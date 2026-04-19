@@ -1,11 +1,11 @@
 {
-  "name": "oxide-engine-ui",
+  "name": "rer-engine",
   "version": "0.1.0",
-  "description": "Oxide Engine Editor UI",
+  "description": "RER-ENGINE — React, Electron, Rust Engine",
   "main": "./out/main/index.js",
   "scripts": {
     "predev": "cargo build --manifest-path src/main/Engine/Cargo.toml",
-    "dev": "WAYLAND_DISPLAY='' ELECTRON_OZONE_PLATFORM_HINT=x11 GDK_BACKEND=x11 electron-vite dev",
+    "dev": "WAYLAND_DISPLAY='' ELECTRON_OZONE_PLATFORM_HINT=x11 GDK_BACKEND=x11 __NV_PRIME_RENDER_OFFLOAD=1 __GLX_VENDOR_LIBRARY_NAME=nvidia electron-vite dev",
     "prebuild": "cargo build --manifest-path src/main/Engine/Cargo.toml",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
@@ -13,8 +13,8 @@
     "dist": "electron-vite build && electron-builder"
   },
   "build": {
-    "appId": "com.oxideengine.editor",
-    "productName": "Oxide Engine",
+    "appId": "com.rerengine.editor",
+    "productName": "RER-ENGINE",
     "directories": {
       "output": "dist"
     },
@@ -23,7 +23,7 @@
     ],
     "extraResources": [
       {
-        "from": "src/main/Engine/target/release/oxide-engine",
+        "from": "src/main/Engine/target/release/rer-engine",
         "to": "engine"
       }
     ],

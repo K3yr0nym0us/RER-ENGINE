@@ -138,7 +138,7 @@ export default function App() {
         <aside className="app-sidebar p-3 border-end border-secondary-subtle overflow-auto">
           {/* Logo + estado */}
           <div className="d-flex align-items-center justify-content-between mb-1">
-            <span style={{ fontSize: 16, fontWeight: 700, color: '#c084fc', letterSpacing: '0.03em' }}>⬡ Oxide Engine</span>
+            <span style={{ fontSize: 16, fontWeight: 700, color: '#c084fc', letterSpacing: '0.03em' }}>⬡ RER-ENGINE</span>
             {statusBadge}
           </div>
 

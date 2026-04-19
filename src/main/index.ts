@@ -37,7 +37,7 @@ function createMainWindow(): void {
     height: 800,
     minWidth:  900,
     minHeight: 600,
-    title: 'Oxide Engine',
+    title: 'RER-ENGINE',
     backgroundColor: '#0d0d1a',
     webPreferences: {
       preload:          path.join(__dirname, '../preload/index.js'),
@@ -99,7 +99,7 @@ interface ViewportBounds {
 }
 
 function startEngine(embed?: ViewportBounds): void {
-  const binaryName = process.platform === 'win32' ? 'oxide-engine.exe' : 'oxide-engine'
+  const binaryName = process.platform === 'win32' ? 'rer-engine.exe' : 'rer-engine'
   const enginePath = app.isPackaged
     ? path.join(process.resourcesPath, 'engine', binaryName)
     : path.join(app.getAppPath(), 'src', 'main', 'Engine', 'target', 'debug', binaryName)

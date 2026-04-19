@@ -1,4 +1,6 @@
-# Oxide Engine
+# RER-ENGINE
+
+> **R**eact + **E**lectron + **R**ust ENGINE
 
 Motor gráfico 3D experimental construido con Rust embebido dentro de Electron. El objetivo es crear un editor de escenas interactivo donde la UI (React) y el motor de render (Rust/wgpu) coexisten en la misma ventana, comunicándose mediante un protocolo IPC ligero.
 

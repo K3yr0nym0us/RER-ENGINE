@@ -72,7 +72,7 @@ impl ApplicationHandler for App {
 
         // Atributos base
         let mut attrs = Window::default_attributes()
-            .with_title("Oxide Engine — Viewport");
+            .with_title("RER-ENGINE — Viewport");
 
         if let Some(embed) = &self.embed {
             // ── Modo embebido ────────────────────────────────────────────────

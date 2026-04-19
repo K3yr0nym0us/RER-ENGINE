@@ -1,4 +1,4 @@
-# 🚀 Checklist — Oxide Engine (Rust embebido en Electron)
+# 🚀 Checklist — RER-ENGINE (React + Electron + Rust)
 
 ## Arquitectura objetivo
 
@@ -24,7 +24,7 @@
 
 ## Setup
 
-* ✅ Crear workspace Cargo en `Engine/` (`cargo init --name oxide-engine`)
+* ✅ Crear workspace Cargo en `Engine/` (`cargo init --name rer-engine`)
 * ✅ Dependencias: `winit`, `wgpu`, `raw-window-handle`, `serde`, `serde_json`, `gltf`, `image`
 * ✅ Estructura de módulos: `main.rs`, `engine.rs`, `ipc.rs`, `shader.wgsl`
 
