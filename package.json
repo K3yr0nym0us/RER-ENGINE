@@ -1,0 +1,65 @@
+{
+  "name": "oxide-engine-ui",
+  "version": "0.1.0",
+  "description": "Oxide Engine Editor UI",
+  "main": "./out/main/index.js",
+  "scripts": {
+    "predev": "cargo build --manifest-path src/main/Engine/Cargo.toml",
+    "dev": "WAYLAND_DISPLAY='' ELECTRON_OZONE_PLATFORM_HINT=x11 GDK_BACKEND=x11 electron-vite dev",
+    "prebuild": "cargo build --manifest-path src/main/Engine/Cargo.toml",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "predist": "cargo build --release --manifest-path src/main/Engine/Cargo.toml",
+    "dist": "electron-vite build && electron-builder"
+  },
+  "build": {
+    "appId": "com.oxideengine.editor",
+    "productName": "Oxide Engine",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "out/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "src/main/Engine/target/release/oxide-engine",
+        "to": "engine"
+      }
+    ],
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Development"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ]
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.0",
+    "electron": "^30.0.0",
+    "electron-builder": "^26.8.1",
+    "electron-vite": "^2.3.0",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0",
+    "typescript": "^5.5.0",
+    "vite": "^5.4.0"
+  },
+  "dependencies": {
+    "bootstrap": "^5.3.8",
+    "react-bootstrap": "^2.10.10"
+  }
+}
