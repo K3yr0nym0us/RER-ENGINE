@@ -143,7 +143,11 @@ impl ApplicationHandler for App {
                         if pressed {
                             // Comprobar si el click es sobre un eje del gizmo
                             if let Some(cur) = self.last_cursor {
-                                let axis = state.pick_gizmo_axis(cur.0, cur.1);
+                                let axis = if state.camera_2d.is_some() {
+                                    state.pick_gizmo_axis_2d(cur.0, cur.1)
+                                } else {
+                                    state.pick_gizmo_axis(cur.0, cur.1)
+                                };
                                 self.gizmo_drag_axis = axis;
                                 if axis.is_some() {
                                     state.set_active_gizmo_axis(axis);
@@ -164,7 +168,11 @@ impl ApplicationHandler for App {
                                     let dx = (cur.0 - start.0).abs();
                                     let dy = (cur.1 - start.1).abs();
                                     if dx < 5.0 && dy < 5.0 {
-                                        state.pick_entity(cur.0, cur.1);
+                                        if state.camera_2d.is_some() {
+                                            state.pick_entity_2d(cur.0, cur.1);
+                                        } else {
+                                            state.pick_entity(cur.0, cur.1);
+                                        }
                                     }
                                 }
                             }
@@ -186,7 +194,11 @@ impl ApplicationHandler for App {
                     let dy = cur.1 - ly;
                     if let Some(axis) = self.gizmo_drag_axis {
                         // Drag de gizmo: mover entidad a lo largo del eje
-                        state.drag_gizmo(cur.0, cur.1, lx, ly, axis);
+                        if state.camera_2d.is_some() {
+                            state.drag_gizmo_2d(cur.0, cur.1, lx, ly, axis);
+                        } else {
+                            state.drag_gizmo(cur.0, cur.1, lx, ly, axis);
+                        }
                     } else if self.mouse_right {
                         state.camera.orbit(dx, dy);
                     } else if self.mouse_middle {
@@ -195,7 +207,11 @@ impl ApplicationHandler for App {
                 }
                 // Hover: solo cuando no se está arrastrando
                 if !self.mouse_right && !self.mouse_middle && self.gizmo_drag_axis.is_none() {
-                    state.update_hover(cur.0, cur.1);
+                    if state.camera_2d.is_some() {
+                        state.update_hover_2d(cur.0, cur.1);
+                    } else {
+                        state.update_hover(cur.0, cur.1);
+                    }
                 }
                 self.last_cursor = Some(cur);
             }

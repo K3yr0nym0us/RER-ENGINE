@@ -54,6 +54,33 @@ impl GpuTexture {
         Self::from_rgba(device, queue, &[255, 255, 255, 255], 1, 1, "white-fallback")
     }
 
+    // ── Textura de color sólido (1×1) ────────────────────────────────────────
+    pub fn solid_color(device: &wgpu::Device, queue: &wgpu::Queue, r: u8, g: u8, b: u8) -> Self {
+        Self::from_rgba(device, queue, &[r, g, b, 255], 1, 1, "solid-color")
+    }
+
+    // ── Textura checkerboard — usada para el plano de suelo ──────────────────
+    // Genera un patrón de ajedrez de `size`×`size` píxeles con dos tonos de gris.
+    pub fn checkerboard(device: &wgpu::Device, queue: &wgpu::Queue, size: u32) -> Self {
+        let mut pixels: Vec<u8> = Vec::with_capacity((size * size * 4) as usize);
+        for y in 0..size {
+            for x in 0..size {
+                let light = ((x + y) % 2) == 0;
+                // claro: #3a3d50  |  oscuro: #1e2030
+                let (r, g, b): (u8, u8, u8) = if light {
+                    (58, 61, 80)
+                } else {
+                    (30, 32, 48)
+                };
+                pixels.push(r);
+                pixels.push(g);
+                pixels.push(b);
+                pixels.push(255);
+            }
+        }
+        Self::from_rgba(device, queue, &pixels, size, size, "checkerboard")
+    }
+
     // ── Constructor desde bytes de imagen (PNG/JPEG vía crate `image`) ────────
     pub fn from_image_bytes(
         device: &wgpu::Device,

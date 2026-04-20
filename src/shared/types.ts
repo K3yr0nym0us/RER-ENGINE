@@ -1,7 +1,22 @@
 // Tipos compartidos entre main process, preload y renderer.
 
+export type ProjectType = '2D' | '3D' | 'scratch'
+
+export type GameStyle =
+  | 'first-person'
+  | 'second-person'
+  | 'third-person'
+  | 'top-down'
+  | 'side-scroller'
+  | 'isometric'
+
+export interface ProjectConfig {
+  type:      ProjectType
+  gameStyle: GameStyle
+}
+
 export interface EngineCommand {
-  cmd: 'ping' | 'shutdown' | 'set_clear_color' | 'resize' | 'load_model' | 'set_transform'
+  cmd: 'ping' | 'shutdown' | 'set_clear_color' | 'resize' | 'load_model' | 'set_transform' | 'set_scene'
   [key: string]: unknown
 }
 
@@ -34,8 +49,9 @@ declare global {
       on:   (cb: (event: EngineEvent) => void) => void
     }
     electronAPI: {
-      sendViewportBounds: (bounds: ViewportBounds) => void
-      openModelDialog:    () => Promise<string | null>
+      sendViewportBounds:      (bounds: ViewportBounds) => void
+      openModelDialog:         () => Promise<string | null>
+      openProjectDialog:       () => Promise<ProjectConfig | null>
       onRequestViewportBounds: (cb: () => void) => void
     }
   }

@@ -3,6 +3,12 @@ import { Accordion } from 'react-bootstrap'
 import { useEngine } from './useEngine'
 import type { SelectedEntity } from './useEngine'
 import { SceneTree } from './SceneTree'
+import { ProjectSelector } from './ProjectSelector'
+import { GameStyleSelector } from './GameStyleSelector'
+import type { ProjectType, GameStyle, ProjectConfig } from '../../shared/types'
+
+// Re-export para compatibilidad con ProjectSelector (que lo importa desde './App')
+export type { ProjectType }
 
 // ── PropertiesPanel ──────────────────────────────────────────────────────────
 function PropertiesPanel({
@@ -110,15 +116,15 @@ function PropertiesPanel({
   )
 }
 
-// ── Componente principal ─────────────────────────────────────────────────────
-export default function App() {
+// ── Vista del motor (se monta solo tras seleccionar tipo de proyecto) ─────────
+function EngineView({ projectType }: { projectType: ProjectType }) {
   const logRef      = useRef<HTMLDivElement>(null)
   const viewportRef = useRef<HTMLDivElement>(null)
 
   const {
     engineReady, engineError, log, entities, selectedEntity,
     loadModel, send, retryEngine,
-  } = useEngine(viewportRef)
+  } = useEngine(viewportRef, projectType)
 
   useEffect(() => {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight
@@ -130,6 +136,17 @@ export default function App() {
       ? <span className="badge bg-danger">Error</span>
       : <span className="badge bg-warning text-dark">Iniciando…</span>
 
+  const typeBadgeStyle: React.CSSProperties = {
+    fontSize: 10,
+    fontWeight: 700,
+    letterSpacing: '0.1em',
+    padding: '1px 7px',
+    borderRadius: 10,
+    background: projectType === '3D' ? '#34d39922' : projectType === '2.5D' ? '#a78bfa22' : '#38bdf822',
+    color:      projectType === '3D' ? '#34d399'   : projectType === '2.5D' ? '#a78bfa'   : '#38bdf8',
+    border: `1px solid ${projectType === '3D' ? '#34d39955' : projectType === '2.5D' ? '#a78bfa55' : '#38bdf855'}`,
+  }
+
   return (
     <div className="app-shell d-flex flex-column">
       <div className="d-flex flex-grow-1 overflow-hidden">
@@ -139,7 +156,10 @@ export default function App() {
           {/* Logo + estado */}
           <div className="d-flex align-items-center justify-content-between mb-1">
             <span style={{ fontSize: 16, fontWeight: 700, color: '#c084fc', letterSpacing: '0.03em' }}>⬡ RER-ENGINE</span>
-            {statusBadge}
+            <div className="d-flex align-items-center gap-2">
+              <span style={typeBadgeStyle}>{projectType}</span>
+              {statusBadge}
+            </div>
           </div>
 
           {engineError && (
@@ -220,3 +240,36 @@ export default function App() {
   )
 }
 
+// ── Componente principal ─────────────────────────────────────────────────────
+export default function App() {
+  const [projectType, setProjectType] = useState<ProjectType | null>(null)
+  const [gameStyle,   setGameStyle]   = useState<GameStyle   | null>(null)
+
+  // Cargar proyecto existente: salta directamente al motor
+  const handleLoadProject = (cfg: ProjectConfig) => {
+    setProjectType(cfg.type)
+    setGameStyle(cfg.gameStyle)
+  }
+
+  if (!projectType) {
+    return (
+      <ProjectSelector
+        onSelect={setProjectType}
+        onLoadProject={handleLoadProject}
+      />
+    )
+  }
+
+  // 2D y scratch saltan directamente al motor (sin elegir estilo de juego)
+  if (!gameStyle && projectType !== '2D' && projectType !== 'scratch') {
+    return (
+      <GameStyleSelector
+        projectType={projectType}
+        onSelect={setGameStyle}
+        onBack={() => setProjectType(null)}
+      />
+    )
+  }
+
+  return <EngineView projectType={projectType} />
+}

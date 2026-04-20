@@ -1649,24 +1649,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "oxide-engine"
-version = "0.1.0"
-dependencies = [
- "bytemuck",
- "env_logger",
- "glam",
- "gltf",
- "image",
- "log",
- "pollster",
- "rapier3d",
- "serde",
- "serde_json",
- "wgpu",
- "winit",
-]
-
-[[package]]
 name = "parking_lot"
 version = "0.12.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1975,6 +1957,24 @@ name = "renderdoc-sys"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "19b30a45b0cd0bcca8037f3d0dc3421eaf95327a17cad11964fb8179b4fc4832"
+
+[[package]]
+name = "rer-engine"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "env_logger",
+ "glam",
+ "gltf",
+ "image",
+ "log",
+ "pollster",
+ "rapier3d",
+ "serde",
+ "serde_json",
+ "wgpu",
+ "winit",
+]
 
 [[package]]
 name = "robust"

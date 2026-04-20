@@ -163,6 +163,74 @@ pub fn load_glb(
 }
 
 // ---------------------------------------------------------------------------
+// Quad en el plano XY (normal +Z) — primitiva base para escenas 2D
+//
+// `cx`, `cy` = centro del quad en mundo
+// `w`, `h`   = ancho y alto
+// Las UVs cubren el rectángulo completo una vez (0..1).
+// ---------------------------------------------------------------------------
+pub fn create_quad_xy(device: &wgpu::Device, cx: f32, cy: f32, w: f32, h: f32, label: &str) -> Mesh {
+    let hw = w / 2.0;
+    let hh = h / 2.0;
+    let vertices = vec![
+        Vertex { position: [cx - hw, cy - hh, 0.0], normal: [0.0, 0.0, 1.0], uv: [0.0, 1.0] },
+        Vertex { position: [cx + hw, cy - hh, 0.0], normal: [0.0, 0.0, 1.0], uv: [1.0, 1.0] },
+        Vertex { position: [cx + hw, cy + hh, 0.0], normal: [0.0, 0.0, 1.0], uv: [1.0, 0.0] },
+        Vertex { position: [cx - hw, cy + hh, 0.0], normal: [0.0, 0.0, 1.0], uv: [0.0, 0.0] },
+    ];
+    let indices = vec![0u32, 1, 2, 2, 3, 0];
+    upload(device, &vertices, &indices, label)
+}
+
+// ---------------------------------------------------------------------------
+// Plano de suelo procedural — escenario base primera persona
+//
+// Genera un quad subdividido de `size` × `size` unidades centrado en el origen,
+// orientado en el plano XZ (normal apuntando a +Y).
+// Las UVs se multiplican por `uv_scale` para que la textura se repita en tile.
+// ---------------------------------------------------------------------------
+pub fn create_ground_plane(device: &wgpu::Device) -> Mesh {
+    const SEGMENTS:  u32  = 20;
+    const SIZE:      f32  = 40.0;   // metros totales
+    const UV_SCALE:  f32  = 20.0;   // repeticiones de la textura
+
+    let half = SIZE / 2.0;
+    let step = SIZE / SEGMENTS as f32;
+
+    let mut vertices: Vec<Vertex> = Vec::new();
+    let mut indices:  Vec<u32>    = Vec::new();
+
+    // Vértices: malla (SEGMENTS+1) × (SEGMENTS+1)
+    for z in 0..=SEGMENTS {
+        for x in 0..=SEGMENTS {
+            let px = -half + x as f32 * step;
+            let pz = -half + z as f32 * step;
+            let u  = (x as f32 / SEGMENTS as f32) * UV_SCALE;
+            let v  = (z as f32 / SEGMENTS as f32) * UV_SCALE;
+            vertices.push(Vertex {
+                position: [px, 0.0, pz],
+                normal:   [0.0, 1.0, 0.0],
+                uv:       [u, v],
+            });
+        }
+    }
+
+    // Índices: dos triángulos por celda
+    let stride = SEGMENTS + 1;
+    for z in 0..SEGMENTS {
+        for x in 0..SEGMENTS {
+            let tl = z * stride + x;
+            let tr = tl + 1;
+            let bl = tl + stride;
+            let br = bl + 1;
+            indices.extend_from_slice(&[tl, bl, tr, tr, bl, br]);
+        }
+    }
+
+    upload(device, &vertices, &indices, "ground-plane")
+}
+
+// ---------------------------------------------------------------------------
 // Helper: sube vértices e índices a la GPU
 // ---------------------------------------------------------------------------
 fn upload(device: &wgpu::Device, vertices: &[Vertex], indices: &[u32], label: &str) -> Mesh {

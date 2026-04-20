@@ -25,6 +25,8 @@ pub enum EngineCommand {
         rotation: Option<[f32; 4]>,  // quaternion xyzw
         scale:    Option<[f32; 3]>,
     },
+    /// Cambiar la escena activa. `scene` puede ser "2D", "3D", etc.
+    SetScene { scene: String },
 }
 
 // ---------------------------------------------------------------------------

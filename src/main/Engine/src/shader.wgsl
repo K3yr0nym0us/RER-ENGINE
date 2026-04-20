@@ -78,47 +78,30 @@ const ROUGHNESS   : f32       = 0.5;
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let albedo_samp = textureSample(t_albedo, s_albedo, in.uv);
-    let albedo      = pow(albedo_samp.rgb, vec3<f32>(2.2));  // sRGB → linear
+    let albedo      = albedo_samp.rgb;   // usar color directo sin gamma ni PBR
 
     let n = normalize(in.world_normal);
     let v = normalize(u.cam_pos.xyz - in.world_pos);
     let l = normalize(LIGHT_DIR);
-    let h = normalize(v + l);
 
-    // F0: para dieléctrico ~0.04, para metales = albedo
-    let f0      = mix(vec3<f32>(0.04), albedo, METALLIC);
+    // Iluminación Lambert simple: más brillante y predecible en 2D
     let ndotl   = max(dot(n, l), 0.0);
-    let radiance = LIGHT_COLOR * ndotl;
+    var color   = albedo * (0.4 + 0.6 * ndotl);  // 40% ambient + 60% diffuse
 
-    // Especular (Cook-Torrance)
-    let ndf = distribution_ggx(n, h, ROUGHNESS);
-    let g   = geometry_smith(n, v, l, ROUGHNESS);
-    let f   = fresnel_schlick(max(dot(h, v), 0.0), f0);
-
-    let kd    = (1.0 - f) * (1.0 - METALLIC);
-    let spec  = (ndf * g * f) / max(4.0 * max(dot(n, v), 0.0) * ndotl, 0.001);
-
-    let lo = (kd * albedo / 3.14159265 + spec) * radiance;
-
-    // Ambiente IBL simplificado (AO = 1 por ahora)
-    let ambient = vec3<f32>(0.03) * albedo;
-
-    // Tone mapping Reinhard + corrección gamma
-    var color = ambient + lo;
-    color     = color / (color + vec3<f32>(1.0));
-
-    // ── Rim glow: borde del objeto según estado de selección ─────────────────
-    // rim_factor ≈ 0 en el centro, 1 en los bordes tangentes a la cámara
+    // ── Rim glow + flat tint según estado de selección/hover ─────────────────
+    // rim_factor ≈ 0 en el centro, 1 en los bordes tangentes a la cámara.
+    // En quads 2D (normal=[0,0,1] frente a cámara) rim_factor≈0, por eso
+    // añadimos también un flat mix para que el cambio sea siempre visible.
     let rim_factor = pow(1.0 - max(dot(n, v), 0.0), 2.5);
     if u.cam_pos.w > 1.5 {
-        // Hover: borde cian sutil
+        // Hover: tint cian
+        color = mix(color, vec3<f32>(0.12, 0.60, 0.88), 0.38);
         color += vec3<f32>(0.15, 0.65, 0.90) * rim_factor * 1.3;
     } else if u.cam_pos.w > 0.5 {
-        // Seleccionado: borde dorado brillante
+        // Seleccionado: tint dorado
+        color = mix(color, vec3<f32>(1.0, 0.75, 0.10), 0.38);
         color += vec3<f32>(1.0, 0.80, 0.15) * rim_factor * 2.2;
     }
-
-    color = pow(color, vec3<f32>(1.0 / 2.2));
 
     return vec4<f32>(color, albedo_samp.a);
 }

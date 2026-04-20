@@ -18,7 +18,10 @@ export interface LogEntry {
   isError: boolean
 }
 
-export function useEngine(viewportRef: React.RefObject<HTMLDivElement | null>) {
+export function useEngine(
+  viewportRef: React.RefObject<HTMLDivElement | null>,
+  projectType?: string,
+) {
   const [engineReady,    setEngineReady]    = useState(false)
   const [engineError,    setEngineError]    = useState<string | null>(null)
   const [log,            setLog]            = useState<LogEntry[]>([])
@@ -85,6 +88,10 @@ export function useEngine(viewportRef: React.RefObject<HTMLDivElement | null>) {
         setEngineReady(true)
         setEngineError(null)
         if (readyTimer.current) clearTimeout(readyTimer.current)
+        // Notificar al motor qué escena cargar según el tipo de proyecto
+        if (projectType) {
+          window.engine.send({ cmd: 'set_scene', scene: projectType } as never)
+        }
       }
       if (event.event === 'model_loaded') {
         const id = (event as { id?: number }).id ?? -1

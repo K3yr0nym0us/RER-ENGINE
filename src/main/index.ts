@@ -1,7 +1,8 @@
 import { app, BrowserWindow, ipcMain, dialog, Menu } from 'electron'
 import { spawn, ChildProcess } from 'child_process'
 import path from 'path'
-import type { EngineCommand, EngineEvent } from '../shared/types'
+import fs from 'fs'
+import type { EngineCommand, EngineEvent, ProjectConfig } from '../shared/types'
 
 // Sin GPU hardware disponible: deshabilitar el proceso GPU de Chromium
 // para evitar spam de viz_main_impl / command_buffer_proxy_impl
@@ -198,6 +199,32 @@ ipcMain.handle('open-model-dialog', async () => {
     properties:  ['openFile'],
   })
   return result.canceled ? null : result.filePaths[0] ?? null
+})
+
+// Diálogo para abrir un proyecto existente (lee project.json)
+ipcMain.handle('open-project-dialog', async (): Promise<ProjectConfig | null> => {
+  if (!mainWindow) return null
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title:      'Abrir proyecto',
+    filters:    [{ name: 'Proyecto RER', extensions: ['json'] }],
+    properties: ['openFile'],
+  })
+  if (result.canceled || !result.filePaths[0]) return null
+  try {
+    const raw = fs.readFileSync(result.filePaths[0], 'utf8')
+    const cfg = JSON.parse(raw) as unknown
+    if (
+      cfg !== null &&
+      typeof cfg === 'object' &&
+      'type' in cfg &&
+      'gameStyle' in cfg
+    ) {
+      return cfg as ProjectConfig
+    }
+    return null
+  } catch {
+    return null
+  }
 })
 
 // El renderer envía los bounds del viewport una vez montado (y en cada resize).
