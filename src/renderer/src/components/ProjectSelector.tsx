@@ -1,6 +1,5 @@
 import { useState } from 'react'
-import type { ProjectType } from './App'
-import type { ProjectConfig } from '../../shared/types'
+import type { ProjectConfig, ProjectType } from '../../../shared-types/types'
 
 interface ProjectOption {
   type:        ProjectType
@@ -33,26 +32,13 @@ const OPTIONS: ProjectOption[] = [
   },
 ]
 
-// Estilos reutilizables para una tarjeta genérica
-const cardBase: React.CSSProperties = {
-  width:        220,
-  background:   'rgba(14,16,30,0.95)',
-  border:       '1px solid #2c3152',
-  borderRadius: 12,
-  padding:      '28px 20px 24px',
-  cursor:       'pointer',
-  transition:   'border-color 0.18s, box-shadow 0.18s, transform 0.14s',
-  textAlign:    'center',
-  color:        '#fff',
-}
-
 const separator = (
   <div style={{ width: 1, background: '#2c3152', borderRadius: 1, alignSelf: 'stretch', margin: '0 4px' }} />
 )
 
 interface Props {
-  onSelect:        (type: ProjectType) => void
-  onLoadProject:   (cfg: ProjectConfig) => void
+  onSelect:      (type: ProjectType) => void
+  onLoadProject: (cfg: ProjectConfig) => void
 }
 
 export function ProjectSelector({ onSelect, onLoadProject }: Props) {
@@ -92,7 +78,7 @@ export function ProjectSelector({ onSelect, onLoadProject }: Props) {
         <div style={{ fontSize: 36, fontWeight: 800, color: '#c084fc', letterSpacing: '0.04em', lineHeight: 1 }}>
           ⬡ RER-ENGINE
         </div>
-        <div className="mt-2" style={{ fontSize: 14, color: '#6b7280', letterSpacing: '0.08em' }}>
+        <div className="mt-2 selector-subtitle">
           SELECCIONA EL TIPO DE PROYECTO
         </div>
       </div>
@@ -103,16 +89,16 @@ export function ProjectSelector({ onSelect, onLoadProject }: Props) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <button
             onClick={handleLoadProject}
-            style={{ ...cardBase, height: '100%' }}
+            className="selector-card"
+            style={{ height: '100%' }}
             onMouseEnter={hoverOn('#c084fc')}
             onMouseLeave={hoverOff}
           >
-            <div style={{ fontSize: 42, marginBottom: 10, color: '#c084fc', lineHeight: 1 }}>◫</div>
-            <div style={{
-              display: 'inline-block', fontSize: 11, fontWeight: 700, letterSpacing: '0.12em',
-              padding: '2px 10px', borderRadius: 20, marginBottom: 10,
-              background: '#c084fc22', color: '#c084fc', border: '1px solid #c084fc55',
-            }}>
+            <div className="selector-icon" style={{ color: '#c084fc' }}>◫</div>
+            <div
+              className="selector-badge"
+              style={{ background: '#c084fc22', color: '#c084fc', border: '1px solid #c084fc55' }}
+            >
               ABRIR
             </div>
             <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 8, color: '#e2e8f0' }}>
@@ -123,7 +109,7 @@ export function ProjectSelector({ onSelect, onLoadProject }: Props) {
             </div>
           </button>
           {loadError && (
-            <div style={{ fontSize: 11, color: '#f87171', textAlign: 'center', maxWidth: 220 }}>
+            <div style={{ fontSize: 12, color: '#f87171', textAlign: 'center', maxWidth: 220 }}>
               {loadError}
             </div>
           )}
@@ -137,23 +123,18 @@ export function ProjectSelector({ onSelect, onLoadProject }: Props) {
             <button
               onClick={() => opt.available && onSelect(opt.type)}
               disabled={!opt.available}
-              style={{
-                ...cardBase,
-                height:   '100%',
-                cursor:   opt.available ? 'pointer' : 'not-allowed',
-                opacity:  opt.available ? 1 : 0.72,
-              }}
+              className={`selector-card${!opt.available ? ' selector-card--disabled' : ''}`}
+              style={{ height: '100%' }}
               onMouseEnter={opt.available ? hoverOn(opt.badgeColor) : undefined}
               onMouseLeave={opt.available ? hoverOff : undefined}
             >
-              <div style={{ fontSize: 42, marginBottom: 10, color: opt.badgeColor, lineHeight: 1 }}>
+              <div className="selector-icon" style={{ color: opt.badgeColor }}>
                 {opt.icon}
               </div>
-              <div style={{
-                display: 'inline-block', fontSize: 11, fontWeight: 700, letterSpacing: '0.12em',
-                padding: '2px 10px', borderRadius: 20, marginBottom: 10,
-                background: `${opt.badgeColor}22`, color: opt.badgeColor, border: `1px solid ${opt.badgeColor}55`,
-              }}>
+              <div
+                className="selector-badge"
+                style={{ background: `${opt.badgeColor}22`, color: opt.badgeColor, border: `1px solid ${opt.badgeColor}55` }}
+              >
                 {opt.badge}
               </div>
               <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 8, color: opt.available ? '#e2e8f0' : '#9ca3af' }}>
@@ -164,11 +145,10 @@ export function ProjectSelector({ onSelect, onLoadProject }: Props) {
               </div>
               {!opt.available && (
                 <div style={{ marginTop: 14 }}>
-                  <span style={{
-                    fontSize: 9, fontWeight: 700, letterSpacing: '0.1em',
-                    padding: '2px 10px', borderRadius: 8,
-                    background: `${opt.badgeColor}18`, color: `${opt.badgeColor}bb`, border: `1px solid ${opt.badgeColor}35`,
-                  }}>
+                  <span
+                    className="coming-soon-badge"
+                    style={{ background: `${opt.badgeColor}18`, color: `${opt.badgeColor}bb`, border: `1px solid ${opt.badgeColor}35` }}
+                  >
                     PRÓXIMAMENTE
                   </span>
                 </div>
@@ -182,16 +162,15 @@ export function ProjectSelector({ onSelect, onLoadProject }: Props) {
         {/* ── 4. Proyecto desde cero ───────────────────────────────────── */}
         <button
           onClick={() => onSelect('scratch')}
-          style={{ ...cardBase }}
+          className="selector-card"
           onMouseEnter={hoverOn('#fb923c')}
           onMouseLeave={hoverOff}
         >
-          <div style={{ fontSize: 42, marginBottom: 10, color: '#fb923c', lineHeight: 1 }}>✦</div>
-          <div style={{
-            display: 'inline-block', fontSize: 11, fontWeight: 700, letterSpacing: '0.12em',
-            padding: '2px 10px', borderRadius: 20, marginBottom: 10,
-            background: '#fb923c22', color: '#fb923c', border: '1px solid #fb923c55',
-          }}>
+          <div className="selector-icon" style={{ color: '#fb923c' }}>❆</div>
+          <div
+            className="selector-badge"
+            style={{ background: '#fb923c22', color: '#fb923c', border: '1px solid #fb923c55' }}
+          >
             NUEVO
           </div>
           <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 8, color: '#e2e8f0' }}>
@@ -205,7 +184,7 @@ export function ProjectSelector({ onSelect, onLoadProject }: Props) {
       </div>
 
       {/* Footer */}
-      <div className="mt-5" style={{ fontSize: 11, color: '#374151', letterSpacing: '0.06em' }}>
+      <div className="mt-5" style={{ fontSize: 12, color: '#374151', letterSpacing: '0.04em' }}>
         React TS · Electron TS · Rust (wgpu)
       </div>
     </div>

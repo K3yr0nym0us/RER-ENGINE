@@ -1,9 +1,9 @@
-import type { Entity } from './useEngine'
+import type { Entity } from '../hooks/useEngine'
 
 interface Props {
-  entities: Entity[]
+  entities:   Entity[]
   selectedId?: number | null
-  onSelect?: (id: number) => void
+  onSelect?:  (id: number) => void
 }
 
 export function SceneTree({ entities, selectedId, onSelect }: Props) {
@@ -26,4 +26,3 @@ export function SceneTree({ entities, selectedId, onSelect }: Props) {
     </div>
   )
 }
-

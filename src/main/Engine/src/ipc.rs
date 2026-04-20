@@ -27,6 +27,8 @@ pub enum EngineCommand {
     },
     /// Cambiar la escena activa. `scene` puede ser "2D", "3D", etc.
     SetScene { scene: String },
+    /// Cargar una imagen PNG como escenario de fondo en la escena 2D.
+    LoadScenario { path: String },
 }
 
 // ---------------------------------------------------------------------------

@@ -16,7 +16,7 @@ export interface ProjectConfig {
 }
 
 export interface EngineCommand {
-  cmd: 'ping' | 'shutdown' | 'set_clear_color' | 'resize' | 'load_model' | 'set_transform' | 'set_scene'
+  cmd: 'ping' | 'shutdown' | 'set_clear_color' | 'resize' | 'load_model' | 'set_transform' | 'set_scene' | 'load_scenario'
   [key: string]: unknown
 }
 
@@ -52,6 +52,7 @@ declare global {
       sendViewportBounds:      (bounds: ViewportBounds) => void
       openModelDialog:         () => Promise<string | null>
       openProjectDialog:       () => Promise<ProjectConfig | null>
+      openScenarioDialog:      () => Promise<string | null>
       onRequestViewportBounds: (cb: () => void) => void
     }
   }

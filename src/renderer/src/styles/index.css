@@ -1,0 +1,332 @@
+:root {
+  --bs-body-bg: #1f2237;
+  --bs-body-color: #ffffff;
+  --bs-border-color: #3b4066;
+  --bs-secondary-color: #c5c9e8;
+  --bs-card-bg: rgba(14, 16, 30, 0.92);
+  --bs-card-color: #ffffff;
+  --bs-emphasis-color: #ffffff;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  margin: 0;
+  background: var(--bs-body-bg);
+  color: var(--bs-body-color);
+  font-family: var(--bs-font-sans-serif, 'Segoe UI', system-ui, sans-serif);
+  font-size: 14px;
+}
+
+body {
+  background: var(--bs-body-bg) !important;
+  color: #fff !important;
+}
+
+.app-shell {
+  height: 100vh;
+  background: #55566f;
+}
+
+.app-sidebar {
+  width: 268px;
+  min-width: 268px;
+  background: #090b18;
+}
+
+.section-card {
+  background: rgba(10, 12, 24, 0.95) !important;
+  border: 1px solid #2c3152 !important;
+  color: #fff !important;
+}
+
+.section-card .card-header {
+  background: rgba(255, 255, 255, 0.03) !important;
+  border-bottom: 1px solid #2c3152 !important;
+  color: #eef2ff !important;
+  letter-spacing: 0.06em;
+}
+
+/* ── Acordeón del sidebar ── */
+.sidebar-accordion .accordion-item {
+  background: transparent !important;
+  border-color: #2c3152 !important;
+}
+
+.sidebar-accordion .accordion-button {
+  background: rgba(255, 255, 255, 0.03) !important;
+  color: #eef2ff !important;
+  border-bottom: 1px solid #2c3152 !important;
+  box-shadow: none !important;
+  letter-spacing: 0.06em;
+  padding: 8px 12px;
+}
+
+.sidebar-accordion .accordion-button:not(.collapsed) {
+  color: #c084fc !important;
+  background: rgba(192, 132, 252, 0.08) !important;
+}
+
+.sidebar-accordion .accordion-button::after {
+  filter: invert(1) brightness(1.5);
+}
+
+.sidebar-accordion .accordion-body {
+  background: transparent !important;
+  padding: 8px;
+}
+
+.form-control,
+.form-control:focus {
+  background-color: #262b46 !important;
+  color: #ffffff !important;
+  border-color: #4a4f78 !important;
+  box-shadow: none !important;
+}
+
+.btn-outline-light {
+  color: #fff !important;
+  border-color: #8087bd !important;
+}
+
+.btn-outline-light:hover,
+.btn-outline-light:focus {
+  background-color: #3a4067 !important;
+  border-color: #a0a8e0 !important;
+  color: #fff !important;
+}
+
+.list-group-item {
+  background: transparent !important;
+  color: #eef2ff !important;
+  border-color: #2c3152 !important;
+}
+
+.list-group-item.active {
+  background: #4b57d1 !important;
+  border-color: #6572f0 !important;
+  color: #fff !important;
+}
+
+.console-panel {
+  height: 120px;
+  background: #03050d;
+  border-top: 1px solid #202545;
+}
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #34395d; border-radius: 4px; }
+
+/* ── Engine type badge ───────────────────────────────────────────────────── */
+.engine-type-badge {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 1px 7px;
+  border-radius: 10px;
+}
+.engine-type-badge--3d {
+  background: #34d39922;
+  color: #34d399;
+  border: 1px solid #34d39955;
+}
+.engine-type-badge--2d {
+  background: #38bdf822;
+  color: #38bdf8;
+  border: 1px solid #38bdf855;
+}
+
+/* ── Project selector card ───────────────────────────────────────────────── */
+.selector-card {
+  width: 220px;
+  background: rgba(14, 16, 30, 0.95);
+  border: 1px solid #2c3152;
+  border-radius: 12px;
+  padding: 28px 20px 24px;
+  cursor: pointer;
+  transition: border-color 0.18s, box-shadow 0.18s, transform 0.14s;
+  text-align: center;
+  color: #fff;
+}
+.selector-card--disabled {
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+/* ── Selector subtitle ───────────────────────────────────────────────────── */
+.selector-subtitle {
+  font-size: 14px;
+  color: #6b7280;
+  letter-spacing: 0.05em;
+}
+
+/* ── Selector / style badge (short uppercase labels) ────────────────────── */
+.selector-badge {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 2px 10px;
+  border-radius: 20px;
+  margin-bottom: 10px;
+}
+
+/* ── Style-card (GameStyleSelector option buttons) ───────────────────────── */
+.style-card {
+  width: 100%;
+  background: rgba(14, 16, 30, 0.95);
+  border: 1px solid #2c3152;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: border-color 0.18s, box-shadow 0.18s, transform 0.14s;
+  text-align: center;
+  color: #fff;
+}
+.style-card--disabled {
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+/* ── Style badge (option type badge inside style-card) ───────────────────── */
+.style-badge {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 1px 8px;
+  border-radius: 16px;
+  margin-bottom: 8px;
+}
+
+/* ── "Próximamente" badge ────────────────────────────────────────────────── */
+.coming-soon-badge {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 2px 10px;
+  border-radius: 8px;
+}
+
+/* ── Properties panel ───────────────────────────────────────────────────── */
+.prop-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #d8d4f8;
+  margin-bottom: 0;
+}
+.prop-axis {
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+}
+.prop-input {
+  font-size: 12px !important;
+  padding: 2px 4px !important;
+}
+
+/* ── Selector icon (large emoji/symbol) ─────────────────────────────────── */
+.selector-icon {
+  font-size: 42px;
+  margin-bottom: 10px;
+  line-height: 1;
+}
+
+/* ── Scenario list button ────────────────────────────────────────────────── */
+.scenario-btn {
+  font-size: 12px;
+}
+
+/* ── GameStyleSelector page ──────────────────────────────────────────────── */
+.style-selector-page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  background: #050508;
+  user-select: none;
+}
+
+.engine-logo {
+  font-size: 36px;
+  font-weight: 800;
+  color: #c084fc;
+  letter-spacing: 0.04em;
+  line-height: 1;
+}
+
+.breadcrumb-back {
+  font-size: 12px;
+  color: #4b5280;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.breadcrumb-sep {
+  font-size: 12px;
+  color: #2c3152;
+}
+
+.breadcrumb-current {
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.engine-footer {
+  margin-top: 3rem;
+  font-size: 12px;
+  color: #374151;
+  letter-spacing: 0.04em;
+}
+
+/* ── Style cards grid ────────────────────────────────────────────────────── */
+.style-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 200px);
+  gap: 16px;
+}
+
+.style-card-wrapper {
+  position: relative;
+}
+
+.style-card-icon {
+  font-size: 34px;
+  margin-bottom: 8px;
+  line-height: 1;
+}
+
+.style-card-title {
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 6px;
+  color: #e2e8f0;
+}
+
+.style-card-title--disabled {
+  color: #9ca3af;
+}
+
+.style-card-desc {
+  font-size: 12px;
+  color: #6b7280;
+  line-height: 1.5;
+}
+
+.style-card-desc--disabled {
+  color: #4b5563;
+}
+
+.coming-soon-wrapper {
+  margin-top: 12px;
+}

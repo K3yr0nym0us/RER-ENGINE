@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { EngineCommand, EngineEvent, ProjectConfig } from '../shared/types'
+import type { EngineCommand, EngineEvent, ProjectConfig } from '../shared-types/types'
 
 contextBridge.exposeInMainWorld('engine', {
   send: (cmd: EngineCommand): void => {
@@ -20,6 +20,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   openProjectDialog: (): Promise<ProjectConfig | null> => {
     return ipcRenderer.invoke('open-project-dialog')
+  },
+  openScenarioDialog: (): Promise<string | null> => {
+    return ipcRenderer.invoke('open-scenario-dialog')
   },
   onRequestViewportBounds: (cb: () => void): void => {
     ipcRenderer.on('request-viewport-bounds', cb)

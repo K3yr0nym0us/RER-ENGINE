@@ -1,4 +1,3 @@
-use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -7,12 +6,13 @@ use glam::{Mat4, Vec3 as GlamVec3};
 use wgpu::{include_wgsl, util::DeviceExt};
 use winit::{dpi::PhysicalSize, window::Window};
 
-use crate::camera::{Camera, Camera2D};
+use crate::config_3d::Camera;
+use crate::config_2d::Camera2D;
 use crate::ecs::{MeshComponent, Transform, World};
 use crate::gizmo::{self, GizmoBuffer};
 use crate::ipc::{send_event, EngineCommand, EngineEvent};
 use crate::mesh::{self, Mesh};
-use crate::physics::PhysicsWorld;
+use crate::config_3d::physics_3d::PhysicsWorld;
 use crate::texture::GpuTexture;
 use crate::ecs::EntityId;
 
@@ -21,49 +21,57 @@ const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 // ── Uniform que combina view_proj + model ─────────────────────────────────────
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
-struct SceneUniforms {
-    view_proj: [[f32; 4]; 4],
-    model:     [[f32; 4]; 4],
-    cam_pos:   [f32; 4],   // xyz = posición cámara, w = unused
+pub(crate) struct SceneUniforms {
+    pub(crate) view_proj: [[f32; 4]; 4],
+    pub(crate) model:     [[f32; 4]; 4],
+    pub(crate) cam_pos:   [f32; 4],   // xyz = posición cámara, w = unused
+}
+
+// ── Fondo de escenario 2D (PNG cargado por el usuario) ─────────────────────
+pub(crate) struct ScenarioBg {
+    pub(crate) mesh:       Mesh,
+    pub(crate) tex_bg:     wgpu::BindGroup,
+    pub(crate) entity_buf: wgpu::Buffer,
+    pub(crate) entity_bg:  wgpu::BindGroup,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 pub struct State {
-    window:           Arc<Window>,
-    surface:          wgpu::Surface<'static>,
-    device:           wgpu::Device,
-    queue:            wgpu::Queue,
-    config:           wgpu::SurfaceConfiguration,
-    size:             PhysicalSize<u32>,
-    clear_color:      wgpu::Color,
-    render_pipeline:  wgpu::RenderPipeline,
-    depth_view:       wgpu::TextureView,
+    pub(crate) window:           Arc<Window>,
+    pub(crate) surface:          wgpu::Surface<'static>,
+    pub(crate) device:           wgpu::Device,
+    pub(crate) queue:            wgpu::Queue,
+    pub(crate) config:           wgpu::SurfaceConfiguration,
+    pub(crate) size:             PhysicalSize<u32>,
+    pub(crate) clear_color:      wgpu::Color,
+    pub(crate) render_pipeline:  wgpu::RenderPipeline,
+    pub(crate) depth_view:       wgpu::TextureView,
     // Uniforms (group 0) — un buffer por malla para que cada draw call
     // tenga sus propios datos y write_buffer no sobreescriba el anterior.
-    scene_bgl:          wgpu::BindGroupLayout,
-    entity_buffers:     Vec<wgpu::Buffer>,
-    entity_bind_groups: Vec<wgpu::BindGroup>,
+    pub(crate) scene_bgl:          wgpu::BindGroupLayout,
+    pub(crate) entity_buffers:     Vec<wgpu::Buffer>,
+    pub(crate) entity_bind_groups: Vec<wgpu::BindGroup>,
     // Texturas (group 1)
-    texture_bgl:      wgpu::BindGroupLayout,
-    textures:         Vec<wgpu::BindGroup>,  // una por mesh
-    fallback_tex_bg:  wgpu::BindGroup,       // blanca 1x1
+    pub(crate) texture_bgl:      wgpu::BindGroupLayout,
+    pub(crate) textures:         Vec<wgpu::BindGroup>,  // una por mesh
+    pub(crate) fallback_tex_bg:  wgpu::BindGroup,       // blanca 1x1
     // Cámara
     pub camera:       Camera,
     /// Cámara 2D ortográfica activa cuando se carga una escena 2D.
     /// `None` = modo 3D (usa `camera`).
     pub camera_2d:    Option<Camera2D>,
     // Escena y mallas
-    meshes:           Vec<Mesh>,
-    world:            World,
+    pub(crate) meshes:           Vec<Mesh>,
+    pub(crate) world:            World,
     // Tiempo
-    last_frame:       Instant,
-    pub delta_time:   f32,
+    pub(crate) last_frame:       Instant,
+    pub        delta_time:       f32,
     // Gizmos
-    gizmo_pipeline:   wgpu::RenderPipeline,
-    gizmo_buffer:     GizmoBuffer,
-    gizmo_bgl:        wgpu::BindGroupLayout,
-    gizmo_bind_group: wgpu::BindGroup,
-    gizmo_buffer_uni: wgpu::Buffer,
+    pub(crate) gizmo_pipeline:   wgpu::RenderPipeline,
+    pub(crate) gizmo_buffer:     GizmoBuffer,
+    pub(crate) gizmo_bgl:        wgpu::BindGroupLayout,
+    pub(crate) gizmo_bind_group: wgpu::BindGroup,
+    pub(crate) gizmo_buffer_uni: wgpu::Buffer,
     // Física
     pub physics:      PhysicsWorld,
     // Selección
@@ -71,6 +79,8 @@ pub struct State {
     pub hovered_entity:      Option<EntityId>,
     pub hovered_gizmo_axis:  Option<usize>,
     pub active_gizmo_axis:   Option<usize>,
+    // Escenario 2D (fondo PNG)
+    pub(crate) scenario_bg:  Option<ScenarioBg>,
 }
 
 impl State {
@@ -221,7 +231,7 @@ impl State {
         });
 
         // ── Escenario base: plano de suelo — primera persona ─────────────────
-        let ground_plane = mesh::create_ground_plane(&device);
+        let ground_plane = crate::config_3d::mesh_3d::create_ground_plane(&device);
         let meshes       = vec![ground_plane];
         let mut world    = World::new();
         // Entidad del plano
@@ -343,6 +353,7 @@ impl State {
             hovered_entity:      None,
             hovered_gizmo_axis:  None,
             active_gizmo_axis:   None,
+            scenario_bg:          None,
         }
     }
 
@@ -360,34 +371,6 @@ impl State {
         self.config.height = new_size.height;
         self.surface.configure(&self.device, &self.config);
         self.depth_view = create_depth_texture(&self.device, &self.config);
-    }
-
-    // ── Uniform buffer per-entidad ────────────────────────────────────────────
-    //
-    // wgpu aplica todos los write_buffer al hacer submit, y el último gana si
-    // todos apuntan al mismo buffer. Usando un buffer por malla cada draw call
-    // ve sus propios datos y no los del vecino.
-
-    fn alloc_entity_uniform(&self) -> (wgpu::Buffer, wgpu::BindGroup) {
-        let identity = SceneUniforms {
-            view_proj: Mat4::IDENTITY.to_cols_array_2d(),
-            model:     Mat4::IDENTITY.to_cols_array_2d(),
-            cam_pos:   [0.0; 4],
-        };
-        let buf = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label:    Some("entity-uniforms"),
-            contents: bytemuck::cast_slice(&[identity]),
-            usage:    wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-        let bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label:   Some("entity-bg"),
-            layout:  &self.scene_bgl,
-            entries: &[wgpu::BindGroupEntry {
-                binding:  0,
-                resource: buf.as_entire_binding(),
-            }],
-        });
-        (buf, bg)
     }
 
     // ── Comandos IPC ─────────────────────────────────────────────────────────
@@ -437,455 +420,16 @@ impl State {
                     _         => log::info!("SetScene: escena '{}' no reconocida", scene),
                 }
             }
+            EngineCommand::LoadScenario { path } => {
+                self.load_scenario(&path);
+            }
             EngineCommand::Shutdown => {}
         }
-    }
-
-    // ── Escena "desde cero" — cubo de referencia ─────────────────────────────
-
-    fn setup_scratch(&mut self) {
-        self.world.clear();
-        self.meshes.clear();
-        self.textures.clear();
-        self.entity_buffers.clear();
-        self.entity_bind_groups.clear();
-        self.selected_entity = None;
-        self.hovered_entity  = None;
-        self.camera_2d       = None;  // volver a modo 3D
-
-        // Cubo central con textura blanca (fallback)
-        let cube = mesh::create_cube(&self.device);
-        self.meshes.push(cube);
-        self.textures.push(
-            GpuTexture::white(&self.device, &self.queue)
-                .create_bind_group(&self.device, &self.texture_bgl),
-        );
-        let (b, bg) = self.alloc_entity_uniform();
-        self.entity_buffers.push(b);
-        self.entity_bind_groups.push(bg);
-        let cube_id = self.world.spawn(Some("Cube"));
-        self.world.insert(cube_id, MeshComponent { mesh_idx: 0 });
-
-        // Cámara orbital por defecto mirando el cubo
-        self.camera = Camera::new();
-        self.clear_color = wgpu::Color { r: 0.06, g: 0.06, b: 0.10, a: 1.0 };
-
-        log::info!("Escena 'desde cero' cargada: cubo de referencia");
-    }
-
-    // ── Escena 2D — plataformer vista lateral (Hollow Knight style) ──────────
-
-    fn setup_2d_platformer(&mut self) {
-        // Limpiar escena previa
-        self.world.clear();
-        self.meshes.clear();
-        self.textures.clear();
-        self.entity_buffers.clear();
-        self.entity_bind_groups.clear();
-        self.selected_entity  = None;
-        self.hovered_entity   = None;
-
-        // Quad unitario centrado en el origen (0,0) — el Transform lo posiciona y escala.
-        // Esto es imprescindible para que el picking AABB, el gizmo y el hover funcionen.
-
-        // -- Suelo: quad unitario × Transform(scale=40×1.5, pos=(0,0.75)) ----
-        let ground_mesh = mesh::create_quad_xy(&self.device, 0.0, 0.0, 1.0, 1.0, "ground-unit");
-        self.meshes.push(ground_mesh);
-        let ground_tex = GpuTexture::solid_color(&self.device, &self.queue, 122, 106, 88);
-        self.textures.push(ground_tex.create_bind_group(&self.device, &self.texture_bgl));
-        let (b, bg) = self.alloc_entity_uniform();
-        self.entity_buffers.push(b);
-        self.entity_bind_groups.push(bg);
-        let ground_id = self.world.spawn(Some("Ground"));
-        self.world.insert(ground_id, MeshComponent { mesh_idx: 0 });
-        self.world.insert(ground_id, crate::ecs::Transform {
-            position: GlamVec3::new(0.0, 0.75, 0.0),
-            scale:    GlamVec3::new(40.0, 1.5, 1.0),
-            ..Default::default()
-        });
-        // El suelo es parte del escenario — no debe seleccionarse con click
-        self.world.insert(ground_id, crate::ecs::NonSelectable);
-
-        // -- Personaje: quad unitario × Transform(scale=1.0×1.5, pos=(0,2.25)) --
-        let player_mesh = mesh::create_quad_xy(&self.device, 0.0, 0.0, 1.0, 1.0, "player-unit");
-        self.meshes.push(player_mesh);
-        let player_tex = GpuTexture::solid_color(&self.device, &self.queue, 232, 220, 200);
-        self.textures.push(player_tex.create_bind_group(&self.device, &self.texture_bgl));
-        let (b, bg) = self.alloc_entity_uniform();
-        self.entity_buffers.push(b);
-        self.entity_bind_groups.push(bg);
-        let player_id = self.world.spawn(Some("Player"));
-        self.world.insert(player_id, MeshComponent { mesh_idx: 1 });
-        self.world.insert(player_id, crate::ecs::Transform {
-            position: GlamVec3::new(0.0, 2.25, 0.0),
-            scale:    GlamVec3::new(1.0, 1.5, 1.0),
-            ..Default::default()
-        });
-
-        // -- Cámara ortográfica -----------------------------------------------
-        self.camera_2d = Some(Camera2D {
-            x:      0.0,
-            y:      2.0,
-            half_h: 3.5,
-            near:  -100.0,
-            far:    100.0,
-        });
-
-        // Fondo oscuro azulado (estilo Hollow Knight)
-        self.clear_color = wgpu::Color { r: 0.04, g: 0.04, b: 0.10, a: 1.0 };
-
-        log::info!("Escena 2D cargada: plataformer vista lateral");
-    }
-
-    fn load_model(&mut self, path: &str) {
-        match mesh::load_glb(&self.device, Path::new(path)) {
-            Ok((gltf_meshes, images)) => {
-                self.world.clear();
-                self.meshes.clear();
-                self.textures.clear();
-                self.entity_buffers.clear();
-                self.entity_bind_groups.clear();
-
-                let count = gltf_meshes.len();
-                for (i, gm) in gltf_meshes.into_iter().enumerate() {
-                    let tex_bg = if let Some(tex_idx) = gm.tex_index {
-                        if let Some(img_data) = images.get(tex_idx) {
-                            let gpu_tex = GpuTexture::from_gltf_image(
-                                &self.device, &self.queue, img_data,
-                                &format!("tex-{tex_idx}"),
-                            );
-                            gpu_tex.create_bind_group(&self.device, &self.texture_bgl)
-                        } else {
-                            GpuTexture::white(&self.device, &self.queue)
-                                .create_bind_group(&self.device, &self.texture_bgl)
-                        }
-                    } else {
-                        GpuTexture::white(&self.device, &self.queue)
-                            .create_bind_group(&self.device, &self.texture_bgl)
-                    };
-
-                    self.meshes.push(gm.mesh);
-                    self.textures.push(tex_bg);
-                    let (b, bg) = self.alloc_entity_uniform();
-                    self.entity_buffers.push(b);
-                    self.entity_bind_groups.push(bg);
-
-                    let label = format!("Mesh {i}");
-                    let id = self.world.spawn(Some(&label));
-                    self.world.insert(id, MeshComponent { mesh_idx: i });
-                    send_event(&EngineEvent::ModelLoaded { id });
-                }
-                log::info!("Modelo cargado: {path} ({count} malla/s)");
-            }
-            Err(e) => {
-                log::error!("Error cargando modelo: {e}");
-                send_event(&EngineEvent::Error { message: e });
-            }
-        }
-    }
-
-    // ── Proyección 2D ortográfica ─────────────────────────────────────────────
-
-    /// Proyecta un punto XY de mundo a píxeles de pantalla usando la cámara 2D.
-    fn project_to_screen_2d(&self, cam: &Camera2D, p: GlamVec3) -> Option<(f32, f32)> {
-        let w  = self.size.width  as f32;
-        let h  = self.size.height as f32;
-        let vp = cam.view_proj(w / h);
-        let c  = vp * glam::Vec4::new(p.x, p.y, p.z, 1.0);
-        if c.w.abs() < 1e-6 { return None; }
-        Some(((c.x / c.w + 1.0) * 0.5 * w, (1.0 - c.y / c.w) * 0.5 * h))
-    }
-
-    /// Picking 2D: convierte un píxel a coordenadas de mundo XY y prueba AABB.
-    pub fn pick_entity_2d(&mut self, pixel_x: f32, pixel_y: f32) {
-        let cam = match &self.camera_2d {
-            Some(c) => Camera2D { x: c.x, y: c.y, half_h: c.half_h, near: c.near, far: c.far },
-            None    => return,
-        };
-        let w      = self.size.width  as f32;
-        let h      = self.size.height as f32;
-        let aspect = w / h;
-        let half_w = cam.half_h * aspect;
-        // NDC → mundo
-        let wx = cam.x + ((pixel_x / w) * 2.0 - 1.0) * half_w;
-        let wy = cam.y + (1.0 - (pixel_y / h) * 2.0) * cam.half_h;
-
-        let mut hit: Option<EntityId> = None;
-        for &entity in self.world.entities() {
-            if self.world.get::<crate::ecs::NonSelectable>(entity).is_some() { continue; }
-            if let Some(transform) = self.world.get::<Transform>(entity) {
-                // AABB en XY usando la escala de la entidad
-                let p  = transform.position;
-                let sx = transform.scale.x * 0.5;
-                let sy = transform.scale.y * 0.5;
-                if wx >= p.x - sx && wx <= p.x + sx && wy >= p.y - sy && wy <= p.y + sy {
-                    hit = Some(entity);
-                    break;
-                }
-            }
-        }
-        match hit {
-            Some(entity) => {
-                if self.selected_entity == Some(entity) { return; }
-                self.selected_entity = Some(entity);
-                let name      = self.world.name(entity).unwrap_or("Entity").to_string();
-                let transform = self.world.get::<Transform>(entity).cloned().unwrap_or_default();
-                let pos = transform.position.to_array();
-                let rot = [transform.rotation.x, transform.rotation.y,
-                           transform.rotation.z, transform.rotation.w];
-                let scl = transform.scale.to_array();
-                send_event(&EngineEvent::EntitySelected { id: entity, name, position: pos, rotation: rot, scale: scl });
-            }
-            None => {
-                if self.selected_entity.is_some() {
-                    self.selected_entity = None;
-                    send_event(&EngineEvent::EntityDeselected);
-                }
-            }
-        }
-    }
-
-    /// Eje del gizmo 2D más cercano al píxel (0=X, 1=Y). Solo X e Y en 2D.
-    pub fn pick_gizmo_axis_2d(&self, pixel_x: f32, pixel_y: f32) -> Option<usize> {
-        let sel_id = self.selected_entity?;
-        let origin = self.world.get::<Transform>(sel_id)?.position;
-        let cam = self.camera_2d.as_ref()?;
-        let so = self.project_to_screen_2d(cam, origin)?;
-
-        const LEN: f32 = 1.2;
-        const THRESH: f32 = 16.0;
-        // Solo ejes X e Y (índices 0 y 1)
-        let dirs = [GlamVec3::X, GlamVec3::Y];
-        let mut best: Option<(f32, usize)> = None;
-        for (i, &dir) in dirs.iter().enumerate() {
-            if let Some(tip) = self.project_to_screen_2d(cam, origin + dir * LEN) {
-                let d = point_to_segment_2d(pixel_x, pixel_y, so.0, so.1, tip.0, tip.1);
-                if d < THRESH && best.map_or(true, |(bd, _)| d < bd) {
-                    best = Some((d, i));
-                }
-            }
-        }
-        best.map(|(_, i)| i)
-    }
-
-    /// Arrastra la entidad seleccionada sobre el eje X o Y en modo 2D.
-    pub fn drag_gizmo_2d(&mut self, pixel_x: f32, pixel_y: f32, last_x: f32, last_y: f32, axis_idx: usize) {
-        let sel_id = match self.selected_entity { Some(id) => id, None => return };
-        let cam = match &self.camera_2d {
-            Some(c) => Camera2D { x: c.x, y: c.y, half_h: c.half_h, near: c.near, far: c.far },
-            None    => return,
-        };
-        let origin = match self.world.get::<Transform>(sel_id) {
-            Some(t) => t.position,
-            None    => return,
-        };
-        // Solo X o Y, ignorar Z
-        let axis_world = if axis_idx == 0 { GlamVec3::X } else { GlamVec3::Y };
-        let so  = match self.project_to_screen_2d(&cam, origin)          { Some(p) => p, None => return };
-        let se  = match self.project_to_screen_2d(&cam, origin + axis_world) { Some(p) => p, None => return };
-        let ax  = se.0 - so.0;
-        let ay  = se.1 - so.1;
-        let len = (ax * ax + ay * ay).sqrt();
-        if len < 1e-4 { return; }
-        let dx = pixel_x - last_x;
-        let dy = pixel_y - last_y;
-        let world_delta = (dx * ax + dy * ay) / (len * len);
-        let name = self.world.name(sel_id).unwrap_or("Entity").to_string();
-        if let Some(t) = self.world.get_mut::<Transform>(sel_id) {
-            t.position += axis_world * world_delta;
-            let pos = t.position.to_array();
-            let rot = [t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w];
-            let scl = t.scale.to_array();
-            send_event(&EngineEvent::EntitySelected { id: sel_id, name, position: pos, rotation: rot, scale: scl });
-        }
-    }
-
-    // ── Picking (ray cast CPU) ────────────────────────────────────────────────
-
-    /// Rayo desde píxel de pantalla — devuelve la entidad más cercana (si hay).
-    fn ray_cast(&self, pixel_x: f32, pixel_y: f32) -> Option<EntityId> {
-        use glam::Vec4;
-
-        let w      = self.size.width  as f32;
-        let h      = self.size.height as f32;
-        let aspect = w / h;
-
-        let ndc_x =  (2.0 * pixel_x / w) - 1.0;
-        let ndc_y = -(2.0 * pixel_y / h) + 1.0;
-
-        let inv_proj = self.camera.proj_matrix(aspect).inverse();
-        let inv_view = self.camera.view_matrix().inverse();
-
-        let clip_dir  = Vec4::new(ndc_x, ndc_y, -1.0, 0.0);
-        let view_dir  = inv_proj * clip_dir;
-        let view_dir  = Vec4::new(view_dir.x, view_dir.y, -1.0, 0.0);
-        let world_dir = (inv_view * view_dir).truncate().normalize();
-        let ray_origin = self.camera.position();
-
-        let mut closest: Option<(f32, EntityId)> = None;
-        for &entity in self.world.entities() {
-            if let Some(transform) = self.world.get::<Transform>(entity) {
-                let center = transform.position;
-                let radius = transform.scale.x.max(transform.scale.y).max(transform.scale.z) * 0.866;
-                let oc   = ray_origin - center;
-                let b    = oc.dot(world_dir);
-                let c    = oc.dot(oc) - radius * radius;
-                let disc = b * b - c;
-                if disc >= 0.0 {
-                    let t = -b - disc.sqrt();
-                    if t > 0.0 && closest.map_or(true, |(ct, _)| t < ct) {
-                        closest = Some((t, entity));
-                    }
-                }
-            }
-        }
-        closest.map(|(_, id)| id)
-    }
-
-    // ── Gizmo picking & drag ──────────────────────────────────────────────────
-
-    /// Proyecta un punto 3D a coordenadas de pantalla en píxeles.
-    fn project_to_screen(&self, p: GlamVec3) -> Option<(f32, f32)> {
-        let w  = self.size.width  as f32;
-        let h  = self.size.height as f32;
-        let vp = self.camera.proj_matrix(w / h) * self.camera.view_matrix();
-        let c  = vp * glam::Vec4::new(p.x, p.y, p.z, 1.0);
-        if c.w <= 0.0 { return None; }
-        Some(((c.x / c.w + 1.0) * 0.5 * w, (1.0 - c.y / c.w) * 0.5 * h))
-    }
-
-    /// Devuelve el índice del eje del gizmo más cercano al píxel (0=X,1=Y,2=Z),
-    /// o None si el click no está sobre ninguno.
-    pub fn pick_gizmo_axis(&self, pixel_x: f32, pixel_y: f32) -> Option<usize> {
-        let sel_id = self.selected_entity?;
-        let origin = self.world.get::<Transform>(sel_id)?.position;
-        let so     = self.project_to_screen(origin)?;
-
-        const LEN: f32 = 1.2;
-        const THRESH: f32 = 16.0; // píxeles, más fácil de agarrar
-        let dirs = [GlamVec3::X, GlamVec3::Y, GlamVec3::Z];
-
-        let mut best: Option<(f32, usize)> = None;
-        for (i, &dir) in dirs.iter().enumerate() {
-            if let Some(tip) = self.project_to_screen(origin + dir * LEN) {
-                let d = point_to_segment_2d(pixel_x, pixel_y, so.0, so.1, tip.0, tip.1);
-                if d < THRESH && best.map_or(true, |(bd, _)| d < bd) {
-                    best = Some((d, i));
-                }
-            }
-        }
-        best.map(|(_, i)| i)
-    }
-
-    /// Mueve la entidad seleccionada a lo largo del eje `axis_idx` según el
-    /// desplazamiento del cursor desde (last_x, last_y) a (pixel_x, pixel_y).
-    pub fn drag_gizmo(&mut self, pixel_x: f32, pixel_y: f32, last_x: f32, last_y: f32, axis_idx: usize) {
-        let sel_id = match self.selected_entity { Some(id) => id, None => return };
-        let w = self.size.width  as f32;
-        let h = self.size.height as f32;
-        let aspect = w / h;
-
-        let origin = match self.world.get::<Transform>(sel_id) {
-            Some(t) => t.position,
-            None    => return,
-        };
-
-        let vp = self.camera.proj_matrix(aspect) * self.camera.view_matrix();
-        let axis_world = [GlamVec3::X, GlamVec3::Y, GlamVec3::Z][axis_idx];
-
-        let project = |p: GlamVec3| -> Option<(f32, f32)> {
-            let c = vp * glam::Vec4::new(p.x, p.y, p.z, 1.0);
-            if c.w <= 0.0 { return None; }
-            Some(((c.x / c.w + 1.0) * 0.5 * w, (1.0 - c.y / c.w) * 0.5 * h))
-        };
-
-        let (s0x, s0y) = match project(origin)            { Some(p) => p, None => return };
-        let (s1x, s1y) = match project(origin + axis_world) { Some(p) => p, None => return };
-
-        let ax = s1x - s0x;
-        let ay = s1y - s0y;
-        let axis_len = (ax * ax + ay * ay).sqrt();
-        if axis_len < 1e-4 { return; }
-
-        // Proyectar delta del cursor sobre la dirección del eje en pantalla
-        let dx = pixel_x - last_x;
-        let dy = pixel_y - last_y;
-        let world_delta = (dx * ax + dy * ay) / (axis_len * axis_len);
-
-        let name = self.world.name(sel_id).unwrap_or("Entity").to_string();
-        if let Some(t) = self.world.get_mut::<Transform>(sel_id) {
-            t.position += axis_world * world_delta;
-            let pos = t.position.to_array();
-            let rot = [t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w];
-            let scl = t.scale.to_array();
-            send_event(&EngineEvent::EntitySelected { id: sel_id, name, position: pos, rotation: rot, scale: scl });
-        }
-    }
-
-    /// Actualiza `hovered_entity` y `hovered_gizmo_axis` según la posición del cursor (sin IPC).
-    pub fn update_hover(&mut self, pixel_x: f32, pixel_y: f32) {
-        self.hovered_entity    = self.ray_cast(pixel_x, pixel_y);
-        self.hovered_gizmo_axis = self.pick_gizmo_axis(pixel_x, pixel_y);
-    }
-
-    /// Hover en modo 2D: AABB en XY + detección de eje de gizmo 2D.
-    pub fn update_hover_2d(&mut self, pixel_x: f32, pixel_y: f32) {
-        let cam = match &self.camera_2d {
-            Some(c) => Camera2D { x: c.x, y: c.y, half_h: c.half_h, near: c.near, far: c.far },
-            None    => return,
-        };
-        let w      = self.size.width  as f32;
-        let h      = self.size.height as f32;
-        let aspect = w / h;
-        let half_w = cam.half_h * aspect;
-        let wx = cam.x + ((pixel_x / w) * 2.0 - 1.0) * half_w;
-        let wy = cam.y + (1.0 - (pixel_y / h) * 2.0) * cam.half_h;
-
-        self.hovered_entity = None;
-        for &entity in self.world.entities() {
-            if self.world.get::<crate::ecs::NonSelectable>(entity).is_some() { continue; }
-            if let Some(t) = self.world.get::<Transform>(entity) {
-                let sx = t.scale.x * 0.5;
-                let sy = t.scale.y * 0.5;
-                if wx >= t.position.x - sx && wx <= t.position.x + sx
-                && wy >= t.position.y - sy && wy <= t.position.y + sy {
-                    self.hovered_entity = Some(entity);
-                    break;
-                }
-            }
-        }
-        self.hovered_gizmo_axis = self.pick_gizmo_axis_2d(pixel_x, pixel_y);
     }
 
     /// Notifica al State qué eje del gizmo está siendo arrastrado (None = sin drag).
     pub fn set_active_gizmo_axis(&mut self, axis: Option<usize>) {
         self.active_gizmo_axis = axis;
-    }
-
-    /// Selecciona la entidad bajo el cursor. No emite IPC si ya estaba seleccionada.
-    pub fn pick_entity(&mut self, pixel_x: f32, pixel_y: f32) {
-        match self.ray_cast(pixel_x, pixel_y) {
-            Some(entity) => {
-                // Evitar duplicar el evento si ya estaba seleccionado
-                if self.selected_entity == Some(entity) { return; }
-                self.selected_entity = Some(entity);
-                let name      = self.world.name(entity).unwrap_or("Entity").to_string();
-                let transform = self.world.get::<Transform>(entity).cloned().unwrap_or_default();
-                let position  = transform.position.to_array();
-                let rotation  = [
-                    transform.rotation.x, transform.rotation.y,
-                    transform.rotation.z, transform.rotation.w,
-                ];
-                let scale = transform.scale.to_array();
-                send_event(&EngineEvent::EntitySelected { id: entity, name, position, rotation, scale });
-            }
-            None => {
-                if self.selected_entity.is_some() {
-                    self.selected_entity = None;
-                    send_event(&EngineEvent::EntityDeselected);
-                }
-            }
-        }
     }
 
     // ── Update ───────────────────────────────────────────────────────────────
@@ -931,6 +475,25 @@ impl State {
             });
 
             pass.set_pipeline(&self.render_pipeline);
+
+            // Renderizar escenario de fondo PNG (solo en modo 2D, siempre primero)
+            if let Some(cam2d) = &self.camera_2d {
+                if let Some(sc) = &self.scenario_bg {
+                    // Quad 100×100 unidades en Z=-1 (detrás de todo)
+                    let model = Mat4::from_scale_rotation_translation(
+                        GlamVec3::new(100.0, 100.0, 1.0),
+                        glam::Quat::IDENTITY,
+                        GlamVec3::new(0.0, 0.0, -1.0),
+                    );
+                    let uniforms = build_uniforms_2d(cam2d, model, self.size, 0.0);
+                    self.queue.write_buffer(&sc.entity_buf, 0, bytemuck::cast_slice(&[uniforms]));
+                    pass.set_bind_group(0, &sc.entity_bg, &[]);
+                    pass.set_bind_group(1, &sc.tex_bg, &[]);
+                    pass.set_vertex_buffer(0, sc.mesh.vertex_buffer.slice(..));
+                    pass.set_index_buffer(sc.mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                    pass.draw_indexed(0..sc.mesh.index_count, 0, 0..1);
+                }
+            }
 
             // Iterar entidades con MeshComponent
             let entities: Vec<_> = self.world.entities().iter().copied().filter_map(|id| {
@@ -1067,19 +630,4 @@ fn build_uniforms_2d(cam: &Camera2D, model: Mat4, size: PhysicalSize<u32>, flag:
         model: model.to_cols_array_2d(),
         cam_pos: [p.x, p.y, p.z, flag],
     }
-}
-
-/// Distancia 2D desde el punto (px,py) al segmento [(ax,ay),(bx,by)].
-fn point_to_segment_2d(px: f32, py: f32, ax: f32, ay: f32, bx: f32, by: f32) -> f32 {
-    let dx = bx - ax;
-    let dy = by - ay;
-    let len_sq = dx * dx + dy * dy;
-    if len_sq < 1e-6 {
-        return ((px - ax).powi(2) + (py - ay).powi(2)).sqrt();
-    }
-    let t  = ((px - ax) * dx + (py - ay) * dy) / len_sq;
-    let t  = t.clamp(0.0, 1.0);
-    let cx = ax + t * dx;
-    let cy = ay + t * dy;
-    ((px - cx).powi(2) + (py - cy).powi(2)).sqrt()
 }

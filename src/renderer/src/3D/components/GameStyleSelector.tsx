@@ -1,4 +1,4 @@
-import type { ProjectType, GameStyle } from '../../shared/types'
+import type { ProjectType, GameStyle } from '../../../../shared-types/types'
 
 interface StyleOption {
   type:        GameStyle
@@ -87,80 +87,50 @@ export function GameStyleSelector({ projectType, onSelect, onBack }: Props) {
     projectType === '2.5D' ? '#a78bfa' : '#38bdf8'
 
   return (
-    <div
-      className="d-flex flex-column align-items-center justify-content-center"
-      style={{ height: '100vh', background: '#050508', userSelect: 'none' }}
-    >
+    <div className="style-selector-page">
       {/* Título */}
       <div className="mb-5 text-center">
-        <div style={{ fontSize: 36, fontWeight: 800, color: '#c084fc', letterSpacing: '0.04em', lineHeight: 1 }}>
+        <div className="engine-logo">
           ⬡ RER-ENGINE
         </div>
 
         {/* Breadcrumb */}
         <div className="d-flex align-items-center justify-content-center gap-2 mt-3">
           <span
+            role="button"
+            tabIndex={0}
             onClick={onBack}
-            style={{
-              fontSize: 12,
-              color: '#4b5280',
-              cursor: 'pointer',
-              transition: 'color 0.15s',
-            }}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onBack() }}
+            className="breadcrumb-back"
             onMouseEnter={(e) => (e.currentTarget.style.color = '#c084fc')}
             onMouseLeave={(e) => (e.currentTarget.style.color = '#4b5280')}
           >
             Tipo de proyecto
           </span>
-          <span style={{ color: '#2c3152', fontSize: 12 }}>›</span>
+          <span className="breadcrumb-sep">›</span>
           <span
-            style={{
-              fontSize: 12,
-              fontWeight: 700,
-              letterSpacing: '0.06em',
-              color: typeBadgeColor,
-              background: `${typeBadgeColor}18`,
-              border: `1px solid ${typeBadgeColor}40`,
-              borderRadius: 8,
-              padding: '1px 8px',
-            }}
+            className="engine-type-badge"
+            style={{ color: typeBadgeColor, background: `${typeBadgeColor}18`, border: `1px solid ${typeBadgeColor}40` }}
           >
             {projectType}
           </span>
-          <span style={{ color: '#2c3152', fontSize: 12 }}>›</span>
-          <span style={{ fontSize: 12, color: '#9ca3af' }}>Estilo de juego</span>
+          <span className="breadcrumb-sep">›</span>
+          <span className="breadcrumb-current">Estilo de juego</span>
         </div>
 
-        <div className="mt-3" style={{ fontSize: 14, color: '#6b7280', letterSpacing: '0.08em' }}>
+        <div className="mt-3 selector-subtitle">
           SELECCIONA EL ESTILO DE JUEGO
         </div>
       </div>
 
       {/* Grid de tarjetas — 3 columnas */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(3, 200px)',
-          gap: 16,
-        }}
-      >
+      <div className="style-cards-grid">
         {options.map((opt) => (
-          <div key={opt.type} style={{ position: 'relative' }}>
+          <div key={opt.type} className="style-card-wrapper">
             <button
               onClick={() => opt.available && onSelect(opt.type)}
               disabled={!opt.available}
-              style={{
-                width:        '100%',
-                background:   'rgba(14,16,30,0.95)',
-                border:       '1px solid #2c3152',
-                borderRadius: 10,
-                padding:      opt.available ? '22px 16px 18px' : '22px 16px 36px',
-                cursor:       opt.available ? 'pointer' : 'not-allowed',
-                transition:   'border-color 0.18s, box-shadow 0.18s, transform 0.14s',
-                textAlign:    'center',
-                color:        '#fff',
-                opacity:      opt.available ? 1 : 0.72,
-              }}
+              className={`style-card${!opt.available ? ' style-card--disabled' : ''}`}
               onMouseEnter={(e) => {
                 if (!opt.available) return
                 const el = e.currentTarget
@@ -177,52 +147,34 @@ export function GameStyleSelector({ projectType, onSelect, onBack }: Props) {
               }}
             >
               {/* Ícono */}
-              <div style={{ fontSize: 34, marginBottom: 8, color: opt.color, lineHeight: 1 }}>
+              <div className="style-card-icon" style={{ color: opt.color }}>
                 {opt.icon}
               </div>
 
               {/* Badge */}
               <div
-                style={{
-                  display:       'inline-block',
-                  fontSize:      10,
-                  fontWeight:    700,
-                  letterSpacing: '0.12em',
-                  padding:       '1px 8px',
-                  borderRadius:  16,
-                  background:    `${opt.color}20`,
-                  color:         opt.color,
-                  border:        `1px solid ${opt.color}45`,
-                  marginBottom:  8,
-                }}
+                className="style-badge"
+                style={{ background: `${opt.color}20`, color: opt.color, border: `1px solid ${opt.color}45` }}
               >
                 {opt.badge}
               </div>
 
               {/* Título */}
-              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6, color: opt.available ? '#e2e8f0' : '#9ca3af' }}>
+              <div className={`style-card-title${!opt.available ? ' style-card-title--disabled' : ''}`}>
                 {opt.label}
               </div>
 
               {/* Descripción */}
-              <div style={{ fontSize: 11, color: opt.available ? '#6b7280' : '#4b5563', lineHeight: 1.5 }}>
+              <div className={`style-card-desc${!opt.available ? ' style-card-desc--disabled' : ''}`}>
                 {opt.description}
               </div>
 
               {/* Badge "Próximamente" */}
               {!opt.available && (
-                <div style={{ marginTop: 12 }}>
+                <div className="coming-soon-wrapper">
                   <span
-                    style={{
-                      fontSize:      9,
-                      fontWeight:    700,
-                      letterSpacing: '0.1em',
-                      padding:       '2px 10px',
-                      borderRadius:  8,
-                      background:    `${opt.color}18`,
-                      color:         `${opt.color}bb`,
-                      border:        `1px solid ${opt.color}35`,
-                    }}
+                    className="coming-soon-badge"
+                    style={{ background: `${opt.color}18`, color: `${opt.color}bb`, border: `1px solid ${opt.color}35` }}
                   >
                     PRÓXIMAMENTE
                   </span>
@@ -234,7 +186,7 @@ export function GameStyleSelector({ projectType, onSelect, onBack }: Props) {
       </div>
 
       {/* Footer */}
-      <div className="mt-5" style={{ fontSize: 11, color: '#374151', letterSpacing: '0.06em' }}>
+      <div className="engine-footer">
         React TS · Electron TS · Rust (wgpu)
       </div>
     </div>

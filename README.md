@@ -141,6 +141,6 @@ yarn dist
 | IPC JSON lines | ✅ Completo |
 | Física Rapier3D | 🔧 Integrada, sin activar |
 | Scripting (Lua/Python) | ⏳ Pendiente |
-| Soporte Windows | ⏳ Sin probar |
+| Soporte Windows | ⏳ Sin probar (DE MOMENTO SOLO CORRE EN LINUX UBUNTU) |
 
 

@@ -1,5 +1,9 @@
-use bytemuck::{Pod, Zeroable};
-use glam::{Mat4, Vec3};
+// Este archivo fue dividido en:
+//   CONFIG_3D/camera_3d.rs  — Camera (órbita 3D) + CameraUniform
+//   CONFIG_2D/camera_2d.rs  — Camera2D (ortográfica 2D)
+//
+// Ya no se incluye como módulo en main.rs.
+
 
 // ---------------------------------------------------------------------------
 // Datos que se suben a la GPU (debe ser Pod + repr(C))

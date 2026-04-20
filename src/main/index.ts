@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, dialog, Menu } from 'electron'
 import { spawn, ChildProcess } from 'child_process'
 import path from 'path'
 import fs from 'fs'
-import type { EngineCommand, EngineEvent, ProjectConfig } from '../shared/types'
+import type { EngineCommand, EngineEvent, ProjectConfig } from '../shared-types/types'
 
 // Sin GPU hardware disponible: deshabilitar el proceso GPU de Chromium
 // para evitar spam de viz_main_impl / command_buffer_proxy_impl
@@ -197,6 +197,17 @@ ipcMain.handle('open-model-dialog', async () => {
     title:       'Abrir modelo 3D',
     filters:     [{ name: 'Modelos 3D', extensions: ['glb', 'gltf'] }],
     properties:  ['openFile'],
+  })
+  return result.canceled ? null : result.filePaths[0] ?? null
+})
+
+// Diálogo para abrir imagen PNG como escenario 2D
+ipcMain.handle('open-scenario-dialog', async () => {
+  if (!mainWindow) return null
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title:      'Cargar escenario (PNG)',
+    filters:    [{ name: 'Imágenes PNG', extensions: ['png'] }],
+    properties: ['openFile'],
   })
   return result.canceled ? null : result.filePaths[0] ?? null
 })

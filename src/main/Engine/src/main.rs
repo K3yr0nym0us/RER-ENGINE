@@ -1,12 +1,15 @@
-mod camera;
 mod ecs;
 mod engine;
 mod gizmo;
 mod ipc;
 mod mesh;
-mod physics;
-mod scene;
 mod texture;
+
+// ── Módulos de lógica de escena separados por modo ───────────────────────────
+#[path = "CONFIG_BASE/mod.rs"]   mod config_base;
+#[path = "CONFIG_2D/mod.rs"]     mod config_2d;
+#[path = "CONFIG_3D/mod.rs"]     mod config_3d;
+#[path = "CONFIG_SHARED/mod.rs"] mod config_shared;
 
 use std::sync::{Arc, mpsc};
 
@@ -220,7 +223,12 @@ impl ApplicationHandler for App {
                     MouseScrollDelta::LineDelta(_, y)   => y,
                     MouseScrollDelta::PixelDelta(p)     => p.y as f32 * 0.05,
                 };
-                state.camera.zoom(scroll);
+                if let Some(cam2d) = &mut state.camera_2d {
+                    // Zoom ortográfico: reducir/aumentar half_h
+                    cam2d.half_h = (cam2d.half_h - scroll * 0.5).clamp(1.0, 50.0);
+                } else {
+                    state.camera.zoom(scroll);
+                }
             }
             WindowEvent::RedrawRequested => {
                 state.update();
