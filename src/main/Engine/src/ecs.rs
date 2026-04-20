@@ -43,6 +43,11 @@ pub struct MeshComponent {
     pub mesh_idx: usize,
 }
 
+/// Marca una entidad como no seleccionable por el usuario (escenario/fondo).
+/// Las funciones de picking ignoran entidades con este componente.
+#[derive(Debug, Clone, Default)]
+pub struct NonSelectable;
+
 /// Nombre visible en el SceneTree.
 #[derive(Debug, Clone)]
 pub struct NameComponent {
@@ -141,6 +146,7 @@ impl Default for World {
         w.register::<Transform>();
         w.register::<MeshComponent>();
         w.register::<NameComponent>();
+        w.register::<NonSelectable>();
         w
     }
 }

@@ -38,9 +38,11 @@ pub struct State {
     clear_color:      wgpu::Color,
     render_pipeline:  wgpu::RenderPipeline,
     depth_view:       wgpu::TextureView,
-    // Uniforms (group 0)
-    scene_buffer:     wgpu::Buffer,
-    scene_bind_group: wgpu::BindGroup,
+    // Uniforms (group 0) — un buffer por malla para que cada draw call
+    // tenga sus propios datos y write_buffer no sobreescriba el anterior.
+    scene_bgl:          wgpu::BindGroupLayout,
+    entity_buffers:     Vec<wgpu::Buffer>,
+    entity_bind_groups: Vec<wgpu::BindGroup>,
     // Texturas (group 1)
     texture_bgl:      wgpu::BindGroupLayout,
     textures:         Vec<wgpu::BindGroup>,  // una por mesh
@@ -141,11 +143,6 @@ impl State {
         // ── Uniforms buffer ───────────────────────────────────────────────────
         let camera   = Camera::new();
         let uniforms = build_uniforms(&camera, Mat4::IDENTITY, size, 0.0);
-        let scene_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label:    Some("scene-uniforms"),
-            contents: bytemuck::cast_slice(&[uniforms]),
-            usage:    wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
 
         // ── Bind group layout group 0 (uniforms) ─────────────────────────────────
         let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -161,12 +158,18 @@ impl State {
                 count: None,
             }],
         });
-        let scene_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label:   Some("scene-bg"),
+        // Buffer de uniforms para la malla inicial (plano de suelo 3D)
+        let init_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label:    Some("entity-uniforms-0"),
+            contents: bytemuck::cast_slice(&[uniforms]),
+            usage:    wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let init_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label:   Some("entity-bg-0"),
             layout:  &bgl,
             entries: &[wgpu::BindGroupEntry {
                 binding:  0,
-                resource: scene_buffer.as_entire_binding(),
+                resource: init_buf.as_entire_binding(),
             }],
         });
 
@@ -317,13 +320,15 @@ impl State {
             clear_color: wgpu::Color { r: 0.06, g: 0.06, b: 0.10, a: 1.0 },
             render_pipeline,
             depth_view,
-            scene_buffer,
-            scene_bind_group,
             texture_bgl,
             textures: vec![checker_tex_bg],   // índice 0 = plano de suelo
+            scene_bgl: bgl,
+            entity_buffers:     vec![init_buf],
+            entity_bind_groups: vec![init_bg],
             fallback_tex_bg,
             camera,
             camera_2d: None,   // se activa al recibir SetScene { scene: "2D" }
+
             meshes,
             world,
             last_frame:  Instant::now(),
@@ -355,6 +360,34 @@ impl State {
         self.config.height = new_size.height;
         self.surface.configure(&self.device, &self.config);
         self.depth_view = create_depth_texture(&self.device, &self.config);
+    }
+
+    // ── Uniform buffer per-entidad ────────────────────────────────────────────
+    //
+    // wgpu aplica todos los write_buffer al hacer submit, y el último gana si
+    // todos apuntan al mismo buffer. Usando un buffer por malla cada draw call
+    // ve sus propios datos y no los del vecino.
+
+    fn alloc_entity_uniform(&self) -> (wgpu::Buffer, wgpu::BindGroup) {
+        let identity = SceneUniforms {
+            view_proj: Mat4::IDENTITY.to_cols_array_2d(),
+            model:     Mat4::IDENTITY.to_cols_array_2d(),
+            cam_pos:   [0.0; 4],
+        };
+        let buf = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label:    Some("entity-uniforms"),
+            contents: bytemuck::cast_slice(&[identity]),
+            usage:    wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label:   Some("entity-bg"),
+            layout:  &self.scene_bgl,
+            entries: &[wgpu::BindGroupEntry {
+                binding:  0,
+                resource: buf.as_entire_binding(),
+            }],
+        });
+        (buf, bg)
     }
 
     // ── Comandos IPC ─────────────────────────────────────────────────────────
@@ -414,6 +447,8 @@ impl State {
         self.world.clear();
         self.meshes.clear();
         self.textures.clear();
+        self.entity_buffers.clear();
+        self.entity_bind_groups.clear();
         self.selected_entity = None;
         self.hovered_entity  = None;
         self.camera_2d       = None;  // volver a modo 3D
@@ -425,6 +460,9 @@ impl State {
             GpuTexture::white(&self.device, &self.queue)
                 .create_bind_group(&self.device, &self.texture_bgl),
         );
+        let (b, bg) = self.alloc_entity_uniform();
+        self.entity_buffers.push(b);
+        self.entity_bind_groups.push(bg);
         let cube_id = self.world.spawn(Some("Cube"));
         self.world.insert(cube_id, MeshComponent { mesh_idx: 0 });
 
@@ -442,6 +480,8 @@ impl State {
         self.world.clear();
         self.meshes.clear();
         self.textures.clear();
+        self.entity_buffers.clear();
+        self.entity_bind_groups.clear();
         self.selected_entity  = None;
         self.hovered_entity   = None;
 
@@ -453,6 +493,9 @@ impl State {
         self.meshes.push(ground_mesh);
         let ground_tex = GpuTexture::solid_color(&self.device, &self.queue, 122, 106, 88);
         self.textures.push(ground_tex.create_bind_group(&self.device, &self.texture_bgl));
+        let (b, bg) = self.alloc_entity_uniform();
+        self.entity_buffers.push(b);
+        self.entity_bind_groups.push(bg);
         let ground_id = self.world.spawn(Some("Ground"));
         self.world.insert(ground_id, MeshComponent { mesh_idx: 0 });
         self.world.insert(ground_id, crate::ecs::Transform {
@@ -460,12 +503,17 @@ impl State {
             scale:    GlamVec3::new(40.0, 1.5, 1.0),
             ..Default::default()
         });
+        // El suelo es parte del escenario — no debe seleccionarse con click
+        self.world.insert(ground_id, crate::ecs::NonSelectable);
 
         // -- Personaje: quad unitario × Transform(scale=1.0×1.5, pos=(0,2.25)) --
         let player_mesh = mesh::create_quad_xy(&self.device, 0.0, 0.0, 1.0, 1.0, "player-unit");
         self.meshes.push(player_mesh);
         let player_tex = GpuTexture::solid_color(&self.device, &self.queue, 232, 220, 200);
         self.textures.push(player_tex.create_bind_group(&self.device, &self.texture_bgl));
+        let (b, bg) = self.alloc_entity_uniform();
+        self.entity_buffers.push(b);
+        self.entity_bind_groups.push(bg);
         let player_id = self.world.spawn(Some("Player"));
         self.world.insert(player_id, MeshComponent { mesh_idx: 1 });
         self.world.insert(player_id, crate::ecs::Transform {
@@ -495,6 +543,8 @@ impl State {
                 self.world.clear();
                 self.meshes.clear();
                 self.textures.clear();
+                self.entity_buffers.clear();
+                self.entity_bind_groups.clear();
 
                 let count = gltf_meshes.len();
                 for (i, gm) in gltf_meshes.into_iter().enumerate() {
@@ -516,6 +566,9 @@ impl State {
 
                     self.meshes.push(gm.mesh);
                     self.textures.push(tex_bg);
+                    let (b, bg) = self.alloc_entity_uniform();
+                    self.entity_buffers.push(b);
+                    self.entity_bind_groups.push(bg);
 
                     let label = format!("Mesh {i}");
                     let id = self.world.spawn(Some(&label));
@@ -559,6 +612,7 @@ impl State {
 
         let mut hit: Option<EntityId> = None;
         for &entity in self.world.entities() {
+            if self.world.get::<crate::ecs::NonSelectable>(entity).is_some() { continue; }
             if let Some(transform) = self.world.get::<Transform>(entity) {
                 // AABB en XY usando la escala de la entidad
                 let p  = transform.position;
@@ -789,6 +843,7 @@ impl State {
 
         self.hovered_entity = None;
         for &entity in self.world.entities() {
+            if self.world.get::<crate::ecs::NonSelectable>(entity).is_some() { continue; }
             if let Some(t) = self.world.get::<Transform>(entity) {
                 let sx = t.scale.x * 0.5;
                 let sy = t.scale.y * 0.5;
@@ -885,32 +940,35 @@ impl State {
             }).collect();
 
             for (entity_id, idx, model_matrix) in entities {
-                if let Some(mesh) = self.meshes.get(idx) {
-                    let flag = if self.selected_entity == Some(entity_id) {
-                        1.0_f32   // dorado
-                    } else if self.hovered_entity == Some(entity_id) {
-                        2.0_f32   // cian
-                    } else {
-                        0.0_f32
-                    };
-                    let uniforms = if let Some(cam2d) = &self.camera_2d {
-                        build_uniforms_2d(cam2d, model_matrix, self.size, flag)
-                    } else {
-                        build_uniforms(&self.camera, model_matrix, self.size, flag)
-                    };
-                    self.queue.write_buffer(
-                        &self.scene_buffer, 0, bytemuck::cast_slice(&[uniforms]),
-                    );
-                    pass.set_bind_group(0, &self.scene_bind_group, &[]);
-                    let tex_bg = self.textures.get(idx)
-                        .unwrap_or(&self.fallback_tex_bg);
-                    pass.set_bind_group(1, tex_bg, &[]);
-                    pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
-                    pass.set_index_buffer(
-                        mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32,
-                    );
-                    pass.draw_indexed(0..mesh.index_count, 0, 0..1);
-                }
+                let (Some(mesh), Some(entity_buf), Some(entity_bg)) = (
+                    self.meshes.get(idx),
+                    self.entity_buffers.get(idx),
+                    self.entity_bind_groups.get(idx),
+                ) else { continue };
+                let flag = if self.selected_entity == Some(entity_id) {
+                    1.0_f32   // dorado
+                } else if self.hovered_entity == Some(entity_id) {
+                    2.0_f32   // cian
+                } else {
+                    0.0_f32
+                };
+                let uniforms = if let Some(cam2d) = &self.camera_2d {
+                    build_uniforms_2d(cam2d, model_matrix, self.size, flag)
+                } else {
+                    build_uniforms(&self.camera, model_matrix, self.size, flag)
+                };
+                self.queue.write_buffer(
+                    entity_buf, 0, bytemuck::cast_slice(&[uniforms]),
+                );
+                pass.set_bind_group(0, entity_bg, &[]);
+                let tex_bg = self.textures.get(idx)
+                    .unwrap_or(&self.fallback_tex_bg);
+                pass.set_bind_group(1, tex_bg, &[]);
+                pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
+                pass.set_index_buffer(
+                    mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32,
+                );
+                pass.draw_indexed(0..mesh.index_count, 0, 0..1);
             }
         }
 
