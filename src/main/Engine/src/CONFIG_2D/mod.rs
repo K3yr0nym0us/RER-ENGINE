@@ -17,19 +17,34 @@ use std::fs;
 
 use glam::Vec3 as GlamVec3;
 use crate::ecs::{EntityId, MeshComponent, Transform};
-use crate::engine::{ScenarioBg, State};
+use crate::engine::State;
 use crate::config_shared::point_to_segment_2d;
 use crate::ipc::{send_event, EngineEvent};
 use crate::mesh::{upload, Mesh, Vertex};
 use crate::texture::GpuTexture;
+
+// ── Componente exclusivo del modo 2D ─────────────────────────────────────────
+
+/// Marca una entidad como escenario PNG en una escena 2D.
+/// Guarda las dimensiones originales de la imagen para escalar
+/// proporcionalmente cuando el usuario mueve el slider.
+#[derive(Debug, Clone)]
+pub(crate) struct ScenarioMarker {
+    pub img_width:    u32,
+    pub img_height:   u32,
+    /// Altura base en unidades de mundo (user_scale = 1.0).
+    pub base_world_h: f32,
+    /// Ruta del PNG original, necesaria para duplicar la entidad.
+    pub path:         String,
+}
 
 impl State {
     // ── Inicialización ────────────────────────────────────────────────────────
 
     /// Configura la escena 2D de plataformas con un único rectángulo (player).
     pub(crate) fn setup_2d_platformer(&mut self) {
-        // Limpiar escena previa y escenario de fondo
-        self.scenario_bg = None;
+        // Limpiar escena previa y escenarios de fondo
+        self.scenario_entities.clear();
         self.world.clear();
         self.meshes.clear();
         self.textures.clear();
@@ -74,7 +89,9 @@ impl State {
 
     // ── Escenario PNG de fondo ────────────────────────────────────────────────
 
-    /// Carga una imagen PNG del disco y la establece como fondo de escenario.
+    /// Carga una imagen PNG del disco y la registra como entidad ECS de escenario.
+    /// La entidad se posiciona en Z=-1 (detrás de todo), mantiene las proporciones
+    /// de la imagen y puede seleccionarse, arrastrarse y escalarse como cualquier entidad.
     pub(crate) fn load_scenario(&mut self, path: &str) {
         let bytes = match fs::read(path) {
             Ok(b)  => b,
@@ -84,19 +101,77 @@ impl State {
                 return;
             }
         };
-        let gpu_tex = match GpuTexture::from_image_bytes(&self.device, &self.queue, &bytes, "scenario") {
-            Ok(t)  => t,
+
+        use image::ImageReader;
+        use std::io::Cursor;
+        let img = match ImageReader::new(Cursor::new(&bytes))
+            .with_guessed_format()
+            .map_err(|e| e.to_string())
+            .and_then(|r| r.decode().map_err(|e| e.to_string()))
+        {
+            Ok(i)  => i.to_rgba8(),
             Err(e) => {
                 log::error!("[load_scenario] error decodificando PNG {path}: {e}");
                 send_event(&EngineEvent::Error { message: format!("Error al decodificar PNG: {e}") });
                 return;
             }
         };
-        let tex_bg = gpu_tex.create_bind_group(&self.device, &self.texture_bgl);
-        let mesh   = create_quad_xy(&self.device, 0.0, 0.0, 1.0, 1.0, "scenario-quad");
-        let (entity_buf, entity_bg) = self.alloc_entity_uniform();
-        self.scenario_bg = Some(ScenarioBg { mesh, tex_bg, entity_buf, entity_bg });
-        log::info!("[load_scenario] escenario cargado: {path}");
+
+        let (img_width, img_height) = img.dimensions();
+        let aspect       = img_width as f32 / img_height.max(1) as f32;
+        // Altura base fija en unidades de mundo, independiente del zoom actual.
+        // Usar cam.half_h provocaría que el mismo PNG cargue a tamaños distintos
+        // si el usuario ha hecho zoom entre cargas.
+        // 7.0 = 2.0 × half_h inicial (3.5), y es la referencia para scale=1.0.
+        let base_world_h = 7.0_f32;
+        let base_world_w = base_world_h * aspect;
+
+        let gpu_tex  = GpuTexture::from_rgba(&self.device, &self.queue, &img, img_width, img_height, "scenario");
+        let tex_bg   = gpu_tex.create_bind_group(&self.device, &self.texture_bgl);
+        let mesh     = create_quad_xy(&self.device, 0.0, 0.0, 1.0, 1.0, "scenario-quad");
+        let mesh_idx = self.meshes.len();
+        self.meshes.push(mesh);
+        self.textures.push(tex_bg);
+        let (buf, bg) = self.alloc_entity_uniform();
+        self.entity_buffers.push(buf);
+        self.entity_bind_groups.push(bg);
+
+        let sc_id = self.world.spawn(Some("Escenario"));
+        self.world.insert(sc_id, MeshComponent { mesh_idx });
+        self.world.insert(sc_id, Transform {
+            position: GlamVec3::new(0.0, 0.0, -1.0),
+            scale:    GlamVec3::new(base_world_w, base_world_h, 1.0),
+            ..Default::default()
+        });
+        self.world.insert(sc_id, ScenarioMarker { img_width, img_height, base_world_h, path: path.to_owned() });
+        self.scenario_entities.push(sc_id);
+
+        send_event(&EngineEvent::ScenarioLoaded { id: sc_id, path: path.to_owned() });
+        log::info!("[load_scenario] entidad {sc_id} creada {img_width}×{img_height}: {path}");
+    }
+
+    /// Duplica un escenario existente: crea una nueva entidad con el mismo PNG
+    /// ligeramente desplazada (offset +1 en X e Y) para que sea visible.
+    pub(crate) fn duplicate_scenario(&mut self, id: u32) {
+        let path = match self.world.get::<ScenarioMarker>(id) {
+            Some(m) => m.path.clone(),
+            None => {
+                log::warn!("[duplicate_scenario] entidad {id} no tiene ScenarioMarker");
+                return;
+            }
+        };
+        // Offset para que el duplicado sea visible sobre el original
+        let offset = {
+            let count = self.scenario_entities.len() as f32;
+            GlamVec3::new(count * 0.5, count * 0.5, 0.0)
+        };
+        self.load_scenario(&path);
+        // Aplicar offset a la entidad recién creada
+        if let Some(&new_id) = self.scenario_entities.last() {
+            if let Some(t) = self.world.get_mut::<Transform>(new_id) {
+                t.position += offset;
+            }
+        }
     }
 
     // ── Proyección 2D a pantalla ──────────────────────────────────────────────
@@ -114,6 +189,8 @@ impl State {
     // ── Picking 2D ────────────────────────────────────────────────────────────
 
     /// Selecciona la entidad bajo el cursor usando AABB en el plano XY.
+    /// Cuando varios AABBs se solapan (p.ej. escenario + player) se elige
+    /// la entidad con mayor Z (más cercana a la cámara).
     pub fn pick_entity_2d(&mut self, pixel_x: f32, pixel_y: f32) {
         let cam = match &self.camera_2d {
             Some(c) => Camera2D { x: c.x, y: c.y, half_h: c.half_h, near: c.near, far: c.far },
@@ -123,11 +200,11 @@ impl State {
         let h      = self.size.height as f32;
         let aspect = w / h;
         let half_w = cam.half_h * aspect;
-        // NDC → coordenadas de mundo
         let wx = cam.x + ((pixel_x / w) * 2.0 - 1.0) * half_w;
         let wy = cam.y + (1.0 - (pixel_y / h) * 2.0) * cam.half_h;
 
-        let mut hit: Option<EntityId> = None;
+        // Recoge todos los hits y elige el de mayor Z (más cercano a la cámara).
+        let mut best: Option<(EntityId, f32)> = None;
         for &entity in self.world.entities() {
             if self.world.get::<crate::ecs::NonSelectable>(entity).is_some() { continue; }
             if let Some(transform) = self.world.get::<Transform>(entity) {
@@ -135,11 +212,13 @@ impl State {
                 let sx = transform.scale.x * 0.5;
                 let sy = transform.scale.y * 0.5;
                 if wx >= p.x - sx && wx <= p.x + sx && wy >= p.y - sy && wy <= p.y + sy {
-                    hit = Some(entity);
-                    break;
+                    if best.map_or(true, |(_, bz)| p.z > bz) {
+                        best = Some((entity, p.z));
+                    }
                 }
             }
         }
+        let hit = best.map(|(id, _)| id);
         match hit {
             Some(entity) => {
                 if self.selected_entity == Some(entity) { return; }
@@ -235,6 +314,7 @@ impl State {
         let wy = cam.y + (1.0 - (pixel_y / h) * 2.0) * cam.half_h;
 
         self.hovered_entity = None;
+        let mut best_hover: Option<(EntityId, f32)> = None;
         for &entity in self.world.entities() {
             if self.world.get::<crate::ecs::NonSelectable>(entity).is_some() { continue; }
             if let Some(t) = self.world.get::<Transform>(entity) {
@@ -242,11 +322,13 @@ impl State {
                 let sy = t.scale.y * 0.5;
                 if wx >= t.position.x - sx && wx <= t.position.x + sx
                 && wy >= t.position.y - sy && wy <= t.position.y + sy {
-                    self.hovered_entity = Some(entity);
-                    break;
+                    if best_hover.map_or(true, |(_, bz)| t.position.z > bz) {
+                        best_hover = Some((entity, t.position.z));
+                    }
                 }
             }
         }
+        self.hovered_entity    = best_hover.map(|(id, _)| id);
         self.hovered_gizmo_axis = self.pick_gizmo_axis_2d(pixel_x, pixel_y);
     }
 }

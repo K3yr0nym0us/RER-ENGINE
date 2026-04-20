@@ -1,29 +1,41 @@
 import { useState } from 'react'
 import { Accordion } from 'react-bootstrap'
+import { Files, Trash, Map } from 'react-bootstrap-icons'
+import type { ScenarioEntry } from '../../hooks/useEngine'
 
 interface Props {
-  engineReady: boolean
-  send:        (cmd: object) => void
+  engineReady:      boolean
+  send:             (cmd: object) => void
+  scenarioEntities: ScenarioEntry[]
+  onRemove:         (id: number) => void
+  onDuplicate:      (id: number) => void
 }
 
-export function ScenarioPanel({ engineReady, send }: Props) {
-  const [scenarios,     setScenarios]     = useState<string[]>([])
-  const [activeScenario, setActiveScenario] = useState<string | null>(null)
+export function ScenarioPanel({ engineReady, send, scenarioEntities, onRemove, onDuplicate }: Props) {
+  const [activeId, setActiveId] = useState<number | null>(null)
+  const [scales,   setScales]   = useState<Record<number, number>>({})
 
-  const applyScenario = (path: string) => {
-    setActiveScenario(path)
-    send({ cmd: 'load_scenario', path })
-  }
+  const getScale = (id: number) => scales[id] ?? 1.0
 
   const handleLoadScenario = () => {
     window.electronAPI.openScenarioDialog().then((p: string | null) => {
       if (!p) return
-      setScenarios((prev) => prev.includes(p) ? prev : [...prev, p])
-      applyScenario(p)
+      send({ cmd: 'load_scenario', path: p })
     })
   }
 
-  const scenarioLabel = (p: string) => p.split('/').pop() ?? p
+  const handleScaleChange = (id: number, value: number) => {
+    setScales((prev) => ({ ...prev, [id]: value }))
+    send({ cmd: 'set_scenario_scale', id, scale: value })
+  }
+
+  const handleRemove = (id: number) => {
+    if (activeId === id) setActiveId(null)
+    setScales((prev) => { const next = { ...prev }; delete next[id]; return next })
+    onRemove(id)
+  }
+
+  const scenarioLabel = (path: string) => path.split('/').pop() ?? path
 
   return (
     <Accordion.Item eventKey="escenarios">
@@ -36,19 +48,52 @@ export function ScenarioPanel({ engineReady, send }: Props) {
         >
           + Agregar escenario (PNG)
         </button>
-        {scenarios.length === 0 ? (
+
+        {scenarioEntities.length === 0 ? (
           <p className="text-secondary fst-italic small mb-0 px-1">Sin escenarios cargados</p>
         ) : (
           <ul className="list-unstyled mb-0">
-            {scenarios.map((p) => (
-              <li key={p}>
-                <button
-                  className={`btn btn-sm w-100 text-start text-truncate scenario-btn ${activeScenario === p ? 'btn-info text-dark fw-bold' : 'btn-outline-secondary'}`}
-                  title={p}
-                  onClick={() => applyScenario(p)}
-                >
-                  🗺 {scenarioLabel(p)}
-                </button>
+            {scenarioEntities.map(({ id, path }) => (
+              <li key={id} className="mb-1">
+                {/* Cabecera de la entrada: nombre + botones */}
+                <div className="d-flex align-items-center gap-1">
+                  <button
+                    className={`btn btn-sm flex-fill text-start text-truncate scenario-btn ${activeId === id ? 'btn-info text-dark fw-bold' : 'btn-outline-secondary'}`}
+                    title={path}
+                    onClick={() => setActiveId((prev) => prev === id ? null : id)}
+                  >
+                    <Map className="me-1" />{scenarioLabel(path)}
+                  </button>
+                  <button
+                    className="btn btn-sm btn-outline-secondary"
+                    title="Duplicar escenario"
+                    onClick={() => onDuplicate(id)}
+                  ><Files /></button>
+                  <button
+                    className="btn btn-sm btn-outline-danger"
+                    title="Quitar escenario"
+                    onClick={() => handleRemove(id)}
+                  ><Trash /></button>
+                </div>
+
+                {/* Panel de escala (se expande al seleccionar) */}
+                {activeId === id && (
+                  <div className="mt-1 px-1">
+                    <label className="form-label small text-secondary mb-1 d-flex justify-content-between">
+                      <span>Escala</span>
+                      <span className="text-info fw-bold">{getScale(id).toFixed(2)}×</span>
+                    </label>
+                    <input
+                      type="range"
+                      className="form-range"
+                      min={0.05}
+                      max={5}
+                      step={0.05}
+                      value={getScale(id)}
+                      onChange={(e) => handleScaleChange(id, parseFloat(e.target.value))}
+                    />
+                  </div>
+                )}
               </li>
             ))}
           </ul>
@@ -57,3 +102,4 @@ export function ScenarioPanel({ engineReady, send }: Props) {
     </Accordion.Item>
   )
 }
+

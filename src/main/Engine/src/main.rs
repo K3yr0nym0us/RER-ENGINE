@@ -1,6 +1,7 @@
 mod ecs;
 mod engine;
 mod gizmo;
+mod grid;
 mod ipc;
 mod mesh;
 mod texture;

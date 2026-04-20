@@ -29,6 +29,18 @@ pub enum EngineCommand {
     SetScene { scene: String },
     /// Cargar una imagen PNG como escenario de fondo en la escena 2D.
     LoadScenario { path: String },
+    /// Ajustar la escala de un escenario 2D específico preservando proporciones.
+    SetScenarioScale { id: u32, scale: f32 },
+    /// Duplicar un escenario existente (crea una nueva entidad con el mismo PNG).
+    DuplicateScenario { id: u32 },
+    /// Eliminar una entidad de la escena por su ID.
+    RemoveEntity { id: u32 },
+    /// Definir el tamaño del área de trabajo del mundo (unidades de mundo).
+    SetWorldSize { width: f32, height: f32 },
+    /// Mostrar u ocultar la cuadrícula del mundo.
+    SetGridVisible { visible: bool },
+    /// Cambiar el tamaño de cada celda de la cuadrícula.
+    SetGridCellSize { size: f32 },
 }
 
 // ---------------------------------------------------------------------------
@@ -51,6 +63,8 @@ pub enum EngineEvent {
     },
     /// Emitido cuando el usuario hace click izquierdo en vacío.
     EntityDeselected,
+    /// Emitido cuando un escenario PNG se cargó correctamente.
+    ScenarioLoaded { id: u32, path: String },
 }
 
 /// Escribe un evento JSON en stdout y lo flushea inmediatamente.

@@ -1,5 +1,5 @@
 import { useReducer, useEffect, useRef } from 'react'
-import type { EngineEvent, EntitySelected } from '../../../shared-types/types'
+import type { EngineEvent, EntitySelected, ScenarioLoaded } from '../../../shared-types/types'
 
 export interface Entity {
   id: number
@@ -19,12 +19,33 @@ export interface LogEntry {
   isError: boolean
 }
 
+export interface ScenarioEntry {
+  id:   number
+  path: string
+}
+
+export interface WorldConfig {
+  worldWidth:   number
+  worldHeight:  number
+  gridVisible:  boolean
+  gridCellSize: number
+}
+
+const DEFAULT_WORLD_CONFIG: WorldConfig = {
+  worldWidth:   100,
+  worldHeight:  50,
+  gridVisible:  true,
+  gridCellSize: 1,
+}
+
 interface EngineState {
-  engineReady:    boolean
-  engineError:    string | null
-  log:            LogEntry[]
-  entities:       Entity[]
-  selectedEntity: SelectedEntity | null
+  engineReady:       boolean
+  engineError:       string | null
+  log:               LogEntry[]
+  entities:          Entity[]
+  selectedEntity:    SelectedEntity | null
+  scenarioEntities:  ScenarioEntry[]
+  worldConfig:       WorldConfig
 }
 
 type EngineAction =
@@ -37,13 +58,18 @@ type EngineAction =
   | { type: 'ENGINE_STOPPED'; payload: number | undefined }
   | { type: 'CLEAR_ENTITIES' }
   | { type: 'RESET_ENGINE' }
+  | { type: 'ADD_SCENARIO'; payload: ScenarioEntry }
+  | { type: 'REMOVE_SCENARIO'; payload: number }
+  | { type: 'SET_WORLD_CONFIG'; payload: Partial<WorldConfig> }
 
 const initialState: EngineState = {
-  engineReady:    false,
-  engineError:    null,
-  log:            [],
-  entities:       [],
-  selectedEntity: null,
+  engineReady:      false,
+  engineError:      null,
+  log:              [],
+  entities:         [],
+  selectedEntity:   null,
+  scenarioEntities: [],
+  worldConfig:      DEFAULT_WORLD_CONFIG,
 }
 
 function engineReducer(state: EngineState, action: EngineAction): EngineState {
@@ -72,6 +98,12 @@ function engineReducer(state: EngineState, action: EngineAction): EngineState {
       return { ...state, entities: [] }
     case 'RESET_ENGINE':
       return { ...state, engineReady: false, engineError: null, entities: [] }
+    case 'ADD_SCENARIO':
+      return { ...state, scenarioEntities: [...state.scenarioEntities, action.payload] }
+    case 'REMOVE_SCENARIO':
+      return { ...state, scenarioEntities: state.scenarioEntities.filter((s) => s.id !== action.payload) }
+    case 'SET_WORLD_CONFIG':
+      return { ...state, worldConfig: { ...state.worldConfig, ...action.payload } }
     default:
       return state
   }
@@ -158,6 +190,10 @@ export function useEngine(
       if (event.event === 'entity_deselected') {
         dispatch({ type: 'DESELECT_ENTITY' })
       }
+      if (event.event === 'scenario_loaded') {
+        const e = event as unknown as ScenarioLoaded
+        dispatch({ type: 'ADD_SCENARIO', payload: { id: e.id, path: e.path } })
+      }
       if (event.event === 'stopped') {
         dispatch({ type: 'ENGINE_STOPPED', payload: (event as { code?: number }).code })
       }
@@ -165,17 +201,49 @@ export function useEngine(
         dispatch({ type: 'SET_ERROR', payload: (event as { message?: string }).message ?? 'Error desconocido' })
       }
     })
+    return () => { window.engine.off() }
   }, [])
 
+  const removeScenario = (id: number) => {
+    send({ cmd: 'remove_entity', id })
+    dispatch({ type: 'REMOVE_SCENARIO', payload: id })
+  }
+
+  const duplicateScenario = (id: number) => {
+    send({ cmd: 'duplicate_scenario', id })
+  }
+
+  const setWorldSize = (width: number, height: number) => {
+    dispatch({ type: 'SET_WORLD_CONFIG', payload: { worldWidth: width, worldHeight: height } })
+    send({ cmd: 'set_world_size', width, height })
+  }
+
+  const setGridVisible = (visible: boolean) => {
+    dispatch({ type: 'SET_WORLD_CONFIG', payload: { gridVisible: visible } })
+    send({ cmd: 'set_grid_visible', visible })
+  }
+
+  const setGridCellSize = (size: number) => {
+    dispatch({ type: 'SET_WORLD_CONFIG', payload: { gridCellSize: size } })
+    send({ cmd: 'set_grid_cell_size', size })
+  }
+
   return {
-    engineReady:    state.engineReady,
-    engineError:    state.engineError,
-    log:            state.log,
-    entities:       state.entities,
-    selectedEntity: state.selectedEntity,
+    engineReady:       state.engineReady,
+    engineError:       state.engineError,
+    log:               state.log,
+    entities:          state.entities,
+    selectedEntity:    state.selectedEntity,
+    scenarioEntities:  state.scenarioEntities,
+    worldConfig:       state.worldConfig,
     send,
     loadModel,
     reportBounds,
     retryEngine,
+    removeScenario,
+    duplicateScenario,
+    setWorldSize,
+    setGridVisible,
+    setGridCellSize,
   }
 }

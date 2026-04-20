@@ -6,6 +6,8 @@ use glam::{Mat4, Vec3 as GlamVec3};
 use wgpu::{include_wgsl, util::DeviceExt};
 use winit::{dpi::PhysicalSize, window::Window};
 
+use crate::grid::{GridBuffer, GridConfig};
+
 use crate::config_3d::Camera;
 use crate::config_2d::Camera2D;
 use crate::ecs::{MeshComponent, Transform, World};
@@ -25,14 +27,6 @@ pub(crate) struct SceneUniforms {
     pub(crate) view_proj: [[f32; 4]; 4],
     pub(crate) model:     [[f32; 4]; 4],
     pub(crate) cam_pos:   [f32; 4],   // xyz = posición cámara, w = unused
-}
-
-// ── Fondo de escenario 2D (PNG cargado por el usuario) ─────────────────────
-pub(crate) struct ScenarioBg {
-    pub(crate) mesh:       Mesh,
-    pub(crate) tex_bg:     wgpu::BindGroup,
-    pub(crate) entity_buf: wgpu::Buffer,
-    pub(crate) entity_bg:  wgpu::BindGroup,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -79,8 +73,14 @@ pub struct State {
     pub hovered_entity:      Option<EntityId>,
     pub hovered_gizmo_axis:  Option<usize>,
     pub active_gizmo_axis:   Option<usize>,
-    // Escenario 2D (fondo PNG)
-    pub(crate) scenario_bg:  Option<ScenarioBg>,
+    // Escenario 2D: lista de entidades ECS que actúan como fondos PNG.
+    pub(crate) scenario_entities: Vec<EntityId>,
+    // Grid 2D: cuadrícula y límites del mundo.
+    pub(crate) grid_config:      GridConfig,
+    pub(crate) grid_pipeline:    wgpu::RenderPipeline,
+    pub(crate) grid_buffer:      GridBuffer,
+    pub(crate) grid_bind_group:  wgpu::BindGroup,
+    pub(crate) grid_buffer_uni:  wgpu::Buffer,
 }
 
 impl State {
@@ -209,7 +209,7 @@ impl State {
                 entry_point: "fs_main",
                 targets:     &[Some(wgpu::ColorTargetState {
                     format,
-                    blend:      Some(wgpu::BlendState::REPLACE),
+                    blend:      Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
                 compilation_options: Default::default(),
@@ -320,6 +320,60 @@ impl State {
         });
         let gizmo_buffer = gizmo::build_axes(&device, 1.14);
 
+        // ── Pipeline de grid (LineList, sin depth, reutiliza shader de gizmo) ──
+        let grid_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label:  Some("grid-pipeline"),
+            layout: Some(&gizmo_pl_layout),
+            vertex: wgpu::VertexState {
+                module:      &gizmo_shader,
+                entry_point: "vs_main",
+                buffers:     &[gizmo::GizmoVertex::desc()],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module:      &gizmo_shader,
+                entry_point: "fs_main",
+                targets: &[Some(wgpu::ColorTargetState {
+                    format:     config.format,
+                    blend:      Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology:  wgpu::PrimitiveTopology::LineList,
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample:   wgpu::MultisampleState::default(),
+            multiview:     None,
+            cache:         None,
+        });
+        // Buffer de uniforms del grid (view_proj se actualiza en render; model = identity; flags = -1)
+        let grid_uni_identity: [[f32; 4]; 9] = [
+            [1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0],
+            [-1.0, -1.0, 0.0, 0.0],
+        ];
+        let grid_buffer_uni = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label:    Some("grid-uni"),
+            contents: bytemuck::cast_slice(&grid_uni_identity),
+            usage:    wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let grid_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label:   Some("grid-bg"),
+            layout:  &gizmo_bgl,
+            entries: &[wgpu::BindGroupEntry {
+                binding:  0,
+                resource: grid_buffer_uni.as_entire_binding(),
+            }],
+        });
+        let grid_config = GridConfig::default();
+        let grid_buffer = crate::grid::build_grid(&device, &grid_config);
+
         Self {
             window,
             surface,
@@ -353,7 +407,12 @@ impl State {
             hovered_entity:      None,
             hovered_gizmo_axis:  None,
             active_gizmo_axis:   None,
-            scenario_bg:          None,
+            scenario_entities:      Vec::new(),
+            grid_config,
+            grid_pipeline,
+            grid_buffer,
+            grid_bind_group,
+            grid_buffer_uni,
         }
     }
 
@@ -423,8 +482,46 @@ impl State {
             EngineCommand::LoadScenario { path } => {
                 self.load_scenario(&path);
             }
+            EngineCommand::SetScenarioScale { id, scale } => {
+                let marker = self.world.get::<crate::config_2d::ScenarioMarker>(id).cloned();
+                if let Some(m) = marker {
+                    let aspect = m.img_width as f32 / m.img_height.max(1) as f32;
+                    let new_h  = m.base_world_h * scale.clamp(0.05, 20.0);
+                    let new_w  = new_h * aspect;
+                    if let Some(t) = self.world.get_mut::<Transform>(id) {
+                        t.scale = GlamVec3::new(new_w, new_h, 1.0);
+                    }
+                }
+            }
+            EngineCommand::DuplicateScenario { id } => {
+                self.duplicate_scenario(id);
+            }
+            EngineCommand::RemoveEntity { id } => {
+                if Some(id) == self.selected_entity { self.selected_entity = None; }
+                if Some(id) == self.hovered_entity  { self.hovered_entity  = None; }
+                self.scenario_entities.retain(|&e| e != id);
+                self.world.despawn(id);
+            }
+            EngineCommand::SetWorldSize { width, height } => {
+                self.grid_config.world_width  = width.max(1.0);
+                self.grid_config.world_height = height.max(1.0);
+                self.rebuild_grid();
+            }
+            EngineCommand::SetGridVisible { visible } => {
+                self.grid_config.visible = visible;
+                self.rebuild_grid();
+            }
+            EngineCommand::SetGridCellSize { size } => {
+                self.grid_config.cell_size = size.clamp(0.05, 100.0);
+                self.rebuild_grid();
+            }
             EngineCommand::Shutdown => {}
         }
+    }
+
+    /// Reconstruye el vertex buffer de la cuadrícula con la configuración actual.
+    pub(crate) fn rebuild_grid(&mut self) {
+        self.grid_buffer = crate::grid::build_grid(&self.device, &self.grid_config);
     }
 
     /// Notifica al State qué eje del gizmo está siendo arrastrado (None = sin drag).
@@ -476,33 +573,20 @@ impl State {
 
             pass.set_pipeline(&self.render_pipeline);
 
-            // Renderizar escenario de fondo PNG (solo en modo 2D, siempre primero)
-            if let Some(cam2d) = &self.camera_2d {
-                if let Some(sc) = &self.scenario_bg {
-                    // Quad 100×100 unidades en Z=-1 (detrás de todo)
-                    let model = Mat4::from_scale_rotation_translation(
-                        GlamVec3::new(100.0, 100.0, 1.0),
-                        glam::Quat::IDENTITY,
-                        GlamVec3::new(0.0, 0.0, -1.0),
-                    );
-                    let uniforms = build_uniforms_2d(cam2d, model, self.size, 0.0);
-                    self.queue.write_buffer(&sc.entity_buf, 0, bytemuck::cast_slice(&[uniforms]));
-                    pass.set_bind_group(0, &sc.entity_bg, &[]);
-                    pass.set_bind_group(1, &sc.tex_bg, &[]);
-                    pass.set_vertex_buffer(0, sc.mesh.vertex_buffer.slice(..));
-                    pass.set_index_buffer(sc.mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                    pass.draw_indexed(0..sc.mesh.index_count, 0, 0..1);
-                }
-            }
-
-            // Iterar entidades con MeshComponent
-            let entities: Vec<_> = self.world.entities().iter().copied().filter_map(|id| {
+            // Iterar entidades con MeshComponent.
+            // Las entidades de escenario (ScenarioMarker) están en Z=-1, por lo que
+            // el depth test las deja detrás de las entidades normales (Z=0).
+            // Ordenamos por Z ascendente para garantizar que se dibujen primero
+            // incluso si el depth test falla en algunos drivers GL/EGL software.
+            let mut entities: Vec<_> = self.world.entities().iter().copied().filter_map(|id| {
                 let mesh_idx  = self.world.get::<MeshComponent>(id)?.mesh_idx;
                 let model_mat = self.world.get::<Transform>(id)?.to_matrix();
-                Some((id, mesh_idx, model_mat))
+                let z         = self.world.get::<crate::ecs::Transform>(id).map_or(0.0, |t| t.position.z);
+                Some((id, mesh_idx, model_mat, z))
             }).collect();
+            entities.sort_by(|a, b| a.3.partial_cmp(&b.3).unwrap_or(std::cmp::Ordering::Equal));
 
-            for (entity_id, idx, model_matrix) in entities {
+            for (entity_id, idx, model_matrix, _z) in entities {
                 let (Some(mesh), Some(entity_buf), Some(entity_bg)) = (
                     self.meshes.get(idx),
                     self.entity_buffers.get(idx),
@@ -533,6 +617,39 @@ impl State {
                 );
                 pass.draw_indexed(0..mesh.index_count, 0, 0..1);
             }
+        }
+
+        // ── Grid pass (solo modo 2D; borde siempre visible, líneas según config) ──
+        if let Some(cam2d) = &self.camera_2d {
+                let aspect   = self.size.width as f32 / self.size.height as f32;
+                let vp       = cam2d.view_proj(aspect).to_cols_array_2d();
+                // Uniforms: view_proj + model identity + flags -1
+                let grid_uni: [[f32; 4]; 9] = [
+                    vp[0], vp[1], vp[2], vp[3],
+                    [1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0],
+                    [-1.0, -1.0, 0.0, 0.0],
+                ];
+                self.queue.write_buffer(&self.grid_buffer_uni, 0, bytemuck::cast_slice(&grid_uni));
+
+                let mut grd_pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("grid-pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view:           &view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load:  wgpu::LoadOp::Load,
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    occlusion_query_set:      None,
+                    timestamp_writes:         None,
+                });
+                grd_pass.set_pipeline(&self.grid_pipeline);
+                grd_pass.set_bind_group(0, &self.grid_bind_group, &[]);
+                grd_pass.set_vertex_buffer(0, self.grid_buffer.vertex_buffer.slice(..));
+                grd_pass.draw(0..self.grid_buffer.vertex_count, 0..1);
         }
 
         // ── Gizmos (segundo pass, sin depth) ─────────────────────────────────

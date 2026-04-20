@@ -16,13 +16,19 @@ export interface ProjectConfig {
 }
 
 export interface EngineCommand {
-  cmd: 'ping' | 'shutdown' | 'set_clear_color' | 'resize' | 'load_model' | 'set_transform' | 'set_scene' | 'load_scenario'
+  cmd: 'ping' | 'shutdown' | 'set_clear_color' | 'resize' | 'load_model' | 'set_transform' | 'set_scene' | 'load_scenario' | 'set_scenario_scale' | 'duplicate_scenario' | 'remove_entity' | 'set_world_size' | 'set_grid_visible' | 'set_grid_cell_size'
   [key: string]: unknown
 }
 
 export interface EngineEvent {
-  event: 'ready' | 'pong' | 'error' | 'model_loaded' | 'stopped' | 'entity_selected' | 'entity_deselected'
+  event: 'ready' | 'pong' | 'error' | 'model_loaded' | 'stopped' | 'entity_selected' | 'entity_deselected' | 'scenario_loaded'
   [key: string]: unknown
+}
+
+export interface ScenarioLoaded {
+  event: 'scenario_loaded'
+  id:    number
+  path:  string
 }
 
 export interface EntitySelected {
@@ -47,6 +53,7 @@ declare global {
     engine: {
       send: (cmd: EngineCommand) => void
       on:   (cb: (event: EngineEvent) => void) => void
+      off:  () => void
     }
     electronAPI: {
       sendViewportBounds:      (bounds: ViewportBounds) => void

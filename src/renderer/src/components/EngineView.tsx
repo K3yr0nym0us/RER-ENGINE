@@ -4,6 +4,7 @@ import { useEngine } from '../hooks/useEngine'
 import { SceneTree } from './SceneTree'
 import { PropertiesPanel } from './PropertiesPanel'
 import { ScenarioPanel } from '../2D/components/ScenarioPanel'
+import { WorldPanel } from '../2D/components/WorldPanel'
 import type { ProjectType } from '../../../shared-types/types'
 
 export function EngineView({ projectType }: { projectType: ProjectType }) {
@@ -12,6 +13,8 @@ export function EngineView({ projectType }: { projectType: ProjectType }) {
 
   const {
     engineReady, engineError, log, entities, selectedEntity,
+    scenarioEntities, removeScenario, duplicateScenario,
+    worldConfig, setWorldSize, setGridVisible, setGridCellSize,
     loadModel, send, retryEngine,
   } = useEngine(viewportRef, projectType)
 
@@ -48,7 +51,17 @@ export function EngineView({ projectType }: { projectType: ProjectType }) {
 
           <hr className="border-secondary my-1" />
 
-          <Accordion defaultActiveKey="assets" className="sidebar-accordion">
+          <Accordion defaultActiveKey="mundo" className="sidebar-accordion">
+
+            {projectType === '2D' && (
+              <WorldPanel
+                engineReady={engineReady}
+                worldConfig={worldConfig}
+                onWorldSize={setWorldSize}
+                onGridVisible={setGridVisible}
+                onCellSize={setGridCellSize}
+              />
+            )}
 
             <Accordion.Item eventKey="assets">
               <Accordion.Header>Assets</Accordion.Header>
@@ -66,7 +79,13 @@ export function EngineView({ projectType }: { projectType: ProjectType }) {
             </Accordion.Item>
 
             {projectType === '2D' && (
-              <ScenarioPanel engineReady={engineReady} send={send} />
+              <ScenarioPanel
+                engineReady={engineReady}
+                send={send}
+                scenarioEntities={scenarioEntities}
+                onRemove={removeScenario}
+                onDuplicate={duplicateScenario}
+              />
             )}
 
             <Accordion.Item eventKey="escena">

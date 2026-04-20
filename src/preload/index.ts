@@ -6,7 +6,13 @@ contextBridge.exposeInMainWorld('engine', {
     ipcRenderer.send('engine:cmd', cmd)
   },
   on: (cb: (event: EngineEvent) => void): void => {
+    // Eliminar listeners anteriores antes de registrar uno nuevo para evitar
+    // duplicados cuando React StrictMode monta el componente dos veces.
+    ipcRenderer.removeAllListeners('engine:event')
     ipcRenderer.on('engine:event', (_ipcEvent, data: EngineEvent) => cb(data))
+  },
+  off: (): void => {
+    ipcRenderer.removeAllListeners('engine:event')
   },
 })
 
