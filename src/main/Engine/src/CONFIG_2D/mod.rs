@@ -1,7 +1,8 @@
 // ── Lógica exclusiva del modo 2D (plataformer, vista lateral) ────────────────
 //
 // Contiene:
-//  · camera_2d            — Camera2D (ortográfica)
+//  · camera_2d            — Camera2D (ortográfica) con pan()
+//  · grid_2d              — GridConfig, GridBuffer, build_grid
 //  · setup_2d_platformer  — inicialización de la escena 2D
 //  · load_scenario        — carga un PNG como fondo de escenario
 //  · project_to_screen_2d — proyecta un punto 3D a píxeles (cámara ortográfica)
@@ -12,6 +13,9 @@
 
 pub(crate) mod camera_2d;
 pub(crate) use camera_2d::Camera2D;
+
+pub(crate) mod grid_2d;
+pub(crate) use grid_2d::{GridBuffer, GridConfig, build_grid};
 
 use std::fs;
 

@@ -6,7 +6,7 @@ use glam::{Mat4, Vec3 as GlamVec3};
 use wgpu::{include_wgsl, util::DeviceExt};
 use winit::{dpi::PhysicalSize, window::Window};
 
-use crate::grid::{GridBuffer, GridConfig};
+use crate::config_2d::{GridBuffer, GridConfig};
 
 use crate::config_3d::Camera;
 use crate::config_2d::Camera2D;
@@ -375,7 +375,7 @@ impl State {
             }],
         });
         let grid_config = GridConfig::default();
-        let grid_buffer = crate::grid::build_grid(&device, &grid_config);
+        let grid_buffer = crate::config_2d::build_grid(&device, &grid_config);
 
         Self {
             window,
@@ -528,7 +528,7 @@ impl State {
 
     /// Reconstruye el vertex buffer de la cuadrícula con la configuración actual.
     pub(crate) fn rebuild_grid(&mut self) {
-        self.grid_buffer = crate::grid::build_grid(&self.device, &self.grid_config);
+        self.grid_buffer = crate::config_2d::build_grid(&self.device, &self.grid_config);
     }
 
     /// Notifica al State qué eje del gizmo está siendo arrastrado (None = sin drag).

@@ -1,7 +1,6 @@
 mod ecs;
 mod engine;
 mod gizmo;
-mod grid;
 mod ipc;
 mod mesh;
 mod texture;
@@ -232,7 +231,12 @@ impl ApplicationHandler for App {
                             state.drag_gizmo(cur.0, cur.1, lx, ly, axis);
                         }
                     } else if self.mouse_right {
-                        state.camera.orbit(dx, dy);
+                        let (vw, vh) = { let s = state.size(); (s.width as f32, s.height as f32) };
+                        if let Some(cam2d) = &mut state.camera_2d {
+                            cam2d.pan(dx, dy, vw, vh);
+                        } else {
+                            state.camera.orbit(dx, dy);
+                        }
                     } else if self.mouse_middle {
                         state.camera.pan(dx, dy);
                     }

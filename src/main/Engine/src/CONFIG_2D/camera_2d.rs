@@ -51,4 +51,16 @@ impl Camera2D {
         );
         proj * view
     }
+
+    /// Desplaza la cámara en el plano XY según el delta de píxeles del ratón.
+    ///
+    /// `dx` / `dy`   — delta en píxeles (positivo = derecha / abajo en pantalla).
+    /// `vw` / `vh`   — tamaño del viewport en píxeles.
+    pub(crate) fn pan(&mut self, dx: f32, dy: f32, vw: f32, vh: f32) {
+        let aspect = vw / vh;
+        let half_w = self.half_h * aspect;
+        // Convertir delta de píxeles a unidades de mundo proporcionales al zoom
+        self.x -= dx / vw * half_w  * 2.0;
+        self.y += dy / vh * self.half_h * 2.0;  // Y de pantalla invertida respecto a mundo
+    }
 }

@@ -4,7 +4,6 @@
 //  · alloc_entity_uniform  — crea el buffer wgpu de uniforms para una entidad
 //  · point_to_segment_2d   — distancia de un punto a un segmento 2D (picking)
 
-use bytemuck::Zeroable;
 use glam::Mat4;
 
 use crate::engine::{SceneUniforms, State};
