@@ -30,6 +30,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openScenarioDialog: (): Promise<string | null> => {
     return ipcRenderer.invoke('open-scenario-dialog')
   },
+  openCharacterDialog: (): Promise<string | null> => {
+    return ipcRenderer.invoke('open-character-dialog')
+  },
   onRequestViewportBounds: (cb: () => void): void => {
     ipcRenderer.on('request-viewport-bounds', cb)
   },

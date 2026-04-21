@@ -212,6 +212,17 @@ ipcMain.handle('open-scenario-dialog', async () => {
   return result.canceled ? null : result.filePaths[0] ?? null
 })
 
+// Diálogo para abrir imagen PNG como personaje 2D
+ipcMain.handle('open-character-dialog', async () => {
+  if (!mainWindow) return null
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title:      'Cargar personaje (PNG)',
+    filters:    [{ name: 'Imágenes PNG', extensions: ['png'] }],
+    properties: ['openFile'],
+  })
+  return result.canceled ? null : result.filePaths[0] ?? null
+})
+
 // Diálogo para abrir un proyecto existente (lee project.json)
 ipcMain.handle('open-project-dialog', async (): Promise<ProjectConfig | null> => {
   if (!mainWindow) return null

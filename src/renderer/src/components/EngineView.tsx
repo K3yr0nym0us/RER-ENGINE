@@ -1,11 +1,29 @@
-import { useEffect, useRef } from 'react'
-import { Accordion } from 'react-bootstrap'
-import { useEngine } from '../hooks/useEngine'
-import { SceneTree } from './SceneTree'
-import { PropertiesPanel } from './PropertiesPanel'
-import { ScenarioPanel } from '../2D/components/ScenarioPanel'
-import { WorldPanel } from '../2D/components/WorldPanel'
-import type { ProjectType } from '../../../shared-types/types'
+import { useEffect, useRef } from 'react';
+
+import { Accordion } from 'react-bootstrap';
+import { PropertiesPanel } from './PropertiesPanel';
+import { AssetGroupPanel, type AssetGroupConfig } from '../2D/components/ScenarioPanel';
+import { WorldPanel } from '../2D/components/WorldPanel';
+
+import { useEngine } from '../hooks/useEngine';
+
+import type { ProjectType } from '../../../shared-types/types';
+
+const SCENARIO_CONFIG: AssetGroupConfig = {
+  openDialog:  () => window.electronAPI.openScenarioDialog(),
+  loadCmd:     'load_scenario',
+  dupCmd:      'duplicate_scenario',
+  addBtnLabel: '+ Agregar escenario (PNG)',
+  emptyText:   'Sin escenarios cargados',
+}
+
+const CHARACTER_CONFIG: AssetGroupConfig = {
+  openDialog:  () => window.electronAPI.openCharacterDialog(),
+  loadCmd:     'load_character',
+  dupCmd:      'duplicate_character',
+  addBtnLabel: '+ Agregar personaje (PNG)',
+  emptyText:   'Sin personajes cargados',
+}
 
 export function EngineView({ projectType }: { projectType: ProjectType }) {
   const logRef      = useRef<HTMLDivElement>(null)
@@ -14,6 +32,7 @@ export function EngineView({ projectType }: { projectType: ProjectType }) {
   const {
     engineReady, engineError, log, entities, selectedEntity,
     scenarioEntities, removeScenario, duplicateScenario,
+    characterEntities, removeCharacter, duplicateCharacter,
     worldConfig, setWorldSize, setGridVisible, setGridCellSize,
     loadModel, send, retryEngine,
   } = useEngine(viewportRef, projectType)
@@ -66,43 +85,66 @@ export function EngineView({ projectType }: { projectType: ProjectType }) {
             <Accordion.Item eventKey="assets">
               <Accordion.Header>Assets</Accordion.Header>
               <Accordion.Body className="py-2 px-2">
-                <button
-                  className="btn btn-outline-light btn-sm w-100 fw-bold"
-                  disabled={!engineReady}
-                  onClick={() =>
-                    window.electronAPI.openModelDialog().then((p: string | null) => { if (p) loadModel(p) })
-                  }
-                >
-                  Cargar modelo (.glb)
-                </button>
+                <Accordion>
+                  <Accordion.Item eventKey="escenarios">
+                    <Accordion.Header>Escenarios</Accordion.Header>
+                    <Accordion.Body className="py-2 px-2">
+                      {projectType === '3D' && (
+                        <button
+                          className="btn btn-outline-light btn-sm w-100 fw-bold"
+                          disabled={!engineReady}
+                          onClick={() =>
+                            window.electronAPI.openModelDialog().then((p: string | null) => { if (p) loadModel(p) })
+                          }
+                        >
+                          Cargar modelo (.glb)
+                        </button>
+                      )}
+                      {projectType === '2D' && (
+                        <AssetGroupPanel
+                          engineReady={engineReady}
+                          send={send}
+                          entries={scenarioEntities}
+                          onRemove={removeScenario}
+                          onDuplicate={duplicateScenario}
+                          config={SCENARIO_CONFIG}
+                        />
+                      )}
+                    </Accordion.Body>
+                  </Accordion.Item>
+                  <Accordion.Item eventKey="personajes">
+                    <Accordion.Header>Personajes</Accordion.Header>
+                    <Accordion.Body className="py-2 px-2">
+                      {projectType === '2D' && (
+                        <AssetGroupPanel
+                          engineReady={engineReady}
+                          send={send}
+                          entries={characterEntities}
+                          onRemove={removeCharacter}
+                          onDuplicate={duplicateCharacter}
+                          config={CHARACTER_CONFIG}
+                        />
+                      )}
+                    </Accordion.Body>
+                  </Accordion.Item>
+                </Accordion>
               </Accordion.Body>
             </Accordion.Item>
-
-            {projectType === '2D' && (
-              <ScenarioPanel
-                engineReady={engineReady}
-                send={send}
-                scenarioEntities={scenarioEntities}
-                onRemove={removeScenario}
-                onDuplicate={duplicateScenario}
-              />
-            )}
-
-            <Accordion.Item eventKey="escena">
-              <Accordion.Header>Escena</Accordion.Header>
-              <Accordion.Body className="py-1 px-1">
-                <SceneTree entities={entities} selectedId={selectedEntity?.id} />
-              </Accordion.Body>
-            </Accordion.Item>
-
-            <Accordion.Item eventKey="propiedades">
-              <Accordion.Header>Propiedades</Accordion.Header>
-              <Accordion.Body className="py-2 px-2">
-                <PropertiesPanel entity={selectedEntity ?? null} onSend={send} />
-              </Accordion.Body>
-            </Accordion.Item>
-
           </Accordion>
+
+          {selectedEntity && (
+            <div className="pt-4">
+              <b className="ms-2">Elemento seleccionado:</b>
+              <Accordion defaultActiveKey="propiedades" className="sidebar-accordion mt-1">
+                <Accordion.Item eventKey="propiedades">
+                  <Accordion.Header>Propiedades</Accordion.Header>
+                  <Accordion.Body className="py-2 px-2">
+                    <PropertiesPanel entity={selectedEntity ?? null} onSend={send} projectType={projectType} />
+                  </Accordion.Body>
+                </Accordion.Item>
+              </Accordion>
+            </div>
+          )}
         </aside>
 
         {/* ── Viewport ────────────────────────────────────────────────────── */}

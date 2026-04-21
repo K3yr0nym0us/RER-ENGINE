@@ -1,5 +1,5 @@
 import { useReducer, useEffect, useRef } from 'react'
-import type { EngineEvent, EntitySelected, ScenarioLoaded } from '../../../shared-types/types'
+import type { EngineEvent, EntitySelected, ScenarioLoaded, CharacterLoaded } from '../../../shared-types/types'
 
 export interface Entity {
   id: number
@@ -24,6 +24,8 @@ export interface ScenarioEntry {
   path: string
 }
 
+export type CharacterEntry = ScenarioEntry
+
 export interface WorldConfig {
   worldWidth:   number
   worldHeight:  number
@@ -39,13 +41,14 @@ const DEFAULT_WORLD_CONFIG: WorldConfig = {
 }
 
 interface EngineState {
-  engineReady:       boolean
-  engineError:       string | null
-  log:               LogEntry[]
-  entities:          Entity[]
-  selectedEntity:    SelectedEntity | null
-  scenarioEntities:  ScenarioEntry[]
-  worldConfig:       WorldConfig
+  engineReady:        boolean
+  engineError:        string | null
+  log:                LogEntry[]
+  entities:           Entity[]
+  selectedEntity:     SelectedEntity | null
+  scenarioEntities:   ScenarioEntry[]
+  characterEntities:  CharacterEntry[]
+  worldConfig:        WorldConfig
 }
 
 type EngineAction =
@@ -60,16 +63,19 @@ type EngineAction =
   | { type: 'RESET_ENGINE' }
   | { type: 'ADD_SCENARIO'; payload: ScenarioEntry }
   | { type: 'REMOVE_SCENARIO'; payload: number }
+  | { type: 'ADD_CHARACTER'; payload: CharacterEntry }
+  | { type: 'REMOVE_CHARACTER'; payload: number }
   | { type: 'SET_WORLD_CONFIG'; payload: Partial<WorldConfig> }
 
 const initialState: EngineState = {
-  engineReady:      false,
-  engineError:      null,
-  log:              [],
-  entities:         [],
-  selectedEntity:   null,
-  scenarioEntities: [],
-  worldConfig:      DEFAULT_WORLD_CONFIG,
+  engineReady:       false,
+  engineError:       null,
+  log:               [],
+  entities:          [],
+  selectedEntity:    null,
+  scenarioEntities:  [],
+  characterEntities: [],
+  worldConfig:       DEFAULT_WORLD_CONFIG,
 }
 
 function engineReducer(state: EngineState, action: EngineAction): EngineState {
@@ -102,6 +108,10 @@ function engineReducer(state: EngineState, action: EngineAction): EngineState {
       return { ...state, scenarioEntities: [...state.scenarioEntities, action.payload] }
     case 'REMOVE_SCENARIO':
       return { ...state, scenarioEntities: state.scenarioEntities.filter((s) => s.id !== action.payload) }
+    case 'ADD_CHARACTER':
+      return { ...state, characterEntities: [...state.characterEntities, action.payload] }
+    case 'REMOVE_CHARACTER':
+      return { ...state, characterEntities: state.characterEntities.filter((c) => c.id !== action.payload) }
     case 'SET_WORLD_CONFIG':
       return { ...state, worldConfig: { ...state.worldConfig, ...action.payload } }
     default:
@@ -210,6 +220,10 @@ export function useEngine(
         const e = event as unknown as ScenarioLoaded
         dispatch({ type: 'ADD_SCENARIO', payload: { id: e.id, path: e.path } })
       }
+      if (event.event === 'character_loaded') {
+        const e = event as unknown as CharacterLoaded
+        dispatch({ type: 'ADD_CHARACTER', payload: { id: e.id, path: e.path } })
+      }
       if (event.event === 'stopped') {
         dispatch({ type: 'ENGINE_STOPPED', payload: (event as { code?: number }).code })
       }
@@ -229,6 +243,15 @@ export function useEngine(
     send({ cmd: 'duplicate_scenario', id })
   }
 
+  const removeCharacter = (id: number) => {
+    send({ cmd: 'remove_entity', id })
+    dispatch({ type: 'REMOVE_CHARACTER', payload: id })
+  }
+
+  const duplicateCharacter = (id: number) => {
+    send({ cmd: 'duplicate_character', id })
+  }
+
   const setWorldSize = (width: number, height: number) => {
     dispatch({ type: 'SET_WORLD_CONFIG', payload: { worldWidth: width, worldHeight: height } })
     send({ cmd: 'set_world_size', width, height })
@@ -245,19 +268,22 @@ export function useEngine(
   }
 
   return {
-    engineReady:       state.engineReady,
-    engineError:       state.engineError,
-    log:               state.log,
-    entities:          state.entities,
-    selectedEntity:    state.selectedEntity,
-    scenarioEntities:  state.scenarioEntities,
-    worldConfig:       state.worldConfig,
+    engineReady:        state.engineReady,
+    engineError:        state.engineError,
+    log:                state.log,
+    entities:           state.entities,
+    selectedEntity:     state.selectedEntity,
+    scenarioEntities:   state.scenarioEntities,
+    characterEntities:  state.characterEntities,
+    worldConfig:        state.worldConfig,
     send,
     loadModel,
     reportBounds,
     retryEngine,
     removeScenario,
     duplicateScenario,
+    removeCharacter,
+    duplicateCharacter,
     setWorldSize,
     setGridVisible,
     setGridCellSize,

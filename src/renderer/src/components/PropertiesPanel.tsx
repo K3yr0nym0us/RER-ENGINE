@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
+import { Lock, Unlock } from 'react-bootstrap-icons'
 import type { SelectedEntity } from '../hooks/useEngine'
 
 interface Transform {
@@ -8,16 +9,20 @@ interface Transform {
 }
 
 interface Props {
-  entity: SelectedEntity | null
-  onSend: (cmd: object) => void
+  entity:      SelectedEntity | null
+  onSend:      (cmd: object) => void
+  projectType?: string
 }
 
-export function PropertiesPanel({ entity, onSend }: Props) {
+export function PropertiesPanel({ entity, onSend, projectType }: Props) {
+  const is2D = projectType === '2D'
+
   const [transform, setTransform] = useState<Transform>({
     pos: ['0', '0', '0'],
     rot: ['0', '0', '0', '1'],
     scl: ['1', '1', '1'],
   })
+  const [lockProportions, setLockProportions] = useState(false)
 
   useEffect(() => {
     if (!entity) return
@@ -51,32 +56,71 @@ export function PropertiesPanel({ entity, onSend }: Props) {
     vals: [string, string, string],
     key: 'pos' | 'scl',
     step = '0.1',
-  ) => (
-    <div className="mb-2">
-      <p className="prop-label">{label}</p>
-      <div className="d-flex gap-1 mt-1">
-        {(['X', 'Y', 'Z'] as const).map((ax, i) => (
-          <div key={ax} className="flex-fill">
-            <div className={`prop-axis ${axisColors[i]}`}>{ax}</div>
-            <input
-              type="number"
-              step={step}
-              value={vals[i]}
-              aria-label={`${label} ${ax}`}
-              className="form-control form-control-sm text-center bg-dark text-light border-secondary prop-input"
-              onChange={(e) => {
-                const next = [...vals] as [string, string, string]
-                next[i] = e.target.value
-                const updated = { ...transform, [key]: next }
-                setTransform(updated)
-                commit({ [key]: next })
-              }}
-            />
-          </div>
-        ))}
+    options: {
+      hiddenAxes?:    number[]
+      labelAction?:   React.ReactNode
+      extraOnChange?: (i: number, next: [string, string, string]) => [string, string, string]
+    } = {},
+  ) => {
+    const { hiddenAxes = [], labelAction, extraOnChange } = options
+    return (
+      <div className="mb-2">
+        <p className="prop-label">{label}</p>
+        <div className="d-flex gap-1 mt-1 align-items-end">
+          {(['X', 'Y', 'Z'] as const).map((ax, i) => {
+            if (hiddenAxes.includes(i)) return null
+            return (
+              <div key={ax} className="flex-fill">
+                <div className={`prop-axis ${axisColors[i]}`}>{ax}</div>
+                <input
+                  type="number"
+                  step={step}
+                  value={vals[i]}
+                  aria-label={`${label} ${ax}`}
+                  className="form-control form-control-sm text-center bg-dark text-light border-secondary prop-input"
+                  onChange={(e) => {
+                    let next = [...vals] as [string, string, string]
+                    next[i] = e.target.value
+                    if (extraOnChange) next = extraOnChange(i, next)
+                    const updated = { ...transform, [key]: next }
+                    setTransform(updated)
+                    commit({ [key]: next })
+                  }}
+                />
+              </div>
+            )
+          })}
+          {labelAction && (
+            <div className="d-flex flex-column align-items-center">
+              <div className="prop-axis" style={{ visibility: 'hidden' }}>·</div>
+              {labelAction}
+            </div>
+          )}
+        </div>
       </div>
-    </div>
-  )
+    )
+  }
+
+  const proportionOnChange = (i: number, next: [string, string, string]): [string, string, string] => {
+    const xVal = parseFloat(transform.scl[0])
+    const yVal = parseFloat(transform.scl[1])
+    if (i === 0 && xVal !== 0) {
+      next[1] = (parseFloat(next[0]) * yVal / xVal).toFixed(3)
+    } else if (i === 1 && yVal !== 0) {
+      next[0] = (parseFloat(next[1]) * xVal / yVal).toFixed(3)
+    }
+    return next
+  }
+
+  const lockBtn = is2D ? (
+    <button
+      className={`btn btn-sm ${lockProportions ? 'btn-info' : 'btn-outline-secondary'}`}
+      title={lockProportions ? 'Proporciones bloqueadas' : 'Mantener proporciones'}
+      onClick={() => setLockProportions((v) => !v)}
+    >
+      {lockProportions ? <Lock size={13} /> : <Unlock size={13} />}
+    </button>
+  ) : undefined
 
   return (
     <div className="px-1">
@@ -87,7 +131,11 @@ export function PropertiesPanel({ entity, onSend }: Props) {
         </div>
       </div>
       {makeVec3Row('Posición', transform.pos, 'pos')}
-      {makeVec3Row('Escala',   transform.scl, 'scl')}
+      {makeVec3Row('Escala', transform.scl, 'scl', '0.1', {
+        hiddenAxes:    is2D ? [2] : [],
+        labelAction:   lockBtn,
+        extraOnChange: is2D && lockProportions ? proportionOnChange : undefined,
+      })}
       <div className="mb-2">
         <p className="prop-label">Rotación (xyzw)</p>
         <div className="d-flex gap-1 mt-1">

@@ -16,17 +16,23 @@ export interface ProjectConfig {
 }
 
 export interface EngineCommand {
-  cmd: 'ping' | 'shutdown' | 'set_clear_color' | 'resize' | 'load_model' | 'set_transform' | 'set_scene' | 'load_scenario' | 'set_scenario_scale' | 'duplicate_scenario' | 'remove_entity' | 'set_world_size' | 'set_grid_visible' | 'set_grid_cell_size' | 'set_ctrl_held'
+  cmd: 'ping' | 'shutdown' | 'set_clear_color' | 'resize' | 'load_model' | 'set_transform' | 'set_scene' | 'load_scenario' | 'set_scenario_scale' | 'duplicate_scenario' | 'load_character' | 'set_character_scale' | 'duplicate_character' | 'remove_entity' | 'set_world_size' | 'set_grid_visible' | 'set_grid_cell_size' | 'set_ctrl_held'
   [key: string]: unknown
 }
 
 export interface EngineEvent {
-  event: 'ready' | 'pong' | 'error' | 'model_loaded' | 'stopped' | 'entity_selected' | 'entity_deselected' | 'scenario_loaded'
+  event: 'ready' | 'pong' | 'error' | 'model_loaded' | 'stopped' | 'entity_selected' | 'entity_deselected' | 'scenario_loaded' | 'character_loaded'
   [key: string]: unknown
 }
 
 export interface ScenarioLoaded {
   event: 'scenario_loaded'
+  id:    number
+  path:  string
+}
+
+export interface CharacterLoaded {
+  event: 'character_loaded'
   id:    number
   path:  string
 }
@@ -60,6 +66,7 @@ declare global {
       openModelDialog:         () => Promise<string | null>
       openProjectDialog:       () => Promise<ProjectConfig | null>
       openScenarioDialog:      () => Promise<string | null>
+      openCharacterDialog:      () => Promise<string | null>
       onRequestViewportBounds: (cb: () => void) => void
     }
   }
