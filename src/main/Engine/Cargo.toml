@@ -20,3 +20,6 @@ env_logger  = "0.11"
 gltf        = "1"
 image       = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 rapier3d    = { version = "0.22", features = ["default"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+x11         = { version = "2", features = ["xlib"] }

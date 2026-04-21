@@ -41,6 +41,8 @@ pub enum EngineCommand {
     SetGridVisible { visible: bool },
     /// Cambiar el tamaño de cada celda de la cuadrícula.
     SetGridCellSize { size: f32 },
+    /// Estado de la tecla Ctrl enviado desde Electron (ventana embebida no recibe teclado directo).
+    SetCtrlHeld { held: bool },
 }
 
 // ---------------------------------------------------------------------------

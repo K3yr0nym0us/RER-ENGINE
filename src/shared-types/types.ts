@@ -16,7 +16,7 @@ export interface ProjectConfig {
 }
 
 export interface EngineCommand {
-  cmd: 'ping' | 'shutdown' | 'set_clear_color' | 'resize' | 'load_model' | 'set_transform' | 'set_scene' | 'load_scenario' | 'set_scenario_scale' | 'duplicate_scenario' | 'remove_entity' | 'set_world_size' | 'set_grid_visible' | 'set_grid_cell_size'
+  cmd: 'ping' | 'shutdown' | 'set_clear_color' | 'resize' | 'load_model' | 'set_transform' | 'set_scene' | 'load_scenario' | 'set_scenario_scale' | 'duplicate_scenario' | 'remove_entity' | 'set_world_size' | 'set_grid_visible' | 'set_grid_cell_size' | 'set_ctrl_held'
   [key: string]: unknown
 }
 

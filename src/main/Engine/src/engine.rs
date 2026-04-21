@@ -81,6 +81,9 @@ pub struct State {
     pub(crate) grid_buffer:      GridBuffer,
     pub(crate) grid_bind_group:  wgpu::BindGroup,
     pub(crate) grid_buffer_uni:  wgpu::Buffer,
+    /// Estado de la tecla Ctrl (enviado por IPC desde Electron, ya que la ventana embebida
+    /// no recibe keyboard events directamente).
+    pub(crate) ctrl_held:        bool,
 }
 
 impl State {
@@ -413,6 +416,7 @@ impl State {
             grid_buffer,
             grid_bind_group,
             grid_buffer_uni,
+            ctrl_held: false,
         }
     }
 
@@ -514,6 +518,9 @@ impl State {
             EngineCommand::SetGridCellSize { size } => {
                 self.grid_config.cell_size = size.clamp(0.05, 100.0);
                 self.rebuild_grid();
+            }
+            EngineCommand::SetCtrlHeld { held } => {
+                self.ctrl_held = held;
             }
             EngineCommand::Shutdown => {}
         }

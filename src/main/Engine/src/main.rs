@@ -16,12 +16,35 @@ use std::sync::{Arc, mpsc};
 
 use winit::{
     application::ApplicationHandler,
-    event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent},
+    event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent},
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
+    keyboard::{KeyCode, PhysicalKey},
     window::{Window, WindowId},
 };
 
 use ipc::{EngineCommand, EngineEvent};
+
+// ---------------------------------------------------------------------------
+// Consulta de estado de teclado vía X11 (sin depender del foco de ventana)
+// ---------------------------------------------------------------------------
+#[cfg(target_os = "linux")]
+fn query_ctrl_held_x11() -> bool {
+    // SAFETY: llamadas estándar a libX11; Display se abre y cierra en la misma función.
+    unsafe {
+        let display = x11::xlib::XOpenDisplay(std::ptr::null());
+        if display.is_null() { return false; }
+        let mut keys = [0u8; 32];
+        x11::xlib::XQueryKeymap(display, keys.as_mut_ptr() as *mut i8);
+        x11::xlib::XCloseDisplay(display);
+        // Keycode 37 = Control_L, keycode 105 = Control_R (estándar X11 en Linux)
+        let lctrl = (keys[37 / 8] >> (37 % 8)) & 1;
+        let rctrl = (keys[105 / 8] >> (105 % 8)) & 1;
+        lctrl != 0 || rctrl != 0
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn query_ctrl_held_x11() -> bool { false }
 
 // ---------------------------------------------------------------------------
 // Configuración de embedding (Fase 2)
@@ -66,6 +89,8 @@ struct App {
     left_click_pos:  Option<(f32, f32)>,  // posición al presionar
     // Drag de gizmo
     gizmo_drag_axis: Option<usize>,       // eje activo (0=X,1=Y,2=Z)
+    // Teclas modificadoras
+    ctrl_held:       bool,                // Ctrl izquierdo o derecho presionado
 }
 
 impl ApplicationHandler for App {
@@ -199,7 +224,10 @@ impl ApplicationHandler for App {
                     if let Some(axis) = self.gizmo_drag_axis {
                         // Drag de gizmo: mover entidad a lo largo del eje
                         if state.camera_2d.is_some() {
-                            state.drag_gizmo_2d(cur.0, cur.1, lx, ly, axis);
+                            // Combina ambas fuentes: winit (self.ctrl_held) e IPC (state.ctrl_held)
+                            // + consulta directa X11 (no depende del foco de ventana)
+                            let snap = self.ctrl_held || state.ctrl_held || query_ctrl_held_x11();
+                            state.drag_gizmo_2d(cur.0, cur.1, lx, ly, axis, snap);
                         } else {
                             state.drag_gizmo(cur.0, cur.1, lx, ly, axis);
                         }
@@ -218,6 +246,18 @@ impl ApplicationHandler for App {
                     }
                 }
                 self.last_cursor = Some(cur);
+            }
+            WindowEvent::KeyboardInput {
+                event: KeyEvent { physical_key: PhysicalKey::Code(code), state: key_state, .. },
+                ..
+            } => {
+                let pressed = key_state == ElementState::Pressed;
+                match code {
+                    KeyCode::ControlLeft | KeyCode::ControlRight => {
+                        self.ctrl_held = pressed;
+                    }
+                    _ => {}
+                }
             }
             WindowEvent::MouseWheel { delta, .. } => {
                 let scroll = match delta {
@@ -280,6 +320,6 @@ fn main() {
         log::info!("Modo embebido activado");
     }
 
-    let mut app = App { state: None, rx, embed, mouse_right: false, mouse_middle: false, last_cursor: None, left_click_pos: None, gizmo_drag_axis: None };
+    let mut app = App { state: None, rx, embed, mouse_right: false, mouse_middle: false, last_cursor: None, left_click_pos: None, gizmo_drag_axis: None, ctrl_held: false };
     event_loop.run_app(&mut app).expect("Error en el event loop");
 }

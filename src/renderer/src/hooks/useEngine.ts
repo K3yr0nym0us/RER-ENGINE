@@ -156,6 +156,22 @@ export function useEngine(
     return () => observer.disconnect()
   }, [])
 
+  // Enviar estado de Ctrl al motor (la ventana embebida no recibe teclado directo)
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Control') window.engine.send({ cmd: 'set_ctrl_held', held: true } as never)
+    }
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'Control') window.engine.send({ cmd: 'set_ctrl_held', held: false } as never)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('keyup',   onKeyUp)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('keyup',   onKeyUp)
+    }
+  }, [])
+
   // Timeout de 5 s esperando el evento "ready"
   useEffect(() => {
     readyTimer.current = setTimeout(() => {

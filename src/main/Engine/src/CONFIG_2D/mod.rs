@@ -268,7 +268,7 @@ impl State {
     // ── Drag de gizmo 2D ──────────────────────────────────────────────────────
 
     /// Arrastra la entidad seleccionada sobre el eje X (0) o Y (1) en modo 2D.
-    pub fn drag_gizmo_2d(&mut self, pixel_x: f32, pixel_y: f32, last_x: f32, last_y: f32, axis_idx: usize) {
+    pub fn drag_gizmo_2d(&mut self, pixel_x: f32, pixel_y: f32, last_x: f32, last_y: f32, axis_idx: usize, snap: bool) {
         let sel_id = match self.selected_entity { Some(id) => id, None => return };
         let cam = match &self.camera_2d {
             Some(c) => Camera2D { x: c.x, y: c.y, half_h: c.half_h, near: c.near, far: c.far },
@@ -291,6 +291,35 @@ impl State {
         let name = self.world.name(sel_id).unwrap_or("Entity").to_string();
         if let Some(t) = self.world.get_mut::<Transform>(sel_id) {
             t.position += axis_world * world_delta;
+            // Snap a cuadrícula: alinea el borde más cercano a la línea de
+            // cuadrícula más próxima. Se activa si snap=true (Ctrl desde
+            // cualquier fuente: winit o IPC).
+            let cell = self.grid_config.cell_size;
+            if snap && cell > 1e-6 {
+                if axis_idx == 0 {
+                    let hw = t.scale.x * 0.5;
+                    let left  = t.position.x - hw;
+                    let right = t.position.x + hw;
+                    let left_snap  = (left  / cell).round() * cell;
+                    let right_snap = (right / cell).round() * cell;
+                    if (left - left_snap).abs() <= (right - right_snap).abs() {
+                        t.position.x = left_snap + hw;
+                    } else {
+                        t.position.x = right_snap - hw;
+                    }
+                } else {
+                    let hh = t.scale.y * 0.5;
+                    let bottom = t.position.y - hh;
+                    let top    = t.position.y + hh;
+                    let bottom_snap = (bottom / cell).round() * cell;
+                    let top_snap    = (top    / cell).round() * cell;
+                    if (bottom - bottom_snap).abs() <= (top - top_snap).abs() {
+                        t.position.y = bottom_snap + hh;
+                    } else {
+                        t.position.y = top_snap - hh;
+                    }
+                }
+            }
             let pos = t.position.to_array();
             let rot = [t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w];
             let scl = t.scale.to_array();
