@@ -223,6 +223,17 @@ ipcMain.handle('open-character-dialog', async () => {
   return result.canceled ? null : result.filePaths[0] ?? null
 })
 
+// Diálogo para abrir imagen PNG/GIF como fondo del mundo 2D
+ipcMain.handle('open-background-dialog', async () => {
+  if (!mainWindow) return null
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title:   'Cargar fondo del mundo',
+    filters: [{ name: 'Imágenes', extensions: ['png', 'gif', 'jpg', 'jpeg', 'webp'] }],
+    properties: ['openFile'],
+  })
+  return result.canceled ? null : result.filePaths[0] ?? null
+})
+
 // Diálogo para abrir un proyecto existente (lee project.json)
 ipcMain.handle('open-project-dialog', async (): Promise<ProjectSaveData | null> => {
   if (!mainWindow) return null

@@ -46,6 +46,8 @@ interface EngineState {
   log:                LogEntry[]
   entities:           Entity[]
   selectedEntity:     SelectedEntity | null
+  hoveredEntityId:    number | null
+  backgroundPath:     string | null
   scenarioEntities:   ScenarioEntry[]
   characterEntities:  CharacterEntry[]
   worldConfig:        WorldConfig
@@ -65,6 +67,8 @@ type EngineAction =
   | { type: 'REMOVE_SCENARIO'; payload: number }
   | { type: 'ADD_CHARACTER'; payload: CharacterEntry }
   | { type: 'REMOVE_CHARACTER'; payload: number }
+  | { type: 'SET_HOVER'; payload: number | null }
+  | { type: 'SET_BACKGROUND'; payload: string | null }
   | { type: 'SET_WORLD_CONFIG'; payload: Partial<WorldConfig> }
 
 const initialState: EngineState = {
@@ -73,6 +77,8 @@ const initialState: EngineState = {
   log:               [],
   entities:          [],
   selectedEntity:    null,
+  hoveredEntityId:   null,
+  backgroundPath:    null,
   scenarioEntities:  [],
   characterEntities: [],
   worldConfig:       DEFAULT_WORLD_CONFIG,
@@ -112,6 +118,10 @@ function engineReducer(state: EngineState, action: EngineAction): EngineState {
       return { ...state, characterEntities: [...state.characterEntities, action.payload] }
     case 'REMOVE_CHARACTER':
       return { ...state, characterEntities: state.characterEntities.filter((c) => c.id !== action.payload) }
+    case 'SET_HOVER':
+      return { ...state, hoveredEntityId: action.payload }
+    case 'SET_BACKGROUND':
+      return { ...state, backgroundPath: action.payload }
     case 'SET_WORLD_CONFIG':
       return { ...state, worldConfig: { ...state.worldConfig, ...action.payload } }
     default:
@@ -146,6 +156,18 @@ export function useEngine(
   // Usar cola permite que múltiples entidades con el mismo path (duplicados)
   // reciban el transform correcto en el orden en que el motor las crea.
   const pendingRestoresRef = useRef<Map<string, Transform[]>>(new Map())
+
+  // ── Restauración del jugador base ─────────────────────────────────────────
+  // mainPlayerHandled: true cuando ya se procesó el character_loaded del player
+  //   principal (el que crea setup_2d_platformer), para no confundirlo con dups.
+  // playerRemoved: true cuando el save indica que el player fue borrado,
+  //   para evitar añadirlo a characterEntities cuando llega el character_loaded.
+  // pendingPlayerDups: transforms de duplicados [Player] extraídos del save.
+  // pendingDupQ: cola consumida por los character_loaded de cada duplicado.
+  const mainPlayerHandled = useRef(false)
+  const playerRemoved     = useRef(false)
+  const pendingPlayerDups = useRef<Transform[]>([])
+  const pendingDupQ       = useRef<Transform[]>([])
 
   const addLog = (text: string, isError = false) => {
     logIdRef.current += 1
@@ -224,6 +246,11 @@ export function useEngine(
         if (projectType) {
           window.engine.send({ cmd: 'set_scene', scene: projectType } as never)
         }
+        // Reiniciar tracking del player base en cada carga de escena
+        mainPlayerHandled.current = false
+        playerRemoved.current     = false
+        pendingPlayerDups.current = []
+        pendingDupQ.current       = []
         // Restaurar proyecto guardado
         const save = initialSaveRef.current
         if (save) {
@@ -237,18 +264,25 @@ export function useEngine(
             window.engine.send({ cmd: 'set_camera_2d', x: save.camera2d.x, y: save.camera2d.y, half_h: save.camera2d.halfH } as never)
             camera2dRef.current = save.camera2d
           }
-          for (const entity of save.entities) {
-            const t: Transform = {
+          if (save.backgroundPath) {
+            window.engine.send({ cmd: 'load_background', path: save.backgroundPath } as never)
+          }
+          for (const entity of save.entities) {            const t: Transform = {
               position: entity.position,
               rotation: entity.rotation,
               scale:    entity.scale,
             }
-            const queue = pendingRestoresRef.current.get(entity.path) ?? []
-            queue.push(t)
-            pendingRestoresRef.current.set(entity.path, queue)
-            if (entity.kind === 'scenario')  window.engine.send({ cmd: 'load_scenario',  path: entity.path } as never)
-            if (entity.kind === 'character') window.engine.send({ cmd: 'load_character', path: entity.path } as never)
-            if (entity.kind === 'model')     window.engine.send({ cmd: 'load_model',     path: entity.path } as never)
+            // Los duplicados de [Player] se restauran desde player_ready (no tienen archivo real)
+            if (entity.kind === 'character' && entity.path === '[Player]') {
+              pendingPlayerDups.current.push(t)
+            } else {
+              const queue = pendingRestoresRef.current.get(entity.path) ?? []
+              queue.push(t)
+              pendingRestoresRef.current.set(entity.path, queue)
+              if (entity.kind === 'scenario')  window.engine.send({ cmd: 'load_scenario',  path: entity.path } as never)
+              if (entity.kind === 'character') window.engine.send({ cmd: 'load_character', path: entity.path } as never)
+              if (entity.kind === 'model')     window.engine.send({ cmd: 'load_model',     path: entity.path } as never)
+            }
           }
         }
       }
@@ -264,6 +298,12 @@ export function useEngine(
       if (event.event === 'entity_deselected') {
         dispatch({ type: 'DESELECT_ENTITY' })
       }
+      if (event.event === 'entity_hovered') {
+        dispatch({ type: 'SET_HOVER', payload: (event as { id?: number }).id ?? null })
+      }
+      if (event.event === 'entity_unhovered') {
+        dispatch({ type: 'SET_HOVER', payload: null })
+      }
       if (event.event === 'player_ready') {
         const e = event as unknown as PlayerReady
         playerEntityIdRef.current = e.id
@@ -272,9 +312,14 @@ export function useEngine(
           rotation: [0, 0, 0, 1],
           scale:    e.scale,
         }
-        // Si hay un transform guardado para el jugador, restaurarlo
         const save = initialSaveRef.current
-        if (save?.playerTransform) {
+        if (save != null && save.playerTransform === null) {
+          // El player fue borrado explícitamente en el proyecto guardado
+          window.engine.send({ cmd: 'remove_entity', id: e.id } as never)
+          playerEntityIdRef.current = null
+          playerRemoved.current     = true
+        } else if (save?.playerTransform) {
+          // Restaurar transform del jugador principal
           window.engine.send({
             cmd:      'set_transform',
             id:       e.id,
@@ -286,11 +331,20 @@ export function useEngine(
             rotation: [0, 0, 0, 1],
             scale:    save.playerTransform.scale,
           }
+          // Crear duplicados guardados y encolar sus transforms
+          for (const dupT of pendingPlayerDups.current) {
+            pendingDupQ.current.push(dupT)
+            window.engine.send({ cmd: 'duplicate_character', id: e.id } as never)
+          }
+          pendingPlayerDups.current = []
         }
       }
       if (event.event === 'camera_2d_updated') {
         const e = event as unknown as Camera2dUpdated
         camera2dRef.current = { x: e.x, y: e.y, halfH: e.half_h }
+      }
+      if (event.event === 'background_loaded') {
+        dispatch({ type: 'SET_BACKGROUND', payload: (event as { path?: string }).path ?? null })
       }
       if (event.event === 'scenario_loaded') {
         const e = event as unknown as ScenarioLoaded
@@ -305,13 +359,32 @@ export function useEngine(
       }
       if (event.event === 'character_loaded') {
         const e = event as unknown as CharacterLoaded
-        dispatch({ type: 'ADD_CHARACTER', payload: { id: e.id, path: e.path } })
-        const queue = pendingRestoresRef.current.get(e.path)
-        if (queue && queue.length > 0) {
-          const pending = queue.shift()!
-          window.engine.send({ cmd: 'set_transform', id: e.id, position: pending.position, rotation: pending.rotation, scale: pending.scale } as never)
-          entityTransformsRef.current[e.id] = pending
-          if (queue.length === 0) pendingRestoresRef.current.delete(e.path)
+        if (e.path === '[Player]') {
+          if (!mainPlayerHandled.current) {
+            // Primer character_loaded de [Player] = player principal de setup_2d_platformer
+            mainPlayerHandled.current = true
+            if (!playerRemoved.current) {
+              dispatch({ type: 'ADD_CHARACTER', payload: { id: e.id, path: e.path } })
+            }
+            playerRemoved.current = false
+          } else {
+            // Duplicado de [Player] (usuario o restauración)
+            dispatch({ type: 'ADD_CHARACTER', payload: { id: e.id, path: e.path } })
+            const dupT = pendingDupQ.current.shift()
+            if (dupT) {
+              window.engine.send({ cmd: 'set_transform', id: e.id, position: dupT.position, rotation: dupT.rotation, scale: dupT.scale } as never)
+              entityTransformsRef.current[e.id] = dupT
+            }
+          }
+        } else {
+          dispatch({ type: 'ADD_CHARACTER', payload: { id: e.id, path: e.path } })
+          const queue = pendingRestoresRef.current.get(e.path)
+          if (queue && queue.length > 0) {
+            const pending = queue.shift()!
+            window.engine.send({ cmd: 'set_transform', id: e.id, position: pending.position, rotation: pending.rotation, scale: pending.scale } as never)
+            entityTransformsRef.current[e.id] = pending
+            if (queue.length === 0) pendingRestoresRef.current.delete(e.path)
+          }
         }
       }
       if (event.event === 'stopped') {
@@ -336,6 +409,7 @@ export function useEngine(
   const removeCharacter = (id: number) => {
     send({ cmd: 'remove_entity', id })
     dispatch({ type: 'REMOVE_CHARACTER', payload: id })
+    if (playerEntityIdRef.current === id) playerEntityIdRef.current = null
   }
 
   const duplicateCharacter = (id: number) => {
@@ -363,6 +437,8 @@ export function useEngine(
     log:                state.log,
     entities:           state.entities,
     selectedEntity:     state.selectedEntity,
+    hoveredEntityId:    state.hoveredEntityId,
+    backgroundPath:     state.backgroundPath,
     scenarioEntities:   state.scenarioEntities,
     characterEntities:  state.characterEntities,
     worldConfig:        state.worldConfig,

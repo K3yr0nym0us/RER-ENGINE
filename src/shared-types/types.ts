@@ -38,6 +38,7 @@ export interface ProjectSaveData {
   type:            ProjectType
   gameStyle:       GameStyle
   world:           SavedWorldConfig
+  backgroundPath:  string | null
   entities:        SavedEntity[]
   playerTransform: { position: [number, number, number]; scale: [number, number, number] } | null
   camera2d:        { x: number; y: number; halfH: number } | null
@@ -112,6 +113,7 @@ declare global {
       saveProjectSilent:       (filePath: string, data: ProjectSaveData) => Promise<boolean>
       openScenarioDialog:      () => Promise<string | null>
       openCharacterDialog:     () => Promise<string | null>
+      openBackgroundDialog:    () => Promise<string | null>
       onRequestViewportBounds: (cb: () => void) => void
     }
   }

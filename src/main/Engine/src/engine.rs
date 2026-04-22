@@ -38,7 +38,10 @@ pub struct State {
     pub(crate) config:           wgpu::SurfaceConfiguration,
     pub(crate) size:             PhysicalSize<u32>,
     pub(crate) clear_color:      wgpu::Color,
-    pub(crate) render_pipeline:  wgpu::RenderPipeline,
+    pub(crate) render_pipeline:     wgpu::RenderPipeline,
+    /// Pipeline para modo 2D: sin depth-write, CompareFunction::Always.
+    /// Permite que el alpha blending funcione correctamente con back-to-front sort.
+    pub(crate) render_pipeline_2d:  wgpu::RenderPipeline,
     pub(crate) depth_view:       wgpu::TextureView,
     // Uniforms (group 0) — un buffer por malla para que cada draw call
     // tenga sus propios datos y write_buffer no sobreescriba el anterior.
@@ -75,6 +78,10 @@ pub struct State {
     pub active_gizmo_axis:   Option<usize>,
     // Escenario 2D: lista de entidades ECS que actúan como fondos PNG.
     pub(crate) scenario_entities: Vec<EntityId>,
+    // Personajes 2D: lista de entidades ECS que actúan como sprites de personaje.
+    pub(crate) character_entities: Vec<EntityId>,
+    // Fondo del mundo 2D: entidad especial no seleccionable que cubre todo el área.
+    pub(crate) background_entity: Option<EntityId>,
     // Grid 2D: cuadrícula y límites del mundo.
     pub(crate) grid_config:      GridConfig,
     pub(crate) grid_pipeline:    wgpu::RenderPipeline,
@@ -225,6 +232,43 @@ impl State {
                 format:              DEPTH_FORMAT,
                 depth_write_enabled: true,
                 depth_compare:       wgpu::CompareFunction::Less,
+                stencil:             wgpu::StencilState::default(),
+                bias:                wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState::default(),
+            multiview:   None,
+            cache:       None,
+        });
+
+        // Pipeline 2D: sin depth-write ni depth-test — el orden back-to-front
+        // ya garantiza el orden correcto y el alpha blending funciona bien.
+        let render_pipeline_2d = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label:  Some("main-pipeline-2d"),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module:              &shader,
+                entry_point:         "vs_main",
+                buffers:             &[mesh::Vertex::desc()],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module:      &shader,
+                entry_point: "fs_main",
+                targets:     &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend:      Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format:              DEPTH_FORMAT,
+                depth_write_enabled: false,
+                depth_compare:       wgpu::CompareFunction::Always,
                 stencil:             wgpu::StencilState::default(),
                 bias:                wgpu::DepthBiasState::default(),
             }),
@@ -386,6 +430,7 @@ impl State {
             size,
             clear_color: wgpu::Color { r: 0.06, g: 0.06, b: 0.10, a: 1.0 },
             render_pipeline,
+            render_pipeline_2d,
             depth_view,
             texture_bgl,
             textures: vec![checker_tex_bg],   // índice 0 = plano de suelo
@@ -411,6 +456,8 @@ impl State {
             hovered_gizmo_axis:  None,
             active_gizmo_axis:   None,
             scenario_entities:      Vec::new(),
+            character_entities:     Vec::new(),
+            background_entity:       None,
             grid_config,
             grid_pipeline,
             grid_buffer,
@@ -500,16 +547,32 @@ impl State {
             EngineCommand::DuplicateScenario { id } => {
                 self.duplicate_scenario(id);
             }
+            EngineCommand::LoadCharacter { path } => {
+                self.load_character(&path);
+            }
+            EngineCommand::SetCharacterScale { id, scale } => {
+                self.set_character_scale(id, scale);
+            }
+            EngineCommand::DuplicateCharacter { id } => {
+                self.duplicate_character(id);
+            }
             EngineCommand::RemoveEntity { id } => {
                 if Some(id) == self.selected_entity { self.selected_entity = None; }
                 if Some(id) == self.hovered_entity  { self.hovered_entity  = None; }
                 self.scenario_entities.retain(|&e| e != id);
+                self.character_entities.retain(|&e| e != id);
                 self.world.despawn(id);
             }
             EngineCommand::SetWorldSize { width, height } => {
                 self.grid_config.world_width  = width.max(1.0);
                 self.grid_config.world_height = height.max(1.0);
                 self.rebuild_grid();
+                // Redimensionar el fondo si existe
+                if let Some(bg_id) = self.background_entity {
+                    if let Some(t) = self.world.get_mut::<Transform>(bg_id) {
+                        t.scale = GlamVec3::new(self.grid_config.world_width, self.grid_config.world_height, 1.0);
+                    }
+                }
             }
             EngineCommand::SetGridVisible { visible } => {
                 self.grid_config.visible = visible;
@@ -529,6 +592,9 @@ impl State {
                     cam2d.half_h = half_h.clamp(1.0, 50.0);
                     log::info!("Cámara 2D restaurada: x={x} y={y} half_h={half_h}");
                 }
+            }
+            EngineCommand::LoadBackground { path } => {
+                self.load_background(&path);
             }
             EngineCommand::Shutdown => {}
         }
@@ -586,7 +652,14 @@ impl State {
                 timestamp_writes:    None,
             });
 
-            pass.set_pipeline(&self.render_pipeline);
+            // En 2D usamos el pipeline sin depth-write: el sort back-to-front
+            // más el alpha blending se encargan del orden correcto, y no hay
+            // bloqueo de píxeles transparentes por profundidad.
+            if self.camera_2d.is_some() {
+                pass.set_pipeline(&self.render_pipeline_2d);
+            } else {
+                pass.set_pipeline(&self.render_pipeline);
+            }
 
             // Iterar entidades con MeshComponent.
             // Las entidades de escenario (ScenarioMarker) están en Z=-1, por lo que

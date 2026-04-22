@@ -34,13 +34,20 @@ export function EngineView({ projectType, initialSave }: { projectType: ProjectT
   const lastSavePath   = useRef<string | null>(null)
 
   const {
-    engineReady, engineError, log, entities, selectedEntity,
+    engineReady, engineError, log, entities, selectedEntity, hoveredEntityId,
+    backgroundPath,
     scenarioEntities, removeScenario, duplicateScenario,
     characterEntities, removeCharacter, duplicateCharacter,
     worldConfig, setWorldSize, setGridVisible, setGridCellSize,
     entityTransformsRef, playerEntityIdRef, camera2dRef,
     loadModel, send, retryEngine,
   } = useEngine(viewportRef, projectType, initialSave)
+
+  const loadBackground = () => {
+    window.electronAPI.openBackgroundDialog().then((p: string | null) => {
+      if (p) send({ cmd: 'load_background', path: p })
+    })
+  }
 
   // Si se cargó desde un proyecto guardado, marcar como ya guardado
   useEffect(() => {
@@ -61,7 +68,9 @@ export function EngineView({ projectType, initialSave }: { projectType: ProjectT
         rotation: transforms[e.id]?.rotation ?? DEFAULT_ROT,
         scale:    transforms[e.id]?.scale    ?? DEFAULT_SCL,
       })),
-      ...characterEntities.map((e) => ({
+      ...characterEntities
+        .filter((e) => !(e.path === '[Player]' && e.id === playerEntityIdRef.current))
+        .map((e) => ({
         id:       e.id,
         path:     e.path,
         kind:     'character' as const,
@@ -82,12 +91,13 @@ export function EngineView({ projectType, initialSave }: { projectType: ProjectT
       type:            projectType,
       gameStyle:       (initialSave?.gameStyle ?? 'side-scroller'),
       world:           worldConfig,
+      backgroundPath:  backgroundPath ?? null,
       entities:        allEntities,
       playerTransform,
       camera2d:        camera2dRef.current,
       savedAt:         new Date().toISOString(),
     }
-  }, [projectType, initialSave, scenarioEntities, characterEntities, worldConfig, entityTransformsRef, playerEntityIdRef, camera2dRef])
+  }, [projectType, initialSave, scenarioEntities, characterEntities, worldConfig, backgroundPath, entityTransformsRef, playerEntityIdRef, camera2dRef])
 
   const handleSave = useCallback(async () => {
     const data = buildSaveData()
@@ -175,9 +185,11 @@ export function EngineView({ projectType, initialSave }: { projectType: ProjectT
               <WorldPanel
                 engineReady={engineReady}
                 worldConfig={worldConfig}
+                backgroundPath={backgroundPath ?? null}
                 onWorldSize={setWorldSize}
                 onGridVisible={setGridVisible}
                 onCellSize={setGridCellSize}
+                onLoadBackground={loadBackground}
               />
             )}
 
@@ -207,6 +219,7 @@ export function EngineView({ projectType, initialSave }: { projectType: ProjectT
                           onRemove={removeScenario}
                           onDuplicate={duplicateScenario}
                           config={SCENARIO_CONFIG}
+                          highlightId={hoveredEntityId ?? selectedEntity?.id ?? null}
                         />
                       )}
                     </Accordion.Body>
@@ -222,6 +235,7 @@ export function EngineView({ projectType, initialSave }: { projectType: ProjectT
                           onRemove={removeCharacter}
                           onDuplicate={duplicateCharacter}
                           config={CHARACTER_CONFIG}
+                          highlightId={hoveredEntityId ?? selectedEntity?.id ?? null}
                         />
                       )}
                     </Accordion.Body>

@@ -33,6 +33,12 @@ pub enum EngineCommand {
     SetScenarioScale { id: u32, scale: f32 },
     /// Duplicar un escenario existente (crea una nueva entidad con el mismo PNG).
     DuplicateScenario { id: u32 },
+    /// Cargar una imagen PNG como personaje en la escena 2D.
+    LoadCharacter { path: String },
+    /// Ajustar la escala de un personaje 2D específico preservando proporciones.
+    SetCharacterScale { id: u32, scale: f32 },
+    /// Duplicar un personaje existente (crea una nueva entidad con el mismo PNG).
+    DuplicateCharacter { id: u32 },
     /// Eliminar una entidad de la escena por su ID.
     RemoveEntity { id: u32 },
     /// Definir el tamaño del área de trabajo del mundo (unidades de mundo).
@@ -45,6 +51,8 @@ pub enum EngineCommand {
     SetCtrlHeld { held: bool },
     /// Restaurar posición y zoom de la cámara 2D ortográfica.
     SetCamera2d { x: f32, y: f32, half_h: f32 },
+    /// Cargar una imagen PNG/GIF como fondo de mundo (cubre todo el área del mundo).
+    LoadBackground { path: String },
 }
 
 // ---------------------------------------------------------------------------
@@ -67,6 +75,10 @@ pub enum EngineEvent {
     },
     /// Emitido cuando el usuario hace click izquierdo en vacío.
     EntityDeselected,
+    /// Emitido cuando el cursor pasa por encima de una entidad (solo cuando cambia).
+    EntityHovered { id: u32 },
+    /// Emitido cuando el cursor deja de estar sobre cualquier entidad.
+    EntityUnhovered,
     /// Emitido cuando un escenario PNG se cargó correctamente.
     ScenarioLoaded { id: u32, path: String },
     /// Emitido cuando un personaje PNG se cargó correctamente.
@@ -81,6 +93,8 @@ pub enum EngineEvent {
     /// Emitido cuando la cámara 2D cambia (fin de pan o zoom).
     #[serde(rename = "camera_2d_updated")]
     Camera2dUpdated { x: f32, y: f32, half_h: f32 },
+    /// Emitido cuando se cargó una imagen de fondo del mundo.
+    BackgroundLoaded { path: String },
 }
 
 /// Escribe un evento JSON en stdout y lo flushea inmediatamente.

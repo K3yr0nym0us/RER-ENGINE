@@ -42,6 +42,17 @@ pub(crate) struct ScenarioMarker {
     pub path:         String,
 }
 
+/// Marca una entidad como personaje PNG en una escena 2D.
+#[derive(Debug, Clone)]
+pub(crate) struct CharacterMarker {
+    pub img_width:    u32,
+    pub img_height:   u32,
+    /// Altura base en unidades de mundo (user_scale = 1.0).
+    pub base_world_h: f32,
+    /// Ruta del PNG original, necesaria para duplicar la entidad.
+    pub path:         String,
+}
+
 impl State {
     // ── Inicialización ────────────────────────────────────────────────────────
 
@@ -49,6 +60,8 @@ impl State {
     pub(crate) fn setup_2d_platformer(&mut self) {
         // Limpiar escena previa y escenarios de fondo
         self.scenario_entities.clear();
+        self.character_entities.clear();
+        self.background_entity = None;
         self.world.clear();
         self.meshes.clear();
         self.textures.clear();
@@ -75,6 +88,13 @@ impl State {
             scale:    GlamVec3::new(1.0, 1.5, 1.0),
             ..Default::default()
         });
+        self.world.insert(player_id, CharacterMarker {
+            img_width:    0,
+            img_height:   0,
+            base_world_h: 1.5,
+            path:         "[Player]".to_owned(),
+        });
+        self.character_entities.push(player_id);
 
         // -- Cámara ortográfica -----------------------------------------------
         self.camera_2d = Some(Camera2D {
@@ -94,6 +114,7 @@ impl State {
             position: [0.0, 0.0, 0.0],
             scale:    [1.0, 1.5, 1.0],
         });
+        send_event(&EngineEvent::CharacterLoaded { id: player_id, path: "[Player]".to_owned() });
 
         log::info!("Escena 2D cargada: plataformer vista lateral");
     }
@@ -181,6 +202,193 @@ impl State {
         if let Some(&new_id) = self.scenario_entities.last() {
             if let Some(t) = self.world.get_mut::<Transform>(new_id) {
                 t.position += offset;
+            }
+        }
+    }
+
+    // ── Fondo del mundo ───────────────────────────────────────────────────────
+
+    /// Carga una imagen PNG o GIF como fondo del mundo 2D.
+    /// Se escala automáticamente al tamaño del mundo (worldWidth × worldHeight)
+    /// y se posiciona en Z=-10 (detrás de escenarios y personajes).
+    /// Si ya existía un fondo previo, lo elimina antes de crear el nuevo.
+    pub(crate) fn load_background(&mut self, path: &str) {
+        // Eliminar fondo previo si existe
+        if let Some(old_id) = self.background_entity.take() {
+            self.world.despawn(old_id);
+        }
+
+        let bytes = match std::fs::read(path) {
+            Ok(b)  => b,
+            Err(e) => {
+                log::error!("[load_background] error leyendo {path}: {e}");
+                send_event(&EngineEvent::Error { message: format!("No se pudo leer el fondo: {e}") });
+                return;
+            }
+        };
+
+        use image::ImageReader;
+        use std::io::Cursor;
+        let img = match ImageReader::new(Cursor::new(&bytes))
+            .with_guessed_format()
+            .map_err(|e| e.to_string())
+            .and_then(|r| r.decode().map_err(|e| e.to_string()))
+        {
+            Ok(i)  => i.to_rgba8(),
+            Err(e) => {
+                log::error!("[load_background] error decodificando imagen {path}: {e}");
+                send_event(&EngineEvent::Error { message: format!("Error al decodificar imagen: {e}") });
+                return;
+            }
+        };
+
+        let (img_w, img_h) = img.dimensions();
+        let world_w = self.grid_config.world_width;
+        let world_h = self.grid_config.world_height;
+
+        let gpu_tex  = GpuTexture::from_rgba(&self.device, &self.queue, &img, img_w, img_h, "background");
+        let tex_bg   = gpu_tex.create_bind_group(&self.device, &self.texture_bgl);
+        let mesh     = create_quad_xy(&self.device, 0.0, 0.0, 1.0, 1.0, "background-quad");
+        let mesh_idx = self.meshes.len();
+        self.meshes.push(mesh);
+        self.textures.push(tex_bg);
+        let (buf, bg) = self.alloc_entity_uniform();
+        self.entity_buffers.push(buf);
+        self.entity_bind_groups.push(bg);
+
+        let bg_id = self.world.spawn(Some("Background"));
+        self.world.insert(bg_id, MeshComponent { mesh_idx });
+        self.world.insert(bg_id, Transform {
+            position: GlamVec3::new(0.0, 0.0, -10.0),
+            scale:    GlamVec3::new(world_w, world_h, 1.0),
+            ..Default::default()
+        });
+        // No seleccionable para que no interfiera con el picking
+        self.world.insert(bg_id, crate::ecs::NonSelectable);
+        self.background_entity = Some(bg_id);
+
+        send_event(&EngineEvent::BackgroundLoaded { path: path.to_owned() });
+        log::info!("[load_background] fondo cargado {img_w}×{img_h} escala {world_w}×{world_h}: {path}");
+    }
+
+    // ── Personaje PNG ─────────────────────────────────────────────────────────
+
+    /// Carga una imagen PNG del disco y la registra como entidad ECS de personaje.
+    /// Se posiciona en Z=0 (mismo plano que el jugador) y puede seleccionarse,
+    /// arrastrarse y escalarse como cualquier entidad.
+    pub(crate) fn load_character(&mut self, path: &str) {
+        let bytes = match std::fs::read(path) {
+            Ok(b)  => b,
+            Err(e) => {
+                log::error!("[load_character] error leyendo {path}: {e}");
+                send_event(&EngineEvent::Error { message: format!("No se pudo leer el personaje: {e}") });
+                return;
+            }
+        };
+
+        use image::ImageReader;
+        use std::io::Cursor;
+        let img = match ImageReader::new(Cursor::new(&bytes))
+            .with_guessed_format()
+            .map_err(|e| e.to_string())
+            .and_then(|r| r.decode().map_err(|e| e.to_string()))
+        {
+            Ok(i)  => i.to_rgba8(),
+            Err(e) => {
+                log::error!("[load_character] error decodificando PNG {path}: {e}");
+                send_event(&EngineEvent::Error { message: format!("Error al decodificar PNG: {e}") });
+                return;
+            }
+        };
+
+        let (img_width, img_height) = img.dimensions();
+        let aspect       = img_width as f32 / img_height.max(1) as f32;
+        let base_world_h = 2.0_f32; // altura base razonable para un personaje
+        let base_world_w = base_world_h * aspect;
+
+        let gpu_tex  = GpuTexture::from_rgba(&self.device, &self.queue, &img, img_width, img_height, "character");
+        let tex_bg   = gpu_tex.create_bind_group(&self.device, &self.texture_bgl);
+        let mesh     = create_quad_xy(&self.device, 0.0, 0.0, 1.0, 1.0, "character-quad");
+        let mesh_idx = self.meshes.len();
+        self.meshes.push(mesh);
+        self.textures.push(tex_bg);
+        let (buf, bg) = self.alloc_entity_uniform();
+        self.entity_buffers.push(buf);
+        self.entity_bind_groups.push(bg);
+
+        let ch_id = self.world.spawn(Some("Personaje"));
+        self.world.insert(ch_id, MeshComponent { mesh_idx });
+        self.world.insert(ch_id, Transform {
+            position: GlamVec3::new(0.0, 0.0, 0.0),
+            scale:    GlamVec3::new(base_world_w, base_world_h, 1.0),
+            ..Default::default()
+        });
+        self.world.insert(ch_id, CharacterMarker { img_width, img_height, base_world_h, path: path.to_owned() });
+        self.character_entities.push(ch_id);
+
+        send_event(&EngineEvent::CharacterLoaded { id: ch_id, path: path.to_owned() });
+        log::info!("[load_character] entidad {ch_id} creada {img_width}×{img_height}: {path}");
+    }
+
+    /// Ajusta la escala de un personaje 2D preservando proporciones.
+    pub(crate) fn set_character_scale(&mut self, id: u32, scale: f32) {
+        let marker = self.world.get::<CharacterMarker>(id).cloned();
+        if let Some(m) = marker {
+            let aspect = m.img_width as f32 / m.img_height.max(1) as f32;
+            let new_h  = m.base_world_h * scale.clamp(0.05, 20.0);
+            let new_w  = new_h * aspect;
+            if let Some(t) = self.world.get_mut::<Transform>(id) {
+                t.scale = GlamVec3::new(new_w, new_h, 1.0);
+            }
+        }
+    }
+
+    /// Duplica un personaje existente: crea una nueva entidad con el mismo PNG
+    /// ligeramente desplazada para que sea visible.
+    /// Si el personaje es el jugador por defecto ([Player]), crea un nuevo quad blanco.
+    pub(crate) fn duplicate_character(&mut self, id: u32) {
+        let path = match self.world.get::<CharacterMarker>(id) {
+            Some(m) => m.path.clone(),
+            None => {
+                log::warn!("[duplicate_character] entidad {id} no tiene CharacterMarker");
+                return;
+            }
+        };
+        let offset = {
+            let count = self.character_entities.len() as f32;
+            GlamVec3::new(count * 0.5, count * 0.5, 0.0)
+        };
+        if path == "[Player]" {
+            // Crear un nuevo quad blanco (igual al jugador por defecto)
+            let mesh     = create_quad_xy(&self.device, 0.0, 0.0, 1.0, 1.0, "player-unit");
+            let mesh_idx = self.meshes.len();
+            self.meshes.push(mesh);
+            let tex = GpuTexture::solid_color(&self.device, &self.queue, 232, 220, 200);
+            self.textures.push(tex.create_bind_group(&self.device, &self.texture_bgl));
+            let (buf, bg) = self.alloc_entity_uniform();
+            self.entity_buffers.push(buf);
+            self.entity_bind_groups.push(bg);
+            let new_id = self.world.spawn(Some("Player"));
+            self.world.insert(new_id, MeshComponent { mesh_idx });
+            self.world.insert(new_id, Transform {
+                position: GlamVec3::new(offset.x, offset.y, 0.0),
+                scale:    GlamVec3::new(1.0, 1.5, 1.0),
+                ..Default::default()
+            });
+            self.world.insert(new_id, CharacterMarker {
+                img_width: 0, img_height: 0,
+                base_world_h: 1.5,
+                path: "[Player]".to_owned(),
+            });
+            self.character_entities.push(new_id);
+            send_event(&EngineEvent::CharacterLoaded { id: new_id, path: "[Player]".to_owned() });
+            log::info!("[duplicate_character] nuevo quad jugador creado: entidad {new_id}");
+        } else {
+            self.load_character(&path);
+            if let Some(&new_id) = self.character_entities.last() {
+                if let Some(t) = self.world.get_mut::<Transform>(new_id) {
+                    t.position += offset;
+                }
             }
         }
     }
@@ -342,6 +550,7 @@ impl State {
 
     /// Actualiza `hovered_entity` y `hovered_gizmo_axis` en modo 2D.
     pub fn update_hover_2d(&mut self, pixel_x: f32, pixel_y: f32) {
+        let prev_hover = self.hovered_entity;
         let cam = match &self.camera_2d {
             Some(c) => Camera2D { x: c.x, y: c.y, half_h: c.half_h, near: c.near, far: c.far },
             None    => return,
@@ -370,6 +579,13 @@ impl State {
         }
         self.hovered_entity    = best_hover.map(|(id, _)| id);
         self.hovered_gizmo_axis = self.pick_gizmo_axis_2d(pixel_x, pixel_y);
+        // Emitir evento solo si el hover cambió para no saturar el IPC
+        match (prev_hover, self.hovered_entity) {
+            (None, Some(id))              => send_event(&EngineEvent::EntityHovered { id }),
+            (Some(_), None)               => send_event(&EngineEvent::EntityUnhovered),
+            (Some(a), Some(b)) if a != b  => send_event(&EngineEvent::EntityHovered { id: b }),
+            _                             => {}
+        }
     }
 }
 

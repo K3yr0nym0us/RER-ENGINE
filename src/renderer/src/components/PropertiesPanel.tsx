@@ -27,11 +27,13 @@ export function PropertiesPanel({ entity, onSend, projectType }: Props) {
   useEffect(() => {
     if (!entity) return
     setTransform({
-      pos: entity.position.map((n) => n.toFixed(1)) as [string, string, string],
+      pos: entity.position.map((n, i) =>
+        (is2D && i === 2) ? String(Math.round(n)) : n.toFixed(1)
+      ) as [string, string, string],
       rot: entity.rotation.map((n) => n.toFixed(1)) as [string, string, string, string],
       scl: entity.scale.map((n) => n.toFixed(1)) as [string, string, string],
     })
-  }, [entity?.id, entity])
+  }, [entity?.id, entity, is2D])
 
   const commit = useCallback((override: Partial<Transform>) => {
     if (!entity) return
@@ -55,7 +57,7 @@ export function PropertiesPanel({ entity, onSend, projectType }: Props) {
     label: string,
     vals: [string, string, string],
     key: 'pos' | 'scl',
-    step = '0.1',
+    step: string | [string, string, string] = '0.1',
     options: {
       hiddenAxes?:    number[]
       labelAction?:   React.ReactNode
@@ -74,7 +76,7 @@ export function PropertiesPanel({ entity, onSend, projectType }: Props) {
                 <div className={`prop-axis ${axisColors[i]}`}>{ax}</div>
                 <input
                   type="number"
-                  step={step}
+                  step={Array.isArray(step) ? step[i] : step}
                   value={vals[i]}
                   aria-label={`${label} ${ax}`}
                   className="form-control form-control-sm text-center bg-dark text-light border-secondary prop-input"
@@ -130,7 +132,7 @@ export function PropertiesPanel({ entity, onSend, projectType }: Props) {
           {entity.name}
         </div>
       </div>
-      {makeVec3Row('Posición', transform.pos, 'pos')}
+      {makeVec3Row('Posición', transform.pos, 'pos', is2D ? ['0.1', '0.1', '1'] : '0.1')}
       {makeVec3Row('Escala', transform.scl, 'scl', '0.1', {
         hiddenAxes:    is2D ? [2] : [],
         labelAction:   lockBtn,

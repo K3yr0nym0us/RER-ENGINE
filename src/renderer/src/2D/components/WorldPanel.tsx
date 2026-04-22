@@ -1,19 +1,21 @@
 import { useState, useEffect } from 'react'
 import { Accordion } from 'react-bootstrap'
-import { Grid3x3, EyeFill, EyeSlashFill } from 'react-bootstrap-icons'
+import { Grid3x3, EyeFill, EyeSlashFill, Image } from 'react-bootstrap-icons'
 import type { WorldConfig } from '../../hooks/useEngine'
 
 interface Props {
-  engineReady:   boolean
-  worldConfig:   WorldConfig
-  onWorldSize:   (w: number, h: number) => void
-  onGridVisible: (v: boolean)           => void
-  onCellSize:    (s: number)            => void
+  engineReady:      boolean
+  worldConfig:      WorldConfig
+  backgroundPath:   string | null
+  onWorldSize:      (w: number, h: number) => void
+  onGridVisible:    (v: boolean)           => void
+  onCellSize:       (s: number)            => void
+  onLoadBackground: () => void
 }
 
 export function WorldPanel({
-  engineReady, worldConfig,
-  onWorldSize, onGridVisible, onCellSize,
+  engineReady, worldConfig, backgroundPath,
+  onWorldSize, onGridVisible, onCellSize, onLoadBackground,
 }: Props) {
   // Estado local para los inputs de tamaño (evitar enviar en cada tecla)
   const [widthStr,  setWidthStr]  = useState(String(worldConfig.worldWidth))
@@ -72,6 +74,25 @@ export function WorldPanel({
             />
           </div>
         </div>
+
+        <hr className="border-secondary my-2" />
+
+        {/* Fondo del mundo */}
+        <p className="text-secondary small mb-1 fw-semibold d-flex align-items-center gap-1">
+          <Image /> Fondo del mundo
+        </p>
+        <button
+          className="btn btn-outline-info btn-sm w-100 fw-bold mb-1"
+          disabled={!engineReady}
+          onClick={onLoadBackground}
+        >
+          {backgroundPath ? 'Cambiar fondo' : '+ Cargar fondo (PNG/GIF)'}
+        </button>
+        {backgroundPath && (
+          <p className="text-secondary small text-truncate mb-0 px-1" title={backgroundPath}>
+            {backgroundPath.split('/').pop()}
+          </p>
+        )}
 
         <hr className="border-secondary my-2" />
 

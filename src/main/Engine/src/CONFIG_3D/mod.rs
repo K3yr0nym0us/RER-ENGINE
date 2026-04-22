@@ -231,7 +231,14 @@ impl State {
 
     /// Actualiza `hovered_entity` y `hovered_gizmo_axis` en modo 3D.
     pub fn update_hover(&mut self, pixel_x: f32, pixel_y: f32) {
+        let prev_hover          = self.hovered_entity;
         self.hovered_entity     = self.ray_cast(pixel_x, pixel_y);
         self.hovered_gizmo_axis = self.pick_gizmo_axis(pixel_x, pixel_y);
+        match (prev_hover, self.hovered_entity) {
+            (None, Some(id))              => crate::ipc::send_event(&crate::ipc::EngineEvent::EntityHovered { id }),
+            (Some(_), None)               => crate::ipc::send_event(&crate::ipc::EngineEvent::EntityUnhovered),
+            (Some(a), Some(b)) if a != b  => crate::ipc::send_event(&crate::ipc::EngineEvent::EntityHovered { id: b }),
+            _                             => {}
+        }
     }
 }

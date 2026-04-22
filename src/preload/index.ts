@@ -33,6 +33,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openCharacterDialog: (): Promise<string | null> => {
     return ipcRenderer.invoke('open-character-dialog')
   },
+  openBackgroundDialog: (): Promise<string | null> => {
+    return ipcRenderer.invoke('open-background-dialog')
+  },
   saveProject: (data: ProjectSaveData): Promise<boolean> => {
     return ipcRenderer.invoke('save-project', data)
   },

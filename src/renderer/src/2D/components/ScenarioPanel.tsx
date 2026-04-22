@@ -16,9 +16,10 @@ interface Props {
   onRemove:    (id: number) => void
   onDuplicate: (id: number) => void
   config:      AssetGroupConfig
+  highlightId: number | null
 }
 
-export function AssetGroupPanel({ engineReady, send, entries, onRemove, onDuplicate, config }: Props) {
+export function AssetGroupPanel({ engineReady, send, entries, onRemove, onDuplicate, config, highlightId }: Props) {
   const handleLoad = () => {
     config.openDialog().then((p: string | null) => {
       if (!p) return
@@ -42,15 +43,21 @@ export function AssetGroupPanel({ engineReady, send, entries, onRemove, onDuplic
         <p className="text-secondary fst-italic small mb-0 px-1">{config.emptyText}</p>
       ) : (
         <ul className="list-unstyled mb-0">
-          {entries.map(({ id, path }) => (
+          {entries.map(({ id, path }) => {
+            const isHighlighted = id === highlightId
+            return (
             <li key={id} className="mb-1">
-              <div className="d-flex align-items-center gap-1">
+              <div
+                className="d-flex align-items-center gap-1"
+                style={isHighlighted ? { background: '#1e2a4a', borderRadius: 4, outline: '1px solid #38bdf855' } : undefined}
+              >
                 <button
-                  className="btn btn-sm btn-outline-secondary flex-fill text-start text-truncate"
+                  className="btn btn-sm flex-fill text-start text-truncate"
+                  style={{ color: isHighlighted ? '#7dd3fc' : undefined, fontWeight: isHighlighted ? 700 : undefined }}
                   title={path}
                   disabled
                 >
-                  {entryLabel(path)}
+                  {isHighlighted ? '▶ ' : ''}{entryLabel(path)}
                 </button>
                 <button
                   className="btn btn-sm btn-outline-secondary"
@@ -64,10 +71,10 @@ export function AssetGroupPanel({ engineReady, send, entries, onRemove, onDuplic
                 ><Trash /></button>
               </div>
             </li>
-          ))}
+            )
+          })}
         </ul>
       )}
     </>
   )
 }
-
