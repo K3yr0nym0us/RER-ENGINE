@@ -23,6 +23,14 @@ export function PropertiesPanel({ entity, onSend, projectType }: Props) {
     scl: ['1', '1', '1'],
   })
   const [lockProportions, setLockProportions] = useState(false)
+  const [physicsEnabled, setPhysicsEnabled] = useState(false)
+  const [physicsType,    setPhysicsType]    = useState('dynamic')
+
+  useEffect(() => {
+    if (!entity) return
+    setPhysicsEnabled(entity.physicsEnabled)
+    setPhysicsType(entity.physicsType || 'dynamic')
+  }, [entity?.id])
 
   useEffect(() => {
     if (!entity) return
@@ -166,6 +174,42 @@ export function PropertiesPanel({ entity, onSend, projectType }: Props) {
           ))}
         </div>
       </div>
+      {!is2D && (
+        <div className="mb-2">
+          <p className="prop-label">Física</p>
+          <div className="d-flex align-items-center gap-2 mt-1">
+            <input
+              type="checkbox"
+              id="physics-enabled"
+              className="form-check-input"
+              checked={physicsEnabled}
+              onChange={(e) => {
+                const next = e.target.checked
+                setPhysicsEnabled(next)
+                onSend({ cmd: 'set_physics', id: entity.id, enabled: next, body_type: physicsType })
+              }}
+            />
+            <label htmlFor="physics-enabled" className="form-check-label text-light small mb-0">
+              Activar física
+            </label>
+          </div>
+          {physicsEnabled && (
+            <select
+              value={physicsType}
+              className="form-select form-select-sm bg-dark text-light border-secondary mt-1"
+              onChange={(e) => {
+                const next = e.target.value
+                setPhysicsType(next)
+                onSend({ cmd: 'set_physics', id: entity.id, enabled: true, body_type: next })
+              }}
+            >
+              <option value="dynamic">Dinámico (gravedad)</option>
+              <option value="static">Estático (no se mueve)</option>
+              <option value="kinematic">Cinemático (por código)</option>
+            </select>
+          )}
+        </div>
+      )}
     </div>
   )
 }

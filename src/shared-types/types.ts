@@ -46,7 +46,7 @@ export interface ProjectSaveData {
 }
 
 export interface EngineCommand {
-  cmd: 'ping' | 'shutdown' | 'set_clear_color' | 'resize' | 'set_bounds' | 'load_model' | 'set_transform' | 'set_scene' | 'load_scenario' | 'set_scenario_scale' | 'duplicate_scenario' | 'load_character' | 'set_character_scale' | 'duplicate_character' | 'remove_entity' | 'set_world_size' | 'set_grid_visible' | 'set_grid_cell_size' | 'set_ctrl_held'
+  cmd: 'ping' | 'shutdown' | 'set_clear_color' | 'resize' | 'set_bounds' | 'load_model' | 'set_transform' | 'set_scene' | 'load_scenario' | 'set_scenario_scale' | 'duplicate_scenario' | 'load_character' | 'set_character_scale' | 'duplicate_character' | 'remove_entity' | 'set_world_size' | 'set_grid_visible' | 'set_grid_cell_size' | 'set_ctrl_held' | 'set_physics'
   [key: string]: unknown
 }
 
@@ -82,12 +82,14 @@ export interface CharacterLoaded {
 }
 
 export interface EntitySelected {
-  event:    'entity_selected'
-  id:       number
-  name:     string
-  position: [number, number, number]
-  rotation: [number, number, number, number]  // quaternion xyzw
-  scale:    [number, number, number]
+  event:           'entity_selected'
+  id:              number
+  name:            string
+  position:        [number, number, number]
+  rotation:        [number, number, number, number]  // quaternion xyzw
+  scale:           [number, number, number]
+  physics_enabled: boolean
+  physics_type:    string
 }
 
 export interface ViewportBounds {

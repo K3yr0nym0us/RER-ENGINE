@@ -139,7 +139,7 @@ yarn dist
 | Gizmos 3D (mover por eje) | ✅ Completo |
 | UI con Bootstrap (acordeón) | ✅ Completo |
 | IPC JSON lines | ✅ Completo |
-| Física Rapier3D | 🔧 Integrada, sin activar |
+| Física Rapier3D | ✅ Completo (por entidad: dinámico / estático / cinemático) |
 | Scripting (Lua/Python) | ⏳ Pendiente |
 | Soporte Windows | ⏳ Sin probar (DE MOMENTO SOLO CORRE EN LINUX UBUNTU) |
 

@@ -448,7 +448,11 @@ impl State {
                 let rot = [transform.rotation.x, transform.rotation.y,
                            transform.rotation.z, transform.rotation.w];
                 let scl = transform.scale.to_array();
-                send_event(&EngineEvent::EntitySelected { id: entity, name, position: pos, rotation: rot, scale: scl });
+                send_event(&EngineEvent::EntitySelected {
+                    id: entity, name, position: pos, rotation: rot, scale: scl,
+                    physics_enabled: false,
+                    physics_type: String::new(),
+                });
             }
             None => {
                 if self.selected_entity.is_some() {
@@ -542,7 +546,11 @@ impl State {
             let pos = t.position.to_array();
             let rot = [t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w];
             let scl = t.scale.to_array();
-            send_event(&EngineEvent::EntitySelected { id: sel_id, name, position: pos, rotation: rot, scale: scl });
+            send_event(&EngineEvent::EntitySelected {
+                id: sel_id, name, position: pos, rotation: rot, scale: scl,
+                physics_enabled: false,
+                physics_type: String::new(),
+            });
         }
     }
 

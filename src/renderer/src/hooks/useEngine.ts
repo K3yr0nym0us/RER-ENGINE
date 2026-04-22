@@ -6,11 +6,13 @@ export interface Entity {
 }
 
 export interface SelectedEntity {
-  id:       number
-  name:     string
-  position: [number, number, number]
-  rotation: [number, number, number, number]
-  scale:    [number, number, number]
+  id:             number
+  name:           string
+  position:       [number, number, number]
+  rotation:       [number, number, number, number]
+  scale:          [number, number, number]
+  physicsEnabled: boolean
+  physicsType:    string
 }
 
 export interface LogEntry {
@@ -293,7 +295,15 @@ export function useEngine(
       if (event.event === 'entity_selected') {
         const e = event as unknown as EntitySelected
         entityTransformsRef.current[e.id] = { position: e.position, rotation: e.rotation, scale: e.scale }
-        dispatch({ type: 'SELECT_ENTITY', payload: { id: e.id, name: e.name, position: e.position, rotation: e.rotation, scale: e.scale } })
+        dispatch({ type: 'SELECT_ENTITY', payload: {
+          id:             e.id,
+          name:           e.name,
+          position:       e.position,
+          rotation:       e.rotation,
+          scale:          e.scale,
+          physicsEnabled: e.physics_enabled ?? false,
+          physicsType:    e.physics_type    ?? '',
+        } })
       }
       if (event.event === 'entity_deselected') {
         dispatch({ type: 'DESELECT_ENTITY' })

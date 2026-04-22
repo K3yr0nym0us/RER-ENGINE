@@ -134,8 +134,10 @@ impl State {
                     transform.rotation.x, transform.rotation.y,
                     transform.rotation.z, transform.rotation.w,
                 ];
-                let scale = transform.scale.to_array();
-                send_event(&EngineEvent::EntitySelected { id: entity, name, position, rotation, scale });
+                let scale           = transform.scale.to_array();
+                let physics_enabled = self.physics.has_physics(entity);
+                let physics_type    = self.physics.get_body_type(entity).to_string();
+                send_event(&EngineEvent::EntitySelected { id: entity, name, position, rotation, scale, physics_enabled, physics_type });
             }
             None => {
                 if self.selected_entity.is_some() {
@@ -220,10 +222,15 @@ impl State {
         let name = self.world.name(sel_id).unwrap_or("Entity").to_string();
         if let Some(t) = self.world.get_mut::<Transform>(sel_id) {
             t.position += axis_world * world_delta;
-            let pos = t.position.to_array();
-            let rot = [t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w];
-            let scl = t.scale.to_array();
-            send_event(&EngineEvent::EntitySelected { id: sel_id, name, position: pos, rotation: rot, scale: scl });
+            let pos             = t.position.to_array();
+            let rot             = [t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w];
+            let scl             = t.scale.to_array();
+            let physics_enabled = self.physics.has_physics(sel_id);
+            let physics_type    = self.physics.get_body_type(sel_id).to_string();
+            send_event(&EngineEvent::EntitySelected {
+                id: sel_id, name, position: pos, rotation: rot, scale: scl,
+                physics_enabled, physics_type,
+            });
         }
     }
 

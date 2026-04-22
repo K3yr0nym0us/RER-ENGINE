@@ -559,6 +559,7 @@ impl State {
             EngineCommand::RemoveEntity { id } => {
                 if Some(id) == self.selected_entity { self.selected_entity = None; }
                 if Some(id) == self.hovered_entity  { self.hovered_entity  = None; }
+                self.physics.remove_entity_body(id);
                 self.scenario_entities.retain(|&e| e != id);
                 self.character_entities.retain(|&e| e != id);
                 self.world.despawn(id);
@@ -595,6 +596,16 @@ impl State {
             }
             EngineCommand::LoadBackground { path } => {
                 self.load_background(&path);
+            }
+            EngineCommand::SetPhysics { id, enabled, body_type } => {
+                let (pos, half) = if let Some(t) = self.world.get::<Transform>(id) {
+                    (t.position.to_array(), (t.scale * 0.5).to_array())
+                } else {
+                    ([0.0_f32; 3], [0.5_f32; 3])
+                };
+                self.physics.set_entity_physics(id, enabled, &body_type, pos, half);
+                log::info!("Física {}: entidad {} tipo='{}'" ,
+                    if enabled { "activada" } else { "desactivada" }, id, body_type);
             }
             EngineCommand::Shutdown => {}
         }

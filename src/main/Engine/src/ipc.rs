@@ -53,6 +53,8 @@ pub enum EngineCommand {
     SetCamera2d { x: f32, y: f32, half_h: f32 },
     /// Cargar una imagen PNG/GIF como fondo de mundo (cubre todo el área del mundo).
     LoadBackground { path: String },
+    /// Activar o desactivar física en una entidad. body_type: "dynamic" | "static" | "kinematic"
+    SetPhysics { id: u32, enabled: bool, body_type: String },
 }
 
 // ---------------------------------------------------------------------------
@@ -67,11 +69,13 @@ pub enum EngineEvent {
     ModelLoaded { id: u32 },
     /// Emitido cuando el usuario hace click izquierdo sobre una entidad.
     EntitySelected {
-        id:       u32,
-        name:     String,
-        position: [f32; 3],
-        rotation: [f32; 4],   // quaternion xyzw
-        scale:    [f32; 3],
+        id:              u32,
+        name:            String,
+        position:        [f32; 3],
+        rotation:        [f32; 4],   // quaternion xyzw
+        scale:           [f32; 3],
+        physics_enabled: bool,
+        physics_type:    String,
     },
     /// Emitido cuando el usuario hace click izquierdo en vacío.
     EntityDeselected,
