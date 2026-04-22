@@ -43,6 +43,8 @@ pub enum EngineCommand {
     SetGridCellSize { size: f32 },
     /// Estado de la tecla Ctrl enviado desde Electron (ventana embebida no recibe teclado directo).
     SetCtrlHeld { held: bool },
+    /// Restaurar posición y zoom de la cámara 2D ortográfica.
+    SetCamera2d { x: f32, y: f32, half_h: f32 },
 }
 
 // ---------------------------------------------------------------------------
@@ -67,6 +69,18 @@ pub enum EngineEvent {
     EntityDeselected,
     /// Emitido cuando un escenario PNG se cargó correctamente.
     ScenarioLoaded { id: u32, path: String },
+    /// Emitido cuando un personaje PNG se cargó correctamente.
+    CharacterLoaded { id: u32, path: String },
+    /// Emitido justo después de configurar la escena 2D con el ID y transform del jugador.
+    #[serde(rename = "player_ready")]
+    PlayerReady {
+        id:       u32,
+        position: [f32; 3],
+        scale:    [f32; 3],
+    },
+    /// Emitido cuando la cámara 2D cambia (fin de pan o zoom).
+    #[serde(rename = "camera_2d_updated")]
+    Camera2dUpdated { x: f32, y: f32, half_h: f32 },
 }
 
 /// Escribe un evento JSON en stdout y lo flushea inmediatamente.

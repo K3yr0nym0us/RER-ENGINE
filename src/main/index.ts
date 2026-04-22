@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, dialog, Menu } from 'electron'
 import { spawn, ChildProcess } from 'child_process'
 import path from 'path'
 import fs from 'fs'
-import type { EngineCommand, EngineEvent, ProjectConfig } from '../shared-types/types'
+import type { EngineCommand, EngineEvent, ProjectConfig, ProjectSaveData } from '../shared-types/types'
 
 // Sin GPU hardware disponible: deshabilitar el proceso GPU de Chromium
 // para evitar spam de viz_main_impl / command_buffer_proxy_impl
@@ -224,7 +224,7 @@ ipcMain.handle('open-character-dialog', async () => {
 })
 
 // Diálogo para abrir un proyecto existente (lee project.json)
-ipcMain.handle('open-project-dialog', async (): Promise<ProjectConfig | null> => {
+ipcMain.handle('open-project-dialog', async (): Promise<ProjectSaveData | null> => {
   if (!mainWindow) return null
   const result = await dialog.showOpenDialog(mainWindow, {
     title:      'Abrir proyecto',
@@ -234,18 +234,49 @@ ipcMain.handle('open-project-dialog', async (): Promise<ProjectConfig | null> =>
   if (result.canceled || !result.filePaths[0]) return null
   try {
     const raw = fs.readFileSync(result.filePaths[0], 'utf8')
-    const cfg = JSON.parse(raw) as unknown
+    const data = JSON.parse(raw) as unknown
     if (
-      cfg !== null &&
-      typeof cfg === 'object' &&
-      'type' in cfg &&
-      'gameStyle' in cfg
+      data !== null &&
+      typeof data === 'object' &&
+      'type' in data &&
+      'gameStyle' in data
     ) {
-      return cfg as ProjectConfig
+      return data as ProjectSaveData
     }
     return null
   } catch {
     return null
+  }
+})
+
+// Diálogo para guardar el proyecto (escribe project.json en la ruta elegida)
+ipcMain.handle('save-project', async (_event, data: ProjectSaveData): Promise<boolean> => {
+  if (!mainWindow) return false
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title:       'Guardar proyecto',
+    defaultPath: 'project.json',
+    filters:     [{ name: 'Proyecto RER', extensions: ['json'] }],
+  })
+  if (result.canceled || !result.filePath) return false
+  try {
+    fs.writeFileSync(result.filePath, JSON.stringify(data, null, 2), 'utf8')
+    console.log(`[editor] Proyecto guardado en ${result.filePath}`)
+    return true
+  } catch (err) {
+    console.error('[editor] Error al guardar proyecto:', err)
+    return false
+  }
+})
+
+// Guardado silencioso (auto-save) en la misma ruta sin dialog
+ipcMain.handle('save-project-silent', async (_event, filePath: string, data: ProjectSaveData): Promise<boolean> => {
+  try {
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8')
+    console.log(`[editor] Auto-guardado en ${filePath}`)
+    return true
+  } catch (err) {
+    console.error('[editor] Error en auto-guardado:', err)
+    return false
   }
 })
 

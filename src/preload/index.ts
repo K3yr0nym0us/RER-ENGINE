@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { EngineCommand, EngineEvent, ProjectConfig } from '../shared-types/types'
+import type { EngineCommand, EngineEvent, ProjectSaveData } from '../shared-types/types'
 
 contextBridge.exposeInMainWorld('engine', {
   send: (cmd: EngineCommand): void => {
@@ -24,7 +24,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openModelDialog: (): Promise<string | null> => {
     return ipcRenderer.invoke('open-model-dialog')
   },
-  openProjectDialog: (): Promise<ProjectConfig | null> => {
+  openProjectDialog: (): Promise<ProjectSaveData | null> => {
     return ipcRenderer.invoke('open-project-dialog')
   },
   openScenarioDialog: (): Promise<string | null> => {
@@ -32,6 +32,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   openCharacterDialog: (): Promise<string | null> => {
     return ipcRenderer.invoke('open-character-dialog')
+  },
+  saveProject: (data: ProjectSaveData): Promise<boolean> => {
+    return ipcRenderer.invoke('save-project', data)
+  },
+  saveProjectSilent: (filePath: string, data: ProjectSaveData): Promise<boolean> => {
+    return ipcRenderer.invoke('save-project-silent', filePath, data)
   },
   onRequestViewportBounds: (cb: () => void): void => {
     ipcRenderer.on('request-viewport-bounds', cb)

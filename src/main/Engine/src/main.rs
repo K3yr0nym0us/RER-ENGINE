@@ -207,7 +207,19 @@ impl ApplicationHandler for App {
                             self.left_click_pos = None;
                         }
                     }
-                    MouseButton::Right  => { self.mouse_right  = pressed; }
+                    MouseButton::Right  => {
+                        self.mouse_right = pressed;
+                        // Fin de pan: notificar posición actual de la cámara 2D
+                        if !pressed {
+                            if let Some(cam2d) = &state.camera_2d {
+                                ipc::send_event(&EngineEvent::Camera2dUpdated {
+                                    x:      cam2d.x,
+                                    y:      cam2d.y,
+                                    half_h: cam2d.half_h,
+                                });
+                            }
+                        }
+                    }
                     MouseButton::Middle => { self.mouse_middle = pressed; }
                     _ => {}
                 }
@@ -271,6 +283,11 @@ impl ApplicationHandler for App {
                 if let Some(cam2d) = &mut state.camera_2d {
                     // Zoom ortográfico: reducir/aumentar half_h
                     cam2d.half_h = (cam2d.half_h - scroll * 0.5).clamp(1.0, 50.0);
+                    ipc::send_event(&EngineEvent::Camera2dUpdated {
+                        x:      cam2d.x,
+                        y:      cam2d.y,
+                        half_h: cam2d.half_h,
+                    });
                 } else {
                     state.camera.zoom(scroll);
                 }

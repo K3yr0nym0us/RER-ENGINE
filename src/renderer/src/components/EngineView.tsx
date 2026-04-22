@@ -1,13 +1,15 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 
 import { Accordion } from 'react-bootstrap';
+import { FloppyFill, ClockFill } from 'react-bootstrap-icons';
+import { useAutoSave } from '../hooks/useAutoSave';
 import { PropertiesPanel } from './PropertiesPanel';
 import { AssetGroupPanel, type AssetGroupConfig } from '../2D/components/ScenarioPanel';
 import { WorldPanel } from '../2D/components/WorldPanel';
 
 import { useEngine } from '../hooks/useEngine';
 
-import type { ProjectType } from '../../../shared-types/types';
+import type { ProjectType, ProjectSaveData } from '../../../shared-types/types';
 
 const SCENARIO_CONFIG: AssetGroupConfig = {
   openDialog:  () => window.electronAPI.openScenarioDialog(),
@@ -25,17 +27,89 @@ const CHARACTER_CONFIG: AssetGroupConfig = {
   emptyText:   'Sin personajes cargados',
 }
 
-export function EngineView({ projectType }: { projectType: ProjectType }) {
-  const logRef      = useRef<HTMLDivElement>(null)
-  const viewportRef = useRef<HTMLDivElement>(null)
+export function EngineView({ projectType, initialSave }: { projectType: ProjectType; initialSave?: ProjectSaveData | null }) {
+  const logRef         = useRef<HTMLDivElement>(null)
+  const viewportRef    = useRef<HTMLDivElement>(null)
+  const [hasSavedOnce, setHasSavedOnce] = useState(false)
+  const lastSavePath   = useRef<string | null>(null)
 
   const {
     engineReady, engineError, log, entities, selectedEntity,
     scenarioEntities, removeScenario, duplicateScenario,
     characterEntities, removeCharacter, duplicateCharacter,
     worldConfig, setWorldSize, setGridVisible, setGridCellSize,
+    entityTransformsRef, playerEntityIdRef, camera2dRef,
     loadModel, send, retryEngine,
-  } = useEngine(viewportRef, projectType)
+  } = useEngine(viewportRef, projectType, initialSave)
+
+  // Si se cargó desde un proyecto guardado, marcar como ya guardado
+  useEffect(() => {
+    if (initialSave) setHasSavedOnce(true)
+  }, [initialSave])
+
+  const buildSaveData = useCallback((): ProjectSaveData => {
+    const transforms = entityTransformsRef.current
+    const DEFAULT_POS: [number,number,number]         = [0, 0, 0]
+    const DEFAULT_ROT: [number,number,number,number]  = [0, 0, 0, 1]
+    const DEFAULT_SCL: [number,number,number]         = [1, 1, 1]
+    const allEntities: ProjectSaveData['entities'] = [
+      ...scenarioEntities.map((e) => ({
+        id:       e.id,
+        path:     e.path,
+        kind:     'scenario' as const,
+        position: transforms[e.id]?.position ?? DEFAULT_POS,
+        rotation: transforms[e.id]?.rotation ?? DEFAULT_ROT,
+        scale:    transforms[e.id]?.scale    ?? DEFAULT_SCL,
+      })),
+      ...characterEntities.map((e) => ({
+        id:       e.id,
+        path:     e.path,
+        kind:     'character' as const,
+        position: transforms[e.id]?.position ?? DEFAULT_POS,
+        rotation: transforms[e.id]?.rotation ?? DEFAULT_ROT,
+        scale:    transforms[e.id]?.scale    ?? DEFAULT_SCL,
+      })),
+    ]
+    const playerId = playerEntityIdRef.current
+    const playerTransform = playerId !== null
+      ? {
+          position: transforms[playerId]?.position ?? DEFAULT_POS,
+          scale:    transforms[playerId]?.scale    ?? DEFAULT_SCL,
+        }
+      : null
+    return {
+      version:         1,
+      type:            projectType,
+      gameStyle:       (initialSave?.gameStyle ?? 'side-scroller'),
+      world:           worldConfig,
+      entities:        allEntities,
+      playerTransform,
+      camera2d:        camera2dRef.current,
+      savedAt:         new Date().toISOString(),
+    }
+  }, [projectType, initialSave, scenarioEntities, characterEntities, worldConfig, entityTransformsRef, playerEntityIdRef, camera2dRef])
+
+  const handleSave = useCallback(async () => {
+    const data = buildSaveData()
+    if (lastSavePath.current) {
+      // Ya se guardó antes — usar ruta conocida sin dialog
+      await window.electronAPI.saveProjectSilent(lastSavePath.current, data)
+      setHasSavedOnce(true)
+      return
+    }
+    // Primera vez: mostrar dialog para elegir ruta
+    const ok = await window.electronAPI.saveProject(data)
+    if (ok) {
+      setHasSavedOnce(true)
+      // Guardar la ruta elegida para auto-save (el main la conoce; la inferimos
+      // en el próximo save mostrando de nuevo el dialog si se recarga la app)
+    }
+  }, [buildSaveData])
+
+  const { autoSaveEnabled, toggleAutoSave } = useAutoSave({
+    onSave: handleSave,
+    hasSavedOnce,
+  })
 
   useEffect(() => {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight
@@ -69,6 +143,31 @@ export function EngineView({ projectType }: { projectType: ProjectType }) {
           )}
 
           <hr className="border-secondary my-1" />
+
+          {/* ── Guardar proyecto ──────────────────────────────────────────── */}
+          <div className="d-flex gap-2 mb-2 align-items-center">
+            <button
+              className="btn btn-sm btn-outline-light flex-fill d-flex align-items-center justify-content-center gap-2"
+              title="Guardar proyecto"
+              disabled={!engineReady}
+              onClick={handleSave}
+            >
+              <FloppyFill size={13} />
+              <span style={{ fontSize: 11 }}>Guardar</span>
+            </button>
+            <button
+              className={`btn btn-sm d-flex align-items-center gap-1 ${
+                autoSaveEnabled ? 'btn-warning text-dark' : 'btn-outline-secondary'
+              }`}
+              title={hasSavedOnce ? (autoSaveEnabled ? 'Desactivar auto-guardado (cada 5 min)' : 'Activar auto-guardado (cada 5 min)') : 'Guarda el proyecto al menos una vez para activar'}
+              disabled={!hasSavedOnce || !engineReady}
+              onClick={toggleAutoSave}
+              style={{ whiteSpace: 'nowrap' }}
+            >
+              <ClockFill size={11} />
+              <span style={{ fontSize: 10 }}>Auto</span>
+            </button>
+          </div>
 
           <Accordion defaultActiveKey="mundo" className="sidebar-accordion">
 

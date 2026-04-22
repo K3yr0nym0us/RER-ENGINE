@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Accordion } from 'react-bootstrap'
 import { Grid3x3, EyeFill, EyeSlashFill } from 'react-bootstrap-icons'
 import type { WorldConfig } from '../../hooks/useEngine'
@@ -18,6 +18,12 @@ export function WorldPanel({
   // Estado local para los inputs de tamaño (evitar enviar en cada tecla)
   const [widthStr,  setWidthStr]  = useState(String(worldConfig.worldWidth))
   const [heightStr, setHeightStr] = useState(String(worldConfig.worldHeight))
+
+  // Sincronizar inputs cuando worldConfig cambia desde fuera (ej: carga de proyecto)
+  useEffect(() => {
+    setWidthStr(String(worldConfig.worldWidth))
+    setHeightStr(String(worldConfig.worldHeight))
+  }, [worldConfig.worldWidth, worldConfig.worldHeight])
 
   const commitSize = () => {
     const w = parseFloat(widthStr)

@@ -2,18 +2,20 @@ import { useState } from 'react'
 import { ProjectSelector } from './components/ProjectSelector'
 import { GameStyleSelector } from './3D/components/GameStyleSelector'
 import { EngineView } from './components/EngineView'
-import type { ProjectType, GameStyle, ProjectConfig } from '../../shared-types/types'
+import type { ProjectType, GameStyle, ProjectSaveData } from '../../shared-types/types'
 
 // ── Componente principal ─────────────────────────────────────────────────────
 
 export default function App() {
-  const [projectType, setProjectType] = useState<ProjectType | null>(null)
-  const [gameStyle,   setGameStyle]   = useState<GameStyle   | null>(null)
+  const [projectType,   setProjectType]   = useState<ProjectType   | null>(null)
+  const [gameStyle,     setGameStyle]     = useState<GameStyle     | null>(null)
+  const [initialSave,   setInitialSave]   = useState<ProjectSaveData | null>(null)
 
-  // Cargar proyecto existente: salta directamente al motor
-  const handleLoadProject = (cfg: ProjectConfig) => {
-    setProjectType(cfg.type)
-    setGameStyle(cfg.gameStyle)
+  // Cargar proyecto existente: salta directamente al motor con datos previos
+  const handleLoadProject = (data: ProjectSaveData) => {
+    setInitialSave(data)
+    setProjectType(data.type)
+    setGameStyle(data.gameStyle)
   }
 
   if (!projectType) {
@@ -36,5 +38,5 @@ export default function App() {
     )
   }
 
-  return <EngineView projectType={projectType} />
+  return <EngineView projectType={projectType} initialSave={initialSave} />
 }

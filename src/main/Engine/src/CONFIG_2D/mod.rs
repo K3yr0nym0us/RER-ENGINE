@@ -88,6 +88,13 @@ impl State {
         // Fondo oscuro azulado (estilo Hollow Knight)
         self.clear_color = wgpu::Color { r: 0.04, g: 0.04, b: 0.10, a: 1.0 };
 
+        // Notificar al editor el ID y transform inicial del jugador
+        send_event(&EngineEvent::PlayerReady {
+            id:       player_id,
+            position: [0.0, 0.0, 0.0],
+            scale:    [1.0, 1.5, 1.0],
+        });
+
         log::info!("Escena 2D cargada: plataformer vista lateral");
     }
 

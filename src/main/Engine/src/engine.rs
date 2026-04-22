@@ -522,6 +522,14 @@ impl State {
             EngineCommand::SetCtrlHeld { held } => {
                 self.ctrl_held = held;
             }
+            EngineCommand::SetCamera2d { x, y, half_h } => {
+                if let Some(cam2d) = &mut self.camera_2d {
+                    cam2d.x      = x;
+                    cam2d.y      = y;
+                    cam2d.half_h = half_h.clamp(1.0, 50.0);
+                    log::info!("Cámara 2D restaurada: x={x} y={y} half_h={half_h}");
+                }
+            }
             EngineCommand::Shutdown => {}
         }
     }

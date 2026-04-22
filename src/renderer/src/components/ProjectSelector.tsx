@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { ProjectConfig, ProjectType } from '../../../shared-types/types'
+import type { ProjectSaveData, ProjectType } from '../../../shared-types/types'
 
 interface ProjectOption {
   type:        ProjectType
@@ -38,7 +38,7 @@ const separator = (
 
 interface Props {
   onSelect:      (type: ProjectType) => void
-  onLoadProject: (cfg: ProjectConfig) => void
+  onLoadProject: (cfg: ProjectSaveData) => void
 }
 
 export function ProjectSelector({ onSelect, onLoadProject }: Props) {
