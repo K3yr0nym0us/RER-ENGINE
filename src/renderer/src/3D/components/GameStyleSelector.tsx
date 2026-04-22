@@ -1,3 +1,4 @@
+import { ArrowLeft } from 'react-bootstrap-icons'
 import type { ProjectType, GameStyle } from '../../../../shared-types/types'
 
 interface StyleOption {
@@ -69,8 +70,7 @@ const OPTIONS_3D: StyleOption[] = [
 
 const OPTIONS_BY_TYPE: Partial<Record<ProjectType, StyleOption[]>> = {
   '3D':   OPTIONS_3D,
-  '2D':   [],
-  '2.5D': [],
+  '2D':   []
 }
 
 interface Props {
@@ -82,12 +82,30 @@ interface Props {
 export function GameStyleSelector({ projectType, onSelect, onBack }: Props) {
   const options = OPTIONS_BY_TYPE[projectType] ?? []
 
-  const typeBadgeColor =
-    projectType === '3D'   ? '#34d399' :
-    projectType === '2.5D' ? '#a78bfa' : '#38bdf8'
+  const typeBadgeColor = projectType === '3D'   ? '#34d399' : '#38bdf8';
 
   return (
-    <div className="style-selector-page">
+    <div className="style-selector-page" style={{ position: 'relative' }}>
+      {/* ── Botón volver ─────────────────────────────────────────────── */}
+      <button
+        onClick={onBack}
+        title="Volver al selector de proyecto"
+        className="btn rounded-circle d-flex align-items-center justify-content-center position-fixed"
+        style={{ top: 24, left: 28, width: 56, height: 56, fontSize: 22, zIndex: 100, background: '#0e1021', border: '2px solid #2c3152', color: '#94a3b8' }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.borderColor = '#c084fc'
+          e.currentTarget.style.color       = '#c084fc'
+          e.currentTarget.style.boxShadow   = '0 0 20px #c084fc44'
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.borderColor = '#2c3152'
+          e.currentTarget.style.color       = '#94a3b8'
+          e.currentTarget.style.boxShadow   = 'none'
+        }}
+      >
+        <ArrowLeft />
+      </button>
+
       {/* Título */}
       <div className="mb-5 text-center">
         <div className="engine-logo">
@@ -130,7 +148,7 @@ export function GameStyleSelector({ projectType, onSelect, onBack }: Props) {
             <button
               onClick={() => opt.available && onSelect(opt.type)}
               disabled={!opt.available}
-              className={`style-card${!opt.available ? ' style-card--disabled' : ''}`}
+              className={`p-3 style-card${!opt.available ? ' style-card--disabled' : ''}`}
               onMouseEnter={(e) => {
                 if (!opt.available) return
                 const el = e.currentTarget

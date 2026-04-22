@@ -1,6 +1,6 @@
 // Tipos compartidos entre main process, preload y renderer.
 
-export type ProjectType = '2D' | '3D' | 'scratch'
+export type ProjectType = '2D' | '3D'
 
 export type GameStyle =
   | 'first-person'

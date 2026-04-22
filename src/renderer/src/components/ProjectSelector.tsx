@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import type { ProjectSaveData, ProjectType } from '../../../shared-types/types'
+import { useState } from 'react';
+import type { ProjectSaveData, ProjectType } from '../../../shared-types/types';
 
 interface ProjectOption {
   type:        ProjectType
@@ -28,7 +28,7 @@ const OPTIONS: ProjectOption[] = [
     description: 'Motor completo con meshes, luces, sombras y física 3D usando wgpu + Rapier.',
     badge:       '3D',
     badgeColor:  '#34d399',
-    available:   false,
+    available:   true,
   },
 ]
 
@@ -156,34 +156,8 @@ export function ProjectSelector({ onSelect, onLoadProject }: Props) {
             </button>
           </div>
         ))}
-
-        {separator}
-
-        {/* ── 4. Proyecto desde cero ───────────────────────────────────── */}
-        <button
-          onClick={() => onSelect('scratch')}
-          className="selector-card"
-          onMouseEnter={hoverOn('#fb923c')}
-          onMouseLeave={hoverOff}
-        >
-          <div className="selector-icon" style={{ color: '#fb923c' }}>❆</div>
-          <div
-            className="selector-badge"
-            style={{ background: '#fb923c22', color: '#fb923c', border: '1px solid #fb923c55' }}
-          >
-            NUEVO
-          </div>
-          <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 8, color: '#e2e8f0' }}>
-            Proyecto desde cero
-          </div>
-          <div style={{ fontSize: 12, color: '#6b7280', lineHeight: 1.5 }}>
-            Abre el motor con una escena vacía y un cubo de referencia listo para editar.
-          </div>
-        </button>
-
       </div>
 
-      {/* Footer */}
       <div className="mt-5" style={{ fontSize: 12, color: '#374151', letterSpacing: '0.04em' }}>
         React TS · Electron TS · Rust (wgpu)
       </div>

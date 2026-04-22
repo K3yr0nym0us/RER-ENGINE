@@ -27,8 +27,8 @@ export default function App() {
     )
   }
 
-  // 2D y scratch saltan directamente al motor (sin elegir estilo de juego)
-  if (!gameStyle && projectType !== '2D' && projectType !== 'scratch') {
+  // 2D salta directamente al motor (sin elegir estilo de juego)
+  if (!gameStyle && projectType !== '2D') {
     return (
       <GameStyleSelector
         projectType={projectType}
