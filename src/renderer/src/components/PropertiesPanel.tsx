@@ -174,7 +174,7 @@ export function PropertiesPanel({ entity, onSend, projectType }: Props) {
           ))}
         </div>
       </div>
-      {!is2D && (
+      {(
         <div className="mb-2">
           <p className="prop-label">Física</p>
           <div className="d-flex align-items-center gap-2 mt-1">
@@ -205,7 +205,7 @@ export function PropertiesPanel({ entity, onSend, projectType }: Props) {
             >
               <option value="dynamic">Dinámico (gravedad)</option>
               <option value="static">Estático (no se mueve)</option>
-              <option value="kinematic">Cinemático (por código)</option>
+              {!is2D && <option value="kinematic">Cinemático (por código)</option>}
             </select>
           )}
         </div>

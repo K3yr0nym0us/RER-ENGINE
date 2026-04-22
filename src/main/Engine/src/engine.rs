@@ -10,6 +10,7 @@ use crate::config_2d::{GridBuffer, GridConfig};
 
 use crate::config_3d::Camera;
 use crate::config_2d::Camera2D;
+use crate::config_2d::PhysicsWorld2D;
 use crate::ecs::{MeshComponent, Transform, World};
 use crate::gizmo::{self, GizmoBuffer};
 use crate::ipc::{send_event, EngineCommand, EngineEvent};
@@ -71,6 +72,7 @@ pub struct State {
     pub(crate) gizmo_buffer_uni: wgpu::Buffer,
     // Física
     pub physics:      PhysicsWorld,
+    pub physics_2d:   PhysicsWorld2D,
     // Selección
     pub selected_entity:     Option<EntityId>,
     pub hovered_entity:      Option<EntityId>,
@@ -451,6 +453,7 @@ impl State {
             gizmo_bind_group,
             gizmo_buffer_uni,
             physics: PhysicsWorld::new(),
+            physics_2d: PhysicsWorld2D::new(),
             selected_entity:      None,
             hovered_entity:      None,
             hovered_gizmo_axis:  None,
@@ -560,6 +563,7 @@ impl State {
                 if Some(id) == self.selected_entity { self.selected_entity = None; }
                 if Some(id) == self.hovered_entity  { self.hovered_entity  = None; }
                 self.physics.remove_entity_body(id);
+                self.physics_2d.remove_entity_body(id);
                 self.scenario_entities.retain(|&e| e != id);
                 self.character_entities.retain(|&e| e != id);
                 self.world.despawn(id);
@@ -603,8 +607,12 @@ impl State {
                 } else {
                     ([0.0_f32; 3], [0.5_f32; 3])
                 };
-                self.physics.set_entity_physics(id, enabled, &body_type, pos, half);
-                log::info!("Física {}: entidad {} tipo='{}'" ,
+                if self.camera_2d.is_some() {
+                    self.physics_2d.set_entity_physics(id, enabled, &body_type, pos, half);
+                } else {
+                    self.physics.set_entity_physics(id, enabled, &body_type, pos, half);
+                }
+                log::info!("Física {}: entidad {} tipo='{}'",
                     if enabled { "activada" } else { "desactivada" }, id, body_type);
             }
             EngineCommand::Shutdown => {}
@@ -627,8 +635,11 @@ impl State {
         let now         = Instant::now();
         self.delta_time = now.duration_since(self.last_frame).as_secs_f32();
         self.last_frame = now;
-        // Paso de simulación física
-        self.physics.step(self.delta_time, &mut self.world);
+        if self.camera_2d.is_some() {
+            self.physics_2d.step(self.delta_time, &mut self.world);
+        } else {
+            self.physics.step(self.delta_time, &mut self.world);
+        }
     }
 
     // ── Render ───────────────────────────────────────────────────────────────

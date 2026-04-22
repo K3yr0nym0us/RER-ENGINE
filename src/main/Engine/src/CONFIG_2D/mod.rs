@@ -17,6 +17,9 @@ pub(crate) use camera_2d::Camera2D;
 pub(crate) mod grid_2d;
 pub(crate) use grid_2d::{GridBuffer, GridConfig, build_grid};
 
+pub(crate) mod physics_2d;
+pub(crate) use physics_2d::PhysicsWorld2D;
+
 use std::fs;
 
 use glam::Vec3 as GlamVec3;
@@ -62,6 +65,7 @@ impl State {
         self.scenario_entities.clear();
         self.character_entities.clear();
         self.background_entity = None;
+        self.physics_2d.clear();
         self.world.clear();
         self.meshes.clear();
         self.textures.clear();
@@ -447,11 +451,13 @@ impl State {
                 let pos = transform.position.to_array();
                 let rot = [transform.rotation.x, transform.rotation.y,
                            transform.rotation.z, transform.rotation.w];
-                let scl = transform.scale.to_array();
+                let scl             = transform.scale.to_array();
+                let physics_enabled = self.physics_2d.has_physics(entity);
+                let physics_type    = self.physics_2d.get_body_type(entity).to_string();
                 send_event(&EngineEvent::EntitySelected {
                     id: entity, name, position: pos, rotation: rot, scale: scl,
-                    physics_enabled: false,
-                    physics_type: String::new(),
+                    physics_enabled,
+                    physics_type,
                 });
             }
             None => {
@@ -545,11 +551,13 @@ impl State {
             }
             let pos = t.position.to_array();
             let rot = [t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w];
-            let scl = t.scale.to_array();
+            let scl             = t.scale.to_array();
+            let physics_enabled = self.physics_2d.has_physics(sel_id);
+            let physics_type    = self.physics_2d.get_body_type(sel_id).to_string();
             send_event(&EngineEvent::EntitySelected {
                 id: sel_id, name, position: pos, rotation: rot, scale: scl,
-                physics_enabled: false,
-                physics_type: String::new(),
+                physics_enabled,
+                physics_type,
             });
         }
     }
