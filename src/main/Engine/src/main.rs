@@ -50,7 +50,7 @@ fn query_ctrl_held_x11() -> bool { false }
 // ---------------------------------------------------------------------------
 #[derive(Debug, Clone)]
 pub struct EmbedConfig {
-    pub parent_xid: u32,
+    pub parent_xid: u64,
     pub x:          i32,
     pub y:          i32,
     pub width:      u32,
@@ -113,7 +113,12 @@ impl ApplicationHandler for App {
             #[cfg(target_os = "linux")]
             {
                 use winit::platform::x11::WindowAttributesExtX11;
-                attrs = attrs.with_embed_parent_window(embed.parent_xid);
+                attrs = attrs.with_embed_parent_window(embed.parent_xid as u32);
+            }
+            #[cfg(target_os = "windows")]
+            {
+                // Aquí deberías agregar la lógica específica para Windows si es necesario
+                // attrs = attrs.with_embed_parent_window(embed.parent_xid as HWND); // Ejemplo si usas HWND
             }
         } else {
             // ── Modo standalone ──────────────────────────────────────────────
