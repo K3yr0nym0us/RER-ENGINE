@@ -193,8 +193,12 @@ El sistema debe permitir:
 * ✅ Sistema de física (Rapier3D) — integrado como `PhysicsWorld`, sin step activo en game loop aún
 * ✅ Iluminación PBR (physically based rendering) — GGX + Fresnel-Schlick + Smith en `shader.wgsl`
 * ✅ Gizmos 3D interactivos (mover/rotar entidades desde la UI)
-* [ ] Scripting (Lua o Python embebido)
 * ✅ Empaquetado multiplataforma (`electron-builder`)
+* ✅ Fisicas y colisiones 2D
+* [ ] Fisicas y colisiones 3D
+* [ ] Animaciones a base de frames para el 2D
+* [ ] Animaciones para el 3D (creo que con que sea compatible con las de blender basta)
+* [ ] Scripting (Lua o Python embebido)
 
 👉 Solo cuando el MVP esté estable y probado.
 

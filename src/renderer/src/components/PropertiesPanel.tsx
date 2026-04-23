@@ -12,9 +12,10 @@ interface Props {
   entity:      SelectedEntity | null
   onSend:      (cmd: object) => void
   projectType?: string
+  isScenario?:  boolean
 }
 
-export function PropertiesPanel({ entity, onSend, projectType }: Props) {
+export function PropertiesPanel({ entity, onSend, projectType, isScenario = false }: Props) {
   const is2D = projectType === '2D'
 
   const [transform, setTransform] = useState<Transform>({
@@ -174,7 +175,27 @@ export function PropertiesPanel({ entity, onSend, projectType }: Props) {
           ))}
         </div>
       </div>
-      {(
+      {isScenario ? (
+        <div className="mb-2">
+          <p className="prop-label">Colisión</p>
+          <div className="d-flex align-items-center gap-2 mt-1">
+            <input
+              type="checkbox"
+              id="scenario-collision"
+              className="form-check-input"
+              checked={physicsEnabled}
+              onChange={(e) => {
+                const next = e.target.checked
+                setPhysicsEnabled(next)
+                onSend({ cmd: 'set_physics', id: entity.id, enabled: next, body_type: 'static' })
+              }}
+            />
+            <label htmlFor="scenario-collision" className="form-check-label text-light small mb-0">
+              Con colisión
+            </label>
+          </div>
+        </div>
+      ) : (
         <div className="mb-2">
           <p className="prop-label">Física</p>
           <div className="d-flex align-items-center gap-2 mt-1">

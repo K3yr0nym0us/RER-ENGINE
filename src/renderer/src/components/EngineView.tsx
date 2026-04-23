@@ -8,6 +8,7 @@ import { AssetGroupPanel, type AssetGroupConfig } from '../2D/components/Scenari
 import { WorldPanel } from '../2D/components/WorldPanel';
 
 import { useEngine } from '../hooks/useEngine';
+import { usePointDrawing } from '../hooks/usePointDrawing';
 
 import type { ProjectType, ProjectSaveData } from '../../../shared-types/types';
 
@@ -39,9 +40,12 @@ export function EngineView({ projectType, initialSave }: { projectType: ProjectT
     scenarioEntities, removeScenario, duplicateScenario,
     characterEntities, removeCharacter, duplicateCharacter,
     worldConfig, setWorldSize, setGridVisible, setGridCellSize,
-    entityTransformsRef, playerEntityIdRef, camera2dRef,
+    colliderEntities, removeCollider, toolProgress,
+    entityTransformsRef, entityMetaRef, playerEntityIdRef, camera2dRef,
     loadModel, send, retryEngine,
   } = useEngine(viewportRef, projectType, initialSave)
+
+  const colliderTool = usePointDrawing('draw_collider', 4, send, toolProgress)
 
   const loadBackground = () => {
     window.electronAPI.openBackgroundDialog().then((p: string | null) => {
@@ -56,30 +60,29 @@ export function EngineView({ projectType, initialSave }: { projectType: ProjectT
 
   const buildSaveData = useCallback((): ProjectSaveData => {
     const transforms = entityTransformsRef.current
-    const DEFAULT_POS: [number,number,number]         = [0, 0, 0]
-    const DEFAULT_ROT: [number,number,number,number]  = [0, 0, 0, 1]
-    const DEFAULT_SCL: [number,number,number]         = [1, 1, 1]
-    const allEntities: ProjectSaveData['entities'] = [
-      ...scenarioEntities.map((e) => ({
-        id:       e.id,
-        path:     e.path,
-        kind:     'scenario' as const,
-        position: transforms[e.id]?.position ?? DEFAULT_POS,
-        rotation: transforms[e.id]?.rotation ?? DEFAULT_ROT,
-        scale:    transforms[e.id]?.scale    ?? DEFAULT_SCL,
-      })),
-      ...characterEntities
-        .filter((e) => !(e.path === '[Player]' && e.id === playerEntityIdRef.current))
-        .map((e) => ({
-        id:       e.id,
-        path:     e.path,
-        kind:     'character' as const,
-        position: transforms[e.id]?.position ?? DEFAULT_POS,
-        rotation: transforms[e.id]?.rotation ?? DEFAULT_ROT,
-        scale:    transforms[e.id]?.scale    ?? DEFAULT_SCL,
-      })),
-    ]
+    const meta       = entityMetaRef.current
+    const DEFAULT_POS: [number,number,number]        = [0, 0, 0]
+    const DEFAULT_ROT: [number,number,number,number] = [0, 0, 0, 1]
+    const DEFAULT_SCL: [number,number,number]        = [1, 1, 1]
     const playerId = playerEntityIdRef.current
+    const allEntities: ProjectSaveData['entities'] = Object.entries(meta)
+      .filter(([idStr, m]) =>
+        !(m.kind === 'character' && m.path === '[Player]' && Number(idStr) === playerId)
+      )
+      .map(([idStr, m]) => {
+        const id = Number(idStr)
+        return {
+          id,
+          kind:            m.kind,
+          path:            m.path,
+          position:        transforms[id]?.position ?? DEFAULT_POS,
+          rotation:        transforms[id]?.rotation ?? DEFAULT_ROT,
+          scale:           transforms[id]?.scale    ?? DEFAULT_SCL,
+          physics_enabled: m.physicsEnabled,
+          physics_type:    m.physicsType,
+          points:          m.points,
+        }
+      })
     const playerTransform = playerId !== null
       ? {
           position: transforms[playerId]?.position ?? DEFAULT_POS,
@@ -87,17 +90,17 @@ export function EngineView({ projectType, initialSave }: { projectType: ProjectT
         }
       : null
     return {
-      version:         1,
-      type:            projectType,
-      gameStyle:       (initialSave?.gameStyle ?? 'side-scroller'),
-      world:           worldConfig,
-      backgroundPath:  backgroundPath ?? null,
-      entities:        allEntities,
+      version:        1,
+      type:           projectType,
+      gameStyle:      (initialSave?.gameStyle ?? 'side-scroller'),
+      world:          worldConfig,
+      backgroundPath: backgroundPath ?? null,
+      entities:       allEntities,
       playerTransform,
-      camera2d:        camera2dRef.current,
-      savedAt:         new Date().toISOString(),
+      camera2d:       camera2dRef.current,
+      savedAt:        new Date().toISOString(),
     }
-  }, [projectType, initialSave, scenarioEntities, characterEntities, worldConfig, backgroundPath, entityTransformsRef, playerEntityIdRef, camera2dRef])
+  }, [projectType, initialSave, worldConfig, backgroundPath])
 
   const handleSave = useCallback(async () => {
     const data = buildSaveData()
@@ -243,16 +246,82 @@ export function EngineView({ projectType, initialSave }: { projectType: ProjectT
                 </Accordion>
               </Accordion.Body>
             </Accordion.Item>
+
+            <Accordion.Item eventKey="herramientas">
+              <Accordion.Header>Herramientas</Accordion.Header>
+              <Accordion.Body className="py-2 px-2">
+                {/* ── Cuadro de colisiones ───────────────────────────────── */}
+                {!colliderTool.isActive ? (
+                  <button
+                    className="btn btn-sm btn-outline-info w-100 mb-2"
+                    onClick={colliderTool.start}
+                    disabled={!engineReady}
+                    title="Click 4 veces en el viewport para definir un cuadro de colisiones"
+                  >
+                    ⬡ Cuadro de colisiones
+                  </button>
+                ) : (
+                  <div className="mb-2">
+                    <div className="text-info small mb-1">
+                      Cuadro de colisiones — {colliderTool.progress}/{colliderTool.totalPoints} puntos colocados
+                    </div>
+                    <div className="d-flex gap-1 mb-2">
+                      {[...Array(colliderTool.totalPoints)].map((_, i) => (
+                        <div
+                          key={i}
+                          style={{
+                            width:           12,
+                            height:          12,
+                            borderRadius:    '50%',
+                            border:          '1px solid var(--bs-info)',
+                            backgroundColor: i < colliderTool.progress ? 'var(--bs-info)' : 'transparent',
+                          }}
+                        />
+                      ))}
+                    </div>
+                    <button
+                      className="btn btn-sm btn-outline-danger w-100"
+                      onClick={colliderTool.cancel}
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                )}
+                {colliderEntities.length > 0 && (
+                  <div className="mt-1">
+                    <div className="text-muted small mb-1">Colisionadores ({colliderEntities.length})</div>
+                    {colliderEntities.map((c) => (
+                      <div key={c.id} className="d-flex align-items-center justify-content-between mb-1">
+                        <span className="small text-truncate me-1">#{c.id}</span>
+                        <button
+                          className="btn btn-sm btn-outline-danger py-0 px-1"
+                          style={{ fontSize: '0.7rem' }}
+                          onClick={() => removeCollider(c.id)}
+                          title="Eliminar colisionador"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Accordion.Body>
+            </Accordion.Item>
           </Accordion>
 
-          {selectedEntity && (
+          {selectedEntity && !colliderEntities.some((c) => c.id === selectedEntity.id) && (
             <div className="pt-4">
               <b className="ms-2">Elemento seleccionado:</b>
               <Accordion defaultActiveKey="propiedades" className="sidebar-accordion mt-1">
                 <Accordion.Item eventKey="propiedades">
                   <Accordion.Header>Propiedades</Accordion.Header>
                   <Accordion.Body className="py-2 px-2">
-                    <PropertiesPanel entity={selectedEntity ?? null} onSend={send} projectType={projectType} />
+                    <PropertiesPanel
+                      entity={selectedEntity ?? null}
+                      onSend={send}
+                      projectType={projectType}
+                      isScenario={scenarioEntities.some((s) => s.id === selectedEntity?.id)}
+                    />
                   </Accordion.Body>
                 </Accordion.Item>
               </Accordion>

@@ -53,6 +53,8 @@ interface EngineState {
   scenarioEntities:   ScenarioEntry[]
   characterEntities:  CharacterEntry[]
   worldConfig:        WorldConfig
+  colliderEntities:   ScenarioEntry[]
+  toolProgress:       number | null
 }
 
 type EngineAction =
@@ -72,6 +74,9 @@ type EngineAction =
   | { type: 'SET_HOVER'; payload: number | null }
   | { type: 'SET_BACKGROUND'; payload: string | null }
   | { type: 'SET_WORLD_CONFIG'; payload: Partial<WorldConfig> }
+  | { type: 'ADD_COLLIDER'; payload: ScenarioEntry }
+  | { type: 'REMOVE_COLLIDER'; payload: number }
+  | { type: 'SET_TOOL_PROGRESS'; payload: number | null }
 
 const initialState: EngineState = {
   engineReady:       false,
@@ -84,6 +89,8 @@ const initialState: EngineState = {
   scenarioEntities:  [],
   characterEntities: [],
   worldConfig:       DEFAULT_WORLD_CONFIG,
+  colliderEntities:  [],
+  toolProgress:      null,
 }
 
 function engineReducer(state: EngineState, action: EngineAction): EngineState {
@@ -126,6 +133,12 @@ function engineReducer(state: EngineState, action: EngineAction): EngineState {
       return { ...state, backgroundPath: action.payload }
     case 'SET_WORLD_CONFIG':
       return { ...state, worldConfig: { ...state.worldConfig, ...action.payload } }
+    case 'ADD_COLLIDER':
+      return { ...state, colliderEntities: [...state.colliderEntities, action.payload] }
+    case 'REMOVE_COLLIDER':
+      return { ...state, colliderEntities: state.colliderEntities.filter((c) => c.id !== action.payload) }
+    case 'SET_TOOL_PROGRESS':
+      return { ...state, toolProgress: action.payload }
     default:
       return state
   }
@@ -146,18 +159,29 @@ export function useEngine(
   type Transform = { position: [number,number,number]; rotation: [number,number,number,number]; scale: [number,number,number] }
   const entityTransformsRef = useRef<Record<number, Transform>>({})
 
+  // Metadatos por entidad: kind, path, física, puntos (colisionador).
+  // Fuente de verdad general para el guardado del proyecto — nuevas propiedades
+  // solo necesitan actualizarse aquí; buildSaveData las captura automáticamente.
+  type ColliderPoints = [[number,number],[number,number],[number,number],[number,number]]
+  type EntityMeta = {
+    kind:           'scenario' | 'character' | 'model' | 'collider'
+    path:           string
+    physicsEnabled: boolean
+    physicsType:    string
+    points?:        ColliderPoints
+  }
+  const entityMetaRef = useRef<Record<number, EntityMeta>>({})
+
+  // Pendientes de restaurar al cargar un proyecto: transform + física por entidad.
+  type PendingRestore = { transform: Transform; physicsEnabled: boolean; physicsType: string }
+  const pendingRestoresRef = useRef<Map<string, PendingRestore[]>>(new Map())
+
   // ID del jugador base (creado por setup_2d_platformer).
   const playerEntityIdRef = useRef<number | null>(null)
 
   // Estado actual de la cámara 2D (actualizado por Camera2dUpdated).
   type Camera2dState = { x: number; y: number; halfH: number }
   const camera2dRef = useRef<Camera2dState | null>(null)
-
-  // Transforms pendientes de aplicar al restaurar un proyecto.
-  // Clave = path del asset, valor = cola FIFO de transforms.
-  // Usar cola permite que múltiples entidades con el mismo path (duplicados)
-  // reciban el transform correcto en el orden en que el motor las crea.
-  const pendingRestoresRef = useRef<Map<string, Transform[]>>(new Map())
 
   // ── Restauración del jugador base ─────────────────────────────────────────
   // mainPlayerHandled: true cuando ya se procesó el character_loaded del player
@@ -269,17 +293,26 @@ export function useEngine(
           if (save.backgroundPath) {
             window.engine.send({ cmd: 'load_background', path: save.backgroundPath } as never)
           }
-          for (const entity of save.entities) {            const t: Transform = {
+          for (const entity of save.entities) {
+            const t: Transform = {
               position: entity.position,
               rotation: entity.rotation,
               scale:    entity.scale,
             }
-            // Los duplicados de [Player] se restauran desde player_ready (no tienen archivo real)
-            if (entity.kind === 'character' && entity.path === '[Player]') {
+            if (entity.kind === 'collider' && entity.points) {
+              // Colisionadores no tienen archivo: se recrean directamente con sus puntos
+              window.engine.send({ cmd: 'create_collider_from_points', points: entity.points } as never)
+            } else if (entity.kind === 'character' && entity.path === '[Player]') {
+              // Los duplicados de [Player] se restauran desde player_ready (no tienen archivo real)
               pendingPlayerDups.current.push(t)
             } else {
+              const pr: PendingRestore = {
+                transform:      t,
+                physicsEnabled: entity.physics_enabled ?? false,
+                physicsType:    entity.physics_type    ?? 'static',
+              }
               const queue = pendingRestoresRef.current.get(entity.path) ?? []
-              queue.push(t)
+              queue.push(pr)
               pendingRestoresRef.current.set(entity.path, queue)
               if (entity.kind === 'scenario')  window.engine.send({ cmd: 'load_scenario',  path: entity.path } as never)
               if (entity.kind === 'character') window.engine.send({ cmd: 'load_character', path: entity.path } as never)
@@ -295,6 +328,11 @@ export function useEngine(
       if (event.event === 'entity_selected') {
         const e = event as unknown as EntitySelected
         entityTransformsRef.current[e.id] = { position: e.position, rotation: e.rotation, scale: e.scale }
+        // Sincronizar física en entityMetaRef al seleccionar
+        if (entityMetaRef.current[e.id]) {
+          entityMetaRef.current[e.id].physicsEnabled = e.physics_enabled ?? false
+          entityMetaRef.current[e.id].physicsType    = e.physics_type    ?? ''
+        }
         dispatch({ type: 'SELECT_ENTITY', payload: {
           id:             e.id,
           name:           e.name,
@@ -322,12 +360,14 @@ export function useEngine(
           rotation: [0, 0, 0, 1],
           scale:    e.scale,
         }
+        entityMetaRef.current[e.id] = { kind: 'character', path: '[Player]', physicsEnabled: false, physicsType: '' }
         const save = initialSaveRef.current
         if (save != null && save.playerTransform === null) {
           // El player fue borrado explícitamente en el proyecto guardado
           window.engine.send({ cmd: 'remove_entity', id: e.id } as never)
           playerEntityIdRef.current = null
           playerRemoved.current     = true
+          delete entityMetaRef.current[e.id]
         } else if (save?.playerTransform) {
           // Restaurar transform del jugador principal
           window.engine.send({
@@ -359,11 +399,17 @@ export function useEngine(
       if (event.event === 'scenario_loaded') {
         const e = event as unknown as ScenarioLoaded
         dispatch({ type: 'ADD_SCENARIO', payload: { id: e.id, path: e.path } })
+        entityMetaRef.current[e.id] = { kind: 'scenario', path: e.path, physicsEnabled: false, physicsType: '' }
         const queue = pendingRestoresRef.current.get(e.path)
         if (queue && queue.length > 0) {
           const pending = queue.shift()!
-          window.engine.send({ cmd: 'set_transform', id: e.id, position: pending.position, rotation: pending.rotation, scale: pending.scale } as never)
-          entityTransformsRef.current[e.id] = pending
+          window.engine.send({ cmd: 'set_transform', id: e.id, position: pending.transform.position, rotation: pending.transform.rotation, scale: pending.transform.scale } as never)
+          entityTransformsRef.current[e.id] = pending.transform
+          if (pending.physicsEnabled) {
+            window.engine.send({ cmd: 'set_physics', id: e.id, enabled: true, body_type: pending.physicsType } as never)
+            entityMetaRef.current[e.id].physicsEnabled = true
+            entityMetaRef.current[e.id].physicsType    = pending.physicsType
+          }
           if (queue.length === 0) pendingRestoresRef.current.delete(e.path)
         }
       }
@@ -380,6 +426,7 @@ export function useEngine(
           } else {
             // Duplicado de [Player] (usuario o restauración)
             dispatch({ type: 'ADD_CHARACTER', payload: { id: e.id, path: e.path } })
+            entityMetaRef.current[e.id] = { kind: 'character', path: '[Player]', physicsEnabled: false, physicsType: '' }
             const dupT = pendingDupQ.current.shift()
             if (dupT) {
               window.engine.send({ cmd: 'set_transform', id: e.id, position: dupT.position, rotation: dupT.rotation, scale: dupT.scale } as never)
@@ -388,11 +435,17 @@ export function useEngine(
           }
         } else {
           dispatch({ type: 'ADD_CHARACTER', payload: { id: e.id, path: e.path } })
+          entityMetaRef.current[e.id] = { kind: 'character', path: e.path, physicsEnabled: false, physicsType: '' }
           const queue = pendingRestoresRef.current.get(e.path)
           if (queue && queue.length > 0) {
             const pending = queue.shift()!
-            window.engine.send({ cmd: 'set_transform', id: e.id, position: pending.position, rotation: pending.rotation, scale: pending.scale } as never)
-            entityTransformsRef.current[e.id] = pending
+            window.engine.send({ cmd: 'set_transform', id: e.id, position: pending.transform.position, rotation: pending.transform.rotation, scale: pending.transform.scale } as never)
+            entityTransformsRef.current[e.id] = pending.transform
+            if (pending.physicsEnabled) {
+              window.engine.send({ cmd: 'set_physics', id: e.id, enabled: true, body_type: pending.physicsType } as never)
+              entityMetaRef.current[e.id].physicsEnabled = true
+              entityMetaRef.current[e.id].physicsType    = pending.physicsType
+            }
             if (queue.length === 0) pendingRestoresRef.current.delete(e.path)
           }
         }
@@ -403,6 +456,19 @@ export function useEngine(
       if (event.event === 'error') {
         dispatch({ type: 'SET_ERROR', payload: (event as { message?: string }).message ?? 'Error desconocido' })
       }
+      if (event.event === 'drawing_progress') {
+        dispatch({ type: 'SET_TOOL_PROGRESS', payload: (event as { count?: number }).count ?? 0 })
+      }
+      if (event.event === 'collider_created') {
+        const ev = event as { id?: number; points?: [[number,number],[number,number],[number,number],[number,number]] }
+        const id  = ev.id ?? -1
+        entityMetaRef.current[id] = { kind: 'collider', path: '[Colisionador]', physicsEnabled: true, physicsType: 'static', points: ev.points }
+        dispatch({ type: 'ADD_COLLIDER', payload: { id, path: '[Colisionador]' } })
+        dispatch({ type: 'SET_TOOL_PROGRESS', payload: null })
+      }
+      if (event.event === 'tool_cancelled') {
+        dispatch({ type: 'SET_TOOL_PROGRESS', payload: null })
+      }
     })
     return () => { window.engine.off() }
   }, [])
@@ -410,6 +476,7 @@ export function useEngine(
   const removeScenario = (id: number) => {
     send({ cmd: 'remove_entity', id })
     dispatch({ type: 'REMOVE_SCENARIO', payload: id })
+    delete entityMetaRef.current[id]
   }
 
   const duplicateScenario = (id: number) => {
@@ -420,6 +487,7 @@ export function useEngine(
     send({ cmd: 'remove_entity', id })
     dispatch({ type: 'REMOVE_CHARACTER', payload: id })
     if (playerEntityIdRef.current === id) playerEntityIdRef.current = null
+    delete entityMetaRef.current[id]
   }
 
   const duplicateCharacter = (id: number) => {
@@ -441,6 +509,12 @@ export function useEngine(
     send({ cmd: 'set_grid_cell_size', size })
   }
 
+  const removeCollider = (id: number) => {
+    send({ cmd: 'remove_entity', id })
+    dispatch({ type: 'REMOVE_COLLIDER', payload: id })
+    delete entityMetaRef.current[id]
+  }
+
   return {
     engineReady:        state.engineReady,
     engineError:        state.engineError,
@@ -452,7 +526,10 @@ export function useEngine(
     scenarioEntities:   state.scenarioEntities,
     characterEntities:  state.characterEntities,
     worldConfig:        state.worldConfig,
+    colliderEntities:   state.colliderEntities,
+    toolProgress:       state.toolProgress,
     entityTransformsRef,
+    entityMetaRef,
     playerEntityIdRef,
     camera2dRef,
     send,
@@ -466,5 +543,6 @@ export function useEngine(
     setWorldSize,
     setGridVisible,
     setGridCellSize,
+    removeCollider,
   }
 }

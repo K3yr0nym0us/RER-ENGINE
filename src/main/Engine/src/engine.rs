@@ -7,6 +7,7 @@ use wgpu::{include_wgsl, util::DeviceExt};
 use winit::{dpi::PhysicalSize, window::Window};
 
 use crate::config_2d::{GridBuffer, GridConfig};
+use crate::config_2d::ActiveTool;
 
 use crate::config_3d::Camera;
 use crate::config_2d::Camera2D;
@@ -93,6 +94,12 @@ pub struct State {
     /// Estado de la tecla Ctrl (enviado por IPC desde Electron, ya que la ventana embebida
     /// no recibe keyboard events directamente).
     pub(crate) ctrl_held:        bool,
+    /// Herramienta de dibujo activa en modo 2D.
+    pub        active_tool:      ActiveTool,
+    /// Buffer de overlay de la herramienta activa (cruces + líneas de construcción).
+    pub(crate) tool_overlay_buffer: GizmoBuffer,
+    /// Entidades creadas por herramientas de dibujo (colisionadores).
+    pub(crate) collider_entities: Vec<EntityId>,
 }
 
 impl State {
@@ -368,6 +375,7 @@ impl State {
             cache:         None,
         });
         let gizmo_buffer = gizmo::build_axes(&device, 1.14);
+        let tool_overlay_buffer_init = gizmo::build_from_vertices(&device, &[]);
 
         // ── Pipeline de grid (LineList, sin depth, reutiliza shader de gizmo) ──
         let grid_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -467,6 +475,9 @@ impl State {
             grid_bind_group,
             grid_buffer_uni,
             ctrl_held: false,
+            active_tool: ActiveTool::None,
+            tool_overlay_buffer: tool_overlay_buffer_init,
+            collider_entities: Vec::new(),
         }
     }
 
@@ -566,6 +577,7 @@ impl State {
                 self.physics_2d.remove_entity_body(id);
                 self.scenario_entities.retain(|&e| e != id);
                 self.character_entities.retain(|&e| e != id);
+                self.collider_entities.retain(|&e| e != id);
                 self.world.despawn(id);
             }
             EngineCommand::SetWorldSize { width, height } => {
@@ -614,6 +626,29 @@ impl State {
                 }
                 log::info!("Física {}: entidad {} tipo='{}'",
                     if enabled { "activada" } else { "desactivada" }, id, body_type);
+            }
+            EngineCommand::SetActiveTool { tool } => {
+                if tool.is_empty() {
+                    self.active_tool = ActiveTool::None;
+                    self.tool_overlay_buffer = gizmo::build_from_vertices(&self.device, &[]);
+                    send_event(&EngineEvent::ToolCancelled);
+                    log::info!("Herramienta cancelada");
+                } else {
+                    match tool.as_str() {
+                        "draw_collider" => {
+                            self.active_tool = ActiveTool::DrawCollider { points_world: Vec::new() };
+                            log::info!("Herramienta activa: dibujar colisionador (4 puntos)");
+                        }
+                        _ => log::warn!("Herramienta desconocida: {}", tool),
+                    }
+                }
+            }
+            EngineCommand::CreateColliderFromPoints { points } => {
+                if self.camera_2d.is_some() {
+                    self.create_collision_box_from_points(&points);
+                } else {
+                    log::warn!("CreateColliderFromPoints solo disponible en modo 2D");
+                }
             }
             EngineCommand::Shutdown => {}
         }
@@ -760,6 +795,28 @@ impl State {
                 grd_pass.set_bind_group(0, &self.grid_bind_group, &[]);
                 grd_pass.set_vertex_buffer(0, self.grid_buffer.vertex_buffer.slice(..));
                 grd_pass.draw(0..self.grid_buffer.vertex_count, 0..1);
+        }
+
+        // ── Tool overlay pass (solo modo 2D; cruces + líneas de construcción) ──
+        if self.camera_2d.is_some() && self.tool_overlay_buffer.vertex_count > 0 {
+            let mut tool_pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("tool-overlay-pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view:           &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load:  wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                occlusion_query_set:      None,
+                timestamp_writes:         None,
+            });
+            tool_pass.set_pipeline(&self.grid_pipeline);          // LineList, sin depth
+            tool_pass.set_bind_group(0, &self.grid_bind_group, &[]); // view_proj actualizado
+            tool_pass.set_vertex_buffer(0, self.tool_overlay_buffer.vertex_buffer.slice(..));
+            tool_pass.draw(0..self.tool_overlay_buffer.vertex_count, 0..1);
         }
 
         // ── Gizmos (segundo pass, sin depth) ─────────────────────────────────

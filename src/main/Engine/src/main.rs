@@ -197,7 +197,9 @@ impl ApplicationHandler for App {
                                     let dy = (cur.1 - start.1).abs();
                                     if dx < 5.0 && dy < 5.0 {
                                         if state.camera_2d.is_some() {
-                                            state.pick_entity_2d(cur.0, cur.1);
+                                            if !state.handle_tool_click_2d(cur.0, cur.1) {
+                                                state.pick_entity_2d(cur.0, cur.1);
+                                            }
                                         } else {
                                             state.pick_entity(cur.0, cur.1);
                                         }

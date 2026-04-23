@@ -28,6 +28,7 @@ use crate::engine::State;
 use crate::config_shared::point_to_segment_2d;
 use crate::ipc::{send_event, EngineEvent};
 use crate::mesh::{upload, Mesh, Vertex};
+use crate::gizmo::{self, GizmoVertex};
 use crate::texture::GpuTexture;
 
 // ── Componente exclusivo del modo 2D ─────────────────────────────────────────
@@ -55,7 +56,28 @@ pub(crate) struct CharacterMarker {
     /// Ruta del PNG original, necesaria para duplicar la entidad.
     pub path:         String,
 }
+// ── Herramientas de dibujo ─────────────────────────────────────────────────
 
+/// Estado de la herramienta activa de dibujo (solo en modo 2D).
+#[derive(Debug)]
+pub(crate) enum ActiveTool {
+    None,
+    DrawCollider { points_world: Vec<[f32; 2]> },
+}
+
+impl Default for ActiveTool {
+    fn default() -> Self { ActiveTool::None }
+}
+
+impl ActiveTool {
+    pub(crate) fn is_active(&self) -> bool { !matches!(self, ActiveTool::None) }
+}
+
+/// Marca una entidad ECS como colisionador creado con la herramienta de dibujo.
+#[derive(Debug, Clone)]
+pub(crate) struct ColliderMarker {
+    pub points_world: [[f32; 2]; 4],
+}
 impl State {
     // ── Inicialización ────────────────────────────────────────────────────────
 
@@ -64,7 +86,10 @@ impl State {
         // Limpiar escena previa y escenarios de fondo
         self.scenario_entities.clear();
         self.character_entities.clear();
+        self.collider_entities.clear();
         self.background_entity = None;
+        self.active_tool = ActiveTool::None;
+        self.tool_overlay_buffer = gizmo::build_from_vertices(&self.device, &[]);
         self.physics_2d.clear();
         self.world.clear();
         self.meshes.clear();
@@ -603,6 +628,83 @@ impl State {
             _                             => {}
         }
     }
+
+    // ── Herramienta de dibujo: cuadro de colisiones ───────────────────────────
+
+    /// Intenta procesar un click del cursor como evento de la herramienta activa.
+    /// Devuelve `true` si la herramienta consumió el click (no debe disparar picking).
+    pub(crate) fn handle_tool_click_2d(&mut self, pixel_x: f32, pixel_y: f32) -> bool {
+        let cam = match &self.camera_2d {
+            Some(c) => Camera2D { x: c.x, y: c.y, half_h: c.half_h, near: c.near, far: c.far },
+            None    => return false,
+        };
+        if !self.active_tool.is_active() { return false; }
+
+        let w      = self.size.width  as f32;
+        let h      = self.size.height as f32;
+        let aspect = w / h;
+        let half_w = cam.half_h * aspect;
+        let wx = cam.x + ((pixel_x / w) * 2.0 - 1.0) * half_w;
+        let wy = cam.y + (1.0 - (pixel_y / h) * 2.0) * cam.half_h;
+
+        match &mut self.active_tool {
+            ActiveTool::DrawCollider { points_world } => {
+                points_world.push([wx, wy]);
+                let count = points_world.len() as u32;
+
+                if count >= 4 {
+                    let pts: [[f32; 2]; 4] = [
+                        points_world[0], points_world[1],
+                        points_world[2], points_world[3],
+                    ];
+                    self.active_tool = ActiveTool::None;
+                    self.tool_overlay_buffer = gizmo::build_from_vertices(&self.device, &[]);
+                    self.create_collision_box_from_points(&pts);
+                } else {
+                    let pts_clone: Vec<[f32; 2]> = points_world.clone();
+                    self.tool_overlay_buffer = build_tool_overlay(&self.device, &pts_clone);
+                    send_event(&EngineEvent::DrawingProgress { count });
+                }
+                true
+            }
+            ActiveTool::None => false,
+        }
+    }
+
+    /// Crea una entidad ECS de colisionador a partir de 4 puntos en espacio de mundo.
+    pub(crate) fn create_collision_box_from_points(&mut self, pts: &[[f32; 2]; 4]) {
+        let (mesh, pos, scale) = create_mesh_from_4_points(pts, &self.device);
+        let mesh_idx = self.meshes.len();
+        self.meshes.push(mesh);
+
+        // Textura semitransparente cyan para indicar área de colisión
+        let tex = GpuTexture::from_rgba(&self.device, &self.queue, &[60, 220, 200, 110], 1, 1, "collider");
+        self.textures.push(tex.create_bind_group(&self.device, &self.texture_bgl));
+        let (buf, bg) = self.alloc_entity_uniform();
+        self.entity_buffers.push(buf);
+        self.entity_bind_groups.push(bg);
+
+        let entity = self.world.spawn(Some("Colisionador"));
+        self.world.insert(entity, MeshComponent { mesh_idx });
+        self.world.insert(entity, Transform {
+            position: GlamVec3::from(pos),
+            scale:    GlamVec3::from(scale),
+            ..Default::default()
+        });
+        self.world.insert(entity, ColliderMarker { points_world: *pts });
+        // Usamos cuboid estático (AABB del bounding box) en lugar de hull convexo 3D,
+        // ya que rapier3d puede rechazar hulls de puntos coplanares (z=0).
+        // El result es idéntico en precisión al toggle manual que confirma el usuario.
+        self.physics_2d.set_entity_physics(
+            entity, true, "static",
+            pos,
+            [scale[0] * 0.5, scale[1] * 0.5, 0.01],
+        );
+        self.collider_entities.push(entity);
+
+        send_event(&EngineEvent::ColliderCreated { id: entity, points: *pts });
+        log::info!("[tool] colisionador creado: entidad {entity} en {:?}", pts);
+    }
 }
 
 // ── Primitivas de malla para el modo 2D ───────────────────────────────────────
@@ -620,4 +722,65 @@ fn create_quad_xy(device: &wgpu::Device, cx: f32, cy: f32, w: f32, h: f32, label
     ];
     let indices = vec![0u32, 1, 2, 2, 3, 0];
     upload(device, &vertices, &indices, label)
+}
+
+/// Crea un mesh a partir de 4 puntos arbitrarios en espacio de mundo (plano XY).
+/// Los vértices se normalizan respecto al bounding box del centroide para que
+/// `Transform.position = centroide` y `Transform.scale = (bbox_w, bbox_h, 1)`
+/// sean coherentes con el renderizador y el picking por AABB.
+/// Devuelve (Mesh, posición[3], escala[3]).
+fn create_mesh_from_4_points(pts: &[[f32; 2]; 4], device: &wgpu::Device) -> (Mesh, [f32; 3], [f32; 3]) {
+    let cx = pts.iter().map(|p| p[0]).sum::<f32>() / 4.0;
+    let cy = pts.iter().map(|p| p[1]).sum::<f32>() / 4.0;
+    let min_x = pts.iter().map(|p| p[0]).fold(f32::INFINITY, f32::min);
+    let max_x = pts.iter().map(|p| p[0]).fold(f32::NEG_INFINITY, f32::max);
+    let min_y = pts.iter().map(|p| p[1]).fold(f32::INFINITY, f32::min);
+    let max_y = pts.iter().map(|p| p[1]).fold(f32::NEG_INFINITY, f32::max);
+    let bw = (max_x - min_x).max(0.01);
+    let bh = (max_y - min_y).max(0.01);
+
+    // Normalize to [-0.5, 0.5] space so the model matrix (scale = bbox) remaps correctly.
+    let uvs = [[0.0_f32, 1.0], [1.0, 1.0], [1.0, 0.0], [0.0, 0.0]];
+    let vertices: Vec<Vertex> = pts.iter().enumerate().map(|(i, p)| Vertex {
+        position: [(p[0] - cx) / bw, (p[1] - cy) / bh, 0.0],
+        normal:   [0.0, 0.0, 1.0],
+        uv:       uvs[i],
+    }).collect();
+    let indices = vec![0u32, 1, 2, 2, 3, 0];
+
+    // Z = -0.5: entre los escenarios (Z=-1) y los personajes (Z=0).
+    let position = [cx, cy, -0.5];
+    let scale    = [bw, bh, 1.0];
+    (upload(device, &vertices, &indices, "collider-quad"), position, scale)
+}
+
+/// Construye el GizmoBuffer (LineList) de overlay para la herramienta de dibujo.
+/// `pts`: puntos acumulados (1-4) en espacio de mundo.
+/// Dibuja una cruz en cada punto y líneas de conexión consecutivas.
+fn build_tool_overlay(device: &wgpu::Device, pts: &[[f32; 2]]) -> gizmo::GizmoBuffer {
+    const ARM:         f32 = 0.15;
+    const Z:           f32 = 0.1;
+    let cross_color        = [1.0_f32, 1.0,  1.0,  1.0]; // blanco
+    let line_color         = [1.0_f32, 0.75, 0.0,  1.0]; // naranja
+
+    let mut verts: Vec<GizmoVertex> = Vec::new();
+
+    // Cruz en cada punto acumulado
+    for p in pts {
+        let [x, y] = *p;
+        verts.push(GizmoVertex { position: [x - ARM, y,       Z], color: cross_color });
+        verts.push(GizmoVertex { position: [x + ARM, y,       Z], color: cross_color });
+        verts.push(GizmoVertex { position: [x,       y - ARM, Z], color: cross_color });
+        verts.push(GizmoVertex { position: [x,       y + ARM, Z], color: cross_color });
+    }
+
+    // Líneas entre puntos consecutivos
+    for i in 0..pts.len().saturating_sub(1) {
+        let [ax, ay] = pts[i];
+        let [bx, by] = pts[i + 1];
+        verts.push(GizmoVertex { position: [ax, ay, Z], color: line_color });
+        verts.push(GizmoVertex { position: [bx, by, Z], color: line_color });
+    }
+
+    gizmo::build_from_vertices(device, &verts)
 }

@@ -157,3 +157,19 @@ pub fn build_axes(device: &wgpu::Device, length: f32) -> GizmoBuffer {
 
     GizmoBuffer { vertex_buffer, vertex_count: verts.len() as u32 }
 }
+
+/// Creates a GizmoBuffer from arbitrary pre-built line vertices (tool overlays, etc.).
+pub fn build_from_vertices(device: &wgpu::Device, verts: &[GizmoVertex]) -> GizmoBuffer {
+    // Always allocate at least one vertex so the buffer is valid.
+    let data: &[u8] = if verts.is_empty() {
+        &[0u8; std::mem::size_of::<GizmoVertex>()]
+    } else {
+        bytemuck::cast_slice(verts)
+    };
+    let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label:    Some("tool-overlay-vbo"),
+        contents: data,
+        usage:    wgpu::BufferUsages::VERTEX,
+    });
+    GizmoBuffer { vertex_buffer, vertex_count: verts.len() as u32 }
+}

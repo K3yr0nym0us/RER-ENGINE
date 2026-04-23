@@ -55,6 +55,10 @@ pub enum EngineCommand {
     LoadBackground { path: String },
     /// Activar o desactivar física en una entidad. body_type: "dynamic" | "static" | "kinematic"
     SetPhysics { id: u32, enabled: bool, body_type: String },
+    /// Activar una herramienta de dibujo. tool: "draw_collider" | "" (cancelar)
+    SetActiveTool { tool: String },
+    /// Recrear un colisionador de 4 puntos desde datos guardados (restauración de proyecto).
+    CreateColliderFromPoints { points: [[f32; 2]; 4] },
 }
 
 // ---------------------------------------------------------------------------
@@ -99,6 +103,12 @@ pub enum EngineEvent {
     Camera2dUpdated { x: f32, y: f32, half_h: f32 },
     /// Emitido cuando se cargó una imagen de fondo del mundo.
     BackgroundLoaded { path: String },
+    /// Emitido mientras el usuario está colocando puntos con una herramienta de dibujo.
+    DrawingProgress { count: u32 },
+    /// Emitido cuando se creó un colisionador de 4 puntos.
+    ColliderCreated { id: u32, points: [[f32; 2]; 4] },
+    /// Emitido cuando una herramienta de dibujo fue cancelada desde el motor.
+    ToolCancelled,
 }
 
 /// Escribe un evento JSON en stdout y lo flushea inmediatamente.
