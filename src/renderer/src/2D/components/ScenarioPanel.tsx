@@ -1,5 +1,5 @@
 import { Files, Trash } from 'react-bootstrap-icons'
-import type { ScenarioEntry } from '../../hooks/useEngine'
+import type { ScenarioEntry } from '../../context/useContextEngine'
 
 export interface AssetGroupConfig {
   openDialog:  () => Promise<string | null>

@@ -1,4 +1,4 @@
-import type { Entity } from '../hooks/useEngine'
+import type { Entity } from '../context/useContextEngine'
 
 interface Props {
   entities:   Entity[]

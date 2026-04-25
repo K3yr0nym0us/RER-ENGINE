@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { Accordion } from 'react-bootstrap';
 import { Grid3x3, EyeFill, EyeSlashFill, Image } from 'react-bootstrap-icons';
 
-import type { WorldConfig } from '../../hooks/useEngine';
+import type { WorldConfig } from '../../context/useContextEngine';
 
 interface Props {
   engineReady:      boolean

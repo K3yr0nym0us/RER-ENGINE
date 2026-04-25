@@ -1,3 +1,8 @@
+/* Barra de controles superior igual a sidebar */
+.custom-controls-bar {
+  background: #090b18 !important;
+}
+
 :root {
   --bs-body-bg: #1f2237;
   --bs-body-color: #ffffff;

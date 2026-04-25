@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { Lock, Unlock } from 'react-bootstrap-icons'
-import type { SelectedEntity } from '../hooks/useEngine'
+import type { SelectedEntity } from '../context/useContextEngine'
 
 interface Transform {
   pos: [string, string, string]

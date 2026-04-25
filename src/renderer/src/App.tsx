@@ -1,8 +1,10 @@
-import { useState } from 'react'
-import { ProjectSelector } from './components/ProjectSelector'
-import { GameStyleSelector } from './3D/components/GameStyleSelector'
-import { EngineView } from './components/EngineView'
-import type { ProjectType, GameStyle, ProjectSaveData } from '../../shared-types/types'
+import { useState } from 'react';
+
+import { ProjectSelector } from './components/ProjectSelector';
+import { GameStyleSelector } from './3D/components/GameStyleSelector';
+import { EngineView } from './components/EngineView';
+
+import type { ProjectType, GameStyle, ProjectSaveData } from '../../shared-types/types';
 
 // ── Componente principal ─────────────────────────────────────────────────────
 

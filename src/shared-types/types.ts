@@ -55,7 +55,7 @@ export interface EngineCommand {
 }
 
 export interface EngineEvent {
-  event: 'ready' | 'pong' | 'error' | 'model_loaded' | 'stopped' | 'entity_selected' | 'entity_deselected' | 'scenario_loaded' | 'character_loaded' | 'player_ready' | 'camera_2d_updated' | 'drawing_progress' | 'collider_created' | 'tool_cancelled'
+  event: 'ready' | 'pong' | 'error' | 'model_loaded' | 'stopped' | 'entity_selected' | 'entity_deselected' | 'entity_hovered' | 'entity_unhovered' | 'scenario_loaded' | 'character_loaded' | 'player_ready' | 'camera_2d_updated' | 'background_loaded' | 'drawing_progress' | 'collider_created' | 'tool_cancelled'
   [key: string]: unknown
 }
 
@@ -82,6 +82,20 @@ export interface ScenarioLoaded {
 export interface CharacterLoaded {
   event: 'character_loaded'
   id:    number
+  path:  string
+}
+
+export interface EntityHovered {
+  event: 'entity_hovered'
+  id:    number
+}
+
+export interface EntityUnhovered {
+  event: 'entity_unhovered'
+}
+
+export interface BackgroundLoaded {
+  event: 'background_loaded'
   path:  string
 }
 
