@@ -1,7 +1,7 @@
 import { Accordion } from 'react-bootstrap';
 
 import { PropertiesPanel } from './PropertiesPanel';
-import { AssetGroupConfig, AssetGroupPanel, WorldPanel } from '../2D/components';
+import { AssetGroupConfig, AssetGroupPanel, WorldPanel, ColliderPanel } from '../2D/components';
 
 import { usePointDrawing } from '../hooks/usePointDrawing';
 
@@ -163,19 +163,12 @@ export function SideBarLeft({ projectType, engineReady, backgroundPath, worldCon
             {colliderEntities.length > 0 && (
               <div className="mt-1">
                 <div className="text-muted small mb-1">Colisionadores ({colliderEntities.length})</div>
-                {colliderEntities.map((c) => (
-                  <div key={c.id} className="d-flex align-items-center justify-content-between mb-1">
-                    <span className="small text-truncate me-1">#{c.id}</span>
-                    <button
-                      className="btn btn-sm btn-outline-danger py-0 px-1"
-                      style={{ fontSize: '0.7rem' }}
-                      onClick={() => removeCollider(c.id)}
-                      title="Eliminar colisionador"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                ))}
+                <ColliderPanel
+                  entries={colliderEntities}
+                  onRemove={removeCollider}
+                  config={{ addBtnLabel: '', emptyText: 'Sin colisionadores' }}
+                  highlightId={hoveredEntityId ?? selectedEntity?.id ?? null}
+                />
               </div>
             )}
           </Accordion.Body>
