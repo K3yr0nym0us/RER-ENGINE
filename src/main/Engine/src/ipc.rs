@@ -39,6 +39,19 @@ pub enum EngineCommand {
     SetCharacterScale { id: u32, scale: f32 },
     /// Duplicar un personaje existente (crea una nueva entidad con el mismo PNG).
     DuplicateCharacter { id: u32 },
+/// Cambiar el sprite de una entidad (escenario o personaje) a un frame de animación.
+    /// pivot_x/pivot_y: punto ancla en píxeles dentro del frame (0,0 = esquina superior-izq).
+    /// logical_w/logical_h: bounding box lógico fijo de la animación (en píxeles).
+    PlayAnimationFrame {
+        id:        u32,
+        path:      String,
+        pivot_x:   f32,
+        pivot_y:   f32,
+        logical_w: u32,
+        logical_h: u32,
+    },
+    /// Restaurar el sprite original de una entidad después de una animación.
+    RestoreAnimationFrame { id: u32 },
     /// Eliminar una entidad de la escena por su ID.
     RemoveEntity { id: u32 },
     /// Definir el tamaño del área de trabajo del mundo (unidades de mundo).
@@ -59,6 +72,19 @@ pub enum EngineCommand {
     SetActiveTool { tool: String },
     /// Recrear un colisionador de 4 puntos desde datos guardados (restauración de proyecto).
     CreateColliderFromPoints { points: [[f32; 2]; 4] },
+    /// Activar modo edición de pivot: muestra el frame en la entidad y captura el siguiente click.
+    /// pivot_x/pivot_y: coordenadas del pivot ya asignado (para mostrarlo visualmente).
+    SetPivotEditMode { id: u32, frame_path: String, pivot_x: f32, pivot_y: f32 },
+    /// Cancelar modo edición de pivot y restaurar el sprite original.
+    CancelPivotEditMode,
+    /// Mostrar el borde del área lógica de una entidad (w×h píxeles).
+    SetLogicalAreaMode { id: u32, w: u32, h: u32 },
+    /// Ocultar el borde del área lógica.
+    CancelLogicalAreaMode,
+    /// Reproducir un archivo de audio (wav/ogg/mp3). loop_: true para repetir indefinidamente.
+    PlayAudio { path: String, loop_: bool },
+    /// Detener el audio que está sonando actualmente.
+    StopAudio,
 }
 
 // ---------------------------------------------------------------------------
@@ -109,6 +135,8 @@ pub enum EngineEvent {
     ColliderCreated { id: u32, points: [[f32; 2]; 4] },
     /// Emitido cuando una herramienta de dibujo fue cancelada desde el motor.
     ToolCancelled,
+    /// Emitido cuando el usuario selecciona el pivot de un frame en modo edición.
+    PivotSelected { frame_path: String, pivot_x: f32, pivot_y: f32 },
 }
 
 /// Escribe un evento JSON en stdout y lo flushea inmediatamente.

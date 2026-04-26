@@ -15,6 +15,8 @@ impl State {
         self.world.clear();
         self.meshes.clear();
         self.textures.clear();
+        self.anim_texture_cache.clear();
+        self.anim_overrides.clear();
         self.entity_buffers.clear();
         self.entity_bind_groups.clear();
         self.selected_entity = None;

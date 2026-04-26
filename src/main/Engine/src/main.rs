@@ -90,6 +90,8 @@ struct App {
     gizmo_drag_axis: Option<usize>,       // eje activo (0=X,1=Y,2=Z)
     // Teclas modificadoras
     ctrl_held:       bool,                // Ctrl izquierdo o derecho presionado
+    // Frame rate cap: tiempo objetivo del próximo frame (evita busy loop)
+    next_frame_at:   std::time::Instant,
 }
 
 impl ApplicationHandler for App {
@@ -113,12 +115,18 @@ impl ApplicationHandler for App {
             #[cfg(target_os = "linux")]
             {
                 use winit::platform::x11::WindowAttributesExtX11;
-                attrs = attrs.with_embed_parent_window(embed.parent_xid as u32);
+                // parent_xid == 0 cuando se corre desde Windows/plataforma sin XID real
+                if embed.parent_xid != 0 {
+                    attrs = attrs.with_embed_parent_window(embed.parent_xid as u32);
+                }
             }
             #[cfg(target_os = "windows")]
             {
-                // Aquí deberías agregar la lógica específica para Windows si es necesario
-                // attrs = attrs.with_embed_parent_window(embed.parent_xid as HWND); // Ejemplo si usas HWND
+                // winit 0.30 no expone embed_parent_window en Windows.
+                // El motor corre como ventana flotante posicionada sobre el editor.
+                // El embedding nativo vía SetParent(HWND) requiere winit-raw o win32 directo
+                // y queda pendiente de implementación para la versión Windows.
+                let _ = &embed.parent_xid; // suprimir warning de campo no usado
             }
         } else {
             // ── Modo standalone ──────────────────────────────────────────────
@@ -174,12 +182,17 @@ impl ApplicationHandler for App {
                 match button {
                     MouseButton::Left => {
                         if pressed {
-                            // Comprobar si el click es sobre un eje del gizmo
+                            // Comprobar si el click es sobre un eje del gizmo.
+                            // Se omite en modo pivot para no robar el click al handler de pivot.
                             if let Some(cur) = self.last_cursor {
-                                let axis = if state.camera_2d.is_some() {
-                                    state.pick_gizmo_axis_2d(cur.0, cur.1)
+                                let axis = if state.pivot_edit_mode.is_none() {
+                                    if state.camera_2d.is_some() {
+                                        state.pick_gizmo_axis_2d(cur.0, cur.1)
+                                    } else {
+                                        state.pick_gizmo_axis(cur.0, cur.1)
+                                    }
                                 } else {
-                                    state.pick_gizmo_axis(cur.0, cur.1)
+                                    None
                                 };
                                 self.gizmo_drag_axis = axis;
                                 if axis.is_some() {
@@ -202,7 +215,9 @@ impl ApplicationHandler for App {
                                     let dy = (cur.1 - start.1).abs();
                                     if dx < 5.0 && dy < 5.0 {
                                         if state.camera_2d.is_some() {
-                                            if !state.handle_tool_click_2d(cur.0, cur.1) {
+                                            if state.pivot_edit_mode.is_some() {
+                                                state.handle_pivot_click_2d(cur.0, cur.1);
+                                            } else if !state.handle_tool_click_2d(cur.0, cur.1) {
                                                 state.pick_entity_2d(cur.0, cur.1);
                                             }
                                         } else {
@@ -314,17 +329,38 @@ impl ApplicationHandler for App {
                     }
                     Err(e) => log::warn!("render error: {e:?}"),
                 }
-                // Pedir un nuevo frame (Poll mode)
-                state.window().request_redraw();
+                // NO llamar request_redraw() aquí: lo hace about_to_wait con WaitUntil.
+                // Hacerlo aquí + ControlFlow::Poll crea un busy loop que consume CPU al 100%.
             }
             _ => {}
         }
     }
-}
+    /// Llamado cuando winit ha procesado todos los eventos pendientes del ciclo actual.
+    /// Es el único lugar correcto para pedir el siguiente frame en modo Poll.
+    /// Usando WaitUntil capamos a ~60 fps y el CPU puede dormir entre frames.
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        const TARGET_FPS: u64 = 60;
+        const FRAME_DURATION: std::time::Duration =
+            std::time::Duration::from_nanos(1_000_000_000 / TARGET_FPS);
 
-// ---------------------------------------------------------------------------
-// Entry point
-// ---------------------------------------------------------------------------
+        let now = std::time::Instant::now();
+        if now >= self.next_frame_at {
+            if let Some(state) = &self.state {
+                state.window().request_redraw();
+            }
+            // Calcular el próximo tick desde el tiempo objetivo, no desde `now`,
+            // para evitar drift acumulado si un frame tardó más de lo esperado.
+            self.next_frame_at = self.next_frame_at + FRAME_DURATION;
+            // Si nos retrasamos más de un frame, resincronizar para evitar
+            // ráfagas de frames de recuperación.
+            if self.next_frame_at < now {
+                self.next_frame_at = now + FRAME_DURATION;
+            }
+        }
+        // Dormir hasta el próximo frame en lugar de hacer busy-wait
+        event_loop.set_control_flow(ControlFlow::WaitUntil(self.next_frame_at));
+    }
+}
 fn main() {
     // Logs van a stderr; IPC usa stdout.
     // wgpu_hal::vulkan genera spam de "Suboptimal present" y warnings de capas
@@ -341,13 +377,14 @@ fn main() {
     ipc::start_ipc_thread(tx);
 
     let event_loop = EventLoop::new().expect("No se pudo crear EventLoop");
-    event_loop.set_control_flow(ControlFlow::Poll);
+    // ControlFlow se gestiona dinámicamente en about_to_wait con WaitUntil(next_frame).
+    // NO usar Poll aquí: Poll + request_redraw en RedrawRequested = busy loop al 100% CPU.
 
     let embed = parse_embed_config();
     if embed.is_some() {
         log::info!("Modo embebido activado");
     }
 
-    let mut app = App { state: None, rx, embed, mouse_right: false, mouse_middle: false, last_cursor: None, left_click_pos: None, gizmo_drag_axis: None, ctrl_held: false };
+    let mut app = App { state: None, rx, embed, mouse_right: false, mouse_middle: false, last_cursor: None, left_click_pos: None, gizmo_drag_axis: None, ctrl_held: false, next_frame_at: std::time::Instant::now() };
     event_loop.run_app(&mut app).expect("Error en el event loop");
 }

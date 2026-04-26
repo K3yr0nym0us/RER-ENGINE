@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, Menu } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, Menu, session } from 'electron'
 import { spawn, ChildProcess } from 'child_process'
 import path from 'path'
 import fs from 'fs'
@@ -47,6 +47,11 @@ function createMainWindow(): void {
       nodeIntegration:  false,
     },
   })
+
+  // Abrir DevTools automáticamente en desarrollo
+  if (process.env.NODE_ENV === 'development' || !app.isPackaged) {
+    mainWindow.webContents.openDevTools()
+  }
 
   // En desarrollo carga el servidor de Vite; en producción, el build.
   if (process.env['ELECTRON_RENDERER_URL']) {
@@ -117,18 +122,37 @@ function startEngine(embed?: ViewportBounds): void {
       engineArgs = ['--embed', String(xid), String(x), String(y), String(width), String(height)]
       console.log(`[engine] modo embed — xid=${xid} pos=(${x},${y}) size=${width}x${height}`)
     }
+  } else if (process.platform === 'win32' && embed) {
+    // En Windows winit 0.30 no soporta embed nativo vía HWND todavía.
+    // Se pasan bounds para que el motor se posicione sobre el panel del editor.
+    const x      = Math.round(embed.x)
+    const y      = Math.round(embed.y)
+    const width  = Math.max(1, Math.round(embed.width))
+    const height = Math.max(1, Math.round(embed.height))
+    // HWND=0 indica al motor que no debe intentar re-parenting
+    engineArgs = ['--embed', '0', String(x), String(y), String(width), String(height)]
+    console.log(`[engine] modo embed (Windows, flotante) pos=(${x},${y}) size=${width}x${height}`)
   }
 
   // LIBGL_ALWAYS_SOFTWARE=1 asegura que EGL use llvmpipe en vez de buscar DRI3.
   // EGL_LOG_LEVEL=fatal silencia el warning "DRI3 error" de libEGL.
+  // Estas variables solo aplican en Linux; en Windows se omiten para no contaminar el entorno.
+  const linuxEnv = process.platform === 'linux'
+    ? {
+        WAYLAND_DISPLAY: '',
+        GDK_BACKEND:     'x11',
+        LIBGL_ALWAYS_SOFTWARE: '1',
+        EGL_LOG_LEVEL:   'fatal',
+        // Asegurar que el motor herede el servidor de audio de WSLg
+        ...(process.env.PULSE_SERVER ? { PULSE_SERVER: process.env.PULSE_SERVER } : {}),
+      }
+    : {}
+
   engineProcess = spawn(enginePath, engineArgs, {
     stdio: ['pipe', 'pipe', 'pipe'],
     env: {
       ...process.env,
-      WAYLAND_DISPLAY: '',
-      GDK_BACKEND: 'x11',
-      LIBGL_ALWAYS_SOFTWARE: '1',
-      EGL_LOG_LEVEL: 'fatal',
+      ...linuxEnv,
     },
   })
 
@@ -201,6 +225,17 @@ ipcMain.handle('open-model-dialog', async () => {
   return result.canceled ? null : result.filePaths[0] ?? null
 })
 
+// Diálogo para abrir archivo de audio (WAV, OGG, MP3)
+ipcMain.handle('open-audio-dialog', async () => {
+  if (!mainWindow) return null
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title:      'Cargar audio de animación',
+    filters:    [{ name: 'Audio', extensions: ['wav', 'ogg', 'mp3'] }],
+    properties: ['openFile'],
+  })
+  return result.canceled ? null : result.filePaths[0] ?? null
+})
+
 // Diálogo para abrir imagen PNG como escenario 2D
 ipcMain.handle('open-scenario-dialog', async () => {
   if (!mainWindow) return null
@@ -234,9 +269,154 @@ ipcMain.handle('open-background-dialog', async () => {
   return result.canceled ? null : result.filePaths[0] ?? null
 })
 
-// Diálogo para abrir un proyecto existente (lee project.json)
+// ---------------------------------------------------------------------------
+// Helpers de guardado con copia de assets
+// ---------------------------------------------------------------------------
+
+/**
+ * Recorre un ProjectSaveData y devuelve todos los paths de archivo absolutos
+ * que hay que copiar al directorio de assets del proyecto.
+ */
+function collectAssetPaths(data: ProjectSaveData): Set<string> {
+  const paths = new Set<string>()
+  const add = (p: string | null | undefined) => {
+    if (p && path.isAbsolute(p) && fs.existsSync(p)) paths.add(p)
+  }
+
+  add(data.backgroundPath)
+  for (const entity of data.entities) {
+    add(entity.path)
+    for (const anim of entity.animations ?? []) {
+      add(anim.audio_path)
+      for (const frame of anim.frames) {
+        add(frame.path)
+      }
+    }
+  }
+  return paths
+}
+
+/**
+ * Copia todos los assets al directorio `projectDir/assets/` y devuelve
+ * un mapa de ruta-absoluta → ruta-relativa-desde-projectDir.
+ * Si dos archivos distintos tienen el mismo nombre, se les agrega un sufijo numérico.
+ */
+function copyAssetsToDir(
+  assetPaths: Set<string>,
+  assetsDir: string,
+): Map<string, string> {
+  fs.mkdirSync(assetsDir, { recursive: true })
+  const map = new Map<string, string>()
+  const usedNames = new Map<string, number>()
+
+  for (const src of assetPaths) {
+    const baseName = path.basename(src)
+    const count    = (usedNames.get(baseName) ?? 0)
+    usedNames.set(baseName, count + 1)
+
+    const destName = count === 0
+      ? baseName
+      : `${path.basename(baseName, path.extname(baseName))}_${count}${path.extname(baseName)}`
+
+    const destAbs = path.join(assetsDir, destName)
+    try {
+      fs.copyFileSync(src, destAbs)
+      // Siempre usar '/' en los paths del JSON para portabilidad entre OS
+      map.set(src, `assets/${destName}`)
+    } catch (err) {
+      console.error(`[editor] No se pudo copiar asset ${src}:`, err)
+    }
+  }
+  return map
+}
+
+/**
+ * Clona el ProjectSaveData reemplazando todos los paths absolutos por relativos
+ * según el mapa generado por copyAssetsToDir.
+ */
+function remapPaths(data: ProjectSaveData, map: Map<string, string>): ProjectSaveData {
+  const remap = (p: string | null | undefined): string | null | undefined =>
+    p ? (map.get(p) ?? p) : p
+
+  return {
+    ...data,
+    backgroundPath: remap(data.backgroundPath) as string | null,
+    entities: data.entities.map((e) => ({
+      ...e,
+      path: remap(e.path) as string,
+      animations: e.animations?.map((anim) => ({
+        ...anim,
+        audio_path: remap(anim.audio_path) as string | undefined,
+        frames: anim.frames.map((f) => ({
+          ...f,
+          path: remap(f.path) as string,
+        })),
+      })),
+    })),
+  }
+}
+
+/**
+ * Función central de guardado: crea la carpeta del proyecto, copia los assets
+ * y escribe project.json con rutas relativas.
+ * Devuelve la ruta al project.json creado, o null si hubo error.
+ */
+function saveProjectToDir(projectDir: string, data: ProjectSaveData): string | null {
+  try {
+    fs.mkdirSync(projectDir, { recursive: true })
+    const assetsDir = path.join(projectDir, 'assets')
+    const assetPaths = collectAssetPaths(data)
+    const pathMap    = copyAssetsToDir(assetPaths, assetsDir)
+    const remapped   = remapPaths(data, pathMap)
+    const jsonPath   = path.join(projectDir, 'project.json')
+    fs.writeFileSync(jsonPath, JSON.stringify(remapped, null, 2), 'utf8')
+    console.log(`[editor] Proyecto guardado en ${jsonPath} (${pathMap.size} assets copiados)`)
+    return jsonPath
+  } catch (err) {
+    console.error('[editor] Error al guardar proyecto:', err)
+    return null
+  }
+}
+
+/**
+ * Resuelve los paths relativos de un ProjectSaveData cargado desde disco,
+ * convirtiendo rutas relativas a absolutas respecto a projectDir.
+ */
+function resolveLoadedPaths(data: ProjectSaveData, projectDir: string): ProjectSaveData {
+  const resolve = (p: string | null | undefined): string | null | undefined => {
+    if (!p) return p
+    if (path.isAbsolute(p)) return p
+    // El JSON siempre guarda rutas con '/' — normalizamos al separador del OS actual
+    const normalized = p.split('/').join(path.sep)
+    return path.join(projectDir, normalized)
+  }
+
+  return {
+    ...data,
+    backgroundPath: resolve(data.backgroundPath) as string | null,
+    entities: data.entities.map((e) => ({
+      ...e,
+      path: resolve(e.path) as string,
+      animations: e.animations?.map((anim) => ({
+        ...anim,
+        audio_path: resolve(anim.audio_path) as string | undefined,
+        frames: anim.frames.map((f) => ({
+          ...f,
+          path: resolve(f.path) as string,
+        })),
+      })),
+    })),
+  }
+}
+
+// ---------------------------------------------------------------------------
+// IPC: guardar / cargar proyecto
+// ---------------------------------------------------------------------------
+
+// Diálogo para abrir un proyecto existente (lee project.json dentro de una carpeta)
 ipcMain.handle('open-project-dialog', async (): Promise<ProjectSaveData | null> => {
   if (!mainWindow) return null
+  // Permitir abrir tanto la carpeta del proyecto como el project.json directamente
   const result = await dialog.showOpenDialog(mainWindow, {
     title:      'Abrir proyecto',
     filters:    [{ name: 'Proyecto RER', extensions: ['json'] }],
@@ -244,15 +424,12 @@ ipcMain.handle('open-project-dialog', async (): Promise<ProjectSaveData | null> 
   })
   if (result.canceled || !result.filePaths[0]) return null
   try {
-    const raw = fs.readFileSync(result.filePaths[0], 'utf8')
+    const jsonPath   = result.filePaths[0]
+    const projectDir = path.dirname(jsonPath)
+    const raw  = fs.readFileSync(jsonPath, 'utf8')
     const data = JSON.parse(raw) as unknown
-    if (
-      data !== null &&
-      typeof data === 'object' &&
-      'type' in data &&
-      'gameStyle' in data
-    ) {
-      return data as ProjectSaveData
+    if (data !== null && typeof data === 'object' && 'type' in data && 'gameStyle' in data) {
+      return resolveLoadedPaths(data as ProjectSaveData, projectDir)
     }
     return null
   } catch {
@@ -260,35 +437,24 @@ ipcMain.handle('open-project-dialog', async (): Promise<ProjectSaveData | null> 
   }
 })
 
-// Diálogo para guardar el proyecto (escribe project.json en la ruta elegida)
+// Diálogo para guardar el proyecto (el usuario elige/crea una CARPETA)
 ipcMain.handle('save-project', async (_event, data: ProjectSaveData): Promise<boolean> => {
   if (!mainWindow) return false
-  const result = await dialog.showSaveDialog(mainWindow, {
-    title:       'Guardar proyecto',
-    defaultPath: 'project.json',
-    filters:     [{ name: 'Proyecto RER', extensions: ['json'] }],
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title:      'Guardar proyecto — elige o crea una carpeta',
+    properties: ['openDirectory', 'createDirectory'],
   })
-  if (result.canceled || !result.filePath) return false
-  try {
-    fs.writeFileSync(result.filePath, JSON.stringify(data, null, 2), 'utf8')
-    console.log(`[editor] Proyecto guardado en ${result.filePath}`)
-    return true
-  } catch (err) {
-    console.error('[editor] Error al guardar proyecto:', err)
-    return false
-  }
+  if (result.canceled || !result.filePaths[0]) return false
+  const ok = saveProjectToDir(result.filePaths[0], data)
+  return ok !== null
 })
 
-// Guardado silencioso (auto-save) en la misma ruta sin dialog
+// Guardado silencioso (auto-save): filePath es la carpeta del proyecto
 ipcMain.handle('save-project-silent', async (_event, filePath: string, data: ProjectSaveData): Promise<boolean> => {
-  try {
-    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8')
-    console.log(`[editor] Auto-guardado en ${filePath}`)
-    return true
-  } catch (err) {
-    console.error('[editor] Error en auto-guardado:', err)
-    return false
-  }
+  // filePath puede ser la carpeta o el project.json; normalizamos a carpeta
+  const projectDir = path.extname(filePath) === '.json' ? path.dirname(filePath) : filePath
+  const ok = saveProjectToDir(projectDir, data)
+  return ok !== null
 })
 
 // El renderer envía los bounds del viewport una vez montado (y en cada resize).
@@ -321,6 +487,31 @@ ipcMain.on('viewport-bounds', (_event, bounds: ViewportBounds) => {
 // Ciclo de vida de la app
 // ---------------------------------------------------------------------------
 app.whenReady().then(() => {
+  // CSP estricto solo en producción (app.isPackaged).
+  // En desarrollo, Vite inyecta scripts inline para HMR/React preamble
+  // que serían bloqueados. El warning de Electron en dev desaparece
+  // automáticamente al empaquetar la app.
+  if (app.isPackaged) {
+    const CSP = [
+      "default-src 'self'",
+      "script-src 'self'",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data: blob: file:",
+      "media-src 'self' file: blob:",
+      "connect-src 'self'",
+      "font-src 'self' data:",
+    ].join('; ')
+
+    session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+      callback({
+        responseHeaders: {
+          ...details.responseHeaders,
+          'Content-Security-Policy': [CSP],
+        },
+      })
+    })
+  }
+
   createMainWindow()
   // No arrancamos el motor aquí: esperamos el primer 'viewport-bounds'
 

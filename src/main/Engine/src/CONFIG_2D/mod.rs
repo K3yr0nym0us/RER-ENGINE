@@ -34,8 +34,6 @@ use crate::texture::GpuTexture;
 // ── Componente exclusivo del modo 2D ─────────────────────────────────────────
 
 /// Marca una entidad como escenario PNG en una escena 2D.
-/// Guarda las dimensiones originales de la imagen para escalar
-/// proporcionalmente cuando el usuario mueve el slider.
 #[derive(Debug, Clone)]
 pub(crate) struct ScenarioMarker {
     pub img_width:    u32,
@@ -56,6 +54,7 @@ pub(crate) struct CharacterMarker {
     /// Ruta del PNG original, necesaria para duplicar la entidad.
     pub path:         String,
 }
+
 // ── Herramientas de dibujo ─────────────────────────────────────────────────
 
 /// Estado de la herramienta activa de dibujo (solo en modo 2D).
@@ -94,6 +93,8 @@ impl State {
         self.world.clear();
         self.meshes.clear();
         self.textures.clear();
+        self.anim_texture_cache.clear();
+        self.anim_overrides.clear();
         self.entity_buffers.clear();
         self.entity_bind_groups.clear();
         self.selected_entity = None;
@@ -422,7 +423,288 @@ impl State {
         }
     }
 
-    // ── Proyección 2D a pantalla ──────────────────────────────────────────────
+    /// Cambia el sprite de una entidad (escenario o personaje) a un frame de animación.
+    /// - `pivot_x/pivot_y`: punto ancla en píxeles dentro del frame (0,0 = esquina superior-izq).
+    /// - `logical_w/logical_h`: bounding box lógico fijo de la animación (en píxeles).
+    ///
+    /// La entidad mantiene su posición de ancla en el mundo.  El quad se redimensiona y
+    /// desplaza para que el píxel (pivot_x, pivot_y) quede exactamente sobre dicha posición.
+    pub(crate) fn play_animation_frame(
+        &mut self,
+        id: u32,
+        path: &str,
+        pivot_x: f32,
+        pivot_y: f32,
+        logical_w: u32,
+        logical_h: u32,
+    ) {
+        // Verificar que la entidad existe y obtener su tipo
+        let is_scenario  = self.scenario_entities.contains(&id);
+        let is_character = self.character_entities.contains(&id);
+        if !is_scenario && !is_character {
+            log::warn!("[play_animation_frame] entidad {id} no es escenario ni personaje");
+            return;
+        }
+
+        // Obtener (o crear) el bind group + dimensiones desde la caché.
+        // Solo en el primer uso de cada ruta se hace disk I/O + decode + upload a GPU.
+        // Las llamadas siguientes son un simple lookup de HashMap → sin trabajo de GPU.
+        let (arc_bg, img_width, img_height) =
+            if let Some((cached_bg, w, h)) = self.anim_texture_cache.get(path) {
+                (std::sync::Arc::clone(cached_bg), *w, *h)
+            } else {
+                // Cache miss: cargar, decodificar y subir a GPU UNA sola vez
+                let bytes = match fs::read(path) {
+                    Ok(b)  => b,
+                    Err(e) => {
+                        log::error!("[play_animation_frame] error leyendo {path}: {e}");
+                        send_event(&EngineEvent::Error { message: format!("No se pudo leer el frame: {e}") });
+                        return;
+                    }
+                };
+                use image::ImageReader;
+                use std::io::Cursor;
+                let img = match ImageReader::new(Cursor::new(&bytes))
+                    .with_guessed_format()
+                    .map_err(|e| e.to_string())
+                    .and_then(|r| r.decode().map_err(|e| e.to_string()))
+                {
+                    Ok(i)  => i.to_rgba8(),
+                    Err(e) => {
+                        log::error!("[play_animation_frame] error decodificando PNG {path}: {e}");
+                        send_event(&EngineEvent::Error { message: format!("Error al decodificar frame: {e}") });
+                        return;
+                    }
+                };
+                let (w, h) = img.dimensions();
+                let gpu_tex = GpuTexture::from_rgba(&self.device, &self.queue, &img, w, h, "anim-frame");
+                let bg = std::sync::Arc::new(gpu_tex.create_bind_group(&self.device, &self.texture_bgl));
+                self.anim_texture_cache.insert(path.to_string(), (std::sync::Arc::clone(&bg), w, h));
+                log::info!("[play_animation_frame] frame cargado a GPU (caché miss): {path}");
+                (bg, w, h)
+            };
+
+        // Obtener tex_position para el override
+        let tex_position = match self.world.get::<MeshComponent>(id) {
+            Some(m) => m.mesh_idx,
+            None => {
+                log::warn!("[play_animation_frame] entidad {id} sin MeshComponent");
+                return;
+            }
+        };
+        if tex_position >= self.textures.len() {
+            log::warn!("[play_animation_frame] indice invalido: {tex_position}");
+            return;
+        }
+
+        // Escribir el override — el render loop lo lee con prioridad sobre textures[]
+        self.anim_overrides.insert(tex_position, arc_bg);
+
+        // ── Aplicar pivot ────────────────────────────────────────────────────
+        if logical_w > 0 && logical_h > 0 {
+            if let Some(transform) = self.world.get::<Transform>(id).cloned() {
+                let (orig_pos, orig_scale) = *self.anim_saved_transforms
+                    .entry(id)
+                    .or_insert((transform.position, transform.scale));
+
+                let world_per_px = orig_scale.y / img_height as f32;
+                let new_scale_x  = img_width  as f32 * world_per_px;
+                let new_scale_y  = img_height as f32 * world_per_px;
+                let offset_x     =  (pivot_x - img_width  as f32 * 0.5) * world_per_px;
+                let offset_y     = -(pivot_y - img_height as f32 * 0.5) * world_per_px;
+
+                if let Some(t) = self.world.get_mut::<Transform>(id) {
+                    t.scale    = GlamVec3::new(new_scale_x, new_scale_y, 1.0);
+                    t.position = orig_pos - GlamVec3::new(offset_x, offset_y, 0.0);
+                }
+            }
+        }
+
+        log::info!("[play_animation_frame] frame actualizado para entidad {id} (tex_idx={tex_position}, pivot=({pivot_x},{pivot_y}))");
+    }
+
+    /// Restaura el sprite original de una entidad después de una animación.
+    pub(crate) fn restore_animation_frame(&mut self, id: u32) {
+        let is_scenario  = self.scenario_entities.contains(&id);
+        let is_character = self.character_entities.contains(&id);
+        if !is_scenario && !is_character {
+            log::warn!("[restore_animation_frame] entidad {id} no es escenario ni personaje");
+            return;
+        }
+
+        // Obtener tex_position del MeshComponent
+        let tex_position = match self.world.get::<MeshComponent>(id) {
+            Some(m) => m.mesh_idx,
+            None => {
+                log::warn!("[restore_animation_frame] entidad {id} sin MeshComponent");
+                return;
+            }
+        };
+
+        // Eliminar el override: el render loop vuelve a usar textures[tex_position]
+        // que nunca fue modificado. No hay que recargar nada de disco.
+        self.anim_overrides.remove(&tex_position);
+
+        // Restaurar el transform original si fue modificado por play_animation_frame
+        if let Some((orig_pos, orig_scale)) = self.anim_saved_transforms.remove(&id) {
+            if let Some(t) = self.world.get_mut::<Transform>(id) {
+                t.position = orig_pos;
+                t.scale    = orig_scale;
+            }
+        }
+
+        log::info!("[restore_animation_frame] sprite restaurado para entidad {id}");
+    }
+
+    // ── Modo edición de pivot ─────────────────────────────────────────────────
+
+    /// Activa el modo edición de pivot para una entidad:
+    /// - Muestra el frame como textura temporal (sin modificar la escala).
+    /// - Dibuja un borde cyan alrededor de la entidad en el overlay.
+    /// - El siguiente click calculará el pivot y emitirá PivotSelected.
+    pub(crate) fn enter_pivot_edit_mode(&mut self, id: u32, frame_path: &str, pivot_x: f32, pivot_y: f32) {
+        let bytes = match fs::read(frame_path) {
+            Ok(b)  => b,
+            Err(e) => { log::error!("[enter_pivot_edit_mode] error leyendo {frame_path}: {e}"); return; }
+        };
+        use image::ImageReader;
+        use std::io::Cursor;
+        let img = match ImageReader::new(Cursor::new(&bytes))
+            .with_guessed_format()
+            .map_err(|e| e.to_string())
+            .and_then(|r| r.decode().map_err(|e| e.to_string()))
+        {
+            Ok(i)  => i.to_rgba8(),
+            Err(e) => { log::error!("[enter_pivot_edit_mode] error decodificando {frame_path}: {e}"); return; }
+        };
+        let (img_w, img_h) = img.dimensions();
+
+        // 1. Guardar transform original (si no estaba ya guardado por una animación previa)
+        //    y calcular la escala ajustada para que el frame no aparezca deformado en pantalla.
+        let (new_pos, new_scale_x, new_scale_y) = {
+            let t = match self.world.get::<Transform>(id) {
+                Some(t) => t.clone(),
+                None    => { log::error!("[enter_pivot_edit_mode] entidad {id} sin Transform"); return; }
+            };
+            let (_, orig_scale) = *self.anim_saved_transforms.entry(id).or_insert((t.position, t.scale));
+            // Escala ajustada: altura = orig_scale.y, ancho proporcional al ratio píxel del frame.
+            // Esto asegura que el frame se vea sin deformar al hacer click para asignar el pivot.
+            let aspect   = img_w as f32 / img_h as f32;
+            let scale_y  = orig_scale.y;
+            let scale_x  = scale_y * aspect;
+            (t.position, scale_x, scale_y)
+        };
+
+        // 2. Aplicar la escala corregida al transform de la entidad
+        if let Some(t) = self.world.get_mut::<Transform>(id) {
+            t.scale = GlamVec3::new(new_scale_x, new_scale_y, 1.0);
+        }
+
+        // 3. Swap de textura con el frame a editar
+        if let Some(m) = self.world.get::<MeshComponent>(id) {
+            let tex_pos = m.mesh_idx;
+            if tex_pos < self.textures.len() {
+                let gpu_tex = GpuTexture::from_rgba(&self.device, &self.queue, &img, img_w, img_h, "pivot-edit");
+                self.textures[tex_pos] = gpu_tex.create_bind_group(&self.device, &self.texture_bgl);
+            }
+        }
+
+        // 4. Overlay combinado: borde cyan + cruceta amarilla en el pivot actual
+        self.tool_overlay_buffer = build_pivot_edit_overlay_with_cross(
+            &self.device,
+            new_pos,
+            GlamVec3::new(new_scale_x, new_scale_y, 1.0),
+            pivot_x, pivot_y,
+            img_w, img_h,
+        );
+
+        self.pivot_edit_mode = Some((id, frame_path.to_string(), img_w, img_h));
+        log::info!("[enter_pivot_edit_mode] activo para entidad {id} ({img_w}×{img_h}) escala=({new_scale_x:.3},{new_scale_y:.3}): {frame_path}");
+    }
+
+    /// Cancela el modo edición de pivot y restaura el sprite original.
+    pub(crate) fn cancel_pivot_edit_mode(&mut self) {
+        if let Some((entity_id, _, _, _)) = self.pivot_edit_mode.take() {
+            self.restore_animation_frame(entity_id);
+            self.tool_overlay_buffer = gizmo::build_from_vertices(&self.device, &[]);
+            log::info!("[cancel_pivot_edit_mode] modo cancelado para entidad {entity_id}");
+        }
+    }
+
+    // ── Modo visualización del Área Lógica ────────────────────────────────────
+
+    /// Muestra un borde naranja en el viewport indicando las dimensiones del área
+    /// lógica (bounding box de referencia para la animación). El usuario puede
+    /// actualizar w/h y re-enviar este comando para ver los cambios en tiempo real.
+    pub(crate) fn enter_logical_area_mode(&mut self, id: u32, w: u32, h: u32) {
+        let transform = match self.world.get::<Transform>(id) {
+            Some(t) => t.clone(),
+            None    => { log::warn!("[enter_logical_area_mode] entidad {id} sin Transform"); return; }
+        };
+        // Usar escala original si hay animación en curso, si no la actual
+        let orig_scale_y = self.anim_saved_transforms
+            .get(&id)
+            .map(|(_, s)| s.y)
+            .unwrap_or(transform.scale.y);
+
+        self.tool_overlay_buffer = build_logical_area_overlay(
+            &self.device, transform.position, orig_scale_y, w, h,
+        );
+        self.logical_area_mode = Some(id);
+        log::info!("[enter_logical_area_mode] área {w}×{h} para entidad {id}");
+    }
+
+    /// Oculta el overlay de área lógica.
+    pub(crate) fn cancel_logical_area_mode(&mut self) {
+        self.logical_area_mode = None;
+        self.tool_overlay_buffer = gizmo::build_from_vertices(&self.device, &[]);
+        log::info!("[cancel_logical_area_mode] overlay ocultado");
+    }
+
+    /// Procesa un click del usuario cuando el modo edición de pivot está activo.
+    /// Convierte las coordenadas de pantalla a coordenadas de píxel dentro del frame
+    /// y emite el evento PivotSelected. Devuelve true si el click fue consumido.
+    pub(crate) fn handle_pivot_click_2d(&mut self, pixel_x: f32, pixel_y: f32) -> bool {
+        let (entity_id, frame_path, img_w, img_h) = match self.pivot_edit_mode.clone() {
+            Some(m) => m,
+            None    => return false,
+        };
+        let cam = match &self.camera_2d {
+            Some(c) => Camera2D { x: c.x, y: c.y, half_h: c.half_h, near: c.near, far: c.far },
+            None    => return false,
+        };
+
+        // Pantalla → mundo
+        let w      = self.size.width  as f32;
+        let h      = self.size.height as f32;
+        let half_w = cam.half_h * (w / h);
+        let wx     = cam.x + ((pixel_x / w) * 2.0 - 1.0) * half_w;
+        let wy     = cam.y + (1.0 - (pixel_y / h) * 2.0) * cam.half_h;
+
+        // Mundo → [0,1] dentro del quad de la entidad
+        let transform = match self.world.get::<Transform>(entity_id) {
+            Some(t) => t.clone(),
+            None    => return false,
+        };
+        let nx       = ((wx - transform.position.x) / transform.scale.x + 0.5).clamp(0.0, 1.0);
+        let ny_world = ((wy - transform.position.y) / transform.scale.y + 0.5).clamp(0.0, 1.0);
+        let ny       = 1.0 - ny_world; // imagen: Y = arriba→abajo
+
+        let pivot_x = nx * img_w as f32;
+        let pivot_y = ny * img_h as f32;
+
+        send_event(&EngineEvent::PivotSelected { frame_path: frame_path.clone(), pivot_x, pivot_y });
+
+        // Restaurar sprite original y limpiar modo
+        self.pivot_edit_mode = None;
+        self.restore_animation_frame(entity_id);
+        self.tool_overlay_buffer = gizmo::build_from_vertices(&self.device, &[]);
+
+        log::info!("[handle_pivot_click_2d] pivot ({pivot_x:.1}, {pivot_y:.1}) para {frame_path}");
+        true
+    }
+
+    // ── Proyeccion 2D a pantalla ──────────────────────────────────────────────
 
     /// Proyecta un punto de mundo XY a coordenadas de pantalla en píxeles.
     pub(crate) fn project_to_screen_2d(&self, cam: &Camera2D, p: GlamVec3) -> Option<(f32, f32)> {
@@ -781,6 +1063,116 @@ fn build_tool_overlay(device: &wgpu::Device, pts: &[[f32; 2]]) -> gizmo::GizmoBu
         verts.push(GizmoVertex { position: [ax, ay, Z], color: line_color });
         verts.push(GizmoVertex { position: [bx, by, Z], color: line_color });
     }
+
+    gizmo::build_from_vertices(device, &verts)
+}
+
+/// Construye el GizmoBuffer de overlay para el modo edición de pivot.
+/// Dibuja un rectángulo cyan (LineList, 4 segmentos = 8 vértices) alrededor
+/// del quad de la entidad para que el usuario sepa sobre qué área debe clickear.
+fn build_pivot_edit_overlay(device: &wgpu::Device, pos: GlamVec3, scale: GlamVec3) -> gizmo::GizmoBuffer {
+    let left   = pos.x - scale.x * 0.5;
+    let right  = pos.x + scale.x * 0.5;
+    let bottom = pos.y - scale.y * 0.5;
+    let top    = pos.y + scale.y * 0.5;
+    const Z: f32 = 0.2;
+    let color = [0.2_f32, 0.9, 1.0, 1.0]; // cyan
+
+    let verts = vec![
+        // Borde inferior
+        GizmoVertex { position: [left,  bottom, Z], color },
+        GizmoVertex { position: [right, bottom, Z], color },
+        // Borde derecho
+        GizmoVertex { position: [right, bottom, Z], color },
+        GizmoVertex { position: [right, top,    Z], color },
+        // Borde superior
+        GizmoVertex { position: [right, top,    Z], color },
+        GizmoVertex { position: [left,  top,    Z], color },
+        // Borde izquierdo
+        GizmoVertex { position: [left,  top,    Z], color },
+        GizmoVertex { position: [left,  bottom, Z], color },
+    ];
+
+    gizmo::build_from_vertices(device, &verts)
+}
+
+/// Borde cyan + cruceta amarilla en el pivot actual del frame.
+/// pivot_x, pivot_y: coordenadas en píxeles dentro del frame (0,0 = esquina superior-izquierda).
+fn build_pivot_edit_overlay_with_cross(
+    device:   &wgpu::Device,
+    pos:      GlamVec3,
+    scale:    GlamVec3,
+    pivot_x:  f32,
+    pivot_y:  f32,
+    img_w:    u32,
+    img_h:    u32,
+) -> gizmo::GizmoBuffer {
+    let left   = pos.x - scale.x * 0.5;
+    let right  = pos.x + scale.x * 0.5;
+    let bottom = pos.y - scale.y * 0.5;
+    let top    = pos.y + scale.y * 0.5;
+    const Z: f32 = 0.2;
+    let border_color = [0.2_f32, 0.9, 1.0, 1.0]; // cyan
+
+    let mut verts = vec![
+        GizmoVertex { position: [left,  bottom, Z], color: border_color },
+        GizmoVertex { position: [right, bottom, Z], color: border_color },
+        GizmoVertex { position: [right, bottom, Z], color: border_color },
+        GizmoVertex { position: [right, top,    Z], color: border_color },
+        GizmoVertex { position: [right, top,    Z], color: border_color },
+        GizmoVertex { position: [left,  top,    Z], color: border_color },
+        GizmoVertex { position: [left,  top,    Z], color: border_color },
+        GizmoVertex { position: [left,  bottom, Z], color: border_color },
+    ];
+
+    // Cruceta en el pivot actual (solo si el pivot tiene coordenadas válidas)
+    if img_w > 0 && img_h > 0 {
+        let px = left + (pivot_x / img_w as f32) * scale.x;
+        let py = top  - (pivot_y / img_h as f32) * scale.y;
+        let s  = (scale.x.min(scale.y) * 0.07).max(0.005);
+        let cross_color = [1.0_f32, 1.0, 0.0, 1.0]; // amarillo
+
+        verts.extend_from_slice(&[
+            GizmoVertex { position: [px - s, py,     Z], color: cross_color },
+            GizmoVertex { position: [px + s, py,     Z], color: cross_color },
+            GizmoVertex { position: [px,     py - s, Z], color: cross_color },
+            GizmoVertex { position: [px,     py + s, Z], color: cross_color },
+        ]);
+    }
+
+    gizmo::build_from_vertices(device, &verts)
+}
+
+/// Overlay naranja para el área lógica: rectángulo centrado en la entidad
+/// con las dimensiones del bounding box lógico (w×h píxeles → mundo).
+fn build_logical_area_overlay(
+    device:       &wgpu::Device,
+    pos:          GlamVec3,
+    orig_scale_y: f32,
+    w:            u32,
+    h:            u32,
+) -> gizmo::GizmoBuffer {
+    if h == 0 { return gizmo::build_from_vertices(device, &[]); }
+    let aspect  = w as f32 / h as f32;
+    let world_h = orig_scale_y;
+    let world_w = world_h * aspect;
+    let left   = pos.x - world_w * 0.5;
+    let right  = pos.x + world_w * 0.5;
+    let bottom = pos.y - world_h * 0.5;
+    let top    = pos.y + world_h * 0.5;
+    const Z: f32 = 0.15;
+    let color = [1.0_f32, 0.55, 0.0, 1.0]; // naranja
+
+    let verts = vec![
+        GizmoVertex { position: [left,  bottom, Z], color },
+        GizmoVertex { position: [right, bottom, Z], color },
+        GizmoVertex { position: [right, bottom, Z], color },
+        GizmoVertex { position: [right, top,    Z], color },
+        GizmoVertex { position: [right, top,    Z], color },
+        GizmoVertex { position: [left,  top,    Z], color },
+        GizmoVertex { position: [left,  top,    Z], color },
+        GizmoVertex { position: [left,  bottom, Z], color },
+    ];
 
     gizmo::build_from_vertices(device, &verts)
 }

@@ -1,20 +1,23 @@
+import { useState } from 'react';
 import { 
   ClockFill, 
   FloppyFill, 
-  PauseFill, 
   PlayFill, 
   StopFill 
 } from 'react-bootstrap-icons';
 
-export function TopBarEngine({ engineError, projectType, engineReady, hasSavedOnce, autoSaveEnabled, handleSave, toggleAutoSave }: {
-  engineError: string | null
+import { useContextEngine } from '../context/useContextEngine';
+
+interface Props {
   projectType: string
-  engineReady: boolean
-  hasSavedOnce: boolean
-  autoSaveEnabled: boolean
   handleSave: () => void
   toggleAutoSave: () => void
-}) {
+}
+
+export function TopBarEngine({ projectType, handleSave, toggleAutoSave }: Props) {
+  const { engineReady, engineError } = useContextEngine()
+  const [hasSavedOnce] = useState(false)
+  const [autoSaveEnabled] = useState(false)
 
   const statusBadge = engineReady
     ? <span className="badge bg-success">◉</span>
@@ -29,9 +32,6 @@ export function TopBarEngine({ engineError, projectType, engineReady, hasSavedOn
       <div className="d-flex align-items-center gap-2">
         <button className="btn btn-outline-light btn-sm" title="Play">
           <PlayFill size={16} />
-        </button>
-        <button className="btn btn-outline-light btn-sm" title="Pause">
-          <PauseFill size={16} />
         </button>
         <button className="btn btn-outline-light btn-sm" title="Stop">
           <StopFill size={16} />
@@ -60,7 +60,7 @@ export function TopBarEngine({ engineError, projectType, engineReady, hasSavedOn
           className={`btn btn-sm d-flex align-items-center gap-1 ${
             autoSaveEnabled ? 'btn-warning text-dark' : 'btn-outline-secondary'
           }`}
-          title={hasSavedOnce ? (autoSaveEnabled ? 'Desactivar auto-guardado (cada 5 min)' : 'Activar auto-guardado (cada 5 min)') : 'Guarda el proyecto al menos una vez para activar'}
+          title={hasSavedOnce ? (autoSaveEnabled ? 'Desactivar auto-guardado' : 'Activar auto-guardado') : 'Guarda primero'}
           disabled={!hasSavedOnce || !engineReady}
           onClick={toggleAutoSave}
           style={{ whiteSpace: 'nowrap' }}

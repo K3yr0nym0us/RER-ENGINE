@@ -8,7 +8,7 @@ Siempre usa como ejemplo el codigo existente en el proyecto, sobre todo en creac
 
 La configuracion del motor y toda su estrutura debe estar en ingles y solo los logs en español, el front puede estar en español o ingles dependiendo del contexto y la audiencia, pero siempre manteniendo consistencia dentro de la aplicación.
 
-Despues de cada cambio grande e importante que afecte al front usa npx -y react-doctor@latest en el directorio de la app correspondiente para verificar que no hay errores de dependencias o problemas con los hooks, si algun hook o componente de los que creaste o editaste tiene problemas de dependencias o hooks, corrige esos problemas antes de seguir con el siguiente cambio.
+Despues de cada cambio grande e importante que afecte al front usa npx -y react-doctor@latest en el directorio raiz de la app para verificar que no hay errores de dependencias o problemas con los hooks, si algun hook o componente de los que creaste o editaste tiene problemas de dependencias o hooks, corrige esos problemas antes de seguir con el siguiente cambio.
 
 Código DRY (Don't Repeat Yourself), evita la duplicación de código y busca siempre la forma de reutilizar componentes, hooks o funciones existentes antes de crear nuevos.
 

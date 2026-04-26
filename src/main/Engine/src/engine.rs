@@ -5,6 +5,7 @@ use bytemuck::{Pod, Zeroable};
 use glam::{Mat4, Vec3 as GlamVec3};
 use wgpu::{include_wgsl, util::DeviceExt};
 use winit::{dpi::PhysicalSize, window::Window};
+use rodio;
 
 use crate::config_2d::{GridBuffer, GridConfig};
 use crate::config_2d::ActiveTool;
@@ -100,6 +101,29 @@ pub struct State {
     pub(crate) tool_overlay_buffer: GizmoBuffer,
     /// Entidades creadas por herramientas de dibujo (colisionadores).
     pub(crate) collider_entities: Vec<EntityId>,
+    /// Transforms originales guardados antes de aplicar un frame de animación
+    /// (posición, escala). Se restauran con RestoreAnimationFrame.
+    pub(crate) anim_saved_transforms: std::collections::HashMap<u32, (GlamVec3, GlamVec3)>,
+    /// Estado del modo edición de pivot: (entity_id, frame_path, img_w, img_h).
+    /// Cuando es Some, el siguiente click izquierdo en el viewport calcula el pivot.
+    pub pivot_edit_mode: Option<(u32, String, u32, u32)>,
+    /// Modo visualización del área lógica: Some(entity_id) cuando el overlay naranja está activo.
+    pub logical_area_mode: Option<u32>,
+    /// Sink único y persistente de rodio.
+    /// Se reutiliza en cada PlayAudio (clear + append) para evitar acumulación de sinks
+    /// en el mixer de rodio, que degrada el audio y bloquea ALSA/PulseAudio.
+    pub(crate) audio_sink: Option<rodio::Sink>,
+    /// OutputStream de rodio: se abre UNA sola vez al iniciar el motor y se mantiene vivo siempre.
+    pub(crate) _audio_stream: Option<rodio::OutputStream>,
+    /// Caché de texturas GPU para frames de animación, indexada por ruta absoluta.
+    /// Almacena (BindGroup, img_width, img_height) para evitar recargar de disco,
+    /// redecodificar y resubir a GPU en cada tick. Se limpia al cambiar de escena.
+    pub(crate) anim_texture_cache: std::collections::HashMap<String, (std::sync::Arc<wgpu::BindGroup>, u32, u32)>,
+    /// Overrides de textura para animaciones activas: tex_position → bind group.
+    /// Play_animation_frame escribe aquí en lugar de mutar textures[],
+    /// así la textura base de la entidad nunca se sobreescribe.
+    /// Restore_animation_frame borra la entrada; el render loop vuelve a textures[].
+    pub(crate) anim_overrides: std::collections::HashMap<usize, std::sync::Arc<wgpu::BindGroup>>,
 }
 
 impl State {
@@ -431,6 +455,30 @@ impl State {
         let grid_config = GridConfig::default();
         let grid_buffer = crate::config_2d::build_grid(&device, &grid_config);
 
+        // ── Audio: inicializar dispositivo y Sink UNA sola vez ──────────────────
+        // Crear un único Sink persistente. PlayAudio solo llama clear()+append();
+        // nunca crea ni destruye Sinks, evitando acumulación en el mixer de rodio.
+        let (audio_stream_opt, audio_sink_opt) =
+            match rodio::OutputStream::try_default() {
+                Ok((stream, handle)) => {
+                    match rodio::Sink::try_new(&handle) {
+                        Ok(sink) => {
+                            // El handle puede dropearse; el Sink mantiene la referencia interna.
+                            log::info!("[audio] dispositivo de audio inicializado");
+                            (Some(stream), Some(sink))
+                        }
+                        Err(e) => {
+                            log::warn!("[audio] no se pudo crear el Sink de audio: {e}");
+                            (Some(stream), None)
+                        }
+                    }
+                }
+                Err(e) => {
+                    log::warn!("[audio] no se pudo abrir el dispositivo de audio: {e}");
+                    (None, None)
+                }
+            };
+
         Self {
             window,
             surface,
@@ -478,6 +526,13 @@ impl State {
             active_tool: ActiveTool::None,
             tool_overlay_buffer: tool_overlay_buffer_init,
             collider_entities: Vec::new(),
+            anim_saved_transforms: std::collections::HashMap::new(),
+            pivot_edit_mode:    None,
+            logical_area_mode:  None,
+            audio_sink:         audio_sink_opt,
+            _audio_stream:      audio_stream_opt,
+            anim_texture_cache: std::collections::HashMap::new(),
+            anim_overrides:     std::collections::HashMap::new(),
         }
     }
 
@@ -569,6 +624,60 @@ impl State {
             }
             EngineCommand::DuplicateCharacter { id } => {
                 self.duplicate_character(id);
+            }
+            EngineCommand::PlayAnimationFrame { id, path, pivot_x, pivot_y, logical_w, logical_h } => {
+                if self.pivot_edit_mode.is_some() {
+                    // Ignorar: el modo edición de pivot tiene prioridad para no interferir con la textura/escala
+                    return;
+                }
+                self.play_animation_frame(id, &path, pivot_x, pivot_y, logical_w, logical_h);
+            }
+            EngineCommand::RestoreAnimationFrame { id } => {
+                self.restore_animation_frame(id);
+            }
+            EngineCommand::SetPivotEditMode { id, frame_path, pivot_x, pivot_y } => {
+                self.enter_pivot_edit_mode(id, &frame_path, pivot_x, pivot_y);
+            }
+            EngineCommand::CancelPivotEditMode => {
+                self.cancel_pivot_edit_mode();
+            }
+            EngineCommand::SetLogicalAreaMode { id, w, h } => {
+                self.enter_logical_area_mode(id, w, h);
+            }
+            EngineCommand::CancelLogicalAreaMode => {
+                self.cancel_logical_area_mode();
+            }
+            EngineCommand::PlayAudio { path, loop_ } => {
+                if let Some(sink) = &self.audio_sink {
+                    // Limpiar la cola del Sink sin destruirlo — evita acumulación en el mixer
+                    sink.clear();
+                    match std::fs::File::open(&path) {
+                        Ok(file) => {
+                            let buf = std::io::BufReader::new(file);
+                            match rodio::Decoder::new(buf) {
+                                Ok(source) => {
+                                    if loop_ {
+                                        sink.append(rodio::source::Source::repeat_infinite(source));
+                                    } else {
+                                        sink.append(source);
+                                    }
+                                    sink.play();
+                                    log::info!("[audio] reproduciendo: {path}");
+                                }
+                                Err(e) => log::error!("[audio] error al decodificar {path}: {e}"),
+                            }
+                        }
+                        Err(e) => log::error!("[audio] no se pudo abrir {path}: {e}"),
+                    }
+                } else {
+                    log::warn!("[audio] dispositivo no disponible, no se puede reproducir: {path}");
+                }
+            }
+            EngineCommand::StopAudio => {
+                if let Some(sink) = &self.audio_sink {
+                    sink.clear();
+                    log::info!("[audio] detenido");
+                }
             }
             EngineCommand::RemoveEntity { id } => {
                 if Some(id) == self.selected_entity { self.selected_entity = None; }
@@ -753,7 +862,11 @@ impl State {
                     entity_buf, 0, bytemuck::cast_slice(&[uniforms]),
                 );
                 pass.set_bind_group(0, entity_bg, &[]);
-                let tex_bg = self.textures.get(idx)
+                // anim_overrides tiene prioridad sobre textures[]:
+                // durante una animación activa evita mutar la textura base.
+                let tex_bg: &wgpu::BindGroup = self.anim_overrides.get(&idx)
+                    .map(|a| a.as_ref())
+                    .or_else(|| self.textures.get(idx))
                     .unwrap_or(&self.fallback_tex_bg);
                 pass.set_bind_group(1, tex_bg, &[]);
                 pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
@@ -820,7 +933,9 @@ impl State {
         }
 
         // ── Gizmos (segundo pass, sin depth) ─────────────────────────────────
-        if let Some(sel_id) = self.selected_entity {
+        // Ocultar gizmo durante el modo edición de pivot: las flechas de movimiento
+        // robarían el foco e impedirían hacer click libremente sobre el asset.
+        if let Some(sel_id) = self.selected_entity.filter(|_| self.pivot_edit_mode.is_none()) {
             let aspect   = self.size.width as f32 / self.size.height as f32;
             let vp = if let Some(cam2d) = &self.camera_2d {
                 cam2d.view_proj(aspect).to_cols_array_2d()

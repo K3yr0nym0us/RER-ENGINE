@@ -1,7 +1,9 @@
-import React, { useEffect, useRef } from 'react'
-import { LogEntry } from '../context/useContextEngine'
+import { useEffect, useRef } from 'react'
 
-export function LogConsole({ log }: { log: LogEntry[] }) {
+import { useContextEngine, LogEntry } from '../context/useContextEngine'
+
+export function LogConsole() {
+  const { log } = useContextEngine()
   const logRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {

@@ -27,6 +27,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openProjectDialog: (): Promise<ProjectSaveData | null> => {
     return ipcRenderer.invoke('open-project-dialog')
   },
+  openAudioDialog: (): Promise<string | null> => {
+    return ipcRenderer.invoke('open-audio-dialog')
+  },
   openScenarioDialog: (): Promise<string | null> => {
     return ipcRenderer.invoke('open-scenario-dialog')
   },
