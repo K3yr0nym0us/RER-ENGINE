@@ -122,11 +122,10 @@ impl ApplicationHandler for App {
             }
             #[cfg(target_os = "windows")]
             {
-                // winit 0.30 no expone embed_parent_window en Windows.
-                // El motor corre como ventana flotante posicionada sobre el editor.
-                // El embedding nativo vía SetParent(HWND) requiere winit-raw o win32 directo
-                // y queda pendiente de implementación para la versión Windows.
-                let _ = &embed.parent_xid; // suprimir warning de campo no usado
+                // En Windows NO se usa with_parent_window: winit añade WS_CHILD y la
+                // superficie de Chromium queda encima interceptando todos los eventos.
+                // En su lugar se crea un WS_POPUP normal y se asigna Electron como
+                // owner vía Win32 después de la creación (ver bloque post-creación).
             }
         } else {
             // ── Modo standalone ──────────────────────────────────────────────
@@ -140,6 +139,35 @@ impl ApplicationHandler for App {
                 .create_window(attrs)
                 .expect("No se pudo crear la ventana"),
         );
+
+        // Windows: asignar Electron como owner del popup y añadir WS_EX_NOACTIVATE.
+        // Owned popup: queda visualmente encima de Electron sin ser WS_CHILD,
+        // por lo que la superficie de Chromium no puede interceptar sus eventos.
+        #[cfg(target_os = "windows")]
+        if let Some(embed) = &self.embed {
+            if embed.parent_xid != 0 {
+                use raw_window_handle::HasWindowHandle;
+                use windows::Win32::Foundation::HWND;
+                use windows::Win32::UI::WindowsAndMessaging::{
+                    GetWindowLongPtrW, SetWindowLongPtrW,
+                    GWL_EXSTYLE, GWLP_HWNDPARENT, WS_EX_NOACTIVATE,
+                };
+                if let Ok(handle) = window.window_handle() {
+                    if let raw_window_handle::RawWindowHandle::Win32(h) = handle.as_raw() {
+                        let motor_hwnd    = HWND(h.hwnd.get() as isize);
+                        let electron_hwnd = HWND(embed.parent_xid as isize);
+                        // SAFETY: ambos HWNDs son válidos y viven mientras el motor esté activo
+                        unsafe {
+                            // Electron como owner: la ventana del motor siempre queda encima
+                            SetWindowLongPtrW(motor_hwnd, GWLP_HWNDPARENT, electron_hwnd.0 as isize);
+                            // No robar foco de teclado a Electron al hacer click
+                            let ex = GetWindowLongPtrW(motor_hwnd, GWL_EXSTYLE);
+                            SetWindowLongPtrW(motor_hwnd, GWL_EXSTYLE, ex | WS_EX_NOACTIVATE.0 as isize);
+                        }
+                    }
+                }
+            }
+        }
 
         let state = pollster::block_on(engine::State::new(Arc::clone(&window), self.embed.is_some()));
 

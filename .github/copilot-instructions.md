@@ -14,4 +14,6 @@ Código DRY (Don't Repeat Yourself), evita la duplicación de código y busca si
 
 En el motor hay que dividir los archivos de la logica 2D de la 3D, y de la logica de renderizado, para mantener el codigo organizado y facil de mantener.
 
+Siempre hay que tratar de mantener compatibilidad con windows y linux, y evitar usar funciones o librerias que no sean compatibles con ambos sistemas operativos.
+
 Cualquier duda fuera de este readme consulta al desarrollador no busques en otros directorios.

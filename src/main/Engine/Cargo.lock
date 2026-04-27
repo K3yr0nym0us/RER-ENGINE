@@ -2225,10 +2225,12 @@ dependencies = [
  "log",
  "pollster",
  "rapier3d",
+ "raw-window-handle",
  "rodio",
  "serde",
  "serde_json",
  "wgpu",
+ "windows 0.54.0",
  "winit",
  "x11",
 ]

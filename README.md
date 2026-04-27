@@ -8,7 +8,10 @@ Motor gráfico 3D experimental construido con Rust embebido dentro de Electron. 
 
 ## Idea del proyecto
 
-Electron actúa como shell: gestiona la ventana principal, la UI del editor y el ciclo de vida de la aplicación. Rust se lanza como proceso hijo y renderiza en una **ventana X11 hija** embebida directamente dentro del viewport de Electron. La comunicación entre ambos procesos se realiza mediante **JSON lines por stdin/stdout**, sin WebSocket ni servidor intermedio.
+Electron actúa como shell: gestiona la ventana principal, la UI del editor y el ciclo de vida de la aplicación. Rust se lanza como proceso hijo y renderiza en una **ventana nativa embebida** directamente dentro del viewport de Electron. La comunicación entre ambos procesos se realiza mediante **JSON lines por stdin/stdout**, sin WebSocket ni servidor intermedio.
+
+- **Linux (X11):** embedding mediante XEMBED (`with_embed_parent_window`).
+- **Windows:** embedding mediante owned popup Win32 (`SetWindowLongPtrW` + `GWLP_HWNDPARENT`) para evitar la intercepción de eventos por parte de Chromium.
 
 ```
 ┌─────────────────────────────────────────────┐
@@ -99,11 +102,11 @@ Electron actúa como shell: gestiona la ventana principal, la UI del editor y el
 
 ## Requisitos
 
-- Linux con X11 (Wayland no soportado directamente; usa XWayland)
+- **Linux:** X11 o XWayland (Wayland puro no soportado). Dependencias: `libgl1`, `libgles2`, `libx11-dev`
+- **Windows:** Windows 10/11 con drivers GPU actualizados
 - Rust toolchain estable (`rustup`)
 - Node.js ≥ 18
 - yarn (`npm i -g yarn`)
-- Dependencias de sistema para wgpu/GL: `libgl1`, `libgles2`, `libx11-dev`
 
 ---
 
@@ -141,6 +144,7 @@ yarn dist
 | IPC JSON lines | ✅ Completo |
 | Física Rapier3D | ✅ Completo (por entidad: dinámico / estático / cinemático) |
 | Scripting (Lua/Python) | ⏳ Pendiente |
-| Soporte Windows | ⏳ Sin probar (DE MOMENTO SOLO CORRE EN LINUX UBUNTU) |
+| Soporte Linux Ubuntu | ✅ Probado en Ubuntu (X11 / WSL2 + WSLg) |
+| Soporte Windows | ✅ Probado en Windows 11 |
 
 

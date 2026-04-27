@@ -5,7 +5,7 @@
   "main": "./out/main/index.js",
   "scripts": {
     "predev": "cargo build --manifest-path src/main/Engine/Cargo.toml",
-    "dev": "WAYLAND_DISPLAY='' ELECTRON_OZONE_PLATFORM_HINT=x11 GDK_BACKEND=x11 __NV_PRIME_RENDER_OFFLOAD=1 __GLX_VENDOR_LIBRARY_NAME=nvidia electron-vite dev",
+    "dev": "electron-vite dev",
     "prebuild": "cargo build --manifest-path src/main/Engine/Cargo.toml",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
