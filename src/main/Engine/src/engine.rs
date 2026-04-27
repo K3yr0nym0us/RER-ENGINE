@@ -697,7 +697,7 @@ impl State {
             }
             EngineCommand::Resize { width, height } => {
                 self.resize(PhysicalSize::new(width, height));
-            }            EngineCommand::SetBounds { x, y, width, height } => {
+            }            EngineCommand::SetBounds { x, y, width, height, .. } => {
                 // Mover la ventana hijo dentro del padre X11
                 let _ = self.window.set_outer_position(
                     winit::dpi::PhysicalPosition::new(x, y)
@@ -709,12 +709,7 @@ impl State {
                     winit::dpi::PhysicalSize::new(width, height)
                 );
             }
-            EngineCommand::HideWindow => {
-                self.window.set_visible(false);
-            }
-            EngineCommand::ShowWindow => {
-                self.window.set_visible(true);
-            }            EngineCommand::LoadModel { path } => {
+            EngineCommand::LoadModel { path } => {
                 self.load_model(&path);
             }
             EngineCommand::SetTransform { id, position, rotation, scale } => {

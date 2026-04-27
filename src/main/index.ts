@@ -85,33 +85,12 @@ function createMainWindow(): void {
     mainWindow = null
   })
 
-  // Cuando la ventana principal se mueve:
-  // - Windows: ocultar el motor en el primer evento (inicio del arrastre).
-  //   La posición final se envía en 'moved', evitando el lag visual.
-  // - Linux: el motor está embebido vía XEMBED y se mueve solo con el padre.
+  // Cuando la ventana principal se mueve en Linux, el motor necesita recalcular
+  // su posición. En Windows, el hilo position-tracker nativo (Rust/Win32) se encarga
+  // de mover la ventana del motor en tiempo real sin IPC, así que no hacemos nada aquí.
   mainWindow.on('move', () => {
-    if (process.platform === 'win32' && engineStarted && engineProcess && !isDragging) {
-      isDragging = true
-      sendToEngine({ cmd: 'hide_window' })
-    }
-  })
-
-  // En Windows, 'moved' se emite UNA sola vez al soltar el arrastre.
-  // Aquí reposicionamos y volvemos a mostrar el motor.
-  mainWindow.on('moved', () => {
-    if (process.platform === 'win32' && isDragging) {
-      isDragging = false
-      if (engineStarted && engineProcess && lastRelativeBounds) {
-        const effectiveBounds = viewportToScreenBounds(lastRelativeBounds)
-        sendToEngine({
-          cmd:    'set_bounds',
-          x:      Math.round(effectiveBounds.x),
-          y:      Math.round(effectiveBounds.y),
-          width:  Math.max(1, Math.round(effectiveBounds.width)),
-          height: Math.max(1, Math.round(effectiveBounds.height)),
-        })
-        sendToEngine({ cmd: 'show_window' })
-      }
+    if (process.platform !== 'win32') {
+      mainWindow?.webContents.send('request-viewport-bounds')
     }
   })
 
@@ -158,6 +137,11 @@ interface ViewportBounds {
   y:      number
   width:  number
   height: number
+  // Offsets físicos del EngineView dentro del área de contenido de Electron.
+  // Solo se usan en Windows: el position-tracker Rust los usa como offset
+  // directo (evita conversión DPI de getContentBounds() que puede ser incorrecta).
+  rel_x?: number
+  rel_y?: number
 }
 
 function startEngine(embed?: ViewportBounds): void {
@@ -186,8 +170,10 @@ function startEngine(embed?: ViewportBounds): void {
     const y      = Math.round(embed.y)
     const width  = Math.max(1, Math.round(embed.width))
     const height = Math.max(1, Math.round(embed.height))
-    engineArgs = ['--embed', hwnd, String(x), String(y), String(width), String(height)]
-    console.log(`[engine] modo embed Windows — hwnd=${hwnd} pos=(${x},${y}) size=${width}x${height}`)
+    const relX = Math.max(0, Math.round(embed.rel_x ?? 0))
+    const relY = Math.max(0, Math.round(embed.rel_y ?? 0))
+    engineArgs = ['--embed', hwnd, String(x), String(y), String(width), String(height), String(relX), String(relY)]
+    console.log(`[engine] modo embed Windows — hwnd=${hwnd} pos=(${x},${y}) size=${width}x${height} offset=(${relX},${relY})`)
   }
 
   // LIBGL_ALWAYS_SOFTWARE=1 asegura que EGL use llvmpipe en vez de buscar DRI3.
@@ -537,13 +523,8 @@ ipcMain.handle('save-project-silent', async (_event, filePath: string, data: Pro
 let engineStarted = false
 
 // Caché de los bounds relativos del viewport (posición dentro del contenido de Electron,
-// pre-DPR). Se actualiza en cada 'viewport-bounds'. Permite calcular coords absolutas
-// directamente en el evento 'moved' de Windows sin un round-trip por el renderer.
+// pre-DPR). Se actualiza en cada 'viewport-bounds'.
 let lastRelativeBounds: ViewportBounds | null = null
-
-// Bandera: indica si la ventana principal está siendo arrastrada (Windows).
-// Mientras se arrastra, el motor se oculta para evitar el lag visual.
-let isDragging = false
 
 // En Windows el motor corre como owned popup (no WS_CHILD), por lo que
 // necesita coordenadas de pantalla absolutas en vez de coordenadas relativas
@@ -558,11 +539,14 @@ function viewportToScreenBounds(bounds: ViewportBounds): ViewportBounds {
     y:      Math.round(cb.y * scaleFactor + bounds.y),
     width:  bounds.width,
     height: bounds.height,
+    // Pasar los offsets físicos del renderer tal cual (sin conversión DPI adicional).
+    // El position-tracker Rust los usa como offset relativo al área de contenido.
+    rel_x:  Math.round(bounds.x),
+    rel_y:  Math.round(bounds.y),
   }
 }
 
 ipcMain.on('viewport-bounds', (_event, bounds: ViewportBounds) => {
-  // Actualizar caché de bounds relativos para el cálculo rápido en el evento 'moved'
   lastRelativeBounds = bounds
 
   // Si el proceso murió, permitir relanzar
@@ -576,12 +560,18 @@ ipcMain.on('viewport-bounds', (_event, bounds: ViewportBounds) => {
 
   if (engineStarted) {
     // Motor corriendo: reposicionar y redimensionar
+    // En Windows esto actualiza el punto de referencia del position-tracker
+    // (tamaño + posición inicial). El tracker se encarga del movimiento en tiempo real.
     sendToEngine({
-      cmd: 'set_bounds',
+      cmd:    'set_bounds',
       x:      Math.round(effectiveBounds.x),
       y:      Math.round(effectiveBounds.y),
       width:  Math.max(1, Math.round(effectiveBounds.width)),
       height: Math.max(1, Math.round(effectiveBounds.height)),
+      // Offsets físicos del renderer (sin conversión DPI): el tracker Rust
+      // los usa directamente para el offset relativo al área de contenido.
+      offset_x: process.platform === 'win32' ? Math.round(bounds.x) : undefined,
+      offset_y: process.platform === 'win32' ? Math.round(bounds.y) : undefined,
     })
     return
   }

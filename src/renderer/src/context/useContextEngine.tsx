@@ -199,6 +199,9 @@ export function EngineProvider({
 	const readyTimer         = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const logIdRef           = useRef(0);
 	const initialSaveRef     = useRef(initialSave);
+	// Debounce de resize: evita que el motor salte al tamaño final
+	// mientras la animación nativa de Windows todavía está corriendo.
+	const resizeTimerRef     = useRef<ReturnType<typeof setTimeout> | null>(null);
 
 	type Transform = { position: [number,number,number]; rotation: [number,number,number,number]; scale: [number,number,number] };
 	const entityTransformsRef = useRef<Record<number, Transform>>({});
@@ -255,6 +258,14 @@ export function EngineProvider({
 		});
 	};
 
+	// Versión con debounce para el ResizeObserver: espera 200ms antes de
+	// enviar los bounds, para que la animación nativa de maximize/restore
+	// termine antes de que el motor cambie de tamaño.
+	const reportBoundsDebounced = () => {
+		if (resizeTimerRef.current) clearTimeout(resizeTimerRef.current);
+		resizeTimerRef.current = setTimeout(reportBounds, 200);
+	};
+
 	const send = (cmd: object) => window.engine.send(cmd as never);
 
 	const sendAsync = <T,>(cmd: object, waitForEvent: string, onStart?: () => void): Promise<T> => {
@@ -282,10 +293,13 @@ export function EngineProvider({
 
 	useEffect(() => {
 		reportBounds();
-		const observer = new ResizeObserver(reportBounds);
+		const observer = new ResizeObserver(reportBoundsDebounced);
 		if (viewportRef.current) observer.observe(viewportRef.current);
 		window.electronAPI.onRequestViewportBounds(reportBounds);
-		return () => observer.disconnect();
+		return () => {
+			observer.disconnect();
+			if (resizeTimerRef.current) clearTimeout(resizeTimerRef.current);
+		};
 	}, []);
 
 	useEffect(() => {

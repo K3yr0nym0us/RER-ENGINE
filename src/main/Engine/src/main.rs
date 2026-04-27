@@ -12,7 +12,7 @@ mod texture;
 #[path = "CONFIG_3D/mod.rs"]     mod config_3d;
 #[path = "CONFIG_SHARED/mod.rs"] mod config_shared;
 
-use std::sync::{Arc, mpsc};
+use std::sync::Arc;
 
 use winit::{
     application::ApplicationHandler,
@@ -23,6 +23,81 @@ use winit::{
 };
 
 use ipc::{EngineCommand, EngineEvent};
+
+// ---------------------------------------------------------------------------
+// Hilo nativo Win32: position tracker (sólo Windows)
+// ---------------------------------------------------------------------------
+/// Offset en píxeles de pantalla entre la esquina superior-izquierda del padre
+/// (Electron) y la esquina superior-izquierda del motor.
+/// Actualizado atómicamente por user_event cuando llega SetBounds.
+/// El tracker lee este offset en cada iteración para calcular la posición deseada,
+/// eliminando la carrera entre IPC y el hilo de tracking.
+#[cfg(target_os = "windows")]
+pub type TrackerOffset = std::sync::Arc<(std::sync::atomic::AtomicI32, std::sync::atomic::AtomicI32)>;
+
+/// Rastrea la posición de la ventana padre (Electron) en un hilo dedicado
+/// y reposiciona la ventana del motor en tiempo real usando Win32 puro.
+///
+/// Algoritmo (offset-based, sin delta acumulado):
+///   cada 8ms, obtiene la posición física del área de contenido del padre con
+///   ClientToScreen(parent, {0,0}) — equivalente a getContentBounds() de Electron,
+///   sin el "invisible resize border" DPI-aware que tiene GetWindowRect.
+///   Si el motor no está en `content_origin + offset`, lo mueve con SetWindowPos.
+/// Cuando se produce maximize/restore/cambio de monitor, Electron envía set_bounds
+/// que actualiza el offset atómico y el tracker se alinea en el siguiente tick.
+#[cfg(target_os = "windows")]
+fn start_position_tracker(engine_hwnd: isize, parent_hwnd: isize, offset: TrackerOffset) {
+    use windows::Win32::Foundation::{HWND, POINT, RECT};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetWindowRect, SetWindowPos,
+        SWP_NOSIZE, SWP_NOZORDER, SWP_NOACTIVATE,
+    };
+    use windows::Win32::Graphics::Gdi::ClientToScreen;
+    use std::sync::atomic::Ordering;
+
+    let engine_hwnd = HWND(engine_hwnd);
+    let parent_hwnd = HWND(parent_hwnd);
+
+    std::thread::Builder::new()
+        .name("position-tracker".into())
+        .spawn(move || {
+            loop {
+                std::thread::sleep(std::time::Duration::from_millis(8));
+                unsafe {
+                    // Usar ClientToScreen para obtener la posición del área de contenido
+                    // (sin el invisible resize border DPI-aware de Win32).
+                    // Si Electron cerró, ClientToScreen devuelve FALSE.
+                    let mut pt = POINT { x: 0, y: 0 };
+                    if !ClientToScreen(parent_hwnd, &mut pt).as_bool() {
+                        break; // Electron cerró — terminar el hilo
+                    }
+                    let off_x = offset.0.load(Ordering::Relaxed);
+                    let off_y = offset.1.load(Ordering::Relaxed);
+                    let desired_x = pt.x + off_x;
+                    let desired_y = pt.y + off_y;
+
+                    let mut engine = RECT::default();
+                    if GetWindowRect(engine_hwnd, &mut engine).is_ok() {
+                        if engine.left != desired_x || engine.top != desired_y {
+                            // SAFETY: ambos HWNDs son válidos mientras el motor esté activo.
+                            let _ = SetWindowPos(
+                                engine_hwnd,
+                                HWND(0isize),
+                                desired_x,
+                                desired_y,
+                                0, 0,
+                                SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
+                            );
+                        }
+                    }
+                }
+            }
+        })
+        .expect("No se pudo crear el hilo position-tracker");
+}
+
+#[cfg(not(target_os = "windows"))]
+fn start_position_tracker(_e: isize, _p: isize, _o: std::sync::Arc<(std::sync::atomic::AtomicI32, std::sync::atomic::AtomicI32)>) {}
 
 // ---------------------------------------------------------------------------
 // Consulta de estado de teclado vía X11 (sin depender del foco de ventana)
@@ -56,10 +131,15 @@ pub struct EmbedConfig {
     pub y:          i32,
     pub width:      u32,
     pub height:     u32,
+    /// Offset físico del EngineView dentro del área de contenido de Electron.
+    /// Pasado desde Electron como `bounds.x / bounds.y` (rect * devicePixelRatio),
+    /// garantizando que el DPR del monitor actual esté aplicado.
+    pub rel_x:      i32,
+    pub rel_y:      i32,
 }
 
 fn parse_embed_config() -> Option<EmbedConfig> {
-    // Espera: --embed <xid> <x> <y> <width> <height>
+    // Espera: --embed <xid> <x> <y> <width> <height> [rel_x rel_y]
     let args: Vec<String> = std::env::args().collect();
     if args.len() >= 7 && args[1] == "--embed" {
         Some(EmbedConfig {
@@ -68,6 +148,8 @@ fn parse_embed_config() -> Option<EmbedConfig> {
             y:          args[4].parse().ok()?,
             width:      args[5].parse().ok()?,
             height:     args[6].parse().ok()?,
+            rel_x: args.get(7).and_then(|a| a.parse().ok()).unwrap_or(0),
+            rel_y: args.get(8).and_then(|a| a.parse().ok()).unwrap_or(0),
         })
     } else {
         None
@@ -79,7 +161,6 @@ fn parse_embed_config() -> Option<EmbedConfig> {
 // ---------------------------------------------------------------------------
 struct App {
     state:           Option<engine::State>,
-    rx:              mpsc::Receiver<EngineCommand>,
     embed:           Option<EmbedConfig>,
     // ── Cámara orbital
     mouse_right:     bool,   // botón derecho  → orbitar
@@ -93,9 +174,13 @@ struct App {
     ctrl_held:       bool,                // Ctrl izquierdo o derecho presionado
     // Frame rate cap: tiempo objetivo del próximo frame (evita busy loop)
     next_frame_at:   std::time::Instant,
+    // Windows: offset compartido con el hilo position-tracker.
+    // Actualizado en SetBounds para sincronizar maximize/monitor-change.
+    tracker_offset:     std::sync::Arc<(std::sync::atomic::AtomicI32, std::sync::atomic::AtomicI32)>,
+    tracker_parent_hwnd: isize,
 }
 
-impl ApplicationHandler for App {
+impl ApplicationHandler<EngineCommand> for App {
     /// Llamado al iniciar (y al volver de suspensión en móvil).
     /// Aquí creamos la ventana y el estado wgpu.
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
@@ -165,6 +250,34 @@ impl ApplicationHandler for App {
                             let ex = GetWindowLongPtrW(motor_hwnd, GWL_EXSTYLE);
                             SetWindowLongPtrW(motor_hwnd, GWL_EXSTYLE, ex | WS_EX_NOACTIVATE.0 as isize);
                         }
+                        // Lanzar hilo position-tracker con offset inicial calculado
+                        // usando ClientToScreen para el área de contenido del padre
+                        // (sin invisible resize border), alineado con getContentBounds() de Electron.
+                        let offset = unsafe {
+                            use windows::Win32::Foundation::POINT;
+                            use windows::Win32::Graphics::Gdi::ClientToScreen;
+                            // Si Electron pasó rel_x/rel_y (offsets físicos del renderer),
+                            // usarlos directamente: son el offset correcto sin conversión DPI.
+                            let (off_x, off_y) = if self.embed.as_ref().map(|e| e.rel_x != 0 || e.rel_y != 0).unwrap_or(false) {
+                                let rx = self.embed.as_ref().map(|e| e.rel_x).unwrap_or(0);
+                                let ry = self.embed.as_ref().map(|e| e.rel_y).unwrap_or(0);
+                                (rx, ry)
+                            } else {
+                                // Fallback: calcular desde ClientToScreen (funciona en monitor principal)
+                                let mut pt = POINT { x: 0, y: 0 };
+                                let _ = ClientToScreen(electron_hwnd, &mut pt);
+                                let embed_x = self.embed.as_ref().map(|e| e.x).unwrap_or(0);
+                                let embed_y = self.embed.as_ref().map(|e| e.y).unwrap_or(0);
+                                (embed_x - pt.x, embed_y - pt.y)
+                            };
+                            std::sync::Arc::new((
+                                std::sync::atomic::AtomicI32::new(off_x),
+                                std::sync::atomic::AtomicI32::new(off_y),
+                            ))
+                        };
+                        start_position_tracker(motor_hwnd.0, electron_hwnd.0, std::sync::Arc::clone(&offset));
+                        self.tracker_offset = offset;
+                        self.tracker_parent_hwnd = electron_hwnd.0;
                     }
                 }
             }
@@ -178,6 +291,43 @@ impl ApplicationHandler for App {
         self.state = Some(state);
     }
 
+    fn user_event(&mut self, event_loop: &ActiveEventLoop, cmd: EngineCommand) {
+        // El IPC thread envió un comando vía EventLoopProxy — procesar de inmediato.
+        if matches!(cmd, EngineCommand::Shutdown) {
+            event_loop.exit();
+            return;
+        }
+        // Windows: cuando set_bounds llega (maximize, cambio de monitor, resize),
+        // actualizar el offset del position-tracker ANTES de mover la ventana.
+        // Así el tracker y set_bounds no pelean — ambos apuntan al mismo lugar.
+        #[cfg(target_os = "windows")]
+        if let EngineCommand::SetBounds { x, y, offset_x, offset_y, .. } = &cmd {
+            if self.tracker_parent_hwnd != 0 {
+                use windows::Win32::Foundation::{HWND, POINT};
+                use windows::Win32::Graphics::Gdi::ClientToScreen;
+                use std::sync::atomic::Ordering;
+                // Si el comando trae offset_x/offset_y (offsets físicos del renderer),
+                // usarlos directamente: son la fuente de verdad sin conversión DPI.
+                if let (Some(ox), Some(oy)) = (offset_x, offset_y) {
+                    self.tracker_offset.0.store(*ox, Ordering::Relaxed);
+                    self.tracker_offset.1.store(*oy, Ordering::Relaxed);
+                } else {
+                    // Fallback: calcular desde la posición absoluta y ClientToScreen
+                    unsafe {
+                        let mut pt = POINT { x: 0, y: 0 };
+                        if ClientToScreen(HWND(self.tracker_parent_hwnd), &mut pt).as_bool() {
+                            self.tracker_offset.0.store(x - pt.x, Ordering::Relaxed);
+                            self.tracker_offset.1.store(y - pt.y, Ordering::Relaxed);
+                        }
+                    }
+                }
+            }
+        }
+        if let Some(state) = self.state.as_mut() {
+            state.handle_command(cmd);
+        }
+    }
+
     fn window_event(
         &mut self,
         event_loop: &ActiveEventLoop,
@@ -187,15 +337,6 @@ impl ApplicationHandler for App {
         let Some(state) = self.state.as_mut() else {
             return;
         };
-
-        // ── Procesar comandos IPC pendientes ─────────────────────────────────
-        while let Ok(cmd) = self.rx.try_recv() {
-            if matches!(cmd, EngineCommand::Shutdown) {
-                event_loop.exit();
-                return;
-            }
-            state.handle_command(cmd);
-        }
 
         // ── Eventos de ventana ───────────────────────────────────────────────
         match event {
@@ -401,11 +542,13 @@ fn main() {
     )
     .init();
 
-    // Canal IPC: hilo stdin → event loop
-    let (tx, rx) = mpsc::channel::<EngineCommand>();
-    ipc::start_ipc_thread(tx);
+    // Canal IPC: hilo stdin → event loop vía EventLoopProxy (despierta el loop inmediatamente)
+    let event_loop = EventLoop::<EngineCommand>::with_user_event()
+        .build()
+        .expect("No se pudo crear EventLoop");
+    let proxy = event_loop.create_proxy();
+    ipc::start_ipc_thread(proxy);
 
-    let event_loop = EventLoop::new().expect("No se pudo crear EventLoop");
     // ControlFlow se gestiona dinámicamente en about_to_wait con WaitUntil(next_frame).
     // NO usar Poll aquí: Poll + request_redraw en RedrawRequested = busy loop al 100% CPU.
 
@@ -414,6 +557,21 @@ fn main() {
         log::info!("Modo embebido activado");
     }
 
-    let mut app = App { state: None, rx, embed, mouse_right: false, mouse_middle: false, last_cursor: None, left_click_pos: None, gizmo_drag_axis: None, ctrl_held: false, next_frame_at: std::time::Instant::now() };
+    let mut app = App {
+        state:               None,
+        embed,
+        mouse_right:         false,
+        mouse_middle:        false,
+        last_cursor:         None,
+        left_click_pos:      None,
+        gizmo_drag_axis:     None,
+        ctrl_held:           false,
+        next_frame_at:       std::time::Instant::now(),
+        tracker_offset:      std::sync::Arc::new((
+            std::sync::atomic::AtomicI32::new(0),
+            std::sync::atomic::AtomicI32::new(0),
+        )),
+        tracker_parent_hwnd: 0,
+    };
     event_loop.run_app(&mut app).expect("Error en el event loop");
 }

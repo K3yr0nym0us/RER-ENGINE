@@ -1,8 +1,9 @@
 use std::{
     io::{self, BufRead, Write},
-    sync::mpsc::Sender,
     thread,
 };
+
+use winit::event_loop::EventLoopProxy;
 
 use serde::{Deserialize, Serialize};
 
@@ -16,11 +17,14 @@ pub enum EngineCommand {
     Shutdown,
     SetClearColor { r: f64, g: f64, b: f64 },
     Resize { width: u32, height: u32 },
-    SetBounds { x: i32, y: i32, width: u32, height: u32 },
-    /// Ocultar la ventana del motor (durante arrastre de la ventana principal en Windows).
-    HideWindow,
-    /// Mostrar la ventana del motor (al terminar el arrastre).
-    ShowWindow,
+    SetBounds { x: i32, y: i32, width: u32, height: u32,
+        /// Offset físico (en píxeles de pantalla) del EngineView dentro del área de
+        /// contenido de Electron. Calculado en el renderer como `rect * devicePixelRatio`,
+        /// sin la conversión DPI de getContentBounds() que puede ser inexacta en monitores
+        /// secundarios. El position-tracker Win32 lo usa como offset directo.
+        #[serde(default)] offset_x: Option<i32>,
+        #[serde(default)] offset_y: Option<i32>,
+    },
     LoadModel { path: String },
     /// Actualizar transform de una entidad por id.
     SetTransform {
@@ -185,8 +189,10 @@ pub fn send_event(event: &EngineEvent) {
 }
 
 /// Lanza un hilo dedicado que lee stdin línea a línea y envía
-/// los comandos parseados al event loop del motor.
-pub fn start_ipc_thread(tx: Sender<EngineCommand>) {
+/// los comandos parseados al event loop del motor vía EventLoopProxy.
+/// El proxy despierta el event loop inmediatamente (sin esperar el siguiente frame),
+/// lo que elimina la latencia de hasta 16 ms del canal mpsc + WaitUntil.
+pub fn start_ipc_thread(proxy: EventLoopProxy<EngineCommand>) {
     thread::Builder::new()
         .name("ipc-stdin".into())
         .spawn(move || {
@@ -196,8 +202,8 @@ pub fn start_ipc_thread(tx: Sender<EngineCommand>) {
                     Ok(line) if !line.trim().is_empty() => {
                         match serde_json::from_str::<EngineCommand>(&line) {
                             Ok(cmd) => {
-                                if tx.send(cmd).is_err() {
-                                    break; // El event loop cerró el receptor
+                                if proxy.send_event(cmd).is_err() {
+                                    break; // El event loop cerró el proxy
                                 }
                             }
                             Err(e) => eprintln!("[ipc] parse error: {e} — línea: {line}"),

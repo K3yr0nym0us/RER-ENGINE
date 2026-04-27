@@ -80,7 +80,7 @@ export interface ProjectSaveData {
 }
 
 export interface EngineCommand {
-  cmd: 'ping' | 'shutdown' | 'set_clear_color' | 'resize' | 'set_bounds' | 'hide_window' | 'show_window' | 'load_model' | 'set_transform' | 'set_scene' | 'load_scenario' | 'set_scenario_scale' | 'duplicate_scenario' | 'load_character' | 'set_character_scale' | 'duplicate_character' | 'remove_entity' | 'set_world_size' | 'set_grid_visible' | 'set_grid_cell_size' | 'set_ctrl_held' | 'set_physics' | 'set_active_tool' | 'create_collider_from_points' | 'play_animation_frame' | 'restore_animation_frame' | 'set_pivot_edit_mode' | 'cancel_pivot_edit_mode' | 'set_logical_area_mode' | 'cancel_logical_area_mode' | 'play_audio' | 'stop_audio' | 'set_animation' | 'play_animation' | 'stop_animation' | 'load_script' | 'unload_script'
+  cmd: 'ping' | 'shutdown' | 'set_clear_color' | 'resize' | 'set_bounds' | 'load_model' | 'set_transform' | 'set_scene' | 'load_scenario' | 'set_scenario_scale' | 'duplicate_scenario' | 'load_character' | 'set_character_scale' | 'duplicate_character' | 'remove_entity' | 'set_world_size' | 'set_grid_visible' | 'set_grid_cell_size' | 'set_ctrl_held' | 'set_physics' | 'set_active_tool' | 'create_collider_from_points' | 'play_animation_frame' | 'restore_animation_frame' | 'set_pivot_edit_mode' | 'cancel_pivot_edit_mode' | 'set_logical_area_mode' | 'cancel_logical_area_mode' | 'play_audio' | 'stop_audio' | 'set_animation' | 'play_animation' | 'stop_animation' | 'load_script' | 'unload_script'
   [key: string]: unknown
 }
 
