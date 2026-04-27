@@ -26,6 +26,7 @@ export interface SelectedEntity {
 			pivot_y: number
 		}[]
 	}[]
+	scripts?: { name: string; source: string }[]
 }
 export interface LogEntry {
 	id: number
@@ -175,6 +176,7 @@ interface EngineContextValue extends EngineState {
 	setGridCellSize: (size: number) => void;
 	removeCollider: (id: number) => void;
 	updateEntityAnimations: (id: number, animations: any[]) => void;
+	updateEntityScripts: (id: number, scripts: { name: string; source: string }[]) => void;
 	registerPivotEditListener: (fn: (framePath: string, px: number, py: number) => void) => void;
 	unregisterPivotEditListener: () => void;
 }
@@ -219,9 +221,10 @@ export function EngineProvider({
 				pivot_y: number
 			}[]
 		}[]
+		scripts?: { name: string; source: string }[]
 	};
 	const entityMetaRef = useRef<Record<number, EntityMeta>>({});
-	type PendingRestore = { transform: Transform; physicsEnabled: boolean; physicsType: string; animations?: any[] };
+	type PendingRestore = { transform: Transform; physicsEnabled: boolean; physicsType: string; animations?: any[]; scripts?: { name: string; source: string }[] };
 	const pendingRestoresRef = useRef<Map<string, PendingRestore[]>>(new Map());
 	const playerEntityIdRef = useRef<number | null>(null);
 	type Camera2dState = { x: number; y: number; halfH: number };
@@ -354,8 +357,7 @@ export function EngineProvider({
 								transform:      t,
 								physicsEnabled: entity.physics_enabled ?? false,
 								physicsType:    entity.physics_type    ?? 'static',
-								animations:    entity.animations,
-							}
+								animations:    entity.animations,							scripts:       entity.scripts,							}
 							const queue = pendingRestoresRef.current.get(entity.path) ?? []
 							queue.push(pr)
 							pendingRestoresRef.current.set(entity.path, queue)
@@ -390,6 +392,7 @@ export function EngineProvider({
 					physicsType:    e.physics_type    ?? '',
 					path:           meta?.path,
 					animations:     meta?.animations,
+					scripts:        meta?.scripts,
 				} })
 			}
 			if (event.event === 'entity_deselected') {
@@ -473,6 +476,12 @@ export function EngineProvider({
 							} as never)
 						}
 					}
+					if (pending.scripts) {
+						entityMetaRef.current[e.id].scripts = pending.scripts
+						for (const s of pending.scripts) {
+							window.engine.send({ cmd: 'load_script', id: e.id, path: s.name, source: s.source } as never)
+						}
+					}
 					if (queue.length === 0) pendingRestoresRef.current.delete(e.path)
 				}
 			}
@@ -527,6 +536,12 @@ export function EngineProvider({
 									logical_w:  anim.logical_w ?? 64,
 									logical_h:  anim.logical_h ?? 64,
 								} as never)
+							}
+						}
+						if (pending.scripts) {
+							entityMetaRef.current[e.id].scripts = pending.scripts
+							for (const s of pending.scripts) {
+								window.engine.send({ cmd: 'load_script', id: e.id, path: s.name, source: s.source } as never)
 							}
 						}
 						if (queue.length === 0) pendingRestoresRef.current.delete(e.path)
@@ -625,6 +640,12 @@ export function EngineProvider({
 			} as never)
 		}
 	};
+	const updateEntityScripts = (id: number, scripts: { name: string; source: string }[]) => {
+		if (!entityMetaRef.current[id]) {
+			entityMetaRef.current[id] = { kind: 'model', path: '', physicsEnabled: false, physicsType: '' }
+		}
+		entityMetaRef.current[id].scripts = scripts
+	};
 	const registerPivotEditListener = (fn: (framePath: string, px: number, py: number) => void) => {
 		pivotEditListenerRef.current = fn;
 	};
@@ -653,6 +674,7 @@ export function EngineProvider({
 		setGridCellSize,
 		removeCollider,
 		updateEntityAnimations,
+		updateEntityScripts,
 		registerPivotEditListener,
 		unregisterPivotEditListener,
 	};

@@ -140,6 +140,7 @@ use crate::gizmo::{self, GizmoBuffer};
 use crate::ipc::{send_event, AnimationFrameData, EngineCommand, EngineEvent};
 use crate::mesh::{self, Mesh};
 use crate::config_3d::physics_3d::PhysicsWorld;
+use crate::scripting::{ScriptEngine, ScriptCmd, EntitySnapshot};
 
 #[derive(Clone)]
 pub struct AnimationState {
@@ -270,6 +271,8 @@ pub struct State {
     pub(crate) animations: HashMap<u32, HashMap<String, AnimationState>>,
     /// Animación actualmente en reproducción: entity_id → ActiveAnimation.
     pub(crate) active_animations: HashMap<u32, ActiveAnimation>,
+    /// Sistema de scripting Lua. Contiene la VM y los scripts adjuntos a entidades.
+    pub(crate) script_engine: ScriptEngine,
 }
 
 impl State {
@@ -661,6 +664,8 @@ impl State {
             anim_overrides:     std::collections::HashMap::new(),
             animations:        HashMap::new(),
             active_animations: HashMap::new(),
+            script_engine: ScriptEngine::new()
+                .expect("Error al inicializar el motor de scripting Lua"),
         }
     }
 
@@ -703,6 +708,12 @@ impl State {
                 let _ = self.window.request_inner_size(
                     winit::dpi::PhysicalSize::new(width, height)
                 );
+            }
+            EngineCommand::HideWindow => {
+                self.window.set_visible(false);
+            }
+            EngineCommand::ShowWindow => {
+                self.window.set_visible(true);
             }            EngineCommand::LoadModel { path } => {
                 self.load_model(&path);
             }
@@ -804,6 +815,7 @@ impl State {
                 self.scenario_entities.retain(|&e| e != id);
                 self.character_entities.retain(|&e| e != id);
                 self.collider_entities.retain(|&e| e != id);
+                self.script_engine.detach_entity(id);
                 self.world.despawn(id);
             }
             EngineCommand::SetWorldSize { width, height } => {
@@ -966,6 +978,19 @@ EngineCommand::PlayAnimation { id, name } => {
                 send_event(&EngineEvent::AnimationFinished { entity_id: id });
                 log::info!("[animation] Stopped for entity {}", id);
             }
+            EngineCommand::LoadScript { id, path, source } => {
+                log::info!("[IPC] LoadScript: entity_id={} path={}", id, path);
+                if let Err(e) = self.script_engine.attach_script(id, &path, &source) {
+                    log::error!("[scripting] Error cargando script '{}': {}", path, e);
+                    send_event(&EngineEvent::Error {
+                        message: format!("Error en script '{path}': {e}"),
+                    });
+                }
+            }
+            EngineCommand::UnloadScript { id } => {
+                log::info!("[IPC] UnloadScript: entity_id={}", id);
+                self.script_engine.detach_entity(id);
+            }
             EngineCommand::Shutdown => {}
         }
     }
@@ -1081,6 +1106,68 @@ self.active_animations.retain(|_, a| !a.finished);
         self.active_gizmo_axis = axis;
     }
 
+    // ── Scripts ───────────────────────────────────────────────────────────────
+
+    /// Ejecuta un tick del motor de scripting y aplica los comandos generados.
+    fn update_scripts(&mut self) {
+        // Build snapshots for entities that have scripts attached
+        let snapshots: HashMap<u32, EntitySnapshot> = {
+            let entity_ids: Vec<u32> = self.script_engine.entity_ids().to_vec();
+            let mut map = HashMap::new();
+            for id in entity_ids {
+                let (x, y, scale_x, scale_y) = if let Some(t) = self.world.get::<Transform>(id) {
+                    (t.position.x, t.position.y, t.scale.x, t.scale.y)
+                } else {
+                    (0.0, 0.0, 1.0, 1.0)
+                };
+                let animations: Vec<String> = self.animations
+                    .get(&id)
+                    .map(|m| m.keys().cloned().collect())
+                    .unwrap_or_default();
+                map.insert(id, EntitySnapshot { id, x, y, scale_x, scale_y, animations });
+            }
+            map
+        };
+
+        let commands = self.script_engine.tick(self.delta_time, &snapshots);
+        self.apply_script_commands(commands);
+    }
+
+    /// Aplica los comandos generados por los scripts al estado del motor.
+    fn apply_script_commands(&mut self, commands: Vec<ScriptCmd>) {
+        for cmd in commands {
+            match cmd {
+                ScriptCmd::SetPosition { id, x, y } => {
+                    if let Some(t) = self.world.get_mut::<Transform>(id) {
+                        t.position.x = x;
+                        t.position.y = y;
+                    }
+                }
+                ScriptCmd::Translate { id, dx, dy } => {
+                    if let Some(t) = self.world.get_mut::<Transform>(id) {
+                        t.position.x += dx;
+                        t.position.y += dy;
+                    }
+                }
+                ScriptCmd::SetScale { id, sx, sy } => {
+                    if let Some(t) = self.world.get_mut::<Transform>(id) {
+                        t.scale.x = sx;
+                        t.scale.y = sy;
+                    }
+                }
+                ScriptCmd::PlayAnimation { id, name } => {
+                    self.handle_command(EngineCommand::PlayAnimation { id, name });
+                }
+                ScriptCmd::StopAnimation { id } => {
+                    self.handle_command(EngineCommand::StopAnimation { id });
+                }
+                ScriptCmd::Log { message } => {
+                    eprintln!("[script] {message}");
+                }
+            }
+        }
+    }
+
     // ── Update ───────────────────────────────────────────────────────────────
 
     pub fn update(&mut self) {
@@ -1092,6 +1179,7 @@ self.active_animations.retain(|_, a| !a.finished);
         } else {
             self.physics.step(self.delta_time, &mut self.world);
         }
+        self.update_scripts();
     }
 
     // ── Render ───────────────────────────────────────────────────────────────

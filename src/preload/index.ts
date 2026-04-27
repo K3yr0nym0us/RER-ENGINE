@@ -21,6 +21,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   sendViewportBounds: (bounds: { x: number; y: number; width: number; height: number }): void => {
     ipcRenderer.send('viewport-bounds', bounds)
   },
+  hideEngineViewport: (): void => {
+    ipcRenderer.send('hide-engine-viewport')
+  },
+  restoreEngineViewport: (): void => {
+    ipcRenderer.send('restore-engine-viewport')
+  },
   openModelDialog: (): Promise<string | null> => {
     return ipcRenderer.invoke('open-model-dialog')
   },

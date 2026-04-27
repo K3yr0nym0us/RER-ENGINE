@@ -5,11 +5,18 @@ import { Plus } from 'react-bootstrap-icons';
 import { AnimationAccordion } from './AnimationAccordion';
 
 import { useContextEngine } from '../../../context/useContextEngine';
+import { useModal } from '../../../context/ModalContext';
+import { ScriptEditorModalBody } from '../../ScriptEditorModalBody';
 
 interface AnimationFrame {
   path:    string
   pivot_x: number
   pivot_y: number
+}
+
+interface ScriptEntry {
+  name:   string
+  source: string
 }
 
 interface Animation {
@@ -20,10 +27,12 @@ interface Animation {
   logical_h:  number
   audio_path?: string
   frames:     AnimationFrame[]
+  scripts?:   ScriptEntry[]
 }
 
 export function AnimationsPanel() {
   const { selectedEntity: entity, send, sendAsync, setAnimationPlaying, updateEntityAnimations, registerPivotEditListener, unregisterPivotEditListener, animationPlaying } = useContextEngine()
+  const { openModal, closeModal } = useModal()
   const [animations, setAnimations] = useState<Animation[]>([])
   const [newAnimName, setNewAnimName] = useState('')
   const [editingPivot, setEditingPivot] = useState<{ animIdx: number; frameIdx: number } | null>(null)
@@ -164,6 +173,51 @@ const removeAnimation = (index: number) => {
     }
   }
 
+    const handleAnimScriptSave = (animIdx: number, data: ScriptEntry, replacing?: string) => {
+    const anim = animations[animIdx]
+    if (!anim) return
+    const prev = anim.scripts ?? []
+    const next = replacing
+      ? prev.map((s) => s.name === replacing ? data : s)
+      : [...prev, data]
+    updateAnimation(animIdx, { scripts: next })
+    closeModal()
+  }
+
+  const addAnimScript = (animIdx: number) => {
+    openModal({
+      title: `Nuevo Script — ${animations[animIdx]?.name}`,
+      size:  'xl',
+      body: (
+        <ScriptEditorModalBody
+          onSave={(data) => handleAnimScriptSave(animIdx, data)}
+          onCancel={closeModal}
+        />
+      ),
+    })
+  }
+
+  const editAnimScript = (animIdx: number, scriptName: string) => {
+    const existing = (animations[animIdx]?.scripts ?? []).find((s) => s.name === scriptName)
+    if (!existing) return
+    openModal({
+      title: `Editar Script: ${scriptName}`,
+      size:  'xl',
+      body: (
+        <ScriptEditorModalBody
+          initialData={existing}
+          onSave={(data) => handleAnimScriptSave(animIdx, data, scriptName)}
+          onCancel={closeModal}
+        />
+      ),
+    })
+  }
+
+  const removeAnimScript = (animIdx: number, scriptName: string) => {
+    const prev = animations[animIdx]?.scripts ?? []
+    updateAnimation(animIdx, { scripts: prev.filter((s) => s.name !== scriptName) })
+  }
+
   const startPivotEdit = (animIdx: number, frameIdx: number) => {
     if (!entity) return
     const frame = animations[animIdx]?.frames[frameIdx]
@@ -251,6 +305,9 @@ const removeAnimation = (index: number) => {
                 onMoveFrame={(frameIdx, dir) => moveFrame(idx, frameIdx, dir)}
                 onUpdateFramePivot={(frameIdx, field, val) => updateFramePivot(idx, frameIdx, field, val)}
                 onStartPivotEdit={(frameIdx) => startPivotEdit(idx, frameIdx)}
+                onAddScript={() => addAnimScript(idx)}
+                onEditScript={(name) => editAnimScript(idx, name)}
+                onRemoveScript={(name) => removeAnimScript(idx, name)}
               />
             ))}
           </Accordion>

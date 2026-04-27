@@ -55,6 +55,7 @@ export function useAutoSave({ projectType = '2D', initialSave = null }: UseAutoS
           physics_type: m.physicsType,
           points: m.points,
           animations: m.animations,
+          scripts: m.scripts,
         }
       })
 

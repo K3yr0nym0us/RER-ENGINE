@@ -1,12 +1,17 @@
 import React, { useState } from 'react'
 import { Accordion, Spinner } from 'react-bootstrap'
-import { Plus, Trash, ArrowLeft, PlayFill, Crosshair, Pencil, MusicNoteBeamed } from 'react-bootstrap-icons'
+import { Plus, Trash, ArrowUp, ArrowDown, PlayFill, Crosshair, Pencil, MusicNoteBeamed, FileEarmarkCode } from 'react-bootstrap-icons'
 import { useContextEngine } from '../../../context/useContextEngine'
 
 interface AnimationFrame {
   path:    string
   pivot_x: number
   pivot_y: number
+}
+
+interface ScriptEntry {
+  name:   string
+  source: string
 }
 
 interface Animation {
@@ -17,6 +22,7 @@ interface Animation {
   logical_h:  number
   audio_path?: string
   frames:     AnimationFrame[]
+  scripts?:   ScriptEntry[]
 }
 
 interface AnimationAccordionProps {
@@ -38,6 +44,9 @@ interface AnimationAccordionProps {
   onMoveFrame: (frameIdx: number, direction: -1 | 1) => void
   onUpdateFramePivot: (frameIdx: number, field: 'pivot_x' | 'pivot_y', value: number) => void
   onStartPivotEdit: (frameIdx: number) => void
+  onAddScript:      () => void
+  onEditScript:     (name: string) => void
+  onRemoveScript:   (name: string) => void
 }
 
 export function AnimationAccordion({
@@ -59,6 +68,9 @@ export function AnimationAccordion({
   onMoveFrame,
   onUpdateFramePivot,
   onStartPivotEdit,
+  onAddScript,
+  onEditScript,
+  onRemoveScript,
 }: AnimationAccordionProps) {
   const { selectedEntity: entity, animationPlaying } = useContextEngine()
   const isPlaying = entity ? animationPlaying.get(entity.id) ?? false : false
@@ -88,7 +100,7 @@ export function AnimationAccordion({
         title={editingLogicalArea === animIdx ? 'Ocultar área lógica' : 'Habilitar edición'}
         onClick={onToggleLogicalArea}
       >
-        <Crosshair size={12} />
+        <Pencil size={12} />
       </button>
     </div>
   )
@@ -167,14 +179,7 @@ export function AnimationAccordion({
             )}
             {anim.frames.map((frame, frameIdx) => (
               <div key={frameIdx} className="d-flex align-items-center gap-1">
-                <button
-                  className="btn btn-sm p-1"
-                  disabled={frameIdx === 0}
-                  onClick={() => onMoveFrame(frameIdx, -1)}
-                >
-                  <ArrowLeft size={10} />
-                </button>
-                <span className="small text-truncate" style={{ maxWidth: 120 }} title={frame.path}>
+                <span className="small text-truncate" style={{ maxWidth: 110 }} title={frame.path}>
                   {frame.path.split('/').pop()}
                 </span>
                 <span className="small text-muted">
@@ -185,7 +190,23 @@ export function AnimationAccordion({
                   title={editingPivot?.animIdx === animIdx && editingPivot?.frameIdx === frameIdx ? 'Cancelar edición de pivot' : 'Editar pivot (click en viewport)'}
                   onClick={() => onStartPivotEdit(frameIdx)}
                 >
-                  <Pencil size={10} />
+                  <Crosshair size={10} />
+                </button>
+                <button
+                  className="btn btn-sm p-1"
+                  disabled={frameIdx === 0}
+                  onClick={() => onMoveFrame(frameIdx, -1)}
+                  title="Mover arriba"
+                >
+                  <ArrowUp size={10} />
+                </button>
+                <button
+                  className="btn btn-sm p-1"
+                  disabled={frameIdx === anim.frames.length - 1}
+                  onClick={() => onMoveFrame(frameIdx, 1)}
+                  title="Mover abajo"
+                >
+                  <ArrowDown size={10} />
                 </button>
                 <button
                   className="btn btn-sm p-1 text-danger"
@@ -193,17 +214,48 @@ export function AnimationAccordion({
                 >
                   <Trash size={10} />
                 </button>
-                <button
-                  className="btn btn-sm p-1"
-                  disabled={frameIdx === anim.frames.length - 1}
-                  onClick={() => onMoveFrame(frameIdx, 1)}
-                >
-                  <ArrowLeft size={10} style={{ transform: 'scaleX(-1)' }} />
-                </button>
               </div>
             ))}
           </div>
         )}
+
+        {/* Scripts de animación */}
+        <div className="mt-2 pt-2 border-top border-secondary">
+          <div className="d-flex align-items-center justify-content-between mb-1">
+            <span className="small text-secondary">Scripts</span>
+            <button
+              className="btn btn-sm btn-outline-warning p-1 lh-1"
+              title="Nuevo script de animación"
+              onClick={onAddScript}
+            >
+              <Plus size={12} />
+            </button>
+          </div>
+          {(!anim.scripts || anim.scripts.length === 0) && (
+            <div className="small text-muted fst-italic">Sin scripts.</div>
+          )}
+          {anim.scripts?.map((s) => (
+            <div key={s.name} className="d-flex align-items-center gap-1 mb-1">
+              <FileEarmarkCode size={12} className="text-warning flex-shrink-0" />
+              <span className="small text-light text-truncate flex-fill" title={s.name}>{s.name}</span>
+              <button
+                className="btn btn-sm btn-outline-primary p-1 lh-1"
+                title="Editar script"
+                onClick={() => onEditScript(s.name)}
+              >
+                <Pencil size={10} />
+              </button>
+              <button
+                className="btn btn-sm btn-outline-danger p-1 lh-1"
+                title="Quitar script"
+                onClick={() => onRemoveScript(s.name)}
+              >
+                <Trash size={10} />
+              </button>
+            </div>
+          ))}
+        </div>
+
       </Accordion.Body>
     </Accordion.Item>
   )

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Accordion } from 'react-bootstrap';
 import { useContextEngine } from '../context/useContextEngine';
-import { TransformPanel, AnimationsPanel } from './sidebar/properties';
+import { TransformPanel, AnimationsPanel, ScriptingPanel } from './sidebar/properties';
 
 export function PropertiesPanel({ projectType }: { projectType?: string }) {
   const { selectedEntity } = useContextEngine()
@@ -111,6 +111,8 @@ export function PropertiesPanel({ projectType }: { projectType?: string }) {
         </Accordion.Item>
 
         <AnimationsPanel />
+
+        <ScriptingPanel />
       </Accordion>
     </div>
   )

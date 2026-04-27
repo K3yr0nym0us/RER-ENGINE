@@ -59,7 +59,9 @@
     "vite": "^5.4.0"
   },
   "dependencies": {
+    "@monaco-editor/react": "^4.7.0",
     "bootstrap": "^5.3.8",
+    "monaco-editor": "^0.55.1",
     "react-bootstrap": "^2.10.10",
     "react-bootstrap-icons": "^1.11.6"
   }

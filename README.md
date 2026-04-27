@@ -2,7 +2,7 @@
 
 > **R**eact + **E**lectron + **R**ust ENGINE
 
-Motor gráfico 3D experimental construido con Rust embebido dentro de Electron. El objetivo es crear un editor de escenas interactivo donde la UI (React) y el motor de render (Rust/wgpu) coexisten en la misma ventana, comunicándose mediante un protocolo IPC ligero.
+Motor gráfico 2D y 3D experimental construido con Rust embebido dentro de Electron. El objetivo es crear un editor de escenas interactivo donde la UI (React) y el motor de render (Rust/wgpu) coexisten en la misma ventana, comunicándose mediante un protocolo IPC ligero.
 
 ---
 
@@ -143,7 +143,7 @@ yarn dist
 | UI con Bootstrap (acordeón) | ✅ Completo |
 | IPC JSON lines | ✅ Completo |
 | Física Rapier3D | ✅ Completo (por entidad: dinámico / estático / cinemático) |
-| Scripting (Lua/Python) | ⏳ Pendiente |
+| Scripting (Lua/Rhai) | ⏳ Pendiente — recomendado Lua vía `mlua` o Rhai nativo Rust |
 | Soporte Linux Ubuntu | ✅ Probado en Ubuntu (X11 / WSL2 + WSLg) |
 | Soporte Windows | ✅ Probado en Windows 11 |
 

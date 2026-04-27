@@ -31,6 +31,12 @@ let engineProcess: ChildProcess | null = null
 let rendererReady = false
 const eventBuffer: EngineEvent[] = []
 
+// Ventana secundaria del editor de scripts Lua
+// (eliminada — el editor ahora vive en un modal de Bootstrap dentro del renderer)
+
+// Últimos bounds efectivos del motor (para restaurarlo tras ocultarlo)
+let lastEffectiveBounds: ViewportBounds | null = null
+
 function sendEventToRenderer(event: EngineEvent): void {
   if (rendererReady && mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('engine:event', event)
@@ -79,10 +85,34 @@ function createMainWindow(): void {
     mainWindow = null
   })
 
-  // Cuando la ventana principal se mueve, pedir al renderer que reenvíe bounds.
-  // El motor hijo necesita recalcular su posición relativa al nuevo origen.
+  // Cuando la ventana principal se mueve:
+  // - Windows: ocultar el motor en el primer evento (inicio del arrastre).
+  //   La posición final se envía en 'moved', evitando el lag visual.
+  // - Linux: el motor está embebido vía XEMBED y se mueve solo con el padre.
   mainWindow.on('move', () => {
-    mainWindow?.webContents.send('request-viewport-bounds')
+    if (process.platform === 'win32' && engineStarted && engineProcess && !isDragging) {
+      isDragging = true
+      sendToEngine({ cmd: 'hide_window' })
+    }
+  })
+
+  // En Windows, 'moved' se emite UNA sola vez al soltar el arrastre.
+  // Aquí reposicionamos y volvemos a mostrar el motor.
+  mainWindow.on('moved', () => {
+    if (process.platform === 'win32' && isDragging) {
+      isDragging = false
+      if (engineStarted && engineProcess && lastRelativeBounds) {
+        const effectiveBounds = viewportToScreenBounds(lastRelativeBounds)
+        sendToEngine({
+          cmd:    'set_bounds',
+          x:      Math.round(effectiveBounds.x),
+          y:      Math.round(effectiveBounds.y),
+          width:  Math.max(1, Math.round(effectiveBounds.width)),
+          height: Math.max(1, Math.round(effectiveBounds.height)),
+        })
+        sendToEngine({ cmd: 'show_window' })
+      }
+    }
   })
 
   // Una vez que el renderer cargó y sus listeners están activos,
@@ -296,6 +326,24 @@ ipcMain.handle('open-background-dialog', async () => {
   return result.canceled ? null : result.filePaths[0] ?? null
 })
 
+// Oculta el motor (para que no tape modales del renderer)
+ipcMain.on('hide-engine-viewport', () => {
+  if (!engineStarted) return
+  sendToEngine({ cmd: 'set_bounds', x: 0, y: 0, width: 1, height: 1 })
+})
+
+// Restaura el motor a los últimos bounds conocidos
+ipcMain.on('restore-engine-viewport', () => {
+  if (!engineStarted || !lastEffectiveBounds) return
+  sendToEngine({
+    cmd:    'set_bounds',
+    x:      Math.round(lastEffectiveBounds.x),
+    y:      Math.round(lastEffectiveBounds.y),
+    width:  Math.max(1, Math.round(lastEffectiveBounds.width)),
+    height: Math.max(1, Math.round(lastEffectiveBounds.height)),
+  })
+})
+
 // ---------------------------------------------------------------------------
 // Helpers de guardado con copia de assets
 // ---------------------------------------------------------------------------
@@ -488,6 +536,15 @@ ipcMain.handle('save-project-silent', async (_event, filePath: string, data: Pro
 // Al primer mensaje arrancamos el motor con las coordenadas correctas.
 let engineStarted = false
 
+// Caché de los bounds relativos del viewport (posición dentro del contenido de Electron,
+// pre-DPR). Se actualiza en cada 'viewport-bounds'. Permite calcular coords absolutas
+// directamente en el evento 'moved' de Windows sin un round-trip por el renderer.
+let lastRelativeBounds: ViewportBounds | null = null
+
+// Bandera: indica si la ventana principal está siendo arrastrada (Windows).
+// Mientras se arrastra, el motor se oculta para evitar el lag visual.
+let isDragging = false
+
 // En Windows el motor corre como owned popup (no WS_CHILD), por lo que
 // necesita coordenadas de pantalla absolutas en vez de coordenadas relativas
 // al área cliente de Electron. Convierte los bounds DPR-escalados del renderer
@@ -505,6 +562,9 @@ function viewportToScreenBounds(bounds: ViewportBounds): ViewportBounds {
 }
 
 ipcMain.on('viewport-bounds', (_event, bounds: ViewportBounds) => {
+  // Actualizar caché de bounds relativos para el cálculo rápido en el evento 'moved'
+  lastRelativeBounds = bounds
+
   // Si el proceso murió, permitir relanzar
   if (engineStarted && !engineProcess) {
     engineStarted = false
@@ -512,6 +572,7 @@ ipcMain.on('viewport-bounds', (_event, bounds: ViewportBounds) => {
 
   // En Windows el popup usa coordenadas de pantalla absolutas
   const effectiveBounds = process.platform === 'win32' ? viewportToScreenBounds(bounds) : bounds
+  lastEffectiveBounds = effectiveBounds
 
   if (engineStarted) {
     // Motor corriendo: reposicionar y redimensionar

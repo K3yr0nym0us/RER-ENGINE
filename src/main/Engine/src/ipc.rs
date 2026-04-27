@@ -17,6 +17,10 @@ pub enum EngineCommand {
     SetClearColor { r: f64, g: f64, b: f64 },
     Resize { width: u32, height: u32 },
     SetBounds { x: i32, y: i32, width: u32, height: u32 },
+    /// Ocultar la ventana del motor (durante arrastre de la ventana principal en Windows).
+    HideWindow,
+    /// Mostrar la ventana del motor (al terminar el arrastre).
+    ShowWindow,
     LoadModel { path: String },
     /// Actualizar transform de una entidad por id.
     SetTransform {
@@ -102,6 +106,11 @@ pub enum EngineCommand {
     PlayAnimation { id: u32, name: String },
     /// Detener la animación en curso.
     StopAnimation { id: u32 },
+    /// Adjuntar un script Lua a una entidad. `source` es el código Lua completo.
+    /// `path` se usa solo para mensajes de error y logs.
+    LoadScript { id: u32, path: String, source: String },
+    /// Desadjuntar todos los scripts de una entidad (sin eliminar la entidad).
+    UnloadScript { id: u32 },
 }
 
 #[derive(Debug, Deserialize, Clone)]
