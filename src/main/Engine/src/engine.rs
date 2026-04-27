@@ -1,4 +1,5 @@
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::Instant;
 
 use bytemuck::{Pod, Zeroable};
@@ -6,7 +7,128 @@ use glam::{Mat4, Vec3 as GlamVec3};
 use wgpu::{include_wgsl, util::DeviceExt};
 use winit::{dpi::PhysicalSize, window::Window};
 use rodio;
+use rodio::Source as RodioSource;
 
+// ---------------------------------------------------------------------------
+// Thread dedicado de audio
+// ---------------------------------------------------------------------------
+
+/// Audio pre-decodificado a muestras PCM listas para reproducción instantánea.
+/// Se genera una vez en `SetAnimation` y se reutiliza en cada `PlayAnimation`.
+pub struct DecodedAudio {
+    pub samples:     Vec<i16>,
+    pub channels:    u16,
+    pub sample_rate: u32,
+}
+
+/// Comandos enviados al thread de audio.
+pub enum AudioCmd {
+    /// Reproducir audio desde muestras PCM ya decodificadas en RAM.
+    /// El Sink nunca se destruye — solo se vacía la cola y se agrega el nuevo source.
+    Play { audio: Arc<DecodedAudio>, loop_: bool },
+    /// Detener el audio en curso (vacía la cola, el Sink sigue vivo).
+    Stop,
+}
+
+/// Single-slot "latest wins": solo el comando más reciente importa.
+/// Si el thread de audio está ocupado procesando y llegan 10 Play seguidos,
+/// solo se ejecuta el último — sin acumulación de cola.
+type AudioSlot = Arc<(Mutex<Option<AudioCmd>>, Condvar)>;
+
+/// Envía un comando al thread de audio sobreescribiendo cualquier
+/// comando pendiente aún no procesado.
+fn send_audio(slot: &AudioSlot, cmd: AudioCmd) {
+    let (lock, cvar) = &**slot;
+    *lock.lock().unwrap() = Some(cmd);
+    cvar.notify_one();
+}
+
+/// Lanza el thread dedicado de audio.
+///
+/// Diseño:
+///   - Un único `OutputStream` (conexión ALSA) vive todo el tiempo del thread.
+///   - Cada `Play` crea un Sink NUEVO desde el handle existente (sin sink.clear()).
+///     `sink.clear()` puede deadlock en WSL/ALSA cuando el stream subyacente se invalida;
+///     un Sink fresco evita ese riesgo completamente.
+///   - Sonidos no-looping: `sink.detach()` → fire & forget, múltiples SFX simultáneos.
+///   - Sonido looping: se guarda en `loop_sink` y se reemplaza en el siguiente Play.
+///   - `Sink::try_new(&handle)` es O(1) (solo envía un mensaje al mixer existente),
+///     muy distinto de `OutputStream::try_default()` que abre un nuevo dispositivo ALSA.
+fn start_audio_thread() -> Option<AudioSlot> {
+    let slot: AudioSlot = Arc::new((Mutex::new(None), Condvar::new()));
+    let slot_thread = Arc::clone(&slot);
+    std::thread::Builder::new()
+        .name("audio".into())
+        .spawn(move || {
+            let (_stream, handle) = match rodio::OutputStream::try_default() {
+                Ok(pair) => pair,
+                Err(e) => {
+                    log::error!("[audio] thread: no se pudo abrir dispositivo: {e}");
+                    return;
+                }
+            };
+
+            let (lock, cvar) = &*slot_thread;
+            // Sink para sonido looping (música, ambience). None = ninguno activo.
+            let mut loop_sink: Option<rodio::Sink> = None;
+
+            loop {
+                let cmd = {
+                    let mut guard = lock.lock().unwrap();
+                    loop {
+                        if let Some(cmd) = guard.take() {
+                            break cmd;
+                        }
+                        guard = cvar.wait(guard).unwrap();
+                    }
+                };
+                match cmd {
+                    AudioCmd::Stop => {
+                        // Detener música looping si la hay; drop() detiene el Sink.
+                        if let Some(s) = loop_sink.take() {
+                            drop(s);
+                            log::info!("[audio] música detenida");
+                        } else {
+                            log::info!("[audio] detenido (sin loop activo)");
+                        }
+                    }
+                    AudioCmd::Play { audio, loop_ } => {
+                        // Crear un Sink fresco por reproducción — evita sink.clear() y
+                        // permite múltiples SFX simultáneos vía detach().
+                        let sink = match rodio::Sink::try_new(&handle) {
+                            Ok(s) => s,
+                            Err(e) => {
+                                log::error!("[audio] no se pudo crear sink: {e}");
+                                continue;
+                            }
+                        };
+                        let source = rodio::buffer::SamplesBuffer::new(
+                            audio.channels,
+                            audio.sample_rate,
+                            audio.samples.clone(),
+                        );
+                        if loop_ {
+                            // Reemplazar música anterior (drop detiene la anterior).
+                            if let Some(prev) = loop_sink.take() { drop(prev); }
+                            sink.append(source.repeat_infinite());
+                            sink.play();
+                            loop_sink = Some(sink);
+                        } else {
+                            // SFX one-shot: fire & forget. Varios pueden solaparse.
+                            sink.append(source);
+                            sink.play();
+                            sink.detach();
+                        }
+                        log::info!("[audio] reproduciendo ({} muestras, {}ch, {}Hz, loop={})",
+                            audio.samples.len(), audio.channels, audio.sample_rate, loop_);
+                    }
+                }
+            }
+        })
+        .expect("no se pudo crear el thread de audio");
+    log::info!("[audio] dispositivo de audio inicializado");
+    Some(slot)
+}
 use crate::config_2d::{GridBuffer, GridConfig};
 use crate::config_2d::ActiveTool;
 
@@ -15,9 +137,29 @@ use crate::config_2d::Camera2D;
 use crate::config_2d::PhysicsWorld2D;
 use crate::ecs::{MeshComponent, Transform, World};
 use crate::gizmo::{self, GizmoBuffer};
-use crate::ipc::{send_event, EngineCommand, EngineEvent};
+use crate::ipc::{send_event, AnimationFrameData, EngineCommand, EngineEvent};
 use crate::mesh::{self, Mesh};
 use crate::config_3d::physics_3d::PhysicsWorld;
+
+#[derive(Clone)]
+pub struct AnimationState {
+    pub frames:        Vec<AnimationFrameData>,
+    pub fps:           u32,
+    pub loop_:         bool,
+    /// Audio pre-decodificado a muestras PCM durante SetAnimation.
+    /// `None` si la animación no tiene audio o falló la decodificación.
+    pub audio_decoded: Option<Arc<DecodedAudio>>,
+    pub logical_w:     u32,
+    pub logical_h:     u32,
+}
+
+pub struct ActiveAnimation {
+    pub animation_name: String,
+    pub current_frame: usize,
+    pub last_frame_time: Instant,
+    pub fps: u32,
+    pub finished: bool,
+}
 use crate::texture::GpuTexture;
 use crate::ecs::EntityId;
 
@@ -69,7 +211,6 @@ pub struct State {
     // Gizmos
     pub(crate) gizmo_pipeline:   wgpu::RenderPipeline,
     pub(crate) gizmo_buffer:     GizmoBuffer,
-    pub(crate) gizmo_bgl:        wgpu::BindGroupLayout,
     pub(crate) gizmo_bind_group: wgpu::BindGroup,
     pub(crate) gizmo_buffer_uni: wgpu::Buffer,
     // Física
@@ -109,12 +250,11 @@ pub struct State {
     pub pivot_edit_mode: Option<(u32, String, u32, u32)>,
     /// Modo visualización del área lógica: Some(entity_id) cuando el overlay naranja está activo.
     pub logical_area_mode: Option<u32>,
-    /// Sink único y persistente de rodio.
-    /// Se reutiliza en cada PlayAudio (clear + append) para evitar acumulación de sinks
-    /// en el mixer de rodio, que degrada el audio y bloquea ALSA/PulseAudio.
-    pub(crate) audio_sink: Option<rodio::Sink>,
-    /// OutputStream de rodio: se abre UNA sola vez al iniciar el motor y se mantiene vivo siempre.
-    pub(crate) _audio_stream: Option<rodio::OutputStream>,
+    /// Canal para enviar comandos de audio al thread dedicado.
+    /// El thread de audio vive independiente del render thread para que
+    /// la creaci\u00f3n/destrucci\u00f3n de Sinks de rodio (que puede bloquear en ALSA/PulseAudio)
+    /// nunca detenga el render loop ni cause drift en el timing de animaciones.
+    pub(crate) audio_slot: Option<AudioSlot>,
     /// Caché de texturas GPU para frames de animación, indexada por ruta absoluta.
     /// Almacena (BindGroup, img_width, img_height) para evitar recargar de disco,
     /// redecodificar y resubir a GPU en cada tick. Se limpia al cambiar de escena.
@@ -124,6 +264,12 @@ pub struct State {
     /// así la textura base de la entidad nunca se sobreescribe.
     /// Restore_animation_frame borra la entrada; el render loop vuelve a textures[].
     pub(crate) anim_overrides: std::collections::HashMap<usize, std::sync::Arc<wgpu::BindGroup>>,
+/// Animaciones guardadas: entity_id → (name → AnimationState).
+    /// Permite almacenar TODAS las animaciones de una entidad y reproducir
+    /// cualquiera por nombre sin reenviar datos desde el frontend.
+    pub(crate) animations: HashMap<u32, HashMap<String, AnimationState>>,
+    /// Animación actualmente en reproducción: entity_id → ActiveAnimation.
+    pub(crate) active_animations: HashMap<u32, ActiveAnimation>,
 }
 
 impl State {
@@ -455,29 +601,11 @@ impl State {
         let grid_config = GridConfig::default();
         let grid_buffer = crate::config_2d::build_grid(&device, &grid_config);
 
-        // ── Audio: inicializar dispositivo y Sink UNA sola vez ──────────────────
-        // Crear un único Sink persistente. PlayAudio solo llama clear()+append();
-        // nunca crea ni destruye Sinks, evitando acumulación en el mixer de rodio.
-        let (audio_stream_opt, audio_sink_opt) =
-            match rodio::OutputStream::try_default() {
-                Ok((stream, handle)) => {
-                    match rodio::Sink::try_new(&handle) {
-                        Ok(sink) => {
-                            // El handle puede dropearse; el Sink mantiene la referencia interna.
-                            log::info!("[audio] dispositivo de audio inicializado");
-                            (Some(stream), Some(sink))
-                        }
-                        Err(e) => {
-                            log::warn!("[audio] no se pudo crear el Sink de audio: {e}");
-                            (Some(stream), None)
-                        }
-                    }
-                }
-                Err(e) => {
-                    log::warn!("[audio] no se pudo abrir el dispositivo de audio: {e}");
-                    (None, None)
-                }
-            };
+        // ── Audio: thread dedicado ──────────────────────────────────────────────
+        // El thread de audio vive independiente del render thread para que la
+        // creaci\u00f3n/destrucci\u00f3n de Sinks de rodio (que puede bloquear en ALSA/PulseAudio)
+        // nunca detenga el render loop ni cause drift en el timing de animaciones.
+        let audio_slot = start_audio_thread();
 
         Self {
             window,
@@ -505,7 +633,6 @@ impl State {
             delta_time:  0.0,
             gizmo_pipeline,
             gizmo_buffer,
-            gizmo_bgl,
             gizmo_bind_group,
             gizmo_buffer_uni,
             physics: PhysicsWorld::new(),
@@ -529,10 +656,11 @@ impl State {
             anim_saved_transforms: std::collections::HashMap::new(),
             pivot_edit_mode:    None,
             logical_area_mode:  None,
-            audio_sink:         audio_sink_opt,
-            _audio_stream:      audio_stream_opt,
+            audio_slot,
             anim_texture_cache: std::collections::HashMap::new(),
             anim_overrides:     std::collections::HashMap::new(),
+            animations:        HashMap::new(),
+            active_animations: HashMap::new(),
         }
     }
 
@@ -648,36 +776,25 @@ impl State {
                 self.cancel_logical_area_mode();
             }
             EngineCommand::PlayAudio { path, loop_ } => {
-                if let Some(sink) = &self.audio_sink {
-                    // Limpiar la cola del Sink sin destruirlo — evita acumulación en el mixer
-                    sink.clear();
-                    match std::fs::File::open(&path) {
-                        Ok(file) => {
-                            let buf = std::io::BufReader::new(file);
-                            match rodio::Decoder::new(buf) {
-                                Ok(source) => {
-                                    if loop_ {
-                                        sink.append(rodio::source::Source::repeat_infinite(source));
-                                    } else {
-                                        sink.append(source);
-                                    }
-                                    sink.play();
-                                    log::info!("[audio] reproduciendo: {path}");
-                                }
-                                Err(e) => log::error!("[audio] error al decodificar {path}: {e}"),
-                            }
-                        }
-                        Err(e) => log::error!("[audio] no se pudo abrir {path}: {e}"),
-                    }
-                } else {
-                    log::warn!("[audio] dispositivo no disponible, no se puede reproducir: {path}");
+                // Decodificar a PCM y enviar al Sink persistente.
+                let decoded = std::fs::read(&path).ok()
+                    .and_then(|b| {
+                        let cursor = std::io::Cursor::new(b);
+                        rodio::Decoder::new(cursor).ok().map(|dec| {
+                            let ch = dec.channels();
+                            let sr = dec.sample_rate();
+                            let s: Vec<i16> = dec.collect();
+                            Arc::new(DecodedAudio { samples: s, channels: ch, sample_rate: sr })
+                        })
+                    });
+                match decoded {
+                    Some(audio) => self.play_audio_internal(audio, loop_),
+                    None => log::error!("[audio] no se pudo cargar o decodificar: {path}"),
                 }
             }
             EngineCommand::StopAudio => {
-                if let Some(sink) = &self.audio_sink {
-                    sink.clear();
-                    log::info!("[audio] detenido");
-                }
+                self.stop_audio_internal();
+                log::info!("[audio] detenido por comando externo");
             }
             EngineCommand::RemoveEntity { id } => {
                 if Some(id) == self.selected_entity { self.selected_entity = None; }
@@ -759,6 +876,96 @@ impl State {
                     log::warn!("CreateColliderFromPoints solo disponible en modo 2D");
                 }
             }
+            EngineCommand::SetAnimation { id, name, frames, fps, loop_, audio_path, logical_w, logical_h } => {
+                log::info!("[IPC] SetAnimation: entity_id={}, name='{}', frames={}, audio={:?}", id, name, frames.len(), audio_path);
+
+                // Pre-decodificar audio a muestras PCM durante SetAnimation.
+                // En PlayAnimation solo se clona un Vec<i16> — cero I/O, cero decode.
+                let audio_decoded: Option<Arc<DecodedAudio>> = audio_path.as_deref().and_then(|p| {
+                    let bytes = match std::fs::read(p) {
+                        Ok(b) => b,
+                        Err(e) => { log::warn!("[SetAnimation] error leyendo audio {}: {}", p, e); return None; }
+                    };
+                    let cursor = std::io::Cursor::new(bytes);
+                    let decoder = match rodio::Decoder::new(cursor) {
+                        Ok(d) => d,
+                        Err(e) => { log::warn!("[SetAnimation] error decodificando audio {}: {}", p, e); return None; }
+                    };
+                    let channels    = decoder.channels();
+                    let sample_rate = decoder.sample_rate();
+                    let samples: Vec<i16> = decoder.collect();
+                    log::info!("[SetAnimation] audio decodificado: {} ({} muestras, {}ch, {}Hz)",
+                        p, samples.len(), channels, sample_rate);
+                    Some(Arc::new(DecodedAudio { samples, channels, sample_rate }))
+                });
+
+                // Pre-cargar todos los frames de la animación en la caché GPU.
+                // El primer PlayAnimation ya no tendrá latencia de decode+upload.
+                for frame in &frames {
+                    self.preload_anim_frame(&frame.path);
+                }
+
+                // Guardar animación en el almacén por entidad+nombre.
+                self.animations
+                    .entry(id)
+                    .or_insert_with(HashMap::new)
+                    .insert(name.clone(), AnimationState {
+                        frames,
+                        fps,
+                        loop_,
+                        audio_decoded,
+                        logical_w,
+                        logical_h,
+                    });
+                log::info!("[IPC] Animación '{}' guardada y pre-cargada para entidad {}", name, id);
+            }
+EngineCommand::PlayAnimation { id, name } => {
+                log::info!("[IPC] PlayAnimation: entity_id={}, name='{}'", id, name);
+                // Detener animación previa (el Play de audio incluye clear interno)
+                self.active_animations.remove(&id);
+                self.restore_animation_frame(id);
+
+                let anim_opt = self.animations.get(&id)
+                    .and_then(|m| m.get(&name))
+                    .cloned();
+
+                match anim_opt {
+                    None => log::warn!("[IPC] Animación '{}' no encontrada para entidad {}", name, id),
+                    Some(anim) => {
+                        // Capturar el tiempo ANTES del I/O de archivos para que
+                        // last_frame_time refleje el inicio real del frame 0, no el
+                        // tiempo después de cargar texturas/audio (puede ser 50-200ms más tarde).
+                        let frame_start = Instant::now();
+
+                        // Mostrar frame 0 (cache miss solo en el primer play)
+                        if let Some(first_frame) = anim.frames.first() {
+                            self.play_animation_frame(id, &first_frame.path, first_frame.pivot_x, first_frame.pivot_y, anim.logical_w, anim.logical_h);
+                        }
+
+                        // Iniciar audio desde PCM pre-decodificado (cero I/O, cero decode)
+                        if let Some(ref audio_decoded) = anim.audio_decoded {
+                            self.play_audio_internal(Arc::clone(audio_decoded), anim.loop_);
+                        }
+
+                        self.active_animations.insert(id, ActiveAnimation {
+                            animation_name: name.clone(),
+                            current_frame: 0,
+                            last_frame_time: frame_start,
+                            fps: anim.fps,
+                            finished: false,
+                        });
+                        log::info!("[animation] Iniciada '{}' para entidad {} (fps={}, frames={})", name, id, anim.fps, anim.frames.len());
+                    }
+                }
+            }
+            EngineCommand::StopAnimation { id } => {
+                log::info!("[IPC] StopAnimation: entity_id={}", id);
+                self.active_animations.remove(&id);
+                self.restore_animation_frame(id);
+                self.stop_audio_internal();
+                send_event(&EngineEvent::AnimationFinished { entity_id: id });
+                log::info!("[animation] Stopped for entity {}", id);
+            }
             EngineCommand::Shutdown => {}
         }
     }
@@ -766,6 +973,107 @@ impl State {
     /// Reconstruye el vertex buffer de la cuadrícula con la configuración actual.
     pub(crate) fn rebuild_grid(&mut self) {
         self.grid_buffer = crate::config_2d::build_grid(&self.device, &self.grid_config);
+    }
+
+    fn play_audio_internal(&mut self, audio: Arc<DecodedAudio>, loop_: bool) {
+        if let Some(slot) = &self.audio_slot {
+            send_audio(slot, AudioCmd::Play { audio, loop_ });
+        } else {
+            log::error!("[audio] thread de audio no disponible");
+        }
+    }
+
+    fn stop_audio_internal(&mut self) {
+        if let Some(slot) = &self.audio_slot {
+            send_audio(slot, AudioCmd::Stop);
+        }
+    }
+
+    pub(crate) fn update_animations(&mut self) {
+        let now = Instant::now();
+        let mut to_play: Vec<(u32, usize)> = Vec::new();
+        let mut to_restore: Vec<u32> = Vec::new();
+
+        let entity_ids: Vec<u32> = self.active_animations.keys().copied().collect();
+        for entity_id in entity_ids {
+            let active = match self.active_animations.get_mut(&entity_id) {
+                Some(a) => a,
+                None => continue,
+            };
+
+            if active.finished {
+                continue;
+            }
+            // Nota: la lógica de avance de frames se hace abajo con corrección de drift
+
+            let anim_state = match self.animations.get(&entity_id)
+                .and_then(|m| m.get(&active.animation_name)) {
+                Some(a) => a,
+                None => continue,
+            };
+
+            let frame_duration_ms = 1000u64 / active.fps.max(1) as u64;
+            let frame_duration = std::time::Duration::from_millis(frame_duration_ms);
+            let elapsed = now.duration_since(active.last_frame_time);
+
+            if elapsed < frame_duration {
+                continue;
+            }
+
+            // Cuántos frames debieron haberse mostrado (recuperación de lag/stutter).
+            // Con `= now` el error se acumula; con `+= frame_duration` el reloj es exacto.
+            let frames_to_advance = (elapsed.as_millis() / frame_duration_ms as u128).max(1) as usize;
+            let total_frames = anim_state.frames.len();
+
+            // Avanzar el reloj de animación por el número exacto de frames,
+            // no resincronizar a `now` (eso causaría deriva acumulada).
+            active.last_frame_time += frame_duration * frames_to_advance as u32;
+            // Salvaguarda: si el motor estuvo suspendido/bloqueado demasiado tiempo,
+            // resincronizar para evitar una ráfaga de frames al retomar.
+            if now.duration_since(active.last_frame_time) > frame_duration * 3 {
+                active.last_frame_time = now - frame_duration;
+            }
+
+            let next_frame_idx = active.current_frame + frames_to_advance;
+
+            if next_frame_idx >= total_frames {
+                if anim_state.loop_ {
+                    active.current_frame = next_frame_idx % total_frames;
+                    to_play.push((entity_id, active.current_frame));
+                } else {
+                    active.finished = true;
+                    to_restore.push(entity_id);
+                }
+            } else {
+                active.current_frame = next_frame_idx;
+                to_play.push((entity_id, next_frame_idx));
+            }
+        }
+
+        for (entity_id, frame_idx) in to_play {
+            let (path, pivot_x, pivot_y, logical_w, logical_h) = {
+                let anim_name = self.active_animations.get(&entity_id)
+                    .map(|a| a.animation_name.clone())
+                    .unwrap_or_default();
+                let anim = self.animations.get(&entity_id)
+                    .and_then(|m| m.get(&anim_name))
+                    .unwrap();
+                let f = &anim.frames[frame_idx];
+                (f.path.clone(), f.pivot_x, f.pivot_y, anim.logical_w, anim.logical_h)
+            };
+            self.play_animation_frame(entity_id, &path, pivot_x, pivot_y, logical_w, logical_h);
+        }
+
+        for entity_id in to_restore {
+            self.restore_animation_frame(entity_id);
+            // El audio no-looping se agota solo cuando las muestras PCM terminan.
+            // No enviamos Stop aquí para evitar que sobrescriba un Play ya encolado
+            // si el usuario dispara la siguiente animación justo al terminar esta.
+            log::info!("[animation] Enviando AnimationFinished para entidad {}", entity_id);
+            send_event(&EngineEvent::AnimationFinished { entity_id });
+        }
+
+self.active_animations.retain(|_, a| !a.finished);
     }
 
     /// Notifica al State qué eje del gizmo está siendo arrastrado (None = sin drag).
@@ -789,6 +1097,8 @@ impl State {
     // ── Render ───────────────────────────────────────────────────────────────
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
+        self.update_animations();
+
         let output  = self.surface.get_current_texture()?;
         let view    = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
         let mut enc = self.device.create_command_encoder(

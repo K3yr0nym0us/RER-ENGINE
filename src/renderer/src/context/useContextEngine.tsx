@@ -1,5 +1,5 @@
 import React, { useReducer, useRef, useEffect, createContext, useContext } from 'react';
-import type { EngineEvent, EntitySelected, ScenarioLoaded, CharacterLoaded, PlayerReady, Camera2dUpdated, ProjectSaveData, PivotSelected } from '../../../shared-types/types';
+import type { EngineEvent, EntitySelected, ScenarioLoaded, CharacterLoaded, PlayerReady, Camera2dUpdated, ProjectSaveData, PivotSelected, AnimationFinished } from '../../../shared-types/types';
 
 // Tipos y estado inicial (idénticos al hook original)
 export interface Entity {
@@ -62,6 +62,7 @@ interface EngineState {
 	worldConfig: WorldConfig
 	colliderEntities: ScenarioEntry[]
 	toolProgress: number | null
+	animationPlaying: Map<number, boolean>
 }
 type EngineAction =
 	| { type: 'SET_READY' }
@@ -83,6 +84,7 @@ type EngineAction =
 	| { type: 'ADD_COLLIDER'; payload: ScenarioEntry }
 	| { type: 'REMOVE_COLLIDER'; payload: number }
 	| { type: 'SET_TOOL_PROGRESS'; payload: number | null }
+	| { type: 'SET_ANIMATION_PLAYING'; payload: { entityId: number; playing: boolean } }
 
 const initialState: EngineState = {
 	engineReady: false,
@@ -97,7 +99,8 @@ const initialState: EngineState = {
 	worldConfig: DEFAULT_WORLD_CONFIG,
 	colliderEntities: [],
 	toolProgress: null,
-};
+	animationPlaying: new Map(),
+}
 
 function engineReducer(state: EngineState, action: EngineAction): EngineState {
 	const handlers: Record<string, (state: EngineState, action: any) => EngineState> = {
@@ -141,6 +144,11 @@ function engineReducer(state: EngineState, action: EngineAction): EngineState {
 			colliderEntities: state.colliderEntities.filter((c) => c.id !== action.payload)
 		}),
 		SET_TOOL_PROGRESS: (state, action) => ({ ...state, toolProgress: action.payload }),
+		SET_ANIMATION_PLAYING: (state, action) => {
+			const newMap = new Map(state.animationPlaying);
+			newMap.set(action.payload.entityId, action.payload.playing);
+			return { ...state, animationPlaying: newMap };
+		},
 	};
 	const handler = handlers[action.type as keyof typeof handlers];
 	return handler ? handler(state, action) : state;
@@ -153,6 +161,8 @@ interface EngineContextValue extends EngineState {
 	playerEntityIdRef: React.MutableRefObject<number | null>;
 	camera2dRef: React.MutableRefObject<any>;
 	send: (cmd: object) => void;
+	sendAsync: <T>(cmd: object, waitForEvent: string, onStart?: () => void) => Promise<T>;
+	setAnimationPlaying: (entityId: number, playing: boolean) => void;
 	loadModel: (path: string) => void;
 	reportBounds: () => void;
 	retryEngine: () => void;
@@ -222,6 +232,8 @@ export function EngineProvider({
 	const pendingDupQ       = useRef<Transform[]>([]);
 	// Callback registrado por AnimationsPanel para recibir pivot seleccionado
 	const pivotEditListenerRef = useRef<((framePath: string, px: number, py: number) => void) | null>(null);
+	// Pending promises para sendAsync
+	const pendingEventsRef = useRef<Map<string, { resolve: (value: any) => void }>>(new Map());
 
 	const addLog = (text: string, isError = false) => {
 		logIdRef.current += 1;
@@ -241,6 +253,18 @@ export function EngineProvider({
 	};
 
 	const send = (cmd: object) => window.engine.send(cmd as never);
+
+	const sendAsync = <T,>(cmd: object, waitForEvent: string, onStart?: () => void): Promise<T> => {
+		if (onStart) onStart();
+		return new Promise((resolve) => {
+			pendingEventsRef.current.set(waitForEvent, { resolve });
+			window.engine.send(cmd as never);
+		});
+	};
+
+	const setAnimationPlaying = (entityId: number, playing: boolean) => {
+		dispatch({ type: 'SET_ANIMATION_PLAYING', payload: { entityId, playing } });
+	};
 
 	const loadModel = (path: string) => {
 		dispatch({ type: 'CLEAR_ENTITIES' });
@@ -335,21 +359,8 @@ export function EngineProvider({
 							const queue = pendingRestoresRef.current.get(entity.path) ?? []
 							queue.push(pr)
 							pendingRestoresRef.current.set(entity.path, queue)
-							// Guardar animaciones en entityMetaRef (sin sobrescribir la cola de pendingRestores)
-							if (entity.animations) {
-								const existingMeta = entityMetaRef.current[entity.id]
-								if (existingMeta) {
-									existingMeta.animations = entity.animations
-								} else {
-									entityMetaRef.current[entity.id] = {
-										kind: entity.kind,
-										path: entity.path,
-										physicsEnabled: entity.physics_enabled ?? false,
-										physicsType: entity.physics_type ?? 'static',
-										animations: entity.animations,
-									}
-								}
-							}
+							// Las animaciones ya están en pendingRestores; se enviarán al motor
+							// en scenario_loaded/character_loaded con el ID real que asigne el motor.
 							if (entity.kind === 'scenario')  window.engine.send({ cmd: 'load_scenario',  path: entity.path } as never)
 							if (entity.kind === 'character') window.engine.send({ cmd: 'load_character', path: entity.path } as never)
 							if (entity.kind === 'model')     window.engine.send({ cmd: 'load_model',     path: entity.path } as never)
@@ -447,6 +458,20 @@ export function EngineProvider({
 					}
 					if (pending.animations) {
 						entityMetaRef.current[e.id].animations = pending.animations
+						// Sincronizar animaciones con el motor usando el ID real asignado por el motor.
+						for (const anim of pending.animations) {
+							window.engine.send({
+								cmd:        'set_animation',
+								id:         e.id,
+								name:       anim.name,
+								frames:     anim.frames,
+								fps:        anim.fps,
+								loop_:      anim.loop,
+								audio_path: anim.audio_path ?? null,
+								logical_w:  anim.logical_w ?? 64,
+								logical_h:  anim.logical_h ?? 64,
+							} as never)
+						}
 					}
 					if (queue.length === 0) pendingRestoresRef.current.delete(e.path)
 				}
@@ -489,6 +514,20 @@ export function EngineProvider({
 						}
 						if (pending.animations) {
 							entityMetaRef.current[e.id].animations = pending.animations
+							// Sincronizar animaciones con el motor usando el ID real asignado por el motor.
+							for (const anim of pending.animations) {
+								window.engine.send({
+									cmd:        'set_animation',
+									id:         e.id,
+									name:       anim.name,
+									frames:     anim.frames,
+									fps:        anim.fps,
+									loop_:      anim.loop,
+									audio_path: anim.audio_path ?? null,
+									logical_w:  anim.logical_w ?? 64,
+									logical_h:  anim.logical_h ?? 64,
+								} as never)
+							}
 						}
 						if (queue.length === 0) pendingRestoresRef.current.delete(e.path)
 					}
@@ -516,6 +555,15 @@ export function EngineProvider({
 			if (event.event === 'pivot_selected') {
 				const e = event as unknown as PivotSelected;
 				pivotEditListenerRef.current?.(e.frame_path, e.pivot_x, e.pivot_y);
+			}
+			if (event.event === 'animation_finished') {
+				const e = event as unknown as AnimationFinished;
+				const pending = pendingEventsRef.current.get('animation_finished');
+				if (pending) {
+					pending.resolve(e);
+					pendingEventsRef.current.delete('animation_finished');
+				}
+				dispatch({ type: 'SET_ANIMATION_PLAYING', payload: { entityId: e.entity_id, playing: false } });
 			}
 		})
 		return () => { window.engine.off() }
@@ -561,6 +609,21 @@ export function EngineProvider({
 			entityMetaRef.current[id] = { kind: 'model', path: '', physicsEnabled: false, physicsType: '' }
 		}
 		entityMetaRef.current[id].animations = animations
+		// Sincronizar cada animación con el motor para que `play_animation` no
+		// necesite reenviar los datos en cada reproducción.
+		for (const anim of animations) {
+			window.engine.send({
+				cmd:       'set_animation',
+				id,
+				name:      anim.name,
+				frames:    anim.frames,
+				fps:       anim.fps,
+				loop_:     anim.loop,
+				audio_path: anim.audio_path ?? null,
+				logical_w: anim.logical_w ?? 64,
+				logical_h: anim.logical_h ?? 64,
+			} as never)
+		}
 	};
 	const registerPivotEditListener = (fn: (framePath: string, px: number, py: number) => void) => {
 		pivotEditListenerRef.current = fn;
@@ -576,6 +639,8 @@ export function EngineProvider({
 		playerEntityIdRef,
 		camera2dRef,
 		send,
+		sendAsync,
+		setAnimationPlaying,
 		loadModel,
 		reportBounds,
 		retryEngine,

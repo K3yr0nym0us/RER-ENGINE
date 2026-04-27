@@ -191,7 +191,8 @@ function startEngine(embed?: ViewportBounds): void {
 
 function sendToEngine(cmd: EngineCommand): void {
   if (engineProcess?.stdin && !engineProcess.stdin.destroyed) {
-    engineProcess.stdin.write(JSON.stringify(cmd) + '\n')
+    const data = JSON.stringify(cmd) + '\n'
+    engineProcess.stdin.write(data, () => {})
   }
 }
 

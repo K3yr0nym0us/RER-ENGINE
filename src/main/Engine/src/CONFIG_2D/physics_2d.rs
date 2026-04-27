@@ -148,6 +148,7 @@ impl PhysicsWorld2D {
 
     /// Crea un colisionador estático de forma convexa a partir de puntos en espacio de mundo (XY).
     /// Usado por la herramienta de dibujo para crear colisionadores de forma arbitraria.
+    #[allow(dead_code)]
     pub(crate) fn add_convex_collider(&mut self, entity: EntityId, points: &[[f32; 2]]) {
         if let Some(handle) = self.entity_bodies.remove(&entity) {
             self.entity_body_types.remove(&entity);

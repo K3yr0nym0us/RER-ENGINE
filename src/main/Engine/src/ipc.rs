@@ -85,6 +85,30 @@ pub enum EngineCommand {
     PlayAudio { path: String, loop_: bool },
     /// Detener el audio que está sonando actualmente.
     StopAudio,
+    /// Guardar una animación en el motor para reproducción posterior.
+    SetAnimation {
+        id:         u32,
+        name:       String,
+        frames:     Vec<AnimationFrameData>,
+        fps:        u32,
+        loop_:      bool,
+        audio_path: Option<String>,
+        logical_w:  u32,
+        logical_h:  u32,
+    },
+    /// Reproducir una animación guardada por ID de entidad y nombre.
+    /// El motor busca en su almacén de animaciones — el front no necesita
+    /// reenviar los datos de frames en cada reproducción.
+    PlayAnimation { id: u32, name: String },
+    /// Detener la animación en curso.
+    StopAnimation { id: u32 },
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct AnimationFrameData {
+    pub path:      String,
+    pub pivot_x:   f32,
+    pub pivot_y:   f32,
 }
 
 // ---------------------------------------------------------------------------
@@ -137,6 +161,8 @@ pub enum EngineEvent {
     ToolCancelled,
     /// Emitido cuando el usuario selecciona el pivot de un frame en modo edición.
     PivotSelected { frame_path: String, pivot_x: f32, pivot_y: f32 },
+    /// Emitido cuando una animación termina (no loop) o se detiene.
+    AnimationFinished { entity_id: u32 },
 }
 
 /// Escribe un evento JSON en stdout y lo flushea inmediatamente.

@@ -81,27 +81,6 @@ impl GpuTexture {
         Self::from_rgba(device, queue, &pixels, size, size, "checkerboard")
     }
 
-    // ── Constructor desde bytes de imagen (PNG/JPEG vía crate `image`) ────────
-    pub fn from_image_bytes(
-        device: &wgpu::Device,
-        queue:  &wgpu::Queue,
-        bytes:  &[u8],
-        label:  &str,
-    ) -> Result<Self, String> {
-        use image::ImageReader;
-        use std::io::Cursor;
-
-        let img = ImageReader::new(Cursor::new(bytes))
-            .with_guessed_format()
-            .map_err(|e| e.to_string())?
-            .decode()
-            .map_err(|e| e.to_string())?
-            .to_rgba8();
-
-        let (w, h) = img.dimensions();
-        Ok(Self::from_rgba(device, queue, &img, w, h, label))
-    }
-
     // ── Constructor desde datos de imagen gltf ────────────────────────────────
     pub fn from_gltf_image(
         device: &wgpu::Device,

@@ -10,6 +10,7 @@ use rapier3d::prelude::*;
 use crate::ecs::{EntityId, Transform, World};
 
 // ── Handle para referenciar un rigid body desde el ECS ───────────────────────
+#[allow(dead_code)]
 #[derive(Clone, Debug)]
 pub(crate) struct RigidBodyComponent {
     pub(crate) handle: RigidBodyHandle,
@@ -61,6 +62,7 @@ impl PhysicsWorld {
     // ── Añadir cuerpos ───────────────────────────────────────────────────────
 
     /// Rigid body dinámico (cae por gravedad) con colisionador esférico.
+    #[allow(dead_code)]
     pub(crate) fn add_dynamic_sphere(
         &mut self,
         position: [f32; 3],
@@ -76,6 +78,7 @@ impl PhysicsWorld {
     }
 
     /// Plano estático (suelo) en y = 0.
+    #[allow(dead_code)]
     pub(crate) fn add_static_ground(&mut self) -> ColliderHandle {
         let collider = ColliderBuilder::halfspace(
             UnitVector::new_normalize(vector![0.0, 1.0, 0.0])
@@ -186,6 +189,7 @@ impl PhysicsWorld {
 
     // ── Acceso directo ───────────────────────────────────────────────────────
 
+    #[allow(dead_code)]
     pub(crate) fn body_mut(&mut self, handle: RigidBodyHandle) -> Option<&mut RigidBody> {
         self.bodies.get_mut(handle)
     }

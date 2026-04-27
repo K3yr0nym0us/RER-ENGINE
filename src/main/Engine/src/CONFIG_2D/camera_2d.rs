@@ -17,16 +17,6 @@ pub(crate) struct Camera2D {
 }
 
 impl Camera2D {
-    pub(crate) fn new() -> Self {
-        Self {
-            x:      0.0,
-            y:      4.0,    // centrada 4 u por encima del suelo
-            half_h: 6.0,    // 12 u de alto visibles
-            near:   -100.0,
-            far:    100.0,
-        }
-    }
-
     pub(crate) fn position(&self) -> Vec3 {
         Vec3::new(self.x, self.y, 10.0)
     }

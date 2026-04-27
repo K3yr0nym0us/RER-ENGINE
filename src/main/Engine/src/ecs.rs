@@ -15,6 +15,20 @@ use glam::{Mat4, Quat, Vec3};
 // ── Tipos base ────────────────────────────────────────────────────────────────
 pub type EntityId = u32;
 
+/// Genera un EntityId aleatorio via CSPRNG (no secuencial, no predecible).
+/// Reintenta si colisiona con un ID ya existente (probabilidad astronómicamente baja).
+fn new_entity_id(alive: &[EntityId]) -> EntityId {
+    let mut buf = [0u8; 4];
+    loop {
+        getrandom::getrandom(&mut buf).expect("getrandom no disponible");
+        let id = u32::from_ne_bytes(buf);
+        // Evitar 0 (valor centinela) y colisiones
+        if id != 0 && !alive.contains(&id) {
+            return id;
+        }
+    }
+}
+
 // ── Componentes estándar ──────────────────────────────────────────────────────
 
 /// Posición, rotación y escala de una entidad en el mundo.
@@ -107,10 +121,12 @@ impl<T> ComponentStorage<T> {
     }
 
     /// Itera sobre todos los (EntityId, &T)
+    #[allow(dead_code)]
     pub fn iter(&self) -> impl Iterator<Item = (EntityId, &T)> {
         self.index_map.iter().copied().zip(self.data.iter())
     }
 
+    #[allow(dead_code)]
     pub fn iter_mut(&mut self) -> impl Iterator<Item = (EntityId, &mut T)> {
         self.index_map.iter().copied().zip(self.data.iter_mut())
     }
@@ -134,14 +150,13 @@ impl<T: 'static> AnyStorage for ComponentStorage<T> {
 
 /// Mundo ECS: contiene todas las entidades y sus componentes.
 pub struct World {
-    next_id:    EntityId,
     alive:      Vec<EntityId>,
     storages:   HashMap<TypeId, Box<dyn AnyStorage>>,
 }
 
 impl Default for World {
     fn default() -> Self {
-        let mut w = Self { next_id: 0, alive: Vec::new(), storages: HashMap::new() };
+        let mut w = Self { alive: Vec::new(), storages: HashMap::new() };
         // Registrar almacenamientos estándar
         w.register::<Transform>();
         w.register::<MeshComponent>();
@@ -165,8 +180,7 @@ impl World {
 
     /// Crea una nueva entidad con Transform por defecto y nombre opcional.
     pub fn spawn(&mut self, name: Option<&str>) -> EntityId {
-        let id = self.next_id;
-        self.next_id += 1;
+        let id = new_entity_id(&self.alive);
         self.alive.push(id);
         self.insert(id, Transform::default());
         if let Some(n) = name {
@@ -218,6 +232,7 @@ impl World {
             .get_mut(entity)
     }
 
+    #[allow(dead_code)]
     pub fn remove_component<T: 'static>(&mut self, entity: EntityId) {
         if let Some(s) = self.storages.get_mut(&TypeId::of::<T>()) {
             s.remove_entity(entity);
@@ -225,6 +240,7 @@ impl World {
     }
 
     /// Itera sobre todos los (EntityId, &T) de un tipo de componente.
+    #[allow(dead_code)]
     pub fn query<T: 'static>(&self) -> impl Iterator<Item = (EntityId, &T)> {
         self.storages
             .get(&TypeId::of::<T>())
@@ -234,6 +250,7 @@ impl World {
             .into_iter()
     }
 
+    #[allow(dead_code)]
     pub fn query_mut<T: 'static>(&mut self) -> impl Iterator<Item = (EntityId, &mut T)> {
         self.storages
             .get_mut(&TypeId::of::<T>())

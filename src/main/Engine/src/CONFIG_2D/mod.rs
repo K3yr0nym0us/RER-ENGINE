@@ -74,9 +74,7 @@ impl ActiveTool {
 
 /// Marca una entidad ECS como colisionador creado con la herramienta de dibujo.
 #[derive(Debug, Clone)]
-pub(crate) struct ColliderMarker {
-    pub points_world: [[f32; 2]; 4],
-}
+pub(crate) struct ColliderMarker {}
 impl State {
     // ── Inicialización ────────────────────────────────────────────────────────
 
@@ -521,6 +519,34 @@ impl State {
         }
 
         log::info!("[play_animation_frame] frame actualizado para entidad {id} (tex_idx={tex_position}, pivot=({pivot_x},{pivot_y}))");
+    }
+
+    /// Pre-carga un frame de animación en la caché GPU sin aplicarlo a ninguna entidad.
+    /// Llamar desde `SetAnimation` para que el primer `PlayAnimation` no tenga
+    /// latencia de decode+upload a GPU (cache miss).
+    pub(crate) fn preload_anim_frame(&mut self, path: &str) {
+        if self.anim_texture_cache.contains_key(path) {
+            return; // ya cacheado
+        }
+        let bytes = match fs::read(path) {
+            Ok(b) => b,
+            Err(e) => { log::warn!("[preload] no se pudo leer {path}: {e}"); return; }
+        };
+        use image::ImageReader;
+        use std::io::Cursor;
+        let img = match ImageReader::new(Cursor::new(&bytes))
+            .with_guessed_format()
+            .map_err(|e| e.to_string())
+            .and_then(|r| r.decode().map_err(|e| e.to_string()))
+        {
+            Ok(i) => i.to_rgba8(),
+            Err(e) => { log::warn!("[preload] error decodificando {path}: {e}"); return; }
+        };
+        let (w, h) = img.dimensions();
+        let gpu_tex = crate::texture::GpuTexture::from_rgba(&self.device, &self.queue, &img, w, h, "anim-frame");
+        let bg = std::sync::Arc::new(gpu_tex.create_bind_group(&self.device, &self.texture_bgl));
+        self.anim_texture_cache.insert(path.to_string(), (bg, w, h));
+        log::info!("[preload] frame pre-cargado a GPU: {path}");
     }
 
     /// Restaura el sprite original de una entidad después de una animación.
@@ -973,7 +999,7 @@ impl State {
             scale:    GlamVec3::from(scale),
             ..Default::default()
         });
-        self.world.insert(entity, ColliderMarker { points_world: *pts });
+        self.world.insert(entity, ColliderMarker {});
         // Usamos cuboid estático (AABB del bounding box) en lugar de hull convexo 3D,
         // ya que rapier3d puede rechazar hulls de puntos coplanares (z=0).
         // El result es idéntico en precisión al toggle manual que confirma el usuario.
@@ -1063,35 +1089,6 @@ fn build_tool_overlay(device: &wgpu::Device, pts: &[[f32; 2]]) -> gizmo::GizmoBu
         verts.push(GizmoVertex { position: [ax, ay, Z], color: line_color });
         verts.push(GizmoVertex { position: [bx, by, Z], color: line_color });
     }
-
-    gizmo::build_from_vertices(device, &verts)
-}
-
-/// Construye el GizmoBuffer de overlay para el modo edición de pivot.
-/// Dibuja un rectángulo cyan (LineList, 4 segmentos = 8 vértices) alrededor
-/// del quad de la entidad para que el usuario sepa sobre qué área debe clickear.
-fn build_pivot_edit_overlay(device: &wgpu::Device, pos: GlamVec3, scale: GlamVec3) -> gizmo::GizmoBuffer {
-    let left   = pos.x - scale.x * 0.5;
-    let right  = pos.x + scale.x * 0.5;
-    let bottom = pos.y - scale.y * 0.5;
-    let top    = pos.y + scale.y * 0.5;
-    const Z: f32 = 0.2;
-    let color = [0.2_f32, 0.9, 1.0, 1.0]; // cyan
-
-    let verts = vec![
-        // Borde inferior
-        GizmoVertex { position: [left,  bottom, Z], color },
-        GizmoVertex { position: [right, bottom, Z], color },
-        // Borde derecho
-        GizmoVertex { position: [right, bottom, Z], color },
-        GizmoVertex { position: [right, top,    Z], color },
-        // Borde superior
-        GizmoVertex { position: [right, top,    Z], color },
-        GizmoVertex { position: [left,  top,    Z], color },
-        // Borde izquierdo
-        GizmoVertex { position: [left,  top,    Z], color },
-        GizmoVertex { position: [left,  bottom, Z], color },
-    ];
 
     gizmo::build_from_vertices(device, &verts)
 }
