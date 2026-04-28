@@ -31,6 +31,10 @@ pub enum ScriptCmd {
     /// Enable or disable physics on an entity.
     /// `body_type` is only used when `enabled = true` (e.g. "dynamic", "static").
     SetPhysics { id: u32, enabled: bool, body_type: String },
+    /// Move a physics-enabled entity using linear velocity so Rapier resolves
+    /// collisions naturally. `speed` is in world units/second; `dir_x`/`dir_y`
+    /// form the movement direction (normalized internally).
+    MoveEntity { id: u32, speed: f32, dir_x: f32, dir_y: f32 },
     /// Log a message to the engine console (forwarded via IPC).
     Log { message: String },
 }
@@ -297,6 +301,20 @@ impl ScriptEngine {
         }).expect("create set_physics fn");
         let _ = globals.set("__api_set_physics", set_physics);
 
+        // engine.move_entity(id, speed, dir_x, dir_y)
+        // Mueve la entidad con física aplicando velocidad lineal; Rapier resuelve
+        // las colisiones correctamente. dir_x/dir_y forman el vector de dirección.
+        let move_entity = lua.create_function(|lua_ctx, (id, speed, dir_x, dir_y): (u32, f32, f32, f32)| {
+            push_cmd(lua_ctx, "move_entity", |t| {
+                t.set("id",    id)?;
+                t.set("speed", speed)?;
+                t.set("dir_x", dir_x)?;
+                t.set("dir_y", dir_y)?;
+                Ok(())
+            })
+        }).expect("create move_entity fn");
+        let _ = globals.set("__api_move_entity", move_entity);
+
         // engine.log(msg)
         let log_fn = lua.create_function(|lua_ctx, msg: String| {
             push_cmd(lua_ctx, "log", |t| {
@@ -315,6 +333,7 @@ impl ScriptEngine {
         let _ = engine_table.set("play_animation", globals.get::<LuaFunction>("__api_play_animation").ok());
         let _ = engine_table.set("stop_animation", globals.get::<LuaFunction>("__api_stop_animation").ok());
         let _ = engine_table.set("set_physics",    globals.get::<LuaFunction>("__api_set_physics").ok());
+        let _ = engine_table.set("move_entity",    globals.get::<LuaFunction>("__api_move_entity").ok());
         let _ = engine_table.set("log",            globals.get::<LuaFunction>("__api_log").ok());
         let _ = globals.set("engine", engine_table);
 
@@ -429,6 +448,12 @@ fn parse_cmd_table(t: LuaTable) -> LuaResult<ScriptCmd> {
             id:        t.get("id")?,
             enabled:   t.get("enabled")?,
             body_type: t.get("body_type")?,
+        }),
+        "move_entity" => Ok(ScriptCmd::MoveEntity {
+            id:    t.get("id")?,
+            speed: t.get("speed")?,
+            dir_x: t.get("dir_x")?,
+            dir_y: t.get("dir_y")?,
         }),
         "log" => Ok(ScriptCmd::Log {
             message: t.get("message")?,

@@ -8,10 +8,14 @@
 //   "static"    — no se mueve (suelo, plataformas).
 //
 // Funciones extraídas a archivos propios (submódulos vía #[path]):
-//   teleport_entity  — sincroniza Rapier body con el Transform.
+//   teleport_entity      — sincroniza Rapier body con el Transform.
+//   move_physics_entity  — mueve con velocidad lineal respetando colisiones.
 
 #[path = "teleport_entity.rs"]
 mod teleport_entity;
+
+#[path = "move_physics_entity.rs"]
+mod move_physics_entity;
 
 use std::collections::HashMap;
 
@@ -35,6 +39,9 @@ pub(crate) struct PhysicsWorld2D {
     query_pipeline:     QueryPipeline,
     entity_bodies:      HashMap<EntityId, RigidBodyHandle>,
     entity_body_types:  HashMap<EntityId, String>,
+    /// Collider handle associated to each entity, used by move_physics_entity
+    /// to query the narrow phase and detect blocking contacts before applying velocity.
+    entity_colliders:   HashMap<EntityId, ColliderHandle>,
 }
 
 impl Default for PhysicsWorld2D {
@@ -54,6 +61,7 @@ impl Default for PhysicsWorld2D {
             query_pipeline:     QueryPipeline::new(),
             entity_bodies:      HashMap::new(),
             entity_body_types:  HashMap::new(),
+            entity_colliders:   HashMap::new(),
         }
     }
 }
@@ -74,9 +82,10 @@ impl PhysicsWorld2D {
         position:  [f32; 3],
         half_ext:  [f32; 3],
     ) {
-        // Eliminar cuerpo previo si existe
+        // Eliminar cuerpo previo si existe (incluyendo su collider handle)
         if let Some(handle) = self.entity_bodies.remove(&entity) {
             self.entity_body_types.remove(&entity);
+            self.entity_colliders.remove(&entity);
             self.remove_body(handle);
         }
         if !enabled { return; }
@@ -91,11 +100,14 @@ impl PhysicsWorld2D {
                     .build();
                 let handle = self.bodies.insert(body);
                 let col = ColliderBuilder::cuboid(hx, hy, 0.01).build();
-                self.colliders.insert_with_parent(col, handle, &mut self.bodies);
+                let col_handle = self.colliders.insert_with_parent(col, handle, &mut self.bodies);
+                self.entity_colliders.insert(entity, col_handle);
                 handle
             }
             _ => {
-                // "dynamic" — bloqueamos Z y rotaciones X/Y para comportamiento 2D puro
+                // "dynamic" — bloqueamos Z y rotaciones X/Y para comportamiento 2D puro.
+                // CCD habilitado: garantiza que Rapier no permita traversal incluso a
+                // velocidades altas, actuando como última línea de defensa.
                 let body = RigidBodyBuilder::dynamic()
                     .translation(vector![position[0], position[1], 0.0])
                     .locked_axes(
@@ -103,13 +115,15 @@ impl PhysicsWorld2D {
                         | LockedAxes::ROTATION_LOCKED_X
                         | LockedAxes::ROTATION_LOCKED_Y,
                     )
+                    .ccd_enabled(true)
                     .build();
                 let handle = self.bodies.insert(body);
                 let col = ColliderBuilder::cuboid(hx, hy, 0.01)
                     .restitution(0.0)
                     .friction(0.5)
                     .build();
-                self.colliders.insert_with_parent(col, handle, &mut self.bodies);
+                let col_handle = self.colliders.insert_with_parent(col, handle, &mut self.bodies);
+                self.entity_colliders.insert(entity, col_handle);
                 handle
             }
         };
@@ -121,6 +135,7 @@ impl PhysicsWorld2D {
     pub(crate) fn remove_entity_body(&mut self, entity: EntityId) {
         if let Some(handle) = self.entity_bodies.remove(&entity) {
             self.entity_body_types.remove(&entity);
+            self.entity_colliders.remove(&entity);
             self.remove_body(handle);
         }
     }
@@ -142,6 +157,7 @@ impl PhysicsWorld2D {
         for h in handles { self.remove_body(h); }
         self.entity_bodies.clear();
         self.entity_body_types.clear();
+        self.entity_colliders.clear();
     }
 
     pub(crate) fn has_physics(&self, entity: EntityId) -> bool {

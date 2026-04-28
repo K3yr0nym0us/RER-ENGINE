@@ -573,23 +573,17 @@ impl State {
         // que nunca fue modificado. No hay que recargar nada de disco.
         self.anim_overrides.remove(&tex_position);
 
-        // Restaurar al estado lógico acumulado:
-        //   .0 = posición acumulada por scripts → el personaje se queda donde llegó,
-        //        el siguiente play continúa desde esa posición.
-        //   .1 = escala original → elimina la distorsión que introduce el pivot calc.
-        // anim_origin_transforms ya no se usa para posición; solo lo limpiamos.
+        // Solo restaurar la escala original (elimina la distorsión del pivot calc).
+        // La posición NO se toca: el personaje se queda donde llegó gracias a scripts/física.
+        // anim_origin_transforms ya no se usa; solo lo limpiamos.
         self.anim_origin_transforms.remove(&id);
-        if let Some((accumulated_pos, orig_scale)) = self.anim_saved_transforms.remove(&id) {
-            log::info!("[restore_animation_frame] entidad {id} → posición restaurada a ({:.3}, {:.3})", accumulated_pos.x, accumulated_pos.y);
+        if let Some((_saved_pos, orig_scale)) = self.anim_saved_transforms.remove(&id) {
             if let Some(t) = self.world.get_mut::<Transform>(id) {
-                t.position = accumulated_pos;
-                t.scale    = orig_scale;
+                t.scale = orig_scale;
             }
-            // Sincronizar el Rapier body para que physics.step() no sobreescriba la
-            // posición acumulada con la posición previa del body en el siguiente frame.
-            self.physics_2d.teleport_entity(id, accumulated_pos.x, accumulated_pos.y);
+            log::info!("[restore_animation_frame] entidad {id} → escala restaurada, posición conservada");
         } else {
-            log::warn!("[restore_animation_frame] entidad {id} sin anim_saved_transforms — posición NO modificada");
+            log::warn!("[restore_animation_frame] entidad {id} sin anim_saved_transforms — escala NO modificada");
         }
 
         log::info!("[restore_animation_frame] sprite restaurado para entidad {id}");
@@ -906,6 +900,14 @@ impl State {
                 physics_type,
             });
         }
+        // Sincronizar el Rapier body con la nueva posición visual.
+        // Sin esto, el cuerpo físico (y por tanto las colisiones) permanece
+        // en la posición original aunque el cuadro visual se haya movido.
+        let new_pos = self.world.get::<Transform>(sel_id)
+            .map(|t| (t.position.x, t.position.y));
+        if let Some((nx, ny)) = new_pos {
+            self.physics_2d.teleport_entity(sel_id, nx, ny);
+        }
     }
 
     // ── Hover 2D ─────────────────────────────────────────────────────────────
@@ -1001,9 +1003,12 @@ impl State {
         self.world.insert(entity, ColliderMarker {});
         // Usamos cuboid estático (AABB del bounding box) en lugar de hull convexo 3D,
         // ya que rapier3d puede rechazar hulls de puntos coplanares (z=0).
+        // IMPORTANTE: forzar z=0 en la posición física. create_box_entity devuelve
+        // z=-0.5 para el orden de render, pero Rapier trabaja en 3D real: si el
+        // colisionador estático y el personaje dinámico tienen z distinto no colisionan.
         self.physics_2d.set_entity_physics(
             entity, true, "static",
-            pos,
+            [pos[0], pos[1], 0.0],
             [scale[0] * 0.5, scale[1] * 0.5, 0.01],
         );
         self.collider_entities.push(entity);

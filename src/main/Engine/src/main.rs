@@ -537,7 +537,9 @@ fn main() {
     // en entornos sin GPU hardware — subirlos a error los silencia.
     env_logger::Builder::from_env(
         env_logger::Env::default().default_filter_or(
-            "info,wgpu_core=warn,wgpu_hal::vulkan=error,wgpu_hal=warn,naga=warn",
+            // wgpu_hal::gles genera spam de advertencias de rendimiento de buffers GPU
+            // (copy VIDEO→HOST memory) en cada frame — silenciamos a nivel error.
+            "info,wgpu_core=warn,wgpu_hal::vulkan=error,wgpu_hal::gles=error,wgpu_hal=warn,naga=warn",
         ),
     )
     .init();

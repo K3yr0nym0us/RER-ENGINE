@@ -2287,6 +2287,7 @@ dependencies = [
  "image",
  "log",
  "mlua",
+ "parry3d",
  "pollster",
  "rapier3d",
  "raw-window-handle",

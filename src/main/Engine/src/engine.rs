@@ -733,6 +733,16 @@ impl State {
                         transform.scale = Vec3::from(s);
                     }
                 }
+                // Sincronizar el Rapier body si la entidad tiene física activa.
+                // Sin esto, cuando el editor reposiciona una entidad via SetTransform
+                // (p.ej. al cargar el proyecto o antes de reproducir una animación),
+                // el cuerpo físico queda en su posición anterior y las colisiones
+                // no ocurren donde el personaje aparece visualmente.
+                if let Some(p) = position {
+                    if self.camera_2d.is_some() {
+                        self.physics_2d.teleport_entity(id, p[0], p[1]);
+                    }
+                }
             }
             EngineCommand::SetScene { scene } => {
                 match scene.as_str() {
@@ -856,7 +866,12 @@ impl State {
             }
             EngineCommand::SetPhysics { id, enabled, body_type } => {
                 let (pos, half) = if let Some(t) = self.world.get::<Transform>(id) {
-                    (t.position.to_array(), (t.scale * 0.5).to_array())
+                    // Forzar z=0 en la posición física: el Z del Transform es visual
+                    // (orden de capas), pero Rapier trabaja en 3D real. Si dos cuerpos
+                    // tienen Z distinto no colisionan aunque se solapen en XY.
+                    let mut p = t.position.to_array();
+                    p[2] = 0.0;
+                    (p, (t.scale * 0.5).to_array())
                 } else {
                     ([0.0_f32; 3], [0.5_f32; 3])
                 };
@@ -1227,6 +1242,15 @@ self.active_animations.retain(|_, a| !a.finished);
                         self.handle_command(EngineCommand::SetPhysics { id, enabled, body_type });
                     }
                 }
+                ScriptCmd::MoveEntity { id, speed, dir_x, dir_y } => {
+                    // Aplica velocidad lineal al Rapier body usando shape cast para
+                    // detectar obstáculos antes de aplicar. Si no tiene física activa,
+                    // no hace nada (el script debe usar engine.translate en ese caso).
+                    let moved = self.physics_2d.move_physics_entity(id, speed, dir_x, dir_y, self.delta_time);
+                    if !moved {
+                        log::warn!("[script/move_entity] entidad {} sin cuerpo físico activo — usa engine.translate para entidades sin física", id);
+                    }
+                }
                 ScriptCmd::Log { message } => {
                     eprintln!("[script] {message}");
                 }
@@ -1241,11 +1265,38 @@ self.active_animations.retain(|_, a| !a.finished);
         self.delta_time = now.duration_since(self.last_frame).as_secs_f32();
         self.last_frame = now;
         if self.camera_2d.is_some() {
+            // Scripts primero: ponen la velocidad que quieren aplicar este frame.
+            // Physics después: Rapier corre con esa velocidad y resuelve colisiones,
+            // zeroeando el componente de velocidad que choque con un colisionador.
+            // Si el orden fuera al revés, el script picaría la resolución de Rapier
+            // y el personaje atravesaría los colisionadores cada frame.
+            self.update_scripts();
             self.physics_2d.step(self.delta_time, &mut self.world);
+            // Sincronizar anim_saved_transforms con la posición post-physics (ya bloqueada
+            // por colisiones) para que update_animations() no restaure la posición original.
+            self.sync_physics_anim_origins();
         } else {
             self.physics.step(self.delta_time, &mut self.world);
+            self.update_scripts();
         }
-        self.update_scripts();
+    }
+
+    /// Sincroniza anim_saved_transforms desde la posición actual del Transform
+    /// para entidades que tienen física activa y están en medio de una animación.
+    /// Necesario para que move_physics_entity funcione con animaciones de pivot.
+    fn sync_physics_anim_origins(&mut self) {
+        let ids: Vec<u32> = self.anim_saved_transforms.keys().copied().collect();
+        for id in ids {
+            if self.physics_2d.has_physics(id) {
+                if let Some(t) = self.world.get::<Transform>(id) {
+                    let (px, py) = (t.position.x, t.position.y);
+                    if let Some(saved) = self.anim_saved_transforms.get_mut(&id) {
+                        saved.0.x = px;
+                        saved.0.y = py;
+                    }
+                }
+            }
+        }
     }
 
     // ── Render ───────────────────────────────────────────────────────────────

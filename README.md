@@ -143,7 +143,7 @@ yarn dist
 | UI con Bootstrap (acordeón) | ✅ Completo |
 | IPC JSON lines | ✅ Completo |
 | Física Rapier3D | ✅ Completo (por entidad: dinámico / estático / cinemático) |
-| Scripting (Lua/Rhai) | ⏳ Pendiente — recomendado Lua vía `mlua` o Rhai nativo Rust |
+| Scripting (Lua) | ⏳ Pendiente — recomendado Lua vía `mlua` |
 | Soporte Linux Ubuntu | ✅ Probado en Ubuntu (X11 / WSL2 + WSLg) |
 | Soporte Windows | ✅ Probado en Windows 11 |
 
