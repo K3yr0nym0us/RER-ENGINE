@@ -20,6 +20,8 @@ pub(crate) use grid_2d::{GridBuffer, GridConfig, build_grid};
 pub(crate) mod physics_2d;
 pub(crate) use physics_2d::PhysicsWorld2D;
 
+mod herramienta_de_dibujo;
+
 use std::fs;
 
 use glam::Vec3 as GlamVec3;
@@ -571,12 +573,23 @@ impl State {
         // que nunca fue modificado. No hay que recargar nada de disco.
         self.anim_overrides.remove(&tex_position);
 
-        // Restaurar el transform original si fue modificado por play_animation_frame
-        if let Some((orig_pos, orig_scale)) = self.anim_saved_transforms.remove(&id) {
+        // Restaurar al estado lógico acumulado:
+        //   .0 = posición acumulada por scripts → el personaje se queda donde llegó,
+        //        el siguiente play continúa desde esa posición.
+        //   .1 = escala original → elimina la distorsión que introduce el pivot calc.
+        // anim_origin_transforms ya no se usa para posición; solo lo limpiamos.
+        self.anim_origin_transforms.remove(&id);
+        if let Some((accumulated_pos, orig_scale)) = self.anim_saved_transforms.remove(&id) {
+            log::info!("[restore_animation_frame] entidad {id} → posición restaurada a ({:.3}, {:.3})", accumulated_pos.x, accumulated_pos.y);
             if let Some(t) = self.world.get_mut::<Transform>(id) {
-                t.position = orig_pos;
+                t.position = accumulated_pos;
                 t.scale    = orig_scale;
             }
+            // Sincronizar el Rapier body para que physics.step() no sobreescriba la
+            // posición acumulada con la posición previa del body en el siguiente frame.
+            self.physics_2d.teleport_entity(id, accumulated_pos.x, accumulated_pos.y);
+        } else {
+            log::warn!("[restore_animation_frame] entidad {id} sin anim_saved_transforms — posición NO modificada");
         }
 
         log::info!("[restore_animation_frame] sprite restaurado para entidad {id}");
@@ -981,28 +994,13 @@ impl State {
 
     /// Crea una entidad ECS de colisionador a partir de 4 puntos en espacio de mundo.
     pub(crate) fn create_collision_box_from_points(&mut self, pts: &[[f32; 2]; 4]) {
-        let (mesh, pos, scale) = create_mesh_from_4_points(pts, &self.device);
-        let mesh_idx = self.meshes.len();
-        self.meshes.push(mesh);
+        // Crea la entidad visual (quad + textura cyan) sin física.
+        let (entity, pos, scale) = self.create_box_entity(pts, "Colisionador", [60, 220, 200, 110]);
 
-        // Textura semitransparente cyan para indicar área de colisión
-        let tex = GpuTexture::from_rgba(&self.device, &self.queue, &[60, 220, 200, 110], 1, 1, "collider");
-        self.textures.push(tex.create_bind_group(&self.device, &self.texture_bgl));
-        let (buf, bg) = self.alloc_entity_uniform();
-        self.entity_buffers.push(buf);
-        self.entity_bind_groups.push(bg);
-
-        let entity = self.world.spawn(Some("Colisionador"));
-        self.world.insert(entity, MeshComponent { mesh_idx });
-        self.world.insert(entity, Transform {
-            position: GlamVec3::from(pos),
-            scale:    GlamVec3::from(scale),
-            ..Default::default()
-        });
+        // Marca la entidad como colisionador y añade física estática.
         self.world.insert(entity, ColliderMarker {});
         // Usamos cuboid estático (AABB del bounding box) en lugar de hull convexo 3D,
         // ya que rapier3d puede rechazar hulls de puntos coplanares (z=0).
-        // El result es idéntico en precisión al toggle manual que confirma el usuario.
         self.physics_2d.set_entity_physics(
             entity, true, "static",
             pos,
@@ -1032,35 +1030,7 @@ fn create_quad_xy(device: &wgpu::Device, cx: f32, cy: f32, w: f32, h: f32, label
     upload(device, &vertices, &indices, label)
 }
 
-/// Crea un mesh a partir de 4 puntos arbitrarios en espacio de mundo (plano XY).
-/// Los vértices se normalizan respecto al bounding box del centroide para que
-/// `Transform.position = centroide` y `Transform.scale = (bbox_w, bbox_h, 1)`
-/// sean coherentes con el renderizador y el picking por AABB.
-/// Devuelve (Mesh, posición[3], escala[3]).
-fn create_mesh_from_4_points(pts: &[[f32; 2]; 4], device: &wgpu::Device) -> (Mesh, [f32; 3], [f32; 3]) {
-    let cx = pts.iter().map(|p| p[0]).sum::<f32>() / 4.0;
-    let cy = pts.iter().map(|p| p[1]).sum::<f32>() / 4.0;
-    let min_x = pts.iter().map(|p| p[0]).fold(f32::INFINITY, f32::min);
-    let max_x = pts.iter().map(|p| p[0]).fold(f32::NEG_INFINITY, f32::max);
-    let min_y = pts.iter().map(|p| p[1]).fold(f32::INFINITY, f32::min);
-    let max_y = pts.iter().map(|p| p[1]).fold(f32::NEG_INFINITY, f32::max);
-    let bw = (max_x - min_x).max(0.01);
-    let bh = (max_y - min_y).max(0.01);
 
-    // Normalize to [-0.5, 0.5] space so the model matrix (scale = bbox) remaps correctly.
-    let uvs = [[0.0_f32, 1.0], [1.0, 1.0], [1.0, 0.0], [0.0, 0.0]];
-    let vertices: Vec<Vertex> = pts.iter().enumerate().map(|(i, p)| Vertex {
-        position: [(p[0] - cx) / bw, (p[1] - cy) / bh, 0.0],
-        normal:   [0.0, 0.0, 1.0],
-        uv:       uvs[i],
-    }).collect();
-    let indices = vec![0u32, 1, 2, 2, 3, 0];
-
-    // Z = -0.5: entre los escenarios (Z=-1) y los personajes (Z=0).
-    let position = [cx, cy, -0.5];
-    let scale    = [bw, bh, 1.0];
-    (upload(device, &vertices, &indices, "collider-quad"), position, scale)
-}
 
 /// Construye el GizmoBuffer (LineList) de overlay para la herramienta de dibujo.
 /// `pts`: puntos acumulados (1-4) en espacio de mundo.

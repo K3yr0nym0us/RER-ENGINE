@@ -85,7 +85,7 @@ export interface EngineCommand {
 }
 
 export interface EngineEvent {
-  event: 'ready' | 'pong' | 'error' | 'model_loaded' | 'stopped' | 'entity_selected' | 'entity_deselected' | 'entity_hovered' | 'entity_unhovered' | 'scenario_loaded' | 'character_loaded' | 'player_ready' | 'camera_2d_updated' | 'background_loaded' | 'drawing_progress' | 'collider_created' | 'tool_cancelled' | 'pivot_selected'
+  event: 'ready' | 'pong' | 'error' | 'model_loaded' | 'stopped' | 'entity_selected' | 'entity_deselected' | 'entity_hovered' | 'entity_unhovered' | 'scenario_loaded' | 'character_loaded' | 'player_ready' | 'camera_2d_updated' | 'background_loaded' | 'drawing_progress' | 'collider_created' | 'tool_cancelled' | 'pivot_selected' | 'physics_changed'
   [key: string]: unknown
 }
 
@@ -132,6 +132,13 @@ export interface BackgroundLoaded {
 export interface AnimationFinished {
   event:            'animation_finished'
   entity_id:        number
+}
+
+export interface PhysicsChanged {
+  event:       'physics_changed'
+  entity_id:   number
+  enabled:     boolean
+  body_type:   string
 }
 
 export interface EntitySelected {

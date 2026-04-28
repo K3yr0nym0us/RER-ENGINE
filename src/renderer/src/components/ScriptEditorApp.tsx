@@ -4,15 +4,20 @@ import { FileEarmarkCode } from 'react-bootstrap-icons'
 import type * as Monaco from 'monaco-editor'
 
 const DEFAULT_SCRIPT = `-- Escribe tu script Lua aquí
+-- Parámetros disponibles:
+--   entity  → snapshot de la entidad { id, x, y, scale_x, scale_y, animations }
+--   dt      → tiempo en segundos desde el último frame (ej: 0.016)
+-- API del motor: engine.translate(id, dx, dy)  engine.move_to(id, x, y)
+--               engine.play_animation(id, name)  engine.stop_animation(id)  engine.log(msg)
 local script = {}
 
-function script.on_start(self)
+function script.on_start(self, entity)
 end
 
-function script.update(self, dt)
+function script.update(self, entity, dt)
 end
 
-function script.on_stop(self)
+function script.on_stop(self, entity)
 end
 
 return script`

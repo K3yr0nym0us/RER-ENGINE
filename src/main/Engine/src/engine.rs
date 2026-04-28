@@ -137,7 +137,7 @@ use crate::config_2d::Camera2D;
 use crate::config_2d::PhysicsWorld2D;
 use crate::ecs::{MeshComponent, Transform, World};
 use crate::gizmo::{self, GizmoBuffer};
-use crate::ipc::{send_event, AnimationFrameData, EngineCommand, EngineEvent};
+use crate::ipc::{send_event, AnimationFrameData, AnimScriptData, EngineCommand, EngineEvent};
 use crate::mesh::{self, Mesh};
 use crate::config_3d::physics_3d::PhysicsWorld;
 use crate::scripting::{ScriptEngine, ScriptCmd, EntitySnapshot};
@@ -152,6 +152,8 @@ pub struct AnimationState {
     pub audio_decoded: Option<Arc<DecodedAudio>>,
     pub logical_w:     u32,
     pub logical_h:     u32,
+    /// Scripts Lua que se ejecutan solo mientras esta animación está activa.
+    pub scripts:       Vec<AnimScriptData>,
 }
 
 pub struct ActiveAnimation {
@@ -271,6 +273,11 @@ pub struct State {
     pub(crate) animations: HashMap<u32, HashMap<String, AnimationState>>,
     /// Animación actualmente en reproducción: entity_id → ActiveAnimation.
     pub(crate) active_animations: HashMap<u32, ActiveAnimation>,
+    /// Snapshot del transform ORIGINAL antes de que empiece cualquier animación.
+    /// Usado por restore_animation_frame para devolver la entidad a su estado previo.
+    /// A diferencia de anim_saved_transforms (que se acumula con los scripts),
+    /// este mapa nunca es modificado por scripts — solo se escribe una vez por sesión.
+    pub(crate) anim_origin_transforms: HashMap<u32, (GlamVec3, GlamVec3)>,
     /// Sistema de scripting Lua. Contiene la VM y los scripts adjuntos a entidades.
     pub(crate) script_engine: ScriptEngine,
 }
@@ -662,8 +669,9 @@ impl State {
             audio_slot,
             anim_texture_cache: std::collections::HashMap::new(),
             anim_overrides:     std::collections::HashMap::new(),
-            animations:        HashMap::new(),
-            active_animations: HashMap::new(),
+            animations:            HashMap::new(),
+            active_animations:     HashMap::new(),
+            anim_origin_transforms: HashMap::new(),
             script_engine: ScriptEngine::new()
                 .expect("Error al inicializar el motor de scripting Lua"),
         }
@@ -859,6 +867,7 @@ impl State {
                 }
                 log::info!("Física {}: entidad {} tipo='{}'",
                     if enabled { "activada" } else { "desactivada" }, id, body_type);
+                send_event(&EngineEvent::PhysicsChanged { entity_id: id, enabled, body_type });
             }
             EngineCommand::SetActiveTool { tool } => {
                 if tool.is_empty() {
@@ -883,8 +892,8 @@ impl State {
                     log::warn!("CreateColliderFromPoints solo disponible en modo 2D");
                 }
             }
-            EngineCommand::SetAnimation { id, name, frames, fps, loop_, audio_path, logical_w, logical_h } => {
-                log::info!("[IPC] SetAnimation: entity_id={}, name='{}', frames={}, audio={:?}", id, name, frames.len(), audio_path);
+            EngineCommand::SetAnimation { id, name, frames, fps, loop_, audio_path, logical_w, logical_h, scripts } => {
+                log::info!("[IPC] SetAnimation: entity_id={}, name='{}', frames={}, audio={:?}, scripts={}", id, name, frames.len(), audio_path, scripts.len());
 
                 // Pre-decodificar audio a muestras PCM durante SetAnimation.
                 // En PlayAnimation solo se clona un Vec<i16> — cero I/O, cero decode.
@@ -923,6 +932,7 @@ impl State {
                         audio_decoded,
                         logical_w,
                         logical_h,
+                        scripts,
                     });
                 log::info!("[IPC] Animación '{}' guardada y pre-cargada para entidad {}", name, id);
             }
@@ -954,6 +964,19 @@ EngineCommand::PlayAnimation { id, name } => {
                             self.play_audio_internal(Arc::clone(audio_decoded), anim.loop_);
                         }
 
+                        // Reemplazar los scripts de animación anteriores por los de la nueva.
+                        // Los scripts de entidad (LoadScript) se preservan intactos.
+                        self.script_engine.detach_animation_scripts(id);
+                        for script in &anim.scripts {
+                            let anim_path = format!("$anim$::{}::{}", name, script.name);
+                            if let Err(e) = self.script_engine.attach_script(id, &anim_path, &script.source) {
+                                log::error!("[scripting] Error cargando script de animación '{}': {}", anim_path, e);
+                            }
+                        }
+                        if !anim.scripts.is_empty() {
+                            log::info!("[scripting] {} script(s) de animación '{}' cargados para entidad {}", anim.scripts.len(), name, id);
+                        }
+
                         self.active_animations.insert(id, ActiveAnimation {
                             animation_name: name.clone(),
                             current_frame: 0,
@@ -970,6 +993,8 @@ EngineCommand::PlayAnimation { id, name } => {
                 self.active_animations.remove(&id);
                 self.restore_animation_frame(id);
                 self.stop_audio_internal();
+                // Descargar scripts de la animación que estaba activa.
+                self.script_engine.detach_animation_scripts(id);
                 send_event(&EngineEvent::AnimationFinished { entity_id: id });
                 log::info!("[animation] Stopped for entity {}", id);
             }
@@ -1085,6 +1110,8 @@ EngineCommand::PlayAnimation { id, name } => {
         }
 
         for entity_id in to_restore {
+            // Desenganche de scripts de animación cuando una animación no-loop termina.
+            self.script_engine.detach_animation_scripts(entity_id);
             self.restore_animation_frame(entity_id);
             // El audio no-looping se agota solo cuando las muestras PCM terminan.
             // No enviamos Stop aquí para evitar que sobrescriba un Play ya encolado
@@ -1137,11 +1164,34 @@ self.active_animations.retain(|_, a| !a.finished);
                         t.position.x = x;
                         t.position.y = y;
                     }
+                    // Sincronizar el origen de animación para que play_animation_frame
+                    // no sobreescriba la posición con el valor pre-movimiento.
+                    if let Some(saved) = self.anim_saved_transforms.get_mut(&id) {
+                        saved.0.x = x;
+                        saved.0.y = y;
+                    }
+                    // Sincronizar el Rapier body para que physics.step() no resetee la posición.
+                    self.physics_2d.teleport_entity(id, x, y);
                 }
                 ScriptCmd::Translate { id, dx, dy } => {
                     if let Some(t) = self.world.get_mut::<Transform>(id) {
                         t.position.x += dx;
                         t.position.y += dy;
+                    }
+                    // Propagar el desplazamiento al origen guardado de animación,
+                    // de lo contrario cada frame de animación resetea la posición a orig_pos.
+                    if let Some(saved) = self.anim_saved_transforms.get_mut(&id) {
+                        saved.0.x += dx;
+                        saved.0.y += dy;
+                        log::debug!("[script/translate] entidad {} saved_x={:.3} (+{:.3})", id, saved.0.x, dx);
+                    } else {
+                        log::warn!("[script/translate] entidad {} SIN entrada en anim_saved_transforms — translate no acumulado", id);
+                    }
+                    // Sincronizar el Rapier body para que physics.step() no resetee la posición.
+                    let new_pos = self.world.get::<Transform>(id)
+                        .map(|t| (t.position.x, t.position.y));
+                    if let Some((nx, ny)) = new_pos {
+                        self.physics_2d.teleport_entity(id, nx, ny);
                     }
                 }
                 ScriptCmd::SetScale { id, sx, sy } => {
@@ -1151,10 +1201,31 @@ self.active_animations.retain(|_, a| !a.finished);
                     }
                 }
                 ScriptCmd::PlayAnimation { id, name } => {
-                    self.handle_command(EngineCommand::PlayAnimation { id, name });
+                    // Si la animación solicitada ya está activa en esa entidad,
+                    // ignorar para evitar el bucle on_start → play_animation → on_start.
+                    let already_active = self.active_animations.get(&id)
+                        .map(|a| a.animation_name == name)
+                        .unwrap_or(false);
+                    if !already_active {
+                        self.handle_command(EngineCommand::PlayAnimation { id, name });
+                    }
                 }
                 ScriptCmd::StopAnimation { id } => {
                     self.handle_command(EngineCommand::StopAnimation { id });
+                }
+                ScriptCmd::SetPhysics { id, enabled, body_type } => {
+                    // Evitar recrear el cuerpo Rapier si ya tiene el estado correcto.
+                    // Destruir y recrear cada frame resetea la velocidad a 0, lo que
+                    // impide que la gravedad acumule y que las colisiones funcionen.
+                    let already_same = if enabled {
+                        self.physics_2d.has_physics(id)
+                            && self.physics_2d.get_body_type(id) == body_type
+                    } else {
+                        !self.physics_2d.has_physics(id)
+                    };
+                    if !already_same {
+                        self.handle_command(EngineCommand::SetPhysics { id, enabled, body_type });
+                    }
                 }
                 ScriptCmd::Log { message } => {
                     eprintln!("[script] {message}");

@@ -6,6 +6,12 @@
 // Tipos de cuerpo soportados:
 //   "dynamic"   — afectado por gravedad y colisiones.
 //   "static"    — no se mueve (suelo, plataformas).
+//
+// Funciones extraídas a archivos propios (submódulos vía #[path]):
+//   teleport_entity  — sincroniza Rapier body con el Transform.
+
+#[path = "teleport_entity.rs"]
+mod teleport_entity;
 
 use std::collections::HashMap;
 
@@ -144,54 +150,6 @@ impl PhysicsWorld2D {
 
     pub(crate) fn get_body_type(&self, entity: EntityId) -> &str {
         self.entity_body_types.get(&entity).map(|s| s.as_str()).unwrap_or("")
-    }
-
-    /// Crea un colisionador estático de forma convexa a partir de puntos en espacio de mundo (XY).
-    /// Usado por la herramienta de dibujo para crear colisionadores de forma arbitraria.
-    #[allow(dead_code)]
-    pub(crate) fn add_convex_collider(&mut self, entity: EntityId, points: &[[f32; 2]]) {
-        if let Some(handle) = self.entity_bodies.remove(&entity) {
-            self.entity_body_types.remove(&entity);
-            self.remove_body(handle);
-        }
-        if points.len() < 3 {
-            log::warn!("[physics_2d] add_convex_collider: se necesitan al menos 3 puntos (se recibieron {})", points.len());
-            return;
-        }
-
-        let rapier_pts: Vec<Point<f32>> = points.iter()
-            .map(|p| point![p[0], p[1], 0.0])
-            .collect();
-
-        let shape = match SharedShape::convex_hull(&rapier_pts) {
-            Some(s) => s,
-            None => {
-                log::warn!("[physics_2d] no se pudo construir hull convexo para entidad {}", entity);
-                return;
-            }
-        };
-
-        let cx = points.iter().map(|p| p[0]).sum::<f32>() / points.len() as f32;
-        let cy = points.iter().map(|p| p[1]).sum::<f32>() / points.len() as f32;
-
-        let body  = RigidBodyBuilder::fixed().translation(vector![cx, cy, 0.0]).build();
-        let handle = self.bodies.insert(body);
-        // The shape from convex_hull is in world space but we placed body at centroid,
-        // so shift the shape to centroid-relative by using a zero-offset collider
-        // (rapier hull points are absolute when body is at world origin; here body is
-        // at centroid so we must use centroid-relative points).
-        let rel_pts: Vec<Point<f32>> = points.iter()
-            .map(|p| point![p[0] - cx, p[1] - cy, 0.0])
-            .collect();
-        let rel_shape = match SharedShape::convex_hull(&rel_pts) {
-            Some(s) => s,
-            None => shape,
-        };
-        let col = ColliderBuilder::new(rel_shape).build();
-        self.colliders.insert_with_parent(col, handle, &mut self.bodies);
-
-        self.entity_bodies.insert(entity, handle);
-        self.entity_body_types.insert(entity, "static".to_string());
     }
 
     // ── Paso de simulación ────────────────────────────────────────────────────

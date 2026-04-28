@@ -1,4 +1,3 @@
-import { useEffect, useState } from 'react';
 import { Accordion } from 'react-bootstrap';
 import { useContextEngine } from '../context/useContextEngine';
 import { TransformPanel, AnimationsPanel, ScriptingPanel } from './sidebar/properties';
@@ -21,14 +20,11 @@ export function PropertiesPanel({ projectType }: { projectType?: string }) {
   }
   
   const is2D = projectType === '2D'
-  const [physicsEnabled, setPhysicsEnabled] = useState(false)
-  const [physicsType, setPhysicsType] = useState('dynamic')
 
-  useEffect(() => {
-    if (!selectedEntity) return
-    setPhysicsEnabled(selectedEntity.physicsEnabled)
-    setPhysicsType(selectedEntity.physicsType || 'dynamic')
-  }, [selectedEntity?.id])
+  // Derivar directamente desde el contexto para que sea reactivo a cambios
+  // por scripts (PhysicsChanged) sin necesitar estado local intermedio.
+  const physicsEnabled = selectedEntity?.physicsEnabled ?? false
+  const physicsType    = selectedEntity?.physicsType || 'dynamic'
 
   if (!selectedEntity) {
     return <p className="text-secondary fst-italic small mb-0 px-1">Haz click en un objeto para verlo</p>
@@ -56,7 +52,6 @@ export function PropertiesPanel({ projectType }: { projectType?: string }) {
               checked={physicsEnabled}
               onChange={(e) => {
                 const next = e.target.checked
-                setPhysicsEnabled(next)
                 send({ cmd: 'set_physics', id: selectedEntity.id, enabled: next, body_type: 'static' })
               }}
             />
@@ -76,7 +71,6 @@ export function PropertiesPanel({ projectType }: { projectType?: string }) {
               checked={physicsEnabled}
               onChange={(e) => {
                 const next = e.target.checked
-                setPhysicsEnabled(next)
                 send({ cmd: 'set_physics', id: selectedEntity.id, enabled: next, body_type: physicsType })
               }}
             />
@@ -90,7 +84,6 @@ export function PropertiesPanel({ projectType }: { projectType?: string }) {
               className="form-select form-select-sm bg-dark text-light border-secondary mt-1"
               onChange={(e) => {
                 const next = e.target.value
-                setPhysicsType(next)
                 send({ cmd: 'set_physics', id: selectedEntity.id, enabled: true, body_type: next })
               }}
             >

@@ -1,5 +1,5 @@
 import React, { useReducer, useRef, useEffect, createContext, useContext } from 'react';
-import type { EngineEvent, EntitySelected, ScenarioLoaded, CharacterLoaded, PlayerReady, Camera2dUpdated, ProjectSaveData, PivotSelected, AnimationFinished } from '../../../shared-types/types';
+import type { EngineEvent, EntitySelected, ScenarioLoaded, CharacterLoaded, PlayerReady, Camera2dUpdated, ProjectSaveData, PivotSelected, AnimationFinished, PhysicsChanged } from '../../../shared-types/types';
 
 // Tipos y estado inicial (idénticos al hook original)
 export interface Entity {
@@ -86,6 +86,7 @@ type EngineAction =
 	| { type: 'REMOVE_COLLIDER'; payload: number }
 	| { type: 'SET_TOOL_PROGRESS'; payload: number | null }
 	| { type: 'SET_ANIMATION_PLAYING'; payload: { entityId: number; playing: boolean } }
+	| { type: 'UPDATE_SELECTED_PHYSICS'; payload: { entityId: number; enabled: boolean; bodyType: string } }
 
 const initialState: EngineState = {
 	engineReady: false,
@@ -149,6 +150,17 @@ function engineReducer(state: EngineState, action: EngineAction): EngineState {
 			const newMap = new Map(state.animationPlaying);
 			newMap.set(action.payload.entityId, action.payload.playing);
 			return { ...state, animationPlaying: newMap };
+		},
+		UPDATE_SELECTED_PHYSICS: (state, action) => {
+			if (state.selectedEntity?.id !== action.payload.entityId) return state;
+			return {
+				...state,
+				selectedEntity: {
+					...state.selectedEntity,
+					physicsEnabled: action.payload.enabled,
+					physicsType:    action.payload.bodyType,
+				},
+			};
 		},
 	};
 	const handler = handlers[action.type as keyof typeof handlers];
@@ -487,6 +499,7 @@ export function EngineProvider({
 								audio_path: anim.audio_path ?? null,
 								logical_w:  anim.logical_w ?? 64,
 								logical_h:  anim.logical_h ?? 64,
+								scripts:    anim.scripts ?? [],
 							} as never)
 						}
 					}
@@ -549,6 +562,7 @@ export function EngineProvider({
 									audio_path: anim.audio_path ?? null,
 									logical_w:  anim.logical_w ?? 64,
 									logical_h:  anim.logical_h ?? 64,
+									scripts:    anim.scripts ?? [],
 								} as never)
 							}
 						}
@@ -593,6 +607,16 @@ export function EngineProvider({
 					pendingEventsRef.current.delete('animation_finished');
 				}
 				dispatch({ type: 'SET_ANIMATION_PLAYING', payload: { entityId: e.entity_id, playing: false } });
+			}
+			if (event.event === 'physics_changed') {
+				const e = event as unknown as PhysicsChanged;
+				// Actualizar entityMetaRef para que el estado persista entre selecciones
+				if (entityMetaRef.current[e.entity_id]) {
+					entityMetaRef.current[e.entity_id].physicsEnabled = e.enabled;
+					entityMetaRef.current[e.entity_id].physicsType    = e.body_type;
+				}
+				// Actualizar selectedEntity si la entidad afectada está seleccionada
+				dispatch({ type: 'UPDATE_SELECTED_PHYSICS', payload: { entityId: e.entity_id, enabled: e.enabled, bodyType: e.body_type } });
 			}
 		})
 		return () => { window.engine.off() }
@@ -651,6 +675,7 @@ export function EngineProvider({
 				audio_path: anim.audio_path ?? null,
 				logical_w: anim.logical_w ?? 64,
 				logical_h: anim.logical_h ?? 64,
+				scripts:   anim.scripts ?? [],
 			} as never)
 		}
 	};

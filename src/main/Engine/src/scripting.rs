@@ -28,6 +28,9 @@ pub enum ScriptCmd {
     PlayAnimation { id: u32, name: String },
     /// Stop the current animation on an entity.
     StopAnimation { id: u32 },
+    /// Enable or disable physics on an entity.
+    /// `body_type` is only used when `enabled = true` (e.g. "dynamic", "static").
+    SetPhysics { id: u32, enabled: bool, body_type: String },
     /// Log a message to the engine console (forwarded via IPC).
     Log { message: String },
 }
@@ -126,6 +129,33 @@ impl ScriptEngine {
                 self.call_lifecycle(&s.table, "on_stop", entity_id);
             }
             log::info!("[scripting] scripts de entidad {} removidos", entity_id);
+        }
+    }
+
+    /// Remove only animation scripts (path prefix `$anim$::`) from an entity.
+    /// Entity-level scripts loaded via `LoadScript` are left intact.
+    pub fn detach_animation_scripts(&mut self, entity_id: u32) {
+        // Collect tables first (immutable access ends before the mutable retain below)
+        let anim_tables: Vec<LuaTable> = self.scripts
+            .get(&entity_id)
+            .map(|scripts| {
+                scripts.iter()
+                    .filter(|s| s.path.starts_with("$anim$::"))
+                    .map(|s| s.table.clone())
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let count = anim_tables.len();
+        for table in &anim_tables {
+            self.call_lifecycle(table, "on_stop", entity_id);
+        }
+
+        if let Some(scripts) = self.scripts.get_mut(&entity_id) {
+            scripts.retain(|s| !s.path.starts_with("$anim$::"));
+        }
+        if count > 0 {
+            log::info!("[scripting] {} script(s) de animación removidos de entidad {}", count, entity_id);
         }
     }
 
@@ -255,6 +285,18 @@ impl ScriptEngine {
         }).expect("create stop_animation fn");
         let _ = globals.set("__api_stop_animation", stop_animation);
 
+        // engine.set_physics(id, enabled, body_type?)
+        // body_type es opcional; si se omite se usa "dynamic" al re-habilitar.
+        let set_physics = lua.create_function(|lua_ctx, (id, enabled, body_type): (u32, bool, Option<String>)| {
+            push_cmd(lua_ctx, "set_physics", |t| {
+                t.set("id",        id)?;
+                t.set("enabled",   enabled)?;
+                t.set("body_type", body_type.unwrap_or_else(|| "dynamic".to_string()))?;
+                Ok(())
+            })
+        }).expect("create set_physics fn");
+        let _ = globals.set("__api_set_physics", set_physics);
+
         // engine.log(msg)
         let log_fn = lua.create_function(|lua_ctx, msg: String| {
             push_cmd(lua_ctx, "log", |t| {
@@ -272,6 +314,7 @@ impl ScriptEngine {
         let _ = engine_table.set("set_scale",      globals.get::<LuaFunction>("__api_set_scale").ok());
         let _ = engine_table.set("play_animation", globals.get::<LuaFunction>("__api_play_animation").ok());
         let _ = engine_table.set("stop_animation", globals.get::<LuaFunction>("__api_stop_animation").ok());
+        let _ = engine_table.set("set_physics",    globals.get::<LuaFunction>("__api_set_physics").ok());
         let _ = engine_table.set("log",            globals.get::<LuaFunction>("__api_log").ok());
         let _ = globals.set("engine", engine_table);
 
@@ -381,6 +424,11 @@ fn parse_cmd_table(t: LuaTable) -> LuaResult<ScriptCmd> {
         }),
         "stop_animation" => Ok(ScriptCmd::StopAnimation {
             id: t.get("id")?,
+        }),
+        "set_physics" => Ok(ScriptCmd::SetPhysics {
+            id:        t.get("id")?,
+            enabled:   t.get("enabled")?,
+            body_type: t.get("body_type")?,
         }),
         "log" => Ok(ScriptCmd::Log {
             message: t.get("message")?,

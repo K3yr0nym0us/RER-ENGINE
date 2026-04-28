@@ -103,6 +103,9 @@ pub enum EngineCommand {
         audio_path: Option<String>,
         logical_w:  u32,
         logical_h:  u32,
+        /// Scripts Lua que se ejecutan mientras esta animación está activa.
+        #[serde(default)]
+        scripts:    Vec<AnimScriptData>,
     },
     /// Reproducir una animación guardada por ID de entidad y nombre.
     /// El motor busca en su almacén de animaciones — el front no necesita
@@ -122,6 +125,13 @@ pub struct AnimationFrameData {
     pub path:      String,
     pub pivot_x:   f32,
     pub pivot_y:   f32,
+}
+
+/// Script Lua asociado a una animación. Se ejecuta solo mientras la animación está activa.
+#[derive(Debug, Deserialize, Clone)]
+pub struct AnimScriptData {
+    pub name:   String,
+    pub source: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -176,6 +186,8 @@ pub enum EngineEvent {
     PivotSelected { frame_path: String, pivot_x: f32, pivot_y: f32 },
     /// Emitido cuando una animación termina (no loop) o se detiene.
     AnimationFinished { entity_id: u32 },
+    /// Emitido cuando el estado de física de una entidad cambia (activado/desactivado por script).
+    PhysicsChanged { entity_id: u32, enabled: bool, body_type: String },
 }
 
 /// Escribe un evento JSON en stdout y lo flushea inmediatamente.
