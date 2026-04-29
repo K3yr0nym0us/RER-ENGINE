@@ -5,6 +5,7 @@ import PropertiesPanel from './PropertiesPanel';
 import { WorldAccordion, ScenariosAccordion, CharactersAccordion, ToolsAccordion } from './sidebar';
 
 import { ProjectType } from '../../../shared-types/types';
+import BtnLoadSprite from './sidebar/BtnLoadSprite';
 
 export function SideBarLeft({ projectType }: { projectType: ProjectType }) {
   const {
@@ -58,6 +59,9 @@ export function SideBarLeft({ projectType }: { projectType: ProjectType }) {
                     addBtnLabel: '+ Agregar personaje (PNG)',
                     emptyText: 'Sin personajes cargados',
                   }} />}
+                  {projectType === '2D' && (
+                    <BtnLoadSprite />
+                  )}
                 </Accordion.Body>
               </Accordion.Item>
             </Accordion>

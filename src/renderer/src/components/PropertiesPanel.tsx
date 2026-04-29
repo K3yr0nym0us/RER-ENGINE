@@ -4,7 +4,7 @@ import { TransformPanel, AnimationsPanel, ScriptingPanel } from './sidebar/prope
 
 export function PropertiesPanel({ projectType }: { projectType?: string }) {
   const { selectedEntity } = useContextEngine()
-  const { engineReady, send, scenarioEntities, worldConfig, backgroundPath, entityMetaRef, entityTransformsRef } = useContextEngine()
+  const { send, scenarioEntities, entityTransformsRef } = useContextEngine()
 
   // Intercepta set_transform para mantener entityTransformsRef sincronizado
   // sin depender del evento entity_selected (que solo llega cuando el usuario clica la entidad).
