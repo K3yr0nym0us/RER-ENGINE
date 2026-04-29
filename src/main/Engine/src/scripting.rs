@@ -35,6 +35,9 @@ pub enum ScriptCmd {
     /// collisions naturally. `speed` is in world units/second; `dir_x`/`dir_y`
     /// form the movement direction (normalized internally).
     MoveEntity { id: u32, speed: f32, dir_x: f32, dir_y: f32 },
+    /// Stop a physics-enabled entity instantly by zeroing its linear and
+    /// angular velocities. Useful to prevent inertia drift after movement ends.
+    StopEntity { id: u32 },
     /// Log a message to the engine console (forwarded via IPC).
     Log { message: String },
 }
@@ -315,6 +318,15 @@ impl ScriptEngine {
         }).expect("create move_entity fn");
         let _ = globals.set("__api_move_entity", move_entity);
 
+        // engine.stop_entity(id)
+        let stop_entity = lua.create_function(|lua_ctx, id: u32| {
+            push_cmd(lua_ctx, "stop_entity", |t| {
+                t.set("id", id)?;
+                Ok(())
+            })
+        }).expect("create stop_entity fn");
+        let _ = globals.set("__api_stop_entity", stop_entity);
+
         // engine.log(msg)
         let log_fn = lua.create_function(|lua_ctx, msg: String| {
             push_cmd(lua_ctx, "log", |t| {
@@ -334,6 +346,7 @@ impl ScriptEngine {
         let _ = engine_table.set("stop_animation", globals.get::<LuaFunction>("__api_stop_animation").ok());
         let _ = engine_table.set("set_physics",    globals.get::<LuaFunction>("__api_set_physics").ok());
         let _ = engine_table.set("move_entity",    globals.get::<LuaFunction>("__api_move_entity").ok());
+        let _ = engine_table.set("stop_entity",    globals.get::<LuaFunction>("__api_stop_entity").ok());
         let _ = engine_table.set("log",            globals.get::<LuaFunction>("__api_log").ok());
         let _ = globals.set("engine", engine_table);
 
@@ -454,6 +467,9 @@ fn parse_cmd_table(t: LuaTable) -> LuaResult<ScriptCmd> {
             speed: t.get("speed")?,
             dir_x: t.get("dir_x")?,
             dir_y: t.get("dir_y")?,
+        }),
+        "stop_entity" => Ok(ScriptCmd::StopEntity {
+            id: t.get("id")?,
         }),
         "log" => Ok(ScriptCmd::Log {
             message: t.get("message")?,

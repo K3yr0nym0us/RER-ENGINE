@@ -17,6 +17,9 @@ mod teleport_entity;
 #[path = "move_physics_entity.rs"]
 mod move_physics_entity;
 
+#[path = "stop_physics_entity.rs"]
+mod stop_physics_entity;
+
 use std::collections::HashMap;
 
 use rapier3d::prelude::*;

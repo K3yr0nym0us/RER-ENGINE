@@ -7,8 +7,24 @@ const DEFAULT_SCRIPT = `-- Escribe tu script Lua aquí
 -- Parámetros disponibles:
 --   entity  → snapshot de la entidad { id, x, y, scale_x, scale_y, animations }
 --   dt      → tiempo en segundos desde el último frame (ej: 0.016)
--- API del motor: engine.translate(id, dx, dy)  engine.move_to(id, x, y)
---               engine.play_animation(id, name)  engine.stop_animation(id)  engine.log(msg)
+--
+-- ── Funciones de movimiento disponibles ──────────────────────────────────────
+--
+-- engine.move_entity(id, speed, dir_x, dir_y)
+--   Mueve la entidad a través del sistema de físicas (shape cast + colisiones).
+--   La entidad NO atravesará colisionadores. Usar para personajes y objetos
+--   que deben respetar el mundo físico.
+--   Ejemplo: engine.move_entity(entity.id, 15.0, 1.0, 0.0)  -- derecha a 15 u/s
+--
+-- engine.translate(id, dx, dy)
+--   Traslada la posición directamente, IGNORANDO colisiones.
+--   Útil para cinemáticas, objetos flotantes o efectos visuales donde no
+--   importa la interacción física.
+--   Ejemplo: engine.translate(entity.id, SPEED * dt, 0.0)
+--
+-- Otras API: engine.play_animation(id, name)  engine.stop_animation(id)
+--            engine.move_to(id, x, y)  engine.log(msg)
+-- ─────────────────────────────────────────────────────────────────────────────
 local script = {}
 
 function script.on_start(self, entity)
