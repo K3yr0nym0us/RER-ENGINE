@@ -1,8 +1,15 @@
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, useMemo } from 'react';
 
 const CANVAS_SIZE = 500;
 const DEFAULT_BOX = { x: 0, y: 0, width: 64, height: 64 };
 type SelectionMode = 'cell' | 'box';
+
+type Frame = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
 
 export function SpritePreviewModalBody({ src }: { src: string }) {
   const [cellOffsetX, setCellOffsetX] = useState(0);
@@ -13,14 +20,73 @@ export function SpritePreviewModalBody({ src }: { src: string }) {
   const [box, setBox] = useState(DEFAULT_BOX);
   const [keepAspect, setKeepAspect] = useState(true);
   const [boxes, setBoxes] = useState<{ x: number, y: number, width: number, height: number }[]>([]);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  // --- Funciones de interacción ---
+  const [currentFrame, setCurrentFrame] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [fps, setFps] = useState(6);
+
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const previewCanvasRef = useRef<HTMLCanvasElement>(null);
+
+  // 🔥 Frames unificados
+  const frames: Frame[] = useMemo(() => {
+    if (selectionMode === 'cell') {
+      return selectedCells.map(cell => ({
+        x: cell.x * gridSize,
+        y: cell.y * gridSize,
+        width: gridSize,
+        height: gridSize
+      }));
+    }
+    return boxes;
+  }, [selectionMode, selectedCells, boxes, gridSize]);
+
+  // 🎬 Animación
+  useEffect(() => {
+    if (!isPlaying || frames.length === 0) return;
+
+    const interval = setInterval(() => {
+      setCurrentFrame(prev => (prev + 1) % frames.length);
+    }, 1000 / fps);
+
+    return () => clearInterval(interval);
+  }, [isPlaying, frames, fps]);
+
+  // 🖼 Preview
+  useEffect(() => {
+    const canvas = previewCanvasRef.current;
+    if (!canvas || frames.length === 0) return;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const img = new Image();
+    img.src = src;
+
+    img.onload = () => {
+      const frame = frames[currentFrame];
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      ctx.drawImage(
+        img,
+        frame.x,
+        frame.y,
+        frame.width,
+        frame.height,
+        0,
+        0,
+        canvas.width,
+        canvas.height
+      );
+    };
+  }, [frames, currentFrame, src]);
+
+  // --- INTERACCIÓN ---
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (selectionMode === 'cell') {
       const rect = e.currentTarget.getBoundingClientRect();
 
-      // ✅ FIX: offset correcto
       const x = Math.floor((e.clientX - rect.left + cellOffsetX) / gridSize);
       const y = Math.floor((e.clientY - rect.top + cellOffsetY) / gridSize);
 
@@ -29,63 +95,42 @@ export function SpritePreviewModalBody({ src }: { src: string }) {
         ? selectedCells.filter(cell => !(cell.x === x && cell.y === y))
         : [...selectedCells, { x, y }]
       );
-    } else if (selectionMode === 'box') {
+    } else {
       setBoxes(prev => [...prev, { ...box }]);
     }
   };
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (selectionMode !== 'box') return;
-    if (box != DEFAULT_BOX) {
-      setBox(DEFAULT_BOX);
-    }
+    if (box != DEFAULT_BOX) setBox(DEFAULT_BOX);
+
     const rect = e.currentTarget.getBoundingClientRect();
     const mouseX = Math.floor(e.clientX - rect.left);
     const mouseY = Math.floor(e.clientY - rect.top);
+
     setBox(b => {
       let width = b.width;
-      let height = b.height;
-      if (keepAspect) height = width;
+      let height = keepAspect ? width : b.height;
+
       let x = mouseX - width / 2;
       let y = mouseY - height / 2;
+
       x = Math.max(0, Math.min(x, CANVAS_SIZE - width));
       y = Math.max(0, Math.min(y, CANVAS_SIZE - height));
+
       return { ...b, x, y, width, height };
     });
   };
 
   const handleMouseLeave = () => {
     if (selectionMode === 'box') {
-      const canvas = canvasRef.current;
-      if (canvas) {
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
-          const img = new window.Image();
-          img.src = src;
-          img.onload = () => {
-            const scale = Math.min(CANVAS_SIZE / img.width, CANVAS_SIZE / img.height);
-            const drawWidth = img.width * scale;
-            const drawHeight = img.height * scale;
-            const offsetX = (CANVAS_SIZE - drawWidth) / 2;
-            const offsetY = (CANVAS_SIZE - drawHeight) / 2;
-            ctx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);
-            ctx.strokeStyle = 'rgba(0,200,255,0.8)';
-            ctx.lineWidth = 2;
-            setBox({ x: 0, y: 0, width: 0, height: 0 });
-            boxes.forEach(b =>
-              ctx.strokeRect(b.x, b.y, b.width, b.height)
-            );
-          };
-        }
-      }
+      setBox({ x: 0, y: 0, width: 0, height: 0 });
     }
   };
 
   const handleBoxWidthChange = (width: number) => {
     setBox(b => {
-      let newHeight = b.height;
-      if (keepAspect) newHeight = width;
+      let newHeight = keepAspect ? width : b.height;
       return {
         ...b,
         width,
@@ -98,8 +143,7 @@ export function SpritePreviewModalBody({ src }: { src: string }) {
 
   const handleBoxHeightChange = (height: number) => {
     setBox(b => {
-      let newWidth = b.width;
-      if (keepAspect) newWidth = height;
+      let newWidth = keepAspect ? height : b.width;
       return {
         ...b,
         width: newWidth,
@@ -110,32 +154,30 @@ export function SpritePreviewModalBody({ src }: { src: string }) {
     });
   };
 
-  // --- useEffect ---
+  // --- DRAW ---
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
-
-    const img = new window.Image();
+    const img = new Image();
     img.src = src;
+
     img.onload = () => {
+      ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+
       const scale = Math.min(CANVAS_SIZE / img.width, CANVAS_SIZE / img.height);
       const drawWidth = img.width * scale;
       const drawHeight = img.height * scale;
       const offsetX = (CANVAS_SIZE - drawWidth) / 2;
       const offsetY = (CANVAS_SIZE - drawHeight) / 2;
 
-      ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
       ctx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);
 
       if (selectionMode === 'cell') {
         ctx.strokeStyle = 'rgba(255,255,255,0.64)';
-        ctx.lineWidth = 1;
 
-        // ✅ FIX: grid correcta con offsets
         const startX = Math.floor(cellOffsetX / gridSize) * gridSize;
         for (let x = startX; x < CANVAS_SIZE + gridSize; x += gridSize) {
           const drawX = x - cellOffsetX;
@@ -167,21 +209,19 @@ export function SpritePreviewModalBody({ src }: { src: string }) {
 
       if (selectionMode === 'box') {
         ctx.strokeStyle = 'rgba(0,200,255,0.8)';
-        ctx.lineWidth = 2;
-        boxes.forEach(b =>
-          ctx.strokeRect(b.x, b.y, b.width, b.height)
-        );
+        boxes.forEach(b => ctx.strokeRect(b.x, b.y, b.width, b.height));
+
         ctx.setLineDash([6, 4]);
         ctx.strokeRect(box.x, box.y, box.width, box.height);
         ctx.setLineDash([]);
       }
     };
-  }, [src, gridSize, selectionMode, selectedCells, box, boxes, keepAspect, cellOffsetX, cellOffsetY]);
+  }, [src, selectionMode, selectedCells, boxes, box, gridSize, cellOffsetX, cellOffsetY]);
 
-  // --- Render ---
+  // --- RENDER ---
   return (
     <div style={{ display: 'flex', minHeight: 300 }}>
-      {/* Barra lateral izquierda */}
+      {/* IZQUIERDA (100% intacto) */}
       <div className="border rounded me-3 text-center" style={{ minWidth: 160, borderRight: '1px solid #eee', padding: 12 }}>
         <h5>Propiedades del Sprite</h5>
         <hr className="mt-3 me-0 ms-0" />
@@ -357,41 +397,30 @@ export function SpritePreviewModalBody({ src }: { src: string }) {
         )}
       </div>
 
-      {/* Canvas */}
-      <div
-        style={{
-          flex: 1,
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          minHeight: CANVAS_SIZE,
-        }}
-      >
+      {/* CANVAS */}
+      <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
         <canvas
           ref={canvasRef}
           width={CANVAS_SIZE}
           height={CANVAS_SIZE}
-          style={{
-            border: '1px solid #ccc',
-            background: '#222',
-            width: '50vh',
-            height: '50vh',
-            display: 'block',
-            cursor: selectionMode === 'box' ? 'crosshair' : 'default'
-          }}
+          style={{ border: '1px solid #ccc', background: '#222' }}
+          onClick={handleCanvasClick}
           onMouseMove={selectionMode === 'box' ? handleMouseMove : undefined}
           onMouseLeave={selectionMode === 'box' ? handleMouseLeave : undefined}
-          onClick={handleCanvasClick}
         />
       </div>
 
-      {/* Sidebar derecho */}
-      <div 
-        className="border rounded ms-3 text-center" 
-        style={{ minWidth: '15vw', borderLeft: '1px solid #eee', padding: 12 }}
-      >
+      {/* DERECHA */}
+      <div className="border rounded ms-3 text-center" style={{ minWidth: '15vw', padding: 12 }}>
         <h4>Previsualización</h4>
-        <hr className="mt-3 ms-0 me-0" />
+
+        <canvas ref={previewCanvasRef} width={128} height={128} style={{ border: '1px solid #ccc' }} />
+
+        <button onClick={() => setIsPlaying(p => !p)}>
+          {isPlaying ? 'Pause' : 'Play'}
+        </button>
+
+        <input type="range" min={1} max={24} value={fps} onChange={e => setFps(+e.target.value)} />
       </div>
     </div>
   );
