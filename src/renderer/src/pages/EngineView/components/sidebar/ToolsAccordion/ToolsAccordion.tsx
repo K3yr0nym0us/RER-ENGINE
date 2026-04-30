@@ -1,7 +1,10 @@
-import { Accordion } from 'react-bootstrap'
-import { usePointDrawing } from '../../hooks/usePointDrawing'
-import { ColliderPanel } from '../../2D/components/ColliderPanel'
-import { useContextEngine } from '../../context/useContextEngine'
+import { Accordion } from 'react-bootstrap';
+
+import { ColliderPanel } from './components/ColliderPanel';
+
+import { usePointDrawing } from '../../../../../hooks/usePointDrawing';
+
+import { useContextEngine } from '../../../../../context/useContextEngine';
 
 export function ToolsAccordion() {
   const { engineReady, send, toolProgress, colliderEntities, removeCollider } = useContextEngine()

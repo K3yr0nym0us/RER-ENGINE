@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { ProjectSaveData, ProjectType } from '../../../shared-types/types';
+import type { ProjectSaveData, ProjectType } from '../../../../shared-types/types';
 
 interface ProjectOption {
   type:        ProjectType
@@ -41,7 +41,7 @@ interface Props {
   onLoadProject: (cfg: ProjectSaveData) => void
 }
 
-export function ProjectSelector({ onSelect, onLoadProject }: Props) {
+export function TypeProjectSelector({ onSelect, onLoadProject }: Props) {
   const [loadError, setLoadError] = useState<string | null>(null)
 
   const handleLoadProject = async () => {
@@ -164,3 +164,5 @@ export function ProjectSelector({ onSelect, onLoadProject }: Props) {
     </div>
   )
 }
+
+export default TypeProjectSelector;

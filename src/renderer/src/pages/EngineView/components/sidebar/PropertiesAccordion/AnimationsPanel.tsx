@@ -4,14 +4,14 @@ import { Accordion } from 'react-bootstrap';
 import { Plus } from 'react-bootstrap-icons';
 import { AnimationAccordion } from './AnimationAccordion';
 
-import { useContextEngine } from '../../../context/useContextEngine';
-import { useModal } from '../../../context/ModalContext';
+import { useContextEngine } from '../../../../../context/useContextEngine';
+import { useModal } from '../../../../../context/ModalContext';
 import { ScriptEditorModalBody } from '../../ScriptEditorModalBody';
 
 interface AnimationFrame {
-  path:    string
-  pivot_x: number
-  pivot_y: number
+  path:    string;
+  pivot_x: number;
+  pivot_y: number;
 }
 
 interface ScriptEntry {
@@ -20,14 +20,15 @@ interface ScriptEntry {
 }
 
 interface Animation {
-  name:       string
-  fps:        number
-  loop:       boolean
-  logical_w:  number
-  logical_h:  number
-  audio_path?: string
-  frames:     AnimationFrame[]
-  scripts?:   ScriptEntry[]
+  id?:         string;
+  name:       string;
+  fps:        number;
+  loop:       boolean;
+  logical_w:  number;
+  logical_h:  number;
+  audio_path?: string;
+  frames:     AnimationFrame[];
+  scripts?:   ScriptEntry[];
 }
 
 export function AnimationsPanel() {
@@ -50,14 +51,21 @@ export function AnimationsPanel() {
       setEditingLogicalArea(null)
     }
     setAnimations(entity?.animations ?? [])
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entity?.id])
 
   const addAnimation = () => {
     if (!newAnimName.trim()) return
     const next: Animation[] = [
       ...animations,
-      { name: newAnimName.trim(), fps: 12, loop: true, logical_w: 64, logical_h: 64, frames: [] },
+      {
+        id: `anim_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        name: newAnimName.trim(),
+        fps: 12,
+        loop: true,
+        logical_w: 64,
+        logical_h: 64,
+        frames: []
+      },
     ]
     setAnimations(next)
     setNewAnimName('')
@@ -285,8 +293,8 @@ const removeAnimation = (index: number) => {
         {animations.length > 0 && (
           <Accordion>
             {animations.map((anim, idx) => (
-                <AnimationAccordion
-                  key={anim.id || anim.name}
+              <AnimationAccordion
+                key={anim.id}
                 anim={anim}
                 animIdx={idx}
                 editingPivot={editingPivot}

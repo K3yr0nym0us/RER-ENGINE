@@ -1,6 +1,6 @@
-import { Files, Trash } from 'react-bootstrap-icons'
+import { Files, Trash } from 'react-bootstrap-icons';
 
-import { useContextEngine } from '../../context/useContextEngine'
+import { useContextEngine } from '../../../../../../context/useContextEngine';
 
 export interface AssetGroupConfig {
   openDialog:  () => Promise<string | null>
@@ -29,14 +29,6 @@ export function CharactersAccordion({ config }: Props) {
 
   return (
     <>
-      <button
-        className="btn btn-outline-info btn-sm w-100 fw-bold mb-2"
-        disabled={!engineReady}
-        onClick={handleLoad}
-      >
-        {config.addBtnLabel}
-      </button>
-
       {entries.length === 0 ? (
         <p className="text-secondary fst-italic small mb-0 px-1">{config.emptyText}</p>
       ) : (

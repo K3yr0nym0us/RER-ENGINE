@@ -1,8 +1,10 @@
 import { Accordion } from 'react-bootstrap';
-import { useContextEngine } from '../context/useContextEngine';
-import { TransformPanel, AnimationsPanel, ScriptingPanel } from './sidebar/properties';
 
-export function PropertiesPanel({ projectType }: { projectType?: string }) {
+import { TransformPanel, AnimationsPanel, ScriptingPanel } from '.';
+
+import { useContextEngine } from '../../../../../context/useContextEngine';
+
+export function PropertiesAccordion({ projectType }: { projectType?: string }) {
   const { selectedEntity } = useContextEngine()
   const { send, scenarioEntities, entityTransformsRef } = useContextEngine()
 
@@ -111,4 +113,4 @@ export function PropertiesPanel({ projectType }: { projectType?: string }) {
   )
 }
 
-export default PropertiesPanel
+export default PropertiesAccordion;

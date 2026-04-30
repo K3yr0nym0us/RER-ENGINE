@@ -1,14 +1,14 @@
 import { useRef } from 'react';
 
-import SideBarLeft from './SideBarLeft';
-import LogConsole from './LogConsole';
-import TopBarEngine from './TopBarEngine';
+import SideBarLeft from './components/SideBarLeft';
+import LogConsole from './components/LogConsole';
+import TopBarEngine from './components/TopBarEngine';
 
-import { EngineProvider } from '../context/useContextEngine';
-import { ModalProvider } from '../context/ModalContext';
-import { useAutoSave } from '../hooks/useAutoSave';
+import { EngineProvider } from '../../context/useContextEngine';
+import { ModalProvider } from '../../context/ModalContext';
+import { useAutoSave } from '../../hooks/useAutoSave';
 
-import type { ProjectType, ProjectSaveData } from '../../../shared-types/types';
+import type { ProjectType, ProjectSaveData } from '../../../../shared-types/types';
 
 export function EngineView({ projectType, initialSave }: { projectType: ProjectType; initialSave?: ProjectSaveData | null }) {
   const viewportRef = useRef<HTMLDivElement>(null)

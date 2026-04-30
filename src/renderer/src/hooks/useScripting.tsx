@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react';
 
-import { useContextEngine } from '../context/useContextEngine'
-import { useModal } from '../context/ModalContext'
-import { ScriptEditorModalBody } from '../components/ScriptEditorModalBody'
+import ScriptEditorModalBody from '../pages/EngineView/components/ScriptEditorModalBody';
+
+import { useContextEngine } from '../context/useContextEngine';
+import { useModal } from '../context/ModalContext';
 
 export interface ScriptEntry {
   name:   string

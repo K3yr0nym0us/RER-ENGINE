@@ -1,8 +1,8 @@
 import { useState } from 'react';
 
-import { ProjectSelector } from './components/ProjectSelector';
-import { GameStyleSelector } from './3D/components/GameStyleSelector';
-import { EngineView } from './components/EngineView';
+import { TypeProjectSelector } from './pages/TypeProjectSelector/TypeProjectSelector';
+import { GameStyleSelector } from './pages/GameStyleSelector/GameStyleSelector';
+import { EngineView } from './pages/EngineView/EngineView';
 
 import type { ProjectType, GameStyle, ProjectSaveData } from '../../shared-types/types';
 
@@ -22,7 +22,7 @@ export default function App() {
 
   if (!projectType) {
     return (
-      <ProjectSelector
+      <TypeProjectSelector
         onSelect={setProjectType}
         onLoadProject={handleLoadProject}
       />
@@ -40,5 +40,5 @@ export default function App() {
     )
   }
 
-    return <EngineView projectType={projectType} initialSave={initialSave} />
+  return <EngineView projectType={projectType} initialSave={initialSave} />
 }

@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react'
-import { Accordion } from 'react-bootstrap'
-import { Grid3x3, EyeFill, EyeSlashFill, Image } from 'react-bootstrap-icons'
+import { useState, useEffect } from 'react';
+import { Accordion } from 'react-bootstrap';
+import { Grid3x3, EyeFill, EyeSlashFill, Image } from 'react-bootstrap-icons';
 
-import { useContextEngine } from '../../context/useContextEngine'
+import { useContextEngine } from '../../../../context/useContextEngine';
 
 export function WorldAccordion() {
   const { engineReady, worldConfig, backgroundPath, setWorldSize, setGridVisible, setGridCellSize, send } = useContextEngine()

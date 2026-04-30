@@ -1,6 +1,6 @@
-import { Files, Trash } from 'react-bootstrap-icons'
+import { Files, Trash } from 'react-bootstrap-icons';
 
-import { useContextEngine, ScenarioEntry } from '../../context/useContextEngine'
+import { useContextEngine } from '../../../../../../context/useContextEngine';
 
 export interface AssetGroupConfig {
   openDialog:  () => Promise<string | null>
@@ -14,9 +14,15 @@ interface Props {
   config: AssetGroupConfig
 }
 
-export function ScenariosAccordion({ config }: Props) {
-  const { engineReady, send, scenarioEntities: entries, removeScenario: onRemove, duplicateScenario: onDuplicate } = useContextEngine()
-  const highlightId = useContextEngine().hoveredEntityId
+export function EnvironmentsAccordion({ config }: Props) {
+  const { 
+    engineReady, 
+    send, 
+    scenarioEntities: entries, 
+    removeScenario: onRemove, 
+    duplicateScenario: onDuplicate 
+  } = useContextEngine()
+  const { hoveredEntityId } = useContextEngine()
 
   const handleLoad = () => {
     config.openDialog().then((p: string | null) => {
@@ -42,7 +48,7 @@ export function ScenariosAccordion({ config }: Props) {
       ) : (
         <ul className="list-unstyled mb-0">
           {entries.map(({ id, path }) => {
-            const isHighlighted = id === highlightId
+            const isHighlighted = id === hoveredEntityId
             return (
               <li key={id} className="mb-1">
                 <div
@@ -77,4 +83,4 @@ export function ScenariosAccordion({ config }: Props) {
   )
 }
 
-export default ScenariosAccordion
+export default EnvironmentsAccordion;

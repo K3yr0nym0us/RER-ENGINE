@@ -1,5 +1,5 @@
-import { useScripting } from '../../../hooks/useScripting'
-import { ScriptingAccordion } from './ScriptingAccordion'
+import { useScripting } from '../../../../../hooks/useScripting';
+import { ScriptingAccordion } from './ScriptingAccordion';
 
 /**
  * Panel de scripting Lua para la entidad seleccionada.
