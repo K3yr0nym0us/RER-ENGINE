@@ -50,8 +50,9 @@ export function WorldPanel({
         <p className="text-secondary small mb-1 fw-semibold">Área de trabajo</p>
         <div className="d-flex gap-1 mb-2">
           <div className="flex-fill">
-            <label className="form-label small text-secondary mb-0">Ancho (u)</label>
+            <label className="form-label small text-secondary mb-0" htmlFor="panel-width">Ancho (u)</label>
             <input
+              id="panel-width"
               type="number"
               className="form-control form-control-sm bg-dark text-light border-secondary"
               min={1} step={1}
@@ -63,8 +64,9 @@ export function WorldPanel({
             />
           </div>
           <div className="flex-fill">
-            <label className="form-label small text-secondary mb-0">Alto (u)</label>
+            <label className="form-label small text-secondary mb-0" htmlFor="panel-height">Alto (u)</label>
             <input
+              id="panel-height"
               type="number"
               className="form-control form-control-sm bg-dark text-light border-secondary"
               min={1} step={1}

@@ -1,6 +1,10 @@
-import { useState, useRef } from 'react'
-import Editor, { type OnMount } from '@monaco-editor/react'
-import type * as Monaco from 'monaco-editor'
+
+import React, { useState, useRef, Suspense } from 'react';
+// Dynamic import for monaco-editor (for code splitting)
+const MonacoEditor = React.lazy(() => import('@monaco-editor/react'));
+// monaco-editor types are only imported for type checking, not runtime
+import type { OnMount } from '@monaco-editor/react';
+import type * as Monaco from 'monaco-editor';
 
 const DEFAULT_SCRIPT = `-- Escribe tu script Lua aquí
 -- Parámetros disponibles:
@@ -72,31 +76,32 @@ export function ScriptEditorModalBody({ initialData, onSave, onCancel }: ScriptE
         value={name}
         onChange={(e) => setName(e.target.value)}
         className="form-control form-control-sm bg-dark text-light border-secondary"
-        autoFocus
         onKeyDown={(e) => { if (e.key === 'Enter') handleSave() }}
       />
 
       {/* Editor Monaco */}
       <div className="flex-fill rounded overflow-hidden border border-secondary" style={{ minHeight: 0 }}>
-        <Editor
-          height="100%"
-          defaultLanguage="lua"
-          defaultValue={initialData?.source ?? DEFAULT_SCRIPT}
-          theme="vs-dark"
-          onChange={(val) => { sourceRef.current = val ?? '' }}
-          onMount={handleMount}
-          options={{
-            fontSize:             13,
-            minimap:              { enabled: false },
-            scrollBeyondLastLine: false,
-            wordWrap:             'on',
-            tabSize:              2,
-            insertSpaces:         true,
-            automaticLayout:      true,
-            lineNumbersMinChars:  3,
-            padding:              { top: 8 },
-          }}
-        />
+        <Suspense fallback={<div>Cargando editor...</div>}>
+          <MonacoEditor
+            height="100%"
+            defaultLanguage="lua"
+            defaultValue={initialData?.source ?? DEFAULT_SCRIPT}
+            theme="vs-dark"
+            onChange={(val) => { sourceRef.current = val ?? '' }}
+            onMount={handleMount}
+            options={{
+              fontSize:             13,
+              minimap:              { enabled: false },
+              scrollBeyondLastLine: false,
+              wordWrap:             'on',
+              tabSize:              2,
+              insertSpaces:         true,
+              automaticLayout:      true,
+              lineNumbersMinChars:  3,
+              padding:              { top: 8 },
+            }}
+          />
+        </Suspense>
       </div>
 
       {/* Acciones */}

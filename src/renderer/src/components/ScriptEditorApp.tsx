@@ -1,7 +1,11 @@
-import { useState, useRef, useEffect } from 'react'
-import Editor, { type OnMount } from '@monaco-editor/react'
-import { FileEarmarkCode } from 'react-bootstrap-icons'
-import type * as Monaco from 'monaco-editor'
+
+import React, { useState, useRef, useEffect, Suspense } from 'react';
+import { FileEarmarkCode } from 'react-bootstrap-icons';
+// Dynamic import for monaco-editor (for code splitting)
+const MonacoEditor = React.lazy(() => import('@monaco-editor/react'));
+// monaco-editor types are only imported for type checking, not runtime
+import type { OnMount } from '@monaco-editor/react';
+import type * as Monaco from 'monaco-editor';
 
 const DEFAULT_SCRIPT = `-- Escribe tu script Lua aquí
 -- Parámetros disponibles:
@@ -99,13 +103,13 @@ export function ScriptEditorApp() {
         value={name}
         onChange={(e) => setName(e.target.value)}
         className="form-control form-control-sm bg-dark text-light border-secondary"
-        autoFocus
         onKeyDown={(e) => { if (e.key === 'Enter') handleSave() }}
       />
 
       {/* Editor Monaco */}
       <div className="flex-fill rounded overflow-hidden border border-secondary" style={{ minHeight: 0 }}>
-        <Editor
+        <Suspense fallback={<div>Cargando editor...</div>}>
+          <MonacoEditor
           height="100%"
           defaultLanguage="lua"
           defaultValue={DEFAULT_SCRIPT}
@@ -123,7 +127,8 @@ export function ScriptEditorApp() {
             lineNumbersMinChars: 3,
             padding:           { top: 8 },
           }}
-        />
+          />
+        </Suspense>
       </div>
 
       {/* Acciones */}

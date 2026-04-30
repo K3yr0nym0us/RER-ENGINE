@@ -39,30 +39,12 @@ export function WorldAccordion() {
         <p className="text-secondary small mb-1 fw-semibold">Área de trabajo</p>
         <div className="d-flex gap-1 mb-2">
           <div className="flex-fill">
-            <label className="form-label small text-secondary mb-0">Ancho (u)</label>
-            <input
-              type="number"
-              className="form-control form-control-sm bg-dark text-light border-secondary"
-              min={1} step={1}
-              value={widthStr}
-              disabled={!engineReady}
-              onChange={(e) => setWidthStr(e.target.value)}
-              onBlur={commitSize}
-              onKeyDown={handleKey}
-            />
+            <label className="form-label small text-secondary mb-0" htmlFor="world-width">Ancho (u)</label>
+            <input id="world-width" type="number" className="form-control form-control-sm bg-dark text-light border-secondary" min={1} step={1} value={widthStr} disabled={!engineReady} onChange={(e) => setWidthStr(e.target.value)} onBlur={commitSize} onKeyDown={handleKey} />
           </div>
           <div className="flex-fill">
-            <label className="form-label small text-secondary mb-0">Alto (u)</label>
-            <input
-              type="number"
-              className="form-control form-control-sm bg-dark text-light border-secondary"
-              min={1} step={1}
-              value={heightStr}
-              disabled={!engineReady}
-              onChange={(e) => setHeightStr(e.target.value)}
-              onBlur={commitSize}
-              onKeyDown={handleKey}
-            />
+            <label className="form-label small text-secondary mb-0" htmlFor="world-height">Alto (u)</label>
+            <input id="world-height" type="number" className="form-control form-control-sm bg-dark text-light border-secondary" min={1} step={1} value={heightStr} disabled={!engineReady} onChange={(e) => setHeightStr(e.target.value)} onBlur={commitSize} onKeyDown={handleKey} />
           </div>
         </div>
 
@@ -100,11 +82,12 @@ export function WorldAccordion() {
           </button>
         </div>
 
-        <label className="form-label small text-secondary mb-1 d-flex justify-content-between">
+        <label className="form-label small text-secondary mb-1 d-flex justify-content-between" htmlFor="grid-cell-size-range">
           <span>Tamaño de celda</span>
           <span className="text-info fw-bold">{worldConfig.gridCellSize.toFixed(2)} u</span>
         </label>
         <input
+          id="grid-cell-size-range"
           type="range"
           className="form-range mb-2"
           min={0.25} max={10} step={0.25}

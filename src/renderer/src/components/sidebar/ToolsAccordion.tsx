@@ -26,9 +26,9 @@ export function ToolsAccordion() {
               Cuadro de colisiones — {colliderTool.progress}/{colliderTool.totalPoints} puntos colocados
             </div>
             <div className="d-flex gap-1 mb-2">
-              {[...Array(colliderTool.totalPoints)].map((_, i) => (
-                <div
-                  key={i}
+                {[...Array(colliderTool.totalPoints)].map((_, i) => (
+                  <div
+                    key={`collider-point-${colliderTool.progress}-${i}`}
                   style={{
                     width:           12,
                     height:          12,

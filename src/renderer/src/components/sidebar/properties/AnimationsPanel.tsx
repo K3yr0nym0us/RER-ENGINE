@@ -285,8 +285,8 @@ const removeAnimation = (index: number) => {
         {animations.length > 0 && (
           <Accordion>
             {animations.map((anim, idx) => (
-              <AnimationAccordion
-                key={idx}
+                <AnimationAccordion
+                  key={anim.id || anim.name}
                 anim={anim}
                 animIdx={idx}
                 editingPivot={editingPivot}

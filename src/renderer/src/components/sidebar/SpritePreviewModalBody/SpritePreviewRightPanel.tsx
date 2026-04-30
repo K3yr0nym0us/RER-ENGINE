@@ -126,12 +126,14 @@ export function SpritePreviewRightPanel({
       <hr className="border-secondary mb-3" />
 
       <div className="mb-3">
-        <label className="text-light text-center fw-bold d-block">Vista previa del frame</label>
+        <label className="text-light text-center fw-bold d-block" htmlFor="preview-canvas" id="preview-canvas-label">Vista previa del frame</label>
         <div className="bg-dark d-flex align-items-center justify-content-center mt-3">
           {currentFrame && (
             <canvas 
               className="border border-primary"
               ref={previewCanvasRef}
+              id="preview-canvas"
+              aria-labelledby="preview-canvas-label"
             />
           )}
           {!currentFrame && (
@@ -168,8 +170,9 @@ export function SpritePreviewRightPanel({
             </button>
 
             <div className="d-flex align-items-center gap-1">
-              <label className="text-light small mb-0">FPS</label>
+              <label className="text-light small mb-0" htmlFor="preview-fps">FPS</label>
               <input
+                id="preview-fps"
                 type="number"
                 className="form-control form-control-sm bg-dark text-light border-secondary"
                 style={{ width: '4vw' }}
@@ -187,11 +190,11 @@ export function SpritePreviewRightPanel({
 
       {hasFrames && (
         <div className="mb-3">
-          <label className="text-light fw-bold d-block mb-2">Frames ({frames.length})</label>
+          <label className="text-light fw-bold d-block mb-2" aria-hidden="true" role="presentation">Frames ({frames.length})</label>
           <nav>
             <ul className="pagination pagination-sm flex-wrap mb-0">
-              {frames.map((_, index) => (
-                <li key={index} className={`page-item ${index === safeIndex ? 'active' : ''}`}>
+              {frames.map((frame, index) => (
+                <li key={`${frame.x}-${frame.y}-${frame.width}-${frame.height}`} className={`page-item ${index === safeIndex ? 'active' : ''}`}>
                   <button
                     className="page-link d-flex align-items-center gap-1"
                     onClick={() => {

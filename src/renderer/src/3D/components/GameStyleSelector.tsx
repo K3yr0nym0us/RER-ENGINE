@@ -1,77 +1,78 @@
-import { ArrowLeft } from 'react-bootstrap-icons'
-import type { ProjectType, GameStyle } from '../../../../shared-types/types'
+import { ArrowLeft } from 'react-bootstrap-icons';
+
+import type { ProjectType, GameStyle } from '../../../../shared-types/types';
 
 interface StyleOption {
-  type:        GameStyle
-  label:       string
-  icon:        string
-  description: string
-  badge:       string
-  color:       string
-  available:   boolean
+  type: GameStyle;
+  label: string;
+  icon: string;
+  description: string;
+  badge: string;
+  color: string;
+  available: boolean;
 }
 
 const OPTIONS_3D: StyleOption[] = [
   {
-    type:        'first-person',
-    label:       'Primera Persona',
-    icon:        '◉',
+    type: 'first-person',
+    label: 'Primera Persona',
+    icon: '◉',
     description: 'Cámara en los ojos del personaje. FPS, horror y simuladores de vuelo.',
-    badge:       '1ª P',
-    color:       '#f87171',
-    available:   true,
+    badge: '1ª P',
+    color: '#f87171',
+    available: true,
   },
   {
-    type:        'second-person',
-    label:       'Segunda Persona',
-    icon:        '◑',
+    type: 'second-person',
+    label: 'Segunda Persona',
+    icon: '◑',
     description: 'Cámara sobre el hombro. Shooters en tercera persona cercana y acción-aventura.',
-    badge:       '2ª P',
-    color:       '#fb923c',
-    available:   false,
+    badge: '2ª P',
+    color: '#fb923c',
+    available: false,
   },
   {
-    type:        'third-person',
-    label:       'Tercera Persona',
-    icon:        '◎',
+    type: 'third-person',
+    label: 'Tercera Persona',
+    icon: '◎',
     description: 'Cámara detrás del personaje. RPG, aventuras y juegos de acción estándar.',
-    badge:       '3ª P',
-    color:       '#34d399',
-    available:   false,
+    badge: '3ª P',
+    color: '#34d399',
+    available: false,
   },
   {
-    type:        'top-down',
-    label:       'Vista Cenital',
-    icon:        '⊕',
+    type: 'top-down',
+    label: 'Vista Cenital',
+    icon: '⊕',
     description: 'Cámara desde arriba. RTS, roguelikes, dungeon crawlers y bullet-hells.',
-    badge:       'TOP',
-    color:       '#38bdf8',
-    available:   false,
+    badge: 'TOP',
+    color: '#38bdf8',
+    available: false,
   },
   {
-    type:        'side-scroller',
-    label:       'Vista Lateral',
-    icon:        '⊢',
+    type: 'side-scroller',
+    label: 'Vista Lateral',
+    icon: '⊢',
     description: 'Cámara de costado. Plataformas 3D, beat-em-ups y metroidvanias.',
-    badge:       'SIDE',
-    color:       '#facc15',
-    available:   false,
+    badge: 'SIDE',
+    color: '#facc15',
+    available: false,
   },
   {
-    type:        'isometric',
-    label:       'Isométrico',
-    icon:        '◇',
+    type: 'isometric',
+    label: 'Isométrico',
+    icon: '◇',
     description: 'Perspectiva diagonal fija. RPG clásicos, estrategia y city-builders.',
-    badge:       'ISO',
-    color:       '#a78bfa',
-    available:   false,
+    badge: 'ISO',
+    color: '#a78bfa',
+    available: false,
   },
-]
+];
 
 const OPTIONS_BY_TYPE: Partial<Record<ProjectType, StyleOption[]>> = {
-  '3D':   OPTIONS_3D,
-  '2D':   []
-}
+  '3D': OPTIONS_3D,
+  '2D': [],
+};
 
 interface Props {
   projectType: ProjectType
@@ -90,8 +91,8 @@ export function GameStyleSelector({ projectType, onSelect, onBack }: Props) {
       <button
         onClick={onBack}
         title="Volver al selector de proyecto"
-        className="btn rounded-circle d-flex align-items-center justify-content-center position-fixed"
-        style={{ top: 24, left: 28, width: 56, height: 56, fontSize: 22, zIndex: 100, background: '#0e1021', border: '2px solid #2c3152', color: '#94a3b8' }}
+        className="btn rounded-circle d-flex align-items-center justify-content-center position-fixed z-50 bg-dark border border-secondary"
+        style={{ top: 24, left: 28, width: 56, height: 56 }}
         onMouseEnter={(e) => {
           e.currentTarget.style.borderColor = '#c084fc'
           e.currentTarget.style.color       = '#c084fc'
@@ -103,7 +104,7 @@ export function GameStyleSelector({ projectType, onSelect, onBack }: Props) {
           e.currentTarget.style.boxShadow   = 'none'
         }}
       >
-        <ArrowLeft />
+        <ArrowLeft size={24} />
       </button>
 
       {/* Título */}

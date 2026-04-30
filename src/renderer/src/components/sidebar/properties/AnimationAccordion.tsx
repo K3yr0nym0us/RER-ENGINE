@@ -77,8 +77,9 @@ export function AnimationAccordion({
 
   const frameInputW = (
     <div className="d-flex align-items-center gap-2 mb-2">
-      <label className="form-label small mb-0 text-secondary">W</label>
+      <label className="form-label small mb-0 text-secondary" htmlFor={`logical-w-${animIdx}`}>W</label>
       <input
+        id={`logical-w-${animIdx}`}
         type="number"
         className="form-control form-control-sm"
         style={{ width: 60 }}
@@ -86,8 +87,9 @@ export function AnimationAccordion({
         disabled={editingLogicalArea !== animIdx}
         onChange={(e) => onUpdateLogicalW(parseInt(e.target.value) || 64)}
       />
-      <label className="form-label small mb-0 text-secondary">H</label>
+      <label className="form-label small mb-0 text-secondary" htmlFor={`logical-h-${animIdx}`}>H</label>
       <input
+        id={`logical-h-${animIdx}`}
         type="number"
         className="form-form-control form-control-sm"
         style={{ width: 60 }}
@@ -95,6 +97,26 @@ export function AnimationAccordion({
         disabled={editingLogicalArea !== animIdx}
         onChange={(e) => onUpdateLogicalH(parseInt(e.target.value) || 64)}
       />
+        <label className="form-label small mb-0 text-secondary" htmlFor={`logical-w-${animIdx}`}>W</label>
+        <input
+          id={`logical-w-${animIdx}`}
+          type="number"
+          className="form-control form-control-sm"
+          style={{ width: 60 }}
+          value={anim.logical_w ?? 64}
+          disabled={editingLogicalArea !== animIdx}
+          onChange={(e) => onUpdateLogicalW(parseInt(e.target.value) || 64)}
+        />
+        <label className="form-label small mb-0 text-secondary" htmlFor={`logical-h-${animIdx}`}>H</label>
+        <input
+          id={`logical-h-${animIdx}`}
+          type="number"
+          className="form-form-control form-control-sm"
+          style={{ width: 60 }}
+          value={anim.logical_h ?? 64}
+          disabled={editingLogicalArea !== animIdx}
+          onChange={(e) => onUpdateLogicalH(parseInt(e.target.value) || 64)}
+        />
       <button
         className={`btn btn-sm p-1 ms-auto ${editingLogicalArea === animIdx ? 'btn-warning' : 'btn-outline-secondary'}`}
         title={editingLogicalArea === animIdx ? 'Ocultar área lógica' : 'Habilitar edición'}
@@ -135,8 +157,9 @@ export function AnimationAccordion({
 
       <Accordion.Body className="py-2 px-2">
         <div className="d-flex align-items-center gap-2 mb-2">
-          <label className="form-label small mb-0 text-secondary">FPS</label>
+          <label className="form-label small mb-0 text-secondary" htmlFor={`fps-${animIdx}`}>FPS</label>
           <input
+            id={`fps-${animIdx}`}
             type="number"
             className="form-control form-control-sm"
             style={{ width: 60 }}
@@ -144,12 +167,30 @@ export function AnimationAccordion({
             onChange={(e) => onUpdateFps(parseInt(e.target.value) || 12)}
           />
           <input
+            id={`loop-${animIdx}`}
             type="checkbox"
             className="form-check-input"
             checked={anim.loop}
             onChange={(e) => onUpdateLoop(e.target.checked)}
           />
-          <label className="form-check-label small">Loop</label>
+          <label className="form-check-label small" htmlFor={`loop-${animIdx}`}>Loop</label>
+            <label className="form-label small mb-0 text-secondary" htmlFor={`fps-${animIdx}`}>FPS</label>
+            <input
+              id={`fps-${animIdx}`}
+              type="number"
+              className="form-control form-control-sm"
+              style={{ width: 60 }}
+              value={anim.fps}
+              onChange={(e) => onUpdateFps(parseInt(e.target.value) || 12)}
+            />
+            <input
+              id={`loop-${animIdx}`}
+              type="checkbox"
+              className="form-check-input"
+              checked={anim.loop}
+              onChange={(e) => onUpdateLoop(e.target.checked)}
+            />
+            <label className="form-check-label small" htmlFor={`loop-${animIdx}`}>Loop</label>
           {anim.audio_path ? (
             <MusicNoteBeamed size={14} className="text-success ms-auto" title={anim.audio_path} />
           ) : (

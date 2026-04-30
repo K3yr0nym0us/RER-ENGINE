@@ -58,7 +58,7 @@ export function SpritePreviewLeftPanel({
       <hr className="border-secondary opacity-50 mb-3" />
 
       <div className="mb-3">
-        <label className="text-light fw-bold d-block mb-2">Modo de selección</label>
+        <label className="text-light fw-bold d-block mb-2" id="label-modo-seleccion" htmlFor="mode-cell">Modo de selección</label>
         <div className="d-flex gap-4 justify-content-center">
           <div className="form-check d-flex align-items-center gap-1">
             <input
@@ -67,8 +67,9 @@ export function SpritePreviewLeftPanel({
               checked={selectionMode === 'cell'}
               onChange={() => setSelectionMode('cell')}
               id="mode-cell"
+              aria-labelledby="label-modo-seleccion mode-cell-label"
             />
-            <label className="form-check-label" htmlFor="mode-cell">
+            <label className="form-check-label" htmlFor="mode-cell" id="mode-cell-label">
               Celdas
             </label>
           </div>
@@ -79,8 +80,9 @@ export function SpritePreviewLeftPanel({
               checked={selectionMode === 'box'}
               onChange={() => setSelectionMode('box')}
               id="mode-box"
+              aria-labelledby="label-modo-seleccion mode-box-label"
             />
-            <label className="form-check-label" htmlFor="mode-box">
+            <label className="form-check-label" htmlFor="mode-box" id="mode-box-label">
               Recuadro
             </label>
           </div>
@@ -89,9 +91,10 @@ export function SpritePreviewLeftPanel({
 
       {selectionMode === 'cell' && (
         <div className="mb-3">
-          <label className="text-light fw-bold d-block mb-2">Tamaño de celda</label>
+            <label className="text-light fw-bold d-block mb-2" htmlFor="grid-size">Tamaño de celda</label>
           <div className="d-flex align-items-center gap-2 mb-3">
             <input
+              id="grid-size"
               type="range"
               className="form-range flex-fill"
               min={8}
@@ -101,6 +104,7 @@ export function SpritePreviewLeftPanel({
               onChange={e => setGridSize(Number(e.target.value))}
             />
             <input
+              id="grid-size-number"
               type="number"
               className="form-control form-control-sm bg-dark text-light border-secondary"
               style={{ width: 70 }}
@@ -113,12 +117,13 @@ export function SpritePreviewLeftPanel({
             <span className="text-secondary small">px</span>
           </div>
 
-          <label className="text-light fw-bold d-block mb-2">Desplazar cuadrícula</label>
+          <label className="text-light fw-bold d-block mb-2" htmlFor="offset-x-range">Desplazar cuadrícula</label>
 
           <div className="mb-2">
             <div className="d-flex align-items-center gap-2">
               <span className="text-secondary small fw-bold" style={{ width: 20 }}>X</span>
               <input
+                id="offset-x-range"
                 type="range"
                 className="form-range flex-fill"
                 min={-CANVAS_SIZE}
@@ -126,8 +131,10 @@ export function SpritePreviewLeftPanel({
                 step={1}
                 value={cellOffsetX}
                 onChange={e => setCellOffsetX(Number(e.target.value))}
+                aria-label="Desplazar cuadrícula X"
               />
               <input
+                id="offset-x-number"
                 type="number"
                 className="form-control form-control-sm bg-dark text-light border-secondary"
                 style={{ width: 70 }}
@@ -136,6 +143,7 @@ export function SpritePreviewLeftPanel({
                 step={1}
                 value={cellOffsetX}
                 onChange={e => setCellOffsetX(Number(e.target.value))}
+                aria-label="Desplazar cuadrícula X (número)"
               />
             </div>
           </div>
@@ -169,12 +177,13 @@ export function SpritePreviewLeftPanel({
 
       {selectionMode === 'box' && (
         <div className="mb-3">
-          <label className="text-light fw-bold d-block mb-2">Tamaño recuadro</label>
+          <label className="text-light fw-bold d-block mb-2" htmlFor="box-width-range">Tamaño recuadro</label>
 
           <div className="mb-2">
             <div className="d-flex align-items-center gap-2">
               <span className="text-secondary small fw-bold" style={{ width: 20 }}>W</span>
               <input
+                id="box-width-range"
                 type="range"
                 className="form-range flex-fill"
                 min={8}
@@ -182,8 +191,10 @@ export function SpritePreviewLeftPanel({
                 step={1}
                 value={box.width}
                 onChange={e => handleBoxWidthChange(Number(e.target.value))}
+                aria-label="Tamaño recuadro ancho"
               />
               <input
+                id="box-width-number"
                 type="number"
                 className="form-control form-control-sm bg-dark text-light border-secondary"
                 style={{ width: 70 }}
@@ -192,6 +203,7 @@ export function SpritePreviewLeftPanel({
                 step={1}
                 value={box.width}
                 onChange={e => handleBoxWidthChange(Number(e.target.value))}
+                aria-label="Tamaño recuadro ancho (número)"
               />
               <span className="text-secondary small">px</span>
             </div>

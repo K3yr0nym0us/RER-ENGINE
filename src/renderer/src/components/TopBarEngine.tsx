@@ -25,8 +25,6 @@ export function TopBarEngine({ projectType, handleSave, toggleAutoSave }: Props)
       ? <span className="badge bg-danger">Error</span>
       : <span className="badge bg-warning text-dark">Iniciando…</span>
 
-  const typeBadgeClass = `engine-type-badge engine-type-badge--${projectType === '3D' ? '3d' : '2d'}`
-
   return (
     <div className="p-2 d-flex align-items-center gap-2 custom-controls-bar border-bottom border-secondary-subtle justify-content-between">
       <div className="d-flex align-items-center gap-2">
@@ -42,7 +40,9 @@ export function TopBarEngine({ projectType, handleSave, toggleAutoSave }: Props)
           ⬡ RER-ENGINE
         </span>
         <div className="d-flex align-items-center gap-2 ms-2">
-          <span className={typeBadgeClass}>{projectType}</span>
+          <span className={`engine-type-badge engine-type-badge--${projectType}`}>
+            {projectType}
+          </span>
           {statusBadge}
         </div>
       </div>
@@ -54,7 +54,7 @@ export function TopBarEngine({ projectType, handleSave, toggleAutoSave }: Props)
           onClick={handleSave}
         >
           <FloppyFill size={13} />
-          <span style={{ fontSize: 11 }}>Guardar</span>
+          <span style={{ fontSize: 14 }}>Guardar</span>
         </button>
         <button
           className={`btn btn-sm d-flex align-items-center gap-1 ${
@@ -66,7 +66,7 @@ export function TopBarEngine({ projectType, handleSave, toggleAutoSave }: Props)
           style={{ whiteSpace: 'nowrap' }}
         >
           <ClockFill size={11} />
-          <span style={{ fontSize: 10 }}>Auto</span>
+          <span style={{ fontSize: 14 }}>Auto</span>
         </button>
       </div>
     </div>
