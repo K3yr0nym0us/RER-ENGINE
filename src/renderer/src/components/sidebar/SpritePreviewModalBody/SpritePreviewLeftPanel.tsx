@@ -1,3 +1,4 @@
+import { useState, useCallback } from 'react';
 import { SelectionMode } from './SpritePreviewModalBody';
 import { Link, Unlock } from 'react-bootstrap-icons';
 
@@ -10,13 +11,12 @@ interface SpritePreviewLeftPanelProps {
   setCellOffsetX: (offset: number) => void;
   cellOffsetY: number;
   setCellOffsetY: (offset: number) => void;
-  box: { x: number; y: number; width: number; height: number };
-  handleBoxWidthChange: (width: number) => void;
-  handleBoxHeightChange: (height: number) => void;
-  keepAspect: boolean;
-  setKeepAspect: (keep: boolean) => void;
   CANVAS_SIZE: number;
+  onBoxChange: (box: { x: number; y: number; width: number; height: number }) => void;
+  onAddBox: () => void;
 }
+
+const DEFAULT_BOX = { x: 0, y: 0, width: 64, height: 64 };
 
 export function SpritePreviewLeftPanel({
   selectionMode,
@@ -27,13 +27,31 @@ export function SpritePreviewLeftPanel({
   setCellOffsetX,
   cellOffsetY,
   setCellOffsetY,
-  box,
-  handleBoxWidthChange,
-  handleBoxHeightChange,
-  keepAspect,
-  setKeepAspect,
-  CANVAS_SIZE
+  CANVAS_SIZE,
+  onBoxChange,
+  onAddBox
 }: SpritePreviewLeftPanelProps) {
+  const [box, setBox] = useState(DEFAULT_BOX);
+  const [keepAspect, setKeepAspect] = useState(true);
+
+  const handleBoxWidthChange = useCallback((width: number) => {
+    setBox(b => {
+      const newHeight = keepAspect ? width : b.height;
+      const updated = { ...b, width, height: newHeight };
+      onBoxChange(updated);
+      return updated;
+    });
+  }, [keepAspect, onBoxChange]);
+
+  const handleBoxHeightChange = useCallback((height: number) => {
+    setBox(b => {
+      const newWidth = keepAspect ? height : b.width;
+      const updated = { ...b, width: newWidth, height };
+      onBoxChange(updated);
+      return updated;
+    });
+  }, [keepAspect, onBoxChange]);
+
   return (
     <div className="bg-dark text-light border border-secondary rounded p-3 h-100">
       <h5 className="text-light text-center mb-3">Propiedades</h5>
@@ -212,7 +230,7 @@ export function SpritePreviewLeftPanel({
             className={`btn w-100 ${keepAspect ? 'btn-primary' : 'btn-outline-secondary'}`}
             type="button"
           >
-            {keepAspect ? <><Link className="me-1" /> Mantener proporciones</> : <><Unlock className="me-1" /> Proporción libre</>}
+            {keepAspect ? <><Link className="me-1" /> Proporción fija</> : <><Unlock className="me-1" /> Proporción libre</>}
           </button>
         </div>
       )}
