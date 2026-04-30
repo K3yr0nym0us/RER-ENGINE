@@ -109,6 +109,7 @@ export function SpritePreviewModalBody({ src }: { src: string }) {
 
       <div className="col-3">
         <SpritePreviewRightPanel
+          key={`${src}-${selectionMode}`}
           src={src}
           selectionMode={selectionMode}
           selectedCells={selectedCells}

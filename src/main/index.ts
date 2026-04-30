@@ -319,14 +319,21 @@ ipcMain.on('hide-engine-viewport', () => {
 })
 
 // Restaura el motor a los últimos bounds conocidos
-ipcMain.on('restore-engine-viewport', () => {
-  if (!engineStarted || !lastEffectiveBounds) return
+ipcMain.on('restore-engine-viewport', (_event, bounds) => {
+  if (!engineStarted) return
+  let useBounds = null
+  if (bounds && typeof bounds.x === 'number' && typeof bounds.y === 'number' && typeof bounds.width === 'number' && typeof bounds.height === 'number') {
+    useBounds = bounds
+  } else if (lastEffectiveBounds) {
+    useBounds = lastEffectiveBounds
+  }
+  if (!useBounds) return
   sendToEngine({
     cmd:    'set_bounds',
-    x:      Math.round(lastEffectiveBounds.x),
-    y:      Math.round(lastEffectiveBounds.y),
-    width:  Math.max(1, Math.round(lastEffectiveBounds.width)),
-    height: Math.max(1, Math.round(lastEffectiveBounds.height)),
+    x:      Math.round(useBounds.x),
+    y:      Math.round(useBounds.y),
+    width:  Math.max(1, Math.round(useBounds.width)),
+    height: Math.max(1, Math.round(useBounds.height)),
   })
 })
 

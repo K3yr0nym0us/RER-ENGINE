@@ -3,7 +3,6 @@ import { useState } from 'react';
 import { ProjectSelector } from './components/ProjectSelector';
 import { GameStyleSelector } from './3D/components/GameStyleSelector';
 import { EngineView } from './components/EngineView';
-import { ModalProvider } from './context/ModalContext';
 
 import type { ProjectType, GameStyle, ProjectSaveData } from '../../shared-types/types';
 
@@ -23,31 +22,23 @@ export default function App() {
 
   if (!projectType) {
     return (
-      <ModalProvider>
-        <ProjectSelector
-          onSelect={setProjectType}
-          onLoadProject={handleLoadProject}
-        />
-      </ModalProvider>
+      <ProjectSelector
+        onSelect={setProjectType}
+        onLoadProject={handleLoadProject}
+      />
     )
   }
 
   // 2D salta directamente al motor (sin elegir estilo de juego)
   if (!gameStyle && projectType !== '2D') {
     return (
-      <ModalProvider>
-        <GameStyleSelector
-          projectType={projectType}
-          onSelect={setGameStyle}
-          onBack={() => setProjectType(null)}
-        />
-      </ModalProvider>
+      <GameStyleSelector
+        projectType={projectType}
+        onSelect={setGameStyle}
+        onBack={() => setProjectType(null)}
+      />
     )
   }
 
-  return (
-    <ModalProvider>
-      <EngineView projectType={projectType} initialSave={initialSave} />
-    </ModalProvider>
-  )
+    return <EngineView projectType={projectType} initialSave={initialSave} />
 }

@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useState, type ReactNode } from 'react'
+import { useContextEngine } from './useContextEngine'
 import { Modal } from 'react-bootstrap'
 
 // ---------------------------------------------------------------------------
@@ -31,6 +32,8 @@ const ModalContext = createContext<ModalContextType | null>(null)
 export function ModalProvider({ children }: { children: ReactNode }) {
   const [config, setConfig] = useState<ModalConfig | null>(null)
 
+  const { reportBounds } = useContextEngine();
+
   const openModal = useCallback((cfg: ModalConfig) => {
     ;(window as any).electronAPI?.hideEngineViewport?.()
     setConfig(cfg)
@@ -38,8 +41,12 @@ export function ModalProvider({ children }: { children: ReactNode }) {
 
   const closeModal = useCallback(() => {
     setConfig(null)
-    ;(window as any).electronAPI?.restoreEngineViewport?.()
-  }, [])
+    // Usar el método oficial del engine para reportar los bounds correctos
+    setTimeout(() => {
+      (window as any).electronAPI?.restoreEngineViewport?.();
+      reportBounds();
+    }, 0);
+  }, [reportBounds])
 
   return (
     <ModalContext.Provider value={{ openModal, closeModal }}>

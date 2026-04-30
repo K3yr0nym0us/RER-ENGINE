@@ -5,6 +5,7 @@ import LogConsole from './LogConsole';
 import TopBarEngine from './TopBarEngine';
 
 import { EngineProvider } from '../context/useContextEngine';
+import { ModalProvider } from '../context/ModalContext';
 import { useAutoSave } from '../hooks/useAutoSave';
 
 import type { ProjectType, ProjectSaveData } from '../../../shared-types/types';
@@ -14,7 +15,9 @@ export function EngineView({ projectType, initialSave }: { projectType: ProjectT
 
   return (
     <EngineProvider viewportRef={viewportRef} projectType={projectType} initialSave={initialSave}>
-      <EngineViewInner projectType={projectType} initialSave={initialSave} viewportRef={viewportRef} />
+      <ModalProvider>
+        <EngineViewInner projectType={projectType} initialSave={initialSave} viewportRef={viewportRef} />
+      </ModalProvider>
     </EngineProvider>
   )
 }
