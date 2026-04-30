@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 
-import { PlayFill, StopFill } from 'react-bootstrap-icons';
+import { PlayFill, StopFill, XCircleFill } from 'react-bootstrap-icons';
 import { SelectionMode } from './SpritePreviewModalBody';
 
 interface SpritePreviewRightPanelProps {
@@ -11,6 +11,7 @@ interface SpritePreviewRightPanelProps {
   gridSize: number;
   cellOffsetX: number;
   cellOffsetY: number;
+  onRemoveBox?: (index: number) => void;
 }
 
 const CANVAS_SIZE = 500;
@@ -22,7 +23,8 @@ export function SpritePreviewRightPanel({
   boxes,
   gridSize,
   cellOffsetX,
-  cellOffsetY
+  cellOffsetY,
+  onRemoveBox
 }: SpritePreviewRightPanelProps) {
   const [selectedFrameIndex, setSelectedFrameIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -191,13 +193,24 @@ export function SpritePreviewRightPanel({
               {frames.map((_, index) => (
                 <li key={index} className={`page-item ${index === safeIndex ? 'active' : ''}`}>
                   <button
-                    className="page-link"
+                    className="page-link d-flex align-items-center gap-1"
                     onClick={() => {
                       if (isPlaying) setIsPlaying(false);
                       setSelectedFrameIndex(index);
                     }}
                   >
                     {index + 1}
+                    {selectionMode === 'box' && onRemoveBox && (
+                      <XCircleFill
+                        role="button"
+                        className="text-danger"
+                        style={{ fontSize: '0.8em' }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onRemoveBox(index);
+                        }}
+                      />
+                    )}
                   </button>
                 </li>
               ))}

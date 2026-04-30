@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { SpritePreviewLeftPanel } from './SpritePreviewLeftPanel';
 import { SpritePreviewCanvas } from './SpritePreviewCanvas';
 import { SpritePreviewRightPanel } from './SpritePreviewRightPanel';
@@ -14,6 +14,21 @@ export function SpritePreviewModalBody({ src }: { src: string }) {
   const [selectedCells, setSelectedCells] = useState<{ x: number, y: number }[]>([]);
   const [boxes, setBoxes] = useState<{ x: number, y: number, width: number, height: number }[]>([]);
   const [currentBox, setCurrentBox] = useState({ x: 0, y: 0, width: 64, height: 64 });
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+        e.preventDefault();
+        setBoxes(prev => prev.slice(0, -1));
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  const handleRemoveBox = useCallback((index: number) => {
+    setBoxes(prev => prev.filter((_, i) => i !== index));
+  }, []);
 
   const handleCanvasClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     if (selectionMode === 'cell') {
@@ -101,6 +116,7 @@ export function SpritePreviewModalBody({ src }: { src: string }) {
           gridSize={gridSize}
           cellOffsetX={cellOffsetX}
           cellOffsetY={cellOffsetY}
+          onRemoveBox={handleRemoveBox}
         />
       </div>
     </div>
