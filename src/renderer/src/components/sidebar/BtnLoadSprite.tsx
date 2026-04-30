@@ -1,6 +1,6 @@
 import { Image } from 'react-bootstrap-icons';
 import { useModal } from '../../context/ModalContext';
-import { SpritePreviewModalBody } from './SpritePreviewModalBody';
+import { SpritePreviewModalBody } from './SpritePreviewModalBody/SpritePreviewModalBody';
 
 export function BtnLoadSprite() {
   const { openModal } = useModal();
