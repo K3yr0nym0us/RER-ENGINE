@@ -94,14 +94,10 @@ export function GameStyleSelector({ projectType, onSelect, onBack }: Props) {
         className="btn rounded-circle d-flex align-items-center justify-content-center position-fixed z-50 bg-dark border border-secondary"
         style={{ top: 24, left: 28, width: 56, height: 56 }}
         onMouseEnter={(e) => {
-          e.currentTarget.style.borderColor = '#c084fc'
-          e.currentTarget.style.color       = '#c084fc'
-          e.currentTarget.style.boxShadow   = '0 0 20px #c084fc44'
+          Object.assign(e.currentTarget.style, { borderColor: '#c084fc', color: '#c084fc', boxShadow: '0 0 20px #c084fc44' })
         }}
         onMouseLeave={(e) => {
-          e.currentTarget.style.borderColor = '#2c3152'
-          e.currentTarget.style.color       = '#94a3b8'
-          e.currentTarget.style.boxShadow   = 'none'
+          Object.assign(e.currentTarget.style, { borderColor: '#2c3152', color: '#94a3b8', boxShadow: 'none' })
         }}
       >
         <ArrowLeft size={24} />
@@ -152,17 +148,11 @@ export function GameStyleSelector({ projectType, onSelect, onBack }: Props) {
               className={`p-3 style-card${!opt.available ? ' style-card--disabled' : ''}`}
               onMouseEnter={(e) => {
                 if (!opt.available) return
-                const el = e.currentTarget
-                el.style.borderColor = opt.color
-                el.style.boxShadow   = `0 0 20px ${opt.color}30`
-                el.style.transform   = 'translateY(-2px)'
+                Object.assign(e.currentTarget.style, { borderColor: opt.color, boxShadow: `0 0 20px ${opt.color}30`, transform: 'translateY(-2px)' })
               }}
               onMouseLeave={(e) => {
                 if (!opt.available) return
-                const el = e.currentTarget
-                el.style.borderColor = '#2c3152'
-                el.style.boxShadow   = 'none'
-                el.style.transform   = 'translateY(0)'
+                Object.assign(e.currentTarget.style, { borderColor: '#2c3152', boxShadow: 'none', transform: 'translateY(0)' })
               }}
             >
               {/* Ícono */}

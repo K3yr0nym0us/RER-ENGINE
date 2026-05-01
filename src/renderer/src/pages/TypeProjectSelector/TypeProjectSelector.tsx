@@ -56,16 +56,18 @@ export function TypeProjectSelector({ onSelect, onLoadProject }: Props) {
   }
 
   const hoverOn = (color: string) => (e: React.MouseEvent<HTMLButtonElement>) => {
-    const el = e.currentTarget
-    el.style.borderColor = color
-    el.style.boxShadow   = `0 0 24px ${color}33`
-    el.style.transform   = 'translateY(-3px)'
+    Object.assign(e.currentTarget.style, {
+      borderColor: color,
+      boxShadow: `0 0 24px ${color}33`,
+      transform: 'translateY(-3px)',
+    })
   }
   const hoverOff = (e: React.MouseEvent<HTMLButtonElement>) => {
-    const el = e.currentTarget
-    el.style.borderColor = '#2c3152'
-    el.style.boxShadow   = 'none'
-    el.style.transform   = 'translateY(0)'
+    Object.assign(e.currentTarget.style, {
+      borderColor: '#2c3152',
+      boxShadow: 'none',
+      transform: 'translateY(0)',
+    })
   }
 
   return (
