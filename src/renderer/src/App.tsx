@@ -4,7 +4,7 @@ import { TypeProjectSelector } from './pages/TypeProjectSelector/TypeProjectSele
 import { GameStyleSelector } from './pages/GameStyleSelector/GameStyleSelector';
 import { EngineView } from './pages/EngineView/EngineView';
 
-import type { ProjectType, GameStyle, ProjectSaveData } from '../../shared-types/types';
+import type { ProjectType, GameStyle, ProjectSaveData } from '@shared-types';
 
 // ── Componente principal ─────────────────────────────────────────────────────
 

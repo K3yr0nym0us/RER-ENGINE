@@ -4,8 +4,8 @@ import { WorldAccordion, ToolsAccordion } from './sidebar';
 import SpritesAccordion from './sidebar/SpritesAccordion/SpritesAccordion';
 import EntitiesAccordion from './sidebar/EntitiesAccordion/EntitiesAccordion';
 
-import { useContextEngine } from '../../../context/useContextEngine';
-import { ProjectType } from '../../../../../shared-types/types';
+import { useContextEngine } from '@engine';
+import { ProjectType } from '@shared-types';
 
 export function SideBarLeft({ projectType }: { projectType: ProjectType }) {
   const {

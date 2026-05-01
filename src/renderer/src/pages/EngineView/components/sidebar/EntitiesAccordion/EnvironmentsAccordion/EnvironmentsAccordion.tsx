@@ -2,8 +2,8 @@ import { PlusLg } from 'react-bootstrap-icons';
 
 import { CreateEntityFromSpriteModalBody } from '../components/CreateEntityFromSpriteModalBody';
 
-import { useContextEngine } from '../../../../../../context/useContextEngine';
-import { useModal } from '../../../../../../context/ModalContext';
+import { useContextEngine } from '@engine';
+import { useModal } from '@modal';
 import { useCreateEntityFromSpriteAnimation } from '../../../../../../hooks/useCreateEntityFromSpriteAnimation';
 
 export interface AssetGroupConfig {

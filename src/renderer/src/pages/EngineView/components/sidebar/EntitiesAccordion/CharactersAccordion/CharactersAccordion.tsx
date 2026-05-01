@@ -1,4 +1,4 @@
-import { useContextEngine } from '../../../../../../context/useContextEngine';
+import { useContextEngine } from '@engine';
 
 export interface AssetGroupConfig {
   openDialog:  () => Promise<string | null>

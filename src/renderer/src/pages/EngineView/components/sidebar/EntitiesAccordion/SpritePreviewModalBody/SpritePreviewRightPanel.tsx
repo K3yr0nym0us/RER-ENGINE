@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useEffect, useReducer, useRef } from 'react';
 
 import { PlayFill, StopFill, XCircleFill } from 'react-bootstrap-icons';
 import { SelectionMode } from './SpritePreviewModalBody';
@@ -22,6 +22,50 @@ interface SpritePreviewRightPanelProps {
 
 const CANVAS_SIZE = 500;
 
+interface PlaybackState {
+  selectedFrameIndex: number;
+  isPlaying: boolean;
+}
+
+type PlaybackAction =
+  | { type: 'start' }
+  | { type: 'stop' }
+  | { type: 'select_frame'; payload: number }
+  | { type: 'tick'; payload: { frameCount: number; isLooping: boolean } };
+
+const initialPlaybackState: PlaybackState = {
+  selectedFrameIndex: 0,
+  isPlaying: false,
+};
+
+function playbackReducer(state: PlaybackState, action: PlaybackAction): PlaybackState {
+  switch (action.type) {
+    case 'start':
+      return { selectedFrameIndex: 0, isPlaying: true };
+    case 'stop':
+      return { ...state, isPlaying: false };
+    case 'select_frame':
+      return { selectedFrameIndex: action.payload, isPlaying: false };
+    case 'tick': {
+      const { frameCount, isLooping } = action.payload;
+      if (frameCount === 0) return { ...state, isPlaying: false };
+
+      const nextIndex = state.selectedFrameIndex + 1;
+      if (nextIndex < frameCount) {
+        return { ...state, selectedFrameIndex: nextIndex };
+      }
+
+      if (isLooping) {
+        return { ...state, selectedFrameIndex: 0 };
+      }
+
+      return { selectedFrameIndex: frameCount - 1, isPlaying: false };
+    }
+    default:
+      return state;
+  }
+}
+
 export function SpritePreviewRightPanel({
   src,
   selectionMode,
@@ -38,8 +82,7 @@ export function SpritePreviewRightPanel({
   isLooping,
   onLoopChange,
 }: SpritePreviewRightPanelProps) {
-  const [selectedFrameIndex, setSelectedFrameIndex] = useState(0);
-  const [isPlaying, setIsPlaying] = useState(false);
+  const [{ selectedFrameIndex, isPlaying }, dispatch] = useReducer(playbackReducer, initialPlaybackState);
   const animIntervalRef = useRef<number | null>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -60,18 +103,7 @@ export function SpritePreviewRightPanel({
   useEffect(() => {
     if (isPlaying && hasFrames) {
       const interval = setInterval(() => {
-        setSelectedFrameIndex(prev => {
-          const next = prev + 1;
-          if (next >= frames.length) {
-            if (isLooping) {
-              return 0;
-            } else {
-              setIsPlaying(false);
-              return frames.length - 1;
-            }
-          }
-          return next;
-        });
+        dispatch({ type: 'tick', payload: { frameCount: frames.length, isLooping } });
       }, 1000 / fps);
 
       animIntervalRef.current = interval;
@@ -119,11 +151,10 @@ export function SpritePreviewRightPanel({
 
   const handlePlayStop = () => {
     if (isPlaying) {
-      setIsPlaying(false);
+      dispatch({ type: 'stop' });
     } else {
       if (!hasFrames) return;
-      setSelectedFrameIndex(0);
-      setIsPlaying(true);
+      dispatch({ type: 'start' });
     }
   };
 
@@ -204,10 +235,7 @@ export function SpritePreviewRightPanel({
                 <li key={`${frame.x}-${frame.y}-${frame.width}-${frame.height}`} className={`page-item ${index === safeIndex ? 'active' : ''}`}>
                   <button
                     className="page-link d-flex align-items-center gap-1"
-                    onClick={() => {
-                      if (isPlaying) setIsPlaying(false);
-                      setSelectedFrameIndex(index);
-                    }}
+                    onClick={() => dispatch({ type: 'select_frame', payload: index })}
                   >
                     {index + 1}
                     {selectionMode === 'box' && onRemoveBox && (

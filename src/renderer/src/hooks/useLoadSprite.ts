@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
-import { useContextEngine } from '../context/useContextEngine';
-import { useModal } from '../context/ModalContext';
+import { useContextEngine } from '@engine';
+import { useModal } from '@modal';
 import ModalSetNameSprite from '../pages/EngineView/components/sidebar/SpritesAccordion/components/ModalSetNameSprite';
 
 /**

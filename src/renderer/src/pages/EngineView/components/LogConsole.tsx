@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 
-import { useContextEngine, LogEntry } from '../../../context/useContextEngine'
+import { useContextEngine, LogEntry } from '@engine'
 
 export function LogConsole() {
   const { log } = useContextEngine()

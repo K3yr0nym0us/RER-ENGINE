@@ -1,9 +1,9 @@
 import { useState } from 'react';
 
-import { useModal } from '../../../../../../context/ModalContext';
+import { useModal } from '@modal';
 import { SpritePreviewModalBody, type SpriteFrameRect } from '../SpritePreviewModalBody/SpritePreviewModalBody';
 
-import type { SpriteInfo } from '../../../../../../../../shared-types/types';
+import type { SpriteInfo } from '@shared-types';
 
 interface CreateEntityFromSpriteModalBodyProps {
   sprites: SpriteInfo[];

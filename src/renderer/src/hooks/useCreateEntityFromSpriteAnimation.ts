@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 
-import { useContextEngine } from '../context/useContextEngine';
+import { useContextEngine } from '@engine';
 
 type LoadCmd = 'load_character' | 'load_scenario';
 

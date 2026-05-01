@@ -1,8 +1,8 @@
 import { PlusLg } from 'react-bootstrap-icons';
 import { CreateEntityFromSpriteModalBody } from '../../components/CreateEntityFromSpriteModalBody';
 
-import { useModal } from '../../../../../../../context/ModalContext';
-import { useContextEngine } from '../../../../../../../context/useContextEngine';
+import { useModal } from '@modal';
+import { useContextEngine } from '@engine';
 import { useCreateEntityFromSpriteAnimation } from '../../../../../../../hooks/useCreateEntityFromSpriteAnimation';
 
 const BtnCreateCharacter = () => {

@@ -13,6 +13,9 @@ export default defineConfig({
     resolve: {
       alias: {
         '@renderer': resolve('src/renderer/src'),
+        '@shared-types': resolve('src/shared-types/types.ts'),
+        '@modal': resolve('src/renderer/src/context/ModalContext.tsx'),
+        '@engine': resolve('src/renderer/src/context/useContextEngine.tsx'),
       },
     },
     plugins: [react()],

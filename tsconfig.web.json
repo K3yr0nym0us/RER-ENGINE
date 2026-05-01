@@ -5,6 +5,13 @@
     "moduleResolution": "bundler",
     "target":           "ESNext",
     "lib":              ["ESNext", "DOM", "DOM.Iterable"],
+    "baseUrl":          ".",
+    "ignoreDeprecations": "6.0",
+    "paths": {
+      "@shared-types": ["src/shared-types/types.ts"],
+      "@modal": ["src/renderer/src/context/ModalContext.tsx"],
+      "@engine": ["src/renderer/src/context/useContextEngine.tsx"]
+    },
     "outDir":           "out",
     "strict":           true,
     "noEmit":           false,

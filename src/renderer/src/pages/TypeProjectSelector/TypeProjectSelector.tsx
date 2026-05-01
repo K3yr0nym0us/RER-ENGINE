@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { ProjectSaveData, ProjectType } from '../../../../shared-types/types';
+import type { ProjectSaveData, ProjectType } from '@shared-types';
 
 interface ProjectOption {
   type:        ProjectType

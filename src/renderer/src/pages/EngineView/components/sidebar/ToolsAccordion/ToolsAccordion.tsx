@@ -4,7 +4,7 @@ import { Bricks } from 'react-bootstrap-icons';
 
 import { usePointDrawing } from '../../../../../hooks/usePointDrawing';
 
-import { useContextEngine } from '../../../../../context/useContextEngine';
+import { useContextEngine } from '@engine';
 
 export function ToolsAccordion() {
   const { engineReady, send, toolProgress } = useContextEngine()

@@ -1,6 +1,6 @@
 import { Accordion, Spinner } from 'react-bootstrap';
 import { Plus, Trash, ArrowUp, ArrowDown, PlayFill, Crosshair, Pencil, MusicNoteBeamed, FileEarmarkCode } from 'react-bootstrap-icons';
-import { useContextEngine } from '../../../../../context/useContextEngine';
+import { useContextEngine } from '@engine';
 
 interface AnimationFrame {
   path:    string

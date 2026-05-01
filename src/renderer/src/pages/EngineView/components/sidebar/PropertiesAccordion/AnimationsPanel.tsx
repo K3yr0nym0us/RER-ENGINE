@@ -5,8 +5,8 @@ import { Pencil, PlayFill, StopFill, Trash } from 'react-bootstrap-icons';
 
 import { CreateEntityFromSpriteModalBody } from '../EntitiesAccordion/components/CreateEntityFromSpriteModalBody';
 import { SpritePreviewModalBody, type SpriteFrameRect } from '../EntitiesAccordion/SpritePreviewModalBody/SpritePreviewModalBody';
-import { useContextEngine } from '../../../../../context/useContextEngine';
-import { useModal } from '../../../../../context/ModalContext';
+import { useContextEngine } from '@engine';
+import { useModal } from '@modal';
 
 interface AnimationFrame {
   path: string;

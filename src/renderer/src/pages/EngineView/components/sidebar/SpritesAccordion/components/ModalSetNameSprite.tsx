@@ -1,6 +1,6 @@
 import { useRef } from 'react';
-import { useModal } from '../../../../../../context/ModalContext';
-import { useContextEngine } from '../../../../../../context/useContextEngine';
+import { useModal } from '@modal';
+import { useContextEngine } from '@engine';
 
 interface ModalSetNameSpriteProps {
   path: string;

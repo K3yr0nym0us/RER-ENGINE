@@ -3,7 +3,7 @@ import { useCallback } from 'react';
 import { Image } from 'react-bootstrap-icons';
 import ModalSetNameSprite from './ModalSetNameSprite';
 
-import { useModal } from '../../../../../../context/ModalContext';
+import { useModal } from '@modal';
 
 export const BtnLoadSprite = () => {
 

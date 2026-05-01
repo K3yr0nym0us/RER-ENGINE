@@ -1,6 +1,6 @@
 import { Trash } from 'react-bootstrap-icons';
 
-import type { ScenarioEntry } from '../../../../../../context/useContextEngine';
+import type { ScenarioEntry } from '@engine';
 
 export interface ColliderPanelConfig {
   addBtnLabel: string

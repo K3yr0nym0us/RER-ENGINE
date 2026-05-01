@@ -1,6 +1,6 @@
 import { ArrowLeft } from 'react-bootstrap-icons';
 
-import type { ProjectType, GameStyle } from '../../../../shared-types/types';
+import type { ProjectType, GameStyle } from '@shared-types';
 
 interface StyleOption {
   type: GameStyle;

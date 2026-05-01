@@ -1,9 +1,9 @@
 import { Accordion } from 'react-bootstrap';
 import { Image, Trash } from 'react-bootstrap-icons';
 
-import { useContextEngine } from '../../../../../context/useContextEngine';
+import { useContextEngine } from '@engine';
 import { BtnLoadSprite } from './components/BtnLoadSprite';
-import { useModal } from '../../../../../context/ModalContext';
+import { useModal } from '@modal';
 
 type Sprite = {
   height: number;
