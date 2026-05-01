@@ -2,9 +2,10 @@
 import React, { useState, useRef, Suspense } from 'react';
 // Dynamic import for monaco-editor (for code splitting)
 const MonacoEditor = React.lazy(() => import('@monaco-editor/react'));
-// monaco-editor types are only imported for type checking, not runtime
-import type { OnMount } from '@monaco-editor/react';
-import type * as Monaco from 'monaco-editor';
+
+interface ScriptEditorInstance {
+  focus: () => void;
+}
 
 const DEFAULT_SCRIPT = `-- Escribe tu script Lua aquí
 -- Parámetros disponibles:
@@ -54,9 +55,9 @@ interface ScriptEditorModalBodyProps {
 export function ScriptEditorModalBody({ initialData, onSave, onCancel }: ScriptEditorModalBodyProps) {
   const [name, setName] = useState(initialData?.name ?? '')
   const sourceRef        = useRef<string>(initialData?.source ?? DEFAULT_SCRIPT)
-  const editorRef        = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null)
+  const editorRef        = useRef<ScriptEditorInstance | null>(null)
 
-  const handleMount: OnMount = (editor) => {
+  const handleMount = (editor: ScriptEditorInstance) => {
     editorRef.current = editor
     editor.focus()
   }
