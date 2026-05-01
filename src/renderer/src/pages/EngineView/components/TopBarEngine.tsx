@@ -16,7 +16,8 @@ interface Props {
 }
 
 export function TopBarEngine({ projectType, handleSave, toggleAutoSave }: Props) {
-  const { engineReady, engineError } = useContextEngine()
+  const { engineReady, engineError, previewPlaying, setPreviewPlaying } = useContextEngine()
+  const isStopActive = !previewPlaying
   const [hasSavedOnce] = useState(false)
   const [autoSaveEnabled] = useState(false)
 
@@ -29,13 +30,23 @@ export function TopBarEngine({ projectType, handleSave, toggleAutoSave }: Props)
   return (
     <div className="p-2 d-flex align-items-center gap-2 custom-controls-bar border-bottom border-secondary-subtle justify-content-between">
       <div className="d-flex align-items-center gap-2">
-        <AppTooltip content="Play" place="bottom">
-          <button className="btn btn-outline-light btn-sm">
+        <AppTooltip content={previewPlaying ? 'Jugando' : 'Iniciar prueba'} place="bottom">
+          <button
+            className={`btn btn-sm ${previewPlaying ? 'btn-success active' : 'btn-outline-light'}`}
+            disabled={!engineReady || previewPlaying}
+            onClick={() => setPreviewPlaying(true)}
+            aria-pressed={previewPlaying}
+          >
             <PlayFill size={16} />
           </button>
         </AppTooltip>
-        <AppTooltip content="Stop" place="bottom">
-          <button className="btn btn-outline-light btn-sm">
+        <AppTooltip content={isStopActive ? 'Editor activo' : 'Detener prueba'} place="bottom">
+          <button
+            className={`btn btn-sm ${isStopActive ? 'btn-danger active' : 'btn-outline-light'}`}
+            disabled={!engineReady || isStopActive}
+            onClick={() => setPreviewPlaying(false)}
+            aria-pressed={isStopActive}
+          >
             <StopFill size={16} />
           </button>
         </AppTooltip>

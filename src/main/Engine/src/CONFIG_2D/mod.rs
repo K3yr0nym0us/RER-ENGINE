@@ -63,7 +63,7 @@ pub(crate) struct CharacterMarker {
 #[derive(Debug)]
 pub(crate) enum ActiveTool {
     None,
-    DrawCollider { points_world: Vec<[f32; 2]> },
+    DrawCollider { points_world: Vec<[f32; 2]>, cursor_world: Option<[f32; 2]> },
 }
 
 impl Default for ActiveTool {
@@ -78,6 +78,41 @@ impl ActiveTool {
 #[derive(Debug, Clone)]
 pub(crate) struct ColliderMarker {}
 impl State {
+    fn screen_to_world_2d(&self, pixel_x: f32, pixel_y: f32) -> Option<(f32, f32)> {
+        let cam = self.camera_2d.as_ref()?;
+        let w = self.size.width as f32;
+        let h = self.size.height as f32;
+        let aspect = w / h;
+        let half_w = cam.half_h * aspect;
+        let wx = cam.x + ((pixel_x / w) * 2.0 - 1.0) * half_w;
+        let wy = cam.y + (1.0 - (pixel_y / h) * 2.0) * cam.half_h;
+        Some((wx, wy))
+    }
+
+    pub(crate) fn update_tool_overlay_cursor_2d(&mut self, pixel_x: f32, pixel_y: f32) {
+        let Some((wx, wy)) = self.screen_to_world_2d(pixel_x, pixel_y) else { return; };
+        if let ActiveTool::DrawCollider { points_world, cursor_world } = &mut self.active_tool {
+            *cursor_world = Some([wx, wy]);
+            let pts_clone = points_world.clone();
+            self.tool_overlay_buffer = build_tool_overlay(&self.device, &pts_clone, *cursor_world);
+        }
+    }
+
+    pub(crate) fn undo_last_tool_step_2d(&mut self) -> bool {
+        match &mut self.active_tool {
+            ActiveTool::DrawCollider { points_world, cursor_world } => {
+                if points_world.pop().is_some() {
+                    let pts_clone = points_world.clone();
+                    self.tool_overlay_buffer = build_tool_overlay(&self.device, &pts_clone, *cursor_world);
+                    send_event(&EngineEvent::DrawingProgress { count: points_world.len() as u32 });
+                    return true;
+                }
+                false
+            }
+            ActiveTool::None => false,
+        }
+    }
+
     // ── Inicialización ────────────────────────────────────────────────────────
 
     /// Configura la escena 2D de plataformas con un único rectángulo (player).
@@ -1015,22 +1050,18 @@ impl State {
     /// Intenta procesar un click del cursor como evento de la herramienta activa.
     /// Devuelve `true` si la herramienta consumió el click (no debe disparar picking).
     pub(crate) fn handle_tool_click_2d(&mut self, pixel_x: f32, pixel_y: f32) -> bool {
-        let cam = match &self.camera_2d {
+        let _cam = match &self.camera_2d {
             Some(c) => Camera2D { x: c.x, y: c.y, half_h: c.half_h, near: c.near, far: c.far },
             None    => return false,
         };
         if !self.active_tool.is_active() { return false; }
 
-        let w      = self.size.width  as f32;
-        let h      = self.size.height as f32;
-        let aspect = w / h;
-        let half_w = cam.half_h * aspect;
-        let wx = cam.x + ((pixel_x / w) * 2.0 - 1.0) * half_w;
-        let wy = cam.y + (1.0 - (pixel_y / h) * 2.0) * cam.half_h;
+        let Some((wx, wy)) = self.screen_to_world_2d(pixel_x, pixel_y) else { return false; };
 
         match &mut self.active_tool {
-            ActiveTool::DrawCollider { points_world } => {
+            ActiveTool::DrawCollider { points_world, cursor_world } => {
                 points_world.push([wx, wy]);
+                *cursor_world = Some([wx, wy]);
                 let count = points_world.len() as u32;
 
                 if count >= 4 {
@@ -1043,7 +1074,7 @@ impl State {
                     self.create_collision_box_from_points(&pts);
                 } else {
                     let pts_clone: Vec<[f32; 2]> = points_world.clone();
-                    self.tool_overlay_buffer = build_tool_overlay(&self.device, &pts_clone);
+                    self.tool_overlay_buffer = build_tool_overlay(&self.device, &pts_clone, *cursor_world);
                     send_event(&EngineEvent::DrawingProgress { count });
                 }
                 true
@@ -1071,6 +1102,7 @@ impl State {
             [scale[0] * 0.5, scale[1] * 0.5, 0.01],
         );
         self.collider_entities.push(entity);
+        self.undo_stack.push(crate::engine::UndoAction::RemoveEntity { id: entity });
 
         send_event(&EngineEvent::ColliderCreated { id: entity, points: *pts });
         log::info!("[tool] colisionador creado: entidad {entity} en {:?}", pts);
@@ -1099,7 +1131,7 @@ fn create_quad_xy(device: &wgpu::Device, cx: f32, cy: f32, w: f32, h: f32, label
 /// Construye el GizmoBuffer (LineList) de overlay para la herramienta de dibujo.
 /// `pts`: puntos acumulados (1-4) en espacio de mundo.
 /// Dibuja una cruz en cada punto y líneas de conexión consecutivas.
-fn build_tool_overlay(device: &wgpu::Device, pts: &[[f32; 2]]) -> gizmo::GizmoBuffer {
+fn build_tool_overlay(device: &wgpu::Device, pts: &[[f32; 2]], cursor: Option<[f32; 2]>) -> gizmo::GizmoBuffer {
     const ARM:         f32 = 0.15;
     const Z:           f32 = 0.1;
     let cross_color        = [1.0_f32, 1.0,  1.0,  1.0]; // blanco
@@ -1122,6 +1154,19 @@ fn build_tool_overlay(device: &wgpu::Device, pts: &[[f32; 2]]) -> gizmo::GizmoBu
         let [bx, by] = pts[i + 1];
         verts.push(GizmoVertex { position: [ax, ay, Z], color: line_color });
         verts.push(GizmoVertex { position: [bx, by, Z], color: line_color });
+    }
+
+    if let (Some(last), Some(cur)) = (pts.last().copied(), cursor) {
+        verts.push(GizmoVertex { position: [last[0], last[1], Z], color: line_color });
+        verts.push(GizmoVertex { position: [cur[0], cur[1], Z], color: line_color });
+
+        // Preview de cierre del polígono: al definir el 4to punto, mostrar también
+        // la línea desde el primer punto hasta el cursor para cuadrar mejor.
+        if pts.len() >= 3 {
+            let first = pts[0];
+            verts.push(GizmoVertex { position: [first[0], first[1], Z], color: line_color });
+            verts.push(GizmoVertex { position: [cur[0], cur[1], Z], color: line_color });
+        }
     }
 
     gizmo::build_from_vertices(device, &verts)

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 
 /**
  * Hook reutilizable para herramientas de dibujo por puntos en el viewport del motor.
@@ -20,15 +20,21 @@ export function usePointDrawing(
 ) {
   const [isActive, setIsActive] = useState(false)
   const [progress, setProgress] = useState(0)
+  const sawEngineProgressRef = useRef(false)
 
   // Sincronizar con eventos del motor
   useEffect(() => {
     if (!isActive) return
     if (toolProgress === null) {
-      // Completado o cancelado desde el motor
-      setIsActive(false)
-      setProgress(0)
+      // Completado o cancelado desde el motor, pero solo después de que
+      // efectivamente haya comenzado el flujo (al menos 1 evento de progreso).
+      if (sawEngineProgressRef.current) {
+        setIsActive(false)
+        setProgress(0)
+        sawEngineProgressRef.current = false
+      }
     } else {
+      sawEngineProgressRef.current = true
       setProgress(toolProgress)
     }
   }, [toolProgress, isActive])
@@ -36,12 +42,14 @@ export function usePointDrawing(
   const start = useCallback(() => {
     setIsActive(true)
     setProgress(0)
+    sawEngineProgressRef.current = false
     send({ cmd: 'set_active_tool', tool: toolName })
   }, [send, toolName])
 
   const cancel = useCallback(() => {
     setIsActive(false)
     setProgress(0)
+    sawEngineProgressRef.current = false
     send({ cmd: 'set_active_tool', tool: '' })
   }, [send])
 

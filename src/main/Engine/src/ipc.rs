@@ -139,6 +139,10 @@ pub enum EngineCommand {
     RemoveSprite { path: String },
     /// Solicitar la lista de sprites cargados en el motor.
     GetSpritesList,
+    /// Alternar modo de prueba del juego: true = simular juego, false = modo editor.
+    SetPreviewPlaying { playing: bool },
+    /// Deshacer la última acción disponible.
+    Undo,
 }
 
 #[derive(Debug, Deserialize, Clone)]

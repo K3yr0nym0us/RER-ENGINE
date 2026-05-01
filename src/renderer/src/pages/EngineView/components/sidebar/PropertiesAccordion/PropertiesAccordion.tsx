@@ -21,6 +21,7 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
     duplicateScenario,
     removeCharacter,
     duplicateCharacter,
+    removeCollider,
   } = useContextEngine()
 
   const { openModal, closeModal } = useModal();
@@ -58,6 +59,7 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
 
   const isScenario = scenarioEntities.some((s: any) => s.id === selectedEntity?.id)
   const isCharacter = characterEntities.some((c: any) => c.id === selectedEntity?.id)
+  const isCollider = selectedEntity ? entityMetaRef.current[selectedEntity.id]?.kind === 'collider' : false
 
   const handleConfirmModal = (onConfirm: () => void, action: 'eliminar' | 'duplicar') => {
     openModal({
@@ -90,6 +92,11 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
       handleConfirmModal(() => duplicateScenario(selectedEntity.id), 'duplicar');
     } else if (isCharacter) {
       handleConfirmModal(() => duplicateCharacter(selectedEntity.id), 'duplicar');
+    } else if (isCollider) {
+      const points = entityMetaRef.current[selectedEntity.id]?.points;
+      if (!points || points.length !== 4) return;
+      const shiftedPoints = points.map(([x, y]) => [x + 0.5, y + 0.5]) as [[number, number], [number, number], [number, number], [number, number]];
+      handleConfirmModal(() => send({ cmd: 'create_collider_from_points', points: shiftedPoints }), 'duplicar');
     }
   }
 
@@ -98,10 +105,10 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
       handleConfirmModal(() => removeScenario(selectedEntity.id), 'eliminar');
     } else if (isCharacter) {
       handleConfirmModal(() => removeCharacter(selectedEntity.id), 'eliminar');
+    } else if (isCollider) {
+      handleConfirmModal(() => removeCollider(selectedEntity.id), 'eliminar');
     }
   }
-
-  const canDuplicateOrRemove = isScenario || isCharacter
   const trimmedEntityName = entityNameDraft.trim();
   const hasValidEntityName = trimmedEntityName.length > 0;
   const canRename = !!selectedEntity && hasValidEntityName && trimmedEntityName !== selectedEntity.name;
@@ -153,91 +160,93 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
         </div>
       </div>
 
-      {isScenario ? (
-        <div className="mb-2">
-          <p className="prop-label">Colisión</p>
-          <div className="d-flex align-items-center gap-2 mt-1">
-            <input
-              type="checkbox"
-              id="scenario-collision"
-              className="form-check-input"
-              checked={physicsEnabled}
-              onChange={(e) => {
-                const next = e.target.checked
-                send({ cmd: 'set_physics', id: selectedEntity.id, enabled: next, body_type: 'static' })
-              }}
-            />
-            <label htmlFor="scenario-collision" className="form-check-label text-light small mb-0">
-              Con colisión
-            </label>
+      {!isCollider && (
+        isScenario ? (
+          <div className="mb-2">
+            <p className="prop-label">Colisión</p>
+            <div className="d-flex align-items-center gap-2 mt-1">
+              <input
+                type="checkbox"
+                id="scenario-collision"
+                className="form-check-input"
+                checked={physicsEnabled}
+                onChange={(e) => {
+                  const next = e.target.checked
+                  send({ cmd: 'set_physics', id: selectedEntity.id, enabled: next, body_type: 'static' })
+                }}
+              />
+              <label htmlFor="scenario-collision" className="form-check-label text-light small mb-0">
+                Con colisión
+              </label>
+            </div>
           </div>
-        </div>
-      ) : (
-        <div className="mb-2">
-          <p className="prop-label">Física</p>
-          <div className="d-flex align-items-center gap-2 mt-1">
-            <input
-              type="checkbox"
-              id="physics-enabled"
-              className="form-check-input"
-              checked={physicsEnabled}
-              onChange={(e) => {
-                const next = e.target.checked
-                send({ cmd: 'set_physics', id: selectedEntity.id, enabled: next, body_type: physicsType })
-              }}
-            />
-            <label htmlFor="physics-enabled" className="form-check-label text-light small mb-0">
-              Activar física
-            </label>
+        ) : (
+          <div className="mb-2">
+            <p className="prop-label">Física</p>
+            <div className="d-flex align-items-center gap-2 mt-1">
+              <input
+                type="checkbox"
+                id="physics-enabled"
+                className="form-check-input"
+                checked={physicsEnabled}
+                onChange={(e) => {
+                  const next = e.target.checked
+                  send({ cmd: 'set_physics', id: selectedEntity.id, enabled: next, body_type: physicsType })
+                }}
+              />
+              <label htmlFor="physics-enabled" className="form-check-label text-light small mb-0">
+                Activar física
+              </label>
+            </div>
+            {physicsEnabled && (
+              <select
+                value={physicsType}
+                className="form-select form-select-sm bg-dark text-light border-secondary mt-1"
+                onChange={(e) => {
+                  const next = e.target.value
+                  send({ cmd: 'set_physics', id: selectedEntity.id, enabled: true, body_type: next })
+                }}
+              >
+                <option value="dynamic">Dinámico (gravedad)</option>
+                <option value="static">Estático (no se mueve)</option>
+                {!is2D && <option value="kinematic">Cinemático (por código)</option>}
+              </select>
+            )}
           </div>
-          {physicsEnabled && (
-            <select
-              value={physicsType}
-              className="form-select form-select-sm bg-dark text-light border-secondary mt-1"
-              onChange={(e) => {
-                const next = e.target.value
-                send({ cmd: 'set_physics', id: selectedEntity.id, enabled: true, body_type: next })
-              }}
-            >
-              <option value="dynamic">Dinámico (gravedad)</option>
-              <option value="static">Estático (no se mueve)</option>
-              {!is2D && <option value="kinematic">Cinemático (por código)</option>}
-            </select>
-          )}
-        </div>
+        )
       )}
 
-      <Accordion className="prop-accordion">
-        <Accordion.Item eventKey="transform">
-          <Accordion.Header>Transformaciones</Accordion.Header>
-          <Accordion.Body className="py-2 px-2">
-            <TransformPanel entity={selectedEntity} is2D={is2D} onSend={handleSend} />
-          </Accordion.Body>
-        </Accordion.Item>
+      {!isCollider && (
+        <Accordion className="prop-accordion">
+          <Accordion.Item eventKey="transform">
+            <Accordion.Header>Transformaciones</Accordion.Header>
+            <Accordion.Body className="py-2 px-2">
+              <TransformPanel entity={selectedEntity} is2D={is2D} onSend={handleSend} />
+            </Accordion.Body>
+          </Accordion.Item>
 
-        <AnimationsPanel />
+          <AnimationsPanel />
 
-        <ScriptingPanel />
-      </Accordion>
-
-      {canDuplicateOrRemove && (
-        <div className="d-flex gap-2 mt-3 pt-2 border-top border-secondary">
-          <button
-            className="btn btn-sm btn-outline-secondary flex-fill"
-            onClick={handleDuplicate}
-          >
-            <Files className="me-2" />
-            Duplicar
-          </button>
-          <button
-            className="btn btn-sm btn-outline-danger flex-fill"
-            onClick={handleRemove}
-          >
-            <Trash className="me-2" />
-            Eliminar
-          </button>
-        </div>
+          <ScriptingPanel />
+        </Accordion>
       )}
+
+      <div className="d-flex gap-2 mt-3 pt-2 border-top border-secondary">
+        <button
+          className="btn btn-sm btn-outline-secondary flex-fill"
+          onClick={handleDuplicate}
+        >
+          <Files className="me-2" />
+          Duplicar
+        </button>
+        <button
+          className="btn btn-sm btn-outline-danger flex-fill"
+          onClick={handleRemove}
+        >
+          <Trash className="me-2" />
+          Eliminar
+        </button>
+      </div>
     </div>
   )
 }

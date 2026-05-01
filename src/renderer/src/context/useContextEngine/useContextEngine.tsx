@@ -118,6 +118,7 @@ export function EngineProvider({
 		removeSprite: actions.removeSprite,
 		getSpritesList: actions.getSpritesList,
 		loadCharacter: actions.loadCharacter,
+		setPreviewPlaying: actions.setPreviewPlaying,
 	};
 
 	return (

@@ -41,10 +41,12 @@ export function createEngineEventHandler({
 
 		if (event.event === 'ready') {
 			dispatch({ type: 'SET_READY' });
+			dispatch({ type: 'SET_PREVIEW_PLAYING', payload: false });
 			if (refs.readyTimer.current) clearTimeout(refs.readyTimer.current);
 			if (projectType) {
 				window.engine.send({ cmd: 'set_scene', scene: projectType } as never);
 			}
+			window.engine.send({ cmd: 'set_preview_playing', playing: false } as never);
 			refs.mainPlayerHandled.current = false;
 			refs.playerRemoved.current = false;
 			refs.pendingPlayerDups.current = [];
@@ -222,6 +224,9 @@ export function createEngineEventHandler({
 							scripts: anim.scripts ?? [],
 						} as never);
 					}
+					// Si la entidad usa una animación de un solo frame (objeto estático),
+					// aplicar el primer frame de inmediato para que quede visible al cargar.
+					applyInitialAnimationFrame(scenario.id, pending.animations);
 				}
 				if (pending.scripts) {
 					refs.entityMetaRef.current[scenario.id].scripts = pending.scripts;
@@ -235,6 +240,61 @@ export function createEngineEventHandler({
 
 		if (event.event === 'character_loaded') {
 			const character = event as CharacterLoaded;
+			const applyPendingRestore = (id: number, path: string) => {
+				const queue = refs.pendingRestoresRef.current.get(path);
+				if (!queue || queue.length === 0) return;
+
+				const pending = queue.shift()!;
+				if (pending.name && pending.name.trim().length > 0) {
+					if (refs.entityMetaRef.current[id]) {
+						refs.entityMetaRef.current[id].name = pending.name;
+					}
+					window.engine.send({ cmd: 'set_entity_name', id, name: pending.name } as never);
+				}
+				window.engine.send({ cmd: 'set_transform', id, position: pending.transform.position, rotation: pending.transform.rotation, scale: pending.transform.scale } as never);
+				refs.entityTransformsRef.current[id] = pending.transform;
+
+				if (pending.physicsEnabled) {
+					window.engine.send({ cmd: 'set_physics', id, enabled: true, body_type: pending.physicsType } as never);
+					if (refs.entityMetaRef.current[id]) {
+						refs.entityMetaRef.current[id].physicsEnabled = true;
+						refs.entityMetaRef.current[id].physicsType = pending.physicsType;
+					}
+				}
+
+				if (pending.animations) {
+					if (refs.entityMetaRef.current[id]) {
+						refs.entityMetaRef.current[id].animations = pending.animations;
+					}
+					for (const anim of pending.animations) {
+						window.engine.send({
+							cmd: 'set_animation',
+							id,
+							name: anim.name,
+							frames: anim.frames,
+							fps: anim.fps,
+							loop_: anim.loop,
+							audio_path: anim.audio_path ?? null,
+							logical_w: anim.logical_w ?? 64,
+							logical_h: anim.logical_h ?? 64,
+							scripts: anim.scripts ?? [],
+						} as never);
+					}
+					applyInitialAnimationFrame(id, pending.animations);
+				}
+
+				if (pending.scripts) {
+					if (refs.entityMetaRef.current[id]) {
+						refs.entityMetaRef.current[id].scripts = pending.scripts;
+					}
+					for (const script of pending.scripts) {
+						window.engine.send({ cmd: 'load_script', id, path: script.name, source: script.source } as never);
+					}
+				}
+
+				if (queue.length === 0) refs.pendingRestoresRef.current.delete(path);
+			};
+
 			if (character.path === '[Player]') {
 				if (!refs.mainPlayerHandled.current) {
 					refs.mainPlayerHandled.current = true;
@@ -245,6 +305,7 @@ export function createEngineEventHandler({
 				} else {
 					dispatch({ type: 'ADD_CHARACTER', payload: { id: character.id, path: character.path } });
 					refs.entityMetaRef.current[character.id] = { kind: 'character', path: '[Player]', physicsEnabled: false, physicsType: '' };
+					applyPendingRestore(character.id, character.path);
 					const duplicateTransform = refs.pendingDupQ.current.shift();
 					if (duplicateTransform) {
 						window.engine.send({ cmd: 'set_transform', id: character.id, position: duplicateTransform.position, rotation: duplicateTransform.rotation, scale: duplicateTransform.scale } as never);
@@ -259,47 +320,7 @@ export function createEngineEventHandler({
 				} else {
 					refs.entityMetaRef.current[character.id] = { kind: 'character', path: character.path, physicsEnabled: false, physicsType: '' };
 				}
-				const queue = refs.pendingRestoresRef.current.get(character.path);
-				if (queue && queue.length > 0) {
-					const pending = queue.shift()!;
-					if (pending.name && pending.name.trim().length > 0) {
-						refs.entityMetaRef.current[character.id].name = pending.name;
-						window.engine.send({ cmd: 'set_entity_name', id: character.id, name: pending.name } as never);
-					}
-					window.engine.send({ cmd: 'set_transform', id: character.id, position: pending.transform.position, rotation: pending.transform.rotation, scale: pending.transform.scale } as never);
-					refs.entityTransformsRef.current[character.id] = pending.transform;
-					if (pending.physicsEnabled) {
-						window.engine.send({ cmd: 'set_physics', id: character.id, enabled: true, body_type: pending.physicsType } as never);
-						refs.entityMetaRef.current[character.id].physicsEnabled = true;
-						refs.entityMetaRef.current[character.id].physicsType = pending.physicsType;
-					}
-					if (pending.animations) {
-						refs.entityMetaRef.current[character.id].animations = pending.animations;
-						for (const anim of pending.animations) {
-							window.engine.send({
-								cmd: 'set_animation',
-								id: character.id,
-								name: anim.name,
-								frames: anim.frames,
-								fps: anim.fps,
-								loop_: anim.loop,
-								audio_path: anim.audio_path ?? null,
-								logical_w: anim.logical_w ?? 64,
-								logical_h: anim.logical_h ?? 64,
-								scripts: anim.scripts ?? [],
-							} as never);
-						}
-						applyInitialAnimationFrame(character.id, pending.animations);
-						applyInitialAnimationFrame(character.id, pending.animations);
-					}
-					if (pending.scripts) {
-						refs.entityMetaRef.current[character.id].scripts = pending.scripts;
-						for (const script of pending.scripts) {
-							window.engine.send({ cmd: 'load_script', id: character.id, path: script.name, source: script.source } as never);
-						}
-					}
-					if (queue.length === 0) refs.pendingRestoresRef.current.delete(character.path);
-				}
+				applyPendingRestore(character.id, character.path);
 			}
 		}
 

@@ -59,6 +59,7 @@ export const DEFAULT_WORLD_CONFIG: WorldConfig = {
 export interface EngineState {
 	engineReady: boolean
 	engineError: string | null
+	previewPlaying: boolean
 	log: LogEntry[]
 	entities: Entity[]
 	selectedEntity: SelectedEntity | null
@@ -77,6 +78,7 @@ export interface EngineState {
 export type EngineAction =
 	| { type: 'SET_READY' }
 	| { type: 'SET_ERROR'; payload: string }
+	| { type: 'SET_PREVIEW_PLAYING'; payload: boolean }
 	| { type: 'ADD_LOG'; payload: LogEntry }
 	| { type: 'ADD_ENTITY'; payload: number }
 	| { type: 'SELECT_ENTITY'; payload: SelectedEntity }
@@ -106,6 +108,7 @@ export type EngineAction =
 export const initialState: EngineState = {
 	engineReady: false,
 	engineError: null,
+	previewPlaying: false,
 	log: [],
 	entities: [],
 	selectedEntity: null,
@@ -123,8 +126,9 @@ export const initialState: EngineState = {
 
 export function engineReducer(state: EngineState, action: EngineAction): EngineState {
 	const handlers: Record<string, (prevState: EngineState, nextAction: any) => EngineState> = {
-		SET_READY: (prevState) => ({ ...prevState, engineReady: true, engineError: null }),
+		SET_READY: (prevState) => ({ ...prevState, engineReady: true, engineError: null, previewPlaying: false }),
 		SET_ERROR: (prevState, nextAction) => ({ ...prevState, engineError: nextAction.payload }),
+		SET_PREVIEW_PLAYING: (prevState, nextAction) => ({ ...prevState, previewPlaying: nextAction.payload }),
 		ADD_LOG: (prevState, nextAction) => ({ ...prevState, log: [...prevState.log.slice(-199), nextAction.payload] }),
 		ADD_ENTITY: (prevState, nextAction) =>
 			prevState.entities.some((entity) => entity.id === nextAction.payload)
@@ -137,10 +141,10 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 			const error = code !== 0 && code != null
 				? `El motor terminó inesperadamente (código ${code}).`
 				: null;
-			return { ...prevState, engineReady: false, ...(error ? { engineError: error } : {}) };
+			return { ...prevState, engineReady: false, previewPlaying: false, ...(error ? { engineError: error } : {}) };
 		},
 		CLEAR_ENTITIES: (prevState) => ({ ...prevState, entities: [] }),
-		RESET_ENGINE: (prevState) => ({ ...prevState, engineReady: false, engineError: null, entities: [] }),
+		RESET_ENGINE: (prevState) => ({ ...prevState, engineReady: false, engineError: null, previewPlaying: false, entities: [] }),
 		ADD_SCENARIO: (prevState, nextAction) => ({ ...prevState, scenarioEntities: [...prevState.scenarioEntities, nextAction.payload] }),
 		REMOVE_SCENARIO: (prevState, nextAction) => ({
 			...prevState,
@@ -287,4 +291,5 @@ export interface EngineContextValue extends EngineState {
 	removeSprite: (path: string) => void
 	getSpritesList: () => void
 	loadCharacter: (path: string) => void
+	setPreviewPlaying: (playing: boolean) => void
 }

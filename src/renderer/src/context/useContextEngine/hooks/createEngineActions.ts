@@ -1,5 +1,5 @@
 import type { Dispatch } from 'react';
-import type { EngineAction, EngineInternalRefs, EntityScripts } from '../types';
+import type { EngineAction, EngineInternalRefs, EntityScripts, PendingRestore, Transform } from '../types';
 
 interface CreateEngineActionsParams {
 	dispatch: Dispatch<EngineAction>
@@ -10,6 +10,51 @@ interface CreateEngineActionsParams {
 }
 
 export function createEngineActions({ dispatch, refs, addLog, reportBounds, send }: CreateEngineActionsParams) {
+	const cloneTransform = (transform: Transform): Transform => ({
+		position: [...transform.position] as [number, number, number],
+		rotation: [...transform.rotation] as [number, number, number, number],
+		scale: [...transform.scale] as [number, number, number],
+	});
+
+	const cloneAnimations = (animations?: any[]) =>
+		animations?.map((anim) => ({
+			...anim,
+			frames: Array.isArray(anim.frames)
+				? anim.frames.map((frame: any) => ({ ...frame }))
+				: [],
+			scripts: Array.isArray(anim.scripts)
+				? anim.scripts.map((script: any) => ({ ...script }))
+				: [],
+		}));
+
+	const cloneScripts = (scripts?: EntityScripts) =>
+		scripts?.map((script) => ({ ...script }));
+
+	const queuePendingDuplicateRestore = (id: number) => {
+		const meta = refs.entityMetaRef.current[id];
+		const transform = refs.entityTransformsRef.current[id];
+		if (!meta || !transform || !meta.path) return;
+
+		const clonedTransform = cloneTransform(transform);
+		clonedTransform.position = [
+			clonedTransform.position[0] + 0.5,
+			clonedTransform.position[1] + 0.5,
+			clonedTransform.position[2],
+		];
+
+		const pendingRestore: PendingRestore = {
+			transform: clonedTransform,
+			physicsEnabled: meta.physicsEnabled ?? false,
+			physicsType: meta.physicsType ?? 'static',
+			animations: cloneAnimations(meta.animations),
+			scripts: cloneScripts(meta.scripts),
+		};
+
+		const queue = refs.pendingRestoresRef.current.get(meta.path) ?? [];
+		queue.push(pendingRestore);
+		refs.pendingRestoresRef.current.set(meta.path, queue);
+	};
+
 	const sendAsync = <T,>(cmd: object, waitForEvent: string, onStart?: () => void): Promise<T> => {
 		if (onStart) onStart();
 		return new Promise((resolve) => {
@@ -69,6 +114,7 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 	};
 
 	const duplicateScenario = (id: number) => {
+		queuePendingDuplicateRestore(id);
 		send({ cmd: 'duplicate_scenario', id });
 	};
 
@@ -80,6 +126,7 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 	};
 
 	const duplicateCharacter = (id: number) => {
+		queuePendingDuplicateRestore(id);
 		send({ cmd: 'duplicate_character', id });
 	};
 
@@ -158,6 +205,11 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 		send({ cmd: 'load_character', path });
 	};
 
+	const setPreviewPlaying = (playing: boolean) => {
+		dispatch({ type: 'SET_PREVIEW_PLAYING', payload: playing });
+		send({ cmd: 'set_preview_playing', playing });
+	};
+
 	return {
 		sendAsync,
 		setAnimationPlaying,
@@ -180,5 +232,6 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 		removeSprite,
 		getSpritesList,
 		loadCharacter,
+		setPreviewPlaying,
 	};
 }

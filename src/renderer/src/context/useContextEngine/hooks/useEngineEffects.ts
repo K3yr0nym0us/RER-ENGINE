@@ -35,8 +35,18 @@ export function useEngineEffects({
 	}, []);
 
 	useEffect(() => {
+		const isTypingTarget = (target: EventTarget | null) => {
+			if (!(target instanceof HTMLElement)) return false;
+			const tag = target.tagName.toLowerCase();
+			return tag === 'input' || tag === 'textarea' || target.isContentEditable;
+		};
+
 		const onKeyDown = (event: KeyboardEvent) => {
 			if (event.key === 'Control') window.engine.send({ cmd: 'set_ctrl_held', held: true } as never);
+			if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z' && !isTypingTarget(event.target)) {
+				event.preventDefault();
+				window.engine.send({ cmd: 'undo' } as never);
+			}
 		};
 		const onKeyUp = (event: KeyboardEvent) => {
 			if (event.key === 'Control') window.engine.send({ cmd: 'set_ctrl_held', held: false } as never);

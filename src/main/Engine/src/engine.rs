@@ -142,6 +142,16 @@ use crate::mesh::{self, Mesh};
 use crate::config_3d::physics_3d::PhysicsWorld;
 use crate::scripting::{ScriptEngine, ScriptCmd, EntitySnapshot};
 
+pub(crate) enum UndoAction {
+    RestoreTransform {
+        id:       u32,
+        position: [f32; 3],
+        rotation: [f32; 4],
+        scale:    [f32; 3],
+    },
+    RemoveEntity { id: u32 },
+}
+
 #[derive(Clone)]
 pub struct AnimationState {
     pub frames:        Vec<AnimationFrameData>,
@@ -241,6 +251,8 @@ pub struct State {
     pub(crate) ctrl_held:        bool,
     /// Herramienta de dibujo activa en modo 2D.
     pub        active_tool:      ActiveTool,
+    /// true = modo juego (simulación), false = modo editor.
+    pub        preview_playing:  bool,
     /// Buffer de overlay de la herramienta activa (cruces + líneas de construcción).
     pub(crate) tool_overlay_buffer: GizmoBuffer,
     /// Entidades creadas por herramientas de dibujo (colisionadores).
@@ -278,6 +290,10 @@ pub struct State {
     /// Almacén de sprites cargados (PNGs) para reutilización en el editor.
     /// No se renderizan directamente; actúan como biblioteca de imágenes.
     pub(crate) sprite_store: HashMap<String, (String, u32, u32)>, // path → (name, width, height)
+    /// Historial simple para deshacer cambios del editor.
+    pub(crate) undo_stack: Vec<UndoAction>,
+    /// Evita registrar nuevas entradas de undo mientras se está aplicando una.
+    pub(crate) is_applying_undo: bool,
 }
 
 impl State {
@@ -692,6 +708,7 @@ impl State {
             grid_buffer_uni,
             ctrl_held: false,
             active_tool: ActiveTool::None,
+            preview_playing: false,
             tool_overlay_buffer: tool_overlay_buffer_init,
             collider_entities: Vec::new(),
             anim_saved_transforms: std::collections::HashMap::new(),
@@ -705,6 +722,8 @@ impl State {
             script_engine: ScriptEngine::new()
                 .expect("Error al inicializar el motor de scripting Lua"),
             sprite_store: HashMap::new(),
+            undo_stack: Vec::new(),
+            is_applying_undo: false,
         }
     }
 
@@ -712,6 +731,30 @@ impl State {
 
     pub fn window(&self) -> &Arc<Window> { &self.window }
     pub fn size(&self)   -> PhysicalSize<u32> { self.size }
+    pub fn is_preview_playing(&self) -> bool { self.preview_playing }
+
+    pub fn push_undo_transform(&mut self, id: u32, position: [f32; 3], rotation: [f32; 4], scale: [f32; 3]) {
+        self.undo_stack.push(UndoAction::RestoreTransform { id, position, rotation, scale });
+    }
+
+    pub fn apply_undo(&mut self) {
+        let Some(action) = self.undo_stack.pop() else { return; };
+        self.is_applying_undo = true;
+        match action {
+            UndoAction::RestoreTransform { id, position, rotation, scale } => {
+                self.handle_command(EngineCommand::SetTransform {
+                    id,
+                    position: Some(position),
+                    rotation: Some(rotation),
+                    scale: Some(scale),
+                });
+            }
+            UndoAction::RemoveEntity { id } => {
+                self.handle_command(EngineCommand::RemoveEntity { id });
+            }
+        }
+        self.is_applying_undo = false;
+    }
 
     // ── Resize ───────────────────────────────────────────────────────────────
 
@@ -753,6 +796,7 @@ impl State {
             }
             EngineCommand::SetTransform { id, position, rotation, scale } => {
                 use glam::{Quat, Vec3};
+                let before = self.world.get::<Transform>(id).cloned();
                 if let Some(transform) = self.world.get_mut::<Transform>(id) {
                     if let Some(p) = position {
                         transform.position = Vec3::from(p);
@@ -783,6 +827,17 @@ impl State {
                 if let Some(p) = position {
                     if self.camera_2d.is_some() {
                         self.physics_2d.teleport_entity(id, p[0], p[1]);
+                    }
+                }
+                if let Some(prev) = before {
+                    let prev_pos = prev.position.to_array();
+                    let prev_rot = [prev.rotation.x, prev.rotation.y, prev.rotation.z, prev.rotation.w];
+                    let prev_scl = prev.scale.to_array();
+                    let next_pos = self.world.get::<Transform>(id).map(|t| t.position.to_array());
+                    let next_rot = self.world.get::<Transform>(id).map(|t| [t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w]);
+                    let next_scl = self.world.get::<Transform>(id).map(|t| t.scale.to_array());
+                    if !self.is_applying_undo && (next_pos != Some(prev_pos) || next_rot != Some(prev_rot) || next_scl != Some(prev_scl)) {
+                        self.push_undo_transform(id, prev_pos, prev_rot, prev_scl);
                     }
                 }
             }
@@ -913,8 +968,14 @@ impl State {
                 log::info!("[audio] detenido por comando externo");
             }
             EngineCommand::RemoveEntity { id } => {
-                if Some(id) == self.selected_entity { self.selected_entity = None; }
-                if Some(id) == self.hovered_entity  { self.hovered_entity  = None; }
+                if Some(id) == self.selected_entity {
+                    self.selected_entity = None;
+                    send_event(&EngineEvent::EntityDeselected);
+                }
+                if Some(id) == self.hovered_entity  {
+                    self.hovered_entity  = None;
+                    send_event(&EngineEvent::EntityUnhovered);
+                }
                 self.physics.remove_entity_body(id);
                 self.physics_2d.remove_entity_body(id);
                 self.scenario_entities.retain(|&e| e != id);
@@ -941,6 +1002,38 @@ impl State {
             EngineCommand::SetGridCellSize { size } => {
                 self.grid_config.cell_size = size.clamp(0.05, 100.0);
                 self.rebuild_grid();
+            }
+            EngineCommand::SetPreviewPlaying { playing } => {
+                if self.preview_playing == playing {
+                    return;
+                }
+
+                self.preview_playing = playing;
+
+                if playing {
+                    self.active_tool = ActiveTool::None;
+                    self.tool_overlay_buffer = gizmo::build_from_vertices(&self.device, &[]);
+                    if self.pivot_edit_mode.is_some() {
+                        self.cancel_pivot_edit_mode();
+                    }
+                    if self.logical_area_mode.is_some() {
+                        self.cancel_logical_area_mode();
+                    }
+
+                    if self.selected_entity.take().is_some() {
+                        send_event(&EngineEvent::EntityDeselected);
+                    }
+                    if self.hovered_entity.take().is_some() {
+                        send_event(&EngineEvent::EntityUnhovered);
+                    }
+                    self.hovered_gizmo_axis = None;
+                    self.active_gizmo_axis = None;
+                }
+
+                log::info!(
+                    "[preview] modo {}",
+                    if playing { "juego" } else { "editor" }
+                );
             }
             EngineCommand::SetCtrlHeld { held } => {
                 self.ctrl_held = held;
@@ -985,7 +1078,7 @@ impl State {
                 } else {
                     match tool.as_str() {
                         "draw_collider" => {
-                            self.active_tool = ActiveTool::DrawCollider { points_world: Vec::new() };
+                            self.active_tool = ActiveTool::DrawCollider { points_world: Vec::new(), cursor_world: None };
                             log::info!("Herramienta activa: dibujar colisionador (4 puntos)");
                         }
                         _ => log::warn!("Herramienta desconocida: {}", tool),
@@ -998,6 +1091,12 @@ impl State {
                 } else {
                     log::warn!("CreateColliderFromPoints solo disponible en modo 2D");
                 }
+            }
+            EngineCommand::Undo => {
+                if self.undo_last_tool_step_2d() {
+                    return;
+                }
+                self.apply_undo();
             }
             EngineCommand::SetAnimation { id, name, frames, fps, loop_, audio_path, logical_w, logical_h, scripts } => {
                 log::info!("[IPC] SetAnimation: entity_id={}, name='{}', frames={}, audio={:?}, scripts={}", id, name, frames.len(), audio_path, scripts.len());
@@ -1470,6 +1569,9 @@ self.active_animations.retain(|_, a| !a.finished);
         let now         = Instant::now();
         self.delta_time = now.duration_since(self.last_frame).as_secs_f32();
         self.last_frame = now;
+        if !self.preview_playing {
+            return;
+        }
         if self.camera_2d.is_some() {
             // Scripts primero: ponen la velocidad que quieren aplicar este frame.
             // Physics después: Rapier corre con esa velocidad y resuelve colisiones,
@@ -1567,7 +1669,12 @@ self.active_animations.retain(|_, a| !a.finished);
                     self.entity_buffers.get(idx),
                     self.entity_bind_groups.get(idx),
                 ) else { continue };
-                let flag = if self.selected_entity == Some(entity_id) {
+                if self.preview_playing && self.collider_entities.contains(&entity_id) {
+                    continue;
+                }
+                let flag = if self.preview_playing {
+                    0.0_f32
+                } else if self.selected_entity == Some(entity_id) {
                     1.0_f32   // dorado
                 } else if self.hovered_entity == Some(entity_id) {
                     2.0_f32   // cian
@@ -1599,7 +1706,8 @@ self.active_animations.retain(|_, a| !a.finished);
         }
 
         // ── Grid pass (solo modo 2D; borde siempre visible, líneas según config) ──
-        if let Some(cam2d) = &self.camera_2d {
+        if !self.preview_playing {
+            if let Some(cam2d) = &self.camera_2d {
                 let aspect   = self.size.width as f32 / self.size.height as f32;
                 let vp       = cam2d.view_proj(aspect).to_cols_array_2d();
                 // Uniforms: view_proj + model identity + flags -1
@@ -1629,10 +1737,11 @@ self.active_animations.retain(|_, a| !a.finished);
                 grd_pass.set_bind_group(0, &self.grid_bind_group, &[]);
                 grd_pass.set_vertex_buffer(0, self.grid_buffer.vertex_buffer.slice(..));
                 grd_pass.draw(0..self.grid_buffer.vertex_count, 0..1);
+            }
         }
 
         // ── Tool overlay pass (solo modo 2D; cruces + líneas de construcción) ──
-        if self.camera_2d.is_some() && self.tool_overlay_buffer.vertex_count > 0 {
+        if !self.preview_playing && self.camera_2d.is_some() && self.tool_overlay_buffer.vertex_count > 0 {
             let mut tool_pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("tool-overlay-pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -1656,7 +1765,8 @@ self.active_animations.retain(|_, a| !a.finished);
         // ── Gizmos (segundo pass, sin depth) ─────────────────────────────────
         // Ocultar gizmo durante el modo edición de pivot: las flechas de movimiento
         // robarían el foco e impedirían hacer click libremente sobre el asset.
-        if let Some(sel_id) = self.selected_entity.filter(|_| self.pivot_edit_mode.is_none()) {
+        if !self.preview_playing {
+            if let Some(sel_id) = self.selected_entity.filter(|_| self.pivot_edit_mode.is_none()) {
             let aspect   = self.size.width as f32 / self.size.height as f32;
             let vp = if let Some(cam2d) = &self.camera_2d {
                 cam2d.view_proj(aspect).to_cols_array_2d()
@@ -1699,6 +1809,7 @@ self.active_animations.retain(|_, a| !a.finished);
             gpass.set_bind_group(0, &self.gizmo_bind_group, &[]);
             gpass.set_vertex_buffer(0, self.gizmo_buffer.vertex_buffer.slice(..));
             gpass.draw(0..self.gizmo_buffer.vertex_count, 0..1);
+            }
         }
 
         self.queue.submit(std::iter::once(enc.finish()));

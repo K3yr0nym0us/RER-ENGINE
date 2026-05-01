@@ -167,6 +167,7 @@ struct App {
     left_click_pos:  Option<(f32, f32)>,  // posición al presionar
     // Drag de gizmo
     gizmo_drag_axis: Option<usize>,       // eje activo (0=X,1=Y,2=Z)
+    gizmo_drag_start: Option<(u32, [f32; 3], [f32; 4], [f32; 3])>,
     // Teclas modificadoras
     ctrl_held:       bool,                // Ctrl izquierdo o derecho presionado
     // Frame rate cap: tiempo objetivo del próximo frame (evita busy loop)
@@ -350,6 +351,12 @@ impl ApplicationHandler<EngineCommand> for App {
                 let pressed = btn_state == ElementState::Pressed;
                 match button {
                     MouseButton::Left => {
+                        if state.is_preview_playing() {
+                            self.left_click_pos = None;
+                            self.gizmo_drag_axis = None;
+                            state.set_active_gizmo_axis(None);
+                            return;
+                        }
                         if pressed {
                             // Comprobar si el click es sobre un eje del gizmo.
                             // Se omite en modo pivot para no robar el click al handler de pivot.
@@ -366,6 +373,16 @@ impl ApplicationHandler<EngineCommand> for App {
                                 self.gizmo_drag_axis = axis;
                                 if axis.is_some() {
                                     state.set_active_gizmo_axis(axis);
+                                    if let Some(sel_id) = state.selected_entity {
+                                        if let Some(t) = state.world.get::<crate::ecs::Transform>(sel_id) {
+                                            self.gizmo_drag_start = Some((
+                                                sel_id,
+                                                t.position.to_array(),
+                                                [t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w],
+                                                t.scale.to_array(),
+                                            ));
+                                        }
+                                    }
                                 }
                             }
                             if self.gizmo_drag_axis.is_none() {
@@ -377,6 +394,16 @@ impl ApplicationHandler<EngineCommand> for App {
                                 // Fin del drag de gizmo
                                 self.gizmo_drag_axis = None;
                                 state.set_active_gizmo_axis(None);
+                                if let Some((id, pos, rot, scl)) = self.gizmo_drag_start.take() {
+                                    if let Some(t) = state.world.get::<crate::ecs::Transform>(id) {
+                                        let changed = t.position.to_array() != pos
+                                            || [t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w] != rot
+                                            || t.scale.to_array() != scl;
+                                        if changed {
+                                            state.push_undo_transform(id, pos, rot, scl);
+                                        }
+                                    }
+                                }
                             } else {
                                 // Al soltar: si no hubo arrastre, disparar picking
                                 if let (Some(start), Some(cur)) = (self.left_click_pos, self.last_cursor) {
@@ -420,10 +447,19 @@ impl ApplicationHandler<EngineCommand> for App {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 let cur = (position.x as f32, position.y as f32);
+                if state.is_preview_playing() {
+                    self.gizmo_drag_axis = None;
+                    self.gizmo_drag_start = None;
+                    state.set_active_gizmo_axis(None);
+                }
+                if state.camera_2d.is_some() && !state.is_preview_playing() {
+                    state.update_tool_overlay_cursor_2d(cur.0, cur.1);
+                }
                 if let Some((lx, ly)) = self.last_cursor {
                     let dx = cur.0 - lx;
                     let dy = cur.1 - ly;
-                    if let Some(axis) = self.gizmo_drag_axis {
+                    if !state.is_preview_playing() {
+                        if let Some(axis) = self.gizmo_drag_axis {
                         // Drag de gizmo: mover entidad a lo largo del eje
                         if state.camera_2d.is_some() {
                             // Combina ambas fuentes: winit (self.ctrl_held) e IPC (state.ctrl_held)
@@ -433,19 +469,20 @@ impl ApplicationHandler<EngineCommand> for App {
                         } else {
                             state.drag_gizmo(cur.0, cur.1, lx, ly, axis);
                         }
-                    } else if self.mouse_right {
+                        } else if self.mouse_right {
                         let (vw, vh) = { let s = state.size(); (s.width as f32, s.height as f32) };
                         if let Some(cam2d) = &mut state.camera_2d {
                             cam2d.pan(dx, dy, vw, vh);
                         } else {
                             state.camera.orbit(dx, dy);
                         }
-                    } else if self.mouse_middle {
+                        } else if self.mouse_middle {
                         state.camera.pan(dx, dy);
+                        }
                     }
                 }
                 // Hover: solo cuando no se está arrastrando
-                if !self.mouse_right && !self.mouse_middle && self.gizmo_drag_axis.is_none() {
+                if !state.is_preview_playing() && !self.mouse_right && !self.mouse_middle && self.gizmo_drag_axis.is_none() {
                     if state.camera_2d.is_some() {
                         state.update_hover_2d(cur.0, cur.1);
                     } else {
@@ -455,13 +492,21 @@ impl ApplicationHandler<EngineCommand> for App {
                 self.last_cursor = Some(cur);
             }
             WindowEvent::KeyboardInput {
-                event: KeyEvent { physical_key: PhysicalKey::Code(code), state: key_state, .. },
+                event: KeyEvent { physical_key: PhysicalKey::Code(code), state: key_state, repeat, .. },
                 ..
             } => {
                 let pressed = key_state == ElementState::Pressed;
                 match code {
                     KeyCode::ControlLeft | KeyCode::ControlRight => {
                         self.ctrl_held = pressed;
+                    }
+                    KeyCode::KeyZ => {
+                        if pressed && !repeat {
+                            let ctrl_active = self.ctrl_held || state.ctrl_held || query_ctrl_held_x11();
+                            if ctrl_active {
+                                state.handle_command(EngineCommand::Undo);
+                            }
+                        }
                     }
                     _ => {}
                 }
@@ -566,6 +611,7 @@ fn main() {
         last_cursor:         None,
         left_click_pos:      None,
         gizmo_drag_axis:     None,
+        gizmo_drag_start:    None,
         ctrl_held:           false,
         next_frame_at:       std::time::Instant::now(),
         #[cfg(target_os = "windows")]

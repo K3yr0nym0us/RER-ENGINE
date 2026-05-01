@@ -42,7 +42,7 @@ export function SideBarLeft({ projectType }: { projectType: ProjectType }) {
         <ToolsAccordion />
       </Accordion>
 
-      {selectedEntity && !isCollider && (
+      {selectedEntity && (
         <div className="pt-4">
           <b className="ms-2">Elemento seleccionado:</b>
           <Accordion defaultActiveKey="propiedades" className="sidebar-accordion mt-1">
