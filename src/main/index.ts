@@ -2,8 +2,9 @@ import { app, BrowserWindow, ipcMain, dialog, Menu, session, screen as electronS
 import { spawn, ChildProcess } from 'child_process';
 import path from 'path';
 import fs from 'fs';
+import AdmZip from 'adm-zip';
 
-import type { EngineCommand, EngineEvent, ProjectSaveData } from '../shared-types/types';
+import type { EngineCommand, EngineEvent, OpenProjectResult, ProjectSaveData } from '../shared-types/types';
 
 // Sin GPU hardware disponible: deshabilitar el proceso GPU de Chromium
 // para evitar spam de viz_main_impl / command_buffer_proxy_impl
@@ -30,6 +31,13 @@ let engineProcess: ChildProcess | null = null
 // Buffer de eventos que llegaron antes de que el renderer estuviera listo
 let rendererReady = false
 const eventBuffer: EngineEvent[] = []
+
+// Path del proyecto abierto/guardado actualmente.
+let currentProjectFilePath: string | null = null
+
+// Directorios temporales con contenido extraído de .save que deben vivir
+// mientras el proyecto está abierto para que el motor lea rutas absolutas.
+const extractedProjectDirs = new Set<string>()
 
 // Ventana secundaria del editor de scripts Lua
 // (eliminada — el editor ahora vive en un modal de Bootstrap dentro del renderer)
@@ -372,12 +380,16 @@ ipcMain.on('restore-engine-viewport', (_event, bounds) => {
 })
 
 // ---------------------------------------------------------------------------
-// Helpers de guardado con copia de assets
+// Helpers de guardado consolidado (.save)
 // ---------------------------------------------------------------------------
+
+function ensureSaveExtension(filePath: string): string {
+  return path.extname(filePath).toLowerCase() === '.save' ? filePath : `${filePath}.save`
+}
 
 /**
  * Recorre un ProjectSaveData y devuelve todos los paths de archivo absolutos
- * que hay que copiar al directorio de assets del proyecto.
+ * que hay que copiar al paquete de assets del archivo .save.
  */
 function collectAssetPaths(data: ProjectSaveData): Set<string> {
   const paths = new Set<string>()
@@ -405,8 +417,8 @@ function collectAssetPaths(data: ProjectSaveData): Set<string> {
 }
 
 /**
- * Copia todos los assets al directorio `projectDir/assets/` y devuelve
- * un mapa de ruta-absoluta → ruta-relativa-desde-projectDir.
+ * Copia todos los assets al directorio temporal `assets/` y devuelve
+ * un mapa de ruta-absoluta → ruta-relativa dentro del paquete .save.
  * Si dos archivos distintos tienen el mismo nombre, se les agrega un sufijo numérico.
  */
 function copyAssetsToDir(
@@ -440,7 +452,7 @@ function copyAssetsToDir(
 
 /**
  * Clona el ProjectSaveData reemplazando todos los paths absolutos por relativos
- * según el mapa generado por copyAssetsToDir.
+ * según el mapa generado por copyAssetsToDir para serializar dentro del .save.
  */
 function remapPaths(data: ProjectSaveData, map: Map<string, string>): ProjectSaveData {
   const remap = (p: string | null | undefined): string | null | undefined =>
@@ -469,38 +481,45 @@ function remapPaths(data: ProjectSaveData, map: Map<string, string>): ProjectSav
 }
 
 /**
- * Función central de guardado: crea la carpeta del proyecto, copia los assets
- * y escribe project.json con rutas relativas.
- * Devuelve la ruta al project.json creado, o null si hubo error.
+ * Crea un archivo .save (ZIP) con `manifest.json` + `assets/`.
  */
-function saveProjectToDir(projectDir: string, data: ProjectSaveData): string | null {
+function saveProjectToFile(saveFilePath: string, data: ProjectSaveData): boolean {
+  const tempRoot = app.getPath('temp')
+  const stagingDir = fs.mkdtempSync(path.join(tempRoot, 'rer-save-write-'))
   try {
-    fs.mkdirSync(projectDir, { recursive: true })
-    const assetsDir = path.join(projectDir, 'assets')
+    const assetsDir = path.join(stagingDir, 'assets')
     const assetPaths = collectAssetPaths(data)
     const pathMap    = copyAssetsToDir(assetPaths, assetsDir)
     const remapped   = remapPaths(data, pathMap)
-    const jsonPath   = path.join(projectDir, 'project.json')
-    fs.writeFileSync(jsonPath, JSON.stringify(remapped, null, 2), 'utf8')
-    console.log(`[editor] Proyecto guardado en ${jsonPath} (${pathMap.size} assets copiados)`)
-    return jsonPath
+
+    const manifestPath = path.join(stagingDir, 'manifest.json')
+    fs.writeFileSync(manifestPath, JSON.stringify(remapped, null, 2), 'utf8')
+
+    const zip = new AdmZip()
+    zip.addLocalFolder(stagingDir)
+    zip.writeZip(saveFilePath)
+
+    console.log(`[editor] Proyecto guardado en ${saveFilePath} (${pathMap.size} assets empaquetados)`)
+    return true
   } catch (err) {
     console.error('[editor] Error al guardar proyecto:', err)
-    return null
+    return false
+  } finally {
+    fs.rmSync(stagingDir, { recursive: true, force: true })
   }
 }
 
 /**
- * Resuelve los paths relativos de un ProjectSaveData cargado desde disco,
- * convirtiendo rutas relativas a absolutas respecto a projectDir.
+ * Resuelve los paths relativos de un ProjectSaveData cargado desde un .save,
+ * convirtiendo rutas relativas a absolutas respecto al directorio extraído.
  */
-function resolveLoadedPaths(data: ProjectSaveData, projectDir: string): ProjectSaveData {
+function resolveLoadedPaths(data: ProjectSaveData, extractedDir: string): ProjectSaveData {
   const resolve = (p: string | null | undefined): string | null | undefined => {
     if (!p) return p
     if (path.isAbsolute(p)) return p
     // El JSON siempre guarda rutas con '/' — normalizamos al separador del OS actual
     const normalized = p.split('/').join(path.sep)
-    return path.join(projectDir, normalized)
+    return path.join(extractedDir, normalized)
   }
 
   return {
@@ -525,52 +544,87 @@ function resolveLoadedPaths(data: ProjectSaveData, projectDir: string): ProjectS
   }
 }
 
+/**
+ * Carga un archivo .save, lo extrae a un directorio temporal y devuelve
+ * los datos del proyecto con paths absolutos para consumo del motor.
+ */
+function loadProjectFromSaveFile(saveFilePath: string): ProjectSaveData | null {
+  const tempRoot = app.getPath('temp')
+  const extractDir = fs.mkdtempSync(path.join(tempRoot, 'rer-save-open-'))
+  try {
+    const zip = new AdmZip(saveFilePath)
+    zip.extractAllTo(extractDir, true)
+
+    const manifestPath = path.join(extractDir, 'manifest.json')
+    if (!fs.existsSync(manifestPath)) {
+      console.error('[editor] El archivo .save no contiene manifest.json')
+      fs.rmSync(extractDir, { recursive: true, force: true })
+      return null
+    }
+
+    const raw = fs.readFileSync(manifestPath, 'utf8')
+    const parsed = JSON.parse(raw) as unknown
+    if (!(parsed !== null && typeof parsed === 'object' && 'type' in parsed && 'gameStyle' in parsed)) {
+      fs.rmSync(extractDir, { recursive: true, force: true })
+      return null
+    }
+
+    extractedProjectDirs.add(extractDir)
+    return resolveLoadedPaths(parsed as ProjectSaveData, extractDir)
+  } catch (err) {
+    console.error('[editor] Error al abrir archivo .save:', err)
+    fs.rmSync(extractDir, { recursive: true, force: true })
+    return null
+  }
+}
+
 // ---------------------------------------------------------------------------
 // IPC: guardar / cargar proyecto
 // ---------------------------------------------------------------------------
 
-// Diálogo para abrir un proyecto existente (lee project.json dentro de una carpeta)
-ipcMain.handle('open-project-dialog', async (): Promise<ProjectSaveData | null> => {
+// Diálogo para abrir un proyecto existente (.save)
+ipcMain.handle('open-project-dialog', async (): Promise<OpenProjectResult | null> => {
   if (!mainWindow) return null
-  // Permitir abrir tanto la carpeta del proyecto como el project.json directamente
   const result = await dialog.showOpenDialog(mainWindow, {
     title:      'Abrir proyecto',
-    filters:    [{ name: 'Proyecto RER', extensions: ['json'] }],
+    filters:    [{ name: 'Proyecto RER Save', extensions: ['save'] }],
     properties: ['openFile'],
   })
   if (result.canceled || !result.filePaths[0]) return null
-  try {
-    const jsonPath   = result.filePaths[0]
-    const projectDir = path.dirname(jsonPath)
-    const raw  = fs.readFileSync(jsonPath, 'utf8')
-    const data = JSON.parse(raw) as unknown
-    if (data !== null && typeof data === 'object' && 'type' in data && 'gameStyle' in data) {
-      return resolveLoadedPaths(data as ProjectSaveData, projectDir)
-    }
-    return null
-  } catch {
-    return null
-  }
+  const filePath = result.filePaths[0]
+  const project = loadProjectFromSaveFile(filePath)
+  if (!project) return null
+  currentProjectFilePath = filePath
+  return { project, filePath }
 })
 
-// Diálogo para guardar el proyecto (el usuario elige/crea una CARPETA)
-ipcMain.handle('save-project', async (_event, data: ProjectSaveData): Promise<boolean> => {
-  if (!mainWindow) return false
-  const result = await dialog.showOpenDialog(mainWindow, {
-    title:      'Guardar proyecto — elige o crea una carpeta',
-    properties: ['openDirectory', 'createDirectory'],
+// Diálogo para guardar el proyecto (archivo .save)
+ipcMain.handle('save-project', async (_event, data: ProjectSaveData): Promise<string | null> => {
+  if (!mainWindow) return null
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: 'Guardar proyecto',
+    defaultPath: currentProjectFilePath ?? 'project.save',
+    filters: [{ name: 'Proyecto RER Save', extensions: ['save'] }],
   })
-  if (result.canceled || !result.filePaths[0]) return false
-  const ok = saveProjectToDir(result.filePaths[0], data)
-  return ok !== null
+  if (result.canceled || !result.filePath) return null
+
+  const savePath = ensureSaveExtension(result.filePath)
+  const ok = saveProjectToFile(savePath, data)
+  if (!ok) return null
+
+  currentProjectFilePath = savePath
+  return savePath
 })
 
-// Guardado silencioso (auto-save): filePath es la carpeta del proyecto
+// Guardado silencioso (auto-save): sobrescribe el archivo .save indicado.
 ipcMain.handle('save-project-silent', async (_event, filePath: string, data: ProjectSaveData): Promise<boolean> => {
-  // filePath puede ser la carpeta o el project.json; normalizamos a carpeta
-  const projectDir = path.extname(filePath) === '.json' ? path.dirname(filePath) : filePath
-  const ok = saveProjectToDir(projectDir, data)
-  return ok !== null
+  const targetPath = path.isAbsolute(filePath)
+    ? ensureSaveExtension(filePath)
+    : path.join(app.getPath('userData'), ensureSaveExtension(filePath))
+
+  const ok = saveProjectToFile(targetPath, data)
+  if (ok) currentProjectFilePath = targetPath
+  return ok
 })
 
 // El renderer envía los bounds del viewport una vez montado (y en cada resize).
@@ -638,6 +692,17 @@ ipcMain.on('viewport-bounds', (_event, bounds: ViewportBounds) => {
 // ---------------------------------------------------------------------------
 // Ciclo de vida de la app
 // ---------------------------------------------------------------------------
+function cleanupExtractedProjectDirs(): void {
+  for (const dir of extractedProjectDirs) {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true })
+    } catch (err) {
+      console.error('[editor] No se pudo limpiar carpeta temporal:', err)
+    }
+  }
+  extractedProjectDirs.clear()
+}
+
 app.whenReady().then(() => {
   // CSP estricto solo en producción (app.isPackaged).
   // En desarrollo, Vite inyecta scripts inline para HMR/React preamble
@@ -676,6 +741,7 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   stopEngine()
+  cleanupExtractedProjectDirs()
   if (process.platform !== 'darwin') {
     app.quit()
   }

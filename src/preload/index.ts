@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { EngineCommand, EngineEvent, ProjectSaveData } from '../shared-types/types'
+import type { EngineCommand, EngineEvent, OpenProjectResult, ProjectSaveData } from '../shared-types/types'
 
 contextBridge.exposeInMainWorld('engine', {
   send: (cmd: EngineCommand): void => {
@@ -34,7 +34,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openModelDialog: (): Promise<string | null> => {
     return ipcRenderer.invoke('open-model-dialog')
   },
-  openProjectDialog: (): Promise<ProjectSaveData | null> => {
+  openProjectDialog: (): Promise<OpenProjectResult | null> => {
     return ipcRenderer.invoke('open-project-dialog')
   },
   openAudioDialog: (): Promise<string | null> => {
@@ -55,7 +55,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openBackgroundDialog: (): Promise<string | null> => {
     return ipcRenderer.invoke('open-background-dialog')
   },
-  saveProject: (data: ProjectSaveData): Promise<boolean> => {
+  saveProject: (data: ProjectSaveData): Promise<string | null> => {
     return ipcRenderer.invoke('save-project', data)
   },
   saveProjectSilent: (filePath: string, data: ProjectSaveData): Promise<boolean> => {

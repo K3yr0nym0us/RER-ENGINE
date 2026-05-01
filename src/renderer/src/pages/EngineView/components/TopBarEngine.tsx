@@ -52,8 +52,7 @@ export function TopBarEngine({ projectType, handleSave, toggleAutoSave }: Props)
         </div>
       </div>
       <div className="d-flex align-items-center gap-2">
-        <AppTooltip content="Guardar proyecto" place="bottom">
-          <button
+        <button
             className="btn btn-sm btn-outline-light d-flex align-items-center gap-2"
             disabled={!engineReady}
             onClick={handleSave}
@@ -61,10 +60,9 @@ export function TopBarEngine({ projectType, handleSave, toggleAutoSave }: Props)
             <FloppyFill size={13} />
             <span style={{ fontSize: 14 }}>Guardar</span>
           </button>
-        </AppTooltip>
         <AppTooltip
           content={hasSavedOnce ? (autoSaveEnabled ? 'Desactivar auto-guardado' : 'Activar auto-guardado') : 'Guarda primero'}
-          place="bottom"
+          place="left"
         >
           <button
             className={`btn btn-sm d-flex align-items-center gap-1 ${

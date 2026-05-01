@@ -35,22 +35,18 @@ export function SpritePreviewLeftPanel({
   const [keepAspect, setKeepAspect] = useState(true);
 
   const handleBoxWidthChange = useCallback((width: number) => {
-    setBox(b => {
-      const newHeight = keepAspect ? width : b.height;
-      const updated = { ...b, width, height: newHeight };
-      onBoxChange(updated);
-      return updated;
-    });
-  }, [keepAspect, onBoxChange]);
+    const newHeight = keepAspect ? width : box.height;
+    const updated = { ...box, width, height: newHeight };
+    setBox(updated);
+    onBoxChange(updated);
+  }, [keepAspect, onBoxChange, box]);
 
   const handleBoxHeightChange = useCallback((height: number) => {
-    setBox(b => {
-      const newWidth = keepAspect ? height : b.width;
-      const updated = { ...b, width: newWidth, height };
-      onBoxChange(updated);
-      return updated;
-    });
-  }, [keepAspect, onBoxChange]);
+    const newWidth = keepAspect ? height : box.width;
+    const updated = { ...box, width: newWidth, height };
+    setBox(updated);
+    onBoxChange(updated);
+  }, [keepAspect, onBoxChange, box]);
 
   return (
     <div className="bg-dark text-light border border-secondary rounded p-3 h-100">

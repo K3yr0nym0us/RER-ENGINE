@@ -10,24 +10,25 @@ import { useAutoSave } from '../../hooks/useAutoSave';
 
 import type { ProjectType, ProjectSaveData } from '@shared-types';
 
-export function EngineView({ projectType, initialSave }: { projectType: ProjectType; initialSave?: ProjectSaveData | null }) {
+export function EngineView({ projectType, initialSave, initialSavePath }: { projectType: ProjectType; initialSave?: ProjectSaveData | null; initialSavePath?: string | null }) {
   const viewportRef = useRef<HTMLDivElement>(null)
 
   return (
     <EngineProvider viewportRef={viewportRef} projectType={projectType} initialSave={initialSave}>
       <ModalProvider>
-        <EngineViewInner projectType={projectType} initialSave={initialSave} viewportRef={viewportRef} />
+        <EngineViewInner projectType={projectType} initialSave={initialSave} initialSavePath={initialSavePath} viewportRef={viewportRef} />
       </ModalProvider>
     </EngineProvider>
   )
 }
 
-function EngineViewInner({ projectType, initialSave, viewportRef }: {
+function EngineViewInner({ projectType, initialSave, initialSavePath, viewportRef }: {
   projectType: ProjectType
   initialSave?: ProjectSaveData | null
+  initialSavePath?: string | null
   viewportRef: React.RefObject<HTMLDivElement>
 }) {
-  const { handleSave, toggleAutoSave } = useAutoSave({ projectType, initialSave })
+  const { handleSave, toggleAutoSave } = useAutoSave({ projectType, initialSave, initialSavePath })
 
   return (
     <div className="app-shell d-flex flex-column">

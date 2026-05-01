@@ -7,6 +7,7 @@ const AUTO_SAVE_INTERVAL_MS = 5 * 60 * 1000 // 5 minutos
 interface UseAutoSaveOptions {
   projectType?: string
   initialSave?: any | null
+  initialSavePath?: string | null
 }
 
 export interface UseAutoSaveReturn {
@@ -17,16 +18,22 @@ export interface UseAutoSaveReturn {
   handleSave: () => Promise<void>
 }
 
-export function useAutoSave({ projectType = '2D', initialSave = null }: UseAutoSaveOptions = {}): UseAutoSaveReturn {
+export function useAutoSave({ projectType = '2D', initialSave = null, initialSavePath = null }: UseAutoSaveOptions = {}): UseAutoSaveReturn {
   const { worldConfig, backgroundPath, selectedEntity, entityTransformsRef, entityMetaRef, playerEntityIdRef, camera2dRef, loadedSpritesInfo } = useContextEngine()
   const [hasSavedOnce, setHasSavedOnce] = useState(false)
   const [autoSaveEnabled, setAutoSaveEnabled] = useState(false)
   const intervalRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const lastSavePath = useRef<string | null>(null)
+  const lastSavePath = useRef<string | null>(initialSavePath)
 
   useEffect(() => {
     if (initialSave) setHasSavedOnce(true)
   }, [initialSave])
+
+  useEffect(() => {
+    if (initialSavePath) {
+      lastSavePath.current = initialSavePath
+    }
+  }, [initialSavePath])
 
   const buildSaveData = useCallback(() => {
     if (!entityTransformsRef.current || !entityMetaRef.current) return null
@@ -99,7 +106,8 @@ export function useAutoSave({ projectType = '2D', initialSave = null }: UseAutoS
       intervalRef.current = setTimeout(async () => {
         const data = buildSaveData()
         if (data) {
-          await window.electronAPI.saveProjectSilent('autosave.json', data)
+          const targetPath = lastSavePath.current ?? 'autosave.save'
+          await window.electronAPI.saveProjectSilent(targetPath, data)
         }
       }, AUTO_SAVE_INTERVAL_MS)
     } else {
@@ -127,8 +135,9 @@ export function useAutoSave({ projectType = '2D', initialSave = null }: UseAutoS
       return
     }
 
-    const ok = await window.electronAPI.saveProject(data)
-    if (ok) {
+    const savedPath = await window.electronAPI.saveProject(data)
+    if (savedPath) {
+      lastSavePath.current = savedPath
       setHasSavedOnce(true)
     }
   }, [buildSaveData])

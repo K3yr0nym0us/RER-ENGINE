@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { ProjectSaveData, ProjectType } from '@shared-types';
+import type { OpenProjectResult, ProjectType } from '@shared-types';
 
 interface ProjectOption {
   type:        ProjectType
@@ -38,7 +38,7 @@ const separator = (
 
 interface Props {
   onSelect:      (type: ProjectType) => void
-  onLoadProject: (cfg: ProjectSaveData) => void
+  onLoadProject: (result: OpenProjectResult) => void
 }
 
 export function TypeProjectSelector({ onSelect, onLoadProject }: Props) {
@@ -46,13 +46,13 @@ export function TypeProjectSelector({ onSelect, onLoadProject }: Props) {
 
   const handleLoadProject = async () => {
     setLoadError(null)
-    const cfg = await window.electronAPI.openProjectDialog()
-    if (cfg === null) return
-    if (!cfg.type || !cfg.gameStyle) {
+    const result = await window.electronAPI.openProjectDialog()
+    if (result === null) return
+    if (!result.project.type || !result.project.gameStyle) {
       setLoadError('El archivo seleccionado no es un proyecto RER válido.')
       return
     }
-    onLoadProject(cfg)
+    onLoadProject(result)
   }
 
   const hoverOn = (color: string) => (e: React.MouseEvent<HTMLButtonElement>) => {
@@ -107,7 +107,7 @@ export function TypeProjectSelector({ onSelect, onLoadProject }: Props) {
               Proyecto existente
             </div>
             <div style={{ fontSize: 12, color: '#6b7280', lineHeight: 1.5 }}>
-              Carga un proyecto guardado anteriormente desde un archivo <em>project.json</em>.
+              Carga un proyecto guardado anteriormente desde un archivo <em>.save</em>.
             </div>
           </button>
           {loadError && (

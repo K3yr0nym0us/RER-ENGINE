@@ -16,6 +16,7 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
     scenarioEntities, 
     characterEntities,
     entityTransformsRef,
+    entityMetaRef,
     removeScenario,
     duplicateScenario,
     removeCharacter,
@@ -221,24 +222,20 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
 
       {canDuplicateOrRemove && (
         <div className="d-flex gap-2 mt-3 pt-2 border-top border-secondary">
-          <AppTooltip content="Duplicar entidad" place="top">
-            <button
-              className="btn btn-sm btn-outline-secondary flex-fill"
-              onClick={handleDuplicate}
-            >
-              <Files className="me-2" />
-              Duplicar
-            </button>
-          </AppTooltip>
-          <AppTooltip content="Eliminar entidad" place="top">
-            <button
-              className="btn btn-sm btn-outline-danger flex-fill"
-              onClick={handleRemove}
-            >
-              <Trash className="me-2" />
-              Eliminar
-            </button>
-          </AppTooltip>
+          <button
+            className="btn btn-sm btn-outline-secondary flex-fill"
+            onClick={handleDuplicate}
+          >
+            <Files className="me-2" />
+            Duplicar
+          </button>
+          <button
+            className="btn btn-sm btn-outline-danger flex-fill"
+            onClick={handleRemove}
+          >
+            <Trash className="me-2" />
+            Eliminar
+          </button>
         </div>
       )}
     </div>
