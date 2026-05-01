@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react';
 
 import { SpritePreviewLeftPanel } from './SpritePreviewLeftPanel';
 import { SpritePreviewCanvas } from './SpritePreviewCanvas';
@@ -23,7 +23,67 @@ interface SpritePreviewConfirmConfig {
   loop: boolean;
 }
 
-export function SpritePreviewModalBody({ 
+interface SpritePreviewState {
+  animationName: string;
+  validationError: string | null;
+  cellOffsetX: number;
+  cellOffsetY: number;
+  gridSize: number;
+  selectionMode: SelectionMode;
+  selectedCells: { x: number; y: number }[];
+  boxes: { x: number; y: number; width: number; height: number }[];
+  currentBox: { x: number; y: number; width: number; height: number };
+  fps: number;
+  isLooping: boolean;
+}
+
+type SpritePreviewAction =
+  | { type: 'patch'; payload: Partial<SpritePreviewState> }
+  | { type: 'toggle_cell'; payload: { x: number; y: number } }
+  | { type: 'append_current_box' }
+  | { type: 'remove_box'; payload: number }
+  | { type: 'pop_box' };
+
+const initialSpritePreviewState: SpritePreviewState = {
+  animationName: '',
+  validationError: null,
+  cellOffsetX: 0,
+  cellOffsetY: 0,
+  gridSize: 32,
+  selectionMode: 'cell',
+  selectedCells: [],
+  boxes: [],
+  currentBox: { x: 0, y: 0, width: 64, height: 64 },
+  fps: 12,
+  isLooping: false,
+};
+
+function spritePreviewReducer(state: SpritePreviewState, action: SpritePreviewAction): SpritePreviewState {
+  switch (action.type) {
+    case 'patch':
+      return { ...state, ...action.payload };
+    case 'toggle_cell': {
+      const { x, y } = action.payload;
+      const exists = state.selectedCells.some((cell) => cell.x === x && cell.y === y);
+      return {
+        ...state,
+        selectedCells: exists
+          ? state.selectedCells.filter((cell) => !(cell.x === x && cell.y === y))
+          : [...state.selectedCells, { x, y }],
+      };
+    }
+    case 'append_current_box':
+      return { ...state, boxes: [...state.boxes, { ...state.currentBox }] };
+    case 'remove_box':
+      return { ...state, boxes: state.boxes.filter((_, i) => i !== action.payload) };
+    case 'pop_box':
+      return { ...state, boxes: state.boxes.slice(0, -1) };
+    default:
+      return state;
+  }
+}
+
+export function SpritePreviewModalBody({
   src,
   onConfirm,
   onCancel,
@@ -31,7 +91,7 @@ export function SpritePreviewModalBody({
   initialFrames,
   initialFps,
   initialLoop,
-}: { 
+}: {
   src: string
   onConfirm?: (config: SpritePreviewConfirmConfig) => void
   onCancel?: () => void
@@ -41,24 +101,28 @@ export function SpritePreviewModalBody({
   initialLoop?: boolean
 }) {
   const { imageSrc, imageSize } = useSpritePreviewImage(src);
-  const [animationName, setAnimationName] = useState('');
-  const [validationError, setValidationError] = useState<string | null>(null);
-  const [cellOffsetX, setCellOffsetX] = useState(0);
-  const [cellOffsetY, setCellOffsetY] = useState(0);
-  const [gridSize, setGridSize] = useState(32);
-  const [selectionMode, setSelectionMode] = useState<SelectionMode>('cell');
-  const [selectedCells, setSelectedCells] = useState<{ x: number, y: number }[]>([]);
-  const [boxes, setBoxes] = useState<{ x: number, y: number, width: number, height: number }[]>([]);
-  const [currentBox, setCurrentBox] = useState({ x: 0, y: 0, width: 64, height: 64 });
-  const [fps, setFps] = useState(12);
-  const [isLooping, setIsLooping] = useState(false);
+  const [state, dispatch] = useReducer(spritePreviewReducer, initialSpritePreviewState);
   const initialLoadedRef = useRef(false);
+
+  const {
+    animationName,
+    validationError,
+    cellOffsetX,
+    cellOffsetY,
+    gridSize,
+    selectionMode,
+    selectedCells,
+    boxes,
+    currentBox,
+    fps,
+    isLooping,
+  } = state;
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
         e.preventDefault();
-        setBoxes(prev => prev.slice(0, -1));
+        dispatch({ type: 'pop_box' });
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -67,18 +131,18 @@ export function SpritePreviewModalBody({
 
   useEffect(() => {
     if (!initialAnimationName) return;
-    setAnimationName(initialAnimationName);
+    dispatch({ type: 'patch', payload: { animationName: initialAnimationName } });
   }, [initialAnimationName]);
 
   useEffect(() => {
     if (typeof initialFps === 'number') {
-      setFps(Math.max(1, Math.min(60, initialFps)));
+      dispatch({ type: 'patch', payload: { fps: Math.max(1, Math.min(60, initialFps)) } });
     }
   }, [initialFps]);
 
   useEffect(() => {
     if (typeof initialLoop === 'boolean') {
-      setIsLooping(initialLoop);
+      dispatch({ type: 'patch', payload: { isLooping: initialLoop } });
     }
   }, [initialLoop]);
 
@@ -102,8 +166,13 @@ export function SpritePreviewModalBody({
       height: frame.height * scale,
     }));
 
-    setSelectionMode('box');
-    setBoxes(initialBoxes);
+    dispatch({
+      type: 'patch',
+      payload: {
+        selectionMode: 'box',
+        boxes: initialBoxes,
+      },
+    });
     initialLoadedRef.current = true;
   }, [imageSize, imageSrc, initialFrames]);
 
@@ -115,7 +184,7 @@ export function SpritePreviewModalBody({
   }, [imageSrc, selectionMode, selectedCells, boxes]);
 
   const handleRemoveBox = useCallback((index: number) => {
-    setBoxes(prev => prev.filter((_, i) => i !== index));
+    dispatch({ type: 'remove_box', payload: index });
   }, []);
 
   const handleCanvasClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -123,17 +192,14 @@ export function SpritePreviewModalBody({
       const rect = e.currentTarget.getBoundingClientRect();
       const x = Math.floor((e.clientX - rect.left + cellOffsetX) / gridSize);
       const y = Math.floor((e.clientY - rect.top + cellOffsetY) / gridSize);
-
-      setSelectedCells(prev => {
-        const exists = prev.some(cell => cell.x === x && cell.y === y);
-        return exists
-          ? prev.filter(cell => !(cell.x === x && cell.y === y))
-          : [...prev, { x, y }];
-      });
-    } else if (selectionMode === 'box') {
-      setBoxes(prev => [...prev, { ...currentBox }]);
+      dispatch({ type: 'toggle_cell', payload: { x, y } });
+      return;
     }
-  }, [selectionMode, cellOffsetX, cellOffsetY, gridSize, currentBox]);
+
+    if (selectionMode === 'box') {
+      dispatch({ type: 'append_current_box' });
+    }
+  }, [selectionMode, cellOffsetX, cellOffsetY, gridSize]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     if (selectionMode !== 'box') return;
@@ -142,24 +208,23 @@ export function SpritePreviewModalBody({
     const mouseX = Math.floor(e.clientX - rect.left);
     const mouseY = Math.floor(e.clientY - rect.top);
 
-    setCurrentBox(b => {
-      const width = b.width;
-      const height = b.height;
-      let x = mouseX - width / 2;
-      let y = mouseY - height / 2;
-      x = Math.max(0, Math.min(x, CANVAS_SIZE - width));
-      y = Math.max(0, Math.min(y, CANVAS_SIZE - height));
-      return { ...b, x, y };
-    });
-  }, [selectionMode]);
+    const width = currentBox.width;
+    const height = currentBox.height;
+    let x = mouseX - width / 2;
+    let y = mouseY - height / 2;
+    x = Math.max(0, Math.min(x, CANVAS_SIZE - width));
+    y = Math.max(0, Math.min(y, CANVAS_SIZE - height));
+
+    dispatch({ type: 'patch', payload: { currentBox: { ...currentBox, x, y } } });
+  }, [selectionMode, currentBox]);
 
   const handleBoxChange = useCallback((box: { x: number; y: number; width: number; height: number }) => {
-    setCurrentBox(box);
+    dispatch({ type: 'patch', payload: { currentBox: box } });
   }, []);
 
   const handleAddBox = useCallback(() => {
-    setBoxes(prev => [...prev, { ...currentBox }]);
-  }, [currentBox]);
+    dispatch({ type: 'append_current_box' });
+  }, []);
 
   const selectedFrameCount = selectionMode === 'cell' ? selectedCells.length : boxes.length;
 
@@ -217,14 +282,15 @@ export function SpritePreviewModalBody({
   const handleConfirm = () => {
     const cleanName = animationName.trim();
     if (!cleanName) {
-      setValidationError('Debes escribir un nombre para la animacion.');
+      dispatch({ type: 'patch', payload: { validationError: 'Debes escribir un nombre para la animacion.' } });
       return;
     }
     if (normalizedFrames.length === 0) {
-      setValidationError('Debes seleccionar al menos 1 frame valido.');
+      dispatch({ type: 'patch', payload: { validationError: 'Debes seleccionar al menos 1 frame valido.' } });
       return;
     }
-    setValidationError(null);
+
+    dispatch({ type: 'patch', payload: { validationError: null } });
     onConfirm?.({
       animationName: cleanName,
       frames: normalizedFrames,
@@ -239,13 +305,13 @@ export function SpritePreviewModalBody({
         <div className="col-3">
           <SpritePreviewLeftPanel
             selectionMode={selectionMode}
-            setSelectionMode={setSelectionMode}
+            setSelectionMode={(mode) => dispatch({ type: 'patch', payload: { selectionMode: mode } })}
             gridSize={gridSize}
-            setGridSize={setGridSize}
+            setGridSize={(size) => dispatch({ type: 'patch', payload: { gridSize: size } })}
             cellOffsetX={cellOffsetX}
-            setCellOffsetX={setCellOffsetX}
+            setCellOffsetX={(offset) => dispatch({ type: 'patch', payload: { cellOffsetX: offset } })}
             cellOffsetY={cellOffsetY}
-            setCellOffsetY={setCellOffsetY}
+            setCellOffsetY={(offset) => dispatch({ type: 'patch', payload: { cellOffsetY: offset } })}
             CANVAS_SIZE={CANVAS_SIZE}
             onBoxChange={handleBoxChange}
             onAddBox={handleAddBox}
@@ -281,13 +347,18 @@ export function SpritePreviewModalBody({
             onRemoveBox={handleRemoveBox}
             animationName={animationName}
             onAnimationNameChange={(value: string) => {
-              setAnimationName(value);
-              if (validationError) setValidationError(null);
+              dispatch({
+                type: 'patch',
+                payload: {
+                  animationName: value,
+                  validationError: validationError ? null : validationError,
+                },
+              });
             }}
             fps={fps}
-            onFpsChange={setFps}
+            onFpsChange={(value) => dispatch({ type: 'patch', payload: { fps: value } })}
             isLooping={isLooping}
-            onLoopChange={setIsLooping}
+            onLoopChange={(value) => dispatch({ type: 'patch', payload: { isLooping: value } })}
           />
         </div>
       </div>
@@ -297,7 +368,7 @@ export function SpritePreviewModalBody({
           {validationError}
         </div>
       )}
-      
+
       {(onConfirm || onCancel) && (
         <div className="d-flex gap-2 justify-content-end mt-3 px-3">
           {onCancel && (
@@ -306,8 +377,8 @@ export function SpritePreviewModalBody({
             </button>
           )}
           {onConfirm && (
-            <button 
-              className="btn btn-primary btn-sm" 
+            <button
+              className="btn btn-primary btn-sm"
               onClick={handleConfirm}
               disabled={selectedFrameCount === 0 || !imageSrc}
             >
