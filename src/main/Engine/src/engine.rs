@@ -302,14 +302,21 @@ impl State {
 
     pub(crate) fn next_numbered_entity_name(&self, base: &str) -> String {
         let clean_base = base.trim();
-        let mut i: u32 = 1;
-        loop {
-            let candidate = format!("{}_{:02}", clean_base, i);
-            if !self.is_entity_name_taken(&candidate, None) {
-                return candidate;
+        let prefix = format!("{}_", clean_base);
+        let mut max_suffix: u32 = 0;
+
+        for (_id, c) in self.world.query::<NameComponent>() {
+            let current = c.name.trim();
+            if let Some(rest) = current.strip_prefix(&prefix) {
+                if let Ok(n) = rest.parse::<u32>() {
+                    if n > max_suffix {
+                        max_suffix = n;
+                    }
+                }
             }
-            i += 1;
         }
+
+        format!("{}_{:02}", clean_base, max_suffix.saturating_add(1))
     }
 
     /// `is_embed`: si es true, fuerza el backend GL/EGL en vez de Vulkan.
