@@ -267,6 +267,7 @@ export interface EngineInternalRefs {
 export interface EngineContextValue extends EngineState {
 	entityTransformsRef: MutableRefObject<Record<number, Transform>>
 	entityMetaRef: MutableRefObject<Record<number, EntityMeta>>
+	pendingRestoresRef: MutableRefObject<Map<string, PendingRestore[]>>
 	playerEntityIdRef: MutableRefObject<number | null>
 	camera2dRef: MutableRefObject<Camera2dState | null>
 	send: (cmd: object) => void
@@ -292,4 +293,5 @@ export interface EngineContextValue extends EngineState {
 	getSpritesList: () => void
 	loadCharacter: (path: string) => void
 	setPreviewPlaying: (playing: boolean) => void
+	setBackground: (path: string | null) => void
 }

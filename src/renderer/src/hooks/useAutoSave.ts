@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 
 import { useContextEngine } from '@engine'
+import { getSceneProjectState } from '../pages/EngineView/sceneStateStore'
 
 const AUTO_SAVE_INTERVAL_MS = 5 * 60 * 1000 // 5 minutos
 
@@ -45,7 +46,7 @@ export function useAutoSave({ projectType = '2D', initialSave = null, initialSav
     const DEFAULT_SCL: [number,number,number] = [1, 1, 1]
     const playerId = playerEntityIdRef.current
 
-    const allEntities = Object.entries(meta)
+    const buildCurrentSceneEntities = () => Object.entries(meta)
       .filter(([idStr, m]) =>
         !(m.kind === 'character' && m.path === '[Player]' && Number(idStr) === playerId)
       )
@@ -68,6 +69,8 @@ export function useAutoSave({ projectType = '2D', initialSave = null, initialSav
         }
       })
 
+    const allEntities = buildCurrentSceneEntities()
+
     const playerTransform = playerId !== null
       ? {
           position: transforms[playerId]?.position ?? DEFAULT_POS,
@@ -81,17 +84,53 @@ export function useAutoSave({ projectType = '2D', initialSave = null, initialSav
       path,
     }))
 
-    return {
-      version: 1,
-      type: projectType,
-      gameStyle: initialSave?.gameStyle ?? 'side-scroller',
+    const currentSceneSnapshot = {
+      id: 1,
+      name: 'Escena 1',
       world: worldConfig,
       backgroundPath: backgroundPath ?? null,
       entities: allEntities,
       playerTransform,
       camera2d: camera2dRef.current,
-      savedAt: new Date().toISOString(),
       sprites: spritesArray,
+    }
+
+    const sceneState = getSceneProjectState()
+    let scenes = [currentSceneSnapshot]
+    let activeSceneId = 1
+
+    if (sceneState && sceneState.scenes.length > 0) {
+      activeSceneId = sceneState.activeSceneId
+      scenes = sceneState.scenes.map((scene) => ({ ...scene }))
+      const activeIndex = scenes.findIndex((scene) => scene.id === activeSceneId)
+      if (activeIndex >= 0) {
+        scenes[activeIndex] = {
+          ...scenes[activeIndex],
+          world: worldConfig,
+          backgroundPath: backgroundPath ?? null,
+          entities: allEntities,
+          playerTransform,
+          camera2d: camera2dRef.current,
+          sprites: spritesArray,
+        }
+      }
+    }
+
+    const activeScene = scenes.find((scene) => scene.id === activeSceneId) ?? scenes[0]
+
+    return {
+      version: 1,
+      type: projectType,
+      gameStyle: initialSave?.gameStyle ?? 'side-scroller',
+      scenes,
+      activeSceneId,
+      world: activeScene?.world ?? worldConfig,
+      backgroundPath: activeScene?.backgroundPath ?? (backgroundPath ?? null),
+      entities: activeScene?.entities ?? allEntities,
+      playerTransform: activeScene?.playerTransform ?? playerTransform,
+      camera2d: activeScene?.camera2d ?? camera2dRef.current,
+      savedAt: new Date().toISOString(),
+      sprites: activeScene?.sprites ?? spritesArray,
     }
   }, [projectType, initialSave, worldConfig, backgroundPath, selectedEntity, playerEntityIdRef, entityTransformsRef, entityMetaRef, camera2dRef, loadedSpritesInfo])
 

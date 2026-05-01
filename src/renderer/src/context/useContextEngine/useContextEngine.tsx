@@ -94,6 +94,7 @@ export function EngineProvider({
 		...state,
 		entityTransformsRef: refs.entityTransformsRef,
 		entityMetaRef: refs.entityMetaRef,
+		pendingRestoresRef: refs.pendingRestoresRef,
 		playerEntityIdRef: refs.playerEntityIdRef,
 		camera2dRef: refs.camera2dRef,
 		send,
@@ -119,6 +120,7 @@ export function EngineProvider({
 		getSpritesList: actions.getSpritesList,
 		loadCharacter: actions.loadCharacter,
 		setPreviewPlaying: actions.setPreviewPlaying,
+		setBackground: actions.setBackground,
 	};
 
 	return (

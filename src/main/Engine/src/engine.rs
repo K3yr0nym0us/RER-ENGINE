@@ -1049,6 +1049,9 @@ impl State {
             EngineCommand::LoadBackground { path } => {
                 self.load_background(&path);
             }
+            EngineCommand::ClearBackground => {
+                self.clear_background();
+            }
             EngineCommand::SetPhysics { id, enabled, body_type } => {
                 let (pos, half) = if let Some(t) = self.world.get::<Transform>(id) {
                     // Forzar z=0 en la posición física: el Z del Transform es visual

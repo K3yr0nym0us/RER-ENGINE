@@ -338,6 +338,14 @@ impl State {
         log::info!("[load_background] fondo cargado {img_w}×{img_h} escala {world_w}×{world_h}: {path}");
     }
 
+    /// Elimina el fondo actual del mundo 2D, si existe.
+    pub(crate) fn clear_background(&mut self) {
+        if let Some(old_id) = self.background_entity.take() {
+            self.world.despawn(old_id);
+            log::info!("[clear_background] fondo eliminado");
+        }
+    }
+
     // ── Personaje PNG ─────────────────────────────────────────────────────────
 
     /// Carga una imagen PNG del disco y la registra como entidad ECS de personaje.

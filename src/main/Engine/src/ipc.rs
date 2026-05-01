@@ -54,6 +54,8 @@ pub enum EngineCommand {
     SetCharacterScale { id: u32, scale: f32 },
     /// Duplicar un personaje existente (crea una nueva entidad con el mismo PNG).
     DuplicateCharacter { id: u32 },
+        /// Limpiar el fondo del mundo 2D actual.
+        ClearBackground,
 /// Cambiar el sprite de una entidad (escenario o personaje) a un frame de animación.
     /// pivot_x/pivot_y: punto ancla en píxeles dentro del frame (0,0 = esquina superior-izq).
     /// logical_w/logical_h: bounding box lógico fijo de la animación (en píxeles).

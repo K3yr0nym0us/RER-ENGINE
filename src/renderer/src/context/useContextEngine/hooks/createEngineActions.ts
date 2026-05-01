@@ -210,6 +210,15 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 		send({ cmd: 'set_preview_playing', playing });
 	};
 
+	const setBackground = (path: string | null) => {
+		dispatch({ type: 'SET_BACKGROUND', payload: path });
+		if (path) {
+			send({ cmd: 'load_background', path });
+		} else {
+			send({ cmd: 'clear_background' });
+		}
+	};
+
 	return {
 		sendAsync,
 		setAnimationPlaying,
@@ -233,5 +242,6 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 		getSpritesList,
 		loadCharacter,
 		setPreviewPlaying,
+		setBackground,
 	};
 }

@@ -34,10 +34,11 @@ Electron actúa como shell: gestiona la ventana principal, la UI del editor y el
 |---|---|
 | `wgpu 22` | API gráfica multiplataforma (Vulkan/GL/Metal) |
 | `winit 0.30` | Gestión de ventanas y eventos de entrada |
-| `glam 0.29` | Matemáticas 3D (Vec3, Mat4, Quat) |
+| `glam 0.28` | Matemáticas 2D/3D (Vec, Mat, Quat) |
 | `gltf 1.x` | Carga de modelos `.glb` / `.gltf` |
 | `image 0.25` | Carga de texturas (PNG, JPEG, etc.) |
-| `rapier3d` | Motor de física (integrado, en desarrollo) |
+| `rapier3d` | Motor de física para modos 2D y 3D |
+| `mlua` | Scripting Lua 5.4 embebido en el motor |
 | `serde` / `serde_json` | Serialización del protocolo IPC |
 | `bytemuck` | Casting seguro de structs a bytes para wgpu |
 
@@ -58,23 +59,26 @@ Electron actúa como shell: gestiona la ventana principal, la UI del editor y el
 
 ### Motor Rust (`src/main/Engine/src/`)
 
-- **`engine.rs`** — Estado principal wgpu: pipelines, render loop, picking de entidades, uniforms
-- **`main.rs`** — Event loop winit, manejo de mouse/teclado, drag de gizmos
-- **`camera.rs`** — Cámara órbita con yaw/pitch/zoom controlados por ratón
-- **`ecs.rs`** — ECS propio: `EntityId`, `ComponentStorage<T>`, `World`, `Transform`, `MeshComponent`
-- **`gizmo.rs`** — Flechas 3D (eje caja + cabeza pirámide) para mover entidades
-- **`gizmo.wgsl`** — Shader de gizmos con tint por hover/active
-- **`shader.wgsl`** — Shader PBR: distribución GGX, Fresnel-Schlick, geometría Smith
-- **`ipc.rs`** — Protocolo JSON lines: `EngineCommand` (entrada) / `EngineEvent` (salida)
-- **`mesh.rs`** — Loader .glb y cubo por defecto, upload a buffers wgpu
-- **`physics.rs`** — `PhysicsWorld` con Rapier3D (estructura lista, sin step activo aún)
-- **`texture.rs`** — Carga de imágenes a `wgpu::Texture`, fallback blanco 1×1
+- **`engine.rs`** — Estado principal del motor: render loop, entidades, comandos IPC y sincronización editor/juego
+- **`main.rs`** — Event loop `winit`, embedding Linux/Windows, input de mouse/teclado y dispatch de comandos
+- **`CONFIG_2D/`** — Lógica 2D (cámara, grilla, herramientas, picking, física 2D)
+- **`CONFIG_3D/`** — Lógica 3D (cámara, mallas, picking, física 3D)
+- **`CONFIG_BASE/`** — Escena base y setup inicial compartido
+- **`CONFIG_SHARED/`** — Helpers y utilidades comunes entre modos
+- **`ecs.rs`** — ECS propio: `EntityId`, `World`, `Transform`, `MeshComponent`, etc.
+- **`gizmo.rs` + `gizmo.wgsl`** — Render y control de gizmos de transformación
+- **`shader.wgsl`** — Shader principal de render
+- **`ipc.rs`** — Protocolo JSON lines: `EngineCommand` (entrada) y `EngineEvent` (salida)
+- **`mesh.rs`** — Carga de mallas/modelos
+- **`texture.rs`** — Carga de texturas y fallback
+- **`scripting.rs`** — Runtime Lua (attach/detach scripts, tick y comandos de script)
 
 ### Editor React (`src/renderer/src/`)
 
-- **`App.tsx`** — Layout principal: sidebar con acordeón (Assets / Escena / Propiedades) + viewport + consola
-- **`SceneTree.tsx`** — Lista de entidades de la escena con selección activa
-- **`useEngine.ts`** — Hook que gestiona el ciclo de vida del IPC, estado del motor y entidades
+- **`App.tsx`** — Flujo de entrada: selector de tipo de proyecto, carga de `.save` y entrada al editor
+- **`pages/EngineView/`** — Vista principal del editor (sidebar, topbar, viewport y consola)
+- **`context/useContextEngine/`** — Estado global del motor en frontend (reducer + acciones + event handler)
+- **`hooks/`** — Hooks de UI/editor (autosave, herramientas de dibujo, sprites, scripting)
 
 ---
 
@@ -86,6 +90,8 @@ Electron actúa como shell: gestiona la ventana principal, la UI del editor y el
 { "cmd": "load_model", "path": "/ruta/modelo.glb" }
 { "cmd": "set_bounds", "x": 268, "y": 0, "width": 1012, "height": 680 }
 { "cmd": "set_transform", "id": 0, "position": [0,0,0], "rotation": [0,0,0,1], "scale": [1,1,1] }
+{ "cmd": "set_preview_playing", "playing": true }
+{ "cmd": "undo" }
 { "cmd": "shutdown" }
 ```
 
@@ -95,6 +101,7 @@ Electron actúa como shell: gestiona la ventana principal, la UI del editor y el
 { "event": "model_loaded", "id": 0 }
 { "event": "entity_selected", "id": 0, "name": "Cube", "position": [...], "rotation": [...], "scale": [...] }
 { "event": "entity_deselected" }
+{ "event": "collider_created", "id": 12, "points": [[...],[...],[...],[...]] }
 { "event": "error", "message": "..." }
 ```
 
@@ -136,14 +143,17 @@ yarn dist
 |---|---|
 | Motor Rust embebido en Electron | ✅ Completo |
 | Render wgpu (PBR, texturas, mallas) | ✅ Completo |
-| Cámara órbita interactiva | ✅ Completo |
+| Cámara interactiva (2D/3D) | ✅ Completo |
 | ECS (entidades, componentes) | ✅ Completo |
 | Carga de modelos .glb | ✅ Completo |
-| Gizmos 3D (mover por eje) | ✅ Completo |
-| UI con Bootstrap (acordeón) | ✅ Completo |
+| Gizmos y manipulación de entidades | ✅ Completo |
+| UI editor (sidebar/topbar/modales) | ✅ Completo |
 | IPC JSON lines | ✅ Completo |
-| Física Rapier3D | ✅ Completo (por entidad: dinámico / estático / cinemático) |
-| Scripting (Lua) | ⏳ Pendiente — recomendado Lua vía `mlua` |
+| Física Rapier (2D y 3D) | ✅ Completo (por entidad: dinámico / estático / cinemático) |
+| Herramientas 2D (grilla, colisionadores, drawing tool) | ✅ Completo |
+| Modo Play/Stop para prueba en editor | ✅ Completo |
+| Undo básico de editor | ✅ Implementado |
+| Scripting (Lua / mlua) | ✅ Implementado |
 | Soporte Linux Ubuntu | ✅ Probado en Ubuntu (X11 / WSL2 + WSLg) |
 | Soporte Windows | ✅ Probado en Windows 11 |
 

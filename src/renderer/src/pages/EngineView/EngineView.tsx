@@ -2,6 +2,7 @@ import { useRef } from 'react';
 
 import SideBarLeft from './components/SideBarLeft';
 import LogConsole from './components/LogConsole';
+import SceneTabsBar from './components/SceneTabsBar';
 import TopBarEngine from './components/TopBarEngine';
 
 import { EngineProvider } from '@engine';
@@ -32,6 +33,8 @@ function EngineViewInner({ projectType, initialSave, initialSavePath, viewportRe
 
   return (
     <div className="app-shell d-flex flex-column">
+      <SceneTabsBar initialSave={initialSave} projectType={projectType} />
+
       <div className="d-flex flex-grow-1 overflow-hidden">
 
         <SideBarLeft projectType={projectType} />

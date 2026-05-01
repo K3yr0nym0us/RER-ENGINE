@@ -52,8 +52,27 @@ export function createEngineEventHandler({
 			refs.pendingPlayerDups.current = [];
 			refs.pendingDupQ.current = [];
 			const sendEngine = window.engine.send;
-			const save = refs.initialSaveRef.current;
-			if (save) {
+			const baseSave = refs.initialSaveRef.current;
+			if (baseSave) {
+				const scenes = baseSave.scenes ?? [];
+				const activeScene = scenes.length > 0
+					? (scenes.find((scene) => scene.id === baseSave.activeSceneId) ?? scenes[0])
+					: null;
+
+				const save = activeScene
+					? {
+						...baseSave,
+						world: activeScene.world,
+						backgroundPath: activeScene.backgroundPath,
+						entities: activeScene.entities,
+						playerTransform: activeScene.playerTransform,
+						camera2d: activeScene.camera2d,
+						sprites: activeScene.sprites,
+					}
+					: baseSave;
+
+				refs.initialSaveRef.current = save;
+
 				if (save.world) {
 					dispatch({ type: 'SET_WORLD_CONFIG', payload: save.world });
 					sendEngine({ cmd: 'set_world_size', width: save.world.worldWidth, height: save.world.worldHeight } as never);

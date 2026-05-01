@@ -148,6 +148,104 @@ body {
   border: 1px solid #38bdf855;
 }
 
+/* ── Scene tabs bar ─────────────────────────────────────────────────────── */
+.scene-tabs-bar {
+  background: #090b18;
+  border-bottom: 1px solid #1f2440;
+  padding-top: 8px;
+  padding-bottom: 4px;
+}
+
+.scene-tabs-nav-wrap {
+  scrollbar-width: thin;
+}
+
+.scene-tabs-nav {
+  min-width: max-content;
+}
+
+.scene-nav-item {
+  position: relative;
+  flex: 0 0 auto;
+  width: 200px;
+  max-width: 200px;
+}
+
+.scene-nav-item--create {
+  width: 42px;
+  max-width: 42px;
+}
+
+.scene-nav-link {
+  width: 100%;
+  max-width: 100%;
+  min-height: 36px;
+  display: flex !important;
+  align-items: center;
+  padding-right: 8px !important;
+  overflow: hidden;
+  border-color: #2c3152 !important;
+}
+
+.scene-nav-link__name {
+  display: block;
+  font-size: 12px;
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scene-nav-actions {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.scene-nav-action {
+  width: 18px;
+  height: 18px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  color: inherit;
+  opacity: 0.75;
+}
+
+.scene-nav-action:hover,
+.scene-nav-action:focus {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.08);
+  outline: none;
+}
+
+.scene-nav-action--danger:hover,
+.scene-nav-action--danger:focus {
+  color: #ff9a9a;
+}
+
+.scene-nav-create {
+  width: 42px;
+  max-width: 42px;
+  min-width: 42px;
+  min-height: 36px;
+  font-size: 12px;
+  border: 1px solid #2c3152 !important;
+  color: #dde3f1 !important;
+  padding: 0 !important;
+}
+
+.scene-nav-create:hover,
+.scene-nav-create:focus {
+  background: rgba(174, 181, 199, 0.14) !important;
+  color: #ffffff !important;
+}
+
 /* ── Project selector card ───────────────────────────────────────────────── */
 .selector-card {
   width: 220px;

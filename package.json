@@ -3,6 +3,13 @@
   "version": "0.1.0",
   "description": "RER-ENGINE — React, Electron, Rust Engine",
   "main": "./out/main/index.js",
+  "license": "MIT",
+  "author": {
+    "name": "Kevin Martinez",
+    "email": "kevinmartinezbarra@gmail.com",
+    "url": "https://keyron.dev"
+  },
+  "contributors": [],
   "scripts": {
     "predev": "cargo build --manifest-path src/main/Engine/Cargo.toml",
     "dev": "electron-vite dev",
