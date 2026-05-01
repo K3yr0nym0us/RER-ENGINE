@@ -1,24 +1,23 @@
 import { PlusLg } from 'react-bootstrap-icons';
-import { CreateCharacterModalBody } from './CreateCharacterModalBody';
-import { Sprite } from '../../../SpritesAccordion/SpritesAccordion';
+import { CreateEntityFromSpriteModalBody } from '../../components/CreateEntityFromSpriteModalBody';
 
 import { useModal } from '../../../../../../../context/ModalContext';
+import { useContextEngine } from '../../../../../../../context/useContextEngine';
+import { useCreateEntityFromSpriteAnimation } from '../../../../../../../hooks/useCreateEntityFromSpriteAnimation';
 
-interface BtnCreateCharacterProps {
-  sprites: Sprite[];
-  openDialog: () => Promise<string | null>;
-}
-
-const BtnCreateCharacter = ({ sprites, openDialog }: BtnCreateCharacterProps) => {
+const BtnCreateCharacter = () => {
   const { openModal } = useModal();
+  const { sprites } = useContextEngine();
+  const createCharacterFromSprite = useCreateEntityFromSpriteAnimation('load_character');
 
   const handleClick = () => {
     openModal({
       title: 'Crear personaje',
-      body: <CreateCharacterModalBody 
+      body: <CreateEntityFromSpriteModalBody
         sprites={sprites} 
-        openDialog={openDialog} 
-      />
+        onCreateEntity={createCharacterFromSprite}
+        previewTitle="Configurar personaje"
+      />,
     });
   };
 

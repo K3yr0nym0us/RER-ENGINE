@@ -40,7 +40,7 @@ impl State {
                 self.entity_bind_groups.clear();
 
                 let count = gltf_meshes.len();
-                for (i, gm) in gltf_meshes.into_iter().enumerate() {
+                for gm in gltf_meshes {
                     let tex_bg = if let Some(tex_idx) = gm.tex_index {
                         if let Some(img_data) = images.get(tex_idx) {
                             let gpu_tex = GpuTexture::from_gltf_image(
@@ -57,15 +57,16 @@ impl State {
                             .create_bind_group(&self.device, &self.texture_bgl)
                     };
 
+                    let mesh_idx = self.meshes.len();
                     self.meshes.push(gm.mesh);
                     self.textures.push(tex_bg);
                     let (b, bg) = self.alloc_entity_uniform();
                     self.entity_buffers.push(b);
                     self.entity_bind_groups.push(bg);
 
-                    let label = format!("Mesh {i}");
+                    let label = self.next_numbered_entity_name("Mesh");
                     let id = self.world.spawn(Some(&label));
-                    self.world.insert(id, MeshComponent { mesh_idx: i });
+                    self.world.insert(id, MeshComponent { mesh_idx });
                     send_event(&EngineEvent::ModelLoaded { id });
                 }
                 log::info!("Modelo cargado: {path} ({count} malla/s)");

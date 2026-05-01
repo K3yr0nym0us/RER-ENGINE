@@ -2,9 +2,9 @@ import { Accordion } from 'react-bootstrap';
 
 import ScenariosAccordion, { EnvironmentsAccordion } from './EnvironmentsAccordion/EnvironmentsAccordion';
 import BtnCreateCharacter from './CharactersAccordion/components/BtnCreateCharacter';
-import CharactersAccordion from './CharactersAccordion/CharactersAccordion';
+import ObjectsAccordion from './ObjectsAccordion/ObjectsAccordion';
 
-export default function EntitiesAccordeon({ projectType, engineReady, loadModel, sprites }: any) {
+export default function EntitiesAccordeon({ projectType, engineReady, loadModel }: any) {
   return (
     <Accordion.Item eventKey="entities">
       <Accordion.Header>Entidades</Accordion.Header>
@@ -41,22 +41,15 @@ export default function EntitiesAccordeon({ projectType, engineReady, loadModel,
             <Accordion.Header>Personajes</Accordion.Header>
             <Accordion.Body className="py-2 px-2">
               {projectType === '2D' && (
-                <>
-                  <BtnCreateCharacter 
-                    sprites={sprites} 
-                    openDialog={() => window.electronAPI.openCharacterDialog()} 
-                  />
-                  <CharactersAccordion 
-                    config={{
-                      openDialog: () => window.electronAPI.openCharacterDialog(),
-                        loadCmd: 'load_character',
-                        dupCmd: 'duplicate_character',
-                        addBtnLabel: '+ Agregar personaje (PNG)',
-                        emptyText: 'Sin personajes cargados',
-                      }
-                    } 
-                  />
-                </>
+                <BtnCreateCharacter />
+              )}
+            </Accordion.Body>
+          </Accordion.Item>
+          <Accordion.Item eventKey="objetos">
+            <Accordion.Header>Objetos</Accordion.Header>
+            <Accordion.Body className="py-2 px-2">
+              {projectType === '2D' && (
+                <ObjectsAccordion />
               )}
             </Accordion.Body>
           </Accordion.Item>

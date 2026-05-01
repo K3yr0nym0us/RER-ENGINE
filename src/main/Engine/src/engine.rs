@@ -135,7 +135,7 @@ use crate::config_2d::ActiveTool;
 use crate::config_3d::Camera;
 use crate::config_2d::Camera2D;
 use crate::config_2d::PhysicsWorld2D;
-use crate::ecs::{MeshComponent, Transform, World};
+use crate::ecs::{MeshComponent, NameComponent, Transform, World};
 use crate::gizmo::{self, GizmoBuffer};
 use crate::ipc::{send_event, AnimationFrameData, AnimScriptData, EngineCommand, EngineEvent};
 use crate::mesh::{self, Mesh};
@@ -280,9 +280,38 @@ pub struct State {
     pub(crate) anim_origin_transforms: HashMap<u32, (GlamVec3, GlamVec3)>,
     /// Sistema de scripting Lua. Contiene la VM y los scripts adjuntos a entidades.
     pub(crate) script_engine: ScriptEngine,
+    /// Almacén de sprites cargados (PNGs) para reutilización en el editor.
+    /// No se renderizan directamente; actúan como biblioteca de imágenes.
+    pub(crate) sprite_store: HashMap<String, (String, u32, u32)>, // path → (name, width, height)
 }
 
 impl State {
+    pub(crate) fn is_entity_name_taken(&self, name: &str, except_id: Option<u32>) -> bool {
+        let target = name.trim().to_lowercase();
+        if target.is_empty() {
+            return false;
+        }
+
+        self.world.query::<NameComponent>().any(|(id, c)| {
+            if except_id == Some(id) {
+                return false;
+            }
+            c.name.trim().eq_ignore_ascii_case(&target)
+        })
+    }
+
+    pub(crate) fn next_numbered_entity_name(&self, base: &str) -> String {
+        let clean_base = base.trim();
+        let mut i: u32 = 1;
+        loop {
+            let candidate = format!("{}_{:02}", clean_base, i);
+            if !self.is_entity_name_taken(&candidate, None) {
+                return candidate;
+            }
+            i += 1;
+        }
+    }
+
     /// `is_embed`: si es true, fuerza el backend GL/EGL en vez de Vulkan.
     /// Vulkan (incluso llvmpipe) no soporta presentar en child X11 windows;
     /// EGL sí lo hace mediante software fallback.
@@ -674,6 +703,7 @@ impl State {
             anim_origin_transforms: HashMap::new(),
             script_engine: ScriptEngine::new()
                 .expect("Error al inicializar el motor de scripting Lua"),
+            sprite_store: HashMap::new(),
         }
     }
 
@@ -733,6 +763,17 @@ impl State {
                         transform.scale = Vec3::from(s);
                     }
                 }
+                // Si la entidad está mostrando frames animados, mantener sincronizada
+                // la base (orig_pos/orig_scale) para que el siguiente frame respete
+                // los cambios hechos desde el panel de Transformaciones.
+                if let Some(saved) = self.anim_saved_transforms.get_mut(&id) {
+                    if let Some(p) = position {
+                        saved.0 = Vec3::from(p);
+                    }
+                    if let Some(s) = scale {
+                        saved.1 = Vec3::from(s);
+                    }
+                }
                 // Sincronizar el Rapier body si la entidad tiene física activa.
                 // Sin esto, cuando el editor reposiciona una entidad via SetTransform
                 // (p.ej. al cargar el proyecto o antes de reproducir una animación),
@@ -742,6 +783,56 @@ impl State {
                     if self.camera_2d.is_some() {
                         self.physics_2d.teleport_entity(id, p[0], p[1]);
                     }
+                }
+            }
+            EngineCommand::SetEntityName { id, name } => {
+                let next_name = name.trim();
+                if next_name.is_empty() {
+                    send_event(&EngineEvent::Error { message: "El nombre no puede estar vacio".to_string() });
+                    return;
+                }
+
+                if self.is_entity_name_taken(next_name, Some(id)) {
+                    send_event(&EngineEvent::Error { message: format!("Ya existe una entidad con el nombre '{}'", next_name) });
+                    return;
+                }
+
+                if let Some(existing) = self.world.get_mut::<NameComponent>(id) {
+                    existing.name = next_name.to_string();
+                } else {
+                    self.world.insert(id, NameComponent { name: next_name.to_string() });
+                }
+
+                if self.selected_entity == Some(id) {
+                    let transform = self.world.get::<Transform>(id).cloned().unwrap_or_default();
+                    let position = transform.position.to_array();
+                    let rotation = [
+                        transform.rotation.x,
+                        transform.rotation.y,
+                        transform.rotation.z,
+                        transform.rotation.w,
+                    ];
+                    let scale = transform.scale.to_array();
+                    let physics_enabled = if self.camera_2d.is_some() {
+                        self.physics_2d.has_physics(id)
+                    } else {
+                        self.physics.has_physics(id)
+                    };
+                    let physics_type = if self.camera_2d.is_some() {
+                        self.physics_2d.get_body_type(id).to_string()
+                    } else {
+                        self.physics.get_body_type(id).to_string()
+                    };
+
+                    send_event(&EngineEvent::EntitySelected {
+                        id,
+                        name: next_name.to_string(),
+                        position,
+                        rotation,
+                        scale,
+                        physics_enabled,
+                        physics_type,
+                    });
                 }
             }
             EngineCommand::SetScene { scene } => {
@@ -777,12 +868,12 @@ impl State {
             EngineCommand::DuplicateCharacter { id } => {
                 self.duplicate_character(id);
             }
-            EngineCommand::PlayAnimationFrame { id, path, pivot_x, pivot_y, logical_w, logical_h } => {
+            EngineCommand::PlayAnimationFrame { id, path, pivot_x, pivot_y, logical_w, logical_h, src_x, src_y, src_w, src_h } => {
                 if self.pivot_edit_mode.is_some() {
                     // Ignorar: el modo edición de pivot tiene prioridad para no interferir con la textura/escala
                     return;
                 }
-                self.play_animation_frame(id, &path, pivot_x, pivot_y, logical_w, logical_h);
+                self.play_animation_frame(id, &path, pivot_x, pivot_y, logical_w, logical_h, src_x.zip(src_y).zip(src_w.zip(src_h)).map(|((x, y), (w, h))| (x, y, w, h)));
             }
             EngineCommand::RestoreAnimationFrame { id } => {
                 self.restore_animation_frame(id);
@@ -933,7 +1024,10 @@ impl State {
                 // Pre-cargar todos los frames de la animación en la caché GPU.
                 // El primer PlayAnimation ya no tendrá latencia de decode+upload.
                 for frame in &frames {
-                    self.preload_anim_frame(&frame.path);
+                    self.preload_anim_frame_with_rect(
+                        &frame.path,
+                        frame.src_x.zip(frame.src_y).zip(frame.src_w.zip(frame.src_h)).map(|((x, y), (w, h))| (x, y, w, h)),
+                    );
                 }
 
                 // Guardar animación en el almacén por entidad+nombre.
@@ -955,7 +1049,6 @@ EngineCommand::PlayAnimation { id, name } => {
                 log::info!("[IPC] PlayAnimation: entity_id={}, name='{}'", id, name);
                 // Detener animación previa (el Play de audio incluye clear interno)
                 self.active_animations.remove(&id);
-                self.restore_animation_frame(id);
 
                 let anim_opt = self.animations.get(&id)
                     .and_then(|m| m.get(&name))
@@ -971,7 +1064,15 @@ EngineCommand::PlayAnimation { id, name } => {
 
                         // Mostrar frame 0 (cache miss solo en el primer play)
                         if let Some(first_frame) = anim.frames.first() {
-                            self.play_animation_frame(id, &first_frame.path, first_frame.pivot_x, first_frame.pivot_y, anim.logical_w, anim.logical_h);
+                            self.play_animation_frame(
+                                id,
+                                &first_frame.path,
+                                first_frame.pivot_x,
+                                first_frame.pivot_y,
+                                anim.logical_w,
+                                anim.logical_h,
+                                first_frame.src_x.zip(first_frame.src_y).zip(first_frame.src_w.zip(first_frame.src_h)).map(|((x, y), (w, h))| (x, y, w, h)),
+                            );
                         }
 
                         // Iniciar audio desde PCM pre-decodificado (cero I/O, cero decode)
@@ -1005,8 +1106,12 @@ EngineCommand::PlayAnimation { id, name } => {
             }
             EngineCommand::StopAnimation { id } => {
                 log::info!("[IPC] StopAnimation: entity_id={}", id);
-                self.active_animations.remove(&id);
-                self.restore_animation_frame(id);
+                let stopped_animation_name = self.active_animations.remove(&id).map(|a| a.animation_name);
+                if let Some(name) = stopped_animation_name {
+                    self.show_first_frame_of_animation(id, &name);
+                } else {
+                    self.restore_animation_frame(id);
+                }
                 self.stop_audio_internal();
                 // Descargar scripts de la animación que estaba activa.
                 self.script_engine.detach_animation_scripts(id);
@@ -1025,6 +1130,54 @@ EngineCommand::PlayAnimation { id, name } => {
             EngineCommand::UnloadScript { id } => {
                 log::info!("[IPC] UnloadScript: entity_id={}", id);
                 self.script_engine.detach_entity(id);
+            }
+            EngineCommand::LoadSprite { path, name } => {
+                // Cargar PNG y almacenar sus dimensiones; no se crea entidad ECS.
+                match std::fs::read(&path) {
+                    Ok(bytes) => {
+                        use image::ImageReader;
+                        match ImageReader::new(std::io::Cursor::new(&bytes))
+                            .with_guessed_format()
+                            .map_err(|e| e.to_string())
+                            .and_then(|r| r.decode().map_err(|e| e.to_string()))
+                        {
+                            Ok(img) => {
+                                let img = img.to_rgba8();
+                                let (w, h) = img.dimensions();
+                                self.sprite_store.insert(path.clone(), (name.clone(), w, h));
+                                let path_for_log = path.clone();
+                                let name_for_log = name.clone();
+                                send_event(&EngineEvent::SpriteLoaded { path, name, width: w, height: h });
+                                log::info!("[sprite] cargado: {} ({}) ({}x{})", path_for_log, name_for_log, w, h);
+                            }
+                            Err(e) => {
+                                log::error!("[sprite] error decodificando {}: {}", path, e);
+                                send_event(&EngineEvent::Error { message: format!("Error al decodificar sprite: {e}") });
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        log::error!("[sprite] error leyendo {}: {}", path, e);
+                        send_event(&EngineEvent::Error { message: format!("No se pudo leer el sprite: {e}") });
+                    }
+                }
+            }
+            EngineCommand::RemoveSprite { path } => {
+                if self.sprite_store.remove(&path).is_some() {
+                    send_event(&EngineEvent::SpriteRemoved { path: path.clone() });
+                    log::info!("[sprite] eliminado: {}", path);
+                } else {
+                    log::warn!("[sprite] intento de eliminar sprite inexistente: {}", path);
+                }
+            }
+            EngineCommand::GetSpritesList => {
+                let sprites: Vec<crate::ipc::SpriteInfo> = self.sprite_store
+                    .iter()
+                    .map(|(path, &(ref name, w, h))| crate::ipc::SpriteInfo { path: path.clone(), name: name.clone(), width: w, height: h })
+                    .collect();
+                let count = sprites.len();
+                send_event(&EngineEvent::SpritesList { sprites });
+                log::info!("[sprite] lista enviada: {} sprites", count);
             }
             EngineCommand::Shutdown => {}
         }
@@ -1049,10 +1202,32 @@ EngineCommand::PlayAnimation { id, name } => {
         }
     }
 
+    fn show_first_frame_of_animation(&mut self, entity_id: u32, animation_name: &str) {
+        let frame_data = self.animations
+            .get(&entity_id)
+            .and_then(|m| m.get(animation_name))
+            .and_then(|anim| {
+                anim.frames.first().map(|first| {
+                    (
+                        first.path.clone(),
+                        first.pivot_x,
+                        first.pivot_y,
+                        anim.logical_w,
+                        anim.logical_h,
+                        first.src_x.zip(first.src_y).zip(first.src_w.zip(first.src_h)).map(|((x, y), (w, h))| (x, y, w, h)),
+                    )
+                })
+            });
+
+        if let Some((path, pivot_x, pivot_y, logical_w, logical_h, src_rect)) = frame_data {
+            self.play_animation_frame(entity_id, &path, pivot_x, pivot_y, logical_w, logical_h, src_rect);
+        }
+    }
+
     pub(crate) fn update_animations(&mut self) {
         let now = Instant::now();
         let mut to_play: Vec<(u32, usize)> = Vec::new();
-        let mut to_restore: Vec<u32> = Vec::new();
+        let mut to_restore: Vec<(u32, String)> = Vec::new();
 
         let entity_ids: Vec<u32> = self.active_animations.keys().copied().collect();
         for entity_id in entity_ids {
@@ -1102,7 +1277,7 @@ EngineCommand::PlayAnimation { id, name } => {
                     to_play.push((entity_id, active.current_frame));
                 } else {
                     active.finished = true;
-                    to_restore.push(entity_id);
+                    to_restore.push((entity_id, active.animation_name.clone()));
                 }
             } else {
                 active.current_frame = next_frame_idx;
@@ -1111,7 +1286,7 @@ EngineCommand::PlayAnimation { id, name } => {
         }
 
         for (entity_id, frame_idx) in to_play {
-            let (path, pivot_x, pivot_y, logical_w, logical_h) = {
+            let (path, pivot_x, pivot_y, logical_w, logical_h, src_rect) = {
                 let anim_name = self.active_animations.get(&entity_id)
                     .map(|a| a.animation_name.clone())
                     .unwrap_or_default();
@@ -1119,15 +1294,22 @@ EngineCommand::PlayAnimation { id, name } => {
                     .and_then(|m| m.get(&anim_name))
                     .unwrap();
                 let f = &anim.frames[frame_idx];
-                (f.path.clone(), f.pivot_x, f.pivot_y, anim.logical_w, anim.logical_h)
+                (
+                    f.path.clone(),
+                    f.pivot_x,
+                    f.pivot_y,
+                    anim.logical_w,
+                    anim.logical_h,
+                    f.src_x.zip(f.src_y).zip(f.src_w.zip(f.src_h)).map(|((x, y), (w, h))| (x, y, w, h)),
+                )
             };
-            self.play_animation_frame(entity_id, &path, pivot_x, pivot_y, logical_w, logical_h);
+            self.play_animation_frame(entity_id, &path, pivot_x, pivot_y, logical_w, logical_h, src_rect);
         }
 
-        for entity_id in to_restore {
+        for (entity_id, animation_name) in to_restore {
             // Desenganche de scripts de animación cuando una animación no-loop termina.
             self.script_engine.detach_animation_scripts(entity_id);
-            self.restore_animation_frame(entity_id);
+            self.show_first_frame_of_animation(entity_id, &animation_name);
             // El audio no-looping se agota solo cuando las muestras PCM terminan.
             // No enviamos Stop aquí para evitar que sobrescriba un Play ya encolado
             // si el usuario dispara la siguiente animación justo al terminar esta.
@@ -1213,6 +1395,11 @@ self.active_animations.retain(|_, a| !a.finished);
                     if let Some(t) = self.world.get_mut::<Transform>(id) {
                         t.scale.x = sx;
                         t.scale.y = sy;
+                    }
+                    // Mantener la escala base de animación en sync con scripts.
+                    if let Some(saved) = self.anim_saved_transforms.get_mut(&id) {
+                        saved.1.x = sx;
+                        saved.1.y = sy;
                     }
                 }
                 ScriptCmd::PlayAnimation { id, name } => {

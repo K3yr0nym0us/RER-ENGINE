@@ -38,7 +38,6 @@ export function SpritePreviewCanvas({
     ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
 
     const img = new window.Image();
-    img.src = src;
     img.onload = () => {
       const scale = Math.min(CANVAS_SIZE / img.width, CANVAS_SIZE / img.height);
       const drawWidth = img.width * scale;
@@ -93,6 +92,10 @@ export function SpritePreviewCanvas({
         ctx.setLineDash([]);
       }
     };
+    img.onerror = () => {
+      ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+    };
+    img.src = src;
   }, [src, gridSize, selectionMode, selectedCells, box, boxes, cellOffsetX, cellOffsetY, CANVAS_SIZE]);
 
   return (

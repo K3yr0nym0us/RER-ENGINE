@@ -6,47 +6,35 @@ import { useContextEngine } from '../../../../../../context/useContextEngine';
 import { useModal } from '../../../../../../context/ModalContext';
 import { useCreateEntityFromSpriteAnimation } from '../../../../../../hooks/useCreateEntityFromSpriteAnimation';
 
-export interface AssetGroupConfig {
-  openDialog:  () => Promise<string | null>
-  loadCmd:     string
-  dupCmd:      string
-  addBtnLabel: string
-  emptyText:   string
-}
-
-interface Props {
-  config: AssetGroupConfig
-}
-
-export function EnvironmentsAccordion({ config }: Props) {
+export function ObjectsAccordion() {
   const { 
     engineReady, 
     sprites,
   } = useContextEngine()
   const { openModal } = useModal()
-  const createEnvironmentFromSprite = useCreateEntityFromSpriteAnimation(config.loadCmd as 'load_scenario')
+  const createObjectFromSprite = useCreateEntityFromSpriteAnimation('load_scenario')
 
-  const handleCreateEnvironment = () => {
+  const handleCreateObject = () => {
     openModal({
-      title: 'Crear entorno',
+      title: 'Crear objeto',
       body: <CreateEntityFromSpriteModalBody
         sprites={sprites} 
-        onCreateEntity={createEnvironmentFromSprite}
-        previewTitle="Configurar entorno"
+        onCreateEntity={createObjectFromSprite}
+        previewTitle="Configurar objeto"
       />,
     });
   }
 
   return (
     <button
-      className="btn btn-outline-info btn-sm w-100 fw-bold mb-2"
+      className="btn btn-outline-warning btn-sm w-100 fw-bold mb-2"
       disabled={!engineReady}
-      onClick={handleCreateEnvironment}
+      onClick={handleCreateObject}
     >
       <PlusLg className="me-2" />
-      Crear entorno
+      Crear objeto
     </button>
   )
 }
 
-export default EnvironmentsAccordion;
+export default ObjectsAccordion;

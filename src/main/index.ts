@@ -301,6 +301,17 @@ ipcMain.handle('open-character-dialog', async () => {
   return result.canceled ? null : result.filePaths[0] ?? null
 })
 
+// Diálogo para abrir imagen PNG como sprite (solo almacenamiento en motor)
+ipcMain.handle('open-sprite-dialog', async () => {
+  if (!mainWindow) return null
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title:      'Cargar sprite (PNG)',
+    filters:    [{ name: 'Imágenes PNG', extensions: ['png'] }],
+    properties: ['openFile'],
+  })
+  return result.canceled ? null : result.filePaths[0] ?? null
+})
+
 // Diálogo para abrir imagen PNG/GIF como fondo del mundo 2D
 ipcMain.handle('open-background-dialog', async () => {
   if (!mainWindow) return null
@@ -310,6 +321,29 @@ ipcMain.handle('open-background-dialog', async () => {
     properties: ['openFile'],
   })
   return result.canceled ? null : result.filePaths[0] ?? null
+})
+
+// Convierte una imagen local a data URL para que el renderer no use file://
+ipcMain.handle('get-image-data-url', async (_event, filePath: string): Promise<string | null> => {
+  try {
+    if (!filePath || !path.isAbsolute(filePath) || !fs.existsSync(filePath)) return null
+
+    const ext = path.extname(filePath).toLowerCase()
+    const mimeByExt: Record<string, string> = {
+      '.png': 'image/png',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.webp': 'image/webp',
+      '.gif': 'image/gif',
+    }
+    const mime = mimeByExt[ext] ?? 'application/octet-stream'
+    const bytes = fs.readFileSync(filePath)
+    const base64 = bytes.toString('base64')
+    return `data:${mime};base64,${base64}`
+  } catch (error) {
+    console.error('[ipc] get-image-data-url error:', error)
+    return null
+  }
 })
 
 // Oculta el motor (para que no tape modales del renderer)
@@ -352,6 +386,12 @@ function collectAssetPaths(data: ProjectSaveData): Set<string> {
   }
 
   add(data.backgroundPath)
+  // Agregar sprites
+  if (data.sprites) {
+    for (const sprite of data.sprites) {
+      add(sprite.path)
+    }
+  }
   for (const entity of data.entities) {
     add(entity.path)
     for (const anim of entity.animations ?? []) {
@@ -409,6 +449,10 @@ function remapPaths(data: ProjectSaveData, map: Map<string, string>): ProjectSav
   return {
     ...data,
     backgroundPath: remap(data.backgroundPath) as string | null,
+    sprites: data.sprites?.map((s) => ({
+      name: s.name,
+      path: remap(s.path) as string,
+    })),
     entities: data.entities.map((e) => ({
       ...e,
       path: remap(e.path) as string,
@@ -462,6 +506,10 @@ function resolveLoadedPaths(data: ProjectSaveData, projectDir: string): ProjectS
   return {
     ...data,
     backgroundPath: resolve(data.backgroundPath) as string | null,
+    sprites: data.sprites?.map((s) => ({
+      name: s.name,
+      path: resolve(s.path) as string,
+    })),
     entities: data.entities.map((e) => ({
       ...e,
       path: resolve(e.path) as string,

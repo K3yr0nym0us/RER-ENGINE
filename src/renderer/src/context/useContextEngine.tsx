@@ -1,5 +1,5 @@
 import React, { useReducer, useRef, useEffect, createContext, useContext } from 'react';
-import type { EngineEvent, EntitySelected, ScenarioLoaded, CharacterLoaded, PlayerReady, Camera2dUpdated, ProjectSaveData, PivotSelected, AnimationFinished, PhysicsChanged } from '../../../shared-types/types';
+import type { EngineEvent, EntitySelected, ScenarioLoaded, CharacterLoaded, PlayerReady, Camera2dUpdated, ProjectSaveData, PivotSelected, AnimationFinished, PhysicsChanged, SpriteInfo, SpriteLoaded, SpriteRemoved, SpritesList } from '../../../shared-types/types';
 
 // Tipos y estado inicial (idénticos al hook original)
 export interface Entity {
@@ -50,6 +50,7 @@ const DEFAULT_WORLD_CONFIG: WorldConfig = {
 	gridVisible: true,
 	gridCellSize: 1,
 };
+
 interface EngineState {
 	engineReady: boolean
 	engineError: string | null
@@ -64,6 +65,8 @@ interface EngineState {
 	colliderEntities: ScenarioEntry[]
 	toolProgress: number | null
 	animationPlaying: Map<number, boolean>
+	sprites: SpriteInfo[]
+	loadedSpritesInfo: Map<string, { name: string }>
 }
 type EngineAction =
 	| { type: 'SET_READY' }
@@ -87,6 +90,12 @@ type EngineAction =
 	| { type: 'SET_TOOL_PROGRESS'; payload: number | null }
 	| { type: 'SET_ANIMATION_PLAYING'; payload: { entityId: number; playing: boolean } }
 	| { type: 'UPDATE_SELECTED_PHYSICS'; payload: { entityId: number; enabled: boolean; bodyType: string } }
+	| { type: 'ADD_SPRITE'; payload: SpriteInfo }
+	| { type: 'REMOVE_SPRITE'; payload: string }
+	| { type: 'SET_SPRITES'; payload: SpriteInfo[] }
+	| { type: 'ADD_SPRITE_INFO'; payload: { path: string; name: string } }
+	| { type: 'REMOVE_SPRITE_INFO'; payload: string }
+	| { type: 'SET_LOADED_SPRITES_INFO'; payload: Array<{ path: string; name: string }> }
 
 const initialState: EngineState = {
 	engineReady: false,
@@ -102,6 +111,8 @@ const initialState: EngineState = {
 	colliderEntities: [],
 	toolProgress: null,
 	animationPlaying: new Map(),
+	sprites: [],
+	loadedSpritesInfo: new Map(),
 }
 
 function engineReducer(state: EngineState, action: EngineAction): EngineState {
@@ -162,6 +173,35 @@ function engineReducer(state: EngineState, action: EngineAction): EngineState {
 				},
 			};
 		},
+		ADD_SPRITE: (state, action) => ({
+			...state,
+			sprites: [...state.sprites, action.payload],
+		}),
+		REMOVE_SPRITE: (state, action) => ({
+			...state,
+			sprites: state.sprites.filter((s) => s.path !== action.payload),
+		}),
+		SET_SPRITES: (state, action) => ({
+			...state,
+			sprites: action.payload,
+		}),
+		ADD_SPRITE_INFO: (state, action) => {
+			const newMap = new Map(state.loadedSpritesInfo);
+			newMap.set(action.payload.path, { name: action.payload.name });
+			return { ...state, loadedSpritesInfo: newMap };
+		},
+		REMOVE_SPRITE_INFO: (state, action) => {
+			const newMap = new Map(state.loadedSpritesInfo);
+			newMap.delete(action.payload);
+			return { ...state, loadedSpritesInfo: newMap };
+		},
+		SET_LOADED_SPRITES_INFO: (state, action) => {
+			const newMap = new Map<string, { name: string }>();
+			for (const item of action.payload) {
+				newMap.set(item.path, { name: item.name });
+			}
+			return { ...state, loadedSpritesInfo: newMap };
+		},
 	};
 	const handler = handlers[action.type as keyof typeof handlers];
 	return handler ? handler(state, action) : state;
@@ -191,6 +231,10 @@ interface EngineContextValue extends EngineState {
 	updateEntityScripts: (id: number, scripts: { name: string; source: string }[]) => void;
 	registerPivotEditListener: (fn: (framePath: string, px: number, py: number) => void) => void;
 	unregisterPivotEditListener: () => void;
+	loadSprite: (path: string, name: string) => void;
+	removeSprite: (path: string) => void;
+	getSpritesList: () => void;
+	loadCharacter: (path: string) => void;
 }
 
 const EngineContext = createContext<EngineContextValue | undefined>(undefined);
@@ -292,6 +336,35 @@ export function EngineProvider({
 		dispatch({ type: 'SET_ANIMATION_PLAYING', payload: { entityId, playing } });
 	};
 
+	const applyInitialAnimationFrame = (entityId: number, animations?: any[]) => {
+		if (!animations || animations.length === 0) return;
+
+		const firstAnim = animations[0];
+		const firstFrame = firstAnim?.frames?.[0];
+		if (!firstFrame?.path) return;
+
+		const fallbackW = firstAnim.logical_w ?? 64;
+		const fallbackH = firstAnim.logical_h ?? 64;
+		const pivotX = firstFrame.pivot_x ?? Math.round((firstFrame.src_w ?? fallbackW) / 2);
+		const pivotY = firstFrame.pivot_y ?? (firstFrame.src_h ?? fallbackH);
+
+		window.engine.send({
+			cmd: 'play_animation_frame',
+			id: entityId,
+			path: firstFrame.path,
+			pivot_x: pivotX,
+			pivot_y: pivotY,
+			logical_w: fallbackW,
+			logical_h: fallbackH,
+			src_x: firstFrame.src_x,
+			src_y: firstFrame.src_y,
+			src_w: firstFrame.src_w,
+			src_h: firstFrame.src_h,
+		} as never);
+
+		dispatch({ type: 'SET_ANIMATION_PLAYING', payload: { entityId, playing: false } });
+	};
+
 	const loadModel = (path: string) => {
 		dispatch({ type: 'CLEAR_ENTITIES' });
 		send({ cmd: 'load_model', path });
@@ -343,6 +416,12 @@ export function EngineProvider({
 		window.engine.on((event: EngineEvent) => {
 			addLog(JSON.stringify(event), event.event === 'error')
 
+			const pendingEvent = pendingEventsRef.current.get(event.event)
+			if (pendingEvent) {
+				pendingEvent.resolve(event)
+				pendingEventsRef.current.delete(event.event)
+			}
+
 			if (event.event === 'ready') {
 				dispatch({ type: 'SET_READY' })
 				if (readyTimer.current) clearTimeout(readyTimer.current)
@@ -364,6 +443,13 @@ export function EngineProvider({
 					if (save.camera2d) {
 						window.engine.send({ cmd: 'set_camera2d', x: save.camera2d.x, y: save.camera2d.y, half_h: save.camera2d.halfH } as never)
 						camera2dRef.current = save.camera2d
+					}
+					// Cargar sprites precargados
+					if (save.sprites && save.sprites.length > 0) {
+						for (const sprite of save.sprites) {
+							window.engine.send({ cmd: 'load_sprite', path: sprite.path, name: sprite.name } as never)
+							dispatch({ type: 'ADD_SPRITE_INFO', payload: { path: sprite.path, name: sprite.name } })
+						}
 					}
 					if (save.backgroundPath) {
 						window.engine.send({ cmd: 'load_background', path: save.backgroundPath } as never)
@@ -565,6 +651,8 @@ export function EngineProvider({
 									scripts:    anim.scripts ?? [],
 								} as never)
 							}
+							applyInitialAnimationFrame(e.id, pending.animations)
+							applyInitialAnimationFrame(e.id, pending.animations)
 						}
 						if (pending.scripts) {
 							entityMetaRef.current[e.id].scripts = pending.scripts
@@ -575,6 +663,18 @@ export function EngineProvider({
 						if (queue.length === 0) pendingRestoresRef.current.delete(e.path)
 					}
 				}
+			}
+			if (event.event === 'sprite_loaded') {
+				const e = event as unknown as SpriteLoaded;
+				dispatch({ type: 'ADD_SPRITE', payload: { path: e.path, name: e.name, width: e.width, height: e.height } });
+			}
+			if (event.event === 'sprite_removed') {
+				const e = event as unknown as SpriteRemoved;
+				dispatch({ type: 'REMOVE_SPRITE', payload: e.path });
+			}
+			if (event.event === 'sprites_list') {
+				const e = event as unknown as SpritesList;
+				dispatch({ type: 'SET_SPRITES', payload: e.sprites });
 			}
 			if (event.event === 'stopped') {
 				dispatch({ type: 'ENGINE_STOPPED', payload: (event as { code?: number }).code })
@@ -691,6 +791,20 @@ export function EngineProvider({
 	const unregisterPivotEditListener = () => {
 		pivotEditListenerRef.current = null;
 	};
+	const loadSprite = (path: string, name: string) => {
+		send({ cmd: 'load_sprite', path, name });
+		dispatch({ type: 'ADD_SPRITE_INFO', payload: { path, name } });
+	};
+	const removeSprite = (path: string) => {
+		send({ cmd: 'remove_sprite', path });
+		dispatch({ type: 'REMOVE_SPRITE_INFO', payload: path });
+	};
+	const getSpritesList = () => {
+		send({ cmd: 'get_sprites_list' });
+	};
+	const loadCharacter = (path: string) => {
+		send({ cmd: 'load_character', path });
+	};
 
 	const value: EngineContextValue = {
 		...state,
@@ -716,6 +830,10 @@ export function EngineProvider({
 		updateEntityScripts,
 		registerPivotEditListener,
 		unregisterPivotEditListener,
+		loadSprite,
+		removeSprite,
+		getSpritesList,
+		loadCharacter,
 	};
 
 	return (

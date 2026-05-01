@@ -33,6 +33,11 @@ pub enum EngineCommand {
         rotation: Option<[f32; 4]>,  // quaternion xyzw
         scale:    Option<[f32; 3]>,
     },
+    /// Cambiar el nombre de una entidad por id.
+    SetEntityName {
+        id:   u32,
+        name: String,
+    },
     /// Cambiar la escena activa. `scene` puede ser "2D", "3D", etc.
     SetScene { scene: String },
     /// Cargar una imagen PNG como escenario de fondo en la escena 2D.
@@ -57,6 +62,14 @@ pub enum EngineCommand {
         pivot_y:   f32,
         logical_w: u32,
         logical_h: u32,
+        #[serde(default)]
+        src_x:     Option<u32>,
+        #[serde(default)]
+        src_y:     Option<u32>,
+        #[serde(default)]
+        src_w:     Option<u32>,
+        #[serde(default)]
+        src_h:     Option<u32>,
     },
     /// Restaurar el sprite original de una entidad después de una animación.
     RestoreAnimationFrame { id: u32 },
@@ -118,6 +131,12 @@ pub enum EngineCommand {
     LoadScript { id: u32, path: String, source: String },
     /// Desadjuntar todos los scripts de una entidad (sin eliminar la entidad).
     UnloadScript { id: u32 },
+    /// Cargar una imagen PNG como sprite (solo almacenamiento, no se renderiza).
+    LoadSprite { path: String, name: String },
+    /// Eliminar un sprite del almacén del motor.
+    RemoveSprite { path: String },
+    /// Solicitar la lista de sprites cargados en el motor.
+    GetSpritesList,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -125,6 +144,14 @@ pub struct AnimationFrameData {
     pub path:      String,
     pub pivot_x:   f32,
     pub pivot_y:   f32,
+    #[serde(default)]
+    pub src_x:     Option<u32>,
+    #[serde(default)]
+    pub src_y:     Option<u32>,
+    #[serde(default)]
+    pub src_w:     Option<u32>,
+    #[serde(default)]
+    pub src_h:     Option<u32>,
 }
 
 /// Script Lua asociado a una animación. Se ejecuta solo mientras la animación está activa.
@@ -188,6 +215,21 @@ pub enum EngineEvent {
     AnimationFinished { entity_id: u32 },
     /// Emitido cuando el estado de física de una entidad cambia (activado/desactivado por script).
     PhysicsChanged { entity_id: u32, enabled: bool, body_type: String },
+    /// Emitido cuando un sprite PNG se cargó correctamente en el almacén.
+    SpriteLoaded { path: String, name: String, width: u32, height: u32 },
+    /// Emitido cuando se eliminó un sprite del almacén.
+    SpriteRemoved { path: String },
+    /// Emitido como respuesta a GetSpritesList: lista de sprites disponibles.
+    SpritesList { sprites: Vec<SpriteInfo> },
+}
+
+/// Información básica de un sprite almacenado en el motor.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SpriteInfo {
+    pub path:   String,
+    pub name:   String,
+    pub width:  u32,
+    pub height: u32,
 }
 
 /// Escribe un evento JSON en stdout y lo flushea inmediatamente.

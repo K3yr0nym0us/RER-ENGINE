@@ -198,7 +198,8 @@ impl State {
         self.entity_buffers.push(buf);
         self.entity_bind_groups.push(bg);
 
-        let sc_id = self.world.spawn(Some("Escenario"));
+        let scenario_name = self.next_numbered_entity_name("Escenario");
+        let sc_id = self.world.spawn(Some(&scenario_name));
         self.world.insert(sc_id, MeshComponent { mesh_idx });
         self.world.insert(sc_id, Transform {
             position: GlamVec3::new(0.0, 0.0, -1.0),
@@ -286,7 +287,8 @@ impl State {
         self.entity_buffers.push(buf);
         self.entity_bind_groups.push(bg);
 
-        let bg_id = self.world.spawn(Some("Background"));
+        let background_name = self.next_numbered_entity_name("Background");
+        let bg_id = self.world.spawn(Some(&background_name));
         self.world.insert(bg_id, MeshComponent { mesh_idx });
         self.world.insert(bg_id, Transform {
             position: GlamVec3::new(0.0, 0.0, -10.0),
@@ -346,7 +348,8 @@ impl State {
         self.entity_buffers.push(buf);
         self.entity_bind_groups.push(bg);
 
-        let ch_id = self.world.spawn(Some("Personaje"));
+        let character_name = self.next_numbered_entity_name("Personaje");
+        let ch_id = self.world.spawn(Some(&character_name));
         self.world.insert(ch_id, MeshComponent { mesh_idx });
         self.world.insert(ch_id, Transform {
             position: GlamVec3::new(0.0, 0.0, 0.0),
@@ -398,7 +401,8 @@ impl State {
             let (buf, bg) = self.alloc_entity_uniform();
             self.entity_buffers.push(buf);
             self.entity_bind_groups.push(bg);
-            let new_id = self.world.spawn(Some("Player"));
+            let player_name = self.next_numbered_entity_name("Player");
+            let new_id = self.world.spawn(Some(&player_name));
             self.world.insert(new_id, MeshComponent { mesh_idx });
             self.world.insert(new_id, Transform {
                 position: GlamVec3::new(offset.x, offset.y, 0.0),
@@ -437,6 +441,7 @@ impl State {
         pivot_y: f32,
         logical_w: u32,
         logical_h: u32,
+        src_rect: Option<(u32, u32, u32, u32)>,
     ) {
         // Verificar que la entidad existe y obtener su tipo
         let is_scenario  = self.scenario_entities.contains(&id);
@@ -449,8 +454,14 @@ impl State {
         // Obtener (o crear) el bind group + dimensiones desde la caché.
         // Solo en el primer uso de cada ruta se hace disk I/O + decode + upload a GPU.
         // Las llamadas siguientes son un simple lookup de HashMap → sin trabajo de GPU.
+        let cache_key = if let Some((sx, sy, sw, sh)) = src_rect {
+            format!("{path}#{sx}:{sy}:{sw}:{sh}")
+        } else {
+            path.to_string()
+        };
+
         let (arc_bg, img_width, img_height) =
-            if let Some((cached_bg, w, h)) = self.anim_texture_cache.get(path) {
+            if let Some((cached_bg, w, h)) = self.anim_texture_cache.get(&cache_key) {
                 (std::sync::Arc::clone(cached_bg), *w, *h)
             } else {
                 // Cache miss: cargar, decodificar y subir a GPU UNA sola vez
@@ -476,11 +487,29 @@ impl State {
                         return;
                     }
                 };
-                let (w, h) = img.dimensions();
-                let gpu_tex = GpuTexture::from_rgba(&self.device, &self.queue, &img, w, h, "anim-frame");
+                let processed = if let Some((sx, sy, sw, sh)) = src_rect {
+                    let (sheet_w, sheet_h) = img.dimensions();
+                    if sx >= sheet_w || sy >= sheet_h {
+                        log::error!("[play_animation_frame] recorte fuera de rango para {path}: x={sx} y={sy} sheet={sheet_w}x{sheet_h}");
+                        send_event(&EngineEvent::Error { message: "Recorte de frame fuera del sprite sheet".to_string() });
+                        return;
+                    }
+
+                    let max_w = sheet_w.saturating_sub(sx);
+                    let max_h = sheet_h.saturating_sub(sy);
+                    let crop_w = sw.min(max_w).max(1);
+                    let crop_h = sh.min(max_h).max(1);
+
+                    image::imageops::crop_imm(&img, sx, sy, crop_w, crop_h).to_image()
+                } else {
+                    img
+                };
+
+                let (w, h) = processed.dimensions();
+                let gpu_tex = GpuTexture::from_rgba(&self.device, &self.queue, &processed, w, h, "anim-frame");
                 let bg = std::sync::Arc::new(gpu_tex.create_bind_group(&self.device, &self.texture_bgl));
-                self.anim_texture_cache.insert(path.to_string(), (std::sync::Arc::clone(&bg), w, h));
-                log::info!("[play_animation_frame] frame cargado a GPU (caché miss): {path}");
+                self.anim_texture_cache.insert(cache_key, (std::sync::Arc::clone(&bg), w, h));
+                log::info!("[play_animation_frame] frame cargado a GPU (cache miss): {path}");
                 (bg, w, h)
             };
 
@@ -527,7 +556,17 @@ impl State {
     /// Llamar desde `SetAnimation` para que el primer `PlayAnimation` no tenga
     /// latencia de decode+upload a GPU (cache miss).
     pub(crate) fn preload_anim_frame(&mut self, path: &str) {
-        if self.anim_texture_cache.contains_key(path) {
+        self.preload_anim_frame_with_rect(path, None);
+    }
+
+    pub(crate) fn preload_anim_frame_with_rect(&mut self, path: &str, src_rect: Option<(u32, u32, u32, u32)>) {
+        let cache_key = if let Some((sx, sy, sw, sh)) = src_rect {
+            format!("{path}#{sx}:{sy}:{sw}:{sh}")
+        } else {
+            path.to_string()
+        };
+
+        if self.anim_texture_cache.contains_key(&cache_key) {
             return; // ya cacheado
         }
         let bytes = match fs::read(path) {
@@ -544,10 +583,25 @@ impl State {
             Ok(i) => i.to_rgba8(),
             Err(e) => { log::warn!("[preload] error decodificando {path}: {e}"); return; }
         };
-        let (w, h) = img.dimensions();
-        let gpu_tex = crate::texture::GpuTexture::from_rgba(&self.device, &self.queue, &img, w, h, "anim-frame");
+        let processed = if let Some((sx, sy, sw, sh)) = src_rect {
+            let (sheet_w, sheet_h) = img.dimensions();
+            if sx >= sheet_w || sy >= sheet_h {
+                log::warn!("[preload] recorte fuera de rango para {path}: x={sx} y={sy} sheet={sheet_w}x{sheet_h}");
+                return;
+            }
+            let max_w = sheet_w.saturating_sub(sx);
+            let max_h = sheet_h.saturating_sub(sy);
+            let crop_w = sw.min(max_w).max(1);
+            let crop_h = sh.min(max_h).max(1);
+            image::imageops::crop_imm(&img, sx, sy, crop_w, crop_h).to_image()
+        } else {
+            img
+        };
+
+        let (w, h) = processed.dimensions();
+        let gpu_tex = crate::texture::GpuTexture::from_rgba(&self.device, &self.queue, &processed, w, h, "anim-frame");
         let bg = std::sync::Arc::new(gpu_tex.create_bind_group(&self.device, &self.texture_bgl));
-        self.anim_texture_cache.insert(path.to_string(), (bg, w, h));
+        self.anim_texture_cache.insert(cache_key, (bg, w, h));
         log::info!("[preload] frame pre-cargado a GPU: {path}");
     }
 
@@ -997,7 +1051,8 @@ impl State {
     /// Crea una entidad ECS de colisionador a partir de 4 puntos en espacio de mundo.
     pub(crate) fn create_collision_box_from_points(&mut self, pts: &[[f32; 2]; 4]) {
         // Crea la entidad visual (quad + textura cyan) sin física.
-        let (entity, pos, scale) = self.create_box_entity(pts, "Colisionador", [60, 220, 200, 110]);
+        let collider_name = self.next_numbered_entity_name("Colisionador");
+        let (entity, pos, scale) = self.create_box_entity(pts, &collider_name, [60, 220, 200, 110]);
 
         // Marca la entidad como colisionador y añade física estática.
         self.world.insert(entity, ColliderMarker {});

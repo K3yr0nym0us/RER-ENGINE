@@ -46,6 +46,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openCharacterDialog: (): Promise<string | null> => {
     return ipcRenderer.invoke('open-character-dialog')
   },
+  openSpriteDialog: (): Promise<string | null> => {
+    return ipcRenderer.invoke('open-sprite-dialog')
+  },
+  getImageDataUrl: (filePath: string): Promise<string | null> => {
+    return ipcRenderer.invoke('get-image-data-url', filePath)
+  },
   openBackgroundDialog: (): Promise<string | null> => {
     return ipcRenderer.invoke('open-background-dialog')
   },

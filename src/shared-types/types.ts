@@ -32,6 +32,8 @@ export interface SavedEntity {
   animations?:      SavedAnimation[]
   /** Scripts Lua adjuntos a esta entidad. */
   scripts?:         SavedScript[]
+  /** Nombre del sprite precargado si esta entidad lo usa. */
+  spriteName?:      string
 }
 
 export interface SavedAnimation {
@@ -48,6 +50,11 @@ export interface SavedAnimation {
     /** Punto ancla en píxeles dentro del frame (esquina superior-izq = 0,0). */
     pivot_x: number
     pivot_y: number
+    /** Coordenadas opcionales dentro del sprite sheet (si el frame viene de un atlas). */
+    src_x?:  number
+    src_y?:  number
+    src_w?:  number
+    src_h?:  number
   }[]
   /** Scripts Lua asociados a esta animación. */
   scripts?: SavedScript[]
@@ -77,15 +84,17 @@ export interface ProjectSaveData {
   playerTransform: { position: [number, number, number]; scale: [number, number, number] } | null
   camera2d:        { x: number; y: number; halfH: number } | null
   savedAt:         string   // ISO timestamp
+  /** Sprites precargados en el proyecto (nombre -> ruta relativa). */
+  sprites?:        Array<{ name: string; path: string }>
 }
 
 export interface EngineCommand {
-  cmd: 'ping' | 'shutdown' | 'set_clear_color' | 'resize' | 'set_bounds' | 'load_model' | 'set_transform' | 'set_scene' | 'load_scenario' | 'set_scenario_scale' | 'duplicate_scenario' | 'load_character' | 'set_character_scale' | 'duplicate_character' | 'remove_entity' | 'set_world_size' | 'set_grid_visible' | 'set_grid_cell_size' | 'set_ctrl_held' | 'set_physics' | 'set_active_tool' | 'create_collider_from_points' | 'play_animation_frame' | 'restore_animation_frame' | 'set_pivot_edit_mode' | 'cancel_pivot_edit_mode' | 'set_logical_area_mode' | 'cancel_logical_area_mode' | 'play_audio' | 'stop_audio' | 'set_animation' | 'play_animation' | 'stop_animation' | 'load_script' | 'unload_script'
+  cmd: 'ping' | 'shutdown' | 'set_clear_color' | 'resize' | 'set_bounds' | 'load_model' | 'set_transform' | 'set_entity_name' | 'set_scene' | 'load_scenario' | 'set_scenario_scale' | 'duplicate_scenario' | 'load_character' | 'set_character_scale' | 'duplicate_character' | 'remove_entity' | 'set_world_size' | 'set_grid_visible' | 'set_grid_cell_size' | 'set_ctrl_held' | 'set_physics' | 'set_active_tool' | 'create_collider_from_points' | 'play_animation_frame' | 'restore_animation_frame' | 'set_pivot_edit_mode' | 'cancel_pivot_edit_mode' | 'set_logical_area_mode' | 'cancel_logical_area_mode' | 'play_audio' | 'stop_audio' | 'set_animation' | 'play_animation' | 'stop_animation' | 'load_script' | 'unload_script' | 'load_sprite' | 'remove_sprite' | 'get_sprites_list'
   [key: string]: unknown
 }
 
 export interface EngineEvent {
-  event: 'ready' | 'pong' | 'error' | 'model_loaded' | 'stopped' | 'entity_selected' | 'entity_deselected' | 'entity_hovered' | 'entity_unhovered' | 'scenario_loaded' | 'character_loaded' | 'player_ready' | 'camera_2d_updated' | 'background_loaded' | 'drawing_progress' | 'collider_created' | 'tool_cancelled' | 'pivot_selected' | 'physics_changed'
+  event: 'ready' | 'pong' | 'error' | 'model_loaded' | 'stopped' | 'entity_selected' | 'entity_deselected' | 'entity_hovered' | 'entity_unhovered' | 'scenario_loaded' | 'character_loaded' | 'player_ready' | 'camera_2d_updated' | 'background_loaded' | 'drawing_progress' | 'collider_created' | 'tool_cancelled' | 'pivot_selected' | 'physics_changed' | 'sprite_loaded' | 'sprite_removed' | 'sprites_list'
   [key: string]: unknown
 }
 
@@ -159,6 +168,30 @@ export interface PivotSelected {
   pivot_y:    number
 }
 
+export interface SpriteLoaded {
+  event:  'sprite_loaded'
+  path:   string
+  width:  number
+  height: number
+}
+
+export interface SpriteRemoved {
+  event:  'sprite_removed'
+  path:  string
+}
+
+export interface SpritesList {
+  event:  'sprites_list'
+  sprites: SpriteInfo[]
+}
+
+export interface SpriteInfo {
+  path:   string
+  name:   string
+  width:  number
+  height: number
+}
+
 export interface ViewportBounds {
   x:      number
   y:      number
@@ -182,6 +215,7 @@ declare global {
       saveProjectSilent:       (filePath: string, data: ProjectSaveData) => Promise<boolean>
       openScenarioDialog:      () => Promise<string | null>
       openCharacterDialog:     () => Promise<string | null>
+      getImageDataUrl:         (filePath: string) => Promise<string | null>
       openBackgroundDialog:    () => Promise<string | null>
       openAudioDialog:         () => Promise<string | null>
       onRequestViewportBounds: (cb: () => void) => void

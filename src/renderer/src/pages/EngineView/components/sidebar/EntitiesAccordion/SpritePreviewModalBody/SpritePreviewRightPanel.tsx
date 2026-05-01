@@ -12,6 +12,12 @@ interface SpritePreviewRightPanelProps {
   cellOffsetX: number;
   cellOffsetY: number;
   onRemoveBox?: (index: number) => void;
+  animationName: string;
+  onAnimationNameChange: (value: string) => void;
+  fps: number;
+  onFpsChange: (value: number) => void;
+  isLooping: boolean;
+  onLoopChange: (value: boolean) => void;
 }
 
 const CANVAS_SIZE = 500;
@@ -24,12 +30,16 @@ export function SpritePreviewRightPanel({
   gridSize,
   cellOffsetX,
   cellOffsetY,
-  onRemoveBox
+  onRemoveBox,
+  animationName,
+  onAnimationNameChange,
+  fps,
+  onFpsChange,
+  isLooping,
+  onLoopChange,
 }: SpritePreviewRightPanelProps) {
   const [selectedFrameIndex, setSelectedFrameIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [isLooping, setIsLooping] = useState(false);
-  const [fps, setFps] = useState(12);
   const animIntervalRef = useRef<number | null>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -89,7 +99,6 @@ export function SpritePreviewRightPanel({
     if (!ctx) return;
 
     const img = new window.Image();
-    img.src = src;
     img.onload = () => {
       const scale = Math.min(CANVAS_SIZE / img.width, CANVAS_SIZE / img.height);
       const drawWidth = img.width * scale;
@@ -108,6 +117,10 @@ export function SpritePreviewRightPanel({
       ctx.clearRect(0, 0, size, size);
       ctx.drawImage(img, origX, origY, origW, origH, 0, 0, size, size);
     };
+    img.onerror = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    };
+    img.src = src;
   }, [currentFrame, src]);
 
   const handlePlayStop = () => {
@@ -121,7 +134,7 @@ export function SpritePreviewRightPanel({
   };
 
   return (
-    <div className="bg-dark text-light border border-secondary rounded p-3 h-100" style={{ minWidth: 220 }}>
+    <div className="bg-dark text-light border border-secondary rounded p-3 h-100 d-flex flex-column" style={{ minWidth: 220 }}>
       <h5 className="text-light text-center mb-3">Previsualización</h5>
       <hr className="border-secondary mb-3" />
 
@@ -153,7 +166,7 @@ export function SpritePreviewRightPanel({
                 type="checkbox"
                 id="loop-check"
                 checked={isLooping}
-                onChange={e => setIsLooping(e.target.checked)}
+                onChange={e => onLoopChange(e.target.checked)}
               />
               <label className="form-check-label d-flex align-items-center" htmlFor="loop-check">
                 Loop
@@ -179,7 +192,7 @@ export function SpritePreviewRightPanel({
                 min={1}
                 max={60}
                 value={fps}
-                onChange={e => setFps(Number(e.target.value))}
+                onChange={e => onFpsChange(Math.max(1, Math.min(60, Number(e.target.value) || 1)))}
               />
             </div>
           </div>
@@ -219,6 +232,18 @@ export function SpritePreviewRightPanel({
               ))}
             </ul>
           </nav>
+        </div>
+      )}
+
+      {hasFrames && (
+        <div className="mt-auto pt-2 border-top border-secondary">
+          <label className="text-light fw-bold d-block mb-1">Nombre de la animacion</label>
+          <input
+            className="form-control form-control-sm bg-dark text-light border-secondary"
+            placeholder="Ej: run, idle, attack"
+            value={animationName}
+            onChange={(e) => onAnimationNameChange(e.target.value)}
+          />
         </div>
       )}
     </div>
