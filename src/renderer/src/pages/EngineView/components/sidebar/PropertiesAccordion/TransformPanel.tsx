@@ -2,6 +2,8 @@ import { useEffect, useState, useCallback, ReactNode } from 'react';
 
 import { Lock, Unlock } from 'react-bootstrap-icons';
 
+import AppTooltip from '../../../../../components/AppTooltip';
+
 interface Transform {
   pos: [string, string, string]
   rot: [string, string, string, string]
@@ -114,13 +116,14 @@ export function TransformPanel({ entity, is2D, onSend }: Props) {
   }
 
   const lockBtn = is2D ? (
-    <button
-      className={`btn btn-sm ${lockProportions ? 'btn-info' : 'btn-outline-secondary'}`}
-      title={lockProportions ? 'Proporciones bloqueadas' : 'Mantener proporciones'}
-      onClick={() => setLockProportions((v) => !v)}
-    >
-      {lockProportions ? <Lock size={13} /> : <Unlock size={13} />}
-    </button>
+    <AppTooltip content={lockProportions ? 'Proporciones bloqueadas' : 'Mantener proporciones'} place="top">
+      <button
+        className={`btn btn-sm ${lockProportions ? 'btn-info' : 'btn-outline-secondary'}`}
+        onClick={() => setLockProportions((v) => !v)}
+      >
+        {lockProportions ? <Lock size={13} /> : <Unlock size={13} />}
+      </button>
+    </AppTooltip>
   ) : undefined
 
   return (

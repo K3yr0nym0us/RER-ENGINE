@@ -19,6 +19,8 @@ export interface ProjectConfig {
 
 export interface SavedEntity {
   id:               number
+  /** Nombre visible de la entidad en el editor. */
+  name?:            string
   path:             string
   kind:             'model' | 'scenario' | 'character' | 'collider'
   position:         [number, number, number]

@@ -22,7 +22,9 @@ pub enum EngineCommand {
         /// contenido de Electron. Calculado en el renderer como `rect * devicePixelRatio`,
         /// sin la conversión DPI de getContentBounds() que puede ser inexacta en monitores
         /// secundarios. El position-tracker Win32 lo usa como offset directo.
+        #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
         #[serde(default)] offset_x: Option<i32>,
+        #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
         #[serde(default)] offset_y: Option<i32>,
     },
     LoadModel { path: String },

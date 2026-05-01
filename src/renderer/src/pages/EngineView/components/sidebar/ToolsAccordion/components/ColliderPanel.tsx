@@ -1,5 +1,6 @@
 import { Trash } from 'react-bootstrap-icons';
 
+import AppTooltip from '../../../../../../components/AppTooltip';
 import type { ScenarioEntry } from '@engine';
 
 export interface ColliderPanelConfig {
@@ -26,21 +27,23 @@ export function ColliderPanel({ entries, onRemove, config, highlightId }: Props)
             return (
               <li key={id} className="mb-1">
                 <div className="d-flex align-items-center gap-1">
-                  <div
-                    className="btn btn-sm flex-fill text-start text-truncate"
-                    style={isHighlighted 
-                      ? { background: '#1e2a4a', borderRadius: '4px 0 0 4px', outline: '1px solid #38bdf855', color: '#7dd3fc', fontWeight: 700 }
-                      : { background: 'var(--bs-dark)', border: '1px solid var(--bs-secondary)', borderRadius: '4px 0 0 4px', color: 'var(--bs-light)' }
-                    }
-                    title={`Colisionador #${id}`}
-                  >
-                    {isHighlighted ? '▶ ' : ''}#{id}
-                  </div>
-                  <button
-                    className="btn btn-sm btn-outline-danger py-1"
-                    title="Eliminar colisionador"
-                    onClick={() => onRemove(id)}
-                  ><Trash /></button>
+                  <AppTooltip content={`Colisionador #${id}`} place="top">
+                    <div
+                      className="btn btn-sm flex-fill text-start text-truncate"
+                      style={isHighlighted 
+                        ? { background: '#1e2a4a', borderRadius: '4px 0 0 4px', outline: '1px solid #38bdf855', color: '#7dd3fc', fontWeight: 700 }
+                        : { background: 'var(--bs-dark)', border: '1px solid var(--bs-secondary)', borderRadius: '4px 0 0 4px', color: 'var(--bs-light)' }
+                      }
+                    >
+                      {isHighlighted ? '▶ ' : ''}#{id}
+                    </div>
+                  </AppTooltip>
+                  <AppTooltip content="Eliminar colisionador" place="top">
+                    <button
+                      className="btn btn-sm btn-outline-danger py-1"
+                      onClick={() => onRemove(id)}
+                    ><Trash /></button>
+                  </AppTooltip>
                 </div>
               </li>
             )

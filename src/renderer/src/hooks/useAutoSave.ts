@@ -18,7 +18,7 @@ export interface UseAutoSaveReturn {
 }
 
 export function useAutoSave({ projectType = '2D', initialSave = null }: UseAutoSaveOptions = {}): UseAutoSaveReturn {
-  const { worldConfig, backgroundPath, entityTransformsRef, entityMetaRef, playerEntityIdRef, camera2dRef, loadedSpritesInfo } = useContextEngine()
+  const { worldConfig, backgroundPath, selectedEntity, entityTransformsRef, entityMetaRef, playerEntityIdRef, camera2dRef, loadedSpritesInfo } = useContextEngine()
   const [hasSavedOnce, setHasSavedOnce] = useState(false)
   const [autoSaveEnabled, setAutoSaveEnabled] = useState(false)
   const intervalRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -44,8 +44,10 @@ export function useAutoSave({ projectType = '2D', initialSave = null }: UseAutoS
       )
       .map(([idStr, m]) => {
         const id = Number(idStr)
+        const selectedName = selectedEntity?.id === id ? selectedEntity.name : undefined
         return {
           id,
+          name: selectedName ?? m.name,
           kind: m.kind,
           path: m.path,
           position: transforms[id]?.position ?? DEFAULT_POS,
@@ -84,7 +86,7 @@ export function useAutoSave({ projectType = '2D', initialSave = null }: UseAutoS
       savedAt: new Date().toISOString(),
       sprites: spritesArray,
     }
-  }, [projectType, initialSave, worldConfig, backgroundPath, playerEntityIdRef, entityTransformsRef, entityMetaRef, camera2dRef, loadedSpritesInfo])
+  }, [projectType, initialSave, worldConfig, backgroundPath, selectedEntity, playerEntityIdRef, entityTransformsRef, entityMetaRef, camera2dRef, loadedSpritesInfo])
 
   useEffect(() => {
     if (!hasSavedOnce && autoSaveEnabled) {

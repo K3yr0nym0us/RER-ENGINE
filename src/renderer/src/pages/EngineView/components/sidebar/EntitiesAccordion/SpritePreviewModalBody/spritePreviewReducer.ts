@@ -7,6 +7,8 @@ export interface SpriteFrameRect {
   y: number;
   width: number;
   height: number;
+  pivot_x?: number;
+  pivot_y?: number;
 }
 
 export interface SpritePreviewConfirmConfig {

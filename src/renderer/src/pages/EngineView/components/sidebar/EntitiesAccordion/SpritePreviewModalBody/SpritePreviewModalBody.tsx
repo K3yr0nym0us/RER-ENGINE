@@ -1,4 +1,4 @@
-import { useMemo, useReducer } from 'react';
+import { useMemo, useReducer, useState, useEffect, useRef } from 'react';
 
 import { SpritePreviewLeftPanel } from './SpritePreviewLeftPanel';
 import { SpritePreviewCanvas } from './SpritePreviewCanvas';
@@ -44,6 +44,10 @@ export function SpritePreviewModalBody({
 }) {
   const { imageSrc, imageSize } = useSpritePreviewImage(src);
   const [state, dispatch] = useReducer(spritePreviewReducer, initialSpritePreviewState);
+  const [defaultPivotNormalized] = useState<{ x: number; y: number }>({ x: 0.5, y: 0.5 });
+  const selectedPreviewFrameIndexRef = useRef(0);
+  const [pivotByFrameIndex, setPivotByFrameIndex] = useState<Record<number, { x: number; y: number }>>({});
+  const initialPivotsLoadedRef = useRef(false);
 
   const {
     animationName,
@@ -77,7 +81,14 @@ export function SpritePreviewModalBody({
   }, [imageSrc, selectionMode, selectedCells, boxes]);
 
   const { handleCanvasClick, handleMouseMove, handleBoxChange, handleAddBox, handleRemoveBox } =
-    useCanvasHandlers({ selectionMode, cellOffsetX, cellOffsetY, gridSize, currentBox, dispatch });
+    useCanvasHandlers({
+      selectionMode,
+      cellOffsetX,
+      cellOffsetY,
+      gridSize,
+      currentBox,
+      dispatch,
+    });
 
   const selectedFrameCount = selectionMode === 'cell' ? selectedCells.length : boxes.length;
 
@@ -92,6 +103,37 @@ export function SpritePreviewModalBody({
     cellOffsetY,
   });
 
+  useEffect(() => {
+    if (selectedPreviewFrameIndexRef.current < normalizedFrames.length) return;
+    selectedPreviewFrameIndexRef.current = Math.max(0, normalizedFrames.length - 1);
+  }, [normalizedFrames.length]);
+
+  useEffect(() => {
+    if (initialPivotsLoadedRef.current) return;
+    if (!initialFrames || initialFrames.length === 0) return;
+
+    const pivots: Record<number, { x: number; y: number }> = {};
+    for (let i = 0; i < initialFrames.length; i += 1) {
+      const frame = initialFrames[i];
+      if (
+        typeof frame.pivot_x !== 'number'
+        || typeof frame.pivot_y !== 'number'
+        || frame.width <= 0
+        || frame.height <= 0
+      ) {
+        continue;
+      }
+
+      pivots[i] = {
+        x: Math.max(0, Math.min(1, frame.pivot_x / frame.width)),
+        y: Math.max(0, Math.min(1, frame.pivot_y / frame.height)),
+      };
+    }
+
+    setPivotByFrameIndex(pivots);
+    initialPivotsLoadedRef.current = true;
+  }, [initialFrames]);
+
   const handleConfirm = () => {
     const cleanName = animationName.trim();
     if (!cleanName) {
@@ -104,9 +146,18 @@ export function SpritePreviewModalBody({
     }
 
     dispatch({ type: 'patch', payload: { validationError: null } });
+    const framesWithPivot = normalizedFrames.map((frame, index) => {
+      const pivotNormalized = pivotByFrameIndex[index] ?? defaultPivotNormalized;
+      return {
+      ...frame,
+      pivot_x: Math.max(0, Math.min(frame.width, Math.round(frame.width * pivotNormalized.x))),
+      pivot_y: Math.max(0, Math.min(frame.height, Math.round(frame.height * pivotNormalized.y))),
+      };
+    });
+
     onConfirm?.({
       animationName: cleanName,
-      frames: normalizedFrames,
+      frames: framesWithPivot,
       fps,
       loop: isLooping,
     });
@@ -172,6 +223,16 @@ export function SpritePreviewModalBody({
             onFpsChange={(value) => dispatch({ type: 'patch', payload: { fps: value } })}
             isLooping={isLooping}
             onLoopChange={(value) => dispatch({ type: 'patch', payload: { isLooping: value } })}
+            onSelectedFrameChange={(index) => {
+              selectedPreviewFrameIndexRef.current = index;
+            }}
+            pivotsByFrameIndex={pivotByFrameIndex}
+            onPivotChange={(index, pivot) => {
+              setPivotByFrameIndex((prev) => ({
+                ...prev,
+                [index]: pivot,
+              }));
+            }}
           />
         </div>
       </div>

@@ -84,6 +84,7 @@ export function createEngineEventHandler({
 					} else {
 						const pendingRestore: PendingRestore = {
 							transform,
+							name: entity.name,
 							physicsEnabled: entity.physics_enabled ?? false,
 							physicsType: entity.physics_type ?? 'static',
 							animations: entity.animations,
@@ -109,6 +110,7 @@ export function createEngineEventHandler({
 			const selected = event as EntitySelected;
 			refs.entityTransformsRef.current[selected.id] = { position: selected.position, rotation: selected.rotation, scale: selected.scale };
 			if (refs.entityMetaRef.current[selected.id]) {
+				refs.entityMetaRef.current[selected.id].name = selected.name;
 				refs.entityMetaRef.current[selected.id].physicsEnabled = selected.physics_enabled ?? false;
 				refs.entityMetaRef.current[selected.id].physicsType = selected.physics_type ?? '';
 			}
@@ -193,6 +195,10 @@ export function createEngineEventHandler({
 			const queue = refs.pendingRestoresRef.current.get(scenario.path);
 			if (queue && queue.length > 0) {
 				const pending = queue.shift()!;
+				if (pending.name && pending.name.trim().length > 0) {
+					refs.entityMetaRef.current[scenario.id].name = pending.name;
+					window.engine.send({ cmd: 'set_entity_name', id: scenario.id, name: pending.name } as never);
+				}
 				window.engine.send({ cmd: 'set_transform', id: scenario.id, position: pending.transform.position, rotation: pending.transform.rotation, scale: pending.transform.scale } as never);
 				refs.entityTransformsRef.current[scenario.id] = pending.transform;
 				if (pending.physicsEnabled) {
@@ -256,6 +262,10 @@ export function createEngineEventHandler({
 				const queue = refs.pendingRestoresRef.current.get(character.path);
 				if (queue && queue.length > 0) {
 					const pending = queue.shift()!;
+					if (pending.name && pending.name.trim().length > 0) {
+						refs.entityMetaRef.current[character.id].name = pending.name;
+						window.engine.send({ cmd: 'set_entity_name', id: character.id, name: pending.name } as never);
+					}
 					window.engine.send({ cmd: 'set_transform', id: character.id, position: pending.transform.position, rotation: pending.transform.rotation, scale: pending.transform.scale } as never);
 					refs.entityTransformsRef.current[character.id] = pending.transform;
 					if (pending.physicsEnabled) {

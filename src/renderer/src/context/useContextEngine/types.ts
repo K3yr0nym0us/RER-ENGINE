@@ -219,6 +219,7 @@ export type EntityScripts = NonNullable<SelectedEntity['scripts']>;
 export interface EntityMeta {
 	kind: 'scenario' | 'character' | 'model' | 'collider'
 	path: string
+	name?: string
 	physicsEnabled: boolean
 	physicsType: string
 	points?: ColliderPoints
@@ -228,6 +229,7 @@ export interface EntityMeta {
 
 export interface PendingRestore {
 	transform: Transform
+	name?: string
 	physicsEnabled: boolean
 	physicsType: string
 	animations?: any[]

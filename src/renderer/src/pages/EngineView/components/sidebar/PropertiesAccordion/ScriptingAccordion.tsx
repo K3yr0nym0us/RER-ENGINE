@@ -1,6 +1,7 @@
 import { Accordion } from 'react-bootstrap';
 import { FileEarmarkCode, Pencil, Plus, Trash } from 'react-bootstrap-icons';
 
+import AppTooltip from '../../../../../components/AppTooltip';
 import type { ScriptEntry } from '../../../hooks/useScripting';
 
 interface ScriptingAccordionProps {
@@ -36,26 +37,27 @@ export function ScriptingAccordion({ scripts, onNew, onEdit, onRemove }: Scripti
             className="d-flex align-items-center gap-2 mb-1 p-2 rounded border border-secondary bg-dark"
           >
             <FileEarmarkCode size={14} className="text-warning flex-shrink-0" />
-            <span
-              className="text-light small text-truncate flex-fill"
-              title={s.source.slice(0, 160)}
-            >
-              {s.name}
-            </span>
-            <button
-              className="btn btn-sm btn-outline-primary p-1 lh-1"
-              title="Editar script"
-              onClick={() => onEdit(s.name)}
-            >
-              <Pencil size={12} />
-            </button>
-            <button
-              className="btn btn-sm btn-outline-danger p-1 lh-1"
-              title="Quitar script"
-              onClick={() => onRemove(s.name)}
-            >
-              <Trash size={12} />
-            </button>
+            <AppTooltip content={s.source.slice(0, 160)} place="top">
+              <span className="text-light small text-truncate flex-fill">
+                {s.name}
+              </span>
+            </AppTooltip>
+            <AppTooltip content="Editar script" place="top">
+              <button
+                className="btn btn-sm btn-outline-primary p-1 lh-1"
+                onClick={() => onEdit(s.name)}
+              >
+                <Pencil size={12} />
+              </button>
+            </AppTooltip>
+            <AppTooltip content="Quitar script" place="top">
+              <button
+                className="btn btn-sm btn-outline-danger p-1 lh-1"
+                onClick={() => onRemove(s.name)}
+              >
+                <Trash size={12} />
+              </button>
+            </AppTooltip>
           </div>
         ))}
 

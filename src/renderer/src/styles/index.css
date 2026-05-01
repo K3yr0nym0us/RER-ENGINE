@@ -219,6 +219,11 @@ body {
   border-radius: 8px;
 }
 
+.app-tooltip--compact {
+  max-width: 220px;
+  font-size: 0.82rem;
+}
+
 /* ── Properties panel ───────────────────────────────────────────────────── */
 .prop-label {
   display: block;

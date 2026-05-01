@@ -96,9 +96,6 @@ fn start_position_tracker(engine_hwnd: isize, parent_hwnd: isize, offset: Tracke
         .expect("No se pudo crear el hilo position-tracker");
 }
 
-#[cfg(not(target_os = "windows"))]
-fn start_position_tracker(_e: isize, _p: isize, _o: std::sync::Arc<(std::sync::atomic::AtomicI32, std::sync::atomic::AtomicI32)>) {}
-
 // ---------------------------------------------------------------------------
 // Consulta de estado de teclado vía X11 (sin depender del foco de ventana)
 // ---------------------------------------------------------------------------
@@ -174,9 +171,11 @@ struct App {
     ctrl_held:       bool,                // Ctrl izquierdo o derecho presionado
     // Frame rate cap: tiempo objetivo del próximo frame (evita busy loop)
     next_frame_at:   std::time::Instant,
+    #[cfg(target_os = "windows")]
     // Windows: offset compartido con el hilo position-tracker.
     // Actualizado en SetBounds para sincronizar maximize/monitor-change.
     tracker_offset:     std::sync::Arc<(std::sync::atomic::AtomicI32, std::sync::atomic::AtomicI32)>,
+    #[cfg(target_os = "windows")]
     tracker_parent_hwnd: isize,
 }
 
@@ -569,10 +568,12 @@ fn main() {
         gizmo_drag_axis:     None,
         ctrl_held:           false,
         next_frame_at:       std::time::Instant::now(),
+        #[cfg(target_os = "windows")]
         tracker_offset:      std::sync::Arc::new((
             std::sync::atomic::AtomicI32::new(0),
             std::sync::atomic::AtomicI32::new(0),
         )),
+        #[cfg(target_os = "windows")]
         tracker_parent_hwnd: 0,
     };
     event_loop.run_app(&mut app).expect("Error en el event loop");

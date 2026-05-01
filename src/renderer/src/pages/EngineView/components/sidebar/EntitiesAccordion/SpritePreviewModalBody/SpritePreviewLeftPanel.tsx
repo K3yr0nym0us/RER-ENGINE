@@ -29,7 +29,7 @@ export function SpritePreviewLeftPanel({
   setCellOffsetY,
   CANVAS_SIZE,
   onBoxChange,
-  onAddBox
+  onAddBox,
 }: SpritePreviewLeftPanelProps) {
   const [box, setBox] = useState(DEFAULT_BOX);
   const [keepAspect, setKeepAspect] = useState(true);
@@ -246,6 +246,7 @@ export function SpritePreviewLeftPanel({
           </button>
         </div>
       )}
+
     </div>
   );
 }

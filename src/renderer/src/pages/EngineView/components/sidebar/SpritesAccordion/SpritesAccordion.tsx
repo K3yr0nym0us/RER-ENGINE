@@ -1,6 +1,7 @@
 import { Accordion } from 'react-bootstrap';
 import { Image, Trash } from 'react-bootstrap-icons';
 
+import AppTooltip from '../../../../../components/AppTooltip';
 import { useContextEngine } from '@engine';
 import { BtnLoadSprite } from './components/BtnLoadSprite';
 import { useModal } from '@modal';
@@ -61,13 +62,14 @@ const SpritesAccordion = () => {
                   {sprite.name}
                 </div>
                 <div>
-                  <button 
-                    className="btn btn-sm text-danger"
-                    title="Eliminar Sprite"
-                    onClick={() => handleDeleteSprite(sprite)}
-                  >
-                    <Trash />
-                  </button>
+                  <AppTooltip content="Eliminar Sprite" place="top">
+                    <button 
+                      className="btn btn-sm text-danger"
+                      onClick={() => handleDeleteSprite(sprite)}
+                    >
+                      <Trash />
+                    </button>
+                  </AppTooltip>
                 </div>
               </span>
             </li>

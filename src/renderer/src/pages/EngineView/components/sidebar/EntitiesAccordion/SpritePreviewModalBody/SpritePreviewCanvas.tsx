@@ -25,7 +25,7 @@ export function SpritePreviewCanvas({
   cellOffsetY,
   onCanvasClick,
   onMouseMove,
-  CANVAS_SIZE
+  CANVAS_SIZE,
 }: SpritePreviewCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -91,6 +91,7 @@ export function SpritePreviewCanvas({
         ctx.strokeRect(box.x, box.y, box.width, box.height);
         ctx.setLineDash([]);
       }
+
     };
     img.onerror = () => {
       ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);

@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 
 import { Accordion } from 'react-bootstrap';
-import { Check2Square, Files, Trash } from 'react-bootstrap-icons';
+import { Check2Square, Files, Pencil, Trash } from 'react-bootstrap-icons';
 
+import AppTooltip from '../../../../../components/AppTooltip';
 import { TransformPanel, AnimationsPanel, ScriptingPanel } from '.';
 
 import { useContextEngine } from '@engine';
@@ -23,6 +24,7 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
 
   const { openModal, closeModal } = useModal();
   const [entityNameDraft, setEntityNameDraft] = useState('');
+  const [isEditingEntityName, setIsEditingEntityName] = useState(false);
 
   // Intercepta set_transform para mantener entityTransformsRef sincronizado
   // sin depender del evento entity_selected (que solo llega cuando el usuario clica la entidad).
@@ -41,6 +43,7 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
 
   useEffect(() => {
     setEntityNameDraft(selectedEntity?.name ?? '');
+    setIsEditingEntityName(false);
   }, [selectedEntity?.id, selectedEntity?.name]);
 
   // Derivar directamente desde el contexto para que sea reactivo a cambios
@@ -99,7 +102,8 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
 
   const canDuplicateOrRemove = isScenario || isCharacter
   const trimmedEntityName = entityNameDraft.trim();
-  const canRename = !!selectedEntity && trimmedEntityName.length > 0 && trimmedEntityName !== selectedEntity.name;
+  const hasValidEntityName = trimmedEntityName.length > 0;
+  const canRename = !!selectedEntity && hasValidEntityName && trimmedEntityName !== selectedEntity.name;
 
   return (
     <div>
@@ -112,19 +116,39 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
             onChange={(e) => setEntityNameDraft(e.target.value)}
             className="form-control bg-dark text-info border-secondary prop-input"
             aria-label="Nombre de entidad"
+            disabled={!isEditingEntityName}
           />
-          <button
-            type="button"
-            className="btn btn-outline-info"
-            title="Aplicar nombre"
-            disabled={!canRename}
-            onClick={() => {
-              if (!canRename) return;
-              send({ cmd: 'set_entity_name', id: selectedEntity.id, name: trimmedEntityName });
-            }}
-          >
-            <Check2Square />
-          </button>
+          {!isEditingEntityName ? (
+            <AppTooltip content="Editar nombre" place="top">
+              <button
+                type="button"
+                className="btn btn-outline-secondary"
+                onClick={() => setIsEditingEntityName(true)}
+              >
+                <Pencil />
+              </button>
+            </AppTooltip>
+          ) : (
+            <AppTooltip content="Guardar cambios" place="top">
+              <button
+                type="button"
+                className="btn btn-outline-info"
+                disabled={!hasValidEntityName}
+                onClick={() => {
+                  if (!hasValidEntityName) return;
+                  if (canRename) {
+                    if (entityMetaRef.current[selectedEntity.id]) {
+                      entityMetaRef.current[selectedEntity.id].name = trimmedEntityName;
+                    }
+                    send({ cmd: 'set_entity_name', id: selectedEntity.id, name: trimmedEntityName });
+                  }
+                  setIsEditingEntityName(false);
+                }}
+              >
+                <Check2Square />
+              </button>
+            </AppTooltip>
+          )}
         </div>
       </div>
 
@@ -197,22 +221,24 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
 
       {canDuplicateOrRemove && (
         <div className="d-flex gap-2 mt-3 pt-2 border-top border-secondary">
-          <button
-            className="btn btn-sm btn-outline-secondary flex-fill"
-            title="Duplicar entidad"
-            onClick={handleDuplicate}
-          >
-            <Files className="me-2" />
-            Duplicar
-          </button>
-          <button
-            className="btn btn-sm btn-outline-danger flex-fill"
-            title="Eliminar entidad"
-            onClick={handleRemove}
-          >
-            <Trash className="me-2" />
-            Eliminar
-          </button>
+          <AppTooltip content="Duplicar entidad" place="top">
+            <button
+              className="btn btn-sm btn-outline-secondary flex-fill"
+              onClick={handleDuplicate}
+            >
+              <Files className="me-2" />
+              Duplicar
+            </button>
+          </AppTooltip>
+          <AppTooltip content="Eliminar entidad" place="top">
+            <button
+              className="btn btn-sm btn-outline-danger flex-fill"
+              onClick={handleRemove}
+            >
+              <Trash className="me-2" />
+              Eliminar
+            </button>
+          </AppTooltip>
         </div>
       )}
     </div>

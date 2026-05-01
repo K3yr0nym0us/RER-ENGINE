@@ -9,6 +9,8 @@ interface SpriteFrameRect {
   y: number;
   width: number;
   height: number;
+  pivot_x?: number;
+  pivot_y?: number;
 }
 
 interface CreateEntityFromSpriteAnimationPayload {
@@ -49,8 +51,8 @@ export function useCreateEntityFromSpriteAnimation(loadCmd: LoadCmd) {
       logical_h: logicalH,
       frames: payload.animation.frames.map((f) => ({
         path: payload.spritePath,
-        pivot_x: Math.round(f.width / 2),
-        pivot_y: f.height,
+        pivot_x: f.pivot_x ?? Math.round(f.width / 2),
+        pivot_y: f.pivot_y ?? f.height,
         src_x: f.x,
         src_y: f.y,
         src_w: f.width,

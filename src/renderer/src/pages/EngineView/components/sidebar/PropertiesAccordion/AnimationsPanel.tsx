@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { Accordion } from 'react-bootstrap';
 import { Pencil, PlayFill, StopFill, Trash } from 'react-bootstrap-icons';
 
+import AppTooltip from '../../../../../components/AppTooltip';
 import { CreateEntityFromSpriteModalBody } from '../EntitiesAccordion/components/CreateEntityFromSpriteModalBody';
 import { SpritePreviewModalBody, type SpriteFrameRect } from '../EntitiesAccordion/SpritePreviewModalBody/SpritePreviewModalBody';
 import { useContextEngine } from '@engine';
@@ -105,8 +106,8 @@ export function AnimationsPanel() {
               logical_h: baseLogicalH,
               frames: animation.frames.map((f) => ({
                 path: spritePath,
-                pivot_x: Math.round(f.width / 2),
-                pivot_y: f.height,
+                pivot_x: f.pivot_x ?? Math.round(f.width / 2),
+                pivot_y: f.pivot_y ?? f.height,
                 src_x: f.x,
                 src_y: f.y,
                 src_w: f.width,
@@ -209,6 +210,8 @@ export function AnimationsPanel() {
       y: f.src_y ?? 0,
       width: f.src_w ?? anim.logical_w ?? 64,
       height: f.src_h ?? anim.logical_h ?? 64,
+      pivot_x: f.pivot_x,
+      pivot_y: f.pivot_y,
     }));
 
     openModal({
@@ -234,8 +237,8 @@ export function AnimationsPanel() {
               logical_h: logicalH,
               frames: config.frames.map((f) => ({
                 path: spritePath,
-                pivot_x: Math.round(f.width / 2),
-                pivot_y: f.height,
+                pivot_x: f.pivot_x ?? Math.round(f.width / 2),
+                pivot_y: f.pivot_y ?? f.height,
                 src_x: f.x,
                 src_y: f.y,
                 src_w: f.width,
@@ -279,33 +282,38 @@ export function AnimationsPanel() {
               const isPlayingThisAnimation = !!entity?.id && (animationPlaying.get(entity.id) ?? false) && playingAnimationName === anim.name;
               return (
                 <div key={anim.id ?? `${anim.name}-${idx}`} className="d-flex align-items-center gap-2 p-2 border border-secondary rounded bg-dark">
-                  <span className="small fw-semibold text-light flex-fill text-truncate" title={anim.name}>{anim.name}</span>
+                  <AppTooltip content={anim.name} place="top">
+                    <span className="small fw-semibold text-light flex-fill text-truncate">{anim.name}</span>
+                  </AppTooltip>
 
-                  <button
-                    className={`btn btn-sm ${isPlayingThisAnimation ? 'btn-outline-danger' : 'btn-outline-success'}`}
-                    title={isPlayingThisAnimation ? 'Detener animacion' : 'Reproducir animacion'}
-                    disabled={!canPlayOrEdit}
-                    onClick={() => playAnimation(idx)}
-                  >
-                    {isPlayingThisAnimation ? <StopFill /> : <PlayFill />}
-                  </button>
+                  <AppTooltip content={isPlayingThisAnimation ? 'Detener animacion' : 'Reproducir animacion'} place="top">
+                    <button
+                      className={`btn btn-sm ${isPlayingThisAnimation ? 'btn-outline-danger' : 'btn-outline-success'}`}
+                      disabled={!canPlayOrEdit}
+                      onClick={() => playAnimation(idx)}
+                    >
+                      {isPlayingThisAnimation ? <StopFill /> : <PlayFill />}
+                    </button>
+                  </AppTooltip>
 
-                  <button
-                    className="btn btn-sm btn-outline-warning"
-                    title="Editar animacion"
-                    disabled={!canPlayOrEdit}
-                    onClick={() => editAnimation(idx)}
-                  >
-                    <Pencil />
-                  </button>
+                  <AppTooltip content="Editar animacion" place="top">
+                    <button
+                      className="btn btn-sm btn-outline-warning"
+                      disabled={!canPlayOrEdit}
+                      onClick={() => editAnimation(idx)}
+                    >
+                      <Pencil />
+                    </button>
+                  </AppTooltip>
 
-                  <button
-                    className="btn btn-sm btn-outline-danger"
-                    title="Eliminar animacion"
-                    onClick={() => confirmRemoveAnimation(idx)}
-                  >
-                    <Trash />
-                  </button>
+                  <AppTooltip content="Eliminar animacion" place="top">
+                    <button
+                      className="btn btn-sm btn-outline-danger"
+                      onClick={() => confirmRemoveAnimation(idx)}
+                    >
+                      <Trash />
+                    </button>
+                  </AppTooltip>
                 </div>
               );
             })}

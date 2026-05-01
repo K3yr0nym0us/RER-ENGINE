@@ -1,6 +1,8 @@
 import { useEffect, useReducer, useRef } from 'react';
 
 import { PlayFill, StopFill, XCircleFill } from 'react-bootstrap-icons';
+
+import AppTooltip from '../../../../../../components/AppTooltip';
 import { SelectionMode } from './SpritePreviewModalBody';
 
 interface SpritePreviewRightPanelProps {
@@ -18,6 +20,9 @@ interface SpritePreviewRightPanelProps {
   onFpsChange: (value: number) => void;
   isLooping: boolean;
   onLoopChange: (value: boolean) => void;
+  onSelectedFrameChange?: (index: number) => void;
+  pivotsByFrameIndex?: Record<number, { x: number; y: number }>;
+  onPivotChange?: (index: number, pivot: { x: number; y: number }) => void;
 }
 
 const CANVAS_SIZE = 500;
@@ -81,6 +86,9 @@ export function SpritePreviewRightPanel({
   onFpsChange,
   isLooping,
   onLoopChange,
+  onSelectedFrameChange,
+  pivotsByFrameIndex,
+  onPivotChange,
 }: SpritePreviewRightPanelProps) {
   const [{ selectedFrameIndex, isPlaying }, dispatch] = useReducer(playbackReducer, initialPlaybackState);
   const animIntervalRef = useRef<number | null>(null);
@@ -98,6 +106,12 @@ export function SpritePreviewRightPanel({
   const hasFrames = frames.length > 0;
   const safeIndex = hasFrames ? Math.min(selectedFrameIndex, frames.length - 1) : 0;
   const currentFrame = hasFrames ? frames[safeIndex] : null;
+  const currentPivot = (pivotsByFrameIndex?.[safeIndex]) ?? { x: 0.5, y: 0.5 };
+
+  useEffect(() => {
+    if (!hasFrames) return;
+    onSelectedFrameChange?.(safeIndex);
+  }, [hasFrames, safeIndex, onSelectedFrameChange]);
 
   // Animation effect
   useEffect(() => {
@@ -142,12 +156,37 @@ export function SpritePreviewRightPanel({
       canvas.height = size;
       ctx.clearRect(0, 0, size, size);
       ctx.drawImage(img, origX, origY, origW, origH, 0, 0, size, size);
+
+      const px = currentPivot.x * size;
+      const py = currentPivot.y * size;
+      ctx.save();
+      ctx.strokeStyle = '#ffde59';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(px - 10, py);
+      ctx.lineTo(px + 10, py);
+      ctx.moveTo(px, py - 10);
+      ctx.lineTo(px, py + 10);
+      ctx.stroke();
+      ctx.fillStyle = '#ffde59';
+      ctx.beginPath();
+      ctx.arc(px, py, 3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
     };
     img.onerror = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
     };
     img.src = src;
-  }, [currentFrame, src]);
+  }, [currentFrame, src, currentPivot.x, currentPivot.y]);
+
+  const handlePreviewCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!hasFrames) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const nx = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const ny = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+    onPivotChange?.(safeIndex, { x: nx, y: ny });
+  };
 
   const handlePlayStop = () => {
     if (isPlaying) {
@@ -167,12 +206,20 @@ export function SpritePreviewRightPanel({
         <label className="text-light text-center fw-bold d-block" htmlFor="preview-canvas" id="preview-canvas-label">Vista previa del frame</label>
         <div className="bg-dark d-flex align-items-center justify-content-center mt-3">
           {currentFrame && (
-            <canvas 
-              className="border border-primary"
-              ref={previewCanvasRef}
-              id="preview-canvas"
-              aria-labelledby="preview-canvas-label"
-            />
+            <AppTooltip
+              content="Haz clic en el frame para reasignar el punto de pivote. El pivote determina el punto de anclaje de la animación (cruz amarilla)."
+              place="left"
+              tooltipClassName="app-tooltip--compact"
+            >
+              <canvas 
+                className="border border-primary"
+                ref={previewCanvasRef}
+                id="preview-canvas"
+                aria-labelledby="preview-canvas-label"
+                style={{ cursor: 'crosshair' }}
+                onClick={handlePreviewCanvasClick}
+              />
+            </AppTooltip>
           )}
           {!currentFrame && (
             <p className="text-muted small mb-0 text-center">
@@ -198,14 +245,15 @@ export function SpritePreviewRightPanel({
               </label>
             </div>
 
-            <button
-              className={`btn btn-sm ${isPlaying ? 'btn-danger' : 'btn-success'}`}
-              onClick={handlePlayStop}
-              disabled={!hasFrames}
-              title={isPlaying ? 'Detener' : 'Reproducir'}
-            >
-              {isPlaying ? <StopFill /> : <PlayFill />}
-            </button>
+            <AppTooltip content={isPlaying ? 'Detener' : 'Reproducir'} place="top">
+              <button
+                className={`btn btn-sm ${isPlaying ? 'btn-danger' : 'btn-success'}`}
+                onClick={handlePlayStop}
+                disabled={!hasFrames}
+              >
+                {isPlaying ? <StopFill /> : <PlayFill />}
+              </button>
+            </AppTooltip>
 
             <div className="d-flex align-items-center gap-1">
               <label className="text-light small mb-0" htmlFor="preview-fps">FPS</label>

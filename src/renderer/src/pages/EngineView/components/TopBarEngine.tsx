@@ -6,6 +6,7 @@ import {
   StopFill 
 } from 'react-bootstrap-icons';
 
+import AppTooltip from '../../../components/AppTooltip';
 import { useContextEngine } from '@engine';
 
 interface Props {
@@ -28,12 +29,16 @@ export function TopBarEngine({ projectType, handleSave, toggleAutoSave }: Props)
   return (
     <div className="p-2 d-flex align-items-center gap-2 custom-controls-bar border-bottom border-secondary-subtle justify-content-between">
       <div className="d-flex align-items-center gap-2">
-        <button className="btn btn-outline-light btn-sm" title="Play">
-          <PlayFill size={16} />
-        </button>
-        <button className="btn btn-outline-light btn-sm" title="Stop">
-          <StopFill size={16} />
-        </button>
+        <AppTooltip content="Play" place="bottom">
+          <button className="btn btn-outline-light btn-sm">
+            <PlayFill size={16} />
+          </button>
+        </AppTooltip>
+        <AppTooltip content="Stop" place="bottom">
+          <button className="btn btn-outline-light btn-sm">
+            <StopFill size={16} />
+          </button>
+        </AppTooltip>
       </div>
       <div className="d-flex align-items-center">
         <span style={{ fontSize: 16, fontWeight: 700, color: '#c084fc', letterSpacing: '0.03em' }}>
@@ -47,27 +52,32 @@ export function TopBarEngine({ projectType, handleSave, toggleAutoSave }: Props)
         </div>
       </div>
       <div className="d-flex align-items-center gap-2">
-        <button
-          className="btn btn-sm btn-outline-light d-flex align-items-center gap-2"
-          title="Guardar proyecto"
-          disabled={!engineReady}
-          onClick={handleSave}
+        <AppTooltip content="Guardar proyecto" place="bottom">
+          <button
+            className="btn btn-sm btn-outline-light d-flex align-items-center gap-2"
+            disabled={!engineReady}
+            onClick={handleSave}
+          >
+            <FloppyFill size={13} />
+            <span style={{ fontSize: 14 }}>Guardar</span>
+          </button>
+        </AppTooltip>
+        <AppTooltip
+          content={hasSavedOnce ? (autoSaveEnabled ? 'Desactivar auto-guardado' : 'Activar auto-guardado') : 'Guarda primero'}
+          place="bottom"
         >
-          <FloppyFill size={13} />
-          <span style={{ fontSize: 14 }}>Guardar</span>
-        </button>
-        <button
-          className={`btn btn-sm d-flex align-items-center gap-1 ${
-            autoSaveEnabled ? 'btn-warning text-dark' : 'btn-outline-secondary'
-          }`}
-          title={hasSavedOnce ? (autoSaveEnabled ? 'Desactivar auto-guardado' : 'Activar auto-guardado') : 'Guarda primero'}
-          disabled={!hasSavedOnce || !engineReady}
-          onClick={toggleAutoSave}
-          style={{ whiteSpace: 'nowrap' }}
-        >
-          <ClockFill size={11} />
-          <span style={{ fontSize: 14 }}>Auto</span>
-        </button>
+          <button
+            className={`btn btn-sm d-flex align-items-center gap-1 ${
+              autoSaveEnabled ? 'btn-warning text-dark' : 'btn-outline-secondary'
+            }`}
+            disabled={!hasSavedOnce || !engineReady}
+            onClick={toggleAutoSave}
+            style={{ whiteSpace: 'nowrap' }}
+          >
+            <ClockFill size={11} />
+            <span style={{ fontSize: 14 }}>Auto</span>
+          </button>
+        </AppTooltip>
       </div>
     </div>
   )

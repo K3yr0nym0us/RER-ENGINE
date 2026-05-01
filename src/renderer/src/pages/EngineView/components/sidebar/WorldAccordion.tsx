@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Accordion } from 'react-bootstrap';
 import { Grid3x3, EyeFill, EyeSlashFill, Image } from 'react-bootstrap-icons';
 
+import AppTooltip from '../../../../components/AppTooltip';
 import { useContextEngine } from '@engine';
 
 export function WorldAccordion() {
@@ -61,9 +62,11 @@ export function WorldAccordion() {
           {backgroundPath ? 'Cambiar fondo' : '+ Cargar fondo (PNG/GIF)'}
         </button>
         {backgroundPath && (
-          <p className="text-secondary small text-truncate mb-0 px-1" title={backgroundPath}>
-            {backgroundPath.split('/').pop()}
-          </p>
+          <AppTooltip content={backgroundPath} place="top">
+            <p className="text-secondary small text-truncate mb-0 px-1">
+              {backgroundPath.split('/').pop()}
+            </p>
+          </AppTooltip>
         )}
 
         <hr className="border-secondary my-2" />
@@ -72,14 +75,15 @@ export function WorldAccordion() {
           <span className="small fw-semibold text-secondary d-flex align-items-center gap-1">
             <Grid3x3 /> Cuadrícula
           </span>
-          <button
-            className={`btn btn-sm ${worldConfig.gridVisible ? 'btn-info' : 'btn-outline-secondary'}`}
-            title={worldConfig.gridVisible ? 'Ocultar cuadrícula' : 'Mostrar cuadrícula'}
-            disabled={!engineReady}
-            onClick={() => setGridVisible(!worldConfig.gridVisible)}
-          >
-            {worldConfig.gridVisible ? <EyeFill /> : <EyeSlashFill />}
-          </button>
+          <AppTooltip content={worldConfig.gridVisible ? 'Ocultar cuadrícula' : 'Mostrar cuadrícula'} place="top">
+            <button
+              className={`btn btn-sm ${worldConfig.gridVisible ? 'btn-info' : 'btn-outline-secondary'}`}
+              disabled={!engineReady}
+              onClick={() => setGridVisible(!worldConfig.gridVisible)}
+            >
+              {worldConfig.gridVisible ? <EyeFill /> : <EyeSlashFill />}
+            </button>
+          </AppTooltip>
         </div>
 
         <label className="form-label small text-secondary mb-1 d-flex justify-content-between" htmlFor="grid-cell-size-range">

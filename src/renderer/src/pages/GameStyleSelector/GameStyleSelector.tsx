@@ -1,5 +1,6 @@
 import { ArrowLeft } from 'react-bootstrap-icons';
 
+import AppTooltip from '../../components/AppTooltip';
 import type { ProjectType, GameStyle } from '@shared-types';
 
 interface StyleOption {
@@ -88,20 +89,21 @@ export function GameStyleSelector({ projectType, onSelect, onBack }: Props) {
   return (
     <div className="style-selector-page" style={{ position: 'relative' }}>
       {/* ── Botón volver ─────────────────────────────────────────────── */}
-      <button
-        onClick={onBack}
-        title="Volver al selector de proyecto"
-        className="btn rounded-circle d-flex align-items-center justify-content-center position-fixed z-50 bg-dark border border-secondary"
-        style={{ top: 24, left: 28, width: 56, height: 56 }}
-        onMouseEnter={(e) => {
-          Object.assign(e.currentTarget.style, { borderColor: '#c084fc', color: '#c084fc', boxShadow: '0 0 20px #c084fc44' })
-        }}
-        onMouseLeave={(e) => {
-          Object.assign(e.currentTarget.style, { borderColor: '#2c3152', color: '#94a3b8', boxShadow: 'none' })
-        }}
-      >
-        <ArrowLeft size={24} />
-      </button>
+      <AppTooltip content="Volver al selector de proyecto" place="right">
+        <button
+          onClick={onBack}
+          className="btn rounded-circle d-flex align-items-center justify-content-center position-fixed z-50 bg-dark border border-secondary"
+          style={{ top: 24, left: 28, width: 56, height: 56 }}
+          onMouseEnter={(e) => {
+            Object.assign(e.currentTarget.style, { borderColor: '#c084fc', color: '#c084fc', boxShadow: '0 0 20px #c084fc44' })
+          }}
+          onMouseLeave={(e) => {
+            Object.assign(e.currentTarget.style, { borderColor: '#2c3152', color: '#94a3b8', boxShadow: 'none' })
+          }}
+        >
+          <ArrowLeft size={24} />
+        </button>
+      </AppTooltip>
 
       {/* Título */}
       <div className="mb-5 text-center">

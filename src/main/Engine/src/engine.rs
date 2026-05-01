@@ -273,11 +273,6 @@ pub struct State {
     pub(crate) animations: HashMap<u32, HashMap<String, AnimationState>>,
     /// Animación actualmente en reproducción: entity_id → ActiveAnimation.
     pub(crate) active_animations: HashMap<u32, ActiveAnimation>,
-    /// Snapshot del transform ORIGINAL antes de que empiece cualquier animación.
-    /// Usado por restore_animation_frame para devolver la entidad a su estado previo.
-    /// A diferencia de anim_saved_transforms (que se acumula con los scripts),
-    /// este mapa nunca es modificado por scripts — solo se escribe una vez por sesión.
-    pub(crate) anim_origin_transforms: HashMap<u32, (GlamVec3, GlamVec3)>,
     /// Sistema de scripting Lua. Contiene la VM y los scripts adjuntos a entidades.
     pub(crate) script_engine: ScriptEngine,
     /// Almacén de sprites cargados (PNGs) para reutilización en el editor.
@@ -707,7 +702,6 @@ impl State {
             anim_overrides:     std::collections::HashMap::new(),
             animations:            HashMap::new(),
             active_animations:     HashMap::new(),
-            anim_origin_transforms: HashMap::new(),
             script_engine: ScriptEngine::new()
                 .expect("Error al inicializar el motor de scripting Lua"),
             sprite_store: HashMap::new(),
@@ -1064,6 +1058,13 @@ EngineCommand::PlayAnimation { id, name } => {
                 match anim_opt {
                     None => log::warn!("[IPC] Animación '{}' no encontrada para entidad {}", name, id),
                     Some(anim) => {
+                        // Re-baseline del ancla al estado actual antes de reproducir.
+                        // Evita reutilizar un origen antiguo cuando la entidad fue movida
+                        // por física, gizmo o scripts entre reproducciones.
+                        if let Some(t) = self.world.get::<Transform>(id).cloned() {
+                            self.anim_saved_transforms.insert(id, (t.position, t.scale));
+                        }
+
                         // Capturar el tiempo ANTES del I/O de archivos para que
                         // last_frame_time refleje el inicio real del frame 0, no el
                         // tiempo después de cargar texturas/audio (puede ser 50-200ms más tarde).
@@ -1115,6 +1116,8 @@ EngineCommand::PlayAnimation { id, name } => {
                 log::info!("[IPC] StopAnimation: entity_id={}", id);
                 let stopped_animation_name = self.active_animations.remove(&id).map(|a| a.animation_name);
                 if let Some(name) = stopped_animation_name {
+                    // Al detener manualmente siempre dejamos visible el frame 0
+                    // de la animación activa para evitar volver a la hoja completa.
                     self.show_first_frame_of_animation(id, &name);
                 } else {
                     self.restore_animation_frame(id);
@@ -1259,6 +1262,9 @@ EngineCommand::PlayAnimation { id, name } => {
             let elapsed = now.duration_since(active.last_frame_time);
 
             if elapsed < frame_duration {
+                // Re-aplicar el frame actual en cada tick para mantener el ajuste
+                // de pivot aunque otro sistema (p.ej. física) haya escrito Transform.
+                to_play.push((entity_id, active.current_frame));
                 continue;
             }
 

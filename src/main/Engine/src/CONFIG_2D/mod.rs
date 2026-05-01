@@ -532,11 +532,17 @@ impl State {
         // ── Aplicar pivot ────────────────────────────────────────────────────
         if logical_w > 0 && logical_h > 0 {
             if let Some(transform) = self.world.get::<Transform>(id).cloned() {
-                let (orig_pos, orig_scale) = *self.anim_saved_transforms
+                let saved = self.anim_saved_transforms
                     .entry(id)
                     .or_insert((transform.position, transform.scale));
 
-                let world_per_px = orig_scale.y / img_height as f32;
+                let orig_pos = saved.0;
+                let orig_scale = saved.1;
+
+                // Escala de referencia estable: usar el alto lógico de la animación
+                // para que cambios de tamaño entre frames no alteren el anclaje.
+                let ref_h_px    = logical_h.max(1) as f32;
+                let world_per_px = orig_scale.y / ref_h_px;
                 let new_scale_x  = img_width  as f32 * world_per_px;
                 let new_scale_y  = img_height as f32 * world_per_px;
                 let offset_x     =  (pivot_x - img_width  as f32 * 0.5) * world_per_px;
@@ -550,13 +556,6 @@ impl State {
         }
 
         log::info!("[play_animation_frame] frame actualizado para entidad {id} (tex_idx={tex_position}, pivot=({pivot_x},{pivot_y}))");
-    }
-
-    /// Pre-carga un frame de animación en la caché GPU sin aplicarlo a ninguna entidad.
-    /// Llamar desde `SetAnimation` para que el primer `PlayAnimation` no tenga
-    /// latencia de decode+upload a GPU (cache miss).
-    pub(crate) fn preload_anim_frame(&mut self, path: &str) {
-        self.preload_anim_frame_with_rect(path, None);
     }
 
     pub(crate) fn preload_anim_frame_with_rect(&mut self, path: &str, src_rect: Option<(u32, u32, u32, u32)>) {
@@ -629,8 +628,6 @@ impl State {
 
         // Solo restaurar la escala original (elimina la distorsión del pivot calc).
         // La posición NO se toca: el personaje se queda donde llegó gracias a scripts/física.
-        // anim_origin_transforms ya no se usa; solo lo limpiamos.
-        self.anim_origin_transforms.remove(&id);
         if let Some((_saved_pos, orig_scale)) = self.anim_saved_transforms.remove(&id) {
             if let Some(t) = self.world.get_mut::<Transform>(id) {
                 t.scale = orig_scale;
@@ -960,6 +957,13 @@ impl State {
         let new_pos = self.world.get::<Transform>(sel_id)
             .map(|t| (t.position.x, t.position.y));
         if let Some((nx, ny)) = new_pos {
+            // Si existe una base de animación guardada para la entidad,
+            // mantenerla sincronizada con el drag del gizmo para que
+            // play_animation_frame no ancle en una posición antigua.
+            if let Some(saved) = self.anim_saved_transforms.get_mut(&sel_id) {
+                saved.0.x = nx;
+                saved.0.y = ny;
+            }
             self.physics_2d.teleport_entity(sel_id, nx, ny);
         }
     }
