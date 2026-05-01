@@ -27,7 +27,6 @@ export default function ModalSetNameSprite({ path, autoName }: ModalSetNameSprit
         defaultValue={autoName}
         ref={nameRef}
         placeholder="Nombre del sprite"
-        autoFocus
       />
       <div className="d-flex gap-2 justify-content-end">
         <button 

@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 
 import { SpritePreviewLeftPanel } from './SpritePreviewLeftPanel';
 import { SpritePreviewCanvas } from './SpritePreviewCanvas';
@@ -52,7 +52,7 @@ export function SpritePreviewModalBody({
   const [currentBox, setCurrentBox] = useState({ x: 0, y: 0, width: 64, height: 64 });
   const [fps, setFps] = useState(12);
   const [isLooping, setIsLooping] = useState(false);
-  const [initialLoaded, setInitialLoaded] = useState(false);
+  const initialLoadedRef = useRef(false);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -83,7 +83,7 @@ export function SpritePreviewModalBody({
   }, [initialLoop]);
 
   useEffect(() => {
-    if (initialLoaded) return;
+    if (initialLoadedRef.current) return;
     if (!imageSize || !imageSrc) return;
     if (!initialFrames || initialFrames.length === 0) return;
 
@@ -104,11 +104,15 @@ export function SpritePreviewModalBody({
 
     setSelectionMode('box');
     setBoxes(initialBoxes);
-    if (initialBoxes.length > 0) {
-      setCurrentBox(initialBoxes[initialBoxes.length - 1]);
+    initialLoadedRef.current = true;
+  }, [imageSize, imageSrc, initialFrames]);
+
+  const rightPanelKey = useMemo(() => {
+    if (selectionMode === 'cell') {
+      return `${imageSrc}-cell-${selectedCells.map((c) => `${c.x}:${c.y}`).join('|')}`;
     }
-    setInitialLoaded(true);
-  }, [initialLoaded, imageSize, imageSrc, initialFrames]);
+    return `${imageSrc}-box-${boxes.map((b) => `${b.x}:${b.y}:${b.width}:${b.height}`).join('|')}`;
+  }, [imageSrc, selectionMode, selectedCells, boxes]);
 
   const handleRemoveBox = useCallback((index: number) => {
     setBoxes(prev => prev.filter((_, i) => i !== index));
@@ -192,18 +196,22 @@ export function SpritePreviewModalBody({
     };
 
     if (selectionMode === 'cell') {
-      return selectedCells
-        .map((cell) => {
-          const canvasX = cell.x * gridSize - cellOffsetX;
-          const canvasY = cell.y * gridSize - cellOffsetY;
-          return toSourceRect(canvasX, canvasY, gridSize, gridSize);
-        })
-        .filter((r): r is SpriteFrameRect => r !== null);
+      const frames: SpriteFrameRect[] = [];
+      for (const cell of selectedCells) {
+        const canvasX = cell.x * gridSize - cellOffsetX;
+        const canvasY = cell.y * gridSize - cellOffsetY;
+        const rect = toSourceRect(canvasX, canvasY, gridSize, gridSize);
+        if (rect) frames.push(rect);
+      }
+      return frames;
     }
 
-    return boxes
-      .map((box) => toSourceRect(box.x, box.y, box.width, box.height))
-      .filter((r): r is SpriteFrameRect => r !== null);
+    const frames: SpriteFrameRect[] = [];
+    for (const box of boxes) {
+      const rect = toSourceRect(box.x, box.y, box.width, box.height);
+      if (rect) frames.push(rect);
+    }
+    return frames;
   }, [imageSize, imageSrc, selectionMode, selectedCells, boxes, gridSize, cellOffsetX, cellOffsetY]);
 
   const handleConfirm = () => {
@@ -262,7 +270,7 @@ export function SpritePreviewModalBody({
 
         <div className="col-3">
           <SpritePreviewRightPanel
-            key={`${imageSrc}-${selectionMode}`}
+            key={rightPanelKey}
             src={imageSrc}
             selectionMode={selectionMode}
             selectedCells={selectedCells}

@@ -432,27 +432,28 @@ export function EngineProvider({
 				playerRemoved.current     = false
 				pendingPlayerDups.current = []
 				pendingDupQ.current       = []
+				const sendEngine = window.engine.send
 				const save = initialSaveRef.current
 				if (save) {
 					if (save.world) {
 						dispatch({ type: 'SET_WORLD_CONFIG', payload: save.world })
-						window.engine.send({ cmd: 'set_world_size',    width:   save.world.worldWidth,   height: save.world.worldHeight } as never)
-						window.engine.send({ cmd: 'set_grid_visible',  visible: save.world.gridVisible } as never)
-						window.engine.send({ cmd: 'set_grid_cell_size', size:   save.world.gridCellSize } as never)
+						sendEngine({ cmd: 'set_world_size',    width:   save.world.worldWidth,   height: save.world.worldHeight } as never)
+						sendEngine({ cmd: 'set_grid_visible',  visible: save.world.gridVisible } as never)
+						sendEngine({ cmd: 'set_grid_cell_size', size:   save.world.gridCellSize } as never)
 					}
 					if (save.camera2d) {
-						window.engine.send({ cmd: 'set_camera2d', x: save.camera2d.x, y: save.camera2d.y, half_h: save.camera2d.halfH } as never)
+						sendEngine({ cmd: 'set_camera2d', x: save.camera2d.x, y: save.camera2d.y, half_h: save.camera2d.halfH } as never)
 						camera2dRef.current = save.camera2d
 					}
 					// Cargar sprites precargados
 					if (save.sprites && save.sprites.length > 0) {
 						for (const sprite of save.sprites) {
-							window.engine.send({ cmd: 'load_sprite', path: sprite.path, name: sprite.name } as never)
+							sendEngine({ cmd: 'load_sprite', path: sprite.path, name: sprite.name } as never)
 							dispatch({ type: 'ADD_SPRITE_INFO', payload: { path: sprite.path, name: sprite.name } })
 						}
 					}
 					if (save.backgroundPath) {
-						window.engine.send({ cmd: 'load_background', path: save.backgroundPath } as never)
+						sendEngine({ cmd: 'load_background', path: save.backgroundPath } as never)
 					}
 					for (const entity of save.entities) {
 						const t: Transform = {
@@ -461,7 +462,7 @@ export function EngineProvider({
 							scale:    entity.scale,
 						}
 						if (entity.kind === 'collider' && entity.points) {
-							window.engine.send({ cmd: 'create_collider_from_points', points: entity.points } as never)
+							sendEngine({ cmd: 'create_collider_from_points', points: entity.points } as never)
 						} else if (entity.kind === 'character' && entity.path === '[Player]') {
 							pendingPlayerDups.current.push(t)
 						} else {
@@ -475,9 +476,9 @@ export function EngineProvider({
 							pendingRestoresRef.current.set(entity.path, queue)
 							// Las animaciones ya están en pendingRestores; se enviarán al motor
 							// en scenario_loaded/character_loaded con el ID real que asigne el motor.
-							if (entity.kind === 'scenario')  window.engine.send({ cmd: 'load_scenario',  path: entity.path } as never)
-							if (entity.kind === 'character') window.engine.send({ cmd: 'load_character', path: entity.path } as never)
-							if (entity.kind === 'model')     window.engine.send({ cmd: 'load_model',     path: entity.path } as never)
+							if (entity.kind === 'scenario')  sendEngine({ cmd: 'load_scenario',  path: entity.path } as never)
+							if (entity.kind === 'character') sendEngine({ cmd: 'load_character', path: entity.path } as never)
+							if (entity.kind === 'model')     sendEngine({ cmd: 'load_model',     path: entity.path } as never)
 						}
 					}
 				}

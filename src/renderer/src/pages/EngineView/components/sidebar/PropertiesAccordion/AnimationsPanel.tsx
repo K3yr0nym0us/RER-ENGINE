@@ -29,6 +29,13 @@ interface Animation {
   frames: AnimationFrame[];
 }
 
+let animationIdCounter = 0;
+
+const createAnimationId = () => {
+  animationIdCounter += 1;
+  return `anim_${animationIdCounter}`;
+};
+
 export function AnimationsPanel() {
   const { selectedEntity: entity, send, sendAsync, setAnimationPlaying, updateEntityAnimations, animationPlaying, sprites } = useContextEngine();
   const { openModal, closeModal } = useModal();
@@ -90,7 +97,7 @@ export function AnimationsPanel() {
             const baseLogicalH = animations[0]?.logical_h ?? logicalH;
 
             const newAnimation: Animation = {
-              id: `anim_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
+              id: createAnimationId(),
               name: animation.name,
               fps: animation.fps,
               loop: animation.loop,

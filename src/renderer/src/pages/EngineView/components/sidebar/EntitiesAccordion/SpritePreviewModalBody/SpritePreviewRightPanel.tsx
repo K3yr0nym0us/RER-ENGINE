@@ -84,12 +84,6 @@ export function SpritePreviewRightPanel({
     }
   }, [isPlaying, isLooping, fps, hasFrames, frames.length]);
 
-  // Reset animation when frames change
-  useEffect(() => {
-    setSelectedFrameIndex(0);
-    setIsPlaying(false);
-  }, [selectionMode, selectedCells, boxes]);
-
   // Draw current frame
   useEffect(() => {
     if (!currentFrame || !previewCanvasRef.current) return;
@@ -237,8 +231,9 @@ export function SpritePreviewRightPanel({
 
       {hasFrames && (
         <div className="mt-auto pt-2 border-top border-secondary">
-          <label className="text-light fw-bold d-block mb-1">Nombre de la animacion</label>
+          <label className="text-light fw-bold d-block mb-1" htmlFor="animation-name-input">Nombre de la animacion</label>
           <input
+            id="animation-name-input"
             className="form-control form-control-sm bg-dark text-light border-secondary"
             placeholder="Ej: run, idle, attack"
             value={animationName}

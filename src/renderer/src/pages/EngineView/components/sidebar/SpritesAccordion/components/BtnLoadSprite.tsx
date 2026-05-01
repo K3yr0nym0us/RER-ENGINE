@@ -9,7 +9,7 @@ export const BtnLoadSprite = () => {
 
   const { openModal } = useModal();
 
-  const handleClick = useCallback(async () => {
+  const openLoadSpriteModal = useCallback(async () => {
     const path = await window.electronAPI.openSpriteDialog();
     if (!path) return;
     const autoName = path.split('/').pop()?.replace(/\.[^/.]+$/, '') ?? 'sprite';
@@ -28,7 +28,7 @@ export const BtnLoadSprite = () => {
     <button
       className="btn btn-outline-primary btn-sm w-100 mb-2"
       type="button"
-      onClick={handleClick}
+      onClick={openLoadSpriteModal}
     >
       <Image className="me-1" /> Cargar Sprite
     </button>

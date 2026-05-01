@@ -73,8 +73,9 @@ export function CreateEntityFromSpriteModalBody({
   return (
     <div>
       <div className="mb-3">
-        <label className="form-label">Selecciona un sprite</label>
+        <label className="form-label" htmlFor="create-entity-sprite-select">Selecciona un sprite</label>
         <select
+          id="create-entity-sprite-select"
           className="form-select"
           value={selectedSpritePath}
           onChange={e => setSelectedSpritePath(e.target.value)}

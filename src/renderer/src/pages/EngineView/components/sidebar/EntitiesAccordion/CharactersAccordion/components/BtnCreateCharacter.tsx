@@ -10,7 +10,7 @@ const BtnCreateCharacter = () => {
   const { sprites } = useContextEngine();
   const createCharacterFromSprite = useCreateEntityFromSpriteAnimation('load_character');
 
-  const handleClick = () => {
+  const openCreateCharacterModal = () => {
     openModal({
       title: 'Crear personaje',
       body: <CreateEntityFromSpriteModalBody
@@ -24,7 +24,7 @@ const BtnCreateCharacter = () => {
   return (
     <button 
       className="btn btn-outline-success btn-sm w-100 fw-bold mb-2" 
-      onClick={handleClick}
+      onClick={openCreateCharacterModal}
     >
       <PlusLg className="me-2" />
       Crear personaje
