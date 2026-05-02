@@ -218,7 +218,7 @@ export function createEngineEventHandler({
 				const pending = queue.shift()!;
 				if (pending.name && pending.name.trim().length > 0) {
 					refs.entityMetaRef.current[scenario.id].name = pending.name;
-					window.engine.send({ cmd: 'set_entity_name', id: scenario.id, name: pending.name } as never);
+					window.engine.send({ cmd: 'set_entity_name', id: scenario.id, name: pending.name, force: true } as never);
 				}
 				window.engine.send({ cmd: 'set_transform', id: scenario.id, position: pending.transform.position, rotation: pending.transform.rotation, scale: pending.transform.scale } as never);
 				refs.entityTransformsRef.current[scenario.id] = pending.transform;
@@ -268,7 +268,7 @@ export function createEngineEventHandler({
 					if (refs.entityMetaRef.current[id]) {
 						refs.entityMetaRef.current[id].name = pending.name;
 					}
-					window.engine.send({ cmd: 'set_entity_name', id, name: pending.name } as never);
+					window.engine.send({ cmd: 'set_entity_name', id, name: pending.name, force: true } as never);
 				}
 				window.engine.send({ cmd: 'set_transform', id, position: pending.transform.position, rotation: pending.transform.rotation, scale: pending.transform.scale } as never);
 				refs.entityTransformsRef.current[id] = pending.transform;

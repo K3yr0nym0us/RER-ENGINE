@@ -5,7 +5,8 @@ import { Pencil, PlayFill, StopFill, Trash } from 'react-bootstrap-icons';
 
 import AppTooltip from '../../../../../components/AppTooltip';
 import { CreateEntityFromSpriteModalBody } from '../EntitiesAccordion/components/CreateEntityFromSpriteModalBody';
-import { SpritePreviewModalBody, type SpriteFrameRect } from '../EntitiesAccordion/SpritePreviewModalBody/SpritePreviewModalBody';
+import { SpritePreviewModalBody } from '../EntitiesAccordion/SpritePreviewModalBody/SpritePreviewModalBody';
+import type { SpriteFrameRect } from '../EntitiesAccordion/SpritePreviewModalBody/components';
 import { useContextEngine } from '@engine';
 import { useModal } from '@modal';
 
@@ -27,6 +28,7 @@ interface Animation {
   logical_w: number;
   logical_h: number;
   audio_path?: string;
+  scripts?: { name: string; source: string }[];
   frames: AnimationFrame[];
 }
 
@@ -104,6 +106,8 @@ export function AnimationsPanel() {
               loop: animation.loop,
               logical_w: baseLogicalW,
               logical_h: baseLogicalH,
+              audio_path: animation.audioPath,
+              scripts: animation.scripts,
               frames: animation.frames.map((f) => ({
                 path: spritePath,
                 pivot_x: f.pivot_x ?? Math.round(f.width / 2),
@@ -224,6 +228,8 @@ export function AnimationsPanel() {
           initialFrames={initialFrames}
           initialFps={anim.fps}
           initialLoop={anim.loop}
+          initialAudioPath={anim.audio_path}
+          initialScripts={anim.scripts}
           onConfirm={(config) => {
             const logicalW = Math.max(1, ...config.frames.map((f) => f.width));
             const logicalH = Math.max(1, ...config.frames.map((f) => f.height));
@@ -235,6 +241,8 @@ export function AnimationsPanel() {
               loop: config.loop,
               logical_w: logicalW,
               logical_h: logicalH,
+              audio_path: config.audioPath,
+              scripts: config.scripts,
               frames: config.frames.map((f) => ({
                 path: spritePath,
                 pivot_x: f.pivot_x ?? Math.round(f.width / 2),
@@ -281,38 +289,50 @@ export function AnimationsPanel() {
               const canPlayOrEdit = anim.frames.length > 0;
               const isPlayingThisAnimation = !!entity?.id && (animationPlaying.get(entity.id) ?? false) && playingAnimationName === anim.name;
               return (
-                <div key={anim.id ?? `${anim.name}-${idx}`} className="d-flex align-items-center gap-2 p-2 border border-secondary rounded bg-dark">
+                <div key={anim.id ?? `${anim.name}-${idx}`} className="d-flex align-items-center gap-2 p-2 pt-1 pb-1 border border-secondary rounded bg-dark">
                   <AppTooltip content={anim.name} place="top">
                     <span className="small fw-semibold text-light flex-fill text-truncate">{anim.name}</span>
                   </AppTooltip>
 
                   <AppTooltip content={isPlayingThisAnimation ? 'Detener animacion' : 'Reproducir animacion'} place="top">
-                    <button
-                      className={`btn btn-sm ${isPlayingThisAnimation ? 'btn-outline-danger' : 'btn-outline-success'}`}
-                      disabled={!canPlayOrEdit}
-                      onClick={() => playAnimation(idx)}
+                    <span
+                      role="button"
+                      tabIndex={canPlayOrEdit ? 0 : -1}
+                      aria-disabled={!canPlayOrEdit}
+                      className={isPlayingThisAnimation ? 'text-danger' : 'text-success'}
+                      style={{ cursor: canPlayOrEdit ? 'pointer' : 'not-allowed', opacity: canPlayOrEdit ? 1 : 0.5 }}
+                      onClick={canPlayOrEdit ? () => playAnimation(idx) : undefined}
+                      onKeyDown={canPlayOrEdit ? (e) => { if (e.key === 'Enter' || e.key === ' ') playAnimation(idx); } : undefined}
                     >
                       {isPlayingThisAnimation ? <StopFill /> : <PlayFill />}
-                    </button>
+                    </span>
                   </AppTooltip>
 
                   <AppTooltip content="Editar animacion" place="top">
-                    <button
-                      className="btn btn-sm btn-outline-warning"
-                      disabled={!canPlayOrEdit}
-                      onClick={() => editAnimation(idx)}
+                    <span
+                      role="button"
+                      tabIndex={canPlayOrEdit ? 0 : -1}
+                      aria-disabled={!canPlayOrEdit}
+                      className="text-warning"
+                      style={{ cursor: canPlayOrEdit ? 'pointer' : 'not-allowed', opacity: canPlayOrEdit ? 1 : 0.5 }}
+                      onClick={canPlayOrEdit ? () => editAnimation(idx) : undefined}
+                      onKeyDown={canPlayOrEdit ? (e) => { if (e.key === 'Enter' || e.key === ' ') editAnimation(idx); } : undefined}
                     >
                       <Pencil />
-                    </button>
+                    </span>
                   </AppTooltip>
 
                   <AppTooltip content="Eliminar animacion" place="top">
-                    <button
-                      className="btn btn-sm btn-outline-danger"
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      className="text-danger"
+                      style={{ cursor: 'pointer' }}
                       onClick={() => confirmRemoveAnimation(idx)}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') confirmRemoveAnimation(idx); }}
                     >
                       <Trash />
-                    </button>
+                    </span>
                   </AppTooltip>
                 </div>
               );

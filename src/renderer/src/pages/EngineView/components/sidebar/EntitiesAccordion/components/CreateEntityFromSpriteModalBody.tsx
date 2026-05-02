@@ -14,6 +14,8 @@ interface CreateEntityFromSpriteModalBodyProps {
       frames: SpriteFrameRect[];
       fps: number;
       loop: boolean;
+      audioPath?: string;
+      scripts: { name: string; source: string }[];
     };
   }) => void;
   previewTitle: string;
@@ -50,6 +52,8 @@ export function CreateEntityFromSpriteModalBody({
                   frames: config.frames,
                   fps: config.fps,
                   loop: config.loop,
+                  audioPath: config.audioPath,
+                  scripts: config.scripts,
                 },
               });
               closeModal();

@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
-import { SelectionMode } from './SpritePreviewModalBody';
-import { Link, Unlock } from 'react-bootstrap-icons';
+import { SelectionMode, type ScriptEntry } from './';
+import { Link, Unlock, MusicNoteBeamed, Trash, FileEarmarkCode, PencilSquare } from 'react-bootstrap-icons';
+import AppTooltip from '../../../../../../../components/AppTooltip';
 
 interface SpritePreviewLeftPanelProps {
   selectionMode: SelectionMode;
@@ -14,6 +15,13 @@ interface SpritePreviewLeftPanelProps {
   CANVAS_SIZE: number;
   onBoxChange: (box: { x: number; y: number; width: number; height: number }) => void;
   onAddBox: () => void;
+  audioPath?: string;
+  onAddAudio: () => void;
+  onClearAudio: () => void;
+  scripts: ScriptEntry[];
+  onAddScript: () => void;
+  onEditScript: (name: string) => void;
+  onRemoveScript: (name: string) => void;
 }
 
 const DEFAULT_BOX = { x: 0, y: 0, width: 64, height: 64 };
@@ -30,6 +38,13 @@ export function SpritePreviewLeftPanel({
   CANVAS_SIZE,
   onBoxChange,
   onAddBox,
+  audioPath,
+  onAddAudio,
+  onClearAudio,
+  scripts,
+  onAddScript,
+  onEditScript,
+  onRemoveScript,
 }: SpritePreviewLeftPanelProps) {
   const [box, setBox] = useState(DEFAULT_BOX);
   const [keepAspect, setKeepAspect] = useState(true);
@@ -242,6 +257,77 @@ export function SpritePreviewLeftPanel({
           </button>
         </div>
       )}
+
+      <hr className="border-secondary opacity-50 mb-3" />
+
+      <div className="mb-3">
+        <label className="text-light fw-bold d-block mb-2">Audio de animación</label>
+        {audioPath ? (
+          <div className="d-flex align-items-center gap-1">
+            <AppTooltip content={audioPath} place="top">
+              <span className="text-success small text-truncate flex-fill" style={{ maxWidth: 120 }}>
+                <MusicNoteBeamed className="me-1" />
+                {audioPath.split(/[\\/]/).pop()}
+              </span>
+            </AppTooltip>
+            <AppTooltip content="Quitar audio" place="top">
+              <button className="btn btn-sm btn-outline-danger p-0 px-1" type="button" onClick={onClearAudio}>
+                <Trash />
+              </button>
+            </AppTooltip>
+          </div>
+        ) : (
+          <AppTooltip content="Cargar archivo de audio (wav/ogg/mp3)" place="top">
+            <button
+              className="btn btn-outline-secondary btn-sm w-100"
+              type="button"
+              onClick={onAddAudio}
+            >
+              <MusicNoteBeamed className="me-1" /> Agregar audio
+            </button>
+          </AppTooltip>
+        )}
+      </div>
+
+      <hr className="border-secondary opacity-50 mb-3" />
+
+      <div className="mb-3">
+        <label className="text-light fw-bold d-block mb-2">Scripts Lua</label>
+
+        {scripts.length > 0 && (
+          <div className="d-flex flex-column gap-1 mb-2">
+            {scripts.map((s) => (
+              <div key={s.name} className="d-flex align-items-center gap-1">
+                <AppTooltip content={s.name} place="top">
+                  <span className="text-info small text-truncate flex-fill" style={{ maxWidth: 110 }}>
+                    <FileEarmarkCode className="me-1" />{s.name}
+                  </span>
+                </AppTooltip>
+                <AppTooltip content="Editar script" place="top">
+                  <button className="btn btn-sm p-0 px-1 btn-outline-warning" type="button" onClick={() => onEditScript(s.name)}>
+                    <PencilSquare size={12} />
+                  </button>
+                </AppTooltip>
+                <AppTooltip content="Eliminar script" place="top">
+                  <button className="btn btn-sm p-0 px-1 btn-outline-danger" type="button" onClick={() => onRemoveScript(s.name)}>
+                    <Trash size={12} />
+                  </button>
+                </AppTooltip>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <AppTooltip content="Agregar script Lua a esta animación" place="top">
+          <button
+            className="btn btn-outline-secondary btn-sm w-100"
+            type="button"
+            onClick={onAddScript}
+          >
+            <FileEarmarkCode className="me-1" /> Agregar script
+          </button>
+        </AppTooltip>
+      </div>
 
     </div>
   );

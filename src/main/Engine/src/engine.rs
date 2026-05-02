@@ -841,14 +841,14 @@ impl State {
                     }
                 }
             }
-            EngineCommand::SetEntityName { id, name } => {
+            EngineCommand::SetEntityName { id, name, force } => {
                 let next_name = name.trim();
                 if next_name.is_empty() {
                     send_event(&EngineEvent::Error { message: "El nombre no puede estar vacio".to_string() });
                     return;
                 }
 
-                if self.is_entity_name_taken(next_name, Some(id)) {
+                if !force && self.is_entity_name_taken(next_name, Some(id)) {
                     send_event(&EngineEvent::Error { message: format!("Ya existe una entidad con el nombre '{}'", next_name) });
                     return;
                 }
@@ -1547,10 +1547,35 @@ self.active_animations.retain(|_, a| !a.finished);
                 ScriptCmd::MoveEntity { id, speed, dir_x, dir_y } => {
                     // Aplica velocidad lineal al Rapier body usando shape cast para
                     // detectar obstáculos antes de aplicar. Si no tiene física activa,
-                    // no hace nada (el script debe usar engine.translate en ese caso).
-                    let moved = self.physics_2d.move_physics_entity(id, speed, dir_x, dir_y, self.delta_time);
-                    if !moved {
-                        log::warn!("[script/move_entity] entidad {} sin cuerpo físico activo — usa engine.translate para entidades sin física", id);
+                    // se aplica fallback por traslación directa para facilitar pruebas.
+                    if self.preview_playing {
+                        let moved = self.physics_2d.move_physics_entity(id, speed, dir_x, dir_y, self.delta_time);
+                        if !moved {
+                            let dx = speed * dir_x * self.delta_time;
+                            let dy = speed * dir_y * self.delta_time;
+                            if let Some(t) = self.world.get_mut::<Transform>(id) {
+                                t.position.x += dx;
+                                t.position.y += dy;
+                            }
+                            if let Some(saved) = self.anim_saved_transforms.get_mut(&id) {
+                                saved.0.x += dx;
+                                saved.0.y += dy;
+                            }
+                            log::warn!("[script/move_entity] entidad {} sin cuerpo físico activo — aplicado fallback translate", id);
+                        }
+                    } else {
+                        // En modo editor no corremos el step de físicas; para pruebas
+                        // manuales movemos por traslación directa respetando delta_time.
+                        let dx = speed * dir_x * self.delta_time;
+                        let dy = speed * dir_y * self.delta_time;
+                        if let Some(t) = self.world.get_mut::<Transform>(id) {
+                            t.position.x += dx;
+                            t.position.y += dy;
+                        }
+                        if let Some(saved) = self.anim_saved_transforms.get_mut(&id) {
+                            saved.0.x += dx;
+                            saved.0.y += dy;
+                        }
                     }
                 }
                 ScriptCmd::StopEntity { id } => {
@@ -1572,23 +1597,21 @@ self.active_animations.retain(|_, a| !a.finished);
         let now         = Instant::now();
         self.delta_time = now.duration_since(self.last_frame).as_secs_f32();
         self.last_frame = now;
-        if !self.preview_playing {
-            return;
-        }
         if self.camera_2d.is_some() {
-            // Scripts primero: ponen la velocidad que quieren aplicar este frame.
-            // Physics después: Rapier corre con esa velocidad y resuelve colisiones,
-            // zeroeando el componente de velocidad que choque con un colisionador.
-            // Si el orden fuera al revés, el script picaría la resolución de Rapier
-            // y el personaje atravesaría los colisionadores cada frame.
+            // Scripts corren siempre (editor + juego) para facilitar pruebas rápidas.
             self.update_scripts();
-            self.physics_2d.step(self.delta_time, &mut self.world);
-            // Sincronizar anim_saved_transforms con la posición post-physics (ya bloqueada
-            // por colisiones) para que update_animations() no restaure la posición original.
-            self.sync_physics_anim_origins();
+            if self.preview_playing {
+                // En modo juego sí aplicamos físicas completas.
+                self.physics_2d.step(self.delta_time, &mut self.world);
+                // Sincronizar anim_saved_transforms con la posición post-physics (ya bloqueada
+                // por colisiones) para que update_animations() no restaure la posición original.
+                self.sync_physics_anim_origins();
+            }
         } else {
-            self.physics.step(self.delta_time, &mut self.world);
             self.update_scripts();
+            if self.preview_playing {
+                self.physics.step(self.delta_time, &mut self.world);
+            }
         }
     }
 

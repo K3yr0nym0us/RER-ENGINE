@@ -1,28 +1,31 @@
 import { useMemo, useReducer, useState, useEffect, useRef } from 'react';
+import { Modal } from 'react-bootstrap';
 
-import { SpritePreviewLeftPanel } from './SpritePreviewLeftPanel';
-import { SpritePreviewCanvas } from './SpritePreviewCanvas';
-import { SpritePreviewRightPanel } from './SpritePreviewRightPanel';
-import { SpritePreviewFooter } from './SpritePreviewFooter';
-
-import { useSpritePreviewImage } from '../../../../../../hooks/useSpritePreviewImage';
-import { useNormalizedFrames } from './useNormalizedFrames';
-import { useCanvasHandlers } from './useCanvasHandlers';
-import { useInitialLoad } from './useInitialLoad';
-import {
+import { 
+  SpritePreviewLeftPanel, 
+  SpritePreviewCanvas,
+  SpritePreviewRightPanel,
+  SpritePreviewFooter,
+  useCanvasHandlers,
+  useInitialLoad,
+  useNormalizedFrames,
   CANVAS_SIZE,
   initialSpritePreviewState,
   spritePreviewReducer,
   type SpriteFrameRect,
-} from './spritePreviewReducer';
+  type ScriptEntry,
+} from './components';
+import { ScriptEditorModalBody } from '../../../ScriptEditorModalBody';
 
-export type { SelectionMode, SpriteFrameRect } from './spritePreviewReducer';
+import { useSpritePreviewImage } from '../../../../../../hooks/useSpritePreviewImage';
 
 interface SpritePreviewConfirmConfig {
   animationName: string;
   frames: SpriteFrameRect[];
   fps: number;
   loop: boolean;
+  audioPath?: string;
+  scripts: ScriptEntry[];
 }
 
 export function SpritePreviewModalBody({
@@ -33,6 +36,8 @@ export function SpritePreviewModalBody({
   initialFrames,
   initialFps,
   initialLoop,
+  initialAudioPath,
+  initialScripts,
 }: {
   src: string
   onConfirm?: (config: SpritePreviewConfirmConfig) => void
@@ -41,7 +46,14 @@ export function SpritePreviewModalBody({
   initialFrames?: SpriteFrameRect[]
   initialFps?: number
   initialLoop?: boolean
+  initialAudioPath?: string
+  initialScripts?: ScriptEntry[]
 }) {
+  const [scriptEditorState, setScriptEditorState] = useState<
+    { mode: 'add' } | { mode: 'edit'; name: string } | null
+  >(null);
+  const closeScriptEditor = () => setScriptEditorState(null);
+  const [confirmRemoveScript, setConfirmRemoveScript] = useState<string | null>(null);
   const { imageSrc, imageSize } = useSpritePreviewImage(src);
   const [state, dispatch] = useReducer(spritePreviewReducer, initialSpritePreviewState);
   const [defaultPivotNormalized] = useState<{ x: number; y: number }>({ x: 0.5, y: 0.5 });
@@ -61,7 +73,42 @@ export function SpritePreviewModalBody({
     currentBox,
     fps,
     isLooping,
+    audioPath,
+    scripts,
   } = state;
+
+  useEffect(() => {
+    if (initialAudioPath) {
+      dispatch({ type: 'patch', payload: { audioPath: initialAudioPath } });
+    }
+  }, [initialAudioPath]);
+
+  useEffect(() => {
+    if (initialScripts && initialScripts.length > 0) {
+      dispatch({ type: 'patch', payload: { scripts: initialScripts } });
+    }
+  }, [initialScripts]);
+
+  const handleAddAudio = async () => {
+    const path = await window.electronAPI.openAudioDialog();
+    if (path) dispatch({ type: 'patch', payload: { audioPath: path } });
+  };
+
+  const handleClearAudio = () => {
+    dispatch({ type: 'patch', payload: { audioPath: undefined } });
+  };
+
+  const handleAddScript = () => {
+    setScriptEditorState({ mode: 'add' });
+  };
+
+  const handleEditScript = (name: string) => {
+    setScriptEditorState({ mode: 'edit', name });
+  };
+
+  const handleRemoveScript = (name: string) => {
+    setConfirmRemoveScript(name);
+  };
 
   useInitialLoad({
     dispatch,
@@ -160,6 +207,8 @@ export function SpritePreviewModalBody({
       frames: framesWithPivot,
       fps,
       loop: isLooping,
+      audioPath,
+      scripts,
     });
   };
 
@@ -179,6 +228,13 @@ export function SpritePreviewModalBody({
             CANVAS_SIZE={CANVAS_SIZE}
             onBoxChange={handleBoxChange}
             onAddBox={handleAddBox}
+            audioPath={audioPath}
+            onAddAudio={handleAddAudio}
+            onClearAudio={handleClearAudio}
+            scripts={scripts}
+            onAddScript={handleAddScript}
+            onEditScript={handleEditScript}
+            onRemoveScript={handleRemoveScript}
           />
         </div>
 
@@ -233,6 +289,7 @@ export function SpritePreviewModalBody({
                 [index]: pivot,
               }));
             }}
+            audioPath={audioPath}
           />
         </div>
       </div>
@@ -244,6 +301,80 @@ export function SpritePreviewModalBody({
         onConfirm={onConfirm ? handleConfirm : undefined}
         onCancel={onCancel}
       />
+
+      {/* Modal de confirmación de eliminación de script */}
+      <Modal
+        show={confirmRemoveScript !== null}
+        onHide={() => setConfirmRemoveScript(null)}
+        size="sm"
+        centered
+      >
+        <Modal.Header closeButton>
+          <Modal.Title>Eliminar script</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <p className="mb-0">
+            ¿Seguro que quieres eliminar el script{' '}
+            <strong>{confirmRemoveScript}</strong>? Esta acción no se puede deshacer.
+          </p>
+        </Modal.Body>
+        <Modal.Footer>
+          <button
+            className="btn btn-sm btn-outline-secondary"
+            onClick={() => setConfirmRemoveScript(null)}
+          >
+            Cancelar
+          </button>
+          <button
+            className="btn btn-sm btn-danger"
+            onClick={() => {
+              if (confirmRemoveScript) {
+                dispatch({ type: 'patch', payload: { scripts: scripts.filter((s) => s.name !== confirmRemoveScript) } });
+              }
+              setConfirmRemoveScript(null);
+            }}
+          >
+            Eliminar
+          </button>
+        </Modal.Footer>
+      </Modal>
+
+      {/* Modal local para el editor de scripts — evita reemplazar el modal padre */}
+      <Modal
+        show={scriptEditorState !== null}
+        onHide={closeScriptEditor}
+        size="lg"
+        centered
+      >
+        <Modal.Header closeButton>
+          <Modal.Title>
+            {scriptEditorState?.mode === 'edit'
+              ? `Editar Script: ${(scriptEditorState as { mode: 'edit'; name: string }).name}`
+              : 'Nuevo Script Lua'}
+          </Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          {scriptEditorState !== null && (
+            <ScriptEditorModalBody
+              initialData={
+                scriptEditorState.mode === 'edit'
+                  ? scripts.find((s) => s.name === (scriptEditorState as { mode: 'edit'; name: string }).name)
+                  : undefined
+              }
+              onSave={(data) => {
+                if (scriptEditorState.mode === 'add') {
+                  dispatch({ type: 'patch', payload: { scripts: [...scripts, data] } });
+                } else {
+                  const editName = (scriptEditorState as { mode: 'edit'; name: string }).name;
+                  dispatch({ type: 'patch', payload: { scripts: scripts.map((s) => s.name === editName ? data : s) } });
+                }
+                closeScriptEditor();
+              }}
+              onCancel={closeScriptEditor}
+            />
+          )}
+        </Modal.Body>
+      </Modal>
     </div>
   );
 }

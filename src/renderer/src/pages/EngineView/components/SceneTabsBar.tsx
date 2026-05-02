@@ -495,7 +495,7 @@ export function SceneTabsBar({ initialSave, projectType }: Props) {
   };
 
   return (
-    <div className="scene-tabs-bar px-1 d-flex align-items-center gap-2 overflow-auto">
+    <div className="scene-tabs-bar px-1 d-flex align-items-center gap-2 overflow-auto pb-0">
       <div className="scene-tabs-nav-wrap flex-grow-1 overflow-auto">
         <Nav
           variant="tabs"

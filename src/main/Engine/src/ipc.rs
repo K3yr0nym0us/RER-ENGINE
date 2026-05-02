@@ -36,9 +36,12 @@ pub enum EngineCommand {
         scale:    Option<[f32; 3]>,
     },
     /// Cambiar el nombre de una entidad por id.
+    /// `force`: si es true, omite la validación de nombre duplicado (usado en restore de proyecto).
     SetEntityName {
         id:   u32,
         name: String,
+        #[serde(default)]
+        force: bool,
     },
     /// Cambiar la escena activa. `scene` puede ser "2D", "3D", etc.
     SetScene { scene: String },

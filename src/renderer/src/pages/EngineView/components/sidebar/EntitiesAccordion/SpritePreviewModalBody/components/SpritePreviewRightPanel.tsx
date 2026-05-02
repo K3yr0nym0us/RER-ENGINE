@@ -2,8 +2,9 @@ import { useEffect, useReducer, useRef } from 'react';
 
 import { PlayFill, StopFill, XCircleFill } from 'react-bootstrap-icons';
 
-import AppTooltip from '../../../../../../components/AppTooltip';
-import { SelectionMode } from './SpritePreviewModalBody';
+import AppTooltip from '../../../../../../../components/AppTooltip';
+import { SelectionMode } from './';
+import { useAudioPreview } from '../../../../../../../hooks/useAudioPreview';
 
 interface SpritePreviewRightPanelProps {
   src: string;
@@ -23,6 +24,7 @@ interface SpritePreviewRightPanelProps {
   onSelectedFrameChange?: (index: number) => void;
   pivotsByFrameIndex?: Record<number, { x: number; y: number }>;
   onPivotChange?: (index: number, pivot: { x: number; y: number }) => void;
+  audioPath?: string;
 }
 
 const CANVAS_SIZE = 500;
@@ -89,8 +91,10 @@ export function SpritePreviewRightPanel({
   onSelectedFrameChange,
   pivotsByFrameIndex,
   onPivotChange,
+  audioPath,
 }: SpritePreviewRightPanelProps) {
   const [{ selectedFrameIndex, isPlaying }, dispatch] = useReducer(playbackReducer, initialPlaybackState);
+  useAudioPreview(audioPath, isPlaying, isLooping);
   const animIntervalRef = useRef<number | null>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
 

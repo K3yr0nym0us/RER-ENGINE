@@ -2,6 +2,11 @@ export const CANVAS_SIZE = 500;
 
 export type SelectionMode = 'cell' | 'box';
 
+export interface ScriptEntry {
+  name:   string;
+  source: string;
+}
+
 export interface SpriteFrameRect {
   x: number;
   y: number;
@@ -16,6 +21,8 @@ export interface SpritePreviewConfirmConfig {
   frames: SpriteFrameRect[];
   fps: number;
   loop: boolean;
+  audioPath?: string;
+  scripts: ScriptEntry[];
 }
 
 export interface SpritePreviewState {
@@ -30,6 +37,8 @@ export interface SpritePreviewState {
   currentBox: { x: number; y: number; width: number; height: number };
   fps: number;
   isLooping: boolean;
+  audioPath?: string;
+  scripts: ScriptEntry[];
 }
 
 export type SpritePreviewAction =
@@ -51,6 +60,8 @@ export const initialSpritePreviewState: SpritePreviewState = {
   currentBox: { x: 0, y: 0, width: 64, height: 64 },
   fps: 12,
   isLooping: false,
+  audioPath: undefined,
+  scripts: [],
 };
 
 export function spritePreviewReducer(
