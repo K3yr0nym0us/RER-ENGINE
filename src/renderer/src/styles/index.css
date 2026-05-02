@@ -440,14 +440,10 @@ body {
 }
 
 /* ── Control mapping modal ─────────────────────────────────────────────── */
-.control-grid-placeholder {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(78px, 1fr));
-  gap: 8px;
-}
-
 .control-key-btn {
-  min-height: 42px;
+  min-height: 34px;
+  min-width: 34px;
+  padding: 4px 8px;
   border: 1px solid #4a4f78;
   background: #1b2036;
   color: #dde3f1;
@@ -455,7 +451,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 4px;
   transition: border-color 0.15s ease, background-color 0.15s ease;
 }
 
@@ -470,15 +466,95 @@ body {
   background: #1d3a33;
 }
 
+.control-key-btn--wide {
+  flex: 1;
+}
+
 .control-key-btn__key {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.03em;
+  white-space: nowrap;
 }
 
 .control-key-btn__dot {
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
   border-radius: 999px;
   background: #47d18f;
+  flex-shrink: 0;
+}
+
+/* Keyboard layout */
+.ckb-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.ckb-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #8890b5;
+}
+
+.ckb-section-hr {
+  border-color: #4a4f78;
+  margin: 4px 0 8px;
+  opacity: 1;
+}
+
+.ckb-keyboard-keys {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ckb-row {
+  display: flex;
+  gap: 6px;
+}
+
+.ckb-row--center {
+  justify-content: center;
+}
+
+.ckb-row--spread {
+  justify-content: space-between;
+}
+
+.ckb-row--vcenter {
+  align-items: center;
+}
+
+.ckb-mouse-keys {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Gamepad layout */
+.ckb-gamepad-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ckb-gamepad-center {
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.ckb-dpad {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ckb-face-btns {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }

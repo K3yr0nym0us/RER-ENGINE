@@ -22,6 +22,8 @@ const KEY_MAP: Record<string, string> = {
   ControlRight: 'CTRL',
   ShiftLeft: 'SHIFT',
   ShiftRight: 'SHIFT',
+  AltLeft: 'ALT',
+  AltRight: 'ALT',
 }
 
 const MOUSE_MAP: Record<number, string> = {

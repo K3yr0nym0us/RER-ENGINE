@@ -144,7 +144,9 @@ export function AnimationAccordion({
             {isPlaying ? <Spinner animation="border" size="sm" /> : <PlayFill size={12} />}
           </span>
         </AppTooltip>
-        <span className="me-auto">{anim.name}</span>
+        <AppTooltip content={anim.name} place="bottom">
+          <span className="text-truncate" style={{ maxWidth: '120px' }}>{anim.name}</span>
+        </AppTooltip>
         <AppTooltip content="Eliminar animación" place="bottom">
           <span
             role="button"
@@ -231,7 +233,7 @@ export function AnimationAccordion({
             {anim.frames.map((frame, frameIdx) => (
               <div key={frameIdx} className="d-flex align-items-center gap-1">
                 <AppTooltip content={frame.path} place="top">
-                  <span className="small text-truncate" style={{ maxWidth: 110 }}>
+                  <span className="small text-truncate flex-fill" style={{ minWidth: 0 }}>
                     {frame.path.split('/').pop()}
                   </span>
                 </AppTooltip>

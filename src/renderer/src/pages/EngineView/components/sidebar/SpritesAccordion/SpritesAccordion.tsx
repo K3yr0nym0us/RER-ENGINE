@@ -56,21 +56,19 @@ const SpritesAccordion = () => {
           {sprites.length === 0 && <li className="text-muted">Sin sprites cargados</li>}
           {sprites.map((sprite) => (
             <li key={sprite.path} className="mb-1">
-              <span className="d-flex align-items-center justify-content-between gap-2 border rounded p-2">
-                <div>
-                  <Image className="me-2" />
-                  {sprite.name}
-                </div>
-                <div>
-                  <AppTooltip content="Eliminar Sprite" place="top">
-                    <button 
-                      className="btn btn-sm text-danger"
-                      onClick={() => handleDeleteSprite(sprite)}
-                    >
-                      <Trash />
-                    </button>
-                  </AppTooltip>
-                </div>
+              <span className="d-flex align-items-center gap-2 border rounded p-2">
+                <Image className="flex-shrink-0" />
+                <AppTooltip content={sprite.name} place="top">
+                  <span className="text-light small text-truncate flex-fill">{sprite.name}</span>
+                </AppTooltip>
+                <AppTooltip content="Eliminar Sprite" place="top">
+                  <button 
+                    className="btn btn-sm text-danger flex-shrink-0"
+                    onClick={() => handleDeleteSprite(sprite)}
+                  >
+                    <Trash />
+                  </button>
+                </AppTooltip>
               </span>
             </li>
           ))}
