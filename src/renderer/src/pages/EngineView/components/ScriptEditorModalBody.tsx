@@ -43,7 +43,7 @@ end
 return script`
 
 interface ScriptEditorModalBodyProps {
-  initialData?: { name: string; source: string }
+  initialData?: { name?: string; source?: string }
   onSave:       (data: { name: string; source: string }) => void
   onCancel:     () => void
 }

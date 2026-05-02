@@ -171,6 +171,53 @@ impl ScriptEngine {
         self.scripts.keys().copied().collect()
     }
 
+    /// Executes a control script on-demand (triggered by runtime input).
+    /// The chunk can return a table with `on_press(self, entity, control_key)`
+    /// or execute direct `engine.*` API calls inline.
+    pub fn run_control_script(
+        &mut self,
+        entity_id: u32,
+        control_key: &str,
+        path: &str,
+        source: &str,
+        snapshot: Option<&EntitySnapshot>,
+    ) -> LuaResult<Vec<ScriptCmd>> {
+        let cmd_queue: LuaTable = self.lua.create_table()?;
+        self.lua.globals().set("__cmds", cmd_queue)?;
+
+        let mut snapshots = HashMap::new();
+        if let Some(s) = snapshot {
+            snapshots.insert(entity_id, s.clone());
+        }
+        self.register_api(&snapshots);
+
+        let entity_table = self.build_entity_table(entity_id, snapshot)?;
+
+        let eval_result = self.lua.load(source).set_name(path).eval::<LuaValue>();
+        match eval_result {
+            Ok(LuaValue::Table(table)) => {
+                call_fn_control(&table, "on_press", entity_table, control_key)?;
+            }
+            Ok(_) => {}
+            Err(_) => {
+                self.lua.load(source).set_name(path).exec()?;
+            }
+        }
+
+        let mut commands = Vec::new();
+        if let Ok(queue) = self.lua.globals().get::<LuaTable>("__cmds") {
+            for pair in queue.sequence_values::<LuaTable>() {
+                if let Ok(cmd_table) = pair {
+                    if let Ok(cmd) = parse_cmd_table(cmd_table) {
+                        commands.push(cmd);
+                    }
+                }
+            }
+        }
+
+        Ok(commands)
+    }
+
     // ── Tick ──────────────────────────────────────────────────────────────
 
     /// Called every frame. Snapshots are the current state of all entities
@@ -412,6 +459,14 @@ fn call_fn(table: &LuaTable, method: &str, entity: LuaTable) -> LuaResult<()> {
 fn call_fn_dt(table: &LuaTable, method: &str, entity: LuaTable, dt: f32) -> LuaResult<()> {
     match table.get::<LuaValue>(method)? {
         LuaValue::Function(f) => f.call::<()>((table.clone(), entity, dt)),
+        LuaValue::Nil => Ok(()),
+        _ => Ok(()),
+    }
+}
+
+fn call_fn_control(table: &LuaTable, method: &str, entity: LuaTable, control_key: &str) -> LuaResult<()> {
+    match table.get::<LuaValue>(method)? {
+        LuaValue::Function(f) => f.call::<()>((table.clone(), entity, control_key.to_string())),
         LuaValue::Nil => Ok(()),
         _ => Ok(()),
     }

@@ -1239,6 +1239,19 @@ EngineCommand::PlayAnimation { id, name } => {
                     });
                 }
             }
+            EngineCommand::RunControlScript { id, control_key, path, source } => {
+                if !self.preview_playing {
+                    return;
+                }
+
+                let snapshot = self.build_script_snapshot(id);
+                match self.script_engine.run_control_script(id, &control_key, &path, &source, snapshot.as_ref()) {
+                    Ok(commands) => self.apply_script_commands(commands),
+                    Err(e) => {
+                        log::error!("[control] Error ejecutando script '{}' ({}): {}", path, control_key, e);
+                    }
+                }
+            }
             EngineCommand::UnloadScript { id } => {
                 log::info!("[IPC] UnloadScript: entity_id={}", id);
                 self.script_engine.detach_entity(id);
@@ -1465,6 +1478,21 @@ self.active_animations.retain(|_, a| !a.finished);
 
         let commands = self.script_engine.tick(self.delta_time, &snapshots);
         self.apply_script_commands(commands);
+    }
+
+    fn build_script_snapshot(&self, id: u32) -> Option<EntitySnapshot> {
+        let (x, y, scale_x, scale_y) = if let Some(t) = self.world.get::<Transform>(id) {
+            (t.position.x, t.position.y, t.scale.x, t.scale.y)
+        } else {
+            (0.0, 0.0, 1.0, 1.0)
+        };
+
+        let animations: Vec<String> = self.animations
+            .get(&id)
+            .map(|m| m.keys().cloned().collect())
+            .unwrap_or_default();
+
+        Some(EntitySnapshot { id, x, y, scale_x, scale_y, animations })
     }
 
     /// Aplica los comandos generados por los scripts al estado del motor.

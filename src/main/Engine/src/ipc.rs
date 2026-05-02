@@ -136,6 +136,9 @@ pub enum EngineCommand {
     /// Adjuntar un script Lua a una entidad. `source` es el código Lua completo.
     /// `path` se usa solo para mensajes de error y logs.
     LoadScript { id: u32, path: String, source: String },
+    /// Ejecutar script de control para una entidad (trigger en runtime por input).
+    /// Se procesa solo en modo de juego.
+    RunControlScript { id: u32, control_key: String, path: String, source: String },
     /// Desadjuntar todos los scripts de una entidad (sin eliminar la entidad).
     UnloadScript { id: u32 },
     /// Cargar una imagen PNG como sprite (solo almacenamiento, no se renderiza).

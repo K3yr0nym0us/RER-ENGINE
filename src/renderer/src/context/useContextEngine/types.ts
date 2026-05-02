@@ -1,5 +1,5 @@
 import type { MutableRefObject } from 'react';
-import type { ProjectSaveData, SpriteInfo } from '@shared-types';
+import type { ProjectSaveData, SavedControlBindings, SpriteInfo } from '@shared-types';
 
 export interface Entity {
 	id: number
@@ -229,6 +229,7 @@ export interface EntityMeta {
 	points?: ColliderPoints
 	animations?: EntityAnimations
 	scripts?: EntityScripts
+	controlBindings?: SavedControlBindings
 }
 
 export interface PendingRestore {
@@ -238,6 +239,7 @@ export interface PendingRestore {
 	physicsType: string
 	animations?: any[]
 	scripts?: EntityScripts
+	controlBindings?: SavedControlBindings
 }
 
 export interface Camera2dState {

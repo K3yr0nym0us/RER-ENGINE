@@ -66,6 +66,7 @@ export function useAutoSave({ projectType = '2D', initialSave = null, initialSav
           points: m.points,
           animations: m.animations,
           scripts: m.scripts,
+          control_bindings: m.controlBindings,
         }
       })
 

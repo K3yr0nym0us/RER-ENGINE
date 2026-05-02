@@ -110,6 +110,7 @@ export function createEngineEventHandler({
 							physicsType: entity.physics_type ?? 'static',
 							animations: entity.animations,
 							scripts: entity.scripts,
+							controlBindings: entity.control_bindings,
 						};
 						const queue = refs.pendingRestoresRef.current.get(entity.path) ?? [];
 						queue.push(pendingRestore);
@@ -253,6 +254,9 @@ export function createEngineEventHandler({
 						window.engine.send({ cmd: 'load_script', id: scenario.id, path: script.name, source: script.source } as never);
 					}
 				}
+				if (pending.controlBindings) {
+					refs.entityMetaRef.current[scenario.id].controlBindings = pending.controlBindings;
+				}
 				if (queue.length === 0) refs.pendingRestoresRef.current.delete(scenario.path);
 			}
 		}
@@ -308,6 +312,12 @@ export function createEngineEventHandler({
 					}
 					for (const script of pending.scripts) {
 						window.engine.send({ cmd: 'load_script', id, path: script.name, source: script.source } as never);
+					}
+				}
+
+				if (pending.controlBindings) {
+					if (refs.entityMetaRef.current[id]) {
+						refs.entityMetaRef.current[id].controlBindings = pending.controlBindings;
 					}
 				}
 

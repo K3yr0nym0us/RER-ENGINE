@@ -438,3 +438,47 @@ body {
 .coming-soon-wrapper {
   margin-top: 12px;
 }
+
+/* ── Control mapping modal ─────────────────────────────────────────────── */
+.control-grid-placeholder {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(78px, 1fr));
+  gap: 8px;
+}
+
+.control-key-btn {
+  min-height: 42px;
+  border: 1px solid #4a4f78;
+  background: #1b2036;
+  color: #dde3f1;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.control-key-btn:hover,
+.control-key-btn:focus {
+  border-color: #7f8ae6;
+  background: #252c4a;
+}
+
+.control-key-btn--assigned {
+  border-color: #2ea86f;
+  background: #1d3a33;
+}
+
+.control-key-btn__key {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
+.control-key-btn__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #47d18f;
+}

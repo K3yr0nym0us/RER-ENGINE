@@ -110,6 +110,7 @@ export function SceneTabsBar({ initialSave, projectType }: Props) {
         points: m.points,
         animations: m.animations,
         scripts: m.scripts,
+        control_bindings: m.controlBindings,
       });
       return acc;
     }, []);
@@ -205,6 +206,7 @@ export function SceneTabsBar({ initialSave, projectType }: Props) {
         physicsType: entity.physics_type ?? 'static',
         animations: entity.animations,
         scripts: entity.scripts,
+        controlBindings: entity.control_bindings,
       });
 
       if (entity.kind === 'scenario') send({ cmd: 'load_scenario', path: entity.path });
@@ -529,7 +531,7 @@ export function SceneTabsBar({ initialSave, projectType }: Props) {
               sprites: [],
             };
 
-            if (currentSnapshot) {
+            if (current && currentSnapshot) {
               setSceneDataById((prev) => ({ ...prev, [current.id]: currentSnapshot }));
             }
 
