@@ -278,7 +278,7 @@ Motivo: priorizar madurez de engine, estabilidad y pipeline antes de expansion d
   * ✅ Step 2: Instanced rendering — batch by (mesh_idx, bind_group)
   * ✅ Step 3: Texture atlas — single 4096×4096 GPU texture via shelf packing
   * ✅ Step 4: Frustum culling — 2D AABB + 3D sphere-plane testing
-  * [ ] Step 5: Render layers / z-sorting (parcialmente hecho: ya hay sort Z)
+  * ✅ Step 5: Render layers — explicit layer control + z-sorting
 * [ ] Particionado espacial para escalado (quadtree/grid/BVH) en picking/render/fisicas
 * [ ] Prefabs/blueprints para productividad y reutilizacion real de logica
 
@@ -292,17 +292,6 @@ Motivo: priorizar madurez de engine, estabilidad y pipeline antes de expansion d
 ### Prioridad baja
 
 * [ ] Animaciones 3D (clips/animator/state machine) consolidadas en pipeline de proyecto
-
-## 🧠 Criterio de priorizacion (vision del proyecto)
-
-* Tipo A (motor interno): ECS, optimizacion, particionado
-* Tipo B (producto usable): prefabs, scripting, UX/editor
-
-Decision vigente:
-
-* ✅ Equilibrar A y B
-* ✅ Priorizar features que mejoran capacidad de crear juegos de forma natural
-* ✅ Evitar crecimiento por features llamativas que no mejoran workflow real
 
 ## 🔓 Bloqueadores y desbloqueos
 
@@ -321,7 +310,7 @@ Decision vigente:
   * ✅ DONE: Instanced rendering implementado (batch by mesh_idx + bind_group)
   * ✅ DONE: Texture atlas implementado (4096×4096 single texture, all 2D/3D sprites packed)
   * ✅ DONE: Frustum culling (is_visible_2d AABB + is_visible_3d sphere-plane)
-  * ⏳ Próximo: Render layers / z-sorting mejorado (ya hay sort Z básico)
+  * ✅ DONE: Render layers (RenderLayer component, sort by (layer, z))
 * Particionado espacial
   * DONE cuando picking y consultas principales dejan de ser O(n) global para casos comunes
   * DONE cuando se usa en al menos picking + una ruta de fisica o render

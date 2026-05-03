@@ -67,6 +67,18 @@ pub struct MeshComponent {
 #[derive(Debug, Clone, Default)]
 pub struct NonSelectable;
 
+/// Control explícito del orden de renderizado (render layer).
+/// Entidades con mayor `layer` se renderizan después (encima).
+/// Dentro del mismo layer, el orden está determinado por Transform.position.z (menor z primero = back-to-front).
+#[derive(Debug, Clone, Copy)]
+pub struct RenderLayer {
+    pub value: i32,  // default 0
+}
+
+impl Default for RenderLayer {
+    fn default() -> Self { Self { value: 0 } }
+}
+
 /// Nombre visible en el SceneTree.
 #[derive(Debug, Clone)]
 pub struct NameComponent {
@@ -167,6 +179,7 @@ impl Default for World {
         w.register::<MeshComponent>();
         w.register::<NameComponent>();
         w.register::<NonSelectable>();
+        w.register::<RenderLayer>();
         w
     }
 }

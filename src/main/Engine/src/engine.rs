@@ -1752,13 +1752,13 @@ self.active_animations.retain(|_, a| !a.finished);
             self.queue.write_buffer(&self.scene_buffer, 0, bytemuck::cast_slice(&[scene_uni]));
         }
 
-        // ── Paso 2: recopilar entidades visibles (frustum culling + sort Z) ──
+        // ── Paso 2: recopilar entidades visibles (frustum culling + sort layer+Z) ──
         let aspect_fc = self.size.width as f32 / self.size.height as f32;
         let frustum_vp_3d: Option<glam::Mat4> = self.camera_2d.is_none().then(|| {
             let raw = self.camera.to_uniform(aspect_fc).view_proj;
             glam::Mat4::from_cols_array_2d(&raw)
         });
-        let mut entities: Vec<(crate::ecs::EntityId, usize, usize, Mat4, f32)> =
+        let mut entities: Vec<(crate::ecs::EntityId, usize, usize, Mat4, i32, f32)> =
             self.world.entities().iter().copied().filter_map(|id| {
                 let mc       = self.world.get::<MeshComponent>(id)?;
                 let mesh_idx = mc.mesh_idx;
@@ -1775,10 +1775,19 @@ self.active_animations.retain(|_, a| !a.finished);
                 };
                 if !visible { return None; }
                 let model_mat = t.to_matrix();
+                let layer     = self.world.get::<crate::ecs::RenderLayer>(id).map(|rl| rl.value).unwrap_or(0);
                 let z         = t.position.z;
-                Some((id, mesh_idx, tex_idx, model_mat, z))
+                Some((id, mesh_idx, tex_idx, model_mat, layer, z))
             }).collect();
-        entities.sort_by(|a, b| a.4.partial_cmp(&b.4).unwrap_or(std::cmp::Ordering::Equal));
+        // Sort by (layer ASC, z ASC) — lower layer first, within layer sort by z (back-to-front)
+        entities.sort_by(|a, b| {
+            let layer_cmp = a.4.cmp(&b.4);
+            if layer_cmp != std::cmp::Ordering::Equal {
+                layer_cmp
+            } else {
+                a.5.partial_cmp(&b.5).unwrap_or(std::cmp::Ordering::Equal)
+            }
+        });
 
         // ── Paso 3: agrupar en batches por mesh_idx ────────────────────────
         // Con el atlas todas las entidades comparten el mismo bind group,
@@ -1789,7 +1798,7 @@ self.active_animations.retain(|_, a| !a.finished);
             instances: Vec<mesh::InstanceData>,
         }
         let mut batches: Vec<Batch> = Vec::new();
-        for (entity_id, mesh_idx, tex_idx, model_matrix, _z) in &entities {
+        for (entity_id, mesh_idx, tex_idx, model_matrix, _layer, _z) in &entities {
             if self.preview_playing
                 && (self.collider_entities.contains(entity_id)
                     || self.execution_area_entities.contains(entity_id))
