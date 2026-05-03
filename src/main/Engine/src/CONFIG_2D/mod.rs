@@ -874,7 +874,7 @@ impl State {
         // Recoge todos los hits y elige el de mayor Z (más cercano a la cámara).
         let mut best: Option<(EntityId, f32)> = None;
         for &entity in self.world.entities() {
-            if self.world.get::<crate::ecs::NonSelectable>(entity).is_some() { continue; }
+            if self.world.has::<crate::ecs::NonSelectable>(entity) { continue; }
             if let Some(transform) = self.world.get::<Transform>(entity) {
                 let p  = transform.position;
                 let sx = transform.scale.x * 0.5;
@@ -1045,7 +1045,7 @@ impl State {
         // Query spatial grid para entidades cerca del cursor
         let candidates = self.spatial_grid.query_cell(wx, wy);
         for entity in candidates {
-            if self.world.get::<crate::ecs::NonSelectable>(entity).is_some() { continue; }
+            if self.world.has::<crate::ecs::NonSelectable>(entity) { continue; }
             if let Some(t) = self.world.get::<Transform>(entity) {
                 let sx = t.scale.x * 0.5;
                 let sy = t.scale.y * 0.5;

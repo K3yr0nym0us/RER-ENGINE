@@ -1775,12 +1775,13 @@ self.active_animations.retain(|_, a| !a.finished);
             let raw = self.camera.to_uniform(aspect_fc).view_proj;
             glam::Mat4::from_cols_array_2d(&raw)
         });
+        // query2<MeshComponent, Transform> itera solo entidades con ambos componentes,
+        // evitando el scan de todas las entidades + doble lookup de hash por entidad.
         let mut entities: Vec<(crate::ecs::EntityId, usize, usize, Mat4, i32, f32)> =
-            self.world.entities().iter().copied().filter_map(|id| {
-                let mc       = self.world.get::<MeshComponent>(id)?;
+            self.world.query2::<MeshComponent, crate::ecs::Transform>()
+            .filter_map(|(id, mc, t)| {
                 let mesh_idx = mc.mesh_idx;
                 let tex_idx  = mc.tex_idx;
-                let t        = self.world.get::<crate::ecs::Transform>(id)?;
                 // ── Frustum culling ──────────────────────────────────────────
                 let visible = if let Some(cam2d) = &self.camera_2d {
                     is_visible_2d(cam2d, t.position, t.scale, aspect_fc)

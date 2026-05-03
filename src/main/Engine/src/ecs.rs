@@ -290,4 +290,73 @@ impl World {
     pub fn name(&self, entity: EntityId) -> Option<&str> {
         self.get::<NameComponent>(entity).map(|n| n.name.as_str())
     }
+
+    // ── Queries multi-componente ──────────────────────────────────────────────
+
+    /// Comprueba si una entidad tiene el componente T (O(1)).
+    pub fn has<T: 'static>(&self, entity: EntityId) -> bool {
+        self.storages
+            .get(&TypeId::of::<T>())
+            .and_then(|s| s.as_any().downcast_ref::<ComponentStorage<T>>())
+            .map(|cs| cs.entity_map.contains_key(&entity))
+            .unwrap_or(false)
+    }
+
+    /// Itera sobre entidades que tienen **ambos** componentes A y B.
+    /// Recorre el storage de A y hace lookup O(1) de B por cada entidad.
+    /// Más eficiente que filtrar `entities()` cuando A es el componente menos frecuente.
+    #[allow(dead_code)]
+    pub fn query2<A: 'static, B: 'static>(&self) -> impl Iterator<Item = (EntityId, &A, &B)> {
+        let storage_a = self.storages
+            .get(&TypeId::of::<A>())
+            .and_then(|s| s.as_any().downcast_ref::<ComponentStorage<A>>());
+        let storage_b = self.storages
+            .get(&TypeId::of::<B>())
+            .and_then(|s| s.as_any().downcast_ref::<ComponentStorage<B>>());
+
+        match (storage_a, storage_b) {
+            (Some(sa), Some(sb)) => {
+                let pairs: Vec<(EntityId, &A, &B)> = sa.index_map.iter().copied()
+                    .zip(sa.data.iter())
+                    .filter_map(|(id, a)| {
+                        sb.get(id).map(|b| (id, a, b))
+                    })
+                    .collect();
+                pairs.into_iter()
+            }
+            _ => Vec::new().into_iter(),
+        }
+    }
+
+    /// Itera sobre entidades que tienen los tres componentes A, B y C.
+    /// Recorre el storage de A y hace lookup O(1) de B y C por cada entidad.
+    #[allow(dead_code)]
+    pub fn query3<A: 'static, B: 'static, C: 'static>(
+        &self,
+    ) -> impl Iterator<Item = (EntityId, &A, &B, &C)> {
+        let storage_a = self.storages
+            .get(&TypeId::of::<A>())
+            .and_then(|s| s.as_any().downcast_ref::<ComponentStorage<A>>());
+        let storage_b = self.storages
+            .get(&TypeId::of::<B>())
+            .and_then(|s| s.as_any().downcast_ref::<ComponentStorage<B>>());
+        let storage_c = self.storages
+            .get(&TypeId::of::<C>())
+            .and_then(|s| s.as_any().downcast_ref::<ComponentStorage<C>>());
+
+        match (storage_a, storage_b, storage_c) {
+            (Some(sa), Some(sb), Some(sc)) => {
+                let triples: Vec<(EntityId, &A, &B, &C)> = sa.index_map.iter().copied()
+                    .zip(sa.data.iter())
+                    .filter_map(|(id, a)| {
+                        let b = sb.get(id)?;
+                        let c = sc.get(id)?;
+                        Some((id, a, b, c))
+                    })
+                    .collect();
+                triples.into_iter()
+            }
+            _ => Vec::new().into_iter(),
+        }
+    }
 }

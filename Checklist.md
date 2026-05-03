@@ -284,7 +284,7 @@ Motivo: priorizar madurez de engine, estabilidad y pipeline antes de expansion d
 
 ### Prioridad media
 
-* [ ] ECS mas avanzado: queries multi-componente y evaluacion de archetypes
+* ✅ ECS mas avanzado: queries multi-componente y evaluacion de archetypes
 * [ ] Hot reload de scripts/shaders/assets
 * [ ] Jerarquia de entidades parent/child y multi-seleccion en editor
 * [ ] Versionado y migraciones de formato `.save` (el campo `version` existe, faltan migraciones formales) (⚠️ Se vuelve crítico en cuanto existan proyectos persistentes reales)
