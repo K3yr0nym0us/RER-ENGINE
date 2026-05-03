@@ -277,8 +277,8 @@ Motivo: priorizar madurez de engine, estabilidad y pipeline antes de expansion d
 * ✅ Optimizacion de render de base: batching, texture atlas, frustum culling, render layers
   * ✅ Step 2: Instanced rendering — batch by (mesh_idx, bind_group)
   * ✅ Step 3: Texture atlas — single 4096×4096 GPU texture via shelf packing
-  * [ ] Step 4: Frustum culling (próximo)
-  * [ ] Step 5: Render layers / z-sorting
+  * ✅ Step 4: Frustum culling — 2D AABB + 3D sphere-plane testing
+  * [ ] Step 5: Render layers / z-sorting (parcialmente hecho: ya hay sort Z)
 * [ ] Particionado espacial para escalado (quadtree/grid/BVH) en picking/render/fisicas
 * [ ] Prefabs/blueprints para productividad y reutilizacion real de logica
 
@@ -320,7 +320,8 @@ Decision vigente:
 * Optimizacion render base
   * ✅ DONE: Instanced rendering implementado (batch by mesh_idx + bind_group)
   * ✅ DONE: Texture atlas implementado (4096×4096 single texture, all 2D/3D sprites packed)
-  * ⏳ Próximo: Frustum culling y z-sorting para escenas más complejas
+  * ✅ DONE: Frustum culling (is_visible_2d AABB + is_visible_3d sphere-plane)
+  * ⏳ Próximo: Render layers / z-sorting mejorado (ya hay sort Z básico)
 * Particionado espacial
   * DONE cuando picking y consultas principales dejan de ser O(n) global para casos comunes
   * DONE cuando se usa en al menos picking + una ruta de fisica o render
