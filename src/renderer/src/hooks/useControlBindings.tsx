@@ -105,26 +105,6 @@ export function useControlBindings() {
     setRevision((prev) => prev + 1)
   }, [effectiveCharacterId, entityMetaRef])
 
-  const removeBinding = useCallback((mode: ControlDeviceMode, controlKey: string) => {
-    if (!effectiveCharacterId) return
-    const meta = entityMetaRef.current[effectiveCharacterId]
-    if (!meta) return
-
-    const current = fromSavedBindings(meta.controlBindings)
-    const nextKeyboard = { ...current.keyboardMouse }
-    const nextGamepad = { ...current.gamepad }
-
-    if (mode === 'keyboard_mouse') delete nextKeyboard[controlKey]
-    if (mode === 'gamepad') delete nextGamepad[controlKey]
-
-    meta.controlBindings = toSavedBindings({
-      keyboardMouse: nextKeyboard,
-      gamepad: nextGamepad,
-    })
-
-    setRevision((prev) => prev + 1)
-  }, [effectiveCharacterId, entityMetaRef])
-
   const openBindingsModal = useCallback((mode: ControlDeviceMode) => {
     if (!effectiveCharacterId) return
 
@@ -159,11 +139,10 @@ export function useControlBindings() {
           characterLabel={selectedCharacterLabel}
           bindings={currentBindings}
           onOpenScriptEditor={openScriptEditor}
-          onRemoveBinding={(controlKey) => removeBinding(mode, controlKey)}
         />
       ),
     })
-  }, [effectiveCharacterId, getBindingsForCurrentCharacter, openModal, removeBinding, selectedCharacterLabel, setBinding])
+  }, [effectiveCharacterId, getBindingsForCurrentCharacter, openModal, selectedCharacterLabel, setBinding])
 
   const currentBindings = getBindingsForCurrentCharacter()
 

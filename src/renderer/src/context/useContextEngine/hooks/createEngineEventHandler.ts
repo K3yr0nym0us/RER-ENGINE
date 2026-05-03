@@ -3,6 +3,7 @@ import type {
 	AnimationFinished,
 	Camera2dUpdated,
 	CharacterLoaded,
+	ControlInputDetected,
 	EngineEvent,
 	EntitySelected,
 	PhysicsChanged,
@@ -49,6 +50,29 @@ export function createEngineEventHandler({
 			rotation: [0, 0, 0, 1],
 			scale: [bw, bh, 1],
 		};
+	};
+
+	const runControlScriptsForDetectedInput = (payload: ControlInputDetected) => {
+		const bindingsKey = payload.device === 'gamepad' ? 'gamepad' : 'keyboard_mouse';
+		const controlKey = payload.control_key;
+
+		for (const [entityIdStr, meta] of Object.entries(refs.entityMetaRef.current)) {
+			if (meta.kind !== 'character' || !meta.controlBindings) continue;
+			const boundScripts = meta.controlBindings[bindingsKey] ?? {};
+			const script = boundScripts[controlKey];
+			if (!script) continue;
+
+			const entityId = Number(entityIdStr);
+			if (!Number.isFinite(entityId)) continue;
+
+			window.engine.send({
+				cmd: 'run_control_script',
+				id: entityId,
+				control_key: controlKey,
+				path: script.name,
+				source: script.source,
+			} as never);
+		}
 	};
 
 	return (event: EngineEvent) => {
@@ -197,6 +221,10 @@ export function createEngineEventHandler({
 
 		if (event.event === 'entity_unhovered') {
 			dispatch({ type: 'SET_HOVER', payload: null });
+		}
+
+		if (event.event === 'control_input_detected') {
+			runControlScriptsForDetectedInput(event as ControlInputDetected);
 		}
 
 		if (event.event === 'player_ready') {

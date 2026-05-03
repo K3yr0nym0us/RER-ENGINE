@@ -122,7 +122,7 @@ export interface EngineCommand {
 }
 
 export interface EngineEvent {
-  event: 'ready' | 'pong' | 'error' | 'model_loaded' | 'stopped' | 'entity_selected' | 'entity_deselected' | 'entity_hovered' | 'entity_unhovered' | 'scenario_loaded' | 'character_loaded' | 'player_ready' | 'camera_2d_updated' | 'background_loaded' | 'drawing_progress' | 'collider_created' | 'execution_area_created' | 'tool_cancelled' | 'pivot_selected' | 'physics_changed' | 'sprite_loaded' | 'sprite_removed' | 'sprites_list'
+  event: 'ready' | 'pong' | 'error' | 'model_loaded' | 'stopped' | 'entity_selected' | 'entity_deselected' | 'entity_hovered' | 'entity_unhovered' | 'scenario_loaded' | 'character_loaded' | 'player_ready' | 'camera_2d_updated' | 'background_loaded' | 'drawing_progress' | 'collider_created' | 'execution_area_created' | 'tool_cancelled' | 'pivot_selected' | 'physics_changed' | 'sprite_loaded' | 'sprite_removed' | 'sprites_list' | 'control_input_detected'
   [key: string]: unknown
 }
 
@@ -211,6 +211,12 @@ export interface SpriteRemoved {
 export interface SpritesList {
   event:  'sprites_list'
   sprites: SpriteInfo[]
+}
+
+export interface ControlInputDetected {
+  event: 'control_input_detected'
+  device: 'keyboard_mouse' | 'gamepad'
+  control_key: string
 }
 
 export interface SpriteInfo {

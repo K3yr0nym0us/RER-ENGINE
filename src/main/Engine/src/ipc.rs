@@ -239,6 +239,8 @@ pub enum EngineEvent {
     SpriteRemoved { path: String },
     /// Emitido como respuesta a GetSpritesList: lista de sprites disponibles.
     SpritesList { sprites: Vec<SpriteInfo> },
+    /// Emitido cuando el motor detecta un input de control en modo juego.
+    ControlInputDetected { device: String, control_key: String },
 }
 
 /// Información básica de un sprite almacenado en el motor.

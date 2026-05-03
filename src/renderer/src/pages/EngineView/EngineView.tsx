@@ -8,7 +8,6 @@ import TopBarEngine from './components/TopBarEngine';
 import { EngineProvider } from '@engine';
 import { ModalProvider } from '@modal';
 import { useAutoSave } from '../../hooks/useAutoSave';
-import { useControlBindingsRuntime } from '../../hooks/useControlBindingsRuntime';
 
 import type { ProjectType, ProjectSaveData } from '@shared-types';
 
@@ -31,7 +30,6 @@ function EngineViewInner({ projectType, initialSave, initialSavePath, viewportRe
   viewportRef: React.RefObject<HTMLDivElement>
 }) {
   const { handleSave, toggleAutoSave } = useAutoSave({ projectType, initialSave, initialSavePath })
-  useControlBindingsRuntime()
 
   return (
     <div className="app-shell d-flex flex-column">

@@ -1,4 +1,4 @@
-import { Joystick, Keyboard, Pencil, Trash } from 'react-bootstrap-icons';
+import { InfoCircleFill } from 'react-bootstrap-icons';
 
 import AppTooltip from '../../../../../components/AppTooltip';
 import type { ControlDeviceMode, ControlScript } from '../../../../../hooks/useControlBindings';
@@ -8,16 +8,15 @@ interface ControlBindingsModalBodyProps {
   characterLabel: string
   bindings: Record<string, ControlScript>
   onOpenScriptEditor: (controlKey: string) => void
-  onRemoveBinding: (controlKey: string) => void
 }
 
 export const KEYBOARD_KEYS = ['1','2','3','4','5','6','7','8','9','0','W','A','S','D','SPACE','CTRL','ALT','SHIFT','MOUSE_LEFT','MOUSE_RIGHT','MOUSE_MIDDLE']
 export const GAMEPAD_KEYS = ['A','B','X','Y','LB','RB','LT','RT','START','BACK','D-UP','D-DOWN','D-LEFT','D-RIGHT','L3','R3']
 
 const KEY_LABELS: Record<string, string> = {
-  MOUSE_LEFT: 'M.IZQ',
-  MOUSE_RIGHT: 'M.DER',
-  MOUSE_MIDDLE: 'M.MED',
+  MOUSE_LEFT: 'MOUSE LEFT',
+  MOUSE_RIGHT: 'MOUSE RIGHT',
+  MOUSE_MIDDLE: 'MOUSE MIDDLE',
 }
 
 interface KeyBtnProps {
@@ -71,9 +70,9 @@ function KeyboardLayout({ bindings, onOpenScriptEditor }: LayoutProps) {
               {['W','A','S','D'].map(k => B(k))}
             </div>
             <div className="ckb-row">
+              {B('SHIFT')}
               {B('CTRL')}
               {B('ALT')}
-              {B('SHIFT')}
               {B('SPACE', true)}
             </div>
           </div>
@@ -132,7 +131,6 @@ export function ControlBindingsModalBody({
   characterLabel,
   bindings,
   onOpenScriptEditor,
-  onRemoveBinding,
 }: ControlBindingsModalBodyProps) {
   const hasBindings = Object.keys(bindings).length > 0
 
@@ -147,10 +145,6 @@ export function ControlBindingsModalBody({
         </span>
       </div>
 
-      <div className="alert alert-info py-2 mb-0 small">
-        Haz <b>doble click</b> sobre cualquier tecla/boton para abrir la modal de script y asignarlo.
-      </div>
-
       {mode === 'keyboard_mouse'
         ? <KeyboardLayout bindings={bindings} onOpenScriptEditor={onOpenScriptEditor} />
         : <GamepadLayout bindings={bindings} onOpenScriptEditor={onOpenScriptEditor} />
@@ -162,36 +156,10 @@ export function ControlBindingsModalBody({
         </div>
       )}
 
-      {hasBindings && (
-        <div className="d-flex flex-column gap-2">
-          {Object.entries(bindings).map(([controlKey, script]) => (
-            <div
-              key={controlKey}
-              className="d-flex align-items-center gap-2 p-2 rounded border border-secondary bg-dark"
-            >
-              {mode === 'keyboard_mouse' ? <Keyboard size={14} className="text-info" /> : <Joystick size={14} className="text-info" />}
-              <span className="badge bg-dark border border-secondary flex-shrink-0">{controlKey}</span>
-              <AppTooltip content={script.name} place="top">
-                <span className="text-light small text-truncate flex-fill">{script.name}</span>
-              </AppTooltip>
-              <button
-                className="btn btn-sm btn-outline-primary p-1 lh-1"
-                onClick={() => onOpenScriptEditor(controlKey)}
-                type="button"
-              >
-                <Pencil size={12} />
-              </button>
-              <button
-                className="btn btn-sm btn-outline-danger p-1 lh-1"
-                onClick={() => onRemoveBinding(controlKey)}
-                type="button"
-              >
-                <Trash size={12} />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
+      <div className="border-top border-secondary pt-2 text-info fw-bold small d-flex align-items-center gap-2">
+        <InfoCircleFill size={14} className="flex-shrink-0" />
+        <span>Haz <b>doble click</b> sobre cualquier tecla/boton para abrir la modal de script y asignarlo.</span>
+      </div>
     </div>
   )
 }

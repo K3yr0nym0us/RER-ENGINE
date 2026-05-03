@@ -12,7 +12,10 @@ mod texture;
 #[path = "CONFIG_3D/mod.rs"]     mod config_3d;
 #[path = "CONFIG_SHARED/mod.rs"] mod config_shared;
 
+use std::collections::HashSet;
 use std::sync::Arc;
+
+use gilrs::{Button as GamepadButton, EventType as GamepadEventType, Gilrs};
 
 use winit::{
     application::ApplicationHandler,
@@ -118,6 +121,76 @@ fn query_ctrl_held_x11() -> bool {
 #[cfg(not(target_os = "linux"))]
 fn query_ctrl_held_x11() -> bool { false }
 
+fn map_keyboard_control_key(code: KeyCode) -> Option<&'static str> {
+    match code {
+        KeyCode::Digit1 => Some("1"),
+        KeyCode::Digit2 => Some("2"),
+        KeyCode::Digit3 => Some("3"),
+        KeyCode::Digit4 => Some("4"),
+        KeyCode::Digit5 => Some("5"),
+        KeyCode::Digit6 => Some("6"),
+        KeyCode::Digit7 => Some("7"),
+        KeyCode::Digit8 => Some("8"),
+        KeyCode::Digit9 => Some("9"),
+        KeyCode::Digit0 => Some("0"),
+        KeyCode::KeyW => Some("W"),
+        KeyCode::KeyA => Some("A"),
+        KeyCode::KeyS => Some("S"),
+        KeyCode::KeyD => Some("D"),
+        KeyCode::Space => Some("SPACE"),
+        KeyCode::ControlLeft | KeyCode::ControlRight => Some("CTRL"),
+        KeyCode::ShiftLeft | KeyCode::ShiftRight => Some("SHIFT"),
+        KeyCode::AltLeft | KeyCode::AltRight => Some("ALT"),
+        _ => None,
+    }
+}
+
+fn map_mouse_control_key(button: MouseButton) -> Option<&'static str> {
+    match button {
+        MouseButton::Left => Some("MOUSE_LEFT"),
+        MouseButton::Right => Some("MOUSE_RIGHT"),
+        MouseButton::Middle => Some("MOUSE_MIDDLE"),
+        _ => None,
+    }
+}
+
+fn map_gamepad_control_key(button: GamepadButton) -> Option<&'static str> {
+    match button {
+        GamepadButton::South => Some("A"),
+        GamepadButton::East => Some("B"),
+        GamepadButton::West => Some("X"),
+        GamepadButton::North => Some("Y"),
+        GamepadButton::LeftTrigger => Some("LB"),
+        GamepadButton::RightTrigger => Some("RB"),
+        GamepadButton::LeftTrigger2 => Some("LT"),
+        GamepadButton::RightTrigger2 => Some("RT"),
+        GamepadButton::Select => Some("BACK"),
+        GamepadButton::Start => Some("START"),
+        GamepadButton::LeftThumb => Some("L3"),
+        GamepadButton::RightThumb => Some("R3"),
+        GamepadButton::DPadUp => Some("D-UP"),
+        GamepadButton::DPadDown => Some("D-DOWN"),
+        GamepadButton::DPadLeft => Some("D-LEFT"),
+        GamepadButton::DPadRight => Some("D-RIGHT"),
+        _ => None,
+    }
+}
+
+fn emit_control_detected(device: &'static str, control_key: &str) {
+    log::info!("\x1b[34m[control-input] detectado {device}:{control_key}\x1b[0m");
+    ipc::send_event(&EngineEvent::ControlInputDetected {
+        device: device.to_string(),
+        control_key: control_key.to_string(),
+    });
+}
+
+fn emit_control_detected_silent(device: &'static str, control_key: &str) {
+    ipc::send_event(&EngineEvent::ControlInputDetected {
+        device: device.to_string(),
+        control_key: control_key.to_string(),
+    });
+}
+
 // ---------------------------------------------------------------------------
 // Configuración de embedding (Fase 2)
 // ---------------------------------------------------------------------------
@@ -170,6 +243,10 @@ struct App {
     gizmo_drag_start: Option<(u32, [f32; 3], [f32; 4], [f32; 3])>,
     // Teclas modificadoras
     ctrl_held:       bool,                // Ctrl izquierdo o derecho presionado
+    keyboard_mouse_pressed: HashSet<&'static str>,
+    // Input de mando (gamepad)
+    gilrs:           Option<Gilrs>,
+    gamepad_pressed: HashSet<GamepadButton>,
     // Frame rate cap: tiempo objetivo del próximo frame (evita busy loop)
     next_frame_at:   std::time::Instant,
     #[cfg(target_os = "windows")]
@@ -349,6 +426,17 @@ impl ApplicationHandler<EngineCommand> for App {
             // ── Input de ratón para cámara orbital ───────────────────────────
             WindowEvent::MouseInput { button, state: btn_state, .. } => {
                 let pressed = btn_state == ElementState::Pressed;
+                if state.is_preview_playing() {
+                    if let Some(control_key) = map_mouse_control_key(button) {
+                        if pressed {
+                            if self.keyboard_mouse_pressed.insert(control_key) {
+                                emit_control_detected("keyboard_mouse", control_key);
+                            }
+                        } else {
+                            self.keyboard_mouse_pressed.remove(control_key);
+                        }
+                    }
+                }
                 match button {
                     MouseButton::Left => {
                         if state.is_preview_playing() {
@@ -496,6 +584,17 @@ impl ApplicationHandler<EngineCommand> for App {
                 ..
             } => {
                 let pressed = key_state == ElementState::Pressed;
+                if state.is_preview_playing() {
+                    if let Some(control_key) = map_keyboard_control_key(code) {
+                        if pressed {
+                            if self.keyboard_mouse_pressed.insert(control_key) {
+                                emit_control_detected("keyboard_mouse", control_key);
+                            }
+                        } else {
+                            self.keyboard_mouse_pressed.remove(control_key);
+                        }
+                    }
+                }
                 match code {
                     KeyCode::ControlLeft | KeyCode::ControlRight => {
                         self.ctrl_held = pressed;
@@ -510,6 +609,10 @@ impl ApplicationHandler<EngineCommand> for App {
                     }
                     _ => {}
                 }
+            }
+            WindowEvent::Focused(false) => {
+                self.keyboard_mouse_pressed.clear();
+                self.gamepad_pressed.clear();
             }
             WindowEvent::MouseWheel { delta, .. } => {
                 let scroll = match delta {
@@ -558,6 +661,40 @@ impl ApplicationHandler<EngineCommand> for App {
             std::time::Duration::from_nanos(1_000_000_000 / TARGET_FPS);
 
         let now = std::time::Instant::now();
+        if let Some(state) = &self.state {
+            if state.is_preview_playing() {
+                if let Some(gilrs) = self.gilrs.as_mut() {
+                    while let Some(evt) = gilrs.next_event() {
+                        match evt.event {
+                            GamepadEventType::ButtonPressed(button, _) => {
+                                if self.gamepad_pressed.insert(button) {
+                                    if let Some(control_key) = map_gamepad_control_key(button) {
+                                        emit_control_detected("gamepad", control_key);
+                                    }
+                                }
+                            }
+                            GamepadEventType::ButtonReleased(button, _) => {
+                                self.gamepad_pressed.remove(&button);
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+
+                for control_key in &self.keyboard_mouse_pressed {
+                    emit_control_detected_silent("keyboard_mouse", control_key);
+                }
+                for button in &self.gamepad_pressed {
+                    if let Some(control_key) = map_gamepad_control_key(*button) {
+                        emit_control_detected_silent("gamepad", control_key);
+                    }
+                }
+            } else {
+                self.keyboard_mouse_pressed.clear();
+                self.gamepad_pressed.clear();
+            }
+        }
+
         if now >= self.next_frame_at {
             if let Some(state) = &self.state {
                 state.window().request_redraw();
@@ -613,6 +750,9 @@ fn main() {
         gizmo_drag_axis:     None,
         gizmo_drag_start:    None,
         ctrl_held:           false,
+        keyboard_mouse_pressed: HashSet::new(),
+        gilrs:               Gilrs::new().ok(),
+        gamepad_pressed:     HashSet::new(),
         next_frame_at:       std::time::Instant::now(),
         #[cfg(target_os = "windows")]
         tracker_offset:      std::sync::Arc::new((
