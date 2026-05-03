@@ -22,13 +22,13 @@ export interface SavedEntity {
   /** Nombre visible de la entidad en el editor. */
   name?:            string
   path:             string
-  kind:             'model' | 'scenario' | 'character' | 'collider'
+  kind:             'model' | 'scenario' | 'character' | 'collider' | 'execution_area'
   position:         [number, number, number]
   rotation:         [number, number, number, number]
   scale:            [number, number, number]
   physics_enabled?: boolean
   physics_type?:    string
-/** Puntos en espacio de mundo para entidades de tipo 'collider'. */
+/** Puntos en espacio de mundo para entidades de tipo 'collider' y 'execution_area'. */
   points?:          [[number,number],[number,number],[number,number],[number,number]]
   /** Animaciones asociadas a esta entidad. */
   animations?:      SavedAnimation[]
@@ -117,12 +117,12 @@ export interface OpenProjectResult {
 }
 
 export interface EngineCommand {
-  cmd: 'ping' | 'shutdown' | 'set_clear_color' | 'resize' | 'set_bounds' | 'load_model' | 'set_transform' | 'set_entity_name' | 'set_scene' | 'load_scenario' | 'set_scenario_scale' | 'duplicate_scenario' | 'load_character' | 'set_character_scale' | 'duplicate_character' | 'remove_entity' | 'set_world_size' | 'set_grid_visible' | 'set_grid_cell_size' | 'set_ctrl_held' | 'set_physics' | 'set_active_tool' | 'create_collider_from_points' | 'play_animation_frame' | 'restore_animation_frame' | 'set_pivot_edit_mode' | 'cancel_pivot_edit_mode' | 'set_logical_area_mode' | 'cancel_logical_area_mode' | 'play_audio' | 'stop_audio' | 'set_animation' | 'play_animation' | 'stop_animation' | 'load_script' | 'unload_script' | 'load_sprite' | 'remove_sprite' | 'get_sprites_list' | 'set_preview_playing' | 'run_control_script' | 'undo' | 'clear_background'
+  cmd: 'ping' | 'shutdown' | 'set_clear_color' | 'resize' | 'set_bounds' | 'load_model' | 'set_transform' | 'set_entity_name' | 'set_scene' | 'load_scenario' | 'set_scenario_scale' | 'duplicate_scenario' | 'load_character' | 'set_character_scale' | 'duplicate_character' | 'remove_entity' | 'set_world_size' | 'set_grid_visible' | 'set_grid_cell_size' | 'set_ctrl_held' | 'set_physics' | 'set_active_tool' | 'create_collider_from_points' | 'create_execution_area_from_points' | 'play_animation_frame' | 'restore_animation_frame' | 'set_pivot_edit_mode' | 'cancel_pivot_edit_mode' | 'set_logical_area_mode' | 'cancel_logical_area_mode' | 'play_audio' | 'stop_audio' | 'set_animation' | 'play_animation' | 'stop_animation' | 'load_script' | 'unload_script' | 'load_sprite' | 'remove_sprite' | 'get_sprites_list' | 'set_preview_playing' | 'run_control_script' | 'undo' | 'clear_background'
   [key: string]: unknown
 }
 
 export interface EngineEvent {
-  event: 'ready' | 'pong' | 'error' | 'model_loaded' | 'stopped' | 'entity_selected' | 'entity_deselected' | 'entity_hovered' | 'entity_unhovered' | 'scenario_loaded' | 'character_loaded' | 'player_ready' | 'camera_2d_updated' | 'background_loaded' | 'drawing_progress' | 'collider_created' | 'tool_cancelled' | 'pivot_selected' | 'physics_changed' | 'sprite_loaded' | 'sprite_removed' | 'sprites_list'
+  event: 'ready' | 'pong' | 'error' | 'model_loaded' | 'stopped' | 'entity_selected' | 'entity_deselected' | 'entity_hovered' | 'entity_unhovered' | 'scenario_loaded' | 'character_loaded' | 'player_ready' | 'camera_2d_updated' | 'background_loaded' | 'drawing_progress' | 'collider_created' | 'execution_area_created' | 'tool_cancelled' | 'pivot_selected' | 'physics_changed' | 'sprite_loaded' | 'sprite_removed' | 'sprites_list'
   [key: string]: unknown
 }
 

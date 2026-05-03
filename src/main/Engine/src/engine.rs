@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Instant;
 
@@ -257,6 +257,10 @@ pub struct State {
     pub(crate) tool_overlay_buffer: GizmoBuffer,
     /// Entidades creadas por herramientas de dibujo (colisionadores).
     pub(crate) collider_entities: Vec<EntityId>,
+    /// Entidades creadas por herramientas de dibujo (áreas de ejecución).
+    pub(crate) execution_area_entities: Vec<EntityId>,
+    /// Pares activos (trigger, actor) detectados en el frame anterior.
+    pub(crate) execution_overlaps: HashSet<(EntityId, EntityId)>,
     /// Transforms originales guardados antes de aplicar un frame de animación
     /// (posición, escala). Se restauran con RestoreAnimationFrame.
     pub(crate) anim_saved_transforms: std::collections::HashMap<u32, (GlamVec3, GlamVec3)>,
@@ -711,6 +715,8 @@ impl State {
             preview_playing: false,
             tool_overlay_buffer: tool_overlay_buffer_init,
             collider_entities: Vec::new(),
+            execution_area_entities: Vec::new(),
+            execution_overlaps: HashSet::new(),
             anim_saved_transforms: std::collections::HashMap::new(),
             pivot_edit_mode:    None,
             logical_area_mode:  None,
@@ -981,6 +987,8 @@ impl State {
                 self.scenario_entities.retain(|&e| e != id);
                 self.character_entities.retain(|&e| e != id);
                 self.collider_entities.retain(|&e| e != id);
+                self.execution_area_entities.retain(|&e| e != id);
+                self.execution_overlaps.retain(|(trigger_id, actor_id)| *trigger_id != id && *actor_id != id);
                 self.script_engine.detach_entity(id);
                 self.world.despawn(id);
             }
@@ -1030,6 +1038,8 @@ impl State {
                     self.active_gizmo_axis = None;
                 }
 
+                self.execution_overlaps.clear();
+
                 log::info!(
                     "[preview] modo {}",
                     if playing { "juego" } else { "editor" }
@@ -1043,7 +1053,7 @@ impl State {
                     cam2d.x      = x;
                     cam2d.y      = y;
                     cam2d.half_h = half_h.clamp(1.0, 50.0);
-                    log::info!("Cámara 2D restaurada: x={x} y={y} half_h={half_h}");
+                    log::debug!("Cámara 2D restaurada: x={x} y={y} half_h={half_h}");
                 }
             }
             EngineCommand::LoadBackground { path } => {
@@ -1068,7 +1078,7 @@ impl State {
                 } else {
                     self.physics.set_entity_physics(id, enabled, &body_type, pos, half);
                 }
-                log::info!("Física {}: entidad {} tipo='{}'",
+                log::debug!("Física {}: entidad {} tipo='{}'",
                     if enabled { "activada" } else { "desactivada" }, id, body_type);
                 send_event(&EngineEvent::PhysicsChanged { entity_id: id, enabled, body_type });
             }
@@ -1084,6 +1094,10 @@ impl State {
                             self.active_tool = ActiveTool::DrawCollider { points_world: Vec::new(), cursor_world: None };
                             log::info!("Herramienta activa: dibujar colisionador (4 puntos)");
                         }
+                        "draw_execution_area" => {
+                            self.active_tool = ActiveTool::DrawExecutionArea { points_world: Vec::new(), cursor_world: None };
+                            log::info!("Herramienta activa: dibujar área de ejecución (4 puntos)");
+                        }
                         _ => log::warn!("Herramienta desconocida: {}", tool),
                     }
                 }
@@ -1095,6 +1109,13 @@ impl State {
                     log::warn!("CreateColliderFromPoints solo disponible en modo 2D");
                 }
             }
+            EngineCommand::CreateExecutionAreaFromPoints { points } => {
+                if self.camera_2d.is_some() {
+                    self.create_execution_area_from_points(&points);
+                } else {
+                    log::warn!("CreateExecutionAreaFromPoints solo disponible en modo 2D");
+                }
+            }
             EngineCommand::Undo => {
                 if self.undo_last_tool_step_2d() {
                     return;
@@ -1102,7 +1123,7 @@ impl State {
                 self.apply_undo();
             }
             EngineCommand::SetAnimation { id, name, frames, fps, loop_, audio_path, logical_w, logical_h, scripts } => {
-                log::info!("[IPC] SetAnimation: entity_id={}, name='{}', frames={}, audio={:?}, scripts={}", id, name, frames.len(), audio_path, scripts.len());
+                log::debug!("[IPC] SetAnimation: entity_id={}, name='{}', frames={}, audio={:?}, scripts={}", id, name, frames.len(), audio_path, scripts.len());
 
                 // Pre-decodificar audio a muestras PCM durante SetAnimation.
                 // En PlayAnimation solo se clona un Vec<i16> — cero I/O, cero decode.
@@ -1119,7 +1140,7 @@ impl State {
                     let channels    = decoder.channels();
                     let sample_rate = decoder.sample_rate();
                     let samples: Vec<i16> = decoder.collect();
-                    log::info!("[SetAnimation] audio decodificado: {} ({} muestras, {}ch, {}Hz)",
+                    log::debug!("[SetAnimation] audio decodificado: {} ({} muestras, {}ch, {}Hz)",
                         p, samples.len(), channels, sample_rate);
                     Some(Arc::new(DecodedAudio { samples, channels, sample_rate }))
                 });
@@ -1146,10 +1167,10 @@ impl State {
                         logical_h,
                         scripts,
                     });
-                log::info!("[IPC] Animación '{}' guardada y pre-cargada para entidad {}", name, id);
+                log::debug!("[IPC] Animación '{}' guardada y pre-cargada para entidad {}", name, id);
             }
 EngineCommand::PlayAnimation { id, name } => {
-                log::info!("[IPC] PlayAnimation: entity_id={}, name='{}'", id, name);
+                log::debug!("[IPC] PlayAnimation: entity_id={}, name='{}'", id, name);
                 // Detener animación previa (el Play de audio incluye clear interno)
                 self.active_animations.remove(&id);
 
@@ -1200,7 +1221,7 @@ EngineCommand::PlayAnimation { id, name } => {
                             }
                         }
                         if !anim.scripts.is_empty() {
-                            log::info!("[scripting] {} script(s) de animación '{}' cargados para entidad {}", anim.scripts.len(), name, id);
+                            log::debug!("[scripting] {} script(s) de animación '{}' cargados para entidad {}", anim.scripts.len(), name, id);
                         }
 
                         self.active_animations.insert(id, ActiveAnimation {
@@ -1210,7 +1231,7 @@ EngineCommand::PlayAnimation { id, name } => {
                             fps: anim.fps,
                             finished: false,
                         });
-                        log::info!("[animation] Iniciada '{}' para entidad {} (fps={}, frames={})", name, id, anim.fps, anim.frames.len());
+                        log::debug!("[animation] Iniciada '{}' para entidad {} (fps={}, frames={})", name, id, anim.fps, anim.frames.len());
                     }
                 }
             }
@@ -1273,7 +1294,7 @@ EngineCommand::PlayAnimation { id, name } => {
                                 let path_for_log = path.clone();
                                 let name_for_log = name.clone();
                                 send_event(&EngineEvent::SpriteLoaded { path, name, width: w, height: h });
-                                log::info!("[sprite] cargado: {} ({}) ({}x{})", path_for_log, name_for_log, w, h);
+                                log::debug!("[sprite] cargado: {} ({}) ({}x{})", path_for_log, name_for_log, w, h);
                             }
                             Err(e) => {
                                 log::error!("[sprite] error decodificando {}: {}", path, e);
@@ -1441,7 +1462,7 @@ EngineCommand::PlayAnimation { id, name } => {
             // El audio no-looping se agota solo cuando las muestras PCM terminan.
             // No enviamos Stop aquí para evitar que sobrescriba un Play ya encolado
             // si el usuario dispara la siguiente animación justo al terminar esta.
-            log::info!("[animation] Enviando AnimationFinished para entidad {}", entity_id);
+            log::debug!("[animation] Enviando AnimationFinished para entidad {}", entity_id);
             send_event(&EngineEvent::AnimationFinished { entity_id });
         }
 
@@ -1480,7 +1501,7 @@ self.active_animations.retain(|_, a| !a.finished);
         self.apply_script_commands(commands);
     }
 
-    fn build_script_snapshot(&self, id: u32) -> Option<EntitySnapshot> {
+    pub(crate) fn build_script_snapshot(&self, id: u32) -> Option<EntitySnapshot> {
         let (x, y, scale_x, scale_y) = if let Some(t) = self.world.get::<Transform>(id) {
             (t.position.x, t.position.y, t.scale.x, t.scale.y)
         } else {
@@ -1496,7 +1517,7 @@ self.active_animations.retain(|_, a| !a.finished);
     }
 
     /// Aplica los comandos generados por los scripts al estado del motor.
-    fn apply_script_commands(&mut self, commands: Vec<ScriptCmd>) {
+    pub(crate) fn apply_script_commands(&mut self, commands: Vec<ScriptCmd>) {
         for cmd in commands {
             match cmd {
                 ScriptCmd::SetPosition { id, x, y } => {
@@ -1628,6 +1649,7 @@ self.active_animations.retain(|_, a| !a.finished);
                 // Sincronizar anim_saved_transforms con la posición post-physics (ya bloqueada
                 // por colisiones) para que update_animations() no restaure la posición original.
                 self.sync_physics_anim_origins();
+                self.update_execution_areas_2d();
             }
         } else {
             self.update_scripts();
@@ -1717,7 +1739,10 @@ self.active_animations.retain(|_, a| !a.finished);
                     self.entity_buffers.get(idx),
                     self.entity_bind_groups.get(idx),
                 ) else { continue };
-                if self.preview_playing && self.collider_entities.contains(&entity_id) {
+                if self.preview_playing
+                    && (self.collider_entities.contains(&entity_id)
+                        || self.execution_area_entities.contains(&entity_id))
+                {
                     continue;
                 }
                 let flag = if self.preview_playing {

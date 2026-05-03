@@ -151,6 +151,12 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 		delete refs.entityMetaRef.current[id];
 	};
 
+	const removeExecutionArea = (id: number) => {
+		send({ cmd: 'remove_entity', id });
+		dispatch({ type: 'REMOVE_EXECUTION_AREA', payload: id });
+		delete refs.entityMetaRef.current[id];
+	};
+
 	const updateEntityAnimations = (id: number, animations: any[]) => {
 		if (!refs.entityMetaRef.current[id]) {
 			refs.entityMetaRef.current[id] = { kind: 'model', path: '', physicsEnabled: false, physicsType: '' };
@@ -233,6 +239,7 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 		setGridVisible,
 		setGridCellSize,
 		removeCollider,
+		removeExecutionArea,
 		updateEntityAnimations,
 		updateEntityScripts,
 		registerPivotEditListener,

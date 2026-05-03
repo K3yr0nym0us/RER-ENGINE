@@ -22,6 +22,7 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
     removeCharacter,
     duplicateCharacter,
     removeCollider,
+    removeExecutionArea,
   } = useContextEngine()
 
   const { openModal, closeModal } = useModal();
@@ -60,6 +61,7 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
   const isScenario = scenarioEntities.some((s: any) => s.id === selectedEntity?.id)
   const isCharacter = characterEntities.some((c: any) => c.id === selectedEntity?.id)
   const isCollider = selectedEntity ? entityMetaRef.current[selectedEntity.id]?.kind === 'collider' : false
+  const isExecutionArea = selectedEntity ? entityMetaRef.current[selectedEntity.id]?.kind === 'execution_area' : false
 
   const handleConfirmModal = (onConfirm: () => void, action: 'eliminar' | 'duplicar') => {
     openModal({
@@ -97,6 +99,11 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
       if (!points || points.length !== 4) return;
       const shiftedPoints = points.map(([x, y]) => [x + 0.5, y + 0.5]) as [[number, number], [number, number], [number, number], [number, number]];
       handleConfirmModal(() => send({ cmd: 'create_collider_from_points', points: shiftedPoints }), 'duplicar');
+    } else if (isExecutionArea) {
+      const points = entityMetaRef.current[selectedEntity.id]?.points;
+      if (!points || points.length !== 4) return;
+      const shiftedPoints = points.map(([x, y]) => [x + 0.5, y + 0.5]) as [[number, number], [number, number], [number, number], [number, number]];
+      handleConfirmModal(() => send({ cmd: 'create_execution_area_from_points', points: shiftedPoints }), 'duplicar');
     }
   }
 
@@ -107,6 +114,8 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
       handleConfirmModal(() => removeCharacter(selectedEntity.id), 'eliminar');
     } else if (isCollider) {
       handleConfirmModal(() => removeCollider(selectedEntity.id), 'eliminar');
+    } else if (isExecutionArea) {
+      handleConfirmModal(() => removeExecutionArea(selectedEntity.id), 'eliminar');
     }
   }
   const trimmedEntityName = entityNameDraft.trim();
@@ -160,7 +169,7 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
         </div>
       </div>
 
-      {!isCollider && (
+      {!isCollider && !isExecutionArea && (
         isScenario ? (
           <div className="mb-2">
             <p className="prop-label">Colisión</p>
@@ -216,7 +225,7 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
         )
       )}
 
-      {!isCollider && (
+      {!isCollider && !isExecutionArea && (
         <Accordion className="prop-accordion">
           <Accordion.Item eventKey="transform">
             <Accordion.Header>Transformaciones</Accordion.Header>
@@ -227,6 +236,12 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
 
           <AnimationsPanel />
 
+          <ScriptingPanel />
+        </Accordion>
+      )}
+
+      {isExecutionArea && (
+        <Accordion className="prop-accordion">
           <ScriptingPanel />
         </Accordion>
       )}

@@ -111,6 +111,7 @@ export function EngineProvider({
 		setGridVisible: actions.setGridVisible,
 		setGridCellSize: actions.setGridCellSize,
 		removeCollider: actions.removeCollider,
+		removeExecutionArea: actions.removeExecutionArea,
 		updateEntityAnimations: actions.updateEntityAnimations,
 		updateEntityScripts: actions.updateEntityScripts,
 		registerPivotEditListener: actions.registerPivotEditListener,

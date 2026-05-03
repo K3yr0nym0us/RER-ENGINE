@@ -387,6 +387,29 @@ function ensureSaveExtension(filePath: string): string {
   return path.extname(filePath).toLowerCase() === '.save' ? filePath : `${filePath}.save`
 }
 
+const SCRIPT_FILE_PREFIX = '@file:'
+const AUDIO_EXTENSIONS = new Set(['.wav', '.ogg', '.mp3', '.flac', '.aac', '.m4a'])
+
+function sanitizeSegment(raw: string | null | undefined, fallback = 'item'): string {
+  const text = (raw ?? '').trim()
+  const cleaned = text
+    .replace(/[<>:"/\\|?*\x00-\x1f]/g, '_')
+    .replace(/\s+/g, '_')
+    .replace(/^\.+/, '')
+  return cleaned.length > 0 ? cleaned : fallback
+}
+
+function isAudioAsset(filePath: string): boolean {
+  return AUDIO_EXTENSIONS.has(path.extname(filePath).toLowerCase())
+}
+
+function forEachEntity(data: ProjectSaveData, cb: (entity: ProjectSaveData['entities'][number]) => void): void {
+  for (const entity of data.entities) cb(entity)
+  for (const scene of data.scenes ?? []) {
+    for (const entity of scene.entities) cb(entity)
+  }
+}
+
 /**
  * Recorre un ProjectSaveData y devuelve todos los paths de archivo absolutos
  * que hay que copiar al paquete de assets del archivo .save.
@@ -398,13 +421,18 @@ function collectAssetPaths(data: ProjectSaveData): Set<string> {
   }
 
   add(data.backgroundPath)
-  // Agregar sprites
-  if (data.sprites) {
-    for (const sprite of data.sprites) {
-      add(sprite.path)
-    }
+  for (const scene of data.scenes ?? []) {
+    add(scene.backgroundPath)
   }
-  for (const entity of data.entities) {
+
+  if (data.sprites) {
+    for (const sprite of data.sprites) add(sprite.path)
+  }
+  for (const scene of data.scenes ?? []) {
+    for (const sprite of scene.sprites ?? []) add(sprite.path)
+  }
+
+  forEachEntity(data, (entity) => {
     add(entity.path)
     for (const anim of entity.animations ?? []) {
       add(anim.audio_path)
@@ -412,42 +440,153 @@ function collectAssetPaths(data: ProjectSaveData): Set<string> {
         add(frame.path)
       }
     }
-  }
+  })
+
   return paths
 }
 
 /**
- * Copia todos los assets al directorio temporal `assets/` y devuelve
+ * Copia todos los assets al directorio temporal (`assets/` y `sounds/`) y devuelve
  * un mapa de ruta-absoluta → ruta-relativa dentro del paquete .save.
  * Si dos archivos distintos tienen el mismo nombre, se les agrega un sufijo numérico.
  */
 function copyAssetsToDir(
   assetPaths: Set<string>,
   assetsDir: string,
+  soundsDir: string,
 ): Map<string, string> {
   fs.mkdirSync(assetsDir, { recursive: true })
+  fs.mkdirSync(soundsDir, { recursive: true })
   const map = new Map<string, string>()
   const usedNames = new Map<string, number>()
 
   for (const src of assetPaths) {
     const baseName = path.basename(src)
-    const count    = (usedNames.get(baseName) ?? 0)
-    usedNames.set(baseName, count + 1)
+    const targetDir = isAudioAsset(src) ? soundsDir : assetsDir
+    const relPrefix = isAudioAsset(src) ? 'sounds' : 'assets'
+    const key = `${relPrefix}/${baseName}`
+    const count = usedNames.get(key) ?? 0
+    usedNames.set(key, count + 1)
 
     const destName = count === 0
       ? baseName
       : `${path.basename(baseName, path.extname(baseName))}_${count}${path.extname(baseName)}`
 
-    const destAbs = path.join(assetsDir, destName)
+    const destAbs = path.join(targetDir, destName)
     try {
       fs.copyFileSync(src, destAbs)
       // Siempre usar '/' en los paths del JSON para portabilidad entre OS
-      map.set(src, `assets/${destName}`)
+      map.set(src, `${relPrefix}/${destName}`)
     } catch (err) {
       console.error(`[editor] No se pudo copiar asset ${src}:`, err)
     }
   }
   return map
+}
+
+function serializeScriptsToFiles(data: ProjectSaveData, scriptingDir: string): { data: ProjectSaveData; count: number } {
+  fs.mkdirSync(scriptingDir, { recursive: true })
+  const usedNames = new Map<string, number>()
+  const sourceCache = new Map<string, string>()
+  let total = 0
+
+  const nextName = (folderKey: string, baseName: string) => {
+    const key = `${folderKey}/${baseName}`
+    const count = usedNames.get(key) ?? 0
+    usedNames.set(key, count + 1)
+    return count === 0 ? baseName : `${path.basename(baseName, '.lua')}_${count}.lua`
+  }
+
+  const saveScript = (sourceScript: { name: string; source: string }, folderParts: string[], fallbackName: string) => {
+    const safeFolderParts = folderParts.map((part) => sanitizeSegment(part, 'group'))
+    const folderRel = safeFolderParts.join('/')
+    const cacheKey = `${folderRel}\n${sourceScript.name}\n${sourceScript.source ?? ''}`
+    const cachedRef = sourceCache.get(cacheKey)
+    if (cachedRef) {
+      return {
+        ...sourceScript,
+        source: cachedRef,
+      }
+    }
+
+    const fileBase = `${sanitizeSegment(sourceScript.name, fallbackName)}.lua`
+    const fileName = nextName(folderRel, fileBase)
+    const relPath = folderRel.length > 0 ? `scripting/${folderRel}/${fileName}` : `scripting/${fileName}`
+    const absDir = folderRel.length > 0 ? path.join(scriptingDir, ...safeFolderParts) : scriptingDir
+    fs.mkdirSync(absDir, { recursive: true })
+    fs.writeFileSync(path.join(absDir, fileName), sourceScript.source ?? '', 'utf8')
+    total += 1
+    const sourceRef = `${SCRIPT_FILE_PREFIX}${relPath}`
+    sourceCache.set(cacheKey, sourceRef)
+    return {
+      ...sourceScript,
+      source: sourceRef,
+    }
+  }
+
+  const mapEntity = (entity: ProjectSaveData['entities'][number]) => {
+    const entityFolder = `entity_${entity.id}`
+    return {
+      ...entity,
+      scripts: entity.scripts?.map((script, idx) => saveScript(script, [entityFolder], `script_${idx + 1}`)),
+      animations: entity.animations?.map((anim, animIndex) => ({
+        ...anim,
+        scripts: anim.scripts?.map((script, scriptIndex) =>
+          saveScript(
+            script,
+            [entityFolder, 'animations', sanitizeSegment(anim.name, `anim_${animIndex + 1}`)],
+            `script_${scriptIndex + 1}`,
+          ),
+        ),
+      })),
+      control_bindings: entity.control_bindings
+        ? {
+            keyboard_mouse: Object.fromEntries(
+              Object.entries(entity.control_bindings.keyboard_mouse).map(([key, script], idx) => [
+                key,
+                saveScript(script, [entityFolder, 'controls', 'keyboard_mouse', sanitizeSegment(key, `key_${idx + 1}`)], `script_${idx + 1}`),
+              ]),
+            ),
+            gamepad: Object.fromEntries(
+              Object.entries(entity.control_bindings.gamepad).map(([key, script], idx) => [
+                key,
+                saveScript(script, [entityFolder, 'controls', 'gamepad', sanitizeSegment(key, `btn_${idx + 1}`)], `script_${idx + 1}`),
+              ]),
+            ),
+          }
+        : undefined,
+    }
+  }
+
+  return {
+    count: total,
+    data: {
+      ...data,
+      entities: data.entities.map(mapEntity),
+      scenes: data.scenes?.map((scene) => ({
+        ...scene,
+        entities: scene.entities.map(mapEntity),
+      })),
+    },
+  }
+}
+
+function resolveScriptSource(source: string | undefined, extractedDir: string): string {
+  if (!source) return ''
+  if (!source.startsWith(SCRIPT_FILE_PREFIX)) {
+    console.warn('[editor] Script con formato inválido en save (se esperaba @file:scripting/...):', source)
+    return ''
+  }
+
+  const relPath = source.slice(SCRIPT_FILE_PREFIX.length)
+
+  const normalized = relPath.split('/').join(path.sep)
+  const absPath = path.join(extractedDir, normalized)
+  if (!fs.existsSync(absPath)) {
+    console.warn(`[editor] Script referenciado no encontrado en save: ${relPath}`)
+    return ''
+  }
+  return fs.readFileSync(absPath, 'utf8')
 }
 
 /**
@@ -458,6 +597,19 @@ function remapPaths(data: ProjectSaveData, map: Map<string, string>): ProjectSav
   const remap = (p: string | null | undefined): string | null | undefined =>
     p ? (map.get(p) ?? p) : p
 
+  const mapEntity = (e: ProjectSaveData['entities'][number]) => ({
+    ...e,
+    path: remap(e.path) as string,
+    animations: e.animations?.map((anim) => ({
+      ...anim,
+      audio_path: remap(anim.audio_path) as string | undefined,
+      frames: anim.frames.map((f) => ({
+        ...f,
+        path: remap(f.path) as string,
+      })),
+    })),
+  })
+
   return {
     ...data,
     backgroundPath: remap(data.backgroundPath) as string | null,
@@ -465,17 +617,15 @@ function remapPaths(data: ProjectSaveData, map: Map<string, string>): ProjectSav
       name: s.name,
       path: remap(s.path) as string,
     })),
-    entities: data.entities.map((e) => ({
-      ...e,
-      path: remap(e.path) as string,
-      animations: e.animations?.map((anim) => ({
-        ...anim,
-        audio_path: remap(anim.audio_path) as string | undefined,
-        frames: anim.frames.map((f) => ({
-          ...f,
-          path: remap(f.path) as string,
-        })),
+    entities: data.entities.map(mapEntity),
+    scenes: data.scenes?.map((scene) => ({
+      ...scene,
+      backgroundPath: remap(scene.backgroundPath) as string | null,
+      sprites: scene.sprites?.map((s) => ({
+        name: s.name,
+        path: remap(s.path) as string,
       })),
+      entities: scene.entities.map(mapEntity),
     })),
   }
 }
@@ -488,18 +638,21 @@ function saveProjectToFile(saveFilePath: string, data: ProjectSaveData): boolean
   const stagingDir = fs.mkdtempSync(path.join(tempRoot, 'rer-save-write-'))
   try {
     const assetsDir = path.join(stagingDir, 'assets')
+    const soundsDir = path.join(stagingDir, 'sounds')
+    const scriptingDir = path.join(stagingDir, 'scripting')
     const assetPaths = collectAssetPaths(data)
-    const pathMap    = copyAssetsToDir(assetPaths, assetsDir)
-    const remapped   = remapPaths(data, pathMap)
+    const pathMap = copyAssetsToDir(assetPaths, assetsDir, soundsDir)
+    const remapped = remapPaths(data, pathMap)
+    const scriptsPacked = serializeScriptsToFiles(remapped, scriptingDir)
 
     const manifestPath = path.join(stagingDir, 'manifest.json')
-    fs.writeFileSync(manifestPath, JSON.stringify(remapped, null, 2), 'utf8')
+    fs.writeFileSync(manifestPath, JSON.stringify(scriptsPacked.data, null, 2), 'utf8')
 
     const zip = new AdmZip()
     zip.addLocalFolder(stagingDir)
     zip.writeZip(saveFilePath)
 
-    console.log(`[editor] Proyecto guardado en ${saveFilePath} (${pathMap.size} assets empaquetados)`)
+    console.log(`[editor] Proyecto guardado en ${saveFilePath} (${pathMap.size} archivos empaquetados, ${scriptsPacked.count} scripts)`)
     return true
   } catch (err) {
     console.error('[editor] Error al guardar proyecto:', err)
@@ -522,6 +675,43 @@ function resolveLoadedPaths(data: ProjectSaveData, extractedDir: string): Projec
     return path.join(extractedDir, normalized)
   }
 
+  const mapEntity = (e: ProjectSaveData['entities'][number]) => ({
+    ...e,
+    path: resolve(e.path) as string,
+    scripts: e.scripts?.map((script) => ({
+      ...script,
+      source: resolveScriptSource(script.source, extractedDir),
+    })),
+    animations: e.animations?.map((anim) => ({
+      ...anim,
+      audio_path: resolve(anim.audio_path) as string | undefined,
+      frames: anim.frames.map((f) => ({
+        ...f,
+        path: resolve(f.path) as string,
+      })),
+      scripts: anim.scripts?.map((script) => ({
+        ...script,
+        source: resolveScriptSource(script.source, extractedDir),
+      })),
+    })),
+    control_bindings: e.control_bindings
+      ? {
+          keyboard_mouse: Object.fromEntries(
+            Object.entries(e.control_bindings.keyboard_mouse).map(([key, script]) => [
+              key,
+              { ...script, source: resolveScriptSource(script.source, extractedDir) },
+            ]),
+          ),
+          gamepad: Object.fromEntries(
+            Object.entries(e.control_bindings.gamepad).map(([key, script]) => [
+              key,
+              { ...script, source: resolveScriptSource(script.source, extractedDir) },
+            ]),
+          ),
+        }
+      : undefined,
+  })
+
   return {
     ...data,
     backgroundPath: resolve(data.backgroundPath) as string | null,
@@ -529,17 +719,15 @@ function resolveLoadedPaths(data: ProjectSaveData, extractedDir: string): Projec
       name: s.name,
       path: resolve(s.path) as string,
     })),
-    entities: data.entities.map((e) => ({
-      ...e,
-      path: resolve(e.path) as string,
-      animations: e.animations?.map((anim) => ({
-        ...anim,
-        audio_path: resolve(anim.audio_path) as string | undefined,
-        frames: anim.frames.map((f) => ({
-          ...f,
-          path: resolve(f.path) as string,
-        })),
+    entities: data.entities.map(mapEntity),
+    scenes: data.scenes?.map((scene) => ({
+      ...scene,
+      backgroundPath: resolve(scene.backgroundPath) as string | null,
+      sprites: scene.sprites?.map((s) => ({
+        name: s.name,
+        path: resolve(s.path) as string,
       })),
+      entities: scene.entities.map(mapEntity),
     })),
   }
 }

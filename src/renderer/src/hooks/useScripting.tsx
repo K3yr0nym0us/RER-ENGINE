@@ -80,12 +80,34 @@ export function useScripting(): UseScriptingReturn {
 
   const removeScript = (name: string) => {
     if (!selectedEntity) return
-    const next = scripts.filter((s) => s.name !== name)
-    setScripts(next)
-    updateEntityScripts(selectedEntity.id, next)
-    if (next.length === 0) {
-      send({ cmd: 'unload_script', id: selectedEntity.id })
-    }
+    openModal({
+      title: 'Confirmar eliminación',
+      body: (
+        <div className="text-center">
+          <p>¿Estás seguro de que deseas eliminar el script <strong>{name}</strong>?</p>
+          <p className="text-danger">Esta acción no se puede deshacer.</p>
+          <div className="d-flex justify-content-center gap-2 mt-4">
+            <button className="btn btn-secondary" onClick={closeModal}>
+              Cancelar
+            </button>
+            <button
+              className="btn btn-danger"
+              onClick={() => {
+                const next = scripts.filter((s) => s.name !== name)
+                setScripts(next)
+                updateEntityScripts(selectedEntity.id, next)
+                if (next.length === 0) {
+                  send({ cmd: 'unload_script', id: selectedEntity.id })
+                }
+                closeModal()
+              }}
+            >
+              Sí, eliminar
+            </button>
+          </div>
+        </div>
+      ),
+    })
   }
 
   return { scripts, openEditor, editScript, removeScript }

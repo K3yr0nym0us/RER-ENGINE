@@ -96,10 +96,12 @@ pub enum EngineCommand {
     LoadBackground { path: String },
     /// Activar o desactivar física en una entidad. body_type: "dynamic" | "static" | "kinematic"
     SetPhysics { id: u32, enabled: bool, body_type: String },
-    /// Activar una herramienta de dibujo. tool: "draw_collider" | "" (cancelar)
+    /// Activar una herramienta de dibujo. tool: "draw_collider" | "draw_execution_area" | "" (cancelar)
     SetActiveTool { tool: String },
     /// Recrear un colisionador de 4 puntos desde datos guardados (restauración de proyecto).
     CreateColliderFromPoints { points: [[f32; 2]; 4] },
+    /// Crear un área de ejecución de 4 puntos (trigger sin colisión física).
+    CreateExecutionAreaFromPoints { points: [[f32; 2]; 4] },
     /// Activar modo edición de pivot: muestra el frame en la entidad y captura el siguiente click.
     /// pivot_x/pivot_y: coordenadas del pivot ya asignado (para mostrarlo visualmente).
     SetPivotEditMode { id: u32, frame_path: String, pivot_x: f32, pivot_y: f32 },
@@ -221,6 +223,8 @@ pub enum EngineEvent {
     DrawingProgress { count: u32 },
     /// Emitido cuando se creó un colisionador de 4 puntos.
     ColliderCreated { id: u32, points: [[f32; 2]; 4] },
+    /// Emitido cuando se creó un área de ejecución de 4 puntos.
+    ExecutionAreaCreated { id: u32, points: [[f32; 2]; 4] },
     /// Emitido cuando una herramienta de dibujo fue cancelada desde el motor.
     ToolCancelled,
     /// Emitido cuando el usuario selecciona el pivot de un frame en modo edición.

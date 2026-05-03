@@ -101,7 +101,8 @@ impl ScriptEngine {
     // ── Script loading ────────────────────────────────────────────────────
 
     /// Load a Lua script from source code and attach it to `entity_id`.
-    /// The script must return a table (or set a global named after the file).
+    /// The script should return a table (`return script`). For compatibility,
+    /// we also accept `script = {}` inside the script-local environment.
     /// Expected shape:
     /// ```lua
     /// local script = {}
@@ -111,9 +112,64 @@ impl ScriptEngine {
     /// return script
     /// ```
     pub fn attach_script(&mut self, entity_id: u32, path: &str, source: &str) -> LuaResult<()> {
-        // Each script runs in its own chunk; the returned value must be a table.
-        let chunk = self.lua.load(source).set_name(path);
-        let table: LuaTable = chunk.eval()?;
+        // Isolated environment per script to avoid leaking/reading globals from
+        // other scripts while still inheriting engine API via __index = _G.
+        let env = self.lua.create_table()?;
+        let mt = self.lua.create_table()?;
+        mt.set("__index", self.lua.globals())?;
+        env.set_metatable(Some(mt));
+
+        // Prefer returned table (`return script`).
+        // Compatibility fallback: `local script = {}` sin `return script`.
+        // Last fallback: loose callbacks in env (`function on_trigger_enter(...)`).
+        let direct_result = self
+            .lua
+            .load(source)
+            .set_name(path)
+            .set_environment(env.clone())
+            .eval::<LuaValue>();
+
+        let table = if let Ok(LuaValue::Table(t)) = direct_result {
+            t
+        } else {
+            let with_return = format!("{}\nreturn script", source);
+            let return_result = self
+                .lua
+                .load(&with_return)
+                .set_name(path)
+                .set_environment(env.clone())
+                .eval::<LuaValue>();
+
+            if let Ok(LuaValue::Table(t)) = return_result {
+                log::warn!("[scripting] script '{}' cargado en modo compatibilidad (faltaba return script)", path);
+                t
+            } else {
+                match env.get::<LuaValue>("script")? {
+                    LuaValue::Table(t) => t,
+                    _ => {
+                        // Compatibilidad adicional: aceptar callbacks sueltos en el chunk
+                        // (e.g. function on_trigger_enter(...) ... end) y agruparlos.
+                        let inferred = self.lua.create_table()?;
+                        let mut found_any = false;
+                        for name in ["on_start", "update", "on_stop", "on_trigger_enter", "on_press"] {
+                            if let LuaValue::Function(f) = env.get::<LuaValue>(name)? {
+                                inferred.set(name, f)?;
+                                found_any = true;
+                            }
+                        }
+                        if found_any {
+                            log::warn!("[scripting] script '{}' cargado en modo compatibilidad (callbacks sueltos). Recomendado: return script", path);
+                            inferred
+                        } else {
+                            return Err(LuaError::runtime(format!(
+                                "El script '{}' debe retornar una tabla (return script), definir script={{}} o exponer callbacks (on_trigger_enter, update, etc.)",
+                                path
+                            )));
+                        }
+                    }
+                }
+            }
+        };
 
         let script = Script {
             path: path.to_string(),
@@ -122,7 +178,7 @@ impl ScriptEngine {
         };
 
         self.scripts.entry(entity_id).or_default().push(script);
-        log::info!("[scripting] script '{}' adjuntado a entidad {}", path, entity_id);
+        log::debug!("[scripting] script '{}' adjuntado a entidad {}", path, entity_id);
         Ok(())
     }
 
@@ -132,7 +188,7 @@ impl ScriptEngine {
             for s in &scripts {
                 self.call_lifecycle(&s.table, "on_stop", entity_id);
             }
-            log::info!("[scripting] scripts de entidad {} removidos", entity_id);
+            log::debug!("[scripting] scripts de entidad {} removidos", entity_id);
         }
     }
 
@@ -159,7 +215,7 @@ impl ScriptEngine {
             scripts.retain(|s| !s.path.starts_with("$anim$::"));
         }
         if count > 0 {
-            log::info!("[scripting] {} script(s) de animación removidos de entidad {}", count, entity_id);
+            log::debug!("[scripting] {} script(s) de animación removidos de entidad {}", count, entity_id);
         }
     }
 
@@ -199,6 +255,54 @@ impl ScriptEngine {
             Err(_) => {
                 self.lua.load(source).set_name(path).exec()?;
             }
+        }
+
+        let mut commands = Vec::new();
+        if let Ok(queue) = self.lua.globals().get::<LuaTable>("__cmds") {
+            for pair in queue.sequence_values::<LuaTable>() {
+                if let Ok(cmd_table) = pair {
+                    if let Ok(cmd) = parse_cmd_table(cmd_table) {
+                        commands.push(cmd);
+                    }
+                }
+            }
+        }
+
+        Ok(commands)
+    }
+
+    /// Ejecuta `on_trigger_enter(self, trigger, actor)` en los scripts adjuntos
+    /// a `trigger_id` cuando un actor entra por primera vez en el área.
+    pub fn run_trigger_enter_hook(
+        &mut self,
+        trigger_id: u32,
+        actor_id: u32,
+        trigger_snapshot: Option<&EntitySnapshot>,
+        actor_snapshot: Option<&EntitySnapshot>,
+    ) -> LuaResult<Vec<ScriptCmd>> {
+        let cmd_queue: LuaTable = self.lua.create_table()?;
+        self.lua.globals().set("__cmds", cmd_queue)?;
+
+        let mut snapshots = HashMap::new();
+        if let Some(s) = trigger_snapshot {
+            snapshots.insert(trigger_id, s.clone());
+        }
+        if let Some(s) = actor_snapshot {
+            snapshots.insert(actor_id, s.clone());
+        }
+        self.register_api(&snapshots);
+
+        let trigger_table = self.build_entity_table(trigger_id, trigger_snapshot)?;
+        let actor_table = self.build_entity_table(actor_id, actor_snapshot)?;
+
+        if let Some(scripts) = self.scripts.get_mut(&trigger_id) {
+            for script in scripts.iter_mut() {
+                if let Err(e) = call_fn_trigger(&script.table, "on_trigger_enter", trigger_table.clone(), actor_table.clone()) {
+                    log::warn!("[scripting] on_trigger_enter '{}': {}", script.path, e);
+                }
+            }
+        } else {
+            log::warn!("[trigger] entrada detectada en trigger {} pero no tiene scripts adjuntos", trigger_id);
         }
 
         let mut commands = Vec::new();
@@ -454,6 +558,14 @@ fn call_fn_dt(table: &LuaTable, method: &str, entity: LuaTable, dt: f32) -> LuaR
 fn call_fn_control(table: &LuaTable, method: &str, entity: LuaTable, control_key: &str) -> LuaResult<()> {
     match table.get::<LuaValue>(method)? {
         LuaValue::Function(f) => f.call::<()>((table.clone(), entity, control_key.to_string())),
+        LuaValue::Nil => Ok(()),
+        _ => Ok(()),
+    }
+}
+
+fn call_fn_trigger(table: &LuaTable, method: &str, trigger: LuaTable, actor: LuaTable) -> LuaResult<()> {
+    match table.get::<LuaValue>(method)? {
+        LuaValue::Function(f) => f.call::<()>((table.clone(), trigger, actor)),
         LuaValue::Nil => Ok(()),
         _ => Ok(()),
     }

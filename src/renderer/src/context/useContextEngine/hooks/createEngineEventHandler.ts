@@ -30,6 +30,27 @@ export function createEngineEventHandler({
 	projectType,
 	applyInitialAnimationFrame,
 }: CreateEngineEventHandlerParams) {
+	const buildTransformFromPoints = (
+		points?: [[number, number], [number, number], [number, number], [number, number]],
+	): Transform | null => {
+		if (!points || points.length !== 4) return null;
+		const xs = points.map(([x]) => x);
+		const ys = points.map(([, y]) => y);
+		const minX = Math.min(...xs);
+		const maxX = Math.max(...xs);
+		const minY = Math.min(...ys);
+		const maxY = Math.max(...ys);
+		const bw = Math.max(0.01, maxX - minX);
+		const bh = Math.max(0.01, maxY - minY);
+		const cx = (minX + maxX) * 0.5;
+		const cy = (minY + maxY) * 0.5;
+		return {
+			position: [cx, cy, -0.5],
+			rotation: [0, 0, 0, 1],
+			scale: [bw, bh, 1],
+		};
+	};
+
 	return (event: EngineEvent) => {
 		addLog(JSON.stringify(event), event.event === 'error');
 
@@ -100,6 +121,18 @@ export function createEngineEventHandler({
 					};
 					if (entity.kind === 'collider' && entity.points) {
 						sendEngine({ cmd: 'create_collider_from_points', points: entity.points } as never);
+					} else if (entity.kind === 'execution_area' && entity.points) {
+						const pendingRestore: PendingRestore = {
+							transform,
+							name: entity.name,
+							physicsEnabled: entity.physics_enabled ?? false,
+							physicsType: entity.physics_type ?? 'static',
+							scripts: entity.scripts,
+						};
+						const queue = refs.pendingRestoresRef.current.get('[ExecutionArea]') ?? [];
+						queue.push(pendingRestore);
+						refs.pendingRestoresRef.current.set('[ExecutionArea]', queue);
+						sendEngine({ cmd: 'create_execution_area_from_points', points: entity.points } as never);
 					} else if (entity.kind === 'character' && entity.path === '[Player]') {
 						refs.pendingPlayerDups.current.push(transform);
 					} else {
@@ -384,7 +417,40 @@ export function createEngineEventHandler({
 			const collider = event as { id?: number; points?: [[number, number], [number, number], [number, number], [number, number]] };
 			const id = collider.id ?? -1;
 			refs.entityMetaRef.current[id] = { kind: 'collider', path: '[Colisionador]', physicsEnabled: true, physicsType: 'static', points: collider.points };
+			const transformFromPoints = buildTransformFromPoints(collider.points);
+			if (transformFromPoints) {
+				refs.entityTransformsRef.current[id] = transformFromPoints;
+			}
 			dispatch({ type: 'ADD_COLLIDER', payload: { id, path: '[Colisionador]' } });
+			dispatch({ type: 'SET_TOOL_PROGRESS', payload: null });
+		}
+
+		if (event.event === 'execution_area_created') {
+			const area = event as { id?: number; points?: [[number, number], [number, number], [number, number], [number, number]] };
+			const id = area.id ?? -1;
+			refs.entityMetaRef.current[id] = { kind: 'execution_area', path: '[ExecutionArea]', physicsEnabled: false, physicsType: 'static', points: area.points };
+			const transformFromPoints = buildTransformFromPoints(area.points);
+			if (transformFromPoints) {
+				refs.entityTransformsRef.current[id] = transformFromPoints;
+			}
+			const queue = refs.pendingRestoresRef.current.get('[ExecutionArea]');
+			if (queue && queue.length > 0) {
+				const pending = queue.shift()!;
+				window.engine.send({ cmd: 'set_transform', id, position: pending.transform.position, rotation: pending.transform.rotation, scale: pending.transform.scale } as never);
+				refs.entityTransformsRef.current[id] = pending.transform;
+				if (pending.name && pending.name.trim().length > 0) {
+					refs.entityMetaRef.current[id].name = pending.name;
+					window.engine.send({ cmd: 'set_entity_name', id, name: pending.name, force: true } as never);
+				}
+				if (pending.scripts) {
+					refs.entityMetaRef.current[id].scripts = pending.scripts;
+					for (const script of pending.scripts) {
+						window.engine.send({ cmd: 'load_script', id, path: script.name, source: script.source } as never);
+					}
+				}
+				if (queue.length === 0) refs.pendingRestoresRef.current.delete('[ExecutionArea]');
+			}
+			dispatch({ type: 'ADD_EXECUTION_AREA', payload: { id, path: '[ExecutionArea]' } });
 			dispatch({ type: 'SET_TOOL_PROGRESS', payload: null });
 		}
 

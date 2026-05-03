@@ -31,6 +31,7 @@ export function SceneTabsBar({ initialSave, projectType }: Props) {
     scenarioEntities,
     characterEntities,
     colliderEntities,
+    executionAreaEntities,
     loadedSpritesInfo,
     entityTransformsRef,
     entityMetaRef,
@@ -41,6 +42,7 @@ export function SceneTabsBar({ initialSave, projectType }: Props) {
     removeScenario,
     removeCharacter,
     removeCollider,
+    removeExecutionArea,
     setWorldSize,
     setGridVisible,
     setGridCellSize,
@@ -150,6 +152,10 @@ export function SceneTabsBar({ initialSave, projectType }: Props) {
       removeCollider(collider.id);
     }
 
+    for (const executionArea of executionAreaEntities) {
+      removeExecutionArea(executionArea.id);
+    }
+
     for (const [idStr, meta] of Object.entries(entityMetaRef.current)) {
       if (meta.kind !== 'model') continue;
       const id = Number(idStr);
@@ -194,6 +200,11 @@ export function SceneTabsBar({ initialSave, projectType }: Props) {
 
       if (entity.kind === 'collider' && entity.points) {
         send({ cmd: 'create_collider_from_points', points: entity.points });
+        continue;
+      }
+
+      if (entity.kind === 'execution_area' && entity.points) {
+        send({ cmd: 'create_execution_area_from_points', points: entity.points });
         continue;
       }
 

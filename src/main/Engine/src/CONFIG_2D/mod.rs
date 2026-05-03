@@ -64,6 +64,7 @@ pub(crate) struct CharacterMarker {
 pub(crate) enum ActiveTool {
     None,
     DrawCollider { points_world: Vec<[f32; 2]>, cursor_world: Option<[f32; 2]> },
+    DrawExecutionArea { points_world: Vec<[f32; 2]>, cursor_world: Option<[f32; 2]> },
 }
 
 impl Default for ActiveTool {
@@ -77,6 +78,10 @@ impl ActiveTool {
 /// Marca una entidad ECS como colisionador creado con la herramienta de dibujo.
 #[derive(Debug, Clone)]
 pub(crate) struct ColliderMarker {}
+
+/// Marca una entidad ECS como área de ejecución (trigger sin física).
+#[derive(Debug, Clone)]
+pub(crate) struct ExecutionAreaMarker {}
 impl State {
     fn screen_to_world_2d(&self, pixel_x: f32, pixel_y: f32) -> Option<(f32, f32)> {
         let cam = self.camera_2d.as_ref()?;
@@ -91,16 +96,21 @@ impl State {
 
     pub(crate) fn update_tool_overlay_cursor_2d(&mut self, pixel_x: f32, pixel_y: f32) {
         let Some((wx, wy)) = self.screen_to_world_2d(pixel_x, pixel_y) else { return; };
-        if let ActiveTool::DrawCollider { points_world, cursor_world } = &mut self.active_tool {
-            *cursor_world = Some([wx, wy]);
-            let pts_clone = points_world.clone();
-            self.tool_overlay_buffer = build_tool_overlay(&self.device, &pts_clone, *cursor_world);
+        match &mut self.active_tool {
+            ActiveTool::DrawCollider { points_world, cursor_world }
+            | ActiveTool::DrawExecutionArea { points_world, cursor_world } => {
+                *cursor_world = Some([wx, wy]);
+                let pts_clone = points_world.clone();
+                self.tool_overlay_buffer = build_tool_overlay(&self.device, &pts_clone, *cursor_world);
+            }
+            ActiveTool::None => {}
         }
     }
 
     pub(crate) fn undo_last_tool_step_2d(&mut self) -> bool {
         match &mut self.active_tool {
-            ActiveTool::DrawCollider { points_world, cursor_world } => {
+            ActiveTool::DrawCollider { points_world, cursor_world }
+            | ActiveTool::DrawExecutionArea { points_world, cursor_world } => {
                 if points_world.pop().is_some() {
                     let pts_clone = points_world.clone();
                     self.tool_overlay_buffer = build_tool_overlay(&self.device, &pts_clone, *cursor_world);
@@ -121,6 +131,8 @@ impl State {
         self.scenario_entities.clear();
         self.character_entities.clear();
         self.collider_entities.clear();
+        self.execution_area_entities.clear();
+        self.execution_overlaps.clear();
         self.background_entity = None;
         self.active_tool = ActiveTool::None;
         self.tool_overlay_buffer = gizmo::build_from_vertices(&self.device, &[]);
@@ -245,7 +257,7 @@ impl State {
         self.scenario_entities.push(sc_id);
 
         send_event(&EngineEvent::ScenarioLoaded { id: sc_id, path: path.to_owned() });
-        log::info!("[load_scenario] entidad {sc_id} creada {img_width}×{img_height}: {path}");
+        log::debug!("[load_scenario] entidad {sc_id} creada {img_width}×{img_height}: {path}");
     }
 
     /// Duplica un escenario existente: crea una nueva entidad con el mismo PNG
@@ -335,7 +347,7 @@ impl State {
         self.background_entity = Some(bg_id);
 
         send_event(&EngineEvent::BackgroundLoaded { path: path.to_owned() });
-        log::info!("[load_background] fondo cargado {img_w}×{img_h} escala {world_w}×{world_h}: {path}");
+        log::debug!("[load_background] fondo cargado {img_w}×{img_h} escala {world_w}×{world_h}: {path}");
     }
 
     /// Elimina el fondo actual del mundo 2D, si existe.
@@ -403,7 +415,7 @@ impl State {
         self.character_entities.push(ch_id);
 
         send_event(&EngineEvent::CharacterLoaded { id: ch_id, path: path.to_owned() });
-        log::info!("[load_character] entidad {ch_id} creada {img_width}×{img_height}: {path}");
+        log::debug!("[load_character] entidad {ch_id} creada {img_width}×{img_height}: {path}");
     }
 
     /// Ajusta la escala de un personaje 2D preservando proporciones.
@@ -552,7 +564,7 @@ impl State {
                 let gpu_tex = GpuTexture::from_rgba(&self.device, &self.queue, &processed, w, h, "anim-frame");
                 let bg = std::sync::Arc::new(gpu_tex.create_bind_group(&self.device, &self.texture_bgl));
                 self.anim_texture_cache.insert(cache_key, (std::sync::Arc::clone(&bg), w, h));
-                log::info!("[play_animation_frame] frame cargado a GPU (cache miss): {path}");
+                log::debug!("[play_animation_frame] frame cargado a GPU (cache miss): {path}");
                 (bg, w, h)
             };
 
@@ -598,7 +610,7 @@ impl State {
             }
         }
 
-        log::info!("[play_animation_frame] frame actualizado para entidad {id} (tex_idx={tex_position}, pivot=({pivot_x},{pivot_y}))");
+        log::debug!("[play_animation_frame] frame actualizado para entidad {id} (tex_idx={tex_position}, pivot=({pivot_x},{pivot_y}))");
     }
 
     pub(crate) fn preload_anim_frame_with_rect(&mut self, path: &str, src_rect: Option<(u32, u32, u32, u32)>) {
@@ -644,7 +656,7 @@ impl State {
         let gpu_tex = crate::texture::GpuTexture::from_rgba(&self.device, &self.queue, &processed, w, h, "anim-frame");
         let bg = std::sync::Arc::new(gpu_tex.create_bind_group(&self.device, &self.texture_bgl));
         self.anim_texture_cache.insert(cache_key, (bg, w, h));
-        log::info!("[preload] frame pre-cargado a GPU: {path}");
+        log::debug!("[preload] frame pre-cargado a GPU: {path}");
     }
 
     /// Restaura el sprite original de una entidad después de una animación.
@@ -1087,6 +1099,26 @@ impl State {
                 }
                 true
             }
+            ActiveTool::DrawExecutionArea { points_world, cursor_world } => {
+                points_world.push([wx, wy]);
+                *cursor_world = Some([wx, wy]);
+                let count = points_world.len() as u32;
+
+                if count >= 4 {
+                    let pts: [[f32; 2]; 4] = [
+                        points_world[0], points_world[1],
+                        points_world[2], points_world[3],
+                    ];
+                    self.active_tool = ActiveTool::None;
+                    self.tool_overlay_buffer = gizmo::build_from_vertices(&self.device, &[]);
+                    self.create_execution_area_from_points(&pts);
+                } else {
+                    let pts_clone: Vec<[f32; 2]> = points_world.clone();
+                    self.tool_overlay_buffer = build_tool_overlay(&self.device, &pts_clone, *cursor_world);
+                    send_event(&EngineEvent::DrawingProgress { count });
+                }
+                true
+            }
             ActiveTool::None => false,
         }
     }
@@ -1114,6 +1146,71 @@ impl State {
 
         send_event(&EngineEvent::ColliderCreated { id: entity, points: *pts });
         log::info!("[tool] colisionador creado: entidad {entity} en {:?}", pts);
+    }
+
+    /// Crea una entidad ECS de área de ejecución (trigger) a partir de 4 puntos.
+    /// No añade física para evitar colisiones con personajes.
+    pub(crate) fn create_execution_area_from_points(&mut self, pts: &[[f32; 2]; 4]) {
+        let trigger_name = self.next_numbered_entity_name("ExecutionArea");
+        let (entity, _pos, _scale) = self.create_box_entity(pts, &trigger_name, [220, 80, 80, 130]);
+
+        self.world.insert(entity, ExecutionAreaMarker {});
+        self.execution_area_entities.push(entity);
+        self.undo_stack.push(crate::engine::UndoAction::RemoveEntity { id: entity });
+
+        send_event(&EngineEvent::ExecutionAreaCreated { id: entity, points: *pts });
+        log::info!("[tool] área de ejecución creada: entidad {entity} en {:?}", pts);
+    }
+
+    /// Detecta entradas a áreas de ejecución en modo preview y dispara hooks de scripting.
+    pub(crate) fn update_execution_areas_2d(&mut self) {
+        if !self.preview_playing {
+            self.execution_overlaps.clear();
+            return;
+        }
+
+        let trigger_ids = self.execution_area_entities.clone();
+        let actor_ids = self.character_entities.clone();
+        let mut next_overlaps = std::collections::HashSet::new();
+
+        for trigger_id in trigger_ids {
+            let Some(trigger_t) = self.world.get::<Transform>(trigger_id).cloned() else { continue; };
+            let trigger_hx = trigger_t.scale.x * 0.5;
+            let trigger_hy = trigger_t.scale.y * 0.5;
+
+            for actor_id in &actor_ids {
+                let Some(actor_t) = self.world.get::<Transform>(*actor_id).cloned() else { continue; };
+                let actor_hx = actor_t.scale.x * 0.5;
+                let actor_hy = actor_t.scale.y * 0.5;
+
+                let overlap_x = (trigger_t.position.x - actor_t.position.x).abs() <= (trigger_hx + actor_hx);
+                let overlap_y = (trigger_t.position.y - actor_t.position.y).abs() <= (trigger_hy + actor_hy);
+                if !overlap_x || !overlap_y {
+                    continue;
+                }
+
+                next_overlaps.insert((trigger_id, *actor_id));
+                if self.execution_overlaps.contains(&(trigger_id, *actor_id)) {
+                    continue;
+                }
+
+                log::info!("[trigger] entrada detectada: trigger={} actor={}", trigger_id, actor_id);
+
+                let trigger_snapshot = self.build_script_snapshot(trigger_id);
+                let actor_snapshot = self.build_script_snapshot(*actor_id);
+                match self.script_engine.run_trigger_enter_hook(
+                    trigger_id,
+                    *actor_id,
+                    trigger_snapshot.as_ref(),
+                    actor_snapshot.as_ref(),
+                ) {
+                    Ok(commands) => self.apply_script_commands(commands),
+                    Err(e) => log::warn!("[trigger] error ejecutando script en área {trigger_id}: {e}"),
+                }
+            }
+        }
+
+        self.execution_overlaps = next_overlaps;
     }
 }
 

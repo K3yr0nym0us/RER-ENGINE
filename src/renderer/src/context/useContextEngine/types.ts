@@ -69,6 +69,7 @@ export interface EngineState {
 	characterEntities: CharacterEntry[]
 	worldConfig: WorldConfig
 	colliderEntities: ScenarioEntry[]
+	executionAreaEntities: ScenarioEntry[]
 	toolProgress: number | null
 	animationPlaying: Map<number, boolean>
 	sprites: SpriteInfo[]
@@ -95,6 +96,8 @@ export type EngineAction =
 	| { type: 'SET_WORLD_CONFIG'; payload: Partial<WorldConfig> }
 	| { type: 'ADD_COLLIDER'; payload: ScenarioEntry }
 	| { type: 'REMOVE_COLLIDER'; payload: number }
+	| { type: 'ADD_EXECUTION_AREA'; payload: ScenarioEntry }
+	| { type: 'REMOVE_EXECUTION_AREA'; payload: number }
 	| { type: 'SET_TOOL_PROGRESS'; payload: number | null }
 	| { type: 'SET_ANIMATION_PLAYING'; payload: { entityId: number; playing: boolean } }
 	| { type: 'UPDATE_SELECTED_PHYSICS'; payload: { entityId: number; enabled: boolean; bodyType: string } }
@@ -118,6 +121,7 @@ export const initialState: EngineState = {
 	characterEntities: [],
 	worldConfig: DEFAULT_WORLD_CONFIG,
 	colliderEntities: [],
+	executionAreaEntities: [],
 	toolProgress: null,
 	animationPlaying: new Map(),
 	sprites: [],
@@ -165,6 +169,11 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 		REMOVE_COLLIDER: (prevState, nextAction) => ({
 			...prevState,
 			colliderEntities: prevState.colliderEntities.filter((collider) => collider.id !== nextAction.payload),
+		}),
+		ADD_EXECUTION_AREA: (prevState, nextAction) => ({ ...prevState, executionAreaEntities: [...prevState.executionAreaEntities, nextAction.payload] }),
+		REMOVE_EXECUTION_AREA: (prevState, nextAction) => ({
+			...prevState,
+			executionAreaEntities: prevState.executionAreaEntities.filter((area) => area.id !== nextAction.payload),
 		}),
 		SET_TOOL_PROGRESS: (prevState, nextAction) => ({ ...prevState, toolProgress: nextAction.payload }),
 		SET_ANIMATION_PLAYING: (prevState, nextAction) => {
@@ -221,7 +230,7 @@ export type EntityAnimations = NonNullable<SelectedEntity['animations']>;
 export type EntityScripts = NonNullable<SelectedEntity['scripts']>;
 
 export interface EntityMeta {
-	kind: 'scenario' | 'character' | 'model' | 'collider'
+	kind: 'scenario' | 'character' | 'model' | 'collider' | 'execution_area'
 	path: string
 	name?: string
 	physicsEnabled: boolean
@@ -286,6 +295,7 @@ export interface EngineContextValue extends EngineState {
 	setGridVisible: (visible: boolean) => void
 	setGridCellSize: (size: number) => void
 	removeCollider: (id: number) => void
+	removeExecutionArea: (id: number) => void
 	updateEntityAnimations: (id: number, animations: any[]) => void
 	updateEntityScripts: (id: number, scripts: EntityScripts) => void
 	registerPivotEditListener: (fn: (framePath: string, px: number, py: number) => void) => void
