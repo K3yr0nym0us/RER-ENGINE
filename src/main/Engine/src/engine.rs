@@ -1606,12 +1606,6 @@ self.active_animations.retain(|_, a| !a.finished);
                         }
                     }
                 }
-                ScriptCmd::StopEntity { id } => {
-                    // Pone a cero la velocidad lineal y angular del Rapier body para
-                    // detener instantáneamente el personaje sin esperar a que la
-                    // inercia se disipe naturalmente.
-                    self.physics_2d.stop_entity(id);
-                }
                 ScriptCmd::Log { message } => {
                     eprintln!("[script] {message}");
                 }
