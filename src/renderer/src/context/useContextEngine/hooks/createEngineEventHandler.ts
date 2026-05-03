@@ -4,17 +4,20 @@ import type {
 	Camera2dUpdated,
 	CharacterLoaded,
 	ControlInputDetected,
-	EngineEvent,
 	EntitySelected,
 	PhysicsChanged,
 	PivotSelected,
 	PlayerReady,
 	ScenarioLoaded,
-	SpriteLoaded,
 	SpriteRemoved,
 	SpritesList,
 } from '@shared-types';
 import type { EngineAction, EngineInternalRefs, PendingRestore, Transform } from '../types';
+
+type RuntimeEngineEvent = {
+	event: string
+	[key: string]: unknown
+};
 
 interface CreateEngineEventHandlerParams {
 	dispatch: Dispatch<EngineAction>
@@ -75,7 +78,7 @@ export function createEngineEventHandler({
 		}
 	};
 
-	return (event: EngineEvent) => {
+	return (event: RuntimeEngineEvent) => {
 		addLog(JSON.stringify(event), event.event === 'error');
 
 		const pendingEvent = refs.pendingEventsRef.current.get(event.event);
@@ -186,7 +189,7 @@ export function createEngineEventHandler({
 		}
 
 		if (event.event === 'entity_selected') {
-			const selected = event as EntitySelected;
+			const selected = event as unknown as EntitySelected;
 			refs.entityTransformsRef.current[selected.id] = { position: selected.position, rotation: selected.rotation, scale: selected.scale };
 			if (refs.entityMetaRef.current[selected.id]) {
 				refs.entityMetaRef.current[selected.id].name = selected.name;
@@ -224,11 +227,11 @@ export function createEngineEventHandler({
 		}
 
 		if (event.event === 'control_input_detected') {
-			runControlScriptsForDetectedInput(event as ControlInputDetected);
+			runControlScriptsForDetectedInput(event as unknown as ControlInputDetected);
 		}
 
 		if (event.event === 'player_ready') {
-			const playerReady = event as PlayerReady;
+			const playerReady = event as unknown as PlayerReady;
 			refs.playerEntityIdRef.current = playerReady.id;
 			refs.entityTransformsRef.current[playerReady.id] = {
 				position: playerReady.position,
@@ -263,7 +266,7 @@ export function createEngineEventHandler({
 		}
 
 		if (event.event === 'camera_2d_updated') {
-			const cameraUpdated = event as Camera2dUpdated;
+			const cameraUpdated = event as unknown as Camera2dUpdated;
 			refs.camera2dRef.current = { x: cameraUpdated.x, y: cameraUpdated.y, halfH: cameraUpdated.half_h };
 		}
 
@@ -272,7 +275,7 @@ export function createEngineEventHandler({
 		}
 
 		if (event.event === 'scenario_loaded') {
-			const scenario = event as ScenarioLoaded;
+			const scenario = event as unknown as ScenarioLoaded;
 			dispatch({ type: 'ADD_SCENARIO', payload: { id: scenario.id, path: scenario.path } });
 			refs.entityMetaRef.current[scenario.id] = { kind: 'scenario', path: scenario.path, physicsEnabled: false, physicsType: '' };
 			const queue = refs.pendingRestoresRef.current.get(scenario.path);
@@ -323,7 +326,7 @@ export function createEngineEventHandler({
 		}
 
 		if (event.event === 'character_loaded') {
-			const character = event as CharacterLoaded;
+			const character = event as unknown as CharacterLoaded;
 			const applyPendingRestore = (id: number, path: string) => {
 				const queue = refs.pendingRestoresRef.current.get(path);
 				if (!queue || queue.length === 0) return;
@@ -415,17 +418,17 @@ export function createEngineEventHandler({
 		}
 
 		if (event.event === 'sprite_loaded') {
-			const sprite = event as SpriteLoaded;
+			const sprite = event as unknown as { path: string; name: string; width: number; height: number };
 			dispatch({ type: 'ADD_SPRITE', payload: { path: sprite.path, name: sprite.name, width: sprite.width, height: sprite.height } });
 		}
 
 		if (event.event === 'sprite_removed') {
-			const sprite = event as SpriteRemoved;
+			const sprite = event as unknown as SpriteRemoved;
 			dispatch({ type: 'REMOVE_SPRITE', payload: sprite.path });
 		}
 
 		if (event.event === 'sprites_list') {
-			const spritesList = event as SpritesList;
+			const spritesList = event as unknown as SpritesList;
 			dispatch({ type: 'SET_SPRITES', payload: spritesList.sprites });
 		}
 
@@ -487,12 +490,12 @@ export function createEngineEventHandler({
 		}
 
 		if (event.event === 'pivot_selected') {
-			const pivot = event as PivotSelected;
+			const pivot = event as unknown as PivotSelected;
 			refs.pivotEditListenerRef.current?.(pivot.frame_path, pivot.pivot_x, pivot.pivot_y);
 		}
 
 		if (event.event === 'animation_finished') {
-			const animationFinished = event as AnimationFinished;
+			const animationFinished = event as unknown as AnimationFinished;
 			const pending = refs.pendingEventsRef.current.get('animation_finished');
 			if (pending) {
 				pending.resolve(animationFinished);
@@ -502,7 +505,7 @@ export function createEngineEventHandler({
 		}
 
 		if (event.event === 'physics_changed') {
-			const physicsChanged = event as PhysicsChanged;
+			const physicsChanged = event as unknown as PhysicsChanged;
 			if (refs.entityMetaRef.current[physicsChanged.entity_id]) {
 				refs.entityMetaRef.current[physicsChanged.entity_id].physicsEnabled = physicsChanged.enabled;
 				refs.entityMetaRef.current[physicsChanged.entity_id].physicsType = physicsChanged.body_type;
