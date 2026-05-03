@@ -69,6 +69,9 @@ impl Default for PhysicsWorld2D {
 impl PhysicsWorld2D {
     pub(crate) fn new() -> Self { Self::default() }
 
+    /// Número de rigid bodies activos en el mundo físico 2D.
+    pub(crate) fn body_count(&self) -> u32 { self.bodies.len() as u32 }
+
     // ── Gestión de cuerpos por entidad ────────────────────────────────────────
 
     /// Activa o desactiva física en una entidad 2D.

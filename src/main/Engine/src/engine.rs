@@ -298,6 +298,10 @@ pub struct State {
     pub(crate) undo_stack: Vec<UndoAction>,
     /// Evita registrar nuevas entradas de undo mientras se está aplicando una.
     pub(crate) is_applying_undo: bool,
+    // ── Debug metrics ────────────────────────────────────────────────────────
+    metrics_last_emit:   Instant,
+    metrics_frame_count: u32,
+    last_draw_calls:     u32,
 }
 
 impl State {
@@ -730,6 +734,9 @@ impl State {
             sprite_store: HashMap::new(),
             undo_stack: Vec::new(),
             is_applying_undo: false,
+            metrics_last_emit:   Instant::now(),
+            metrics_frame_count: 0,
+            last_draw_calls:     0,
         }
     }
 
@@ -1640,6 +1647,26 @@ self.active_animations.retain(|_, a| !a.finished);
         let now         = Instant::now();
         self.delta_time = now.duration_since(self.last_frame).as_secs_f32();
         self.last_frame = now;
+
+        // Emitir métricas de debug ~1 vez por segundo.
+        self.metrics_frame_count += 1;
+        if now.duration_since(self.metrics_last_emit) >= std::time::Duration::from_secs(1) {
+            let elapsed_secs = now.duration_since(self.metrics_last_emit).as_secs_f32();
+            let fps = self.metrics_frame_count as f32 / elapsed_secs;
+            let physics_bodies = if self.camera_2d.is_some() {
+                self.physics_2d.body_count()
+            } else {
+                self.physics.body_count()
+            };
+            send_event(&EngineEvent::DebugMetrics {
+                fps,
+                frame_time_ms:  self.delta_time * 1000.0,
+                draw_calls:     self.last_draw_calls,
+                physics_bodies,
+            });
+            self.metrics_last_emit   = now;
+            self.metrics_frame_count = 0;
+        }
         if self.camera_2d.is_some() {
             // Scripts corren siempre (editor + juego) para facilitar pruebas rápidas.
             self.update_scripts();
@@ -1681,6 +1708,7 @@ self.active_animations.retain(|_, a| !a.finished);
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
         self.update_animations();
+        let mut draw_calls: u32 = 0;
 
         let output  = self.surface.get_current_texture()?;
         let view    = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
@@ -1775,6 +1803,7 @@ self.active_animations.retain(|_, a| !a.finished);
                     mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32,
                 );
                 pass.draw_indexed(0..mesh.index_count, 0, 0..1);
+                draw_calls += 1;
             }
         }
 
@@ -1810,6 +1839,7 @@ self.active_animations.retain(|_, a| !a.finished);
                 grd_pass.set_bind_group(0, &self.grid_bind_group, &[]);
                 grd_pass.set_vertex_buffer(0, self.grid_buffer.vertex_buffer.slice(..));
                 grd_pass.draw(0..self.grid_buffer.vertex_count, 0..1);
+                draw_calls += 1;
             }
         }
 
@@ -1833,6 +1863,7 @@ self.active_animations.retain(|_, a| !a.finished);
             tool_pass.set_bind_group(0, &self.grid_bind_group, &[]); // view_proj actualizado
             tool_pass.set_vertex_buffer(0, self.tool_overlay_buffer.vertex_buffer.slice(..));
             tool_pass.draw(0..self.tool_overlay_buffer.vertex_count, 0..1);
+            draw_calls += 1;
         }
 
         // ── Gizmos (segundo pass, sin depth) ─────────────────────────────────
@@ -1882,10 +1913,12 @@ self.active_animations.retain(|_, a| !a.finished);
             gpass.set_bind_group(0, &self.gizmo_bind_group, &[]);
             gpass.set_vertex_buffer(0, self.gizmo_buffer.vertex_buffer.slice(..));
             gpass.draw(0..self.gizmo_buffer.vertex_count, 0..1);
+            draw_calls += 1;
             }
         }
 
         self.queue.submit(std::iter::once(enc.finish()));
+        self.last_draw_calls = draw_calls;
         output.present();
         Ok(())
     }

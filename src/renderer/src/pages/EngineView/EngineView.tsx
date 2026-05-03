@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 
 import SideBarLeft from './components/SideBarLeft';
 import LogConsole from './components/LogConsole';
@@ -30,6 +30,7 @@ function EngineViewInner({ projectType, initialSave, initialSavePath, viewportRe
   viewportRef: React.RefObject<HTMLDivElement>
 }) {
   const { handleSave, toggleAutoSave } = useAutoSave({ projectType, initialSave, initialSavePath })
+  const [debugOverlayVisible, setDebugOverlayVisible] = useState(true)
 
   return (
     <div className="app-shell d-flex flex-column">
@@ -44,6 +45,8 @@ function EngineViewInner({ projectType, initialSave, initialSavePath, viewportRe
             projectType={projectType}
             handleSave={handleSave}
             toggleAutoSave={toggleAutoSave}
+            debugOverlayVisible={debugOverlayVisible}
+            onToggleDebugOverlay={() => setDebugOverlayVisible(v => !v)}
           />
 
           <main

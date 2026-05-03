@@ -4,6 +4,7 @@ import type {
 	Camera2dUpdated,
 	CharacterLoaded,
 	ControlInputDetected,
+	DebugMetrics,
 	EntitySelected,
 	PhysicsChanged,
 	PivotSelected,
@@ -79,7 +80,10 @@ export function createEngineEventHandler({
 	};
 
 	return (event: RuntimeEngineEvent) => {
-		addLog(JSON.stringify(event), event.event === 'error');
+		// debug_metrics es de alta frecuencia (≤1 Hz); no se registra en la consola.
+		if (event.event !== 'debug_metrics') {
+			addLog(JSON.stringify(event), event.event === 'error');
+		}
 
 		const pendingEvent = refs.pendingEventsRef.current.get(event.event);
 		if (pendingEvent) {
@@ -514,6 +518,11 @@ export function createEngineEventHandler({
 				type: 'UPDATE_SELECTED_PHYSICS',
 				payload: { entityId: physicsChanged.entity_id, enabled: physicsChanged.enabled, bodyType: physicsChanged.body_type },
 			});
+		}
+
+		if (event.event === 'debug_metrics') {
+			const metrics = event as unknown as DebugMetrics;
+			dispatch({ type: 'SET_DEBUG_METRICS', payload: metrics });
 		}
 	};
 }

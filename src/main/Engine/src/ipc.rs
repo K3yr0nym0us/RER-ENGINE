@@ -241,6 +241,13 @@ pub enum EngineEvent {
     SpritesList { sprites: Vec<SpriteInfo> },
     /// Emitido cuando el motor detecta un input de control en modo juego.
     ControlInputDetected { device: String, control_key: String },
+    /// Emitido ~1 vez por segundo con métricas de rendimiento del motor.
+    DebugMetrics {
+        fps:            f32,
+        frame_time_ms:  f32,
+        draw_calls:     u32,
+        physics_bodies: u32,
+    },
 }
 
 /// Información básica de un sprite almacenado en el motor.

@@ -59,6 +59,9 @@ impl Default for PhysicsWorld {
 impl PhysicsWorld {
     pub(crate) fn new() -> Self { Self::default() }
 
+    /// Número de rigid bodies activos en el mundo físico 3D.
+    pub(crate) fn body_count(&self) -> u32 { self.bodies.len() as u32 }
+
     // ── Añadir cuerpos ───────────────────────────────────────────────────────
 
     /// Rigid body dinámico (cae por gravedad) con colisionador esférico.

@@ -273,7 +273,7 @@ Motivo: priorizar madurez de engine, estabilidad y pipeline antes de expansion d
 
 ### Prioridad alta (alineada a vision human-first)
 
-* [ ] Herramientas de debug runtime: overlay con FPS, frame time, draw calls y estado de fisica
+* ✅ Herramientas de debug runtime: overlay con FPS, frame time, draw calls y estado de fisica
 * [ ] Optimizacion de render de base: batching, texture atlas, frustum culling, render layers
 * [ ] Particionado espacial para escalado (quadtree/grid/BVH) en picking/render/fisicas
 * [ ] Prefabs/blueprints para productividad y reutilizacion real de logica

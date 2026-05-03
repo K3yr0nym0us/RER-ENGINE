@@ -1,5 +1,5 @@
 import type { MutableRefObject } from 'react';
-import type { ProjectSaveData, SavedControlBindings, SpriteInfo } from '@shared-types';
+import type { DebugMetrics, ProjectSaveData, SavedControlBindings, SpriteInfo } from '@shared-types';
 
 export interface Entity {
 	id: number
@@ -74,6 +74,7 @@ export interface EngineState {
 	animationPlaying: Map<number, boolean>
 	sprites: SpriteInfo[]
 	loadedSpritesInfo: Map<string, { name: string }>
+	debugMetrics: DebugMetrics | null
 }
 
 export type EngineAction =
@@ -106,7 +107,8 @@ export type EngineAction =
 	| { type: 'SET_SPRITES'; payload: SpriteInfo[] }
 	| { type: 'ADD_SPRITE_INFO'; payload: { path: string; name: string } }
 	| { type: 'REMOVE_SPRITE_INFO'; payload: string }
-	| { type: 'SET_LOADED_SPRITES_INFO'; payload: Array<{ path: string; name: string }> };
+	| { type: 'SET_LOADED_SPRITES_INFO'; payload: Array<{ path: string; name: string }> }
+	| { type: 'SET_DEBUG_METRICS'; payload: DebugMetrics };
 
 export const initialState: EngineState = {
 	engineReady: false,
@@ -126,6 +128,7 @@ export const initialState: EngineState = {
 	animationPlaying: new Map(),
 	sprites: [],
 	loadedSpritesInfo: new Map(),
+	debugMetrics: null,
 };
 
 export function engineReducer(state: EngineState, action: EngineAction): EngineState {
@@ -212,6 +215,7 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 			}
 			return { ...prevState, loadedSpritesInfo: nextMap };
 		},
+		SET_DEBUG_METRICS: (prevState, nextAction) => ({ ...prevState, debugMetrics: nextAction.payload }),
 	};
 
 	const handler = handlers[action.type as keyof typeof handlers];

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import {
+  Activity,
   ClockFill,
   FloppyFill,
   PlayFill,
@@ -13,10 +14,12 @@ interface Props {
   projectType: string
   handleSave: () => void
   toggleAutoSave: () => void
+  debugOverlayVisible: boolean
+  onToggleDebugOverlay: () => void
 }
 
-export function TopBarEngine({ projectType, handleSave, toggleAutoSave }: Props) {
-  const { engineReady, engineError, previewPlaying, setPreviewPlaying } = useContextEngine();
+export function TopBarEngine({ projectType, handleSave, toggleAutoSave, debugOverlayVisible, onToggleDebugOverlay }: Props) {
+  const { engineReady, engineError, previewPlaying, setPreviewPlaying, debugMetrics } = useContextEngine();
   const isStopActive = !previewPlaying;
   const [hasSavedOnce] = useState(false);
   const [autoSaveEnabled] = useState(false);
@@ -66,6 +69,39 @@ export function TopBarEngine({ projectType, handleSave, toggleAutoSave }: Props)
           </div>
         </div>
         <div className="d-flex align-items-center gap-2">
+          {debugOverlayVisible && debugMetrics && (
+            <div
+              style={{
+                fontFamily: 'monospace',
+                fontSize: 11,
+                color: '#94a3b8',
+                display: 'flex',
+                gap: 10,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              <span style={{ color: debugMetrics.fps >= 55 ? '#4ade80' : debugMetrics.fps >= 30 ? '#facc15' : '#f87171' }}>
+                {debugMetrics.fps.toFixed(1)} fps
+              </span>
+              <span>{debugMetrics.frame_time_ms.toFixed(1)} ms</span>
+              <span>{debugMetrics.draw_calls} dc</span>
+              <span>{debugMetrics.physics_bodies} bod</span>
+            </div>
+          )}
+          <AppTooltip
+            content={debugOverlayVisible ? 'Ocultar métricas' : 'Mostrar métricas'}
+            place="left"
+          >
+            <button
+              className={`btn btn-sm d-flex align-items-center gap-1 ${
+                debugOverlayVisible ? 'btn-info text-dark' : 'btn-outline-secondary'
+              }`}
+              onClick={onToggleDebugOverlay}
+              type="button"
+            >
+              <Activity size={13} />
+            </button>
+          </AppTooltip>
           <button
             className="btn btn-sm btn-outline-light d-flex align-items-center gap-2"
             disabled={!engineReady}
