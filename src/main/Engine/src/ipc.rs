@@ -153,6 +153,9 @@ pub enum EngineCommand {
     SetPreviewPlaying { playing: bool },
     /// Deshacer la última acción disponible.
     Undo,
+    /// Recargar un asset PNG desde disco sin recrear entidades ni cambiar UVs.
+    /// Electron lo envía cuando detecta que el archivo fue modificado externamente.
+    ReloadAsset { path: String },
 }
 
 #[derive(Debug, Deserialize, Clone)]

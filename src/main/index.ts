@@ -259,9 +259,50 @@ function stopEngine(): void {
 }
 
 // ---------------------------------------------------------------------------
+// Hot reload de assets: file watchers para PNG/sprites cargados externamente
+// ---------------------------------------------------------------------------
+const assetWatchers = new Map<string, fs.FSWatcher>()
+
+function watchAsset(filePath: string): void {
+  if (assetWatchers.has(filePath)) return
+  try {
+    const watcher = fs.watch(filePath, { persistent: false }, (eventType) => {
+      if (eventType === 'change') {
+        // Debounce: esperar 150 ms antes de recargar para evitar recargas dobles
+        // mientras el programa externo termina de escribir el archivo.
+        setTimeout(() => {
+          sendToEngine({ cmd: 'reload_asset', path: filePath } as never)
+        }, 150)
+      }
+    })
+    watcher.on('error', () => {
+      assetWatchers.delete(filePath)
+    })
+    assetWatchers.set(filePath, watcher)
+  } catch {
+    // Si el archivo no existe aún, ignorar
+  }
+}
+
+function clearAssetWatchers(): void {
+  for (const watcher of assetWatchers.values()) {
+    try { watcher.close() } catch { /* ignorar */ }
+  }
+  assetWatchers.clear()
+}
+
+// ---------------------------------------------------------------------------
 // IPC: renderer → motor y herramientas del editor
 // ---------------------------------------------------------------------------
 ipcMain.on('engine:cmd', (_event, cmd: EngineCommand) => {
+  // Registrar file watcher para assets cargados por path
+  const c = cmd as Record<string, unknown>
+  if (
+    typeof c['path'] === 'string' &&
+    (c['cmd'] === 'load_character' || c['cmd'] === 'load_scenario' || c['cmd'] === 'load_background')
+  ) {
+    watchAsset(c['path'] as string)
+  }
   sendToEngine(cmd)
 })
 
@@ -783,6 +824,8 @@ ipcMain.handle('open-project-dialog', async (): Promise<OpenProjectResult | null
   const project = loadProjectFromSaveFile(filePath)
   if (!project) return null
   currentProjectFilePath = filePath
+  // Limpiar watchers del proyecto anterior al abrir uno nuevo
+  clearAssetWatchers()
   return { project, filePath }
 })
 
@@ -930,6 +973,7 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   stopEngine()
   cleanupExtractedProjectDirs()
+  clearAssetWatchers()
   if (process.platform !== 'darwin') {
     app.quit()
   }

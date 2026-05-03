@@ -1158,6 +1158,32 @@ impl State {
                 }
                 self.apply_undo();
             }
+            EngineCommand::ReloadAsset { path } => {
+                log::info!("[IPC] ReloadAsset: {}", path);
+                // Buscar UV rect pre-asignado en el atlas (sin re-empacar, sin cambiar ECS).
+                if let Some(&uv_rect) = self.static_tex_cache.get(&path) {
+                    match std::fs::read(&path) {
+                        Ok(bytes) => {
+                            use image::ImageReader;
+                            match ImageReader::new(std::io::Cursor::new(&bytes))
+                                .with_guessed_format()
+                                .map_err(|e| e.to_string())
+                                .and_then(|r| r.decode().map_err(|e| e.to_string()))
+                            {
+                                Ok(img) => {
+                                    let rgba = img.to_rgba8();
+                                    self.atlas.update(&self.queue, rgba.as_raw(), uv_rect);
+                                    log::info!("[hot-reload] Textura actualizada en atlas: {}", path);
+                                }
+                                Err(e) => log::warn!("[hot-reload] Error decodificando PNG '{}': {}", path, e),
+                            }
+                        }
+                        Err(e) => log::warn!("[hot-reload] Error leyendo archivo '{}': {}", path, e),
+                    }
+                } else {
+                    log::warn!("[hot-reload] Path no encontrado en static_tex_cache: {}", path);
+                }
+            }
             EngineCommand::SetAnimation { id, name, frames, fps, loop_, audio_path, logical_w, logical_h, scripts } => {
                 log::debug!("[IPC] SetAnimation: entity_id={}, name='{}', frames={}, audio={:?}, scripts={}", id, name, frames.len(), audio_path, scripts.len());
 
