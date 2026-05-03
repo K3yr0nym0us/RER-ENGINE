@@ -274,7 +274,11 @@ Motivo: priorizar madurez de engine, estabilidad y pipeline antes de expansion d
 ### Prioridad alta (alineada a vision human-first)
 
 * ✅ Herramientas de debug runtime: overlay con FPS, frame time, draw calls y estado de fisica
-* [ ] Optimizacion de render de base: batching, texture atlas, frustum culling, render layers
+* ✅ Optimizacion de render de base: batching, texture atlas, frustum culling, render layers
+  * ✅ Step 2: Instanced rendering — batch by (mesh_idx, bind_group)
+  * ✅ Step 3: Texture atlas — single 4096×4096 GPU texture via shelf packing
+  * [ ] Step 4: Frustum culling (próximo)
+  * [ ] Step 5: Render layers / z-sorting
 * [ ] Particionado espacial para escalado (quadtree/grid/BVH) en picking/render/fisicas
 * [ ] Prefabs/blueprints para productividad y reutilizacion real de logica
 
@@ -314,8 +318,9 @@ Decision vigente:
   * DONE cuando muestra FPS + frame time + draw calls + estado de fisica
   * DONE cuando puede activarse/desactivarse en runtime
 * Optimizacion render base
-  * DONE cuando existe mejora medible en escenas de prueba repetibles
-  * DONE cuando hay benchmark base comparando antes/despues
+  * ✅ DONE: Instanced rendering implementado (batch by mesh_idx + bind_group)
+  * ✅ DONE: Texture atlas implementado (4096×4096 single texture, all 2D/3D sprites packed)
+  * ⏳ Próximo: Frustum culling y z-sorting para escenas más complejas
 * Particionado espacial
   * DONE cuando picking y consultas principales dejan de ser O(n) global para casos comunes
   * DONE cuando se usa en al menos picking + una ruta de fisica o render

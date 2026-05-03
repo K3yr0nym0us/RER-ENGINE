@@ -9,7 +9,6 @@ use glam::Vec3 as GlamVec3;
 use crate::ecs::{EntityId, MeshComponent, Transform};
 use crate::engine::State;
 use crate::mesh::{upload, Mesh, Vertex};
-use crate::texture::GpuTexture;
 
 impl State {
     /// Crea una entidad de cuadro visual a partir de 4 puntos en espacio de mundo.
@@ -25,15 +24,11 @@ impl State {
         let mesh_idx = self.meshes.len();
         self.meshes.push(mesh);
 
-        let tex = GpuTexture::from_rgba(&self.device, &self.queue, &color, 1, 1, "box-entity");
-        self.textures.push(tex.create_bind_group(&self.device, &self.texture_bgl));
-
-        let (buf, bg) = self.alloc_entity_uniform();
-        self.entity_buffers.push(buf);
-        self.entity_bind_groups.push(bg);
+        let tex_idx = self.uv_rects.len();
+        self.uv_rects.push(self.atlas.pack(&self.queue, &color, 1, 1));
 
         let entity = self.world.spawn(Some(name));
-        self.world.insert(entity, MeshComponent { mesh_idx });
+        self.world.insert(entity, MeshComponent { mesh_idx, tex_idx });
         self.world.insert(entity, Transform {
             position: GlamVec3::from(pos),
             scale:    GlamVec3::from(scale),

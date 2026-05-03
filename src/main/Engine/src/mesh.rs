@@ -89,6 +89,52 @@ pub fn create_cube(device: &wgpu::Device) -> Mesh {
 }
 
 // ---------------------------------------------------------------------------
+// Per-instance data for the instanced rendering pipeline
+// ---------------------------------------------------------------------------
+/// Data uploaded per draw instance to the GPU.
+///
+/// Layout (96 bytes):
+///   offset  0..64  → model matrix, column-major (4 × vec4<f32>)
+///   offset 64..80  → flag_pad  (x = selection flag, yzw = unused)
+///   offset 80..96  → uv_rect   [u_min, v_min, u_max, v_max] en el atlas
+///
+/// Matches WGSL `InstanceInput` locations 3..8.
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct InstanceData {
+    pub model:    [[f32; 4]; 4],
+    pub flag_pad: [f32; 4],   // x: 0=normal  1=selected  2=hovered
+    pub uv_rect:  [f32; 4],   // sub-región del texture atlas [u_min, v_min, u_max, v_max]
+}
+
+impl InstanceData {
+    const ATTRIBS: [wgpu::VertexAttribute; 6] = wgpu::vertex_attr_array![
+        3 => Float32x4,  // model col 0
+        4 => Float32x4,  // model col 1
+        5 => Float32x4,  // model col 2
+        6 => Float32x4,  // model col 3
+        7 => Float32x4,  // flag_pad
+        8 => Float32x4,  // uv_rect  ← nuevo
+    ];
+
+    pub fn desc() -> wgpu::VertexBufferLayout<'static> {
+        wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<Self>() as wgpu::BufferAddress,
+            step_mode:    wgpu::VertexStepMode::Instance,
+            attributes:   &Self::ATTRIBS,
+        }
+    }
+
+    pub fn new(model: glam::Mat4, flag: f32, uv_rect: [f32; 4]) -> Self {
+        Self {
+            model:    model.to_cols_array_2d(),
+            flag_pad: [flag, 0.0, 0.0, 0.0],
+            uv_rect,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Loader de archivos .glb / .gltf
 // ---------------------------------------------------------------------------
 // Helper: sube vértices e índices a la GPU

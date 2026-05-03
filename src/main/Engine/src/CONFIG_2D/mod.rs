@@ -139,27 +139,25 @@ impl State {
         self.physics_2d.clear();
         self.world.clear();
         self.meshes.clear();
-        self.textures.clear();
+        self.uv_rects.clear();
+        self.static_tex_cache.clear();
         self.anim_texture_cache.clear();
         self.anim_overrides.clear();
-        self.entity_buffers.clear();
-        self.entity_bind_groups.clear();
         self.selected_entity = None;
         self.hovered_entity  = None;
 
-        // Quad unitario en el origen — el Transform lo escala/posiciona.
-        // Imprescindible para que picking AABB, gizmo y hover funcionen.
+        // Quad unitario canónico — compartido por TODOS los sprites 2D de la escena.
+        // El Transform de cada entidad lo escala y posiciona correctamente.
+        let canonical_quad = create_quad_xy(&self.device, 0.0, 0.0, 1.0, 1.0, "canonical-quad");
+        self.meshes.push(canonical_quad);
+        self.canonical_quad_idx = 0;
 
-        // -- Personaje: quad 1.0 × 1.5, centrado en (0, 0) -------------------
-        let player_mesh = create_quad_xy(&self.device, 0.0, 0.0, 1.0, 1.0, "player-unit");
-        self.meshes.push(player_mesh);
-        let player_tex = GpuTexture::solid_color(&self.device, &self.queue, 232, 220, 200);
-        self.textures.push(player_tex.create_bind_group(&self.device, &self.texture_bgl));
-        let (b, bg) = self.alloc_entity_uniform();
-        self.entity_buffers.push(b);
-        self.entity_bind_groups.push(bg);
+        // -- Personaje por defecto (Player): quad skin 1.0 × 1.5 -------------------
+        let player_rgba = [232u8, 220, 200, 255];
+        let tex_idx     = self.uv_rects.len();
+        self.uv_rects.push(self.atlas.pack(&self.queue, &player_rgba, 1, 1));
         let player_id = self.world.spawn(Some("Player"));
-        self.world.insert(player_id, MeshComponent { mesh_idx: 0 });
+        self.world.insert(player_id, MeshComponent { mesh_idx: self.canonical_quad_idx, tex_idx });
         self.world.insert(player_id, crate::ecs::Transform {
             position: GlamVec3::new(0.0, 0.0, 0.0),
             scale:    GlamVec3::new(1.0, 1.5, 1.0),
@@ -236,18 +234,21 @@ impl State {
         let base_world_w = base_world_h * aspect;
 
         let gpu_tex  = GpuTexture::from_rgba(&self.device, &self.queue, &img, img_width, img_height, "scenario");
-        let tex_bg   = gpu_tex.create_bind_group(&self.device, &self.texture_bgl);
-        let mesh     = create_quad_xy(&self.device, 0.0, 0.0, 1.0, 1.0, "scenario-quad");
-        let mesh_idx = self.meshes.len();
-        self.meshes.push(mesh);
-        self.textures.push(tex_bg);
-        let (buf, bg) = self.alloc_entity_uniform();
-        self.entity_buffers.push(buf);
-        self.entity_bind_groups.push(bg);
-
+        // Deduplicar textura: si ya existe una con el mismo path, reutilizar su UV rect.
+        let uv = if let Some(&cached_uv) = self.static_tex_cache.get(path) {
+            cached_uv
+        } else {
+            let u = self.atlas.pack(&self.queue, &img, img_width, img_height);
+            self.static_tex_cache.insert(path.to_owned(), u);
+            u
+        };
+        drop(gpu_tex); // ya no necesitamos GpuTexture (datos ya en atlas)
+        // Todos los escenarios comparten el quad canónico (geometría idéntica).
+        let tex_idx  = self.uv_rects.len();
+        self.uv_rects.push(uv);
         let scenario_name = self.next_numbered_entity_name("Escenario");
         let sc_id = self.world.spawn(Some(&scenario_name));
-        self.world.insert(sc_id, MeshComponent { mesh_idx });
+        self.world.insert(sc_id, MeshComponent { mesh_idx: self.canonical_quad_idx, tex_idx });
         self.world.insert(sc_id, Transform {
             position: GlamVec3::new(0.0, 0.0, -1.0),
             scale:    GlamVec3::new(base_world_w, base_world_h, 1.0),
@@ -325,18 +326,13 @@ impl State {
         let world_h = self.grid_config.world_height;
 
         let gpu_tex  = GpuTexture::from_rgba(&self.device, &self.queue, &img, img_w, img_h, "background");
-        let tex_bg   = gpu_tex.create_bind_group(&self.device, &self.texture_bgl);
-        let mesh     = create_quad_xy(&self.device, 0.0, 0.0, 1.0, 1.0, "background-quad");
-        let mesh_idx = self.meshes.len();
-        self.meshes.push(mesh);
-        self.textures.push(tex_bg);
-        let (buf, bg) = self.alloc_entity_uniform();
-        self.entity_buffers.push(buf);
-        self.entity_bind_groups.push(bg);
-
+        let uv       = self.atlas.pack(&self.queue, &img, img_w, img_h);
+        drop(gpu_tex);
+        let tex_idx  = self.uv_rects.len();
+        self.uv_rects.push(uv);
         let background_name = self.next_numbered_entity_name("Background");
         let bg_id = self.world.spawn(Some(&background_name));
-        self.world.insert(bg_id, MeshComponent { mesh_idx });
+        self.world.insert(bg_id, MeshComponent { mesh_idx: self.canonical_quad_idx, tex_idx });
         self.world.insert(bg_id, Transform {
             position: GlamVec3::new(0.0, 0.0, -10.0),
             scale:    GlamVec3::new(world_w, world_h, 1.0),
@@ -394,18 +390,20 @@ impl State {
         let base_world_w = base_world_h * aspect;
 
         let gpu_tex  = GpuTexture::from_rgba(&self.device, &self.queue, &img, img_width, img_height, "character");
-        let tex_bg   = gpu_tex.create_bind_group(&self.device, &self.texture_bgl);
-        let mesh     = create_quad_xy(&self.device, 0.0, 0.0, 1.0, 1.0, "character-quad");
-        let mesh_idx = self.meshes.len();
-        self.meshes.push(mesh);
-        self.textures.push(tex_bg);
-        let (buf, bg) = self.alloc_entity_uniform();
-        self.entity_buffers.push(buf);
-        self.entity_bind_groups.push(bg);
-
+        // Deduplicar textura: sprites del mismo PNG reutilizan la misma sub-región del atlas.
+        let uv = if let Some(&cached_uv) = self.static_tex_cache.get(path) {
+            cached_uv
+        } else {
+            let u = self.atlas.pack(&self.queue, &img, img_width, img_height);
+            self.static_tex_cache.insert(path.to_owned(), u);
+            u
+        };
+        drop(gpu_tex);
+        let tex_idx  = self.uv_rects.len();
+        self.uv_rects.push(uv);
         let character_name = self.next_numbered_entity_name("Personaje");
         let ch_id = self.world.spawn(Some(&character_name));
-        self.world.insert(ch_id, MeshComponent { mesh_idx });
+        self.world.insert(ch_id, MeshComponent { mesh_idx: self.canonical_quad_idx, tex_idx });
         self.world.insert(ch_id, Transform {
             position: GlamVec3::new(0.0, 0.0, 0.0),
             scale:    GlamVec3::new(base_world_w, base_world_h, 1.0),
@@ -447,18 +445,13 @@ impl State {
             GlamVec3::new(count * 0.5, count * 0.5, 0.0)
         };
         if path == "[Player]" {
-            // Crear un nuevo quad blanco (igual al jugador por defecto)
-            let mesh     = create_quad_xy(&self.device, 0.0, 0.0, 1.0, 1.0, "player-unit");
-            let mesh_idx = self.meshes.len();
-            self.meshes.push(mesh);
-            let tex = GpuTexture::solid_color(&self.device, &self.queue, 232, 220, 200);
-            self.textures.push(tex.create_bind_group(&self.device, &self.texture_bgl));
-            let (buf, bg) = self.alloc_entity_uniform();
-            self.entity_buffers.push(buf);
-            self.entity_bind_groups.push(bg);
+            // Crear un nuevo quad blanco usando el quad canónico compartido
+            let player_rgba = [232u8, 220, 200, 255];
+            let tex_idx = self.uv_rects.len();
+            self.uv_rects.push(self.atlas.pack(&self.queue, &player_rgba, 1, 1));
             let player_name = self.next_numbered_entity_name("Player");
             let new_id = self.world.spawn(Some(&player_name));
-            self.world.insert(new_id, MeshComponent { mesh_idx });
+            self.world.insert(new_id, MeshComponent { mesh_idx: self.canonical_quad_idx, tex_idx });
             self.world.insert(new_id, Transform {
                 position: GlamVec3::new(offset.x, offset.y, 0.0),
                 scale:    GlamVec3::new(1.0, 1.5, 1.0),
@@ -515,9 +508,9 @@ impl State {
             path.to_string()
         };
 
-        let (arc_bg, img_width, img_height) =
-            if let Some((cached_bg, w, h)) = self.anim_texture_cache.get(&cache_key) {
-                (std::sync::Arc::clone(cached_bg), *w, *h)
+        let (uv_rect, img_width, img_height) =
+            if let Some((cached_uv, w, h)) = self.anim_texture_cache.get(&cache_key) {
+                (*cached_uv, *w, *h)
             } else {
                 // Cache miss: cargar, decodificar y subir a GPU UNA sola vez
                 let bytes = match fs::read(path) {
@@ -561,28 +554,27 @@ impl State {
                 };
 
                 let (w, h) = processed.dimensions();
-                let gpu_tex = GpuTexture::from_rgba(&self.device, &self.queue, &processed, w, h, "anim-frame");
-                let bg = std::sync::Arc::new(gpu_tex.create_bind_group(&self.device, &self.texture_bgl));
-                self.anim_texture_cache.insert(cache_key, (std::sync::Arc::clone(&bg), w, h));
-                log::debug!("[play_animation_frame] frame cargado a GPU (cache miss): {path}");
-                (bg, w, h)
+                let uv_packed = self.atlas.pack(&self.queue, &processed, w, h);
+                self.anim_texture_cache.insert(cache_key, (uv_packed, w, h));
+                log::debug!("[play_animation_frame] frame cargado al atlas (cache miss): {path}");
+                (uv_packed, w, h)
             };
 
-        // Obtener tex_position para el override
+        // Obtener tex_idx para el override (independiente del mesh geométrico)
         let tex_position = match self.world.get::<MeshComponent>(id) {
-            Some(m) => m.mesh_idx,
+            Some(m) => m.tex_idx,
             None => {
                 log::warn!("[play_animation_frame] entidad {id} sin MeshComponent");
                 return;
             }
         };
-        if tex_position >= self.textures.len() {
+        if tex_position >= self.uv_rects.len() {
             log::warn!("[play_animation_frame] indice invalido: {tex_position}");
             return;
         }
 
-        // Escribir el override — el render loop lo lee con prioridad sobre textures[]
-        self.anim_overrides.insert(tex_position, arc_bg);
+        // Escribir el override — el render loop lo lee con prioridad sobre uv_rects[]
+        self.anim_overrides.insert(tex_position, uv_rect);
 
         // ── Aplicar pivot ────────────────────────────────────────────────────
         if logical_w > 0 && logical_h > 0 {
@@ -653,10 +645,9 @@ impl State {
         };
 
         let (w, h) = processed.dimensions();
-        let gpu_tex = crate::texture::GpuTexture::from_rgba(&self.device, &self.queue, &processed, w, h, "anim-frame");
-        let bg = std::sync::Arc::new(gpu_tex.create_bind_group(&self.device, &self.texture_bgl));
-        self.anim_texture_cache.insert(cache_key, (bg, w, h));
-        log::debug!("[preload] frame pre-cargado a GPU: {path}");
+        let uv = self.atlas.pack(&self.queue, &processed, w, h);
+        self.anim_texture_cache.insert(cache_key, (uv, w, h));
+        log::debug!("[preload] frame pre-empacado en atlas: {path}");
     }
 
     /// Restaura el sprite original de una entidad después de una animación.
@@ -668,9 +659,9 @@ impl State {
             return;
         }
 
-        // Obtener tex_position del MeshComponent
+        // Obtener tex_idx del MeshComponent
         let tex_position = match self.world.get::<MeshComponent>(id) {
-            Some(m) => m.mesh_idx,
+            Some(m) => m.tex_idx,
             None => {
                 log::warn!("[restore_animation_frame] entidad {id} sin MeshComponent");
                 return;
@@ -741,10 +732,18 @@ impl State {
 
         // 3. Swap de textura con el frame a editar
         if let Some(m) = self.world.get::<MeshComponent>(id) {
-            let tex_pos = m.mesh_idx;
-            if tex_pos < self.textures.len() {
-                let gpu_tex = GpuTexture::from_rgba(&self.device, &self.queue, &img, img_w, img_h, "pivot-edit");
-                self.textures[tex_pos] = gpu_tex.create_bind_group(&self.device, &self.texture_bgl);
+            let tex_pos = m.tex_idx;
+            if tex_pos < self.uv_rects.len() {
+                // Empacar el frame en el atlas (o recuperar de caché) 
+                let cache_key = frame_path.to_string();
+                let uv = if let Some((cached_uv, _, _)) = self.anim_texture_cache.get(&cache_key) {
+                    *cached_uv
+                } else {
+                    let u = self.atlas.pack(&self.queue, &img, img_w, img_h);
+                    self.anim_texture_cache.insert(cache_key, (u, img_w, img_h));
+                    u
+                };
+                self.anim_overrides.insert(tex_pos, uv);
             }
         }
 

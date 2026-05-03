@@ -24,7 +24,6 @@ use crate::ecs::{EntityId, MeshComponent, Transform};
 use crate::engine::State;
 use crate::config_shared::point_to_segment_2d;
 use crate::ipc::{send_event, EngineEvent};
-use crate::texture::GpuTexture;
 
 impl State {
     // ── Carga de modelo 3D ────────────────────────────────────────────────────
@@ -35,38 +34,43 @@ impl State {
             Ok((gltf_meshes, images)) => {
                 self.world.clear();
                 self.meshes.clear();
-                self.textures.clear();
-                self.entity_buffers.clear();
-                self.entity_bind_groups.clear();
+                self.uv_rects.clear();
 
                 let count = gltf_meshes.len();
                 for gm in gltf_meshes {
-                    let tex_bg = if let Some(tex_idx) = gm.tex_index {
-                        if let Some(img_data) = images.get(tex_idx) {
-                            let gpu_tex = GpuTexture::from_gltf_image(
-                                &self.device, &self.queue, img_data,
-                                &format!("tex-{tex_idx}"),
-                            );
-                            gpu_tex.create_bind_group(&self.device, &self.texture_bgl)
+                    let rgba: Vec<u8> = if let Some(img_idx) = gm.tex_index {
+                        if let Some(img_data) = images.get(img_idx) {
+                            // Convertir a RGBA8 para el atlas
+                            use gltf::image::Format;
+                            match img_data.format {
+                                Format::R8G8B8 => img_data.pixels.chunks_exact(3)
+                                    .flat_map(|p| [p[0], p[1], p[2], 255u8]).collect(),
+                                Format::R8G8B8A8 => img_data.pixels.clone(),
+                                _ => vec![255, 255, 255, 255],
+                            }
                         } else {
-                            GpuTexture::white(&self.device, &self.queue)
-                                .create_bind_group(&self.device, &self.texture_bgl)
+                            vec![255, 255, 255, 255]
                         }
                     } else {
-                        GpuTexture::white(&self.device, &self.queue)
-                            .create_bind_group(&self.device, &self.texture_bgl)
+                        vec![255, 255, 255, 255]
+                    };
+                    let (img_w, img_h) = if let Some(img_idx) = gm.tex_index {
+                        images.get(img_idx)
+                            .map(|d| (d.width, d.height))
+                            .unwrap_or((1, 1))
+                    } else {
+                        (1, 1)
                     };
 
                     let mesh_idx = self.meshes.len();
+                    let tex_idx  = self.uv_rects.len();
                     self.meshes.push(gm.mesh);
-                    self.textures.push(tex_bg);
-                    let (b, bg) = self.alloc_entity_uniform();
-                    self.entity_buffers.push(b);
-                    self.entity_bind_groups.push(bg);
+                    let uv = self.atlas.pack(&self.queue, &rgba, img_w, img_h);
+                    self.uv_rects.push(uv);
 
                     let label = self.next_numbered_entity_name("Mesh");
                     let id = self.world.spawn(Some(&label));
-                    self.world.insert(id, MeshComponent { mesh_idx });
+                    self.world.insert(id, MeshComponent { mesh_idx, tex_idx });
                     send_event(&EngineEvent::ModelLoaded { id });
                 }
                 log::info!("Modelo cargado: {path} ({count} malla/s)");

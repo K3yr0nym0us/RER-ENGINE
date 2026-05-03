@@ -54,7 +54,12 @@ impl Transform {
 /// Referencia a la malla que renderiza esta entidad.
 #[derive(Debug, Clone)]
 pub struct MeshComponent {
+    /// Índice en `State.meshes` para la geometría (vértices + índices).
     pub mesh_idx: usize,
+    /// Índice en `State.textures` para el bind group de textura.
+    /// Puede diferir de mesh_idx cuando múltiples sprites comparten el mismo
+    /// quad canónico (mesh_idx=0) pero tienen texturas distintas.
+    pub tex_idx:  usize,
 }
 
 /// Marca una entidad como no seleccionable por el usuario (escenario/fondo).

@@ -90,7 +90,7 @@ pub(crate) fn load_glb(
 pub(crate) fn create_ground_plane(device: &wgpu::Device) -> Mesh {
     const SEGMENTS: u32 = 20;
     const SIZE:     f32 = 40.0;
-    const UV_SCALE: f32 = 20.0;
+    const UV_SCALE: f32 = 1.0;  // Con atlas: UVs normalizadas a [0,1] sin tiling por hardware
 
     let half = SIZE / 2.0;
     let step = SIZE / SEGMENTS as f32;

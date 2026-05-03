@@ -178,13 +178,13 @@ use crate::ecs::EntityId;
 
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
-// ── Uniform que combina view_proj + model ─────────────────────────────────────
+// ── Uniform compartido por frame (group 0) ───────────────────────────────────
+// Solo view_proj + cam_pos; el model matrix va en el instance buffer.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub(crate) struct SceneUniforms {
     pub(crate) view_proj: [[f32; 4]; 4],
-    pub(crate) model:     [[f32; 4]; 4],
-    pub(crate) cam_pos:   [f32; 4],   // xyz = posición cámara, w = unused
+    pub(crate) cam_pos:   [f32; 4],   // xyz = posición cámara, w = sin uso
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -203,13 +203,23 @@ pub struct State {
     pub(crate) depth_view:       wgpu::TextureView,
     // Uniforms (group 0) — un buffer por malla para que cada draw call
     // tenga sus propios datos y write_buffer no sobreescriba el anterior.
-    pub(crate) scene_bgl:          wgpu::BindGroupLayout,
-    pub(crate) entity_buffers:     Vec<wgpu::Buffer>,
-    pub(crate) entity_bind_groups: Vec<wgpu::BindGroup>,
-    // Texturas (group 1)
-    pub(crate) texture_bgl:      wgpu::BindGroupLayout,
-    pub(crate) textures:         Vec<wgpu::BindGroup>,  // una por mesh
-    pub(crate) fallback_tex_bg:  wgpu::BindGroup,       // blanca 1x1
+    pub(crate) scene_buffer:       wgpu::Buffer,
+    /// Bind group del buffer escena (group 0, binding 0).
+    pub(crate) scene_bind_group:   wgpu::BindGroup,
+    // Texturas (group 1) — todas en el atlas compartido
+    /// Atlas de texturas: una sola textura GPU 4096×4096 que empaca todos los sprites.
+    /// Todas las entidades comparten su bind group, eliminando los cambios de grupo por batch.
+    pub(crate) atlas:              crate::texture::TextureAtlas,
+    /// UV rects de cada textura en el atlas, indexados por `MeshComponent.tex_idx`.
+    pub(crate) uv_rects:           Vec<[f32; 4]>,
+    /// UV del pixel blanco 1×1 en (0,0) del atlas — fallback cuando tex_idx es inválido.
+    pub(crate) fallback_uv:        [f32; 4],
+    /// Caché de texturas estáticas PNG: path → UV rect en el atlas.
+    pub(crate) static_tex_cache:   std::collections::HashMap<String, [f32; 4]>,
+    /// Índice en `meshes[]` del quad unitario canónico (1×1 en origen).
+    /// Todos los sprites 2D apuntan a este mesh; sus texturas individuales
+    /// se almacenan en `textures[]` indexadas por `MeshComponent.tex_idx`.
+    pub(crate) canonical_quad_idx: usize,
     // Cámara
     pub camera:       Camera,
     /// Cámara 2D ortográfica activa cuando se carga una escena 2D.
@@ -275,14 +285,13 @@ pub struct State {
     /// nunca detenga el render loop ni cause drift en el timing de animaciones.
     pub(crate) audio_slot: Option<AudioSlot>,
     /// Caché de texturas GPU para frames de animación, indexada por ruta absoluta.
-    /// Almacena (BindGroup, img_width, img_height) para evitar recargar de disco,
-    /// redecodificar y resubir a GPU en cada tick. Se limpia al cambiar de escena.
-    pub(crate) anim_texture_cache: std::collections::HashMap<String, (std::sync::Arc<wgpu::BindGroup>, u32, u32)>,
-    /// Overrides de textura para animaciones activas: tex_position → bind group.
-    /// Play_animation_frame escribe aquí en lugar de mutar textures[],
-    /// así la textura base de la entidad nunca se sobreescribe.
-    /// Restore_animation_frame borra la entrada; el render loop vuelve a textures[].
-    pub(crate) anim_overrides: std::collections::HashMap<usize, std::sync::Arc<wgpu::BindGroup>>,
+    /// Almacena (uv_rect_en_atlas, img_width, img_height) para evitar recargar de disco.
+    /// Se limpia al cambiar de escena.
+    pub(crate) anim_texture_cache: std::collections::HashMap<String, ([f32; 4], u32, u32)>,
+    /// Overrides de UV rect para animaciones activas: tex_idx → uv_rect en el atlas.
+    /// play_animation_frame escribe aquí; restore_animation_frame borra la entrada;
+    /// el render loop lo lee con prioridad sobre uv_rects[].
+    pub(crate) anim_overrides: std::collections::HashMap<usize, [f32; 4]>,
 /// Animaciones guardadas: entity_id → (name → AnimationState).
     /// Permite almacenar TODAS las animaciones de una entidad y reproducir
     /// cualquiera por nombre sin reenviar datos desde el frontend.
@@ -404,9 +413,9 @@ impl State {
         // ── Depth texture ─────────────────────────────────────────────────────
         let depth_view = create_depth_texture(&device, &config);
 
-        // ── Uniforms buffer ───────────────────────────────────────────────────
+        // ── Uniforms buffer (compartido por todo el frame) ──────────────────
         let camera   = Camera::new();
-        let uniforms = build_uniforms(&camera, Mat4::IDENTITY, size, 0.0);
+        let uniforms = build_scene_uniforms(&camera, size);
 
         // ── Bind group layout group 0 (uniforms) ─────────────────────────────────
         let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -422,25 +431,43 @@ impl State {
                 count: None,
             }],
         });
-        // Buffer de uniforms para la malla inicial (plano de suelo 3D)
-        let init_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label:    Some("entity-uniforms-0"),
+        // Buffer de uniforms de escena (view_proj + cam_pos, compartido por todos los sprites)
+        let scene_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label:    Some("scene-uniforms"),
             contents: bytemuck::cast_slice(&[uniforms]),
             usage:    wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
-        let init_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label:   Some("entity-bg-0"),
+        let scene_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label:   Some("scene-bg"),
             layout:  &bgl,
             entries: &[wgpu::BindGroupEntry {
                 binding:  0,
-                resource: init_buf.as_entire_binding(),
+                resource: scene_buf.as_entire_binding(),
             }],
         });
 
-        // ── Bind group layout group 1 (textura) + fallback blanco ────────────────
-        let texture_bgl   = GpuTexture::bind_group_layout(&device);
-        let fallback_tex  = GpuTexture::white(&device, &queue);
-        let fallback_tex_bg = fallback_tex.create_bind_group(&device, &texture_bgl);
+        // ── Bind group layout group 1 (textura) + atlas ─────────────────────────────
+        let texture_bgl = GpuTexture::bind_group_layout(&device);
+        let mut atlas   = crate::texture::TextureAtlas::new(&device, &queue, &texture_bgl);
+        let fallback_uv = crate::texture::TextureAtlas::fallback_uv();
+
+        // Checkerboard para el plano de suelo (tex_idx=0).
+        // Patrón bakeado 128×128 con tiles de 8px para no depender del tiling con Repeat.
+        let checker_pixels = {
+            const S: u32 = 128;
+            const TILE: u32 = 8;
+            let mut px: Vec<u8> = Vec::with_capacity((S * S * 4) as usize);
+            for y in 0..S {
+                for x in 0..S {
+                    let light = ((x / TILE + y / TILE) % 2) == 0;
+                    let (r, g, b): (u8, u8, u8) = if light { (58, 61, 80) } else { (30, 32, 48) };
+                    px.extend_from_slice(&[r, g, b, 255]);
+                }
+            }
+            px
+        };
+        let checker_uv = atlas.pack(&queue, &checker_pixels, 128, 128);
+        let uv_rects = vec![checker_uv];   // idx 0 = checkerboard (plano de suelo)
 
         // ── Pipeline ─────────────────────────────────────────────────────────
         let shader = device.create_shader_module(include_wgsl!("shader.wgsl"));
@@ -455,7 +482,7 @@ impl State {
             vertex: wgpu::VertexState {
                 module:              &shader,
                 entry_point:         "vs_main",
-                buffers:             &[mesh::Vertex::desc()],
+                buffers:             &[mesh::Vertex::desc(), mesh::InstanceData::desc()],
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
@@ -492,7 +519,7 @@ impl State {
             vertex: wgpu::VertexState {
                 module:              &shader,
                 entry_point:         "vs_main",
-                buffers:             &[mesh::Vertex::desc()],
+                buffers:             &[mesh::Vertex::desc(), mesh::InstanceData::desc()],
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
@@ -527,10 +554,8 @@ impl State {
         let mut world    = World::new();
         // Entidad del plano
         let plane_id = world.spawn(Some("Ground"));
-        world.insert(plane_id, MeshComponent { mesh_idx: 0 });
-        // Textura checkerboard para el suelo (índice 0 en self.textures)
-        let checker_tex    = crate::texture::GpuTexture::checkerboard(&device, &queue, 2);
-        let checker_tex_bg = checker_tex.create_bind_group(&device, &texture_bgl);
+        world.insert(plane_id, MeshComponent { mesh_idx: 0, tex_idx: 0 });
+        // Textura checkerboard para el suelo (UV idx 0 ya en uv_rects)
         // Cámara en primera persona: ojos a 1.75 m de altura mirando hacia +Z
         let mut camera = Camera::new();
         camera.target   = glam::Vec3::new(0.0, 1.75, 5.0);
@@ -683,12 +708,13 @@ impl State {
             render_pipeline,
             render_pipeline_2d,
             depth_view,
-            texture_bgl,
-            textures: vec![checker_tex_bg],   // índice 0 = plano de suelo
-            scene_bgl: bgl,
-            entity_buffers:     vec![init_buf],
-            entity_bind_groups: vec![init_bg],
-            fallback_tex_bg,
+            scene_buffer:     scene_buf,
+            scene_bind_group: scene_bg,
+            atlas,
+            uv_rects,
+            fallback_uv,
+            static_tex_cache: std::collections::HashMap::new(),
+            canonical_quad_idx: 0,
             camera,
             camera_2d: None,   // se activa al recibir SetScene { scene: "2D" }
 
@@ -1716,6 +1742,96 @@ self.active_animations.retain(|_, a| !a.finished);
             &wgpu::CommandEncoderDescriptor { label: Some("render-encoder") },
         );
 
+        // ── Paso 1: escribir uniforms de escena compartidos (view_proj + cam_pos) ──
+        {
+            let scene_uni = if let Some(cam2d) = &self.camera_2d {
+                build_scene_uniforms_2d(cam2d, self.size)
+            } else {
+                build_scene_uniforms(&self.camera, self.size)
+            };
+            self.queue.write_buffer(&self.scene_buffer, 0, bytemuck::cast_slice(&[scene_uni]));
+        }
+
+        // ── Paso 2: recopilar entidades visibles (frustum culling + sort Z) ──
+        let aspect_fc = self.size.width as f32 / self.size.height as f32;
+        let frustum_vp_3d: Option<glam::Mat4> = self.camera_2d.is_none().then(|| {
+            let raw = self.camera.to_uniform(aspect_fc).view_proj;
+            glam::Mat4::from_cols_array_2d(&raw)
+        });
+        let mut entities: Vec<(crate::ecs::EntityId, usize, usize, Mat4, f32)> =
+            self.world.entities().iter().copied().filter_map(|id| {
+                let mc       = self.world.get::<MeshComponent>(id)?;
+                let mesh_idx = mc.mesh_idx;
+                let tex_idx  = mc.tex_idx;
+                let t        = self.world.get::<crate::ecs::Transform>(id)?;
+                // ── Frustum culling ──────────────────────────────────────────
+                let visible = if let Some(cam2d) = &self.camera_2d {
+                    is_visible_2d(cam2d, t.position, t.scale, aspect_fc)
+                } else if let Some(vp) = &frustum_vp_3d {
+                    let radius = t.scale.x.abs().max(t.scale.y.abs()).max(t.scale.z.abs()) * 0.87;
+                    is_visible_3d(vp, t.position, radius)
+                } else {
+                    true
+                };
+                if !visible { return None; }
+                let model_mat = t.to_matrix();
+                let z         = t.position.z;
+                Some((id, mesh_idx, tex_idx, model_mat, z))
+            }).collect();
+        entities.sort_by(|a, b| a.4.partial_cmp(&b.4).unwrap_or(std::cmp::Ordering::Equal));
+
+        // ── Paso 3: agrupar en batches por mesh_idx ────────────────────────
+        // Con el atlas todas las entidades comparten el mismo bind group,
+        // así que solo agrupamos por geometría (mesh_idx).
+        // El UV rect viaja en cada instancia — no hay cambio de bind group entre batches.
+        struct Batch {
+            mesh_idx:  usize,
+            instances: Vec<mesh::InstanceData>,
+        }
+        let mut batches: Vec<Batch> = Vec::new();
+        for (entity_id, mesh_idx, tex_idx, model_matrix, _z) in &entities {
+            if self.preview_playing
+                && (self.collider_entities.contains(entity_id)
+                    || self.execution_area_entities.contains(entity_id))
+            {
+                continue;
+            }
+            let flag = if self.preview_playing {
+                0.0_f32
+            } else if self.selected_entity == Some(*entity_id) {
+                1.0_f32   // dorado
+            } else if self.hovered_entity == Some(*entity_id) {
+                2.0_f32   // cian
+            } else {
+                0.0_f32
+            };
+            // anim_overrides tiene prioridad sobre uv_rects[]:
+            // durante una animación activa evita mutar la UV base de la entidad.
+            let uv = self.anim_overrides.get(tex_idx)
+                .copied()
+                .or_else(|| self.uv_rects.get(*tex_idx).copied())
+                .unwrap_or(self.fallback_uv);
+            let inst = mesh::InstanceData::new(*model_matrix, flag, uv);
+            // Extender el último batch si coincide mesh (mismo UV rect viaja por instancia)
+            let can_extend = batches.last().map_or(false, |b| b.mesh_idx == *mesh_idx);
+            if can_extend {
+                batches.last_mut().unwrap().instances.push(inst);
+            } else {
+                batches.push(Batch { mesh_idx: *mesh_idx, instances: vec![inst] });
+            }
+        }
+
+        // ── Paso 4: crear buffers de instancias en GPU ──────────────────────
+        let instance_buffers: Vec<wgpu::Buffer> = batches.iter().map(|b| {
+            use wgpu::util::DeviceExt;
+            self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label:    Some("inst-buf"),
+                contents: bytemuck::cast_slice(&b.instances),
+                usage:    wgpu::BufferUsages::VERTEX,
+            })
+        }).collect();
+
+        // ── Paso 5: render pass principal ──────────────────────────────────
         {
             let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("render-pass"),
@@ -1748,61 +1864,17 @@ self.active_animations.retain(|_, a| !a.finished);
                 pass.set_pipeline(&self.render_pipeline);
             }
 
-            // Iterar entidades con MeshComponent.
-            // Las entidades de escenario (ScenarioMarker) están en Z=-1, por lo que
-            // el depth test las deja detrás de las entidades normales (Z=0).
-            // Ordenamos por Z ascendente para garantizar que se dibujen primero
-            // incluso si el depth test falla en algunos drivers GL/EGL software.
-            let mut entities: Vec<_> = self.world.entities().iter().copied().filter_map(|id| {
-                let mesh_idx  = self.world.get::<MeshComponent>(id)?.mesh_idx;
-                let model_mat = self.world.get::<Transform>(id)?.to_matrix();
-                let z         = self.world.get::<crate::ecs::Transform>(id).map_or(0.0, |t| t.position.z);
-                Some((id, mesh_idx, model_mat, z))
-            }).collect();
-            entities.sort_by(|a, b| a.3.partial_cmp(&b.3).unwrap_or(std::cmp::Ordering::Equal));
+            // El bind group 0 (view_proj + cam_pos) es compartido por todos los batches.
+            pass.set_bind_group(0, &self.scene_bind_group, &[]);
+            // El bind group 1 (atlas) es compartido por TODOS los sprites — se setea UNA vez.
+            pass.set_bind_group(1, self.atlas.bind_group.as_ref(), &[]);
 
-            for (entity_id, idx, model_matrix, _z) in entities {
-                let (Some(mesh), Some(entity_buf), Some(entity_bg)) = (
-                    self.meshes.get(idx),
-                    self.entity_buffers.get(idx),
-                    self.entity_bind_groups.get(idx),
-                ) else { continue };
-                if self.preview_playing
-                    && (self.collider_entities.contains(&entity_id)
-                        || self.execution_area_entities.contains(&entity_id))
-                {
-                    continue;
-                }
-                let flag = if self.preview_playing {
-                    0.0_f32
-                } else if self.selected_entity == Some(entity_id) {
-                    1.0_f32   // dorado
-                } else if self.hovered_entity == Some(entity_id) {
-                    2.0_f32   // cian
-                } else {
-                    0.0_f32
-                };
-                let uniforms = if let Some(cam2d) = &self.camera_2d {
-                    build_uniforms_2d(cam2d, model_matrix, self.size, flag)
-                } else {
-                    build_uniforms(&self.camera, model_matrix, self.size, flag)
-                };
-                self.queue.write_buffer(
-                    entity_buf, 0, bytemuck::cast_slice(&[uniforms]),
-                );
-                pass.set_bind_group(0, entity_bg, &[]);
-                // anim_overrides tiene prioridad sobre textures[]:
-                // durante una animación activa evita mutar la textura base.
-                let tex_bg: &wgpu::BindGroup = self.anim_overrides.get(&idx)
-                    .map(|a| a.as_ref())
-                    .or_else(|| self.textures.get(idx))
-                    .unwrap_or(&self.fallback_tex_bg);
-                pass.set_bind_group(1, tex_bg, &[]);
+            for (batch, inst_buf) in batches.iter().zip(instance_buffers.iter()) {
+                let Some(mesh) = self.meshes.get(batch.mesh_idx) else { continue };
                 pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
-                pass.set_index_buffer(
-                    mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32,
-                );
-                pass.draw_indexed(0..mesh.index_count, 0, 0..1);
+                pass.set_vertex_buffer(1, inst_buf.slice(..));
+                pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                pass.draw_indexed(0..mesh.index_count, 0, 0..batch.instances.len() as u32);
                 draw_calls += 1;
             }
         }
@@ -1947,24 +2019,80 @@ fn create_depth_texture(
     tex.create_view(&wgpu::TextureViewDescriptor::default())
 }
 
-fn build_uniforms(camera: &Camera, model: Mat4, size: PhysicalSize<u32>, flag: f32) -> SceneUniforms {
+fn build_scene_uniforms(camera: &Camera, size: PhysicalSize<u32>) -> SceneUniforms {
     let aspect    = size.width as f32 / size.height as f32;
     let view_proj = camera.to_uniform(aspect).view_proj;
     let p = camera.position();
     SceneUniforms {
         view_proj,
-        model: model.to_cols_array_2d(),
-        cam_pos: [p.x, p.y, p.z, flag],
+        cam_pos: [p.x, p.y, p.z, 0.0],
     }
 }
 
-fn build_uniforms_2d(cam: &Camera2D, model: Mat4, size: PhysicalSize<u32>, flag: f32) -> SceneUniforms {
+fn build_scene_uniforms_2d(cam: &Camera2D, size: PhysicalSize<u32>) -> SceneUniforms {
     let aspect    = size.width as f32 / size.height as f32;
     let view_proj = cam.view_proj(aspect).to_cols_array_2d();
     let p = cam.position();
     SceneUniforms {
         view_proj,
-        model: model.to_cols_array_2d(),
-        cam_pos: [p.x, p.y, p.z, flag],
+        cam_pos: [p.x, p.y, p.z, 0.0],
     }
+}
+
+// ── Frustum culling ───────────────────────────────────────────────────────────
+
+/// Culling 2D: comprueba si el AABB de la entidad es visible en el rectángulo
+/// ortográfico de la cámara. Se añade un margen proporcional al zoom para evitar
+/// popping en entidades con geometría más grande que su Transform (ej. sprites con pivot).
+///
+/// Retorna `true` si la entidad DEBE dibujarse.
+pub(crate) fn is_visible_2d(cam: &Camera2D, pos: GlamVec3, scale: GlamVec3, aspect: f32) -> bool {
+    let half_w = cam.half_h * aspect;
+    // Margen de seguridad: la mitad del lado mayor de la entidad
+    let margin = scale.x.abs().max(scale.y.abs()) * 0.5;
+    let min_x = cam.x - half_w  - margin;
+    let max_x = cam.x + half_w  + margin;
+    let min_y = cam.y - cam.half_h - margin;
+    let max_y = cam.y + cam.half_h + margin;
+
+    let e_min_x = pos.x - scale.x.abs() * 0.5;
+    let e_max_x = pos.x + scale.x.abs() * 0.5;
+    let e_min_y = pos.y - scale.y.abs() * 0.5;
+    let e_max_y = pos.y + scale.y.abs() * 0.5;
+
+    e_max_x >= min_x && e_min_x <= max_x && e_max_y >= min_y && e_min_y <= max_y
+}
+
+/// Culling 3D: extrae los 6 planos del frustum de la view_proj y testea
+/// si una esfera de radio `radius` centrada en `center` es visible.
+///
+/// Los planos se normalizan para que la distancia sea métrica.
+/// Retorna `true` si la entidad DEBE dibujarse.
+pub(crate) fn is_visible_3d(view_proj: &glam::Mat4, center: GlamVec3, radius: f32) -> bool {
+    let m = view_proj.to_cols_array_2d();
+    // Filas de la matriz (columna-major en glam → transponer para filas)
+    let r0 = [m[0][0], m[1][0], m[2][0], m[3][0]];
+    let r1 = [m[0][1], m[1][1], m[2][1], m[3][1]];
+    let r2 = [m[0][2], m[1][2], m[2][2], m[3][2]];
+    let r3 = [m[0][3], m[1][3], m[2][3], m[3][3]];
+
+    // Los 6 planos del frustum (izq, der, abajo, arriba, cerca, lejos)
+    let planes: [[f32; 4]; 6] = [
+        [r3[0]+r0[0], r3[1]+r0[1], r3[2]+r0[2], r3[3]+r0[3]], // izquierda
+        [r3[0]-r0[0], r3[1]-r0[1], r3[2]-r0[2], r3[3]-r0[3]], // derecha
+        [r3[0]+r1[0], r3[1]+r1[1], r3[2]+r1[2], r3[3]+r1[3]], // abajo
+        [r3[0]-r1[0], r3[1]-r1[1], r3[2]-r1[2], r3[3]-r1[3]], // arriba
+        [r3[0]+r2[0], r3[1]+r2[1], r3[2]+r2[2], r3[3]+r2[3]], // cerca
+        [r3[0]-r2[0], r3[1]-r2[1], r3[2]-r2[2], r3[3]-r2[3]], // lejos
+    ];
+
+    for plane in &planes {
+        let len = (plane[0]*plane[0] + plane[1]*plane[1] + plane[2]*plane[2]).sqrt();
+        if len < 1e-6 { continue; }
+        let dist = (plane[0]*center.x + plane[1]*center.y + plane[2]*center.z + plane[3]) / len;
+        if dist < -radius {
+            return false; // esfera completamente fuera de este plano
+        }
+    }
+    true
 }
