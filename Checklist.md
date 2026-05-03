@@ -239,12 +239,95 @@ serde_json = "1"
 
 ---
 
-# ✅ Regla de oro
+# 📋 ACTUALIZACION DE AUDITORIA (MAYO 2026)
 
-Si puedes:
+Resumen basado en la revision profunda del codigo (motor + editor + guardado).
 
-* Abrir la app
-* Ver el motor renderizando dentro de la ventana
-* Cargar un modelo con un click
+## 📍 Estado actual del engine (resumen)
 
-👉 Ya tienes una base sólida para crecer 🚀
+Nivel: base funcional + inicio de madurez.
+
+* Editor usable: ✅
+* Pipeline de assets/guardado: ⚠️ funcional, pero aun basico para crecimiento grande
+* Rendimiento: ❌ sin optimizacion de escala (batching/culling)
+* Escalabilidad de escena: ❌ limitada sin particionado espacial
+
+## ✅ Confirmado en codigo (ya implementado)
+
+* ✅ Sistema de escenas multiples en editor: crear, renombrar, duplicar, eliminar y cambiar escena activa
+* ✅ Guardado/carga de proyecto como `.save` empaquetado: ZIP con `manifest.json` + `assets/` + `sounds/` + `scripting/`
+* ✅ Remapeo de rutas para portabilidad entre Windows/Linux al guardar/cargar
+* ✅ Scripting Lua con sandbox (sin `io`, `os`, `require`) y lifecycle (`on_start`, `update`, `on_stop`)
+* ✅ Hooks de scripting para input/control y triggers (`on_press`, `on_trigger_enter`)
+* ✅ ECS funcional con almacenamiento denso por componente y query simple por tipo
+
+## ⏸️ Descartado por ahora (fuera de foco actual)
+
+* ⏸️ Agregar features de bajo impacto en esta etapa (particulas, shaders experimentales sin necesidad de producto)
+* ⏸️ Multiplayer
+* ⏸️ IA generativa (fuera de foco actual; posible uso futuro en interpolación de animaciones)
+
+Motivo: priorizar madurez de engine, estabilidad y pipeline antes de expansion de features.
+
+## 🔧 Pendientes reales (segun impacto)
+
+### Prioridad alta (alineada a vision human-first)
+
+* [ ] Herramientas de debug runtime: overlay con FPS, frame time, draw calls y estado de fisica
+* [ ] Optimizacion de render de base: batching, texture atlas, frustum culling, render layers
+* [ ] Particionado espacial para escalado (quadtree/grid/BVH) en picking/render/fisicas
+* [ ] Prefabs/blueprints para productividad y reutilizacion real de logica
+
+### Prioridad media
+
+* [ ] ECS mas avanzado: queries multi-componente y evaluacion de archetypes
+* [ ] Hot reload de scripts/shaders/assets
+* [ ] Jerarquia de entidades parent/child y multi-seleccion en editor
+* [ ] Versionado y migraciones de formato `.save` (el campo `version` existe, faltan migraciones formales) (⚠️ Se vuelve crítico en cuanto existan proyectos persistentes reales)
+
+### Prioridad baja
+
+* [ ] Animaciones 3D (clips/animator/state machine) consolidadas en pipeline de proyecto
+
+## 🧠 Criterio de priorizacion (vision del proyecto)
+
+* Tipo A (motor interno): ECS, optimizacion, particionado
+* Tipo B (producto usable): prefabs, scripting, UX/editor
+
+Decision vigente:
+
+* ✅ Equilibrar A y B
+* ✅ Priorizar features que mejoran capacidad de crear juegos de forma natural
+* ✅ Evitar crecimiento por features llamativas que no mejoran workflow real
+
+## 🔓 Bloqueadores y desbloqueos
+
+* Debug tools runtime → desbloquea optimizacion real basada en metricas
+* Optimizacion render base → desbloquea escenas mas grandes sin degradacion fuerte
+* Particionado espacial → desbloquea escalabilidad en picking/fisicas/render
+* Prefabs/blueprints → desbloquea workflow reusable y creacion de contenido consistente
+* Versionado/migraciones de `.save` → desbloquea evolucion segura del proyecto sin romper guardados
+
+## ✅ Criterio de DONE (minimo)
+
+* Debug overlay runtime
+  * DONE cuando muestra FPS + frame time + draw calls + estado de fisica
+  * DONE cuando puede activarse/desactivarse en runtime
+* Optimizacion render base
+  * DONE cuando existe mejora medible en escenas de prueba repetibles
+  * DONE cuando hay benchmark base comparando antes/despues
+* Particionado espacial
+  * DONE cuando picking y consultas principales dejan de ser O(n) global para casos comunes
+  * DONE cuando se usa en al menos picking + una ruta de fisica o render
+* Prefabs/blueprints
+  * DONE cuando una entidad reusable puede guardarse, instanciarse y actualizarse sin trabajo manual repetitivo
+  * DONE cuando su flujo es visible y usable desde el editor
+* Versionado/migraciones `.save`
+  * DONE cuando cada cambio de formato incrementa version
+  * DONE cuando existe migracion automatica y testeada entre al menos dos versiones
+
+## 📌 Decision de arquitectura vigente
+
+* ✅ Mantener arquitectura Electron (editor) + Rust (motor) por IPC
+* ⚠️ Vigilar volumen de eventos IPC para evitar cuellos de botella en escenas grandes
+* [ ] Evaluar optimizaciones de transporte a futuro (solo si aparecen bottlenecks medidos)
