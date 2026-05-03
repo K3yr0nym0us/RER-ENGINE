@@ -279,7 +279,7 @@ Motivo: priorizar madurez de engine, estabilidad y pipeline antes de expansion d
   * ✅ Step 3: Texture atlas — single 4096×4096 GPU texture via shelf packing
   * ✅ Step 4: Frustum culling — 2D AABB + 3D sphere-plane testing
   * ✅ Step 5: Render layers — explicit layer control + z-sorting
-* [ ] Particionado espacial para escalado (quadtree/grid/BVH) en picking/render/fisicas
+* ✅ Particionado espacial para escalado (quadtree/grid/BVH) en picking/render/fisicas
 * [ ] Prefabs/blueprints para productividad y reutilizacion real de logica
 
 ### Prioridad media
@@ -312,8 +312,9 @@ Motivo: priorizar madurez de engine, estabilidad y pipeline antes de expansion d
   * ✅ DONE: Frustum culling (is_visible_2d AABB + is_visible_3d sphere-plane)
   * ✅ DONE: Render layers (RenderLayer component, sort by (layer, z))
 * Particionado espacial
-  * DONE cuando picking y consultas principales dejan de ser O(n) global para casos comunes
-  * DONE cuando se usa en al menos picking + una ruta de fisica o render
+  * ✅ DONE: Spatial grid implementado (5.0 world units per cell, O(k) lookup)
+  * ✅ DONE: Rebuild en cada frame Paso 0
+  * ✅ DONE: update_hover_2d usa spatial grid para picking
 * Prefabs/blueprints
   * DONE cuando una entidad reusable puede guardarse, instanciarse y actualizarse sin trabajo manual repetitivo
   * DONE cuando su flujo es visible y usable desde el editor

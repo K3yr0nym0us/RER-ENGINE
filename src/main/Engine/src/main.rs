@@ -4,6 +4,7 @@ mod gizmo;
 mod ipc;
 mod mesh;
 mod scripting;
+mod spatial;
 mod texture;
 
 // ── Módulos de lógica de escena separados por modo ───────────────────────────

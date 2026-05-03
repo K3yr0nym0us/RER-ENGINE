@@ -244,6 +244,8 @@ pub struct State {
     pub hovered_entity:      Option<EntityId>,
     pub hovered_gizmo_axis:  Option<usize>,
     pub active_gizmo_axis:   Option<usize>,
+    // Spatial partitioning para picking/queries
+    pub(crate) spatial_grid: crate::spatial::SpatialGrid,
     // Escenario 2D: lista de entidades ECS que actúan como fondos PNG.
     pub(crate) scenario_entities: Vec<EntityId>,
     // Personajes 2D: lista de entidades ECS que actúan como sprites de personaje.
@@ -732,6 +734,7 @@ impl State {
             hovered_entity:      None,
             hovered_gizmo_axis:  None,
             active_gizmo_axis:   None,
+            spatial_grid: crate::spatial::SpatialGrid::new(),
             scenario_entities:      Vec::new(),
             character_entities:     Vec::new(),
             background_entity:       None,
@@ -1735,6 +1738,20 @@ self.active_animations.retain(|_, a| !a.finished);
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
         self.update_animations();
         let mut draw_calls: u32 = 0;
+
+        // ── Paso 0: reconstruir spatial grid para picking ──────────────────────────
+        self.spatial_grid.clear();
+        for &entity in self.world.entities() {
+            if let Some(t) = self.world.get::<crate::ecs::Transform>(entity) {
+                let sx = t.scale.x.abs() * 0.5;
+                let sy = t.scale.y.abs() * 0.5;
+                let min_x = t.position.x - sx;
+                let min_y = t.position.y - sy;
+                let max_x = t.position.x + sx;
+                let max_y = t.position.y + sy;
+                self.spatial_grid.insert_entity(entity, [min_x, min_y, max_x, max_y]);
+            }
+        }
 
         let output  = self.surface.get_current_texture()?;
         let view    = output.texture.create_view(&wgpu::TextureViewDescriptor::default());

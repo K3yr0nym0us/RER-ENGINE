@@ -1025,6 +1025,7 @@ impl State {
     // ── Hover 2D ─────────────────────────────────────────────────────────────
 
     /// Actualiza `hovered_entity` y `hovered_gizmo_axis` en modo 2D.
+    /// Usa spatial grid para O(k) lookup en lugar de O(n) linear scan.
     pub fn update_hover_2d(&mut self, pixel_x: f32, pixel_y: f32) {
         let prev_hover = self.hovered_entity;
         let cam = match &self.camera_2d {
@@ -1040,7 +1041,10 @@ impl State {
 
         self.hovered_entity = None;
         let mut best_hover: Option<(EntityId, f32)> = None;
-        for &entity in self.world.entities() {
+        
+        // Query spatial grid para entidades cerca del cursor
+        let candidates = self.spatial_grid.query_cell(wx, wy);
+        for entity in candidates {
             if self.world.get::<crate::ecs::NonSelectable>(entity).is_some() { continue; }
             if let Some(t) = self.world.get::<Transform>(entity) {
                 let sx = t.scale.x * 0.5;
@@ -1053,6 +1057,7 @@ impl State {
                 }
             }
         }
+        
         self.hovered_entity    = best_hover.map(|(id, _)| id);
         self.hovered_gizmo_axis = self.pick_gizmo_axis_2d(pixel_x, pixel_y);
         // Emitir evento solo si el hover cambió para no saturar el IPC
