@@ -32,9 +32,14 @@ function toSourceRect(
 
   if (right <= left || bottom <= top) return null;
 
-  const srcX = Math.max(0, Math.min(imgW - 1, Math.round((left - drawOffsetX) / scale)));
+  const normalizedLeft = left - drawOffsetX;
+  const normalizedRight = right - drawOffsetX;
+  const sampleLeft = normalizedLeft;
+  const sampleRight = normalizedRight;
+
+  const srcX = Math.max(0, Math.min(imgW - 1, Math.round(sampleLeft / scale)));
   const srcY = Math.max(0, Math.min(imgH - 1, Math.round((top - drawOffsetY) / scale)));
-  const srcRight = Math.max(srcX + 1, Math.min(imgW, Math.round((right - drawOffsetX) / scale)));
+  const srcRight = Math.max(srcX + 1, Math.min(imgW, Math.round(sampleRight / scale)));
   const srcBottom = Math.max(srcY + 1, Math.min(imgH, Math.round((bottom - drawOffsetY) / scale)));
 
   return {

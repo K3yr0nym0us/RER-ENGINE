@@ -1,7 +1,11 @@
 import { useRef, useEffect } from 'react';
+import { InfoCircle } from 'react-bootstrap-icons';
+import AppTooltip from '../../../../../../../components/AppTooltip';
 
 interface SpritePreviewCanvasProps {
   src: string;
+  facingRight: boolean;
+  onFacingRightChange: (value: boolean) => void;
   selectionMode: 'cell' | 'box';
   selectedCells: { x: number; y: number }[];
   boxes: { x: number; y: number; width: number; height: number }[];
@@ -16,6 +20,8 @@ interface SpritePreviewCanvasProps {
 
 export function SpritePreviewCanvas({
   src,
+  facingRight,
+  onFacingRightChange,
   selectionMode,
   selectedCells,
   boxes,
@@ -101,6 +107,47 @@ export function SpritePreviewCanvas({
 
   return (
     <div className="text-center">
+      <div className="mb-2">
+        <div className="d-flex justify-content-center align-items-center gap-2 mb-1">
+          <span className="text-light small fw-semibold">Orientacion de la animacion</span>
+          <AppTooltip
+            content="Define la direccion base de la animacion creada. El motor usa este dato como referencia de orientacion por defecto."
+            place="top"
+          >
+            <span className="d-inline-flex align-items-center" role="button" aria-label="Informacion sobre orientacion de la animacion">
+              <InfoCircle size={15} className="text-info" />
+            </span>
+          </AppTooltip>
+        </div>
+        <div className="d-flex justify-content-center align-items-center gap-4">
+          <div className="form-check d-flex align-items-center gap-1 m-0">
+            <input
+              className="form-check-input m-0"
+              type="radio"
+              id="facing-left"
+              name="facing-direction"
+              checked={!facingRight}
+              onChange={() => onFacingRightChange(false)}
+            />
+            <label className="form-check-label small text-light m-0" htmlFor="facing-left">
+              Izquierda
+            </label>
+          </div>
+          <div className="form-check d-flex align-items-center gap-1 m-0">
+            <input
+              className="form-check-input m-0"
+              type="radio"
+              id="facing-right"
+              name="facing-direction"
+              checked={facingRight}
+              onChange={() => onFacingRightChange(true)}
+            />
+            <label className="form-check-label small text-light m-0" htmlFor="facing-right">
+              Derecha
+            </label>
+          </div>
+        </div>
+      </div>
       <canvas
         ref={canvasRef}
         width={CANVAS_SIZE}

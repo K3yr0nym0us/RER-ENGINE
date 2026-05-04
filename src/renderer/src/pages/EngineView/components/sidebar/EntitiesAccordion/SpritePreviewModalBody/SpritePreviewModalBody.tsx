@@ -24,6 +24,7 @@ interface SpritePreviewConfirmConfig {
   frames: SpriteFrameRect[];
   fps: number;
   loop: boolean;
+  facingRight: boolean;
   audioPath?: string;
   scripts: ScriptEntry[];
 }
@@ -36,6 +37,7 @@ export function SpritePreviewModalBody({
   initialFrames,
   initialFps,
   initialLoop,
+  initialFacingRight,
   initialAudioPath,
   initialScripts,
 }: {
@@ -46,6 +48,7 @@ export function SpritePreviewModalBody({
   initialFrames?: SpriteFrameRect[]
   initialFps?: number
   initialLoop?: boolean
+  initialFacingRight?: boolean
   initialAudioPath?: string
   initialScripts?: ScriptEntry[]
 }) {
@@ -56,6 +59,7 @@ export function SpritePreviewModalBody({
   const [confirmRemoveScript, setConfirmRemoveScript] = useState<string | null>(null);
   const { imageSrc, imageSize } = useSpritePreviewImage(src);
   const [state, dispatch] = useReducer(spritePreviewReducer, initialSpritePreviewState);
+  const [facingRight, setFacingRight] = useState(true);
   const [defaultPivotNormalized] = useState<{ x: number; y: number }>({ x: 0.5, y: 0.5 });
   const selectedPreviewFrameIndexRef = useRef(0);
   const [pivotByFrameIndex, setPivotByFrameIndex] = useState<Record<number, { x: number; y: number }>>({});
@@ -88,6 +92,10 @@ export function SpritePreviewModalBody({
       dispatch({ type: 'patch', payload: { scripts: initialScripts } });
     }
   }, [initialScripts]);
+
+  useEffect(() => {
+    setFacingRight(initialFacingRight ?? true);
+  }, [initialFacingRight]);
 
   const handleAddAudio = async () => {
     const path = await window.electronAPI.openAudioDialog();
@@ -207,6 +215,7 @@ export function SpritePreviewModalBody({
       frames: framesWithPivot,
       fps,
       loop: isLooping,
+      facingRight,
       audioPath,
       scripts,
     });
@@ -214,7 +223,7 @@ export function SpritePreviewModalBody({
 
   return (
     <div>
-      <div data-bs-theme="dark" className="row g-3 p-3 rounded-3" style={{ minHeight: 300 }}>
+      <div data-bs-theme="dark" className="row g-3 p-3 rounded-3 pt-0" style={{ minHeight: 300 }}>
         <div className="col-3">
           <SpritePreviewLeftPanel
             selectionMode={selectionMode}
@@ -241,6 +250,8 @@ export function SpritePreviewModalBody({
         <div className="col">
           <SpritePreviewCanvas
             src={imageSrc}
+            facingRight={facingRight}
+            onFacingRightChange={setFacingRight}
             selectionMode={selectionMode}
             selectedCells={selectedCells}
             boxes={boxes}

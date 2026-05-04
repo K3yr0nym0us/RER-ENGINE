@@ -136,6 +136,8 @@ pub enum EngineCommand {
         frames:     Vec<AnimationFrameData>,
         fps:        u32,
         loop_:      bool,
+        #[serde(default)]
+        flip_horizontal: bool,
         audio_path: Option<String>,
         logical_w:  u32,
         logical_h:  u32,

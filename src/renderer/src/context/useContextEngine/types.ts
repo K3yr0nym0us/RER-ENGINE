@@ -18,6 +18,7 @@ export interface SelectedEntity {
 		name: string
 		fps: number
 		loop: boolean
+		facing_right?: boolean
 		logical_w: number
 		logical_h: number
 		frames: {

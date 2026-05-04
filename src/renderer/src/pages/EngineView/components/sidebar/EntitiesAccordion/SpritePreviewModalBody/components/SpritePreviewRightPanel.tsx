@@ -111,6 +111,7 @@ export function SpritePreviewRightPanel({
   const safeIndex = hasFrames ? Math.min(selectedFrameIndex, frames.length - 1) : 0;
   const currentFrame = hasFrames ? frames[safeIndex] : null;
   const currentPivot = (pivotsByFrameIndex?.[safeIndex]) ?? { x: 0.5, y: 0.5 };
+  const visiblePivotX = currentPivot.x;
 
   useEffect(() => {
     if (!hasFrames) return;
@@ -150,9 +151,16 @@ export function SpritePreviewRightPanel({
       const offsetX = (CANVAS_SIZE - drawWidth) / 2;
       const offsetY = (CANVAS_SIZE - drawHeight) / 2;
 
-      const origX = (currentFrame.x - offsetX) / scale;
+      const frameLeft = currentFrame.x;
+      const frameRight = currentFrame.x + currentFrame.width;
+      const normalizedLeft = frameLeft - offsetX;
+      const normalizedRight = frameRight - offsetX;
+      const sampleLeft = normalizedLeft;
+      const sampleRight = normalizedRight;
+
+      const origX = sampleLeft / scale;
       const origY = (currentFrame.y - offsetY) / scale;
-      const origW = currentFrame.width / scale;
+      const origW = (sampleRight - sampleLeft) / scale;
       const origH = currentFrame.height / scale;
 
       const size = 120;
@@ -161,7 +169,7 @@ export function SpritePreviewRightPanel({
       ctx.clearRect(0, 0, size, size);
       ctx.drawImage(img, origX, origY, origW, origH, 0, 0, size, size);
 
-      const px = currentPivot.x * size;
+      const px = visiblePivotX * size;
       const py = currentPivot.y * size;
       ctx.save();
       ctx.strokeStyle = '#ffde59';
@@ -182,12 +190,13 @@ export function SpritePreviewRightPanel({
       ctx.clearRect(0, 0, canvas.width, canvas.height);
     };
     img.src = src;
-  }, [currentFrame, src, currentPivot.x, currentPivot.y]);
+  }, [currentFrame, src, visiblePivotX, currentPivot.y]);
 
   const handlePreviewCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!hasFrames) return;
     const rect = e.currentTarget.getBoundingClientRect();
-    const nx = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const clickedX = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const nx = clickedX;
     const ny = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
     onPivotChange?.(safeIndex, { x: nx, y: ny });
   };

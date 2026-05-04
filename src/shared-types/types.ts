@@ -44,6 +44,8 @@ export interface SavedAnimation {
   name:       string
   fps:        number
   loop:       boolean
+  /** Indica la orientación por defecto de la animación (true = mira a la derecha). */
+  facing_right?: boolean
   /** Bounding box lógico fijo (en píxeles) que define el tamaño referencia de la entidad. */
   logical_w:  number
   logical_h:  number

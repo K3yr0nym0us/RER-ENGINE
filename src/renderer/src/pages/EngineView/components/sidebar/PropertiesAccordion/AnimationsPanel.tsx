@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { Accordion } from 'react-bootstrap';
-import { Pencil, PlayFill, StopFill, Trash } from 'react-bootstrap-icons';
+import { Files, Pencil, PlayFill, StopFill, Trash } from 'react-bootstrap-icons';
 
 import AppTooltip from '../../../../../components/AppTooltip';
 import { CreateEntityFromSpriteModalBody } from '../EntitiesAccordion/components/CreateEntityFromSpriteModalBody';
@@ -25,6 +25,7 @@ interface Animation {
   name: string;
   fps: number;
   loop: boolean;
+  facing_right?: boolean;
   logical_w: number;
   logical_h: number;
   audio_path?: string;
@@ -104,6 +105,7 @@ export function AnimationsPanel() {
               name: animation.name,
               fps: animation.fps,
               loop: animation.loop,
+              facing_right: animation.facingRight,
               logical_w: baseLogicalW,
               logical_h: baseLogicalH,
               audio_path: animation.audioPath,
@@ -139,6 +141,22 @@ export function AnimationsPanel() {
       send({ cmd: 'stop_animation', id: entity?.id });
     }
     const next = animations.filter((_, i) => i !== index);
+    syncAnimations(next);
+  };
+
+  const duplicateAnimation = (index: number) => {
+    const anim = animations[index];
+    if (!anim) return;
+
+    const duplicated: Animation = {
+      ...anim,
+      id: createAnimationId(),
+      name: `${anim.name} copia`,
+      frames: anim.frames.map((frame) => ({ ...frame })),
+      scripts: anim.scripts?.map((script) => ({ ...script })),
+    };
+
+    const next = [...animations, duplicated];
     syncAnimations(next);
   };
 
@@ -228,6 +246,7 @@ export function AnimationsPanel() {
           initialFrames={initialFrames}
           initialFps={anim.fps}
           initialLoop={anim.loop}
+          initialFacingRight={anim.facing_right ?? true}
           initialAudioPath={anim.audio_path}
           initialScripts={anim.scripts}
           onConfirm={(config) => {
@@ -239,6 +258,7 @@ export function AnimationsPanel() {
               name: config.animationName,
               fps: config.fps,
               loop: config.loop,
+              facing_right: config.facingRight,
               logical_w: logicalW,
               logical_h: logicalH,
               audio_path: config.audioPath,
@@ -319,6 +339,19 @@ export function AnimationsPanel() {
                       onKeyDown={canPlayOrEdit ? (e) => { if (e.key === 'Enter' || e.key === ' ') editAnimation(idx); } : undefined}
                     >
                       <Pencil />
+                    </span>
+                  </AppTooltip>
+
+                  <AppTooltip content="Duplicar animacion" place="top">
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      className="text-info"
+                      style={{ cursor: 'pointer' }}
+                      onClick={() => duplicateAnimation(idx)}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') duplicateAnimation(idx); }}
+                    >
+                      <Files />
                     </span>
                   </AppTooltip>
 

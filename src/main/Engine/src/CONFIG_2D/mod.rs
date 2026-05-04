@@ -491,6 +491,7 @@ impl State {
         logical_w: u32,
         logical_h: u32,
         src_rect: Option<(u32, u32, u32, u32)>,
+        flip_horizontal: bool,
     ) {
         // Verificar que la entidad existe y obtener su tipo
         let is_scenario  = self.scenario_entities.contains(&id);
@@ -574,8 +575,14 @@ impl State {
             return;
         }
 
-        // Escribir el override — el render loop lo lee con prioridad sobre uv_rects[]
-        self.anim_overrides.insert(tex_position, uv_rect);
+        // Escribir el override — el render loop lo lee con prioridad sobre uv_rects[].
+        // Para flip horizontal invertimos u_min/u_max para espejar la muestra en el shader.
+        let uv_rect_for_render = if flip_horizontal {
+            [uv_rect[2], uv_rect[1], uv_rect[0], uv_rect[3]]
+        } else {
+            uv_rect
+        };
+        self.anim_overrides.insert(tex_position, uv_rect_for_render);
 
         // ── Aplicar pivot ────────────────────────────────────────────────────
         if logical_w > 0 && logical_h > 0 {

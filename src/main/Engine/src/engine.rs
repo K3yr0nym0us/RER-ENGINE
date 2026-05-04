@@ -160,6 +160,7 @@ pub struct AnimationState {
     pub frames:        Vec<AnimationFrameData>,
     pub fps:           u32,
     pub loop_:         bool,
+    pub flip_horizontal: bool,
     /// Audio pre-decodificado a muestras PCM durante SetAnimation.
     /// `None` si la animación no tiene audio o falló la decodificación.
     pub audio_decoded: Option<Arc<DecodedAudio>>,
@@ -312,6 +313,9 @@ pub struct State {
     pub(crate) animations: HashMap<u32, HashMap<String, AnimationState>>,
     /// Animación actualmente en reproducción: entity_id → ActiveAnimation.
     pub(crate) active_animations: HashMap<u32, ActiveAnimation>,
+    /// Override de flip horizontal por entidad para el playback actual.
+    /// Establecido por play_animation_flipped, limpiado al llamar play_animation normal.
+    pub(crate) anim_flip_overrides: HashMap<u32, bool>,
     /// Sistema de scripting Lua. Contiene la VM y los scripts adjuntos a entidades.
     pub(crate) script_engine: ScriptEngine,
     /// Almacén de sprites cargados (PNGs) para reutilización en el editor.
@@ -807,6 +811,7 @@ impl State {
             anim_overrides:     std::collections::HashMap::new(),
             animations:            HashMap::new(),
             active_animations:     HashMap::new(),
+            anim_flip_overrides:   HashMap::new(),
             script_engine: ScriptEngine::new()
                 .expect("Error al inicializar el motor de scripting Lua"),
             sprite_store: HashMap::new(),
@@ -1125,7 +1130,7 @@ impl State {
                     // Ignorar: el modo edición de pivot tiene prioridad para no interferir con la textura/escala
                     return;
                 }
-                self.play_animation_frame(id, &path, pivot_x, pivot_y, logical_w, logical_h, src_x.zip(src_y).zip(src_w.zip(src_h)).map(|((x, y), (w, h))| (x, y, w, h)));
+                self.play_animation_frame(id, &path, pivot_x, pivot_y, logical_w, logical_h, src_x.zip(src_y).zip(src_w.zip(src_h)).map(|((x, y), (w, h))| (x, y, w, h)), false);
             }
             EngineCommand::RestoreAnimationFrame { id } => {
                 self.restore_animation_frame(id);
@@ -1345,7 +1350,7 @@ impl State {
                     log::warn!("[hot-reload] Path no encontrado en static_tex_cache: {}", path);
                 }
             }
-            EngineCommand::SetAnimation { id, name, frames, fps, loop_, audio_path, logical_w, logical_h, scripts } => {
+            EngineCommand::SetAnimation { id, name, frames, fps, loop_, flip_horizontal, audio_path, logical_w, logical_h, scripts } => {
                 log::debug!("[IPC] SetAnimation: entity_id={}, name='{}', frames={}, audio={:?}, scripts={}", id, name, frames.len(), audio_path, scripts.len());
 
                 // Pre-decodificar audio a muestras PCM durante SetAnimation.
@@ -1385,6 +1390,7 @@ impl State {
                         frames,
                         fps,
                         loop_,
+                        flip_horizontal,
                         audio_decoded,
                         logical_w,
                         logical_h,
@@ -1426,6 +1432,7 @@ EngineCommand::PlayAnimation { id, name } => {
                                 anim.logical_w,
                                 anim.logical_h,
                                 first_frame.src_x.zip(first_frame.src_y).zip(first_frame.src_w.zip(first_frame.src_h)).map(|((x, y), (w, h))| (x, y, w, h)),
+                                anim.flip_horizontal,
                             );
                         }
 
@@ -1460,6 +1467,7 @@ EngineCommand::PlayAnimation { id, name } => {
             }
             EngineCommand::StopAnimation { id } => {
                 log::info!("[IPC] StopAnimation: entity_id={}", id);
+                self.anim_flip_overrides.remove(&id);
                 let stopped_animation_name = self.active_animations.remove(&id).map(|a| a.animation_name);
                 if let Some(name) = stopped_animation_name {
                     // Al detener manualmente siempre dejamos visible el frame 0
@@ -1572,11 +1580,13 @@ EngineCommand::PlayAnimation { id, name } => {
     }
 
     fn show_first_frame_of_animation(&mut self, entity_id: u32, animation_name: &str) {
+        let flip_override = self.anim_flip_overrides.get(&entity_id).copied();
         let frame_data = self.animations
             .get(&entity_id)
             .and_then(|m| m.get(animation_name))
             .and_then(|anim| {
                 anim.frames.first().map(|first| {
+                    let flip = flip_override.unwrap_or(anim.flip_horizontal);
                     (
                         first.path.clone(),
                         first.pivot_x,
@@ -1584,12 +1594,13 @@ EngineCommand::PlayAnimation { id, name } => {
                         anim.logical_w,
                         anim.logical_h,
                         first.src_x.zip(first.src_y).zip(first.src_w.zip(first.src_h)).map(|((x, y), (w, h))| (x, y, w, h)),
+                        flip,
                     )
                 })
             });
 
-        if let Some((path, pivot_x, pivot_y, logical_w, logical_h, src_rect)) = frame_data {
-            self.play_animation_frame(entity_id, &path, pivot_x, pivot_y, logical_w, logical_h, src_rect);
+        if let Some((path, pivot_x, pivot_y, logical_w, logical_h, src_rect, flip_horizontal)) = frame_data {
+            self.play_animation_frame(entity_id, &path, pivot_x, pivot_y, logical_w, logical_h, src_rect, flip_horizontal);
         }
     }
 
@@ -1658,14 +1669,16 @@ EngineCommand::PlayAnimation { id, name } => {
         }
 
         for (entity_id, frame_idx) in to_play {
-            let (path, pivot_x, pivot_y, logical_w, logical_h, src_rect) = {
+            let (path, pivot_x, pivot_y, logical_w, logical_h, src_rect, flip_horizontal) = {
                 let anim_name = self.active_animations.get(&entity_id)
                     .map(|a| a.animation_name.clone())
                     .unwrap_or_default();
+                let flip_override = self.anim_flip_overrides.get(&entity_id).copied();
                 let anim = self.animations.get(&entity_id)
                     .and_then(|m| m.get(&anim_name))
                     .unwrap();
                 let f = &anim.frames[frame_idx];
+                let flip = flip_override.unwrap_or(anim.flip_horizontal);
                 (
                     f.path.clone(),
                     f.pivot_x,
@@ -1673,9 +1686,10 @@ EngineCommand::PlayAnimation { id, name } => {
                     anim.logical_w,
                     anim.logical_h,
                     f.src_x.zip(f.src_y).zip(f.src_w.zip(f.src_h)).map(|((x, y), (w, h))| (x, y, w, h)),
+                    flip,
                 )
             };
-            self.play_animation_frame(entity_id, &path, pivot_x, pivot_y, logical_w, logical_h, src_rect);
+            self.play_animation_frame(entity_id, &path, pivot_x, pivot_y, logical_w, logical_h, src_rect, flip_horizontal);
         }
 
         for (entity_id, animation_name) in to_restore {
@@ -1883,7 +1897,20 @@ self.active_animations.retain(|_, a| !a.finished);
                     let already_active = self.active_animations.get(&id)
                         .map(|a| a.animation_name == name)
                         .unwrap_or(false);
-                    if !already_active {
+                    // Limpiar override de flip al reproducir normal
+                    let had_flip_override = self.anim_flip_overrides.remove(&id).unwrap_or(false);
+                    if !already_active || had_flip_override {
+                        self.handle_command(EngineCommand::PlayAnimation { id, name });
+                    }
+                }
+                ScriptCmd::PlayAnimationFlipped { id, name } => {
+                    // Igual que PlayAnimation pero fuerza flip horizontal en la animación.
+                    let already_active = self.active_animations.get(&id)
+                        .map(|a| a.animation_name == name)
+                        .unwrap_or(false);
+                    let had_no_flip = !self.anim_flip_overrides.get(&id).copied().unwrap_or(false);
+                    self.anim_flip_overrides.insert(id, true);
+                    if !already_active || had_no_flip {
                         self.handle_command(EngineCommand::PlayAnimation { id, name });
                     }
                 }
