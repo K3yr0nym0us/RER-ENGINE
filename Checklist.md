@@ -286,11 +286,14 @@ Motivo: priorizar madurez de engine, estabilidad y pipeline antes de expansion d
 
 * ✅ ECS mas avanzado: queries multi-componente y evaluacion de archetypes
 * ✅ Hot reload de scripts/shaders/assets
-* [ ] Jerarquia de entidades parent/child y multi-seleccion en editor
+* ✅ multi-seleccion en editor (ctrl + click)
+* ✅ Undo/Redo de editor para transformaciones y dibujo de colliders/triggers
+* ✅ Hint visual de snap a grilla en viewport del motor durante drag de gizmo
 * [ ] Versionado y migraciones de formato `.save` (el campo `version` existe, faltan migraciones formales) (⚠️ Se vuelve crítico en cuanto existan proyectos persistentes reales)
 
 ### Prioridad baja
 
+* [ ] Jerarquia de entidades parent/child
 * [ ] Animaciones 3D (clips/animator/state machine) consolidadas en pipeline de proyecto
 
 ## 🔓 Bloqueadores y desbloqueos

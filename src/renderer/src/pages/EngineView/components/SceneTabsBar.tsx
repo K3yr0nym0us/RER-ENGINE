@@ -199,12 +199,12 @@ export function SceneTabsBar({ initialSave, projectType }: Props) {
       };
 
       if (entity.kind === 'collider' && entity.points) {
-        send({ cmd: 'create_collider_from_points', points: entity.points });
+        send({ cmd: 'create_collider_from_points', points: entity.points, track_undo: false });
         continue;
       }
 
       if (entity.kind === 'execution_area' && entity.points) {
-        send({ cmd: 'create_execution_area_from_points', points: entity.points });
+        send({ cmd: 'create_execution_area_from_points', points: entity.points, track_undo: false });
         continue;
       }
 
@@ -231,6 +231,7 @@ export function SceneTabsBar({ initialSave, projectType }: Props) {
         id: playerEntityIdRef.current,
         position: scene.playerTransform.position,
         scale: scene.playerTransform.scale,
+        track_undo: false,
       });
       entityTransformsRef.current[playerEntityIdRef.current] = {
         position: scene.playerTransform.position,

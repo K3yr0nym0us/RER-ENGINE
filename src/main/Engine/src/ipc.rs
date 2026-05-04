@@ -34,6 +34,10 @@ pub enum EngineCommand {
         position: Option<[f32; 3]>,
         rotation: Option<[f32; 4]>,  // quaternion xyzw
         scale:    Option<[f32; 3]>,
+        /// Controla si el cambio se registra en historial Undo/Redo.
+        /// None/true: registrar (acciones de usuario). false: no registrar (restore/carga).
+        #[serde(default)]
+        track_undo: Option<bool>,
     },
     /// Cambiar el nombre de una entidad por id.
     /// `force`: si es true, omite la validación de nombre duplicado (usado en restore de proyecto).
@@ -99,9 +103,19 @@ pub enum EngineCommand {
     /// Activar una herramienta de dibujo. tool: "draw_collider" | "draw_execution_area" | "" (cancelar)
     SetActiveTool { tool: String },
     /// Recrear un colisionador de 4 puntos desde datos guardados (restauración de proyecto).
-    CreateColliderFromPoints { points: [[f32; 2]; 4] },
+    CreateColliderFromPoints {
+        points: [[f32; 2]; 4],
+        /// true/None: registrar en undo; false: no registrar (carga/restore).
+        #[serde(default)]
+        track_undo: Option<bool>,
+    },
     /// Crear un área de ejecución de 4 puntos (trigger sin colisión física).
-    CreateExecutionAreaFromPoints { points: [[f32; 2]; 4] },
+    CreateExecutionAreaFromPoints {
+        points: [[f32; 2]; 4],
+        /// true/None: registrar en undo; false: no registrar (carga/restore).
+        #[serde(default)]
+        track_undo: Option<bool>,
+    },
     /// Activar modo edición de pivot: muestra el frame en la entidad y captura el siguiente click.
     /// pivot_x/pivot_y: coordenadas del pivot ya asignado (para mostrarlo visualmente).
     SetPivotEditMode { id: u32, frame_path: String, pivot_x: f32, pivot_y: f32 },
@@ -153,6 +167,8 @@ pub enum EngineCommand {
     SetPreviewPlaying { playing: bool },
     /// Deshacer la última acción disponible.
     Undo,
+    /// Rehacer la última acción deshecha (si existe historial de redo).
+    Redo,
     /// Recargar un asset PNG desde disco sin recrear entidades ni cambiar UVs.
     /// Electron lo envía cuando detecta que el archivo fue modificado externamente.
     ReloadAsset { path: String },

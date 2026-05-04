@@ -22,7 +22,9 @@ struct VertexInput {
 }
 
 // ── Instance I/O (paso de datos por instancia) ────────────────────────────────
-// model: matrix columna-major. flag_pad.x: 0=normal  1=seleccionado  2=hover
+// model: matrix columna-major. flag_pad.x: 0=normal 1=seleccionado 2=hover
+// flag_pad.y: multiplicador de alpha por instancia (default 1.0)
+// flag_pad.z: 0=normal 1=collider 2=trigger (color plano, sin difuminado)
 // uv_rect: sub-región del texture atlas [u_min, v_min, u_max, v_max]
 struct InstanceInput {
     @location(3) model_0  : vec4<f32>,
@@ -39,6 +41,9 @@ struct VertexOutput {
     @location(1) world_normal    : vec3<f32>,
     @location(2) uv              : vec2<f32>,
     @location(3) flag            : f32,
+    @location(4) alpha_mul       : f32,
+    @location(5) render_kind     : f32,
+    @location(6) uv_center       : vec2<f32>,
 }
 
 @vertex
@@ -52,6 +57,9 @@ fn vs_main(in: VertexInput, inst: InstanceInput) -> VertexOutput {
     // Remap UV 0→1 a la sub-región del atlas: uv_rect.xy = min, uv_rect.zw = max
     out.uv          = inst.uv_rect.xy + in.uv * (inst.uv_rect.zw - inst.uv_rect.xy);
     out.flag        = inst.flag_pad.x;
+    out.alpha_mul   = inst.flag_pad.y;
+    out.render_kind = inst.flag_pad.z;
+    out.uv_center   = (inst.uv_rect.xy + inst.uv_rect.zw) * 0.5;
     return out;
 }
 
@@ -95,16 +103,22 @@ const ROUGHNESS   : f32       = 0.5;
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    let albedo_samp = textureSample(t_albedo, s_albedo, in.uv);
+    var albedo_samp = textureSample(t_albedo, s_albedo, in.uv);
+    if in.render_kind >= 0.5 {
+        albedo_samp = textureSample(t_albedo, s_albedo, in.uv_center);
+    }
     let albedo      = albedo_samp.rgb;   // usar color directo sin gamma ni PBR
 
     let n = normalize(in.world_normal);
     let v = normalize(u.cam_pos.xyz - in.world_pos);
     let l = normalize(LIGHT_DIR);
 
-    // Iluminación Lambert simple: más brillante y predecible en 2D
-    let ndotl   = max(dot(n, l), 0.0);
-    var color   = albedo * (0.4 + 0.6 * ndotl);  // 40% ambient + 60% diffuse
+    var color = albedo;
+    if in.render_kind < 0.5 {
+        // Iluminación Lambert simple para entidades normales.
+        let ndotl = max(dot(n, l), 0.0);
+        color = albedo * (0.4 + 0.6 * ndotl);  // 40% ambient + 60% diffuse
+    }
 
     // ── Rim glow + flat tint según estado de selección/hover ─────────────────
     // rim_factor ≈ 0 en el centro, 1 en los bordes tangentes a la cámara.
@@ -121,5 +135,10 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         color += vec3<f32>(1.0, 0.80, 0.15) * rim_factor * 2.2;
     }
 
-    return vec4<f32>(color, albedo_samp.a);
+    var out_alpha = albedo_samp.a * in.alpha_mul;
+    if in.render_kind >= 0.5 {
+        out_alpha = in.alpha_mul;
+    }
+
+    return vec4<f32>(color, out_alpha);
 }

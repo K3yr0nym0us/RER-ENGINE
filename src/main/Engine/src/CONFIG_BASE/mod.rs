@@ -18,6 +18,7 @@ impl State {
         self.anim_texture_cache.clear();
         self.anim_overrides.clear();
         self.selected_entity = None;
+        self.selected_entities.clear();
         self.hovered_entity  = None;
         self.camera_2d       = None;  // volver a modo 3D
 

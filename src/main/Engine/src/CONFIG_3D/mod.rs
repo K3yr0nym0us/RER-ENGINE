@@ -130,8 +130,51 @@ impl State {
     pub fn pick_entity(&mut self, pixel_x: f32, pixel_y: f32) {
         match self.ray_cast(pixel_x, pixel_y) {
             Some(entity) => {
-                if self.selected_entity == Some(entity) { return; }
-                self.selected_entity = Some(entity);
+                if self.ctrl_held {
+                    if let Some(idx) = self.selected_entities.iter().position(|&e| e == entity) {
+                        self.selected_entities.swap_remove(idx);
+                        if self.selected_entity == Some(entity) {
+                            self.selected_entity = self.selected_entities.last().copied();
+                        }
+                        if self.selected_entities.is_empty() {
+                            self.selected_entity = None;
+                            send_event(&EngineEvent::EntityDeselected);
+                        } else if let Some(active_id) = self.selected_entity {
+                            let active_name      = self.world.name(active_id).unwrap_or("Entity").to_string();
+                            let active_transform = self.world.get::<Transform>(active_id).cloned().unwrap_or_default();
+                            let active_position  = active_transform.position.to_array();
+                            let active_rotation  = [
+                                active_transform.rotation.x, active_transform.rotation.y,
+                                active_transform.rotation.z, active_transform.rotation.w,
+                            ];
+                            let active_scale           = active_transform.scale.to_array();
+                            let physics_enabled = self.physics.has_physics(active_id);
+                            let physics_type    = self.physics.get_body_type(active_id).to_string();
+                            send_event(&EngineEvent::EntitySelected {
+                                id: active_id,
+                                name: active_name,
+                                position: active_position,
+                                rotation: active_rotation,
+                                scale: active_scale,
+                                physics_enabled,
+                                physics_type,
+                            });
+                        }
+                        return;
+                    } else {
+                        self.selected_entities.push(entity);
+                        self.selected_entity = Some(entity);
+                    }
+                } else {
+                    if self.selected_entity == Some(entity)
+                        && self.selected_entities.len() == 1
+                        && self.selected_entities[0] == entity {
+                        return;
+                    }
+                    self.selected_entities.clear();
+                    self.selected_entities.push(entity);
+                    self.selected_entity = Some(entity);
+                }
                 let name      = self.world.name(entity).unwrap_or("Entity").to_string();
                 let transform = self.world.get::<Transform>(entity).cloned().unwrap_or_default();
                 let position  = transform.position.to_array();
@@ -145,8 +188,9 @@ impl State {
                 send_event(&EngineEvent::EntitySelected { id: entity, name, position, rotation, scale, physics_enabled, physics_type });
             }
             None => {
-                if self.selected_entity.is_some() {
+                if !self.ctrl_held && (self.selected_entity.is_some() || !self.selected_entities.is_empty()) {
                     self.selected_entity = None;
+                    self.selected_entities.clear();
                     send_event(&EngineEvent::EntityDeselected);
                 }
             }
@@ -169,8 +213,7 @@ impl State {
 
     /// Devuelve el índice del eje del gizmo 3D más cercano al cursor (0=X, 1=Y, 2=Z).
     pub fn pick_gizmo_axis(&self, pixel_x: f32, pixel_y: f32) -> Option<usize> {
-        let sel_id = self.selected_entity?;
-        let origin = self.world.get::<Transform>(sel_id)?.position;
+        let origin = self.selection_center()?;
         let so     = self.project_to_screen(origin)?;
 
         const LEN:    f32 = 1.2;
@@ -193,15 +236,27 @@ impl State {
 
     /// Arrastra la entidad seleccionada a lo largo del eje `axis_idx` (0=X, 1=Y, 2=Z).
     pub fn drag_gizmo(&mut self, pixel_x: f32, pixel_y: f32, last_x: f32, last_y: f32, axis_idx: usize) {
-        let sel_id = match self.selected_entity { Some(id) => id, None => return };
+        let selected_ids: Vec<EntityId> = if !self.selected_entities.is_empty() {
+            self.selected_entities.clone()
+        } else {
+            self.selected_entity.into_iter().collect()
+        };
+        if selected_ids.is_empty() { return; }
+
         let w      = self.size.width  as f32;
         let h      = self.size.height as f32;
         let aspect = w / h;
 
-        let origin = match self.world.get::<Transform>(sel_id) {
-            Some(t) => t.position,
-            None    => return,
-        };
+        let mut sum = GlamVec3::ZERO;
+        let mut count = 0usize;
+        for &id in &selected_ids {
+            if let Some(t) = self.world.get::<Transform>(id) {
+                sum += t.position;
+                count += 1;
+            }
+        }
+        if count == 0 { return; }
+        let origin = sum / count as f32;
 
         let vp         = self.camera.proj_matrix(aspect) * self.camera.view_matrix();
         let axis_world = [GlamVec3::X, GlamVec3::Y, GlamVec3::Z][axis_idx];
@@ -224,18 +279,26 @@ impl State {
         let dy          = pixel_y - last_y;
         let world_delta = (dx * ax + dy * ay) / (axis_len * axis_len);
 
-        let name = self.world.name(sel_id).unwrap_or("Entity").to_string();
-        if let Some(t) = self.world.get_mut::<Transform>(sel_id) {
-            t.position += axis_world * world_delta;
-            let pos             = t.position.to_array();
-            let rot             = [t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w];
-            let scl             = t.scale.to_array();
-            let physics_enabled = self.physics.has_physics(sel_id);
-            let physics_type    = self.physics.get_body_type(sel_id).to_string();
-            send_event(&EngineEvent::EntitySelected {
-                id: sel_id, name, position: pos, rotation: rot, scale: scl,
-                physics_enabled, physics_type,
-            });
+        for &sel_id in &selected_ids {
+            if let Some(t) = self.world.get_mut::<Transform>(sel_id) {
+                t.position += axis_world * world_delta;
+            }
+        }
+
+        let lead_id = self.selected_entity.or_else(|| selected_ids.last().copied());
+        if let Some(sel_id) = lead_id {
+            let name = self.world.name(sel_id).unwrap_or("Entity").to_string();
+            if let Some(t) = self.world.get::<Transform>(sel_id) {
+                let pos             = t.position.to_array();
+                let rot             = [t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w];
+                let scl             = t.scale.to_array();
+                let physics_enabled = self.physics.has_physics(sel_id);
+                let physics_type    = self.physics.get_body_type(sel_id).to_string();
+                send_event(&EngineEvent::EntitySelected {
+                    id: sel_id, name, position: pos, rotation: rot, scale: scl,
+                    physics_enabled, physics_type,
+                });
+            }
         }
     }
 

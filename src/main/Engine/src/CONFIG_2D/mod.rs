@@ -144,6 +144,7 @@ impl State {
         self.anim_texture_cache.clear();
         self.anim_overrides.clear();
         self.selected_entity = None;
+        self.selected_entities.clear();
         self.hovered_entity  = None;
 
         // Quad unitario canónico — compartido por TODOS los sprites 2D de la escena.
@@ -889,8 +890,45 @@ impl State {
         let hit = best.map(|(id, _)| id);
         match hit {
             Some(entity) => {
-                if self.selected_entity == Some(entity) { return; }
-                self.selected_entity = Some(entity);
+                if self.ctrl_held {
+                    if let Some(idx) = self.selected_entities.iter().position(|&e| e == entity) {
+                        self.selected_entities.swap_remove(idx);
+                        if self.selected_entity == Some(entity) {
+                            self.selected_entity = self.selected_entities.last().copied();
+                        }
+                        if self.selected_entities.is_empty() {
+                            self.selected_entity = None;
+                            send_event(&EngineEvent::EntityDeselected);
+                        } else if let Some(active_id) = self.selected_entity {
+                            let active_name      = self.world.name(active_id).unwrap_or("Entity").to_string();
+                            let active_transform = self.world.get::<Transform>(active_id).cloned().unwrap_or_default();
+                            let active_pos = active_transform.position.to_array();
+                            let active_rot = [active_transform.rotation.x, active_transform.rotation.y,
+                                              active_transform.rotation.z, active_transform.rotation.w];
+                            let active_scl             = active_transform.scale.to_array();
+                            let physics_enabled = self.physics_2d.has_physics(active_id);
+                            let physics_type    = self.physics_2d.get_body_type(active_id).to_string();
+                            send_event(&EngineEvent::EntitySelected {
+                                id: active_id, name: active_name, position: active_pos, rotation: active_rot, scale: active_scl,
+                                physics_enabled,
+                                physics_type,
+                            });
+                        }
+                        return;
+                    } else {
+                        self.selected_entities.push(entity);
+                        self.selected_entity = Some(entity);
+                    }
+                } else {
+                    if self.selected_entity == Some(entity)
+                        && self.selected_entities.len() == 1
+                        && self.selected_entities[0] == entity {
+                        return;
+                    }
+                    self.selected_entities.clear();
+                    self.selected_entities.push(entity);
+                    self.selected_entity = Some(entity);
+                }
                 let name      = self.world.name(entity).unwrap_or("Entity").to_string();
                 let transform = self.world.get::<Transform>(entity).cloned().unwrap_or_default();
                 let pos = transform.position.to_array();
@@ -906,8 +944,9 @@ impl State {
                 });
             }
             None => {
-                if self.selected_entity.is_some() {
+                if !self.ctrl_held && (self.selected_entity.is_some() || !self.selected_entities.is_empty()) {
                     self.selected_entity = None;
+                    self.selected_entities.clear();
                     send_event(&EngineEvent::EntityDeselected);
                 }
             }
@@ -918,8 +957,7 @@ impl State {
 
     /// Devuelve el índice del eje del gizmo 2D más cercano al cursor (0=X, 1=Y).
     pub fn pick_gizmo_axis_2d(&self, pixel_x: f32, pixel_y: f32) -> Option<usize> {
-        let sel_id = self.selected_entity?;
-        let origin = self.world.get::<Transform>(sel_id)?.position;
+        let origin = self.selection_center()?;
         let cam    = self.camera_2d.as_ref()?;
         let so     = self.project_to_screen_2d(cam, origin)?;
 
@@ -943,15 +981,28 @@ impl State {
 
     /// Arrastra la entidad seleccionada sobre el eje X (0) o Y (1) en modo 2D.
     pub fn drag_gizmo_2d(&mut self, pixel_x: f32, pixel_y: f32, last_x: f32, last_y: f32, axis_idx: usize, snap: bool) {
-        let sel_id = match self.selected_entity { Some(id) => id, None => return };
+        let selected_ids: Vec<EntityId> = if !self.selected_entities.is_empty() {
+            self.selected_entities.clone()
+        } else {
+            self.selected_entity.into_iter().collect()
+        };
+        if selected_ids.is_empty() { return; }
+
         let cam = match &self.camera_2d {
             Some(c) => Camera2D { x: c.x, y: c.y, half_h: c.half_h, near: c.near, far: c.far },
             None    => return,
         };
-        let origin = match self.world.get::<Transform>(sel_id) {
-            Some(t) => t.position,
-            None    => return,
-        };
+        let mut sum = GlamVec3::ZERO;
+        let mut count = 0usize;
+        for &id in &selected_ids {
+            if let Some(t) = self.world.get::<Transform>(id) {
+                sum += t.position;
+                count += 1;
+            }
+        }
+        if count == 0 { return; }
+        let origin = sum / count as f32;
+
         let axis_world = if axis_idx == 0 { GlamVec3::X } else { GlamVec3::Y };
         let so = match self.project_to_screen_2d(&cam, origin)               { Some(p) => p, None => return };
         let se = match self.project_to_screen_2d(&cam, origin + axis_world)  { Some(p) => p, None => return };
@@ -962,8 +1013,8 @@ impl State {
         let dx = pixel_x - last_x;
         let dy = pixel_y - last_y;
         let world_delta = (dx * ax + dy * ay) / (len * len);
-        let name = self.world.name(sel_id).unwrap_or("Entity").to_string();
-        if let Some(t) = self.world.get_mut::<Transform>(sel_id) {
+        for &sel_id in &selected_ids {
+            if let Some(t) = self.world.get_mut::<Transform>(sel_id) {
             t.position += axis_world * world_delta;
             // Snap a cuadrícula: alinea el borde más cercano a la línea de
             // cuadrícula más próxima. Se activa si snap=true (Ctrl desde
@@ -994,23 +1045,33 @@ impl State {
                     }
                 }
             }
-            let pos = t.position.to_array();
-            let rot = [t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w];
-            let scl             = t.scale.to_array();
-            let physics_enabled = self.physics_2d.has_physics(sel_id);
-            let physics_type    = self.physics_2d.get_body_type(sel_id).to_string();
-            send_event(&EngineEvent::EntitySelected {
-                id: sel_id, name, position: pos, rotation: rot, scale: scl,
-                physics_enabled,
-                physics_type,
-            });
+            }
         }
+
+        let lead_id = self.selected_entity.or_else(|| selected_ids.last().copied());
+        if let Some(sel_id) = lead_id {
+            let name = self.world.name(sel_id).unwrap_or("Entity").to_string();
+            if let Some(t) = self.world.get::<Transform>(sel_id) {
+                let pos = t.position.to_array();
+                let rot = [t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w];
+                let scl             = t.scale.to_array();
+                let physics_enabled = self.physics_2d.has_physics(sel_id);
+                let physics_type    = self.physics_2d.get_body_type(sel_id).to_string();
+                send_event(&EngineEvent::EntitySelected {
+                    id: sel_id, name, position: pos, rotation: rot, scale: scl,
+                    physics_enabled,
+                    physics_type,
+                });
+            }
+        }
+
         // Sincronizar el Rapier body con la nueva posición visual.
         // Sin esto, el cuerpo físico (y por tanto las colisiones) permanece
         // en la posición original aunque el cuadro visual se haya movido.
-        let new_pos = self.world.get::<Transform>(sel_id)
-            .map(|t| (t.position.x, t.position.y));
-        if let Some((nx, ny)) = new_pos {
+        for &sel_id in &selected_ids {
+            let new_pos = self.world.get::<Transform>(sel_id)
+                .map(|t| (t.position.x, t.position.y));
+            if let Some((nx, ny)) = new_pos {
             // Si existe una base de animación guardada para la entidad,
             // mantenerla sincronizada con el drag del gizmo para que
             // play_animation_frame no ancle en una posición antigua.
@@ -1019,6 +1080,7 @@ impl State {
                 saved.0.y = ny;
             }
             self.physics_2d.teleport_entity(sel_id, nx, ny);
+            }
         }
     }
 
@@ -1095,7 +1157,7 @@ impl State {
                     ];
                     self.active_tool = ActiveTool::None;
                     self.tool_overlay_buffer = gizmo::build_from_vertices(&self.device, &[]);
-                    self.create_collision_box_from_points(&pts);
+                    self.create_collision_box_from_points(&pts, true);
                 } else {
                     let pts_clone: Vec<[f32; 2]> = points_world.clone();
                     self.tool_overlay_buffer = build_tool_overlay(&self.device, &pts_clone, *cursor_world);
@@ -1115,7 +1177,7 @@ impl State {
                     ];
                     self.active_tool = ActiveTool::None;
                     self.tool_overlay_buffer = gizmo::build_from_vertices(&self.device, &[]);
-                    self.create_execution_area_from_points(&pts);
+                    self.create_execution_area_from_points(&pts, true);
                 } else {
                     let pts_clone: Vec<[f32; 2]> = points_world.clone();
                     self.tool_overlay_buffer = build_tool_overlay(&self.device, &pts_clone, *cursor_world);
@@ -1128,10 +1190,10 @@ impl State {
     }
 
     /// Crea una entidad ECS de colisionador a partir de 4 puntos en espacio de mundo.
-    pub(crate) fn create_collision_box_from_points(&mut self, pts: &[[f32; 2]; 4]) {
+    pub(crate) fn create_collision_box_from_points(&mut self, pts: &[[f32; 2]; 4], track_undo: bool) {
         // Crea la entidad visual (quad + textura cyan) sin física.
         let collider_name = self.next_numbered_entity_name("Colisionador");
-        let (entity, pos, scale) = self.create_box_entity(pts, &collider_name, [60, 220, 200, 110]);
+        let (entity, pos, scale) = self.create_box_entity(pts, &collider_name, [60, 220, 200, 235]);
 
         // Marca la entidad como colisionador y añade física estática.
         self.world.insert(entity, ColliderMarker {});
@@ -1146,7 +1208,9 @@ impl State {
             [scale[0] * 0.5, scale[1] * 0.5, 0.01],
         );
         self.collider_entities.push(entity);
-        self.undo_stack.push(crate::engine::UndoAction::RemoveEntity { id: entity });
+        if track_undo {
+            self.undo_stack.push(crate::engine::UndoAction::RemoveEntity { id: entity });
+        }
 
         send_event(&EngineEvent::ColliderCreated { id: entity, points: *pts });
         log::info!("[tool] colisionador creado: entidad {entity} en {:?}", pts);
@@ -1154,13 +1218,15 @@ impl State {
 
     /// Crea una entidad ECS de área de ejecución (trigger) a partir de 4 puntos.
     /// No añade física para evitar colisiones con personajes.
-    pub(crate) fn create_execution_area_from_points(&mut self, pts: &[[f32; 2]; 4]) {
+    pub(crate) fn create_execution_area_from_points(&mut self, pts: &[[f32; 2]; 4], track_undo: bool) {
         let trigger_name = self.next_numbered_entity_name("ExecutionArea");
-        let (entity, _pos, _scale) = self.create_box_entity(pts, &trigger_name, [220, 80, 80, 130]);
+        let (entity, _pos, _scale) = self.create_box_entity(pts, &trigger_name, [220, 80, 80, 230]);
 
         self.world.insert(entity, ExecutionAreaMarker {});
         self.execution_area_entities.push(entity);
-        self.undo_stack.push(crate::engine::UndoAction::RemoveEntity { id: entity });
+        if track_undo {
+            self.undo_stack.push(crate::engine::UndoAction::RemoveEntity { id: entity });
+        }
 
         send_event(&EngineEvent::ExecutionAreaCreated { id: entity, points: *pts });
         log::info!("[tool] área de ejecución creada: entidad {entity} en {:?}", pts);

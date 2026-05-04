@@ -103,7 +103,7 @@ pub fn create_cube(device: &wgpu::Device) -> Mesh {
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct InstanceData {
     pub model:    [[f32; 4]; 4],
-    pub flag_pad: [f32; 4],   // x: 0=normal  1=selected  2=hovered
+    pub flag_pad: [f32; 4],   // x: estado selección/hover, y: alpha multiplicador
     pub uv_rect:  [f32; 4],   // sub-región del texture atlas [u_min, v_min, u_max, v_max]
 }
 
@@ -128,7 +128,7 @@ impl InstanceData {
     pub fn new(model: glam::Mat4, flag: f32, uv_rect: [f32; 4]) -> Self {
         Self {
             model:    model.to_cols_array_2d(),
-            flag_pad: [flag, 0.0, 0.0, 0.0],
+            flag_pad: [flag, 1.0, 0.0, 0.0],
             uv_rect,
         }
     }

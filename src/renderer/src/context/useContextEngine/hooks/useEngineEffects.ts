@@ -42,20 +42,37 @@ export function useEngineEffects({
 		};
 
 		const onKeyDown = (event: KeyboardEvent) => {
-			if (event.key === 'Control') window.engine.send({ cmd: 'set_ctrl_held', held: true } as never);
+			if (event.ctrlKey || event.key === 'Control') {
+				window.engine.send({ cmd: 'set_ctrl_held', held: true } as never);
+			}
 			if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z' && !isTypingTarget(event.target)) {
 				event.preventDefault();
-				window.engine.send({ cmd: 'undo' } as never);
+				if (event.shiftKey) {
+					window.engine.send({ cmd: 'redo' } as never);
+				} else {
+					window.engine.send({ cmd: 'undo' } as never);
+				}
+			}
+			if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'y' && !isTypingTarget(event.target)) {
+				event.preventDefault();
+				window.engine.send({ cmd: 'redo' } as never);
 			}
 		};
 		const onKeyUp = (event: KeyboardEvent) => {
-			if (event.key === 'Control') window.engine.send({ cmd: 'set_ctrl_held', held: false } as never);
+			if (event.key === 'Control' || !event.ctrlKey) {
+				window.engine.send({ cmd: 'set_ctrl_held', held: false } as never);
+			}
+		};
+		const onBlur = () => {
+			window.engine.send({ cmd: 'set_ctrl_held', held: false } as never);
 		};
 		window.addEventListener('keydown', onKeyDown);
 		window.addEventListener('keyup', onKeyUp);
+		window.addEventListener('blur', onBlur);
 		return () => {
 			window.removeEventListener('keydown', onKeyDown);
 			window.removeEventListener('keyup', onKeyUp);
+			window.removeEventListener('blur', onBlur);
 		};
 	}, []);
 

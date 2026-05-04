@@ -149,6 +149,9 @@ pub(crate) enum UndoAction {
         rotation: [f32; 4],
         scale:    [f32; 3],
     },
+    RestoreTransforms {
+        items: Vec<(u32, [f32; 3], [f32; 4], [f32; 3])>,
+    },
     RemoveEntity { id: u32 },
 }
 
@@ -241,6 +244,7 @@ pub struct State {
     pub physics_2d:   PhysicsWorld2D,
     // Selección
     pub selected_entity:     Option<EntityId>,
+    pub selected_entities:   Vec<EntityId>,
     pub hovered_entity:      Option<EntityId>,
     pub hovered_gizmo_axis:  Option<usize>,
     pub active_gizmo_axis:   Option<usize>,
@@ -267,6 +271,14 @@ pub struct State {
     pub        preview_playing:  bool,
     /// Buffer de overlay de la herramienta activa (cruces + líneas de construcción).
     pub(crate) tool_overlay_buffer: GizmoBuffer,
+    /// UV del PNG de hint de snap en el atlas, si se cargó correctamente.
+    pub(crate) snap_hint_uv: Option<[f32; 4]>,
+    /// Tamaño original del PNG de hint (ancho, alto) en píxeles.
+    pub(crate) snap_hint_size: (f32, f32),
+    /// Controla visibilidad del hint de snap (solo editor 2D).
+    pub(crate) show_snap_hint: bool,
+    /// Alpha actual del hint [0..1] para fade in/out suave.
+    pub(crate) snap_hint_alpha: f32,
     /// Entidades creadas por herramientas de dibujo (colisionadores).
     pub(crate) collider_entities: Vec<EntityId>,
     /// Entidades creadas por herramientas de dibujo (áreas de ejecución).
@@ -307,6 +319,8 @@ pub struct State {
     pub(crate) sprite_store: HashMap<String, (String, u32, u32)>, // path → (name, width, height)
     /// Historial simple para deshacer cambios del editor.
     pub(crate) undo_stack: Vec<UndoAction>,
+    /// Historial para rehacer (Ctrl+Y). Se limpia al registrar una acción nueva.
+    pub(crate) redo_stack: Vec<UndoAction>,
     /// Evita registrar nuevas entradas de undo mientras se está aplicando una.
     pub(crate) is_applying_undo: bool,
     // ── Debug metrics ────────────────────────────────────────────────────────
@@ -470,6 +484,36 @@ impl State {
         };
         let checker_uv = atlas.pack(&queue, &checker_pixels, 128, 128);
         let uv_rects = vec![checker_uv];   // idx 0 = checkerboard (plano de suelo)
+
+        // Hint visual de snap (Ctrl): PNG del editor empaquetado en atlas.
+        let mut snap_hint_uv: Option<[f32; 4]> = None;
+        let mut snap_hint_size: (f32, f32) = (0.0, 0.0);
+        let snap_hint_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../assets/tooltip-btn-ctrl-to-auto-adjust.png");
+        match std::fs::read(&snap_hint_path) {
+            Ok(bytes) => {
+                use image::ImageReader;
+                match ImageReader::new(std::io::Cursor::new(&bytes))
+                    .with_guessed_format()
+                    .map_err(|e| e.to_string())
+                    .and_then(|r| r.decode().map_err(|e| e.to_string()))
+                {
+                    Ok(img) => {
+                        let img = img.to_rgba8();
+                        let (w, h) = img.dimensions();
+                        let uv = atlas.pack(&queue, img.as_raw(), w, h);
+                        snap_hint_uv = Some(uv);
+                        snap_hint_size = (w as f32, h as f32);
+                    }
+                    Err(e) => {
+                        log::warn!("[snap-hint] Error decodificando PNG '{}': {}", snap_hint_path.display(), e);
+                    }
+                }
+            }
+            Err(e) => {
+                log::warn!("[snap-hint] No se pudo leer '{}': {}", snap_hint_path.display(), e);
+            }
+        }
 
         // ── Pipeline ─────────────────────────────────────────────────────────
         let shader = device.create_shader_module(include_wgsl!("shader.wgsl"));
@@ -731,6 +775,7 @@ impl State {
             physics: PhysicsWorld::new(),
             physics_2d: PhysicsWorld2D::new(),
             selected_entity:      None,
+            selected_entities:    Vec::new(),
             hovered_entity:      None,
             hovered_gizmo_axis:  None,
             active_gizmo_axis:   None,
@@ -747,6 +792,10 @@ impl State {
             active_tool: ActiveTool::None,
             preview_playing: false,
             tool_overlay_buffer: tool_overlay_buffer_init,
+            snap_hint_uv,
+            snap_hint_size,
+            show_snap_hint: false,
+            snap_hint_alpha: 0.0,
             collider_entities: Vec::new(),
             execution_area_entities: Vec::new(),
             execution_overlaps: HashSet::new(),
@@ -762,6 +811,7 @@ impl State {
                 .expect("Error al inicializar el motor de scripting Lua"),
             sprite_store: HashMap::new(),
             undo_stack: Vec::new(),
+            redo_stack: Vec::new(),
             is_applying_undo: false,
             metrics_last_emit:   Instant::now(),
             metrics_frame_count: 0,
@@ -776,7 +826,20 @@ impl State {
     pub fn is_preview_playing(&self) -> bool { self.preview_playing }
 
     pub fn push_undo_transform(&mut self, id: u32, position: [f32; 3], rotation: [f32; 4], scale: [f32; 3]) {
+        if !self.is_applying_undo {
+            self.redo_stack.clear();
+        }
         self.undo_stack.push(UndoAction::RestoreTransform { id, position, rotation, scale });
+    }
+
+    pub fn push_undo_transforms(&mut self, items: Vec<(u32, [f32; 3], [f32; 4], [f32; 3])>) {
+        if items.is_empty() {
+            return;
+        }
+        if !self.is_applying_undo {
+            self.redo_stack.clear();
+        }
+        self.undo_stack.push(UndoAction::RestoreTransforms { items });
     }
 
     pub fn apply_undo(&mut self) {
@@ -784,15 +847,103 @@ impl State {
         self.is_applying_undo = true;
         match action {
             UndoAction::RestoreTransform { id, position, rotation, scale } => {
+                if let Some(t) = self.world.get::<Transform>(id) {
+                    self.redo_stack.push(UndoAction::RestoreTransform {
+                        id,
+                        position: t.position.to_array(),
+                        rotation: [t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w],
+                        scale: t.scale.to_array(),
+                    });
+                }
                 self.handle_command(EngineCommand::SetTransform {
                     id,
                     position: Some(position),
                     rotation: Some(rotation),
                     scale: Some(scale),
+                    track_undo: Some(false),
                 });
+            }
+            UndoAction::RestoreTransforms { items } => {
+                let mut redo_items: Vec<(u32, [f32; 3], [f32; 4], [f32; 3])> = Vec::new();
+                for (id, _, _, _) in &items {
+                    if let Some(t) = self.world.get::<Transform>(*id) {
+                        redo_items.push((
+                            *id,
+                            t.position.to_array(),
+                            [t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w],
+                            t.scale.to_array(),
+                        ));
+                    }
+                }
+                if !redo_items.is_empty() {
+                    self.redo_stack.push(UndoAction::RestoreTransforms { items: redo_items });
+                }
+                for (id, position, rotation, scale) in items {
+                    self.handle_command(EngineCommand::SetTransform {
+                        id,
+                        position: Some(position),
+                        rotation: Some(rotation),
+                        scale: Some(scale),
+                        track_undo: Some(false),
+                    });
+                }
             }
             UndoAction::RemoveEntity { id } => {
                 self.handle_command(EngineCommand::RemoveEntity { id });
+                self.redo_stack.clear();
+            }
+        }
+        self.is_applying_undo = false;
+    }
+
+    pub fn apply_redo(&mut self) {
+        let Some(action) = self.redo_stack.pop() else { return; };
+        self.is_applying_undo = true;
+        match action {
+            UndoAction::RestoreTransform { id, position, rotation, scale } => {
+                if let Some(t) = self.world.get::<Transform>(id) {
+                    self.undo_stack.push(UndoAction::RestoreTransform {
+                        id,
+                        position: t.position.to_array(),
+                        rotation: [t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w],
+                        scale: t.scale.to_array(),
+                    });
+                }
+                self.handle_command(EngineCommand::SetTransform {
+                    id,
+                    position: Some(position),
+                    rotation: Some(rotation),
+                    scale: Some(scale),
+                    track_undo: Some(false),
+                });
+            }
+            UndoAction::RestoreTransforms { items } => {
+                let mut undo_items: Vec<(u32, [f32; 3], [f32; 4], [f32; 3])> = Vec::new();
+                for (id, _, _, _) in &items {
+                    if let Some(t) = self.world.get::<Transform>(*id) {
+                        undo_items.push((
+                            *id,
+                            t.position.to_array(),
+                            [t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w],
+                            t.scale.to_array(),
+                        ));
+                    }
+                }
+                if !undo_items.is_empty() {
+                    self.undo_stack.push(UndoAction::RestoreTransforms { items: undo_items });
+                }
+                for (id, position, rotation, scale) in items {
+                    self.handle_command(EngineCommand::SetTransform {
+                        id,
+                        position: Some(position),
+                        rotation: Some(rotation),
+                        scale: Some(scale),
+                        track_undo: Some(false),
+                    });
+                }
+            }
+            UndoAction::RemoveEntity { .. } => {
+                // No soportado: faltan snapshots completos para re-crear entidades eliminadas.
             }
         }
         self.is_applying_undo = false;
@@ -836,7 +987,7 @@ impl State {
             EngineCommand::LoadModel { path } => {
                 self.load_model(&path);
             }
-            EngineCommand::SetTransform { id, position, rotation, scale } => {
+            EngineCommand::SetTransform { id, position, rotation, scale, track_undo } => {
                 use glam::{Quat, Vec3};
                 let before = self.world.get::<Transform>(id).cloned();
                 if let Some(transform) = self.world.get_mut::<Transform>(id) {
@@ -878,7 +1029,10 @@ impl State {
                     let next_pos = self.world.get::<Transform>(id).map(|t| t.position.to_array());
                     let next_rot = self.world.get::<Transform>(id).map(|t| [t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w]);
                     let next_scl = self.world.get::<Transform>(id).map(|t| t.scale.to_array());
-                    if !self.is_applying_undo && (next_pos != Some(prev_pos) || next_rot != Some(prev_rot) || next_scl != Some(prev_scl)) {
+                    let should_track_undo = track_undo.unwrap_or(true);
+                    if !self.is_applying_undo
+                        && should_track_undo
+                        && (next_pos != Some(prev_pos) || next_rot != Some(prev_rot) || next_scl != Some(prev_scl)) {
                         self.push_undo_transform(id, prev_pos, prev_rot, prev_scl);
                     }
                 }
@@ -1010,8 +1164,11 @@ impl State {
                 log::info!("[audio] detenido por comando externo");
             }
             EngineCommand::RemoveEntity { id } => {
+                self.selected_entities.retain(|&e| e != id);
                 if Some(id) == self.selected_entity {
-                    self.selected_entity = None;
+                    self.selected_entity = self.selected_entities.last().copied();
+                }
+                if self.selected_entities.is_empty() && self.selected_entity.is_none() {
                     send_event(&EngineEvent::EntityDeselected);
                 }
                 if Some(id) == self.hovered_entity  {
@@ -1064,7 +1221,8 @@ impl State {
                         self.cancel_logical_area_mode();
                     }
 
-                    if self.selected_entity.take().is_some() {
+                    if self.selected_entity.take().is_some() || !self.selected_entities.is_empty() {
+                        self.selected_entities.clear();
                         send_event(&EngineEvent::EntityDeselected);
                     }
                     if self.hovered_entity.take().is_some() {
@@ -1138,16 +1296,16 @@ impl State {
                     }
                 }
             }
-            EngineCommand::CreateColliderFromPoints { points } => {
+            EngineCommand::CreateColliderFromPoints { points, track_undo } => {
                 if self.camera_2d.is_some() {
-                    self.create_collision_box_from_points(&points);
+                    self.create_collision_box_from_points(&points, track_undo.unwrap_or(true));
                 } else {
                     log::warn!("CreateColliderFromPoints solo disponible en modo 2D");
                 }
             }
-            EngineCommand::CreateExecutionAreaFromPoints { points } => {
+            EngineCommand::CreateExecutionAreaFromPoints { points, track_undo } => {
                 if self.camera_2d.is_some() {
-                    self.create_execution_area_from_points(&points);
+                    self.create_execution_area_from_points(&points, track_undo.unwrap_or(true));
                 } else {
                     log::warn!("CreateExecutionAreaFromPoints solo disponible en modo 2D");
                 }
@@ -1157,6 +1315,9 @@ impl State {
                     return;
                 }
                 self.apply_undo();
+            }
+            EngineCommand::Redo => {
+                self.apply_redo();
             }
             EngineCommand::ReloadAsset { path } => {
                 log::info!("[IPC] ReloadAsset: {}", path);
@@ -1536,6 +1697,94 @@ self.active_animations.retain(|_, a| !a.finished);
         self.active_gizmo_axis = axis;
     }
 
+    /// Muestra/oculta el hint visual de snap a cuadrícula en el viewport 2D.
+    pub fn set_snap_hint_visible(&mut self, visible: bool) {
+        self.show_snap_hint = visible;
+    }
+
+    fn update_snap_hint_alpha(&mut self) {
+        let target = if self.show_snap_hint && !self.preview_playing && self.camera_2d.is_some() {
+            1.0_f32
+        } else {
+            0.0_f32
+        };
+        // Suavizado exponencial frame-rate independiente.
+        // Menor k => transición más visible y menos "instantánea".
+        let k = if target > self.snap_hint_alpha { 4.2_f32 } else { 3.4_f32 };
+        let blend = 1.0 - (-k * self.delta_time.max(0.0)).exp();
+        self.snap_hint_alpha += (target - self.snap_hint_alpha) * blend;
+        if (self.snap_hint_alpha - target).abs() < 0.001 {
+            self.snap_hint_alpha = target;
+        }
+    }
+
+    fn build_snap_hint_instance_2d(&self) -> Option<mesh::InstanceData> {
+        if self.snap_hint_alpha <= 0.003 || self.preview_playing {
+            return None;
+        }
+        let uv = self.snap_hint_uv?;
+        let Some(cam) = &self.camera_2d else {
+            return None;
+        };
+        if self.size.width == 0 || self.size.height == 0 {
+            return None;
+        }
+        let (img_w, img_h) = self.snap_hint_size;
+        if img_w <= 0.0 || img_h <= 0.0 {
+            return None;
+        }
+
+        let aspect = self.size.width as f32 / self.size.height as f32;
+        let half_w = cam.half_h * aspect;
+        let world_per_px_x = (half_w * 2.0) / self.size.width as f32;
+        let world_per_px_y = (cam.half_h * 2.0) / self.size.height as f32;
+
+        let margin_px = 18.0_f32;
+        // Tamaño proporcional al viewport pero con tope para evitar que se vea enorme.
+        let max_width_px = (self.size.width as f32 * 0.22).clamp(120.0, 320.0);
+        let scale_px = (max_width_px / img_w).min(1.0);
+        let draw_w_px = img_w * scale_px;
+        let draw_h_px = img_h * scale_px;
+
+        let draw_w_world = draw_w_px * world_per_px_x;
+        let draw_h_world = draw_h_px * world_per_px_y;
+        let margin_x_world = margin_px * world_per_px_x;
+        let margin_y_world = margin_px * world_per_px_y;
+
+        // Easing para que se perciba mejor la transición.
+        let a = self.snap_hint_alpha.clamp(0.0, 1.0);
+        let eased_alpha = a * a * (3.0 - 2.0 * a);
+        let scale_in = 0.92 + 0.08 * eased_alpha;
+        let slide_px = (1.0 - eased_alpha) * 14.0;
+
+        let center_x = cam.x - half_w + margin_x_world + draw_w_world * 0.5;
+        let center_y = cam.y + cam.half_h - margin_y_world - draw_h_world * 0.5 - slide_px * world_per_px_y;
+        let model = glam::Mat4::from_translation(glam::vec3(center_x, center_y, 0.9))
+            * glam::Mat4::from_scale(glam::vec3(draw_w_world * scale_in, draw_h_world * scale_in, 1.0));
+        let mut inst = mesh::InstanceData::new(model, 0.0, uv);
+        inst.flag_pad[1] = eased_alpha;
+        Some(inst)
+    }
+
+    /// Centro de selección para gizmo/grupo. Si no hay grupo, usa selected_entity.
+    pub(crate) fn selection_center(&self) -> Option<glam::Vec3> {
+        if !self.selected_entities.is_empty() {
+            let mut sum = glam::Vec3::ZERO;
+            let mut count = 0usize;
+            for &id in &self.selected_entities {
+                if let Some(t) = self.world.get::<Transform>(id) {
+                    sum += t.position;
+                    count += 1;
+                }
+            }
+            if count > 0 {
+                return Some(sum / count as f32);
+            }
+        }
+        self.selected_entity
+            .and_then(|id| self.world.get::<Transform>(id).map(|t| t.position))
+    }
+
     // ── Scripts ───────────────────────────────────────────────────────────────
 
     /// Ejecuta un tick del motor de scripting y aplica los comandos generados.
@@ -1702,6 +1951,7 @@ self.active_animations.retain(|_, a| !a.finished);
         let now         = Instant::now();
         self.delta_time = now.duration_since(self.last_frame).as_secs_f32();
         self.last_frame = now;
+        self.update_snap_hint_alpha();
 
         // Emitir métricas de debug ~1 vez por segundo.
         self.metrics_frame_count += 1;
@@ -1849,9 +2099,11 @@ self.active_animations.retain(|_, a| !a.finished);
             {
                 continue;
             }
+            let is_selected = self.selected_entity == Some(*entity_id)
+                || self.selected_entities.contains(entity_id);
             let flag = if self.preview_playing {
                 0.0_f32
-            } else if self.selected_entity == Some(*entity_id) {
+            } else if is_selected {
                 1.0_f32   // dorado
             } else if self.hovered_entity == Some(*entity_id) {
                 2.0_f32   // cian
@@ -1864,7 +2116,14 @@ self.active_animations.retain(|_, a| !a.finished);
                 .copied()
                 .or_else(|| self.uv_rects.get(*tex_idx).copied())
                 .unwrap_or(self.fallback_uv);
-            let inst = mesh::InstanceData::new(*model_matrix, flag, uv);
+            let mut inst = mesh::InstanceData::new(*model_matrix, flag, uv);
+            inst.flag_pad[2] = if self.world.get::<crate::config_2d::ColliderMarker>(*entity_id).is_some() {
+                1.0_f32
+            } else if self.world.get::<crate::config_2d::ExecutionAreaMarker>(*entity_id).is_some() {
+                2.0_f32
+            } else {
+                0.0_f32
+            };
             // Extender el último batch si coincide mesh (mismo UV rect viaja por instancia)
             let can_extend = batches.last().map_or(false, |b| b.mesh_idx == *mesh_idx);
             if can_extend {
@@ -1991,11 +2250,53 @@ self.active_animations.retain(|_, a| !a.finished);
             draw_calls += 1;
         }
 
+        // ── Snap hint pass (PNG en viewport 2D durante drag de gizmo) ──────
+        if let Some(hint_inst) = self.build_snap_hint_instance_2d() {
+            use wgpu::util::DeviceExt;
+            let hint_inst_buf = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label:    Some("snap-hint-inst-buf"),
+                contents: bytemuck::cast_slice(&[hint_inst]),
+                usage:    wgpu::BufferUsages::VERTEX,
+            });
+
+            if let Some(mesh) = self.meshes.get(self.canonical_quad_idx) {
+                let mut hint_pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("snap-hint-pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view:           &view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load:  wgpu::LoadOp::Load,
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                        view: &self.depth_view,
+                        depth_ops: Some(wgpu::Operations {
+                            load:  wgpu::LoadOp::Load,
+                            store: wgpu::StoreOp::Store,
+                        }),
+                        stencil_ops: None,
+                    }),
+                    occlusion_query_set:      None,
+                    timestamp_writes:         None,
+                });
+                hint_pass.set_pipeline(&self.render_pipeline_2d);
+                hint_pass.set_bind_group(0, &self.scene_bind_group, &[]);
+                hint_pass.set_bind_group(1, self.atlas.bind_group.as_ref(), &[]);
+                hint_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
+                hint_pass.set_vertex_buffer(1, hint_inst_buf.slice(..));
+                hint_pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                hint_pass.draw_indexed(0..mesh.index_count, 0, 0..1);
+                draw_calls += 1;
+            }
+        }
+
         // ── Gizmos (segundo pass, sin depth) ─────────────────────────────────
         // Ocultar gizmo durante el modo edición de pivot: las flechas de movimiento
         // robarían el foco e impedirían hacer click libremente sobre el asset.
         if !self.preview_playing {
-            if let Some(sel_id) = self.selected_entity.filter(|_| self.pivot_edit_mode.is_none()) {
+            if let Some(origin) = self.selection_center().filter(|_| self.pivot_edit_mode.is_none()) {
             let aspect   = self.size.width as f32 / self.size.height as f32;
             let vp = if let Some(cam2d) = &self.camera_2d {
                 cam2d.view_proj(aspect).to_cols_array_2d()
@@ -2003,10 +2304,8 @@ self.active_animations.retain(|_, a| !a.finished);
                 self.camera.to_uniform(aspect).view_proj
             };
 
-            // Situar el gizmo en el centro de la entidad seleccionada
-            let gizmo_model = self.world.get::<Transform>(sel_id)
-                .map(|t| glam::Mat4::from_translation(t.position))
-                .unwrap_or(glam::Mat4::IDENTITY);
+            // Situar el gizmo en el centro de selección (single o multi-select)
+            let gizmo_model = glam::Mat4::from_translation(origin);
 
             let gm = gizmo_model.to_cols_array_2d();
             let h_ax = self.hovered_gizmo_axis.map(|a| a as f32).unwrap_or(-1.0);

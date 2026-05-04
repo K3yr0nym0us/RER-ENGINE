@@ -241,7 +241,7 @@ struct App {
     left_click_pos:  Option<(f32, f32)>,  // posición al presionar
     // Drag de gizmo
     gizmo_drag_axis: Option<usize>,       // eje activo (0=X,1=Y,2=Z)
-    gizmo_drag_start: Option<(u32, [f32; 3], [f32; 4], [f32; 3])>,
+    gizmo_drag_start: Option<Vec<(u32, [f32; 3], [f32; 4], [f32; 3])>>,
     // Teclas modificadoras
     ctrl_held:       bool,                // Ctrl izquierdo o derecho presionado
     keyboard_mouse_pressed: HashSet<&'static str>,
@@ -444,6 +444,7 @@ impl ApplicationHandler<EngineCommand> for App {
                             self.left_click_pos = None;
                             self.gizmo_drag_axis = None;
                             state.set_active_gizmo_axis(None);
+                            state.set_snap_hint_visible(false);
                             return;
                         }
                         if pressed {
@@ -462,9 +463,16 @@ impl ApplicationHandler<EngineCommand> for App {
                                 self.gizmo_drag_axis = axis;
                                 if axis.is_some() {
                                     state.set_active_gizmo_axis(axis);
-                                    if let Some(sel_id) = state.selected_entity {
+                                    state.set_snap_hint_visible(state.camera_2d.is_some());
+                                    let selected_ids: Vec<u32> = if !state.selected_entities.is_empty() {
+                                        state.selected_entities.clone()
+                                    } else {
+                                        state.selected_entity.into_iter().collect()
+                                    };
+                                    let mut snapshots: Vec<(u32, [f32; 3], [f32; 4], [f32; 3])> = Vec::new();
+                                    for sel_id in selected_ids {
                                         if let Some(t) = state.world.get::<crate::ecs::Transform>(sel_id) {
-                                            self.gizmo_drag_start = Some((
+                                            snapshots.push((
                                                 sel_id,
                                                 t.position.to_array(),
                                                 [t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w],
@@ -472,7 +480,11 @@ impl ApplicationHandler<EngineCommand> for App {
                                             ));
                                         }
                                     }
+                                    self.gizmo_drag_start = Some(snapshots);
                                 }
+                            }
+                            if self.gizmo_drag_axis.is_none() {
+                                state.set_snap_hint_visible(false);
                             }
                             if self.gizmo_drag_axis.is_none() {
                                 // Guardar posición inicial del click izquierdo para picking normal
@@ -483,13 +495,25 @@ impl ApplicationHandler<EngineCommand> for App {
                                 // Fin del drag de gizmo
                                 self.gizmo_drag_axis = None;
                                 state.set_active_gizmo_axis(None);
-                                if let Some((id, pos, rot, scl)) = self.gizmo_drag_start.take() {
-                                    if let Some(t) = state.world.get::<crate::ecs::Transform>(id) {
-                                        let changed = t.position.to_array() != pos
-                                            || [t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w] != rot
-                                            || t.scale.to_array() != scl;
-                                        if changed {
+                                state.set_snap_hint_visible(false);
+                                if let Some(start_snapshots) = self.gizmo_drag_start.take() {
+                                    let mut changed_snapshots: Vec<(u32, [f32; 3], [f32; 4], [f32; 3])> = Vec::new();
+                                    for (id, pos, rot, scl) in start_snapshots {
+                                        if let Some(t) = state.world.get::<crate::ecs::Transform>(id) {
+                                            let changed = t.position.to_array() != pos
+                                                || [t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w] != rot
+                                                || t.scale.to_array() != scl;
+                                            if changed {
+                                                changed_snapshots.push((id, pos, rot, scl));
+                                            }
+                                        }
+                                    }
+                                    if !changed_snapshots.is_empty() {
+                                        if changed_snapshots.len() == 1 {
+                                            let (id, pos, rot, scl) = changed_snapshots[0];
                                             state.push_undo_transform(id, pos, rot, scl);
+                                        } else {
+                                            state.push_undo_transforms(changed_snapshots);
                                         }
                                     }
                                 }
@@ -499,6 +523,10 @@ impl ApplicationHandler<EngineCommand> for App {
                                     let dx = (cur.0 - start.0).abs();
                                     let dy = (cur.1 - start.1).abs();
                                     if dx < 5.0 && dy < 5.0 {
+                                        // Unificar estado de Ctrl justo antes del picking.
+                                        // Evita carreras cuando set_ctrl_held llega por IPC unos ms tarde.
+                                        let ctrl_active = self.ctrl_held || state.ctrl_held || query_ctrl_held_x11();
+                                        state.ctrl_held = ctrl_active;
                                         if state.camera_2d.is_some() {
                                             if state.pivot_edit_mode.is_some() {
                                                 state.handle_pivot_click_2d(cur.0, cur.1);
@@ -540,6 +568,7 @@ impl ApplicationHandler<EngineCommand> for App {
                     self.gizmo_drag_axis = None;
                     self.gizmo_drag_start = None;
                     state.set_active_gizmo_axis(None);
+                    state.set_snap_hint_visible(false);
                 }
                 if state.camera_2d.is_some() && !state.is_preview_playing() {
                     state.update_tool_overlay_cursor_2d(cur.0, cur.1);
@@ -605,6 +634,14 @@ impl ApplicationHandler<EngineCommand> for App {
                             let ctrl_active = self.ctrl_held || state.ctrl_held || query_ctrl_held_x11();
                             if ctrl_active {
                                 state.handle_command(EngineCommand::Undo);
+                            }
+                        }
+                    }
+                    KeyCode::KeyY => {
+                        if pressed && !repeat {
+                            let ctrl_active = self.ctrl_held || state.ctrl_held || query_ctrl_held_x11();
+                            if ctrl_active {
+                                state.handle_command(EngineCommand::Redo);
                             }
                         }
                     }

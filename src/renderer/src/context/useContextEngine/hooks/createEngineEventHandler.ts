@@ -151,7 +151,7 @@ export function createEngineEventHandler({
 						scale: entity.scale,
 					};
 					if (entity.kind === 'collider' && entity.points) {
-						sendEngine({ cmd: 'create_collider_from_points', points: entity.points } as never);
+						sendEngine({ cmd: 'create_collider_from_points', points: entity.points, track_undo: false } as never);
 					} else if (entity.kind === 'execution_area' && entity.points) {
 						const pendingRestore: PendingRestore = {
 							transform,
@@ -163,7 +163,7 @@ export function createEngineEventHandler({
 						const queue = refs.pendingRestoresRef.current.get('[ExecutionArea]') ?? [];
 						queue.push(pendingRestore);
 						refs.pendingRestoresRef.current.set('[ExecutionArea]', queue);
-						sendEngine({ cmd: 'create_execution_area_from_points', points: entity.points } as never);
+						sendEngine({ cmd: 'create_execution_area_from_points', points: entity.points, track_undo: false } as never);
 					} else if (entity.kind === 'character' && entity.path === '[Player]') {
 						refs.pendingPlayerDups.current.push(transform);
 					} else {
@@ -255,6 +255,7 @@ export function createEngineEventHandler({
 					id: playerReady.id,
 					position: save.playerTransform.position,
 					scale: save.playerTransform.scale,
+					track_undo: false,
 				} as never);
 				refs.entityTransformsRef.current[playerReady.id] = {
 					position: save.playerTransform.position,
@@ -289,7 +290,7 @@ export function createEngineEventHandler({
 					refs.entityMetaRef.current[scenario.id].name = pending.name;
 					window.engine.send({ cmd: 'set_entity_name', id: scenario.id, name: pending.name, force: true } as never);
 				}
-				window.engine.send({ cmd: 'set_transform', id: scenario.id, position: pending.transform.position, rotation: pending.transform.rotation, scale: pending.transform.scale } as never);
+				window.engine.send({ cmd: 'set_transform', id: scenario.id, position: pending.transform.position, rotation: pending.transform.rotation, scale: pending.transform.scale, track_undo: false } as never);
 				refs.entityTransformsRef.current[scenario.id] = pending.transform;
 				if (pending.physicsEnabled) {
 					window.engine.send({ cmd: 'set_physics', id: scenario.id, enabled: true, body_type: pending.physicsType } as never);
@@ -342,7 +343,7 @@ export function createEngineEventHandler({
 					}
 					window.engine.send({ cmd: 'set_entity_name', id, name: pending.name, force: true } as never);
 				}
-				window.engine.send({ cmd: 'set_transform', id, position: pending.transform.position, rotation: pending.transform.rotation, scale: pending.transform.scale } as never);
+				window.engine.send({ cmd: 'set_transform', id, position: pending.transform.position, rotation: pending.transform.rotation, scale: pending.transform.scale, track_undo: false } as never);
 				refs.entityTransformsRef.current[id] = pending.transform;
 
 				if (pending.physicsEnabled) {
@@ -405,7 +406,7 @@ export function createEngineEventHandler({
 					applyPendingRestore(character.id, character.path);
 					const duplicateTransform = refs.pendingDupQ.current.shift();
 					if (duplicateTransform) {
-						window.engine.send({ cmd: 'set_transform', id: character.id, position: duplicateTransform.position, rotation: duplicateTransform.rotation, scale: duplicateTransform.scale } as never);
+						window.engine.send({ cmd: 'set_transform', id: character.id, position: duplicateTransform.position, rotation: duplicateTransform.rotation, scale: duplicateTransform.scale, track_undo: false } as never);
 						refs.entityTransformsRef.current[character.id] = duplicateTransform;
 					}
 				}
@@ -471,7 +472,7 @@ export function createEngineEventHandler({
 			const queue = refs.pendingRestoresRef.current.get('[ExecutionArea]');
 			if (queue && queue.length > 0) {
 				const pending = queue.shift()!;
-				window.engine.send({ cmd: 'set_transform', id, position: pending.transform.position, rotation: pending.transform.rotation, scale: pending.transform.scale } as never);
+				window.engine.send({ cmd: 'set_transform', id, position: pending.transform.position, rotation: pending.transform.rotation, scale: pending.transform.scale, track_undo: false } as never);
 				refs.entityTransformsRef.current[id] = pending.transform;
 				if (pending.name && pending.name.trim().length > 0) {
 					refs.entityMetaRef.current[id].name = pending.name;
