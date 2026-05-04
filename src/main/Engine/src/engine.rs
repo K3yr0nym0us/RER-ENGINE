@@ -314,8 +314,11 @@ pub struct State {
     /// Animación actualmente en reproducción: entity_id → ActiveAnimation.
     pub(crate) active_animations: HashMap<u32, ActiveAnimation>,
     /// Override de flip horizontal por entidad para el playback actual.
-    /// Establecido por play_animation_flipped, limpiado al llamar play_animation normal.
+    /// Reservado para forzados internos del motor; por defecto el flip se resuelve automáticamente.
     pub(crate) anim_flip_overrides: HashMap<u32, bool>,
+    /// Dirección actual de mirada por entidad (true = derecha, false = izquierda).
+    /// Se actualiza automáticamente con movimiento horizontal en scripts.
+    pub(crate) entity_facing_right: HashMap<u32, bool>,
     /// Sistema de scripting Lua. Contiene la VM y los scripts adjuntos a entidades.
     pub(crate) script_engine: ScriptEngine,
     /// Almacén de sprites cargados (PNGs) para reutilización en el editor.
@@ -812,6 +815,7 @@ impl State {
             animations:            HashMap::new(),
             active_animations:     HashMap::new(),
             anim_flip_overrides:   HashMap::new(),
+            entity_facing_right:   HashMap::new(),
             script_engine: ScriptEngine::new()
                 .expect("Error al inicializar el motor de scripting Lua"),
             sprite_store: HashMap::new(),
@@ -1187,6 +1191,8 @@ impl State {
                 self.collider_entities.retain(|&e| e != id);
                 self.execution_area_entities.retain(|&e| e != id);
                 self.execution_overlaps.retain(|(trigger_id, actor_id)| *trigger_id != id && *actor_id != id);
+                self.anim_flip_overrides.remove(&id);
+                self.entity_facing_right.remove(&id);
                 self.script_engine.detach_entity(id);
                 self.world.despawn(id);
             }
@@ -1421,6 +1427,7 @@ EngineCommand::PlayAnimation { id, name } => {
                         // last_frame_time refleje el inicio real del frame 0, no el
                         // tiempo después de cargar texturas/audio (puede ser 50-200ms más tarde).
                         let frame_start = Instant::now();
+                        let effective_flip = self.resolve_animation_flip(id, &anim);
 
                         // Mostrar frame 0 (cache miss solo en el primer play)
                         if let Some(first_frame) = anim.frames.first() {
@@ -1432,7 +1439,7 @@ EngineCommand::PlayAnimation { id, name } => {
                                 anim.logical_w,
                                 anim.logical_h,
                                 first_frame.src_x.zip(first_frame.src_y).zip(first_frame.src_w.zip(first_frame.src_h)).map(|((x, y), (w, h))| (x, y, w, h)),
-                                anim.flip_horizontal,
+                                effective_flip,
                             );
                         }
 
@@ -1579,14 +1586,33 @@ EngineCommand::PlayAnimation { id, name } => {
         }
     }
 
+    fn update_entity_facing_from_horizontal(&mut self, entity_id: u32, horizontal: f32) {
+        const EPS: f32 = 0.0001;
+        if horizontal.abs() <= EPS {
+            return;
+        }
+        self.entity_facing_right.insert(entity_id, horizontal > 0.0);
+    }
+
+    fn resolve_animation_flip(&self, entity_id: u32, anim: &AnimationState) -> bool {
+        if let Some(forced_flip) = self.anim_flip_overrides.get(&entity_id) {
+            return *forced_flip;
+        }
+
+        // `anim.flip_horizontal` representa la orientación base de autoría:
+        // false = dibujada mirando derecha, true = dibujada mirando izquierda.
+        let facing_right = self.entity_facing_right.get(&entity_id).copied().unwrap_or(true);
+        let target_is_left = !facing_right;
+        anim.flip_horizontal ^ target_is_left
+    }
+
     fn show_first_frame_of_animation(&mut self, entity_id: u32, animation_name: &str) {
-        let flip_override = self.anim_flip_overrides.get(&entity_id).copied();
         let frame_data = self.animations
             .get(&entity_id)
             .and_then(|m| m.get(animation_name))
             .and_then(|anim| {
                 anim.frames.first().map(|first| {
-                    let flip = flip_override.unwrap_or(anim.flip_horizontal);
+                    let flip = self.resolve_animation_flip(entity_id, anim);
                     (
                         first.path.clone(),
                         first.pivot_x,
@@ -1673,12 +1699,11 @@ EngineCommand::PlayAnimation { id, name } => {
                 let anim_name = self.active_animations.get(&entity_id)
                     .map(|a| a.animation_name.clone())
                     .unwrap_or_default();
-                let flip_override = self.anim_flip_overrides.get(&entity_id).copied();
                 let anim = self.animations.get(&entity_id)
                     .and_then(|m| m.get(&anim_name))
                     .unwrap();
                 let f = &anim.frames[frame_idx];
-                let flip = flip_override.unwrap_or(anim.flip_horizontal);
+                let flip = self.resolve_animation_flip(entity_id, anim);
                 (
                     f.path.clone(),
                     f.pivot_x,
@@ -1846,6 +1871,10 @@ self.active_animations.retain(|_, a| !a.finished);
         for cmd in commands {
             match cmd {
                 ScriptCmd::SetPosition { id, x, y } => {
+                    let horizontal = self.world.get::<Transform>(id)
+                        .map(|t| x - t.position.x)
+                        .unwrap_or(0.0);
+                    self.update_entity_facing_from_horizontal(id, horizontal);
                     if let Some(t) = self.world.get_mut::<Transform>(id) {
                         t.position.x = x;
                         t.position.y = y;
@@ -1860,6 +1889,7 @@ self.active_animations.retain(|_, a| !a.finished);
                     self.physics_2d.teleport_entity(id, x, y);
                 }
                 ScriptCmd::Translate { id, dx, dy } => {
+                    self.update_entity_facing_from_horizontal(id, dx);
                     if let Some(t) = self.world.get_mut::<Transform>(id) {
                         t.position.x += dx;
                         t.position.y += dy;
@@ -1897,20 +1927,7 @@ self.active_animations.retain(|_, a| !a.finished);
                     let already_active = self.active_animations.get(&id)
                         .map(|a| a.animation_name == name)
                         .unwrap_or(false);
-                    // Limpiar override de flip al reproducir normal
-                    let had_flip_override = self.anim_flip_overrides.remove(&id).unwrap_or(false);
-                    if !already_active || had_flip_override {
-                        self.handle_command(EngineCommand::PlayAnimation { id, name });
-                    }
-                }
-                ScriptCmd::PlayAnimationFlipped { id, name } => {
-                    // Igual que PlayAnimation pero fuerza flip horizontal en la animación.
-                    let already_active = self.active_animations.get(&id)
-                        .map(|a| a.animation_name == name)
-                        .unwrap_or(false);
-                    let had_no_flip = !self.anim_flip_overrides.get(&id).copied().unwrap_or(false);
-                    self.anim_flip_overrides.insert(id, true);
-                    if !already_active || had_no_flip {
+                    if !already_active {
                         self.handle_command(EngineCommand::PlayAnimation { id, name });
                     }
                 }
@@ -1932,6 +1949,7 @@ self.active_animations.retain(|_, a| !a.finished);
                     }
                 }
                 ScriptCmd::MoveEntity { id, speed, dir_x, dir_y } => {
+                    self.update_entity_facing_from_horizontal(id, speed * dir_x);
                     // Aplica velocidad lineal al Rapier body usando shape cast para
                     // detectar obstáculos antes de aplicar. Si no tiene física activa,
                     // se aplica fallback por traslación directa para facilitar pruebas.

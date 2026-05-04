@@ -3,10 +3,17 @@ import { useEffect, useRef } from 'react'
 import { useContextEngine } from '@engine'
 
 const KEY_MAP: Record<string, string> = {
+  KeyQ: 'Q',
   KeyW: 'W',
+  KeyE: 'E',
+  KeyR: 'R',
   KeyA: 'A',
   KeyS: 'S',
   KeyD: 'D',
+  KeyF: 'F',
+  KeyZ: 'Z',
+  KeyX: 'X',
+  KeyC: 'C',
   Digit1: '1',
   Digit2: '2',
   Digit3: '3',

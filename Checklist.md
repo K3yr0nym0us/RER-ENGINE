@@ -20,191 +20,149 @@
 
 ---
 
-# 🧱 FASE 1 — Motor Rust (standalone, para validar render)
+# ✅ IMPLEMENTADO
 
-## Setup
+## Motor Rust — Setup y render base
 
 * ✅ Crear workspace Cargo en `Engine/` (`cargo init --name rer-engine`)
 * ✅ Dependencias: `winit`, `wgpu`, `raw-window-handle`, `serde`, `serde_json`, `gltf`, `image`
 * ✅ Estructura de módulos: `main.rs`, `engine.rs`, `ipc.rs`, `shader.wgsl`
-
-## Ventana y render (modo standalone)
-
 * ✅ Crear ventana propia con `winit::EventLoop` y `WindowBuilder`
 * ✅ Inicializar `wgpu`: `Instance` → `Surface` → `Adapter` → `Device` + `Queue`
 * ✅ Renderizar clear color configurable
 * ✅ Renderizar triángulo con vertex/fragment shader (WGSL)
 * ✅ Manejar evento `Resized` y reconfigurar `SurfaceConfiguration`
-
-## Game loop
-
 * ✅ `EventLoop::run` con separación `update()` / `render()`
 * ✅ Manejar `WindowEvent::CloseRequested`
 * ✅ Delta time básico (`std::time::Instant`)
 
-## Cámara básica
+## Motor Rust — Cámara
 
 * ✅ Struct `Camera` con posición, yaw, pitch
 * ✅ Matriz View (`glam::Mat4::look_at_rh`)
 * ✅ Matriz Projection (perspectiva, `glam::Mat4::perspective_rh`)
 * ✅ Uniform buffer en wgpu + bind group
 
----
-
-# 🔌 FASE 2 — Soporte para ventana embebida (clave)
-
-## Modo dual de arranque
+## Motor Rust — Ventana embebida e IPC
 
 * ✅ Parsear args: `--standalone` vs `--embed <window_id> <x> <y> <width> <height>`
-* ✅ En modo `--embed`: crear ventana hija usando el handle recibido
-  * Linux (X11): usar `XID` con `raw-window-handle::XlibWindowHandle`
-  * Windows: usar `HWND` con `raw-window-handle::Win32WindowHandle`
+* ✅ En modo `--embed`: crear ventana hija usando el handle recibido (X11/Win32)
 * ✅ `wgpu::Surface` creada desde el handle de la ventana hija
-* ✅ Sin decoraciones (`window.set_decorations(false)`)
-* ✅ Sin barra de título, borderless, no resizable (Electron controla el tamaño)
-
-## IPC — Protocolo stdin/stdout (JSON lines)
-
+* ✅ Sin decoraciones, borderless, no resizable (Electron controla el tamaño)
 * ✅ Hilo dedicado para leer stdin (`BufReader<stdin>`)
 * ✅ Deserializar cada línea como `EngineCommand` con `serde_json`
 * ✅ Enviar eventos al loop principal vía `mpsc::channel`
 * ✅ Responder por stdout con `println!("{}", serde_json::to_string(...))`
 
-### Comandos mínimos a soportar
-
-```jsonc
-// Motor → Electron (eventos)
-{ "event": "ready" }
-{ "event": "error", "message": "..." }
-
-// Electron → Motor (comandos)
-{ "cmd": "ping" }
-{ "cmd": "load_model", "path": "assets/cube.glb" }
-{ "cmd": "resize", "width": 800, "height": 600 }
-{ "cmd": "set_clear_color", "r": 0.1, "g": 0.1, "b": 0.15 }
-{ "cmd": "shutdown" }
-```
-
----
-
-# 📦 FASE 3 — Assets y escena
-
-## Carga de modelos
+## Motor Rust — Assets y escena
 
 * ✅ Loader `.glb` con crate `gltf` (solo mallas + materiales básicos)
 * ✅ Subir vértices e índices a `wgpu::Buffer`
 * ✅ Renderizar modelo con shader básico (Blinn-Phong o flat shading)
-
-## Texturas
-
 * ✅ Cargar imagen con crate `image` → `wgpu::Texture`
 * ✅ Bind group con sampler + texture view
 * ✅ Aplicar textura al modelo cargado
-
-## Escena mínima
-
 * ✅ Struct `Entity` con ID + `Transform` (posición, rotación, escala)
 * ✅ Struct `Scene` con `Vec<Entity>` + `HashMap<EntityId, MeshHandle>`
 * ✅ Crear y eliminar entidades desde comandos IPC
 
----
+## Motor Rust — ECS y física
 
-# 🪟 FASE 4 — Editor en Electron (React + TypeScript)
+* ✅ ECS funcional con almacenamiento denso por componente y query simple por tipo
+* ✅ ECS avanzado: queries multi-componente y evaluación de archetypes
+* ✅ Sistema de física (Rapier3D) integrado como `PhysicsWorld`
+* ✅ Físicas y colisiones 2D
+* ✅ Iluminación PBR (GGX + Fresnel-Schlick + Smith en `shader.wgsl`)
 
-## Setup del proyecto
+## Motor Rust — Optimizaciones de render
 
-* ✅ Inicializar en `UI/` con `electron-vite` → template `react-ts`
-* ✅ Configurar `tsconfig.json` (strict mode)
-* ✅ Instalar: `@types/node`, `electron-builder`
+* ✅ Instanced rendering — batch by (mesh_idx, bind_group)
+* ✅ Texture atlas — single 4096×4096 GPU texture via shelf packing
+* ✅ Frustum culling — 2D AABB + 3D sphere-plane testing
+* ✅ Render layers — explicit layer control + z-sorting
+* ✅ Particionado espacial (spatial grid, 5.0 world units per cell, O(k) lookup)
+* ✅ Rebuild de spatial grid en cada frame; `update_hover_2d` usa spatial grid para picking
+
+## Motor Rust — Debug y herramientas
+
+* ✅ Debug overlay runtime: FPS, frame time, draw calls, estado de física
+* ✅ El overlay puede activarse/desactivarse en runtime
+* ✅ Gizmos 3D interactivos (mover/rotar entidades desde la UI)
+* ✅ Hint visual de snap a grilla en viewport durante drag de gizmo
+
+## Motor Rust — Scripting y animaciones
+
+* ✅ Scripting Lua con sandbox (sin `io`, `os`, `require`) y lifecycle (`on_start`, `update`, `on_stop`)
+* ✅ Hooks de scripting para input/control y triggers (`on_press`, `on_trigger_enter`)
+* ✅ Hot reload de scripts/shaders/assets
+* ✅ Animaciones a base de frames para 2D
+
+## Editor (Electron + React + TypeScript)
+
+* ✅ Inicializar con `electron-vite` → template `react-ts`; `tsconfig.json` strict mode
 * ✅ Estructura: `src/main/`, `src/preload/`, `src/renderer/`
-
-## Main process (`src/main/index.ts`)
-
-* ✅ Crear `BrowserWindow` principal (frameless o con frame, a elección)
-* ✅ Obtener el XID nativo de la ventana principal: `mainWindow.getNativeWindowHandle()`
-* ✅ Spawner del motor: `child_process.spawn('./engine', ['--embed', xid, x, y, w, h])`
-* ✅ Pipe de stdin/stdout: `engine.stdin.write(...)` / `engine.stdout.on('data', ...)`
-* ✅ Reenviar comandos del renderer al motor via `ipcMain.on('engine:cmd', ...)`
-* ✅ Reenviar eventos del motor al renderer via `mainWindow.webContents.send('engine:event', ...)`
+* ✅ Crear `BrowserWindow` principal; obtener handle nativo con `getNativeWindowHandle()`
+* ✅ Spawner del motor: `child_process.spawn('./engine', ['--embed', ...])`
+* ✅ Pipe de stdin/stdout; reenvío de comandos y eventos via `ipcMain`/`webContents.send`
 * ✅ Al cerrar la app: enviar `{ "cmd": "shutdown" }` y esperar cierre del proceso
-
-## Preload (`src/preload/index.ts`)
-
-* ✅ Exponer API segura con `contextBridge`:
-  ```ts
-  window.engine = {
-    send: (cmd: EngineCommand) => ipcRenderer.send('engine:cmd', cmd),
-    on: (cb: (event: EngineEvent) => void) => ipcRenderer.on('engine:event', (_, e) => cb(e))
-  }
-  ```
+* ✅ Exponer API segura con `contextBridge` en preload
 * ✅ Tipos `EngineCommand` y `EngineEvent` en `src/shared/types.ts`
-
-## Renderer (`src/renderer/`)
-
-* ✅ Layout con flexbox: sidebar izquierdo + área de viewport central
-* ✅ El área de viewport es un `<div>` que reporta bounds vía `ResizeObserver` → el motor X11 renderiza encima
-* ✅ Estado: `engineReady: boolean`, `engineError: string|null`, `log: string[]` en `App.tsx`
-* ✅ Botón "Ping motor" y "Color de fondo aleatorio"
-* ✅ Panel de log: muestra eventos del motor en tiempo real
+* ✅ Layout con flexbox: sidebar + área de viewport central con `ResizeObserver`
 * ✅ Hook `useEngine()` extraído como módulo separado
-* ✅ Botón "Cargar modelo (.glb)" (abre `dialog.showOpenDialog`)
-* ✅ Componente `<SceneTree>`: lista entidades de la escena (stub)
-* ✅ Deshabilitar botones hasta que `engineReady === true`
+* ✅ Panel de log con eventos del motor en tiempo real
+* ✅ Botones: "Ping motor", "Color de fondo aleatorio", "Cargar modelo (.glb)"
+* ✅ Componente `<SceneTree>` con lista de entidades de la escena
+* ✅ Deshabilitar botones hasta `engineReady === true`
 
----
+## Editor — Funcionalidades avanzadas
 
-# 🔗 FASE 5 — Integración completa
+* ✅ Sistema de escenas múltiples: crear, renombrar, duplicar, eliminar y cambiar escena activa
+* ✅ Guardado/carga de proyecto como `.save` (ZIP con `manifest.json` + `assets/` + `sounds/` + `scripting/`)
+* ✅ Remapeo de rutas para portabilidad Windows/Linux al guardar/cargar
+* ✅ Multi-selección en editor (ctrl + click)
+* ✅ Undo/Redo para transformaciones y dibujo de colliders/triggers
+* ✅ Empaquetado multiplataforma (`electron-builder`)
 
-## Sincronización de viewport
+## Integración completa
 
-* ✅ Al redimensionar la ventana principal: calcular nuevo tamaño del viewport
-* ✅ Enviar `{ "cmd": "set_bounds", "x": x, "y": y, "width": w, "height": h }` al motor
-* ✅ Motor reconfigura `SurfaceConfiguration` y redibuja
-
-## Flujo de carga de modelo
-
-* ✅ Click "Load Model" → `dialog.showOpenDialog` filtra `.glb/.gltf`
-* ✅ Enviar `{ "cmd": "load_model", "path": "..." }` al motor
-* ✅ Motor responde `{ "event": "model_loaded", "id": 0 }` o `{ "event": "error" }`
-* ✅ UI actualiza `<SceneTree>` con la entidad creada
-
-## Manejo de errores
-
-* ✅ Si el proceso Rust muere: mostrar overlay de error en UI + botón "Reintentar"
+* ✅ Al redimensionar ventana: enviar `{ "cmd": "set_bounds", ... }` → motor reconfigura y redibuja
+* ✅ Flujo completo: click "Load Model" → `.glb` → modelo en motor → `<SceneTree>` actualizado
+* ✅ Si el proceso Rust muere: overlay de error + botón "Reintentar"
 * ✅ Si el motor no envía `ready` en 5s: timeout + mensaje de error
 
 ---
 
-# 🎯 MVP FINAL
+# 🔧 POR IMPLEMENTAR
 
-El sistema debe permitir:
+> Ordenado por prioridad descendente.
 
-* ✅ Abrir Electron → motor Rust se inicia automáticamente embebido
-* ✅ Motor renderiza dentro del área de viewport (sin ventana separada)
-* ✅ Click "Load Model" → seleccionar `.glb` → modelo aparece en el motor
-* ✅ Redimensionar ventana → viewport se ajusta correctamente
-* ✅ Cerrar Electron → proceso del motor termina limpiamente
+## Prioridad alta
+
+* [ ] **Físicas y colisiones 3D** — equivalente a lo ya implementado en 2D con Rapier3D
+* [ ] **Versionado y migraciones de formato `.save`** — el campo `version` existe pero faltan migraciones automáticas (⚠️ crítico en cuanto existan proyectos persistentes reales)
+  * DONE cuando cada cambio de formato incrementa `version`
+  * DONE cuando existe migración automática y testeada entre al menos dos versiones
+
+## Prioridad media
+
+* [ ] **Animaciones 3D** (clips/animator/state machine) — compatible con Blender; consolidadas en pipeline de proyecto
+* [ ] **Prefabs/blueprints** — guardar, instanciar y actualizar entidades reutilizables desde el editor sin trabajo manual repetitivo
+  * DONE cuando el flujo es visible y usable desde el editor
+
+## Prioridad baja
+
+* [ ] **Jerarquía de entidades parent/child** — a evaluar si se incorpora al diseño
+* [ ] **Evaluar optimizaciones de transporte IPC** — solo si aparecen bottlenecks medidos en escenas grandes
+
+## Descartado por ahora
+
+* ⏸️ Multiplayer
+* ⏸️ IA generativa (posible uso futuro en interpolación de animaciones)
+* ⏸️ Partículas / shaders experimentales (sin necesidad de producto concreta)
 
 ---
 
-# 🧠 POST-MVP (no implementar aún)
-
-* ✅ ECS completo (entidades/componentes desacoplados)
-* ✅ Sistema de física (Rapier3D) — integrado como `PhysicsWorld`, sin step activo en game loop aún
-* ✅ Iluminación PBR (physically based rendering) — GGX + Fresnel-Schlick + Smith en `shader.wgsl`
-* ✅ Gizmos 3D interactivos (mover/rotar entidades desde la UI)
-* ✅ Empaquetado multiplataforma (`electron-builder`)
-* ✅ Fisicas y colisiones 2D
-* [ ] Fisicas y colisiones 3D
-* [ ] Animaciones para el 3D (creo que con que sea compatible con las de blender basta)
-* ✅ Animaciones a base de frames para el 2D
-* ✅ Scripting (Lua o Python embebido)
-
-👉 Solo cuando el MVP esté estable y probado.
-
----
-
-# ⚠️ Notas técnicas importantes
+# ⚠️ Notas técnicas
 
 ## Window embedding por plataforma
 
@@ -218,7 +176,6 @@ El sistema debe permitir:
 
 ## Alternativa de fallback si el embedding falla
 
-Si el embedding nativo resulta demasiado complejo en una plataforma:
 1. Motor Rust abre su propia ventana (`--standalone`)
 2. Electron la reposiciona junto a la UI usando coordenadas de pantalla
 3. Migrar a embedding real post-MVP
@@ -237,96 +194,16 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 ```
 
----
-
-# 📋 ACTUALIZACION DE AUDITORIA (MAYO 2026)
-
-Resumen basado en la revision profunda del codigo (motor + editor + guardado).
-
-## 📍 Estado actual del engine (resumen)
+## Estado actual del engine (Mayo 2026)
 
 Nivel: base funcional + inicio de madurez.
 
 * Editor usable: ✅
-* Pipeline de assets/guardado: ⚠️ funcional, pero aun basico para crecimiento grande
-* Rendimiento: ❌ sin optimizacion de escala (batching/culling)
-* Escalabilidad de escena: ❌ limitada sin particionado espacial
+* Pipeline de assets/guardado: ⚠️ funcional, pero aún básico para crecimiento grande
+* Rendimiento: ✅ (instanced rendering, atlas, frustum culling implementados)
+* Escalabilidad de escena: ✅ (spatial grid implementado)
 
-## ✅ Confirmado en codigo (ya implementado)
-
-* ✅ Sistema de escenas multiples en editor: crear, renombrar, duplicar, eliminar y cambiar escena activa
-* ✅ Guardado/carga de proyecto como `.save` empaquetado: ZIP con `manifest.json` + `assets/` + `sounds/` + `scripting/`
-* ✅ Remapeo de rutas para portabilidad entre Windows/Linux al guardar/cargar
-* ✅ Scripting Lua con sandbox (sin `io`, `os`, `require`) y lifecycle (`on_start`, `update`, `on_stop`)
-* ✅ Hooks de scripting para input/control y triggers (`on_press`, `on_trigger_enter`)
-* ✅ ECS funcional con almacenamiento denso por componente y query simple por tipo
-
-## ⏸️ Descartado por ahora (fuera de foco actual)
-
-* ⏸️ Agregar features de bajo impacto en esta etapa (particulas, shaders experimentales sin necesidad de producto)
-* ⏸️ Multiplayer
-* ⏸️ IA generativa (fuera de foco actual; posible uso futuro en interpolación de animaciones)
-
-Motivo: priorizar madurez de engine, estabilidad y pipeline antes de expansion de features.
-
-## 🔧 Pendientes reales (segun impacto)
-
-### Prioridad alta (alineada a vision human-first)
-
-* ✅ Herramientas de debug runtime: overlay con FPS, frame time, draw calls y estado de fisica
-* ✅ Optimizacion de render de base: batching, texture atlas, frustum culling, render layers
-  * ✅ Step 2: Instanced rendering — batch by (mesh_idx, bind_group)
-  * ✅ Step 3: Texture atlas — single 4096×4096 GPU texture via shelf packing
-  * ✅ Step 4: Frustum culling — 2D AABB + 3D sphere-plane testing
-  * ✅ Step 5: Render layers — explicit layer control + z-sorting
-* ✅ Particionado espacial para escalado (quadtree/grid/BVH) en picking/render/fisicas
-* [ ] Prefabs/blueprints para productividad y reutilizacion real de logica
-
-### Prioridad media
-
-* ✅ ECS mas avanzado: queries multi-componente y evaluacion de archetypes
-* ✅ Hot reload de scripts/shaders/assets
-* ✅ multi-seleccion en editor (ctrl + click)
-* ✅ Undo/Redo de editor para transformaciones y dibujo de colliders/triggers
-* ✅ Hint visual de snap a grilla en viewport del motor durante drag de gizmo
-* [ ] Versionado y migraciones de formato `.save` (el campo `version` existe, faltan migraciones formales) (⚠️ Se vuelve crítico en cuanto existan proyectos persistentes reales)
-
-### Prioridad baja
-
-* [ ] Jerarquia de entidades parent/child
-* [ ] Animaciones 3D (clips/animator/state machine) consolidadas en pipeline de proyecto
-
-## 🔓 Bloqueadores y desbloqueos
-
-* Debug tools runtime → desbloquea optimizacion real basada en metricas
-* Optimizacion render base → desbloquea escenas mas grandes sin degradacion fuerte
-* Particionado espacial → desbloquea escalabilidad en picking/fisicas/render
-* Prefabs/blueprints → desbloquea workflow reusable y creacion de contenido consistente
-* Versionado/migraciones de `.save` → desbloquea evolucion segura del proyecto sin romper guardados
-
-## ✅ Criterio de DONE (minimo)
-
-* Debug overlay runtime
-  * DONE cuando muestra FPS + frame time + draw calls + estado de fisica
-  * DONE cuando puede activarse/desactivarse en runtime
-* Optimizacion render base
-  * ✅ DONE: Instanced rendering implementado (batch by mesh_idx + bind_group)
-  * ✅ DONE: Texture atlas implementado (4096×4096 single texture, all 2D/3D sprites packed)
-  * ✅ DONE: Frustum culling (is_visible_2d AABB + is_visible_3d sphere-plane)
-  * ✅ DONE: Render layers (RenderLayer component, sort by (layer, z))
-* Particionado espacial
-  * ✅ DONE: Spatial grid implementado (5.0 world units per cell, O(k) lookup)
-  * ✅ DONE: Rebuild en cada frame Paso 0
-  * ✅ DONE: update_hover_2d usa spatial grid para picking
-* Prefabs/blueprints
-  * DONE cuando una entidad reusable puede guardarse, instanciarse y actualizarse sin trabajo manual repetitivo
-  * DONE cuando su flujo es visible y usable desde el editor
-* Versionado/migraciones `.save`
-  * DONE cuando cada cambio de formato incrementa version
-  * DONE cuando existe migracion automatica y testeada entre al menos dos versiones
-
-## 📌 Decision de arquitectura vigente
+## Decisión de arquitectura vigente
 
 * ✅ Mantener arquitectura Electron (editor) + Rust (motor) por IPC
 * ⚠️ Vigilar volumen de eventos IPC para evitar cuellos de botella en escenas grandes
-* [ ] Evaluar optimizaciones de transporte a futuro (solo si aparecen bottlenecks medidos)

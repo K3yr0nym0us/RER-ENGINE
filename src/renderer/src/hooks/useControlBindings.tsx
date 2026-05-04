@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'react'
 
 import ScriptEditorModalBody from '../pages/EngineView/components/ScriptEditorModalBody'
-import { ControlBindingsModalBody } from '../pages/EngineView/components/sidebar/ControlsAccordion/ControlBindingsModalBody'
+import { ControlBindingsModalBody } from '../pages/EngineView/components/sidebar/ControlsAccordion/components/ControlBindingsModalBody'
 
 import { useContextEngine } from '@engine'
 import { useModal } from '@modal'

@@ -144,30 +144,13 @@ engine.play_animation(entity.id, "Run")
 engine.play_animation(entity.id, "Idle")
 ```
 
+El motor aplica el espejo horizontal automáticamente según la dirección en la
+que quedó mirando la entidad (detectada por el último movimiento horizontal).
+No es necesario llamar una función separada para flip.
+
 ---
 
-#### `engine.play_animation_flipped(id, name)`
-
-Reproduce una animación con flip horizontal aplicado en tiempo de ejecución. Útil para reutilizar una animación sin crear una copia espejada: basta con llamar `play_animation_flipped` cuando el personaje mira a la izquierda.
-
-| Parámetro | Tipo | Descripción |
-|-----------|------|-------------|
-| `id` | `number` | ID de la entidad |
-| `name` | `string` | Nombre de la animación definido en el editor |
-
-```lua
--- Script de movimiento: misma animación, distinta dirección
-if input_dir_x > 0 then
-  engine.play_animation(entity.id, "Run")         -- mira a la derecha
-else
-  engine.play_animation_flipped(entity.id, "Run") -- mira a la izquierda
-end
-
--- Ataque: depende de la última dirección, el script decide
-engine.play_animation_flipped(entity.id, "Attack")
-```
-
-> **Nota sobre orientación:** en el editor, cada animación tiene configurada su "Orientación" (Derecha / Izquierda). Ese dato es metadata para el desarrollador — indica cómo fue dibujada la animación en el sprite sheet. El flip real en render siempre viene de qué función se llama en Lua.
+> **Nota sobre orientación:** en el editor, cada animación tiene configurada su "Orientación" (Derecha / Izquierda). Ese dato representa la orientación base en que fue dibujada la animación y el motor decide automáticamente cuándo espejar en tiempo de ejecución.
 
 ---
 
@@ -273,7 +256,7 @@ function script.on_press(self, entity, key)
   end
   if key == "left" then
     engine.move_entity(entity.id, 5.0, -1.0, 0.0)
-    engine.play_animation_flipped(entity.id, "Run")
+    engine.play_animation(entity.id, "Run")
   end
   if key == "attack" then
     -- El flip de ataque depende de qué animación corría antes
@@ -316,7 +299,7 @@ function script.on_press(self, entity, key)
 
   if key == "left" then
     engine.move_entity(entity.id, 7.0, -1.0, 0.0)
-    engine.play_animation_flipped(entity.id, "Run")
+    engine.play_animation(entity.id, "Run")
   end
 
   if key == "jump" then

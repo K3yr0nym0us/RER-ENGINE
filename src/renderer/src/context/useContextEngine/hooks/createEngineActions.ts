@@ -170,7 +170,7 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 				frames: anim.frames,
 				fps: anim.fps,
 				loop_: anim.loop,
-				flip_horizontal: false,
+				flip_horizontal: !(anim.facing_right ?? true),
 				audio_path: anim.audio_path ?? null,
 				logical_w: anim.logical_w ?? 64,
 				logical_h: anim.logical_h ?? 64,

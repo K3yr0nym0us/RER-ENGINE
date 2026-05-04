@@ -122,26 +122,37 @@ fn query_ctrl_held_x11() -> bool {
 #[cfg(not(target_os = "linux"))]
 fn query_ctrl_held_x11() -> bool { false }
 
-fn map_keyboard_control_key(code: KeyCode) -> Option<&'static str> {
+/// Convierte un `KeyCode` de winit a la string de control usada en los bindings.
+///
+/// Usa el nombre del variant (via Debug) para mapear automáticamente cualquier tecla
+/// de letra (KeyA-KeyZ → "A"-"Z") y dígito (Digit0-Digit9 → "0"-"9") sin necesitar
+/// actualizar este archivo al agregar nuevas teclas en el frontend.
+fn map_keyboard_control_key(code: KeyCode) -> Option<String> {
+    let debug = format!("{code:?}");
+
+    // Letras: "KeyA" → "A", "KeyZ" → "Z"
+    if let Some(letter) = debug.strip_prefix("Key") {
+        if letter.len() == 1 && letter.as_bytes()[0].is_ascii_alphabetic() {
+            return Some(letter.to_uppercase());
+        }
+    }
+
+    // Dígitos: "Digit0" → "0", "Digit9" → "9"
+    if let Some(digit) = debug.strip_prefix("Digit") {
+        if digit.len() == 1 && digit.as_bytes()[0].is_ascii_digit() {
+            return Some(digit.to_string());
+        }
+    }
+
+    // Teclas especiales con nombre distinto al variant
     match code {
-        KeyCode::Digit1 => Some("1"),
-        KeyCode::Digit2 => Some("2"),
-        KeyCode::Digit3 => Some("3"),
-        KeyCode::Digit4 => Some("4"),
-        KeyCode::Digit5 => Some("5"),
-        KeyCode::Digit6 => Some("6"),
-        KeyCode::Digit7 => Some("7"),
-        KeyCode::Digit8 => Some("8"),
-        KeyCode::Digit9 => Some("9"),
-        KeyCode::Digit0 => Some("0"),
-        KeyCode::KeyW => Some("W"),
-        KeyCode::KeyA => Some("A"),
-        KeyCode::KeyS => Some("S"),
-        KeyCode::KeyD => Some("D"),
-        KeyCode::Space => Some("SPACE"),
-        KeyCode::ControlLeft | KeyCode::ControlRight => Some("CTRL"),
-        KeyCode::ShiftLeft | KeyCode::ShiftRight => Some("SHIFT"),
-        KeyCode::AltLeft | KeyCode::AltRight => Some("ALT"),
+        KeyCode::Space        => Some("SPACE".to_string()),
+        KeyCode::ControlLeft
+        | KeyCode::ControlRight => Some("CTRL".to_string()),
+        KeyCode::ShiftLeft
+        | KeyCode::ShiftRight   => Some("SHIFT".to_string()),
+        KeyCode::AltLeft
+        | KeyCode::AltRight     => Some("ALT".to_string()),
         _ => None,
     }
 }
@@ -244,7 +255,7 @@ struct App {
     gizmo_drag_start: Option<Vec<(u32, [f32; 3], [f32; 4], [f32; 3])>>,
     // Teclas modificadoras
     ctrl_held:       bool,                // Ctrl izquierdo o derecho presionado
-    keyboard_mouse_pressed: HashSet<&'static str>,
+    keyboard_mouse_pressed: HashSet<String>,
     // Input de mando (gamepad)
     gilrs:           Option<Gilrs>,
     gamepad_pressed: HashSet<GamepadButton>,
@@ -430,7 +441,7 @@ impl ApplicationHandler<EngineCommand> for App {
                 if state.is_preview_playing() {
                     if let Some(control_key) = map_mouse_control_key(button) {
                         if pressed {
-                            if self.keyboard_mouse_pressed.insert(control_key) {
+                            if self.keyboard_mouse_pressed.insert(control_key.to_string()) {
                                 emit_control_detected("keyboard_mouse", control_key);
                             }
                         } else {
@@ -617,11 +628,11 @@ impl ApplicationHandler<EngineCommand> for App {
                 if state.is_preview_playing() {
                     if let Some(control_key) = map_keyboard_control_key(code) {
                         if pressed {
-                            if self.keyboard_mouse_pressed.insert(control_key) {
-                                emit_control_detected("keyboard_mouse", control_key);
+                            if self.keyboard_mouse_pressed.insert(control_key.clone()) {
+                                emit_control_detected("keyboard_mouse", &control_key);
                             }
                         } else {
-                            self.keyboard_mouse_pressed.remove(control_key);
+                            self.keyboard_mouse_pressed.remove(&control_key);
                         }
                     }
                 }

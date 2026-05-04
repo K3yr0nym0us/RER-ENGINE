@@ -26,8 +26,6 @@ pub enum ScriptCmd {
     SetScale { id: u32, sx: f32, sy: f32 },
     /// Play a named animation on an entity.
     PlayAnimation { id: u32, name: String },
-    /// Play a named animation on an entity with horizontal flip applied.
-    PlayAnimationFlipped { id: u32, name: String },
     /// Stop the current animation on an entity.
     StopAnimation { id: u32 },
     /// Enable or disable physics on an entity.
@@ -433,16 +431,6 @@ impl ScriptEngine {
         }).expect("create play_animation fn");
         let _ = globals.set("__api_play_animation", play_animation);
 
-        // engine.play_animation_flipped(id, name)
-        let play_animation_flipped = lua.create_function(|lua_ctx, (id, name): (u32, String)| {
-            push_cmd(lua_ctx, "play_animation_flipped", |t| {
-                t.set("id",   id)?;
-                t.set("name", name)?;
-                Ok(())
-            })
-        }).expect("create play_animation_flipped fn");
-        let _ = globals.set("__api_play_animation_flipped", play_animation_flipped);
-
         // engine.stop_animation(id)
         let stop_animation = lua.create_function(|lua_ctx, id: u32| {
             push_cmd(lua_ctx, "stop_animation", |t| {
@@ -494,7 +482,6 @@ impl ScriptEngine {
         let _ = engine_table.set("translate",      globals.get::<LuaFunction>("__api_translate").ok());
         let _ = engine_table.set("set_scale",      globals.get::<LuaFunction>("__api_set_scale").ok());
         let _ = engine_table.set("play_animation", globals.get::<LuaFunction>("__api_play_animation").ok());
-        let _ = engine_table.set("play_animation_flipped", globals.get::<LuaFunction>("__api_play_animation_flipped").ok());
         let _ = engine_table.set("stop_animation", globals.get::<LuaFunction>("__api_stop_animation").ok());
         let _ = engine_table.set("set_physics",    globals.get::<LuaFunction>("__api_set_physics").ok());
         let _ = engine_table.set("move_entity",    globals.get::<LuaFunction>("__api_move_entity").ok());
@@ -618,10 +605,6 @@ fn parse_cmd_table(t: LuaTable) -> LuaResult<ScriptCmd> {
             sy: t.get("sy")?,
         }),
         "play_animation" => Ok(ScriptCmd::PlayAnimation {
-            id:   t.get("id")?,
-            name: t.get("name")?,
-        }),
-        "play_animation_flipped" => Ok(ScriptCmd::PlayAnimationFlipped {
             id:   t.get("id")?,
             name: t.get("name")?,
         }),
