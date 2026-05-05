@@ -119,7 +119,7 @@ fn start_audio_thread() -> Option<AudioSlot> {
                             sink.play();
                             sink.detach();
                         }
-                        log::info!("[audio] reproduciendo ({} muestras, {}ch, {}Hz, loop={})",
+                        log::debug!("[audio] reproduciendo ({} muestras, {}ch, {}Hz, loop={})",
                             audio.samples.len(), audio.channels, audio.sample_rate, loop_);
                     }
                 }
@@ -313,6 +313,8 @@ pub struct State {
     pub(crate) animations: HashMap<u32, HashMap<String, AnimationState>>,
     /// Animación actualmente en reproducción: entity_id → ActiveAnimation.
     pub(crate) active_animations: HashMap<u32, ActiveAnimation>,
+    /// Nombre de animación predeterminada por entidad.
+    pub(crate) default_animation_by_entity: HashMap<u32, String>,
     /// Override de flip horizontal por entidad para el playback actual.
     /// Reservado para forzados internos del motor; por defecto el flip se resuelve automáticamente.
     pub(crate) anim_flip_overrides: HashMap<u32, bool>,
@@ -814,6 +816,7 @@ impl State {
             anim_overrides:     std::collections::HashMap::new(),
             animations:            HashMap::new(),
             active_animations:     HashMap::new(),
+            default_animation_by_entity: HashMap::new(),
             anim_flip_overrides:   HashMap::new(),
             entity_facing_right:   HashMap::new(),
             script_engine: ScriptEngine::new()
@@ -1193,6 +1196,7 @@ impl State {
                 self.execution_overlaps.retain(|(trigger_id, actor_id)| *trigger_id != id && *actor_id != id);
                 self.anim_flip_overrides.remove(&id);
                 self.entity_facing_right.remove(&id);
+                self.default_animation_by_entity.remove(&id);
                 self.script_engine.detach_entity(id);
                 self.world.despawn(id);
             }
@@ -1206,6 +1210,10 @@ impl State {
                         t.scale = GlamVec3::new(self.grid_config.world_width, self.grid_config.world_height, 1.0);
                     }
                 }
+            }
+            EngineCommand::SetGravity { gravity } => {
+                self.physics_2d.set_gravity(-gravity.abs());
+                log::info!("[physics] Gravedad actualizada: -{:.2}", gravity.abs());
             }
             EngineCommand::SetGridVisible { visible } => {
                 self.grid_config.visible = visible;
@@ -1241,6 +1249,38 @@ impl State {
                     }
                     self.hovered_gizmo_axis = None;
                     self.active_gizmo_axis = None;
+
+                    // Al entrar en modo juego, reproducir la animación predeterminada
+                    // de cada entidad que tenga animaciones registradas.
+                    // Limpiar caché de scripts compilados para que ediciones en el editor surtan efecto.
+                    self.script_engine.clear_control_script_cache();
+                    let entities_with_anims: Vec<u32> = self.animations.keys().copied().collect();
+                    for entity_id in entities_with_anims {
+                        let default_name = self.default_animation_by_entity
+                            .get(&entity_id)
+                            .cloned()
+                            .or_else(|| {
+                                self.animations
+                                    .get(&entity_id)
+                                    .and_then(|m| m.keys().next().cloned())
+                            });
+                        if let Some(name) = default_name {
+                            self.handle_command(EngineCommand::PlayAnimation { id: entity_id, name });
+                        }
+                    }
+                } else {
+                    // Al volver al modo editor, detener todas las animaciones activas
+                    // y mostrar el primer frame de la animación correspondiente.
+                    let active: Vec<(u32, String)> = self.active_animations
+                        .iter()
+                        .map(|(&id, a)| (id, a.animation_name.clone()))
+                        .collect();
+                    self.active_animations.clear();
+                    for (entity_id, anim_name) in active {
+                        self.script_engine.detach_animation_scripts(entity_id);
+                        self.show_first_frame_of_animation(entity_id, &anim_name);
+                    }
+                    self.stop_audio_internal();
                 }
 
                 self.execution_overlaps.clear();
@@ -1402,7 +1442,22 @@ impl State {
                         logical_h,
                         scripts,
                     });
+                self.default_animation_by_entity
+                    .entry(id)
+                    .or_insert(name.clone());
                 log::debug!("[IPC] Animación '{}' guardada y pre-cargada para entidad {}", name, id);
+            }
+            EngineCommand::SetDefaultAnimation { id, name } => {
+                let exists = self.animations
+                    .get(&id)
+                    .map(|m| m.contains_key(&name))
+                    .unwrap_or(false);
+                if exists {
+                    self.default_animation_by_entity.insert(id, name.clone());
+                    log::debug!("[animation] predeterminada de entidad {} => {}", id, name);
+                } else {
+                    log::warn!("[animation] set_default_animation ignorado: '{}' no existe en entidad {}", name, id);
+                }
             }
 EngineCommand::PlayAnimation { id, name } => {
                 log::debug!("[IPC] PlayAnimation: entity_id={}, name='{}'", id, name);
@@ -1416,11 +1471,16 @@ EngineCommand::PlayAnimation { id, name } => {
                 match anim_opt {
                     None => log::warn!("[IPC] Animación '{}' no encontrada para entidad {}", name, id),
                     Some(anim) => {
-                        // Re-baseline del ancla al estado actual antes de reproducir.
-                        // Evita reutilizar un origen antiguo cuando la entidad fue movida
-                        // por física, gizmo o scripts entre reproducciones.
+                        // Re-baseline de posición al estado actual antes de reproducir.
+                        // La escala base se conserva para evitar acumulación al alternar
+                        // animaciones con distinto logical_h (grow/shrink progresivo).
                         if let Some(t) = self.world.get::<Transform>(id).cloned() {
-                            self.anim_saved_transforms.insert(id, (t.position, t.scale));
+                            self.anim_saved_transforms
+                                .entry(id)
+                                .and_modify(|saved| {
+                                    saved.0 = t.position;
+                                })
+                                .or_insert((t.position, t.scale));
                         }
 
                         // Capturar el tiempo ANTES del I/O de archivos para que
@@ -1476,9 +1536,22 @@ EngineCommand::PlayAnimation { id, name } => {
                 log::info!("[IPC] StopAnimation: entity_id={}", id);
                 self.anim_flip_overrides.remove(&id);
                 let stopped_animation_name = self.active_animations.remove(&id).map(|a| a.animation_name);
-                if let Some(name) = stopped_animation_name {
-                    // Al detener manualmente siempre dejamos visible el frame 0
-                    // de la animación activa para evitar volver a la hoja completa.
+                if self.preview_playing {
+                    let fallback_name = self.default_animation_by_entity
+                        .get(&id)
+                        .cloned()
+                        .or_else(|| {
+                            self.animations
+                                .get(&id)
+                                .and_then(|m| m.keys().next().cloned())
+                        });
+                    if let Some(name) = fallback_name {
+                        self.show_first_frame_of_animation(id, &name);
+                    } else {
+                        self.restore_animation_frame(id);
+                    }
+                } else if let Some(name) = stopped_animation_name {
+                    // En modo edición no hay fallback automático a la predeterminada.
                     self.show_first_frame_of_animation(id, &name);
                 } else {
                     self.restore_animation_frame(id);
@@ -1503,12 +1576,17 @@ EngineCommand::PlayAnimation { id, name } => {
                     return;
                 }
 
+                // Heurística de dirección basada en control horizontal.
+                match control_key.as_str() {
+                    "A" | "LEFT" | "D-LEFT" => { self.entity_facing_right.insert(id, false); }
+                    "D" | "RIGHT" | "D-RIGHT" => { self.entity_facing_right.insert(id, true); }
+                    _ => {}
+                }
+
                 let snapshot = self.build_script_snapshot(id);
                 match self.script_engine.run_control_script(id, &control_key, &path, &source, snapshot.as_ref()) {
                     Ok(commands) => self.apply_script_commands(commands),
-                    Err(e) => {
-                        log::error!("[control] Error ejecutando script '{}' ({}): {}", path, control_key, e);
-                    }
+                    Err(e) => log::error!("[control] Error ejecutando script '{}' ({}): {}", path, control_key, e),
                 }
             }
             EngineCommand::UnloadScript { id } => {
@@ -1720,7 +1798,24 @@ EngineCommand::PlayAnimation { id, name } => {
         for (entity_id, animation_name) in to_restore {
             // Desenganche de scripts de animación cuando una animación no-loop termina.
             self.script_engine.detach_animation_scripts(entity_id);
-            self.show_first_frame_of_animation(entity_id, &animation_name);
+            if self.preview_playing {
+                let fallback_name = self.default_animation_by_entity
+                    .get(&entity_id)
+                    .cloned()
+                    .or_else(|| {
+                        self.animations
+                            .get(&entity_id)
+                            .and_then(|m| m.keys().next().cloned())
+                    });
+                if let Some(fname) = fallback_name {
+                    self.handle_command(EngineCommand::PlayAnimation { id: entity_id, name: fname });
+                } else {
+                    self.show_first_frame_of_animation(entity_id, &animation_name);
+                }
+            } else {
+                // En modo edición no ejecutar fallback a animación predeterminada.
+                self.show_first_frame_of_animation(entity_id, &animation_name);
+            }
             // El audio no-looping se agota solo cuando las muestras PCM terminan.
             // No enviamos Stop aquí para evitar que sobrescriba un Play ya encolado
             // si el usuario dispara la siguiente animación justo al terminar esta.
@@ -1838,11 +1933,13 @@ self.active_animations.retain(|_, a| !a.finished);
                 } else {
                     (0.0, 0.0, 1.0, 1.0)
                 };
+                let facing_right = self.entity_facing_right.get(&id).copied().unwrap_or(true);
+                let facing_sign = if facing_right { 1.0 } else { -1.0 };
                 let animations: Vec<String> = self.animations
                     .get(&id)
                     .map(|m| m.keys().cloned().collect())
                     .unwrap_or_default();
-                map.insert(id, EntitySnapshot { id, x, y, scale_x, scale_y, animations });
+                map.insert(id, EntitySnapshot { id, x, y, scale_x, scale_y, facing_right, facing_sign, animations });
             }
             map
         };
@@ -1857,13 +1954,15 @@ self.active_animations.retain(|_, a| !a.finished);
         } else {
             (0.0, 0.0, 1.0, 1.0)
         };
+        let facing_right = self.entity_facing_right.get(&id).copied().unwrap_or(true);
+        let facing_sign = if facing_right { 1.0 } else { -1.0 };
 
         let animations: Vec<String> = self.animations
             .get(&id)
             .map(|m| m.keys().cloned().collect())
             .unwrap_or_default();
 
-        Some(EntitySnapshot { id, x, y, scale_x, scale_y, animations })
+        Some(EntitySnapshot { id, x, y, scale_x, scale_y, facing_right, facing_sign, animations })
     }
 
     /// Aplica los comandos generados por los scripts al estado del motor.
@@ -1931,6 +2030,9 @@ self.active_animations.retain(|_, a| !a.finished);
                         self.handle_command(EngineCommand::PlayAnimation { id, name });
                     }
                 }
+                ScriptCmd::SetDefaultAnimation { id, name } => {
+                    self.handle_command(EngineCommand::SetDefaultAnimation { id, name });
+                }
                 ScriptCmd::StopAnimation { id } => {
                     self.handle_command(EngineCommand::StopAnimation { id });
                 }
@@ -1983,8 +2085,48 @@ self.active_animations.retain(|_, a| !a.finished);
                         }
                     }
                 }
+                ScriptCmd::MoveEntityFacing { id, speed, amount_x, dir_y } => {
+                    let facing_right = self.entity_facing_right.get(&id).copied().unwrap_or(true);
+                    let facing_sign = if facing_right { 1.0 } else { -1.0 };
+                    let dir_x = amount_x.abs() * facing_sign;
+
+                    // Aplica velocidad lineal al Rapier body usando shape cast para
+                    // detectar obstáculos antes de aplicar. Si no tiene física activa,
+                    // se aplica fallback por traslación directa para facilitar pruebas.
+                    if self.preview_playing {
+                        let moved = self.physics_2d.move_physics_entity(id, speed, dir_x, dir_y, self.delta_time);
+                        if !moved {
+                            let dx = speed * dir_x * self.delta_time;
+                            let dy = speed * dir_y * self.delta_time;
+                            if let Some(t) = self.world.get_mut::<Transform>(id) {
+                                t.position.x += dx;
+                                t.position.y += dy;
+                            }
+                            if let Some(saved) = self.anim_saved_transforms.get_mut(&id) {
+                                saved.0.x += dx;
+                                saved.0.y += dy;
+                            }
+                            log::warn!("[script/move_entity_facing] entidad {} sin cuerpo físico activo — aplicado fallback translate", id);
+                        }
+                    } else {
+                        // En modo editor no corremos el step de físicas; para pruebas
+                        // manuales movemos por traslación directa respetando delta_time.
+                        let dx = speed * dir_x * self.delta_time;
+                        let dy = speed * dir_y * self.delta_time;
+                        if let Some(t) = self.world.get_mut::<Transform>(id) {
+                            t.position.x += dx;
+                            t.position.y += dy;
+                        }
+                        if let Some(saved) = self.anim_saved_transforms.get_mut(&id) {
+                            saved.0.x += dx;
+                            saved.0.y += dy;
+                        }
+                    }
+                }
                 ScriptCmd::Log { message } => {
-                    eprintln!("[script] {message}");
+                    // Evitar spam en stderr/frontend durante input continuo.
+                    // El mensaje queda disponible solo en nivel debug.
+                    log::debug!("[script] {message}");
                 }
             }
         }

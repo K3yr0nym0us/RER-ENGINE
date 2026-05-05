@@ -1,11 +1,13 @@
 use wgpu::util::DeviceExt;
 
 /// Textura en GPU lista para bindear: view + sampler.
+#[allow(dead_code)]
 pub struct GpuTexture {
     pub view:    wgpu::TextureView,
     pub sampler: wgpu::Sampler,
 }
 
+#[allow(dead_code)]
 impl GpuTexture {
     // ── Constructor desde bytes RGBA crudos ───────────────────────────────────
     pub fn from_rgba(

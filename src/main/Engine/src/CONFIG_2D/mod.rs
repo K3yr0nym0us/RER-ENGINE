@@ -1271,7 +1271,8 @@ impl State {
                     continue;
                 }
 
-                log::info!("[trigger] entrada detectada: trigger={} actor={}", trigger_id, actor_id);
+                log::debug!("[trigger] entrada detectada: trigger={} actor={}", trigger_id, actor_id);
+                crate::ipc::send_event(&crate::ipc::EngineEvent::TriggerEntered { trigger_id, actor_id: *actor_id });
 
                 let trigger_snapshot = self.build_script_snapshot(trigger_id);
                 let actor_snapshot = self.build_script_snapshot(*actor_id);
@@ -1285,6 +1286,17 @@ impl State {
                     Err(e) => log::warn!("[trigger] error ejecutando script en área {trigger_id}: {e}"),
                 }
             }
+        }
+
+        // Detectar salidas: pares que estaban pero ya no están
+        let exited: Vec<_> = self.execution_overlaps
+            .iter()
+            .filter(|pair| !next_overlaps.contains(*pair))
+            .cloned()
+            .collect();
+        for (trigger_id, actor_id) in exited {
+            log::debug!("[trigger] salida detectada: trigger={} actor={}", trigger_id, actor_id);
+            crate::ipc::send_event(&crate::ipc::EngineEvent::TriggerExited { trigger_id, actor_id });
         }
 
         self.execution_overlaps = next_overlaps;

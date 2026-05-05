@@ -110,6 +110,7 @@ export function EngineProvider({
 		setWorldSize: actions.setWorldSize,
 		setGridVisible: actions.setGridVisible,
 		setGridCellSize: actions.setGridCellSize,
+		setGravity: actions.setGravity,
 		removeCollider: actions.removeCollider,
 		removeExecutionArea: actions.removeExecutionArea,
 		updateEntityAnimations: actions.updateEntityAnimations,

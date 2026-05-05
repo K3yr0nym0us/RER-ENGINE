@@ -67,6 +67,7 @@ impl SpatialGrid {
     }
 
     /// Query: retorna todas las entidades en un rango AABB (para queries más amplias).
+    #[allow(dead_code)]
     pub fn query_aabb(&self, aabb: [f32; 4]) -> Vec<u32> {
         let gx_min = Self::world_to_grid(aabb[0]);
         let gy_min = Self::world_to_grid(aabb[1]);

@@ -6,7 +6,7 @@ import AppTooltip from '../../../../components/AppTooltip';
 import { useContextEngine } from '@engine';
 
 export function WorldAccordion() {
-  const { engineReady, worldConfig, backgroundPath, setWorldSize, setGridVisible, setGridCellSize, send } = useContextEngine()
+  const { engineReady, worldConfig, backgroundPath, setWorldSize, setGridVisible, setGridCellSize, setGravity, send } = useContextEngine()
   const [widthStr,  setWidthStr]  = useState(String(worldConfig.worldWidth))
   const [heightStr, setHeightStr] = useState(String(worldConfig.worldHeight))
 
@@ -98,6 +98,22 @@ export function WorldAccordion() {
           value={worldConfig.gridCellSize}
           disabled={!engineReady}
           onChange={(e) => setGridCellSize(parseFloat(e.target.value))}
+        />
+
+        <hr className="border-secondary my-2" />
+
+        <label className="form-label small text-secondary mb-1 d-flex justify-content-between" htmlFor="gravity-range">
+          <span>Gravedad</span>
+          <span className="text-info fw-bold">{(worldConfig.gravity ?? 9.81).toFixed(2)} u/s²</span>
+        </label>
+        <input
+          id="gravity-range"
+          type="range"
+          className="form-range mb-2"
+          min={0} max={50} step={0.5}
+          value={worldConfig.gravity ?? 9.81}
+          disabled={!engineReady}
+          onChange={(e) => setGravity(parseFloat(e.target.value))}
         />
       </Accordion.Body>
     </Accordion.Item>

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { Accordion } from 'react-bootstrap';
-import { Files, Pencil, PlayFill, StopFill, Trash } from 'react-bootstrap-icons';
+import { Pencil, PlayFill, StopFill, Trash } from 'react-bootstrap-icons';
 
 import AppTooltip from '../../../../../components/AppTooltip';
 import { CreateEntityFromSpriteModalBody } from '../EntitiesAccordion/components/CreateEntityFromSpriteModalBody';
@@ -25,6 +25,7 @@ interface Animation {
   name: string;
   fps: number;
   loop: boolean;
+  is_default?: boolean;
   facing_right?: boolean;
   logical_w: number;
   logical_h: number;
@@ -38,6 +39,41 @@ let animationIdCounter = 0;
 const createAnimationId = () => {
   animationIdCounter += 1;
   return `anim_${animationIdCounter}`;
+};
+
+const getFrameBounds = (anim: Animation) => {
+  const widths = anim.frames.map((f) => f.src_w ?? anim.logical_w ?? 64);
+  const heights = anim.frames.map((f) => f.src_h ?? anim.logical_h ?? 64);
+
+  return {
+    width: Math.max(1, ...widths),
+    height: Math.max(1, ...heights),
+  };
+};
+
+const resolveLogicalSizeFromReference = (
+  measuredWidth: number,
+  measuredHeight: number,
+  reference?: Animation,
+) => {
+  if (!reference) {
+    return {
+      logical_w: Math.max(1, Math.round(measuredWidth)),
+      logical_h: Math.max(1, Math.round(measuredHeight)),
+    };
+  }
+
+  const refBounds = getFrameBounds(reference);
+  const refLogicalW = Math.max(1, reference.logical_w ?? refBounds.width);
+  const refLogicalH = Math.max(1, reference.logical_h ?? refBounds.height);
+
+  const ratioW = refBounds.width / refLogicalW;
+  const ratioH = refBounds.height / refLogicalH;
+
+  return {
+    logical_w: Math.max(1, Math.round(measuredWidth / Math.max(0.0001, ratioW))),
+    logical_h: Math.max(1, Math.round(measuredHeight / Math.max(0.0001, ratioH))),
+  };
 };
 
 export function AnimationsPanel() {
@@ -95,19 +131,24 @@ export function AnimationsPanel() {
           sprites={sprites}
           previewTitle="Configurar animacion"
           onCreateEntity={({ spritePath, animation }) => {
-            const logicalW = Math.max(1, ...animation.frames.map((f) => f.width));
-            const logicalH = Math.max(1, ...animation.frames.map((f) => f.height));
-            const baseLogicalW = animations[0]?.logical_w ?? logicalW;
-            const baseLogicalH = animations[0]?.logical_h ?? logicalH;
+            const measuredW = Math.max(1, ...animation.frames.map((f) => f.width));
+            const measuredH = Math.max(1, ...animation.frames.map((f) => f.height));
+            const referenceAnimation = animations.find((a) => a.frames.length > 0);
+            const { logical_w, logical_h } = resolveLogicalSizeFromReference(
+              measuredW,
+              measuredH,
+              referenceAnimation,
+            );
 
             const newAnimation: Animation = {
               id: createAnimationId(),
               name: animation.name,
               fps: animation.fps,
               loop: animation.loop,
+              is_default: !animations.some((a) => a.is_default),
               facing_right: animation.facingRight,
-              logical_w: baseLogicalW,
-              logical_h: baseLogicalH,
+              logical_w,
+              logical_h,
               audio_path: animation.audioPath,
               scripts: animation.scripts,
               frames: animation.frames.map((f) => ({
@@ -121,13 +162,7 @@ export function AnimationsPanel() {
               })),
             };
 
-            const normalizedExisting = animations.map((a) => ({
-              ...a,
-              logical_w: baseLogicalW,
-              logical_h: baseLogicalH,
-            }));
-
-            const next = [...normalizedExisting, newAnimation];
+            const next = [...animations, newAnimation];
             syncAnimations(next);
             applyFirstFrame(newAnimation);
           }}
@@ -141,22 +176,6 @@ export function AnimationsPanel() {
       send({ cmd: 'stop_animation', id: entity?.id });
     }
     const next = animations.filter((_, i) => i !== index);
-    syncAnimations(next);
-  };
-
-  const duplicateAnimation = (index: number) => {
-    const anim = animations[index];
-    if (!anim) return;
-
-    const duplicated: Animation = {
-      ...anim,
-      id: createAnimationId(),
-      name: `${anim.name} copia`,
-      frames: anim.frames.map((frame) => ({ ...frame })),
-      scripts: anim.scripts?.map((script) => ({ ...script })),
-    };
-
-    const next = [...animations, duplicated];
     syncAnimations(next);
   };
 
@@ -246,21 +265,29 @@ export function AnimationsPanel() {
           initialFrames={initialFrames}
           initialFps={anim.fps}
           initialLoop={anim.loop}
+          initialIsDefaultAnimation={anim.is_default ?? false}
           initialFacingRight={anim.facing_right ?? true}
           initialAudioPath={anim.audio_path}
           initialScripts={anim.scripts}
           onConfirm={(config) => {
-            const logicalW = Math.max(1, ...config.frames.map((f) => f.width));
-            const logicalH = Math.max(1, ...config.frames.map((f) => f.height));
+            const measuredW = Math.max(1, ...config.frames.map((f) => f.width));
+            const measuredH = Math.max(1, ...config.frames.map((f) => f.height));
+            const referenceAnimation = animations.find((a, i) => i !== index && a.frames.length > 0) ?? anim;
+            const { logical_w, logical_h } = resolveLogicalSizeFromReference(
+              measuredW,
+              measuredH,
+              referenceAnimation,
+            );
 
             const updatedAnimation: Animation = {
               ...anim,
               name: config.animationName,
               fps: config.fps,
               loop: config.loop,
+              is_default: config.defaultAnimation,
               facing_right: config.facingRight,
-              logical_w: logicalW,
-              logical_h: logicalH,
+              logical_w,
+              logical_h,
               audio_path: config.audioPath,
               scripts: config.scripts,
               frames: config.frames.map((f) => ({
@@ -274,7 +301,11 @@ export function AnimationsPanel() {
               })),
             };
 
-            const next = animations.map((a, i) => (i === index ? updatedAnimation : a));
+            const next = animations.map((a, i) => {
+              if (i === index) return updatedAnimation;
+              if (config.defaultAnimation) return { ...a, is_default: false };
+              return a;
+            });
             syncAnimations(next);
             applyFirstFrame(updatedAnimation);
             closeModal();
@@ -339,19 +370,6 @@ export function AnimationsPanel() {
                       onKeyDown={canPlayOrEdit ? (e) => { if (e.key === 'Enter' || e.key === ' ') editAnimation(idx); } : undefined}
                     >
                       <Pencil />
-                    </span>
-                  </AppTooltip>
-
-                  <AppTooltip content="Duplicar animacion" place="top">
-                    <span
-                      role="button"
-                      tabIndex={0}
-                      className="text-info"
-                      style={{ cursor: 'pointer' }}
-                      onClick={() => duplicateAnimation(idx)}
-                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') duplicateAnimation(idx); }}
-                    >
-                      <Files />
                     </span>
                   </AppTooltip>
 

@@ -72,6 +72,11 @@ impl PhysicsWorld2D {
     /// Número de rigid bodies activos en el mundo físico 2D.
     pub(crate) fn body_count(&self) -> u32 { self.bodies.len() as u32 }
 
+    /// Cambia la gravedad del mundo físico 2D en el eje Y (negativo = hacia abajo).
+    pub(crate) fn set_gravity(&mut self, gravity_y: f32) {
+        self.gravity = vector![0.0, gravity_y, 0.0];
+    }
+
     // ── Gestión de cuerpos por entidad ────────────────────────────────────────
 
     /// Activa o desactiva física en una entidad 2D.

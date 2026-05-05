@@ -189,7 +189,9 @@ fn map_gamepad_control_key(button: GamepadButton) -> Option<&'static str> {
 }
 
 fn emit_control_detected(device: &'static str, control_key: &str) {
-    log::info!("\x1b[34m[control-input] detectado {device}:{control_key}\x1b[0m");
+    // Alta frecuencia: evitar spam en consola de dev/editor.
+    // Se mantiene en trace para depuración puntual.
+    log::trace!("[control-input] detectado {device}:{control_key}");
     ipc::send_event(&EngineEvent::ControlInputDetected {
         device: device.to_string(),
         control_key: control_key.to_string(),
@@ -767,9 +769,10 @@ fn main() {
     // en entornos sin GPU hardware — subirlos a error los silencia.
     env_logger::Builder::from_env(
         env_logger::Env::default().default_filter_or(
-            // wgpu_hal::gles genera spam de advertencias de rendimiento de buffers GPU
-            // (copy VIDEO→HOST memory) en cada frame — silenciamos a nivel error.
-            "info,wgpu_core=warn,wgpu_hal::vulkan=error,wgpu_hal::gles=error,wgpu_hal=warn,naga=warn",
+            // Por defecto dejamos solo advertencias/errores para un arranque limpio.
+            // Quien necesite más detalle puede usar RUST_LOG=info o RUST_LOG=debug.
+            // Además, wgpu_hal::gles/vulkan generan spam en algunos entornos.
+            "warn,wgpu_core=warn,wgpu_hal::vulkan=error,wgpu_hal::gles=error,wgpu_hal=warn,naga=warn",
         ),
     )
     .init();

@@ -35,6 +35,39 @@ export function createEngineEventHandler({
 	projectType,
 	applyInitialAnimationFrame,
 }: CreateEngineEventHandlerParams) {
+	const getAnimationFrameBounds = (anim: any) => {
+		const frames = Array.isArray(anim?.frames) ? anim.frames : [];
+		const widths = frames.map((f: any) => Number(f?.src_w ?? anim?.logical_w ?? 64));
+		const heights = frames.map((f: any) => Number(f?.src_h ?? anim?.logical_h ?? 64));
+
+		return {
+			width: Math.max(1, ...(widths.length > 0 ? widths : [anim?.logical_w ?? 64])),
+			height: Math.max(1, ...(heights.length > 0 ? heights : [anim?.logical_h ?? 64])),
+		};
+	};
+
+	const normalizeAnimationsForEntity = (animations: any[] | undefined) => {
+		if (!Array.isArray(animations) || animations.length === 0) return animations;
+
+		const reference = animations.find((anim) => Array.isArray(anim?.frames) && anim.frames.length > 0) ?? animations[0];
+		if (!reference) return animations;
+
+		const refBounds = getAnimationFrameBounds(reference);
+		const refLogicalW = Math.max(1, Number(reference.logical_w ?? refBounds.width));
+		const refLogicalH = Math.max(1, Number(reference.logical_h ?? refBounds.height));
+		const ratioW = refBounds.width / refLogicalW;
+		const ratioH = refBounds.height / refLogicalH;
+
+		return animations.map((anim) => {
+			const measured = getAnimationFrameBounds(anim);
+			return {
+				...anim,
+				logical_w: Math.max(1, Math.round(measured.width / Math.max(0.0001, ratioW))),
+				logical_h: Math.max(1, Math.round(measured.height / Math.max(0.0001, ratioH))),
+			};
+		});
+	};
+
 	const buildTransformFromPoints = (
 		points?: [[number, number], [number, number], [number, number], [number, number]],
 	): Transform | null => {
@@ -80,8 +113,27 @@ export function createEngineEventHandler({
 	};
 
 	return (event: RuntimeEngineEvent) => {
-		// debug_metrics es de alta frecuencia (≤1 Hz); no se registra en la consola.
-		if (event.event !== 'debug_metrics') {
+		// Eventos de alta frecuencia: se procesan normalmente, pero no se
+		// imprimen en la consola del panel para evitar spam visual.
+		const silentEvents = new Set([
+			'debug_metrics',
+			'control_input_detected',
+			'animation_finished',
+			'ready',
+			'player_ready',
+			'character_loaded',
+			'sprite_loaded',
+			'background_loaded',
+			'scenario_loaded',
+			'collider_created',
+			'execution_area_created',
+			'entity_deselected',
+			'entity_hovered',
+			'entity_unhovered',
+			'entity_selected',
+			'physics_changed',
+		]);
+		if (!silentEvents.has(event.event)) {
 			addLog(JSON.stringify(event), event.event === 'error');
 		}
 
@@ -130,6 +182,9 @@ export function createEngineEventHandler({
 					sendEngine({ cmd: 'set_world_size', width: save.world.worldWidth, height: save.world.worldHeight } as never);
 					sendEngine({ cmd: 'set_grid_visible', visible: save.world.gridVisible } as never);
 					sendEngine({ cmd: 'set_grid_cell_size', size: save.world.gridCellSize } as never);
+					if (save.world.gravity != null) {
+						sendEngine({ cmd: 'set_gravity', gravity: save.world.gravity } as never);
+					}
 				}
 				if (save.camera2d) {
 					sendEngine({ cmd: 'set_camera2d', x: save.camera2d.x, y: save.camera2d.y, half_h: save.camera2d.halfH } as never);
@@ -298,8 +353,9 @@ export function createEngineEventHandler({
 					refs.entityMetaRef.current[scenario.id].physicsType = pending.physicsType;
 				}
 				if (pending.animations) {
-					refs.entityMetaRef.current[scenario.id].animations = pending.animations;
-					for (const anim of pending.animations) {
+					const normalizedAnimations = normalizeAnimationsForEntity(pending.animations) ?? pending.animations;
+					refs.entityMetaRef.current[scenario.id].animations = normalizedAnimations;
+					for (const anim of normalizedAnimations) {
 						window.engine.send({
 							cmd: 'set_animation',
 							id: scenario.id,
@@ -314,9 +370,13 @@ export function createEngineEventHandler({
 							scripts: anim.scripts ?? [],
 						} as never);
 					}
+					const defaultAnim = normalizedAnimations.find((anim: any) => anim?.is_default) ?? normalizedAnimations[0];
+					if (defaultAnim?.name) {
+						window.engine.send({ cmd: 'set_default_animation', id: scenario.id, name: defaultAnim.name } as never);
+					}
 					// Si la entidad usa una animación de un solo frame (objeto estático),
 					// aplicar el primer frame de inmediato para que quede visible al cargar.
-					applyInitialAnimationFrame(scenario.id, pending.animations);
+					applyInitialAnimationFrame(scenario.id, normalizedAnimations);
 				}
 				if (pending.scripts) {
 					refs.entityMetaRef.current[scenario.id].scripts = pending.scripts;
@@ -356,10 +416,11 @@ export function createEngineEventHandler({
 				}
 
 				if (pending.animations) {
+					const normalizedAnimations = normalizeAnimationsForEntity(pending.animations) ?? pending.animations;
 					if (refs.entityMetaRef.current[id]) {
-						refs.entityMetaRef.current[id].animations = pending.animations;
+						refs.entityMetaRef.current[id].animations = normalizedAnimations;
 					}
-					for (const anim of pending.animations) {
+					for (const anim of normalizedAnimations) {
 						window.engine.send({
 							cmd: 'set_animation',
 							id,
@@ -374,7 +435,11 @@ export function createEngineEventHandler({
 							scripts: anim.scripts ?? [],
 						} as never);
 					}
-					applyInitialAnimationFrame(id, pending.animations);
+					const defaultAnim = normalizedAnimations.find((anim: any) => anim?.is_default) ?? normalizedAnimations[0];
+					if (defaultAnim?.name) {
+						window.engine.send({ cmd: 'set_default_animation', id, name: defaultAnim.name } as never);
+					}
+					applyInitialAnimationFrame(id, normalizedAnimations);
 				}
 
 				if (pending.scripts) {

@@ -88,6 +88,8 @@ pub enum EngineCommand {
     RemoveEntity { id: u32 },
     /// Definir el tamaño del área de trabajo del mundo (unidades de mundo).
     SetWorldSize { width: f32, height: f32 },
+    /// Cambiar la gravedad del mundo físico (valor Y negativo = hacia abajo).
+    SetGravity { gravity: f32 },
     /// Mostrar u ocultar la cuadrícula del mundo.
     SetGridVisible { visible: bool },
     /// Cambiar el tamaño de cada celda de la cuadrícula.
@@ -145,6 +147,8 @@ pub enum EngineCommand {
         #[serde(default)]
         scripts:    Vec<AnimScriptData>,
     },
+    /// Definir la animación predeterminada de una entidad.
+    SetDefaultAnimation { id: u32, name: String },
     /// Reproducir una animación guardada por ID de entidad y nombre.
     /// El motor busca en su almacén de animaciones — el front no necesita
     /// reenviar los datos de frames en cada reproducción.
@@ -269,6 +273,10 @@ pub enum EngineEvent {
         draw_calls:     u32,
         physics_bodies: u32,
     },
+    /// Emitido cuando un actor entra en un área de ejecución (trigger).
+    TriggerEntered { trigger_id: u32, actor_id: u32 },
+    /// Emitido cuando un actor sale de un área de ejecución (trigger).
+    TriggerExited { trigger_id: u32, actor_id: u32 },
 }
 
 /// Información básica de un sprite almacenado en el motor.

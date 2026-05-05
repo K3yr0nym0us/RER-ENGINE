@@ -24,6 +24,7 @@ interface SpritePreviewConfirmConfig {
   frames: SpriteFrameRect[];
   fps: number;
   loop: boolean;
+  defaultAnimation: boolean;
   facingRight: boolean;
   audioPath?: string;
   scripts: ScriptEntry[];
@@ -37,6 +38,7 @@ export function SpritePreviewModalBody({
   initialFrames,
   initialFps,
   initialLoop,
+  initialIsDefaultAnimation,
   initialFacingRight,
   initialAudioPath,
   initialScripts,
@@ -48,6 +50,7 @@ export function SpritePreviewModalBody({
   initialFrames?: SpriteFrameRect[]
   initialFps?: number
   initialLoop?: boolean
+  initialIsDefaultAnimation?: boolean
   initialFacingRight?: boolean
   initialAudioPath?: string
   initialScripts?: ScriptEntry[]
@@ -60,6 +63,7 @@ export function SpritePreviewModalBody({
   const { imageSrc, imageSize } = useSpritePreviewImage(src);
   const [state, dispatch] = useReducer(spritePreviewReducer, initialSpritePreviewState);
   const [facingRight, setFacingRight] = useState(true);
+  const [isDefaultAnimation, setIsDefaultAnimation] = useState(false);
   const [defaultPivotNormalized] = useState<{ x: number; y: number }>({ x: 0.5, y: 0.5 });
   const selectedPreviewFrameIndexRef = useRef(0);
   const [pivotByFrameIndex, setPivotByFrameIndex] = useState<Record<number, { x: number; y: number }>>({});
@@ -96,6 +100,10 @@ export function SpritePreviewModalBody({
   useEffect(() => {
     setFacingRight(initialFacingRight ?? true);
   }, [initialFacingRight]);
+
+  useEffect(() => {
+    setIsDefaultAnimation(initialIsDefaultAnimation ?? false);
+  }, [initialIsDefaultAnimation]);
 
   const handleAddAudio = async () => {
     const path = await window.electronAPI.openAudioDialog();
@@ -215,6 +223,7 @@ export function SpritePreviewModalBody({
       frames: framesWithPivot,
       fps,
       loop: isLooping,
+      defaultAnimation: isDefaultAnimation,
       facingRight,
       audioPath,
       scripts,
@@ -286,6 +295,8 @@ export function SpritePreviewModalBody({
                 },
               });
             }}
+            isDefaultAnimation={isDefaultAnimation}
+            onDefaultAnimationChange={setIsDefaultAnimation}
             fps={fps}
             onFpsChange={(value) => dispatch({ type: 'patch', payload: { fps: value } })}
             isLooping={isLooping}

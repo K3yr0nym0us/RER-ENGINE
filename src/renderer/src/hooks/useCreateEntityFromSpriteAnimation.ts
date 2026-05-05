@@ -48,6 +48,7 @@ export function useCreateEntityFromSpriteAnimation(loadCmd: LoadCmd) {
       name: payload.animation.name,
       fps: payload.animation.fps,
       loop: payload.animation.loop,
+      is_default: true,
       facing_right: payload.animation.facingRight ?? true,
       logical_w: logicalW,
       logical_h: logicalH,

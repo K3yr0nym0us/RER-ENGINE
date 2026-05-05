@@ -26,6 +26,8 @@ pub enum ScriptCmd {
     SetScale { id: u32, sx: f32, sy: f32 },
     /// Play a named animation on an entity.
     PlayAnimation { id: u32, name: String },
+    /// Set the default animation name for an entity.
+    SetDefaultAnimation { id: u32, name: String },
     /// Stop the current animation on an entity.
     StopAnimation { id: u32 },
     /// Enable or disable physics on an entity.
@@ -35,6 +37,10 @@ pub enum ScriptCmd {
     /// collisions naturally. `speed` is in world units/second; `dir_x`/`dir_y`
     /// form the movement direction (normalized internally).
     MoveEntity { id: u32, speed: f32, dir_x: f32, dir_y: f32 },
+    /// Move a physics-enabled entity using current facing.
+    /// `amount_x` is a positive horizontal magnitude that will be applied
+    /// automatically to the side the entity is currently facing.
+    MoveEntityFacing { id: u32, speed: f32, amount_x: f32, dir_y: f32 },
     /// Log a message to the engine console (forwarded via IPC).
     Log { message: String },
 }
@@ -62,6 +68,10 @@ pub struct EntitySnapshot {
     pub y:        f32,
     pub scale_x:  f32,
     pub scale_y:  f32,
+    /// true = facing right, false = facing left.
+    pub facing_right: bool,
+    /// Horizontal sign derived from facing_right (right=1.0, left=-1.0).
+    pub facing_sign: f32,
     /// Names of animations available for this entity.
     pub animations: Vec<String>,
 }
@@ -73,6 +83,9 @@ pub struct ScriptEngine {
     lua: Lua,
     /// entity_id → list of scripts attached to it.
     scripts: HashMap<u32, Vec<Script>>,
+    /// Compiled control script functions cached by path.
+    /// Avoids recompiling Lua source on every input frame (same as Godot's bytecode cache).
+    control_script_cache: HashMap<String, mlua::RegistryKey>,
 }
 
 impl ScriptEngine {
@@ -95,6 +108,7 @@ impl ScriptEngine {
         Ok(Self {
             lua,
             scripts: HashMap::new(),
+            control_script_cache: HashMap::new(),
         })
     }
 
@@ -224,6 +238,13 @@ impl ScriptEngine {
         self.scripts.keys().copied().collect()
     }
 
+    /// Clear the compiled control script cache.
+    /// Call this when starting a new game session so edited scripts are recompiled.
+    pub fn clear_control_script_cache(&mut self) {
+        self.control_script_cache.clear();
+        log::debug!("[scripting] caché de control scripts limpiada");
+    }
+
     /// Executes a control script on-demand (triggered by runtime input).
     /// The chunk can return a table with `on_press(self, entity, control_key)`
     /// or execute direct `engine.*` API calls inline.
@@ -246,14 +267,35 @@ impl ScriptEngine {
 
         let entity_table = self.build_entity_table(entity_id, snapshot)?;
 
-        let eval_result = self.lua.load(source).set_name(path).eval::<LuaValue>();
+        // Get or compile the script as a cached Lua function.
+        // Godot-style: compile once, reuse every frame — eliminates per-frame Lua parsing.
+        let func: LuaFunction = if let Some(key) = self.control_script_cache.get(path) {
+            match self.lua.registry_value(key) {
+                Ok(f) => f,
+                Err(_) => {
+                    // Registry entry stale — recompile.
+                    self.control_script_cache.remove(path);
+                    let f = self.lua.load(source).set_name(path).into_function()?;
+                    let new_key = self.lua.create_registry_value(f.clone())?;
+                    self.control_script_cache.insert(path.to_string(), new_key);
+                    f
+                }
+            }
+        } else {
+            let f = self.lua.load(source).set_name(path).into_function()?;
+            let new_key = self.lua.create_registry_value(f.clone())?;
+            self.control_script_cache.insert(path.to_string(), new_key);
+            f
+        };
+
+        let eval_result = func.call::<LuaValue>(());
         match eval_result {
             Ok(LuaValue::Table(table)) => {
                 call_fn_control(&table, "on_press", entity_table, control_key)?;
             }
             Ok(_) => {}
-            Err(_) => {
-                self.lua.load(source).set_name(path).exec()?;
+            Err(e) => {
+                log::warn!("[control] Error ejecutando script '{}': {}", path, e);
             }
         }
 
@@ -431,6 +473,16 @@ impl ScriptEngine {
         }).expect("create play_animation fn");
         let _ = globals.set("__api_play_animation", play_animation);
 
+        // engine.set_default_animation(id, name)
+        let set_default_animation = lua.create_function(|lua_ctx, (id, name): (u32, String)| {
+            push_cmd(lua_ctx, "set_default_animation", |t| {
+                t.set("id",   id)?;
+                t.set("name", name)?;
+                Ok(())
+            })
+        }).expect("create set_default_animation fn");
+        let _ = globals.set("__api_set_default_animation", set_default_animation);
+
         // engine.stop_animation(id)
         let stop_animation = lua.create_function(|lua_ctx, id: u32| {
             push_cmd(lua_ctx, "stop_animation", |t| {
@@ -466,6 +518,20 @@ impl ScriptEngine {
         }).expect("create move_entity fn");
         let _ = globals.set("__api_move_entity", move_entity);
 
+        // engine.move_entity_facing(id, speed, amount_x, dir_y)
+        // amount_x siempre es magnitud positiva; el motor aplica la dirección
+        // según el facing actual de la entidad.
+        let move_entity_facing = lua.create_function(|lua_ctx, (id, speed, amount_x, dir_y): (u32, f32, f32, f32)| {
+            push_cmd(lua_ctx, "move_entity_facing", |t| {
+                t.set("id",       id)?;
+                t.set("speed",    speed)?;
+                t.set("amount_x", amount_x)?;
+                t.set("dir_y",    dir_y)?;
+                Ok(())
+            })
+        }).expect("create move_entity_facing fn");
+        let _ = globals.set("__api_move_entity_facing", move_entity_facing);
+
         // engine.log(msg)
         let log_fn = lua.create_function(|lua_ctx, msg: String| {
             push_cmd(lua_ctx, "log", |t| {
@@ -482,9 +548,11 @@ impl ScriptEngine {
         let _ = engine_table.set("translate",      globals.get::<LuaFunction>("__api_translate").ok());
         let _ = engine_table.set("set_scale",      globals.get::<LuaFunction>("__api_set_scale").ok());
         let _ = engine_table.set("play_animation", globals.get::<LuaFunction>("__api_play_animation").ok());
+        let _ = engine_table.set("set_default_animation", globals.get::<LuaFunction>("__api_set_default_animation").ok());
         let _ = engine_table.set("stop_animation", globals.get::<LuaFunction>("__api_stop_animation").ok());
         let _ = engine_table.set("set_physics",    globals.get::<LuaFunction>("__api_set_physics").ok());
         let _ = engine_table.set("move_entity",    globals.get::<LuaFunction>("__api_move_entity").ok());
+        let _ = engine_table.set("move_entity_facing", globals.get::<LuaFunction>("__api_move_entity_facing").ok());
         let _ = engine_table.set("log",            globals.get::<LuaFunction>("__api_log").ok());
         let _ = globals.set("engine", engine_table);
 
@@ -497,6 +565,8 @@ impl ScriptEngine {
             let _ = t.set("y",       snap.y);
             let _ = t.set("scale_x", snap.scale_x);
             let _ = t.set("scale_y", snap.scale_y);
+            let _ = t.set("facing_right", snap.facing_right);
+            let _ = t.set("facing_sign", snap.facing_sign);
             let anims = lua.create_table().expect("anims table");
             for (i, name) in snap.animations.iter().enumerate() {
                 let _ = anims.set(i + 1, name.as_str());
@@ -515,6 +585,8 @@ impl ScriptEngine {
             t.set("y",       s.y)?;
             t.set("scale_x", s.scale_x)?;
             t.set("scale_y", s.scale_y)?;
+            t.set("facing_right", s.facing_right)?;
+            t.set("facing_sign", s.facing_sign)?;
             let anims = self.lua.create_table()?;
             for (i, name) in s.animations.iter().enumerate() {
                 anims.set(i + 1, name.as_str())?;
@@ -608,6 +680,10 @@ fn parse_cmd_table(t: LuaTable) -> LuaResult<ScriptCmd> {
             id:   t.get("id")?,
             name: t.get("name")?,
         }),
+        "set_default_animation" => Ok(ScriptCmd::SetDefaultAnimation {
+            id:   t.get("id")?,
+            name: t.get("name")?,
+        }),
         "stop_animation" => Ok(ScriptCmd::StopAnimation {
             id: t.get("id")?,
         }),
@@ -621,6 +697,12 @@ fn parse_cmd_table(t: LuaTable) -> LuaResult<ScriptCmd> {
             speed: t.get("speed")?,
             dir_x: t.get("dir_x")?,
             dir_y: t.get("dir_y")?,
+        }),
+        "move_entity_facing" => Ok(ScriptCmd::MoveEntityFacing {
+            id:       t.get("id")?,
+            speed:    t.get("speed")?,
+            amount_x: t.get("amount_x")?,
+            dir_y:    t.get("dir_y")?,
         }),
         "log" => Ok(ScriptCmd::Log {
             message: t.get("message")?,

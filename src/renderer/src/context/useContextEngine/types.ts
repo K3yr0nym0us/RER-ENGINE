@@ -18,6 +18,7 @@ export interface SelectedEntity {
 		name: string
 		fps: number
 		loop: boolean
+		is_default?: boolean
 		facing_right?: boolean
 		logical_w: number
 		logical_h: number
@@ -48,6 +49,7 @@ export interface WorldConfig {
 	worldHeight: number
 	gridVisible: boolean
 	gridCellSize: number
+	gravity: number
 }
 
 export const DEFAULT_WORLD_CONFIG: WorldConfig = {
@@ -55,6 +57,7 @@ export const DEFAULT_WORLD_CONFIG: WorldConfig = {
 	worldHeight: 50,
 	gridVisible: true,
 	gridCellSize: 1,
+	gravity: 9.81,
 };
 
 export interface EngineState {
@@ -299,6 +302,7 @@ export interface EngineContextValue extends EngineState {
 	setWorldSize: (width: number, height: number) => void
 	setGridVisible: (visible: boolean) => void
 	setGridCellSize: (size: number) => void
+	setGravity: (gravity: number) => void
 	removeCollider: (id: number) => void
 	removeExecutionArea: (id: number) => void
 	updateEntityAnimations: (id: number, animations: any[]) => void

@@ -145,6 +145,11 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 		send({ cmd: 'set_grid_cell_size', size });
 	};
 
+	const setGravity = (gravity: number) => {
+		dispatch({ type: 'SET_WORLD_CONFIG', payload: { gravity } });
+		send({ cmd: 'set_gravity', gravity });
+	};
+
 	const removeCollider = (id: number) => {
 		send({ cmd: 'remove_entity', id });
 		dispatch({ type: 'REMOVE_COLLIDER', payload: id });
@@ -176,6 +181,11 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 				logical_h: anim.logical_h ?? 64,
 				scripts: anim.scripts ?? [],
 			} as never);
+		}
+
+		const defaultAnim = animations.find((anim) => anim?.is_default) ?? animations[0];
+		if (defaultAnim?.name) {
+			window.engine.send({ cmd: 'set_default_animation', id, name: defaultAnim.name } as never);
 		}
 	};
 
@@ -239,6 +249,7 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 		setWorldSize,
 		setGridVisible,
 		setGridCellSize,
+		setGravity,
 		removeCollider,
 		removeExecutionArea,
 		updateEntityAnimations,

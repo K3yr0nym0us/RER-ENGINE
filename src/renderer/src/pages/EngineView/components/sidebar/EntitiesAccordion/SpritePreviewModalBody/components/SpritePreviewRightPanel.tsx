@@ -17,6 +17,8 @@ interface SpritePreviewRightPanelProps {
   onRemoveBox?: (index: number) => void;
   animationName: string;
   onAnimationNameChange: (value: string) => void;
+  isDefaultAnimation: boolean;
+  onDefaultAnimationChange: (value: boolean) => void;
   fps: number;
   onFpsChange: (value: number) => void;
   isLooping: boolean;
@@ -84,6 +86,8 @@ export function SpritePreviewRightPanel({
   onRemoveBox,
   animationName,
   onAnimationNameChange,
+  isDefaultAnimation,
+  onDefaultAnimationChange,
   fps,
   onFpsChange,
   isLooping,
@@ -328,6 +332,18 @@ export function SpritePreviewRightPanel({
             value={animationName}
             onChange={(e) => onAnimationNameChange(e.target.value)}
           />
+          <div className="form-check mt-2">
+            <input
+              className="form-check-input"
+              type="checkbox"
+              id="default-animation-check"
+              checked={isDefaultAnimation}
+              onChange={(e) => onDefaultAnimationChange(e.target.checked)}
+            />
+            <label className="form-check-label small" htmlFor="default-animation-check">
+              Animacion predeterminada
+            </label>
+          </div>
         </div>
       )}
     </div>
