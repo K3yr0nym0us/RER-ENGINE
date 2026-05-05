@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useReducer, useRef } from 'react';
+import React, { createContext, useContext, useEffect, useReducer, useRef } from 'react';
 import type { ProjectSaveData } from '@shared-types';
 import { createEngineActions } from './hooks/createEngineActions';
 import { useEngineEffects } from './hooks/useEngineEffects';
@@ -44,6 +44,7 @@ export function EngineProvider({
 		pendingPlayerDups: useRef<Transform[]>([]),
 		pendingDupQ: useRef<Transform[]>([]),
 		pivotEditListenerRef: useRef<((framePath: string, px: number, py: number) => void) | null>(null),
+		quickBuildClickListenerRef: useRef<((x: number, y: number) => void) | null>(null),
 		pendingEventsRef: useRef<Map<string, { resolve: (value: any) => void }>>(new Map()),
 	};
 
@@ -90,6 +91,15 @@ export function EngineProvider({
 		applyInitialAnimationFrame: actions.applyInitialAnimationFrame,
 	});
 
+	// Cargar blueprints desde el guardado inicial al montar
+	useEffect(() => {
+		const saved = refs.initialSaveRef.current;
+		if (saved?.blueprints && saved.blueprints.length > 0) {
+			actions.setBlueprints(saved.blueprints);
+		}
+	// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, []);
+
 	const value: EngineContextValue = {
 		...state,
 		entityTransformsRef: refs.entityTransformsRef,
@@ -123,6 +133,10 @@ export function EngineProvider({
 		loadCharacter: actions.loadCharacter,
 		setPreviewPlaying: actions.setPreviewPlaying,
 		setBackground: actions.setBackground,
+		addBlueprint: actions.addBlueprint,
+		setBlueprints: actions.setBlueprints,
+		registerQuickBuildClickListener: actions.registerQuickBuildClickListener,
+		unregisterQuickBuildClickListener: actions.unregisterQuickBuildClickListener,
 	};
 
 	return (

@@ -114,6 +114,8 @@ export interface ProjectSaveData {
   savedAt:         string   // ISO timestamp
   /** Sprites precargados en el proyecto (nombre -> ruta relativa). */
   sprites?:        Array<{ name: string; path: string }>
+  /** Blueprints creados en el proyecto. */
+  blueprints?:     BluePrintEntry[]
 }
 
 export interface OpenProjectResult {
@@ -127,7 +129,7 @@ export interface EngineCommand {
 }
 
 export interface EngineEvent {
-  event: 'ready' | 'pong' | 'error' | 'model_loaded' | 'stopped' | 'entity_selected' | 'entity_deselected' | 'entity_hovered' | 'entity_unhovered' | 'scenario_loaded' | 'character_loaded' | 'player_ready' | 'camera_2d_updated' | 'background_loaded' | 'drawing_progress' | 'collider_created' | 'execution_area_created' | 'tool_cancelled' | 'pivot_selected' | 'physics_changed' | 'sprite_loaded' | 'sprite_removed' | 'sprites_list' | 'control_input_detected' | 'debug_metrics' | 'trigger_entered' | 'trigger_exited'
+  event: 'ready' | 'pong' | 'error' | 'model_loaded' | 'stopped' | 'entity_selected' | 'entity_deselected' | 'entity_hovered' | 'entity_unhovered' | 'scenario_loaded' | 'character_loaded' | 'player_ready' | 'camera_2d_updated' | 'background_loaded' | 'drawing_progress' | 'collider_created' | 'execution_area_created' | 'tool_cancelled' | 'pivot_selected' | 'physics_changed' | 'sprite_loaded' | 'sprite_removed' | 'sprites_list' | 'control_input_detected' | 'debug_metrics' | 'trigger_entered' | 'trigger_exited' | 'entity_removed' | 'quick_build_move' | 'quick_build_click'
   [key: string]: unknown
 }
 
@@ -248,6 +250,23 @@ export interface SpriteInfo {
   name:   string
   width:  number
   height: number
+}
+
+export type BluePrintCategory = 'personaje' | 'entorno' | 'objetos'
+
+export interface BluePrintEntry {
+  /** Identificador único generado al crear el blueprint. */
+  id:               string
+  name:             string
+  category:         BluePrintCategory
+  kind:             'scenario' | 'character' | 'model' | 'collider' | 'execution_area'
+  path:             string
+  scale:            [number, number, number]
+  physics_enabled?: boolean
+  physics_type?:    string
+  animations?:      SavedAnimation[]
+  scripts?:         SavedScript[]
+  control_bindings?: SavedControlBindings
 }
 
 export interface ViewportBounds {

@@ -483,6 +483,16 @@ function collectAssetPaths(data: ProjectSaveData): Set<string> {
     }
   })
 
+  for (const bp of data.blueprints ?? []) {
+    add(bp.path)
+    for (const anim of bp.animations ?? []) {
+      add(anim.audio_path)
+      for (const frame of anim.frames) {
+        add(frame.path)
+      }
+    }
+  }
+
   return paths
 }
 
@@ -668,6 +678,18 @@ function remapPaths(data: ProjectSaveData, map: Map<string, string>): ProjectSav
       })),
       entities: scene.entities.map(mapEntity),
     })),
+    blueprints: data.blueprints?.map((bp) => ({
+      ...bp,
+      path: remap(bp.path) as string,
+      animations: bp.animations?.map((anim) => ({
+        ...anim,
+        audio_path: remap(anim.audio_path) as string | undefined,
+        frames: anim.frames.map((f) => ({
+          ...f,
+          path: remap(f.path) as string,
+        })),
+      })),
+    })),
   }
 }
 
@@ -769,6 +791,18 @@ function resolveLoadedPaths(data: ProjectSaveData, extractedDir: string): Projec
         path: resolve(s.path) as string,
       })),
       entities: scene.entities.map(mapEntity),
+    })),
+    blueprints: data.blueprints?.map((bp) => ({
+      ...bp,
+      path: resolve(bp.path) as string,
+      animations: bp.animations?.map((anim) => ({
+        ...anim,
+        audio_path: resolve(anim.audio_path) as string | undefined,
+        frames: anim.frames.map((f) => ({
+          ...f,
+          path: resolve(f.path) as string,
+        })),
+      })),
     })),
   }
 }

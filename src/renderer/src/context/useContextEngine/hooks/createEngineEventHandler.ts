@@ -132,6 +132,7 @@ export function createEngineEventHandler({
 			'entity_unhovered',
 			'entity_selected',
 			'physics_changed',
+			'quick_build_move',
 		]);
 		if (!silentEvents.has(event.event)) {
 			addLog(JSON.stringify(event), event.event === 'error');
@@ -564,6 +565,17 @@ export function createEngineEventHandler({
 		if (event.event === 'pivot_selected') {
 			const pivot = event as unknown as PivotSelected;
 			refs.pivotEditListenerRef.current?.(pivot.frame_path, pivot.pivot_x, pivot.pivot_y);
+		}
+
+		if (event.event === 'quick_build_click') {
+			const e = event as unknown as { x: number; y: number };
+			refs.quickBuildClickListenerRef.current?.(e.x, e.y);
+		}
+
+		if (event.event === 'entity_removed') {
+			const e = event as unknown as { id: number };
+			delete refs.entityMetaRef.current[e.id];
+			delete refs.entityTransformsRef.current[e.id];
 		}
 
 		if (event.event === 'animation_finished') {

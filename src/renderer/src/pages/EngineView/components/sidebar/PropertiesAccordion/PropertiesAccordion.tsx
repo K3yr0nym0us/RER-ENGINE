@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
 
 import { Accordion } from 'react-bootstrap';
-import { Check2Square, Files, Pencil, Trash } from 'react-bootstrap-icons';
+import { CircleSquare, Check2Square, Files, Pencil, Trash } from 'react-bootstrap-icons';
 
 import AppTooltip from '../../../../../components/AppTooltip';
 import { TransformPanel, AnimationsPanel, ScriptingPanel } from '.';
 
 import { useContextEngine } from '@engine';
 import { useModal } from '@modal';
+import type { BluePrintCategory, BluePrintEntry } from '@shared-types';
 
 export function PropertiesAccordion({ projectType }: { projectType?: string }) {
   const { 
@@ -23,6 +24,7 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
     duplicateCharacter,
     removeCollider,
     removeExecutionArea,
+    addBlueprint,
   } = useContextEngine()
 
   const { openModal, closeModal } = useModal();
@@ -246,21 +248,75 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
         </Accordion>
       )}
 
-      <div className="d-flex gap-2 mt-3 pt-2 border-top border-secondary">
+      <div className="mt-3 pt-2 border-top border-secondary">
         <button
-          className="btn btn-sm btn-outline-secondary flex-fill"
-          onClick={handleDuplicate}
+          className="btn btn-sm btn-outline-primary w-100 mb-2"
+          onClick={() => {
+            const meta = entityMetaRef.current[selectedEntity.id];
+            const kind = meta?.kind ?? 'model';
+            const category: BluePrintCategory =
+              kind === 'character' ? 'personaje' :
+              kind === 'scenario'  ? 'entorno'   : 'objetos';
+
+            const handleConfirm = () => {
+              const transform = entityTransformsRef.current[selectedEntity.id];
+              const entry: BluePrintEntry = {
+                id:               `bp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+                name:             selectedEntity.name,
+                category,
+                kind,
+                path:             meta?.path ?? '',
+                scale:            transform?.scale ?? [1, 1, 1],
+                physics_enabled:  meta?.physicsEnabled,
+                physics_type:     meta?.physicsType,
+                animations:       meta?.animations,
+                scripts:          meta?.scripts,
+                control_bindings: meta?.controlBindings,
+              };
+              addBlueprint(entry);
+              closeModal();
+            };
+
+            openModal({
+              title: 'Crear Blueprint',
+              body: (
+                <div className="text-center">
+                  <CircleSquare size={40} className="text-primary mb-3" />
+                  <p>Se creará un <strong>Blueprint</strong> basado en la entidad <strong>{selectedEntity.name}</strong>.</p>
+                  <p className="text-secondary small">El Blueprint guardará toda la configuración actual de la entidad: transformaciones, física, animaciones y scripts.</p>
+                  <p className="text-secondary small">Se guardará en la categoría <strong>{category}</strong>.</p>
+                  <div className="d-flex justify-content-center gap-2 mt-4">
+                    <button className="btn btn-primary" onClick={handleConfirm}>
+                      Confirmar
+                    </button>
+                    <button className="btn btn-secondary" onClick={closeModal}>
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
+              ),
+            });
+          }}
         >
-          <Files className="me-2" />
-          Duplicar
+          <CircleSquare className="me-2" />
+          Crear Blueprint
         </button>
-        <button
-          className="btn btn-sm btn-outline-danger flex-fill"
-          onClick={handleRemove}
-        >
-          <Trash className="me-2" />
-          Eliminar
-        </button>
+        <div className="d-flex gap-2">
+          <button
+            className="btn btn-sm btn-outline-secondary flex-fill"
+            onClick={handleDuplicate}
+          >
+            <Files className="me-2" />
+            Duplicar
+          </button>
+          <button
+            className="btn btn-sm btn-outline-danger flex-fill"
+            onClick={handleRemove}
+          >
+            <Trash className="me-2" />
+            Eliminar
+          </button>
+        </div>
       </div>
     </div>
   )

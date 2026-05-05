@@ -268,6 +268,8 @@ pub struct State {
     pub(crate) ctrl_held:        bool,
     /// Herramienta de dibujo activa en modo 2D.
     pub        active_tool:      ActiveTool,
+    /// Entidad fantasma para previsualizar el blueprint a colocar (Quick Build mode).
+    pub(crate) quick_build_ghost_id: Option<EntityId>,
     /// true = modo juego (simulación), false = modo editor.
     pub        preview_playing:  bool,
     /// Buffer de overlay de la herramienta activa (cruces + líneas de construcción).
@@ -799,6 +801,7 @@ impl State {
             grid_buffer_uni,
             ctrl_held: false,
             active_tool: ActiveTool::None,
+            quick_build_ghost_id: None,
             preview_playing: false,
             tool_overlay_buffer: tool_overlay_buffer_init,
             snap_hint_uv,
@@ -1106,8 +1109,15 @@ impl State {
                     _         => log::info!("SetScene: escena '{}' no reconocida", scene),
                 }
             }
-            EngineCommand::LoadScenario { path } => {
+            EngineCommand::LoadScenario { path, track_undo } => {
                 self.load_scenario(&path);
+                if track_undo.unwrap_or(false) {
+                    if let Some(&id) = self.scenario_entities.last() {
+                        self.undo_stack.push(UndoAction::RemoveEntity { id });
+                        self.redo_stack.clear();
+                        log::info!("[quick_build] escenario {id} registrado en undo");
+                    }
+                }
             }
             EngineCommand::SetScenarioScale { id, scale } => {
                 let marker = self.world.get::<crate::config_2d::ScenarioMarker>(id).cloned();
@@ -1123,8 +1133,15 @@ impl State {
             EngineCommand::DuplicateScenario { id } => {
                 self.duplicate_scenario(id);
             }
-            EngineCommand::LoadCharacter { path } => {
+            EngineCommand::LoadCharacter { path, track_undo } => {
                 self.load_character(&path);
+                if track_undo.unwrap_or(false) {
+                    if let Some(&id) = self.character_entities.last() {
+                        self.undo_stack.push(UndoAction::RemoveEntity { id });
+                        self.redo_stack.clear();
+                        log::info!("[quick_build] personaje {id} registrado en undo");
+                    }
+                }
             }
             EngineCommand::SetCharacterScale { id, scale } => {
                 self.set_character_scale(id, scale);
@@ -1199,6 +1216,7 @@ impl State {
                 self.default_animation_by_entity.remove(&id);
                 self.script_engine.detach_entity(id);
                 self.world.despawn(id);
+                send_event(&EngineEvent::EntityRemoved { id });
             }
             EngineCommand::SetWorldSize { width, height } => {
                 self.grid_config.world_width  = width.max(1.0);
@@ -1327,13 +1345,21 @@ impl State {
                     if enabled { "activada" } else { "desactivada" }, id, body_type);
                 send_event(&EngineEvent::PhysicsChanged { entity_id: id, enabled, body_type });
             }
-            EngineCommand::SetActiveTool { tool } => {
+            EngineCommand::SetActiveTool { tool, preview_path, preview_kind, preview_scale, preview_src_rect } => {
                 if tool.is_empty() {
+                    // Limpiar entidad fantasma de quick_build si existía
+                    if let Some(ghost_id) = self.quick_build_ghost_id.take() {
+                        self.world.despawn(ghost_id);
+                    }
                     self.active_tool = ActiveTool::None;
                     self.tool_overlay_buffer = gizmo::build_from_vertices(&self.device, &[]);
                     send_event(&EngineEvent::ToolCancelled);
                     log::info!("Herramienta cancelada");
                 } else {
+                    // Limpiar entidad fantasma previa si la hay
+                    if let Some(ghost_id) = self.quick_build_ghost_id.take() {
+                        self.world.despawn(ghost_id);
+                    }
                     match tool.as_str() {
                         "draw_collider" => {
                             self.active_tool = ActiveTool::DrawCollider { points_world: Vec::new(), cursor_world: None };
@@ -1342,6 +1368,15 @@ impl State {
                         "draw_execution_area" => {
                             self.active_tool = ActiveTool::DrawExecutionArea { points_world: Vec::new(), cursor_world: None };
                             log::info!("Herramienta activa: dibujar área de ejecución (4 puntos)");
+                        }
+                        "quick_build_place" => {
+                            self.active_tool = ActiveTool::QuickBuildPlace { cursor_world: None };
+                            self.tool_overlay_buffer = crate::gizmo::build_from_vertices(&self.device, &[]);
+                            // Cargar entidad fantasma si se proporcionaron datos del blueprint
+                            if let (Some(path), Some(kind), Some(scale)) = (preview_path.as_deref(), preview_kind.as_deref(), preview_scale) {
+                                self.quick_build_ghost_id = self.load_quick_build_ghost(path, kind, scale, preview_src_rect);
+                            }
+                            log::info!("Herramienta activa: construcción rápida");
                         }
                         _ => log::warn!("Herramienta desconocida: {}", tool),
                     }

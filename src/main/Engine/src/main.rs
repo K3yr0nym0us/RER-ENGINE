@@ -461,10 +461,14 @@ impl ApplicationHandler<EngineCommand> for App {
                             return;
                         }
                         if pressed {
+                            // En modo quick_build_place los clicks son capturados por la herramienta;
+                            // no se deben seleccionar entidades ni activar el gizmo.
+                            let is_quick_build = matches!(state.active_tool, crate::config_2d::ActiveTool::QuickBuildPlace { .. });
+
                             // Comprobar si el click es sobre un eje del gizmo.
-                            // Se omite en modo pivot para no robar el click al handler de pivot.
+                            // Se omite en modo pivot/quick_build para no robar el click al handler.
                             if let Some(cur) = self.last_cursor {
-                                let axis = if state.pivot_edit_mode.is_none() {
+                                let axis = if state.pivot_edit_mode.is_none() && !is_quick_build {
                                     if state.camera_2d.is_some() {
                                         state.pick_gizmo_axis_2d(cur.0, cur.1)
                                     } else {
@@ -614,9 +618,10 @@ impl ApplicationHandler<EngineCommand> for App {
                 }
                 // Hover: solo cuando no se está arrastrando
                 if !state.is_preview_playing() && !self.mouse_right && !self.mouse_middle && self.gizmo_drag_axis.is_none() {
-                    if state.camera_2d.is_some() {
+                    let is_quick_build = matches!(state.active_tool, crate::config_2d::ActiveTool::QuickBuildPlace { .. });
+                    if state.camera_2d.is_some() && !is_quick_build {
                         state.update_hover_2d(cur.0, cur.1);
-                    } else {
+                    } else if state.camera_2d.is_none() {
                         state.update_hover(cur.0, cur.1);
                     }
                 }

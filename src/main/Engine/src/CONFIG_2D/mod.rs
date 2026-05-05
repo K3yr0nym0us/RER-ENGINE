@@ -65,6 +65,7 @@ pub(crate) enum ActiveTool {
     None,
     DrawCollider { points_world: Vec<[f32; 2]>, cursor_world: Option<[f32; 2]> },
     DrawExecutionArea { points_world: Vec<[f32; 2]>, cursor_world: Option<[f32; 2]> },
+    QuickBuildPlace { cursor_world: Option<[f32; 2]> },
 }
 
 impl Default for ActiveTool {
@@ -103,6 +104,16 @@ impl State {
                 let pts_clone = points_world.clone();
                 self.tool_overlay_buffer = build_tool_overlay(&self.device, &pts_clone, *cursor_world);
             }
+            ActiveTool::QuickBuildPlace { cursor_world } => {
+                *cursor_world = Some([wx, wy]);
+                if let Some(ghost_id) = self.quick_build_ghost_id {
+                    if let Some(t) = self.world.get_mut::<Transform>(ghost_id) {
+                        t.position = GlamVec3::new(wx, wy, 0.5);
+                    }
+                }
+                self.tool_overlay_buffer = gizmo::build_from_vertices(&self.device, &[]);
+                send_event(&EngineEvent::QuickBuildMove { x: wx, y: wy });
+            }
             ActiveTool::None => {}
         }
     }
@@ -120,6 +131,8 @@ impl State {
                 false
             }
             ActiveTool::None => false,
+            // QuickBuildPlace no tiene pasos que deshacer aquí; Ctrl+Z en JS deshace la entidad colocada
+            ActiveTool::QuickBuildPlace { .. } => false,
         }
     }
 
@@ -205,7 +218,7 @@ impl State {
             Ok(b)  => b,
             Err(e) => {
                 log::error!("[load_scenario] error leyendo {path}: {e}");
-                send_event(&EngineEvent::Error { message: format!("No se pudo leer el escenario: {e}") });
+                send_event(&EngineEvent::Error { message: format!("No se pudo leer el escenario (ruta: {path:?}): {e}") });
                 return;
             }
         };
@@ -365,7 +378,7 @@ impl State {
             Ok(b)  => b,
             Err(e) => {
                 log::error!("[load_character] error leyendo {path}: {e}");
-                send_event(&EngineEvent::Error { message: format!("No se pudo leer el personaje: {e}") });
+                send_event(&EngineEvent::Error { message: format!("No se pudo leer el personaje (ruta: {path:?}): {e}") });
                 return;
             }
         };
@@ -1192,6 +1205,10 @@ impl State {
                 }
                 true
             }
+            ActiveTool::QuickBuildPlace { .. } => {
+                send_event(&EngineEvent::QuickBuildClick { x: wx, y: wy });
+                true
+            }
             ActiveTool::None => false,
         }
     }
@@ -1301,6 +1318,55 @@ impl State {
 
         self.execution_overlaps = next_overlaps;
     }
+
+    /// Carga una entidad fantasma para previsualizar el blueprint en modo Quick Build.
+    /// No se añade a `scenario_entities` ni `character_entities` y no emite eventos.
+    /// Se posiciona fuera de pantalla hasta que el cursor se mueva.
+    pub(crate) fn load_quick_build_ghost(&mut self, path: &str, kind: &str, scale: [f32; 3], src_rect: Option<[u32; 4]>) -> Option<u32> {
+        let bytes = std::fs::read(path).ok()?;
+        use image::ImageReader;
+        use image::imageops;
+        use std::io::Cursor;
+        let mut img = ImageReader::new(Cursor::new(&bytes))
+            .with_guessed_format().ok()?
+            .decode().ok()?.to_rgba8();
+        if let Some([sx, sy, sw, sh]) = src_rect {
+            let iw = img.width();
+            let ih = img.height();
+            if sw > 0 && sh > 0 && sx < iw && sy < ih {
+                let cw = sw.min(iw.saturating_sub(sx));
+                let ch = sh.min(ih.saturating_sub(sy));
+                if cw > 0 && ch > 0 {
+                    img = imageops::crop_imm(&img, sx, sy, cw, ch).to_image();
+                }
+            }
+        }
+        let (img_w, img_h) = img.dimensions();
+        let uv = if src_rect.is_none() {
+            if let Some(&cached_uv) = self.static_tex_cache.get(path) {
+                cached_uv
+            } else {
+                let u = self.atlas.pack(&self.queue, img.as_raw(), img_w, img_h);
+                self.static_tex_cache.insert(path.to_owned(), u);
+                u
+            }
+        } else {
+            self.atlas.pack(&self.queue, img.as_raw(), img_w, img_h)
+        };
+        let tex_idx = self.uv_rects.len();
+        self.uv_rects.push(uv);
+        let ghost_id = self.world.spawn(Some("__qb_ghost__"));
+        self.world.insert(ghost_id, MeshComponent { mesh_idx: self.canonical_quad_idx, tex_idx });
+        let z = if kind == "scenario" { -0.5_f32 } else { 0.5_f32 };
+        self.world.insert(ghost_id, Transform {
+            position: GlamVec3::new(-99999.0, -99999.0, z),
+            scale:    GlamVec3::new(scale[0], scale[1], scale[2]),
+            ..Default::default()
+        });
+        self.world.insert(ghost_id, crate::ecs::NonSelectable);
+        log::debug!("[quick_build] entidad fantasma {ghost_id} creada desde {path} ({kind})");
+        Some(ghost_id)
+    }
 }
 
 // ── Primitivas de malla para el modo 2D ───────────────────────────────────────
@@ -1323,8 +1389,7 @@ fn create_quad_xy(device: &wgpu::Device, cx: f32, cy: f32, w: f32, h: f32, label
 
 
 /// Construye el GizmoBuffer (LineList) de overlay para la herramienta de dibujo.
-/// `pts`: puntos acumulados (1-4) en espacio de mundo.
-/// Dibuja una cruz en cada punto y líneas de conexión consecutivas.
+
 fn build_tool_overlay(device: &wgpu::Device, pts: &[[f32; 2]], cursor: Option<[f32; 2]>) -> gizmo::GizmoBuffer {
     const ARM:         f32 = 0.15;
     const Z:           f32 = 0.1;

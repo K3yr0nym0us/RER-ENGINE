@@ -1,5 +1,5 @@
 import type { MutableRefObject } from 'react';
-import type { DebugMetrics, ProjectSaveData, SavedControlBindings, SpriteInfo } from '@shared-types';
+import type { BluePrintEntry, DebugMetrics, ProjectSaveData, SavedControlBindings, SpriteInfo } from '@shared-types';
 
 export interface Entity {
 	id: number
@@ -79,6 +79,7 @@ export interface EngineState {
 	sprites: SpriteInfo[]
 	loadedSpritesInfo: Map<string, { name: string }>
 	debugMetrics: DebugMetrics | null
+	blueprints: BluePrintEntry[]
 }
 
 export type EngineAction =
@@ -112,7 +113,9 @@ export type EngineAction =
 	| { type: 'ADD_SPRITE_INFO'; payload: { path: string; name: string } }
 	| { type: 'REMOVE_SPRITE_INFO'; payload: string }
 	| { type: 'SET_LOADED_SPRITES_INFO'; payload: Array<{ path: string; name: string }> }
-	| { type: 'SET_DEBUG_METRICS'; payload: DebugMetrics };
+	| { type: 'SET_DEBUG_METRICS'; payload: DebugMetrics }
+	| { type: 'ADD_BLUEPRINT'; payload: BluePrintEntry }
+	| { type: 'SET_BLUEPRINTS'; payload: BluePrintEntry[] };
 
 export const initialState: EngineState = {
 	engineReady: false,
@@ -133,6 +136,7 @@ export const initialState: EngineState = {
 	sprites: [],
 	loadedSpritesInfo: new Map(),
 	debugMetrics: null,
+	blueprints: [],
 };
 
 export function engineReducer(state: EngineState, action: EngineAction): EngineState {
@@ -220,6 +224,8 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 			return { ...prevState, loadedSpritesInfo: nextMap };
 		},
 		SET_DEBUG_METRICS: (prevState, nextAction) => ({ ...prevState, debugMetrics: nextAction.payload }),
+		ADD_BLUEPRINT: (prevState, nextAction) => ({ ...prevState, blueprints: [...prevState.blueprints, nextAction.payload] }),
+		SET_BLUEPRINTS: (prevState, nextAction) => ({ ...prevState, blueprints: nextAction.payload }),
 	};
 
 	const handler = handlers[action.type as keyof typeof handlers];
@@ -280,6 +286,7 @@ export interface EngineInternalRefs {
 	pendingPlayerDups: MutableRefObject<Transform[]>
 	pendingDupQ: MutableRefObject<Transform[]>
 	pivotEditListenerRef: MutableRefObject<((framePath: string, px: number, py: number) => void) | null>
+	quickBuildClickListenerRef: MutableRefObject<((x: number, y: number) => void) | null>
 	pendingEventsRef: MutableRefObject<Map<string, { resolve: (value: any) => void }>>
 }
 
@@ -315,4 +322,8 @@ export interface EngineContextValue extends EngineState {
 	loadCharacter: (path: string) => void
 	setPreviewPlaying: (playing: boolean) => void
 	setBackground: (path: string | null) => void
+	addBlueprint: (entry: BluePrintEntry) => void
+	setBlueprints: (entries: BluePrintEntry[]) => void
+	registerQuickBuildClickListener: (fn: (x: number, y: number) => void) => void
+	unregisterQuickBuildClickListener: () => void
 }

@@ -1,5 +1,5 @@
 import type { Dispatch } from 'react';
-import type { EngineAction, EngineInternalRefs, EntityScripts, PendingRestore, Transform } from '../types';
+import type { BluePrintEntry, EngineAction, EngineInternalRefs, EntityScripts, PendingRestore, Transform } from '../types';
 
 interface CreateEngineActionsParams {
 	dispatch: Dispatch<EngineAction>
@@ -204,6 +204,14 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 		refs.pivotEditListenerRef.current = null;
 	};
 
+	const registerQuickBuildClickListener = (fn: (x: number, y: number) => void) => {
+		refs.quickBuildClickListenerRef.current = fn;
+	};
+
+	const unregisterQuickBuildClickListener = () => {
+		refs.quickBuildClickListenerRef.current = null;
+	};
+
 	const loadSprite = (path: string, name: string) => {
 		send({ cmd: 'load_sprite', path, name });
 		dispatch({ type: 'ADD_SPRITE_INFO', payload: { path, name } });
@@ -236,6 +244,14 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 		}
 	};
 
+	const addBlueprint = (entry: BluePrintEntry) => {
+		dispatch({ type: 'ADD_BLUEPRINT', payload: entry });
+	};
+
+	const setBlueprints = (entries: BluePrintEntry[]) => {
+		dispatch({ type: 'SET_BLUEPRINTS', payload: entries });
+	};
+
 	return {
 		sendAsync,
 		setAnimationPlaying,
@@ -262,5 +278,9 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 		loadCharacter,
 		setPreviewPlaying,
 		setBackground,
+		addBlueprint,
+		setBlueprints,
+		registerQuickBuildClickListener,
+		unregisterQuickBuildClickListener,
 	};
 }

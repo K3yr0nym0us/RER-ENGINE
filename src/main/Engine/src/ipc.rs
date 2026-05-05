@@ -50,13 +50,24 @@ pub enum EngineCommand {
     /// Cambiar la escena activa. `scene` puede ser "2D", "3D", etc.
     SetScene { scene: String },
     /// Cargar una imagen PNG como escenario de fondo en la escena 2D.
-    LoadScenario { path: String },
+    LoadScenario {
+        path: String,
+        /// Si es true, registra la creación en el historial de deshacer.
+        /// None/false: no registrar (carga inicial, restore de proyecto).
+        #[serde(default)]
+        track_undo: Option<bool>,
+    },
     /// Ajustar la escala de un escenario 2D específico preservando proporciones.
     SetScenarioScale { id: u32, scale: f32 },
     /// Duplicar un escenario existente (crea una nueva entidad con el mismo PNG).
     DuplicateScenario { id: u32 },
     /// Cargar una imagen PNG como personaje en la escena 2D.
-    LoadCharacter { path: String },
+    LoadCharacter {
+        path: String,
+        /// Si es true, registra la creación en el historial de deshacer.
+        #[serde(default)]
+        track_undo: Option<bool>,
+    },
     /// Ajustar la escala de un personaje 2D específico preservando proporciones.
     SetCharacterScale { id: u32, scale: f32 },
     /// Duplicar un personaje existente (crea una nueva entidad con el mismo PNG).
@@ -103,7 +114,22 @@ pub enum EngineCommand {
     /// Activar o desactivar física en una entidad. body_type: "dynamic" | "static" | "kinematic"
     SetPhysics { id: u32, enabled: bool, body_type: String },
     /// Activar una herramienta de dibujo. tool: "draw_collider" | "draw_execution_area" | "" (cancelar)
-    SetActiveTool { tool: String },
+    SetActiveTool {
+        tool: String,
+        /// Path al sprite del blueprint a previsualizar como entidad fantasma.
+        #[serde(default)]
+        preview_path: Option<String>,
+        /// Tipo del blueprint ("scenario" | "character") para elegir cómo cargarlo.
+        #[serde(default)]
+        preview_kind: Option<String>,
+        /// Escala del blueprint [x, y, z] en unidades de mundo.
+        #[serde(default)]
+        preview_scale: Option<[f32; 3]>,
+        /// Rectángulo opcional de recorte [x, y, w, h] dentro de `preview_path`.
+        /// Se usa para mostrar solo el frame inicial cuando el blueprint viene de spritesheet.
+        #[serde(default)]
+        preview_src_rect: Option<[u32; 4]>,
+    },
     /// Recrear un colisionador de 4 puntos desde datos guardados (restauración de proyecto).
     CreateColliderFromPoints {
         points: [[f32; 2]; 4],
@@ -264,6 +290,12 @@ pub enum EngineEvent {
     SpriteRemoved { path: String },
     /// Emitido como respuesta a GetSpritesList: lista de sprites disponibles.
     SpritesList { sprites: Vec<SpriteInfo> },
+    /// Emitido cuando el cursor se mueve y la herramienta quick_build_place está activa.
+    QuickBuildMove { x: f32, y: f32 },
+    /// Emitido cuando el usuario hace click con la herramienta quick_build_place activa.
+    QuickBuildClick { x: f32, y: f32 },
+    /// Emitido cuando una entidad es eliminada del mundo (por Ctrl+Z, RemoveEntity, etc.).
+    EntityRemoved { id: u32 },
     /// Emitido cuando el motor detecta un input de control en modo juego.
     ControlInputDetected { device: String, control_key: String },
     /// Emitido ~1 vez por segundo con métricas de rendimiento del motor.

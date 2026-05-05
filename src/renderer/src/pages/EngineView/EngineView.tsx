@@ -4,9 +4,11 @@ import SideBarLeft from './components/SideBarLeft';
 import LogConsole from './components/LogConsole';
 import SceneTabsBar from './components/SceneTabsBar';
 import TopBarEngine from './components/TopBarEngine';
+import { QuickBuildOverlay } from './components/QuickBuildOverlay';
 
 import { EngineProvider } from '@engine';
 import { ModalProvider } from '@modal';
+import { QuickBuildProvider } from '../../context/QuickBuildContext';
 import { useAutoSave } from '../../hooks/useAutoSave';
 
 import type { ProjectType, ProjectSaveData } from '@shared-types';
@@ -16,9 +18,11 @@ export function EngineView({ projectType, initialSave, initialSavePath }: { proj
 
   return (
     <EngineProvider viewportRef={viewportRef} projectType={projectType} initialSave={initialSave}>
-      <ModalProvider>
-        <EngineViewInner projectType={projectType} initialSave={initialSave} initialSavePath={initialSavePath} viewportRef={viewportRef} />
-      </ModalProvider>
+      <QuickBuildProvider>
+        <ModalProvider>
+          <EngineViewInner projectType={projectType} initialSave={initialSave} initialSavePath={initialSavePath} viewportRef={viewportRef} />
+        </ModalProvider>
+      </QuickBuildProvider>
     </EngineProvider>
   )
 }
@@ -53,7 +57,9 @@ function EngineViewInner({ projectType, initialSave, initialSavePath, viewportRe
             className="flex-fill position-relative overflow-hidden engine-viewport-area"
             ref={viewportRef}
             style={{ background: 'transparent', marginTop: 0 }}
-          />
+          >
+            <QuickBuildOverlay />
+          </main>
 
           <LogConsole />
         </div>

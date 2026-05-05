@@ -1,11 +1,11 @@
-import { isValidElement, useId, type ComponentProps, type ReactElement } from 'react';
+import { isValidElement, useId, type ComponentProps, type ReactElement, type ReactNode } from 'react';
 
 import { OverlayTrigger, Tooltip } from 'react-bootstrap';
 
 type Placement = NonNullable<ComponentProps<typeof OverlayTrigger>['placement']>;
 
 interface AppTooltipProps {
-  content?: string | null;
+  content?: ReactNode;
   place?: Placement;
   variant?: string;
   offset?: number;
