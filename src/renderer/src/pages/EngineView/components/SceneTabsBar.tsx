@@ -204,6 +204,16 @@ export function SceneTabsBar({ initialSave, projectType }: Props) {
       }
 
       if (entity.kind === 'execution_area' && entity.points) {
+        const eaQueue = pendingRestoresRef.current.get('[ExecutionArea]') ?? [];
+        pendingRestoresRef.current.set('[ExecutionArea]', eaQueue);
+        eaQueue.push({
+          transform,
+          name: entity.name,
+          physicsEnabled: entity.physics_enabled ?? false,
+          physicsType: entity.physics_type ?? 'static',
+          scripts: entity.scripts,
+          controlBindings: entity.control_bindings,
+        });
         send({ cmd: 'create_execution_area_from_points', points: entity.points, track_undo: false });
         continue;
       }
