@@ -1,8 +1,9 @@
 import { Accordion } from 'react-bootstrap';
 import { FileEarmarkCode, Pencil, Plus, Trash } from 'react-bootstrap-icons';
 
-import AppTooltip from '../../../../../components/AppTooltip';
-import type { ScriptEntry } from '../../../hooks/useScripting';
+import { AppTooltip } from '@components';
+import type { ScriptEntry } from '@hooks';
+import { useTraslate } from '@hooks';
 
 interface ScriptingAccordionProps {
   scripts:  ScriptEntry[]
@@ -12,6 +13,7 @@ interface ScriptingAccordionProps {
 }
 
 export function ScriptingAccordion({ scripts, onNew, onEdit, onRemove }: ScriptingAccordionProps) {
+  const { t } = useTraslate()
   return (
     <Accordion.Item eventKey="scripting">
       <Accordion.Header>Scripting (Lua)</Accordion.Header>
@@ -22,12 +24,12 @@ export function ScriptingAccordion({ scripts, onNew, onEdit, onRemove }: Scripti
           onClick={onNew}
         >
           <Plus size={15} className="me-1" />
-          Nuevo Script
+          {t('New Script')}
         </button>
 
         {scripts.length === 0 && (
           <div className="alert py-1 text-center mb-0" role="alert">
-            Sin scripts adjuntos.
+            {t('No scripts attached.')}
           </div>
         )}
 
@@ -42,7 +44,7 @@ export function ScriptingAccordion({ scripts, onNew, onEdit, onRemove }: Scripti
                 {s.name}
               </span>
             </AppTooltip>
-            <AppTooltip content="Editar script" place="top">
+            <AppTooltip content={t('Edit script')} place="top">
               <button
                 className="btn btn-sm btn-outline-primary p-1 lh-1"
                 onClick={() => onEdit(s.name)}
@@ -50,7 +52,7 @@ export function ScriptingAccordion({ scripts, onNew, onEdit, onRemove }: Scripti
                 <Pencil size={12} />
               </button>
             </AppTooltip>
-            <AppTooltip content="Quitar script" place="top">
+            <AppTooltip content={t('Remove script')} place="top">
               <button
                 className="btn btn-sm btn-outline-danger p-1 lh-1"
                 onClick={() => onRemove(s.name)}

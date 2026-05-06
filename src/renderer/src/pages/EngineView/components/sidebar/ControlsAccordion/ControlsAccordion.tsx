@@ -1,10 +1,12 @@
 import { Accordion } from 'react-bootstrap';
 import { Controller, KeyboardFill } from 'react-bootstrap-icons';
 
-import AppTooltip from '../../../../../components/AppTooltip';
-import { useControlBindings } from '../../../../../hooks/useControlBindings';
+import { AppTooltip } from '@components';
+import { useControlBindings } from '@hooks';
+import { useTraslate } from '@hooks';
 
 export function ControlsAccordion() {
+  const { t } = useTraslate();
   const {
     selectedCharacterId,
     setSelectedCharacterId,
@@ -19,12 +21,12 @@ export function ControlsAccordion() {
 
   return (
     <Accordion.Item eventKey="controles">
-      <Accordion.Header>Controles</Accordion.Header>
+      <Accordion.Header>{t('Controls')}</Accordion.Header>
       <Accordion.Body className="py-2 px-2">
         <div className="d-flex flex-column gap-2">
           <div>
             <label htmlFor="character-controls-select" className="form-label mb-1 small text-secondary">
-              Personaje para asignar controles
+              {t('Character to assign controls')}
             </label>
             <select
               id="character-controls-select"
@@ -36,7 +38,7 @@ export function ControlsAccordion() {
               }}
               disabled={!hasCharacters}
             >
-              {!hasCharacters && <option value="">No hay personajes creados</option>}
+              {!hasCharacters && <option value="">{t('No characters created')}</option>}
               {characterOptions.map((option) => (
                 <option key={option.id} value={option.id}>
                   {option.label}
@@ -45,7 +47,7 @@ export function ControlsAccordion() {
             </select>
           </div>
 
-          <AppTooltip content={!hasCharacters ? 'Crea un personaje primero' : null} place="top">
+          <AppTooltip content={!hasCharacters ? t('Create a character first') : null} place="top">
             <button
               type="button"
               className="btn btn-sm btn-outline-info w-100 d-flex align-items-center justify-content-between"
@@ -54,13 +56,13 @@ export function ControlsAccordion() {
             >
               <span>
                 <KeyboardFill className="me-2" />
-                Configurar teclado + mouse
+                {t('Configure keyboard + mouse')}
               </span>
               <span className="badge bg-dark border border-secondary">{keyboardBindingsCount}</span>
             </button>
           </AppTooltip>
 
-          <AppTooltip content={!hasCharacters ? 'Crea un personaje primero' : null} place="top">
+          <AppTooltip content={!hasCharacters ? t('Create a character first') : null} place="top">
             <button
               type="button"
               className="btn btn-sm btn-outline-warning w-100 d-flex align-items-center justify-content-between"
@@ -69,14 +71,14 @@ export function ControlsAccordion() {
             >
               <span>
                 <Controller className="me-2" />
-                Configurar mandos
+                {t('Configure gamepads')}
               </span>
               <span className="badge bg-dark border border-secondary">{gamepadBindingsCount}</span>
             </button>
           </AppTooltip>
 
           <small className="text-secondary fst-italic">
-            Puedes editar controles en cualquier momento. Su deteccion por el motor aplica unicamente en modo juego.
+            {t('You can edit controls at any time. Motor detection applies only in game mode.')}
           </small>
         </div>
       </Accordion.Body>

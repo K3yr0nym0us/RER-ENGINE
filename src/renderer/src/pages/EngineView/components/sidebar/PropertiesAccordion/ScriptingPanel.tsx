@@ -1,4 +1,4 @@
-import { useScripting } from '../../../../../hooks/useScripting';
+import { useScripting } from '@hooks';
 import { ScriptingAccordion } from './ScriptingAccordion';
 
 /**

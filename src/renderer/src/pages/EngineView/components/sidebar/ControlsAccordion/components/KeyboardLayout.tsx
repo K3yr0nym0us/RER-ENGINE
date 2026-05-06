@@ -1,4 +1,4 @@
-import type { ControlScript } from '../../../../../../hooks/useControlBindings'
+import type { ControlScript } from '@hooks'
 import { KeyBtn } from './KeyBtn'
 
 interface KeyboardLayoutProps {

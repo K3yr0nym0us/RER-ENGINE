@@ -3,7 +3,7 @@ import { InfoCircleFill } from 'react-bootstrap-icons';
 import { GamepadLayout } from './GamepadLayout';
 import { KeyboardLayout } from './KeyboardLayout';
 
-import type { ControlDeviceMode, ControlScript } from '../../../../../../hooks/useControlBindings';
+import type { ControlDeviceMode, ControlScript } from '@hooks';
 
 interface ControlBindingsModalBodyProps {
   mode: ControlDeviceMode

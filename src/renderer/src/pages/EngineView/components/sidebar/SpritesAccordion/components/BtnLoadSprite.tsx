@@ -4,9 +4,10 @@ import { Image } from 'react-bootstrap-icons';
 import ModalSetNameSprite from './ModalSetNameSprite';
 
 import { useModal } from '@modal';
+import { useTraslate } from '@hooks';
 
 export const BtnLoadSprite = () => {
-
+  const { t } = useTraslate();
   const { openModal } = useModal();
 
   const openLoadSpriteModal = useCallback(async () => {
@@ -14,7 +15,7 @@ export const BtnLoadSprite = () => {
     if (!path) return;
     const autoName = path.split('/').pop()?.replace(/\.[^/.]+$/, '') ?? 'sprite';
     openModal({
-      title: 'Asignar nombre al Sprite',
+      title: t('Assign name to Sprite'),
       body: (
         <ModalSetNameSprite
           path={path}
@@ -30,7 +31,7 @@ export const BtnLoadSprite = () => {
       type="button"
       onClick={openLoadSpriteModal}
     >
-      <Image className="me-1" /> Cargar Sprite
+      <Image className="me-1" /> {t('Load Sprite')}
     </button>
   );
 };

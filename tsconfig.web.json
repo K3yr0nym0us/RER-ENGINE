@@ -10,7 +10,9 @@
     "paths": {
       "@shared-types": ["src/shared-types/types.ts"],
       "@modal": ["src/renderer/src/context/ModalContext.tsx"],
-      "@engine": ["src/renderer/src/context/useContextEngine.tsx"]
+      "@engine": ["src/renderer/src/context/useContextEngine.tsx"],
+      "@hooks": ["src/renderer/src/hooks/index.ts"],
+      "@components": ["src/renderer/src/components/index.ts"],
     },
     "outDir":           "out",
     "strict":           true,
@@ -23,6 +25,7 @@
   },
   "include": [
     "src/renderer/src/**/*",
-    "src/shared-types/**/*"
+    "src/shared-types/**/*",
+    "src/renderer/src/locales/translations.json"
   ]
 }

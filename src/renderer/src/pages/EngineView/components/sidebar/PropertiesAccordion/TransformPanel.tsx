@@ -2,7 +2,8 @@ import { useEffect, useState, useCallback, ReactNode } from 'react';
 
 import { Lock, Unlock } from 'react-bootstrap-icons';
 
-import AppTooltip from '../../../../../components/AppTooltip';
+import { AppTooltip } from '@components';
+import { useTraslate } from '@hooks';
 
 interface Transform {
   pos: [string, string, string]
@@ -22,6 +23,7 @@ interface Props {
 }
 
 export function TransformPanel({ entity, is2D, onSend }: Props) {
+  const { t } = useTraslate()
   const [transform, setTransform] = useState<Transform>({
     pos: ['0', '0', '0'],
     rot: ['0', '0', '0', '1'],
@@ -116,7 +118,7 @@ export function TransformPanel({ entity, is2D, onSend }: Props) {
   }
 
   const lockBtn = is2D ? (
-    <AppTooltip content={lockProportions ? 'Proporciones bloqueadas' : 'Mantener proporciones'} place="top">
+      <AppTooltip content={lockProportions ? t('Lock proportions') : t('Keep proportions')} place="top">
       <button
         className={`btn btn-sm ${lockProportions ? 'btn-info' : 'btn-outline-secondary'}`}
         onClick={() => setLockProportions((v) => !v)}
@@ -128,14 +130,14 @@ export function TransformPanel({ entity, is2D, onSend }: Props) {
 
   return (
     <>
-      {makeVec3Row('Posición', transform.pos, 'pos', is2D ? ['0.1', '0.1', '1'] : '0.1')}
-      {makeVec3Row('Escala', transform.scl, 'scl', '0.1', {
+      {makeVec3Row(t('Position'), transform.pos, 'pos', is2D ? ['0.1', '0.1', '1'] : '0.1')}
+      {makeVec3Row(t('Scale'), transform.scl, 'scl', '0.1', {
         hiddenAxes:    is2D ? [2] : [],
         labelAction:   lockBtn,
         extraOnChange: is2D && lockProportions ? proportionOnChange : undefined,
       })}
       <div className="mb-2">
-        <p className="prop-label">Rotación (xyzw)</p>
+        <p className="prop-label">{t('Rotation (xyzw)')}</p>
         <div className="d-flex gap-1 mt-1">
           {(['X', 'Y', 'Z', 'W'] as const).map((ax, i) => (
             <div key={ax} className="flex-fill">
@@ -149,7 +151,7 @@ export function TransformPanel({ entity, is2D, onSend }: Props) {
                 type="number"
                 step="0.01"
                 value={transform.rot[i]}
-                aria-label={`Rotación ${ax}`}
+                aria-label={`${t('Rotation (xyzw)')} ${ax}`}
                 className="form-control form-control-sm text-center bg-dark text-light border-secondary prop-input"
                 onChange={(e) => {
                   const next = [...transform.rot] as [string, string, string, string]
@@ -166,4 +168,4 @@ export function TransformPanel({ entity, is2D, onSend }: Props) {
   )
 }
 
-export default TransformPanel
+export default TransformPanel;

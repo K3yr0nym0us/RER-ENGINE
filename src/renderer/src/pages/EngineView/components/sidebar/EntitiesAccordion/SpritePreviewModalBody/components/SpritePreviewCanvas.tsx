@@ -1,6 +1,9 @@
 import { useRef, useEffect } from 'react';
+
 import { InfoCircle } from 'react-bootstrap-icons';
-import AppTooltip from '../../../../../../../components/AppTooltip';
+import { AppTooltip } from '@components';
+
+import { useTraslate } from '@hooks';
 
 interface SpritePreviewCanvasProps {
   src: string;
@@ -33,6 +36,7 @@ export function SpritePreviewCanvas({
   onMouseMove,
   CANVAS_SIZE,
 }: SpritePreviewCanvasProps) {
+  const { t } = useTraslate();
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -109,12 +113,12 @@ export function SpritePreviewCanvas({
     <div className="text-center">
       <div className="mb-2">
         <div className="d-flex justify-content-center align-items-center gap-2 mb-1">
-          <span className="text-light small fw-semibold">Orientacion de la animacion</span>
+          <span className="text-light small fw-semibold">{t('Animation orientation')}</span>
           <AppTooltip
-            content="Define la direccion base de la animacion creada. El motor usa este dato como referencia de orientacion por defecto."
+            content={t('Animation orientation info')}
             place="top"
           >
-            <span className="d-inline-flex align-items-center" role="button" aria-label="Informacion sobre orientacion de la animacion">
+            <span className="d-inline-flex align-items-center" role="button" aria-label={t('Animation orientation info aria')}>
               <InfoCircle size={15} className="text-info" />
             </span>
           </AppTooltip>
@@ -130,7 +134,7 @@ export function SpritePreviewCanvas({
               onChange={() => onFacingRightChange(false)}
             />
             <label className="form-check-label small text-light m-0" htmlFor="facing-left">
-              Izquierda
+              {t('Left')}
             </label>
           </div>
           <div className="form-check d-flex align-items-center gap-1 m-0">
@@ -143,7 +147,7 @@ export function SpritePreviewCanvas({
               onChange={() => onFacingRightChange(true)}
             />
             <label className="form-check-label small text-light m-0" htmlFor="facing-right">
-              Derecha
+              {t('Right')}
             </label>
           </div>
         </div>

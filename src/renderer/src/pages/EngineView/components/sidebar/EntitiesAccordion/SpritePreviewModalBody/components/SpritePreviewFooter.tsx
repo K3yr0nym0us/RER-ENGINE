@@ -1,3 +1,5 @@
+import { useTraslate } from '@hooks';
+
 interface SpritePreviewFooterProps {
   validationError: string | null;
   selectedFrameCount: number;
@@ -13,6 +15,7 @@ export function SpritePreviewFooter({
   onConfirm,
   onCancel,
 }: SpritePreviewFooterProps) {
+  const { t } = useTraslate()
   return (
     <>
       {validationError && (
@@ -25,7 +28,7 @@ export function SpritePreviewFooter({
         <div className="d-flex gap-2 justify-content-end mt-3 px-3">
           {onCancel && (
             <button className="btn btn-secondary btn-sm" onClick={onCancel}>
-              Cancelar
+              {t('Cancel')}
             </button>
           )}
           {onConfirm && (
@@ -34,7 +37,7 @@ export function SpritePreviewFooter({
               onClick={onConfirm}
               disabled={selectedFrameCount === 0 || !hasImageSrc}
             >
-              Confirmar
+              {t('Confirm')}
             </button>
           )}
         </div>

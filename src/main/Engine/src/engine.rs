@@ -283,10 +283,16 @@ pub struct State {
     pub        preview_playing:  bool,
     /// Buffer de overlay de la herramienta activa (cruces + líneas de construcción).
     pub(crate) tool_overlay_buffer: GizmoBuffer,
-    /// UV del PNG de hint de snap en el atlas, si se cargó correctamente.
+    /// UV del PNG de hint de snap en español en el atlas, si se cargó correctamente.
     pub(crate) snap_hint_uv: Option<[f32; 4]>,
-    /// Tamaño original del PNG de hint (ancho, alto) en píxeles.
+    /// Tamaño original del PNG de hint ES (ancho, alto) en píxeles.
     pub(crate) snap_hint_size: (f32, f32),
+    /// UV del PNG de hint de snap en inglés en el atlas, si se cargó correctamente.
+    pub(crate) snap_hint_uv_en: Option<[f32; 4]>,
+    /// Tamaño original del PNG de hint EN (ancho, alto) en píxeles.
+    pub(crate) snap_hint_size_en: (f32, f32),
+    /// Locale activo del editor: "en" | "es". Determina qué imagen de hint se muestra.
+    pub(crate) snap_locale: String,
     /// Controla visibilidad del hint de snap (solo editor 2D).
     pub(crate) show_snap_hint: bool,
     /// Alpha actual del hint [0..1] para fade in/out suave.
@@ -505,35 +511,39 @@ impl State {
         let checker_uv = atlas.pack(&queue, &checker_pixels, 128, 128);
         let uv_rects = vec![checker_uv];   // idx 0 = checkerboard (plano de suelo)
 
-        // Hint visual de snap (Ctrl): PNG del editor empaquetado en atlas.
-        let mut snap_hint_uv: Option<[f32; 4]> = None;
-        let mut snap_hint_size: (f32, f32) = (0.0, 0.0);
-        let snap_hint_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../assets/tooltip-btn-ctrl-to-auto-adjust.png");
-        match std::fs::read(&snap_hint_path) {
-            Ok(bytes) => {
-                use image::ImageReader;
-                match ImageReader::new(std::io::Cursor::new(&bytes))
-                    .with_guessed_format()
-                    .map_err(|e| e.to_string())
-                    .and_then(|r| r.decode().map_err(|e| e.to_string()))
-                {
-                    Ok(img) => {
-                        let img = img.to_rgba8();
-                        let (w, h) = img.dimensions();
-                        let uv = atlas.pack(&queue, img.as_raw(), w, h);
-                        snap_hint_uv = Some(uv);
-                        snap_hint_size = (w as f32, h as f32);
-                    }
-                    Err(e) => {
-                        log::warn!("[snap-hint] Error decodificando PNG '{}': {}", snap_hint_path.display(), e);
+        // Hint visual de snap (Ctrl): carga versión ES y EN del PNG en el atlas.
+        let load_snap_hint = |atlas: &mut crate::texture::TextureAtlas, queue: &wgpu::Queue, filename: &str| -> (Option<[f32; 4]>, (f32, f32)) {
+            let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../assets")
+                .join(filename);
+            match std::fs::read(&path) {
+                Ok(bytes) => {
+                    use image::ImageReader;
+                    match ImageReader::new(std::io::Cursor::new(&bytes))
+                        .with_guessed_format()
+                        .map_err(|e| e.to_string())
+                        .and_then(|r| r.decode().map_err(|e| e.to_string()))
+                    {
+                        Ok(img) => {
+                            let img = img.to_rgba8();
+                            let (w, h) = img.dimensions();
+                            let uv = atlas.pack(queue, img.as_raw(), w, h);
+                            (Some(uv), (w as f32, h as f32))
+                        }
+                        Err(e) => {
+                            log::warn!("[snap-hint] Error decodificando '{}': {}", path.display(), e);
+                            (None, (0.0, 0.0))
+                        }
                     }
                 }
+                Err(e) => {
+                    log::warn!("[snap-hint] No se pudo leer '{}': {}", path.display(), e);
+                    (None, (0.0, 0.0))
+                }
             }
-            Err(e) => {
-                log::warn!("[snap-hint] No se pudo leer '{}': {}", snap_hint_path.display(), e);
-            }
-        }
+        };
+        let (snap_hint_uv, snap_hint_size) = load_snap_hint(&mut atlas, &queue, "tooltip-btn-ctrl-to-auto-adjust.png");
+        let (snap_hint_uv_en, snap_hint_size_en) = load_snap_hint(&mut atlas, &queue, "tooltip-btn-ctrl-to-auto-adjust-english.png");
 
         // ── Pipeline ─────────────────────────────────────────────────────────
         let shader = device.create_shader_module(include_wgsl!("shader.wgsl"));
@@ -819,6 +829,9 @@ impl State {
             tool_overlay_buffer: tool_overlay_buffer_init,
             snap_hint_uv,
             snap_hint_size,
+            snap_hint_uv_en,
+            snap_hint_size_en,
+            snap_locale: "en".to_string(),
             show_snap_hint: false,
             snap_hint_alpha: 0.0,
             collider_entities: Vec::new(),
@@ -1433,6 +1446,11 @@ impl State {
             EngineCommand::Redo => {
                 self.apply_redo();
             }
+            EngineCommand::SetLocale { locale } => {
+                eprintln!("[i18n] SetLocale recibido: {}", locale);
+                log::info!("[IPC] SetLocale: {}", locale);
+                self.snap_locale = locale;
+            }
             EngineCommand::ReloadAsset { path } => {
                 log::info!("[IPC] ReloadAsset: {}", path);
                 // Buscar UV rect pre-asignado en el atlas (sin re-empacar, sin cambiar ECS).
@@ -1941,14 +1959,21 @@ self.active_animations.retain(|_, a| !a.finished);
         if self.snap_hint_alpha <= 0.003 || self.preview_playing {
             return None;
         }
-        let uv = self.snap_hint_uv?;
+        let (uv, img_w, img_h) = if self.snap_locale == "en" {
+            let uv = self.snap_hint_uv_en.or(self.snap_hint_uv)?;
+            let (w, h) = if self.snap_hint_uv_en.is_some() { self.snap_hint_size_en } else { self.snap_hint_size };
+            (uv, w, h)
+        } else {
+            let uv = self.snap_hint_uv.or(self.snap_hint_uv_en)?;
+            let (w, h) = if self.snap_hint_uv.is_some() { self.snap_hint_size } else { self.snap_hint_size_en };
+            (uv, w, h)
+        };
         let Some(cam) = &self.camera_2d else {
             return None;
         };
         if self.size.width == 0 || self.size.height == 0 {
             return None;
         }
-        let (img_w, img_h) = self.snap_hint_size;
         if img_w <= 0.0 || img_h <= 0.0 {
             return None;
         }

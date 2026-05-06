@@ -1,5 +1,5 @@
-import AppTooltip from '../../../../../../components/AppTooltip'
-import type { ControlScript } from '../../../../../../hooks/useControlBindings'
+import { AppTooltip } from '@components'
+import type { ControlScript } from '@hooks'
 
 const KEY_LABELS: Record<string, string> = {
   MOUSE_LEFT:   'MOUSE LEFT',

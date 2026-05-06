@@ -9,7 +9,7 @@ import { QuickBuildOverlay } from './components/QuickBuildOverlay';
 import { EngineProvider } from '@engine';
 import { ModalProvider } from '@modal';
 import { QuickBuildProvider } from '../../context/QuickBuildContext';
-import { useAutoSave } from '../../hooks/useAutoSave';
+import { useAutoSave } from '@hooks';
 
 import type { ProjectType, ProjectSaveData } from '@shared-types';
 

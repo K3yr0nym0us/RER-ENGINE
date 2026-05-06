@@ -6,6 +6,7 @@ import type { ProjectSaveData, SavedEntity, SavedScene, SavedWorldConfig } from 
 import { useContextEngine } from '@engine';
 import { useModal } from '@modal';
 import { setSceneProjectState } from '../sceneStateStore';
+import { useTraslate } from '@hooks';
 
 interface SceneTab {
   id: number;
@@ -25,6 +26,7 @@ const DEFAULT_WORLD: SavedWorldConfig = {
 };
 
 export function SceneTabsBar({ initialSave, projectType }: Props) {
+  const { t } = useTraslate();
   const {
     worldConfig,
     backgroundPath,
@@ -302,7 +304,7 @@ export function SceneTabsBar({ initialSave, projectType }: Props) {
     if (!sourceData) return;
 
     const nextId = getNextSceneId();
-    const nextName = `${sourceTab.name} (copia)`;
+    const nextName = `${sourceTab.name} ${t('(copy)')}`;
     const duplicatedScene: SavedScene = {
       ...sourceData,
       id: nextId,
@@ -382,11 +384,11 @@ export function SceneTabsBar({ initialSave, projectType }: Props) {
     let draftName = `Escena ${nextId}`;
 
     openModal({
-      title: 'Crear nueva escena',
+      title: t('Create new scene'),
       body: (
         <div className="d-flex flex-column gap-3">
           <div>
-            <label htmlFor="scene-name-create" className="form-label mb-1">Nombre de la escena</label>
+            <label htmlFor="scene-name-create" className="form-label mb-1">{t('Scene name')}</label>
             <input
               id="scene-name-create"
               type="text"
@@ -399,7 +401,7 @@ export function SceneTabsBar({ initialSave, projectType }: Props) {
           </div>
 
           <div className="d-flex justify-content-end gap-2">
-            <button className="btn btn-secondary" onClick={closeModal} type="button">Cancelar</button>
+            <button className="btn btn-secondary" onClick={closeModal} type="button">{t('Cancel')}</button>
             <button
               className="btn btn-success"
               onClick={() => {
@@ -408,7 +410,7 @@ export function SceneTabsBar({ initialSave, projectType }: Props) {
               }}
               type="button"
             >
-              Crear escena
+              {t('Create scene')}
             </button>
           </div>
         </div>
@@ -420,11 +422,11 @@ export function SceneTabsBar({ initialSave, projectType }: Props) {
     let draftName = scene.name;
 
     openModal({
-      title: `Editar ${scene.name}`,
+      title: `${t('Edit')} ${scene.name}`,
       body: (
         <div className="d-flex flex-column gap-3">
           <div>
-            <label htmlFor="scene-name-rename" className="form-label mb-1">Nombre de la escena</label>
+            <label htmlFor="scene-name-rename" className="form-label mb-1">{t('Scene name')}</label>
             <input
               id="scene-name-rename"
               type="text"
@@ -445,9 +447,9 @@ export function SceneTabsBar({ initialSave, projectType }: Props) {
               }}
               type="button"
             >
-              Guardar nombre
+              {t('Save name')}
             </button>
-            <button className="btn btn-secondary" onClick={closeModal} type="button">Cancelar</button>
+            <button className="btn btn-secondary" onClick={closeModal} type="button">{t('Cancel')}</button>
           </div>
         </div>
       ),
@@ -457,11 +459,11 @@ export function SceneTabsBar({ initialSave, projectType }: Props) {
   const openDeleteSceneModal = (scene: SceneTab) => {
     if (scenes.length <= 1) {
       openModal({
-        title: `No se puede eliminar ${scene.name}`,
+        title: `${t('Cannot delete')} ${scene.name}`,
         body: (
           <div className="d-flex flex-column gap-2">
-            <p className="mb-0">No puedes eliminar esta escena porque es la única del proyecto.</p>
-            <small className="text-secondary">Debe existir al menos una escena para mantener el editor en un estado válido.</small>
+            <p className="mb-0">{t('You cannot delete this scene because it is the only one in the project.')}</p>
+            <small className="text-secondary">{t('There must be at least one scene to keep the editor in a valid state.')}</small>
           </div>
         ),
       });
@@ -469,12 +471,12 @@ export function SceneTabsBar({ initialSave, projectType }: Props) {
     }
 
     openModal({
-      title: `Eliminar ${scene.name}`,
+      title: `${t('Delete')} ${scene.name}`,
       body: (
         <div className="d-flex flex-column gap-3">
-          <p className="mb-0">Esta acción eliminará la escena seleccionada.</p>
+          <p className="mb-0">{t('This action will delete the selected scene.')}</p>
           <div className="d-flex justify-content-end gap-2">
-            <button className="btn btn-secondary" onClick={closeModal} type="button">Cancelar</button>
+            <button className="btn btn-secondary" onClick={closeModal} type="button">{t('Cancel')}</button>
             <button
               className="btn btn-danger"
               onClick={() => {
@@ -483,7 +485,7 @@ export function SceneTabsBar({ initialSave, projectType }: Props) {
               }}
               type="button"
             >
-              Eliminar
+              {t('Delete')}
             </button>
           </div>
         </div>
@@ -493,15 +495,15 @@ export function SceneTabsBar({ initialSave, projectType }: Props) {
 
   const openDuplicateSceneModal = (scene: SceneTab) => {
     openModal({
-      title: `Duplicar ${scene.name}`,
+      title: `${t('Duplicate')} ${scene.name}`,
       body: (
         <div className="d-flex flex-column gap-3">
-          <p className="mb-0">Se creará una copia completa de esta escena.</p>
+          <p className="mb-0">{t('A full copy of this scene will be created.')}</p>
           <small className="text-secondary">
-            La copia incluirá todos los elementos de la escena: escenarios, personajes, colisionadores y el resto de su configuración visual y lógica.
+            {t('The copy will include all scene elements: scenarios, characters, colliders and the rest of its visual and logical configuration.')}
           </small>
           <div className="d-flex justify-content-end gap-2">
-            <button className="btn btn-secondary" onClick={closeModal} type="button">Cancelar</button>
+            <button className="btn btn-secondary" onClick={closeModal} type="button">{t('Cancel')}</button>
             <button
               className="btn btn-success"
               onClick={() => {
@@ -510,7 +512,7 @@ export function SceneTabsBar({ initialSave, projectType }: Props) {
               }}
               type="button"
             >
-              Duplicar escena
+              {t('Duplicate scene')}
             </button>
           </div>
         </div>
@@ -575,7 +577,7 @@ export function SceneTabsBar({ initialSave, projectType }: Props) {
                       event.stopPropagation();
                       openRenameSceneModal(scene);
                     }}
-                    aria-label={`Editar ${scene.name}`}
+                    aria-label={`${t('Edit')} ${scene.name}`}
                   >
                     <Pencil size={14} />
                   </button>
@@ -588,7 +590,7 @@ export function SceneTabsBar({ initialSave, projectType }: Props) {
                       event.stopPropagation();
                       openDuplicateSceneModal(scene);
                     }}
-                    aria-label={`Duplicar ${scene.name}`}
+                    aria-label={`${t('Duplicate')} ${scene.name}`}
                   >
                     <Files size={14} />
                   </button>
@@ -601,7 +603,7 @@ export function SceneTabsBar({ initialSave, projectType }: Props) {
                       event.stopPropagation();
                       openDeleteSceneModal(scene);
                     }}
-                    aria-label={`Eliminar ${scene.name}`}
+                    aria-label={`${t('Delete')} ${scene.name}`}
                   >
                     <Trash size={14} />
                   </button>

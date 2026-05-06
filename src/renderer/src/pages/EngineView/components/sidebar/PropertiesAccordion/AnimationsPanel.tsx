@@ -3,12 +3,13 @@ import { useEffect, useState } from 'react';
 import { Accordion } from 'react-bootstrap';
 import { Pencil, PlayFill, StopFill, Trash } from 'react-bootstrap-icons';
 
-import AppTooltip from '../../../../../components/AppTooltip';
+import { AppTooltip } from '@components';
 import { CreateEntityFromSpriteModalBody } from '../EntitiesAccordion/components/CreateEntityFromSpriteModalBody';
 import { SpritePreviewModalBody } from '../EntitiesAccordion/SpritePreviewModalBody/SpritePreviewModalBody';
 import type { SpriteFrameRect } from '../EntitiesAccordion/SpritePreviewModalBody/components';
 import { useContextEngine } from '@engine';
 import { useModal } from '@modal';
+import { useTraslate } from '@hooks';
 
 interface AnimationFrame {
   path: string;
@@ -78,6 +79,7 @@ const resolveLogicalSizeFromReference = (
 };
 
 export function AnimationsPanel() {
+  const { t } = useTraslate();
   const { selectedEntity: entity, send, sendAsync, setAnimationPlaying, updateEntityAnimations, animationPlaying, sprites } = useContextEngine();
   const { openModal, closeModal } = useModal();
 
@@ -126,11 +128,11 @@ export function AnimationsPanel() {
     if (!entity?.id) return;
 
     openModal({
-      title: 'Nueva animacion',
+      title: t('New animation'),
       body: (
         <CreateEntityFromSpriteModalBody
           sprites={sprites}
-          previewTitle="Configurar animacion"
+          previewTitle={t('Configure animation')}
           onCreateEntity={({ spritePath, animation }) => {
             const measuredW = Math.max(1, ...animation.frames.map((f) => f.width));
             const measuredH = Math.max(1, ...animation.frames.map((f) => f.height));
@@ -186,12 +188,12 @@ export function AnimationsPanel() {
     if (!anim) return;
 
     openModal({
-      title: 'Confirmar eliminacion',
+      title: t('Confirm deletion'),
       body: (
         <div>
-          <p className="mb-3">¿Seguro que deseas eliminar la animacion <strong>{anim.name}</strong>?</p>
+          <p className="mb-3">{t('Are you sure you want to delete the animation')} <strong>{anim.name}</strong>?</p>
           <div className="d-flex justify-content-end gap-2">
-            <button className="btn btn-secondary btn-sm" onClick={closeModal}>Cancelar</button>
+            <button className="btn btn-secondary btn-sm" onClick={closeModal}>{t('Cancel')}</button>
             <button
               className="btn btn-danger btn-sm"
               onClick={() => {
@@ -199,7 +201,7 @@ export function AnimationsPanel() {
                 closeModal();
               }}
             >
-              Eliminar
+              {t('Delete')}
             </button>
           </div>
         </div>
@@ -258,7 +260,7 @@ export function AnimationsPanel() {
     }));
 
     openModal({
-      title: `Editar animacion: ${anim.name}`,
+      title: `${t('Edit animation:')} ${anim.name}`,
       size: 'xl',
       body: (
         <SpritePreviewModalBody
@@ -322,19 +324,19 @@ export function AnimationsPanel() {
 
   return (
     <Accordion.Item eventKey="animaciones">
-      <Accordion.Header>Animaciones</Accordion.Header>
+      <Accordion.Header>{t('Animations')}</Accordion.Header>
       <Accordion.Body className="py-2 px-2">
         <button
           className="btn btn-outline-success btn-sm w-100 fw-bold mb-2"
           onClick={openCreateAnimationModal}
           disabled={!entity?.id}
         >
-          + Nueva animacion
+          {t('+ New animation')}
         </button>
 
         {animations.length === 0 && (
           <div className="alert alert-secondary py-1 text-center" role="alert">
-            Sin animaciones. Agrega una nueva para empezar.
+            {t('No animations. Add a new one to start.')}
           </div>
         )}
 
@@ -349,7 +351,7 @@ export function AnimationsPanel() {
                     <span className="small fw-semibold text-light flex-fill text-truncate">{anim.name}</span>
                   </AppTooltip>
 
-                  <AppTooltip content={isPlayingThisAnimation ? 'Detener animacion' : 'Reproducir animacion'} place="top">
+                  <AppTooltip content={isPlayingThisAnimation ? t('Stop animation') : t('Play animation')} place="top">
                     <span
                       role="button"
                       tabIndex={canPlayOrEdit ? 0 : -1}
@@ -363,7 +365,7 @@ export function AnimationsPanel() {
                     </span>
                   </AppTooltip>
 
-                  <AppTooltip content="Editar animacion" place="top">
+                  <AppTooltip content={t('Edit animation')} place="top">
                     <span
                       role="button"
                       tabIndex={canPlayOrEdit ? 0 : -1}
@@ -377,7 +379,7 @@ export function AnimationsPanel() {
                     </span>
                   </AppTooltip>
 
-                  <AppTooltip content="Eliminar animacion" place="top">
+                  <AppTooltip content={t('Delete animation')} place="top">
                     <span
                       role="button"
                       tabIndex={0}

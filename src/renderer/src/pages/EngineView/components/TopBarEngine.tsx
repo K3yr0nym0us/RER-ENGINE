@@ -7,8 +7,9 @@ import {
   StopFill,
 } from 'react-bootstrap-icons';
 
-import AppTooltip from '../../../components/AppTooltip';
+import { AppTooltip } from '@components';
 import { useContextEngine } from '@engine';
+import { useTraslate } from '@hooks';
 
 interface Props {
   projectType: string
@@ -20,6 +21,7 @@ interface Props {
 
 export function TopBarEngine({ projectType, handleSave, toggleAutoSave, debugOverlayVisible, onToggleDebugOverlay }: Props) {
   const { engineReady, engineError, previewPlaying, setPreviewPlaying, debugMetrics } = useContextEngine();
+  const { t } = useTraslate();
   const isStopActive = !previewPlaying;
   const [hasSavedOnce] = useState(false);
   const [autoSaveEnabled] = useState(false);
@@ -27,14 +29,14 @@ export function TopBarEngine({ projectType, handleSave, toggleAutoSave, debugOve
   const statusBadge = engineReady
     ? <span className="badge bg-success">◉</span>
     : engineError
-      ? <span className="badge bg-danger">Error</span>
-      : <span className="badge bg-warning text-dark">Iniciando…</span>;
+      ? <span className="badge bg-danger">{t('Error')}</span>
+      : <span className="badge bg-warning text-dark">{t('Starting…')}</span>;
 
   return (
     <div className="custom-controls-bar border-bottom border-secondary-subtle">
       <div className="p-2 d-flex align-items-center gap-2 justify-content-between">
         <div className="d-flex align-items-center gap-2">
-          <AppTooltip content={previewPlaying ? 'Jugando' : 'Iniciar prueba'} place="bottom">
+          <AppTooltip content={previewPlaying ? t('Playing') : t('Start test')} place="bottom">
             <button
               className={`btn btn-sm ${previewPlaying ? 'btn-success active' : 'btn-outline-light'}`}
               disabled={!engineReady || previewPlaying}
@@ -45,7 +47,7 @@ export function TopBarEngine({ projectType, handleSave, toggleAutoSave, debugOve
               <PlayFill size={16} />
             </button>
           </AppTooltip>
-          <AppTooltip content={isStopActive ? 'Editor activo' : 'Detener prueba'} place="bottom">
+          <AppTooltip content={isStopActive ? t('Active editor') : t('Stop test')} place="bottom">
             <button
               className={`btn btn-sm ${isStopActive ? 'btn-danger active' : 'btn-outline-light'}`}
               disabled={!engineReady || isStopActive}
@@ -89,7 +91,7 @@ export function TopBarEngine({ projectType, handleSave, toggleAutoSave, debugOve
             </div>
           )}
           <AppTooltip
-            content={debugOverlayVisible ? 'Ocultar métricas' : 'Mostrar métricas'}
+            content={debugOverlayVisible ? t('Hide metrics') : t('Show metrics')}
             place="left"
           >
             <button
@@ -109,10 +111,10 @@ export function TopBarEngine({ projectType, handleSave, toggleAutoSave, debugOve
             type="button"
           >
             <FloppyFill size={13} />
-            <span style={{ fontSize: 14 }}>Guardar</span>
+            <span style={{ fontSize: 14 }}>{t('Save')}</span>
           </button>
           <AppTooltip
-            content={hasSavedOnce ? (autoSaveEnabled ? 'Desactivar auto-guardado' : 'Activar auto-guardado') : 'Guarda primero'}
+            content={hasSavedOnce ? (autoSaveEnabled ? t('Disable auto-save') : t('Enable auto-save')) : t('Save first')}
             place="left"
           >
             <button
@@ -125,7 +127,7 @@ export function TopBarEngine({ projectType, handleSave, toggleAutoSave, debugOve
               type="button"
             >
               <ClockFill size={11} />
-              <span style={{ fontSize: 14 }}>Auto</span>
+              <span style={{ fontSize: 14 }}>{t('Auto')}</span>
             </button>
           </AppTooltip>
         </div>

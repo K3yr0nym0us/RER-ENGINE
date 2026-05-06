@@ -207,6 +207,9 @@ pub enum EngineCommand {
     /// Recargar un asset PNG desde disco sin recrear entidades ni cambiar UVs.
     /// Electron lo envía cuando detecta que el archivo fue modificado externamente.
     ReloadAsset { path: String },
+    /// Cambiar el locale del motor para seleccionar assets localizados (ej. imágenes de hint).
+    /// locale: "en" | "es"
+    SetLocale { locale: String },
 }
 
 #[derive(Debug, Deserialize, Clone)]

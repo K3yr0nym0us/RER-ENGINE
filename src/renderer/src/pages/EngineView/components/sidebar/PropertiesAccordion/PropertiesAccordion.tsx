@@ -3,14 +3,16 @@ import { useEffect, useState } from 'react';
 import { Accordion } from 'react-bootstrap';
 import { CircleSquare, Check2Square, Files, Pencil, Trash } from 'react-bootstrap-icons';
 
-import AppTooltip from '../../../../../components/AppTooltip';
+import { AppTooltip } from '@components';
 import { TransformPanel, AnimationsPanel, ScriptingPanel } from '.';
 
 import { useContextEngine } from '@engine';
 import { useModal } from '@modal';
 import type { BluePrintCategory, BluePrintEntry } from '@shared-types';
+import { useTraslate } from '@hooks';
 
 export function PropertiesAccordion({ projectType }: { projectType?: string }) {
+  const { t } = useTraslate();
   const { 
     selectedEntity, 
     send, 
@@ -57,7 +59,7 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
   const physicsType    = selectedEntity?.physicsType || 'dynamic'
 
   if (!selectedEntity) {
-    return <p className="text-secondary fst-italic small mb-0 px-1">Haz click en un objeto para verlo</p>
+    return <p className="text-secondary fst-italic small mb-0 px-1">{t('Click on an object to view it')}</p>
   }
 
   const isScenario = scenarioEntities.some((s: any) => s.id === selectedEntity?.id)
@@ -65,13 +67,13 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
   const isCollider = selectedEntity ? entityMetaRef.current[selectedEntity.id]?.kind === 'collider' : false
   const isExecutionArea = selectedEntity ? entityMetaRef.current[selectedEntity.id]?.kind === 'execution_area' : false
 
-  const handleConfirmModal = (onConfirm: () => void, action: 'eliminar' | 'duplicar') => {
+  const handleConfirmModal = (onConfirm: () => void, action: 'delete' | 'duplicate') => {
     openModal({
-      title: 'Confirmar acción',
+      title: t('Confirm action'),
       body: (
         <div className="text-center">
-          <p>¿Estás seguro de que deseas {action} esta entidad?</p>
-          <p className="text-danger">Esta acción no se puede deshacer.</p>
+          <p>{t('Are you sure you want to')} {t(action)} {t('this entity?')}</p>
+          <p className="text-danger">{t('This action cannot be undone.')}</p>
           <div className="d-flex justify-content-center gap-2 mt-4">
             <button
               className="btn btn-danger"
@@ -80,10 +82,10 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
                 closeModal()
               }}
             >
-              Sí, {action}
+              {t('Yes,')} {t(action)}
             </button>
             <button className="btn btn-secondary" onClick={closeModal}>
-              Cancelar
+              {t('Cancel')}
             </button>
            </div>
          </div>
@@ -93,31 +95,31 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
 
   const handleDuplicate = () => {
     if (isScenario) {
-      handleConfirmModal(() => duplicateScenario(selectedEntity.id), 'duplicar');
+      handleConfirmModal(() => duplicateScenario(selectedEntity.id), 'duplicate');
     } else if (isCharacter) {
-      handleConfirmModal(() => duplicateCharacter(selectedEntity.id), 'duplicar');
+      handleConfirmModal(() => duplicateCharacter(selectedEntity.id), 'duplicate');
     } else if (isCollider) {
       const points = entityMetaRef.current[selectedEntity.id]?.points;
       if (!points || points.length !== 4) return;
       const shiftedPoints = points.map(([x, y]) => [x + 0.5, y + 0.5]) as [[number, number], [number, number], [number, number], [number, number]];
-      handleConfirmModal(() => send({ cmd: 'create_collider_from_points', points: shiftedPoints }), 'duplicar');
+      handleConfirmModal(() => send({ cmd: 'create_collider_from_points', points: shiftedPoints }), 'duplicate');
     } else if (isExecutionArea) {
       const points = entityMetaRef.current[selectedEntity.id]?.points;
       if (!points || points.length !== 4) return;
       const shiftedPoints = points.map(([x, y]) => [x + 0.5, y + 0.5]) as [[number, number], [number, number], [number, number], [number, number]];
-      handleConfirmModal(() => send({ cmd: 'create_execution_area_from_points', points: shiftedPoints }), 'duplicar');
+      handleConfirmModal(() => send({ cmd: 'create_execution_area_from_points', points: shiftedPoints }), 'duplicate');
     }
   }
 
   const handleRemove = () => {
     if (isScenario) {
-      handleConfirmModal(() => removeScenario(selectedEntity.id), 'eliminar');
+      handleConfirmModal(() => removeScenario(selectedEntity.id), 'delete');
     } else if (isCharacter) {
-      handleConfirmModal(() => removeCharacter(selectedEntity.id), 'eliminar');
+      handleConfirmModal(() => removeCharacter(selectedEntity.id), 'delete');
     } else if (isCollider) {
-      handleConfirmModal(() => removeCollider(selectedEntity.id), 'eliminar');
+      handleConfirmModal(() => removeCollider(selectedEntity.id), 'delete');
     } else if (isExecutionArea) {
-      handleConfirmModal(() => removeExecutionArea(selectedEntity.id), 'eliminar');
+      handleConfirmModal(() => removeExecutionArea(selectedEntity.id), 'delete');
     }
   }
   const trimmedEntityName = entityNameDraft.trim();
@@ -127,18 +129,18 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
   return (
     <div>
       <div className="mb-2">
-        <p className="prop-label">Nombre</p>
+        <p className="prop-label">{t('Name')}</p>
         <div className="input-group input-group-sm mt-1">
           <input
             type="text"
             value={entityNameDraft}
             onChange={(e) => setEntityNameDraft(e.target.value)}
             className="form-control bg-dark text-info border-secondary prop-input"
-            aria-label="Nombre de entidad"
+            aria-label={t('Entity name')}
             disabled={!isEditingEntityName}
           />
           {!isEditingEntityName ? (
-            <AppTooltip content="Editar nombre" place="top">
+            <AppTooltip content={t('Edit name')} place="top">
               <button
                 type="button"
                 className="btn btn-outline-secondary"
@@ -148,7 +150,7 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
               </button>
             </AppTooltip>
           ) : (
-            <AppTooltip content="Guardar cambios" place="top">
+            <AppTooltip content={t('Save changes')} place="top">
               <button
                 type="button"
                 className="btn btn-outline-info"
@@ -174,7 +176,7 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
       {!isCollider && !isExecutionArea && (
         isScenario ? (
           <div className="mb-2">
-            <p className="prop-label">Colisión</p>
+            <p className="prop-label">{t('Collision')}</p>
             <div className="d-flex align-items-center gap-2 mt-1">
               <input
                 type="checkbox"
@@ -187,13 +189,13 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
                 }}
               />
               <label htmlFor="scenario-collision" className="form-check-label text-light small mb-0">
-                Con colisión
+                {t('With collision')}
               </label>
             </div>
           </div>
         ) : (
           <div className="mb-2">
-            <p className="prop-label">Física</p>
+            <p className="prop-label">{t('Physics')}</p>
             <div className="d-flex align-items-center gap-2 mt-1">
               <input
                 type="checkbox"
@@ -206,7 +208,7 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
                 }}
               />
               <label htmlFor="physics-enabled" className="form-check-label text-light small mb-0">
-                Activar física
+                {t('Enable physics')}
               </label>
             </div>
             {physicsEnabled && (
@@ -218,9 +220,9 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
                   send({ cmd: 'set_physics', id: selectedEntity.id, enabled: true, body_type: next })
                 }}
               >
-                <option value="dynamic">Dinámico (gravedad)</option>
-                <option value="static">Estático (no se mueve)</option>
-                {!is2D && <option value="kinematic">Cinemático (por código)</option>}
+                <option value="dynamic">{t('Dynamic (gravity)')}</option>
+                <option value="static">{t('Static (does not move)')}</option>
+                {!is2D && <option value="kinematic">{t('Kinematic (by code)')}</option>}
               </select>
             )}
           </div>
@@ -230,7 +232,7 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
       {!isCollider && !isExecutionArea && (
         <Accordion className="prop-accordion">
           <Accordion.Item eventKey="transform">
-            <Accordion.Header>Transformaciones</Accordion.Header>
+            <Accordion.Header>{t('Transformations')}</Accordion.Header>
             <Accordion.Body className="py-2 px-2">
               <TransformPanel entity={selectedEntity} is2D={is2D} onSend={handleSend} />
             </Accordion.Body>
@@ -278,19 +280,19 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
             };
 
             openModal({
-              title: 'Crear Blueprint',
+              title: t('Create Blueprint'),
               body: (
                 <div className="text-center">
                   <CircleSquare size={40} className="text-primary mb-3" />
-                  <p>Se creará un <strong>Blueprint</strong> basado en la entidad <strong>{selectedEntity.name}</strong>.</p>
-                  <p className="text-secondary small">El Blueprint guardará toda la configuración actual de la entidad: transformaciones, física, animaciones y scripts.</p>
-                  <p className="text-secondary small">Se guardará en la categoría <strong>{category}</strong>.</p>
+                  <p>{t('A Blueprint will be created based on the entity')} <strong>{selectedEntity.name}</strong>.</p>
+                  <p className="text-secondary small">{t('The Blueprint will save the current entity configuration: transformations, physics, animations and scripts.')}</p>
+                  <p className="text-secondary small">{t('It will be saved in the')} <strong>{category}</strong> {t('category.')}.</p>
                   <div className="d-flex justify-content-center gap-2 mt-4">
                     <button className="btn btn-primary" onClick={handleConfirm}>
-                      Confirmar
+                      {t('Confirm')}
                     </button>
                     <button className="btn btn-secondary" onClick={closeModal}>
-                      Cancelar
+                      {t('Cancel')}
                     </button>
                   </div>
                 </div>
@@ -299,7 +301,7 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
           }}
         >
           <CircleSquare className="me-2" />
-          Crear Blueprint
+          {t('Create Blueprint')}
         </button>
         <div className="d-flex gap-2">
           <button
@@ -307,14 +309,14 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
             onClick={handleDuplicate}
           >
             <Files className="me-2" />
-            Duplicar
+            {t('Duplicate')}
           </button>
           <button
             className="btn btn-sm btn-outline-danger flex-fill"
             onClick={handleRemove}
           >
             <Trash className="me-2" />
-            Eliminar
+            {t('Delete')}
           </button>
         </div>
       </div>

@@ -17,7 +17,7 @@ import {
 } from './components';
 import { ScriptEditorModalBody } from '../../../ScriptEditorModalBody';
 
-import { useSpritePreviewImage } from '../../../../../../hooks/useSpritePreviewImage';
+import { useSpritePreviewImage } from '@hooks';
 
 interface SpritePreviewConfirmConfig {
   animationName: string;

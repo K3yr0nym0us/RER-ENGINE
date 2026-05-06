@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import type { OpenProjectResult, ProjectType } from '@shared-types';
+import { useTraslate } from '@hooks';
+import { useLanguage } from '../../context/LanguageContext';
 
 interface ProjectOption {
   type:        ProjectType
@@ -11,26 +13,28 @@ interface ProjectOption {
   available:   boolean
 }
 
-const OPTIONS: ProjectOption[] = [
-  {
-    type:        '2D',
-    label:       'Proyecto 2D',
-    icon:        '▣',
-    description: 'Sprites, tilemaps y física plana. Ideal para juegos plataformer, top-down o puzzle.',
-    badge:       '2D',
-    badgeColor:  '#38bdf8',
-    available:   true,
-  },
-  {
-    type:        '3D',
-    label:       'Proyecto 3D',
-    icon:        '⬡',
-    description: 'Motor completo con meshes, luces, sombras y física 3D usando wgpu + Rapier.',
-    badge:       '3D',
-    badgeColor:  '#34d399',
-    available:   true,
-  },
-]
+function getOptions(t: (key: string) => string): ProjectOption[] {
+  return [
+    {
+      type:        '2D',
+      label:       t('2D Project'),
+      icon:        '▣',
+      description: t('Sprites, tilemaps and flat physics. Ideal for platformer, top-down or puzzle games.'),
+      badge:       '2D',
+      badgeColor:  '#38bdf8',
+      available:   true,
+    },
+    {
+      type:        '3D',
+      label:       t('3D Project'),
+      icon:        '⬡',
+      description: t('Full engine with meshes, lights, shadows and 3D physics using wgpu + Rapier.'),
+      badge:       '3D',
+      badgeColor:  '#34d399',
+      available:   true,
+    },
+  ]
+}
 
 const separator = (
   <div style={{ width: 1, background: '#2c3152', borderRadius: 1, alignSelf: 'stretch', margin: '0 4px' }} />
@@ -43,13 +47,17 @@ interface Props {
 
 export function TypeProjectSelector({ onSelect, onLoadProject }: Props) {
   const [loadError, setLoadError] = useState<string | null>(null)
+  const { t } = useTraslate()
+  const { locale, toggleLocale } = useLanguage()
+
+  const options = getOptions(t)
 
   const handleLoadProject = async () => {
     setLoadError(null)
     const result = await window.electronAPI.openProjectDialog()
     if (result === null) return
     if (!result.project.type || !result.project.gameStyle) {
-      setLoadError('El archivo seleccionado no es un proyecto RER válido.')
+      setLoadError(t('Invalid RER project file.'))
       return
     }
     onLoadProject(result)
@@ -73,21 +81,43 @@ export function TypeProjectSelector({ onSelect, onLoadProject }: Props) {
   return (
     <div
       className="d-flex flex-column align-items-center justify-content-center"
-      style={{ height: '100vh', background: '#050508', userSelect: 'none' }}
+      style={{ height: '100vh', background: '#050508', userSelect: 'none', position: 'relative' }}
     >
-      {/* Título */}
+      <button
+        onClick={toggleLocale}
+        title={locale === 'en' ? 'Switch to Spanish' : 'Cambiar a inglés'}
+        style={{
+          position:     'absolute',
+          top:          16,
+          right:        16,
+          background:   '#0f1120',
+          border:       '1px solid #2c3152',
+          borderRadius: 6,
+          color:        '#94a3b8',
+          fontSize:     12,
+          fontWeight:   700,
+          letterSpacing: '0.06em',
+          padding:      '5px 12px',
+          cursor:       'pointer',
+          transition:   'border-color 0.15s, color 0.15s',
+        }}
+        onMouseEnter={e => Object.assign((e.currentTarget as HTMLButtonElement).style, { borderColor: '#c084fc', color: '#c084fc' })}
+        onMouseLeave={e => Object.assign((e.currentTarget as HTMLButtonElement).style, { borderColor: '#2c3152', color: '#94a3b8' })}
+      >
+        {locale === 'en' ? 'EN' : 'ES'}
+      </button>
+
       <div className="mb-5 text-center">
         <div style={{ fontSize: 36, fontWeight: 800, color: '#c084fc', letterSpacing: '0.04em', lineHeight: 1 }}>
           ⬡ RER-ENGINE
         </div>
         <div className="mt-2 selector-subtitle">
-          SELECCIONA EL TIPO DE PROYECTO
+          {t('SELECT PROJECT TYPE')}
         </div>
       </div>
 
       <div className="d-flex gap-4 align-items-stretch">
 
-        {/* ── 1. Abrir proyecto existente ──────────────────────────────── */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <button
             onClick={handleLoadProject}
@@ -101,13 +131,13 @@ export function TypeProjectSelector({ onSelect, onLoadProject }: Props) {
               className="selector-badge"
               style={{ background: '#c084fc22', color: '#c084fc', border: '1px solid #c084fc55' }}
             >
-              ABRIR
+              {t('OPEN')}
             </div>
             <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 8, color: '#e2e8f0' }}>
-              Proyecto existente
+              {t('Existing project')}
             </div>
             <div style={{ fontSize: 12, color: '#6b7280', lineHeight: 1.5 }}>
-              Carga un proyecto guardado anteriormente desde un archivo <em>.save</em>.
+              {t('Load a previously saved project from a .save file.')}
             </div>
           </button>
           {loadError && (
@@ -119,8 +149,7 @@ export function TypeProjectSelector({ onSelect, onLoadProject }: Props) {
 
         {separator}
 
-        {/* ── 2 & 3. Tipos de proyecto (2D / 3D) ───────────────────────── */}
-        {OPTIONS.map((opt) => (
+        {options.map((opt) => (
           <div key={opt.type} style={{ position: 'relative' }}>
             <button
               onClick={() => opt.available && onSelect(opt.type)}
@@ -151,7 +180,7 @@ export function TypeProjectSelector({ onSelect, onLoadProject }: Props) {
                     className="coming-soon-badge"
                     style={{ background: `${opt.badgeColor}18`, color: `${opt.badgeColor}bb`, border: `1px solid ${opt.badgeColor}35` }}
                   >
-                    PRÓXIMAMENTE
+                    {t('COMING SOON')}
                   </span>
                 </div>
               )}

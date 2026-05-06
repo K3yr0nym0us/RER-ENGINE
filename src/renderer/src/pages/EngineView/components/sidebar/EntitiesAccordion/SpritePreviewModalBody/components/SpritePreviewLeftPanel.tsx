@@ -1,7 +1,8 @@
 import { useState, useCallback } from 'react';
 import { SelectionMode, type ScriptEntry } from './';
 import { Link, Unlock, MusicNoteBeamed, Trash, FileEarmarkCode, PencilSquare, SkipEndFill } from 'react-bootstrap-icons';
-import AppTooltip from '../../../../../../../components/AppTooltip';
+import { AppTooltip } from '@components';
+import { useTraslate } from '@hooks';
 
 interface SpritePreviewLeftPanelProps {
   selectionMode: SelectionMode;
@@ -52,6 +53,7 @@ export function SpritePreviewLeftPanel({
 }: SpritePreviewLeftPanelProps) {
   const [box, setBox] = useState(DEFAULT_BOX);
   const [keepAspect, setKeepAspect] = useState(true);
+  const { t } = useTraslate();
 
   const handleBoxWidthChange = useCallback((width: number) => {
     const newHeight = keepAspect ? width : box.height;
@@ -69,11 +71,11 @@ export function SpritePreviewLeftPanel({
 
   return (
     <div className="bg-dark text-light border border-secondary rounded p-3 h-100">
-      <h5 className="text-light text-center mb-3">Propiedades</h5>
+      <h5 className="text-light text-center mb-3">{t('Properties')}</h5>
       <hr className="border-secondary opacity-50 mb-3" />
 
       <div className="mb-3">
-        <label className="text-light fw-bold d-block mb-2" id="label-modo-seleccion" htmlFor="mode-cell">Modo de selección</label>
+        <label className="text-light fw-bold d-block mb-2" id="label-modo-seleccion" htmlFor="mode-cell">{t('Selection mode')}</label>
         <div className="d-flex gap-4 justify-content-center">
           <div className="form-check d-flex align-items-center gap-1">
             <input
@@ -85,7 +87,7 @@ export function SpritePreviewLeftPanel({
               aria-labelledby="label-modo-seleccion mode-cell-label"
             />
             <label className="form-check-label" htmlFor="mode-cell" id="mode-cell-label">
-              Celdas
+              {t('Cells')}
             </label>
           </div>
           <div className="form-check d-flex align-items-center gap-1">
@@ -98,7 +100,7 @@ export function SpritePreviewLeftPanel({
               aria-labelledby="label-modo-seleccion mode-box-label"
             />
             <label className="form-check-label" htmlFor="mode-box" id="mode-box-label">
-              Recuadro
+              {t('Box')}
             </label>
           </div>
         </div>
@@ -106,7 +108,7 @@ export function SpritePreviewLeftPanel({
 
       {selectionMode === 'cell' && (
         <div className="mb-3">
-            <label className="text-light fw-bold d-block mb-2" htmlFor="grid-size">Tamaño de celda</label>
+            <label className="text-light fw-bold d-block mb-2" htmlFor="grid-size">{t('Cell size')}</label>
           <div className="d-flex align-items-center gap-2 mb-3">
             <input
               id="grid-size"
@@ -132,7 +134,7 @@ export function SpritePreviewLeftPanel({
             <span className="text-secondary small">px</span>
           </div>
 
-          <label className="text-light fw-bold d-block mb-2" htmlFor="offset-x-range">Desplazar cuadrícula</label>
+          <label className="text-light fw-bold d-block mb-2" htmlFor="offset-x-range">{t('Move grid')}</label>
 
           <div className="mb-2">
             <div className="d-flex align-items-center gap-2">
@@ -146,7 +148,7 @@ export function SpritePreviewLeftPanel({
                 step={1}
                 value={cellOffsetX}
                 onChange={e => setCellOffsetX(Number(e.target.value))}
-                aria-label="Desplazar cuadrícula X"
+                aria-label={t('Move grid X')}
               />
               <input
                 id="offset-x-number"
@@ -158,7 +160,7 @@ export function SpritePreviewLeftPanel({
                 step={1}
                 value={cellOffsetX}
                 onChange={e => setCellOffsetX(Number(e.target.value))}
-                aria-label="Desplazar cuadrícula X (número)"
+                aria-label={t('Move grid X (number)')}
               />
             </div>
           </div>
@@ -192,7 +194,7 @@ export function SpritePreviewLeftPanel({
 
       {selectionMode === 'box' && (
         <div className="mb-3">
-          <label className="text-light fw-bold d-block mb-2" htmlFor="box-width-range">Tamaño recuadro</label>
+          <label className="text-light fw-bold d-block mb-2" htmlFor="box-width-range">{t('Box size')}</label>
 
           <div className="mb-2">
             <div className="d-flex align-items-center gap-2">
@@ -206,7 +208,7 @@ export function SpritePreviewLeftPanel({
                 step={1}
                 value={box.width}
                 onChange={e => handleBoxWidthChange(Number(e.target.value))}
-                aria-label="Tamaño recuadro ancho"
+                aria-label={t('Box size width')}
               />
               <input
                 id="box-width-number"
@@ -218,7 +220,7 @@ export function SpritePreviewLeftPanel({
                 step={1}
                 value={box.width}
                 onChange={e => handleBoxWidthChange(Number(e.target.value))}
-                aria-label="Tamaño recuadro ancho (número)"
+                aria-label={t('Box size width (number)')}
               />
               <span className="text-secondary small">px</span>
             </div>
@@ -257,7 +259,7 @@ export function SpritePreviewLeftPanel({
             className={`btn w-100 ${keepAspect ? 'btn-primary' : 'btn-outline-secondary'}`}
             type="button"
           >
-            {keepAspect ? <><Link className="me-1" /> Proporción fija</> : <><Unlock className="me-1" /> Proporción libre</>}
+            {keepAspect ? <><Link className="me-1" /> {t('Fixed proportion')}</> : <><Unlock className="me-1" /> {t('Free proportion')}</>}
           </button>
         </div>
       )}
@@ -265,7 +267,7 @@ export function SpritePreviewLeftPanel({
       <hr className="border-secondary opacity-50 mb-3" />
 
       <div className="mb-3">
-        <label className="text-light fw-bold d-block mb-2">Audio de animación</label>
+        <label className="text-light fw-bold d-block mb-2">{t('Animation audio')}</label>
         {audioPath ? (
           <div className="d-flex align-items-center gap-1">
             <AppTooltip content={audioPath} place="top">
@@ -274,20 +276,20 @@ export function SpritePreviewLeftPanel({
                 {audioPath.split(/[\\/]/).pop()}
               </span>
             </AppTooltip>
-            <AppTooltip content="Quitar audio" place="top">
+            <AppTooltip content={t('Remove audio')} place="top">
               <button className="btn btn-sm btn-outline-danger p-0 px-1" type="button" onClick={onClearAudio}>
                 <Trash />
               </button>
             </AppTooltip>
           </div>
         ) : (
-          <AppTooltip content="Cargar archivo de audio (wav/ogg/mp3)" place="top">
+          <AppTooltip content={t('Load audio file (wav/ogg/mp3)')} place="top">
             <button
               className="btn btn-outline-secondary btn-sm w-100"
               type="button"
               onClick={onAddAudio}
             >
-              <MusicNoteBeamed className="me-1" /> Agregar audio
+              <MusicNoteBeamed className="me-1" /> {t('Add audio')}
             </button>
           </AppTooltip>
         )}
@@ -296,7 +298,7 @@ export function SpritePreviewLeftPanel({
       <hr className="border-secondary opacity-50 mb-3" />
 
       <div className="mb-3">
-        <label className="text-light fw-bold d-block mb-2">Scripts Lua</label>
+        <label className="text-light fw-bold d-block mb-2">{t('Lua Scripts')}</label>
 
         {scripts.length > 0 && (
           <div className="d-flex flex-column gap-1 mb-2">
@@ -307,12 +309,12 @@ export function SpritePreviewLeftPanel({
                     <FileEarmarkCode className="me-1" />{s.name}
                   </span>
                 </AppTooltip>
-                <AppTooltip content="Editar script" place="top">
+                <AppTooltip content={t('Edit script')} place="top">
                   <button className="btn btn-sm p-0 px-1 btn-outline-warning" type="button" onClick={() => onEditScript(s.name)}>
                     <PencilSquare size={12} />
                   </button>
                 </AppTooltip>
-                <AppTooltip content="Eliminar script" place="top">
+                <AppTooltip content={t('Delete script')} place="top">
                   <button className="btn btn-sm p-0 px-1 btn-outline-danger" type="button" onClick={() => onRemoveScript(s.name)}>
                     <Trash size={12} />
                   </button>
@@ -322,13 +324,13 @@ export function SpritePreviewLeftPanel({
           </div>
         )}
 
-        <AppTooltip content="Agregar script Lua a esta animación" place="top">
+        <AppTooltip content={t('Add Lua script to this animation')} place="top">
           <button
             className="btn btn-outline-secondary btn-sm w-100"
             type="button"
             onClick={onAddScript}
           >
-            <FileEarmarkCode className="me-1" /> Agregar script
+            <FileEarmarkCode className="me-1" /> {t('Add script')}
           </button>
         </AppTooltip>
       </div>
@@ -339,9 +341,8 @@ export function SpritePreviewLeftPanel({
         <AppTooltip
           content={
             <>
-              <strong>Cancelable por otras animaciones</strong><br />
-              Si está activado, otra animación puede interrumpir y cancelar esta antes de que termine.<br />
-              Si está desactivado, ninguna animación podrá cancelarla hasta que concluya.
+              <strong>{t('Cancelable by other animations')}</strong><br />
+              {t('Cancelable tooltip')}
             </>
           }
           place="right"
@@ -356,7 +357,7 @@ export function SpritePreviewLeftPanel({
             />
             <label className="form-check-label d-flex align-items-center gap-1" htmlFor="is-cancelable-check" style={{ cursor: 'pointer' }}>
               <SkipEndFill size={13} className="text-warning" />
-              <span className="text-light small">Cancelable</span>
+              <span className="text-light small">{t('Cancelable')}</span>
             </label>
           </div>
         </AppTooltip>

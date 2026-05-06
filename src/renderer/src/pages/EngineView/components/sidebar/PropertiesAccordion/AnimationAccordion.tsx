@@ -1,8 +1,9 @@
 import { Accordion, Spinner } from 'react-bootstrap';
 import { Plus, Trash, ArrowUp, ArrowDown, PlayFill, Crosshair, Pencil, MusicNoteBeamed, FileEarmarkCode } from 'react-bootstrap-icons';
 
-import AppTooltip from '../../../../../components/AppTooltip';
+import { AppTooltip } from '@components';
 import { useContextEngine } from '@engine';
+import { useTraslate } from '@hooks';
 
 interface AnimationFrame {
   path:    string
@@ -74,6 +75,7 @@ export function AnimationAccordion({
   onRemoveScript,
 }: AnimationAccordionProps) {
   const { selectedEntity: entity, animationPlaying } = useContextEngine()
+  const { t } = useTraslate()
   const isPlaying = entity ? animationPlaying.get(entity.id) ?? false : false
 
   const frameInputW = (
@@ -118,7 +120,7 @@ export function AnimationAccordion({
           disabled={editingLogicalArea !== animIdx}
           onChange={(e) => onUpdateLogicalH(parseInt(e.target.value) || 64)}
         />
-      <AppTooltip content={editingLogicalArea === animIdx ? 'Ocultar área lógica' : 'Habilitar edición'} place="top">
+      <AppTooltip content={editingLogicalArea === animIdx ? t('Hide logical area') : t('Enable editing')} place="top">
         <button
           className={`btn btn-sm p-1 ms-auto ${editingLogicalArea === animIdx ? 'btn-warning' : 'btn-outline-secondary'}`}
           onClick={onToggleLogicalArea}
@@ -132,7 +134,7 @@ export function AnimationAccordion({
   return (
     <Accordion.Item eventKey={`anim-${animIdx}`}>
       <Accordion.Header>
-        <AppTooltip content={isPlaying ? 'Reproduciendo...' : 'Reproducir'} place="bottom">
+        <AppTooltip content={isPlaying ? t('Playing...') : t('Play')} place="bottom">
           <span
             role="button"
             tabIndex={0}
@@ -147,7 +149,7 @@ export function AnimationAccordion({
         <AppTooltip content={anim.name} place="bottom">
           <span className="text-truncate" style={{ maxWidth: '120px' }}>{anim.name}</span>
         </AppTooltip>
-        <AppTooltip content="Eliminar animación" place="bottom">
+        <AppTooltip content={t('Delete animation')} place="bottom">
           <span
             role="button"
             tabIndex={0}
@@ -202,14 +204,14 @@ export function AnimationAccordion({
               <MusicNoteBeamed size={14} className="text-success ms-auto" />
             </AppTooltip>
           ) : (
-            <AppTooltip content="Agregar audio" place="top">
+            <AppTooltip content={t('Add audio')} place="top">
               <button className="btn btn-sm p-0 ms-auto" onClick={onAddAudio}>
                 <MusicNoteBeamed size={14} />
               </button>
             </AppTooltip>
           )}
           {anim.audio_path && (
-            <AppTooltip content="Quitar audio" place="top">
+            <AppTooltip content={t('Remove audio')} place="top">
               <button className="btn btn-sm p-0 text-danger" onClick={onClearAudio}>
                 <Trash size={12} />
               </button>
@@ -228,7 +230,7 @@ export function AnimationAccordion({
         {anim.frames.length > 0 && (
           <div className="d-flex flex-column gap-1">
             {editingPivot === null && (
-              <div className="small text-secondary mb-1">Frames ({anim.frames.length})</div>
+            <div className="small text-secondary mb-1">Frames ({anim.frames.length})</div>
             )}
             {anim.frames.map((frame, frameIdx) => (
               <div key={frameIdx} className="d-flex align-items-center gap-1">
@@ -240,7 +242,7 @@ export function AnimationAccordion({
                 <span className="small text-muted">
                   ({frame.pivot_x},{frame.pivot_y})
                 </span>
-                <AppTooltip content={editingPivot?.animIdx === animIdx && editingPivot?.frameIdx === frameIdx ? 'Cancelar edición de pivot' : 'Editar pivot (click en viewport)'} place="top">
+                <AppTooltip content={editingPivot?.animIdx === animIdx && editingPivot?.frameIdx === frameIdx ? t('Cancel pivot edit') : t('Edit pivot (click on viewport)')} place="top">
                   <button
                     className={`btn btn-sm p-1 ms-auto ${editingPivot?.animIdx === animIdx && editingPivot?.frameIdx === frameIdx ? 'btn-warning' : 'btn-outline-info'}`}
                     onClick={() => onStartPivotEdit(frameIdx)}
@@ -248,7 +250,7 @@ export function AnimationAccordion({
                     <Crosshair size={10} />
                   </button>
                 </AppTooltip>
-                <AppTooltip content="Mover arriba" place="top">
+                <AppTooltip content={t('Move up')} place="top">
                   <button
                     className="btn btn-sm p-1"
                     disabled={frameIdx === 0}
@@ -257,7 +259,7 @@ export function AnimationAccordion({
                     <ArrowUp size={10} />
                   </button>
                 </AppTooltip>
-                <AppTooltip content="Mover abajo" place="top">
+                <AppTooltip content={t('Move down')} place="top">
                   <button
                     className="btn btn-sm p-1"
                     disabled={frameIdx === anim.frames.length - 1}
@@ -277,11 +279,11 @@ export function AnimationAccordion({
           </div>
         )}
 
-        {/* Scripts de animación */}
+        {/* Scripts de animacion */}
         <div className="mt-2 pt-2 border-top border-secondary">
           <div className="d-flex align-items-center justify-content-between mb-1">
             <span className="small text-secondary">Scripts</span>
-            <AppTooltip content="Nuevo script de animación" place="top">
+            <AppTooltip content={t('New animation script')} place="top">
               <button
                 className="btn btn-sm btn-outline-warning p-1 lh-1"
                 onClick={onAddScript}
@@ -291,7 +293,7 @@ export function AnimationAccordion({
             </AppTooltip>
           </div>
           {(!anim.scripts || anim.scripts.length === 0) && (
-            <div className="small text-muted fst-italic">Sin scripts.</div>
+          <div className="small text-muted fst-italic">{t('No scripts.')}</div>
           )}
           {anim.scripts?.map((s) => (
             <div key={s.name} className="d-flex align-items-center gap-1 mb-1">
@@ -299,7 +301,7 @@ export function AnimationAccordion({
               <AppTooltip content={s.name} place="top">
                 <span className="small text-light text-truncate flex-fill">{s.name}</span>
               </AppTooltip>
-              <AppTooltip content="Editar script" place="top">
+              <AppTooltip content={t('Edit script')} place="top">
                 <button
                   className="btn btn-sm btn-outline-primary p-1 lh-1"
                   onClick={() => onEditScript(s.name)}
@@ -307,7 +309,7 @@ export function AnimationAccordion({
                   <Pencil size={10} />
                 </button>
               </AppTooltip>
-              <AppTooltip content="Quitar script" place="top">
+              <AppTooltip content={t('Remove script')} place="top">
                 <button
                   className="btn btn-sm btn-outline-danger p-1 lh-1"
                   onClick={() => onRemoveScript(s.name)}

@@ -4,7 +4,8 @@ import { CreateEntityFromSpriteModalBody } from '../components/CreateEntityFromS
 
 import { useContextEngine } from '@engine';
 import { useModal } from '@modal';
-import { useCreateEntityFromSpriteAnimation } from '../../../../../../hooks/useCreateEntityFromSpriteAnimation';
+import { useCreateEntityFromSpriteAnimation } from '@hooks';
+import { useTraslate } from '@hooks';
 
 export interface AssetGroupConfig {
   openDialog:  () => Promise<string | null>
@@ -19,6 +20,7 @@ interface Props {
 }
 
 export function EnvironmentsAccordion({ config }: Props) {
+  const { t } = useTraslate()
   const { 
     engineReady, 
     sprites,
@@ -28,11 +30,11 @@ export function EnvironmentsAccordion({ config }: Props) {
 
   const handleCreateEnvironment = () => {
     openModal({
-      title: 'Crear entorno',
+      title: t('Create environment'),
       body: <CreateEntityFromSpriteModalBody
         sprites={sprites} 
         onCreateEntity={createEnvironmentFromSprite}
-        previewTitle="Configurar entorno"
+        previewTitle={t('Configure environment')}
       />,
     });
   }
@@ -44,7 +46,7 @@ export function EnvironmentsAccordion({ config }: Props) {
       onClick={handleCreateEnvironment}
     >
       <PlusLg className="me-2" />
-      Crear entorno
+      {t('Create environment')}
     </button>
   )
 }

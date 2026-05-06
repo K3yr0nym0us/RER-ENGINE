@@ -2,9 +2,10 @@ import { useEffect } from 'react'
 
 import { CodeSquare } from 'react-bootstrap-icons'
 
-import AppTooltip from '../../../../../../components/AppTooltip'
-import { usePointDrawing } from '../../../../../../hooks/usePointDrawing'
+import { AppTooltip } from '@components'
+import { usePointDrawing } from '@hooks'
 import { useContextEngine } from '@engine'
+import { useTraslate } from '@hooks'
 
 interface Props {
   activeTool: 'draw_collider' | 'draw_execution_area' | null
@@ -12,6 +13,7 @@ interface Props {
 }
 
 export function ExecutionAreaToolButton({ activeTool, setActiveTool }: Props) {
+  const { t } = useTraslate()
   const { engineReady, send, toolProgress } = useContextEngine()
   const executionAreaTool = usePointDrawing('draw_execution_area', 4, send, toolProgress)
   const isActive = activeTool === 'draw_execution_area'
@@ -26,8 +28,8 @@ export function ExecutionAreaToolButton({ activeTool, setActiveTool }: Props) {
   }, [isActive, executionAreaTool.isActive, setActiveTool])
 
   const tooltipText = isActive
-    ? `Herramienta activa (${pointsPlaced}/${executionAreaTool.totalPoints}). Click de nuevo para cancelar`
-    : 'Haz click en 4 zonas del motor para crear un cuadro de ejecución'
+    ? `${t('Active tool')} (${pointsPlaced}/${executionAreaTool.totalPoints}). ${t('Click again to cancel')}`
+    : t('Click 4 areas to create an execution area')
 
   const buttonClass = isActive
     ? 'btn btn-sm btn-danger mb-2 d-flex flex-column justify-content-center align-items-center'
@@ -53,10 +55,10 @@ export function ExecutionAreaToolButton({ activeTool, setActiveTool }: Props) {
         disabled={!engineReady}
         aria-pressed={isActive}
       >
-        <span style={{ fontSize: 9, lineHeight: 1.1 }}>Crear</span>
+        <span style={{ fontSize: 9, lineHeight: 1.1 }}>{t('Create')}</span>
         <CodeSquare className="my-1" size={20} />
         <span style={{ fontSize: 9, lineHeight: 1.1 }}>
-          {isActive ? `${pointsLeft} faltan` : 'Trigger'}
+          {isActive ? `${pointsLeft} ${t('remaining')}` : 'Trigger'}
         </span>
       </button>
     </AppTooltip>

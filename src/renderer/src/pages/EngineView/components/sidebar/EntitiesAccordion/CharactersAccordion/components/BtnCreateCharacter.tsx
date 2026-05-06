@@ -3,20 +3,21 @@ import { CreateEntityFromSpriteModalBody } from '../../components/CreateEntityFr
 
 import { useModal } from '@modal';
 import { useContextEngine } from '@engine';
-import { useCreateEntityFromSpriteAnimation } from '../../../../../../../hooks/useCreateEntityFromSpriteAnimation';
+import { useCreateEntityFromSpriteAnimation, useTraslate } from '@hooks';
 
 const BtnCreateCharacter = () => {
+  const { t } = useTraslate();
   const { openModal } = useModal();
   const { sprites } = useContextEngine();
   const createCharacterFromSprite = useCreateEntityFromSpriteAnimation('load_character');
 
   const openCreateCharacterModal = () => {
     openModal({
-      title: 'Crear personaje',
+      title: t('Create character'),
       body: <CreateEntityFromSpriteModalBody
         sprites={sprites} 
         onCreateEntity={createCharacterFromSprite}
-        previewTitle="Configurar personaje"
+        previewTitle={t('Configure character')}
       />,
     });
   };
@@ -27,7 +28,7 @@ const BtnCreateCharacter = () => {
       onClick={openCreateCharacterModal}
     >
       <PlusLg className="me-2" />
-      Crear personaje
+      {t('Create character')}
     </button>
   );
 };

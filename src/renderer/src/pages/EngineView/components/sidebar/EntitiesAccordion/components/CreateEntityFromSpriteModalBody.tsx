@@ -4,6 +4,7 @@ import { useModal } from '@modal';
 import { SpritePreviewModalBody, type SpriteFrameRect } from '../SpritePreviewModalBody/SpritePreviewModalBody';
 
 import type { SpriteInfo } from '@shared-types';
+import { useTraslate } from '@hooks';
 
 interface CreateEntityFromSpriteModalBodyProps {
   sprites: SpriteInfo[];
@@ -28,6 +29,7 @@ export function CreateEntityFromSpriteModalBody({
   onCreateEntity,
   previewTitle,
 }: CreateEntityFromSpriteModalBodyProps) {
+  const { t } = useTraslate();
   const { closeModal, openModal } = useModal();
   const [selectedSpritePath, setSelectedSpritePath] = useState<string>('');
 
@@ -72,8 +74,8 @@ export function CreateEntityFromSpriteModalBody({
   if (sprites.length === 0) {
     return (
       <div className="alert alert-warning mb-0">
-        <p className="mb-2">No hay sprites precargados. Carga sprites primero en el acordeon de <strong>Sprites</strong>.</p>
-        <button className="btn btn-secondary btn-sm" onClick={closeModal}>Cerrar</button>
+        <p className="mb-2">{t('No preloaded sprites. Load sprites first in the Sprites accordion.')}</p>
+        <button className="btn btn-secondary btn-sm" onClick={closeModal}>{t('Close')}</button>
       </div>
     );
   }
@@ -81,14 +83,14 @@ export function CreateEntityFromSpriteModalBody({
   return (
     <div>
       <div className="mb-3">
-        <label className="form-label" htmlFor="create-entity-sprite-select">Selecciona un sprite</label>
+        <label className="form-label" htmlFor="create-entity-sprite-select">{t('Select a sprite')}</label>
         <select
           id="create-entity-sprite-select"
           className="form-select"
           value={selectedSpritePath}
           onChange={e => setSelectedSpritePath(e.target.value)}
         >
-          <option value="">-- Elige un sprite --</option>
+          <option value="">{t('-- Choose a sprite --')}</option>
           {sprites.map(s => (
             <option key={s.path} value={s.path}>
               {s.name || spriteName(s.path)} ({s.width}x{s.height})

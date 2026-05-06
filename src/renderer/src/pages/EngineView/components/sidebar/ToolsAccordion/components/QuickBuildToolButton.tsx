@@ -1,19 +1,21 @@
 import { Tools } from 'react-bootstrap-icons'
 
-import AppTooltip from '../../../../../../components/AppTooltip'
+import { AppTooltip } from '@components'
 import { BluePrintModalBody } from './BluePrintModalBody'
 import { useContextEngine } from '@engine'
 import { useModal } from '@modal'
 import { useQuickBuild } from '../../../../../../context/QuickBuildContext'
+import { useTraslate } from '@hooks'
 
 export function QuickBuildToolButton() {
+  const { t } = useTraslate()
   const { engineReady } = useContextEngine()
   const { openModal } = useModal()
   const { activeBluePrint, setActiveBluePrint } = useQuickBuild()
 
   const handleOpenBluePrint = () => {
     openModal({
-      title: 'Construcción',
+      title: t('Construction'),
       body: <BluePrintModalBody />,
       size: 'lg',
     })
@@ -31,8 +33,8 @@ export function QuickBuildToolButton() {
     <AppTooltip
       content={
         activeBluePrint
-          ? <>Modo activo: <b>{activeBluePrint.name}</b><br />Click para desactivar</>
-          : <>Construcción rápida.<br /><b>(basada en BluePrints)</b></>
+          ? <>{t('Active mode:')} <b>{activeBluePrint.name}</b><br />{t('Click to deactivate')}</>
+          : <>{t('Quick build.')}<br /><b>({t('based on BluePrints')})</b></>
       }
       place="left"
     >
@@ -46,11 +48,11 @@ export function QuickBuildToolButton() {
         aria-pressed={!!activeBluePrint}
       >
         <span style={{ fontSize: 9, lineHeight: 1.1 }}>
-          {activeBluePrint ? 'Activo' : 'Construcción'}
+          {activeBluePrint ? t('Active') : t('Construction')}
         </span>
         <Tools className="my-1" size={20} />
         <span style={{ fontSize: 9, lineHeight: 1.1 }}>
-          {activeBluePrint ? '⬡ ON' : 'Rápida'}
+          {activeBluePrint ? '? ON' : t('Quick')}
         </span>
       </button>
     </AppTooltip>

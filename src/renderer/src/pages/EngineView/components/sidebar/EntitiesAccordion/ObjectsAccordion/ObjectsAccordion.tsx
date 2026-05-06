@@ -4,9 +4,11 @@ import { CreateEntityFromSpriteModalBody } from '../components/CreateEntityFromS
 
 import { useContextEngine } from '@engine';
 import { useModal } from '@modal';
-import { useCreateEntityFromSpriteAnimation } from '../../../../../../hooks/useCreateEntityFromSpriteAnimation';
+import { useCreateEntityFromSpriteAnimation } from '@hooks';
+import { useTraslate } from '@hooks';
 
 export function ObjectsAccordion() {
+  const { t } = useTraslate()
   const { 
     engineReady, 
     sprites,
@@ -16,11 +18,11 @@ export function ObjectsAccordion() {
 
   const handleCreateObject = () => {
     openModal({
-      title: 'Crear objeto',
+      title: t('Create object'),
       body: <CreateEntityFromSpriteModalBody
         sprites={sprites} 
         onCreateEntity={createObjectFromSprite}
-        previewTitle="Configurar objeto"
+        previewTitle={t('Configure object')}
       />,
     });
   }
@@ -32,7 +34,7 @@ export function ObjectsAccordion() {
       onClick={handleCreateObject}
     >
       <PlusLg className="me-2" />
-      Crear objeto
+      {t('Create object')}
     </button>
   )
 }

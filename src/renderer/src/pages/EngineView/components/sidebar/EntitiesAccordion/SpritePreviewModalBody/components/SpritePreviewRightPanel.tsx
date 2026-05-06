@@ -2,9 +2,10 @@ import { useEffect, useReducer, useRef } from 'react';
 
 import { PlayFill, StopFill, XCircleFill } from 'react-bootstrap-icons';
 
-import AppTooltip from '../../../../../../../components/AppTooltip';
+import { AppTooltip } from '@components';
 import { SelectionMode } from './';
-import { useAudioPreview } from '../../../../../../../hooks/useAudioPreview';
+import { useAudioPreview } from '@hooks';
+import { useTraslate } from '@hooks';
 
 interface SpritePreviewRightPanelProps {
   src: string;
@@ -98,6 +99,7 @@ export function SpritePreviewRightPanel({
   audioPath,
 }: SpritePreviewRightPanelProps) {
   const [{ selectedFrameIndex, isPlaying }, dispatch] = useReducer(playbackReducer, initialPlaybackState);
+  const { t } = useTraslate();
   useAudioPreview(audioPath, isPlaying, isLooping);
   const animIntervalRef = useRef<number | null>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -216,15 +218,15 @@ export function SpritePreviewRightPanel({
 
   return (
     <div className="bg-dark text-light border border-secondary rounded p-3 h-100 d-flex flex-column" style={{ minWidth: 220 }}>
-      <h5 className="text-light text-center mb-3">Previsualización</h5>
+      <h5 className="text-light text-center mb-3">{t('Preview')}</h5>
       <hr className="border-secondary mb-3" />
 
       <div className="mb-3">
-        <label className="text-light text-center fw-bold d-block" htmlFor="preview-canvas" id="preview-canvas-label">Vista previa del frame</label>
+        <label className="text-light text-center fw-bold d-block" htmlFor="preview-canvas" id="preview-canvas-label">{t('Frame preview')}</label>
         <div className="bg-dark d-flex align-items-center justify-content-center mt-3">
           {currentFrame && (
             <AppTooltip
-              content="Haz clic en el frame para reasignar el punto de pivote. El pivote determina el punto de anclaje de la animación (cruz amarilla)."
+              content={t('Click frame to reassign pivot point')}
               place="left"
               tooltipClassName="app-tooltip--compact"
             >
@@ -240,7 +242,7 @@ export function SpritePreviewRightPanel({
           )}
           {!currentFrame && (
             <p className="text-muted small mb-0 text-center">
-              Para ver la vista previa primero debe crear un cuadro o seleccionar una celda
+              {t('To see preview first create a box or select a cell')}
             </p>
           )}
         </div>
@@ -262,7 +264,7 @@ export function SpritePreviewRightPanel({
               </label>
             </div>
 
-            <AppTooltip content={isPlaying ? 'Detener' : 'Reproducir'} place="top">
+            <AppTooltip content={isPlaying ? t('Stop') : t('Play')} place="top">
               <button
                 className={`btn btn-sm ${isPlaying ? 'btn-danger' : 'btn-success'}`}
                 onClick={handlePlayStop}
@@ -324,7 +326,7 @@ export function SpritePreviewRightPanel({
 
       {hasFrames && (
         <div className="mt-auto pt-2 border-top border-secondary">
-          <label className="text-light fw-bold d-block mb-1" htmlFor="animation-name-input">Nombre de la animacion</label>
+          <label className="text-light fw-bold d-block mb-1" htmlFor="animation-name-input">{t('Animation name')}</label>
           <input
             id="animation-name-input"
             className="form-control form-control-sm bg-dark text-light border-secondary"
@@ -341,7 +343,7 @@ export function SpritePreviewRightPanel({
               onChange={(e) => onDefaultAnimationChange(e.target.checked)}
             />
             <label className="form-check-label small" htmlFor="default-animation-check">
-              Animacion predeterminada
+              {t('Default animation')}
             </label>
           </div>
         </div>

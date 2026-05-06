@@ -1,7 +1,9 @@
 import { ArrowLeft } from 'react-bootstrap-icons';
 
-import AppTooltip from '../../components/AppTooltip';
+import { AppTooltip } from '@components';
 import type { ProjectType, GameStyle } from '@shared-types';
+import { useTraslate } from '@hooks';
+import { useLanguage } from '../../context/LanguageContext';
 
 interface StyleOption {
   type: GameStyle;
@@ -13,67 +15,71 @@ interface StyleOption {
   available: boolean;
 }
 
-const OPTIONS_3D: StyleOption[] = [
-  {
-    type: 'first-person',
-    label: 'Primera Persona',
-    icon: '◉',
-    description: 'Cámara en los ojos del personaje. FPS, horror y simuladores de vuelo.',
-    badge: '1ª P',
-    color: '#f87171',
-    available: true,
-  },
-  {
-    type: 'second-person',
-    label: 'Segunda Persona',
-    icon: '◑',
-    description: 'Cámara sobre el hombro. Shooters en tercera persona cercana y acción-aventura.',
-    badge: '2ª P',
-    color: '#fb923c',
-    available: false,
-  },
-  {
-    type: 'third-person',
-    label: 'Tercera Persona',
-    icon: '◎',
-    description: 'Cámara detrás del personaje. RPG, aventuras y juegos de acción estándar.',
-    badge: '3ª P',
-    color: '#34d399',
-    available: false,
-  },
-  {
-    type: 'top-down',
-    label: 'Vista Cenital',
-    icon: '⊕',
-    description: 'Cámara desde arriba. RTS, roguelikes, dungeon crawlers y bullet-hells.',
-    badge: 'TOP',
-    color: '#38bdf8',
-    available: false,
-  },
-  {
-    type: 'side-scroller',
-    label: 'Vista Lateral',
-    icon: '⊢',
-    description: 'Cámara de costado. Plataformas 3D, beat-em-ups y metroidvanias.',
-    badge: 'SIDE',
-    color: '#facc15',
-    available: false,
-  },
-  {
-    type: 'isometric',
-    label: 'Isométrico',
-    icon: '◇',
-    description: 'Perspectiva diagonal fija. RPG clásicos, estrategia y city-builders.',
-    badge: 'ISO',
-    color: '#a78bfa',
-    available: false,
-  },
-];
+function getOptions3D(t: (key: string) => string): StyleOption[] {
+  return [
+    {
+      type: 'first-person',
+      label: t('First Person'),
+      icon: '◉',
+      description: t("Camera in the character's eyes. FPS, horror and flight simulators."),
+      badge: '1ª P',
+      color: '#f87171',
+      available: true,
+    },
+    {
+      type: 'second-person',
+      label: t('Second Person'),
+      icon: '◑',
+      description: t('Over-the-shoulder camera. Close third-person shooters and action-adventure.'),
+      badge: '2ª P',
+      color: '#fb923c',
+      available: false,
+    },
+    {
+      type: 'third-person',
+      label: t('Third Person'),
+      icon: '◎',
+      description: t('Camera behind the character. RPG, adventure and standard action games.'),
+      badge: '3ª P',
+      color: '#34d399',
+      available: false,
+    },
+    {
+      type: 'top-down',
+      label: t('Top Down'),
+      icon: '⊕',
+      description: t('Camera from above. RTS, roguelikes, dungeon crawlers and bullet-hells.'),
+      badge: 'TOP',
+      color: '#38bdf8',
+      available: false,
+    },
+    {
+      type: 'side-scroller',
+      label: t('Side Scroller'),
+      icon: '⊢',
+      description: t('Side camera. 3D platformers, beat-em-ups and metroidvanias.'),
+      badge: 'SIDE',
+      color: '#facc15',
+      available: false,
+    },
+    {
+      type: 'isometric',
+      label: t('Isometric'),
+      icon: '◇',
+      description: t('Fixed diagonal perspective. Classic RPGs, strategy and city-builders.'),
+      badge: 'ISO',
+      color: '#a78bfa',
+      available: false,
+    },
+  ]
+}
 
-const OPTIONS_BY_TYPE: Partial<Record<ProjectType, StyleOption[]>> = {
-  '3D': OPTIONS_3D,
-  '2D': [],
-};
+function getOptionsByType(t: (key: string) => string): Partial<Record<ProjectType, StyleOption[]>> {
+  return {
+    '3D': getOptions3D(t),
+    '2D': [],
+  }
+}
 
 interface Props {
   projectType: ProjectType
@@ -82,14 +88,43 @@ interface Props {
 }
 
 export function GameStyleSelector({ projectType, onSelect, onBack }: Props) {
-  const options = OPTIONS_BY_TYPE[projectType] ?? []
+  const { t } = useTraslate()
+  const { locale, toggleLocale } = useLanguage()
 
-  const typeBadgeColor = projectType === '3D'   ? '#34d399' : '#38bdf8';
+  const options = getOptionsByType(t)[projectType] ?? []
+
+  const typeBadgeColor = projectType === '3D' ? '#34d399' : '#38bdf8';
 
   return (
     <div className="style-selector-page" style={{ position: 'relative' }}>
+      {/* Botón toggle de idioma */}
+      <button
+        onClick={toggleLocale}
+        title={locale === 'en' ? 'Switch to Spanish' : 'Cambiar a inglés'}
+        style={{
+          position:      'absolute',
+          top:           16,
+          right:         16,
+          background:    '#0f1120',
+          border:        '1px solid #2c3152',
+          borderRadius:  6,
+          color:         '#94a3b8',
+          fontSize:      12,
+          fontWeight:    700,
+          letterSpacing: '0.06em',
+          padding:       '5px 12px',
+          cursor:        'pointer',
+          transition:    'border-color 0.15s, color 0.15s',
+          zIndex:        10,
+        }}
+        onMouseEnter={e => Object.assign((e.currentTarget as HTMLButtonElement).style, { borderColor: '#c084fc', color: '#c084fc' })}
+        onMouseLeave={e => Object.assign((e.currentTarget as HTMLButtonElement).style, { borderColor: '#2c3152', color: '#94a3b8' })}
+      >
+        {locale === 'en' ? 'EN' : 'ES'}
+      </button>
+
       {/* ── Botón volver ─────────────────────────────────────────────── */}
-      <AppTooltip content="Volver al selector de proyecto" place="right">
+      <AppTooltip content={t('Back to project selector')} place="right">
         <button
           onClick={onBack}
           className="btn rounded-circle d-flex align-items-center justify-content-center position-fixed z-50 bg-dark border border-secondary"
@@ -122,7 +157,7 @@ export function GameStyleSelector({ projectType, onSelect, onBack }: Props) {
             onMouseEnter={(e) => (e.currentTarget.style.color = '#c084fc')}
             onMouseLeave={(e) => (e.currentTarget.style.color = '#4b5280')}
           >
-            Tipo de proyecto
+            {t('Project type')}
           </span>
           <span className="breadcrumb-sep">›</span>
           <span
@@ -132,11 +167,11 @@ export function GameStyleSelector({ projectType, onSelect, onBack }: Props) {
             {projectType}
           </span>
           <span className="breadcrumb-sep">›</span>
-          <span className="breadcrumb-current">Estilo de juego</span>
+          <span className="breadcrumb-current">{t('Game style')}</span>
         </div>
 
         <div className="mt-3 selector-subtitle">
-          SELECCIONA EL ESTILO DE JUEGO
+          {t('SELECT GAME STYLE')}
         </div>
       </div>
 
@@ -187,7 +222,7 @@ export function GameStyleSelector({ projectType, onSelect, onBack }: Props) {
                     className="coming-soon-badge"
                     style={{ background: `${opt.color}18`, color: `${opt.color}bb`, border: `1px solid ${opt.color}35` }}
                   >
-                    PRÓXIMAMENTE
+                    {t('COMING SOON')}
                   </span>
                 </div>
               )}
@@ -203,3 +238,5 @@ export function GameStyleSelector({ projectType, onSelect, onBack }: Props) {
     </div>
   )
 }
+
+export default GameStyleSelector;

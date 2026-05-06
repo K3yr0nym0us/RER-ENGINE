@@ -2,9 +2,10 @@ import { useEffect } from 'react'
 
 import { Bricks } from 'react-bootstrap-icons'
 
-import AppTooltip from '../../../../../../components/AppTooltip'
-import { usePointDrawing } from '../../../../../../hooks/usePointDrawing'
+import { AppTooltip } from '@components'
+import { usePointDrawing } from '@hooks'
 import { useContextEngine } from '@engine'
+import { useTraslate } from '@hooks'
 
 interface Props {
   activeTool: 'draw_collider' | 'draw_execution_area' | null
@@ -12,6 +13,7 @@ interface Props {
 }
 
 export function ColliderToolButton({ activeTool, setActiveTool }: Props) {
+  const { t } = useTraslate()
   const { engineReady, send, toolProgress } = useContextEngine()
   const colliderTool = usePointDrawing('draw_collider', 4, send, toolProgress)
   const isActive = activeTool === 'draw_collider'
@@ -26,8 +28,8 @@ export function ColliderToolButton({ activeTool, setActiveTool }: Props) {
   }, [isActive, colliderTool.isActive, setActiveTool])
 
   const tooltipText = isActive
-    ? `Herramienta activa (${pointsPlaced}/${colliderTool.totalPoints}). Click de nuevo para cancelar`
-    : 'Haz click en 4 zonas del motor para crear un cuadro de colisiones'
+    ? `${t('Active tool')} (${pointsPlaced}/${colliderTool.totalPoints}). ${t('Click again to cancel')}`
+    : t('Click 4 areas to create a collision box')
 
   const buttonClass = isActive
     ? 'btn btn-sm btn-info mb-2 d-flex flex-column justify-content-center align-items-center'
@@ -53,10 +55,10 @@ export function ColliderToolButton({ activeTool, setActiveTool }: Props) {
         disabled={!engineReady}
         aria-pressed={isActive}
       >
-        <span style={{ fontSize: 10, lineHeight: 1.1 }}>Crear</span>
+        <span style={{ fontSize: 10, lineHeight: 1.1 }}>{t('Create')}</span>
         <Bricks className="my-1" size={20} />
         <span style={{ fontSize: 10, lineHeight: 1.1 }}>
-          {isActive ? `${pointsLeft} faltan` : 'Muro'}
+          {isActive ? `${pointsLeft} ${t('remaining')}` : t('Wall')}
         </span>
       </button>
     </AppTooltip>

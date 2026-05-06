@@ -1,14 +1,16 @@
-﻿import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect } from 'react'
 
 import { Modal, Nav } from 'react-bootstrap'
 import { Grid3x3GapFill, TrashFill } from 'react-bootstrap-icons'
 import { useContextEngine } from '@engine'
 import { useModal } from '@modal'
 import { useQuickBuild } from '../../../../../../context/QuickBuildContext'
-import { useSpritePreviewImage } from '../../../../../../hooks/useSpritePreviewImage'
+import { useSpritePreviewImage } from '@hooks'
 import type { BluePrintCategory, BluePrintEntry } from '@shared-types'
+import { useTraslate } from '@hooks'
 
 export function BluePrintModalBody() {
+  const { t } = useTraslate()
   const [activeCategory, setActiveCategory] = useState<BluePrintCategory>('personaje')
   const [pendingDelete, setPendingDelete] = useState<BluePrintEntry | null>(null)
   const { blueprints, setBlueprints } = useContextEngine()
@@ -45,24 +47,24 @@ export function BluePrintModalBody() {
         onSelect={k => setActiveCategory((k ?? 'personaje') as BluePrintCategory)}
       >
         <Nav.Item>
-          <Nav.Link eventKey="personaje">Personaje</Nav.Link>
+          <Nav.Link eventKey="personaje">{t('Character')}</Nav.Link>
         </Nav.Item>
         <Nav.Item>
-          <Nav.Link eventKey="entorno">Entorno</Nav.Link>
+          <Nav.Link eventKey="entorno">{t('Environment')}</Nav.Link>
         </Nav.Item>
         <Nav.Item>
-          <Nav.Link eventKey="objetos">Objetos</Nav.Link>
+          <Nav.Link eventKey="objetos">{t('Objects')}</Nav.Link>
         </Nav.Item>
       </Nav>
 
       {filtered.length === 0 ? (
         <p className="text-secondary fst-italic small text-center py-4 mb-0">
-          Sin blueprints en esta categoría
+          {t('No blueprints in this category')}
         </p>
       ) : (
         <>
           <p className="text-secondary small mb-2">
-            Selecciona una blueprint para activar el modo de construcción rápida.
+            {t('Select a blueprint to activate quick build mode.')}
           </p>
           <div className="d-flex flex-wrap gap-2">
             {filtered.map(bp => (
@@ -85,19 +87,19 @@ export function BluePrintModalBody() {
         backdrop={false}
       >
         <Modal.Header closeButton>
-          <Modal.Title>Eliminar blueprint</Modal.Title>
+          <Modal.Title>{t('Delete blueprint')}</Modal.Title>
         </Modal.Header>
         <Modal.Body>
           <p className="mb-3">
-            Esta acción eliminará la blueprint <strong>{pendingDelete?.name}</strong>.
+            {t('This action will delete the blueprint')} <strong>{pendingDelete?.name}</strong>.
           </p>
-          <p className="text-secondary small mb-4">No se puede deshacer.</p>
+          <p className="text-secondary small mb-4">{t('Cannot be undone.')}</p>
           <div className="d-flex justify-content-end gap-2">
             <button className="btn btn-secondary" onClick={() => setPendingDelete(null)}>
-              Cancelar
+              {t('Cancel')}
             </button>
             <button className="btn btn-danger" onClick={handleDeleteConfirm}>
-              Eliminar
+              {t('Delete')}
             </button>
           </div>
         </Modal.Body>
@@ -107,7 +109,7 @@ export function BluePrintModalBody() {
 }
 
 // ---------------------------------------------------------------------------
-// Tarjeta individual — muestra solo el primer frame como preview
+// Tarjeta individual - muestra solo el primer frame como preview
 // ---------------------------------------------------------------------------
 
 const PREVIEW_SIZE = 48
@@ -121,10 +123,11 @@ function BluePrintCard({
   onSelect: (bp: BluePrintEntry) => void
   onDeleteRequest: (bp: BluePrintEntry) => void
 }) {
+  const { t } = useTraslate()
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
   const firstFrame = bp.animations?.[0]?.frames?.[0]
-  // Si no hay frame de animación, usamos la ruta principal del blueprint como preview
+  // Si no hay frame de animacion, usamos la ruta principal del blueprint como preview
   const framePath = firstFrame?.path ?? bp.path
 
   const { imageSrc } = useSpritePreviewImage(framePath)
@@ -181,7 +184,7 @@ function BluePrintCard({
         type="button"
         className="btn btn-sm btn-danger position-absolute d-flex align-items-center justify-content-center"
         style={{ top: 4, right: 4, width: 20, height: 20, borderRadius: 999, padding: 0 }}
-        title="Eliminar blueprint"
+        title={t('Delete blueprint')}
         onClick={(e) => {
           e.stopPropagation()
           onDeleteRequest(bp)

@@ -1,6 +1,7 @@
 import { useRef } from 'react';
 import { useModal } from '@modal';
 import { useContextEngine } from '@engine';
+import { useTraslate } from '@hooks';
 
 interface ModalSetNameSpriteProps {
   path: string;
@@ -8,6 +9,7 @@ interface ModalSetNameSpriteProps {
 }
 
 export default function ModalSetNameSprite({ path, autoName }: ModalSetNameSpriteProps) {
+  const { t } = useTraslate();
   const { loadSprite } = useContextEngine();
   const { closeModal } = useModal();
   
@@ -20,20 +22,20 @@ export default function ModalSetNameSprite({ path, autoName }: ModalSetNameSprit
 
   return (
     <div>
-      <p className="text-muted small">Archivo: {path.split('/').pop()}</p>
+      <p className="text-muted small">{t('File:')} {path.split('/').pop()}</p>
       <input
         className="form-control mb-2"
         type="text"
         defaultValue={autoName}
         ref={nameRef}
-        placeholder="Nombre del sprite"
+        placeholder={t('Sprite name')}
       />
       <div className="d-flex gap-2 justify-content-end">
         <button 
           className="btn btn-secondary btn-sm" 
           onClick={closeModal}
         >
-          Cancelar
+          {t('Cancel')}
         </button>
         <button
           className="btn btn-primary btn-sm"
@@ -42,7 +44,7 @@ export default function ModalSetNameSprite({ path, autoName }: ModalSetNameSprit
             handleConfirm(name);
           }}
         >
-          Cargar
+          {t('Load')}
         </button>
       </div>
     </div>

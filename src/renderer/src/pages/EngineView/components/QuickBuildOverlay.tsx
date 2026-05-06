@@ -1,4 +1,4 @@
-import { useQuickBuildPlacement } from '../../../hooks/useQuickBuildPlacement'
+import { useQuickBuildPlacement } from '@hooks'
 
 /**
  * Activa el modo de construcción rápida registrando el hook IPC.

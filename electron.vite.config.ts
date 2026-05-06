@@ -16,6 +16,8 @@ export default defineConfig({
         '@shared-types': resolve('src/shared-types/types.ts'),
         '@modal': resolve('src/renderer/src/context/ModalContext.tsx'),
         '@engine': resolve('src/renderer/src/context/useContextEngine.tsx'),
+        '@hooks': resolve('src/renderer/src/hooks/index.ts'),
+        '@components': resolve('src/renderer/src/components/index.ts'),
       },
     },
     plugins: [react()],
