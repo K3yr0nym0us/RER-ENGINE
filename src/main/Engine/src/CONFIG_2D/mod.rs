@@ -177,8 +177,8 @@ impl State {
         }
 
         let cell = self.grid_config.cell_size.max(0.05);
-        let gx = (wx / cell).round() * cell;
-        let gy = (wy / cell).round() * cell;
+        let gx = (wx / cell).floor() * cell + cell * 0.5;
+        let gy = (wy / cell).floor() * cell + cell * 0.5;
         Some((gx, gy))
     }
 

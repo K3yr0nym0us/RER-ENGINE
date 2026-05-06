@@ -257,6 +257,7 @@ pub struct State {
     pub(crate) character_entities: Vec<EntityId>,
     // Fondo del mundo 2D: entidad especial no seleccionable que cubre todo el área.
     pub(crate) background_entity: Option<EntityId>,
+    pub(crate) background_path:   Option<String>,
     // Grid 2D: cuadrícula y límites del mundo.
     pub(crate) grid_config:      GridConfig,
     pub(crate) grid_pipeline:    wgpu::RenderPipeline,
@@ -800,6 +801,7 @@ impl State {
             scenario_entities:      Vec::new(),
             character_entities:     Vec::new(),
             background_entity:       None,
+            background_path:         None,
             grid_config,
             grid_pipeline,
             grid_buffer,
@@ -1329,9 +1331,11 @@ impl State {
                 }
             }
             EngineCommand::LoadBackground { path } => {
+                self.background_path = Some(path.clone());
                 self.load_background(&path);
             }
             EngineCommand::ClearBackground => {
+                self.background_path = None;
                 self.clear_background();
             }
             EngineCommand::SetPhysics { id, enabled, body_type } => {
@@ -1356,6 +1360,8 @@ impl State {
             }
             EngineCommand::SetActiveTool { tool, preview_path, preview_kind, preview_scale, preview_src_rect } => {
                 if tool.is_empty() {
+                    // Solo cancelar si había una herramienta activa (evita eventos espurios al inicio)
+                    let was_active = !matches!(self.active_tool, ActiveTool::None);
                     // Limpiar entidad fantasma de quick_build si existía
                     if let Some(ghost_id) = self.quick_build_ghost_id.take() {
                         self.world.despawn(ghost_id);
@@ -1365,8 +1371,10 @@ impl State {
                     self.quick_build_preview_scale = None;
                     self.active_tool = ActiveTool::None;
                     self.tool_overlay_buffer = gizmo::build_from_vertices(&self.device, &[]);
-                    send_event(&EngineEvent::ToolCancelled);
-                    log::info!("Herramienta cancelada");
+                    if was_active {
+                        send_event(&EngineEvent::ToolCancelled);
+                        log::info!("Herramienta cancelada");
+                    }
                 } else {
                     // Limpiar entidad fantasma previa si la hay
                     if let Some(ghost_id) = self.quick_build_ghost_id.take() {
@@ -1445,8 +1453,12 @@ impl State {
                         }
                         Err(e) => log::warn!("[hot-reload] Error leyendo archivo '{}': {}", path, e),
                     }
+                } else if self.background_path.as_deref() == Some(path.as_str()) {
+                    // El fondo usa GpuTexture propia, no el atlas — recargarlo completo.
+                    self.load_background(&path);
+                    log::info!("[hot-reload] Fondo recargado: {}", path);
                 } else {
-                    log::warn!("[hot-reload] Path no encontrado en static_tex_cache: {}", path);
+                    log::warn!("[hot-reload] Path no encontrado en static_tex_cache ni como fondo: {}", path);
                 }
             }
             EngineCommand::SetAnimation { id, name, frames, fps, loop_, flip_horizontal, audio_path, logical_w, logical_h, scripts } => {
