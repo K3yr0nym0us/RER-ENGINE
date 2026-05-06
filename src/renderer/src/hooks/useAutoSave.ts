@@ -46,6 +46,21 @@ export function useAutoSave({ projectType = '2D', initialSave = null, initialSav
     const DEFAULT_SCL: [number,number,number] = [1, 1, 1]
     const playerId = playerEntityIdRef.current
 
+    const pointsFromTransform = (id: number): [[number, number], [number, number], [number, number], [number, number]] | undefined => {
+      const t = transforms[id]
+      if (!t) return undefined
+      const cx = t.position[0]
+      const cy = t.position[1]
+      const hw = Math.abs(t.scale[0]) * 0.5
+      const hh = Math.abs(t.scale[1]) * 0.5
+      return [
+        [cx - hw, cy - hh],
+        [cx + hw, cy - hh],
+        [cx + hw, cy + hh],
+        [cx - hw, cy + hh],
+      ]
+    }
+
     const buildCurrentSceneEntities = () => Object.entries(meta)
       .filter(([idStr, m]) =>
         !(m.kind === 'character' && m.path === '[Player]' && Number(idStr) === playerId)
@@ -53,6 +68,9 @@ export function useAutoSave({ projectType = '2D', initialSave = null, initialSav
       .map(([idStr, m]) => {
         const id = Number(idStr)
         const selectedName = selectedEntity?.id === id ? selectedEntity.name : undefined
+        const livePoints = (m.kind === 'collider' || m.kind === 'execution_area')
+          ? pointsFromTransform(id)
+          : undefined
         return {
           id,
           name: selectedName ?? m.name,
@@ -63,7 +81,7 @@ export function useAutoSave({ projectType = '2D', initialSave = null, initialSav
           scale: transforms[id]?.scale ?? DEFAULT_SCL,
           physics_enabled: m.physicsEnabled,
           physics_type: m.physicsType,
-          points: m.points,
+          points: livePoints ?? m.points,
           animations: m.animations,
           scripts: m.scripts,
           control_bindings: m.controlBindings,

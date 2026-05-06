@@ -270,6 +270,12 @@ pub struct State {
     pub        active_tool:      ActiveTool,
     /// Entidad fantasma para previsualizar el blueprint a colocar (Quick Build mode).
     pub(crate) quick_build_ghost_id: Option<EntityId>,
+    /// Ruta de asset de la blueprint activa en Quick Build (para snap por igualdad de blueprint).
+    pub(crate) quick_build_preview_path: Option<String>,
+    /// Tipo de blueprint activa en Quick Build ("scenario" | "character").
+    pub(crate) quick_build_preview_kind: Option<String>,
+    /// Escala base de la blueprint activa (sin ajuste dinámico por Ctrl).
+    pub(crate) quick_build_preview_scale: Option<[f32; 3]>,
     /// true = modo juego (simulación), false = modo editor.
     pub        preview_playing:  bool,
     /// Buffer de overlay de la herramienta activa (cruces + líneas de construcción).
@@ -802,6 +808,9 @@ impl State {
             ctrl_held: false,
             active_tool: ActiveTool::None,
             quick_build_ghost_id: None,
+            quick_build_preview_path: None,
+            quick_build_preview_kind: None,
+            quick_build_preview_scale: None,
             preview_playing: false,
             tool_overlay_buffer: tool_overlay_buffer_init,
             snap_hint_uv,
@@ -1351,6 +1360,9 @@ impl State {
                     if let Some(ghost_id) = self.quick_build_ghost_id.take() {
                         self.world.despawn(ghost_id);
                     }
+                    self.quick_build_preview_path = None;
+                    self.quick_build_preview_kind = None;
+                    self.quick_build_preview_scale = None;
                     self.active_tool = ActiveTool::None;
                     self.tool_overlay_buffer = gizmo::build_from_vertices(&self.device, &[]);
                     send_event(&EngineEvent::ToolCancelled);
@@ -1360,6 +1372,9 @@ impl State {
                     if let Some(ghost_id) = self.quick_build_ghost_id.take() {
                         self.world.despawn(ghost_id);
                     }
+                    self.quick_build_preview_path = None;
+                    self.quick_build_preview_kind = None;
+                    self.quick_build_preview_scale = None;
                     match tool.as_str() {
                         "draw_collider" => {
                             self.active_tool = ActiveTool::DrawCollider { points_world: Vec::new(), cursor_world: None };
@@ -1374,6 +1389,9 @@ impl State {
                             self.tool_overlay_buffer = crate::gizmo::build_from_vertices(&self.device, &[]);
                             // Cargar entidad fantasma si se proporcionaron datos del blueprint
                             if let (Some(path), Some(kind), Some(scale)) = (preview_path.as_deref(), preview_kind.as_deref(), preview_scale) {
+                                self.quick_build_preview_path = Some(path.to_owned());
+                                self.quick_build_preview_kind = Some(kind.to_owned());
+                                self.quick_build_preview_scale = Some(scale);
                                 self.quick_build_ghost_id = self.load_quick_build_ghost(path, kind, scale, preview_src_rect);
                             }
                             log::info!("Herramienta activa: construcción rápida");

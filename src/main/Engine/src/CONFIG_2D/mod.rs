@@ -95,8 +95,96 @@ impl State {
         Some((wx, wy))
     }
 
+    fn quick_build_snap_position_2d(&self, wx: f32, wy: f32) -> Option<(f32, f32)> {
+        if !self.ctrl_held {
+            return None;
+        }
+        let ghost_id = self.quick_build_ghost_id?;
+        let preview_path = self.quick_build_preview_path.as_deref()?;
+        let preview_kind = self.quick_build_preview_kind.as_deref()?;
+        let ghost_t = self.world.get::<Transform>(ghost_id)?;
+        let ghost_half_w = ghost_t.scale.x.abs() * 0.5;
+        let ghost_half_h = ghost_t.scale.y.abs() * 0.5;
+
+        let candidates = if preview_kind == "scenario" {
+            &self.scenario_entities
+        } else {
+            &self.character_entities
+        };
+
+        let mut best: Option<(f32, (f32, f32))> = None;
+        for &id in candidates {
+            if id == ghost_id { continue; }
+
+            let same_blueprint = if preview_kind == "scenario" {
+                self.world
+                    .get::<ScenarioMarker>(id)
+                    .map(|m| m.path.as_str() == preview_path)
+                    .unwrap_or(false)
+            } else {
+                self.world
+                    .get::<CharacterMarker>(id)
+                    .map(|m| m.path.as_str() == preview_path)
+                    .unwrap_or(false)
+            };
+            if !same_blueprint { continue; }
+
+            let Some(t) = self.world.get::<Transform>(id) else { continue; };
+            let entity_half_w = t.scale.x.abs() * 0.5;
+            let entity_half_h = t.scale.y.abs() * 0.5;
+
+            let dx = wx - t.position.x;
+            let dy = wy - t.position.y;
+
+            let snap_x = t.position.x + if dx >= 0.0 {
+                entity_half_w + ghost_half_w
+            } else {
+                -(entity_half_w + ghost_half_w)
+            };
+            let snap_y = t.position.y;
+
+            let snap_x_v = t.position.x;
+            let snap_y_v = t.position.y + if dy >= 0.0 {
+                entity_half_h + ghost_half_h
+            } else {
+                -(entity_half_h + ghost_half_h)
+            };
+
+            let dist_h = ((wx - snap_x).powi(2) + (wy - snap_y).powi(2)).sqrt();
+            let dist_v = ((wx - snap_x_v).powi(2) + (wy - snap_y_v).powi(2)).sqrt();
+
+            let (dist, candidate) = if dist_h <= dist_v {
+                (dist_h, (snap_x, snap_y))
+            } else {
+                (dist_v, (snap_x_v, snap_y_v))
+            };
+
+            let threshold = (entity_half_w + ghost_half_w)
+                .max(entity_half_h + ghost_half_h)
+                .max(0.25)
+                * 1.35;
+            if dist > threshold {
+                continue;
+            }
+
+            if best.map_or(true, |(best_dist, _)| dist < best_dist) {
+                best = Some((dist, candidate));
+            }
+        }
+
+        if let Some((_, p)) = best {
+            return Some(p);
+        }
+
+        let cell = self.grid_config.cell_size.max(0.05);
+        let gx = (wx / cell).round() * cell;
+        let gy = (wy / cell).round() * cell;
+        Some((gx, gy))
+    }
+
     pub(crate) fn update_tool_overlay_cursor_2d(&mut self, pixel_x: f32, pixel_y: f32) {
         let Some((wx, wy)) = self.screen_to_world_2d(pixel_x, pixel_y) else { return; };
+        let quick_build_snap_target = self.quick_build_snap_position_2d(wx, wy);
         match &mut self.active_tool {
             ActiveTool::DrawCollider { points_world, cursor_world }
             | ActiveTool::DrawExecutionArea { points_world, cursor_world } => {
@@ -105,14 +193,23 @@ impl State {
                 self.tool_overlay_buffer = build_tool_overlay(&self.device, &pts_clone, *cursor_world);
             }
             ActiveTool::QuickBuildPlace { cursor_world } => {
-                *cursor_world = Some([wx, wy]);
+                let (target_x, target_y) = quick_build_snap_target.unwrap_or((wx, wy));
+                *cursor_world = Some([target_x, target_y]);
                 if let Some(ghost_id) = self.quick_build_ghost_id {
                     if let Some(t) = self.world.get_mut::<Transform>(ghost_id) {
-                        t.position = GlamVec3::new(wx, wy, 0.5);
+                        if let Some(base_scale) = self.quick_build_preview_scale {
+                            if self.ctrl_held {
+                                let cell = self.grid_config.cell_size.max(0.05);
+                                t.scale = GlamVec3::new(cell, cell, base_scale[2]);
+                            } else {
+                                t.scale = GlamVec3::new(base_scale[0], base_scale[1], base_scale[2]);
+                            }
+                        }
+                        t.position = GlamVec3::new(target_x, target_y, 0.5);
                     }
                 }
                 self.tool_overlay_buffer = gizmo::build_from_vertices(&self.device, &[]);
-                send_event(&EngineEvent::QuickBuildMove { x: wx, y: wy });
+                send_event(&EngineEvent::QuickBuildMove { x: target_x, y: target_y });
             }
             ActiveTool::None => {}
         }
@@ -1205,8 +1302,15 @@ impl State {
                 }
                 true
             }
-            ActiveTool::QuickBuildPlace { .. } => {
-                send_event(&EngineEvent::QuickBuildClick { x: wx, y: wy });
+            ActiveTool::QuickBuildPlace { cursor_world } => {
+                let fit_to_grid = self.ctrl_held;
+                let [cx, cy] = if fit_to_grid {
+                    let (sx, sy) = self.quick_build_snap_position_2d(wx, wy).unwrap_or((wx, wy));
+                    [sx, sy]
+                } else {
+                    cursor_world.unwrap_or([wx, wy])
+                };
+                send_event(&EngineEvent::QuickBuildClick { x: cx, y: cy, fit_to_grid });
                 true
             }
             ActiveTool::None => false,

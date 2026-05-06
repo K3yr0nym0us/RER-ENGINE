@@ -293,7 +293,8 @@ pub enum EngineEvent {
     /// Emitido cuando el cursor se mueve y la herramienta quick_build_place está activa.
     QuickBuildMove { x: f32, y: f32 },
     /// Emitido cuando el usuario hace click con la herramienta quick_build_place activa.
-    QuickBuildClick { x: f32, y: f32 },
+    /// `fit_to_grid` indica si Ctrl estaba presionado al colocar.
+    QuickBuildClick { x: f32, y: f32, fit_to_grid: bool },
     /// Emitido cuando una entidad es eliminada del mundo (por Ctrl+Z, RemoveEntity, etc.).
     EntityRemoved { id: u32 },
     /// Emitido cuando el motor detecta un input de control en modo juego.

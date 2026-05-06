@@ -9,11 +9,16 @@ export function WorldAccordion() {
   const { engineReady, worldConfig, backgroundPath, setWorldSize, setGridVisible, setGridCellSize, setGravity, send } = useContextEngine()
   const [widthStr,  setWidthStr]  = useState(String(worldConfig.worldWidth))
   const [heightStr, setHeightStr] = useState(String(worldConfig.worldHeight))
+  const [gridCellStr, setGridCellStr] = useState(String(worldConfig.gridCellSize))
 
   useEffect(() => {
     setWidthStr(String(worldConfig.worldWidth))
     setHeightStr(String(worldConfig.worldHeight))
   }, [worldConfig.worldWidth, worldConfig.worldHeight])
+
+  useEffect(() => {
+    setGridCellStr(String(worldConfig.gridCellSize))
+  }, [worldConfig.gridCellSize])
 
   const loadBackground = () => {
     window.electronAPI.openBackgroundDialog().then((p: string | null) => {
@@ -31,6 +36,17 @@ export function WorldAccordion() {
 
   const handleKey = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') commitSize()
+  }
+
+  const commitGridCell = () => {
+    const size = parseFloat(gridCellStr)
+    if (!isNaN(size) && size > 0) {
+      setGridCellSize(size)
+    }
+  }
+
+  const handleGridCellKey = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') commitGridCell()
   }
 
   return (
@@ -86,19 +102,40 @@ export function WorldAccordion() {
           </AppTooltip>
         </div>
 
-        <label className="form-label small text-secondary mb-1 d-flex justify-content-between" htmlFor="grid-cell-size-range">
+        <div className="form-label small text-secondary mb-1 d-flex align-items-center justify-content-between gap-2">
           <span>Tamaño de celda</span>
-          <span className="text-info fw-bold">{worldConfig.gridCellSize.toFixed(2)} u</span>
-        </label>
-        <input
-          id="grid-cell-size-range"
-          type="range"
-          className="form-range mb-2"
-          min={0.25} max={10} step={0.25}
-          value={worldConfig.gridCellSize}
-          disabled={!engineReady}
-          onChange={(e) => setGridCellSize(parseFloat(e.target.value))}
-        />
+          <div className="d-flex align-items-center gap-2">
+            <span className="text-info fw-bold">{worldConfig.gridCellSize.toFixed(2)} u</span>
+            <input
+              id="grid-cell-size-number"
+              type="number"
+              className="form-control form-control-sm bg-dark text-light border-secondary"
+              style={{ width: 88 }}
+              min={0.05}
+              step={0.01}
+              value={gridCellStr}
+              disabled={!engineReady}
+              onChange={(e) => setGridCellStr(e.target.value)}
+              onBlur={commitGridCell}
+              onKeyDown={handleGridCellKey}
+              aria-label="Tamaño exacto de celda"
+            />
+          </div>
+        </div>
+        <div className="mb-2">
+          <input
+            id="grid-cell-size-range"
+            type="range"
+            className="form-range mb-0"
+            min={0.25} max={10} step={0.25}
+            value={worldConfig.gridCellSize}
+            disabled={!engineReady}
+            onChange={(e) => {
+              setGridCellStr(e.target.value)
+              setGridCellSize(parseFloat(e.target.value))
+            }}
+          />
+        </div>
 
         <hr className="border-secondary my-2" />
 

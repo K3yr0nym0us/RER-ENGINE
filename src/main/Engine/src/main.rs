@@ -588,6 +588,8 @@ impl ApplicationHandler<EngineCommand> for App {
                     state.set_snap_hint_visible(false);
                 }
                 if state.camera_2d.is_some() && !state.is_preview_playing() {
+                    let ctrl_active = self.ctrl_held || state.ctrl_held || query_ctrl_held_x11();
+                    state.ctrl_held = ctrl_active;
                     state.update_tool_overlay_cursor_2d(cur.0, cur.1);
                 }
                 if let Some((lx, ly)) = self.last_cursor {

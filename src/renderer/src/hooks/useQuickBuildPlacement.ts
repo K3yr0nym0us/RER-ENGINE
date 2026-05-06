@@ -15,6 +15,7 @@ export function useQuickBuildPlacement() {
   const { activeBluePrint } = useQuickBuild()
   const {
     engineReady,
+    worldConfig,
     pendingRestoresRef,
     send,
     registerQuickBuildClickListener,
@@ -26,6 +27,11 @@ export function useQuickBuildPlacement() {
   useEffect(() => {
     activeBluePrintRef.current = activeBluePrint
   }, [activeBluePrint])
+
+  const gridCellSizeRef = useRef(worldConfig.gridCellSize)
+  useEffect(() => {
+    gridCellSizeRef.current = worldConfig.gridCellSize
+  }, [worldConfig.gridCellSize])
 
   // Efecto: activar/desactivar herramienta en el motor
   useEffect(() => {
@@ -70,17 +76,21 @@ export function useQuickBuildPlacement() {
   useEffect(() => {
     if (!engineReady) return
 
-    registerQuickBuildClickListener((worldX: number, worldY: number) => {
+    registerQuickBuildClickListener((worldX: number, worldY: number, fitToGrid: boolean) => {
       const bp = activeBluePrintRef.current
       if (!bp) return
 
-      console.log('[quick_build] click mundo:', worldX, worldY, '| bp.path:', bp.path, '| bp.kind:', bp.kind)
+      const placementScale = fitToGrid
+        ? [gridCellSizeRef.current, gridCellSizeRef.current, bp.scale?.[2] ?? 1] as [number, number, number]
+        : bp.scale
+
+      console.log('[quick_build] click mundo:', worldX, worldY, '| bp.path:', bp.path, '| bp.kind:', bp.kind, '| scale:', placementScale)
 
       const pending: PendingRestore = {
         transform: {
           position: [worldX, worldY, 0],
           rotation: [0, 0, 0, 1],
-          scale: bp.scale,
+          scale: placementScale,
         },
         name: bp.name,
         physicsEnabled: bp.physics_enabled ?? false,

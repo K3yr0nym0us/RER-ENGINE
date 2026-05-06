@@ -568,8 +568,8 @@ export function createEngineEventHandler({
 		}
 
 		if (event.event === 'quick_build_click') {
-			const e = event as unknown as { x: number; y: number };
-			refs.quickBuildClickListenerRef.current?.(e.x, e.y);
+			const e = event as unknown as { x: number; y: number; fit_to_grid?: boolean };
+			refs.quickBuildClickListenerRef.current?.(e.x, e.y, !!e.fit_to_grid);
 		}
 
 		if (event.event === 'entity_removed') {
