@@ -39,6 +39,7 @@ export interface SpritePreviewState {
   isLooping: boolean;
   audioPath?: string;
   scripts: ScriptEntry[];
+  isCancelable: boolean;
 }
 
 export type SpritePreviewAction =
@@ -62,6 +63,7 @@ export const initialSpritePreviewState: SpritePreviewState = {
   isLooping: false,
   audioPath: undefined,
   scripts: [],
+  isCancelable: false,
 };
 
 export function spritePreviewReducer(

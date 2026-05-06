@@ -28,6 +28,7 @@ interface SpritePreviewConfirmConfig {
   facingRight: boolean;
   audioPath?: string;
   scripts: ScriptEntry[];
+  isCancelable: boolean;
 }
 
 export function SpritePreviewModalBody({
@@ -42,6 +43,7 @@ export function SpritePreviewModalBody({
   initialFacingRight,
   initialAudioPath,
   initialScripts,
+  initialIsCancelable,
 }: {
   src: string
   onConfirm?: (config: SpritePreviewConfirmConfig) => void
@@ -54,6 +56,7 @@ export function SpritePreviewModalBody({
   initialFacingRight?: boolean
   initialAudioPath?: string
   initialScripts?: ScriptEntry[]
+  initialIsCancelable?: boolean
 }) {
   const [scriptEditorState, setScriptEditorState] = useState<
     { mode: 'add' } | { mode: 'edit'; name: string } | null
@@ -83,6 +86,7 @@ export function SpritePreviewModalBody({
     isLooping,
     audioPath,
     scripts,
+    isCancelable,
   } = state;
 
   useEffect(() => {
@@ -96,6 +100,10 @@ export function SpritePreviewModalBody({
       dispatch({ type: 'patch', payload: { scripts: initialScripts } });
     }
   }, [initialScripts]);
+
+  useEffect(() => {
+    dispatch({ type: 'patch', payload: { isCancelable: initialIsCancelable ?? false } });
+  }, [initialIsCancelable]);
 
   useEffect(() => {
     setFacingRight(initialFacingRight ?? true);
@@ -227,6 +235,7 @@ export function SpritePreviewModalBody({
       facingRight,
       audioPath,
       scripts,
+      isCancelable,
     });
   };
 
@@ -253,6 +262,8 @@ export function SpritePreviewModalBody({
             onAddScript={handleAddScript}
             onEditScript={handleEditScript}
             onRemoveScript={handleRemoveScript}
+            isCancelable={isCancelable}
+            onIsCancelableChange={(value) => dispatch({ type: 'patch', payload: { isCancelable: value } })}
           />
         </div>
 

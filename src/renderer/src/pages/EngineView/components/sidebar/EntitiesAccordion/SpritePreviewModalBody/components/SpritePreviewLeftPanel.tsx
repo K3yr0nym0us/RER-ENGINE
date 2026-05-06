@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { SelectionMode, type ScriptEntry } from './';
-import { Link, Unlock, MusicNoteBeamed, Trash, FileEarmarkCode, PencilSquare } from 'react-bootstrap-icons';
+import { Link, Unlock, MusicNoteBeamed, Trash, FileEarmarkCode, PencilSquare, SkipEndFill } from 'react-bootstrap-icons';
 import AppTooltip from '../../../../../../../components/AppTooltip';
 
 interface SpritePreviewLeftPanelProps {
@@ -22,6 +22,8 @@ interface SpritePreviewLeftPanelProps {
   onAddScript: () => void;
   onEditScript: (name: string) => void;
   onRemoveScript: (name: string) => void;
+  isCancelable: boolean;
+  onIsCancelableChange: (value: boolean) => void;
 }
 
 const DEFAULT_BOX = { x: 0, y: 0, width: 64, height: 64 };
@@ -45,6 +47,8 @@ export function SpritePreviewLeftPanel({
   onAddScript,
   onEditScript,
   onRemoveScript,
+  isCancelable,
+  onIsCancelableChange,
 }: SpritePreviewLeftPanelProps) {
   const [box, setBox] = useState(DEFAULT_BOX);
   const [keepAspect, setKeepAspect] = useState(true);
@@ -326,6 +330,35 @@ export function SpritePreviewLeftPanel({
           >
             <FileEarmarkCode className="me-1" /> Agregar script
           </button>
+        </AppTooltip>
+      </div>
+
+      <hr className="border-secondary opacity-50 mb-3" />
+
+      <div className="mb-2 d-flex justify-content-center">
+        <AppTooltip
+          content={
+            <>
+              <strong>Cancelable por otras animaciones</strong><br />
+              Si está activado, otra animación puede interrumpir y cancelar esta antes de que termine.<br />
+              Si está desactivado, ninguna animación podrá cancelarla hasta que concluya.
+            </>
+          }
+          place="right"
+        >
+          <div className="form-check d-flex align-items-center gap-2" style={{ cursor: 'pointer' }}>
+            <input
+              className="form-check-input"
+              type="checkbox"
+              id="is-cancelable-check"
+              checked={isCancelable}
+              onChange={e => onIsCancelableChange(e.target.checked)}
+            />
+            <label className="form-check-label d-flex align-items-center gap-1" htmlFor="is-cancelable-check" style={{ cursor: 'pointer' }}>
+              <SkipEndFill size={13} className="text-warning" />
+              <span className="text-light small">Cancelable</span>
+            </label>
+          </div>
         </AppTooltip>
       </div>
 

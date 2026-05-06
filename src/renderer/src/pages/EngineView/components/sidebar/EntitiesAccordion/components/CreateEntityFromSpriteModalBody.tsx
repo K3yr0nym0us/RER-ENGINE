@@ -17,6 +17,7 @@ interface CreateEntityFromSpriteModalBodyProps {
       facingRight: boolean;
       audioPath?: string;
       scripts: { name: string; source: string }[];
+      isCancelable: boolean;
     };
   }) => void;
   previewTitle: string;
@@ -56,6 +57,7 @@ export function CreateEntityFromSpriteModalBody({
                   facingRight: config.facingRight,
                   audioPath: config.audioPath,
                   scripts: config.scripts,
+                  isCancelable: config.isCancelable,
                 },
               });
               closeModal();

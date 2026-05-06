@@ -1,6 +1,6 @@
 import { Accordion } from 'react-bootstrap';
 
-import ScenariosAccordion, { EnvironmentsAccordion } from './EnvironmentsAccordion/EnvironmentsAccordion';
+import { EnvironmentsAccordion } from './EnvironmentsAccordion/EnvironmentsAccordion';
 import BtnCreateCharacter from './CharactersAccordion/components/BtnCreateCharacter';
 import ObjectsAccordion from './ObjectsAccordion/ObjectsAccordion';
 

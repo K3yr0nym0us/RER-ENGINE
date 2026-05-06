@@ -26,6 +26,7 @@ interface Animation {
   fps: number;
   loop: boolean;
   is_default?: boolean;
+  is_cancelable?: boolean;
   facing_right?: boolean;
   logical_w: number;
   logical_h: number;
@@ -146,6 +147,7 @@ export function AnimationsPanel() {
               fps: animation.fps,
               loop: animation.loop,
               is_default: !animations.some((a) => a.is_default),
+              is_cancelable: animation.isCancelable,
               facing_right: animation.facingRight,
               logical_w,
               logical_h,
@@ -266,6 +268,7 @@ export function AnimationsPanel() {
           initialFps={anim.fps}
           initialLoop={anim.loop}
           initialIsDefaultAnimation={anim.is_default ?? false}
+          initialIsCancelable={anim.is_cancelable ?? false}
           initialFacingRight={anim.facing_right ?? true}
           initialAudioPath={anim.audio_path}
           initialScripts={anim.scripts}
@@ -285,6 +288,7 @@ export function AnimationsPanel() {
               fps: config.fps,
               loop: config.loop,
               is_default: config.defaultAnimation,
+              is_cancelable: config.isCancelable,
               facing_right: config.facingRight,
               logical_w,
               logical_h,

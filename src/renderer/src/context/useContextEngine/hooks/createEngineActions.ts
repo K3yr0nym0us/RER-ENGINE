@@ -180,6 +180,7 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 				logical_w: anim.logical_w ?? 64,
 				logical_h: anim.logical_h ?? 64,
 				scripts: anim.scripts ?? [],
+				is_cancelable: anim.is_cancelable ?? false,
 			} as never);
 		}
 

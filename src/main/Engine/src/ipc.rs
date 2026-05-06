@@ -172,6 +172,9 @@ pub enum EngineCommand {
         /// Scripts Lua que se ejecutan mientras esta animación está activa.
         #[serde(default)]
         scripts:    Vec<AnimScriptData>,
+        /// Si false (default), ninguna otra animación puede interrumpirla antes de que termine.
+        #[serde(default)]
+        is_cancelable: bool,
     },
     /// Definir la animación predeterminada de una entidad.
     SetDefaultAnimation { id: u32, name: String },

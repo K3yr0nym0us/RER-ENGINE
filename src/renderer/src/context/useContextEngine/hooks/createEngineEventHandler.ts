@@ -369,6 +369,7 @@ export function createEngineEventHandler({
 							logical_w: anim.logical_w ?? 64,
 							logical_h: anim.logical_h ?? 64,
 							scripts: anim.scripts ?? [],
+							is_cancelable: anim.is_cancelable ?? false,
 						} as never);
 					}
 					const defaultAnim = normalizedAnimations.find((anim: any) => anim?.is_default) ?? normalizedAnimations[0];
@@ -434,6 +435,7 @@ export function createEngineEventHandler({
 							logical_w: anim.logical_w ?? 64,
 							logical_h: anim.logical_h ?? 64,
 							scripts: anim.scripts ?? [],
+							is_cancelable: anim.is_cancelable ?? false,
 						} as never);
 					}
 					const defaultAnim = normalizedAnimations.find((anim: any) => anim?.is_default) ?? normalizedAnimations[0];

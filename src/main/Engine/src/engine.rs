@@ -168,6 +168,8 @@ pub struct AnimationState {
     pub logical_h:     u32,
     /// Scripts Lua que se ejecutan solo mientras esta animación está activa.
     pub scripts:       Vec<AnimScriptData>,
+    /// Si false, ningún `PlayAnimation` puede interrumpirla hasta que termine.
+    pub is_cancelable: bool,
 }
 
 pub struct ActiveAnimation {
@@ -1461,7 +1463,7 @@ impl State {
                     log::warn!("[hot-reload] Path no encontrado en static_tex_cache ni como fondo: {}", path);
                 }
             }
-            EngineCommand::SetAnimation { id, name, frames, fps, loop_, flip_horizontal, audio_path, logical_w, logical_h, scripts } => {
+            EngineCommand::SetAnimation { id, name, frames, fps, loop_, flip_horizontal, audio_path, logical_w, logical_h, scripts, is_cancelable } => {
                 log::debug!("[IPC] SetAnimation: entity_id={}, name='{}', frames={}, audio={:?}, scripts={}", id, name, frames.len(), audio_path, scripts.len());
 
                 // Pre-decodificar audio a muestras PCM durante SetAnimation.
@@ -1506,6 +1508,7 @@ impl State {
                         logical_w,
                         logical_h,
                         scripts,
+                        is_cancelable,
                     });
                 self.default_animation_by_entity
                     .entry(id)
@@ -1526,6 +1529,23 @@ impl State {
             }
 EngineCommand::PlayAnimation { id, name } => {
                 log::debug!("[IPC] PlayAnimation: entity_id={}, name='{}'", id, name);
+
+                // Bloquear si la animación activa no es cancelable
+                if let Some(active) = self.active_animations.get(&id) {
+                    if !active.finished {
+                        let current_name = active.animation_name.clone();
+                        let is_cancelable = self.animations
+                            .get(&id)
+                            .and_then(|m| m.get(&current_name))
+                            .map(|a| a.is_cancelable)
+                            .unwrap_or(true);
+                        if !is_cancelable {
+                            log::debug!("[animation] PlayAnimation '{}' bloqueado: la animación '{}' activa no es cancelable", name, current_name);
+                            return;
+                        }
+                    }
+                }
+
                 // Detener animación previa (el Play de audio incluye clear interno)
                 self.active_animations.remove(&id);
 

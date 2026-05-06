@@ -66,6 +66,11 @@ export interface SavedAnimation {
   }[]
   /** Scripts Lua asociados a esta animación. */
   scripts?: SavedScript[]
+  /**
+   * Si true, una animación siguiente puede interrumpir/cancelar esta antes de que termine.
+   * Por defecto false: ninguna animación puede cancelarla.
+   */
+  is_cancelable?: boolean
 }
 
 export interface SavedScript {
