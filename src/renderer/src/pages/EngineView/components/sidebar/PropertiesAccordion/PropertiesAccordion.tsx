@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { Accordion } from 'react-bootstrap';
-import { CircleSquare, Check2Square, Files, Pencil, Trash } from 'react-bootstrap-icons';
+import { CircleSquare, Check2Square, Pencil, Trash } from 'react-bootstrap-icons';
 
 import { AppTooltip } from '@components';
 import { TransformPanel, AnimationsPanel, ScriptingPanel } from '.';
@@ -21,12 +21,12 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
     entityTransformsRef,
     entityMetaRef,
     removeScenario,
-    duplicateScenario,
     removeCharacter,
-    duplicateCharacter,
     removeCollider,
     removeExecutionArea,
     addBlueprint,
+    multiSelectedIds,
+    setEntityPhysics,
   } = useContextEngine()
 
   const { openModal, closeModal } = useModal();
@@ -47,6 +47,7 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
   }
   
   const is2D = projectType === '2D'
+  const isMultiSelect = multiSelectedIds.length > 1
 
   useEffect(() => {
     setEntityNameDraft(selectedEntity?.name ?? '');
@@ -62,10 +63,63 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
     return <p className="text-secondary fst-italic small mb-0 px-1">{t('Click on an object to view it')}</p>
   }
 
+  if (isMultiSelect) {
+    const handleRemoveMultiple = () => {
+      openModal({
+        title: t('Confirm action'),
+        body: (
+          <div className="text-center">
+            <p>{t('Are you sure you want to')} {t('delete')} <strong>{multiSelectedIds.length}</strong> {t('entities?')}</p>
+            <p className="text-danger">{t('This action cannot be undone.')}</p>
+            <div className="d-flex justify-content-center gap-2 mt-4">
+              <button
+                className="btn btn-danger"
+                onClick={() => {
+                  multiSelectedIds.forEach(id => {
+                    const kind = entityMetaRef.current[id]?.kind;
+                    if (kind === 'scenario') removeScenario(id);
+                    else if (kind === 'character') removeCharacter(id);
+                    else if (kind === 'collider') removeCollider(id);
+                    else if (kind === 'execution_area') removeExecutionArea(id);
+                    else if (scenarioEntities.some((s: any) => s.id === id)) removeScenario(id);
+                    else if (characterEntities.some((c: any) => c.id === id)) removeCharacter(id);
+                  });
+                  closeModal();
+                }}
+              >
+                {t('Yes,')} {t('delete')}
+              </button>
+              <button className="btn btn-secondary" onClick={closeModal}>
+                {t('Cancel')}
+              </button>
+            </div>
+          </div>
+        ),
+      });
+    };
+    return (
+      <div>
+        <p className="text-secondary fst-italic small mb-0 px-1">
+          {multiSelectedIds.length} {t('entities selected')}
+        </p>
+        <div className="mt-3 pt-2 border-top border-secondary">
+          <button
+            className="btn btn-sm btn-outline-danger w-100"
+            onClick={handleRemoveMultiple}
+          >
+            <Trash className="me-2" />
+            {t('Delete')} ({multiSelectedIds.length})
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const isScenario = scenarioEntities.some((s: any) => s.id === selectedEntity?.id)
   const isCharacter = characterEntities.some((c: any) => c.id === selectedEntity?.id)
   const isCollider = selectedEntity ? entityMetaRef.current[selectedEntity.id]?.kind === 'collider' : false
   const isExecutionArea = selectedEntity ? entityMetaRef.current[selectedEntity.id]?.kind === 'execution_area' : false
+  const isFromBlueprint = selectedEntity ? !!entityMetaRef.current[selectedEntity.id]?.blueprintId : false
 
   const handleConfirmModal = (onConfirm: () => void, action: 'delete' | 'duplicate') => {
     openModal({
@@ -91,24 +145,6 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
          </div>
        )
      })
-  }
-
-  const handleDuplicate = () => {
-    if (isScenario) {
-      handleConfirmModal(() => duplicateScenario(selectedEntity.id), 'duplicate');
-    } else if (isCharacter) {
-      handleConfirmModal(() => duplicateCharacter(selectedEntity.id), 'duplicate');
-    } else if (isCollider) {
-      const points = entityMetaRef.current[selectedEntity.id]?.points;
-      if (!points || points.length !== 4) return;
-      const shiftedPoints = points.map(([x, y]) => [x + 0.5, y + 0.5]) as [[number, number], [number, number], [number, number], [number, number]];
-      handleConfirmModal(() => send({ cmd: 'create_collider_from_points', points: shiftedPoints }), 'duplicate');
-    } else if (isExecutionArea) {
-      const points = entityMetaRef.current[selectedEntity.id]?.points;
-      if (!points || points.length !== 4) return;
-      const shiftedPoints = points.map(([x, y]) => [x + 0.5, y + 0.5]) as [[number, number], [number, number], [number, number], [number, number]];
-      handleConfirmModal(() => send({ cmd: 'create_execution_area_from_points', points: shiftedPoints }), 'duplicate');
-    }
   }
 
   const handleRemove = () => {
@@ -185,7 +221,7 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
                 checked={physicsEnabled}
                 onChange={(e) => {
                   const next = e.target.checked
-                  send({ cmd: 'set_physics', id: selectedEntity.id, enabled: next, body_type: 'static' })
+                  setEntityPhysics(selectedEntity.id, next, 'static')
                 }}
               />
               <label htmlFor="scenario-collision" className="form-check-label text-light small mb-0">
@@ -204,7 +240,7 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
                 checked={physicsEnabled}
                 onChange={(e) => {
                   const next = e.target.checked
-                  send({ cmd: 'set_physics', id: selectedEntity.id, enabled: next, body_type: physicsType })
+                  setEntityPhysics(selectedEntity.id, next, physicsType)
                 }}
               />
               <label htmlFor="physics-enabled" className="form-check-label text-light small mb-0">
@@ -217,7 +253,7 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
                 className="form-select form-select-sm bg-dark text-light border-secondary mt-1"
                 onChange={(e) => {
                   const next = e.target.value
-                  send({ cmd: 'set_physics', id: selectedEntity.id, enabled: true, body_type: next })
+                  setEntityPhysics(selectedEntity.id, true, next)
                 }}
               >
                 <option value="dynamic">{t('Dynamic (gravity)')}</option>
@@ -251,6 +287,7 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
       )}
 
       <div className="mt-3 pt-2 border-top border-secondary">
+        {!isFromBlueprint && (
         <button
           className="btn btn-sm btn-outline-primary w-100 mb-2"
           onClick={() => {
@@ -303,22 +340,14 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
           <CircleSquare className="me-2" />
           {t('Create Blueprint')}
         </button>
-        <div className="d-flex gap-2">
-          <button
-            className="btn btn-sm btn-outline-secondary flex-fill"
-            onClick={handleDuplicate}
-          >
-            <Files className="me-2" />
-            {t('Duplicate')}
-          </button>
-          <button
-            className="btn btn-sm btn-outline-danger flex-fill"
-            onClick={handleRemove}
-          >
-            <Trash className="me-2" />
-            {t('Delete')}
-          </button>
-        </div>
+        )}
+        <button
+          className="btn btn-sm btn-outline-danger w-100"
+          onClick={handleRemove}
+        >
+          <Trash className="me-2" />
+          {t('Delete')}
+        </button>
       </div>
     </div>
   )

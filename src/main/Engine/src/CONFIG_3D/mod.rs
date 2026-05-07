@@ -160,6 +160,7 @@ impl State {
                                 physics_type,
                             });
                         }
+                        send_event(&EngineEvent::MultiSelectChanged { ids: self.selected_entities.clone() });
                         return;
                     } else {
                         self.selected_entities.push(entity);
@@ -186,6 +187,9 @@ impl State {
                 let physics_enabled = self.physics.has_physics(entity);
                 let physics_type    = self.physics.get_body_type(entity).to_string();
                 send_event(&EngineEvent::EntitySelected { id: entity, name, position, rotation, scale, physics_enabled, physics_type });
+                if self.ctrl_held && self.selected_entities.len() > 1 {
+                    send_event(&EngineEvent::MultiSelectChanged { ids: self.selected_entities.clone() });
+                }
             }
             None => {
                 if !self.ctrl_held && (self.selected_entity.is_some() || !self.selected_entities.is_empty()) {

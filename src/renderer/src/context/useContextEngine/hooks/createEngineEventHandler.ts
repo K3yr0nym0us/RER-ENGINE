@@ -223,14 +223,20 @@ export function createEngineEventHandler({
 					} else if (entity.kind === 'character' && entity.path === '[Player]') {
 						refs.pendingPlayerDups.current.push(transform);
 					} else {
+						// Si la entidad es una instancia de blueprint, heredar las propiedades
+						// del blueprint original en lugar de las guardadas por entidad.
+						const bp = entity.blueprint_id
+							? (save.blueprints ?? []).find((b) => b.id === entity.blueprint_id) ?? null
+							: null;
 						const pendingRestore: PendingRestore = {
 							transform,
 							name: entity.name,
-							physicsEnabled: entity.physics_enabled ?? false,
-							physicsType: entity.physics_type ?? 'static',
-							animations: entity.animations,
-							scripts: entity.scripts,
-							controlBindings: entity.control_bindings,
+							physicsEnabled: bp?.physics_enabled ?? entity.physics_enabled ?? false,
+							physicsType: bp?.physics_type ?? entity.physics_type ?? 'static',
+							animations: bp?.animations ?? entity.animations,
+							scripts: bp?.scripts ?? entity.scripts,
+							controlBindings: bp?.control_bindings ?? entity.control_bindings,
+							blueprintId: entity.blueprint_id,
 						};
 						const queue = refs.pendingRestoresRef.current.get(entity.path) ?? [];
 						queue.push(pendingRestore);
@@ -389,6 +395,9 @@ export function createEngineEventHandler({
 				if (pending.controlBindings) {
 					refs.entityMetaRef.current[scenario.id].controlBindings = pending.controlBindings;
 				}
+				if (pending.blueprintId) {
+					refs.entityMetaRef.current[scenario.id].blueprintId = pending.blueprintId;
+				}
 				if (queue.length === 0) refs.pendingRestoresRef.current.delete(scenario.path);
 			}
 		}
@@ -457,6 +466,12 @@ export function createEngineEventHandler({
 				if (pending.controlBindings) {
 					if (refs.entityMetaRef.current[id]) {
 						refs.entityMetaRef.current[id].controlBindings = pending.controlBindings;
+					}
+				}
+
+				if (pending.blueprintId) {
+					if (refs.entityMetaRef.current[id]) {
+						refs.entityMetaRef.current[id].blueprintId = pending.blueprintId;
 					}
 				}
 
@@ -578,6 +593,11 @@ export function createEngineEventHandler({
 			const e = event as unknown as { id: number };
 			delete refs.entityMetaRef.current[e.id];
 			delete refs.entityTransformsRef.current[e.id];
+		}
+
+		if (event.event === 'multi_select_changed') {
+			const e = event as unknown as { ids: number[] };
+			dispatch({ type: 'SET_MULTI_SELECT', payload: e.ids });
 		}
 
 		if (event.event === 'animation_finished') {

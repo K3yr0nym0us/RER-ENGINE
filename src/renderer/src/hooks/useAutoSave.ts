@@ -71,6 +71,9 @@ export function useAutoSave({ projectType = '2D', initialSave = null, initialSav
         const livePoints = (m.kind === 'collider' || m.kind === 'execution_area')
           ? pointsFromTransform(id)
           : undefined
+        // Las instancias de blueprint no guardan sus propias propiedades:
+        // las heredan del blueprint original al cargar el proyecto.
+        const isBlueprintInstance = !!m.blueprintId
         return {
           id,
           name: selectedName ?? m.name,
@@ -79,12 +82,13 @@ export function useAutoSave({ projectType = '2D', initialSave = null, initialSav
           position: transforms[id]?.position ?? DEFAULT_POS,
           rotation: transforms[id]?.rotation ?? DEFAULT_ROT,
           scale: transforms[id]?.scale ?? DEFAULT_SCL,
-          physics_enabled: m.physicsEnabled,
-          physics_type: m.physicsType,
+          physics_enabled: isBlueprintInstance ? undefined : m.physicsEnabled,
+          physics_type: isBlueprintInstance ? undefined : m.physicsType,
           points: livePoints ?? m.points,
-          animations: m.animations,
-          scripts: m.scripts,
-          control_bindings: m.controlBindings,
+          animations: isBlueprintInstance ? undefined : m.animations,
+          scripts: isBlueprintInstance ? undefined : m.scripts,
+          control_bindings: isBlueprintInstance ? undefined : m.controlBindings,
+          blueprint_id: m.blueprintId,
         }
       })
 

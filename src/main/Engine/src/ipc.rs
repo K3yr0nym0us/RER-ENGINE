@@ -59,8 +59,6 @@ pub enum EngineCommand {
     },
     /// Ajustar la escala de un escenario 2D específico preservando proporciones.
     SetScenarioScale { id: u32, scale: f32 },
-    /// Duplicar un escenario existente (crea una nueva entidad con el mismo PNG).
-    DuplicateScenario { id: u32 },
     /// Cargar una imagen PNG como personaje en la escena 2D.
     LoadCharacter {
         path: String,
@@ -70,8 +68,6 @@ pub enum EngineCommand {
     },
     /// Ajustar la escala de un personaje 2D específico preservando proporciones.
     SetCharacterScale { id: u32, scale: f32 },
-    /// Duplicar un personaje existente (crea una nueva entidad con el mismo PNG).
-    DuplicateCharacter { id: u32 },
         /// Limpiar el fondo del mundo 2D actual.
         ClearBackground,
 /// Cambiar el sprite de una entidad (escenario o personaje) a un frame de animación.
@@ -305,6 +301,9 @@ pub enum EngineEvent {
     QuickBuildClick { x: f32, y: f32, fit_to_grid: bool },
     /// Emitido cuando una entidad es eliminada del mundo (por Ctrl+Z, RemoveEntity, etc.).
     EntityRemoved { id: u32 },
+    /// Emitido cuando el usuario mantiene Ctrl y hace click añadiendo/quitando entidades
+    /// a la selección múltiple. `ids` contiene todos los IDs actualmente seleccionados.
+    MultiSelectChanged { ids: Vec<u32> },
     /// Emitido cuando el motor detecta un input de control en modo juego.
     ControlInputDetected { device: String, control_key: String },
     /// Emitido ~1 vez por segundo con métricas de rendimiento del motor.

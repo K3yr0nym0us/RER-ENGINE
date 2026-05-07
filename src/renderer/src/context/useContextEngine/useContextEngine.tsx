@@ -46,6 +46,7 @@ export function EngineProvider({
 		pivotEditListenerRef: useRef<((framePath: string, px: number, py: number) => void) | null>(null),
 		quickBuildClickListenerRef: useRef<((x: number, y: number) => void) | null>(null),
 		pendingEventsRef: useRef<Map<string, { resolve: (value: any) => void }>>(new Map()),
+		blueprintsRef: useRef([]),
 	};
 
 	const addLog = (text: string, isError = false) => {
@@ -100,6 +101,11 @@ export function EngineProvider({
 	// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
 
+	// Mantener blueprintsRef sincronizado con el estado para acceso desde acciones
+	useEffect(() => {
+		refs.blueprintsRef.current = state.blueprints;
+	}, [state.blueprints, refs.blueprintsRef]);
+
 	const value: EngineContextValue = {
 		...state,
 		entityTransformsRef: refs.entityTransformsRef,
@@ -114,9 +120,7 @@ export function EngineProvider({
 		reportBounds,
 		retryEngine: actions.retryEngine,
 		removeScenario: actions.removeScenario,
-		duplicateScenario: actions.duplicateScenario,
 		removeCharacter: actions.removeCharacter,
-		duplicateCharacter: actions.duplicateCharacter,
 		setWorldSize: actions.setWorldSize,
 		setGridVisible: actions.setGridVisible,
 		setGridCellSize: actions.setGridCellSize,
@@ -125,6 +129,7 @@ export function EngineProvider({
 		removeExecutionArea: actions.removeExecutionArea,
 		updateEntityAnimations: actions.updateEntityAnimations,
 		updateEntityScripts: actions.updateEntityScripts,
+		setEntityPhysics: actions.setEntityPhysics,
 		registerPivotEditListener: actions.registerPivotEditListener,
 		unregisterPivotEditListener: actions.unregisterPivotEditListener,
 		loadSprite: actions.loadSprite,

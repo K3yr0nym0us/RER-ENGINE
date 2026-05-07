@@ -30,31 +30,6 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 	const cloneScripts = (scripts?: EntityScripts) =>
 		scripts?.map((script) => ({ ...script }));
 
-	const queuePendingDuplicateRestore = (id: number) => {
-		const meta = refs.entityMetaRef.current[id];
-		const transform = refs.entityTransformsRef.current[id];
-		if (!meta || !transform || !meta.path) return;
-
-		const clonedTransform = cloneTransform(transform);
-		clonedTransform.position = [
-			clonedTransform.position[0] + 0.5,
-			clonedTransform.position[1] + 0.5,
-			clonedTransform.position[2],
-		];
-
-		const pendingRestore: PendingRestore = {
-			transform: clonedTransform,
-			physicsEnabled: meta.physicsEnabled ?? false,
-			physicsType: meta.physicsType ?? 'static',
-			animations: cloneAnimations(meta.animations),
-			scripts: cloneScripts(meta.scripts),
-		};
-
-		const queue = refs.pendingRestoresRef.current.get(meta.path) ?? [];
-		queue.push(pendingRestore);
-		refs.pendingRestoresRef.current.set(meta.path, queue);
-	};
-
 	const sendAsync = <T,>(cmd: object, waitForEvent: string, onStart?: () => void): Promise<T> => {
 		if (onStart) onStart();
 		return new Promise((resolve) => {
@@ -113,21 +88,11 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 		delete refs.entityMetaRef.current[id];
 	};
 
-	const duplicateScenario = (id: number) => {
-		queuePendingDuplicateRestore(id);
-		send({ cmd: 'duplicate_scenario', id });
-	};
-
 	const removeCharacter = (id: number) => {
 		send({ cmd: 'remove_entity', id });
 		dispatch({ type: 'REMOVE_CHARACTER', payload: id });
 		if (refs.playerEntityIdRef.current === id) refs.playerEntityIdRef.current = null;
 		delete refs.entityMetaRef.current[id];
-	};
-
-	const duplicateCharacter = (id: number) => {
-		queuePendingDuplicateRestore(id);
-		send({ cmd: 'duplicate_character', id });
 	};
 
 	const setWorldSize = (width: number, height: number) => {
@@ -163,38 +128,109 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 	};
 
 	const updateEntityAnimations = (id: number, animations: any[]) => {
-		if (!refs.entityMetaRef.current[id]) {
-			refs.entityMetaRef.current[id] = { kind: 'model', path: '', physicsEnabled: false, physicsType: '' };
-		}
-		refs.entityMetaRef.current[id].animations = animations;
-		for (const anim of animations) {
-			window.engine.send({
-				cmd: 'set_animation',
-				id,
-				name: anim.name,
-				frames: anim.frames,
-				fps: anim.fps,
-				loop_: anim.loop,
-				flip_horizontal: !(anim.facing_right ?? true),
-				audio_path: anim.audio_path ?? null,
-				logical_w: anim.logical_w ?? 64,
-				logical_h: anim.logical_h ?? 64,
-				scripts: anim.scripts ?? [],
-				is_cancelable: anim.is_cancelable ?? true,
-			} as never);
-		}
+		const bpId = refs.entityMetaRef.current[id]?.blueprintId;
 
-		const defaultAnim = animations.find((anim) => anim?.is_default) ?? animations[0];
-		if (defaultAnim?.name) {
-			window.engine.send({ cmd: 'set_default_animation', id, name: defaultAnim.name } as never);
+		const applyAnimationsToSingleEntity = (entityId: number) => {
+			if (!refs.entityMetaRef.current[entityId]) return;
+			refs.entityMetaRef.current[entityId].animations = animations;
+			for (const anim of animations) {
+				window.engine.send({
+					cmd: 'set_animation',
+					id: entityId,
+					name: anim.name,
+					frames: anim.frames,
+					fps: anim.fps,
+					loop_: anim.loop,
+					flip_horizontal: !(anim.facing_right ?? true),
+					audio_path: anim.audio_path ?? null,
+					logical_w: anim.logical_w ?? 64,
+					logical_h: anim.logical_h ?? 64,
+					scripts: anim.scripts ?? [],
+					is_cancelable: anim.is_cancelable ?? true,
+				} as never);
+			}
+			const defaultAnim = animations.find((anim) => anim?.is_default) ?? animations[0];
+			if (defaultAnim?.name) {
+				window.engine.send({ cmd: 'set_default_animation', id: entityId, name: defaultAnim.name } as never);
+			}
+		};
+
+		if (bpId) {
+			// Actualizar la blueprint y propagar a todas sus instancias
+			const updatedBlueprints = refs.blueprintsRef.current.map((bp) =>
+				bp.id === bpId ? { ...bp, animations } : bp
+			);
+			refs.blueprintsRef.current = updatedBlueprints;
+			dispatch({ type: 'SET_BLUEPRINTS', payload: updatedBlueprints });
+			for (const [entityIdStr, meta] of Object.entries(refs.entityMetaRef.current)) {
+				if (meta.blueprintId === bpId) {
+					applyAnimationsToSingleEntity(Number(entityIdStr));
+				}
+			}
+		} else {
+			if (!refs.entityMetaRef.current[id]) {
+				refs.entityMetaRef.current[id] = { kind: 'model', path: '', physicsEnabled: false, physicsType: '' };
+			}
+			applyAnimationsToSingleEntity(id);
 		}
 	};
 
 	const updateEntityScripts = (id: number, scripts: EntityScripts) => {
-		if (!refs.entityMetaRef.current[id]) {
-			refs.entityMetaRef.current[id] = { kind: 'model', path: '', physicsEnabled: false, physicsType: '' };
+		const bpId = refs.entityMetaRef.current[id]?.blueprintId;
+
+		const applyScriptsToSingleEntity = (entityId: number) => {
+			if (!refs.entityMetaRef.current[entityId]) return;
+			refs.entityMetaRef.current[entityId].scripts = scripts;
+			for (const script of scripts) {
+				window.engine.send({ cmd: 'load_script', id: entityId, path: script.name, source: script.source } as never);
+			}
+		};
+
+		if (bpId) {
+			// Actualizar la blueprint y propagar a todas sus instancias
+			const updatedBlueprints = refs.blueprintsRef.current.map((bp) =>
+				bp.id === bpId ? { ...bp, scripts } : bp
+			);
+			refs.blueprintsRef.current = updatedBlueprints;
+			dispatch({ type: 'SET_BLUEPRINTS', payload: updatedBlueprints });
+			for (const [entityIdStr, meta] of Object.entries(refs.entityMetaRef.current)) {
+				if (meta.blueprintId === bpId) {
+					applyScriptsToSingleEntity(Number(entityIdStr));
+				}
+			}
+		} else {
+			if (!refs.entityMetaRef.current[id]) {
+				refs.entityMetaRef.current[id] = { kind: 'model', path: '', physicsEnabled: false, physicsType: '' };
+			}
+			applyScriptsToSingleEntity(id);
 		}
-		refs.entityMetaRef.current[id].scripts = scripts;
+	};
+
+	const setEntityPhysics = (id: number, enabled: boolean, bodyType: string) => {
+		const bpId = refs.entityMetaRef.current[id]?.blueprintId;
+
+		const applyPhysicsToSingleEntity = (entityId: number) => {
+			if (!refs.entityMetaRef.current[entityId]) return;
+			refs.entityMetaRef.current[entityId].physicsEnabled = enabled;
+			refs.entityMetaRef.current[entityId].physicsType = bodyType;
+			window.engine.send({ cmd: 'set_physics', id: entityId, enabled, body_type: bodyType } as never);
+		};
+
+		if (bpId) {
+			// Actualizar la blueprint y propagar a todas sus instancias
+			const updatedBlueprints = refs.blueprintsRef.current.map((bp) =>
+				bp.id === bpId ? { ...bp, physics_enabled: enabled, physics_type: bodyType } : bp
+			);
+			refs.blueprintsRef.current = updatedBlueprints;
+			dispatch({ type: 'SET_BLUEPRINTS', payload: updatedBlueprints });
+			for (const [entityIdStr, meta] of Object.entries(refs.entityMetaRef.current)) {
+				if (meta.blueprintId === bpId) {
+					applyPhysicsToSingleEntity(Number(entityIdStr));
+				}
+			}
+		} else {
+			applyPhysicsToSingleEntity(id);
+		}
 	};
 
 	const registerPivotEditListener = (fn: (framePath: string, px: number, py: number) => void) => {
@@ -260,9 +296,7 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 		loadModel,
 		retryEngine,
 		removeScenario,
-		duplicateScenario,
 		removeCharacter,
-		duplicateCharacter,
 		setWorldSize,
 		setGridVisible,
 		setGridCellSize,
@@ -271,6 +305,7 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 		removeExecutionArea,
 		updateEntityAnimations,
 		updateEntityScripts,
+		setEntityPhysics,
 		registerPivotEditListener,
 		unregisterPivotEditListener,
 		loadSprite,

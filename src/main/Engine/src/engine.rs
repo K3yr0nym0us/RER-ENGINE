@@ -1156,9 +1156,6 @@ impl State {
                     }
                 }
             }
-            EngineCommand::DuplicateScenario { id } => {
-                self.duplicate_scenario(id);
-            }
             EngineCommand::LoadCharacter { path, track_undo } => {
                 self.load_character(&path);
                 if track_undo.unwrap_or(false) {
@@ -1171,9 +1168,6 @@ impl State {
             }
             EngineCommand::SetCharacterScale { id, scale } => {
                 self.set_character_scale(id, scale);
-            }
-            EngineCommand::DuplicateCharacter { id } => {
-                self.duplicate_character(id);
             }
             EngineCommand::PlayAnimationFrame { id, path, pivot_x, pivot_y, logical_w, logical_h, src_x, src_y, src_w, src_h } => {
                 if self.pivot_edit_mode.is_some() {

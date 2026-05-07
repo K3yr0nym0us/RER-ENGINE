@@ -378,30 +378,6 @@ impl State {
         log::debug!("[load_scenario] entidad {sc_id} creada {img_width}×{img_height}: {path}");
     }
 
-    /// Duplica un escenario existente: crea una nueva entidad con el mismo PNG
-    /// ligeramente desplazada (offset +1 en X e Y) para que sea visible.
-    pub(crate) fn duplicate_scenario(&mut self, id: u32) {
-        let path = match self.world.get::<ScenarioMarker>(id) {
-            Some(m) => m.path.clone(),
-            None => {
-                log::warn!("[duplicate_scenario] entidad {id} no tiene ScenarioMarker");
-                return;
-            }
-        };
-        // Offset para que el duplicado sea visible sobre el original
-        let offset = {
-            let count = self.scenario_entities.len() as f32;
-            GlamVec3::new(count * 0.5, count * 0.5, 0.0)
-        };
-        self.load_scenario(&path);
-        // Aplicar offset a la entidad recién creada
-        if let Some(&new_id) = self.scenario_entities.last() {
-            if let Some(t) = self.world.get_mut::<Transform>(new_id) {
-                t.position += offset;
-            }
-        }
-    }
-
     // ── Fondo del mundo ───────────────────────────────────────────────────────
 
     /// Carga una imagen PNG o GIF como fondo del mundo 2D.
@@ -542,52 +518,6 @@ impl State {
             let new_w  = new_h * aspect;
             if let Some(t) = self.world.get_mut::<Transform>(id) {
                 t.scale = GlamVec3::new(new_w, new_h, 1.0);
-            }
-        }
-    }
-
-    /// Duplica un personaje existente: crea una nueva entidad con el mismo PNG
-    /// ligeramente desplazada para que sea visible.
-    /// Si el personaje es el jugador por defecto ([Player]), crea un nuevo quad blanco.
-    pub(crate) fn duplicate_character(&mut self, id: u32) {
-        let path = match self.world.get::<CharacterMarker>(id) {
-            Some(m) => m.path.clone(),
-            None => {
-                log::warn!("[duplicate_character] entidad {id} no tiene CharacterMarker");
-                return;
-            }
-        };
-        let offset = {
-            let count = self.character_entities.len() as f32;
-            GlamVec3::new(count * 0.5, count * 0.5, 0.0)
-        };
-        if path == "[Player]" {
-            // Crear un nuevo quad blanco usando el quad canónico compartido
-            let player_rgba = [232u8, 220, 200, 255];
-            let tex_idx = self.uv_rects.len();
-            self.uv_rects.push(self.atlas.pack(&self.queue, &player_rgba, 1, 1));
-            let player_name = self.next_numbered_entity_name("Player");
-            let new_id = self.world.spawn(Some(&player_name));
-            self.world.insert(new_id, MeshComponent { mesh_idx: self.canonical_quad_idx, tex_idx });
-            self.world.insert(new_id, Transform {
-                position: GlamVec3::new(offset.x, offset.y, 0.0),
-                scale:    GlamVec3::new(1.0, 1.5, 1.0),
-                ..Default::default()
-            });
-            self.world.insert(new_id, CharacterMarker {
-                img_width: 0, img_height: 0,
-                base_world_h: 1.5,
-                path: "[Player]".to_owned(),
-            });
-            self.character_entities.push(new_id);
-            send_event(&EngineEvent::CharacterLoaded { id: new_id, path: "[Player]".to_owned() });
-            log::info!("[duplicate_character] nuevo quad jugador creado: entidad {new_id}");
-        } else {
-            self.load_character(&path);
-            if let Some(&new_id) = self.character_entities.last() {
-                if let Some(t) = self.world.get_mut::<Transform>(new_id) {
-                    t.position += offset;
-                }
             }
         }
     }
@@ -1037,6 +967,7 @@ impl State {
                                 physics_type,
                             });
                         }
+                        send_event(&EngineEvent::MultiSelectChanged { ids: self.selected_entities.clone() });
                         return;
                     } else {
                         self.selected_entities.push(entity);
@@ -1065,6 +996,9 @@ impl State {
                     physics_enabled,
                     physics_type,
                 });
+                if self.ctrl_held && self.selected_entities.len() > 1 {
+                    send_event(&EngineEvent::MultiSelectChanged { ids: self.selected_entities.clone() });
+                }
             }
             None => {
                 if !self.ctrl_held && (self.selected_entity.is_some() || !self.selected_entities.is_empty()) {

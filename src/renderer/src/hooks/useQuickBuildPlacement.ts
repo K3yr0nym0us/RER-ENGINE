@@ -98,6 +98,7 @@ export function useQuickBuildPlacement() {
         animations: bp.animations as any[] | undefined,
         scripts: bp.scripts,
         controlBindings: bp.control_bindings,
+        blueprintId: bp.id,
       }
 
       const queue = pendingRestoresRef.current.get(bp.path) ?? []

@@ -38,6 +38,8 @@ export interface SavedEntity {
   control_bindings?: SavedControlBindings
   /** Nombre del sprite precargado si esta entidad lo usa. */
   spriteName?:      string
+  /** ID de la blueprint desde la que fue instanciada esta entidad. */
+  blueprint_id?:    string
 }
 
 export interface SavedAnimation {

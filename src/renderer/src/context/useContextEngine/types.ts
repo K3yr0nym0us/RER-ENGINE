@@ -80,6 +80,7 @@ export interface EngineState {
 	loadedSpritesInfo: Map<string, { name: string }>
 	debugMetrics: DebugMetrics | null
 	blueprints: BluePrintEntry[]
+	multiSelectedIds: number[]
 }
 
 export type EngineAction =
@@ -115,7 +116,8 @@ export type EngineAction =
 	| { type: 'SET_LOADED_SPRITES_INFO'; payload: Array<{ path: string; name: string }> }
 	| { type: 'SET_DEBUG_METRICS'; payload: DebugMetrics }
 	| { type: 'ADD_BLUEPRINT'; payload: BluePrintEntry }
-	| { type: 'SET_BLUEPRINTS'; payload: BluePrintEntry[] };
+	| { type: 'SET_BLUEPRINTS'; payload: BluePrintEntry[] }
+	| { type: 'SET_MULTI_SELECT'; payload: number[] };
 
 export const initialState: EngineState = {
 	engineReady: false,
@@ -137,6 +139,7 @@ export const initialState: EngineState = {
 	loadedSpritesInfo: new Map(),
 	debugMetrics: null,
 	blueprints: [],
+	multiSelectedIds: [],
 };
 
 export function engineReducer(state: EngineState, action: EngineAction): EngineState {
@@ -150,7 +153,7 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 				? prevState
 				: { ...prevState, entities: [...prevState.entities, { id: nextAction.payload }] },
 		SELECT_ENTITY: (prevState, nextAction) => ({ ...prevState, selectedEntity: nextAction.payload }),
-		DESELECT_ENTITY: (prevState) => ({ ...prevState, selectedEntity: null }),
+		DESELECT_ENTITY: (prevState) => ({ ...prevState, selectedEntity: null, multiSelectedIds: [] }),
 		ENGINE_STOPPED: (prevState, nextAction) => {
 			const code = nextAction.payload;
 			const error = code !== 0 && code != null
@@ -158,8 +161,8 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 				: null;
 			return { ...prevState, engineReady: false, previewPlaying: false, ...(error ? { engineError: error } : {}) };
 		},
-		CLEAR_ENTITIES: (prevState) => ({ ...prevState, entities: [] }),
-		RESET_ENGINE: (prevState) => ({ ...prevState, engineReady: false, engineError: null, previewPlaying: false, entities: [] }),
+		CLEAR_ENTITIES: (prevState) => ({ ...prevState, entities: [], multiSelectedIds: [] }),
+		RESET_ENGINE: (prevState) => ({ ...prevState, engineReady: false, engineError: null, previewPlaying: false, entities: [], multiSelectedIds: [] }),
 		ADD_SCENARIO: (prevState, nextAction) => ({ ...prevState, scenarioEntities: [...prevState.scenarioEntities, nextAction.payload] }),
 		REMOVE_SCENARIO: (prevState, nextAction) => ({
 			...prevState,
@@ -226,6 +229,7 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 		SET_DEBUG_METRICS: (prevState, nextAction) => ({ ...prevState, debugMetrics: nextAction.payload }),
 		ADD_BLUEPRINT: (prevState, nextAction) => ({ ...prevState, blueprints: [...prevState.blueprints, nextAction.payload] }),
 		SET_BLUEPRINTS: (prevState, nextAction) => ({ ...prevState, blueprints: nextAction.payload }),
+		SET_MULTI_SELECT: (prevState, nextAction) => ({ ...prevState, multiSelectedIds: nextAction.payload }),
 	};
 
 	const handler = handlers[action.type as keyof typeof handlers];
@@ -253,6 +257,8 @@ export interface EntityMeta {
 	animations?: EntityAnimations
 	scripts?: EntityScripts
 	controlBindings?: SavedControlBindings
+	/** ID de la blueprint desde la que fue instanciada esta entidad. */
+	blueprintId?: string
 }
 
 export interface PendingRestore {
@@ -263,6 +269,8 @@ export interface PendingRestore {
 	animations?: any[]
 	scripts?: EntityScripts
 	controlBindings?: SavedControlBindings
+	/** ID de la blueprint desde la que fue instanciada esta entidad. */
+	blueprintId?: string
 }
 
 export interface Camera2dState {
@@ -288,6 +296,7 @@ export interface EngineInternalRefs {
 	pivotEditListenerRef: MutableRefObject<((framePath: string, px: number, py: number) => void) | null>
 	quickBuildClickListenerRef: MutableRefObject<((x: number, y: number, fitToGrid: boolean) => void) | null>
 	pendingEventsRef: MutableRefObject<Map<string, { resolve: (value: any) => void }>>
+	blueprintsRef: MutableRefObject<BluePrintEntry[]>
 }
 
 export interface EngineContextValue extends EngineState {
@@ -303,9 +312,7 @@ export interface EngineContextValue extends EngineState {
 	reportBounds: () => void
 	retryEngine: () => void
 	removeScenario: (id: number) => void
-	duplicateScenario: (id: number) => void
 	removeCharacter: (id: number) => void
-	duplicateCharacter: (id: number) => void
 	setWorldSize: (width: number, height: number) => void
 	setGridVisible: (visible: boolean) => void
 	setGridCellSize: (size: number) => void
@@ -314,6 +321,7 @@ export interface EngineContextValue extends EngineState {
 	removeExecutionArea: (id: number) => void
 	updateEntityAnimations: (id: number, animations: any[]) => void
 	updateEntityScripts: (id: number, scripts: EntityScripts) => void
+	setEntityPhysics: (id: number, enabled: boolean, bodyType: string) => void
 	registerPivotEditListener: (fn: (framePath: string, px: number, py: number) => void) => void
 	unregisterPivotEditListener: () => void
 	loadSprite: (path: string, name: string) => void
