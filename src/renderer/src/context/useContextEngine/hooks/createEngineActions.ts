@@ -143,8 +143,8 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 					loop_: anim.loop,
 					flip_horizontal: !(anim.facing_right ?? true),
 					audio_path: anim.audio_path ?? null,
-					logical_w: anim.logical_w ?? 64,
-					logical_h: anim.logical_h ?? 64,
+					logical_w: anim.logical_w,
+					logical_h: anim.logical_h,
 					scripts: anim.scripts ?? [],
 					is_cancelable: anim.is_cancelable ?? true,
 				} as never);

@@ -136,7 +136,7 @@ export interface EngineCommand {
 }
 
 export interface EngineEvent {
-  event: 'ready' | 'pong' | 'error' | 'model_loaded' | 'stopped' | 'entity_selected' | 'entity_deselected' | 'entity_hovered' | 'entity_unhovered' | 'scenario_loaded' | 'character_loaded' | 'player_ready' | 'camera_2d_updated' | 'background_loaded' | 'drawing_progress' | 'collider_created' | 'execution_area_created' | 'tool_cancelled' | 'pivot_selected' | 'physics_changed' | 'sprite_loaded' | 'sprite_removed' | 'sprites_list' | 'control_input_detected' | 'debug_metrics' | 'trigger_entered' | 'trigger_exited' | 'entity_removed' | 'quick_build_move' | 'quick_build_click'
+  event: 'ready' | 'pong' | 'error' | 'model_loaded' | 'stopped' | 'entity_selected' | 'entity_deselected' | 'entity_hovered' | 'entity_unhovered' | 'scenario_loaded' | 'character_loaded' | 'player_ready' | 'camera_2d_updated' | 'background_loaded' | 'drawing_progress' | 'collider_created' | 'execution_area_created' | 'tool_cancelled' | 'pivot_selected' | 'physics_changed' | 'sprite_loaded' | 'sprite_removed' | 'sprites_list' | 'control_input_detected' | 'debug_metrics' | 'trigger_entered' | 'trigger_exited' | 'entity_removed' | 'quick_build_move' | 'quick_build_click' | 'animation_logical_resolved'
   [key: string]: unknown
 }
 
@@ -256,6 +256,14 @@ export interface EntityRemoved {
   event: 'entity_removed'
   id: number
   kind: 'scenario' | 'character' | 'model' | 'collider' | 'execution_area'
+}
+
+export interface AnimationLogicalResolved {
+  event: 'animation_logical_resolved'
+  id: number
+  name: string
+  logical_w: number
+  logical_h: number
 }
 
 export interface SpriteInfo {

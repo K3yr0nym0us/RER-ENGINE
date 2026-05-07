@@ -1492,6 +1492,37 @@ impl State {
             EngineCommand::SetAnimation { id, name, frames, fps, loop_, flip_horizontal, audio_path, logical_w, logical_h, scripts, is_cancelable } => {
                 log::debug!("[IPC] SetAnimation: entity_id={}, name='{}', frames={}, audio={:?}, scripts={}", id, name, frames.len(), audio_path, scripts.len());
 
+                let fallback_logical_w = logical_w.unwrap_or(64).max(1);
+                let fallback_logical_h = logical_h.unwrap_or(64).max(1);
+
+                let measure_bounds = |anim_frames: &Vec<AnimationFrameData>, fallback_w: u32, fallback_h: u32| -> (u32, u32) {
+                    let mut max_w = fallback_w.max(1);
+                    let mut max_h = fallback_h.max(1);
+                    for frame in anim_frames {
+                        max_w = max_w.max(frame.src_w.unwrap_or(fallback_w).max(1));
+                        max_h = max_h.max(frame.src_h.unwrap_or(fallback_h).max(1));
+                    }
+                    (max_w, max_h)
+                };
+
+                let (measured_w, measured_h) = measure_bounds(&frames, fallback_logical_w, fallback_logical_h);
+                let mut resolved_logical_w = measured_w.max(1);
+                let mut resolved_logical_h = measured_h.max(1);
+
+                if let Some(reference_anim) = self.animations.get(&id).and_then(|by_name| by_name.values().next()) {
+                    let (ref_bounds_w, ref_bounds_h) = measure_bounds(
+                        &reference_anim.frames,
+                        reference_anim.logical_w.max(1),
+                        reference_anim.logical_h.max(1),
+                    );
+
+                    let ratio_w = (ref_bounds_w as f32) / (reference_anim.logical_w.max(1) as f32);
+                    let ratio_h = (ref_bounds_h as f32) / (reference_anim.logical_h.max(1) as f32);
+
+                    resolved_logical_w = ((measured_w as f32) / ratio_w.max(0.0001)).round().max(1.0) as u32;
+                    resolved_logical_h = ((measured_h as f32) / ratio_h.max(0.0001)).round().max(1.0) as u32;
+                }
+
                 // Pre-decodificar audio a muestras PCM durante SetAnimation.
                 // En PlayAnimation solo se clona un Vec<i16> — cero I/O, cero decode.
                 let audio_decoded: Option<Arc<DecodedAudio>> = audio_path.as_deref().and_then(|p| {
@@ -1531,14 +1562,20 @@ impl State {
                         loop_,
                         flip_horizontal,
                         audio_decoded,
-                        logical_w,
-                        logical_h,
+                        logical_w: resolved_logical_w,
+                        logical_h: resolved_logical_h,
                         scripts,
                         is_cancelable,
                     });
                 self.default_animation_by_entity
                     .entry(id)
                     .or_insert(name.clone());
+                send_event(&EngineEvent::AnimationLogicalResolved {
+                    id,
+                    name: name.clone(),
+                    logical_w: resolved_logical_w,
+                    logical_h: resolved_logical_h,
+                });
                 log::debug!("[IPC] Animación '{}' guardada y pre-cargada para entidad {}", name, id);
             }
             EngineCommand::RemoveAnimation { id, name } => {

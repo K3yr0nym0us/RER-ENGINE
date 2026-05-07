@@ -47,40 +47,10 @@ const createAnimationId = () => {
   return `anim_${animationIdCounter}`;
 };
 
-const getFrameBounds = (anim: Animation) => {
-  const widths = anim.frames.map((f) => f.src_w ?? anim.logical_w ?? 64);
-  const heights = anim.frames.map((f) => f.src_h ?? anim.logical_h ?? 64);
-
-  return {
-    width: Math.max(1, ...widths),
-    height: Math.max(1, ...heights),
-  };
-};
-
-const resolveLogicalSizeFromReference = (
-  measuredWidth: number,
-  measuredHeight: number,
-  reference?: Animation,
-) => {
-  if (!reference) {
-    return {
-      logical_w: Math.max(1, Math.round(measuredWidth)),
-      logical_h: Math.max(1, Math.round(measuredHeight)),
-    };
-  }
-
-  const refBounds = getFrameBounds(reference);
-  const refLogicalW = Math.max(1, reference.logical_w ?? refBounds.width);
-  const refLogicalH = Math.max(1, reference.logical_h ?? refBounds.height);
-
-  const ratioW = refBounds.width / refLogicalW;
-  const ratioH = refBounds.height / refLogicalH;
-
-  return {
-    logical_w: Math.max(1, Math.round(measuredWidth / Math.max(0.0001, ratioW))),
-    logical_h: Math.max(1, Math.round(measuredHeight / Math.max(0.0001, ratioH))),
-  };
-};
+const getLogicalBaseFromFrames = (frames: Array<{ width: number; height: number }>) => ({
+  logical_w: Math.max(1, ...frames.map((f) => Math.max(1, f.width))),
+  logical_h: Math.max(1, ...frames.map((f) => Math.max(1, f.height))),
+});
 
 export function AnimationsPanel() {
   const { t } = useTraslate();
@@ -138,14 +108,7 @@ export function AnimationsPanel() {
           sprites={sprites}
           previewTitle={t('Configure animation')}
           onCreateEntity={({ spritePath, animation }) => {
-            const measuredW = Math.max(1, ...animation.frames.map((f) => f.width));
-            const measuredH = Math.max(1, ...animation.frames.map((f) => f.height));
-            const referenceAnimation = animations.find((a) => a.frames.length > 0);
-            const { logical_w, logical_h } = resolveLogicalSizeFromReference(
-              measuredW,
-              measuredH,
-              referenceAnimation,
-            );
+            const { logical_w, logical_h } = getLogicalBaseFromFrames(animation.frames);
 
             const newAnimation: Animation = {
               id: createAnimationId(),
@@ -295,14 +258,7 @@ export function AnimationsPanel() {
           initialCellOffsetX={anim.cell_offset_x}
           initialCellOffsetY={anim.cell_offset_y}
           onConfirm={(config) => {
-            const measuredW = Math.max(1, ...config.frames.map((f) => f.width));
-            const measuredH = Math.max(1, ...config.frames.map((f) => f.height));
-            const referenceAnimation = animations.find((a, i) => i !== index && a.frames.length > 0) ?? anim;
-            const { logical_w, logical_h } = resolveLogicalSizeFromReference(
-              measuredW,
-              measuredH,
-              referenceAnimation,
-            );
+            const { logical_w, logical_h } = getLogicalBaseFromFrames(config.frames);
 
             const updatedAnimation: Animation = {
               ...anim,

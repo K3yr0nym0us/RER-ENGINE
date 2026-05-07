@@ -1,5 +1,6 @@
 import type { Dispatch } from 'react';
 import type {
+	AnimationLogicalResolved,
 	AnimationFinished,
 	Camera2dUpdated,
 	CharacterLoaded,
@@ -35,39 +36,6 @@ export function createEngineEventHandler({
 	projectType,
 	applyInitialAnimationFrame,
 }: CreateEngineEventHandlerParams) {
-	const getAnimationFrameBounds = (anim: any) => {
-		const frames = Array.isArray(anim?.frames) ? anim.frames : [];
-		const widths = frames.map((f: any) => Number(f?.src_w ?? anim?.logical_w ?? 64));
-		const heights = frames.map((f: any) => Number(f?.src_h ?? anim?.logical_h ?? 64));
-
-		return {
-			width: Math.max(1, ...(widths.length > 0 ? widths : [anim?.logical_w ?? 64])),
-			height: Math.max(1, ...(heights.length > 0 ? heights : [anim?.logical_h ?? 64])),
-		};
-	};
-
-	const normalizeAnimationsForEntity = (animations: any[] | undefined) => {
-		if (!Array.isArray(animations) || animations.length === 0) return animations;
-
-		const reference = animations.find((anim) => Array.isArray(anim?.frames) && anim.frames.length > 0) ?? animations[0];
-		if (!reference) return animations;
-
-		const refBounds = getAnimationFrameBounds(reference);
-		const refLogicalW = Math.max(1, Number(reference.logical_w ?? refBounds.width));
-		const refLogicalH = Math.max(1, Number(reference.logical_h ?? refBounds.height));
-		const ratioW = refBounds.width / refLogicalW;
-		const ratioH = refBounds.height / refLogicalH;
-
-		return animations.map((anim) => {
-			const measured = getAnimationFrameBounds(anim);
-			return {
-				...anim,
-				logical_w: Math.max(1, Math.round(measured.width / Math.max(0.0001, ratioW))),
-				logical_h: Math.max(1, Math.round(measured.height / Math.max(0.0001, ratioH))),
-			};
-		});
-	};
-
 	const buildTransformFromPoints = (
 		points?: [[number, number], [number, number], [number, number], [number, number]],
 	): Transform | null => {
@@ -134,6 +102,7 @@ export function createEngineEventHandler({
 			'physics_changed',
 			'quick_build_move',
 			'camera_2d_updated',
+			'animation_logical_resolved',
 		]);
 		if (!silentEvents.has(event.event)) {
 			addLog(JSON.stringify(event), event.event === 'error');
@@ -361,9 +330,8 @@ export function createEngineEventHandler({
 					refs.entityMetaRef.current[scenario.id].physicsType = pending.physicsType;
 				}
 				if (pending.animations) {
-					const normalizedAnimations = normalizeAnimationsForEntity(pending.animations) ?? pending.animations;
-					refs.entityMetaRef.current[scenario.id].animations = normalizedAnimations;
-					for (const anim of normalizedAnimations) {
+					refs.entityMetaRef.current[scenario.id].animations = pending.animations;
+					for (const anim of pending.animations) {
 						window.engine.send({
 							cmd: 'set_animation',
 							id: scenario.id,
@@ -373,19 +341,19 @@ export function createEngineEventHandler({
 							loop_: anim.loop,
 							flip_horizontal: !(anim.facing_right ?? true),
 							audio_path: anim.audio_path ?? null,
-							logical_w: anim.logical_w ?? 64,
-							logical_h: anim.logical_h ?? 64,
+							logical_w: anim.logical_w,
+							logical_h: anim.logical_h,
 							scripts: anim.scripts ?? [],
 							is_cancelable: anim.is_cancelable ?? true,
 						} as never);
 					}
-					const defaultAnim = normalizedAnimations.find((anim: any) => anim?.is_default) ?? normalizedAnimations[0];
+					const defaultAnim = pending.animations.find((anim: any) => anim?.is_default) ?? pending.animations[0];
 					if (defaultAnim?.name) {
 						window.engine.send({ cmd: 'set_default_animation', id: scenario.id, name: defaultAnim.name } as never);
 					}
 					// Si la entidad usa una animación de un solo frame (objeto estático),
 					// aplicar el primer frame de inmediato para que quede visible al cargar.
-					applyInitialAnimationFrame(scenario.id, normalizedAnimations);
+					applyInitialAnimationFrame(scenario.id, pending.animations);
 				}
 				if (pending.scripts) {
 					refs.entityMetaRef.current[scenario.id].scripts = pending.scripts;
@@ -429,11 +397,10 @@ export function createEngineEventHandler({
 				}
 
 				if (pending.animations) {
-					const normalizedAnimations = normalizeAnimationsForEntity(pending.animations) ?? pending.animations;
 					if (refs.entityMetaRef.current[id]) {
-						refs.entityMetaRef.current[id].animations = normalizedAnimations;
+						refs.entityMetaRef.current[id].animations = pending.animations;
 					}
-					for (const anim of normalizedAnimations) {
+					for (const anim of pending.animations) {
 						window.engine.send({
 							cmd: 'set_animation',
 							id,
@@ -443,17 +410,17 @@ export function createEngineEventHandler({
 							loop_: anim.loop,
 							flip_horizontal: !(anim.facing_right ?? true),
 							audio_path: anim.audio_path ?? null,
-							logical_w: anim.logical_w ?? 64,
-							logical_h: anim.logical_h ?? 64,
+							logical_w: anim.logical_w,
+							logical_h: anim.logical_h,
 							scripts: anim.scripts ?? [],
 						is_cancelable: anim.is_cancelable ?? true,
 						} as never);
 					}
-					const defaultAnim = normalizedAnimations.find((anim: any) => anim?.is_default) ?? normalizedAnimations[0];
+					const defaultAnim = pending.animations.find((anim: any) => anim?.is_default) ?? pending.animations[0];
 					if (defaultAnim?.name) {
 						window.engine.send({ cmd: 'set_default_animation', id, name: defaultAnim.name } as never);
 					}
-					applyInitialAnimationFrame(id, normalizedAnimations);
+					applyInitialAnimationFrame(id, pending.animations);
 				}
 
 				if (pending.scripts) {
@@ -591,6 +558,17 @@ export function createEngineEventHandler({
 		if (event.event === 'quick_build_click') {
 			const e = event as unknown as { x: number; y: number; fit_to_grid?: boolean; scale?: [number, number, number] };
 			refs.quickBuildClickListenerRef.current?.(e.x, e.y, !!e.fit_to_grid, e.scale);
+		}
+
+		if (event.event === 'animation_logical_resolved') {
+			const e = event as unknown as AnimationLogicalResolved;
+			const meta = refs.entityMetaRef.current[e.id];
+			if (!meta?.animations) return;
+			meta.animations = meta.animations.map((anim: any) =>
+				anim?.name === e.name
+					? { ...anim, logical_w: e.logical_w, logical_h: e.logical_h }
+					: anim,
+			);
 		}
 
 		if (event.event === 'entity_removed') {

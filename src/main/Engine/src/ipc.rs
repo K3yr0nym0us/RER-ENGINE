@@ -163,8 +163,13 @@ pub enum EngineCommand {
         #[serde(default)]
         flip_horizontal: bool,
         audio_path: Option<String>,
-        logical_w:  u32,
-        logical_h:  u32,
+        /// Tamaño lógico opcional enviado por el front.
+        /// Si falta, el motor lo normaliza automáticamente usando los frames
+        /// y la referencia de las animaciones existentes de la entidad.
+        #[serde(default)]
+        logical_w:  Option<u32>,
+        #[serde(default)]
+        logical_h:  Option<u32>,
         /// Scripts Lua que se ejecutan mientras esta animación está activa.
         #[serde(default)]
         scripts:    Vec<AnimScriptData>,
@@ -300,6 +305,8 @@ pub enum EngineEvent {
     /// `fit_to_grid` indica si Ctrl estaba presionado al colocar.
     /// `scale` contiene el tamaño final resuelto por el motor para esta colocación.
     QuickBuildClick { x: f32, y: f32, fit_to_grid: bool, scale: [f32; 3] },
+    /// Emitido cuando SetAnimation resolvió/normalizó el tamaño lógico final.
+    AnimationLogicalResolved { id: u32, name: String, logical_w: u32, logical_h: u32 },
     /// Emitido cuando una entidad es eliminada del mundo (por Ctrl+Z, RemoveEntity, etc.).
     /// `kind` permite al frontend sincronizar estado sin inferencias locales.
     EntityRemoved { id: u32, kind: String },
