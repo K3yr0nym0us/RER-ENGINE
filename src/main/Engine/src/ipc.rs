@@ -176,6 +176,8 @@ pub enum EngineCommand {
         #[serde(default)]
         is_cancelable: bool,
     },
+    /// Eliminar una animación del motor por ID de entidad y nombre.
+    RemoveAnimation { id: u32, name: String },
     /// Definir la animación predeterminada de una entidad.
     SetDefaultAnimation { id: u32, name: String },
     /// Reproducir una animación guardada por ID de entidad y nombre.

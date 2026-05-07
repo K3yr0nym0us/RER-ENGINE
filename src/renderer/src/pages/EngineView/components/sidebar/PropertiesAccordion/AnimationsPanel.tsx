@@ -176,9 +176,17 @@ export function AnimationsPanel() {
   };
 
   const removeAnimation = (index: number) => {
-    if (animationPlaying.get(entity?.id ?? 0)) {
-      send({ cmd: 'stop_animation', id: entity?.id });
+    if (!entity?.id) return;
+    const anim = animations[index];
+    if (!anim) return;
+
+    if (animationPlaying.get(entity.id)) {
+      send({ cmd: 'stop_animation', id: entity.id });
     }
+
+    // Notificar al motor para eliminar la animación
+    send({ cmd: 'remove_animation', id: entity.id, name: anim.name });
+
     const next = animations.filter((_, i) => i !== index);
     syncAnimations(next);
   };

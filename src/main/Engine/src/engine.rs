@@ -1240,6 +1240,9 @@ impl State {
                 self.anim_flip_overrides.remove(&id);
                 self.entity_facing_right.remove(&id);
                 self.default_animation_by_entity.remove(&id);
+                self.animations.remove(&id);
+                self.active_animations.remove(&id);
+                self.anim_saved_transforms.remove(&id);
                 self.script_engine.detach_entity(id);
                 self.world.despawn(id);
                 send_event(&EngineEvent::EntityRemoved { id });
@@ -1532,6 +1535,51 @@ impl State {
                     .entry(id)
                     .or_insert(name.clone());
                 log::debug!("[IPC] Animación '{}' guardada y pre-cargada para entidad {}", name, id);
+            }
+            EngineCommand::RemoveAnimation { id, name } => {
+                log::info!("[IPC] RemoveAnimation: entity_id={}, name='{}'", id, name);
+
+                // Detener la animación si está activa
+                if let Some(active) = self.active_animations.get(&id) {
+                    if active.animation_name == name {
+                        self.active_animations.remove(&id);
+                        self.restore_animation_frame(id);
+                        self.script_engine.detach_animation_scripts(id);
+                        send_event(&EngineEvent::AnimationFinished { entity_id: id });
+                    }
+                }
+
+                // Eliminar del almacén de animaciones
+                if let Some(entity_anims) = self.animations.get_mut(&id) {
+                    entity_anims.remove(&name);
+                    log::debug!("[animation] Eliminada '{}' de entidad {}", name, id);
+
+                    // Si no quedan animaciones, limpiar la entrada
+                    if entity_anims.is_empty() {
+                        self.animations.remove(&id);
+                        self.default_animation_by_entity.remove(&id);
+                    }
+                }
+
+                // Si era la animación predeterminada, actualizar
+                if let Some(default) = self.default_animation_by_entity.get(&id) {
+                    if default == &name {
+                        // Buscar otra animación para poner como predeterminada
+                        let new_default = self.animations
+                            .get(&id)
+                            .and_then(|m| m.keys().next().cloned());
+                        match new_default {
+                            Some(new_name) => {
+                                self.default_animation_by_entity.insert(id, new_name.clone());
+                                log::debug!("[animation] Predeterminada cambiada a '{}' para entidad {}", new_name, id);
+                            }
+                            None => {
+                                self.default_animation_by_entity.remove(&id);
+                                log::debug!("[animation] Sin animaciones restantes para entidad {}", id);
+                            }
+                        }
+                    }
+                }
             }
             EngineCommand::SetDefaultAnimation { id, name } => {
                 let exists = self.animations
