@@ -429,8 +429,16 @@ impl ApplicationHandler<EngineCommand> for App {
                 }
             }
         }
+        // When entering game mode, automatically focus the engine window
+        // so keyboard/mouse input is captured without requiring a manual click.
+        let entering_play = matches!(cmd, EngineCommand::SetPreviewPlaying { playing: true });
+
         if let Some(state) = self.state.as_mut() {
             state.handle_command(cmd);
+            if entering_play {
+                state.window().focus_window();
+                log::info!("[preview] foco transferido a la ventana del motor");
+            }
         }
     }
 
