@@ -13,7 +13,15 @@ export function BluePrintModalBody() {
   const { t } = useTraslate()
   const [activeCategory, setActiveCategory] = useState<BluePrintCategory>('personaje')
   const [pendingDelete, setPendingDelete] = useState<BluePrintEntry | null>(null)
-  const { blueprints, setBlueprints } = useContextEngine()
+  const {
+    blueprints,
+    setBlueprints,
+    entityMetaRef,
+    removeScenario,
+    removeCharacter,
+    removeCollider,
+    removeExecutionArea,
+  } = useContextEngine()
   const { activeBluePrint, setActiveBluePrint } = useQuickBuild()
   const { closeModal } = useModal()
 
@@ -28,14 +36,49 @@ export function BluePrintModalBody() {
     setPendingDelete(bp)
   }
 
-  const handleDeleteConfirm = () => {
+  /** Recoge todos los ids de entidades vinculadas a una blueprint */
+  const getLinkedEntityIds = (bpId: string): number[] =>
+    Object.entries(entityMetaRef.current)
+      .filter(([, meta]) => meta.blueprintId === bpId)
+      .map(([id]) => Number(id))
+
+  /** Elimina la blueprint y BORRA todas las entidades vinculadas */
+  const handleDeleteWithEntities = () => {
     if (!pendingDelete) return
+    const ids = getLinkedEntityIds(pendingDelete.id)
+    ids.forEach(id => {
+      const kind = entityMetaRef.current[id]?.kind
+      if (kind === 'scenario') removeScenario(id)
+      else if (kind === 'character') removeCharacter(id)
+      else if (kind === 'collider') removeCollider(id)
+      else if (kind === 'execution_area') removeExecutionArea(id)
+    })
     setBlueprints(blueprints.filter(bp => bp.id !== pendingDelete.id))
-    if (activeBluePrint?.id === pendingDelete.id) {
-      setActiveBluePrint(null)
-    }
+    if (activeBluePrint?.id === pendingDelete.id) setActiveBluePrint(null)
     setPendingDelete(null)
   }
+
+  /** Elimina la blueprint y CONVIERTE todas las entidades en entidades únicas */
+  const handleDeleteKeepEntities = () => {
+    if (!pendingDelete) return
+    const ids = getLinkedEntityIds(pendingDelete.id)
+    ids.forEach(id => {
+      const meta = entityMetaRef.current[id]
+      if (!meta) return
+      // Absorber propiedades de la blueprint antes de romper el vínculo
+      meta.physicsEnabled  = pendingDelete.physics_enabled ?? meta.physicsEnabled
+      meta.physicsType     = pendingDelete.physics_type    ?? meta.physicsType
+      meta.animations      = pendingDelete.animations      ?? meta.animations
+      meta.scripts         = pendingDelete.scripts         ?? meta.scripts
+      meta.controlBindings = pendingDelete.control_bindings ?? meta.controlBindings
+      delete meta.blueprintId
+    })
+    setBlueprints(blueprints.filter(bp => bp.id !== pendingDelete.id))
+    if (activeBluePrint?.id === pendingDelete.id) setActiveBluePrint(null)
+    setPendingDelete(null)
+  }
+
+  const linkedCount = pendingDelete ? getLinkedEntityIds(pendingDelete.id).length : 0
 
   return (
     <>
@@ -90,18 +133,39 @@ export function BluePrintModalBody() {
           <Modal.Title>{t('Delete blueprint')}</Modal.Title>
         </Modal.Header>
         <Modal.Body>
-          <p className="mb-3">
+          <p className="mb-2">
             {t('This action will delete the blueprint')} <strong>{pendingDelete?.name}</strong>.
           </p>
-          <p className="text-secondary small mb-4">{t('Cannot be undone.')}</p>
-          <div className="d-flex justify-content-end gap-2">
-            <button className="btn btn-secondary" onClick={() => setPendingDelete(null)}>
-              {t('Cancel')}
-            </button>
-            <button className="btn btn-danger" onClick={handleDeleteConfirm}>
-              {t('Delete')}
-            </button>
-          </div>
+          {linkedCount > 0 ? (
+            <>
+              <p className="mb-4">
+                {t('There are')} <strong>{linkedCount}</strong> {t('entities based on this blueprint. What do you want to do with them?')}
+              </p>
+              <div className="d-flex flex-column gap-2">
+                <button className="btn btn-danger" onClick={handleDeleteWithEntities}>
+                  {t('Delete all entities')} ({linkedCount})
+                </button>
+                <button className="btn btn-warning text-dark" onClick={handleDeleteKeepEntities}>
+                  {t('Convert to standalone entities')}
+                </button>
+                <button className="btn btn-secondary" onClick={() => setPendingDelete(null)}>
+                  {t('Cancel')}
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="text-secondary small mb-4">{t('Cannot be undone.')}</p>
+              <div className="d-flex justify-content-end gap-2">
+                <button className="btn btn-secondary" onClick={() => setPendingDelete(null)}>
+                  {t('Cancel')}
+                </button>
+                <button className="btn btn-danger" onClick={handleDeleteWithEntities}>
+                  {t('Delete')}
+                </button>
+              </div>
+            </>
+          )}
         </Modal.Body>
       </Modal>
     </>

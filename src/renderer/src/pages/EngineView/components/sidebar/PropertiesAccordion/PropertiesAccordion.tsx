@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { Accordion } from 'react-bootstrap';
-import { CircleSquare, Check2Square, Pencil, Trash } from 'react-bootstrap-icons';
+import { CircleSquare, Check2Square, Pencil, Trash, Link45deg } from 'react-bootstrap-icons';
 
 import { AppTooltip } from '@components';
 import { TransformPanel, AnimationsPanel, ScriptingPanel } from '.';
@@ -27,6 +27,7 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
     addBlueprint,
     multiSelectedIds,
     setEntityPhysics,
+    blueprints,
   } = useContextEngine()
 
   const { openModal, closeModal } = useModal();
@@ -120,6 +121,9 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
   const isCollider = selectedEntity ? entityMetaRef.current[selectedEntity.id]?.kind === 'collider' : false
   const isExecutionArea = selectedEntity ? entityMetaRef.current[selectedEntity.id]?.kind === 'execution_area' : false
   const isFromBlueprint = selectedEntity ? !!entityMetaRef.current[selectedEntity.id]?.blueprintId : false
+  const linkedBlueprintName = isFromBlueprint
+    ? (blueprints.find(bp => bp.id === entityMetaRef.current[selectedEntity!.id]?.blueprintId)?.name ?? null)
+    : null
 
   const handleConfirmModal = (onConfirm: () => void, action: 'delete' | 'duplicate') => {
     openModal({
@@ -287,7 +291,17 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
       )}
 
       <div className="mt-3 pt-2 border-top border-secondary">
-        {!isFromBlueprint && (
+        {isFromBlueprint ? (
+          <div className="d-flex align-items-center justify-content-center gap-2 mb-2 px-1 py-1 rounded small text-white">
+            <Link45deg className="flex-shrink-0" />
+            <span className="text-truncate">
+              {linkedBlueprintName
+                ? <>{t('Based on blueprint')}: <strong>{linkedBlueprintName}</strong></>
+                : t('Based on blueprint')
+              }
+            </span>
+          </div>
+        ) : (
         <button
           className="btn btn-sm btn-outline-primary w-100 mb-2"
           onClick={() => {
@@ -313,6 +327,10 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
                 control_bindings: meta?.controlBindings,
               };
               addBlueprint(entry);
+              // Vincular la entidad actual a la blueprint recién creada
+              if (entityMetaRef.current[selectedEntity.id]) {
+                entityMetaRef.current[selectedEntity.id].blueprintId = entry.id;
+              }
               closeModal();
             };
 
