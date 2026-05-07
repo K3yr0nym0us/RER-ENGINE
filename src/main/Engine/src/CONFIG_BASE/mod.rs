@@ -17,6 +17,12 @@ impl State {
         self.static_tex_cache.clear();
         self.anim_texture_cache.clear();
         self.anim_overrides.clear();
+        self.animations.clear();
+        self.active_animations.clear();
+        self.default_animation_by_entity.clear();
+        self.anim_saved_transforms.clear();
+        self.anim_flip_overrides.clear();
+        self.entity_facing_right.clear();
         self.selected_entity = None;
         self.selected_entities.clear();
         self.hovered_entity  = None;

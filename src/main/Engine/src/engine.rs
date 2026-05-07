@@ -1596,22 +1596,6 @@ impl State {
 EngineCommand::PlayAnimation { id, name } => {
                 log::debug!("[IPC] PlayAnimation: entity_id={}, name='{}'", id, name);
 
-                // Bloquear si la animación activa no es cancelable
-                if let Some(active) = self.active_animations.get(&id) {
-                    if !active.finished {
-                        let current_name = active.animation_name.clone();
-                        let is_cancelable = self.animations
-                            .get(&id)
-                            .and_then(|m| m.get(&current_name))
-                            .map(|a| a.is_cancelable)
-                            .unwrap_or(true);
-                        if !is_cancelable {
-                            log::debug!("[animation] PlayAnimation '{}' bloqueado: la animación '{}' activa no es cancelable", name, current_name);
-                            return;
-                        }
-                    }
-                }
-
                 // Detener animación previa (el Play de audio incluye clear interno)
                 self.active_animations.remove(&id);
 
@@ -1924,26 +1908,40 @@ EngineCommand::PlayAnimation { id, name } => {
         }
 
         for (entity_id, frame_idx) in to_play {
-            let (path, pivot_x, pivot_y, logical_w, logical_h, src_rect, flip_horizontal) = {
+            let frame_data = {
                 let anim_name = self.active_animations.get(&entity_id)
                     .map(|a| a.animation_name.clone())
                     .unwrap_or_default();
-                let anim = self.animations.get(&entity_id)
-                    .and_then(|m| m.get(&anim_name))
-                    .unwrap();
-                let f = &anim.frames[frame_idx];
-                let flip = self.resolve_animation_flip(entity_id, anim);
-                (
-                    f.path.clone(),
-                    f.pivot_x,
-                    f.pivot_y,
-                    anim.logical_w,
-                    anim.logical_h,
-                    f.src_x.zip(f.src_y).zip(f.src_w.zip(f.src_h)).map(|((x, y), (w, h))| (x, y, w, h)),
-                    flip,
-                )
+                let anim_opt = self.animations.get(&entity_id)
+                    .and_then(|m| m.get(&anim_name));
+                match anim_opt {
+                    None => {
+                        // La animación fue eliminada mientras estaba activa — limpiar para evitar bucles.
+                        log::warn!("[animation] entidad {} tiene active_animation '{}' pero ya no existe en el almacén — limpiando", entity_id, anim_name);
+                        None
+                    }
+                    Some(anim) => {
+                        let frame_idx_clamped = frame_idx.min(anim.frames.len().saturating_sub(1));
+                        anim.frames.get(frame_idx_clamped).map(|f| {
+                            let flip = self.resolve_animation_flip(entity_id, anim);
+                            (
+                                f.path.clone(),
+                                f.pivot_x,
+                                f.pivot_y,
+                                anim.logical_w,
+                                anim.logical_h,
+                                f.src_x.zip(f.src_y).zip(f.src_w.zip(f.src_h)).map(|((x, y), (w, h))| (x, y, w, h)),
+                                flip,
+                            )
+                        })
+                    }
+                }
             };
-            self.play_animation_frame(entity_id, &path, pivot_x, pivot_y, logical_w, logical_h, src_rect, flip_horizontal);
+            if let Some((path, pivot_x, pivot_y, logical_w, logical_h, src_rect, flip_horizontal)) = frame_data {
+                self.play_animation_frame(entity_id, &path, pivot_x, pivot_y, logical_w, logical_h, src_rect, flip_horizontal);
+            } else {
+                self.active_animations.remove(&entity_id);
+            }
         }
 
         for (entity_id, animation_name) in to_restore {
