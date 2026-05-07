@@ -294,7 +294,7 @@ export interface EngineInternalRefs {
 	pendingPlayerDups: MutableRefObject<Transform[]>
 	pendingDupQ: MutableRefObject<Transform[]>
 	pivotEditListenerRef: MutableRefObject<((framePath: string, px: number, py: number) => void) | null>
-	quickBuildClickListenerRef: MutableRefObject<((x: number, y: number, fitToGrid: boolean) => void) | null>
+	quickBuildClickListenerRef: MutableRefObject<((x: number, y: number, fitToGrid: boolean, scale?: [number, number, number]) => void) | null>
 	pendingEventsRef: MutableRefObject<Map<string, { resolve: (value: any) => void }>>
 	blueprintsRef: MutableRefObject<BluePrintEntry[]>
 }
@@ -332,6 +332,6 @@ export interface EngineContextValue extends EngineState {
 	setBackground: (path: string | null) => void
 	addBlueprint: (entry: BluePrintEntry) => void
 	setBlueprints: (entries: BluePrintEntry[]) => void
-	registerQuickBuildClickListener: (fn: (x: number, y: number, fitToGrid: boolean) => void) => void
+	registerQuickBuildClickListener: (fn: (x: number, y: number, fitToGrid: boolean, scale?: [number, number, number]) => void) => void
 	unregisterQuickBuildClickListener: () => void
 }

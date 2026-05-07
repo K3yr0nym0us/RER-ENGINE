@@ -133,6 +133,7 @@ export function createEngineEventHandler({
 			'entity_selected',
 			'physics_changed',
 			'quick_build_move',
+			'camera_2d_updated',
 		]);
 		if (!silentEvents.has(event.event)) {
 			addLog(JSON.stringify(event), event.event === 'error');
@@ -348,12 +349,12 @@ export function createEngineEventHandler({
 			const queue = refs.pendingRestoresRef.current.get(scenario.path);
 			if (queue && queue.length > 0) {
 				const pending = queue.shift()!;
+				const pendingTransform = pending.transform;
 				if (pending.name && pending.name.trim().length > 0) {
 					refs.entityMetaRef.current[scenario.id].name = pending.name;
 					window.engine.send({ cmd: 'set_entity_name', id: scenario.id, name: pending.name, force: true } as never);
 				}
-				window.engine.send({ cmd: 'set_transform', id: scenario.id, position: pending.transform.position, rotation: pending.transform.rotation, scale: pending.transform.scale, track_undo: false } as never);
-				refs.entityTransformsRef.current[scenario.id] = pending.transform;
+				window.engine.send({ cmd: 'set_transform', id: scenario.id, position: pendingTransform.position, rotation: pendingTransform.rotation, scale: pendingTransform.scale, track_undo: false } as never);
 				if (pending.physicsEnabled) {
 					window.engine.send({ cmd: 'set_physics', id: scenario.id, enabled: true, body_type: pending.physicsType } as never);
 					refs.entityMetaRef.current[scenario.id].physicsEnabled = true;
@@ -398,6 +399,7 @@ export function createEngineEventHandler({
 				if (pending.blueprintId) {
 					refs.entityMetaRef.current[scenario.id].blueprintId = pending.blueprintId;
 				}
+				refs.entityTransformsRef.current[scenario.id] = pendingTransform;
 				if (queue.length === 0) refs.pendingRestoresRef.current.delete(scenario.path);
 			}
 		}
@@ -409,14 +411,14 @@ export function createEngineEventHandler({
 				if (!queue || queue.length === 0) return;
 
 				const pending = queue.shift()!;
+				const pendingTransform = pending.transform;
 				if (pending.name && pending.name.trim().length > 0) {
 					if (refs.entityMetaRef.current[id]) {
 						refs.entityMetaRef.current[id].name = pending.name;
 					}
 					window.engine.send({ cmd: 'set_entity_name', id, name: pending.name, force: true } as never);
 				}
-				window.engine.send({ cmd: 'set_transform', id, position: pending.transform.position, rotation: pending.transform.rotation, scale: pending.transform.scale, track_undo: false } as never);
-				refs.entityTransformsRef.current[id] = pending.transform;
+				window.engine.send({ cmd: 'set_transform', id, position: pendingTransform.position, rotation: pendingTransform.rotation, scale: pendingTransform.scale, track_undo: false } as never);
 
 				if (pending.physicsEnabled) {
 					window.engine.send({ cmd: 'set_physics', id, enabled: true, body_type: pending.physicsType } as never);
@@ -474,6 +476,8 @@ export function createEngineEventHandler({
 						refs.entityMetaRef.current[id].blueprintId = pending.blueprintId;
 					}
 				}
+
+				refs.entityTransformsRef.current[id] = pendingTransform;
 
 				if (queue.length === 0) refs.pendingRestoresRef.current.delete(path);
 			};
@@ -585,8 +589,8 @@ export function createEngineEventHandler({
 		}
 
 		if (event.event === 'quick_build_click') {
-			const e = event as unknown as { x: number; y: number; fit_to_grid?: boolean };
-			refs.quickBuildClickListenerRef.current?.(e.x, e.y, !!e.fit_to_grid);
+			const e = event as unknown as { x: number; y: number; fit_to_grid?: boolean; scale?: [number, number, number] };
+			refs.quickBuildClickListenerRef.current?.(e.x, e.y, !!e.fit_to_grid, e.scale);
 		}
 
 		if (event.event === 'entity_removed') {

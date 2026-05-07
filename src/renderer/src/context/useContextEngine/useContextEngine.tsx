@@ -44,7 +44,7 @@ export function EngineProvider({
 		pendingPlayerDups: useRef<Transform[]>([]),
 		pendingDupQ: useRef<Transform[]>([]),
 		pivotEditListenerRef: useRef<((framePath: string, px: number, py: number) => void) | null>(null),
-		quickBuildClickListenerRef: useRef<((x: number, y: number) => void) | null>(null),
+		quickBuildClickListenerRef: useRef<((x: number, y: number, fitToGrid: boolean, scale?: [number, number, number]) => void) | null>(null),
 		pendingEventsRef: useRef<Map<string, { resolve: (value: any) => void }>>(new Map()),
 		blueprintsRef: useRef([]),
 	};

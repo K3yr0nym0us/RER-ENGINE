@@ -241,7 +241,7 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 		refs.pivotEditListenerRef.current = null;
 	};
 
-	const registerQuickBuildClickListener = (fn: (x: number, y: number, fitToGrid: boolean) => void) => {
+	const registerQuickBuildClickListener = (fn: (x: number, y: number, fitToGrid: boolean, scale?: [number, number, number]) => void) => {
 		refs.quickBuildClickListenerRef.current = fn;
 	};
 

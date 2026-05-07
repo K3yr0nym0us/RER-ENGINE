@@ -95,6 +95,28 @@ impl State {
         Some((wx, wy))
     }
 
+    fn snap_size_to_grid_2d(&self, size: f32) -> f32 {
+        let cell = self.grid_config.cell_size.max(0.05);
+        let sign = if size < 0.0 { -1.0 } else { 1.0 };
+        let snapped_cells = (size.abs() / cell).round().max(1.0);
+        sign * snapped_cells * cell
+    }
+
+    fn quick_build_effective_scale_2d(&self) -> Option<[f32; 3]> {
+        let base_scale = self.quick_build_preview_scale?;
+        let preview_kind = self.quick_build_preview_kind.as_deref()?;
+
+        if self.ctrl_held && preview_kind == "scenario" {
+            Some([
+                self.snap_size_to_grid_2d(base_scale[0]),
+                self.snap_size_to_grid_2d(base_scale[1]),
+                base_scale[2],
+            ])
+        } else {
+            Some(base_scale)
+        }
+    }
+
     fn quick_build_snap_position_2d(&self, wx: f32, wy: f32) -> Option<(f32, f32)> {
         if !self.ctrl_held {
             return None;
@@ -102,9 +124,9 @@ impl State {
         let ghost_id = self.quick_build_ghost_id?;
         let preview_path = self.quick_build_preview_path.as_deref()?;
         let preview_kind = self.quick_build_preview_kind.as_deref()?;
-        let ghost_t = self.world.get::<Transform>(ghost_id)?;
-        let ghost_half_w = ghost_t.scale.x.abs() * 0.5;
-        let ghost_half_h = ghost_t.scale.y.abs() * 0.5;
+        let effective_scale = self.quick_build_effective_scale_2d()?;
+        let ghost_half_w = effective_scale[0].abs() * 0.5;
+        let ghost_half_h = effective_scale[1].abs() * 0.5;
 
         let candidates = if preview_kind == "scenario" {
             &self.scenario_entities
@@ -130,8 +152,18 @@ impl State {
             if !same_blueprint { continue; }
 
             let Some(t) = self.world.get::<Transform>(id) else { continue; };
-            let entity_half_w = t.scale.x.abs() * 0.5;
-            let entity_half_h = t.scale.y.abs() * 0.5;
+            let entity_scale_x = if preview_kind == "scenario" {
+                self.snap_size_to_grid_2d(t.scale.x)
+            } else {
+                t.scale.x
+            };
+            let entity_scale_y = if preview_kind == "scenario" {
+                self.snap_size_to_grid_2d(t.scale.y)
+            } else {
+                t.scale.y
+            };
+            let entity_half_w = entity_scale_x.abs() * 0.5;
+            let entity_half_h = entity_scale_y.abs() * 0.5;
 
             let dx = wx - t.position.x;
             let dy = wy - t.position.y;
@@ -195,15 +227,11 @@ impl State {
             ActiveTool::QuickBuildPlace { cursor_world } => {
                 let (target_x, target_y) = quick_build_snap_target.unwrap_or((wx, wy));
                 *cursor_world = Some([target_x, target_y]);
+                let effective_scale = self.quick_build_effective_scale_2d();
                 if let Some(ghost_id) = self.quick_build_ghost_id {
                     if let Some(t) = self.world.get_mut::<Transform>(ghost_id) {
-                        if let Some(base_scale) = self.quick_build_preview_scale {
-                            if self.ctrl_held {
-                                let cell = self.grid_config.cell_size.max(0.05);
-                                t.scale = GlamVec3::new(cell, cell, base_scale[2]);
-                            } else {
-                                t.scale = GlamVec3::new(base_scale[0], base_scale[1], base_scale[2]);
-                            }
+                        if let Some(scale) = effective_scale {
+                            t.scale = GlamVec3::new(scale[0], scale[1], scale[2]);
                         }
                         t.position = GlamVec3::new(target_x, target_y, 0.5);
                     }
@@ -631,7 +659,10 @@ impl State {
         self.anim_overrides.insert(tex_position, uv_rect_for_render);
 
         // ── Aplicar pivot ────────────────────────────────────────────────────
-        if logical_w > 0 && logical_h > 0 {
+        // Para escenarios no modificamos el transform al cambiar frame: el tamaño
+        // y la posición deben permanecer exactamente como los fijó la colocación
+        // (quick build/grid). Solo actualizamos UV del atlas.
+        if is_character && logical_w > 0 && logical_h > 0 {
             if let Some(transform) = self.world.get::<Transform>(id).cloned() {
                 let saved = self.anim_saved_transforms
                     .entry(id)
@@ -640,9 +671,9 @@ impl State {
                 let orig_pos = saved.0;
                 let orig_scale = saved.1;
 
-                // Escala de referencia estable: usar el alto lógico de la animación
-                // para que cambios de tamaño entre frames no alteren el anclaje.
-                let ref_h_px    = logical_h.max(1) as f32;
+                // En personajes usamos un factor uniforme por alto lógico para que
+                // frames más anchos (ej. ataque) expandan visualmente sin aplastarse.
+                let ref_h_px     = logical_h.max(1) as f32;
                 let world_per_px = orig_scale.y / ref_h_px;
                 let new_scale_x  = img_width  as f32 * world_per_px;
                 let new_scale_y  = img_height as f32 * world_per_px;
@@ -1250,7 +1281,10 @@ impl State {
                 } else {
                     cursor_world.unwrap_or([wx, wy])
                 };
-                send_event(&EngineEvent::QuickBuildClick { x: cx, y: cy, fit_to_grid });
+                let scale = self.quick_build_effective_scale_2d()
+                    .or(self.quick_build_preview_scale)
+                    .unwrap_or([1.0, 1.0, 1.0]);
+                send_event(&EngineEvent::QuickBuildClick { x: cx, y: cy, fit_to_grid, scale });
                 true
             }
             ActiveTool::None => false,

@@ -298,7 +298,8 @@ pub enum EngineEvent {
     QuickBuildMove { x: f32, y: f32 },
     /// Emitido cuando el usuario hace click con la herramienta quick_build_place activa.
     /// `fit_to_grid` indica si Ctrl estaba presionado al colocar.
-    QuickBuildClick { x: f32, y: f32, fit_to_grid: bool },
+    /// `scale` contiene el tamaño final resuelto por el motor para esta colocación.
+    QuickBuildClick { x: f32, y: f32, fit_to_grid: bool, scale: [f32; 3] },
     /// Emitido cuando una entidad es eliminada del mundo (por Ctrl+Z, RemoveEntity, etc.).
     EntityRemoved { id: u32 },
     /// Emitido cuando el usuario mantiene Ctrl y hace click añadiendo/quitando entidades
