@@ -1878,6 +1878,55 @@ EngineCommand::PlayAnimation { id, name } => {
         anim.flip_horizontal ^ target_is_left
     }
 
+    /// Inicia el estado de una animación de fallback sin renderizar el frame 0 inmediatamente.
+    ///
+    /// A diferencia de `handle_command(PlayAnimation)`, esta función NO llama a
+    /// `play_animation_frame` para el frame inicial. Esto evita el flash de 1 frame del
+    /// fallback (p.ej. animación idle) cuando un control script va a reiniciar la animación
+    /// correcta en el siguiente tick del event loop (caso típico: tecla A/D aún presionada
+    /// cuando la animación de correr completa un ciclo no-loop).
+    ///
+    /// El frame 0 se renderizará naturalmente en el siguiente `update_animations` si ningún
+    /// otro comando sobreescribe la animación antes.
+    fn start_animation_deferred(&mut self, entity_id: u32, name: String) {
+        let anim_opt = self.animations
+            .get(&entity_id)
+            .and_then(|m| m.get(&name))
+            .cloned();
+        let Some(anim) = anim_opt else { return; };
+
+        self.active_animations.remove(&entity_id);
+
+        // Re-baseline de posición (igual que en PlayAnimation normal).
+        if let Some(t) = self.world.get::<Transform>(entity_id).cloned() {
+            self.anim_saved_transforms
+                .entry(entity_id)
+                .and_modify(|saved| { saved.0 = t.position; })
+                .or_insert((t.position, t.scale));
+        }
+
+        // Iniciar audio del fallback si tiene (no hay visual, pero el audio sí aplica).
+        if let Some(ref audio_decoded) = anim.audio_decoded {
+            self.play_audio_internal(Arc::clone(audio_decoded), anim.loop_);
+        }
+
+        // Cargar scripts de la animación fallback.
+        self.script_engine.detach_animation_scripts(entity_id);
+        for script in &anim.scripts {
+            let anim_path = format!("$anim$::{}::{}", name, script.name);
+            let _ = self.script_engine.attach_script(entity_id, &anim_path, &script.source);
+        }
+
+        // Insertar estado activo SIN renderizar frame 0.
+        self.active_animations.insert(entity_id, ActiveAnimation {
+            animation_name: name,
+            current_frame:  0,
+            last_frame_time: Instant::now(),
+            fps:    anim.fps,
+            finished: false,
+        });
+    }
+
     fn show_first_frame_of_animation(&mut self, entity_id: u32, animation_name: &str) {
         let frame_data = self.animations
             .get(&entity_id)
@@ -2016,7 +2065,10 @@ EngineCommand::PlayAnimation { id, name } => {
                             .and_then(|m| m.keys().next().cloned())
                     });
                 if let Some(fname) = fallback_name {
-                    self.handle_command(EngineCommand::PlayAnimation { id: entity_id, name: fname });
+                    // Iniciar el fallback de forma diferida (sin renderizar frame 0) para
+                    // evitar el flash de 1 frame cuando un control script va a reiniciar
+                    // la animación correcta en el siguiente tick del event loop.
+                    self.start_animation_deferred(entity_id, fname);
                 } else {
                     self.show_first_frame_of_animation(entity_id, &animation_name);
                 }
