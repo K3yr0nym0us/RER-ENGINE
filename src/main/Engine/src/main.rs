@@ -429,8 +429,16 @@ impl ApplicationHandler<EngineCommand> for App {
                 }
             }
         }
+        // Al activar el modo juego, dar foco automáticamente a la ventana del motor
+        // para que el input de teclado/ratón sea capturado sin necesitar un click manual.
+        let entering_play = matches!(cmd, EngineCommand::SetPreviewPlaying { playing: true });
+
         if let Some(state) = self.state.as_mut() {
             state.handle_command(cmd);
+            if entering_play {
+                state.window().focus_window();
+                log::info!("[preview] foco transferido a la ventana del motor");
+            }
         }
     }
 
