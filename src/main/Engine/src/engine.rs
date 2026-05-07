@@ -1213,6 +1213,18 @@ impl State {
                 log::info!("[audio] detenido por comando externo");
             }
             EngineCommand::RemoveEntity { id } => {
+                let removed_kind = if self.scenario_entities.contains(&id) {
+                    "scenario"
+                } else if self.character_entities.contains(&id) {
+                    "character"
+                } else if self.collider_entities.contains(&id) {
+                    "collider"
+                } else if self.execution_area_entities.contains(&id) {
+                    "execution_area"
+                } else {
+                    "model"
+                };
+
                 self.selected_entities.retain(|&e| e != id);
                 if Some(id) == self.selected_entity {
                     self.selected_entity = self.selected_entities.last().copied();
@@ -1239,7 +1251,7 @@ impl State {
                 self.anim_saved_transforms.remove(&id);
                 self.script_engine.detach_entity(id);
                 self.world.despawn(id);
-                send_event(&EngineEvent::EntityRemoved { id });
+                send_event(&EngineEvent::EntityRemoved { id, kind: removed_kind.to_string() });
             }
             EngineCommand::SetWorldSize { width, height } => {
                 self.grid_config.world_width  = width.max(1.0);

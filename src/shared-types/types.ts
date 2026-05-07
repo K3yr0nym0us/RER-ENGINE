@@ -252,6 +252,12 @@ export interface TriggerExited {
   actor_id:   number
 }
 
+export interface EntityRemoved {
+  event: 'entity_removed'
+  id: number
+  kind: 'scenario' | 'character' | 'model' | 'collider' | 'execution_area'
+}
+
 export interface SpriteInfo {
   path:   string
   name:   string

@@ -301,7 +301,8 @@ pub enum EngineEvent {
     /// `scale` contiene el tamaño final resuelto por el motor para esta colocación.
     QuickBuildClick { x: f32, y: f32, fit_to_grid: bool, scale: [f32; 3] },
     /// Emitido cuando una entidad es eliminada del mundo (por Ctrl+Z, RemoveEntity, etc.).
-    EntityRemoved { id: u32 },
+    /// `kind` permite al frontend sincronizar estado sin inferencias locales.
+    EntityRemoved { id: u32, kind: String },
     /// Emitido cuando el usuario mantiene Ctrl y hace click añadiendo/quitando entidades
     /// a la selección múltiple. `ids` contiene todos los IDs actualmente seleccionados.
     MultiSelectChanged { ids: Vec<u32> },
