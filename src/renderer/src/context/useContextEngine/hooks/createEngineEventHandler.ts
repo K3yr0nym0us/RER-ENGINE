@@ -595,6 +595,16 @@ export function createEngineEventHandler({
 
 		if (event.event === 'entity_removed') {
 			const e = event as unknown as { id: number };
+			const removedKind = refs.entityMetaRef.current[e.id]?.kind;
+			if (removedKind === 'scenario') {
+				dispatch({ type: 'REMOVE_SCENARIO', payload: e.id });
+			} else if (removedKind === 'character') {
+				dispatch({ type: 'REMOVE_CHARACTER', payload: e.id });
+			} else if (removedKind === 'collider') {
+				dispatch({ type: 'REMOVE_COLLIDER', payload: e.id });
+			} else if (removedKind === 'execution_area') {
+				dispatch({ type: 'REMOVE_EXECUTION_AREA', payload: e.id });
+			}
 			delete refs.entityMetaRef.current[e.id];
 			delete refs.entityTransformsRef.current[e.id];
 		}
