@@ -429,8 +429,8 @@ impl ApplicationHandler<EngineCommand> for App {
                 }
             }
         }
-        // Al activar el modo juego, dar foco automáticamente a la ventana del motor
-        // para que el input de teclado/ratón sea capturado sin necesitar un click manual.
+        // When entering game mode, automatically focus the engine window
+        // so keyboard/mouse input is captured without requiring a manual click.
         let entering_play = matches!(cmd, EngineCommand::SetPreviewPlaying { playing: true });
 
         if let Some(state) = self.state.as_mut() {
