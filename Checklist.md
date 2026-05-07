@@ -82,6 +82,9 @@
 * ✅ Render layers — explicit layer control + z-sorting
 * ✅ Particionado espacial (spatial grid, 5.0 world units per cell, O(k) lookup)
 * ✅ Rebuild de spatial grid en cada frame; `update_hover_2d` usa spatial grid para picking
+* ✅ Quick build snap/escala calculados en el motor (`quick_build_effective_scale_2d`, `snap_size_to_grid_2d`, `quick_build_snap_position_2d`)
+* ✅ `play_animation_frame` diferencia scenarios (solo UV/texture, sin tocar transform) de characters (escala uniforme por altura)
+* ✅ `entity_removed` IPC incluye campo `kind` — motor clasifica el tipo antes de despawnear
 
 ## Motor Rust — Debug y herramientas
 
@@ -143,7 +146,17 @@
   * DONE cuando cada cambio de formato incrementa `version`
   * DONE cuando existe migración automática y testeada entre al menos dos versiones
 
-## Prioridad media
+## Prioridad media — Motor-first (migraciones pendientes)
+
+> Siguiendo el principio motor-first: toda lógica que involucre datos del motor debe vivir en Rust.
+
+* [ ] **`normalizeAnimations` en el motor** — actualmente el front normaliza el array de animaciones al cargar; debe hacerse en Rust antes de emitir el evento `scenario_loaded`/`character_loaded`
+* [ ] **`pendingRestores` en el motor** — la orquestación de restauración de entidades (transform + animation frame) debe ser un comando motor-side, no coordinación del front
+* [ ] **Defaults de `logical`/`pivot` en el motor** — `useCreateEntityFromSpriteAnimation` calcula estos valores; el motor debe emitirlos ya calculados en el evento de creación
+* [ ] **Snapshot de puntos en `entity_removed`** — al eliminar colliders/areas, el motor debería incluir sus puntos en el evento para restauración limpia via undo
+* [ ] **Comando `import_scene` en el motor** — la lógica de importación de escena debe ser un comando IPC en Rust, no un loop de comandos desde el front
+
+## Prioridad media — Otras funcionalidades
 
 * [ ] **Animaciones 3D** (clips/animator/state machine) — compatible con Blender; consolidadas en pipeline de proyecto
 * [ ] **Prefabs/blueprints** — guardar, instanciar y actualizar entidades reutilizables desde el editor sin trabajo manual repetitivo
@@ -196,7 +209,7 @@ serde_json = "1"
 
 ## Estado actual del engine (Mayo 2026)
 
-Nivel: base funcional + inicio de madurez.
+Nivel: funcional + madurez creciente. Principio motor-first adoptado formalmente: toda lógica de estado del motor vive en Rust, el front solo consume eventos y resultados ya calculados.
 
 * Editor usable: ✅
 * Pipeline de assets/guardado: ⚠️ funcional, pero aún básico para crecimiento grande

@@ -14,6 +14,8 @@ Código DRY (Don't Repeat Yourself), evita la duplicación de código y busca si
 
 En el motor hay que dividir los archivos de la logica 2D de la 3D, y de la logica de renderizado, para mantener el codigo organizado y facil de mantener.
 
+PRINCIPIO MOTOR-FIRST (obligatorio): Toda la lógica de cálculo espacial, clasificación de entidades, transformaciones, snap, escala, colisiones y cualquier operación que involucre el estado interno del motor DEBE vivir en Rust. El frontend (React/TS) solo consume eventos y resultados ya calculados; nunca debe replicar ni inferir lógica que el motor ya conoce. Solo se permite lógica de presentación pura en el front (formateo, UI state, renderizado de componentes). Cualquier duda sobre dónde poner algo: si involucra datos del motor, va en el motor.
+
 Siempre hay que tratar de mantener compatibilidad con windows y linux, y evitar usar funciones o librerias que no sean compatibles con ambos sistemas operativos.
 
 Cualquier duda fuera de este readme consulta al desarrollador no busques en otros directorios.

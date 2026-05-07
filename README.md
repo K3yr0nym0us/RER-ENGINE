@@ -96,8 +96,17 @@ Ambos se comunican mediante un protocolo IPC simple basado en JSON.
 
 El motor ya cuenta con:
 
-* Render 2D/3D funcional
-* ECS básico
+* Render 2D/3D funcional con instanced rendering, texture atlas y frustum culling
+* ECS con queries multi-componente y archetypes
+* Física integrada (Rapier 2D/3D)
+* Sistema de scripting (Lua con lifecycle)
+* Editor visual con manipulación de entidades, quick build y multi-selección
+* Sistema de escenas múltiples
+* Guardado empaquetado (`.save` con assets incluidos)
+* Herramientas de debug runtime (FPS, draw calls, overlay)
+* Hot reload de scripts/shaders/assets
+* Comunicación IPC estable
+* Principio motor-first: toda lógica de estado del motor vive en Rust
 * Física integrada (Rapier)
 * Sistema de scripting (Lua con lifecycle)
 * Editor visual con manipulación de entidades
@@ -113,23 +122,21 @@ El motor ya cuenta con:
 
 El engine aún está en fase de maduración:
 
-* Sin optimización de render (batching, culling)
-* ECS sin queries avanzadas ni archetypes
-* Sin particionado espacial
-* Herramientas de debug limitadas
-* Pipeline de assets aún básico
-* IPC puede convertirse en cuello de botella en escenas grandes
+* Sin físicas/colisiones 3D completas (2D funcional)
+* Sin animaciones 3D (clips/animator/state machine)
+* Pipeline de assets aún básico para modelos 3D
+* IPC puede convertirse en cuello de botella en escenas muy grandes (no medido aún)
+* Migraciones de formato `.save` aún no implementadas
 
 ---
 
 ## 🔧 Áreas de mejora prioritarias
 
-* Optimización de render (batching, atlas, culling)
-* Sistema de debug runtime (FPS, métricas)
-* ECS más avanzado (queries multi-componente)
-* Particionado espacial
-* Prefabs / reutilización de entidades
-* Hot reload (scripts, shaders, assets)
+* Físicas y colisiones 3D
+* Animaciones 3D (clips/animator compatible con Blender)
+* Migraciones automáticas de formato `.save`
+* Motor-first: mover `normalizeAnimations`, `pendingRestores` y defaults de entidad al motor
+* Prefabs / reutilización de entidades desde el editor
 
 ---
 
