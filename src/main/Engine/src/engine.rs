@@ -1444,7 +1444,6 @@ impl State {
                 self.apply_redo();
             }
             EngineCommand::SetLocale { locale } => {
-                eprintln!("[i18n] SetLocale recibido: {}", locale);
                 log::info!("[IPC] SetLocale: {}", locale);
                 self.snap_locale = locale;
             }

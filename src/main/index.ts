@@ -210,7 +210,6 @@ function startEngine(embed?: ViewportBounds): void {
   // Reaplicar locale actual al arrancar motor.
   // Si el usuario cambió idioma antes de iniciar el engine, evitamos perder ese estado.
   sendToEngine({ cmd: 'set_locale', locale: currentLocale } as EngineCommand)
-  console.log(`[i18n] locale aplicado al iniciar motor: ${currentLocale}`)
 
   // stdout → eventos para el renderer
   engineProcess.stdout?.on('data', (data: Buffer) => {
@@ -249,10 +248,6 @@ function sendToEngine(cmd: EngineCommand): void {
   if (engineProcess?.stdin && !engineProcess.stdin.destroyed) {
     const data = JSON.stringify(cmd) + '\n'
     engineProcess.stdin.write(data, () => {})
-    if (cmd.cmd === 'set_locale') {
-      const locale = String((cmd as Record<string, unknown>)['locale'] ?? 'en')
-      console.log(`[i18n] main -> engine set_locale enviado: ${locale}`)
-    }
   } else if (cmd.cmd === 'set_locale') {
     const locale = String((cmd as Record<string, unknown>)['locale'] ?? 'en')
     console.log(`[i18n] set_locale recibido en main pero motor no activo (se aplicará al iniciar): ${locale}`)
