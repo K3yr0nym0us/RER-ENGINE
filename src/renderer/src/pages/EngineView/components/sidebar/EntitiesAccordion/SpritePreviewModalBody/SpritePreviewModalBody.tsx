@@ -14,6 +14,7 @@ import {
   spritePreviewReducer,
   type SpriteFrameRect,
   type ScriptEntry,
+  type SelectionMode,
 } from './components';
 import { ScriptEditorModalBody } from '../../../ScriptEditorModalBody';
 
@@ -29,6 +30,10 @@ interface SpritePreviewConfirmConfig {
   audioPath?: string;
   scripts: ScriptEntry[];
   isCancelable: boolean;
+  selectionMode: SelectionMode;
+  gridSize: number;
+  cellOffsetX: number;
+  cellOffsetY: number;
 }
 
 export function SpritePreviewModalBody({
@@ -44,6 +49,10 @@ export function SpritePreviewModalBody({
   initialAudioPath,
   initialScripts,
   initialIsCancelable,
+  initialSelectionMode,
+  initialGridSize,
+  initialCellOffsetX,
+  initialCellOffsetY,
 }: {
   src: string
   onConfirm?: (config: SpritePreviewConfirmConfig) => void
@@ -57,6 +66,10 @@ export function SpritePreviewModalBody({
   initialAudioPath?: string
   initialScripts?: ScriptEntry[]
   initialIsCancelable?: boolean
+  initialSelectionMode?: SelectionMode
+  initialGridSize?: number
+  initialCellOffsetX?: number
+  initialCellOffsetY?: number
 }) {
   const [scriptEditorState, setScriptEditorState] = useState<
     { mode: 'add' } | { mode: 'edit'; name: string } | null
@@ -142,6 +155,10 @@ export function SpritePreviewModalBody({
     initialFrames,
     initialFps,
     initialLoop,
+    initialSelectionMode,
+    initialGridSize,
+    initialCellOffsetX,
+    initialCellOffsetY,
   });
 
   const rightPanelKey = useMemo(() => {
@@ -236,6 +253,10 @@ export function SpritePreviewModalBody({
       audioPath,
       scripts,
       isCancelable,
+      selectionMode,
+      gridSize,
+      cellOffsetX,
+      cellOffsetY,
     });
   };
 

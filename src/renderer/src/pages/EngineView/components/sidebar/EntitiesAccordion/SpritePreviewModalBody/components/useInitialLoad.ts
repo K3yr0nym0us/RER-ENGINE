@@ -1,5 +1,5 @@
 import { useEffect, useRef, type Dispatch } from 'react';
-import { CANVAS_SIZE, type SpritePreviewAction, type SpriteFrameRect } from './spritePreviewReducer';
+import { CANVAS_SIZE, type SpritePreviewAction, type SpriteFrameRect, type SelectionMode } from './spritePreviewReducer';
 
 interface UseInitialLoadParams {
   dispatch: Dispatch<SpritePreviewAction>;
@@ -9,6 +9,10 @@ interface UseInitialLoadParams {
   initialFrames?: SpriteFrameRect[];
   initialFps?: number;
   initialLoop?: boolean;
+  initialSelectionMode?: SelectionMode;
+  initialGridSize?: number;
+  initialCellOffsetX?: number;
+  initialCellOffsetY?: number;
 }
 
 export function useInitialLoad({
@@ -19,6 +23,10 @@ export function useInitialLoad({
   initialFrames,
   initialFps,
   initialLoop,
+  initialSelectionMode,
+  initialGridSize,
+  initialCellOffsetX,
+  initialCellOffsetY,
 }: UseInitialLoadParams) {
   const initialLoadedRef = useRef(false);
 
@@ -63,14 +71,33 @@ export function useInitialLoad({
     const drawOffsetX = (CANVAS_SIZE - drawWidth) / 2;
     const drawOffsetY = (CANVAS_SIZE - drawHeight) / 2;
 
-    const initialBoxes = initialFrames.map((frame) => ({
-      x: drawOffsetX + frame.x * scale,
-      y: drawOffsetY + frame.y * scale,
-      width: frame.width * scale,
-      height: frame.height * scale,
-    }));
+    if (initialSelectionMode === 'cell' && initialGridSize && initialGridSize > 0) {
+      const offX = initialCellOffsetX ?? 0;
+      const offY = initialCellOffsetY ?? 0;
+      const selectedCells = initialFrames.map((frame) => ({
+        x: Math.round((drawOffsetX + frame.x * scale + offX) / initialGridSize),
+        y: Math.round((drawOffsetY + frame.y * scale + offY) / initialGridSize),
+      }));
+      dispatch({
+        type: 'patch',
+        payload: {
+          selectionMode: 'cell',
+          gridSize: initialGridSize,
+          cellOffsetX: offX,
+          cellOffsetY: offY,
+          selectedCells,
+        },
+      });
+    } else {
+      const initialBoxes = initialFrames.map((frame) => ({
+        x: drawOffsetX + frame.x * scale,
+        y: drawOffsetY + frame.y * scale,
+        width: frame.width * scale,
+        height: frame.height * scale,
+      }));
+      dispatch({ type: 'patch', payload: { selectionMode: 'box', boxes: initialBoxes } });
+    }
 
-    dispatch({ type: 'patch', payload: { selectionMode: 'box', boxes: initialBoxes } });
     initialLoadedRef.current = true;
-  }, [imageSize, imageSrc, initialFrames, dispatch]);
+  }, [imageSize, imageSrc, initialFrames, initialSelectionMode, initialGridSize, initialCellOffsetX, initialCellOffsetY, dispatch]);
 }

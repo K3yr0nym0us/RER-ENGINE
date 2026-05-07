@@ -34,6 +34,10 @@ interface Animation {
   audio_path?: string;
   scripts?: { name: string; source: string }[];
   frames: AnimationFrame[];
+  selection_mode?: 'cell' | 'box';
+  grid_size?: number;
+  cell_offset_x?: number;
+  cell_offset_y?: number;
 }
 
 let animationIdCounter = 0;
@@ -155,6 +159,10 @@ export function AnimationsPanel() {
               logical_h,
               audio_path: animation.audioPath,
               scripts: animation.scripts,
+              selection_mode: animation.selectionMode as 'cell' | 'box' | undefined,
+              grid_size: animation.gridSize,
+              cell_offset_x: animation.cellOffsetX,
+              cell_offset_y: animation.cellOffsetY,
               frames: animation.frames.map((f) => ({
                 path: spritePath,
                 pivot_x: f.pivot_x ?? Math.round(f.width / 2),
@@ -282,6 +290,10 @@ export function AnimationsPanel() {
           initialFacingRight={anim.facing_right ?? true}
           initialAudioPath={anim.audio_path}
           initialScripts={anim.scripts}
+          initialSelectionMode={anim.selection_mode}
+          initialGridSize={anim.grid_size}
+          initialCellOffsetX={anim.cell_offset_x}
+          initialCellOffsetY={anim.cell_offset_y}
           onConfirm={(config) => {
             const measuredW = Math.max(1, ...config.frames.map((f) => f.width));
             const measuredH = Math.max(1, ...config.frames.map((f) => f.height));
@@ -304,6 +316,10 @@ export function AnimationsPanel() {
               logical_h,
               audio_path: config.audioPath,
               scripts: config.scripts,
+              selection_mode: config.selectionMode,
+              grid_size: config.gridSize,
+              cell_offset_x: config.cellOffsetX,
+              cell_offset_y: config.cellOffsetY,
               frames: config.frames.map((f) => ({
                 path: spritePath,
                 pivot_x: f.pivot_x ?? Math.round(f.width / 2),
