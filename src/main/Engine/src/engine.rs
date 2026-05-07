@@ -1596,6 +1596,23 @@ impl State {
 EngineCommand::PlayAnimation { id, name } => {
                 log::debug!("[IPC] PlayAnimation: entity_id={}, name='{}'", id, name);
 
+                // Si hay una animación activa con is_cancelable=false que aún no terminó,
+                // bloquear la nueva hasta que termine naturalmente.
+                if let Some(active) = self.active_animations.get(&id) {
+                    if !active.finished {
+                        let current_name = active.animation_name.clone();
+                        let is_cancelable = self.animations
+                            .get(&id)
+                            .and_then(|m| m.get(&current_name))
+                            .map(|a| a.is_cancelable)
+                            .unwrap_or(true); // default: cancelable
+                        if !is_cancelable {
+                            log::debug!("[animation] PlayAnimation '{}' bloqueado: '{}' no es cancelable en entidad {}", name, current_name, id);
+                            return;
+                        }
+                    }
+                }
+
                 // Detener animación previa (el Play de audio incluye clear interno)
                 self.active_animations.remove(&id);
 
