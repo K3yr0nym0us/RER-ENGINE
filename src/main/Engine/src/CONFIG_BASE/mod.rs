@@ -16,6 +16,7 @@ impl State {
         self.uv_rects.clear();
         self.static_tex_cache.clear();
         self.anim_texture_cache.clear();
+        self.atlas.reset(&self.queue);
         self.anim_overrides.clear();
         self.animations.clear();
         self.active_animations.clear();

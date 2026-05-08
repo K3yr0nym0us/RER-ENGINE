@@ -244,6 +244,16 @@ impl TextureAtlas {
         [0.0, 0.0, 1.0 / Self::SIZE as f32, 1.0 / Self::SIZE as f32]
     }
 
+    /// Reinicia el shelf packing del atlas y vuelve a escribir el pixel blanco
+    /// de fallback en (0,0). Se usa al cambiar de escena cuando las cachés de UV
+    /// se vacían, evitando que el cursor siga avanzando con contenido ya huérfano.
+    pub fn reset(&mut self, queue: &wgpu::Queue) {
+        self.cursor_x = 0;
+        self.cursor_y = 0;
+        self.row_h = 0;
+        self.pack_raw(queue, &[255, 255, 255, 255], 1, 1);
+    }
+
     /// Empaca una imagen RGBA en el atlas usando shelf packing.
     /// Retorna el UV rect [u_min, v_min, u_max, v_max] listo para el shader.
     pub fn pack(&mut self, queue: &wgpu::Queue, rgba: &[u8], w: u32, h: u32) -> [f32; 4] {
