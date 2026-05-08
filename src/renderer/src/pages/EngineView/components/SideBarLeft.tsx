@@ -19,21 +19,21 @@ export function SideBarLeft({ projectType }: { projectType: ProjectType }) {
   } = useContextEngine()
 
   return (
-    <aside className="app-sidebar p-3 border-end border-secondary-subtle d-flex flex-column">
-      <div className="flex-grow-1 overflow-auto pe-1">
+    <aside className="app-sidebar px-2 py-2 border-end border-secondary-subtle d-flex flex-column">
+      <div className="flex-grow-1 sidebar-scroll">
         {projectType === '2D' && (
           <>
             <Accordion className="sidebar-accordion">
               <WorldAccordion />
             </Accordion>
 
-            <Accordion className="sidebar-accordion mt-3">
+            <Accordion className="sidebar-accordion mt-1">
               <ResourcesAccordion />
             </Accordion>
           </>
         )}
 
-        <Accordion className="sidebar-accordion mt-3">
+        <Accordion className="sidebar-accordion mt-1">
           <EntitiesAccordion
             projectType={projectType}
             engineReady={engineReady}
@@ -41,16 +41,16 @@ export function SideBarLeft({ projectType }: { projectType: ProjectType }) {
           />
         </Accordion>
 
-        <Accordion className="sidebar-accordion mt-3">
+        <Accordion className="sidebar-accordion mt-1">
           <ToolsAccordion />
         </Accordion>
 
-        <Accordion className="sidebar-accordion mt-3">
+        <Accordion className="sidebar-accordion mt-1">
           <ControlsAccordion />
         </Accordion>
 
         {selectedEntity && (
-          <div className="pt-4">
+          <div className="pt-2">
             <b className="ms-2">{t('Selected element:')}</b>
             <Accordion defaultActiveKey="propiedades" className="sidebar-accordion mt-1">
               <Accordion.Item eventKey="propiedades">
