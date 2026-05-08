@@ -105,11 +105,15 @@ impl ScriptEngine {
             // Keep: math, string, table, pairs, ipairs, tostring, tonumber, print
         }
 
-        Ok(Self {
+        let engine = Self {
             lua,
             scripts: HashMap::new(),
             control_script_cache: HashMap::new(),
-        })
+        };
+
+        engine.register_static_api();
+
+        Ok(engine)
     }
 
     // ── Script loading ────────────────────────────────────────────────────
@@ -263,7 +267,7 @@ impl ScriptEngine {
         if let Some(s) = snapshot {
             snapshots.insert(entity_id, s.clone());
         }
-        self.register_api(&snapshots);
+        self.update_snapshot_globals(&snapshots);
 
         let entity_table = self.build_entity_table(entity_id, snapshot)?;
 
@@ -332,7 +336,7 @@ impl ScriptEngine {
         if let Some(s) = actor_snapshot {
             snapshots.insert(actor_id, s.clone());
         }
-        self.register_api(&snapshots);
+        self.update_snapshot_globals(&snapshots);
 
         let trigger_table = self.build_entity_table(trigger_id, trigger_snapshot)?;
         let actor_table = self.build_entity_table(actor_id, actor_snapshot)?;
@@ -376,8 +380,7 @@ impl ScriptEngine {
         let cmd_queue: LuaTable = self.lua.create_table().expect("tabla cmd_queue");
         self.lua.globals().set("__cmds", cmd_queue).expect("set __cmds");
 
-        // Register helpers into globals before each tick (cheap: just sets refs)
-        self.register_api(snapshots);
+        self.update_snapshot_globals(snapshots);
 
         let mut commands = Vec::new();
 
@@ -424,9 +427,8 @@ impl ScriptEngine {
 
     // ── Internal helpers ──────────────────────────────────────────────────
 
-    /// Register engine API functions into Lua globals.
-    /// These are re-registered each tick so closures capture fresh data.
-    fn register_api(&self, snapshots: &HashMap<u32, EntitySnapshot>) {
+    /// Registra la API estática `engine.*` una sola vez durante la creación de la VM.
+    fn register_static_api(&self) {
         let globals = self.lua.globals();
         let lua = &self.lua;
 
@@ -555,6 +557,13 @@ impl ScriptEngine {
         let _ = engine_table.set("move_entity_facing", globals.get::<LuaFunction>("__api_move_entity_facing").ok());
         let _ = engine_table.set("log",            globals.get::<LuaFunction>("__api_log").ok());
         let _ = globals.set("engine", engine_table);
+
+    }
+
+    /// Actualiza los snapshots dinámicos visibles para Lua en este tick.
+    fn update_snapshot_globals(&self, snapshots: &HashMap<u32, EntitySnapshot>) {
+        let globals = self.lua.globals();
+        let lua = &self.lua;
 
         // Inject entity snapshots as a read-only table (entities[id] = {x,y,...})
         let entities_table = lua.create_table().expect("entities table");
