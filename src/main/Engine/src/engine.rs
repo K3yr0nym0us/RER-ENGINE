@@ -341,6 +341,9 @@ pub struct State {
     pub(crate) entity_facing_right: HashMap<u32, bool>,
     /// Sistema de scripting Lua. Contiene la VM y los scripts adjuntos a entidades.
     pub(crate) script_engine: ScriptEngine,
+    /// Mapa de bindings de control runtime. El frontend solo sincroniza esta
+    /// configuración; el motor resuelve y ejecuta los scripts al detectar input.
+    pub(crate) control_bindings_by_entity: HashMap<u32, crate::ipc::ControlBindingsData>,
     /// Almacén de sprites cargados (PNGs) para reutilización en el editor.
     /// No se renderizan directamente; actúan como biblioteca de imágenes.
     pub(crate) sprite_store: HashMap<String, (String, u32, u32)>, // path → (name, width, height)
@@ -859,6 +862,7 @@ impl State {
             entity_facing_right:   HashMap::new(),
             script_engine: ScriptEngine::new()
                 .expect("Error al inicializar el motor de scripting Lua"),
+            control_bindings_by_entity: HashMap::new(),
             sprite_store: HashMap::new(),
             sound_store: HashMap::new(),
             background_store: HashMap::new(),
@@ -1262,6 +1266,7 @@ impl State {
                 self.animations.remove(&id);
                 self.active_animations.remove(&id);
                 self.anim_saved_transforms.remove(&id);
+                self.control_bindings_by_entity.remove(&id);
                 self.script_engine.detach_entity(id);
                 self.world.despawn(id);
                 send_event(&EngineEvent::EntityRemoved { id, kind: removed_kind.to_string() });
@@ -1783,23 +1788,15 @@ EngineCommand::PlayAnimation { id, name } => {
                     });
                 }
             }
+            EngineCommand::SetControlBindings { id, bindings } => {
+                if bindings.keyboard_mouse.is_empty() && bindings.gamepad.is_empty() {
+                    self.control_bindings_by_entity.remove(&id);
+                } else {
+                    self.control_bindings_by_entity.insert(id, bindings);
+                }
+            }
             EngineCommand::RunControlScript { id, control_key, path, source } => {
-                if !self.preview_playing {
-                    return;
-                }
-
-                // Heurística de dirección basada en control horizontal.
-                match control_key.as_str() {
-                    "A" | "LEFT" | "D-LEFT" => { self.entity_facing_right.insert(id, false); }
-                    "D" | "RIGHT" | "D-RIGHT" => { self.entity_facing_right.insert(id, true); }
-                    _ => {}
-                }
-
-                let snapshot = self.build_script_snapshot(id);
-                match self.script_engine.run_control_script(id, &control_key, &path, &source, snapshot.as_ref()) {
-                    Ok(commands) => self.apply_script_commands(commands),
-                    Err(e) => log::error!("[control] Error ejecutando script '{}' ({}): {}", path, control_key, e),
-                }
+                self.execute_control_script(id, &control_key, &path, &source);
             }
             EngineCommand::UnloadScript { id } => {
                 log::info!("[IPC] UnloadScript: entity_id={}", id);
@@ -2275,6 +2272,46 @@ self.active_animations.retain(|_, a| !a.finished);
 
         let commands = self.script_engine.tick(self.delta_time, &snapshots);
         self.apply_script_commands(commands);
+    }
+
+    fn execute_control_script(&mut self, id: u32, control_key: &str, path: &str, source: &str) {
+        if !self.preview_playing {
+            return;
+        }
+
+        match control_key {
+            "A" | "LEFT" | "D-LEFT" => { self.entity_facing_right.insert(id, false); }
+            "D" | "RIGHT" | "D-RIGHT" => { self.entity_facing_right.insert(id, true); }
+            _ => {}
+        }
+
+        let snapshot = self.build_script_snapshot(id);
+        match self.script_engine.run_control_script(id, control_key, path, source, snapshot.as_ref()) {
+            Ok(commands) => self.apply_script_commands(commands),
+            Err(e) => log::error!("[control] Error ejecutando script '{}' ({}): {}", path, control_key, e),
+        }
+    }
+
+    pub fn handle_runtime_control_input(&mut self, device: &str, control_key: &str) {
+        if !self.preview_playing {
+            return;
+        }
+
+        let matches: Vec<(u32, String, String)> = self.control_bindings_by_entity
+            .iter()
+            .filter_map(|(&id, bindings)| {
+                let script = match device {
+                    "keyboard_mouse" => bindings.keyboard_mouse.get(control_key),
+                    "gamepad" => bindings.gamepad.get(control_key),
+                    _ => None,
+                }?;
+                Some((id, script.name.clone(), script.source.clone()))
+            })
+            .collect();
+
+        for (id, path, source) in matches {
+            self.execute_control_script(id, control_key, &path, &source);
+        }
     }
 
     pub(crate) fn build_script_snapshot(&self, id: u32) -> Option<EntitySnapshot> {

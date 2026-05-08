@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     io::{self, BufRead, Write},
     thread,
 };
@@ -193,6 +194,9 @@ pub enum EngineCommand {
     /// Ejecutar script de control para una entidad (trigger en runtime por input).
     /// Se procesa solo en modo de juego.
     RunControlScript { id: u32, control_key: String, path: String, source: String },
+    /// Configurar bindings de runtime por entidad. El frontend solo sincroniza la
+    /// configuración; la detección y ejecución de inputs ocurre dentro del motor.
+    SetControlBindings { id: u32, bindings: ControlBindingsData },
     /// Desadjuntar todos los scripts de una entidad (sin eliminar la entidad).
     UnloadScript { id: u32 },
     /// Cargar una imagen PNG como sprite (solo almacenamiento, no se renderiza).
@@ -249,6 +253,20 @@ pub struct AnimationFrameData {
 pub struct AnimScriptData {
     pub name:   String,
     pub source: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct ControlScriptData {
+    pub name:   String,
+    pub source: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct ControlBindingsData {
+    #[serde(default)]
+    pub keyboard_mouse: HashMap<String, ControlScriptData>,
+    #[serde(default)]
+    pub gamepad: HashMap<String, ControlScriptData>,
 }
 
 // ---------------------------------------------------------------------------
@@ -332,8 +350,6 @@ pub enum EngineEvent {
     /// Emitido cuando el usuario mantiene Ctrl y hace click añadiendo/quitando entidades
     /// a la selección múltiple. `ids` contiene todos los IDs actualmente seleccionados.
     MultiSelectChanged { ids: Vec<u32> },
-    /// Emitido cuando el motor detecta un input de control en modo juego.
-    ControlInputDetected { device: String, control_key: String },
     /// Emitido ~1 vez por segundo con métricas de rendimiento del motor.
     DebugMetrics {
         fps:            f32,

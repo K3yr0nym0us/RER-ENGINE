@@ -135,12 +135,12 @@ export interface OpenProjectResult {
 }
 
 export interface EngineCommand {
-  cmd: 'ping' | 'shutdown' | 'set_clear_color' | 'resize' | 'set_bounds' | 'load_model' | 'set_transform' | 'set_entity_name' | 'set_scene' | 'load_scenario' | 'set_scenario_scale' | 'duplicate_scenario' | 'load_character' | 'set_character_scale' | 'duplicate_character' | 'remove_entity' | 'set_world_size' | 'set_grid_visible' | 'set_grid_cell_size' | 'set_ctrl_held' | 'set_physics' | 'set_active_tool' | 'create_collider_from_points' | 'create_execution_area_from_points' | 'play_animation_frame' | 'restore_animation_frame' | 'set_pivot_edit_mode' | 'cancel_pivot_edit_mode' | 'set_logical_area_mode' | 'cancel_logical_area_mode' | 'play_audio' | 'stop_audio' | 'set_animation' | 'remove_animation' | 'set_default_animation' | 'play_animation' | 'stop_animation' | 'load_script' | 'unload_script' | 'load_sprite' | 'remove_sprite' | 'get_sprites_list' | 'load_sound' | 'remove_sound' | 'get_sounds_list' | 'load_background_asset' | 'remove_background_asset' | 'get_backgrounds_list' | 'set_preview_playing' | 'run_control_script' | 'undo' | 'clear_background' | 'reload_asset' | 'set_locale' | 'set_autosave'
+  cmd: 'ping' | 'shutdown' | 'set_clear_color' | 'resize' | 'set_bounds' | 'load_model' | 'set_transform' | 'set_entity_name' | 'set_scene' | 'load_scenario' | 'set_scenario_scale' | 'duplicate_scenario' | 'load_character' | 'set_character_scale' | 'duplicate_character' | 'remove_entity' | 'set_world_size' | 'set_grid_visible' | 'set_grid_cell_size' | 'set_ctrl_held' | 'set_physics' | 'set_active_tool' | 'create_collider_from_points' | 'create_execution_area_from_points' | 'play_animation_frame' | 'restore_animation_frame' | 'set_pivot_edit_mode' | 'cancel_pivot_edit_mode' | 'set_logical_area_mode' | 'cancel_logical_area_mode' | 'play_audio' | 'stop_audio' | 'set_animation' | 'remove_animation' | 'set_default_animation' | 'play_animation' | 'stop_animation' | 'load_script' | 'set_control_bindings' | 'unload_script' | 'load_sprite' | 'remove_sprite' | 'get_sprites_list' | 'load_sound' | 'remove_sound' | 'get_sounds_list' | 'load_background_asset' | 'remove_background_asset' | 'get_backgrounds_list' | 'set_preview_playing' | 'run_control_script' | 'undo' | 'clear_background' | 'reload_asset' | 'set_locale' | 'set_autosave'
   [key: string]: unknown
 }
 
 export interface EngineEvent {
-  event: 'ready' | 'pong' | 'error' | 'model_loaded' | 'stopped' | 'entity_selected' | 'entity_deselected' | 'entity_hovered' | 'entity_unhovered' | 'scenario_loaded' | 'character_loaded' | 'camera_2d_updated' | 'background_loaded' | 'drawing_progress' | 'collider_created' | 'execution_area_created' | 'tool_cancelled' | 'pivot_selected' | 'physics_changed' | 'sprite_loaded' | 'sprite_removed' | 'sprites_list' | 'sound_loaded' | 'sound_removed' | 'sounds_list' | 'background_asset_loaded' | 'background_asset_removed' | 'backgrounds_list' | 'control_input_detected' | 'debug_metrics' | 'trigger_entered' | 'trigger_exited' | 'entity_removed' | 'quick_build_move' | 'quick_build_click' | 'animation_logical_resolved' | 'autosave_tick'
+  event: 'ready' | 'pong' | 'error' | 'model_loaded' | 'stopped' | 'entity_selected' | 'entity_deselected' | 'entity_hovered' | 'entity_unhovered' | 'scenario_loaded' | 'character_loaded' | 'camera_2d_updated' | 'background_loaded' | 'drawing_progress' | 'collider_created' | 'execution_area_created' | 'tool_cancelled' | 'pivot_selected' | 'physics_changed' | 'sprite_loaded' | 'sprite_removed' | 'sprites_list' | 'sound_loaded' | 'sound_removed' | 'sounds_list' | 'background_asset_loaded' | 'background_asset_removed' | 'backgrounds_list' | 'debug_metrics' | 'trigger_entered' | 'trigger_exited' | 'entity_removed' | 'quick_build_move' | 'quick_build_click' | 'animation_logical_resolved' | 'autosave_tick'
   [key: string]: unknown
 }
 
@@ -229,12 +229,6 @@ export interface SpriteRemoved {
 export interface SpritesList {
   event:  'sprites_list'
   sprites: SpriteInfo[]
-}
-
-export interface ControlInputDetected {
-  event: 'control_input_detected'
-  device: 'keyboard_mouse' | 'gamepad'
-  control_key: string
 }
 
 export interface TriggerEntered {

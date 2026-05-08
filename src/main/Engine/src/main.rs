@@ -203,23 +203,6 @@ fn map_gamepad_control_key(button: GamepadButton) -> Option<&'static str> {
     }
 }
 
-fn emit_control_detected(device: &'static str, control_key: &str) {
-    // Alta frecuencia: evitar spam en consola de dev/editor.
-    // Se mantiene en trace para depuración puntual.
-    log::trace!("[control-input] detectado {device}:{control_key}");
-    ipc::send_event(&EngineEvent::ControlInputDetected {
-        device: device.to_string(),
-        control_key: control_key.to_string(),
-    });
-}
-
-fn emit_control_detected_silent(device: &'static str, control_key: &str) {
-    ipc::send_event(&EngineEvent::ControlInputDetected {
-        device: device.to_string(),
-        control_key: control_key.to_string(),
-    });
-}
-
 // ---------------------------------------------------------------------------
 // Configuración de embedding (Fase 2)
 // ---------------------------------------------------------------------------
@@ -467,7 +450,7 @@ impl ApplicationHandler<EngineCommand> for App {
                     if let Some(control_key) = map_mouse_control_key(button) {
                         if pressed {
                             if self.keyboard_mouse_pressed.insert(control_key.to_string()) {
-                                emit_control_detected("keyboard_mouse", control_key);
+                                state.handle_runtime_control_input("keyboard_mouse", control_key);
                             }
                         } else {
                             self.keyboard_mouse_pressed.remove(control_key);
@@ -664,7 +647,7 @@ impl ApplicationHandler<EngineCommand> for App {
                     if let Some(control_key) = map_keyboard_control_key(code) {
                         if pressed {
                             if self.keyboard_mouse_pressed.insert(control_key.clone()) {
-                                emit_control_detected("keyboard_mouse", &control_key);
+                                state.handle_runtime_control_input("keyboard_mouse", &control_key);
                             }
                         } else {
                             self.keyboard_mouse_pressed.remove(&control_key);
@@ -745,7 +728,7 @@ impl ApplicationHandler<EngineCommand> for App {
             std::time::Duration::from_nanos(1_000_000_000 / TARGET_FPS);
 
         let now = std::time::Instant::now();
-        if let Some(state) = &self.state {
+        if let Some(state) = self.state.as_mut() {
             if state.is_preview_playing() {
                 if let Some(gilrs) = self.gilrs.as_mut() {
                     while let Some(evt) = gilrs.next_event() {
@@ -753,7 +736,7 @@ impl ApplicationHandler<EngineCommand> for App {
                             GamepadEventType::ButtonPressed(button, _) => {
                                 if self.gamepad_pressed.insert(button) {
                                     if let Some(control_key) = map_gamepad_control_key(button) {
-                                        emit_control_detected("gamepad", control_key);
+                                        state.handle_runtime_control_input("gamepad", control_key);
                                     }
                                 }
                             }
@@ -766,13 +749,14 @@ impl ApplicationHandler<EngineCommand> for App {
                 }
 
                 for control_key in &self.keyboard_mouse_pressed {
-                    emit_control_detected_silent("keyboard_mouse", control_key);
+                    state.handle_runtime_control_input("keyboard_mouse", control_key);
                 }
                 for button in &self.gamepad_pressed {
                     if let Some(control_key) = map_gamepad_control_key(*button) {
-                        emit_control_detected_silent("gamepad", control_key);
+                        state.handle_runtime_control_input("gamepad", control_key);
                     }
                 }
+
             } else {
                 self.keyboard_mouse_pressed.clear();
                 self.gamepad_pressed.clear();

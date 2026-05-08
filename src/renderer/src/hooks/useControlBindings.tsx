@@ -53,7 +53,7 @@ function getPathLabel(path: string): string {
 }
 
 export function useControlBindings() {
-  const { characterEntities, entityMetaRef } = useContextEngine()
+  const { characterEntities, entityMetaRef, send } = useContextEngine()
   const { openModal } = useModal()
 
   const [selectedCharacterId, setSelectedCharacterId] = useState<number | null>(null)
@@ -102,8 +102,9 @@ export function useControlBindings() {
     }
 
     meta.controlBindings = toSavedBindings(next)
+    send({ cmd: 'set_control_bindings', id: effectiveCharacterId, bindings: meta.controlBindings } as never)
     setRevision((prev) => prev + 1)
-  }, [effectiveCharacterId, entityMetaRef])
+  }, [effectiveCharacterId, entityMetaRef, send])
 
   const openBindingsModal = useCallback((mode: ControlDeviceMode) => {
     if (!effectiveCharacterId) return

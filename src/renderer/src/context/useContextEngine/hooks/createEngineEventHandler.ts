@@ -4,7 +4,6 @@ import type {
 	AnimationFinished,
 	Camera2dUpdated,
 	CharacterLoaded,
-	ControlInputDetected,
 	DebugMetrics,
 	EntitySelected,
 	PhysicsChanged,
@@ -56,35 +55,11 @@ export function createEngineEventHandler({
 		};
 	};
 
-	const runControlScriptsForDetectedInput = (payload: ControlInputDetected) => {
-		const bindingsKey = payload.device === 'gamepad' ? 'gamepad' : 'keyboard_mouse';
-		const controlKey = payload.control_key;
-
-		for (const [entityIdStr, meta] of Object.entries(refs.entityMetaRef.current)) {
-			if (meta.kind !== 'character' || !meta.controlBindings) continue;
-			const boundScripts = meta.controlBindings[bindingsKey] ?? {};
-			const script = boundScripts[controlKey];
-			if (!script) continue;
-
-			const entityId = Number(entityIdStr);
-			if (!Number.isFinite(entityId)) continue;
-
-			window.engine.send({
-				cmd: 'run_control_script',
-				id: entityId,
-				control_key: controlKey,
-				path: script.name,
-				source: script.source,
-			} as never);
-		}
-	};
-
 	return (event: RuntimeEngineEvent) => {
 		// Eventos de alta frecuencia: se procesan normalmente, pero no se
 		// imprimen en la consola del panel para evitar spam visual.
 		const silentEvents = new Set([
 			'debug_metrics',
-			'control_input_detected',
 			'animation_finished',
 			'ready',
 			'player_ready',
@@ -276,10 +251,6 @@ export function createEngineEventHandler({
 			dispatch({ type: 'SET_HOVER', payload: null });
 		}
 
-		if (event.event === 'control_input_detected') {
-			runControlScriptsForDetectedInput(event as unknown as ControlInputDetected);
-		}
-
 		if (event.event === 'player_ready') {
 			const playerReady = event as unknown as { id: number; position: [number,number,number]; scale: [number,number,number] };
 			refs.playerEntityIdRef.current = playerReady.id;
@@ -377,6 +348,7 @@ export function createEngineEventHandler({
 				}
 				if (pending.controlBindings) {
 					refs.entityMetaRef.current[scenario.id].controlBindings = pending.controlBindings;
+					window.engine.send({ cmd: 'set_control_bindings', id: scenario.id, bindings: pending.controlBindings } as never);
 				}
 				if (pending.blueprintId) {
 					refs.entityMetaRef.current[scenario.id].blueprintId = pending.blueprintId;
@@ -450,6 +422,7 @@ export function createEngineEventHandler({
 					if (refs.entityMetaRef.current[id]) {
 						refs.entityMetaRef.current[id].controlBindings = pending.controlBindings;
 					}
+					window.engine.send({ cmd: 'set_control_bindings', id, bindings: pending.controlBindings } as never);
 				}
 
 				if (pending.blueprintId) {
