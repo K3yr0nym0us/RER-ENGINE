@@ -1,7 +1,8 @@
-import { useRef, useState } from 'react';
+import { useRef } from 'react';
 
 import SideBarLeft from './components/SideBarLeft';
 import LogConsole from './components/LogConsole';
+import MetricsPanel from './components/MetricsPanel';
 import SceneTabsBar from './components/SceneTabsBar';
 import TopBarEngine from './components/TopBarEngine';
 import { QuickBuildOverlay } from './components/QuickBuildOverlay';
@@ -33,8 +34,7 @@ function EngineViewInner({ projectType, initialSave, initialSavePath, viewportRe
   initialSavePath?: string | null
   viewportRef: React.RefObject<HTMLDivElement>
 }) {
-  const { handleSave, toggleAutoSave } = useAutoSave({ projectType, initialSave, initialSavePath })
-  const [debugOverlayVisible, setDebugOverlayVisible] = useState(true)
+  const { handleSave, toggleAutoSave, hasSavedOnce, autoSaveEnabled } = useAutoSave({ projectType, initialSave, initialSavePath })
 
   return (
     <div className="app-shell d-flex flex-column">
@@ -49,8 +49,8 @@ function EngineViewInner({ projectType, initialSave, initialSavePath, viewportRe
             projectType={projectType}
             handleSave={handleSave}
             toggleAutoSave={toggleAutoSave}
-            debugOverlayVisible={debugOverlayVisible}
-            onToggleDebugOverlay={() => setDebugOverlayVisible(v => !v)}
+            hasSavedOnce={hasSavedOnce}
+            autoSaveEnabled={autoSaveEnabled}
           />
 
           <main
@@ -61,7 +61,14 @@ function EngineViewInner({ projectType, initialSave, initialSavePath, viewportRe
             <QuickBuildOverlay />
           </main>
 
-          <LogConsole />
+          <div className="row g-0" style={{ height: 120 }}>
+            <div className="col-9">
+              <LogConsole />
+            </div>
+            <div className="col-3">
+              <MetricsPanel />
+            </div>
+          </div>
         </div>
       </div>
     </div>

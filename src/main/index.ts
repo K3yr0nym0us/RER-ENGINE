@@ -217,6 +217,11 @@ function startEngine(embed?: ViewportBounds): void {
     for (const line of lines) {
       try {
         const event = JSON.parse(line) as EngineEvent
+        if (event.event === 'autosave_tick') {
+          if (currentProjectFilePath && mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('autosave:request', currentProjectFilePath)
+          }
+        }
         sendEventToRenderer(event)
       } catch {
         console.log('[engine stdout]', line)

@@ -104,6 +104,7 @@ export function createEngineEventHandler({
 			'quick_build_move',
 			'camera_2d_updated',
 			'animation_logical_resolved',
+			'autosave_tick',
 		]);
 		if (!silentEvents.has(event.event)) {
 			addLog(JSON.stringify(event), event.event === 'error');

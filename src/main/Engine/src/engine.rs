@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Condvar, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use bytemuck::{Pod, Zeroable};
 use glam::{Mat4, Vec3 as GlamVec3};
@@ -183,6 +183,7 @@ use crate::texture::GpuTexture;
 use crate::ecs::EntityId;
 
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
+const AUTOSAVE_INTERVAL: Duration = Duration::from_secs(5 * 60);
 
 // ── Uniform compartido por frame (group 0) ───────────────────────────────────
 // Solo view_proj + cam_pos; el model matrix va en el instance buffer.
@@ -359,6 +360,8 @@ pub struct State {
     metrics_last_emit:   Instant,
     metrics_frame_count: u32,
     last_draw_calls:     u32,
+    autosave_enabled:    bool,
+    autosave_last_tick:  Instant,
 }
 
 impl State {
@@ -865,6 +868,8 @@ impl State {
             metrics_last_emit:   Instant::now(),
             metrics_frame_count: 0,
             last_draw_calls:     0,
+            autosave_enabled:    false,
+            autosave_last_tick:  Instant::now(),
         }
     }
 
@@ -1466,6 +1471,11 @@ impl State {
             EngineCommand::SetLocale { locale } => {
                 log::info!("[IPC] SetLocale: {}", locale);
                 self.snap_locale = locale;
+            }
+            EngineCommand::SetAutosave { enabled } => {
+                self.autosave_enabled = enabled;
+                self.autosave_last_tick = Instant::now();
+                log::info!("[autosave] {}", if enabled { "activado" } else { "desactivado" });
             }
             EngineCommand::ReloadAsset { path } => {
                 log::info!("[IPC] ReloadAsset: {}", path);
@@ -2477,6 +2487,10 @@ self.active_animations.retain(|_, a| !a.finished);
             });
             self.metrics_last_emit   = now;
             self.metrics_frame_count = 0;
+        }
+        if self.autosave_enabled && now.duration_since(self.autosave_last_tick) >= AUTOSAVE_INTERVAL {
+            send_event(&EngineEvent::AutosaveTick);
+            self.autosave_last_tick = now;
         }
         if self.camera_2d.is_some() {
             // Scripts corren siempre (editor + juego) para facilitar pruebas rápidas.

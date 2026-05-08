@@ -64,4 +64,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onRequestViewportBounds: (cb: () => void): void => {
     ipcRenderer.on('request-viewport-bounds', cb)
   },
+  onAutoSaveRequest: (cb: (filePath: string) => void): void => {
+    ipcRenderer.removeAllListeners('autosave:request')
+    ipcRenderer.on('autosave:request', (_event, filePath: string) => cb(filePath))
+  },
 })

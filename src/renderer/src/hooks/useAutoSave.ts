@@ -3,8 +3,6 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useContextEngine } from '@engine'
 import { getSceneProjectState } from '../pages/EngineView/sceneStateStore'
 
-const AUTO_SAVE_INTERVAL_MS = 5 * 60 * 1000 // 5 minutos
-
 interface UseAutoSaveOptions {
   projectType?: string
   initialSave?: any | null
@@ -21,14 +19,20 @@ export interface UseAutoSaveReturn {
 
 export function useAutoSave({ projectType = '2D', initialSave = null, initialSavePath = null }: UseAutoSaveOptions = {}): UseAutoSaveReturn {
   const { worldConfig, backgroundPath, selectedEntity, entityTransformsRef, entityMetaRef, playerEntityIdRef, camera2dRef, loadedSpritesInfo, blueprints, sounds, backgrounds } = useContextEngine()
-  const [hasSavedOnce, setHasSavedOnce] = useState(false)
+  const [hasSavedOnce, setHasSavedOnce] = useState(Boolean(initialSavePath))
   const [autoSaveEnabled, setAutoSaveEnabled] = useState(false)
-  const intervalRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastSavePath = useRef<string | null>(initialSavePath)
+  const autoSaveEnabledRef = useRef(false)
+  const buildSaveDataRef = useRef<(() => ReturnType<typeof buildSaveData>) | null>(null)
+  const autoSaveListenerRegisteredRef = useRef(false)
 
   useEffect(() => {
-    if (initialSave) setHasSavedOnce(true)
-  }, [initialSave])
+    if (initialSavePath) {
+      setHasSavedOnce(true)
+    } else if (initialSave) {
+      setHasSavedOnce(true)
+    }
+  }, [initialSave, initialSavePath])
 
   useEffect(() => {
     if (initialSavePath) {
@@ -161,44 +165,43 @@ export function useAutoSave({ projectType = '2D', initialSave = null, initialSav
   }, [projectType, initialSave, worldConfig, backgroundPath, selectedEntity, playerEntityIdRef, entityTransformsRef, entityMetaRef, camera2dRef, loadedSpritesInfo, blueprints, sounds, backgrounds])
 
   useEffect(() => {
+    autoSaveEnabledRef.current = autoSaveEnabled
+  }, [autoSaveEnabled])
+
+  useEffect(() => {
+    buildSaveDataRef.current = buildSaveData
+  }, [buildSaveData])
+
+  useEffect(() => {
     if (!hasSavedOnce && autoSaveEnabled) {
       setAutoSaveEnabled(false)
+      window.engine.send({ cmd: 'set_autosave', enabled: false } as never)
     }
   }, [hasSavedOnce, autoSaveEnabled])
 
   useEffect(() => {
-    if (autoSaveEnabled) {
-      intervalRef.current = setTimeout(async () => {
-        const data = buildSaveData()
-        if (data) {
-          const targetPath = lastSavePath.current ?? 'autosave.save'
-          await window.electronAPI.saveProjectSilent(targetPath, data)
-        }
-      }, AUTO_SAVE_INTERVAL_MS)
-    } else {
-      if (intervalRef.current) {
-        clearTimeout(intervalRef.current)
-        intervalRef.current = null
-      }
-    }
+    if (autoSaveListenerRegisteredRef.current) return
+    autoSaveListenerRegisteredRef.current = true
 
+    window.electronAPI.onAutoSaveRequest(async (filePath: string) => {
+      if (!autoSaveEnabledRef.current) return
+      const snapshotBuilder = buildSaveDataRef.current
+      if (!snapshotBuilder) return
+      const data = snapshotBuilder()
+      if (!data) return
+      await window.electronAPI.saveProjectSilent(filePath, data)
+    })
+  }, [])
+
+  useEffect(() => {
     return () => {
-      if (intervalRef.current) {
-        clearTimeout(intervalRef.current)
-        intervalRef.current = null
-      }
+      window.engine.send({ cmd: 'set_autosave', enabled: false } as never)
     }
-  }, [autoSaveEnabled, buildSaveData])
+  }, [])
 
   const handleSave = useCallback(async () => {
     const data = buildSaveData()
     if (!data) return
-
-    if (lastSavePath.current) {
-      await window.electronAPI.saveProjectSilent(lastSavePath.current, data)
-      setHasSavedOnce(true)
-      return
-    }
 
     const savedPath = await window.electronAPI.saveProject(data)
     if (savedPath) {
@@ -213,7 +216,11 @@ export function useAutoSave({ projectType = '2D', initialSave = null, initialSav
 
   const toggleAutoSave = useCallback(() => {
     if (!hasSavedOnce) return
-    setAutoSaveEnabled((prev) => !prev)
+    setAutoSaveEnabled((prev) => {
+      const next = !prev
+      window.engine.send({ cmd: 'set_autosave', enabled: next } as never)
+      return next
+    })
   }, [hasSavedOnce])
 
   return { 

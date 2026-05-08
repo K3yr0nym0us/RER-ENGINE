@@ -225,6 +225,8 @@ pub enum EngineCommand {
     /// Cambiar el locale del motor para seleccionar assets localizados (ej. imágenes de hint).
     /// locale: "en" | "es"
     SetLocale { locale: String },
+    /// Activar/desactivar autosave coordinado por el motor.
+    SetAutosave { enabled: bool },
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -343,6 +345,8 @@ pub enum EngineEvent {
     TriggerEntered { trigger_id: u32, actor_id: u32 },
     /// Emitido cuando un actor sale de un área de ejecución (trigger).
     TriggerExited { trigger_id: u32, actor_id: u32 },
+    /// Emitido cada 5 minutos cuando el autosave está activo.
+    AutosaveTick,
 }
 
 /// Información básica de un sprite almacenado en el motor.
