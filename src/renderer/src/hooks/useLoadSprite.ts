@@ -1,6 +1,6 @@
 import { useCallback, createElement } from 'react';
 import { useModal } from '@modal';
-import ModalSetNameSprite from '../pages/EngineView/components/sidebar/SpritesAccordion/components/ModalSetNameSprite';
+import ModalSetNameSprite from '../pages/EngineView/components/sidebar/ResourcesAccordion/SpritesAccordion/components/ModalSetNameSprite';
 
 /**
  * Hook para cargar un sprite: abre el diálogo, luego modal de nombre, y envía al motor.

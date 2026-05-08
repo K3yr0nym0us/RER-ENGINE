@@ -281,6 +281,26 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 		}
 	};
 
+	const loadSound = (path: string, name: string) => {
+		send({ cmd: 'load_sound', path, name });
+		dispatch({ type: 'ADD_SOUND', payload: { path, name } });
+	};
+
+	const removeSound = (path: string) => {
+		send({ cmd: 'remove_sound', path });
+		dispatch({ type: 'REMOVE_SOUND', payload: path });
+	};
+
+	const loadBackgroundToLibrary = (path: string, name: string) => {
+		send({ cmd: 'load_background_asset', path, name });
+		dispatch({ type: 'ADD_BACKGROUND', payload: { path, name } });
+	};
+
+	const removeBackgroundFromLibrary = (path: string) => {
+		send({ cmd: 'remove_background_asset', path });
+		dispatch({ type: 'REMOVE_BACKGROUND', payload: path });
+	};
+
 	const addBlueprint = (entry: BluePrintEntry) => {
 		dispatch({ type: 'ADD_BLUEPRINT', payload: entry });
 	};
@@ -314,6 +334,10 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 		loadCharacter,
 		setPreviewPlaying,
 		setBackground,
+		loadSound,
+		removeSound,
+		loadBackgroundToLibrary,
+		removeBackgroundFromLibrary,
 		addBlueprint,
 		setBlueprints,
 		registerQuickBuildClickListener,

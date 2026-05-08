@@ -18,6 +18,7 @@ import {
 } from './components';
 import { ScriptEditorModalBody } from '../../../ScriptEditorModalBody';
 
+import { useContextEngine } from '@engine';
 import { useSpritePreviewImage } from '@hooks';
 
 interface SpritePreviewConfirmConfig {
@@ -71,6 +72,7 @@ export function SpritePreviewModalBody({
   initialCellOffsetX?: number
   initialCellOffsetY?: number
 }) {
+  const { sounds } = useContextEngine();
   const [scriptEditorState, setScriptEditorState] = useState<
     { mode: 'add' } | { mode: 'edit'; name: string } | null
   >(null);
@@ -126,13 +128,8 @@ export function SpritePreviewModalBody({
     setIsDefaultAnimation(initialIsDefaultAnimation ?? false);
   }, [initialIsDefaultAnimation]);
 
-  const handleAddAudio = async () => {
-    const path = await window.electronAPI.openAudioDialog();
-    if (path) dispatch({ type: 'patch', payload: { audioPath: path } });
-  };
-
-  const handleClearAudio = () => {
-    dispatch({ type: 'patch', payload: { audioPath: undefined } });
+  const handleAudioChange = (path: string) => {
+    dispatch({ type: 'patch', payload: { audioPath: path || undefined } });
   };
 
   const handleAddScript = () => {
@@ -168,7 +165,7 @@ export function SpritePreviewModalBody({
     return `${imageSrc}-box-${boxes.map((b) => `${b.x}:${b.y}:${b.width}:${b.height}`).join('|')}`;
   }, [imageSrc, selectionMode, selectedCells, boxes]);
 
-  const { handleCanvasClick, handleMouseMove, handleBoxChange, handleAddBox, handleRemoveBox } =
+  const { handleCanvasClick, handleMouseMove, handleBoxChange, handleRemoveBox } =
     useCanvasHandlers({
       selectionMode,
       cellOffsetX,
@@ -275,10 +272,9 @@ export function SpritePreviewModalBody({
             setCellOffsetY={(offset) => dispatch({ type: 'patch', payload: { cellOffsetY: offset } })}
             CANVAS_SIZE={CANVAS_SIZE}
             onBoxChange={handleBoxChange}
-            onAddBox={handleAddBox}
+            sounds={sounds}
             audioPath={audioPath}
-            onAddAudio={handleAddAudio}
-            onClearAudio={handleClearAudio}
+            onAudioChange={handleAudioChange}
             scripts={scripts}
             onAddScript={handleAddScript}
             onEditScript={handleEditScript}

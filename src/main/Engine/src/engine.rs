@@ -343,6 +343,12 @@ pub struct State {
     /// Almacén de sprites cargados (PNGs) para reutilización en el editor.
     /// No se renderizan directamente; actúan como biblioteca de imágenes.
     pub(crate) sprite_store: HashMap<String, (String, u32, u32)>, // path → (name, width, height)
+    /// Almacén de sonidos registrados para reutilización en el editor.
+    /// path → name; la reproducción se hace directamente con play_audio.
+    pub(crate) sound_store: HashMap<String, String>, // path → name
+    /// Almacén de fondos registrados para reutilización en el editor.
+    /// path → name; el fondo activo se gestiona por separado con load_background.
+    pub(crate) background_store: HashMap<String, String>, // path → name
     /// Historial simple para deshacer cambios del editor.
     pub(crate) undo_stack: Vec<UndoAction>,
     /// Historial para rehacer (Ctrl+Y). Se limpia al registrar una acción nueva.
@@ -851,6 +857,8 @@ impl State {
             script_engine: ScriptEngine::new()
                 .expect("Error al inicializar el motor de scripting Lua"),
             sprite_store: HashMap::new(),
+            sound_store: HashMap::new(),
+            background_store: HashMap::new(),
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
             is_applying_undo: false,
@@ -1834,6 +1842,50 @@ EngineCommand::PlayAnimation { id, name } => {
                 let count = sprites.len();
                 send_event(&EngineEvent::SpritesList { sprites });
                 log::info!("[sprite] lista enviada: {} sprites", count);
+            }
+            EngineCommand::LoadSound { path, name } => {
+                self.sound_store.insert(path.clone(), name.clone());
+                send_event(&EngineEvent::SoundLoaded { path: path.clone(), name: name.clone() });
+                log::debug!("[sound] registrado: {} ({})", path, name);
+            }
+            EngineCommand::RemoveSound { path } => {
+                if self.sound_store.remove(&path).is_some() {
+                    send_event(&EngineEvent::SoundRemoved { path: path.clone() });
+                    log::info!("[sound] eliminado: {}", path);
+                } else {
+                    log::warn!("[sound] intento de eliminar sonido inexistente: {}", path);
+                }
+            }
+            EngineCommand::GetSoundsList => {
+                let sounds: Vec<crate::ipc::SoundInfo> = self.sound_store
+                    .iter()
+                    .map(|(path, name)| crate::ipc::SoundInfo { path: path.clone(), name: name.clone() })
+                    .collect();
+                let count = sounds.len();
+                send_event(&EngineEvent::SoundsList { sounds });
+                log::info!("[sound] lista enviada: {} sonidos", count);
+            }
+            EngineCommand::LoadBackgroundAsset { path, name } => {
+                self.background_store.insert(path.clone(), name.clone());
+                send_event(&EngineEvent::BackgroundAssetLoaded { path: path.clone(), name: name.clone() });
+                log::debug!("[background] registrado: {} ({})", path, name);
+            }
+            EngineCommand::RemoveBackgroundAsset { path } => {
+                if self.background_store.remove(&path).is_some() {
+                    send_event(&EngineEvent::BackgroundAssetRemoved { path: path.clone() });
+                    log::info!("[background] eliminado: {}", path);
+                } else {
+                    log::warn!("[background] intento de eliminar fondo inexistente: {}", path);
+                }
+            }
+            EngineCommand::GetBackgroundsList => {
+                let backgrounds: Vec<crate::ipc::BackgroundInfo> = self.background_store
+                    .iter()
+                    .map(|(path, name)| crate::ipc::BackgroundInfo { path: path.clone(), name: name.clone() })
+                    .collect();
+                let count = backgrounds.len();
+                send_event(&EngineEvent::BackgroundsList { backgrounds });
+                log::info!("[background] lista enviada: {} fondos", count);
             }
             EngineCommand::Shutdown => {}
         }

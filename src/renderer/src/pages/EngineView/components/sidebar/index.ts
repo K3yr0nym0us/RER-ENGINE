@@ -4,4 +4,5 @@ export { default as CharactersAccordion } from './EntitiesAccordion/CharactersAc
 export { default as ToolsAccordion } from './ToolsAccordion/ToolsAccordion'
 export { default as ControlsAccordion } from './ControlsAccordion/ControlsAccordion'
 export { SpritePreviewModalBody } from './EntitiesAccordion/SpritePreviewModalBody/SpritePreviewModalBody'
-export { default as SpritesAccordion } from './SpritesAccordion/SpritesAccordion'
+export { default as SpritesAccordion } from './ResourcesAccordion/SpritesAccordion/SpritesAccordion'
+export { default as ResourcesAccordion } from './ResourcesAccordion/ResourcesAccordion'

@@ -121,6 +121,10 @@ export interface ProjectSaveData {
   savedAt:         string   // ISO timestamp
   /** Sprites precargados en el proyecto (nombre -> ruta relativa). */
   sprites?:        Array<{ name: string; path: string }>
+  /** Sonidos precargados en el proyecto. */
+  sounds?:         Array<{ name: string; path: string }>
+  /** Fondos precargados en el proyecto. */
+  backgrounds?:    Array<{ name: string; path: string }>
   /** Blueprints creados en el proyecto. */
   blueprints?:     BluePrintEntry[]
 }
@@ -131,12 +135,12 @@ export interface OpenProjectResult {
 }
 
 export interface EngineCommand {
-  cmd: 'ping' | 'shutdown' | 'set_clear_color' | 'resize' | 'set_bounds' | 'load_model' | 'set_transform' | 'set_entity_name' | 'set_scene' | 'load_scenario' | 'set_scenario_scale' | 'duplicate_scenario' | 'load_character' | 'set_character_scale' | 'duplicate_character' | 'remove_entity' | 'set_world_size' | 'set_grid_visible' | 'set_grid_cell_size' | 'set_ctrl_held' | 'set_physics' | 'set_active_tool' | 'create_collider_from_points' | 'create_execution_area_from_points' | 'play_animation_frame' | 'restore_animation_frame' | 'set_pivot_edit_mode' | 'cancel_pivot_edit_mode' | 'set_logical_area_mode' | 'cancel_logical_area_mode' | 'play_audio' | 'stop_audio' | 'set_animation' | 'remove_animation' | 'set_default_animation' | 'play_animation' | 'stop_animation' | 'load_script' | 'unload_script' | 'load_sprite' | 'remove_sprite' | 'get_sprites_list' | 'set_preview_playing' | 'run_control_script' | 'undo' | 'clear_background' | 'reload_asset' | 'set_locale'
+  cmd: 'ping' | 'shutdown' | 'set_clear_color' | 'resize' | 'set_bounds' | 'load_model' | 'set_transform' | 'set_entity_name' | 'set_scene' | 'load_scenario' | 'set_scenario_scale' | 'duplicate_scenario' | 'load_character' | 'set_character_scale' | 'duplicate_character' | 'remove_entity' | 'set_world_size' | 'set_grid_visible' | 'set_grid_cell_size' | 'set_ctrl_held' | 'set_physics' | 'set_active_tool' | 'create_collider_from_points' | 'create_execution_area_from_points' | 'play_animation_frame' | 'restore_animation_frame' | 'set_pivot_edit_mode' | 'cancel_pivot_edit_mode' | 'set_logical_area_mode' | 'cancel_logical_area_mode' | 'play_audio' | 'stop_audio' | 'set_animation' | 'remove_animation' | 'set_default_animation' | 'play_animation' | 'stop_animation' | 'load_script' | 'unload_script' | 'load_sprite' | 'remove_sprite' | 'get_sprites_list' | 'load_sound' | 'remove_sound' | 'get_sounds_list' | 'load_background_asset' | 'remove_background_asset' | 'get_backgrounds_list' | 'set_preview_playing' | 'run_control_script' | 'undo' | 'clear_background' | 'reload_asset' | 'set_locale'
   [key: string]: unknown
 }
 
 export interface EngineEvent {
-  event: 'ready' | 'pong' | 'error' | 'model_loaded' | 'stopped' | 'entity_selected' | 'entity_deselected' | 'entity_hovered' | 'entity_unhovered' | 'scenario_loaded' | 'character_loaded' | 'player_ready' | 'camera_2d_updated' | 'background_loaded' | 'drawing_progress' | 'collider_created' | 'execution_area_created' | 'tool_cancelled' | 'pivot_selected' | 'physics_changed' | 'sprite_loaded' | 'sprite_removed' | 'sprites_list' | 'control_input_detected' | 'debug_metrics' | 'trigger_entered' | 'trigger_exited' | 'entity_removed' | 'quick_build_move' | 'quick_build_click' | 'animation_logical_resolved'
+  event: 'ready' | 'pong' | 'error' | 'model_loaded' | 'stopped' | 'entity_selected' | 'entity_deselected' | 'entity_hovered' | 'entity_unhovered' | 'scenario_loaded' | 'character_loaded' | 'camera_2d_updated' | 'background_loaded' | 'drawing_progress' | 'collider_created' | 'execution_area_created' | 'tool_cancelled' | 'pivot_selected' | 'physics_changed' | 'sprite_loaded' | 'sprite_removed' | 'sprites_list' | 'sound_loaded' | 'sound_removed' | 'sounds_list' | 'background_asset_loaded' | 'background_asset_removed' | 'backgrounds_list' | 'control_input_detected' | 'debug_metrics' | 'trigger_entered' | 'trigger_exited' | 'entity_removed' | 'quick_build_move' | 'quick_build_click' | 'animation_logical_resolved'
   [key: string]: unknown
 }
 
@@ -145,13 +149,6 @@ export interface DebugMetrics {
   frame_time_ms:  number
   draw_calls:     number
   physics_bodies: number
-}
-
-export interface PlayerReady {
-  event:    'player_ready'
-  id:       number
-  position: [number, number, number]
-  scale:    [number, number, number]
 }
 
 export interface Camera2dUpdated {
@@ -271,6 +268,16 @@ export interface SpriteInfo {
   name:   string
   width:  number
   height: number
+}
+
+export interface SoundInfo {
+  path: string
+  name: string
+}
+
+export interface BackgroundInfo {
+  path: string
+  name: string
 }
 
 export type BluePrintCategory = 'personaje' | 'entorno' | 'objetos'

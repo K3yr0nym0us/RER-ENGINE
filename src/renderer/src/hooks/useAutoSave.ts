@@ -20,7 +20,7 @@ export interface UseAutoSaveReturn {
 }
 
 export function useAutoSave({ projectType = '2D', initialSave = null, initialSavePath = null }: UseAutoSaveOptions = {}): UseAutoSaveReturn {
-  const { worldConfig, backgroundPath, selectedEntity, entityTransformsRef, entityMetaRef, playerEntityIdRef, camera2dRef, loadedSpritesInfo, blueprints } = useContextEngine()
+  const { worldConfig, backgroundPath, selectedEntity, entityTransformsRef, entityMetaRef, playerEntityIdRef, camera2dRef, loadedSpritesInfo, blueprints, sounds, backgrounds } = useContextEngine()
   const [hasSavedOnce, setHasSavedOnce] = useState(false)
   const [autoSaveEnabled, setAutoSaveEnabled] = useState(false)
   const intervalRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -154,9 +154,11 @@ export function useAutoSave({ projectType = '2D', initialSave = null, initialSav
       camera2d: activeScene?.camera2d ?? camera2dRef.current,
       savedAt: new Date().toISOString(),
       sprites: activeScene?.sprites ?? spritesArray,
+      sounds,
+      backgrounds,
       blueprints,
     }
-  }, [projectType, initialSave, worldConfig, backgroundPath, selectedEntity, playerEntityIdRef, entityTransformsRef, entityMetaRef, camera2dRef, loadedSpritesInfo, blueprints])
+  }, [projectType, initialSave, worldConfig, backgroundPath, selectedEntity, playerEntityIdRef, entityTransformsRef, entityMetaRef, camera2dRef, loadedSpritesInfo, blueprints, sounds, backgrounds])
 
   useEffect(() => {
     if (!hasSavedOnce && autoSaveEnabled) {

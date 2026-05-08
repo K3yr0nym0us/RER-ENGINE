@@ -458,11 +458,20 @@ function isAudioAsset(filePath: string): boolean {
   return AUDIO_EXTENSIONS.has(path.extname(filePath).toLowerCase())
 }
 
+function toAssetPathKey(filePath: string): string {
+  const normalized = path.normalize(filePath)
+  return process.platform === 'win32' ? normalized.toLowerCase() : normalized
+}
+
 function forEachEntity(data: ProjectSaveData, cb: (entity: ProjectSaveData['entities'][number]) => void): void {
-  for (const entity of data.entities) cb(entity)
-  for (const scene of data.scenes ?? []) {
-    for (const entity of scene.entities) cb(entity)
+  if ((data.scenes?.length ?? 0) > 0) {
+    for (const scene of data.scenes ?? []) {
+      for (const entity of scene.entities) cb(entity)
+    }
+    return
   }
+
+  for (const entity of data.entities) cb(entity)
 }
 
 /**
@@ -472,7 +481,9 @@ function forEachEntity(data: ProjectSaveData, cb: (entity: ProjectSaveData['enti
 function collectAssetPaths(data: ProjectSaveData): Set<string> {
   const paths = new Set<string>()
   const add = (p: string | null | undefined) => {
-    if (p && path.isAbsolute(p) && fs.existsSync(p)) paths.add(p)
+    if (!p || !path.isAbsolute(p) || !fs.existsSync(p)) return
+    // En Windows evitamos duplicados del mismo archivo por separadores distintos (\ vs /).
+    paths.add(toAssetPathKey(p))
   }
 
   add(data.backgroundPath)
@@ -485,6 +496,14 @@ function collectAssetPaths(data: ProjectSaveData): Set<string> {
   }
   for (const scene of data.scenes ?? []) {
     for (const sprite of scene.sprites ?? []) add(sprite.path)
+  }
+
+  if (data.sounds) {
+    for (const sound of data.sounds) add(sound.path)
+  }
+
+  if (data.backgrounds) {
+    for (const bg of data.backgrounds) add(bg.path)
   }
 
   forEachEntity(data, (entity) => {
@@ -623,15 +642,63 @@ function serializeScriptsToFiles(data: ProjectSaveData, scriptingDir: string): {
     }
   }
 
+  const mapBlueprint = (bp: NonNullable<ProjectSaveData['blueprints']>[number]) => {
+    const blueprintFolder = `blueprint_${sanitizeSegment(bp.id, 'bp')}`
+    return {
+      ...bp,
+      scripts: bp.scripts?.map((script, idx) =>
+        saveScript(script, [blueprintFolder], `script_${idx + 1}`),
+      ),
+      animations: bp.animations?.map((anim, animIndex) => ({
+        ...anim,
+        scripts: anim.scripts?.map((script, scriptIndex) =>
+          saveScript(
+            script,
+            [blueprintFolder, 'animations', sanitizeSegment(anim.name, `anim_${animIndex + 1}`)],
+            `script_${scriptIndex + 1}`,
+          ),
+        ),
+      })),
+      control_bindings: bp.control_bindings
+        ? {
+            keyboard_mouse: Object.fromEntries(
+              Object.entries(bp.control_bindings.keyboard_mouse).map(([key, script], idx) => [
+                key,
+                saveScript(
+                  script,
+                  [blueprintFolder, 'controls', 'keyboard_mouse', sanitizeSegment(key, `key_${idx + 1}`)],
+                  `script_${idx + 1}`,
+                ),
+              ]),
+            ),
+            gamepad: Object.fromEntries(
+              Object.entries(bp.control_bindings.gamepad).map(([key, script], idx) => [
+                key,
+                saveScript(
+                  script,
+                  [blueprintFolder, 'controls', 'gamepad', sanitizeSegment(key, `btn_${idx + 1}`)],
+                  `script_${idx + 1}`,
+                ),
+              ]),
+            ),
+          }
+        : undefined,
+    }
+  }
+
+  const hasScenes = (data.scenes?.length ?? 0) > 0
+
   return {
     count: total,
     data: {
       ...data,
-      entities: data.entities.map(mapEntity),
+      // Sin compatibilidad legacy: si hay escenas, no duplicar entidades en raíz.
+      entities: hasScenes ? [] : data.entities.map(mapEntity),
       scenes: data.scenes?.map((scene) => ({
         ...scene,
         entities: scene.entities.map(mapEntity),
       })),
+      blueprints: data.blueprints?.map(mapBlueprint),
     },
   }
 }
@@ -660,7 +727,9 @@ function resolveScriptSource(source: string | undefined, extractedDir: string): 
  */
 function remapPaths(data: ProjectSaveData, map: Map<string, string>): ProjectSaveData {
   const remap = (p: string | null | undefined): string | null | undefined =>
-    p ? (map.get(p) ?? p) : p
+    p ? (map.get(toAssetPathKey(p)) ?? p) : p
+
+  const hasScenes = (data.scenes?.length ?? 0) > 0
 
   const mapEntity = (e: ProjectSaveData['entities'][number]) => ({
     ...e,
@@ -682,7 +751,15 @@ function remapPaths(data: ProjectSaveData, map: Map<string, string>): ProjectSav
       name: s.name,
       path: remap(s.path) as string,
     })),
-    entities: data.entities.map(mapEntity),
+    sounds: data.sounds?.map((s) => ({
+      name: s.name,
+      path: remap(s.path) as string,
+    })),
+    backgrounds: data.backgrounds?.map((b) => ({
+      name: b.name,
+      path: remap(b.path) as string,
+    })),
+    entities: hasScenes ? [] : data.entities.map(mapEntity),
     scenes: data.scenes?.map((scene) => ({
       ...scene,
       backgroundPath: remap(scene.backgroundPath) as string | null,
@@ -729,7 +806,49 @@ function saveProjectToFile(saveFilePath: string, data: ProjectSaveData): boolean
     zip.addLocalFolder(stagingDir)
     zip.writeZip(saveFilePath)
 
-    console.log(`[editor] Proyecto guardado en ${saveFilePath} (${pathMap.size} archivos empaquetados, ${scriptsPacked.count} scripts)`)
+    const countLuaFiles = (dir: string): number => {
+      if (!fs.existsSync(dir)) return 0
+      let total = 0
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name)
+        if (entry.isDirectory()) {
+          total += countLuaFiles(full)
+        } else if (entry.isFile() && path.extname(entry.name).toLowerCase() === '.lua') {
+          total += 1
+        }
+      }
+      return total
+    }
+
+    const addRelIfPacked = (set: Set<string>, absPath: string | null | undefined) => {
+      if (!absPath) return
+      const rel = pathMap.get(toAssetPathKey(absPath))
+      if (rel) set.add(rel)
+    }
+
+    // Desglose por recursos cargados en librería (Resources accordion), no por referencias.
+    const uniqueSounds = new Set<string>()
+    for (const sound of data.sounds ?? []) addRelIfPacked(uniqueSounds, sound.path)
+
+    const uniqueBackgrounds = new Set<string>()
+    for (const bg of data.backgrounds ?? []) addRelIfPacked(uniqueBackgrounds, bg.path)
+
+    const uniqueSprites = new Set<string>()
+    for (const sprite of data.sprites ?? []) addRelIfPacked(uniqueSprites, sprite.path)
+    for (const scene of data.scenes ?? []) {
+      for (const sprite of scene.sprites ?? []) addRelIfPacked(uniqueSprites, sprite.path)
+    }
+
+    const classifiedAssets = new Set<string>([...uniqueSounds, ...uniqueBackgrounds, ...uniqueSprites])
+    const otherAssetNames = Array.from(pathMap.values()).filter((rel) => !classifiedAssets.has(rel)).sort()
+    const otherAssets = otherAssetNames.length
+    const packedScriptFiles = countLuaFiles(scriptingDir)
+    const otherSuffix = otherAssets > 0 ? ` [${otherAssetNames.join(', ')}]` : ''
+
+    console.log(
+      `[editor] Proyecto guardado en ${saveFilePath} `
+      + `(assets total: ${pathMap.size}, sprites: ${uniqueSprites.size}, fondos: ${uniqueBackgrounds.size}, sonidos: ${uniqueSounds.size}, scripts empaquetados: ${packedScriptFiles}, otros: ${otherAssets}${otherSuffix})`,
+    )
     return true
   } catch (err) {
     console.error('[editor] Error al guardar proyecto:', err)
@@ -751,6 +870,8 @@ function resolveLoadedPaths(data: ProjectSaveData, extractedDir: string): Projec
     const normalized = p.split('/').join(path.sep)
     return path.join(extractedDir, normalized)
   }
+
+  const hasScenes = (data.scenes?.length ?? 0) > 0
 
   const mapEntity = (e: ProjectSaveData['entities'][number]) => ({
     ...e,
@@ -796,7 +917,15 @@ function resolveLoadedPaths(data: ProjectSaveData, extractedDir: string): Projec
       name: s.name,
       path: resolve(s.path) as string,
     })),
-    entities: data.entities.map(mapEntity),
+    sounds: data.sounds?.map((s) => ({
+      name: s.name,
+      path: resolve(s.path) as string,
+    })),
+    backgrounds: data.backgrounds?.map((b) => ({
+      name: b.name,
+      path: resolve(b.path) as string,
+    })),
+    entities: hasScenes ? [] : data.entities.map(mapEntity),
     scenes: data.scenes?.map((scene) => ({
       ...scene,
       backgroundPath: resolve(scene.backgroundPath) as string | null,
@@ -809,6 +938,10 @@ function resolveLoadedPaths(data: ProjectSaveData, extractedDir: string): Projec
     blueprints: data.blueprints?.map((bp) => ({
       ...bp,
       path: resolve(bp.path) as string,
+      scripts: bp.scripts?.map((script) => ({
+        ...script,
+        source: resolveScriptSource(script.source, extractedDir),
+      })),
       animations: bp.animations?.map((anim) => ({
         ...anim,
         audio_path: resolve(anim.audio_path) as string | undefined,
@@ -816,7 +949,27 @@ function resolveLoadedPaths(data: ProjectSaveData, extractedDir: string): Projec
           ...f,
           path: resolve(f.path) as string,
         })),
+        scripts: anim.scripts?.map((script) => ({
+          ...script,
+          source: resolveScriptSource(script.source, extractedDir),
+        })),
       })),
+      control_bindings: bp.control_bindings
+        ? {
+            keyboard_mouse: Object.fromEntries(
+              Object.entries(bp.control_bindings.keyboard_mouse).map(([key, script]) => [
+                key,
+                { ...script, source: resolveScriptSource(script.source, extractedDir) },
+              ]),
+            ),
+            gamepad: Object.fromEntries(
+              Object.entries(bp.control_bindings.gamepad).map(([key, script]) => [
+                key,
+                { ...script, source: resolveScriptSource(script.source, extractedDir) },
+              ]),
+            ),
+          }
+        : undefined,
     })),
   }
 }

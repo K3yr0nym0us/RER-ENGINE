@@ -1,18 +1,21 @@
 import { useState, useEffect } from 'react';
 import { Accordion } from 'react-bootstrap';
-import { Grid3x3, EyeFill, EyeSlashFill, Image, Lock, Unlock } from 'react-bootstrap-icons';
+import { Grid3x3, EyeFill, EyeSlashFill, Image, Lock, Unlock, CheckLg } from 'react-bootstrap-icons';
 
 import { AppTooltip } from '@components';
 import { useContextEngine } from '@engine';
+import { useModal } from '@modal';
 import { useTraslate } from '@hooks';
 
 export function WorldAccordion() {
   const { t } = useTraslate();
-  const { engineReady, worldConfig, backgroundPath, setWorldSize, setGridVisible, setGridCellSize, setGravity, send } = useContextEngine()
+  const { engineReady, worldConfig, backgroundPath, backgrounds, setBackground, setWorldSize, setGridVisible, setGridCellSize, setGravity } = useContextEngine()
+  const { openModal, closeModal } = useModal();
   const [widthStr,  setWidthStr]  = useState(String(worldConfig.worldWidth))
   const [heightStr, setHeightStr] = useState(String(worldConfig.worldHeight))
   const [gridCellStr, setGridCellStr] = useState(String(worldConfig.gridCellSize))
   const [gridSizeLocked, setGridSizeLocked] = useState(false)
+  const [selectedBg, setSelectedBg] = useState(backgroundPath ?? '')
 
   useEffect(() => {
     setWidthStr(String(worldConfig.worldWidth))
@@ -23,11 +26,9 @@ export function WorldAccordion() {
     setGridCellStr(String(worldConfig.gridCellSize))
   }, [worldConfig.gridCellSize])
 
-  const loadBackground = () => {
-    window.electronAPI.openBackgroundDialog().then((p: string | null) => {
-      if (p) send({ cmd: 'load_background', path: p })
-    })
-  }
+  useEffect(() => {
+    setSelectedBg(backgroundPath ?? '')
+  }, [backgroundPath])
 
   const commitSize = () => {
     const w = parseFloat(widthStr)
@@ -60,6 +61,34 @@ export function WorldAccordion() {
     }
   }
 
+  const handleApplyBackground = () => {
+    if (!selectedBg) return;
+    const selectedBackground = backgrounds.find((bg) => bg.path === selectedBg);
+    openModal({
+      title: t('Apply Background'),
+      body: (
+        <div className="text-center">
+          <p>{t('Apply selected background to current scene?')}</p>
+          <p><strong>{selectedBackground?.name ?? selectedBg}</strong></p>
+          <div className="d-flex justify-content-end gap-2 mt-3">
+            <button className="btn btn-secondary" onClick={() => closeModal()}>
+              {t('Cancel')}
+            </button>
+            <button
+              className="btn btn-primary"
+              onClick={() => {
+                setBackground(selectedBg);
+                closeModal();
+              }}
+            >
+              {t('Apply')}
+            </button>
+          </div>
+        </div>
+      ),
+    });
+  }
+
   return (
     <Accordion.Item eventKey="mundo">
       <Accordion.Header>{t('World')}</Accordion.Header>
@@ -81,22 +110,35 @@ export function WorldAccordion() {
         <p className="text-secondary small mb-1 fw-semibold d-flex align-items-center gap-1">
           <Image /> {t('World background')}
         </p>
-        <button
-          className="btn btn-outline-info btn-sm w-100 fw-bold mb-1"
-          disabled={!engineReady}
-          onClick={loadBackground}
-        >
-          {backgroundPath ? t('Change background') : t('+ Load background (PNG/GIF)')}
-        </button>
-        {backgroundPath && (
-          <AppTooltip content={backgroundPath} place="top">
-            <p className="text-secondary small text-truncate mb-0 px-1">
-              {backgroundPath.split('/').pop()}
-            </p>
+        <div className="d-flex gap-1 mb-2">
+          <select
+            className="form-select form-select-sm bg-dark text-light border-secondary flex-fill"
+            value={selectedBg}
+            disabled={!engineReady || backgrounds.length === 0}
+            onChange={(e) => setSelectedBg(e.target.value)}
+          >
+            {backgrounds.length === 0 && (
+              <option value="">{t('No backgrounds loaded')}</option>
+            )}
+            {backgrounds.length > 0 && (
+              <option value="">{t('— Select background —')}</option>
+            )}
+            {backgrounds.map((bg) => (
+              <option key={bg.path} value={bg.path}>{bg.name}</option>
+            ))}
+          </select>
+          <AppTooltip content={t('Apply background')} place="top">
+            <button
+              className="btn btn-sm btn-outline-info"
+              disabled={!engineReady || !selectedBg}
+              onClick={handleApplyBackground}
+            >
+              <CheckLg />
+            </button>
           </AppTooltip>
-        )}
+        </div>
 
-        <hr className="border-secondary my-2" />
+          <hr className="border-secondary my-2" />
 
         <div className="d-flex align-items-center justify-content-between mb-2">
           <span className="small fw-semibold text-secondary d-flex align-items-center gap-1">
@@ -116,12 +158,11 @@ export function WorldAccordion() {
         <div className="form-label small text-secondary mb-1 d-flex align-items-center justify-content-between gap-2">
           <span>{t('Cell size')}</span>
           <div className="d-flex align-items-center gap-2">
-            <span className="text-info fw-bold">{worldConfig.gridCellSize.toFixed(2)} u</span>
             <input
               id="grid-cell-size-number"
               type="number"
               className="form-control form-control-sm bg-dark text-light border-secondary"
-              style={{ width: 79 }}
+              style={{ width: 55 }}
               min={0.05}
               step={0.01}
               value={gridCellStr}

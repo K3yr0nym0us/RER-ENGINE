@@ -9,7 +9,6 @@ import type {
 	EntitySelected,
 	PhysicsChanged,
 	PivotSelected,
-	PlayerReady,
 	ScenarioLoaded,
 	SpriteRemoved,
 	SpritesList,
@@ -92,6 +91,8 @@ export function createEngineEventHandler({
 			'character_loaded',
 			'sprite_loaded',
 			'background_loaded',
+			'sound_loaded',
+			'background_asset_loaded',
 			'scenario_loaded',
 			'collider_created',
 			'execution_area_created',
@@ -166,6 +167,18 @@ export function createEngineEventHandler({
 						sendEngine({ cmd: 'load_sprite', path: sprite.path, name: sprite.name } as never);
 						dispatch({ type: 'ADD_SPRITE_INFO', payload: { path: sprite.path, name: sprite.name } });
 					}
+				}
+				if (save.sounds && save.sounds.length > 0) {
+					for (const sound of save.sounds) {
+						sendEngine({ cmd: 'load_sound', path: sound.path, name: sound.name } as never);
+					}
+					dispatch({ type: 'SET_SOUNDS', payload: save.sounds });
+				}
+				if (save.backgrounds && save.backgrounds.length > 0) {
+					for (const bg of save.backgrounds) {
+						sendEngine({ cmd: 'load_background_asset', path: bg.path, name: bg.name } as never);
+					}
+					dispatch({ type: 'SET_BACKGROUNDS', payload: save.backgrounds });
 				}
 				if (save.backgroundPath) {
 					sendEngine({ cmd: 'load_background', path: save.backgroundPath } as never);
@@ -267,7 +280,7 @@ export function createEngineEventHandler({
 		}
 
 		if (event.event === 'player_ready') {
-			const playerReady = event as unknown as PlayerReady;
+			const playerReady = event as unknown as { id: number; position: [number,number,number]; scale: [number,number,number] };
 			refs.playerEntityIdRef.current = playerReady.id;
 			refs.entityTransformsRef.current[playerReady.id] = {
 				position: playerReady.position,
@@ -491,6 +504,36 @@ export function createEngineEventHandler({
 		if (event.event === 'sprites_list') {
 			const spritesList = event as unknown as SpritesList;
 			dispatch({ type: 'SET_SPRITES', payload: spritesList.sprites });
+		}
+
+		if (event.event === 'sound_loaded') {
+			const sound = event as unknown as { path: string; name: string };
+			dispatch({ type: 'ADD_SOUND', payload: { path: sound.path, name: sound.name } });
+		}
+
+		if (event.event === 'sound_removed') {
+			const sound = event as unknown as { path: string };
+			dispatch({ type: 'REMOVE_SOUND', payload: sound.path });
+		}
+
+		if (event.event === 'sounds_list') {
+			const soundsList = event as unknown as { sounds: { path: string; name: string }[] };
+			dispatch({ type: 'SET_SOUNDS', payload: soundsList.sounds });
+		}
+
+		if (event.event === 'background_asset_loaded') {
+			const bg = event as unknown as { path: string; name: string };
+			dispatch({ type: 'ADD_BACKGROUND', payload: { path: bg.path, name: bg.name } });
+		}
+
+		if (event.event === 'background_asset_removed') {
+			const bg = event as unknown as { path: string };
+			dispatch({ type: 'REMOVE_BACKGROUND', payload: bg.path });
+		}
+
+		if (event.event === 'backgrounds_list') {
+			const bgList = event as unknown as { backgrounds: { path: string; name: string }[] };
+			dispatch({ type: 'SET_BACKGROUNDS', payload: bgList.backgrounds });
 		}
 
 		if (event.event === 'stopped') {

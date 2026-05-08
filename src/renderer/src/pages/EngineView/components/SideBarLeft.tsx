@@ -1,7 +1,7 @@
 import { Accordion } from 'react-bootstrap';
 import PropertiesPanel from './sidebar/PropertiesAccordion/PropertiesAccordion';
 import { ControlsAccordion, WorldAccordion, ToolsAccordion } from './sidebar';
-import SpritesAccordion from './sidebar/SpritesAccordion/SpritesAccordion';
+import ResourcesAccordion from './sidebar/ResourcesAccordion/ResourcesAccordion';
 import EntitiesAccordion from './sidebar/EntitiesAccordion/EntitiesAccordion';
 import UserGuideButton from './sidebar/UserGuideButton';
 
@@ -28,7 +28,7 @@ export function SideBarLeft({ projectType }: { projectType: ProjectType }) {
             </Accordion>
 
             <Accordion className="sidebar-accordion mt-3">
-              <SpritesAccordion />
+              <ResourcesAccordion />
             </Accordion>
           </>
         )}

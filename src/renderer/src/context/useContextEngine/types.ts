@@ -1,5 +1,5 @@
 import type { MutableRefObject } from 'react';
-import type { BluePrintEntry, DebugMetrics, ProjectSaveData, SavedControlBindings, SpriteInfo } from '@shared-types';
+import type { BackgroundInfo, BluePrintEntry, DebugMetrics, ProjectSaveData, SavedControlBindings, SoundInfo, SpriteInfo } from '@shared-types';
 
 export interface Entity {
 	id: number
@@ -78,6 +78,8 @@ export interface EngineState {
 	animationPlaying: Map<number, boolean>
 	sprites: SpriteInfo[]
 	loadedSpritesInfo: Map<string, { name: string }>
+	sounds: SoundInfo[]
+	backgrounds: BackgroundInfo[]
 	debugMetrics: DebugMetrics | null
 	blueprints: BluePrintEntry[]
 	multiSelectedIds: number[]
@@ -117,7 +119,13 @@ export type EngineAction =
 	| { type: 'SET_DEBUG_METRICS'; payload: DebugMetrics }
 	| { type: 'ADD_BLUEPRINT'; payload: BluePrintEntry }
 	| { type: 'SET_BLUEPRINTS'; payload: BluePrintEntry[] }
-	| { type: 'SET_MULTI_SELECT'; payload: number[] };
+	| { type: 'SET_MULTI_SELECT'; payload: number[] }
+	| { type: 'ADD_SOUND'; payload: SoundInfo }
+	| { type: 'REMOVE_SOUND'; payload: string }
+	| { type: 'SET_SOUNDS'; payload: SoundInfo[] }
+	| { type: 'ADD_BACKGROUND'; payload: BackgroundInfo }
+	| { type: 'REMOVE_BACKGROUND'; payload: string }
+	| { type: 'SET_BACKGROUNDS'; payload: BackgroundInfo[] };
 
 export const initialState: EngineState = {
 	engineReady: false,
@@ -137,6 +145,8 @@ export const initialState: EngineState = {
 	animationPlaying: new Map(),
 	sprites: [],
 	loadedSpritesInfo: new Map(),
+	sounds: [],
+	backgrounds: [],
 	debugMetrics: null,
 	blueprints: [],
 	multiSelectedIds: [],
@@ -230,6 +240,18 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 		ADD_BLUEPRINT: (prevState, nextAction) => ({ ...prevState, blueprints: [...prevState.blueprints, nextAction.payload] }),
 		SET_BLUEPRINTS: (prevState, nextAction) => ({ ...prevState, blueprints: nextAction.payload }),
 		SET_MULTI_SELECT: (prevState, nextAction) => ({ ...prevState, multiSelectedIds: nextAction.payload }),
+		ADD_SOUND: (prevState, nextAction) =>
+			prevState.sounds.some((s) => s.path === nextAction.payload.path)
+				? prevState
+				: { ...prevState, sounds: [...prevState.sounds, nextAction.payload] },
+		REMOVE_SOUND: (prevState, nextAction) => ({ ...prevState, sounds: prevState.sounds.filter((s) => s.path !== nextAction.payload) }),
+		SET_SOUNDS: (prevState, nextAction) => ({ ...prevState, sounds: nextAction.payload }),
+		ADD_BACKGROUND: (prevState, nextAction) =>
+			prevState.backgrounds.some((b) => b.path === nextAction.payload.path)
+				? prevState
+				: { ...prevState, backgrounds: [...prevState.backgrounds, nextAction.payload] },
+		REMOVE_BACKGROUND: (prevState, nextAction) => ({ ...prevState, backgrounds: prevState.backgrounds.filter((b) => b.path !== nextAction.payload) }),
+		SET_BACKGROUNDS: (prevState, nextAction) => ({ ...prevState, backgrounds: nextAction.payload }),
 	};
 
 	const handler = handlers[action.type as keyof typeof handlers];
@@ -330,6 +352,10 @@ export interface EngineContextValue extends EngineState {
 	loadCharacter: (path: string) => void
 	setPreviewPlaying: (playing: boolean) => void
 	setBackground: (path: string | null) => void
+	loadSound: (path: string, name: string) => void
+	removeSound: (path: string) => void
+	loadBackgroundToLibrary: (path: string, name: string) => void
+	removeBackgroundFromLibrary: (path: string) => void
 	addBlueprint: (entry: BluePrintEntry) => void
 	setBlueprints: (entries: BluePrintEntry[]) => void
 	registerQuickBuildClickListener: (fn: (x: number, y: number, fitToGrid: boolean, scale?: [number, number, number]) => void) => void

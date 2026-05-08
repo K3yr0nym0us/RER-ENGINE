@@ -201,6 +201,18 @@ pub enum EngineCommand {
     RemoveSprite { path: String },
     /// Solicitar la lista de sprites cargados en el motor.
     GetSpritesList,
+    /// Registrar un archivo de audio en el almacén del motor (nombre → ruta).
+    LoadSound { path: String, name: String },
+    /// Eliminar un sonido del almacén del motor.
+    RemoveSound { path: String },
+    /// Solicitar la lista de sonidos cargados en el motor.
+    GetSoundsList,
+    /// Registrar una imagen como fondo en el almacén del motor (nombre → ruta).
+    LoadBackgroundAsset { path: String, name: String },
+    /// Eliminar un fondo del almacén del motor.
+    RemoveBackgroundAsset { path: String },
+    /// Solicitar la lista de fondos cargados en el motor.
+    GetBackgroundsList,
     /// Alternar modo de prueba del juego: true = simular juego, false = modo editor.
     SetPreviewPlaying { playing: bool },
     /// Deshacer la última acción disponible.
@@ -267,13 +279,6 @@ pub enum EngineEvent {
     ScenarioLoaded { id: u32, path: String },
     /// Emitido cuando un personaje PNG se cargó correctamente.
     CharacterLoaded { id: u32, path: String },
-    /// Emitido justo después de configurar la escena 2D con el ID y transform del jugador.
-    #[serde(rename = "player_ready")]
-    PlayerReady {
-        id:       u32,
-        position: [f32; 3],
-        scale:    [f32; 3],
-    },
     /// Emitido cuando la cámara 2D cambia (fin de pan o zoom).
     #[serde(rename = "camera_2d_updated")]
     Camera2dUpdated { x: f32, y: f32, half_h: f32 },
@@ -299,6 +304,18 @@ pub enum EngineEvent {
     SpriteRemoved { path: String },
     /// Emitido como respuesta a GetSpritesList: lista de sprites disponibles.
     SpritesList { sprites: Vec<SpriteInfo> },
+    /// Emitido cuando un archivo de audio se registró en el almacén.
+    SoundLoaded { path: String, name: String },
+    /// Emitido cuando se eliminó un sonido del almacén.
+    SoundRemoved { path: String },
+    /// Emitido como respuesta a GetSoundsList: lista de sonidos disponibles.
+    SoundsList { sounds: Vec<SoundInfo> },
+    /// Emitido cuando un fondo se registró en el almacén.
+    BackgroundAssetLoaded { path: String, name: String },
+    /// Emitido cuando se eliminó un fondo del almacén.
+    BackgroundAssetRemoved { path: String },
+    /// Emitido como respuesta a GetBackgroundsList: lista de fondos disponibles.
+    BackgroundsList { backgrounds: Vec<BackgroundInfo> },
     /// Emitido cuando el cursor se mueve y la herramienta quick_build_place está activa.
     QuickBuildMove { x: f32, y: f32 },
     /// Emitido cuando el usuario hace click con la herramienta quick_build_place activa.
@@ -335,6 +352,20 @@ pub struct SpriteInfo {
     pub name:   String,
     pub width:  u32,
     pub height: u32,
+}
+
+/// Información básica de un sonido almacenado en el motor.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SoundInfo {
+    pub path: String,
+    pub name: String,
+}
+
+/// Información básica de un fondo almacenado en el motor.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct BackgroundInfo {
+    pub path: String,
+    pub name: String,
 }
 
 /// Escribe un evento JSON en stdout y lo flushea inmediatamente.

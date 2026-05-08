@@ -1,8 +1,9 @@
 import { useState, useCallback } from 'react';
 import { SelectionMode, type ScriptEntry } from './';
-import { Link, Unlock, MusicNoteBeamed, Trash, FileEarmarkCode, PencilSquare, SkipEndFill } from 'react-bootstrap-icons';
+import { Link, Unlock, MusicNoteBeamed, FileEarmarkCode, PencilSquare, SkipEndFill, Trash } from 'react-bootstrap-icons';
 import { AppTooltip } from '@components';
 import { useTraslate } from '@hooks';
+import type { SoundInfo } from '@shared-types';
 
 interface SpritePreviewLeftPanelProps {
   selectionMode: SelectionMode;
@@ -15,10 +16,9 @@ interface SpritePreviewLeftPanelProps {
   setCellOffsetY: (offset: number) => void;
   CANVAS_SIZE: number;
   onBoxChange: (box: { x: number; y: number; width: number; height: number }) => void;
-  onAddBox: () => void;
+  sounds: SoundInfo[];
   audioPath?: string;
-  onAddAudio: () => void;
-  onClearAudio: () => void;
+  onAudioChange: (path: string) => void;
   scripts: ScriptEntry[];
   onAddScript: () => void;
   onEditScript: (name: string) => void;
@@ -40,10 +40,9 @@ export function SpritePreviewLeftPanel({
   setCellOffsetY,
   CANVAS_SIZE,
   onBoxChange,
-  onAddBox,
+  sounds,
   audioPath,
-  onAddAudio,
-  onClearAudio,
+  onAudioChange,
   scripts,
   onAddScript,
   onEditScript,
@@ -268,31 +267,22 @@ export function SpritePreviewLeftPanel({
 
       <div className="mb-3">
         <label className="text-light fw-bold d-block mb-2">{t('Animation audio')}</label>
-        {audioPath ? (
-          <div className="d-flex align-items-center gap-1">
-            <AppTooltip content={audioPath} place="top">
-              <span className="text-success small text-truncate flex-fill" style={{ maxWidth: 120 }}>
-                <MusicNoteBeamed className="me-1" />
-                {audioPath.split(/[\\/]/).pop()}
-              </span>
-            </AppTooltip>
-            <AppTooltip content={t('Remove audio')} place="top">
-              <button className="btn btn-sm btn-outline-danger p-0 px-1" type="button" onClick={onClearAudio}>
-                <Trash />
-              </button>
-            </AppTooltip>
-          </div>
-        ) : (
-          <AppTooltip content={t('Load audio file (wav/ogg/mp3)')} place="top">
-            <button
-              className="btn btn-outline-secondary btn-sm w-100"
-              type="button"
-              onClick={onAddAudio}
-            >
-              <MusicNoteBeamed className="me-1" /> {t('Add audio')}
-            </button>
-          </AppTooltip>
-        )}
+        <div className="d-flex align-items-center gap-2">
+          <MusicNoteBeamed className="text-secondary" />
+          <select
+            className="form-select form-select-sm bg-dark text-light border-secondary"
+            value={audioPath ?? ''}
+            onChange={(e) => onAudioChange(e.target.value)}
+          >
+            <option value="">{t('-- No audio --')}</option>
+            {audioPath && !sounds.some((s) => s.path === audioPath) && (
+              <option value={audioPath}>{audioPath.split(/[\\/]/).pop() ?? audioPath}</option>
+            )}
+            {sounds.map((sound) => (
+              <option key={sound.path} value={sound.path}>{sound.name}</option>
+            ))}
+          </select>
+        </div>
       </div>
 
       <hr className="border-secondary opacity-50 mb-3" />

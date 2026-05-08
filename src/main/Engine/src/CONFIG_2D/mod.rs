@@ -297,25 +297,6 @@ impl State {
         self.meshes.push(canonical_quad);
         self.canonical_quad_idx = 0;
 
-        // -- Personaje por defecto (Player): quad skin 1.0 × 1.5 -------------------
-        let player_rgba = [232u8, 220, 200, 255];
-        let tex_idx     = self.uv_rects.len();
-        self.uv_rects.push(self.atlas.pack(&self.queue, &player_rgba, 1, 1));
-        let player_id = self.world.spawn(Some("Player"));
-        self.world.insert(player_id, MeshComponent { mesh_idx: self.canonical_quad_idx, tex_idx });
-        self.world.insert(player_id, crate::ecs::Transform {
-            position: GlamVec3::new(0.0, 0.0, 0.0),
-            scale:    GlamVec3::new(1.0, 1.5, 1.0),
-            ..Default::default()
-        });
-        self.world.insert(player_id, CharacterMarker {
-            img_width:    0,
-            img_height:   0,
-            base_world_h: 1.5,
-            path:         "[Player]".to_owned(),
-        });
-        self.character_entities.push(player_id);
-
         // -- Cámara ortográfica -----------------------------------------------
         self.camera_2d = Some(Camera2D {
             x:      0.0,
@@ -327,14 +308,6 @@ impl State {
 
         // Fondo oscuro azulado (estilo Hollow Knight)
         self.clear_color = wgpu::Color { r: 0.04, g: 0.04, b: 0.10, a: 1.0 };
-
-        // Notificar al editor el ID y transform inicial del jugador
-        send_event(&EngineEvent::PlayerReady {
-            id:       player_id,
-            position: [0.0, 0.0, 0.0],
-            scale:    [1.0, 1.5, 1.0],
-        });
-        send_event(&EngineEvent::CharacterLoaded { id: player_id, path: "[Player]".to_owned() });
 
         log::info!("Escena 2D cargada: plataformer vista lateral");
     }

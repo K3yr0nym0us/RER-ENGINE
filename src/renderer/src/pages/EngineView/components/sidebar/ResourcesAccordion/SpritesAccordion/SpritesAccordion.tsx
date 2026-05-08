@@ -58,7 +58,7 @@ const SpritesAccordion = () => {
           {sprites.length === 0 && <li className="text-muted">{t('No sprites loaded')}</li>}
           {sprites.map((sprite) => (
             <li key={sprite.path} className="mb-1">
-              <span className="d-flex align-items-center gap-2 border rounded p-2">
+              <span className="d-flex align-items-center gap-2 border rounded p-1 ps-2">
                 <Image className="flex-shrink-0" />
                 <AppTooltip content={sprite.name} place="top">
                   <span className="text-light small text-truncate flex-fill">{sprite.name}</span>
