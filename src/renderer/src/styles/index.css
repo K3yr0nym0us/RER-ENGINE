@@ -125,6 +125,14 @@ body {
   border-top: 1px solid #202545;
 }
 
+.metrics-panel {
+  height: 120px;
+  background: #050817;
+  border-top: 1px solid #202545;
+  border-left: 1px solid #202545;
+}
+
+
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #34395d; border-radius: 4px; }

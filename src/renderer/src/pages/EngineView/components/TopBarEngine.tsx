@@ -1,6 +1,4 @@
-import { useState } from 'react';
 import {
-  Activity,
   ClockFill,
   FloppyFill,
   PlayFill,
@@ -15,16 +13,14 @@ interface Props {
   projectType: string
   handleSave: () => void
   toggleAutoSave: () => void
-  debugOverlayVisible: boolean
-  onToggleDebugOverlay: () => void
+  hasSavedOnce: boolean
+  autoSaveEnabled: boolean
 }
 
-export function TopBarEngine({ projectType, handleSave, toggleAutoSave, debugOverlayVisible, onToggleDebugOverlay }: Props) {
-  const { engineReady, engineError, previewPlaying, setPreviewPlaying, debugMetrics } = useContextEngine();
+export function TopBarEngine({ projectType, handleSave, toggleAutoSave, hasSavedOnce, autoSaveEnabled }: Props) {
+  const { engineReady, engineError, previewPlaying, setPreviewPlaying } = useContextEngine();
   const { t } = useTraslate();
   const isStopActive = !previewPlaying;
-  const [hasSavedOnce] = useState(false);
-  const [autoSaveEnabled] = useState(false);
 
   const statusBadge = engineReady
     ? <span className="badge bg-success">◉</span>
@@ -71,39 +67,6 @@ export function TopBarEngine({ projectType, handleSave, toggleAutoSave, debugOve
           </div>
         </div>
         <div className="d-flex align-items-center gap-2">
-          {debugOverlayVisible && debugMetrics && (
-            <div
-              style={{
-                fontFamily: 'monospace',
-                fontSize: 11,
-                color: '#94a3b8',
-                display: 'flex',
-                gap: 10,
-                whiteSpace: 'nowrap',
-              }}
-            >
-              <span style={{ color: debugMetrics.fps >= 55 ? '#4ade80' : debugMetrics.fps >= 30 ? '#facc15' : '#f87171' }}>
-                {debugMetrics.fps.toFixed(1)} fps
-              </span>
-              <span>{debugMetrics.frame_time_ms.toFixed(1)} ms</span>
-              <span>{debugMetrics.draw_calls} dc</span>
-              <span>{debugMetrics.physics_bodies} bod</span>
-            </div>
-          )}
-          <AppTooltip
-            content={debugOverlayVisible ? t('Hide metrics') : t('Show metrics')}
-            place="left"
-          >
-            <button
-              className={`btn btn-sm d-flex align-items-center gap-1 ${
-                debugOverlayVisible ? 'btn-info text-dark' : 'btn-outline-secondary'
-              }`}
-              onClick={onToggleDebugOverlay}
-              type="button"
-            >
-              <Activity size={13} />
-            </button>
-          </AppTooltip>
           <button
             className="btn btn-sm btn-outline-light d-flex align-items-center gap-2"
             disabled={!engineReady}
@@ -114,7 +77,9 @@ export function TopBarEngine({ projectType, handleSave, toggleAutoSave, debugOve
             <span style={{ fontSize: 14 }}>{t('Save')}</span>
           </button>
           <AppTooltip
-            content={hasSavedOnce ? (autoSaveEnabled ? t('Disable auto-save') : t('Enable auto-save')) : t('Save first')}
+            content={hasSavedOnce
+              ? `${autoSaveEnabled ? t('Disable auto-save') : t('Enable auto-save')} (5 min)`
+              : `${t('Save first')} (5 min)`}
             place="left"
           >
             <button
@@ -127,7 +92,7 @@ export function TopBarEngine({ projectType, handleSave, toggleAutoSave, debugOve
               type="button"
             >
               <ClockFill size={11} />
-              <span style={{ fontSize: 14 }}>{t('Auto')}</span>
+              <span style={{ fontSize: 14 }}>{autoSaveEnabled ? 'Auto (on)' : 'Auto (off)'}</span>
             </button>
           </AppTooltip>
         </div>
