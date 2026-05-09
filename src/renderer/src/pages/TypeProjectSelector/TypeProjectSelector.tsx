@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { OpenProjectResult, ProjectType } from '@shared-types';
 import { useTraslate } from '@hooks';
-import { useLanguage } from '../../context/LanguageContext';
+import { LanguageToggleButton } from '@components';
 
 interface ProjectOption {
   type:        ProjectType
@@ -48,7 +48,6 @@ interface Props {
 export function TypeProjectSelector({ onSelect, onLoadProject }: Props) {
   const [loadError, setLoadError] = useState<string | null>(null)
   const { t } = useTraslate()
-  const { locale, toggleLocale } = useLanguage()
 
   const options = getOptions(t)
 
@@ -83,29 +82,7 @@ export function TypeProjectSelector({ onSelect, onLoadProject }: Props) {
       className="d-flex flex-column align-items-center justify-content-center"
       style={{ height: '100vh', background: '#050508', userSelect: 'none', position: 'relative' }}
     >
-      <button
-        onClick={toggleLocale}
-        title={locale === 'en' ? 'Switch to Spanish' : 'Cambiar a inglés'}
-        style={{
-          position:     'absolute',
-          top:          16,
-          right:        16,
-          background:   '#0f1120',
-          border:       '1px solid #2c3152',
-          borderRadius: 6,
-          color:        '#94a3b8',
-          fontSize:     12,
-          fontWeight:   700,
-          letterSpacing: '0.06em',
-          padding:      '5px 12px',
-          cursor:       'pointer',
-          transition:   'border-color 0.15s, color 0.15s',
-        }}
-        onMouseEnter={e => Object.assign((e.currentTarget as HTMLButtonElement).style, { borderColor: '#c084fc', color: '#c084fc' })}
-        onMouseLeave={e => Object.assign((e.currentTarget as HTMLButtonElement).style, { borderColor: '#2c3152', color: '#94a3b8' })}
-      >
-        {locale === 'en' ? 'EN' : 'ES'}
-      </button>
+      <LanguageToggleButton variant="compact" />
 
       <div className="mb-5 text-center">
         <div style={{ fontSize: 36, fontWeight: 800, color: '#c084fc', letterSpacing: '0.04em', lineHeight: 1 }}>

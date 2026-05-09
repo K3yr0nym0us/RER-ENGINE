@@ -1,4 +1,5 @@
 import { useEffect, useRef, type Dispatch, type RefObject } from 'react';
+import type { Locale } from '../LanguageContext';
 import { createEngineEventHandler } from './createEngineEventHandler';
 import type { EngineAction, EngineInternalRefs } from '../types';
 
@@ -11,6 +12,7 @@ interface UseEngineEffectsParams {
 	reportBounds: () => void
 	reportBoundsDebounced: () => void
 	applyInitialAnimationFrame: (entityId: number, animations?: any[]) => void
+	setLocale?: (locale: Locale) => void
 }
 
 export function useEngineEffects({
@@ -22,6 +24,7 @@ export function useEngineEffects({
 	reportBounds,
 	reportBoundsDebounced,
 	applyInitialAnimationFrame,
+	setLocale,
 }: UseEngineEffectsParams) {
 	const reportBoundsRef = useRef(reportBounds);
 	const reportBoundsDebouncedRef = useRef(reportBoundsDebounced);
@@ -34,6 +37,7 @@ export function useEngineEffects({
 		addLog,
 		projectType,
 		applyInitialAnimationFrame,
+		setLocale,
 	}));
 
 	useEffect(() => {
@@ -48,8 +52,9 @@ export function useEngineEffects({
 			addLog,
 			projectType,
 			applyInitialAnimationFrame,
+			setLocale,
 		});
-	}, [dispatch, refs, addLog, projectType, applyInitialAnimationFrame, reportBounds, reportBoundsDebounced]);
+	}, [dispatch, refs, addLog, projectType, applyInitialAnimationFrame, reportBounds, reportBoundsDebounced, setLocale]);
 
 	useEffect(() => {
 		const onRequestViewportBounds = () => reportBoundsRef.current();

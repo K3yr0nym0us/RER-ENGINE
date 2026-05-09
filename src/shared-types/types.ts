@@ -104,7 +104,7 @@ export interface SavedScene {
   entities:       SavedEntity[]
   playerTransform:{ position: [number, number, number]; scale: [number, number, number] } | null
   camera2d:       { x: number; y: number; halfH: number } | null
-  sprites?:       Array<{ name: string; path: string }>
+  sprites:        Array<{ name: string; path: string }>
 }
 
 export interface ProjectSaveData {
@@ -128,6 +128,8 @@ export interface ProjectSaveData {
   backgrounds?:    Array<{ name: string; path: string }>
   /** Blueprints creados en el proyecto. */
   blueprints?:     BluePrintEntry[]
+  /** Idioma/locale del proyecto (en | es). */
+  language?:       string
 }
 
 export interface OpenProjectResult {

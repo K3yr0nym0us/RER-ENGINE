@@ -1,4 +1,5 @@
 import type { Dispatch } from 'react';
+import type { Locale } from '../../LanguageContext';
 import type {
 	AnimationLogicalResolved,
 	AnimationFinished,
@@ -49,6 +50,7 @@ interface CreateEngineEventHandlerParams {
 	addLog: (text: string, isError?: boolean) => void
 	projectType?: string
 	applyInitialAnimationFrame: (entityId: number, animations?: any[]) => void
+	setLocale?: (locale: Locale) => void
 }
 
 export function createEngineEventHandler({
@@ -57,6 +59,7 @@ export function createEngineEventHandler({
 	addLog,
 	projectType,
 	applyInitialAnimationFrame,
+	setLocale,
 }: CreateEngineEventHandlerParams) {
 	const buildTransformFromPoints = (
 		points?: [[number, number], [number, number], [number, number], [number, number]],
@@ -135,11 +138,16 @@ export function createEngineEventHandler({
 					if (save.world.gravity != null) {
 						sendEngine({ cmd: 'set_gravity', gravity: save.world.gravity } as never);
 					}
-				}
-				if (save.camera2d) {
-					sendEngine({ cmd: 'set_camera2d', x: save.camera2d.x, y: save.camera2d.y, half_h: save.camera2d.halfH } as never);
-					refs.camera2dRef.current = save.camera2d;
-				}
+			}
+			if (save.language && (save.language === 'en' || save.language === 'es')) {
+				const validLocale = save.language as Locale;
+				sendEngine({ cmd: 'set_locale', locale: validLocale } as never);
+				setLocale?.(validLocale);
+			}
+			if (save.camera2d) {
+				sendEngine({ cmd: 'set_camera2d', x: save.camera2d.x, y: save.camera2d.y, half_h: save.camera2d.halfH } as never);
+				refs.camera2dRef.current = save.camera2d;
+			}
 				if (save.sprites && save.sprites.length > 0) {
 					for (const sprite of save.sprites) {
 						sendEngine({ cmd: 'load_sprite', path: sprite.path, name: sprite.name } as never);

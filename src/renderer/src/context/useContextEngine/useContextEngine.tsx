@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useReducer, useRef } from 'react';
 import type { ProjectSaveData } from '@shared-types';
+import { useLanguage } from '../LanguageContext';
 import { createEngineActions } from './hooks/createEngineActions';
 import { useEngineEffects } from './hooks/useEngineEffects';
 import {
@@ -27,6 +28,8 @@ export function EngineProvider({
 	projectType?: string;
 	initialSave?: ProjectSaveData | null;
 }) {
+	const { setLocale } = useLanguage();
+
 	const [state, dispatch] = useReducer(engineReducer, initialState);
 
 	const refs: EngineInternalRefs = {
@@ -90,6 +93,7 @@ export function EngineProvider({
 		reportBounds,
 		reportBoundsDebounced,
 		applyInitialAnimationFrame: actions.applyInitialAnimationFrame,
+		setLocale,
 	});
 
 	// Cargar blueprints desde el guardado inicial al montar

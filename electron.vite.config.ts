@@ -18,6 +18,7 @@ export default defineConfig({
         '@engine': resolve('src/renderer/src/context/useContextEngine.tsx'),
         '@hooks': resolve('src/renderer/src/hooks/index.ts'),
         '@components': resolve('src/renderer/src/components/index.ts'),
+        '@context': resolve('src/renderer/src/context/index.ts'),
       },
     },
     plugins: [react()],

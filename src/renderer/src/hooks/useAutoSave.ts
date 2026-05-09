@@ -1,11 +1,13 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react';
 
-import { useContextEngine } from '@engine'
-import { getSceneProjectState } from '../pages/EngineView/sceneStateStore'
+import { useContextEngine } from '@engine';
+import { useLanguage } from '@context';
+import type { ProjectType, ProjectSaveData, SavedScene } from '@shared-types';
+import { getSceneProjectState } from '../pages/EngineView/sceneStateStore';
 
 interface UseAutoSaveOptions {
-  projectType?: string
-  initialSave?: any | null
+  projectType?: ProjectType
+  initialSave?: ProjectSaveData | null
   initialSavePath?: string | null
 }
 
@@ -17,8 +19,9 @@ export interface UseAutoSaveReturn {
   handleSave: () => Promise<void>
 }
 
-export function useAutoSave({ projectType = '2D', initialSave = null, initialSavePath = null }: UseAutoSaveOptions = {}): UseAutoSaveReturn {
+export function useAutoSave({ projectType = '2D' as ProjectType, initialSave = null, initialSavePath = null }: UseAutoSaveOptions = {}): UseAutoSaveReturn {
   const { worldConfig, backgroundPath, selectedEntity, entityTransformsRef, entityMetaRef, playerEntityIdRef, camera2dRef, loadedSpritesInfo, blueprints, sounds, backgrounds } = useContextEngine()
+  const { locale } = useLanguage()
   const [hasSavedOnce, setHasSavedOnce] = useState(Boolean(initialSavePath))
   const [autoSaveEnabled, setAutoSaveEnabled] = useState(false)
   const lastSavePath = useRef<string | null>(initialSavePath)
@@ -123,12 +126,12 @@ export function useAutoSave({ projectType = '2D', initialSave = null, initialSav
     }
 
     const sceneState = getSceneProjectState()
-    let scenes = [currentSceneSnapshot]
+    let scenes: SavedScene[] = [currentSceneSnapshot]
     let activeSceneId = 1
 
     if (sceneState && sceneState.scenes.length > 0) {
       activeSceneId = sceneState.activeSceneId
-      scenes = sceneState.scenes.map((scene) => ({ ...scene }))
+      scenes = sceneState.scenes
       const activeIndex = scenes.findIndex((scene) => scene.id === activeSceneId)
       if (activeIndex >= 0) {
         scenes[activeIndex] = {
@@ -161,8 +164,9 @@ export function useAutoSave({ projectType = '2D', initialSave = null, initialSav
       sounds,
       backgrounds,
       blueprints,
+      language: locale,
     }
-  }, [projectType, initialSave, worldConfig, backgroundPath, selectedEntity, playerEntityIdRef, entityTransformsRef, entityMetaRef, camera2dRef, loadedSpritesInfo, blueprints, sounds, backgrounds])
+  }, [projectType, initialSave, worldConfig, backgroundPath, selectedEntity, playerEntityIdRef, entityTransformsRef, entityMetaRef, camera2dRef, loadedSpritesInfo, blueprints, sounds, backgrounds, locale])
 
   useEffect(() => {
     autoSaveEnabledRef.current = autoSaveEnabled

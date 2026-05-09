@@ -4,6 +4,7 @@ import { ControlsAccordion, WorldAccordion, ToolsAccordion } from './sidebar';
 import ResourcesAccordion from './sidebar/ResourcesAccordion/ResourcesAccordion';
 import EntitiesAccordion from './sidebar/EntitiesAccordion/EntitiesAccordion';
 import UserGuideButton from './sidebar/UserGuideButton';
+import { LanguageToggleButton } from '@components';
 
 import { useContextEngine } from '@engine';
 import { useTraslate } from '@hooks';
@@ -66,8 +67,9 @@ export function SideBarLeft({ projectType }: { projectType: ProjectType }) {
         )}
       </div>
 
-      <div className="pt-3 mt-2 border-top border-secondary-subtle">
+      <div className="pt-3 mt-2 border-top border-secondary-subtle d-flex gap-2">
         <UserGuideButton />
+        <LanguageToggleButton variant="sidebar" />
       </div>
     </aside>
   )

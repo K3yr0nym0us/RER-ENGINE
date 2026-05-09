@@ -1,9 +1,8 @@
 import { ArrowLeft } from 'react-bootstrap-icons';
 
-import { AppTooltip } from '@components';
+import { AppTooltip, LanguageToggleButton } from '@components';
 import type { ProjectType, GameStyle } from '@shared-types';
 import { useTraslate } from '@hooks';
-import { useLanguage } from '../../context/LanguageContext';
 
 interface StyleOption {
   type: GameStyle;
@@ -89,7 +88,6 @@ interface Props {
 
 export function GameStyleSelector({ projectType, onSelect, onBack }: Props) {
   const { t } = useTraslate()
-  const { locale, toggleLocale } = useLanguage()
 
   const options = getOptionsByType(t)[projectType] ?? []
 
@@ -98,30 +96,7 @@ export function GameStyleSelector({ projectType, onSelect, onBack }: Props) {
   return (
     <div className="style-selector-page" style={{ position: 'relative' }}>
       {/* Botón toggle de idioma */}
-      <button
-        onClick={toggleLocale}
-        title={locale === 'en' ? 'Switch to Spanish' : 'Cambiar a inglés'}
-        style={{
-          position:      'absolute',
-          top:           16,
-          right:         16,
-          background:    '#0f1120',
-          border:        '1px solid #2c3152',
-          borderRadius:  6,
-          color:         '#94a3b8',
-          fontSize:      12,
-          fontWeight:    700,
-          letterSpacing: '0.06em',
-          padding:       '5px 12px',
-          cursor:        'pointer',
-          transition:    'border-color 0.15s, color 0.15s',
-          zIndex:        10,
-        }}
-        onMouseEnter={e => Object.assign((e.currentTarget as HTMLButtonElement).style, { borderColor: '#c084fc', color: '#c084fc' })}
-        onMouseLeave={e => Object.assign((e.currentTarget as HTMLButtonElement).style, { borderColor: '#2c3152', color: '#94a3b8' })}
-      >
-        {locale === 'en' ? 'EN' : 'ES'}
-      </button>
+      <LanguageToggleButton variant="compact" />
 
       {/* ── Botón volver ─────────────────────────────────────────────── */}
       <AppTooltip content={t('Back to project selector')} place="right">
