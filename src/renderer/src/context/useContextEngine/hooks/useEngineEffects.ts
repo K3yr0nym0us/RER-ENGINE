@@ -1,4 +1,4 @@
-import { useEffect, type Dispatch, type RefObject } from 'react';
+import { useEffect, useRef, type Dispatch, type RefObject } from 'react';
 import { createEngineEventHandler } from './createEngineEventHandler';
 import type { EngineAction, EngineInternalRefs } from '../types';
 
@@ -23,11 +23,42 @@ export function useEngineEffects({
 	reportBoundsDebounced,
 	applyInitialAnimationFrame,
 }: UseEngineEffectsParams) {
+	const reportBoundsRef = useRef(reportBounds);
+	const reportBoundsDebouncedRef = useRef(reportBoundsDebounced);
+	const addLogRef = useRef(addLog);
+	const projectTypeRef = useRef(projectType);
+	const applyInitialAnimationFrameRef = useRef(applyInitialAnimationFrame);
+	const engineEventHandlerRef = useRef(createEngineEventHandler({
+		dispatch,
+		refs,
+		addLog,
+		projectType,
+		applyInitialAnimationFrame,
+	}));
+
 	useEffect(() => {
-		reportBounds();
-		const observer = new ResizeObserver(reportBoundsDebounced);
+		reportBoundsRef.current = reportBounds;
+		reportBoundsDebouncedRef.current = reportBoundsDebounced;
+		addLogRef.current = addLog;
+		projectTypeRef.current = projectType;
+		applyInitialAnimationFrameRef.current = applyInitialAnimationFrame;
+		engineEventHandlerRef.current = createEngineEventHandler({
+			dispatch,
+			refs,
+			addLog,
+			projectType,
+			applyInitialAnimationFrame,
+		});
+	}, [dispatch, refs, addLog, projectType, applyInitialAnimationFrame, reportBounds, reportBoundsDebounced]);
+
+	useEffect(() => {
+		const onRequestViewportBounds = () => reportBoundsRef.current();
+		const onViewportResize = () => reportBoundsDebouncedRef.current();
+
+		reportBoundsRef.current();
+		const observer = new ResizeObserver(onViewportResize);
 		if (viewportRef.current) observer.observe(viewportRef.current);
-		window.electronAPI.onRequestViewportBounds(reportBounds);
+		window.electronAPI.onRequestViewportBounds(onRequestViewportBounds);
 		return () => {
 			observer.disconnect();
 			if (refs.resizeTimerRef.current) clearTimeout(refs.resizeTimerRef.current);
@@ -79,7 +110,7 @@ export function useEngineEffects({
 	useEffect(() => {
 		refs.readyTimer.current = setTimeout(() => {
 			dispatch({ type: 'SET_ERROR', payload: 'El motor no respondió en 5 segundos. Puede que el binario no exista o haya fallado al iniciar.' });
-			addLog('[timeout] Motor no respondió en 5s', true);
+			addLogRef.current('[timeout] Motor no respondió en 5s', true);
 		}, 5000);
 		return () => {
 			if (refs.readyTimer.current) clearTimeout(refs.readyTimer.current);
@@ -87,13 +118,9 @@ export function useEngineEffects({
 	}, []);
 
 	useEffect(() => {
-		const handleEngineEvent = createEngineEventHandler({
-			dispatch,
-			refs,
-			addLog,
-			projectType,
-			applyInitialAnimationFrame,
-		});
+		const handleEngineEvent = (event: { event: string; [key: string]: unknown }) => {
+			engineEventHandlerRef.current(event);
+		};
 
 		window.engine.on(handleEngineEvent);
 		return () => {
