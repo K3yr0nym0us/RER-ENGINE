@@ -125,6 +125,7 @@ export function EngineProvider({
 		setGridVisible: actions.setGridVisible,
 		setGridCellSize: actions.setGridCellSize,
 		setGravity: actions.setGravity,
+		setTargetFps: actions.setTargetFps,
 		removeCollider: actions.removeCollider,
 		removeExecutionArea: actions.removeExecutionArea,
 		updateEntityAnimations: actions.updateEntityAnimations,

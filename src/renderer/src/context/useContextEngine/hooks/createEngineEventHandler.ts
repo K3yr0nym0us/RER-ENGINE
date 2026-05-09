@@ -131,6 +131,7 @@ export function createEngineEventHandler({
 					sendEngine({ cmd: 'set_world_size', width: save.world.worldWidth, height: save.world.worldHeight } as never);
 					sendEngine({ cmd: 'set_grid_visible', visible: save.world.gridVisible } as never);
 					sendEngine({ cmd: 'set_grid_cell_size', size: save.world.gridCellSize } as never);
+					sendEngine({ cmd: 'set_target_fps', fps: save.world.targetFps } as never);
 					if (save.world.gravity != null) {
 						sendEngine({ cmd: 'set_gravity', gravity: save.world.gravity } as never);
 					}

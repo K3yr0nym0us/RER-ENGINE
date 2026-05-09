@@ -50,6 +50,7 @@ export interface WorldConfig {
 	gridVisible: boolean
 	gridCellSize: number
 	gravity: number
+	targetFps: number
 }
 
 export const DEFAULT_WORLD_CONFIG: WorldConfig = {
@@ -58,6 +59,7 @@ export const DEFAULT_WORLD_CONFIG: WorldConfig = {
 	gridVisible: true,
 	gridCellSize: 1,
 	gravity: 9.81,
+	targetFps: 60,
 };
 
 export interface EngineState {
@@ -339,6 +341,7 @@ export interface EngineContextValue extends EngineState {
 	setGridVisible: (visible: boolean) => void
 	setGridCellSize: (size: number) => void
 	setGravity: (gravity: number) => void
+	setTargetFps: (fps: number) => void
 	removeCollider: (id: number) => void
 	removeExecutionArea: (id: number) => void
 	updateEntityAnimations: (id: number, animations: any[]) => void

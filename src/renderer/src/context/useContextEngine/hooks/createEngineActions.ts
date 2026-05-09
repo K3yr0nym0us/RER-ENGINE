@@ -115,6 +115,12 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 		send({ cmd: 'set_gravity', gravity });
 	};
 
+	const setTargetFps = (fps: number) => {
+		const normalizedFps = Math.round(fps);
+		dispatch({ type: 'SET_WORLD_CONFIG', payload: { targetFps: normalizedFps } });
+		send({ cmd: 'set_target_fps', fps: normalizedFps });
+	};
+
 	const removeCollider = (id: number) => {
 		send({ cmd: 'remove_entity', id });
 		dispatch({ type: 'REMOVE_COLLIDER', payload: id });
@@ -321,6 +327,7 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 		setGridVisible,
 		setGridCellSize,
 		setGravity,
+		setTargetFps,
 		removeCollider,
 		removeExecutionArea,
 		updateEntityAnimations,

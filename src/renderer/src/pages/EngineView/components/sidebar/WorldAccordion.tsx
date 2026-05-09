@@ -9,13 +9,15 @@ import { useTraslate } from '@hooks';
 
 export function WorldAccordion() {
   const { t } = useTraslate();
-  const { engineReady, worldConfig, backgroundPath, backgrounds, setBackground, setWorldSize, setGridVisible, setGridCellSize, setGravity } = useContextEngine()
+  const { engineReady, worldConfig, backgroundPath, backgrounds, setBackground, setWorldSize, setGridVisible, setGridCellSize, setGravity, setTargetFps } = useContextEngine()
   const { openModal, closeModal } = useModal();
+  const FPS_OPTIONS = [60, 120, 144, 240] as const;
   const [widthStr,  setWidthStr]  = useState(String(worldConfig.worldWidth))
   const [heightStr, setHeightStr] = useState(String(worldConfig.worldHeight))
   const [gridCellStr, setGridCellStr] = useState(String(worldConfig.gridCellSize))
   const [gridSizeLocked, setGridSizeLocked] = useState(false)
   const [selectedBg, setSelectedBg] = useState(backgroundPath ?? '')
+  const [selectedTargetFps, setSelectedTargetFps] = useState(String(worldConfig.targetFps))
 
   useEffect(() => {
     setWidthStr(String(worldConfig.worldWidth))
@@ -29,6 +31,10 @@ export function WorldAccordion() {
   useEffect(() => {
     setSelectedBg(backgroundPath ?? '')
   }, [backgroundPath])
+
+  useEffect(() => {
+    setSelectedTargetFps(String(worldConfig.targetFps))
+  }, [worldConfig.targetFps])
 
   const commitSize = () => {
     const w = parseFloat(widthStr)
@@ -87,6 +93,12 @@ export function WorldAccordion() {
         </div>
       ),
     });
+  }
+
+  const handleApplyTargetFps = () => {
+    const parsed = Number.parseInt(selectedTargetFps, 10)
+    if (!FPS_OPTIONS.includes(parsed as typeof FPS_OPTIONS[number])) return
+    setTargetFps(parsed)
   }
 
   return (
@@ -215,6 +227,31 @@ export function WorldAccordion() {
           disabled={!engineReady}
           onChange={(e) => setGravity(parseFloat(e.target.value))}
         />
+
+        <hr className="border-secondary my-2" />
+
+        <p className="text-secondary small mb-1 fw-semibold">{t('FPS limit')}</p>
+        <div className="d-flex gap-1 mb-1">
+          <select
+            className="form-select form-select-sm bg-dark text-light border-secondary flex-fill"
+            value={selectedTargetFps}
+            disabled={!engineReady}
+            onChange={(e) => setSelectedTargetFps(e.target.value)}
+          >
+            {FPS_OPTIONS.map((fps) => (
+              <option key={fps} value={fps}>{fps} {t('FPS')}</option>
+            ))}
+          </select>
+          <AppTooltip content={t('Apply FPS limit')} place="top">
+            <button
+              className="btn btn-sm btn-outline-info"
+              disabled={!engineReady}
+              onClick={handleApplyTargetFps}
+            >
+              <CheckLg />
+            </button>
+          </AppTooltip>
+        </div>
       </Accordion.Body>
     </Accordion.Item>
   )

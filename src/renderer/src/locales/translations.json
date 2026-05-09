@@ -76,6 +76,9 @@
   "Unlock grid size": "Desbloquear tamaño de cuadrícula",
   "Lock grid size": "Bloquear tamaño de cuadrícula",
   "Gravity": "Gravedad",
+  "FPS limit": "Límite de FPS",
+  "FPS": "FPS",
+  "Apply FPS limit": "Aplicar límite de FPS",
 
   "Entities": "Entidades",
   "Environment": "Entorno",

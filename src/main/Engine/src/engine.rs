@@ -1294,6 +1294,9 @@ impl State {
                 self.grid_config.cell_size = size.clamp(0.05, 100.0);
                 self.rebuild_grid();
             }
+            EngineCommand::SetTargetFps { fps } => {
+                log::info!("[render] Límite de FPS actualizado: {}", fps);
+            }
             EngineCommand::SetPreviewPlaying { playing } => {
                 if self.preview_playing == playing {
                     return;

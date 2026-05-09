@@ -261,6 +261,7 @@ struct App {
     gamepad_pressed: HashSet<GamepadButton>,
     // Frame rate cap: tiempo objetivo del próximo frame (evita busy loop)
     next_frame_at:   std::time::Instant,
+    target_fps:      u64,
     #[cfg(target_os = "windows")]
     // Windows: offset compartido con el hilo position-tracker.
     // Actualizado en SetBounds para sincronizar maximize/monitor-change.
@@ -385,6 +386,10 @@ impl ApplicationHandler<EngineCommand> for App {
         if matches!(cmd, EngineCommand::Shutdown) {
             event_loop.exit();
             return;
+        }
+        if let EngineCommand::SetTargetFps { fps } = &cmd {
+            self.target_fps = (*fps).clamp(1, 1000);
+            self.next_frame_at = std::time::Instant::now();
         }
         // Windows: cuando set_bounds llega (maximize, cambio de monitor, resize),
         // actualizar el offset del position-tracker ANTES de mover la ventana.
@@ -721,11 +726,9 @@ impl ApplicationHandler<EngineCommand> for App {
     }
     /// Llamado cuando winit ha procesado todos los eventos pendientes del ciclo actual.
     /// Es el único lugar correcto para pedir el siguiente frame en modo Poll.
-    /// Usando WaitUntil capamos a ~60 fps y el CPU puede dormir entre frames.
+    /// Usando WaitUntil capamos al FPS objetivo y el CPU puede dormir entre frames.
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-        const TARGET_FPS: u64 = 60;
-        const FRAME_DURATION: std::time::Duration =
-            std::time::Duration::from_nanos(1_000_000_000 / TARGET_FPS);
+        let frame_duration = std::time::Duration::from_nanos(1_000_000_000 / self.target_fps.max(1));
 
         let now = std::time::Instant::now();
         if let Some(state) = self.state.as_mut() {
@@ -769,11 +772,11 @@ impl ApplicationHandler<EngineCommand> for App {
             }
             // Calcular el próximo tick desde el tiempo objetivo, no desde `now`,
             // para evitar drift acumulado si un frame tardó más de lo esperado.
-            self.next_frame_at = self.next_frame_at + FRAME_DURATION;
+            self.next_frame_at = self.next_frame_at + frame_duration;
             // Si nos retrasamos más de un frame, resincronizar para evitar
             // ráfagas de frames de recuperación.
             if self.next_frame_at < now {
-                self.next_frame_at = now + FRAME_DURATION;
+                self.next_frame_at = now + frame_duration;
             }
         }
         // Dormir hasta el próximo frame en lugar de hacer busy-wait
@@ -823,6 +826,7 @@ fn main() {
         gilrs:               Gilrs::new().ok(),
         gamepad_pressed:     HashSet::new(),
         next_frame_at:       std::time::Instant::now(),
+        target_fps:          60,
         #[cfg(target_os = "windows")]
         tracker_offset:      std::sync::Arc::new((
             std::sync::atomic::AtomicI32::new(0),

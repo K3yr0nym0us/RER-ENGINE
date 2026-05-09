@@ -23,6 +23,7 @@ const DEFAULT_WORLD: SavedWorldConfig = {
   worldHeight: 50,
   gridVisible: true,
   gridCellSize: 1,
+  targetFps: 60,
 };
 
 export function SceneTabsBar({ initialSave, projectType }: Props) {
@@ -48,6 +49,7 @@ export function SceneTabsBar({ initialSave, projectType }: Props) {
     setWorldSize,
     setGridVisible,
     setGridCellSize,
+    setTargetFps,
     setBackground,
     loadSprite,
     removeSprite,
@@ -177,6 +179,7 @@ export function SceneTabsBar({ initialSave, projectType }: Props) {
     setWorldSize(scene.world.worldWidth, scene.world.worldHeight);
     setGridVisible(scene.world.gridVisible);
     setGridCellSize(scene.world.gridCellSize);
+    setTargetFps(scene.world.targetFps);
 
     if (scene.camera2d) {
       send({ cmd: 'set_camera2d', x: scene.camera2d.x, y: scene.camera2d.y, half_h: scene.camera2d.halfH });
