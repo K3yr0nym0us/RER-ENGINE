@@ -1,6 +1,8 @@
 import { useState } from 'react';
 
+
 import { Accordion } from 'react-bootstrap';
+import { Wrench } from 'react-bootstrap-icons';
 
 import { ColliderToolButton } from './components/ColliderToolButton';
 import { ExecutionAreaToolButton } from './components/ExecutionAreaToolButton';
@@ -13,7 +15,7 @@ export function ToolsAccordion() {
 
   return (
     <Accordion.Item eventKey="herramientas">
-      <Accordion.Header>{t('Tools')}</Accordion.Header>
+      <Accordion.Header><Wrench className="me-2" />{t('Tools')}</Accordion.Header>
       <Accordion.Body className="py-2 px-2">
         <div className="d-flex justify-content-between">
           <ColliderToolButton activeTool={activePointTool} setActiveTool={setActivePointTool} />

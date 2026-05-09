@@ -46,7 +46,7 @@ const BackgroundsAccordion = () => {
 
   return (
     <Accordion.Item eventKey="backgrounds">
-      <Accordion.Header>{t('Backgrounds')}</Accordion.Header>
+      <Accordion.Header><Image className="me-2" />{t('Backgrounds')}</Accordion.Header>
       <Accordion.Body className="py-2 px-2">
         <BtnLoadBackground />
         <ul className="list-unstyled mt-2 mb-0">

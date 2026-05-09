@@ -44,9 +44,7 @@ const SoundsAccordion = () => {
 
   return (
     <Accordion.Item eventKey="sounds">
-      <Accordion.Header>
-        {t('Sounds')}
-      </Accordion.Header>
+      <Accordion.Header><MusicNote className="me-2" />{t('Sounds')}</Accordion.Header>
       <Accordion.Body className="py-2 px-2">
         <BtnLoadSound />
         <ul className="list-unstyled mt-2 mb-0">

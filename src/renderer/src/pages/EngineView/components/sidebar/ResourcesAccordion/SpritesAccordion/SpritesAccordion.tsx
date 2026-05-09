@@ -51,7 +51,7 @@ const SpritesAccordion = () => {
 
   return (
     <Accordion.Item eventKey="sprites">
-      <Accordion.Header>{t('Sprites')}</Accordion.Header>
+      <Accordion.Header><Image className="me-2" />{t('Sprites')}</Accordion.Header>
       <Accordion.Body className="py-2 px-2">
         <BtnLoadSprite />
         <ul className="list-unstyled mt-2 mb-0">

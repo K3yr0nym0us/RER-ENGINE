@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Accordion } from 'react-bootstrap';
-import { Grid3x3, EyeFill, EyeSlashFill, Image, Lock, Unlock, CheckLg } from 'react-bootstrap-icons';
+import { Globe2, Grid3x3, EyeFill, EyeSlashFill, Image, Lock, Unlock, CheckLg } from 'react-bootstrap-icons';
 
 import { AppTooltip } from '@components';
 import { useContextEngine } from '@engine';
@@ -91,7 +91,7 @@ export function WorldAccordion() {
 
   return (
     <Accordion.Item eventKey="mundo">
-      <Accordion.Header>{t('World')}</Accordion.Header>
+      <Accordion.Header><Globe2 className="me-2" />{t('World')}</Accordion.Header>
       <Accordion.Body className="py-2 px-2">
         <p className="text-secondary small mb-1 fw-semibold">{t('Workspace')}</p>
         <div className="d-flex gap-1 mb-2">

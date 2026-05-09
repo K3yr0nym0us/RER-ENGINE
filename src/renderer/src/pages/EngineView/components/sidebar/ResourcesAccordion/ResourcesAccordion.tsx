@@ -1,4 +1,6 @@
+
 import { Accordion } from 'react-bootstrap';
+import { BoxSeam } from 'react-bootstrap-icons';
 
 import SpritesAccordion from './SpritesAccordion/SpritesAccordion';
 import BackgroundsAccordion from './BackgroundsAccordion/BackgroundsAccordion';
@@ -11,7 +13,7 @@ const ResourcesAccordion = () => {
 
   return (
     <Accordion.Item eventKey="resources">
-      <Accordion.Header>{t('Resources')}</Accordion.Header>
+      <Accordion.Header><BoxSeam className="me-2" />{t('Resources')}</Accordion.Header>
       <Accordion.Body className="py-2 px-1">
         <Accordion className="sidebar-accordion">
           <SpritesAccordion />

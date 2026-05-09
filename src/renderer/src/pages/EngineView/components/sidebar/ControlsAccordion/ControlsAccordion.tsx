@@ -21,7 +21,7 @@ export function ControlsAccordion() {
 
   return (
     <Accordion.Item eventKey="controles">
-      <Accordion.Header>{t('Controls')}</Accordion.Header>
+      <Accordion.Header><Controller className="me-2" />{t('Controls')}</Accordion.Header>
       <Accordion.Body className="py-2 px-2">
         <div className="d-flex flex-column gap-2">
           <div>
