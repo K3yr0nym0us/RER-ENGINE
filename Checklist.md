@@ -97,6 +97,7 @@
 
 * ✅ Scripting Lua con sandbox (sin `io`, `os`, `require`) y lifecycle (`on_start`, `update`, `on_stop`)
 * ✅ Hooks de scripting para input/control y triggers (`on_press`, `on_trigger_enter`)
+* ✅ Control bindings runtime resueltos en el motor (`set_control_bindings` + ejecución desde input nativo)
 * ✅ Hot reload de scripts/shaders/assets
 * ✅ Animaciones a base de frames para 2D
 
@@ -150,7 +151,7 @@
 
 > Siguiendo el principio motor-first: toda lógica que involucre datos del motor debe vivir en Rust.
 
-* [ ] **`normalizeAnimations` en el motor** — actualmente el front normaliza el array de animaciones al cargar; debe hacerse en Rust antes de emitir el evento `scenario_loaded`/`character_loaded`
+* [ ] **`normalizeAnimations` en el motor (PARCIAL)** — Rust ya resuelve `logical_w/logical_h` y emite `animation_logical_resolved`, pero el front aún aplica defaults y pre-normalización en algunos flujos
 * [ ] **`pendingRestores` en el motor** — la orquestación de restauración de entidades (transform + animation frame) debe ser un comando motor-side, no coordinación del front
 * [ ] **Defaults de `logical`/`pivot` en el motor** — `useCreateEntityFromSpriteAnimation` calcula estos valores; el motor debe emitirlos ya calculados en el evento de creación
 * [ ] **Snapshot de puntos en `entity_removed`** — al eliminar colliders/areas, el motor debería incluir sus puntos en el evento para restauración limpia via undo
@@ -159,13 +160,22 @@
 ## Prioridad media — Otras funcionalidades
 
 * [ ] **Animaciones 3D** (clips/animator/state machine) — compatible con Blender; consolidadas en pipeline de proyecto
-* [ ] **Prefabs/blueprints** — guardar, instanciar y actualizar entidades reutilizables desde el editor sin trabajo manual repetitivo
+* [-] **Prefabs/blueprints (PARCIAL: 2D)** — flujo funcional en 2D (guardar, instanciar y actualizar); falta consolidar cobertura completa (p. ej. 3D/pipeline unificado)
   * DONE cuando el flujo es visible y usable desde el editor
+
+## Prioridad media — Estabilidad y consistencia
+
+* [ ] **Redo de `RemoveEntity` sin no-op** — `apply_redo()` debe rehacer eliminaciones de forma efectiva y no silenciosa
+* [ ] **Scripts Lua solo en modo juego** — evitar ejecución en modo editor para prevenir efectos laterales inesperados
+* [ ] **Atlas con señalización de agotamiento real** — evitar agotamiento silencioso cuando no haya espacio reutilizable
 
 ## Prioridad baja
 
 * [ ] **Jerarquía de entidades parent/child** — a evaluar si se incorpora al diseño
-* [ ] **Evaluar optimizaciones de transporte IPC** — solo si aparecen bottlenecks medidos en escenas grandes
+* [ ] **Optimizar `new_entity_id()` (O(n))** — evaluar estrategia de IDs para crecimiento sostenido
+* [ ] **Renombrar `query_ctrl_held_x11`** — nombre neutral/plataforma-agnóstico para evitar ambigüedad en Windows
+* [ ] **Desacoplar restauración inicial del event handler** — mover orquestación de carga inicial a un flujo dedicado
+* [ ] **Ajustar cleanup de listeners `window.engine.off()`** — evitar limpiar listeners de más según implementación
 
 ## Descartado por ahora
 

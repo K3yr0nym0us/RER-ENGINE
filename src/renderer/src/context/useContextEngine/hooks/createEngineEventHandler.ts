@@ -19,6 +19,30 @@ type RuntimeEngineEvent = {
 	[key: string]: unknown
 };
 
+const SILENT_ENGINE_EVENTS = new Set<string>([
+	'debug_metrics',
+	'animation_finished',
+	'ready',
+	'player_ready',
+	'character_loaded',
+	'sprite_loaded',
+	'background_loaded',
+	'sound_loaded',
+	'background_asset_loaded',
+	'scenario_loaded',
+	'collider_created',
+	'execution_area_created',
+	'entity_deselected',
+	'entity_hovered',
+	'entity_unhovered',
+	'entity_selected',
+	'physics_changed',
+	'quick_build_move',
+	'camera_2d_updated',
+	'animation_logical_resolved',
+	'autosave_tick',
+]);
+
 interface CreateEngineEventHandlerParams {
 	dispatch: Dispatch<EngineAction>
 	refs: EngineInternalRefs
@@ -58,30 +82,7 @@ export function createEngineEventHandler({
 	return (event: RuntimeEngineEvent) => {
 		// Eventos de alta frecuencia: se procesan normalmente, pero no se
 		// imprimen en la consola del panel para evitar spam visual.
-		const silentEvents = new Set([
-			'debug_metrics',
-			'animation_finished',
-			'ready',
-			'player_ready',
-			'character_loaded',
-			'sprite_loaded',
-			'background_loaded',
-			'sound_loaded',
-			'background_asset_loaded',
-			'scenario_loaded',
-			'collider_created',
-			'execution_area_created',
-			'entity_deselected',
-			'entity_hovered',
-			'entity_unhovered',
-			'entity_selected',
-			'physics_changed',
-			'quick_build_move',
-			'camera_2d_updated',
-			'animation_logical_resolved',
-			'autosave_tick',
-		]);
-		if (!silentEvents.has(event.event)) {
+		if (!SILENT_ENGINE_EVENTS.has(event.event)) {
 			addLog(JSON.stringify(event), event.event === 'error');
 		}
 
