@@ -1,4 +1,5 @@
 import { Accordion } from 'react-bootstrap';
+import { Gear } from 'react-bootstrap-icons';
 import PropertiesPanel from './sidebar/PropertiesAccordion/PropertiesAccordion';
 import { ControlsAccordion, WorldAccordion, ToolsAccordion } from './sidebar';
 import ResourcesAccordion from './sidebar/ResourcesAccordion/ResourcesAccordion';
@@ -55,7 +56,7 @@ export function SideBarLeft({ projectType }: { projectType: ProjectType }) {
             <b className="ms-2">{t('Selected element:')}</b>
             <Accordion defaultActiveKey="propiedades" className="sidebar-accordion mt-1">
               <Accordion.Item eventKey="propiedades">
-                <Accordion.Header>{t('Properties')}</Accordion.Header>
+                <Accordion.Header><Gear className="me-2" />{t('Properties')}</Accordion.Header>
                 <Accordion.Body className="py-2 px-1">
                   <PropertiesPanel
                     projectType={projectType}

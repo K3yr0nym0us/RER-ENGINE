@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { Accordion } from 'react-bootstrap';
-import { Pencil, PlayFill, StopFill, Trash } from 'react-bootstrap-icons';
+import { Pencil, PlayFill, StopFill, Trash, CameraReels } from 'react-bootstrap-icons';
 
 import { AppTooltip, SpritePreviewModalBody } from '@components';
 import { CreateEntityFromSpriteModalBody } from '../EntitiesAccordion/components/CreateEntityFromSpriteModalBody';
@@ -303,7 +303,7 @@ export function AnimationsPanel() {
 
   return (
     <Accordion.Item eventKey="animaciones">
-      <Accordion.Header>{t('Animations')}</Accordion.Header>
+      <Accordion.Header><CameraReels className="me-2" />{t('Animations')}</Accordion.Header>
       <Accordion.Body className="py-2 px-2">
         <button
           className="btn btn-outline-success btn-sm w-100 fw-bold mb-2"

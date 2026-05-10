@@ -16,7 +16,7 @@ export function ScriptingAccordion({ scripts, onNew, onEdit, onRemove }: Scripti
   const { t } = useTraslate()
   return (
     <Accordion.Item eventKey="scripting">
-      <Accordion.Header>Scripting (Lua)</Accordion.Header>
+      <Accordion.Header><FileEarmarkCode className="me-2" />Scripting (Lua)</Accordion.Header>
       <Accordion.Body className="py-2 px-2">
 
         <button

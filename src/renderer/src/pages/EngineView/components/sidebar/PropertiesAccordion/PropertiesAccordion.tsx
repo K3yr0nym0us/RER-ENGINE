@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { Accordion } from 'react-bootstrap';
-import { CircleSquare, Check2Square, Pencil, Trash, Link45deg } from 'react-bootstrap-icons';
+import { CircleSquare, Check2Square, Pencil, Trash, Link45deg, ArrowsMove } from 'react-bootstrap-icons';
 
 import { AppTooltip } from '@components';
 import { TransformPanel, AnimationsPanel, ScriptingPanel } from '.';
@@ -272,7 +272,7 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
       {!isCollider && !isExecutionArea && (
         <Accordion className="prop-accordion">
           <Accordion.Item eventKey="transform">
-            <Accordion.Header>{t('Transformations')}</Accordion.Header>
+            <Accordion.Header><ArrowsMove className="me-2" />{t('Transformations')}</Accordion.Header>
             <Accordion.Body className="py-2 px-2">
               <TransformPanel entity={selectedEntity} is2D={is2D} onSend={handleSend} />
             </Accordion.Body>
