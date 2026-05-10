@@ -53,6 +53,7 @@ export function SceneTabsBar({ initialSave, projectType }: Props) {
     setBackground,
     loadSprite,
     removeSprite,
+    blueprints,
   } = useContextEngine();
 
   const { openModal, closeModal } = useModal();
@@ -103,7 +104,7 @@ export function SceneTabsBar({ initialSave, projectType }: Props) {
     const DEFAULT_ROT: [number, number, number, number] = [0, 0, 0, 1];
     const DEFAULT_SCL: [number, number, number] = [1, 1, 1];
 
-    const entities: SavedEntity[] = Object.entries(meta).reduce<SavedEntity[]>((acc, [idStr, m]) => {
+      const entities: SavedEntity[] = Object.entries(meta).reduce<SavedEntity[]>((acc, [idStr, m]) => {
       if (m.kind === 'character' && m.path === '[Player]' && Number(idStr) === playerId) return acc;
       const entityId = Number(idStr);
       acc.push({
@@ -120,6 +121,7 @@ export function SceneTabsBar({ initialSave, projectType }: Props) {
         animations: m.animations,
         scripts: m.scripts,
         control_bindings: m.controlBindings,
+        blueprint_id: m.blueprintId,
       });
       return acc;
     }, []);
@@ -226,16 +228,20 @@ export function SceneTabsBar({ initialSave, projectType }: Props) {
         continue;
       }
 
+      const bp = entity.blueprint_id
+        ? (blueprints ?? []).find((b) => b.id === entity.blueprint_id) ?? null
+        : null;
       const queue = pendingRestoresRef.current.get(entity.path) ?? [];
       pendingRestoresRef.current.set(entity.path, queue);
       queue.push({
         transform,
         name: entity.name,
-        physicsEnabled: entity.physics_enabled ?? false,
-        physicsType: entity.physics_type ?? 'static',
-        animations: entity.animations,
-        scripts: entity.scripts,
-        controlBindings: entity.control_bindings,
+        physicsEnabled: bp?.physics_enabled ?? entity.physics_enabled ?? false,
+        physicsType: bp?.physics_type ?? entity.physics_type ?? 'static',
+        animations: bp?.animations ?? entity.animations,
+        scripts: bp?.scripts ?? entity.scripts,
+        controlBindings: bp?.control_bindings ?? entity.control_bindings,
+        blueprintId: entity.blueprint_id,
       });
 
       if (entity.kind === 'scenario') send({ cmd: 'load_scenario', path: entity.path });
