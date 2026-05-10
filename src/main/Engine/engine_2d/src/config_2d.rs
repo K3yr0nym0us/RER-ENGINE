@@ -637,10 +637,22 @@ impl State {
         };
         self.anim_overrides.insert(tex_position, uv_rect_for_render);
 
-        // ── Aplicar pivot ────────────────────────────────────────────────────
-        // Para escenarios no modificamos el transform al cambiar frame: el tamaño
-        // y la posición deben permanecer exactamente como los fijó la colocación
-        // (quick build/grid). Solo actualizamos UV del atlas.
+        // ── Aplicar pivot / escala ───────────────────────────────────────────
+        // En escenarios con src_rect (sprite sheet), si no ajustamos escala al
+        // recorte activo se conserva la proporción del PNG completo y el frame
+        // queda estirado. Ajustamos solo escala para preservar la posición de
+        // colocación (quick build/grid) y evitar saltos visuales.
+        if is_scenario && logical_w > 0 && logical_h > 0 {
+            if let Some(t) = self.world.get_mut::<Transform>(id) {
+                let world_per_px = t.scale.y / logical_h.max(1) as f32;
+                t.scale = GlamVec3::new(
+                    img_width as f32 * world_per_px,
+                    img_height as f32 * world_per_px,
+                    1.0,
+                );
+            }
+        }
+
         if is_character && logical_w > 0 && logical_h > 0 {
             if let Some(transform) = self.world.get::<Transform>(id).cloned() {
                 let saved = self.anim_saved_transforms

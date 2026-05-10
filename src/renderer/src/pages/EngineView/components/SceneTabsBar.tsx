@@ -63,7 +63,10 @@ export function SceneTabsBar({ initialSave, projectType }: Props) {
       const tabs = save.scenes.map((scene) => ({ id: scene.id, name: scene.name }));
       const dataById: Record<number, SavedScene> = {};
       for (const scene of save.scenes) {
-        dataById[scene.id] = scene;
+        dataById[scene.id] = {
+          ...scene,
+          world: { ...DEFAULT_WORLD, ...(scene.world ?? {}) },
+        };
       }
       const active = save.activeSceneId && dataById[save.activeSceneId]
         ? save.activeSceneId
@@ -74,7 +77,7 @@ export function SceneTabsBar({ initialSave, projectType }: Props) {
     const legacyScene: SavedScene = {
       id: 1,
       name: 'Escena 1',
-      world: save?.world ?? DEFAULT_WORLD,
+      world: { ...DEFAULT_WORLD, ...(save?.world ?? {}) },
       backgroundPath: save?.backgroundPath ?? null,
       entities: save?.entities ?? [],
       playerTransform: save?.playerTransform ?? null,
@@ -179,7 +182,7 @@ export function SceneTabsBar({ initialSave, projectType }: Props) {
     setWorldSize(scene.world.worldWidth, scene.world.worldHeight);
     setGridVisible(scene.world.gridVisible);
     setGridCellSize(scene.world.gridCellSize);
-    setTargetFps(scene.world.targetFps);
+    setTargetFps(Number.isFinite(scene.world?.targetFps) ? scene.world.targetFps : DEFAULT_WORLD.targetFps);
 
     if (scene.camera2d) {
       send({ cmd: 'set_camera2d', x: scene.camera2d.x, y: scene.camera2d.y, half_h: scene.camera2d.halfH });

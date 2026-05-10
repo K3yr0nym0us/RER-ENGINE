@@ -260,41 +260,6 @@ export function createEngineEventHandler({
 			dispatch({ type: 'SET_HOVER', payload: null });
 		}
 
-		if (event.event === 'player_ready') {
-			const playerReady = event as unknown as { id: number; position: [number,number,number]; scale: [number,number,number] };
-			refs.playerEntityIdRef.current = playerReady.id;
-			refs.entityTransformsRef.current[playerReady.id] = {
-				position: playerReady.position,
-				rotation: [0, 0, 0, 1],
-				scale: playerReady.scale,
-			};
-			refs.entityMetaRef.current[playerReady.id] = { kind: 'character', path: '[Player]', physicsEnabled: false, physicsType: '' };
-			const save = refs.initialSaveRef.current;
-			if (save != null && save.playerTransform === null) {
-				window.engine.send({ cmd: 'remove_entity', id: playerReady.id } as never);
-				refs.playerEntityIdRef.current = null;
-				refs.playerRemoved.current = true;
-				delete refs.entityMetaRef.current[playerReady.id];
-			} else if (save?.playerTransform) {
-				window.engine.send({
-					cmd: 'set_transform',
-					id: playerReady.id,
-					position: save.playerTransform.position,
-					scale: save.playerTransform.scale,
-					track_undo: false,
-				} as never);
-				refs.entityTransformsRef.current[playerReady.id] = {
-					position: save.playerTransform.position,
-					rotation: [0, 0, 0, 1],
-					scale: save.playerTransform.scale,
-				};
-				for (const duplicateTransform of refs.pendingPlayerDups.current) {
-					refs.pendingDupQ.current.push(duplicateTransform);
-					window.engine.send({ cmd: 'duplicate_character', id: playerReady.id } as never);
-				}
-				refs.pendingPlayerDups.current = [];
-			}
-		}
 
 		if (event.event === 'camera_2d_updated') {
 			const cameraUpdated = event as unknown as Camera2dUpdated;

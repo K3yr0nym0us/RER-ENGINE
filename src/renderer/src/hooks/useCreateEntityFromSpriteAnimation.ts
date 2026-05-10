@@ -21,6 +21,15 @@ interface CreateEntityFromSpriteAnimationPayload {
     fps: number;
     loop: boolean;
     facingRight?: boolean;
+    audioPath?: string;
+    scripts?: { name: string; source: string }[];
+    isCancelable?: boolean;
+    inGrounded?: boolean;
+    inAir?: boolean;
+    selectionMode?: 'cell' | 'box';
+    gridSize?: number;
+    cellOffsetX?: number;
+    cellOffsetY?: number;
   };
 }
 
@@ -49,9 +58,18 @@ export function useCreateEntityFromSpriteAnimation(loadCmd: LoadCmd) {
       fps: payload.animation.fps,
       loop: payload.animation.loop,
       is_default: true,
+      is_cancelable: payload.animation.isCancelable ?? false,
+      in_grounded: payload.animation.inGrounded ?? false,
+      in_air: payload.animation.inAir ?? false,
       facing_right: payload.animation.facingRight ?? true,
       logical_w: logicalW,
       logical_h: logicalH,
+      audio_path: payload.animation.audioPath,
+      scripts: payload.animation.scripts ?? [],
+      selection_mode: payload.animation.selectionMode,
+      grid_size: payload.animation.gridSize,
+      cell_offset_x: payload.animation.cellOffsetX,
+      cell_offset_y: payload.animation.cellOffsetY,
       frames: payload.animation.frames.map((f) => ({
         path: payload.spritePath,
         pivot_x: f.pivot_x ?? Math.round(f.width / 2),

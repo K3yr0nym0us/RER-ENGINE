@@ -116,7 +116,8 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 	};
 
 	const setTargetFps = (fps: number) => {
-		const normalizedFps = Math.round(fps);
+		const parsedFps = Number.isFinite(fps) ? fps : 60;
+		const normalizedFps = Math.max(1, Math.min(1000, Math.round(parsedFps)));
 		dispatch({ type: 'SET_WORLD_CONFIG', payload: { targetFps: normalizedFps } });
 		send({ cmd: 'set_target_fps', fps: normalizedFps });
 	};

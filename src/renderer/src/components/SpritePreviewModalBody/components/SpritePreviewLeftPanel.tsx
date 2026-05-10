@@ -134,7 +134,7 @@ export function SpritePreviewLeftPanel({
               style={{ width: 70 }}
               min={8}
               max={CANVAS_SIZE}
-              step={1}
+              step={0.1}
               value={gridSize}
               onChange={e => setGridSize(Number(e.target.value))}
             />

@@ -97,7 +97,7 @@ export function WorldAccordion() {
 
   const handleApplyTargetFps = () => {
     const parsed = Number.parseInt(selectedTargetFps, 10)
-    if (!FPS_OPTIONS.includes(parsed as typeof FPS_OPTIONS[number])) return
+    if (!Number.isFinite(parsed) || parsed < 1 || parsed > 1000) return
     setTargetFps(parsed)
   }
 
