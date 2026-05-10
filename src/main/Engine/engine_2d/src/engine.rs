@@ -190,6 +190,8 @@ pub struct ActiveAnimation {
     pub last_frame_time: Instant,
     pub fps: u32,
     pub finished: bool,
+    pub in_grounded: bool,
+    pub in_air: bool,
 }
 use crate::texture::GpuTexture;
 use crate::ecs::EntityId;
@@ -1341,16 +1343,19 @@ impl State {
                     self.hovered_gizmo_axis = None;
                     self.active_gizmo_axis = None;
 
-                    // Forzar una actualización mínima de física antes de arrancar
+                    // Forzar un paso de física inicial antes de arrancar
                     // las animaciones default. Esto sincroniza contactos/grounded
-                    // después de restaurar transformaciones del editor.
-                    self.physics_2d.step(0.0, &mut self.world);
+                    // después de restaurar transformaciones del editor y evita que
+                    // animaciones con in_grounded=true se bloqueen por falta de contactos.
+                    self.physics_2d.step(1.0 / 60.0, &mut self.world);
 
                     // Al entrar en modo juego, reproducir la animación predeterminada
                     // de cada entidad que tenga animaciones registradas.
                     // Limpiar caché de scripts compilados para que ediciones en el editor surtan efecto.
                     self.script_engine.clear_control_script_cache();
                     let entities_with_anims: Vec<u32> = self.animations.keys().copied().collect();
+                    let default_count = self.default_animation_by_entity.len();
+                    log::info!("[SetPreviewPlaying] entidades con animaciones: {}, con default: {}", entities_with_anims.len(), default_count);
                     for entity_id in entities_with_anims {
                         let default_name = self.default_animation_by_entity
                             .get(&entity_id)
@@ -1361,6 +1366,7 @@ impl State {
                                     .and_then(|m| m.keys().next().cloned())
                             });
                         if let Some(name) = default_name {
+                            log::info!("[SetPreviewPlaying] iniciando animación '{}' para entidad {}", name, entity_id);
                             self.handle_command(EngineCommand::PlayAnimation { id: entity_id, name });
                         }
                     }
@@ -1694,7 +1700,7 @@ impl State {
                 }
             }
 EngineCommand::PlayAnimation { id, name } => {
-                log::debug!("[IPC] PlayAnimation: entity_id={}, name='{}'", id, name);
+                log::info!("[handle_command] PlayAnimation: id={}, name='{}'", id, name);
 
                 // Si hay una animación activa con is_cancelable=false que aún no terminó,
                 // bloquear la nueva hasta que termine naturalmente.
@@ -1720,16 +1726,6 @@ EngineCommand::PlayAnimation { id, name } => {
                 match anim_opt {
                     None => log::warn!("[IPC] Animación '{}' no encontrada para entidad {}", name, id),
                     Some(anim) => {
-                        let is_grounded = self.physics_2d.is_entity_grounded(id);
-                        if anim.in_grounded && !is_grounded {
-                            log::debug!("[animation] PlayAnimation '{}' bloqueado: entidad {} no está en tierra", name, id);
-                            return;
-                        }
-                        if anim.in_air && is_grounded {
-                            log::debug!("[animation] PlayAnimation '{}' bloqueado: entidad {} está en tierra", name, id);
-                            return;
-                        }
-
                         // Detener animación previa (el Play de audio incluye clear interno)
                         self.active_animations.remove(&id);
 
@@ -1789,8 +1785,10 @@ EngineCommand::PlayAnimation { id, name } => {
                             last_frame_time: frame_start,
                             fps: anim.fps,
                             finished: false,
+                            in_grounded: anim.in_grounded,
+                            in_air: anim.in_air,
                         });
-                        log::debug!("[animation] Iniciada '{}' para entidad {} (fps={}, frames={})", name, id, anim.fps, anim.frames.len());
+                        log::info!("[animation] Iniciada '{}' para entidad {} (fps={}, frames={})", name, id, anim.fps, anim.frames.len());
                     }
                 }
             }
@@ -2028,6 +2026,8 @@ EngineCommand::PlayAnimation { id, name } => {
             last_frame_time: Instant::now(),
             fps:    anim.fps,
             finished: false,
+            in_grounded: anim.in_grounded,
+            in_air: anim.in_air,
         });
     }
 
@@ -2083,15 +2083,30 @@ EngineCommand::PlayAnimation { id, name } => {
             let elapsed = now.duration_since(active.last_frame_time);
 
             if elapsed < frame_duration {
-                // Re-aplicar el frame actual en cada tick para mantener el ajuste
-                // de pivot aunque otro sistema (p.ej. física) haya escrito Transform.
                 to_play.push((entity_id, active.current_frame));
                 continue;
             }
 
+            // Verificar condiciones in_grounded/in_air (solo en modo juego con física activa).
+            // Si la condición no se cumple, no avanzamos frames pero mantenemos el frame actual
+            // visible. El timer se resetea para no acumular tiempo de espera.
+            if self.preview_playing {
+                let is_grounded = self.physics_2d.is_entity_grounded(entity_id);
+                if active.in_grounded && !is_grounded {
+                    active.last_frame_time = now;
+                    log::debug!("[update_animations] '{}' esperando entidad {} toque tierra (in_grounded)", active.animation_name, entity_id);
+                    continue;
+                }
+                if active.in_air && is_grounded {
+                    active.last_frame_time = now;
+                    log::debug!("[update_animations] '{}' esperando entidad {} esté en aire (in_air)", active.animation_name, entity_id);
+                    continue;
+                }
+            }
+
             // Cuántos frames debieron haberse mostrado (recuperación de lag/stutter).
             // Con `= now` el error se acumula; con `+= frame_duration` el reloj es exacto.
-            let frames_to_advance = (elapsed.as_millis() / frame_duration_ms as u128).max(1) as usize;
+            let frames_to_advance = (elapsed.as_millis() / frame_duration_ms as u128) as usize;
             let total_frames = anim_state.frames.len();
 
             // Avanzar el reloj de animación por el número exacto de frames,
@@ -2119,11 +2134,15 @@ EngineCommand::PlayAnimation { id, name } => {
             }
         }
 
+        if !to_play.is_empty() {
+            log::debug!("[update_animations] procesando {} frames en to_play", to_play.len());
+        }
         for (entity_id, frame_idx) in to_play {
+            log::debug!("[update_animations] → frame {} para entity {} (active tiene {} entradas)", 
+                       frame_idx, entity_id, self.active_animations.len());
             let anim_name = self.active_animations.get(&entity_id)
                 .map(|a| a.animation_name.clone())
                 .unwrap_or_default();
-            // Extraer datos necesarios antes del borrow mutable
             let (frame_data, flip, logical_w, logical_h) = if let Some(anim_map) = self.animations.get(&entity_id) {
                 if let Some(anim) = anim_map.get(&anim_name) {
                     let frame_idx_clamped = frame_idx.min(anim.frames.len().saturating_sub(1));
@@ -2183,11 +2202,10 @@ EngineCommand::PlayAnimation { id, name } => {
             // El audio no-looping se agota solo cuando las muestras PCM terminan.
             // No enviamos Stop aquí para evitar que sobrescriba un Play ya encolado
             // si el usuario dispara la siguiente animación justo al terminar esta.
-            log::debug!("[animation] Enviando AnimationFinished para entidad {}", entity_id);
             send_event(&EngineEvent::AnimationFinished { entity_id });
         }
 
-self.active_animations.retain(|_, a| !a.finished);
+        self.active_animations.retain(|_, a| !a.finished);
     }
 
     /// Notifica al State qué eje del gizmo está siendo arrastrado (None = sin drag).

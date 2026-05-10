@@ -229,7 +229,7 @@ impl PhysicsWorld2D {
 
         let local_aabb = collider.shape().compute_local_aabb();
         let half_h = ((local_aabb.maxs.y - local_aabb.mins.y) * 0.5).max(0.01);
-        let feet_y = body.translation().y - half_h;
+        let feet_y = body.translation().y + collider.translation().y - half_h;
         let ray_origin = Point::new(body.translation().x, feet_y + 0.005, 0.0);
         let ray = Ray::new(ray_origin, vector![0.0, -1.0, 0.0]);
         let filter = QueryFilter::default().exclude_collider(self_collider);

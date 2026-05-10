@@ -720,7 +720,13 @@ impl State {
             }
         }
 
-        log::debug!("[play_animation_frame] frame actualizado para entidad {id} (tex_idx={tex_position}, pivot=({pivot_x},{pivot_y}))");
+        log::debug!("[play_animation_frame] INICIO - id={}, path={}, logical_w={}, logical_h={}, is_character={}", 
+                   id, path, logical_w, logical_h, is_character);
+        log::debug!("[play_animation_frame] anim_saved_transforms tiene {} entradas", self.anim_saved_transforms.len());
+        if self.anim_saved_transforms.contains_key(&id) {
+            let saved = self.anim_saved_transforms.get(&id).unwrap();
+            log::debug!("[play_animation_frame] saved para id {}: pos={:?}, scale={:?}", id, saved.0, saved.1);
+        }
     }
 
     pub(crate) fn preload_anim_frame_with_rect(&mut self, path: &str, src_rect: Option<(u32, u32, u32, u32)>) {
@@ -775,8 +781,13 @@ impl State {
     }
 
     /// Restaura el sprite original de una entidad después de una animación.
-    pub(crate) fn restore_animation_frame(&mut self, id: u32) {
-        let is_scenario  = self.scenario_entities.contains(&id);
+pub(crate) fn restore_animation_frame(&mut self, id: u32) {
+        log::debug!("[restore_animation_frame] LLAMADA - id={}, is_character={}, is_scenario={}", 
+                   id, self.character_entities.contains(&id), self.scenario_entities.contains(&id));
+        log::debug!("[restore_animation_frame] anim_saved_transforms tiene {} entradas", self.anim_saved_transforms.len());
+        log::debug!("[restore_animation_frame] anim_overrides tiene {} entradas", self.anim_overrides.len());
+        
+        let is_scenario = self.scenario_entities.contains(&id);
         let is_character = self.character_entities.contains(&id);
         if !is_scenario && !is_character {
             log::warn!("[restore_animation_frame] entidad {id} no es escenario ni personaje");
@@ -802,12 +813,12 @@ impl State {
             if let Some(t) = self.world.get_mut::<Transform>(id) {
                 t.scale = orig_scale;
             }
-            log::info!("[restore_animation_frame] entidad {id} → escala restaurada, posición conservada");
+            log::debug!("[restore_animation_frame] entidad {id} → escala restaurada, posición conservada");
         } else {
             log::warn!("[restore_animation_frame] entidad {id} sin anim_saved_transforms — escala NO modificada");
         }
 
-        log::info!("[restore_animation_frame] sprite restaurado para entidad {id}");
+        log::debug!("[restore_animation_frame] sprite restaurado para entidad {id}");
     }
 
     // ── Modo edición de pivot ─────────────────────────────────────────────────
