@@ -190,8 +190,6 @@ pub struct ActiveAnimation {
     pub last_frame_time: Instant,
     pub fps: u32,
     pub finished: bool,
-    pub in_grounded: bool,
-    pub in_air: bool,
 }
 use crate::texture::GpuTexture;
 use crate::ecs::EntityId;
@@ -1785,8 +1783,6 @@ EngineCommand::PlayAnimation { id, name } => {
                             last_frame_time: frame_start,
                             fps: anim.fps,
                             finished: false,
-                            in_grounded: anim.in_grounded,
-                            in_air: anim.in_air,
                         });
                         log::info!("[animation] Iniciada '{}' para entidad {} (fps={}, frames={})", name, id, anim.fps, anim.frames.len());
                     }
@@ -2027,8 +2023,6 @@ EngineCommand::PlayAnimation { id, name } => {
             last_frame_time: Instant::now(),
             fps:    anim.fps,
             finished: false,
-            in_grounded: anim.in_grounded,
-            in_air: anim.in_air,
         });
     }
 
@@ -2086,23 +2080,6 @@ EngineCommand::PlayAnimation { id, name } => {
             if elapsed < frame_duration {
                 to_play.push((entity_id, active.current_frame));
                 continue;
-            }
-
-            // Verificar condiciones in_grounded/in_air (solo en modo juego con física activa).
-            // Si la condición no se cumple, no avanzamos frames pero mantenemos el frame actual
-            // visible. El timer se resetea para no acumular tiempo de espera.
-            if self.preview_playing {
-                let is_grounded = self.physics_2d.is_entity_grounded(entity_id);
-                if active.in_grounded && !is_grounded {
-                    active.last_frame_time = now;
-                    log::debug!("[update_animations] '{}' esperando entidad {} toque tierra (in_grounded)", active.animation_name, entity_id);
-                    continue;
-                }
-                if active.in_air && is_grounded {
-                    active.last_frame_time = now;
-                    log::debug!("[update_animations] '{}' esperando entidad {} esté en aire (in_air)", active.animation_name, entity_id);
-                    continue;
-                }
             }
 
             // Cuántos frames debieron haberse mostrado (recuperación de lag/stutter).

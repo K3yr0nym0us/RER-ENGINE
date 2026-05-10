@@ -780,7 +780,7 @@ fn main() {
             // Por defecto dejamos solo advertencias/errores para un arranque limpio.
             // Quien necesite más detalle puede usar RUST_LOG=info o RUST_LOG=debug.
             // Además, wgpu_hal::gles/vulkan generan spam en algunos entornos.
-            "info,wgpu_core=warn,wgpu_hal=warn,wgpu_hal::gles=error,rer_engine_2d::config_2d=info,rer_engine_2d::engine=info",
+            "info,wgpu_core=warn,wgpu_hal=warn,wgpu_hal::gles=error,rer_engine_2d::config_2d=info,rer_engine_2d::engine=debug",
         ),
     )
     .init();
