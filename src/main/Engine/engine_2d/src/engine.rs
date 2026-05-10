@@ -1355,7 +1355,7 @@ impl State {
                     self.script_engine.clear_control_script_cache();
                     let entities_with_anims: Vec<u32> = self.animations.keys().copied().collect();
                     let default_count = self.default_animation_by_entity.len();
-                    log::info!("[SetPreviewPlaying] entidades con animaciones: {}, con default: {}", entities_with_anims.len(), default_count);
+                    log::debug!("[SetPreviewPlaying] entidades con animaciones: {}, con default: {}", entities_with_anims.len(), default_count);
                     for entity_id in entities_with_anims {
                         let default_name = self.default_animation_by_entity
                             .get(&entity_id)
@@ -1366,7 +1366,7 @@ impl State {
                                     .and_then(|m| m.keys().next().cloned())
                             });
                         if let Some(name) = default_name {
-                            log::info!("[SetPreviewPlaying] iniciando animación '{}' para entidad {}", name, entity_id);
+                            log::debug!("[SetPreviewPlaying] iniciando animación '{}' para entidad {}", name, entity_id);
                             self.handle_command(EngineCommand::PlayAnimation { id: entity_id, name });
                         }
                     }
@@ -1839,6 +1839,7 @@ EngineCommand::PlayAnimation { id, name } => {
                 }
             }
             EngineCommand::RunControlScript { id, control_key, path, source } => {
+                log::debug!("[IPC] RunControlScript: entidad={}, key='{}', path='{}'", id, control_key, path);
                 self.execute_control_script(id, &control_key, &path, &source);
             }
             EngineCommand::UnloadScript { id } => {
@@ -2382,8 +2383,7 @@ EngineCommand::PlayAnimation { id, name } => {
             return;
         }
 
-        // El facing se actualiza dentro de apply_script_commands via MoveEntity/MoveEntityFacing.
-        // Si esos comandos se bloquean por condición de animación, el facing tampoco cambia.
+        log::debug!("[control] ejecutando script: entidad={}, key='{}', path='{}'", id, control_key, path);
         let snapshot = self.build_script_snapshot(id);
         match self.script_engine.run_control_script(id, control_key, path, source, snapshot.as_ref()) {
             Ok(commands) => self.apply_script_commands(commands),
@@ -2396,6 +2396,7 @@ EngineCommand::PlayAnimation { id, name } => {
             return;
         }
 
+        log::debug!("[input] control recibido: device='{}', key='{}'", device, control_key);
         let matches: Vec<(u32, String, String)> = self.control_bindings_by_entity
             .iter()
             .filter_map(|(&id, bindings)| {
@@ -2432,24 +2433,6 @@ EngineCommand::PlayAnimation { id, name } => {
 
     /// Aplica los comandos generados por los scripts al estado del motor.
     pub(crate) fn apply_script_commands(&mut self, commands: Vec<ScriptCmd>) {
-        // Si en este tick un script solicita una animación bloqueada por estado
-        // (in_grounded/in_air), bloqueamos también TODO movimiento para evitar que
-        // el personaje se desplace sin animación. El usuario marca una condición de
-        // suelo/aire para que el script no intente mover en esos estados.
-        let mut blocked_by_animation_condition: HashSet<u32> = HashSet::new();
-        for cmd in &commands {
-            if let ScriptCmd::PlayAnimation { id, name } = cmd {
-                if let Some(anim) = self.animations.get(id).and_then(|m| m.get(name)) {
-                    let is_grounded = self.physics_2d.is_entity_grounded(*id);
-                    let blocked_by_grounded = anim.in_grounded && !is_grounded;
-                    let blocked_by_air = anim.in_air && is_grounded;
-                    if blocked_by_grounded || blocked_by_air {
-                        blocked_by_animation_condition.insert(*id);
-                    }
-                }
-            }
-        }
-
         for cmd in commands {
             match cmd {
                 ScriptCmd::SetPosition { id, x, y } => {
@@ -2504,11 +2487,6 @@ EngineCommand::PlayAnimation { id, name } => {
                     }
                 }
                 ScriptCmd::PlayAnimation { id, name } => {
-                    if blocked_by_animation_condition.contains(&id) {
-                        log::debug!("[script/play_animation] '{}' bloqueada por condición in_grounded/in_air para entidad {}", name, id);
-                        continue;
-                    }
-
                     // Si la animación solicitada ya está activa en esa entidad,
                     // ignorar para evitar el bucle on_start → play_animation → on_start.
                     let already_active = self.active_animations.get(&id)
@@ -2539,10 +2517,7 @@ EngineCommand::PlayAnimation { id, name } => {
                     }
                 }
                 ScriptCmd::MoveEntity { id, speed, dir_x, dir_y } => {
-                    if blocked_by_animation_condition.contains(&id) {
-                        log::debug!("[script/move_entity] bloqueado movimiento de entidad {} por condición in_grounded/in_air de animación", id);
-                        continue;
-                    }
+                    log::debug!("[script/move_entity] entidad={}, speed={}, dir=({}, {})", id, speed, dir_x, dir_y);
                     self.update_entity_facing_from_horizontal(id, speed * dir_x);
                     // Aplica velocidad lineal al Rapier body usando shape cast para
                     // detectar obstáculos antes de aplicar. Si no tiene física activa,
@@ -2578,10 +2553,7 @@ EngineCommand::PlayAnimation { id, name } => {
                     }
                 }
                 ScriptCmd::MoveEntityFacing { id, speed, amount_x, dir_y } => {
-                    if blocked_by_animation_condition.contains(&id) {
-                        log::debug!("[script/move_entity_facing] bloqueado movimiento de entidad {} por condición in_grounded/in_air de animación", id);
-                        continue;
-                    }
+                    log::debug!("[script/move_entity_facing] entidad={}, speed={}, amount_x={}, dir_y={}", id, speed, amount_x, dir_y);
                     let facing_right = self.entity_facing_right.get(&id).copied().unwrap_or(true);
                     let facing_sign = if facing_right { 1.0 } else { -1.0 };
                     let dir_x = amount_x.abs() * facing_sign;
