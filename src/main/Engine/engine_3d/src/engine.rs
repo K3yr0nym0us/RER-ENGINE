@@ -2338,12 +2338,8 @@ self.active_animations.retain(|_, a| !a.finished);
             return;
         }
 
-        match control_key {
-            "A" | "LEFT" | "D-LEFT" => { self.entity_facing_right.insert(id, false); }
-            "D" | "RIGHT" | "D-RIGHT" => { self.entity_facing_right.insert(id, true); }
-            _ => {}
-        }
-
+        // El facing se actualiza dentro de apply_script_commands via MoveEntity/MoveEntityFacing.
+        // Si esos comandos se bloquean por condición de animación, el facing tampoco cambia.
         let snapshot = self.build_script_snapshot(id);
         match self.script_engine.run_control_script(id, control_key, path, source, snapshot.as_ref()) {
             Ok(commands) => self.apply_script_commands(commands),
