@@ -2393,10 +2393,10 @@ self.active_animations.retain(|_, a| !a.finished);
     /// Aplica los comandos generados por los scripts al estado del motor.
     pub(crate) fn apply_script_commands(&mut self, commands: Vec<ScriptCmd>) {
         // Si en este tick un script solicita una animación bloqueada por estado
-        // (in_grounded/in_air), también bloqueamos el movimiento vertical ascendente
-        // cuando aplica para evitar "salto sin animación".
-        let mut blocked_upward_impulse: HashSet<u32> = HashSet::new();
-        let mut blocked_play_animation: HashSet<u32> = HashSet::new();
+        // (in_grounded/in_air), bloqueamos también TODO movimiento para evitar que
+        // el personaje se desplace sin animación. El usuario marca una condición de
+        // suelo/aire para que el script no intente mover en esos estados.
+        let mut blocked_by_animation_condition: HashSet<u32> = HashSet::new();
         for cmd in &commands {
             if let ScriptCmd::PlayAnimation { id, name } = cmd {
                 if let Some(anim) = self.animations.get(id).and_then(|m| m.get(name)) {
@@ -2404,10 +2404,7 @@ self.active_animations.retain(|_, a| !a.finished);
                     let blocked_by_grounded = anim.in_grounded && !is_grounded;
                     let blocked_by_air = anim.in_air && is_grounded;
                     if blocked_by_grounded || blocked_by_air {
-                        blocked_play_animation.insert(*id);
-                        if blocked_by_grounded {
-                            blocked_upward_impulse.insert(*id);
-                        }
+                        blocked_by_animation_condition.insert(*id);
                     }
                 }
             }
@@ -2467,7 +2464,7 @@ self.active_animations.retain(|_, a| !a.finished);
                     }
                 }
                 ScriptCmd::PlayAnimation { id, name } => {
-                    if blocked_play_animation.contains(&id) {
+                    if blocked_by_animation_condition.contains(&id) {
                         log::debug!("[script/play_animation] '{}' bloqueada por condición in_grounded/in_air para entidad {}", name, id);
                         continue;
                     }
@@ -2502,8 +2499,8 @@ self.active_animations.retain(|_, a| !a.finished);
                     }
                 }
                 ScriptCmd::MoveEntity { id, speed, dir_x, dir_y } => {
-                    if blocked_upward_impulse.contains(&id) && dir_y > 0.0 {
-                        log::debug!("[script/move_entity] bloqueado impulso vertical de entidad {} por condición in_grounded", id);
+                    if blocked_by_animation_condition.contains(&id) {
+                        log::debug!("[script/move_entity] bloqueado movimiento de entidad {} por condición in_grounded/in_air de animación", id);
                         continue;
                     }
                     self.update_entity_facing_from_horizontal(id, speed * dir_x);
@@ -2541,8 +2538,8 @@ self.active_animations.retain(|_, a| !a.finished);
                     }
                 }
                 ScriptCmd::MoveEntityFacing { id, speed, amount_x, dir_y } => {
-                    if blocked_upward_impulse.contains(&id) && dir_y > 0.0 {
-                        log::debug!("[script/move_entity_facing] bloqueado impulso vertical de entidad {} por condición in_grounded", id);
+                    if blocked_by_animation_condition.contains(&id) {
+                        log::debug!("[script/move_entity_facing] bloqueado movimiento de entidad {} por condición in_grounded/in_air de animación", id);
                         continue;
                     }
                     let facing_right = self.entity_facing_right.get(&id).copied().unwrap_or(true);
