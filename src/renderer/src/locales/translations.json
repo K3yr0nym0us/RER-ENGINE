@@ -104,9 +104,10 @@
   "Kinematic (by code)": "Cinemático (por código)",
   "Transformations": "Transformaciones",
   "Create Blueprint": "Crear Blueprint",
-  "A Blueprint will be created based on the entity {name}.": "Se creará un Blueprint basado en la entidad {name}.",
+  "Convert to Blueprint": "Convertir en Blueprint",
+  "The entity will be converted to a Blueprint": "La entidad se convertirá en un Blueprint",
   "The Blueprint will save the current entity configuration: transformations, physics, animations and scripts.": "El Blueprint guardará toda la configuración actual de la entidad: transformaciones, física, animaciones y scripts.",
-  "It will be saved in the {category} category.": "Se guardará en la categoría {category}.",
+  "The created Blueprint will be available in the Quick Build tool": "La blueprint creada estará disponible en la herramienta de construcción rápida.",
   "Confirm": "Confirmar",
   "Click on an object to view it": "Haz click en un objeto para verlo",
 

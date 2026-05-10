@@ -335,13 +335,13 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
             };
 
             openModal({
-              title: t('Create Blueprint'),
+              title: t('Convert to Blueprint'),
               body: (
                 <div className="text-center">
                   <CircleSquare size={40} className="text-primary mb-3" />
-                  <p>{t('A Blueprint will be created based on the entity')} <strong>{selectedEntity.name}</strong>.</p>
+                  <p>{t('The entity will be converted to a Blueprint')} <strong>{selectedEntity.name}</strong>.</p>
                   <p className="text-secondary small">{t('The Blueprint will save the current entity configuration: transformations, physics, animations and scripts.')}</p>
-                  <p className="text-secondary small">{t('It will be saved in the')} <strong>{category}</strong> {t('category.')}.</p>
+                  <p className="text-secondary small">{t('The created Blueprint will be available in the Quick Build tool')}</p>
                   <div className="d-flex justify-content-center gap-2 mt-4">
                     <button className="btn btn-primary" onClick={handleConfirm}>
                       {t('Confirm')}
@@ -356,7 +356,7 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
           }}
         >
           <CircleSquare className="me-2" />
-          {t('Create Blueprint')}
+          {t('Convert to Blueprint')}
         </button>
         )}
         <button

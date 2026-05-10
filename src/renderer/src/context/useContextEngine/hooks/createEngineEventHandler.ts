@@ -41,6 +41,7 @@ const SILENT_ENGINE_EVENTS = new Set<string>([
 	'quick_build_move',
 	'camera_2d_updated',
 	'animation_logical_resolved',
+	'multi_selection_transformed',
 	'autosave_tick',
 ]);
 
@@ -585,6 +586,17 @@ export function createEngineEventHandler({
 		if (event.event === 'multi_select_changed') {
 			const e = event as unknown as { ids: number[] };
 			dispatch({ type: 'SET_MULTI_SELECT', payload: e.ids });
+		}
+
+		if (event.event === 'multi_selection_transformed') {
+			const e = event as unknown as { entities: Array<{ id: number; position: [number, number, number]; rotation: [number, number, number, number]; scale: [number, number, number] }> };
+			for (const entity of e.entities) {
+				refs.entityTransformsRef.current[entity.id] = {
+					position: entity.position,
+					rotation: entity.rotation,
+					scale: entity.scale,
+				};
+			}
 		}
 
 		if (event.event === 'animation_finished') {
