@@ -24,3 +24,6 @@ Thumbs.db
 
 # Editor
 .vscode/settings.json
+
+# IA
+.claude
