@@ -195,36 +195,6 @@ impl PhysicsWorld {
         self.entity_body_types.get(&entity).map(|s| s.as_str()).unwrap_or("")
     }
 
-    /// Retorna true cuando la entidad está apoyada sobre una superficie horizontal
-    /// con colisión. Se usa para validar animaciones marcadas como "En tierra".
-    pub(crate) fn is_entity_grounded(&self, entity: EntityId) -> bool {
-        let Some(&body_handle) = self.entity_bodies.get(&entity) else {
-            return false;
-        };
-        let Some(&self_collider) = self.entity_colliders.get(&entity) else {
-            return false;
-        };
-
-        let Some(body) = self.bodies.get(body_handle) else {
-            return false;
-        };
-        let Some(collider) = self.colliders.get(self_collider) else {
-            return false;
-        };
-
-        let local_aabb = collider.shape().compute_local_aabb();
-        let half_h = ((local_aabb.maxs.y - local_aabb.mins.y) * 0.5).max(0.01);
-        let feet_y = body.translation().y - half_h;
-        let ray_origin = Point::new(body.translation().x, feet_y + 0.005, body.translation().z);
-        let ray = Ray::new(ray_origin, vector![0.0, -1.0, 0.0]);
-        let filter = QueryFilter::default().exclude_collider(self_collider);
-
-        self.query_pipeline
-            .cast_ray_and_get_normal(&self.bodies, &self.colliders, &ray, 0.03, true, filter)
-            .map(|(_, hit)| hit.normal.y >= 0.65)
-            .unwrap_or(false)
-    }
-
     // ── Acceso directo ───────────────────────────────────────────────────────
 
     #[allow(dead_code)]

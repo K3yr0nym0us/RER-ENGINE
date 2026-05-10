@@ -31,8 +31,6 @@ interface SpritePreviewConfirmConfig {
   audioPath?: string;
   scripts: ScriptEntry[];
   isCancelable: boolean;
-  inGrounded: boolean;
-  inAir: boolean;
   selectionMode: SelectionMode;
   gridSize: number;
   cellOffsetX: number;
@@ -52,8 +50,6 @@ export function SpritePreviewModalBody({
   initialAudioPath,
   initialScripts,
   initialIsCancelable,
-  initialInGrounded,
-  initialInAir,
   initialSelectionMode,
   initialGridSize,
   initialCellOffsetX,
@@ -71,8 +67,6 @@ export function SpritePreviewModalBody({
   initialAudioPath?: string
   initialScripts?: ScriptEntry[]
   initialIsCancelable?: boolean
-  initialInGrounded?: boolean
-  initialInAir?: boolean
   initialSelectionMode?: SelectionMode
   initialGridSize?: number
   initialCellOffsetX?: number
@@ -108,8 +102,6 @@ export function SpritePreviewModalBody({
     audioPath,
     scripts,
     isCancelable,
-    inGrounded,
-    inAir,
   } = state;
 
   useEffect(() => {
@@ -127,14 +119,6 @@ export function SpritePreviewModalBody({
   useEffect(() => {
     dispatch({ type: 'patch', payload: { isCancelable: initialIsCancelable ?? false } });
   }, [initialIsCancelable]);
-
-  useEffect(() => {
-    dispatch({ type: 'patch', payload: { inGrounded: initialInGrounded ?? false } });
-  }, [initialInGrounded]);
-
-  useEffect(() => {
-    dispatch({ type: 'patch', payload: { inAir: initialInAir ?? false } });
-  }, [initialInAir]);
 
   useEffect(() => {
     setFacingRight(initialFacingRight ?? true);
@@ -266,8 +250,6 @@ export function SpritePreviewModalBody({
       audioPath,
       scripts,
       isCancelable,
-      inGrounded,
-      inAir,
       selectionMode,
       gridSize,
       cellOffsetX,
@@ -299,10 +281,6 @@ export function SpritePreviewModalBody({
             onRemoveScript={handleRemoveScript}
             isCancelable={isCancelable}
             onIsCancelableChange={(value) => dispatch({ type: 'patch', payload: { isCancelable: value } })}
-            inGrounded={inGrounded}
-            onInGroundedChange={(value) => dispatch({ type: 'patch', payload: { inGrounded: value, inAir: value ? false : inAir } })}
-            inAir={inAir}
-            onInAirChange={(value) => dispatch({ type: 'patch', payload: { inAir: value, inGrounded: value ? false : inGrounded } })}
           />
         </div>
 

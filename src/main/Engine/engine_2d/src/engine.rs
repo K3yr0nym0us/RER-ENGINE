@@ -170,10 +170,6 @@ pub struct AnimationState {
     pub scripts:       Vec<AnimScriptData>,
     /// Si false, ningún `PlayAnimation` puede interrumpirla hasta que termine.
     pub is_cancelable: bool,
-    /// Si true, solo puede reproducirse cuando la entidad está apoyada en suelo.
-    pub in_grounded: bool,
-    /// Si true, solo puede reproducirse cuando la entidad está en aire.
-    pub in_air: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -1340,8 +1336,7 @@ impl State {
 
                     // Forzar un paso de física inicial antes de arrancar
                     // las animaciones default. Esto sincroniza contactos/grounded
-                    // después de restaurar transformaciones del editor y evita que
-                    // animaciones con in_grounded=true se bloqueen por falta de contactos.
+                    // después de restaurar transformaciones del editor.
                     self.physics_2d.step(1.0 / 60.0, &mut self.world);
 
                     // Al entrar en modo juego, reproducir la animación predeterminada
@@ -1350,7 +1345,7 @@ impl State {
                     self.script_engine.clear_control_script_cache();
                     let entities_with_anims: Vec<u32> = self.animations.keys().copied().collect();
                     let default_count = self.default_animation_by_entity.len();
-                    log::debug!("[SetPreviewPlaying] entidades con animaciones: {}, con default: {}", entities_with_anims.len(), default_count);
+                    log::info!("[SetPreviewPlaying] entidades con animaciones: {}, con default: {}", entities_with_anims.len(), default_count);
                     for entity_id in entities_with_anims {
                         let default_name = self.default_animation_by_entity
                             .get(&entity_id)
@@ -1361,7 +1356,7 @@ impl State {
                                     .and_then(|m| m.keys().next().cloned())
                             });
                         if let Some(name) = default_name {
-                            log::debug!("[SetPreviewPlaying] iniciando animación '{}' para entidad {}", name, entity_id);
+                            log::info!("[SetPreviewPlaying] iniciando animación '{}' para entidad {}", name, entity_id);
                             self.handle_command(EngineCommand::PlayAnimation { id: entity_id, name });
                         }
                     }
@@ -1546,7 +1541,7 @@ impl State {
                     log::warn!("[hot-reload] Path no encontrado en static_tex_cache ni como fondo: {}", path);
                 }
             }
-            EngineCommand::SetAnimation { id, name, frames, fps, loop_, flip_horizontal, audio_path, logical_w, logical_h, scripts, is_cancelable, in_grounded, in_air } => {
+            EngineCommand::SetAnimation { id, name, frames, fps, loop_, flip_horizontal, audio_path, logical_w, logical_h, scripts, is_cancelable, .. } => {
                 log::debug!("[IPC] SetAnimation: entity_id={}, name='{}', frames={}, audio={:?}, scripts={}", id, name, frames.len(), audio_path, scripts.len());
 
                 let fallback_logical_w = logical_w.unwrap_or(64).max(1);
@@ -1623,8 +1618,6 @@ impl State {
                         logical_h: resolved_logical_h,
                         scripts,
                         is_cancelable,
-                        in_grounded,
-                        in_air,
                     });
                 self.default_animation_by_entity
                     .entry(id)
@@ -1695,7 +1688,7 @@ impl State {
                 }
             }
 EngineCommand::PlayAnimation { id, name } => {
-                log::info!("[handle_command] PlayAnimation: id={}, name='{}'", id, name);
+                log::debug!("[handle_command] PlayAnimation: id={}, name='{}'", id, name);
 
                 // Si hay una animación activa con is_cancelable=false que aún no terminó,
                 // bloquear la nueva hasta que termine naturalmente.
@@ -1781,7 +1774,7 @@ EngineCommand::PlayAnimation { id, name } => {
                             fps: anim.fps,
                             finished: false,
                         });
-                        log::info!("[animation] Iniciada '{}' para entidad {} (fps={}, frames={})", name, id, anim.fps, anim.frames.len());
+                        log::debug!("[animation] Iniciada '{}' para entidad {} (fps={}, frames={})", name, id, anim.fps, anim.frames.len());
                     }
                 }
             }
@@ -1832,7 +1825,6 @@ EngineCommand::PlayAnimation { id, name } => {
                 }
             }
             EngineCommand::RunControlScript { id, control_key, path, source } => {
-                log::debug!("[IPC] RunControlScript: entidad={}, key='{}', path='{}'", id, control_key, path);
                 self.execute_control_script(id, &control_key, &path, &source);
             }
             EngineCommand::UnloadScript { id } => {
@@ -2109,12 +2101,7 @@ EngineCommand::PlayAnimation { id, name } => {
             }
         }
 
-        if !to_play.is_empty() {
-            log::debug!("[update_animations] procesando {} frames en to_play", to_play.len());
-        }
         for (entity_id, frame_idx) in to_play {
-            log::debug!("[update_animations] → frame {} para entity {} (active tiene {} entradas)", 
-                       frame_idx, entity_id, self.active_animations.len());
             let anim_name = self.active_animations.get(&entity_id)
                 .map(|a| a.animation_name.clone())
                 .unwrap_or_default();
@@ -2357,7 +2344,6 @@ EngineCommand::PlayAnimation { id, name } => {
             return;
         }
 
-        log::debug!("[control] ejecutando script: entidad={}, key='{}', path='{}'", id, control_key, path);
         let snapshot = self.build_script_snapshot(id);
         match self.script_engine.run_control_script(id, control_key, path, source, snapshot.as_ref()) {
             Ok(commands) => self.apply_script_commands(commands),
@@ -2370,7 +2356,6 @@ EngineCommand::PlayAnimation { id, name } => {
             return;
         }
 
-        log::debug!("[input] control recibido: device='{}', key='{}'", device, control_key);
         let matches: Vec<(u32, String, String)> = self.control_bindings_by_entity
             .iter()
             .filter_map(|(&id, bindings)| {
@@ -2491,7 +2476,6 @@ EngineCommand::PlayAnimation { id, name } => {
                     }
                 }
                 ScriptCmd::MoveEntity { id, speed, dir_x, dir_y } => {
-                    log::debug!("[script/move_entity] entidad={}, speed={}, dir=({}, {})", id, speed, dir_x, dir_y);
                     self.update_entity_facing_from_horizontal(id, speed * dir_x);
                     // Aplica velocidad lineal al Rapier body usando shape cast para
                     // detectar obstáculos antes de aplicar. Si no tiene física activa,
@@ -2527,7 +2511,6 @@ EngineCommand::PlayAnimation { id, name } => {
                     }
                 }
                 ScriptCmd::MoveEntityFacing { id, speed, amount_x, dir_y } => {
-                    log::debug!("[script/move_entity_facing] entidad={}, speed={}, amount_x={}, dir_y={}", id, speed, amount_x, dir_y);
                     let facing_right = self.entity_facing_right.get(&id).copied().unwrap_or(true);
                     let facing_sign = if facing_right { 1.0 } else { -1.0 };
                     let dir_x = amount_x.abs() * facing_sign;

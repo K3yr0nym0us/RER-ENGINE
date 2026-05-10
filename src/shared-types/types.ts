@@ -73,16 +73,6 @@ export interface SavedAnimation {
    * Por defecto false: ninguna animación puede cancelarla.
    */
   is_cancelable?: boolean
-  /**
-   * Si true, el motor solo permite reproducir esta animación cuando
-   * la entidad está en contacto con una superficie horizontal con colisión.
-   */
-  in_grounded?: boolean
-  /**
-   * Si true, el motor solo permite reproducir esta animación cuando
-   * la entidad está en el aire (sin contacto de suelo horizontal).
-   */
-  in_air?: boolean
   /** Modo de selección usado en la modal de sprites (cell/grid o box libre). */
   selection_mode?: 'cell' | 'box'
   /** Tamaño de celda usado cuando selection_mode = 'cell'. */

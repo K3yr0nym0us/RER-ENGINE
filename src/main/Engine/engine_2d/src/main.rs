@@ -633,7 +633,6 @@ impl ApplicationHandler<EngineCommand> for App {
                 let pressed = key_state == ElementState::Pressed;
                 if state.is_preview_playing() {
                     if let Some(control_key) = map_keyboard_control_key(code) {
-                        log::debug!("[input] tecla nativa: code={:?} → control_key='{}' pressed={}", code, control_key, pressed);
                         if pressed {
                             if self.keyboard_mouse_pressed.insert(control_key.clone()) {
                                 state.handle_runtime_control_input("keyboard_mouse", &control_key);
@@ -641,8 +640,6 @@ impl ApplicationHandler<EngineCommand> for App {
                         } else {
                             self.keyboard_mouse_pressed.remove(&control_key);
                         }
-                    } else {
-                        log::debug!("[input] tecla nativa sin mapeo: code={:?}", code);
                     }
                 }
                 match code {
@@ -738,12 +735,10 @@ impl ApplicationHandler<EngineCommand> for App {
                 }
 
                 for control_key in &self.keyboard_mouse_pressed {
-                    log::debug!("[input] held tick: key='{}'", control_key);
                     state.handle_runtime_control_input("keyboard_mouse", control_key);
                 }
                 for button in &self.gamepad_pressed {
                     if let Some(control_key) = map_gamepad_control_key(*button) {
-                        log::debug!("[input] held tick gamepad: button={:?} → '{}'", button, control_key);
                         state.handle_runtime_control_input("gamepad", control_key);
                     }
                 }
@@ -780,7 +775,7 @@ fn main() {
             // Por defecto dejamos solo advertencias/errores para un arranque limpio.
             // Quien necesite más detalle puede usar RUST_LOG=info o RUST_LOG=debug.
             // Además, wgpu_hal::gles/vulkan generan spam en algunos entornos.
-            "info,wgpu_core=warn,wgpu_hal=warn,wgpu_hal::gles=error,rer_engine_2d::config_2d=info,rer_engine_2d::engine=debug",
+            "warn,wgpu_core=warn,wgpu_hal::vulkan=error,wgpu_hal::gles=error,wgpu_hal=warn,naga=warn",
         ),
     )
     .init();

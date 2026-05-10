@@ -25,10 +25,6 @@ interface SpritePreviewLeftPanelProps {
   onRemoveScript: (name: string) => void;
   isCancelable: boolean;
   onIsCancelableChange: (value: boolean) => void;
-  inGrounded: boolean;
-  onInGroundedChange: (value: boolean) => void;
-  inAir: boolean;
-  onInAirChange: (value: boolean) => void;
 }
 
 const DEFAULT_BOX = { x: 0, y: 0, width: 64, height: 64 };
@@ -53,10 +49,6 @@ export function SpritePreviewLeftPanel({
   onRemoveScript,
   isCancelable,
   onIsCancelableChange,
-  inGrounded,
-  onInGroundedChange,
-  inAir,
-  onInAirChange,
 }: SpritePreviewLeftPanelProps) {
   const [box, setBox] = useState(DEFAULT_BOX);
   const [keepAspect, setKeepAspect] = useState(true);
@@ -360,53 +352,6 @@ export function SpritePreviewLeftPanel({
         </AppTooltip>
       </div>
 
-      <div className="mb-2 d-flex justify-content-center">
-        <AppTooltip
-          content={
-            <strong>
-              {t('Only runs when the entity is touching a horizontal collidable surface.')}
-            </strong>
-          }
-          place="right"
-        >
-          <div className="form-check d-flex align-items-center gap-2" style={{ cursor: 'pointer' }}>
-            <input
-              className="form-check-input"
-              type="checkbox"
-              id="is-grounded-check"
-              checked={inGrounded}
-              onChange={e => onInGroundedChange(e.target.checked)}
-            />
-            <label className="form-check-label d-flex align-items-center gap-1" htmlFor="is-grounded-check" style={{ cursor: 'pointer' }}>
-              <span className="text-light small">{t('On ground')}</span>
-            </label>
-          </div>
-        </AppTooltip>
-      </div>
-
-      <div className="mb-2 d-flex justify-content-center">
-        <AppTooltip
-          content={
-            <strong>
-              {t('Only runs while the entity is in the air.')}
-            </strong>
-          }
-          place="right"
-        >
-          <div className="form-check d-flex align-items-center gap-2" style={{ cursor: 'pointer' }}>
-            <input
-              className="form-check-input"
-              type="checkbox"
-              id="is-air-check"
-              checked={inAir}
-              onChange={e => onInAirChange(e.target.checked)}
-            />
-            <label className="form-check-label d-flex align-items-center gap-1" htmlFor="is-air-check" style={{ cursor: 'pointer' }}>
-              <span className="text-light small">{t('In air')}</span>
-            </label>
-          </div>
-        </AppTooltip>
-      </div>
 
       
 

@@ -23,8 +23,6 @@ export interface SpritePreviewConfirmConfig {
   loop: boolean;
   audioPath?: string;
   scripts: ScriptEntry[];
-  inGrounded: boolean;
-  inAir: boolean;
 }
 
 export interface SpritePreviewState {
@@ -42,8 +40,6 @@ export interface SpritePreviewState {
   audioPath?: string;
   scripts: ScriptEntry[];
   isCancelable: boolean;
-  inGrounded: boolean;
-  inAir: boolean;
 }
 
 export type SpritePreviewAction =
@@ -68,8 +64,6 @@ export const initialSpritePreviewState: SpritePreviewState = {
   audioPath: undefined,
   scripts: [],
   isCancelable: false,
-  inGrounded: false,
-  inAir: false,
 };
 
 export function spritePreviewReducer(

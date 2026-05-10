@@ -305,8 +305,6 @@ export function createEngineEventHandler({
 							logical_h: anim.logical_h,
 							scripts: anim.scripts ?? [],
 							is_cancelable: anim.is_cancelable ?? true,
-							in_grounded: anim.in_grounded ?? false,
-							in_air: anim.in_air ?? false,
 						} as never);
 					}
 					const defaultAnim = pending.animations.find((anim: any) => anim?.is_default) ?? pending.animations[0];
@@ -377,8 +375,6 @@ export function createEngineEventHandler({
 							logical_h: anim.logical_h,
 							scripts: anim.scripts ?? [],
 							is_cancelable: anim.is_cancelable ?? true,
-							in_grounded: anim.in_grounded ?? false,
-							in_air: anim.in_air ?? false,
 						} as never);
 					}
 					const defaultAnim = pending.animations.find((anim: any) => anim?.is_default) ?? pending.animations[0];
