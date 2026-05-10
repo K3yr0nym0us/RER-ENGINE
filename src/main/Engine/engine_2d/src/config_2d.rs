@@ -1776,7 +1776,7 @@ pub(crate) fn character_collision_shape(state: &State, entity_id: u32) -> Option
     let marker = state.world.get::<CharacterMarker>(entity_id)?;
 
     let cache_entry = current_character_cache_entry(state, entity_id);
-    let (img_width, img_height, bounds) = if let Some(entry) = cache_entry {
+    let (_img_width, img_height, bounds) = if let Some(entry) = cache_entry {
         (
             entry.img_width,
             entry.img_height,
@@ -1796,18 +1796,13 @@ pub(crate) fn character_collision_shape(state: &State, entity_id: u32) -> Option
         transform.scale.y / img_height as f32
     };
 
-    let bounds_center_x = bounds[0] as f32 + bounds[2] as f32 * 0.5;
-    let bounds_center_y = bounds[1] as f32 + bounds[3] as f32 * 0.5;
-    let local_offset = [
-        (bounds_center_x - img_width as f32 * 0.5) * world_per_px,
-        -((bounds_center_y - img_height as f32 * 0.5) * world_per_px),
-        0.0,
-    ];
+    // El collider se centra en el body (offset = 0) como en el comportamiento original.
+    // El tamaño usa tight_bounds cuando está disponible para colisión precisa.
     let half_ext = [
         bounds[2] as f32 * 0.5 * world_per_px,
         bounds[3] as f32 * 0.5 * world_per_px,
         0.01,
     ];
 
-    Some((half_ext, local_offset))
+    Some((half_ext, [0.0, 0.0, 0.0]))
 }
