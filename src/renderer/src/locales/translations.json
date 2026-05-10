@@ -232,6 +232,12 @@
   "Cancelable by other animations": "Cancelable por otras animaciones",
   "Cancelable tooltip": "Si está activado, otra animación puede interrumpir y cancelar esta antes de que termine.\nSi está desactivado, ninguna animación podrá cancelarla hasta que concluya.",
   "Cancelable": "Cancelable",
+  "Grounded": "En tierra",
+  "Grounded tooltip": "Solo se ejecuta cuando la entidad toca una superficie horizontal con colisión.",
+  "On ground": "En tierra",
+  "Only runs when the entity is touching a horizontal collidable surface.": "Solo se ejecuta cuando la entidad toca una superficie horizontal con colisión.",
+  "In air": "En aire",
+  "Only runs while the entity is in the air.": "Solo se ejecuta mientras la entidad está en el aire.",
 
   "Preview": "Previsualización",
   "Frame preview": "Vista previa del frame",

@@ -183,6 +183,12 @@ pub enum EngineCommand {
         /// Si false (default), ninguna otra animación puede interrumpirla antes de que termine.
         #[serde(default)]
         is_cancelable: bool,
+        /// Si true, solo se reproduce cuando la entidad está en suelo (contacto horizontal).
+        #[serde(default)]
+        in_grounded: bool,
+        /// Si true, solo se reproduce cuando la entidad está en aire.
+        #[serde(default)]
+        in_air: bool,
     },
     /// Eliminar una animación del motor por ID de entidad y nombre.
     RemoveAnimation { id: u32, name: String },

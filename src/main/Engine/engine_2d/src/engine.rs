@@ -170,6 +170,10 @@ pub struct AnimationState {
     pub scripts:       Vec<AnimScriptData>,
     /// Si false, ningún `PlayAnimation` puede interrumpirla hasta que termine.
     pub is_cancelable: bool,
+    /// Si true, solo puede reproducirse cuando la entidad está apoyada en suelo.
+    pub in_grounded: bool,
+    /// Si true, solo puede reproducirse cuando la entidad está en aire.
+    pub in_air: bool,
 }
 
 pub struct ActiveAnimation {
@@ -1517,7 +1521,7 @@ impl State {
                     log::warn!("[hot-reload] Path no encontrado en static_tex_cache ni como fondo: {}", path);
                 }
             }
-            EngineCommand::SetAnimation { id, name, frames, fps, loop_, flip_horizontal, audio_path, logical_w, logical_h, scripts, is_cancelable } => {
+            EngineCommand::SetAnimation { id, name, frames, fps, loop_, flip_horizontal, audio_path, logical_w, logical_h, scripts, is_cancelable, in_grounded, in_air } => {
                 log::debug!("[IPC] SetAnimation: entity_id={}, name='{}', frames={}, audio={:?}, scripts={}", id, name, frames.len(), audio_path, scripts.len());
 
                 let fallback_logical_w = logical_w.unwrap_or(64).max(1);
@@ -1594,6 +1598,8 @@ impl State {
                         logical_h: resolved_logical_h,
                         scripts,
                         is_cancelable,
+                        in_grounded,
+                        in_air,
                     });
                 self.default_animation_by_entity
                     .entry(id)
@@ -1683,9 +1689,6 @@ EngineCommand::PlayAnimation { id, name } => {
                     }
                 }
 
-                // Detener animación previa (el Play de audio incluye clear interno)
-                self.active_animations.remove(&id);
-
                 let anim_opt = self.animations.get(&id)
                     .and_then(|m| m.get(&name))
                     .cloned();
@@ -1693,6 +1696,19 @@ EngineCommand::PlayAnimation { id, name } => {
                 match anim_opt {
                     None => log::warn!("[IPC] Animación '{}' no encontrada para entidad {}", name, id),
                     Some(anim) => {
+                        let is_grounded = self.physics_2d.is_entity_grounded(id);
+                        if anim.in_grounded && !is_grounded {
+                            log::debug!("[animation] PlayAnimation '{}' bloqueado: entidad {} no está en tierra", name, id);
+                            return;
+                        }
+                        if anim.in_air && is_grounded {
+                            log::debug!("[animation] PlayAnimation '{}' bloqueado: entidad {} está en tierra", name, id);
+                            return;
+                        }
+
+                        // Detener animación previa (el Play de audio incluye clear interno)
+                        self.active_animations.remove(&id);
+
                         // Re-baseline de posición al estado actual antes de reproducir.
                         // La escala base se conserva para evitar acumulación al alternar
                         // animaciones con distinto logical_h (grow/shrink progresivo).
@@ -2378,6 +2394,27 @@ self.active_animations.retain(|_, a| !a.finished);
 
     /// Aplica los comandos generados por los scripts al estado del motor.
     pub(crate) fn apply_script_commands(&mut self, commands: Vec<ScriptCmd>) {
+        // Si en este tick un script solicita una animación bloqueada por estado
+        // (in_grounded/in_air), también bloqueamos el movimiento vertical ascendente
+        // cuando aplica para evitar "salto sin animación".
+        let mut blocked_upward_impulse: HashSet<u32> = HashSet::new();
+        let mut blocked_play_animation: HashSet<u32> = HashSet::new();
+        for cmd in &commands {
+            if let ScriptCmd::PlayAnimation { id, name } = cmd {
+                if let Some(anim) = self.animations.get(id).and_then(|m| m.get(name)) {
+                    let is_grounded = self.physics_2d.is_entity_grounded(*id);
+                    let blocked_by_grounded = anim.in_grounded && !is_grounded;
+                    let blocked_by_air = anim.in_air && is_grounded;
+                    if blocked_by_grounded || blocked_by_air {
+                        blocked_play_animation.insert(*id);
+                        if blocked_by_grounded {
+                            blocked_upward_impulse.insert(*id);
+                        }
+                    }
+                }
+            }
+        }
+
         for cmd in commands {
             match cmd {
                 ScriptCmd::SetPosition { id, x, y } => {
@@ -2432,6 +2469,11 @@ self.active_animations.retain(|_, a| !a.finished);
                     }
                 }
                 ScriptCmd::PlayAnimation { id, name } => {
+                    if blocked_play_animation.contains(&id) {
+                        log::debug!("[script/play_animation] '{}' bloqueada por condición in_grounded/in_air para entidad {}", name, id);
+                        continue;
+                    }
+
                     // Si la animación solicitada ya está activa en esa entidad,
                     // ignorar para evitar el bucle on_start → play_animation → on_start.
                     let already_active = self.active_animations.get(&id)
@@ -2462,6 +2504,10 @@ self.active_animations.retain(|_, a| !a.finished);
                     }
                 }
                 ScriptCmd::MoveEntity { id, speed, dir_x, dir_y } => {
+                    if blocked_upward_impulse.contains(&id) && dir_y > 0.0 {
+                        log::debug!("[script/move_entity] bloqueado impulso vertical de entidad {} por condición in_grounded", id);
+                        continue;
+                    }
                     self.update_entity_facing_from_horizontal(id, speed * dir_x);
                     // Aplica velocidad lineal al Rapier body usando shape cast para
                     // detectar obstáculos antes de aplicar. Si no tiene física activa,
@@ -2497,6 +2543,10 @@ self.active_animations.retain(|_, a| !a.finished);
                     }
                 }
                 ScriptCmd::MoveEntityFacing { id, speed, amount_x, dir_y } => {
+                    if blocked_upward_impulse.contains(&id) && dir_y > 0.0 {
+                        log::debug!("[script/move_entity_facing] bloqueado impulso vertical de entidad {} por condición in_grounded", id);
+                        continue;
+                    }
                     let facing_right = self.entity_facing_right.get(&id).copied().unwrap_or(true);
                     let facing_sign = if facing_right { 1.0 } else { -1.0 };
                     let dir_x = amount_x.abs() * facing_sign;

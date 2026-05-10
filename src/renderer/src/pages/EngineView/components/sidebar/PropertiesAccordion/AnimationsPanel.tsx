@@ -3,10 +3,9 @@ import { useEffect, useState } from 'react';
 import { Accordion } from 'react-bootstrap';
 import { Pencil, PlayFill, StopFill, Trash } from 'react-bootstrap-icons';
 
-import { AppTooltip } from '@components';
+import { AppTooltip, SpritePreviewModalBody } from '@components';
 import { CreateEntityFromSpriteModalBody } from '../EntitiesAccordion/components/CreateEntityFromSpriteModalBody';
-import { SpritePreviewModalBody } from '../EntitiesAccordion/SpritePreviewModalBody/SpritePreviewModalBody';
-import type { SpriteFrameRect } from '../EntitiesAccordion/SpritePreviewModalBody/components';
+import type { SpriteFrameRect } from '@components';
 import { useContextEngine } from '@engine';
 import { useModal } from '@modal';
 import { useTraslate } from '@hooks';
@@ -28,6 +27,8 @@ interface Animation {
   loop: boolean;
   is_default?: boolean;
   is_cancelable?: boolean;
+  in_grounded?: boolean;
+  in_air?: boolean;
   facing_right?: boolean;
   logical_w: number;
   logical_h: number;
@@ -117,6 +118,8 @@ export function AnimationsPanel() {
               loop: animation.loop,
               is_default: !animations.some((a) => a.is_default),
               is_cancelable: animation.isCancelable,
+              in_grounded: animation.inGrounded,
+              in_air: animation.inAir,
               facing_right: animation.facingRight,
               logical_w,
               logical_h,
@@ -250,6 +253,8 @@ export function AnimationsPanel() {
           initialLoop={anim.loop}
           initialIsDefaultAnimation={anim.is_default ?? false}
           initialIsCancelable={anim.is_cancelable ?? false}
+          initialInGrounded={anim.in_grounded ?? false}
+          initialInAir={anim.in_air ?? false}
           initialFacingRight={anim.facing_right ?? true}
           initialAudioPath={anim.audio_path}
           initialScripts={anim.scripts}
@@ -267,6 +272,8 @@ export function AnimationsPanel() {
               loop: config.loop,
               is_default: config.defaultAnimation,
               is_cancelable: config.isCancelable,
+              in_grounded: config.inGrounded,
+              in_air: config.inAir,
               facing_right: config.facingRight,
               logical_w,
               logical_h,
