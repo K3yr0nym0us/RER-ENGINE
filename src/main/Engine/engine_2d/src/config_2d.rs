@@ -1161,6 +1161,24 @@ impl State {
             self.physics_2d.teleport_entity(sel_id, nx, ny);
             }
         }
+
+        // Emitir evento con transformaciones de TODAS las entidades en multiselección
+        // para sincronizar correctamente entityTransformsRef en el frontend y guardar posiciones.
+        if !self.selected_entities.is_empty() {
+            let entities: Vec<crate::ipc::EntityTransformUpdate> = selected_ids.iter()
+                .filter_map(|&id| {
+                    self.world.get::<Transform>(id).map(|t| crate::ipc::EntityTransformUpdate {
+                        id,
+                        position: t.position.to_array(),
+                        rotation: [t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w],
+                        scale: t.scale.to_array(),
+                    })
+                })
+                .collect();
+            if !entities.is_empty() {
+                send_event(&EngineEvent::MultiSelectionTransformed { entities });
+            }
+        }
     }
 
     // ── Hover 2D ─────────────────────────────────────────────────────────────

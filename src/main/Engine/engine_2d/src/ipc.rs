@@ -263,6 +263,15 @@ pub struct AnimScriptData {
     pub source: String,
 }
 
+/// Datos de transformación de una entidad para eventos de multiselección
+#[derive(Debug, Serialize, Clone)]
+pub struct EntityTransformUpdate {
+    pub id:       u32,
+    pub position: [f32; 3],
+    pub rotation: [f32; 4],  // quaternion xyzw
+    pub scale:    [f32; 3],
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct ControlScriptData {
     pub name:   String,
@@ -357,6 +366,10 @@ pub enum EngineEvent {
     /// Emitido cuando el usuario mantiene Ctrl y hace click añadiendo/quitando entidades
     /// a la selección múltiple. `ids` contiene todos los IDs actualmente seleccionados.
     MultiSelectChanged { ids: Vec<u32> },
+    /// Emitido durante el arrastre en multiselección, contiene todas las transformaciones
+    /// actualizadas de las entidades seleccionadas. Permite sincronizar entityTransformsRef
+    /// en el frontend para guardar correctamente.
+    MultiSelectionTransformed { entities: Vec<EntityTransformUpdate> },
     /// Emitido ~1 vez por segundo con métricas de rendimiento del motor.
     DebugMetrics {
         fps:            f32,
