@@ -713,9 +713,6 @@ impl State {
                             self.last_collider_frame.insert(id, frame_key);
                         }
                     }
-                    if let Some(t) = self.world.get::<Transform>(id) {
-                        self.physics_2d.teleport_entity(id, t.position.x, t.position.y);
-                    }
                 }
             }
         }
