@@ -6,3 +6,4 @@ export * from './SpritePreviewCanvas';
 export * from './SpritePreviewFooter';
 export * from './SpritePreviewLeftPanel';
 export * from './SpritePreviewRightPanel';
+export * from './ScriptEditorModalBody';

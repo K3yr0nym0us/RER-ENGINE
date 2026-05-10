@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 
-import ScriptEditorModalBody from '../pages/EngineView/components/ScriptEditorModalBody';
+import ScriptEditorModalBody from '../components/SpritePreviewModalBody/components/ScriptEditorModalBody';
 
 import { useContextEngine } from '@engine';
 import { useModal } from '@modal';

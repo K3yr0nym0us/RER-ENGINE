@@ -3,6 +3,5 @@ export { default as ScenariosAccordion } from './EntitiesAccordion/EnvironmentsA
 export { default as CharactersAccordion } from './EntitiesAccordion/CharactersAccordion/CharactersAccordion'
 export { default as ToolsAccordion } from './ToolsAccordion/ToolsAccordion'
 export { default as ControlsAccordion } from './ControlsAccordion/ControlsAccordion'
-export { SpritePreviewModalBody } from './EntitiesAccordion/SpritePreviewModalBody/SpritePreviewModalBody'
 export { default as SpritesAccordion } from './ResourcesAccordion/SpritesAccordion/SpritesAccordion'
 export { default as ResourcesAccordion } from './ResourcesAccordion/ResourcesAccordion'

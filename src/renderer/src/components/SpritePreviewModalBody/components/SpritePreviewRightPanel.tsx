@@ -218,8 +218,8 @@ export function SpritePreviewRightPanel({
 
   return (
     <div className="bg-dark text-light border border-secondary rounded p-3 h-100 d-flex flex-column" style={{ minWidth: 220 }}>
-      <h5 className="text-light text-center mb-3">{t('Preview')}</h5>
-      <hr className="border-secondary mb-3" />
+      <h5 className="text-light text-center">{t('Preview')}</h5>
+      <hr className="border-secondary mb-3 mt-1" />
 
       <div className="mb-3">
         <label className="text-light text-center fw-bold d-block" htmlFor="preview-canvas" id="preview-canvas-label">{t('Frame preview')}</label>

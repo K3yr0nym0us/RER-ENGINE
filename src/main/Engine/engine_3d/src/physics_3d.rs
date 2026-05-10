@@ -33,6 +33,7 @@ pub(crate) struct PhysicsWorld {
     // Tracking per-entity: qué entidades tienen física y de qué tipo.
     entity_bodies:      HashMap<EntityId, RigidBodyHandle>,
     entity_body_types:  HashMap<EntityId, String>,
+    entity_colliders:   HashMap<EntityId, ColliderHandle>,
 }
 
 impl Default for PhysicsWorld {
@@ -52,6 +53,7 @@ impl Default for PhysicsWorld {
             query_pipeline:     QueryPipeline::new(),
             entity_bodies:      HashMap::new(),
             entity_body_types:  HashMap::new(),
+            entity_colliders:   HashMap::new(),
         }
     }
 }
@@ -94,7 +96,7 @@ impl PhysicsWorld {
         &mut self,
         position:     [f32; 3],
         half_extents: [f32; 3],
-    ) -> RigidBodyHandle {
+    ) -> (RigidBodyHandle, ColliderHandle) {
         let body = RigidBodyBuilder::dynamic()
             .translation(vector![position[0], position[1], position[2]])
             .build();
@@ -102,8 +104,8 @@ impl PhysicsWorld {
         let collider = ColliderBuilder::cuboid(
             half_extents[0], half_extents[1], half_extents[2],
         ).restitution(0.3).build();
-        self.colliders.insert_with_parent(collider, handle, &mut self.bodies);
-        handle
+        let collider_handle = self.colliders.insert_with_parent(collider, handle, &mut self.bodies);
+        (handle, collider_handle)
     }
 
     /// Caja estática (no se mueve, bloquea otros cuerpos).
@@ -111,7 +113,7 @@ impl PhysicsWorld {
         &mut self,
         position:     [f32; 3],
         half_extents: [f32; 3],
-    ) -> RigidBodyHandle {
+    ) -> (RigidBodyHandle, ColliderHandle) {
         let body = RigidBodyBuilder::fixed()
             .translation(vector![position[0], position[1], position[2]])
             .build();
@@ -119,8 +121,8 @@ impl PhysicsWorld {
         let collider = ColliderBuilder::cuboid(
             half_extents[0], half_extents[1], half_extents[2],
         ).build();
-        self.colliders.insert_with_parent(collider, handle, &mut self.bodies);
-        handle
+        let collider_handle = self.colliders.insert_with_parent(collider, handle, &mut self.bodies);
+        (handle, collider_handle)
     }
 
     /// Caja cinemática (se mueve por código, no por gravedad).
@@ -128,7 +130,7 @@ impl PhysicsWorld {
         &mut self,
         position:     [f32; 3],
         half_extents: [f32; 3],
-    ) -> RigidBodyHandle {
+    ) -> (RigidBodyHandle, ColliderHandle) {
         let body = RigidBodyBuilder::kinematic_position_based()
             .translation(vector![position[0], position[1], position[2]])
             .build();
@@ -136,8 +138,8 @@ impl PhysicsWorld {
         let collider = ColliderBuilder::cuboid(
             half_extents[0], half_extents[1], half_extents[2],
         ).build();
-        self.colliders.insert_with_parent(collider, handle, &mut self.bodies);
-        handle
+        let collider_handle = self.colliders.insert_with_parent(collider, handle, &mut self.bodies);
+        (handle, collider_handle)
     }
 
     // ── Gestión de física por entidad ─────────────────────────────────────────
@@ -154,6 +156,7 @@ impl PhysicsWorld {
         // Eliminar cuerpo previo si existe
         if let Some(handle) = self.entity_bodies.remove(&entity) {
             self.entity_body_types.remove(&entity);
+            self.entity_colliders.remove(&entity);
             self.remove_body(handle);
         }
         if !enabled { return; }
@@ -163,12 +166,13 @@ impl PhysicsWorld {
             half_ext[1].max(0.01),
             half_ext[2].max(0.01),
         ];
-        let handle = match body_type {
+        let (handle, collider_handle) = match body_type {
             "static"    => self.add_static_box(position, half),
             "kinematic" => self.add_kinematic_box(position, half),
             _           => self.add_dynamic_box(position, half),
         };
         self.entity_bodies.insert(entity, handle);
+        self.entity_colliders.insert(entity, collider_handle);
         self.entity_body_types.insert(entity, body_type.to_string());
     }
 
@@ -176,6 +180,7 @@ impl PhysicsWorld {
     pub(crate) fn remove_entity_body(&mut self, entity: EntityId) {
         if let Some(handle) = self.entity_bodies.remove(&entity) {
             self.entity_body_types.remove(&entity);
+            self.entity_colliders.remove(&entity);
             self.remove_body(handle);
         }
     }
@@ -188,6 +193,36 @@ impl PhysicsWorld {
     /// Devuelve el tipo de cuerpo de la entidad ("dynamic" | "static" | "kinematic" | "").
     pub(crate) fn get_body_type(&self, entity: EntityId) -> &str {
         self.entity_body_types.get(&entity).map(|s| s.as_str()).unwrap_or("")
+    }
+
+    /// Retorna true cuando la entidad está apoyada sobre una superficie horizontal
+    /// con colisión. Se usa para validar animaciones marcadas como "En tierra".
+    pub(crate) fn is_entity_grounded(&self, entity: EntityId) -> bool {
+        let Some(&body_handle) = self.entity_bodies.get(&entity) else {
+            return false;
+        };
+        let Some(&self_collider) = self.entity_colliders.get(&entity) else {
+            return false;
+        };
+
+        let Some(body) = self.bodies.get(body_handle) else {
+            return false;
+        };
+        let Some(collider) = self.colliders.get(self_collider) else {
+            return false;
+        };
+
+        let local_aabb = collider.shape().compute_local_aabb();
+        let half_h = ((local_aabb.maxs.y - local_aabb.mins.y) * 0.5).max(0.01);
+        let feet_y = body.translation().y - half_h;
+        let ray_origin = Point::new(body.translation().x, feet_y + 0.005, body.translation().z);
+        let ray = Ray::new(ray_origin, vector![0.0, -1.0, 0.0]);
+        let filter = QueryFilter::default().exclude_collider(self_collider);
+
+        self.query_pipeline
+            .cast_ray_and_get_normal(&self.bodies, &self.colliders, &ray, 0.03, true, filter)
+            .map(|(_, hit)| hit.normal.y >= 0.65)
+            .unwrap_or(false)
     }
 
     // ── Acceso directo ───────────────────────────────────────────────────────
