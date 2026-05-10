@@ -1721,20 +1721,6 @@ EngineCommand::PlayAnimation { id, name } => {
                 match anim_opt {
                     None => log::warn!("[IPC] Animación '{}' no encontrada para entidad {}", name, id),
                     Some(anim) => {
-                        // Bloquear si la animación requiere condición de suelo/aire y no se cumple
-                        // (solo en modo juego con física activa; en editor se permite siempre).
-                        if self.preview_playing && (anim.in_grounded || anim.in_air) {
-                            let is_grounded = self.physics_2d.is_entity_grounded(id);
-                            if anim.in_grounded && !is_grounded {
-                                log::debug!("[animation] PlayAnimation '{}' bloqueado: entidad {} no está en tierra", name, id);
-                                return;
-                            }
-                            if anim.in_air && is_grounded {
-                                log::debug!("[animation] PlayAnimation '{}' bloqueado: entidad {} está en tierra", name, id);
-                                return;
-                            }
-                        }
-
                         // Detener animación previa (el Play de audio incluye clear interno)
                         self.active_animations.remove(&id);
 
