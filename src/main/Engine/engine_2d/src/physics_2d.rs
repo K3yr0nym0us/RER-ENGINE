@@ -145,34 +145,6 @@ impl PhysicsWorld2D {
         self.entity_body_types.insert(entity, body_type.to_string());
     }
 
-    pub(crate) fn update_entity_collider_box(
-        &mut self,
-        entity: EntityId,
-        half_ext: [f32; 3],
-        collider_offset: [f32; 3],
-    ) {
-        let Some(&body_handle) = self.entity_bodies.get(&entity) else {
-            return;
-        };
-        let Some(old_collider) = self.entity_colliders.remove(&entity) else {
-            return;
-        };
-
-        self.colliders.remove(old_collider, &mut self.island_manager, &mut self.bodies, true);
-
-        let hx = half_ext[0].max(0.01);
-        let hy = half_ext[1].max(0.01);
-        let offset = vector![collider_offset[0], collider_offset[1], collider_offset[2]];
-        let col = ColliderBuilder::cuboid(hx, hy, 0.01)
-            .translation(offset)
-            .restitution(0.0)
-            .friction(0.5)
-            .build();
-        let col_handle = self.colliders.insert_with_parent(col, body_handle, &mut self.bodies);
-        // Solo mantener el collider en cache si la entidad está visible en cámara (optimización futura).
-        self.entity_colliders.insert(entity, col_handle);
-    }
-
     /// Elimina el cuerpo físico de una entidad si tiene uno.
     pub(crate) fn remove_entity_body(&mut self, entity: EntityId) {
         if let Some(handle) = self.entity_bodies.remove(&entity) {
@@ -208,6 +180,36 @@ impl PhysicsWorld2D {
 
     pub(crate) fn get_body_type(&self, entity: EntityId) -> &str {
         self.entity_body_types.get(&entity).map(|s| s.as_str()).unwrap_or("")
+    }
+
+    /// Retorna true cuando la entidad está apoyada sobre una superficie horizontal
+    /// con colisión. Se usa para validar animaciones marcadas como "En tierra".
+    pub(crate) fn is_entity_grounded(&self, entity: EntityId) -> bool {
+        let Some(&body_handle) = self.entity_bodies.get(&entity) else {
+            return false;
+        };
+        let Some(&self_collider) = self.entity_colliders.get(&entity) else {
+            return false;
+        };
+
+        let Some(body) = self.bodies.get(body_handle) else {
+            return false;
+        };
+        let Some(collider) = self.colliders.get(self_collider) else {
+            return false;
+        };
+
+        let local_aabb = collider.shape().compute_local_aabb();
+        let half_h = ((local_aabb.maxs.y - local_aabb.mins.y) * 0.5).max(0.01);
+        let feet_y = body.translation().y + collider.translation().y - half_h;
+        let ray_origin = Point::new(body.translation().x, feet_y + 0.005, 0.0);
+        let ray = Ray::new(ray_origin, vector![0.0, -1.0, 0.0]);
+        let filter = QueryFilter::default().exclude_collider(self_collider);
+
+        self.query_pipeline
+            .cast_ray_and_get_normal(&self.bodies, &self.colliders, &ray, 0.03, true, filter)
+            .map(|(_, hit)| hit.normal.y >= 0.65)
+            .unwrap_or(false)
     }
 
     // ── Paso de simulación ────────────────────────────────────────────────────
