@@ -1330,6 +1330,11 @@ impl State {
                     self.hovered_gizmo_axis = None;
                     self.active_gizmo_axis = None;
 
+                    // Forzar una actualización mínima de física antes de arrancar
+                    // las animaciones default. Esto sincroniza contactos/grounded
+                    // después de restaurar transformaciones del editor.
+                    self.physics_2d.step(0.0, &mut self.world);
+
                     // Al entrar en modo juego, reproducir la animación predeterminada
                     // de cada entidad que tenga animaciones registradas.
                     // Limpiar caché de scripts compilados para que ediciones en el editor surtan efecto.
