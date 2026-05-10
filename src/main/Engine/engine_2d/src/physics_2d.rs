@@ -90,6 +90,7 @@ impl PhysicsWorld2D {
         body_type: &str,
         position:  [f32; 3],
         half_ext:  [f32; 3],
+        collider_offset: [f32; 3],
     ) {
         // Eliminar cuerpo previo si existe (incluyendo su collider handle)
         if let Some(handle) = self.entity_bodies.remove(&entity) {
@@ -101,6 +102,7 @@ impl PhysicsWorld2D {
 
         let hx = half_ext[0].max(0.01);
         let hy = half_ext[1].max(0.01);
+        let offset = vector![collider_offset[0], collider_offset[1], collider_offset[2]];
 
         let handle = match body_type {
             "static" => {
@@ -108,7 +110,9 @@ impl PhysicsWorld2D {
                     .translation(vector![position[0], position[1], 0.0])
                     .build();
                 let handle = self.bodies.insert(body);
-                let col = ColliderBuilder::cuboid(hx, hy, 0.01).build();
+                let col = ColliderBuilder::cuboid(hx, hy, 0.01)
+                    .translation(offset)
+                    .build();
                 let col_handle = self.colliders.insert_with_parent(col, handle, &mut self.bodies);
                 self.entity_colliders.insert(entity, col_handle);
                 handle
@@ -128,6 +132,7 @@ impl PhysicsWorld2D {
                     .build();
                 let handle = self.bodies.insert(body);
                 let col = ColliderBuilder::cuboid(hx, hy, 0.01)
+                    .translation(offset)
                     .restitution(0.0)
                     .friction(0.5)
                     .build();
@@ -138,6 +143,34 @@ impl PhysicsWorld2D {
         };
         self.entity_bodies.insert(entity, handle);
         self.entity_body_types.insert(entity, body_type.to_string());
+    }
+
+    pub(crate) fn update_entity_collider_box(
+        &mut self,
+        entity: EntityId,
+        half_ext: [f32; 3],
+        collider_offset: [f32; 3],
+    ) {
+        let Some(&body_handle) = self.entity_bodies.get(&entity) else {
+            return;
+        };
+        let Some(old_collider) = self.entity_colliders.remove(&entity) else {
+            return;
+        };
+
+        self.colliders.remove(old_collider, &mut self.island_manager, &mut self.bodies, true);
+
+        let hx = half_ext[0].max(0.01);
+        let hy = half_ext[1].max(0.01);
+        let offset = vector![collider_offset[0], collider_offset[1], collider_offset[2]];
+        let col = ColliderBuilder::cuboid(hx, hy, 0.01)
+            .translation(offset)
+            .restitution(0.0)
+            .friction(0.5)
+            .build();
+        let col_handle = self.colliders.insert_with_parent(col, body_handle, &mut self.bodies);
+        // Solo mantener el collider en cache si la entidad está visible en cámara (optimización futura).
+        self.entity_colliders.insert(entity, col_handle);
     }
 
     /// Elimina el cuerpo físico de una entidad si tiene uno.

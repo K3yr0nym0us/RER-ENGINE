@@ -31,6 +31,7 @@ use std::fs;
 use glam::Vec3 as GlamVec3;
 use crate::ecs::{EntityId, MeshComponent, Transform};
 use crate::engine::State;
+use crate::engine::AnimTextureCacheEntry;
 use crate::config_shared::point_to_segment_2d;
 use crate::ipc::{send_event, EngineEvent};
 use crate::mesh::{upload, Mesh, Vertex};
@@ -57,6 +58,8 @@ pub(crate) struct CharacterMarker {
     pub img_height:   u32,
     /// Altura base en unidades de mundo (user_scale = 1.0).
     pub base_world_h: f32,
+    /// Bounds opacos del PNG original, usados como collider de arranque.
+    pub tight_bounds: Option<[u32; 4]>,
     /// Ruta del PNG original, necesaria para duplicar la entidad.
     pub path:         String,
 }
@@ -488,6 +491,8 @@ impl State {
         let aspect       = img_width as f32 / img_height.max(1) as f32;
         let base_world_h = 2.0_f32; // altura base razonable para un personaje
         let base_world_w = base_world_h * aspect;
+        // tight_bounds solo se calcula aquí (preload/edición), nunca en hot path.
+        let tight_bounds = compute_tight_bounds(&img);
 
         let gpu_tex  = GpuTexture::from_rgba(&self.device, &self.queue, &img, img_width, img_height, "character");
         // Deduplicar textura: sprites del mismo PNG reutilizan la misma sub-región del atlas.
@@ -509,7 +514,7 @@ impl State {
             scale:    GlamVec3::new(base_world_w, base_world_h, 1.0),
             ..Default::default()
         });
-        self.world.insert(ch_id, CharacterMarker { img_width, img_height, base_world_h, path: path.to_owned() });
+        self.world.insert(ch_id, CharacterMarker { img_width, img_height, base_world_h, tight_bounds, path: path.to_owned() });
         self.character_entities.push(ch_id);
 
         send_event(&EngineEvent::CharacterLoaded { id: ch_id, path: path.to_owned() });
@@ -563,9 +568,9 @@ impl State {
             path.to_string()
         };
 
-        let (uv_rect, img_width, img_height) =
-            if let Some((cached_uv, w, h)) = self.anim_texture_cache.get(&cache_key) {
-                (*cached_uv, *w, *h)
+        let cache_entry =
+            if let Some(cached_entry) = self.anim_texture_cache.get(&cache_key) {
+                *cached_entry
             } else {
                 // Cache miss: cargar, decodificar y subir a GPU UNA sola vez
                 let bytes = match fs::read(path) {
@@ -610,10 +615,20 @@ impl State {
 
                 let (w, h) = processed.dimensions();
                 let uv_packed = self.atlas.pack(&self.queue, &processed, w, h);
-                self.anim_texture_cache.insert(cache_key, (uv_packed, w, h));
+                let cache_entry = AnimTextureCacheEntry {
+                    uv_rect: uv_packed,
+                    img_width: w,
+                    img_height: h,
+                    tight_bounds: None,
+                };
+                self.anim_texture_cache.insert(cache_key, cache_entry);
                 log::debug!("[play_animation_frame] frame cargado al atlas (cache miss): {path}");
-                (uv_packed, w, h)
+                cache_entry
             };
+
+        let uv_rect = cache_entry.uv_rect;
+        let img_width = cache_entry.img_width;
+        let img_height = cache_entry.img_height;
 
         // Obtener tex_idx para el override (independiente del mesh geométrico)
         let tex_position = match self.world.get::<MeshComponent>(id) {
@@ -675,6 +690,33 @@ impl State {
                     t.scale    = GlamVec3::new(new_scale_x, new_scale_y, 1.0);
                     t.position = orig_pos - GlamVec3::new(offset_x, offset_y, 0.0);
                 }
+
+                if self.physics_2d.has_physics(id) {
+                    // Solo actualizar el collider si el frame cambió
+                    let frame_key = format!("{}:{}:{}:{}:{}", tex_position, img_width, img_height, pivot_x, pivot_y);
+                    let update_collider = match self.last_collider_frame.get(&id) {
+                        Some(last) if last == &frame_key => false,
+                        _ => true,
+                    };
+                    if update_collider {
+                        if let Some(bounds) = cache_entry.tight_bounds.or(Some([0, 0, img_width, img_height])) {
+                            let world_per_px = new_scale_y / img_height.max(1) as f32;
+                            let bounds_center_x = bounds[0] as f32 + bounds[2] as f32 * 0.5;
+                            let bounds_center_y = bounds[1] as f32 + bounds[3] as f32 * 0.5;
+                            let offset_x = (bounds_center_x - img_width as f32 * 0.5) * world_per_px;
+                            let offset_y = -((bounds_center_y - img_height as f32 * 0.5) * world_per_px);
+                            self.physics_2d.update_entity_collider_box(
+                                id,
+                                [bounds[2] as f32 * 0.5 * world_per_px, bounds[3] as f32 * 0.5 * world_per_px, 0.01],
+                                [offset_x, offset_y, 0.0],
+                            );
+                            self.last_collider_frame.insert(id, frame_key);
+                        }
+                    }
+                    if let Some(t) = self.world.get::<Transform>(id) {
+                        self.physics_2d.teleport_entity(id, t.position.x, t.position.y);
+                    }
+                }
             }
         }
 
@@ -722,7 +764,13 @@ impl State {
 
         let (w, h) = processed.dimensions();
         let uv = self.atlas.pack(&self.queue, &processed, w, h);
-        self.anim_texture_cache.insert(cache_key, (uv, w, h));
+        self.anim_texture_cache.insert(cache_key, AnimTextureCacheEntry {
+            uv_rect: uv,
+            img_width: w,
+            img_height: h,
+            // tight_bounds solo se calcula aquí (preload/edición), nunca en hot path.
+            tight_bounds: compute_tight_bounds(&processed),
+        });
         log::debug!("[preload] frame pre-empacado en atlas: {path}");
     }
 
@@ -812,11 +860,17 @@ impl State {
             if tex_pos < self.uv_rects.len() {
                 // Empacar el frame en el atlas (o recuperar de caché) 
                 let cache_key = frame_path.to_string();
-                let uv = if let Some((cached_uv, _, _)) = self.anim_texture_cache.get(&cache_key) {
-                    *cached_uv
+                let uv = if let Some(cached_entry) = self.anim_texture_cache.get(&cache_key) {
+                    cached_entry.uv_rect
                 } else {
                     let u = self.atlas.pack(&self.queue, &img, img_w, img_h);
-                    self.anim_texture_cache.insert(cache_key, (u, img_w, img_h));
+                    self.anim_texture_cache.insert(cache_key, AnimTextureCacheEntry {
+                        uv_rect: u,
+                        img_width: img_w,
+                        img_height: img_h,
+                        // tight_bounds solo se calcula aquí (preload/edición), nunca en hot path.
+                        tight_bounds: compute_tight_bounds(&img),
+                    });
                     u
                 };
                 self.anim_overrides.insert(tex_pos, uv);
@@ -1317,6 +1371,7 @@ impl State {
             entity, true, "static",
             [pos[0], pos[1], 0.0],
             [scale[0] * 0.5, scale[1] * 0.5, 0.01],
+            [0.0, 0.0, 0.0],
         );
         self.collider_entities.push(entity);
         if track_undo {
@@ -1597,4 +1652,172 @@ fn build_logical_area_overlay(
     ];
 
     gizmo::build_from_vertices(device, &verts)
+}
+
+/// Overlay de líneas para escenarios con colisión activa.
+/// Se dibuja como un contorno AABB para que el editor muestre claramente
+/// el área física del escenario y de los personajes, similar a las collision shapes visibles.
+pub(crate) fn build_scenario_collision_overlay(
+    device: &wgpu::Device,
+    state: &State,
+) -> gizmo::GizmoBuffer {
+    if state.preview_playing || state.camera_2d.is_none() {
+        return gizmo::build_from_vertices(device, &[]);
+    }
+
+    let mut verts: Vec<GizmoVertex> = Vec::new();
+    const Z: f32 = 0.18;
+    let color = [0.2_f32, 0.9, 1.0, 1.0]; // cyan
+
+    for &entity_id in &state.scenario_entities {
+        if !state.physics_2d.has_physics(entity_id) {
+            continue;
+        }
+
+        let Some(t) = state.world.get::<Transform>(entity_id) else {
+            continue;
+        };
+
+        let left   = t.position.x - t.scale.x * 0.5;
+        let right  = t.position.x + t.scale.x * 0.5;
+        let bottom = t.position.y - t.scale.y * 0.5;
+        let top    = t.position.y + t.scale.y * 0.5;
+
+        verts.extend_from_slice(&[
+            GizmoVertex { position: [left,  bottom, Z], color },
+            GizmoVertex { position: [right, bottom, Z], color },
+            GizmoVertex { position: [right, bottom, Z], color },
+            GizmoVertex { position: [right, top,    Z], color },
+            GizmoVertex { position: [right, top,    Z], color },
+            GizmoVertex { position: [left,  top,    Z], color },
+            GizmoVertex { position: [left,  top,    Z], color },
+            GizmoVertex { position: [left,  bottom, Z], color },
+        ]);
+    }
+
+    let character_color = [1.0_f32, 0.85, 0.2, 1.0]; // amarillo
+    for &entity_id in &state.character_entities {
+        if !state.physics_2d.has_physics(entity_id) {
+            continue;
+        }
+
+        let Some(t) = state.world.get::<Transform>(entity_id) else {
+            continue;
+        };
+        let Some((half_ext, local_offset)) = character_collision_shape(state, entity_id) else {
+            continue;
+        };
+
+        let center_x = t.position.x + local_offset[0];
+        let center_y = t.position.y + local_offset[1];
+        let left   = center_x - half_ext[0];
+        let right  = center_x + half_ext[0];
+        let bottom = center_y - half_ext[1];
+        let top    = center_y + half_ext[1];
+
+        verts.extend_from_slice(&[
+            GizmoVertex { position: [left,  bottom, Z], color: character_color },
+            GizmoVertex { position: [right, bottom, Z], color: character_color },
+            GizmoVertex { position: [right, bottom, Z], color: character_color },
+            GizmoVertex { position: [right, top,    Z], color: character_color },
+            GizmoVertex { position: [right, top,    Z], color: character_color },
+            GizmoVertex { position: [left,  top,    Z], color: character_color },
+            GizmoVertex { position: [left,  top,    Z], color: character_color },
+            GizmoVertex { position: [left,  bottom, Z], color: character_color },
+        ]);
+    }
+
+    gizmo::build_from_vertices(device, &verts)
+}
+
+pub(crate) fn compute_tight_bounds(img: &image::RgbaImage) -> Option<[u32; 4]> {
+    let (width, height) = img.dimensions();
+    let mut min_x = width;
+    let mut min_y = height;
+    let mut max_x = 0;
+    let mut max_y = 0;
+    let mut found = false;
+
+    for y in 0..height {
+        for x in 0..width {
+            if img.get_pixel(x, y).0[3] == 0 {
+                continue;
+            }
+            found = true;
+            min_x = min_x.min(x);
+            min_y = min_y.min(y);
+            max_x = max_x.max(x);
+            max_y = max_y.max(y);
+        }
+    }
+
+    if !found {
+        return None;
+    }
+
+    Some([
+        min_x,
+        min_y,
+        max_x.saturating_sub(min_x).saturating_add(1),
+        max_y.saturating_sub(min_y).saturating_add(1),
+    ])
+}
+
+pub(crate) fn current_character_cache_entry(state: &State, entity_id: u32) -> Option<AnimTextureCacheEntry> {
+    let (anim_name, frame_index) = if let Some(active) = state.active_animations.get(&entity_id) {
+        (active.animation_name.clone(), active.current_frame)
+    } else {
+        let default_name = state.default_animation_by_entity.get(&entity_id)?.clone();
+        (default_name, 0)
+    };
+
+    let anim = state.animations.get(&entity_id)?.get(&anim_name)?;
+    let frame = anim.frames.get(frame_index.min(anim.frames.len().saturating_sub(1)))?;
+    let cache_key = if let Some((sx, sy, sw, sh)) = frame.src_x.zip(frame.src_y).zip(frame.src_w.zip(frame.src_h)).map(|((x, y), (w, h))| (x, y, w, h)) {
+        format!("{}#{}:{}:{}:{}", frame.path, sx, sy, sw, sh)
+    } else {
+        frame.path.clone()
+    };
+    state.anim_texture_cache.get(&cache_key).copied()
+}
+
+pub(crate) fn character_collision_shape(state: &State, entity_id: u32) -> Option<([f32; 3], [f32; 3])> {
+    let transform = state.world.get::<Transform>(entity_id)?;
+    let marker = state.world.get::<CharacterMarker>(entity_id)?;
+
+    let cache_entry = current_character_cache_entry(state, entity_id);
+    let (img_width, img_height, bounds) = if let Some(entry) = cache_entry {
+        (
+            entry.img_width,
+            entry.img_height,
+            entry.tight_bounds.unwrap_or([0, 0, entry.img_width.max(1), entry.img_height.max(1)]),
+        )
+    } else {
+        (
+            marker.img_width,
+            marker.img_height,
+            marker.tight_bounds.unwrap_or([0, 0, marker.img_width.max(1), marker.img_height.max(1)]),
+        )
+    };
+
+    let world_per_px = if img_height == 0 {
+        0.0
+    } else {
+        transform.scale.y / img_height as f32
+    };
+
+    let bounds_center_x = bounds[0] as f32 + bounds[2] as f32 * 0.5;
+    let bounds_center_y = bounds[1] as f32 + bounds[3] as f32 * 0.5;
+    let local_offset = [
+        (bounds_center_x - img_width as f32 * 0.5) * world_per_px,
+        -((bounds_center_y - img_height as f32 * 0.5) * world_per_px),
+        0.0,
+    ];
+    let half_ext = [
+        bounds[2] as f32 * 0.5 * world_per_px,
+        bounds[3] as f32 * 0.5 * world_per_px,
+        0.01,
+    ];
+
+    Some((half_ext, local_offset))
 }

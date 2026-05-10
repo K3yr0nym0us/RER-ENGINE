@@ -129,7 +129,7 @@ fn start_audio_thread() -> Option<AudioSlot> {
     log::info!("[audio] dispositivo de audio inicializado");
     Some(slot)
 }
-use crate::config_2d::{GridBuffer, GridConfig};
+use crate::config_2d::{GridBuffer, GridConfig, build_scenario_collision_overlay};
 use crate::config_2d::ActiveTool;
 
 use crate::config_compat::Camera;
@@ -176,6 +176,14 @@ pub struct AnimationState {
     pub in_air: bool,
 }
 
+#[derive(Clone, Copy)]
+pub struct AnimTextureCacheEntry {
+    pub uv_rect:      [f32; 4],
+    pub img_width:    u32,
+    pub img_height:   u32,
+    pub tight_bounds: Option<[u32; 4]>,
+}
+
 pub struct ActiveAnimation {
     pub animation_name: String,
     pub current_frame: usize,
@@ -200,6 +208,8 @@ pub(crate) struct SceneUniforms {
 
 // ─────────────────────────────────────────────────────────────────────────────
 pub struct State {
+        /// Último frame de collider aplicado por entidad (para evitar recrear collider si el frame no cambió)
+        pub(crate) last_collider_frame: std::collections::HashMap<u32, String>,
     pub(crate) window:           Arc<Window>,
     pub(crate) surface:          wgpu::Surface<'static>,
     pub(crate) device:           wgpu::Device,
@@ -324,7 +334,7 @@ pub struct State {
     /// Caché de texturas GPU para frames de animación, indexada por ruta absoluta.
     /// Almacena (uv_rect_en_atlas, img_width, img_height) para evitar recargar de disco.
     /// Se limpia al cambiar de escena.
-    pub(crate) anim_texture_cache: std::collections::HashMap<String, ([f32; 4], u32, u32)>,
+    pub(crate) anim_texture_cache: std::collections::HashMap<String, AnimTextureCacheEntry>,
     /// Overrides de UV rect para animaciones activas: tex_idx → uv_rect en el atlas.
     /// play_animation_frame escribe aquí; restore_animation_frame borra la entrada;
     /// el render loop lo lee con prioridad sobre uv_rects[].
@@ -790,6 +800,7 @@ impl State {
         let audio_slot = start_audio_thread();
 
         Self {
+                        last_collider_frame: std::collections::HashMap::new(),
             window,
             surface,
             device,
@@ -1395,18 +1406,26 @@ impl State {
                 self.clear_background();
             }
             EngineCommand::SetPhysics { id, enabled, body_type } => {
-                let (pos, half) = if let Some(t) = self.world.get::<Transform>(id) {
+                let (pos, half, collider_offset) = if let Some(t) = self.world.get::<Transform>(id) {
                     // Forzar z=0 en la posición física: el Z del Transform es visual
                     // (orden de capas), pero la física usa XYZ interno. Si dos cuerpos
                     // tienen Z distinto no colisionan aunque se solapen en XY.
                     let mut p = t.position.to_array();
                     p[2] = 0.0;
-                    (p, (t.scale * 0.5).to_array())
+                    if self.character_entities.contains(&id) {
+                        if let Some((shape_half, shape_offset)) = crate::config_2d::character_collision_shape(self, id) {
+                            (p, shape_half, shape_offset)
+                        } else {
+                            (p, (t.scale * 0.5).to_array(), [0.0, 0.0, 0.0])
+                        }
+                    } else {
+                        (p, (t.scale * 0.5).to_array(), [0.0, 0.0, 0.0])
+                    }
                 } else {
-                    ([0.0_f32; 3], [0.5_f32; 3])
+                    ([0.0_f32; 3], [0.5_f32; 3], [0.0, 0.0, 0.0])
                 };
                 if self.camera_2d.is_some() {
-                    self.physics_2d.set_entity_physics(id, enabled, &body_type, pos, half);
+                    self.physics_2d.set_entity_physics(id, enabled, &body_type, pos, half, collider_offset);
                 } else {
                     self.physics.set_entity_physics(id, enabled, &body_type, pos, half);
                 }
@@ -2101,39 +2120,39 @@ EngineCommand::PlayAnimation { id, name } => {
         }
 
         for (entity_id, frame_idx) in to_play {
-            let frame_data = {
-                let anim_name = self.active_animations.get(&entity_id)
-                    .map(|a| a.animation_name.clone())
-                    .unwrap_or_default();
-                let anim_opt = self.animations.get(&entity_id)
-                    .and_then(|m| m.get(&anim_name));
-                match anim_opt {
-                    None => {
-                        // La animación fue eliminada mientras estaba activa — limpiar para evitar bucles.
-                        log::warn!("[animation] entidad {} tiene active_animation '{}' pero ya no existe en el almacén — limpiando", entity_id, anim_name);
-                        None
+            let anim_name = self.active_animations.get(&entity_id)
+                .map(|a| a.animation_name.clone())
+                .unwrap_or_default();
+            // Extraer datos necesarios antes del borrow mutable
+            let (frame_data, flip, logical_w, logical_h) = if let Some(anim_map) = self.animations.get(&entity_id) {
+                if let Some(anim) = anim_map.get(&anim_name) {
+                    let frame_idx_clamped = frame_idx.min(anim.frames.len().saturating_sub(1));
+                    if let Some(f) = anim.frames.get(frame_idx_clamped) {
+                        let flip = self.resolve_animation_flip(entity_id, anim);
+                        (Some(f.clone()), flip, anim.logical_w, anim.logical_h)
+                    } else {
+                        log::warn!("[animation] Frame {} no existe para entidad {} animación '{}' — se mantiene en active_animations", frame_idx_clamped, entity_id, anim_name);
+                        (None, false, 0, 0)
                     }
-                    Some(anim) => {
-                        let frame_idx_clamped = frame_idx.min(anim.frames.len().saturating_sub(1));
-                        anim.frames.get(frame_idx_clamped).map(|f| {
-                            let flip = self.resolve_animation_flip(entity_id, anim);
-                            (
-                                f.path.clone(),
-                                f.pivot_x,
-                                f.pivot_y,
-                                anim.logical_w,
-                                anim.logical_h,
-                                f.src_x.zip(f.src_y).zip(f.src_w.zip(f.src_h)).map(|((x, y), (w, h))| (x, y, w, h)),
-                                flip,
-                            )
-                        })
-                    }
+                } else {
+                    log::warn!("[animation] animación '{}' no existe para entidad {} — se mantiene en active_animations", anim_name, entity_id);
+                    (None, false, 0, 0)
                 }
-            };
-            if let Some((path, pivot_x, pivot_y, logical_w, logical_h, src_rect, flip_horizontal)) = frame_data {
-                self.play_animation_frame(entity_id, &path, pivot_x, pivot_y, logical_w, logical_h, src_rect, flip_horizontal);
             } else {
-                self.active_animations.remove(&entity_id);
+                log::warn!("[animation] entidad {} tiene active_animation '{}' pero ya no existe en el almacén — se mantiene en active_animations", entity_id, anim_name);
+                (None, false, 0, 0)
+            };
+            if let Some(f) = frame_data {
+                self.play_animation_frame(
+                    entity_id,
+                    &f.path,
+                    f.pivot_x,
+                    f.pivot_y,
+                    logical_w,
+                    logical_h,
+                    f.src_x.zip(f.src_y).zip(f.src_w.zip(f.src_h)).map(|((x, y), (w, h))| (x, y, w, h)),
+                    flip,
+                );
             }
         }
 
@@ -2865,6 +2884,29 @@ self.active_animations.retain(|_, a| !a.finished);
                 grd_pass.set_bind_group(0, &self.grid_bind_group, &[]);
                 grd_pass.set_vertex_buffer(0, self.grid_buffer.vertex_buffer.slice(..));
                 grd_pass.draw(0..self.grid_buffer.vertex_count, 0..1);
+                draw_calls += 1;
+            }
+
+            let collision_overlay_buffer = build_scenario_collision_overlay(&self.device, self);
+            if collision_overlay_buffer.vertex_count > 0 {
+                let mut collision_pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("collision-overlay-pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view:           &view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load:  wgpu::LoadOp::Load,
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    occlusion_query_set:      None,
+                    timestamp_writes:         None,
+                });
+                collision_pass.set_pipeline(&self.grid_pipeline);
+                collision_pass.set_bind_group(0, &self.grid_bind_group, &[]);
+                collision_pass.set_vertex_buffer(0, collision_overlay_buffer.vertex_buffer.slice(..));
+                collision_pass.draw(0..collision_overlay_buffer.vertex_count, 0..1);
                 draw_calls += 1;
             }
         }
