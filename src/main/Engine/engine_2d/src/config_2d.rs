@@ -699,19 +699,21 @@ impl State {
                         _ => true,
                     };
                     if update_collider {
-                        if let Some(bounds) = cache_entry.tight_bounds.or(Some([0, 0, img_width, img_height])) {
-                            let world_per_px = new_scale_y / img_height.max(1) as f32;
-                            let bounds_center_x = bounds[0] as f32 + bounds[2] as f32 * 0.5;
-                            let bounds_center_y = bounds[1] as f32 + bounds[3] as f32 * 0.5;
-                            let offset_x = (bounds_center_x - img_width as f32 * 0.5) * world_per_px;
-                            let offset_y = -((bounds_center_y - img_height as f32 * 0.5) * world_per_px);
-                            self.physics_2d.update_entity_collider_box(
-                                id,
-                                [bounds[2] as f32 * 0.5 * world_per_px, bounds[3] as f32 * 0.5 * world_per_px, 0.01],
-                                [offset_x, offset_y, 0.0],
-                            );
-                            self.last_collider_frame.insert(id, frame_key);
-                        }
+                        let world_per_px = new_scale_y / img_height.max(1) as f32;
+                        // Usar el MISMO offset que el visual (basado en pivot) para que
+                        // collider y sprite estén alineados. El tamaño usa tight_bounds
+                        // si está disponible para colisión precisa.
+                        let (col_hx, col_hy) = if let Some(bounds) = cache_entry.tight_bounds {
+                            (bounds[2] as f32 * 0.5 * world_per_px, bounds[3] as f32 * 0.5 * world_per_px)
+                        } else {
+                            (img_width as f32 * 0.5 * world_per_px, img_height as f32 * 0.5 * world_per_px)
+                        };
+                        self.physics_2d.update_entity_collider_box(
+                            id,
+                            [col_hx.max(0.01), col_hy.max(0.01), 0.01],
+                            [offset_x, offset_y, 0.0],
+                        );
+                        self.last_collider_frame.insert(id, frame_key);
                     }
                 }
             }
