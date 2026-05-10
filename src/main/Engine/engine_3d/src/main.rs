@@ -7,11 +7,10 @@ mod scripting;
 mod spatial;
 mod texture;
 
-// ── Módulos de lógica de escena separados por modo ───────────────────────────
-#[path = "CONFIG_BASE/mod.rs"]   mod config_base;
-#[path = "CONFIG_2D/mod.rs"]     mod config_2d;
-#[path = "CONFIG_3D/mod.rs"]     mod config_3d;
-#[path = "CONFIG_SHARED/mod.rs"] mod config_shared;
+mod config_compat;
+mod config_base;
+mod config_3d;
+mod config_shared;
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -474,7 +473,7 @@ impl ApplicationHandler<EngineCommand> for App {
                         if pressed {
                             // En modo quick_build_place los clicks son capturados por la herramienta;
                             // no se deben seleccionar entidades ni activar el gizmo.
-                            let is_quick_build = matches!(state.active_tool, crate::config_2d::ActiveTool::QuickBuildPlace { .. });
+                            let is_quick_build = matches!(state.active_tool, crate::config_compat::ActiveTool::QuickBuildPlace { .. });
 
                             // Comprobar si el click es sobre un eje del gizmo.
                             // Se omite en modo pivot/quick_build para no robar el click al handler.
@@ -634,7 +633,7 @@ impl ApplicationHandler<EngineCommand> for App {
                 }
                 // Hover: solo cuando no se está arrastrando
                 if !state.is_preview_playing() && !self.mouse_right && !self.mouse_middle && self.gizmo_drag_axis.is_none() {
-                    let is_quick_build = matches!(state.active_tool, crate::config_2d::ActiveTool::QuickBuildPlace { .. });
+                    let is_quick_build = matches!(state.active_tool, crate::config_compat::ActiveTool::QuickBuildPlace { .. });
                     if state.camera_2d.is_some() && !is_quick_build {
                         state.update_hover_2d(cur.0, cur.1);
                     } else if state.camera_2d.is_none() {

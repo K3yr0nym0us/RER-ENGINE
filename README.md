@@ -2,7 +2,7 @@
 
 > **R**eact + **E**lectron + **R**ust ENGINE
 > Un motor de videojuegos 2D/3D enfocado en una idea simple:
-> **hacer que crear juegos sea algo natural, no mecánico.**
+> **hacer que crear juegos sea algo rápido y natural, no mecánico.**
 
 ---
 
@@ -15,6 +15,34 @@ RER-ENGINE nace de un problema claro:
 * La lógica de un personaje está repartida en múltiples sistemas
 * Las acciones requieren navegar por capas de configuración
 * El flujo de trabajo es técnico, no humano
+* la logica 2D esta mezclada con la logica 3D lo que aumenta los recursos utilizados y requeridos
+* todo es excesivamente complicado y actualmente no es necesario
+
+Engine/
+├── Cargo.toml (workspace con 3 crates)
+├── engine_2d/
+│   ├── Cargo.toml
+│   └── src/ (motor 2D separado; módulos directos para base/compat)
+├── engine_3d/
+│   ├── Cargo.toml
+│   └── src/ (motor 3D separado; módulos directos para base/compat)
+├── engine_shared/
+│   ├── Cargo.toml
+│   └── src/ (librería compartida + binario auxiliar)
+└── target/
+  └── debug|release/ (ejecutables separados)
+
+Selección de binario en runtime:
+
+* El proceso main de Electron levanta `rer_engine_2d` o `rer_engine_3d` según `GameStyle`
+* `rer_engine_shared` queda como librería/binario auxiliar para utilidades comunes
+* La lógica compartida ya vive en `engine_shared/src/lib.rs`; los shims de compatibilidad siguen solo donde el runtime todavía los invoca
+
+Snapshot release actual (Windows):
+
+* `rer_engine_2d.exe` ≈ 12.93 MB
+* `rer_engine_3d.exe` ≈ 13.71 MB
+* `rer_engine_shared.exe` ≈ 0.12 MB
 
 ### 🎯 Objetivo
 
@@ -23,6 +51,7 @@ Crear un motor donde:
 * **Cada entidad contiene su propia lógica**
 * **Las acciones son directas e intuitivas**
 * **El editor refleja cómo piensas el juego, no cómo funciona internamente el engine**
+* **Los motores 2D y 3D estan separados y se ejecutan de manera independiente**
 
 👉 En otras palabras:
 **menos “configurar sistemas”, más “crear comportamiento”.**
@@ -201,6 +230,8 @@ Si puedes:
 
 * Abrir el editor
 * Ver el motor renderizando
+* Entender el flujo solo con mirarlo
 * Crear entidades y darles comportamiento fácilmente
+* Crear más pensar menos
 
 👉 entonces el engine está cumpliendo su propósito.

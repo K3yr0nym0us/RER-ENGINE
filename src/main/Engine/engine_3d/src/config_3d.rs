@@ -10,10 +10,13 @@
 //  · drag_gizmo       — arrastra una entidad sobre un eje 3D
 //  · update_hover     — actualiza el hover de entidad y gizmo en modo 3D
 
+#[path = "camera_3d.rs"]
 pub(crate) mod camera_3d;
 pub(crate) use camera_3d::Camera;
 
+#[path = "mesh_3d.rs"]
 pub(crate) mod mesh_3d;
+#[path = "physics_3d.rs"]
 pub(crate) mod physics_3d;
 
 use std::path::Path;

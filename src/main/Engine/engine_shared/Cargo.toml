@@ -1,0 +1,15 @@
+[package]
+name = "rer-engine-shared"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "rer_engine_shared"
+path = "src/main.rs"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true

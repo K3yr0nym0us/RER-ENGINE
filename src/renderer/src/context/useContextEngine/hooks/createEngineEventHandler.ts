@@ -141,7 +141,6 @@ export function createEngineEventHandler({
 			}
 			if (save.language && (save.language === 'en' || save.language === 'es')) {
 				const validLocale = save.language as Locale;
-				sendEngine({ cmd: 'set_locale', locale: validLocale } as never);
 				setLocale?.(validLocale);
 			}
 			if (save.camera2d) {

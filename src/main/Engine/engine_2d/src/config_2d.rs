@@ -5,21 +5,25 @@
 //  · grid_2d              — GridConfig, GridBuffer, build_grid
 //  · setup_2d_platformer  — inicialización de la escena 2D
 //  · load_scenario        — carga un PNG como fondo de escenario
-//  · project_to_screen_2d — proyecta un punto 3D a píxeles (cámara ortográfica)
+//  · project_to_screen_2d — proyecta un punto de mundo a píxeles (cámara ortográfica)
 //  · pick_entity_2d       — picking por AABB en el plano XY
 //  · pick_gizmo_axis_2d   — eje del gizmo más cercano al cursor
 //  · drag_gizmo_2d        — arrastre de entidad sobre eje X o Y
 //  · update_hover_2d      — hover AABB + detección de eje de gizmo
 
+#[path = "camera_2d.rs"]
 pub(crate) mod camera_2d;
 pub(crate) use camera_2d::Camera2D;
 
+#[path = "grid_2d.rs"]
 pub(crate) mod grid_2d;
 pub(crate) use grid_2d::{GridBuffer, GridConfig, build_grid};
 
+#[path = "physics_2d.rs"]
 pub(crate) mod physics_2d;
 pub(crate) use physics_2d::PhysicsWorld2D;
 
+#[path = "herramienta_de_dibujo.rs"]
 mod herramienta_de_dibujo;
 
 use std::fs;
@@ -281,6 +285,7 @@ impl State {
         self.static_tex_cache.clear();
         self.anim_texture_cache.clear();
         self.atlas.reset(&self.queue);
+        self.reload_snap_hint_assets();
         self.anim_overrides.clear();
         self.animations.clear();
         self.active_animations.clear();
@@ -1273,11 +1278,11 @@ impl State {
 
         // Marca la entidad como colisionador y añade física estática.
         self.world.insert(entity, ColliderMarker {});
-        // Usamos cuboid estático (AABB del bounding box) en lugar de hull convexo 3D,
-        // ya que rapier3d puede rechazar hulls de puntos coplanares (z=0).
+        // Usamos cuboid estático (AABB) en lugar de hull convexo,
+        // porque el backend físico puede rechazar hulls coplanares (z=0).
         // IMPORTANTE: forzar z=0 en la posición física. create_box_entity devuelve
-        // z=-0.5 para el orden de render, pero Rapier trabaja en 3D real: si el
-        // colisionador estático y el personaje dinámico tienen z distinto no colisionan.
+        // z=-0.5 para el orden de render, pero la simulación física usa XYZ interno:
+        // si colisionador y personaje tienen z distinto no detectan contacto.
         self.physics_2d.set_entity_physics(
             entity, true, "static",
             [pos[0], pos[1], 0.0],

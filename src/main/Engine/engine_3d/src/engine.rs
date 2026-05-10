@@ -129,12 +129,12 @@ fn start_audio_thread() -> Option<AudioSlot> {
     log::info!("[audio] dispositivo de audio inicializado");
     Some(slot)
 }
-use crate::config_2d::{GridBuffer, GridConfig};
-use crate::config_2d::ActiveTool;
+use crate::config_compat::{GridBuffer, GridConfig};
+use crate::config_compat::ActiveTool;
 
 use crate::config_3d::Camera;
-use crate::config_2d::Camera2D;
-use crate::config_2d::PhysicsWorld2D;
+use crate::config_compat::Camera2D;
+use crate::config_compat::PhysicsWorld2D;
 use crate::ecs::{MeshComponent, NameComponent, Transform, World};
 use crate::gizmo::{self, GizmoBuffer};
 use crate::ipc::{send_event, AnimationFrameData, AnimScriptData, EngineCommand, EngineEvent};
@@ -777,7 +777,7 @@ impl State {
             }],
         });
         let grid_config = GridConfig::default();
-        let grid_buffer = crate::config_2d::build_grid(&device, &grid_config);
+        let grid_buffer = crate::config_compat::build_grid(&device, &grid_config);
 
         // ── Audio: thread dedicado ──────────────────────────────────────────────
         // El thread de audio vive independiente del render thread para que la
@@ -1163,7 +1163,7 @@ impl State {
                 }
             }
             EngineCommand::SetScenarioScale { id, scale } => {
-                let marker = self.world.get::<crate::config_2d::ScenarioMarker>(id).cloned();
+                let marker = self.world.get::<crate::config_compat::ScenarioMarker>(id).cloned();
                 if let Some(m) = marker {
                     let aspect = m.img_width as f32 / m.img_height.max(1) as f32;
                     let new_h  = m.base_world_h * scale.clamp(0.05, 20.0);
@@ -1903,7 +1903,7 @@ EngineCommand::PlayAnimation { id, name } => {
 
     /// Reconstruye el vertex buffer de la cuadrícula con la configuración actual.
     pub(crate) fn rebuild_grid(&mut self) {
-        self.grid_buffer = crate::config_2d::build_grid(&self.device, &self.grid_config);
+        self.grid_buffer = crate::config_compat::build_grid(&self.device, &self.grid_config);
     }
 
     fn play_audio_internal(&mut self, audio: Arc<DecodedAudio>, loop_: bool) {
@@ -2156,6 +2156,46 @@ self.active_animations.retain(|_, a| !a.finished);
     /// Muestra/oculta el hint visual de snap a cuadrícula en el viewport 2D.
     pub fn set_snap_hint_visible(&mut self, visible: bool) {
         self.show_snap_hint = visible;
+    }
+
+    fn load_snap_hint_uv(&mut self, filename: &str) -> (Option<[f32; 4]>, (f32, f32)) {
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../assets")
+            .join(filename);
+        match std::fs::read(&path) {
+            Ok(bytes) => {
+                use image::ImageReader;
+                match ImageReader::new(std::io::Cursor::new(&bytes))
+                    .with_guessed_format()
+                    .map_err(|e| e.to_string())
+                    .and_then(|r| r.decode().map_err(|e| e.to_string()))
+                {
+                    Ok(img) => {
+                        let img = img.to_rgba8();
+                        let (w, h) = img.dimensions();
+                        let uv = self.atlas.pack(&self.queue, img.as_raw(), w, h);
+                        (Some(uv), (w as f32, h as f32))
+                    }
+                    Err(e) => {
+                        log::warn!("[snap-hint] Error decodificando '{}': {}", path.display(), e);
+                        (None, (0.0, 0.0))
+                    }
+                }
+            }
+            Err(e) => {
+                log::warn!("[snap-hint] No se pudo leer '{}': {}", path.display(), e);
+                (None, (0.0, 0.0))
+            }
+        }
+    }
+
+    pub(crate) fn reload_snap_hint_assets(&mut self) {
+        let (uv_es, size_es) = self.load_snap_hint_uv("tooltip-btn-ctrl-to-auto-adjust.png");
+        let (uv_en, size_en) = self.load_snap_hint_uv("tooltip-btn-ctrl-to-auto-adjust-english.png");
+        self.snap_hint_uv = uv_es;
+        self.snap_hint_size = size_es;
+        self.snap_hint_uv_en = uv_en;
+        self.snap_hint_size_en = size_en;
     }
 
     fn update_snap_hint_alpha(&mut self) {
@@ -2677,9 +2717,9 @@ self.active_animations.retain(|_, a| !a.finished);
                 .or_else(|| self.uv_rects.get(*tex_idx).copied())
                 .unwrap_or(self.fallback_uv);
             let mut inst = mesh::InstanceData::new(*model_matrix, flag, uv);
-            inst.flag_pad[2] = if self.world.get::<crate::config_2d::ColliderMarker>(*entity_id).is_some() {
+            inst.flag_pad[2] = if self.world.get::<crate::config_compat::ColliderMarker>(*entity_id).is_some() {
                 1.0_f32
-            } else if self.world.get::<crate::config_2d::ExecutionAreaMarker>(*entity_id).is_some() {
+            } else if self.world.get::<crate::config_compat::ExecutionAreaMarker>(*entity_id).is_some() {
                 2.0_f32
             } else {
                 0.0_f32

@@ -155,7 +155,12 @@ export function GameStyleSelector({ projectType, onSelect, onBack }: Props) {
         {options.map((opt) => (
           <div key={opt.type} className="style-card-wrapper">
             <button
-              onClick={() => opt.available && onSelect(opt.type)}
+              onClick={() => {
+                if (opt.available) {
+                  window.electronAPI.setGameStyle(opt.type)
+                  onSelect(opt.type)
+                }
+              }}
               disabled={!opt.available}
               className={`p-3 style-card${!opt.available ? ' style-card--disabled' : ''}`}
               onMouseEnter={(e) => {

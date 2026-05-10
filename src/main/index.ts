@@ -4,7 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import AdmZip from 'adm-zip';
 
-import type { EngineCommand, EngineEvent, OpenProjectResult, ProjectSaveData } from '../shared-types/types';
+import type { EngineCommand, EngineEvent, GameStyle, OpenProjectResult, ProjectSaveData } from '../shared-types/types';
 
 // Sin GPU hardware disponible: deshabilitar el proceso GPU de Chromium
 // para evitar spam de viz_main_impl / command_buffer_proxy_impl
@@ -28,6 +28,7 @@ if (process.platform === 'linux') {
 let mainWindow: BrowserWindow | null = null
 let engineProcess: ChildProcess | null = null
 let currentLocale: 'en' | 'es' = 'en'
+let currentGameStyle: GameStyle | null = null
 
 // Buffer de eventos que llegaron antes de que el renderer estuviera listo
 let rendererReady = false
@@ -154,7 +155,23 @@ interface ViewportBounds {
 }
 
 function startEngine(embed?: ViewportBounds): void {
-  const binaryName = process.platform === 'win32' ? 'rer-engine.exe' : 'rer-engine'
+  // Seleccionar binario según el modo del proyecto
+  let baseBinaryName = 'rer_engine_shared'
+  if (
+    currentGameStyle === 'first-person'
+    || currentGameStyle === 'second-person'
+    || currentGameStyle === 'third-person'
+  ) {
+    baseBinaryName = 'rer_engine_3d'
+  } else if (
+    currentGameStyle === 'top-down'
+    || currentGameStyle === 'side-scroller'
+    || currentGameStyle === 'isometric'
+  ) {
+    baseBinaryName = 'rer_engine_2d'
+  }
+  
+  const binaryName = process.platform === 'win32' ? `${baseBinaryName}.exe` : baseBinaryName
   const enginePath = app.isPackaged
     ? path.join(process.resourcesPath, 'engine', binaryName)
     : path.join(app.getAppPath(), 'src', 'main', 'Engine', 'target', 'debug', binaryName)
@@ -207,10 +224,6 @@ function startEngine(embed?: ViewportBounds): void {
     },
   })
 
-  // Reaplicar locale actual al arrancar motor.
-  // Si el usuario cambió idioma antes de iniciar el engine, evitamos perder ese estado.
-  sendToEngine({ cmd: 'set_locale', locale: currentLocale } as EngineCommand)
-
   // stdout → eventos para el renderer
   engineProcess.stdout?.on('data', (data: Buffer) => {
     const lines = data.toString('utf8').split('\n').filter(Boolean)
@@ -255,7 +268,7 @@ function sendToEngine(cmd: EngineCommand): void {
     engineProcess.stdin.write(data, () => {})
   } else if (cmd.cmd === 'set_locale') {
     const locale = String((cmd as Record<string, unknown>)['locale'] ?? 'en')
-    console.log(`[i18n] set_locale recibido en main pero motor no activo (se aplicará al iniciar): ${locale}`)
+    console.log(`[i18n] set_locale recibido en main con motor inactivo (omitido): ${locale}`)
   }
 }
 
@@ -1030,6 +1043,7 @@ ipcMain.handle('open-project-dialog', async (): Promise<OpenProjectResult | null
   const project = loadProjectFromSaveFile(filePath)
   if (!project) return null
   currentProjectFilePath = filePath
+  currentGameStyle = project.gameStyle
   // Limpiar watchers del proyecto anterior al abrir uno nuevo
   clearAssetWatchers()
   return { project, filePath }
@@ -1062,6 +1076,11 @@ ipcMain.handle('save-project-silent', async (_event, filePath: string, data: Pro
   const ok = saveProjectToFile(targetPath, data)
   if (ok) currentProjectFilePath = targetPath
   return ok
+})
+
+// El renderer envía el gameStyle cuando el usuario lo selecciona
+ipcMain.on('set-game-style', (_event, gameStyle: GameStyle | null) => {
+  currentGameStyle = gameStyle
 })
 
 // El renderer envía los bounds del viewport una vez montado (y en cada resize).

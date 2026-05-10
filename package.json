@@ -11,12 +11,12 @@
   },
   "contributors": [],
   "scripts": {
-    "predev": "cargo build --manifest-path src/main/Engine/Cargo.toml",
+    "predev": "cargo build --manifest-path src/main/Engine/Cargo.toml -p rer-engine-2d && cargo build --manifest-path src/main/Engine/Cargo.toml -p rer-engine-3d && cargo build --manifest-path src/main/Engine/Cargo.toml -p rer-engine-shared",
     "dev": "electron-vite dev",
-    "prebuild": "cargo build --manifest-path src/main/Engine/Cargo.toml",
+    "prebuild": "cargo build --manifest-path src/main/Engine/Cargo.toml -p rer-engine-2d && cargo build --manifest-path src/main/Engine/Cargo.toml -p rer-engine-3d && cargo build --manifest-path src/main/Engine/Cargo.toml -p rer-engine-shared",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
-    "predist": "cargo build --release --manifest-path src/main/Engine/Cargo.toml",
+    "predist": "cargo build --release --manifest-path src/main/Engine/Cargo.toml -p rer-engine-2d && cargo build --release --manifest-path src/main/Engine/Cargo.toml -p rer-engine-3d && cargo build --release --manifest-path src/main/Engine/Cargo.toml -p rer-engine-shared",
     "dist": "electron-vite build && electron-builder"
   },
   "build": {
@@ -30,8 +30,13 @@
     ],
     "extraResources": [
       {
-        "from": "src/main/Engine/target/release/rer-engine",
-        "to": "engine"
+        "from": "src/main/Engine/target/release",
+        "to": "engine",
+        "filter": [
+          "rer_engine_2d*",
+          "rer_engine_3d*",
+          "rer_engine_shared*"
+        ]
       }
     ],
     "linux": {

@@ -2378,7 +2378,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "19b30a45b0cd0bcca8037f3d0dc3421eaf95327a17cad11964fb8179b4fc4832"
 
 [[package]]
-name = "rer-engine"
+name = "rer-engine-2d"
 version = "0.1.0"
 dependencies = [
  "bytemuck",
@@ -2394,6 +2394,7 @@ dependencies = [
  "pollster",
  "rapier3d",
  "raw-window-handle",
+ "rer-engine-shared",
  "rodio",
  "serde",
  "serde_json",
@@ -2401,6 +2402,40 @@ dependencies = [
  "windows 0.54.0",
  "winit",
  "x11",
+]
+
+[[package]]
+name = "rer-engine-3d"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "env_logger",
+ "getrandom 0.2.17",
+ "gilrs",
+ "glam",
+ "gltf",
+ "image",
+ "log",
+ "mlua",
+ "pollster",
+ "rapier3d",
+ "raw-window-handle",
+ "rer-engine-shared",
+ "rodio",
+ "serde",
+ "serde_json",
+ "wgpu",
+ "windows 0.54.0",
+ "winit",
+ "x11",
+]
+
+[[package]]
+name = "rer-engine-shared"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

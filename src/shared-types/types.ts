@@ -310,6 +310,7 @@ declare global {
       off:  () => void
     }
     electronAPI: {
+      setGameStyle:            (gameStyle: GameStyle | null) => void
       sendViewportBounds:      (bounds: ViewportBounds) => void
       openModelDialog:         () => Promise<string | null>
       openProjectDialog:       () => Promise<OpenProjectResult | null>

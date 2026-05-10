@@ -1,7 +1,8 @@
-// ── Física 2D — simulación en plano XY usando Rapier3D ───────────────────────
+// ── Física 2D — simulación en plano XY ───────────────────────────────────────
 //
-// Rapier3D se usa con los ejes Z de traslación y rotación en X/Y bloqueados,
-// lo que equivale a un mundo físico 2D. Gravedad en -Y (9.81 u/s²).
+// Este binario implementa comportamiento 2D. El backend de física usa la crate
+// `rapier3d` por compatibilidad técnica, pero con ejes bloqueados para mantener
+// dinámica estrictamente en XY. Gravedad en -Y (9.81 u/s²).
 //
 // Tipos de cuerpo soportados:
 //   "dynamic"   — afectado por gravedad y colisiones.

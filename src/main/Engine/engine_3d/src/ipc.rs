@@ -10,6 +10,10 @@ use serde::{Deserialize, Serialize};
 
 // ---------------------------------------------------------------------------
 // Comandos que Electron envía al motor (stdin → motor)
+//
+// Nota: este contrato IPC es compartido con frontend y otros binarios.
+// Algunos comandos orientados a 2D se conservan por compatibilidad y el
+// binario 3D los ignora o los deriva a stubs explícitos de compat.
 // ---------------------------------------------------------------------------
 #[derive(Debug, Deserialize)]
 #[serde(tag = "cmd", rename_all = "snake_case")]
@@ -48,7 +52,7 @@ pub enum EngineCommand {
         #[serde(default)]
         force: bool,
     },
-    /// Cambiar la escena activa. `scene` puede ser "2D", "3D", etc.
+    /// Cambiar la escena activa solicitada por frontend.
     SetScene { scene: String },
     /// Cargar una imagen PNG como escenario de fondo en la escena 2D.
     LoadScenario {
@@ -276,6 +280,7 @@ pub struct ControlBindingsData {
 // ---------------------------------------------------------------------------
 #[derive(Debug, Serialize)]
 #[serde(tag = "event", rename_all = "snake_case")]
+#[allow(dead_code)]
 pub enum EngineEvent {
     Ready,
     Pong,
