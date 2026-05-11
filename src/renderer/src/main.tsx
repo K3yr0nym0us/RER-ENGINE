@@ -7,10 +7,10 @@ import 'bootstrap/dist/css/bootstrap.min.css';
 import './styles/index.css';
 
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
-  <React.StrictMode>
+  /* <React.StrictMode> */
     <LanguageProvider>
       <App />
     </LanguageProvider>
-  </React.StrictMode>,
+  /* </React.StrictMode>, */
 )
 

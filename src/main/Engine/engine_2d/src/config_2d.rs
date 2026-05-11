@@ -615,11 +615,12 @@ impl State {
 
                 let (w, h) = processed.dimensions();
                 let uv_packed = self.atlas.pack(&self.queue, &processed, w, h);
+                let tight_bounds = compute_tight_bounds(&processed);
                 let cache_entry = AnimTextureCacheEntry {
                     uv_rect: uv_packed,
                     img_width: w,
                     img_height: h,
-                    tight_bounds: None,
+                    tight_bounds,
                 };
                 self.anim_texture_cache.insert(cache_key, cache_entry);
                 log::debug!("[play_animation_frame] frame cargado al atlas (cache miss): {path}");
@@ -701,7 +702,23 @@ impl State {
 
                 // Actualizar collider si la entidad tiene física activa
                 if self.physics_2d.has_physics(id) {
-                    if let Some((half_ext, col_off)) = character_collision_shape(self, id) {
+                    let bounds = cache_entry.tight_bounds.unwrap_or([0, 0, cache_entry.img_width.max(1), cache_entry.img_height.max(1)]);
+                    if let Some(transform) = self.world.get::<Transform>(id) {
+                        let world_per_px = transform.scale.y / cache_entry.img_height.max(1) as f32;
+                        let bx = bounds[0] as f32;
+                        let by = bounds[1] as f32;
+                        let bw = bounds[2] as f32;
+                        let bh = bounds[3] as f32;
+                        let half_ext = [
+                            bw * 0.5 * world_per_px,
+                            bh * 0.5 * world_per_px,
+                            0.01,
+                        ];
+                        let col_off = [
+                            (bx + bw * 0.5 - cache_entry.img_width as f32 * 0.5) * world_per_px,
+                            (cache_entry.img_height as f32 * 0.5 - by - bh * 0.5) * world_per_px,
+                            0.0,
+                        ];
                         self.physics_2d.update_entity_collider(id, half_ext, col_off);
                     }
                 }

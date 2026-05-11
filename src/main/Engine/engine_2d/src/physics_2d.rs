@@ -18,7 +18,7 @@ mod teleport_entity;
 #[path = "move_physics_entity.rs"]
 mod move_physics_entity;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use rapier3d::prelude::*;
 
@@ -43,6 +43,11 @@ pub(crate) struct PhysicsWorld2D {
     /// Collider handle associated to each entity, used by move_physics_entity
     /// to query the narrow phase and detect blocking contacts before applying velocity.
     entity_colliders:   HashMap<EntityId, ColliderHandle>,
+    /// Set de entidades cuyo collider ya fue inicializado con la forma correcta.
+    /// Las siguientes llamadas solo actualizan el offset (translation local) sin
+    /// recrear el collider, preservando los contactos de Rapier.
+    collider_shape_set: HashSet<EntityId>,
+    pub(crate) debug_mode: bool,
 }
 
 impl Default for PhysicsWorld2D {
@@ -63,12 +68,18 @@ impl Default for PhysicsWorld2D {
             entity_bodies:      HashMap::new(),
             entity_body_types:  HashMap::new(),
             entity_colliders:   HashMap::new(),
+            collider_shape_set: HashSet::new(),
+            debug_mode:         false,
         }
     }
 }
 
 impl PhysicsWorld2D {
     pub(crate) fn new() -> Self { Self::default() }
+
+    pub(crate) fn set_debug_mode(&mut self, on: bool) {
+        self.debug_mode = on;
+    }
 
     /// Número de rigid bodies activos en el mundo físico 2D.
     pub(crate) fn body_count(&self) -> u32 { self.bodies.len() as u32 }
@@ -96,6 +107,7 @@ impl PhysicsWorld2D {
         if let Some(handle) = self.entity_bodies.remove(&entity) {
             self.entity_body_types.remove(&entity);
             self.entity_colliders.remove(&entity);
+            self.collider_shape_set.remove(&entity);
             self.remove_body(handle);
         }
         if !enabled { return; }
@@ -155,8 +167,10 @@ impl PhysicsWorld2D {
         }
     }
 
-    /// Actualiza solo el collider de una entidad (forma y offset local),
-    /// sin recrear el rigid body. La posición del body se mantiene intacta.
+    /// Actualiza la posición local (offset) del collider.
+    /// La primera vez que se llama para una entidad, también establece la forma
+    /// (remove + insert). Las siguientes veces solo mueve el collider existente
+    /// para no interrumpir los contactos activos de Rapier.
     pub(crate) fn update_entity_collider(
         &mut self,
         entity:   EntityId,
@@ -167,21 +181,35 @@ impl PhysicsWorld2D {
         let hx = half_ext[0].max(0.01);
         let hy = half_ext[1].max(0.01);
         let offset = vector![collider_offset[0], collider_offset[1], collider_offset[2]];
-        if let Some(old_handle) = self.entity_colliders.remove(&entity) {
-            self.colliders.remove(old_handle, &mut self.island_manager, &mut self.bodies, true);
+
+        if !self.collider_shape_set.contains(&entity) {
+            // Primera vez: crear collider completo (remove previo si existe + insert nuevo)
+            if let Some(old_handle) = self.entity_colliders.remove(&entity) {
+                self.colliders.remove(old_handle, &mut self.island_manager, &mut self.bodies, true);
+            }
+            let col = ColliderBuilder::cuboid(hx, hy, 0.01)
+                .translation(offset)
+                .restitution(0.0)
+                .friction(0.5)
+                .build();
+            let col_handle = self.colliders.insert_with_parent(col, body_handle, &mut self.bodies);
+            self.entity_colliders.insert(entity, col_handle);
+            self.collider_shape_set.insert(entity);
+            if self.debug_mode {
+                log::info!("[collider] entidad {entity} shape inicial: ({hx:.4},{hy:.4}) offset=({:.4},{:.4})", collider_offset[0], collider_offset[1]);
+            }
+        } else if let Some(&col_handle) = self.entity_colliders.get(&entity) {
+            // Ya tiene collider — solo mover el offset sin tocar la forma.
+            if let Some(collider) = self.colliders.get_mut(col_handle) {
+                collider.set_translation(offset);
+            }
         }
-        let col = ColliderBuilder::cuboid(hx, hy, 0.01)
-            .translation(offset)
-            .restitution(0.0)
-            .friction(0.5)
-            .build();
-        let col_handle = self.colliders.insert_with_parent(col, body_handle, &mut self.bodies);
-        self.entity_colliders.insert(entity, col_handle);
     }
     pub(crate) fn remove_entity_body(&mut self, entity: EntityId) {
         if let Some(handle) = self.entity_bodies.remove(&entity) {
             self.entity_body_types.remove(&entity);
             self.entity_colliders.remove(&entity);
+            self.collider_shape_set.remove(&entity);
             self.remove_body(handle);
         }
     }
@@ -204,6 +232,7 @@ impl PhysicsWorld2D {
         self.entity_bodies.clear();
         self.entity_body_types.clear();
         self.entity_colliders.clear();
+        self.collider_shape_set.clear();
     }
 
     pub(crate) fn has_physics(&self, entity: EntityId) -> bool {
@@ -244,10 +273,16 @@ impl PhysicsWorld2D {
             if let Some(body) = self.bodies.get(handle) {
                 if body.is_dynamic() {
                     let t = body.translation();
+                    if self.debug_mode {
+                        let v = body.linvel();
+                        log::info!(
+                            "[physics] entidad {} post-step: pos=({:.3},{:.3}) vel=({:.3},{:.3})",
+                            entity, t.x, t.y, v.x, v.y
+                        );
+                    }
                     if let Some(transform) = ecs.get_mut::<Transform>(entity) {
                         transform.position.x = t.x;
                         transform.position.y = t.y;
-                        // Z no se toca — lo gestiona el editor para orden de capas
                     }
                 }
             }

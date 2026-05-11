@@ -1520,6 +1520,7 @@ impl State {
             }
             EngineCommand::SetDebugMode { show } => {
                 self.debug_mode = show;
+                self.physics_2d.set_debug_mode(show);
                 log::info!("[debug] modo debug: {}", show);
             }
             EngineCommand::ReloadAsset { path } => {
@@ -2078,7 +2079,7 @@ EngineCommand::PlayAnimation { id, name } => {
             let elapsed = now.duration_since(active.last_frame_time);
 
             if elapsed < frame_duration {
-                to_play.push((entity_id, active.current_frame));
+                // Mismo frame — no tocar collider ni visuales, ya están en el estado correcto.
                 continue;
             }
 
@@ -2108,6 +2109,7 @@ EngineCommand::PlayAnimation { id, name } => {
                 }
             } else {
                 active.current_frame = next_frame_idx;
+                log::info!("[anim] entidad {entity_id} avanza a frame {next_frame_idx} (anim '{}')", active.animation_name);
                 to_play.push((entity_id, next_frame_idx));
             }
         }
