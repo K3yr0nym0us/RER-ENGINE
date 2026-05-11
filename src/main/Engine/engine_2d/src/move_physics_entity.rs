@@ -63,7 +63,7 @@ impl PhysicsWorld2D {
 
         // ── Leer estado actual del body (inmutable) ───────────────────────────
         let current_vy = self.bodies.get(body_handle).map(|b| b.linvel().y).unwrap_or(0.0);
-        let body_pos   = match self.bodies.get(body_handle) {
+        let shape_pos  = match self.bodies.get(body_handle) {
             Some(b) => *b.position(),
             None    => return false,
         };
@@ -77,17 +77,6 @@ impl PhysicsWorld2D {
                 }
                 return true;
             }
-        };
-
-        // Posición mundial real del collider (body_pos * offset_local)
-        let shape_pos = if let Some(col) = self.colliders.get(col_handle) {
-            if let Some(col_local) = col.position_wrt_parent() {
-                &body_pos * col_local
-            } else {
-                body_pos
-            }
-        } else {
-            body_pos
         };
 
         // ── Shape cast con desplazamiento real del frame ──────────────────────
@@ -114,9 +103,8 @@ impl PhysicsWorld2D {
                 ShapeCastOptions {
                     // Fracción máxima del desplazamiento a buscar (1.0 = todo el frame)
                     max_time_of_impact:                    1.0,
-                    // Margen de piel: evitamos cambios bruscos de offset entre
-                    // frames de animación causen superposición ignorada.
-                    target_distance:                       0.05,
+                    // Margen de piel: no llegamos exactamente a la superficie
+                    target_distance:                       0.01,
                     // false = ignorar penetraciones existentes (cuerpo apoyado en suelo).
                     // Permite moverse mientras se está en contacto con una superficie.
                     stop_at_penetration:                   false,

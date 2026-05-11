@@ -155,44 +155,29 @@ impl PhysicsWorld2D {
         }
     }
 
-    /// Actualiza collider in-place: cambia forma y offset sin eliminar el
-    /// collider handle, preservando datos de CCD y contactos de Rapier.
+    /// Actualiza solo el collider de una entidad (forma y offset local),
+    /// sin recrear el rigid body. La posición del body se mantiene intacta.
     pub(crate) fn update_entity_collider(
         &mut self,
         entity:   EntityId,
         half_ext: [f32; 3],
         collider_offset: [f32; 3],
     ) {
-        let Some(&body_handle) = self.entity_bodies.get(&entity) else {
-            return;
-        };
-        let Some(&col_handle) = self.entity_colliders.get(&entity) else {
-            let hx = half_ext[0].max(0.01);
-            let hy = half_ext[1].max(0.01);
-            let off = vector![collider_offset[0], collider_offset[1], collider_offset[2]];
-            let col = ColliderBuilder::cuboid(hx, hy, 0.01)
-                .translation(off)
-                .restitution(0.0)
-                .friction(0.5)
-                .build();
-            let new_handle = self.colliders.insert_with_parent(col, body_handle, &mut self.bodies);
-            self.entity_colliders.insert(entity, new_handle);
-            return;
-        };
-
+        let Some(&body_handle) = self.entity_bodies.get(&entity) else { return };
         let hx = half_ext[0].max(0.01);
         let hy = half_ext[1].max(0.01);
-
-        if let Some(col) = self.colliders.get_mut(col_handle) {
-            col.set_shape(SharedShape::cuboid(hx, hy, 0.01));
-            col.set_position_wrt_parent(Isometry::translation(
-                collider_offset[0],
-                collider_offset[1],
-                collider_offset[2],
-            ));
+        let offset = vector![collider_offset[0], collider_offset[1], collider_offset[2]];
+        if let Some(old_handle) = self.entity_colliders.remove(&entity) {
+            self.colliders.remove(old_handle, &mut self.island_manager, &mut self.bodies, true);
         }
+        let col = ColliderBuilder::cuboid(hx, hy, 0.01)
+            .translation(offset)
+            .restitution(0.0)
+            .friction(0.5)
+            .build();
+        let col_handle = self.colliders.insert_with_parent(col, body_handle, &mut self.bodies);
+        self.entity_colliders.insert(entity, col_handle);
     }
-
     pub(crate) fn remove_entity_body(&mut self, entity: EntityId) {
         if let Some(handle) = self.entity_bodies.remove(&entity) {
             self.entity_body_types.remove(&entity);

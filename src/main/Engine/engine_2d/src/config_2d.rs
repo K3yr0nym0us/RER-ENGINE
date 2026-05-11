@@ -619,7 +619,7 @@ impl State {
                     uv_rect: uv_packed,
                     img_width: w,
                     img_height: h,
-                    tight_bounds: compute_tight_bounds(&processed),
+                    tight_bounds: None,
                 };
                 self.anim_texture_cache.insert(cache_key, cache_entry);
                 log::debug!("[play_animation_frame] frame cargado al atlas (cache miss): {path}");
@@ -686,25 +686,23 @@ impl State {
                 let offset_x     =  (pivot_x - img_width  as f32 * 0.5) * world_per_px;
                 let offset_y     = -(pivot_y - img_height as f32 * 0.5) * world_per_px;
 
-                // Aplicar nueva escala
                 if let Some(t) = self.world.get_mut::<Transform>(id) {
                     t.scale = GlamVec3::new(new_scale_x, new_scale_y, 1.0);
-                }
-
-                // Actualizar collider cada frame para que coincida con el
-                // tight_bounds del frame de animación actual.
-                if self.physics_2d.has_physics(id) {
-                    if let Some((half_ext, col_off)) = character_collision_shape(self, id) {
-                        self.physics_2d.update_entity_collider(id, half_ext, col_off);
+                    // Entidades con física: t.position es el body position (pivot point),
+                    // el offset visual se aplica al renderizar vía visual_offsets.
+                    // Entidades sin física: ajuste directo de posición para backward compat.
+                    if self.physics_2d.has_physics(id) {
+                        let vis_offset = GlamVec3::new(-offset_x, -offset_y, 0.0);
+                        self.visual_offsets.insert(id, vis_offset);
+                    } else {
+                        t.position = orig_pos - GlamVec3::new(offset_x, offset_y, 0.0);
                     }
                 }
 
+                // Actualizar collider si la entidad tiene física activa
                 if self.physics_2d.has_physics(id) {
-                    let vis_offset = GlamVec3::new(-offset_x, -offset_y, 0.0);
-                    self.visual_offsets.insert(id, vis_offset);
-                } else {
-                    if let Some(t) = self.world.get_mut::<Transform>(id) {
-                        t.position = orig_pos - GlamVec3::new(offset_x, offset_y, 0.0);
+                    if let Some((half_ext, col_off)) = character_collision_shape(self, id) {
+                        self.physics_2d.update_entity_collider(id, half_ext, col_off);
                     }
                 }
             }
