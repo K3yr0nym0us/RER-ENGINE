@@ -338,7 +338,7 @@ pub struct State {
     /// play_animation_frame escribe aquí; restore_animation_frame borra la entrada;
     /// el render loop lo lee con prioridad sobre uv_rects[].
     pub(crate) anim_overrides: std::collections::HashMap<usize, [f32; 4]>,
-/// Animaciones guardadas: entity_id → (name → AnimationState).
+    /// Animaciones guardadas: entity_id → (name → AnimationState).
     /// Permite almacenar TODAS las animaciones de una entidad y reproducir
     /// cualquiera por nombre sin reenviar datos desde el frontend.
     pub(crate) animations: HashMap<u32, HashMap<String, AnimationState>>,
@@ -2600,6 +2600,8 @@ EngineCommand::PlayAnimation { id, name } => {
             self.autosave_last_tick = now;
         }
         if self.camera_2d.is_some() {
+            // Avanzar animaciones ANTES de física para que el collider esté actualizado
+            self.update_animations();
             // Scripts corren siempre (editor + juego) para facilitar pruebas rápidas.
             self.update_scripts();
             if self.preview_playing {
@@ -2639,7 +2641,6 @@ EngineCommand::PlayAnimation { id, name } => {
     // ── Render ───────────────────────────────────────────────────────────────
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
-        self.update_animations();
         let mut draw_calls: u32 = 0;
 
         // ── Paso 0: reconstruir spatial grid para picking ──────────────────────────

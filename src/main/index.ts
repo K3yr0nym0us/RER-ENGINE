@@ -865,7 +865,7 @@ function saveProjectToFile(saveFilePath: string, data: ProjectSaveData): boolean
 
     console.log(
       `[editor] Proyecto guardado en ${saveFilePath} `
-      + `(assets total: ${pathMap.size}, sprites: ${uniqueSprites.size}, fondos: ${uniqueBackgrounds.size}, sonidos: ${uniqueSounds.size}, scripts empaquetados: ${packedScriptFiles}, otros: ${otherAssets}${otherSuffix})`,
+      + `(assets total: ${pathMap.size}, sprites: ${uniqueSprites.size}, fondos: ${uniqueBackgrounds.size}, sonidos: ${uniqueSounds.size}, $scripts: ${packedScriptFiles}, otros: ${otherAssets}${otherSuffix})`,
     )
     return true
   } catch (err) {
