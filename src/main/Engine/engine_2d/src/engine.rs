@@ -292,6 +292,8 @@ pub struct State {
     pub        preview_playing:  bool,
     /// Muestra los colliders overlay incluso en modo juego (debug toggle).
     pub(crate) debug_mode: bool,
+    /// V-Sync activado en el swapchain.
+    pub(crate) vsync_enabled: bool,
     /// Buffer de overlay de la herramienta activa (cruces + líneas de construcción).
     pub(crate) tool_overlay_buffer: GizmoBuffer,
     /// UV del PNG de hint de snap en español en el atlas, si se cargó correctamente.
@@ -470,7 +472,7 @@ impl State {
             format,
             width:                         size.width.max(1),
             height:                        size.height.max(1),
-            present_mode:                  wgpu::PresentMode::AutoVsync,
+            present_mode:                  wgpu::PresentMode::AutoNoVsync,
             alpha_mode:                    caps.alpha_modes[0],
             view_formats:                  vec![],
             desired_maximum_frame_latency: 2,
@@ -852,6 +854,7 @@ impl State {
             quick_build_preview_scale: None,
             preview_playing: false,
             debug_mode: false,
+            vsync_enabled: false,
             tool_overlay_buffer: tool_overlay_buffer_init,
             snap_hint_uv,
             snap_hint_size,
@@ -1031,6 +1034,18 @@ impl State {
         self.config.height = new_size.height;
         self.surface.configure(&self.device, &self.config);
         self.depth_view = create_depth_texture(&self.device, &self.config);
+    }
+
+    /// Activa o desactiva V-Sync reconfigurendo el swapchain.
+    pub fn set_vsync(&mut self, enabled: bool) {
+        self.vsync_enabled = enabled;
+        self.config.present_mode = if enabled {
+            wgpu::PresentMode::AutoVsync
+        } else {
+            wgpu::PresentMode::AutoNoVsync
+        };
+        self.surface.configure(&self.device, &self.config);
+        log::info!("[vsync] V-Sync {}", if enabled { "activado" } else { "desactivado" });
     }
 
     // ── Comandos IPC ─────────────────────────────────────────────────────────
@@ -1522,6 +1537,9 @@ impl State {
                 self.debug_mode = show;
                 self.physics_2d.set_debug_mode(show);
                 log::info!("[debug] modo debug: {}", show);
+            }
+            EngineCommand::SetVsync { enabled } => {
+                self.set_vsync(enabled);
             }
             EngineCommand::ReloadAsset { path } => {
                 log::info!("[IPC] ReloadAsset: {}", path);
@@ -2564,9 +2582,10 @@ EngineCommand::PlayAnimation { id, name } => {
                     }
                 }
                 ScriptCmd::Log { message } => {
-                    // Evitar spam en stderr/frontend durante input continuo.
-                    // El mensaje queda disponible solo en nivel debug.
-                    log::debug!("[script] {message}");
+                    log::info!("[script/log] {message}");
+                }
+                ScriptCmd::SetVsync { enabled } => {
+                    self.set_vsync(enabled);
                 }
             }
         }

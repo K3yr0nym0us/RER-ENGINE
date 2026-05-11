@@ -43,6 +43,8 @@ pub enum ScriptCmd {
     MoveEntityFacing { id: u32, speed: f32, amount_x: f32, dir_y: f32 },
     /// Log a message to the engine console (forwarded via IPC).
     Log { message: String },
+    /// Activate or deactivate V-Sync.
+    SetVsync { enabled: bool },
 }
 
 // ---------------------------------------------------------------------------
@@ -543,6 +545,15 @@ impl ScriptEngine {
         }).expect("create log fn");
         let _ = globals.set("__api_log", log_fn);
 
+        // engine.set_vsync(enabled)
+        let set_vsync = lua.create_function(|lua_ctx, enabled: bool| {
+            push_cmd(lua_ctx, "set_vsync", |t| {
+                t.set("enabled", enabled)?;
+                Ok(())
+            })
+        }).expect("create set_vsync fn");
+        let _ = globals.set("__api_set_vsync", set_vsync);
+
         // engine table: the public API that scripts use
         // engine.move_to, engine.translate, etc.
         let engine_table = lua.create_table().expect("engine table");
@@ -556,6 +567,7 @@ impl ScriptEngine {
         let _ = engine_table.set("move_entity",    globals.get::<LuaFunction>("__api_move_entity").ok());
         let _ = engine_table.set("move_entity_facing", globals.get::<LuaFunction>("__api_move_entity_facing").ok());
         let _ = engine_table.set("log",            globals.get::<LuaFunction>("__api_log").ok());
+        let _ = engine_table.set("set_vsync",      globals.get::<LuaFunction>("__api_set_vsync").ok());
         let _ = globals.set("engine", engine_table);
 
     }
@@ -715,6 +727,9 @@ fn parse_cmd_table(t: LuaTable) -> LuaResult<ScriptCmd> {
         }),
         "log" => Ok(ScriptCmd::Log {
             message: t.get("message")?,
+        }),
+        "set_vsync" => Ok(ScriptCmd::SetVsync {
+            enabled: t.get("enabled")?,
         }),
         other => Err(LuaError::runtime(format!("unknown script cmd: {other}"))),
     }

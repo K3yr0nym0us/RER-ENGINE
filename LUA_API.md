@@ -189,6 +189,27 @@ engine.set_physics(entity.id, false)             -- Desactivar físicas
 
 ---
 
+### Renderizado
+
+---
+
+#### `engine.set_vsync(enabled)`
+
+Activa o desactiva V-Sync en el swapchain del motor. Por defecto está desactivado (`AutoNoVsync`).
+
+| Parámetro | Tipo | Descripción |
+|-----------|------|-------------|
+| `enabled` | `boolean` | `true` para activar V-Sync, `false` para desactivar |
+
+```lua
+engine.set_vsync(true)  -- Activar V-Sync (sincronizar con el refresco del monitor)
+engine.set_vsync(false) -- Desactivar V-Sync (máximo rendimiento, sin tearing)
+```
+
+> **Nota:** El cambio se aplica inmediatamente al swapchain. Disponible desde cualquier tipo de script.
+
+---
+
 ### Utilidades
 
 ---

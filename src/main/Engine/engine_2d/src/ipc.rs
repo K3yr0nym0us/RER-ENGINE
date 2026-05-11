@@ -235,6 +235,8 @@ pub enum EngineCommand {
     SetAutosave { enabled: bool },
     /// Mostrar colliders incluso en modo juego (debug).
     SetDebugMode { show: bool },
+    /// Activar/desactivar V-Sync en el swapchain.
+    SetVsync { enabled: bool },
 }
 
 #[derive(Debug, Deserialize, Clone)]
