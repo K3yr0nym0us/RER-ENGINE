@@ -687,15 +687,24 @@ impl State {
                 let offset_y     = -(pivot_y - img_height as f32 * 0.5) * world_per_px;
 
                 if let Some(t) = self.world.get_mut::<Transform>(id) {
-                    t.scale    = GlamVec3::new(new_scale_x, new_scale_y, 1.0);
-                    t.position = orig_pos - GlamVec3::new(offset_x, offset_y, 0.0);
+                    t.scale = GlamVec3::new(new_scale_x, new_scale_y, 1.0);
+                    // Entidades con física: t.position es el body position (pivot point),
+                    // el offset visual se aplica al renderizar vía visual_offsets.
+                    // Entidades sin física: ajuste directo de posición para backward compat.
+                    if self.physics_2d.has_physics(id) {
+                        let vis_offset = GlamVec3::new(-offset_x, -offset_y, 0.0);
+                        self.visual_offsets.insert(id, vis_offset);
+                    } else {
+                        t.position = orig_pos - GlamVec3::new(offset_x, offset_y, 0.0);
+                    }
                 }
 
-                // Nota: el collider NO se actualiza por frame de animación.
-                // El collider inicial se establece en SetPhysics vía character_collision_shape()
-                // y permanece fijo. Actualizarlo por frame (update_entity_collider_box)
-                // causaba inestabilidad en la simulación física (el personaje pierde contacto
-                // con el suelo).
+                // Actualizar collider si la entidad tiene física activa
+                if self.physics_2d.has_physics(id) {
+                    if let Some((half_ext, col_off)) = character_collision_shape(self, id) {
+                        self.physics_2d.update_entity_collider(id, half_ext, col_off);
+                    }
+                }
             }
         }
     }
@@ -775,6 +784,8 @@ pub(crate) fn restore_animation_frame(&mut self, id: u32) {
 
         // Solo restaurar la escala original (elimina la distorsión del pivot calc).
         // La posición NO se toca: el personaje se queda donde llegó gracias a scripts/física.
+        // Limpiar el visual offset para que el render use t.position directamente.
+        self.visual_offsets.remove(&id);
         if let Some((_saved_pos, orig_scale)) = self.anim_saved_transforms.remove(&id) {
             if let Some(t) = self.world.get_mut::<Transform>(id) {
                 t.scale = orig_scale;
@@ -1763,7 +1774,7 @@ pub(crate) fn character_collision_shape(state: &State, entity_id: u32) -> Option
     let marker = state.world.get::<CharacterMarker>(entity_id)?;
 
     let cache_entry = current_character_cache_entry(state, entity_id);
-    let (_img_width, img_height, bounds) = if let Some(entry) = cache_entry {
+    let (img_width, img_height, bounds) = if let Some(entry) = cache_entry {
         (
             entry.img_width,
             entry.img_height,
@@ -1783,13 +1794,23 @@ pub(crate) fn character_collision_shape(state: &State, entity_id: u32) -> Option
         transform.scale.y / img_height as f32
     };
 
-    // El collider se centra en el body (offset = 0) como en el comportamiento original.
-    // El tamaño usa tight_bounds cuando está disponible para colisión precisa.
+    // El collider se centra en el tight_bounds dentro del quad visual:
+    // offset = tight_bounds_center - image_center (en espacio de imagen → mundo)
+    let bx = bounds[0] as f32;
+    let by = bounds[1] as f32;
+    let bw = bounds[2] as f32;
+    let bh = bounds[3] as f32;
+
     let half_ext = [
-        bounds[2] as f32 * 0.5 * world_per_px,
-        bounds[3] as f32 * 0.5 * world_per_px,
+        bw * 0.5 * world_per_px,
+        bh * 0.5 * world_per_px,
         0.01,
     ];
+    let collider_offset = [
+        (bx + bw * 0.5 - img_width as f32 * 0.5) * world_per_px,
+        (img_height as f32 * 0.5 - by - bh * 0.5) * world_per_px,
+        0.0,
+    ];
 
-    Some((half_ext, [0.0, 0.0, 0.0]))
+    Some((half_ext, collider_offset))
 }

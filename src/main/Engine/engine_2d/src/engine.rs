@@ -317,6 +317,9 @@ pub struct State {
     /// Transforms originales guardados antes de aplicar un frame de animación
     /// (posición, escala). Se restauran con RestoreAnimationFrame.
     pub(crate) anim_saved_transforms: std::collections::HashMap<u32, (GlamVec3, GlamVec3)>,
+    /// Offset visual acumulado por pivot de animación: entidades con física
+    /// mantienen t.position = body position; este offset se suma al renderizar.
+    pub(crate) visual_offsets: std::collections::HashMap<u32, GlamVec3>,
     /// Estado del modo edición de pivot: (entity_id, frame_path, img_w, img_h).
     /// Cuando es Some, el siguiente click izquierdo en el viewport calcula el pivot.
     pub pivot_edit_mode: Option<(u32, String, u32, u32)>,
@@ -861,6 +864,7 @@ impl State {
             execution_area_entities: Vec::new(),
             execution_overlaps: HashSet::new(),
             anim_saved_transforms: std::collections::HashMap::new(),
+            visual_offsets: std::collections::HashMap::new(),
             pivot_edit_mode:    None,
             logical_area_mode:  None,
             audio_slot,
@@ -2620,7 +2624,7 @@ EngineCommand::PlayAnimation { id, name } => {
     fn sync_physics_anim_origins(&mut self) {
         let ids: Vec<u32> = self.anim_saved_transforms.keys().copied().collect();
         for id in ids {
-            if self.physics_2d.has_physics(id) {
+            if self.physics_2d.has_physics(id) && self.physics_2d.get_body_type(id) != "static" {
                 if let Some(t) = self.world.get::<Transform>(id) {
                     let (px, py) = (t.position.x, t.position.y);
                     if let Some(saved) = self.anim_saved_transforms.get_mut(&id) {
@@ -2644,10 +2648,15 @@ EngineCommand::PlayAnimation { id, name } => {
             if let Some(t) = self.world.get::<crate::ecs::Transform>(entity) {
                 let sx = t.scale.x.abs() * 0.5;
                 let sy = t.scale.y.abs() * 0.5;
-                let min_x = t.position.x - sx;
-                let min_y = t.position.y - sy;
-                let max_x = t.position.x + sx;
-                let max_y = t.position.y + sy;
+                let center = if let Some(vo) = self.visual_offsets.get(&entity) {
+                    t.position + *vo
+                } else {
+                    t.position
+                };
+                let min_x = center.x - sx;
+                let min_y = center.y - sy;
+                let max_x = center.x + sx;
+                let max_y = center.y + sy;
                 self.spatial_grid.insert_entity(entity, [min_x, min_y, max_x, max_y]);
             }
         }
@@ -2672,18 +2681,29 @@ EngineCommand::PlayAnimation { id, name } => {
         let aspect_fc = self.size.width as f32 / self.size.height as f32;
         // query2<MeshComponent, Transform> itera solo entidades con ambos componentes,
         // evitando el scan de todas las entidades + doble lookup de hash por entidad.
+        let visual_offsets = &self.visual_offsets;
         let mut entities: Vec<(crate::ecs::EntityId, usize, usize, Mat4, i32, f32)> =
             self.world.query2::<MeshComponent, crate::ecs::Transform>()
             .filter_map(|(id, mc, t)| {
                 let mesh_idx = mc.mesh_idx;
                 let tex_idx  = mc.tex_idx;
                 // ── Culling por viewport 2D ──────────────────────────────────
+                // Para culling usamos la posición visual (con offset de pivot)
+                let visual_pos = if let Some(vo) = visual_offsets.get(&id) {
+                    t.position + *vo
+                } else {
+                    t.position
+                };
                 let visible = self.camera_2d
                     .as_ref()
-                    .map(|cam2d| is_visible_2d(cam2d, t.position, t.scale, aspect_fc))
+                    .map(|cam2d| is_visible_2d(cam2d, visual_pos, t.scale, aspect_fc))
                     .unwrap_or(true);
                 if !visible { return None; }
-                let model_mat = t.to_matrix();
+                let model_mat = if let Some(vo) = visual_offsets.get(&id) {
+                    Mat4::from_scale_rotation_translation(t.scale, t.rotation, t.position + *vo)
+                } else {
+                    t.to_matrix()
+                };
                 let layer     = self.world.get::<crate::ecs::RenderLayer>(id).map(|rl| rl.value).unwrap_or(0);
                 let z         = t.position.z;
                 Some((id, mesh_idx, tex_idx, model_mat, layer, z))
