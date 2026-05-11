@@ -174,7 +174,7 @@ function startEngine(embed?: ViewportBounds): void {
   const binaryName = process.platform === 'win32' ? `${baseBinaryName}.exe` : baseBinaryName
   const enginePath = app.isPackaged
     ? path.join(process.resourcesPath, 'engine', binaryName)
-    : path.join(app.getAppPath(), 'src', 'main', 'Engine', 'target', 'debug', binaryName)
+    : path.join(app.getAppPath(), 'src', 'main', 'Engine', 'target', (process.env.RER_ENGINE_PROFILE || 'debug').trim(), binaryName)
 
   // Argumentos de embedding en Linux
   let engineArgs: string[] = []

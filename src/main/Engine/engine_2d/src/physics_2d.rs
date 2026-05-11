@@ -273,13 +273,6 @@ impl PhysicsWorld2D {
             if let Some(body) = self.bodies.get(handle) {
                 if body.is_dynamic() {
                     let t = body.translation();
-                    if self.debug_mode {
-                        let v = body.linvel();
-                        log::info!(
-                            "[physics] entidad {} post-step: pos=({:.3},{:.3}) vel=({:.3},{:.3})",
-                            entity, t.x, t.y, v.x, v.y
-                        );
-                    }
                     if let Some(transform) = ecs.get_mut::<Transform>(entity) {
                         transform.position.x = t.x;
                         transform.position.y = t.y;

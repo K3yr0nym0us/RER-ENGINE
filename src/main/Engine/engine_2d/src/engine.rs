@@ -2109,7 +2109,9 @@ EngineCommand::PlayAnimation { id, name } => {
                 }
             } else {
                 active.current_frame = next_frame_idx;
-                log::info!("[anim] entidad {entity_id} avanza a frame {next_frame_idx} (anim '{}')", active.animation_name);
+                if self.debug_mode {
+                    log::info!("[anim] entidad {entity_id} avanza a frame {next_frame_idx} (anim '{}')", active.animation_name);
+                }
                 to_play.push((entity_id, next_frame_idx));
             }
         }
