@@ -1,4 +1,5 @@
 import {
+  Bug,
   ClockFill,
   FloppyFill,
   PlayFill,
@@ -18,7 +19,7 @@ interface Props {
 }
 
 export function TopBarEngine({ projectType, handleSave, toggleAutoSave, hasSavedOnce, autoSaveEnabled }: Props) {
-  const { engineReady, engineError, previewPlaying, setPreviewPlaying } = useContextEngine();
+  const { engineReady, engineError, previewPlaying, setPreviewPlaying, debugMode, setDebugMode } = useContextEngine();
   const { t } = useTraslate();
   const isStopActive = !previewPlaying;
 
@@ -32,7 +33,7 @@ export function TopBarEngine({ projectType, handleSave, toggleAutoSave, hasSaved
     <div className="custom-controls-bar border-bottom border-secondary-subtle">
       <div className="p-2 d-flex align-items-center gap-2 justify-content-between">
         <div className="d-flex align-items-center gap-2">
-          <AppTooltip content={previewPlaying ? t('Playing') : t('Start test')} place="bottom">
+          <AppTooltip content={previewPlaying ? t('Playing') : t('Start test')} place="top">
             <button
               className={`btn btn-sm ${previewPlaying ? 'btn-success active' : 'btn-outline-light'}`}
               disabled={!engineReady || previewPlaying}
@@ -43,7 +44,7 @@ export function TopBarEngine({ projectType, handleSave, toggleAutoSave, hasSaved
               <PlayFill size={16} />
             </button>
           </AppTooltip>
-          <AppTooltip content={isStopActive ? t('Active editor') : t('Stop test')} place="bottom">
+          <AppTooltip content={isStopActive ? t('Active editor') : t('Stop test')} place="top">
             <button
               className={`btn btn-sm ${isStopActive ? 'btn-danger active' : 'btn-outline-light'}`}
               disabled={!engineReady || isStopActive}
@@ -52,6 +53,16 @@ export function TopBarEngine({ projectType, handleSave, toggleAutoSave, hasSaved
               type="button"
             >
               <StopFill size={16} />
+            </button>
+          </AppTooltip>
+          <AppTooltip content={debugMode ? t('Deactivate debug mode') : t('Activate debug mode')} place="top">
+            <button
+              className={`btn btn-sm ${debugMode ? 'btn-success active' : 'btn-outline-success'}`}
+              disabled={!engineReady}
+              onClick={() => setDebugMode(!debugMode)}
+              type="button"
+            >
+              <Bug size={16} />
             </button>
           </AppTooltip>
         </div>

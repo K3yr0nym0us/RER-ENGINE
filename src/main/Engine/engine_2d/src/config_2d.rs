@@ -1638,7 +1638,7 @@ pub(crate) fn build_scenario_collision_overlay(
     device: &wgpu::Device,
     state: &State,
 ) -> gizmo::GizmoBuffer {
-    if state.preview_playing || state.camera_2d.is_none() {
+    if (!state.debug_mode && state.preview_playing) || state.camera_2d.is_none() {
         return gizmo::build_from_vertices(device, &[]);
     }
 

@@ -83,6 +83,7 @@ export interface EngineState {
 	sounds: SoundInfo[]
 	backgrounds: BackgroundInfo[]
 	debugMetrics: DebugMetrics | null
+	debugMode: boolean
 	blueprints: BluePrintEntry[]
 	multiSelectedIds: number[]
 }
@@ -118,6 +119,7 @@ export type EngineAction =
 	| { type: 'ADD_SPRITE_INFO'; payload: { path: string; name: string } }
 	| { type: 'REMOVE_SPRITE_INFO'; payload: string }
 	| { type: 'SET_LOADED_SPRITES_INFO'; payload: Array<{ path: string; name: string }> }
+	| { type: 'SET_DEBUG_MODE'; payload: boolean }
 	| { type: 'SET_DEBUG_METRICS'; payload: DebugMetrics }
 	| { type: 'ADD_BLUEPRINT'; payload: BluePrintEntry }
 	| { type: 'SET_BLUEPRINTS'; payload: BluePrintEntry[] }
@@ -150,6 +152,7 @@ export const initialState: EngineState = {
 	sounds: [],
 	backgrounds: [],
 	debugMetrics: null,
+	debugMode: false,
 	blueprints: [],
 	multiSelectedIds: [],
 };
@@ -238,6 +241,7 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 			}
 			return { ...prevState, loadedSpritesInfo: nextMap };
 		},
+		SET_DEBUG_MODE: (prevState, nextAction) => ({ ...prevState, debugMode: nextAction.payload }),
 		SET_DEBUG_METRICS: (prevState, nextAction) => ({ ...prevState, debugMetrics: nextAction.payload }),
 		ADD_BLUEPRINT: (prevState, nextAction) => ({ ...prevState, blueprints: [...prevState.blueprints, nextAction.payload] }),
 		SET_BLUEPRINTS: (prevState, nextAction) => ({ ...prevState, blueprints: nextAction.payload }),
@@ -363,4 +367,5 @@ export interface EngineContextValue extends EngineState {
 	setBlueprints: (entries: BluePrintEntry[]) => void
 	registerQuickBuildClickListener: (fn: (x: number, y: number, fitToGrid: boolean, scale?: [number, number, number]) => void) => void
 	unregisterQuickBuildClickListener: () => void
+	setDebugMode: (show: boolean) => void
 }

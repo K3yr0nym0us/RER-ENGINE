@@ -233,6 +233,8 @@ pub enum EngineCommand {
     SetLocale { locale: String },
     /// Activar/desactivar autosave coordinado por el motor.
     SetAutosave { enabled: bool },
+    /// Mostrar colliders incluso en modo juego (debug).
+    SetDebugMode { show: bool },
 }
 
 #[derive(Debug, Deserialize, Clone)]

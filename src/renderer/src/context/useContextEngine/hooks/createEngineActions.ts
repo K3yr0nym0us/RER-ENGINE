@@ -279,6 +279,11 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 		send({ cmd: 'set_preview_playing', playing });
 	};
 
+	const setDebugMode = (show: boolean) => {
+		dispatch({ type: 'SET_DEBUG_MODE', payload: show });
+		send({ cmd: 'set_debug_mode', show });
+	};
+
 	const setBackground = (path: string | null) => {
 		dispatch({ type: 'SET_BACKGROUND', payload: path });
 		if (path) {
@@ -341,6 +346,7 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 		getSpritesList,
 		loadCharacter,
 		setPreviewPlaying,
+		setDebugMode,
 		setBackground,
 		loadSound,
 		removeSound,

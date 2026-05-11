@@ -142,6 +142,7 @@ export function EngineProvider({
 		getSpritesList: actions.getSpritesList,
 		loadCharacter: actions.loadCharacter,
 		setPreviewPlaying: actions.setPreviewPlaying,
+		setDebugMode: actions.setDebugMode,
 		setBackground: actions.setBackground,
 		loadSound: actions.loadSound,
 		removeSound: actions.removeSound,

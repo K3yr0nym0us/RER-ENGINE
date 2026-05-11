@@ -290,6 +290,8 @@ pub struct State {
     pub(crate) quick_build_preview_scale: Option<[f32; 3]>,
     /// true = modo juego (simulación), false = modo editor.
     pub        preview_playing:  bool,
+    /// Muestra los colliders overlay incluso en modo juego (debug toggle).
+    pub(crate) debug_mode: bool,
     /// Buffer de overlay de la herramienta activa (cruces + líneas de construcción).
     pub(crate) tool_overlay_buffer: GizmoBuffer,
     /// UV del PNG de hint de snap en español en el atlas, si se cargó correctamente.
@@ -846,6 +848,7 @@ impl State {
             quick_build_preview_kind: None,
             quick_build_preview_scale: None,
             preview_playing: false,
+            debug_mode: false,
             tool_overlay_buffer: tool_overlay_buffer_init,
             snap_hint_uv,
             snap_hint_size,
@@ -1510,6 +1513,10 @@ impl State {
                 self.autosave_enabled = enabled;
                 self.autosave_last_tick = Instant::now();
                 log::info!("[autosave] {}", if enabled { "activado" } else { "desactivado" });
+            }
+            EngineCommand::SetDebugMode { show } => {
+                self.debug_mode = show;
+                log::info!("[debug] modo debug: {}", show);
             }
             EngineCommand::ReloadAsset { path } => {
                 log::info!("[IPC] ReloadAsset: {}", path);
@@ -2701,7 +2708,7 @@ EngineCommand::PlayAnimation { id, name } => {
         }
         let mut batches: Vec<Batch> = Vec::new();
         for (entity_id, mesh_idx, tex_idx, model_matrix, _layer, _z) in &entities {
-            if self.preview_playing
+            if self.preview_playing && !self.debug_mode
                 && (self.collider_entities.contains(entity_id)
                     || self.execution_area_entities.contains(entity_id))
             {
@@ -2800,7 +2807,7 @@ EngineCommand::PlayAnimation { id, name } => {
         }
 
         // ── Grid pass (solo modo 2D; borde siempre visible, líneas según config) ──
-        if !self.preview_playing {
+        if !self.preview_playing || self.debug_mode {
             if let Some(cam2d) = &self.camera_2d {
                 let aspect   = self.size.width as f32 / self.size.height as f32;
                 let vp       = cam2d.view_proj(aspect).to_cols_array_2d();
