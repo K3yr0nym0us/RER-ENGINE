@@ -21,6 +21,7 @@ impl PhysicsWorld2D {
                 body.set_translation(vector![x, y, 0.0], true);
                 body.set_linvel(vector![0.0, 0.0, 0.0], true);
             }
+            self.kinematic_actor_vel.remove(&entity);
         }
     }
 }

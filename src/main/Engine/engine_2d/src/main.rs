@@ -453,9 +453,11 @@ impl ApplicationHandler<EngineCommand> for App {
                 if state.is_preview_playing() {
                     if let Some(control_key) = map_mouse_control_key(button) {
                         if pressed {
-                            if self.keyboard_mouse_pressed.insert(control_key.to_string()) {
-                                state.handle_runtime_control_input("keyboard_mouse", control_key);
-                            }
+                            self.keyboard_mouse_pressed.insert(control_key.to_string());
+                            state.handle_runtime_control_input_just_pressed(
+                                "keyboard_mouse",
+                                control_key,
+                            );
                         } else {
                             self.keyboard_mouse_pressed.remove(control_key);
                         }
@@ -634,8 +636,12 @@ impl ApplicationHandler<EngineCommand> for App {
                 if state.is_preview_playing() {
                     if let Some(control_key) = map_keyboard_control_key(code) {
                         if pressed {
-                            if self.keyboard_mouse_pressed.insert(control_key.clone()) {
-                                state.handle_runtime_control_input("keyboard_mouse", &control_key);
+                            self.keyboard_mouse_pressed.insert(control_key.clone());
+                            if !repeat {
+                                state.handle_runtime_control_input_just_pressed(
+                                    "keyboard_mouse",
+                                    &control_key,
+                                );
                             }
                         } else {
                             self.keyboard_mouse_pressed.remove(&control_key);
@@ -687,6 +693,17 @@ impl ApplicationHandler<EngineCommand> for App {
                 }
             }
             WindowEvent::RedrawRequested => {
+                // Controles sostenidos en el mismo frame que update()/física (antes de step).
+                if state.is_preview_playing() {
+                    for control_key in &self.keyboard_mouse_pressed {
+                        state.handle_runtime_control_input("keyboard_mouse", control_key);
+                    }
+                    for button in &self.gamepad_pressed {
+                        if let Some(control_key) = map_gamepad_control_key(*button) {
+                            state.handle_runtime_control_input("gamepad", control_key);
+                        }
+                    }
+                }
                 state.update();
                 match state.render() {
                     Ok(_) => {}
@@ -720,10 +737,9 @@ impl ApplicationHandler<EngineCommand> for App {
                     while let Some(evt) = gilrs.next_event() {
                         match evt.event {
                             GamepadEventType::ButtonPressed(button, _) => {
-                                if self.gamepad_pressed.insert(button) {
-                                    if let Some(control_key) = map_gamepad_control_key(button) {
-                                        state.handle_runtime_control_input("gamepad", control_key);
-                                    }
+                                self.gamepad_pressed.insert(button);
+                                if let Some(control_key) = map_gamepad_control_key(button) {
+                                    state.handle_runtime_control_input_just_pressed("gamepad", control_key);
                                 }
                             }
                             GamepadEventType::ButtonReleased(button, _) => {
@@ -731,15 +747,6 @@ impl ApplicationHandler<EngineCommand> for App {
                             }
                             _ => {}
                         }
-                    }
-                }
-
-                for control_key in &self.keyboard_mouse_pressed {
-                    state.handle_runtime_control_input("keyboard_mouse", control_key);
-                }
-                for button in &self.gamepad_pressed {
-                    if let Some(control_key) = map_gamepad_control_key(*button) {
-                        state.handle_runtime_control_input("gamepad", control_key);
                     }
                 }
 

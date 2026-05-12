@@ -41,10 +41,23 @@ pub enum ScriptCmd {
     /// `amount_x` is a positive horizontal magnitude that will be applied
     /// automatically to the side the entity is currently facing.
     MoveEntityFacing { id: u32, speed: f32, amount_x: f32, dir_y: f32 },
+    /// Aplica gravedad manual + colisiones a un cuerpo kinematic.
+    ApplyKinematicGravity { id: u32, speed_x: f32, jump_speed_y: f32, gravity: f32 },
+    /// Aplica un impulso de velocidad a un kinematic.
+    ApplyKinematicImpulse { id: u32, dir_x: f32, dir_y: f32, impulse: f32 },
     /// Log a message to the engine console (forwarded via IPC).
     Log { message: String },
     /// Activate or deactivate V-Sync.
     SetVsync { enabled: bool },
+}
+
+/// Cómo despachar callbacks de scripts de control enlazados a teclas/gamepad.
+#[derive(Clone, Copy)]
+pub enum ControlScriptDispatch {
+    /// Cada frame mientras la entrada sigue activa; `on_hold` o `on_press` heredado.
+    WhileHeld,
+    /// Solo en el borde de bajada (sin autorepeat): `on_pressed`. Saltos / un disparo.
+    JustPressed,
 }
 
 // ---------------------------------------------------------------------------
@@ -251,16 +264,14 @@ impl ScriptEngine {
         log::debug!("[scripting] caché de control scripts limpiada");
     }
 
-    /// Executes a control script on-demand (triggered by runtime input).
-    /// The chunk can return a table with `on_press(self, entity, control_key)`
-    /// or execute direct `engine.*` API calls inline.
-    pub fn run_control_script(
+    fn run_control_script_dispatch(
         &mut self,
         entity_id: u32,
         control_key: &str,
         path: &str,
         source: &str,
         snapshot: Option<&EntitySnapshot>,
+        dispatch: ControlScriptDispatch,
     ) -> LuaResult<Vec<ScriptCmd>> {
         let cmd_queue: LuaTable = self.lua.create_table()?;
         self.lua.globals().set("__cmds", cmd_queue)?;
@@ -273,13 +284,10 @@ impl ScriptEngine {
 
         let entity_table = self.build_entity_table(entity_id, snapshot)?;
 
-        // Get or compile the script as a cached Lua function.
-        // Godot-style: compile once, reuse every frame — eliminates per-frame Lua parsing.
         let func: LuaFunction = if let Some(key) = self.control_script_cache.get(path) {
             match self.lua.registry_value(key) {
                 Ok(f) => f,
                 Err(_) => {
-                    // Registry entry stale — recompile.
                     self.control_script_cache.remove(path);
                     let f = self.lua.load(source).set_name(path).into_function()?;
                     let new_key = self.lua.create_registry_value(f.clone())?;
@@ -296,9 +304,19 @@ impl ScriptEngine {
 
         let eval_result = func.call::<LuaValue>(());
         match eval_result {
-            Ok(LuaValue::Table(table)) => {
-                call_fn_control(&table, "on_press", entity_table, control_key)?;
-            }
+            Ok(LuaValue::Table(table)) => match dispatch {
+                ControlScriptDispatch::WhileHeld => {
+                    // `on_hold` = movimiento continuo; `on_press` = nombre antiguo (mismo papel).
+                    if matches!(table.get::<LuaValue>("on_hold")?, LuaValue::Function(_)) {
+                        call_fn_control(&table, "on_hold", entity_table, control_key)?;
+                    } else {
+                        call_fn_control(&table, "on_press", entity_table, control_key)?;
+                    }
+                }
+                ControlScriptDispatch::JustPressed => {
+                    call_fn_control(&table, "on_pressed", entity_table, control_key)?;
+                }
+            },
             Ok(_) => {}
             Err(e) => {
                 log::warn!("[control] Error ejecutando script '{}': {}", path, e);
@@ -317,6 +335,42 @@ impl ScriptEngine {
         }
 
         Ok(commands)
+    }
+
+    /// Mientras la tecla está pulsada (~cada frame). Ver `ControlScriptDispatch::WhileHeld`.
+    pub fn run_control_script_while_held(
+        &mut self,
+        entity_id: u32,
+        control_key: &str,
+        path: &str,
+        source: &str,
+        snapshot: Option<&EntitySnapshot>,
+    ) -> LuaResult<Vec<ScriptCmd>> {
+        self.run_control_script_dispatch(entity_id, control_key, path, source, snapshot, ControlScriptDispatch::WhileHeld)
+    }
+
+    /// Solo al borde de bajada (`on_pressed`) — usar para saltos; no depende del autorepeat.
+    pub fn run_control_script_just_pressed(
+        &mut self,
+        entity_id: u32,
+        control_key: &str,
+        path: &str,
+        source: &str,
+        snapshot: Option<&EntitySnapshot>,
+    ) -> LuaResult<Vec<ScriptCmd>> {
+        self.run_control_script_dispatch(entity_id, control_key, path, source, snapshot, ControlScriptDispatch::JustPressed)
+    }
+
+    /// Alias de compatibilidad: equivale a `run_control_script_while_held`.
+    pub fn run_control_script(
+        &mut self,
+        entity_id: u32,
+        control_key: &str,
+        path: &str,
+        source: &str,
+        snapshot: Option<&EntitySnapshot>,
+    ) -> LuaResult<Vec<ScriptCmd>> {
+        self.run_control_script_while_held(entity_id, control_key, path, source, snapshot)
     }
 
     /// Ejecuta `on_trigger_enter(self, trigger, actor)` en los scripts adjuntos
@@ -536,6 +590,30 @@ impl ScriptEngine {
         }).expect("create move_entity_facing fn");
         let _ = globals.set("__api_move_entity_facing", move_entity_facing);
 
+        // engine.apply_kinematic_gravity(id, speed_x, jump_speed_y, gravity)
+        let apply_kinematic_gravity = lua.create_function(|lua_ctx, (id, speed_x, jump_speed_y, gravity): (u32, f32, f32, f32)| {
+            push_cmd(lua_ctx, "apply_kinematic_gravity", |t| {
+                t.set("id",            id)?;
+                t.set("speed_x",       speed_x)?;
+                t.set("jump_speed_y",  jump_speed_y)?;
+                t.set("gravity",       gravity)?;
+                Ok(())
+            })
+        }).expect("create apply_kinematic_gravity fn");
+        let _ = globals.set("__api_apply_kinematic_gravity", apply_kinematic_gravity);
+
+        // engine.apply_kinematic_impulse(id, dir_x, dir_y, impulse)
+        let apply_kinematic_impulse = lua.create_function(|lua_ctx, (id, dir_x, dir_y, impulse): (u32, f32, f32, f32)| {
+            push_cmd(lua_ctx, "apply_kinematic_impulse", |t| {
+                t.set("id",      id)?;
+                t.set("dir_x",   dir_x)?;
+                t.set("dir_y",   dir_y)?;
+                t.set("impulse", impulse)?;
+                Ok(())
+            })
+        }).expect("create apply_kinematic_impulse fn");
+        let _ = globals.set("__api_apply_kinematic_impulse", apply_kinematic_impulse);
+
         // engine.log(msg)
         let log_fn = lua.create_function(|lua_ctx, msg: String| {
             push_cmd(lua_ctx, "log", |t| {
@@ -566,6 +644,8 @@ impl ScriptEngine {
         let _ = engine_table.set("set_physics",    globals.get::<LuaFunction>("__api_set_physics").ok());
         let _ = engine_table.set("move_entity",    globals.get::<LuaFunction>("__api_move_entity").ok());
         let _ = engine_table.set("move_entity_facing", globals.get::<LuaFunction>("__api_move_entity_facing").ok());
+        let _ = engine_table.set("apply_kinematic_gravity", globals.get::<LuaFunction>("__api_apply_kinematic_gravity").ok());
+        let _ = engine_table.set("apply_kinematic_impulse", globals.get::<LuaFunction>("__api_apply_kinematic_impulse").ok());
         let _ = engine_table.set("log",            globals.get::<LuaFunction>("__api_log").ok());
         let _ = engine_table.set("set_vsync",      globals.get::<LuaFunction>("__api_set_vsync").ok());
         let _ = globals.set("engine", engine_table);
@@ -724,6 +804,18 @@ fn parse_cmd_table(t: LuaTable) -> LuaResult<ScriptCmd> {
             speed:    t.get("speed")?,
             amount_x: t.get("amount_x")?,
             dir_y:    t.get("dir_y")?,
+        }),
+        "apply_kinematic_gravity" => Ok(ScriptCmd::ApplyKinematicGravity {
+            id:           t.get("id")?,
+            speed_x:      t.get("speed_x")?,
+            jump_speed_y: t.get("jump_speed_y")?,
+            gravity:      t.get("gravity")?,
+        }),
+        "apply_kinematic_impulse" => Ok(ScriptCmd::ApplyKinematicImpulse {
+            id:      t.get("id")?,
+            dir_x:   t.get("dir_x")?,
+            dir_y:   t.get("dir_y")?,
+            impulse: t.get("impulse")?,
         }),
         "log" => Ok(ScriptCmd::Log {
             message: t.get("message")?,

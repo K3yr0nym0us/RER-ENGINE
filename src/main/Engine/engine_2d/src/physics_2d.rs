@@ -7,11 +7,14 @@
 // Tipos de cuerpo soportados:
 //   "dynamic"   — afectado por gravedad y colisiones.
 //   "static"    — no se mueve (suelo, plataformas).
-//   "kinematic" — solo se mueve por código, no recibe fuerzas ni gravedad, colisiona pero no es empujado.
+//   "kinematic" — KinematicPositionBased + KinematicCharacterController de Rapier
+//                 (similar a CharacterBody/move_and_slide de Godot: deslices iterados,
+//                 snap al suelo). La entrada de velocidad viene de kinematic_actor_vel.
 //
 // Funciones extraídas a archivos propios (submódulos vía #[path]):
-//   teleport_entity      — sincroniza Rapier body con el Transform.
-//   move_physics_entity  — mueve con velocidad lineal respetando colisiones.
+//   teleport_entity         — sincroniza Rapier body con el Transform.
+//   move_physics_entity     — mueve con velocidad lineal respetando colisiones.
+//   kinematic_gravity       — gravedad manual + colisiones para cuerpos kinematic.
 
 #[path = "teleport_entity.rs"]
 mod teleport_entity;
@@ -19,9 +22,13 @@ mod teleport_entity;
 #[path = "move_physics_entity.rs"]
 mod move_physics_entity;
 
+#[path = "kinematic_gravity.rs"]
+mod kinematic_gravity;
+
 use std::collections::{HashMap, HashSet};
 
 use rapier3d::prelude::*;
+use rapier3d::control::{CharacterLength, KinematicCharacterController};
 
 use crate::ecs::{EntityId, Transform, World};
 
@@ -49,6 +56,18 @@ pub(crate) struct PhysicsWorld2D {
     /// recrear el collider, preservando los contactos de Rapier.
     collider_shape_set: HashSet<EntityId>,
     pub(crate) debug_mode: bool,
+    /// Velocidad planar (XY) pedida por scripts para KinematicPositionBased.
+    /// Rapier no aplica `set_linvel` a ese tipo; `step()` la consume aquí.
+    kinematic_actor_vel: HashMap<EntityId, Vector<f32>>,
+    /// Deslizamiento multi-paso + snap al suelo (API tipo Godot CharacterBody).
+    kinematic_character: KinematicCharacterController,
+}
+
+fn default_kinematic_character() -> KinematicCharacterController {
+    let mut cc = KinematicCharacterController::default();
+    cc.snap_to_ground = Some(CharacterLength::Relative(0.14));
+    cc.offset = CharacterLength::Relative(0.012);
+    cc
 }
 
 impl Default for PhysicsWorld2D {
@@ -71,6 +90,8 @@ impl Default for PhysicsWorld2D {
             entity_colliders:   HashMap::new(),
             collider_shape_set: HashSet::new(),
             debug_mode:         false,
+            kinematic_actor_vel: HashMap::new(),
+            kinematic_character: default_kinematic_character(),
         }
     }
 }
@@ -131,7 +152,9 @@ impl PhysicsWorld2D {
                 handle
             }
             "kinematic" => {
-                // "kinematic" — solo se mueve por código, no recibe fuerzas ni gravedad, colisiona pero no es empujado.
+                // "kinematic" — position-based con gravedad manual en step().
+                // La gravedad + shape cast + set_next_kinematic_position se
+                // manejan en step() para detectar colisiones antes de mover.
                 let body = RigidBodyBuilder::kinematic_position_based()
                     .translation(vector![position[0], position[1], 0.0])
                     .locked_axes(
@@ -217,7 +240,7 @@ impl PhysicsWorld2D {
             self.entity_colliders.insert(entity, col_handle);
             self.collider_shape_set.insert(entity);
             if self.debug_mode {
-                log::info!("[collider] entidad {entity} shape inicial: ({hx:.4},{hy:.4}) offset=({:.4},{:.4})", collider_offset[0], collider_offset[1]);
+                log::debug!("[collider] entidad {entity} shape inicial: ({hx:.4},{hy:.4}) offset=({:.4},{:.4})", collider_offset[0], collider_offset[1]);
             }
         } else if let Some(&col_handle) = self.entity_colliders.get(&entity) {
             // Ya tiene collider — solo mover el offset sin tocar la forma.
@@ -231,6 +254,7 @@ impl PhysicsWorld2D {
             self.entity_body_types.remove(&entity);
             self.entity_colliders.remove(&entity);
             self.collider_shape_set.remove(&entity);
+            self.kinematic_actor_vel.remove(&entity);
             self.remove_body(handle);
         }
     }
@@ -254,6 +278,7 @@ impl PhysicsWorld2D {
         self.entity_body_types.clear();
         self.entity_colliders.clear();
         self.collider_shape_set.clear();
+        self.kinematic_actor_vel.clear();
     }
 
     pub(crate) fn has_physics(&self, entity: EntityId) -> bool {
@@ -264,12 +289,93 @@ impl PhysicsWorld2D {
         self.entity_body_types.get(&entity).map(|s| s.as_str()).unwrap_or("")
     }
 
+    /// Registra velocidad planar para un actor kinematic (Rapier ignora `set_linvel` en KinematicPositionBased).
+    pub(crate) fn set_kinematic_actor_vel_xy(&mut self, entity: EntityId, vel: Vector<f32>) {
+        if self.get_body_type(entity) == "kinematic" {
+            self.kinematic_actor_vel.insert(entity, vel);
+        }
+    }
+
     // ── Paso de simulación ────────────────────────────────────────────────────
 
     pub(crate) fn step(&mut self, dt: f32, ecs: &mut World) {
         if self.entity_bodies.is_empty() { return; }
 
         self.integration_params.dt = dt.clamp(0.0001, 0.05);
+
+        // ── KinematicPositionBased + CharacterController (estilo Godot move_and_slide) ──
+        // Rapier ignora `set_linvel`; la entrada de scripts va a `kinematic_actor_vel`.
+
+        #[derive(Clone, Copy)]
+        struct KData {
+            entity:     EntityId,
+            handle:     RigidBodyHandle,
+            col_handle: ColliderHandle,
+            linvel:     Vector<f32>,
+            pos:        Vector<f32>,
+            shape_pos:  Isometry<f32>,
+        }
+
+        let kdata: Vec<KData> = self.entity_bodies.iter()
+            .filter_map(|(&entity, &handle)| {
+                (self.get_body_type(entity) == "kinematic").then(|| {
+                    let col_handle = *self.entity_colliders.get(&entity)?;
+                    let body = self.bodies.get(handle)?;
+                    let shape_pos = self.colliders.get(col_handle)
+                        .map(|c| *c.position())
+                        .unwrap_or(*body.position());
+                    Some(KData {
+                        entity,
+                        handle,
+                        col_handle,
+                        linvel: *body.linvel(),
+                        pos: *body.translation(),
+                        shape_pos,
+                    })
+                }).flatten()
+            }).collect();
+
+        let dt_clamped = self.integration_params.dt;
+        let cc = self.kinematic_character;
+
+        struct KResult { handle: RigidBodyHandle, next_pos: Vector<f32> }
+        let results: Vec<KResult> = kdata.iter().filter_map(|d| {
+            let script = self.kinematic_actor_vel.remove(&d.entity);
+            // Godot CharacterBody: la velocidad horizontal la fija cada frame el input;
+            // sin comando => 0 (no arrastrar velocidad interpolada lateral de Rapier).
+            let vx = script.as_ref().map(|s| s.x).unwrap_or(0.0);
+            let vy_base = script.map(|s| s.y).unwrap_or(d.linvel.y);
+            let vy = vy_base + self.gravity.y * dt_clamped;
+            let desired_translation = vector![vx * dt_clamped, vy * dt_clamped, 0.0];
+
+            let character_col = self.colliders.get(d.col_handle)?;
+            let filter      = QueryFilter::default().exclude_collider(d.col_handle);
+            let movement    = cc.move_shape(
+                dt_clamped,
+                &self.bodies,
+                &self.colliders,
+                &self.query_pipeline,
+                character_col.shape(),
+                &d.shape_pos,
+                desired_translation,
+                filter,
+                |_collision| (),
+            );
+
+            // Traslación rígida del centro del body = misma Δ que sobre el volumen swept.
+            let next_pos = d.pos + movement.translation;
+
+            Some(KResult { handle: d.handle, next_pos })
+        }).collect();
+
+        // Aplicar set_next_kinematic_position
+        for r in &results {
+            if let Some(body) = self.bodies.get_mut(r.handle) {
+                body.set_next_kinematic_position(Isometry::translation(
+                    r.next_pos.x, r.next_pos.y, r.next_pos.z,
+                ));
+            }
+        }
 
         self.physics_pipeline.step(
             &self.gravity,

@@ -2384,6 +2384,21 @@ EngineCommand::PlayAnimation { id, name } => {
         }
     }
 
+    fn execute_control_script_just_pressed(&mut self, id: u32, control_key: &str, path: &str, source: &str) {
+        if !self.preview_playing {
+            return;
+        }
+
+        let snapshot = self.build_script_snapshot(id);
+        match self
+            .script_engine
+            .run_control_script_just_pressed(id, control_key, path, source, snapshot.as_ref())
+        {
+            Ok(commands) => self.apply_script_commands(commands),
+            Err(e) => log::error!("[control] Error en on_pressed '{}' ({}): {}", path, control_key, e),
+        }
+    }
+
     pub fn handle_runtime_control_input(&mut self, device: &str, control_key: &str) {
         if !self.preview_playing {
             return;
@@ -2403,6 +2418,29 @@ EngineCommand::PlayAnimation { id, name } => {
 
         for (id, path, source) in matches {
             self.execute_control_script(id, control_key, &path, &source);
+        }
+    }
+
+    /// Borde de bajada sin autorepeat: ejecuta solo `on_pressed` en scripts de control.
+    pub fn handle_runtime_control_input_just_pressed(&mut self, device: &str, control_key: &str) {
+        if !self.preview_playing {
+            return;
+        }
+
+        let matches: Vec<(u32, String, String)> = self.control_bindings_by_entity
+            .iter()
+            .filter_map(|(&id, bindings)| {
+                let script = match device {
+                    "keyboard_mouse" => bindings.keyboard_mouse.get(control_key),
+                    "gamepad" => bindings.gamepad.get(control_key),
+                    _ => None,
+                }?;
+                Some((id, script.name.clone(), script.source.clone()))
+            })
+            .collect();
+
+        for (id, path, source) in matches {
+            self.execute_control_script_just_pressed(id, control_key, &path, &source);
         }
     }
 
@@ -2579,6 +2617,18 @@ EngineCommand::PlayAnimation { id, name } => {
                             saved.0.x += dx;
                             saved.0.y += dy;
                         }
+                    }
+                }
+                ScriptCmd::ApplyKinematicGravity { id, speed_x, jump_speed_y, gravity } => {
+                    if self.preview_playing {
+                        self.physics_2d.apply_kinematic_gravity(
+                            id, speed_x, jump_speed_y, gravity, self.delta_time, None,
+                        );
+                    }
+                }
+                ScriptCmd::ApplyKinematicImpulse { id, dir_x, dir_y, impulse } => {
+                    if self.preview_playing {
+                        self.physics_2d.apply_kinematic_impulse(id, dir_x, dir_y, impulse);
                     }
                 }
                 ScriptCmd::Log { message } => {
