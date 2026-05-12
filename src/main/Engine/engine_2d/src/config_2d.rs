@@ -23,8 +23,8 @@ pub(crate) use grid_2d::{GridBuffer, GridConfig, build_grid};
 pub(crate) mod physics_2d;
 pub(crate) use physics_2d::PhysicsWorld2D;
 
-#[path = "herramienta_de_dibujo.rs"]
-mod herramienta_de_dibujo;
+#[path = "drawing_tool.rs"]
+mod drawing_tool;
 
 use std::fs;
 
