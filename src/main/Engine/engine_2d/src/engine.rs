@@ -2427,43 +2427,74 @@ EngineCommand::PlayAnimation { id, name } => {
         for cmd in commands {
             match cmd {
                 ScriptCmd::SetPosition { id, x, y } => {
-                    let horizontal = self.world.get::<Transform>(id)
-                        .map(|t| x - t.position.x)
+                    let current_pos = self.world.get::<Transform>(id)
+                        .map(|t| (t.position.x, t.position.y));
+                    let horizontal = current_pos
+                        .map(|(cx, _)| x - cx)
                         .unwrap_or(0.0);
                     self.update_entity_facing_from_horizontal(id, horizontal);
-                    if let Some(t) = self.world.get_mut::<Transform>(id) {
-                        t.position.x = x;
-                        t.position.y = y;
+
+                    // En modo juego con física activa, SetPosition debe respetar colisiones
+                    // (estilo move_and_slide), no teletransportar atravesando obstáculos.
+                    let uses_physics_move = self.preview_playing && self.physics_2d.has_physics(id);
+                    if uses_physics_move {
+                        if let Some((cx, cy)) = current_pos {
+                            let dx = x - cx;
+                            let dy = y - cy;
+                            let dist = (dx * dx + dy * dy).sqrt();
+                            if dist > 1e-6 {
+                                let dt_safe = self.delta_time.max(1e-4);
+                                let speed = dist / dt_safe;
+                                let _ = self.physics_2d.move_physics_entity(id, speed, dx / dist, dy / dist, dt_safe);
+                            }
+                        }
+                    } else {
+                        // Editor o entidad sin física: mantener comportamiento anterior.
+                        if let Some(t) = self.world.get_mut::<Transform>(id) {
+                            t.position.x = x;
+                            t.position.y = y;
+                        }
+                        // Sincronizar el origen de animación para que play_animation_frame
+                        // no sobreescriba la posición con el valor pre-movimiento.
+                        if let Some(saved) = self.anim_saved_transforms.get_mut(&id) {
+                            saved.0.x = x;
+                            saved.0.y = y;
+                        }
+                        self.physics_2d.teleport_entity(id, x, y);
                     }
-                    // Sincronizar el origen de animación para que play_animation_frame
-                    // no sobreescriba la posición con el valor pre-movimiento.
-                    if let Some(saved) = self.anim_saved_transforms.get_mut(&id) {
-                        saved.0.x = x;
-                        saved.0.y = y;
-                    }
-                    // Sincronizar el Rapier body para que physics.step() no resetee la posición.
-                    self.physics_2d.teleport_entity(id, x, y);
                 }
                 ScriptCmd::Translate { id, dx, dy } => {
                     self.update_entity_facing_from_horizontal(id, dx);
-                    if let Some(t) = self.world.get_mut::<Transform>(id) {
-                        t.position.x += dx;
-                        t.position.y += dy;
-                    }
-                    // Propagar el desplazamiento al origen guardado de animación,
-                    // de lo contrario cada frame de animación resetea la posición a orig_pos.
-                    if let Some(saved) = self.anim_saved_transforms.get_mut(&id) {
-                        saved.0.x += dx;
-                        saved.0.y += dy;
-                        log::debug!("[script/translate] entidad {} saved_x={:.3} (+{:.3})", id, saved.0.x, dx);
+                    // En modo juego con física activa: aplicar translate vía movimiento físico
+                    // para que respete colisiones y no atraviese colliders.
+                    let uses_physics_move = self.preview_playing && self.physics_2d.has_physics(id);
+                    if uses_physics_move {
+                        let dist = (dx * dx + dy * dy).sqrt();
+                        if dist > 1e-6 {
+                            let dt_safe = self.delta_time.max(1e-4);
+                            let speed = dist / dt_safe;
+                            let _ = self.physics_2d.move_physics_entity(id, speed, dx / dist, dy / dist, dt_safe);
+                        }
                     } else {
-                        log::warn!("[script/translate] entidad {} SIN entrada en anim_saved_transforms — translate no acumulado", id);
-                    }
-                    // Sincronizar el Rapier body para que physics.step() no resetee la posición.
-                    let new_pos = self.world.get::<Transform>(id)
-                        .map(|t| (t.position.x, t.position.y));
-                    if let Some((nx, ny)) = new_pos {
-                        self.physics_2d.teleport_entity(id, nx, ny);
+                        if let Some(t) = self.world.get_mut::<Transform>(id) {
+                            t.position.x += dx;
+                            t.position.y += dy;
+                        }
+                        // Propagar el desplazamiento al origen guardado de animación,
+                        // de lo contrario cada frame de animación resetea la posición a orig_pos.
+                        if let Some(saved) = self.anim_saved_transforms.get_mut(&id) {
+                            saved.0.x += dx;
+                            saved.0.y += dy;
+                            log::debug!("[script/translate] entidad {} saved_x={:.3} (+{:.3})", id, saved.0.x, dx);
+                        } else {
+                            log::warn!("[script/translate] entidad {} SIN entrada en anim_saved_transforms — translate no acumulado", id);
+                        }
+                        // Sincronizar el Rapier body para que physics.step() no resetee la posición.
+                        let new_pos = self.world.get::<Transform>(id)
+                            .map(|t| (t.position.x, t.position.y));
+                        if let Some((nx, ny)) = new_pos {
+                            self.physics_2d.teleport_entity(id, nx, ny);
+                        }
                     }
                 }
                 ScriptCmd::SetScale { id, sx, sy } => {

@@ -700,8 +700,11 @@ impl State {
                     }
                 }
 
-                // Actualizar collider si la entidad tiene física activa
-                if self.physics_2d.has_physics(id) {
+                // Actualizar collider por frame solo fuera de gameplay.
+                // En preview/juego el collider del personaje debe ser estable
+                // (estilo CharacterBody2D de Godot) para evitar atravesar
+                // paredes cuando los frames cambian tight-bounds/offset.
+                if self.physics_2d.has_physics(id) && !self.preview_playing {
                     let bounds = cache_entry.tight_bounds.unwrap_or([0, 0, cache_entry.img_width.max(1), cache_entry.img_height.max(1)]);
                     if let Some(transform) = self.world.get::<Transform>(id) {
                         let world_per_px = transform.scale.y / cache_entry.img_height.max(1) as f32;
