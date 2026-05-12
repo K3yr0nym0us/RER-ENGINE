@@ -203,6 +203,17 @@ pub(crate) struct SceneUniforms {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+
+/// Estado de un deslizamiento suave iniciado desde `on_press`.
+/// La entidad se mueve hacia (target_x, target_y) a `speed` u/s
+/// usando el shape-cast kinematic de Rapier, con detección de colisiones.
+#[derive(Clone, Copy)]
+pub(crate) struct PendingSlide {
+    pub target_x: f32,
+    pub target_y: f32,
+    pub speed:    f32,
+}
+
 pub struct State {
     pub(crate) window:           Arc<Window>,
     pub(crate) surface:          wgpu::Surface<'static>,
@@ -380,6 +391,10 @@ pub struct State {
     last_draw_calls:     u32,
     autosave_enabled:    bool,
     autosave_last_tick:  Instant,
+    /// Deslizamientos suaves en curso iniciados desde `on_press`.
+    /// Cada frame, la entidad avanza hacia su destino a la velocidad indicada
+    /// usando el shape-cast kinematic (colisiones incluidas).
+    pub(crate) pending_slides: HashMap<u32, PendingSlide>,
 }
 
 impl State {
@@ -892,6 +907,7 @@ impl State {
             last_draw_calls:     0,
             autosave_enabled:    false,
             autosave_last_tick:  Instant::now(),
+            pending_slides:      HashMap::new(),
         }
     }
 
@@ -1299,6 +1315,7 @@ impl State {
                 self.active_animations.remove(&id);
                 self.anim_saved_transforms.remove(&id);
                 self.control_bindings_by_entity.remove(&id);
+                self.pending_slides.remove(&id);
                 self.script_engine.detach_entity(id);
                 self.world.despawn(id);
                 send_event(&EngineEvent::EntityRemoved { id, kind: removed_kind.to_string() });
@@ -1398,6 +1415,7 @@ impl State {
                 }
 
                 self.execution_overlaps.clear();
+                self.pending_slides.clear();
 
                 log::info!(
                     "[preview] modo {}",
@@ -1976,7 +1994,7 @@ EngineCommand::PlayAnimation { id, name } => {
         }
     }
 
-    fn update_entity_facing_from_horizontal(&mut self, entity_id: u32, horizontal: f32) {
+    pub(crate) fn update_entity_facing_from_horizontal(&mut self, entity_id: u32, horizontal: f32) {
         const EPS: f32 = 0.0001;
         if horizontal.abs() <= EPS {
             return;
@@ -2384,66 +2402,6 @@ EngineCommand::PlayAnimation { id, name } => {
         }
     }
 
-    fn execute_control_script_just_pressed(&mut self, id: u32, control_key: &str, path: &str, source: &str) {
-        if !self.preview_playing {
-            return;
-        }
-
-        let snapshot = self.build_script_snapshot(id);
-        match self
-            .script_engine
-            .run_control_script_just_pressed(id, control_key, path, source, snapshot.as_ref())
-        {
-            Ok(commands) => self.apply_script_commands(commands),
-            Err(e) => log::error!("[control] Error en on_pressed '{}' ({}): {}", path, control_key, e),
-        }
-    }
-
-    pub fn handle_runtime_control_input(&mut self, device: &str, control_key: &str) {
-        if !self.preview_playing {
-            return;
-        }
-
-        let matches: Vec<(u32, String, String)> = self.control_bindings_by_entity
-            .iter()
-            .filter_map(|(&id, bindings)| {
-                let script = match device {
-                    "keyboard_mouse" => bindings.keyboard_mouse.get(control_key),
-                    "gamepad" => bindings.gamepad.get(control_key),
-                    _ => None,
-                }?;
-                Some((id, script.name.clone(), script.source.clone()))
-            })
-            .collect();
-
-        for (id, path, source) in matches {
-            self.execute_control_script(id, control_key, &path, &source);
-        }
-    }
-
-    /// Borde de bajada sin autorepeat: ejecuta solo `on_pressed` en scripts de control.
-    pub fn handle_runtime_control_input_just_pressed(&mut self, device: &str, control_key: &str) {
-        if !self.preview_playing {
-            return;
-        }
-
-        let matches: Vec<(u32, String, String)> = self.control_bindings_by_entity
-            .iter()
-            .filter_map(|(&id, bindings)| {
-                let script = match device {
-                    "keyboard_mouse" => bindings.keyboard_mouse.get(control_key),
-                    "gamepad" => bindings.gamepad.get(control_key),
-                    _ => None,
-                }?;
-                Some((id, script.name.clone(), script.source.clone()))
-            })
-            .collect();
-
-        for (id, path, source) in matches {
-            self.execute_control_script_just_pressed(id, control_key, &path, &source);
-        }
-    }
-
     pub(crate) fn build_script_snapshot(&self, id: u32) -> Option<EntitySnapshot> {
         let (x, y, scale_x, scale_y) = if let Some(t) = self.world.get::<Transform>(id) {
             (t.position.x, t.position.y, t.scale.x, t.scale.y)
@@ -2631,6 +2589,20 @@ EngineCommand::PlayAnimation { id, name } => {
                         self.physics_2d.apply_kinematic_impulse(id, dir_x, dir_y, impulse);
                     }
                 }
+                ScriptCmd::SlideEntity { id, dx, dy, speed } => {
+                    if self.preview_playing {
+                        let (cx, cy) = if let Some(t) = self.world.get::<Transform>(id) {
+                            (t.position.x, t.position.y)
+                        } else {
+                            (0.0, 0.0)
+                        };
+                        self.pending_slides.insert(id, PendingSlide {
+                            target_x: cx + dx,
+                            target_y: cy + dy,
+                            speed:    speed.max(0.001),
+                        });
+                    }
+                }
                 ScriptCmd::Log { message } => {
                     log::info!("[script/log] {message}");
                 }
@@ -2676,6 +2648,9 @@ EngineCommand::PlayAnimation { id, name } => {
             // Scripts corren siempre (editor + juego) para facilitar pruebas rápidas.
             self.update_scripts();
             if self.preview_playing {
+                // Los deslizamientos pendientes (on_press slide) se avanzan antes del paso
+                // de física para que la velocidad esté lista cuando Rapier integra el cuerpo.
+                self.advance_pending_slides();
                 // En modo juego sí aplicamos físicas completas.
                 self.physics_2d.step(self.delta_time, &mut self.world);
                 // Sincronizar anim_saved_transforms con la posición post-physics (ya bloqueada
@@ -2704,6 +2679,45 @@ EngineCommand::PlayAnimation { id, name } => {
                         saved.0.x = px;
                         saved.0.y = py;
                     }
+                }
+            }
+        }
+    }
+
+    /// Avanza los deslizamientos pendientes (`engine.move_entity_slide`) frame a frame.
+    /// Debe llamarse ANTES del paso de física para que la velocidad esté lista cuando
+    /// Rapier integra el cuerpo. Respeta colisiones usando el shape-cast kinematic.
+    fn advance_pending_slides(&mut self) {
+        let dt = self.delta_time;
+        let ids: Vec<u32> = self.pending_slides.keys().copied().collect();
+        for id in ids {
+            let Some(slide) = self.pending_slides.get(&id).copied() else { continue; };
+            let (cx, cy) = if let Some(t) = self.world.get::<Transform>(id) {
+                (t.position.x, t.position.y)
+            } else {
+                self.pending_slides.remove(&id);
+                continue;
+            };
+            let delta_x = slide.target_x - cx;
+            let delta_y = slide.target_y - cy;
+            let dist = (delta_x * delta_x + delta_y * delta_y).sqrt();
+            if dist <= 0.02 {
+                self.pending_slides.remove(&id);
+                continue;
+            }
+            // Limitar velocidad para no sobrepasar el destino en el último frame.
+            let max_speed = dist / dt.max(0.001);
+            let effective_speed = slide.speed.min(max_speed);
+            let dir_x = delta_x / dist;
+            let dir_y = delta_y / dist;
+            let moved = self.physics_2d.move_physics_entity(id, effective_speed, dir_x, dir_y, dt);
+            if !moved {
+                // Fallback: traslación directa para entidades sin física activa.
+                let step_x = dir_x * effective_speed * dt;
+                let step_y = dir_y * effective_speed * dt;
+                if let Some(t) = self.world.get_mut::<Transform>(id) {
+                    t.position.x += step_x;
+                    t.position.y += step_y;
                 }
             }
         }
