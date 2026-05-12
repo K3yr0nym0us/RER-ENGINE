@@ -27,6 +27,11 @@ export interface SavedEntity {
   rotation:         [number, number, number, number]
   scale:            [number, number, number]
   physics_enabled?: boolean
+  /**
+   * Tipo de físicas del cuerpo.
+   * Valores válidos: "dynamic" (afectado por fuerzas y gravedad),
+   * "static" (no se mueve), "kinematic" (movido solo por código, sin fuerzas).
+   */
   physics_type?:    string
 /** Puntos en espacio de mundo para entidades de tipo 'collider' y 'execution_area'. */
   points?:          [[number,number],[number,number],[number,number],[number,number]]
@@ -297,6 +302,11 @@ export interface BluePrintEntry {
   path:             string
   scale:            [number, number, number]
   physics_enabled?: boolean
+  /**
+   * Tipo de físicas del cuerpo.
+   * Valores válidos: "dynamic" (afectado por fuerzas y gravedad),
+   * "static" (no se mueve), "kinematic" (movido solo por código, sin fuerzas).
+   */
   physics_type?:    string
   animations?:      SavedAnimation[]
   scripts?:         SavedScript[]

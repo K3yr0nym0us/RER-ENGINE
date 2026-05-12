@@ -262,7 +262,7 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
               >
                 <option value="dynamic">{t('Dynamic (gravity)')}</option>
                 <option value="static">{t('Static (does not move)')}</option>
-                {!is2D && <option value="kinematic">{t('Kinematic (by code)')}</option>}
+                <option value="kinematic">{t('Kinematic (by code)')}</option>
               </select>
             )}
           </div>

@@ -48,13 +48,35 @@ impl PhysicsWorld2D {
         let Some(&body_handle) = self.entity_bodies.get(&entity) else {
             return false;
         };
-
+        let body_type = self.get_body_type(entity);
+        // Solo mover si es dynamic o kinematic
+        if body_type != "dynamic" && body_type != "kinematic" {
+            return false;
+        }
         // ── Dirección nula: detener componente horizontal, conservar vertical ─
         let len = (dir_x * dir_x + dir_y * dir_y).sqrt();
         if len <= 1e-6 {
             if let Some(body) = self.bodies.get_mut(body_handle) {
                 let vy = body.linvel().y;
                 body.set_linvel(vector![0.0, vy, 0.0], true);
+            }
+            return true;
+        }
+        // Si es kinematic, aplicar velocidad directamente (ignorar shape cast)
+        if body_type == "kinematic" {
+            let (nx, ny) = (dir_x / len, dir_y / len);
+            if let Some(body) = self.bodies.get_mut(body_handle) {
+                let current_pos = body.translation();
+                let next_pos = vector![
+                    current_pos.x + nx * speed * dt,
+                    current_pos.y + ny * speed * dt,
+                    0.0
+                ];
+                log::info!(
+                    "[kinematic-move] entidad {} pos_actual=({:.3},{:.3}) next=({:.3},{:.3}) vel=({:.3},{:.3}) dt={:.4}",
+                    entity, current_pos.x, current_pos.y, next_pos.x, next_pos.y, nx * speed, ny * speed, dt
+                );
+                body.set_next_kinematic_position(Isometry::translation(next_pos.x, next_pos.y, 0.0));
             }
             return true;
         }

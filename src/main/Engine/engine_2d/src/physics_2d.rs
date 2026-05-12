@@ -7,6 +7,7 @@
 // Tipos de cuerpo soportados:
 //   "dynamic"   — afectado por gravedad y colisiones.
 //   "static"    — no se mueve (suelo, plataformas).
+//   "kinematic" — solo se mueve por código, no recibe fuerzas ni gravedad, colisiona pero no es empujado.
 //
 // Funciones extraídas a archivos propios (submódulos vía #[path]):
 //   teleport_entity      — sincroniza Rapier body con el Transform.
@@ -124,6 +125,26 @@ impl PhysicsWorld2D {
                 let handle = self.bodies.insert(body);
                 let col = ColliderBuilder::cuboid(hx, hy, 0.01)
                     .translation(offset)
+                    .build();
+                let col_handle = self.colliders.insert_with_parent(col, handle, &mut self.bodies);
+                self.entity_colliders.insert(entity, col_handle);
+                handle
+            }
+            "kinematic" => {
+                // "kinematic" — solo se mueve por código, no recibe fuerzas ni gravedad, colisiona pero no es empujado.
+                let body = RigidBodyBuilder::kinematic_position_based()
+                    .translation(vector![position[0], position[1], 0.0])
+                    .locked_axes(
+                        LockedAxes::TRANSLATION_LOCKED_Z
+                        | LockedAxes::ROTATION_LOCKED_X
+                        | LockedAxes::ROTATION_LOCKED_Y,
+                    )
+                    .build();
+                let handle = self.bodies.insert(body);
+                let col = ColliderBuilder::cuboid(hx, hy, 0.01)
+                    .translation(offset)
+                    .restitution(0.0)
+                    .friction(0.5)
                     .build();
                 let col_handle = self.colliders.insert_with_parent(col, handle, &mut self.bodies);
                 self.entity_colliders.insert(entity, col_handle);
@@ -266,12 +287,12 @@ impl PhysicsWorld2D {
             &(),
         );
 
-        // Sincronizar solo cuerpos dinámicos de vuelta al ECS
+        // Sincronizar cuerpos dinámicos y kinematic de vuelta al ECS
         let pairs: Vec<(EntityId, RigidBodyHandle)> =
             self.entity_bodies.iter().map(|(&e, &h)| (e, h)).collect();
         for (entity, handle) in pairs {
             if let Some(body) = self.bodies.get(handle) {
-                if body.is_dynamic() {
+                if body.is_dynamic() || body.is_kinematic() {
                     let t = body.translation();
                     if let Some(transform) = ecs.get_mut::<Transform>(entity) {
                         transform.position.x = t.x;
