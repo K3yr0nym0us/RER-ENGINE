@@ -59,6 +59,9 @@ pub(crate) struct PhysicsWorld2D {
     /// Velocidad planar (XY) pedida por scripts para KinematicPositionBased.
     /// Rapier no aplica `set_linvel` a ese tipo; `step()` la consume aquí.
     kinematic_actor_vel: HashMap<EntityId, Vector<f32>>,
+    /// Dirección horizontal bloqueada por colisión en el último step kinematic.
+    /// -1.0 = bloqueado hacia izquierda, 1.0 = bloqueado hacia derecha.
+    blocked_horizontal_sign: HashMap<EntityId, f32>,
     /// Deslizamiento multi-paso + snap al suelo (API tipo Godot CharacterBody).
     kinematic_character: KinematicCharacterController,
 }
@@ -91,6 +94,7 @@ impl Default for PhysicsWorld2D {
             collider_shape_set: HashSet::new(),
             debug_mode:         false,
             kinematic_actor_vel: HashMap::new(),
+            blocked_horizontal_sign: HashMap::new(),
             kinematic_character: default_kinematic_character(),
         }
     }
@@ -255,6 +259,7 @@ impl PhysicsWorld2D {
             self.entity_colliders.remove(&entity);
             self.collider_shape_set.remove(&entity);
             self.kinematic_actor_vel.remove(&entity);
+            self.blocked_horizontal_sign.remove(&entity);
             self.remove_body(handle);
         }
     }
@@ -279,6 +284,7 @@ impl PhysicsWorld2D {
         self.entity_colliders.clear();
         self.collider_shape_set.clear();
         self.kinematic_actor_vel.clear();
+        self.blocked_horizontal_sign.clear();
     }
 
     pub(crate) fn has_physics(&self, entity: EntityId) -> bool {
@@ -294,6 +300,17 @@ impl PhysicsWorld2D {
         if self.get_body_type(entity) == "kinematic" {
             self.kinematic_actor_vel.insert(entity, vel);
         }
+    }
+
+    pub(crate) fn is_horizontal_blocked(&self, entity: EntityId, dir_x: f32) -> bool {
+        const EPS: f32 = 1e-6;
+        if dir_x.abs() <= EPS {
+            return false;
+        }
+        let Some(sign) = self.blocked_horizontal_sign.get(&entity).copied() else {
+            return false;
+        };
+        sign * dir_x > EPS
     }
 
     // ── Paso de simulación ────────────────────────────────────────────────────
@@ -338,7 +355,12 @@ impl PhysicsWorld2D {
         let dt_clamped = self.integration_params.dt;
         let cc = self.kinematic_character;
 
-        struct KResult { handle: RigidBodyHandle, next_pos: Vector<f32> }
+        struct KResult {
+            entity: EntityId,
+            handle: RigidBodyHandle,
+            next_pos: Vector<f32>,
+            blocked_sign: Option<f32>,
+        }
         let results: Vec<KResult> = kdata.iter().filter_map(|d| {
             let script = self.kinematic_actor_vel.remove(&d.entity);
             // Godot CharacterBody: la velocidad horizontal la fija cada frame el input;
@@ -365,8 +387,32 @@ impl PhysicsWorld2D {
             // Traslación rígida del centro del body = misma Δ que sobre el volumen swept.
             let next_pos = d.pos + movement.translation;
 
-            Some(KResult { handle: d.handle, next_pos })
+            // Si la traslación horizontal real es mucho menor que la deseada,
+            // consideramos que chocó contra pared en esa dirección.
+            let blocked_sign = {
+                let desired_x = desired_translation.x;
+                let actual_x = movement.translation.x;
+                if desired_x.abs() > 1e-4 && actual_x.abs() < desired_x.abs() * 0.25 {
+                    Some(desired_x.signum())
+                } else {
+                    None
+                }
+            };
+
+            Some(KResult {
+                entity: d.entity,
+                handle: d.handle,
+                next_pos,
+                blocked_sign,
+            })
         }).collect();
+
+        self.blocked_horizontal_sign.clear();
+        for r in &results {
+            if let Some(s) = r.blocked_sign {
+                self.blocked_horizontal_sign.insert(r.entity, s);
+            }
+        }
 
         // Aplicar set_next_kinematic_position
         for r in &results {

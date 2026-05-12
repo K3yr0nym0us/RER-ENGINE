@@ -460,7 +460,7 @@ impl ApplicationHandler<EngineCommand> for App {
                             state.dispatch_on_keep_key_down(control_key);
                         } else {
                             self.keyboard_mouse_pressed.remove(control_key);
-                            state.dispatch_on_keep_key_up(control_key);
+                            state.dispatch_on_keep_key_up("keyboard_mouse", control_key);
                         }
                     }
                 }
@@ -646,7 +646,7 @@ impl ApplicationHandler<EngineCommand> for App {
                             }
                         } else {
                             self.keyboard_mouse_pressed.remove(&control_key);
-                            state.dispatch_on_keep_key_up(&control_key);
+                            state.dispatch_on_keep_key_up("keyboard_mouse", &control_key);
                         }
                     }
                 }
@@ -676,6 +676,7 @@ impl ApplicationHandler<EngineCommand> for App {
             WindowEvent::Focused(false) => {
                 self.keyboard_mouse_pressed.clear();
                 self.gamepad_pressed.clear();
+                state.clear_all_on_keep_horizontal_blocks();
             }
             WindowEvent::MouseWheel { delta, .. } => {
                 let scroll = match delta {
@@ -749,7 +750,7 @@ impl ApplicationHandler<EngineCommand> for App {
                             GamepadEventType::ButtonReleased(button, _) => {
                                 self.gamepad_pressed.remove(&button);
                                 if let Some(control_key) = map_gamepad_control_key(button) {
-                                    state.dispatch_on_keep_key_up(control_key);
+                                    state.dispatch_on_keep_key_up("gamepad", control_key);
                                 }
                             }
                             _ => {}
@@ -760,6 +761,7 @@ impl ApplicationHandler<EngineCommand> for App {
             } else {
                 self.keyboard_mouse_pressed.clear();
                 self.gamepad_pressed.clear();
+                state.clear_all_on_keep_horizontal_blocks();
             }
         }
 

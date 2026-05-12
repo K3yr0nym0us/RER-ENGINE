@@ -78,6 +78,15 @@ impl PhysicsWorld2D {
                 .map(|v| v.y)
                 .or_else(|| self.bodies.get(body_handle).map(|b| b.linvel().y))
                 .unwrap_or(0.0);
+
+            // Si el actor viene bloqueado en esta dirección horizontal, cancelar
+            // empuje X y permitir solo que se aleje en sentido contrario.
+            if self.is_horizontal_blocked(entity, nx) {
+                let target_vy = if ny.abs() > 1e-6 { ny * speed } else { vy_base };
+                self.set_kinematic_actor_vel_xy(entity, vector![0.0, target_vy, 0.0]);
+                return true;
+            }
+
             let target_vy = if ny.abs() > 1e-6 { ny * speed } else { vy_base };
             self.set_kinematic_actor_vel_xy(entity, vector![nx * speed, target_vy, 0.0]);
             return true;

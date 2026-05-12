@@ -87,9 +87,6 @@ fn start_audio_thread() -> Option<AudioSlot> {
                         // Detener música looping si la hay; drop() detiene el Sink.
                         if let Some(s) = loop_sink.take() {
                             drop(s);
-                            log::info!("[audio] música detenida");
-                        } else {
-                            log::info!("[audio] detenido (sin loop activo)");
                         }
                     }
                     AudioCmd::Play { audio, loop_ } => {
@@ -394,6 +391,9 @@ pub struct State {
     last_draw_calls:     u32,
     autosave_enabled:    bool,
     autosave_last_tick:  Instant,
+    /// Bloqueo persistente de input horizontal para `on_keep`.
+    /// Mientras exista, la misma dirección no vuelve a ejecutar Lua.
+    pub(crate) blocked_on_keep_horizontal: HashMap<u32, f32>,
     /// Deslizamientos suaves en curso iniciados desde `on_press`.
     /// Cada frame, la entidad avanza hacia su destino a la velocidad indicada
     /// usando el shape-cast kinematic (colisiones incluidas).
@@ -910,6 +910,7 @@ impl State {
             last_draw_calls:     0,
             autosave_enabled:    false,
             autosave_last_tick:  Instant::now(),
+            blocked_on_keep_horizontal: HashMap::new(),
             pending_slides:      HashMap::new(),
         }
     }
@@ -1278,7 +1279,6 @@ impl State {
             }
             EngineCommand::StopAudio => {
                 self.stop_audio_internal();
-                log::info!("[audio] detenido por comando externo");
             }
             EngineCommand::RemoveEntity { id } => {
                 let removed_kind = if self.scenario_entities.contains(&id) {
@@ -1318,6 +1318,7 @@ impl State {
                 self.active_animations.remove(&id);
                 self.anim_saved_transforms.remove(&id);
                 self.control_bindings_by_entity.remove(&id);
+                self.blocked_on_keep_horizontal.remove(&id);
                 self.pending_slides.remove(&id);
                 self.script_engine.detach_entity(id);
                 self.world.despawn(id);
@@ -1418,6 +1419,7 @@ impl State {
                 }
 
                 self.execution_overlaps.clear();
+                self.blocked_on_keep_horizontal.clear();
                 self.pending_slides.clear();
 
                 log::info!(
@@ -1830,9 +1832,11 @@ EngineCommand::PlayAnimation { id, name } => {
                 }
             }
             EngineCommand::StopAnimation { id } => {
-                log::info!("[IPC] StopAnimation: entity_id={}", id);
                 self.anim_flip_overrides.remove(&id);
-                let stopped_animation_name = self.active_animations.remove(&id).map(|a| a.animation_name);
+                let Some(stopped_animation_name) = self.active_animations.remove(&id).map(|a| a.animation_name) else {
+                    // Ya estaba detenida: no repetir fallback, audio stop, detach ni logs.
+                    return;
+                };
                 if self.preview_playing {
                     let fallback_name = self.default_animation_by_entity
                         .get(&id)
@@ -1847,17 +1851,14 @@ EngineCommand::PlayAnimation { id, name } => {
                     } else {
                         self.restore_animation_frame(id);
                     }
-                } else if let Some(name) = stopped_animation_name {
-                    // En modo edición no hay fallback automático a la predeterminada.
-                    self.show_first_frame_of_animation(id, &name);
                 } else {
-                    self.restore_animation_frame(id);
+                    // En modo edición no hay fallback automático a la predeterminada.
+                    self.show_first_frame_of_animation(id, &stopped_animation_name);
                 }
                 self.stop_audio_internal();
                 // Descargar scripts de la animación que estaba activa.
                 self.script_engine.detach_animation_scripts(id);
                 send_event(&EngineEvent::AnimationFinished { entity_id: id });
-                log::info!("[animation] Stopped for entity {}", id);
             }
             EngineCommand::LoadScript { id, path, source } => {
                 log::info!("[IPC] LoadScript: entity_id={} path={}", id, path);
@@ -2003,6 +2004,67 @@ EngineCommand::PlayAnimation { id, name } => {
             return;
         }
         self.entity_facing_right.insert(entity_id, horizontal > 0.0);
+    }
+
+    /// Intenta inferir intención horizontal pura desde el input bruto.
+    /// Se usa para pre-filtrar scripts de movimiento cuando el actor ya está
+    /// bloqueado por colisión en esa dirección, evitando ejecutar Lua de más.
+    pub(crate) fn infer_horizontal_input_dir(&self, device: &str, control_key: &str) -> Option<f32> {
+        match device {
+            "keyboard_mouse" => match control_key {
+                "A" => Some(-1.0),
+                "D" => Some(1.0),
+                _ => None,
+            },
+            "gamepad" => match control_key {
+                "D-LEFT" => Some(-1.0),
+                "D-RIGHT" => Some(1.0),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    pub(crate) fn clear_on_keep_horizontal_block_for_input(&mut self, device: &str, control_key: &str) {
+        let Some(dir_x) = self.infer_horizontal_input_dir(device, control_key) else {
+            return;
+        };
+        const EPS: f32 = 1e-6;
+        self.blocked_on_keep_horizontal
+            .retain(|_, sign| *sign * dir_x <= EPS);
+    }
+
+    pub(crate) fn clear_all_on_keep_horizontal_blocks(&mut self) {
+        self.blocked_on_keep_horizontal.clear();
+    }
+
+    pub(crate) fn should_block_on_keep_script(
+        &mut self,
+        entity_id: u32,
+        device: &str,
+        control_key: &str,
+    ) -> bool {
+        let Some(dir_x) = self.infer_horizontal_input_dir(device, control_key) else {
+            return false;
+        };
+        const EPS: f32 = 1e-6;
+
+        if let Some(sign) = self.blocked_on_keep_horizontal.get(&entity_id).copied() {
+            if sign * dir_x < -EPS {
+                self.blocked_on_keep_horizontal.remove(&entity_id);
+            } else if sign * dir_x > EPS {
+                self.handle_command(EngineCommand::StopAnimation { id: entity_id });
+                return true;
+            }
+        }
+
+        if self.physics_2d.has_physics(entity_id) && self.physics_2d.is_horizontal_blocked(entity_id, dir_x) {
+            self.blocked_on_keep_horizontal.insert(entity_id, dir_x.signum());
+            self.handle_command(EngineCommand::StopAnimation { id: entity_id });
+            return true;
+        }
+
+        false
     }
 
     fn resolve_animation_flip(&self, entity_id: u32, anim: &AnimationState) -> bool {

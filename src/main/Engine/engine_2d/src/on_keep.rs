@@ -23,10 +23,11 @@ impl State {
 
     /// Called once when a key/button is released.
     /// Logs "[on_keep] tecla X subió".
-    pub fn dispatch_on_keep_key_up(&self, control_key: &str) {
+    pub fn dispatch_on_keep_key_up(&mut self, device: &str, control_key: &str) {
         if !self.preview_playing {
             return;
         }
+        self.clear_on_keep_horizontal_block_for_input(device, control_key);
         log::info!("[on_keep] tecla {} subió", control_key);
     }
 
@@ -51,6 +52,10 @@ impl State {
             .collect();
 
         for (id, path, source) in bindings {
+            if self.should_block_on_keep_script(id, device, control_key) {
+                continue;
+            }
+
             let snap = self.build_script_snapshot(id);
             match self.script_engine.run_control_script(
                 id,
