@@ -212,6 +212,9 @@ pub(crate) struct PendingSlide {
     pub target_x: f32,
     pub target_y: f32,
     pub speed:    f32,
+    /// Si es true, el slide solo corrige X y nunca intenta volver a target_y.
+    /// Evita cancelar saltos cuando se aplica deriva horizontal en on_press.
+    pub keep_current_y: bool,
 }
 
 pub struct State {
@@ -2600,6 +2603,7 @@ EngineCommand::PlayAnimation { id, name } => {
                             target_x: cx + dx,
                             target_y: cy + dy,
                             speed:    speed.max(0.001),
+                            keep_current_y: dy.abs() <= 1e-6,
                         });
                     }
                 }
@@ -2699,7 +2703,11 @@ EngineCommand::PlayAnimation { id, name } => {
                 continue;
             };
             let delta_x = slide.target_x - cx;
-            let delta_y = slide.target_y - cy;
+            let delta_y = if slide.keep_current_y {
+                0.0
+            } else {
+                slide.target_y - cy
+            };
             let dist = (delta_x * delta_x + delta_y * delta_y).sqrt();
             if dist <= 0.02 {
                 self.pending_slides.remove(&id);

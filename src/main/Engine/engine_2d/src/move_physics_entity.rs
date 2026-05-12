@@ -72,8 +72,11 @@ impl PhysicsWorld2D {
         // KinematicPositionBased: Rapier ignora set_linvel; step() lee kinematic_actor_vel.
         if body_type == "kinematic" {
             let (nx, ny) = (dir_x / len, dir_y / len);
-            let vy_base = self.bodies.get(body_handle)
-                .map(|b| b.linvel().y)
+            // Priorizar la intención vertical ya acumulada en kinematic_actor_vel.
+            // Permite combinar salto (Y) y deriva lateral (X) en el mismo frame.
+            let vy_base = self.kinematic_actor_vel.get(&entity)
+                .map(|v| v.y)
+                .or_else(|| self.bodies.get(body_handle).map(|b| b.linvel().y))
                 .unwrap_or(0.0);
             let target_vy = if ny.abs() > 1e-6 { ny * speed } else { vy_base };
             self.set_kinematic_actor_vel_xy(entity, vector![nx * speed, target_vy, 0.0]);
