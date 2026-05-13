@@ -16,13 +16,13 @@
 //   move_physics_entity     — mueve con velocidad lineal respetando colisiones.
 //   kinematic_gravity       — gravedad manual + colisiones para cuerpos kinematic.
 
-#[path = "teleport_entity.rs"]
+#[path = "config_2d/physics_2d/teleport_entity.rs"]
 mod teleport_entity;
 
-#[path = "move_physics_entity.rs"]
+#[path = "config_2d/physics_2d/move_physics_entity.rs"]
 mod move_physics_entity;
 
-#[path = "kinematic_gravity.rs"]
+#[path = "config_2d/physics_2d/kinematic_gravity.rs"]
 mod kinematic_gravity;
 
 use std::collections::{HashMap, HashSet};

@@ -11,19 +11,19 @@
 //  · drag_gizmo_2d        — arrastre de entidad sobre eje X o Y
 //  · update_hover_2d      — hover AABB + detección de eje de gizmo
 
-#[path = "camera_2d.rs"]
+#[path = "config_2d/camera_2d.rs"]
 pub(crate) mod camera_2d;
 pub(crate) use camera_2d::Camera2D;
 
-#[path = "grid_2d.rs"]
+#[path = "config_2d/grid_2d.rs"]
 pub(crate) mod grid_2d;
 pub(crate) use grid_2d::{GridBuffer, GridConfig, build_grid};
 
-#[path = "physics_2d.rs"]
+#[path = "config_2d/physics_2d/mod.rs"]
 pub(crate) mod physics_2d;
 pub(crate) use physics_2d::PhysicsWorld2D;
 
-#[path = "drawing_tool.rs"]
+#[path = "config_2d/drawing_tool.rs"]
 mod drawing_tool;
 use std::fs;
 use glam::Vec3 as GlamVec3;
@@ -33,8 +33,11 @@ use crate::engine::AnimTextureCacheEntry;
 use crate::ipc::{send_event, EngineEvent};
 use crate::gizmo;
 
+#[path = "config_2d/assets.rs"]
 mod assets;
+#[path = "config_2d/overlay.rs"]
 mod overlay;
+#[path = "config_2d/selection.rs"]
 mod selection;
 use overlay::{
     build_logical_area_overlay,

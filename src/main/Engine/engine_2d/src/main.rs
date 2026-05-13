@@ -9,6 +9,7 @@ mod scripting;
 mod spatial;
 mod texture;
 
+#[path = "config_2d/mod.rs"]
 mod config_2d;
 mod config_compat;
 mod config_base;
