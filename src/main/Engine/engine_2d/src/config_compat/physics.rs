@@ -1,3 +1,7 @@
+// Shim de compatibilidad para rutas heredadas.
+// La fisica 2D real del motor vive en `physics_2d.rs`.
+// Este modulo no debe usarse como fuente de verdad para comportamiento runtime.
+
 use std::collections::{HashMap, HashSet};
 
 use crate::ecs::{EntityId, World};
@@ -45,6 +49,11 @@ impl PhysicsWorld {
     pub(crate) fn remove_entity_body(&mut self, entity: EntityId) {
         self.active.remove(&entity);
         self.body_types.remove(&entity);
+    }
+
+    pub(crate) fn clear(&mut self) {
+        self.active.clear();
+        self.body_types.clear();
     }
 
     pub(crate) fn has_physics(&self, entity: EntityId) -> bool {

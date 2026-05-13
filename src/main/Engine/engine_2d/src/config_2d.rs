@@ -465,7 +465,11 @@ impl State {
                             (cache_entry.img_height as f32 * 0.5 - by - bh * 0.5) * world_per_px,
                             0.0,
                         ];
-                        self.physics_2d.update_entity_collider(id, half_ext, col_off);
+                        // En esta fase saneamos el nombre, no la semantica:
+                        // seguimos preservando la forma del collider una vez creada
+                        // y solo resincronizamos el offset visual/logico.
+                        self.physics_2d
+                            .sync_entity_collider_offset_preserving_shape(id, half_ext, col_off);
                     }
                 }
             }
@@ -840,6 +844,10 @@ pub(crate) fn restore_animation_frame(&mut self, id: u32) {
     }
 
     /// Detecta entradas a áreas de ejecución en modo preview y dispara hooks de scripting.
+    ///
+    /// Contrato actual: usa AABB basado en `Transform` crudo.
+    /// No consulta `visual_offsets` ni la forma real de Rapier; cambiar eso puede
+    /// modificar gameplay/scripts existentes y debe tratarse como una segunda fase.
     pub(crate) fn update_execution_areas_2d(&mut self) {
         if !self.preview_playing {
             self.execution_overlaps.clear();

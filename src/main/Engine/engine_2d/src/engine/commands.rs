@@ -69,14 +69,12 @@ impl State {
                         saved.1 = Vec3::from(s);
                     }
                 }
-                // Sincronizar el Rapier body si la entidad tiene física activa.
-                // Sin esto, cuando el editor reposiciona una entidad via SetTransform
-                // (p.ej. al cargar el proyecto o antes de reproducir una animación),
-                // el cuerpo físico queda en su posición anterior y las colisiones
-                // no ocurren donde el personaje aparece visualmente.
+                // Ruta de compatibilidad editor -> fisica.
+                // El Transform ya fue mutado; aqui solo resincronizamos el body.
+                // No usar esto como sustituto del movimiento normal de gameplay.
                 if let Some(p) = position {
                     if self.camera_2d.is_some() {
-                        self.physics_2d.teleport_entity(id, p[0], p[1]);
+                        self.sync_physics_2d_body_from_xy(id, p[0], p[1]);
                     }
                 }
                 if let Some(prev) = before {
@@ -168,6 +166,8 @@ impl State {
                     let new_h  = m.base_world_h * scale.clamp(0.05, 20.0);
                     let new_w  = new_h * aspect;
                     if let Some(t) = self.world.get_mut::<Transform>(id) {
+                        // Mantener el comportamiento actual: cambia la escala visual
+                        // sin recomponer automaticamente collider/shape en esta fase.
                         t.scale = GlamVec3::new(new_w, new_h, 1.0);
                     }
                 }
@@ -283,6 +283,9 @@ impl State {
                 }
             }
             EngineCommand::SetGravity { gravity } => {
+                // Contrato legacy actual: el IPC acepta un valor "gravedad" y el
+                // runtime lo normaliza siempre hacia abajo para preservar semantica.
+                // Revisarlo cambiaria comportamiento de proyectos existentes.
                 self.physics_2d.set_gravity(-gravity.abs());
                 log::info!("[physics] Gravedad actualizada: -{:.2}", gravity.abs());
             }

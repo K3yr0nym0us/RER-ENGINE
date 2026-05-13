@@ -1,7 +1,6 @@
 use glam::Vec3 as GlamVec3;
 
 use crate::ecs::{MeshComponent, Transform};
-use crate::gizmo;
 use crate::ipc::{send_event, EngineEvent};
 use crate::texture::GpuTexture;
 
@@ -13,33 +12,7 @@ impl State {
 
     /// Configura la escena 2D de plataformas con un único rectángulo (player).
     pub(crate) fn setup_2d_platformer(&mut self) {
-        // Limpiar escena previa y escenarios de fondo
-        self.scenario_entities.clear();
-        self.character_entities.clear();
-        self.collider_entities.clear();
-        self.execution_area_entities.clear();
-        self.execution_overlaps.clear();
-        self.background_entity = None;
-        self.active_tool = super::ActiveTool::None;
-        self.tool_overlay_buffer = gizmo::build_from_vertices(&self.device, &[]);
-        self.physics_2d.clear();
-        self.world.clear();
-        self.meshes.clear();
-        self.uv_rects.clear();
-        self.static_tex_cache.clear();
-        self.anim_texture_cache.clear();
-        self.atlas.reset(&self.queue);
-        self.reload_snap_hint_assets();
-        self.anim_overrides.clear();
-        self.animations.clear();
-        self.active_animations.clear();
-        self.default_animation_by_entity.clear();
-        self.anim_saved_transforms.clear();
-        self.anim_flip_overrides.clear();
-        self.entity_facing_right.clear();
-        self.selected_entity = None;
-        self.selected_entities.clear();
-        self.hovered_entity  = None;
+        self.reset_runtime_scene_2d();
 
         // Quad unitario canónico — compartido por TODOS los sprites 2D de la escena.
         // El Transform de cada entidad lo escala y posiciona correctamente.
@@ -270,6 +243,8 @@ impl State {
             let new_h  = m.base_world_h * scale.clamp(0.05, 20.0);
             let new_w  = new_h * aspect;
             if let Some(t) = self.world.get_mut::<Transform>(id) {
+                // Mantener este comportamiento por ahora: la escala visual cambia,
+                // pero el collider no se recompone automaticamente en esta fase.
                 t.scale = GlamVec3::new(new_w, new_h, 1.0);
             }
         }

@@ -267,6 +267,20 @@ impl State {
     pub fn size(&self)   -> PhysicalSize<u32> { self.size }
     pub fn is_preview_playing(&self) -> bool { self.preview_playing }
 
+    /// Sincroniza el body 2D con una mutacion externa del `Transform`.
+    /// No reemplaza el movimiento de gameplay: ese debe pasar por
+    /// `move_physics_entity()` o por las rutas kinematic del runtime.
+    pub(crate) fn sync_physics_2d_body_from_transform(&mut self, id: u32) {
+        let Some((x, y)) = self.world.get::<Transform>(id)
+            .map(|t| (t.position.x, t.position.y)) else { return; };
+        self.physics_2d.sync_body_from_transform(id, x, y);
+    }
+
+    /// Variante directa para los casos donde ya se conocen las coordenadas.
+    pub(crate) fn sync_physics_2d_body_from_xy(&mut self, id: u32, x: f32, y: f32) {
+        self.physics_2d.sync_body_from_transform(id, x, y);
+    }
+
     pub fn push_undo_transform(&mut self, id: u32, position: [f32; 3], rotation: [f32; 4], scale: [f32; 3]) {
         if !self.is_applying_undo {
             self.redo_stack.clear();

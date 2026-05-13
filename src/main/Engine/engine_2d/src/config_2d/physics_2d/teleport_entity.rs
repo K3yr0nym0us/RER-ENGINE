@@ -11,10 +11,23 @@ use crate::ecs::EntityId;
 use super::PhysicsWorld2D;
 
 impl PhysicsWorld2D {
+    /// Sincroniza el body fisico con una mutacion EXTERNA del `Transform`.
+    ///
+    /// Usar este helper cuando el editor o una ruta de compatibilidad ya cambió
+    /// la posicion visual y solo hace falta alinear el cuerpo Rapier.
+    /// Para movimiento normal de gameplay debe usarse `move_physics_entity()`.
+    pub(crate) fn sync_body_from_transform(&mut self, entity: EntityId, x: f32, y: f32) {
+        self.teleport_entity(entity, x, y);
+    }
+
     /// Teletransporta el Rapier body de la entidad a la posición indicada (XY).
-    /// Necesario cuando los scripts mueven la entidad durante una animación para
-    /// mantener el Rapier body sincronizado y evitar que physics.step() sobreescriba
-    /// la posición del Transform en el siguiente frame.
+    ///
+    /// NO USAR para movimiento normal de entidades.
+    /// - Movimiento de gameplay: `move_physics_entity()`.
+    /// - Mutacion externa de `Transform`: `sync_body_from_transform()`.
+    ///
+    /// Esta API debe reservarse para teletransportes reales o para la
+    /// resincronizacion puntual del cuerpo fisico tras una mutacion externa.
     pub(crate) fn teleport_entity(&mut self, entity: EntityId, x: f32, y: f32) {
         if let Some(&handle) = self.entity_bodies.get(&entity) {
             if let Some(body) = self.bodies.get_mut(handle) {

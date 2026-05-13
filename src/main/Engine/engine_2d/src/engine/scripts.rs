@@ -170,7 +170,9 @@ impl State {
                             saved.0.x = x;
                             saved.0.y = y;
                         }
-                        self.physics_2d.teleport_entity(id, x, y);
+                        // El script ya mutó el Transform fuera de la ruta de gameplay;
+                        // aqui solo alineamos el body 2D para preservar el contrato actual.
+                        self.sync_physics_2d_body_from_xy(id, x, y);
                     }
                 }
                 ScriptCmd::Translate { id, dx, dy } => {
@@ -199,16 +201,16 @@ impl State {
                         } else {
                             log::warn!("[script/translate] entidad {} SIN entrada en anim_saved_transforms — translate no acumulado", id);
                         }
-                        // Sincronizar el Rapier body para que physics.step() no resetee la posición.
-                        let new_pos = self.world.get::<Transform>(id)
-                            .map(|t| (t.position.x, t.position.y));
-                        if let Some((nx, ny)) = new_pos {
-                            self.physics_2d.teleport_entity(id, nx, ny);
-                        }
+                        // Mantener el contrato actual editor/script -> body fisico.
+                        // Esta ruta existe para compatibilidad; el movimiento normal
+                        // de gameplay debe seguir pasando por `move_physics_entity()`.
+                        self.sync_physics_2d_body_from_transform(id);
                     }
                 }
                 ScriptCmd::SetScale { id, sx, sy } => {
                     if let Some(t) = self.world.get_mut::<Transform>(id) {
+                        // Mantener compatibilidad actual: los scripts pueden escalar en
+                        // editor/juego, pero eso no recompone automaticamente colliders.
                         t.scale.x = sx;
                         t.scale.y = sy;
                     }

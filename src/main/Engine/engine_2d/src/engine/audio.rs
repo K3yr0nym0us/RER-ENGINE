@@ -132,7 +132,7 @@ impl State {
         }
     }
 
-    pub(super) fn stop_audio_internal(&mut self) {
+    pub(crate) fn stop_audio_internal(&mut self) {
         if let Some(slot) = &self.audio_slot {
             send_audio(slot, AudioCmd::Stop);
         }

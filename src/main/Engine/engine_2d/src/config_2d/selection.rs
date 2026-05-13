@@ -35,6 +35,10 @@ impl State {
         let wx = cam.x + ((pixel_x / w) * 2.0 - 1.0) * half_w;
         let wy = cam.y + (1.0 - (pixel_y / h) * 2.0) * cam.half_h;
 
+        // Mantener el picking del editor basado en Transform crudo.
+        // El render puede aplicar `visual_offsets`, pero igualar ambas referencias
+        // aqui cambiaria la seleccion actual de escenas/animaciones existentes.
+        // Esa unificacion queda como trabajo separado de cambio de comportamiento.
         // Recoge todos los hits y elige el de mayor Z (más cercano a la cámara).
         let mut best: Option<(EntityId, f32)> = None;
         for &entity in self.world.entities() {
@@ -246,7 +250,7 @@ impl State {
                     saved.0.x = nx;
                     saved.0.y = ny;
                 }
-                self.physics_2d.teleport_entity(sel_id, nx, ny);
+                self.sync_physics_2d_body_from_xy(sel_id, nx, ny);
             }
         }
 

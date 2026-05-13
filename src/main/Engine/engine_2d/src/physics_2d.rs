@@ -215,11 +215,15 @@ impl PhysicsWorld2D {
         }
     }
 
-    /// Actualiza la posición local (offset) del collider.
-    /// La primera vez que se llama para una entidad, también establece la forma
-    /// (remove + insert). Las siguientes veces solo mueve el collider existente
-    /// para no interrumpir los contactos activos de Rapier.
-    pub(crate) fn update_entity_collider(
+    /// Sincroniza el offset local del collider preservando la forma ya creada.
+    ///
+    /// Contrato actual:
+    /// - Primera llamada: crea el collider completo con la forma indicada.
+    /// - Llamadas siguientes: solo actualizan el offset local.
+    ///
+    /// Esto conserva el comportamiento actual del motor y evita reiniciar
+    /// contactos en Rapier, pero NO recompone la forma tras cambios de escala.
+    pub(crate) fn sync_entity_collider_offset_preserving_shape(
         &mut self,
         entity:   EntityId,
         half_ext: [f32; 3],
@@ -252,6 +256,18 @@ impl PhysicsWorld2D {
                 collider.set_translation(offset);
             }
         }
+    }
+
+    /// Wrapper legacy: mantener por compatibilidad interna mientras se migra el
+    /// codigo a nombres mas explicitos. No recrea la forma en llamadas sucesivas.
+    #[allow(dead_code)]
+    pub(crate) fn update_entity_collider(
+        &mut self,
+        entity:   EntityId,
+        half_ext: [f32; 3],
+        collider_offset: [f32; 3],
+    ) {
+        self.sync_entity_collider_offset_preserving_shape(entity, half_ext, collider_offset);
     }
     pub(crate) fn remove_entity_body(&mut self, entity: EntityId) {
         if let Some(handle) = self.entity_bodies.remove(&entity) {

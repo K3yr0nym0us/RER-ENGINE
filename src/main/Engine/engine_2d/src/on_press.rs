@@ -56,9 +56,11 @@ impl State {
                 Ok(mut cmds) => {
                     let mut extra_cmds: Vec<ScriptCmd> = Vec::new();
 
-                    // Compatibilidad para kinematic en on_press:
+                    // Compatibilidad legacy para kinematic en on_press:
                     // si un script usa move_entity (pensado para movimiento continuo),
                     // convertirlo a un slide corto para que la pulsación única sea visible.
+                    // Unificar esta semantica con on_keep implicaria un cambio de
+                    // comportamiento y se deja fuera de esta fase.
                     for cmd in &mut cmds {
                         if let ScriptCmd::MoveEntity { id, speed, dir_x, dir_y } = *cmd {
                             if self.physics_2d.get_body_type(id) == "kinematic" {

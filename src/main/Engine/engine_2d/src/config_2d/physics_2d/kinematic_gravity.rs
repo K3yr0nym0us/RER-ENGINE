@@ -10,6 +10,10 @@ use crate::ecs::EntityId;
 
 impl PhysicsWorld2D {
     /// Marca velocidad objetivo horizontal y suma salto vertical para el siguiente `step()`.
+    ///
+    /// Nota de contrato actual: `gravity` y `dt` se conservan en la firma por
+    /// compatibilidad con las llamadas existentes, aunque esta implementacion
+    /// mantiene la integracion real centralizada en `PhysicsWorld2D::step()`.
 
     pub(crate) fn apply_kinematic_gravity(
         &mut self,
