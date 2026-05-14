@@ -1,32 +1,19 @@
 // ── Primitivas de malla exclusivas del modo 3D ────────────────────────────────
-//
-// Contiene:
-//  · GltfMesh          — resultado de parsear un .glb/.gltf
-//  · load_glb          — carga un .glb/.gltf desde disco y lo sube a la GPU
-//  · create_ground_plane — plano subdividido 40×40 u en XZ (escena por defecto)
 
 use std::path::Path;
 
 use crate::mesh::{upload, Mesh, Vertex};
 
-// ---------------------------------------------------------------------------
-// Resultado de carga de un archivo .glb / .gltf
-// ---------------------------------------------------------------------------
 pub(crate) struct GltfMesh {
-    pub(crate) mesh:      Mesh,
-    /// Índice en el Vec<gltf::image::Data> devuelto por gltf::import.
+    pub(crate) mesh: Mesh,
     pub(crate) tex_index: Option<usize>,
 }
 
-// ---------------------------------------------------------------------------
-// Loader .glb / .gltf
-// ---------------------------------------------------------------------------
 pub(crate) fn load_glb(
     device: &wgpu::Device,
-    path:   &Path,
+    path: &Path,
 ) -> Result<(Vec<GltfMesh>, Vec<gltf::image::Data>), String> {
-    let (doc, buffers, images) =
-        gltf::import(path).map_err(|e| format!("gltf error: {e}"))?;
+    let (doc, buffers, images) = gltf::import(path).map_err(|e| format!("gltf error: {e}"))?;
 
     let mut meshes = Vec::new();
 
@@ -58,7 +45,11 @@ pub(crate) fn load_glb(
                 .into_iter()
                 .zip(normals)
                 .zip(uvs)
-                .map(|((pos, norm), uv)| Vertex { position: pos, normal: norm, uv })
+                .map(|((pos, norm), uv)| Vertex {
+                    position: pos,
+                    normal: norm,
+                    uv,
+                })
                 .collect();
 
             let tex_index = primitive
@@ -81,33 +72,27 @@ pub(crate) fn load_glb(
     Ok((meshes, images))
 }
 
-// ---------------------------------------------------------------------------
-// Plano de suelo procedural — escenario base 3D (primera persona)
-//
-// Genera una malla subdividida de SIZE × SIZE unidades centrada en el origen,
-// orientada en el plano XZ (normal +Y). Las UVs se tilan con UV_SCALE.
-// ---------------------------------------------------------------------------
 pub(crate) fn create_ground_plane(device: &wgpu::Device) -> Mesh {
     const SEGMENTS: u32 = 20;
-    const SIZE:     f32 = 40.0;
-    const UV_SCALE: f32 = 1.0;  // Con atlas: UVs normalizadas a [0,1] sin tiling por hardware
+    const SIZE: f32 = 40.0;
+    const UV_SCALE: f32 = 1.0;
 
     let half = SIZE / 2.0;
     let step = SIZE / SEGMENTS as f32;
 
     let mut vertices: Vec<Vertex> = Vec::new();
-    let mut indices:  Vec<u32>    = Vec::new();
+    let mut indices: Vec<u32> = Vec::new();
 
     for z in 0..=SEGMENTS {
         for x in 0..=SEGMENTS {
             let px = -half + x as f32 * step;
             let pz = -half + z as f32 * step;
-            let u  = (x as f32 / SEGMENTS as f32) * UV_SCALE;
-            let v  = (z as f32 / SEGMENTS as f32) * UV_SCALE;
+            let u = (x as f32 / SEGMENTS as f32) * UV_SCALE;
+            let v = (z as f32 / SEGMENTS as f32) * UV_SCALE;
             vertices.push(Vertex {
                 position: [px, 0.0, pz],
-                normal:   [0.0, 1.0, 0.0],
-                uv:       [u, v],
+                normal: [0.0, 1.0, 0.0],
+                uv: [u, v],
             });
         }
     }

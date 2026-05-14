@@ -1,14 +1,18 @@
 mod ecs;
-mod engine;
 mod gizmo;
 mod ipc;
 mod mesh;
+mod platform;
 mod scripting;
 mod spatial;
 mod texture;
 
+#[path = "engine/mod.rs"]
+mod engine;
+#[path = "config_compat/mod.rs"]
 mod config_compat;
 mod config_base;
+#[path = "config_3d/mod.rs"]
 mod config_3d;
 mod config_shared;
 
@@ -26,115 +30,9 @@ use winit::{
 };
 
 use ipc::{EngineCommand, EngineEvent};
-
-// ---------------------------------------------------------------------------
-// Hilo nativo Win32: position tracker (sólo Windows)
-// ---------------------------------------------------------------------------
-/// Offset en píxeles de pantalla entre la esquina superior-izquierda del padre
-/// (Electron) y la esquina superior-izquierda del motor.
-/// Actualizado atómicamente por user_event cuando llega SetBounds.
-/// El tracker lee este offset en cada iteración para calcular la posición deseada,
-/// eliminando la carrera entre IPC y el hilo de tracking.
+use platform::query_ctrl_held_x11;
 #[cfg(target_os = "windows")]
-pub type TrackerOffset = std::sync::Arc<(std::sync::atomic::AtomicI32, std::sync::atomic::AtomicI32)>;
-
-/// Rastrea la posición de la ventana padre (Electron) en un hilo dedicado
-/// y reposiciona la ventana del motor en tiempo real usando Win32 puro.
-///
-/// Algoritmo (offset-based, sin delta acumulado):
-///   cada 8ms, obtiene la posición física del área de contenido del padre con
-///   ClientToScreen(parent, {0,0}) — equivalente a getContentBounds() de Electron,
-///   sin el "invisible resize border" DPI-aware que tiene GetWindowRect.
-///   Si el motor no está en `content_origin + offset`, lo mueve con SetWindowPos.
-/// Cuando se produce maximize/restore/cambio de monitor, Electron envía set_bounds
-/// que actualiza el offset atómico y el tracker se alinea en el siguiente tick.
-#[cfg(target_os = "windows")]
-fn start_position_tracker(engine_hwnd: isize, parent_hwnd: isize, offset: TrackerOffset) {
-    use windows::Win32::Foundation::{HWND, POINT, RECT};
-    use windows::Win32::UI::WindowsAndMessaging::{
-        GetWindowRect, SetWindowPos,
-        SWP_NOSIZE, SWP_NOZORDER, SWP_NOACTIVATE,
-    };
-    use windows::Win32::Graphics::Gdi::ClientToScreen;
-    use std::sync::atomic::Ordering;
-
-    let engine_hwnd = HWND(engine_hwnd);
-    let parent_hwnd = HWND(parent_hwnd);
-
-    std::thread::Builder::new()
-        .name("position-tracker".into())
-        .spawn(move || {
-            loop {
-                std::thread::sleep(std::time::Duration::from_millis(8));
-                unsafe {
-                    // Usar ClientToScreen para obtener la posición del área de contenido
-                    // (sin el invisible resize border DPI-aware de Win32).
-                    // Si Electron cerró, ClientToScreen devuelve FALSE.
-                    let mut pt = POINT { x: 0, y: 0 };
-                    if !ClientToScreen(parent_hwnd, &mut pt).as_bool() {
-                        break; // Electron cerró — terminar el hilo
-                    }
-                    let off_x = offset.0.load(Ordering::Relaxed);
-                    let off_y = offset.1.load(Ordering::Relaxed);
-                    let desired_x = pt.x + off_x;
-                    let desired_y = pt.y + off_y;
-
-                    let mut engine = RECT::default();
-                    if GetWindowRect(engine_hwnd, &mut engine).is_ok() {
-                        if engine.left != desired_x || engine.top != desired_y {
-                            // SAFETY: ambos HWNDs son válidos mientras el motor esté activo.
-                            let _ = SetWindowPos(
-                                engine_hwnd,
-                                HWND(0isize),
-                                desired_x,
-                                desired_y,
-                                0, 0,
-                                SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
-                            );
-                        }
-                    }
-                }
-            }
-        })
-        .expect("No se pudo crear el hilo position-tracker");
-}
-
-// ---------------------------------------------------------------------------
-// Consulta de estado de teclado vía X11 (sin depender del foco de ventana)
-// ---------------------------------------------------------------------------
-#[cfg(target_os = "linux")]
-fn query_ctrl_held_x11() -> bool {
-    // SAFETY: llamadas estándar a libX11; Display se abre y cierra en la misma función.
-    unsafe {
-        let display = x11::xlib::XOpenDisplay(std::ptr::null());
-        if display.is_null() { return false; }
-        let mut keys = [0u8; 32];
-        x11::xlib::XQueryKeymap(display, keys.as_mut_ptr() as *mut i8);
-        x11::xlib::XCloseDisplay(display);
-        // Keycode 37 = Control_L, keycode 105 = Control_R (estándar X11 en Linux)
-        let lctrl = (keys[37 / 8] >> (37 % 8)) & 1;
-        let rctrl = (keys[105 / 8] >> (105 % 8)) & 1;
-        lctrl != 0 || rctrl != 0
-    }
-}
-
-/// En Windows usamos GetAsyncKeyState para consultar el estado real del Ctrl
-/// sin depender del foco de ventana. Esto evita el bug de "toggle" que ocurre
-/// cuando Electron pierde el foco al hacer click en el viewport del motor y
-/// el keyup de Control nunca llega al renderer.
-#[cfg(target_os = "windows")]
-fn query_ctrl_held_x11() -> bool {
-    // SAFETY: GetAsyncKeyState es seguro de llamar en cualquier contexto Win32.
-    unsafe {
-        use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LCONTROL, VK_RCONTROL};
-        let left  = (GetAsyncKeyState(VK_LCONTROL.0 as i32) as u16 & 0x8000) != 0;
-        let right = (GetAsyncKeyState(VK_RCONTROL.0 as i32) as u16 & 0x8000) != 0;
-        left || right
-    }
-}
-
-#[cfg(not(any(target_os = "linux", target_os = "windows")))]
-fn query_ctrl_held_x11() -> bool { false }
+use platform::start_position_tracker;
 
 /// Convierte un `KeyCode` de winit a la string de control usada en los bindings.
 ///
@@ -419,6 +317,16 @@ impl ApplicationHandler<EngineCommand> for App {
         // When entering game mode, automatically focus the engine window
         // so keyboard/mouse input is captured without requiring a manual click.
         let entering_play = matches!(cmd, EngineCommand::SetPreviewPlaying { playing: true });
+        let toggling_preview = matches!(cmd, EngineCommand::SetPreviewPlaying { .. });
+
+        if toggling_preview {
+            self.last_cursor = None;
+            self.mouse_right = false;
+            self.mouse_middle = false;
+            self.left_click_pos = None;
+            self.gizmo_drag_axis = None;
+            self.gizmo_drag_start = None;
+        }
 
         if let Some(state) = self.state.as_mut() {
             state.handle_command(cmd);
@@ -609,6 +517,9 @@ impl ApplicationHandler<EngineCommand> for App {
                 if let Some((lx, ly)) = self.last_cursor {
                     let dx = cur.0 - lx;
                     let dy = cur.1 - ly;
+                    if state.is_first_person_runtime_active() {
+                        state.apply_first_person_mouse_look(dx, dy);
+                    }
                     if !state.is_preview_playing() {
                         if let Some(axis) = self.gizmo_drag_axis {
                         // Drag de gizmo: mover entidad a lo largo del eje
@@ -758,6 +669,10 @@ impl ApplicationHandler<EngineCommand> for App {
                         state.handle_runtime_control_input("gamepad", control_key);
                     }
                 }
+                state.apply_first_person_keyboard(
+                    &self.keyboard_mouse_pressed,
+                    frame_duration.as_secs_f32(),
+                );
 
             } else {
                 self.keyboard_mouse_pressed.clear();

@@ -6,154 +6,16 @@
 // compatibilidad y no activan lógica 2D en este binario.
 // ---------------------------------------------------------------------------
 
-use std::collections::{HashMap, HashSet};
+pub(crate) mod camera;
+pub(crate) use camera::Camera2D;
 
-use glam::{Mat4, Vec3};
-use wgpu::util::DeviceExt;
+pub(crate) mod mesh;
+pub use mesh::{build_grid, GridBuffer, GridConfig};
 
-use crate::ecs::{EntityId, World};
+pub(crate) mod physics;
+pub(crate) use physics::PhysicsWorld2D;
+
 use crate::engine::State;
-use crate::gizmo;
-
-#[derive(Debug, Clone)]
-pub(crate) struct Camera2D {
-    pub x: f32,
-    pub y: f32,
-    pub half_h: f32,
-    pub near: f32,
-    pub far: f32,
-}
-
-impl Camera2D {
-    pub(crate) fn position(&self) -> Vec3 {
-        Vec3::new(self.x, self.y, 10.0)
-    }
-
-    pub(crate) fn view_proj(&self, aspect: f32) -> Mat4 {
-        let half_w = self.half_h * aspect;
-        let proj = Mat4::orthographic_rh(-half_w, half_w, -self.half_h, self.half_h, self.near, self.far);
-        let view = Mat4::look_at_rh(
-            Vec3::new(self.x, self.y, 10.0),
-            Vec3::new(self.x, self.y, 0.0),
-            Vec3::Y,
-        );
-        proj * view
-    }
-
-    pub(crate) fn pan(&mut self, _dx: f32, _dy: f32, _vw: f32, _vh: f32) {}
-}
-
-pub struct GridConfig {
-    pub world_width: f32,
-    pub world_height: f32,
-    pub visible: bool,
-    pub cell_size: f32,
-}
-
-impl Default for GridConfig {
-    fn default() -> Self {
-        Self {
-            world_width: 100.0,
-            world_height: 50.0,
-            visible: false,
-            cell_size: 1.0,
-        }
-    }
-}
-
-pub struct GridBuffer {
-    pub vertex_buffer: wgpu::Buffer,
-    pub vertex_count: u32,
-}
-
-pub fn build_grid(device: &wgpu::Device, _config: &GridConfig) -> GridBuffer {
-    let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some("grid-vbuf-stub"),
-        contents: bytemuck::cast_slice(&[gizmo::GizmoVertex {
-            position: [0.0, 0.0, 0.0],
-            color: [0.0, 0.0, 0.0, 0.0],
-        }]),
-        usage: wgpu::BufferUsages::VERTEX,
-    });
-    GridBuffer {
-        vertex_buffer,
-        vertex_count: 0,
-    }
-}
-
-pub(crate) struct PhysicsWorld2D {
-    active: HashSet<EntityId>,
-    body_types: HashMap<EntityId, String>,
-}
-
-impl Default for PhysicsWorld2D {
-    fn default() -> Self {
-        Self {
-            active: HashSet::new(),
-            body_types: HashMap::new(),
-        }
-    }
-}
-
-impl PhysicsWorld2D {
-    pub(crate) fn new() -> Self {
-        Self::default()
-    }
-
-    pub(crate) fn body_count(&self) -> u32 {
-        self.active.len() as u32
-    }
-
-    pub(crate) fn set_gravity(&mut self, _gravity_y: f32) {}
-
-    pub(crate) fn set_entity_physics(
-        &mut self,
-        entity: EntityId,
-        enabled: bool,
-        body_type: &str,
-        _position: [f32; 3],
-        _half_ext: [f32; 3],
-    ) {
-        if enabled {
-            self.active.insert(entity);
-            self.body_types.insert(entity, body_type.to_string());
-        } else {
-            self.active.remove(&entity);
-            self.body_types.remove(&entity);
-        }
-    }
-
-    pub(crate) fn remove_entity_body(&mut self, entity: EntityId) {
-        self.active.remove(&entity);
-        self.body_types.remove(&entity);
-    }
-
-    pub(crate) fn has_physics(&self, entity: EntityId) -> bool {
-        self.active.contains(&entity)
-    }
-
-    pub(crate) fn get_body_type(&self, entity: EntityId) -> &str {
-        self.body_types
-            .get(&entity)
-            .map(|s| s.as_str())
-            .unwrap_or("")
-    }
-
-    pub(crate) fn teleport_entity(&mut self, _entity: EntityId, _x: f32, _y: f32) {}
-
-    pub(crate) fn move_physics_entity(
-        &mut self,
-        entity: EntityId,
-        _speed: f32,
-        _dir_x: f32,
-        _dir_y: f32,
-        _dt: f32,
-    ) -> bool {
-        self.active.contains(&entity)
-    }
-
-    pub(crate) fn step(&mut self, _dt: f32, _ecs: &mut World) {}
-}
 
 #[derive(Debug)]
 #[allow(dead_code)]
