@@ -47,6 +47,7 @@ export type CharacterEntry = ScenarioEntry;
 export interface WorldConfig {
 	worldWidth: number
 	worldHeight: number
+	worldDepth: number
 	gridVisible: boolean
 	gridCellSize: number
 	gravity: number
@@ -56,6 +57,7 @@ export interface WorldConfig {
 export const DEFAULT_WORLD_CONFIG: WorldConfig = {
 	worldWidth: 100,
 	worldHeight: 50,
+	worldDepth: 100,
 	gridVisible: true,
 	gridCellSize: 1,
 	gravity: 9.81,
@@ -341,7 +343,7 @@ export interface EngineContextValue extends EngineState {
 	retryEngine: () => void
 	removeScenario: (id: number) => void
 	removeCharacter: (id: number) => void
-	setWorldSize: (width: number, height: number) => void
+	setWorldSize: (width: number, height: number, depth?: number) => void
 	setGridVisible: (visible: boolean) => void
 	setGridCellSize: (size: number) => void
 	setGravity: (gravity: number) => void

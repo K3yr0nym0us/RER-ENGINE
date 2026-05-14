@@ -158,6 +158,28 @@ pub fn build_axes(device: &wgpu::Device, length: f32) -> GizmoBuffer {
     GizmoBuffer { vertex_buffer, vertex_count: verts.len() as u32 }
 }
 
+pub fn build_crosshair(device: &wgpu::Device) -> GizmoBuffer {
+    let verts = [
+        GizmoVertex {
+            position: [-0.018, 0.0, 0.0],
+            color: [1.0, 1.0, 1.0, 0.92],
+        },
+        GizmoVertex {
+            position: [0.018, 0.0, 0.0],
+            color: [1.0, 1.0, 1.0, 0.92],
+        },
+        GizmoVertex {
+            position: [0.0, -0.028, 0.0],
+            color: [1.0, 1.0, 1.0, 0.92],
+        },
+        GizmoVertex {
+            position: [0.0, 0.028, 0.0],
+            color: [1.0, 1.0, 1.0, 0.92],
+        },
+    ];
+    build_from_vertices(device, &verts)
+}
+
 /// Creates a GizmoBuffer from arbitrary pre-built line vertices (tool overlays, etc.).
 pub fn build_from_vertices(device: &wgpu::Device, verts: &[GizmoVertex]) -> GizmoBuffer {
     // Always allocate at least one vertex so the buffer is valid.

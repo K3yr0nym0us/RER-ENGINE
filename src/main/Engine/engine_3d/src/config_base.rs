@@ -1,7 +1,7 @@
 // ── Escenas base 3D por código ────────────────────────────────────────────────
 
 use crate::config_3d::physics_3d::PhysicsWorld;
-use crate::config_3d::Camera;
+use crate::config_3d::{Camera, WorldBounds3D};
 use crate::config_compat::{ActiveTool, PhysicsWorld2D};
 use crate::ecs::{MeshComponent, Transform};
 use crate::engine::State;
@@ -59,6 +59,8 @@ impl State {
         self.undo_stack.clear();
         self.redo_stack.clear();
         self.is_applying_undo = false;
+        self.world_bounds_3d = WorldBounds3D::default();
+        self.sync_world_bounds_3d_runtime();
     }
 
     /// Escena base del modo first-person: suelo checker y cámara a ras de editor 3D.
@@ -114,6 +116,10 @@ impl State {
                     t.position = glam::Vec3::from_array(position);
                     t.scale = glam::Vec3::from_array(scale);
                 }
+                self.physics.add_scene_static_box(
+                    position,
+                    [scale[0] * 0.5, scale[1] * 0.5, scale[2] * 0.5],
+                );
             };
 
         // Escenario base visible al frente para que first-person no arranque en vacío.
@@ -129,6 +135,7 @@ impl State {
         self.camera.pitch = 0.0;
         self.camera.yaw = -std::f32::consts::FRAC_PI_2;
         self.camera.distance = 0.01;
+        self.clamp_first_person_camera_to_bounds();
         self.clear_color = wgpu::Color {
             r: 0.06,
             g: 0.06,

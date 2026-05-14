@@ -21,6 +21,7 @@ interface Props {
 const DEFAULT_WORLD: SavedWorldConfig = {
   worldWidth: 100,
   worldHeight: 50,
+  worldDepth: 100,
   gridVisible: true,
   gridCellSize: 1,
   targetFps: 60,
@@ -181,7 +182,11 @@ export function SceneTabsBar({ initialSave, projectType }: Props) {
   const loadSceneIntoEngine = (scene: SavedScene) => {
     send({ cmd: 'set_preview_playing', playing: false });
 
-    setWorldSize(scene.world.worldWidth, scene.world.worldHeight);
+    setWorldSize(
+      scene.world.worldWidth,
+      scene.world.worldHeight,
+      scene.world.worldDepth ?? DEFAULT_WORLD.worldDepth,
+    );
     setGridVisible(scene.world.gridVisible);
     setGridCellSize(scene.world.gridCellSize);
     setTargetFps(Number.isFinite(scene.world?.targetFps) ? scene.world.targetFps : DEFAULT_WORLD.targetFps);

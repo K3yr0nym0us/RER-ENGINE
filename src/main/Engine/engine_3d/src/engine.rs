@@ -7,7 +7,7 @@ use winit::{dpi::PhysicalSize, window::Window};
 
 use super::{ActiveAnimation, AnimationState, AudioSlot, UndoAction};
 use crate::config_3d::physics_3d::PhysicsWorld;
-use crate::config_3d::Camera;
+use crate::config_3d::{Camera, WorldBounds3D};
 use crate::config_compat::{ActiveTool, Camera2D, GridBuffer, GridConfig, PhysicsWorld2D};
 use crate::ecs::{EntityId, NameComponent, World};
 use crate::gizmo::GizmoBuffer;
@@ -63,6 +63,9 @@ pub struct State {
     pub(crate) grid_buffer: GridBuffer,
     pub(crate) grid_bind_group: wgpu::BindGroup,
     pub(crate) grid_buffer_uni: wgpu::Buffer,
+    pub(crate) world_bounds_3d: WorldBounds3D,
+    pub(crate) world_bounds_buffer: GizmoBuffer,
+    pub(crate) crosshair_buffer: GizmoBuffer,
     pub(crate) ctrl_held: bool,
     pub active_tool: ActiveTool,
     pub(crate) quick_build_ghost_id: Option<EntityId>,

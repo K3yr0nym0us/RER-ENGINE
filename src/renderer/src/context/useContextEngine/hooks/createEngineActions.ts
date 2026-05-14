@@ -95,9 +95,12 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 		delete refs.entityMetaRef.current[id];
 	};
 
-	const setWorldSize = (width: number, height: number) => {
-		dispatch({ type: 'SET_WORLD_CONFIG', payload: { worldWidth: width, worldHeight: height } });
-		send({ cmd: 'set_world_size', width, height });
+	const setWorldSize = (width: number, height: number, depth?: number) => {
+		const payload = typeof depth === 'number'
+			? { worldWidth: width, worldHeight: height, worldDepth: depth }
+			: { worldWidth: width, worldHeight: height };
+		dispatch({ type: 'SET_WORLD_CONFIG', payload });
+		send({ cmd: 'set_world_size', width, height, depth });
 	};
 
 	const setGridVisible = (visible: boolean) => {

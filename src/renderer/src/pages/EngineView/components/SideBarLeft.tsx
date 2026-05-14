@@ -23,15 +23,17 @@ export function SideBarLeft({ projectType }: { projectType: ProjectType }) {
   return (
     <aside className="app-sidebar px-2 py-2 border-end border-secondary-subtle d-flex flex-column">
       <div className="flex-grow-1 sidebar-scroll">
-        {projectType === '2D' && (
+        {(projectType === '2D' || projectType === '3D') && (
           <>
             <Accordion className="sidebar-accordion">
-              <WorldAccordion />
+              <WorldAccordion projectType={projectType} />
             </Accordion>
 
-            <Accordion className="sidebar-accordion mt-1">
-              <ResourcesAccordion />
-            </Accordion>
+            {projectType === '2D' && (
+              <Accordion className="sidebar-accordion mt-1">
+                <ResourcesAccordion />
+              </Accordion>
+            )}
           </>
         )}
 

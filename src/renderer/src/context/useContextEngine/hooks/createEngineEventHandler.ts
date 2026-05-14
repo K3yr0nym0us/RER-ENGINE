@@ -43,6 +43,7 @@ const SILENT_ENGINE_EVENTS = new Set<string>([
 	'animation_logical_resolved',
 	'multi_selection_transformed',
 	'autosave_tick',
+	'preview_playing_changed',
 ]);
 
 interface CreateEngineEventHandlerParams {
@@ -132,7 +133,12 @@ export function createEngineEventHandler({
 
 				if (save.world) {
 					dispatch({ type: 'SET_WORLD_CONFIG', payload: save.world });
-					sendEngine({ cmd: 'set_world_size', width: save.world.worldWidth, height: save.world.worldHeight } as never);
+					sendEngine({
+						cmd: 'set_world_size',
+						width: save.world.worldWidth,
+						height: save.world.worldHeight,
+						depth: save.world.worldDepth,
+					} as never);
 					sendEngine({ cmd: 'set_grid_visible', visible: save.world.gridVisible } as never);
 					sendEngine({ cmd: 'set_grid_cell_size', size: save.world.gridCellSize } as never);
 					sendEngine({ cmd: 'set_target_fps', fps: save.world.targetFps } as never);
@@ -487,6 +493,10 @@ export function createEngineEventHandler({
 
 		if (event.event === 'stopped') {
 			dispatch({ type: 'ENGINE_STOPPED', payload: (event as { code?: number }).code });
+		}
+
+		if (event.event === 'preview_playing_changed') {
+			dispatch({ type: 'SET_PREVIEW_PLAYING', payload: Boolean((event as { playing?: boolean }).playing) });
 		}
 
 		if (event.event === 'error') {

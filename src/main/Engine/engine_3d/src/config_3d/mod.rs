@@ -17,6 +17,8 @@ pub(crate) use camera_3d::Camera;
 pub(crate) mod first_person;
 pub(crate) mod mesh_3d;
 pub(crate) mod physics_3d;
+pub(crate) mod world_bounds;
+pub(crate) use world_bounds::WorldBounds3D;
 
 use std::path::Path;
 
@@ -35,6 +37,7 @@ impl State {
                 self.world.clear();
                 self.meshes.clear();
                 self.uv_rects.clear();
+                self.physics.clear_scene_colliders();
 
                 let count = gltf_meshes.len();
                 for gm in gltf_meshes {

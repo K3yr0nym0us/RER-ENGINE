@@ -23,10 +23,11 @@ use gilrs::{Button as GamepadButton, EventType as GamepadEventType, Gilrs};
 
 use winit::{
     application::ApplicationHandler,
-    event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent},
+    dpi::PhysicalPosition,
+    event::{DeviceEvent, ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent},
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
     keyboard::{KeyCode, PhysicalKey},
-    window::{Window, WindowId},
+    window::{CursorGrabMode, Window, WindowId},
 };
 
 use ipc::{EngineCommand, EngineEvent};
@@ -165,6 +166,88 @@ struct App {
     tracker_offset:     std::sync::Arc<(std::sync::atomic::AtomicI32, std::sync::atomic::AtomicI32)>,
     #[cfg(target_os = "windows")]
     tracker_parent_hwnd: isize,
+    cursor_captured:   bool,
+}
+
+impl App {
+    fn reset_preview_input_state(&mut self, state: &mut engine::State) {
+        self.last_cursor = None;
+        self.mouse_right = false;
+        self.mouse_middle = false;
+        self.left_click_pos = None;
+        self.gizmo_drag_axis = None;
+        self.gizmo_drag_start = None;
+        self.keyboard_mouse_pressed.clear();
+        self.gamepad_pressed.clear();
+        state.set_active_gizmo_axis(None);
+        state.set_snap_hint_visible(false);
+    }
+
+    fn capture_cursor_for_preview(&mut self, state: &engine::State) {
+        if !state.is_first_person_runtime_active() {
+            self.release_cursor_after_preview(state);
+            return;
+        }
+
+        let window = state.window();
+        let size = state.size();
+        let center = PhysicalPosition::new(size.width as f64 * 0.5, size.height as f64 * 0.5);
+        let _ = window.set_cursor_position(center);
+
+        let grab_result = window
+            .set_cursor_grab(CursorGrabMode::Locked)
+            .or_else(|lock_err| {
+                log::warn!(
+                    "[preview] CursorGrabMode::Locked no disponible: {lock_err}; intentando Confined"
+                );
+                window.set_cursor_grab(CursorGrabMode::Confined)
+            });
+
+        match grab_result {
+            Ok(()) => {
+                window.set_cursor_visible(false);
+                self.cursor_captured = true;
+                log::info!("[preview] cursor capturado para runtime first-person");
+            }
+            Err(err) => {
+                window.set_cursor_visible(true);
+                self.cursor_captured = false;
+                log::warn!("[preview] no se pudo capturar el cursor: {err}");
+            }
+        }
+    }
+
+    fn release_cursor_after_preview(&mut self, state: &engine::State) {
+        let window = state.window();
+        if let Err(err) = window.set_cursor_grab(CursorGrabMode::None) {
+            log::warn!("[preview] no se pudo liberar el cursor: {err}");
+        }
+        window.set_cursor_visible(true);
+        self.cursor_captured = false;
+    }
+
+    fn set_preview_playing(&mut self, state: &mut engine::State, playing: bool) {
+        let was_playing = state.is_preview_playing();
+        self.reset_preview_input_state(state);
+        state.handle_command(EngineCommand::SetPreviewPlaying { playing });
+
+        if state.is_preview_playing() {
+            state.window().focus_window();
+            log::info!("[preview] foco transferido a la ventana del motor");
+        }
+
+        if state.is_first_person_runtime_active() {
+            self.capture_cursor_for_preview(state);
+        } else {
+            self.release_cursor_after_preview(state);
+        }
+
+        if was_playing != state.is_preview_playing() {
+            ipc::send_event(&EngineEvent::PreviewPlayingChanged {
+                playing: state.is_preview_playing(),
+            });
+        }
+    }
 }
 
 impl ApplicationHandler<EngineCommand> for App {
@@ -314,26 +397,42 @@ impl ApplicationHandler<EngineCommand> for App {
                 }
             }
         }
-        // When entering game mode, automatically focus the engine window
-        // so keyboard/mouse input is captured without requiring a manual click.
-        let entering_play = matches!(cmd, EngineCommand::SetPreviewPlaying { playing: true });
-        let toggling_preview = matches!(cmd, EngineCommand::SetPreviewPlaying { .. });
-
-        if toggling_preview {
-            self.last_cursor = None;
-            self.mouse_right = false;
-            self.mouse_middle = false;
-            self.left_click_pos = None;
-            self.gizmo_drag_axis = None;
-            self.gizmo_drag_start = None;
+        let mut preview_toggle = None;
+        match cmd {
+            EngineCommand::SetPreviewPlaying { playing } => {
+                preview_toggle = Some(playing);
+            }
+            other => {
+                if let Some(state) = self.state.as_mut() {
+                    state.handle_command(other);
+                }
+            }
         }
 
-        if let Some(state) = self.state.as_mut() {
-            state.handle_command(cmd);
-            if entering_play {
-                state.window().focus_window();
-                log::info!("[preview] foco transferido a la ventana del motor");
+        if let Some(playing) = preview_toggle {
+            if let Some(mut state) = self.state.take() {
+                self.set_preview_playing(&mut state, playing);
+                self.state = Some(state);
             }
+        }
+    }
+
+    fn device_event(
+        &mut self,
+        _event_loop: &ActiveEventLoop,
+        _device_id: winit::event::DeviceId,
+        event: DeviceEvent,
+    ) {
+        let Some(state) = self.state.as_mut() else {
+            return;
+        };
+
+        if !self.cursor_captured || !state.is_first_person_runtime_active() {
+            return;
+        }
+
+        if let DeviceEvent::MouseMotion { delta: (dx, dy) } = event {
+            state.apply_first_person_mouse_look(dx as f32, dy as f32);
         }
     }
 
@@ -343,12 +442,17 @@ impl ApplicationHandler<EngineCommand> for App {
         _window_id: WindowId,
         event: WindowEvent,
     ) {
-        let Some(state) = self.state.as_mut() else {
-            return;
-        };
+        let mut preview_toggle = None;
+        let mut release_cursor_on_focus_loss = false;
+        let mut recapture_cursor_on_focus_gain = false;
 
-        // ── Eventos de ventana ───────────────────────────────────────────────
-        match event {
+        {
+            let Some(state) = self.state.as_mut() else {
+                return;
+            };
+
+            // ── Eventos de ventana ───────────────────────────────────────────────
+            match event {
             WindowEvent::CloseRequested => {
                 event_loop.exit();
             }
@@ -502,6 +606,10 @@ impl ApplicationHandler<EngineCommand> for App {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 let cur = (position.x as f32, position.y as f32);
+                if self.cursor_captured && state.is_first_person_runtime_active() {
+                    self.last_cursor = None;
+                    return;
+                }
                 if state.is_preview_playing() {
                     self.gizmo_drag_axis = None;
                     self.gizmo_drag_start = None;
@@ -558,7 +666,9 @@ impl ApplicationHandler<EngineCommand> for App {
                 ..
             } => {
                 let pressed = key_state == ElementState::Pressed;
-                if state.is_preview_playing() {
+                if pressed && !repeat && code == KeyCode::Escape && state.is_first_person_runtime_active() {
+                    preview_toggle = Some(false);
+                } else if state.is_preview_playing() {
                     if let Some(control_key) = map_keyboard_control_key(code) {
                         if pressed {
                             if self.keyboard_mouse_pressed.insert(control_key.clone()) {
@@ -595,6 +705,14 @@ impl ApplicationHandler<EngineCommand> for App {
             WindowEvent::Focused(false) => {
                 self.keyboard_mouse_pressed.clear();
                 self.gamepad_pressed.clear();
+                if self.cursor_captured {
+                    release_cursor_on_focus_loss = true;
+                }
+            }
+            WindowEvent::Focused(true) => {
+                if state.is_first_person_runtime_active() {
+                    recapture_cursor_on_focus_gain = true;
+                }
             }
             WindowEvent::MouseWheel { delta, .. } => {
                 let scroll = match delta {
@@ -632,6 +750,24 @@ impl ApplicationHandler<EngineCommand> for App {
                 // Hacerlo aquí + ControlFlow::Poll crea un busy loop que consume CPU al 100%.
             }
             _ => {}
+            }
+        }
+
+        if let Some(playing) = preview_toggle {
+            if let Some(mut state) = self.state.take() {
+                self.set_preview_playing(&mut state, playing);
+                self.state = Some(state);
+            }
+        } else if release_cursor_on_focus_loss {
+            if let Some(state) = self.state.take() {
+                self.release_cursor_after_preview(&state);
+                self.state = Some(state);
+            }
+        } else if recapture_cursor_on_focus_gain {
+            if let Some(state) = self.state.take() {
+                self.capture_cursor_for_preview(&state);
+                self.state = Some(state);
+            }
         }
     }
     /// Llamado cuando winit ha procesado todos los eventos pendientes del ciclo actual.
@@ -748,6 +884,7 @@ fn main() {
         )),
         #[cfg(target_os = "windows")]
         tracker_parent_hwnd: 0,
+        cursor_captured:     false,
     };
     event_loop.run_app(&mut app).expect("Error en el event loop");
 }

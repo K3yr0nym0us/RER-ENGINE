@@ -99,7 +99,12 @@ pub enum EngineCommand {
     /// Eliminar una entidad de la escena por su ID.
     RemoveEntity { id: u32 },
     /// Definir el tamaño del área de trabajo del mundo (unidades de mundo).
-    SetWorldSize { width: f32, height: f32 },
+    SetWorldSize {
+        width: f32,
+        height: f32,
+        #[serde(default)]
+        depth: Option<f32>,
+    },
     /// Cambiar la gravedad del mundo físico (valor Y negativo = hacia abajo).
     SetGravity { gravity: f32 },
     /// Mostrar u ocultar la cuadrícula del mundo.
@@ -364,6 +369,8 @@ pub enum EngineEvent {
         draw_calls:     u32,
         physics_bodies: u32,
     },
+    /// Emitido cuando el preview cambia de estado desde el motor.
+    PreviewPlayingChanged { playing: bool },
     /// Emitido cuando un actor entra en un área de ejecución (trigger).
     TriggerEntered { trigger_id: u32, actor_id: u32 },
     /// Emitido cuando un actor sale de un área de ejecución (trigger).

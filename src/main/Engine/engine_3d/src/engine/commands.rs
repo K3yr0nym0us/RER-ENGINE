@@ -233,6 +233,8 @@ impl State {
                 if let Some(p) = position {
                     if self.camera_2d.is_some() {
                         self.physics_2d.teleport_entity(id, p[0], p[1]);
+                    } else {
+                        self.physics.set_entity_body_position(id, p);
                     }
                 }
                 if let Some(prev) = before {
@@ -474,15 +476,27 @@ impl State {
                     kind: removed_kind.to_string(),
                 });
             }
-            EngineCommand::SetWorldSize { width, height } => {
-                self.grid_config.world_width = width.max(1.0);
-                self.grid_config.world_height = height.max(1.0);
-                self.rebuild_grid();
-                if let Some(bg_id) = self.background_entity {
-                    if let Some(t) = self.world.get_mut::<Transform>(bg_id) {
-                        t.scale =
-                            GlamVec3::new(self.grid_config.world_width, self.grid_config.world_height, 1.0);
+            EngineCommand::SetWorldSize {
+                width,
+                height,
+                depth,
+            } => {
+                if self.camera_2d.is_some() {
+                    self.grid_config.world_width = width.max(1.0);
+                    self.grid_config.world_height = height.max(1.0);
+                    self.rebuild_grid();
+                    if let Some(bg_id) = self.background_entity {
+                        if let Some(t) = self.world.get_mut::<Transform>(bg_id) {
+                            t.scale = GlamVec3::new(
+                                self.grid_config.world_width,
+                                self.grid_config.world_height,
+                                1.0,
+                            );
+                        }
                     }
+                } else {
+                    self.set_world_bounds_3d_size(width, height, depth);
+                    self.clamp_first_person_camera_to_bounds();
                 }
             }
             EngineCommand::SetGravity { gravity } => {
@@ -582,9 +596,14 @@ impl State {
             }
             EngineCommand::SetPhysics { id, enabled, body_type } => {
                 let (pos, half) = if let Some(t) = self.world.get::<Transform>(id) {
-                    let mut p = t.position.to_array();
-                    p[2] = 0.0;
-                    (p, (t.scale * 0.5).to_array())
+                    let p = if self.camera_2d.is_some() {
+                        let mut p = t.position.to_array();
+                        p[2] = 0.0;
+                        p
+                    } else {
+                        t.position.to_array()
+                    };
+                    (p, (t.scale.abs() * 0.5).to_array())
                 } else {
                     ([0.0_f32; 3], [0.5_f32; 3])
                 };

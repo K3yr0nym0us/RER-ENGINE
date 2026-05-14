@@ -66,6 +66,11 @@ impl State {
             .filter_map(|(id, mc, t)| {
                 let mesh_idx = mc.mesh_idx;
                 let tex_idx = mc.tex_idx;
+                if self.camera_2d.is_none()
+                    && !self.world_bounds_3d.intersects_aabb(t.position, t.scale)
+                {
+                    return None;
+                }
                 let visible = if let Some(cam2d) = &self.camera_2d {
                     is_visible_2d(cam2d, t.position, t.scale, aspect_fc)
                 } else if let Some(vp) = &frustum_vp_3d {
@@ -208,7 +213,85 @@ impl State {
             }
         }
 
+        if self.camera_2d.is_none() && self.world_bounds_buffer.vertex_count > 0 {
+            let aspect = self.size.width as f32 / self.size.height as f32;
+            let vp = self.camera.to_uniform(aspect).view_proj;
+            let bounds_uni: [[f32; 4]; 9] = [
+                vp[0],
+                vp[1],
+                vp[2],
+                vp[3],
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+                [-1.0, -1.0, 0.0, 0.0],
+            ];
+            self.queue
+                .write_buffer(&self.grid_buffer_uni, 0, bytemuck::cast_slice(&bounds_uni));
+
+            let mut bounds_pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("world-bounds-pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                occlusion_query_set: None,
+                timestamp_writes: None,
+            });
+            bounds_pass.set_pipeline(&self.grid_pipeline);
+            bounds_pass.set_bind_group(0, &self.grid_bind_group, &[]);
+            bounds_pass.set_vertex_buffer(0, self.world_bounds_buffer.vertex_buffer.slice(..));
+            bounds_pass.draw(0..self.world_bounds_buffer.vertex_count, 0..1);
+            draw_calls += 1;
+        }
+
+        if self.is_first_person_runtime_active() && self.crosshair_buffer.vertex_count > 0 {
+            let crosshair_uni: [[f32; 4]; 9] = [
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+                [-1.0, -1.0, 0.0, 0.0],
+            ];
+            self.queue.write_buffer(
+                &self.grid_buffer_uni,
+                0,
+                bytemuck::cast_slice(&crosshair_uni),
+            );
+
+            let mut crosshair_pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("crosshair-pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                occlusion_query_set: None,
+                timestamp_writes: None,
+            });
+            crosshair_pass.set_pipeline(&self.grid_pipeline);
+            crosshair_pass.set_bind_group(0, &self.grid_bind_group, &[]);
+            crosshair_pass.set_vertex_buffer(0, self.crosshair_buffer.vertex_buffer.slice(..));
+            crosshair_pass.draw(0..self.crosshair_buffer.vertex_count, 0..1);
+            draw_calls += 1;
+        }
+
         if !self.preview_playing {
+
             if let Some(cam2d) = &self.camera_2d {
                 let aspect = self.size.width as f32 / self.size.height as f32;
                 let vp = cam2d.view_proj(aspect).to_cols_array_2d();

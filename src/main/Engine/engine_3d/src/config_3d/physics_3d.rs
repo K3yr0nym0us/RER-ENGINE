@@ -2,8 +2,11 @@
 
 use std::collections::HashMap;
 
+use glam::Vec3;
 use rapier3d::prelude::*;
+use rapier3d::parry::query::ShapeCastOptions;
 
+use crate::config_3d::WorldBounds3D;
 use crate::ecs::{EntityId, Transform, World};
 
 #[allow(dead_code)]
@@ -28,6 +31,8 @@ pub(crate) struct PhysicsWorld {
     entity_bodies: HashMap<EntityId, RigidBodyHandle>,
     entity_body_types: HashMap<EntityId, String>,
     entity_colliders: HashMap<EntityId, ColliderHandle>,
+    scene_colliders: Vec<ColliderHandle>,
+    world_bounds_colliders: Vec<ColliderHandle>,
 }
 
 impl Default for PhysicsWorld {
@@ -48,11 +53,17 @@ impl Default for PhysicsWorld {
             entity_bodies: HashMap::new(),
             entity_body_types: HashMap::new(),
             entity_colliders: HashMap::new(),
+            scene_colliders: Vec::new(),
+            world_bounds_colliders: Vec::new(),
         }
     }
 }
 
 impl PhysicsWorld {
+    fn refresh_queries(&mut self) {
+        self.query_pipeline.update(&self.colliders);
+    }
+
     pub(crate) fn new() -> Self {
         Self::default()
     }
@@ -118,6 +129,24 @@ impl PhysicsWorld {
         (handle, collider_handle)
     }
 
+    pub(crate) fn add_scene_static_box(
+        &mut self,
+        position: [f32; 3],
+        half_extents: [f32; 3],
+    ) -> ColliderHandle {
+        let collider = ColliderBuilder::cuboid(
+            half_extents[0].max(0.01),
+            half_extents[1].max(0.01),
+            half_extents[2].max(0.01),
+        )
+        .translation(vector![position[0], position[1], position[2]])
+        .build();
+        let handle = self.colliders.insert(collider);
+        self.scene_colliders.push(handle);
+        self.refresh_queries();
+        handle
+    }
+
     pub(crate) fn add_kinematic_box(
         &mut self,
         position: [f32; 3],
@@ -165,6 +194,7 @@ impl PhysicsWorld {
         self.entity_bodies.insert(entity, handle);
         self.entity_colliders.insert(entity, collider_handle);
         self.entity_body_types.insert(entity, body_type.to_string());
+        self.refresh_queries();
     }
 
     pub(crate) fn remove_entity_body(&mut self, entity: EntityId) {
@@ -172,6 +202,7 @@ impl PhysicsWorld {
             self.entity_body_types.remove(&entity);
             self.entity_colliders.remove(&entity);
             self.remove_body(handle);
+            self.refresh_queries();
         }
     }
 
@@ -191,6 +222,16 @@ impl PhysicsWorld {
         self.bodies.get_mut(handle)
     }
 
+    pub(crate) fn set_entity_body_position(&mut self, entity: EntityId, position: [f32; 3]) {
+        let Some(&handle) = self.entity_bodies.get(&entity) else {
+            return;
+        };
+        if let Some(body) = self.bodies.get_mut(handle) {
+            body.set_translation(vector![position[0], position[1], position[2]], true);
+        }
+        self.refresh_queries();
+    }
+
     pub(crate) fn remove_body(&mut self, handle: RigidBodyHandle) {
         self.bodies.remove(
             handle,
@@ -200,6 +241,121 @@ impl PhysicsWorld {
             &mut self.multibody_joints,
             true,
         );
+    }
+
+    fn clear_collider_handles(&mut self, handles: Vec<ColliderHandle>) {
+        for handle in handles {
+            self.colliders
+                .remove(handle, &mut self.island_manager, &mut self.bodies, true);
+        }
+    }
+
+    pub(crate) fn clear_scene_colliders(&mut self) {
+        let handles = std::mem::take(&mut self.scene_colliders);
+        self.clear_collider_handles(handles);
+        self.refresh_queries();
+    }
+
+    pub(crate) fn rebuild_world_bounds_colliders(&mut self, bounds: &WorldBounds3D) {
+        const WALL_THICKNESS: f32 = 0.5;
+
+        let handles = std::mem::take(&mut self.world_bounds_colliders);
+        self.clear_collider_handles(handles);
+
+        let hx = (bounds.width * 0.5).max(0.5);
+        let hy = (bounds.height * 0.5).max(0.5);
+        let hz = (bounds.depth * 0.5).max(0.5);
+
+        let floor = ColliderBuilder::cuboid(hx, WALL_THICKNESS, hz)
+            .translation(vector![0.0, -WALL_THICKNESS, 0.0])
+            .build();
+        self.world_bounds_colliders.push(self.colliders.insert(floor));
+
+        let left_wall = ColliderBuilder::cuboid(WALL_THICKNESS, hy, hz + WALL_THICKNESS)
+            .translation(vector![-hx - WALL_THICKNESS, hy, 0.0])
+            .build();
+        self.world_bounds_colliders
+            .push(self.colliders.insert(left_wall));
+
+        let right_wall = ColliderBuilder::cuboid(WALL_THICKNESS, hy, hz + WALL_THICKNESS)
+            .translation(vector![hx + WALL_THICKNESS, hy, 0.0])
+            .build();
+        self.world_bounds_colliders
+            .push(self.colliders.insert(right_wall));
+
+        let back_wall = ColliderBuilder::cuboid(hx + WALL_THICKNESS, hy, WALL_THICKNESS)
+            .translation(vector![0.0, hy, -hz - WALL_THICKNESS])
+            .build();
+        self.world_bounds_colliders
+            .push(self.colliders.insert(back_wall));
+
+        let front_wall = ColliderBuilder::cuboid(hx + WALL_THICKNESS, hy, WALL_THICKNESS)
+            .translation(vector![0.0, hy, hz + WALL_THICKNESS])
+            .build();
+        self.world_bounds_colliders
+            .push(self.colliders.insert(front_wall));
+
+        self.refresh_queries();
+    }
+
+    pub(crate) fn move_character_sphere(
+        &mut self,
+        start: Vec3,
+        movement: Vec3,
+        radius: f32,
+    ) -> Vec3 {
+        if movement.length_squared() <= 1e-6 {
+            return start;
+        }
+
+        self.refresh_queries();
+
+        let shape = Ball::new(radius.max(0.05));
+        let mut current = start;
+        let mut remaining = movement;
+
+        for _ in 0..3 {
+            if remaining.length_squared() <= 1e-6 {
+                break;
+            }
+
+            let shape_pos = Isometry::translation(current.x, current.y, current.z);
+            let shape_vel = vector![remaining.x, remaining.y, remaining.z];
+            let hit = self.query_pipeline.cast_shape(
+                &self.bodies,
+                &self.colliders,
+                &shape_pos,
+                &shape_vel,
+                &shape,
+                ShapeCastOptions {
+                    max_time_of_impact: 1.0,
+                    target_distance: 0.02,
+                    stop_at_penetration: false,
+                    compute_impact_geometry_on_penetration: false,
+                },
+                QueryFilter::default(),
+            );
+
+            let Some((_, hit_data)) = hit else {
+                current += remaining;
+                break;
+            };
+
+            let toi = hit_data.time_of_impact.clamp(0.0, 1.0);
+            current += remaining * toi;
+
+            let normal = hit_data.normal2.into_inner();
+            let slide_normal = Vec3::new(normal.x, normal.y, normal.z).normalize_or_zero();
+            let slide = remaining - slide_normal * remaining.dot(slide_normal);
+            let remainder_factor = (1.0 - toi).max(0.0);
+            if slide.length_squared() <= 1e-6 || remainder_factor <= 1e-3 {
+                break;
+            }
+
+            remaining = slide * remainder_factor;
+        }
+
+        current
     }
 
     pub(crate) fn step(&mut self, dt: f32, ecs: &mut World) {
@@ -239,5 +395,7 @@ impl PhysicsWorld {
                 }
             }
         }
+
+        self.refresh_queries();
     }
 }

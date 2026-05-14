@@ -103,6 +103,7 @@ export interface SavedControlBindings {
 export interface SavedWorldConfig {
   worldWidth:   number
   worldHeight:  number
+  worldDepth?:  number
   gridVisible:  boolean
   gridCellSize: number
   gravity?:     number
@@ -157,7 +158,7 @@ export interface EngineCommand {
 }
 
 export interface EngineEvent {
-  event: 'ready' | 'pong' | 'error' | 'model_loaded' | 'stopped' | 'entity_selected' | 'entity_deselected' | 'entity_hovered' | 'entity_unhovered' | 'scenario_loaded' | 'character_loaded' | 'camera_2d_updated' | 'background_loaded' | 'drawing_progress' | 'collider_created' | 'execution_area_created' | 'tool_cancelled' | 'pivot_selected' | 'physics_changed' | 'sprite_loaded' | 'sprite_removed' | 'sprites_list' | 'sound_loaded' | 'sound_removed' | 'sounds_list' | 'background_asset_loaded' | 'background_asset_removed' | 'backgrounds_list' | 'debug_metrics' | 'trigger_entered' | 'trigger_exited' | 'entity_removed' | 'quick_build_move' | 'quick_build_click' | 'animation_logical_resolved' | 'autosave_tick'
+  event: 'ready' | 'pong' | 'error' | 'model_loaded' | 'stopped' | 'entity_selected' | 'entity_deselected' | 'entity_hovered' | 'entity_unhovered' | 'scenario_loaded' | 'character_loaded' | 'camera_2d_updated' | 'background_loaded' | 'drawing_progress' | 'collider_created' | 'execution_area_created' | 'tool_cancelled' | 'pivot_selected' | 'physics_changed' | 'sprite_loaded' | 'sprite_removed' | 'sprites_list' | 'sound_loaded' | 'sound_removed' | 'sounds_list' | 'background_asset_loaded' | 'background_asset_removed' | 'backgrounds_list' | 'debug_metrics' | 'preview_playing_changed' | 'trigger_entered' | 'trigger_exited' | 'entity_removed' | 'quick_build_move' | 'quick_build_click' | 'animation_logical_resolved' | 'autosave_tick'
   [key: string]: unknown
 }
 

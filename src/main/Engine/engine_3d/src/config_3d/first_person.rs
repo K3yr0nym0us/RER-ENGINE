@@ -6,6 +6,7 @@ use crate::engine::State;
 
 pub(crate) const FIRST_PERSON_KEYBOARD_SPEED: f32 = 4.0;
 pub(crate) const FIRST_PERSON_MOUSE_SPEED: f32 = 0.0020;
+pub(crate) const FIRST_PERSON_COLLIDER_RADIUS: f32 = 0.40;
 
 impl State {
     pub(crate) fn is_first_person_runtime_active(&self) -> bool {
@@ -63,7 +64,26 @@ impl State {
             return;
         }
 
-        self.camera.target += movement.normalize() * FIRST_PERSON_KEYBOARD_SPEED * delta_time;
+        let requested_motion = movement.normalize() * FIRST_PERSON_KEYBOARD_SPEED * delta_time;
+        let next_target = self.physics.move_character_sphere(
+            self.camera.target,
+            requested_motion,
+            FIRST_PERSON_COLLIDER_RADIUS,
+        );
+        self.camera.target = self
+            .world_bounds_3d
+            .clamp_sphere_center(next_target, FIRST_PERSON_COLLIDER_RADIUS);
+        self.camera.distance = 0.01;
+    }
+
+    pub(crate) fn clamp_first_person_camera_to_bounds(&mut self) {
+        if self.camera_2d.is_some() {
+            return;
+        }
+
+        self.camera.target = self
+            .world_bounds_3d
+            .clamp_sphere_center(self.camera.target, FIRST_PERSON_COLLIDER_RADIUS);
         self.camera.distance = 0.01;
     }
 }
