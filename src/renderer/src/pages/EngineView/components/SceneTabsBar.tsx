@@ -8,6 +8,7 @@ import {
 	buildSavedPlayerTransform,
 	ensureFirstPersonPlayerOnLoad,
 } from '../../../defaults/firstPersonSceneRestore';
+import { setSceneCommandForSavedProject } from '../../../defaults/projectSceneLoad';
 import { useContextEngine } from '@engine';
 import { useModal } from '@modal';
 import { setSceneProjectState } from '../sceneStateStore';
@@ -203,7 +204,7 @@ export function SceneTabsBar({ initialSave, projectType, gameStyle }: Props) {
     } else {
       pendingFirstPersonViewRef.current = null;
     }
-    send({ cmd: 'set_scene', scene: 'empty' });
+    send({ cmd: 'set_scene', scene: setSceneCommandForSavedProject(projectType) });
 
     setWorldSize(
       scene.world.worldWidth,

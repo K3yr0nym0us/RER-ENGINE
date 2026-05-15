@@ -20,6 +20,7 @@ import {
 	applySavedFirstPersonView,
 	ensureFirstPersonPlayerOnLoad,
 } from '../../../defaults/firstPersonSceneRestore';
+import { setSceneCommandForSavedProject } from '../../../defaults/projectSceneLoad';
 import type { EngineAction, EngineInternalRefs, PendingRestore, Transform } from '../types';
 
 type RuntimeEngineEvent = {
@@ -128,7 +129,10 @@ export function createEngineEventHandler({
 			const baseSave = refs.initialSaveRef.current;
 			if (projectType) {
 				if (baseSave) {
-					window.engine.send({ cmd: 'set_scene', scene: 'empty' } as never);
+					window.engine.send({
+						cmd: 'set_scene',
+						scene: setSceneCommandForSavedProject(projectType),
+					} as never);
 				} else if (gameStyle === 'first-person' && projectType === '3D') {
 					window.engine.send({ cmd: 'set_scene', scene: 'first-person' } as never);
 				} else {
