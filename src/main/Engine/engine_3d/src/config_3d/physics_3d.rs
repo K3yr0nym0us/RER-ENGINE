@@ -314,11 +314,50 @@ impl PhysicsWorld {
     ) -> bool {
         self.refresh_queries();
 
-        let shape = Ball::new(radius.max(0.05));
+        let radius = radius.max(0.05);
+        let feet_y = position.y - radius;
+        let probe = extra_distance.max(0.05) + 0.15;
+        let filter = QueryFilter::default();
+
+        // Raycast desde los pies (Godot/Unity floor check) — detecta cajas y suelo.
+        let ray_origin = point![position.x, feet_y + 0.04, position.z];
+        let ray_dir = vector![0.0, -1.0, 0.0];
+        let ray = Ray::new(ray_origin, ray_dir);
+        if let Some((_, hit)) = self.query_pipeline.cast_ray_and_get_normal(
+            &self.bodies,
+            &self.colliders,
+            &ray,
+            probe,
+            true,
+            filter,
+        ) {
+            if hit.time_of_impact <= probe && hit.normal.y > 0.45 {
+                return true;
+            }
+        }
+
+        // Proyección bajo las suelas: superficie cercana en XZ (cajas, escalones).
+        let sole = point![position.x, feet_y, position.z];
+        if let Some((_, proj)) = self.query_pipeline.project_point(
+            &self.bodies,
+            &self.colliders,
+            &sole,
+            true,
+            filter,
+        ) {
+            let gap_y = feet_y - proj.point.y;
+            let horiz = ((position.x - proj.point.x).powi(2) + (position.z - proj.point.z).powi(2))
+                .sqrt();
+            if gap_y.abs() <= probe && gap_y >= -0.08 && horiz <= radius + 0.25 {
+                return true;
+            }
+        }
+
+        // Respaldo: shape-cast desde el centro del cuerpo.
+        let shape = Ball::new(radius);
         let shape_pos = Isometry::translation(position.x, position.y, position.z);
-        let probe = radius + extra_distance.max(0.01);
-        let shape_vel = vector![0.0, -probe, 0.0];
-        let hit = self.query_pipeline.cast_shape(
+        let shape_vel = vector![0.0, -(radius + probe), 0.0];
+        if let Some((_, hit_data)) = self.query_pipeline.cast_shape(
             &self.bodies,
             &self.colliders,
             &shape_pos,
@@ -327,16 +366,18 @@ impl PhysicsWorld {
             ShapeCastOptions {
                 max_time_of_impact: 1.0,
                 target_distance: 0.05,
-                stop_at_penetration: false,
-                compute_impact_geometry_on_penetration: false,
+                stop_at_penetration: true,
+                compute_impact_geometry_on_penetration: true,
             },
-            QueryFilter::default(),
-        );
-
-        hit.map_or(false, |(_, hit_data)| {
+            filter,
+        ) {
             let normal = hit_data.normal2.into_inner();
-            normal.y > 0.5
-        })
+            if normal.y > 0.45 {
+                return true;
+            }
+        }
+
+        false
     }
 
     /// Desplazamiento tipo `move_and_slide` (Godot) / `CharacterController.Move` (Unity):

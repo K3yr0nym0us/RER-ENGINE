@@ -5,21 +5,45 @@ use glam::Vec3;
 use crate::engine::State;
 
 pub(crate) const FIRST_PERSON_KEYBOARD_SPEED: f32 = 4.0;
+pub(crate) const FIRST_PERSON_SPRINT_MULTIPLIER: f32 = 3.0;
 pub(crate) const FIRST_PERSON_MOUSE_SPEED: f32 = 0.0020;
 pub(crate) const FIRST_PERSON_COLLIDER_RADIUS: f32 = 0.40;
 pub(crate) const FIRST_PERSON_EYE_OFFSET: f32 = 1.35;
 pub(crate) const FIRST_PERSON_GROUND_REST_Y: f32 = FIRST_PERSON_COLLIDER_RADIUS + 0.05;
-/// Margen para considerar que los pies están en el suelo (evita depender del shape-cast).
+/// Respaldo solo para el plano del mundo en y=0 cuando el shape-cast no reporta suelo.
 pub(crate) const FIRST_PERSON_FLOOR_EPSILON: f32 = 0.12;
 pub(crate) const FIRST_PERSON_JUMP_SPEED: f32 = 6.0;
+pub(crate) const FIRST_PERSON_GROUND_PROBE: f32 = 0.08;
 
 impl State {
     pub(crate) fn is_first_person_runtime_active(&self) -> bool {
         self.preview_playing && self.camera_2d.is_none()
     }
 
-    fn is_first_person_on_floor(&self, position: Vec3, velocity_y: f32) -> bool {
-        position.y <= FIRST_PERSON_GROUND_REST_Y + FIRST_PERSON_FLOOR_EPSILON && velocity_y <= 0.5
+    /// Pies sobre cualquier superficie con collider (cajas, suelo, etc.).
+    fn is_first_person_grounded(&mut self, position: Vec3, velocity_y: f32) -> bool {
+        if velocity_y > 0.5 {
+            return false;
+        }
+
+        if self.physics.is_character_grounded(
+            position,
+            FIRST_PERSON_COLLIDER_RADIUS,
+            FIRST_PERSON_GROUND_PROBE,
+        ) {
+            return true;
+        }
+
+        // Plano del mundo (checker) sin depender solo de la altura para plataformas elevadas.
+        position.y <= FIRST_PERSON_GROUND_REST_Y + FIRST_PERSON_FLOOR_EPSILON
+    }
+
+    fn first_person_move_speed(&self, pressed_inputs: &HashSet<String>) -> f32 {
+        let mut speed = FIRST_PERSON_KEYBOARD_SPEED;
+        if pressed_inputs.contains("SHIFT") {
+            speed *= FIRST_PERSON_SPRINT_MULTIPLIER;
+        }
+        speed
     }
 
     pub(crate) fn reset_first_person_motion(&mut self) {
@@ -29,12 +53,13 @@ impl State {
         self.camera.eye_height_offset = 0.0;
     }
 
-    /// Llamado al pulsar Space: aplica el impulso de inmediato (no espera al siguiente frame de render).
     pub(crate) fn queue_first_person_jump(&mut self) {
         if !self.is_first_person_runtime_active() {
             return;
         }
-        if self.is_first_person_on_floor(self.camera.target, self.first_person_velocity.y) {
+        let position = self.camera.target;
+        let velocity_y = self.first_person_velocity.y;
+        if self.is_first_person_grounded(position, velocity_y) {
             self.first_person_velocity.y = FIRST_PERSON_JUMP_SPEED;
             self.first_person_on_floor = false;
         }
@@ -55,7 +80,10 @@ impl State {
         if self.camera.target.y > eye_y - 0.25 {
             self.camera.target.y = FIRST_PERSON_GROUND_REST_Y;
         }
-        self.first_person_on_floor = true;
+        self.first_person_on_floor = self.is_first_person_grounded(
+            self.camera.target,
+            self.first_person_velocity.y,
+        );
         self.first_person_velocity = Vec3::ZERO;
     }
 
@@ -85,24 +113,23 @@ impl State {
 
         let dt = delta_time.min(0.05);
         let radius = FIRST_PERSON_COLLIDER_RADIUS;
+        let move_speed = self.first_person_move_speed(pressed_inputs);
         let mut position = self.camera.target;
         let mut velocity = self.first_person_velocity;
 
-        let mut on_floor = self.is_first_person_on_floor(position, velocity.y);
+        let mut on_floor = self.is_first_person_grounded(position, velocity.y);
 
         let gravity = self.physics.gravity_magnitude();
 
-        // Gravedad (Godot: solo si no está en el suelo).
         if !on_floor {
             velocity.y -= gravity * dt;
         } else if velocity.y < 0.0 {
             velocity.y = 0.0;
         }
 
-        // Salto: Space en el mismo HashSet que WASD + cola del evento de teclado.
         let jump_requested =
             pressed_inputs.contains("SPACE") || self.first_person_jump_queued;
-        if jump_requested && self.is_first_person_on_floor(position, velocity.y) {
+        if jump_requested && self.is_first_person_grounded(position, velocity.y) {
             velocity.y = FIRST_PERSON_JUMP_SPEED;
         }
 
@@ -125,7 +152,7 @@ impl State {
         }
 
         if wish.length_squared() > f32::EPSILON {
-            wish = wish.normalize() * FIRST_PERSON_KEYBOARD_SPEED;
+            wish = wish.normalize() * move_speed;
         }
         velocity.x = wish.x;
         velocity.z = wish.z;
@@ -135,14 +162,17 @@ impl State {
             velocity,
             dt,
             radius,
-            0.0,
+            FIRST_PERSON_GROUND_PROBE,
         );
         position = new_position;
 
-        on_floor = self.is_first_person_on_floor(position, velocity.y);
+        on_floor = self.is_first_person_grounded(position, velocity.y);
         if on_floor && velocity.y <= 0.0 {
             velocity.y = 0.0;
-            position.y = FIRST_PERSON_GROUND_REST_Y;
+            // Snap solo en el plano base del mundo, no en plataformas elevadas.
+            if position.y <= FIRST_PERSON_GROUND_REST_Y + FIRST_PERSON_FLOOR_EPSILON {
+                position.y = FIRST_PERSON_GROUND_REST_Y;
+            }
         }
 
         position = self
