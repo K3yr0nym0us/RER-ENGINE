@@ -12,29 +12,40 @@ import { ModalProvider } from '@modal';
 import { QuickBuildProvider } from '../../context/QuickBuildContext';
 import { useAutoSave } from '@hooks';
 
-import type { ProjectType, ProjectSaveData } from '@shared-types';
+import type { GameStyle, ProjectType, ProjectSaveData } from '@shared-types';
 
-export function EngineView({ projectType, initialSave, initialSavePath }: { projectType: ProjectType; initialSave?: ProjectSaveData | null; initialSavePath?: string | null }) {
+export function EngineView({
+  projectType,
+  gameStyle,
+  initialSave,
+  initialSavePath,
+}: {
+  projectType: ProjectType
+  gameStyle?: GameStyle
+  initialSave?: ProjectSaveData | null
+  initialSavePath?: string | null
+}) {
   const viewportRef = useRef<HTMLDivElement>(null)
 
   return (
-    <EngineProvider viewportRef={viewportRef} projectType={projectType} initialSave={initialSave}>
+    <EngineProvider viewportRef={viewportRef} projectType={projectType} gameStyle={gameStyle} initialSave={initialSave}>
       <QuickBuildProvider>
         <ModalProvider>
-          <EngineViewInner projectType={projectType} initialSave={initialSave} initialSavePath={initialSavePath} viewportRef={viewportRef} />
+          <EngineViewInner projectType={projectType} gameStyle={gameStyle} initialSave={initialSave} initialSavePath={initialSavePath} viewportRef={viewportRef} />
         </ModalProvider>
       </QuickBuildProvider>
     </EngineProvider>
   )
 }
 
-function EngineViewInner({ projectType, initialSave, initialSavePath, viewportRef }: {
+function EngineViewInner({ projectType, gameStyle, initialSave, initialSavePath, viewportRef }: {
   projectType: ProjectType
+  gameStyle?: GameStyle
   initialSave?: ProjectSaveData | null
   initialSavePath?: string | null
   viewportRef: React.RefObject<HTMLDivElement>
 }) {
-  const { handleSave, toggleAutoSave, hasSavedOnce, autoSaveEnabled } = useAutoSave({ projectType, initialSave, initialSavePath })
+  const { handleSave, toggleAutoSave, hasSavedOnce, autoSaveEnabled } = useAutoSave({ projectType, gameStyle, initialSave, initialSavePath })
 
   return (
     <div className="app-shell d-flex flex-column">

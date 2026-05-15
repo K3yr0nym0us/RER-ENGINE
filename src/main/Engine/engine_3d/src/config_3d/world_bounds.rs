@@ -7,7 +7,7 @@ pub(crate) const DEFAULT_WORLD_WIDTH_3D: f32 = 100.0;
 pub(crate) const DEFAULT_WORLD_HEIGHT_3D: f32 = 50.0;
 pub(crate) const DEFAULT_WORLD_DEPTH_3D: f32 = 100.0;
 const MIN_WORLD_DIMENSION_3D: f32 = 1.0;
-const WORLD_BOUNDS_COLOR: [f32; 4] = [1.0, 0.35, 0.35, 0.24];
+const WORLD_BOUNDS_COLOR: [f32; 4] = [1.0, 0.35, 0.35, 0.55];
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct WorldBounds3D {

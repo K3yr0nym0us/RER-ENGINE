@@ -77,6 +77,10 @@ pub struct State {
     pub(crate) first_person_velocity: GlamVec3,
     pub(crate) first_person_on_floor: bool,
     pub(crate) first_person_jump_queued: bool,
+    /// Teclas acumuladas por scripts de control en el frame actual (primera persona).
+    pub(crate) first_person_script_input: HashSet<String>,
+    /// Entidad `[Player]` de la plantilla first-person (bindings de control).
+    pub(crate) first_person_player_entity: Option<EntityId>,
     pub(crate) tool_overlay_buffer: GizmoBuffer,
     pub(crate) snap_hint_uv: Option<[f32; 4]>,
     pub(crate) snap_hint_size: (f32, f32),

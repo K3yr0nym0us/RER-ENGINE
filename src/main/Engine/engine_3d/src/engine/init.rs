@@ -424,6 +424,8 @@ impl State {
             first_person_velocity: glam::Vec3::ZERO,
             first_person_on_floor: true,
             first_person_jump_queued: false,
+            first_person_script_input: HashSet::new(),
+            first_person_player_entity: None,
             tool_overlay_buffer: tool_overlay_buffer_init,
             snap_hint_uv,
             snap_hint_size,

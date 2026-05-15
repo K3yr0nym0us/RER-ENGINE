@@ -25,7 +25,7 @@ use std::path::Path;
 use glam::Vec3 as GlamVec3;
 
 use crate::config_shared::point_to_segment_2d;
-use crate::ecs::{EntityId, MeshComponent, Transform};
+use crate::ecs::{EntityId, MeshComponent, NonSelectable, Transform};
 use crate::engine::State;
 use crate::ipc::{send_event, EngineEvent};
 
@@ -85,6 +85,49 @@ impl State {
         }
     }
 
+    fn ray_intersects_aabb(
+        origin: GlamVec3,
+        dir: GlamVec3,
+        center: GlamVec3,
+        half: GlamVec3,
+    ) -> Option<f32> {
+        let min = center - half;
+        let max = center + half;
+        let mut tmin = f32::NEG_INFINITY;
+        let mut tmax = f32::INFINITY;
+
+        let oa = origin.to_array();
+        let da = dir.to_array();
+        let mna = min.to_array();
+        let mxa = max.to_array();
+        for i in 0..3 {
+            let o = oa[i];
+            let d = da[i];
+            let mn = mna[i];
+            let mx = mxa[i];
+            if d.abs() < 1e-8 {
+                if o < mn || o > mx {
+                    return None;
+                }
+            } else {
+                let inv = 1.0 / d;
+                let mut t1 = (mn - o) * inv;
+                let mut t2 = (mx - o) * inv;
+                if t1 > t2 {
+                    std::mem::swap(&mut t1, &mut t2);
+                }
+                tmin = tmin.max(t1);
+                tmax = tmax.min(t2);
+                if tmax < tmin {
+                    return None;
+                }
+            }
+        }
+
+        let t = if tmin >= 0.0 { tmin } else { tmax };
+        if t >= 0.0 { Some(t) } else { None }
+    }
+
     fn ray_cast(&self, pixel_x: f32, pixel_y: f32) -> Option<EntityId> {
         use glam::Vec4;
 
@@ -106,19 +149,20 @@ impl State {
 
         let mut closest: Option<(f32, EntityId)> = None;
         for &entity in self.world.entities() {
-            if let Some(transform) = self.world.get::<Transform>(entity) {
-                let center = transform.position;
-                let radius =
-                    transform.scale.x.max(transform.scale.y).max(transform.scale.z) * 0.866;
-                let oc = ray_origin - center;
-                let b = oc.dot(world_dir);
-                let c = oc.dot(oc) - radius * radius;
-                let disc = b * b - c;
-                if disc >= 0.0 {
-                    let t = -b - disc.sqrt();
-                    if t > 0.0 && closest.map_or(true, |(ct, _)| t < ct) {
-                        closest = Some((t, entity));
-                    }
+            if self.world.get::<NonSelectable>(entity).is_some()
+                || self.world.get::<MeshComponent>(entity).is_none()
+            {
+                continue;
+            }
+            let Some(transform) = self.world.get::<Transform>(entity) else {
+                continue;
+            };
+            let half = transform.scale * 0.5;
+            if let Some(t) =
+                Self::ray_intersects_aabb(ray_origin, world_dir, transform.position, half)
+            {
+                if closest.map_or(true, |(ct, _)| t < ct) {
+                    closest = Some((t, entity));
                 }
             }
         }
@@ -322,6 +366,20 @@ impl State {
         for &sel_id in &selected_ids {
             if let Some(t) = self.world.get_mut::<Transform>(sel_id) {
                 t.position += axis_world * world_delta;
+            }
+            if let Some(t) = self.world.get::<Transform>(sel_id).cloned() {
+                if self.physics.has_physics(sel_id) {
+                    let half = [
+                        (t.scale.x * 0.5).max(0.01),
+                        (t.scale.y * 0.5).max(0.01),
+                        (t.scale.z * 0.5).max(0.01),
+                    ];
+                    self.physics.sync_entity_physics_from_transform(
+                        sel_id,
+                        t.position.to_array(),
+                        half,
+                    );
+                }
             }
         }
 

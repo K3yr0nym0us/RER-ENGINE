@@ -43,6 +43,10 @@ pub enum ScriptCmd {
     MoveEntityFacing { id: u32, speed: f32, amount_x: f32, dir_y: f32 },
     /// Log a message to the engine console (forwarded via IPC).
     Log { message: String },
+    /// Marca una tecla como pulsada para movimiento primera persona (control script).
+    FpPressKey { key: String },
+    /// Encola salto en primera persona (control script).
+    FpJump,
 }
 
 // ---------------------------------------------------------------------------
@@ -497,6 +501,19 @@ impl ScriptEngine {
         }).expect("create log fn");
         let _ = globals.set("__api_log", log_fn);
 
+        let fp_press_key = lua.create_function(|lua_ctx, key: String| {
+            push_cmd(lua_ctx, "fp_press_key", |t| {
+                t.set("key", key)?;
+                Ok(())
+            })
+        }).expect("create fp_press_key fn");
+        let _ = globals.set("__api_fp_press_key", fp_press_key);
+
+        let fp_jump = lua.create_function(|lua_ctx, _: ()| {
+            push_cmd(lua_ctx, "fp_jump", |_| Ok(()))
+        }).expect("create fp_jump fn");
+        let _ = globals.set("__api_fp_jump", fp_jump);
+
         // engine table: the public API that scripts use
         // engine.move_to, engine.translate, etc.
         let engine_table = lua.create_table().expect("engine table");
@@ -510,6 +527,8 @@ impl ScriptEngine {
         let _ = engine_table.set("move_entity",    globals.get::<LuaFunction>("__api_move_entity").ok());
         let _ = engine_table.set("move_entity_facing", globals.get::<LuaFunction>("__api_move_entity_facing").ok());
         let _ = engine_table.set("log",            globals.get::<LuaFunction>("__api_log").ok());
+        let _ = engine_table.set("fp_press_key",   globals.get::<LuaFunction>("__api_fp_press_key").ok());
+        let _ = engine_table.set("fp_jump",        globals.get::<LuaFunction>("__api_fp_jump").ok());
         let _ = globals.set("engine", engine_table);
 
     }
@@ -662,6 +681,10 @@ fn parse_cmd_table(t: LuaTable) -> LuaResult<ScriptCmd> {
         "log" => Ok(ScriptCmd::Log {
             message: t.get("message")?,
         }),
+        "fp_press_key" => Ok(ScriptCmd::FpPressKey {
+            key: t.get("key")?,
+        }),
+        "fp_jump" => Ok(ScriptCmd::FpJump),
         other => Err(LuaError::runtime(format!("unknown script cmd: {other}"))),
     }
 }

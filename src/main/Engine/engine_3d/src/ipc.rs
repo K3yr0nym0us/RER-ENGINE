@@ -287,7 +287,7 @@ pub struct ControlBindingsData {
 #[serde(tag = "event", rename_all = "snake_case")]
 #[allow(dead_code)]
 pub enum EngineEvent {
-    Ready,
+    Ready { gravity: f32 },
     Pong,
     Error { message: String },
     ModelLoaded { id: u32 },

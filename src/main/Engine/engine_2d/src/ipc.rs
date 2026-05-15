@@ -290,7 +290,7 @@ pub struct ControlBindingsData {
 #[derive(Debug, Serialize)]
 #[serde(tag = "event", rename_all = "snake_case")]
 pub enum EngineEvent {
-    Ready,
+    Ready { gravity: f32 },
     Pong,
     Error { message: String },
     /// Emitido cuando el usuario hace click izquierdo sobre una entidad.

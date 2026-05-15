@@ -230,11 +230,24 @@ impl State {
                         saved.1 = Vec3::from(s);
                     }
                 }
-                if let Some(p) = position {
-                    if self.camera_2d.is_some() {
+                if self.camera_2d.is_some() {
+                    if let Some(p) = position {
                         self.physics_2d.teleport_entity(id, p[0], p[1]);
-                    } else {
-                        self.physics.set_entity_body_position(id, p);
+                    }
+                } else if let Some(t) = self.world.get::<Transform>(id).cloned() {
+                    if self.physics.has_physics(id)
+                        && (position.is_some() || rotation.is_some() || scale.is_some())
+                    {
+                        let half = [
+                            (t.scale.x * 0.5).max(0.01),
+                            (t.scale.y * 0.5).max(0.01),
+                            (t.scale.z * 0.5).max(0.01),
+                        ];
+                        self.physics.sync_entity_physics_from_transform(
+                            id,
+                            t.position.to_array(),
+                            half,
+                        );
                     }
                 }
                 if let Some(prev) = before {

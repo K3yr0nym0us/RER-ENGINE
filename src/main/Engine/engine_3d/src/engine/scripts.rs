@@ -295,6 +295,12 @@ impl State {
                 ScriptCmd::Log { message } => {
                     log::debug!("[script] {message}");
                 }
+                ScriptCmd::FpPressKey { key } => {
+                    self.first_person_script_input.insert(key);
+                }
+                ScriptCmd::FpJump => {
+                    self.queue_first_person_jump();
+                }
             }
         }
     }

@@ -1,4 +1,5 @@
 import { useEffect, useRef, type Dispatch, type RefObject } from 'react';
+import type { GameStyle } from '@shared-types';
 import type { Locale } from '../LanguageContext';
 import { createEngineEventHandler } from './createEngineEventHandler';
 import type { EngineAction, EngineInternalRefs } from '../types';
@@ -9,6 +10,7 @@ interface UseEngineEffectsParams {
 	addLog: (text: string, isError?: boolean) => void
 	viewportRef: RefObject<HTMLDivElement | null>
 	projectType?: string
+	gameStyle?: GameStyle
 	reportBounds: () => void
 	reportBoundsDebounced: () => void
 	applyInitialAnimationFrame: (entityId: number, animations?: any[]) => void
@@ -21,6 +23,7 @@ export function useEngineEffects({
 	addLog,
 	viewportRef,
 	projectType,
+	gameStyle,
 	reportBounds,
 	reportBoundsDebounced,
 	applyInitialAnimationFrame,
@@ -30,12 +33,14 @@ export function useEngineEffects({
 	const reportBoundsDebouncedRef = useRef(reportBoundsDebounced);
 	const addLogRef = useRef(addLog);
 	const projectTypeRef = useRef(projectType);
+	const gameStyleRef = useRef(gameStyle);
 	const applyInitialAnimationFrameRef = useRef(applyInitialAnimationFrame);
 	const engineEventHandlerRef = useRef(createEngineEventHandler({
 		dispatch,
 		refs,
 		addLog,
 		projectType,
+		gameStyle,
 		applyInitialAnimationFrame,
 		setLocale,
 	}));
@@ -45,16 +50,18 @@ export function useEngineEffects({
 		reportBoundsDebouncedRef.current = reportBoundsDebounced;
 		addLogRef.current = addLog;
 		projectTypeRef.current = projectType;
+		gameStyleRef.current = gameStyle;
 		applyInitialAnimationFrameRef.current = applyInitialAnimationFrame;
 		engineEventHandlerRef.current = createEngineEventHandler({
 			dispatch,
 			refs,
 			addLog,
 			projectType,
+			gameStyle,
 			applyInitialAnimationFrame,
 			setLocale,
 		});
-	}, [dispatch, refs, addLog, projectType, applyInitialAnimationFrame, reportBounds, reportBoundsDebounced, setLocale]);
+	}, [dispatch, refs, addLog, projectType, gameStyle, applyInitialAnimationFrame, reportBounds, reportBoundsDebounced, setLocale]);
 
 	useEffect(() => {
 		const onRequestViewportBounds = () => reportBoundsRef.current();

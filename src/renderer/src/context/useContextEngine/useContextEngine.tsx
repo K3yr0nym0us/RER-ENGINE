@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useReducer, useRef } from 'react';
-import type { ProjectSaveData } from '@shared-types';
+import type { GameStyle, ProjectSaveData } from '@shared-types';
 import { useLanguage } from '../LanguageContext';
 import { createEngineActions } from './hooks/createEngineActions';
 import { useEngineEffects } from './hooks/useEngineEffects';
@@ -21,11 +21,13 @@ export function EngineProvider({
 	children,
 	viewportRef,
 	projectType,
+	gameStyle,
 	initialSave,
 }: {
 	children: React.ReactNode;
 	viewportRef: React.RefObject<HTMLDivElement | null>;
 	projectType?: string;
+	gameStyle?: GameStyle;
 	initialSave?: ProjectSaveData | null;
 }) {
 	const { setLocale } = useLanguage();
@@ -90,6 +92,7 @@ export function EngineProvider({
 		addLog,
 		viewportRef,
 		projectType,
+		gameStyle,
 		reportBounds,
 		reportBoundsDebounced,
 		applyInitialAnimationFrame: actions.applyInitialAnimationFrame,

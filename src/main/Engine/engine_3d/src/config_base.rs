@@ -3,9 +3,10 @@
 use crate::config_3d::physics_3d::PhysicsWorld;
 use crate::config_3d::{Camera, WorldBounds3D};
 use crate::config_compat::{ActiveTool, PhysicsWorld2D};
-use crate::ecs::{MeshComponent, Transform};
+use crate::ecs::{MeshComponent, NonSelectable, Transform};
 use crate::engine::State;
 use crate::gizmo;
+use crate::ipc::{send_event, EngineEvent};
 use crate::mesh;
 use crate::scripting::ScriptEngine;
 
@@ -56,6 +57,8 @@ impl State {
         self.script_engine = ScriptEngine::new()
             .expect("Error al reinicializar el motor de scripting Lua");
         self.control_bindings_by_entity.clear();
+        self.first_person_script_input.clear();
+        self.first_person_player_entity = None;
         self.undo_stack.clear();
         self.redo_stack.clear();
         self.is_applying_undo = false;
@@ -94,6 +97,11 @@ impl State {
                 tex_idx: 0,
             },
         );
+        self.world.insert(plane_id, NonSelectable);
+        if let Some(t) = self.world.get_mut::<Transform>(plane_id) {
+            t.position = glam::Vec3::new(0.0, 0.0, 0.0);
+            t.scale = glam::Vec3::new(20.0, 0.02, 20.0);
+        }
         self.physics.add_static_ground();
 
         let block_mesh_idx = self.meshes.len();
@@ -117,10 +125,11 @@ impl State {
                     t.position = glam::Vec3::from_array(position);
                     t.scale = glam::Vec3::from_array(scale);
                 }
-                self.physics.add_scene_static_box(
-                    position,
-                    [scale[0] * 0.5, scale[1] * 0.5, scale[2] * 0.5],
-                );
+                let half = [scale[0] * 0.5, scale[1] * 0.5, scale[2] * 0.5];
+                self.physics
+                    .set_entity_physics(id, true, "static", position, half);
+                self.scenario_entities.push(id);
+                send_event(&EngineEvent::ModelLoaded { id });
             };
 
         // Escenario base visible al frente para que first-person no arranque en vacío.
@@ -130,6 +139,10 @@ impl State {
         spawn_block("Crate_A", [-2.5, 0.75, 11.0], [1.5, 1.5, 1.5]);
         spawn_block("Crate_B", [2.0, 1.25, 15.0], [2.0, 2.5, 2.0]);
         spawn_block("Pillar", [0.0, 2.5, 21.0], [1.8, 5.0, 1.8]);
+
+        // Límites del mundo: el wireframe es centrado en el origen (z ∈ [-depth/2, depth/2]).
+        // Los muros del placeholder llegan hasta z≈28; depth 36 dejaba max z=18 y el render los ocultaba.
+        self.set_world_bounds_3d_size(28.0, 14.0, Some(56.0));
 
         self.camera = Camera::new();
         self.camera.target = glam::Vec3::new(
@@ -150,7 +163,19 @@ impl State {
             a: 1.0,
         };
 
+        self.spawn_first_person_player();
+
         log::info!("Escena first-person cargada: arena base del editor 3D");
+    }
+
+    fn spawn_first_person_player(&mut self) {
+        let id = self.world.spawn(Some("Player"));
+        self.character_entities.push(id);
+        self.first_person_player_entity = Some(id);
+        send_event(&EngineEvent::CharacterLoaded {
+            id,
+            path: "[Player]".to_string(),
+        });
     }
 
     /// Inicializa la escena scratch: un cubo de referencia con cámara orbital.

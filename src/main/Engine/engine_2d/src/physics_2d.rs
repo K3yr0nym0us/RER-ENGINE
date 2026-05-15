@@ -28,6 +28,7 @@ mod kinematic_gravity;
 use std::collections::{HashMap, HashSet};
 
 use rapier3d::prelude::*;
+use rer_engine_shared::DEFAULT_GRAVITY_MAGNITUDE;
 use rapier3d::control::{CharacterLength, KinematicCharacterController};
 
 use crate::ecs::{EntityId, Transform, World};
@@ -76,7 +77,7 @@ fn default_kinematic_character() -> KinematicCharacterController {
 impl Default for PhysicsWorld2D {
     fn default() -> Self {
         Self {
-            gravity:            vector![0.0, -9.81, 0.0],
+            gravity:            vector![0.0, -DEFAULT_GRAVITY_MAGNITUDE, 0.0],
             integration_params: IntegrationParameters::default(),
             physics_pipeline:   PhysicsPipeline::new(),
             island_manager:     IslandManager::new(),
@@ -109,6 +110,11 @@ impl PhysicsWorld2D {
 
     /// Número de rigid bodies activos en el mundo físico 2D.
     pub(crate) fn body_count(&self) -> u32 { self.bodies.len() as u32 }
+
+    /// Gravedad positiva hacia abajo (m/s²).
+    pub(crate) fn gravity_magnitude(&self) -> f32 {
+        self.gravity.y.abs()
+    }
 
     /// Cambia la gravedad del mundo físico 2D en el eje Y (negativo = hacia abajo).
     pub(crate) fn set_gravity(&mut self, gravity_y: f32) {

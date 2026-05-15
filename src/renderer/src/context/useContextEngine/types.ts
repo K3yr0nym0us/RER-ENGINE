@@ -1,5 +1,5 @@
 import type { MutableRefObject } from 'react';
-import type { BackgroundInfo, BluePrintEntry, DebugMetrics, ProjectSaveData, SavedControlBindings, SoundInfo, SpriteInfo } from '@shared-types';
+import { DEFAULT_GRAVITY_MAGNITUDE, type BackgroundInfo, type BluePrintEntry, type DebugMetrics, type ProjectSaveData, type SavedControlBindings, type SoundInfo, type SpriteInfo } from '@shared-types';
 
 export interface Entity {
 	id: number
@@ -60,7 +60,7 @@ export const DEFAULT_WORLD_CONFIG: WorldConfig = {
 	worldDepth: 100,
 	gridVisible: true,
 	gridCellSize: 1,
-	gravity: 9.81,
+	gravity: DEFAULT_GRAVITY_MAGNITUDE,
 	targetFps: 60,
 };
 

@@ -15,6 +15,9 @@ export interface ProjectConfig {
   gameStyle: GameStyle
 }
 
+/** Debe coincidir con `DEFAULT_GRAVITY_MAGNITUDE` en `engine_shared` (Rust). */
+export const DEFAULT_GRAVITY_MAGNITUDE = 15
+
 // ── Estado completo guardado en disco ───────────────────────────────────────
 
 export interface SavedEntity {
@@ -152,8 +155,66 @@ export interface OpenProjectResult {
 }
 
 export interface EngineCommand {
-  cmd: 'ping' | 'shutdown' | 'set_clear_color' | 'resize' | 'set_bounds' | 'load_model' | 'set_transform' | 'set_entity_name' | 'set_scene' | 'load_scenario' | 'set_scenario_scale' | 'duplicate_scenario' | 'load_character' | 'set_character_scale' | 'duplicate_character' | 'remove_entity' | 'set_world_size' | 'set_grid_visible' | 'set_grid_cell_size' | 'set_target_fps' | 'set_ctrl_held' | 'set_physics' | 'set_active_tool' | 'create_collider_from_points' | 'create_execution_area_from_points' | 'play_animation_frame' | 'restore_animation_frame' | 'set_pivot_edit_mode' | 'cancel_pivot_edit_mode' | 'set_logical_area_mode' | 'cancel_logical_area_mode' | 'play_audio' | 'stop_audio' | 'set_animation' | 'remove_animation' | 'set_default_animation' | 'play_animation' | 'stop_animation' | 'load_script' | 'set_control_bindings' | 'unload_script' | 'load_sprite' | 'remove_sprite' | 'get_sprites_list' | 'load_sound' | 'remove_sound' | 'get_sounds_list' | 'load_background_asset' | 'remove_background_asset' | 'get_backgrounds_list' | 'set_preview_playing' | 'run_control_script' | 'undo' | 'clear_background' | 'reload_asset' | 'set_locale' | 'set_autosave' | 'set_debug_mode''
-    cmd: 'ping' | 'shutdown' | 'set_clear_color' | 'resize' | 'set_bounds' | 'load_model' | 'set_transform' | 'set_entity_name' | 'set_scene' | 'load_scenario' | 'set_scenario_scale' | 'load_character' | 'set_character_scale' | 'remove_entity' | 'set_world_size' | 'set_grid_visible' | 'set_grid_cell_size' | 'set_target_fps' | 'set_ctrl_held' | 'set_physics' | 'set_active_tool' | 'create_collider_from_points' | 'create_execution_area_from_points' | 'play_animation_frame' | 'restore_animation_frame' | 'set_pivot_edit_mode' | 'cancel_pivot_edit_mode' | 'set_logical_area_mode' | 'cancel_logical_area_mode' | 'play_audio' | 'stop_audio' | 'set_animation' | 'remove_animation' | 'set_default_animation' | 'play_animation' | 'stop_animation' | 'load_script' | 'set_control_bindings' | 'unload_script' | 'load_sprite' | 'remove_sprite' | 'get_sprites_list' | 'load_sound' | 'remove_sound' | 'get_sounds_list' | 'load_background_asset' | 'remove_background_asset' | 'get_backgrounds_list' | 'set_preview_playing' | 'run_control_script' | 'undo' | 'clear_background' | 'reload_asset' | 'set_locale' | 'set_autosave' | 'set_debug_mode'
+  cmd:
+    | 'ping'
+    | 'shutdown'
+    | 'set_clear_color'
+    | 'resize'
+    | 'set_bounds'
+    | 'load_model'
+    | 'set_transform'
+    | 'set_entity_name'
+    | 'set_scene'
+    | 'load_scenario'
+    | 'set_scenario_scale'
+    | 'duplicate_scenario'
+    | 'load_character'
+    | 'set_character_scale'
+    | 'duplicate_character'
+    | 'remove_entity'
+    | 'set_world_size'
+    | 'set_grid_visible'
+    | 'set_grid_cell_size'
+    | 'set_target_fps'
+    | 'set_gravity'
+    | 'set_ctrl_held'
+    | 'set_physics'
+    | 'set_active_tool'
+    | 'create_collider_from_points'
+    | 'create_execution_area_from_points'
+    | 'play_animation_frame'
+    | 'restore_animation_frame'
+    | 'set_pivot_edit_mode'
+    | 'cancel_pivot_edit_mode'
+    | 'set_logical_area_mode'
+    | 'cancel_logical_area_mode'
+    | 'play_audio'
+    | 'stop_audio'
+    | 'set_animation'
+    | 'remove_animation'
+    | 'set_default_animation'
+    | 'play_animation'
+    | 'stop_animation'
+    | 'load_script'
+    | 'set_control_bindings'
+    | 'unload_script'
+    | 'load_sprite'
+    | 'remove_sprite'
+    | 'get_sprites_list'
+    | 'load_sound'
+    | 'remove_sound'
+    | 'get_sounds_list'
+    | 'load_background_asset'
+    | 'remove_background_asset'
+    | 'get_backgrounds_list'
+    | 'set_preview_playing'
+    | 'run_control_script'
+    | 'undo'
+    | 'clear_background'
+    | 'reload_asset'
+    | 'set_locale'
+    | 'set_autosave'
+    | 'set_debug_mode'
   [key: string]: unknown
 }
 

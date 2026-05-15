@@ -358,8 +358,10 @@ impl ApplicationHandler<EngineCommand> for App {
 
         let state = pollster::block_on(engine::State::new(Arc::clone(&window), self.embed.is_some()));
 
-        // Notificar a Electron que el motor está listo
-        ipc::send_event(&EngineEvent::Ready);
+        // Notificar a Electron que el motor está listo (gravedad = valor interno del motor)
+        ipc::send_event(&EngineEvent::Ready {
+            gravity: state.physics.gravity_magnitude(),
+        });
 
         self.state = Some(state);
     }

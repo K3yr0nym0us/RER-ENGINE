@@ -1,3 +1,6 @@
+/// Magnitud de gravedad por defecto del mundo (m/s², positiva = hacia abajo).
+pub const DEFAULT_GRAVITY_MAGNITUDE: f32 = 15.0;
+
 pub fn point_to_segment_2d(px: f32, py: f32, ax: f32, ay: f32, bx: f32, by: f32) -> f32 {
     let dx = bx - ax;
     let dy = by - ay;

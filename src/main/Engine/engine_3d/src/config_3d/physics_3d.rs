@@ -6,6 +6,8 @@ use glam::Vec3;
 use rapier3d::prelude::*;
 use rapier3d::parry::query::ShapeCastOptions;
 
+use rer_engine_shared::DEFAULT_GRAVITY_MAGNITUDE;
+
 use crate::config_3d::WorldBounds3D;
 use crate::ecs::{EntityId, Transform, World};
 
@@ -38,7 +40,7 @@ pub(crate) struct PhysicsWorld {
 impl Default for PhysicsWorld {
     fn default() -> Self {
         Self {
-            gravity: vector![0.0, -9.81, 0.0],
+            gravity: vector![0.0, -DEFAULT_GRAVITY_MAGNITUDE, 0.0],
             integration_params: IntegrationParameters::default(),
             physics_pipeline: PhysicsPipeline::new(),
             island_manager: IslandManager::new(),
@@ -238,6 +240,24 @@ impl PhysicsWorld {
             body.set_translation(vector![position[0], position[1], position[2]], true);
         }
         self.refresh_queries();
+    }
+
+    /// Recrea el cuerpo/collider según el transform actual (editor: mover y escalar).
+    pub(crate) fn sync_entity_physics_from_transform(
+        &mut self,
+        entity: EntityId,
+        position: [f32; 3],
+        half_extents: [f32; 3],
+    ) {
+        if !self.entity_bodies.contains_key(&entity) {
+            return;
+        }
+        let body_type = self
+            .entity_body_types
+            .get(&entity)
+            .cloned()
+            .unwrap_or_else(|| "static".to_string());
+        self.set_entity_physics(entity, true, &body_type, position, half_extents);
     }
 
     pub(crate) fn remove_body(&mut self, handle: RigidBodyHandle) {

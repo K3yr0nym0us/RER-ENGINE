@@ -56,5 +56,12 @@ export default function App() {
     )
   }
 
-  return <EngineView projectType={projectType} initialSave={initialSave} initialSavePath={initialSavePath} />
+  return (
+    <EngineView
+      projectType={projectType}
+      gameStyle={gameStyle ?? undefined}
+      initialSave={initialSave}
+      initialSavePath={initialSavePath}
+    />
+  )
 }
