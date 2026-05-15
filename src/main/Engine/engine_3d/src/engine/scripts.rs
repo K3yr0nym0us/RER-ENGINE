@@ -301,6 +301,15 @@ impl State {
                 ScriptCmd::FpJump => {
                     self.queue_first_person_jump();
                 }
+                ScriptCmd::FpSetWalkSpeed(speed) => {
+                    self.first_person_lua_walk_speed = Some(speed.max(0.0));
+                }
+                ScriptCmd::FpSetSprintMultiplier(mult) => {
+                    self.first_person_lua_sprint_multiplier = Some(mult.max(0.0));
+                }
+                ScriptCmd::FpSetJumpSpeed(speed) => {
+                    self.first_person_lua_jump_speed = Some(speed.max(0.0));
+                }
             }
         }
     }

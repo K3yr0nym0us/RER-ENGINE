@@ -18,6 +18,35 @@ export interface ProjectConfig {
 /** Debe coincidir con `DEFAULT_GRAVITY_MAGNITUDE` en `engine_shared` (Rust). */
 export const DEFAULT_GRAVITY_MAGNITUDE = 15
 
+/** Rutas simbólicas de entidad (no son archivos en disco). */
+export const ENTITY_MARKER_PATHS = [
+  '[EditorBox]',
+  '[Player]',
+  '[Colisionador]',
+  '[ExecutionArea]',
+] as const
+
+export type EntityMarkerPath = (typeof ENTITY_MARKER_PATHS)[number]
+
+export function entityPathMarker(p: string | null | undefined): EntityMarkerPath | null {
+  if (!p) return null
+  const marker = p.split(/[/\\]/).pop() ?? p
+  return (ENTITY_MARKER_PATHS as readonly string[]).includes(marker)
+    ? (marker as EntityMarkerPath)
+    : null
+}
+
+export function isEditorBoxPath(p: string | null | undefined): boolean {
+  return entityPathMarker(p) === '[EditorBox]'
+}
+
+export function isPlayerPath(p: string | null | undefined): boolean {
+  return entityPathMarker(p) === '[Player]'
+}
+
+/** Escala del mesh placeholder del jugador FP (debe coincidir con `engine_3d`). */
+export const FIRST_PERSON_PLAYER_BODY_SCALE: [number, number, number] = [0.8, 1.7, 0.8]
+
 // ── Estado completo guardado en disco ───────────────────────────────────────
 
 export interface SavedEntity {
@@ -113,13 +142,23 @@ export interface SavedWorldConfig {
   targetFps:    number
 }
 
+/** Vista del jugador en escena (cámara FP en 3D; transform de entidad en 2D). */
+export interface SavedPlayerTransform {
+  position: [number, number, number]
+  scale:    [number, number, number]
+  /** Primera persona 3D: yaw de cámara en radianes. */
+  yaw?:     number
+  /** Primera persona 3D: pitch de cámara en radianes. */
+  pitch?:   number
+}
+
 export interface SavedScene {
   id:             number
   name:           string
   world:          SavedWorldConfig
   backgroundPath: string | null
   entities:       SavedEntity[]
-  playerTransform:{ position: [number, number, number]; scale: [number, number, number] } | null
+  playerTransform: SavedPlayerTransform | null
   camera2d:       { x: number; y: number; halfH: number } | null
   sprites:        Array<{ name: string; path: string }>
 }
@@ -134,7 +173,7 @@ export interface ProjectSaveData {
   world:           SavedWorldConfig
   backgroundPath:  string | null
   entities:        SavedEntity[]
-  playerTransform: { position: [number, number, number]; scale: [number, number, number] } | null
+  playerTransform: SavedPlayerTransform | null
   camera2d:        { x: number; y: number; halfH: number } | null
   savedAt:         string   // ISO timestamp
   /** Sprites precargados en el proyecto (nombre -> ruta relativa). */
@@ -228,6 +267,10 @@ export interface DebugMetrics {
   frame_time_ms:  number
   draw_calls:     number
   physics_bodies: number
+  /** Primera persona 3D: posición de pies (camera.target). */
+  first_person_position?: [number, number, number]
+  first_person_yaw?:     number
+  first_person_pitch?:   number
 }
 
 export interface Camera2dUpdated {

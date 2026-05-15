@@ -49,7 +49,7 @@ function EngineViewInner({ projectType, gameStyle, initialSave, initialSavePath,
 
   return (
     <div className="app-shell d-flex flex-column">
-      <SceneTabsBar initialSave={initialSave} projectType={projectType} />
+      <SceneTabsBar initialSave={initialSave} projectType={projectType} gameStyle={gameStyle} />
 
       <div className="d-flex flex-grow-1 overflow-hidden">
 

@@ -3,6 +3,8 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useContextEngine } from '@engine';
 import { useLanguage } from '@context';
 import type { GameStyle, ProjectType, ProjectSaveData, SavedScene } from '@shared-types';
+import { isEditorBoxPath, isPlayerPath } from '@shared-types';
+import { buildSavedPlayerTransform } from '../defaults/firstPersonSceneRestore';
 import { getSceneProjectState } from '../pages/EngineView/sceneStateStore';
 
 interface UseAutoSaveOptions {
@@ -26,7 +28,7 @@ export function useAutoSave({
   initialSave = null,
   initialSavePath = null,
 }: UseAutoSaveOptions = {}): UseAutoSaveReturn {
-  const { worldConfig, backgroundPath, selectedEntity, entityTransformsRef, entityMetaRef, playerEntityIdRef, camera2dRef, loadedSpritesInfo, blueprints, sounds, backgrounds } = useContextEngine()
+  const { worldConfig, backgroundPath, selectedEntity, entityTransformsRef, entityMetaRef, playerEntityIdRef, firstPersonViewRef, camera2dRef, loadedSpritesInfo, blueprints, sounds, backgrounds } = useContextEngine()
   const { locale } = useLanguage()
   const [hasSavedOnce, setHasSavedOnce] = useState(Boolean(initialSavePath))
   const [autoSaveEnabled, setAutoSaveEnabled] = useState(false)
@@ -75,9 +77,7 @@ export function useAutoSave({
     }
 
     const buildCurrentSceneEntities = () => Object.entries(meta)
-      .filter(([idStr, m]) =>
-        !(m.kind === 'character' && m.path === '[Player]' && Number(idStr) === playerId)
-      )
+      .filter(([, m]) => !(m.kind === 'character' && isPlayerPath(m.path)))
       .map(([idStr, m]) => {
         const id = Number(idStr)
         const selectedName = selectedEntity?.id === id ? selectedEntity.name : undefined
@@ -91,7 +91,7 @@ export function useAutoSave({
           id,
           name: selectedName ?? m.name,
           kind: m.kind,
-          path: m.path,
+          path: m.kind === 'model' && isEditorBoxPath(m.path) ? '[EditorBox]' : m.path,
           position: transforms[id]?.position ?? DEFAULT_POS,
           rotation: transforms[id]?.rotation ?? DEFAULT_ROT,
           scale: transforms[id]?.scale ?? DEFAULT_SCL,
@@ -107,12 +107,17 @@ export function useAutoSave({
 
     const allEntities = buildCurrentSceneEntities()
 
-    const playerTransform = playerId !== null
-      ? {
-          position: transforms[playerId]?.position ?? DEFAULT_POS,
-          scale: transforms[playerId]?.scale ?? DEFAULT_SCL,
-        }
-      : null
+    const fpView = firstPersonViewRef?.current ?? null
+    const feetPos = fpView?.position
+      ?? (playerId !== null ? transforms[playerId]?.position : undefined)
+    const playerTransform = gameStyle === 'first-person' && projectType === '3D'
+      ? buildSavedPlayerTransform(fpView, feetPos)
+      : playerId !== null
+        ? {
+            position: transforms[playerId]?.position ?? DEFAULT_POS,
+            scale: transforms[playerId]?.scale ?? DEFAULT_SCL,
+          }
+        : null
 
     // Convertir loadedSpritesInfo Map a array para persistencia
     const spritesArray = Array.from(loadedSpritesInfo.entries()).map(([path, info]) => ({
@@ -172,7 +177,7 @@ export function useAutoSave({
       blueprints,
       language: locale,
     }
-  }, [projectType, gameStyle, initialSave, worldConfig, backgroundPath, selectedEntity, playerEntityIdRef, entityTransformsRef, entityMetaRef, camera2dRef, loadedSpritesInfo, blueprints, sounds, backgrounds, locale])
+  }, [projectType, gameStyle, initialSave, worldConfig, backgroundPath, selectedEntity, playerEntityIdRef, firstPersonViewRef, entityTransformsRef, entityMetaRef, camera2dRef, loadedSpritesInfo, blueprints, sounds, backgrounds, locale])
 
   useEffect(() => {
     autoSaveEnabledRef.current = autoSaveEnabled

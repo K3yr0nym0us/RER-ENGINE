@@ -139,24 +139,6 @@ impl PhysicsWorld {
         (handle, collider_handle)
     }
 
-    pub(crate) fn add_scene_static_box(
-        &mut self,
-        position: [f32; 3],
-        half_extents: [f32; 3],
-    ) -> ColliderHandle {
-        let collider = ColliderBuilder::cuboid(
-            half_extents[0].max(0.01),
-            half_extents[1].max(0.01),
-            half_extents[2].max(0.01),
-        )
-        .translation(vector![position[0], position[1], position[2]])
-        .build();
-        let handle = self.colliders.insert(collider);
-        self.scene_colliders.push(handle);
-        self.refresh_queries();
-        handle
-    }
-
     pub(crate) fn add_kinematic_box(
         &mut self,
         position: [f32; 3],
@@ -230,16 +212,6 @@ impl PhysicsWorld {
     #[allow(dead_code)]
     pub(crate) fn body_mut(&mut self, handle: RigidBodyHandle) -> Option<&mut RigidBody> {
         self.bodies.get_mut(handle)
-    }
-
-    pub(crate) fn set_entity_body_position(&mut self, entity: EntityId, position: [f32; 3]) {
-        let Some(&handle) = self.entity_bodies.get(&entity) else {
-            return;
-        };
-        if let Some(body) = self.bodies.get_mut(handle) {
-            body.set_translation(vector![position[0], position[1], position[2]], true);
-        }
-        self.refresh_queries();
     }
 
     /// Recrea el cuerpo/collider según el transform actual (editor: mover y escalar).

@@ -79,6 +79,10 @@ pub struct State {
     pub(crate) first_person_jump_queued: bool,
     /// Teclas acumuladas por scripts de control en el frame actual (primera persona).
     pub(crate) first_person_script_input: HashSet<String>,
+    /// Parámetros opcionales fijados por scripts Lua de control (primera persona).
+    pub(crate) first_person_lua_walk_speed: Option<f32>,
+    pub(crate) first_person_lua_sprint_multiplier: Option<f32>,
+    pub(crate) first_person_lua_jump_speed: Option<f32>,
     /// Entidad `[Player]` de la plantilla first-person (bindings de control).
     pub(crate) first_person_player_entity: Option<EntityId>,
     pub(crate) tool_overlay_buffer: GizmoBuffer,

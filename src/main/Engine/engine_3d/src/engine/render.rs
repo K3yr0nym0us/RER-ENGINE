@@ -64,6 +64,11 @@ impl State {
             .world
             .query2::<crate::ecs::MeshComponent, crate::ecs::Transform>()
             .filter_map(|(id, mc, t)| {
+                if self.preview_playing
+                    && self.first_person_player_entity == Some(id)
+                {
+                    return None;
+                }
                 let mesh_idx = mc.mesh_idx;
                 let tex_idx = mc.tex_idx;
                 if self.camera_2d.is_none()

@@ -1,5 +1,5 @@
 import type { MutableRefObject } from 'react';
-import { DEFAULT_GRAVITY_MAGNITUDE, type BackgroundInfo, type BluePrintEntry, type DebugMetrics, type ProjectSaveData, type SavedControlBindings, type SoundInfo, type SpriteInfo } from '@shared-types';
+import { DEFAULT_GRAVITY_MAGNITUDE, type BackgroundInfo, type BluePrintEntry, type DebugMetrics, type ProjectSaveData, type SavedControlBindings, type SavedPlayerTransform, type SoundInfo, type SpriteInfo } from '@shared-types';
 
 export interface Entity {
 	id: number
@@ -318,6 +318,8 @@ export interface EngineInternalRefs {
 	entityMetaRef: MutableRefObject<Record<number, EntityMeta>>
 	pendingRestoresRef: MutableRefObject<Map<string, PendingRestore[]>>
 	playerEntityIdRef: MutableRefObject<number | null>
+	firstPersonViewRef: MutableRefObject<import('@shared-types').SavedPlayerTransform | null>
+	pendingFirstPersonViewRef: MutableRefObject<import('@shared-types').SavedPlayerTransform | null>
 	camera2dRef: MutableRefObject<Camera2dState | null>
 	mainPlayerHandled: MutableRefObject<boolean>
 	playerRemoved: MutableRefObject<boolean>
@@ -334,6 +336,9 @@ export interface EngineContextValue extends EngineState {
 	entityMetaRef: MutableRefObject<Record<number, EntityMeta>>
 	pendingRestoresRef: MutableRefObject<Map<string, PendingRestore[]>>
 	playerEntityIdRef: MutableRefObject<number | null>
+	firstPersonViewRef: MutableRefObject<SavedPlayerTransform | null>
+	pendingFirstPersonViewRef: MutableRefObject<SavedPlayerTransform | null>
+	mainPlayerHandled: MutableRefObject<boolean>
 	camera2dRef: MutableRefObject<Camera2dState | null>
 	send: (cmd: object) => void
 	sendAsync: <T>(cmd: object, waitForEvent: string, onStart?: () => void) => Promise<T>

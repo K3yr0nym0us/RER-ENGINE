@@ -294,11 +294,24 @@ impl State {
             } else {
                 self.physics.body_count()
             };
+            let (first_person_position, first_person_yaw, first_person_pitch) =
+                if self.camera_2d.is_none() && self.first_person_player_entity.is_some() {
+                    (
+                        Some(self.first_person_feet_position().to_array()),
+                        Some(self.camera.yaw),
+                        Some(self.camera.pitch),
+                    )
+                } else {
+                    (None, None, None)
+                };
             send_event(&EngineEvent::DebugMetrics {
                 fps,
                 frame_time_ms: self.delta_time * 1000.0,
                 draw_calls: self.last_draw_calls,
                 physics_bodies,
+                first_person_position,
+                first_person_yaw,
+                first_person_pitch,
             });
             self.metrics_last_emit = now;
             self.metrics_frame_count = 0;

@@ -5,6 +5,7 @@ import fs from 'fs';
 import AdmZip from 'adm-zip';
 
 import type { EngineCommand, EngineEvent, GameStyle, OpenProjectResult, ProjectSaveData } from '../shared-types/types';
+import { entityPathMarker } from '../shared-types/types';
 
 // Sin GPU hardware disponible: deshabilitar el proceso GPU de Chromium
 // para evitar spam de viz_main_impl / command_buffer_proxy_impl
@@ -525,7 +526,7 @@ function collectAssetPaths(data: ProjectSaveData): Set<string> {
   }
 
   forEachEntity(data, (entity) => {
-    add(entity.path)
+    if (!entityPathMarker(entity.path)) add(entity.path)
     for (const anim of entity.animations ?? []) {
       add(anim.audio_path)
       for (const frame of anim.frames) {
@@ -883,6 +884,8 @@ function saveProjectToFile(saveFilePath: string, data: ProjectSaveData): boolean
 function resolveLoadedPaths(data: ProjectSaveData, extractedDir: string): ProjectSaveData {
   const resolve = (p: string | null | undefined): string | null | undefined => {
     if (!p) return p
+    const marker = entityPathMarker(p)
+    if (marker) return marker
     if (path.isAbsolute(p)) return p
     // El JSON siempre guarda rutas con '/' — normalizamos al separador del OS actual
     const normalized = p.split('/').join(path.sep)

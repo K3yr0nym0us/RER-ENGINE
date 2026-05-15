@@ -13,8 +13,13 @@ import type {
 	SpriteRemoved,
 	SpritesList,
 } from '@shared-types';
-import type { GameStyle, ProjectSaveData, SavedControlBindings } from '@shared-types';
+import type { GameStyle } from '@shared-types';
+import { FIRST_PERSON_PLAYER_BODY_SCALE, isEditorBoxPath, isPlayerPath } from '@shared-types';
 import { applyFirstPersonControlDefaultsIfEmpty } from '../../../defaults/applyFirstPersonControlDefaults';
+import {
+	applySavedFirstPersonView,
+	ensureFirstPersonPlayerOnLoad,
+} from '../../../defaults/firstPersonSceneRestore';
 import type { EngineAction, EngineInternalRefs, PendingRestore, Transform } from '../types';
 
 type RuntimeEngineEvent = {
@@ -58,37 +63,14 @@ interface CreateEngineEventHandlerParams {
 	setLocale?: (locale: Locale) => void
 }
 
-function getPlayerBindingsFromSave(save: ProjectSaveData | null | undefined): SavedControlBindings | undefined {
-	if (!save) return undefined;
-	const scenes = save.scenes ?? [];
-	const activeScene = scenes.length > 0
-		? (scenes.find((scene) => scene.id === save.activeSceneId) ?? scenes[0])
-		: null;
-	const entities = activeScene?.entities ?? save.entities ?? [];
-	const player = entities.find((entity) => entity.kind === 'character' && entity.path === '[Player]');
-	return player?.control_bindings;
-}
-
 function applyFirstPersonDefaultsForPlayer(
 	characterId: number,
 	gameStyle: GameStyle | undefined,
 	refs: EngineInternalRefs,
 ) {
 	if (gameStyle !== 'first-person') return;
-
-	const savedBindings = getPlayerBindingsFromSave(refs.initialSaveRef.current);
-	if (savedBindings) {
-		const meta = refs.entityMetaRef.current[characterId] ?? {
-			kind: 'character' as const,
-			path: '[Player]',
-			name: 'Player',
-			physicsEnabled: false,
-			physicsType: '',
-		};
-		refs.entityMetaRef.current[characterId] = { ...meta, controlBindings: savedBindings };
-		window.engine.send({ cmd: 'set_control_bindings', id: characterId, bindings: savedBindings } as never);
-		return;
-	}
+	// Proyecto abierto desde .save: bindings y entidades vienen del archivo, no de la plantilla.
+	if (refs.initialSaveRef.current) return;
 
 	applyFirstPersonControlDefaultsIfEmpty(characterId, refs.entityMetaRef, (cmd) => {
 		window.engine.send(cmd as never);
@@ -142,16 +124,22 @@ export function createEngineEventHandler({
 			dispatch({ type: 'SET_READY' });
 			dispatch({ type: 'SET_PREVIEW_PLAYING', payload: false });
 			if (refs.readyTimer.current) clearTimeout(refs.readyTimer.current);
+			const sendEngine = window.engine.send;
+			const baseSave = refs.initialSaveRef.current;
 			if (projectType) {
-				window.engine.send({ cmd: 'set_scene', scene: projectType } as never);
+				if (baseSave) {
+					window.engine.send({ cmd: 'set_scene', scene: 'empty' } as never);
+				} else if (gameStyle === 'first-person' && projectType === '3D') {
+					window.engine.send({ cmd: 'set_scene', scene: 'first-person' } as never);
+				} else {
+					window.engine.send({ cmd: 'set_scene', scene: projectType } as never);
+				}
 			}
 			window.engine.send({ cmd: 'set_preview_playing', playing: false } as never);
 			refs.mainPlayerHandled.current = false;
 			refs.playerRemoved.current = false;
 			refs.pendingPlayerDups.current = [];
 			refs.pendingDupQ.current = [];
-			const sendEngine = window.engine.send;
-			const baseSave = refs.initialSaveRef.current;
 			let savedGravity: number | undefined;
 			if (baseSave) {
 				const scenes = baseSave.scenes ?? [];
@@ -172,6 +160,10 @@ export function createEngineEventHandler({
 					: baseSave;
 
 				refs.initialSaveRef.current = save;
+				if (gameStyle === 'first-person' && projectType === '3D' && save.playerTransform) {
+					refs.pendingFirstPersonViewRef.current = save.playerTransform;
+					refs.firstPersonViewRef.current = save.playerTransform;
+				}
 
 				if (save.world) {
 					savedGravity = save.world.gravity;
@@ -185,6 +177,9 @@ export function createEngineEventHandler({
 					sendEngine({ cmd: 'set_grid_visible', visible: save.world.gridVisible } as never);
 					sendEngine({ cmd: 'set_grid_cell_size', size: save.world.gridCellSize } as never);
 					sendEngine({ cmd: 'set_target_fps', fps: save.world.targetFps } as never);
+					if (save.world.gravity != null) {
+						sendEngine({ cmd: 'set_gravity', gravity: save.world.gravity } as never);
+					}
 				}
 			if (save.language && (save.language === 'en' || save.language === 'es')) {
 				const validLocale = save.language as Locale;
@@ -235,8 +230,46 @@ export function createEngineEventHandler({
 						queue.push(pendingRestore);
 						refs.pendingRestoresRef.current.set('[ExecutionArea]', queue);
 						sendEngine({ cmd: 'create_execution_area_from_points', points: entity.points, track_undo: false } as never);
-					} else if (entity.kind === 'character' && entity.path === '[Player]') {
-						refs.pendingPlayerDups.current.push(transform);
+					} else if (entity.kind === 'character' && isPlayerPath(entity.path)) {
+						const savedPlayer = save.playerTransform;
+						const playerTransform: Transform = savedPlayer
+							? {
+								position: savedPlayer.position,
+								rotation: entity.rotation,
+								scale: FIRST_PERSON_PLAYER_BODY_SCALE,
+							}
+							: transform;
+						const pendingRestore: PendingRestore = {
+							transform: playerTransform,
+							name: entity.name,
+							physicsEnabled: entity.physics_enabled ?? false,
+							physicsType: entity.physics_type ?? 'static',
+							scripts: entity.scripts,
+							controlBindings: entity.control_bindings,
+						};
+						const queue = refs.pendingRestoresRef.current.get('[Player]') ?? [];
+						queue.push(pendingRestore);
+						refs.pendingRestoresRef.current.set('[Player]', queue);
+						sendEngine({ cmd: 'load_character', path: entity.path } as never);
+					} else if (entity.kind === 'model' && isEditorBoxPath(entity.path)) {
+						const pendingRestore: PendingRestore = {
+							transform,
+							name: entity.name,
+							physicsEnabled: entity.physics_enabled ?? false,
+							physicsType: entity.physics_type ?? 'static',
+							scripts: entity.scripts,
+							controlBindings: entity.control_bindings,
+							blueprintId: entity.blueprint_id,
+						};
+						const queue = refs.pendingRestoresRef.current.get('[EditorBox]') ?? [];
+						queue.push(pendingRestore);
+						refs.pendingRestoresRef.current.set('[EditorBox]', queue);
+						sendEngine({
+							cmd: 'spawn_editor_box',
+							name: entity.name ?? 'Box',
+							position: entity.position,
+							scale: entity.scale,
+						} as never);
 					} else {
 						// Si la entidad es una instancia de blueprint, heredar las propiedades
 						// del blueprint original en lugar de las guardadas por entidad.
@@ -258,8 +291,13 @@ export function createEngineEventHandler({
 						refs.pendingRestoresRef.current.set(entity.path, queue);
 						if (entity.kind === 'scenario') sendEngine({ cmd: 'load_scenario', path: entity.path } as never);
 						if (entity.kind === 'character') sendEngine({ cmd: 'load_character', path: entity.path } as never);
-						if (entity.kind === 'model') sendEngine({ cmd: 'load_model', path: entity.path } as never);
+						if (entity.kind === 'model' && entity.path && !isEditorBoxPath(entity.path)) {
+							sendEngine({ cmd: 'load_model', path: entity.path } as never);
+						}
 					}
+				}
+				if (gameStyle === 'first-person' && projectType === '3D') {
+					ensureFirstPersonPlayerOnLoad(save, refs.pendingRestoresRef, (cmd) => sendEngine(cmd as never));
 				}
 			}
 			const motorGravity = typeof event.gravity === 'number' ? event.gravity : undefined;
@@ -269,8 +307,63 @@ export function createEngineEventHandler({
 		}
 
 		if (event.event === 'model_loaded') {
-			const id = (event as { id?: number }).id ?? -1;
+			const loaded = event as {
+				id?: number
+				name?: string
+				position?: [number, number, number]
+				scale?: [number, number, number]
+			};
+			const id = loaded.id ?? -1;
 			dispatch({ type: 'ADD_ENTITY', payload: id });
+			if (loaded.position && loaded.scale) {
+				refs.entityTransformsRef.current[id] = {
+					position: loaded.position,
+					rotation: [0, 0, 0, 1],
+					scale: loaded.scale,
+				};
+			}
+			const editorBoxQueue = refs.pendingRestoresRef.current.get('[EditorBox]');
+			if (editorBoxQueue && editorBoxQueue.length > 0) {
+				const pending = editorBoxQueue.shift()!;
+				refs.entityMetaRef.current[id] = {
+					kind: 'model',
+					path: '[EditorBox]',
+					name: pending.name ?? loaded.name ?? `Entity ${id}`,
+					physicsEnabled: pending.physicsEnabled,
+					physicsType: pending.physicsType ?? 'static',
+				};
+				if (pending.name && pending.name.trim().length > 0) {
+					window.engine.send({ cmd: 'set_entity_name', id, name: pending.name, force: true } as never);
+				}
+				if (pending.scripts) {
+					refs.entityMetaRef.current[id].scripts = pending.scripts;
+					for (const script of pending.scripts) {
+						window.engine.send({ cmd: 'load_script', id, path: script.name, source: script.source } as never);
+					}
+				}
+				if (pending.controlBindings) {
+					refs.entityMetaRef.current[id].controlBindings = pending.controlBindings;
+					window.engine.send({ cmd: 'set_control_bindings', id, bindings: pending.controlBindings } as never);
+				}
+				if (pending.blueprintId) {
+					refs.entityMetaRef.current[id].blueprintId = pending.blueprintId;
+				}
+				refs.entityTransformsRef.current[id] = pending.transform;
+				if (editorBoxQueue.length === 0) refs.pendingRestoresRef.current.delete('[EditorBox]');
+			} else if (!refs.entityMetaRef.current[id]) {
+				refs.entityMetaRef.current[id] = {
+					kind: 'model',
+					path: '[EditorBox]',
+					name: loaded.name ?? `Entity ${id}`,
+					physicsEnabled: true,
+					physicsType: 'static',
+				};
+			} else if (loaded.name) {
+				refs.entityMetaRef.current[id].name = loaded.name;
+				if (!refs.entityMetaRef.current[id].path || refs.entityMetaRef.current[id].path === '') {
+					refs.entityMetaRef.current[id].path = '[EditorBox]';
+				}
+			}
 		}
 
 		if (event.event === 'entity_selected') {
@@ -397,7 +490,15 @@ export function createEngineEventHandler({
 					}
 					window.engine.send({ cmd: 'set_entity_name', id, name: pending.name, force: true } as never);
 				}
-				window.engine.send({ cmd: 'set_transform', id, position: pendingTransform.position, rotation: pendingTransform.rotation, scale: pendingTransform.scale, track_undo: false } as never);
+				const isPlayer = isPlayerPath(path);
+				window.engine.send({
+					cmd: 'set_transform',
+					id,
+					position: pendingTransform.position,
+					rotation: pendingTransform.rotation,
+					...(isPlayer ? {} : { scale: pendingTransform.scale }),
+					track_undo: false,
+				} as never);
 
 				if (pending.physicsEnabled) {
 					window.engine.send({ cmd: 'set_physics', id, enabled: true, body_type: pending.physicsType } as never);
@@ -461,7 +562,7 @@ export function createEngineEventHandler({
 				if (queue.length === 0) refs.pendingRestoresRef.current.delete(path);
 			};
 
-			if (character.path === '[Player]') {
+			if (isPlayerPath(character.path)) {
 				if (!refs.mainPlayerHandled.current) {
 					refs.mainPlayerHandled.current = true;
 					if (!refs.playerRemoved.current) {
@@ -476,6 +577,23 @@ export function createEngineEventHandler({
 							name: 'Player',
 							physicsEnabled: false,
 							physicsType: '',
+						};
+					}
+					applyPendingRestore(character.id, character.path);
+					applySavedFirstPersonView(
+						refs.pendingFirstPersonViewRef.current,
+						character.id,
+						refs.entityTransformsRef,
+						{ editorOrbit: true },
+					);
+					refs.pendingFirstPersonViewRef.current = null;
+					const feet = refs.entityTransformsRef.current[character.id]?.position
+						?? refs.firstPersonViewRef.current?.position;
+					if (feet) {
+						refs.entityTransformsRef.current[character.id] = {
+							position: feet,
+							rotation: [0, 0, 0, 1],
+							scale: FIRST_PERSON_PLAYER_BODY_SCALE,
 						};
 					}
 					applyFirstPersonDefaultsForPlayer(character.id, gameStyle, refs);
@@ -551,7 +669,21 @@ export function createEngineEventHandler({
 		}
 
 		if (event.event === 'preview_playing_changed') {
-			dispatch({ type: 'SET_PREVIEW_PLAYING', payload: Boolean((event as { playing?: boolean }).playing) });
+			const playing = Boolean((event as { playing?: boolean }).playing);
+			dispatch({ type: 'SET_PREVIEW_PLAYING', payload: playing });
+			if (
+				playing
+				&& gameStyle === 'first-person'
+				&& projectType === '3D'
+				&& refs.firstPersonViewRef.current
+			) {
+				applySavedFirstPersonView(
+					refs.firstPersonViewRef.current,
+					refs.playerEntityIdRef.current,
+					refs.entityTransformsRef,
+					{ editorOrbit: false },
+				);
+			}
 		}
 
 		if (event.event === 'error') {
@@ -685,6 +817,28 @@ export function createEngineEventHandler({
 		if (event.event === 'debug_metrics') {
 			const metrics = event as unknown as DebugMetrics;
 			dispatch({ type: 'SET_DEBUG_METRICS', payload: metrics });
+			if (
+				gameStyle === 'first-person'
+				&& projectType === '3D'
+				&& metrics.first_person_position
+				&& metrics.first_person_yaw != null
+				&& metrics.first_person_pitch != null
+			) {
+				refs.firstPersonViewRef.current = {
+					position: metrics.first_person_position,
+					scale: FIRST_PERSON_PLAYER_BODY_SCALE,
+					yaw: metrics.first_person_yaw,
+					pitch: metrics.first_person_pitch,
+				};
+				const playerId = refs.playerEntityIdRef.current;
+				if (playerId != null) {
+					refs.entityTransformsRef.current[playerId] = {
+						position: metrics.first_person_position,
+						rotation: [0, 0, 0, 1],
+						scale: FIRST_PERSON_PLAYER_BODY_SCALE,
+					};
+				}
+			}
 		}
 	};
 }

@@ -33,6 +33,18 @@ pub enum EngineCommand {
         #[serde(default)] offset_y: Option<i32>,
     },
     LoadModel { path: String },
+    /// Cubo procedural del editor (restaurar bloques de plantilla sin `.glb`).
+    SpawnEditorBox {
+        name: String,
+        position: [f32; 3],
+        scale: [f32; 3],
+    },
+    /// Restaurar posición y orientación de la cámara en primera persona (carga de `.save`).
+    SetFirstPersonSpawn {
+        position: [f32; 3],
+        yaw: f32,
+        pitch: f32,
+    },
     /// Actualizar transform de una entidad por id.
     SetTransform {
         id:       u32,
@@ -290,7 +302,15 @@ pub enum EngineEvent {
     Ready { gravity: f32 },
     Pong,
     Error { message: String },
-    ModelLoaded { id: u32 },
+    ModelLoaded {
+        id: u32,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        name: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        position: Option<[f32; 3]>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        scale: Option<[f32; 3]>,
+    },
     /// Emitido cuando el usuario hace click izquierdo sobre una entidad.
     EntitySelected {
         id:              u32,
@@ -368,6 +388,12 @@ pub enum EngineEvent {
         frame_time_ms:  f32,
         draw_calls:     u32,
         physics_bodies: u32,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        first_person_position: Option<[f32; 3]>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        first_person_yaw: Option<f32>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        first_person_pitch: Option<f32>,
     },
     /// Emitido cuando el preview cambia de estado desde el motor.
     PreviewPlayingChanged { playing: bool },

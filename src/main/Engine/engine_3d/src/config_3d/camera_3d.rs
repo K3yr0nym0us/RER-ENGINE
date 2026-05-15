@@ -21,6 +21,8 @@ pub(crate) struct Camera {
     pub far: f32,
     /// Desplazamiento vertical de la vista en primera persona (ojos sobre el collider).
     pub(crate) eye_height_offset: f32,
+    /// Pivote extra para órbita en editor FP (target = pies, pivote = pies + offset).
+    pub(crate) orbit_pivot_offset: Vec3,
 }
 
 impl Camera {
@@ -34,7 +36,16 @@ impl Camera {
             near: 0.1,
             far: 1000.0,
             eye_height_offset: 0.0,
+            orbit_pivot_offset: Vec3::ZERO,
         }
+    }
+
+    fn orbit_pivot(&self) -> Vec3 {
+        self.target + self.orbit_pivot_offset
+    }
+
+    fn is_first_person_view(&self) -> bool {
+        self.eye_height_offset > 0.0 && self.distance < 0.5
     }
 
     pub(crate) fn view_forward(&self) -> Vec3 {
@@ -46,7 +57,8 @@ impl Camera {
     pub(crate) fn position(&self) -> Vec3 {
         let (sy, cy) = self.yaw.sin_cos();
         let (sp, cp) = self.pitch.sin_cos();
-        self.target
+        let pivot = self.orbit_pivot();
+        pivot
             + Vec3::new(cy * cp, sp, sy * cp) * self.distance
             + Vec3::Y * self.eye_height_offset
     }
@@ -67,7 +79,7 @@ impl Camera {
     pub(crate) fn pan(&mut self, dx: f32, dy: f32) {
         const SENSITIVITY: f32 = 0.002;
         let pos = self.position();
-        let fwd = (self.target - pos).normalize();
+        let fwd = (self.orbit_pivot() - pos).normalize();
         let right = fwd.cross(Vec3::Y).normalize();
         let up = right.cross(fwd).normalize();
         let offset =
@@ -77,11 +89,11 @@ impl Camera {
 
     pub(crate) fn view_matrix(&self) -> Mat4 {
         let pos = self.position();
-        if self.eye_height_offset > 0.0 {
+        if self.is_first_person_view() {
             let forward = self.view_forward();
             return Mat4::look_at_rh(pos, pos + forward, Vec3::Y);
         }
-        Mat4::look_at_rh(pos, self.target, Vec3::Y)
+        Mat4::look_at_rh(pos, self.orbit_pivot(), Vec3::Y)
     }
 
     pub(crate) fn proj_matrix(&self, aspect: f32) -> Mat4 {

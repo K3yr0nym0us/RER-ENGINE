@@ -238,11 +238,13 @@ impl App {
         }
 
         if state.is_first_person_runtime_active() {
-            state.normalize_first_person_spawn_position();
             state.sync_first_person_camera_mode();
             self.capture_cursor_for_preview(state);
         } else {
             self.release_cursor_after_preview(state);
+            if state.has_first_person_player() {
+                state.sync_first_person_camera_mode();
+            }
         }
 
         if was_playing != state.is_preview_playing() {
@@ -673,8 +675,6 @@ impl ApplicationHandler<EngineCommand> for App {
                 let pressed = key_state == ElementState::Pressed;
                 if pressed && !repeat && code == KeyCode::Escape && state.is_first_person_runtime_active() {
                     preview_toggle = Some(false);
-                } else if pressed && !repeat && code == KeyCode::Space && state.is_first_person_runtime_active() {
-                    state.queue_first_person_jump();
                 } else if state.is_preview_playing() {
                     if let Some(control_key) = map_keyboard_control_key(code) {
                         if pressed {
@@ -684,6 +684,10 @@ impl ApplicationHandler<EngineCommand> for App {
                         } else {
                             self.keyboard_mouse_pressed.remove(&control_key);
                         }
+                    }
+                } else if pressed && !repeat && code == KeyCode::Space && state.is_first_person_runtime_active() {
+                    if !state.uses_scripted_first_person_controls() {
+                        state.queue_first_person_jump();
                     }
                 }
                 match code {
@@ -741,10 +745,8 @@ impl ApplicationHandler<EngineCommand> for App {
             WindowEvent::RedrawRequested => {
                 state.update();
                 if state.is_first_person_runtime_active() {
-                    state.apply_first_person_keyboard(
-                        &self.keyboard_mouse_pressed,
-                        state.delta_time,
-                    );
+                    let inputs = state.first_person_effective_inputs(&self.keyboard_mouse_pressed);
+                    state.apply_first_person_keyboard(&inputs, state.delta_time);
                 }
                 match state.render() {
                     Ok(_) => {}
@@ -792,6 +794,9 @@ impl ApplicationHandler<EngineCommand> for App {
         let now = std::time::Instant::now();
         if let Some(state) = self.state.as_mut() {
             if state.is_preview_playing() {
+                if state.is_first_person_runtime_active() {
+                    state.clear_first_person_script_frame();
+                }
                 if let Some(gilrs) = self.gilrs.as_mut() {
                     while let Some(evt) = gilrs.next_event() {
                         match evt.event {

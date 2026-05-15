@@ -202,6 +202,20 @@ impl State {
             EngineCommand::LoadModel { path } => {
                 self.load_model(&path);
             }
+            EngineCommand::SpawnEditorBox {
+                name,
+                position,
+                scale,
+            } => {
+                self.spawn_editor_box(&name, position, scale);
+            }
+            EngineCommand::SetFirstPersonSpawn {
+                position,
+                yaw,
+                pitch,
+            } => {
+                self.apply_first_person_saved_view(position, yaw, pitch);
+            }
             EngineCommand::SetTransform {
                 id,
                 position,
@@ -211,7 +225,18 @@ impl State {
             } => {
                 use glam::{Quat, Vec3};
                 let before = self.world.get::<Transform>(id).cloned();
-                if let Some(transform) = self.world.get_mut::<Transform>(id) {
+                let is_fp_player = self.first_person_player_entity == Some(id);
+                if is_fp_player {
+                    if let Some(p) = position {
+                        self.set_first_person_feet_position(Vec3::from_array(p));
+                    }
+                    if let Some(r) = rotation {
+                        let q = Quat::from_xyzw(r[0], r[1], r[2], r[3]);
+                        let (yaw, _, _) = q.to_euler(glam::EulerRot::YXZ);
+                        self.camera.yaw = yaw;
+                        self.sync_player_rotation_from_look();
+                    }
+                } else if let Some(transform) = self.world.get_mut::<Transform>(id) {
                     if let Some(p) = position {
                         transform.position = Vec3::from(p);
                     }
@@ -224,10 +249,19 @@ impl State {
                 }
                 if let Some(saved) = self.anim_saved_transforms.get_mut(&id) {
                     if let Some(p) = position {
-                        saved.0 = Vec3::from(p);
+                        saved.0 = if is_fp_player {
+                            self.world
+                                .get::<Transform>(id)
+                                .map(|t| t.position)
+                                .unwrap_or_else(|| Vec3::from_array(p))
+                        } else {
+                            Vec3::from_array(p)
+                        };
                     }
                     if let Some(s) = scale {
-                        saved.1 = Vec3::from(s);
+                        if !is_fp_player {
+                            saved.1 = Vec3::from_array(s);
+                        }
                     }
                 }
                 if self.camera_2d.is_some() {
@@ -332,9 +366,11 @@ impl State {
             }
             EngineCommand::SetScene { scene } => match scene.as_str() {
                 "2D" => self.setup_2d_platformer(),
-                "3D" | "first-person" | "second-person" | "third-person" => {
+                "empty" => self.setup_empty_3d(),
+                "first-person" | "second-person" | "third-person" => {
                     self.setup_first_person()
                 }
+                "3D" => self.setup_first_person(),
                 "scratch" => self.setup_scratch(),
                 _ => log::info!("SetScene: escena '{}' no reconocida", scene),
             },

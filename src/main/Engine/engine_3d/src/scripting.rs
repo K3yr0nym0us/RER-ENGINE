@@ -47,6 +47,12 @@ pub enum ScriptCmd {
     FpPressKey { key: String },
     /// Encola salto en primera persona (control script).
     FpJump,
+    /// Velocidad de caminar (m/s) para el frame actual.
+    FpSetWalkSpeed(f32),
+    /// Multiplicador de sprint para el frame actual.
+    FpSetSprintMultiplier(f32),
+    /// Velocidad inicial de salto (m/s) para el frame actual.
+    FpSetJumpSpeed(f32),
 }
 
 // ---------------------------------------------------------------------------
@@ -514,6 +520,30 @@ impl ScriptEngine {
         }).expect("create fp_jump fn");
         let _ = globals.set("__api_fp_jump", fp_jump);
 
+        let fp_set_walk_speed = lua.create_function(|lua_ctx, speed: f32| {
+            push_cmd(lua_ctx, "fp_set_walk_speed", |t| {
+                t.set("speed", speed)?;
+                Ok(())
+            })
+        }).expect("create fp_set_walk_speed fn");
+        let _ = globals.set("__api_fp_set_walk_speed", fp_set_walk_speed);
+
+        let fp_set_sprint_multiplier = lua.create_function(|lua_ctx, mult: f32| {
+            push_cmd(lua_ctx, "fp_set_sprint_multiplier", |t| {
+                t.set("mult", mult)?;
+                Ok(())
+            })
+        }).expect("create fp_set_sprint_multiplier fn");
+        let _ = globals.set("__api_fp_set_sprint_multiplier", fp_set_sprint_multiplier);
+
+        let fp_set_jump_speed = lua.create_function(|lua_ctx, speed: f32| {
+            push_cmd(lua_ctx, "fp_set_jump_speed", |t| {
+                t.set("speed", speed)?;
+                Ok(())
+            })
+        }).expect("create fp_set_jump_speed fn");
+        let _ = globals.set("__api_fp_set_jump_speed", fp_set_jump_speed);
+
         // engine table: the public API that scripts use
         // engine.move_to, engine.translate, etc.
         let engine_table = lua.create_table().expect("engine table");
@@ -529,6 +559,9 @@ impl ScriptEngine {
         let _ = engine_table.set("log",            globals.get::<LuaFunction>("__api_log").ok());
         let _ = engine_table.set("fp_press_key",   globals.get::<LuaFunction>("__api_fp_press_key").ok());
         let _ = engine_table.set("fp_jump",        globals.get::<LuaFunction>("__api_fp_jump").ok());
+        let _ = engine_table.set("fp_set_walk_speed", globals.get::<LuaFunction>("__api_fp_set_walk_speed").ok());
+        let _ = engine_table.set("fp_set_sprint_multiplier", globals.get::<LuaFunction>("__api_fp_set_sprint_multiplier").ok());
+        let _ = engine_table.set("fp_set_jump_speed", globals.get::<LuaFunction>("__api_fp_set_jump_speed").ok());
         let _ = globals.set("engine", engine_table);
 
     }
@@ -685,6 +718,9 @@ fn parse_cmd_table(t: LuaTable) -> LuaResult<ScriptCmd> {
             key: t.get("key")?,
         }),
         "fp_jump" => Ok(ScriptCmd::FpJump),
+        "fp_set_walk_speed" => Ok(ScriptCmd::FpSetWalkSpeed(t.get("speed")?)),
+        "fp_set_sprint_multiplier" => Ok(ScriptCmd::FpSetSprintMultiplier(t.get("mult")?)),
+        "fp_set_jump_speed" => Ok(ScriptCmd::FpSetJumpSpeed(t.get("speed")?)),
         other => Err(LuaError::runtime(format!("unknown script cmd: {other}"))),
     }
 }

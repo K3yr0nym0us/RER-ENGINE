@@ -2,7 +2,43 @@ use std::collections::HashSet;
 
 use glam::Vec3;
 
+use crate::ecs::Transform;
 use crate::engine::State;
+
+impl State {
+    pub(crate) fn clear_first_person_script_frame(&mut self) {
+        self.first_person_script_input.clear();
+        self.first_person_lua_walk_speed = None;
+        self.first_person_lua_sprint_multiplier = None;
+        self.first_person_lua_jump_speed = None;
+    }
+
+    pub(crate) fn uses_scripted_first_person_controls(&self) -> bool {
+        let Some(player_id) = self.first_person_player_entity else {
+            return false;
+        };
+        self.control_bindings_by_entity
+            .get(&player_id)
+            .map(|bindings| !bindings.keyboard_mouse.is_empty())
+            .unwrap_or(false)
+    }
+
+    pub(crate) fn first_person_effective_inputs(
+        &self,
+        hardware_pressed: &HashSet<String>,
+    ) -> HashSet<String> {
+        if self.uses_scripted_first_person_controls() {
+            self.first_person_script_input.clone()
+        } else {
+            hardware_pressed.clone()
+        }
+    }
+
+    fn first_person_jump_speed(&self) -> f32 {
+        self.first_person_lua_jump_speed
+            .unwrap_or(FIRST_PERSON_JUMP_SPEED)
+    }
+}
 
 pub(crate) const FIRST_PERSON_KEYBOARD_SPEED: f32 = 4.0;
 pub(crate) const FIRST_PERSON_SPRINT_MULTIPLIER: f32 = 3.0;
@@ -14,8 +50,48 @@ pub(crate) const FIRST_PERSON_GROUND_REST_Y: f32 = FIRST_PERSON_COLLIDER_RADIUS 
 pub(crate) const FIRST_PERSON_FLOOR_EPSILON: f32 = 0.12;
 pub(crate) const FIRST_PERSON_JUMP_SPEED: f32 = 6.0;
 pub(crate) const FIRST_PERSON_GROUND_PROBE: f32 = 0.08;
+/// Altura del cubo-cuerpo del jugador (placeholder visual).
+pub(crate) const FIRST_PERSON_BODY_HEIGHT: f32 = 1.7;
+pub(crate) const FIRST_PERSON_BODY_HALF_H: f32 = FIRST_PERSON_BODY_HEIGHT * 0.5;
+/// Distancia de la cámara orbital en editor (detrás del jugador, fuera de play).
+pub(crate) const FIRST_PERSON_EDITOR_ORBIT_DISTANCE: f32 = 3.0;
+
+pub(crate) fn player_body_center_from_feet(feet: Vec3) -> Vec3 {
+    feet + Vec3::new(0.0, FIRST_PERSON_BODY_HALF_H, 0.0)
+}
+
+pub(crate) fn feet_from_player_body_center(center: Vec3) -> Vec3 {
+    center - Vec3::new(0.0, FIRST_PERSON_BODY_HALF_H, 0.0)
+}
 
 impl State {
+    /// Posición de los pies del jugador (= cámara FP). Fuente única con la entidad Player.
+    pub(crate) fn first_person_feet_position(&self) -> Vec3 {
+        if let Some(id) = self.first_person_player_entity {
+            if let Some(t) = self.world.get::<Transform>(id) {
+                return feet_from_player_body_center(t.position);
+            }
+        }
+        self.camera.target
+    }
+
+    pub(crate) fn set_first_person_feet_position(&mut self, feet: Vec3) {
+        if let Some(id) = self.first_person_player_entity {
+            if let Some(t) = self.world.get_mut::<Transform>(id) {
+                t.position = player_body_center_from_feet(feet);
+            }
+        }
+        self.camera.target = feet;
+    }
+
+    pub(crate) fn sync_player_rotation_from_look(&mut self) {
+        if let Some(id) = self.first_person_player_entity {
+            if let Some(t) = self.world.get_mut::<Transform>(id) {
+                t.rotation = glam::Quat::from_rotation_y(self.camera.yaw);
+            }
+        }
+    }
+
     pub(crate) fn is_first_person_runtime_active(&self) -> bool {
         self.preview_playing && self.camera_2d.is_none()
     }
@@ -39,9 +115,14 @@ impl State {
     }
 
     fn first_person_move_speed(&self, pressed_inputs: &HashSet<String>) -> f32 {
-        let mut speed = FIRST_PERSON_KEYBOARD_SPEED;
+        let mut speed = self
+            .first_person_lua_walk_speed
+            .unwrap_or(FIRST_PERSON_KEYBOARD_SPEED);
         if pressed_inputs.contains("SHIFT") {
-            speed *= FIRST_PERSON_SPRINT_MULTIPLIER;
+            let sprint = self
+                .first_person_lua_sprint_multiplier
+                .unwrap_or(FIRST_PERSON_SPRINT_MULTIPLIER);
+            speed *= sprint;
         }
         speed
     }
@@ -50,17 +131,20 @@ impl State {
         self.first_person_velocity = Vec3::ZERO;
         self.first_person_on_floor = true;
         self.first_person_jump_queued = false;
-        self.camera.eye_height_offset = 0.0;
+    }
+
+    pub(crate) fn has_first_person_player(&self) -> bool {
+        self.first_person_player_entity.is_some() && self.camera_2d.is_none()
     }
 
     pub(crate) fn queue_first_person_jump(&mut self) {
         if !self.is_first_person_runtime_active() {
             return;
         }
-        let position = self.camera.target;
+        let position = self.first_person_feet_position();
         let velocity_y = self.first_person_velocity.y;
         if self.is_first_person_grounded(position, velocity_y) {
-            self.first_person_velocity.y = FIRST_PERSON_JUMP_SPEED;
+            self.first_person_velocity.y = self.first_person_jump_speed();
             self.first_person_on_floor = false;
         }
         self.first_person_jump_queued = true;
@@ -68,23 +152,46 @@ impl State {
 
     pub(crate) fn sync_first_person_camera_mode(&mut self) {
         if self.is_first_person_runtime_active() {
+            self.camera.orbit_pivot_offset = Vec3::ZERO;
             self.camera.eye_height_offset = FIRST_PERSON_EYE_OFFSET;
             self.camera.distance = 0.01;
+        } else if self.has_first_person_player() {
+            // Editor: orbitar a la altura de los ojos (misma altura que en play).
+            self.camera.orbit_pivot_offset =
+                Vec3::new(0.0, FIRST_PERSON_EYE_OFFSET, 0.0);
+            self.camera.eye_height_offset = 0.0;
+            self.camera.distance = FIRST_PERSON_EDITOR_ORBIT_DISTANCE;
         } else {
+            self.camera.orbit_pivot_offset = Vec3::ZERO;
             self.camera.eye_height_offset = 0.0;
         }
     }
 
-    pub(crate) fn normalize_first_person_spawn_position(&mut self) {
-        let eye_y = FIRST_PERSON_GROUND_REST_Y + FIRST_PERSON_EYE_OFFSET;
-        if self.camera.target.y > eye_y - 0.25 {
-            self.camera.target.y = FIRST_PERSON_GROUND_REST_Y;
+    /// Aplica vista guardada (carga de proyecto). Funciona en editor y en preview.
+    pub(crate) fn apply_first_person_saved_view(
+        &mut self,
+        position: [f32; 3],
+        yaw: f32,
+        pitch: f32,
+    ) {
+        if self.camera_2d.is_some() {
+            return;
         }
-        self.first_person_on_floor = self.is_first_person_grounded(
-            self.camera.target,
-            self.first_person_velocity.y,
+
+        self.set_first_person_feet_position(Vec3::from_array(position));
+        self.camera.yaw = yaw;
+        self.camera.pitch = pitch.clamp(
+            -std::f32::consts::FRAC_PI_2 + 0.05,
+            std::f32::consts::FRAC_PI_2 - 0.05,
         );
+        self.sync_player_rotation_from_look();
+
+        self.sync_first_person_camera_mode();
+
         self.first_person_velocity = Vec3::ZERO;
+        self.first_person_on_floor =
+            self.is_first_person_grounded(self.first_person_feet_position(), 0.0);
+        self.clamp_first_person_camera_to_bounds();
     }
 
     pub(crate) fn apply_first_person_mouse_look(&mut self, dx: f32, dy: f32) {
@@ -98,6 +205,7 @@ impl State {
             -std::f32::consts::FRAC_PI_2 + 0.05,
             std::f32::consts::FRAC_PI_2 - 0.05,
         );
+        self.sync_player_rotation_from_look();
     }
 
     pub(crate) fn apply_first_person_keyboard(
@@ -114,7 +222,7 @@ impl State {
         let dt = delta_time.min(0.05);
         let radius = FIRST_PERSON_COLLIDER_RADIUS;
         let move_speed = self.first_person_move_speed(pressed_inputs);
-        let mut position = self.camera.target;
+        let mut position = self.first_person_feet_position();
         let mut velocity = self.first_person_velocity;
 
         let mut on_floor = self.is_first_person_grounded(position, velocity.y);
@@ -130,7 +238,7 @@ impl State {
         let jump_requested =
             pressed_inputs.contains("SPACE") || self.first_person_jump_queued;
         if jump_requested && self.is_first_person_grounded(position, velocity.y) {
-            velocity.y = FIRST_PERSON_JUMP_SPEED;
+            velocity.y = self.first_person_jump_speed();
         }
 
         let (sy, cy) = self.camera.yaw.sin_cos();
@@ -179,7 +287,7 @@ impl State {
             .world_bounds_3d
             .clamp_sphere_center(position, radius);
 
-        self.camera.target = position;
+        self.set_first_person_feet_position(position);
         self.camera.distance = 0.01;
         self.first_person_velocity = velocity;
         self.first_person_on_floor = on_floor;
@@ -191,10 +299,13 @@ impl State {
             return;
         }
 
-        self.camera.target = self.world_bounds_3d.clamp_sphere_center(
-            self.camera.target,
+        let feet = self.world_bounds_3d.clamp_sphere_center(
+            self.first_person_feet_position(),
             FIRST_PERSON_COLLIDER_RADIUS,
         );
-        self.camera.distance = 0.01;
+        self.set_first_person_feet_position(feet);
+        if self.is_first_person_runtime_active() {
+            self.camera.distance = 0.01;
+        }
     }
 }

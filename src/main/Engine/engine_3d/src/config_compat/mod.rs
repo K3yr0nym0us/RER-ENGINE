@@ -64,9 +64,7 @@ impl State {
         log::warn!("[engine_3d] load_scenario ignorado (binario 3D)");
     }
 
-    pub(crate) fn load_character(&mut self, _path: &str) {
-        log::warn!("[engine_3d] load_character ignorado (binario 3D)");
-    }
+    // load_character: implementado en config_base.rs
 
     pub(crate) fn set_character_scale(&mut self, _id: u32, _scale: f32) {}
 

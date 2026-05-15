@@ -2,7 +2,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { Files, Pencil, PlusLg, Trash } from 'react-bootstrap-icons';
 import Nav from 'react-bootstrap/Nav';
 
-import type { ProjectSaveData, SavedEntity, SavedScene, SavedWorldConfig } from '@shared-types';
+import type { GameStyle, ProjectSaveData, SavedEntity, SavedScene, SavedWorldConfig } from '@shared-types';
+import { isEditorBoxPath, isPlayerPath } from '@shared-types';
+import {
+	buildSavedPlayerTransform,
+	ensureFirstPersonPlayerOnLoad,
+} from '../../../defaults/firstPersonSceneRestore';
 import { useContextEngine } from '@engine';
 import { useModal } from '@modal';
 import { setSceneProjectState } from '../sceneStateStore';
@@ -16,6 +21,7 @@ interface SceneTab {
 interface Props {
   initialSave?: ProjectSaveData | null;
   projectType?: string;
+  gameStyle?: GameStyle;
 }
 
 const DEFAULT_WORLD: SavedWorldConfig = {
@@ -27,7 +33,7 @@ const DEFAULT_WORLD: SavedWorldConfig = {
   targetFps: 60,
 };
 
-export function SceneTabsBar({ initialSave, projectType }: Props) {
+export function SceneTabsBar({ initialSave, projectType, gameStyle }: Props) {
   const { t } = useTraslate();
   const {
     worldConfig,
@@ -40,6 +46,9 @@ export function SceneTabsBar({ initialSave, projectType }: Props) {
     entityTransformsRef,
     entityMetaRef,
     pendingRestoresRef,
+    pendingFirstPersonViewRef,
+    firstPersonViewRef,
+    mainPlayerHandled,
     playerEntityIdRef,
     camera2dRef,
     send,
@@ -105,14 +114,15 @@ export function SceneTabsBar({ initialSave, projectType }: Props) {
     const DEFAULT_ROT: [number, number, number, number] = [0, 0, 0, 1];
     const DEFAULT_SCL: [number, number, number] = [1, 1, 1];
 
-      const entities: SavedEntity[] = Object.entries(meta).reduce<SavedEntity[]>((acc, [idStr, m]) => {
-      if (m.kind === 'character' && m.path === '[Player]' && Number(idStr) === playerId) return acc;
+      const entities: SavedEntity[] = Object.entries(meta)
+      .filter(([, m]) => !(m.kind === 'character' && isPlayerPath(m.path)))
+      .map(([idStr, m]) => {
       const entityId = Number(idStr);
-      acc.push({
+      return {
         id: entityId,
         name: m.name,
         kind: m.kind,
-        path: m.path,
+        path: m.kind === 'model' && isEditorBoxPath(m.path) ? '[EditorBox]' : m.path,
         position: transforms[entityId]?.position ?? DEFAULT_POS,
         rotation: transforms[entityId]?.rotation ?? DEFAULT_ROT,
         scale: transforms[entityId]?.scale ?? DEFAULT_SCL,
@@ -123,18 +133,22 @@ export function SceneTabsBar({ initialSave, projectType }: Props) {
         scripts: m.scripts,
         control_bindings: m.controlBindings,
         blueprint_id: m.blueprintId,
-      });
-      return acc;
-    }, []);
+      };
+    });
 
     const sprites = Array.from(loadedSpritesInfo.entries()).map(([path, info]) => ({ name: info.name, path }));
 
-    const playerTransform = playerId !== null
-      ? {
-          position: transforms[playerId]?.position ?? DEFAULT_POS,
-          scale: transforms[playerId]?.scale ?? DEFAULT_SCL,
-        }
-      : null;
+    const fpView = firstPersonViewRef?.current ?? null;
+    const feetPos = fpView?.position
+      ?? (playerId !== null ? transforms[playerId]?.position : undefined);
+    const playerTransform = gameStyle === 'first-person' && projectType === '3D'
+      ? buildSavedPlayerTransform(fpView, feetPos)
+      : playerId !== null
+        ? {
+            position: transforms[playerId]?.position ?? DEFAULT_POS,
+            scale: transforms[playerId]?.scale ?? DEFAULT_SCL,
+          }
+        : null;
 
     return {
       id,
@@ -181,6 +195,15 @@ export function SceneTabsBar({ initialSave, projectType }: Props) {
 
   const loadSceneIntoEngine = (scene: SavedScene) => {
     send({ cmd: 'set_preview_playing', playing: false });
+    mainPlayerHandled.current = false;
+    playerEntityIdRef.current = null;
+    if (gameStyle === 'first-person' && projectType === '3D' && scene.playerTransform) {
+      pendingFirstPersonViewRef.current = scene.playerTransform;
+      firstPersonViewRef.current = scene.playerTransform;
+    } else {
+      pendingFirstPersonViewRef.current = null;
+    }
+    send({ cmd: 'set_scene', scene: 'empty' });
 
     setWorldSize(
       scene.world.worldWidth,
@@ -233,6 +256,27 @@ export function SceneTabsBar({ initialSave, projectType }: Props) {
         continue;
       }
 
+      if (entity.kind === 'model' && isEditorBoxPath(entity.path)) {
+        const boxQueue = pendingRestoresRef.current.get('[EditorBox]') ?? [];
+        pendingRestoresRef.current.set('[EditorBox]', boxQueue);
+        boxQueue.push({
+          transform,
+          name: entity.name,
+          physicsEnabled: entity.physics_enabled ?? false,
+          physicsType: entity.physics_type ?? 'static',
+          scripts: entity.scripts,
+          controlBindings: entity.control_bindings,
+          blueprintId: entity.blueprint_id,
+        });
+        send({
+          cmd: 'spawn_editor_box',
+          name: entity.name ?? 'Box',
+          position: entity.position,
+          scale: entity.scale,
+        });
+        continue;
+      }
+
       const bp = entity.blueprint_id
         ? (blueprints ?? []).find((b) => b.id === entity.blueprint_id) ?? null
         : null;
@@ -251,22 +295,13 @@ export function SceneTabsBar({ initialSave, projectType }: Props) {
 
       if (entity.kind === 'scenario') send({ cmd: 'load_scenario', path: entity.path });
       if (entity.kind === 'character') send({ cmd: 'load_character', path: entity.path });
-      if (entity.kind === 'model') send({ cmd: 'load_model', path: entity.path });
+      if (entity.kind === 'model' && entity.path && !isEditorBoxPath(entity.path)) {
+        send({ cmd: 'load_model', path: entity.path });
+      }
     }
 
-    if (scene.playerTransform && playerEntityIdRef.current !== null) {
-      send({
-        cmd: 'set_transform',
-        id: playerEntityIdRef.current,
-        position: scene.playerTransform.position,
-        scale: scene.playerTransform.scale,
-        track_undo: false,
-      });
-      entityTransformsRef.current[playerEntityIdRef.current] = {
-        position: scene.playerTransform.position,
-        rotation: [0, 0, 0, 1],
-        scale: scene.playerTransform.scale,
-      };
+    if (gameStyle === 'first-person' && projectType === '3D') {
+      ensureFirstPersonPlayerOnLoad(scene, pendingRestoresRef, send);
     }
   };
 

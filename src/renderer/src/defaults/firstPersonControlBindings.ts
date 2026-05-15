@@ -1,21 +1,29 @@
 import type { SavedControlBindings } from '@shared-types'
 
-/**
- * Plantilla Lua por tecla (accordion Controles).
- * El motor aplica WASD, Shift y Space de forma nativa en primera persona;
- * estos scripts documentan el mapeo y sirven para personalizar con engine.fp_* si lo necesitas.
- */
-const nativeNote = (label: string, key: string) =>
-	`-- ${label} (${key})\n-- Comportamiento nativo del motor en primera persona.\n-- Opcional: engine.fp_press_key("${key}") para lógica personalizada.\n`
+const fpMove = (key: string, walkSpeed: number) => `local WALK_SPEED = ${walkSpeed}
+engine.fp_set_walk_speed(WALK_SPEED)
+engine.fp_press_key("${key}")
+`
 
+const fpSprint = (sprintMultiplier: number) => `local SPRINT_MULTIPLIER = ${sprintMultiplier}
+engine.fp_set_sprint_multiplier(SPRINT_MULTIPLIER)
+engine.fp_press_key("SHIFT")
+`
+
+const fpJump = (jumpSpeed: number) => `local JUMP_SPEED = ${jumpSpeed}
+engine.fp_set_jump_speed(JUMP_SPEED)
+engine.fp_jump()
+`
+
+/** Valores por defecto = mismos que las constantes del motor (4 / ×3 / 6). */
 export const DEFAULT_FIRST_PERSON_CONTROL_BINDINGS: SavedControlBindings = {
 	keyboard_mouse: {
-		W: { name: 'fp_move_forward', source: nativeNote('Avanzar', 'W') },
-		S: { name: 'fp_move_back', source: nativeNote('Retroceder', 'S') },
-		A: { name: 'fp_move_left', source: nativeNote('Izquierda', 'A') },
-		D: { name: 'fp_move_right', source: nativeNote('Derecha', 'D') },
-		SHIFT: { name: 'fp_sprint', source: nativeNote('Sprint', 'SHIFT') },
-		SPACE: { name: 'fp_jump', source: nativeNote('Salto', 'SPACE') },
+		W: { name: 'fp_move_forward', source: fpMove('W', 4) },
+		S: { name: 'fp_move_back', source: fpMove('S', 4) },
+		A: { name: 'fp_move_left', source: fpMove('A', 4) },
+		D: { name: 'fp_move_right', source: fpMove('D', 4) },
+		SHIFT: { name: 'fp_sprint', source: fpSprint(3) },
+		SPACE: { name: 'fp_jump', source: fpJump(6) },
 	},
 	gamepad: {},
 }

@@ -74,7 +74,7 @@ impl State {
                     let label = self.next_numbered_entity_name("Mesh");
                     let id = self.world.spawn(Some(&label));
                     self.world.insert(id, MeshComponent { mesh_idx, tex_idx });
-                    send_event(&EngineEvent::ModelLoaded { id });
+                    self.send_model_loaded_event(id, &label);
                 }
                 log::info!("Modelo cargado: {path} ({count} malla/s)");
             }
