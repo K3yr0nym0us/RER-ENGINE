@@ -233,23 +233,24 @@ export function WorldAccordion({ projectType = '2D' }: { projectType?: ProjectTy
               />
             </div>
 
-            <hr className="border-secondary my-2" />
-
-            <label className="form-label small text-secondary mb-1 d-flex justify-content-between" htmlFor="gravity-range">
-              <span>{t('Gravity')}</span>
-              <span className="text-info fw-bold">{(worldConfig.gravity ?? 9.81).toFixed(2)} u/s²</span>
-            </label>
-            <input
-              id="gravity-range"
-              type="range"
-              className="form-range mb-2"
-              min={0} max={50} step={0.5}
-              value={worldConfig.gravity ?? 9.81}
-              disabled={!engineReady}
-              onChange={(e) => setGravity(parseFloat(e.target.value))}
-            />
           </>
         )}
+
+        <hr className="border-secondary my-2" />
+
+        <label className="form-label small text-secondary mb-1 d-flex justify-content-between" htmlFor="gravity-range">
+          <span>{t('Gravity')}</span>
+          <span className="text-info fw-bold">{(worldConfig.gravity ?? 9.81).toFixed(2)} u/s²</span>
+        </label>
+        <input
+          id="gravity-range"
+          type="range"
+          className="form-range mb-2"
+          min={0} max={50} step={0.5}
+          value={worldConfig.gravity ?? 9.81}
+          disabled={!engineReady}
+          onChange={(e) => setGravity(parseFloat(e.target.value))}
+        />
 
         <hr className="border-secondary my-2" />
 

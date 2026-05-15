@@ -19,6 +19,8 @@ pub(crate) struct Camera {
     pub fov_y: f32,
     pub near: f32,
     pub far: f32,
+    /// Desplazamiento vertical de la vista en primera persona (ojos sobre el collider).
+    pub(crate) eye_height_offset: f32,
 }
 
 impl Camera {
@@ -31,13 +33,22 @@ impl Camera {
             fov_y: 45_f32.to_radians(),
             near: 0.1,
             far: 1000.0,
+            eye_height_offset: 0.0,
         }
+    }
+
+    pub(crate) fn view_forward(&self) -> Vec3 {
+        let (sy, cy) = self.yaw.sin_cos();
+        let (sp, cp) = self.pitch.sin_cos();
+        Vec3::new(-cy * cp, -sp, -sy * cp).normalize_or_zero()
     }
 
     pub(crate) fn position(&self) -> Vec3 {
         let (sy, cy) = self.yaw.sin_cos();
         let (sp, cp) = self.pitch.sin_cos();
-        self.target + Vec3::new(cy * cp, sp, sy * cp) * self.distance
+        self.target
+            + Vec3::new(cy * cp, sp, sy * cp) * self.distance
+            + Vec3::Y * self.eye_height_offset
     }
 
     pub(crate) fn orbit(&mut self, dx: f32, dy: f32) {
@@ -66,6 +77,10 @@ impl Camera {
 
     pub(crate) fn view_matrix(&self) -> Mat4 {
         let pos = self.position();
+        if self.eye_height_offset > 0.0 {
+            let forward = self.view_forward();
+            return Mat4::look_at_rh(pos, pos + forward, Vec3::Y);
+        }
         Mat4::look_at_rh(pos, self.target, Vec3::Y)
     }
 

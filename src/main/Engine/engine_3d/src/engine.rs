@@ -73,6 +73,10 @@ pub struct State {
     pub(crate) quick_build_preview_kind: Option<String>,
     pub(crate) quick_build_preview_scale: Option<[f32; 3]>,
     pub preview_playing: bool,
+    /// Velocidad del personaje (m/s), patrón Godot CharacterBody3D / Unity CharacterController.
+    pub(crate) first_person_velocity: GlamVec3,
+    pub(crate) first_person_on_floor: bool,
+    pub(crate) first_person_jump_queued: bool,
     pub(crate) tool_overlay_buffer: GizmoBuffer,
     pub(crate) snap_hint_uv: Option<[f32; 4]>,
     pub(crate) snap_hint_size: (f32, f32),

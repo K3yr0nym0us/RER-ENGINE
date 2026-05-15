@@ -500,8 +500,10 @@ impl State {
                 }
             }
             EngineCommand::SetGravity { gravity } => {
-                self.physics_2d.set_gravity(-gravity.abs());
-                log::info!("[physics] Gravedad actualizada: -{:.2}", gravity.abs());
+                let magnitude = gravity.abs();
+                self.physics.set_gravity(-magnitude);
+                self.physics_2d.set_gravity(-magnitude);
+                log::info!("[physics] Gravedad actualizada: {:.2} m/s²", magnitude);
             }
             EngineCommand::SetGridVisible { visible } => {
                 self.grid_config.visible = visible;

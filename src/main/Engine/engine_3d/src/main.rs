@@ -181,6 +181,7 @@ impl App {
         self.gamepad_pressed.clear();
         state.set_active_gizmo_axis(None);
         state.set_snap_hint_visible(false);
+        state.reset_first_person_motion();
     }
 
     fn capture_cursor_for_preview(&mut self, state: &engine::State) {
@@ -237,6 +238,8 @@ impl App {
         }
 
         if state.is_first_person_runtime_active() {
+            state.normalize_first_person_spawn_position();
+            state.sync_first_person_camera_mode();
             self.capture_cursor_for_preview(state);
         } else {
             self.release_cursor_after_preview(state);
@@ -668,6 +671,8 @@ impl ApplicationHandler<EngineCommand> for App {
                 let pressed = key_state == ElementState::Pressed;
                 if pressed && !repeat && code == KeyCode::Escape && state.is_first_person_runtime_active() {
                     preview_toggle = Some(false);
+                } else if pressed && !repeat && code == KeyCode::Space && state.is_first_person_runtime_active() {
+                    state.queue_first_person_jump();
                 } else if state.is_preview_playing() {
                     if let Some(control_key) = map_keyboard_control_key(code) {
                         if pressed {
@@ -733,6 +738,12 @@ impl ApplicationHandler<EngineCommand> for App {
             }
             WindowEvent::RedrawRequested => {
                 state.update();
+                if state.is_first_person_runtime_active() {
+                    state.apply_first_person_keyboard(
+                        &self.keyboard_mouse_pressed,
+                        state.delta_time,
+                    );
+                }
                 match state.render() {
                     Ok(_) => {}
                     // Surface perdida: reconfigurar con el tamaño actual
@@ -805,11 +816,6 @@ impl ApplicationHandler<EngineCommand> for App {
                         state.handle_runtime_control_input("gamepad", control_key);
                     }
                 }
-                state.apply_first_person_keyboard(
-                    &self.keyboard_mouse_pressed,
-                    frame_duration.as_secs_f32(),
-                );
-
             } else {
                 self.keyboard_mouse_pressed.clear();
                 self.gamepad_pressed.clear();

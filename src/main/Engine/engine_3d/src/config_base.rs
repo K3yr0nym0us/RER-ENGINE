@@ -94,6 +94,7 @@ impl State {
                 tex_idx: 0,
             },
         );
+        self.physics.add_static_ground();
 
         let block_mesh_idx = self.meshes.len();
         self.meshes.push(mesh::create_cube(&self.device));
@@ -131,7 +132,13 @@ impl State {
         spawn_block("Pillar", [0.0, 2.5, 21.0], [1.8, 5.0, 1.8]);
 
         self.camera = Camera::new();
-        self.camera.target = glam::Vec3::new(0.0, 1.75, 5.0);
+        self.camera.target = glam::Vec3::new(
+            0.0,
+            crate::config_3d::first_person::FIRST_PERSON_GROUND_REST_Y,
+            5.0,
+        );
+        self.camera.eye_height_offset =
+            crate::config_3d::first_person::FIRST_PERSON_EYE_OFFSET;
         self.camera.pitch = 0.0;
         self.camera.yaw = -std::f32::consts::FRAC_PI_2;
         self.camera.distance = 0.01;

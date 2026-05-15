@@ -72,6 +72,15 @@ impl PhysicsWorld {
         self.bodies.len() as u32
     }
 
+    /// Gravedad positiva hacia abajo (m/s²), p. ej. 9.81 en la Tierra.
+    pub(crate) fn gravity_magnitude(&self) -> f32 {
+        self.gravity.y.abs()
+    }
+
+    pub(crate) fn set_gravity(&mut self, gravity_y: f32) {
+        self.gravity = vector![0.0, gravity_y, 0.0];
+    }
+
     #[allow(dead_code)]
     pub(crate) fn add_dynamic_sphere(
         &mut self,
@@ -87,7 +96,6 @@ impl PhysicsWorld {
         handle
     }
 
-    #[allow(dead_code)]
     pub(crate) fn add_static_ground(&mut self) -> ColliderHandle {
         let collider =
             ColliderBuilder::halfspace(UnitVector::new_normalize(vector![0.0, 1.0, 0.0])).build();
@@ -296,6 +304,75 @@ impl PhysicsWorld {
             .push(self.colliders.insert(front_wall));
 
         self.refresh_queries();
+    }
+
+    pub(crate) fn is_character_grounded(
+        &mut self,
+        position: Vec3,
+        radius: f32,
+        extra_distance: f32,
+    ) -> bool {
+        self.refresh_queries();
+
+        let shape = Ball::new(radius.max(0.05));
+        let shape_pos = Isometry::translation(position.x, position.y, position.z);
+        let probe = radius + extra_distance.max(0.01);
+        let shape_vel = vector![0.0, -probe, 0.0];
+        let hit = self.query_pipeline.cast_shape(
+            &self.bodies,
+            &self.colliders,
+            &shape_pos,
+            &shape_vel,
+            &shape,
+            ShapeCastOptions {
+                max_time_of_impact: 1.0,
+                target_distance: 0.05,
+                stop_at_penetration: false,
+                compute_impact_geometry_on_penetration: false,
+            },
+            QueryFilter::default(),
+        );
+
+        hit.map_or(false, |(_, hit_data)| {
+            let normal = hit_data.normal2.into_inner();
+            normal.y > 0.5
+        })
+    }
+
+    /// Desplazamiento tipo `move_and_slide` (Godot) / `CharacterController.Move` (Unity):
+    /// primero horizontal, luego vertical; devuelve posición final y si hay suelo bajo los pies.
+    pub(crate) fn move_character_slide(
+        &mut self,
+        start: Vec3,
+        velocity: Vec3,
+        dt: f32,
+        radius: f32,
+        ground_probe: f32,
+    ) -> (Vec3, bool) {
+        let mut position = start;
+
+        let horizontal = Vec3::new(velocity.x, 0.0, velocity.z) * dt;
+        if horizontal.length_squared() > 1e-6 {
+            position = self.move_character_sphere(position, horizontal, radius);
+        }
+
+        let vertical_delta = velocity.y * dt;
+        if vertical_delta.abs() > 1e-6 {
+            let before_y = position.y;
+            let vertical_motion = Vec3::Y * vertical_delta;
+            position = self.move_character_sphere(position, vertical_motion, radius);
+            // Si el shape-cast bloquea el salto por contacto con el suelo, forzar subida mínima.
+            if velocity.y > 0.0 && (position.y - before_y) < vertical_delta * 0.25 {
+                position.y = before_y + vertical_delta;
+            }
+        }
+
+        let on_floor = if ground_probe > 0.0 {
+            self.is_character_grounded(position, radius, ground_probe)
+        } else {
+            false
+        };
+        (position, on_floor)
     }
 
     pub(crate) fn move_character_sphere(
