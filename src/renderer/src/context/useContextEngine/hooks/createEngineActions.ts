@@ -1,5 +1,5 @@
 import type { Dispatch } from 'react';
-import type { BluePrintEntry, EngineAction, EngineInternalRefs, EntityScripts, PendingRestore, Transform } from '../types';
+import type { BluePrintEntry, EngineAction, EngineInternalRefs, EntityMeta, EntityScripts, PendingRestore, Transform } from '../types';
 
 interface CreateEngineActionsParams {
 	dispatch: Dispatch<EngineAction>
@@ -71,8 +71,23 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 		dispatch({ type: 'SET_ANIMATION_PLAYING', payload: { entityId, playing: false } });
 	};
 
-	const loadModel = (path: string) => {
-		dispatch({ type: 'CLEAR_ENTITIES' });
+	const loadModelAsset = (path: string, name: string) => {
+		send({ cmd: 'load_model_asset', path, name });
+		dispatch({ type: 'ADD_MODEL_INFO', payload: { path, name } });
+	};
+
+	const removeModelAsset = (path: string) => {
+		send({ cmd: 'remove_model_asset', path });
+		dispatch({ type: 'REMOVE_MODEL_INFO', payload: path });
+	};
+
+	const getModelsList = () => {
+		send({ cmd: 'get_models_list' });
+	};
+
+	const spawnModel = (path: string, kind: EntityMeta['kind'] = 'model') => {
+		refs.pendingModelPathRef.current = path;
+		refs.pendingSpawnKindRef.current = kind;
 		send({ cmd: 'load_model', path });
 	};
 
@@ -328,7 +343,10 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 		sendAsync,
 		setAnimationPlaying,
 		applyInitialAnimationFrame,
-		loadModel,
+		loadModelAsset,
+		spawnModel,
+		removeModelAsset,
+		getModelsList,
 		retryEngine,
 		removeScenario,
 		removeCharacter,

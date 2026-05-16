@@ -82,6 +82,8 @@ export interface EngineState {
 	animationPlaying: Map<number, boolean>
 	sprites: SpriteInfo[]
 	loadedSpritesInfo: Map<string, { name: string }>
+	models: import('@shared-types').ModelInfo[]
+	loadedModelsInfo: Map<string, { name: string }>
 	sounds: SoundInfo[]
 	backgrounds: BackgroundInfo[]
 	debugMetrics: DebugMetrics | null
@@ -121,6 +123,9 @@ export type EngineAction =
 	| { type: 'ADD_SPRITE_INFO'; payload: { path: string; name: string } }
 	| { type: 'REMOVE_SPRITE_INFO'; payload: string }
 	| { type: 'SET_LOADED_SPRITES_INFO'; payload: Array<{ path: string; name: string }> }
+	| { type: 'ADD_MODEL_INFO'; payload: { path: string; name: string } }
+	| { type: 'REMOVE_MODEL_INFO'; payload: string }
+	| { type: 'SET_MODELS'; payload: import('@shared-types').ModelInfo[] }
 	| { type: 'SET_DEBUG_MODE'; payload: boolean }
 	| { type: 'SET_DEBUG_METRICS'; payload: DebugMetrics }
 	| { type: 'ADD_BLUEPRINT'; payload: BluePrintEntry }
@@ -151,6 +156,8 @@ export const initialState: EngineState = {
 	animationPlaying: new Map(),
 	sprites: [],
 	loadedSpritesInfo: new Map(),
+	models: [],
+	loadedModelsInfo: new Map(),
 	sounds: [],
 	backgrounds: [],
 	debugMetrics: null,
@@ -243,6 +250,27 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 			}
 			return { ...prevState, loadedSpritesInfo: nextMap };
 		},
+		ADD_MODEL_INFO: (prevState, nextAction) => {
+			const nextMap = new Map(prevState.loadedModelsInfo);
+			nextMap.set(nextAction.payload.path, { name: nextAction.payload.name });
+			const entry = { path: nextAction.payload.path, name: nextAction.payload.name };
+			const exists = prevState.models.some((m) => m.path === entry.path);
+			return {
+				...prevState,
+				loadedModelsInfo: nextMap,
+				models: exists ? prevState.models : [...prevState.models, entry],
+			};
+		},
+		REMOVE_MODEL_INFO: (prevState, nextAction) => {
+			const nextMap = new Map(prevState.loadedModelsInfo);
+			nextMap.delete(nextAction.payload);
+			return {
+				...prevState,
+				loadedModelsInfo: nextMap,
+				models: prevState.models.filter((m) => m.path !== nextAction.payload),
+			};
+		},
+		SET_MODELS: (prevState, nextAction) => ({ ...prevState, models: nextAction.payload }),
 		SET_DEBUG_MODE: (prevState, nextAction) => ({ ...prevState, debugMode: nextAction.payload }),
 		SET_DEBUG_METRICS: (prevState, nextAction) => ({ ...prevState, debugMetrics: nextAction.payload }),
 		ADD_BLUEPRINT: (prevState, nextAction) => ({ ...prevState, blueprints: [...prevState.blueprints, nextAction.payload] }),
@@ -320,6 +348,8 @@ export interface EngineInternalRefs {
 	playerEntityIdRef: MutableRefObject<number | null>
 	firstPersonViewRef: MutableRefObject<import('@shared-types').SavedPlayerTransform | null>
 	pendingFirstPersonViewRef: MutableRefObject<import('@shared-types').SavedPlayerTransform | null>
+	pendingModelPathRef: MutableRefObject<string | null>
+	pendingSpawnKindRef: MutableRefObject<EntityMeta['kind'] | null>
 	camera2dRef: MutableRefObject<Camera2dState | null>
 	mainPlayerHandled: MutableRefObject<boolean>
 	playerRemoved: MutableRefObject<boolean>
@@ -338,12 +368,17 @@ export interface EngineContextValue extends EngineState {
 	playerEntityIdRef: MutableRefObject<number | null>
 	firstPersonViewRef: MutableRefObject<SavedPlayerTransform | null>
 	pendingFirstPersonViewRef: MutableRefObject<SavedPlayerTransform | null>
+	pendingModelPathRef: MutableRefObject<string | null>
+	pendingSpawnKindRef: MutableRefObject<EntityMeta['kind'] | null>
 	mainPlayerHandled: MutableRefObject<boolean>
 	camera2dRef: MutableRefObject<Camera2dState | null>
 	send: (cmd: object) => void
 	sendAsync: <T>(cmd: object, waitForEvent: string, onStart?: () => void) => Promise<T>
 	setAnimationPlaying: (entityId: number, playing: boolean) => void
-	loadModel: (path: string) => void
+	loadModelAsset: (path: string, name: string) => void
+	spawnModel: (path: string, kind?: EntityMeta['kind']) => void
+	removeModelAsset: (path: string) => void
+	getModelsList: () => void
 	reportBounds: () => void
 	retryEngine: () => void
 	removeScenario: (id: number) => void

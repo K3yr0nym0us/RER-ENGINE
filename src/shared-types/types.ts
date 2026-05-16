@@ -161,6 +161,8 @@ export interface SavedScene {
   playerTransform: SavedPlayerTransform | null
   camera2d:       { x: number; y: number; halfH: number } | null
   sprites:        Array<{ name: string; path: string }>
+  /** Modelos 3D precargados (ruta absoluta + nombre). */
+  models?:        Array<{ name: string; path: string }>
 }
 
 export interface ProjectSaveData {
@@ -178,6 +180,8 @@ export interface ProjectSaveData {
   savedAt:         string   // ISO timestamp
   /** Sprites precargados en el proyecto (nombre -> ruta relativa). */
   sprites?:        Array<{ name: string; path: string }>
+  /** Modelos 3D precargados en el proyecto. */
+  models?:         Array<{ name: string; path: string }>
   /** Sonidos precargados en el proyecto. */
   sounds?:         Array<{ name: string; path: string }>
   /** Fondos precargados en el proyecto. */
@@ -240,6 +244,9 @@ export interface EngineCommand {
     | 'load_sprite'
     | 'remove_sprite'
     | 'get_sprites_list'
+    | 'load_model_asset'
+    | 'remove_model_asset'
+    | 'get_models_list'
     | 'load_sound'
     | 'remove_sound'
     | 'get_sounds_list'
@@ -258,7 +265,7 @@ export interface EngineCommand {
 }
 
 export interface EngineEvent {
-  event: 'ready' | 'pong' | 'error' | 'model_loaded' | 'stopped' | 'entity_selected' | 'entity_deselected' | 'entity_hovered' | 'entity_unhovered' | 'scenario_loaded' | 'character_loaded' | 'camera_2d_updated' | 'background_loaded' | 'drawing_progress' | 'collider_created' | 'execution_area_created' | 'tool_cancelled' | 'pivot_selected' | 'physics_changed' | 'sprite_loaded' | 'sprite_removed' | 'sprites_list' | 'sound_loaded' | 'sound_removed' | 'sounds_list' | 'background_asset_loaded' | 'background_asset_removed' | 'backgrounds_list' | 'debug_metrics' | 'preview_playing_changed' | 'trigger_entered' | 'trigger_exited' | 'entity_removed' | 'quick_build_move' | 'quick_build_click' | 'animation_logical_resolved' | 'autosave_tick'
+  event: 'ready' | 'pong' | 'error' | 'model_loaded' | 'stopped' | 'entity_selected' | 'entity_deselected' | 'entity_hovered' | 'entity_unhovered' | 'scenario_loaded' | 'character_loaded' | 'camera_2d_updated' | 'background_loaded' | 'drawing_progress' | 'collider_created' | 'execution_area_created' | 'tool_cancelled' | 'pivot_selected' | 'physics_changed' | 'sprite_loaded' | 'sprite_removed' | 'sprites_list' | 'model_asset_loaded' | 'model_asset_removed' | 'models_list' | 'sound_loaded' | 'sound_removed' | 'sounds_list' | 'background_asset_loaded' | 'background_asset_removed' | 'backgrounds_list' | 'debug_metrics' | 'preview_playing_changed' | 'trigger_entered' | 'trigger_exited' | 'entity_removed' | 'quick_build_move' | 'quick_build_click' | 'animation_logical_resolved' | 'autosave_tick'
   [key: string]: unknown
 }
 
@@ -284,6 +291,7 @@ export interface ScenarioLoaded {
   event: 'scenario_loaded'
   id:    number
   path:  string
+  name?: string
 }
 
 export interface CharacterLoaded {
@@ -384,6 +392,11 @@ export interface SpriteInfo {
   name:   string
   width:  number
   height: number
+}
+
+export interface ModelInfo {
+  path: string
+  name: string
 }
 
 export interface SoundInfo {

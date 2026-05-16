@@ -310,7 +310,12 @@ pub enum EngineEvent {
     /// Emitido cuando el cursor deja de estar sobre cualquier entidad.
     EntityUnhovered,
     /// Emitido cuando un escenario PNG se cargó correctamente.
-    ScenarioLoaded { id: u32, path: String },
+    ScenarioLoaded {
+        id: u32,
+        path: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        name: Option<String>,
+    },
     /// Emitido cuando un personaje PNG se cargó correctamente.
     CharacterLoaded { id: u32, path: String },
     /// Emitido cuando la cámara 2D cambia (fin de pan o zoom).

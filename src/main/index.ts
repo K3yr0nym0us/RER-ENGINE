@@ -344,7 +344,7 @@ ipcMain.handle('open-model-dialog', async () => {
   if (!mainWindow) return null
   const result = await dialog.showOpenDialog(mainWindow, {
     title:       'Abrir modelo 3D',
-    filters:     [{ name: 'Modelos 3D', extensions: ['glb', 'gltf'] }],
+    filters:     [{ name: 'Modelos 3D', extensions: ['glb', 'gltf', 'fbx'] }],
     properties:  ['openFile'],
   })
   return result.canceled ? null : result.filePaths[0] ?? null
@@ -491,6 +491,24 @@ function forEachEntity(data: ProjectSaveData, cb: (entity: ProjectSaveData['enti
   }
 
   for (const entity of data.entities) cb(entity)
+}
+
+function countSavedEntities(data: ProjectSaveData): number {
+  let count = 0
+  forEachEntity(data, () => { count += 1 })
+  return count
+}
+
+function formatEntityKindBreakdown(data: ProjectSaveData): string {
+  const byKind = new Map<string, number>()
+  forEachEntity(data, (entity) => {
+    byKind.set(entity.kind, (byKind.get(entity.kind) ?? 0) + 1)
+  })
+  if (byKind.size === 0) return ''
+  const parts = [...byKind.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([kind, n]) => `${kind}: ${n}`)
+  return ` [${parts.join(', ')}]`
 }
 
 /**
@@ -863,11 +881,25 @@ function saveProjectToFile(saveFilePath: string, data: ProjectSaveData): boolean
     const otherAssets = otherAssetNames.length
     const packedScriptFiles = countLuaFiles(scriptingDir)
     const otherSuffix = otherAssets > 0 ? ` [${otherAssetNames.join(', ')}]` : ''
+    const entityCount = countSavedEntities(data)
+    const entityKindSuffix = formatEntityKindBreakdown(data)
 
-    console.log(
-      `[editor] Proyecto guardado en ${saveFilePath} `
-      + `(assets total: ${pathMap.size}, sprites: ${uniqueSprites.size}, fondos: ${uniqueBackgrounds.size}, sonidos: ${uniqueSounds.size}, scripts empaquetados: ${packedScriptFiles}, otros: ${otherAssets}${otherSuffix})`,
-    )
+    if (data.type === '3D') {
+      const uniqueModels = new Set<string>()
+      for (const model of data.models ?? []) addRelIfPacked(uniqueModels, model.path)
+      for (const scene of data.scenes ?? []) {
+        for (const model of scene.models ?? []) addRelIfPacked(uniqueModels, model.path)
+      }
+      console.log(
+        `[editor] Proyecto guardado en ${saveFilePath} `
+        + `(entidades: ${entityCount}${entityKindSuffix}, modelos: ${uniqueModels.size}, fondos: ${uniqueBackgrounds.size}, sonidos: ${uniqueSounds.size}, scripts empaquetados: ${packedScriptFiles})`,
+      )
+    } else {
+      console.log(
+        `[editor] Proyecto guardado en ${saveFilePath} `
+        + `(entidades: ${entityCount}${entityKindSuffix}, sprites: ${uniqueSprites.size}, fondos: ${uniqueBackgrounds.size}, sonidos: ${uniqueSounds.size}, scripts empaquetados: ${packedScriptFiles}, otros: ${otherAssets}${otherSuffix})`,
+      )
+    }
     return true
   } catch (err) {
     console.error('[editor] Error al guardar proyecto:', err)

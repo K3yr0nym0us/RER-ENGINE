@@ -98,7 +98,11 @@ impl State {
         self.world.insert(sc_id, ScenarioMarker { img_width, img_height, base_world_h, path: path.to_owned() });
         self.scenario_entities.push(sc_id);
 
-        send_event(&EngineEvent::ScenarioLoaded { id: sc_id, path: path.to_owned() });
+        send_event(&EngineEvent::ScenarioLoaded {
+            id: sc_id,
+            path: path.to_owned(),
+            name: Some(scenario_name),
+        });
         log::debug!("[load_scenario] entidad {sc_id} creada {img_width}×{img_height}: {path}");
     }
 

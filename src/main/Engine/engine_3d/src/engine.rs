@@ -110,6 +110,8 @@ pub struct State {
     pub(crate) script_engine: ScriptEngine,
     pub(crate) control_bindings_by_entity: HashMap<u32, crate::ipc::ControlBindingsData>,
     pub(crate) sprite_store: HashMap<String, (String, u32, u32)>,
+    /// Modelos 3D precargados: ruta absoluta → nombre visible.
+    pub(crate) model_store: HashMap<String, String>,
     pub(crate) sound_store: HashMap<String, String>,
     pub(crate) background_store: HashMap<String, String>,
     pub(crate) undo_stack: Vec<UndoAction>,

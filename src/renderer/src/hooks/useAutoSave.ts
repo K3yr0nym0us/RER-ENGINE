@@ -28,7 +28,7 @@ export function useAutoSave({
   initialSave = null,
   initialSavePath = null,
 }: UseAutoSaveOptions = {}): UseAutoSaveReturn {
-  const { worldConfig, backgroundPath, selectedEntity, entityTransformsRef, entityMetaRef, playerEntityIdRef, firstPersonViewRef, camera2dRef, loadedSpritesInfo, blueprints, sounds, backgrounds } = useContextEngine()
+  const { worldConfig, backgroundPath, selectedEntity, entityTransformsRef, entityMetaRef, playerEntityIdRef, firstPersonViewRef, camera2dRef, loadedSpritesInfo, loadedModelsInfo, blueprints, sounds, backgrounds } = useContextEngine()
   const { locale } = useLanguage()
   const [hasSavedOnce, setHasSavedOnce] = useState(Boolean(initialSavePath))
   const [autoSaveEnabled, setAutoSaveEnabled] = useState(false)
@@ -125,6 +125,13 @@ export function useAutoSave({
       path,
     }))
 
+    const modelsArray = projectType === '3D'
+      ? Array.from(loadedModelsInfo.entries()).map(([path, info]) => ({
+          name: info.name,
+          path,
+        }))
+      : undefined
+
     const currentSceneSnapshot = {
       id: 1,
       name: 'Escena 1',
@@ -134,6 +141,7 @@ export function useAutoSave({
       playerTransform,
       camera2d: camera2dRef.current,
       sprites: spritesArray,
+      models: modelsArray,
     }
 
     const sceneState = getSceneProjectState()
@@ -153,6 +161,7 @@ export function useAutoSave({
           playerTransform,
           camera2d: camera2dRef.current,
           sprites: spritesArray,
+          models: modelsArray,
         }
       }
     }
@@ -172,12 +181,13 @@ export function useAutoSave({
       camera2d: activeScene?.camera2d ?? camera2dRef.current,
       savedAt: new Date().toISOString(),
       sprites: activeScene?.sprites ?? spritesArray,
+      models: activeScene?.models ?? modelsArray,
       sounds,
       backgrounds,
       blueprints,
       language: locale,
     }
-  }, [projectType, gameStyle, initialSave, worldConfig, backgroundPath, selectedEntity, playerEntityIdRef, firstPersonViewRef, entityTransformsRef, entityMetaRef, camera2dRef, loadedSpritesInfo, blueprints, sounds, backgrounds, locale])
+  }, [projectType, gameStyle, initialSave, worldConfig, backgroundPath, selectedEntity, playerEntityIdRef, firstPersonViewRef, entityTransformsRef, entityMetaRef, camera2dRef, loadedSpritesInfo, loadedModelsInfo, blueprints, sounds, backgrounds, locale])
 
   useEffect(() => {
     autoSaveEnabledRef.current = autoSaveEnabled

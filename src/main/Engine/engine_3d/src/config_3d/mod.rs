@@ -3,7 +3,7 @@
 // Contiene:
 //  · camera_3d        — Camera (órbita) + CameraUniform
 //  · first_person     — movimiento y mouse look del runtime 3D
-//  · load_model       — carga un archivo .glb/.gltf y puebla la escena
+//  · load_model       — carga un .glb/.gltf/.fbx y añade mallas a la escena
 //  · ray_cast         — proyecta un rayo desde píxel y devuelve la entidad más cercana
 //  · pick_entity      — dispara el picking 3D y emite IPC
 //  · project_to_screen — proyecta un punto 3D a píxeles de pantalla
@@ -30,50 +30,45 @@ use crate::engine::State;
 use crate::ipc::{send_event, EngineEvent};
 
 impl State {
-    /// Carga un archivo .glb / .gltf desde disco y puebla la escena con sus mallas.
+    /// Registra un modelo 3D en el almacén de recursos (sin instanciar en escena).
+    pub(crate) fn register_model_asset(&mut self, path: &str, name: &str) {
+        if !Path::new(path).is_file() {
+            send_event(&EngineEvent::Error {
+                message: format!("No se encontró el modelo: {path}"),
+            });
+            return;
+        }
+        self.model_store
+            .insert(path.to_string(), name.to_string());
+        send_event(&EngineEvent::ModelAssetLoaded {
+            path: path.to_string(),
+            name: name.to_string(),
+        });
+        log::info!("[model] registrado en recursos: {name} ({path})");
+    }
+
+    /// Instancia un modelo 3D en la escena (añade mallas sin limpiar el mundo).
     pub(crate) fn load_model(&mut self, path: &str) {
-        match mesh_3d::load_glb(&self.device, Path::new(path)) {
-            Ok((gltf_meshes, images)) => {
-                self.world.clear();
-                self.meshes.clear();
-                self.uv_rects.clear();
-                self.physics.clear_scene_colliders();
-
-                let count = gltf_meshes.len();
-                for gm in gltf_meshes {
-                    let rgba: Vec<u8> = if let Some(img_idx) = gm.tex_index {
-                        if let Some(img_data) = images.get(img_idx) {
-                            use gltf::image::Format;
-                            match img_data.format {
-                                Format::R8G8B8 => img_data
-                                    .pixels
-                                    .chunks_exact(3)
-                                    .flat_map(|p| [p[0], p[1], p[2], 255u8])
-                                    .collect(),
-                                Format::R8G8B8A8 => img_data.pixels.clone(),
-                                _ => vec![255, 255, 255, 255],
-                            }
-                        } else {
-                            vec![255, 255, 255, 255]
-                        }
-                    } else {
-                        vec![255, 255, 255, 255]
-                    };
-                    let (img_w, img_h) = if let Some(img_idx) = gm.tex_index {
-                        images.get(img_idx).map(|d| (d.width, d.height)).unwrap_or((1, 1))
-                    } else {
-                        (1, 1)
-                    };
-
+        match mesh_3d::load_model_file(&self.device, Path::new(path)) {
+            Ok(loaded) => {
+                let count = loaded.len();
+                for part in loaded {
                     let mesh_idx = self.meshes.len();
                     let tex_idx = self.uv_rects.len();
-                    self.meshes.push(gm.mesh);
-                    let uv = self.atlas.pack(&self.queue, &rgba, img_w, img_h);
+                    self.meshes.push(part.mesh);
+                    let uv = self
+                        .atlas
+                        .pack(&self.queue, &part.rgba, part.width, part.height);
                     self.uv_rects.push(uv);
 
                     let label = self.next_numbered_entity_name("Mesh");
                     let id = self.world.spawn(Some(&label));
                     self.world.insert(id, MeshComponent { mesh_idx, tex_idx });
+                    if let Some(t) = self.world.get_mut::<Transform>(id) {
+                        let forward = self.camera.view_forward();
+                        let spawn = self.camera.target + forward * 2.5;
+                        t.position = glam::Vec3::new(spawn.x, spawn.y.max(0.0), spawn.z);
+                    }
                     self.send_model_loaded_event(id, &label);
                 }
                 log::info!("Modelo cargado: {path} ({count} malla/s)");

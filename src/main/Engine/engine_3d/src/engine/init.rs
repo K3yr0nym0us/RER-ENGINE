@@ -455,6 +455,7 @@ impl State {
                 .expect("Error al inicializar el motor de scripting Lua"),
             control_bindings_by_entity: HashMap::new(),
             sprite_store: HashMap::new(),
+            model_store: HashMap::new(),
             sound_store: HashMap::new(),
             background_store: HashMap::new(),
             undo_stack: Vec::new(),

@@ -160,6 +160,7 @@ export function createEngineEventHandler({
 						playerTransform: activeScene.playerTransform,
 						camera2d: activeScene.camera2d,
 						sprites: activeScene.sprites,
+						models: activeScene.models,
 					}
 					: baseSave;
 
@@ -197,6 +198,12 @@ export function createEngineEventHandler({
 					for (const sprite of save.sprites) {
 						sendEngine({ cmd: 'load_sprite', path: sprite.path, name: sprite.name } as never);
 						dispatch({ type: 'ADD_SPRITE_INFO', payload: { path: sprite.path, name: sprite.name } });
+					}
+				}
+				if (save.models && save.models.length > 0) {
+					for (const model of save.models) {
+						sendEngine({ cmd: 'load_model_asset', path: model.path, name: model.name } as never);
+						dispatch({ type: 'ADD_MODEL_INFO', payload: { path: model.path, name: model.name } });
 					}
 				}
 				if (save.sounds && save.sounds.length > 0) {
@@ -354,18 +361,39 @@ export function createEngineEventHandler({
 				}
 				refs.entityTransformsRef.current[id] = pending.transform;
 				if (editorBoxQueue.length === 0) refs.pendingRestoresRef.current.delete('[EditorBox]');
-			} else if (!refs.entityMetaRef.current[id]) {
-				refs.entityMetaRef.current[id] = {
-					kind: 'model',
-					path: '[EditorBox]',
-					name: loaded.name ?? `Entity ${id}`,
-					physicsEnabled: true,
-					physicsType: 'static',
-				};
-			} else if (loaded.name) {
-				refs.entityMetaRef.current[id].name = loaded.name;
-				if (!refs.entityMetaRef.current[id].path || refs.entityMetaRef.current[id].path === '') {
-					refs.entityMetaRef.current[id].path = '[EditorBox]';
+			} else {
+				const modelPath = refs.pendingModelPathRef.current;
+				const spawnKind = refs.pendingSpawnKindRef.current ?? 'model';
+
+				if (modelPath) {
+					refs.entityMetaRef.current[id] = {
+						kind: spawnKind,
+						path: modelPath,
+						name: loaded.name ?? `Entity ${id}`,
+						physicsEnabled: true,
+						physicsType: 'static',
+					};
+					if (spawnKind === 'character') {
+						dispatch({
+							type: 'ADD_CHARACTER',
+							payload: { id, path: modelPath },
+						});
+					}
+					refs.pendingModelPathRef.current = null;
+					refs.pendingSpawnKindRef.current = null;
+				} else if (!refs.entityMetaRef.current[id]) {
+					refs.entityMetaRef.current[id] = {
+						kind: 'model',
+						path: '[EditorBox]',
+						name: loaded.name ?? `Entity ${id}`,
+						physicsEnabled: true,
+						physicsType: 'static',
+					};
+				} else if (loaded.name) {
+					refs.entityMetaRef.current[id].name = loaded.name;
+					if (!refs.entityMetaRef.current[id].path || refs.entityMetaRef.current[id].path === '') {
+						refs.entityMetaRef.current[id].path = '[EditorBox]';
+					}
 				}
 			}
 		}
@@ -636,6 +664,21 @@ export function createEngineEventHandler({
 		if (event.event === 'sprites_list') {
 			const spritesList = event as unknown as SpritesList;
 			dispatch({ type: 'SET_SPRITES', payload: spritesList.sprites });
+		}
+
+		if (event.event === 'model_asset_loaded') {
+			const model = event as unknown as { path: string; name: string };
+			dispatch({ type: 'ADD_MODEL_INFO', payload: { path: model.path, name: model.name } });
+		}
+
+		if (event.event === 'model_asset_removed') {
+			const model = event as unknown as { path: string };
+			dispatch({ type: 'REMOVE_MODEL_INFO', payload: model.path });
+		}
+
+		if (event.event === 'models_list') {
+			const modelsList = event as unknown as { models: { path: string; name: string }[] };
+			dispatch({ type: 'SET_MODELS', payload: modelsList.models });
 		}
 
 		if (event.event === 'sound_loaded') {

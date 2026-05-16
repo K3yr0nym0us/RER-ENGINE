@@ -33,6 +33,12 @@ pub enum EngineCommand {
         #[serde(default)] offset_y: Option<i32>,
     },
     LoadModel { path: String },
+    /// Registrar un .glb/.gltf/.fbx en el almacén de recursos (sin instanciar en escena).
+    LoadModelAsset { path: String, name: String },
+    /// Eliminar un modelo del almacén de recursos.
+    RemoveModelAsset { path: String },
+    /// Solicitar la lista de modelos 3D precargados.
+    GetModelsList,
     /// Cubo procedural del editor (restaurar bloques de plantilla sin `.glb`).
     SpawnEditorBox {
         name: String,
@@ -328,7 +334,12 @@ pub enum EngineEvent {
     /// Emitido cuando el cursor deja de estar sobre cualquier entidad.
     EntityUnhovered,
     /// Emitido cuando un escenario PNG se cargó correctamente.
-    ScenarioLoaded { id: u32, path: String },
+    ScenarioLoaded {
+        id: u32,
+        path: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        name: Option<String>,
+    },
     /// Emitido cuando un personaje PNG se cargó correctamente.
     CharacterLoaded { id: u32, path: String },
     /// Emitido cuando la cámara 2D cambia (fin de pan o zoom).
@@ -356,6 +367,10 @@ pub enum EngineEvent {
     SpriteRemoved { path: String },
     /// Emitido como respuesta a GetSpritesList: lista de sprites disponibles.
     SpritesList { sprites: Vec<SpriteInfo> },
+    /// Modelo 3D registrado en el almacén de recursos.
+    ModelAssetLoaded { path: String, name: String },
+    ModelAssetRemoved { path: String },
+    ModelsList { models: Vec<ModelInfo> },
     /// Emitido cuando un archivo de audio se registró en el almacén.
     SoundLoaded { path: String, name: String },
     /// Emitido cuando se eliminó un sonido del almacén.
@@ -412,6 +427,13 @@ pub struct SpriteInfo {
     pub name:   String,
     pub width:  u32,
     pub height: u32,
+}
+
+/// Información básica de un modelo 3D en el almacén de recursos.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ModelInfo {
+    pub path: String,
+    pub name: String,
 }
 
 /// Información básica de un sonido almacenado en el motor.

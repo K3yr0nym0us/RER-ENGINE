@@ -2,11 +2,12 @@ import { Accordion } from 'react-bootstrap';
 import { PeopleFill, TreeFill, PersonFill, Box } from 'react-bootstrap-icons';
 
 import { EnvironmentsAccordion } from './EnvironmentsAccordion/EnvironmentsAccordion';
+import BtnCreateEntityFromModel from './components/BtnCreateEntityFromModel';
 import BtnCreateCharacter from './CharactersAccordion/components/BtnCreateCharacter';
 import ObjectsAccordion from './ObjectsAccordion/ObjectsAccordion';
 import { useTraslate } from '@hooks';
 
-export default function EntitiesAccordeon({ projectType, engineReady, loadModel }: any) {
+export default function EntitiesAccordeon({ projectType }: { projectType?: string }) {
   const { t } = useTraslate();
   return (
     <Accordion.Item eventKey="entities">
@@ -16,17 +17,7 @@ export default function EntitiesAccordeon({ projectType, engineReady, loadModel 
           <Accordion.Item eventKey="escenarios">
             <Accordion.Header><TreeFill className="me-2" />{t('Environment')}</Accordion.Header>
             <Accordion.Body className="py-2 px-2">
-              {projectType === '3D' && (
-                <button
-                  className="btn btn-outline-light btn-sm w-100 fw-bold"
-                  disabled={!engineReady}
-                  onClick={() =>
-                    window.electronAPI.openModelDialog().then((p: string | null) => { if (p) loadModel(p) })
-                  }
-                >
-                  {t('Load model (.glb)')}
-                </button>
-              )}
+              {projectType === '3D' && <BtnCreateEntityFromModel intent="environment" />}
               {projectType === '2D' && (
                 <EnvironmentsAccordion
                   config={{
@@ -35,7 +26,7 @@ export default function EntitiesAccordeon({ projectType, engineReady, loadModel 
                     dupCmd: 'duplicate_scenario',
                     addBtnLabel: t('+ Add scenario (PNG)'),
                     emptyText: t('No scenarios loaded'),
-                  }} 
+                  }}
                 />
               )}
             </Accordion.Body>
@@ -43,17 +34,15 @@ export default function EntitiesAccordeon({ projectType, engineReady, loadModel 
           <Accordion.Item eventKey="personajes">
             <Accordion.Header><PersonFill className="me-2" />{t('Characters')}</Accordion.Header>
             <Accordion.Body className="py-2 px-2">
-              {projectType === '2D' && (
-                <BtnCreateCharacter />
-              )}
+              {projectType === '3D' && <BtnCreateEntityFromModel intent="character" />}
+              {projectType === '2D' && <BtnCreateCharacter />}
             </Accordion.Body>
           </Accordion.Item>
           <Accordion.Item eventKey="objetos">
             <Accordion.Header><Box className="me-2" />{t('Objects')}</Accordion.Header>
             <Accordion.Body className="py-2 px-2">
-              {projectType === '2D' && (
-                <ObjectsAccordion />
-              )}
+              {projectType === '3D' && <BtnCreateEntityFromModel intent="object" />}
+              {projectType === '2D' && <ObjectsAccordion />}
             </Accordion.Body>
           </Accordion.Item>
         </Accordion>

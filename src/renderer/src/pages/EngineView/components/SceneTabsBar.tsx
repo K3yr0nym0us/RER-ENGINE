@@ -44,6 +44,7 @@ export function SceneTabsBar({ initialSave, projectType, gameStyle }: Props) {
     colliderEntities,
     executionAreaEntities,
     loadedSpritesInfo,
+    loadedModelsInfo,
     entityTransformsRef,
     entityMetaRef,
     pendingRestoresRef,
@@ -63,6 +64,7 @@ export function SceneTabsBar({ initialSave, projectType, gameStyle }: Props) {
     setTargetFps,
     setBackground,
     loadSprite,
+    loadModelAsset,
     removeSprite,
     blueprints,
   } = useContextEngine();
@@ -139,6 +141,10 @@ export function SceneTabsBar({ initialSave, projectType, gameStyle }: Props) {
 
     const sprites = Array.from(loadedSpritesInfo.entries()).map(([path, info]) => ({ name: info.name, path }));
 
+    const models = projectType === '3D'
+      ? Array.from(loadedModelsInfo.entries()).map(([path, info]) => ({ name: info.name, path }))
+      : undefined;
+
     const fpView = firstPersonViewRef?.current ?? null;
     const feetPos = fpView?.position
       ?? (playerId !== null ? transforms[playerId]?.position : undefined);
@@ -160,6 +166,7 @@ export function SceneTabsBar({ initialSave, projectType, gameStyle }: Props) {
       playerTransform,
       camera2d: camera2dRef.current,
       sprites,
+      models,
     };
   };
 
@@ -226,6 +233,10 @@ export function SceneTabsBar({ initialSave, projectType, gameStyle }: Props) {
 
     for (const sprite of scene.sprites ?? []) {
       loadSprite(sprite.path, sprite.name);
+    }
+
+    for (const model of scene.models ?? []) {
+      loadModelAsset(model.path, model.name);
     }
 
     pendingRestoresRef.current.clear();

@@ -127,34 +127,34 @@ impl State {
         let block_uv = self.atlas.pack(&self.queue, &white_px, 1, 1);
         self.uv_rects.push(block_uv);
 
-        let mut spawn_block =
-            |name: &str, position: [f32; 3], scale: [f32; 3]| {
-                let id = self.world.spawn(Some(name));
-                self.world.insert(
-                    id,
-                    MeshComponent {
-                        mesh_idx: block_mesh_idx,
-                        tex_idx: block_tex_idx,
-                    },
-                );
-                if let Some(t) = self.world.get_mut::<Transform>(id) {
-                    t.position = glam::Vec3::from_array(position);
-                    t.scale = glam::Vec3::from_array(scale);
-                }
-                let half = [scale[0] * 0.5, scale[1] * 0.5, scale[2] * 0.5];
-                self.physics
-                    .set_entity_physics(id, true, "static", position, half);
-                self.scenario_entities.push(id);
-                self.send_model_loaded_event(id, name);
-            };
+        let mut spawn_block = |position: [f32; 3], scale: [f32; 3]| {
+            let label = self.next_numbered_entity_name("Escenario");
+            let id = self.world.spawn(Some(&label));
+            self.world.insert(
+                id,
+                MeshComponent {
+                    mesh_idx: block_mesh_idx,
+                    tex_idx: block_tex_idx,
+                },
+            );
+            if let Some(t) = self.world.get_mut::<Transform>(id) {
+                t.position = glam::Vec3::from_array(position);
+                t.scale = glam::Vec3::from_array(scale);
+            }
+            let half = [scale[0] * 0.5, scale[1] * 0.5, scale[2] * 0.5];
+            self.physics
+                .set_entity_physics(id, true, "static", position, half);
+            self.scenario_entities.push(id);
+            self.send_model_loaded_event(id, &label);
+        };
 
         // Escenario base visible al frente para que first-person no arranque en vacío.
-        spawn_block("Wall_Left", [-6.0, 2.0, 18.0], [1.2, 4.0, 18.0]);
-        spawn_block("Wall_Right", [6.0, 2.0, 18.0], [1.2, 4.0, 18.0]);
-        spawn_block("Wall_Back", [0.0, 2.0, 27.0], [12.0, 4.0, 1.2]);
-        spawn_block("Crate_A", [-2.5, 0.75, 11.0], [1.5, 1.5, 1.5]);
-        spawn_block("Crate_B", [2.0, 1.25, 15.0], [2.0, 2.5, 2.0]);
-        spawn_block("Pillar", [0.0, 2.5, 21.0], [1.8, 5.0, 1.8]);
+        spawn_block([-6.0, 2.0, 18.0], [1.2, 4.0, 18.0]);
+        spawn_block([6.0, 2.0, 18.0], [1.2, 4.0, 18.0]);
+        spawn_block([0.0, 2.0, 27.0], [12.0, 4.0, 1.2]);
+        spawn_block([-2.5, 0.75, 11.0], [1.5, 1.5, 1.5]);
+        spawn_block([2.0, 1.25, 15.0], [2.0, 2.5, 2.0]);
+        spawn_block([0.0, 2.5, 21.0], [1.8, 5.0, 1.8]);
 
         // Límites del mundo: el wireframe es centrado en el origen (z ∈ [-depth/2, depth/2]).
         // Los muros del placeholder llegan hasta z≈28; depth 36 dejaba max z=18 y el render los ocultaba.

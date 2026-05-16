@@ -202,6 +202,30 @@ impl State {
             EngineCommand::LoadModel { path } => {
                 self.load_model(&path);
             }
+            EngineCommand::LoadModelAsset { path, name } => {
+                self.register_model_asset(&path, &name);
+            }
+            EngineCommand::RemoveModelAsset { path } => {
+                if self.model_store.remove(&path).is_some() {
+                    send_event(&EngineEvent::ModelAssetRemoved { path: path.clone() });
+                    log::info!("[model] eliminado de recursos: {}", path);
+                } else {
+                    log::warn!("[model] intento de eliminar modelo inexistente: {}", path);
+                }
+            }
+            EngineCommand::GetModelsList => {
+                let models: Vec<crate::ipc::ModelInfo> = self
+                    .model_store
+                    .iter()
+                    .map(|(path, name)| crate::ipc::ModelInfo {
+                        path: path.clone(),
+                        name: name.clone(),
+                    })
+                    .collect();
+                let count = models.len();
+                send_event(&EngineEvent::ModelsList { models });
+                log::info!("[model] lista enviada: {} modelos", count);
+            }
             EngineCommand::SpawnEditorBox {
                 name,
                 position,

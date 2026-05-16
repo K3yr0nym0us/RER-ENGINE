@@ -15,9 +15,7 @@ import { ProjectType } from '@shared-types';
 export function SideBarLeft({ projectType }: { projectType: ProjectType }) {
   const { t } = useTraslate();
   const {
-    engineReady,
     selectedEntity,
-    loadModel,
   } = useContextEngine()
 
   return (
@@ -29,25 +27,21 @@ export function SideBarLeft({ projectType }: { projectType: ProjectType }) {
               <WorldAccordion projectType={projectType} />
             </Accordion>
 
-            {projectType === '2D' && (
-              <Accordion className="sidebar-accordion mt-1">
-                <ResourcesAccordion />
-              </Accordion>
-            )}
+            <Accordion className="sidebar-accordion mt-1">
+              <ResourcesAccordion projectType={projectType} />
+            </Accordion>
           </>
         )}
 
         <Accordion className="sidebar-accordion mt-1">
-          <EntitiesAccordion
-            projectType={projectType}
-            engineReady={engineReady}
-            loadModel={loadModel}
-          />
+          <EntitiesAccordion projectType={projectType} />
         </Accordion>
 
-        <Accordion className="sidebar-accordion mt-1">
-          <ToolsAccordion />
-        </Accordion>
+        {projectType !== '3D' && (
+          <Accordion className="sidebar-accordion mt-1">
+            <ToolsAccordion />
+          </Accordion>
+        )}
 
         <Accordion className="sidebar-accordion mt-1">
           <ControlsAccordion />
