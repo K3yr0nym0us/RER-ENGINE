@@ -254,17 +254,19 @@ impl State {
                 let before = self.world.get::<Transform>(id).cloned();
                 let is_fp_player = self.first_person_player_entity == Some(id);
                 if let Some(transform) = self.world.get_mut::<Transform>(id) {
+                    if let Some(r) = rotation {
+                        transform.rotation = Quat::from_xyzw(r[0], r[1], r[2], r[3]);
+                    }
                     if let Some(p) = position {
                         let pos = Vec3::from_array(p);
                         transform.position = pos;
                         if is_fp_player {
-                            // El panel envía el centro del cuerpo; la cámara orbita sobre los pies.
                             self.camera.target =
-                                crate::config_3d::first_person::feet_from_player_body_center(pos);
+                                crate::config_3d::first_person::feet_from_player_transform(
+                                    pos,
+                                    transform.rotation,
+                                );
                         }
-                    }
-                    if let Some(r) = rotation {
-                        transform.rotation = Quat::from_xyzw(r[0], r[1], r[2], r[3]);
                     }
                     if let Some(s) = scale {
                         transform.scale = Vec3::from(s);
@@ -300,11 +302,17 @@ impl State {
                             (t.scale.y * 0.5).max(0.01),
                             (t.scale.z * 0.5).max(0.01),
                         ];
-                        self.physics.sync_entity_physics_from_transform(
-                            id,
-                            t.position.to_array(),
-                            half,
-                        );
+                        let pos = if is_fp_player {
+                            crate::config_3d::first_person::feet_from_player_transform(
+                                t.position,
+                                t.rotation,
+                            )
+                            .to_array()
+                        } else {
+                            t.position.to_array()
+                        };
+                        self.physics
+                            .sync_entity_physics_from_transform(id, pos, half);
                     }
                 }
                 if let Some(prev) = before {
@@ -596,6 +604,8 @@ impl State {
                 self.preview_playing = playing;
 
                 if playing {
+                    self.reset_first_person_motion();
+                    self.sync_first_person_player_physics();
                     self.active_tool = ActiveTool::None;
                     self.tool_overlay_buffer = gizmo::build_from_vertices(&self.device, &[]);
                     if self.pivot_edit_mode.is_some() {

@@ -33,7 +33,6 @@ pub(crate) struct PhysicsWorld {
     entity_bodies: HashMap<EntityId, RigidBodyHandle>,
     entity_body_types: HashMap<EntityId, String>,
     entity_colliders: HashMap<EntityId, ColliderHandle>,
-    scene_colliders: Vec<ColliderHandle>,
     world_bounds_colliders: Vec<ColliderHandle>,
 }
 
@@ -55,7 +54,6 @@ impl Default for PhysicsWorld {
             entity_bodies: HashMap::new(),
             entity_body_types: HashMap::new(),
             entity_colliders: HashMap::new(),
-            scene_colliders: Vec::new(),
             world_bounds_colliders: Vec::new(),
         }
     }
@@ -248,12 +246,6 @@ impl PhysicsWorld {
             self.colliders
                 .remove(handle, &mut self.island_manager, &mut self.bodies, true);
         }
-    }
-
-    pub(crate) fn clear_scene_colliders(&mut self) {
-        let handles = std::mem::take(&mut self.scene_colliders);
-        self.clear_collider_handles(handles);
-        self.refresh_queries();
     }
 
     pub(crate) fn rebuild_world_bounds_colliders(&mut self, bounds: &WorldBounds3D) {
@@ -468,7 +460,12 @@ impl PhysicsWorld {
         current
     }
 
-    pub(crate) fn step(&mut self, dt: f32, ecs: &mut World) {
+    pub(crate) fn step(
+        &mut self,
+        dt: f32,
+        ecs: &mut World,
+        skip_ecs_sync: &[EntityId],
+    ) {
         if self.entity_bodies.is_empty() {
             return;
         }
@@ -494,13 +491,17 @@ impl PhysicsWorld {
         let pairs: Vec<(EntityId, RigidBodyHandle)> =
             self.entity_bodies.iter().map(|(&e, &h)| (e, h)).collect();
         for (entity, handle) in pairs {
+            if skip_ecs_sync.contains(&entity) {
+                continue;
+            }
             if let Some(body) = self.bodies.get(handle) {
                 if body.is_dynamic() {
                     let t = body.translation();
                     let r = body.rotation();
                     if let Some(transform) = ecs.get_mut::<Transform>(entity) {
                         transform.position = glam::Vec3::new(t.x, t.y, t.z);
-                        transform.rotation = glam::Quat::from_xyzw(r.i, r.j, r.k, r.w);
+                        transform.rotation =
+                            glam::Quat::from_xyzw(r.i, r.j, r.k, r.w);
                     }
                 }
             }

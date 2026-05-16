@@ -24,6 +24,8 @@ import {
 import { applyFirstPersonControlDefaultsIfEmpty } from '../../../defaults/applyFirstPersonControlDefaults';
 import {
 	applySavedFirstPersonView,
+	syncFirstPersonViewRefFromPlayer,
+	bodyCenterFromFeet,
 	ensureFirstPersonPlayerOnLoad,
 } from '../../../defaults/firstPersonSceneRestore';
 import { setSceneCommandForSavedProject } from '../../../defaults/projectSceneLoad';
@@ -491,6 +493,11 @@ export function createEngineEventHandler({
 				};
 			}
 			if (refs.playerEntityIdRef.current === id) {
+				syncFirstPersonViewRefFromPlayer(
+					refs.firstPersonViewRef,
+					id,
+					refs.entityTransformsRef,
+				);
 				if (refs.entityMetaRef.current[id]) {
 					refs.entityMetaRef.current[id].physicsEnabled = true;
 					refs.entityMetaRef.current[id].physicsType = 'dynamic';
@@ -529,6 +536,13 @@ export function createEngineEventHandler({
 					scripts: meta?.scripts,
 				},
 			});
+			if (isPlayer && gameStyle === 'first-person' && projectType === '3D') {
+				syncFirstPersonViewRefFromPlayer(
+					refs.firstPersonViewRef,
+					selected.id,
+					refs.entityTransformsRef,
+				);
+			}
 		}
 
 		if (event.event === 'entity_deselected') {
@@ -744,12 +758,12 @@ export function createEngineEventHandler({
 						{ editorOrbit: true },
 					);
 					refs.pendingFirstPersonViewRef.current = null;
-					const feet = refs.entityTransformsRef.current[character.id]?.position
-						?? refs.firstPersonViewRef.current?.position;
-					if (feet) {
+					const center = refs.entityTransformsRef.current[character.id]?.position;
+					const rot = refs.entityTransformsRef.current[character.id]?.rotation ?? [0, 0, 0, 1];
+					if (center) {
 						refs.entityTransformsRef.current[character.id] = {
-							position: feet,
-							rotation: [0, 0, 0, 1],
+							position: center,
+							rotation: rot,
 							scale: FIRST_PERSON_PLAYER_BODY_SCALE,
 						};
 					}
@@ -843,19 +857,6 @@ export function createEngineEventHandler({
 		if (event.event === 'preview_playing_changed') {
 			const playing = Boolean((event as { playing?: boolean }).playing);
 			dispatch({ type: 'SET_PREVIEW_PLAYING', payload: playing });
-			if (
-				playing
-				&& gameStyle === 'first-person'
-				&& projectType === '3D'
-				&& refs.firstPersonViewRef.current
-			) {
-				applySavedFirstPersonView(
-					refs.firstPersonViewRef.current,
-					refs.playerEntityIdRef.current,
-					refs.entityTransformsRef,
-					{ editorOrbit: false },
-				);
-			}
 		}
 
 		if (event.event === 'error') {
@@ -1004,9 +1005,11 @@ export function createEngineEventHandler({
 				};
 				const playerId = refs.playerEntityIdRef.current;
 				if (playerId != null) {
+					const prev = refs.entityTransformsRef.current[playerId];
+					const keptRot = prev?.rotation ?? [0, 0, 0, 1];
 					refs.entityTransformsRef.current[playerId] = {
-						position: metrics.first_person_position,
-						rotation: [0, 0, 0, 1],
+						position: bodyCenterFromFeet(metrics.first_person_position),
+						rotation: keptRot,
 						scale: FIRST_PERSON_PLAYER_BODY_SCALE,
 					};
 				}

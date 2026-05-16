@@ -331,7 +331,12 @@ impl State {
         } else {
             self.update_scripts();
             if self.preview_playing {
-                self.physics.step(self.delta_time, &mut self.world);
+                let skip_sync = self
+                    .first_person_player_entity
+                    .map(|id| vec![id])
+                    .unwrap_or_default();
+                self.physics
+                    .step(self.delta_time, &mut self.world, &skip_sync);
             }
         }
     }

@@ -7,6 +7,64 @@ import type { PendingRestore } from '../context/useContextEngine/types';
 export const FP_EDITOR_ORBIT_PITCH = 0.25;
 export const FP_DEFAULT_YAW = -Math.PI / 2;
 
+/** Mitad de altura del cuerpo (debe coincidir con FIRST_PERSON_BODY_HALF_H del motor). */
+const FP_BODY_HALF_H = FIRST_PERSON_PLAYER_BODY_SCALE[1] * 0.5;
+const FEET_OFFSET_LOCAL: [number, number, number] = [0, -FP_BODY_HALF_H, 0];
+
+function rotateVec3ByQuat(
+	v: [number, number, number],
+	q: [number, number, number, number],
+): [number, number, number] {
+	const [qx, qy, qz, qw] = q;
+	const [vx, vy, vz] = v;
+	const ix = qw * vx + qy * vz - qz * vy;
+	const iy = qw * vy + qz * vx - qx * vz;
+	const iz = qw * vz + qx * vy - qy * vx;
+	const iw = -qx * vx - qy * vy - qz * vz;
+	return [
+		ix * qw + iw * -qx + iy * -qz - iz * -qy,
+		iy * qw + iw * -qy + iz * -qx - ix * -qz,
+		iz * qw + iw * -qz + ix * -qy - iy * -qx,
+	];
+}
+
+export function feetFromPlayerBodyCenter(
+	center: [number, number, number],
+	rotation: [number, number, number, number] = [0, 0, 0, 1],
+): [number, number, number] {
+	const off = rotateVec3ByQuat(FEET_OFFSET_LOCAL, rotation);
+	return [center[0] + off[0], center[1] + off[1], center[2] + off[2]];
+}
+
+export function bodyCenterFromFeet(
+	feet: [number, number, number],
+	rotation: [number, number, number, number] = [0, 0, 0, 1],
+): [number, number, number] {
+	const off = rotateVec3ByQuat(FEET_OFFSET_LOCAL, rotation);
+	return [feet[0] - off[0], feet[1] - off[1], feet[2] - off[2]];
+}
+
+/** Mantiene `firstPersonViewRef` alineado con el transform del jugador (centro → pies). */
+export function syncFirstPersonViewRefFromPlayer(
+	firstPersonViewRef: MutableRefObject<SavedPlayerTransform | null>,
+	playerId: number,
+	entityTransformsRef: MutableRefObject<
+		Record<number, import('../context/useContextEngine/types').Transform>
+	>,
+) {
+	const t = entityTransformsRef.current[playerId];
+	if (!t) return;
+	const feet = feetFromPlayerBodyCenter(t.position, t.rotation);
+	const prev = firstPersonViewRef.current;
+	firstPersonViewRef.current = {
+		position: feet,
+		scale: FIRST_PERSON_PLAYER_BODY_SCALE,
+		yaw: prev?.yaw ?? FP_DEFAULT_YAW,
+		pitch: prev?.pitch ?? FP_EDITOR_ORBIT_PITCH,
+		...(prev?.visual_model_path ? { visual_model_path: prev.visual_model_path } : {}),
+	};
+}
+
 type SceneSlice = {
 	entities?: SavedEntity[]
 	playerTransform?: SavedPlayerTransform | null
@@ -30,9 +88,11 @@ export function applySavedFirstPersonView(
 		pitch,
 	} as never);
 	if (playerId != null) {
+		const prev = entityTransformsRef.current[playerId];
+		const rot = prev?.rotation ?? [0, 0, 0, 1];
 		entityTransformsRef.current[playerId] = {
-			position: view.position,
-			rotation: [0, 0, 0, 1],
+			position: bodyCenterFromFeet(view.position, rot),
+			rotation: rot,
 			scale: FIRST_PERSON_PLAYER_BODY_SCALE,
 		};
 	}

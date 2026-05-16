@@ -25,7 +25,7 @@ use std::path::Path;
 use glam::Vec3 as GlamVec3;
 
 use crate::config_3d::first_person::{
-    player_body_center_from_feet, feet_from_player_body_center, FIRST_PERSON_BODY_HEIGHT,
+    feet_from_player_transform, player_center_from_feet, FIRST_PERSON_BODY_HEIGHT,
     FIRST_PERSON_COLLIDER_RADIUS,
 };
 use crate::config_shared::point_to_segment_2d;
@@ -135,7 +135,8 @@ impl State {
             let w = FIRST_PERSON_COLLIDER_RADIUS * 2.0;
             if let Some(t) = self.world.get_mut::<Transform>(id) {
                 t.scale = glam::Vec3::new(w, FIRST_PERSON_BODY_HEIGHT, w);
-                t.position = player_body_center_from_feet(feet);
+                let rot = t.rotation;
+                t.position = player_center_from_feet(feet, rot);
             }
             self.camera.target = feet;
         }
@@ -153,7 +154,7 @@ impl State {
                     (t.scale.z * 0.5).max(0.01),
                 ];
                 let pos = if is_fp_player {
-                    feet_from_player_body_center(t.position).to_array()
+                    feet_from_player_transform(t.position, t.rotation).to_array()
                 } else {
                     t.position.to_array()
                 };

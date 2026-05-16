@@ -56,12 +56,18 @@ pub(crate) const FIRST_PERSON_BODY_HALF_H: f32 = FIRST_PERSON_BODY_HEIGHT * 0.5;
 /// Distancia de la cámara orbital en editor (detrás del jugador, fuera de play).
 pub(crate) const FIRST_PERSON_EDITOR_ORBIT_DISTANCE: f32 = 3.0;
 
-pub(crate) fn player_body_center_from_feet(feet: Vec3) -> Vec3 {
-    feet + Vec3::new(0.0, FIRST_PERSON_BODY_HALF_H, 0.0)
+const FEET_OFFSET_LOCAL: glam::Vec3 = glam::Vec3::new(0.0, -FIRST_PERSON_BODY_HALF_H, 0.0);
+
+pub(crate) fn feet_from_player_transform(center: Vec3, rotation: glam::Quat) -> Vec3 {
+    center + rotation * FEET_OFFSET_LOCAL
 }
 
-pub(crate) fn feet_from_player_body_center(center: Vec3) -> Vec3 {
-    center - Vec3::new(0.0, FIRST_PERSON_BODY_HALF_H, 0.0)
+pub(crate) fn player_center_from_feet(feet: Vec3, rotation: glam::Quat) -> Vec3 {
+    feet - rotation * FEET_OFFSET_LOCAL
+}
+
+pub(crate) fn player_body_center_from_feet(feet: Vec3) -> Vec3 {
+    player_center_from_feet(feet, glam::Quat::IDENTITY)
 }
 
 impl State {
@@ -69,7 +75,7 @@ impl State {
     pub(crate) fn first_person_feet_position(&self) -> Vec3 {
         if let Some(id) = self.first_person_player_entity {
             if let Some(t) = self.world.get::<Transform>(id) {
-                return feet_from_player_body_center(t.position);
+                return feet_from_player_transform(t.position, t.rotation);
             }
         }
         self.camera.target
@@ -78,13 +84,18 @@ impl State {
     pub(crate) fn set_first_person_feet_position(&mut self, feet: Vec3) {
         if let Some(id) = self.first_person_player_entity {
             if let Some(t) = self.world.get_mut::<Transform>(id) {
-                t.position = player_body_center_from_feet(feet);
+                let rot = t.rotation;
+                t.position = player_center_from_feet(feet, rot);
             }
         }
         self.camera.target = feet;
     }
 
+    /// Alinea el mesh del jugador al yaw de cámara (solo editor; en play se preserva rotación de Propiedades).
     pub(crate) fn sync_player_rotation_from_look(&mut self) {
+        if self.is_first_person_runtime_active() {
+            return;
+        }
         if let Some(id) = self.first_person_player_entity {
             if let Some(t) = self.world.get_mut::<Transform>(id) {
                 t.rotation = glam::Quat::from_rotation_y(self.camera.yaw);
@@ -131,6 +142,27 @@ impl State {
         self.first_person_velocity = Vec3::ZERO;
         self.first_person_on_floor = true;
         self.first_person_jump_queued = false;
+    }
+
+    /// Alinea el collider Rapier del jugador con sus pies actuales (evita bloqueos tras rotar/mover en editor).
+    pub(crate) fn sync_first_person_player_physics(&mut self) {
+        let Some(id) = self.first_person_player_entity else {
+            return;
+        };
+        if !self.physics.has_physics(id) {
+            return;
+        }
+        let Some(t) = self.world.get::<Transform>(id) else {
+            return;
+        };
+        let half = [
+            (t.scale.x * 0.5).max(0.01),
+            (t.scale.y * 0.5).max(0.01),
+            (t.scale.z * 0.5).max(0.01),
+        ];
+        let pos = feet_from_player_transform(t.position, t.rotation).to_array();
+        self.physics
+            .sync_entity_physics_from_transform(id, pos, half);
     }
 
     pub(crate) fn has_first_person_player(&self) -> bool {
@@ -184,8 +216,6 @@ impl State {
             -std::f32::consts::FRAC_PI_2 + 0.05,
             std::f32::consts::FRAC_PI_2 - 0.05,
         );
-        self.sync_player_rotation_from_look();
-
         self.sync_first_person_camera_mode();
 
         self.first_person_velocity = Vec3::ZERO;
@@ -205,7 +235,6 @@ impl State {
             -std::f32::consts::FRAC_PI_2 + 0.05,
             std::f32::consts::FRAC_PI_2 - 0.05,
         );
-        self.sync_player_rotation_from_look();
     }
 
     pub(crate) fn apply_first_person_keyboard(

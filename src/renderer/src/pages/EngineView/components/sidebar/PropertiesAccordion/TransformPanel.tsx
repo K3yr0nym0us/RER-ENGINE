@@ -4,6 +4,7 @@ import { Lock, Unlock } from 'react-bootstrap-icons';
 
 import { AppTooltip } from '@components';
 import { useTraslate } from '@hooks';
+import { eulerYxzDegreesToQuat, quatToEulerYxzDegrees } from '../../../../../utils/eulerYxz';
 
 interface Transform {
   pos: [string, string, string]
@@ -22,35 +23,6 @@ interface Props {
   onSend: (cmd: object) => void
 }
 
-const RAD_TO_DEG = 180 / Math.PI;
-const DEG_TO_RAD = Math.PI / 180;
-
-function quatToEulerDegrees(q: [number, number, number, number]): [number, number, number] {
-  const [x, y, z, w] = q;
-  const sinr = 2 * (w * x + y * z);
-  const cosr = 1 - 2 * (x * x + y * y);
-  const rx = Math.atan2(sinr, cosr);
-  const sinp = 2 * (w * y - z * x);
-  const ry = Math.abs(sinp) >= 1 ? Math.sign(sinp) * (Math.PI / 2) : Math.asin(sinp);
-  const siny = 2 * (w * z + x * y);
-  const cosy = 1 - 2 * (y * y + z * z);
-  const rz = Math.atan2(siny, cosy);
-  return [rx * RAD_TO_DEG, ry * RAD_TO_DEG, rz * RAD_TO_DEG];
-}
-
-function eulerDegreesToQuat(euler: [number, number, number]): [number, number, number, number] {
-  const [ex, ey, ez] = euler.map((d) => d * DEG_TO_RAD);
-  const cx = Math.cos(ex / 2), sx = Math.sin(ex / 2);
-  const cy = Math.cos(ey / 2), sy = Math.sin(ey / 2);
-  const cz = Math.cos(ez / 2), sz = Math.sin(ez / 2);
-  return [
-    sx * cy * cz - cx * sy * sz,
-    cx * sy * cz + sx * cy * sz,
-    cx * cy * sz - sx * sy * cz,
-    cx * cy * cz + sx * sy * sz,
-  ];
-}
-
 export function TransformPanel({ entity, is2D, onSend }: Props) {
   const { t } = useTraslate()
   const [transform, setTransform] = useState<Transform>({
@@ -65,7 +37,7 @@ export function TransformPanel({ entity, is2D, onSend }: Props) {
     const rot = is2D
       ? entity.rotation.map((n) => n.toFixed(1)) as [string, string, string, string]
       : (() => {
-        const [rx, ry, rz] = quatToEulerDegrees(entity.rotation);
+        const [rx, ry, rz] = quatToEulerYxzDegrees(entity.rotation);
         return [rx.toFixed(1), ry.toFixed(1), rz.toFixed(1), ''] as [string, string, string, string];
       })();
     setTransform({
@@ -82,11 +54,11 @@ export function TransformPanel({ entity, is2D, onSend }: Props) {
     const merged = { ...transform, ...override }
     const rotation: [number, number, number, number] = is2D
       ? merged.rot.map(Number) as [number, number, number, number]
-      : eulerDegreesToQuat([
+      : eulerYxzDegreesToQuat(
         Number(merged.rot[0]),
         Number(merged.rot[1]),
         Number(merged.rot[2]),
-      ]);
+      );
     onSend({
       cmd:      'set_transform',
       id:       entity.id,
