@@ -33,6 +33,8 @@ pub enum EngineCommand {
         #[serde(default)] offset_y: Option<i32>,
     },
     LoadModel { path: String },
+    /// Sustituir el mesh visual de una entidad existente (sin crear entidad nueva).
+    ReplaceEntityModel { id: u32, path: String },
     /// Registrar un .glb/.gltf/.fbx en el almacén de recursos (sin instanciar en escena).
     LoadModelAsset { path: String, name: String },
     /// Eliminar un modelo del almacén de recursos.
@@ -312,6 +314,15 @@ pub enum EngineEvent {
         id: u32,
         #[serde(skip_serializing_if = "Option::is_none")]
         name: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        position: Option<[f32; 3]>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        scale: Option<[f32; 3]>,
+    },
+    /// Mesh visual de una entidad reemplazado por otro archivo 3D.
+    EntityModelReplaced {
+        id: u32,
+        path: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         position: Option<[f32; 3]>,
         #[serde(skip_serializing_if = "Option::is_none")]

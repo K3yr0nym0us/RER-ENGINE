@@ -85,10 +85,15 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 		send({ cmd: 'get_models_list' });
 	};
 
-	const spawnModel = (path: string, kind: EntityMeta['kind'] = 'model') => {
+	const spawnModel = (path: string, kind: EntityMeta['kind'] = 'model', category?: EntityMeta['entityCategory']) => {
 		refs.pendingModelPathRef.current = path;
 		refs.pendingSpawnKindRef.current = kind;
+		refs.pendingSpawnCategoryRef.current = category ?? null;
 		send({ cmd: 'load_model', path });
+	};
+
+	const replaceEntityModel = (entityId: number, modelPath: string) => {
+		send({ cmd: 'replace_entity_model', id: entityId, path: modelPath });
 	};
 
 	const retryEngine = () => {
@@ -345,6 +350,7 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 		applyInitialAnimationFrame,
 		loadModelAsset,
 		spawnModel,
+		replaceEntityModel,
 		removeModelAsset,
 		getModelsList,
 		retryEngine,

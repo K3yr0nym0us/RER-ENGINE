@@ -1,5 +1,5 @@
 import type { MutableRefObject } from 'react';
-import { DEFAULT_GRAVITY_MAGNITUDE, type BackgroundInfo, type BluePrintEntry, type DebugMetrics, type ProjectSaveData, type SavedControlBindings, type SavedPlayerTransform, type SoundInfo, type SpriteInfo } from '@shared-types';
+import { DEFAULT_GRAVITY_MAGNITUDE, type BackgroundInfo, type BluePrintEntry, type DebugMetrics, type EntityCategory, type ProjectSaveData, type SavedControlBindings, type SavedPlayerTransform, type SoundInfo, type SpriteInfo } from '@shared-types';
 
 export interface Entity {
 	id: number
@@ -317,6 +317,10 @@ export interface EntityMeta {
 	controlBindings?: SavedControlBindings
 	/** ID de la blueprint desde la que fue instanciada esta entidad. */
 	blueprintId?: string
+	/** Entorno 3D creado desde acordeón Entorno (UI solo colisión). */
+	entityCategory?: EntityCategory
+	/** Modelo visual cargado (distinto de path lógico `[Player]` / `[EditorBox]`). */
+	visualModelPath?: string
 }
 
 export interface PendingRestore {
@@ -329,6 +333,8 @@ export interface PendingRestore {
 	controlBindings?: SavedControlBindings
 	/** ID de la blueprint desde la que fue instanciada esta entidad. */
 	blueprintId?: string
+	entityCategory?: EntityCategory
+	visualModelPath?: string
 }
 
 export interface Camera2dState {
@@ -350,6 +356,8 @@ export interface EngineInternalRefs {
 	pendingFirstPersonViewRef: MutableRefObject<import('@shared-types').SavedPlayerTransform | null>
 	pendingModelPathRef: MutableRefObject<string | null>
 	pendingSpawnKindRef: MutableRefObject<EntityMeta['kind'] | null>
+	pendingSpawnCategoryRef: MutableRefObject<EntityCategory | null>
+	pendingModelLoadQueueRef: MutableRefObject<Array<{ modelPath: string; pending: PendingRestore }>>
 	camera2dRef: MutableRefObject<Camera2dState | null>
 	mainPlayerHandled: MutableRefObject<boolean>
 	playerRemoved: MutableRefObject<boolean>
@@ -370,13 +378,16 @@ export interface EngineContextValue extends EngineState {
 	pendingFirstPersonViewRef: MutableRefObject<SavedPlayerTransform | null>
 	pendingModelPathRef: MutableRefObject<string | null>
 	pendingSpawnKindRef: MutableRefObject<EntityMeta['kind'] | null>
+	pendingSpawnCategoryRef: MutableRefObject<EntityCategory | null>
+	pendingModelLoadQueueRef: MutableRefObject<Array<{ modelPath: string; pending: PendingRestore }>>
 	mainPlayerHandled: MutableRefObject<boolean>
 	camera2dRef: MutableRefObject<Camera2dState | null>
 	send: (cmd: object) => void
 	sendAsync: <T>(cmd: object, waitForEvent: string, onStart?: () => void) => Promise<T>
 	setAnimationPlaying: (entityId: number, playing: boolean) => void
 	loadModelAsset: (path: string, name: string) => void
-	spawnModel: (path: string, kind?: EntityMeta['kind']) => void
+	spawnModel: (path: string, kind?: EntityMeta['kind'], category?: EntityCategory) => void
+	replaceEntityModel: (entityId: number, modelPath: string) => void
 	removeModelAsset: (path: string) => void
 	getModelsList: () => void
 	reportBounds: () => void

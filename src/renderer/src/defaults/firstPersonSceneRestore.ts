@@ -63,10 +63,11 @@ export function ensureFirstPersonPlayerOnLoad(
 					scale: FIRST_PERSON_PLAYER_BODY_SCALE,
 				},
 				name: playerEntity?.name ?? 'Player',
-				physicsEnabled: playerEntity?.physics_enabled ?? false,
-				physicsType: playerEntity?.physics_type ?? 'static',
+				physicsEnabled: true,
+				physicsType: 'dynamic',
 				scripts: playerEntity?.scripts,
 				controlBindings: playerEntity?.control_bindings,
+				visualModelPath: savedPlayer.visual_model_path ?? playerEntity?.visual_model_path,
 			};
 			queue.push(pending);
 			pendingRestoresRef.current.set('[Player]', queue);
@@ -78,6 +79,7 @@ export function ensureFirstPersonPlayerOnLoad(
 export function buildSavedPlayerTransform(
 	fpView: SavedPlayerTransform | null | undefined,
 	feetPosition: [number, number, number] | undefined,
+	visualModelPath?: string,
 ): SavedPlayerTransform | null {
 	if (!feetPosition) return null;
 	return {
@@ -85,5 +87,6 @@ export function buildSavedPlayerTransform(
 		scale: FIRST_PERSON_PLAYER_BODY_SCALE,
 		yaw: fpView?.yaw ?? FP_DEFAULT_YAW,
 		pitch: fpView?.pitch ?? FP_EDITOR_ORBIT_PITCH,
+		...(visualModelPath ? { visual_model_path: visualModelPath } : {}),
 	};
 }

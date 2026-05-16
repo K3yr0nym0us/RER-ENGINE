@@ -202,6 +202,9 @@ impl State {
             EngineCommand::LoadModel { path } => {
                 self.load_model(&path);
             }
+            EngineCommand::ReplaceEntityModel { id, path } => {
+                self.replace_entity_model(id, &path);
+            }
             EngineCommand::LoadModelAsset { path, name } => {
                 self.register_model_asset(&path, &name);
             }
@@ -250,19 +253,15 @@ impl State {
                 use glam::{Quat, Vec3};
                 let before = self.world.get::<Transform>(id).cloned();
                 let is_fp_player = self.first_person_player_entity == Some(id);
-                if is_fp_player {
+                if let Some(transform) = self.world.get_mut::<Transform>(id) {
                     if let Some(p) = position {
-                        self.set_first_person_feet_position(Vec3::from_array(p));
-                    }
-                    if let Some(r) = rotation {
-                        let q = Quat::from_xyzw(r[0], r[1], r[2], r[3]);
-                        let (yaw, _, _) = q.to_euler(glam::EulerRot::YXZ);
-                        self.camera.yaw = yaw;
-                        self.sync_player_rotation_from_look();
-                    }
-                } else if let Some(transform) = self.world.get_mut::<Transform>(id) {
-                    if let Some(p) = position {
-                        transform.position = Vec3::from(p);
+                        let pos = Vec3::from_array(p);
+                        transform.position = pos;
+                        if is_fp_player {
+                            // El panel envía el centro del cuerpo; la cámara orbita sobre los pies.
+                            self.camera.target =
+                                crate::config_3d::first_person::feet_from_player_body_center(pos);
+                        }
                     }
                     if let Some(r) = rotation {
                         transform.rotation = Quat::from_xyzw(r[0], r[1], r[2], r[3]);

@@ -24,6 +24,10 @@ use std::path::Path;
 
 use glam::Vec3 as GlamVec3;
 
+use crate::config_3d::first_person::{
+    player_body_center_from_feet, feet_from_player_body_center, FIRST_PERSON_BODY_HEIGHT,
+    FIRST_PERSON_COLLIDER_RADIUS,
+};
 use crate::config_shared::point_to_segment_2d;
 use crate::ecs::{EntityId, MeshComponent, NonSelectable, Transform};
 use crate::engine::State;
@@ -78,6 +82,94 @@ impl State {
                 send_event(&EngineEvent::Error { message: e });
             }
         }
+    }
+
+    /// Sustituye el mesh visual de una entidad existente (mismo id, sin recrear entidad).
+    pub(crate) fn replace_entity_model(&mut self, id: EntityId, path: &str) {
+        if self.world.get::<Transform>(id).is_none() {
+            send_event(&EngineEvent::Error {
+                message: format!("Entidad {id} no encontrada para reemplazar modelo"),
+            });
+            return;
+        }
+
+        let loaded = match mesh_3d::load_model_file(&self.device, Path::new(path)) {
+            Ok(parts) => parts,
+            Err(e) => {
+                send_event(&EngineEvent::Error { message: e });
+                return;
+            }
+        };
+
+        let Some(part) = loaded.into_iter().next() else {
+            send_event(&EngineEvent::Error {
+                message: "El archivo no contiene mallas".to_string(),
+            });
+            return;
+        };
+
+        let mesh_idx = self.meshes.len();
+        let tex_idx = self.uv_rects.len();
+        self.meshes.push(part.mesh);
+        let uv = self
+            .atlas
+            .pack(&self.queue, &part.rgba, part.width, part.height);
+        self.uv_rects.push(uv);
+
+        if let Some(mc) = self.world.get_mut::<MeshComponent>(id) {
+            mc.mesh_idx = mesh_idx;
+            mc.tex_idx = tex_idx;
+        } else {
+            self.world.insert(
+                id,
+                MeshComponent {
+                    mesh_idx,
+                    tex_idx,
+                },
+            );
+        }
+
+        let is_fp_player = self.first_person_player_entity == Some(id);
+        if is_fp_player {
+            let feet = self.first_person_feet_position();
+            let w = FIRST_PERSON_COLLIDER_RADIUS * 2.0;
+            if let Some(t) = self.world.get_mut::<Transform>(id) {
+                t.scale = glam::Vec3::new(w, FIRST_PERSON_BODY_HEIGHT, w);
+                t.position = player_body_center_from_feet(feet);
+            }
+            self.camera.target = feet;
+        }
+
+        let (position, scale) = match self.world.get::<Transform>(id) {
+            Some(t) => (Some(t.position.to_array()), Some(t.scale.to_array())),
+            None => (None, None),
+        };
+
+        if self.physics.has_physics(id) {
+            if let Some(t) = self.world.get::<Transform>(id) {
+                let half = [
+                    (t.scale.x * 0.5).max(0.01),
+                    (t.scale.y * 0.5).max(0.01),
+                    (t.scale.z * 0.5).max(0.01),
+                ];
+                let pos = if is_fp_player {
+                    feet_from_player_body_center(t.position).to_array()
+                } else {
+                    t.position.to_array()
+                };
+                let body_type = self.physics.get_body_type(id).to_string();
+                self.physics
+                    .set_entity_physics(id, true, &body_type, pos, half);
+            }
+        }
+
+        send_event(&EngineEvent::EntityModelReplaced {
+            id,
+            path: path.to_string(),
+            position,
+            scale,
+        });
+        log::info!("Modelo reemplazado en entidad {id}: {path}");
     }
 
     fn ray_intersects_aabb(

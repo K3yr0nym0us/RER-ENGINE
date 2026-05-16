@@ -22,6 +22,35 @@ interface Props {
   onSend: (cmd: object) => void
 }
 
+const RAD_TO_DEG = 180 / Math.PI;
+const DEG_TO_RAD = Math.PI / 180;
+
+function quatToEulerDegrees(q: [number, number, number, number]): [number, number, number] {
+  const [x, y, z, w] = q;
+  const sinr = 2 * (w * x + y * z);
+  const cosr = 1 - 2 * (x * x + y * y);
+  const rx = Math.atan2(sinr, cosr);
+  const sinp = 2 * (w * y - z * x);
+  const ry = Math.abs(sinp) >= 1 ? Math.sign(sinp) * (Math.PI / 2) : Math.asin(sinp);
+  const siny = 2 * (w * z + x * y);
+  const cosy = 1 - 2 * (y * y + z * z);
+  const rz = Math.atan2(siny, cosy);
+  return [rx * RAD_TO_DEG, ry * RAD_TO_DEG, rz * RAD_TO_DEG];
+}
+
+function eulerDegreesToQuat(euler: [number, number, number]): [number, number, number, number] {
+  const [ex, ey, ez] = euler.map((d) => d * DEG_TO_RAD);
+  const cx = Math.cos(ex / 2), sx = Math.sin(ex / 2);
+  const cy = Math.cos(ey / 2), sy = Math.sin(ey / 2);
+  const cz = Math.cos(ez / 2), sz = Math.sin(ez / 2);
+  return [
+    sx * cy * cz - cx * sy * sz,
+    cx * sy * cz + sx * cy * sz,
+    cx * cy * sz - sx * sy * cz,
+    cx * cy * cz + sx * sy * sz,
+  ];
+}
+
 export function TransformPanel({ entity, is2D, onSend }: Props) {
   const { t } = useTraslate()
   const [transform, setTransform] = useState<Transform>({
@@ -33,11 +62,17 @@ export function TransformPanel({ entity, is2D, onSend }: Props) {
 
   useEffect(() => {
     if (!entity) return
+    const rot = is2D
+      ? entity.rotation.map((n) => n.toFixed(1)) as [string, string, string, string]
+      : (() => {
+        const [rx, ry, rz] = quatToEulerDegrees(entity.rotation);
+        return [rx.toFixed(1), ry.toFixed(1), rz.toFixed(1), ''] as [string, string, string, string];
+      })();
     setTransform({
       pos: entity.position.map((n, i) =>
         (is2D && i === 2) ? String(Math.round(n)) : n.toFixed(1)
       ) as [string, string, string],
-      rot: entity.rotation.map((n) => n.toFixed(1)) as [string, string, string, string],
+      rot,
       scl: entity.scale.map((n) => n.toFixed(1)) as [string, string, string],
     })
   }, [entity, is2D])
@@ -45,16 +80,24 @@ export function TransformPanel({ entity, is2D, onSend }: Props) {
   const commit = useCallback((override: Partial<Transform>) => {
     if (!entity) return
     const merged = { ...transform, ...override }
+    const rotation: [number, number, number, number] = is2D
+      ? merged.rot.map(Number) as [number, number, number, number]
+      : eulerDegreesToQuat([
+        Number(merged.rot[0]),
+        Number(merged.rot[1]),
+        Number(merged.rot[2]),
+      ]);
     onSend({
       cmd:      'set_transform',
       id:       entity.id,
       position: merged.pos.map(Number) as [number, number, number],
-      rotation: merged.rot.map(Number) as [number, number, number, number],
+      rotation,
       scale:    merged.scl.map(Number) as [number, number, number],
     })
-  }, [entity, transform, onSend])
+  }, [entity, transform, onSend, is2D])
 
   const axisColors = ['text-danger', 'text-success', 'text-info']
+  const rotationAxes = is2D ? (['X', 'Y', 'Z', 'W'] as const) : (['X', 'Y', 'Z'] as const)
 
   const makeVec3Row = (
     label: string,
@@ -137,9 +180,9 @@ export function TransformPanel({ entity, is2D, onSend }: Props) {
         extraOnChange: is2D && lockProportions ? proportionOnChange : undefined,
       })}
       <div className="mb-2">
-        <p className="prop-label">{t('Rotation (xyzw)')}</p>
+        <p className="prop-label">{is2D ? t('Rotation (xyzw)') : t('Rotation (degrees)')}</p>
         <div className="d-flex gap-1 mt-1">
-          {(['X', 'Y', 'Z', 'W'] as const).map((ax, i) => (
+          {rotationAxes.map((ax, i) => (
             <div key={ax} className="flex-fill">
               <div
                 className={`prop-axis ${i < 3 ? axisColors[i] : ''}`}
@@ -149,9 +192,9 @@ export function TransformPanel({ entity, is2D, onSend }: Props) {
               </div>
               <input
                 type="number"
-                step="0.01"
+                step={is2D ? '0.01' : '1'}
                 value={transform.rot[i]}
-                aria-label={`${t('Rotation (xyzw)')} ${ax}`}
+                aria-label={`${is2D ? t('Rotation (xyzw)') : t('Rotation (degrees)')} ${ax}`}
                 className="form-control form-control-sm text-center bg-dark text-light border-secondary prop-input"
                 onChange={(e) => {
                   const next = [...transform.rot] as [string, string, string, string]

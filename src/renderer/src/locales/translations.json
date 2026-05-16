@@ -110,6 +110,10 @@
   "Dynamic (gravity)": "Dinámico (gravedad)",
   "Static (does not move)": "Estático (no se mueve)",
   "Kinematic (by code)": "Cinemático (por código)",
+  "Player physics managed by engine": "Movimiento y gravedad gestionados por el motor",
+  "Replace model": "Reemplazar modelo",
+  "Replace model player hint": "Solo cambia el aspecto visual. Controles, salto y cámara en primera persona se mantienen.",
+  "Replace model entity hint": "Solo cambia el mesh visual de esta entidad.",
   "Transformations": "Transformaciones",
   "Create Blueprint": "Crear Blueprint",
   "Convert to Blueprint": "Convertir en Blueprint",
@@ -144,6 +148,7 @@
   "Position": "Posición",
   "Scale": "Escala",
   "Rotation (xyzw)": "Rotación (xyzw)",
+  "Rotation (degrees)": "Rotación (grados)",
   "Lock proportions": "Proporciones bloqueadas",
   "Keep proportions": "Mantener proporciones",
 

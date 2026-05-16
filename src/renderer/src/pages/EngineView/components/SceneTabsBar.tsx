@@ -48,6 +48,7 @@ export function SceneTabsBar({ initialSave, projectType, gameStyle }: Props) {
     entityTransformsRef,
     entityMetaRef,
     pendingRestoresRef,
+    pendingModelLoadQueueRef,
     pendingFirstPersonViewRef,
     firstPersonViewRef,
     mainPlayerHandled,
@@ -136,6 +137,8 @@ export function SceneTabsBar({ initialSave, projectType, gameStyle }: Props) {
         scripts: m.scripts,
         control_bindings: m.controlBindings,
         blueprint_id: m.blueprintId,
+        visual_model_path: m.visualModelPath,
+        entity_category: m.entityCategory,
       };
     });
 
@@ -148,8 +151,11 @@ export function SceneTabsBar({ initialSave, projectType, gameStyle }: Props) {
     const fpView = firstPersonViewRef?.current ?? null;
     const feetPos = fpView?.position
       ?? (playerId !== null ? transforms[playerId]?.position : undefined);
+    const playerVisualPath = playerId !== null
+      ? meta[playerId]?.visualModelPath
+      : undefined;
     const playerTransform = gameStyle === 'first-person' && projectType === '3D'
-      ? buildSavedPlayerTransform(fpView, feetPos)
+      ? buildSavedPlayerTransform(fpView, feetPos, playerVisualPath)
       : playerId !== null
         ? {
             position: transforms[playerId]?.position ?? DEFAULT_POS,
@@ -240,6 +246,7 @@ export function SceneTabsBar({ initialSave, projectType, gameStyle }: Props) {
     }
 
     pendingRestoresRef.current.clear();
+    pendingModelLoadQueueRef.current = [];
 
     for (const entity of scene.entities) {
       const transform = {
@@ -289,12 +296,26 @@ export function SceneTabsBar({ initialSave, projectType, gameStyle }: Props) {
         continue;
       }
 
+      if (entity.kind === 'character' && isPlayerPath(entity.path)) {
+        const playerQueue = pendingRestoresRef.current.get('[Player]') ?? [];
+        pendingRestoresRef.current.set('[Player]', playerQueue);
+        playerQueue.push({
+          transform,
+          name: entity.name,
+          physicsEnabled: true,
+          physicsType: 'dynamic',
+          scripts: entity.scripts,
+          controlBindings: entity.control_bindings,
+          visualModelPath: entity.visual_model_path ?? scene.playerTransform?.visual_model_path,
+        });
+        send({ cmd: 'load_character', path: entity.path });
+        continue;
+      }
+
       const bp = entity.blueprint_id
         ? (blueprints ?? []).find((b) => b.id === entity.blueprint_id) ?? null
         : null;
-      const queue = pendingRestoresRef.current.get(entity.path) ?? [];
-      pendingRestoresRef.current.set(entity.path, queue);
-      queue.push({
+      const pendingRestore = {
         transform,
         name: entity.name,
         physicsEnabled: bp?.physics_enabled ?? entity.physics_enabled ?? false,
@@ -303,11 +324,20 @@ export function SceneTabsBar({ initialSave, projectType, gameStyle }: Props) {
         scripts: bp?.scripts ?? entity.scripts,
         controlBindings: bp?.control_bindings ?? entity.control_bindings,
         blueprintId: entity.blueprint_id,
-      });
+        entityCategory: entity.entity_category,
+        visualModelPath: entity.visual_model_path,
+      };
+      const queue = pendingRestoresRef.current.get(entity.path) ?? [];
+      pendingRestoresRef.current.set(entity.path, queue);
+      queue.push(pendingRestore);
 
       if (entity.kind === 'scenario') send({ cmd: 'load_scenario', path: entity.path });
       if (entity.kind === 'character') send({ cmd: 'load_character', path: entity.path });
       if (entity.kind === 'model' && entity.path && !isEditorBoxPath(entity.path)) {
+        pendingModelLoadQueueRef.current.push({
+          modelPath: entity.path,
+          pending: pendingRestore,
+        });
         send({ cmd: 'load_model', path: entity.path });
       }
     }

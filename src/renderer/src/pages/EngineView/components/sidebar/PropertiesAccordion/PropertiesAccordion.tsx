@@ -1,14 +1,16 @@
 import { useEffect, useState } from 'react';
 
 import { Accordion } from 'react-bootstrap';
-import { CircleSquare, Check2Square, Pencil, Trash, Link45deg, ArrowsMove } from 'react-bootstrap-icons';
+import { CircleSquare, Check2Square, Pencil, Trash, Link45deg, ArrowsMove, BoxSeam } from 'react-bootstrap-icons';
 
 import { AppTooltip } from '@components';
 import { TransformPanel, AnimationsPanel, ScriptingPanel } from '.';
+import { CreateEntityFromModelModalBody } from '../EntitiesAccordion/components/CreateEntityFromModelModalBody';
 
 import { useContextEngine } from '@engine';
 import { useModal } from '@modal';
 import type { BluePrintCategory, BluePrintEntry } from '@shared-types';
+import { isEnvironmentEntity, isPlayerEntity } from '@shared-types';
 import { useTraslate } from '@hooks';
 
 export function PropertiesAccordion({ projectType }: { projectType?: string }) {
@@ -20,6 +22,9 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
     characterEntities,
     entityTransformsRef,
     entityMetaRef,
+    playerEntityIdRef,
+    models,
+    replaceEntityModel,
     removeScenario,
     removeCharacter,
     removeCollider,
@@ -117,7 +122,11 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
   }
 
   const isScenario = scenarioEntities.some((s: any) => s.id === selectedEntity?.id)
+  const entityMeta = entityMetaRef.current[selectedEntity.id]
+  const isEnvironment = isEnvironmentEntity(isScenario, entityMeta)
+  const isPlayer = isPlayerEntity(selectedEntity.id, entityMeta, playerEntityIdRef.current)
   const isCharacter = characterEntities.some((c: any) => c.id === selectedEntity?.id)
+  const is3D = projectType === '3D'
   const isCollider = selectedEntity ? entityMetaRef.current[selectedEntity.id]?.kind === 'collider' : false
   const isExecutionArea = selectedEntity ? entityMetaRef.current[selectedEntity.id]?.kind === 'execution_area' : false
   const isFromBlueprint = selectedEntity ? !!entityMetaRef.current[selectedEntity.id]?.blueprintId : false
@@ -214,13 +223,13 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
       </div>
 
       {!isCollider && !isExecutionArea && (
-        isScenario ? (
+        isEnvironment ? (
           <div className="mb-2">
             <p className="prop-label">{t('Collision')}</p>
             <div className="d-flex align-items-center gap-2 mt-1">
               <input
                 type="checkbox"
-                id="scenario-collision"
+                id="environment-collision"
                 className="form-check-input"
                 checked={physicsEnabled}
                 onChange={(e) => {
@@ -228,10 +237,35 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
                   setEntityPhysics(selectedEntity.id, next, 'static')
                 }}
               />
-              <label htmlFor="scenario-collision" className="form-check-label text-light small mb-0">
+              <label htmlFor="environment-collision" className="form-check-label text-light small mb-0">
                 {t('With collision')}
               </label>
             </div>
+          </div>
+        ) : isPlayer ? (
+          <div className="mb-2">
+            <p className="prop-label">{t('Physics')}</p>
+            <div className="d-flex align-items-center gap-2 mt-1">
+              <input
+                type="checkbox"
+                id="player-physics"
+                className="form-check-input"
+                checked
+                disabled
+                readOnly
+              />
+              <label htmlFor="player-physics" className="form-check-label text-light small mb-0">
+                {t('Enable physics')}
+              </label>
+            </div>
+            <select
+              value="dynamic"
+              className="form-select form-select-sm bg-dark text-light border-secondary mt-1"
+              disabled
+            >
+              <option value="dynamic">{t('Dynamic (gravity)')}</option>
+            </select>
+            <p className="text-secondary small mb-0 mt-1">{t('Player physics managed by engine')}</p>
           </div>
         ) : (
           <div className="mb-2">
@@ -302,6 +336,35 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
             </span>
           </div>
         ) : (
+        <>
+        {is3D && (
+          <button
+            className="btn btn-sm btn-outline-info w-100 mb-2"
+            type="button"
+            onClick={() => {
+              openModal({
+                title: t('Replace model'),
+                body: (
+                  <div>
+                    <p className="text-secondary small">
+                      {isPlayer ? t('Replace model player hint') : t('Replace model entity hint')}
+                    </p>
+                    <CreateEntityFromModelModalBody
+                      models={models}
+                      onSpawn={(path) => {
+                        replaceEntityModel(selectedEntity.id, path);
+                        closeModal();
+                      }}
+                    />
+                  </div>
+                ),
+              });
+            }}
+          >
+            <BoxSeam className="me-2" />
+            {t('Replace model')}
+          </button>
+        )}
         <button
           className="btn btn-sm btn-outline-primary w-100 mb-2"
           onClick={() => {
@@ -358,6 +421,7 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
           <CircleSquare className="me-2" />
           {t('Convert to Blueprint')}
         </button>
+        </>
         )}
         <button
           className="btn btn-sm btn-outline-danger w-100"

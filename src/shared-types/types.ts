@@ -44,6 +44,23 @@ export function isPlayerPath(p: string | null | undefined): boolean {
   return entityPathMarker(p) === '[Player]'
 }
 
+export type EntityCategory = 'environment'
+
+export function isPlayerEntity(
+  id: number,
+  meta: { path?: string } | undefined,
+  playerEntityId: number | null,
+): boolean {
+  return isPlayerPath(meta?.path) || playerEntityId === id
+}
+
+export function isEnvironmentEntity(
+  isScenario: boolean,
+  meta: { path?: string; entityCategory?: EntityCategory } | undefined,
+): boolean {
+  return isScenario || isEditorBoxPath(meta?.path) || meta?.entityCategory === 'environment'
+}
+
 /** Escala del mesh placeholder del jugador FP (debe coincidir con `engine_3d`). */
 export const FIRST_PERSON_PLAYER_BODY_SCALE: [number, number, number] = [0.8, 1.7, 0.8]
 
@@ -77,6 +94,10 @@ export interface SavedEntity {
   spriteName?:      string
   /** ID de la blueprint desde la que fue instanciada esta entidad. */
   blueprint_id?:    string
+  /** Ruta del modelo visual (.glb/.fbx) si difiere de `path` (p. ej. jugador con `[Player]`). */
+  visual_model_path?: string
+  /** Categoría de entorno para UI de colisión en 3D. */
+  entity_category?: EntityCategory
 }
 
 export interface SavedAnimation {
@@ -150,6 +171,8 @@ export interface SavedPlayerTransform {
   yaw?:     number
   /** Primera persona 3D: pitch de cámara en radianes. */
   pitch?:   number
+  /** Modelo visual (.glb/.fbx) del jugador si se reemplazó el placeholder. */
+  visual_model_path?: string
 }
 
 export interface SavedScene {
@@ -205,6 +228,7 @@ export interface EngineCommand {
     | 'resize'
     | 'set_bounds'
     | 'load_model'
+    | 'replace_entity_model'
     | 'set_transform'
     | 'set_entity_name'
     | 'set_scene'
@@ -265,7 +289,7 @@ export interface EngineCommand {
 }
 
 export interface EngineEvent {
-  event: 'ready' | 'pong' | 'error' | 'model_loaded' | 'stopped' | 'entity_selected' | 'entity_deselected' | 'entity_hovered' | 'entity_unhovered' | 'scenario_loaded' | 'character_loaded' | 'camera_2d_updated' | 'background_loaded' | 'drawing_progress' | 'collider_created' | 'execution_area_created' | 'tool_cancelled' | 'pivot_selected' | 'physics_changed' | 'sprite_loaded' | 'sprite_removed' | 'sprites_list' | 'model_asset_loaded' | 'model_asset_removed' | 'models_list' | 'sound_loaded' | 'sound_removed' | 'sounds_list' | 'background_asset_loaded' | 'background_asset_removed' | 'backgrounds_list' | 'debug_metrics' | 'preview_playing_changed' | 'trigger_entered' | 'trigger_exited' | 'entity_removed' | 'quick_build_move' | 'quick_build_click' | 'animation_logical_resolved' | 'autosave_tick'
+  event: 'ready' | 'pong' | 'error' | 'model_loaded' | 'entity_model_replaced' | 'stopped' | 'entity_selected' | 'entity_deselected' | 'entity_hovered' | 'entity_unhovered' | 'scenario_loaded' | 'character_loaded' | 'camera_2d_updated' | 'background_loaded' | 'drawing_progress' | 'collider_created' | 'execution_area_created' | 'tool_cancelled' | 'pivot_selected' | 'physics_changed' | 'sprite_loaded' | 'sprite_removed' | 'sprites_list' | 'model_asset_loaded' | 'model_asset_removed' | 'models_list' | 'sound_loaded' | 'sound_removed' | 'sounds_list' | 'background_asset_loaded' | 'background_asset_removed' | 'backgrounds_list' | 'debug_metrics' | 'preview_playing_changed' | 'trigger_entered' | 'trigger_exited' | 'entity_removed' | 'quick_build_move' | 'quick_build_click' | 'animation_logical_resolved' | 'autosave_tick'
   [key: string]: unknown
 }
 

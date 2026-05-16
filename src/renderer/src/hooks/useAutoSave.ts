@@ -102,6 +102,8 @@ export function useAutoSave({
           scripts: isBlueprintInstance ? undefined : m.scripts,
           control_bindings: isBlueprintInstance ? undefined : m.controlBindings,
           blueprint_id: m.blueprintId,
+          visual_model_path: m.visualModelPath,
+          entity_category: m.entityCategory,
         }
       })
 
@@ -110,8 +112,11 @@ export function useAutoSave({
     const fpView = firstPersonViewRef?.current ?? null
     const feetPos = fpView?.position
       ?? (playerId !== null ? transforms[playerId]?.position : undefined)
+    const playerVisualPath = playerId !== null
+      ? meta[playerId]?.visualModelPath
+      : undefined;
     const playerTransform = gameStyle === 'first-person' && projectType === '3D'
-      ? buildSavedPlayerTransform(fpView, feetPos)
+      ? buildSavedPlayerTransform(fpView, feetPos, playerVisualPath)
       : playerId !== null
         ? {
             position: transforms[playerId]?.position ?? DEFAULT_POS,

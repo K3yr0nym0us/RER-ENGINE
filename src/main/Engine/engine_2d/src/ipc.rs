@@ -29,6 +29,7 @@ pub enum EngineCommand {
         #[serde(default)] offset_y: Option<i32>,
     },
     LoadModel { path: String },
+    ReplaceEntityModel { id: u32, path: String },
     /// Actualizar transform de una entidad por id.
     SetTransform {
         id:       u32,

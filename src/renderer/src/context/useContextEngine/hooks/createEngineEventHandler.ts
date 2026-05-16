@@ -14,7 +14,13 @@ import type {
 	SpritesList,
 } from '@shared-types';
 import type { GameStyle } from '@shared-types';
-import { FIRST_PERSON_PLAYER_BODY_SCALE, isEditorBoxPath, isPlayerPath } from '@shared-types';
+import {
+	FIRST_PERSON_PLAYER_BODY_SCALE,
+	isEditorBoxPath,
+	isPlayerEntity,
+	isPlayerPath,
+	type EntityCategory,
+} from '@shared-types';
 import { applyFirstPersonControlDefaultsIfEmpty } from '../../../defaults/applyFirstPersonControlDefaults';
 import {
 	applySavedFirstPersonView,
@@ -253,10 +259,11 @@ export function createEngineEventHandler({
 						const pendingRestore: PendingRestore = {
 							transform: playerTransform,
 							name: entity.name,
-							physicsEnabled: entity.physics_enabled ?? false,
-							physicsType: entity.physics_type ?? 'static',
+							physicsEnabled: true,
+							physicsType: 'dynamic',
 							scripts: entity.scripts,
 							controlBindings: entity.control_bindings,
+							visualModelPath: entity.visual_model_path,
 						};
 						const queue = refs.pendingRestoresRef.current.get('[Player]') ?? [];
 						queue.push(pendingRestore);
@@ -296,6 +303,8 @@ export function createEngineEventHandler({
 							scripts: bp?.scripts ?? entity.scripts,
 							controlBindings: bp?.control_bindings ?? entity.control_bindings,
 							blueprintId: entity.blueprint_id,
+							entityCategory: entity.entity_category,
+							visualModelPath: entity.visual_model_path,
 						};
 						const queue = refs.pendingRestoresRef.current.get(entity.path) ?? [];
 						queue.push(pendingRestore);
@@ -303,6 +312,10 @@ export function createEngineEventHandler({
 						if (entity.kind === 'scenario') sendEngine({ cmd: 'load_scenario', path: entity.path } as never);
 						if (entity.kind === 'character') sendEngine({ cmd: 'load_character', path: entity.path } as never);
 						if (entity.kind === 'model' && entity.path && !isEditorBoxPath(entity.path)) {
+							refs.pendingModelLoadQueueRef.current.push({
+								modelPath: entity.path,
+								pending: pendingRestore,
+							});
 							sendEngine({ cmd: 'load_model', path: entity.path } as never);
 						}
 					}
@@ -362,25 +375,86 @@ export function createEngineEventHandler({
 				refs.entityTransformsRef.current[id] = pending.transform;
 				if (editorBoxQueue.length === 0) refs.pendingRestoresRef.current.delete('[EditorBox]');
 			} else {
-				const modelPath = refs.pendingModelPathRef.current;
+				const spawnModelPath = refs.pendingModelPathRef.current;
 				const spawnKind = refs.pendingSpawnKindRef.current ?? 'model';
+				const spawnCategory = refs.pendingSpawnCategoryRef.current;
+				const loadItem = !spawnModelPath
+					? refs.pendingModelLoadQueueRef.current.shift()
+					: null;
+				const modelPath = spawnModelPath ?? loadItem?.modelPath ?? null;
+				const restorePending = loadItem?.pending;
 
 				if (modelPath) {
+					const isEnvironment = spawnCategory === 'environment'
+						|| restorePending?.entityCategory === 'environment';
 					refs.entityMetaRef.current[id] = {
 						kind: spawnKind,
 						path: modelPath,
-						name: loaded.name ?? `Entity ${id}`,
-						physicsEnabled: true,
-						physicsType: 'static',
+						name: restorePending?.name ?? loaded.name ?? `Entity ${id}`,
+						physicsEnabled: isEnvironment
+							? true
+							: (restorePending?.physicsEnabled ?? true),
+						physicsType: isEnvironment
+							? 'static'
+							: (restorePending?.physicsType ?? 'static'),
+						...(isEnvironment ? { entityCategory: 'environment' as EntityCategory } : {}),
+						...(restorePending?.entityCategory ? { entityCategory: restorePending.entityCategory } : {}),
+						scripts: restorePending?.scripts,
+						controlBindings: restorePending?.controlBindings,
+						blueprintId: restorePending?.blueprintId,
+						visualModelPath: restorePending?.visualModelPath,
 					};
+					if (restorePending?.name && restorePending.name.trim().length > 0) {
+						window.engine.send({
+							cmd: 'set_entity_name',
+							id,
+							name: restorePending.name,
+							force: true,
+						} as never);
+					}
+					if (restorePending?.transform) {
+						window.engine.send({
+							cmd: 'set_transform',
+							id,
+							position: restorePending.transform.position,
+							rotation: restorePending.transform.rotation,
+							scale: restorePending.transform.scale,
+							track_undo: false,
+						} as never);
+						refs.entityTransformsRef.current[id] = restorePending.transform;
+					}
 					if (spawnKind === 'character') {
 						dispatch({
 							type: 'ADD_CHARACTER',
 							payload: { id, path: modelPath },
 						});
 					}
+					if (isEnvironment && projectType === '3D') {
+						window.engine.send({
+							cmd: 'set_physics',
+							id,
+							enabled: true,
+							body_type: 'static',
+						} as never);
+					} else if (restorePending?.physicsEnabled) {
+						window.engine.send({
+							cmd: 'set_physics',
+							id,
+							enabled: true,
+							body_type: restorePending.physicsType,
+						} as never);
+					}
+					const visualPath = restorePending?.visualModelPath;
+					if (visualPath && visualPath !== modelPath) {
+						window.engine.send({
+							cmd: 'replace_entity_model',
+							id,
+							path: visualPath,
+						} as never);
+					}
 					refs.pendingModelPathRef.current = null;
 					refs.pendingSpawnKindRef.current = null;
+					refs.pendingSpawnCategoryRef.current = null;
 				} else if (!refs.entityMetaRef.current[id]) {
 					refs.entityMetaRef.current[id] = {
 						kind: 'model',
@@ -398,15 +472,48 @@ export function createEngineEventHandler({
 			}
 		}
 
+		if (event.event === 'entity_model_replaced') {
+			const replaced = event as {
+				id?: number
+				path?: string
+				position?: [number, number, number]
+				scale?: [number, number, number]
+			};
+			const id = replaced.id ?? -1;
+			if (replaced.path && refs.entityMetaRef.current[id]) {
+				refs.entityMetaRef.current[id].visualModelPath = replaced.path;
+			}
+			if (replaced.position && replaced.scale) {
+				refs.entityTransformsRef.current[id] = {
+					position: replaced.position,
+					rotation: refs.entityTransformsRef.current[id]?.rotation ?? [0, 0, 0, 1],
+					scale: replaced.scale,
+				};
+			}
+			if (refs.playerEntityIdRef.current === id) {
+				if (refs.entityMetaRef.current[id]) {
+					refs.entityMetaRef.current[id].physicsEnabled = true;
+					refs.entityMetaRef.current[id].physicsType = 'dynamic';
+				}
+			}
+		}
+
 		if (event.event === 'entity_selected') {
 			const selected = event as unknown as EntitySelected;
 			refs.entityTransformsRef.current[selected.id] = { position: selected.position, rotation: selected.rotation, scale: selected.scale };
-			if (refs.entityMetaRef.current[selected.id]) {
-				refs.entityMetaRef.current[selected.id].name = selected.name;
-				refs.entityMetaRef.current[selected.id].physicsEnabled = selected.physics_enabled ?? false;
-				refs.entityMetaRef.current[selected.id].physicsType = selected.physics_type ?? '';
-			}
 			const meta = refs.entityMetaRef.current[selected.id];
+			const isPlayer = isPlayerEntity(selected.id, meta, refs.playerEntityIdRef.current);
+			const physicsEnabled = isPlayer
+				? true
+				: (selected.physics_enabled ?? false);
+			const physicsType = isPlayer
+				? 'dynamic'
+				: (selected.physics_type ?? '');
+			if (meta) {
+				meta.name = selected.name;
+				meta.physicsEnabled = physicsEnabled;
+				meta.physicsType = physicsType;
+			}
 			dispatch({
 				type: 'SELECT_ENTITY',
 				payload: {
@@ -415,8 +522,8 @@ export function createEngineEventHandler({
 					position: selected.position,
 					rotation: selected.rotation,
 					scale: selected.scale,
-					physicsEnabled: selected.physics_enabled ?? false,
-					physicsType: selected.physics_type ?? '',
+					physicsEnabled,
+					physicsType,
 					path: meta?.path,
 					animations: meta?.animations,
 					scripts: meta?.scripts,
@@ -589,7 +696,22 @@ export function createEngineEventHandler({
 					}
 				}
 
+				if (pending.entityCategory && refs.entityMetaRef.current[id]) {
+					refs.entityMetaRef.current[id].entityCategory = pending.entityCategory;
+				}
+
 				refs.entityTransformsRef.current[id] = pendingTransform;
+
+				if (pending.visualModelPath) {
+					window.engine.send({
+						cmd: 'replace_entity_model',
+						id,
+						path: pending.visualModelPath,
+					} as never);
+					if (refs.entityMetaRef.current[id]) {
+						refs.entityMetaRef.current[id].visualModelPath = pending.visualModelPath;
+					}
+				}
 
 				if (queue.length === 0) refs.pendingRestoresRef.current.delete(path);
 			};
@@ -607,9 +729,12 @@ export function createEngineEventHandler({
 							kind: 'character',
 							path: character.path,
 							name: 'Player',
-							physicsEnabled: false,
-							physicsType: '',
+							physicsEnabled: true,
+							physicsType: 'dynamic',
 						};
+					} else {
+						refs.entityMetaRef.current[character.id].physicsEnabled = true;
+						refs.entityMetaRef.current[character.id].physicsType = 'dynamic';
 					}
 					applyPendingRestore(character.id, character.path);
 					applySavedFirstPersonView(
