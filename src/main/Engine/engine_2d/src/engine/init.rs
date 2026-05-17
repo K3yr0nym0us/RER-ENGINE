@@ -6,6 +6,7 @@ use wgpu::{include_wgsl, util::DeviceExt};
 use winit::window::Window;
 
 use crate::config_2d::{ActiveTool, GridConfig, PhysicsWorld2D};
+use crate::entity_save_meta::EntitySaveRegistry;
 use crate::config_compat::physics::PhysicsWorld;
 use crate::config_compat::Camera;
 use crate::ecs::{MeshComponent, World};
@@ -498,6 +499,7 @@ impl State {
             autosave_last_tick:  Instant::now(),
             blocked_on_keep_horizontal: HashMap::new(),
             pending_slides:      HashMap::new(),
+            save_registry: EntitySaveRegistry::new(),
         }
     }
 }

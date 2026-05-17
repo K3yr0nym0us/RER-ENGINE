@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Files, Pencil, PlusLg, Trash } from 'react-bootstrap-icons';
 import Nav from 'react-bootstrap/Nav';
 
-import type { GameStyle, ProjectSaveData, SavedEntity, SavedScene, SavedWorldConfig } from '@shared-types';
+import type { GameStyle, ProjectSaveData, SavedScene, SavedWorldConfig } from '@shared-types';
 import { isEditorBoxPath, isPlayerPath } from '@shared-types';
 import { buildActiveSceneSnapshotFromEngine } from '../../../defaults/buildProjectSaveFromEngine';
 import { ensureFirstPersonPlayerOnLoad } from '../../../defaults/firstPersonSceneRestore';
@@ -108,68 +108,8 @@ export function SceneTabsBar({ initialSave, projectType, gameStyle }: Props) {
   const [sceneDataById, setSceneDataById] = useState<Record<number, SavedScene>>(initialSceneState.dataById);
   const [activeSceneId, setActiveSceneId] = useState(initialSceneState.activeSceneId);
 
-  const captureActiveSceneSnapshot = async (id: number, name: string): Promise<SavedScene> => {
-    if (projectType === '3D') {
-      return buildActiveSceneSnapshotFromEngine(id, name, entityMetaRef.current);
-    }
-    return buildCurrentSceneSnapshotSync(id, name);
-  };
-
-  const buildCurrentSceneSnapshotSync = (id: number, name: string): SavedScene => {
-    const transforms = entityTransformsRef.current;
-    const meta = entityMetaRef.current;
-    const playerId = playerEntityIdRef.current;
-    const DEFAULT_POS: [number, number, number] = [0, 0, 0];
-    const DEFAULT_ROT: [number, number, number, number] = [0, 0, 0, 1];
-    const DEFAULT_SCL: [number, number, number] = [1, 1, 1];
-
-      const entities: SavedEntity[] = Object.entries(meta)
-      .filter(([, m]) => !(m.kind === 'character' && isPlayerPath(m.path)))
-      .map(([idStr, m]) => {
-      const entityId = Number(idStr);
-      return {
-        id: entityId,
-        name: m.name,
-        kind: m.kind,
-        path: m.kind === 'model' && isEditorBoxPath(m.path) ? '[EditorBox]' : m.path,
-        position: transforms[entityId]?.position ?? DEFAULT_POS,
-        rotation: transforms[entityId]?.rotation ?? DEFAULT_ROT,
-        scale: transforms[entityId]?.scale ?? DEFAULT_SCL,
-        physics_enabled: m.physicsEnabled,
-        physics_type: m.physicsType,
-        points: m.points,
-        animations: m.animations,
-        scripts: m.scripts,
-        control_bindings: m.controlBindings,
-        blueprint_id: m.blueprintId,
-        visual_model_path: m.visualModelPath,
-        entity_category: m.entityCategory,
-      };
-    });
-
-    const sprites = Array.from(loadedSpritesInfo.entries()).map(([path, info]) => ({ name: info.name, path }));
-
-    const models = undefined;
-
-    const playerTransform = playerId !== null
-      ? {
-          position: transforms[playerId]?.position ?? DEFAULT_POS,
-          scale: transforms[playerId]?.scale ?? DEFAULT_SCL,
-        }
-      : null;
-
-    return {
-      id,
-      name,
-      world: { ...worldConfig },
-      backgroundPath: backgroundPath ?? null,
-      entities,
-      playerTransform,
-      camera2d: camera2dRef.current,
-      sprites,
-      models,
-    };
-  };
+  const captureActiveSceneSnapshot = async (id: number, name: string): Promise<SavedScene> =>
+    buildActiveSceneSnapshotFromEngine(id, name, entityMetaRef.current);
 
   const clearCurrentSceneInEngine = () => {
     for (const scenario of scenarioEntities) {

@@ -67,6 +67,7 @@ impl State {
         self.script_engine = ScriptEngine::new()
             .expect("Error al reinicializar el motor de scripting Lua");
         self.control_bindings_by_entity.clear();
+        self.save_registry.clear();
         self.blocked_on_keep_horizontal.clear();
         self.pending_slides.clear();
 

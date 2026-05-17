@@ -819,6 +819,15 @@ pub(crate) fn restore_animation_frame(&mut self, id: u32) {
             [0.0, 0.0, 0.0],
         );
         self.collider_entities.push(entity);
+        self.save_registry.register_meta(
+            entity,
+            crate::entity_save_meta::EntitySaveMeta {
+                kind: "collider".to_string(),
+                path: "[Colisionador]".to_string(),
+                visual_model_path: None,
+                points: Some(*pts),
+            },
+        );
         if track_undo {
             self.undo_stack.push(crate::engine::UndoAction::RemoveEntity { id: entity });
         }
@@ -835,6 +844,15 @@ pub(crate) fn restore_animation_frame(&mut self, id: u32) {
 
         self.world.insert(entity, ExecutionAreaMarker {});
         self.execution_area_entities.push(entity);
+        self.save_registry.register_meta(
+            entity,
+            crate::entity_save_meta::EntitySaveMeta {
+                kind: "execution_area".to_string(),
+                path: "[ExecutionArea]".to_string(),
+                visual_model_path: None,
+                points: Some(*pts),
+            },
+        );
         if track_undo {
             self.undo_stack.push(crate::engine::UndoAction::RemoveEntity { id: entity });
         }

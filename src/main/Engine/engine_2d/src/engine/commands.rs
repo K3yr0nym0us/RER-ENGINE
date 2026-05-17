@@ -274,6 +274,7 @@ impl State {
                 self.control_bindings_by_entity.remove(&id);
                 self.blocked_on_keep_horizontal.remove(&id);
                 self.pending_slides.remove(&id);
+                self.save_registry.remove_entity(id);
                 self.script_engine.detach_entity(id);
                 self.world.despawn(id);
                 send_event(&EngineEvent::EntityRemoved { id, kind: removed_kind.to_string() });
@@ -512,6 +513,9 @@ impl State {
                 self.autosave_enabled = enabled;
                 self.autosave_last_tick = Instant::now();
                 log::info!("[autosave] {}", if enabled { "activado" } else { "desactivado" });
+            }
+            EngineCommand::ExportSaveSnapshot => {
+                self.export_save_snapshot();
             }
             EngineCommand::SetDebugMode { show } => {
                 self.debug_mode = show;
@@ -824,6 +828,21 @@ EngineCommand::PlayAnimation { id, name } => {
                     send_event(&EngineEvent::Error {
                         message: format!("Error en script '{path}': {e}"),
                     });
+                } else {
+                    use crate::entity_save_meta::ScriptSourceRecord;
+                    let list = self
+                        .save_registry
+                        .script_sources
+                        .entry(id)
+                        .or_insert_with(Vec::new);
+                    if let Some(existing) = list.iter_mut().find(|s| s.name == path) {
+                        existing.source = source;
+                    } else {
+                        list.push(ScriptSourceRecord {
+                            name: path,
+                            source,
+                        });
+                    }
                 }
             }
             EngineCommand::SetControlBindings { id, bindings } => {
@@ -839,6 +858,7 @@ EngineCommand::PlayAnimation { id, name } => {
             EngineCommand::UnloadScript { id } => {
                 log::info!("[IPC] UnloadScript: entity_id={}", id);
                 self.script_engine.detach_entity(id);
+                self.save_registry.script_sources.remove(&id);
             }
             EngineCommand::LoadSprite { path, name } => {
                 // Cargar PNG y almacenar sus dimensiones; no se crea entidad ECS.

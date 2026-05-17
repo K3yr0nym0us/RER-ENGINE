@@ -82,14 +82,17 @@ Selección de binario en runtime: `rer_engine_2d` o `rer_engine_3d` según tipo 
 - [x] `replace_entity_model` con resync de orientación y escala del jugador
 - [x] Export escena para `.save`: `export_save_snapshot` → `save_snapshot_ready` (`entity_save_meta`, placeholders FP incluidos)
 
+### Motor 2D (`rer_engine_2d`) — guardado
+
+- [x] Export escena para `.save`: `export_save_snapshot` → `save_snapshot_ready` (`entity_save_meta`, marcadores scenario/character/collider)
+
 ### Editor (Electron + React)
 
 - [x] electron-vite, preload con `contextBridge`, tipos compartidos
 - [x] Spawn del motor correcto según proyecto; reintento si el proceso muere
 - [x] Escenas múltiples (crear, renombrar, duplicar, cambiar activa)
 - [x] Guardado/carga `.save` (ZIP: manifest, assets, sounds, scripting)
-- [x] Guardado **3D** engine-first: `export_save_snapshot`; front fusiona pestañas inactivas, blueprints e idioma
-- [x] Guardado **2D** desde renderer (`buildSaveDataLegacy2D` en `useAutoSave.ts`)
+- [x] Guardado engine-first (2D y 3D): `export_save_snapshot`; front fusiona pestañas inactivas, blueprints e idioma
 - [x] Multi-selección, panel de propiedades, herramientas 2D/3D según proyecto
 - [x] Acordeón cámara FP (envía `set_first_person_view`, no calcula poses en TS)
 - [x] Refactor engine-first FP: `firstPersonViewRef` para UI vía `first_person_view_changed` (no para serializar save 3D)
@@ -112,7 +115,6 @@ Selección de binario en runtime: `rer_engine_2d` o `rer_engine_3d` según tipo 
 
 ### Prioridad media — motor-first
 
-- [ ] **Guardado 2D en motor** — portar `export_save_snapshot` a `engine_2d` (hoy solo 3D usa snapshot autoritativo)
 - [ ] **`normalizeAnimations` solo en motor** — el front aún pre-normaliza en algunos flujos pese a `animation_logical_resolved`
 - [ ] **`pendingRestores` / carga de escena en motor** — comando tipo `import_scene` en Rust en lugar de loops IPC desde el front
 - [ ] **Defaults `logical` / `pivot` emitidos por el motor** al crear entidad desde sprite

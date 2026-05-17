@@ -4,6 +4,8 @@ use crate::ecs::{MeshComponent, Transform};
 use crate::ipc::{send_event, EngineEvent};
 use crate::texture::GpuTexture;
 
+use crate::entity_save_meta::EntitySaveMeta;
+
 use super::{CharacterMarker, ScenarioMarker, compute_tight_bounds, create_quad_xy};
 use crate::engine::State;
 
@@ -97,6 +99,15 @@ impl State {
         });
         self.world.insert(sc_id, ScenarioMarker { img_width, img_height, base_world_h, path: path.to_owned() });
         self.scenario_entities.push(sc_id);
+        self.save_registry.register_meta(
+            sc_id,
+            EntitySaveMeta {
+                kind: "scenario".to_string(),
+                path: path.to_owned(),
+                visual_model_path: None,
+                points: None,
+            },
+        );
 
         send_event(&EngineEvent::ScenarioLoaded {
             id: sc_id,
@@ -234,6 +245,15 @@ impl State {
         });
         self.world.insert(ch_id, CharacterMarker { img_width, img_height, base_world_h, tight_bounds, path: path.to_owned() });
         self.character_entities.push(ch_id);
+        self.save_registry.register_meta(
+            ch_id,
+            EntitySaveMeta {
+                kind: "character".to_string(),
+                path: path.to_owned(),
+                visual_model_path: None,
+                points: None,
+            },
+        );
 
         send_event(&EngineEvent::CharacterLoaded { id: ch_id, path: path.to_owned() });
         log::debug!("[load_character] entidad {ch_id} creada {img_width}×{img_height}: {path}");

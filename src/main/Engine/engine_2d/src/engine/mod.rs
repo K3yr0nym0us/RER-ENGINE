@@ -5,6 +5,9 @@ use std::time::Instant;
 use glam::Vec3 as GlamVec3;
 use winit::{dpi::PhysicalSize, window::Window};
 
+#[path = "../save_snapshot.rs"]
+mod save_snapshot;
+
 mod animations;
 mod audio;
 mod commands;
@@ -31,6 +34,7 @@ use crate::config_2d::ActiveTool;
 use crate::config_compat::Camera;
 use crate::config_2d::Camera2D;
 use crate::config_2d::PhysicsWorld2D;
+use crate::entity_save_meta::EntitySaveRegistry;
 use crate::ecs::{NameComponent, Transform, World};
 use crate::gizmo::GizmoBuffer;
 use crate::ipc::EngineCommand;
@@ -224,6 +228,7 @@ pub struct State {
     /// Cada frame, la entidad avanza hacia su destino a la velocidad indicada
     /// usando el shape-cast kinematic (colisiones incluidas).
     pub(crate) pending_slides: HashMap<u32, PendingSlide>,
+    pub(crate) save_registry: EntitySaveRegistry,
 }
 
 impl State {

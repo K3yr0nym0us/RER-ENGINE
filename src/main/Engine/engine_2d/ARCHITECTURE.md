@@ -26,6 +26,15 @@ Los modulos bajo `src/config_compat/` son shims de compatibilidad **dentro de es
 - `src/config_compat/physics.rs` no implementa la simulacion 2D real; solo conserva una API minima para rutas heredadas.
 - Cualquier cambio de comportamiento de fisica 2D debe nacer en `src/physics_2d.rs`, no en `config_compat`.
 
+## Persistencia de escena (`.save`)
+
+| Direccion | JSON | Rol |
+|-----------|------|-----|
+| Electron → motor | `export_save_snapshot` | Serializa mundo, entidades (scenario/character/collider/execution_area), jugador `[Player]`, camara 2D, almacenes de assets, animaciones y scripts. |
+| Motor → Electron | `save_snapshot_ready` | Payload `scene` listo para el ZIP (main escribe el `.save`). |
+
+Registro: `entity_save_meta` + inferencia desde `ScenarioMarker` / `CharacterMarker`. El renderer solo fusiona pestañas inactivas, blueprints e idioma. Ver `src/renderer/ARCHITECTURE.md`.
+
 ## Contratos operativos que hoy deben respetarse
 
 - El movimiento normal de gameplay debe pasar por `move_physics_entity()` o por las rutas kinematic del runtime.

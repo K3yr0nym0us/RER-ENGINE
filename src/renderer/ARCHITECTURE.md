@@ -54,17 +54,16 @@ El **ZIP** lo escribe Electron/main; el **contenido de la escena activa** depend
 
 | Tipo | Quién serializa la escena | Archivos |
 |------|---------------------------|----------|
-| **3D** | Motor (`export_save_snapshot` → `save_snapshot_ready`) | `useAutoSave.ts`, `buildProjectSaveFromEngine.ts`, `SceneTabsBar` (pestañas 3D) |
-| **2D** | Renderer (`buildSaveDataLegacy2D` en `useAutoSave.ts`) | Misma ruta de hook; sin `export_save_snapshot` en `engine_2d` aún |
+| **2D / 3D** | Motor (`export_save_snapshot` → `save_snapshot_ready`) | `useAutoSave.ts`, `buildProjectSaveFromEngine.ts`, `SceneTabsBar` |
 
-Flujo **3D**:
+Flujo (ambos motores):
 
 1. Front → `{ cmd: 'export_save_snapshot' }`.
 2. Motor recorre la escena (entidades placeholder del template FP incluidas), mundo, jugador FP, cámara 2D si aplica, stores de assets y scripts registrados.
 3. Motor → `save_snapshot_ready` con `scene`.
 4. Front arma `ProjectSaveData`: fusiona blueprints, idioma, sonidos/fondos del contexto, pestañas **inactivas** desde `sceneStateStore`, y `blueprint_id` / categoría desde `entityMetaRef` cuando exista.
 
-El front **no** decide qué entidades van al save en 3D ni arma `playerTransform` desde refs locales.
+El front **no** decide qué entidades van al save ni arma `playerTransform` desde refs locales (salvo metadatos de editor: blueprints, categorías).
 
 ## Relacion con los dos motores
 
@@ -83,8 +82,8 @@ Documentacion de motores:
 - `src/context/useContextEngine/hooks/createEngineEventHandler.ts` — unico lugar que deberia interpretar eventos del motor para estado global.
 - `src/pages/EngineView/` — layout del editor, sidebars, `SceneTabsBar`.
 - `src/defaults/` — plantillas y restauracion de escena (intencion, no fisica).
-- `src/hooks/useAutoSave.ts` — 3D: snapshot del motor; 2D: `buildSaveDataLegacy2D`.
-- `src/defaults/buildProjectSaveFromEngine.ts` — IPC `export_save_snapshot` y merge a `ProjectSaveData` (solo 3D).
+- `src/hooks/useAutoSave.ts` — snapshot del motor (2D y 3D).
+- `src/defaults/buildProjectSaveFromEngine.ts` — IPC `export_save_snapshot` y merge a `ProjectSaveData`.
 - `src/shared-types/types.ts` — contrato IPC; ampliar aqui al anadir comandos/eventos nuevos.
 
 ## Checklist para cambios nuevos
