@@ -73,7 +73,7 @@ Selección de binario en runtime: `rer_engine_2d` o `rer_engine_3d` según tipo 
 - [x] Carga glTF/FBX, mallas normalizadas, materiales básicos + PBR en shader
 - [x] Editor: cámara orbital; gizmo mover/rotar; preview FP con frustum de editor
 - [x] Play mode primera persona (cápsula cinemática, shape cast; mesh del jugador oculto)
-- [x] Rapier3D en **objetos** de escena (`set_entity_physics`, sync con `Transform`)
+- [x] **Física 3D de producto** — Rapier en objetos (`set_entity_physics`, sync `Transform` en editor); jugador FP solo con shape cast; play sin traspasos (movimiento, salto, static/dynamic, límites del mundo)
 - [x] Jugador FP: convención pies ↔ centro de cuerpo, forward de malla, sync cámara-cuerpo
 - [x] IPC vista FP autoritativa: `set_first_person_view` → `first_person_view_changed`
 - [x] HUD play: crosshair + tooltip Esc (texturas en `Engine/assets/`)
@@ -114,12 +114,11 @@ Selección de binario en runtime: `rer_engine_2d` o `rer_engine_3d` según tipo 
 
 ### Prioridad alta
 
-- [ ] **Física 3D de producto completo** — Rapier en objetos está; falta cerrar colisiones/gameplay FP (interacción uniforme, edge cases, pruebas de regresión)
+- [ ] **`import_scene` completo en motor (2D)** — hoy: `apply_entity_restore` por entidad; falta un comando que cargue la escena entera sin ráfagas IPC + `pendingRestores` en el front
 
 ### Prioridad media — motor-first
 
 - [x] **`normalizeAnimations` solo en motor** — `SetAnimation` resuelve `logical_w/h`; front sincroniza vía `animation_logical_resolved`
-- [ ] **`import_scene` completo en motor** — hoy: `apply_entity_restore` por entidad; falta cargar escena entera en un comando
 - [x] **Defaults `logical` / `pivot` en motor** — pivot opcional en frames; `CharacterLoaded`/`ScenarioLoaded` con dimensiones
 - [x] **`entity_removed` con snapshot de puntos** (2D: colliders / execution areas en el evento IPC)
 - [x] **Scripts Lua `update()` solo en play** (2D y 3D)
@@ -133,7 +132,6 @@ Selección de binario en runtime: `rer_engine_2d` o `rer_engine_3d` según tipo 
 
 ### Prioridad baja
 
-- [ ] Jerarquía parent/child de entidades (evaluar diseño)
 - [ ] Optimizar `new_entity_id()` para escenas muy grandes
 - [x] Renombrar helpers con sufijo `_x11` a nombres neutros multiplataforma (`query_ctrl_held_os`)
 - [~] Flujo dedicado de restauración inicial — `applyPendingRestoreToEngine.ts` + `apply_entity_restore`; aún hay colas `pendingRestores` en front
@@ -144,6 +142,8 @@ Selección de binario en runtime: `rer_engine_2d` o `rer_engine_3d` según tipo 
 - Multiplayer
 - IA generativa en pipeline de assets
 - Partículas / shaders experimentales sin caso de producto
+- Jerarquía parent/child entre entidades del editor
+- Migraciones automáticas entre versiones de `.save`
 
 ---
 
@@ -167,7 +167,7 @@ Selección de binario en runtime: `rer_engine_2d` o `rer_engine_3d` según tipo 
 ### Deuda 3D documentada en crate
 
 - No usar `meshes[0]` para overlays HUD (`hud_quad_mesh` dedicado)
-- Coherencia render / picking / física respecto a `Transform` en editor
+- Picking AABB vs malla fina (mejora visual, no bloquea física)
 
 ### Comandos IPC “solo 2D”
 
@@ -180,4 +180,5 @@ El protocolo compartido incluye variantes que `engine_3d` ignora o stubbea (`cre
 | Ítem | Criterio |
 |------|----------|
 | Blueprints 3D | Crear/instanciar/actualizar desde editor en proyecto 3D |
-| Física 3D producto | Play FP + objetos dinámicos/estáticos sin desincronías transform/collider |
+| Física 3D producto | [x] Play FP + colisiones Rapier sin traspasos; sync editor en gizmo/`set_transform` |
+| `import_scene` 2D | Un comando motor carga escena + restores; front sin cola por entidad |

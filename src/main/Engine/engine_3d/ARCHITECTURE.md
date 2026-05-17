@@ -92,8 +92,9 @@ Registro de rutas/tipos: `entity_save_meta` + actualizacion en spawn/load/replac
 
 ### Fisica
 
-- Objetos: Rapier3D (`set_entity_physics`, sync con `Transform` al editar).
-- Jugador en play: shape cast; sin rigid body Rapier en el mesh visual del player.
+- Objetos: Rapier3D (`set_entity_physics`, sync con `Transform` al editar y al usar gizmo).
+- Jugador en play: shape cast (`move_character_capsule_at_feet`); sin rigid body Rapier en el mesh visual del player.
+- Estado de producto: validado en play (movimiento, salto, static/dynamic, límites del mundo, sin traspasos). No reescribir el pipeline salvo bug reproducible.
 
 ### IPC
 
@@ -107,4 +108,4 @@ Registro de rutas/tipos: `entity_save_meta` + actualizacion en spawn/load/replac
 ## Deuda tecnica (solo 3D)
 
 - `canonical_quad_idx` / `hud_quad_mesh`: no usar `meshes[0]` (suelo) para overlays HUD futuros.
-- Coherencia render / picking / fisica 3D respecto a `Transform` en el editor.
+- Picking por AABB del `Transform` puede no coincidir con silueta fina del modelo (solo UX de selección).
