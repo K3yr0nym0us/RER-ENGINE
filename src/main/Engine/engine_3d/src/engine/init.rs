@@ -14,7 +14,7 @@ use crate::mesh;
 use crate::scripting::ScriptEngine;
 use crate::texture::GpuTexture;
 
-use super::{build_scene_uniforms, create_depth_texture, start_audio_thread, State, DEPTH_FORMAT};
+use super::{build_scene_uniforms, create_depth_texture, start_audio_thread, SceneUniforms, State, DEPTH_FORMAT};
 
 impl State {
     /// `is_embed`: si es true, fuerza el backend GL/EGL en vez de Vulkan.
@@ -110,6 +110,29 @@ impl State {
             }],
         });
 
+        let hud_identity = SceneUniforms {
+            view_proj: [
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ],
+            cam_pos: [0.0, 0.0, 5.0, 0.0],
+        };
+        let hud_scene_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("hud-scene-uniforms"),
+            contents: bytemuck::cast_slice(&[hud_identity]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let hud_scene_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("hud-scene-bg"),
+            layout: &bgl,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: hud_scene_buf.as_entire_binding(),
+            }],
+        });
+
         let texture_bgl = GpuTexture::bind_group_layout(&device);
         let mut atlas = crate::texture::TextureAtlas::new(&device, &queue, &texture_bgl);
         let fallback_uv = crate::texture::TextureAtlas::fallback_uv();
@@ -137,6 +160,10 @@ impl State {
             &queue,
             "tooltip-btn-ctrl-to-auto-adjust-english.png",
         );
+        let (fp_exit_hint_uv, fp_exit_hint_size) =
+            load_snap_hint_asset(&mut atlas, &queue, "tooltip-btn-esc-salir.png");
+        let (fp_exit_hint_uv_en, fp_exit_hint_size_en) =
+            load_snap_hint_asset(&mut atlas, &queue, "tooltip-btn-esc-exit.png");
 
         let shader = device.create_shader_module(include_wgsl!("../shader.wgsl"));
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -215,6 +242,7 @@ impl State {
         });
 
         let ground_plane = crate::config_3d::mesh_3d::create_ground_plane(&device);
+        let hud_quad_mesh = mesh::create_unit_quad_xy(&device);
         let meshes = vec![ground_plane];
         let mut world = World::new();
         let plane_id = world.spawn(Some("Ground"));
@@ -379,11 +407,13 @@ impl State {
             depth_view,
             scene_buffer: scene_buf,
             scene_bind_group: scene_bg,
+            hud_scene_bind_group: hud_scene_bg,
             atlas,
             uv_rects,
             fallback_uv,
             static_tex_cache: std::collections::HashMap::new(),
             canonical_quad_idx: 0,
+            hud_quad_mesh,
             camera,
             fp_editor_frustum_distance: 2.5,
             camera_2d: None,
@@ -441,6 +471,11 @@ impl State {
             snap_locale: "en".to_string(),
             show_snap_hint: false,
             snap_hint_alpha: 0.0,
+            fp_exit_hint_uv,
+            fp_exit_hint_size,
+            fp_exit_hint_uv_en,
+            fp_exit_hint_size_en,
+            fp_exit_hint_alpha: 0.0,
             collider_entities: Vec::new(),
             execution_area_entities: Vec::new(),
             execution_overlaps: HashSet::new(),

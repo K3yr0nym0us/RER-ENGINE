@@ -68,6 +68,7 @@ impl State {
         self.tool_overlay_buffer = gizmo::build_from_vertices(&self.device, &[]);
         self.show_snap_hint = false;
         self.snap_hint_alpha = 0.0;
+        self.fp_exit_hint_alpha = 0.0;
         self.pivot_edit_mode = None;
         self.logical_area_mode = None;
         self.script_engine = ScriptEngine::new()

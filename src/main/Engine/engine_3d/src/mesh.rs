@@ -88,6 +88,19 @@ pub fn create_cube(device: &wgpu::Device) -> Mesh {
     upload(device, &vertices, &indices, "cube")
 }
 
+/// Quad unitario en el plano XY (Z=0), normal +Z; para overlays HUD texturizados.
+pub fn create_unit_quad_xy(device: &wgpu::Device) -> Mesh {
+    #[rustfmt::skip]
+    let vertices: Vec<Vertex> = vec![
+        Vertex { position: [-0.5, -0.5, 0.0], normal: [0.0, 0.0, 1.0], uv: [0.0, 1.0] },
+        Vertex { position: [ 0.5, -0.5, 0.0], normal: [0.0, 0.0, 1.0], uv: [1.0, 1.0] },
+        Vertex { position: [ 0.5,  0.5, 0.0], normal: [0.0, 0.0, 1.0], uv: [1.0, 0.0] },
+        Vertex { position: [-0.5,  0.5, 0.0], normal: [0.0, 0.0, 1.0], uv: [0.0, 0.0] },
+    ];
+    let indices: Vec<u32> = vec![0, 1, 2, 2, 3, 0];
+    upload(device, &vertices, &indices, "unit-quad-xy")
+}
+
 // ---------------------------------------------------------------------------
 // Per-instance data for the instanced rendering pipeline
 // ---------------------------------------------------------------------------

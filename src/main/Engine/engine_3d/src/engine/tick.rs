@@ -165,6 +165,13 @@ impl State {
         self.snap_hint_size = size_es;
         self.snap_hint_uv_en = uv_en;
         self.snap_hint_size_en = size_en;
+
+        let (fp_es, fp_size_es) = self.load_snap_hint_uv("tooltip-btn-esc-salir.png");
+        let (fp_en, fp_size_en) = self.load_snap_hint_uv("tooltip-btn-esc-exit.png");
+        self.fp_exit_hint_uv = fp_es;
+        self.fp_exit_hint_size = fp_size_es;
+        self.fp_exit_hint_uv_en = fp_en;
+        self.fp_exit_hint_size_en = fp_size_en;
     }
 
     pub(crate) fn update_snap_hint_alpha(&mut self) {
@@ -182,6 +189,27 @@ impl State {
         self.snap_hint_alpha += (target - self.snap_hint_alpha) * blend;
         if (self.snap_hint_alpha - target).abs() < 0.001 {
             self.snap_hint_alpha = target;
+        }
+    }
+
+    pub(crate) fn update_fp_exit_hint_alpha(&mut self) {
+        let target = if self.preview_playing
+            && self.camera_2d.is_none()
+            && self.first_person_player_entity.is_some()
+        {
+            1.0_f32
+        } else {
+            0.0_f32
+        };
+        let k = if target > self.fp_exit_hint_alpha {
+            3.6_f32
+        } else {
+            2.8_f32
+        };
+        let blend = 1.0 - (-k * self.delta_time.max(0.0)).exp();
+        self.fp_exit_hint_alpha += (target - self.fp_exit_hint_alpha) * blend;
+        if (self.fp_exit_hint_alpha - target).abs() < 0.001 {
+            self.fp_exit_hint_alpha = target;
         }
     }
 
@@ -244,6 +272,61 @@ impl State {
         Some(inst)
     }
 
+    /// Tooltip «Esc para salir del play» en primera persona 3D (esquina inferior izquierda).
+    pub(crate) fn build_fp_exit_hint_instance(&self) -> Option<mesh::InstanceData> {
+        if self.fp_exit_hint_alpha <= 0.003 {
+            return None;
+        }
+        let (uv, img_w, img_h) = if self.snap_locale == "en" {
+            let uv = self.fp_exit_hint_uv_en.or(self.fp_exit_hint_uv)?;
+            let (w, h) = if self.fp_exit_hint_uv_en.is_some() {
+                self.fp_exit_hint_size_en
+            } else {
+                self.fp_exit_hint_size
+            };
+            (uv, w, h)
+        } else {
+            let uv = self.fp_exit_hint_uv.or(self.fp_exit_hint_uv_en)?;
+            let (w, h) = if self.fp_exit_hint_uv.is_some() {
+                self.fp_exit_hint_size
+            } else {
+                self.fp_exit_hint_size_en
+            };
+            (uv, w, h)
+        };
+        let w = self.size.width as f32;
+        let h = self.size.height as f32;
+        if w <= 0.0 || h <= 0.0 || img_w <= 0.0 || img_h <= 0.0 {
+            return None;
+        }
+
+        let margin_px = 18.0_f32;
+        let max_width_px = (w * 0.28).clamp(120.0, 360.0);
+        let scale_px = (max_width_px / img_w).min(1.0);
+        const DISPLAY_SCALE: f32 = 0.9;
+        let draw_w_px = img_w * scale_px * DISPLAY_SCALE;
+        let draw_h_px = img_h * scale_px * DISPLAY_SCALE;
+
+        let a = self.fp_exit_hint_alpha.clamp(0.0, 1.0);
+        let eased_alpha = a * a * (3.0 - 2.0 * a);
+        let scale_in = 0.92 + 0.08 * eased_alpha;
+        let slide_px = (1.0 - eased_alpha) * 14.0;
+
+        // Espacio NDC fijo en pantalla (como el crosshair): view_proj = identidad en el pass.
+        let ndc_w = 2.0 * (draw_w_px / w) * scale_in;
+        let ndc_h = 2.0 * (draw_h_px / h) * scale_in;
+        let margin_x_ndc = 2.0 * margin_px / w;
+        let margin_y_ndc = 2.0 * margin_px / h;
+        let slide_ndc = 2.0 * slide_px / h;
+        let cx = -1.0 + margin_x_ndc + ndc_w * 0.5;
+        let cy = -1.0 + margin_y_ndc + ndc_h * 0.5 + slide_ndc;
+        let model = Mat4::from_translation(glam::vec3(cx, cy, 0.0))
+            * Mat4::from_scale(glam::vec3(ndc_w, ndc_h, 1.0));
+        let mut inst = mesh::InstanceData::new(model, 0.0, uv);
+        inst.flag_pad[1] = eased_alpha;
+        Some(inst)
+    }
+
     /// Centro de selección para gizmo/grupo. Si no hay grupo, usa `selected_entity`.
     pub(crate) fn selection_center(&self) -> Option<glam::Vec3> {
         if !self.selected_entities.is_empty() {
@@ -284,6 +367,7 @@ impl State {
         self.delta_time = now.duration_since(self.last_frame).as_secs_f32();
         self.last_frame = now;
         self.update_snap_hint_alpha();
+        self.update_fp_exit_hint_alpha();
 
         self.metrics_frame_count += 1;
         if now.duration_since(self.metrics_last_emit) >= std::time::Duration::from_secs(1) {

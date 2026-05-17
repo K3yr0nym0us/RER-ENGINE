@@ -352,6 +352,48 @@ impl State {
             draw_calls += 1;
         }
 
+        if let Some(hint_inst) = self.build_fp_exit_hint_instance() {
+            use wgpu::util::DeviceExt;
+            let hint_inst_buf = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("fp-exit-hint-inst-buf"),
+                contents: bytemuck::cast_slice(&[hint_inst]),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
+
+            let mut hint_pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("fp-exit-hint-pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.depth_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                occlusion_query_set: None,
+                timestamp_writes: None,
+            });
+            hint_pass.set_pipeline(&self.render_pipeline_2d);
+            hint_pass.set_bind_group(0, &self.hud_scene_bind_group, &[]);
+            hint_pass.set_bind_group(1, self.atlas.bind_group.as_ref(), &[]);
+            hint_pass.set_vertex_buffer(0, self.hud_quad_mesh.vertex_buffer.slice(..));
+            hint_pass.set_vertex_buffer(1, hint_inst_buf.slice(..));
+            hint_pass.set_index_buffer(
+                self.hud_quad_mesh.index_buffer.slice(..),
+                wgpu::IndexFormat::Uint32,
+            );
+            hint_pass.draw_indexed(0..self.hud_quad_mesh.index_count, 0, 0..1);
+            draw_calls += 1;
+        }
+
         if !self.preview_playing {
 
             if let Some(cam2d) = &self.camera_2d {

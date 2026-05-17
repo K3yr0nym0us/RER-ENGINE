@@ -29,11 +29,14 @@ pub struct State {
     pub(crate) depth_view: wgpu::TextureView,
     pub(crate) scene_buffer: wgpu::Buffer,
     pub(crate) scene_bind_group: wgpu::BindGroup,
+    pub(crate) hud_scene_bind_group: wgpu::BindGroup,
     pub(crate) atlas: crate::texture::TextureAtlas,
     pub(crate) uv_rects: Vec<[f32; 4]>,
     pub(crate) fallback_uv: [f32; 4],
     pub(crate) static_tex_cache: std::collections::HashMap<String, [f32; 4]>,
     pub(crate) canonical_quad_idx: usize,
+    /// Quad para tooltips en pantalla (HUD); no usar `meshes[0]` (suelo).
+    pub(crate) hud_quad_mesh: Mesh,
     pub camera: Camera,
     /// Profundidad del gizmo de frustum FP en modo editor (metros).
     pub(crate) fp_editor_frustum_distance: f32,
@@ -101,6 +104,12 @@ pub struct State {
     pub(crate) snap_locale: String,
     pub(crate) show_snap_hint: bool,
     pub(crate) snap_hint_alpha: f32,
+    /// Tooltip «pulsa Esc para salir» en play primera persona 3D.
+    pub(crate) fp_exit_hint_uv: Option<[f32; 4]>,
+    pub(crate) fp_exit_hint_size: (f32, f32),
+    pub(crate) fp_exit_hint_uv_en: Option<[f32; 4]>,
+    pub(crate) fp_exit_hint_size_en: (f32, f32),
+    pub(crate) fp_exit_hint_alpha: f32,
     pub(crate) collider_entities: Vec<EntityId>,
     pub(crate) execution_area_entities: Vec<EntityId>,
     pub(crate) execution_overlaps: HashSet<(EntityId, EntityId)>,
