@@ -1,5 +1,7 @@
 use wgpu::util::DeviceExt;
 
+use crate::ipc::{send_event, EngineEvent};
+
 /// Textura en GPU lista para bindear: view + sampler.
 #[allow(dead_code)]
 pub struct GpuTexture {
@@ -183,6 +185,8 @@ pub struct TextureAtlas {
     cursor_x:        u32,
     cursor_y:        u32,
     row_h:           u32,
+    /// Evita spam de IPC/log cuando el atlas ya no tiene hueco reutilizable.
+    exhausted_notified: bool,
 }
 
 impl TextureAtlas {
@@ -232,6 +236,7 @@ impl TextureAtlas {
             cursor_x: 0,
             cursor_y: 0,
             row_h:    0,
+            exhausted_notified: false,
         };
         // Pixel blanco de fallback en (0,0)
         atlas.pack_raw(queue, &[255, 255, 255, 255], 1, 1);
@@ -251,6 +256,7 @@ impl TextureAtlas {
         self.cursor_x = 0;
         self.cursor_y = 0;
         self.row_h = 0;
+        self.exhausted_notified = false;
         self.pack_raw(queue, &[255, 255, 255, 255], 1, 1);
     }
 
@@ -269,6 +275,14 @@ impl TextureAtlas {
         }
         if self.cursor_y + h > self.height {
             log::error!("[TextureAtlas] atlas lleno — no se puede empacar {}×{}", w, h);
+            if !self.exhausted_notified {
+                self.exhausted_notified = true;
+                send_event(&EngineEvent::AtlasExhausted {
+                    atlas_size: Self::SIZE,
+                    width: w,
+                    height: h,
+                });
+            }
             return Self::fallback_uv();
         }
 

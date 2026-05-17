@@ -59,6 +59,7 @@ const SILENT_ENGINE_EVENTS = new Set<string>([
 	'animation_logical_resolved',
 	'multi_selection_transformed',
 	'autosave_tick',
+	'atlas_exhausted',
 	'preview_playing_changed',
 	'first_person_view_changed',
 	'save_snapshot_ready',
@@ -871,6 +872,17 @@ export function createEngineEventHandler({
 		if (event.event === 'preview_playing_changed') {
 			const playing = Boolean((event as { playing?: boolean }).playing);
 			dispatch({ type: 'SET_PREVIEW_PLAYING', payload: playing });
+		}
+
+		if (event.event === 'atlas_exhausted') {
+			const e = event as { atlas_size?: number; width?: number; height?: number };
+			const atlas = e.atlas_size ?? 4096;
+			const w = e.width ?? 0;
+			const h = e.height ?? 0;
+			addLog(
+				`[atlas] Texture atlas full (${atlas}×${atlas}). Could not pack ${w}×${h}. Remove sprites or change scene.`,
+				true,
+			);
 		}
 
 		if (event.event === 'error') {

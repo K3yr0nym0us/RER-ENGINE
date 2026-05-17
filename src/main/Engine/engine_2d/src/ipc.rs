@@ -517,6 +517,8 @@ pub enum EngineEvent {
     TriggerExited { trigger_id: u32, actor_id: u32 },
     /// Emitido cada 5 minutos cuando el autosave está activo.
     AutosaveTick,
+    /// Atlas de sprites 2D sin espacio para empacar la imagen solicitada (una vez por llenado).
+    AtlasExhausted { atlas_size: u32, width: u32, height: u32 },
     /// Respuesta a `export_save_snapshot`: escena activa lista para el `.save`.
     SaveSnapshotReady { scene: SaveSceneSnapshotPayload },
 }

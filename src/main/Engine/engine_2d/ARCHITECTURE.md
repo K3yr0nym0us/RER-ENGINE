@@ -43,6 +43,10 @@ Registro: `entity_save_meta` + inferencia desde `ScenarioMarker` / `CharacterMar
 
 - `update_scripts()` (`script.update`) solo corre con `preview_playing`. Los control scripts (`on_press` / `on_keep`) ya estaban acotados a play.
 
+## Atlas de texturas
+
+- Si el atlas 4096×4096 no puede empacar una imagen, el motor emite `atlas_exhausted` (una vez hasta `reset` del atlas) y el front lo muestra en la consola de log.
+
 ## Contratos operativos que hoy deben respetarse
 
 - El movimiento normal de gameplay debe pasar por `move_physics_entity()` o por las rutas kinematic del runtime.

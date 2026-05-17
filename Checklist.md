@@ -126,7 +126,7 @@ Selección de binario en runtime: `rer_engine_2d` o `rer_engine_3d` según tipo 
 - [ ] **Animaciones 3D** (clips / state machine; pipeline compatible con Blender)
 - [ ] **Blueprints / prefabs 3D** — flujo 2D parcial; falta equivalente unificado en 3D
 - [ ] **Redo de `RemoveEntity` fiable** — `apply_redo()` sin no-ops silenciosos
-- [ ] **Atlas: señalizar agotamiento** cuando no hay espacio reutilizable
+- [x] **Atlas: señalizar agotamiento** (2D: evento `atlas_exhausted` → consola del editor)
 
 ### Prioridad baja
 
