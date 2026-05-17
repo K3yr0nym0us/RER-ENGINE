@@ -1,6 +1,6 @@
 # Arquitectura actual de `engine_3d`
 
-Este documento fija el contrato tecnico actual del motor 3D para que el codigo no siga siendo la unica fuente de verdad implicita.
+Este documento fija el contrato tecnico actual del motor 3D para que el codigo no siga siendo la unica fuente de verdad implicita. Las tareas de producto pendientes están en [`CHECKLIST-3D.md`](../../../../CHECKLIST-3D.md).
 
 ## Relacion con `engine_2d`
 
@@ -94,18 +94,17 @@ Registro de rutas/tipos: `entity_save_meta` + actualizacion en spawn/load/replac
 
 - Objetos: Rapier3D (`set_entity_physics`, sync con `Transform` al editar y al usar gizmo).
 - Jugador en play: shape cast (`move_character_capsule_at_feet`); sin rigid body Rapier en el mesh visual del player.
-- Estado de producto: validado en play (movimiento, salto, static/dynamic, límites del mundo, sin traspasos). No reescribir el pipeline salvo bug reproducible.
+- En play, `physics.step` sincroniza cuerpos dynamic con ECS; el id del jugador FP se excluye de ese sync.
 
 ### IPC
 
-- Comandos que el protocolo define solo para 2D: no-op o warn; no son “pendientes de implementar en 3D”.
-- Proyectos 3D en el frontend deben evitar emitirlos.
+- Comandos del protocolo compartido que solo aplican al binario 2D: stub o `warn` en este crate (`config_compat`).
+- Proyectos 3D en el frontend no deben depender de variantes solo 2D.
 
 ### Assets
 
 - Hints HUD: `../assets/tooltip-btn-esc-*.png`; `snap_locale` EN/ES.
 
-## Deuda tecnica (solo 3D)
+### Render HUD
 
-- `canonical_quad_idx` / `hud_quad_mesh`: no usar `meshes[0]` (suelo) para overlays HUD futuros.
-- Picking por AABB del `Transform` puede no coincidir con silueta fina del modelo (solo UX de selección).
+- Overlays en play (crosshair, tooltip Esc) usan `hud_quad_mesh` y `hud_scene_bind_group` con view-projection identidad; no reutilizar el mesh del suelo de escena.

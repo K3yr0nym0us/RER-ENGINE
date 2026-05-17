@@ -95,7 +95,8 @@ Los ejecutables quedan en `src/main/Engine/target/debug/` o `target/release/`.
 | Archivo | Contenido |
 |---------|-----------|
 | [LUA_API.md](./LUA_API.md) | API de scripting Lua (2D y 3D), resumida |
-| [Checklist.md](./Checklist.md) | Estado técnico: hecho y pendiente |
+| [CHECKLIST-2D.md](./CHECKLIST-2D.md) | Hecho y pendiente — motor / editor 2D |
+| [CHECKLIST-3D.md](./CHECKLIST-3D.md) | Hecho y pendiente — motor / editor 3D |
 | `src/main/Engine/engine_2d/ARCHITECTURE.md` | Contrato del motor 2D |
 | `src/main/Engine/engine_3d/ARCHITECTURE.md` | Contrato del motor 3D |
 | `src/renderer/ARCHITECTURE.md` | Rol del frontend y qué no duplicar |

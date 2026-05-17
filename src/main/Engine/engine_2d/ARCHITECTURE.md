@@ -1,6 +1,6 @@
 # Arquitectura actual de `engine_2d`
 
-Este documento fija el contrato tecnico actual del motor 2D para que el codigo no siga siendo la unica fuente de verdad implicita.
+Este documento fija el contrato tecnico actual del motor 2D para que el codigo no siga siendo la unica fuente de verdad implicita. Las tareas de producto pendientes están en [`CHECKLIST-2D.md`](../../../../CHECKLIST-2D.md).
 
 ## Relacion con `engine_3d`
 
@@ -37,7 +37,7 @@ Registro: `entity_save_meta` + inferencia desde `ScenarioMarker` / `CharacterMar
 
 ## Eventos de entidades
 
-- `entity_removed` incluye `points` opcional para colisionadores y áreas de ejecución (cuadrilátero en espacio mundo), útil para sincronizar meta del editor y futuro redo.
+- `entity_removed` incluye `points` opcional para colisionadores y áreas de ejecución (cuadrilátero en espacio mundo), para sincronizar meta del editor y undo/redo.
 
 ## Scripting
 
@@ -52,10 +52,9 @@ Registro: `entity_save_meta` + inferencia desde `ScenarioMarker` / `CharacterMar
 - El movimiento normal de gameplay debe pasar por `move_physics_entity()` o por las rutas kinematic del runtime.
 - `teleport_entity()` solo debe usarse para teletransportes reales o para resincronizar el cuerpo fisico despues de una mutacion externa del `Transform`.
 - `visual_offsets` afecta render/animacion, pero no es hoy la fuente de verdad universal de picking, triggers o fisica.
-- Las `execution areas` usan overlap AABB basado en `Transform`; cambiar esa semantica es decision de producto 2D, no alineacion con el motor 3D.
+- Las `execution areas` usan overlap AABB basado en `Transform`; cambiar esa semántica es decisión de producto 2D, no alineación con el motor 3D.
 
-## Deuda tecnica (solo 2D)
+## Restore post-carga
 
-- Unificar la referencia espacial entre render, picking, triggers y fisica en este binario.
-- Revisar la semantica de `SetGravity`, `apply_kinematic_gravity()` y la traduccion especial de `on_press` para cuerpos kinematic.
-- Reducir shims de `config_compat` cuando dejen de usarse rutas heredadas en **este** crate.
+- `apply_entity_restore`: transform, física, animaciones, scripts y bindings en un solo comando IPC (sustituye ráfagas desde el front al aplicar restores por entidad).
+- Undo/redo de entidades: snapshot en `undo_entity.rs` (`RemoveEntity` / `RestoreEntity`) para escenario, personaje, colisionador y execution area.
