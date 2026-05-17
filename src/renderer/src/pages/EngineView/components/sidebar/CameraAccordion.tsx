@@ -12,7 +12,6 @@ import {
 	FP_DEFAULT_FRUSTUM_DISTANCE,
 	FP_DEFAULT_YAW,
 	FP_EDITOR_ORBIT_PITCH,
-	syncFirstPersonViewRefFromPlayer,
 } from '../../../../defaults/firstPersonSceneRestore';
 
 const RAD_TO_DEG = 180 / Math.PI;
@@ -47,9 +46,10 @@ export function CameraAccordion({
 		send,
 		camera2dRef,
 		firstPersonViewRef,
-		entityTransformsRef,
 		playerEntityIdRef,
 		selectedEntity,
+		fpViewSyncSeq,
+		previewPlaying,
 	} = useContextEngine();
 
 	const is3d = projectType === '3D';
@@ -73,10 +73,6 @@ export function CameraAccordion({
 
 	const loadFromScene = useCallback(() => {
 		if (is3dFp) {
-			const playerId = playerEntityIdRef.current;
-			if (playerId != null) {
-				syncFirstPersonViewRefFromPlayer(firstPersonViewRef, playerId, entityTransformsRef);
-			}
 			const v = firstPersonViewRef.current;
 			if (v) {
 				setPosX(formatCameraNum(v.position[0]));
@@ -94,11 +90,11 @@ export function CameraAccordion({
 			setCam2dY(formatCameraNum(c.y));
 			setCam2dHalfH(formatCameraNum(c.halfH));
 		}
-	}, [is3dFp, is3d, camera2dRef, firstPersonViewRef, entityTransformsRef, playerEntityIdRef]);
+	}, [is3dFp, is3d, camera2dRef, firstPersonViewRef]);
 
 	useEffect(() => {
 		loadFromScene();
-	}, [loadFromScene, selectedEntity?.id, engineReady]);
+	}, [loadFromScene, selectedEntity?.id, engineReady, fpViewSyncSeq, previewPlaying]);
 
 	const apply3dFp = () => {
 		const playerId = playerEntityIdRef.current;
@@ -123,7 +119,7 @@ export function CameraAccordion({
 			...(prev?.control_bindings ? { control_bindings: prev.control_bindings } : {}),
 		};
 		firstPersonViewRef.current = view;
-		applySavedFirstPersonView(view, playerId, entityTransformsRef, { editorOrbit: true });
+		applySavedFirstPersonView(view, { editorOrbit: true });
 	};
 
 	const apply2d = () => {

@@ -150,7 +150,7 @@ export function SceneTabsBar({ initialSave, projectType, gameStyle }: Props) {
       : undefined;
 
     const feetPos = gameStyle === 'first-person' && projectType === '3D'
-      ? resolvePlayerFeetForSave(playerId, firstPersonViewRef, entityTransformsRef)
+      ? resolvePlayerFeetForSave(playerId, firstPersonViewRef)
       : undefined;
     const fpView = firstPersonViewRef?.current ?? null;
     const playerVisualPath = playerId !== null

@@ -1,382 +1,158 @@
-# RER-ENGINE — Guía de Scripting Lua
+# Scripting Lua — RER-ENGINE
 
-Referencia completa de la API expuesta al sistema de scripts Lua del motor.
+Guía breve para escribir scripts en entidades. El motor **2D** y el **3D** comparten la misma forma de script; algunas funciones solo existen en uno de los dos.
 
 ---
 
-## Estructura de un script
+## Forma de un script
 
-Los scripts deben retornar una tabla con las funciones de ciclo de vida:
+Devuelve una tabla con callbacks. `dt` es el delta en segundos.
 
 ```lua
 local script = {}
 
 function script.on_start(self, entity)
-  -- Se llama una vez cuando el script se activa
+  engine.log("Hola desde entidad " .. entity.id)
 end
 
 function script.update(self, entity, dt)
-  -- Se llama cada frame. dt = delta time en segundos
+  -- cada frame
 end
 
 function script.on_stop(self, entity)
-  -- Se llama al desactivar el script
 end
 
 return script
 ```
 
-> **Modo compatibilidad:** el motor también acepta `function on_press(self, entity, key)` para scripts de control, y callbacks sueltos como `function on_trigger_enter(...)`.
+**Otros callbacks** (según tipo de script):
+
+| Callback | Cuándo |
+|----------|--------|
+| `on_press(self, entity, key)` | Tecla/control asignado (script de control) |
+| `on_trigger_enter(self, trigger, actor)` | Un actor entra en un *execution area* (solo 2D) |
 
 ---
 
-## Tabla `entity`
+## Datos de la entidad (`entity` / `entities`)
 
-El parámetro `entity` que reciben las funciones contiene el estado actual de la entidad:
+En cada frame el motor inyecta `entity` (la tuya) y `entities[id]` (lectura del resto).
 
-| Campo | Tipo | Descripción |
-|-------|------|-------------|
-| `entity.id` | `number` | ID único de la entidad |
-| `entity.x` | `number` | Posición X en unidades de mundo |
-| `entity.y` | `number` | Posición Y en unidades de mundo |
-| `entity.scale_x` | `number` | Escala horizontal |
-| `entity.scale_y` | `number` | Escala vertical |
-| `entity.animations` | `table` | Lista de nombres de animaciones disponibles |
+| Campo | Descripción |
+|-------|-------------|
+| `id` | ID numérico |
+| `x`, `y` | Posición en el plano de juego (2D: mundo XY; 3D: uso principal en XZ del suelo) |
+| `scale_x`, `scale_y` | Escala |
+| `animations` | Lista de nombres de animación (2D; en 3D puede estar vacía) |
 
 ---
 
-## API del motor (`engine.*`)
+## API común (`engine.*`)
 
-### Posición y movimiento
+Disponible en **2D y 3D** salvo donde se indique lo contrario.
+
+### Movimiento
+
+| Función | Qué hace |
+|---------|----------|
+| `engine.move_to(id, x, y)` | Teletransporta a una posición absoluta (sin física). |
+| `engine.translate(id, dx, dy)` | Mueve un delta sin física. |
+| `engine.move_entity(id, speed, dir_x, dir_y)` | Movimiento con Rapier (respeta colisiones si hay cuerpo físico). |
+| `engine.move_entity_facing(id, speed, amount_x, dir_y)` | Como `move_entity`, pero el eje horizontal sigue hacia dónde mira el personaje. |
+
+### Apariencia y animación (principalmente 2D)
+
+| Función | Qué hace |
+|---------|----------|
+| `engine.set_scale(id, sx, sy)` | Cambia escala. |
+| `engine.play_animation(id, name)` | Reproduce animación por nombre; el motor espeja según la última dirección horizontal. |
+| `engine.set_default_animation(id, name)` | Animación por defecto al parar. |
+| `engine.stop_animation(id)` | Detiene y vuelve al frame 0. |
+
+### Física
+
+| Función | Qué hace |
+|---------|----------|
+| `engine.set_physics(id, enabled, body_type?)` | Activa/desactiva Rapier. `body_type`: `"dynamic"` (por defecto) o `"static"`. |
+
+### Utilidad
+
+| Función | Qué hace |
+|---------|----------|
+| `engine.log(message)` | Mensaje en la consola del editor. |
 
 ---
 
-#### `engine.move_to(id, x, y)`
+## Solo motor 2D
 
-Mueve la entidad a una posición absoluta en el mundo.
+Herramientas del plano lateral y plataformas:
 
-| Parámetro | Tipo | Descripción |
-|-----------|------|-------------|
-| `id` | `number` | ID de la entidad |
-| `x` | `number` | Posición X destino |
-| `y` | `number` | Posición Y destino |
+| Función | Qué hace |
+|---------|----------|
+| `engine.apply_kinematic_gravity(id, speed_x, jump_speed_y, gravity)` | Salto/gravedad en cuerpo kinematic. |
+| `engine.apply_kinematic_impulse(id, dir_x, dir_y, impulse)` | Impulso puntual. |
+| `engine.move_entity_slide(id, dx, dy, speed)` | Desplazamiento con shape-cast (sin teletransporte). |
+| `engine.set_vsync(enabled)` | Activa o desactiva V-Sync. |
+
+**Triggers:** coloca un script en un *execution area* y usa `on_trigger_enter(trigger, actor)` para reaccionar cuando otro personaje entra.
+
+**Ejemplo de control 2D:**
 
 ```lua
-function script.update(self, entity, dt)
-  engine.move_to(entity.id, 0, 0)  -- Teleportar al origen
-end
-```
-
----
-
-#### `engine.translate(id, dx, dy)`
-
-Desplaza la entidad por un delta relativo a su posición actual (sin física).
-
-| Parámetro | Tipo | Descripción |
-|-----------|------|-------------|
-| `id` | `number` | ID de la entidad |
-| `dx` | `number` | Delta en X (unidades de mundo) |
-| `dy` | `number` | Delta en Y (unidades de mundo) |
-
-```lua
-function script.update(self, entity, dt)
-  engine.translate(entity.id, 2 * dt, 0)  -- Mover 2 u/s hacia la derecha
-end
-```
-
----
-
-#### `engine.move_entity(id, speed, dir_x, dir_y)`
-
-Mueve la entidad usando el sistema de físicas Rapier. Aplica velocidad lineal para que las colisiones se resuelvan correctamente. Si la entidad no tiene cuerpo físico activo, aplica traslación directa como fallback.
-
-| Parámetro | Tipo | Descripción |
-|-----------|------|-------------|
-| `id` | `number` | ID de la entidad |
-| `speed` | `number` | Velocidad en unidades de mundo por segundo |
-| `dir_x` | `number` | Componente X de la dirección (se normaliza internamente) |
-| `dir_y` | `number` | Componente Y de la dirección (se normaliza internamente) |
-
-```lua
--- Movimiento horizontal hacia la derecha
-engine.move_entity(entity.id, 5.0, 1.0, 0.0)
-
--- Movimiento diagonal
-engine.move_entity(entity.id, 7.0, 1.0, -1.0)
-```
-
-> **Uso recomendado** para personajes con físicas habilitadas. Respeta la gravedad y las colisiones definidas en el collider.
-
----
-
-#### `engine.set_scale(id, sx, sy)`
-
-Cambia la escala de la entidad.
-
-| Parámetro | Tipo | Descripción |
-|-----------|------|-------------|
-| `id` | `number` | ID de la entidad |
-| `sx` | `number` | Escala en X |
-| `sy` | `number` | Escala en Y |
-
-```lua
-engine.set_scale(entity.id, 2.0, 2.0)  -- Duplicar tamaño
-```
-
----
-
-### Animaciones
-
----
-
-#### `engine.play_animation(id, name)`
-
-Reproduce una animación por nombre. Si la animación ya está activa, la llamada se ignora para evitar reinicios involuntarios. La animación se reproduce desde el frame 0.
-
-| Parámetro | Tipo | Descripción |
-|-----------|------|-------------|
-| `id` | `number` | ID de la entidad |
-| `name` | `string` | Nombre de la animación definido en el editor |
-
-```lua
-engine.play_animation(entity.id, "Run")
-engine.play_animation(entity.id, "Idle")
-```
-
-El motor aplica el espejo horizontal automáticamente según la dirección en la
-que quedó mirando la entidad (detectada por el último movimiento horizontal).
-No es necesario llamar una función separada para flip.
-
----
-
-> **Nota sobre orientación:** en el editor, cada animación tiene configurada su "Orientación" (Derecha / Izquierda). Ese dato representa la orientación base en que fue dibujada la animación y el motor decide automáticamente cuándo espejar en tiempo de ejecución.
-
----
-
-#### `engine.stop_animation(id)`
-
-Detiene la animación activa y muestra el frame 0.
-
-| Parámetro | Tipo | Descripción |
-|-----------|------|-------------|
-| `id` | `number` | ID de la entidad |
-
-```lua
-engine.stop_animation(entity.id)
-```
-
----
-
-### Físicas
-
----
-
-#### `engine.set_physics(id, enabled, body_type?)`
-
-Habilita o deshabilita el cuerpo físico Rapier de la entidad.
-
-| Parámetro | Tipo | Descripción |
-|-----------|------|-------------|
-| `id` | `number` | ID de la entidad |
-| `enabled` | `boolean` | `true` para activar, `false` para desactivar |
-| `body_type` | `string?` | `"dynamic"` (default) o `"static"`. Solo usado al activar. |
-
-```lua
-engine.set_physics(entity.id, true, "dynamic")  -- Activar como dinámico
-engine.set_physics(entity.id, false)             -- Desactivar físicas
-```
-
----
-
-### Renderizado
-
----
-
-#### `engine.set_vsync(enabled)`
-
-Activa o desactiva V-Sync en el swapchain del motor. Por defecto está desactivado (`AutoNoVsync`).
-
-| Parámetro | Tipo | Descripción |
-|-----------|------|-------------|
-| `enabled` | `boolean` | `true` para activar V-Sync, `false` para desactivar |
-
-```lua
-engine.set_vsync(true)  -- Activar V-Sync (sincronizar con el refresco del monitor)
-engine.set_vsync(false) -- Desactivar V-Sync (máximo rendimiento, sin tearing)
-```
-
-> **Nota:** El cambio se aplica inmediatamente al swapchain. Disponible desde cualquier tipo de script.
-
----
-
-### Utilidades
-
----
-
-#### `engine.log(message)`
-
-Envía un mensaje al log del editor (visible en la consola del motor).
-
-| Parámetro | Tipo | Descripción |
-|-----------|------|-------------|
-| `message` | `string` | Texto a registrar |
-
-```lua
-engine.log("Entidad " .. entity.id .. " inicializada")
-```
-
----
-
-## Tabla `entities`
-
-Diccionario de todas las entidades activas, indexado por ID. Disponible en cualquier script:
-
-```lua
-local other = entities[42]
-if other then
-  engine.log("Posición de entidad 42: " .. other.x .. ", " .. other.y)
-end
-```
-
-Cada entrada tiene los mismos campos que la tabla `entity` (ver arriba).
-
----
-
-## Tipos de scripts
-
-### Script de animación
-
-Se adjunta a una animación específica desde el editor. Se activa al reproducir esa animación y se detiene al terminarla.
-
-```lua
-local script = {}
-
-function script.on_start(self, entity)
-  engine.log("Animación iniciada en entidad " .. entity.id)
-end
-
-function script.update(self, entity, dt)
-  -- Código ejecutado cada frame mientras la animación esté activa
-end
-
-return script
-```
-
-### Script de control (input)
-
-Se ejecuta cuando el jugador presiona la tecla/control asignada. Recibe la `entity` y la `key` presionada.
-
-```lua
-local script = {}
-
 function script.on_press(self, entity, key)
   if key == "right" then
-    engine.move_entity(entity.id, 5.0, 1.0, 0.0)
+    engine.move_entity(entity.id, 7, 1, 0)
     engine.play_animation(entity.id, "Run")
-  end
-  if key == "left" then
-    engine.move_entity(entity.id, 5.0, -1.0, 0.0)
+  elseif key == "left" then
+    engine.move_entity(entity.id, 7, -1, 0)
     engine.play_animation(entity.id, "Run")
-  end
-  if key == "attack" then
-    -- El flip de ataque depende de qué animación corría antes
-    engine.play_animation(entity.id, "Attack")
-  end
-end
-
-return script
-```
-
-### Script de trigger (área de ejecución)
-
-Se ejecuta cuando un actor entra en un área de tipo `execution_area`.
-
-```lua
-local script = {}
-
-function script.on_trigger_enter(self, trigger, actor)
-  engine.log("Actor " .. actor.id .. " entró en trigger " .. trigger.id)
-  engine.play_animation(actor.id, "Celebrate")
-end
-
-return script
-```
-
----
-
-## Patrones comunes
-
-### Movimiento con físicas y animación direccional
-
-```lua
-local script = {}
-
-function script.on_press(self, entity, key)
-  if key == "right" then
-    engine.move_entity(entity.id, 7.0, 1.0, 0.0)
-    engine.play_animation(entity.id, "Run")
-  end
-
-  if key == "left" then
-    engine.move_entity(entity.id, 7.0, -1.0, 0.0)
-    engine.play_animation(entity.id, "Run")
-  end
-
-  if key == "jump" then
-    engine.move_entity(entity.id, 10.0, 0.0, 1.0)
+  elseif key == "jump" then
+    engine.apply_kinematic_gravity(entity.id, 0, 12, -30)
     engine.play_animation(entity.id, "Jump")
   end
 end
-
-return script
-```
-
-### Animación idle de retorno
-
-```lua
-local script = {}
-local idle_timer = 0.0
-
-function script.update(self, entity, dt)
-  idle_timer = idle_timer + dt
-  if idle_timer > 2.0 then
-    engine.play_animation(entity.id, "Idle")
-    idle_timer = 0.0
-  end
-end
-
-return script
-```
-
-### Log de posición cada segundo
-
-```lua
-local script = {}
-local elapsed = 0.0
-
-function script.update(self, entity, dt)
-  elapsed = elapsed + dt
-  if elapsed >= 1.0 then
-    engine.log("Pos: " .. entity.x .. ", " .. entity.y)
-    elapsed = 0.0
-  end
-end
-
-return script
 ```
 
 ---
 
-## Sandbox de seguridad
+## Solo motor 3D
 
-Las siguientes librerías de Lua **están bloqueadas** por seguridad:
+Pensado para proyectos **first-person** y objetos 3D con Rapier:
 
-| Bloqueado | Razón |
-|-----------|-------|
-| `io` | Acceso al sistema de archivos |
-| `os` | Ejecución de procesos del sistema |
-| `package` / `require` | Carga de módulos externos |
-| `dofile` / `loadfile` | Carga de archivos arbitrarios |
+| Función | Qué hace |
+|---------|----------|
+| `engine.fp_press_key(key)` | Simula tecla pulsada en play (mismos nombres que el input: `"W"`, `"S"`, `"A"`, `"D"`, `"SHIFT"`, `"SPACE"`, etc.). |
+| `engine.fp_jump()` | Salto del jugador en play. |
+| `engine.fp_set_walk_speed(speed)` | Velocidad base al caminar. |
+| `engine.fp_set_sprint_multiplier(mult)` | Multiplicador al sprintar. |
+| `engine.fp_set_jump_speed(speed)` | Impulso de salto. |
 
-**Disponibles:** `math`, `string`, `table`, `pairs`, `ipairs`, `tostring`, `tonumber`, `print`.
+En 3D las animaciones por frames 2D no son el foco; el jugador FP usa cápsula cinemática (no el mismo pipeline que `move_entity` en XY de un sprite).
+
+**Ejemplo mínimo FP:**
+
+```lua
+function script.on_start(self, entity)
+  engine.fp_set_walk_speed(4.0)
+  engine.fp_set_jump_speed(6.5)
+end
+
+function script.on_press(self, entity, key)
+  engine.fp_press_key(key)
+  if key == "SPACE" then engine.fp_jump() end
+end
+```
+
+---
+
+## Sandbox
+
+**Bloqueado:** `io`, `os`, `package`, `require`, `dofile`, `loadfile`.
+
+**Permitido:** `math`, `string`, `table`, `pairs`, `ipairs`, `print`, operaciones básicas de Lua.
+
+---
+
+## Más detalle
+
+Implementación y límites por binario: `engine_2d/src/scripting.rs` y `engine_3d/src/scripting.rs`.

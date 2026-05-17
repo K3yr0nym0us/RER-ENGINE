@@ -53,6 +53,16 @@ pub enum EngineCommand {
         yaw: f32,
         pitch: f32,
     },
+    /// Vista FP autoritativa: pies, orientación de cámara, FOV y frustum de editor.
+    SetFirstPersonView {
+        position: [f32; 3],
+        yaw: f32,
+        pitch: f32,
+        #[serde(default)]
+        fov_y: Option<f32>,
+        #[serde(default)]
+        frustum_distance: Option<f32>,
+    },
     /// Actualizar transform de una entidad por id.
     SetTransform {
         id:       u32,
@@ -414,6 +424,19 @@ pub enum EngineEvent {
     /// Emitido cuando el usuario mantiene Ctrl y hace click añadiendo/quitando entidades
     /// a la selección múltiple. `ids` contiene todos los IDs actualmente seleccionados.
     MultiSelectChanged { ids: Vec<u32> },
+    /// Vista FP actual (pies, cámara y transform del mesh). Fuente de verdad para UI y guardado.
+    FirstPersonViewChanged {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        player_id: Option<u32>,
+        position: [f32; 3],
+        yaw: f32,
+        pitch: f32,
+        fov_y: f32,
+        frustum_distance: f32,
+        body_center: [f32; 3],
+        body_rotation: [f32; 4],
+        body_scale: [f32; 3],
+    },
     /// Emitido ~1 vez por segundo con métricas de rendimiento del motor.
     DebugMetrics {
         fps:            f32,

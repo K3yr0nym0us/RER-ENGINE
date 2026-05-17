@@ -1,7 +1,7 @@
 import type { SavedControlBindings, SavedEntity, SavedPlayerTransform } from '@shared-types';
 import { FIRST_PERSON_PLAYER_BODY_SCALE, isPlayerPath } from '@shared-types';
 import type { MutableRefObject } from 'react';
-import type { PendingRestore } from '../context/useContextEngine/types';
+import type { PendingRestore, Transform } from '../context/useContextEngine/types';
 
 /** Pitch de órbita en editor (detrás del personaje). */
 export const FP_EDITOR_ORBIT_PITCH = 0.25;
@@ -9,132 +9,74 @@ export const FP_DEFAULT_YAW = -Math.PI / 2;
 export const FP_DEFAULT_FOV_Y = (45 * Math.PI) / 180;
 export const FP_DEFAULT_FRUSTUM_DISTANCE = 2.5;
 
-/**
- * Offset pivot→pies del jugador. La malla SIEMPRE mide `FIRST_PERSON_PLAYER_BODY_SCALE[1]`
- * en alto (1.7m): el cubo placeholder lo logra vía `scale.y = 1.7`, los modelos importados
- * se normalizan a 1.7m con `scale.y = 1.0`. Por eso el offset es constante.
- */
-function feetOffsetLocal(_scaleY: number): [number, number, number] {
-	return [0, -FIRST_PERSON_PLAYER_BODY_SCALE[1] * 0.5, 0];
+export interface FirstPersonViewChangedEvent {
+	event: 'first_person_view_changed';
+	player_id: number | null;
+	position: [number, number, number];
+	yaw: number;
+	pitch: number;
+	fov_y: number;
+	frustum_distance: number;
+	body_center: [number, number, number];
+	body_rotation: [number, number, number, number];
+	body_scale: [number, number, number];
 }
 
-function rotateVec3ByQuat(
-	v: [number, number, number],
-	q: [number, number, number, number],
-): [number, number, number] {
-	const [qx, qy, qz, qw] = q;
-	const [vx, vy, vz] = v;
-	const ix = qw * vx + qy * vz - qz * vy;
-	const iy = qw * vy + qz * vx - qx * vz;
-	const iz = qw * vz + qx * vy - qy * vx;
-	const iw = -qx * vx - qy * vy - qz * vz;
-	return [
-		ix * qw + iw * -qx + iy * -qz - iz * -qy,
-		iy * qw + iw * -qy + iz * -qx - ix * -qz,
-		iz * qw + iw * -qz + ix * -qy - iy * -qx,
-	];
-}
-
-/** Quaternion (xyzw) con rotación solo en Y (yaw del mesh). */
-export function quatFromYaw(yaw: number): [number, number, number, number] {
-	const half = yaw * 0.5;
-	return [0, Math.sin(half), 0, Math.cos(half)];
-}
-
-/** Yaw de cámara del motor → rotación del mesh (+Z forward, offset π/2). */
-export function quatFromCameraYaw(yaw: number): [number, number, number, number] {
-	return quatFromYaw(yaw + Math.PI / 2);
-}
-
-export function feetFromPlayerBodyCenter(
-	center: [number, number, number],
-	rotation: [number, number, number, number] = [0, 0, 0, 1],
-	scaleY: number = FIRST_PERSON_PLAYER_BODY_SCALE[1],
-): [number, number, number] {
-	const off = rotateVec3ByQuat(feetOffsetLocal(scaleY), rotation);
-	return [center[0] + off[0], center[1] + off[1], center[2] + off[2]];
-}
-
-export function bodyCenterFromFeet(
-	feet: [number, number, number],
-	rotation: [number, number, number, number] = [0, 0, 0, 1],
-	scaleY: number = FIRST_PERSON_PLAYER_BODY_SCALE[1],
-): [number, number, number] {
-	const off = rotateVec3ByQuat(feetOffsetLocal(scaleY), rotation);
-	return [feet[0] - off[0], feet[1] - off[1], feet[2] - off[2]];
-}
-
-/** Centro del jugador en play: offset solo en mundo Y (igual que el motor). */
-export function bodyCenterFromFeetWorld(
-	feet: [number, number, number],
-	bodyHeight: number = FIRST_PERSON_PLAYER_BODY_SCALE[1],
-): [number, number, number] {
-	const half = bodyHeight * 0.5;
-	return [feet[0], feet[1] + half, feet[2]];
-}
-
-/** Mantiene `firstPersonViewRef` alineado con el transform del jugador (centro → pies). */
-export function syncFirstPersonViewRefFromPlayer(
+/** Aplica al estado React lo que reporta el motor (sin derivar poses en TS). */
+export function applyFirstPersonViewFromEngine(
+	ev: FirstPersonViewChangedEvent,
 	firstPersonViewRef: MutableRefObject<SavedPlayerTransform | null>,
-	playerId: number,
-	entityTransformsRef: MutableRefObject<
-		Record<number, import('../context/useContextEngine/types').Transform>
-	>,
+	entityTransformsRef: MutableRefObject<Record<number, Transform>>,
+	playerEntityIdRef?: MutableRefObject<number | null>,
 ) {
-	const t = entityTransformsRef.current[playerId];
-	if (!t) return;
-	const feet = feetFromPlayerBodyCenter(t.position, t.rotation, t.scale[1]);
+	if (ev.player_id != null && playerEntityIdRef) {
+		playerEntityIdRef.current = ev.player_id;
+	}
 	const prev = firstPersonViewRef.current;
 	firstPersonViewRef.current = {
-		position: feet,
-		scale: FIRST_PERSON_PLAYER_BODY_SCALE,
-		yaw: prev?.yaw ?? FP_DEFAULT_YAW,
-		pitch: prev?.pitch ?? FP_EDITOR_ORBIT_PITCH,
-		fov_y: prev?.fov_y ?? FP_DEFAULT_FOV_Y,
-		frustum_distance: prev?.frustum_distance ?? FP_DEFAULT_FRUSTUM_DISTANCE,
+		position: ev.position,
+		scale: ev.body_scale,
+		yaw: ev.yaw,
+		pitch: ev.pitch,
+		fov_y: ev.fov_y,
+		frustum_distance: ev.frustum_distance,
 		...(prev?.visual_model_path ? { visual_model_path: prev.visual_model_path } : {}),
 		...(prev?.control_bindings ? { control_bindings: prev.control_bindings } : {}),
 	};
-}
-
-type SceneSlice = {
-	entities?: SavedEntity[]
-	playerTransform?: SavedPlayerTransform | null
-};
-
-export function applySavedFirstPersonView(
-	view: SavedPlayerTransform | null | undefined,
-	playerId: number | null,
-	entityTransformsRef: MutableRefObject<Record<number, import('../context/useContextEngine/types').Transform>>,
-	options?: { editorOrbit?: boolean },
-) {
-	if (!view?.position) return;
-	const yaw = view.yaw ?? FP_DEFAULT_YAW;
-	const pitch = options?.editorOrbit !== false
-		? FP_EDITOR_ORBIT_PITCH
-		: (view.pitch ?? FP_EDITOR_ORBIT_PITCH);
-	const fovY = view.fov_y ?? FP_DEFAULT_FOV_Y;
-	const frustumDist = view.frustum_distance ?? FP_DEFAULT_FRUSTUM_DISTANCE;
-
-	window.engine.send({
-		cmd: 'set_first_person_spawn',
-		position: view.position,
-		yaw,
-		pitch,
-	} as never);
-	window.engine.send({ cmd: 'set_camera_fov', fov_y: fovY } as never);
-	window.engine.send({ cmd: 'set_fp_editor_frustum_distance', distance: frustumDist } as never);
-
-	if (playerId != null) {
-		const scale = FIRST_PERSON_PLAYER_BODY_SCALE;
-		const rot = quatFromCameraYaw(yaw);
-		entityTransformsRef.current[playerId] = {
-			position: bodyCenterFromFeet(view.position, rot, scale[1]),
-			rotation: rot,
-			scale,
+	if (ev.player_id != null) {
+		entityTransformsRef.current[ev.player_id] = {
+			position: ev.body_center,
+			rotation: ev.body_rotation,
+			scale: ev.body_scale,
 		};
 	}
 }
+
+/** Pide al motor la vista FP; el frontend actualiza refs al recibir `first_person_view_changed`. */
+export function applySavedFirstPersonView(
+	view: SavedPlayerTransform | null | undefined,
+	_options?: { editorOrbit?: boolean },
+) {
+	if (!view?.position) return;
+	const yaw = view.yaw ?? FP_DEFAULT_YAW;
+	const pitch =
+		_options?.editorOrbit !== false
+			? FP_EDITOR_ORBIT_PITCH
+			: (view.pitch ?? FP_EDITOR_ORBIT_PITCH);
+	window.engine.send({
+		cmd: 'set_first_person_view',
+		position: view.position,
+		yaw,
+		pitch,
+		fov_y: view.fov_y ?? FP_DEFAULT_FOV_Y,
+		frustum_distance: view.frustum_distance ?? FP_DEFAULT_FRUSTUM_DISTANCE,
+	} as never);
+}
+
+type SceneSlice = {
+	entities?: SavedEntity[];
+	playerTransform?: SavedPlayerTransform | null;
+};
 
 /** Cola restore + `load_character` cuando el save no incluye entidad `[Player]`. */
 export function ensureFirstPersonPlayerOnLoad(
@@ -151,23 +93,17 @@ export function ensureFirstPersonPlayerOnLoad(
 
 	if (!playerInEntities && savedPlayer) {
 		if (!alreadyQueued) {
-			const playerEntity = (scene.entities ?? []).find(
-				(e) => e.kind === 'character' && isPlayerPath(e.path),
-			);
-			const yaw = savedPlayer.yaw ?? FP_DEFAULT_YAW;
-			const rot = quatFromCameraYaw(yaw);
 			const pending: PendingRestore = {
 				transform: {
-					position: bodyCenterFromFeet(savedPlayer.position, rot, savedPlayer.scale[1]),
-					rotation: rot,
+					position: [0, FIRST_PERSON_PLAYER_BODY_SCALE[1] * 0.5, 0],
+					rotation: [0, 0, 0, 1],
 					scale: FIRST_PERSON_PLAYER_BODY_SCALE,
 				},
-				name: playerEntity?.name ?? 'Player',
+				name: 'Player',
 				physicsEnabled: true,
 				physicsType: 'dynamic',
-				scripts: playerEntity?.scripts,
-				controlBindings: savedPlayer.control_bindings ?? playerEntity?.control_bindings,
-				visualModelPath: savedPlayer.visual_model_path ?? playerEntity?.visual_model_path,
+				controlBindings: savedPlayer.control_bindings,
+				visualModelPath: savedPlayer.visual_model_path,
 			};
 			queue.push(pending);
 			pendingRestoresRef.current.set('[Player]', queue);
@@ -196,22 +132,14 @@ export function buildSavedPlayerTransform(
 }
 
 /**
- * Resuelve la posición en pies del jugador para guardar.
- * Prioriza `firstPersonViewRef` (métricas FP / acordeón Cámara): en play el pivot del
- * jugador en `entityTransformsRef` no se actualiza y un sync previo pisaba la posición real.
+ * Pies del jugador para guardar.
+ * Solo usa `firstPersonViewRef` (alimentada por `first_person_view_changed`).
+ * Si aún no llegó el evento del motor, devuelve `undefined` (no derivar poses en TS).
  */
 export function resolvePlayerFeetForSave(
-	playerId: number | null,
+	_playerId: number | null,
 	firstPersonViewRef: MutableRefObject<SavedPlayerTransform | null>,
-	entityTransformsRef: MutableRefObject<
-		Record<number, import('../context/useContextEngine/types').Transform>
-	>,
 ): [number, number, number] | undefined {
-	if (playerId == null) return undefined;
-
-	const liveFeet = firstPersonViewRef.current?.position;
-	if (liveFeet) return liveFeet;
-
-	syncFirstPersonViewRefFromPlayer(firstPersonViewRef, playerId, entityTransformsRef);
+	if (_playerId == null) return undefined;
 	return firstPersonViewRef.current?.position;
 }

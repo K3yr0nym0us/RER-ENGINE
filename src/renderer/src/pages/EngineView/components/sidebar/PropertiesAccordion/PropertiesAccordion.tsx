@@ -11,7 +11,6 @@ import { useContextEngine } from '@engine';
 import { useModal } from '@modal';
 import type { BluePrintCategory, BluePrintEntry } from '@shared-types';
 import { isEnvironmentEntity, isPlayerEntity } from '@shared-types';
-import { syncFirstPersonViewRefFromPlayer } from '../../../../../defaults/firstPersonSceneRestore';
 import { useTraslate } from '@hooks';
 
 export function PropertiesAccordion({ projectType }: { projectType?: string }) {
@@ -24,7 +23,6 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
     entityTransformsRef,
     entityMetaRef,
     playerEntityIdRef,
-    firstPersonViewRef,
     models,
     replaceEntityModel,
     removeScenario,
@@ -50,21 +48,6 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
         rotation: cmd.rotation ?? selectedEntity.rotation,
         scale:    cmd.scale    ?? selectedEntity.scale,
       };
-      if (
-        projectType === '3D'
-        && firstPersonViewRef
-        && isPlayerEntity(
-          selectedEntity.id,
-          entityMetaRef.current[selectedEntity.id],
-          playerEntityIdRef?.current ?? null,
-        )
-      ) {
-        syncFirstPersonViewRefFromPlayer(
-          firstPersonViewRef,
-          selectedEntity.id,
-          entityTransformsRef,
-        );
-      }
     }
     send(cmd)
   }

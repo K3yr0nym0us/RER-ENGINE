@@ -1,237 +1,113 @@
 # RER-ENGINE
 
 > **R**eact + **E**lectron + **R**ust ENGINE
-> Un motor de videojuegos 2D/3D enfocado en una idea simple:
-> **hacer que crear juegos sea algo rápido y natural, no mecánico.**
+
+Motor de videojuegos 2D/3D con editor integrado. La idea central: **crear comportamiento de forma directa**, sin repartir la lógica de cada entidad entre muchos sistemas abstractos.
 
 ---
 
-## 🧠 Filosofía del proyecto
+## Idea del motor
 
-RER-ENGINE nace de un problema claro:
+RER-ENGINE separa el producto en dos capas que hablan por JSON (stdin/stdout):
 
-> Los motores modernos son potentes, pero muchas veces se sienten **complejos, fragmentados y poco intuitivos**.
+| Capa | Rol |
+|------|-----|
+| **Editor** (Electron + React + TypeScript) | Interfaz, escenas, guardado `.save`, herramientas de autoría. |
+| **Motor** (Rust + wgpu) | Render, física, scripting, play mode. |
 
-* La lógica de un personaje está repartida en múltiples sistemas
-* Las acciones requieren navegar por capas de configuración
-* El flujo de trabajo es técnico, no humano
-* la logica 2D esta mezclada con la logica 3D lo que aumenta los recursos utilizados y requeridos
-* todo es excesivamente complicado y actualmente no es necesario
+Hay **dos motores independientes**, no uno híbrido:
 
-Engine/
-├── Cargo.toml (workspace con 3 crates)
-├── engine_2d/
-│   ├── Cargo.toml
-│   └── src/ (motor 2D separado; módulos directos para base/compat)
-├── engine_3d/
-│   ├── Cargo.toml
-│   └── src/ (motor 3D separado; módulos directos para base/compat)
-├── engine_shared/
-│   ├── Cargo.toml
-│   └── src/ (librería compartida + binario auxiliar)
-└── target/
-  └── debug|release/ (ejecutables separados)
+- `rer_engine_2d` — sprites, plano XY, colliders y execution areas.
+- `rer_engine_3d` — mallas glTF/FBX, cámara orbital, primera persona en play.
 
-Selección de binario en runtime:
-
-* El proceso main de Electron levanta `rer_engine_2d` o `rer_engine_3d` según `GameStyle`
-* `rer_engine_shared` queda como librería/binario auxiliar para utilidades comunes
-* La lógica compartida ya vive en `engine_shared/src/lib.rs`; los shims de compatibilidad siguen solo donde el runtime todavía los invoca
-
-Snapshot release actual (Windows):
-
-* `rer_engine_2d.exe` ≈ 12.93 MB
-* `rer_engine_3d.exe` ≈ 13.71 MB
-* `rer_engine_shared.exe` ≈ 0.12 MB
-
-### 🎯 Objetivo
-
-Crear un motor donde:
-
-* **Cada entidad contiene su propia lógica**
-* **Las acciones son directas e intuitivas**
-* **El editor refleja cómo piensas el juego, no cómo funciona internamente el engine**
-* **Los motores 2D y 3D estan separados y se ejecutan de manera independiente**
-
-👉 En otras palabras:
-**menos “configurar sistemas”, más “crear comportamiento”.**
-
----
-
-## ⚙️ Enfoque técnico
-
-RER-ENGINE separa claramente:
-
-* **Editor (Electron + React)** → interfaz, herramientas, flujo de usuario
-* **Motor (Rust + wgpu)** → render, física, ejecución
-
-Ambos se comunican mediante un protocolo IPC simple basado en JSON.
+Electron arranca el binario que corresponda según el tipo de proyecto. Comparten protocolo IPC y utilidades (`engine_shared`), pero **no comparten runtime de juego**.
 
 ```
 ┌─────────────────────────────────────────────┐
 │             Electron (BrowserWindow)        │
 │  ┌──────────────────┐  ┌───────────────────┐│
-│  │   React + TS     │  │  Viewport nativo  ││
-│  │   (UI/Editor)    │  │  ← Rust / wgpu    ││
+│  │   React + TS     │  │  Viewport Rust    ││
+│  │   (editor UI)    │  │  wgpu embebido    ││
 │  └──────────────────┘  └───────────────────┘│
 └─────────────────────────────────────────────┘
-          ↑ IPC — JSON lines stdin/stdout
+          ↑  IPC — una línea JSON por mensaje
 ```
 
-### ¿Por qué esta arquitectura?
-
-* Permite iterar el editor sin tocar el motor
-* Mantiene el runtime desacoplado
-* Facilita debugging y control total del pipeline
+Principio **engine-first**: posiciones, cámaras, física y convenciones espaciales las resuelve el motor; el frontend envía intención y refleja eventos. Detalle en `src/renderer/ARCHITECTURE.md` y en los `ARCHITECTURE.md` de cada crate.
 
 ---
 
-## 🧩 Principios de diseño
+## Lenguajes y stack
 
-* **Human-first design**
-  El editor debe reflejar cómo piensa el desarrollador, no cómo está implementado el motor.
-
-* **Data-driven**
-  Las entidades contienen datos + comportamiento claro (no lógica dispersa).
-
-* **Modularidad real**
-  El motor puede evolucionar sin romper el editor.
-
-* **Simplicidad explícita**
-  Preferir sistemas claros antes que soluciones mágicas u ocultas.
+| Área | Tecnologías |
+|------|-------------|
+| Motor | Rust, wgpu, winit, glam, Rapier, mlua, gltf/image |
+| Editor | Electron, React, TypeScript, Vite (electron-vite) |
+| Scripts de juego | Lua (sandbox: sin `io`, `os`, `require`) |
+| Contrato IPC | JSON — tipos en `src/shared-types/types.ts` |
 
 ---
 
-## 🧱 Tecnologías
+## Requisitos
 
-### Motor (Rust)
-
-* `wgpu` — render multiplataforma (Vulkan/Metal/GL)
-* `winit` — ventana y eventos
-* `glam` — matemáticas
-* `rapier` — físicas 2D/3D
-* `mlua` — scripting embebido
-* `gltf` + `image` — assets
-
-### Editor
-
-* Electron
-* React + TypeScript
-* Bootstrap
+- **Node.js** 20+ y **Yarn**
+- **Rust** (toolchain estable) y **Cargo**
+- **Windows 11** o **Linux con X11** (el viewport se embebe vía handle nativo; en Wayland usar XWayland / `ELECTRON_OZONE_PLATFORM_HINT=x11`)
 
 ---
 
-## 🏗️ Estado actual
+## Cómo ejecutar
 
-El motor ya cuenta con:
+Desde la raíz del repositorio:
 
-* Render 2D/3D funcional con instanced rendering, texture atlas y frustum culling
-* ECS con queries multi-componente y archetypes
-* Física integrada (Rapier 2D/3D)
-* Sistema de scripting (Lua con lifecycle)
-* Editor visual con manipulación de entidades, quick build y multi-selección
-* Sistema de escenas múltiples
-* Guardado empaquetado (`.save` con assets incluidos)
-* Herramientas de debug runtime (FPS, draw calls, overlay)
-* Hot reload de scripts/shaders/assets
-* Comunicación IPC estable
-* Principio motor-first: toda lógica de estado del motor vive en Rust
-* Física integrada (Rapier)
-* Sistema de scripting (Lua con lifecycle)
-* Editor visual con manipulación de entidades
-* Sistema de escenas múltiples
-* Guardado empaquetado (`.save` con assets incluidos)
-* Comunicación IPC estable
+```bash
+# Instalar dependencias (primera vez)
+yarn
 
-👉 Es una base sólida para evolucionar hacia un engine completo.
+# Desarrollo: compila motores (debug) y abre el editor
+yarn dev
 
----
+# Desarrollo con motores en release (más rápido al renderizar)
+yarn start
 
-## ⚠️ Limitaciones actuales
+# Build del editor (sin empaquetar instalador)
+yarn build
 
-El engine aún está en fase de maduración:
+# Vista previa del build
+yarn preview
 
-* Sin físicas/colisiones 3D completas (2D funcional)
-* Sin animaciones 3D (clips/animator/state machine)
-* Pipeline de assets aún básico para modelos 3D
-* IPC puede convertirse en cuello de botella en escenas muy grandes (no medido aún)
-* Migraciones de formato `.save` aún no implementadas
-
----
-
-## 🔧 Áreas de mejora prioritarias
-
-* Físicas y colisiones 3D
-* Animaciones 3D (clips/animator compatible con Blender)
-* Migraciones automáticas de formato `.save`
-* Motor-first: mover `normalizeAnimations`, `pendingRestores` y defaults de entidad al motor
-* Prefabs / reutilización de entidades desde el editor
-
----
-
-## 🧠 Scripting (ejemplo)
-
-El comportamiento vive directamente en la entidad:
-
-```lua
-function on_start(self)
-    engine.log("Entidad iniciada")
-end
-
-function update(self, dt)
-    self:translate(2 * dt, 0)
-end
-
-function on_trigger_enter(self, other)
-    engine.log("Colisión detectada")
-end
+# Instalador (compila motores release + electron-builder)
+yarn dist
 ```
 
-👉 La lógica está donde pertenece: en el objeto.
+Compilar solo los motores (opcional):
+
+```bash
+cargo build --manifest-path src/main/Engine/Cargo.toml -p rer-engine-2d -p rer-engine-3d
+```
+
+Los ejecutables quedan en `src/main/Engine/target/debug/` o `target/release/`.
 
 ---
 
-## 💾 Formato de proyecto
+## Documentación
 
-Los proyectos se guardan como `.save`:
-
-* ZIP portable
-* `manifest.json`
-* `assets/`, `sounds/`, `scripting/`
-
-Permite mover proyectos entre sistemas sin romper rutas.
-
----
-
-## 🚀 Visión a largo plazo
-
-RER-ENGINE no busca competir con motores masivos.
-
-Busca algo distinto:
-
-> Un entorno donde crear videojuegos sea **intuitivo, directo y entendible**.
-
-* Menos configuración
-* Menos abstracciones innecesarias
-* Más control real
+| Archivo | Contenido |
+|---------|-----------|
+| [LUA_API.md](./LUA_API.md) | API de scripting Lua (2D y 3D), resumida |
+| [Checklist.md](./Checklist.md) | Estado técnico: hecho y pendiente |
+| `src/main/Engine/engine_2d/ARCHITECTURE.md` | Contrato del motor 2D |
+| `src/main/Engine/engine_3d/ARCHITECTURE.md` | Contrato del motor 3D |
+| `src/renderer/ARCHITECTURE.md` | Rol del frontend y qué no duplicar |
 
 ---
 
-## 🧪 Estado del proyecto
+## Proyectos `.save`
 
-Proyecto experimental en desarrollo activo.
-Probado en Linux (X11) y Windows 11.
+Los proyectos se guardan como ZIP portable (`manifest.json`, `assets/`, `sounds/`, `scripting/`) para moverlos entre máquinas sin romper rutas.
 
 ---
 
-## 📌 Regla de oro
+## Licencia
 
-Si puedes:
-
-* Abrir el editor
-* Ver el motor renderizando
-* Entender el flujo solo con mirarlo
-* Crear entidades y darles comportamiento fácilmente
-* Crear más pensar menos
-
-👉 entonces el engine está cumpliendo su propósito.
+MIT — ver autor en `package.json`.

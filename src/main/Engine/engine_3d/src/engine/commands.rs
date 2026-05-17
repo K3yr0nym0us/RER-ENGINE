@@ -241,7 +241,16 @@ impl State {
                 yaw,
                 pitch,
             } => {
-                self.apply_first_person_saved_view(position, yaw, pitch);
+                self.apply_first_person_view(position, yaw, pitch, None, None);
+            }
+            EngineCommand::SetFirstPersonView {
+                position,
+                yaw,
+                pitch,
+                fov_y,
+                frustum_distance,
+            } => {
+                self.apply_first_person_view(position, yaw, pitch, fov_y, frustum_distance);
             }
             EngineCommand::SetTransform {
                 id,
@@ -368,6 +377,9 @@ impl State {
                     {
                         self.push_undo_transform(id, prev_pos, prev_rot, prev_scl);
                     }
+                }
+                if is_fp_player {
+                    self.emit_first_person_view_changed();
                 }
             }
             EngineCommand::SetEntityName { id, name, force } => {
@@ -691,6 +703,8 @@ impl State {
                         self.show_first_frame_of_animation(entity_id, &anim_name);
                     }
                     self.stop_audio_internal();
+                    self.sync_first_person_camera_mode();
+                    self.emit_first_person_view_changed();
                 }
 
                 self.execution_overlaps.clear();
@@ -710,9 +724,15 @@ impl State {
             }
             EngineCommand::SetCameraFov { fov_y } => {
                 self.camera.fov_y = fov_y.clamp(0.1, std::f32::consts::FRAC_PI_2 - 0.01);
+                if self.camera_2d.is_none() && self.has_first_person_player() {
+                    self.emit_first_person_view_changed();
+                }
             }
             EngineCommand::SetFpEditorFrustumDistance { distance } => {
                 self.fp_editor_frustum_distance = distance.clamp(0.5, 50.0);
+                if self.camera_2d.is_none() && self.has_first_person_player() {
+                    self.emit_first_person_view_changed();
+                }
             }
             EngineCommand::LoadBackground { path } => {
                 self.background_path = Some(path.clone());

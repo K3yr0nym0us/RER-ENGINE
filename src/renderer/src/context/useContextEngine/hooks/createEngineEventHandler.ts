@@ -23,11 +23,10 @@ import {
 } from '@shared-types';
 import { applyFirstPersonControlDefaultsIfEmpty } from '../../../defaults/applyFirstPersonControlDefaults';
 import {
+	applyFirstPersonViewFromEngine,
 	applySavedFirstPersonView,
-	bodyCenterFromFeet,
 	ensureFirstPersonPlayerOnLoad,
-	quatFromCameraYaw,
-	syncFirstPersonViewRefFromPlayer,
+	type FirstPersonViewChangedEvent,
 } from '../../../defaults/firstPersonSceneRestore';
 import { setSceneCommandForSavedProject } from '../../../defaults/projectSceneLoad';
 import type { EngineAction, EngineInternalRefs, PendingRestore, Transform } from '../types';
@@ -61,6 +60,7 @@ const SILENT_ENGINE_EVENTS = new Set<string>([
 	'multi_selection_transformed',
 	'autosave_tick',
 	'preview_playing_changed',
+	'first_person_view_changed',
 ]);
 
 interface CreateEngineEventHandlerParams {
@@ -252,17 +252,11 @@ export function createEngineEventHandler({
 						sendEngine({ cmd: 'create_execution_area_from_points', points: entity.points, track_undo: false } as never);
 					} else if (entity.kind === 'character' && isPlayerPath(entity.path)) {
 						const savedPlayer = save.playerTransform;
-						const playerYaw = savedPlayer?.yaw;
-						const rot = playerYaw != null ? quatFromCameraYaw(playerYaw) : entity.rotation;
-						const playerTransform: Transform = savedPlayer
-							? {
-								position: bodyCenterFromFeet(savedPlayer.position, rot, savedPlayer.scale[1]),
-								rotation: rot,
-								scale: FIRST_PERSON_PLAYER_BODY_SCALE,
-							}
-							: transform;
+						if (savedPlayer) {
+							refs.pendingFirstPersonViewRef.current = savedPlayer;
+						}
 						const pendingRestore: PendingRestore = {
-							transform: playerTransform,
+							transform,
 							name: entity.name,
 							physicsEnabled: true,
 							physicsType: 'dynamic',
@@ -497,11 +491,6 @@ export function createEngineEventHandler({
 				};
 			}
 			if (refs.playerEntityIdRef.current === id) {
-				syncFirstPersonViewRefFromPlayer(
-					refs.firstPersonViewRef,
-					id,
-					refs.entityTransformsRef,
-				);
 				const meta = refs.entityMetaRef.current[id];
 				if (meta) {
 					meta.physicsEnabled = true;
@@ -548,13 +537,6 @@ export function createEngineEventHandler({
 					scripts: meta?.scripts,
 				},
 			});
-			if (isPlayer && gameStyle === 'first-person' && projectType === '3D') {
-				syncFirstPersonViewRefFromPlayer(
-					refs.firstPersonViewRef,
-					selected.id,
-					refs.entityTransformsRef,
-				);
-			}
 		}
 
 		if (event.event === 'entity_deselected') {
@@ -643,7 +625,11 @@ export function createEngineEventHandler({
 
 		if (event.event === 'character_loaded') {
 			const character = event as unknown as CharacterLoaded;
-			const applyPendingRestore = (id: number, path: string) => {
+			const applyPendingRestore = (
+				id: number,
+				path: string,
+				options?: { skipTransform?: boolean },
+			) => {
 				const queue = refs.pendingRestoresRef.current.get(path);
 				if (!queue || queue.length === 0) return;
 
@@ -656,14 +642,16 @@ export function createEngineEventHandler({
 					window.engine.send({ cmd: 'set_entity_name', id, name: pending.name, force: true } as never);
 				}
 				const isPlayer = isPlayerPath(path);
-				window.engine.send({
-					cmd: 'set_transform',
-					id,
-					position: pendingTransform.position,
-					rotation: pendingTransform.rotation,
-					...(isPlayer ? {} : { scale: pendingTransform.scale }),
-					track_undo: false,
-				} as never);
+				if (!options?.skipTransform) {
+					window.engine.send({
+						cmd: 'set_transform',
+						id,
+						position: pendingTransform.position,
+						rotation: pendingTransform.rotation,
+						...(isPlayer ? {} : { scale: pendingTransform.scale }),
+						track_undo: false,
+					} as never);
+				}
 
 				if (pending.physicsEnabled) {
 					window.engine.send({ cmd: 'set_physics', id, enabled: true, body_type: pending.physicsType } as never);
@@ -762,15 +750,12 @@ export function createEngineEventHandler({
 						refs.entityMetaRef.current[character.id].physicsEnabled = true;
 						refs.entityMetaRef.current[character.id].physicsType = 'dynamic';
 					}
-					applyPendingRestore(character.id, character.path);
 					const savedFpView = refs.pendingFirstPersonViewRef.current
 						?? refs.firstPersonViewRef.current;
-					applySavedFirstPersonView(
-						savedFpView,
-						character.id,
-						refs.entityTransformsRef,
-						{ editorOrbit: true },
-					);
+					applyPendingRestore(character.id, character.path, {
+						skipTransform: !!savedFpView?.position,
+					});
+					applySavedFirstPersonView(savedFpView, { editorOrbit: true });
 					if (savedFpView?.control_bindings) {
 						const meta = refs.entityMetaRef.current[character.id];
 						if (meta) {
@@ -869,6 +854,17 @@ export function createEngineEventHandler({
 
 		if (event.event === 'stopped') {
 			dispatch({ type: 'ENGINE_STOPPED', payload: (event as { code?: number }).code });
+		}
+
+		if (event.event === 'first_person_view_changed') {
+			const ev = event as unknown as FirstPersonViewChangedEvent;
+			applyFirstPersonViewFromEngine(
+				ev,
+				refs.firstPersonViewRef,
+				refs.entityTransformsRef,
+				refs.playerEntityIdRef,
+			);
+			dispatch({ type: 'SYNC_FP_VIEW' });
 		}
 
 		if (event.event === 'preview_playing_changed') {

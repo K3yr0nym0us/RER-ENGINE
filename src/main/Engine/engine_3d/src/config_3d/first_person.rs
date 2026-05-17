@@ -4,6 +4,7 @@ use glam::Vec3;
 
 use crate::ecs::Transform;
 use crate::engine::State;
+use crate::ipc::{send_event, EngineEvent};
 
 impl State {
     pub(crate) fn clear_first_person_script_frame(&mut self) {
@@ -313,6 +314,66 @@ impl State {
         self.first_person_velocity = Vec3::ZERO;
         self.first_person_on_floor = false;
         self.clamp_first_person_camera_to_bounds();
+    }
+
+    /// Aplica vista FP (pies + cámara + opcional FOV/frustum) y notifica al frontend.
+    pub(crate) fn apply_first_person_view(
+        &mut self,
+        position: [f32; 3],
+        yaw: f32,
+        pitch: f32,
+        fov_y: Option<f32>,
+        frustum_distance: Option<f32>,
+    ) {
+        if self.camera_2d.is_some() {
+            return;
+        }
+        self.apply_first_person_saved_view(position, yaw, pitch);
+        if let Some(fov) = fov_y {
+            self.camera.fov_y = fov.clamp(0.1, std::f32::consts::FRAC_PI_2 - 0.01);
+        }
+        if let Some(dist) = frustum_distance {
+            self.fp_editor_frustum_distance = dist.clamp(0.5, 50.0);
+        }
+        self.emit_first_person_view_changed();
+    }
+
+    /// Emite la vista FP actual para que el frontend no derive poses en TypeScript.
+    pub(crate) fn emit_first_person_view_changed(&self) {
+        if self.camera_2d.is_some() || !self.has_first_person_player() {
+            return;
+        }
+        let player_id = self.first_person_player_entity;
+        let Some(id) = player_id else {
+            return;
+        };
+        let feet = self.first_person_feet_position();
+        let (body_center, body_rotation, body_scale) =
+            if let Some(t) = self.world.get::<Transform>(id) {
+                (
+                    t.position.to_array(),
+                    [
+                        t.rotation.x,
+                        t.rotation.y,
+                        t.rotation.z,
+                        t.rotation.w,
+                    ],
+                    t.scale.to_array(),
+                )
+            } else {
+                return;
+            };
+        send_event(&EngineEvent::FirstPersonViewChanged {
+            player_id,
+            position: feet.to_array(),
+            yaw: self.camera.yaw,
+            pitch: self.camera.pitch,
+            fov_y: self.camera.fov_y,
+            frustum_distance: self.fp_editor_frustum_distance,
+            body_center,
+            body_rotation,
+            body_scale,
+        });
     }
 
     pub(crate) fn apply_first_person_mouse_look(&mut self, dx: f32, dy: f32) {

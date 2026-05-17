@@ -68,6 +68,8 @@ export interface EngineState {
 	engineReady: boolean
 	engineError: string | null
 	previewPlaying: boolean
+	/** Incrementa al recibir `first_person_view_changed` (refrescar UI de cámara FP). */
+	fpViewSyncSeq: number
 	log: LogEntry[]
 	entities: Entity[]
 	selectedEntity: SelectedEntity | null
@@ -96,6 +98,7 @@ export type EngineAction =
 	| { type: 'SET_READY' }
 	| { type: 'SET_ERROR'; payload: string }
 	| { type: 'SET_PREVIEW_PLAYING'; payload: boolean }
+	| { type: 'SYNC_FP_VIEW' }
 	| { type: 'ADD_LOG'; payload: LogEntry }
 	| { type: 'ADD_ENTITY'; payload: number }
 	| { type: 'SELECT_ENTITY'; payload: SelectedEntity }
@@ -142,6 +145,7 @@ export const initialState: EngineState = {
 	engineReady: false,
 	engineError: null,
 	previewPlaying: false,
+	fpViewSyncSeq: 0,
 	log: [],
 	entities: [],
 	selectedEntity: null,
@@ -171,6 +175,7 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 		SET_READY: (prevState) => ({ ...prevState, engineReady: true, engineError: null, previewPlaying: false }),
 		SET_ERROR: (prevState, nextAction) => ({ ...prevState, engineError: nextAction.payload }),
 		SET_PREVIEW_PLAYING: (prevState, nextAction) => ({ ...prevState, previewPlaying: nextAction.payload }),
+		SYNC_FP_VIEW: (prevState) => ({ ...prevState, fpViewSyncSeq: prevState.fpViewSyncSeq + 1 }),
 		ADD_LOG: (prevState, nextAction) => ({ ...prevState, log: [...prevState.log.slice(-199), nextAction.payload] }),
 		ADD_ENTITY: (prevState, nextAction) =>
 			prevState.entities.some((entity) => entity.id === nextAction.payload)

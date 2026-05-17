@@ -152,6 +152,7 @@ impl State {
             self.sync_player_rotation_from_look();
             // El jugador FP usa solo la cápsula cinemática; el cuerpo Rapier estático bloquea queries.
             self.physics.remove_entity_body(id);
+            self.emit_first_person_view_changed();
         } else if self.physics.has_physics(id) {
             if let Some(t) = self.world.get::<Transform>(id) {
                 let half = [

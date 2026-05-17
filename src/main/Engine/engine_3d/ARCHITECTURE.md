@@ -56,6 +56,27 @@ Soporte: `mesh.rs`, `shader.wgsl`, `gizmo.rs`, `gizmo.wgsl`, `texture.rs`, `scri
 - `SetTransform` del jugador con rotacion: recalcular centro desde pies (`feet_from_player_transform` / `player_center_from_feet` en `commands.rs`).
 - Yaw: mantener alineadas `look_xz_from_mesh_yaw` y `mesh_yaw_from_camera_and_forward` con `glam::Quat::from_rotation_y`.
 
+#### Vista FP autoritativa (IPC)
+
+El frontend **no** debe derivar centro de cuerpo, quaterniones ni forward de malla. Solo envia intencion y refleja lo que el motor confirma.
+
+| Direccion | JSON (`snake_case`) | Responsabilidad |
+|-----------|---------------------|-----------------|
+| Electron → motor | `set_first_person_view` | Pies, `yaw`, `pitch`; opcional `fov_y`, `frustum_distance`. Aplica camara + cuerpo y emite evento. |
+| Motor → Electron | `first_person_view_changed` | Estado confirmado: pies, orientacion de camara, FOV/frustum, `body_center`, `body_rotation`, `body_scale`, `player_id`. |
+
+Implementacion: `apply_first_person_view()` / `emit_first_person_view_changed()` en `config_3d/first_person.rs`; handler en `engine/commands.rs`.
+
+El motor emite `first_person_view_changed` tras, entre otros:
+
+- `set_first_person_view` (y `set_first_person_spawn`, compat legacy),
+- `set_transform` del jugador FP,
+- salir de play (`set_preview_playing` false),
+- `set_camera_fov` / `set_fp_editor_frustum_distance` con jugador FP activo,
+- `replace_entity_model` del jugador.
+
+El renderer guarda en `.save` solo lo que recibe en el evento (campo `position` = pies). Ver `src/renderer/ARCHITECTURE.md`.
+
 ### Fisica
 
 - Objetos: Rapier3D (`set_entity_physics`, sync con `Transform` al editar).
