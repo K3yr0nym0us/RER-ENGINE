@@ -180,6 +180,82 @@ pub fn build_crosshair(device: &wgpu::Device) -> GizmoBuffer {
     build_from_vertices(device, &verts)
 }
 
+/// Frustum visual de la cámara del jugador (modo editor 3D).
+///
+/// Dibuja un pequeño cubo en la posición del ojo + una pirámide de líneas hasta
+/// un rectángulo lejano (estilo Godot/Unity al seleccionar una `Camera3D`).
+/// Topología esperada: `LineList`. Vértices en espacio de mundo.
+pub fn build_first_person_camera_frustum(
+    device: &wgpu::Device,
+    eye: glam::Vec3,
+    yaw: f32,
+    pitch: f32,
+    fov_y: f32,
+    aspect: f32,
+    far_dist: f32,
+) -> GizmoBuffer {
+    use glam::Vec3;
+
+    let (sy, cy) = yaw.sin_cos();
+    let (sp, cp) = pitch.sin_cos();
+    // Mismo convenio que `Camera::view_forward` para que el gizmo apunte exactamente
+    // a donde apuntará la cámara en Play.
+    let forward = Vec3::new(-cy * cp, -sp, -sy * cp).normalize_or_zero();
+    let world_up = Vec3::Y;
+    let right = forward.cross(world_up).normalize_or_zero();
+    let up = right.cross(forward).normalize_or_zero();
+
+    let color: [f32; 4] = [1.0, 0.85, 0.18, 0.92];
+
+    let mut verts: Vec<GizmoVertex> = Vec::with_capacity(40);
+    let mut push_line = |a: Vec3, b: Vec3| {
+        verts.push(GizmoVertex { position: a.to_array(), color });
+        verts.push(GizmoVertex { position: b.to_array(), color });
+    };
+
+    // Cuerpo de la cámara: cubito wireframe pequeño centrado en el ojo.
+    let s = 0.07_f32;
+    let c000 = eye + (-right - up - forward) * s;
+    let c001 = eye + (-right - up + forward) * s;
+    let c010 = eye + (-right + up - forward) * s;
+    let c011 = eye + (-right + up + forward) * s;
+    let c100 = eye + ( right - up - forward) * s;
+    let c101 = eye + ( right - up + forward) * s;
+    let c110 = eye + ( right + up - forward) * s;
+    let c111 = eye + ( right + up + forward) * s;
+
+    // 12 aristas del cubo
+    push_line(c000, c100); push_line(c001, c101);
+    push_line(c010, c110); push_line(c011, c111);
+    push_line(c000, c010); push_line(c001, c011);
+    push_line(c100, c110); push_line(c101, c111);
+    push_line(c000, c001); push_line(c010, c011);
+    push_line(c100, c101); push_line(c110, c111);
+
+    // Rectángulo lejano: tamaño según fov y aspect.
+    let half_h = (fov_y * 0.5).tan() * far_dist;
+    let half_w = half_h * aspect;
+    let center = eye + forward * far_dist;
+    let f_tl = center - right * half_w + up * half_h;
+    let f_tr = center + right * half_w + up * half_h;
+    let f_br = center + right * half_w - up * half_h;
+    let f_bl = center - right * half_w - up * half_h;
+
+    // Pirámide ojo → 4 esquinas lejanas.
+    push_line(eye, f_tl);
+    push_line(eye, f_tr);
+    push_line(eye, f_br);
+    push_line(eye, f_bl);
+
+    // Cuadrado lejano.
+    push_line(f_tl, f_tr);
+    push_line(f_tr, f_br);
+    push_line(f_br, f_bl);
+    push_line(f_bl, f_tl);
+
+    build_from_vertices(device, &verts)
+}
+
 /// Creates a GizmoBuffer from arbitrary pre-built line vertices (tool overlays, etc.).
 pub fn build_from_vertices(device: &wgpu::Device, verts: &[GizmoVertex]) -> GizmoBuffer {
     // Always allocate at least one vertex so the buffer is valid.

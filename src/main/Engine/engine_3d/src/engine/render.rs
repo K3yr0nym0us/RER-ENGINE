@@ -3,6 +3,7 @@ use winit::dpi::PhysicalSize;
 
 use crate::config_3d::Camera;
 use crate::config_compat::Camera2D;
+use crate::gizmo;
 
 use super::{SceneUniforms, State, DEPTH_FORMAT};
 
@@ -254,6 +255,62 @@ impl State {
             bounds_pass.set_vertex_buffer(0, self.world_bounds_buffer.vertex_buffer.slice(..));
             bounds_pass.draw(0..self.world_bounds_buffer.vertex_count, 0..1);
             draw_calls += 1;
+        }
+
+        // Gizmo de cámara FP en modo editor: cubito en el ojo + frustum hasta el
+        // rectángulo lejano, para visualizar a dónde mirará la cámara al pulsar
+        // Play (estilo Godot/Unity al seleccionar una `Camera3D`).
+        if !self.preview_playing && self.camera_2d.is_none() && self.has_first_person_player() {
+            if let Some((eye, yaw, pitch)) = self.first_person_camera_gizmo_pose() {
+                let aspect = self.size.width as f32 / self.size.height as f32;
+                let frustum_buf = gizmo::build_first_person_camera_frustum(
+                    &self.device,
+                    eye,
+                    yaw,
+                    pitch,
+                    self.camera.fov_y,
+                    aspect,
+                    2.5,
+                );
+
+                let vp = self.camera.to_uniform(aspect).view_proj;
+                let frustum_uni: [[f32; 4]; 9] = [
+                    vp[0],
+                    vp[1],
+                    vp[2],
+                    vp[3],
+                    [1.0, 0.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                    [0.0, 0.0, 0.0, 1.0],
+                    [-1.0, -1.0, 0.0, 0.0],
+                ];
+                self.queue.write_buffer(
+                    &self.grid_buffer_uni,
+                    0,
+                    bytemuck::cast_slice(&frustum_uni),
+                );
+
+                let mut frustum_pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("fp-camera-frustum-pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Load,
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    occlusion_query_set: None,
+                    timestamp_writes: None,
+                });
+                frustum_pass.set_pipeline(&self.grid_pipeline);
+                frustum_pass.set_bind_group(0, &self.grid_bind_group, &[]);
+                frustum_pass.set_vertex_buffer(0, frustum_buf.vertex_buffer.slice(..));
+                frustum_pass.draw(0..frustum_buf.vertex_count, 0..1);
+                draw_calls += 1;
+            }
         }
 
         if self.is_first_person_runtime_active() && self.crosshair_buffer.vertex_count > 0 {

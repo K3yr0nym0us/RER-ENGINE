@@ -165,6 +165,19 @@ impl State {
         self.camera.yaw = yaw;
     }
 
+    /// Pose visual de la cámara FP para dibujar el gizmo de frustum en el editor.
+    /// Devuelve `(ojo_mundo, yaw_cuerpo, pitch_inicial)`. El yaw sale del Transform
+    /// del cuerpo (no de `camera.yaw`, que en editor es el ángulo del orbit) y el
+    /// pitch es 0 — así el gizmo muestra exactamente la orientación que tendrá la
+    /// cámara en el primer frame de Play.
+    pub(crate) fn first_person_camera_gizmo_pose(&self) -> Option<(Vec3, f32, f32)> {
+        let id = self.first_person_player_entity?;
+        let t = self.world.get::<Transform>(id)?;
+        let (yaw, _, _) = t.rotation.to_euler(glam::EulerRot::YXZ);
+        let eye = self.first_person_feet_position() + self.first_person_eye_world_offset();
+        Some((eye, yaw, 0.0))
+    }
+
     pub(crate) fn is_first_person_runtime_active(&self) -> bool {
         self.preview_playing && self.camera_2d.is_none()
     }
