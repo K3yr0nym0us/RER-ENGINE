@@ -75,6 +75,7 @@ impl State {
         self.control_bindings_by_entity.clear();
         self.clear_first_person_script_frame();
         self.first_person_player_entity = None;
+        self.first_person_mesh_forward_xz = glam::Vec2::new(0.0, 1.0);
         self.undo_stack.clear();
         self.redo_stack.clear();
         self.is_applying_undo = false;
@@ -210,6 +211,7 @@ impl State {
     fn setup_first_person_player_entity(&mut self, id: EntityId, feet: glam::Vec3) {
         self.character_entities.push(id);
         self.first_person_player_entity = Some(id);
+        self.first_person_mesh_forward_xz = glam::Vec2::new(0.0, 1.0);
         self.attach_first_person_player_body(id);
         if let Some(t) = self.world.get_mut::<Transform>(id) {
             t.position = crate::config_3d::first_person::player_body_center_from_feet(feet);

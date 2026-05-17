@@ -91,6 +91,8 @@ pub struct State {
     pub(crate) first_person_lua_jump_speed: Option<f32>,
     /// Entidad `[Player]` de la plantilla first-person (bindings de control).
     pub(crate) first_person_player_entity: Option<EntityId>,
+    /// Forward local (plano XZ) del mesh del jugador; se recalcula al reemplazar el modelo.
+    pub(crate) first_person_mesh_forward_xz: glam::Vec2,
     pub(crate) tool_overlay_buffer: GizmoBuffer,
     pub(crate) snap_hint_uv: Option<[f32; 4]>,
     pub(crate) snap_hint_size: (f32, f32),

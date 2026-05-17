@@ -26,7 +26,7 @@ import {
 	applySavedFirstPersonView,
 	bodyCenterFromFeet,
 	ensureFirstPersonPlayerOnLoad,
-	quatFromYaw,
+	quatFromCameraYaw,
 	syncFirstPersonViewRefFromPlayer,
 } from '../../../defaults/firstPersonSceneRestore';
 import { setSceneCommandForSavedProject } from '../../../defaults/projectSceneLoad';
@@ -253,7 +253,7 @@ export function createEngineEventHandler({
 					} else if (entity.kind === 'character' && isPlayerPath(entity.path)) {
 						const savedPlayer = save.playerTransform;
 						const playerYaw = savedPlayer?.yaw;
-						const rot = playerYaw != null ? quatFromYaw(playerYaw) : entity.rotation;
+						const rot = playerYaw != null ? quatFromCameraYaw(playerYaw) : entity.rotation;
 						const playerTransform: Transform = savedPlayer
 							? {
 								position: bodyCenterFromFeet(savedPlayer.position, rot, savedPlayer.scale[1]),
@@ -482,6 +482,7 @@ export function createEngineEventHandler({
 				id?: number
 				path?: string
 				position?: [number, number, number]
+				rotation?: [number, number, number, number]
 				scale?: [number, number, number]
 			};
 			const id = replaced.id ?? -1;
@@ -491,7 +492,7 @@ export function createEngineEventHandler({
 			if (replaced.position && replaced.scale) {
 				refs.entityTransformsRef.current[id] = {
 					position: replaced.position,
-					rotation: refs.entityTransformsRef.current[id]?.rotation ?? [0, 0, 0, 1],
+					rotation: replaced.rotation ?? refs.entityTransformsRef.current[id]?.rotation ?? [0, 0, 0, 1],
 					scale: replaced.scale,
 				};
 			}

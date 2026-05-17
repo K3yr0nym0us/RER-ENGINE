@@ -35,10 +35,15 @@ function rotateVec3ByQuat(
 	];
 }
 
-/** Quaternion (xyzw) con rotación solo en Y (yaw). */
+/** Quaternion (xyzw) con rotación solo en Y (yaw del mesh). */
 export function quatFromYaw(yaw: number): [number, number, number, number] {
 	const half = yaw * 0.5;
 	return [0, Math.sin(half), 0, Math.cos(half)];
+}
+
+/** Yaw de cámara del motor → rotación del mesh (+Z forward, offset π/2). */
+export function quatFromCameraYaw(yaw: number): [number, number, number, number] {
+	return quatFromYaw(yaw + Math.PI / 2);
 }
 
 export function feetFromPlayerBodyCenter(
@@ -122,7 +127,7 @@ export function applySavedFirstPersonView(
 
 	if (playerId != null) {
 		const scale = FIRST_PERSON_PLAYER_BODY_SCALE;
-		const rot = quatFromYaw(yaw);
+		const rot = quatFromCameraYaw(yaw);
 		entityTransformsRef.current[playerId] = {
 			position: bodyCenterFromFeet(view.position, rot, scale[1]),
 			rotation: rot,
@@ -150,7 +155,7 @@ export function ensureFirstPersonPlayerOnLoad(
 				(e) => e.kind === 'character' && isPlayerPath(e.path),
 			);
 			const yaw = savedPlayer.yaw ?? FP_DEFAULT_YAW;
-			const rot = quatFromYaw(yaw);
+			const rot = quatFromCameraYaw(yaw);
 			const pending: PendingRestore = {
 				transform: {
 					position: bodyCenterFromFeet(savedPlayer.position, rot, savedPlayer.scale[1]),

@@ -93,6 +93,37 @@ pub(crate) const FIRST_PERSON_GROUND_PROBE: f32 = 0.08;
 pub(crate) const FIRST_PERSON_BODY_HEIGHT: f32 = 1.7;
 /// Distancia de la cámara orbital en editor (detrás del jugador, fuera de play).
 pub(crate) const FIRST_PERSON_EDITOR_ORBIT_DISTANCE: f32 = 3.0;
+/// Forward de la cámara proyectado al plano XZ. Coincide con `Camera::view_forward` con pitch=0.
+fn look_xz_from_camera_yaw(camera_yaw: f32) -> glam::Vec2 {
+    let (sy, cy) = camera_yaw.sin_cos();
+    glam::Vec2::new(-cy, -sy)
+}
+
+fn camera_yaw_from_look_xz(look: glam::Vec2) -> f32 {
+    (-look.y).atan2(-look.x)
+}
+
+/// Forward world del mesh tras rotar `mesh_yaw` alrededor de Y.
+///
+/// `glam::Quat::from_rotation_y(θ)` aplica la matriz `[cosθ  sinθ; -sinθ  cosθ]` al plano XZ
+/// (rota +X → -Z y +Z → +X). La función original usaba la matriz opuesta y por eso el cuerpo
+/// terminaba girando al revés que la cámara.
+fn look_xz_from_mesh_yaw(mesh_yaw: f32, mesh_forward_xz: glam::Vec2) -> glam::Vec2 {
+    let (s, c) = mesh_yaw.sin_cos();
+    let fx = mesh_forward_xz.x;
+    let fz = mesh_forward_xz.y;
+    glam::Vec2::new(fx * c + fz * s, -fx * s + fz * c)
+}
+
+/// Yaw del mesh para que su forward local apunte hacia donde mira la cámara (offset 0).
+///
+/// Usando complejos (X + iZ): rotar por glam `Rot_Y(θ)` ≡ multiplicar por `cosθ − i·sinθ`.
+/// Para mapear `mesh_local = (fx, fz)` a `cam_world = (cfx, cfz)`:
+///   θ = arg(fx + i·fz) − arg(cfx + i·cfz) = atan2(fz, fx) − atan2(cfz, cfx).
+fn mesh_yaw_from_camera_and_forward(camera_yaw: f32, mesh_forward_xz: glam::Vec2) -> f32 {
+    let look = look_xz_from_camera_yaw(camera_yaw);
+    mesh_forward_xz.y.atan2(mesh_forward_xz.x) - look.y.atan2(look.x)
+}
 
 pub(crate) fn feet_from_player_transform(center: Vec3, scale_y: f32, rotation: glam::Quat) -> Vec3 {
     center + State::feet_offset_local(scale_y, rotation)
@@ -143,10 +174,16 @@ impl State {
     /// En FPS estilo Godot, el cuerpo gira con la cámara para que mirar = orientarse.
     /// Solo aplica yaw (Y world); pitch queda en la cámara, no en el cuerpo.
     pub(crate) fn sync_player_rotation_from_look(&mut self) {
-        if let Some(id) = self.first_person_player_entity {
-            if let Some(t) = self.world.get_mut::<Transform>(id) {
-                t.rotation = glam::Quat::from_rotation_y(self.camera.yaw);
-            }
+        let Some(id) = self.first_person_player_entity else {
+            return;
+        };
+        let mesh_yaw = mesh_yaw_from_camera_and_forward(
+            self.camera.yaw,
+            self.first_person_mesh_forward_xz,
+        );
+        if let Some(t) = self.world.get_mut::<Transform>(id) {
+            let (_, pitch, roll) = t.rotation.to_euler(glam::EulerRot::YXZ);
+            t.rotation = glam::Quat::from_euler(glam::EulerRot::YXZ, mesh_yaw, pitch, roll);
         }
     }
 
@@ -161,8 +198,9 @@ impl State {
         let Some(t) = self.world.get::<Transform>(id) else {
             return;
         };
-        let (yaw, _, _) = t.rotation.to_euler(glam::EulerRot::YXZ);
-        self.camera.yaw = yaw;
+        let (mesh_yaw, _, _) = t.rotation.to_euler(glam::EulerRot::YXZ);
+        let look = look_xz_from_mesh_yaw(mesh_yaw, self.first_person_mesh_forward_xz);
+        self.camera.yaw = camera_yaw_from_look_xz(look);
     }
 
     /// Pose visual de la cámara FP para dibujar el gizmo de frustum en el editor.
@@ -173,9 +211,10 @@ impl State {
     pub(crate) fn first_person_camera_gizmo_pose(&self) -> Option<(Vec3, f32, f32)> {
         let id = self.first_person_player_entity?;
         let t = self.world.get::<Transform>(id)?;
-        let (yaw, _, _) = t.rotation.to_euler(glam::EulerRot::YXZ);
+        let (mesh_yaw, _, _) = t.rotation.to_euler(glam::EulerRot::YXZ);
+        let look = look_xz_from_mesh_yaw(mesh_yaw, self.first_person_mesh_forward_xz);
         let eye = self.first_person_feet_position() + self.first_person_eye_world_offset();
-        Some((eye, yaw, 0.0))
+        Some((eye, camera_yaw_from_look_xz(look), 0.0))
     }
 
     pub(crate) fn is_first_person_runtime_active(&self) -> bool {

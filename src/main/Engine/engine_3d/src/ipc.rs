@@ -330,6 +330,8 @@ pub enum EngineEvent {
         #[serde(skip_serializing_if = "Option::is_none")]
         position: Option<[f32; 3]>,
         #[serde(skip_serializing_if = "Option::is_none")]
+        rotation: Option<[f32; 4]>,
+        #[serde(skip_serializing_if = "Option::is_none")]
         scale: Option<[f32; 3]>,
     },
     /// Emitido cuando el usuario hace click izquierdo sobre una entidad.

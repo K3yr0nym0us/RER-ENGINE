@@ -136,6 +136,7 @@ impl State {
         }
 
         if is_fp_player {
+            self.first_person_mesh_forward_xz = part.forward_xz;
             let feet = self.first_person_feet_position();
             let w = FIRST_PERSON_COLLIDER_RADIUS * 2.0;
             if let Some(t) = self.world.get_mut::<Transform>(id) {
@@ -148,6 +149,7 @@ impl State {
                 );
             }
             self.camera.target = feet;
+            self.sync_player_rotation_from_look();
             // El jugador FP usa solo la cápsula cinemática; el cuerpo Rapier estático bloquea queries.
             self.physics.remove_entity_body(id);
         } else if self.physics.has_physics(id) {
@@ -164,15 +166,25 @@ impl State {
             }
         }
 
-        let (position, scale) = match self.world.get::<Transform>(id) {
-            Some(t) => (Some(t.position.to_array()), Some(t.scale.to_array())),
-            None => (None, None),
+        let (position, rotation, scale) = match self.world.get::<Transform>(id) {
+            Some(t) => (
+                Some(t.position.to_array()),
+                Some([
+                    t.rotation.x,
+                    t.rotation.y,
+                    t.rotation.z,
+                    t.rotation.w,
+                ]),
+                Some(t.scale.to_array()),
+            ),
+            None => (None, None, None),
         };
 
         send_event(&EngineEvent::EntityModelReplaced {
             id,
             path: path.to_string(),
             position,
+            rotation,
             scale,
         });
         log::info!("Modelo reemplazado en entidad {id}: {path}");

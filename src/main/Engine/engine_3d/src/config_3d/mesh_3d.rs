@@ -9,6 +9,43 @@ pub(crate) struct LoadedModelMesh {
     pub(crate) rgba: Vec<u8>,
     pub(crate) width: u32,
     pub(crate) height: u32,
+    /// Forward horizontal en espacio local de la malla (plano XZ), para alinear al jugador FP.
+    pub(crate) forward_xz: glam::Vec2,
+}
+
+/// Estima hacia dónde "mira" la malla en XZ (tras centrar/normalizar).
+pub(crate) fn estimate_mesh_forward_xz(vertices: &[Vertex]) -> glam::Vec2 {
+    if vertices.is_empty() {
+        return glam::Vec2::new(0.0, 1.0);
+    }
+    let mut pos_z = 0.0f32;
+    let mut neg_z = 0.0f32;
+    let mut pos_x = 0.0f32;
+    let mut neg_x = 0.0f32;
+    for v in vertices {
+        let p = &v.position;
+        if p[2] > 0.0 {
+            pos_z += p[2];
+        } else {
+            neg_z += -p[2];
+        }
+        if p[0] > 0.0 {
+            pos_x += p[0];
+        } else {
+            neg_x += -p[0];
+        }
+    }
+    if pos_z.max(neg_z) >= pos_x.max(neg_x) {
+        if pos_z >= neg_z {
+            glam::Vec2::new(0.0, 1.0)
+        } else {
+            glam::Vec2::new(0.0, -1.0)
+        }
+    } else if pos_x >= neg_x {
+        glam::Vec2::new(1.0, 0.0)
+    } else {
+        glam::Vec2::new(-1.0, 0.0)
+    }
 }
 
 /// Despacha por extensión: glTF (`.glb`/`.gltf`) o FBX (`.fbx`).
@@ -225,11 +262,13 @@ fn load_gltf(
 
     let mut meshes = Vec::with_capacity(prims.len());
     for p in prims {
+        let forward_xz = estimate_mesh_forward_xz(&p.vertices);
         meshes.push(LoadedModelMesh {
             mesh: upload(device, &p.vertices, &p.indices, "gltf-mesh"),
             rgba: p.rgba,
             width: p.width,
             height: p.height,
+            forward_xz,
         });
     }
     Ok(meshes)
@@ -406,12 +445,14 @@ fn load_fbx(
     }
 
     center_and_normalize_vertices(&mut vertices, normalize_to_extent.unwrap_or(1.8));
+    let forward_xz = estimate_mesh_forward_xz(&vertices);
 
     Ok(vec![LoadedModelMesh {
         mesh: upload(device, &vertices, &indices, "fbx-mesh"),
         rgba,
         width: tex_w,
         height: tex_h,
+        forward_xz,
     }])
 }
 

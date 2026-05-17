@@ -432,6 +432,7 @@ impl State {
             first_person_lua_sprint_multiplier: None,
             first_person_lua_jump_speed: None,
             first_person_player_entity: None,
+            first_person_mesh_forward_xz: glam::Vec2::new(0.0, 1.0),
             tool_overlay_buffer: tool_overlay_buffer_init,
             snap_hint_uv,
             snap_hint_size,
