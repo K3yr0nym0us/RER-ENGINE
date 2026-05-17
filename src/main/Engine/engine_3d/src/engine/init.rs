@@ -9,6 +9,7 @@ use crate::config_3d::physics_3d::PhysicsWorld;
 use crate::config_3d::{Camera, WorldBounds3D};
 use crate::config_compat::{ActiveTool, GridConfig, PhysicsWorld2D};
 use crate::ecs::{MeshComponent, World};
+use crate::entity_save_meta::EntitySaveRegistry;
 use crate::gizmo;
 use crate::mesh;
 use crate::scripting::ScriptEngine;
@@ -505,6 +506,8 @@ impl State {
             last_draw_calls: 0,
             autosave_enabled: false,
             autosave_last_tick: Instant::now(),
+            save_registry: EntitySaveRegistry::new(),
+            target_fps: 60,
         }
     }
 }

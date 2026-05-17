@@ -61,6 +61,7 @@ const SILENT_ENGINE_EVENTS = new Set<string>([
 	'autosave_tick',
 	'preview_playing_changed',
 	'first_person_view_changed',
+	'save_snapshot_ready',
 ]);
 
 interface CreateEngineEventHandlerParams {

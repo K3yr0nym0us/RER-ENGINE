@@ -12,6 +12,7 @@ use crate::config_compat::{ActiveTool, Camera2D, GridBuffer, GridConfig, Physics
 use crate::ecs::{EntityId, NameComponent, World};
 use crate::gizmo::GizmoBuffer;
 use crate::mesh::Mesh;
+use crate::entity_save_meta::EntitySaveRegistry;
 use crate::scripting::ScriptEngine;
 
 pub struct State {
@@ -139,6 +140,10 @@ pub struct State {
     pub(crate) last_draw_calls: u32,
     pub(crate) autosave_enabled: bool,
     pub(crate) autosave_last_tick: Instant,
+    /// Metadatos de persistencia (rutas, tipo) y fuentes de scripts por entidad.
+    pub(crate) save_registry: EntitySaveRegistry,
+    /// Límite de FPS del bucle (sincronizado con `set_target_fps`).
+    pub(crate) target_fps: u64,
 }
 
 impl State {

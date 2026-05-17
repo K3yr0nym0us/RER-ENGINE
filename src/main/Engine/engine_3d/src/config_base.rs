@@ -10,6 +10,7 @@ use crate::ecs::{MeshComponent, NonSelectable, Transform};
 use crate::engine::State;
 use crate::gizmo;
 use crate::ipc::{send_event, EngineEvent};
+use crate::entity_save_meta::EntitySaveMeta;
 use crate::mesh;
 use crate::scripting::ScriptEngine;
 
@@ -53,6 +54,7 @@ impl State {
         self.execution_overlaps.clear();
         self.background_entity = None;
         self.background_path = None;
+        self.save_registry.clear();
         self.selected_entity = None;
         self.selected_entities.clear();
         self.hovered_entity = None;
@@ -147,6 +149,15 @@ impl State {
             self.physics
                 .set_entity_physics(id, true, "static", position, half);
             self.scenario_entities.push(id);
+            self.save_registry.register_meta(
+                id,
+                EntitySaveMeta {
+                    kind: "model".to_string(),
+                    path: "[EditorBox]".to_string(),
+                    visual_model_path: None,
+                    points: None,
+                },
+            );
             self.send_model_loaded_event(id, &label);
         };
 
@@ -227,6 +238,15 @@ impl State {
         let feet = self.camera.target;
         let id = self.world.spawn(Some("Player"));
         self.setup_first_person_player_entity(id, feet);
+        self.save_registry.register_meta(
+            id,
+            EntitySaveMeta {
+                kind: "character".to_string(),
+                path: "[Player]".to_string(),
+                visual_model_path: None,
+                points: None,
+            },
+        );
         send_event(&EngineEvent::CharacterLoaded {
             id,
             path: "[Player]".to_string(),
@@ -271,6 +291,15 @@ impl State {
         self.physics
             .set_entity_physics(id, true, "static", position, half);
         self.scenario_entities.push(id);
+        self.save_registry.register_meta(
+            id,
+            EntitySaveMeta {
+                kind: "model".to_string(),
+                path: "[EditorBox]".to_string(),
+                visual_model_path: None,
+                points: None,
+            },
+        );
         self.send_model_loaded_event(id, name);
     }
 
@@ -289,6 +318,15 @@ impl State {
         } else {
             self.character_entities.push(id);
         }
+        self.save_registry.register_meta(
+            id,
+            EntitySaveMeta {
+                kind: "character".to_string(),
+                path: path.to_string(),
+                visual_model_path: None,
+                points: None,
+            },
+        );
         send_event(&EngineEvent::CharacterLoaded {
             id,
             path: path.to_string(),

@@ -1,6 +1,8 @@
 mod animations;
 mod audio;
 mod commands;
+#[path = "../save_snapshot.rs"]
+mod save_snapshot;
 mod init;
 mod render;
 mod scripts;

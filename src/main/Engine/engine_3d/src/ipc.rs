@@ -276,6 +276,8 @@ pub enum EngineCommand {
     SetLocale { locale: String },
     /// Activar/desactivar autosave coordinado por el motor.
     SetAutosave { enabled: bool },
+    /// Pedir al motor la instantánea de la escena activa para persistir en `.save`.
+    ExportSaveSnapshot,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -304,6 +306,129 @@ pub struct AnimScriptData {
 pub struct ControlScriptData {
     pub name:   String,
     pub source: String,
+}
+
+// ── Instantánea de guardado (motor → Electron) ───────────────────────────────
+
+#[derive(Debug, Serialize, Clone)]
+pub struct SaveWorldSnapshot {
+    pub world_width: f32,
+    pub world_height: f32,
+    pub world_depth: f32,
+    pub grid_visible: bool,
+    pub grid_cell_size: f32,
+    pub gravity: f32,
+    pub target_fps: u64,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct SaveScriptSnapshot {
+    pub name: String,
+    pub source: String,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct SaveAnimationFrameSnapshot {
+    pub path: String,
+    pub pivot_x: f32,
+    pub pivot_y: f32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub src_x: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub src_y: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub src_w: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub src_h: Option<u32>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct SaveAnimationSnapshot {
+    pub name: String,
+    pub fps: u32,
+    pub loop_: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_default: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub facing_right: Option<bool>,
+    pub logical_w: u32,
+    pub logical_h: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub audio_path: Option<String>,
+    pub frames: Vec<SaveAnimationFrameSnapshot>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub scripts: Vec<SaveScriptSnapshot>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_cancelable: Option<bool>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct SaveEntitySnapshot {
+    pub id: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    pub kind: String,
+    pub path: String,
+    pub position: [f32; 3],
+    pub rotation: [f32; 4],
+    pub scale: [f32; 3],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub physics_enabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub physics_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub points: Option<[[f32; 2]; 4]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub animations: Option<Vec<SaveAnimationSnapshot>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scripts: Option<Vec<SaveScriptSnapshot>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub control_bindings: Option<ControlBindingsData>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub visual_model_path: Option<String>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct SavePlayerTransformSnapshot {
+    pub position: [f32; 3],
+    pub scale: [f32; 3],
+    pub yaw: f32,
+    pub pitch: f32,
+    pub fov_y: f32,
+    pub frustum_distance: f32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub visual_model_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub control_bindings: Option<ControlBindingsData>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct SaveCamera2dSnapshot {
+    pub x: f32,
+    pub y: f32,
+    pub half_h: f32,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct SaveAssetRefSnapshot {
+    pub name: String,
+    pub path: String,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct SaveSceneSnapshotPayload {
+    pub world: SaveWorldSnapshot,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub background_path: Option<String>,
+    pub entities: Vec<SaveEntitySnapshot>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub player_transform: Option<SavePlayerTransformSnapshot>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub camera2d: Option<SaveCamera2dSnapshot>,
+    pub sprites: Vec<SaveAssetRefSnapshot>,
+    pub models: Vec<SaveAssetRefSnapshot>,
+    pub sounds: Vec<SaveAssetRefSnapshot>,
+    pub backgrounds: Vec<SaveAssetRefSnapshot>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
@@ -458,6 +583,8 @@ pub enum EngineEvent {
     TriggerExited { trigger_id: u32, actor_id: u32 },
     /// Emitido cada 5 minutos cuando el autosave está activo.
     AutosaveTick,
+    /// Respuesta a `export_save_snapshot`: escena activa lista para el `.save`.
+    SaveSnapshotReady { scene: SaveSceneSnapshotPayload },
 }
 
 /// Información básica de un sprite almacenado en el motor.

@@ -33,12 +33,13 @@ Si una feature necesita trigonometria espacial, conversion pies↔centro, forwar
 
 Referencia completa en `src/main/Engine/engine_3d/ARCHITECTURE.md` (seccion *Vista FP autoritativa*).
 
-Flujo correcto:
+Flujo **vista / cámara** (editor y paneles; no es el guardado):
 
 1. UI / carga de escena → `set_first_person_view` (pies, yaw, pitch, FOV, frustum).
 2. Motor → `first_person_view_changed`.
-3. `applyFirstPersonViewFromEngine()` en `src/defaults/firstPersonSceneRestore.ts` actualiza `firstPersonViewRef` y `entityTransformsRef`.
-4. Autoguardado y tabs usan `firstPersonViewRef.current.position` (pies), no derivaciones locales.
+3. `applyFirstPersonViewFromEngine()` en `src/defaults/firstPersonSceneRestore.ts` actualiza `firstPersonViewRef` y `entityTransformsRef` para la UI (p. ej. `CameraAccordion`), sin recalcular poses en TS.
+
+En proyectos **3D**, `firstPersonViewRef` **no** alimenta el `.save`: el motor exporta `player_transform` en el snapshot (pies, yaw, pitch, FOV, frustum, `visual_model_path`). Ver sección *Guardado*.
 
 Archivos clave:
 
@@ -46,6 +47,24 @@ Archivos clave:
 - `src/context/useContextEngine/hooks/createEngineEventHandler.ts` — handler de `first_person_view_changed`; carga de jugador con `skipTransform` si hay vista guardada.
 - `src/pages/EngineView/components/sidebar/CameraAccordion.tsx` — solo dispara `set_first_person_view`; refresca UI con `fpViewSyncSeq`.
 - `src/shared-types/types.ts` — `FirstPersonViewChanged`, comando `set_first_person_view`.
+
+## Guardado `.save`
+
+El **ZIP** lo escribe Electron/main; el **contenido de la escena activa** depende del tipo de proyecto:
+
+| Tipo | Quién serializa la escena | Archivos |
+|------|---------------------------|----------|
+| **3D** | Motor (`export_save_snapshot` → `save_snapshot_ready`) | `useAutoSave.ts`, `buildProjectSaveFromEngine.ts`, `SceneTabsBar` (pestañas 3D) |
+| **2D** | Renderer (`buildSaveDataLegacy2D` en `useAutoSave.ts`) | Misma ruta de hook; sin `export_save_snapshot` en `engine_2d` aún |
+
+Flujo **3D**:
+
+1. Front → `{ cmd: 'export_save_snapshot' }`.
+2. Motor recorre la escena (entidades placeholder del template FP incluidas), mundo, jugador FP, cámara 2D si aplica, stores de assets y scripts registrados.
+3. Motor → `save_snapshot_ready` con `scene`.
+4. Front arma `ProjectSaveData`: fusiona blueprints, idioma, sonidos/fondos del contexto, pestañas **inactivas** desde `sceneStateStore`, y `blueprint_id` / categoría desde `entityMetaRef` cuando exista.
+
+El front **no** decide qué entidades van al save en 3D ni arma `playerTransform` desde refs locales.
 
 ## Relacion con los dos motores
 
@@ -64,7 +83,8 @@ Documentacion de motores:
 - `src/context/useContextEngine/hooks/createEngineEventHandler.ts` — unico lugar que deberia interpretar eventos del motor para estado global.
 - `src/pages/EngineView/` — layout del editor, sidebars, `SceneTabsBar`.
 - `src/defaults/` — plantillas y restauracion de escena (intencion, no fisica).
-- `src/hooks/useAutoSave.ts` — persistencia; leer refs alimentadas por eventos del motor.
+- `src/hooks/useAutoSave.ts` — 3D: snapshot del motor; 2D: `buildSaveDataLegacy2D`.
+- `src/defaults/buildProjectSaveFromEngine.ts` — IPC `export_save_snapshot` y merge a `ProjectSaveData` (solo 3D).
 - `src/shared-types/types.ts` — contrato IPC; ampliar aqui al anadir comandos/eventos nuevos.
 
 ## Checklist para cambios nuevos

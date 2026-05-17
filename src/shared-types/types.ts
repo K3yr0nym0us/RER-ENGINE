@@ -293,12 +293,57 @@ export interface EngineCommand {
     | 'set_locale'
     | 'set_autosave'
     | 'set_debug_mode'
+    | 'export_save_snapshot'
   [key: string]: unknown
 }
 
 export interface EngineEvent {
-  event: 'ready' | 'pong' | 'error' | 'model_loaded' | 'entity_model_replaced' | 'stopped' | 'entity_selected' | 'entity_deselected' | 'entity_hovered' | 'entity_unhovered' | 'scenario_loaded' | 'character_loaded' | 'camera_2d_updated' | 'background_loaded' | 'drawing_progress' | 'collider_created' | 'execution_area_created' | 'tool_cancelled' | 'pivot_selected' | 'physics_changed' | 'sprite_loaded' | 'sprite_removed' | 'sprites_list' | 'model_asset_loaded' | 'model_asset_removed' | 'models_list' | 'sound_loaded' | 'sound_removed' | 'sounds_list' | 'background_asset_loaded' | 'background_asset_removed' | 'backgrounds_list' | 'first_person_view_changed' | 'debug_metrics' | 'preview_playing_changed' | 'trigger_entered' | 'trigger_exited' | 'entity_removed' | 'quick_build_move' | 'quick_build_click' | 'animation_logical_resolved' | 'autosave_tick'
+  event: 'ready' | 'pong' | 'error' | 'model_loaded' | 'entity_model_replaced' | 'stopped' | 'entity_selected' | 'entity_deselected' | 'entity_hovered' | 'entity_unhovered' | 'scenario_loaded' | 'character_loaded' | 'camera_2d_updated' | 'background_loaded' | 'drawing_progress' | 'collider_created' | 'execution_area_created' | 'tool_cancelled' | 'pivot_selected' | 'physics_changed' | 'sprite_loaded' | 'sprite_removed' | 'sprites_list' | 'model_asset_loaded' | 'model_asset_removed' | 'models_list' | 'sound_loaded' | 'sound_removed' | 'sounds_list' | 'background_asset_loaded' | 'background_asset_removed' | 'backgrounds_list' | 'first_person_view_changed' | 'save_snapshot_ready' | 'debug_metrics' | 'preview_playing_changed' | 'trigger_entered' | 'trigger_exited' | 'entity_removed' | 'quick_build_move' | 'quick_build_click' | 'animation_logical_resolved' | 'autosave_tick'
   [key: string]: unknown
+}
+
+/** Entidad en JSON del motor (serde snake_case). */
+export interface EngineSaveEntitySnapshot {
+  id:               number
+  name?:            string
+  kind:             string
+  path:             string
+  position:         [number, number, number]
+  rotation:         [number, number, number, number]
+  scale:            [number, number, number]
+  physics_enabled?: boolean
+  physics_type?:    string
+  points?:          SavedEntity['points']
+  animations?:      Array<Record<string, unknown>>
+  scripts?:         SavedEntity['scripts']
+  control_bindings?: SavedEntity['control_bindings']
+  visual_model_path?: string
+}
+
+/** Escena activa exportada por el motor (`export_save_snapshot`). */
+export interface EngineSaveSceneSnapshot {
+  world: {
+    world_width: number
+    world_height: number
+    world_depth: number
+    grid_visible: boolean
+    grid_cell_size: number
+    gravity: number
+    target_fps: number
+  }
+  background_path?: string | null
+  entities: EngineSaveEntitySnapshot[]
+  player_transform?: SavedPlayerTransform | null
+  camera2d?: { x: number; y: number; half_h: number } | null
+  sprites: Array<{ name: string; path: string }>
+  models?: Array<{ name: string; path: string }>
+  sounds: Array<{ name: string; path: string }>
+  backgrounds: Array<{ name: string; path: string }>
+}
+
+export interface SaveSnapshotReady {
+  event: 'save_snapshot_ready'
+  scene: EngineSaveSceneSnapshot
 }
 
 export interface FirstPersonViewChanged {

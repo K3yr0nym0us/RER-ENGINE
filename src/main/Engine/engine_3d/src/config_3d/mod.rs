@@ -30,6 +30,7 @@ use crate::config_3d::first_person::{
 };
 use crate::config_shared::point_to_segment_2d;
 use crate::ecs::{EntityId, MeshComponent, NonSelectable, Transform};
+use crate::entity_save_meta::EntitySaveMeta;
 use crate::engine::State;
 use crate::ipc::{send_event, EngineEvent};
 
@@ -73,6 +74,15 @@ impl State {
                         let spawn = self.camera.target + forward * 2.5;
                         t.position = glam::Vec3::new(spawn.x, spawn.y.max(0.0), spawn.z);
                     }
+                    self.save_registry.register_meta(
+                        id,
+                        EntitySaveMeta {
+                            kind: "model".to_string(),
+                            path: path.to_string(),
+                            visual_model_path: None,
+                            points: None,
+                        },
+                    );
                     self.send_model_loaded_event(id, &label);
                 }
                 log::info!("Modelo cargado: {path} ({count} malla/s)");
@@ -136,6 +146,19 @@ impl State {
         }
 
         if is_fp_player {
+            if let Some(m) = self.save_registry.meta.get_mut(&id) {
+                m.visual_model_path = Some(path.to_string());
+            } else {
+                self.save_registry.register_meta(
+                    id,
+                    EntitySaveMeta {
+                        kind: "character".to_string(),
+                        path: "[Player]".to_string(),
+                        visual_model_path: Some(path.to_string()),
+                        points: None,
+                    },
+                );
+            }
             self.first_person_mesh_forward_xz = part.forward_xz;
             let feet = self.first_person_feet_position();
             let w = FIRST_PERSON_COLLIDER_RADIUS * 2.0;
@@ -153,7 +176,13 @@ impl State {
             // El jugador FP usa solo la cápsula cinemática; el cuerpo Rapier estático bloquea queries.
             self.physics.remove_entity_body(id);
             self.emit_first_person_view_changed();
-        } else if self.physics.has_physics(id) {
+        } else {
+            if let Some(m) = self.save_registry.meta.get_mut(&id) {
+                m.path = path.to_string();
+                m.visual_model_path = Some(path.to_string());
+            }
+        }
+        if !is_fp_player && self.physics.has_physics(id) {
             if let Some(t) = self.world.get::<Transform>(id) {
                 let half = [
                     (t.scale.x * 0.5).max(0.01),

@@ -1,4 +1,4 @@
-import type { SavedControlBindings, SavedEntity, SavedPlayerTransform } from '@shared-types';
+import type { SavedEntity, SavedPlayerTransform } from '@shared-types';
 import { FIRST_PERSON_PLAYER_BODY_SCALE, isPlayerPath } from '@shared-types';
 import type { MutableRefObject } from 'react';
 import type { PendingRestore, Transform } from '../context/useContextEngine/types';
@@ -110,36 +110,4 @@ export function ensureFirstPersonPlayerOnLoad(
 		}
 		send({ cmd: 'load_character', path: '[Player]' });
 	}
-}
-
-export function buildSavedPlayerTransform(
-	fpView: SavedPlayerTransform | null | undefined,
-	feetPosition: [number, number, number] | undefined,
-	visualModelPath?: string,
-	controlBindings?: SavedControlBindings,
-): SavedPlayerTransform | null {
-	if (!feetPosition) return null;
-	return {
-		position: feetPosition,
-		scale: FIRST_PERSON_PLAYER_BODY_SCALE,
-		yaw: fpView?.yaw ?? FP_DEFAULT_YAW,
-		pitch: fpView?.pitch ?? FP_EDITOR_ORBIT_PITCH,
-		fov_y: fpView?.fov_y ?? FP_DEFAULT_FOV_Y,
-		frustum_distance: fpView?.frustum_distance ?? FP_DEFAULT_FRUSTUM_DISTANCE,
-		...(visualModelPath ? { visual_model_path: visualModelPath } : {}),
-		...(controlBindings ? { control_bindings: controlBindings } : {}),
-	};
-}
-
-/**
- * Pies del jugador para guardar.
- * Solo usa `firstPersonViewRef` (alimentada por `first_person_view_changed`).
- * Si aún no llegó el evento del motor, devuelve `undefined` (no derivar poses en TS).
- */
-export function resolvePlayerFeetForSave(
-	_playerId: number | null,
-	firstPersonViewRef: MutableRefObject<SavedPlayerTransform | null>,
-): [number, number, number] | undefined {
-	if (_playerId == null) return undefined;
-	return firstPersonViewRef.current?.position;
 }

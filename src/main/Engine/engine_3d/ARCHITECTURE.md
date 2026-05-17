@@ -75,7 +75,16 @@ El motor emite `first_person_view_changed` tras, entre otros:
 - `set_camera_fov` / `set_fp_editor_frustum_distance` con jugador FP activo,
 - `replace_entity_model` del jugador.
 
-El renderer guarda en `.save` solo lo que recibe en el evento (campo `position` = pies). Ver `src/renderer/ARCHITECTURE.md`.
+El renderer **no** arma `playerTransform` del `.save` desde refs locales: lo incluye el snapshot (`export_save_snapshot`). La vista FP en editor sigue el evento `first_person_view_changed` (`position` = pies). Ver `src/renderer/ARCHITECTURE.md`.
+
+#### Persistencia de escena (`.save`)
+
+| Direccion | JSON | Rol |
+|-----------|------|-----|
+| Electron → motor | `export_save_snapshot` | El motor serializa mundo, entidades, jugador FP, camara, almacenes de assets y scripts. |
+| Motor → Electron | `save_snapshot_ready` | Payload `scene` listo para empaquetar en ZIP (main sigue escribiendo el `.save`). |
+
+Registro de rutas/tipos: `entity_save_meta` + actualizacion en spawn/load/replace. El front solo fusiona pestañas inactivas, blueprints, idioma y `blueprint_id` por entidad.
 
 ### Fisica
 

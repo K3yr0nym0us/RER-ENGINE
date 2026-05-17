@@ -80,6 +80,7 @@ Selección de binario en runtime: `rer_engine_2d` o `rer_engine_3d` según tipo 
 - [x] Cubos de editor (`spawn_editor_box`), modelos en almacén (`load_model_asset`)
 - [x] API Lua 3D FP: `fp_press_key`, `fp_jump`, `fp_set_walk_speed`, etc.
 - [x] `replace_entity_model` con resync de orientación y escala del jugador
+- [x] Export escena para `.save`: `export_save_snapshot` → `save_snapshot_ready` (`entity_save_meta`, placeholders FP incluidos)
 
 ### Editor (Electron + React)
 
@@ -87,10 +88,11 @@ Selección de binario en runtime: `rer_engine_2d` o `rer_engine_3d` según tipo 
 - [x] Spawn del motor correcto según proyecto; reintento si el proceso muere
 - [x] Escenas múltiples (crear, renombrar, duplicar, cambiar activa)
 - [x] Guardado/carga `.save` (ZIP: manifest, assets, sounds, scripting)
+- [x] Guardado **3D** engine-first: `export_save_snapshot`; front fusiona pestañas inactivas, blueprints e idioma
+- [x] Guardado **2D** desde renderer (`buildSaveDataLegacy2D` en `useAutoSave.ts`)
 - [x] Multi-selección, panel de propiedades, herramientas 2D/3D según proyecto
 - [x] Acordeón cámara FP (envía `set_first_person_view`, no calcula poses en TS)
-- [x] Refactor engine-first FP: refs alimentadas por `first_person_view_changed`
-- [x] Autoguardado y tabs usan pies del motor para `playerTransform`
+- [x] Refactor engine-first FP: `firstPersonViewRef` para UI vía `first_person_view_changed` (no para serializar save 3D)
 - [x] Empaquetado `electron-builder` (extraResources con binarios release)
 
 ### Integración
@@ -110,6 +112,7 @@ Selección de binario en runtime: `rer_engine_2d` o `rer_engine_3d` según tipo 
 
 ### Prioridad media — motor-first
 
+- [ ] **Guardado 2D en motor** — portar `export_save_snapshot` a `engine_2d` (hoy solo 3D usa snapshot autoritativo)
 - [ ] **`normalizeAnimations` solo en motor** — el front aún pre-normaliza en algunos flujos pese a `animation_logical_resolved`
 - [ ] **`pendingRestores` / carga de escena en motor** — comando tipo `import_scene` en Rust en lugar de loops IPC desde el front
 - [ ] **Defaults `logical` / `pivot` emitidos por el motor** al crear entidad desde sprite

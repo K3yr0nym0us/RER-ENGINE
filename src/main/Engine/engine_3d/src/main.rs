@@ -1,4 +1,5 @@
 mod ecs;
+mod entity_save_meta;
 mod gizmo;
 mod ipc;
 mod mesh;

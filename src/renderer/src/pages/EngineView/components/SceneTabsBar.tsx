@@ -4,11 +4,8 @@ import Nav from 'react-bootstrap/Nav';
 
 import type { GameStyle, ProjectSaveData, SavedEntity, SavedScene, SavedWorldConfig } from '@shared-types';
 import { isEditorBoxPath, isPlayerPath } from '@shared-types';
-import {
-	buildSavedPlayerTransform,
-	ensureFirstPersonPlayerOnLoad,
-	resolvePlayerFeetForSave,
-} from '../../../defaults/firstPersonSceneRestore';
+import { buildActiveSceneSnapshotFromEngine } from '../../../defaults/buildProjectSaveFromEngine';
+import { ensureFirstPersonPlayerOnLoad } from '../../../defaults/firstPersonSceneRestore';
 import { setSceneCommandForSavedProject } from '../../../defaults/projectSceneLoad';
 import { useContextEngine } from '@engine';
 import { useModal } from '@modal';
@@ -111,7 +108,14 @@ export function SceneTabsBar({ initialSave, projectType, gameStyle }: Props) {
   const [sceneDataById, setSceneDataById] = useState<Record<number, SavedScene>>(initialSceneState.dataById);
   const [activeSceneId, setActiveSceneId] = useState(initialSceneState.activeSceneId);
 
-  const buildCurrentSceneSnapshot = (id: number, name: string): SavedScene => {
+  const captureActiveSceneSnapshot = async (id: number, name: string): Promise<SavedScene> => {
+    if (projectType === '3D') {
+      return buildActiveSceneSnapshotFromEngine(id, name, entityMetaRef.current);
+    }
+    return buildCurrentSceneSnapshotSync(id, name);
+  };
+
+  const buildCurrentSceneSnapshotSync = (id: number, name: string): SavedScene => {
     const transforms = entityTransformsRef.current;
     const meta = entityMetaRef.current;
     const playerId = playerEntityIdRef.current;
@@ -145,28 +149,14 @@ export function SceneTabsBar({ initialSave, projectType, gameStyle }: Props) {
 
     const sprites = Array.from(loadedSpritesInfo.entries()).map(([path, info]) => ({ name: info.name, path }));
 
-    const models = projectType === '3D'
-      ? Array.from(loadedModelsInfo.entries()).map(([path, info]) => ({ name: info.name, path }))
-      : undefined;
+    const models = undefined;
 
-    const feetPos = gameStyle === 'first-person' && projectType === '3D'
-      ? resolvePlayerFeetForSave(playerId, firstPersonViewRef)
-      : undefined;
-    const fpView = firstPersonViewRef?.current ?? null;
-    const playerVisualPath = playerId !== null
-      ? meta[playerId]?.visualModelPath
-      : undefined;
-    const playerControlBindings = playerId !== null
-      ? meta[playerId]?.controlBindings
-      : undefined;
-    const playerTransform = gameStyle === 'first-person' && projectType === '3D'
-      ? buildSavedPlayerTransform(fpView, feetPos, playerVisualPath, playerControlBindings)
-      : playerId !== null
-        ? {
-            position: transforms[playerId]?.position ?? DEFAULT_POS,
-            scale: transforms[playerId]?.scale ?? DEFAULT_SCL,
-          }
-        : null;
+    const playerTransform = playerId !== null
+      ? {
+          position: transforms[playerId]?.position ?? DEFAULT_POS,
+          scale: transforms[playerId]?.scale ?? DEFAULT_SCL,
+        }
+      : null;
 
     return {
       id,
@@ -358,13 +348,13 @@ export function SceneTabsBar({ initialSave, projectType, gameStyle }: Props) {
     return Math.max(...scenes.map((scene) => scene.id)) + 1;
   };
 
-  const createScene = (name: string) => {
+  const createScene = async (name: string) => {
     const trimmed = name.trim();
     if (!trimmed) return;
 
     const current = scenes.find((scene) => scene.id === activeSceneId);
     if (current) {
-      const snapshot = buildCurrentSceneSnapshot(current.id, current.name);
+      const snapshot = await captureActiveSceneSnapshot(current.id, current.name);
       setSceneDataById((prev) => ({ ...prev, [current.id]: snapshot }));
     }
 
@@ -395,11 +385,11 @@ export function SceneTabsBar({ initialSave, projectType, gameStyle }: Props) {
     setScenes((prev) => prev.map((scene) => (scene.id === sceneId ? { ...scene, name: trimmed } : scene)));
   };
 
-  const duplicateScene = (sceneId: number) => {
+  const duplicateScene = async (sceneId: number) => {
     const sourceTab = scenes.find((scene) => scene.id === sceneId);
     if (!sourceTab) return;
     const sourceData = sceneId === activeSceneId
-      ? buildCurrentSceneSnapshot(sourceTab.id, sourceTab.name)
+      ? await captureActiveSceneSnapshot(sourceTab.id, sourceTab.name)
       : sceneDataById[sceneId];
     if (!sourceData) return;
 
@@ -420,7 +410,7 @@ export function SceneTabsBar({ initialSave, projectType, gameStyle }: Props) {
 
     const current = scenes.find((scene) => scene.id === activeSceneId);
     if (current) {
-      const snapshot = buildCurrentSceneSnapshot(current.id, current.name);
+      const snapshot = await captureActiveSceneSnapshot(current.id, current.name);
       setSceneDataById((prev) => ({ ...prev, [current.id]: snapshot, [nextId]: duplicatedScene }));
     } else {
       setSceneDataById((prev) => ({ ...prev, [nextId]: duplicatedScene }));
@@ -628,40 +618,42 @@ export function SceneTabsBar({ initialSave, projectType, gameStyle }: Props) {
           activeKey={`${activeSceneId}`}
           className="scene-tabs-nav flex-nowrap"
           onSelect={(eventKey) => {
-            if (!eventKey) return;
-            if (eventKey === '__new_scene') {
-              openCreateSceneModal();
-              return;
-            }
-            const nextId = Number(eventKey);
-            if (Number.isNaN(nextId) || nextId === activeSceneId) return;
+            void (async () => {
+              if (!eventKey) return;
+              if (eventKey === '__new_scene') {
+                openCreateSceneModal();
+                return;
+              }
+              const nextId = Number(eventKey);
+              if (Number.isNaN(nextId) || nextId === activeSceneId) return;
 
-            const current = scenes.find((scene) => scene.id === activeSceneId);
-            const target = scenes.find((scene) => scene.id === nextId);
-            if (!target) return;
+              const current = scenes.find((scene) => scene.id === activeSceneId);
+              const target = scenes.find((scene) => scene.id === nextId);
+              if (!target) return;
 
-            const currentSnapshot = current
-              ? buildCurrentSceneSnapshot(current.id, current.name)
-              : null;
+              const currentSnapshot = current
+                ? await captureActiveSceneSnapshot(current.id, current.name)
+                : null;
 
-            const targetSnapshot = sceneDataById[nextId] ?? {
-              id: target.id,
-              name: target.name,
-              world: { ...worldConfig },
-              backgroundPath: null,
-              entities: [],
-              playerTransform: null,
-              camera2d: camera2dRef.current,
-              sprites: [],
-            };
+              const targetSnapshot = sceneDataById[nextId] ?? {
+                id: target.id,
+                name: target.name,
+                world: { ...worldConfig },
+                backgroundPath: null,
+                entities: [],
+                playerTransform: null,
+                camera2d: camera2dRef.current,
+                sprites: [],
+              };
 
-            if (current && currentSnapshot) {
-              setSceneDataById((prev) => ({ ...prev, [current.id]: currentSnapshot }));
-            }
+              if (current && currentSnapshot) {
+                setSceneDataById((prev) => ({ ...prev, [current.id]: currentSnapshot }));
+              }
 
-            clearCurrentSceneInEngine();
-            loadSceneIntoEngine(targetSnapshot);
-            setActiveSceneId(nextId);
+              clearCurrentSceneInEngine();
+              loadSceneIntoEngine(targetSnapshot);
+              setActiveSceneId(nextId);
+            })();
           }}
         >
           {scenes.map((scene) => (
