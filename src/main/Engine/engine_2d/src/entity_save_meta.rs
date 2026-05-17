@@ -123,6 +123,10 @@ impl State {
         None
     }
 
+    pub(crate) fn collider_points_from_transform(&self, id: EntityId) -> Option<[[f32; 2]; 4]> {
+        self.points_from_transform_xy(id)
+    }
+
     fn points_from_transform_xy(&self, id: EntityId) -> Option<[[f32; 2]; 4]> {
         let t = self.world.get::<Transform>(id)?;
         let cx = t.position.x;

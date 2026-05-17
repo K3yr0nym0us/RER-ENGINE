@@ -491,7 +491,12 @@ pub enum EngineEvent {
     AnimationLogicalResolved { id: u32, name: String, logical_w: u32, logical_h: u32 },
     /// Emitido cuando una entidad es eliminada del mundo (por Ctrl+Z, RemoveEntity, etc.).
     /// `kind` permite al frontend sincronizar estado sin inferencias locales.
-    EntityRemoved { id: u32, kind: String },
+    EntityRemoved {
+    id: u32,
+    kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    points: Option<[[f32; 2]; 4]>,
+  },
     /// Emitido cuando el usuario mantiene Ctrl y hace click añadiendo/quitando entidades
     /// a la selección múltiple. `ids` contiene todos los IDs actualmente seleccionados.
     MultiSelectChanged { ids: Vec<u32> },

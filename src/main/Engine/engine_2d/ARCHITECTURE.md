@@ -35,6 +35,10 @@ Los modulos bajo `src/config_compat/` son shims de compatibilidad **dentro de es
 
 Registro: `entity_save_meta` + inferencia desde `ScenarioMarker` / `CharacterMarker`. El renderer solo fusiona pestañas inactivas, blueprints e idioma. Ver `src/renderer/ARCHITECTURE.md`.
 
+## Eventos de entidades
+
+- `entity_removed` incluye `points` opcional para colisionadores y áreas de ejecución (cuadrilátero en espacio mundo), útil para sincronizar meta del editor y futuro redo.
+
 ## Contratos operativos que hoy deben respetarse
 
 - El movimiento normal de gameplay debe pasar por `move_physics_entity()` o por las rutas kinematic del runtime.

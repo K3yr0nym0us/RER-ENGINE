@@ -467,6 +467,8 @@ export interface EntityRemoved {
   event: 'entity_removed'
   id: number
   kind: 'scenario' | 'character' | 'model' | 'collider' | 'execution_area'
+  /** Vértices del quad (solo colisionadores / áreas de ejecución 2D). */
+  points?: [[number, number], [number, number], [number, number], [number, number]]
 }
 
 export interface AnimationLogicalResolved {

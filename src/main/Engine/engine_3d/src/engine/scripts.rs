@@ -9,6 +9,10 @@ use super::State;
 impl State {
     /// Ejecuta un tick del motor de scripting y aplica los comandos generados.
     pub(crate) fn update_scripts(&mut self) {
+        if !self.preview_playing {
+            return;
+        }
+
         let snapshots: HashMap<u32, EntitySnapshot> = {
             let entity_ids: Vec<u32> = self.script_engine.entity_ids().to_vec();
             let mut map = HashMap::new();

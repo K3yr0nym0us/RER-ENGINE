@@ -274,10 +274,23 @@ impl State {
                 self.control_bindings_by_entity.remove(&id);
                 self.blocked_on_keep_horizontal.remove(&id);
                 self.pending_slides.remove(&id);
+                let points = if removed_kind == "collider" || removed_kind == "execution_area" {
+                    self.save_registry
+                        .meta
+                        .get(&id)
+                        .and_then(|m| m.points)
+                        .or_else(|| self.collider_points_from_transform(id))
+                } else {
+                    None
+                };
                 self.save_registry.remove_entity(id);
                 self.script_engine.detach_entity(id);
                 self.world.despawn(id);
-                send_event(&EngineEvent::EntityRemoved { id, kind: removed_kind.to_string() });
+                send_event(&EngineEvent::EntityRemoved {
+                    id,
+                    kind: removed_kind.to_string(),
+                    points,
+                });
             }
             EngineCommand::SetWorldSize { width, height } => {
                 self.grid_config.world_width  = width.max(1.0);

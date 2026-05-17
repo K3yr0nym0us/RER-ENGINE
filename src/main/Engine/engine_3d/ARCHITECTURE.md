@@ -86,6 +86,10 @@ El renderer **no** arma `playerTransform` del `.save` desde refs locales: lo inc
 
 Registro de rutas/tipos: `entity_save_meta` + actualizacion en spawn/load/replace. El front solo fusiona pestañas inactivas, blueprints, idioma y `blueprint_id` por entidad.
 
+### Scripting
+
+- `update_scripts()` solo ejecuta el tick Lua de entidades cuando `preview_playing` es true. Los control scripts (`on_press` / `on_keep`) ya estaban acotados a play.
+
 ### Fisica
 
 - Objetos: Rapier3D (`set_entity_physics`, sync con `Transform` al editar).

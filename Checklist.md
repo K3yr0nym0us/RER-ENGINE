@@ -118,8 +118,9 @@ Selección de binario en runtime: `rer_engine_2d` o `rer_engine_3d` según tipo 
 - [ ] **`normalizeAnimations` solo en motor** — el front aún pre-normaliza en algunos flujos pese a `animation_logical_resolved`
 - [ ] **`pendingRestores` / carga de escena en motor** — comando tipo `import_scene` en Rust en lugar de loops IPC desde el front
 - [ ] **Defaults `logical` / `pivot` emitidos por el motor** al crear entidad desde sprite
-- [ ] **`entity_removed` con snapshot de puntos** (colliders / execution areas) para undo limpio
-- [ ] **Scripts Lua solo en play** — evitar efectos laterales en modo editor
+- [x] **`entity_removed` con snapshot de puntos** (2D: colliders / execution areas en el evento IPC)
+- [x] **Scripts Lua `update()` solo en play** (3D)
+- [ ] **Scripts Lua solo en play** (2D: pendiente; hoy corre en editor por contrato en `tick.rs`)
 
 ### Prioridad media — funcionalidad
 
