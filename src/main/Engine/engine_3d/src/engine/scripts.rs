@@ -299,20 +299,20 @@ impl State {
                 ScriptCmd::Log { message } => {
                     log::debug!("[script] {message}");
                 }
-                ScriptCmd::FpPressKey { key } => {
-                    self.first_person_script_input.insert(key);
+                ScriptCmd::PlayControllerPressKey { key } => {
+                    self.play_controller_script_input.insert(key);
                 }
-                ScriptCmd::FpJump => {
-                    self.queue_first_person_jump();
+                ScriptCmd::PlayControllerJump => {
+                    self.queue_play_controller_jump();
                 }
-                ScriptCmd::FpSetWalkSpeed(speed) => {
-                    self.first_person_lua_walk_speed = Some(speed.max(0.0));
+                ScriptCmd::PlayControllerSetWalkSpeed(speed) => {
+                    self.play_controller_lua_walk_speed = Some(speed.max(0.0));
                 }
-                ScriptCmd::FpSetSprintMultiplier(mult) => {
-                    self.first_person_lua_sprint_multiplier = Some(mult.max(0.0));
+                ScriptCmd::PlayControllerSetSprintMultiplier(mult) => {
+                    self.play_controller_lua_sprint_multiplier = Some(mult.max(0.0));
                 }
-                ScriptCmd::FpSetJumpSpeed(speed) => {
-                    self.first_person_lua_jump_speed = Some(speed.max(0.0));
+                ScriptCmd::PlayControllerSetJumpSpeed(speed) => {
+                    self.play_controller_lua_jump_speed = Some(speed.max(0.0));
                 }
             }
         }

@@ -185,7 +185,7 @@ pub fn build_crosshair(device: &wgpu::Device) -> GizmoBuffer {
 /// Dibuja un pequeño cubo en la posición del ojo + una pirámide de líneas hasta
 /// un rectángulo lejano (estilo Godot/Unity al seleccionar una `Camera3D`).
 /// Topología esperada: `LineList`. Vértices en espacio de mundo.
-pub fn build_first_person_camera_frustum(
+pub fn build_fps_camera_frustum(
     device: &wgpu::Device,
     eye: glam::Vec3,
     yaw: f32,

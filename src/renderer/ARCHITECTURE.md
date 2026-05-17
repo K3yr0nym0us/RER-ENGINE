@@ -35,18 +35,18 @@ Referencia completa en `src/main/Engine/engine_3d/ARCHITECTURE.md` (seccion *Vis
 
 Flujo **vista / cámara** (editor y paneles; no es el guardado):
 
-1. UI / carga de escena → `set_first_person_view` (pies, yaw, pitch, FOV, frustum).
-2. Motor → `first_person_view_changed`.
-3. `applyFirstPersonViewFromEngine()` en `src/defaults/firstPersonSceneRestore.ts` actualiza `firstPersonViewRef` y `entityTransformsRef` para la UI (p. ej. `CameraAccordion`), sin recalcular poses en TS.
+1. UI / carga de escena → `set_play_character_view` (pies, yaw, pitch, FOV, frustum).
+2. Motor → `play_character_view_changed` (alias legacy `first_person_view_changed`).
+3. `applyPlayCharacterViewFromEngine()` en `src/defaults/playCharacterSceneRestore.ts` actualiza `playCharacterViewRef` y `entityTransformsRef` para la UI (p. ej. `CameraAccordion`), sin recalcular poses en TS.
 
-En proyectos **3D**, `firstPersonViewRef` **no** alimenta el `.save`: el motor exporta `player_transform` en el snapshot (pies, yaw, pitch, FOV, frustum, `visual_model_path`). Ver sección *Guardado*.
+En proyectos **3D**, `playCharacterViewRef` **no** alimenta el `.save`: el motor exporta `player_transform` en el snapshot (pies, yaw, pitch, FOV, frustum, `visual_model_path`). Ver sección *Guardado*.
 
 Archivos clave:
 
-- `src/defaults/firstPersonSceneRestore.ts` — envio de vista y aplicacion del evento (sin matematica de poses).
-- `src/context/useContextEngine/hooks/createEngineEventHandler.ts` — handler de `first_person_view_changed`; carga de jugador con `skipTransform` si hay vista guardada.
-- `src/pages/EngineView/components/sidebar/CameraAccordion.tsx` — solo dispara `set_first_person_view`; refresca UI con `fpViewSyncSeq`.
-- `src/shared-types/types.ts` — `FirstPersonViewChanged`, comando `set_first_person_view`.
+- `src/defaults/playCharacterSceneRestore.ts` — envio de vista y aplicacion del evento (sin matematica de poses).
+- `src/context/useContextEngine/hooks/createEngineEventHandler.ts` — handler de `play_character_view_changed`; carga de jugador con `skipTransform` si hay vista guardada.
+- `src/pages/EngineView/components/sidebar/CameraAccordion.tsx` — dispara `set_play_character_view`; refresca UI con `playCharacterViewSyncSeq`.
+- `src/shared-types/types.ts` — `PlayCharacterViewChanged`, comando `set_play_character_view`.
 
 ## Guardado `.save`
 

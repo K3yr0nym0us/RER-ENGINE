@@ -92,7 +92,9 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 
 ## Aplazado (producto)
 
-- Multiplayer · IA generativa en assets · partículas/shaders experimentales
+- Multiplayer 
+- IA generativa en assets 
+- partículas/shaders experimentales
 
 ---
 

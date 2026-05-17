@@ -821,7 +821,7 @@ pub(crate) fn restore_animation_frame(&mut self, id: u32) {
         self.world.insert(entity, ColliderMarker {});
         // Usamos cuboid estático (AABB) en lugar de hull convexo,
         // porque el backend físico puede rechazar hulls coplanares (z=0).
-        // IMPORTANTE: forzar z=0 en la posición física. create_box_entity devuelve
+        // IMPORTANTE: forzar z=0 en la posición física. create_box_entity_at devuelve
         // z=-0.5 para el orden de render, pero la simulación física usa XYZ interno:
         // si colisionador y personaje tienen z distinto no detectan contacto.
         self.physics_2d.set_entity_physics(

@@ -47,7 +47,7 @@ impl Camera {
         self.target + self.orbit_pivot_offset
     }
 
-    fn is_first_person_view(&self) -> bool {
+    fn is_fps_camera_view(&self) -> bool {
         self.distance < 0.5
     }
 
@@ -93,7 +93,7 @@ impl Camera {
 
     pub(crate) fn view_matrix(&self) -> Mat4 {
         let pos = self.position();
-        if self.is_first_person_view() {
+        if self.is_fps_camera_view() {
             let forward = self.view_forward();
             return Mat4::look_at_rh(pos, pos + forward, Vec3::Y);
         }

@@ -182,11 +182,11 @@ impl App {
         self.gamepad_pressed.clear();
         state.set_active_gizmo_axis(None);
         state.set_snap_hint_visible(false);
-        state.reset_first_person_motion();
+        state.reset_play_controller_motion();
     }
 
     fn capture_cursor_for_preview(&mut self, state: &engine::State) {
-        if !state.is_first_person_runtime_active() {
+        if !state.is_play_controller_active() {
             self.release_cursor_after_preview(state);
             return;
         }
@@ -238,13 +238,13 @@ impl App {
             log::info!("[preview] foco transferido a la ventana del motor");
         }
 
-        if state.is_first_person_runtime_active() {
-            state.sync_first_person_camera_mode();
+        if state.is_play_controller_active() {
+            state.sync_fps_camera_mode();
             self.capture_cursor_for_preview(state);
         } else {
             self.release_cursor_after_preview(state);
-            if state.has_first_person_player() {
-                state.sync_first_person_camera_mode();
+            if state.has_play_character() {
+                state.sync_fps_camera_mode();
             }
         }
 
@@ -435,12 +435,12 @@ impl ApplicationHandler<EngineCommand> for App {
             return;
         };
 
-        if !self.cursor_captured || !state.is_first_person_runtime_active() {
+        if !self.cursor_captured || !state.is_play_controller_active() {
             return;
         }
 
         if let DeviceEvent::MouseMotion { delta: (dx, dy) } = event {
-            state.apply_first_person_mouse_look(dx as f32, dy as f32);
+            state.apply_fps_mouse_look(dx as f32, dy as f32);
         }
     }
 
@@ -614,7 +614,7 @@ impl ApplicationHandler<EngineCommand> for App {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 let cur = (position.x as f32, position.y as f32);
-                if self.cursor_captured && state.is_first_person_runtime_active() {
+                if self.cursor_captured && state.is_play_controller_active() {
                     self.last_cursor = None;
                     return;
                 }
@@ -633,8 +633,8 @@ impl ApplicationHandler<EngineCommand> for App {
                 if let Some((lx, ly)) = self.last_cursor {
                     let dx = cur.0 - lx;
                     let dy = cur.1 - ly;
-                    if state.is_first_person_runtime_active() {
-                        state.apply_first_person_mouse_look(dx, dy);
+                    if state.is_play_controller_active() {
+                        state.apply_fps_mouse_look(dx, dy);
                     }
                     if !state.is_preview_playing() {
                         if let Some(axis) = self.gizmo_drag_axis {
@@ -674,7 +674,7 @@ impl ApplicationHandler<EngineCommand> for App {
                 ..
             } => {
                 let pressed = key_state == ElementState::Pressed;
-                if pressed && !repeat && code == KeyCode::Escape && state.is_first_person_runtime_active() {
+                if pressed && !repeat && code == KeyCode::Escape && state.is_play_controller_active() {
                     preview_toggle = Some(false);
                 } else if state.is_preview_playing() {
                     if let Some(control_key) = map_keyboard_control_key(code) {
@@ -686,9 +686,9 @@ impl ApplicationHandler<EngineCommand> for App {
                             self.keyboard_mouse_pressed.remove(&control_key);
                         }
                     }
-                } else if pressed && !repeat && code == KeyCode::Space && state.is_first_person_runtime_active() {
-                    if !state.uses_scripted_first_person_controls() {
-                        state.queue_first_person_jump();
+                } else if pressed && !repeat && code == KeyCode::Space && state.is_play_controller_active() {
+                    if !state.uses_scripted_play_controller() {
+                        state.queue_play_controller_jump();
                     }
                 }
                 match code {
@@ -722,7 +722,7 @@ impl ApplicationHandler<EngineCommand> for App {
                 }
             }
             WindowEvent::Focused(true) => {
-                if state.is_first_person_runtime_active() {
+                if state.is_play_controller_active() {
                     recapture_cursor_on_focus_gain = true;
                 }
             }
@@ -745,9 +745,9 @@ impl ApplicationHandler<EngineCommand> for App {
             }
             WindowEvent::RedrawRequested => {
                 state.update();
-                if state.is_first_person_runtime_active() {
-                    let inputs = state.first_person_effective_inputs(&self.keyboard_mouse_pressed);
-                    state.apply_first_person_keyboard(&inputs, state.delta_time);
+                if state.is_play_controller_active() {
+                    let inputs = state.play_controller_effective_inputs(&self.keyboard_mouse_pressed);
+                    state.apply_play_controller_keyboard(&inputs, state.delta_time);
                 }
                 match state.render() {
                     Ok(_) => {}
@@ -795,8 +795,8 @@ impl ApplicationHandler<EngineCommand> for App {
         let now = std::time::Instant::now();
         if let Some(state) = self.state.as_mut() {
             if state.is_preview_playing() {
-                if state.is_first_person_runtime_active() {
-                    state.clear_first_person_script_frame();
+                if state.is_play_controller_active() {
+                    state.clear_play_controller_script_frame();
                 }
                 if let Some(gilrs) = self.gilrs.as_mut() {
                     while let Some(evt) = gilrs.next_event() {

@@ -22,11 +22,14 @@ Runtime 3D: camara orbital en editor, primera persona en play, Rapier3D, mallas 
 - `src/engine/tick.rs`: delta time, metricas, fade del hint Esc.
 - `src/config_3d/mod.rs`: picking, raycast, gizmo, modelos, pantalla.
 - `src/config_3d/camera_3d.rs`: camara orbital y uniforms.
-- `src/config_3d/first_person.rs`: controller FP, pies/centro, sync cuerpo-camara.
+- `src/config_3d/character_anchor.rs`: pies ↔ centro del personaje jugable.
+- `src/config_3d/play_character.rs`: entidad `[Player]`, spawn y cuerpo placeholder.
+- `src/config_3d/fps_camera.rs`: vista FPS acoplada, IPC `play_character_view_changed`.
+- `src/config_3d/play_controller.rs`: movimiento en play (cápsula cinemática).
 - `src/config_3d/mesh_3d.rs`: glTF/FBX, normalizacion, `forward_xz`.
 - `src/config_3d/physics_3d.rs`: Rapier3D y shape cast del jugador.
 - `src/config_3d/world_bounds.rs`: limites y culling AABB.
-- `src/config_base.rs`: `setup_first_person`, `reset_runtime_scene_3d`, spawn `[Player]`.
+- `src/config_base.rs`: `setup_default_3d_scene`, `reset_runtime_scene_3d`.
 - `src/ecs.rs`: `Transform`, `MeshComponent`, marcadores.
 - `src/ipc.rs`: comandos y eventos JSON.
 
@@ -44,16 +47,16 @@ Soporte: `mesh.rs`, `shader.wgsl`, `gizmo.rs`, `gizmo.wgsl`, `texture.rs`, `scri
 ## Modos de camara y render
 
 - **Editor 3D**: `camera_2d` es `None`; `Camera` orbital; gizmo y frustum FP con `preview_playing == false`.
-- **Play FP**: `preview_playing`, vista FPS, mesh del jugador oculto; capsula cinematica en `first_person.rs`.
+- **Play FP**: `preview_playing`, vista FPS, mesh del jugador oculto; capsula cinematica en `play_controller.rs`.
 - **HUD** (crosshair, Esc): NDC + `hud_scene_bind_group` (identidad). No mezclar ese uniform con `scene_bind_group`.
 
 ## Contratos operativos (3D)
 
-### Jugador primera persona
+### Personaje jugable (`[Player]`)
 
-- `Transform` = centro del cuerpo; pies via `FIRST_PERSON_BODY_HEIGHT`; `camera.target` = pies.
-- `replace_entity_model`: actualizar `first_person_mesh_forward_xz`, escala 1.7 m, `sync_player_rotation_from_look()`.
-- `SetTransform` del jugador con rotacion: recalcular centro desde pies (`feet_from_player_transform` / `player_center_from_feet` en `commands.rs`).
+- `Transform` = centro del cuerpo; pies via `PLAY_CHARACTER_BODY_HEIGHT`; `camera.target` = pies.
+- `replace_entity_model`: actualizar `play_character_mesh_forward_xz`, escala 1.7 m, `sync_player_rotation_from_look()`.
+- `SetTransform` del jugador con rotacion: recalcular centro desde pies (`feet_from_transform` / `center_from_feet` en `commands.rs`).
 - Yaw: mantener alineadas `look_xz_from_mesh_yaw` y `mesh_yaw_from_camera_and_forward` con `glam::Quat::from_rotation_y`.
 
 #### Vista FP autoritativa (IPC)
@@ -62,20 +65,22 @@ El frontend **no** debe derivar centro de cuerpo, quaterniones ni forward de mal
 
 | Direccion | JSON (`snake_case`) | Responsabilidad |
 |-----------|---------------------|-----------------|
-| Electron → motor | `set_first_person_view` | Pies, `yaw`, `pitch`; opcional `fov_y`, `frustum_distance`. Aplica camara + cuerpo y emite evento. |
-| Motor → Electron | `first_person_view_changed` | Estado confirmado: pies, orientacion de camara, FOV/frustum, `body_center`, `body_rotation`, `body_scale`, `player_id`. |
+| Electron → motor | `set_play_character_view` | Pies, `yaw`, `pitch`; opcional `fov_y`, `frustum_distance`. Aplica camara + cuerpo y emite evento. |
+| Motor → Electron | `play_character_view_changed` | Estado confirmado: pies, orientacion de camara, FOV/frustum, `body_center`, `body_rotation`, `body_scale`, `player_id`. |
 
-Implementacion: `apply_first_person_view()` / `emit_first_person_view_changed()` en `config_3d/first_person.rs`; handler en `engine/commands.rs`.
+Aliases legacy (misma semantica): `set_first_person_view`, `set_first_person_spawn`, `first_person_view_changed`, `set_fp_editor_frustum_distance`.
 
-El motor emite `first_person_view_changed` tras, entre otros:
+Implementacion: `apply_play_character_view()` / `emit_play_character_view_changed()` en `config_3d/fps_camera.rs`; handler en `engine/commands.rs`.
 
-- `set_first_person_view` (y `set_first_person_spawn`, compat legacy),
-- `set_transform` del jugador FP,
+El motor emite `play_character_view_changed` tras, entre otros:
+
+- `set_play_character_view` (y spawn legacy),
+- `set_transform` del personaje jugable,
 - salir de play (`set_preview_playing` false),
-- `set_camera_fov` / `set_fp_editor_frustum_distance` con jugador FP activo,
+- `set_camera_fov` / `set_fps_editor_frustum_distance` con personaje activo,
 - `replace_entity_model` del jugador.
 
-El renderer **no** arma `playerTransform` del `.save` desde refs locales: lo incluye el snapshot (`export_save_snapshot`). La vista FP en editor sigue el evento `first_person_view_changed` (`position` = pies). Ver `src/renderer/ARCHITECTURE.md`.
+El renderer **no** arma `playerTransform` del `.save` desde refs locales: lo incluye el snapshot (`export_save_snapshot`). La vista en editor sigue `play_character_view_changed` (`position` = pies). Ver `src/renderer/ARCHITECTURE.md`.
 
 #### Persistencia de escena (`.save`)
 

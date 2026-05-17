@@ -39,8 +39,8 @@ pub struct State {
     /// Quad para tooltips en pantalla (HUD); no usar `meshes[0]` (suelo).
     pub(crate) hud_quad_mesh: Mesh,
     pub camera: Camera,
-    /// Profundidad del gizmo de frustum FP en modo editor (metros).
-    pub(crate) fp_editor_frustum_distance: f32,
+    /// Profundidad del gizmo de frustum FPS en modo editor (metros).
+    pub(crate) fps_editor_frustum_distance: f32,
     /// Cámara 2D ortográfica activa cuando se carga una escena 2D.
     /// `None` = modo 3D (usa `camera`).
     pub camera_2d: Option<Camera2D>,
@@ -80,23 +80,23 @@ pub struct State {
     pub(crate) quick_build_preview_scale: Option<[f32; 3]>,
     pub preview_playing: bool,
     /// Velocidad del personaje (m/s), patrón Godot CharacterBody3D / Unity CharacterController.
-    pub(crate) first_person_velocity: GlamVec3,
-    pub(crate) first_person_on_floor: bool,
-    pub(crate) first_person_jump_queued: bool,
+    pub(crate) play_controller_velocity: GlamVec3,
+    pub(crate) play_controller_on_floor: bool,
+    pub(crate) play_controller_jump_queued: bool,
     /// Detección de flanco (Godot `is_action_just_pressed`): true mientras el script SPACE
     /// está pulsando este frame; comparado con `_prev` para detectar la transición.
-    pub(crate) first_person_jump_request_active: bool,
-    pub(crate) first_person_jump_request_prev: bool,
-    /// Teclas acumuladas por scripts de control en el frame actual (primera persona).
-    pub(crate) first_person_script_input: HashSet<String>,
-    /// Parámetros opcionales fijados por scripts Lua de control (primera persona).
-    pub(crate) first_person_lua_walk_speed: Option<f32>,
-    pub(crate) first_person_lua_sprint_multiplier: Option<f32>,
-    pub(crate) first_person_lua_jump_speed: Option<f32>,
-    /// Entidad `[Player]` de la plantilla first-person (bindings de control).
-    pub(crate) first_person_player_entity: Option<EntityId>,
+    pub(crate) play_controller_jump_request_active: bool,
+    pub(crate) play_controller_jump_request_prev: bool,
+    /// Teclas acumuladas por scripts de control en el frame actual (play).
+    pub(crate) play_controller_script_input: HashSet<String>,
+    /// Parámetros opcionales fijados por scripts Lua de control (play).
+    pub(crate) play_controller_lua_walk_speed: Option<f32>,
+    pub(crate) play_controller_lua_sprint_multiplier: Option<f32>,
+    pub(crate) play_controller_lua_jump_speed: Option<f32>,
+    /// Entidad `[Player]` principal de la escena 3D.
+    pub(crate) play_character_entity: Option<EntityId>,
     /// Forward local (plano XZ) del mesh del jugador; se recalcula al reemplazar el modelo.
-    pub(crate) first_person_mesh_forward_xz: glam::Vec2,
+    pub(crate) play_character_mesh_forward_xz: glam::Vec2,
     pub(crate) tool_overlay_buffer: GizmoBuffer,
     pub(crate) snap_hint_uv: Option<[f32; 4]>,
     pub(crate) snap_hint_size: (f32, f32),
@@ -105,12 +105,12 @@ pub struct State {
     pub(crate) snap_locale: String,
     pub(crate) show_snap_hint: bool,
     pub(crate) snap_hint_alpha: f32,
-    /// Tooltip «pulsa Esc para salir» en play primera persona 3D.
-    pub(crate) fp_exit_hint_uv: Option<[f32; 4]>,
-    pub(crate) fp_exit_hint_size: (f32, f32),
-    pub(crate) fp_exit_hint_uv_en: Option<[f32; 4]>,
-    pub(crate) fp_exit_hint_size_en: (f32, f32),
-    pub(crate) fp_exit_hint_alpha: f32,
+    /// Tooltip «pulsa Esc para salir» en play FPS 3D.
+    pub(crate) fps_exit_hint_uv: Option<[f32; 4]>,
+    pub(crate) fps_exit_hint_size: (f32, f32),
+    pub(crate) fps_exit_hint_uv_en: Option<[f32; 4]>,
+    pub(crate) fps_exit_hint_size_en: (f32, f32),
+    pub(crate) fps_exit_hint_alpha: f32,
     pub(crate) collider_entities: Vec<EntityId>,
     pub(crate) execution_area_entities: Vec<EntityId>,
     pub(crate) execution_overlaps: HashSet<(EntityId, EntityId)>,

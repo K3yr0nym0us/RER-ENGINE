@@ -14,7 +14,7 @@ impl State {
   }
 
   fn build_save_scene_snapshot(&self) -> SaveSceneSnapshotPayload {
-    let player_id = self.first_person_player_entity;
+    let player_id = self.play_character_entity;
     let mut entities = Vec::new();
 
     for (id, _name) in self.world.query::<crate::ecs::NameComponent>() {
@@ -164,16 +164,16 @@ impl State {
   }
 
   fn build_player_transform_snapshot(&self) -> Option<SavePlayerTransformSnapshot> {
-    if !self.has_first_person_player() {
+    if !self.has_play_character() {
       return None;
     }
-    let feet = self.first_person_feet_position();
+    let feet = self.play_character_feet_position();
     let scale = [
-      crate::config_3d::first_person::FIRST_PERSON_COLLIDER_RADIUS * 2.0,
-      crate::config_3d::first_person::FIRST_PERSON_BODY_HEIGHT,
-      crate::config_3d::first_person::FIRST_PERSON_COLLIDER_RADIUS * 2.0,
+      crate::config_3d::character_anchor::PLAY_CHARACTER_COLLIDER_RADIUS * 2.0,
+      crate::config_3d::character_anchor::PLAY_CHARACTER_BODY_HEIGHT,
+      crate::config_3d::character_anchor::PLAY_CHARACTER_COLLIDER_RADIUS * 2.0,
     ];
-    let player_id = self.first_person_player_entity?;
+    let player_id = self.play_character_entity?;
     let visual_model_path = self
       .save_registry
       .meta
@@ -187,7 +187,7 @@ impl State {
       yaw: self.camera.yaw,
       pitch: self.camera.pitch,
       fov_y: self.camera.fov_y,
-      frustum_distance: self.fp_editor_frustum_distance,
+      frustum_distance: self.fps_editor_frustum_distance,
       visual_model_path,
       control_bindings,
     })

@@ -66,7 +66,7 @@ impl State {
             .query2::<crate::ecs::MeshComponent, crate::ecs::Transform>()
             .filter_map(|(id, mc, t)| {
                 if self.preview_playing
-                    && self.first_person_player_entity == Some(id)
+                    && self.play_character_entity == Some(id)
                 {
                     return None;
                 }
@@ -260,17 +260,17 @@ impl State {
         // Gizmo de cámara FP en modo editor: cubito en el ojo + frustum hasta el
         // rectángulo lejano, para visualizar a dónde mirará la cámara al pulsar
         // Play (estilo Godot/Unity al seleccionar una `Camera3D`).
-        if !self.preview_playing && self.camera_2d.is_none() && self.has_first_person_player() {
-            if let Some((eye, yaw, pitch)) = self.first_person_camera_gizmo_pose() {
+        if !self.preview_playing && self.camera_2d.is_none() && self.has_play_character() {
+            if let Some((eye, yaw, pitch)) = self.play_character_camera_gizmo_pose() {
                 let aspect = self.size.width as f32 / self.size.height as f32;
-                let frustum_buf = gizmo::build_first_person_camera_frustum(
+                let frustum_buf = gizmo::build_fps_camera_frustum(
                     &self.device,
                     eye,
                     yaw,
                     pitch,
                     self.camera.fov_y,
                     aspect,
-                    self.fp_editor_frustum_distance,
+                    self.fps_editor_frustum_distance,
                 );
 
                 let vp = self.camera.to_uniform(aspect).view_proj;
@@ -313,7 +313,7 @@ impl State {
             }
         }
 
-        if self.is_first_person_runtime_active() && self.crosshair_buffer.vertex_count > 0 {
+        if self.is_play_controller_active() && self.crosshair_buffer.vertex_count > 0 {
             let crosshair_uni: [[f32; 4]; 9] = [
                 [1.0, 0.0, 0.0, 0.0],
                 [0.0, 1.0, 0.0, 0.0],
@@ -352,7 +352,7 @@ impl State {
             draw_calls += 1;
         }
 
-        if let Some(hint_inst) = self.build_fp_exit_hint_instance() {
+        if let Some(hint_inst) = self.build_fps_exit_hint_instance() {
             use wgpu::util::DeviceExt;
             let hint_inst_buf = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("fp-exit-hint-inst-buf"),

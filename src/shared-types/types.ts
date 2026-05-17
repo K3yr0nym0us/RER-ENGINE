@@ -163,13 +163,13 @@ export interface SavedWorldConfig {
   targetFps:    number
 }
 
-/** Vista del jugador en escena (cámara FP en 3D; transform de entidad en 2D). */
+/** Vista del personaje jugable en escena (cámara FPS en 3D; transform de entidad en 2D). */
 export interface SavedPlayerTransform {
   position: [number, number, number]
   scale:    [number, number, number]
-  /** Primera persona 3D: yaw de cámara en radianes. */
+  /** 3D: yaw de cámara en radianes. */
   yaw?:     number
-  /** Primera persona 3D: pitch de cámara en radianes. */
+  /** 3D: pitch de cámara en radianes. */
   pitch?:   number
   /** Modelo visual (.glb/.fbx) del jugador si se reemplazó el placeholder. */
   visual_model_path?: string
@@ -180,6 +180,9 @@ export interface SavedPlayerTransform {
   /** Bindings de control Lua del jugador principal. */
   control_bindings?: SavedControlBindings
 }
+
+/** Alias de dominio: personaje jugable principal en escena 3D (mismo JSON que `SavedPlayerTransform`). */
+export type SavedPlayCharacterTransform = SavedPlayerTransform
 
 export interface SavedScene {
   id:             number
@@ -284,6 +287,8 @@ export interface EngineCommand {
     | 'remove_background_asset'
     | 'get_backgrounds_list'
     | 'set_preview_playing'
+    | 'set_play_character_view'
+    | 'set_play_character_spawn'
     | 'set_first_person_view'
     | 'set_first_person_spawn'
     | 'run_control_script'
@@ -298,7 +303,7 @@ export interface EngineCommand {
 }
 
 export interface EngineEvent {
-  event: 'ready' | 'pong' | 'error' | 'model_loaded' | 'entity_model_replaced' | 'stopped' | 'entity_selected' | 'entity_deselected' | 'entity_hovered' | 'entity_unhovered' | 'scenario_loaded' | 'character_loaded' | 'scene_imported' | 'camera_2d_updated' | 'background_loaded' | 'drawing_progress' | 'collider_created' | 'execution_area_created' | 'tool_cancelled' | 'pivot_selected' | 'physics_changed' | 'sprite_loaded' | 'sprite_removed' | 'sprites_list' | 'model_asset_loaded' | 'model_asset_removed' | 'models_list' | 'sound_loaded' | 'sound_removed' | 'sounds_list' | 'background_asset_loaded' | 'background_asset_removed' | 'backgrounds_list' | 'first_person_view_changed' | 'save_snapshot_ready' | 'debug_metrics' | 'preview_playing_changed' | 'trigger_entered' | 'trigger_exited' | 'entity_removed' | 'quick_build_move' | 'quick_build_click' | 'animation_logical_resolved' | 'autosave_tick' | 'atlas_exhausted'
+  event: 'ready' | 'pong' | 'error' | 'model_loaded' | 'entity_model_replaced' | 'stopped' | 'entity_selected' | 'entity_deselected' | 'entity_hovered' | 'entity_unhovered' | 'scenario_loaded' | 'character_loaded' | 'scene_imported' | 'camera_2d_updated' | 'background_loaded' | 'drawing_progress' | 'collider_created' | 'execution_area_created' | 'tool_cancelled' | 'pivot_selected' | 'physics_changed' | 'sprite_loaded' | 'sprite_removed' | 'sprites_list' | 'model_asset_loaded' | 'model_asset_removed' | 'models_list' | 'sound_loaded' | 'sound_removed' | 'sounds_list' | 'background_asset_loaded' | 'background_asset_removed' | 'backgrounds_list' | 'play_character_view_changed' | 'first_person_view_changed' | 'save_snapshot_ready' | 'debug_metrics' | 'preview_playing_changed' | 'trigger_entered' | 'trigger_exited' | 'entity_removed' | 'quick_build_move' | 'quick_build_click' | 'animation_logical_resolved' | 'autosave_tick' | 'atlas_exhausted'
   [key: string]: unknown
 }
 
@@ -346,8 +351,8 @@ export interface SaveSnapshotReady {
   scene: EngineSaveSceneSnapshot
 }
 
-export interface FirstPersonViewChanged {
-  event:                 'first_person_view_changed'
+export interface PlayCharacterViewChanged {
+  event:                 'play_character_view_changed' | 'first_person_view_changed'
   player_id:             number | null
   position:              [number, number, number]
   yaw:                   number
@@ -359,14 +364,23 @@ export interface FirstPersonViewChanged {
   body_scale:            [number, number, number]
 }
 
+/** @deprecated Use `PlayCharacterViewChanged` */
+export type FirstPersonViewChanged = PlayCharacterViewChanged
+
 export interface DebugMetrics {
   fps:            number
   frame_time_ms:  number
   draw_calls:     number
   physics_bodies: number
-  /** Primera persona 3D: posición de pies (camera.target). */
+  /** 3D: posición de pies del personaje jugable. */
+  play_character_position?: [number, number, number]
+  play_character_yaw?:     number
+  play_character_pitch?:   number
+  /** @deprecated Alias de `play_character_position` */
   first_person_position?: [number, number, number]
+  /** @deprecated Alias de `play_character_yaw` */
   first_person_yaw?:     number
+  /** @deprecated Alias de `play_character_pitch` */
   first_person_pitch?:   number
 }
 

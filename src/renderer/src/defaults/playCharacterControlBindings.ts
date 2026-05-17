@@ -16,7 +16,7 @@ engine.fp_jump()
 `
 
 /** Valores por defecto = mismos que las constantes del motor (4 / ×3 / 6). */
-export const DEFAULT_FIRST_PERSON_CONTROL_BINDINGS: SavedControlBindings = {
+export const DEFAULT_PLAY_CHARACTER_CONTROL_BINDINGS: SavedControlBindings = {
 	keyboard_mouse: {
 		W: { name: 'fp_move_forward', source: fpMove('W', 4) },
 		S: { name: 'fp_move_back', source: fpMove('S', 4) },
@@ -27,3 +27,6 @@ export const DEFAULT_FIRST_PERSON_CONTROL_BINDINGS: SavedControlBindings = {
 	},
 	gamepad: {},
 }
+
+/** @deprecated Use `DEFAULT_PLAY_CHARACTER_CONTROL_BINDINGS` */
+export const DEFAULT_FIRST_PERSON_CONTROL_BINDINGS = DEFAULT_PLAY_CHARACTER_CONTROL_BINDINGS

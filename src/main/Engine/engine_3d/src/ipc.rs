@@ -47,14 +47,16 @@ pub enum EngineCommand {
         position: [f32; 3],
         scale: [f32; 3],
     },
-    /// Restaurar posición y orientación de la cámara en primera persona (carga de `.save`).
-    SetFirstPersonSpawn {
+    /// Restaurar posición y orientación del personaje jugable (carga de `.save`).
+    #[serde(rename = "set_play_character_spawn", alias = "set_first_person_spawn")]
+    SetPlayCharacterSpawn {
         position: [f32; 3],
         yaw: f32,
         pitch: f32,
     },
-    /// Vista FP autoritativa: pies, orientación de cámara, FOV y frustum de editor.
-    SetFirstPersonView {
+    /// Vista del personaje jugable: pies, orientación de cámara, FOV y frustum de editor.
+    #[serde(rename = "set_play_character_view", alias = "set_first_person_view")]
+    SetPlayCharacterView {
         position: [f32; 3],
         yaw: f32,
         pitch: f32,
@@ -149,8 +151,9 @@ pub enum EngineCommand {
     SetCamera2d { x: f32, y: f32, half_h: f32 },
     /// FOV vertical de la cámara 3D (radianes).
     SetCameraFov { fov_y: f32 },
-    /// Alcance del gizmo de frustum de cámara FP en el editor (metros).
-    SetFpEditorFrustumDistance { distance: f32 },
+    /// Alcance del gizmo de frustum de cámara FPS en el editor (metros).
+    #[serde(rename = "set_fps_editor_frustum_distance", alias = "set_fp_editor_frustum_distance")]
+    SetFpsEditorFrustumDistance { distance: f32 },
     /// Cargar una imagen PNG/GIF como fondo de mundo (cubre todo el área del mundo).
     LoadBackground { path: String },
     /// Activar o desactivar física en una entidad. body_type: "dynamic" | "static" | "kinematic"
@@ -549,8 +552,9 @@ pub enum EngineEvent {
     /// Emitido cuando el usuario mantiene Ctrl y hace click añadiendo/quitando entidades
     /// a la selección múltiple. `ids` contiene todos los IDs actualmente seleccionados.
     MultiSelectChanged { ids: Vec<u32> },
-    /// Vista FP actual (pies, cámara y transform del mesh). Fuente de verdad para UI y guardado.
-    FirstPersonViewChanged {
+    /// Vista del personaje jugable (pies, cámara y transform del mesh).
+    #[serde(rename = "play_character_view_changed", alias = "first_person_view_changed")]
+    PlayCharacterViewChanged {
         #[serde(skip_serializing_if = "Option::is_none")]
         player_id: Option<u32>,
         position: [f32; 3],
@@ -568,12 +572,24 @@ pub enum EngineEvent {
         frame_time_ms:  f32,
         draw_calls:     u32,
         physics_bodies: u32,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        first_person_position: Option<[f32; 3]>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        first_person_yaw: Option<f32>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        first_person_pitch: Option<f32>,
+        #[serde(
+            rename = "play_character_position",
+            alias = "first_person_position",
+            skip_serializing_if = "Option::is_none"
+        )]
+        play_character_position: Option<[f32; 3]>,
+        #[serde(
+            rename = "play_character_yaw",
+            alias = "first_person_yaw",
+            skip_serializing_if = "Option::is_none"
+        )]
+        play_character_yaw: Option<f32>,
+        #[serde(
+            rename = "play_character_pitch",
+            alias = "first_person_pitch",
+            skip_serializing_if = "Option::is_none"
+        )]
+        play_character_pitch: Option<f32>,
     },
     /// Emitido cuando el preview cambia de estado desde el motor.
     PreviewPlayingChanged { playing: bool },

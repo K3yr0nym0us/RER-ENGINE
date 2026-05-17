@@ -21,17 +21,25 @@ import {
 	isPlayerPath,
 	type EntityCategory,
 } from '@shared-types';
-import { applyFirstPersonControlDefaultsIfEmpty } from '../../../defaults/applyFirstPersonControlDefaults';
+import { applyPlayCharacterControlDefaultsIfEmpty } from '../../../defaults/applyPlayCharacterControlDefaults';
 import {
-	applyFirstPersonViewFromEngine,
-	applySavedFirstPersonView,
-	ensureFirstPersonPlayerOnLoad,
-	type FirstPersonViewChangedEvent,
-} from '../../../defaults/firstPersonSceneRestore';
+	applyPlayCharacterViewFromEngine,
+	applySavedPlayCharacterView,
+	ensurePlayCharacterOnLoad,
+	type PlayCharacterViewChangedEvent,
+} from '../../../defaults/playCharacterSceneRestore';
 import { setSceneCommandForSavedProject } from '../../../defaults/projectSceneLoad';
 import { buildImportSceneCommand, syncEditorStateFromSavedScene } from './buildImportSceneCommand';
 import { applyPendingRestoreMeta, sendApplyEntityRestore } from './applyPendingRestoreToEngine';
-import { beginSceneImportLoading, endSceneImportLoading } from './sceneImportOverlay';
+import {
+	beginSceneBurstLoad,
+	beginSceneImportLoading,
+	endSceneBurstLoad,
+	endSceneImportLoading,
+	needsSceneBurstLoad,
+	trackSceneBurstCollider,
+	tryEndSceneBurstLoad,
+} from './sceneImportOverlay';
 import type { EngineAction, EngineInternalRefs, PendingRestore, Transform } from '../types';
 
 type RuntimeEngineEvent = {
@@ -65,7 +73,7 @@ const SILENT_ENGINE_EVENTS = new Set<string>([
 	'autosave_tick',
 	'atlas_exhausted',
 	'preview_playing_changed',
-	'first_person_view_changed',
+	'play_character_view_changed', 'first_person_view_changed',
 	'save_snapshot_ready',
 ]);
 
@@ -80,7 +88,7 @@ interface CreateEngineEventHandlerParams {
 	reportBounds: () => void
 }
 
-function applyFirstPersonDefaultsForPlayer(
+function applyPlayCharacterDefaultsForPlayer(
 	characterId: number,
 	gameStyle: GameStyle | undefined,
 	refs: EngineInternalRefs,
@@ -89,7 +97,7 @@ function applyFirstPersonDefaultsForPlayer(
 	// Proyecto abierto desde .save: bindings y entidades vienen del archivo, no de la plantilla.
 	if (refs.initialSaveRef.current) return;
 
-	applyFirstPersonControlDefaultsIfEmpty(characterId, refs.entityMetaRef, (cmd) => {
+	applyPlayCharacterControlDefaultsIfEmpty(characterId, refs.entityMetaRef, (cmd) => {
 		window.engine.send(cmd as never);
 	});
 }
@@ -183,8 +191,8 @@ export function createEngineEventHandler({
 
 				refs.initialSaveRef.current = save;
 				if (gameStyle === 'first-person' && projectType === '3D' && save.playerTransform) {
-					refs.pendingFirstPersonViewRef.current = save.playerTransform;
-					refs.firstPersonViewRef.current = save.playerTransform;
+					refs.pendingPlayCharacterViewRef.current = save.playerTransform;
+					refs.playCharacterViewRef.current = save.playerTransform;
 				}
 
 				const importScene2d = projectType === '2D' && (save.entities?.length ?? 0) > 0;
@@ -265,6 +273,12 @@ export function createEngineEventHandler({
 						) as never,
 					);
 				} else {
+				const burstLoad = needsSceneBurstLoad(projectType, gameStyle, save);
+				if (burstLoad) {
+					refs.sceneBurstAwaitingPlayerViewRef.current = false;
+					refs.sceneBurstPendingColliderCountRef.current = 0;
+					beginSceneBurstLoad(dispatch, refs.sceneBurstLoadInProgressRef);
+				}
 				for (const entity of save.entities) {
 					const transform: Transform = {
 						position: entity.position,
@@ -272,6 +286,7 @@ export function createEngineEventHandler({
 						scale: entity.scale,
 					};
 					if (entity.kind === 'collider' && entity.points) {
+						if (burstLoad) trackSceneBurstCollider(refs);
 						sendEngine({ cmd: 'create_collider_from_points', points: entity.points, track_undo: false } as never);
 					} else if (entity.kind === 'execution_area' && entity.points) {
 						const pendingRestore: PendingRestore = {
@@ -288,7 +303,7 @@ export function createEngineEventHandler({
 					} else if (entity.kind === 'character' && isPlayerPath(entity.path)) {
 						const savedPlayer = save.playerTransform;
 						if (savedPlayer) {
-							refs.pendingFirstPersonViewRef.current = savedPlayer;
+							refs.pendingPlayCharacterViewRef.current = savedPlayer;
 						}
 						const pendingRestore: PendingRestore = {
 							transform,
@@ -356,7 +371,18 @@ export function createEngineEventHandler({
 				}
 				}
 				if (gameStyle === 'first-person' && projectType === '3D') {
-					ensureFirstPersonPlayerOnLoad(save, refs.pendingRestoresRef, (cmd) => sendEngine(cmd as never));
+					ensurePlayCharacterOnLoad(save, refs.pendingRestoresRef, (cmd) => sendEngine(cmd as never));
+				}
+				if (burstLoad) {
+					setTimeout(
+						() => tryEndSceneBurstLoad(
+							dispatch,
+							refs.sceneBurstLoadInProgressRef,
+							refs,
+							reportBounds,
+						),
+						0,
+					);
 				}
 			}
 			const motorGravity = typeof event.gravity === 'number' ? event.gravity : undefined;
@@ -493,6 +519,7 @@ export function createEngineEventHandler({
 					}
 				}
 			}
+			tryEndSceneBurstLoad(dispatch, refs.sceneBurstLoadInProgressRef, refs, reportBounds);
 		}
 
 		if (event.event === 'entity_model_replaced') {
@@ -527,6 +554,12 @@ export function createEngineEventHandler({
 						} as never);
 					}
 				}
+			}
+			if (
+				refs.sceneBurstLoadInProgressRef.current
+				&& !(gameStyle === 'first-person' && projectType === '3D' && refs.playerEntityIdRef.current === id)
+			) {
+				tryEndSceneBurstLoad(dispatch, refs.sceneBurstLoadInProgressRef, refs, reportBounds);
 			}
 		}
 
@@ -598,7 +631,7 @@ export function createEngineEventHandler({
 					dispatch({ type: 'SET_LOADED_SPRITES_INFO', payload: scene.sprites });
 				}
 				window.engine.send({ cmd: 'get_sprites_list' } as never);
-				dispatch({ type: 'SYNC_FP_VIEW' });
+				dispatch({ type: 'SYNC_PLAY_CHARACTER_VIEW' });
 			}
 			endSceneImportLoading(
 				dispatch,
@@ -620,6 +653,7 @@ export function createEngineEventHandler({
 				applyPendingRestoreMeta(refs, scenario.id, pending);
 				if (queue.length === 0) refs.pendingRestoresRef.current.delete(scenario.path);
 			}
+			tryEndSceneBurstLoad(dispatch, refs.sceneBurstLoadInProgressRef, refs, reportBounds);
 		}
 
 		if (event.event === 'character_loaded') {
@@ -650,6 +684,14 @@ export function createEngineEventHandler({
 					if (refs.entityMetaRef.current[id]) {
 						refs.entityMetaRef.current[id].visualModelPath = pending.visualModelPath;
 					}
+					if (
+						refs.sceneBurstLoadInProgressRef.current
+						&& isPlayer
+						&& gameStyle === 'first-person'
+						&& projectType === '3D'
+					) {
+						refs.sceneBurstAwaitingPlayerViewRef.current = true;
+					}
 				}
 
 				if (queue.length === 0) refs.pendingRestoresRef.current.delete(path);
@@ -675,12 +717,18 @@ export function createEngineEventHandler({
 						refs.entityMetaRef.current[character.id].physicsEnabled = true;
 						refs.entityMetaRef.current[character.id].physicsType = 'dynamic';
 					}
-					const savedFpView = refs.pendingFirstPersonViewRef.current
-						?? refs.firstPersonViewRef.current;
+					const savedFpView = refs.pendingPlayCharacterViewRef.current
+						?? refs.playCharacterViewRef.current;
+					if (
+						refs.sceneBurstLoadInProgressRef.current
+						&& savedFpView?.position
+					) {
+						refs.sceneBurstAwaitingPlayerViewRef.current = true;
+					}
 					applyPendingRestore(character.id, character.path, {
 						skipTransform: !!savedFpView?.position,
 					});
-					applySavedFirstPersonView(savedFpView, { editorOrbit: true });
+					applySavedPlayCharacterView(savedFpView, { editorOrbit: true });
 					if (savedFpView?.control_bindings) {
 						const meta = refs.entityMetaRef.current[character.id];
 						if (meta) {
@@ -692,9 +740,9 @@ export function createEngineEventHandler({
 							bindings: savedFpView.control_bindings,
 						} as never);
 					}
-					refs.pendingFirstPersonViewRef.current = null;
+					refs.pendingPlayCharacterViewRef.current = null;
 					// No sobrescribir scale: el motor puede usar 1.0 tras importar modelo (malla ya normalizada).
-					applyFirstPersonDefaultsForPlayer(character.id, gameStyle, refs);
+					applyPlayCharacterDefaultsForPlayer(character.id, gameStyle, refs);
 				} else {
 					dispatch({ type: 'ADD_CHARACTER', payload: { id: character.id, path: character.path } });
 					refs.entityMetaRef.current[character.id] = { kind: 'character', path: '[Player]', physicsEnabled: false, physicsType: '' };
@@ -715,6 +763,7 @@ export function createEngineEventHandler({
 				}
 				applyPendingRestore(character.id, character.path);
 			}
+			tryEndSceneBurstLoad(dispatch, refs.sceneBurstLoadInProgressRef, refs, reportBounds);
 		}
 
 		if (event.event === 'sprite_loaded') {
@@ -787,18 +836,30 @@ export function createEngineEventHandler({
 					reportBounds,
 				);
 			}
+			if (refs.sceneBurstLoadInProgressRef.current) {
+				refs.sceneBurstAwaitingPlayerViewRef.current = false;
+				refs.sceneBurstPendingColliderCountRef.current = 0;
+				endSceneBurstLoad(dispatch, refs.sceneBurstLoadInProgressRef, reportBounds);
+			}
 			dispatch({ type: 'ENGINE_STOPPED', payload: (event as { code?: number }).code });
 		}
 
-		if (event.event === 'first_person_view_changed') {
-			const ev = event as unknown as FirstPersonViewChangedEvent;
-			applyFirstPersonViewFromEngine(
+		if (
+			event.event === 'play_character_view_changed'
+			|| event.event === 'first_person_view_changed'
+		) {
+			const ev = event as unknown as PlayCharacterViewChangedEvent;
+			applyPlayCharacterViewFromEngine(
 				ev,
-				refs.firstPersonViewRef,
+				refs.playCharacterViewRef,
 				refs.entityTransformsRef,
 				refs.playerEntityIdRef,
 			);
-			dispatch({ type: 'SYNC_FP_VIEW' });
+			dispatch({ type: 'SYNC_PLAY_CHARACTER_VIEW' });
+			if (refs.sceneBurstLoadInProgressRef.current) {
+				refs.sceneBurstAwaitingPlayerViewRef.current = false;
+				tryEndSceneBurstLoad(dispatch, refs.sceneBurstLoadInProgressRef, refs, reportBounds);
+			}
 		}
 
 		if (event.event === 'preview_playing_changed') {
@@ -826,6 +887,11 @@ export function createEngineEventHandler({
 					reportBounds,
 				);
 			}
+			if (refs.sceneBurstLoadInProgressRef.current) {
+				refs.sceneBurstAwaitingPlayerViewRef.current = false;
+				refs.sceneBurstPendingColliderCountRef.current = 0;
+				endSceneBurstLoad(dispatch, refs.sceneBurstLoadInProgressRef, reportBounds);
+			}
 			dispatch({ type: 'SET_ERROR', payload: (event as { message?: string }).message ?? 'Error desconocido' });
 		}
 
@@ -844,6 +910,13 @@ export function createEngineEventHandler({
 			}
 			dispatch({ type: 'ADD_COLLIDER', payload: { id, path: '[Colisionador]' } });
 			dispatch({ type: 'SET_TOOL_PROGRESS', payload: null });
+			if (refs.sceneBurstLoadInProgressRef.current) {
+				refs.sceneBurstPendingColliderCountRef.current = Math.max(
+					0,
+					refs.sceneBurstPendingColliderCountRef.current - 1,
+				);
+				tryEndSceneBurstLoad(dispatch, refs.sceneBurstLoadInProgressRef, refs, reportBounds);
+			}
 		}
 
 		if (event.event === 'execution_area_created') {
@@ -864,6 +937,7 @@ export function createEngineEventHandler({
 			}
 			dispatch({ type: 'ADD_EXECUTION_AREA', payload: { id, path: '[ExecutionArea]' } });
 			dispatch({ type: 'SET_TOOL_PROGRESS', payload: null });
+			tryEndSceneBurstLoad(dispatch, refs.sceneBurstLoadInProgressRef, refs, reportBounds);
 		}
 
 		if (event.event === 'tool_cancelled') {
@@ -975,16 +1049,16 @@ export function createEngineEventHandler({
 			if (
 				gameStyle === 'first-person'
 				&& projectType === '3D'
-				&& metrics.first_person_position
-				&& metrics.first_person_yaw != null
-				&& metrics.first_person_pitch != null
+				&& (metrics.play_character_position ?? metrics.first_person_position)
+				&& (metrics.play_character_yaw ?? metrics.first_person_yaw) != null
+				&& (metrics.play_character_pitch ?? metrics.first_person_pitch) != null
 			) {
-				const prev = refs.firstPersonViewRef.current;
-				refs.firstPersonViewRef.current = {
-					position: metrics.first_person_position,
+				const prev = refs.playCharacterViewRef.current;
+				refs.playCharacterViewRef.current = {
+					position: (metrics.play_character_position ?? metrics.first_person_position)!,
 					scale: prev?.scale ?? FIRST_PERSON_PLAYER_BODY_SCALE,
-					yaw: metrics.first_person_yaw,
-					pitch: metrics.first_person_pitch,
+					yaw: (metrics.play_character_yaw ?? metrics.first_person_yaw)!,
+					pitch: (metrics.play_character_pitch ?? metrics.first_person_pitch)!,
 					...(prev?.visual_model_path ? { visual_model_path: prev.visual_model_path } : {}),
 				};
 			}

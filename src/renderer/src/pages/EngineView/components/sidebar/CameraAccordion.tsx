@@ -7,12 +7,12 @@ import { useContextEngine } from '@engine';
 import { useTraslate } from '@hooks';
 import { FIRST_PERSON_PLAYER_BODY_SCALE, type GameStyle, type ProjectType } from '@shared-types';
 import {
-	applySavedFirstPersonView,
+	applySavedPlayCharacterView,
 	FP_DEFAULT_FOV_Y,
 	FP_DEFAULT_FRUSTUM_DISTANCE,
 	FP_DEFAULT_YAW,
 	FP_EDITOR_ORBIT_PITCH,
-} from '../../../../defaults/firstPersonSceneRestore';
+} from '../../../../defaults/playCharacterSceneRestore';
 
 const RAD_TO_DEG = 180 / Math.PI;
 const DEG_TO_RAD = Math.PI / 180;
@@ -45,10 +45,10 @@ export function CameraAccordion({
 		engineReady,
 		send,
 		camera2dRef,
-		firstPersonViewRef,
+		playCharacterViewRef,
 		playerEntityIdRef,
 		selectedEntity,
-		fpViewSyncSeq,
+		playCharacterViewSyncSeq,
 		previewPlaying,
 	} = useContextEngine();
 
@@ -73,7 +73,7 @@ export function CameraAccordion({
 
 	const loadFromScene = useCallback(() => {
 		if (is3dFp) {
-			const v = firstPersonViewRef.current;
+			const v = playCharacterViewRef.current;
 			if (v) {
 				setPosX(formatCameraNum(v.position[0]));
 				setPosY(formatCameraNum(v.position[1]));
@@ -90,11 +90,11 @@ export function CameraAccordion({
 			setCam2dY(formatCameraNum(c.y));
 			setCam2dHalfH(formatCameraNum(c.halfH));
 		}
-	}, [is3dFp, is3d, camera2dRef, firstPersonViewRef]);
+	}, [is3dFp, is3d, camera2dRef, playCharacterViewRef]);
 
 	useEffect(() => {
 		loadFromScene();
-	}, [loadFromScene, selectedEntity?.id, engineReady, fpViewSyncSeq, previewPlaying]);
+	}, [loadFromScene, selectedEntity?.id, engineReady, playCharacterViewSyncSeq, previewPlaying]);
 
 	const apply3dFp = () => {
 		const playerId = playerEntityIdRef.current;
@@ -107,7 +107,7 @@ export function CameraAccordion({
 		const frustum = parseCameraNum(frustumDist);
 		if ([x, y, z, yaw, fov, frustum].some((n) => Number.isNaN(n))) return;
 
-		const prev = firstPersonViewRef.current;
+		const prev = playCharacterViewRef.current;
 		const view = {
 			position: [x, y, z] as [number, number, number],
 			scale: prev?.scale ?? FIRST_PERSON_PLAYER_BODY_SCALE,
@@ -118,8 +118,8 @@ export function CameraAccordion({
 			...(prev?.visual_model_path ? { visual_model_path: prev.visual_model_path } : {}),
 			...(prev?.control_bindings ? { control_bindings: prev.control_bindings } : {}),
 		};
-		firstPersonViewRef.current = view;
-		applySavedFirstPersonView(view, { editorOrbit: true });
+		playCharacterViewRef.current = view;
+		applySavedPlayCharacterView(view, { editorOrbit: true });
 	};
 
 	const apply2d = () => {

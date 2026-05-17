@@ -45,8 +45,8 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 
 ### Editor e integración (proyecto 3D)
 
-- [x] Acordeón cámara FP (envía `set_first_person_view`, no calcula poses en TS)
-- [x] `firstPersonViewRef` vía `first_person_view_changed` (UI editor; save 3D vía snapshot del motor)
+- [x] Acordeón cámara FP (envía `set_play_character_view`, no calcula poses en TS)
+- [x] `playCharacterViewRef` vía `play_character_view_changed` (UI editor; save 3D vía snapshot del motor)
 - [x] Herramientas 3D (gizmo, spawn caja/modelo, play FP)
 - [x] Carga de escena 3D + `pendingRestores` / vista FP desde motor al abrir `.save`
 - [x] Guardado engine-first: `export_save_snapshot` + merge en el front
@@ -87,8 +87,10 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 
 | Comando / evento | Uso |
 |------------------|-----|
-| `set_first_person_view` | Front → motor: pies, yaw, pitch, FOV, frustum |
-| `first_person_view_changed` | Motor → front: estado confirmado (`body_center`, `body_rotation`, etc.) |
+| `set_play_character_view` | Front → motor: pies, yaw, pitch, FOV, frustum |
+| `play_character_view_changed` | Motor → front: estado confirmado (`body_center`, `body_rotation`, etc.) |
+
+Aliases legacy: `set_first_person_view`, `first_person_view_changed`.
 
 El frontend **no** deriva poses FP para el `.save`; el snapshot del motor es autoritativo. Ver `src/renderer/ARCHITECTURE.md`.
 

@@ -71,7 +71,7 @@ export interface EngineState {
 	/** Overlay mientras el motor ejecuta `import_scene` (2D). */
 	sceneImportLoading: boolean
 	/** Incrementa al recibir `first_person_view_changed` (refrescar UI de cámara FP). */
-	fpViewSyncSeq: number
+	playCharacterViewSyncSeq: number
 	log: LogEntry[]
 	entities: Entity[]
 	selectedEntity: SelectedEntity | null
@@ -101,7 +101,7 @@ export type EngineAction =
 	| { type: 'SET_ERROR'; payload: string }
 	| { type: 'SET_PREVIEW_PLAYING'; payload: boolean }
 	| { type: 'SET_SCENE_IMPORT_LOADING'; payload: boolean }
-	| { type: 'SYNC_FP_VIEW' }
+	| { type: 'SYNC_PLAY_CHARACTER_VIEW' }
 	| { type: 'ADD_LOG'; payload: LogEntry }
 	| { type: 'ADD_ENTITY'; payload: number }
 	| { type: 'SELECT_ENTITY'; payload: SelectedEntity }
@@ -162,7 +162,7 @@ export const initialState: EngineState = {
 	engineError: null,
 	previewPlaying: false,
 	sceneImportLoading: false,
-	fpViewSyncSeq: 0,
+	playCharacterViewSyncSeq: 0,
 	log: [],
 	entities: [],
 	selectedEntity: null,
@@ -196,7 +196,7 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 			...prevState,
 			sceneImportLoading: nextAction.payload,
 		}),
-		SYNC_FP_VIEW: (prevState) => ({ ...prevState, fpViewSyncSeq: prevState.fpViewSyncSeq + 1 }),
+		SYNC_PLAY_CHARACTER_VIEW: (prevState) => ({ ...prevState, playCharacterViewSyncSeq: prevState.playCharacterViewSyncSeq + 1 }),
 		ADD_LOG: (prevState, nextAction) => ({ ...prevState, log: [...prevState.log.slice(-199), nextAction.payload] }),
 		ADD_ENTITY: (prevState, nextAction) =>
 			prevState.entities.some((entity) => entity.id === nextAction.payload)
@@ -400,8 +400,8 @@ export interface EngineInternalRefs {
 	entityMetaRef: MutableRefObject<Record<number, EntityMeta>>
 	pendingRestoresRef: MutableRefObject<Map<string, PendingRestore[]>>
 	playerEntityIdRef: MutableRefObject<number | null>
-	firstPersonViewRef: MutableRefObject<import('@shared-types').SavedPlayerTransform | null>
-	pendingFirstPersonViewRef: MutableRefObject<import('@shared-types').SavedPlayerTransform | null>
+	playCharacterViewRef: MutableRefObject<import('@shared-types').SavedPlayerTransform | null>
+	pendingPlayCharacterViewRef: MutableRefObject<import('@shared-types').SavedPlayerTransform | null>
 	pendingModelPathRef: MutableRefObject<string | null>
 	pendingSpawnKindRef: MutableRefObject<EntityMeta['kind'] | null>
 	pendingSpawnCategoryRef: MutableRefObject<EntityCategory | null>
@@ -419,18 +419,27 @@ export interface EngineInternalRefs {
 	pendingImportSceneRef: MutableRefObject<import('@shared-types').SavedScene | null>
 	/** Evita duplicar estado React mientras el motor emite eventos de carga por entidad. */
 	sceneImportInProgressRef: MutableRefObject<boolean>
+	/** Overlay de carga durante ráfaga IPC 3D (pestañas / `ready`). */
+	sceneBurstLoadInProgressRef: MutableRefObject<boolean>
+	/** FP: esperar `play_character_view_changed` tras restore del jugador. */
+	sceneBurstAwaitingPlayerViewRef: MutableRefObject<boolean>
+	/** Colisionadores 3D enviados sin cola de restore. */
+	sceneBurstPendingColliderCountRef: MutableRefObject<number>
 }
 
 export interface EngineContextValue extends EngineState {
 	dispatch: (action: EngineAction) => void
 	pendingImportSceneRef: MutableRefObject<import('@shared-types').SavedScene | null>
 	sceneImportInProgressRef: MutableRefObject<boolean>
+	sceneBurstLoadInProgressRef: MutableRefObject<boolean>
+	sceneBurstAwaitingPlayerViewRef: MutableRefObject<boolean>
+	sceneBurstPendingColliderCountRef: MutableRefObject<number>
 	entityTransformsRef: MutableRefObject<Record<number, Transform>>
 	entityMetaRef: MutableRefObject<Record<number, EntityMeta>>
 	pendingRestoresRef: MutableRefObject<Map<string, PendingRestore[]>>
 	playerEntityIdRef: MutableRefObject<number | null>
-	firstPersonViewRef: MutableRefObject<SavedPlayerTransform | null>
-	pendingFirstPersonViewRef: MutableRefObject<SavedPlayerTransform | null>
+	playCharacterViewRef: MutableRefObject<SavedPlayerTransform | null>
+	pendingPlayCharacterViewRef: MutableRefObject<SavedPlayerTransform | null>
 	pendingModelPathRef: MutableRefObject<string | null>
 	pendingSpawnKindRef: MutableRefObject<EntityMeta['kind'] | null>
 	pendingSpawnCategoryRef: MutableRefObject<EntityCategory | null>

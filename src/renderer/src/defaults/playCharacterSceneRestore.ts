@@ -9,8 +9,8 @@ export const FP_DEFAULT_YAW = -Math.PI / 2;
 export const FP_DEFAULT_FOV_Y = (45 * Math.PI) / 180;
 export const FP_DEFAULT_FRUSTUM_DISTANCE = 2.5;
 
-export interface FirstPersonViewChangedEvent {
-	event: 'first_person_view_changed';
+export interface PlayCharacterViewChangedEvent {
+	event: 'play_character_view_changed' | 'first_person_view_changed';
 	player_id: number | null;
 	position: [number, number, number];
 	yaw: number;
@@ -22,18 +22,21 @@ export interface FirstPersonViewChangedEvent {
 	body_scale: [number, number, number];
 }
 
+/** @deprecated Use `PlayCharacterViewChangedEvent` */
+export type FirstPersonViewChangedEvent = PlayCharacterViewChangedEvent;
+
 /** Aplica al estado React lo que reporta el motor (sin derivar poses en TS). */
-export function applyFirstPersonViewFromEngine(
-	ev: FirstPersonViewChangedEvent,
-	firstPersonViewRef: MutableRefObject<SavedPlayerTransform | null>,
+export function applyPlayCharacterViewFromEngine(
+	ev: PlayCharacterViewChangedEvent,
+	playCharacterViewRef: MutableRefObject<SavedPlayerTransform | null>,
 	entityTransformsRef: MutableRefObject<Record<number, Transform>>,
 	playerEntityIdRef?: MutableRefObject<number | null>,
 ) {
 	if (ev.player_id != null && playerEntityIdRef) {
 		playerEntityIdRef.current = ev.player_id;
 	}
-	const prev = firstPersonViewRef.current;
-	firstPersonViewRef.current = {
+	const prev = playCharacterViewRef.current;
+	playCharacterViewRef.current = {
 		position: ev.position,
 		scale: ev.body_scale,
 		yaw: ev.yaw,
@@ -52,8 +55,11 @@ export function applyFirstPersonViewFromEngine(
 	}
 }
 
-/** Pide al motor la vista FP; el frontend actualiza refs al recibir `first_person_view_changed`. */
-export function applySavedFirstPersonView(
+/** @deprecated Use `applyPlayCharacterViewFromEngine` */
+export const applyFirstPersonViewFromEngine = applyPlayCharacterViewFromEngine;
+
+/** Pide al motor la vista del personaje jugable; el front actualiza refs al recibir el evento. */
+export function applySavedPlayCharacterView(
 	view: SavedPlayerTransform | null | undefined,
 	_options?: { editorOrbit?: boolean },
 ) {
@@ -64,7 +70,7 @@ export function applySavedFirstPersonView(
 			? FP_EDITOR_ORBIT_PITCH
 			: (view.pitch ?? FP_EDITOR_ORBIT_PITCH);
 	window.engine.send({
-		cmd: 'set_first_person_view',
+		cmd: 'set_play_character_view',
 		position: view.position,
 		yaw,
 		pitch,
@@ -73,13 +79,16 @@ export function applySavedFirstPersonView(
 	} as never);
 }
 
+/** @deprecated Use `applySavedPlayCharacterView` */
+export const applySavedFirstPersonView = applySavedPlayCharacterView;
+
 type SceneSlice = {
 	entities?: SavedEntity[];
 	playerTransform?: SavedPlayerTransform | null;
 };
 
 /** Cola restore + `load_character` cuando el save no incluye entidad `[Player]`. */
-export function ensureFirstPersonPlayerOnLoad(
+export function ensurePlayCharacterOnLoad(
 	scene: SceneSlice,
 	pendingRestoresRef: MutableRefObject<Map<string, PendingRestore[]>>,
 	send: (cmd: unknown) => void,
@@ -111,3 +120,6 @@ export function ensureFirstPersonPlayerOnLoad(
 		send({ cmd: 'load_character', path: '[Player]' });
 	}
 }
+
+/** @deprecated Use `ensurePlayCharacterOnLoad` */
+export const ensureFirstPersonPlayerOnLoad = ensurePlayCharacterOnLoad;

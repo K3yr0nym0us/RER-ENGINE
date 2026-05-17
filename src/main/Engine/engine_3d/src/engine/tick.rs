@@ -168,10 +168,10 @@ impl State {
 
         let (fp_es, fp_size_es) = self.load_snap_hint_uv("tooltip-btn-esc-salir.png");
         let (fp_en, fp_size_en) = self.load_snap_hint_uv("tooltip-btn-esc-exit.png");
-        self.fp_exit_hint_uv = fp_es;
-        self.fp_exit_hint_size = fp_size_es;
-        self.fp_exit_hint_uv_en = fp_en;
-        self.fp_exit_hint_size_en = fp_size_en;
+        self.fps_exit_hint_uv = fp_es;
+        self.fps_exit_hint_size = fp_size_es;
+        self.fps_exit_hint_uv_en = fp_en;
+        self.fps_exit_hint_size_en = fp_size_en;
     }
 
     pub(crate) fn update_snap_hint_alpha(&mut self) {
@@ -192,24 +192,24 @@ impl State {
         }
     }
 
-    pub(crate) fn update_fp_exit_hint_alpha(&mut self) {
+    pub(crate) fn update_fps_exit_hint_alpha(&mut self) {
         let target = if self.preview_playing
             && self.camera_2d.is_none()
-            && self.first_person_player_entity.is_some()
+            && self.play_character_entity.is_some()
         {
             1.0_f32
         } else {
             0.0_f32
         };
-        let k = if target > self.fp_exit_hint_alpha {
+        let k = if target > self.fps_exit_hint_alpha {
             3.6_f32
         } else {
             2.8_f32
         };
         let blend = 1.0 - (-k * self.delta_time.max(0.0)).exp();
-        self.fp_exit_hint_alpha += (target - self.fp_exit_hint_alpha) * blend;
-        if (self.fp_exit_hint_alpha - target).abs() < 0.001 {
-            self.fp_exit_hint_alpha = target;
+        self.fps_exit_hint_alpha += (target - self.fps_exit_hint_alpha) * blend;
+        if (self.fps_exit_hint_alpha - target).abs() < 0.001 {
+            self.fps_exit_hint_alpha = target;
         }
     }
 
@@ -273,24 +273,24 @@ impl State {
     }
 
     /// Tooltip «Esc para salir del play» en primera persona 3D (esquina inferior izquierda).
-    pub(crate) fn build_fp_exit_hint_instance(&self) -> Option<mesh::InstanceData> {
-        if self.fp_exit_hint_alpha <= 0.003 {
+    pub(crate) fn build_fps_exit_hint_instance(&self) -> Option<mesh::InstanceData> {
+        if self.fps_exit_hint_alpha <= 0.003 {
             return None;
         }
         let (uv, img_w, img_h) = if self.snap_locale == "en" {
-            let uv = self.fp_exit_hint_uv_en.or(self.fp_exit_hint_uv)?;
-            let (w, h) = if self.fp_exit_hint_uv_en.is_some() {
-                self.fp_exit_hint_size_en
+            let uv = self.fps_exit_hint_uv_en.or(self.fps_exit_hint_uv)?;
+            let (w, h) = if self.fps_exit_hint_uv_en.is_some() {
+                self.fps_exit_hint_size_en
             } else {
-                self.fp_exit_hint_size
+                self.fps_exit_hint_size
             };
             (uv, w, h)
         } else {
-            let uv = self.fp_exit_hint_uv.or(self.fp_exit_hint_uv_en)?;
-            let (w, h) = if self.fp_exit_hint_uv.is_some() {
-                self.fp_exit_hint_size
+            let uv = self.fps_exit_hint_uv.or(self.fps_exit_hint_uv_en)?;
+            let (w, h) = if self.fps_exit_hint_uv.is_some() {
+                self.fps_exit_hint_size
             } else {
-                self.fp_exit_hint_size_en
+                self.fps_exit_hint_size_en
             };
             (uv, w, h)
         };
@@ -307,7 +307,7 @@ impl State {
         let draw_w_px = img_w * scale_px * DISPLAY_SCALE;
         let draw_h_px = img_h * scale_px * DISPLAY_SCALE;
 
-        let a = self.fp_exit_hint_alpha.clamp(0.0, 1.0);
+        let a = self.fps_exit_hint_alpha.clamp(0.0, 1.0);
         let eased_alpha = a * a * (3.0 - 2.0 * a);
         let scale_in = 0.92 + 0.08 * eased_alpha;
         let slide_px = (1.0 - eased_alpha) * 14.0;
@@ -367,7 +367,7 @@ impl State {
         self.delta_time = now.duration_since(self.last_frame).as_secs_f32();
         self.last_frame = now;
         self.update_snap_hint_alpha();
-        self.update_fp_exit_hint_alpha();
+        self.update_fps_exit_hint_alpha();
 
         self.metrics_frame_count += 1;
         if now.duration_since(self.metrics_last_emit) >= std::time::Duration::from_secs(1) {
@@ -378,10 +378,10 @@ impl State {
             } else {
                 self.physics.body_count()
             };
-            let (first_person_position, first_person_yaw, first_person_pitch) =
-                if self.camera_2d.is_none() && self.first_person_player_entity.is_some() {
+            let (play_character_position, play_character_yaw, play_character_pitch) =
+                if self.camera_2d.is_none() && self.play_character_entity.is_some() {
                     (
-                        Some(self.first_person_feet_position().to_array()),
+                        Some(self.play_character_feet_position().to_array()),
                         Some(self.camera.yaw),
                         Some(self.camera.pitch),
                     )
@@ -393,9 +393,9 @@ impl State {
                 frame_time_ms: self.delta_time * 1000.0,
                 draw_calls: self.last_draw_calls,
                 physics_bodies,
-                first_person_position,
-                first_person_yaw,
-                first_person_pitch,
+                play_character_position,
+                play_character_yaw,
+                play_character_pitch,
             });
             self.metrics_last_emit = now;
             self.metrics_frame_count = 0;
@@ -416,7 +416,7 @@ impl State {
             self.update_scripts();
             if self.preview_playing {
                 let skip_sync = self
-                    .first_person_player_entity
+                    .play_character_entity
                     .map(|id| vec![id])
                     .unwrap_or_default();
                 self.physics

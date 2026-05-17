@@ -236,21 +236,21 @@ impl State {
             } => {
                 self.spawn_editor_box(&name, position, scale);
             }
-            EngineCommand::SetFirstPersonSpawn {
+            EngineCommand::SetPlayCharacterSpawn {
                 position,
                 yaw,
                 pitch,
             } => {
-                self.apply_first_person_view(position, yaw, pitch, None, None);
+                self.apply_play_character_view(position, yaw, pitch, None, None);
             }
-            EngineCommand::SetFirstPersonView {
+            EngineCommand::SetPlayCharacterView {
                 position,
                 yaw,
                 pitch,
                 fov_y,
                 frustum_distance,
             } => {
-                self.apply_first_person_view(position, yaw, pitch, fov_y, frustum_distance);
+                self.apply_play_character_view(position, yaw, pitch, fov_y, frustum_distance);
             }
             EngineCommand::SetTransform {
                 id,
@@ -261,9 +261,9 @@ impl State {
             } => {
                 use glam::{Quat, Vec3};
                 let before = self.world.get::<Transform>(id).cloned();
-                let is_fp_player = self.first_person_player_entity == Some(id);
+                let is_play_character = self.play_character_entity == Some(id);
 
-                if is_fp_player {
+                if is_play_character {
                     if let Some(before_t) = before.as_ref() {
                     let new_rot = rotation
                         .map(|r| Quat::from_xyzw(r[0], r[1], r[2], r[3]))
@@ -276,13 +276,13 @@ impl State {
                         if rotation.is_some() {
                             // Mantener pies del jugador en el suelo: el offset pivote→pies rota con
                             // el mesh; sin recalcular centro el cuerpo se “rompe” al editar Euler.
-                            let feet = crate::config_3d::first_person::feet_from_player_transform(
+                            let feet = crate::config_3d::character_anchor::feet_from_transform(
                                 before_t.position,
                                 before_t.scale.y,
                                 before_t.rotation,
                             );
                             let mut center =
-                                crate::config_3d::first_person::player_center_from_feet(
+                                crate::config_3d::character_anchor::center_from_feet(
                                     feet,
                                     new_scale.y,
                                     new_rot,
@@ -301,7 +301,7 @@ impl State {
                             transform.rotation = new_rot;
                             transform.scale = new_scale;
                             self.camera.target =
-                                crate::config_3d::first_person::feet_from_player_transform(
+                                crate::config_3d::character_anchor::feet_from_transform(
                                     transform.position,
                                     transform.scale.y,
                                     transform.rotation,
@@ -323,7 +323,7 @@ impl State {
 
                 if let Some(saved) = self.anim_saved_transforms.get_mut(&id) {
                     if let Some(p) = position {
-                        saved.0 = if is_fp_player {
+                        saved.0 = if is_play_character {
                             self.world
                                 .get::<Transform>(id)
                                 .map(|t| t.position)
@@ -333,7 +333,7 @@ impl State {
                         };
                     }
                     if let Some(s) = scale {
-                        if !is_fp_player {
+                        if !is_play_character {
                             saved.1 = Vec3::from_array(s);
                         }
                     }
@@ -342,7 +342,7 @@ impl State {
                     if let Some(p) = position {
                         self.physics_2d.teleport_entity(id, p[0], p[1]);
                     }
-                } else if !is_fp_player {
+                } else if !is_play_character {
                     if let Some(t) = self.world.get::<Transform>(id).cloned() {
                         if self.physics.has_physics(id)
                             && (position.is_some() || rotation.is_some() || scale.is_some())
@@ -378,8 +378,8 @@ impl State {
                         self.push_undo_transform(id, prev_pos, prev_rot, prev_scl);
                     }
                 }
-                if is_fp_player {
-                    self.emit_first_person_view_changed();
+                if is_play_character {
+                    self.emit_play_character_view_changed();
                 }
             }
             EngineCommand::SetEntityName { id, name, force } => {
@@ -445,9 +445,9 @@ impl State {
                 "2D" => self.setup_2d_platformer(),
                 "empty" => self.setup_empty_3d(),
                 "first-person" | "second-person" | "third-person" => {
-                    self.setup_first_person()
+                    self.setup_default_3d_scene()
                 }
-                "3D" => self.setup_first_person(),
+                "3D" => self.setup_default_3d_scene(),
                 "scratch" => self.setup_scratch(),
                 _ => log::info!("SetScene: escena '{}' no reconocida", scene),
             },
@@ -623,7 +623,7 @@ impl State {
                     }
                 } else {
                     self.set_world_bounds_3d_size(width, height, depth);
-                    self.clamp_first_person_camera_to_bounds();
+                    self.clamp_play_character_camera_to_bounds();
                 }
             }
             EngineCommand::SetGravity { gravity } => {
@@ -652,8 +652,8 @@ impl State {
                 self.preview_playing = playing;
 
                 if playing {
-                    self.reset_first_person_motion();
-                    self.ensure_fp_player_kinematic_only();
+                    self.reset_play_controller_motion();
+                    self.ensure_play_character_kinematic_only();
                     // Camera.yaw = yaw actual del cuerpo, para que el primer mouse-look
                     // no rote el cuerpo al yaw del orbit del editor (regresión típica al
                     // pasar de editor a play conservando la orientación en Propiedades).
@@ -705,8 +705,8 @@ impl State {
                         self.show_first_frame_of_animation(entity_id, &anim_name);
                     }
                     self.stop_audio_internal();
-                    self.sync_first_person_camera_mode();
-                    self.emit_first_person_view_changed();
+                    self.sync_fps_camera_mode();
+                    self.emit_play_character_view_changed();
                 }
 
                 self.execution_overlaps.clear();
@@ -726,14 +726,14 @@ impl State {
             }
             EngineCommand::SetCameraFov { fov_y } => {
                 self.camera.fov_y = fov_y.clamp(0.1, std::f32::consts::FRAC_PI_2 - 0.01);
-                if self.camera_2d.is_none() && self.has_first_person_player() {
-                    self.emit_first_person_view_changed();
+                if self.camera_2d.is_none() && self.has_play_character() {
+                    self.emit_play_character_view_changed();
                 }
             }
-            EngineCommand::SetFpEditorFrustumDistance { distance } => {
-                self.fp_editor_frustum_distance = distance.clamp(0.5, 50.0);
-                if self.camera_2d.is_none() && self.has_first_person_player() {
-                    self.emit_first_person_view_changed();
+            EngineCommand::SetFpsEditorFrustumDistance { distance } => {
+                self.fps_editor_frustum_distance = distance.clamp(0.5, 50.0);
+                if self.camera_2d.is_none() && self.has_play_character() {
+                    self.emit_play_character_view_changed();
                 }
             }
             EngineCommand::LoadBackground { path } => {
@@ -760,7 +760,7 @@ impl State {
                 if self.camera_2d.is_some() {
                     self.physics_2d
                         .set_entity_physics(id, enabled, &body_type, pos, half);
-                } else if self.first_person_player_entity == Some(id) {
+                } else if self.play_character_entity == Some(id) {
                     self.physics.remove_entity_body(id);
                 } else {
                     self.physics.set_entity_physics(id, enabled, &body_type, pos, half);

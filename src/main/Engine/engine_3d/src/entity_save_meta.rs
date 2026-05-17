@@ -66,7 +66,7 @@ impl State {
             return Some(m.clone());
         }
 
-        if Some(id) == self.first_person_player_entity {
+        if Some(id) == self.play_character_entity {
             return Some(EntitySaveMeta {
                 kind: "character".to_string(),
                 path: "[Player]".to_string(),

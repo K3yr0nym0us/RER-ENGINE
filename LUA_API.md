@@ -117,7 +117,7 @@ end
 
 ## Solo motor 3D
 
-Pensado para proyectos **first-person** y objetos 3D con Rapier:
+Controller de **play** en proyectos 3D (hoy usado en primera persona) y objetos con Rapier:
 
 | Función | Qué hace |
 |---------|----------|
@@ -127,7 +127,9 @@ Pensado para proyectos **first-person** y objetos 3D con Rapier:
 | `engine.fp_set_sprint_multiplier(mult)` | Multiplicador al sprintar. |
 | `engine.fp_set_jump_speed(speed)` | Impulso de salto. |
 
-En 3D las animaciones por frames 2D no son el foco; el jugador FP usa cápsula cinemática (no el mismo pipeline que `move_entity` en XY de un sprite).
+Aliases equivalentes (misma implementación): `engine.play_character_press_key`, `play_character_jump`, `play_character_set_walk_speed`, `play_character_set_sprint_multiplier`, `play_character_set_jump_speed`.
+
+En 3D las animaciones por frames 2D no son el foco; el personaje jugable en play usa cápsula cinemática (no el mismo pipeline que `move_entity` en XY de un sprite).
 
 **Ejemplo mínimo FP:**
 

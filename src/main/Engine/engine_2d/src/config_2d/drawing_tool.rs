@@ -11,20 +11,7 @@ use crate::engine::State;
 use crate::mesh::{upload, Mesh, Vertex};
 
 impl State {
-    /// Creates a visual box entity from 4 points in world space.
-    /// Returns `(EntityId, center_position[3], scale[3])`.
-    /// Does not add physics — the caller decides if the entity needs a collider.
-    pub(crate) fn create_box_entity(
-        &mut self,
-        pts:   &[[f32; 2]; 4],
-        name:  &str,
-        color: [u8; 4],
-    ) -> (EntityId, [f32; 3], [f32; 3]) {
-        self.create_box_entity_at(pts, name, color, None)
-            .expect("create_box_entity: spawn libre")
-    }
-
-    /// Igual que `create_box_entity`, pero reutiliza `forced_id` si se indica (import de escena).
+    /// Crea una entidad visual (quad) desde 4 puntos; reutiliza `forced_id` si se indica (import de escena).
     pub(crate) fn create_box_entity_at(
         &mut self,
         pts:        &[[f32; 2]; 4],

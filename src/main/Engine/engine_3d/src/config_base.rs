@@ -1,10 +1,7 @@
 // ── Escenas base 3D por código ────────────────────────────────────────────────
 
-use crate::config_3d::first_person::FIRST_PERSON_BODY_HEIGHT;
-use crate::config_3d::first_person::FIRST_PERSON_COLLIDER_RADIUS;
 use crate::config_3d::physics_3d::PhysicsWorld;
 use crate::config_3d::{Camera, WorldBounds3D};
-use crate::ecs::EntityId;
 use crate::config_compat::{ActiveTool, PhysicsWorld2D};
 use crate::ecs::{MeshComponent, NonSelectable, Transform};
 use crate::engine::State;
@@ -70,15 +67,15 @@ impl State {
         self.tool_overlay_buffer = gizmo::build_from_vertices(&self.device, &[]);
         self.show_snap_hint = false;
         self.snap_hint_alpha = 0.0;
-        self.fp_exit_hint_alpha = 0.0;
+        self.fps_exit_hint_alpha = 0.0;
         self.pivot_edit_mode = None;
         self.logical_area_mode = None;
         self.script_engine = ScriptEngine::new()
             .expect("Error al reinicializar el motor de scripting Lua");
         self.control_bindings_by_entity.clear();
-        self.clear_first_person_script_frame();
-        self.first_person_player_entity = None;
-        self.first_person_mesh_forward_xz = glam::Vec2::new(0.0, 1.0);
+        self.clear_play_controller_script_frame();
+        self.play_character_entity = None;
+        self.play_character_mesh_forward_xz = glam::Vec2::new(0.0, 1.0);
         self.undo_stack.clear();
         self.redo_stack.clear();
         self.is_applying_undo = false;
@@ -87,7 +84,7 @@ impl State {
     }
 
     /// Escena base del modo first-person: suelo checker y cámara a ras de editor 3D.
-    pub(crate) fn setup_first_person(&mut self) {
+    pub(crate) fn setup_default_3d_scene(&mut self) {
         self.reset_runtime_scene_3d();
 
         let ground_plane = crate::config_3d::mesh_3d::create_ground_plane(&self.device);
@@ -183,8 +180,8 @@ impl State {
         self.camera.pitch = 0.25;
         self.camera.yaw = -std::f32::consts::FRAC_PI_2;
         self.camera.distance =
-            crate::config_3d::first_person::FIRST_PERSON_EDITOR_ORBIT_DISTANCE;
-        self.clamp_first_person_camera_to_bounds();
+            crate::config_3d::character_anchor::PLAY_CHARACTER_EDITOR_ORBIT_DISTANCE;
+        self.clamp_play_character_camera_to_bounds();
         self.clear_color = wgpu::Color {
             r: 0.06,
             g: 0.06,
@@ -192,65 +189,10 @@ impl State {
             a: 1.0,
         };
 
-        self.spawn_first_person_player();
-        self.sync_first_person_camera_mode();
+        self.spawn_play_character();
+        self.sync_fps_camera_mode();
 
-        log::info!("Escena first-person cargada: arena base del editor 3D");
-    }
-
-    /// Cuerpo placeholder del jugador FP (cubo). La posición del transform = pies (= cámara).
-    fn attach_first_person_player_body(&mut self, id: EntityId) {
-        let mesh_idx = self.meshes.len();
-        self.meshes.push(mesh::create_cube(&self.device));
-        let body_px = [180u8, 200, 255, 255];
-        let tex_idx = self.uv_rects.len();
-        let body_uv = self.atlas.pack(&self.queue, &body_px, 1, 1);
-        self.uv_rects.push(body_uv);
-
-        self.world.insert(
-            id,
-            MeshComponent {
-                mesh_idx,
-                tex_idx,
-            },
-        );
-        if let Some(t) = self.world.get_mut::<Transform>(id) {
-            let w = FIRST_PERSON_COLLIDER_RADIUS * 2.0;
-            t.scale = glam::Vec3::new(w, FIRST_PERSON_BODY_HEIGHT, w);
-        }
-    }
-
-    fn setup_first_person_player_entity(&mut self, id: EntityId, feet: glam::Vec3) {
-        self.character_entities.push(id);
-        self.first_person_player_entity = Some(id);
-        self.first_person_mesh_forward_xz = glam::Vec2::new(0.0, 1.0);
-        self.attach_first_person_player_body(id);
-        if let Some(t) = self.world.get_mut::<Transform>(id) {
-            t.position = crate::config_3d::first_person::player_body_center_from_feet(feet);
-        }
-        self.camera.target = feet;
-        self.sync_player_rotation_from_look();
-        self.sync_first_person_camera_mode();
-        self.ensure_fp_player_kinematic_only();
-    }
-
-    fn spawn_first_person_player(&mut self) {
-        let feet = self.camera.target;
-        let id = self.world.spawn(Some("Player"));
-        self.setup_first_person_player_entity(id, feet);
-        self.save_registry.register_meta(
-            id,
-            EntitySaveMeta {
-                kind: "character".to_string(),
-                path: "[Player]".to_string(),
-                visual_model_path: None,
-                points: None,
-            },
-        );
-        send_event(&EngineEvent::CharacterLoaded {
-            id,
-            path: "[Player]".to_string(),
-        });
+        log::info!("Escena 3D por defecto cargada: arena base del editor");
     }
 
     /// Escena 3D vacía: solo para abrir un `.save` (sin plantilla first-person).
@@ -314,7 +256,7 @@ impl State {
         ));
         if is_player {
             let feet = self.camera.target;
-            self.setup_first_person_player_entity(id, feet);
+            self.setup_play_character_entity(id, feet);
         } else {
             self.character_entities.push(id);
         }

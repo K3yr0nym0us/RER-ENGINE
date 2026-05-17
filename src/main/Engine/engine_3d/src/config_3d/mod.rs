@@ -2,7 +2,7 @@
 //
 // Contiene:
 //  · camera_3d        — Camera (órbita) + CameraUniform
-//  · first_person     — movimiento y mouse look del runtime 3D
+//  · character_anchor / play_character / fps_camera / play_controller
 //  · load_model       — carga un .glb/.gltf/.fbx y añade mallas a la escena
 //  · ray_cast         — proyecta un rayo desde píxel y devuelve la entidad más cercana
 //  · pick_entity      — dispara el picking 3D y emite IPC
@@ -14,7 +14,10 @@
 pub(crate) mod camera_3d;
 pub(crate) use camera_3d::Camera;
 
-pub(crate) mod first_person;
+pub(crate) mod character_anchor;
+pub(crate) mod play_character;
+pub(crate) mod fps_camera;
+pub(crate) mod play_controller;
 pub(crate) mod mesh_3d;
 pub(crate) mod physics_3d;
 pub(crate) mod world_bounds;
@@ -24,9 +27,9 @@ use std::path::Path;
 
 use glam::Vec3 as GlamVec3;
 
-use crate::config_3d::first_person::{
-    FIRST_PERSON_BODY_HEIGHT,
-    FIRST_PERSON_COLLIDER_RADIUS,
+use crate::config_3d::character_anchor::{
+    PLAY_CHARACTER_BODY_HEIGHT,
+    PLAY_CHARACTER_COLLIDER_RADIUS,
 };
 use crate::config_shared::point_to_segment_2d;
 use crate::ecs::{EntityId, MeshComponent, NonSelectable, Transform};
@@ -103,9 +106,9 @@ impl State {
             return;
         }
 
-        let is_fp_player = self.first_person_player_entity == Some(id);
-        let normalize = if is_fp_player {
-            Some(FIRST_PERSON_BODY_HEIGHT)
+        let is_play_character = self.play_character_entity == Some(id);
+        let normalize = if is_play_character {
+            Some(PLAY_CHARACTER_BODY_HEIGHT)
         } else {
             None
         };
@@ -145,7 +148,7 @@ impl State {
             );
         }
 
-        if is_fp_player {
+        if is_play_character {
             if let Some(m) = self.save_registry.meta.get_mut(&id) {
                 m.visual_model_path = Some(path.to_string());
             } else {
@@ -159,15 +162,15 @@ impl State {
                     },
                 );
             }
-            self.first_person_mesh_forward_xz = part.forward_xz;
-            let feet = self.first_person_feet_position();
-            let w = FIRST_PERSON_COLLIDER_RADIUS * 2.0;
+            self.play_character_mesh_forward_xz = part.forward_xz;
+            let feet = self.play_character_feet_position();
+            let w = PLAY_CHARACTER_COLLIDER_RADIUS * 2.0;
             if let Some(t) = self.world.get_mut::<Transform>(id) {
                 // La malla ya viene normalizada a BODY_HEIGHT; scale.y=1 evita doble altura.
                 t.scale = glam::Vec3::new(w, 1.0, w);
                 t.position = glam::Vec3::new(
                     feet.x,
-                    feet.y + FIRST_PERSON_BODY_HEIGHT * 0.5,
+                    feet.y + PLAY_CHARACTER_BODY_HEIGHT * 0.5,
                     feet.z,
                 );
             }
@@ -175,14 +178,14 @@ impl State {
             self.sync_player_rotation_from_look();
             // El jugador FP usa solo la cápsula cinemática; el cuerpo Rapier estático bloquea queries.
             self.physics.remove_entity_body(id);
-            self.emit_first_person_view_changed();
+            self.emit_play_character_view_changed();
         } else {
             if let Some(m) = self.save_registry.meta.get_mut(&id) {
                 m.path = path.to_string();
                 m.visual_model_path = Some(path.to_string());
             }
         }
-        if !is_fp_player && self.physics.has_physics(id) {
+        if !is_play_character && self.physics.has_physics(id) {
             if let Some(t) = self.world.get::<Transform>(id) {
                 let half = [
                     (t.scale.x * 0.5).max(0.01),

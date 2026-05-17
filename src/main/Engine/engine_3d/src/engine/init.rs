@@ -161,9 +161,9 @@ impl State {
             &queue,
             "tooltip-btn-ctrl-to-auto-adjust-english.png",
         );
-        let (fp_exit_hint_uv, fp_exit_hint_size) =
+        let (fps_exit_hint_uv, fps_exit_hint_size) =
             load_snap_hint_asset(&mut atlas, &queue, "tooltip-btn-esc-salir.png");
-        let (fp_exit_hint_uv_en, fp_exit_hint_size_en) =
+        let (fps_exit_hint_uv_en, fps_exit_hint_size_en) =
             load_snap_hint_asset(&mut atlas, &queue, "tooltip-btn-esc-exit.png");
 
         let shader = device.create_shader_module(include_wgsl!("../shader.wgsl"));
@@ -416,7 +416,7 @@ impl State {
             canonical_quad_idx: 0,
             hud_quad_mesh,
             camera,
-            fp_editor_frustum_distance: 2.5,
+            fps_editor_frustum_distance: 2.5,
             camera_2d: None,
             meshes,
             world,
@@ -453,17 +453,17 @@ impl State {
             quick_build_preview_kind: None,
             quick_build_preview_scale: None,
             preview_playing: false,
-            first_person_velocity: glam::Vec3::ZERO,
-            first_person_on_floor: true,
-            first_person_jump_queued: false,
-            first_person_jump_request_active: false,
-            first_person_jump_request_prev: false,
-            first_person_script_input: HashSet::new(),
-            first_person_lua_walk_speed: None,
-            first_person_lua_sprint_multiplier: None,
-            first_person_lua_jump_speed: None,
-            first_person_player_entity: None,
-            first_person_mesh_forward_xz: glam::Vec2::new(0.0, 1.0),
+            play_controller_velocity: glam::Vec3::ZERO,
+            play_controller_on_floor: true,
+            play_controller_jump_queued: false,
+            play_controller_jump_request_active: false,
+            play_controller_jump_request_prev: false,
+            play_controller_script_input: HashSet::new(),
+            play_controller_lua_walk_speed: None,
+            play_controller_lua_sprint_multiplier: None,
+            play_controller_lua_jump_speed: None,
+            play_character_entity: None,
+            play_character_mesh_forward_xz: glam::Vec2::new(0.0, 1.0),
             tool_overlay_buffer: tool_overlay_buffer_init,
             snap_hint_uv,
             snap_hint_size,
@@ -472,11 +472,11 @@ impl State {
             snap_locale: "en".to_string(),
             show_snap_hint: false,
             snap_hint_alpha: 0.0,
-            fp_exit_hint_uv,
-            fp_exit_hint_size,
-            fp_exit_hint_uv_en,
-            fp_exit_hint_size_en,
-            fp_exit_hint_alpha: 0.0,
+            fps_exit_hint_uv,
+            fps_exit_hint_size,
+            fps_exit_hint_uv_en,
+            fps_exit_hint_size_en,
+            fps_exit_hint_alpha: 0.0,
             collider_entities: Vec::new(),
             execution_area_entities: Vec::new(),
             execution_overlaps: HashSet::new(),

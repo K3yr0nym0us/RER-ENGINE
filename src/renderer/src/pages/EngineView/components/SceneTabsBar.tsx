@@ -6,10 +6,16 @@ import type { GameStyle, ProjectSaveData, SavedScene, SavedWorldConfig } from '@
 import { DEFAULT_GRAVITY_MAGNITUDE } from '@shared-types';
 import { isEditorBoxPath, isPlayerPath } from '@shared-types';
 import { buildActiveSceneSnapshotFromEngine } from '../../../defaults/buildProjectSaveFromEngine';
-import { ensureFirstPersonPlayerOnLoad } from '../../../defaults/firstPersonSceneRestore';
+import { ensurePlayCharacterOnLoad } from '../../../defaults/playCharacterSceneRestore';
 import { setSceneCommandForSavedProject } from '../../../defaults/projectSceneLoad';
 import { buildImportSceneCommand } from '../../../context/useContextEngine/hooks/buildImportSceneCommand';
-import { beginSceneImportLoading } from '../../../context/useContextEngine/hooks/sceneImportOverlay';
+import {
+	beginSceneBurstLoad,
+	beginSceneImportLoading,
+	needsSceneBurstLoad,
+	trackSceneBurstCollider,
+	tryEndSceneBurstLoad,
+} from '../../../context/useContextEngine/hooks/sceneImportOverlay';
 import { useContextEngine } from '@engine';
 import { useModal } from '@modal';
 import { setSceneProjectState } from '../sceneStateStore';
@@ -51,13 +57,17 @@ export function SceneTabsBar({ initialSave, projectType, gameStyle }: Props) {
     entityMetaRef,
     pendingRestoresRef,
     pendingModelLoadQueueRef,
-    pendingFirstPersonViewRef,
-    firstPersonViewRef,
+    pendingPlayCharacterViewRef,
+    playCharacterViewRef,
     mainPlayerHandled,
     playerEntityIdRef,
     camera2dRef,
     pendingImportSceneRef,
     sceneImportInProgressRef,
+    sceneBurstLoadInProgressRef,
+    sceneBurstAwaitingPlayerViewRef,
+    sceneBurstPendingColliderCountRef,
+    reportBounds,
     dispatch,
     send,
     removeScenario,
@@ -160,11 +170,11 @@ export function SceneTabsBar({ initialSave, projectType, gameStyle }: Props) {
     mainPlayerHandled.current = false;
     playerEntityIdRef.current = null;
     if (gameStyle === 'first-person' && projectType === '3D' && scene.playerTransform) {
-      pendingFirstPersonViewRef.current = scene.playerTransform;
-      firstPersonViewRef.current = scene.playerTransform;
+      pendingPlayCharacterViewRef.current = scene.playerTransform;
+      playCharacterViewRef.current = scene.playerTransform;
     } else {
-      pendingFirstPersonViewRef.current = null;
-      firstPersonViewRef.current = null;
+      pendingPlayCharacterViewRef.current = null;
+      playCharacterViewRef.current = null;
     }
     if (projectType !== '2D') {
       send({ cmd: 'set_scene', scene: setSceneCommandForSavedProject(projectType) });
@@ -224,6 +234,13 @@ export function SceneTabsBar({ initialSave, projectType, gameStyle }: Props) {
     pendingRestoresRef.current.clear();
     pendingModelLoadQueueRef.current = [];
 
+    const burstLoad = needsSceneBurstLoad(projectType, gameStyle, scene);
+    if (burstLoad) {
+      sceneBurstAwaitingPlayerViewRef.current = false;
+      sceneBurstPendingColliderCountRef.current = 0;
+      beginSceneBurstLoad(dispatch, sceneBurstLoadInProgressRef);
+    }
+
     for (const entity of scene.entities) {
       const transform = {
         position: entity.position,
@@ -232,6 +249,9 @@ export function SceneTabsBar({ initialSave, projectType, gameStyle }: Props) {
       };
 
       if (entity.kind === 'collider' && entity.points) {
+        if (burstLoad) {
+          trackSceneBurstCollider({ sceneBurstPendingColliderCountRef });
+        }
         send({ cmd: 'create_collider_from_points', points: entity.points, track_undo: false });
         continue;
       }
@@ -319,7 +339,25 @@ export function SceneTabsBar({ initialSave, projectType, gameStyle }: Props) {
     }
 
     if (gameStyle === 'first-person' && projectType === '3D') {
-      ensureFirstPersonPlayerOnLoad(scene, pendingRestoresRef, send);
+      ensurePlayCharacterOnLoad(scene, pendingRestoresRef, send);
+    }
+
+    if (burstLoad) {
+      setTimeout(() => {
+        tryEndSceneBurstLoad(
+          dispatch,
+          sceneBurstLoadInProgressRef,
+          {
+            pendingRestoresRef,
+            pendingModelLoadQueueRef,
+            pendingPlayCharacterViewRef,
+            mainPlayerHandled,
+            sceneBurstAwaitingPlayerViewRef,
+            sceneBurstPendingColliderCountRef,
+          },
+          reportBounds,
+        );
+      }, 0);
     }
   };
 
