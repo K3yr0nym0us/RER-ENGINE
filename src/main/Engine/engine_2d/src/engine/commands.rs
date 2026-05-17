@@ -44,9 +44,11 @@ impl State {
                     message: format!("Este binario es 2D: carga de modelos no disponible ({path})"),
                 });
             }
-            EngineCommand::ReplaceEntityModel { .. } => {
+            EngineCommand::ReplaceEntityModel { id, path } => {
                 send_event(&EngineEvent::Error {
-                    message: "Este binario es 2D: reemplazo de modelo no disponible".to_string(),
+                    message: format!(
+                        "Este binario es 2D: reemplazo de modelo no disponible (entidad {id}, {path})"
+                    ),
                 });
             }
             EngineCommand::SetTransform { id, position, rotation, scale, track_undo } => {

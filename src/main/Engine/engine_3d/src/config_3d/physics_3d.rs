@@ -3,8 +3,9 @@
 use std::collections::HashMap;
 
 use glam::Vec3;
-use rapier3d::prelude::*;
+use rapier3d::na::{Isometry, Quaternion, Translation3, UnitQuaternion};
 use rapier3d::parry::query::ShapeCastOptions;
+use rapier3d::prelude::*;
 
 use rer_engine_shared::DEFAULT_GRAVITY_MAGNITUDE;
 
@@ -248,6 +249,23 @@ impl PhysicsWorld {
         }
     }
 
+    pub(crate) fn collider_handle_for_entity(&self, entity: EntityId) -> Option<ColliderHandle> {
+        self.entity_colliders.get(&entity).copied()
+    }
+
+    fn query_filter(exclude_collider: Option<ColliderHandle>) -> QueryFilter<'static> {
+        let mut filter = QueryFilter::default();
+        if let Some(handle) = exclude_collider {
+            filter = filter.exclude_collider(handle);
+        }
+        filter
+    }
+
+    /// Altura del segmento cilíndrico de la cápsula (total ≈ scale_y con hemisferios).
+    pub(crate) fn capsule_half_height_from_scale(scale_y: f32, radius: f32) -> f32 {
+        (scale_y * 0.5 - radius).max(0.01)
+    }
+
     pub(crate) fn rebuild_world_bounds_colliders(&mut self, bounds: &WorldBounds3D) {
         const WALL_THICKNESS: f32 = 0.5;
 
@@ -290,130 +308,150 @@ impl PhysicsWorld {
         self.refresh_queries();
     }
 
-    pub(crate) fn is_character_grounded(
+    /// Raycast vertical para colocar pies al spawn (solo contacto, sin Y fijo).
+    pub(crate) fn find_ground_y_at(&mut self, x: f32, z: f32, from_y: f32, max_down: f32) -> Option<f32> {
+        self.refresh_queries();
+        let filter = QueryFilter::default();
+        let ray = Ray::new(point![x, from_y, z], vector![0.0, -1.0, 0.0]);
+        let hit = self.query_pipeline.cast_ray_and_get_normal(
+            &self.bodies,
+            &self.colliders,
+            &ray,
+            max_down.max(0.1),
+            true,
+            filter,
+        );
+        if let Some((_, hit)) = hit {
+            if hit.normal.y > 0.45 {
+                return Some(from_y - hit.time_of_impact + 0.02);
+            }
+        }
+        None
+    }
+
+    /// Sondea el suelo bajo los pies con un raycast vertical. Devuelve `Some(ground_y)`
+    /// si hay suelo cuya normal cumple `floor_max_angle ≈ 45°` (estilo Godot).
+    /// El caller decide si hacer "snap" de los pies a `ground_y`.
+    pub(crate) fn floor_probe(
         &mut self,
-        position: Vec3,
-        radius: f32,
-        extra_distance: f32,
-    ) -> bool {
+        feet: Vec3,
+        exclude_collider: Option<ColliderHandle>,
+    ) -> Option<f32> {
         self.refresh_queries();
 
-        let radius = radius.max(0.05);
-        let feet_y = position.y - radius;
-        let probe = extra_distance.max(0.05) + 0.15;
-        let filter = QueryFilter::default();
+        let filter = Self::query_filter(exclude_collider);
+        // SKIN hacia arriba: arranca el ray ligeramente sobre los pies para no partir
+        // dentro de un piso con micro-penetración. PROBE: cuánto buscar suelo abajo.
+        const SKIN: f32 = 0.02;
+        const PROBE: f32 = 0.10;
+        let origin = point![feet.x, feet.y + SKIN, feet.z];
+        let dir = vector![0.0, -1.0, 0.0];
+        let ray = Ray::new(origin, dir);
 
-        // Raycast desde los pies (Godot/Unity floor check) — detecta cajas y suelo.
-        let ray_origin = point![position.x, feet_y + 0.04, position.z];
-        let ray_dir = vector![0.0, -1.0, 0.0];
-        let ray = Ray::new(ray_origin, ray_dir);
         if let Some((_, hit)) = self.query_pipeline.cast_ray_and_get_normal(
             &self.bodies,
             &self.colliders,
             &ray,
-            probe,
+            SKIN + PROBE,
             true,
             filter,
         ) {
-            if hit.time_of_impact <= probe && hit.normal.y > 0.45 {
-                return true;
+            // Godot floor_max_angle: cos(45°) ≈ 0.707.
+            if hit.normal.y > 0.707 {
+                let ground_y = feet.y + SKIN - hit.time_of_impact;
+                return Some(ground_y);
             }
         }
-
-        // Proyección bajo las suelas: superficie cercana en XZ (cajas, escalones).
-        let sole = point![position.x, feet_y, position.z];
-        if let Some((_, proj)) = self.query_pipeline.project_point(
-            &self.bodies,
-            &self.colliders,
-            &sole,
-            true,
-            filter,
-        ) {
-            let gap_y = feet_y - proj.point.y;
-            let horiz = ((position.x - proj.point.x).powi(2) + (position.z - proj.point.z).powi(2))
-                .sqrt();
-            if gap_y.abs() <= probe && gap_y >= -0.08 && horiz <= radius + 0.25 {
-                return true;
-            }
-        }
-
-        // Respaldo: shape-cast desde el centro del cuerpo.
-        let shape = Ball::new(radius);
-        let shape_pos = Isometry::translation(position.x, position.y, position.z);
-        let shape_vel = vector![0.0, -(radius + probe), 0.0];
-        if let Some((_, hit_data)) = self.query_pipeline.cast_shape(
-            &self.bodies,
-            &self.colliders,
-            &shape_pos,
-            &shape_vel,
-            &shape,
-            ShapeCastOptions {
-                max_time_of_impact: 1.0,
-                target_distance: 0.05,
-                stop_at_penetration: true,
-                compute_impact_geometry_on_penetration: true,
-            },
-            filter,
-        ) {
-            let normal = hit_data.normal2.into_inner();
-            if normal.y > 0.45 {
-                return true;
-            }
-        }
-
-        false
+        None
     }
 
-    /// Desplazamiento tipo `move_and_slide` (Godot) / `CharacterController.Move` (Unity):
-    /// primero horizontal, luego vertical; devuelve posición final y si hay suelo bajo los pies.
-    pub(crate) fn move_character_slide(
+    /// `move_and_slide` con cápsula anclada en los pies (CharacterBody3D-style).
+    ///
+    /// Reglas estilo Godot:
+    /// 1. Movimiento horizontal con deslizamiento sobre paredes.
+    /// 2. Movimiento vertical con detección de contacto (gravedad/salto).
+    /// 3. Tras mover, si `velocity.y <= 0` y hay suelo bajo los pies, hacer
+    ///    **snap a la `y` real del contacto** y reportar `on_floor = true`.
+    ///    Si `velocity.y > 0` (saltando), nunca se reporta on_floor (evita auto-snap
+    ///    inmediato al despegar y permite que la gravedad actúe siempre).
+    pub(crate) fn move_character_capsule_at_feet(
         &mut self,
-        start: Vec3,
+        feet: Vec3,
+        up: Vec3,
         velocity: Vec3,
         dt: f32,
         radius: f32,
-        ground_probe: f32,
+        half_height: f32,
+        _ground_probe: f32,
+        exclude_collider: Option<ColliderHandle>,
     ) -> (Vec3, bool) {
-        let mut position = start;
+        let up = up.normalize_or_zero();
+        let radius = radius.max(0.05);
+        let half_height = half_height.max(0.01);
+        let mut feet_pos = feet;
 
+        // 1) Horizontal: desliza sobre paredes.
         let horizontal = Vec3::new(velocity.x, 0.0, velocity.z) * dt;
         if horizontal.length_squared() > 1e-6 {
-            position = self.move_character_sphere(position, horizontal, radius);
+            feet_pos = self.move_capsule_at_feet(
+                feet_pos,
+                up,
+                horizontal,
+                radius,
+                half_height,
+                Self::query_filter(exclude_collider),
+            );
         }
 
+        // 2) Vertical: gravedad / salto, detenido por colisión.
         let vertical_delta = velocity.y * dt;
         if vertical_delta.abs() > 1e-6 {
-            let before_y = position.y;
             let vertical_motion = Vec3::Y * vertical_delta;
-            position = self.move_character_sphere(position, vertical_motion, radius);
-            // Si el shape-cast bloquea el salto por contacto con el suelo, forzar subida mínima.
-            if velocity.y > 0.0 && (position.y - before_y) < vertical_delta * 0.25 {
-                position.y = before_y + vertical_delta;
-            }
+            feet_pos = self.move_capsule_at_feet(
+                feet_pos,
+                up,
+                vertical_motion,
+                radius,
+                half_height,
+                Self::query_filter(exclude_collider),
+            );
         }
 
-        let on_floor = if ground_probe > 0.0 {
-            self.is_character_grounded(position, radius, ground_probe)
-        } else {
+        // 3) Suelo + snap. Solo si NO estamos ascendiendo (vy>0 = en pleno salto).
+        let on_floor = if velocity.y > 0.0 {
             false
+        } else {
+            match self.floor_probe(feet_pos, exclude_collider) {
+                Some(ground_y) => {
+                    // Pega los pies EXACTAMENTE al suelo: nada de flotar 1-2 cm.
+                    feet_pos.y = ground_y;
+                    true
+                }
+                None => false,
+            }
         };
-        (position, on_floor)
+
+        (feet_pos, on_floor)
     }
 
-    pub(crate) fn move_character_sphere(
+    fn move_capsule_at_feet(
         &mut self,
-        start: Vec3,
+        feet: Vec3,
+        up: Vec3,
         movement: Vec3,
         radius: f32,
+        half_height: f32,
+        filter: QueryFilter,
     ) -> Vec3 {
         if movement.length_squared() <= 1e-6 {
-            return start;
+            return feet;
         }
 
         self.refresh_queries();
 
-        let shape = Ball::new(radius.max(0.05));
-        let mut current = start;
+        let capsule = Capsule::new_y(half_height, radius);
+        let up = up.normalize_or_zero();
+        let mut current_feet = feet;
         let mut remaining = movement;
 
         for _ in 0..3 {
@@ -421,30 +459,39 @@ impl PhysicsWorld {
                 break;
             }
 
-            let shape_pos = Isometry::translation(current.x, current.y, current.z);
-            let shape_vel = vector![remaining.x, remaining.y, remaining.z];
+            let pose = capsule_isometry_at_feet(current_feet, up, radius, half_height);
+            let falling = remaining.y < -1e-6;
             let hit = self.query_pipeline.cast_shape(
                 &self.bodies,
                 &self.colliders,
-                &shape_pos,
-                &shape_vel,
-                &shape,
+                &pose,
+                &vector![remaining.x, remaining.y, remaining.z],
+                &capsule,
                 ShapeCastOptions {
                     max_time_of_impact: 1.0,
-                    target_distance: 0.02,
-                    stop_at_penetration: false,
-                    compute_impact_geometry_on_penetration: false,
+                    target_distance: 0.0,
+                    stop_at_penetration: falling,
+                    compute_impact_geometry_on_penetration: falling,
                 },
-                QueryFilter::default(),
+                filter,
             );
 
             let Some((_, hit_data)) = hit else {
-                current += remaining;
+                current_feet += remaining;
                 break;
             };
 
             let toi = hit_data.time_of_impact.clamp(0.0, 1.0);
-            current += remaining * toi;
+            let center = capsule_center_from_feet(current_feet, up, radius, half_height);
+            let new_center = center + remaining * toi;
+            current_feet = feet_from_capsule_center(new_center, up, radius, half_height);
+
+            if falling {
+                let n = hit_data.normal2.into_inner();
+                if n.y > 0.45 {
+                    break;
+                }
+            }
 
             let normal = hit_data.normal2.into_inner();
             let slide_normal = Vec3::new(normal.x, normal.y, normal.z).normalize_or_zero();
@@ -457,7 +504,7 @@ impl PhysicsWorld {
             remaining = slide * remainder_factor;
         }
 
-        current
+        current_feet
     }
 
     pub(crate) fn step(
@@ -509,4 +556,30 @@ impl PhysicsWorld {
 
         self.refresh_queries();
     }
+}
+
+fn capsule_center_from_feet(feet: Vec3, up: Vec3, radius: f32, half_height: f32) -> Vec3 {
+    feet + up.normalize_or_zero() * (half_height + radius)
+}
+
+fn feet_from_capsule_center(center: Vec3, up: Vec3, radius: f32, half_height: f32) -> Vec3 {
+    center - up.normalize_or_zero() * (half_height + radius)
+}
+
+fn capsule_isometry_at_feet(
+    feet: Vec3,
+    up: Vec3,
+    radius: f32,
+    half_height: f32,
+) -> Isometry<f32, UnitQuaternion<f32>, 3> {
+    let up = up.normalize_or_zero();
+    let center = capsule_center_from_feet(feet, up, radius, half_height);
+    let rot = glam::Quat::from_rotation_arc(glam::Vec3::Y, up);
+    let na_rot = UnitQuaternion::from_quaternion(Quaternion::new(
+        rot.w, rot.x, rot.y, rot.z,
+    ));
+    Isometry::from_parts(
+        Translation3::new(center.x, center.y, center.z),
+        na_rot,
+    )
 }

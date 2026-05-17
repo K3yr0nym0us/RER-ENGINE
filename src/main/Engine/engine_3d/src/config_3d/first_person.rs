@@ -38,6 +38,48 @@ impl State {
         self.first_person_lua_jump_speed
             .unwrap_or(FIRST_PERSON_JUMP_SPEED)
     }
+
+    fn player_exclude_collider(&self) -> Option<rapier3d::prelude::ColliderHandle> {
+        self.first_person_player_entity
+            .and_then(|id| self.physics.collider_handle_for_entity(id))
+    }
+
+    fn player_capsule_params(&self) -> Option<(f32, f32, glam::Quat, Vec3)> {
+        let id = self.first_person_player_entity?;
+        let t = self.world.get::<Transform>(id)?;
+        let radius = FIRST_PERSON_COLLIDER_RADIUS;
+        // Altura de cápsula fija (malla normalizada o cubo con scale.y=BODY_HEIGHT).
+        let half_height =
+            crate::config_3d::physics_3d::PhysicsWorld::capsule_half_height_from_scale(
+                FIRST_PERSON_BODY_HEIGHT,
+                radius,
+            );
+        Some((radius, half_height, t.rotation, t.position))
+    }
+
+    /// Pies del controller en play: eje mundo Y (independiente de rotación del mesh).
+    fn controller_feet_from_center(center: Vec3) -> Vec3 {
+        Vec3::new(
+            center.x,
+            center.y - FIRST_PERSON_BODY_HEIGHT * 0.5,
+            center.z,
+        )
+    }
+
+    fn center_from_controller_feet(feet: Vec3) -> Vec3 {
+        Vec3::new(
+            feet.x,
+            feet.y + FIRST_PERSON_BODY_HEIGHT * 0.5,
+            feet.z,
+        )
+    }
+
+    /// Offset pivot→pies. La malla del jugador SIEMPRE mide `FIRST_PERSON_BODY_HEIGHT` (1.7m):
+    /// el cubo placeholder lo logra vía `scale.y = 1.7`, los modelos importados se normalizan
+    /// a 1.7m con `scale.y = 1.0`. Por eso el offset es constante (no depende de `scale_y`).
+    fn feet_offset_local(_scale_y: f32, rotation: glam::Quat) -> Vec3 {
+        rotation * Vec3::new(0.0, -FIRST_PERSON_BODY_HEIGHT * 0.5, 0.0)
+    }
 }
 
 pub(crate) const FIRST_PERSON_KEYBOARD_SPEED: f32 = 4.0;
@@ -45,57 +87,62 @@ pub(crate) const FIRST_PERSON_SPRINT_MULTIPLIER: f32 = 3.0;
 pub(crate) const FIRST_PERSON_MOUSE_SPEED: f32 = 0.0020;
 pub(crate) const FIRST_PERSON_COLLIDER_RADIUS: f32 = 0.40;
 pub(crate) const FIRST_PERSON_EYE_OFFSET: f32 = 1.35;
-pub(crate) const FIRST_PERSON_GROUND_REST_Y: f32 = FIRST_PERSON_COLLIDER_RADIUS + 0.05;
-/// Respaldo solo para el plano del mundo en y=0 cuando el shape-cast no reporta suelo.
-pub(crate) const FIRST_PERSON_FLOOR_EPSILON: f32 = 0.12;
 pub(crate) const FIRST_PERSON_JUMP_SPEED: f32 = 6.0;
 pub(crate) const FIRST_PERSON_GROUND_PROBE: f32 = 0.08;
 /// Altura del cubo-cuerpo del jugador (placeholder visual).
 pub(crate) const FIRST_PERSON_BODY_HEIGHT: f32 = 1.7;
-pub(crate) const FIRST_PERSON_BODY_HALF_H: f32 = FIRST_PERSON_BODY_HEIGHT * 0.5;
 /// Distancia de la cámara orbital en editor (detrás del jugador, fuera de play).
 pub(crate) const FIRST_PERSON_EDITOR_ORBIT_DISTANCE: f32 = 3.0;
 
-const FEET_OFFSET_LOCAL: glam::Vec3 = glam::Vec3::new(0.0, -FIRST_PERSON_BODY_HALF_H, 0.0);
-
-pub(crate) fn feet_from_player_transform(center: Vec3, rotation: glam::Quat) -> Vec3 {
-    center + rotation * FEET_OFFSET_LOCAL
+pub(crate) fn feet_from_player_transform(center: Vec3, scale_y: f32, rotation: glam::Quat) -> Vec3 {
+    center + State::feet_offset_local(scale_y, rotation)
 }
 
-pub(crate) fn player_center_from_feet(feet: Vec3, rotation: glam::Quat) -> Vec3 {
-    feet - rotation * FEET_OFFSET_LOCAL
+pub(crate) fn player_center_from_feet(feet: Vec3, scale_y: f32, rotation: glam::Quat) -> Vec3 {
+    feet - State::feet_offset_local(scale_y, rotation)
 }
 
 pub(crate) fn player_body_center_from_feet(feet: Vec3) -> Vec3 {
-    player_center_from_feet(feet, glam::Quat::IDENTITY)
+    player_center_from_feet(feet, FIRST_PERSON_BODY_HEIGHT, glam::Quat::IDENTITY)
 }
 
 impl State {
-    /// Posición de los pies del jugador (= cámara FP). Fuente única con la entidad Player.
+    /// Posición de los pies del jugador (base de la cápsula de movimiento).
     pub(crate) fn first_person_feet_position(&self) -> Vec3 {
-        if let Some(id) = self.first_person_player_entity {
-            if let Some(t) = self.world.get::<Transform>(id) {
-                return feet_from_player_transform(t.position, t.rotation);
+        if let Some((_, _, rot, center)) = self.player_capsule_params() {
+            if self.is_first_person_runtime_active() {
+                return Self::controller_feet_from_center(center);
             }
+            let scale_y = self
+                .first_person_player_entity
+                .and_then(|id| self.world.get::<Transform>(id))
+                .map(|t| t.scale.y)
+                .unwrap_or(FIRST_PERSON_BODY_HEIGHT);
+            return feet_from_player_transform(center, scale_y, rot);
         }
         self.camera.target
     }
 
     pub(crate) fn set_first_person_feet_position(&mut self, feet: Vec3) {
+        let in_play = self.is_first_person_runtime_active();
         if let Some(id) = self.first_person_player_entity {
             if let Some(t) = self.world.get_mut::<Transform>(id) {
-                let rot = t.rotation;
-                t.position = player_center_from_feet(feet, rot);
+                if in_play {
+                    t.position = Self::center_from_controller_feet(feet);
+                } else {
+                    let scale_y = t.scale.y;
+                    let rot = t.rotation;
+                    t.position = player_center_from_feet(feet, scale_y, rot);
+                }
             }
         }
         self.camera.target = feet;
     }
 
-    /// Alinea el mesh del jugador al yaw de cámara (solo editor; en play se preserva rotación de Propiedades).
+    /// Alinea el mesh del jugador al yaw de la cámara (editor y play).
+    /// En FPS estilo Godot, el cuerpo gira con la cámara para que mirar = orientarse.
+    /// Solo aplica yaw (Y world); pitch queda en la cámara, no en el cuerpo.
     pub(crate) fn sync_player_rotation_from_look(&mut self) {
-        if self.is_first_person_runtime_active() {
-            return;
-        }
         if let Some(id) = self.first_person_player_entity {
             if let Some(t) = self.world.get_mut::<Transform>(id) {
                 t.rotation = glam::Quat::from_rotation_y(self.camera.yaw);
@@ -103,27 +150,25 @@ impl State {
         }
     }
 
+    /// Inverso de `sync_player_rotation_from_look`: toma el yaw del cuerpo y lo asigna a la
+    /// cámara. Se invoca al entrar a Play para que `apply_first_person_mouse_look` no haga
+    /// "snap" del cuerpo al primer movimiento de mouse (perdiendo la rotación que el usuario
+    /// fijó en el editor por Propiedades o herramientas).
+    pub(crate) fn sync_camera_yaw_from_player_body(&mut self) {
+        let Some(id) = self.first_person_player_entity else {
+            return;
+        };
+        let Some(t) = self.world.get::<Transform>(id) else {
+            return;
+        };
+        let (yaw, _, _) = t.rotation.to_euler(glam::EulerRot::YXZ);
+        self.camera.yaw = yaw;
+    }
+
     pub(crate) fn is_first_person_runtime_active(&self) -> bool {
         self.preview_playing && self.camera_2d.is_none()
     }
 
-    /// Pies sobre cualquier superficie con collider (cajas, suelo, etc.).
-    fn is_first_person_grounded(&mut self, position: Vec3, velocity_y: f32) -> bool {
-        if velocity_y > 0.5 {
-            return false;
-        }
-
-        if self.physics.is_character_grounded(
-            position,
-            FIRST_PERSON_COLLIDER_RADIUS,
-            FIRST_PERSON_GROUND_PROBE,
-        ) {
-            return true;
-        }
-
-        // Plano del mundo (checker) sin depender solo de la altura para plataformas elevadas.
-        position.y <= FIRST_PERSON_GROUND_REST_Y + FIRST_PERSON_FLOOR_EPSILON
-    }
 
     fn first_person_move_speed(&self, pressed_inputs: &HashSet<String>) -> f32 {
         let mut speed = self
@@ -140,62 +185,56 @@ impl State {
 
     pub(crate) fn reset_first_person_motion(&mut self) {
         self.first_person_velocity = Vec3::ZERO;
-        self.first_person_on_floor = true;
+        self.first_person_on_floor = false;
         self.first_person_jump_queued = false;
+        self.first_person_jump_request_active = false;
+        self.first_person_jump_request_prev = false;
     }
 
-    /// Alinea el collider Rapier del jugador con sus pies actuales (evita bloqueos tras rotar/mover en editor).
-    pub(crate) fn sync_first_person_player_physics(&mut self) {
+    /// El jugador FP no debe tener cuerpo Rapier (solo cápsula cinemática por queries).
+    pub(crate) fn ensure_fp_player_kinematic_only(&mut self) {
         let Some(id) = self.first_person_player_entity else {
             return;
         };
-        if !self.physics.has_physics(id) {
-            return;
-        }
-        let Some(t) = self.world.get::<Transform>(id) else {
-            return;
-        };
-        let half = [
-            (t.scale.x * 0.5).max(0.01),
-            (t.scale.y * 0.5).max(0.01),
-            (t.scale.z * 0.5).max(0.01),
-        ];
-        let pos = feet_from_player_transform(t.position, t.rotation).to_array();
-        self.physics
-            .sync_entity_physics_from_transform(id, pos, half);
+        self.physics.remove_entity_body(id);
     }
 
     pub(crate) fn has_first_person_player(&self) -> bool {
         self.first_person_player_entity.is_some() && self.camera_2d.is_none()
     }
 
+    /// Solicita salto. NO aplica velocidad aquí (eso lo decide `apply_first_person_keyboard`
+    /// con detección de flanco al estilo Godot `is_action_just_pressed`).
     pub(crate) fn queue_first_person_jump(&mut self) {
         if !self.is_first_person_runtime_active() {
             return;
         }
-        let position = self.first_person_feet_position();
-        let velocity_y = self.first_person_velocity.y;
-        if self.is_first_person_grounded(position, velocity_y) {
-            self.first_person_velocity.y = self.first_person_jump_speed();
-            self.first_person_on_floor = false;
-        }
-        self.first_person_jump_queued = true;
+        self.first_person_jump_request_active = true;
+    }
+
+    /// Eye offset SIEMPRE en world Y (estilo Godot Camera3D anclado al pivote del jugador).
+    /// No rotar por la rotación del mesh: el usuario controla la cámara con yaw/pitch,
+    /// y el cuerpo visual puede tener cualquier rotación sin afectar la altura de ojos.
+    pub(crate) fn first_person_eye_world_offset(&self) -> Vec3 {
+        Vec3::new(0.0, FIRST_PERSON_EYE_OFFSET, 0.0)
     }
 
     pub(crate) fn sync_first_person_camera_mode(&mut self) {
         if self.is_first_person_runtime_active() {
             self.camera.orbit_pivot_offset = Vec3::ZERO;
-            self.camera.eye_height_offset = FIRST_PERSON_EYE_OFFSET;
+            self.camera.eye_height_offset = 0.0;
+            self.camera.eye_offset_local = self.first_person_eye_world_offset();
             self.camera.distance = 0.01;
         } else if self.has_first_person_player() {
-            // Editor: orbitar a la altura de los ojos (misma altura que en play).
             self.camera.orbit_pivot_offset =
                 Vec3::new(0.0, FIRST_PERSON_EYE_OFFSET, 0.0);
             self.camera.eye_height_offset = 0.0;
+            self.camera.eye_offset_local = Vec3::ZERO;
             self.camera.distance = FIRST_PERSON_EDITOR_ORBIT_DISTANCE;
         } else {
             self.camera.orbit_pivot_offset = Vec3::ZERO;
             self.camera.eye_height_offset = 0.0;
+            self.camera.eye_offset_local = Vec3::ZERO;
         }
     }
 
@@ -219,8 +258,7 @@ impl State {
         self.sync_first_person_camera_mode();
 
         self.first_person_velocity = Vec3::ZERO;
-        self.first_person_on_floor =
-            self.is_first_person_grounded(self.first_person_feet_position(), 0.0);
+        self.first_person_on_floor = false;
         self.clamp_first_person_camera_to_bounds();
     }
 
@@ -235,6 +273,8 @@ impl State {
             -std::f32::consts::FRAC_PI_2 + 0.05,
             std::f32::consts::FRAC_PI_2 - 0.05,
         );
+        // Rotar el cuerpo del jugador con el yaw (estilo Godot CharacterBody3D + Head).
+        self.sync_player_rotation_from_look();
     }
 
     pub(crate) fn apply_first_person_keyboard(
@@ -248,26 +288,40 @@ impl State {
 
         self.sync_first_person_camera_mode();
 
+        let Some((radius, half_height, _, _)) = self.player_capsule_params() else {
+            return;
+        };
+        let up = Vec3::Y;
+        let exclude = self.player_exclude_collider();
+
         let dt = delta_time.min(0.05);
-        let radius = FIRST_PERSON_COLLIDER_RADIUS;
         let move_speed = self.first_person_move_speed(pressed_inputs);
-        let mut position = self.first_person_feet_position();
+        let mut feet = self.first_person_feet_position();
         let mut velocity = self.first_person_velocity;
 
-        let mut on_floor = self.is_first_person_grounded(position, velocity.y);
+        // Edge detection estilo Godot `is_action_just_pressed`: el script SPACE corre cada
+        // frame mientras esté pulsado; solo el flanco de subida cuenta como un nuevo salto.
+        let jump_held_now = self.first_person_jump_request_active
+            || pressed_inputs.contains("SPACE");
+        let jump_just_pressed = jump_held_now && !self.first_person_jump_request_prev;
+        self.first_person_jump_request_prev = jump_held_now;
+        self.first_person_jump_request_active = false;
 
+        // Godot _physics_process: is_on_floor del frame anterior (tras move_and_slide).
+        let mut on_floor = self.first_person_on_floor;
         let gravity = self.physics.gravity_magnitude();
 
+        // 1) Salto solo en flanco y estando en suelo.
+        if jump_just_pressed && on_floor {
+            velocity.y = self.first_person_jump_speed();
+            on_floor = false;
+        }
+
+        // 2) Gravedad si no está en suelo (estilo Godot).
         if !on_floor {
             velocity.y -= gravity * dt;
         } else if velocity.y < 0.0 {
             velocity.y = 0.0;
-        }
-
-        let jump_requested =
-            pressed_inputs.contains("SPACE") || self.first_person_jump_queued;
-        if jump_requested && self.is_first_person_grounded(position, velocity.y) {
-            velocity.y = self.first_person_jump_speed();
         }
 
         let (sy, cy) = self.camera.yaw.sin_cos();
@@ -294,47 +348,46 @@ impl State {
         velocity.x = wish.x;
         velocity.z = wish.z;
 
-        let (new_position, _) = self.physics.move_character_slide(
-            position,
+        let (new_feet, slide_on_floor) = self.physics.move_character_capsule_at_feet(
+            feet,
+            up,
             velocity,
             dt,
             radius,
+            half_height,
             FIRST_PERSON_GROUND_PROBE,
+            exclude,
         );
-        position = new_position;
+        feet = new_feet;
+        on_floor = slide_on_floor;
 
-        on_floor = self.is_first_person_grounded(position, velocity.y);
-        if on_floor && velocity.y <= 0.0 {
+        if on_floor && velocity.y < 0.0 {
             velocity.y = 0.0;
-            // Snap solo en el plano base del mundo, no en plataformas elevadas.
-            if position.y <= FIRST_PERSON_GROUND_REST_Y + FIRST_PERSON_FLOOR_EPSILON {
-                position.y = FIRST_PERSON_GROUND_REST_Y;
-            }
         }
 
-        position = self
-            .world_bounds_3d
-            .clamp_sphere_center(position, radius);
+        feet = self.world_bounds_3d.clamp_sphere_center(feet, 0.0);
 
-        self.set_first_person_feet_position(position);
+        self.set_first_person_feet_position(feet);
         self.camera.distance = 0.01;
+        self.sync_first_person_camera_mode();
         self.first_person_velocity = velocity;
         self.first_person_on_floor = on_floor;
         self.first_person_jump_queued = false;
     }
+
 
     pub(crate) fn clamp_first_person_camera_to_bounds(&mut self) {
         if self.camera_2d.is_some() {
             return;
         }
 
-        let feet = self.world_bounds_3d.clamp_sphere_center(
-            self.first_person_feet_position(),
-            FIRST_PERSON_COLLIDER_RADIUS,
-        );
+        let feet = self
+            .world_bounds_3d
+            .clamp_sphere_center(self.first_person_feet_position(), 0.0);
         self.set_first_person_feet_position(feet);
         if self.is_first_person_runtime_active() {
             self.camera.distance = 0.01;
+            self.sync_first_person_camera_mode();
         }
     }
 }

@@ -758,15 +758,7 @@ export function createEngineEventHandler({
 						{ editorOrbit: true },
 					);
 					refs.pendingFirstPersonViewRef.current = null;
-					const center = refs.entityTransformsRef.current[character.id]?.position;
-					const rot = refs.entityTransformsRef.current[character.id]?.rotation ?? [0, 0, 0, 1];
-					if (center) {
-						refs.entityTransformsRef.current[character.id] = {
-							position: center,
-							rotation: rot,
-							scale: FIRST_PERSON_PLAYER_BODY_SCALE,
-						};
-					}
+					// No sobrescribir scale: el motor puede usar 1.0 tras importar modelo (malla ya normalizada).
 					applyFirstPersonDefaultsForPlayer(character.id, gameStyle, refs);
 				} else {
 					dispatch({ type: 'ADD_CHARACTER', payload: { id: character.id, path: character.path } });
@@ -990,6 +982,8 @@ export function createEngineEventHandler({
 		if (event.event === 'debug_metrics') {
 			const metrics = event as unknown as DebugMetrics;
 			dispatch({ type: 'SET_DEBUG_METRICS', payload: metrics });
+			// Solo actualizar la vista guardada (pies/yaw/pitch). No reescribir entityTransformsRef
+			// en play: eso desalineaba centro/pivot respecto al motor y el panel de Propiedades.
 			if (
 				gameStyle === 'first-person'
 				&& projectType === '3D'
@@ -997,22 +991,14 @@ export function createEngineEventHandler({
 				&& metrics.first_person_yaw != null
 				&& metrics.first_person_pitch != null
 			) {
+				const prev = refs.firstPersonViewRef.current;
 				refs.firstPersonViewRef.current = {
 					position: metrics.first_person_position,
-					scale: FIRST_PERSON_PLAYER_BODY_SCALE,
+					scale: prev?.scale ?? FIRST_PERSON_PLAYER_BODY_SCALE,
 					yaw: metrics.first_person_yaw,
 					pitch: metrics.first_person_pitch,
+					...(prev?.visual_model_path ? { visual_model_path: prev.visual_model_path } : {}),
 				};
-				const playerId = refs.playerEntityIdRef.current;
-				if (playerId != null) {
-					const prev = refs.entityTransformsRef.current[playerId];
-					const keptRot = prev?.rotation ?? [0, 0, 0, 1];
-					refs.entityTransformsRef.current[playerId] = {
-						position: bodyCenterFromFeet(metrics.first_person_position),
-						rotation: keptRot,
-						scale: FIRST_PERSON_PLAYER_BODY_SCALE,
-					};
-				}
 			}
 		}
 	};

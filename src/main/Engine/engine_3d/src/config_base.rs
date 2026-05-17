@@ -161,11 +161,12 @@ impl State {
         self.set_world_bounds_3d_size(28.0, 14.0, Some(56.0));
 
         self.camera = Camera::new();
-        self.camera.target = glam::Vec3::new(
-            0.0,
-            crate::config_3d::first_person::FIRST_PERSON_GROUND_REST_Y,
-            5.0,
-        );
+        let spawn_xz = (0.0_f32, 5.0_f32);
+        let ground_y = self
+            .physics
+            .find_ground_y_at(spawn_xz.0, spawn_xz.1, 10.0, 20.0)
+            .unwrap_or(0.0);
+        self.camera.target = glam::Vec3::new(spawn_xz.0, ground_y, spawn_xz.1);
         self.camera.pitch = 0.25;
         self.camera.yaw = -std::f32::consts::FRAC_PI_2;
         self.camera.distance =
@@ -216,6 +217,7 @@ impl State {
         self.camera.target = feet;
         self.sync_player_rotation_from_look();
         self.sync_first_person_camera_mode();
+        self.ensure_fp_player_kinematic_only();
     }
 
     fn spawn_first_person_player(&mut self) {

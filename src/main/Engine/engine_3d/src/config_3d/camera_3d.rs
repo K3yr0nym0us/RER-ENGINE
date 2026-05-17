@@ -21,6 +21,8 @@ pub(crate) struct Camera {
     pub far: f32,
     /// Desplazamiento vertical de la vista en primera persona (ojos sobre el collider).
     pub(crate) eye_height_offset: f32,
+    /// Offset de ojos en espacio local del jugador (Play FP).
+    pub(crate) eye_offset_local: Vec3,
     /// Pivote extra para órbita en editor FP (target = pies, pivote = pies + offset).
     pub(crate) orbit_pivot_offset: Vec3,
 }
@@ -36,6 +38,7 @@ impl Camera {
             near: 0.1,
             far: 1000.0,
             eye_height_offset: 0.0,
+            eye_offset_local: Vec3::ZERO,
             orbit_pivot_offset: Vec3::ZERO,
         }
     }
@@ -45,7 +48,7 @@ impl Camera {
     }
 
     fn is_first_person_view(&self) -> bool {
-        self.eye_height_offset > 0.0 && self.distance < 0.5
+        self.distance < 0.5
     }
 
     pub(crate) fn view_forward(&self) -> Vec3 {
@@ -61,6 +64,7 @@ impl Camera {
         pivot
             + Vec3::new(cy * cp, sp, sy * cp) * self.distance
             + Vec3::Y * self.eye_height_offset
+            + self.eye_offset_local
     }
 
     pub(crate) fn orbit(&mut self, dx: f32, dy: f32) {

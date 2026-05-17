@@ -424,6 +424,8 @@ impl State {
             first_person_velocity: glam::Vec3::ZERO,
             first_person_on_floor: true,
             first_person_jump_queued: false,
+            first_person_jump_request_active: false,
+            first_person_jump_request_prev: false,
             first_person_script_input: HashSet::new(),
             first_person_lua_walk_speed: None,
             first_person_lua_sprint_multiplier: None,

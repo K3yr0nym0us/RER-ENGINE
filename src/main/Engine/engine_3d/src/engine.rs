@@ -77,6 +77,10 @@ pub struct State {
     pub(crate) first_person_velocity: GlamVec3,
     pub(crate) first_person_on_floor: bool,
     pub(crate) first_person_jump_queued: bool,
+    /// Detección de flanco (Godot `is_action_just_pressed`): true mientras el script SPACE
+    /// está pulsando este frame; comparado con `_prev` para detectar la transición.
+    pub(crate) first_person_jump_request_active: bool,
+    pub(crate) first_person_jump_request_prev: bool,
     /// Teclas acumuladas por scripts de control en el frame actual (primera persona).
     pub(crate) first_person_script_input: HashSet<String>,
     /// Parámetros opcionales fijados por scripts Lua de control (primera persona).

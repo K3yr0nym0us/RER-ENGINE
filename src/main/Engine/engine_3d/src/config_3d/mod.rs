@@ -25,7 +25,7 @@ use std::path::Path;
 use glam::Vec3 as GlamVec3;
 
 use crate::config_3d::first_person::{
-    feet_from_player_transform, player_center_from_feet, FIRST_PERSON_BODY_HEIGHT,
+    FIRST_PERSON_BODY_HEIGHT,
     FIRST_PERSON_COLLIDER_RADIUS,
 };
 use crate::config_shared::point_to_segment_2d;
@@ -53,7 +53,7 @@ impl State {
 
     /// Instancia un modelo 3D en la escena (añade mallas sin limpiar el mundo).
     pub(crate) fn load_model(&mut self, path: &str) {
-        match mesh_3d::load_model_file(&self.device, Path::new(path)) {
+        match mesh_3d::load_model_file(&self.device, Path::new(path), None) {
             Ok(loaded) => {
                 let count = loaded.len();
                 for part in loaded {
@@ -93,7 +93,13 @@ impl State {
             return;
         }
 
-        let loaded = match mesh_3d::load_model_file(&self.device, Path::new(path)) {
+        let is_fp_player = self.first_person_player_entity == Some(id);
+        let normalize = if is_fp_player {
+            Some(FIRST_PERSON_BODY_HEIGHT)
+        } else {
+            None
+        };
+        let loaded = match mesh_3d::load_model_file(&self.device, Path::new(path), normalize) {
             Ok(parts) => parts,
             Err(e) => {
                 send_event(&EngineEvent::Error { message: e });
@@ -129,40 +135,39 @@ impl State {
             );
         }
 
-        let is_fp_player = self.first_person_player_entity == Some(id);
         if is_fp_player {
             let feet = self.first_person_feet_position();
             let w = FIRST_PERSON_COLLIDER_RADIUS * 2.0;
             if let Some(t) = self.world.get_mut::<Transform>(id) {
-                t.scale = glam::Vec3::new(w, FIRST_PERSON_BODY_HEIGHT, w);
-                let rot = t.rotation;
-                t.position = player_center_from_feet(feet, rot);
+                // La malla ya viene normalizada a BODY_HEIGHT; scale.y=1 evita doble altura.
+                t.scale = glam::Vec3::new(w, 1.0, w);
+                t.position = glam::Vec3::new(
+                    feet.x,
+                    feet.y + FIRST_PERSON_BODY_HEIGHT * 0.5,
+                    feet.z,
+                );
             }
             self.camera.target = feet;
-        }
-
-        let (position, scale) = match self.world.get::<Transform>(id) {
-            Some(t) => (Some(t.position.to_array()), Some(t.scale.to_array())),
-            None => (None, None),
-        };
-
-        if self.physics.has_physics(id) {
+            // El jugador FP usa solo la cápsula cinemática; el cuerpo Rapier estático bloquea queries.
+            self.physics.remove_entity_body(id);
+        } else if self.physics.has_physics(id) {
             if let Some(t) = self.world.get::<Transform>(id) {
                 let half = [
                     (t.scale.x * 0.5).max(0.01),
                     (t.scale.y * 0.5).max(0.01),
                     (t.scale.z * 0.5).max(0.01),
                 ];
-                let pos = if is_fp_player {
-                    feet_from_player_transform(t.position, t.rotation).to_array()
-                } else {
-                    t.position.to_array()
-                };
+                let pos = t.position.to_array();
                 let body_type = self.physics.get_body_type(id).to_string();
                 self.physics
                     .set_entity_physics(id, true, &body_type, pos, half);
             }
         }
+
+        let (position, scale) = match self.world.get::<Transform>(id) {
+            Some(t) => (Some(t.position.to_array()), Some(t.scale.to_array())),
+            None => (None, None),
+        };
 
         send_event(&EngineEvent::EntityModelReplaced {
             id,

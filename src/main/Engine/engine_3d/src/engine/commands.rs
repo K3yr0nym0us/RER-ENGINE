@@ -264,6 +264,7 @@ impl State {
                             self.camera.target =
                                 crate::config_3d::first_person::feet_from_player_transform(
                                     pos,
+                                    transform.scale.y,
                                     transform.rotation,
                                 );
                         }
@@ -293,26 +294,20 @@ impl State {
                     if let Some(p) = position {
                         self.physics_2d.teleport_entity(id, p[0], p[1]);
                     }
-                } else if let Some(t) = self.world.get::<Transform>(id).cloned() {
-                    if self.physics.has_physics(id)
-                        && (position.is_some() || rotation.is_some() || scale.is_some())
-                    {
-                        let half = [
-                            (t.scale.x * 0.5).max(0.01),
-                            (t.scale.y * 0.5).max(0.01),
-                            (t.scale.z * 0.5).max(0.01),
-                        ];
-                        let pos = if is_fp_player {
-                            crate::config_3d::first_person::feet_from_player_transform(
-                                t.position,
-                                t.rotation,
-                            )
-                            .to_array()
-                        } else {
-                            t.position.to_array()
-                        };
-                        self.physics
-                            .sync_entity_physics_from_transform(id, pos, half);
+                } else if !is_fp_player {
+                    if let Some(t) = self.world.get::<Transform>(id).cloned() {
+                        if self.physics.has_physics(id)
+                            && (position.is_some() || rotation.is_some() || scale.is_some())
+                        {
+                            let half = [
+                                (t.scale.x * 0.5).max(0.01),
+                                (t.scale.y * 0.5).max(0.01),
+                                (t.scale.z * 0.5).max(0.01),
+                            ];
+                            let pos = t.position.to_array();
+                            self.physics
+                                .sync_entity_physics_from_transform(id, pos, half);
+                        }
                     }
                 }
                 if let Some(prev) = before {
@@ -605,7 +600,11 @@ impl State {
 
                 if playing {
                     self.reset_first_person_motion();
-                    self.sync_first_person_player_physics();
+                    self.ensure_fp_player_kinematic_only();
+                    // Camera.yaw = yaw actual del cuerpo, para que el primer mouse-look
+                    // no rote el cuerpo al yaw del orbit del editor (regresión típica al
+                    // pasar de editor a play conservando la orientación en Propiedades).
+                    self.sync_camera_yaw_from_player_body();
                     self.active_tool = ActiveTool::None;
                     self.tool_overlay_buffer = gizmo::build_from_vertices(&self.device, &[]);
                     if self.pivot_edit_mode.is_some() {
@@ -694,6 +693,8 @@ impl State {
                 if self.camera_2d.is_some() {
                     self.physics_2d
                         .set_entity_physics(id, enabled, &body_type, pos, half);
+                } else if self.first_person_player_entity == Some(id) {
+                    self.physics.remove_entity_body(id);
                 } else {
                     self.physics.set_entity_physics(id, enabled, &body_type, pos, half);
                 }

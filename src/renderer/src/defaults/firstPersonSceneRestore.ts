@@ -7,9 +7,14 @@ import type { PendingRestore } from '../context/useContextEngine/types';
 export const FP_EDITOR_ORBIT_PITCH = 0.25;
 export const FP_DEFAULT_YAW = -Math.PI / 2;
 
-/** Mitad de altura del cuerpo (debe coincidir con FIRST_PERSON_BODY_HALF_H del motor). */
-const FP_BODY_HALF_H = FIRST_PERSON_PLAYER_BODY_SCALE[1] * 0.5;
-const FEET_OFFSET_LOCAL: [number, number, number] = [0, -FP_BODY_HALF_H, 0];
+/**
+ * Offset pivot→pies del jugador. La malla SIEMPRE mide `FIRST_PERSON_PLAYER_BODY_SCALE[1]`
+ * en alto (1.7m): el cubo placeholder lo logra vía `scale.y = 1.7`, los modelos importados
+ * se normalizan a 1.7m con `scale.y = 1.0`. Por eso el offset es constante.
+ */
+function feetOffsetLocal(_scaleY: number): [number, number, number] {
+	return [0, -FIRST_PERSON_PLAYER_BODY_SCALE[1] * 0.5, 0];
+}
 
 function rotateVec3ByQuat(
 	v: [number, number, number],
@@ -31,17 +36,28 @@ function rotateVec3ByQuat(
 export function feetFromPlayerBodyCenter(
 	center: [number, number, number],
 	rotation: [number, number, number, number] = [0, 0, 0, 1],
+	scaleY: number = FIRST_PERSON_PLAYER_BODY_SCALE[1],
 ): [number, number, number] {
-	const off = rotateVec3ByQuat(FEET_OFFSET_LOCAL, rotation);
+	const off = rotateVec3ByQuat(feetOffsetLocal(scaleY), rotation);
 	return [center[0] + off[0], center[1] + off[1], center[2] + off[2]];
 }
 
 export function bodyCenterFromFeet(
 	feet: [number, number, number],
 	rotation: [number, number, number, number] = [0, 0, 0, 1],
+	scaleY: number = FIRST_PERSON_PLAYER_BODY_SCALE[1],
 ): [number, number, number] {
-	const off = rotateVec3ByQuat(FEET_OFFSET_LOCAL, rotation);
+	const off = rotateVec3ByQuat(feetOffsetLocal(scaleY), rotation);
 	return [feet[0] - off[0], feet[1] - off[1], feet[2] - off[2]];
+}
+
+/** Centro del jugador en play: offset solo en mundo Y (igual que el motor). */
+export function bodyCenterFromFeetWorld(
+	feet: [number, number, number],
+	bodyHeight: number = FIRST_PERSON_PLAYER_BODY_SCALE[1],
+): [number, number, number] {
+	const half = bodyHeight * 0.5;
+	return [feet[0], feet[1] + half, feet[2]];
 }
 
 /** Mantiene `firstPersonViewRef` alineado con el transform del jugador (centro → pies). */
@@ -54,7 +70,7 @@ export function syncFirstPersonViewRefFromPlayer(
 ) {
 	const t = entityTransformsRef.current[playerId];
 	if (!t) return;
-	const feet = feetFromPlayerBodyCenter(t.position, t.rotation);
+	const feet = feetFromPlayerBodyCenter(t.position, t.rotation, t.scale[1]);
 	const prev = firstPersonViewRef.current;
 	firstPersonViewRef.current = {
 		position: feet,
@@ -90,8 +106,9 @@ export function applySavedFirstPersonView(
 	if (playerId != null) {
 		const prev = entityTransformsRef.current[playerId];
 		const rot = prev?.rotation ?? [0, 0, 0, 1];
+		const scale = prev?.scale ?? FIRST_PERSON_PLAYER_BODY_SCALE;
 		entityTransformsRef.current[playerId] = {
-			position: bodyCenterFromFeet(view.position, rot),
+			position: bodyCenterFromFeet(view.position, rot, scale[1]),
 			rotation: rot,
 			scale: FIRST_PERSON_PLAYER_BODY_SCALE,
 		};
