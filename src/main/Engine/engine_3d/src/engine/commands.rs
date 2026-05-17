@@ -253,26 +253,65 @@ impl State {
                 use glam::{Quat, Vec3};
                 let before = self.world.get::<Transform>(id).cloned();
                 let is_fp_player = self.first_person_player_entity == Some(id);
-                if let Some(transform) = self.world.get_mut::<Transform>(id) {
-                    if let Some(r) = rotation {
-                        transform.rotation = Quat::from_xyzw(r[0], r[1], r[2], r[3]);
-                    }
-                    if let Some(p) = position {
-                        let pos = Vec3::from_array(p);
-                        transform.position = pos;
-                        if is_fp_player {
+
+                if is_fp_player {
+                    if let Some(before_t) = before.as_ref() {
+                    let new_rot = rotation
+                        .map(|r| Quat::from_xyzw(r[0], r[1], r[2], r[3]))
+                        .unwrap_or(before_t.rotation);
+                    let new_scale = scale
+                        .map(Vec3::from)
+                        .unwrap_or(before_t.scale);
+
+                    if let Some(transform) = self.world.get_mut::<Transform>(id) {
+                        if rotation.is_some() {
+                            // Mantener pies del jugador en el suelo: el offset pivote→pies rota con
+                            // el mesh; sin recalcular centro el cuerpo se “rompe” al editar Euler.
+                            let feet = crate::config_3d::first_person::feet_from_player_transform(
+                                before_t.position,
+                                before_t.scale.y,
+                                before_t.rotation,
+                            );
+                            let mut center =
+                                crate::config_3d::first_person::player_center_from_feet(
+                                    feet,
+                                    new_scale.y,
+                                    new_rot,
+                                );
+                            if let Some(p) = position {
+                                center += Vec3::from_array(p) - before_t.position;
+                            }
+                            transform.position = center;
+                            transform.rotation = new_rot;
+                            transform.scale = new_scale;
+                            self.camera.target = feet;
+                        } else {
+                            if let Some(p) = position {
+                                transform.position = Vec3::from_array(p);
+                            }
+                            transform.rotation = new_rot;
+                            transform.scale = new_scale;
                             self.camera.target =
                                 crate::config_3d::first_person::feet_from_player_transform(
-                                    pos,
+                                    transform.position,
                                     transform.scale.y,
                                     transform.rotation,
                                 );
                         }
                     }
+                    }
+                } else if let Some(transform) = self.world.get_mut::<Transform>(id) {
+                    if let Some(r) = rotation {
+                        transform.rotation = Quat::from_xyzw(r[0], r[1], r[2], r[3]);
+                    }
+                    if let Some(p) = position {
+                        transform.position = Vec3::from_array(p);
+                    }
                     if let Some(s) = scale {
                         transform.scale = Vec3::from(s);
                     }
                 }
+
                 if let Some(saved) = self.anim_saved_transforms.get_mut(&id) {
                     if let Some(p) = position {
                         saved.0 = if is_fp_player {

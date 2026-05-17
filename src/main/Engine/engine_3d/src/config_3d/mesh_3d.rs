@@ -14,6 +14,7 @@ pub(crate) struct LoadedModelMesh {
 }
 
 /// Estima hacia dónde "mira" la malla en XZ (tras centrar/normalizar).
+/// Personajes simétricos suelen empatar ±X/±Z; si no hay eje dominante claro, se usa +Z (convención glTF).
 pub(crate) fn estimate_mesh_forward_xz(vertices: &[Vertex]) -> glam::Vec2 {
     if vertices.is_empty() {
         return glam::Vec2::new(0.0, 1.0);
@@ -34,6 +35,18 @@ pub(crate) fn estimate_mesh_forward_xz(vertices: &[Vertex]) -> glam::Vec2 {
         } else {
             neg_x += -p[0];
         }
+    }
+    let mut weights = [
+        pos_z,
+        neg_z,
+        pos_x,
+        neg_x,
+    ];
+    weights.sort_by(|a, b| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
+    let primary = weights[0];
+    let secondary = weights[1].max(1e-8);
+    if primary < secondary * 1.08 {
+        return glam::Vec2::new(0.0, 1.0);
     }
     if pos_z.max(neg_z) >= pos_x.max(neg_x) {
         if pos_z >= neg_z {
