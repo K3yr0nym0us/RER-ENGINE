@@ -828,7 +828,7 @@ pub(crate) fn restore_animation_frame(&mut self, id: u32) {
             },
         );
         if track_undo {
-            self.undo_stack.push(crate::engine::UndoAction::RemoveEntity { id: entity });
+            self.push_remove_entity_undo(entity);
         }
 
         send_event(&EngineEvent::ColliderCreated { id: entity, points: *pts });
@@ -853,7 +853,7 @@ pub(crate) fn restore_animation_frame(&mut self, id: u32) {
             },
         );
         if track_undo {
-            self.undo_stack.push(crate::engine::UndoAction::RemoveEntity { id: entity });
+            self.push_remove_entity_undo(entity);
         }
 
         send_event(&EngineEvent::ExecutionAreaCreated { id: entity, points: *pts });

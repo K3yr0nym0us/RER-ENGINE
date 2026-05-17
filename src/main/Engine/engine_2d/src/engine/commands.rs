@@ -13,7 +13,7 @@ use crate::gizmo;
 use crate::ipc::{send_event, AnimationFrameData, EngineCommand, EngineEvent};
 
 use super::audio::DecodedAudio;
-use super::types::{ActiveAnimation, AnimationState, UndoAction};
+use super::types::{ActiveAnimation, AnimationState};
 use super::State;
 
 impl State {
@@ -160,8 +160,7 @@ impl State {
                 self.load_scenario(&path);
                 if track_undo.unwrap_or(false) {
                     if let Some(&id) = self.scenario_entities.last() {
-                        self.undo_stack.push(UndoAction::RemoveEntity { id });
-                        self.redo_stack.clear();
+                        self.push_remove_entity_undo(id);
                         log::info!("[quick_build] escenario {id} registrado en undo");
                     }
                 }
@@ -183,8 +182,7 @@ impl State {
                 self.load_character(&path);
                 if track_undo.unwrap_or(false) {
                     if let Some(&id) = self.character_entities.last() {
-                        self.undo_stack.push(UndoAction::RemoveEntity { id });
-                        self.redo_stack.clear();
+                        self.push_remove_entity_undo(id);
                         log::info!("[quick_build] personaje {id} registrado en undo");
                     }
                 }
@@ -241,6 +239,13 @@ impl State {
                 self.stop_audio_internal();
             }
             EngineCommand::RemoveEntity { id } => {
+                if !self.is_applying_undo {
+                    if let Some(snapshot) = self.capture_entity_undo_snapshot(id) {
+                        self.undo_stack
+                            .push(crate::engine::UndoAction::RestoreEntity { snapshot });
+                        self.redo_stack.clear();
+                    }
+                }
                 let removed_kind = if self.scenario_entities.contains(&id) {
                     "scenario"
                 } else if self.character_entities.contains(&id) {

@@ -3,6 +3,8 @@ use std::time::{Duration, Instant};
 
 use bytemuck::{Pod, Zeroable};
 
+use crate::config_2d::{CharacterMarker, ScenarioMarker};
+use crate::ecs::MeshComponent;
 use crate::ipc::{AnimationFrameData, AnimScriptData};
 
 use super::audio::DecodedAudio;
@@ -20,7 +22,29 @@ pub(crate) enum UndoAction {
     RestoreTransforms {
         items: Vec<(u32, [f32; 3], [f32; 4], [f32; 3])>,
     },
-    RemoveEntity { id: u32 },
+    /// Undo de creación (quick build, etc.): deshacer = eliminar la entidad.
+    RemoveEntity { snapshot: EntityUndoSnapshot },
+    /// Redo tras eliminar una entidad recién creada: volver a insertarla con el mismo id.
+    RestoreEntity { snapshot: EntityUndoSnapshot },
+}
+
+#[derive(Clone)]
+pub(crate) struct EntityUndoSnapshot {
+    pub id:                  u32,
+    pub name:                String,
+    pub transform_position:  [f32; 3],
+    pub transform_rotation:  [f32; 4],
+    pub transform_scale:     [f32; 3],
+    pub mesh:                MeshComponent,
+    pub kind:                UndoEntityKind,
+}
+
+#[derive(Clone)]
+pub(crate) enum UndoEntityKind {
+    Character(CharacterMarker),
+    Scenario(ScenarioMarker),
+    Collider { points: [[f32; 2]; 4] },
+    ExecutionArea { points: [[f32; 2]; 4] },
 }
 
 #[derive(Clone)]

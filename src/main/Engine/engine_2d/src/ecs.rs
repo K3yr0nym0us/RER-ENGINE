@@ -199,12 +199,21 @@ impl World {
     /// Crea una nueva entidad con Transform por defecto y nombre opcional.
     pub fn spawn(&mut self, name: Option<&str>) -> EntityId {
         let id = new_entity_id(&self.alive);
+        self.spawn_with_id(id, name);
+        id
+    }
+
+    /// Reinserta una entidad con un id ya usado (p. ej. redo de RemoveEntity).
+    pub fn spawn_with_id(&mut self, id: EntityId, name: Option<&str>) -> bool {
+        if id == 0 || self.alive.contains(&id) {
+            return false;
+        }
         self.alive.push(id);
         self.insert(id, Transform::default());
         if let Some(n) = name {
             self.insert(id, NameComponent { name: n.to_owned() });
         }
-        id
+        true
     }
 
     /// Destruye una entidad y elimina todos sus componentes.

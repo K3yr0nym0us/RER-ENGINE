@@ -18,6 +18,7 @@ mod scripts;
 mod snap_hint;
 mod tick;
 mod types;
+mod undo_entity;
 
 #[allow(unused_imports)]
 pub use audio::{AudioCmd, DecodedAudio};
@@ -351,9 +352,14 @@ impl State {
                     });
                 }
             }
-            UndoAction::RemoveEntity { id } => {
+            UndoAction::RemoveEntity { snapshot } => {
+                let id = snapshot.id;
                 self.handle_command(EngineCommand::RemoveEntity { id });
-                self.redo_stack.clear();
+                self.redo_stack.push(UndoAction::RestoreEntity { snapshot });
+            }
+            UndoAction::RestoreEntity { snapshot } => {
+                self.restore_entity_from_undo_snapshot(&snapshot);
+                self.redo_stack.push(UndoAction::RemoveEntity { snapshot });
             }
         }
         self.is_applying_undo = false;
@@ -405,8 +411,14 @@ impl State {
                     });
                 }
             }
-            UndoAction::RemoveEntity { .. } => {
-                // No soportado: faltan snapshots completos para re-crear entidades eliminadas.
+            UndoAction::RestoreEntity { snapshot } => {
+                self.restore_entity_from_undo_snapshot(&snapshot);
+                self.undo_stack.push(UndoAction::RemoveEntity { snapshot });
+            }
+            UndoAction::RemoveEntity { snapshot } => {
+                let id = snapshot.id;
+                self.handle_command(EngineCommand::RemoveEntity { id });
+                self.undo_stack.push(UndoAction::RestoreEntity { snapshot });
             }
         }
         self.is_applying_undo = false;
