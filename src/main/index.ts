@@ -729,7 +729,7 @@ function serializeScriptsToFiles(data: ProjectSaveData, scriptingDir: string): {
     count: total,
     data: {
       ...data,
-      // Sin compatibilidad legacy: si hay escenas, no duplicar entidades en raíz.
+      // Con multi-escena, las entidades viven solo en cada `scene`.
       entities: hasScenes ? [] : data.entities.map(mapEntity),
       scenes: data.scenes?.map((scene) => ({
         ...scene,

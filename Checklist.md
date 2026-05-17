@@ -48,7 +48,7 @@ Selección de binario en runtime: `rer_engine_2d` o `rer_engine_3d` según tipo 
 - [x] Comandos `ping`, `shutdown`, `resize`, `set_bounds`, `set_clear_color`
 - [x] Delta time y bucle update/render
 - [x] ECS con queries multi-componente
-- [x] Undo/redo de transformaciones y herramientas de dibujo (2D)
+- [x] Undo/redo de transformaciones, herramientas de dibujo y entidades 2D (snapshot completo)
 - [x] Scripting Lua (mlua) con sandbox y lifecycle `on_start` / `update` / `on_stop`
 - [x] Hooks `on_press`, `on_trigger_enter` (2D), control bindings desde input nativo
 - [x] Hot reload de scripts
@@ -103,6 +103,10 @@ Selección de binario en runtime: `rer_engine_2d` o `rer_engine_3d` según tipo 
 - [x] `set_bounds` al redimensionar el viewport
 - [x] Timeout si no llega evento `ready`
 - [x] Flujo carga escena → `load_character` / colas `pendingRestores` (orquestación en front; poses FP vía motor)
+- [x] `apply_entity_restore` IPC (restore post-carga por entidad 2D; paso hacia `import_scene`)
+- [x] Tamaño lógico de animación resuelto en motor (`animation_logical_resolved`; front sin pre-cálculo)
+- [x] Defaults pivot/lógico en motor al cargar sprite y en `SetAnimation` / `PlayAnimationFrame`
+- [x] Personaje nuevo ~1,5 celdas; colisión 2D desde `tight_bounds` (no solo offset del frame)
 
 ---
 
@@ -110,14 +114,13 @@ Selección de binario en runtime: `rer_engine_2d` o `rer_engine_3d` según tipo 
 
 ### Prioridad alta
 
-- [ ] **Migraciones de formato `.save`** — el campo `version` existe; faltan migradores automáticos entre versiones
 - [ ] **Física 3D de producto completo** — Rapier en objetos está; falta cerrar colisiones/gameplay FP (interacción uniforme, edge cases, pruebas de regresión)
 
 ### Prioridad media — motor-first
 
-- [ ] **`normalizeAnimations` solo en motor** — el front aún pre-normaliza en algunos flujos pese a `animation_logical_resolved`
-- [ ] **`pendingRestores` / carga de escena en motor** — comando tipo `import_scene` en Rust en lugar de loops IPC desde el front
-- [ ] **Defaults `logical` / `pivot` emitidos por el motor** al crear entidad desde sprite
+- [x] **`normalizeAnimations` solo en motor** — `SetAnimation` resuelve `logical_w/h`; front sincroniza vía `animation_logical_resolved`
+- [ ] **`import_scene` completo en motor** — hoy: `apply_entity_restore` por entidad; falta cargar escena entera en un comando
+- [x] **Defaults `logical` / `pivot` en motor** — pivot opcional en frames; `CharacterLoaded`/`ScenarioLoaded` con dimensiones
 - [x] **`entity_removed` con snapshot de puntos** (2D: colliders / execution areas en el evento IPC)
 - [x] **Scripts Lua `update()` solo en play** (2D y 3D)
 
@@ -125,7 +128,7 @@ Selección de binario en runtime: `rer_engine_2d` o `rer_engine_3d` según tipo 
 
 - [ ] **Animaciones 3D** (clips / state machine; pipeline compatible con Blender)
 - [ ] **Blueprints / prefabs 3D** — flujo 2D parcial; falta equivalente unificado en 3D
-- [ ] **Redo de `RemoveEntity` fiable** — `apply_redo()` sin no-ops silenciosos
+- [x] **Redo de `RemoveEntity` fiable** — snapshot + mismo id (escenario, personaje, colisionador, trigger); undo al borrar desde Propiedades
 - [x] **Atlas: señalizar agotamiento** (2D: evento `atlas_exhausted` → consola del editor)
 
 ### Prioridad baja
@@ -133,7 +136,7 @@ Selección de binario en runtime: `rer_engine_2d` o `rer_engine_3d` según tipo 
 - [ ] Jerarquía parent/child de entidades (evaluar diseño)
 - [ ] Optimizar `new_entity_id()` para escenas muy grandes
 - [x] Renombrar helpers con sufijo `_x11` a nombres neutros multiplataforma (`query_ctrl_held_os`)
-- [ ] Flujo dedicado de restauración inicial (menos lógica en `createEngineEventHandler`)
+- [~] Flujo dedicado de restauración inicial — `applyPendingRestoreToEngine.ts` + `apply_entity_restore`; aún hay colas `pendingRestores` en front
 - [x] Revisar `window.engine.off()` vs múltiples listeners (multiplex en preload; `off(cb)` por suscriptor)
 
 ### Descartado por ahora
@@ -176,6 +179,5 @@ El protocolo compartido incluye variantes que `engine_3d` ignora o stubbea (`cre
 
 | Ítem | Criterio |
 |------|----------|
-| Migraciones `.save` | Al menos dos versiones con migración automática testeada |
 | Blueprints 3D | Crear/instanciar/actualizar desde editor en proyecto 3D |
 | Física 3D producto | Play FP + objetos dinámicos/estáticos sin desincronías transform/collider |

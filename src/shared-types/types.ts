@@ -198,7 +198,7 @@ export interface ProjectSaveData {
   version:         number
   type:            ProjectType
   gameStyle:       GameStyle
-  /** Escenas del proyecto. Si no existe, se asume formato legacy de escena única. */
+  /** Escenas del proyecto (multi-escena). */
   scenes?:         SavedScene[]
   activeSceneId?:  number
   world:           SavedWorldConfig
