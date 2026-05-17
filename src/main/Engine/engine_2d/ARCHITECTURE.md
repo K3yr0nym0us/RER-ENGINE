@@ -1,6 +1,13 @@
 # Arquitectura actual de `engine_2d`
 
-Este documento fija el contrato tecnico actual del motor 2D para que el codigo no siga siendo la unica fuente de verdad implícita.
+Este documento fija el contrato tecnico actual del motor 2D para que el codigo no siga siendo la unica fuente de verdad implicita.
+
+## Relacion con `engine_3d`
+
+- `rer_engine_2d` y `rer_engine_3d` son **binarios distintos** con runtimes distintos.
+- Lo comun con Electron es el **protocolo IPC** (JSON por stdin/stdout) y crates de utilidades (`engine_shared`), no la logica de juego ni de editor.
+- **No se copia runtime entre motores**: lo que el producto 3D necesitaba del stack 2D ya se extrajo; nuevas funciones 2D se implementan solo aqui (`config_2d/`, `physics_2d.rs`, `engine/`).
+- Este documento no describe ni prescribe comportamiento del motor 3D.
 
 ## Archivos fuente de verdad
 
@@ -14,7 +21,7 @@ El runtime real 2D vive principalmente en estos archivos:
 
 ## Que NO es runtime 2D real
 
-Los modulos bajo `src/config_compat/` son shims de compatibilidad.
+Los modulos bajo `src/config_compat/` son shims de compatibilidad **dentro de este crate** (firmas heredadas, rutas que ya no deben crecer).
 
 - `src/config_compat/physics.rs` no implementa la simulacion 2D real; solo conserva una API minima para rutas heredadas.
 - Cualquier cambio de comportamiento de fisica 2D debe nacer en `src/physics_2d.rs`, no en `config_compat`.
@@ -24,12 +31,10 @@ Los modulos bajo `src/config_compat/` son shims de compatibilidad.
 - El movimiento normal de gameplay debe pasar por `move_physics_entity()` o por las rutas kinematic del runtime.
 - `teleport_entity()` solo debe usarse para teletransportes reales o para resincronizar el cuerpo fisico despues de una mutacion externa del `Transform`.
 - `visual_offsets` afecta render/animacion, pero no es hoy la fuente de verdad universal de picking, triggers o fisica.
-- Las `execution areas` siguen usando overlap AABB basado en `Transform`; alinearlas con fisica o con offsets visuales seria un cambio de comportamiento y debe tratarse aparte.
+- Las `execution areas` usan overlap AABB basado en `Transform`; cambiar esa semantica es decision de producto 2D, no alineacion con el motor 3D.
 
-## Deuda tecnica separada de esta fase
+## Deuda tecnica (solo 2D)
 
-Estos puntos ya estan identificados, pero no deben corregirse a ciegas en una pasada orientada a preservar comportamiento:
-
-- Unificar la referencia espacial entre render, picking, triggers y fisica.
+- Unificar la referencia espacial entre render, picking, triggers y fisica en este binario.
 - Revisar la semantica de `SetGravity`, `apply_kinematic_gravity()` y la traduccion especial de `on_press` para cuerpos kinematic.
-- Reducir o eliminar shims de `config_compat` cuando el runtime heredado deje de necesitarlos.
+- Reducir shims de `config_compat` cuando dejen de usarse rutas heredadas en **este** crate.
