@@ -37,9 +37,6 @@ impl State {
             self.autosave_last_tick = now;
         }
         if self.camera_2d.is_some() {
-            // Contrato actual: los scripts corren en editor y en juego para facilitar
-            // pruebas rápidas. Endurecer esto cambiaria workflows existentes, asi que
-            // queda explicitado como deuda separada y no se altera en esta fase.
             self.update_scripts();
             if self.preview_playing {
                 // Los deslizamientos pendientes (on_press slide) se avanzan antes del paso

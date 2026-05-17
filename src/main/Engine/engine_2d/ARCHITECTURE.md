@@ -39,6 +39,10 @@ Registro: `entity_save_meta` + inferencia desde `ScenarioMarker` / `CharacterMar
 
 - `entity_removed` incluye `points` opcional para colisionadores y áreas de ejecución (cuadrilátero en espacio mundo), útil para sincronizar meta del editor y futuro redo.
 
+## Scripting
+
+- `update_scripts()` (`script.update`) solo corre con `preview_playing`. Los control scripts (`on_press` / `on_keep`) ya estaban acotados a play.
+
 ## Contratos operativos que hoy deben respetarse
 
 - El movimiento normal de gameplay debe pasar por `move_physics_entity()` o por las rutas kinematic del runtime.

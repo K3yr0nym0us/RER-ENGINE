@@ -78,6 +78,10 @@ impl State {
     }
 
     pub(super) fn update_scripts(&mut self) {
+        if !self.preview_playing {
+            return;
+        }
+
         // Build snapshots for entities that have scripts attached
         let snapshots: HashMap<u32, EntitySnapshot> = {
             let entity_ids: Vec<u32> = self.script_engine.entity_ids().to_vec();

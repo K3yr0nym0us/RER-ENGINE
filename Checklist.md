@@ -119,8 +119,7 @@ Selección de binario en runtime: `rer_engine_2d` o `rer_engine_3d` según tipo 
 - [ ] **`pendingRestores` / carga de escena en motor** — comando tipo `import_scene` en Rust en lugar de loops IPC desde el front
 - [ ] **Defaults `logical` / `pivot` emitidos por el motor** al crear entidad desde sprite
 - [x] **`entity_removed` con snapshot de puntos** (2D: colliders / execution areas en el evento IPC)
-- [x] **Scripts Lua `update()` solo en play** (3D)
-- [ ] **Scripts Lua solo en play** (2D: pendiente; hoy corre en editor por contrato en `tick.rs`)
+- [x] **Scripts Lua `update()` solo en play** (2D y 3D)
 
 ### Prioridad media — funcionalidad
 
