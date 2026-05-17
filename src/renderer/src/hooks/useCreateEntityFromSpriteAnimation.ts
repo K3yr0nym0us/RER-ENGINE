@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 
 import { useContextEngine } from '@engine';
+import { buildPlayAnimationFrameCmd } from '../context/useContextEngine/hooks/applyPendingRestoreToEngine';
 
 type LoadCmd = 'load_character' | 'load_scenario';
 
@@ -34,6 +35,10 @@ interface CreateEntityFromSpriteAnimationPayload {
 interface LoadedEntityEvent {
   id: number;
   path: string;
+  img_width: number;
+  img_height: number;
+  default_pivot_x: number;
+  default_pivot_y: number;
 }
 
 export function useCreateEntityFromSpriteAnimation(loadCmd: LoadCmd) {
@@ -48,8 +53,8 @@ export function useCreateEntityFromSpriteAnimation(loadCmd: LoadCmd) {
 
     if (!loaded?.id) return;
 
-    const logicalW = Math.max(1, ...payload.animation.frames.map((f) => f.width));
-    const logicalH = Math.max(1, ...payload.animation.frames.map((f) => f.height));
+    const frameLogicalW = Math.max(1, ...payload.animation.frames.map((f) => f.width));
+    const frameLogicalH = Math.max(1, ...payload.animation.frames.map((f) => f.height));
 
     const animation = {
       name: payload.animation.name,
@@ -58,8 +63,8 @@ export function useCreateEntityFromSpriteAnimation(loadCmd: LoadCmd) {
       is_default: true,
       is_cancelable: payload.animation.isCancelable ?? false,
       facing_right: payload.animation.facingRight ?? true,
-      logical_w: logicalW,
-      logical_h: logicalH,
+      logical_w: frameLogicalW,
+      logical_h: frameLogicalH,
       audio_path: payload.animation.audioPath,
       scripts: payload.animation.scripts ?? [],
       selection_mode: payload.animation.selectionMode,
@@ -68,8 +73,8 @@ export function useCreateEntityFromSpriteAnimation(loadCmd: LoadCmd) {
       cell_offset_y: payload.animation.cellOffsetY,
       frames: payload.animation.frames.map((f) => ({
         path: payload.spritePath,
-        pivot_x: f.pivot_x ?? Math.round(f.width / 2),
-        pivot_y: f.pivot_y ?? f.height,
+        ...(f.pivot_x != null ? { pivot_x: f.pivot_x } : {}),
+        ...(f.pivot_y != null ? { pivot_y: f.pivot_y } : {}),
         src_x: f.x,
         src_y: f.y,
         src_w: f.width,
@@ -77,23 +82,12 @@ export function useCreateEntityFromSpriteAnimation(loadCmd: LoadCmd) {
       })),
     };
 
-    updateEntityAnimations?.(loaded.id, [animation]);
+    const resolved = updateEntityAnimations(loaded.id, [animation]);
+    const synced = resolved[0] ?? animation;
 
-    const first = animation.frames[0];
-    if (first) {
-      send({
-        cmd: 'play_animation_frame',
-        id: loaded.id,
-        path: first.path,
-        pivot_x: first.pivot_x,
-        pivot_y: first.pivot_y,
-        logical_w: animation.logical_w,
-        logical_h: animation.logical_h,
-        src_x: first.src_x,
-        src_y: first.src_y,
-        src_w: first.src_w,
-        src_h: first.src_h,
-      });
+    const firstFrame = synced.frames[0];
+    if (firstFrame?.path) {
+      send(buildPlayAnimationFrameCmd(loaded.id, synced, firstFrame));
     }
 
     setAnimationPlaying?.(loaded.id, false);

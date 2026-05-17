@@ -221,6 +221,11 @@ impl PhysicsWorld2D {
         }
     }
 
+    /// Permite recomponer la caja de colisión en el siguiente sync (p. ej. tras cambiar frame).
+    pub(crate) fn clear_collider_shape(&mut self, entity: EntityId) {
+        self.collider_shape_set.remove(&entity);
+    }
+
     /// Sincroniza el offset local del collider preservando la forma ya creada.
     ///
     /// Contrato actual:

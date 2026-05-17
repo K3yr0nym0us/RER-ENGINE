@@ -1,5 +1,6 @@
 import type { Dispatch } from 'react';
 import type { BluePrintEntry, EngineAction, EngineInternalRefs, EntityMeta, EntityScripts, PendingRestore, Transform } from '../types';
+import { buildPlayAnimationFrameCmd } from './applyPendingRestoreToEngine';
 
 interface CreateEngineActionsParams {
 	dispatch: Dispatch<EngineAction>
@@ -45,28 +46,13 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 	const applyInitialAnimationFrame = (entityId: number, animations?: any[]) => {
 		if (!animations || animations.length === 0) return;
 
-		const firstAnim = animations[0];
-		const firstFrame = firstAnim?.frames?.[0];
+		const defaultAnim = animations.find((anim) => anim?.is_default) ?? animations[0];
+		const firstFrame = defaultAnim?.frames?.[0];
 		if (!firstFrame?.path) return;
 
-		const fallbackW = firstAnim.logical_w ?? 64;
-		const fallbackH = firstAnim.logical_h ?? 64;
-		const pivotX = firstFrame.pivot_x ?? Math.round((firstFrame.src_w ?? fallbackW) / 2);
-		const pivotY = firstFrame.pivot_y ?? (firstFrame.src_h ?? fallbackH);
-
-		window.engine.send({
-			cmd: 'play_animation_frame',
-			id: entityId,
-			path: firstFrame.path,
-			pivot_x: pivotX,
-			pivot_y: pivotY,
-			logical_w: fallbackW,
-			logical_h: fallbackH,
-			src_x: firstFrame.src_x,
-			src_y: firstFrame.src_y,
-			src_w: firstFrame.src_w,
-			src_h: firstFrame.src_h,
-		} as never);
+		window.engine.send(
+			buildPlayAnimationFrameCmd(entityId, defaultAnim, firstFrame) as never,
+		);
 
 		dispatch({ type: 'SET_ANIMATION_PLAYING', payload: { entityId, playing: false } });
 	};
@@ -157,7 +143,7 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 		delete refs.entityMetaRef.current[id];
 	};
 
-	const updateEntityAnimations = (id: number, animations: any[]) => {
+	const updateEntityAnimations = (id: number, animations: any[]): any[] => {
 		const bpId = refs.entityMetaRef.current[id]?.blueprintId;
 
 		const applyAnimationsToSingleEntity = (entityId: number) => {
@@ -173,8 +159,6 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 					loop_: anim.loop,
 					flip_horizontal: !(anim.facing_right ?? true),
 					audio_path: anim.audio_path ?? null,
-					logical_w: anim.logical_w,
-					logical_h: anim.logical_h,
 					scripts: anim.scripts ?? [],
 					is_cancelable: anim.is_cancelable ?? true,
 				} as never);
@@ -186,7 +170,6 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 		};
 
 		if (bpId) {
-			// Actualizar la blueprint y propagar a todas sus instancias
 			const updatedBlueprints = refs.blueprintsRef.current.map((bp) =>
 				bp.id === bpId ? { ...bp, animations } : bp
 			);
@@ -203,6 +186,16 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 			}
 			applyAnimationsToSingleEntity(id);
 		}
+
+		const resolved = refs.entityMetaRef.current[id]?.animations ?? animations;
+		if (bpId) {
+			refs.blueprintsRef.current = refs.blueprintsRef.current.map((bp) =>
+				bp.id === bpId ? { ...bp, animations: resolved } : bp
+			);
+			dispatch({ type: 'SET_BLUEPRINTS', payload: refs.blueprintsRef.current });
+		}
+		dispatch({ type: 'UPDATE_ENTITY_ANIMATIONS', payload: { entityId: id, animations: resolved } });
+		return resolved;
 	};
 
 	const updateEntityScripts = (id: number, scripts: EntityScripts) => {

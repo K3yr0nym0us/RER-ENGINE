@@ -113,6 +113,10 @@ impl State {
             id: sc_id,
             path: path.to_owned(),
             name: Some(scenario_name),
+            img_width,
+            img_height,
+            default_pivot_x: img_width as f32 * 0.5,
+            default_pivot_y: img_height as f32,
         });
         log::debug!("[load_scenario] entidad {sc_id} creada {img_width}×{img_height}: {path}");
     }
@@ -218,7 +222,8 @@ impl State {
 
         let (img_width, img_height) = img.dimensions();
         let aspect       = img_width as f32 / img_height.max(1) as f32;
-        let base_world_h = 2.0_f32; // altura base razonable para un personaje
+        // ~1.5 celdas de la cuadrícula (convención de tamaño de personaje en editor).
+        let base_world_h = self.grid_config.cell_size * 1.5;
         let base_world_w = base_world_h * aspect;
         // tight_bounds solo se calcula aquí (preload/edición), nunca en hot path.
         let tight_bounds = compute_tight_bounds(&img);
@@ -255,7 +260,14 @@ impl State {
             },
         );
 
-        send_event(&EngineEvent::CharacterLoaded { id: ch_id, path: path.to_owned() });
+        send_event(&EngineEvent::CharacterLoaded {
+            id: ch_id,
+            path: path.to_owned(),
+            img_width,
+            img_height,
+            default_pivot_x: img_width as f32 * 0.5,
+            default_pivot_y: img_height as f32,
+        });
         log::debug!("[load_character] entidad {ch_id} creada {img_width}×{img_height}: {path}");
     }
 

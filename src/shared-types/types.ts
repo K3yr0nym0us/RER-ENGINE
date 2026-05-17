@@ -382,12 +382,20 @@ export interface ScenarioLoaded {
   id:    number
   path:  string
   name?: string
+  img_width: number
+  img_height: number
+  default_pivot_x: number
+  default_pivot_y: number
 }
 
 export interface CharacterLoaded {
   event: 'character_loaded'
   id:    number
   path:  string
+  img_width: number
+  img_height: number
+  default_pivot_x: number
+  default_pivot_y: number
 }
 
 export interface EntityHovered {

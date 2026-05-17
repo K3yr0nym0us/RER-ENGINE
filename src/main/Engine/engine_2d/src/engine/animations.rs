@@ -76,10 +76,11 @@ impl State {
             .and_then(|anim| {
                 anim.frames.first().map(|first| {
                     let flip = self.resolve_animation_flip(entity_id, anim);
+                    let (pivot_x, pivot_y) = first.resolved_pivot(anim.logical_w, anim.logical_h);
                     (
                         first.path.clone(),
-                        first.pivot_x,
-                        first.pivot_y,
+                        pivot_x,
+                        pivot_y,
                         anim.logical_w,
                         anim.logical_h,
                         first.src_x.zip(first.src_y).zip(first.src_w.zip(first.src_h)).map(|((x, y), (w, h))| (x, y, w, h)),
@@ -181,11 +182,12 @@ impl State {
                 (None, false, 0, 0)
             };
             if let Some(f) = frame_data {
+                let (pivot_x, pivot_y) = f.resolved_pivot(logical_w, logical_h);
                 self.play_animation_frame(
                     entity_id,
                     &f.path,
-                    f.pivot_x,
-                    f.pivot_y,
+                    pivot_x,
+                    pivot_y,
                     logical_w,
                     logical_h,
                     f.src_x.zip(f.src_y).zip(f.src_w.zip(f.src_h)).map(|((x, y), (w, h))| (x, y, w, h)),

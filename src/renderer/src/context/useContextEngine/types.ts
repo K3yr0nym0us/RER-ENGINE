@@ -119,6 +119,7 @@ export type EngineAction =
 	| { type: 'REMOVE_EXECUTION_AREA'; payload: number }
 	| { type: 'SET_TOOL_PROGRESS'; payload: number | null }
 	| { type: 'SET_ANIMATION_PLAYING'; payload: { entityId: number; playing: boolean } }
+	| { type: 'UPDATE_ENTITY_ANIMATIONS'; payload: { entityId: number; animations: NonNullable<SelectedEntity['animations']> } }
 	| { type: 'UPDATE_SELECTED_PHYSICS'; payload: { entityId: number; enabled: boolean; bodyType: string } }
 	| { type: 'ADD_SPRITE'; payload: SpriteInfo }
 	| { type: 'REMOVE_SPRITE'; payload: string }
@@ -223,6 +224,13 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 			const nextMap = new Map(prevState.animationPlaying);
 			nextMap.set(nextAction.payload.entityId, nextAction.payload.playing);
 			return { ...prevState, animationPlaying: nextMap };
+		},
+		UPDATE_ENTITY_ANIMATIONS: (prevState, nextAction) => {
+			if (prevState.selectedEntity?.id !== nextAction.payload.entityId) return prevState;
+			return {
+				...prevState,
+				selectedEntity: { ...prevState.selectedEntity, animations: nextAction.payload.animations },
+			};
 		},
 		UPDATE_SELECTED_PHYSICS: (prevState, nextAction) => {
 			if (prevState.selectedEntity?.id !== nextAction.payload.entityId) return prevState;
@@ -406,7 +414,7 @@ export interface EngineContextValue extends EngineState {
 	setTargetFps: (fps: number) => void
 	removeCollider: (id: number) => void
 	removeExecutionArea: (id: number) => void
-	updateEntityAnimations: (id: number, animations: any[]) => void
+	updateEntityAnimations: (id: number, animations: any[]) => any[]
 	updateEntityScripts: (id: number, scripts: EntityScripts) => void
 	setEntityPhysics: (id: number, enabled: boolean, bodyType: string) => void
 	registerPivotEditListener: (fn: (framePath: string, px: number, py: number) => void) => void

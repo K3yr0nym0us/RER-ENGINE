@@ -465,9 +465,8 @@ impl State {
                             (cache_entry.img_height as f32 * 0.5 - by - bh * 0.5) * world_per_px,
                             0.0,
                         ];
-                        // En esta fase saneamos el nombre, no la semantica:
-                        // seguimos preservando la forma del collider una vez creada
-                        // y solo resincronizamos el offset visual/logico.
+                        // Recomponer forma desde tight_bounds del frame (contorno), no solo offset.
+                        self.physics_2d.clear_collider_shape(id);
                         self.physics_2d
                             .sync_entity_collider_offset_preserving_shape(id, half_ext, col_off);
                     }

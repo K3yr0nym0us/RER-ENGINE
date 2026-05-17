@@ -129,7 +129,7 @@ pub(super) fn build_logical_area_overlay(
     let bottom = pos.y - world_h * 0.5;
     let top    = pos.y + world_h * 0.5;
     const Z: f32 = 0.15;
-    let color = [1.0_f32, 0.55, 0.0, 1.0]; // naranja
+    let color = [1.0_f32, 0.42, 0.05, 1.0]; // naranja (área lógica del frame, no colisión)
 
     let verts = vec![
         GizmoVertex { position: [left,  bottom, Z], color },
@@ -186,7 +186,7 @@ pub(crate) fn build_scenario_collision_overlay(
         ]);
     }
 
-    let character_color = [1.0_f32, 0.85, 0.2, 1.0]; // amarillo
+    let character_color = [0.25_f32, 0.95, 1.0, 1.0]; // cyan (colisión tight_bounds, distinto del área lógica)
     for &entity_id in &state.character_entities {
         if !state.physics_2d.has_physics(entity_id) {
             continue;

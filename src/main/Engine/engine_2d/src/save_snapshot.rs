@@ -208,14 +208,17 @@ impl State {
             frames: anim
                 .frames
                 .iter()
-                .map(|f| SaveAnimationFrameSnapshot {
-                    path: f.path.clone(),
-                    pivot_x: f.pivot_x,
-                    pivot_y: f.pivot_y,
-                    src_x: f.src_x,
-                    src_y: f.src_y,
-                    src_w: f.src_w,
-                    src_h: f.src_h,
+                .map(|f| {
+                    let (pivot_x, pivot_y) = f.resolved_pivot(anim.logical_w, anim.logical_h);
+                    SaveAnimationFrameSnapshot {
+                        path: f.path.clone(),
+                        pivot_x,
+                        pivot_y,
+                        src_x: f.src_x,
+                        src_y: f.src_y,
+                        src_w: f.src_w,
+                        src_h: f.src_h,
+                    }
                 })
                 .collect(),
             scripts: anim

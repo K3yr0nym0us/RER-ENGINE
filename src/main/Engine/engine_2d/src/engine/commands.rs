@@ -197,6 +197,12 @@ impl State {
                     // Ignorar: el modo edición de pivot tiene prioridad para no interferir con la textura/escala
                     return;
                 }
+                let frame_w = src_w.unwrap_or(logical_w).max(1);
+                let frame_h = src_h.unwrap_or(logical_h).max(1);
+                let (pivot_x, pivot_y) = match (pivot_x, pivot_y) {
+                    (Some(x), Some(y)) => (x, y),
+                    _ => (frame_w as f32 * 0.5, frame_h as f32),
+                };
                 self.play_animation_frame(id, &path, pivot_x, pivot_y, logical_w, logical_h, src_x.zip(src_y).zip(src_w.zip(src_h)).map(|((x, y), (w, h))| (x, y, w, h)), false);
             }
             EngineCommand::RestoreAnimationFrame { id } => {
@@ -585,6 +591,13 @@ impl State {
                     (max_w, max_h)
                 };
 
+                let mut frames = frames;
+                for frame in &mut frames {
+                    let (px, py) = frame.resolved_pivot(fallback_logical_w, fallback_logical_h);
+                    frame.pivot_x = Some(px);
+                    frame.pivot_y = Some(py);
+                }
+
                 let (measured_w, measured_h) = measure_bounds(&frames, fallback_logical_w, fallback_logical_h);
                 let mut resolved_logical_w = measured_w.max(1);
                 let mut resolved_logical_h = measured_h.max(1);
@@ -765,11 +778,13 @@ EngineCommand::PlayAnimation { id, name } => {
 
                         // Mostrar frame 0 (cache miss solo en el primer play)
                         if let Some(first_frame) = anim.frames.first() {
+                            let (pivot_x, pivot_y) =
+                                first_frame.resolved_pivot(anim.logical_w, anim.logical_h);
                             self.play_animation_frame(
                                 id,
                                 &first_frame.path,
-                                first_frame.pivot_x,
-                                first_frame.pivot_y,
+                                pivot_x,
+                                pivot_y,
                                 anim.logical_w,
                                 anim.logical_h,
                                 first_frame.src_x.zip(first_frame.src_y).zip(first_frame.src_w.zip(first_frame.src_h)).map(|((x, y), (w, h))| (x, y, w, h)),
@@ -965,6 +980,99 @@ EngineCommand::PlayAnimation { id, name } => {
                 let count = backgrounds.len();
                 send_event(&EngineEvent::BackgroundsList { backgrounds });
                 log::info!("[background] lista enviada: {} fondos", count);
+            }
+            EngineCommand::ApplyEntityRestore {
+                id,
+                name,
+                transform,
+                physics,
+                animations,
+                scripts,
+                control_bindings,
+                omit_scale,
+                skip_transform,
+                apply_initial_animation_frame,
+            } => {
+                if let Some(name) = name.filter(|n| !n.trim().is_empty()) {
+                    self.handle_command(EngineCommand::SetEntityName { id, name, force: true });
+                }
+                if !skip_transform {
+                    self.handle_command(EngineCommand::SetTransform {
+                        id,
+                        position: Some(transform.position),
+                        rotation: Some(transform.rotation),
+                        scale: if omit_scale { None } else { Some(transform.scale) },
+                        track_undo: Some(false),
+                    });
+                }
+                if let Some(physics) = physics {
+                    if physics.enabled {
+                        self.handle_command(EngineCommand::SetPhysics {
+                            id,
+                            enabled: true,
+                            body_type: physics.body_type,
+                        });
+                    }
+                }
+                if let Some(ref anims) = animations {
+                    for anim in anims {
+                        self.handle_command(EngineCommand::SetAnimation {
+                            id,
+                            name: anim.name.clone(),
+                            frames: anim.frames.clone(),
+                            fps: anim.fps,
+                            loop_: anim.loop_,
+                            flip_horizontal: anim.flip_horizontal,
+                            audio_path: anim.audio_path.clone(),
+                            logical_w: None,
+                            logical_h: None,
+                            scripts: anim.scripts.clone(),
+                            is_cancelable: anim.is_cancelable,
+                        });
+                    }
+                    if let Some(default) = anims.iter().find(|a| a.is_default).or(anims.first()) {
+                        self.handle_command(EngineCommand::SetDefaultAnimation {
+                            id,
+                            name: default.name.clone(),
+                        });
+                    }
+                    if apply_initial_animation_frame.unwrap_or(true) {
+                        if let Some(first_anim) = anims.first() {
+                            if let Some(first_frame) = first_anim.frames.first() {
+                                let (logical_w, logical_h) = self
+                                    .animations
+                                    .get(&id)
+                                    .and_then(|by_name| by_name.get(&first_anim.name))
+                                    .map(|a| (a.logical_w, a.logical_h))
+                                    .unwrap_or((64, 64));
+                                let (pivot_x, pivot_y) =
+                                    first_frame.resolved_pivot(logical_w, logical_h);
+                                self.play_animation_frame(
+                                    id,
+                                    &first_frame.path,
+                                    pivot_x,
+                                    pivot_y,
+                                    logical_w,
+                                    logical_h,
+                                    first_frame.src_x.zip(first_frame.src_y).zip(first_frame.src_w.zip(first_frame.src_h)).map(|((x, y), (w, h))| (x, y, w, h)),
+                                    false,
+                                );
+                            }
+                        }
+                    }
+                }
+                if let Some(ref script_list) = scripts {
+                    for script in script_list {
+                        self.handle_command(EngineCommand::LoadScript {
+                            id,
+                            path: script.path.clone(),
+                            source: script.source.clone(),
+                        });
+                    }
+                }
+                if let Some(bindings) = control_bindings {
+                    self.handle_command(EngineCommand::SetControlBindings { id, bindings });
+                }
             }
             EngineCommand::Shutdown => {}
         }

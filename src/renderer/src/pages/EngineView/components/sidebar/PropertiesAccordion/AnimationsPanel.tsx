@@ -7,6 +7,7 @@ import { AppTooltip, SpritePreviewModalBody } from '@components';
 import { CreateEntityFromSpriteModalBody } from '../EntitiesAccordion/components/CreateEntityFromSpriteModalBody';
 import type { SpriteFrameRect } from '@components';
 import { useContextEngine } from '@engine';
+import { buildPlayAnimationFrameCmd } from '../../../../../context/useContextEngine/hooks/applyPendingRestoreToEngine';
 import { useModal } from '@modal';
 import { useTraslate } from '@hooks';
 
@@ -46,10 +47,8 @@ const createAnimationId = () => {
   return `anim_${animationIdCounter}`;
 };
 
-const getLogicalBaseFromFrames = (frames: Array<{ width: number; height: number }>) => ({
-  logical_w: Math.max(1, ...frames.map((f) => Math.max(1, f.width))),
-  logical_h: Math.max(1, ...frames.map((f) => Math.max(1, f.height))),
-});
+/** Placeholder hasta que el motor emita `animation_logical_resolved`. */
+const LOGICAL_PLACEHOLDER = 64;
 
 export function AnimationsPanel() {
   const { t } = useTraslate();
@@ -62,7 +61,7 @@ export function AnimationsPanel() {
   useEffect(() => {
     setAnimations(entity?.animations ?? []);
     setPlayingAnimationName(null);
-  }, [entity?.id]);
+  }, [entity?.id, entity?.animations]);
 
   useEffect(() => {
     if (!entity?.id) return;
@@ -72,9 +71,14 @@ export function AnimationsPanel() {
     }
   }, [entity?.id, animationPlaying]);
 
-  const syncAnimations = (next: Animation[]) => {
-    setAnimations(next);
-    if (entity?.id) updateEntityAnimations?.(entity.id, next);
+  const syncAnimations = (next: Animation[]): Animation[] => {
+    if (!entity?.id) {
+      setAnimations(next);
+      return next;
+    }
+    const resolved = updateEntityAnimations(entity.id, next);
+    setAnimations(resolved);
+    return resolved;
   };
 
   const applyFirstFrame = (anim: Animation) => {
@@ -82,19 +86,7 @@ export function AnimationsPanel() {
     const first = anim.frames[0];
     if (!first) return;
 
-    send({
-      cmd: 'play_animation_frame',
-      id: entity.id,
-      path: first.path,
-      pivot_x: first.pivot_x,
-      pivot_y: first.pivot_y,
-      logical_w: anim.logical_w ?? 64,
-      logical_h: anim.logical_h ?? 64,
-      src_x: first.src_x,
-      src_y: first.src_y,
-      src_w: first.src_w,
-      src_h: first.src_h,
-    });
+    send(buildPlayAnimationFrameCmd(entity.id, anim, first));
   };
 
   const openCreateAnimationModal = () => {
@@ -107,8 +99,6 @@ export function AnimationsPanel() {
           sprites={sprites}
           previewTitle={t('Configure animation')}
           onCreateEntity={({ spritePath, animation }) => {
-            const { logical_w, logical_h } = getLogicalBaseFromFrames(animation.frames);
-
             const newAnimation: Animation = {
               id: createAnimationId(),
               name: animation.name,
@@ -117,8 +107,8 @@ export function AnimationsPanel() {
               is_default: !animations.some((a) => a.is_default),
               is_cancelable: animation.isCancelable,
               facing_right: animation.facingRight,
-              logical_w,
-              logical_h,
+              logical_w: LOGICAL_PLACEHOLDER,
+              logical_h: LOGICAL_PLACEHOLDER,
               audio_path: animation.audioPath,
               scripts: animation.scripts,
               selection_mode: animation.selectionMode as 'cell' | 'box' | undefined,
@@ -127,8 +117,8 @@ export function AnimationsPanel() {
               cell_offset_y: animation.cellOffsetY,
               frames: animation.frames.map((f) => ({
                 path: spritePath,
-                pivot_x: f.pivot_x ?? Math.round(f.width / 2),
-                pivot_y: f.pivot_y ?? f.height,
+                ...(f.pivot_x != null ? { pivot_x: f.pivot_x } : {}),
+                ...(f.pivot_y != null ? { pivot_y: f.pivot_y } : {}),
                 src_x: f.x,
                 src_y: f.y,
                 src_w: f.width,
@@ -137,8 +127,9 @@ export function AnimationsPanel() {
             };
 
             const next = [...animations, newAnimation];
-            syncAnimations(next);
-            applyFirstFrame(newAnimation);
+            const resolved = syncAnimations(next);
+            const synced = resolved.find((a) => a.name === newAnimation.name) ?? newAnimation;
+            applyFirstFrame(synced);
           }}
         />
       ),
@@ -257,8 +248,6 @@ export function AnimationsPanel() {
           initialCellOffsetX={anim.cell_offset_x}
           initialCellOffsetY={anim.cell_offset_y}
           onConfirm={(config) => {
-            const { logical_w, logical_h } = getLogicalBaseFromFrames(config.frames);
-
             const updatedAnimation: Animation = {
               ...anim,
               name: config.animationName,
@@ -267,8 +256,8 @@ export function AnimationsPanel() {
               is_default: config.defaultAnimation,
               is_cancelable: config.isCancelable,
               facing_right: config.facingRight,
-              logical_w,
-              logical_h,
+              logical_w: anim.logical_w ?? LOGICAL_PLACEHOLDER,
+              logical_h: anim.logical_h ?? LOGICAL_PLACEHOLDER,
               audio_path: config.audioPath,
               scripts: config.scripts,
               selection_mode: config.selectionMode,
@@ -277,8 +266,8 @@ export function AnimationsPanel() {
               cell_offset_y: config.cellOffsetY,
               frames: config.frames.map((f) => ({
                 path: spritePath,
-                pivot_x: f.pivot_x ?? Math.round(f.width / 2),
-                pivot_y: f.pivot_y ?? f.height,
+                ...(f.pivot_x != null ? { pivot_x: f.pivot_x } : {}),
+                ...(f.pivot_y != null ? { pivot_y: f.pivot_y } : {}),
                 src_x: f.x,
                 src_y: f.y,
                 src_w: f.width,
@@ -291,8 +280,9 @@ export function AnimationsPanel() {
               if (config.defaultAnimation) return { ...a, is_default: false };
               return a;
             });
-            syncAnimations(next);
-            applyFirstFrame(updatedAnimation);
+            const resolved = syncAnimations(next);
+            const synced = resolved.find((a) => a.name === updatedAnimation.name) ?? updatedAnimation;
+            applyFirstFrame(synced);
             closeModal();
           }}
           onCancel={closeModal}

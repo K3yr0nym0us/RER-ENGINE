@@ -78,8 +78,11 @@ pub enum EngineCommand {
     PlayAnimationFrame {
         id:        u32,
         path:      String,
-        pivot_x:   f32,
-        pivot_y:   f32,
+        /// Si falta, el motor usa centro X y base Y del rect (`src_*` o `logical_*`).
+        #[serde(default)]
+        pivot_x:   Option<f32>,
+        #[serde(default)]
+        pivot_y:   Option<f32>,
         logical_w: u32,
         logical_h: u32,
         #[serde(default)]
@@ -240,13 +243,38 @@ pub enum EngineCommand {
     SetDebugMode { show: bool },
     /// Activar/desactivar V-Sync en el swapchain.
     SetVsync { enabled: bool },
+    /// Restore post-carga de entidad 2D (transform, física, animaciones, scripts).
+    /// Sustituye ráfagas de IPC desde el front al aplicar `pendingRestores`.
+    ApplyEntityRestore {
+        id: u32,
+        #[serde(default)]
+        name: Option<String>,
+        transform: EntityRestoreTransform,
+        #[serde(default)]
+        physics: Option<EntityRestorePhysics>,
+        #[serde(default)]
+        animations: Option<Vec<EntityRestoreAnimation>>,
+        #[serde(default)]
+        scripts: Option<Vec<EntityRestoreScript>>,
+        #[serde(default)]
+        control_bindings: Option<ControlBindingsData>,
+        #[serde(default)]
+        omit_scale: bool,
+        #[serde(default)]
+        skip_transform: bool,
+        #[serde(default)]
+        apply_initial_animation_frame: Option<bool>,
+    },
 }
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct AnimationFrameData {
     pub path:      String,
-    pub pivot_x:   f32,
-    pub pivot_y:   f32,
+    /// Si falta, el motor usa centro horizontal y base inferior del rect del frame.
+    #[serde(default)]
+    pub pivot_x:   Option<f32>,
+    #[serde(default)]
+    pub pivot_y:   Option<f32>,
     #[serde(default)]
     pub src_x:     Option<u32>,
     #[serde(default)]
@@ -255,6 +283,18 @@ pub struct AnimationFrameData {
     pub src_w:     Option<u32>,
     #[serde(default)]
     pub src_h:     Option<u32>,
+}
+
+impl AnimationFrameData {
+    /// Pivot por defecto: centro X, base Y (convención del editor).
+    pub fn resolved_pivot(&self, fallback_w: u32, fallback_h: u32) -> (f32, f32) {
+        if let (Some(x), Some(y)) = (self.pivot_x, self.pivot_y) {
+            return (x, y);
+        }
+        let w = self.src_w.unwrap_or(fallback_w).max(1) as f32;
+        let h = self.src_h.unwrap_or(fallback_h).max(1) as f32;
+        (w * 0.5, h)
+    }
 }
 
 /// Script Lua asociado a una animación. Se ejecuta solo mientras la animación está activa.
@@ -285,6 +325,43 @@ pub struct ControlBindingsData {
     pub keyboard_mouse: HashMap<String, ControlScriptData>,
     #[serde(default)]
     pub gamepad: HashMap<String, ControlScriptData>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct EntityRestoreTransform {
+    pub position: [f32; 3],
+    pub rotation: [f32; 4],
+    pub scale:    [f32; 3],
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct EntityRestorePhysics {
+    pub enabled:   bool,
+    pub body_type: String,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct EntityRestoreAnimation {
+    pub name:   String,
+    pub frames: Vec<AnimationFrameData>,
+    pub fps:    u32,
+    pub loop_:  bool,
+    #[serde(default)]
+    pub flip_horizontal: bool,
+    #[serde(default)]
+    pub audio_path: Option<String>,
+    #[serde(default)]
+    pub scripts: Vec<AnimScriptData>,
+    #[serde(default)]
+    pub is_cancelable: bool,
+    #[serde(default)]
+    pub is_default: bool,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct EntityRestoreScript {
+    pub path:   String,
+    pub source: String,
 }
 
 // ── Instantánea de guardado (motor → Electron) ───────────────────────────────
@@ -441,9 +518,20 @@ pub enum EngineEvent {
         path: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         name: Option<String>,
+        img_width: u32,
+        img_height: u32,
+        default_pivot_x: f32,
+        default_pivot_y: f32,
     },
     /// Emitido cuando un personaje PNG se cargó correctamente.
-    CharacterLoaded { id: u32, path: String },
+    CharacterLoaded {
+        id: u32,
+        path: String,
+        img_width: u32,
+        img_height: u32,
+        default_pivot_x: f32,
+        default_pivot_y: f32,
+    },
     /// Emitido cuando la cámara 2D cambia (fin de pan o zoom).
     #[serde(rename = "camera_2d_updated")]
     Camera2dUpdated { x: f32, y: f32, half_h: f32 },

@@ -29,6 +29,7 @@ import {
 	type FirstPersonViewChangedEvent,
 } from '../../../defaults/firstPersonSceneRestore';
 import { setSceneCommandForSavedProject } from '../../../defaults/projectSceneLoad';
+import { applyPendingRestoreMeta, sendApplyEntityRestore } from './applyPendingRestoreToEngine';
 import type { EngineAction, EngineInternalRefs, PendingRestore, Transform } from '../types';
 
 type RuntimeEngineEvent = {
@@ -357,23 +358,11 @@ export function createEngineEventHandler({
 					physicsEnabled: pending.physicsEnabled,
 					physicsType: pending.physicsType ?? 'static',
 				};
-				if (pending.name && pending.name.trim().length > 0) {
-					window.engine.send({ cmd: 'set_entity_name', id, name: pending.name, force: true } as never);
-				}
-				if (pending.scripts) {
-					refs.entityMetaRef.current[id].scripts = pending.scripts;
-					for (const script of pending.scripts) {
-						window.engine.send({ cmd: 'load_script', id, path: script.name, source: script.source } as never);
-					}
-				}
-				if (pending.controlBindings) {
-					refs.entityMetaRef.current[id].controlBindings = pending.controlBindings;
-					window.engine.send({ cmd: 'set_control_bindings', id, bindings: pending.controlBindings } as never);
-				}
-				if (pending.blueprintId) {
-					refs.entityMetaRef.current[id].blueprintId = pending.blueprintId;
-				}
-				refs.entityTransformsRef.current[id] = pending.transform;
+				sendApplyEntityRestore(id, pending, {
+					skipTransform: true,
+					applyInitialAnimationFrame: false,
+				});
+				applyPendingRestoreMeta(refs, id, pending);
 				if (editorBoxQueue.length === 0) refs.pendingRestoresRef.current.delete('[EditorBox]');
 			} else {
 				const spawnModelPath = refs.pendingModelPathRef.current;
@@ -570,57 +559,8 @@ export function createEngineEventHandler({
 			const queue = refs.pendingRestoresRef.current.get(scenario.path);
 			if (queue && queue.length > 0) {
 				const pending = queue.shift()!;
-				const pendingTransform = pending.transform;
-				if (pending.name && pending.name.trim().length > 0) {
-					refs.entityMetaRef.current[scenario.id].name = pending.name;
-					window.engine.send({ cmd: 'set_entity_name', id: scenario.id, name: pending.name, force: true } as never);
-				}
-				window.engine.send({ cmd: 'set_transform', id: scenario.id, position: pendingTransform.position, rotation: pendingTransform.rotation, scale: pendingTransform.scale, track_undo: false } as never);
-				if (pending.physicsEnabled) {
-					window.engine.send({ cmd: 'set_physics', id: scenario.id, enabled: true, body_type: pending.physicsType } as never);
-					refs.entityMetaRef.current[scenario.id].physicsEnabled = true;
-					refs.entityMetaRef.current[scenario.id].physicsType = pending.physicsType;
-				}
-				if (pending.animations) {
-					refs.entityMetaRef.current[scenario.id].animations = pending.animations;
-					for (const anim of pending.animations) {
-						window.engine.send({
-							cmd: 'set_animation',
-							id: scenario.id,
-							name: anim.name,
-							frames: anim.frames,
-							fps: anim.fps,
-							loop_: anim.loop,
-							flip_horizontal: !(anim.facing_right ?? true),
-							audio_path: anim.audio_path ?? null,
-							logical_w: anim.logical_w,
-							logical_h: anim.logical_h,
-							scripts: anim.scripts ?? [],
-							is_cancelable: anim.is_cancelable ?? true,
-						} as never);
-					}
-					const defaultAnim = pending.animations.find((anim: any) => anim?.is_default) ?? pending.animations[0];
-					if (defaultAnim?.name) {
-						window.engine.send({ cmd: 'set_default_animation', id: scenario.id, name: defaultAnim.name } as never);
-					}
-					// Si la entidad usa una animación de un solo frame (objeto estático),
-					// aplicar el primer frame de inmediato para que quede visible al cargar.
-					applyInitialAnimationFrame(scenario.id, pending.animations);
-				}
-				if (pending.scripts) {
-					refs.entityMetaRef.current[scenario.id].scripts = pending.scripts;
-					for (const script of pending.scripts) {
-						window.engine.send({ cmd: 'load_script', id: scenario.id, path: script.name, source: script.source } as never);
-					}
-				}
-				if (pending.controlBindings) {
-					refs.entityMetaRef.current[scenario.id].controlBindings = pending.controlBindings;
-					window.engine.send({ cmd: 'set_control_bindings', id: scenario.id, bindings: pending.controlBindings } as never);
-				}
-				if (pending.blueprintId) {
-					refs.entityMetaRef.current[scenario.id].blueprintId = pending.blueprintId;
-				}
-				refs.entityTransformsRef.current[scenario.id] = pendingTransform;
+				sendApplyEntityRestore(scenario.id, pending);
+				applyPendingRestoreMeta(refs, scenario.id, pending);
 				if (queue.length === 0) refs.pendingRestoresRef.current.delete(scenario.path);
 			}
 		}
@@ -636,87 +576,12 @@ export function createEngineEventHandler({
 				if (!queue || queue.length === 0) return;
 
 				const pending = queue.shift()!;
-				const pendingTransform = pending.transform;
-				if (pending.name && pending.name.trim().length > 0) {
-					if (refs.entityMetaRef.current[id]) {
-						refs.entityMetaRef.current[id].name = pending.name;
-					}
-					window.engine.send({ cmd: 'set_entity_name', id, name: pending.name, force: true } as never);
-				}
 				const isPlayer = isPlayerPath(path);
-				if (!options?.skipTransform) {
-					window.engine.send({
-						cmd: 'set_transform',
-						id,
-						position: pendingTransform.position,
-						rotation: pendingTransform.rotation,
-						...(isPlayer ? {} : { scale: pendingTransform.scale }),
-						track_undo: false,
-					} as never);
-				}
-
-				if (pending.physicsEnabled) {
-					window.engine.send({ cmd: 'set_physics', id, enabled: true, body_type: pending.physicsType } as never);
-					if (refs.entityMetaRef.current[id]) {
-						refs.entityMetaRef.current[id].physicsEnabled = true;
-						refs.entityMetaRef.current[id].physicsType = pending.physicsType;
-					}
-				}
-
-				if (pending.animations) {
-					if (refs.entityMetaRef.current[id]) {
-						refs.entityMetaRef.current[id].animations = pending.animations;
-					}
-					for (const anim of pending.animations) {
-						window.engine.send({
-							cmd: 'set_animation',
-							id,
-							name: anim.name,
-							frames: anim.frames,
-							fps: anim.fps,
-							loop_: anim.loop,
-							flip_horizontal: !(anim.facing_right ?? true),
-							audio_path: anim.audio_path ?? null,
-							logical_w: anim.logical_w,
-							logical_h: anim.logical_h,
-							scripts: anim.scripts ?? [],
-							is_cancelable: anim.is_cancelable ?? true,
-						} as never);
-					}
-					const defaultAnim = pending.animations.find((anim: any) => anim?.is_default) ?? pending.animations[0];
-					if (defaultAnim?.name) {
-						window.engine.send({ cmd: 'set_default_animation', id, name: defaultAnim.name } as never);
-					}
-					applyInitialAnimationFrame(id, pending.animations);
-				}
-
-				if (pending.scripts) {
-					if (refs.entityMetaRef.current[id]) {
-						refs.entityMetaRef.current[id].scripts = pending.scripts;
-					}
-					for (const script of pending.scripts) {
-						window.engine.send({ cmd: 'load_script', id, path: script.name, source: script.source } as never);
-					}
-				}
-
-				if (pending.controlBindings) {
-					if (refs.entityMetaRef.current[id]) {
-						refs.entityMetaRef.current[id].controlBindings = pending.controlBindings;
-					}
-					window.engine.send({ cmd: 'set_control_bindings', id, bindings: pending.controlBindings } as never);
-				}
-
-				if (pending.blueprintId) {
-					if (refs.entityMetaRef.current[id]) {
-						refs.entityMetaRef.current[id].blueprintId = pending.blueprintId;
-					}
-				}
-
-				if (pending.entityCategory && refs.entityMetaRef.current[id]) {
-					refs.entityMetaRef.current[id].entityCategory = pending.entityCategory;
-				}
-
-				refs.entityTransformsRef.current[id] = pendingTransform;
+				sendApplyEntityRestore(id, pending, {
+					omitScale: isPlayer,
+					skipTransform: options?.skipTransform,
+				});
+				applyPendingRestoreMeta(refs, id, pending);
 
 				if (pending.visualModelPath) {
 					window.engine.send({
@@ -916,18 +781,8 @@ export function createEngineEventHandler({
 			const queue = refs.pendingRestoresRef.current.get('[ExecutionArea]');
 			if (queue && queue.length > 0) {
 				const pending = queue.shift()!;
-				window.engine.send({ cmd: 'set_transform', id, position: pending.transform.position, rotation: pending.transform.rotation, scale: pending.transform.scale, track_undo: false } as never);
-				refs.entityTransformsRef.current[id] = pending.transform;
-				if (pending.name && pending.name.trim().length > 0) {
-					refs.entityMetaRef.current[id].name = pending.name;
-					window.engine.send({ cmd: 'set_entity_name', id, name: pending.name, force: true } as never);
-				}
-				if (pending.scripts) {
-					refs.entityMetaRef.current[id].scripts = pending.scripts;
-					for (const script of pending.scripts) {
-						window.engine.send({ cmd: 'load_script', id, path: script.name, source: script.source } as never);
-					}
-				}
+				sendApplyEntityRestore(id, pending, { applyInitialAnimationFrame: false });
+				applyPendingRestoreMeta(refs, id, pending);
 				if (queue.length === 0) refs.pendingRestoresRef.current.delete('[ExecutionArea]');
 			}
 			dispatch({ type: 'ADD_EXECUTION_AREA', payload: { id, path: '[ExecutionArea]' } });
@@ -952,11 +807,26 @@ export function createEngineEventHandler({
 			const e = event as unknown as AnimationLogicalResolved;
 			const meta = refs.entityMetaRef.current[e.id];
 			if (!meta?.animations) return;
-			meta.animations = meta.animations.map((anim: any) =>
-				anim?.name === e.name
-					? { ...anim, logical_w: e.logical_w, logical_h: e.logical_h }
-					: anim,
-			);
+			const patchLogical = (anims: any[]) =>
+				anims.map((anim: any) =>
+					anim?.name === e.name
+						? { ...anim, logical_w: e.logical_w, logical_h: e.logical_h }
+						: anim,
+				);
+			meta.animations = patchLogical(meta.animations);
+			const bpId = meta.blueprintId;
+			if (bpId) {
+				refs.blueprintsRef.current = refs.blueprintsRef.current.map((bp) =>
+					bp.id === bpId && bp.animations
+						? { ...bp, animations: patchLogical(bp.animations) }
+						: bp,
+				);
+				dispatch({ type: 'SET_BLUEPRINTS', payload: refs.blueprintsRef.current });
+			}
+			dispatch({
+				type: 'UPDATE_ENTITY_ANIMATIONS',
+				payload: { entityId: e.id, animations: meta.animations },
+			});
 		}
 
 		if (event.event === 'entity_removed') {
