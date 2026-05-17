@@ -497,6 +497,7 @@ impl State {
             last_draw_calls:     0,
             autosave_enabled:    false,
             autosave_last_tick:  Instant::now(),
+            target_fps:          60,
             blocked_on_keep_horizontal: HashMap::new(),
             pending_slides:      HashMap::new(),
             save_registry: EntitySaveRegistry::new(),

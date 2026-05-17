@@ -306,7 +306,8 @@ impl State {
                 self.rebuild_grid();
             }
             EngineCommand::SetTargetFps { fps } => {
-                log::info!("[render] Límite de FPS actualizado: {}", fps);
+                self.target_fps = fps.clamp(1, 1000);
+                log::info!("[render] Límite de FPS actualizado: {}", self.target_fps);
             }
             EngineCommand::SetPreviewPlaying { playing } => {
                 if self.preview_playing == playing {

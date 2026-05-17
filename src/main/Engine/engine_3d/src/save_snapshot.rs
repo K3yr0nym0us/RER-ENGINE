@@ -204,7 +204,8 @@ impl State {
       .get(&entity_id)
       .map(|d| d == name)
       .unwrap_or(false);
-    let facing_right = self.entity_facing_right.get(&entity_id).map(|&v| v);
+    // Autoría del sprite (no la dirección runtime al guardar).
+    let facing_right = Some(!anim.flip_horizontal);
 
     SaveAnimationSnapshot {
       name: name.to_string(),

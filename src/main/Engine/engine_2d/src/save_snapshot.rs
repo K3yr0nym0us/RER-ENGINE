@@ -119,7 +119,7 @@ impl State {
                 grid_visible: self.grid_config.visible,
                 grid_cell_size: self.grid_config.cell_size,
                 gravity: self.physics_2d.gravity_magnitude(),
-                target_fps: 60,
+                target_fps: self.target_fps,
             },
             background_path: self.background_path.clone(),
             entities,
@@ -192,7 +192,9 @@ impl State {
             .get(&entity_id)
             .map(|d| d == name)
             .unwrap_or(false);
-        let facing_right = self.entity_facing_right.get(&entity_id).map(|&v| v);
+        // Autoría del sprite (no la dirección runtime del personaje al guardar).
+        // .save facing_right=true → arte dibujado mirando derecha → flip_horizontal=false en motor.
+        let facing_right = Some(!anim.flip_horizontal);
 
         SaveAnimationSnapshot {
             name: name.to_string(),

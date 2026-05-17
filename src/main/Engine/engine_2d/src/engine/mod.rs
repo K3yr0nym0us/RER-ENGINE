@@ -221,6 +221,8 @@ pub struct State {
     last_draw_calls:     u32,
     autosave_enabled:    bool,
     autosave_last_tick:  Instant,
+    /// Límite de FPS del bucle (sincronizado con `set_target_fps`).
+    pub(crate) target_fps: u64,
     /// Bloqueo persistente de input horizontal para `on_keep`.
     /// Mientras exista, la misma dirección no vuelve a ejecutar Lua.
     pub(crate) blocked_on_keep_horizontal: HashMap<u32, f32>,
