@@ -137,6 +137,10 @@ pub enum EngineCommand {
     SetCtrlHeld { held: bool },
     /// Restaurar posición y zoom de la cámara 2D ortográfica.
     SetCamera2d { x: f32, y: f32, half_h: f32 },
+    /// FOV vertical de la cámara 3D (radianes).
+    SetCameraFov { fov_y: f32 },
+    /// Alcance del gizmo de frustum de cámara FP en el editor (metros).
+    SetFpEditorFrustumDistance { distance: f32 },
     /// Cargar una imagen PNG/GIF como fondo de mundo (cubre todo el área del mundo).
     LoadBackground { path: String },
     /// Activar o desactivar física en una entidad. body_type: "dynamic" | "static" | "kinematic"

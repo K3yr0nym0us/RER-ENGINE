@@ -669,6 +669,12 @@ impl State {
                     log::debug!("Cámara 2D restaurada: x={x} y={y} half_h={half_h}");
                 }
             }
+            EngineCommand::SetCameraFov { fov_y } => {
+                self.camera.fov_y = fov_y.clamp(0.1, std::f32::consts::FRAC_PI_2 - 0.01);
+            }
+            EngineCommand::SetFpEditorFrustumDistance { distance } => {
+                self.fp_editor_frustum_distance = distance.clamp(0.5, 50.0);
+            }
             EngineCommand::LoadBackground { path } => {
                 self.background_path = Some(path.clone());
                 self.load_background(&path);

@@ -7,6 +7,7 @@ import { isEditorBoxPath, isPlayerPath } from '@shared-types';
 import {
 	buildSavedPlayerTransform,
 	ensureFirstPersonPlayerOnLoad,
+	resolvePlayerFeetForSave,
 } from '../../../defaults/firstPersonSceneRestore';
 import { setSceneCommandForSavedProject } from '../../../defaults/projectSceneLoad';
 import { useContextEngine } from '@engine';
@@ -148,14 +149,18 @@ export function SceneTabsBar({ initialSave, projectType, gameStyle }: Props) {
       ? Array.from(loadedModelsInfo.entries()).map(([path, info]) => ({ name: info.name, path }))
       : undefined;
 
+    const feetPos = gameStyle === 'first-person' && projectType === '3D'
+      ? resolvePlayerFeetForSave(playerId, firstPersonViewRef, entityTransformsRef)
+      : undefined;
     const fpView = firstPersonViewRef?.current ?? null;
-    const feetPos = fpView?.position
-      ?? (playerId !== null ? transforms[playerId]?.position : undefined);
     const playerVisualPath = playerId !== null
       ? meta[playerId]?.visualModelPath
       : undefined;
+    const playerControlBindings = playerId !== null
+      ? meta[playerId]?.controlBindings
+      : undefined;
     const playerTransform = gameStyle === 'first-person' && projectType === '3D'
-      ? buildSavedPlayerTransform(fpView, feetPos, playerVisualPath)
+      ? buildSavedPlayerTransform(fpView, feetPos, playerVisualPath, playerControlBindings)
       : playerId !== null
         ? {
             position: transforms[playerId]?.position ?? DEFAULT_POS,
@@ -216,6 +221,7 @@ export function SceneTabsBar({ initialSave, projectType, gameStyle }: Props) {
       firstPersonViewRef.current = scene.playerTransform;
     } else {
       pendingFirstPersonViewRef.current = null;
+      firstPersonViewRef.current = null;
     }
     send({ cmd: 'set_scene', scene: setSceneCommandForSavedProject(projectType) });
 
@@ -408,7 +414,7 @@ export function SceneTabsBar({ initialSave, projectType, gameStyle }: Props) {
       world: { ...sourceData.world },
       camera2d: sourceData.camera2d ? { ...sourceData.camera2d } : null,
       playerTransform: sourceData.playerTransform
-        ? { position: [...sourceData.playerTransform.position] as [number, number, number], scale: [...sourceData.playerTransform.scale] as [number, number, number] }
+        ? { ...sourceData.playerTransform, position: [...sourceData.playerTransform.position] as [number, number, number], scale: [...sourceData.playerTransform.scale] as [number, number, number] }
         : null,
     };
 

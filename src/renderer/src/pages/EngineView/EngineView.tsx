@@ -53,7 +53,7 @@ function EngineViewInner({ projectType, gameStyle, initialSave, initialSavePath,
 
       <div className="d-flex flex-grow-1 overflow-hidden">
 
-        <SideBarLeft projectType={projectType} />
+        <SideBarLeft projectType={projectType} gameStyle={gameStyle} />
 
         <div className="d-flex flex-column flex-fill">
           <TopBarEngine 

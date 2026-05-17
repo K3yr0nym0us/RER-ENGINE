@@ -35,6 +35,8 @@ pub struct State {
     pub(crate) static_tex_cache: std::collections::HashMap<String, [f32; 4]>,
     pub(crate) canonical_quad_idx: usize,
     pub camera: Camera,
+    /// Profundidad del gizmo de frustum FP en modo editor (metros).
+    pub(crate) fp_editor_frustum_distance: f32,
     /// Cámara 2D ortográfica activa cuando se carga una escena 2D.
     /// `None` = modo 3D (usa `camera`).
     pub camera_2d: Option<Camera2D>,

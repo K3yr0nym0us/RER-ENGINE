@@ -24,9 +24,10 @@ import {
 import { applyFirstPersonControlDefaultsIfEmpty } from '../../../defaults/applyFirstPersonControlDefaults';
 import {
 	applySavedFirstPersonView,
-	syncFirstPersonViewRefFromPlayer,
 	bodyCenterFromFeet,
 	ensureFirstPersonPlayerOnLoad,
+	quatFromYaw,
+	syncFirstPersonViewRefFromPlayer,
 } from '../../../defaults/firstPersonSceneRestore';
 import { setSceneCommandForSavedProject } from '../../../defaults/projectSceneLoad';
 import type { EngineAction, EngineInternalRefs, PendingRestore, Transform } from '../types';
@@ -251,10 +252,12 @@ export function createEngineEventHandler({
 						sendEngine({ cmd: 'create_execution_area_from_points', points: entity.points, track_undo: false } as never);
 					} else if (entity.kind === 'character' && isPlayerPath(entity.path)) {
 						const savedPlayer = save.playerTransform;
+						const playerYaw = savedPlayer?.yaw;
+						const rot = playerYaw != null ? quatFromYaw(playerYaw) : entity.rotation;
 						const playerTransform: Transform = savedPlayer
 							? {
-								position: savedPlayer.position,
-								rotation: entity.rotation,
+								position: bodyCenterFromFeet(savedPlayer.position, rot, savedPlayer.scale[1]),
+								rotation: rot,
 								scale: FIRST_PERSON_PLAYER_BODY_SCALE,
 							}
 							: transform;
@@ -264,8 +267,8 @@ export function createEngineEventHandler({
 							physicsEnabled: true,
 							physicsType: 'dynamic',
 							scripts: entity.scripts,
-							controlBindings: entity.control_bindings,
-							visualModelPath: entity.visual_model_path,
+							controlBindings: savedPlayer?.control_bindings ?? entity.control_bindings,
+							visualModelPath: savedPlayer?.visual_model_path ?? entity.visual_model_path,
 						};
 						const queue = refs.pendingRestoresRef.current.get('[Player]') ?? [];
 						queue.push(pendingRestore);
@@ -498,9 +501,17 @@ export function createEngineEventHandler({
 					id,
 					refs.entityTransformsRef,
 				);
-				if (refs.entityMetaRef.current[id]) {
-					refs.entityMetaRef.current[id].physicsEnabled = true;
-					refs.entityMetaRef.current[id].physicsType = 'dynamic';
+				const meta = refs.entityMetaRef.current[id];
+				if (meta) {
+					meta.physicsEnabled = true;
+					meta.physicsType = 'dynamic';
+					if (meta.controlBindings) {
+						window.engine.send({
+							cmd: 'set_control_bindings',
+							id,
+							bindings: meta.controlBindings,
+						} as never);
+					}
 				}
 			}
 		}
@@ -751,12 +762,25 @@ export function createEngineEventHandler({
 						refs.entityMetaRef.current[character.id].physicsType = 'dynamic';
 					}
 					applyPendingRestore(character.id, character.path);
+					const savedFpView = refs.pendingFirstPersonViewRef.current
+						?? refs.firstPersonViewRef.current;
 					applySavedFirstPersonView(
-						refs.pendingFirstPersonViewRef.current,
+						savedFpView,
 						character.id,
 						refs.entityTransformsRef,
 						{ editorOrbit: true },
 					);
+					if (savedFpView?.control_bindings) {
+						const meta = refs.entityMetaRef.current[character.id];
+						if (meta) {
+							meta.controlBindings = savedFpView.control_bindings;
+						}
+						window.engine.send({
+							cmd: 'set_control_bindings',
+							id: character.id,
+							bindings: savedFpView.control_bindings,
+						} as never);
+					}
 					refs.pendingFirstPersonViewRef.current = null;
 					// No sobrescribir scale: el motor puede usar 1.0 tras importar modelo (malla ya normalizada).
 					applyFirstPersonDefaultsForPlayer(character.id, gameStyle, refs);

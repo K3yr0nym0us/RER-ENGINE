@@ -1,4 +1,4 @@
-import type { SavedEntity, SavedPlayerTransform } from '@shared-types';
+import type { SavedControlBindings, SavedEntity, SavedPlayerTransform } from '@shared-types';
 import { FIRST_PERSON_PLAYER_BODY_SCALE, isPlayerPath } from '@shared-types';
 import type { MutableRefObject } from 'react';
 import type { PendingRestore } from '../context/useContextEngine/types';
@@ -6,6 +6,8 @@ import type { PendingRestore } from '../context/useContextEngine/types';
 /** Pitch de órbita en editor (detrás del personaje). */
 export const FP_EDITOR_ORBIT_PITCH = 0.25;
 export const FP_DEFAULT_YAW = -Math.PI / 2;
+export const FP_DEFAULT_FOV_Y = (45 * Math.PI) / 180;
+export const FP_DEFAULT_FRUSTUM_DISTANCE = 2.5;
 
 /**
  * Offset pivot→pies del jugador. La malla SIEMPRE mide `FIRST_PERSON_PLAYER_BODY_SCALE[1]`
@@ -31,6 +33,12 @@ function rotateVec3ByQuat(
 		iy * qw + iw * -qy + iz * -qx - ix * -qz,
 		iz * qw + iw * -qz + ix * -qy - iy * -qx,
 	];
+}
+
+/** Quaternion (xyzw) con rotación solo en Y (yaw). */
+export function quatFromYaw(yaw: number): [number, number, number, number] {
+	const half = yaw * 0.5;
+	return [0, Math.sin(half), 0, Math.cos(half)];
 }
 
 export function feetFromPlayerBodyCenter(
@@ -77,7 +85,10 @@ export function syncFirstPersonViewRefFromPlayer(
 		scale: FIRST_PERSON_PLAYER_BODY_SCALE,
 		yaw: prev?.yaw ?? FP_DEFAULT_YAW,
 		pitch: prev?.pitch ?? FP_EDITOR_ORBIT_PITCH,
+		fov_y: prev?.fov_y ?? FP_DEFAULT_FOV_Y,
+		frustum_distance: prev?.frustum_distance ?? FP_DEFAULT_FRUSTUM_DISTANCE,
 		...(prev?.visual_model_path ? { visual_model_path: prev.visual_model_path } : {}),
+		...(prev?.control_bindings ? { control_bindings: prev.control_bindings } : {}),
 	};
 }
 
@@ -97,20 +108,25 @@ export function applySavedFirstPersonView(
 	const pitch = options?.editorOrbit !== false
 		? FP_EDITOR_ORBIT_PITCH
 		: (view.pitch ?? FP_EDITOR_ORBIT_PITCH);
+	const fovY = view.fov_y ?? FP_DEFAULT_FOV_Y;
+	const frustumDist = view.frustum_distance ?? FP_DEFAULT_FRUSTUM_DISTANCE;
+
 	window.engine.send({
 		cmd: 'set_first_person_spawn',
 		position: view.position,
 		yaw,
 		pitch,
 	} as never);
+	window.engine.send({ cmd: 'set_camera_fov', fov_y: fovY } as never);
+	window.engine.send({ cmd: 'set_fp_editor_frustum_distance', distance: frustumDist } as never);
+
 	if (playerId != null) {
-		const prev = entityTransformsRef.current[playerId];
-		const rot = prev?.rotation ?? [0, 0, 0, 1];
-		const scale = prev?.scale ?? FIRST_PERSON_PLAYER_BODY_SCALE;
+		const scale = FIRST_PERSON_PLAYER_BODY_SCALE;
+		const rot = quatFromYaw(yaw);
 		entityTransformsRef.current[playerId] = {
 			position: bodyCenterFromFeet(view.position, rot, scale[1]),
 			rotation: rot,
-			scale: FIRST_PERSON_PLAYER_BODY_SCALE,
+			scale,
 		};
 	}
 }
@@ -133,17 +149,19 @@ export function ensureFirstPersonPlayerOnLoad(
 			const playerEntity = (scene.entities ?? []).find(
 				(e) => e.kind === 'character' && isPlayerPath(e.path),
 			);
+			const yaw = savedPlayer.yaw ?? FP_DEFAULT_YAW;
+			const rot = quatFromYaw(yaw);
 			const pending: PendingRestore = {
 				transform: {
-					position: savedPlayer.position,
-					rotation: [0, 0, 0, 1],
+					position: bodyCenterFromFeet(savedPlayer.position, rot, savedPlayer.scale[1]),
+					rotation: rot,
 					scale: FIRST_PERSON_PLAYER_BODY_SCALE,
 				},
 				name: playerEntity?.name ?? 'Player',
 				physicsEnabled: true,
 				physicsType: 'dynamic',
 				scripts: playerEntity?.scripts,
-				controlBindings: playerEntity?.control_bindings,
+				controlBindings: savedPlayer.control_bindings ?? playerEntity?.control_bindings,
 				visualModelPath: savedPlayer.visual_model_path ?? playerEntity?.visual_model_path,
 			};
 			queue.push(pending);
@@ -157,6 +175,7 @@ export function buildSavedPlayerTransform(
 	fpView: SavedPlayerTransform | null | undefined,
 	feetPosition: [number, number, number] | undefined,
 	visualModelPath?: string,
+	controlBindings?: SavedControlBindings,
 ): SavedPlayerTransform | null {
 	if (!feetPosition) return null;
 	return {
@@ -164,6 +183,30 @@ export function buildSavedPlayerTransform(
 		scale: FIRST_PERSON_PLAYER_BODY_SCALE,
 		yaw: fpView?.yaw ?? FP_DEFAULT_YAW,
 		pitch: fpView?.pitch ?? FP_EDITOR_ORBIT_PITCH,
+		fov_y: fpView?.fov_y ?? FP_DEFAULT_FOV_Y,
+		frustum_distance: fpView?.frustum_distance ?? FP_DEFAULT_FRUSTUM_DISTANCE,
 		...(visualModelPath ? { visual_model_path: visualModelPath } : {}),
+		...(controlBindings ? { control_bindings: controlBindings } : {}),
 	};
+}
+
+/**
+ * Resuelve la posición en pies del jugador para guardar.
+ * Prioriza `firstPersonViewRef` (métricas FP / acordeón Cámara): en play el pivot del
+ * jugador en `entityTransformsRef` no se actualiza y un sync previo pisaba la posición real.
+ */
+export function resolvePlayerFeetForSave(
+	playerId: number | null,
+	firstPersonViewRef: MutableRefObject<SavedPlayerTransform | null>,
+	entityTransformsRef: MutableRefObject<
+		Record<number, import('../context/useContextEngine/types').Transform>
+	>,
+): [number, number, number] | undefined {
+	if (playerId == null) return undefined;
+
+	const liveFeet = firstPersonViewRef.current?.position;
+	if (liveFeet) return liveFeet;
+
+	syncFirstPersonViewRefFromPlayer(firstPersonViewRef, playerId, entityTransformsRef);
+	return firstPersonViewRef.current?.position;
 }

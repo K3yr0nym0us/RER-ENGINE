@@ -270,7 +270,7 @@ impl State {
                     pitch,
                     self.camera.fov_y,
                     aspect,
-                    2.5,
+                    self.fp_editor_frustum_distance,
                 );
 
                 let vp = self.camera.to_uniform(aspect).view_proj;

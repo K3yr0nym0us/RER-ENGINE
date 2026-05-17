@@ -268,6 +268,7 @@ impl State {
             -std::f32::consts::FRAC_PI_2 + 0.05,
             std::f32::consts::FRAC_PI_2 - 0.05,
         );
+        self.sync_player_rotation_from_look();
         self.sync_first_person_camera_mode();
 
         self.first_person_velocity = Vec3::ZERO;

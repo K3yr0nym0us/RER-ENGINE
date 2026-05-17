@@ -1,7 +1,7 @@
 import { Accordion } from 'react-bootstrap';
 import { Gear } from 'react-bootstrap-icons';
 import PropertiesPanel from './sidebar/PropertiesAccordion/PropertiesAccordion';
-import { ControlsAccordion, WorldAccordion, ToolsAccordion } from './sidebar';
+import { CameraAccordion, ControlsAccordion, WorldAccordion, ToolsAccordion } from './sidebar';
 import ResourcesAccordion from './sidebar/ResourcesAccordion/ResourcesAccordion';
 import EntitiesAccordion from './sidebar/EntitiesAccordion/EntitiesAccordion';
 import UserGuideButton from './sidebar/UserGuideButton';
@@ -10,9 +10,9 @@ import { LanguageToggleButton } from '@components';
 import { useContextEngine } from '@engine';
 import { useTraslate } from '@hooks';
 
-import { ProjectType } from '@shared-types';
+import type { GameStyle, ProjectType } from '@shared-types';
 
-export function SideBarLeft({ projectType }: { projectType: ProjectType }) {
+export function SideBarLeft({ projectType, gameStyle }: { projectType: ProjectType; gameStyle?: GameStyle }) {
   const { t } = useTraslate();
   const {
     selectedEntity,
@@ -25,6 +25,10 @@ export function SideBarLeft({ projectType }: { projectType: ProjectType }) {
           <>
             <Accordion className="sidebar-accordion">
               <WorldAccordion projectType={projectType} />
+            </Accordion>
+
+            <Accordion className="sidebar-accordion mt-1">
+              <CameraAccordion projectType={projectType} gameStyle={gameStyle} />
             </Accordion>
 
             <Accordion className="sidebar-accordion mt-1">

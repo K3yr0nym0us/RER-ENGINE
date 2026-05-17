@@ -4,7 +4,7 @@ import { useContextEngine } from '@engine';
 import { useLanguage } from '@context';
 import type { GameStyle, ProjectType, ProjectSaveData, SavedScene } from '@shared-types';
 import { isEditorBoxPath, isPlayerPath } from '@shared-types';
-import { buildSavedPlayerTransform } from '../defaults/firstPersonSceneRestore';
+import { buildSavedPlayerTransform, resolvePlayerFeetForSave } from '../defaults/firstPersonSceneRestore';
 import { getSceneProjectState } from '../pages/EngineView/sceneStateStore';
 
 interface UseAutoSaveOptions {
@@ -109,14 +109,18 @@ export function useAutoSave({
 
     const allEntities = buildCurrentSceneEntities()
 
+    const feetPos = gameStyle === 'first-person' && projectType === '3D'
+      ? resolvePlayerFeetForSave(playerId, firstPersonViewRef, entityTransformsRef)
+      : undefined
     const fpView = firstPersonViewRef?.current ?? null
-    const feetPos = fpView?.position
-      ?? (playerId !== null ? transforms[playerId]?.position : undefined)
     const playerVisualPath = playerId !== null
       ? meta[playerId]?.visualModelPath
       : undefined;
+    const playerControlBindings = playerId !== null
+      ? meta[playerId]?.controlBindings
+      : undefined;
     const playerTransform = gameStyle === 'first-person' && projectType === '3D'
-      ? buildSavedPlayerTransform(fpView, feetPos, playerVisualPath)
+      ? buildSavedPlayerTransform(fpView, feetPos, playerVisualPath, playerControlBindings)
       : playerId !== null
         ? {
             position: transforms[playerId]?.position ?? DEFAULT_POS,

@@ -385,6 +385,7 @@ impl State {
             static_tex_cache: std::collections::HashMap::new(),
             canonical_quad_idx: 0,
             camera,
+            fp_editor_frustum_distance: 2.5,
             camera_2d: None,
             meshes,
             world,

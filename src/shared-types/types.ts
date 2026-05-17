@@ -173,6 +173,12 @@ export interface SavedPlayerTransform {
   pitch?:   number
   /** Modelo visual (.glb/.fbx) del jugador si se reemplazó el placeholder. */
   visual_model_path?: string
+  /** FOV vertical de la cámara en radianes (3D FP). */
+  fov_y?: number
+  /** Alcance del gizmo de frustum en el editor (metros). */
+  frustum_distance?: number
+  /** Bindings de control Lua del jugador principal. */
+  control_bindings?: SavedControlBindings
 }
 
 export interface SavedScene {
