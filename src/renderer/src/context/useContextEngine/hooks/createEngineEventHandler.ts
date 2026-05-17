@@ -13,7 +13,7 @@ import type {
 	SpriteRemoved,
 	SpritesList,
 } from '@shared-types';
-import type { GameStyle } from '@shared-types';
+import type { GameStyle, SavedScene } from '@shared-types';
 import {
 	FIRST_PERSON_PLAYER_BODY_SCALE,
 	isEditorBoxPath,
@@ -29,7 +29,9 @@ import {
 	type FirstPersonViewChangedEvent,
 } from '../../../defaults/firstPersonSceneRestore';
 import { setSceneCommandForSavedProject } from '../../../defaults/projectSceneLoad';
+import { buildImportSceneCommand, syncEditorStateFromSavedScene } from './buildImportSceneCommand';
 import { applyPendingRestoreMeta, sendApplyEntityRestore } from './applyPendingRestoreToEngine';
+import { beginSceneImportLoading, endSceneImportLoading } from './sceneImportOverlay';
 import type { EngineAction, EngineInternalRefs, PendingRestore, Transform } from '../types';
 
 type RuntimeEngineEvent = {
@@ -48,6 +50,7 @@ const SILENT_ENGINE_EVENTS = new Set<string>([
 	'sound_loaded',
 	'background_asset_loaded',
 	'scenario_loaded',
+	'scene_imported',
 	'collider_created',
 	'execution_area_created',
 	'entity_deselected',
@@ -74,6 +77,7 @@ interface CreateEngineEventHandlerParams {
 	gameStyle?: GameStyle
 	applyInitialAnimationFrame: (entityId: number, animations?: any[]) => void
 	setLocale?: (locale: Locale) => void
+	reportBounds: () => void
 }
 
 function applyFirstPersonDefaultsForPlayer(
@@ -98,6 +102,7 @@ export function createEngineEventHandler({
 	gameStyle,
 	applyInitialAnimationFrame,
 	setLocale,
+	reportBounds,
 }: CreateEngineEventHandlerParams) {
 	const buildTransformFromPoints = (
 		points?: [[number, number], [number, number], [number, number], [number, number]],
@@ -182,20 +187,24 @@ export function createEngineEventHandler({
 					refs.firstPersonViewRef.current = save.playerTransform;
 				}
 
+				const importScene2d = projectType === '2D' && (save.entities?.length ?? 0) > 0;
+
 				if (save.world) {
 					savedGravity = save.world.gravity;
 					dispatch({ type: 'SET_WORLD_CONFIG', payload: save.world });
-					sendEngine({
-						cmd: 'set_world_size',
-						width: save.world.worldWidth,
-						height: save.world.worldHeight,
-						depth: save.world.worldDepth,
-					} as never);
-					sendEngine({ cmd: 'set_grid_visible', visible: save.world.gridVisible } as never);
-					sendEngine({ cmd: 'set_grid_cell_size', size: save.world.gridCellSize } as never);
-					sendEngine({ cmd: 'set_target_fps', fps: save.world.targetFps } as never);
-					if (save.world.gravity != null) {
-						sendEngine({ cmd: 'set_gravity', gravity: save.world.gravity } as never);
+					if (!importScene2d) {
+						sendEngine({
+							cmd: 'set_world_size',
+							width: save.world.worldWidth,
+							height: save.world.worldHeight,
+							depth: save.world.worldDepth,
+						} as never);
+						sendEngine({ cmd: 'set_grid_visible', visible: save.world.gridVisible } as never);
+						sendEngine({ cmd: 'set_grid_cell_size', size: save.world.gridCellSize } as never);
+						sendEngine({ cmd: 'set_target_fps', fps: save.world.targetFps } as never);
+						if (save.world.gravity != null) {
+							sendEngine({ cmd: 'set_gravity', gravity: save.world.gravity } as never);
+						}
 					}
 				}
 			if (save.language && (save.language === 'en' || save.language === 'es')) {
@@ -203,10 +212,12 @@ export function createEngineEventHandler({
 				setLocale?.(validLocale);
 			}
 			if (save.camera2d) {
-				sendEngine({ cmd: 'set_camera2d', x: save.camera2d.x, y: save.camera2d.y, half_h: save.camera2d.halfH } as never);
 				refs.camera2dRef.current = save.camera2d;
+				if (!importScene2d) {
+					sendEngine({ cmd: 'set_camera2d', x: save.camera2d.x, y: save.camera2d.y, half_h: save.camera2d.halfH } as never);
+				}
 			}
-				if (save.sprites && save.sprites.length > 0) {
+				if (!importScene2d && save.sprites && save.sprites.length > 0) {
 					for (const sprite of save.sprites) {
 						sendEngine({ cmd: 'load_sprite', path: sprite.path, name: sprite.name } as never);
 						dispatch({ type: 'ADD_SPRITE_INFO', payload: { path: sprite.path, name: sprite.name } });
@@ -230,9 +241,30 @@ export function createEngineEventHandler({
 					}
 					dispatch({ type: 'SET_BACKGROUNDS', payload: save.backgrounds });
 				}
-				if (save.backgroundPath) {
+				if (save.backgroundPath && !importScene2d) {
 					sendEngine({ cmd: 'load_background', path: save.backgroundPath } as never);
 				}
+				if (importScene2d) {
+					const sceneForImport: SavedScene = {
+						id: activeScene?.id ?? 1,
+						name: activeScene?.name ?? 'Escena',
+						world: save.world!,
+						backgroundPath: save.backgroundPath,
+						entities: save.entities,
+						playerTransform: save.playerTransform,
+						camera2d: save.camera2d,
+						sprites: save.sprites ?? [],
+					};
+					refs.pendingImportSceneRef.current = sceneForImport;
+					refs.pendingRestoresRef.current.clear();
+					beginSceneImportLoading(dispatch, refs.sceneImportInProgressRef);
+					sendEngine(
+						buildImportSceneCommand(
+							sceneForImport,
+							save.blueprints ?? refs.blueprintsRef.current,
+						) as never,
+					);
+				} else {
 				for (const entity of save.entities) {
 					const transform: Transform = {
 						position: entity.position,
@@ -321,6 +353,7 @@ export function createEngineEventHandler({
 							sendEngine({ cmd: 'load_model', path: entity.path } as never);
 						}
 					}
+				}
 				}
 				if (gameStyle === 'first-person' && projectType === '3D') {
 					ensureFirstPersonPlayerOnLoad(save, refs.pendingRestoresRef, (cmd) => sendEngine(cmd as never));
@@ -552,7 +585,31 @@ export function createEngineEventHandler({
 			dispatch({ type: 'SET_BACKGROUND', payload: (event as { path?: string }).path ?? null });
 		}
 
+		if (event.event === 'scene_imported') {
+			const scene = refs.pendingImportSceneRef.current;
+			if (scene) {
+				syncEditorStateFromSavedScene(
+					scene,
+					refs,
+					dispatch,
+					refs.blueprintsRef.current,
+				);
+				if (scene.sprites?.length) {
+					dispatch({ type: 'SET_LOADED_SPRITES_INFO', payload: scene.sprites });
+				}
+				window.engine.send({ cmd: 'get_sprites_list' } as never);
+				dispatch({ type: 'SYNC_FP_VIEW' });
+			}
+			endSceneImportLoading(
+				dispatch,
+				refs.sceneImportInProgressRef,
+				refs.pendingImportSceneRef,
+				reportBounds,
+			);
+		}
+
 		if (event.event === 'scenario_loaded') {
+			if (refs.sceneImportInProgressRef.current) return;
 			const scenario = event as unknown as ScenarioLoaded;
 			dispatch({ type: 'ADD_SCENARIO', payload: { id: scenario.id, path: scenario.path } });
 			refs.entityMetaRef.current[scenario.id] = { kind: 'scenario', path: scenario.path, physicsEnabled: false, physicsType: '' };
@@ -566,6 +623,7 @@ export function createEngineEventHandler({
 		}
 
 		if (event.event === 'character_loaded') {
+			if (refs.sceneImportInProgressRef.current) return;
 			const character = event as unknown as CharacterLoaded;
 			const applyPendingRestore = (
 				id: number,
@@ -660,6 +718,7 @@ export function createEngineEventHandler({
 		}
 
 		if (event.event === 'sprite_loaded') {
+			if (refs.sceneImportInProgressRef.current) return;
 			const sprite = event as unknown as { path: string; name: string; width: number; height: number };
 			dispatch({ type: 'ADD_SPRITE', payload: { path: sprite.path, name: sprite.name, width: sprite.width, height: sprite.height } });
 		}
@@ -720,6 +779,14 @@ export function createEngineEventHandler({
 		}
 
 		if (event.event === 'stopped') {
+			if (refs.sceneImportInProgressRef.current) {
+				endSceneImportLoading(
+					dispatch,
+					refs.sceneImportInProgressRef,
+					refs.pendingImportSceneRef,
+					reportBounds,
+				);
+			}
 			dispatch({ type: 'ENGINE_STOPPED', payload: (event as { code?: number }).code });
 		}
 
@@ -751,6 +818,14 @@ export function createEngineEventHandler({
 		}
 
 		if (event.event === 'error') {
+			if (refs.sceneImportInProgressRef.current) {
+				endSceneImportLoading(
+					dispatch,
+					refs.sceneImportInProgressRef,
+					refs.pendingImportSceneRef,
+					reportBounds,
+				);
+			}
 			dispatch({ type: 'SET_ERROR', payload: (event as { message?: string }).message ?? 'Error desconocido' });
 		}
 
@@ -759,6 +834,7 @@ export function createEngineEventHandler({
 		}
 
 		if (event.event === 'collider_created') {
+			if (refs.sceneImportInProgressRef.current) return;
 			const collider = event as { id?: number; points?: [[number, number], [number, number], [number, number], [number, number]] };
 			const id = collider.id ?? -1;
 			refs.entityMetaRef.current[id] = { kind: 'collider', path: '[Colisionador]', physicsEnabled: true, physicsType: 'static', points: collider.points };
@@ -771,6 +847,7 @@ export function createEngineEventHandler({
 		}
 
 		if (event.event === 'execution_area_created') {
+			if (refs.sceneImportInProgressRef.current) return;
 			const area = event as { id?: number; points?: [[number, number], [number, number], [number, number], [number, number]] };
 			const id = area.id ?? -1;
 			refs.entityMetaRef.current[id] = { kind: 'execution_area', path: '[ExecutionArea]', physicsEnabled: false, physicsType: 'static', points: area.points };

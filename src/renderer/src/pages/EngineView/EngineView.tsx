@@ -6,6 +6,7 @@ import MetricsPanel from './components/MetricsPanel';
 import SceneTabsBar from './components/SceneTabsBar';
 import TopBarEngine from './components/TopBarEngine';
 import { QuickBuildOverlay } from './components/QuickBuildOverlay';
+import { SceneImportLoadingOverlay } from './components/SceneImportLoadingOverlay';
 
 import { EngineProvider } from '@engine';
 import { ModalProvider } from '@modal';
@@ -70,6 +71,7 @@ function EngineViewInner({ projectType, gameStyle, initialSave, initialSavePath,
             style={{ background: 'transparent', marginTop: 0 }}
           >
             <QuickBuildOverlay />
+            <SceneImportLoadingOverlay />
           </main>
 
           <div className="row g-0" style={{ height: 120 }}>

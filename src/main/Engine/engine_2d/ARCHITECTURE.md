@@ -56,5 +56,6 @@ Registro: `entity_save_meta` + inferencia desde `ScenarioMarker` / `CharacterMar
 
 ## Restore post-carga
 
-- `apply_entity_restore`: transform, física, animaciones, scripts y bindings en un solo comando IPC (sustituye ráfagas desde el front al aplicar restores por entidad).
+- `apply_entity_restore`: transform, física, animaciones, scripts y bindings en un solo comando IPC (undo y casos puntuales).
+- `import_scene`: reset 2D + mundo + fondo + entidades con ids del `.save` y restores en un solo IPC; evento `scene_imported` al terminar.
 - Undo/redo de entidades: snapshot en `undo_entity.rs` (`RemoveEntity` / `RestoreEntity`) para escenario, personaje, colisionador y execution area.

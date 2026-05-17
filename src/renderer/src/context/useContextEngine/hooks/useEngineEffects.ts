@@ -43,6 +43,7 @@ export function useEngineEffects({
 		gameStyle,
 		applyInitialAnimationFrame,
 		setLocale,
+		reportBounds,
 	}));
 
 	useEffect(() => {
@@ -60,6 +61,7 @@ export function useEngineEffects({
 			gameStyle,
 			applyInitialAnimationFrame,
 			setLocale,
+			reportBounds,
 		});
 	}, [dispatch, refs, addLog, projectType, gameStyle, applyInitialAnimationFrame, reportBounds, reportBoundsDebounced, setLocale]);
 

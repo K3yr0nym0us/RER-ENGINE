@@ -43,12 +43,22 @@ impl State {
     /// La entidad se posiciona en Z=-1 (detrás de todo), mantiene las proporciones
     /// de la imagen y puede seleccionarse, arrastrarse y escalarse como cualquier entidad.
     pub(crate) fn load_scenario(&mut self, path: &str) {
+        self.insert_scenario_at(path, None, None);
+    }
+
+    /// Carga un escenario PNG con id fijo (import de escena / restore).
+    pub(crate) fn insert_scenario_at(
+        &mut self,
+        path: &str,
+        forced_id: Option<u32>,
+        display_name: Option<&str>,
+    ) -> bool {
         let bytes = match std::fs::read(path) {
             Ok(b)  => b,
             Err(e) => {
                 log::error!("[load_scenario] error leyendo {path}: {e}");
                 send_event(&EngineEvent::Error { message: format!("No se pudo leer el escenario (ruta: {path:?}): {e}") });
-                return;
+                return false;
             }
         };
 
@@ -63,21 +73,16 @@ impl State {
             Err(e) => {
                 log::error!("[load_scenario] error decodificando PNG {path}: {e}");
                 send_event(&EngineEvent::Error { message: format!("Error al decodificar PNG: {e}") });
-                return;
+                return false;
             }
         };
 
         let (img_width, img_height) = img.dimensions();
         let aspect       = img_width as f32 / img_height.max(1) as f32;
-        // Altura base fija en unidades de mundo, independiente del zoom actual.
-        // Usar cam.half_h provocaría que el mismo PNG cargue a tamaños distintos
-        // si el usuario ha hecho zoom entre cargas.
-        // 7.0 = 2.0 × half_h inicial (3.5), y es la referencia para scale=1.0.
         let base_world_h = 7.0_f32;
         let base_world_w = base_world_h * aspect;
 
         let gpu_tex  = GpuTexture::from_rgba(&self.device, &self.queue, &img, img_width, img_height, "scenario");
-        // Deduplicar textura: si ya existe una con el mismo path, reutilizar su UV rect.
         let uv = if let Some(&cached_uv) = self.static_tex_cache.get(path) {
             cached_uv
         } else {
@@ -85,12 +90,22 @@ impl State {
             self.static_tex_cache.insert(path.to_owned(), u);
             u
         };
-        drop(gpu_tex); // ya no necesitamos GpuTexture (datos ya en atlas)
-        // Todos los escenarios comparten el quad canónico (geometría idéntica).
+        drop(gpu_tex);
         let tex_idx  = self.uv_rects.len();
         self.uv_rects.push(uv);
-        let scenario_name = self.next_numbered_entity_name("Escenario");
-        let sc_id = self.world.spawn(Some(&scenario_name));
+        let scenario_name = display_name
+            .filter(|n| !n.trim().is_empty())
+            .map(|n| n.to_owned())
+            .unwrap_or_else(|| self.next_numbered_entity_name("Escenario"));
+        let sc_id = if let Some(id) = forced_id {
+            if !self.world.spawn_with_id(id, Some(&scenario_name)) {
+                log::warn!("[insert_scenario_at] id {id} ya en uso");
+                return false;
+            }
+            id
+        } else {
+            self.world.spawn(Some(&scenario_name))
+        };
         self.world.insert(sc_id, MeshComponent { mesh_idx: self.canonical_quad_idx, tex_idx });
         self.world.insert(sc_id, Transform {
             position: GlamVec3::new(0.0, 0.0, -1.0),
@@ -118,7 +133,8 @@ impl State {
             default_pivot_x: img_width as f32 * 0.5,
             default_pivot_y: img_height as f32,
         });
-        log::debug!("[load_scenario] entidad {sc_id} creada {img_width}×{img_height}: {path}");
+        log::debug!("[insert_scenario_at] entidad {sc_id} creada {img_width}×{img_height}: {path}");
+        true
     }
 
     // ── Fondo del mundo ───────────────────────────────────────────────────────
@@ -196,12 +212,21 @@ impl State {
     /// Se posiciona en Z=0 (mismo plano que el jugador) y puede seleccionarse,
     /// arrastrarse y escalarse como cualquier entidad.
     pub(crate) fn load_character(&mut self, path: &str) {
+        self.insert_character_at(path, None, None);
+    }
+
+    pub(crate) fn insert_character_at(
+        &mut self,
+        path: &str,
+        forced_id: Option<u32>,
+        display_name: Option<&str>,
+    ) -> bool {
         let bytes = match std::fs::read(path) {
             Ok(b)  => b,
             Err(e) => {
                 log::error!("[load_character] error leyendo {path}: {e}");
                 send_event(&EngineEvent::Error { message: format!("No se pudo leer el personaje (ruta: {path:?}): {e}") });
-                return;
+                return false;
             }
         };
 
@@ -216,20 +241,17 @@ impl State {
             Err(e) => {
                 log::error!("[load_character] error decodificando PNG {path}: {e}");
                 send_event(&EngineEvent::Error { message: format!("Error al decodificar PNG: {e}") });
-                return;
+                return false;
             }
         };
 
         let (img_width, img_height) = img.dimensions();
         let aspect       = img_width as f32 / img_height.max(1) as f32;
-        // ~1.5 celdas de la cuadrícula (convención de tamaño de personaje en editor).
         let base_world_h = self.grid_config.cell_size * 1.5;
         let base_world_w = base_world_h * aspect;
-        // tight_bounds solo se calcula aquí (preload/edición), nunca en hot path.
         let tight_bounds = compute_tight_bounds(&img);
 
         let gpu_tex  = GpuTexture::from_rgba(&self.device, &self.queue, &img, img_width, img_height, "character");
-        // Deduplicar textura: sprites del mismo PNG reutilizan la misma sub-región del atlas.
         let uv = if let Some(&cached_uv) = self.static_tex_cache.get(path) {
             cached_uv
         } else {
@@ -240,8 +262,19 @@ impl State {
         drop(gpu_tex);
         let tex_idx  = self.uv_rects.len();
         self.uv_rects.push(uv);
-        let character_name = self.next_numbered_entity_name("Personaje");
-        let ch_id = self.world.spawn(Some(&character_name));
+        let character_name = display_name
+            .filter(|n| !n.trim().is_empty())
+            .map(|n| n.to_owned())
+            .unwrap_or_else(|| self.next_numbered_entity_name("Personaje"));
+        let ch_id = if let Some(id) = forced_id {
+            if !self.world.spawn_with_id(id, Some(&character_name)) {
+                log::warn!("[insert_character_at] id {id} ya en uso");
+                return false;
+            }
+            id
+        } else {
+            self.world.spawn(Some(&character_name))
+        };
         self.world.insert(ch_id, MeshComponent { mesh_idx: self.canonical_quad_idx, tex_idx });
         self.world.insert(ch_id, Transform {
             position: GlamVec3::new(0.0, 0.0, 0.0),
@@ -268,7 +301,8 @@ impl State {
             default_pivot_x: img_width as f32 * 0.5,
             default_pivot_y: img_height as f32,
         });
-        log::debug!("[load_character] entidad {ch_id} creada {img_width}×{img_height}: {path}");
+        log::debug!("[insert_character_at] entidad {ch_id} creada {img_width}×{img_height}: {path}");
+        true
     }
 
     /// Ajusta la escala de un personaje 2D preservando proporciones.

@@ -736,7 +736,14 @@ impl ApplicationHandler<EngineCommand> for App {
     /// Es el único lugar correcto para pedir el siguiente frame en modo Poll.
     /// Usando WaitUntil capamos al FPS objetivo y el CPU puede dormir entre frames.
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-        let frame_duration = std::time::Duration::from_nanos(1_000_000_000 / self.target_fps.max(1));
+        // El cap real vive en `State::target_fps` (también lo actualiza `import_scene`).
+        let fps_limit = self
+            .state
+            .as_ref()
+            .map(|s| s.target_fps)
+            .unwrap_or(self.target_fps)
+            .max(1);
+        let frame_duration = std::time::Duration::from_nanos(1_000_000_000 / fps_limit);
 
         let now = std::time::Instant::now();
         if let Some(state) = self.state.as_mut() {

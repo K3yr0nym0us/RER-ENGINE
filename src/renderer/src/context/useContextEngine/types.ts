@@ -68,6 +68,8 @@ export interface EngineState {
 	engineReady: boolean
 	engineError: string | null
 	previewPlaying: boolean
+	/** Overlay mientras el motor ejecuta `import_scene` (2D). */
+	sceneImportLoading: boolean
 	/** Incrementa al recibir `first_person_view_changed` (refrescar UI de cámara FP). */
 	fpViewSyncSeq: number
 	log: LogEntry[]
@@ -98,6 +100,7 @@ export type EngineAction =
 	| { type: 'SET_READY' }
 	| { type: 'SET_ERROR'; payload: string }
 	| { type: 'SET_PREVIEW_PLAYING'; payload: boolean }
+	| { type: 'SET_SCENE_IMPORT_LOADING'; payload: boolean }
 	| { type: 'SYNC_FP_VIEW' }
 	| { type: 'ADD_LOG'; payload: LogEntry }
 	| { type: 'ADD_ENTITY'; payload: number }
@@ -140,12 +143,25 @@ export type EngineAction =
 	| { type: 'SET_SOUNDS'; payload: SoundInfo[] }
 	| { type: 'ADD_BACKGROUND'; payload: BackgroundInfo }
 	| { type: 'REMOVE_BACKGROUND'; payload: string }
-	| { type: 'SET_BACKGROUNDS'; payload: BackgroundInfo[] };
+	| { type: 'SET_BACKGROUNDS'; payload: BackgroundInfo[] }
+	| {
+			type: 'IMPORT_SCENE_STATE'
+			payload: {
+				scenarioEntities: ScenarioEntry[]
+				characterEntities: CharacterEntry[]
+				colliderEntities: ScenarioEntry[]
+				executionAreaEntities: ScenarioEntry[]
+				entities: { id: number }[]
+				backgroundPath: string | null
+				sprites: SpriteInfo[]
+			}
+	  };
 
 export const initialState: EngineState = {
 	engineReady: false,
 	engineError: null,
 	previewPlaying: false,
+	sceneImportLoading: false,
 	fpViewSyncSeq: 0,
 	log: [],
 	entities: [],
@@ -176,6 +192,10 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 		SET_READY: (prevState) => ({ ...prevState, engineReady: true, engineError: null, previewPlaying: false }),
 		SET_ERROR: (prevState, nextAction) => ({ ...prevState, engineError: nextAction.payload }),
 		SET_PREVIEW_PLAYING: (prevState, nextAction) => ({ ...prevState, previewPlaying: nextAction.payload }),
+		SET_SCENE_IMPORT_LOADING: (prevState, nextAction) => ({
+			...prevState,
+			sceneImportLoading: nextAction.payload,
+		}),
 		SYNC_FP_VIEW: (prevState) => ({ ...prevState, fpViewSyncSeq: prevState.fpViewSyncSeq + 1 }),
 		ADD_LOG: (prevState, nextAction) => ({ ...prevState, log: [...prevState.log.slice(-199), nextAction.payload] }),
 		ADD_ENTITY: (prevState, nextAction) =>
@@ -243,7 +263,10 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 				},
 			};
 		},
-		ADD_SPRITE: (prevState, nextAction) => ({ ...prevState, sprites: [...prevState.sprites, nextAction.payload] }),
+		ADD_SPRITE: (prevState, nextAction) =>
+			prevState.sprites.some((sprite) => sprite.path === nextAction.payload.path)
+				? prevState
+				: { ...prevState, sprites: [...prevState.sprites, nextAction.payload] },
 		REMOVE_SPRITE: (prevState, nextAction) => ({ ...prevState, sprites: prevState.sprites.filter((sprite) => sprite.path !== nextAction.payload) }),
 		SET_SPRITES: (prevState, nextAction) => ({ ...prevState, sprites: nextAction.payload }),
 		ADD_SPRITE_INFO: (prevState, nextAction) => {
@@ -301,6 +324,18 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 				: { ...prevState, backgrounds: [...prevState.backgrounds, nextAction.payload] },
 		REMOVE_BACKGROUND: (prevState, nextAction) => ({ ...prevState, backgrounds: prevState.backgrounds.filter((b) => b.path !== nextAction.payload) }),
 		SET_BACKGROUNDS: (prevState, nextAction) => ({ ...prevState, backgrounds: nextAction.payload }),
+		IMPORT_SCENE_STATE: (prevState, nextAction) => ({
+			...prevState,
+			scenarioEntities: nextAction.payload.scenarioEntities,
+			characterEntities: nextAction.payload.characterEntities,
+			colliderEntities: nextAction.payload.colliderEntities,
+			executionAreaEntities: nextAction.payload.executionAreaEntities,
+			entities: nextAction.payload.entities,
+			backgroundPath: nextAction.payload.backgroundPath,
+			sprites: nextAction.payload.sprites,
+			selectedEntity: null,
+			multiSelectedIds: [],
+		}),
 	};
 
 	const handler = handlers[action.type as keyof typeof handlers];
@@ -380,9 +415,16 @@ export interface EngineInternalRefs {
 	quickBuildClickListenerRef: MutableRefObject<((x: number, y: number, fitToGrid: boolean, scale?: [number, number, number]) => void) | null>
 	pendingEventsRef: MutableRefObject<Map<string, { resolve: (value: any) => void }>>
 	blueprintsRef: MutableRefObject<BluePrintEntry[]>
+	/** Escena 2D pendiente de sincronizar tras `scene_imported`. */
+	pendingImportSceneRef: MutableRefObject<import('@shared-types').SavedScene | null>
+	/** Evita duplicar estado React mientras el motor emite eventos de carga por entidad. */
+	sceneImportInProgressRef: MutableRefObject<boolean>
 }
 
 export interface EngineContextValue extends EngineState {
+	dispatch: (action: EngineAction) => void
+	pendingImportSceneRef: MutableRefObject<import('@shared-types').SavedScene | null>
+	sceneImportInProgressRef: MutableRefObject<boolean>
 	entityTransformsRef: MutableRefObject<Record<number, Transform>>
 	entityMetaRef: MutableRefObject<Record<number, EntityMeta>>
 	pendingRestoresRef: MutableRefObject<Map<string, PendingRestore[]>>

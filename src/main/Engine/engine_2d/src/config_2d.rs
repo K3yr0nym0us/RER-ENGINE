@@ -800,9 +800,22 @@ pub(crate) fn restore_animation_frame(&mut self, id: u32) {
 
     /// Crea una entidad ECS de colisionador a partir de 4 puntos en espacio de mundo.
     pub(crate) fn create_collision_box_from_points(&mut self, pts: &[[f32; 2]; 4], track_undo: bool) {
-        // Crea la entidad visual (quad + textura cyan) sin física.
-        let collider_name = self.next_numbered_entity_name("Colisionador");
-        let (entity, pos, scale) = self.create_box_entity(pts, &collider_name, [60, 220, 200, 235]);
+        self.create_collision_box_from_points_at(pts, None, None, track_undo);
+    }
+
+    /// Igual que `create_collision_box_from_points`, con id y nombre opcionales (import de escena).
+    pub(crate) fn create_collision_box_from_points_at(
+        &mut self,
+        pts:          &[[f32; 2]; 4],
+        forced_id:    Option<crate::ecs::EntityId>,
+        display_name: Option<&str>,
+        track_undo:   bool,
+    ) -> Option<crate::ecs::EntityId> {
+        let collider_name = display_name
+            .filter(|n| !n.trim().is_empty())
+            .map(|n| n.to_owned())
+            .unwrap_or_else(|| self.next_numbered_entity_name("Colisionador"));
+        let (entity, pos, scale) = self.create_box_entity_at(pts, &collider_name, [60, 220, 200, 235], forced_id)?;
 
         // Marca la entidad como colisionador y añade física estática.
         self.world.insert(entity, ColliderMarker {});
@@ -833,13 +846,27 @@ pub(crate) fn restore_animation_frame(&mut self, id: u32) {
 
         send_event(&EngineEvent::ColliderCreated { id: entity, points: *pts });
         log::info!("[tool] colisionador creado: entidad {entity} en {:?}", pts);
+        Some(entity)
     }
 
     /// Crea una entidad ECS de área de ejecución (trigger) a partir de 4 puntos.
     /// No añade física para evitar colisiones con personajes.
     pub(crate) fn create_execution_area_from_points(&mut self, pts: &[[f32; 2]; 4], track_undo: bool) {
-        let trigger_name = self.next_numbered_entity_name("ExecutionArea");
-        let (entity, _pos, _scale) = self.create_box_entity(pts, &trigger_name, [220, 80, 80, 230]);
+        self.create_execution_area_from_points_at(pts, None, None, track_undo);
+    }
+
+    pub(crate) fn create_execution_area_from_points_at(
+        &mut self,
+        pts:          &[[f32; 2]; 4],
+        forced_id:    Option<crate::ecs::EntityId>,
+        display_name: Option<&str>,
+        track_undo:   bool,
+    ) -> Option<crate::ecs::EntityId> {
+        let trigger_name = display_name
+            .filter(|n| !n.trim().is_empty())
+            .map(|n| n.to_owned())
+            .unwrap_or_else(|| self.next_numbered_entity_name("ExecutionArea"));
+        let (entity, _pos, _scale) = self.create_box_entity_at(pts, &trigger_name, [220, 80, 80, 230], forced_id)?;
 
         self.world.insert(entity, ExecutionAreaMarker {});
         self.execution_area_entities.push(entity);
@@ -858,6 +885,7 @@ pub(crate) fn restore_animation_frame(&mut self, id: u32) {
 
         send_event(&EngineEvent::ExecutionAreaCreated { id: entity, points: *pts });
         log::info!("[tool] área de ejecución creada: entidad {entity} en {:?}", pts);
+        Some(entity)
     }
 
     /// Detecta entradas a áreas de ejecución en modo preview y dispara hooks de scripting.

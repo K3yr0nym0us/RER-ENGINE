@@ -20,6 +20,18 @@ impl State {
         name:  &str,
         color: [u8; 4],
     ) -> (EntityId, [f32; 3], [f32; 3]) {
+        self.create_box_entity_at(pts, name, color, None)
+            .expect("create_box_entity: spawn libre")
+    }
+
+    /// Igual que `create_box_entity`, pero reutiliza `forced_id` si se indica (import de escena).
+    pub(crate) fn create_box_entity_at(
+        &mut self,
+        pts:        &[[f32; 2]; 4],
+        name:       &str,
+        color:      [u8; 4],
+        forced_id:  Option<EntityId>,
+    ) -> Option<(EntityId, [f32; 3], [f32; 3])> {
         let (mesh, pos, scale) = create_mesh_from_4_points(pts, &self.device);
         let mesh_idx = self.meshes.len();
         self.meshes.push(mesh);
@@ -27,7 +39,14 @@ impl State {
         let tex_idx = self.uv_rects.len();
         self.uv_rects.push(self.atlas.pack(&self.queue, &color, 1, 1));
 
-        let entity = self.world.spawn(Some(name));
+        let entity = if let Some(id) = forced_id {
+            if !self.world.spawn_with_id(id, Some(name)) {
+                return None;
+            }
+            id
+        } else {
+            self.world.spawn(Some(name))
+        };
         self.world.insert(entity, MeshComponent { mesh_idx, tex_idx });
         self.world.insert(entity, Transform {
             position: GlamVec3::from(pos),
@@ -35,7 +54,7 @@ impl State {
             ..Default::default()
         });
 
-        (entity, pos, scale)
+        Some((entity, pos, scale))
     }
 }
 

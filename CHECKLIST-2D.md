@@ -57,7 +57,7 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 
 - [x] Herramientas 2D (dibujo colisionador / trigger, quick build, etc.)
 - [x] Panel de propiedades y multi-selección en escena 2D
-- [x] Carga de escena vía `load_*` + colas `pendingRestores` (orquestación en front hasta `import_scene`)
+- [x] Carga de escena vía `import_scene` (un IPC; motor aplica restores; sin cola `pendingRestores` en 2D)
 - [x] Guardado engine-first: `export_save_snapshot` + merge de pestañas/blueprints en el front
 
 ---
@@ -66,11 +66,11 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 
 ### Prioridad alta
 
-- [ ] **`import_scene` completo en motor** — un comando carga la escena entera (entidades + restores) sin ráfagas IPC ni `pendingRestoresRef` en el front
+- [x] **`import_scene` completo en motor** — un comando carga la escena entera (entidades + restores) sin ráfagas IPC ni `pendingRestoresRef` en el front
 
 ### Prioridad media
 
-- [~] **Flujo de restauración inicial** — hoy `apply_entity_restore` por entidad; se cierra con `import_scene`
+- [x] **Flujo de restauración inicial** — `import_scene` en carga/pestaña 2D; `apply_entity_restore` sigue para undo y casos puntuales
 
 ### Prioridad baja
 
@@ -85,15 +85,14 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 
 | Ítem | Criterio |
 |------|----------|
-| `import_scene` | Un comando motor carga escena + restores; front sin cola por entidad |
+| `import_scene` | Hecho: un IPC carga escena + restores; `scene_imported` sincroniza React |
 | Undo entidades | Crear/borrar escenario, personaje, colisionador y trigger con Ctrl+Z / Ctrl+Y simétricos |
 
 ---
 
-## Descartado (producto)
+## Aplazado (producto)
 
 - Multiplayer · IA generativa en assets · partículas/shaders experimentales
-- Jerarquía parent/child entre entidades · migraciones automáticas de `.save`
 
 ---
 

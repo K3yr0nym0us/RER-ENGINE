@@ -11,6 +11,8 @@ mod save_snapshot;
 mod animations;
 mod audio;
 mod commands;
+mod entity_restore;
+mod import_scene;
 mod init;
 mod render;
 mod render_helpers;

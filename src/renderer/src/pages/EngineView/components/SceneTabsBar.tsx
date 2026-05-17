@@ -3,10 +3,13 @@ import { Files, Pencil, PlusLg, Trash } from 'react-bootstrap-icons';
 import Nav from 'react-bootstrap/Nav';
 
 import type { GameStyle, ProjectSaveData, SavedScene, SavedWorldConfig } from '@shared-types';
+import { DEFAULT_GRAVITY_MAGNITUDE } from '@shared-types';
 import { isEditorBoxPath, isPlayerPath } from '@shared-types';
 import { buildActiveSceneSnapshotFromEngine } from '../../../defaults/buildProjectSaveFromEngine';
 import { ensureFirstPersonPlayerOnLoad } from '../../../defaults/firstPersonSceneRestore';
 import { setSceneCommandForSavedProject } from '../../../defaults/projectSceneLoad';
+import { buildImportSceneCommand } from '../../../context/useContextEngine/hooks/buildImportSceneCommand';
+import { beginSceneImportLoading } from '../../../context/useContextEngine/hooks/sceneImportOverlay';
 import { useContextEngine } from '@engine';
 import { useModal } from '@modal';
 import { setSceneProjectState } from '../sceneStateStore';
@@ -29,6 +32,7 @@ const DEFAULT_WORLD: SavedWorldConfig = {
   worldDepth: 100,
   gridVisible: true,
   gridCellSize: 1,
+  gravity: DEFAULT_GRAVITY_MAGNITUDE,
   targetFps: 60,
 };
 
@@ -52,6 +56,9 @@ export function SceneTabsBar({ initialSave, projectType, gameStyle }: Props) {
     mainPlayerHandled,
     playerEntityIdRef,
     camera2dRef,
+    pendingImportSceneRef,
+    sceneImportInProgressRef,
+    dispatch,
     send,
     removeScenario,
     removeCharacter,
@@ -111,6 +118,12 @@ export function SceneTabsBar({ initialSave, projectType, gameStyle }: Props) {
   const captureActiveSceneSnapshot = async (id: number, name: string): Promise<SavedScene> =>
     buildActiveSceneSnapshotFromEngine(id, name, entityMetaRef.current);
 
+  /** En 2D `import_scene` resetea el motor; no hace falta vaciar entidad a entidad. */
+  const clearEngineBeforeSceneLoad = () => {
+    if (projectType === '2D') return;
+    clearCurrentSceneInEngine();
+  };
+
   const clearCurrentSceneInEngine = () => {
     for (const scenario of scenarioEntities) {
       removeScenario(scenario.id);
@@ -153,32 +166,59 @@ export function SceneTabsBar({ initialSave, projectType, gameStyle }: Props) {
       pendingFirstPersonViewRef.current = null;
       firstPersonViewRef.current = null;
     }
-    send({ cmd: 'set_scene', scene: setSceneCommandForSavedProject(projectType) });
-
-    setWorldSize(
-      scene.world.worldWidth,
-      scene.world.worldHeight,
-      scene.world.worldDepth ?? DEFAULT_WORLD.worldDepth,
-    );
-    setGridVisible(scene.world.gridVisible);
-    setGridCellSize(scene.world.gridCellSize);
-    setTargetFps(Number.isFinite(scene.world?.targetFps) ? scene.world.targetFps : DEFAULT_WORLD.targetFps);
-
-    if (scene.camera2d) {
-      send({ cmd: 'set_camera2d', x: scene.camera2d.x, y: scene.camera2d.y, half_h: scene.camera2d.halfH });
-      camera2dRef.current = scene.camera2d;
+    if (projectType !== '2D') {
+      send({ cmd: 'set_scene', scene: setSceneCommandForSavedProject(projectType) });
     }
 
     if (projectType === '2D') {
+      dispatch({
+        type: 'SET_WORLD_CONFIG',
+        payload: {
+          ...scene.world,
+          gravity: scene.world.gravity ?? DEFAULT_GRAVITY_MAGNITUDE,
+        },
+      });
+      camera2dRef.current = scene.camera2d ?? { x: 0, y: 0, halfH: 3.5 };
+    } else {
+      setWorldSize(
+        scene.world.worldWidth,
+        scene.world.worldHeight,
+        scene.world.worldDepth ?? DEFAULT_WORLD.worldDepth,
+      );
+      setGridVisible(scene.world.gridVisible);
+      setGridCellSize(scene.world.gridCellSize);
+      setTargetFps(Number.isFinite(scene.world?.targetFps) ? scene.world.targetFps : DEFAULT_WORLD.targetFps);
+
+      if (scene.camera2d) {
+        send({ cmd: 'set_camera2d', x: scene.camera2d.x, y: scene.camera2d.y, half_h: scene.camera2d.halfH });
+        camera2dRef.current = scene.camera2d;
+      }
+    }
+
+    if (projectType === '2D') {
+      // El fondo lo aplica `import_scene` en el motor; solo sincronizar UI.
+      dispatch({ type: 'SET_BACKGROUND', payload: scene.backgroundPath });
+    } else if (scene.backgroundPath != null) {
       setBackground(scene.backgroundPath);
     }
 
-    for (const sprite of scene.sprites ?? []) {
-      loadSprite(sprite.path, sprite.name);
+    if (projectType !== '2D') {
+      for (const sprite of scene.sprites ?? []) {
+        loadSprite(sprite.path, sprite.name);
+      }
     }
 
     for (const model of scene.models ?? []) {
       loadModelAsset(model.path, model.name);
+    }
+
+    if (projectType === '2D') {
+      pendingRestoresRef.current.clear();
+      pendingModelLoadQueueRef.current = [];
+      pendingImportSceneRef.current = scene;
+      beginSceneImportLoading(dispatch, sceneImportInProgressRef);
+      send(buildImportSceneCommand(scene, blueprints) as never);
+      return;
     }
 
     pendingRestoresRef.current.clear();
@@ -311,7 +351,7 @@ export function SceneTabsBar({ initialSave, projectType, gameStyle }: Props) {
       sprites: [],
     };
 
-    clearCurrentSceneInEngine();
+    clearEngineBeforeSceneLoad();
     loadSceneIntoEngine(emptyScene);
 
     setScenes((prev) => [...prev, nextScene]);
@@ -356,7 +396,7 @@ export function SceneTabsBar({ initialSave, projectType, gameStyle }: Props) {
       setSceneDataById((prev) => ({ ...prev, [nextId]: duplicatedScene }));
     }
 
-    clearCurrentSceneInEngine();
+    clearEngineBeforeSceneLoad();
     loadSceneIntoEngine(duplicatedScene);
 
     setScenes((prev) => [...prev, { id: nextId, name: nextName }]);
@@ -381,7 +421,7 @@ export function SceneTabsBar({ initialSave, projectType, gameStyle }: Props) {
 
     const targetData = sceneDataById[nextActive.id];
     if (targetData) {
-      clearCurrentSceneInEngine();
+      clearEngineBeforeSceneLoad();
       loadSceneIntoEngine(targetData);
     }
     setActiveSceneId(nextActive.id);
@@ -575,6 +615,15 @@ export function SceneTabsBar({ initialSave, projectType, gameStyle }: Props) {
                 ? await captureActiveSceneSnapshot(current.id, current.name)
                 : null;
 
+              if (currentSnapshot) {
+                if (!currentSnapshot.backgroundPath && backgroundPath) {
+                  currentSnapshot.backgroundPath = backgroundPath;
+                }
+                if (!currentSnapshot.camera2d && camera2dRef.current) {
+                  currentSnapshot.camera2d = camera2dRef.current;
+                }
+              }
+
               const targetSnapshot = sceneDataById[nextId] ?? {
                 id: target.id,
                 name: target.name,
@@ -590,7 +639,7 @@ export function SceneTabsBar({ initialSave, projectType, gameStyle }: Props) {
                 setSceneDataById((prev) => ({ ...prev, [current.id]: currentSnapshot }));
               }
 
-              clearCurrentSceneInEngine();
+              clearEngineBeforeSceneLoad();
               loadSceneIntoEngine(targetSnapshot);
               setActiveSceneId(nextId);
             })();

@@ -57,6 +57,8 @@ export function EngineProvider({
 		pivotEditListenerRef: useRef<((framePath: string, px: number, py: number) => void) | null>(null),
 		quickBuildClickListenerRef: useRef<((x: number, y: number, fitToGrid: boolean, scale?: [number, number, number]) => void) | null>(null),
 		pendingEventsRef: useRef<Map<string, { resolve: (value: any) => void }>>(new Map()),
+		pendingImportSceneRef: useRef<import('@shared-types').SavedScene | null>(null),
+		sceneImportInProgressRef: useRef(false),
 		blueprintsRef: useRef([]),
 	};
 
@@ -121,6 +123,9 @@ export function EngineProvider({
 
 	const value: EngineContextValue = {
 		...state,
+		dispatch,
+		pendingImportSceneRef: refs.pendingImportSceneRef,
+		sceneImportInProgressRef: refs.sceneImportInProgressRef,
 		entityTransformsRef: refs.entityTransformsRef,
 		entityMetaRef: refs.entityMetaRef,
 		pendingRestoresRef: refs.pendingRestoresRef,

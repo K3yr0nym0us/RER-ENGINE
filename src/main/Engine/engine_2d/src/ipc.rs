@@ -265,6 +265,77 @@ pub enum EngineCommand {
         #[serde(default)]
         apply_initial_animation_frame: Option<bool>,
     },
+    /// Carga una escena 2D completa (reset + mundo + entidades + restores) en un solo IPC.
+    ImportScene(ImportScenePayload),
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ImportSceneWorld {
+    pub world_width:   f32,
+    pub world_height:  f32,
+    #[serde(default)]
+    pub grid_visible:  bool,
+    pub grid_cell_size: f32,
+    #[serde(default)]
+    pub gravity:       Option<f32>,
+    pub target_fps:    u64,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ImportSceneCamera2d {
+    pub x:      f32,
+    pub y:      f32,
+    pub half_h: f32,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ImportSceneSprite {
+    pub path: String,
+    pub name: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ImportSceneEntity {
+    pub id:   u32,
+    pub kind: String,
+    pub path: String,
+    #[serde(default)]
+    pub name: Option<String>,
+    pub transform: EntityRestoreTransform,
+    #[serde(default)]
+    pub physics: Option<EntityRestorePhysics>,
+    #[serde(default)]
+    pub animations: Option<Vec<EntityRestoreAnimation>>,
+    #[serde(default)]
+    pub scripts: Option<Vec<EntityRestoreScript>>,
+    #[serde(default)]
+    pub control_bindings: Option<ControlBindingsData>,
+    #[serde(default)]
+    pub points: Option<[[f32; 2]; 4]>,
+    #[serde(default)]
+    pub omit_scale: bool,
+    #[serde(default)]
+    pub skip_transform: bool,
+    #[serde(default)]
+    pub apply_initial_animation_frame: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ImportScenePayload {
+    #[serde(default = "default_import_scene_name")]
+    pub scene: String,
+    pub world: ImportSceneWorld,
+    #[serde(default)]
+    pub background_path: Option<String>,
+    #[serde(default)]
+    pub camera2d: Option<ImportSceneCamera2d>,
+    #[serde(default)]
+    pub sprites: Vec<ImportSceneSprite>,
+    pub entities: Vec<ImportSceneEntity>,
+}
+
+fn default_import_scene_name() -> String {
+    "2D".to_string()
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -532,6 +603,8 @@ pub enum EngineEvent {
         default_pivot_x: f32,
         default_pivot_y: f32,
     },
+    /// Emitido al terminar `import_scene` (carga atómica de escena 2D).
+    SceneImported { entity_count: u32 },
     /// Emitido cuando la cámara 2D cambia (fin de pan o zoom).
     #[serde(rename = "camera_2d_updated")]
     Camera2dUpdated { x: f32, y: f32, half_h: f32 },
