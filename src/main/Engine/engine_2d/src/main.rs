@@ -104,10 +104,10 @@ fn start_position_tracker(engine_hwnd: isize, parent_hwnd: isize, offset: Tracke
 }
 
 // ---------------------------------------------------------------------------
-// Consulta de estado de teclado vía X11 (sin depender del foco de ventana)
+// Consulta de Ctrl en el OS (sin depender del foco de ventana del motor)
 // ---------------------------------------------------------------------------
 #[cfg(target_os = "linux")]
-fn query_ctrl_held_x11() -> bool {
+fn query_ctrl_held_os() -> bool {
     // SAFETY: llamadas estándar a libX11; Display se abre y cierra en la misma función.
     unsafe {
         let display = x11::xlib::XOpenDisplay(std::ptr::null());
@@ -127,7 +127,7 @@ fn query_ctrl_held_x11() -> bool {
 /// cuando Electron pierde el foco al hacer click en el viewport del motor y
 /// el keyup de Control nunca llega al renderer.
 #[cfg(target_os = "windows")]
-fn query_ctrl_held_x11() -> bool {
+fn query_ctrl_held_os() -> bool {
     // SAFETY: GetAsyncKeyState es seguro de llamar en cualquier contexto Win32.
     unsafe {
         use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LCONTROL, VK_RCONTROL};
@@ -138,7 +138,7 @@ fn query_ctrl_held_x11() -> bool {
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
-fn query_ctrl_held_x11() -> bool { false }
+fn query_ctrl_held_os() -> bool { false }
 
 /// Convierte un `KeyCode` de winit a la string de control usada en los bindings.
 ///
@@ -554,11 +554,11 @@ impl ApplicationHandler<EngineCommand> for App {
                                     let dy = (cur.1 - start.1).abs();
                                     if dx < 5.0 && dy < 5.0 {
                                         // Consultar el estado real del Ctrl al momento del click.
-                                        // Usar query_ctrl_held_x11() (Windows: GetAsyncKeyState,
+                                        // Usar query_ctrl_held_os() (Windows: GetAsyncKeyState,
                                         // Linux: XQueryKeymap) como fuente autoritativa del OS,
                                         // sin releer state.ctrl_held que podría estar obsoleto si
                                         // Electron perdió el foco y el keyup no llegó.
-                                        let ctrl_active = self.ctrl_held || query_ctrl_held_x11();
+                                        let ctrl_active = self.ctrl_held || query_ctrl_held_os();
                                         state.ctrl_held = ctrl_active;
                                         if state.pivot_edit_mode.is_some() {
                                             state.handle_pivot_click_2d(cur.0, cur.1);
@@ -601,7 +601,7 @@ impl ApplicationHandler<EngineCommand> for App {
                 }
                 if state.camera_2d.is_some() && !state.is_preview_playing() {
                     // Usar OS query directa: evita que state.ctrl_held obsoleto se propague.
-                    let ctrl_active = self.ctrl_held || query_ctrl_held_x11();
+                    let ctrl_active = self.ctrl_held || query_ctrl_held_os();
                     state.ctrl_held = ctrl_active;
                     state.update_tool_overlay_cursor_2d(cur.0, cur.1);
                 }
@@ -612,7 +612,7 @@ impl ApplicationHandler<EngineCommand> for App {
                         if let Some(axis) = self.gizmo_drag_axis {
                         // Drag de gizmo: mover entidad en el plano 2D.
                         // OS query directa para snap: independiente del foco de ventana.
-                        let snap = self.ctrl_held || query_ctrl_held_x11();
+                        let snap = self.ctrl_held || query_ctrl_held_os();
                         state.drag_gizmo_2d(cur.0, cur.1, lx, ly, axis, snap);
                         } else if self.mouse_right {
                         let (vw, vh) = { let s = state.size(); (s.width as f32, s.height as f32) };
@@ -660,7 +660,7 @@ impl ApplicationHandler<EngineCommand> for App {
                     }
                     KeyCode::KeyZ => {
                         if pressed && !repeat {
-                            let ctrl_active = self.ctrl_held || query_ctrl_held_x11();
+                            let ctrl_active = self.ctrl_held || query_ctrl_held_os();
                             if ctrl_active {
                                 state.handle_command(EngineCommand::Undo);
                             }
@@ -668,7 +668,7 @@ impl ApplicationHandler<EngineCommand> for App {
                     }
                     KeyCode::KeyY => {
                         if pressed && !repeat {
-                            let ctrl_active = self.ctrl_held || query_ctrl_held_x11();
+                            let ctrl_active = self.ctrl_held || query_ctrl_held_os();
                             if ctrl_active {
                                 state.handle_command(EngineCommand::Redo);
                             }

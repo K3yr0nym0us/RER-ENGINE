@@ -136,7 +136,7 @@ export function useEngineEffects({
 
 		window.engine.on(handleEngineEvent);
 		return () => {
-			window.engine.off();
+			window.engine.off(handleEngineEvent);
 		};
 	}, []);
 }

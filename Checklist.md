@@ -132,9 +132,9 @@ Selección de binario en runtime: `rer_engine_2d` o `rer_engine_3d` según tipo 
 
 - [ ] Jerarquía parent/child de entidades (evaluar diseño)
 - [ ] Optimizar `new_entity_id()` para escenas muy grandes
-- [ ] Renombrar helpers con sufijo `_x11` a nombres neutros multiplataforma
+- [x] Renombrar helpers con sufijo `_x11` a nombres neutros multiplataforma (`query_ctrl_held_os`)
 - [ ] Flujo dedicado de restauración inicial (menos lógica en `createEngineEventHandler`)
-- [ ] Revisar `window.engine.off()` vs múltiples listeners
+- [x] Revisar `window.engine.off()` vs múltiples listeners (multiplex en preload; `off(cb)` por suscriptor)
 
 ### Descartado por ahora
 

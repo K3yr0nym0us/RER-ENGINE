@@ -1,18 +1,29 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { EngineCommand, EngineEvent, GameStyle, OpenProjectResult, ProjectSaveData } from '../shared-types/types'
 
+type EngineEventListener = (event: EngineEvent) => void
+
+const engineEventListeners = new Set<EngineEventListener>()
+
+ipcRenderer.on('engine:event', (_ipcEvent, data: EngineEvent) => {
+  for (const listener of engineEventListeners) {
+    listener(data)
+  }
+})
+
 contextBridge.exposeInMainWorld('engine', {
   send: (cmd: EngineCommand): void => {
     ipcRenderer.send('engine:cmd', cmd)
   },
-  on: (cb: (event: EngineEvent) => void): void => {
-    // Eliminar listeners anteriores antes de registrar uno nuevo para evitar
-    // duplicados cuando React StrictMode monta el componente dos veces.
-    ipcRenderer.removeAllListeners('engine:event')
-    ipcRenderer.on('engine:event', (_ipcEvent, data: EngineEvent) => cb(data))
+  on: (cb: EngineEventListener): void => {
+    engineEventListeners.add(cb)
   },
-  off: (): void => {
-    ipcRenderer.removeAllListeners('engine:event')
+  off: (cb?: EngineEventListener): void => {
+    if (cb) {
+      engineEventListeners.delete(cb)
+    } else {
+      engineEventListeners.clear()
+    }
   },
 })
 
@@ -27,7 +38,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   hideEngineViewport: (): void => {
     ipcRenderer.send('hide-engine-viewport')
   },
-  restoreEngineViewport: (bounds?: { x: number; y: number; width: number; height: number }): void => {
+  restoreEngineViewport: (bounds?: { x: number; y: number; width: number; height: number }) => {
     if (bounds) {
       ipcRenderer.send('restore-engine-viewport', bounds)
     } else {

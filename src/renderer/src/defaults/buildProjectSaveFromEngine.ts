@@ -18,24 +18,28 @@ const SAVE_SNAPSHOT_TIMEOUT_MS = 15_000;
 
 export function requestEngineSaveSnapshot(): Promise<EngineSaveSceneSnapshot> {
 	return new Promise((resolve, reject) => {
-		const timeout = window.setTimeout(() => {
-			window.engine.off();
-			reject(new Error('Timeout esperando save_snapshot_ready del motor'));
-		}, SAVE_SNAPSHOT_TIMEOUT_MS);
-
-		window.engine.on((event) => {
+		const onEngineEvent = (event: { event: string; [key: string]: unknown }) => {
 			if (event.event === 'save_snapshot_ready') {
-				window.clearTimeout(timeout);
-				window.engine.off();
+				cleanup();
 				resolve((event as { scene: EngineSaveSceneSnapshot }).scene);
 			}
 			if (event.event === 'error') {
-				window.clearTimeout(timeout);
-				window.engine.off();
+				cleanup();
 				reject(new Error((event as { message?: string }).message ?? 'Error al exportar escena'));
 			}
-		});
+		};
 
+		const cleanup = () => {
+			window.clearTimeout(timeout);
+			window.engine.off(onEngineEvent);
+		};
+
+		const timeout = window.setTimeout(() => {
+			cleanup();
+			reject(new Error('Timeout esperando save_snapshot_ready del motor'));
+		}, SAVE_SNAPSHOT_TIMEOUT_MS);
+
+		window.engine.on(onEngineEvent);
 		window.engine.send({ cmd: 'export_save_snapshot' } as never);
 	});
 }

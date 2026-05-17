@@ -49,7 +49,7 @@ pub(crate) fn start_position_tracker(engine_hwnd: isize, parent_hwnd: isize, off
 }
 
 #[cfg(target_os = "linux")]
-pub(crate) fn query_ctrl_held_x11() -> bool {
+pub(crate) fn query_ctrl_held_os() -> bool {
     unsafe {
         let display = x11::xlib::XOpenDisplay(std::ptr::null());
         if display.is_null() {
@@ -65,7 +65,7 @@ pub(crate) fn query_ctrl_held_x11() -> bool {
 }
 
 #[cfg(target_os = "windows")]
-pub(crate) fn query_ctrl_held_x11() -> bool {
+pub(crate) fn query_ctrl_held_os() -> bool {
     unsafe {
         use windows::Win32::UI::Input::KeyboardAndMouse::{
             GetAsyncKeyState, VK_LCONTROL, VK_RCONTROL,
@@ -77,6 +77,6 @@ pub(crate) fn query_ctrl_held_x11() -> bool {
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
-pub(crate) fn query_ctrl_held_x11() -> bool {
+pub(crate) fn query_ctrl_held_os() -> bool {
     false
 }

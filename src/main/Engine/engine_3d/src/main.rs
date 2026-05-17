@@ -32,7 +32,7 @@ use winit::{
 };
 
 use ipc::{EngineCommand, EngineEvent};
-use platform::query_ctrl_held_x11;
+use platform::query_ctrl_held_os;
 #[cfg(target_os = "windows")]
 use platform::start_position_tracker;
 
@@ -571,11 +571,11 @@ impl ApplicationHandler<EngineCommand> for App {
                                     let dy = (cur.1 - start.1).abs();
                                     if dx < 5.0 && dy < 5.0 {
                                         // Consultar el estado real del Ctrl al momento del click.
-                                        // Usar query_ctrl_held_x11() (Windows: GetAsyncKeyState,
+                                        // Usar query_ctrl_held_os() (Windows: GetAsyncKeyState,
                                         // Linux: XQueryKeymap) como fuente autoritativa del OS,
                                         // sin releer state.ctrl_held que podría estar obsoleto si
                                         // Electron perdió el foco y el keyup no llegó.
-                                        let ctrl_active = self.ctrl_held || query_ctrl_held_x11();
+                                        let ctrl_active = self.ctrl_held || query_ctrl_held_os();
                                         state.ctrl_held = ctrl_active;
                                         if state.camera_2d.is_some() {
                                             if state.pivot_edit_mode.is_some() {
@@ -626,7 +626,7 @@ impl ApplicationHandler<EngineCommand> for App {
                 }
                 if state.camera_2d.is_some() && !state.is_preview_playing() {
                     // Usar OS query directa: evita que state.ctrl_held obsoleto se propague.
-                    let ctrl_active = self.ctrl_held || query_ctrl_held_x11();
+                    let ctrl_active = self.ctrl_held || query_ctrl_held_os();
                     state.ctrl_held = ctrl_active;
                     state.update_tool_overlay_cursor_2d(cur.0, cur.1);
                 }
@@ -641,7 +641,7 @@ impl ApplicationHandler<EngineCommand> for App {
                         // Drag de gizmo: mover entidad a lo largo del eje
                         if state.camera_2d.is_some() {
                             // OS query directa para snap: independiente del foco de ventana.
-                            let snap = self.ctrl_held || query_ctrl_held_x11();
+                            let snap = self.ctrl_held || query_ctrl_held_os();
                             state.drag_gizmo_2d(cur.0, cur.1, lx, ly, axis, snap);
                         } else {
                             state.drag_gizmo(cur.0, cur.1, lx, ly, axis);
@@ -697,7 +697,7 @@ impl ApplicationHandler<EngineCommand> for App {
                     }
                     KeyCode::KeyZ => {
                         if pressed && !repeat {
-                            let ctrl_active = self.ctrl_held || query_ctrl_held_x11();
+                            let ctrl_active = self.ctrl_held || query_ctrl_held_os();
                             if ctrl_active {
                                 state.handle_command(EngineCommand::Undo);
                             }
@@ -705,7 +705,7 @@ impl ApplicationHandler<EngineCommand> for App {
                     }
                     KeyCode::KeyY => {
                         if pressed && !repeat {
-                            let ctrl_active = self.ctrl_held || query_ctrl_held_x11();
+                            let ctrl_active = self.ctrl_held || query_ctrl_held_os();
                             if ctrl_active {
                                 state.handle_command(EngineCommand::Redo);
                             }

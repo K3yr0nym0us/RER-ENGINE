@@ -536,7 +536,8 @@ declare global {
     engine: {
       send: (cmd: EngineCommand) => void
       on:   (cb: (event: EngineEvent) => void) => void
-      off:  () => void
+      /** Quita un listener concreto; sin argumento borra todos. */
+      off:  (cb?: (event: EngineEvent) => void) => void
     }
     electronAPI: {
       setGameStyle:            (gameStyle: GameStyle | null) => void
