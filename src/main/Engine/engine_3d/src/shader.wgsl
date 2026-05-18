@@ -4,7 +4,7 @@ struct SceneUniforms {
     light_dir       : vec4<f32>,   // xyz hacia el sol, w = ambiente
     light_color     : vec4<f32>,   // w > 0.5 → sombras proyectadas
     light_view_proj : mat4x4<f32>,
-    light_params    : vec4<f32>,   // x=intensidad, y=oscurecer sombra
+    light_params    : vec4<f32>,   // x=intensidad, y=oscurecer, z=1/shadow_map, w=radio PCF
 }
 
 @group(0) @binding(0)
@@ -45,6 +45,10 @@ struct VertexOutput {
     @location(6) uv_center       : vec2<f32>,
 }
 
+fn shadow_compare(uv: vec2<f32>, depth_ref: f32) -> f32 {
+    return textureSampleCompareLevel(t_shadow, s_shadow, uv, depth_ref);
+}
+
 fn scene_shadow(world_pos: vec3<f32>) -> f32 {
     let clip = u.light_view_proj * vec4<f32>(world_pos, 1.0);
     let ndc = clip.xyz / clip.w;
@@ -54,7 +58,16 @@ fn scene_shadow(world_pos: vec3<f32>) -> f32 {
         return 1.0;
     }
     let depth_ref = ndc.z - 0.0008;
-    return textureSampleCompareLevel(t_shadow, s_shadow, uv, depth_ref);
+    let texel = u.light_params.z;
+    let radius = u.light_params.w;
+    var sum = 0.0;
+    for (var oy = -1; oy <= 1; oy++) {
+        for (var ox = -1; ox <= 1; ox++) {
+            let off = vec2<f32>(f32(ox), f32(oy)) * texel * radius;
+            sum += shadow_compare(uv + off, depth_ref);
+        }
+    }
+    return sum / 9.0;
 }
 
 @vertex
@@ -80,14 +93,18 @@ fn vs_main(in: VertexInput, inst: InstanceInput) -> VertexOutput {
     return out;
 }
 
-@fragment
-fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    // Tooltips PNG (Esc, snap): textura completa + transparencia, sin iluminación.
+struct SceneFragOut {
+    @location(0) color  : vec4<f32>,
+    @location(1) shadow : f32,
+}
+
+fn evaluate_scene(in: VertexOutput) -> SceneFragOut {
     if in.render_kind >= 2.5 {
         let hud = textureSample(t_albedo, s_albedo, in.uv);
-        return vec4(hud.rgb, hud.a * in.alpha_mul);
+        return SceneFragOut(vec4(hud.rgb, hud.a * in.alpha_mul), 1.0);
     }
 
+    var shadow = 1.0;
     var albedo_samp = textureSample(t_albedo, s_albedo, in.uv);
     if in.render_kind >= 0.5 {
         albedo_samp = textureSample(t_albedo, s_albedo, in.uv_center);
@@ -105,10 +122,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         let ndotl = max(dot(n, l), 0.0);
         let ambient = u.light_dir.w;
         let lc = u.light_color.xyz;
-        var shade = ambient + (1.0 - ambient) * ndotl;
+        let shade = ambient + (1.0 - ambient) * ndotl;
         if u.light_color.w > 0.5 {
-            let shadow = scene_shadow(in.world_pos);
-            shade = shade * mix(u.light_params.y, 1.0, shadow);
+            shadow = scene_shadow(in.world_pos);
         }
         color = albedo * shade * lc * u.light_params.x;
     }
@@ -131,5 +147,15 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         out_alpha = 1.0;
     }
 
-    return vec4<f32>(color, out_alpha);
+    return SceneFragOut(vec4<f32>(color, out_alpha), shadow);
+}
+
+@fragment
+fn fs_main(in: VertexOutput) -> SceneFragOut {
+    return evaluate_scene(in);
+}
+
+@fragment
+fn fs_overlay(in: VertexOutput) -> @location(0) vec4<f32> {
+    return evaluate_scene(in).color;
 }

@@ -59,7 +59,11 @@ pub struct State {
     /// Pipeline para modo 2D: sin depth-write, CompareFunction::Always.
     /// Permite que el alpha blending funcione correctamente con back-to-front sort.
     pub(crate) render_pipeline_2d:  wgpu::RenderPipeline,
+    /// Sprites sobre swapchain (1 color target; p.ej. hints tras TAA).
+    pub(crate) render_pipeline_overlay: wgpu::RenderPipeline,
     pub(crate) depth_view:       wgpu::TextureView,
+    /// Anti-aliasing temporal: escena offscreen + resolve al swapchain.
+    pub(crate) taa:              rer_engine_shared::taa::TaaPass,
     // Uniforms (group 0) — un buffer por malla para que cada draw call
     // tenga sus propios datos y write_buffer no sobreescriba el anterior.
     pub(crate) scene_buffer:       wgpu::Buffer,
@@ -435,6 +439,12 @@ impl State {
         self.config.height = new_size.height;
         self.surface.configure(&self.device, &self.config);
         self.depth_view = create_depth_texture(&self.device, &self.config);
+        self.taa.resize(
+            &self.device,
+            self.config.format,
+            new_size.width,
+            new_size.height,
+        );
     }
 
     /// Activa o desactiva V-Sync reconfigurendo el swapchain.

@@ -1,10 +1,10 @@
 //! Luz direccional (sol) para iluminación PBR compatible con pipelines RTX.
 //! La posición del sol en el mundo define la dirección de la luz.
 
-use glam::Vec3;
+use glam::{Mat4, Vec3};
 
 use crate::ecs::{MeshComponent, Transform};
-use crate::engine::State;
+use crate::engine::{State, SHADOW_MAP_SIZE};
 use crate::entity_save_meta::EntitySaveMeta;
 use crate::mesh;
 
@@ -66,13 +66,21 @@ impl State {
         ]
     }
 
-    /// Matriz vista-proyección ortográfica para el mapa de sombras direccional.
+    /// x/y = iluminación; z = 1/shadow_map; w = radio PCF (menor cerca = borde más nítido).
     pub(crate) fn scene_light_params(&self) -> [f32; 4] {
+        let dist = self.camera.distance;
+        let pcf_radius = if dist < 12.0 {
+            1.0
+        } else if dist < 28.0 {
+            1.5
+        } else {
+            2.25
+        };
         [
             self.light_intensity,
             self.shadow_darkness,
-            0.0,
-            0.0,
+            1.0 / SHADOW_MAP_SIZE as f32,
+            pcf_radius,
         ]
     }
 
@@ -93,21 +101,71 @@ impl State {
         }
     }
 
-    pub(crate) fn build_light_view_proj(&self) -> [[f32; 4]; 4] {
-        let center = self.directional_light_scene_center();
+    /// Shadow map centrado en el frustum de la cámara (más texeles cerca, menos en lejanía).
+    pub(crate) fn build_light_view_proj(&self, aspect: f32) -> [[f32; 4]; 4] {
         let dir = self.directional_light_dir.normalize();
-        let min = self.world_bounds_3d.min_corner();
-        let max = self.world_bounds_3d.max_corner();
-        let extent = (max - min).length().max(48.0) * 0.55;
         let up = if dir.y.abs() > 0.95 {
-            glam::Vec3::X
+            Vec3::X
         } else {
-            glam::Vec3::Y
+            Vec3::Y
         };
-        let eye = center + dir * extent * 2.5;
-        let view = glam::Mat4::look_at_rh(eye, center, up);
-        let proj = glam::Mat4::orthographic_rh(-extent, extent, -extent, extent, 0.5, extent * 8.0);
-        (proj * view).to_cols_array_2d()
+        let cam = &self.camera;
+        let shadow_dist = (cam.distance * 4.0 + 6.0).clamp(8.0, 40.0);
+        let tan_half = (cam.fov_y * 0.5).tan();
+        let inv_view = cam.view_matrix().inverse();
+
+        let mut corners = [Vec3::ZERO; 8];
+        let mut i = 0usize;
+        for z_view in [cam.near, shadow_dist] {
+            let h = z_view * tan_half;
+            let w = h * aspect.max(0.1);
+            for sx in [-1.0f32, 1.0] {
+                for sy in [-1.0f32, 1.0] {
+                    corners[i] = inv_view.transform_point3(Vec3::new(sx * w, sy * h, -z_view));
+                    i += 1;
+                }
+            }
+        }
+
+        let focus = cam.target + cam.orbit_pivot_offset;
+        let light_eye = focus + dir * (shadow_dist * 3.0 + 24.0);
+        let light_view = Mat4::look_at_rh(light_eye, focus, up);
+
+        let mut min_ls = Vec3::splat(f32::INFINITY);
+        let mut max_ls = Vec3::splat(f32::NEG_INFINITY);
+        for p in corners {
+            let ls = light_view.transform_point3(p);
+            min_ls = min_ls.min(ls);
+            max_ls = max_ls.max(ls);
+        }
+
+        let xy_pad = 2.0;
+        min_ls.x -= xy_pad;
+        min_ls.y -= xy_pad;
+        max_ls.x += xy_pad;
+        max_ls.y += xy_pad;
+        min_ls.z -= 12.0;
+        max_ls.z += 12.0;
+
+        let half = ((max_ls.x - min_ls.x).max(max_ls.y - min_ls.y) * 0.5).max(4.0);
+        let map = SHADOW_MAP_SIZE as f32;
+        let texel = (2.0 * half) / map;
+        let cx = (min_ls.x + max_ls.x) * 0.5;
+        let cy = (min_ls.y + max_ls.y) * 0.5;
+        let cx = (cx / texel).floor() * texel + texel * 0.5;
+        let cy = (cy / texel).floor() * texel + texel * 0.5;
+
+        let z_near = (-max_ls.z).max(0.5);
+        let z_far = (-min_ls.z).max(z_near + 4.0);
+        let proj = Mat4::orthographic_rh(
+            cx - half,
+            cx + half,
+            cy - half,
+            cy + half,
+            z_near,
+            z_far,
+        );
+        (proj * light_view).to_cols_array_2d()
     }
 
     /// Icono del sol seleccionable con gizmo; sin física. Idempotente al recargar `.save`.

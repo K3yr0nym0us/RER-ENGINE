@@ -17,6 +17,12 @@ impl State {
         self.config.height = new_size.height;
         self.surface.configure(&self.device, &self.config);
         self.depth_view = create_depth_texture(&self.device, &self.config);
+        self.taa.resize(
+            &self.device,
+            self.config.format,
+            new_size.width,
+            new_size.height,
+        );
     }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
@@ -46,25 +52,40 @@ impl State {
                 label: Some("render-encoder"),
             });
 
-        {
+        let (shadow_darkness, shadows_enabled, zoom_stability) = {
             if self.camera_2d.is_none() {
                 self.sync_directional_light_from_sun();
             }
             let scene_uni = if let Some(cam2d) = &self.camera_2d {
                 build_scene_uniforms_2d(cam2d, self.size)
             } else {
+                let aspect = self.size.width as f32 / self.size.height.max(1) as f32;
                 build_scene_uniforms(
                     &self.camera,
                     self.size,
                     self.scene_light_dir(),
                     self.scene_light_color(),
-                    self.build_light_view_proj(),
+                    self.build_light_view_proj(aspect),
                     self.scene_light_params(),
                 )
             };
+            if self.taa.enabled {
+                self.taa.begin_frame(false);
+            }
             self.queue
                 .write_buffer(&self.scene_buffer, 0, bytemuck::cast_slice(&[scene_uni]));
-        }
+            let is_3d = self.camera_2d.is_none();
+            let zoom_stability = if let Some(cam2d) = &self.camera_2d {
+                rer_engine_shared::taa::zoom_stability_half_h(cam2d.half_h)
+            } else {
+                rer_engine_shared::taa::zoom_stability_distance(self.camera.distance)
+            };
+            let shadows_on = is_3d && scene_uni.light_color[3] > 0.5;
+            (scene_uni.light_params[1], shadows_on, zoom_stability)
+        };
+
+        let scene_view = self.taa.scene_color_view();
+        let shadow_mask_view = self.taa.shadow_mask_view();
 
         let aspect_fc = self.size.width as f32 / self.size.height as f32;
         let frustum_vp_3d: Option<glam::Mat4> = self.camera_2d.is_none().then(|| {
@@ -265,14 +286,24 @@ impl State {
         {
             let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("render-pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(self.clear_color),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
+                color_attachments: &[
+                    Some(wgpu::RenderPassColorAttachment {
+                        view: &scene_view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(self.clear_color),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    }),
+                    Some(wgpu::RenderPassColorAttachment {
+                        view: shadow_mask_view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    }),
+                ],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view: &self.depth_view,
                     depth_ops: Some(wgpu::Operations {
@@ -304,6 +335,32 @@ impl State {
                 pass.draw_indexed(0..mesh.index_count, 0, 0..batch.instances.len() as u32);
                 draw_calls += 1;
             }
+        }
+
+        if shadows_enabled {
+            self.taa.resolve_shadow_and_present(
+                &self.device,
+                &self.queue,
+                &mut enc,
+                &view,
+                shadow_darkness,
+                true,
+                zoom_stability,
+                self.size.width,
+                self.size.height,
+            );
+        } else {
+            let is_3d = self.camera_2d.is_none();
+            self.taa.present_scene(
+                &self.device,
+                &self.queue,
+                &mut enc,
+                &view,
+                is_3d,
+                zoom_stability,
+                self.size.width,
+                self.size.height,
+            );
         }
 
         if self.camera_2d.is_none() && self.world_bounds_buffer.vertex_count > 0 {
@@ -468,7 +525,7 @@ impl State {
                 occlusion_query_set: None,
                 timestamp_writes: None,
             });
-            hint_pass.set_pipeline(&self.render_pipeline_2d);
+            hint_pass.set_pipeline(&self.render_pipeline_overlay);
             hint_pass.set_bind_group(0, &self.hud_scene_bind_group, &[]);
             hint_pass.set_bind_group(1, self.atlas.bind_group.as_ref(), &[]);
             hint_pass.set_vertex_buffer(0, self.hud_quad_mesh.vertex_buffer.slice(..));
@@ -575,7 +632,7 @@ impl State {
                     occlusion_query_set: None,
                     timestamp_writes: None,
                 });
-                hint_pass.set_pipeline(&self.render_pipeline_2d);
+                hint_pass.set_pipeline(&self.render_pipeline_overlay);
                 hint_pass.set_bind_group(0, &self.scene_bind_group, &[]);
                 hint_pass.set_bind_group(1, self.atlas.bind_group.as_ref(), &[]);
                 hint_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));

@@ -38,7 +38,7 @@ impl State {
             &wgpu::CommandEncoderDescriptor { label: Some("render-encoder") },
         );
 
-        // ── Paso 1: escribir uniforms de escena compartidos (view_proj + cam_pos) ──
+        // ── Paso 1: escribir uniforms de escena compartidos (view_proj + cam_pos + jitter TAA) ──
         {
             let scene_uni = if let Some(cam2d) = &self.camera_2d {
                 build_scene_uniforms_2d(cam2d, self.size)
@@ -47,6 +47,8 @@ impl State {
             };
             self.queue.write_buffer(&self.scene_buffer, 0, bytemuck::cast_slice(&[scene_uni]));
         }
+
+        let scene_view = self.taa.scene_color_view();
 
         // ── Paso 2: recopilar entidades visibles (culling 2D + sort layer+Z) ──
         let aspect_fc = self.size.width as f32 / self.size.height as f32;
@@ -153,7 +155,7 @@ impl State {
             let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("render-pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view:           &view,
+                    view:           &scene_view,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load:  wgpu::LoadOp::Clear(self.clear_color),
@@ -195,6 +197,17 @@ impl State {
                 draw_calls += 1;
             }
         }
+
+        self.taa.present_scene(
+            &self.device,
+            &self.queue,
+            &mut enc,
+            &view,
+            false,
+            1.0,
+            self.size.width,
+            self.size.height,
+        );
 
         // ── Grid pass (solo modo 2D; borde siempre visible, líneas según config) ──
         if !self.preview_playing || self.debug_mode {
@@ -308,7 +321,7 @@ impl State {
                     occlusion_query_set:      None,
                     timestamp_writes:         None,
                 });
-                hint_pass.set_pipeline(&self.render_pipeline_2d);
+                hint_pass.set_pipeline(&self.render_pipeline_overlay);
                 hint_pass.set_bind_group(0, &self.scene_bind_group, &[]);
                 hint_pass.set_bind_group(1, self.atlas.bind_group.as_ref(), &[]);
                 hint_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));

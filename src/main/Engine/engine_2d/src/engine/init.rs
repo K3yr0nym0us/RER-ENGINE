@@ -233,6 +233,43 @@ impl State {
             fragment: Some(wgpu::FragmentState {
                 module:      &shader,
                 entry_point: "fs_main",
+                targets:     &[
+                    Some(wgpu::ColorTargetState {
+                        format,
+                        blend:      Some(wgpu::BlendState::ALPHA_BLENDING),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    }),
+                ],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format:              DEPTH_FORMAT,
+                depth_write_enabled: false,
+                depth_compare:       wgpu::CompareFunction::Always,
+                stencil:             wgpu::StencilState::default(),
+                bias:                wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState::default(),
+            multiview:   None,
+            cache:       None,
+        });
+
+        let render_pipeline_overlay = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label:  Some("sprite-overlay-pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module:              &shader,
+                entry_point:         "vs_main",
+                buffers:             &[mesh::Vertex::desc(), mesh::InstanceData::desc()],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module:      &shader,
+                entry_point: "fs_overlay",
                 targets:     &[Some(wgpu::ColorTargetState {
                     format,
                     blend:      Some(wgpu::BlendState::ALPHA_BLENDING),
@@ -405,6 +442,13 @@ impl State {
         // nunca detenga el render loop ni cause drift en el timing de animaciones.
         let audio_slot = start_audio_thread();
 
+        let taa = rer_engine_shared::taa::TaaPass::new(
+            &device,
+            format,
+            size.width,
+            size.height,
+        );
+
         Self {
             window,
             surface,
@@ -415,7 +459,9 @@ impl State {
             clear_color: wgpu::Color { r: 0.06, g: 0.06, b: 0.10, a: 1.0 },
             render_pipeline,
             render_pipeline_2d,
+            render_pipeline_overlay,
             depth_view,
+            taa,
             scene_buffer:     scene_buf,
             scene_bind_group: scene_bg,
             atlas,

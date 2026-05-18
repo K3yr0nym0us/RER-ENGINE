@@ -73,6 +73,7 @@
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
+    "@types/adm-zip": "^0.5.8",
     "adm-zip": "^0.5.17",
     "bootstrap": "^5.3.8",
     "monaco-editor": "^0.55.1",

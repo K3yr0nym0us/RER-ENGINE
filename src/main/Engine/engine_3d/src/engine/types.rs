@@ -58,4 +58,4 @@ pub(crate) struct SceneUniforms {
     pub(crate) light_params: [f32; 4],
 }
 
-pub(crate) const SHADOW_MAP_SIZE: u32 = 2048;
+pub(crate) const SHADOW_MAP_SIZE: u32 = 4096;

@@ -4,7 +4,13 @@ import path from 'path';
 import fs from 'fs';
 import AdmZip from 'adm-zip';
 
-import type { EngineCommand, EngineEvent, GameStyle, OpenProjectResult, ProjectSaveData } from '../shared-types/types';
+import type { 
+  EngineCommand, 
+  EngineEvent, 
+  GameStyle, 
+  OpenProjectResult, 
+  ProjectSaveData 
+} from '../shared-types/types';
 import { entityPathMarker } from '../shared-types/types';
 
 // Sin GPU hardware disponible: deshabilitar el proceso GPU de Chromium

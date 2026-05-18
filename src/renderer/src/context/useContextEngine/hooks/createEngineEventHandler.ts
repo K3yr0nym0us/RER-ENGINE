@@ -271,6 +271,7 @@ export function createEngineEventHandler({
 				if (save.backgroundPath && !importScene2d) {
 					sendEngine({ cmd: 'load_background', path: save.backgroundPath } as never);
 				}
+				let burstLoad = false;
 				if (importScene2d) {
 					const sceneForImport: SavedScene = {
 						id: activeScene?.id ?? 1,
@@ -292,7 +293,7 @@ export function createEngineEventHandler({
 						) as never,
 					);
 				} else {
-				const burstLoad = needsSceneBurstLoad(projectType, gameStyle, save);
+				burstLoad = needsSceneBurstLoad(projectType, gameStyle, save);
 				if (burstLoad) {
 					refs.sceneBurstAwaitingPlayerViewRef.current = false;
 					refs.sceneBurstPendingColliderCountRef.current = 0;

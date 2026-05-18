@@ -285,6 +285,11 @@ impl State {
             load_snap_hint_asset(&mut atlas, &queue, "tooltip-btn-esc-exit.png");
 
         let shader = device.create_shader_module(include_wgsl!("../shader.wgsl"));
+        let shadow_mask_target = Some(wgpu::ColorTargetState {
+            format:     rer_engine_shared::taa::SHADOW_MASK_FORMAT,
+            blend:      None,
+            write_mask: wgpu::ColorWrites::RED,
+        });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("pipeline-layout"),
             bind_group_layouts: &[&bgl, &texture_bgl],
@@ -307,11 +312,14 @@ impl State {
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
                 entry_point: "fs_main",
-                targets: &[Some(wgpu::ColorTargetState {
-                    format,
-                    blend: None,
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
+                targets: &[
+                    Some(wgpu::ColorTargetState {
+                        format,
+                        blend: None,
+                        write_mask: wgpu::ColorWrites::ALL,
+                    }),
+                    shadow_mask_target.clone(),
+                ],
                 compilation_options: Default::default(),
             }),
             primitive: wgpu::PrimitiveState {
@@ -372,6 +380,44 @@ impl State {
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
                 entry_point: "fs_main",
+                targets: &[
+                    Some(wgpu::ColorTargetState {
+                        format,
+                        blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    }),
+                    shadow_mask_target,
+                ],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: false,
+                depth_compare: wgpu::CompareFunction::Always,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
+
+        let render_pipeline_overlay = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("sprite-overlay-pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: "vs_main",
+                buffers: &[mesh::Vertex::desc(), mesh::InstanceData::desc()],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: "fs_overlay",
                 targets: &[Some(wgpu::ColorTargetState {
                     format,
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
@@ -543,6 +589,13 @@ impl State {
 
         let audio_slot = start_audio_thread();
 
+        let taa = rer_engine_shared::taa::TaaPass::new(
+            &device,
+            format,
+            size.width,
+            size.height,
+        );
+
         Self {
             window,
             surface,
@@ -558,10 +611,12 @@ impl State {
             },
             render_pipeline,
             render_pipeline_2d,
+            render_pipeline_overlay,
             shadow_pipeline,
             _shadow_texture: shadow_texture,
             shadow_map_view,
             depth_view,
+            taa,
             scene_buffer: scene_buf,
             scene_bind_group: scene_bg,
             shadow_pass_bind_group,

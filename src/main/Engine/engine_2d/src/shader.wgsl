@@ -101,8 +101,7 @@ const LIGHT_COLOR : vec3<f32> = vec3<f32>(3.0,  2.8, 2.5);   // luz blanca cáli
 const METALLIC    : f32       = 0.0;
 const ROUGHNESS   : f32       = 0.5;
 
-@fragment
-fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+fn evaluate_scene_color(in: VertexOutput) -> vec4<f32> {
     var albedo_samp = textureSample(t_albedo, s_albedo, in.uv);
     if in.render_kind >= 0.5 {
         albedo_samp = textureSample(t_albedo, s_albedo, in.uv_center);
@@ -141,4 +140,14 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     }
 
     return vec4<f32>(color, out_alpha);
+}
+
+@fragment
+fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    return evaluate_scene_color(in);
+}
+
+@fragment
+fn fs_overlay(in: VertexOutput) -> @location(0) vec4<f32> {
+    return evaluate_scene_color(in);
 }

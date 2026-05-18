@@ -27,10 +27,12 @@ pub struct State {
     /// Pipeline para modo 2D: sin depth-write, CompareFunction::Always.
     /// Permite que el alpha blending funcione correctamente con back-to-front sort.
     pub(crate) render_pipeline_2d: wgpu::RenderPipeline,
+    pub(crate) render_pipeline_overlay: wgpu::RenderPipeline,
     pub(crate) shadow_pipeline: wgpu::RenderPipeline,
     pub(crate) _shadow_texture: wgpu::Texture,
     pub(crate) shadow_map_view: wgpu::TextureView,
     pub(crate) depth_view: wgpu::TextureView,
+    pub(crate) taa: rer_engine_shared::taa::TaaPass,
     pub(crate) scene_buffer: wgpu::Buffer,
     pub(crate) scene_bind_group: wgpu::BindGroup,
     /// Solo uniformes; evita leer el shadow map mientras se escribe en el pase de sombras.
