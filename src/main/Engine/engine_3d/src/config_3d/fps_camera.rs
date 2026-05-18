@@ -65,6 +65,43 @@ impl State {
         Vec3::new(0.0, PLAY_CHARACTER_EYE_OFFSET, 0.0)
     }
 
+    /// En editor, la órbita sigue al jugador solo si no hay entidad seleccionada.
+    pub(crate) fn editor_camera_follows_player(&self) -> bool {
+        if self.camera_2d.is_some() || self.is_play_controller_active() {
+            return true;
+        }
+        self.selection_center().is_none()
+    }
+
+    /// Centra la órbita del editor en la selección o en el jugador FP.
+    pub(crate) fn sync_editor_camera_focus(&mut self) {
+        if self.camera_2d.is_some() || self.is_play_controller_active() {
+            return;
+        }
+
+        let player_eye = Vec3::new(0.0, PLAY_CHARACTER_EYE_OFFSET, 0.0);
+
+        if let Some(center) = self.selection_center() {
+            let focus_player = self
+                .selected_entity
+                .and_then(|id| self.play_character_entity.map(|p| p == id))
+                .unwrap_or(false);
+
+            if focus_player {
+                self.camera.target = self.play_character_feet_position();
+                self.camera.orbit_pivot_offset = player_eye;
+            } else {
+                self.camera.target = center;
+                self.camera.orbit_pivot_offset = Vec3::ZERO;
+            }
+        } else if self.has_play_character() {
+            self.camera.target = self.play_character_feet_position();
+            self.camera.orbit_pivot_offset = player_eye;
+        } else {
+            self.camera.orbit_pivot_offset = Vec3::ZERO;
+        }
+    }
+
     pub(crate) fn sync_fps_camera_mode(&mut self) {
         if self.is_play_controller_active() {
             self.camera.orbit_pivot_offset = Vec3::ZERO;
@@ -72,11 +109,12 @@ impl State {
             self.camera.eye_offset_local = self.play_character_eye_world_offset();
             self.camera.distance = 0.01;
         } else if self.has_play_character() {
-            self.camera.orbit_pivot_offset =
-                Vec3::new(0.0, PLAY_CHARACTER_EYE_OFFSET, 0.0);
             self.camera.eye_height_offset = 0.0;
             self.camera.eye_offset_local = Vec3::ZERO;
-            self.camera.distance = PLAY_CHARACTER_EDITOR_ORBIT_DISTANCE;
+            if self.camera.distance < 0.5 {
+                self.camera.distance = PLAY_CHARACTER_EDITOR_ORBIT_DISTANCE;
+            }
+            self.sync_editor_camera_focus();
         } else {
             self.camera.orbit_pivot_offset = Vec3::ZERO;
             self.camera.eye_height_offset = 0.0;

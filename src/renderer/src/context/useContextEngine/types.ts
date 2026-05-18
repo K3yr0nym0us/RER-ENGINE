@@ -1,5 +1,19 @@
 import type { MutableRefObject } from 'react';
-import { DEFAULT_GRAVITY_MAGNITUDE, type BackgroundInfo, type BluePrintEntry, type DebugMetrics, type EntityCategory, type ProjectSaveData, type SavedControlBindings, type SavedPlayerTransform, type SoundInfo, type SpriteInfo } from '@shared-types';
+import {
+	DEFAULT_GRAVITY_MAGNITUDE,
+	DEFAULT_LIGHT_AMBIENT,
+	DEFAULT_LIGHT_INTENSITY,
+	DEFAULT_SHADOW_DARKNESS,
+	type BackgroundInfo,
+	type BluePrintEntry,
+	type DebugMetrics,
+	type EntityCategory,
+	type ProjectSaveData,
+	type SavedControlBindings,
+	type SavedPlayerTransform,
+	type SoundInfo,
+	type SpriteInfo,
+} from '@shared-types';
 
 export interface Entity {
 	id: number
@@ -52,6 +66,9 @@ export interface WorldConfig {
 	gridCellSize: number
 	gravity: number
 	targetFps: number
+	lightAmbient: number
+	lightIntensity: number
+	shadowDarkness: number
 }
 
 export const DEFAULT_WORLD_CONFIG: WorldConfig = {
@@ -62,6 +79,9 @@ export const DEFAULT_WORLD_CONFIG: WorldConfig = {
 	gridCellSize: 1,
 	gravity: DEFAULT_GRAVITY_MAGNITUDE,
 	targetFps: 60,
+	lightAmbient: DEFAULT_LIGHT_AMBIENT,
+	lightIntensity: DEFAULT_LIGHT_INTENSITY,
+	shadowDarkness: DEFAULT_SHADOW_DARKNESS,
 };
 
 export interface EngineState {
@@ -354,7 +374,7 @@ export type EntityAnimations = NonNullable<SelectedEntity['animations']>;
 export type EntityScripts = NonNullable<SelectedEntity['scripts']>;
 
 export interface EntityMeta {
-	kind: 'scenario' | 'character' | 'model' | 'collider' | 'execution_area'
+	kind: 'scenario' | 'character' | 'model' | 'collider' | 'execution_area' | 'directional_light'
 	path: string
 	name?: string
 	physicsEnabled: boolean
@@ -462,6 +482,11 @@ export interface EngineContextValue extends EngineState {
 	setGridVisible: (visible: boolean) => void
 	setGridCellSize: (size: number) => void
 	setGravity: (gravity: number) => void
+	setDirectionalLight: (settings: {
+		ambient?: number
+		intensity?: number
+		shadowDarkness?: number
+	}) => void
 	setTargetFps: (fps: number) => void
 	removeCollider: (id: number) => void
 	removeExecutionArea: (id: number) => void

@@ -288,12 +288,12 @@ impl TextureAtlas {
             wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
         );
 
-        let uv = [
-            self.cursor_x as f32 / self.width  as f32,
-            self.cursor_y as f32 / self.height as f32,
-            (self.cursor_x + w) as f32 / self.width  as f32,
-            (self.cursor_y + h) as f32 / self.height as f32,
-        ];
+        // Inset de medio texel: evita filtrar píxeles vacíos del atlas en colores sólidos 1×1.
+        let u0 = (self.cursor_x as f32 + 0.5) / self.width as f32;
+        let v0 = (self.cursor_y as f32 + 0.5) / self.height as f32;
+        let u1 = (self.cursor_x + w) as f32 / self.width as f32 - 0.5 / self.width as f32;
+        let v1 = (self.cursor_y + h) as f32 / self.height as f32 - 0.5 / self.height as f32;
+        let uv = [u0, v0, u1.max(u0), v1.max(v0)];
         self.cursor_x += w;
         self.row_h     = self.row_h.max(h);
         uv

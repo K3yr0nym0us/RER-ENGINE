@@ -27,9 +27,14 @@ pub struct State {
     /// Pipeline para modo 2D: sin depth-write, CompareFunction::Always.
     /// Permite que el alpha blending funcione correctamente con back-to-front sort.
     pub(crate) render_pipeline_2d: wgpu::RenderPipeline,
+    pub(crate) shadow_pipeline: wgpu::RenderPipeline,
+    pub(crate) _shadow_texture: wgpu::Texture,
+    pub(crate) shadow_map_view: wgpu::TextureView,
     pub(crate) depth_view: wgpu::TextureView,
     pub(crate) scene_buffer: wgpu::Buffer,
     pub(crate) scene_bind_group: wgpu::BindGroup,
+    /// Solo uniformes; evita leer el shadow map mientras se escribe en el pase de sombras.
+    pub(crate) shadow_pass_bind_group: wgpu::BindGroup,
     pub(crate) hud_scene_bind_group: wgpu::BindGroup,
     pub(crate) atlas: crate::texture::TextureAtlas,
     pub(crate) uv_rects: Vec<[f32; 4]>,
@@ -144,6 +149,13 @@ pub struct State {
     pub(crate) save_registry: EntitySaveRegistry,
     /// Límite de FPS del bucle (sincronizado con `set_target_fps`).
     pub(crate) target_fps: u64,
+    /// Entidad icono del sol (luz direccional).
+    pub(crate) sun_entity: Option<EntityId>,
+    pub(crate) directional_light_dir: GlamVec3,
+    pub(crate) directional_light_color: GlamVec3,
+    pub(crate) directional_light_ambient: f32,
+    pub(crate) light_intensity: f32,
+    pub(crate) shadow_darkness: f32,
 }
 
 impl State {

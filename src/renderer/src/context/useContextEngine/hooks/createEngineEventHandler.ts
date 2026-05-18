@@ -15,10 +15,15 @@ import type {
 } from '@shared-types';
 import type { GameStyle, SavedScene } from '@shared-types';
 import {
+	DEFAULT_LIGHT_AMBIENT,
+	DEFAULT_LIGHT_INTENSITY,
+	DEFAULT_SHADOW_DARKNESS,
 	FIRST_PERSON_PLAYER_BODY_SCALE,
 	isEditorBoxPath,
 	isPlayerEntity,
 	isPlayerPath,
+	isGroundPath,
+	isSunPath,
 	type EntityCategory,
 } from '@shared-types';
 import { applyPlayCharacterControlDefaultsIfEmpty } from '../../../defaults/applyPlayCharacterControlDefaults';
@@ -199,7 +204,13 @@ export function createEngineEventHandler({
 
 				if (save.world) {
 					savedGravity = save.world.gravity;
-					dispatch({ type: 'SET_WORLD_CONFIG', payload: save.world });
+					const worldPayload = {
+						...save.world,
+						lightAmbient: save.world.lightAmbient ?? DEFAULT_LIGHT_AMBIENT,
+						lightIntensity: save.world.lightIntensity ?? DEFAULT_LIGHT_INTENSITY,
+						shadowDarkness: save.world.shadowDarkness ?? DEFAULT_SHADOW_DARKNESS,
+					};
+					dispatch({ type: 'SET_WORLD_CONFIG', payload: worldPayload });
 					if (!importScene2d) {
 						sendEngine({
 							cmd: 'set_world_size',
@@ -212,6 +223,14 @@ export function createEngineEventHandler({
 						sendEngine({ cmd: 'set_target_fps', fps: save.world.targetFps } as never);
 						if (save.world.gravity != null) {
 							sendEngine({ cmd: 'set_gravity', gravity: save.world.gravity } as never);
+						}
+						if (projectType === '3D') {
+							sendEngine({
+								cmd: 'set_directional_light',
+								ambient: worldPayload.lightAmbient,
+								intensity: worldPayload.lightIntensity,
+								shadow_darkness: worldPayload.shadowDarkness,
+							} as never);
 						}
 					}
 				}
@@ -318,6 +337,42 @@ export function createEngineEventHandler({
 						queue.push(pendingRestore);
 						refs.pendingRestoresRef.current.set('[Player]', queue);
 						sendEngine({ cmd: 'load_character', path: entity.path } as never);
+					} else if (entity.kind === 'directional_light' || isSunPath(entity.path)) {
+						const pendingRestore: PendingRestore = {
+							transform,
+							name: entity.name,
+							physicsEnabled: false,
+							physicsType: 'static',
+							scripts: entity.scripts,
+							controlBindings: entity.control_bindings,
+							blueprintId: entity.blueprint_id,
+						};
+						const queue = refs.pendingRestoresRef.current.get('[Sun]') ?? [];
+						queue.push(pendingRestore);
+						refs.pendingRestoresRef.current.set('[Sun]', queue);
+						sendEngine({
+							cmd: 'spawn_sun',
+							name: entity.name ?? 'Sol',
+							position: entity.position,
+							scale: entity.scale,
+						} as never);
+					} else if (entity.kind === 'model' && isGroundPath(entity.path)) {
+						const pendingRestore: PendingRestore = {
+							transform,
+							name: entity.name,
+							physicsEnabled: false,
+							physicsType: 'static',
+							scripts: entity.scripts,
+							controlBindings: entity.control_bindings,
+						};
+						const queue = refs.pendingRestoresRef.current.get('[Ground]') ?? [];
+						queue.push(pendingRestore);
+						refs.pendingRestoresRef.current.set('[Ground]', queue);
+						sendEngine({
+							cmd: 'spawn_ground',
+							position: entity.position,
+							scale: entity.scale,
+						} as never);
 					} else if (entity.kind === 'model' && isEditorBoxPath(entity.path)) {
 						const pendingRestore: PendingRestore = {
 							transform,
@@ -407,6 +462,51 @@ export function createEngineEventHandler({
 					scale: loaded.scale,
 				};
 			}
+			const sunQueue = refs.pendingRestoresRef.current.get('[Sun]');
+			if (sunQueue && sunQueue.length > 0) {
+				const pending = sunQueue.shift()!;
+				refs.entityMetaRef.current[id] = {
+					kind: 'directional_light',
+					path: '[Sun]',
+					name: pending.name ?? loaded.name ?? `Entity ${id}`,
+					physicsEnabled: false,
+					physicsType: 'static',
+				};
+				sendApplyEntityRestore(id, pending, {
+					skipTransform: true,
+					applyInitialAnimationFrame: false,
+				});
+				applyPendingRestoreMeta(refs, id, pending);
+				if (sunQueue.length === 0) refs.pendingRestoresRef.current.delete('[Sun]');
+			} else {
+			const groundQueue = refs.pendingRestoresRef.current.get('[Ground]');
+			if (groundQueue && groundQueue.length > 0) {
+				const pending = groundQueue.shift()!;
+				refs.entityMetaRef.current[id] = {
+					kind: 'model',
+					path: '[Ground]',
+					name: pending.name ?? loaded.name ?? 'Ground',
+					physicsEnabled: false,
+					physicsType: 'static',
+				};
+				sendApplyEntityRestore(id, pending, {
+					skipTransform: true,
+					applyInitialAnimationFrame: false,
+				});
+				applyPendingRestoreMeta(refs, id, pending);
+				if (groundQueue.length === 0) refs.pendingRestoresRef.current.delete('[Ground]');
+			} else if (
+				loaded.name?.toLowerCase() === 'ground'
+				&& !refs.entityMetaRef.current[id]
+			) {
+				refs.entityMetaRef.current[id] = {
+					kind: 'model',
+					path: '[Ground]',
+					name: 'Ground',
+					physicsEnabled: false,
+					physicsType: 'static',
+				};
+			} else {
 			const editorBoxQueue = refs.pendingRestoresRef.current.get('[EditorBox]');
 			if (editorBoxQueue && editorBoxQueue.length > 0) {
 				const pending = editorBoxQueue.shift()!;
@@ -518,6 +618,8 @@ export function createEngineEventHandler({
 						refs.entityMetaRef.current[id].path = '[EditorBox]';
 					}
 				}
+			}
+			}
 			}
 			tryEndSceneBurstLoad(dispatch, refs.sceneBurstLoadInProgressRef, refs, reportBounds);
 		}

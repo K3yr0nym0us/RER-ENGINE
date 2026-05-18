@@ -47,6 +47,26 @@ pub enum EngineCommand {
         position: [f32; 3],
         scale: [f32; 3],
     },
+    /// Icono del sol (luz direccional) en escenas 3D.
+    SpawnSun {
+        name: String,
+        position: [f32; 3],
+        scale: [f32; 3],
+    },
+    /// Suelo checker de la escena 3D (placeholder visual + física).
+    SpawnGround {
+        position: [f32; 3],
+        scale: [f32; 3],
+    },
+    /// Ajustar luz direccional (sol) sin mover el icono.
+    SetDirectionalLight {
+        #[serde(default)]
+        ambient: Option<f32>,
+        #[serde(default)]
+        intensity: Option<f32>,
+        #[serde(default)]
+        shadow_darkness: Option<f32>,
+    },
     /// Restaurar posición y orientación del personaje jugable (carga de `.save`).
     #[serde(rename = "set_play_character_spawn", alias = "set_first_person_spawn")]
     SetPlayCharacterSpawn {
@@ -322,6 +342,12 @@ pub struct SaveWorldSnapshot {
     pub grid_cell_size: f32,
     pub gravity: f32,
     pub target_fps: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub light_ambient: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub light_intensity: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shadow_darkness: Option<f32>,
 }
 
 #[derive(Debug, Serialize, Clone)]

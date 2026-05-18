@@ -49,9 +49,6 @@ impl EntitySaveRegistry {
 impl State {
     /// Metadatos de persistencia: registro explícito o inferencia desde listas del runtime.
     pub(crate) fn resolve_entity_save_meta(&self, id: EntityId) -> Option<EntitySaveMeta> {
-        if self.world.get::<NonSelectable>(id).is_some() {
-            return None;
-        }
         if self.background_entity == Some(id) {
             return None;
         }
@@ -66,10 +63,23 @@ impl State {
             return Some(m.clone());
         }
 
+        if self.world.get::<NonSelectable>(id).is_some() {
+            return None;
+        }
+
         if Some(id) == self.play_character_entity {
             return Some(EntitySaveMeta {
                 kind: "character".to_string(),
                 path: "[Player]".to_string(),
+                visual_model_path: None,
+                points: None,
+            });
+        }
+
+        if Some(id) == self.sun_entity {
+            return Some(EntitySaveMeta {
+                kind: "directional_light".to_string(),
+                path: "[Sun]".to_string(),
                 visual_model_path: None,
                 points: None,
             });

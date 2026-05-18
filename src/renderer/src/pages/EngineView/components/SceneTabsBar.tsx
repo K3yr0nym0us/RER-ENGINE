@@ -3,8 +3,13 @@ import { Files, Pencil, PlusLg, Trash } from 'react-bootstrap-icons';
 import Nav from 'react-bootstrap/Nav';
 
 import type { GameStyle, ProjectSaveData, SavedScene, SavedWorldConfig } from '@shared-types';
-import { DEFAULT_GRAVITY_MAGNITUDE } from '@shared-types';
-import { isEditorBoxPath, isPlayerPath } from '@shared-types';
+import {
+  DEFAULT_GRAVITY_MAGNITUDE,
+  DEFAULT_LIGHT_AMBIENT,
+  DEFAULT_LIGHT_INTENSITY,
+  DEFAULT_SHADOW_DARKNESS,
+} from '@shared-types';
+import { isEditorBoxPath, isGroundPath, isPlayerPath, isSunPath } from '@shared-types';
 import { buildActiveSceneSnapshotFromEngine } from '../../../defaults/buildProjectSaveFromEngine';
 import { ensurePlayCharacterOnLoad } from '../../../defaults/playCharacterSceneRestore';
 import { setSceneCommandForSavedProject } from '../../../defaults/projectSceneLoad';
@@ -40,6 +45,9 @@ const DEFAULT_WORLD: SavedWorldConfig = {
   gridCellSize: 1,
   gravity: DEFAULT_GRAVITY_MAGNITUDE,
   targetFps: 60,
+  lightAmbient: DEFAULT_LIGHT_AMBIENT,
+  lightIntensity: DEFAULT_LIGHT_INTENSITY,
+  shadowDarkness: DEFAULT_SHADOW_DARKNESS,
 };
 
 export function SceneTabsBar({ initialSave, projectType, gameStyle }: Props) {
@@ -78,6 +86,7 @@ export function SceneTabsBar({ initialSave, projectType, gameStyle }: Props) {
     setGridVisible,
     setGridCellSize,
     setTargetFps,
+    setDirectionalLight,
     setBackground,
     loadSprite,
     loadModelAsset,
@@ -198,6 +207,11 @@ export function SceneTabsBar({ initialSave, projectType, gameStyle }: Props) {
       setGridVisible(scene.world.gridVisible);
       setGridCellSize(scene.world.gridCellSize);
       setTargetFps(Number.isFinite(scene.world?.targetFps) ? scene.world.targetFps : DEFAULT_WORLD.targetFps);
+      setDirectionalLight({
+        ambient: scene.world.lightAmbient ?? DEFAULT_LIGHT_AMBIENT,
+        intensity: scene.world.lightIntensity ?? DEFAULT_LIGHT_INTENSITY,
+        shadowDarkness: scene.world.shadowDarkness ?? DEFAULT_SHADOW_DARKNESS,
+      });
 
       if (scene.camera2d) {
         send({ cmd: 'set_camera2d', x: scene.camera2d.x, y: scene.camera2d.y, half_h: scene.camera2d.halfH });
@@ -268,6 +282,45 @@ export function SceneTabsBar({ initialSave, projectType, gameStyle }: Props) {
           controlBindings: entity.control_bindings,
         });
         send({ cmd: 'create_execution_area_from_points', points: entity.points, track_undo: false });
+        continue;
+      }
+
+      if (entity.kind === 'directional_light' || isSunPath(entity.path)) {
+        const sunQueue = pendingRestoresRef.current.get('[Sun]') ?? [];
+        pendingRestoresRef.current.set('[Sun]', sunQueue);
+        sunQueue.push({
+          transform,
+          name: entity.name,
+          physicsEnabled: false,
+          physicsType: 'static',
+          scripts: entity.scripts,
+          controlBindings: entity.control_bindings,
+        });
+        send({
+          cmd: 'spawn_sun',
+          name: entity.name ?? 'Sol',
+          position: entity.position,
+          scale: entity.scale,
+        });
+        continue;
+      }
+
+      if (entity.kind === 'model' && isGroundPath(entity.path)) {
+        const groundQueue = pendingRestoresRef.current.get('[Ground]') ?? [];
+        pendingRestoresRef.current.set('[Ground]', groundQueue);
+        groundQueue.push({
+          transform,
+          name: entity.name,
+          physicsEnabled: false,
+          physicsType: 'static',
+          scripts: entity.scripts,
+          controlBindings: entity.control_bindings,
+        });
+        send({
+          cmd: 'spawn_ground',
+          position: entity.position,
+          scale: entity.scale,
+        });
         continue;
       }
 

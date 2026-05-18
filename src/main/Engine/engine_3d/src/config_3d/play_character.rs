@@ -55,7 +55,9 @@ impl State {
                 }
             }
         }
-        self.camera.target = feet;
+        if self.editor_camera_follows_player() {
+            self.camera.target = feet;
+        }
     }
 
     /// Alinea el mesh del jugador al yaw de la cámara (editor y play).

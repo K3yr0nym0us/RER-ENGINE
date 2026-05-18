@@ -269,6 +269,7 @@ impl State {
             * Mat4::from_scale(glam::vec3(draw_w_world * scale_in, draw_h_world * scale_in, 1.0));
         let mut inst = mesh::InstanceData::new(model, 0.0, uv);
         inst.flag_pad[1] = eased_alpha;
+        inst.flag_pad[2] = mesh::RENDER_KIND_HUD_OVERLAY;
         Some(inst)
     }
 
@@ -324,6 +325,7 @@ impl State {
             * Mat4::from_scale(glam::vec3(ndc_w, ndc_h, 1.0));
         let mut inst = mesh::InstanceData::new(model, 0.0, uv);
         inst.flag_pad[1] = eased_alpha;
+        inst.flag_pad[2] = mesh::RENDER_KIND_HUD_OVERLAY;
         Some(inst)
     }
 

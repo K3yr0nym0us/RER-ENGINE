@@ -124,6 +124,26 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 		send({ cmd: 'set_gravity', gravity });
 	};
 
+	const setDirectionalLight = (settings: {
+		ambient?: number;
+		intensity?: number;
+		shadowDarkness?: number;
+	}) => {
+		const payload: Partial<import('../types').WorldConfig> = {};
+		if (settings.ambient !== undefined) payload.lightAmbient = settings.ambient;
+		if (settings.intensity !== undefined) payload.lightIntensity = settings.intensity;
+		if (settings.shadowDarkness !== undefined) payload.shadowDarkness = settings.shadowDarkness;
+		if (Object.keys(payload).length > 0) {
+			dispatch({ type: 'SET_WORLD_CONFIG', payload });
+		}
+		send({
+			cmd: 'set_directional_light',
+			ambient: settings.ambient,
+			intensity: settings.intensity,
+			shadow_darkness: settings.shadowDarkness,
+		} as never);
+	};
+
 	const setTargetFps = (fps: number) => {
 		const parsedFps = Number.isFinite(fps) ? fps : 60;
 		const normalizedFps = Math.max(1, Math.min(1000, Math.round(parsedFps)));
@@ -353,6 +373,7 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 		setGridVisible,
 		setGridCellSize,
 		setGravity,
+		setDirectionalLight,
 		setTargetFps,
 		removeCollider,
 		removeExecutionArea,

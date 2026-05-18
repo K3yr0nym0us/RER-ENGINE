@@ -75,6 +75,15 @@ impl State {
         self.control_bindings_by_entity.clear();
         self.clear_play_controller_script_frame();
         self.play_character_entity = None;
+        self.sun_entity = None;
+        self.directional_light_dir =
+            crate::config_3d::directional_light::DEFAULT_LIGHT_DIR.normalize();
+        self.directional_light_color =
+            crate::config_3d::directional_light::DEFAULT_LIGHT_COLOR;
+        self.directional_light_ambient =
+            crate::config_3d::directional_light::DEFAULT_LIGHT_AMBIENT;
+        self.light_intensity = crate::config_3d::directional_light::DEFAULT_LIGHT_INTENSITY;
+        self.shadow_darkness = crate::config_3d::directional_light::DEFAULT_SHADOW_DARKNESS;
         self.play_character_mesh_forward_xz = glam::Vec2::new(0.0, 1.0);
         self.undo_stack.clear();
         self.redo_stack.clear();
@@ -83,47 +92,91 @@ impl State {
         self.sync_world_bounds_3d_runtime();
     }
 
-    /// Escena base del modo first-person: suelo checker y cámara a ras de editor 3D.
-    pub(crate) fn setup_default_3d_scene(&mut self) {
-        self.reset_runtime_scene_3d();
+    fn find_ground_entity_id(&self) -> Option<crate::ecs::EntityId> {
+        self.world
+            .query::<crate::ecs::NameComponent>()
+            .find(|(_, c)| c.name.eq_ignore_ascii_case("ground"))
+            .map(|(id, _)| id)
+    }
 
-        let ground_plane = crate::config_3d::mesh_3d::create_ground_plane(&self.device);
-        self.meshes.push(ground_plane);
-
-        let checker_pixels = {
-            const S: u32 = 128;
-            const TILE: u32 = 8;
-            let mut px: Vec<u8> = Vec::with_capacity((S * S * 4) as usize);
-            for y in 0..S {
-                for x in 0..S {
-                    let light = ((x / TILE + y / TILE) % 2) == 0;
-                    let (r, g, b): (u8, u8, u8) = if light { (58, 61, 80) } else { (30, 32, 48) };
-                    px.extend_from_slice(&[r, g, b, 255]);
-                }
+    fn pack_scene_checker_texture(&mut self) -> usize {
+        const S: u32 = 128;
+        const TILE: u32 = 8;
+        let mut px: Vec<u8> = Vec::with_capacity((S * S * 4) as usize);
+        for y in 0..S {
+            for x in 0..S {
+                let light = ((x / TILE + y / TILE) % 2) == 0;
+                let (r, g, b): (u8, u8, u8) = if light {
+                    (58, 61, 80)
+                } else {
+                    (30, 32, 48)
+                };
+                px.extend_from_slice(&[r, g, b, 255]);
             }
-            px
-        };
-        let checker_uv = self.atlas.pack(&self.queue, &checker_pixels, 128, 128);
+        }
+        let checker_uv = self.atlas.pack(&self.queue, &px, S, S);
+        let tex_idx = self.uv_rects.len();
         self.uv_rects.push(checker_uv);
+        tex_idx
+    }
+
+    /// Suelo checker + colisión estática. Idempotente (también tras `setup_empty_3d` al cargar `.save`).
+    pub(crate) fn ensure_ground_plane(&mut self) {
+        if self.find_ground_entity_id().is_some() {
+            return;
+        }
+
+        let ground_mesh_idx = self.meshes.len();
+        self.meshes
+            .push(crate::config_3d::mesh_3d::create_ground_plane(&self.device));
+        let tex_idx = self.pack_scene_checker_texture();
 
         let plane_id = self.world.spawn(Some("Ground"));
         self.world.insert(
             plane_id,
             MeshComponent {
-                mesh_idx: 0,
-                tex_idx: 0,
+                mesh_idx: ground_mesh_idx,
+                tex_idx,
             },
         );
         self.world.insert(plane_id, NonSelectable);
         if let Some(t) = self.world.get_mut::<Transform>(plane_id) {
-            t.position = glam::Vec3::new(0.0, 0.0, 0.0);
+            t.position = glam::Vec3::ZERO;
             t.scale = glam::Vec3::new(20.0, 0.02, 20.0);
         }
         self.physics.add_static_ground();
+        self.save_registry.register_meta(
+            plane_id,
+            EntitySaveMeta {
+                kind: "model".to_string(),
+                path: "[Ground]".to_string(),
+                visual_model_path: None,
+                points: None,
+            },
+        );
+        self.send_model_loaded_event(plane_id, "Ground");
+    }
+
+    pub(crate) fn spawn_ground_plane(&mut self, position: [f32; 3], scale: [f32; 3]) {
+        self.ensure_ground_plane();
+        let Some(id) = self.find_ground_entity_id() else {
+            return;
+        };
+        if let Some(t) = self.world.get_mut::<Transform>(id) {
+            t.position = glam::Vec3::from_array(position);
+            t.scale = glam::Vec3::from_array(scale);
+        }
+        self.send_model_loaded_event(id, "Ground");
+    }
+
+    /// Escena base del modo first-person: suelo checker y cámara a ras de editor 3D.
+    pub(crate) fn setup_default_3d_scene(&mut self) {
+        self.reset_runtime_scene_3d();
+        self.ensure_ground_plane();
 
         let block_mesh_idx = self.meshes.len();
         self.meshes.push(mesh::create_cube(&self.device));
-        let white_px = [235u8, 240, 255, 255];
+        let white_px = [255u8, 255, 255, 255];
         let block_tex_idx = self.uv_rects.len();
         let block_uv = self.atlas.pack(&self.queue, &white_px, 1, 1);
         self.uv_rects.push(block_uv);
@@ -191,6 +244,7 @@ impl State {
 
         self.spawn_play_character();
         self.sync_fps_camera_mode();
+        self.ensure_default_sun();
 
         log::info!("Escena 3D por defecto cargada: arena base del editor");
     }
@@ -198,6 +252,7 @@ impl State {
     /// Escena 3D vacía: solo para abrir un `.save` (sin plantilla first-person).
     pub(crate) fn setup_empty_3d(&mut self) {
         self.reset_runtime_scene_3d();
+        self.ensure_ground_plane();
         self.camera = Camera::new();
         self.clear_color = wgpu::Color {
             r: 0.06,
@@ -212,7 +267,7 @@ impl State {
     pub(crate) fn spawn_editor_box(&mut self, name: &str, position: [f32; 3], scale: [f32; 3]) {
         let block_mesh_idx = self.meshes.len();
         self.meshes.push(mesh::create_cube(&self.device));
-        let white_px = [235u8, 240, 255, 255];
+        let white_px = [255u8, 255, 255, 255];
         let block_tex_idx = self.uv_rects.len();
         let block_uv = self.atlas.pack(&self.queue, &white_px, 1, 1);
         self.uv_rects.push(block_uv);

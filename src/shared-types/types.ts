@@ -21,7 +21,9 @@ export const DEFAULT_GRAVITY_MAGNITUDE = 15
 /** Rutas simbólicas de entidad (no son archivos en disco). */
 export const ENTITY_MARKER_PATHS = [
   '[EditorBox]',
+  '[Ground]',
   '[Player]',
+  '[Sun]',
   '[Colisionador]',
   '[ExecutionArea]',
 ] as const
@@ -42,6 +44,14 @@ export function isEditorBoxPath(p: string | null | undefined): boolean {
 
 export function isPlayerPath(p: string | null | undefined): boolean {
   return entityPathMarker(p) === '[Player]'
+}
+
+export function isSunPath(p: string | null | undefined): boolean {
+  return entityPathMarker(p) === '[Sun]'
+}
+
+export function isGroundPath(p: string | null | undefined): boolean {
+  return entityPathMarker(p) === '[Ground]'
 }
 
 export type EntityCategory = 'environment'
@@ -71,7 +81,7 @@ export interface SavedEntity {
   /** Nombre visible de la entidad en el editor. */
   name?:            string
   path:             string
-  kind:             'model' | 'scenario' | 'character' | 'collider' | 'execution_area'
+  kind:             'model' | 'scenario' | 'character' | 'collider' | 'execution_area' | 'directional_light'
   position:         [number, number, number]
   rotation:         [number, number, number, number]
   scale:            [number, number, number]
@@ -153,6 +163,11 @@ export interface SavedControlBindings {
   gamepad: Record<string, SavedScript>
 }
 
+/** Valores por defecto de luz direccional 3D (alineados con el motor). */
+export const DEFAULT_LIGHT_AMBIENT = 0.06
+export const DEFAULT_LIGHT_INTENSITY = 1.0
+export const DEFAULT_SHADOW_DARKNESS = 0.22
+
 export interface SavedWorldConfig {
   worldWidth:   number
   worldHeight:  number
@@ -161,6 +176,12 @@ export interface SavedWorldConfig {
   gridCellSize: number
   gravity?:     number
   targetFps:    number
+  /** 3D: ambiente 0–1 (caras no iluminadas). */
+  lightAmbient?:     number
+  /** 3D: intensidad de la luz direccional. */
+  lightIntensity?:   number
+  /** 3D: oscuridad de sombras proyectadas (0.02–1, menor = más oscuro). */
+  shadowDarkness?:   number
 }
 
 /** Vista del personaje jugable en escena (cámara FPS en 3D; transform de entidad en 2D). */
@@ -253,6 +274,7 @@ export interface EngineCommand {
     | 'set_grid_cell_size'
     | 'set_target_fps'
     | 'set_gravity'
+    | 'set_directional_light'
     | 'set_ctrl_held'
     | 'set_physics'
     | 'set_active_tool'
@@ -335,6 +357,9 @@ export interface EngineSaveSceneSnapshot {
     grid_cell_size: number
     gravity: number
     target_fps: number
+    light_ambient?: number | null
+    light_intensity?: number | null
+    shadow_darkness?: number | null
   }
   background_path?: string | null
   entities: EngineSaveEntitySnapshot[]
@@ -488,7 +513,7 @@ export interface TriggerExited {
 export interface EntityRemoved {
   event: 'entity_removed'
   id: number
-  kind: 'scenario' | 'character' | 'model' | 'collider' | 'execution_area'
+  kind: 'scenario' | 'character' | 'model' | 'collider' | 'execution_area' | 'directional_light'
   /** Vértices del quad (solo colisionadores / áreas de ejecución 2D). */
   points?: [[number, number], [number, number], [number, number], [number, number]]
 }
@@ -530,7 +555,7 @@ export interface BluePrintEntry {
   id:               string
   name:             string
   category:         BluePrintCategory
-  kind:             'scenario' | 'character' | 'model' | 'collider' | 'execution_area'
+  kind:             'scenario' | 'character' | 'model' | 'collider' | 'execution_area' | 'directional_light'
   path:             string
   scale:            [number, number, number]
   physics_enabled?: boolean

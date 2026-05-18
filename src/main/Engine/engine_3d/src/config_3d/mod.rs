@@ -23,6 +23,8 @@ pub(crate) mod physics_3d;
 pub(crate) mod world_bounds;
 pub(crate) use world_bounds::WorldBounds3D;
 
+pub(crate) mod directional_light;
+
 use std::path::Path;
 
 use glam::Vec3 as GlamVec3;
@@ -350,6 +352,7 @@ impl State {
                         send_event(&EngineEvent::MultiSelectChanged {
                             ids: self.selected_entities.clone(),
                         });
+                        self.sync_editor_camera_focus();
                         return;
                     } else {
                         self.selected_entities.push(entity);
@@ -392,6 +395,7 @@ impl State {
                         ids: self.selected_entities.clone(),
                     });
                 }
+                self.sync_editor_camera_focus();
             }
             None => {
                 if !self.ctrl_held
@@ -400,6 +404,7 @@ impl State {
                     self.selected_entity = None;
                     self.selected_entities.clear();
                     send_event(&EngineEvent::EntityDeselected);
+                    self.sync_editor_camera_focus();
                 }
             }
         }
@@ -519,6 +524,16 @@ impl State {
                     );
                 }
             }
+        }
+
+        if selected_ids
+            .iter()
+            .any(|id| self.sun_entity == Some(*id))
+        {
+            self.sync_directional_light_from_sun();
+        }
+        if !self.is_play_controller_active() && self.camera_2d.is_none() {
+            self.sync_editor_camera_focus();
         }
 
         let lead_id = self.selected_entity.or_else(|| selected_ids.last().copied());

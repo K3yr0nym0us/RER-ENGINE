@@ -15,7 +15,11 @@ use crate::mesh;
 use crate::scripting::ScriptEngine;
 use crate::texture::GpuTexture;
 
-use super::{build_scene_uniforms, create_depth_texture, start_audio_thread, SceneUniforms, State, DEPTH_FORMAT};
+use super::{create_depth_texture, start_audio_thread, SceneUniforms, State, DEPTH_FORMAT, SHADOW_MAP_SIZE};
+use crate::config_3d::directional_light::{
+    DEFAULT_LIGHT_AMBIENT, DEFAULT_LIGHT_COLOR, DEFAULT_LIGHT_DIR, DEFAULT_LIGHT_INTENSITY,
+    DEFAULT_SHADOW_DARKNESS,
+};
 
 impl State {
     /// `is_embed`: si es true, fuerza el backend GL/EGL en vez de Vulkan.
@@ -82,20 +86,89 @@ impl State {
         let depth_view = create_depth_texture(&device, &config);
 
         let camera = Camera::new();
-        let uniforms = build_scene_uniforms(&camera, size);
+        let aspect = size.width as f32 / size.height as f32;
+        let p = camera.position();
+        let uniforms = SceneUniforms {
+            view_proj: camera.to_uniform(aspect).view_proj,
+            cam_pos: [p.x, p.y, p.z, 0.0],
+            light_dir: [
+                DEFAULT_LIGHT_DIR.x,
+                DEFAULT_LIGHT_DIR.y,
+                DEFAULT_LIGHT_DIR.z,
+                DEFAULT_LIGHT_AMBIENT,
+            ],
+            light_color: [
+                DEFAULT_LIGHT_COLOR.x,
+                DEFAULT_LIGHT_COLOR.y,
+                DEFAULT_LIGHT_COLOR.z,
+                1.0,
+            ],
+            light_view_proj: glam::Mat4::IDENTITY.to_cols_array_2d(),
+            light_params: [
+                DEFAULT_LIGHT_INTENSITY,
+                DEFAULT_SHADOW_DARKNESS,
+                0.0,
+                0.0,
+            ],
+        };
 
+        let scene_uniform_size =
+            std::num::NonZeroU64::new(std::mem::size_of::<SceneUniforms>() as u64);
+        let shadow_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("shadow-map"),
+            size: wgpu::Extent3d {
+                width: SHADOW_MAP_SIZE,
+                height: SHADOW_MAP_SIZE,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: DEPTH_FORMAT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let shadow_map_view =
+            shadow_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let shadow_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("shadow-sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            compare: Some(wgpu::CompareFunction::LessEqual),
+            ..Default::default()
+        });
         let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("scene-bgl"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: scene_uniform_size,
+                    },
+                    count: None,
                 },
-                count: None,
-            }],
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Depth,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison),
+                    count: None,
+                },
+            ],
         });
         let scene_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("scene-uniforms"),
@@ -105,6 +178,37 @@ impl State {
         let scene_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("scene-bg"),
             layout: &bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: scene_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&shadow_map_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(&shadow_sampler),
+                },
+            ],
+        });
+        let shadow_pass_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("shadow-pass-bgl"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: scene_uniform_size,
+                },
+                count: None,
+            }],
+        });
+        let shadow_pass_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("shadow-pass-bg"),
+            layout: &shadow_pass_bgl,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
                 resource: scene_buf.as_entire_binding(),
@@ -119,6 +223,10 @@ impl State {
                 [0.0, 0.0, 0.0, 1.0],
             ],
             cam_pos: [0.0, 0.0, 5.0, 0.0],
+            light_dir: [0.0, 1.0, 0.0, 1.0],
+            light_color: [1.0, 1.0, 1.0, 0.0],
+            light_view_proj: glam::Mat4::IDENTITY.to_cols_array_2d(),
+            light_params: [DEFAULT_LIGHT_INTENSITY, DEFAULT_SHADOW_DARKNESS, 0.0, 0.0],
         };
         let hud_scene_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("hud-scene-uniforms"),
@@ -128,10 +236,20 @@ impl State {
         let hud_scene_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("hud-scene-bg"),
             layout: &bgl,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: hud_scene_buf.as_entire_binding(),
-            }],
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: hud_scene_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&shadow_map_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(&shadow_sampler),
+                },
+            ],
         });
 
         let texture_bgl = GpuTexture::bind_group_layout(&device);
@@ -172,6 +290,11 @@ impl State {
             bind_group_layouts: &[&bgl, &texture_bgl],
             push_constant_ranges: &[],
         });
+        let shadow_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("shadow-pipeline-layout"),
+            bind_group_layouts: &[&shadow_pass_bgl],
+            push_constant_ranges: &[],
+        });
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("main-pipeline"),
             layout: Some(&pipeline_layout),
@@ -186,7 +309,7 @@ impl State {
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
                     format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    blend: None,
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
                 compilation_options: Default::default(),
@@ -201,6 +324,36 @@ impl State {
                 depth_compare: wgpu::CompareFunction::Less,
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
+
+        let shadow_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("shadow-pipeline"),
+            layout: Some(&shadow_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: "vs_shadow",
+                buffers: &[mesh::Vertex::desc(), mesh::InstanceData::desc()],
+                compilation_options: Default::default(),
+            },
+            fragment: None,
+            primitive: wgpu::PrimitiveState {
+                cull_mode: Some(wgpu::Face::Back),
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::Less,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState {
+                    constant: 3,
+                    slope_scale: 2.5,
+                    clamp: 0.0,
+                },
             }),
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
@@ -405,9 +558,13 @@ impl State {
             },
             render_pipeline,
             render_pipeline_2d,
+            shadow_pipeline,
+            _shadow_texture: shadow_texture,
+            shadow_map_view,
             depth_view,
             scene_buffer: scene_buf,
             scene_bind_group: scene_bg,
+            shadow_pass_bind_group,
             hud_scene_bind_group: hud_scene_bg,
             atlas,
             uv_rects,
@@ -508,6 +665,12 @@ impl State {
             autosave_last_tick: Instant::now(),
             save_registry: EntitySaveRegistry::new(),
             target_fps: 60,
+            sun_entity: None,
+            directional_light_dir: DEFAULT_LIGHT_DIR.normalize(),
+            directional_light_color: DEFAULT_LIGHT_COLOR,
+            directional_light_ambient: DEFAULT_LIGHT_AMBIENT,
+            light_intensity: DEFAULT_LIGHT_INTENSITY,
+            shadow_darkness: DEFAULT_SHADOW_DARKNESS,
         }
     }
 }

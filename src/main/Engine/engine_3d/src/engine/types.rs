@@ -49,4 +49,13 @@ pub(crate) const AUTOSAVE_INTERVAL: Duration = Duration::from_secs(5 * 60);
 pub(crate) struct SceneUniforms {
     pub(crate) view_proj: [[f32; 4]; 4],
     pub(crate) cam_pos: [f32; 4],
+    /// xyz = hacia el sol, w = ambiente 0–1.
+    pub(crate) light_dir: [f32; 4],
+    /// rgb = color de luz; w > 0.5 activa sombras proyectadas.
+    pub(crate) light_color: [f32; 4],
+    pub(crate) light_view_proj: [[f32; 4]; 4],
+    /// x = intensidad, y = oscuridad en sombra (factor mínimo).
+    pub(crate) light_params: [f32; 4],
 }
+
+pub(crate) const SHADOW_MAP_SIZE: u32 = 2048;

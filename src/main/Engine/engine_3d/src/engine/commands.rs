@@ -236,6 +236,23 @@ impl State {
             } => {
                 self.spawn_editor_box(&name, position, scale);
             }
+            EngineCommand::SpawnSun {
+                name,
+                position,
+                scale,
+            } => {
+                self.spawn_sun(&name, position, scale);
+            }
+            EngineCommand::SpawnGround { position, scale } => {
+                self.spawn_ground_plane(position, scale);
+            }
+            EngineCommand::SetDirectionalLight {
+                ambient,
+                intensity,
+                shadow_darkness,
+            } => {
+                self.apply_directional_light_settings(ambient, intensity, shadow_darkness);
+            }
             EngineCommand::SetPlayCharacterSpawn {
                 position,
                 yaw,
@@ -262,6 +279,7 @@ impl State {
                 use glam::{Quat, Vec3};
                 let before = self.world.get::<Transform>(id).cloned();
                 let is_play_character = self.play_character_entity == Some(id);
+                let update_camera_target = self.editor_camera_follows_player();
 
                 if is_play_character {
                     if let Some(before_t) = before.as_ref() {
@@ -293,19 +311,23 @@ impl State {
                             transform.position = center;
                             transform.rotation = new_rot;
                             transform.scale = new_scale;
-                            self.camera.target = feet;
+                            if update_camera_target {
+                                self.camera.target = feet;
+                            }
                         } else {
                             if let Some(p) = position {
                                 transform.position = Vec3::from_array(p);
                             }
                             transform.rotation = new_rot;
                             transform.scale = new_scale;
-                            self.camera.target =
-                                crate::config_3d::character_anchor::feet_from_transform(
-                                    transform.position,
-                                    transform.scale.y,
-                                    transform.rotation,
-                                );
+                            if update_camera_target {
+                                self.camera.target =
+                                    crate::config_3d::character_anchor::feet_from_transform(
+                                        transform.position,
+                                        transform.scale.y,
+                                        transform.rotation,
+                                    );
+                            }
                         }
                     }
                     }
@@ -319,6 +341,10 @@ impl State {
                     if let Some(s) = scale {
                         transform.scale = Vec3::from(s);
                     }
+                }
+
+                if self.sun_entity == Some(id) {
+                    self.sync_directional_light_from_sun();
                 }
 
                 if let Some(saved) = self.anim_saved_transforms.get_mut(&id) {
@@ -597,6 +623,9 @@ impl State {
                 self.control_bindings_by_entity.remove(&id);
                 self.script_engine.detach_entity(id);
                 self.save_registry.remove_entity(id);
+                if self.sun_entity == Some(id) {
+                    self.sun_entity = None;
+                }
                 self.world.despawn(id);
                 send_event(&EngineEvent::EntityRemoved {
                     id,

@@ -104,6 +104,11 @@ pub fn create_unit_quad_xy(device: &wgpu::Device) -> Mesh {
 // ---------------------------------------------------------------------------
 // Per-instance data for the instanced rendering pipeline
 // ---------------------------------------------------------------------------
+
+/// Tooltips/HUD en PNG: UV completas, sin Lambert; alpha = tex.a × flag_pad.y (shader ≥ 2.5).
+pub const RENDER_KIND_HUD_OVERLAY: f32 = 3.0;
+
+// ---------------------------------------------------------------------------
 /// Data uploaded per draw instance to the GPU.
 ///
 /// Layout (96 bytes):

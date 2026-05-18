@@ -47,10 +47,20 @@ impl State {
             });
 
         {
+            if self.camera_2d.is_none() {
+                self.sync_directional_light_from_sun();
+            }
             let scene_uni = if let Some(cam2d) = &self.camera_2d {
                 build_scene_uniforms_2d(cam2d, self.size)
             } else {
-                build_scene_uniforms(&self.camera, self.size)
+                build_scene_uniforms(
+                    &self.camera,
+                    self.size,
+                    self.scene_light_dir(),
+                    self.scene_light_color(),
+                    self.build_light_view_proj(),
+                    self.scene_light_params(),
+                )
             };
             self.queue
                 .write_buffer(&self.scene_buffer, 0, bytemuck::cast_slice(&[scene_uni]));
@@ -66,18 +76,24 @@ impl State {
             .query2::<crate::ecs::MeshComponent, crate::ecs::Transform>()
             .filter_map(|(id, mc, t)| {
                 if self.preview_playing
-                    && self.play_character_entity == Some(id)
+                    && (self.play_character_entity == Some(id)
+                        || self.sun_entity == Some(id))
                 {
                     return None;
                 }
                 let mesh_idx = mc.mesh_idx;
                 let tex_idx = mc.tex_idx;
+                let is_sun = self.sun_entity == Some(id);
+                // El sol vive lejos del origen (luz direccional); no recortar por caja del mundo ni frustum.
                 if self.camera_2d.is_none()
+                    && !is_sun
                     && !self.world_bounds_3d.intersects_aabb(t.position, t.scale)
                 {
                     return None;
                 }
-                let visible = if let Some(cam2d) = &self.camera_2d {
+                let visible = if is_sun {
+                    true
+                } else if let Some(cam2d) = &self.camera_2d {
                     is_visible_2d(cam2d, t.position, t.scale, aspect_fc)
                 } else if let Some(vp) = &frustum_vp_3d {
                     let radius = t.scale.x.abs().max(t.scale.y.abs()).max(t.scale.z.abs()) * 0.87;
@@ -174,6 +190,77 @@ impl State {
                 })
             })
             .collect();
+
+        if self.camera_2d.is_none() {
+            let mut shadow_batches: Vec<Batch> = Vec::new();
+            for (entity_id, mesh_idx, _tex_idx, model_matrix, _layer, _z) in &entities {
+                if self.sun_entity == Some(*entity_id) {
+                    continue;
+                }
+                if self.preview_playing
+                    && (self.collider_entities.contains(entity_id)
+                        || self.execution_area_entities.contains(entity_id))
+                {
+                    continue;
+                }
+                let inst =
+                    crate::mesh::InstanceData::new(*model_matrix, 0.0, self.fallback_uv);
+                let can_extend = shadow_batches
+                    .last()
+                    .map_or(false, |b| b.mesh_idx == *mesh_idx);
+                if can_extend {
+                    shadow_batches.last_mut().unwrap().instances.push(inst);
+                } else {
+                    shadow_batches.push(Batch {
+                        mesh_idx: *mesh_idx,
+                        instances: vec![inst],
+                    });
+                }
+            }
+            let shadow_instance_buffers: Vec<wgpu::Buffer> = shadow_batches
+                .iter()
+                .map(|b| {
+                    use wgpu::util::DeviceExt;
+                    self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                        label: Some("shadow-inst-buf"),
+                        contents: bytemuck::cast_slice(&b.instances),
+                        usage: wgpu::BufferUsages::VERTEX,
+                    })
+                })
+                .collect();
+
+            let mut shadow_pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("shadow-pass"),
+                color_attachments: &[],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.shadow_map_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                occlusion_query_set: None,
+                timestamp_writes: None,
+            });
+            shadow_pass.set_pipeline(&self.shadow_pipeline);
+            shadow_pass.set_bind_group(0, &self.shadow_pass_bind_group, &[]);
+            for (batch, inst_buf) in shadow_batches
+                .iter()
+                .zip(shadow_instance_buffers.iter())
+            {
+                let Some(mesh) = self.meshes.get(batch.mesh_idx) else {
+                    continue;
+                };
+                shadow_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
+                shadow_pass.set_vertex_buffer(1, inst_buf.slice(..));
+                shadow_pass.set_index_buffer(
+                    mesh.index_buffer.slice(..),
+                    wgpu::IndexFormat::Uint32,
+                );
+                shadow_pass.draw_indexed(0..mesh.index_count, 0, 0..batch.instances.len() as u32);
+            }
+        }
 
         {
             let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -581,13 +668,24 @@ pub(crate) fn create_depth_texture(
     tex.create_view(&wgpu::TextureViewDescriptor::default())
 }
 
-pub(crate) fn build_scene_uniforms(camera: &Camera, size: PhysicalSize<u32>) -> SceneUniforms {
+pub(crate) fn build_scene_uniforms(
+    camera: &Camera,
+    size: PhysicalSize<u32>,
+    light_dir: [f32; 4],
+    light_color: [f32; 4],
+    light_view_proj: [[f32; 4]; 4],
+    light_params: [f32; 4],
+) -> SceneUniforms {
     let aspect = size.width as f32 / size.height as f32;
     let view_proj = camera.to_uniform(aspect).view_proj;
     let p = camera.position();
     SceneUniforms {
         view_proj,
         cam_pos: [p.x, p.y, p.z, 0.0],
+        light_dir,
+        light_color,
+        light_view_proj,
+        light_params,
     }
 }
 
@@ -598,6 +696,10 @@ pub(crate) fn build_scene_uniforms_2d(cam: &Camera2D, size: PhysicalSize<u32>) -
     SceneUniforms {
         view_proj,
         cam_pos: [p.x, p.y, p.z, 0.0],
+        light_dir: [0.0, 1.0, 0.0, 1.0],
+        light_color: [1.0, 1.0, 1.0, 0.0],
+        light_view_proj: glam::Mat4::IDENTITY.to_cols_array_2d(),
+        light_params: [1.0, 1.0, 0.0, 0.0],
     }
 }
 
