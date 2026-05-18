@@ -442,7 +442,7 @@ impl State {
         // nunca detenga el render loop ni cause drift en el timing de animaciones.
         let audio_slot = start_audio_thread();
 
-        let taa = rer_engine_shared::taa::TaaPass::new(
+        let scene_target = crate::scene_target::SceneTarget::new(
             &device,
             format,
             size.width,
@@ -461,7 +461,7 @@ impl State {
             render_pipeline_2d,
             render_pipeline_overlay,
             depth_view,
-            taa,
+            scene_target,
             scene_buffer:     scene_buf,
             scene_bind_group: scene_bg,
             atlas,

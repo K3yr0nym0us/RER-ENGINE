@@ -1,3 +1,4 @@
+mod taa;
 mod ecs;
 mod entity_save_meta;
 mod gizmo;

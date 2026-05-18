@@ -1,17 +1,26 @@
-//! TAA en máscara de sombras (3D) + TAA suave opcional en color de escena.
+//! Post-proceso 3D alineado con UE / Unity / Godot 4:
+//!
+//! 1. **G-buffer ligero (MRT):** `ambient`, `direct`, máscara de sombra, depth lineal (R32), velocity (RG16).
+//! 2. **CSM ×4** en shadow pass (matriz activa en `light_view_proj[0]`, sin push constants → GL).
+//! 3. **TAA en máscara de sombra** → **lit-composite:** `lit = ambient + direct × mix(darkness, 1, shadow)`.
+//! 4. **TAA de escena** (reproject + depth/velocity, depth vía `texture_2d` filtrable-nearest, no `textureLoad` en depth).
+//! 5. **Blit** al swapchain; overlays del editor después del blit.
+//!
+//! El slider *Shadow darkness* se aplica solo en lit-composite (CPU), no en `light_params` del forward pass.
 
 use bytemuck::{Pod, Zeroable};
 use wgpu::util::DeviceExt;
 use wgpu::{include_wgsl, Device, Queue, TextureFormat, TextureView};
 
 const SHADOW_HISTORY_BLEND: f32 = 27.0 / 32.0;
-/// Mezcla temporal suave en geometría (bordes de objetos).
 const SCENE_HISTORY_BLEND: f32 = 0.38;
+const DISOCCLUSION_THRESHOLD: f32 = 0.018;
 
 /// Máscara de sombra por píxel (1 = iluminado, 0 = sombra).
 pub const SHADOW_MASK_FORMAT: TextureFormat = TextureFormat::R32Float;
-/// Alias histórico usado por los pipelines MRT.
+/// Profundidad lineal exportada para TAA (compatible GLSL).
 pub const DEPTH_EXPORT_FORMAT: TextureFormat = SHADOW_MASK_FORMAT;
+pub const VELOCITY_FORMAT: TextureFormat = TextureFormat::Rg16Float;
 
 /// Estabilidad TAA en sombras: alta cerca (suaviza), baja lejos (menos prioridad).
 pub fn zoom_stability_distance(distance: f32) -> f32 {
@@ -28,6 +37,23 @@ pub fn zoom_stability_half_h(half_h: f32) -> f32 {
     (REF / half_h.max(0.1)).clamp(MIN, 1.0)
 }
 
+/// Jitter subpíxel Halton (2, 3) centrado en [-0.5, 0.5].
+pub fn halton_jitter(frame_index: u32) -> [f32; 2] {
+    fn halton(mut index: u32, base: u32) -> f32 {
+        let mut f = 1.0f32;
+        let mut r = 0.0f32;
+        let b = base as f32;
+        while index > 0 {
+            f /= b;
+            r += f * (index % base) as f32;
+            index /= base;
+        }
+        r
+    }
+    let i = frame_index.wrapping_add(1);
+    [halton(i, 2) - 0.5, halton(i, 3) - 0.5]
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
 struct TaaUniforms {
@@ -40,18 +66,37 @@ struct TaaUniforms {
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
-struct CompositeUniforms {
+struct SceneTaaUniforms {
+    resolution: [f32; 2],
+    blend: f32,
+    enabled: f32,
+    zoom_stability: f32,
+    jitter: [f32; 2],
+    disocclusion: f32,
+    _pad0: f32,
+    /// Alineación WGSL: `mat4x4` empieza en offset 48 (12 bytes tras `_pad0`).
+    _pad_align: [f32; 3],
+    inv_view_proj: [[f32; 4]; 4],
+    prev_view_proj: [[f32; 4]; 4],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct LitCompositeUniforms {
     shadow_darkness: f32,
     shadows_enabled: f32,
     _pad0: f32,
     _pad1: f32,
 }
 
-/// Recursos GPU: escena + TAA suave en color + TAA en sombras + composite.
+/// Recursos GPU: MRT + lit-composite + TAA sombra/escena.
 pub struct TaaPass {
     pub enabled: bool,
-    /// TAA suave en bordes de objetos (3D).
     pub scene_taa_enabled: bool,
+    ambient_view: TextureView,
+    direct_view: TextureView,
+    depth_export_view: TextureView,
+    velocity_view: TextureView,
     scene_color_view: TextureView,
     shadow_mask_view: TextureView,
     shadow_history_views: [TextureView; 2],
@@ -60,21 +105,27 @@ pub struct TaaPass {
     scene_history_index: u8,
     shadow_resolve_pipeline: wgpu::RenderPipeline,
     scene_resolve_pipeline: wgpu::RenderPipeline,
-    composite_pipeline: wgpu::RenderPipeline,
+    lit_composite_pipeline: wgpu::RenderPipeline,
     blit_pipeline: wgpu::RenderPipeline,
     shadow_resolve_bgl: wgpu::BindGroupLayout,
     scene_resolve_bgl: wgpu::BindGroupLayout,
-    composite_bgl: wgpu::BindGroupLayout,
+    lit_composite_bgl: wgpu::BindGroupLayout,
     blit_bgl: wgpu::BindGroupLayout,
     shadow_resolve_bind_group: wgpu::BindGroup,
     scene_resolve_bind_group: wgpu::BindGroup,
     taa_uniform_buffer: wgpu::Buffer,
-    composite_uniform_buffer: wgpu::Buffer,
+    scene_taa_uniform_buffer: wgpu::Buffer,
+    lit_composite_uniform_buffer: wgpu::Buffer,
     sampler: wgpu::Sampler,
     shadow_sampler: wgpu::Sampler,
     frame_index: u32,
+    pub current_jitter: [f32; 2],
     shadow_first_frame: bool,
     scene_first_frame: bool,
+    _ambient_texture: wgpu::Texture,
+    _direct_texture: wgpu::Texture,
+    _depth_export_texture: wgpu::Texture,
+    _velocity_texture: wgpu::Texture,
     _scene_color_texture: wgpu::Texture,
     _shadow_mask_texture: wgpu::Texture,
     _shadow_history_textures: [wgpu::Texture; 2],
@@ -89,8 +140,16 @@ impl TaaPass {
         width: u32,
         height: u32,
     ) -> Self {
+        let (ambient_texture, ambient_view) =
+            create_texture(device, color_format, width, height, "ambient");
+        let (direct_texture, direct_view) =
+            create_texture(device, color_format, width, height, "direct");
+        let (depth_export_texture, depth_export_view) =
+            create_texture(device, DEPTH_EXPORT_FORMAT, width, height, "depth-export");
+        let (velocity_texture, velocity_view) =
+            create_texture(device, VELOCITY_FORMAT, width, height, "velocity");
         let (scene_color_texture, scene_color_view) =
-            create_texture(device, color_format, width, height, "scene-color");
+            create_texture(device, color_format, width, height, "scene-lit");
         let (shadow_mask_texture, shadow_mask_view) =
             create_texture(device, SHADOW_MASK_FORMAT, width, height, "shadow-mask");
         let (h0, v0) = create_texture(device, SHADOW_MASK_FORMAT, width, height, "shadow-history-0");
@@ -103,7 +162,7 @@ impl TaaPass {
 
         let shadow_resolve_bgl = shadow_resolve_bind_group_layout(device);
         let scene_resolve_bgl = scene_resolve_bind_group_layout(device);
-        let composite_bgl = composite_bind_group_layout(device);
+        let lit_composite_bgl = lit_composite_bind_group_layout(device);
         let blit_bgl = blit_bind_group_layout(device);
 
         let taa_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -118,9 +177,26 @@ impl TaaPass {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
-        let composite_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("taa-composite-uniforms"),
-            contents: bytemuck::bytes_of(&CompositeUniforms {
+        let scene_taa_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("scene-taa-uniforms"),
+            contents: bytemuck::bytes_of(&SceneTaaUniforms {
+                resolution: [width.max(1) as f32, height.max(1) as f32],
+                blend: 0.0,
+                enabled: 1.0,
+                zoom_stability: 1.0,
+                jitter: [0.0; 2],
+                disocclusion: DISOCCLUSION_THRESHOLD,
+                _pad0: 0.0,
+                _pad_align: [0.0; 3],
+                inv_view_proj: glam::Mat4::IDENTITY.to_cols_array_2d(),
+                prev_view_proj: glam::Mat4::IDENTITY.to_cols_array_2d(),
+            }),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let lit_composite_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("lit-composite-uniforms"),
+            contents: bytemuck::bytes_of(&LitCompositeUniforms {
                 shadow_darkness: 0.35,
                 shadows_enabled: 1.0,
                 _pad0: 0.0,
@@ -140,15 +216,18 @@ impl TaaPass {
         let scene_resolve_bind_group = make_scene_resolve_bind_group(
             device,
             &scene_resolve_bgl,
-            &taa_uniform_buffer,
+            &scene_taa_uniform_buffer,
             &scene_color_view,
             &sv0,
+            &depth_export_view,
+            &velocity_view,
             &sampler,
+            &shadow_sampler,
         );
 
         let shadow_resolve_shader = device.create_shader_module(include_wgsl!("taa.wgsl"));
         let scene_resolve_shader = device.create_shader_module(include_wgsl!("taa_scene.wgsl"));
-        let composite_shader = device.create_shader_module(include_wgsl!("taa_composite.wgsl"));
+        let lit_composite_shader = device.create_shader_module(include_wgsl!("lit_composite.wgsl"));
         let blit_shader = device.create_shader_module(include_wgsl!("taa_blit.wgsl"));
 
         let shadow_resolve_pipeline = build_fullscreen_pipeline(
@@ -167,11 +246,11 @@ impl TaaPass {
             color_format,
             wgpu::ColorWrites::ALL,
         );
-        let composite_pipeline = build_fullscreen_pipeline(
+        let lit_composite_pipeline = build_fullscreen_pipeline(
             device,
-            &composite_bgl,
-            &composite_shader,
-            "shadow-composite",
+            &lit_composite_bgl,
+            &lit_composite_shader,
+            "lit-composite",
             color_format,
             wgpu::ColorWrites::ALL,
         );
@@ -187,6 +266,10 @@ impl TaaPass {
         Self {
             enabled: true,
             scene_taa_enabled: true,
+            ambient_view,
+            direct_view,
+            depth_export_view,
+            velocity_view,
             scene_color_view,
             shadow_mask_view,
             shadow_history_views: [v0, v1],
@@ -195,21 +278,27 @@ impl TaaPass {
             scene_history_index: 0,
             shadow_resolve_pipeline,
             scene_resolve_pipeline,
-            composite_pipeline,
+            lit_composite_pipeline,
             blit_pipeline,
             shadow_resolve_bgl,
             scene_resolve_bgl,
-            composite_bgl,
+            lit_composite_bgl,
             blit_bgl,
             shadow_resolve_bind_group,
             scene_resolve_bind_group,
             taa_uniform_buffer,
-            composite_uniform_buffer,
+            scene_taa_uniform_buffer,
+            lit_composite_uniform_buffer,
             sampler,
             shadow_sampler,
             frame_index: 0,
+            current_jitter: [0.0; 2],
             shadow_first_frame: true,
             scene_first_frame: true,
+            _ambient_texture: ambient_texture,
+            _direct_texture: direct_texture,
+            _depth_export_texture: depth_export_texture,
+            _velocity_texture: velocity_texture,
             _scene_color_texture: scene_color_texture,
             _shadow_mask_texture: shadow_mask_texture,
             _shadow_history_textures: [h0, h1],
@@ -218,16 +307,23 @@ impl TaaPass {
         }
     }
 
-    pub fn scene_color_view(&self) -> &TextureView {
-        &self.scene_color_view
+    pub(crate) fn ambient_view(&self) -> &TextureView {
+        &self.ambient_view
     }
 
-    pub fn shadow_mask_view(&self) -> &TextureView {
-        &self.shadow_mask_view
+    pub(crate) fn direct_view(&self) -> &TextureView {
+        &self.direct_view
     }
 
-    /// Alias de [`Self::shadow_mask_view`] (MRT legado).
-    pub fn depth_export_view(&self) -> &TextureView {
+    pub(crate) fn depth_export_view(&self) -> &TextureView {
+        &self.depth_export_view
+    }
+
+    pub(crate) fn velocity_view(&self) -> &TextureView {
+        &self.velocity_view
+    }
+
+    pub(crate) fn shadow_mask_view(&self) -> &TextureView {
         &self.shadow_mask_view
     }
 
@@ -238,8 +334,16 @@ impl TaaPass {
         width: u32,
         height: u32,
     ) {
+        let (ambient_texture, ambient_view) =
+            create_texture(device, color_format, width, height, "ambient");
+        let (direct_texture, direct_view) =
+            create_texture(device, color_format, width, height, "direct");
+        let (depth_export_texture, depth_export_view) =
+            create_texture(device, DEPTH_EXPORT_FORMAT, width, height, "depth-export");
+        let (velocity_texture, velocity_view) =
+            create_texture(device, VELOCITY_FORMAT, width, height, "velocity");
         let (scene_color_texture, scene_color_view) =
-            create_texture(device, color_format, width, height, "scene-color");
+            create_texture(device, color_format, width, height, "scene-lit");
         let (shadow_mask_texture, shadow_mask_view) =
             create_texture(device, SHADOW_MASK_FORMAT, width, height, "shadow-mask");
         let (h0, v0) = create_texture(device, SHADOW_MASK_FORMAT, width, height, "shadow-history-0");
@@ -248,6 +352,14 @@ impl TaaPass {
         let (s1, sv1) = create_texture(device, color_format, width, height, "scene-history-1");
 
         self.color_format = color_format;
+        self._ambient_texture = ambient_texture;
+        self.ambient_view = ambient_view;
+        self._direct_texture = direct_texture;
+        self.direct_view = direct_view;
+        self._depth_export_texture = depth_export_texture;
+        self.depth_export_view = depth_export_view;
+        self._velocity_texture = velocity_texture;
+        self.velocity_view = velocity_view;
         self._scene_color_texture = scene_color_texture;
         self.scene_color_view = scene_color_view;
         self._shadow_mask_texture = shadow_mask_texture;
@@ -273,10 +385,13 @@ impl TaaPass {
         self.scene_resolve_bind_group = make_scene_resolve_bind_group(
             device,
             &self.scene_resolve_bgl,
-            &self.taa_uniform_buffer,
+            &self.scene_taa_uniform_buffer,
             &self.scene_color_view,
             &self.scene_history_views[0],
+            &self.depth_export_view,
+            &self.velocity_view,
             &self.sampler,
+            &self.shadow_sampler,
         );
     }
 
@@ -285,9 +400,9 @@ impl TaaPass {
             self.shadow_first_frame = true;
             self.scene_first_frame = true;
         }
+        self.current_jitter = halton_jitter(self.frame_index);
     }
 
-    /// Presenta la escena (2D directo; 3D con TAA suave opcional en geometría).
     pub fn present_scene(
         &mut self,
         device: &Device,
@@ -298,9 +413,22 @@ impl TaaPass {
         zoom_stability: f32,
         width: u32,
         height: u32,
+        inv_view_proj: [[f32; 4]; 4],
+        prev_view_proj: [[f32; 4]; 4],
     ) {
+        self.run_lit_composite(device, queue, encoder, 0.35, false);
+
         if soft_scene_taa && self.enabled && self.scene_taa_enabled {
-            self.resolve_scene_soft(device, queue, encoder, zoom_stability, width, height);
+            self.resolve_scene_soft(
+                device,
+                queue,
+                encoder,
+                zoom_stability,
+                width,
+                height,
+                inv_view_proj,
+                prev_view_proj,
+            );
             let idx = self.scene_history_index as usize;
             blit(
                 encoder,
@@ -311,7 +439,6 @@ impl TaaPass {
                 &self.scene_history_views[idx],
                 swapchain_view,
             );
-            self.frame_index = self.frame_index.wrapping_add(1);
         } else {
             blit(
                 encoder,
@@ -323,9 +450,9 @@ impl TaaPass {
                 swapchain_view,
             );
         }
+        self.frame_index = self.frame_index.wrapping_add(1);
     }
 
-    /// TAA suave en escena + TAA en sombras + composite (3D con sombras).
     pub fn resolve_shadow_and_present(
         &mut self,
         device: &Device,
@@ -337,6 +464,8 @@ impl TaaPass {
         zoom_stability: f32,
         width: u32,
         height: u32,
+        inv_view_proj: [[f32; 4]; 4],
+        prev_view_proj: [[f32; 4]; 4],
     ) {
         if !shadows_enabled || !self.enabled {
             self.present_scene(
@@ -348,51 +477,88 @@ impl TaaPass {
                 zoom_stability,
                 width,
                 height,
+                inv_view_proj,
+                prev_view_proj,
             );
             return;
         }
 
+        self.resolve_shadow_mask(device, queue, encoder, zoom_stability, width, height);
+        self.run_lit_composite(device, queue, encoder, shadow_darkness, true);
+
         let use_scene_taa = self.scene_taa_enabled;
         if use_scene_taa {
-            self.resolve_scene_soft(device, queue, encoder, zoom_stability, width, height);
+            self.resolve_scene_soft(
+                device,
+                queue,
+                encoder,
+                zoom_stability,
+                width,
+                height,
+                inv_view_proj,
+                prev_view_proj,
+            );
         }
-        self.resolve_shadow_mask(device, queue, encoder, zoom_stability, width, height);
 
         let scene_idx = self.scene_history_index as usize;
-        let shadow_idx = self.shadow_history_index as usize;
-        let scene_view = if use_scene_taa {
+        let source = if use_scene_taa {
             &self.scene_history_views[scene_idx]
         } else {
             &self.scene_color_view
         };
-        let shadow_view = &self.shadow_history_views[shadow_idx];
+        blit(
+            encoder,
+            device,
+            &self.blit_pipeline,
+            &self.blit_bgl,
+            &self.sampler,
+            source,
+            swapchain_view,
+        );
+        self.frame_index = self.frame_index.wrapping_add(1);
+    }
+
+    fn run_lit_composite(
+        &self,
+        device: &Device,
+        queue: &Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        shadow_darkness: f32,
+        shadows_enabled: bool,
+    ) {
+        let shadow_idx = self.shadow_history_index as usize;
+        let shadow_view = if shadows_enabled {
+            &self.shadow_history_views[shadow_idx]
+        } else {
+            &self.shadow_mask_view
+        };
 
         queue.write_buffer(
-            &self.composite_uniform_buffer,
+            &self.lit_composite_uniform_buffer,
             0,
-            bytemuck::bytes_of(&CompositeUniforms {
+            bytemuck::bytes_of(&LitCompositeUniforms {
                 shadow_darkness,
-                shadows_enabled: 1.0,
+                shadows_enabled: if shadows_enabled { 1.0 } else { 0.0 },
                 _pad0: 0.0,
                 _pad1: 0.0,
             }),
         );
 
-        let composite_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("shadow-composite-bg"),
-            layout: &self.composite_bgl,
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("lit-composite-bg"),
+            layout: &self.lit_composite_bgl,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: self.composite_uniform_buffer.as_entire_binding(),
+                    resource: self.lit_composite_uniform_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::TextureView(scene_view),
+                    resource: wgpu::BindingResource::TextureView(&self.ambient_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                    resource: wgpu::BindingResource::TextureView(&self.direct_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
@@ -400,6 +566,10 @@ impl TaaPass {
                 },
                 wgpu::BindGroupEntry {
                     binding: 4,
+                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
                     resource: wgpu::BindingResource::Sampler(&self.shadow_sampler),
                 },
             ],
@@ -407,13 +577,11 @@ impl TaaPass {
 
         draw_fullscreen(
             encoder,
-            &self.composite_pipeline,
-            &composite_bg,
-            swapchain_view,
+            &self.lit_composite_pipeline,
+            &bind_group,
+            &self.scene_color_view,
             wgpu::LoadOp::Clear(wgpu::Color::BLACK),
         );
-
-        self.frame_index = self.frame_index.wrapping_add(1);
     }
 
     fn resolve_scene_soft(
@@ -424,7 +592,9 @@ impl TaaPass {
         zoom_stability: f32,
         width: u32,
         height: u32,
-    ) -> &TextureView {
+        inv_view_proj: [[f32; 4]; 4],
+        prev_view_proj: [[f32; 4]; 4],
+    ) {
         let read_idx = self.scene_history_index as usize;
         let write_idx = 1 - read_idx;
         let history_write = &self.scene_history_views[write_idx];
@@ -432,10 +602,13 @@ impl TaaPass {
         self.scene_resolve_bind_group = make_scene_resolve_bind_group(
             device,
             &self.scene_resolve_bgl,
-            &self.taa_uniform_buffer,
+            &self.scene_taa_uniform_buffer,
             &self.scene_color_view,
             &self.scene_history_views[read_idx],
+            &self.depth_export_view,
+            &self.velocity_view,
             &self.sampler,
+            &self.shadow_sampler,
         );
 
         let blend = if self.scene_first_frame {
@@ -444,14 +617,19 @@ impl TaaPass {
             SCENE_HISTORY_BLEND
         };
         queue.write_buffer(
-            &self.taa_uniform_buffer,
+            &self.scene_taa_uniform_buffer,
             0,
-            bytemuck::bytes_of(&TaaUniforms {
+            bytemuck::bytes_of(&SceneTaaUniforms {
                 resolution: [width.max(1) as f32, height.max(1) as f32],
                 blend,
                 enabled: 1.0,
                 zoom_stability: zoom_stability.clamp(0.0, 1.0),
-                _pad: [0.0; 3],
+                jitter: self.current_jitter,
+                disocclusion: DISOCCLUSION_THRESHOLD,
+                _pad0: 0.0,
+                _pad_align: [0.0; 3],
+                inv_view_proj,
+                prev_view_proj,
             }),
         );
 
@@ -465,7 +643,6 @@ impl TaaPass {
 
         self.scene_history_index = write_idx as u8;
         self.scene_first_frame = false;
-        history_write
     }
 
     fn resolve_shadow_mask(
@@ -476,7 +653,7 @@ impl TaaPass {
         zoom_stability: f32,
         width: u32,
         height: u32,
-    ) -> &TextureView {
+    ) {
         let read_idx = self.shadow_history_index as usize;
         let write_idx = 1 - read_idx;
         let history_write = &self.shadow_history_views[write_idx];
@@ -517,13 +694,6 @@ impl TaaPass {
 
         self.shadow_history_index = write_idx as u8;
         self.shadow_first_frame = false;
-        history_write
-    }
-
-    pub fn invalidate_history(&mut self) {
-        self.shadow_first_frame = true;
-        self.scene_first_frame = true;
-        self.frame_index = 0;
     }
 }
 
@@ -627,7 +797,10 @@ fn make_scene_resolve_bind_group(
     uniform_buffer: &wgpu::Buffer,
     curr_scene: &TextureView,
     history_scene: &TextureView,
+    depth_export: &TextureView,
+    velocity: &TextureView,
     sampler: &wgpu::Sampler,
+    depth_sampler: &wgpu::Sampler,
 ) -> wgpu::BindGroup {
     device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("scene-taa-bg"),
@@ -651,6 +824,22 @@ fn make_scene_resolve_bind_group(
             },
             wgpu::BindGroupEntry {
                 binding: 4,
+                resource: wgpu::BindingResource::Sampler(sampler),
+            },
+            wgpu::BindGroupEntry {
+                binding: 5,
+                resource: wgpu::BindingResource::TextureView(depth_export),
+            },
+            wgpu::BindGroupEntry {
+                binding: 6,
+                resource: wgpu::BindingResource::Sampler(depth_sampler),
+            },
+            wgpu::BindGroupEntry {
+                binding: 7,
+                resource: wgpu::BindingResource::TextureView(velocity),
+            },
+            wgpu::BindGroupEntry {
+                binding: 8,
                 resource: wgpu::BindingResource::Sampler(sampler),
             },
         ],
@@ -679,19 +868,24 @@ fn scene_resolve_bind_group_layout(device: &Device) -> wgpu::BindGroupLayout {
             sampler_bgl_entry(2),
             color_tex_bgl_entry(3),
             sampler_bgl_entry(4),
+            unfilterable_float_tex_bgl_entry(5),
+            non_filtering_sampler_bgl_entry(6),
+            color_tex_bgl_entry(7),
+            sampler_bgl_entry(8),
         ],
     })
 }
 
-fn composite_bind_group_layout(device: &Device) -> wgpu::BindGroupLayout {
+fn lit_composite_bind_group_layout(device: &Device) -> wgpu::BindGroupLayout {
     device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        label: Some("shadow-composite-bgl"),
+        label: Some("lit-composite-bgl"),
         entries: &[
             uniform_bgl_entry(0),
             color_tex_bgl_entry(1),
-            sampler_bgl_entry(2),
+            color_tex_bgl_entry(2),
             unfilterable_float_tex_bgl_entry(3),
-            non_filtering_sampler_bgl_entry(4),
+            sampler_bgl_entry(4),
+            non_filtering_sampler_bgl_entry(5),
         ],
     })
 }

@@ -1,17 +1,22 @@
 struct SceneUniforms {
     view_proj       : mat4x4<f32>,
+    prev_view_proj  : mat4x4<f32>,
+    inv_view_proj   : mat4x4<f32>,
     cam_pos         : vec4<f32>,
-    light_dir       : vec4<f32>,   // xyz hacia el sol, w = ambiente
-    light_color     : vec4<f32>,   // w > 0.5 → sombras proyectadas
-    light_view_proj : mat4x4<f32>,
-    light_params    : vec4<f32>,   // x=intensidad, y=oscurecer, z=1/shadow_map, w=radio PCF
+    light_dir       : vec4<f32>,
+    light_color     : vec4<f32>,
+    light_view_proj : array<mat4x4<f32>, 4>,
+    cascade_splits  : vec4<f32>,
+    light_params    : vec4<f32>,
+    jitter          : vec4<f32>,
+    shadow_bias     : vec4<f32>,
 }
 
 @group(0) @binding(0)
 var<uniform> u: SceneUniforms;
 
 @group(0) @binding(1)
-var t_shadow: texture_depth_2d;
+var t_shadow: texture_depth_2d_array;
 
 @group(0) @binding(2)
 var s_shadow: sampler_comparison;
@@ -43,38 +48,78 @@ struct VertexOutput {
     @location(4) alpha_mul       : f32,
     @location(5) render_kind     : f32,
     @location(6) uv_center       : vec2<f32>,
+    @location(7) prev_clip_pos   : vec4<f32>,
 }
 
-fn shadow_compare(uv: vec2<f32>, depth_ref: f32) -> f32 {
-    return textureSampleCompareLevel(t_shadow, s_shadow, uv, depth_ref);
+fn shadow_compare(uv: vec2<f32>, layer: u32, depth_ref: f32) -> f32 {
+    return textureSampleCompareLevel(t_shadow, s_shadow, uv, layer, depth_ref);
 }
 
-fn scene_shadow(world_pos: vec3<f32>) -> f32 {
-    let clip = u.light_view_proj * vec4<f32>(world_pos, 1.0);
+fn scene_light_dir_norm() -> vec3<f32> {
+    var l = u.light_dir.xyz;
+    if dot(l, l) < 1e-6 {
+        l = vec3<f32>(0.45, 1.0, 0.35);
+    }
+    return normalize(l);
+}
+
+fn cascade_index_for_depth(view_z: f32) -> u32 {
+    let d = abs(view_z);
+    if d < u.cascade_splits.x { return 0u; }
+    if d < u.cascade_splits.y { return 1u; }
+    if d < u.cascade_splits.z { return 2u; }
+    return 3u;
+}
+
+fn scene_shadow(world_pos: vec3<f32>, world_normal: vec3<f32>, view_z: f32) -> f32 {
+    let l = scene_light_dir_norm();
+    let n = normalize(world_normal);
+    let ndotl = max(dot(n, l), 0.0);
+    let normal_scale = u.shadow_bias.x + u.shadow_bias.y * (1.0 - ndotl);
+    let biased_pos = world_pos + n * normal_scale;
+
+    let layer = cascade_index_for_depth(view_z);
+    let clip = u.light_view_proj[layer] * vec4<f32>(biased_pos, 1.0);
     let ndc = clip.xyz / clip.w;
     var uv = ndc.xy * 0.5 + 0.5;
     uv.y = 1.0 - uv.y;
     if uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 {
         return 1.0;
     }
-    let depth_ref = ndc.z - 0.0008;
+    let slope = sqrt(max(1.0 - ndotl * ndotl, 0.0));
+    let depth_ref = ndc.z - (u.shadow_bias.z + u.shadow_bias.w * slope);
     let texel = u.light_params.z;
     let radius = u.light_params.w;
     var sum = 0.0;
     for (var oy = -1; oy <= 1; oy++) {
         for (var ox = -1; ox <= 1; ox++) {
             let off = vec2<f32>(f32(ox), f32(oy)) * texel * radius;
-            sum += shadow_compare(uv + off, depth_ref);
+            sum += shadow_compare(uv + off, layer, depth_ref);
         }
     }
     return sum / 9.0;
+}
+
+fn apply_selection_rim(color: vec3<f32>, flag: f32, world_pos: vec3<f32>, world_normal: vec3<f32>) -> vec3<f32> {
+    let v = normalize(u.cam_pos.xyz - world_pos);
+    let n = normalize(world_normal);
+    let rim_factor = pow(1.0 - max(dot(n, v), 0.0), 2.5);
+    var out_c = color;
+    if flag > 1.5 {
+        out_c = mix(out_c, vec3<f32>(0.12, 0.60, 0.88), 0.38);
+        out_c += vec3<f32>(0.15, 0.65, 0.90) * rim_factor * 1.3;
+    } else if flag > 0.5 {
+        out_c = mix(out_c, vec3<f32>(1.0, 0.75, 0.10), 0.38);
+        out_c += vec3<f32>(1.0, 0.80, 0.15) * rim_factor * 2.2;
+    }
+    return out_c;
 }
 
 @vertex
 fn vs_shadow(in: VertexInput, inst: InstanceInput) -> @builtin(position) vec4<f32> {
     let model = mat4x4<f32>(inst.model_0, inst.model_1, inst.model_2, inst.model_3);
     let world = model * vec4<f32>(in.position, 1.0);
-    return u.light_view_proj * world;
+    return u.light_view_proj[0u] * world;
 }
 
 @vertex
@@ -82,26 +127,44 @@ fn vs_main(in: VertexInput, inst: InstanceInput) -> VertexOutput {
     let model      = mat4x4<f32>(inst.model_0, inst.model_1, inst.model_2, inst.model_3);
     let world_pos4 = model * vec4<f32>(in.position, 1.0);
     var out: VertexOutput;
+    let world_pos = world_pos4.xyz;
     out.clip_pos     = u.view_proj * world_pos4;
-    out.world_pos    = world_pos4.xyz;
+    out.world_pos    = world_pos;
     out.world_normal = normalize((model * vec4<f32>(in.normal, 0.0)).xyz);
     out.uv           = inst.uv_rect.xy + in.uv * (inst.uv_rect.zw - inst.uv_rect.xy);
     out.flag         = inst.flag_pad.x;
     out.alpha_mul    = inst.flag_pad.y;
     out.render_kind  = inst.flag_pad.z;
     out.uv_center    = (inst.uv_rect.xy + inst.uv_rect.zw) * 0.5;
+    let prev_h = u.prev_view_proj * vec4<f32>(world_pos, 1.0);
+    out.prev_clip_pos = prev_h / prev_h.w;
     return out;
 }
 
 struct SceneFragOut {
-    @location(0) color  : vec4<f32>,
-    @location(1) shadow : f32,
+    @location(0) ambient : vec4<f32>,
+    @location(1) shadow  : vec4<f32>,
+    @location(2) direct  : vec4<f32>,
+    @location(3) depth   : vec4<f32>,
+    @location(4) velocity : vec4<f32>,
 }
 
 fn evaluate_scene(in: VertexOutput) -> SceneFragOut {
+    let linear_depth = in.clip_pos.z / in.clip_pos.w;
+    let curr_ndc = in.clip_pos.xy / in.clip_pos.w;
+    let prev_ndc = in.prev_clip_pos.xy / in.prev_clip_pos.w;
+    let velocity = (curr_ndc - prev_ndc) * vec2<f32>(0.5, 0.5);
+
     if in.render_kind >= 2.5 {
         let hud = textureSample(t_albedo, s_albedo, in.uv);
-        return SceneFragOut(vec4(hud.rgb, hud.a * in.alpha_mul), 1.0);
+        let c = hud.rgb;
+        return SceneFragOut(
+            vec4<f32>(c, hud.a * in.alpha_mul),
+            vec4<f32>(1.0, 0.0, 0.0, 0.0),
+            vec4<f32>(0.0, 0.0, 0.0, 0.0),
+            vec4<f32>(linear_depth, 0.0, 0.0, 0.0),
+            vec4<f32>(velocity, 0.0, 0.0),
+        );
     }
 
     var shadow = 1.0;
@@ -111,34 +174,28 @@ fn evaluate_scene(in: VertexOutput) -> SceneFragOut {
     }
     let albedo = albedo_samp.rgb;
 
-    var color = albedo;
+    var amb = albedo;
+    var dir = vec3<f32>(0.0);
     if in.render_kind < 0.5 {
         let n = normalize(in.world_normal);
-        var l = u.light_dir.xyz;
-        if dot(l, l) < 1e-6 {
-            l = vec3<f32>(0.45, 1.0, 0.35);
-        }
-        l = normalize(l);
+        let l = scene_light_dir_norm();
         let ndotl = max(dot(n, l), 0.0);
         let ambient = u.light_dir.w;
         let lc = u.light_color.xyz;
-        let shade = ambient + (1.0 - ambient) * ndotl;
+        let intensity = u.light_params.x;
+        amb = albedo * ambient * lc * intensity;
+        dir = albedo * (1.0 - ambient) * ndotl * lc * intensity;
         if u.light_color.w > 0.5 {
-            shadow = scene_shadow(in.world_pos);
+            let view_z = (u.inv_view_proj * vec4<f32>(in.world_pos, 1.0)).z;
+            shadow = scene_shadow(in.world_pos, n, view_z);
         }
-        color = albedo * shade * lc * u.light_params.x;
     }
 
-    let v = normalize(u.cam_pos.xyz - in.world_pos);
-    let n = normalize(in.world_normal);
-    let rim_factor = pow(1.0 - max(dot(n, v), 0.0), 2.5);
-    if in.flag > 1.5 {
-        color = mix(color, vec3<f32>(0.12, 0.60, 0.88), 0.38);
-        color += vec3<f32>(0.15, 0.65, 0.90) * rim_factor * 1.3;
-    } else if in.flag > 0.5 {
-        color = mix(color, vec3<f32>(1.0, 0.75, 0.10), 0.38);
-        color += vec3<f32>(1.0, 0.80, 0.15) * rim_factor * 2.2;
-    }
+    let lit = apply_selection_rim(amb + dir, in.flag, in.world_pos, in.world_normal);
+    let base = amb + dir;
+    let rim_add = lit - base;
+    amb = amb + rim_add * 0.5;
+    dir = dir + rim_add * 0.5;
 
     var out_alpha = albedo_samp.a * in.alpha_mul;
     if in.render_kind >= 0.5 {
@@ -147,7 +204,13 @@ fn evaluate_scene(in: VertexOutput) -> SceneFragOut {
         out_alpha = 1.0;
     }
 
-    return SceneFragOut(vec4<f32>(color, out_alpha), shadow);
+    return SceneFragOut(
+        vec4<f32>(amb, out_alpha),
+        vec4<f32>(shadow, 0.0, 0.0, 0.0),
+        vec4<f32>(dir, out_alpha),
+        vec4<f32>(linear_depth, 0.0, 0.0, 0.0),
+        vec4<f32>(velocity, 0.0, 0.0),
+    );
 }
 
 @fragment
@@ -157,5 +220,6 @@ fn fs_main(in: VertexOutput) -> SceneFragOut {
 
 @fragment
 fn fs_overlay(in: VertexOutput) -> @location(0) vec4<f32> {
-    return evaluate_scene(in).color;
+    let out = evaluate_scene(in);
+    return vec4<f32>(out.ambient.rgb + out.direct.rgb, out.ambient.a);
 }

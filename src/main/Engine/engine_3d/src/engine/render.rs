@@ -5,7 +5,9 @@ use crate::config_3d::Camera;
 use crate::config_compat::Camera2D;
 use crate::gizmo;
 
-use super::{SceneUniforms, State, DEPTH_FORMAT};
+use glam::Mat4;
+
+use super::{SceneUniforms, State, DEPTH_FORMAT, SHADOW_CASCADE_COUNT};
 
 impl State {
     pub fn resize(&mut self, new_size: PhysicalSize<u32>) {
@@ -52,39 +54,45 @@ impl State {
                 label: Some("render-encoder"),
             });
 
-        let (shadow_darkness, shadows_enabled, zoom_stability) = {
-            if self.camera_2d.is_none() {
-                self.sync_directional_light_from_sun();
-            }
-            let scene_uni = if let Some(cam2d) = &self.camera_2d {
-                build_scene_uniforms_2d(cam2d, self.size)
-            } else {
-                let aspect = self.size.width as f32 / self.size.height.max(1) as f32;
-                build_scene_uniforms(
-                    &self.camera,
-                    self.size,
-                    self.scene_light_dir(),
-                    self.scene_light_color(),
-                    self.build_light_view_proj(aspect),
-                    self.scene_light_params(),
-                )
-            };
-            if self.taa.enabled {
-                self.taa.begin_frame(false);
-            }
-            self.queue
-                .write_buffer(&self.scene_buffer, 0, bytemuck::cast_slice(&[scene_uni]));
-            let is_3d = self.camera_2d.is_none();
-            let zoom_stability = if let Some(cam2d) = &self.camera_2d {
-                rer_engine_shared::taa::zoom_stability_half_h(cam2d.half_h)
-            } else {
-                rer_engine_shared::taa::zoom_stability_distance(self.camera.distance)
-            };
-            let shadows_on = is_3d && scene_uni.light_color[3] > 0.5;
-            (scene_uni.light_params[1], shadows_on, zoom_stability)
+        if self.camera_2d.is_none() {
+            self.sync_directional_light_from_sun();
+        }
+        if self.taa.enabled {
+            self.taa.begin_frame(false);
+        }
+        let scene_uni = if let Some(cam2d) = &self.camera_2d {
+            build_scene_uniforms_2d(cam2d, self.size)
+        } else {
+            let aspect = self.size.width as f32 / self.size.height.max(1) as f32;
+            let (csm, splits) = self.build_csm_matrices(aspect);
+            build_scene_uniforms(
+                &self.camera,
+                self.size,
+                self.prev_view_proj,
+                self.taa.current_jitter,
+                self.scene_light_dir(),
+                self.scene_light_color(),
+                csm,
+                splits,
+                self.scene_light_params(),
+                self.scene_shadow_bias(),
+            )
         };
+        self.queue
+            .write_buffer(&self.scene_buffer, 0, bytemuck::cast_slice(&[scene_uni]));
+        let is_3d = self.camera_2d.is_none();
+        let zoom_stability = if let Some(cam2d) = &self.camera_2d {
+            crate::taa::zoom_stability_half_h(cam2d.half_h)
+        } else {
+            crate::taa::zoom_stability_distance(self.camera.distance)
+        };
+        let shadows_enabled = is_3d && scene_uni.light_color[3] > 0.5;
+        let shadow_darkness = self.shadow_darkness;
 
-        let scene_view = self.taa.scene_color_view();
+        let ambient_view = self.taa.ambient_view();
+        let direct_view = self.taa.direct_view();
+        let depth_export_view = self.taa.depth_export_view();
+        let velocity_view = self.taa.velocity_view();
         let shadow_mask_view = self.taa.shadow_mask_view();
 
         let aspect_fc = self.size.width as f32 / self.size.height as f32;
@@ -218,6 +226,9 @@ impl State {
                 if self.sun_entity == Some(*entity_id) {
                     continue;
                 }
+                if *mesh_idx == 0 {
+                    continue;
+                }
                 if self.preview_playing
                     && (self.collider_entities.contains(entity_id)
                         || self.execution_area_entities.contains(entity_id))
@@ -250,37 +261,60 @@ impl State {
                 })
                 .collect();
 
-            let mut shadow_pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("shadow-pass"),
-                color_attachments: &[],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.shadow_map_view,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
-                        store: wgpu::StoreOp::Store,
-                    }),
-                    stencil_ops: None,
-                }),
-                occlusion_query_set: None,
-                timestamp_writes: None,
-            });
-            shadow_pass.set_pipeline(&self.shadow_pipeline);
-            shadow_pass.set_bind_group(0, &self.shadow_pass_bind_group, &[]);
-            for (batch, inst_buf) in shadow_batches
-                .iter()
-                .zip(shadow_instance_buffers.iter())
-            {
-                let Some(mesh) = self.meshes.get(batch.mesh_idx) else {
-                    continue;
-                };
-                shadow_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
-                shadow_pass.set_vertex_buffer(1, inst_buf.slice(..));
-                shadow_pass.set_index_buffer(
-                    mesh.index_buffer.slice(..),
-                    wgpu::IndexFormat::Uint32,
+            for cascade in 0..SHADOW_CASCADE_COUNT {
+                let mut shadow_uni = scene_uni;
+                shadow_uni.light_view_proj[0] = scene_uni.light_view_proj[cascade as usize];
+                self.queue.write_buffer(
+                    &self.scene_buffer,
+                    0,
+                    bytemuck::cast_slice(&[shadow_uni]),
                 );
-                shadow_pass.draw_indexed(0..mesh.index_count, 0, 0..batch.instances.len() as u32);
+
+                let layer_view = self._shadow_texture.create_view(&wgpu::TextureViewDescriptor {
+                    label: Some("shadow-cascade-layer"),
+                    dimension: Some(wgpu::TextureViewDimension::D2),
+                    base_array_layer: cascade,
+                    array_layer_count: Some(1),
+                    ..Default::default()
+                });
+                let mut shadow_pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("shadow-pass"),
+                    color_attachments: &[],
+                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                        view: &layer_view,
+                        depth_ops: Some(wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(1.0),
+                            store: wgpu::StoreOp::Store,
+                        }),
+                        stencil_ops: None,
+                    }),
+                    occlusion_query_set: None,
+                    timestamp_writes: None,
+                });
+                shadow_pass.set_pipeline(&self.shadow_pipeline);
+                shadow_pass.set_bind_group(0, &self.shadow_pass_bind_group, &[]);
+                for (batch, inst_buf) in shadow_batches
+                    .iter()
+                    .zip(shadow_instance_buffers.iter())
+                {
+                    let Some(mesh) = self.meshes.get(batch.mesh_idx) else {
+                        continue;
+                    };
+                    shadow_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
+                    shadow_pass.set_vertex_buffer(1, inst_buf.slice(..));
+                    shadow_pass.set_index_buffer(
+                        mesh.index_buffer.slice(..),
+                        wgpu::IndexFormat::Uint32,
+                    );
+                    shadow_pass.draw_indexed(
+                        0..mesh.index_count,
+                        0,
+                        0..batch.instances.len() as u32,
+                    );
+                }
             }
+            self.queue
+                .write_buffer(&self.scene_buffer, 0, bytemuck::cast_slice(&[scene_uni]));
         }
 
         {
@@ -288,7 +322,7 @@ impl State {
                 label: Some("render-pass"),
                 color_attachments: &[
                     Some(wgpu::RenderPassColorAttachment {
-                        view: &scene_view,
+                        view: ambient_view,
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Clear(self.clear_color),
@@ -300,6 +334,30 @@ impl State {
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    }),
+                    Some(wgpu::RenderPassColorAttachment {
+                        view: direct_view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    }),
+                    Some(wgpu::RenderPassColorAttachment {
+                        view: depth_export_view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    }),
+                    Some(wgpu::RenderPassColorAttachment {
+                        view: velocity_view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
                             store: wgpu::StoreOp::Store,
                         },
                     }),
@@ -337,6 +395,8 @@ impl State {
             }
         }
 
+        let inv_vp = scene_uni.inv_view_proj;
+        let prev_vp = scene_uni.prev_view_proj;
         if shadows_enabled {
             self.taa.resolve_shadow_and_present(
                 &self.device,
@@ -348,9 +408,10 @@ impl State {
                 zoom_stability,
                 self.size.width,
                 self.size.height,
+                inv_vp,
+                prev_vp,
             );
         } else {
-            let is_3d = self.camera_2d.is_none();
             self.taa.present_scene(
                 &self.device,
                 &self.queue,
@@ -360,7 +421,13 @@ impl State {
                 zoom_stability,
                 self.size.width,
                 self.size.height,
+                inv_vp,
+                prev_vp,
             );
+        }
+
+        if self.camera_2d.is_none() {
+            self.prev_view_proj = scene_uni.view_proj;
         }
 
         if self.camera_2d.is_none() && self.world_bounds_buffer.vertex_count > 0 {
@@ -728,35 +795,60 @@ pub(crate) fn create_depth_texture(
 pub(crate) fn build_scene_uniforms(
     camera: &Camera,
     size: PhysicalSize<u32>,
+    prev_view_proj: [[f32; 4]; 4],
+    jitter: [f32; 2],
     light_dir: [f32; 4],
     light_color: [f32; 4],
-    light_view_proj: [[f32; 4]; 4],
+    light_view_proj: [[[f32; 4]; 4]; SHADOW_CASCADE_COUNT as usize],
+    cascade_splits: [f32; 4],
     light_params: [f32; 4],
+    shadow_bias: [f32; 4],
 ) -> SceneUniforms {
     let aspect = size.width as f32 / size.height as f32;
-    let view_proj = camera.to_uniform(aspect).view_proj;
+    let w = size.width.max(1) as f32;
+    let h = size.height.max(1) as f32;
+    let view = camera.view_matrix();
+    let mut proj = camera.proj_matrix(aspect);
+    proj.x_axis.z += jitter[0] * 2.0 / w;
+    proj.y_axis.z += jitter[1] * 2.0 / h;
+    let vp = proj * view;
+    let view_proj = vp.to_cols_array_2d();
+    let inv_view_proj = vp.inverse().to_cols_array_2d();
     let p = camera.position();
     SceneUniforms {
         view_proj,
+        prev_view_proj,
+        inv_view_proj,
         cam_pos: [p.x, p.y, p.z, 0.0],
         light_dir,
         light_color,
         light_view_proj,
+        cascade_splits,
         light_params,
+        jitter: [jitter[0], jitter[1], 0.0, 0.0],
+        shadow_bias,
     }
 }
 
 pub(crate) fn build_scene_uniforms_2d(cam: &Camera2D, size: PhysicalSize<u32>) -> SceneUniforms {
     let aspect = size.width as f32 / size.height as f32;
     let view_proj = cam.view_proj(aspect).to_cols_array_2d();
+    let identity = Mat4::IDENTITY.to_cols_array_2d();
     let p = cam.position();
     SceneUniforms {
         view_proj,
+        prev_view_proj: identity,
+        inv_view_proj: Mat4::from_cols_array_2d(&view_proj)
+            .inverse()
+            .to_cols_array_2d(),
         cam_pos: [p.x, p.y, p.z, 0.0],
         light_dir: [0.0, 1.0, 0.0, 1.0],
         light_color: [1.0, 1.0, 1.0, 0.0],
-        light_view_proj: glam::Mat4::IDENTITY.to_cols_array_2d(),
+        light_view_proj: [identity; SHADOW_CASCADE_COUNT as usize],
+        cascade_splits: [f32::MAX; 4],
         light_params: [1.0, 1.0, 0.0, 0.0],
+        jitter: [0.0; 4],
+        shadow_bias: [0.0; 4],
     }
 }
 

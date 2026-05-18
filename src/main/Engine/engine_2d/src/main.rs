@@ -1,6 +1,7 @@
 mod ecs;
 mod entity_save_meta;
 mod engine;
+mod scene_target;
 mod gizmo;
 mod ipc;
 mod mesh;

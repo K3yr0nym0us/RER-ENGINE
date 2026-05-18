@@ -1,5 +1,3 @@
-pub mod taa;
-
 /// Magnitud de gravedad por defecto del mundo (m/s², positiva = hacia abajo).
 pub const DEFAULT_GRAVITY_MAGNITUDE: f32 = 15.0;
 

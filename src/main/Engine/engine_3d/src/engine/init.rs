@@ -15,7 +15,10 @@ use crate::mesh;
 use crate::scripting::ScriptEngine;
 use crate::texture::GpuTexture;
 
-use super::{create_depth_texture, start_audio_thread, SceneUniforms, State, DEPTH_FORMAT, SHADOW_MAP_SIZE};
+use super::{
+    create_depth_texture, start_audio_thread, SceneUniforms, State, DEPTH_FORMAT,
+    SHADOW_CASCADE_COUNT, SHADOW_CASCADE_SIZE,
+};
 use crate::config_3d::directional_light::{
     DEFAULT_LIGHT_AMBIENT, DEFAULT_LIGHT_COLOR, DEFAULT_LIGHT_DIR, DEFAULT_LIGHT_INTENSITY,
     DEFAULT_SHADOW_DARKNESS,
@@ -88,8 +91,11 @@ impl State {
         let camera = Camera::new();
         let aspect = size.width as f32 / size.height as f32;
         let p = camera.position();
+        let identity_vp = glam::Mat4::IDENTITY.to_cols_array_2d();
         let uniforms = SceneUniforms {
             view_proj: camera.to_uniform(aspect).view_proj,
+            prev_view_proj: identity_vp,
+            inv_view_proj: identity_vp,
             cam_pos: [p.x, p.y, p.z, 0.0],
             light_dir: [
                 DEFAULT_LIGHT_DIR.x,
@@ -103,23 +109,31 @@ impl State {
                 DEFAULT_LIGHT_COLOR.z,
                 1.0,
             ],
-            light_view_proj: glam::Mat4::IDENTITY.to_cols_array_2d(),
+            light_view_proj: [identity_vp; SHADOW_CASCADE_COUNT as usize],
+            cascade_splits: [f32::MAX; 4],
             light_params: [
                 DEFAULT_LIGHT_INTENSITY,
-                DEFAULT_SHADOW_DARKNESS,
                 0.0,
-                0.0,
+                1.0 / SHADOW_CASCADE_SIZE as f32,
+                1.0,
+            ],
+            jitter: [0.0; 4],
+            shadow_bias: [
+                crate::config_3d::directional_light::SHADOW_NORMAL_BIAS_MIN,
+                crate::config_3d::directional_light::SHADOW_NORMAL_BIAS_MAX,
+                crate::config_3d::directional_light::SHADOW_DEPTH_BIAS_CONST,
+                crate::config_3d::directional_light::SHADOW_DEPTH_BIAS_SLOPE,
             ],
         };
 
         let scene_uniform_size =
             std::num::NonZeroU64::new(std::mem::size_of::<SceneUniforms>() as u64);
         let shadow_texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("shadow-map"),
+            label: Some("shadow-map-csm"),
             size: wgpu::Extent3d {
-                width: SHADOW_MAP_SIZE,
-                height: SHADOW_MAP_SIZE,
-                depth_or_array_layers: 1,
+                width: SHADOW_CASCADE_SIZE,
+                height: SHADOW_CASCADE_SIZE,
+                depth_or_array_layers: SHADOW_CASCADE_COUNT,
             },
             mip_level_count: 1,
             sample_count: 1,
@@ -128,8 +142,12 @@ impl State {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         });
-        let shadow_map_view =
-            shadow_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let shadow_map_view = shadow_texture.create_view(&wgpu::TextureViewDescriptor {
+            label: Some("shadow-map-array"),
+            dimension: Some(wgpu::TextureViewDimension::D2Array),
+            array_layer_count: Some(SHADOW_CASCADE_COUNT),
+            ..Default::default()
+        });
         let shadow_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("shadow-sampler"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
@@ -157,7 +175,7 @@ impl State {
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Texture {
                         sample_type: wgpu::TextureSampleType::Depth,
-                        view_dimension: wgpu::TextureViewDimension::D2,
+                        view_dimension: wgpu::TextureViewDimension::D2Array,
                         multisampled: false,
                     },
                     count: None,
@@ -216,17 +234,17 @@ impl State {
         });
 
         let hud_identity = SceneUniforms {
-            view_proj: [
-                [1.0, 0.0, 0.0, 0.0],
-                [0.0, 1.0, 0.0, 0.0],
-                [0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 1.0],
-            ],
+            view_proj: identity_vp,
+            prev_view_proj: identity_vp,
+            inv_view_proj: identity_vp,
             cam_pos: [0.0, 0.0, 5.0, 0.0],
             light_dir: [0.0, 1.0, 0.0, 1.0],
             light_color: [1.0, 1.0, 1.0, 0.0],
-            light_view_proj: glam::Mat4::IDENTITY.to_cols_array_2d(),
-            light_params: [DEFAULT_LIGHT_INTENSITY, DEFAULT_SHADOW_DARKNESS, 0.0, 0.0],
+            light_view_proj: [identity_vp; SHADOW_CASCADE_COUNT as usize],
+            cascade_splits: [f32::MAX; 4],
+            light_params: [DEFAULT_LIGHT_INTENSITY, 0.0, 0.0, 0.0],
+            jitter: [0.0; 4],
+            shadow_bias: [0.0; 4],
         };
         let hud_scene_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("hud-scene-uniforms"),
@@ -286,10 +304,35 @@ impl State {
 
         let shader = device.create_shader_module(include_wgsl!("../shader.wgsl"));
         let shadow_mask_target = Some(wgpu::ColorTargetState {
-            format:     rer_engine_shared::taa::SHADOW_MASK_FORMAT,
-            blend:      None,
+            format: crate::taa::SHADOW_MASK_FORMAT,
+            blend: None,
             write_mask: wgpu::ColorWrites::RED,
         });
+        let depth_export_target = Some(wgpu::ColorTargetState {
+            format: crate::taa::DEPTH_EXPORT_FORMAT,
+            blend: None,
+            write_mask: wgpu::ColorWrites::RED,
+        });
+        let velocity_target = Some(wgpu::ColorTargetState {
+            format: crate::taa::VELOCITY_FORMAT,
+            blend: None,
+            write_mask: wgpu::ColorWrites::ALL,
+        });
+        let mrt_targets = [
+            Some(wgpu::ColorTargetState {
+                format,
+                blend: None,
+                write_mask: wgpu::ColorWrites::ALL,
+            }),
+            shadow_mask_target.clone(),
+            Some(wgpu::ColorTargetState {
+                format,
+                blend: None,
+                write_mask: wgpu::ColorWrites::ALL,
+            }),
+            depth_export_target.clone(),
+            velocity_target.clone(),
+        ];
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("pipeline-layout"),
             bind_group_layouts: &[&bgl, &texture_bgl],
@@ -312,14 +355,7 @@ impl State {
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
                 entry_point: "fs_main",
-                targets: &[
-                    Some(wgpu::ColorTargetState {
-                        format,
-                        blend: None,
-                        write_mask: wgpu::ColorWrites::ALL,
-                    }),
-                    shadow_mask_target.clone(),
-                ],
+                targets: &mrt_targets,
                 compilation_options: Default::default(),
             }),
             primitive: wgpu::PrimitiveState {
@@ -386,7 +422,14 @@ impl State {
                         blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                         write_mask: wgpu::ColorWrites::ALL,
                     }),
-                    shadow_mask_target,
+                    shadow_mask_target.clone(),
+                    Some(wgpu::ColorTargetState {
+                        format,
+                        blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    }),
+                    depth_export_target,
+                    velocity_target,
                 ],
                 compilation_options: Default::default(),
             }),
@@ -589,7 +632,7 @@ impl State {
 
         let audio_slot = start_audio_thread();
 
-        let taa = rer_engine_shared::taa::TaaPass::new(
+        let taa = crate::taa::TaaPass::new(
             &device,
             format,
             size.width,
@@ -614,9 +657,9 @@ impl State {
             render_pipeline_overlay,
             shadow_pipeline,
             _shadow_texture: shadow_texture,
-            shadow_map_view,
             depth_view,
             taa,
+            prev_view_proj: identity_vp,
             scene_buffer: scene_buf,
             scene_bind_group: scene_bg,
             shadow_pass_bind_group,

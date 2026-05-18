@@ -30,9 +30,9 @@ pub struct State {
     pub(crate) render_pipeline_overlay: wgpu::RenderPipeline,
     pub(crate) shadow_pipeline: wgpu::RenderPipeline,
     pub(crate) _shadow_texture: wgpu::Texture,
-    pub(crate) shadow_map_view: wgpu::TextureView,
     pub(crate) depth_view: wgpu::TextureView,
-    pub(crate) taa: rer_engine_shared::taa::TaaPass,
+    pub(crate) taa: crate::taa::TaaPass,
+    pub(crate) prev_view_proj: [[f32; 4]; 4],
     pub(crate) scene_buffer: wgpu::Buffer,
     pub(crate) scene_bind_group: wgpu::BindGroup,
     /// Solo uniformes; evita leer el shadow map mientras se escribe en el pase de sombras.

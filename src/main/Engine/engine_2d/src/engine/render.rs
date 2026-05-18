@@ -48,7 +48,7 @@ impl State {
             self.queue.write_buffer(&self.scene_buffer, 0, bytemuck::cast_slice(&[scene_uni]));
         }
 
-        let scene_view = self.taa.scene_color_view();
+        let scene_view = self.scene_target.scene_color_view();
 
         // ── Paso 2: recopilar entidades visibles (culling 2D + sort layer+Z) ──
         let aspect_fc = self.size.width as f32 / self.size.height as f32;
@@ -198,16 +198,7 @@ impl State {
             }
         }
 
-        self.taa.present_scene(
-            &self.device,
-            &self.queue,
-            &mut enc,
-            &view,
-            false,
-            1.0,
-            self.size.width,
-            self.size.height,
-        );
+        self.scene_target.present(&self.device, &mut enc, &view);
 
         // ── Grid pass (solo modo 2D; borde siempre visible, líneas según config) ──
         if !self.preview_playing || self.debug_mode {

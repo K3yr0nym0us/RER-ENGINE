@@ -1,15 +1,16 @@
-struct CompositeUniforms {
+struct LitCompositeUniforms {
     shadow_darkness : f32,
     shadows_enabled : f32,
     _pad0           : f32,
     _pad1           : f32,
 }
 
-@group(0) @binding(0) var<uniform> u : CompositeUniforms;
-@group(0) @binding(1) var t_scene  : texture_2d<f32>;
-@group(0) @binding(2) var s_scene  : sampler;
-@group(0) @binding(3) var t_shadow : texture_2d<f32>;
-@group(0) @binding(4) var s_shadow : sampler;
+@group(0) @binding(0) var<uniform> u : LitCompositeUniforms;
+@group(0) @binding(1) var t_ambient : texture_2d<f32>;
+@group(0) @binding(2) var t_direct  : texture_2d<f32>;
+@group(0) @binding(3) var t_shadow  : texture_2d<f32>;
+@group(0) @binding(4) var s_color   : sampler;
+@group(0) @binding(5) var s_shadow  : sampler;
 
 struct VsOut {
     @builtin(position) pos : vec4<f32>,
@@ -33,11 +34,12 @@ fn vs_main(@builtin(vertex_index) vi : u32) -> VsOut {
 
 @fragment
 fn fs_main(in : VsOut) -> @location(0) vec4<f32> {
-    let scene = textureSample(t_scene, s_scene, in.uv);
+    let amb = textureSample(t_ambient, s_color, in.uv);
+    let dir = textureSample(t_direct, s_color, in.uv);
     if u.shadows_enabled < 0.5 {
-        return scene;
+        return vec4<f32>(amb.rgb + dir.rgb, amb.a);
     }
     let shadow = textureSample(t_shadow, s_shadow, in.uv).r;
     let shade = mix(u.shadow_darkness, 1.0, shadow);
-    return vec4<f32>(scene.rgb * shade, scene.a);
+    return vec4<f32>(amb.rgb + dir.rgb * shade, amb.a);
 }

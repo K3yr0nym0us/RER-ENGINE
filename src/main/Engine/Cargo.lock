@@ -2435,11 +2435,8 @@ dependencies = [
 name = "rer-engine-shared"
 version = "0.1.0"
 dependencies = [
- "bytemuck",
- "glam",
  "serde",
  "serde_json",
- "wgpu",
 ]
 
 [[package]]
