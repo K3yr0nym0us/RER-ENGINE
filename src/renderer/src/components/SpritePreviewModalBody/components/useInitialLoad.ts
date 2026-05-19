@@ -71,18 +71,19 @@ export function useInitialLoad({
     const drawOffsetX = (CANVAS_SIZE - drawWidth) / 2;
     const drawOffsetY = (CANVAS_SIZE - drawHeight) / 2;
 
-    if (initialSelectionMode === 'cell' && initialGridSize && initialGridSize > 0) {
+    if (initialSelectionMode === 'cell') {
+      const grid = initialGridSize && initialGridSize > 0 ? initialGridSize : 32;
       const offX = initialCellOffsetX ?? 0;
       const offY = initialCellOffsetY ?? 0;
       const selectedCells = initialFrames.map((frame) => ({
-        x: Math.round((drawOffsetX + frame.x * scale + offX) / initialGridSize),
-        y: Math.round((drawOffsetY + frame.y * scale + offY) / initialGridSize),
+        x: Math.round((drawOffsetX + frame.x * scale + offX) / grid),
+        y: Math.round((drawOffsetY + frame.y * scale + offY) / grid),
       }));
       dispatch({
         type: 'patch',
         payload: {
           selectionMode: 'cell',
-          gridSize: initialGridSize,
+          gridSize: grid,
           cellOffsetX: offX,
           cellOffsetY: offY,
           selectedCells,

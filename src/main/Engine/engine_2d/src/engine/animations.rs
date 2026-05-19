@@ -200,15 +200,7 @@ impl State {
             // Desenganche de scripts de animación cuando una animación no-loop termina.
             self.script_engine.detach_animation_scripts(entity_id);
             if self.preview_playing {
-                let fallback_name = self.default_animation_by_entity
-                    .get(&entity_id)
-                    .cloned()
-                    .or_else(|| {
-                        self.animations
-                            .get(&entity_id)
-                            .and_then(|m| m.keys().next().cloned())
-                    });
-                if let Some(fname) = fallback_name {
+                if let Some(fname) = self.default_animation_by_entity.get(&entity_id).cloned() {
                     // Iniciar el fallback de forma diferida (sin renderizar frame 0) para
                     // evitar el flash de 1 frame cuando un control script va a reiniciar
                     // la animación correcta en el siguiente tick del event loop.

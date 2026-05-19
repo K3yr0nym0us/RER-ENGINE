@@ -63,6 +63,7 @@ export function EngineProvider({
 		sceneBurstAwaitingPlayerViewRef: useRef(false),
 		sceneBurstPendingColliderCountRef: useRef(0),
 		blueprintsRef: useRef([]),
+		updateEntityTransformRef: useRef((_id: number, _patch: Partial<import('./types').Transform>) => {}),
 	};
 
 	const addLog = (text: string, isError = false) => {
@@ -124,6 +125,8 @@ export function EngineProvider({
 		refs.blueprintsRef.current = state.blueprints;
 	}, [state.blueprints, refs.blueprintsRef]);
 
+	refs.updateEntityTransformRef.current = actions.updateEntityTransform;
+
 	const value: EngineContextValue = {
 		...state,
 		dispatch,
@@ -168,6 +171,7 @@ export function EngineProvider({
 		updateEntityAnimations: actions.updateEntityAnimations,
 		updateEntityScripts: actions.updateEntityScripts,
 		setEntityPhysics: actions.setEntityPhysics,
+		updateEntityTransform: actions.updateEntityTransform,
 		registerPivotEditListener: actions.registerPivotEditListener,
 		unregisterPivotEditListener: actions.unregisterPivotEditListener,
 		loadSprite: actions.loadSprite,

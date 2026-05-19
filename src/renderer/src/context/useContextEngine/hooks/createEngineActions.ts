@@ -46,8 +46,9 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 	const applyInitialAnimationFrame = (entityId: number, animations?: any[]) => {
 		if (!animations || animations.length === 0) return;
 
-		const defaultAnim = animations.find((anim) => anim?.is_default) ?? animations[0];
-		const firstFrame = defaultAnim?.frames?.[0];
+		const defaultAnim = animations.find((anim) => anim?.is_default);
+		if (!defaultAnim) return;
+		const firstFrame = defaultAnim.frames?.[0];
 		if (!firstFrame?.path) return;
 
 		window.engine.send(
@@ -183,9 +184,11 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 					is_cancelable: anim.is_cancelable ?? true,
 				} as never);
 			}
-			const defaultAnim = animations.find((anim) => anim?.is_default) ?? animations[0];
+			const defaultAnim = animations.find((anim) => anim?.is_default);
 			if (defaultAnim?.name) {
 				window.engine.send({ cmd: 'set_default_animation', id: entityId, name: defaultAnim.name } as never);
+			} else {
+				window.engine.send({ cmd: 'set_default_animation', id: entityId, name: '' } as never);
 			}
 		};
 
@@ -247,6 +250,101 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 			}
 			applyScriptsToSingleEntity(id);
 		}
+	};
+
+	const applyTransformToEngine = (entityId: number, transform: Transform) => {
+		window.engine.send({
+			cmd: 'set_transform',
+			id: entityId,
+			position: transform.position,
+			rotation: transform.rotation,
+			scale: transform.scale,
+		} as never);
+	};
+
+	const refreshSelectedTransform = (entityId: number) => {
+		const meta = refs.entityMetaRef.current[entityId];
+		const tr = refs.entityTransformsRef.current[entityId];
+		if (!meta || !tr) return;
+		dispatch({
+			type: 'UPDATE_SELECTED_TRANSFORM',
+			payload: {
+				entityId,
+				position: tr.position,
+				rotation: tr.rotation,
+				scale: tr.scale,
+			},
+		});
+	};
+
+	/**
+	 * Actualiza transform de una entidad. Si pertenece a una blueprint:
+	 * - posición: solo la instancia editada
+	 * - escala / rotación: blueprint + todas las instancias vinculadas
+	 */
+	const updateEntityTransform = (
+		id: number,
+		patch: Partial<{
+			position: [number, number, number];
+			rotation: [number, number, number, number];
+			scale: [number, number, number];
+		}>,
+	) => {
+		const bpId = refs.entityMetaRef.current[id]?.blueprintId;
+		const current = refs.entityTransformsRef.current[id]
+			?? {
+				position: [0, 0, 0] as [number, number, number],
+				rotation: [0, 0, 0, 1] as [number, number, number, number],
+				scale: [1, 1, 1] as [number, number, number],
+			};
+
+		const nextForEntity: Transform = {
+			position: patch.position ?? current.position,
+			rotation: patch.rotation ?? current.rotation,
+			scale: patch.scale ?? current.scale,
+		};
+
+		const affectsBlueprintTemplate = patch.scale !== undefined || patch.rotation !== undefined;
+
+		if (!bpId || !affectsBlueprintTemplate) {
+			refs.entityTransformsRef.current[id] = nextForEntity;
+			applyTransformToEngine(id, nextForEntity);
+			refreshSelectedTransform(id);
+			return;
+		}
+
+		const updatedBlueprints = refs.blueprintsRef.current.map((bp) => {
+			if (bp.id !== bpId) return bp;
+			return {
+				...bp,
+				...(patch.scale ? { scale: patch.scale } : {}),
+				...(patch.rotation ? { rotation: patch.rotation } : {}),
+			};
+		});
+		refs.blueprintsRef.current = updatedBlueprints;
+		dispatch({ type: 'SET_BLUEPRINTS', payload: updatedBlueprints });
+
+		const bp = updatedBlueprints.find((b) => b.id === bpId);
+		const templateScale = bp?.scale ?? nextForEntity.scale;
+		const templateRotation = bp?.rotation ?? nextForEntity.rotation;
+
+		for (const [entityIdStr, meta] of Object.entries(refs.entityMetaRef.current)) {
+			if (meta.blueprintId !== bpId) continue;
+			const entityId = Number(entityIdStr);
+			const prev = refs.entityTransformsRef.current[entityId] ?? current;
+			const merged: Transform = {
+				position:
+					entityId === id && patch.position !== undefined
+						? patch.position
+						: prev.position,
+				rotation: templateRotation,
+				scale: templateScale,
+			};
+			refs.entityTransformsRef.current[entityId] = merged;
+			applyTransformToEngine(entityId, merged);
+		}
+
+		refreshSelectedTransform(id);
 	};
 
 	const setEntityPhysics = (id: number, enabled: boolean, bodyType: string) => {
@@ -380,6 +478,7 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 		updateEntityAnimations,
 		updateEntityScripts,
 		setEntityPhysics,
+		updateEntityTransform,
 		registerPivotEditListener,
 		unregisterPivotEditListener,
 		loadSprite,

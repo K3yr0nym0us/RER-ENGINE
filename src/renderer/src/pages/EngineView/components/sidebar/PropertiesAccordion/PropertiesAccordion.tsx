@@ -32,6 +32,7 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
     addBlueprint,
     multiSelectedIds,
     setEntityPhysics,
+    updateEntityTransform,
     blueprints,
   } = useContextEngine()
 
@@ -39,18 +40,17 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
   const [entityNameDraft, setEntityNameDraft] = useState('');
   const [isEditingEntityName, setIsEditingEntityName] = useState(false);
 
-  // Intercepta set_transform para mantener entityTransformsRef sincronizado
-  // sin depender del evento entity_selected (que solo llega cuando el usuario clica la entidad).
-  const handleSend = (cmd: any) => {
-    if (cmd.cmd === 'set_transform' && selectedEntity) {
-      entityTransformsRef.current[selectedEntity.id] = {
-        position: cmd.position ?? selectedEntity.position,
-        rotation: cmd.rotation ?? selectedEntity.rotation,
-        scale:    cmd.scale    ?? selectedEntity.scale,
-      };
+  const handleSend = (cmd: { cmd: string; id?: number; position?: [number, number, number]; rotation?: [number, number, number, number]; scale?: [number, number, number] }) => {
+    if (cmd.cmd === 'set_transform' && selectedEntity && cmd.id === selectedEntity.id) {
+      updateEntityTransform(selectedEntity.id, {
+        ...(cmd.position !== undefined ? { position: cmd.position } : {}),
+        ...(cmd.rotation !== undefined ? { rotation: cmd.rotation } : {}),
+        ...(cmd.scale !== undefined ? { scale: cmd.scale } : {}),
+      });
+      return;
     }
-    send(cmd)
-  }
+    send(cmd);
+  };
   
   const is2D = projectType === '2D'
   const isMultiSelect = multiSelectedIds.length > 1
@@ -278,7 +278,8 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
                 checked={physicsEnabled}
                 onChange={(e) => {
                   const next = e.target.checked
-                  setEntityPhysics(selectedEntity.id, next, physicsType)
+                  const bodyType = next && isCharacter ? 'kinematic' : physicsType
+                  setEntityPhysics(selectedEntity.id, next, bodyType)
                 }}
               />
               <label htmlFor="physics-enabled" className="form-check-label text-light small mb-0">
@@ -383,6 +384,7 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
                 kind,
                 path:             meta?.path ?? '',
                 scale:            transform?.scale ?? [1, 1, 1],
+                rotation:         transform?.rotation ?? [0, 0, 0, 1],
                 physics_enabled:  meta?.physicsEnabled,
                 physics_type:     meta?.physicsType,
                 animations:       meta?.animations,

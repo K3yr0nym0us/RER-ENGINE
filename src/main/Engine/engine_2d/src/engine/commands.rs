@@ -373,14 +373,7 @@ impl State {
                     let default_count = self.default_animation_by_entity.len();
                     log::info!("[SetPreviewPlaying] entidades con animaciones: {}, con default: {}", entities_with_anims.len(), default_count);
                     for entity_id in entities_with_anims {
-                        let default_name = self.default_animation_by_entity
-                            .get(&entity_id)
-                            .cloned()
-                            .or_else(|| {
-                                self.animations
-                                    .get(&entity_id)
-                                    .and_then(|m| m.keys().next().cloned())
-                            });
+                        let default_name = self.default_animation_by_entity.get(&entity_id).cloned();
                         if let Some(name) = default_name {
                             log::info!("[SetPreviewPlaying] iniciando animación '{}' para entidad {}", name, entity_id);
                             self.handle_command(EngineCommand::PlayAnimation { id: entity_id, name });
@@ -665,9 +658,6 @@ impl State {
                         scripts,
                         is_cancelable,
                     });
-                self.default_animation_by_entity
-                    .entry(id)
-                    .or_insert(name.clone());
                 send_event(&EngineEvent::AnimationLogicalResolved {
                     id,
                     name: name.clone(),
@@ -701,27 +691,17 @@ impl State {
                     }
                 }
 
-                // Si era la animación predeterminada, actualizar
-                if let Some(default) = self.default_animation_by_entity.get(&id) {
-                    if default == &name {
-                        // Buscar otra animación para poner como predeterminada
-                        let new_default = self.animations
-                            .get(&id)
-                            .and_then(|m| m.keys().next().cloned());
-                        match new_default {
-                            Some(new_name) => {
-                                self.default_animation_by_entity.insert(id, new_name.clone());
-                                log::debug!("[animation] Predeterminada cambiada a '{}' para entidad {}", new_name, id);
-                            }
-                            None => {
-                                self.default_animation_by_entity.remove(&id);
-                                log::debug!("[animation] Sin animaciones restantes para entidad {}", id);
-                            }
-                        }
-                    }
+                if self.default_animation_by_entity.get(&id) == Some(&name) {
+                    self.default_animation_by_entity.remove(&id);
+                    log::debug!("[animation] predeterminada eliminada al borrar '{}' (entidad {})", name, id);
                 }
             }
             EngineCommand::SetDefaultAnimation { id, name } => {
+                if name.is_empty() {
+                    self.default_animation_by_entity.remove(&id);
+                    log::debug!("[animation] sin predeterminada para entidad {}", id);
+                    return;
+                }
                 let exists = self.animations
                     .get(&id)
                     .map(|m| m.contains_key(&name))
@@ -833,15 +813,7 @@ EngineCommand::PlayAnimation { id, name } => {
                     return;
                 };
                 if self.preview_playing {
-                    let fallback_name = self.default_animation_by_entity
-                        .get(&id)
-                        .cloned()
-                        .or_else(|| {
-                            self.animations
-                                .get(&id)
-                                .and_then(|m| m.keys().next().cloned())
-                        });
-                    if let Some(name) = fallback_name {
+                    if let Some(name) = self.default_animation_by_entity.get(&id).cloned() {
                         self.show_first_frame_of_animation(id, &name);
                     } else {
                         self.restore_animation_frame(id);

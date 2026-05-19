@@ -17,6 +17,7 @@ export function BluePrintModalBody() {
     blueprints,
     setBlueprints,
     entityMetaRef,
+    entityTransformsRef,
     removeScenario,
     removeCharacter,
     removeCollider,
@@ -71,6 +72,13 @@ export function BluePrintModalBody() {
       meta.animations      = pendingDelete.animations      ?? meta.animations
       meta.scripts         = pendingDelete.scripts         ?? meta.scripts
       meta.controlBindings = pendingDelete.control_bindings ?? meta.controlBindings
+      const tr = entityTransformsRef.current[id]
+      if (tr) {
+        tr.scale = [...pendingDelete.scale] as [number, number, number]
+        if (pendingDelete.rotation) {
+          tr.rotation = [...pendingDelete.rotation] as [number, number, number, number]
+        }
+      }
       delete meta.blueprintId
     })
     setBlueprints(blueprints.filter(bp => bp.id !== pendingDelete.id))

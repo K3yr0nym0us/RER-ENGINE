@@ -12,6 +12,7 @@ import type {
 	BackgroundInfo,
 } from '@shared-types';
 import type { EntityMeta } from '../context/useContextEngine/types';
+import type { SavedAnimation } from '@shared-types';
 import { getSceneProjectState } from '../pages/EngineView/sceneStateStore';
 
 const SAVE_SNAPSHOT_TIMEOUT_MS = 15_000;
@@ -72,6 +73,27 @@ function normalizeEngineEntity(raw: EngineSaveEntitySnapshot): SavedEntity {
 	};
 }
 
+function mergeAnimationEditorMeta(
+	engineAnimations: SavedAnimation[] | undefined,
+	metaAnimations: EntityMeta['animations'],
+): SavedAnimation[] | undefined {
+	if (!engineAnimations?.length) {
+		return metaAnimations as SavedAnimation[] | undefined;
+	}
+	if (!metaAnimations?.length) return engineAnimations;
+	return engineAnimations.map((anim) => {
+		const fromMeta = metaAnimations.find((m) => m.name === anim.name);
+		if (!fromMeta) return anim;
+		return {
+			...anim,
+			...(fromMeta.selection_mode != null ? { selection_mode: fromMeta.selection_mode } : {}),
+			...(fromMeta.grid_size != null ? { grid_size: fromMeta.grid_size } : {}),
+			...(fromMeta.cell_offset_x != null ? { cell_offset_x: fromMeta.cell_offset_x } : {}),
+			...(fromMeta.cell_offset_y != null ? { cell_offset_y: fromMeta.cell_offset_y } : {}),
+		};
+	});
+}
+
 function mapEngineEntities(
 	entities: EngineSaveEntitySnapshot[],
 	entityMeta: Record<number, EntityMeta>,
@@ -80,8 +102,10 @@ function mapEngineEntities(
 		const entity = normalizeEngineEntity(raw);
 		const meta = entityMeta[entity.id];
 		if (!meta) return entity;
+		const animations = mergeAnimationEditorMeta(entity.animations, meta.animations);
 		return {
 			...entity,
+			...(animations ? { animations } : {}),
 			...(meta.blueprintId ? { blueprint_id: meta.blueprintId } : {}),
 			...(meta.entityCategory ? { entity_category: meta.entityCategory as EntityCategory } : {}),
 		};

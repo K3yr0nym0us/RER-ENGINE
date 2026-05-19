@@ -13,7 +13,7 @@ import { isEditorBoxPath, isGroundPath, isPlayerPath, isSunPath } from '@shared-
 import { buildActiveSceneSnapshotFromEngine } from '../../../defaults/buildProjectSaveFromEngine';
 import { ensurePlayCharacterOnLoad } from '../../../defaults/playCharacterSceneRestore';
 import { setSceneCommandForSavedProject } from '../../../defaults/projectSceneLoad';
-import { buildImportSceneCommand } from '../../../context/useContextEngine/hooks/buildImportSceneCommand';
+import { buildImportSceneCommand, resolveEntityTransform } from '../../../context/useContextEngine/hooks/buildImportSceneCommand';
 import {
 	beginSceneBurstLoad,
 	beginSceneImportLoading,
@@ -256,11 +256,7 @@ export function SceneTabsBar({ initialSave, projectType, gameStyle }: Props) {
     }
 
     for (const entity of scene.entities) {
-      const transform = {
-        position: entity.position,
-        rotation: entity.rotation,
-        scale: entity.scale,
-      };
+      const transform = resolveEntityTransform(entity, blueprints);
 
       if (entity.kind === 'collider' && entity.points) {
         if (burstLoad) {

@@ -75,13 +75,10 @@ export function useQuickBuildPlacement() {
       if (!bp) return
 
       const placementScale = scaleFromEngine ?? bp.scale
-
-      console.log('[quick_build] click mundo:', worldX, worldY, '| bp.path:', bp.path, '| bp.kind:', bp.kind, '| scale:', placementScale)
-
       const pending: PendingRestore = {
         transform: {
           position: [worldX, worldY, 0],
-          rotation: [0, 0, 0, 1],
+          rotation: bp.rotation ?? [0, 0, 0, 1],
           scale: placementScale,
         },
         name: bp.name,

@@ -32,6 +32,18 @@ function mapRestoreScripts(scripts: SavedScript[] | undefined) {
 	return scripts.map((s) => ({ path: s.name, source: s.source }));
 }
 
+export function resolveEntityTransform(
+	entity: SavedEntity,
+	blueprints?: BluePrintEntry[],
+): Transform {
+	const restore = resolveEntityRestore(entity, blueprints);
+	return {
+		position: entity.position,
+		rotation: restore.rotation,
+		scale: restore.scale,
+	};
+}
+
 function resolveEntityRestore(entity: SavedEntity, blueprints?: BluePrintEntry[]) {
 	const bp = entity.blueprint_id
 		? (blueprints ?? []).find((b) => b.id === entity.blueprint_id) ?? null
@@ -50,6 +62,8 @@ function resolveEntityRestore(entity: SavedEntity, blueprints?: BluePrintEntry[]
 		controlBindings: bp?.control_bindings ?? entity.control_bindings,
 		physicsEnabled,
 		physicsType,
+		scale: bp?.scale ?? entity.scale,
+		rotation: bp?.rotation ?? entity.rotation,
 	};
 }
 
@@ -67,8 +81,8 @@ export function buildImportSceneEntity(
 		...(entity.name?.trim() ? { name: entity.name } : {}),
 		transform: {
 			position: entity.position,
-			rotation: entity.rotation,
-			scale: entity.scale,
+			rotation: restore.rotation,
+			scale: restore.scale,
 		},
 		...(restore.physicsEnabled
 			? { physics: { enabled: true, body_type: restore.physicsType } }
@@ -127,11 +141,7 @@ export function syncEditorStateFromSavedScene(
 			? (blueprints ?? []).find((b) => b.id === entity.blueprint_id) ?? null
 			: null;
 		const restore = resolveEntityRestore(entity, blueprints);
-		const transform: Transform = {
-			position: entity.position,
-			rotation: entity.rotation,
-			scale: entity.scale,
-		};
+		const transform = resolveEntityTransform(entity, blueprints);
 		refs.entityTransformsRef.current[entity.id] = transform;
 
 		const meta: EntityMeta = {

@@ -50,6 +50,21 @@ const createAnimationId = () => {
 /** Placeholder hasta que el motor emita `animation_logical_resolved`. */
 const LOGICAL_PLACEHOLDER = 64;
 
+function resolveLogicalSizeForNewAnimation(
+  existing: Animation[],
+  frames: { width: number; height: number }[],
+): { logical_w: number; logical_h: number } {
+  const ref = existing.find(
+    (a) => a.logical_w > 0 && a.logical_h > 0 && a.logical_w !== LOGICAL_PLACEHOLDER,
+  ) ?? existing.find((a) => a.logical_w > 0 && a.logical_h > 0);
+  if (ref) {
+    return { logical_w: ref.logical_w, logical_h: ref.logical_h };
+  }
+  const logical_w = Math.max(1, ...frames.map((f) => f.width));
+  const logical_h = Math.max(1, ...frames.map((f) => f.height));
+  return { logical_w, logical_h };
+}
+
 export function AnimationsPanel() {
   const { t } = useTraslate();
   const { selectedEntity: entity, send, sendAsync, setAnimationPlaying, updateEntityAnimations, animationPlaying, sprites } = useContextEngine();
@@ -99,34 +114,42 @@ export function AnimationsPanel() {
           sprites={sprites}
           previewTitle={t('Configure animation')}
           onCreateEntity={({ spritePath, animation }) => {
+            const mappedFrames = animation.frames.map((f) => ({
+              path: spritePath,
+              ...(f.pivot_x != null ? { pivot_x: f.pivot_x } : {}),
+              ...(f.pivot_y != null ? { pivot_y: f.pivot_y } : {}),
+              src_x: f.x,
+              src_y: f.y,
+              src_w: f.width,
+              src_h: f.height,
+            }));
+            const { logical_w, logical_h } = resolveLogicalSizeForNewAnimation(
+              animations,
+              animation.frames,
+            );
+            const markDefault = animation.defaultAnimation === true;
             const newAnimation: Animation = {
               id: createAnimationId(),
               name: animation.name,
               fps: animation.fps,
               loop: animation.loop,
-              is_default: !animations.some((a) => a.is_default),
+              is_default: markDefault,
               is_cancelable: animation.isCancelable,
               facing_right: animation.facingRight,
-              logical_w: LOGICAL_PLACEHOLDER,
-              logical_h: LOGICAL_PLACEHOLDER,
+              logical_w,
+              logical_h,
               audio_path: animation.audioPath,
               scripts: animation.scripts,
               selection_mode: animation.selectionMode as 'cell' | 'box' | undefined,
               grid_size: animation.gridSize,
               cell_offset_x: animation.cellOffsetX,
               cell_offset_y: animation.cellOffsetY,
-              frames: animation.frames.map((f) => ({
-                path: spritePath,
-                ...(f.pivot_x != null ? { pivot_x: f.pivot_x } : {}),
-                ...(f.pivot_y != null ? { pivot_y: f.pivot_y } : {}),
-                src_x: f.x,
-                src_y: f.y,
-                src_w: f.width,
-                src_h: f.height,
-              })),
+              frames: mappedFrames,
             };
 
-            const next = [...animations, newAnimation];
+            const next = markDefault
+              ? [...animations.map((a) => ({ ...a, is_default: false })), newAnimation]
+              : [...animations, newAnimation];
             const resolved = syncAnimations(next);
             const synced = resolved.find((a) => a.name === newAnimation.name) ?? newAnimation;
             applyFirstFrame(synced);

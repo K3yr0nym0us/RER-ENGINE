@@ -19,6 +19,7 @@ interface CreateEntityFromSpriteModalBodyProps {
       audioPath?: string;
       scripts: { name: string; source: string }[];
       isCancelable: boolean;
+      defaultAnimation?: boolean;
       selectionMode?: string;
       gridSize?: number;
       cellOffsetX?: number;
@@ -64,6 +65,7 @@ export function CreateEntityFromSpriteModalBody({
                   audioPath: config.audioPath,
                   scripts: config.scripts,
                   isCancelable: config.isCancelable,
+                  defaultAnimation: config.defaultAnimation,
                   selectionMode: config.selectionMode,
                   gridSize: config.gridSize,
                   cellOffsetX: config.cellOffsetX,

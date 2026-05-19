@@ -558,6 +558,8 @@ export interface BluePrintEntry {
   kind:             'scenario' | 'character' | 'model' | 'collider' | 'execution_area' | 'directional_light'
   path:             string
   scale:            [number, number, number]
+  /** Rotación por defecto de nuevas instancias (2D: quaternion xyzw). */
+  rotation?:        [number, number, number, number]
   physics_enabled?: boolean
   /**
    * Tipo de físicas del cuerpo.

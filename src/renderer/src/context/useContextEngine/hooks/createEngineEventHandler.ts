@@ -34,8 +34,8 @@ import {
 	type PlayCharacterViewChangedEvent,
 } from '../../../defaults/playCharacterSceneRestore';
 import { setSceneCommandForSavedProject } from '../../../defaults/projectSceneLoad';
-import { buildImportSceneCommand, syncEditorStateFromSavedScene } from './buildImportSceneCommand';
-import { applyPendingRestoreMeta, sendApplyEntityRestore } from './applyPendingRestoreToEngine';
+import { buildImportSceneCommand, resolveEntityTransform, syncEditorStateFromSavedScene } from './buildImportSceneCommand';
+import { applyPendingRestoreMeta, buildPlayAnimationFrameCmd, sendApplyEntityRestore } from './applyPendingRestoreToEngine';
 import {
 	beginSceneBurstLoad,
 	beginSceneImportLoading,
@@ -299,12 +299,9 @@ export function createEngineEventHandler({
 					refs.sceneBurstPendingColliderCountRef.current = 0;
 					beginSceneBurstLoad(dispatch, refs.sceneBurstLoadInProgressRef);
 				}
+				const loadBlueprints = save.blueprints ?? refs.blueprintsRef.current;
 				for (const entity of save.entities) {
-					const transform: Transform = {
-						position: entity.position,
-						rotation: entity.rotation,
-						scale: entity.scale,
-					};
+					const transform = resolveEntityTransform(entity, loadBlueprints);
 					if (entity.kind === 'collider' && entity.points) {
 						if (burstLoad) trackSceneBurstCollider(refs);
 						sendEngine({ cmd: 'create_collider_from_points', points: entity.points, track_undo: false } as never);
@@ -668,8 +665,48 @@ export function createEngineEventHandler({
 
 		if (event.event === 'entity_selected') {
 			const selected = event as unknown as EntitySelected;
-			refs.entityTransformsRef.current[selected.id] = { position: selected.position, rotation: selected.rotation, scale: selected.scale };
 			const meta = refs.entityMetaRef.current[selected.id];
+			const bpId = meta?.blueprintId;
+			if (bpId) {
+				const bp = refs.blueprintsRef.current.find((b) => b.id === bpId);
+				if (bp) {
+					const bpRot = bp.rotation ?? [0, 0, 0, 1];
+					const scaleChanged =
+						Math.abs(selected.scale[0] - bp.scale[0]) > 1e-4
+						|| Math.abs(selected.scale[1] - bp.scale[1]) > 1e-4
+						|| Math.abs(selected.scale[2] - bp.scale[2]) > 1e-4;
+					const rotChanged =
+						Math.abs(selected.rotation[0] - bpRot[0]) > 1e-4
+						|| Math.abs(selected.rotation[1] - bpRot[1]) > 1e-4
+						|| Math.abs(selected.rotation[2] - bpRot[2]) > 1e-4
+						|| Math.abs(selected.rotation[3] - bpRot[3]) > 1e-4;
+					if (scaleChanged || rotChanged) {
+						refs.updateEntityTransformRef.current(selected.id, {
+							position: selected.position,
+							...(scaleChanged ? { scale: selected.scale } : {}),
+							...(rotChanged ? { rotation: selected.rotation } : {}),
+						});
+					} else {
+						refs.entityTransformsRef.current[selected.id] = {
+							position: selected.position,
+							rotation: selected.rotation,
+							scale: selected.scale,
+						};
+					}
+				} else {
+					refs.entityTransformsRef.current[selected.id] = {
+						position: selected.position,
+						rotation: selected.rotation,
+						scale: selected.scale,
+					};
+				}
+			} else {
+				refs.entityTransformsRef.current[selected.id] = {
+					position: selected.position,
+					rotation: selected.rotation,
+					scale: selected.scale,
+				};
+			}
 			const isPlayer = isPlayerEntity(selected.id, meta, refs.playerEntityIdRef.current);
 			const physicsEnabled = isPlayer
 				? true
@@ -1081,6 +1118,18 @@ export function createEngineEventHandler({
 				type: 'UPDATE_ENTITY_ANIMATIONS',
 				payload: { entityId: e.id, animations: meta.animations },
 			});
+
+			const anim = meta.animations.find((a: { name?: string }) => a?.name === e.name);
+			const frame = anim?.frames?.[0];
+			if (anim && frame?.path) {
+				window.engine.send(
+					buildPlayAnimationFrameCmd(
+						e.id,
+						{ logical_w: e.logical_w, logical_h: e.logical_h },
+						frame,
+					) as never,
+				);
+			}
 		}
 
 		if (event.event === 'entity_removed') {

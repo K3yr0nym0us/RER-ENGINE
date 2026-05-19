@@ -66,14 +66,20 @@ impl State {
                     is_cancelable: anim.is_cancelable,
                 });
             }
-            if let Some(default) = anims.iter().find(|a| a.is_default).or(anims.first()) {
+            if let Some(default) = anims.iter().find(|a| a.is_default) {
                 self.handle_command(EngineCommand::SetDefaultAnimation {
                     id,
                     name: default.name.clone(),
                 });
+            } else {
+                self.handle_command(EngineCommand::SetDefaultAnimation {
+                    id,
+                    name: String::new(),
+                });
             }
             if apply_initial_animation_frame {
-                if let Some(first_anim) = anims.first() {
+                let preview_anim = anims.iter().find(|a| a.is_default).or(anims.first());
+                if let Some(first_anim) = preview_anim {
                     if let Some(first_frame) = first_anim.frames.first() {
                         let (logical_w, logical_h) = self
                             .animations

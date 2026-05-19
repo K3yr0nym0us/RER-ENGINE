@@ -40,7 +40,15 @@ export interface SelectedEntity {
 			path: string
 			pivot_x: number
 			pivot_y: number
+			src_x?: number
+			src_y?: number
+			src_w?: number
+			src_h?: number
 		}[]
+		selection_mode?: 'cell' | 'box'
+		grid_size?: number
+		cell_offset_x?: number
+		cell_offset_y?: number
 	}[]
 	scripts?: { name: string; source: string }[]
 }
@@ -144,6 +152,15 @@ export type EngineAction =
 	| { type: 'SET_ANIMATION_PLAYING'; payload: { entityId: number; playing: boolean } }
 	| { type: 'UPDATE_ENTITY_ANIMATIONS'; payload: { entityId: number; animations: NonNullable<SelectedEntity['animations']> } }
 	| { type: 'UPDATE_SELECTED_PHYSICS'; payload: { entityId: number; enabled: boolean; bodyType: string } }
+	| {
+		type: 'UPDATE_SELECTED_TRANSFORM';
+		payload: {
+			entityId: number;
+			position: [number, number, number];
+			rotation: [number, number, number, number];
+			scale: [number, number, number];
+		};
+	}
 	| { type: 'ADD_SPRITE'; payload: SpriteInfo }
 	| { type: 'REMOVE_SPRITE'; payload: string }
 	| { type: 'SET_SPRITES'; payload: SpriteInfo[] }
@@ -280,6 +297,18 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 					...prevState.selectedEntity,
 					physicsEnabled: nextAction.payload.enabled,
 					physicsType: nextAction.payload.bodyType,
+				},
+			};
+		},
+		UPDATE_SELECTED_TRANSFORM: (prevState, nextAction) => {
+			if (prevState.selectedEntity?.id !== nextAction.payload.entityId) return prevState;
+			return {
+				...prevState,
+				selectedEntity: {
+					...prevState.selectedEntity,
+					position: nextAction.payload.position,
+					rotation: nextAction.payload.rotation,
+					scale: nextAction.payload.scale,
 				},
 			};
 		},
@@ -435,6 +464,9 @@ export interface EngineInternalRefs {
 	quickBuildClickListenerRef: MutableRefObject<((x: number, y: number, fitToGrid: boolean, scale?: [number, number, number]) => void) | null>
 	pendingEventsRef: MutableRefObject<Map<string, { resolve: (value: any) => void }>>
 	blueprintsRef: MutableRefObject<BluePrintEntry[]>
+	updateEntityTransformRef: MutableRefObject<
+		(id: number, patch: Partial<Transform>) => void
+	>
 	/** Escena 2D pendiente de sincronizar tras `scene_imported`. */
 	pendingImportSceneRef: MutableRefObject<import('@shared-types').SavedScene | null>
 	/** Evita duplicar estado React mientras el motor emite eventos de carga por entidad. */
@@ -493,6 +525,14 @@ export interface EngineContextValue extends EngineState {
 	updateEntityAnimations: (id: number, animations: any[]) => any[]
 	updateEntityScripts: (id: number, scripts: EntityScripts) => void
 	setEntityPhysics: (id: number, enabled: boolean, bodyType: string) => void
+	updateEntityTransform: (
+		id: number,
+		patch: Partial<Transform> & {
+			position?: [number, number, number];
+			rotation?: [number, number, number, number];
+			scale?: [number, number, number];
+		},
+	) => void
 	registerPivotEditListener: (fn: (framePath: string, px: number, py: number) => void) => void
 	unregisterPivotEditListener: () => void
 	loadSprite: (path: string, name: string) => void

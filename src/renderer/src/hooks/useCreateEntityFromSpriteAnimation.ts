@@ -25,6 +25,7 @@ interface CreateEntityFromSpriteAnimationPayload {
     audioPath?: string;
     scripts?: { name: string; source: string }[];
     isCancelable?: boolean;
+    defaultAnimation?: boolean;
     selectionMode?: 'cell' | 'box';
     gridSize?: number;
     cellOffsetX?: number;
@@ -60,7 +61,7 @@ export function useCreateEntityFromSpriteAnimation(loadCmd: LoadCmd) {
       name: payload.animation.name,
       fps: payload.animation.fps,
       loop: payload.animation.loop,
-      is_default: true,
+      is_default: payload.animation.defaultAnimation === true,
       is_cancelable: payload.animation.isCancelable ?? false,
       facing_right: payload.animation.facingRight ?? true,
       logical_w: frameLogicalW,
