@@ -110,14 +110,19 @@ impl State {
                 let mesh_idx = mc.mesh_idx;
                 let tex_idx = mc.tex_idx;
                 let is_sun = self.sun_entity == Some(id);
+                let is_ground = self
+                    .world
+                    .get::<crate::ecs::NameComponent>(id)
+                    .is_some_and(|n| n.name.eq_ignore_ascii_case("ground"));
                 // El sol vive lejos del origen (luz direccional); no recortar por caja del mundo ni frustum.
                 if self.camera_2d.is_none()
                     && !is_sun
+                    && !is_ground
                     && !self.world_bounds_3d.intersects_aabb(t.position, t.scale)
                 {
                     return None;
                 }
-                let visible = if is_sun {
+                let visible = if is_sun || is_ground {
                     true
                 } else if let Some(cam2d) = &self.camera_2d {
                     is_visible_2d(cam2d, t.position, t.scale, aspect_fc)

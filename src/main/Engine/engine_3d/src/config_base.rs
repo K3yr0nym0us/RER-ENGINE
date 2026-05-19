@@ -1,6 +1,7 @@
 // ── Escenas base 3D por código ────────────────────────────────────────────────
 
 use crate::config_3d::physics_3d::PhysicsWorld;
+use crate::config_3d::mesh_3d::GROUND_PLANE_MESH_EXTENT;
 use crate::config_3d::{Camera, WorldBounds3D};
 use crate::config_compat::{ActiveTool, PhysicsWorld2D};
 use crate::ecs::{MeshComponent, NonSelectable, Transform};
@@ -140,10 +141,7 @@ impl State {
             },
         );
         self.world.insert(plane_id, NonSelectable);
-        if let Some(t) = self.world.get_mut::<Transform>(plane_id) {
-            t.position = glam::Vec3::ZERO;
-            t.scale = glam::Vec3::new(20.0, 0.02, 20.0);
-        }
+        self.sync_ground_plane_to_world_bounds();
         self.physics.add_static_ground();
         self.save_registry.register_meta(
             plane_id,
@@ -157,16 +155,36 @@ impl State {
         self.send_model_loaded_event(plane_id, "Ground");
     }
 
-    pub(crate) fn spawn_ground_plane(&mut self, position: [f32; 3], scale: [f32; 3]) {
+    pub(crate) fn spawn_ground_plane(&mut self, position: [f32; 3], _scale: [f32; 3]) {
         self.ensure_ground_plane();
         let Some(id) = self.find_ground_entity_id() else {
             return;
         };
         if let Some(t) = self.world.get_mut::<Transform>(id) {
             t.position = glam::Vec3::from_array(position);
-            t.scale = glam::Vec3::from_array(scale);
+            t.position.y = 0.0;
         }
+        self.sync_ground_plane_to_world_bounds();
         self.send_model_loaded_event(id, "Ground");
+    }
+
+    /// Escala el mesh del suelo (40×40 local) al cuadro de límites del accordion World.
+    pub(crate) fn sync_ground_plane_to_world_bounds(&mut self) {
+        if self.camera_2d.is_some() {
+            return;
+        }
+        let Some(id) = self.find_ground_entity_id() else {
+            return;
+        };
+        let b = self.world_bounds_3d;
+        let sx = (b.width / GROUND_PLANE_MESH_EXTENT).max(0.01);
+        let sz = (b.depth / GROUND_PLANE_MESH_EXTENT).max(0.01);
+        if let Some(t) = self.world.get_mut::<Transform>(id) {
+            t.position.x = 0.0;
+            t.position.z = 0.0;
+            t.position.y = 0.0;
+            t.scale = glam::Vec3::new(sx, 0.02, sz);
+        }
     }
 
     /// Escena base del modo first-person: suelo checker y cámara a ras de editor 3D.

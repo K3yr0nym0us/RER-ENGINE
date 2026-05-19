@@ -517,9 +517,12 @@ fn texture_rgba(texture: &ufbx::Texture, fbx_dir: &Path) -> (Vec<u8>, u32, u32) 
     white_pixel()
 }
 
+/// Extensión del plano en X/Z en espacio local (antes de `Transform.scale`).
+pub(crate) const GROUND_PLANE_MESH_EXTENT: f32 = 40.0;
+
 pub(crate) fn create_ground_plane(device: &wgpu::Device) -> Mesh {
     const SEGMENTS: u32 = 20;
-    const SIZE: f32 = 40.0;
+    const SIZE: f32 = GROUND_PLANE_MESH_EXTENT;
     const UV_SCALE: f32 = 1.0;
 
     let half = SIZE / 2.0;
@@ -550,6 +553,8 @@ pub(crate) fn create_ground_plane(device: &wgpu::Device) -> Mesh {
             let bl = tl + stride;
             let br = bl + 1;
             indices.extend_from_slice(&[tl, bl, tr, tr, bl, br]);
+            // Cara opuesta: visible desde arriba (FPS) y desde abajo sin depender del cull global.
+            indices.extend_from_slice(&[tl, tr, bl, tr, br, bl]);
         }
     }
 

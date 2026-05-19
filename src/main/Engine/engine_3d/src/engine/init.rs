@@ -635,7 +635,7 @@ impl State {
             size.height,
         );
 
-        Self {
+        let mut state = Self {
             window,
             surface,
             device,
@@ -765,7 +765,9 @@ impl State {
             directional_light_ambient: DEFAULT_LIGHT_AMBIENT,
             light_intensity: DEFAULT_LIGHT_INTENSITY,
             shadow_darkness: DEFAULT_SHADOW_DARKNESS,
-        }
+        };
+        state.sync_ground_plane_to_world_bounds();
+        state
     }
 }
 

@@ -116,8 +116,16 @@ impl State {
 
     SaveSceneSnapshotPayload {
       world: SaveWorldSnapshot {
-        world_width: self.grid_config.world_width,
-        world_height: self.grid_config.world_height,
+        world_width: if self.camera_2d.is_some() {
+            self.grid_config.world_width
+        } else {
+            self.world_bounds_3d.width
+        },
+        world_height: if self.camera_2d.is_some() {
+            self.grid_config.world_height
+        } else {
+            self.world_bounds_3d.height
+        },
         world_depth: self.world_bounds_3d.depth,
         grid_visible: self.grid_config.visible,
         grid_cell_size: self.grid_config.cell_size,
