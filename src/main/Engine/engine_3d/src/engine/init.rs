@@ -17,7 +17,7 @@ use crate::texture::GpuTexture;
 
 use super::{
     create_depth_texture, start_audio_thread, SceneUniforms, State, DEPTH_FORMAT,
-    SHADOW_CASCADE_COUNT, SHADOW_CASCADE_SIZE,
+    SHADOW_MAP_SIZE,
 };
 use crate::config_3d::directional_light::{
     DEFAULT_LIGHT_AMBIENT, DEFAULT_LIGHT_COLOR, DEFAULT_LIGHT_DIR, DEFAULT_LIGHT_INTENSITY,
@@ -109,12 +109,11 @@ impl State {
                 DEFAULT_LIGHT_COLOR.z,
                 1.0,
             ],
-            light_view_proj: [identity_vp; SHADOW_CASCADE_COUNT as usize],
-            cascade_splits: [f32::MAX; 4],
+            light_view_proj: identity_vp,
             light_params: [
                 DEFAULT_LIGHT_INTENSITY,
                 0.0,
-                1.0 / SHADOW_CASCADE_SIZE as f32,
+                1.0 / SHADOW_MAP_SIZE as f32,
                 1.0,
             ],
             jitter: [0.0; 4],
@@ -129,11 +128,11 @@ impl State {
         let scene_uniform_size =
             std::num::NonZeroU64::new(std::mem::size_of::<SceneUniforms>() as u64);
         let shadow_texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("shadow-map-csm"),
+            label: Some("shadow-map"),
             size: wgpu::Extent3d {
-                width: SHADOW_CASCADE_SIZE,
-                height: SHADOW_CASCADE_SIZE,
-                depth_or_array_layers: SHADOW_CASCADE_COUNT,
+                width: SHADOW_MAP_SIZE,
+                height: SHADOW_MAP_SIZE,
+                depth_or_array_layers: 1,
             },
             mip_level_count: 1,
             sample_count: 1,
@@ -143,9 +142,7 @@ impl State {
             view_formats: &[],
         });
         let shadow_map_view = shadow_texture.create_view(&wgpu::TextureViewDescriptor {
-            label: Some("shadow-map-array"),
-            dimension: Some(wgpu::TextureViewDimension::D2Array),
-            array_layer_count: Some(SHADOW_CASCADE_COUNT),
+            label: Some("shadow-map-view"),
             ..Default::default()
         });
         let shadow_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
@@ -175,7 +172,7 @@ impl State {
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Texture {
                         sample_type: wgpu::TextureSampleType::Depth,
-                        view_dimension: wgpu::TextureViewDimension::D2Array,
+                        view_dimension: wgpu::TextureViewDimension::D2,
                         multisampled: false,
                     },
                     count: None,
@@ -240,8 +237,7 @@ impl State {
             cam_pos: [0.0, 0.0, 5.0, 0.0],
             light_dir: [0.0, 1.0, 0.0, 1.0],
             light_color: [1.0, 1.0, 1.0, 0.0],
-            light_view_proj: [identity_vp; SHADOW_CASCADE_COUNT as usize],
-            cascade_splits: [f32::MAX; 4],
+            light_view_proj: identity_vp,
             light_params: [DEFAULT_LIGHT_INTENSITY, 0.0, 0.0, 0.0],
             jitter: [0.0; 4],
             shadow_bias: [0.0; 4],

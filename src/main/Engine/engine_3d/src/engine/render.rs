@@ -7,7 +7,7 @@ use crate::gizmo;
 
 use glam::Mat4;
 
-use super::{SceneUniforms, State, DEPTH_FORMAT, SHADOW_CASCADE_COUNT};
+use super::{SceneUniforms, State, DEPTH_FORMAT};
 
 impl State {
     pub fn resize(&mut self, new_size: PhysicalSize<u32>) {
@@ -63,8 +63,6 @@ impl State {
         let scene_uni = if let Some(cam2d) = &self.camera_2d {
             build_scene_uniforms_2d(cam2d, self.size)
         } else {
-            let aspect = self.size.width as f32 / self.size.height.max(1) as f32;
-            let (csm, splits) = self.build_csm_matrices(aspect);
             build_scene_uniforms(
                 &self.camera,
                 self.size,
@@ -72,8 +70,7 @@ impl State {
                 self.taa.current_jitter,
                 self.scene_light_dir(),
                 self.scene_light_color(),
-                csm,
-                splits,
+                self.build_light_view_proj(),
                 self.scene_light_params(),
                 self.scene_shadow_bias(),
             )
@@ -261,60 +258,38 @@ impl State {
                 })
                 .collect();
 
-            for cascade in 0..SHADOW_CASCADE_COUNT {
-                let mut shadow_uni = scene_uni;
-                shadow_uni.light_view_proj[0] = scene_uni.light_view_proj[cascade as usize];
-                self.queue.write_buffer(
-                    &self.scene_buffer,
-                    0,
-                    bytemuck::cast_slice(&[shadow_uni]),
-                );
-
-                let layer_view = self._shadow_texture.create_view(&wgpu::TextureViewDescriptor {
-                    label: Some("shadow-cascade-layer"),
-                    dimension: Some(wgpu::TextureViewDimension::D2),
-                    base_array_layer: cascade,
-                    array_layer_count: Some(1),
-                    ..Default::default()
-                });
-                let mut shadow_pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("shadow-pass"),
-                    color_attachments: &[],
-                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                        view: &layer_view,
-                        depth_ops: Some(wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(1.0),
-                            store: wgpu::StoreOp::Store,
-                        }),
-                        stencil_ops: None,
+            let shadow_map_view = self._shadow_texture.create_view(&wgpu::TextureViewDescriptor {
+                label: Some("shadow-map-pass"),
+                ..Default::default()
+            });
+            let mut shadow_pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("shadow-pass"),
+                color_attachments: &[],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &shadow_map_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
                     }),
-                    occlusion_query_set: None,
-                    timestamp_writes: None,
-                });
-                shadow_pass.set_pipeline(&self.shadow_pipeline);
-                shadow_pass.set_bind_group(0, &self.shadow_pass_bind_group, &[]);
-                for (batch, inst_buf) in shadow_batches
-                    .iter()
-                    .zip(shadow_instance_buffers.iter())
-                {
-                    let Some(mesh) = self.meshes.get(batch.mesh_idx) else {
-                        continue;
-                    };
-                    shadow_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
-                    shadow_pass.set_vertex_buffer(1, inst_buf.slice(..));
-                    shadow_pass.set_index_buffer(
-                        mesh.index_buffer.slice(..),
-                        wgpu::IndexFormat::Uint32,
-                    );
-                    shadow_pass.draw_indexed(
-                        0..mesh.index_count,
-                        0,
-                        0..batch.instances.len() as u32,
-                    );
-                }
+                    stencil_ops: None,
+                }),
+                occlusion_query_set: None,
+                timestamp_writes: None,
+            });
+            shadow_pass.set_pipeline(&self.shadow_pipeline);
+            shadow_pass.set_bind_group(0, &self.shadow_pass_bind_group, &[]);
+            for (batch, inst_buf) in shadow_batches
+                .iter()
+                .zip(shadow_instance_buffers.iter())
+            {
+                let Some(mesh) = self.meshes.get(batch.mesh_idx) else {
+                    continue;
+                };
+                shadow_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
+                shadow_pass.set_vertex_buffer(1, inst_buf.slice(..));
+                shadow_pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                shadow_pass.draw_indexed(0..mesh.index_count, 0, 0..batch.instances.len() as u32);
             }
-            self.queue
-                .write_buffer(&self.scene_buffer, 0, bytemuck::cast_slice(&[scene_uni]));
         }
 
         {
@@ -799,8 +774,7 @@ pub(crate) fn build_scene_uniforms(
     jitter: [f32; 2],
     light_dir: [f32; 4],
     light_color: [f32; 4],
-    light_view_proj: [[[f32; 4]; 4]; SHADOW_CASCADE_COUNT as usize],
-    cascade_splits: [f32; 4],
+    light_view_proj: [[f32; 4]; 4],
     light_params: [f32; 4],
     shadow_bias: [f32; 4],
 ) -> SceneUniforms {
@@ -823,7 +797,6 @@ pub(crate) fn build_scene_uniforms(
         light_dir,
         light_color,
         light_view_proj,
-        cascade_splits,
         light_params,
         jitter: [jitter[0], jitter[1], 0.0, 0.0],
         shadow_bias,
@@ -844,8 +817,7 @@ pub(crate) fn build_scene_uniforms_2d(cam: &Camera2D, size: PhysicalSize<u32>) -
         cam_pos: [p.x, p.y, p.z, 0.0],
         light_dir: [0.0, 1.0, 0.0, 1.0],
         light_color: [1.0, 1.0, 1.0, 0.0],
-        light_view_proj: [identity; SHADOW_CASCADE_COUNT as usize],
-        cascade_splits: [f32::MAX; 4],
+        light_view_proj: identity,
         light_params: [1.0, 1.0, 0.0, 0.0],
         jitter: [0.0; 4],
         shadow_bias: [0.0; 4],

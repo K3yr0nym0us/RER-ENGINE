@@ -44,8 +44,7 @@ pub struct ActiveAnimation {
 pub(crate) const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 pub(crate) const AUTOSAVE_INTERVAL: Duration = Duration::from_secs(5 * 60);
 
-pub(crate) const SHADOW_CASCADE_COUNT: u32 = 4;
-pub(crate) const SHADOW_CASCADE_SIZE: u32 = 1024;
+pub(crate) const SHADOW_MAP_SIZE: u32 = 2048;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
@@ -58,8 +57,7 @@ pub(crate) struct SceneUniforms {
     pub(crate) light_dir: [f32; 4],
     /// rgb = color de luz; w > 0.5 activa sombras proyectadas.
     pub(crate) light_color: [f32; 4],
-    pub(crate) light_view_proj: [[[f32; 4]; 4]; SHADOW_CASCADE_COUNT as usize],
-    pub(crate) cascade_splits: [f32; 4],
+    pub(crate) light_view_proj: [[f32; 4]; 4],
     /// x = intensidad, z = 1/texel sombra, w = radio PCF (y sin uso en GPU).
     pub(crate) light_params: [f32; 4],
     /// xy = jitter subpíxel en espacio de proyección.

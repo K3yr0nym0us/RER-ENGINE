@@ -5,8 +5,7 @@ struct SceneUniforms {
     cam_pos         : vec4<f32>,
     light_dir       : vec4<f32>,
     light_color     : vec4<f32>,
-    light_view_proj : array<mat4x4<f32>, 4>,
-    cascade_splits  : vec4<f32>,
+    light_view_proj : mat4x4<f32>,
     light_params    : vec4<f32>,
     jitter          : vec4<f32>,
     shadow_bias     : vec4<f32>,
@@ -16,7 +15,7 @@ struct SceneUniforms {
 var<uniform> u: SceneUniforms;
 
 @group(0) @binding(1)
-var t_shadow: texture_depth_2d_array;
+var t_shadow: texture_depth_2d;
 
 @group(0) @binding(2)
 var s_shadow: sampler_comparison;
@@ -51,10 +50,6 @@ struct VertexOutput {
     @location(7) prev_clip_pos   : vec4<f32>,
 }
 
-fn shadow_compare(uv: vec2<f32>, layer: u32, depth_ref: f32) -> f32 {
-    return textureSampleCompareLevel(t_shadow, s_shadow, uv, layer, depth_ref);
-}
-
 fn scene_light_dir_norm() -> vec3<f32> {
     var l = u.light_dir.xyz;
     if dot(l, l) < 1e-6 {
@@ -63,23 +58,15 @@ fn scene_light_dir_norm() -> vec3<f32> {
     return normalize(l);
 }
 
-fn cascade_index_for_depth(view_z: f32) -> u32 {
-    let d = abs(view_z);
-    if d < u.cascade_splits.x { return 0u; }
-    if d < u.cascade_splits.y { return 1u; }
-    if d < u.cascade_splits.z { return 2u; }
-    return 3u;
-}
-
-fn scene_shadow(world_pos: vec3<f32>, world_normal: vec3<f32>, view_z: f32) -> f32 {
+fn scene_shadow(world_pos: vec3<f32>, world_normal: vec3<f32>) -> f32 {
     let l = scene_light_dir_norm();
     let n = normalize(world_normal);
     let ndotl = max(dot(n, l), 0.0);
+    // Hacia la luz: menos peter-panning en suelo que empujar por la normal del receptor.
     let normal_scale = u.shadow_bias.x + u.shadow_bias.y * (1.0 - ndotl);
-    let biased_pos = world_pos + n * normal_scale;
+    let biased_pos = world_pos + l * normal_scale;
 
-    let layer = cascade_index_for_depth(view_z);
-    let clip = u.light_view_proj[layer] * vec4<f32>(biased_pos, 1.0);
+    let clip = u.light_view_proj * vec4<f32>(biased_pos, 1.0);
     let ndc = clip.xyz / clip.w;
     var uv = ndc.xy * 0.5 + 0.5;
     uv.y = 1.0 - uv.y;
@@ -94,7 +81,7 @@ fn scene_shadow(world_pos: vec3<f32>, world_normal: vec3<f32>, view_z: f32) -> f
     for (var oy = -1; oy <= 1; oy++) {
         for (var ox = -1; ox <= 1; ox++) {
             let off = vec2<f32>(f32(ox), f32(oy)) * texel * radius;
-            sum += shadow_compare(uv + off, layer, depth_ref);
+            sum += textureSampleCompareLevel(t_shadow, s_shadow, uv + off, depth_ref);
         }
     }
     return sum / 9.0;
@@ -119,7 +106,7 @@ fn apply_selection_rim(color: vec3<f32>, flag: f32, world_pos: vec3<f32>, world_
 fn vs_shadow(in: VertexInput, inst: InstanceInput) -> @builtin(position) vec4<f32> {
     let model = mat4x4<f32>(inst.model_0, inst.model_1, inst.model_2, inst.model_3);
     let world = model * vec4<f32>(in.position, 1.0);
-    return u.light_view_proj[0u] * world;
+    return u.light_view_proj * world;
 }
 
 @vertex
@@ -186,8 +173,7 @@ fn evaluate_scene(in: VertexOutput) -> SceneFragOut {
         amb = albedo * ambient * lc * intensity;
         dir = albedo * (1.0 - ambient) * ndotl * lc * intensity;
         if u.light_color.w > 0.5 {
-            let view_z = (u.inv_view_proj * vec4<f32>(in.world_pos, 1.0)).z;
-            shadow = scene_shadow(in.world_pos, n, view_z);
+            shadow = scene_shadow(in.world_pos, n);
         }
     }
 
