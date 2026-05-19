@@ -153,11 +153,16 @@ pub struct State {
     pub(crate) target_fps: u64,
     /// Entidad icono del sol (luz direccional).
     pub(crate) sun_entity: Option<EntityId>,
+    /// Mesh y textura compartidos del icono esférico del sol.
+    pub(crate) sun_icon_mesh_idx: Option<usize>,
+    pub(crate) sun_icon_tex_idx: Option<usize>,
     pub(crate) directional_light_dir: GlamVec3,
     pub(crate) directional_light_color: GlamVec3,
     pub(crate) directional_light_ambient: f32,
     pub(crate) light_intensity: f32,
     pub(crate) shadow_darkness: f32,
+    pub(crate) scene_instance_pool: super::types::InstanceBufferPool,
+    pub(crate) shadow_instance_pool: super::types::InstanceBufferPool,
 }
 
 impl State {

@@ -27,7 +27,7 @@ struct VsOut {
 
 const RPC_9 : f32 = 1.0 / 9.0;
 const VARIANCE_BOX : f32 = 1.35;
-const SCENE_MAX_BLEND : f32 = 0.52;
+const SCENE_MAX_BLEND : f32 = 0.86;
 
 @vertex
 fn vs_main(@builtin(vertex_index) vi : u32) -> VsOut {
@@ -146,17 +146,18 @@ fn fs_main(in : VsOut) -> @location(0) vec4<f32> {
     let edge_dev = clipped.a;
     let curr = curr_samp.rgb;
 
-    let reactive = 1.0 - min(length(curr - hist) * 3.5, 1.0);
-    let vel_w = 1.0 - min(length(velocity) * 8.0, 0.85);
+    let reactive = 1.0 - min(length(curr - hist) * 2.2, 1.0);
+    let vel_w = 1.0 - min(length(velocity) * 6.0, 0.72);
     let far = 1.0 - clamp(u.zoom_stability, 0.0, 1.0);
-    let base_blend = mix(u.blend, u.blend * 0.7, far * 0.35);
-    let edge_color = smoothstep(0.004, 0.065, edge_dev);
-    let edge_sobel = smoothstep(0.018, 0.12, sobel_edge(uv, texel));
-    let depth_edge = smoothstep(0.002, 0.02, abs(depth_curr - depth_hist));
+    let base_blend = mix(u.blend, u.blend * 0.82, far * 0.22);
+    let edge_color = smoothstep(0.003, 0.055, edge_dev);
+    let edge_sobel = smoothstep(0.012, 0.095, sobel_edge(uv, texel));
+    let depth_edge = smoothstep(0.002, 0.025, abs(depth_curr - depth_hist));
     let edge = max(max(edge_color, edge_sobel), depth_edge);
-    var blend_w = base_blend * reactive * vel_w + edge * 0.35;
+    // Más history en siluetas aliased (sube anti-aliasing en bordes de objetos).
+    var blend_w = base_blend * reactive * vel_w + edge * 0.48;
     if disoccluded {
-        blend_w = min(blend_w, 0.12);
+        blend_w = min(blend_w, 0.22);
     }
     blend_w = clamp(blend_w, 0.0, SCENE_MAX_BLEND);
 

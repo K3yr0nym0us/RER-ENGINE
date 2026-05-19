@@ -77,12 +77,13 @@ impl State {
     /// x = intensidad; z = 1/texel sombra; w = radio PCF. Oscuridad → lit-composite (CPU).
     pub(crate) fn scene_light_params(&self) -> [f32; 4] {
         let dist = self.camera.distance;
+        // Radio PCF algo mayor con shadow map 1024 para compensar resolución.
         let pcf_radius = if dist < 12.0 {
-            0.5
+            0.85
         } else if dist < 28.0 {
-            0.5
+            0.95
         } else {
-            0.75
+            1.15
         };
         [
             self.light_intensity,
@@ -147,36 +148,84 @@ impl State {
         }
     }
 
+    fn sun_icon_mesh_idx(&mut self) -> usize {
+        if let Some(idx) = self.sun_icon_mesh_idx {
+            return idx;
+        }
+        let idx = self.meshes.len();
+        self.meshes.push(mesh::create_uv_sphere(&self.device, 20));
+        self.sun_icon_mesh_idx = Some(idx);
+        idx
+    }
+
+    fn sun_icon_texture_idx(&mut self) -> usize {
+        if let Some(idx) = self.sun_icon_tex_idx {
+            return idx;
+        }
+        const N: u32 = 32;
+        let mut px: Vec<u8> = Vec::with_capacity((N * N * 4) as usize);
+        for y in 0..N {
+            for x in 0..N {
+                let u = (x as f32 + 0.5) / N as f32 * 2.0 - 1.0;
+                let v = (y as f32 + 0.5) / N as f32 * 2.0 - 1.0;
+                let r = (u * u + v * v).sqrt().min(1.0);
+                let t = (1.0 - r).powf(0.55);
+                let r8 = (255.0 * (0.97 + 0.03 * t)) as u8;
+                let g8 = (255.0 * (0.96 + 0.04 * t)) as u8;
+                let b8 = (255.0 * (0.93 + 0.07 * t)) as u8;
+                px.extend_from_slice(&[r8, g8, b8, 255]);
+            }
+        }
+        let tex_idx = self.uv_rects.len();
+        let uv = self.atlas.pack(&self.queue, &px, N, N);
+        self.uv_rects.push(uv);
+        self.sun_icon_tex_idx = Some(tex_idx);
+        tex_idx
+    }
+
+    fn apply_sun_icon_visual(&mut self, id: crate::ecs::EntityId) {
+        let mesh_idx = self.sun_icon_mesh_idx();
+        let tex_idx = self.sun_icon_texture_idx();
+        if let Some(mc) = self.world.get_mut::<MeshComponent>(id) {
+            mc.mesh_idx = mesh_idx;
+            mc.tex_idx = tex_idx;
+        } else {
+            self.world.insert(
+                id,
+                MeshComponent {
+                    mesh_idx,
+                    tex_idx,
+                },
+            );
+        }
+    }
+
     /// Icono del sol seleccionable con gizmo; sin física. Idempotente al recargar `.save`.
     pub(crate) fn spawn_sun(&mut self, name: &str, position: [f32; 3], scale: [f32; 3]) {
         if let Some(id) = self.sun_entity {
+            self.apply_sun_icon_visual(id);
             if let Some(t) = self.world.get_mut::<Transform>(id) {
                 t.position = Vec3::from_array(position);
-                t.scale = Vec3::from_array(scale);
+                let s = scale
+                    .into_iter()
+                    .fold(f32::INFINITY, f32::min)
+                    .max(0.15);
+                t.scale = Vec3::splat(s);
             }
             self.sync_directional_light_from_sun();
             self.send_model_loaded_event(id, name);
             return;
         }
 
-        let mesh_idx = self.meshes.len();
-        self.meshes.push(mesh::create_cube(&self.device));
-        let sun_px = [255u8, 210, 120, 255];
-        let tex_idx = self.uv_rects.len();
-        let uv = self.atlas.pack(&self.queue, &sun_px, 1, 1);
-        self.uv_rects.push(uv);
-
         let id = self.world.spawn(Some(name));
-        self.world.insert(
-            id,
-            MeshComponent {
-                mesh_idx,
-                tex_idx,
-            },
-        );
+        self.apply_sun_icon_visual(id);
         if let Some(t) = self.world.get_mut::<Transform>(id) {
             t.position = Vec3::from_array(position);
-            t.scale = Vec3::from_array(scale);
+            let s = scale
+                .into_iter()
+                .fold(f32::INFINITY, f32::min)
+                .max(0.15);
+            t.scale = Vec3::splat(s);
         }
 
         self.sun_entity = Some(id);
@@ -198,6 +247,6 @@ impl State {
             return;
         }
         let pos = self.default_sun_position();
-        self.spawn_sun("Sol", pos.to_array(), [2.5, 2.5, 2.5]);
+        self.spawn_sun("Sol", pos.to_array(), [1.0, 1.0, 1.0]);
     }
 }

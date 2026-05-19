@@ -44,12 +44,16 @@ pub struct ActiveAnimation {
 pub(crate) const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 pub(crate) const AUTOSAVE_INTERVAL: Duration = Duration::from_secs(5 * 60);
 
-pub(crate) const SHADOW_MAP_SIZE: u32 = 2048;
+/// 1024: ~4× menos trabajo que 2048 en el shadow pass; PCF/texel usan esta constante.
+pub(crate) const SHADOW_MAP_SIZE: u32 = 1024;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub(crate) struct SceneUniforms {
+    /// Proyección con jitter Halton (raster).
     pub(crate) view_proj: [[f32; 4]; 4],
+    /// Proyección sin jitter (velocity / `prev_view_proj`).
+    pub(crate) view_proj_stable: [[f32; 4]; 4],
     pub(crate) prev_view_proj: [[f32; 4]; 4],
     pub(crate) inv_view_proj: [[f32; 4]; 4],
     pub(crate) cam_pos: [f32; 4],
@@ -64,4 +68,57 @@ pub(crate) struct SceneUniforms {
     pub(crate) jitter: [f32; 4],
     /// x = bias_min, y = bias_max, z = depth_const, w = depth_slope.
     pub(crate) shadow_bias: [f32; 4],
+}
+
+const INSTANCE_STRIDE: u64 = std::mem::size_of::<crate::mesh::InstanceData>() as u64;
+/// Capacidad inicial por slot del pool (se amplía si hace falta).
+const INSTANCE_POOL_MIN_BYTES: u64 = INSTANCE_STRIDE * 64;
+
+/// Buffers de instancias reutilizables: `write_buffer` por frame, sin `create_buffer` cada vez.
+pub(crate) struct InstanceBufferPool {
+    buffers: Vec<wgpu::Buffer>,
+    capacities: Vec<u64>,
+}
+
+impl InstanceBufferPool {
+    pub fn new() -> Self {
+        Self {
+            buffers: Vec::new(),
+            capacities: Vec::new(),
+        }
+    }
+
+    /// Sube datos de cada batch al slot `i` y devuelve los buffers usados este frame.
+    pub fn upload(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        batches: &[&[crate::mesh::InstanceData]],
+    ) -> &[wgpu::Buffer] {
+        let count = batches.len();
+        while self.buffers.len() < count {
+            let cap = INSTANCE_POOL_MIN_BYTES;
+            self.buffers.push(create_instance_buffer(device, cap));
+            self.capacities.push(cap);
+        }
+        for (i, instances) in batches.iter().enumerate() {
+            let bytes = (instances.len() as u64).max(1) * INSTANCE_STRIDE;
+            if self.capacities[i] < bytes {
+                let cap = bytes.next_power_of_two().max(INSTANCE_POOL_MIN_BYTES);
+                self.buffers[i] = create_instance_buffer(device, cap);
+                self.capacities[i] = cap;
+            }
+            queue.write_buffer(&self.buffers[i], 0, bytemuck::cast_slice(instances));
+        }
+        &self.buffers[..count]
+    }
+}
+
+fn create_instance_buffer(device: &wgpu::Device, size: u64) -> wgpu::Buffer {
+    device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("inst-buf-pool"),
+        size,
+        usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    })
 }

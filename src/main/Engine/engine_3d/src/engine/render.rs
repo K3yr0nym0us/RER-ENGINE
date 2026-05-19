@@ -101,10 +101,7 @@ impl State {
             .world
             .query2::<crate::ecs::MeshComponent, crate::ecs::Transform>()
             .filter_map(|(id, mc, t)| {
-                if self.preview_playing
-                    && (self.play_character_entity == Some(id)
-                        || self.sun_entity == Some(id))
-                {
+                if self.preview_playing && self.play_character_entity == Some(id) {
                     return None;
                 }
                 let mesh_idx = mc.mesh_idx;
@@ -210,17 +207,13 @@ impl State {
             }
         }
 
-        let instance_buffers: Vec<wgpu::Buffer> = batches
-            .iter()
-            .map(|b| {
-                use wgpu::util::DeviceExt;
-                self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("inst-buf"),
-                    contents: bytemuck::cast_slice(&b.instances),
-                    usage: wgpu::BufferUsages::VERTEX,
-                })
-            })
-            .collect();
+        let mut instance_slices = Vec::with_capacity(batches.len());
+        for b in &batches {
+            instance_slices.push(b.instances.as_slice());
+        }
+        let instance_buffers =
+            self.scene_instance_pool
+                .upload(&self.device, &self.queue, &instance_slices);
 
         if self.camera_2d.is_none() {
             let mut shadow_batches: Vec<Batch> = Vec::new();
@@ -251,17 +244,15 @@ impl State {
                     });
                 }
             }
-            let shadow_instance_buffers: Vec<wgpu::Buffer> = shadow_batches
-                .iter()
-                .map(|b| {
-                    use wgpu::util::DeviceExt;
-                    self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                        label: Some("shadow-inst-buf"),
-                        contents: bytemuck::cast_slice(&b.instances),
-                        usage: wgpu::BufferUsages::VERTEX,
-                    })
-                })
-                .collect();
+            let mut shadow_slices = Vec::with_capacity(shadow_batches.len());
+            for b in &shadow_batches {
+                shadow_slices.push(b.instances.as_slice());
+            }
+            let shadow_instance_buffers = self.shadow_instance_pool.upload(
+                &self.device,
+                &self.queue,
+                &shadow_slices,
+            );
 
             let shadow_map_view = self._shadow_texture.create_view(&wgpu::TextureViewDescriptor {
                 label: Some("shadow-map-pass"),
@@ -407,7 +398,7 @@ impl State {
         }
 
         if self.camera_2d.is_none() {
-            self.prev_view_proj = scene_uni.view_proj;
+            self.prev_view_proj = scene_uni.view_proj_stable;
         }
 
         if self.camera_2d.is_none() && self.world_bounds_buffer.vertex_count > 0 {
@@ -787,15 +778,18 @@ pub(crate) fn build_scene_uniforms(
     let w = size.width.max(1) as f32;
     let h = size.height.max(1) as f32;
     let view = camera.view_matrix();
-    let mut proj = camera.proj_matrix(aspect);
-    proj.x_axis.z += jitter[0] * 2.0 / w;
-    proj.y_axis.z += jitter[1] * 2.0 / h;
-    let vp = proj * view;
+    let proj = camera.proj_matrix(aspect);
+    let vp_stable = (proj * view).to_cols_array_2d();
+    let mut proj_j = proj;
+    proj_j.x_axis.z += jitter[0] * 2.0 / w;
+    proj_j.y_axis.z += jitter[1] * 2.0 / h;
+    let vp = proj_j * view;
     let view_proj = vp.to_cols_array_2d();
     let inv_view_proj = vp.inverse().to_cols_array_2d();
     let p = camera.position();
     SceneUniforms {
         view_proj,
+        view_proj_stable: vp_stable,
         prev_view_proj,
         inv_view_proj,
         cam_pos: [p.x, p.y, p.z, 0.0],
@@ -815,6 +809,7 @@ pub(crate) fn build_scene_uniforms_2d(cam: &Camera2D, size: PhysicalSize<u32>) -
     let p = cam.position();
     SceneUniforms {
         view_proj,
+        view_proj_stable: view_proj,
         prev_view_proj: identity,
         inv_view_proj: Mat4::from_cols_array_2d(&view_proj)
             .inverse()

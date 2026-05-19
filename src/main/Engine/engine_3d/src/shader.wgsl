@@ -1,6 +1,7 @@
 struct SceneUniforms {
-    view_proj       : mat4x4<f32>,
-    prev_view_proj  : mat4x4<f32>,
+    view_proj         : mat4x4<f32>,
+    view_proj_stable  : mat4x4<f32>,
+    prev_view_proj    : mat4x4<f32>,
     inv_view_proj   : mat4x4<f32>,
     cam_pos         : vec4<f32>,
     light_dir       : vec4<f32>,
@@ -47,7 +48,8 @@ struct VertexOutput {
     @location(4) alpha_mul       : f32,
     @location(5) render_kind     : f32,
     @location(6) uv_center       : vec2<f32>,
-    @location(7) prev_clip_pos   : vec4<f32>,
+    @location(7) prev_clip_pos     : vec4<f32>,
+    @location(8) curr_stable_clip  : vec4<f32>,
 }
 
 fn scene_light_dir_norm() -> vec3<f32> {
@@ -124,7 +126,8 @@ fn vs_main(in: VertexInput, inst: InstanceInput) -> VertexOutput {
     out.render_kind  = inst.flag_pad.z;
     out.uv_center    = (inst.uv_rect.xy + inst.uv_rect.zw) * 0.5;
     let prev_h = u.prev_view_proj * vec4<f32>(world_pos, 1.0);
-    out.prev_clip_pos = prev_h / prev_h.w;
+    out.prev_clip_pos = prev_h;
+    out.curr_stable_clip = u.view_proj_stable * world_pos4;
     return out;
 }
 
@@ -138,7 +141,7 @@ struct SceneFragOut {
 
 fn evaluate_scene(in: VertexOutput) -> SceneFragOut {
     let linear_depth = in.clip_pos.z / in.clip_pos.w;
-    let curr_ndc = in.clip_pos.xy / in.clip_pos.w;
+    let curr_ndc = in.curr_stable_clip.xy / in.curr_stable_clip.w;
     let prev_ndc = in.prev_clip_pos.xy / in.prev_clip_pos.w;
     let velocity = (curr_ndc - prev_ndc) * vec2<f32>(0.5, 0.5);
 

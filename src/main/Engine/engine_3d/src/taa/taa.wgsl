@@ -20,7 +20,8 @@ struct VsOut {
 }
 
 const RPC_9 : f32 = 1.0 / 9.0;
-const VARIANCE_BOX : f32 = 1.15;
+const VARIANCE_BOX : f32 = 1.22;
+const SHADOW_MAX_BLEND : f32 = 0.93;
 
 @vertex
 fn vs_main(@builtin(vertex_index) vi : u32) -> VsOut {
@@ -98,13 +99,13 @@ fn fs_main(in : VsOut) -> @location(0) vec4<f32> {
     let curr = n.x;
     var hist = n.y;
 
-    let reactive = 1.0 - min(abs(curr - hist) * 6.0, 1.0);
+    let reactive = 1.0 - min(abs(curr - hist) * 4.5, 1.0);
     let far = 1.0 - clamp(u.zoom_stability, 0.0, 1.0);
-    let base_blend = mix(u.blend, 0.92, far * 0.5);
-    // En penumbra (gradiente alto) priorizar frame actual → menos estelas repetidas.
-    let penumbra = smoothstep(0.006, 0.045, n.z);
-    var blend_w = base_blend * reactive * (1.0 - penumbra * 0.92);
-    blend_w = clamp(blend_w, 0.0, 0.88);
+    let base_blend = mix(u.blend, u.blend * 0.92, far * 0.25);
+    // Penumbra: suavizar sin anular el TAA (antes cortaba demasiado la history).
+    let penumbra = smoothstep(0.008, 0.055, n.z);
+    var blend_w = base_blend * reactive * (1.0 - penumbra * 0.42);
+    blend_w = clamp(blend_w, 0.0, SHADOW_MAX_BLEND);
 
     let out_s = mix(curr, hist, blend_w);
     return vec4<f32>(out_s, 0.0, 0.0, 0.0);

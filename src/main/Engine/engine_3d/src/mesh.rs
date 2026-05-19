@@ -88,6 +88,49 @@ pub fn create_cube(device: &wgpu::Device) -> Mesh {
     upload(device, &vertices, &indices, "cube")
 }
 
+/// Esfera UV unitaria (radio 0.5) para el icono del sol.
+pub fn create_uv_sphere(device: &wgpu::Device, segments: u32) -> Mesh {
+    let rings = segments.max(4);
+    let sectors = segments.max(6);
+    let mut vertices: Vec<Vertex> = Vec::new();
+    let mut indices: Vec<u32> = Vec::new();
+
+    for ring in 0..=rings {
+        let v = ring as f32 / rings as f32;
+        let phi = v * std::f32::consts::PI;
+        let sin_phi = phi.sin();
+        let cos_phi = phi.cos();
+
+        for sector in 0..=sectors {
+            let u = sector as f32 / sectors as f32;
+            let theta = u * std::f32::consts::TAU;
+            let sin_theta = theta.sin();
+            let cos_theta = theta.cos();
+
+            let nx = sin_phi * cos_theta;
+            let ny = cos_phi;
+            let nz = sin_phi * sin_theta;
+
+            vertices.push(Vertex {
+                position: [nx * 0.5, ny * 0.5, nz * 0.5],
+                normal: [nx, ny, nz],
+                uv: [u, v],
+            });
+        }
+    }
+
+    let stride = sectors + 1;
+    for ring in 0..rings {
+        for sector in 0..sectors {
+            let cur = ring * stride + sector;
+            let next = cur + stride;
+            indices.extend_from_slice(&[cur, next, cur + 1, cur + 1, next, next + 1]);
+        }
+    }
+
+    upload(device, &vertices, &indices, "uv-sphere")
+}
+
 /// Quad unitario en el plano XY (Z=0), normal +Z; para overlays HUD texturizados.
 pub fn create_unit_quad_xy(device: &wgpu::Device) -> Mesh {
     #[rustfmt::skip]

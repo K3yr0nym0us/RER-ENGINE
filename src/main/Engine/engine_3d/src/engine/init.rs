@@ -92,8 +92,10 @@ impl State {
         let aspect = size.width as f32 / size.height as f32;
         let p = camera.position();
         let identity_vp = glam::Mat4::IDENTITY.to_cols_array_2d();
+        let cam_vp = camera.to_uniform(aspect).view_proj;
         let uniforms = SceneUniforms {
-            view_proj: camera.to_uniform(aspect).view_proj,
+            view_proj: cam_vp,
+            view_proj_stable: cam_vp,
             prev_view_proj: identity_vp,
             inv_view_proj: identity_vp,
             cam_pos: [p.x, p.y, p.z, 0.0],
@@ -232,6 +234,7 @@ impl State {
 
         let hud_identity = SceneUniforms {
             view_proj: identity_vp,
+            view_proj_stable: identity_vp,
             prev_view_proj: identity_vp,
             inv_view_proj: identity_vp,
             cam_pos: [0.0, 0.0, 5.0, 0.0],
@@ -760,11 +763,15 @@ impl State {
             save_registry: EntitySaveRegistry::new(),
             target_fps: 60,
             sun_entity: None,
+            sun_icon_mesh_idx: None,
+            sun_icon_tex_idx: None,
             directional_light_dir: DEFAULT_LIGHT_DIR.normalize(),
             directional_light_color: DEFAULT_LIGHT_COLOR,
             directional_light_ambient: DEFAULT_LIGHT_AMBIENT,
             light_intensity: DEFAULT_LIGHT_INTENSITY,
             shadow_darkness: DEFAULT_SHADOW_DARKNESS,
+            scene_instance_pool: crate::engine::types::InstanceBufferPool::new(),
+            shadow_instance_pool: crate::engine::types::InstanceBufferPool::new(),
         };
         state.sync_ground_plane_to_world_bounds();
         state

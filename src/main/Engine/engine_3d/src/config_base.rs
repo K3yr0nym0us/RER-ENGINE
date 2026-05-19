@@ -77,6 +77,8 @@ impl State {
         self.clear_play_controller_script_frame();
         self.play_character_entity = None;
         self.sun_entity = None;
+        self.sun_icon_mesh_idx = None;
+        self.sun_icon_tex_idx = None;
         self.directional_light_dir =
             crate::config_3d::directional_light::DEFAULT_LIGHT_DIR.normalize();
         self.directional_light_color =
