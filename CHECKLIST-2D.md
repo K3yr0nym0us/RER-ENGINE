@@ -50,6 +50,7 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 - [x] Atlas: evento `atlas_exhausted` → consola del editor
 - [x] `entity_removed` con snapshot de puntos (colliders / execution areas)
 - [x] Export escena: `export_save_snapshot` → `save_snapshot_ready` (`entity_save_meta`, marcadores scenario/character/collider)
+- [x] Asignación de IDs de entidad: `HashSet` + cola de IDs reciclados en `ecs.rs` (escenas grandes)
 
 ### Motor-first (2D)
 
@@ -63,27 +64,17 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 
 - [x] Herramientas 2D (dibujo colisionador / trigger, quick build, etc.)
 - [x] Panel de propiedades y multi-selección en escena 2D
-- [x] Carga de escena vía `import_scene` (un IPC; motor aplica restores; sin cola `pendingRestores` en 2D)
+- [x] **`import_scene` completo** — un IPC carga la escena entera (entidades + restores); sin ráfagas IPC ni `pendingRestoresRef` en el front; evento `scene_imported`
+- [x] **Flujo de restauración inicial** — `import_scene` en carga/pestaña 2D; `apply_entity_restore` para undo y casos puntuales
 - [x] Guardado engine-first: `export_save_snapshot` + merge de pestañas/blueprints en el front
 
 ---
 
 ## Por implementar
 
-### Prioridad alta
-
-- [x] **`import_scene` completo en motor** — un comando carga la escena entera (entidades + restores) sin ráfagas IPC ni `pendingRestoresRef` en el front
-
-### Prioridad media
-
-- [x] **Flujo de restauración inicial** — `import_scene` en carga/pestaña 2D; `apply_entity_restore` sigue para undo y casos puntuales
-
-### Prioridad baja
-
 - [ ] Unificar referencia espacial render / picking / triggers / física
 - [ ] Revisar semántica `SetGravity`, `apply_kinematic_gravity` y `on_press` en cuerpos kinematic
 - [ ] Reducir shims `config_compat` cuando no queden rutas heredadas
-- [ ] Optimizar `new_entity_id()` para escenas muy grandes
 
 ---
 
@@ -91,15 +82,15 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 
 | Ítem | Criterio |
 |------|----------|
-| `import_scene` | Hecho: un IPC carga escena + restores; `scene_imported` sincroniza React |
+| `import_scene` | Un IPC carga escena + restores; `scene_imported` sincroniza React |
 | Undo entidades | Crear/borrar escenario, personaje, colisionador y trigger con Ctrl+Z / Ctrl+Y simétricos |
 
 ---
 
 ## Aplazado (producto)
 
-- Multiplayer 
-- IA generativa en assets 
+- Multiplayer
+- IA generativa en assets
 - partículas/shaders experimentales
 
 ---
