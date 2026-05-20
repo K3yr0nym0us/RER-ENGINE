@@ -24,16 +24,7 @@ impl State {
     /// Cuando varios AABBs se solapan (p.ej. escenario + player) se elige
     /// la entidad con mayor Z (más cercana a la cámara).
     pub fn pick_entity_2d(&mut self, pixel_x: f32, pixel_y: f32) {
-        let cam = match &self.camera_2d {
-            Some(c) => super::Camera2D { x: c.x, y: c.y, half_h: c.half_h, near: c.near, far: c.far },
-            None    => return,
-        };
-        let w      = self.size.width  as f32;
-        let h      = self.size.height as f32;
-        let aspect = w / h;
-        let half_w = cam.half_h * aspect;
-        let wx = cam.x + ((pixel_x / w) * 2.0 - 1.0) * half_w;
-        let wy = cam.y + (1.0 - (pixel_y / h) * 2.0) * cam.half_h;
+        let Some((wx, wy)) = self.screen_to_world_2d(pixel_x, pixel_y) else { return };
 
         // Mantener el picking del editor basado en Transform crudo.
         // El render puede aplicar `visual_offsets`, pero igualar ambas referencias
@@ -279,16 +270,7 @@ impl State {
     /// Usa spatial grid para O(k) lookup en lugar de O(n) linear scan.
     pub fn update_hover_2d(&mut self, pixel_x: f32, pixel_y: f32) {
         let prev_hover = self.hovered_entity;
-        let cam = match &self.camera_2d {
-            Some(c) => super::Camera2D { x: c.x, y: c.y, half_h: c.half_h, near: c.near, far: c.far },
-            None    => return,
-        };
-        let w      = self.size.width  as f32;
-        let h      = self.size.height as f32;
-        let aspect = w / h;
-        let half_w = cam.half_h * aspect;
-        let wx = cam.x + ((pixel_x / w) * 2.0 - 1.0) * half_w;
-        let wy = cam.y + (1.0 - (pixel_y / h) * 2.0) * cam.half_h;
+        let Some((wx, wy)) = self.screen_to_world_2d(pixel_x, pixel_y) else { return };
 
         self.hovered_entity = None;
         let mut best_hover: Option<(EntityId, f32)> = None;

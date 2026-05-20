@@ -35,6 +35,7 @@ El runtime real 2D vive principalmente en estos archivos:
 - `src/physics_2d.rs`: backend fisico 2D sobre Rapier, restringido al plano `XY`.
 - `src/config_2d.rs`: utilidades y reglas de runtime/editor 2D (animacion, areas de ejecucion, overlays, helpers de personaje).
 - `src/config_2d/assets.rs`: inicializacion de escena 2D y carga de sprites/fondos/blueprints.
+- `src/config_2d/world_xy.rs`: contrato mundo XY vs pantalla; `screen_pixel_to_world_xy` para input del editor.
 
 ## Que NO es runtime 2D real
 

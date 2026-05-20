@@ -15,6 +15,10 @@
 pub(crate) mod camera_2d;
 pub(crate) use camera_2d::Camera2D;
 
+#[path = "config_2d/world_xy.rs"]
+pub(crate) mod world_xy;
+pub(crate) use world_xy::screen_pixel_to_world_xy;
+
 #[path = "config_2d/grid_2d.rs"]
 pub(crate) mod grid_2d;
 pub(crate) use grid_2d::{GridBuffer, GridConfig, build_grid};
@@ -100,15 +104,11 @@ pub(crate) struct ColliderMarker {}
 #[derive(Debug, Clone)]
 pub(crate) struct ExecutionAreaMarker {}
 impl State {
-    fn screen_to_world_2d(&self, pixel_x: f32, pixel_y: f32) -> Option<(f32, f32)> {
+    pub(crate) fn screen_to_world_2d(&self, pixel_x: f32, pixel_y: f32) -> Option<(f32, f32)> {
         let cam = self.camera_2d.as_ref()?;
         let w = self.size.width as f32;
         let h = self.size.height as f32;
-        let aspect = w / h;
-        let half_w = cam.half_h * aspect;
-        let wx = cam.x + ((pixel_x / w) * 2.0 - 1.0) * half_w;
-        let wy = cam.y + (1.0 - (pixel_y / h) * 2.0) * cam.half_h;
-        Some((wx, wy))
+        Some(screen_pixel_to_world_xy(cam, w, h, pixel_x, pixel_y))
     }
 
     fn snap_size_to_grid_2d(&self, size: f32) -> f32 {
@@ -720,17 +720,7 @@ pub(crate) fn restore_animation_frame(&mut self, id: u32) {
             Some(m) => m,
             None    => return false,
         };
-        let cam = match &self.camera_2d {
-            Some(c) => Camera2D { x: c.x, y: c.y, half_h: c.half_h, near: c.near, far: c.far },
-            None    => return false,
-        };
-
-        // Pantalla → mundo
-        let w      = self.size.width  as f32;
-        let h      = self.size.height as f32;
-        let half_w = cam.half_h * (w / h);
-        let wx     = cam.x + ((pixel_x / w) * 2.0 - 1.0) * half_w;
-        let wy     = cam.y + (1.0 - (pixel_y / h) * 2.0) * cam.half_h;
+        let Some((wx, wy)) = self.screen_to_world_2d(pixel_x, pixel_y) else { return false };
 
         // Mundo → [0,1] dentro del quad de la entidad
         let transform = match self.world.get::<Transform>(entity_id) {
