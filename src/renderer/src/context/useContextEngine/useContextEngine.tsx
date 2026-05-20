@@ -160,6 +160,7 @@ export function EngineProvider({
 		retryEngine: actions.retryEngine,
 		removeScenario: actions.removeScenario,
 		removeCharacter: actions.removeCharacter,
+		removeEntity: actions.removeEntity,
 		setWorldSize: actions.setWorldSize,
 		setGridVisible: actions.setGridVisible,
 		setGridCellSize: actions.setGridCellSize,

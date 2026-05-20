@@ -60,13 +60,18 @@ export function useControlBindings() {
   const [revision, setRevision] = useState(0)
 
   const characterOptions = useMemo<CharacterOption[]>(() => {
-    return characterEntities.map((character) => {
+    const seen = new Set<number>()
+    const options: CharacterOption[] = []
+    for (const character of characterEntities) {
+      if (seen.has(character.id)) continue
+      seen.add(character.id)
       const name = entityMetaRef.current[character.id]?.name?.trim()
-      return {
+      options.push({
         id: character.id,
         label: name && name.length > 0 ? name : getPathLabel(character.path),
-      }
-    })
+      })
+    }
+    return options
   }, [characterEntities, entityMetaRef])
 
   const effectiveCharacterId = useMemo(() => {

@@ -132,6 +132,7 @@ export type EngineAction =
 	| { type: 'SYNC_PLAY_CHARACTER_VIEW' }
 	| { type: 'ADD_LOG'; payload: LogEntry }
 	| { type: 'ADD_ENTITY'; payload: number }
+	| { type: 'REMOVE_ENTITY'; payload: number }
 	| { type: 'SELECT_ENTITY'; payload: SelectedEntity }
 	| { type: 'DESELECT_ENTITY' }
 	| { type: 'ENGINE_STOPPED'; payload: number | undefined }
@@ -239,6 +240,23 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 			prevState.entities.some((entity) => entity.id === nextAction.payload)
 				? prevState
 				: { ...prevState, entities: [...prevState.entities, { id: nextAction.payload }] },
+		REMOVE_ENTITY: (prevState, nextAction) => {
+			const id = nextAction.payload;
+			const without = (list: { id: number }[]) => list.filter((entry) => entry.id !== id);
+			const multiSelectedIds = prevState.multiSelectedIds.filter((selectedId) => selectedId !== id);
+			const selectedEntity =
+				prevState.selectedEntity?.id === id ? null : prevState.selectedEntity;
+			return {
+				...prevState,
+				entities: without(prevState.entities),
+				characterEntities: without(prevState.characterEntities),
+				scenarioEntities: without(prevState.scenarioEntities),
+				colliderEntities: without(prevState.colliderEntities),
+				executionAreaEntities: without(prevState.executionAreaEntities),
+				multiSelectedIds,
+				selectedEntity,
+			};
+		},
 		SELECT_ENTITY: (prevState, nextAction) => ({ ...prevState, selectedEntity: nextAction.payload }),
 		DESELECT_ENTITY: (prevState) => ({ ...prevState, selectedEntity: null, multiSelectedIds: [] }),
 		ENGINE_STOPPED: (prevState, nextAction) => {
@@ -250,12 +268,34 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 		},
 		CLEAR_ENTITIES: (prevState) => ({ ...prevState, entities: [], multiSelectedIds: [] }),
 		RESET_ENGINE: (prevState) => ({ ...prevState, engineReady: false, engineError: null, previewPlaying: false, entities: [], multiSelectedIds: [] }),
-		ADD_SCENARIO: (prevState, nextAction) => ({ ...prevState, scenarioEntities: [...prevState.scenarioEntities, nextAction.payload] }),
+		ADD_SCENARIO: (prevState, nextAction) => {
+			const id = nextAction.payload.id;
+			if (prevState.scenarioEntities.some((scenario) => scenario.id === id)) {
+				return {
+					...prevState,
+					scenarioEntities: prevState.scenarioEntities.map((scenario) =>
+						scenario.id === id ? nextAction.payload : scenario,
+					),
+				};
+			}
+			return { ...prevState, scenarioEntities: [...prevState.scenarioEntities, nextAction.payload] };
+		},
 		REMOVE_SCENARIO: (prevState, nextAction) => ({
 			...prevState,
 			scenarioEntities: prevState.scenarioEntities.filter((scenario) => scenario.id !== nextAction.payload),
 		}),
-		ADD_CHARACTER: (prevState, nextAction) => ({ ...prevState, characterEntities: [...prevState.characterEntities, nextAction.payload] }),
+		ADD_CHARACTER: (prevState, nextAction) => {
+			const id = nextAction.payload.id;
+			if (prevState.characterEntities.some((character) => character.id === id)) {
+				return {
+					...prevState,
+					characterEntities: prevState.characterEntities.map((character) =>
+						character.id === id ? nextAction.payload : character,
+					),
+				};
+			}
+			return { ...prevState, characterEntities: [...prevState.characterEntities, nextAction.payload] };
+		},
 		REMOVE_CHARACTER: (prevState, nextAction) => ({
 			...prevState,
 			characterEntities: prevState.characterEntities.filter((character) => character.id !== nextAction.payload),
@@ -510,6 +550,7 @@ export interface EngineContextValue extends EngineState {
 	retryEngine: () => void
 	removeScenario: (id: number) => void
 	removeCharacter: (id: number) => void
+	removeEntity: (id: number) => void
 	setWorldSize: (width: number, height: number, depth?: number) => void
 	setGridVisible: (visible: boolean) => void
 	setGridCellSize: (size: number) => void

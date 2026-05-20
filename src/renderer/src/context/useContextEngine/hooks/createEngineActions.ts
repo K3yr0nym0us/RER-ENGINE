@@ -89,18 +89,16 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 		reportBounds();
 	};
 
-	const removeScenario = (id: number) => {
+	const removeEntity = (id: number) => {
 		send({ cmd: 'remove_entity', id });
-		dispatch({ type: 'REMOVE_SCENARIO', payload: id });
-		delete refs.entityMetaRef.current[id];
-	};
-
-	const removeCharacter = (id: number) => {
-		send({ cmd: 'remove_entity', id });
-		dispatch({ type: 'REMOVE_CHARACTER', payload: id });
+		dispatch({ type: 'REMOVE_ENTITY', payload: id });
 		if (refs.playerEntityIdRef.current === id) refs.playerEntityIdRef.current = null;
 		delete refs.entityMetaRef.current[id];
+		delete refs.entityTransformsRef.current[id];
 	};
+
+	const removeScenario = (id: number) => removeEntity(id);
+	const removeCharacter = (id: number) => removeEntity(id);
 
 	const setWorldSize = (width: number, height: number, depth?: number) => {
 		const payload = typeof depth === 'number'
@@ -152,17 +150,8 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 		send({ cmd: 'set_target_fps', fps: normalizedFps });
 	};
 
-	const removeCollider = (id: number) => {
-		send({ cmd: 'remove_entity', id });
-		dispatch({ type: 'REMOVE_COLLIDER', payload: id });
-		delete refs.entityMetaRef.current[id];
-	};
-
-	const removeExecutionArea = (id: number) => {
-		send({ cmd: 'remove_entity', id });
-		dispatch({ type: 'REMOVE_EXECUTION_AREA', payload: id });
-		delete refs.entityMetaRef.current[id];
-	};
+	const removeCollider = (id: number) => removeEntity(id);
+	const removeExecutionArea = (id: number) => removeEntity(id);
 
 	const updateEntityAnimations = (id: number, animations: any[]): any[] => {
 		const bpId = refs.entityMetaRef.current[id]?.blueprintId;
@@ -469,6 +458,7 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 		retryEngine,
 		removeScenario,
 		removeCharacter,
+		removeEntity,
 		setWorldSize,
 		setGridVisible,
 		setGridCellSize,

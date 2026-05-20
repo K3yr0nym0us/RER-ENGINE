@@ -9,7 +9,7 @@
 // ---------------------------------------------------------------------------
 
 use std::any::{Any, TypeId};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use glam::{Mat4, Quat, Vec3};
 
 // ── Tipos base ────────────────────────────────────────────────────────────────
@@ -17,12 +17,11 @@ pub type EntityId = u32;
 
 /// Genera un EntityId aleatorio via CSPRNG (no secuencial, no predecible).
 /// Reintenta si colisiona con un ID ya existente (probabilidad astronómicamente baja).
-fn new_entity_id(alive: &[EntityId]) -> EntityId {
+fn new_entity_id(alive: &HashSet<EntityId>) -> EntityId {
     let mut buf = [0u8; 4];
     loop {
         getrandom::getrandom(&mut buf).expect("getrandom no disponible");
         let id = u32::from_ne_bytes(buf);
-        // Evitar 0 (valor centinela) y colisiones
         if id != 0 && !alive.contains(&id) {
             return id;
         }
@@ -168,12 +167,19 @@ impl<T: 'static> AnyStorage for ComponentStorage<T> {
 /// Mundo ECS: contiene todas las entidades y sus componentes.
 pub struct World {
     alive:      Vec<EntityId>,
+    alive_ids:  HashSet<EntityId>,
+    free_ids:   Vec<EntityId>,
     storages:   HashMap<TypeId, Box<dyn AnyStorage>>,
 }
 
 impl Default for World {
     fn default() -> Self {
-        let mut w = Self { alive: Vec::new(), storages: HashMap::new() };
+        let mut w = Self {
+            alive:     Vec::new(),
+            alive_ids: HashSet::new(),
+            free_ids:  Vec::new(),
+            storages:  HashMap::new(),
+        };
         // Registrar almacenamientos estándar
         w.register::<Transform>();
         w.register::<MeshComponent>();
@@ -196,20 +202,43 @@ impl World {
 
     // ── Entidades ─────────────────────────────────────────────────────────────
 
+    fn alloc_entity_id(&mut self) -> EntityId {
+        while let Some(id) = self.free_ids.pop() {
+            if id != 0 && !self.alive_ids.contains(&id) {
+                return id;
+            }
+        }
+        new_entity_id(&self.alive_ids)
+    }
+
     /// Crea una nueva entidad con Transform por defecto y nombre opcional.
     pub fn spawn(&mut self, name: Option<&str>) -> EntityId {
-        let id = new_entity_id(&self.alive);
+        let id = self.alloc_entity_id();
+        self.spawn_with_id(id, name);
+        id
+    }
+
+    /// Reinserta una entidad con un id ya usado (p. ej. redo de RemoveEntity).
+    pub fn spawn_with_id(&mut self, id: EntityId, name: Option<&str>) -> bool {
+        if id == 0 || self.alive_ids.contains(&id) {
+            return false;
+        }
+        self.free_ids.retain(|&e| e != id);
         self.alive.push(id);
+        self.alive_ids.insert(id);
         self.insert(id, Transform::default());
         if let Some(n) = name {
             self.insert(id, NameComponent { name: n.to_owned() });
         }
-        id
+        true
     }
 
     /// Destruye una entidad y elimina todos sus componentes.
     pub fn despawn(&mut self, entity: EntityId) {
-        self.alive.retain(|&e| e != entity);
+        if self.alive_ids.remove(&entity) {
+            self.alive.retain(|&e| e != entity);
+            self.free_ids.push(entity);
+        }
         for storage in self.storages.values_mut() {
             storage.remove_entity(entity);
         }
@@ -219,8 +248,12 @@ impl World {
 
     pub fn clear(&mut self) {
         let ids: Vec<_> = self.alive.clone();
-        for id in ids { self.despawn(id); }
+        for id in ids {
+            self.despawn(id);
+        }
         self.alive.clear();
+        self.alive_ids.clear();
+        self.free_ids.clear();
     }
 
     // ── Componentes ──────────────────────────────────────────────────────────

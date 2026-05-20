@@ -91,9 +91,9 @@ _(vacío — ver ítems aplazados en producto si aplica)_
 
 ## Aplazado (producto)
 
+- partículas/shaders experimentales
 - Multiplayer
 - IA generativa en assets
-- partículas/shaders experimentales
 
 ---
 

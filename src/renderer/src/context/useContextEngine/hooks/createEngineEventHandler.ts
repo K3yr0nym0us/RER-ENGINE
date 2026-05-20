@@ -1142,15 +1142,8 @@ export function createEngineEventHandler({
 			) {
 				refs.entityMetaRef.current[e.id].points = e.points;
 			}
-			if (removedKind === 'scenario') {
-				dispatch({ type: 'REMOVE_SCENARIO', payload: e.id });
-			} else if (removedKind === 'character') {
-				dispatch({ type: 'REMOVE_CHARACTER', payload: e.id });
-			} else if (removedKind === 'collider') {
-				dispatch({ type: 'REMOVE_COLLIDER', payload: e.id });
-			} else if (removedKind === 'execution_area') {
-				dispatch({ type: 'REMOVE_EXECUTION_AREA', payload: e.id });
-			}
+			dispatch({ type: 'REMOVE_ENTITY', payload: e.id });
+			if (refs.playerEntityIdRef.current === e.id) refs.playerEntityIdRef.current = null;
 			delete refs.entityMetaRef.current[e.id];
 			delete refs.entityTransformsRef.current[e.id];
 		}

@@ -89,6 +89,7 @@ impl State {
                         },
                     );
                     self.send_model_loaded_event(id, &label);
+                    self.push_remove_entity_undo(id);
                 }
                 log::info!("Modelo cargado: {path} ({count} malla/s)");
             }

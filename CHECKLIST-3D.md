@@ -44,6 +44,8 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 - [x] IPC vista FP autoritativa: `set_first_person_view` → `first_person_view_changed`
 - [x] HUD play: crosshair + tooltip Esc (texturas en `Engine/assets/`)
 - [x] Cubos de editor (`spawn_editor_box`), modelos en almacén (`load_model_asset`)
+- [x] ECS 3D: `HashSet` + reciclado de IDs en `despawn` (`ecs.rs`)
+- [x] Undo/redo de creación de entidad — snapshot en motor (`undo_entity.rs`, `spawn_with_id`)
 - [x] API Lua 3D FP: `fp_press_key`, `fp_jump`, `fp_set_walk_speed`, etc.
 - [x] `replace_entity_model` con resync de orientación y escala del jugador
 - [x] Export escena: `export_save_snapshot` → `save_snapshot_ready` (`entity_save_meta`, jugador FP)
@@ -54,6 +56,7 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 - [x] Acordeón cámara FP (envía `set_play_character_view`, no calcula poses en TS)
 - [x] `playCharacterViewRef` vía `play_character_view_changed` (UI editor; save 3D vía snapshot del motor)
 - [x] Herramientas 3D (gizmo, spawn caja/modelo, play FP)
+- [x] Eliminar entidades 3D (modelos/cajas) — `remove_entity` + panel Propiedades; sync listas vía `entity_removed`
 - [x] Carga de escena 3D + `pendingRestores` / vista FP desde motor al abrir `.save`
 - [x] Guardado engine-first: `export_save_snapshot` + merge en el front
 
@@ -69,7 +72,7 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 ### Prioridad baja
 
 - [ ] Picking 3D: AABB del `Transform` vs silueta fina del modelo (mejora UX de selección)
-- [ ] Optimizar `new_entity_id()` para escenas muy grandes
+- [ ] `kind` en `ModelLoaded` (IPC) — sync front sin `spawnKind` local (motor-first)
 
 ---
 

@@ -109,10 +109,13 @@ impl State {
                     });
                 }
             }
-            UndoAction::RemoveEntity { id } => {
+            UndoAction::RemoveEntity { snapshot } => {
+                let id = snapshot.id;
                 self.handle_command(EngineCommand::RemoveEntity { id });
-                self.redo_stack.clear();
+                self.redo_stack
+                    .push(UndoAction::RestoreEntity { snapshot });
             }
+            UndoAction::RestoreEntity { .. } => {}
         }
         self.is_applying_undo = false;
     }
@@ -170,7 +173,17 @@ impl State {
                     });
                 }
             }
-            UndoAction::RemoveEntity { .. } => {}
+            UndoAction::RestoreEntity { snapshot } => {
+                self.restore_entity_from_undo_snapshot(&snapshot);
+                self.undo_stack
+                    .push(UndoAction::RemoveEntity { snapshot });
+            }
+            UndoAction::RemoveEntity { snapshot } => {
+                let id = snapshot.id;
+                self.handle_command(EngineCommand::RemoveEntity { id });
+                self.undo_stack
+                    .push(UndoAction::RestoreEntity { snapshot });
+            }
         }
         self.is_applying_undo = false;
     }
@@ -481,8 +494,7 @@ impl State {
                 self.load_scenario(&path);
                 if track_undo.unwrap_or(false) {
                     if let Some(&id) = self.scenario_entities.last() {
-                        self.undo_stack.push(UndoAction::RemoveEntity { id });
-                        self.redo_stack.clear();
+                        self.push_remove_entity_undo(id);
                         log::info!("[quick_build] escenario {id} registrado en undo");
                     }
                 }
@@ -502,8 +514,7 @@ impl State {
                 self.load_character(&path);
                 if track_undo.unwrap_or(false) {
                     if let Some(&id) = self.character_entities.last() {
-                        self.undo_stack.push(UndoAction::RemoveEntity { id });
-                        self.redo_stack.clear();
+                        self.push_remove_entity_undo(id);
                         log::info!("[quick_build] personaje {id} registrado en undo");
                     }
                 }

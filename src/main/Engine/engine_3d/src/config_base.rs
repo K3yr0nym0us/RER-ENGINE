@@ -318,6 +318,7 @@ impl State {
             },
         );
         self.send_model_loaded_event(id, name);
+        self.push_remove_entity_undo(id);
     }
 
     pub(crate) fn load_character(&mut self, path: &str) {

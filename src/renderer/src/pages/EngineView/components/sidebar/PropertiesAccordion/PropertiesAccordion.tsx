@@ -27,6 +27,7 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
     replaceEntityModel,
     removeScenario,
     removeCharacter,
+    removeEntity,
     removeCollider,
     removeExecutionArea,
     addBlueprint,
@@ -82,6 +83,7 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
                 className="btn btn-danger"
                 onClick={() => {
                   multiSelectedIds.forEach(id => {
+                    if (isPlayerEntity(id, entityMetaRef.current[id], playerEntityIdRef.current)) return;
                     const kind = entityMetaRef.current[id]?.kind;
                     if (kind === 'scenario') removeScenario(id);
                     else if (kind === 'character') removeCharacter(id);
@@ -89,6 +91,7 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
                     else if (kind === 'execution_area') removeExecutionArea(id);
                     else if (scenarioEntities.some((s: any) => s.id === id)) removeScenario(id);
                     else if (characterEntities.some((c: any) => c.id === id)) removeCharacter(id);
+                    else removeEntity(id);
                   });
                   closeModal();
                 }}
@@ -161,6 +164,7 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
   }
 
   const handleRemove = () => {
+    if (isPlayer) return;
     if (isScenario) {
       handleConfirmModal(() => removeScenario(selectedEntity.id), 'delete');
     } else if (isCharacter) {
@@ -169,6 +173,8 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
       handleConfirmModal(() => removeCollider(selectedEntity.id), 'delete');
     } else if (isExecutionArea) {
       handleConfirmModal(() => removeExecutionArea(selectedEntity.id), 'delete');
+    } else {
+      handleConfirmModal(() => removeEntity(selectedEntity.id), 'delete');
     }
   }
   const trimmedEntityName = entityNameDraft.trim();
@@ -425,6 +431,7 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
         </button>
         </>
         )}
+        {!isPlayer && (
         <button
           className="btn btn-sm btn-outline-danger w-100"
           onClick={handleRemove}
@@ -432,6 +439,7 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
           <Trash className="me-2" />
           {t('Delete')}
         </button>
+        )}
       </div>
     </div>
   )
