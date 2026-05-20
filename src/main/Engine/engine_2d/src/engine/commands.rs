@@ -127,16 +127,8 @@ impl State {
                         transform.rotation.w,
                     ];
                     let scale = transform.scale.to_array();
-                    let physics_enabled = if self.camera_2d.is_some() {
-                        self.physics_2d.has_physics(id)
-                    } else {
-                        self.physics.has_physics(id)
-                    };
-                    let physics_type = if self.camera_2d.is_some() {
-                        self.physics_2d.get_body_type(id).to_string()
-                    } else {
-                        self.physics.get_body_type(id).to_string()
-                    };
+                    let physics_enabled = self.physics_2d.has_physics(id);
+                    let physics_type = self.physics_2d.get_body_type(id).to_string();
 
                     send_event(&EngineEvent::EntitySelected {
                         id,
@@ -267,7 +259,6 @@ impl State {
                     self.hovered_entity  = None;
                     send_event(&EngineEvent::EntityUnhovered);
                 }
-                self.physics.remove_entity_body(id);
                 self.physics_2d.remove_entity_body(id);
                 self.scenario_entities.retain(|&e| e != id);
                 self.character_entities.retain(|&e| e != id);
@@ -439,11 +430,8 @@ impl State {
                 } else {
                     ([0.0_f32; 3], [0.5_f32; 3], [0.0, 0.0, 0.0])
                 };
-                if self.camera_2d.is_some() {
-                    self.physics_2d.set_entity_physics(id, enabled, &body_type, pos, half, collider_offset);
-                } else {
-                    self.physics.set_entity_physics(id, enabled, &body_type, pos, half);
-                }
+                self.physics_2d
+                    .set_entity_physics(id, enabled, &body_type, pos, half, collider_offset);
                 log::debug!("Física {}: entidad {} tipo='{}'",
                     if enabled { "activada" } else { "desactivada" }, id, body_type);
                 send_event(&EngineEvent::PhysicsChanged { entity_id: id, enabled, body_type });

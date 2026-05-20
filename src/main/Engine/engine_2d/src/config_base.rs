@@ -18,7 +18,6 @@ impl State {
     /// de escena no deje caches, scripts o referencias colgando entre escenas.
     pub(crate) fn reset_runtime_scene_2d(&mut self) {
         self.stop_audio_internal();
-        self.physics.clear();
         self.physics_2d.clear();
         self.world.clear();
         self.meshes.clear();

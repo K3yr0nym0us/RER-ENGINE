@@ -24,3 +24,9 @@ alwaysApply: true
 - **Engine-first (mandatory)**: spatial math, entity classification, transforms, snap, scale, collisions, and any state the engine owns must live in **Rust**. The frontend only sends intent and reflects engine events—no reimplementing engine logic in TypeScript. Pure UI/presentation in the front is fine.
 - Target **Windows and Linux**; avoid APIs or crates that are not viable on both.
 - If requirements are unclear, ask the developer; do not invent behavior from unrelated directories.
+
+## Git and delivery
+
+- **Do not run `git commit`** unless the user explicitly asks for a commit **after** they have tested the change (or they confirm testing is not required).
+- When implementation is done but untested: leave changes uncommitted, give concise manual test steps, and move checklist items to **Implementado** only after the user confirms.
+- Do not mark checklist tasks as done in **Por implementar** while they remain `[x]` there; completed work belongs under **Implementado**.

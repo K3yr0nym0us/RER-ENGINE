@@ -8,7 +8,6 @@ use rer_engine_shared::gpu::{init_gpu, EngineGpuProfile, GpuInitError};
 
 use crate::config_2d::{ActiveTool, GridConfig, PhysicsWorld2D};
 use crate::entity_save_meta::EntitySaveRegistry;
-use crate::config_compat::physics::PhysicsWorld;
 use crate::config_compat::Camera;
 use crate::ecs::{MeshComponent, World};
 use crate::gizmo;
@@ -455,7 +454,6 @@ impl State {
             gizmo_buffer,
             gizmo_bind_group,
             gizmo_buffer_uni,
-            physics: PhysicsWorld::new(),
             physics_2d: PhysicsWorld2D::new(),
             selected_entity:      None,
             selected_entities:    Vec::new(),

@@ -38,10 +38,7 @@ El runtime real 2D vive principalmente en estos archivos:
 
 ## Que NO es runtime 2D real
 
-Los modulos bajo `src/config_compat/` son shims de compatibilidad **dentro de este crate** (firmas heredadas, rutas que ya no deben crecer).
-
-- `src/config_compat/physics.rs` no implementa la simulacion 2D real; solo conserva una API minima para rutas heredadas.
-- Cualquier cambio de comportamiento de fisica 2D debe nacer en `src/physics_2d.rs`, no en `config_compat`.
+Los modulos bajo `src/config_compat/` son shims minimos **dentro de este crate** (`camera` orbita legacy, `mesh` ground plane). La fisica 2D vive solo en `physics_2d.rs` / `PhysicsWorld2D` — no queda shim de fisica en `config_compat`.
 
 ## Persistencia de escena (`.save`)
 

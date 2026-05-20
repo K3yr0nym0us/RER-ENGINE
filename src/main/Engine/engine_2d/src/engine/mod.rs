@@ -42,7 +42,6 @@ use crate::ecs::{NameComponent, Transform, World};
 use crate::gizmo::GizmoBuffer;
 use crate::ipc::EngineCommand;
 use crate::mesh::Mesh;
-use crate::config_compat::physics::PhysicsWorld;
 use crate::scripting::ScriptEngine;
 
 use crate::ecs::EntityId;
@@ -100,7 +99,6 @@ pub struct State {
     pub(crate) gizmo_bind_group: wgpu::BindGroup,
     pub(crate) gizmo_buffer_uni: wgpu::Buffer,
     // Física
-    pub physics:      PhysicsWorld,
     pub physics_2d:   PhysicsWorld2D,
     // Selección
     pub selected_entity:     Option<EntityId>,

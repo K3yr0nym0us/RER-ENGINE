@@ -52,6 +52,7 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 - [x] `entity_removed` con snapshot de puntos (colliders / execution areas)
 - [x] Export escena: `export_save_snapshot` → `save_snapshot_ready` (`entity_save_meta`, marcadores scenario/character/collider)
 - [x] Asignación de IDs de entidad: `HashSet` + cola de IDs reciclados en `ecs.rs` (escenas grandes)
+- [x] Física 2D unificada: eliminado shim `config_compat/physics`; solo `PhysicsWorld2D`
 
 ### Motor-first (2D)
 

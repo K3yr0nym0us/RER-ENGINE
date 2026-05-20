@@ -4,4 +4,3 @@ pub(crate) mod camera;
 pub(crate) use camera::Camera;
 
 pub(crate) mod mesh;
-pub(crate) mod physics;

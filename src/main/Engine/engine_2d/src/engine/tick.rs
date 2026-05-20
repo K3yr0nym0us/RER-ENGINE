@@ -18,11 +18,7 @@ impl State {
         if now.duration_since(self.metrics_last_emit) >= std::time::Duration::from_secs(1) {
             let elapsed_secs = now.duration_since(self.metrics_last_emit).as_secs_f32();
             let fps = self.metrics_frame_count as f32 / elapsed_secs;
-            let physics_bodies = if self.camera_2d.is_some() {
-                self.physics_2d.body_count()
-            } else {
-                self.physics.body_count()
-            };
+            let physics_bodies = self.physics_2d.body_count();
             send_event(&EngineEvent::DebugMetrics {
                 fps,
                 frame_time_ms:  self.delta_time * 1000.0,
@@ -36,24 +32,16 @@ impl State {
             send_event(&EngineEvent::AutosaveTick);
             self.autosave_last_tick = now;
         }
-        if self.camera_2d.is_some() {
-            self.update_scripts();
-            if self.preview_playing {
-                // Los deslizamientos pendientes (on_press slide) se avanzan antes del paso
-                // de física para que la velocidad esté lista cuando Rapier integra el cuerpo.
-                self.advance_pending_slides();
-                // En modo juego sí aplicamos físicas completas.
-                self.physics_2d.step(self.delta_time, &mut self.world);
-                // Sincronizar anim_saved_transforms con la posición post-physics (ya bloqueada
-                // por colisiones) para que update_animations() no restaure la posición original.
-                self.sync_physics_anim_origins();
-                self.update_execution_areas_2d();
-            }
-        } else {
-            self.update_scripts();
-            if self.preview_playing {
-                self.physics.step(self.delta_time, &mut self.world);
-            }
+        self.update_scripts();
+        if self.preview_playing && self.camera_2d.is_some() {
+            // Los deslizamientos pendientes (on_press slide) se avanzan antes del paso
+            // de física para que la velocidad esté lista cuando Rapier integra el cuerpo.
+            self.advance_pending_slides();
+            self.physics_2d.step(self.delta_time, &mut self.world);
+            // Sincronizar anim_saved_transforms con la posición post-physics (ya bloqueada
+            // por colisiones) para que update_animations() no restaure la posición original.
+            self.sync_physics_anim_origins();
+            self.update_execution_areas_2d();
         }
     }
 
