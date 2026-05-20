@@ -31,7 +31,7 @@ return script
 
 | Callback | Cuándo |
 |----------|--------|
-| `on_press(self, entity, key)` | Tecla/control asignado (script de control) |
+| `on_press(self, entity, key)` | Tecla/control asignado — **una vez por pulsación** (sin autorepeat; ver [Gravedad y controles 2D](#gravedad-y-controles-2d)) |
 | `on_trigger_enter(self, trigger, actor)` | Un actor entra en un *execution area* (solo 2D) |
 
 ---
@@ -91,12 +91,34 @@ Herramientas del plano lateral y plataformas:
 
 | Función | Qué hace |
 |---------|----------|
-| `engine.apply_kinematic_gravity(id, speed_x, jump_speed_y, gravity)` | Salto/gravedad en cuerpo kinematic. |
+| `engine.apply_kinematic_gravity(id, speed_x, jump_speed_y, gravity)` | Impulso de salto + velocidad horizontal en cuerpo **kinematic** (ver abajo). |
 | `engine.apply_kinematic_impulse(id, dir_x, dir_y, impulse)` | Impulso puntual. |
 | `engine.move_entity_slide(id, dx, dy, speed)` | Desplazamiento con shape-cast (sin teletransporte). |
 | `engine.set_vsync(enabled)` | Activa o desactiva V-Sync. |
 
 **Triggers:** coloca un script en un *execution area* y usa `on_trigger_enter(trigger, actor)` para reaccionar cuando otro personaje entra.
+
+### Gravedad y controles (2D)
+
+**Gravedad del mundo** (panel *Mundo* / IPC `set_gravity`):
+
+- El valor es una **magnitud** (u/s²), siempre aplicada **hacia abajo** en el plano XY del motor.
+- El runtime usa internamente el eje Y negativo de Rapier (`-abs(gravity)`), aunque el script o el editor envíen un número positivo.
+
+**`apply_kinematic_gravity(id, speed_x, jump_speed_y, gravity)`** (solo en **play**, cuerpo `kinematic`):
+
+| Parámetro | Efecto |
+|-----------|--------|
+| `speed_x` | Velocidad horizontal objetivo para el siguiente paso de física. |
+| `jump_speed_y` | Impulso vertical sumado una vez (salto). |
+| `gravity` | **Ignorado** en la implementación actual; la caída usa la gravedad del mundo configurada en el editor. |
+
+La integración real ocurre en `PhysicsWorld2D::step()` (shape-cast + suelo), no en el cuarto argumento de Lua.
+
+**`on_press`**:
+
+- Se ejecuta **una sola vez** por pulsación de tecla o botón (sin autorepeat). Usar para saltos y acciones discretas; el movimiento continuo va en `update` / `on_keep`.
+- Si el cuerpo es **kinematic** y el script llama `move_entity` / `move_entity_facing` desde `on_press`, el motor convierte ese desplazamiento en un **slide corto** para que se note en una pulsación única (compatibilidad con scripts legacy).
 
 **Ejemplo de control 2D:**
 
@@ -109,7 +131,8 @@ function script.on_press(self, entity, key)
     engine.move_entity(entity.id, 7, -1, 0)
     engine.play_animation(entity.id, "Run")
   elseif key == "jump" then
-    engine.apply_kinematic_gravity(entity.id, 0, 12, -30)
+    -- jump_speed_y = impulso; el 4º argumento no altera la gravedad del mundo
+    engine.apply_kinematic_gravity(entity.id, 0, 12, 0)
     engine.play_animation(entity.id, "Jump")
   end
 end

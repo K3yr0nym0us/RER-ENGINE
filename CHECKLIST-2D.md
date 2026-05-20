@@ -45,6 +45,7 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 - [x] Quick build con snap/escala calculados en Rust
 - [x] Blueprints 2D (instanciar, actualizar desde plantilla)
 - [x] API Lua 2D: `apply_kinematic_gravity`, `move_entity_slide`, `set_vsync`, etc.
+- [x] Semántica `SetGravity`, `apply_kinematic_gravity` y `on_press` — contrato en [`LUA_API.md`](./LUA_API.md#gravedad-y-controles-2d)
 - [x] Spatial grid para picking/consultas
 - [x] Undo/redo de transformaciones, herramientas de dibujo y entidades (snapshot: escenario, personaje, colisionador, trigger)
 - [x] Atlas: evento `atlas_exhausted` → consola del editor
@@ -73,8 +74,6 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 ## Por implementar
 
 - [ ] Unificar referencia espacial render / picking / triggers / física
-- [ ] Revisar semántica `SetGravity`, `apply_kinematic_gravity` y `on_press` en cuerpos kinematic
-- [ ] Reducir shims `config_compat` cuando no queden rutas heredadas
 
 ---
 
