@@ -2435,8 +2435,12 @@ dependencies = [
 name = "rer-engine-shared"
 version = "0.1.0"
 dependencies = [
+ "log",
  "serde",
  "serde_json",
+ "wgpu",
+ "windows 0.54.0",
+ "x11",
 ]
 
 [[package]]

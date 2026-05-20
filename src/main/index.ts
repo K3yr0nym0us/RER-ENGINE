@@ -18,8 +18,8 @@ import { entityPathMarker } from '../shared-types/types';
 app.commandLine.appendSwitch('disable-gpu');
 app.commandLine.appendSwitch('disable-software-rasterizer');
 
-// En Linux forzar el backend X11 de Chromium/GTK para que el embedding
-// XEMBED funcione correctamente. Las vars de entorno deben establecerse
+// En Linux forzar el backend X11 de Chromium/GTK para alinear el viewport
+// overlay del motor (coordenadas de pantalla). Las vars deben establecerse
 // antes de que las librerías nativas (libwayland, GTK, libGL) se inicialicen.
 if (process.platform === 'linux') {
   app.commandLine.appendSwitch('ozone-platform-hint', 'x11');
@@ -102,11 +102,10 @@ function createMainWindow(): void {
     mainWindow = null
   })
 
-  // Cuando la ventana principal se mueve en Linux, el motor necesita recalcular
-  // su posición. En Windows, el hilo position-tracker nativo (Rust/Win32) se encarga
-  // de mover la ventana del motor en tiempo real sin IPC, así que no hacemos nada aquí.
+  // Linux: respaldo IPC al mover (el tracker X11 escucha ConfigureNotify).
+  // Windows: solo el position-tracker nativo (WinEventHook); IPC aquí causa lag.
   mainWindow.on('move', () => {
-    if (process.platform !== 'win32') {
+    if (process.platform === 'linux') {
       mainWindow?.webContents.send('request-viewport-bounds')
     }
   })
@@ -183,30 +182,26 @@ function startEngine(embed?: ViewportBounds): void {
     ? path.join(process.resourcesPath, 'engine', binaryName)
     : path.join(app.getAppPath(), 'src', 'main', 'Engine', 'target', (process.env.RER_ENGINE_PROFILE || 'debug').trim(), binaryName)
 
-  // Argumentos de embedding en Linux
+  // Modo overlay: ventana nativa separada alineada al hueco del editor.
   let engineArgs: string[] = []
-  if (process.platform === 'linux' && embed) {
-    const xid = getMainWindowXID()
-    if (xid !== 0) {
-      const x      = Math.round(embed.x)
-      const y      = Math.round(embed.y)
-      const width  = Math.max(1, Math.round(embed.width))
-      const height = Math.max(1, Math.round(embed.height))
-      engineArgs = ['--embed', String(xid), String(x), String(y), String(width), String(height)]
-      console.log(`[engine] modo embed — xid=${xid} pos=(${x},${y}) size=${width}x${height}`)
-    }
-  } else if (process.platform === 'win32' && embed) {
-    // En Windows usamos SetParent vía winit para embedding nativo.
-    // Pasamos el HWND real de la ventana Electron.
-    const hwnd   = getMainWindowHWND()
+  if (embed && (process.platform === 'linux' || process.platform === 'win32')) {
     const x      = Math.round(embed.x)
     const y      = Math.round(embed.y)
     const width  = Math.max(1, Math.round(embed.width))
     const height = Math.max(1, Math.round(embed.height))
-    const relX = Math.max(0, Math.round(embed.rel_x ?? 0))
-    const relY = Math.max(0, Math.round(embed.rel_y ?? 0))
-    engineArgs = ['--embed', hwnd, String(x), String(y), String(width), String(height), String(relX), String(relY)]
-    console.log(`[engine] modo embed Windows — hwnd=${hwnd} pos=(${x},${y}) size=${width}x${height} offset=(${relX},${relY})`)
+    const relX   = Math.max(0, Math.round(embed.rel_x ?? 0))
+    const relY   = Math.max(0, Math.round(embed.rel_y ?? 0))
+    if (process.platform === 'linux') {
+      const xid = getMainWindowXID()
+      if (xid !== 0) {
+        engineArgs = ['--overlay', String(xid), String(x), String(y), String(width), String(height), String(relX), String(relY)]
+        console.log(`[engine] modo overlay Linux — xid=${xid} pos=(${x},${y}) size=${width}x${height} offset=(${relX},${relY})`)
+      }
+    } else {
+      const hwnd = getMainWindowHWND()
+      engineArgs = ['--overlay', hwnd, String(x), String(y), String(width), String(height), String(relX), String(relY)]
+      console.log(`[engine] modo overlay Windows — hwnd=${hwnd} pos=(${x},${y}) size=${width}x${height} offset=(${relX},${relY})`)
+    }
   }
 
   // LIBGL_ALWAYS_SOFTWARE=1 asegura que EGL use llvmpipe en vez de buscar DRI3.
@@ -216,9 +211,7 @@ function startEngine(embed?: ViewportBounds): void {
     ? {
         WAYLAND_DISPLAY: '',
         GDK_BACKEND:     'x11',
-        LIBGL_ALWAYS_SOFTWARE: '1',
         EGL_LOG_LEVEL:   'fatal',
-        // Asegurar que el motor herede el servidor de audio de WSLg
         ...(process.env.PULSE_SERVER ? { PULSE_SERVER: process.env.PULSE_SERVER } : {}),
       }
     : {}
@@ -1132,10 +1125,9 @@ let engineStarted = false
 // pre-DPR). Se actualiza en cada 'viewport-bounds'.
 let lastRelativeBounds: ViewportBounds | null = null
 
-// En Windows el motor corre como owned popup (no WS_CHILD), por lo que
-// necesita coordenadas de pantalla absolutas en vez de coordenadas relativas
-// al área cliente de Electron. Convierte los bounds DPR-escalados del renderer
-// (relativos al contenido de Electron) a coordenadas de pantalla físicas.
+// El motor overlay usa coordenadas de pantalla absolutas (popup separado).
+// Convierte los bounds DPR-escalados del renderer (relativos al contenido de
+// Electron) a coordenadas físicas de pantalla.
 function viewportToScreenBounds(bounds: ViewportBounds): ViewportBounds {
   if (!mainWindow) return bounds
   const cb          = mainWindow.getContentBounds()
@@ -1160,8 +1152,8 @@ ipcMain.on('viewport-bounds', (_event, bounds: ViewportBounds) => {
     engineStarted = false
   }
 
-  // En Windows el popup usa coordenadas de pantalla absolutas
-  const effectiveBounds = process.platform === 'win32' ? viewportToScreenBounds(bounds) : bounds
+  const useScreenBounds = process.platform === 'win32' || process.platform === 'linux'
+  const effectiveBounds = useScreenBounds ? viewportToScreenBounds(bounds) : bounds
   lastEffectiveBounds = effectiveBounds
 
   if (engineStarted) {
@@ -1176,8 +1168,8 @@ ipcMain.on('viewport-bounds', (_event, bounds: ViewportBounds) => {
       height: Math.max(1, Math.round(effectiveBounds.height)),
       // Offsets físicos del renderer (sin conversión DPI): el tracker Rust
       // los usa directamente para el offset relativo al área de contenido.
-      offset_x: process.platform === 'win32' ? Math.round(bounds.x) : undefined,
-      offset_y: process.platform === 'win32' ? Math.round(bounds.y) : undefined,
+      offset_x: useScreenBounds ? Math.round(bounds.x) : undefined,
+      offset_y: useScreenBounds ? Math.round(bounds.y) : undefined,
     })
     return
   }

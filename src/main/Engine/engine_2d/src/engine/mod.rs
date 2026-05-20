@@ -123,7 +123,7 @@ pub struct State {
     pub(crate) grid_buffer:      GridBuffer,
     pub(crate) grid_bind_group:  wgpu::BindGroup,
     pub(crate) grid_buffer_uni:  wgpu::Buffer,
-    /// Estado de la tecla Ctrl (enviado por IPC desde Electron, ya que la ventana embebida
+    /// Estado de la tecla Ctrl (enviado por IPC desde Electron, ya que la ventana overlay
     /// no recibe keyboard events directamente).
     pub(crate) ctrl_held:        bool,
     /// Herramienta de dibujo activa en modo 2D.

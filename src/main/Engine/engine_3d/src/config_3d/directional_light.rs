@@ -102,7 +102,7 @@ impl State {
         ]
     }
 
-    /// Proyección ortográfica de la luz que cubre los bounds del mundo (estable en GL/embed).
+    /// Proyección ortográfica de la luz que cubre los bounds del mundo.
     pub(crate) fn build_light_view_proj(&self) -> [[f32; 4]; 4] {
         let center = self.directional_light_scene_center();
         let dir = self.directional_light_dir.normalize();

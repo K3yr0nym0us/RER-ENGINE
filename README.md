@@ -27,7 +27,7 @@ Electron arranca el binario que corresponda según el tipo de proyecto. Comparte
 │             Electron (BrowserWindow)        │
 │  ┌──────────────────┐  ┌───────────────────┐│
 │  │   React + TS     │  │  Viewport Rust    ││
-│  │   (editor UI)    │  │  wgpu embebido    ││
+│  │   (editor UI)    │  │  wgpu overlay     ││
 │  └──────────────────┘  └───────────────────┘│
 └─────────────────────────────────────────────┘
           ↑  IPC — una línea JSON por mensaje
@@ -52,7 +52,7 @@ Principio **engine-first**: posiciones, cámaras, física y convenciones espacia
 
 - **Node.js** 20+ y **Yarn**
 - **Rust** (toolchain estable) y **Cargo**
-- **Windows 11** o **Linux con X11** (el viewport se embebe vía handle nativo; en Wayland usar XWayland / `ELECTRON_OZONE_PLATFORM_HINT=x11`)
+- **Windows 11** o **Linux con X11** (viewport del motor como ventana overlay alineada al editor; en Wayland usar XWayland / `ELECTRON_OZONE_PLATFORM_HINT=x11`)
 
 ---
 

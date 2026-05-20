@@ -165,7 +165,7 @@ pub enum EngineCommand {
     SetGridCellSize { size: f32 },
     /// Cambiar el límite de FPS del loop principal.
     SetTargetFps { fps: u64 },
-    /// Estado de la tecla Ctrl enviado desde Electron (ventana embebida no recibe teclado directo).
+    /// Estado de la tecla Ctrl enviado desde Electron (ventana overlay no recibe teclado directo).
     SetCtrlHeld { held: bool },
     /// Restaurar posición y zoom de la cámara 2D ortográfica.
     SetCamera2d { x: f32, y: f32, half_h: f32 },

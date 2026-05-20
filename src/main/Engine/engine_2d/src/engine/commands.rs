@@ -28,7 +28,7 @@ impl State {
             EngineCommand::Resize { width, height } => {
                 self.resize(PhysicalSize::new(width, height));
             }            EngineCommand::SetBounds { x, y, width, height, .. } => {
-                // Mover la ventana hijo dentro del padre X11
+                // Mover/redimensionar la ventana overlay
                 let _ = self.window.set_outer_position(
                     winit::dpi::PhysicalPosition::new(x, y)
                 );

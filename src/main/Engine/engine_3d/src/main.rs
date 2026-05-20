@@ -34,8 +34,11 @@ use winit::{
 
 use ipc::{EngineCommand, EngineEvent};
 use platform::query_ctrl_held_os;
-#[cfg(target_os = "windows")]
-use platform::start_position_tracker;
+use rer_engine_shared::overlay::{parse_overlay_config, OverlayConfig, WindowAttachMode};
+#[cfg(any(target_os = "windows", target_os = "linux"))]
+use rer_engine_shared::platform::{start_position_tracker, TrackerOffset};
+#[cfg(target_os = "linux")]
+use rer_engine_shared::platform::setup_overlay_x11;
 
 /// Convierte un `KeyCode` de winit a la string de control usada en los bindings.
 ///
@@ -104,46 +107,12 @@ fn map_gamepad_control_key(button: GamepadButton) -> Option<&'static str> {
 }
 
 // ---------------------------------------------------------------------------
-// Configuración de embedding (Fase 2)
-// ---------------------------------------------------------------------------
-#[derive(Debug, Clone)]
-pub struct EmbedConfig {
-    pub parent_xid: u64,
-    pub x:          i32,
-    pub y:          i32,
-    pub width:      u32,
-    pub height:     u32,
-    /// Offset físico del EngineView dentro del área de contenido de Electron.
-    /// Pasado desde Electron como `bounds.x / bounds.y` (rect * devicePixelRatio),
-    /// garantizando que el DPR del monitor actual esté aplicado.
-    pub rel_x:      i32,
-    pub rel_y:      i32,
-}
-
-fn parse_embed_config() -> Option<EmbedConfig> {
-    // Espera: --embed <xid> <x> <y> <width> <height> [rel_x rel_y]
-    let args: Vec<String> = std::env::args().collect();
-    if args.len() >= 7 && args[1] == "--embed" {
-        Some(EmbedConfig {
-            parent_xid: args[2].parse().ok()?,
-            x:          args[3].parse().ok()?,
-            y:          args[4].parse().ok()?,
-            width:      args[5].parse().ok()?,
-            height:     args[6].parse().ok()?,
-            rel_x: args.get(7).and_then(|a| a.parse().ok()).unwrap_or(0),
-            rel_y: args.get(8).and_then(|a| a.parse().ok()).unwrap_or(0),
-        })
-    } else {
-        None
-    }
-}
-
-// ---------------------------------------------------------------------------
 // Estructura principal de la aplicación winit
 // ---------------------------------------------------------------------------
 struct App {
     state:           Option<engine::State>,
-    embed:           Option<EmbedConfig>,
+    overlay:         Option<OverlayConfig>,
+    attach_mode:     WindowAttachMode,
     // ── Cámara orbital
     mouse_right:     bool,   // botón derecho  → orbitar
     mouse_middle:    bool,   // botón central  → pan
@@ -162,16 +131,118 @@ struct App {
     // Frame rate cap: tiempo objetivo del próximo frame (evita busy loop)
     next_frame_at:   std::time::Instant,
     target_fps:      u64,
-    #[cfg(target_os = "windows")]
-    // Windows: offset compartido con el hilo position-tracker.
-    // Actualizado en SetBounds para sincronizar maximize/monitor-change.
-    tracker_offset:     std::sync::Arc<(std::sync::atomic::AtomicI32, std::sync::atomic::AtomicI32)>,
-    #[cfg(target_os = "windows")]
-    tracker_parent_hwnd: isize,
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
+    tracker_offset:      TrackerOffset,
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
+    tracker_parent_id:   u64,
     cursor_captured:   bool,
 }
 
 impl App {
+    fn initial_tracker_offset(overlay: &OverlayConfig) -> TrackerOffset {
+        std::sync::Arc::new((
+            std::sync::atomic::AtomicI32::new(overlay.rel_x),
+            std::sync::atomic::AtomicI32::new(overlay.rel_y),
+        ))
+    }
+
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
+    fn setup_overlay_tracking(&mut self, window: &Window) {
+        let Some(overlay) = self.overlay.as_ref() else { return };
+        if overlay.parent_id == 0 {
+            return;
+        }
+        use raw_window_handle::HasWindowHandle;
+        let Ok(handle) = window.window_handle() else { return };
+
+        let offset = Self::initial_tracker_offset(overlay);
+        self.tracker_offset = std::sync::Arc::clone(&offset);
+        self.tracker_parent_id = overlay.parent_id;
+
+        #[cfg(target_os = "windows")]
+        {
+            use raw_window_handle::RawWindowHandle;
+            use windows::Win32::Foundation::HWND;
+            use windows::Win32::UI::WindowsAndMessaging::{
+                GetWindowLongPtrW, SetWindowLongPtrW, GWL_EXSTYLE, GWLP_HWNDPARENT, WS_EX_NOACTIVATE,
+            };
+            if let RawWindowHandle::Win32(h) = handle.as_raw() {
+                let motor_hwnd = HWND(h.hwnd.get() as isize);
+                let electron_hwnd = HWND(overlay.parent_id as isize);
+                unsafe {
+                    SetWindowLongPtrW(motor_hwnd, GWLP_HWNDPARENT, electron_hwnd.0 as isize);
+                    let ex = GetWindowLongPtrW(motor_hwnd, GWL_EXSTYLE);
+                    SetWindowLongPtrW(motor_hwnd, GWL_EXSTYLE, ex | WS_EX_NOACTIVATE.0 as isize);
+                }
+                start_position_tracker(motor_hwnd.0, electron_hwnd.0, offset);
+            }
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            use raw_window_handle::RawWindowHandle;
+            if let RawWindowHandle::Xlib(x) = handle.as_raw() {
+                let engine_xid = x.window as u32;
+                let parent_xid = overlay.parent_id as u32;
+                setup_overlay_x11(engine_xid, parent_xid);
+                start_position_tracker(engine_xid, parent_xid, offset);
+            }
+        }
+    }
+
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
+    fn update_tracker_offset(&mut self, x: i32, y: i32, offset_x: Option<i32>, offset_y: Option<i32>) {
+        if self.tracker_parent_id == 0 {
+            return;
+        }
+        use std::sync::atomic::Ordering;
+        if let (Some(ox), Some(oy)) = (offset_x, offset_y) {
+            self.tracker_offset.0.store(ox, Ordering::Relaxed);
+            self.tracker_offset.1.store(oy, Ordering::Relaxed);
+            return;
+        }
+        #[cfg(target_os = "windows")]
+        {
+            use windows::Win32::Foundation::{HWND, POINT};
+            use windows::Win32::Graphics::Gdi::ClientToScreen;
+            unsafe {
+                let mut pt = POINT { x: 0, y: 0 };
+                if ClientToScreen(HWND(self.tracker_parent_id as isize), &mut pt).as_bool() {
+                    self.tracker_offset.0.store(x - pt.x, Ordering::Relaxed);
+                    self.tracker_offset.1.store(y - pt.y, Ordering::Relaxed);
+                }
+            }
+        }
+        #[cfg(target_os = "linux")]
+        {
+            unsafe {
+                let display = x11::xlib::XOpenDisplay(std::ptr::null());
+                if display.is_null() {
+                    return;
+                }
+                let root = x11::xlib::XDefaultRootWindow(display);
+                let mut parent_root_x: i32 = 0;
+                let mut parent_root_y: i32 = 0;
+                let mut child_return: x11::xlib::Window = 0;
+                if x11::xlib::XTranslateCoordinates(
+                    display,
+                    self.tracker_parent_id as u32,
+                    root,
+                    0,
+                    0,
+                    &mut parent_root_x,
+                    &mut parent_root_y,
+                    &mut child_return,
+                ) != 0
+                {
+                    self.tracker_offset.0.store(x - parent_root_x, Ordering::Relaxed);
+                    self.tracker_offset.1.store(y - parent_root_y, Ordering::Relaxed);
+                }
+                x11::xlib::XCloseDisplay(display);
+            }
+        }
+    }
+
     fn reset_preview_input_state(&mut self, state: &mut engine::State) {
         self.last_cursor = None;
         self.mouse_right = false;
@@ -267,29 +338,12 @@ impl ApplicationHandler<EngineCommand> for App {
         let mut attrs = Window::default_attributes()
             .with_title("RER-ENGINE — Viewport");
 
-        if let Some(embed) = &self.embed {
-            // ── Modo embebido ────────────────────────────────────────────────
+        if let Some(overlay) = &self.overlay {
             attrs = attrs
-                .with_inner_size(winit::dpi::PhysicalSize::new(embed.width, embed.height))
-                .with_position(winit::dpi::PhysicalPosition::new(embed.x, embed.y))
+                .with_inner_size(winit::dpi::PhysicalSize::new(overlay.width, overlay.height))
+                .with_position(winit::dpi::PhysicalPosition::new(overlay.x, overlay.y))
                 .with_decorations(false)
                 .with_resizable(false);
-
-            #[cfg(target_os = "linux")]
-            {
-                use winit::platform::x11::WindowAttributesExtX11;
-                // parent_xid == 0 cuando se corre desde Windows/plataforma sin XID real
-                if embed.parent_xid != 0 {
-                    attrs = attrs.with_embed_parent_window(embed.parent_xid as u32);
-                }
-            }
-            #[cfg(target_os = "windows")]
-            {
-                // En Windows NO se usa with_parent_window: winit añade WS_CHILD y la
-                // superficie de Chromium queda encima interceptando todos los eventos.
-                // En su lugar se crea un WS_POPUP normal y se asigna Electron como
-                // owner vía Win32 después de la creación (ver bloque post-creación).
-            }
         } else {
             // ── Modo standalone ──────────────────────────────────────────────
             attrs = attrs
@@ -303,64 +357,9 @@ impl ApplicationHandler<EngineCommand> for App {
                 .expect("No se pudo crear la ventana"),
         );
 
-        // Windows: asignar Electron como owner del popup y añadir WS_EX_NOACTIVATE.
-        // Owned popup: queda visualmente encima de Electron sin ser WS_CHILD,
-        // por lo que la superficie de Chromium no puede interceptar sus eventos.
-        #[cfg(target_os = "windows")]
-        if let Some(embed) = &self.embed {
-            if embed.parent_xid != 0 {
-                use raw_window_handle::HasWindowHandle;
-                use windows::Win32::Foundation::HWND;
-                use windows::Win32::UI::WindowsAndMessaging::{
-                    GetWindowLongPtrW, SetWindowLongPtrW,
-                    GWL_EXSTYLE, GWLP_HWNDPARENT, WS_EX_NOACTIVATE,
-                };
-                if let Ok(handle) = window.window_handle() {
-                    if let raw_window_handle::RawWindowHandle::Win32(h) = handle.as_raw() {
-                        let motor_hwnd    = HWND(h.hwnd.get() as isize);
-                        let electron_hwnd = HWND(embed.parent_xid as isize);
-                        // SAFETY: ambos HWNDs son válidos y viven mientras el motor esté activo
-                        unsafe {
-                            // Electron como owner: la ventana del motor siempre queda encima
-                            SetWindowLongPtrW(motor_hwnd, GWLP_HWNDPARENT, electron_hwnd.0 as isize);
-                            // No robar foco de teclado a Electron al hacer click
-                            let ex = GetWindowLongPtrW(motor_hwnd, GWL_EXSTYLE);
-                            SetWindowLongPtrW(motor_hwnd, GWL_EXSTYLE, ex | WS_EX_NOACTIVATE.0 as isize);
-                        }
-                        // Lanzar hilo position-tracker con offset inicial calculado
-                        // usando ClientToScreen para el área de contenido del padre
-                        // (sin invisible resize border), alineado con getContentBounds() de Electron.
-                        let offset = unsafe {
-                            use windows::Win32::Foundation::POINT;
-                            use windows::Win32::Graphics::Gdi::ClientToScreen;
-                            // Si Electron pasó rel_x/rel_y (offsets físicos del renderer),
-                            // usarlos directamente: son el offset correcto sin conversión DPI.
-                            let (off_x, off_y) = if self.embed.as_ref().map(|e| e.rel_x != 0 || e.rel_y != 0).unwrap_or(false) {
-                                let rx = self.embed.as_ref().map(|e| e.rel_x).unwrap_or(0);
-                                let ry = self.embed.as_ref().map(|e| e.rel_y).unwrap_or(0);
-                                (rx, ry)
-                            } else {
-                                // Fallback: calcular desde ClientToScreen (funciona en monitor principal)
-                                let mut pt = POINT { x: 0, y: 0 };
-                                let _ = ClientToScreen(electron_hwnd, &mut pt);
-                                let embed_x = self.embed.as_ref().map(|e| e.x).unwrap_or(0);
-                                let embed_y = self.embed.as_ref().map(|e| e.y).unwrap_or(0);
-                                (embed_x - pt.x, embed_y - pt.y)
-                            };
-                            std::sync::Arc::new((
-                                std::sync::atomic::AtomicI32::new(off_x),
-                                std::sync::atomic::AtomicI32::new(off_y),
-                            ))
-                        };
-                        start_position_tracker(motor_hwnd.0, electron_hwnd.0, std::sync::Arc::clone(&offset));
-                        self.tracker_offset = offset;
-                        self.tracker_parent_hwnd = electron_hwnd.0;
-                    }
-                }
-            }
-        }
+        self.setup_overlay_tracking(&window);
 
-        let state = pollster::block_on(engine::State::new(Arc::clone(&window), self.embed.is_some()));
+        let state = pollster::block_on(engine::State::new(Arc::clone(&window), self.attach_mode));
 
         // Notificar a Electron que el motor está listo (gravedad = valor interno del motor)
         ipc::send_event(&EngineEvent::Ready {
@@ -380,31 +379,9 @@ impl ApplicationHandler<EngineCommand> for App {
             self.target_fps = (*fps).clamp(1, 1000);
             self.next_frame_at = std::time::Instant::now();
         }
-        // Windows: cuando set_bounds llega (maximize, cambio de monitor, resize),
-        // actualizar el offset del position-tracker ANTES de mover la ventana.
-        // Así el tracker y set_bounds no pelean — ambos apuntan al mismo lugar.
-        #[cfg(target_os = "windows")]
+        #[cfg(any(target_os = "windows", target_os = "linux"))]
         if let EngineCommand::SetBounds { x, y, offset_x, offset_y, .. } = &cmd {
-            if self.tracker_parent_hwnd != 0 {
-                use windows::Win32::Foundation::{HWND, POINT};
-                use windows::Win32::Graphics::Gdi::ClientToScreen;
-                use std::sync::atomic::Ordering;
-                // Si el comando trae offset_x/offset_y (offsets físicos del renderer),
-                // usarlos directamente: son la fuente de verdad sin conversión DPI.
-                if let (Some(ox), Some(oy)) = (offset_x, offset_y) {
-                    self.tracker_offset.0.store(*ox, Ordering::Relaxed);
-                    self.tracker_offset.1.store(*oy, Ordering::Relaxed);
-                } else {
-                    // Fallback: calcular desde la posición absoluta y ClientToScreen
-                    unsafe {
-                        let mut pt = POINT { x: 0, y: 0 };
-                        if ClientToScreen(HWND(self.tracker_parent_hwnd), &mut pt).as_bool() {
-                            self.tracker_offset.0.store(x - pt.x, Ordering::Relaxed);
-                            self.tracker_offset.1.store(y - pt.y, Ordering::Relaxed);
-                        }
-                    }
-                }
-            }
+            self.update_tracker_offset(*x, *y, *offset_x, *offset_y);
         }
         let mut preview_toggle = None;
         match cmd {
@@ -872,14 +849,18 @@ fn main() {
     // ControlFlow se gestiona dinámicamente en about_to_wait con WaitUntil(next_frame).
     // NO usar Poll aquí: Poll + request_redraw en RedrawRequested = busy loop al 100% CPU.
 
-    let embed = parse_embed_config();
-    if embed.is_some() {
-        log::info!("Modo embebido activado");
-    }
+    let overlay = parse_overlay_config();
+    let attach_mode = if overlay.is_some() {
+        log::info!("Modo overlay activado");
+        WindowAttachMode::Overlay
+    } else {
+        WindowAttachMode::Standalone
+    };
 
     let mut app = App {
         state:               None,
-        embed,
+        overlay,
+        attach_mode,
         mouse_right:         false,
         mouse_middle:        false,
         last_cursor:         None,
@@ -892,13 +873,13 @@ fn main() {
         gamepad_pressed:     HashSet::new(),
         next_frame_at:       std::time::Instant::now(),
         target_fps:          60,
-        #[cfg(target_os = "windows")]
+        #[cfg(any(target_os = "windows", target_os = "linux"))]
         tracker_offset:      std::sync::Arc::new((
             std::sync::atomic::AtomicI32::new(0),
             std::sync::atomic::AtomicI32::new(0),
         )),
-        #[cfg(target_os = "windows")]
-        tracker_parent_hwnd: 0,
+        #[cfg(any(target_os = "windows", target_os = "linux"))]
+        tracker_parent_id:   0,
         cursor_captured:     false,
     };
     event_loop.run_app(&mut app).expect("Error en el event loop");

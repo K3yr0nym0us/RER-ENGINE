@@ -1,7 +1,7 @@
 //! Post-proceso 3D alineado con UE / Unity / Godot 4:
 //!
 //! 1. **G-buffer ligero (MRT):** `ambient`, `direct`, máscara de sombra, depth lineal (R32), velocity (RG16).
-//! 2. **Shadow map único 2D** (2048, compare en GL/embed).
+//! 2. **Shadow map único 2D** (2048, depth compare).
 //! 3. **TAA en máscara de sombra** → **lit-composite:** `lit = ambient + direct × mix(darkness, 1, shadow)`.
 //! 4. **TAA de escena** (reproject + depth/velocity, depth vía `texture_2d` filtrable-nearest, no `textureLoad` en depth).
 //! 5. **Blit** al swapchain; overlays del editor después del blit.

@@ -13,15 +13,15 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 ```
 
 - [x] Workspace Cargo (`engine_2d`, `engine_3d`, `engine_shared`); binarios separados
-- [x] IPC stdin/stdout, winit + wgpu embebido, ECS, scripting Lua, hot reload
+- [x] IPC stdin/stdout, winit + wgpu overlay, ECS, scripting Lua, hot reload
 - [x] Editor: electron-vite, spawn del motor, escenas múltiples, `.save` ZIP
 - [x] `set_bounds`, evento `ready`, multiplex `engine.off()` en preload
 - [x] Undo/redo de **transformaciones** en editor (ambos motores)
 
-| Plataforma | Embedding viewport |
-|------------|-------------------|
-| Linux X11 | `XID` / reparent |
-| Windows | `HWND` / `SetParent` |
+| Plataforma | Viewport overlay |
+|------------|------------------|
+| Linux X11 | Ventana separada + position-tracker + `XSetTransientForHint` |
+| Windows | Popup owned + position-tracker (`GWLP_HWNDPARENT`) |
 | Wayland | XWayland o `ELECTRON_OZONE_PLATFORM_HINT=x11` |
 
 ---
