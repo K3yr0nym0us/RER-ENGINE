@@ -12,11 +12,24 @@ Este documento fija el contrato tecnico actual del motor 3D para que el codigo n
 
 Runtime 3D: camara orbital en editor, primera persona en play, Rapier3D, mallas glTF/FBX.
 
+## Politica GPU
+
+- Misma politica que `engine_2d`: **solo Vulkan** via `rer_engine_shared::gpu`.
+- Sin OpenGL ni fallback a otros backends. Shaders en **WGSL** (naga), no GLSL como API grafica.
+- Fallo de `init_gpu` → `EngineEvent::Error`; Electron muestra overlay de ayuda.
+- Futuro DX12 en Windows: documentado en `engine_shared/src/gpu.rs` (no activo).
+
+## Ventana overlay
+
+- Identico al 2D: `--overlay`, ventana winit separada, tracker en `engine_shared::platform`.
+- Ver `engine_2d/ARCHITECTURE.md` (seccion overlay) para detalle de plataformas.
+
 ## Archivos fuente de verdad
 
-- `src/main.rs`: bucle winit, input, gizmo, play FP.
+- `engine_shared/src/gpu.rs`: politica Vulkan y `init_gpu()`.
+- `src/main.rs`: bucle winit, input, gizmo, play FP, setup overlay.
 - `src/engine.rs` + `src/engine/mod.rs`: `State` (GPU, ECS, caches, undo/redo, scripting).
-- `src/engine/init.rs`: WGPU, pipelines, atlas, HUD/gizmo.
+- `src/engine/init.rs`: instancia Vulkan, pipelines WGSL, atlas, HUD/gizmo, TAA.
 - `src/engine/commands.rs`: IPC y mutaciones de estado.
 - `src/engine/render.rs`: mundo 3D, crosshair, tooltip Esc, gizmo de editor.
 - `src/engine/tick.rs`: delta time, metricas, fade del hint Esc.

@@ -2,6 +2,8 @@
 
 Guía breve para escribir scripts en entidades. El motor **2D** y el **3D** comparten la misma forma de script; algunas funciones solo existen en uno de los dos.
 
+**Render del motor:** Rust + wgpu con backend **Vulkan** unicamente (ventana overlay junto al editor Electron). Los scripts Lua no configuran la GPU; solo llaman a la API `engine.*` de gameplay.
+
 ---
 
 ## Forma de un script

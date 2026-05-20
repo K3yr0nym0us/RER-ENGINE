@@ -7,6 +7,7 @@ import SceneTabsBar from './components/SceneTabsBar';
 import TopBarEngine from './components/TopBarEngine';
 import { QuickBuildOverlay } from './components/QuickBuildOverlay';
 import { SceneImportLoadingOverlay } from './components/SceneImportLoadingOverlay';
+import { EngineGpuErrorOverlay } from './components/EngineGpuErrorOverlay';
 
 import { EngineProvider } from '@engine';
 import { ModalProvider } from '@modal';
@@ -70,6 +71,7 @@ function EngineViewInner({ projectType, gameStyle, initialSave, initialSavePath,
             ref={viewportRef}
             style={{ background: 'transparent', marginTop: 0 }}
           >
+            <EngineGpuErrorOverlay />
             <QuickBuildOverlay />
             <SceneImportLoadingOverlay />
           </main>

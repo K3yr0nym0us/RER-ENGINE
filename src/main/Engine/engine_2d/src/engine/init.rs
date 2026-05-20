@@ -4,7 +4,7 @@ use std::time::Instant;
 
 use wgpu::{include_wgsl, util::DeviceExt};
 use winit::window::Window;
-use rer_engine_shared::overlay::{wgpu_backend_attempts, WindowAttachMode};
+use rer_engine_shared::gpu::{init_gpu, GpuInitError};
 
 use crate::config_2d::{ActiveTool, GridConfig, PhysicsWorld2D};
 use crate::entity_save_meta::EntitySaveRegistry;
@@ -22,17 +22,11 @@ use super::types::DEPTH_FORMAT;
 use super::State;
 
 impl State {
-    /// `attach_mode`: overlay/standalone permiten Vulkan; X11Child fuerza GL.
-    pub async fn new(window: Arc<Window>, attach_mode: WindowAttachMode) -> Self {
+    /// Inicializa wgpu con Vulkan (política en `rer_engine_shared::gpu`).
+    pub async fn new(window: Arc<Window>) -> Result<Self, GpuInitError> {
         let size = window.inner_size();
 
-        let (_instance, surface, adapter) =
-            init_wgpu(window.clone(), attach_mode).await;
-        log::info!(
-            "Adapter: {} (backend {:?})",
-            adapter.get_info().name,
-            adapter.get_info().backend
-        );
+        let (_instance, surface, adapter) = init_gpu(window.clone()).await?;
 
         // ── Device & Queue ────────────────────────────────────────────────────
         let (device, queue) = adapter
@@ -429,7 +423,7 @@ impl State {
             size.height,
         );
 
-        Self {
+        Ok(Self {
             window,
             surface,
             device,
@@ -527,44 +521,6 @@ impl State {
             blocked_on_keep_horizontal: HashMap::new(),
             pending_slides:      HashMap::new(),
             save_registry: EntitySaveRegistry::new(),
-        }
+        })
     }
-}
-
-async fn init_wgpu(
-    window: Arc<Window>,
-    attach_mode: WindowAttachMode,
-) -> (wgpu::Instance, wgpu::Surface<'static>, wgpu::Adapter) {
-    let mut last_err: Option<String> = None;
-    for backends in wgpu_backend_attempts(attach_mode) {
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends,
-            ..Default::default()
-        });
-        let surface = match instance.create_surface(window.clone()) {
-            Ok(s) => s,
-            Err(e) => {
-                last_err = Some(format!("create_surface({backends:?}): {e}"));
-                log::warn!("{}", last_err.as_ref().unwrap());
-                continue;
-            }
-        };
-        if let Some(adapter) = instance
-            .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference:       wgpu::PowerPreference::HighPerformance,
-                compatible_surface:     Some(&surface),
-                force_fallback_adapter: false,
-            })
-            .await
-        {
-            log::info!("wgpu inicializado con backends {backends:?}");
-            return (instance, surface, adapter);
-        }
-        last_err = Some(format!("sin adapter para backends {backends:?}"));
-        log::warn!("{}", last_err.as_ref().unwrap());
-    }
-    panic!(
-        "no se pudo inicializar wgpu (modo {attach_mode:?}): {}",
-        last_err.unwrap_or_else(|| "desconocido".into())
-    );
 }

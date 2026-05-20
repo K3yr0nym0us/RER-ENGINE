@@ -54,6 +54,34 @@ const extractedProjectDirs = new Set<string>()
 // Últimos bounds efectivos del motor (para restaurarlo tras ocultarlo)
 let lastEffectiveBounds: ViewportBounds | null = null
 
+/** true tras recibir `ready` del proceso motor de la sesión actual. */
+let engineReceivedReady = false
+
+const VULKAN_STARTUP_ERROR_MESSAGE =
+  'No se pudo iniciar el motor gráfico con Vulkan. Instala o actualiza los controladores de video. ' +
+  'En WSL2: usa WSLg, instala mesa-vulkan-drivers (o drivers NVIDIA para WSL) y comprueba con vulkaninfo. ' +
+  'Reinicia el editor después de instalar drivers.'
+
+/** Líneas habituales de wgpu/Vulkan en Windows que no indican fallo del motor. */
+function isBenignEngineStderrLine(line: string): boolean {
+  const l = line.toLowerCase()
+  return (
+    l.includes('loader_get_json')
+    || l.includes('eosoverlay')
+    || l.includes('galaxyoverlayvklayer')
+    || l.includes('unrecognized present mode')
+    || l.includes('vk_layer_khronos_validation')
+    || l.includes('windows_read_data_files_in_registry')
+    || l.includes('does not conform to naming standard')
+  )
+}
+
+/** Solo si el proceso murió sin haber enviado `ready` (no usar stderr: avisos del loader Vulkan son ruido). */
+function notifyEngineGpuStartupError(): void {
+  if (engineReceivedReady) return
+  sendEventToRenderer({ event: 'error', message: VULKAN_STARTUP_ERROR_MESSAGE } as EngineEvent)
+}
+
 function sendEventToRenderer(event: EngineEvent): void {
   if (rendererReady && mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('engine:event', event)
@@ -161,6 +189,8 @@ interface ViewportBounds {
 }
 
 function startEngine(embed?: ViewportBounds): void {
+  engineReceivedReady = false
+
   // Seleccionar binario según el modo del proyecto
   let baseBinaryName = 'rer_engine_shared'
   if (
@@ -204,14 +234,10 @@ function startEngine(embed?: ViewportBounds): void {
     }
   }
 
-  // LIBGL_ALWAYS_SOFTWARE=1 asegura que EGL use llvmpipe en vez de buscar DRI3.
-  // EGL_LOG_LEVEL=fatal silencia el warning "DRI3 error" de libEGL.
-  // Estas variables solo aplican en Linux; en Windows se omiten para no contaminar el entorno.
   const linuxEnv = process.platform === 'linux'
     ? {
         WAYLAND_DISPLAY: '',
         GDK_BACKEND:     'x11',
-        EGL_LOG_LEVEL:   'fatal',
         ...(process.env.PULSE_SERVER ? { PULSE_SERVER: process.env.PULSE_SERVER } : {}),
       }
     : {}
@@ -230,10 +256,17 @@ function startEngine(embed?: ViewportBounds): void {
     for (const line of lines) {
       try {
         const event = JSON.parse(line) as EngineEvent
+        if (event.event === 'ready') {
+          engineReceivedReady = true
+        }
         if (event.event === 'autosave_tick') {
           if (currentProjectFilePath && mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send('autosave:request', currentProjectFilePath)
           }
+        }
+        // Error de arranque GPU: solo confiar en el JSON del motor (init_gpu), no en stderr.
+        if (event.event === 'error' && engineReceivedReady) {
+          continue
         }
         sendEventToRenderer(event)
       } catch {
@@ -242,13 +275,20 @@ function startEngine(embed?: ViewportBounds): void {
     }
   })
 
-  // stderr → log de consola
+  // stderr: solo diagnóstico; no dispara error en UI. Omitir ruido benigno del loader Vulkan.
   engineProcess.stderr?.on('data', (data: Buffer) => {
-    console.error('[engine stderr]', data.toString('utf8').trimEnd())
+    const lines = data.toString('utf8').split('\n').filter(Boolean)
+    for (const line of lines) {
+      if (isBenignEngineStderrLine(line)) continue
+      console.error('[engine stderr]', line)
+    }
   })
 
   engineProcess.on('close', (code) => {
     console.log(`[engine] proceso terminado con código ${code}`)
+    if (code !== 0 && code !== null && !engineReceivedReady) {
+      notifyEngineGpuStartupError()
+    }
     sendEventToRenderer({ event: 'stopped', code } as EngineEvent)
     engineProcess = null
   })

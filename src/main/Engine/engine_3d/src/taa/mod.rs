@@ -21,7 +21,7 @@ const DISOCCLUSION_THRESHOLD: f32 = 0.028;
 
 /// Máscara de sombra por píxel (1 = iluminado, 0 = sombra).
 pub const SHADOW_MASK_FORMAT: TextureFormat = TextureFormat::R32Float;
-/// Profundidad lineal exportada para TAA (compatible GLSL).
+/// Profundidad lineal exportada para TAA (shader WGSL vía naga; no implica backend OpenGL).
 pub const DEPTH_EXPORT_FORMAT: TextureFormat = SHADOW_MASK_FORMAT;
 pub const VELOCITY_FORMAT: TextureFormat = TextureFormat::Rg16Float;
 

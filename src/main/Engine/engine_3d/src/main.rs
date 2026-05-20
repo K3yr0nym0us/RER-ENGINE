@@ -34,7 +34,7 @@ use winit::{
 
 use ipc::{EngineCommand, EngineEvent};
 use platform::query_ctrl_held_os;
-use rer_engine_shared::overlay::{parse_overlay_config, OverlayConfig, WindowAttachMode};
+use rer_engine_shared::overlay::{parse_overlay_config, OverlayConfig};
 #[cfg(any(target_os = "windows", target_os = "linux"))]
 use rer_engine_shared::platform::{start_position_tracker, TrackerOffset};
 #[cfg(target_os = "linux")]
@@ -112,7 +112,6 @@ fn map_gamepad_control_key(button: GamepadButton) -> Option<&'static str> {
 struct App {
     state:           Option<engine::State>,
     overlay:         Option<OverlayConfig>,
-    attach_mode:     WindowAttachMode,
     // ── Cámara orbital
     mouse_right:     bool,   // botón derecho  → orbitar
     mouse_middle:    bool,   // botón central  → pan
@@ -359,14 +358,20 @@ impl ApplicationHandler<EngineCommand> for App {
 
         self.setup_overlay_tracking(&window);
 
-        let state = pollster::block_on(engine::State::new(Arc::clone(&window), self.attach_mode));
-
-        // Notificar a Electron que el motor está listo (gravedad = valor interno del motor)
-        ipc::send_event(&EngineEvent::Ready {
-            gravity: state.physics.gravity_magnitude(),
-        });
-
-        self.state = Some(state);
+        match pollster::block_on(engine::State::new(Arc::clone(&window))) {
+            Ok(state) => {
+                ipc::send_event(&EngineEvent::Ready {
+                    gravity: state.physics.gravity_magnitude(),
+                });
+                self.state = Some(state);
+            }
+            Err(e) => {
+                log::error!("Inicialización GPU fallida: {e}");
+                ipc::send_event(&EngineEvent::Error {
+                    message: e.message,
+                });
+            }
+        }
     }
 
     fn user_event(&mut self, event_loop: &ActiveEventLoop, cmd: EngineCommand) {
@@ -834,7 +839,7 @@ fn main() {
             // Por defecto dejamos solo advertencias/errores para un arranque limpio.
             // Quien necesite más detalle puede usar RUST_LOG=info o RUST_LOG=debug.
             // Además, wgpu_hal::gles/vulkan generan spam en algunos entornos.
-            "warn,wgpu_core=warn,wgpu_hal::vulkan=error,wgpu_hal::gles=error,wgpu_hal=warn,naga=warn",
+            "warn,wgpu_core=warn,wgpu_hal::vulkan::conv=error,wgpu_hal::vulkan::instance=error,wgpu_hal=warn,naga=warn",
         ),
     )
     .init();
@@ -850,17 +855,15 @@ fn main() {
     // NO usar Poll aquí: Poll + request_redraw en RedrawRequested = busy loop al 100% CPU.
 
     let overlay = parse_overlay_config();
-    let attach_mode = if overlay.is_some() {
-        log::info!("Modo overlay activado");
-        WindowAttachMode::Overlay
+    if overlay.is_some() {
+        log::info!("Modo overlay activado (GPU: Vulkan)");
     } else {
-        WindowAttachMode::Standalone
-    };
+        log::info!("Modo standalone (GPU: Vulkan)");
+    }
 
     let mut app = App {
         state:               None,
         overlay,
-        attach_mode,
         mouse_right:         false,
         mouse_middle:        false,
         last_cursor:         None,

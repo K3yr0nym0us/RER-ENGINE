@@ -2,6 +2,21 @@
 
 Este documento fija el rol del **frontend** en RER-ENGINE para que futuras IAs y contribuidores no dupliquen logica que pertenece al motor.
 
+## Integracion con el viewport del motor
+
+El renderer **no renderiza** el mundo de juego. Solo reserva un hueco visual y reporta su geometria:
+
+| Pieza | Archivo / canal |
+|-------|-----------------|
+| Hueco en UI | `EngineView.tsx` → `<main class="engine-viewport-area">` (transparente) |
+| Bounds | `useContextEngine` → `reportBounds()` → `electronAPI.sendViewportBounds` |
+| Main | `src/main/index.ts` → `viewport-bounds`, `viewportToScreenBounds`, spawn `--overlay` |
+| Motor | Ventana winit separada, alineada por IPC (`set_bounds`) + tracker nativo en Rust |
+
+**GPU:** el motor usa **solo Vulkan** (via wgpu). El front no elige backend ni usa WebGL para el viewport de juego.
+
+Si Vulkan no arranca: evento `error` del motor → `engineError` en contexto → `EngineGpuErrorOverlay` en el viewport (drivers / WSL). El resto del editor sigue usable.
+
 ## Principio: engine-first
 
 El renderer es **cascarón de editor**: UI, persistencia (`.save`), enrutado IPC y estado React para paneles. **No** es un segundo motor de juego.

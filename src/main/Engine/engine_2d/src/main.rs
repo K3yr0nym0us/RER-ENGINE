@@ -31,7 +31,7 @@ use winit::{
 };
 
 use ipc::{EngineCommand, EngineEvent};
-use rer_engine_shared::overlay::{parse_overlay_config, OverlayConfig, WindowAttachMode};
+use rer_engine_shared::overlay::{parse_overlay_config, OverlayConfig};
 #[cfg(any(target_os = "windows", target_os = "linux"))]
 use rer_engine_shared::platform::{start_position_tracker, TrackerOffset};
 #[cfg(target_os = "linux")]
@@ -146,7 +146,6 @@ fn map_gamepad_control_key(button: GamepadButton) -> Option<&'static str> {
 struct App {
     state:           Option<engine::State>,
     overlay:         Option<OverlayConfig>,
-    attach_mode:     WindowAttachMode,
     // ── Navegación del editor
     mouse_right:     bool,   // botón derecho  → pan
     mouse_middle:    bool,   // botón central  → pan
@@ -309,14 +308,20 @@ impl ApplicationHandler<EngineCommand> for App {
 
         self.setup_overlay_tracking(&window);
 
-        let state = pollster::block_on(engine::State::new(Arc::clone(&window), self.attach_mode));
-
-        // Notificar a Electron que el motor está listo (gravedad = valor interno del motor)
-        ipc::send_event(&EngineEvent::Ready {
-            gravity: state.physics_2d.gravity_magnitude(),
-        });
-
-        self.state = Some(state);
+        match pollster::block_on(engine::State::new(Arc::clone(&window))) {
+            Ok(state) => {
+                ipc::send_event(&EngineEvent::Ready {
+                    gravity: state.physics_2d.gravity_magnitude(),
+                });
+                self.state = Some(state);
+            }
+            Err(e) => {
+                log::error!("Inicialización GPU fallida: {e}");
+                ipc::send_event(&EngineEvent::Error {
+                    message: e.message,
+                });
+            }
+        }
     }
 
     fn user_event(&mut self, event_loop: &ActiveEventLoop, cmd: EngineCommand) {
@@ -712,7 +717,9 @@ fn main() {
         env_logger::Env::default().default_filter_or(
             // `rer_engine_2d=info` permite ver logs de colisión/física sin RUST_LOG.
             // Para silenciar, usar RUST_LOG=warn (o cambiar aquí a warn).
-            "rer_engine_2d=info,warn,wgpu_core=warn,wgpu_hal::vulkan=error,wgpu_hal::gles=error,wgpu_hal=warn,naga=warn",
+            // wgpu_hal::vulkan::conv=error: oculta "Unrecognized present mode" (FIFO_LATEST_READY en NVIDIA).
+            // wgpu_hal::vulkan::instance=error: oculta capas Galaxy/Epic/registry (ruido del loader).
+            "rer_engine_2d=info,warn,wgpu_core=warn,wgpu_hal::vulkan::conv=error,wgpu_hal::vulkan::instance=error,wgpu_hal=warn,naga=warn",
         ),
     )
     .init();
@@ -728,17 +735,15 @@ fn main() {
     // NO usar Poll aquí: Poll + request_redraw en RedrawRequested = busy loop al 100% CPU.
 
     let overlay = parse_overlay_config();
-    let attach_mode = if overlay.is_some() {
-        log::info!("Modo overlay activado");
-        WindowAttachMode::Overlay
+    if overlay.is_some() {
+        log::info!("Modo overlay activado (GPU: Vulkan)");
     } else {
-        WindowAttachMode::Standalone
-    };
+        log::info!("Modo standalone (GPU: Vulkan)");
+    }
 
     let mut app = App {
         state:               None,
         overlay,
-        attach_mode,
         mouse_right:         false,
         mouse_middle:        false,
         last_cursor:         None,

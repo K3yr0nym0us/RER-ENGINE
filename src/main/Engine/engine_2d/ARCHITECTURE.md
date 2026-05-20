@@ -9,10 +9,26 @@ Este documento fija el contrato tecnico actual del motor 2D para que el codigo n
 - **No se copia runtime entre motores**: lo que el producto 3D necesitaba del stack 2D ya se extrajo; nuevas funciones 2D se implementan solo aqui (`config_2d/`, `physics_2d.rs`, `engine/`).
 - Este documento no describe ni prescribe comportamiento del motor 3D.
 
+## Politica GPU
+
+- Un solo backend por proceso: **Vulkan** (`rer_engine_shared::gpu`, `Backends::VULKAN`).
+- Crate `wgpu` en el workspace: `default-features = false`, `features = ["wgsl"]`; seleccion de backend solo en `gpu.rs`.
+- **No** se usa OpenGL, EGL ni `Backends::all()`. No hay ramas de render por backend GL en pipelines.
+- Inicializacion: `engine::State::new` → `init_gpu()`; fallo → `EngineEvent::Error` (sin `panic`, sin `ready`).
+- Futuro **DirectX 12** solo en Windows: `RER_GPU_BACKEND=dx12` + feature `dx12` en wgpu; excluyente con Vulkan por sesion.
+
+## Ventana overlay (integracion con Electron)
+
+- Arranque: `--overlay <parent_id> <x> <y> <w> <h> [rel_x rel_y]` (alias legacy `--embed`). Ver `engine_shared::overlay`.
+- **No** hay reparent X11 (`with_embed_parent_window` eliminado): ventana hermana alineada por coordenadas de pantalla.
+- Sincronizacion: `engine_shared::platform` (position-tracker Win32 / X11).
+- IPC `set_bounds` redimensiona y actualiza offset del tracker.
+
 ## Archivos fuente de verdad
 
 El runtime real 2D vive principalmente en estos archivos:
 
+- `engine_shared/src/gpu.rs`: politica Vulkan y `init_gpu()`.
 - `src/engine/mod.rs`: estado central del runtime, caches, undo/redo, scripting y flags del editor.
 - `src/engine/commands.rs`: frontera IPC y mutaciones principales del estado.
 - `src/physics_2d.rs`: backend fisico 2D sobre Rapier, restringido al plano `XY`.

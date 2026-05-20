@@ -277,5 +277,14 @@
   "Animation orientation info": "Define la direccion base de la animacion creada. El motor usa este dato como referencia de orientacion por defecto.",
   "Animation orientation info aria": "Informacion sobre orientacion de la animacion",
   "Left": "Izquierda",
-  "Right": "Derecha"
+  "Right": "Derecha",
+
+  "Engine GPU init failed title": "No se pudo iniciar el motor gráfico (Vulkan)",
+  "Engine GPU init failed intro": "El editor sigue disponible, pero el viewport de juego no puede renderizar hasta que Vulkan funcione en este equipo.",
+  "Engine GPU hint drivers": "Instala o actualiza los controladores de tu tarjeta gráfica (NVIDIA, AMD o Intel).",
+  "Engine GPU hint wsl": "En WSL2: usa WSLg (Windows 11), drivers GPU en Windows y en la distro ejecuta `sudo apt install mesa-vulkan-drivers` (o drivers NVIDIA para WSL).",
+  "Engine GPU hint vulkaninfo": "Comprueba Vulkan en terminal: `vulkaninfo` o `vkcube`.",
+  "Engine GPU hint restart": "Reinicia el editor después de instalar drivers.",
+  "Show technical details": "Ver detalle técnico",
+  "Hide technical details": "Ocultar detalle técnico"
 }

@@ -1,22 +1,12 @@
 //! Configuración de ventana overlay (viewport alineado al editor sin reparent X11).
 
-/// Modo de acoplamiento de la ventana del motor al editor.
+/// Modo de acoplamiento de la ventana del motor al editor (solo geometría OS).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WindowAttachMode {
     /// Ventana decorada independiente (depuración).
     Standalone,
-    /// Popup alineado por coordenadas de pantalla; permite Vulkan.
+    /// Popup alineado por coordenadas de pantalla.
     Overlay,
-    /// Ventana X11 hija (legacy): fuerza backend GL.
-    #[allow(dead_code)]
-    X11Child,
-}
-
-impl WindowAttachMode {
-    /// `true` solo para ventanas hijas X11 donde Vulkan no puede presentar.
-    pub fn force_gl_backend(self) -> bool {
-        matches!(self, Self::X11Child)
-    }
 }
 
 /// Bounds iniciales y handle del padre (Electron) para overlay.
@@ -52,13 +42,4 @@ pub fn parse_overlay_config() -> Option<OverlayConfig> {
         rel_x:     args.get(7).and_then(|a| a.parse().ok()).unwrap_or(0),
         rel_y:     args.get(8).and_then(|a| a.parse().ok()).unwrap_or(0),
     })
-}
-
-/// Orden de backends wgpu a probar (con fallback a GL si falla la surface).
-pub fn wgpu_backend_attempts(mode: WindowAttachMode) -> Vec<wgpu::Backends> {
-    if mode.force_gl_backend() {
-        vec![wgpu::Backends::GL]
-    } else {
-        vec![wgpu::Backends::all(), wgpu::Backends::GL]
-    }
 }
