@@ -13,7 +13,8 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 ```
 
 - [x] Workspace Cargo (`engine_2d`, `engine_3d`, `engine_shared`); binarios separados
-- [x] IPC stdin/stdout, winit + wgpu overlay (Vulkan único), ECS, scripting Lua, hot reload
+- [x] IPC stdin/stdout, winit + wgpu overlay, ECS, scripting Lua, hot reload
+- [x] GPU por plataforma: Vulkan (Linux), DirectX 12 fijo (Windows, `EngineGpuProfile::ThreeD`)
 - [x] Editor: electron-vite, spawn del motor, escenas múltiples, `.save` ZIP
 - [x] `set_bounds`, evento `ready`, multiplex `engine.off()` en preload
 - [x] Undo/redo de **transformaciones** en editor (ambos motores)
@@ -24,10 +25,10 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 | Windows | Popup owned + position-tracker (`GWLP_HWNDPARENT`) |
 | Wayland | XWayland o `ELECTRON_OZONE_PLATFORM_HINT=x11` |
 
-| GPU | Solo Vulkan (`engine_shared::gpu`); sin OpenGL ni DX12 activo |
+| GPU | Linux: Vulkan; Windows: DX12 fijo (`EngineGpuProfile::ThreeD`) |
 | Arranque motor | `--overlay` (alias `--embed`); fallo GPU → evento `error` + overlay en editor |
 
-**Nota:** Avisos del loader Vulkan en consola (Epic Games, Galaxy Overlay, `Unrecognized present mode`) son ruido habitual en Windows y **no** indican fallo si el motor envía `ready`.
+**Nota:** En Windows el 3D usa DX12 (menos ruido de capas Vulkan). En Linux, avisos del loader Vulkan en consola pueden ser ruido habitual y **no** indican fallo si el motor envía `ready`.
 
 ---
 

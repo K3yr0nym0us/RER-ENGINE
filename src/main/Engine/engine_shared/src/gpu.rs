@@ -1,8 +1,8 @@
-//! Política GPU del motor: un solo backend por proceso (Vulkan hoy; DX12 futuro en Windows).
+//! Política GPU del motor: un solo backend por proceso.
 //!
-//! Futuro DX12 (no activo aún):
-//! - Cargo: `features = [..., "dx12"]` en wgpu (solo Windows).
-//! - Variable de entorno `RER_GPU_BACKEND=dx12`.
+//! - Motor 2D: siempre Vulkan.
+//! - Motor 3D en Linux: Vulkan.
+//! - Motor 3D en Windows: DirectX 12 (fijo; no usa variables de entorno).
 //! - Sin fallback entre Vulkan y DX12 ni OpenGL.
 
 use std::fmt;
@@ -10,38 +10,22 @@ use std::sync::Arc;
 
 use winit::window::Window;
 
+/// Perfil del binario que solicita GPU (2D vs 3D).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EngineGpuProfile {
+    TwoD,
+    ThreeD,
+}
+
 /// Backend gráfico activo del motor (exclusivo por sesión).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EngineGpuBackend {
     Vulkan,
-    /// Reservado para Windows; requiere feature `dx12` en wgpu y build dedicado.
     #[cfg(target_os = "windows")]
     Dx12,
 }
 
 impl EngineGpuBackend {
-    /// Backend solicitado al arranque. Hoy siempre Vulkan.
-    pub fn active() -> Self {
-        match std::env::var("RER_GPU_BACKEND")
-            .unwrap_or_default()
-            .to_ascii_lowercase()
-            .as_str()
-        {
-            "dx12" | "directx12" => {
-                #[cfg(target_os = "windows")]
-                {
-                    log::warn!(
-                        "RER_GPU_BACKEND=dx12 aún no está habilitado en esta build; usando Vulkan."
-                    );
-                }
-                #[cfg(not(target_os = "windows"))]
-                log::warn!("DirectX 12 solo está previsto en Windows; usando Vulkan.");
-                Self::Vulkan
-            }
-            _ => Self::Vulkan,
-        }
-    }
-
     pub fn wgpu_backends(self) -> wgpu::Backends {
         match self {
             Self::Vulkan => wgpu::Backends::VULKAN,
@@ -67,6 +51,23 @@ impl EngineGpuBackend {
     }
 }
 
+/// Resuelve el backend según perfil de motor (sin variables de entorno).
+pub fn resolve_backend(profile: EngineGpuProfile) -> EngineGpuBackend {
+    match profile {
+        EngineGpuProfile::TwoD => EngineGpuBackend::Vulkan,
+        EngineGpuProfile::ThreeD => {
+            #[cfg(target_os = "windows")]
+            {
+                EngineGpuBackend::Dx12
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
+                EngineGpuBackend::Vulkan
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct GpuInitError {
     pub message: String,
@@ -81,24 +82,34 @@ impl fmt::Display for GpuInitError {
 impl std::error::Error for GpuInitError {}
 
 fn user_facing_message(backend: EngineGpuBackend, detail: &str) -> String {
-    format!(
-        "No se pudo iniciar el motor gráfico con {}.\n\n\
-         {detail}\n\n\
-         Sugerencias:\n\
+    let hints = match backend {
+        EngineGpuBackend::Vulkan => "\
          • Instala o actualiza los controladores de tu tarjeta gráfica (NVIDIA / AMD / Intel).\n\
          • En WSL2: usa WSLg (Windows 11), drivers GPU en Windows y en la distro \
          `sudo apt install mesa-vulkan-drivers` (o drivers NVIDIA para WSL).\n\
          • Comprueba Vulkan en terminal: `vulkaninfo` o `vkcube`.\n\
          • Reinicia el editor después de instalar drivers.",
+        #[cfg(target_os = "windows")]
+        EngineGpuBackend::Dx12 => "\
+         • Instala o actualiza los controladores de tu tarjeta gráfica (NVIDIA / AMD / Intel).\n\
+         • En Windows: asegúrate de tener DirectX 12 y el runtime actualizado (Windows Update).\n\
+         • Reinicia el editor después de instalar drivers.",
+    };
+
+    format!(
+        "No se pudo iniciar el motor gráfico con {}.\n\n\
+         {detail}\n\n\
+         Sugerencias:\n{hints}",
         backend.label()
     )
 }
 
-/// Crea instancia wgpu, surface y adapter. Solo el backend de [`EngineGpuBackend::active`].
+/// Crea instancia wgpu, surface y adapter para el perfil indicado.
 pub async fn init_gpu(
     window: Arc<Window>,
+    profile: EngineGpuProfile,
 ) -> Result<(wgpu::Instance, wgpu::Surface<'static>, wgpu::Adapter), GpuInitError> {
-    let backend = EngineGpuBackend::active();
+    let backend = resolve_backend(profile);
     let backends = backend.wgpu_backends();
 
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
@@ -120,13 +131,11 @@ pub async fn init_gpu(
             force_fallback_adapter: false,
         })
         .await
-        .ok_or_else(|| {
-            GpuInitError {
-                message: user_facing_message(
-                    backend,
-                    "No se encontró ningún adaptador gráfico compatible con la superficie.",
-                ),
-            }
+        .ok_or_else(|| GpuInitError {
+            message: user_facing_message(
+                backend,
+                "No se encontró ningún adaptador gráfico compatible con la superficie.",
+            ),
         })?;
 
     let info = adapter.get_info();
@@ -145,4 +154,31 @@ pub async fn init_gpu(
 
     log::info!("Motor GPU: {} — {}", backend.label(), info.name);
     Ok((instance, surface, adapter))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn two_d_always_vulkan() {
+        assert_eq!(
+            resolve_backend(EngineGpuProfile::TwoD),
+            EngineGpuBackend::Vulkan
+        );
+    }
+
+    #[test]
+    fn three_d_default_by_platform() {
+        #[cfg(target_os = "windows")]
+        assert_eq!(
+            resolve_backend(EngineGpuProfile::ThreeD),
+            EngineGpuBackend::Dx12
+        );
+        #[cfg(not(target_os = "windows"))]
+        assert_eq!(
+            resolve_backend(EngineGpuProfile::ThreeD),
+            EngineGpuBackend::Vulkan
+        );
+    }
 }

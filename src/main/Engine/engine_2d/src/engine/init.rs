@@ -4,7 +4,7 @@ use std::time::Instant;
 
 use wgpu::{include_wgsl, util::DeviceExt};
 use winit::window::Window;
-use rer_engine_shared::gpu::{init_gpu, GpuInitError};
+use rer_engine_shared::gpu::{init_gpu, EngineGpuProfile, GpuInitError};
 
 use crate::config_2d::{ActiveTool, GridConfig, PhysicsWorld2D};
 use crate::entity_save_meta::EntitySaveRegistry;
@@ -22,11 +22,12 @@ use super::types::DEPTH_FORMAT;
 use super::State;
 
 impl State {
-    /// Inicializa wgpu con Vulkan (política en `rer_engine_shared::gpu`).
+    /// Inicializa wgpu (motor 2D: siempre Vulkan vía `rer_engine_shared::gpu`).
     pub async fn new(window: Arc<Window>) -> Result<Self, GpuInitError> {
         let size = window.inner_size();
 
-        let (_instance, surface, adapter) = init_gpu(window.clone()).await?;
+        let (_instance, surface, adapter) =
+            init_gpu(window.clone(), EngineGpuProfile::TwoD).await?;
 
         // ── Device & Queue ────────────────────────────────────────────────────
         let (device, queue) = adapter

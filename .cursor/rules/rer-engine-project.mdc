@@ -1,0 +1,26 @@
+---
+description: RER-ENGINE project conventions (GPU, overlay, engine-first, tooling)
+alwaysApply: true
+---
+
+# RER-ENGINE — project rules
+
+- Use **yarn** for dependency management (required).
+- Desktop app: **Electron**, **React**, **TypeScript**; game runtime in **Rust**.
+- **GPU** (`engine_shared/src/gpu.rs`, `EngineGpuProfile`):
+  - `rer_engine_2d`: always **Vulkan** (Windows and Linux).
+  - `rer_engine_3d` on Linux: **Vulkan**.
+  - `rer_engine_3d` on Windows: **DirectX 12** (fixed; no env overrides).
+  - Do **not** read or set `RER_GPU_BACKEND`; Electron strips it on engine spawn.
+  - No OpenGL, no `Backends::all()`, no silent fallback between Vulkan and DX12.
+- **Viewport**: separate **winit overlay** window aligned to the editor hole (not embedded in Chromium; frontend does not render the game world with WebGL).
+- Prefer the **least invasive** fix; suggest code before rewriting large areas.
+- Match existing project style (especially hooks and components). **Never** put async work inside a component—use a hook.
+- Engine code and structure: **English**. Logs: **Spanish**. UI copy may be Spanish or English but stay consistent within the app.
+- After large frontend changes, run `npx -y react-doctor@latest` at the repo root; fix hook/dependency issues in touched files before continuing.
+- **DRY**: reuse components, hooks, and helpers before adding new ones.
+- Split **2D vs 3D** engine logic and keep rendering code organized in dedicated modules.
+- Graphics policy lives in `engine_shared/src/gpu.rs` and `engine_shared/src/overlay.rs`. Do not reintroduce `Backends::GL`, `with_embed_parent_window`, or OpenGL compatibility branches.
+- **Engine-first (mandatory)**: spatial math, entity classification, transforms, snap, scale, collisions, and any state the engine owns must live in **Rust**. The frontend only sends intent and reflects engine events—no reimplementing engine logic in TypeScript. Pure UI/presentation in the front is fine.
+- Target **Windows and Linux**; avoid APIs or crates that are not viable on both.
+- If requirements are unclear, ask the developer; do not invent behavior from unrelated directories.

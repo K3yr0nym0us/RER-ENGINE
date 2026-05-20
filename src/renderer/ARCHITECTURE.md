@@ -13,9 +13,9 @@ El renderer **no renderiza** el mundo de juego. Solo reserva un hueco visual y r
 | Main | `src/main/index.ts` → `viewport-bounds`, `viewportToScreenBounds`, spawn `--overlay` |
 | Motor | Ventana winit separada, alineada por IPC (`set_bounds`) + tracker nativo en Rust |
 
-**GPU:** el motor usa **solo Vulkan** (via wgpu). El front no elige backend ni usa WebGL para el viewport de juego.
+**GPU:** wgpu con perfil por binario en Rust (`EngineGpuProfile`: 2D → Vulkan; 3D Windows → DX12; 3D Linux → Vulkan). El front no elige backend ni usa WebGL para el viewport. Al hacer `spawn`, el main **elimina** `RER_GPU_BACKEND` del entorno del proceso motor.
 
-Si Vulkan no arranca: evento `error` del motor → `engineError` en contexto → `EngineGpuErrorOverlay` en el viewport (drivers / WSL). El resto del editor sigue usable.
+Si la GPU no arranca: evento `error` del motor → `engineError` → `EngineGpuErrorOverlay` (drivers / WSL / DirectX). El resto del editor sigue usable.
 
 ## Principio: engine-first
 

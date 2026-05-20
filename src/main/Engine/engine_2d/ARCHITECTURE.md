@@ -11,11 +11,12 @@ Este documento fija el contrato tecnico actual del motor 2D para que el codigo n
 
 ## Politica GPU
 
-- Un solo backend por proceso: **Vulkan** (`rer_engine_shared::gpu`, `Backends::VULKAN`).
-- Crate `wgpu` en el workspace: `default-features = false`, `features = ["wgsl"]`; seleccion de backend solo en `gpu.rs`.
+- Perfil **TwoD**: siempre **Vulkan** (`EngineGpuProfile::TwoD`, `Backends::VULKAN`).
+- Crate `wgpu`: `default-features = false`, `features = ["wgsl", "dx12"]`; el 2D solo solicita Vulkan en runtime.
 - **No** se usa OpenGL, EGL ni `Backends::all()`. No hay ramas de render por backend GL en pipelines.
-- Inicializacion: `engine::State::new` → `init_gpu()`; fallo → `EngineEvent::Error` (sin `panic`, sin `ready`).
-- Futuro **DirectX 12** solo en Windows: `RER_GPU_BACKEND=dx12` + feature `dx12` en wgpu; excluyente con Vulkan por sesion.
+- Inicializacion: `engine::State::new` → `init_gpu(_, TwoD)`; fallo → `EngineEvent::Error` (sin `panic`, sin `ready`).
+- No se leen variables de entorno para elegir backend (política fija por perfil `TwoD`).
+- Electron elimina `RER_GPU_BACKEND` del entorno al hacer `spawn` del motor.
 
 ## Ventana overlay (integracion con Electron)
 
@@ -28,7 +29,7 @@ Este documento fija el contrato tecnico actual del motor 2D para que el codigo n
 
 El runtime real 2D vive principalmente en estos archivos:
 
-- `engine_shared/src/gpu.rs`: politica Vulkan y `init_gpu()`.
+- `engine_shared/src/gpu.rs`: `resolve_backend(TwoD)` y `init_gpu(_, TwoD)`.
 - `src/engine/mod.rs`: estado central del runtime, caches, undo/redo, scripting y flags del editor.
 - `src/engine/commands.rs`: frontera IPC y mutaciones principales del estado.
 - `src/physics_2d.rs`: backend fisico 2D sobre Rapier, restringido al plano `XY`.

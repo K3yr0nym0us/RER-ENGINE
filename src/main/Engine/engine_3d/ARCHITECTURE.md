@@ -14,10 +14,12 @@ Runtime 3D: camara orbital en editor, primera persona en play, Rapier3D, mallas 
 
 ## Politica GPU
 
-- Misma politica que `engine_2d`: **solo Vulkan** via `rer_engine_shared::gpu`.
-- Sin OpenGL ni fallback a otros backends. Shaders en **WGSL** (naga), no GLSL como API grafica.
+- Perfil **ThreeD** via `rer_engine_shared::gpu`:
+  - **Linux**: Vulkan.
+  - **Windows**: DirectX 12 fijo (`Backends::DX12`, `EngineGpuProfile::ThreeD`).
+  - Sin variables de entorno: `resolve_backend(ThreeD)` no lee `RER_GPU_BACKEND`.
+- Sin OpenGL ni fallback entre Vulkan y DX12. Shaders en **WGSL** (naga).
 - Fallo de `init_gpu` → `EngineEvent::Error`; Electron muestra overlay de ayuda.
-- Futuro DX12 en Windows: documentado en `engine_shared/src/gpu.rs` (no activo).
 
 ## Ventana overlay
 
@@ -26,10 +28,10 @@ Runtime 3D: camara orbital en editor, primera persona en play, Rapier3D, mallas 
 
 ## Archivos fuente de verdad
 
-- `engine_shared/src/gpu.rs`: politica Vulkan y `init_gpu()`.
+- `engine_shared/src/gpu.rs`: `resolve_backend(ThreeD)` y `init_gpu(_, ThreeD)`.
 - `src/main.rs`: bucle winit, input, gizmo, play FP, setup overlay.
 - `src/engine.rs` + `src/engine/mod.rs`: `State` (GPU, ECS, caches, undo/redo, scripting).
-- `src/engine/init.rs`: instancia Vulkan, pipelines WGSL, atlas, HUD/gizmo, TAA.
+- `src/engine/init.rs`: instancia wgpu (Vulkan o DX12), pipelines WGSL, atlas, HUD/gizmo, TAA.
 - `src/engine/commands.rs`: IPC y mutaciones de estado.
 - `src/engine/render.rs`: mundo 3D, crosshair, tooltip Esc, gizmo de editor.
 - `src/engine/tick.rs`: delta time, metricas, fade del hint Esc.

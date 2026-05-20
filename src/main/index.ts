@@ -57,10 +57,31 @@ let lastEffectiveBounds: ViewportBounds | null = null
 /** true tras recibir `ready` del proceso motor de la sesión actual. */
 let engineReceivedReady = false
 
-const VULKAN_STARTUP_ERROR_MESSAGE =
-  'No se pudo iniciar el motor gráfico con Vulkan. Instala o actualiza los controladores de video. ' +
-  'En WSL2: usa WSLg, instala mesa-vulkan-drivers (o drivers NVIDIA para WSL) y comprueba con vulkaninfo. ' +
-  'Reinicia el editor después de instalar drivers.'
+/** Binario base del motor en la sesión actual (`rer_engine_2d` / `rer_engine_3d`). */
+let lastEngineBinary = 'rer_engine_2d'
+
+function expectedGpuApiLabel(baseBinaryName: string): string {
+  if (baseBinaryName === 'rer_engine_3d' && process.platform === 'win32') {
+    return 'DirectX 12'
+  }
+  return 'Vulkan'
+}
+
+function gpuStartupErrorMessage(): string {
+  const api = expectedGpuApiLabel(lastEngineBinary)
+  if (lastEngineBinary === 'rer_engine_3d' && process.platform === 'win32') {
+    return (
+      `No se pudo iniciar el motor gráfico con ${api}. Instala o actualiza los controladores de video ` +
+      'y asegúrate de tener DirectX 12 actualizado (Windows Update). ' +
+      'Reinicia el editor después de instalar drivers.'
+    )
+  }
+  return (
+    `No se pudo iniciar el motor gráfico con ${api}. Instala o actualiza los controladores de video. ` +
+    'En WSL2: usa WSLg, instala mesa-vulkan-drivers (o drivers NVIDIA para WSL) y comprueba con vulkaninfo. ' +
+    'Reinicia el editor después de instalar drivers.'
+  )
+}
 
 /** Líneas habituales de wgpu/Vulkan en Windows que no indican fallo del motor. */
 function isBenignEngineStderrLine(line: string): boolean {
@@ -76,10 +97,10 @@ function isBenignEngineStderrLine(line: string): boolean {
   )
 }
 
-/** Solo si el proceso murió sin haber enviado `ready` (no usar stderr: avisos del loader Vulkan son ruido). */
+/** Solo si el proceso murió sin haber enviado `ready` (no usar stderr: avisos del loader son ruido). */
 function notifyEngineGpuStartupError(): void {
   if (engineReceivedReady) return
-  sendEventToRenderer({ event: 'error', message: VULKAN_STARTUP_ERROR_MESSAGE } as EngineEvent)
+  sendEventToRenderer({ event: 'error', message: gpuStartupErrorMessage() } as EngineEvent)
 }
 
 function sendEventToRenderer(event: EngineEvent): void {
@@ -206,7 +227,9 @@ function startEngine(embed?: ViewportBounds): void {
   ) {
     baseBinaryName = 'rer_engine_2d'
   }
-  
+
+  lastEngineBinary = baseBinaryName
+
   const binaryName = process.platform === 'win32' ? `${baseBinaryName}.exe` : baseBinaryName
   const enginePath = app.isPackaged
     ? path.join(process.resourcesPath, 'engine', binaryName)
@@ -242,12 +265,15 @@ function startEngine(embed?: ViewportBounds): void {
       }
     : {}
 
+  const gpuLabel = expectedGpuApiLabel(baseBinaryName)
+  console.log(`[engine] binario=${baseBinaryName} GPU esperada=${gpuLabel}`)
+
+  const engineEnv: NodeJS.ProcessEnv = { ...process.env, ...linuxEnv }
+  delete engineEnv.RER_GPU_BACKEND
+
   engineProcess = spawn(enginePath, engineArgs, {
     stdio: ['pipe', 'pipe', 'pipe'],
-    env: {
-      ...process.env,
-      ...linuxEnv,
-    },
+    env: engineEnv,
   })
 
   // stdout → eventos para el renderer

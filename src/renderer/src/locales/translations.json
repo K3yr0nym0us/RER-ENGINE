@@ -279,11 +279,11 @@
   "Left": "Izquierda",
   "Right": "Derecha",
 
-  "Engine GPU init failed title": "No se pudo iniciar el motor gráfico (Vulkan)",
-  "Engine GPU init failed intro": "El editor sigue disponible, pero el viewport de juego no puede renderizar hasta que Vulkan funcione en este equipo.",
+  "Engine GPU init failed title": "No se pudo iniciar el motor gráfico",
+  "Engine GPU init failed intro": "El editor sigue disponible, pero el viewport de juego no puede renderizar hasta que la GPU y los controladores funcionen en este equipo (Vulkan en 2D/Linux; DirectX 12 en 3D Windows).",
   "Engine GPU hint drivers": "Instala o actualiza los controladores de tu tarjeta gráfica (NVIDIA, AMD o Intel).",
   "Engine GPU hint wsl": "En WSL2: usa WSLg (Windows 11), drivers GPU en Windows y en la distro ejecuta `sudo apt install mesa-vulkan-drivers` (o drivers NVIDIA para WSL).",
-  "Engine GPU hint vulkaninfo": "Comprueba Vulkan en terminal: `vulkaninfo` o `vkcube`.",
+  "Engine GPU hint vulkaninfo": "Proyectos 2D o Linux: comprueba Vulkan con `vulkaninfo` o `vkcube`. En 3D Windows: actualiza DirectX 12 vía Windows Update.",
   "Engine GPU hint restart": "Reinicia el editor después de instalar drivers.",
   "Show technical details": "Ver detalle técnico",
   "Hide technical details": "Ocultar detalle técnico"

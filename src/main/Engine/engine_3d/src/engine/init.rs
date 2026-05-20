@@ -4,7 +4,7 @@ use std::time::Instant;
 
 use wgpu::{include_wgsl, util::DeviceExt};
 use winit::window::Window;
-use rer_engine_shared::gpu::{init_gpu, GpuInitError};
+use rer_engine_shared::gpu::{init_gpu, EngineGpuProfile, GpuInitError};
 
 use crate::config_3d::physics_3d::PhysicsWorld;
 use crate::config_3d::{Camera, WorldBounds3D};
@@ -26,11 +26,12 @@ use crate::config_3d::directional_light::{
 };
 
 impl State {
-    /// Inicializa wgpu con Vulkan (política en `rer_engine_shared::gpu`).
+    /// Inicializa wgpu (3D: DX12 en Windows, Vulkan en Linux; ver `rer_engine_shared::gpu`).
     pub async fn new(window: Arc<Window>) -> Result<Self, GpuInitError> {
         let size = window.inner_size();
 
-        let (_instance, surface, adapter) = init_gpu(window.clone()).await?;
+        let (_instance, surface, adapter) =
+            init_gpu(window.clone(), EngineGpuProfile::ThreeD).await?;
 
         let (device, queue) = adapter
             .request_device(

@@ -13,7 +13,7 @@ RER-ENGINE separa el producto en dos capas que hablan por JSON (stdin/stdout):
 | Capa | Rol |
 |------|-----|
 | **Editor** (Electron + React + TypeScript) | Interfaz, escenas, guardado `.save`, herramientas de autoría. |
-| **Motor** (Rust + wgpu) | Render, física, scripting, play mode. **API gráfica: wgpu; backend activo: solo Vulkan.** |
+| **Motor** (Rust + wgpu) | Render, física, scripting, play mode. **wgpu** con backend según binario (ver [Política gráfica](#política-gráfica-gpu)). |
 
 Hay **dos motores independientes**, no uno híbrido:
 
@@ -38,7 +38,7 @@ El render **no** ocurre dentro del DOM de Electron. Es un **proceso hijo** con v
          ▼  IPC viewport-bounds / set_bounds
 ┌─────────────────────────────────────────────────────────┐
 │  rer_engine_2d | rer_engine_3d (ventana winit overlay)  │
-│  Vulkan vía wgpu — misma posición/tamaño que el hueco   │
+│  2D/Linux/3D-Linux: Vulkan · 3D-Windows: DirectX 12    │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -56,13 +56,26 @@ Principio **engine-first**: posiciones, cámaras, física y convenciones espacia
 
 | Regla | Detalle |
 |-------|---------|
-| **Hoy** | Solo **Vulkan** (`Backends::VULKAN` en `engine_shared::gpu`). |
-| **Prohibido** | OpenGL, EGL, `Backends::all()`, fallback silencioso a otros backends. |
-| **Futuro (Windows)** | **DirectX 12** como alternativa de arranque (`RER_GPU_BACKEND=dx12`), **una** API por sesión; no mezclar Vulkan y DX12 en el mismo proceso. |
-| **Shaders** | WGSL compilado con naga; no implica backend OpenGL. |
-| **Si Vulkan falla** | El editor Electron **sí** abre; el viewport muestra ayuda (drivers, WSL). El motor emite `{"event":"error"}` y no envía `ready`. |
+| **Motor 2D** | Siempre **Vulkan** (Windows y Linux). |
+| **Motor 3D en Linux** | **Vulkan**. |
+| **Motor 3D en Windows** | **DirectX 12** (fijo por perfil del binario; sin variables de entorno). |
+| **Prohibido** | OpenGL, EGL, `Backends::all()`, fallback silencioso entre Vulkan y DX12. |
+| **Shaders** | WGSL compilado con naga; portable entre backends wgpu. |
+| **Si la GPU falla** | El editor Electron **sí** abre; el viewport muestra ayuda. El motor emite `{"event":"error"}` y no envía `ready`. |
 
-Requisito de sistema: drivers Vulkan funcionales (`vulkaninfo` / GPU en WSLg si usas WSL2).
+Requisitos: Vulkan para 2D y 3D en Linux (`vulkaninfo`); en Windows, 3D requiere **DirectX 12** y drivers actualizados; 2D en Windows sigue usando Vulkan.
+
+### Implementación (`engine_shared/src/gpu.rs`)
+
+| Pieza | Rol |
+|-------|-----|
+| `EngineGpuProfile::TwoD` / `ThreeD` | Lo fija cada binario al llamar `init_gpu(window, profile)`. |
+| `resolve_backend(profile)` | Elige Vulkan o DX12 solo por perfil y SO; **no** lee variables de entorno. |
+| `init_gpu` | Una API wgpu por proceso; fallo → `GpuInitError` → IPC `{"event":"error"}`. |
+| Electron `startEngine` | Elimina `RER_GPU_BACKEND` del entorno del hijo para que no pueda anular la política. |
+| `EngineGpuErrorOverlay` | Ayuda en el viewport si el motor no envía `ready`. |
+
+`yarn dev` / `yarn start` **no** definen backend GPU; solo compilan motores y arrancan electron-vite (`RER_ENGINE_PROFILE` opcional para release).
 
 ---
 
@@ -70,7 +83,7 @@ Requisito de sistema: drivers Vulkan funcionales (`vulkaninfo` / GPU en WSLg si 
 
 | Área | Tecnologías |
 |------|-------------|
-| Motor | Rust, **wgpu (Vulkan)**, winit, glam, Rapier, mlua, gltf/image |
+| Motor | Rust, **wgpu** (Vulkan / DX12 según binario), winit, glam, Rapier, mlua, gltf/image |
 | Editor | Electron, React, TypeScript, Vite (electron-vite) |
 | Scripts de juego | Lua (sandbox: sin `io`, `os`, `require`) |
 | Contrato IPC | JSON — tipos en `src/shared-types/types.ts` |
@@ -82,7 +95,7 @@ Requisito de sistema: drivers Vulkan funcionales (`vulkaninfo` / GPU en WSLg si 
 - **Node.js** 20+ y **Yarn**
 - **Rust** (toolchain estable) y **Cargo**
 - **Windows 11** o **Linux con X11** (viewport overlay; en Wayland usar XWayland)
-- **GPU con soporte Vulkan** (drivers actualizados; en WSL2: WSLg + `mesa-vulkan-drivers` o drivers NVIDIA para WSL)
+- **GPU**: Vulkan para `rer_engine_2d` y para `rer_engine_3d` en Linux (drivers + `vulkaninfo` en WSL2 si aplica). En Windows, proyectos **3D** requieren **DirectX 12**; proyectos **2D** en Windows siguen usando Vulkan.
 
 ---
 
@@ -132,6 +145,7 @@ Logs del motor (opcional): `RUST_LOG=info` o `RUST_LOG=rer_engine_2d=debug`.
 | [`src/main/Engine/engine_2d/ARCHITECTURE.md`](src/main/Engine/engine_2d/ARCHITECTURE.md) | Contrato del motor 2D |
 | [`src/main/Engine/engine_3d/ARCHITECTURE.md`](src/main/Engine/engine_3d/ARCHITECTURE.md) | Contrato del motor 3D |
 | [`src/renderer/ARCHITECTURE.md`](src/renderer/ARCHITECTURE.md) | Rol del frontend y qué no duplicar |
+| [`.cursor/rules/rer-engine-project.mdc`](.cursor/rules/rer-engine-project.mdc) | Convenciones permanentes para agentes Cursor (inglés) |
 
 ---
 

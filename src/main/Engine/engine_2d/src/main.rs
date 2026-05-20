@@ -31,6 +31,7 @@ use winit::{
 };
 
 use ipc::{EngineCommand, EngineEvent};
+use rer_engine_shared::gpu::{resolve_backend, EngineGpuProfile};
 use rer_engine_shared::overlay::{parse_overlay_config, OverlayConfig};
 #[cfg(any(target_os = "windows", target_os = "linux"))]
 use rer_engine_shared::platform::{start_position_tracker, TrackerOffset};
@@ -735,10 +736,11 @@ fn main() {
     // NO usar Poll aquí: Poll + request_redraw en RedrawRequested = busy loop al 100% CPU.
 
     let overlay = parse_overlay_config();
+    let gpu = resolve_backend(EngineGpuProfile::TwoD).label();
     if overlay.is_some() {
-        log::info!("Modo overlay activado (GPU: Vulkan)");
+        log::info!("Modo overlay activado (GPU: {gpu})");
     } else {
-        log::info!("Modo standalone (GPU: Vulkan)");
+        log::info!("Modo standalone (GPU: {gpu})");
     }
 
     let mut app = App {

@@ -34,6 +34,7 @@ use winit::{
 
 use ipc::{EngineCommand, EngineEvent};
 use platform::query_ctrl_held_os;
+use rer_engine_shared::gpu::{resolve_backend, EngineGpuProfile};
 use rer_engine_shared::overlay::{parse_overlay_config, OverlayConfig};
 #[cfg(any(target_os = "windows", target_os = "linux"))]
 use rer_engine_shared::platform::{start_position_tracker, TrackerOffset};
@@ -834,13 +835,15 @@ fn main() {
     // Logs van a stderr; IPC usa stdout.
     // wgpu_hal::vulkan genera spam de "Suboptimal present" y warnings de capas
     // en entornos sin GPU hardware — subirlos a error los silencia.
+    #[cfg(target_os = "windows")]
+    const DEFAULT_LOG_FILTER: &str =
+        "rer_engine_3d=info,warn,wgpu_core=warn,wgpu_hal=warn,naga=warn";
+    #[cfg(not(target_os = "windows"))]
+    const DEFAULT_LOG_FILTER: &str =
+        "warn,wgpu_core=warn,wgpu_hal::vulkan::conv=error,wgpu_hal::vulkan::instance=error,wgpu_hal=warn,naga=warn";
+
     env_logger::Builder::from_env(
-        env_logger::Env::default().default_filter_or(
-            // Por defecto dejamos solo advertencias/errores para un arranque limpio.
-            // Quien necesite más detalle puede usar RUST_LOG=info o RUST_LOG=debug.
-            // Además, wgpu_hal::gles/vulkan generan spam en algunos entornos.
-            "warn,wgpu_core=warn,wgpu_hal::vulkan::conv=error,wgpu_hal::vulkan::instance=error,wgpu_hal=warn,naga=warn",
-        ),
+        env_logger::Env::default().default_filter_or(DEFAULT_LOG_FILTER),
     )
     .init();
 
@@ -855,10 +858,11 @@ fn main() {
     // NO usar Poll aquí: Poll + request_redraw en RedrawRequested = busy loop al 100% CPU.
 
     let overlay = parse_overlay_config();
+    let gpu = resolve_backend(EngineGpuProfile::ThreeD).label();
     if overlay.is_some() {
-        log::info!("Modo overlay activado (GPU: Vulkan)");
+        log::info!("Modo overlay activado (GPU: {gpu})");
     } else {
-        log::info!("Modo standalone (GPU: Vulkan)");
+        log::info!("Modo standalone (GPU: {gpu})");
     }
 
     let mut app = App {
