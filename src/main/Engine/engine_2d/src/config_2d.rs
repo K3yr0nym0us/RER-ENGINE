@@ -277,9 +277,28 @@ impl State {
         }
     }
 
+    /// Restaura escala base y limpia offset visual antes de aplicar otra animación.
+    /// Evita arrastrar pivot/escala de la animación anterior al cambiar (p. ej. volver a idle).
+    pub(crate) fn prepare_character_animation_visual(&mut self, id: u32) {
+        if !self.character_entities.contains(&id) {
+            return;
+        }
+        if let Some(t) = self.world.get::<Transform>(id).cloned() {
+            if let Some(saved) = self.anim_saved_transforms.get(&id) {
+                if let Some(tt) = self.world.get_mut::<Transform>(id) {
+                    tt.scale = saved.1;
+                }
+            }
+            if let Some(saved) = self.anim_saved_transforms.get_mut(&id) {
+                saved.0 = t.position;
+            }
+        }
+        self.visual_offsets.remove(&id);
+    }
+
     /// Cambia el sprite de una entidad (escenario o personaje) a un frame de animación.
     /// - `pivot_x/pivot_y`: punto ancla en píxeles dentro del frame (0,0 = esquina superior-izq).
-    /// - `logical_w/logical_h`: bounding box lógico fijo de la animación (en píxeles).
+    /// - `logical_w/logical_h`: espacio de dibujo de la animación (píxeles, sin reescalar).
     ///
     /// La entidad mantiene su posición de ancla en el mundo.  El quad se redimensiona y
     /// desplaza para que el píxel (pivot_x, pivot_y) quede exactamente sobre dicha posición.
@@ -421,14 +440,24 @@ impl State {
                 let orig_pos = saved.0;
                 let orig_scale = saved.1;
 
-                // En personajes usamos un factor uniforme por alto lógico para que
-                // frames más anchos (ej. ataque) expandan visualmente sin aplastarse.
-                let ref_h_px     = logical_h.max(1) as f32;
-                let world_per_px = orig_scale.y / ref_h_px;
-                let new_scale_x  = img_width  as f32 * world_per_px;
-                let new_scale_y  = img_height as f32 * world_per_px;
-                let offset_x     =  (pivot_x - img_width  as f32 * 0.5) * world_per_px;
-                let offset_y     = -(pivot_y - img_height as f32 * 0.5) * world_per_px;
+                // Espacio de dibujo fijo (logical_w×logical_h); frame a 1:1 px dentro; solo pivot.
+                let logical_w_f = logical_w.max(1) as f32;
+                let logical_h_f = logical_h.max(1) as f32;
+                let img_w_f = img_width as f32;
+                let img_h_f = img_height.max(1) as f32;
+                let world_per_px = orig_scale.y / logical_h_f;
+                let frame_offset_x = (logical_w_f - img_w_f) * 0.5;
+                let frame_offset_y = logical_h_f - img_h_f;
+                let pivot_on_image_x = if flip_horizontal {
+                    img_w_f - (pivot_x - frame_offset_x)
+                } else {
+                    pivot_x - frame_offset_x
+                };
+                let pivot_on_image_y = pivot_y - frame_offset_y;
+                let new_scale_x = img_w_f * world_per_px;
+                let new_scale_y = img_h_f * world_per_px;
+                let offset_x = (pivot_on_image_x - img_w_f * 0.5) * world_per_px;
+                let offset_y = -(pivot_on_image_y / img_h_f - 0.5) * new_scale_y;
 
                 if let Some(t) = self.world.get_mut::<Transform>(id) {
                     t.scale = GlamVec3::new(new_scale_x, new_scale_y, 1.0);

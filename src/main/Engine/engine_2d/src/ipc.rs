@@ -357,7 +357,7 @@ pub struct AnimationFrameData {
 }
 
 impl AnimationFrameData {
-    /// Pivot por defecto: centro X, base Y (convención del editor).
+    /// Pivot por defecto en coords. del frame: centro X, base Y (solo si falta pivot explícito).
     pub fn resolved_pivot(&self, fallback_w: u32, fallback_h: u32) -> (f32, f32) {
         if let (Some(x), Some(y)) = (self.pivot_x, self.pivot_y) {
             return (x, y);

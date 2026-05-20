@@ -20,16 +20,9 @@ impl State {
         anim.flip_horizontal ^ target_is_left
     }
 
-    /// Inicia el estado de una animación de fallback sin renderizar el frame 0 inmediatamente.
-    ///
-    /// A diferencia de `handle_command(PlayAnimation)`, esta función NO llama a
-    /// `play_animation_frame` para el frame inicial. Esto evita el flash de 1 frame del
-    /// fallback (p.ej. animación idle) cuando un control script va a reiniciar la animación
-    /// correcta en el siguiente tick del event loop (caso típico: tecla A/D aún presionada
-    /// cuando la animación de correr completa un ciclo no-loop).
-    ///
-    /// El frame 0 se renderizará naturalmente en el siguiente `update_animations` si ningún
-    /// otro comando sobreescribe la animación antes.
+    /// Inicia una animación de fallback (p. ej. predeterminada tras una no-loop).
+    /// Aplica el frame 0 de inmediato para recalcular pivot/offset; si un script lanza
+    /// `PlayAnimation` en el mismo tick, ese comando sobreescribe el visual.
     pub(super) fn start_animation_deferred(&mut self, entity_id: u32, name: String) {
         let anim_opt = self.animations
             .get(&entity_id)
@@ -59,17 +52,20 @@ impl State {
             let _ = self.script_engine.attach_script(entity_id, &anim_path, &script.source);
         }
 
-        // Insertar estado activo SIN renderizar frame 0.
         self.active_animations.insert(entity_id, ActiveAnimation {
-            animation_name: name,
+            animation_name: name.clone(),
             current_frame:  0,
             last_frame_time: Instant::now(),
             fps:    anim.fps,
             finished: false,
         });
+
+        self.prepare_character_animation_visual(entity_id);
+        self.show_first_frame_of_animation(entity_id, &name);
     }
 
     pub(super) fn show_first_frame_of_animation(&mut self, entity_id: u32, animation_name: &str) {
+        self.prepare_character_animation_visual(entity_id);
         let frame_data = self.animations
             .get(&entity_id)
             .and_then(|m| m.get(animation_name))

@@ -182,6 +182,8 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 					audio_path: anim.audio_path ?? null,
 					scripts: anim.scripts ?? [],
 					is_cancelable: anim.is_cancelable ?? true,
+					logical_w: anim.logical_w > 0 ? anim.logical_w : undefined,
+					logical_h: anim.logical_h > 0 ? anim.logical_h : undefined,
 				} as never);
 			}
 			const defaultAnim = animations.find((anim) => anim?.is_default);

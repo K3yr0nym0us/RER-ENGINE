@@ -82,7 +82,7 @@ export function SpritePreviewModalBody({
   const [state, dispatch] = useReducer(spritePreviewReducer, initialSpritePreviewState);
   const [facingRight, setFacingRight] = useState(true);
   const [isDefaultAnimation, setIsDefaultAnimation] = useState(false);
-  const [defaultPivotNormalized] = useState<{ x: number; y: number }>({ x: 0.5, y: 0.5 });
+  const [defaultPivotNormalized] = useState<{ x: number; y: number }>({ x: 0.5, y: 1.0 });
   const selectedPreviewFrameIndexRef = useRef(0);
   const [pivotByFrameIndex, setPivotByFrameIndex] = useState<Record<number, { x: number; y: number }>>({});
   const initialPivotsLoadedRef = useRef(false);
@@ -197,6 +197,8 @@ export function SpritePreviewModalBody({
     if (initialPivotsLoadedRef.current) return;
     if (!initialFrames || initialFrames.length === 0) return;
 
+    const drawW = Math.max(1, ...initialFrames.map((f) => f.width));
+    const drawH = Math.max(1, ...initialFrames.map((f) => f.height));
     const pivots: Record<number, { x: number; y: number }> = {};
     for (let i = 0; i < initialFrames.length; i += 1) {
       const frame = initialFrames[i];
@@ -210,8 +212,8 @@ export function SpritePreviewModalBody({
       }
 
       pivots[i] = {
-        x: Math.max(0, Math.min(1, frame.pivot_x / frame.width)),
-        y: Math.max(0, Math.min(1, frame.pivot_y / frame.height)),
+        x: Math.max(0, Math.min(1, frame.pivot_x / drawW)),
+        y: Math.max(0, Math.min(1, frame.pivot_y / drawH)),
       };
     }
 
@@ -231,12 +233,14 @@ export function SpritePreviewModalBody({
     }
 
     dispatch({ type: 'patch', payload: { validationError: null } });
+    const drawW = Math.max(1, ...normalizedFrames.map((f) => f.width));
+    const drawH = Math.max(1, ...normalizedFrames.map((f) => f.height));
     const framesWithPivot = normalizedFrames.map((frame, index) => {
       const pivotNormalized = pivotByFrameIndex[index] ?? defaultPivotNormalized;
       return {
       ...frame,
-      pivot_x: Math.max(0, Math.min(frame.width, Math.round(frame.width * pivotNormalized.x))),
-      pivot_y: Math.max(0, Math.min(frame.height, Math.round(frame.height * pivotNormalized.y))),
+      pivot_x: Math.max(0, Math.min(drawW, Math.round(drawW * pivotNormalized.x))),
+      pivot_y: Math.max(0, Math.min(drawH, Math.round(drawH * pivotNormalized.y))),
       };
     });
 

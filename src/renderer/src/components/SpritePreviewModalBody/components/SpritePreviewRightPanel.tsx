@@ -116,8 +116,7 @@ export function SpritePreviewRightPanel({
   const hasFrames = frames.length > 0;
   const safeIndex = hasFrames ? Math.min(selectedFrameIndex, frames.length - 1) : 0;
   const currentFrame = hasFrames ? frames[safeIndex] : null;
-  const currentPivot = (pivotsByFrameIndex?.[safeIndex]) ?? { x: 0.5, y: 0.5 };
-  const visiblePivotX = currentPivot.x;
+  const currentPivot = (pivotsByFrameIndex?.[safeIndex]) ?? { x: 0.5, y: 1.0 };
 
   useEffect(() => {
     if (!hasFrames) return;
@@ -141,7 +140,10 @@ export function SpritePreviewRightPanel({
     }
   }, [isPlaying, isLooping, fps, hasFrames, frames.length]);
 
-  // Draw current frame
+  const drawSpaceW = Math.max(1, ...frames.map((f) => f.width));
+  const drawSpaceH = Math.max(1, ...frames.map((f) => f.height));
+
+  // Draw current frame dentro del espacio de dibujo (sin estirar a un cuadrado)
   useEffect(() => {
     if (!currentFrame || !previewCanvasRef.current) return;
 
@@ -151,32 +153,44 @@ export function SpritePreviewRightPanel({
 
     const img = new window.Image();
     img.onload = () => {
-      const scale = Math.min(CANVAS_SIZE / img.width, CANVAS_SIZE / img.height);
-      const drawWidth = img.width * scale;
-      const drawHeight = img.height * scale;
-      const offsetX = (CANVAS_SIZE - drawWidth) / 2;
-      const offsetY = (CANVAS_SIZE - drawHeight) / 2;
+      const sheetScale = Math.min(CANVAS_SIZE / img.width, CANVAS_SIZE / img.height);
+      const sheetDrawW = img.width * sheetScale;
+      const sheetDrawH = img.height * sheetScale;
+      const sheetOffX = (CANVAS_SIZE - sheetDrawW) / 2;
+      const sheetOffY = (CANVAS_SIZE - sheetDrawH) / 2;
 
       const frameLeft = currentFrame.x;
       const frameRight = currentFrame.x + currentFrame.width;
-      const normalizedLeft = frameLeft - offsetX;
-      const normalizedRight = frameRight - offsetX;
-      const sampleLeft = normalizedLeft;
-      const sampleRight = normalizedRight;
+      const sampleLeft = frameLeft - sheetOffX;
+      const sampleRight = frameRight - sheetOffX;
+      const origX = sampleLeft / sheetScale;
+      const origY = (currentFrame.y - sheetOffY) / sheetScale;
+      const origW = (sampleRight - sampleLeft) / sheetScale;
+      const origH = currentFrame.height / sheetScale;
 
-      const origX = sampleLeft / scale;
-      const origY = (currentFrame.y - offsetY) / scale;
-      const origW = (sampleRight - sampleLeft) / scale;
-      const origH = currentFrame.height / scale;
+      const previewSize = 120;
+      const spaceScale = Math.min(previewSize / drawSpaceW, previewSize / drawSpaceH);
+      const spaceDispW = drawSpaceW * spaceScale;
+      const spaceDispH = drawSpaceH * spaceScale;
+      const spaceOffX = (previewSize - spaceDispW) / 2;
+      const spaceOffY = (previewSize - spaceDispH) / 2;
+      const frameOffX = (drawSpaceW - currentFrame.width) / 2;
+      const frameOffY = drawSpaceH - currentFrame.height;
+      const frameDispX = spaceOffX + frameOffX * spaceScale;
+      const frameDispY = spaceOffY + frameOffY * spaceScale;
+      const frameDispW = currentFrame.width * spaceScale;
+      const frameDispH = currentFrame.height * spaceScale;
 
-      const size = 120;
-      canvas.width = size;
-      canvas.height = size;
-      ctx.clearRect(0, 0, size, size);
-      ctx.drawImage(img, origX, origY, origW, origH, 0, 0, size, size);
+      canvas.width = previewSize;
+      canvas.height = previewSize;
+      ctx.clearRect(0, 0, previewSize, previewSize);
+      ctx.strokeStyle = 'rgba(255, 132, 38, 0.9)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(spaceOffX + 0.5, spaceOffY + 0.5, spaceDispW - 1, spaceDispH - 1);
+      ctx.drawImage(img, origX, origY, origW, origH, frameDispX, frameDispY, frameDispW, frameDispH);
 
-      const px = visiblePivotX * size;
-      const py = currentPivot.y * size;
+      const px = spaceOffX + currentPivot.x * spaceDispW;
+      const py = spaceOffY + currentPivot.y * spaceDispH;
       ctx.save();
       ctx.strokeStyle = '#ffde59';
       ctx.lineWidth = 2;
@@ -196,14 +210,21 @@ export function SpritePreviewRightPanel({
       ctx.clearRect(0, 0, canvas.width, canvas.height);
     };
     img.src = src;
-  }, [currentFrame, src, visiblePivotX, currentPivot.y]);
+  }, [currentFrame, src, currentPivot.x, currentPivot.y, drawSpaceW, drawSpaceH]);
 
   const handlePreviewCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!hasFrames) return;
     const rect = e.currentTarget.getBoundingClientRect();
-    const clickedX = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    const nx = clickedX;
-    const ny = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+    const previewSize = 120;
+    const clickX = ((e.clientX - rect.left) / rect.width) * previewSize;
+    const clickY = ((e.clientY - rect.top) / rect.height) * previewSize;
+    const spaceScale = Math.min(previewSize / drawSpaceW, previewSize / drawSpaceH);
+    const spaceDispW = drawSpaceW * spaceScale;
+    const spaceDispH = drawSpaceH * spaceScale;
+    const spaceOffX = (previewSize - spaceDispW) / 2;
+    const spaceOffY = (previewSize - spaceDispH) / 2;
+    const nx = Math.max(0, Math.min(1, (clickX - spaceOffX) / spaceDispW));
+    const ny = Math.max(0, Math.min(1, (clickY - spaceOffY) / spaceDispH));
     onPivotChange?.(safeIndex, { x: nx, y: ny });
   };
 

@@ -50,19 +50,12 @@ const createAnimationId = () => {
 /** Placeholder hasta que el motor emita `animation_logical_resolved`. */
 const LOGICAL_PLACEHOLDER = 64;
 
-function resolveLogicalSizeForNewAnimation(
-  existing: Animation[],
-  frames: { width: number; height: number }[],
-): { logical_w: number; logical_h: number } {
-  const ref = existing.find(
-    (a) => a.logical_w > 0 && a.logical_h > 0 && a.logical_w !== LOGICAL_PLACEHOLDER,
-  ) ?? existing.find((a) => a.logical_w > 0 && a.logical_h > 0);
-  if (ref) {
-    return { logical_w: ref.logical_w, logical_h: ref.logical_h };
-  }
-  const logical_w = Math.max(1, ...frames.map((f) => f.width));
-  const logical_h = Math.max(1, ...frames.map((f) => f.height));
-  return { logical_w, logical_h };
+/** Espacio de dibujo del preview: bounding box de los frames de esta animación. */
+function resolveDrawSpace(frames: { width: number; height: number }[]): { logical_w: number; logical_h: number } {
+  return {
+    logical_w: Math.max(1, ...frames.map((f) => f.width)),
+    logical_h: Math.max(1, ...frames.map((f) => f.height)),
+  };
 }
 
 export function AnimationsPanel() {
@@ -123,10 +116,7 @@ export function AnimationsPanel() {
               src_w: f.width,
               src_h: f.height,
             }));
-            const { logical_w, logical_h } = resolveLogicalSizeForNewAnimation(
-              animations,
-              animation.frames,
-            );
+            const { logical_w, logical_h } = resolveDrawSpace(animation.frames);
             const markDefault = animation.defaultAnimation === true;
             const newAnimation: Animation = {
               id: createAnimationId(),

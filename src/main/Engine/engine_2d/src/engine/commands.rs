@@ -195,11 +195,9 @@ impl State {
                     // Ignorar: el modo edición de pivot tiene prioridad para no interferir con la textura/escala
                     return;
                 }
-                let frame_w = src_w.unwrap_or(logical_w).max(1);
-                let frame_h = src_h.unwrap_or(logical_h).max(1);
                 let (pivot_x, pivot_y) = match (pivot_x, pivot_y) {
                     (Some(x), Some(y)) => (x, y),
-                    _ => (frame_w as f32 * 0.5, frame_h as f32),
+                    _ => (logical_w.max(1) as f32 * 0.5, logical_h.max(1) as f32),
                 };
                 self.play_animation_frame(id, &path, pivot_x, pivot_y, logical_w, logical_h, src_x.zip(src_y).zip(src_w.zip(src_h)).map(|((x, y), (w, h))| (x, y, w, h)), false);
             }
@@ -590,28 +588,17 @@ impl State {
                 };
 
                 let mut frames = frames;
-                for frame in &mut frames {
-                    let (px, py) = frame.resolved_pivot(fallback_logical_w, fallback_logical_h);
-                    frame.pivot_x = Some(px);
-                    frame.pivot_y = Some(py);
-                }
-
                 let (measured_w, measured_h) = measure_bounds(&frames, fallback_logical_w, fallback_logical_h);
-                let mut resolved_logical_w = measured_w.max(1);
-                let mut resolved_logical_h = measured_h.max(1);
 
-                if let Some(reference_anim) = self.animations.get(&id).and_then(|by_name| by_name.values().next()) {
-                    let (ref_bounds_w, ref_bounds_h) = measure_bounds(
-                        &reference_anim.frames,
-                        reference_anim.logical_w.max(1),
-                        reference_anim.logical_h.max(1),
-                    );
+                // Espacio de dibujo: solo lo que envía el editor o el máximo de frames de esta animación.
+                let resolved_logical_w = logical_w.unwrap_or(measured_w).max(1);
+                let resolved_logical_h = logical_h.unwrap_or(measured_h).max(1);
 
-                    let ratio_w = (ref_bounds_w as f32) / (reference_anim.logical_w.max(1) as f32);
-                    let ratio_h = (ref_bounds_h as f32) / (reference_anim.logical_h.max(1) as f32);
-
-                    resolved_logical_w = ((measured_w as f32) / ratio_w.max(0.0001)).round().max(1.0) as u32;
-                    resolved_logical_h = ((measured_h as f32) / ratio_h.max(0.0001)).round().max(1.0) as u32;
+                for frame in &mut frames {
+                    if frame.pivot_x.is_none() || frame.pivot_y.is_none() {
+                        frame.pivot_x = Some(resolved_logical_w as f32 * 0.5);
+                        frame.pivot_y = Some(resolved_logical_h as f32);
+                    }
                 }
 
                 // Pre-decodificar audio a muestras PCM durante SetAnimation.
@@ -743,9 +730,7 @@ EngineCommand::PlayAnimation { id, name } => {
                         // Detener animación previa (el Play de audio incluye clear interno)
                         self.active_animations.remove(&id);
 
-                        // Re-baseline de posición al estado actual antes de reproducir.
-                        // La escala base se conserva para evitar acumulación al alternar
-                        // animaciones con distinto logical_h (grow/shrink progresivo).
+                        // Re-baseline: posición actual + escala base antes del nuevo pivot.
                         if let Some(t) = self.world.get::<Transform>(id).cloned() {
                             self.anim_saved_transforms
                                 .entry(id)
@@ -754,6 +739,7 @@ EngineCommand::PlayAnimation { id, name } => {
                                 })
                                 .or_insert((t.position, t.scale));
                         }
+                        self.prepare_character_animation_visual(id);
 
                         // Capturar el tiempo ANTES del I/O de archivos para que
                         // last_frame_time refleje el inicio real del frame 0, no el
