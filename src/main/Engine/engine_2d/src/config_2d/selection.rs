@@ -26,23 +26,18 @@ impl State {
     pub fn pick_entity_2d(&mut self, pixel_x: f32, pixel_y: f32) {
         let Some((wx, wy)) = self.screen_to_world_2d(pixel_x, pixel_y) else { return };
 
-        // Mantener el picking del editor basado en Transform crudo.
-        // El render puede aplicar `visual_offsets`, pero igualar ambas referencias
-        // aqui cambiaria la seleccion actual de escenas/animaciones existentes.
-        // Esa unificacion queda como trabajo separado de cambio de comportamiento.
-        // Recoge todos los hits y elige el de mayor Z (más cercano a la cámara).
+        // AABB en centro visual (mismo criterio que render y spatial grid).
         let mut best: Option<(EntityId, f32)> = None;
         for &entity in self.world.entities() {
             if self.world.has::<crate::ecs::NonSelectable>(entity) { continue; }
-            if let Some(transform) = self.world.get::<Transform>(entity) {
-                let p  = transform.position;
-                let sx = transform.scale.x * 0.5;
-                let sy = transform.scale.y * 0.5;
-                if wx >= p.x - sx && wx <= p.x + sx && wy >= p.y - sy && wy <= p.y + sy {
-                    if best.map_or(true, |(_, bz)| p.z > bz) {
-                        best = Some((entity, p.z));
-                    }
-                }
+            let Some(center) = self.entity_visual_center(entity) else { continue };
+            let Some(transform) = self.world.get::<Transform>(entity) else { continue };
+            let sx = transform.scale.x * 0.5;
+            let sy = transform.scale.y * 0.5;
+            if super::aabb_contains_point_xy(center.x, center.y, sx, sy, wx, wy)
+                && best.map_or(true, |(_, bz)| transform.position.z > bz)
+            {
+                best = Some((entity, transform.position.z));
             }
         }
         let hit = best.map(|(id, _)| id);
@@ -279,15 +274,14 @@ impl State {
         let candidates = self.spatial_grid.query_cell(wx, wy);
         for entity in candidates {
             if self.world.has::<crate::ecs::NonSelectable>(entity) { continue; }
-            if let Some(t) = self.world.get::<Transform>(entity) {
-                let sx = t.scale.x * 0.5;
-                let sy = t.scale.y * 0.5;
-                if wx >= t.position.x - sx && wx <= t.position.x + sx
-                && wy >= t.position.y - sy && wy <= t.position.y + sy {
-                    if best_hover.map_or(true, |(_, bz)| t.position.z > bz) {
-                        best_hover = Some((entity, t.position.z));
-                    }
-                }
+            let Some(center) = self.entity_visual_center(entity) else { continue };
+            let Some(t) = self.world.get::<Transform>(entity) else { continue };
+            let sx = t.scale.x * 0.5;
+            let sy = t.scale.y * 0.5;
+            if super::aabb_contains_point_xy(center.x, center.y, sx, sy, wx, wy)
+                && best_hover.map_or(true, |(_, bz)| t.position.z > bz)
+            {
+                best_hover = Some((entity, t.position.z));
             }
         }
 

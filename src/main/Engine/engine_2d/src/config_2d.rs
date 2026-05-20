@@ -17,7 +17,7 @@ pub(crate) use camera_2d::Camera2D;
 
 #[path = "config_2d/world_xy.rs"]
 pub(crate) mod world_xy;
-pub(crate) use world_xy::screen_pixel_to_world_xy;
+pub(crate) use world_xy::{aabb_contains_point_xy, screen_pixel_to_world_xy, transform_visual_center};
 
 #[path = "config_2d/grid_2d.rs"]
 pub(crate) mod grid_2d;
@@ -109,6 +109,15 @@ impl State {
         let w = self.size.width as f32;
         let h = self.size.height as f32;
         Some(screen_pixel_to_world_xy(cam, w, h, pixel_x, pixel_y))
+    }
+
+    /// Centro visual XY de la entidad (`Transform` + `visual_offsets` si existe).
+    pub(crate) fn entity_visual_center(&self, entity: crate::ecs::EntityId) -> Option<GlamVec3> {
+        let t = self.world.get::<crate::ecs::Transform>(entity)?;
+        Some(transform_visual_center(
+            t.position,
+            self.visual_offsets.get(&entity).copied(),
+        ))
     }
 
     fn snap_size_to_grid_2d(&self, size: f32) -> f32 {
@@ -909,9 +918,8 @@ pub(crate) fn restore_animation_frame(&mut self, id: u32) {
 
     /// Detecta entradas a áreas de ejecución en modo preview y dispara hooks de scripting.
     ///
-    /// Contrato actual: usa AABB basado en `Transform` crudo.
-    /// No consulta `visual_offsets` ni la forma real de Rapier; cambiar eso puede
-    /// modificar gameplay/scripts existentes y debe tratarse como una segunda fase.
+    /// Overlap AABB en plano XY: centro visual del actor (`visual_offsets`); trigger en `Transform`.
+    /// El body Rapier sigue en `Transform.position` (no se mueve con el offset de dibujo).
     pub(crate) fn update_execution_areas_2d(&mut self) {
         if !self.preview_playing {
             self.execution_overlaps.clear();
@@ -929,11 +937,14 @@ pub(crate) fn restore_animation_frame(&mut self, id: u32) {
 
             for actor_id in &actor_ids {
                 let Some(actor_t) = self.world.get::<Transform>(*actor_id).cloned() else { continue; };
+                let Some(actor_center) = self.entity_visual_center(*actor_id) else { continue; };
                 let actor_hx = actor_t.scale.x * 0.5;
                 let actor_hy = actor_t.scale.y * 0.5;
 
-                let overlap_x = (trigger_t.position.x - actor_t.position.x).abs() <= (trigger_hx + actor_hx);
-                let overlap_y = (trigger_t.position.y - actor_t.position.y).abs() <= (trigger_hy + actor_hy);
+                let overlap_x =
+                    (trigger_t.position.x - actor_center.x).abs() <= (trigger_hx + actor_hx);
+                let overlap_y =
+                    (trigger_t.position.y - actor_center.y).abs() <= (trigger_hy + actor_hy);
                 if !overlap_x || !overlap_y {
                     continue;
                 }

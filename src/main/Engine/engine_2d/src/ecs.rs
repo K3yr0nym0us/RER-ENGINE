@@ -10,7 +10,7 @@
 
 use std::any::{Any, TypeId};
 use std::collections::{HashMap, HashSet};
-use glam::{Mat4, Quat, Vec3};
+use glam::{Quat, Vec3};
 
 // ── Tipos base ────────────────────────────────────────────────────────────────
 pub type EntityId = u32;
@@ -41,12 +41,6 @@ pub struct Transform {
 impl Default for Transform {
     fn default() -> Self {
         Self { position: Vec3::ZERO, rotation: Quat::IDENTITY, scale: Vec3::ONE }
-    }
-}
-
-impl Transform {
-    pub fn to_matrix(&self) -> Mat4 {
-        Mat4::from_scale_rotation_translation(self.scale, self.rotation, self.position)
     }
 }
 

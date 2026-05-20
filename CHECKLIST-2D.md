@@ -54,6 +54,7 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 - [x] Asignación de IDs de entidad: `HashSet` + cola de IDs reciclados en `ecs.rs` (escenas grandes)
 - [x] Física 2D unificada: eliminado shim `config_compat/physics`; solo `PhysicsWorld2D`
 - [x] Conversión pantalla↔mundo XY centralizada (`config_2d/world_xy.rs`; picking, hover, herramientas)
+- [x] Centro visual unificado (`visual_offsets`): render, spatial grid, picking, hover y triggers con actor
 
 ### Motor-first (2D)
 
@@ -75,7 +76,7 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 
 ## Por implementar
 
-- [ ] Alinear triggers/picking con `visual_offsets` de render (cambio de comportamiento; fase 2)
+_(vacío — ver ítems aplazados en producto si aplica)_
 
 ---
 

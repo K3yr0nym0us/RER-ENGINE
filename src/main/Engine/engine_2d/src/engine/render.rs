@@ -1,7 +1,7 @@
 use glam::Mat4;
 use wgpu::util::DeviceExt;
 
-use crate::config_2d::build_scenario_collision_overlay;
+use crate::config_2d::{build_scenario_collision_overlay, transform_visual_center};
 use crate::ecs::MeshComponent;
 use crate::mesh;
 
@@ -19,11 +19,10 @@ impl State {
             if let Some(t) = self.world.get::<crate::ecs::Transform>(entity) {
                 let sx = t.scale.x.abs() * 0.5;
                 let sy = t.scale.y.abs() * 0.5;
-                let center = if let Some(vo) = self.visual_offsets.get(&entity) {
-                    t.position + *vo
-                } else {
-                    t.position
-                };
+                let center = transform_visual_center(
+                    t.position,
+                    self.visual_offsets.get(&entity).copied(),
+                );
                 let min_x = center.x - sx;
                 let min_y = center.y - sy;
                 let max_x = center.x + sx;
@@ -62,21 +61,18 @@ impl State {
                 let tex_idx  = mc.tex_idx;
                 // ── Culling por viewport 2D ──────────────────────────────────
                 // Para culling usamos la posición visual (con offset de pivot)
-                let visual_pos = if let Some(vo) = visual_offsets.get(&id) {
-                    t.position + *vo
-                } else {
-                    t.position
-                };
+                let visual_pos =
+                    transform_visual_center(t.position, visual_offsets.get(&id).copied());
                 let visible = self.camera_2d
                     .as_ref()
                     .map(|cam2d| is_visible_2d(cam2d, visual_pos, t.scale, aspect_fc))
                     .unwrap_or(true);
                 if !visible { return None; }
-                let model_mat = if let Some(vo) = visual_offsets.get(&id) {
-                    Mat4::from_scale_rotation_translation(t.scale, t.rotation, t.position + *vo)
-                } else {
-                    t.to_matrix()
-                };
+                let model_mat = Mat4::from_scale_rotation_translation(
+                    t.scale,
+                    t.rotation,
+                    transform_visual_center(t.position, visual_offsets.get(&id).copied()),
+                );
                 let layer     = self.world.get::<crate::ecs::RenderLayer>(id).map(|rl| rl.value).unwrap_or(0);
                 let z         = t.position.z;
                 Some((id, mesh_idx, tex_idx, model_mat, layer, z))

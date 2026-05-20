@@ -66,8 +66,8 @@ Registro: `entity_save_meta` + inferencia desde `ScenarioMarker` / `CharacterMar
 
 - El movimiento normal de gameplay debe pasar por `move_physics_entity()` o por las rutas kinematic del runtime.
 - `teleport_entity()` solo debe usarse para teletransportes reales o para resincronizar el cuerpo fisico despues de una mutacion externa del `Transform`.
-- `visual_offsets` afecta render/animacion, pero no es hoy la fuente de verdad universal de picking, triggers o fisica.
-- Las `execution areas` usan overlap AABB basado en `Transform`; cambiar esa semántica es decisión de producto 2D, no alineación con el motor 3D.
+- **Centro visual** (`Transform.position + visual_offsets`): render, spatial grid, picking, hover y overlap de execution areas con el actor. Ver `config_2d/world_xy.rs`.
+- **Body Rapier** sigue en `Transform.position` (pivot); la física no sigue el offset de dibujo por frame.
 
 ## Restore post-carga
 
