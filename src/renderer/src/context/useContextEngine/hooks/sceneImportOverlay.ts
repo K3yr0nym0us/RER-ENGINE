@@ -5,6 +5,28 @@ import { isPlayerPath } from '@shared-types';
 
 import type { EngineAction, EngineInternalRefs } from '../types';
 
+type BlockingLoadRefs = {
+	sceneImport: MutableRefObject<boolean>;
+	burst: MutableRefObject<boolean>;
+	modelReplace: MutableRefObject<boolean>;
+};
+
+function syncBlockingLoadOverlay(
+	dispatch: Dispatch<EngineAction>,
+	refs: BlockingLoadRefs,
+	reportBounds: () => void,
+) {
+	const stillBusy =
+		refs.sceneImport.current || refs.burst.current || refs.modelReplace.current;
+	dispatch({ type: 'SET_SCENE_IMPORT_LOADING', payload: stillBusy });
+	if (!stillBusy) {
+		setTimeout(() => {
+			window.electronAPI?.restoreEngineViewport?.();
+			reportBounds();
+		}, 0);
+	}
+}
+
 export function beginSceneImportLoading(
 	dispatch: Dispatch<EngineAction>,
 	sceneImportInProgressRef: MutableRefObject<boolean>,
@@ -18,15 +40,51 @@ export function endSceneImportLoading(
 	dispatch: Dispatch<EngineAction>,
 	sceneImportInProgressRef: MutableRefObject<boolean>,
 	pendingImportSceneRef: MutableRefObject<SavedScene | null>,
+	sceneBurstLoadInProgressRef: MutableRefObject<boolean>,
+	modelReplaceInProgressRef: MutableRefObject<boolean>,
 	reportBounds: () => void,
 ) {
 	sceneImportInProgressRef.current = false;
 	pendingImportSceneRef.current = null;
-	dispatch({ type: 'SET_SCENE_IMPORT_LOADING', payload: false });
-	setTimeout(() => {
-		window.electronAPI?.restoreEngineViewport?.();
-		reportBounds();
-	}, 0);
+	syncBlockingLoadOverlay(
+		dispatch,
+		{
+			sceneImport: sceneImportInProgressRef,
+			burst: sceneBurstLoadInProgressRef,
+			modelReplace: modelReplaceInProgressRef,
+		},
+		reportBounds,
+	);
+}
+
+/** Overlay mientras el motor reemplaza un modelo 3D (GLB/FBX pesado en hilo principal). */
+export function beginModelReplaceLoading(
+	dispatch: Dispatch<EngineAction>,
+	modelReplaceInProgressRef: MutableRefObject<boolean>,
+) {
+	modelReplaceInProgressRef.current = true;
+	dispatch({ type: 'SET_SCENE_IMPORT_LOADING', payload: true });
+	window.electronAPI?.hideEngineViewport?.();
+}
+
+export function endModelReplaceLoading(
+	dispatch: Dispatch<EngineAction>,
+	modelReplaceInProgressRef: MutableRefObject<boolean>,
+	sceneImportInProgressRef: MutableRefObject<boolean>,
+	sceneBurstLoadInProgressRef: MutableRefObject<boolean>,
+	reportBounds: () => void,
+) {
+	if (!modelReplaceInProgressRef.current) return;
+	modelReplaceInProgressRef.current = false;
+	syncBlockingLoadOverlay(
+		dispatch,
+		{
+			sceneImport: sceneImportInProgressRef,
+			burst: sceneBurstLoadInProgressRef,
+			modelReplace: modelReplaceInProgressRef,
+		},
+		reportBounds,
+	);
 }
 
 /** Carga 3D por ráfaga IPC (cambio de pestaña o `ready` inicial), no `import_scene` 2D. */
@@ -57,15 +115,21 @@ export function beginSceneBurstLoad(
 export function endSceneBurstLoad(
 	dispatch: Dispatch<EngineAction>,
 	sceneBurstLoadInProgressRef: MutableRefObject<boolean>,
+	sceneImportInProgressRef: MutableRefObject<boolean>,
+	modelReplaceInProgressRef: MutableRefObject<boolean>,
 	reportBounds: () => void,
 ) {
 	if (!sceneBurstLoadInProgressRef.current) return;
 	sceneBurstLoadInProgressRef.current = false;
-	dispatch({ type: 'SET_SCENE_IMPORT_LOADING', payload: false });
-	setTimeout(() => {
-		window.electronAPI?.restoreEngineViewport?.();
-		reportBounds();
-	}, 0);
+	syncBlockingLoadOverlay(
+		dispatch,
+		{
+			sceneImport: sceneImportInProgressRef,
+			burst: sceneBurstLoadInProgressRef,
+			modelReplace: modelReplaceInProgressRef,
+		},
+		reportBounds,
+	);
 }
 
 type SceneBurstRefs = Pick<
@@ -93,11 +157,19 @@ export function tryEndSceneBurstLoad(
 	dispatch: Dispatch<EngineAction>,
 	sceneBurstLoadInProgressRef: MutableRefObject<boolean>,
 	refs: SceneBurstRefs,
+	sceneImportInProgressRef: MutableRefObject<boolean>,
+	modelReplaceInProgressRef: MutableRefObject<boolean>,
 	reportBounds: () => void,
 ) {
 	if (!sceneBurstLoadInProgressRef.current) return;
 	if (hasPendingSceneBurstWork(refs)) return;
-	endSceneBurstLoad(dispatch, sceneBurstLoadInProgressRef, reportBounds);
+	endSceneBurstLoad(
+		dispatch,
+		sceneBurstLoadInProgressRef,
+		sceneImportInProgressRef,
+		modelReplaceInProgressRef,
+		reportBounds,
+	);
 }
 
 export function trackSceneBurstCollider(

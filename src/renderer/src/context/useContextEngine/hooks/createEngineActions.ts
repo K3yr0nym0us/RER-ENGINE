@@ -1,6 +1,7 @@
 import type { Dispatch } from 'react';
 import type { BluePrintEntry, EngineAction, EngineInternalRefs, EntityMeta, EntityScripts, PendingRestore, Transform } from '../types';
 import { buildPlayAnimationFrameCmd } from './applyPendingRestoreToEngine';
+import { beginModelReplaceLoading } from './sceneImportOverlay';
 
 interface CreateEngineActionsParams {
 	dispatch: Dispatch<EngineAction>
@@ -93,6 +94,7 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 			type: 'SET_ANIMATION_PLAYING',
 			payload: { entityId, playing: false },
 		});
+		beginModelReplaceLoading(dispatch, refs.modelReplaceInProgressRef);
 		send({ cmd: 'replace_entity_model', id: entityId, path: modelPath });
 	};
 

@@ -72,6 +72,7 @@ export function SceneTabsBar({ initialSave, projectType, gameStyle }: Props) {
     camera2dRef,
     pendingImportSceneRef,
     sceneImportInProgressRef,
+    modelReplaceInProgressRef,
     sceneBurstLoadInProgressRef,
     sceneBurstAwaitingPlayerViewRef,
     sceneBurstPendingColliderCountRef,
@@ -404,6 +405,8 @@ export function SceneTabsBar({ initialSave, projectType, gameStyle }: Props) {
             sceneBurstAwaitingPlayerViewRef,
             sceneBurstPendingColliderCountRef,
           },
+          sceneImportInProgressRef,
+          modelReplaceInProgressRef,
           reportBounds,
         );
       }, 0);

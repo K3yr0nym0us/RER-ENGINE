@@ -4,10 +4,13 @@ import { useContextEngine } from '@engine';
 import { useTraslate } from '@hooks';
 
 export function SceneImportLoadingOverlay() {
-	const { sceneImportLoading } = useContextEngine();
+	const { sceneImportLoading, modelReplaceInProgressRef } = useContextEngine();
 	const { t } = useTraslate();
 
 	if (!sceneImportLoading) return null;
+
+	const loadingModel = modelReplaceInProgressRef.current;
+	const label = loadingModel ? t('Loading model…') : t('Loading scene…');
 
 	return (
 		<div
@@ -17,9 +20,9 @@ export function SceneImportLoadingOverlay() {
 			aria-live="polite"
 		>
 			<Spinner animation="border" variant="primary" role="status">
-				<span className="visually-hidden">{t('Loading scene…')}</span>
+				<span className="visually-hidden">{label}</span>
 			</Spinner>
-			<span className="text-secondary user-select-none">{t('Loading scene…')}</span>
+			<span className="text-secondary user-select-none">{label}</span>
 		</div>
 	);
 }

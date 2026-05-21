@@ -70,8 +70,8 @@ impl State {
             self.play_character_mesh_forward_xz,
         );
         if let Some(t) = self.world.get_mut::<Transform>(id) {
-            let (_, pitch, roll) = t.rotation.to_euler(glam::EulerRot::YXZ);
-            t.rotation = glam::Quat::from_euler(glam::EulerRot::YXZ, mesh_yaw, pitch, roll);
+            // Solo yaw: pitch/roll en el transform acostaban el mesh aunque la malla esté enderezada.
+            t.rotation = glam::Quat::from_rotation_y(mesh_yaw);
         }
     }
 

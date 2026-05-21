@@ -33,6 +33,15 @@ pub(crate) fn is_fbx_model_path(path: &str) -> bool {
         .is_some_and(|e| e.eq_ignore_ascii_case("fbx"))
 }
 
+pub(crate) fn is_gltf_model_path(path: &str) -> bool {
+    std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| {
+            e.eq_ignore_ascii_case("glb") || e.eq_ignore_ascii_case("gltf")
+        })
+}
+
 pub(crate) mod directional_light;
 
 use std::path::Path;
@@ -126,12 +135,51 @@ impl State {
         } else {
             None
         };
-        let loaded = match mesh_3d::load_model_file(&self.device, Path::new(path), normalize) {
-            Ok(parts) => parts,
-            Err(e) => {
-                send_event(&EngineEvent::Error { message: e });
-                return;
+        let path_buf = Path::new(path);
+        let is_gltf = path_buf
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|e| e.eq_ignore_ascii_case("glb") || e.eq_ignore_ascii_case("gltf"));
+        let gltf_file = if is_gltf {
+            match model_asset::import_gltf(path_buf) {
+                Ok(f) => Some(f),
+                Err(e) => {
+                    send_event(&EngineEvent::Error { message: e });
+                    return;
+                }
             }
+        } else {
+            None
+        };
+        self.replace_entity_model_inner(id, path, gltf_file, is_play_character, normalize);
+    }
+
+    fn replace_entity_model_inner(
+        &mut self,
+        id: EntityId,
+        path: &str,
+        gltf_file: Option<model_asset::GltfFile>,
+        is_play_character: bool,
+        normalize: Option<f32>,
+    ) {
+        let path_buf = Path::new(path);
+        let loaded = match (gltf_file.as_ref(), normalize) {
+            (Some(file), Some(extent)) => {
+                match mesh_3d::load_gltf_preview_from_file(&self.device, file, extent) {
+                    Ok(parts) => parts,
+                    Err(e) => {
+                        send_event(&EngineEvent::Error { message: e });
+                        return;
+                    }
+                }
+            }
+            _ => match mesh_3d::load_model_file(&self.device, path_buf, normalize) {
+                Ok(parts) => parts,
+                Err(e) => {
+                    send_event(&EngineEvent::Error { message: e });
+                    return;
+                }
+            },
         };
 
         let Some(part) = loaded.into_iter().next() else {
@@ -195,6 +243,8 @@ impl State {
                     feet.y + PLAY_CHARACTER_BODY_HEIGHT * 0.5,
                     feet.z,
                 );
+                let (_, _, yaw) = t.rotation.to_euler(glam::EulerRot::YXZ);
+                t.rotation = glam::Quat::from_rotation_y(yaw);
             }
             self.camera.target = feet;
             self.sync_player_rotation_from_look();
@@ -235,15 +285,19 @@ impl State {
             None => (None, None, None),
         };
 
-        self.try_bind_model_animations(id, path);
+        // Forzar recarga del asset (orientación/normalize pueden cambiar entre versiones del motor).
+        self.model_assets.remove(path);
+        self.try_bind_model_animations_with_gltf(id, path, gltf_file.as_ref());
 
-        if is_play_character
-            && is_fbx_model_path(path)
-            && self.model_animation_bindings.contains_key(&id)
-        {
+        if is_play_character && self.model_animation_bindings.contains_key(&id) {
             if let Some(asset) = self.model_assets.get(path) {
-                self.play_character_mesh_forward_xz =
-                    model_asset::resolve_fbx_play_character_forward_xz(asset);
+                if is_fbx_model_path(path) {
+                    self.play_character_mesh_forward_xz =
+                        model_asset::resolve_fbx_play_character_forward_xz(asset);
+                } else if is_gltf_model_path(path) {
+                    self.play_character_mesh_forward_xz =
+                        model_asset::resolve_gltf_play_character_forward_xz(asset);
+                }
                 self.sync_player_rotation_from_look();
             }
         }

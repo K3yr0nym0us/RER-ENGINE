@@ -39,6 +39,7 @@
   "Auto": "Auto",
   "Starting…": "Iniciando…",
   "Loading scene…": "Cargando escena…",
+  "Loading model…": "Cargando modelo…",
   "Error": "Error",
 
   "Scene 1": "Escena 1",
@@ -95,7 +96,7 @@
 
   "Entities": "Entidades",
   "Environment": "Entorno",
-  "Load model (.glb)": "Cargar modelo (.glb/.fbx)",
+  "Load model (.glb/.gltf/.fbx)": "Cargar modelo (.glb/.gltf/.fbx)",
   "Models": "Modelos",
   "No models loaded": "Sin modelos cargados",
   "Model name": "Nombre del modelo",

@@ -8,7 +8,8 @@ use glam::{Mat4, Quat, Vec3};
 
 use crate::config_3d::character_anchor::PLAY_CHARACTER_BODY_HEIGHT;
 use crate::config_3d::model_asset::{
-    self, AnimChannel, AnimKeyframe, AnimProperty, AnimationClip, ModelAsset, MAX_JOINTS,
+    self, compute_gltf_joint_worlds, AnimChannel, AnimKeyframe, AnimProperty, AnimationClip,
+    GltfFile, ModelAsset, MAX_JOINTS,
 };
 use crate::ipc::ModelClipInfoEvent;
 use crate::ecs::EntityId;
@@ -42,6 +43,15 @@ pub(crate) struct GpuSkinnedMeshEntry {
 
 impl State {
     pub(crate) fn try_bind_model_animations(&mut self, id: EntityId, path: &str) {
+        self.try_bind_model_animations_with_gltf(id, path, None);
+    }
+
+    pub(crate) fn try_bind_model_animations_with_gltf(
+        &mut self,
+        id: EntityId,
+        path: &str,
+        gltf_file: Option<&GltfFile>,
+    ) {
         self.unbind_model_animations(id);
         // Clips embebidos 3D sustituyen animaciones 2D por hoja de sprites en esta entidad.
         self.animations.remove(&id);
@@ -55,59 +65,87 @@ impl State {
         };
 
         let path_buf = Path::new(path);
-        let clip_meta: Vec<ModelClipInfoEvent> = {
-            if let Some(cached) = self.model_assets.get(path) {
-                cached
-                    .clips
-                    .iter()
-                    .map(|c| ModelClipInfoEvent {
-                        name: c.name.clone(),
-                        duration_s: c.duration_s,
-                        fps: c.fps,
-                    })
-                    .collect()
-            } else {
-                model_asset::list_fbx_clip_infos(path_buf)
+
+        let asset = if let Some(cached) = self.model_assets.get(path) {
+            Arc::clone(cached)
+        } else if let Some(file) = gltf_file {
+            match model_asset::load_model_asset_from_gltf(file, normalize) {
+                Some(loaded) => {
+                    self.model_assets
+                        .insert(path.to_string(), Arc::clone(&loaded));
+                    loaded
+                }
+                None => {
+                    let clip_meta: Vec<ModelClipInfoEvent> = model_asset::list_gltf_clip_infos_from_file(
+                        file,
+                    )
                     .into_iter()
                     .map(|c| ModelClipInfoEvent {
                         name: c.name,
                         duration_s: c.duration_s,
                         fps: c.fps,
                     })
-                    .collect()
-            }
-        };
-
-        if clip_meta.is_empty() {
-            log::warn!("[model_anim] FBX sin clips embebidos: {path}");
-            return;
-        }
-
-        let asset = {
-            if let Some(cached) = self.model_assets.get(path) {
-                Arc::clone(cached)
-            } else {
-                match model_asset::load_model_asset(path_buf, normalize) {
-                    Some(loaded) => {
-                        self.model_assets
-                            .insert(path.to_string(), Arc::clone(&loaded));
-                        loaded
-                    }
-                    None => {
-                        log::warn!(
-                            "[model_anim] skinning no disponible; solo metadatos de {} clip(s): {path}",
-                            clip_meta.len()
-                        );
+                    .collect();
+                    if !clip_meta.is_empty() {
                         send_event(&EngineEvent::ModelClipsReady {
                             id,
                             path: path.to_string(),
                             clips: clip_meta,
                         });
+                    }
+                    log::warn!("[model_anim] glTF sin skinning utilizable: {path}");
+                    return;
+                }
+            }
+        } else {
+            match model_asset::load_model_asset(path_buf, normalize) {
+                Some(loaded) => {
+                    self.model_assets
+                        .insert(path.to_string(), Arc::clone(&loaded));
+                    loaded
+                }
+                None => {
+                    let clip_meta: Vec<ModelClipInfoEvent> = model_asset::list_model_clip_infos(
+                        path_buf,
+                    )
+                    .into_iter()
+                    .map(|c| ModelClipInfoEvent {
+                        name: c.name,
+                        duration_s: c.duration_s,
+                        fps: c.fps,
+                    })
+                    .collect();
+                    if clip_meta.is_empty() {
+                        log::warn!("[model_anim] modelo sin clips embebidos: {path}");
                         return;
                     }
+                    log::warn!(
+                        "[model_anim] skinning no disponible; solo metadatos de {} clip(s): {path}",
+                        clip_meta.len()
+                    );
+                    send_event(&EngineEvent::ModelClipsReady {
+                        id,
+                        path: path.to_string(),
+                        clips: clip_meta,
+                    });
+                    return;
                 }
             }
         };
+
+        let clip_meta: Vec<ModelClipInfoEvent> = asset
+            .clips
+            .iter()
+            .map(|c| ModelClipInfoEvent {
+                name: c.name.clone(),
+                duration_s: c.duration_s,
+                fps: c.fps,
+            })
+            .collect();
+
+        if clip_meta.is_empty() {
+            log::warn!("[model_anim] modelo sin clips embebidos (solo bind pose): {path}");
+        }
 
         let tex_idx = self
             .world
@@ -312,7 +350,20 @@ impl State {
             apply_clip_to_locals(clip, time_s, &mut local_transforms);
         }
 
-        let global = compute_joint_globals(&asset.joint_parents[..joint_count], &local_transforms);
+        let global = if !asset.joint_gltf_nodes.is_empty() {
+            compute_gltf_joint_worlds(
+                &asset.joint_gltf_nodes[..joint_count],
+                &local_transforms,
+                &asset.gltf_scene_parents,
+                &asset.gltf_bind_node_local,
+            )
+        } else {
+            compute_joint_globals(
+                &asset.joint_parents[..joint_count],
+                &local_transforms,
+                &asset.joint_prefix_world[..joint_count],
+            )
+        };
 
         let norm = asset.mesh_normalize;
         let inv_norm = norm.inverse();
@@ -322,10 +373,17 @@ impl State {
                 continue;
             };
             let inv_mesh = part.mesh_bind_world.inverse();
+            let gltf_skin = !asset.joint_gltf_nodes.is_empty();
             let mut joint_palette = vec![Mat4::IDENTITY; MAX_JOINTS];
             for ji in 0..joint_count {
                 let g2b = Mat4::from_cols_array_2d(&part.inverse_bind[ji]);
-                joint_palette[ji] = norm * global[ji] * g2b * inv_mesh * inv_norm;
+                joint_palette[ji] = if gltf_skin {
+                    // Khronos / Godot: inv(meshGlobal) * jointGlobal * IBM; vértices en espacio de malla
+                    norm * inv_mesh * global[ji] * g2b * inv_norm
+                } else {
+                    // FBX: vértices ya en mundo del nodo de malla
+                    norm * global[ji] * g2b * inv_mesh * inv_norm
+                };
             }
             let flat: Vec<[[f32; 4]; 4]> =
                 joint_palette.iter().map(|m| m.to_cols_array_2d()).collect();
@@ -341,8 +399,12 @@ impl State {
 }
 
 /// Resuelve globals aunque los padres estén después en el array (ancestros añadidos al final).
-fn compute_joint_globals(joint_parents: &[Option<usize>], locals: &[Mat4]) -> Vec<Mat4> {
-    let n = locals.len().min(joint_parents.len());
+fn compute_joint_globals(
+    joint_parents: &[Option<usize>],
+    locals: &[Mat4],
+    prefix_world: &[Mat4],
+) -> Vec<Mat4> {
+    let n = locals.len().min(joint_parents.len()).min(prefix_world.len());
     let mut global = vec![Mat4::IDENTITY; n];
     let mut done = vec![false; n];
     let mut remaining = n;
@@ -354,7 +416,7 @@ fn compute_joint_globals(joint_parents: &[Option<usize>], locals: &[Mat4]) -> Ve
             }
             match joint_parents[ji] {
                 None => {
-                    global[ji] = locals[ji];
+                    global[ji] = prefix_world[ji] * locals[ji];
                     done[ji] = true;
                     progressed = true;
                     remaining -= 1;
@@ -371,7 +433,7 @@ fn compute_joint_globals(joint_parents: &[Option<usize>], locals: &[Mat4]) -> Ve
         if !progressed {
             for ji in 0..n {
                 if !done[ji] {
-                    global[ji] = locals[ji];
+                    global[ji] = prefix_world[ji] * locals[ji];
                     done[ji] = true;
                     remaining -= 1;
                 }
@@ -425,9 +487,10 @@ fn apply_clip_to_locals(clip: &AnimationClip, time_s: f32, locals: &mut [Mat4]) 
             }
         }
 
-        let t = if has_t { translation } else { Vec3::ZERO };
-        let r = if has_r { rotation } else { Quat::IDENTITY };
-        let s = if has_s { scale } else { Vec3::ONE };
+        let (base_s, base_r, base_t) = locals[ji].to_scale_rotation_translation();
+        let t = if has_t { translation } else { base_t };
+        let r = if has_r { rotation } else { base_r };
+        let s = if has_s { scale } else { base_s };
         locals[ji] = Mat4::from_scale_rotation_translation(s, r, t);
     }
 }

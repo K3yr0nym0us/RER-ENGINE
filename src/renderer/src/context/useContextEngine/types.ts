@@ -527,6 +527,8 @@ export interface EngineInternalRefs {
 	pendingImportSceneRef: MutableRefObject<import('@shared-types').SavedScene | null>
 	/** Evita duplicar estado React mientras el motor emite eventos de carga por entidad. */
 	sceneImportInProgressRef: MutableRefObject<boolean>
+	/** Overlay mientras el motor ejecuta `replace_entity_model` (GLB/FBX). */
+	modelReplaceInProgressRef: MutableRefObject<boolean>
 	/** Overlay de carga durante ráfaga IPC 3D (pestañas / `ready`). */
 	sceneBurstLoadInProgressRef: MutableRefObject<boolean>
 	/** FP: esperar `play_character_view_changed` tras restore del jugador. */
@@ -539,6 +541,7 @@ export interface EngineContextValue extends EngineState {
 	dispatch: (action: EngineAction) => void
 	pendingImportSceneRef: MutableRefObject<import('@shared-types').SavedScene | null>
 	sceneImportInProgressRef: MutableRefObject<boolean>
+	modelReplaceInProgressRef: MutableRefObject<boolean>
 	sceneBurstLoadInProgressRef: MutableRefObject<boolean>
 	sceneBurstAwaitingPlayerViewRef: MutableRefObject<boolean>
 	sceneBurstPendingColliderCountRef: MutableRefObject<number>

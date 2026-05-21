@@ -565,6 +565,8 @@ pub enum EngineEvent {
         path: String,
         clips: Vec<ModelClipInfoEvent>,
     },
+    /// Progreso de carga de un GLB grande (hilo en segundo plano).
+    ModelLoadProgress { path: String, stage: String },
     /// Emitido cuando el estado de física de una entidad cambia (activado/desactivado por script).
     PhysicsChanged { entity_id: u32, enabled: bool, body_type: String },
     /// Emitido cuando un sprite PNG se cargó correctamente en el almacén.

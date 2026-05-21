@@ -39,6 +39,8 @@ import { applyPendingRestoreMeta, buildPlayAnimationFrameCmd, sendApplyEntityRes
 import {
 	beginSceneBurstLoad,
 	beginSceneImportLoading,
+	beginModelReplaceLoading,
+	endModelReplaceLoading,
 	endSceneBurstLoad,
 	endSceneImportLoading,
 	needsSceneBurstLoad,
@@ -151,11 +153,12 @@ export function createEngineEventHandler({
 			refs.pendingEventsRef.current.delete(event.event);
 		}
 
+		const sendEngine = window.engine.send;
+
 		if (event.event === 'ready') {
 			dispatch({ type: 'SET_READY' });
 			dispatch({ type: 'SET_PREVIEW_PLAYING', payload: false });
 			if (refs.readyTimer.current) clearTimeout(refs.readyTimer.current);
-			const sendEngine = window.engine.send;
 			const baseSave = refs.initialSaveRef.current;
 			if (projectType) {
 				if (baseSave) {
@@ -432,6 +435,8 @@ export function createEngineEventHandler({
 							dispatch,
 							refs.sceneBurstLoadInProgressRef,
 							refs,
+							refs.sceneImportInProgressRef,
+							refs.modelReplaceInProgressRef,
 							reportBounds,
 						),
 						0,
@@ -619,7 +624,14 @@ export function createEngineEventHandler({
 			}
 			}
 			}
-			tryEndSceneBurstLoad(dispatch, refs.sceneBurstLoadInProgressRef, refs, reportBounds);
+			tryEndSceneBurstLoad(
+				dispatch,
+				refs.sceneBurstLoadInProgressRef,
+				refs,
+				refs.sceneImportInProgressRef,
+				refs.modelReplaceInProgressRef,
+				reportBounds,
+			);
 		}
 
 		if (event.event === 'entity_model_replaced') {
@@ -670,7 +682,23 @@ export function createEngineEventHandler({
 				refs.sceneBurstLoadInProgressRef.current
 				&& !(gameStyle === 'first-person' && projectType === '3D' && refs.playerEntityIdRef.current === id)
 			) {
-				tryEndSceneBurstLoad(dispatch, refs.sceneBurstLoadInProgressRef, refs, reportBounds);
+				tryEndSceneBurstLoad(
+					dispatch,
+					refs.sceneBurstLoadInProgressRef,
+					refs,
+					refs.sceneImportInProgressRef,
+					refs.modelReplaceInProgressRef,
+					reportBounds,
+				);
+			}
+			if (refs.modelReplaceInProgressRef.current) {
+				endModelReplaceLoading(
+					dispatch,
+					refs.modelReplaceInProgressRef,
+					refs.sceneImportInProgressRef,
+					refs.sceneBurstLoadInProgressRef,
+					reportBounds,
+				);
 			}
 		}
 
@@ -789,6 +817,8 @@ export function createEngineEventHandler({
 				dispatch,
 				refs.sceneImportInProgressRef,
 				refs.pendingImportSceneRef,
+				refs.sceneBurstLoadInProgressRef,
+				refs.modelReplaceInProgressRef,
 				reportBounds,
 			);
 		}
@@ -805,7 +835,14 @@ export function createEngineEventHandler({
 				applyPendingRestoreMeta(refs, scenario.id, pending);
 				if (queue.length === 0) refs.pendingRestoresRef.current.delete(scenario.path);
 			}
-			tryEndSceneBurstLoad(dispatch, refs.sceneBurstLoadInProgressRef, refs, reportBounds);
+			tryEndSceneBurstLoad(
+				dispatch,
+				refs.sceneBurstLoadInProgressRef,
+				refs,
+				refs.sceneImportInProgressRef,
+				refs.modelReplaceInProgressRef,
+				reportBounds,
+			);
 		}
 
 		if (event.event === 'character_loaded') {
@@ -915,7 +952,14 @@ export function createEngineEventHandler({
 				}
 				applyPendingRestore(character.id, character.path);
 			}
-			tryEndSceneBurstLoad(dispatch, refs.sceneBurstLoadInProgressRef, refs, reportBounds);
+			tryEndSceneBurstLoad(
+				dispatch,
+				refs.sceneBurstLoadInProgressRef,
+				refs,
+				refs.sceneImportInProgressRef,
+				refs.modelReplaceInProgressRef,
+				reportBounds,
+			);
 		}
 
 		if (event.event === 'sprite_loaded') {
@@ -985,13 +1029,30 @@ export function createEngineEventHandler({
 					dispatch,
 					refs.sceneImportInProgressRef,
 					refs.pendingImportSceneRef,
+					refs.sceneBurstLoadInProgressRef,
+					refs.modelReplaceInProgressRef,
+					reportBounds,
+				);
+			}
+			if (refs.modelReplaceInProgressRef.current) {
+				endModelReplaceLoading(
+					dispatch,
+					refs.modelReplaceInProgressRef,
+					refs.sceneImportInProgressRef,
+					refs.sceneBurstLoadInProgressRef,
 					reportBounds,
 				);
 			}
 			if (refs.sceneBurstLoadInProgressRef.current) {
 				refs.sceneBurstAwaitingPlayerViewRef.current = false;
 				refs.sceneBurstPendingColliderCountRef.current = 0;
-				endSceneBurstLoad(dispatch, refs.sceneBurstLoadInProgressRef, reportBounds);
+				endSceneBurstLoad(
+					dispatch,
+					refs.sceneBurstLoadInProgressRef,
+					refs.sceneImportInProgressRef,
+					refs.modelReplaceInProgressRef,
+					reportBounds,
+				);
 			}
 			dispatch({ type: 'ENGINE_STOPPED', payload: (event as { code?: number }).code });
 		}
@@ -1010,7 +1071,14 @@ export function createEngineEventHandler({
 			dispatch({ type: 'SYNC_PLAY_CHARACTER_VIEW' });
 			if (refs.sceneBurstLoadInProgressRef.current) {
 				refs.sceneBurstAwaitingPlayerViewRef.current = false;
-				tryEndSceneBurstLoad(dispatch, refs.sceneBurstLoadInProgressRef, refs, reportBounds);
+				tryEndSceneBurstLoad(
+				dispatch,
+				refs.sceneBurstLoadInProgressRef,
+				refs,
+				refs.sceneImportInProgressRef,
+				refs.modelReplaceInProgressRef,
+				reportBounds,
+			);
 			}
 		}
 
@@ -1036,13 +1104,29 @@ export function createEngineEventHandler({
 					dispatch,
 					refs.sceneImportInProgressRef,
 					refs.pendingImportSceneRef,
+					refs.sceneBurstLoadInProgressRef,
+					refs.modelReplaceInProgressRef,
+					reportBounds,
+				);
+			} else if (refs.modelReplaceInProgressRef.current) {
+				endModelReplaceLoading(
+					dispatch,
+					refs.modelReplaceInProgressRef,
+					refs.sceneImportInProgressRef,
+					refs.sceneBurstLoadInProgressRef,
 					reportBounds,
 				);
 			}
 			if (refs.sceneBurstLoadInProgressRef.current) {
 				refs.sceneBurstAwaitingPlayerViewRef.current = false;
 				refs.sceneBurstPendingColliderCountRef.current = 0;
-				endSceneBurstLoad(dispatch, refs.sceneBurstLoadInProgressRef, reportBounds);
+				endSceneBurstLoad(
+					dispatch,
+					refs.sceneBurstLoadInProgressRef,
+					refs.sceneImportInProgressRef,
+					refs.modelReplaceInProgressRef,
+					reportBounds,
+				);
 			}
 			dispatch({ type: 'SET_ERROR', payload: (event as { message?: string }).message ?? 'Error desconocido' });
 		}
@@ -1067,7 +1151,14 @@ export function createEngineEventHandler({
 					0,
 					refs.sceneBurstPendingColliderCountRef.current - 1,
 				);
-				tryEndSceneBurstLoad(dispatch, refs.sceneBurstLoadInProgressRef, refs, reportBounds);
+				tryEndSceneBurstLoad(
+				dispatch,
+				refs.sceneBurstLoadInProgressRef,
+				refs,
+				refs.sceneImportInProgressRef,
+				refs.modelReplaceInProgressRef,
+				reportBounds,
+			);
 			}
 		}
 
@@ -1089,7 +1180,14 @@ export function createEngineEventHandler({
 			}
 			dispatch({ type: 'ADD_EXECUTION_AREA', payload: { id, path: '[ExecutionArea]' } });
 			dispatch({ type: 'SET_TOOL_PROGRESS', payload: null });
-			tryEndSceneBurstLoad(dispatch, refs.sceneBurstLoadInProgressRef, refs, reportBounds);
+			tryEndSceneBurstLoad(
+				dispatch,
+				refs.sceneBurstLoadInProgressRef,
+				refs,
+				refs.sceneImportInProgressRef,
+				refs.modelReplaceInProgressRef,
+				reportBounds,
+			);
 		}
 
 		if (event.event === 'tool_cancelled') {

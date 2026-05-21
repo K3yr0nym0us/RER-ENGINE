@@ -1,6 +1,6 @@
 //! Parseo de skeleton, malla skinned y clips de animación (paso aparte de `mesh_3d`).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -62,7 +62,7 @@ pub struct SkinnedMeshPart {
     /// Nombre del nodo FBX/glTF (p. ej. Body, Hair) para filtrar forward del jugador.
     pub name: String,
     pub mesh: SkinnedMeshData,
-    /// `geometry_to_world` del nodo de esta pieza (vértices en espacio mundo previo a `mesh_normalize`).
+    /// Mundo del nodo de malla en bind (glTF: `jointMatrix` usa `inv(mesh_bind_world)`).
     pub mesh_bind_world: Mat4,
     /// `geometry_to_bone` por hueso para esta pieza (identidad si el hueso no influye aquí).
     pub inverse_bind: Vec<[[f32; 4]; 4]>,
@@ -75,6 +75,8 @@ pub struct ModelAsset {
     pub inverse_bind: Vec<[[f32; 4]; 4]>,
     /// Pose local de bind por joint (base antes de mezclar clips).
     pub bind_local: Vec<Mat4>,
+    /// glTF: mundo del padre de escena fuera del skin (p. ej. Armature). FBX: identidad.
+    pub joint_prefix_world: Vec<Mat4>,
     pub joint_names: Vec<String>,
     pub parts: Vec<SkinnedMeshPart>,
     pub clips: Vec<AnimationClip>,
@@ -82,6 +84,29 @@ pub struct ModelAsset {
     pub mesh_normalize: Mat4,
     /// Solo FBX: `settings.axes.front` del archivo. glTF no usa este campo (orientación pendiente).
     pub facing_forward_xz: glam::Vec2,
+    /// glTF: índice de nodo de escena por joint (`skin.joints`); vacío en FBX.
+    pub joint_gltf_nodes: Vec<usize>,
+    /// glTF: padre en la escena y local de bind (cadena hasta raíz, estilo Godot/Unreal).
+    pub gltf_scene_parents: HashMap<usize, usize>,
+    pub gltf_bind_node_local: HashMap<usize, Mat4>,
+}
+
+/// glTF/GLB ya parseado (evita repetir `gltf::import` en la misma carga).
+pub struct GltfFile {
+    pub path: String,
+    pub doc: gltf::Document,
+    pub buffers: Vec<gltf::buffer::Data>,
+    pub images: Vec<gltf::image::Data>,
+}
+
+pub fn import_gltf(path: &Path) -> Result<GltfFile, String> {
+    let (doc, buffers, images) = gltf::import(path).map_err(|e| format!("gltf error: {e}"))?;
+    Ok(GltfFile {
+        path: path.display().to_string(),
+        doc,
+        buffers,
+        images,
+    })
 }
 
 /// Metadatos de clips del FBX sin cargar malla skinned (para listar en UI si falla el asset completo).
@@ -131,6 +156,56 @@ pub fn list_fbx_clip_infos(path: &Path) -> Vec<ModelClipInfo> {
     out
 }
 
+/// Metadatos de clips glTF/GLB sin cargar malla skinned.
+pub fn list_gltf_clip_infos(path: &Path) -> Vec<ModelClipInfo> {
+    let Ok(file) = import_gltf(path) else {
+        return Vec::new();
+    };
+    list_gltf_clip_infos_from_file(&file)
+}
+
+pub fn list_gltf_clip_infos_from_file(file: &GltfFile) -> Vec<ModelClipInfo> {
+    let doc = &file.doc;
+    let buffers = &file.buffers;
+
+    let mut out = Vec::new();
+    for anim in doc.animations() {
+        let name = anim
+            .name()
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| format!("Animation_{}", anim.index()));
+        let mut max_t = 0.0f32;
+        for channel in anim.channels() {
+            let reader = channel.reader(|b| buffers.get(b.index()).map(|d| d.0.as_slice()));
+            if let Some(inputs) = reader.read_inputs() {
+                for t in inputs {
+                    max_t = max_t.max(t);
+                }
+            }
+        }
+        out.push(ModelClipInfo {
+            name,
+            duration_s: max_t.max(1.0 / 30.0),
+            fps: 30.0,
+        });
+    }
+    out
+}
+
+/// Lista clips embebidos según extensión (FBX o glTF/GLB).
+pub fn list_model_clip_infos(path: &Path) -> Vec<ModelClipInfo> {
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    match ext.as_str() {
+        "fbx" => list_fbx_clip_infos(path),
+        "glb" | "gltf" => list_gltf_clip_infos(path),
+        _ => Vec::new(),
+    }
+}
+
 pub fn load_model_asset(path: &Path, normalize_to_extent: Option<f32>) -> Option<Arc<ModelAsset>> {
     let ext = path
         .extension()
@@ -138,141 +213,325 @@ pub fn load_model_asset(path: &Path, normalize_to_extent: Option<f32>) -> Option
         .unwrap_or("")
         .to_ascii_lowercase();
     match ext.as_str() {
-        "glb" | "gltf" => load_gltf_asset(path, normalize_to_extent),
+        "glb" | "gltf" => import_gltf(path)
+            .ok()
+            .and_then(|file| load_gltf_asset_from_file(&file, normalize_to_extent)),
         "fbx" => load_fbx_asset(path, normalize_to_extent),
         _ => None,
     }
 }
 
-fn load_gltf_asset(path: &Path, normalize_to_extent: Option<f32>) -> Option<Arc<ModelAsset>> {
-    let (doc, buffers, images) = gltf::import(path).ok()?;
-    let scene = doc.default_scene().or_else(|| doc.scenes().next())?;
+pub fn load_model_asset_from_gltf(
+    file: &GltfFile,
+    normalize_to_extent: Option<f32>,
+) -> Option<Arc<ModelAsset>> {
+    load_gltf_asset_from_file(file, normalize_to_extent)
+}
 
-    let mut skinned_node_index: Option<usize> = None;
-    for root in scene.nodes() {
-        find_gltf_skinned_node_index(root, &mut skinned_node_index);
-        if skinned_node_index.is_some() {
-            break;
-        }
-    }
-    let node_index = skinned_node_index?;
-    let node = doc.nodes().nth(node_index)?;
-    let skin = node.skin()?;
-    let mesh = node.mesh()?;
-
-    let joint_nodes: Vec<gltf::Node> = skin.joints().collect();
-    if joint_nodes.is_empty() || joint_nodes.len() > MAX_JOINTS {
-        return None;
-    }
-
-    let node_parents = build_gltf_node_parents(scene);
-
-    let node_to_joint: HashMap<usize, usize> = joint_nodes
+/// Global de un joint glTF recorriendo la escena (Godot / Khronos: `globalTransform(joint)`).
+pub(crate) fn gltf_scene_global_for_joint(
+    joint_node: usize,
+    joint_locals: &[Mat4],
+    joint_gltf_nodes: &[usize],
+    scene_parents: &HashMap<usize, usize>,
+    bind_node_local: &HashMap<usize, Mat4>,
+) -> Mat4 {
+    let node_to_joint: HashMap<usize, usize> = joint_gltf_nodes
         .iter()
         .enumerate()
-        .map(|(ji, n)| (n.index(), ji))
+        .map(|(ji, &ni)| (ni, ji))
         .collect();
-
-    let mut joint_parents = vec![None; joint_nodes.len()];
-    let mut joint_names = Vec::with_capacity(joint_nodes.len());
-    for (ji, jn) in joint_nodes.iter().enumerate() {
-        joint_names.push(
-            jn.name()
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| format!("joint_{ji}")),
-        );
-        if let Some(&parent_node) = node_parents.get(&jn.index()) {
-            if let Some(&pji) = node_to_joint.get(&parent_node) {
-                joint_parents[ji] = Some(pji);
-            }
-        }
-    }
-
-    let mut inverse_bind = vec![[[0.0; 4]; 4]; joint_nodes.len()];
-    let skin_reader = skin.reader(|b| buffers.get(b.index()).map(|d| d.0.as_slice()));
-    if let Some(iter) = skin_reader.read_inverse_bind_matrices() {
-        for (ji, m) in iter.enumerate() {
-            if ji < inverse_bind.len() {
-                inverse_bind[ji] = m;
-            }
-        }
-    }
-    for (ji, jn) in joint_nodes.iter().enumerate() {
-        if inverse_bind[ji] == [[0.0; 4]; 4] {
-            let local = node_local_matrix(jn);
-            inverse_bind[ji] = local.inverse().to_cols_array_2d();
-        }
-    }
-
-    let mut mesh_data: Option<SkinnedMeshData> = None;
-    for primitive in mesh.primitives() {
-        if let Some(data) = read_skinned_gltf_primitive(&primitive, &buffers, &images) {
-            mesh_data = Some(data);
+    let mut chain = vec![joint_node];
+    let mut cur = joint_node;
+    let mut guard = 0usize;
+    while let Some(&parent) = scene_parents.get(&cur) {
+        guard += 1;
+        if guard > 512 {
             break;
         }
+        chain.push(parent);
+        cur = parent;
     }
-    let mut mesh_data = mesh_data?;
-    let mesh_normalize = if let Some(extent) = normalize_to_extent {
-        let (min, max) = skinned_mesh_bounds(&mesh_data.vertices)?;
-        let norm = center_scale_normalize_mat(min, max, extent);
-        apply_normalize_to_skinned_vertices(&mut mesh_data.vertices, norm);
-        norm
-    } else {
-        Mat4::IDENTITY
-    };
+    chain.reverse();
+    let mut world = Mat4::IDENTITY;
+    for idx in chain {
+        let local = if let Some(&ji) = node_to_joint.get(&idx) {
+            joint_locals.get(ji).copied().unwrap_or(Mat4::IDENTITY)
+        } else {
+            bind_node_local
+                .get(&idx)
+                .copied()
+                .unwrap_or(Mat4::IDENTITY)
+        };
+        world *= local;
+    }
+    world
+}
 
-    let mut clips = Vec::new();
-    for anim in doc.animations() {
-        if let Some(clip) = parse_gltf_animation(&anim, &buffers, &node_to_joint) {
-            if !clip.channels.is_empty() {
-                clips.push(clip);
-            }
-        }
+pub(crate) fn compute_gltf_joint_worlds(
+    joint_gltf_nodes: &[usize],
+    joint_locals: &[Mat4],
+    scene_parents: &HashMap<usize, usize>,
+    bind_node_local: &HashMap<usize, Mat4>,
+) -> Vec<Mat4> {
+    joint_gltf_nodes
+        .iter()
+        .map(|&node_ix| {
+            gltf_scene_global_for_joint(
+                node_ix,
+                joint_locals,
+                joint_gltf_nodes,
+                scene_parents,
+                bind_node_local,
+            )
+        })
+        .collect()
+}
+
+fn gltf_skin_joint_node_indices(skin: &gltf::Skin) -> Vec<usize> {
+    skin.joints().map(|n| n.index()).collect()
+}
+
+/// Esqueleto unificado: varios `skin` en un GLB comparten nodos o usan listas distintas (Godot los fusiona).
+struct GltfUnifiedSkeleton {
+    node_to_unified: HashMap<usize, usize>,
+    joint_gltf_nodes: Vec<usize>,
+    joint_names: Vec<String>,
+    skin_count: usize,
+}
+
+fn build_gltf_unified_skeleton(
+    doc: &gltf::Document,
+    buffers: &[gltf::buffer::Data],
+    skinned_indices: &[usize],
+) -> Option<GltfUnifiedSkeleton> {
+    let mut skin_stats: HashMap<usize, (usize, Vec<usize>)> = HashMap::new();
+    for &node_ix in skinned_indices {
+        let node = doc.nodes().nth(node_ix)?;
+        let skin = node.skin()?;
+        let entry = skin_stats
+            .entry(skin.index())
+            .or_insert_with(|| (0, gltf_skin_joint_node_indices(&skin)));
+        entry.0 += gltf_skinned_vertex_count(doc, buffers, node_ix);
     }
-    if clips.is_empty() {
+    if skin_stats.is_empty() {
         return None;
     }
 
-    let mut bind_local = Vec::with_capacity(joint_nodes.len());
-    for jn in &joint_nodes {
-        bind_local.push(node_local_matrix(jn));
+    let mut skins_ordered: Vec<(usize, usize, Vec<usize>)> = skin_stats
+        .into_iter()
+        .map(|(idx, (verts, joints))| (idx, verts, joints))
+        .collect();
+    skins_ordered.sort_by(|a, b| {
+        b.1
+            .cmp(&a.1)
+            .then(b.2.len().cmp(&a.2.len()))
+    });
+
+    let mut node_to_unified: HashMap<usize, usize> = HashMap::new();
+    let mut joint_gltf_nodes: Vec<usize> = Vec::new();
+    let mut joint_names: Vec<String> = Vec::new();
+    let mut truncated = false;
+
+    for (_skin_idx, _verts, joint_nodes) in &skins_ordered {
+        for &node_ix in joint_nodes {
+            if node_to_unified.contains_key(&node_ix) {
+                continue;
+            }
+            if joint_gltf_nodes.len() >= MAX_JOINTS {
+                truncated = true;
+                break;
+            }
+            let ui = joint_gltf_nodes.len();
+            node_to_unified.insert(node_ix, ui);
+            joint_gltf_nodes.push(node_ix);
+            let name = doc
+                .nodes()
+                .nth(node_ix)
+                .and_then(|n| n.name())
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| format!("joint_{ui}"));
+            joint_names.push(name);
+        }
+        if truncated {
+            break;
+        }
     }
 
-    Some(Arc::new(ModelAsset {
-        path: path.display().to_string(),
-        joint_parents,
-        inverse_bind: inverse_bind.clone(),
-        bind_local,
+    if joint_gltf_nodes.is_empty() {
+        return None;
+    }
+    if truncated {
+        log::warn!(
+            "[model_asset] glTF: esqueleto unificado truncado a {MAX_JOINTS} huesos"
+        );
+    }
+
+    Some(GltfUnifiedSkeleton {
+        node_to_unified,
+        joint_gltf_nodes,
         joint_names,
-        parts: vec![SkinnedMeshPart {
-            name: node
-                .name()
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| "mesh".to_string()),
-            mesh: mesh_data,
-            mesh_bind_world: Mat4::IDENTITY,
-            inverse_bind,
-        }],
-        clips,
-        mesh_normalize,
-        facing_forward_xz: glam::Vec2::ZERO,
-    }))
+        skin_count: skins_ordered.len(),
+    })
 }
 
-fn find_gltf_skinned_node_index(node: gltf::Node, out: &mut Option<usize>) {
-    if node.skin().is_some() && node.mesh().is_some() {
-        *out = Some(node.index());
-        return;
-    }
-    for child in node.children() {
-        find_gltf_skinned_node_index(child, out);
-        if out.is_some() {
-            return;
+fn remap_gltf_vertex_joints_to_unified(
+    mesh: &mut SkinnedMeshData,
+    skin: &gltf::Skin,
+    node_to_unified: &HashMap<usize, usize>,
+) {
+    let skin_joint_nodes: Vec<usize> = gltf_skin_joint_node_indices(skin);
+    for v in mesh.vertices.iter_mut() {
+        for slot in 0..4 {
+            let si = v.joints[slot] as usize;
+            let node_ix = skin_joint_nodes.get(si).copied().unwrap_or(0);
+            v.joints[slot] = node_to_unified.get(&node_ix).copied().unwrap_or(0) as u32;
         }
     }
 }
 
-fn build_gltf_node_parents(scene: gltf::Scene) -> HashMap<usize, usize> {
+fn part_inverse_bind_for_gltf_skin(
+    skin: &gltf::Skin,
+    buffers: &[gltf::buffer::Data],
+    node_to_unified: &HashMap<usize, usize>,
+    joint_count: usize,
+    mesh_bind_world: Mat4,
+    doc: &gltf::Document,
+    scene_parents: &HashMap<usize, usize>,
+) -> Vec<[[f32; 4]; 4]> {
+    let mut ibm = vec![[[0.0; 4]; 4]; joint_count];
+    let skin_joint_nodes = gltf_skin_joint_node_indices(skin);
+    let skin_reader = skin.reader(|b| buffers.get(b.index()).map(|d| d.0.as_slice()));
+    if let Some(iter) = skin_reader.read_inverse_bind_matrices() {
+        for (si, m) in iter.enumerate() {
+            let Some(&node_ix) = skin_joint_nodes.get(si) else {
+                continue;
+            };
+            let Some(&ui) = node_to_unified.get(&node_ix) else {
+                continue;
+            };
+            ibm[ui] = m;
+        }
+    }
+    for &node_ix in &skin_joint_nodes {
+        let Some(&ui) = node_to_unified.get(&node_ix) else {
+            continue;
+        };
+        if ibm[ui] == [[0.0; 4]; 4] {
+            let joint_world =
+                world_matrix_for_gltf_node_index(doc, scene_parents, node_ix);
+            ibm[ui] = (joint_world.inverse() * mesh_bind_world).to_cols_array_2d();
+        }
+    }
+    ibm
+}
+
+/// Nodos que anima el GLB pero no están en `skin.joints` (p. ej. raíz Armature).
+fn extend_gltf_unified_with_anim_nodes(
+    doc: &gltf::Document,
+    unified: &mut GltfUnifiedSkeleton,
+) {
+    for anim in doc.animations() {
+        for channel in anim.channels() {
+            let node_ix = channel.target().node().index();
+            if unified.node_to_unified.contains_key(&node_ix) {
+                continue;
+            }
+            if unified.joint_gltf_nodes.len() >= MAX_JOINTS {
+                return;
+            }
+            let ui = unified.joint_gltf_nodes.len();
+            unified.node_to_unified.insert(node_ix, ui);
+            unified.joint_gltf_nodes.push(node_ix);
+            let name = doc
+                .nodes()
+                .nth(node_ix)
+                .and_then(|n| n.name())
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| format!("anim_node_{ui}"));
+            unified.joint_names.push(name);
+        }
+    }
+}
+
+fn collect_gltf_scene_chain_nodes(
+    joint_gltf_nodes: &[usize],
+    scene_parents: &HashMap<usize, usize>,
+) -> HashSet<usize> {
+    let mut nodes = HashSet::new();
+    for &joint_node in joint_gltf_nodes {
+        let mut cur = joint_node;
+        let mut guard = 0usize;
+        nodes.insert(cur);
+        while let Some(&parent) = scene_parents.get(&cur) {
+            guard += 1;
+            if guard > 512 {
+                break;
+            }
+            nodes.insert(parent);
+            cur = parent;
+        }
+    }
+    nodes
+}
+
+fn merge_skinned_mesh_data(mut acc: SkinnedMeshData, part: SkinnedMeshData) -> SkinnedMeshData {
+    let base = acc.vertices.len() as u32;
+    acc.vertices.extend(part.vertices);
+    acc.indices.extend(part.indices.iter().map(|i| i + base));
+    if acc.width <= 1 && part.width > 1 {
+        acc.rgba = part.rgba;
+        acc.width = part.width;
+        acc.height = part.height;
+    }
+    acc
+}
+
+/// Índice del nodo con mesh más grande (preview / sustituto de malla estática).
+pub(crate) fn gltf_primary_mesh_node_index(file: &GltfFile) -> Option<usize> {
+    let scene = file.doc.default_scene().or_else(|| file.doc.scenes().next())?;
+    let mut mesh_nodes: Vec<usize> = Vec::new();
+    for root in scene.nodes() {
+        collect_gltf_mesh_node_indices(root, &mut mesh_nodes);
+    }
+    mesh_nodes
+        .into_iter()
+        .max_by_key(|&idx| gltf_mesh_vertex_count(&file.doc, &file.buffers, idx))
+        .filter(|&idx| gltf_mesh_vertex_count(&file.doc, &file.buffers, idx) > 0)
+}
+
+fn collect_gltf_mesh_node_indices(node: gltf::Node, out: &mut Vec<usize>) {
+    if node.mesh().is_some() {
+        out.push(node.index());
+    }
+    for child in node.children() {
+        collect_gltf_mesh_node_indices(child, out);
+    }
+}
+
+fn gltf_mesh_vertex_count(
+    doc: &gltf::Document,
+    buffers: &[gltf::buffer::Data],
+    node_index: usize,
+) -> usize {
+    let node = match doc.nodes().nth(node_index) {
+        Some(n) => n,
+        None => return 0,
+    };
+    let mesh = match node.mesh() {
+        Some(m) => m,
+        None => return 0,
+    };
+    mesh.primitives()
+        .filter_map(|prim| {
+            prim.reader(|b| buffers.get(b.index()).map(|d| d.0.as_slice()))
+                .read_positions()
+                .map(|p| p.count())
+        })
+        .sum()
+}
+
+pub(crate) fn build_gltf_node_parents(scene: &gltf::Scene) -> HashMap<usize, usize> {
     let mut parents = HashMap::new();
     fn walk(node: gltf::Node, parent: Option<usize>, out: &mut HashMap<usize, usize>) {
         let idx = node.index();
@@ -289,7 +548,33 @@ fn build_gltf_node_parents(scene: gltf::Scene) -> HashMap<usize, usize> {
     parents
 }
 
-fn node_local_matrix(node: &gltf::Node) -> Mat4 {
+pub(crate) fn world_matrix_for_gltf_node_index(
+    doc: &gltf::Document,
+    node_parents: &HashMap<usize, usize>,
+    target: usize,
+) -> Mat4 {
+    let mut chain = vec![target];
+    let mut cur = target;
+    let mut guard = 0usize;
+    while let Some(&parent) = node_parents.get(&cur) {
+        guard += 1;
+        if guard > 512 {
+            break;
+        }
+        chain.push(parent);
+        cur = parent;
+    }
+    chain.reverse();
+    let mut world = Mat4::IDENTITY;
+    for idx in chain {
+        if let Some(n) = doc.nodes().nth(idx) {
+            world *= node_local_matrix(&n);
+        }
+    }
+    world
+}
+
+pub(crate) fn node_local_matrix(node: &gltf::Node) -> Mat4 {
     match node.transform() {
         gltf::scene::Transform::Matrix { matrix } => Mat4::from_cols_array_2d(&matrix),
         gltf::scene::Transform::Decomposed {
@@ -302,6 +587,193 @@ fn node_local_matrix(node: &gltf::Node) -> Mat4 {
             Vec3::from(translation),
         ),
     }
+}
+
+fn load_gltf_asset_from_file(
+    file: &GltfFile,
+    normalize_to_extent: Option<f32>,
+) -> Option<Arc<ModelAsset>> {
+    let doc = &file.doc;
+    let buffers = &file.buffers;
+    let images = &file.images;
+    let scene = doc.default_scene().or_else(|| doc.scenes().next())?;
+    let scene_parents = build_gltf_node_parents(&scene);
+
+    let mut skinned_indices: Vec<usize> = Vec::new();
+    for root in scene.nodes() {
+        collect_gltf_skinned_node_indices(root, &mut skinned_indices);
+    }
+    if skinned_indices.is_empty() {
+        return None;
+    }
+
+    let mut unified = build_gltf_unified_skeleton(&doc, &buffers, &skinned_indices)?;
+    extend_gltf_unified_with_anim_nodes(&doc, &mut unified);
+    let joint_count = unified.joint_gltf_nodes.len();
+    let node_to_joint = unified.node_to_unified.clone();
+    let joint_gltf_nodes = unified.joint_gltf_nodes.clone();
+    let joint_names = unified.joint_names.clone();
+
+    let chain_nodes =
+        collect_gltf_scene_chain_nodes(&joint_gltf_nodes, &scene_parents);
+    let mut gltf_bind_node_local = HashMap::new();
+    for &node_ix in &chain_nodes {
+        if let Some(n) = doc.nodes().nth(node_ix) {
+            gltf_bind_node_local.insert(node_ix, node_local_matrix(&n));
+        }
+    }
+
+    let mut asset_parts: Vec<SkinnedMeshPart> = Vec::new();
+    for &node_index in &skinned_indices {
+        let node = match doc.nodes().nth(node_index) {
+            Some(n) => n,
+            None => continue,
+        };
+        let node_skin = match node.skin() {
+            Some(s) => s,
+            None => continue,
+        };
+        let mesh = match node.mesh() {
+            Some(m) => m,
+            None => continue,
+        };
+        let mesh_bind_world =
+            world_matrix_for_gltf_node_index(&doc, &scene_parents, node_index);
+        let part_ibm = part_inverse_bind_for_gltf_skin(
+            &node_skin,
+            &buffers,
+            &node_to_joint,
+            joint_count,
+            mesh_bind_world,
+            &doc,
+            &scene_parents,
+        );
+        let mut merged: Option<SkinnedMeshData> = None;
+        for primitive in mesh.primitives() {
+            if let Some(mut data) =
+                read_skinned_gltf_primitive(&primitive, &buffers, &images)
+            {
+                remap_gltf_vertex_joints_to_unified(&mut data, &node_skin, &node_to_joint);
+                merged = Some(match merged {
+                    Some(acc) => merge_skinned_mesh_data(acc, data),
+                    None => data,
+                });
+            }
+        }
+        let Some(mesh_data) = merged else {
+            continue;
+        };
+        let part_name = node
+            .name()
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| format!("part_{}", asset_parts.len()));
+        asset_parts.push(SkinnedMeshPart {
+            name: part_name,
+            mesh: mesh_data,
+            mesh_bind_world,
+            inverse_bind: part_ibm,
+        });
+    }
+    if asset_parts.is_empty() {
+        return None;
+    }
+
+    let bind_local: Vec<Mat4> = joint_gltf_nodes
+        .iter()
+        .filter_map(|&node_ix| {
+            doc.nodes()
+                .nth(node_ix)
+                .map(|n| node_local_matrix(&n))
+        })
+        .collect();
+
+    let mesh_normalize = if let Some(target_height) = normalize_to_extent {
+        let norm = compute_gltf_play_mesh_normalize_mat(&asset_parts, target_height)?;
+        for part in asset_parts.iter_mut() {
+            apply_normalize_to_skinned_vertices(&mut part.mesh.vertices, norm);
+        }
+        norm
+    } else {
+        Mat4::IDENTITY
+    };
+
+    let mut clips = Vec::new();
+    for anim in doc.animations() {
+        if let Some(clip) = parse_gltf_animation(&anim, &buffers, &node_to_joint) {
+            if !clip.channels.is_empty() {
+                clips.push(clip);
+            }
+        }
+    }
+
+    log::info!(
+        "[model_asset] glTF skinned: {} skin(s), {} huesos, {} pieza(s) desde {}",
+        unified.skin_count,
+        joint_count,
+        asset_parts.len(),
+        file.path
+    );
+
+    let default_ibm = asset_parts
+        .first()
+        .map(|p| p.inverse_bind.clone())
+        .unwrap_or_else(|| vec![[[0.0; 4]; 4]; joint_count]);
+
+    Some(Arc::new(ModelAsset {
+        path: file.path.clone(),
+        joint_parents: vec![None; joint_count],
+        inverse_bind: default_ibm,
+        bind_local,
+        joint_prefix_world: vec![Mat4::IDENTITY; joint_count],
+        joint_names,
+        parts: asset_parts,
+        clips,
+        mesh_normalize,
+        facing_forward_xz: {
+            let node_ix = gltf_primary_mesh_node_index(file);
+            node_ix
+                .map(|ix| {
+                    crate::config_3d::mesh_3d::forward_xz_from_node_world(
+                        world_matrix_for_gltf_node_index(&doc, &scene_parents, ix),
+                    )
+                })
+                .unwrap_or(glam::Vec2::new(0.0, 1.0))
+        },
+        joint_gltf_nodes,
+        gltf_scene_parents: scene_parents,
+        gltf_bind_node_local,
+    }))
+}
+
+fn collect_gltf_skinned_node_indices(node: gltf::Node, out: &mut Vec<usize>) {
+    if node.skin().is_some() && node.mesh().is_some() {
+        out.push(node.index());
+    }
+    for child in node.children() {
+        collect_gltf_skinned_node_indices(child, out);
+    }
+}
+
+fn gltf_skinned_vertex_count(
+    doc: &gltf::Document,
+    buffers: &[gltf::buffer::Data],
+    node_index: usize,
+) -> usize {
+    let node = match doc.nodes().nth(node_index) {
+        Some(n) => n,
+        None => return 0,
+    };
+    let mesh = match node.mesh() {
+        Some(m) => m,
+        None => return 0,
+    };
+    mesh.primitives()
+        .filter_map(|prim| {
+            prim.reader(|b| buffers.get(b.index()).map(|d| d.0.as_slice()))
+                .read_positions()
+                .map(|p| p.count())
+        })
+        .sum()
 }
 
 fn read_skinned_gltf_primitive(
@@ -388,6 +860,35 @@ fn gltf_texture_rgba(
     (vec![255, 255, 255, 255], 1, 1)
 }
 
+fn push_gltf_keyframe(
+    keyframes: &mut Vec<AnimKeyframe>,
+    property: &AnimProperty,
+    t: f32,
+    out: [f32; 4],
+) {
+    let kf = match *property {
+        AnimProperty::Translation => AnimKeyframe {
+            time: t,
+            translation: Some([out[0], out[1], out[2]]),
+            rotation: None,
+            scale: None,
+        },
+        AnimProperty::Scale => AnimKeyframe {
+            time: t,
+            translation: None,
+            rotation: None,
+            scale: Some([out[0], out[1], out[2]]),
+        },
+        AnimProperty::Rotation => AnimKeyframe {
+            time: t,
+            translation: None,
+            rotation: Some([out[0], out[1], out[2], out[3]]),
+            scale: None,
+        },
+    };
+    keyframes.push(kf);
+}
+
 fn parse_gltf_animation(
     anim: &gltf::Animation,
     buffers: &[gltf::buffer::Data],
@@ -418,6 +919,7 @@ fn parse_gltf_animation(
             continue;
         };
         let inputs: Vec<f32> = inputs.collect();
+        const MAX_GLTF_KEYS_PER_CHANNEL: usize = 4096;
         let outputs: Vec<[f32; 4]> = match reader.read_outputs() {
             Some(gltf::animation::util::ReadOutputs::Translations(iter))
                 if matches!(property, AnimProperty::Translation) =>
@@ -442,29 +944,21 @@ fn parse_gltf_animation(
         }
 
         let mut keyframes = Vec::new();
-        for (t, out) in inputs.iter().zip(outputs.iter()) {
-            max_time = max_time.max(*t);
-            let kf = match property {
-                AnimProperty::Translation => AnimKeyframe {
-                    time: *t,
-                    translation: Some([out[0], out[1], out[2]]),
-                    rotation: None,
-                    scale: None,
-                },
-                AnimProperty::Scale => AnimKeyframe {
-                    time: *t,
-                    translation: None,
-                    rotation: None,
-                    scale: Some([out[0], out[1], out[2]]),
-                },
-                AnimProperty::Rotation => AnimKeyframe {
-                    time: *t,
-                    translation: None,
-                    rotation: Some([out[0], out[1], out[2], out[3]]),
-                    scale: None,
-                },
-            };
-            keyframes.push(kf);
+        let key_count = inputs.len().min(outputs.len());
+        if key_count > MAX_GLTF_KEYS_PER_CHANNEL {
+            let step = key_count as f32 / MAX_GLTF_KEYS_PER_CHANNEL as f32;
+            for k in 0..MAX_GLTF_KEYS_PER_CHANNEL {
+                let i = ((k as f32 * step) as usize).min(key_count - 1);
+                let t = inputs[i];
+                let out = outputs[i];
+                max_time = max_time.max(t);
+                push_gltf_keyframe(&mut keyframes, &property, t, out);
+            }
+        } else {
+            for (t, out) in inputs.iter().zip(outputs.iter()) {
+                max_time = max_time.max(*t);
+                push_gltf_keyframe(&mut keyframes, &property, *t, *out);
+            }
         }
         keyframes.sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap_or(std::cmp::Ordering::Equal));
         channels.push(AnimChannel {
@@ -508,6 +1002,61 @@ fn apply_normalize_to_skinned_vertices(vertices: &mut [SkinnedVertex], norm: Mat
         let p = norm.transform_point3(Vec3::from_array(v.position));
         v.position = p.to_array();
     }
+}
+
+/// Piezas que representan el cuerpo (Mixamo/Sketchfab traen armas/botas con AABB distinto).
+fn part_counts_for_play_upright_bounds(name: &str) -> bool {
+    let n = name.to_ascii_lowercase();
+    const BODY: &[&str] = &[
+        "body", "human", "tops", "bottoms", "torso", "shirt", "pants", "shoe", "glove",
+        "hat", "beard", "eye", "lash", "moustache", "cape",
+    ];
+    BODY.iter().any(|s| n.contains(s))
+}
+
+/// Pieza cuyo AABB local se endereza mejor (torso Mixamo suele estar en X, no en la más grande).
+fn gltf_play_reference_part<'a>(parts: &'a [SkinnedMeshPart]) -> Option<&'a SkinnedMeshPart> {
+    let mut best: Option<&SkinnedMeshPart> = None;
+    let mut best_score = 0.0f32;
+    for part in parts {
+        let (min, max) = skinned_mesh_bounds(&part.mesh.vertices)?;
+        let upright = crate::config_3d::mesh_3d::upright_quat_from_vertex_aabb(min, max);
+        let mat = Mat4::from_quat(upright);
+        let (tmin, tmax) = crate::config_3d::mesh_3d::transform_aabb_corners_for_play(min, max, mat);
+        let score = crate::config_3d::mesh_3d::aabb_y_extent_score(tmin, tmax);
+        if score > best_score {
+            best_score = score;
+            best = Some(part);
+        }
+    }
+    best
+}
+
+/// Enderezar + altura en espacio local de malla; misma matriz en vértices y paleta (skinning simétrico).
+fn compute_gltf_play_mesh_normalize_mat(
+    parts: &[SkinnedMeshPart],
+    target_height: f32,
+) -> Option<Mat4> {
+    let reference = gltf_play_reference_part(parts)?;
+    let (min, max) = skinned_mesh_bounds(&reference.mesh.vertices)?;
+    log::info!(
+        "[model_asset] glTF play upright: pieza ref '{}' ({} verts)",
+        reference.name,
+        reference.mesh.vertices.len()
+    );
+    let upright = crate::config_3d::mesh_3d::upright_quat_from_vertex_aabb(min, max);
+    let norm = crate::config_3d::mesh_3d::skinned_play_normalize_mat(min, max, upright, target_height);
+    let sy = max[1] - min[1];
+    let sx = max[0] - min[0];
+    let sz = max[2] - min[2];
+    log::info!(
+        "[model_asset] glTF play upright: AABB local sy={sy:.3} sx={sx:.3} sz={sz:.3} quat=({:.3},{:.3},{:.3},{:.3})",
+        upright.x,
+        upright.y,
+        upright.z,
+        upright.w
+    );
+    Some(norm)
 }
 
 /// AABB de todas las mallas del FBX en espacio mundo (como `mesh_3d::load_fbx`).
@@ -695,11 +1244,13 @@ fn load_fbx_asset(path: &Path, normalize_to_extent: Option<f32>) -> Option<Arc<M
         return None;
     }
 
+    let joint_count = skeleton.joint_parents.len();
     Some(Arc::new(ModelAsset {
         path: path.display().to_string(),
         joint_parents: skeleton.joint_parents,
         inverse_bind: skeleton.inverse_bind,
         bind_local: skeleton.bind_local,
+        joint_prefix_world: vec![Mat4::IDENTITY; joint_count],
         joint_names: skeleton.joint_names,
         parts: asset_parts,
         clips,
@@ -707,6 +1258,9 @@ fn load_fbx_asset(path: &Path, normalize_to_extent: Option<f32>) -> Option<Arc<M
         facing_forward_xz: crate::config_3d::fbx_facing::forward_xz_from_ufbx_front(
             scene.settings.axes.front,
         ),
+        joint_gltf_nodes: Vec::new(),
+        gltf_scene_parents: HashMap::new(),
+        gltf_bind_node_local: HashMap::new(),
     }))
 }
 
@@ -1222,46 +1776,6 @@ fn estimate_fbx_forward_from_normals(vertices: &[crate::mesh::Vertex]) -> glam::
     }
 }
 
-fn estimate_forward_xz_from_positions(positions: &[[f32; 3]]) -> glam::Vec2 {
-    if positions.is_empty() {
-        return glam::Vec2::new(0.0, 1.0);
-    }
-    let mut pos_z = 0.0f32;
-    let mut neg_z = 0.0f32;
-    let mut pos_x = 0.0f32;
-    let mut neg_x = 0.0f32;
-    for p in positions {
-        if p[2] > 0.0 {
-            pos_z += p[2];
-        } else {
-            neg_z += -p[2];
-        }
-        if p[0] > 0.0 {
-            pos_x += p[0];
-        } else {
-            neg_x += -p[0];
-        }
-    }
-    let mut weights = [pos_z, neg_z, pos_x, neg_x];
-    weights.sort_by(|a, b| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
-    let primary = weights[0];
-    let secondary = weights[1].max(1e-8);
-    if primary < secondary * 1.08 {
-        return glam::Vec2::new(0.0, 1.0);
-    }
-    if pos_z.max(neg_z) >= pos_x.max(neg_x) {
-        if pos_z >= neg_z {
-            glam::Vec2::new(0.0, 1.0)
-        } else {
-            glam::Vec2::new(0.0, -1.0)
-        }
-    } else if pos_x >= neg_x {
-        glam::Vec2::new(1.0, 0.0)
-    } else {
-        glam::Vec2::new(-1.0, 0.0)
-    }
-}
-
 fn estimate_fbx_forward_torso(vertices: &[crate::mesh::Vertex]) -> glam::Vec2 {
     if vertices.is_empty() {
         return glam::Vec2::new(0.0, 1.0);
@@ -1272,7 +1786,7 @@ fn estimate_fbx_forward_torso(vertices: &[crate::mesh::Vertex]) -> glam::Vec2 {
     } else {
         vertices.iter().map(|v| v.position).collect()
     };
-    estimate_forward_xz_from_positions(&positions)
+    crate::config_3d::mesh_3d::estimate_forward_xz_from_positions(&positions)
 }
 
 fn find_hips_joint_index(asset: &ModelAsset) -> Option<usize> {
@@ -1468,6 +1982,28 @@ pub fn fbx_skinned_play_forward_xz(path: &Path, normalize_to_extent: f32) -> Opt
         }
     }
     Some(resolved)
+}
+
+/// Forward del jugador FP para asset skinned **glTF/GLB** (tras `try_bind`).
+pub fn resolve_gltf_play_character_forward_xz(asset: &ModelAsset) -> glam::Vec2 {
+    if needs_skinned_forward_correction(asset) {
+        return display_forward_xz(asset);
+    }
+    let meta = asset.facing_forward_xz;
+    let est_pos = {
+        let verts = skinned_forward_core_vertices(asset);
+        if verts.is_empty() {
+            meta
+        } else {
+            crate::config_3d::mesh_3d::estimate_mesh_forward_xz(&verts)
+        }
+    };
+    let est_torso = estimate_skinned_forward_torso(asset);
+    if est_pos.dot(est_torso) < -0.5 {
+        return crate::config_3d::fbx_facing::resolve_fbx_forward_xz(meta, est_torso);
+    }
+    let est = estimate_skinned_forward_from_vertices(asset);
+    crate::config_3d::fbx_facing::resolve_fbx_forward_xz(meta, est)
 }
 
 /// Forward del jugador FP para asset skinned **FBX** (tras `try_bind`).
