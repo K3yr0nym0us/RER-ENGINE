@@ -29,6 +29,37 @@ impl Vertex {
 }
 
 // ---------------------------------------------------------------------------
+// Vértice skinned — layout para shader_skinned.wgsl (locations 0..4)
+// ---------------------------------------------------------------------------
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Pod, Zeroable)]
+pub struct SkinnedVertex {
+    pub position: [f32; 3],
+    pub normal:   [f32; 3],
+    pub uv:       [f32; 2],
+    pub joints:   [u32; 4],
+    pub weights:  [f32; 4],
+}
+
+impl SkinnedVertex {
+    const ATTRIBS: [wgpu::VertexAttribute; 5] = wgpu::vertex_attr_array![
+        0 => Float32x3,
+        1 => Float32x3,
+        2 => Float32x2,
+        3 => Uint32x4,
+        4 => Float32x4,
+    ];
+
+    pub fn desc() -> wgpu::VertexBufferLayout<'static> {
+        wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<Self>() as wgpu::BufferAddress,
+            step_mode:    wgpu::VertexStepMode::Vertex,
+            attributes:   &Self::ATTRIBS,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Mesh en GPU
 // ---------------------------------------------------------------------------
 pub struct Mesh {
@@ -195,11 +226,76 @@ impl InstanceData {
     }
 }
 
+/// Misma disposición que `InstanceData`; locations 5..10 para el pipeline skinned.
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct SkinnedInstanceData {
+    pub model:    [[f32; 4]; 4],
+    pub flag_pad: [f32; 4],
+    pub uv_rect:  [f32; 4],
+}
+
+impl SkinnedInstanceData {
+    const ATTRIBS: [wgpu::VertexAttribute; 6] = wgpu::vertex_attr_array![
+        5 => Float32x4,
+        6 => Float32x4,
+        7 => Float32x4,
+        8 => Float32x4,
+        9 => Float32x4,
+        10 => Float32x4,
+    ];
+
+    pub fn desc() -> wgpu::VertexBufferLayout<'static> {
+        wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<Self>() as wgpu::BufferAddress,
+            step_mode:    wgpu::VertexStepMode::Instance,
+            attributes:   &Self::ATTRIBS,
+        }
+    }
+
+    pub fn from_instance(inst: &InstanceData) -> Self {
+        Self {
+            model:    inst.model,
+            flag_pad: inst.flag_pad,
+            uv_rect:  inst.uv_rect,
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Loader de archivos .glb / .gltf
 // ---------------------------------------------------------------------------
 // Helper: sube vértices e índices a la GPU
 // ---------------------------------------------------------------------------
+pub struct SkinnedMesh {
+    pub vertex_buffer: wgpu::Buffer,
+    pub index_buffer:  wgpu::Buffer,
+    pub index_count:   u32,
+}
+
+pub(crate) fn upload_skinned(
+    device: &wgpu::Device,
+    vertices: &[SkinnedVertex],
+    indices: &[u32],
+    label: &str,
+) -> SkinnedMesh {
+    let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label:    Some(&format!("{label}-skinned-vbo")),
+        contents: bytemuck::cast_slice(vertices),
+        usage:    wgpu::BufferUsages::VERTEX,
+    });
+    let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label:    Some(&format!("{label}-skinned-ibo")),
+        contents: bytemuck::cast_slice(indices),
+        usage:    wgpu::BufferUsages::INDEX,
+    });
+    SkinnedMesh {
+        vertex_buffer,
+        index_buffer,
+        index_count: indices.len() as u32,
+    }
+}
+
 pub(crate) fn upload(device: &wgpu::Device, vertices: &[Vertex], indices: &[u32], label: &str) -> Mesh {
     let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label:    Some(&format!("{label}-vbo")),

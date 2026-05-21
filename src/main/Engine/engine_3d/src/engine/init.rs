@@ -602,6 +602,93 @@ impl State {
                 resource: grid_buffer_uni.as_entire_binding(),
             }],
         });
+        let joint_uniform_size =
+            std::num::NonZeroU64::new((crate::config_3d::model_asset::MAX_JOINTS * 64) as u64)
+                .unwrap();
+        let joint_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("joint-bgl"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: Some(joint_uniform_size),
+                },
+                count: None,
+            }],
+        });
+        let skinned_shader = device.create_shader_module(include_wgsl!("../shader_skinned.wgsl"));
+        let skinned_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("skinned-pipeline-layout"),
+            bind_group_layouts: &[&bgl, &texture_bgl, &joint_bgl],
+            push_constant_ranges: &[],
+        });
+        let skinned_render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("skinned-main-pipeline"),
+            layout: Some(&skinned_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &skinned_shader,
+                entry_point: "vs_main_skinned",
+                buffers: &[mesh::SkinnedVertex::desc(), mesh::SkinnedInstanceData::desc()],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &skinned_shader,
+                entry_point: "fs_main_skinned",
+                targets: &mrt_targets,
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                cull_mode: Some(wgpu::Face::Back),
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::Less,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
+        let skinned_shadow_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("skinned-shadow-layout"),
+            bind_group_layouts: &[&shadow_pass_bgl, &joint_bgl],
+            push_constant_ranges: &[],
+        });
+        let skinned_shadow_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("skinned-shadow-pipeline"),
+            layout: Some(&skinned_shadow_layout),
+            vertex: wgpu::VertexState {
+                module: &skinned_shader,
+                entry_point: "vs_shadow_skinned",
+                buffers: &[mesh::SkinnedVertex::desc(), mesh::SkinnedInstanceData::desc()],
+                compilation_options: Default::default(),
+            },
+            fragment: None,
+            primitive: wgpu::PrimitiveState {
+                cull_mode: Some(wgpu::Face::Back),
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::Less,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState {
+                    constant: 3,
+                    slope_scale: 2.5,
+                    clamp: 0.0,
+                },
+            }),
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
+
         let grid_config = GridConfig::default();
         let grid_buffer = crate::config_compat::build_grid(&device, &grid_config);
         let world_bounds_3d = WorldBounds3D::default();
@@ -751,6 +838,14 @@ impl State {
             shadow_darkness: DEFAULT_SHADOW_DARKNESS,
             scene_instance_pool: crate::engine::types::InstanceBufferPool::new(),
             shadow_instance_pool: crate::engine::types::InstanceBufferPool::new(),
+            model_assets: std::collections::HashMap::new(),
+            model_animation_bindings: std::collections::HashMap::new(),
+            active_model_clips: std::collections::HashMap::new(),
+            model_clip_defaults: std::collections::HashMap::new(),
+            skinned_gpu_meshes: Vec::new(),
+            skinned_render_pipeline,
+            skinned_shadow_pipeline,
+            joint_bind_group_layout: Some(joint_bgl),
         };
         state.sync_ground_plane_to_world_bounds();
         Ok(state)

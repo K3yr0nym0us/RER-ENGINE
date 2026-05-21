@@ -13,18 +13,15 @@ pub(crate) struct LoadedModelMesh {
     pub(crate) forward_xz: glam::Vec2,
 }
 
-/// Estima hacia dónde "mira" la malla en XZ (tras centrar/normalizar).
-/// Personajes simétricos suelen empatar ±X/±Z; si no hay eje dominante claro, se usa +Z (convención glTF).
-pub(crate) fn estimate_mesh_forward_xz(vertices: &[Vertex]) -> glam::Vec2 {
-    if vertices.is_empty() {
+fn estimate_forward_xz_from_positions(positions: &[[f32; 3]]) -> glam::Vec2 {
+    if positions.is_empty() {
         return glam::Vec2::new(0.0, 1.0);
     }
     let mut pos_z = 0.0f32;
     let mut neg_z = 0.0f32;
     let mut pos_x = 0.0f32;
     let mut neg_x = 0.0f32;
-    for v in vertices {
-        let p = &v.position;
+    for p in positions {
         if p[2] > 0.0 {
             pos_z += p[2];
         } else {
@@ -59,6 +56,15 @@ pub(crate) fn estimate_mesh_forward_xz(vertices: &[Vertex]) -> glam::Vec2 {
     } else {
         glam::Vec2::new(-1.0, 0.0)
     }
+}
+
+/// Estima hacia dónde "mira" la malla en XZ (tras centrar/normalizar). Usado por glTF/GLB y estimación FBX.
+pub(crate) fn estimate_mesh_forward_xz(vertices: &[Vertex]) -> glam::Vec2 {
+    if vertices.is_empty() {
+        return glam::Vec2::new(0.0, 1.0);
+    }
+    let positions: Vec<[f32; 3]> = vertices.iter().map(|v| v.position).collect();
+    estimate_forward_xz_from_positions(&positions)
 }
 
 /// Despacha por extensión: glTF (`.glb`/`.gltf`) o FBX (`.fbx`).
@@ -458,7 +464,10 @@ fn load_fbx(
     }
 
     center_and_normalize_vertices(&mut vertices, normalize_to_extent.unwrap_or(1.8));
-    let forward_xz = estimate_mesh_forward_xz(&vertices);
+    let meta =
+        crate::config_3d::fbx_facing::forward_xz_from_ufbx_front(scene.settings.axes.front);
+    let est = estimate_mesh_forward_xz(&vertices);
+    let forward_xz = crate::config_3d::fbx_facing::resolve_fbx_forward_xz(meta, est);
 
     Ok(vec![LoadedModelMesh {
         mesh: upload(device, &vertices, &indices, "fbx-mesh"),

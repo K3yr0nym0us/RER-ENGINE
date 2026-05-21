@@ -130,6 +130,9 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
   const isPlayer = isPlayerEntity(selectedEntity.id, entityMeta, playerEntityIdRef.current)
   const isCharacter = characterEntities.some((c: any) => c.id === selectedEntity?.id)
   const is3D = projectType === '3D'
+  const hasEmbeddedModelClips =
+    is3D &&
+    (entityMeta?.animations?.some((a) => a.embedded_in_model) ?? false)
   const isCollider = selectedEntity ? entityMetaRef.current[selectedEntity.id]?.kind === 'collider' : false
   const isExecutionArea = selectedEntity ? entityMetaRef.current[selectedEntity.id]?.kind === 'execution_area' : false
   const isFromBlueprint = selectedEntity ? !!entityMetaRef.current[selectedEntity.id]?.blueprintId : false
@@ -319,7 +322,7 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
             </Accordion.Body>
           </Accordion.Item>
 
-          <AnimationsPanel />
+          {(is2D || hasEmbeddedModelClips) && <AnimationsPanel projectType={projectType} />}
 
           <ScriptingPanel />
         </Accordion>

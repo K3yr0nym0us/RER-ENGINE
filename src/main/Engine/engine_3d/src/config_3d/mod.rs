@@ -18,10 +18,20 @@ pub(crate) mod character_anchor;
 pub(crate) mod play_character;
 pub(crate) mod fps_camera;
 pub(crate) mod play_controller;
+pub(crate) mod fbx_facing;
 pub(crate) mod mesh_3d;
+pub(crate) mod model_asset;
+pub(crate) mod model_animation;
 pub(crate) mod physics_3d;
 pub(crate) mod world_bounds;
 pub(crate) use world_bounds::WorldBounds3D;
+
+pub(crate) fn is_fbx_model_path(path: &str) -> bool {
+    std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("fbx"))
+}
 
 pub(crate) mod directional_light;
 
@@ -89,6 +99,7 @@ impl State {
                         },
                     );
                     self.send_model_loaded_event(id, &label);
+                    self.try_bind_model_animations(id, path);
                     self.push_remove_entity_undo(id);
                 }
                 log::info!("Modelo cargado: {path} ({count} malla/s)");
@@ -166,6 +177,14 @@ impl State {
                 );
             }
             self.play_character_mesh_forward_xz = part.forward_xz;
+            if is_fbx_model_path(path) {
+                if let Some(skin_fwd) = model_asset::fbx_skinned_play_forward_xz(
+                    Path::new(path),
+                    PLAY_CHARACTER_BODY_HEIGHT,
+                ) {
+                    self.play_character_mesh_forward_xz = skin_fwd;
+                }
+            }
             let feet = self.play_character_feet_position();
             let w = PLAY_CHARACTER_COLLIDER_RADIUS * 2.0;
             if let Some(t) = self.world.get_mut::<Transform>(id) {
@@ -215,6 +234,19 @@ impl State {
             ),
             None => (None, None, None),
         };
+
+        self.try_bind_model_animations(id, path);
+
+        if is_play_character
+            && is_fbx_model_path(path)
+            && self.model_animation_bindings.contains_key(&id)
+        {
+            if let Some(asset) = self.model_assets.get(path) {
+                self.play_character_mesh_forward_xz =
+                    model_asset::resolve_fbx_play_character_forward_xz(asset);
+                self.sync_player_rotation_from_look();
+            }
+        }
 
         send_event(&EngineEvent::EntityModelReplaced {
             id,

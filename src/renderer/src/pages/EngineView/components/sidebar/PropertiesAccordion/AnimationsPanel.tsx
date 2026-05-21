@@ -26,6 +26,7 @@ interface Animation {
   name: string;
   fps: number;
   loop: boolean;
+  embedded_in_model?: boolean;
   is_default?: boolean;
   is_cancelable?: boolean;
   facing_right?: boolean;
@@ -58,18 +59,30 @@ function resolveDrawSpace(frames: { width: number; height: number }[]): { logica
   };
 }
 
-export function AnimationsPanel() {
+export function AnimationsPanel({ projectType }: { projectType?: string }) {
   const { t } = useTraslate();
-  const { selectedEntity: entity, send, sendAsync, setAnimationPlaying, updateEntityAnimations, animationPlaying, sprites } = useContextEngine();
+  const is3D = projectType === '3D';
+  const { selectedEntity: entity, entityMetaRef, send, sendAsync, setAnimationPlaying, updateEntityAnimations, animationPlaying, sprites } = useContextEngine();
   const { openModal, closeModal } = useModal();
 
   const [animations, setAnimations] = useState<Animation[]>([]);
   const [playingAnimationName, setPlayingAnimationName] = useState<string | null>(null);
 
   useEffect(() => {
-    setAnimations(entity?.animations ?? []);
+    if (!entity?.id) {
+      setAnimations([]);
+      setPlayingAnimationName(null);
+      return;
+    }
+    const meta = entityMetaRef.current[entity.id];
+    const embedded = meta?.animations?.filter((a) => a.embedded_in_model) ?? [];
+    if (embedded.length > 0) {
+      setAnimations(embedded);
+    } else {
+      setAnimations(entity.animations ?? meta?.animations ?? []);
+    }
     setPlayingAnimationName(null);
-  }, [entity?.id, entity?.animations]);
+  }, [entity?.id, entity?.animations, entity?.visualModelPath]);
 
   useEffect(() => {
     if (!entity?.id) return;
@@ -194,7 +207,9 @@ export function AnimationsPanel() {
   const playAnimation = async (index: number) => {
     if (!entity) return;
     const anim = animations[index];
-    if (!anim || anim.frames.length === 0) return;
+    if (!anim) return;
+    const canPlayEmbedded3D = is3D && !!anim.embedded_in_model;
+    if (!canPlayEmbedded3D && anim.frames.length === 0) return;
 
     const isPlayingThisAnimation = (animationPlaying.get(entity.id) ?? false) && playingAnimationName === anim.name;
     if (isPlayingThisAnimation) {
@@ -209,12 +224,12 @@ export function AnimationsPanel() {
     }
 
     if (anim.loop) {
-      send({ cmd: 'play_animation', id: entity.id, name: anim.name });
+      send({ cmd: 'play_animation', id: entity.id, name: anim.name, loop: anim.loop });
       setAnimationPlaying(entity.id, true);
       setPlayingAnimationName(anim.name);
     } else {
       await sendAsync(
-        { cmd: 'play_animation', id: entity.id, name: anim.name },
+        { cmd: 'play_animation', id: entity.id, name: anim.name, loop: anim.loop },
         'animation_finished',
         () => {
           setAnimationPlaying(entity.id, true);
@@ -308,15 +323,17 @@ export function AnimationsPanel() {
     <Accordion.Item eventKey="animaciones">
       <Accordion.Header><CameraReels className="me-2" />{t('Animations')}</Accordion.Header>
       <Accordion.Body className="py-2 px-2">
-        <button
-          className="btn btn-outline-success btn-sm w-100 fw-bold mb-2"
-          onClick={openCreateAnimationModal}
-          disabled={!entity?.id}
-        >
-          {t('+ New animation')}
-        </button>
+        {!is3D && (
+          <button
+            className="btn btn-outline-success btn-sm w-100 fw-bold mb-2"
+            onClick={openCreateAnimationModal}
+            disabled={!entity?.id}
+          >
+            {t('+ New animation')}
+          </button>
+        )}
 
-        {animations.length === 0 && (
+        {!is3D && animations.length === 0 && (
           <div className="alert alert-secondary py-1 text-center" role="alert">
             {t('No animations. Add a new one to start.')}
           </div>
@@ -325,7 +342,8 @@ export function AnimationsPanel() {
         {animations.length > 0 && (
           <div className="d-flex flex-column gap-2">
             {animations.map((anim, idx) => {
-              const canPlayOrEdit = anim.frames.length > 0;
+              const canPlay = is3D ? !!anim.embedded_in_model : anim.frames.length > 0;
+              const canPlayOrEdit = canPlay;
               const isPlayingThisAnimation = !!entity?.id && (animationPlaying.get(entity.id) ?? false) && playingAnimationName === anim.name;
               return (
                 <div key={anim.id ?? `${anim.name}-${idx}`} className="d-flex align-items-center gap-2 p-2 pt-1 pb-1 border border-secondary rounded bg-dark">
@@ -347,32 +365,36 @@ export function AnimationsPanel() {
                     </span>
                   </AppTooltip>
 
-                  <AppTooltip content={t('Edit animation')} place="top">
-                    <span
-                      role="button"
-                      tabIndex={canPlayOrEdit ? 0 : -1}
-                      aria-disabled={!canPlayOrEdit}
-                      className="text-warning"
-                      style={{ cursor: canPlayOrEdit ? 'pointer' : 'not-allowed', opacity: canPlayOrEdit ? 1 : 0.5 }}
-                      onClick={canPlayOrEdit ? () => editAnimation(idx) : undefined}
-                      onKeyDown={canPlayOrEdit ? (e) => { if (e.key === 'Enter' || e.key === ' ') editAnimation(idx); } : undefined}
-                    >
-                      <Pencil />
-                    </span>
-                  </AppTooltip>
+                  {!is3D && (
+                    <AppTooltip content={t('Edit animation')} place="top">
+                      <span
+                        role="button"
+                        tabIndex={canPlayOrEdit ? 0 : -1}
+                        aria-disabled={!canPlayOrEdit}
+                        className="text-warning"
+                        style={{ cursor: canPlayOrEdit ? 'pointer' : 'not-allowed', opacity: canPlayOrEdit ? 1 : 0.5 }}
+                        onClick={canPlayOrEdit ? () => editAnimation(idx) : undefined}
+                        onKeyDown={canPlayOrEdit ? (e) => { if (e.key === 'Enter' || e.key === ' ') editAnimation(idx); } : undefined}
+                      >
+                        <Pencil />
+                      </span>
+                    </AppTooltip>
+                  )}
 
-                  <AppTooltip content={t('Delete animation')} place="top">
-                    <span
-                      role="button"
-                      tabIndex={0}
-                      className="text-danger"
-                      style={{ cursor: 'pointer' }}
-                      onClick={() => confirmRemoveAnimation(idx)}
-                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') confirmRemoveAnimation(idx); }}
-                    >
-                      <Trash />
-                    </span>
-                  </AppTooltip>
+                  {!is3D && (
+                    <AppTooltip content={t('Delete animation')} place="top">
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        className="text-danger"
+                        style={{ cursor: 'pointer' }}
+                        onClick={() => confirmRemoveAnimation(idx)}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') confirmRemoveAnimation(idx); }}
+                      >
+                        <Trash />
+                      </span>
+                    </AppTooltip>
+                  )}
                 </div>
               );
             })}

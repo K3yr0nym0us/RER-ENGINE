@@ -190,7 +190,11 @@ impl State {
                         .map(|a| a.animation_name == name)
                         .unwrap_or(false);
                     if !already_active {
-                        self.handle_command(EngineCommand::PlayAnimation { id, name });
+                        self.handle_command(EngineCommand::PlayAnimation {
+                            id,
+                            name,
+                            loop_: true,
+                        });
                     }
                 }
                 ScriptCmd::SetDefaultAnimation { id, name } => {

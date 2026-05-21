@@ -28,10 +28,13 @@ export interface SelectedEntity {
 	physicsEnabled: boolean
 	physicsType: string
 	path?: string
+	/** Ruta del modelo visual 3D (FBX/GLB) en la entidad. */
+	visualModelPath?: string
 	animations?: {
 		name: string
 		fps: number
 		loop: boolean
+		embedded_in_model?: boolean
 		is_default?: boolean
 		facing_right?: boolean
 		logical_w: number
@@ -151,7 +154,14 @@ export type EngineAction =
 	| { type: 'REMOVE_EXECUTION_AREA'; payload: number }
 	| { type: 'SET_TOOL_PROGRESS'; payload: number | null }
 	| { type: 'SET_ANIMATION_PLAYING'; payload: { entityId: number; playing: boolean } }
-	| { type: 'UPDATE_ENTITY_ANIMATIONS'; payload: { entityId: number; animations: NonNullable<SelectedEntity['animations']> } }
+	| {
+		type: 'UPDATE_ENTITY_ANIMATIONS'
+		payload: {
+			entityId: number
+			animations: NonNullable<SelectedEntity['animations']>
+			visualModelPath?: string
+		}
+	}
 	| { type: 'UPDATE_SELECTED_PHYSICS'; payload: { entityId: number; enabled: boolean; bodyType: string } }
 	| {
 		type: 'UPDATE_SELECTED_TRANSFORM';
@@ -326,7 +336,13 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 			if (prevState.selectedEntity?.id !== nextAction.payload.entityId) return prevState;
 			return {
 				...prevState,
-				selectedEntity: { ...prevState.selectedEntity, animations: nextAction.payload.animations },
+				selectedEntity: {
+					...prevState.selectedEntity,
+					animations: nextAction.payload.animations,
+					...(nextAction.payload.visualModelPath !== undefined
+						? { visualModelPath: nextAction.payload.visualModelPath }
+						: {}),
+				},
 			};
 		},
 		UPDATE_SELECTED_PHYSICS: (prevState, nextAction) => {

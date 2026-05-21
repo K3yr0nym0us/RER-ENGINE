@@ -8,6 +8,10 @@ use winit::event_loop::EventLoopProxy;
 
 use serde::{Deserialize, Serialize};
 
+fn default_clip_loop() -> bool {
+    true
+}
+
 // ---------------------------------------------------------------------------
 // Comandos que Electron envía al motor (stdin → motor)
 //
@@ -253,7 +257,12 @@ pub enum EngineCommand {
     /// Reproducir una animación guardada por ID de entidad y nombre.
     /// El motor busca en su almacén de animaciones — el front no necesita
     /// reenviar los datos de frames en cada reproducción.
-    PlayAnimation { id: u32, name: String },
+    PlayAnimation {
+        id: u32,
+        name: String,
+        #[serde(default = "default_clip_loop")]
+        loop_: bool,
+    },
     /// Detener la animación en curso.
     StopAnimation { id: u32 },
     /// Adjuntar un script Lua a una entidad. `source` es el código Lua completo.
@@ -389,6 +398,16 @@ pub struct SaveAnimationSnapshot {
     pub scripts: Vec<SaveScriptSnapshot>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub is_cancelable: Option<bool>,
+    /// Clip embebido en modelo 3D (sin frames PNG).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub embedded_in_model: Option<bool>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct ModelClipInfoEvent {
+    pub name: String,
+    pub duration_s: f32,
+    pub fps: f32,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -540,6 +559,12 @@ pub enum EngineEvent {
     PivotSelected { frame_path: String, pivot_x: f32, pivot_y: f32 },
     /// Emitido cuando una animación termina (no loop) o se detiene.
     AnimationFinished { entity_id: u32 },
+    /// Clips de animación embebidos en el modelo 3D de una entidad.
+    ModelClipsReady {
+        id: u32,
+        path: String,
+        clips: Vec<ModelClipInfoEvent>,
+    },
     /// Emitido cuando el estado de física de una entidad cambia (activado/desactivado por script).
     PhysicsChanged { entity_id: u32, enabled: bool, body_type: String },
     /// Emitido cuando un sprite PNG se cargó correctamente en el almacén.

@@ -628,6 +628,7 @@ impl State {
                 self.anim_flip_overrides.remove(&id);
                 self.entity_facing_right.remove(&id);
                 self.default_animation_by_entity.remove(&id);
+                self.unbind_model_animations(id);
                 self.animations.remove(&id);
                 self.active_animations.remove(&id);
                 self.anim_saved_transforms.remove(&id);
@@ -718,8 +719,31 @@ impl State {
                     self.active_gizmo_axis = None;
 
                     self.script_engine.clear_control_script_cache();
+                    let model_bound: Vec<u32> =
+                        self.model_animation_bindings.keys().copied().collect();
+                    for entity_id in model_bound {
+                        let default_name = self
+                            .model_clip_defaults
+                            .get(&entity_id)
+                            .cloned()
+                            .or_else(|| {
+                                let path = self
+                                    .model_animation_bindings
+                                    .get(&entity_id)
+                                    .map(|b| b.asset_path.clone())?;
+                                self.model_assets
+                                    .get(&path)
+                                    .and_then(|a| a.clips.first().map(|c| c.name.clone()))
+                            });
+                        if let Some(name) = default_name {
+                            self.play_model_clip(entity_id, &name, true);
+                        }
+                    }
                     let entities_with_anims: Vec<u32> = self.animations.keys().copied().collect();
                     for entity_id in entities_with_anims {
+                        if self.model_animation_bindings.contains_key(&entity_id) {
+                            continue;
+                        }
                         let default_name = self
                             .default_animation_by_entity
                             .get(&entity_id)
@@ -730,10 +754,17 @@ impl State {
                                     .and_then(|m| m.keys().next().cloned())
                             });
                         if let Some(name) = default_name {
-                            self.handle_command(EngineCommand::PlayAnimation { id: entity_id, name });
+                            self.handle_command(EngineCommand::PlayAnimation {
+                                id: entity_id,
+                                name,
+                                loop_: true,
+                            });
                         }
                     }
                 } else {
+                    for id in self.active_model_clips.keys().copied().collect::<Vec<_>>() {
+                        self.stop_model_clip(id);
+                    }
                     let active: Vec<(u32, String)> = self
                         .active_animations
                         .iter()
@@ -1134,6 +1165,11 @@ impl State {
                 }
             }
             EngineCommand::SetDefaultAnimation { id, name } => {
+                if self.model_animation_bindings.contains_key(&id) {
+                    self.set_default_model_clip(id, &name);
+                    log::debug!("[model_anim] predeterminada entidad {} => {}", id, name);
+                    return;
+                }
                 let exists = self
                     .animations
                     .get(&id)
@@ -1150,8 +1186,13 @@ impl State {
                     );
                 }
             }
-            EngineCommand::PlayAnimation { id, name } => {
+            EngineCommand::PlayAnimation { id, name, loop_ } => {
                 log::debug!("[IPC] PlayAnimation: entity_id={}, name='{}'", id, name);
+
+                if self.model_animation_bindings.contains_key(&id) {
+                    self.play_model_clip(id, &name, loop_);
+                    return;
+                }
 
                 if let Some(active) = self.active_animations.get(&id) {
                     if !active.finished {
@@ -1258,6 +1299,10 @@ impl State {
             }
             EngineCommand::StopAnimation { id } => {
                 log::info!("[IPC] StopAnimation: entity_id={}", id);
+                if self.model_animation_bindings.contains_key(&id) {
+                    self.stop_model_clip(id);
+                    return;
+                }
                 self.anim_flip_overrides.remove(&id);
                 let stopped_animation_name =
                     self.active_animations.remove(&id).map(|a| a.animation_name);

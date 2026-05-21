@@ -6,6 +6,10 @@ use glam::Vec3 as GlamVec3;
 use winit::{dpi::PhysicalSize, window::Window};
 
 use super::{ActiveAnimation, AnimationState, AudioSlot, UndoAction};
+use crate::config_3d::model_animation::{
+    ActiveModelClip, GpuSkinnedMeshEntry, ModelAnimationBinding,
+};
+use crate::config_3d::model_asset::ModelAsset;
 use crate::config_3d::physics_3d::PhysicsWorld;
 use crate::config_3d::{Camera, WorldBounds3D};
 use crate::config_compat::{ActiveTool, Camera2D, GridBuffer, GridConfig, PhysicsWorld2D};
@@ -163,6 +167,15 @@ pub struct State {
     pub(crate) shadow_darkness: f32,
     pub(crate) scene_instance_pool: super::types::InstanceBufferPool,
     pub(crate) shadow_instance_pool: super::types::InstanceBufferPool,
+    /// Assets de animación 3D por ruta de archivo (parseo aparte de mesh_3d).
+    pub(crate) model_assets: std::collections::HashMap<String, Arc<ModelAsset>>,
+    pub(crate) model_animation_bindings: std::collections::HashMap<u32, ModelAnimationBinding>,
+    pub(crate) active_model_clips: std::collections::HashMap<u32, ActiveModelClip>,
+    pub(crate) model_clip_defaults: std::collections::HashMap<u32, String>,
+    pub(crate) skinned_gpu_meshes: Vec<GpuSkinnedMeshEntry>,
+    pub(crate) skinned_render_pipeline: wgpu::RenderPipeline,
+    pub(crate) skinned_shadow_pipeline: wgpu::RenderPipeline,
+    pub(crate) joint_bind_group_layout: Option<wgpu::BindGroupLayout>,
 }
 
 impl State {

@@ -80,6 +80,19 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 	};
 
 	const replaceEntityModel = (entityId: number, modelPath: string) => {
+		const meta = refs.entityMetaRef.current[entityId];
+		if (meta) {
+			meta.visualModelPath = modelPath;
+			meta.animations = [];
+		}
+		dispatch({
+			type: 'UPDATE_ENTITY_ANIMATIONS',
+			payload: { entityId, animations: [], visualModelPath: modelPath },
+		});
+		dispatch({
+			type: 'SET_ANIMATION_PLAYING',
+			payload: { entityId, playing: false },
+		});
 		send({ cmd: 'replace_entity_model', id: entityId, path: modelPath });
 	};
 

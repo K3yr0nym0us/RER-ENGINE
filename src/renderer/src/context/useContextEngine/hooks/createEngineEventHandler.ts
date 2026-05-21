@@ -634,6 +634,17 @@ export function createEngineEventHandler({
 			if (replaced.path && refs.entityMetaRef.current[id]) {
 				refs.entityMetaRef.current[id].visualModelPath = replaced.path;
 			}
+			const meta = refs.entityMetaRef.current[id];
+			if (meta && replaced.path) {
+				dispatch({
+					type: 'UPDATE_ENTITY_ANIMATIONS',
+					payload: {
+						entityId: id,
+						animations: meta.animations ?? [],
+						visualModelPath: replaced.path,
+					},
+				});
+			}
 			if (replaced.position && replaced.scale) {
 				refs.entityTransformsRef.current[id] = {
 					position: replaced.position,
@@ -730,6 +741,7 @@ export function createEngineEventHandler({
 					physicsEnabled,
 					physicsType,
 					path: meta?.path,
+					visualModelPath: meta?.visualModelPath,
 					animations: meta?.animations,
 					scripts: meta?.scripts,
 				},
@@ -1162,6 +1174,64 @@ export function createEngineEventHandler({
 					scale: entity.scale,
 				};
 			}
+		}
+
+		if (event.event === 'model_clips_ready') {
+			const clipsEvent = event as {
+				id: number
+				path: string
+				clips: Array<{ name: string; duration_s: number; fps: number }>
+			};
+			const id = clipsEvent.id;
+			const prevMeta = refs.entityMetaRef.current[id];
+			const pathChanged = prevMeta?.visualModelPath !== clipsEvent.path;
+			const hadEmbedded = prevMeta?.animations?.some((a) => a.embedded_in_model) ?? false;
+			const prevDefault =
+				pathChanged || !hadEmbedded
+					? undefined
+					: prevMeta?.animations?.find((a) => a.is_default)?.name;
+			const mapped = clipsEvent.clips.map((c) => ({
+				name: c.name,
+				fps: Math.max(1, Math.round(c.fps)),
+				loop: true,
+				embedded_in_model: true as const,
+				logical_w: 1,
+				logical_h: 1,
+				frames: [] as { path: string; pivot_x: number; pivot_y: number }[],
+				is_default: prevDefault === c.name ? true : undefined,
+			}));
+			if (!mapped.some((a) => a.is_default) && mapped.length > 0) {
+				mapped[0].is_default = true;
+			}
+			if (prevMeta) {
+				refs.entityMetaRef.current[id] = {
+					...prevMeta,
+					animations: mapped,
+					visualModelPath: clipsEvent.path,
+				};
+			} else {
+				refs.entityMetaRef.current[id] = {
+					kind: 'model',
+					path: clipsEvent.path,
+					name: `Entity ${id}`,
+					physicsEnabled: true,
+					physicsType: 'static',
+					animations: mapped,
+					visualModelPath: clipsEvent.path,
+				};
+			}
+			const defaultClip = mapped.find((a) => a.is_default)?.name ?? mapped[0]?.name;
+			if (defaultClip) {
+				sendEngine({ cmd: 'set_default_animation', id, name: defaultClip } as never);
+			}
+			dispatch({
+				type: 'UPDATE_ENTITY_ANIMATIONS',
+				payload: {
+					entityId: id,
+					animations: mapped,
+					visualModelPath: clipsEvent.path,
+				},
+			});
 		}
 
 		if (event.event === 'animation_finished') {

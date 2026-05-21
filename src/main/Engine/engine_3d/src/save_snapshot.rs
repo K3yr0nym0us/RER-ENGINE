@@ -38,7 +38,7 @@ impl State {
       let name = self.entity_display_name(id);
 
       let animations = {
-        let list: Vec<SaveAnimationSnapshot> = self
+        let mut list: Vec<SaveAnimationSnapshot> = self
           .animations
           .get(&id)
           .map(|map| {
@@ -47,6 +47,34 @@ impl State {
               .collect()
           })
           .unwrap_or_default();
+        if list.is_empty() {
+          if let Some(binding) = self.model_animation_bindings.get(&id) {
+            if let Some(asset) = self.model_assets.get(&binding.asset_path) {
+              let default_name = self.model_clip_defaults.get(&id);
+              list = asset
+                .clips
+                .iter()
+                .map(|c| SaveAnimationSnapshot {
+                  name: c.name.clone(),
+                  fps: c.fps.round() as u32,
+                  loop_: true,
+                  is_default: default_name
+                    .map(|d| d == &c.name)
+                    .filter(|&b| b)
+                    .map(|_| true),
+                  facing_right: None,
+                  logical_w: 1,
+                  logical_h: 1,
+                  audio_path: None,
+                  frames: vec![],
+                  scripts: vec![],
+                  is_cancelable: None,
+                  embedded_in_model: Some(true),
+                })
+                .collect();
+            }
+          }
+        }
         if list.is_empty() {
           None
         } else {
@@ -249,6 +277,7 @@ impl State {
         })
         .collect(),
       is_cancelable: if anim.is_cancelable { Some(true) } else { None },
+      embedded_in_model: None,
     }
   }
 }

@@ -187,6 +187,8 @@ pub struct TextureAtlas {
 
 impl TextureAtlas {
     pub const SIZE: u32 = 4096;
+    /// Máximo lado al empacar; texturas mayores se reducen para no llenar el atlas.
+    pub const MAX_PACK_DIM: u32 = 2048;
 
     /// Crea el atlas vacío y empaca un pixel blanco 1×1 en la posición (0,0)
     /// que actúa como UV de fallback cuando un tex_idx es inválido.
@@ -257,7 +259,8 @@ impl TextureAtlas {
     /// Empaca una imagen RGBA en el atlas usando shelf packing.
     /// Retorna el UV rect [u_min, v_min, u_max, v_max] listo para el shader.
     pub fn pack(&mut self, queue: &wgpu::Queue, rgba: &[u8], w: u32, h: u32) -> [f32; 4] {
-        self.pack_raw(queue, rgba, w, h)
+        let (rgba, w, h) = downscale_rgba_for_atlas(rgba, w, h);
+        self.pack_raw(queue, &rgba, w, h)
     }
 
     fn pack_raw(&mut self, queue: &wgpu::Queue, rgba: &[u8], w: u32, h: u32) -> [f32; 4] {
@@ -323,4 +326,28 @@ impl TextureAtlas {
             wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
         );
     }
+}
+
+fn downscale_rgba_for_atlas(rgba: &[u8], w: u32, h: u32) -> (Vec<u8>, u32, u32) {
+    let max_dim = TextureAtlas::MAX_PACK_DIM;
+    if w <= max_dim && h <= max_dim {
+        return (rgba.to_vec(), w, h);
+    }
+    let scale = (max_dim as f32 / w.max(h) as f32).min(1.0);
+    let nw = ((w as f32 * scale).round() as u32).max(1);
+    let nh = ((h as f32 * scale).round() as u32).max(1);
+    if let Some(img) = image::RgbaImage::from_raw(w, h, rgba.to_vec()) {
+        let resized = image::imageops::resize(
+            &img,
+            nw,
+            nh,
+            image::imageops::FilterType::Triangle,
+        );
+        let out = resized.into_raw();
+        log::warn!(
+            "[TextureAtlas] textura {w}×{h} reducida a {nw}×{nh} para caber en el atlas"
+        );
+        return (out, nw, nh);
+    }
+    (rgba.to_vec(), w, h)
 }

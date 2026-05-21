@@ -1,4 +1,5 @@
 use glam::Vec3 as GlamVec3;
+use wgpu::util::DeviceExt;
 use winit::dpi::PhysicalSize;
 
 use crate::config_3d::Camera;
@@ -29,6 +30,7 @@ impl State {
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
         self.update_animations();
+        self.update_skinned_animations();
         let mut draw_calls: u32 = 0;
 
         self.spatial_grid.clear();
@@ -101,6 +103,9 @@ impl State {
             .world
             .query2::<crate::ecs::MeshComponent, crate::ecs::Transform>()
             .filter_map(|(id, mc, t)| {
+                if self.model_animation_bindings.contains_key(&id) {
+                    return None;
+                }
                 if self.preview_playing && self.play_character_entity == Some(id) {
                     return None;
                 }
@@ -207,6 +212,9 @@ impl State {
             }
         }
 
+        let skinned_shadow = self.collect_skinned_draw_instances();
+        let skinned_main = skinned_shadow.clone();
+
         let mut instance_slices = Vec::with_capacity(batches.len());
         for b in &batches {
             instance_slices.push(b.instances.as_slice());
@@ -286,6 +294,26 @@ impl State {
                 shadow_pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
                 shadow_pass.draw_indexed(0..mesh.index_count, 0, 0..batch.instances.len() as u32);
             }
+
+            if !skinned_shadow.is_empty() {
+                shadow_pass.set_pipeline(&self.skinned_shadow_pipeline);
+                for (gpu_idx, inst) in &skinned_shadow {
+                    let Some(entry) = self.skinned_gpu_meshes.get(*gpu_idx) else {
+                        continue;
+                    };
+                    shadow_pass.set_bind_group(0, &self.shadow_pass_bind_group, &[]);
+                    shadow_pass.set_bind_group(1, &entry.joint_bind_group, &[]);
+                    let inst_buf = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                        label: Some("skinned-shadow-inst"),
+                        contents: bytemuck::cast_slice(&[*inst]),
+                        usage: wgpu::BufferUsages::VERTEX,
+                    });
+                    shadow_pass.set_vertex_buffer(0, entry.mesh.vertex_buffer.slice(..));
+                    shadow_pass.set_vertex_buffer(1, inst_buf.slice(..));
+                    shadow_pass.set_index_buffer(entry.mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                    shadow_pass.draw_indexed(0..entry.mesh.index_count, 0, 0..1);
+                }
+            }
         }
 
         {
@@ -363,6 +391,28 @@ impl State {
                 pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
                 pass.draw_indexed(0..mesh.index_count, 0, 0..batch.instances.len() as u32);
                 draw_calls += 1;
+            }
+
+            if self.camera_2d.is_none() && !skinned_main.is_empty() {
+                pass.set_pipeline(&self.skinned_render_pipeline);
+                pass.set_bind_group(0, &self.scene_bind_group, &[]);
+                pass.set_bind_group(1, self.atlas.bind_group.as_ref(), &[]);
+                for (gpu_idx, inst) in &skinned_main {
+                    let Some(entry) = self.skinned_gpu_meshes.get(*gpu_idx) else {
+                        continue;
+                    };
+                    pass.set_bind_group(2, &entry.joint_bind_group, &[]);
+                    let inst_buf = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                        label: Some("skinned-main-inst"),
+                        contents: bytemuck::cast_slice(&[*inst]),
+                        usage: wgpu::BufferUsages::VERTEX,
+                    });
+                    pass.set_vertex_buffer(0, entry.mesh.vertex_buffer.slice(..));
+                    pass.set_vertex_buffer(1, inst_buf.slice(..));
+                    pass.set_index_buffer(entry.mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                    pass.draw_indexed(0..entry.mesh.index_count, 0, 0..1);
+                    draw_calls += 1;
+                }
             }
         }
 
@@ -739,6 +789,54 @@ impl State {
         self.last_draw_calls = draw_calls;
         output.present();
         Ok(())
+    }
+
+    fn collect_skinned_draw_instances(&self) -> Vec<(usize, crate::mesh::SkinnedInstanceData)> {
+        // Clonable lightweight list for shadow + main pass.
+        let mut out = Vec::new();
+        if self.camera_2d.is_some() {
+            return out;
+        }
+        for (&id, binding) in &self.model_animation_bindings {
+            if self.preview_playing && self.play_character_entity == Some(id) {
+                continue;
+            }
+            let Some(t) = self.world.get::<crate::ecs::Transform>(id) else {
+                continue;
+            };
+            if self.sun_entity == Some(id) {
+                continue;
+            }
+            let is_ground = self
+                .world
+                .get::<crate::ecs::NameComponent>(id)
+                .is_some_and(|n| n.name.eq_ignore_ascii_case("ground"));
+            if !is_ground
+                && !self
+                    .world_bounds_3d
+                    .intersects_aabb(t.position, t.scale)
+            {
+                continue;
+            }
+            let is_selected = self.selected_entity == Some(id)
+                || self.selected_entities.contains(&id);
+            let flag = if self.preview_playing {
+                0.0_f32
+            } else if is_selected {
+                1.0_f32
+            } else if self.hovered_entity == Some(id) {
+                2.0_f32
+            } else {
+                0.0_f32
+            };
+            let uv = binding.uv_rect;
+            let inst = crate::mesh::InstanceData::new(t.to_matrix(), flag, uv);
+            let skinned_inst = crate::mesh::SkinnedInstanceData::from_instance(&inst);
+            for &gpu_idx in &binding.part_gpu_indices {
+                out.push((gpu_idx, skinned_inst));
+            }
+        }
+        out
     }
 }
 

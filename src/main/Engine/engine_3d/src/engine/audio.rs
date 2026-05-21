@@ -64,9 +64,7 @@ pub(crate) fn start_audio_thread() -> Option<AudioSlot> {
                     AudioCmd::Stop => {
                         if let Some(s) = loop_sink.take() {
                             drop(s);
-                            log::info!("[audio] música detenida");
-                        } else {
-                            log::info!("[audio] detenido (sin loop activo)");
+                            log::debug!("[audio] música detenida");
                         }
                     }
                     AudioCmd::Play { audio, loop_ } => {
@@ -106,7 +104,7 @@ pub(crate) fn start_audio_thread() -> Option<AudioSlot> {
             }
         })
         .expect("no se pudo crear el thread de audio");
-    log::info!("[audio] dispositivo de audio inicializado");
+    log::debug!("[audio] dispositivo de audio inicializado");
     Some(slot)
 }
 
