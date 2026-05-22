@@ -47,7 +47,9 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 - [x] ECS 3D: `HashSet` + reciclado de IDs en `despawn` (`ecs.rs`)
 - [x] Undo/redo de creación de entidad — snapshot en motor (`undo_entity.rs`, `spawn_with_id`)
 - [x] API Lua 3D FP: `fp_press_key`, `fp_jump`, `fp_set_walk_speed`, etc.
-- [x] `replace_entity_model` con resync de orientación y escala del jugador
+- [x] `replace_entity_model` con resync de orientación, escala y forward del jugador (FBX + GLB)
+- [x] **Carga GLB/GLTF skinned** — esqueleto unificado (varios `skin` por archivo), paleta Khronos, piezas múltiples; clips embebidos en asset
+- [x] **Animaciones embebidas 3D** — pipeline skinned GPU, `play_model_clip`, `set_default_animation`, evento `model_clips_ready`
 - [x] Export escena: `export_save_snapshot` → `save_snapshot_ready` (`entity_save_meta`, jugador FP)
 - [x] Scripts Lua `update()` solo en play
 
@@ -59,6 +61,9 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 - [x] Eliminar entidades 3D (modelos/cajas) — `remove_entity` + panel Propiedades; sync listas vía `entity_removed`
 - [x] Carga de escena 3D + `pendingRestores` / vista FP desde motor al abrir `.save`
 - [x] Guardado engine-first: `export_save_snapshot` + merge en el front
+- [x] Panel **Animaciones** en Propiedades (clips embebidos GLB/FBX en 3D; hojas/sprites en 2D)
+- [x] **Reemplazar modelo del jugador** — overlay de carga + ocultar viewport durante importación síncrona
+- [x] Acordeón Modelos: botón y diálogo **`.glb` / `.gltf` / `.fbx`** (almacén + sustitución jugador)
 
 ---
 
@@ -66,7 +71,8 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 
 ### Prioridad media — funcionalidad
 
-- [ ] **Animaciones 3D** (clips / state machine; pipeline compatible con Blender)
+- [ ] **Orientación vertical jugador GLB** — validar en FP con GLB Mixamo reales (rest pose esqueleto + bake por pieza; pendiente prueba manual)
+- [ ] **Animaciones 3D (avanzado)** — state machine / hojas tipo Blender; más allá de clips embebidos + reproducción básica
 - [ ] **Blueprints / prefabs 3D** — equivalente unificado al flujo 2D
 
 ### Prioridad baja
@@ -81,14 +87,17 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 | Ítem | Criterio |
 |------|----------|
 | Física 3D producto | Play FP + colisiones Rapier sin traspasos; sync editor en gizmo/`set_transform` |
+| Animaciones embebidas 3D | GLB/FBX con skinning reproducen clips en editor/play; panel y `model_clips_ready` |
+| Orientación GLB jugador FP | Modelo de pie de frente a cámara, altura ~1.7 m, sin regresión skinning |
 | Blueprints 3D | Crear/instanciar/actualizar desde editor en proyecto 3D |
 
 ---
 
-## Descartado (producto)
+## Aplazado (producto)
 
-- Multiplayer · IA generativa en assets · partículas/shaders experimentales
-- Jerarquía parent/child entre entidades · migraciones automáticas de `.save`
+- Multiplayer 
+- IA generativa en assets 
+- partículas/shaders experimentales
 
 ---
 
@@ -98,6 +107,8 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 |------------------|-----|
 | `set_play_character_view` | Front → motor: pies, yaw, pitch, FOV, frustum |
 | `play_character_view_changed` | Motor → front: estado confirmado (`body_center`, `body_rotation`, etc.) |
+| `model_clips_ready` | Motor → front: clips embebidos tras cargar GLB/FBX skinned en entidad |
+| `entity_model_replaced` | Motor → front: fin de `replace_entity_model` (quita overlay de carga) |
 
 Aliases legacy: `set_first_person_view`, `first_person_view_changed`.
 
