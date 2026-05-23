@@ -69,7 +69,7 @@ impl State {
 
     /// Punto al que mira la órbita del editor (pivote de `look_at`, no la posición del ojo).
     pub(crate) fn editor_orbit_look_at_pivot(&self) -> Vec3 {
-        let mut pivot = if let Some(id) = self.editor_camera_entity {
+        let pivot = if let Some(id) = self.editor_camera_entity {
             if let Some(t) = self.world.get::<Transform>(id) {
                 t.position
             } else {
@@ -78,14 +78,6 @@ impl State {
         } else {
             self.editor_orbit_target
         };
-        // FP editor: el pivote debe estar al centro del cuerpo, no en los pies (position del save).
-        if self.editor_orbit_decoupled_from_player() {
-            if let Some(id) = self.play_character_entity {
-                if let Some(t) = self.world.get::<Transform>(id) {
-                    pivot.y = t.position.y;
-                }
-            }
-        }
         pivot
     }
 
@@ -187,27 +179,34 @@ impl State {
         Vec3::new(0.0, PLAY_CHARACTER_EYE_OFFSET, 0.0)
     }
 
-    /// Centra la órbita del editor en la selección o en el jugador FP.
+    /// Centra la órbita del editor en la selección (jugador incluido).
     pub(crate) fn sync_editor_camera_focus(&mut self) {
         if self.camera_2d.is_some() || self.is_play_controller_active() {
             return;
         }
 
-        if self.editor_orbit_decoupled_from_player() {
-            self.camera.orbit_pivot_offset = Vec3::ZERO;
-            return;
-        }
-
         if let Some(center) = self.selection_center() {
-            let focus_player = self
-                .selected_entity
-                .and_then(|id| self.play_character_entity.map(|p| p == id))
-                .unwrap_or(false);
-
-            if !focus_player {
+            if self.uses_editor_viewport_camera() {
                 self.editor_orbit_target = center;
+                self.ensure_editor_camera_entity();
+                self.sync_editor_camera_entity_from_viewport();
+                self.camera.orbit_pivot_offset = Vec3::ZERO;
+            } else {
+                let focus_player = self
+                    .selected_entity
+                    .and_then(|id| self.play_character_entity.map(|p| p == id))
+                    .unwrap_or(false);
+                if focus_player {
+                    self.camera.target = self.play_character_feet_position();
+                    self.camera.orbit_pivot_offset = Vec3::new(0.0, PLAY_CHARACTER_EYE_OFFSET, 0.0);
+                } else {
+                    self.camera.target = center;
+                    self.camera.orbit_pivot_offset = Vec3::ZERO;
+                }
             }
-            self.camera.orbit_pivot_offset = Vec3::ZERO;
+        } else if self.has_play_character() && !self.editor_orbit_decoupled_from_player() {
+            self.camera.target = self.play_character_feet_position();
+            self.camera.orbit_pivot_offset = Vec3::new(0.0, PLAY_CHARACTER_EYE_OFFSET, 0.0);
         } else {
             self.camera.orbit_pivot_offset = Vec3::ZERO;
         }
