@@ -8,9 +8,6 @@ import { useTraslate } from '@hooks';
 import { type GameStyle, type PlayCameraFollowMode, type ProjectType, type SavedPlayerTransform } from '@shared-types';
 import {
 	applyPlayCharacterCameraPatch,
-	FP_DEFAULT_FOV_Y,
-	FP_DEFAULT_FRUSTUM_DISTANCE,
-	FP_DEFAULT_YAW,
 } from '../../../../defaults/playCharacterSceneRestore';
 
 const RAD_TO_DEG = 180 / Math.PI;
@@ -30,8 +27,9 @@ function parseCameraNum(s: string): number {
 	return Math.round(n * 10) / 10;
 }
 
-function fpsYawFromView(v: SavedPlayerTransform): number {
-	return v.fps_camera_yaw ?? v.yaw ?? FP_DEFAULT_YAW;
+function fpsYawFromView(v: SavedPlayerTransform): number | null {
+	const y = v.fps_camera_yaw ?? v.yaw;
+	return y !== undefined ? y : null;
 }
 
 export function CameraAccordion({
@@ -59,9 +57,9 @@ export function CameraAccordion({
 	const [posX, setPosX] = useState('0');
 	const [posY, setPosY] = useState('0');
 	const [posZ, setPosZ] = useState('0');
-	const [yawDeg, setYawDeg] = useState(formatCameraNum(FP_DEFAULT_YAW * RAD_TO_DEG));
-	const [fovDeg, setFovDeg] = useState(formatCameraNum(FP_DEFAULT_FOV_Y * RAD_TO_DEG));
-	const [frustumDist, setFrustumDist] = useState(formatCameraNum(FP_DEFAULT_FRUSTUM_DISTANCE));
+	const [yawDeg, setYawDeg] = useState('0');
+	const [fovDeg, setFovDeg] = useState('0');
+	const [frustumDist, setFrustumDist] = useState('0');
 	const [followMode, setFollowMode] = useState<PlayCameraFollowMode>('move_with_character');
 
 	const [cam2dX, setCam2dX] = useState('0');
@@ -79,9 +77,16 @@ export function CameraAccordion({
 			setPosX(formatCameraNum(eye[0]));
 			setPosY(formatCameraNum(eye[1]));
 			setPosZ(formatCameraNum(eye[2]));
-			setYawDeg(formatCameraNum(fpsYawFromView(v) * RAD_TO_DEG));
-			setFovDeg(formatCameraNum((v.fov_y ?? FP_DEFAULT_FOV_Y) * RAD_TO_DEG));
-			setFrustumDist(formatCameraNum(v.frustum_distance ?? FP_DEFAULT_FRUSTUM_DISTANCE));
+			const yaw = fpsYawFromView(v);
+			if (yaw !== null) {
+				setYawDeg(formatCameraNum(yaw * RAD_TO_DEG));
+			}
+			if (v.fov_y !== undefined) {
+				setFovDeg(formatCameraNum(v.fov_y * RAD_TO_DEG));
+			}
+			if (v.frustum_distance !== undefined) {
+				setFrustumDist(formatCameraNum(v.frustum_distance));
+			}
 			setFollowMode(v.camera_follow_mode ?? 'move_with_character');
 			return;
 		}

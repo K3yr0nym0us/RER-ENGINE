@@ -738,7 +738,7 @@ impl State {
             camera,
             editor_orbit_target: glam::Vec3::ZERO,
             editor_viewport_yaw: -std::f32::consts::FRAC_PI_4,
-            editor_viewport_pitch: 0.3,
+            editor_viewport_pitch: crate::config_3d::character_anchor::EDITOR_DEFAULT_ORBIT_PITCH,
             editor_viewport_distance: 3.0,
             fps_editor_frustum_distance: 2.5,
             play_camera_eye_position: glam::Vec3::ZERO,

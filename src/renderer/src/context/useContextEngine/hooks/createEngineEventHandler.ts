@@ -917,7 +917,7 @@ export function createEngineEventHandler({
 					applyPendingRestore(character.id, character.path, {
 						skipTransform: !!savedFpView?.position,
 					});
-					applySavedPlayCharacterView(savedFpView, { editorOrbit: true });
+					applySavedPlayCharacterView(savedFpView);
 					if (savedFpView?.control_bindings) {
 						const meta = refs.entityMetaRef.current[character.id];
 						if (meta) {

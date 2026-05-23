@@ -255,8 +255,10 @@ impl State {
             .find_ground_y_at(spawn_xz.0, spawn_xz.1, 10.0, 20.0)
             .unwrap_or(0.0);
         self.camera.target = glam::Vec3::new(spawn_xz.0, ground_y, spawn_xz.1);
-        self.camera.pitch = 0.25;
-        self.camera.yaw = -std::f32::consts::FRAC_PI_2;
+        self.camera.pitch =
+            crate::config_3d::character_anchor::PLAY_CHARACTER_EDITOR_ORBIT_PITCH;
+        self.camera.yaw =
+            crate::config_3d::character_anchor::PLAY_CHARACTER_EDITOR_ORBIT_YAW;
         self.camera.distance =
             crate::config_3d::character_anchor::PLAY_CHARACTER_EDITOR_ORBIT_DISTANCE;
         self.editor_viewport_yaw = self.camera.yaw;

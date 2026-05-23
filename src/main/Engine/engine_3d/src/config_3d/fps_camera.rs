@@ -1,7 +1,8 @@
 use glam::Vec3;
 
 use crate::config_3d::character_anchor::{
-    PLAY_CHARACTER_EDITOR_ORBIT_DISTANCE, PLAY_CHARACTER_EYE_OFFSET, PLAY_CHARACTER_MOUSE_SPEED,
+    body_center_from_feet, PLAY_CHARACTER_EDITOR_ORBIT_DISTANCE, PLAY_CHARACTER_EYE_OFFSET,
+    PLAY_CHARACTER_MOUSE_SPEED,
 };
 use crate::ecs::Transform;
 use crate::engine::State;
@@ -66,18 +67,34 @@ impl State {
         self.sync_editor_camera_entity_from_viewport();
     }
 
+    /// Punto al que mira la órbita del editor (pivote de `look_at`, no la posición del ojo).
+    pub(crate) fn editor_orbit_look_at_pivot(&self) -> Vec3 {
+        let mut pivot = if let Some(id) = self.editor_camera_entity {
+            if let Some(t) = self.world.get::<Transform>(id) {
+                t.position
+            } else {
+                self.editor_orbit_target
+            }
+        } else {
+            self.editor_orbit_target
+        };
+        // FP editor: el pivote debe estar al centro del cuerpo, no en los pies (position del save).
+        if self.editor_orbit_decoupled_from_player() {
+            if let Some(id) = self.play_character_entity {
+                if let Some(t) = self.world.get::<Transform>(id) {
+                    pivot.y = t.position.y;
+                }
+            }
+        }
+        pivot
+    }
+
     /// Punto al que mira la cámara orbital del viewport.
     pub(crate) fn orbit_view_anchor(&self) -> Vec3 {
         if self.uses_editor_viewport_camera() {
-            if let Some(id) = self.editor_camera_entity {
-                if let Some(t) = self.world.get::<Transform>(id) {
-                    return t.position;
-                }
-            }
-            self.editor_orbit_target
-        } else {
-            self.camera.target
+            return self.editor_orbit_look_at_pivot();
         }
+        self.camera.target
     }
 
     pub(crate) fn pan_editor_viewport(&mut self, dx: f32, dy: f32) {
@@ -238,7 +255,7 @@ impl State {
         self.camera.yaw = yaw;
         self.camera.pitch = pitch_clamped;
         if sync_editor_viewport && self.uses_editor_viewport_camera() {
-            self.editor_orbit_target = Vec3::from_array(position);
+            self.editor_orbit_target = body_center_from_feet(Vec3::from_array(position));
             self.editor_viewport_yaw = yaw;
             self.editor_viewport_pitch = pitch_clamped;
             // Reset del ojo de la cámara FPS al ojo actual del Player al cargar/aplicar vista.

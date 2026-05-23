@@ -319,8 +319,12 @@ impl State {
                     };
                     self.apply_play_character_view(
                         pos,
-                        yaw.unwrap_or(self.camera.yaw),
-                        pitch.unwrap_or(self.camera.pitch),
+                        yaw.unwrap_or(
+                            crate::config_3d::character_anchor::PLAY_CHARACTER_EDITOR_ORBIT_YAW,
+                        ),
+                        pitch.unwrap_or(
+                            crate::config_3d::character_anchor::PLAY_CHARACTER_EDITOR_ORBIT_PITCH,
+                        ),
                         fov_y,
                         frustum_distance,
                         camera_follow_mode,

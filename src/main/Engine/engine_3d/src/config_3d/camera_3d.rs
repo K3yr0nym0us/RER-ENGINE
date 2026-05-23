@@ -5,6 +5,8 @@
 use bytemuck::{Pod, Zeroable};
 use glam::{Mat4, Vec3};
 
+use super::character_anchor::EDITOR_DEFAULT_ORBIT_PITCH;
+
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub(crate) struct CameraUniform {
@@ -33,7 +35,7 @@ impl Camera {
             target: Vec3::ZERO,
             distance: 3.0,
             yaw: -std::f32::consts::FRAC_PI_4,
-            pitch: 0.3,
+            pitch: EDITOR_DEFAULT_ORBIT_PITCH,
             fov_y: 45_f32.to_radians(),
             near: 0.1,
             far: 1000.0,

@@ -12,7 +12,13 @@ pub(crate) const PLAY_CHARACTER_GROUND_PROBE: f32 = 0.08;
 /// Altura del cubo-cuerpo del jugador (placeholder visual).
 pub(crate) const PLAY_CHARACTER_BODY_HEIGHT: f32 = 1.7;
 /// Distancia de la cámara orbital en editor (detrás del jugador, fuera de play).
-pub(crate) const PLAY_CHARACTER_EDITOR_ORBIT_DISTANCE: f32 = 3.0;
+pub(crate) const PLAY_CHARACTER_EDITOR_ORBIT_DISTANCE: f32 = 5.0;
+/// Pitch orbital del editor 3D (rad). Eleva la cámara; no confundir con mirar al suelo (eso depende del pivote).
+pub(crate) const PLAY_CHARACTER_EDITOR_ORBIT_PITCH: f32 = 0.48;
+/// Yaw orbital del editor 3D (rad) en escenas FP.
+pub(crate) const PLAY_CHARACTER_EDITOR_ORBIT_YAW: f32 = -std::f32::consts::FRAC_PI_2;
+/// Pitch por defecto al arrancar el motor (antes de cargar escena FP).
+pub(crate) const EDITOR_DEFAULT_ORBIT_PITCH: f32 = 0.48;
 
 impl State {
     /// Offset pivot→pies. La malla del jugador SIEMPRE mide `PLAY_CHARACTER_BODY_HEIGHT` (1.7m):

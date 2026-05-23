@@ -3,12 +3,6 @@ import { FIRST_PERSON_PLAYER_BODY_SCALE, isPlayerPath } from '@shared-types';
 import type { MutableRefObject } from 'react';
 import type { PendingRestore, Transform } from '../context/useContextEngine/types';
 
-/** Pitch de órbita en editor (detrás del personaje). */
-export const FP_EDITOR_ORBIT_PITCH = 0.25;
-export const FP_DEFAULT_YAW = -Math.PI / 2;
-export const FP_DEFAULT_FOV_Y = (45 * Math.PI) / 180;
-export const FP_DEFAULT_FRUSTUM_DISTANCE = 2.5;
-
 /** Aplica al estado React lo que reporta el motor (sin derivar poses en TS). */
 export function applyPlayCharacterViewFromEngine(
 	ev: PlayCharacterViewChanged,
@@ -78,28 +72,20 @@ export function applyPlayCharacterCameraPatch(patch: PlayCharacterCameraPatch) {
 }
 
 /**
- * Pide al motor la vista del personaje jugable; el front actualiza refs al recibir el evento.
- *
- * Restauración / carga: `position` = pies del Player, vista completa.
- * Para edición interactiva del panel Cámara usar `applyPlayCharacterCameraPatch`.
+ * Restaura vista del personaje jugable. Solo envía campos presentes en el save;
+ * el motor aplica sus propios defaults para lo omitido (pitch/yaw/FOV, etc.).
  */
 export function applySavedPlayCharacterView(
 	view: SavedPlayerTransform | null | undefined,
-	_options?: { editorOrbit?: boolean },
 ) {
 	if (!view?.position) return;
-	const yaw = view.yaw ?? FP_DEFAULT_YAW;
-	const pitch =
-		_options?.editorOrbit !== false
-			? FP_EDITOR_ORBIT_PITCH
-			: (view.pitch ?? FP_EDITOR_ORBIT_PITCH);
 	window.engine.send({
 		cmd: 'set_play_character_view',
 		position: view.position,
-		yaw,
-		pitch,
-		fov_y: view.fov_y ?? FP_DEFAULT_FOV_Y,
-		frustum_distance: view.frustum_distance ?? FP_DEFAULT_FRUSTUM_DISTANCE,
+		...(view.yaw !== undefined ? { yaw: view.yaw } : {}),
+		...(view.pitch !== undefined ? { pitch: view.pitch } : {}),
+		...(view.fov_y !== undefined ? { fov_y: view.fov_y } : {}),
+		...(view.frustum_distance !== undefined ? { frustum_distance: view.frustum_distance } : {}),
 		...(view.camera_follow_mode ? { camera_follow_mode: view.camera_follow_mode } : {}),
 	} as never);
 }
