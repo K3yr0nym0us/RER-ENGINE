@@ -62,7 +62,7 @@ pub struct SkinnedMeshPart {
     /// Nombre del nodo FBX/glTF (p. ej. Body, Hair) para filtrar forward del jugador.
     pub name: String,
     pub mesh: SkinnedMeshData,
-    /// Mundo del nodo de malla en bind (glTF: `jointMatrix` usa `inv(mesh_bind_world)`).
+    /// Mundo del nodo de malla en bind (FBX: vértices horneados; glTF: referencia / IBM fallback).
     pub mesh_bind_world: Mat4,
     /// `geometry_to_bone` por hueso para esta pieza (identidad si el hueso no influye aquí).
     pub inverse_bind: Vec<[[f32; 4]; 4]>,
@@ -397,7 +397,7 @@ fn part_inverse_bind_for_gltf_skin(
     buffers: &[gltf::buffer::Data],
     node_to_unified: &HashMap<usize, usize>,
     joint_count: usize,
-    mesh_bind_world: Mat4,
+    _mesh_bind_world: Mat4,
     doc: &gltf::Document,
     scene_parents: &HashMap<usize, usize>,
 ) -> Vec<[[f32; 4]; 4]> {
@@ -422,7 +422,7 @@ fn part_inverse_bind_for_gltf_skin(
         if ibm[ui] == [[0.0; 4]; 4] {
             let joint_world =
                 world_matrix_for_gltf_node_index(doc, scene_parents, node_ix);
-            ibm[ui] = (joint_world.inverse() * mesh_bind_world).to_cols_array_2d();
+            ibm[ui] = joint_world.inverse().to_cols_array_2d();
         }
     }
     ibm

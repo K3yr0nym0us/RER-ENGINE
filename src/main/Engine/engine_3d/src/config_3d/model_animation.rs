@@ -372,8 +372,8 @@ impl State {
             for ji in 0..joint_count {
                 let g2b = Mat4::from_cols_array_2d(&part.inverse_bind[ji]);
                 joint_palette[ji] = if gltf_skin {
-                    // Khronos / Godot: inv(meshGlobal) * jointGlobal * IBM; vértices en espacio de malla
-                    norm * inv_mesh * global[ji] * g2b * inv_norm
+                    // glTF: vértices en espacio local del nodo mesh; IBM del archivo ya es Khronos estándar.
+                    norm * global[ji] * g2b * inv_norm
                 } else {
                     // FBX: vértices ya en mundo del nodo de malla
                     norm * global[ji] * g2b * inv_mesh * inv_norm
