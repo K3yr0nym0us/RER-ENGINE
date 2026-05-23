@@ -17,6 +17,7 @@ pub(crate) use camera_3d::Camera;
 pub(crate) mod character_anchor;
 pub(crate) mod play_character;
 pub(crate) mod fps_camera;
+pub(crate) mod editor_camera;
 pub(crate) mod play_controller;
 pub(crate) mod fbx_facing;
 pub(crate) mod mesh_3d;
@@ -43,6 +44,65 @@ pub(crate) fn is_gltf_model_path(path: &str) -> bool {
 }
 
 pub(crate) mod directional_light;
+
+use crate::ipc::{AxisValue, RotationEulerDelta};
+
+/// Resuelve un cambio de eje individual sobre un vector actual.
+/// Si `axis_value` es `Some`, reemplaza solo ese eje; en caso contrario aplica el `vec` completo.
+pub(crate) fn resolve_axis_update(
+    current: glam::Vec3,
+    vec: Option<[f32; 3]>,
+    axis_value: Option<AxisValue>,
+) -> Option<glam::Vec3> {
+    if let Some(av) = axis_value {
+        let mut next = current;
+        match av.axis {
+            0 => next.x = av.value,
+            1 => next.y = av.value,
+            2 => next.z = av.value,
+            _ => {}
+        }
+        return Some(next);
+    }
+    vec.map(glam::Vec3::from_array)
+}
+
+/// Resuelve rotación de `set_transform`: quaternion explícito, delta Euler o Euler absoluto.
+///
+/// El front trabaja con índices semánticos: `axis 0 = pitch (X)`, `axis 1 = yaw (Y)`, `axis 2 = roll (Z)`.
+///
+/// **Deltas (`rotation_euler_delta`)**: se aplican como giro local en quaternion (`current * axis_quat`),
+/// idéntico para X/Y/Z y al `quatRotateLocalAxis` del front. NO usar `to_euler` + suma + `from_euler`:
+/// en YXZ el eje central (X/pitch) queda acotado a ~±90° al descomponer y el slider “se congela”
+/// mientras Y/Z siguen circulares.
+///
+/// **Euler absoluto (`rotation_euler_degrees`)**: `from_euler(YXZ, yaw, pitch, roll)`.
+pub(crate) fn resolve_set_transform_rotation(
+    current: glam::Quat,
+    rotation: Option<[f32; 4]>,
+    euler_delta: Option<RotationEulerDelta>,
+    euler_degrees: Option<[f32; 3]>,
+) -> Option<glam::Quat> {
+    if let Some(d) = euler_delta {
+        let delta = d.degrees.to_radians();
+        let axis_quat = match d.axis {
+            0 => glam::Quat::from_rotation_x(delta),
+            1 => glam::Quat::from_rotation_y(delta),
+            2 => glam::Quat::from_rotation_z(delta),
+            _ => return Some(current),
+        };
+        return Some((current * axis_quat).normalize());
+    }
+    if let Some([pitch_deg, yaw_deg, roll_deg]) = euler_degrees {
+        return Some(glam::Quat::from_euler(
+            glam::EulerRot::YXZ,
+            yaw_deg.to_radians(),   // Y
+            pitch_deg.to_radians(), // X
+            roll_deg.to_radians(),  // Z
+        ));
+    }
+    rotation.map(|r| glam::Quat::from_xyzw(r[0], r[1], r[2], r[3]))
+}
 
 use std::path::Path;
 
@@ -246,11 +306,13 @@ impl State {
                 let (_, _, yaw) = t.rotation.to_euler(glam::EulerRot::YXZ);
                 t.rotation = glam::Quat::from_rotation_y(yaw);
             }
-            self.camera.target = feet;
+            if self.is_play_controller_active() {
+                self.camera.target = feet;
+            }
             self.sync_player_rotation_from_look();
             // El jugador FP usa solo la cápsula cinemática; el cuerpo Rapier estático bloquea queries.
             self.physics.remove_entity_body(id);
-            self.emit_play_character_view_changed();
+            self.emit_play_character_view_changed(false);
         } else {
             if let Some(m) = self.save_registry.meta.get_mut(&id) {
                 m.path = path.to_string();
@@ -366,13 +428,13 @@ impl State {
         let ndc_y = -(2.0 * pixel_y / h) + 1.0;
 
         let inv_proj = self.camera.proj_matrix(aspect).inverse();
-        let inv_view = self.camera.view_matrix().inverse();
+        let inv_view = self.camera_view_matrix().inverse();
 
         let clip_dir = Vec4::new(ndc_x, ndc_y, -1.0, 0.0);
         let view_dir = inv_proj * clip_dir;
         let view_dir = Vec4::new(view_dir.x, view_dir.y, -1.0, 0.0);
         let world_dir = (inv_view * view_dir).truncate().normalize();
-        let ray_origin = self.camera.position();
+        let ray_origin = self.camera_world_position();
 
         let mut closest: Option<(f32, EntityId)> = None;
         for &entity in self.world.entities() {
@@ -477,6 +539,9 @@ impl State {
                     physics_enabled,
                     physics_type,
                 });
+                if self.editor_camera_entity == Some(entity) {
+                    self.sync_editor_viewport_from_camera_entity();
+                }
                 if self.ctrl_held && self.selected_entities.len() > 1 {
                     send_event(&EngineEvent::MultiSelectChanged {
                         ids: self.selected_entities.clone(),
@@ -500,7 +565,7 @@ impl State {
     pub(crate) fn project_to_screen(&self, p: GlamVec3) -> Option<(f32, f32)> {
         let w = self.size.width as f32;
         let h = self.size.height as f32;
-        let vp = self.camera.proj_matrix(w / h) * self.camera.view_matrix();
+        let vp = self.camera.proj_matrix(w / h) * self.camera_view_matrix();
         let c = vp * glam::Vec4::new(p.x, p.y, p.z, 1.0);
         if c.w <= 0.0 {
             return None;
@@ -562,7 +627,7 @@ impl State {
         }
         let origin = sum / count as f32;
 
-        let vp = self.camera.proj_matrix(aspect) * self.camera.view_matrix();
+        let vp = self.camera.proj_matrix(aspect) * self.camera_view_matrix();
         let axis_world = [GlamVec3::X, GlamVec3::Y, GlamVec3::Z][axis_idx];
 
         let project = |p: GlamVec3| -> Option<(f32, f32)> {
@@ -621,6 +686,12 @@ impl State {
         }
         if !self.is_play_controller_active() && self.camera_2d.is_none() {
             self.sync_editor_camera_focus();
+        }
+
+        if let Some(player_id) = self.play_character_entity {
+            if selected_ids.contains(&player_id) {
+                self.emit_play_character_view_changed(false);
+            }
         }
 
         let lead_id = self.selected_entity.or_else(|| selected_ids.last().copied());

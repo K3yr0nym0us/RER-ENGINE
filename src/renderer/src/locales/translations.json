@@ -67,6 +67,7 @@
   "World": "Mundo",
   "Camera": "Cámara",
   "Position (feet)": "Posición (pies)",
+  "Camera position": "Posición de la cámara",
   "Yaw (°)": "Rumbo (°)",
   "Field of view (°)": "Campo de visión (°)",
   "FOV (°)": "FOV (°)",
@@ -162,6 +163,8 @@
   "Scale": "Escala",
   "Rotation (xyzw)": "Rotación (xyzw)",
   "Rotation (degrees)": "Rotación (grados)",
+  "Transform rotation player hint": "En el editor solo gira el cuerpo; el yaw de la cámara se edita en el panel Cámara.",
+  "Transform editor camera orbit hint": "Posición del blanco orbital del viewport (no mueve al jugador).",
   "Lock proportions": "Proporciones bloqueadas",
   "Keep proportions": "Mantener proporciones",
 

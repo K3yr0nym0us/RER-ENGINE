@@ -1,26 +1,23 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Accordion } from 'react-bootstrap';
-import { CameraVideo, CheckLg } from 'react-bootstrap-icons';
+import { CameraVideo } from 'react-bootstrap-icons';
 
 import { AppTooltip } from '@components';
 import { useContextEngine } from '@engine';
 import { useTraslate } from '@hooks';
-import { FIRST_PERSON_PLAYER_BODY_SCALE, type GameStyle, type ProjectType } from '@shared-types';
+import { type GameStyle, type ProjectType, type SavedPlayerTransform } from '@shared-types';
 import {
-	applySavedPlayCharacterView,
+	applyPlayCharacterCameraPatch,
 	FP_DEFAULT_FOV_Y,
 	FP_DEFAULT_FRUSTUM_DISTANCE,
 	FP_DEFAULT_YAW,
-	FP_EDITOR_ORBIT_PITCH,
 } from '../../../../defaults/playCharacterSceneRestore';
 
 const RAD_TO_DEG = 180 / Math.PI;
 const DEG_TO_RAD = Math.PI / 180;
 const INPUT_CLASS = 'form-control form-control-sm bg-dark text-light border-secondary w-100';
-/** Misma anchura en filas de 3: basis 0 evita que la etiqueta corta (p. ej. FOV) encoja la columna. */
 const FIELD_COL_STYLE: React.CSSProperties = { flex: '1 1 0', minWidth: 0 };
 
-/** Máx. 1 decimal; entero si no hace falta la fracción. */
 function formatCameraNum(n: number): string {
 	if (!Number.isFinite(n)) return '0';
 	const rounded = Math.round(n * 10) / 10;
@@ -31,6 +28,10 @@ function parseCameraNum(s: string): number {
 	const n = parseFloat(s);
 	if (Number.isNaN(n)) return NaN;
 	return Math.round(n * 10) / 10;
+}
+
+function fpsYawFromView(v: SavedPlayerTransform): number {
+	return v.fps_camera_yaw ?? v.yaw ?? FP_DEFAULT_YAW;
 }
 
 export function CameraAccordion({
@@ -66,22 +67,20 @@ export function CameraAccordion({
 	const [cam2dY, setCam2dY] = useState('0');
 	const [cam2dHalfH, setCam2dHalfH] = useState('10');
 
-	const formatOnBlur = (raw: string, setter: (v: string) => void) => {
-		const n = parseCameraNum(raw);
-		if (!Number.isNaN(n)) setter(formatCameraNum(n));
-	};
+	const skipSyncRef = useRef(false);
+	const hasPlayer = playerEntityIdRef.current != null;
 
 	const loadFromScene = useCallback(() => {
 		if (is3dFp) {
 			const v = playCharacterViewRef.current;
-			if (v) {
-				setPosX(formatCameraNum(v.position[0]));
-				setPosY(formatCameraNum(v.position[1]));
-				setPosZ(formatCameraNum(v.position[2]));
-				setYawDeg(formatCameraNum((v.yaw ?? FP_DEFAULT_YAW) * RAD_TO_DEG));
-				setFovDeg(formatCameraNum((v.fov_y ?? FP_DEFAULT_FOV_Y) * RAD_TO_DEG));
-				setFrustumDist(formatCameraNum(v.frustum_distance ?? FP_DEFAULT_FRUSTUM_DISTANCE));
-			}
+			if (!v?.camera_eye_position) return;
+			const eye = v.camera_eye_position;
+			setPosX(formatCameraNum(eye[0]));
+			setPosY(formatCameraNum(eye[1]));
+			setPosZ(formatCameraNum(eye[2]));
+			setYawDeg(formatCameraNum(fpsYawFromView(v) * RAD_TO_DEG));
+			setFovDeg(formatCameraNum((v.fov_y ?? FP_DEFAULT_FOV_Y) * RAD_TO_DEG));
+			setFrustumDist(formatCameraNum(v.frustum_distance ?? FP_DEFAULT_FRUSTUM_DISTANCE));
 			return;
 		}
 		if (!is3d && camera2dRef.current) {
@@ -93,52 +92,90 @@ export function CameraAccordion({
 	}, [is3dFp, is3d, camera2dRef, playCharacterViewRef]);
 
 	useEffect(() => {
+		if (skipSyncRef.current) return;
 		loadFromScene();
 	}, [loadFromScene, selectedEntity?.id, engineReady, playCharacterViewSyncSeq, previewPlaying]);
 
-	const apply3dFp = () => {
-		const playerId = playerEntityIdRef.current;
-		if (playerId == null) return;
-		const x = parseCameraNum(posX);
-		const y = parseCameraNum(posY);
-		const z = parseCameraNum(posZ);
-		const yaw = parseCameraNum(yawDeg) * DEG_TO_RAD;
-		const fov = parseCameraNum(fovDeg) * DEG_TO_RAD;
-		const frustum = parseCameraNum(frustumDist);
-		if ([x, y, z, yaw, fov, frustum].some((n) => Number.isNaN(n))) return;
-
-		const prev = playCharacterViewRef.current;
-		const view = {
-			position: [x, y, z] as [number, number, number],
-			scale: prev?.scale ?? FIRST_PERSON_PLAYER_BODY_SCALE,
-			yaw,
-			pitch: FP_EDITOR_ORBIT_PITCH,
-			fov_y: fov,
-			frustum_distance: frustum,
-			...(prev?.visual_model_path ? { visual_model_path: prev.visual_model_path } : {}),
-			...(prev?.control_bindings ? { control_bindings: prev.control_bindings } : {}),
-		};
-		playCharacterViewRef.current = view;
-		applySavedPlayCharacterView(view, { editorOrbit: true });
+	const commitPosAxis = (axis: 0 | 1 | 2, raw: string) => {
+		if (playerEntityIdRef.current == null) return;
+		const parsed = parseFloat(raw);
+		if (!Number.isFinite(parsed)) return;
+		skipSyncRef.current = true;
+		applyPlayCharacterCameraPatch({ positionAxis: { axis, value: parsed } });
 	};
 
-	const apply2d = () => {
-		const x = parseCameraNum(cam2dX);
-		const y = parseCameraNum(cam2dY);
-		const halfH = parseCameraNum(cam2dHalfH);
-		if ([x, y, halfH].some((n) => Number.isNaN(n))) return;
-		send({ cmd: 'set_camera2d', x, y, half_h: halfH });
-		camera2dRef.current = { x, y, halfH };
+	const commitYaw = (raw: string) => {
+		if (playerEntityIdRef.current == null) return;
+		const parsed = parseCameraNum(raw);
+		if (Number.isNaN(parsed)) return;
+		skipSyncRef.current = true;
+		applyPlayCharacterCameraPatch({ yaw: parsed * DEG_TO_RAD });
 	};
 
-	const handleApply = () => {
-		if (is3dFp) apply3dFp();
-		else if (!is3d) apply2d();
+	const commitFov = (raw: string) => {
+		if (playerEntityIdRef.current == null) return;
+		const parsed = parseCameraNum(raw);
+		if (Number.isNaN(parsed)) return;
+		skipSyncRef.current = true;
+		applyPlayCharacterCameraPatch({ fov_y: parsed * DEG_TO_RAD });
 	};
 
-	const handleKey = (e: React.KeyboardEvent) => {
-		if (e.key === 'Enter') handleApply();
+	const commitFrustum = (raw: string) => {
+		if (playerEntityIdRef.current == null) return;
+		const parsed = parseCameraNum(raw);
+		if (Number.isNaN(parsed)) return;
+		skipSyncRef.current = true;
+		applyPlayCharacterCameraPatch({ frustum_distance: parsed });
 	};
+
+	const commit2d = (x: string, y: string, halfH: string) => {
+		const px = parseCameraNum(x);
+		const py = parseCameraNum(y);
+		const ph = parseCameraNum(halfH);
+		if ([px, py, ph].some((n) => Number.isNaN(n))) return;
+		skipSyncRef.current = true;
+		send({ cmd: 'set_camera2d', x: px, y: py, half_h: ph });
+		camera2dRef.current = { x: px, y: py, halfH: ph };
+	};
+
+	const finishEdit3d = (
+		raw: string,
+		setter: (v: string) => void,
+		commit: (formatted: string) => void,
+	) => {
+		const n = parseCameraNum(raw);
+		if (Number.isNaN(n)) {
+			skipSyncRef.current = false;
+			loadFromScene();
+			return;
+		}
+		const formatted = formatCameraNum(n);
+		setter(formatted);
+		commit(formatted);
+		skipSyncRef.current = false;
+	};
+
+	const finishEdit2d = (
+		raw: string,
+		setter: (v: string) => void,
+		getAll: () => { x: string; y: string; halfH: string },
+		key: 'x' | 'y' | 'halfH',
+	) => {
+		const n = parseCameraNum(raw);
+		if (Number.isNaN(n)) {
+			skipSyncRef.current = false;
+			loadFromScene();
+			return;
+		}
+		const formatted = formatCameraNum(n);
+		setter(formatted);
+		const fields = getAll();
+		const next = { ...fields, [key]: formatted };
+		commit2d(next.x, next.y, next.halfH);
+		skipSyncRef.current = false;
+	};
+
+	const camDisabled = !engineReady || !hasPlayer;
 
 	return (
 		<Accordion.Item eventKey="camera">
@@ -149,7 +186,7 @@ export function CameraAccordion({
 			<Accordion.Body className="py-2 px-2">
 				{is3dFp && (
 					<>
-						<p className="text-secondary small mb-1 fw-semibold">{t('Position (feet)')}</p>
+						<p className="text-secondary small mb-1 fw-semibold">{t('Camera position')}</p>
 						<div className="d-flex gap-1 mb-2">
 							<div style={FIELD_COL_STYLE}>
 								<label className="form-label small text-secondary mb-0" htmlFor="cam-pos-x">X</label>
@@ -159,10 +196,12 @@ export function CameraAccordion({
 									step="0.1"
 									className={INPUT_CLASS}
 									value={posX}
-									disabled={!engineReady}
-									onChange={(e) => setPosX(e.target.value)}
-									onBlur={() => formatOnBlur(posX, setPosX)}
-									onKeyDown={handleKey}
+									disabled={camDisabled}
+									onChange={(e) => {
+										setPosX(e.target.value);
+										commitPosAxis(0, e.target.value);
+									}}
+									onBlur={() => finishEdit3d(posX, setPosX, (f) => commitPosAxis(0, f))}
 								/>
 							</div>
 							<div style={FIELD_COL_STYLE}>
@@ -173,10 +212,12 @@ export function CameraAccordion({
 									step="0.1"
 									className={INPUT_CLASS}
 									value={posY}
-									disabled={!engineReady}
-									onChange={(e) => setPosY(e.target.value)}
-									onBlur={() => formatOnBlur(posY, setPosY)}
-									onKeyDown={handleKey}
+									disabled={camDisabled}
+									onChange={(e) => {
+										setPosY(e.target.value);
+										commitPosAxis(1, e.target.value);
+									}}
+									onBlur={() => finishEdit3d(posY, setPosY, (f) => commitPosAxis(1, f))}
 								/>
 							</div>
 							<div style={FIELD_COL_STYLE}>
@@ -187,10 +228,12 @@ export function CameraAccordion({
 									step="0.1"
 									className={INPUT_CLASS}
 									value={posZ}
-									disabled={!engineReady}
-									onChange={(e) => setPosZ(e.target.value)}
-									onBlur={() => formatOnBlur(posZ, setPosZ)}
-									onKeyDown={handleKey}
+									disabled={camDisabled}
+									onChange={(e) => {
+										setPosZ(e.target.value);
+										commitPosAxis(2, e.target.value);
+									}}
+									onBlur={() => finishEdit3d(posZ, setPosZ, (f) => commitPosAxis(2, f))}
 								/>
 							</div>
 						</div>
@@ -205,10 +248,12 @@ export function CameraAccordion({
 									step="0.1"
 									className={INPUT_CLASS}
 									value={yawDeg}
-									disabled={!engineReady}
-									onChange={(e) => setYawDeg(e.target.value)}
-									onBlur={() => formatOnBlur(yawDeg, setYawDeg)}
-									onKeyDown={handleKey}
+									disabled={camDisabled}
+									onChange={(e) => {
+										setYawDeg(e.target.value);
+										commitYaw(e.target.value);
+									}}
+									onBlur={() => finishEdit3d(yawDeg, setYawDeg, commitYaw)}
 								/>
 							</div>
 							<div style={FIELD_COL_STYLE}>
@@ -219,16 +264,18 @@ export function CameraAccordion({
 								</AppTooltip>
 								<input
 									id="cam-fov"
-									type="number"
+								 type="number"
 									step="0.1"
 									min="10"
 									max="120"
 									className={INPUT_CLASS}
 									value={fovDeg}
-									disabled={!engineReady}
-									onChange={(e) => setFovDeg(e.target.value)}
-									onBlur={() => formatOnBlur(fovDeg, setFovDeg)}
-									onKeyDown={handleKey}
+									disabled={camDisabled}
+									onChange={(e) => {
+										setFovDeg(e.target.value);
+										commitFov(e.target.value);
+									}}
+									onBlur={() => finishEdit3d(fovDeg, setFovDeg, commitFov)}
 								/>
 							</div>
 							<div style={FIELD_COL_STYLE}>
@@ -244,10 +291,12 @@ export function CameraAccordion({
 									min="0.5"
 									className={INPUT_CLASS}
 									value={frustumDist}
-									disabled={!engineReady}
-									onChange={(e) => setFrustumDist(e.target.value)}
-									onBlur={() => formatOnBlur(frustumDist, setFrustumDist)}
-									onKeyDown={handleKey}
+									disabled={camDisabled}
+									onChange={(e) => {
+										setFrustumDist(e.target.value);
+										commitFrustum(e.target.value);
+									}}
+									onBlur={() => finishEdit3d(frustumDist, setFrustumDist, commitFrustum)}
 								/>
 							</div>
 						</div>
@@ -266,9 +315,16 @@ export function CameraAccordion({
 									className={INPUT_CLASS}
 									value={cam2dX}
 									disabled={!engineReady}
-									onChange={(e) => setCam2dX(e.target.value)}
-									onBlur={() => formatOnBlur(cam2dX, setCam2dX)}
-									onKeyDown={handleKey}
+									onChange={(e) => {
+										setCam2dX(e.target.value);
+										commit2d(e.target.value, cam2dY, cam2dHalfH);
+									}}
+									onBlur={() => finishEdit2d(
+										cam2dX,
+										setCam2dX,
+										() => ({ x: cam2dX, y: cam2dY, halfH: cam2dHalfH }),
+										'x',
+									)}
 								/>
 							</div>
 							<div style={FIELD_COL_STYLE}>
@@ -280,9 +336,16 @@ export function CameraAccordion({
 									className={INPUT_CLASS}
 									value={cam2dY}
 									disabled={!engineReady}
-									onChange={(e) => setCam2dY(e.target.value)}
-									onBlur={() => formatOnBlur(cam2dY, setCam2dY)}
-									onKeyDown={handleKey}
+									onChange={(e) => {
+										setCam2dY(e.target.value);
+										commit2d(cam2dX, e.target.value, cam2dHalfH);
+									}}
+									onBlur={() => finishEdit2d(
+										cam2dY,
+										setCam2dY,
+										() => ({ x: cam2dX, y: cam2dY, halfH: cam2dHalfH }),
+										'y',
+									)}
 								/>
 							</div>
 							<div style={FIELD_COL_STYLE}>
@@ -297,9 +360,16 @@ export function CameraAccordion({
 									className={INPUT_CLASS}
 									value={cam2dHalfH}
 									disabled={!engineReady}
-									onChange={(e) => setCam2dHalfH(e.target.value)}
-									onBlur={() => formatOnBlur(cam2dHalfH, setCam2dHalfH)}
-									onKeyDown={handleKey}
+									onChange={(e) => {
+										setCam2dHalfH(e.target.value);
+										commit2d(cam2dX, cam2dY, e.target.value);
+									}}
+									onBlur={() => finishEdit2d(
+										cam2dHalfH,
+										setCam2dHalfH,
+										() => ({ x: cam2dX, y: cam2dY, halfH: cam2dHalfH }),
+										'halfH',
+									)}
 								/>
 							</div>
 						</div>
@@ -309,20 +379,6 @@ export function CameraAccordion({
 					<p className="text-secondary small mb-0 fst-italic">
 						{t('Camera settings are available in first-person 3D projects.')}
 					</p>
-				)}
-
-				{(is3dFp || !is3d) && (
-					<AppTooltip content={t('Apply camera')} place="top">
-						<button
-							type="button"
-							className="btn btn-sm btn-outline-info w-100 d-flex align-items-center justify-content-center gap-1"
-							disabled={!engineReady || (is3dFp && playerEntityIdRef.current == null)}
-							onClick={handleApply}
-						>
-							<CheckLg />
-							{t('Apply camera')}
-						</button>
-					</AppTooltip>
 				)}
 			</Accordion.Body>
 		</Accordion.Item>

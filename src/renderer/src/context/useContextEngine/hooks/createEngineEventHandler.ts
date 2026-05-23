@@ -13,13 +13,14 @@ import type {
 	SpriteRemoved,
 	SpritesList,
 } from '@shared-types';
-import type { GameStyle, SavedScene } from '@shared-types';
+import type { GameStyle, PlayCharacterViewChanged, SavedScene } from '@shared-types';
 import {
 	DEFAULT_LIGHT_AMBIENT,
 	DEFAULT_LIGHT_INTENSITY,
 	DEFAULT_SHADOW_DARKNESS,
 	FIRST_PERSON_PLAYER_BODY_SCALE,
 	isEditorBoxPath,
+	isEditorCameraPath,
 	isPlayerEntity,
 	isPlayerPath,
 	isGroundPath,
@@ -31,7 +32,6 @@ import {
 	applyPlayCharacterViewFromEngine,
 	applySavedPlayCharacterView,
 	ensurePlayCharacterOnLoad,
-	type PlayCharacterViewChangedEvent,
 } from '../../../defaults/playCharacterSceneRestore';
 import { setSceneCommandForSavedProject } from '../../../defaults/projectSceneLoad';
 import { buildImportSceneCommand, resolveEntityTransform, syncEditorStateFromSavedScene } from './buildImportSceneCommand';
@@ -942,6 +942,16 @@ export function createEngineEventHandler({
 						refs.entityTransformsRef.current[character.id] = duplicateTransform;
 					}
 				}
+			} else if (isEditorCameraPath(character.path)) {
+				refs.editorCameraEntityIdRef.current = character.id;
+				dispatch({ type: 'ADD_CHARACTER', payload: { id: character.id, path: character.path } });
+				refs.entityMetaRef.current[character.id] = {
+					kind: 'character',
+					path: character.path,
+					name: 'EditorCamera',
+					physicsEnabled: false,
+					physicsType: '',
+				};
 			} else {
 				dispatch({ type: 'ADD_CHARACTER', payload: { id: character.id, path: character.path } });
 				const existingMeta = refs.entityMetaRef.current[character.id];
@@ -1061,13 +1071,29 @@ export function createEngineEventHandler({
 			event.event === 'play_character_view_changed'
 			|| event.event === 'first_person_view_changed'
 		) {
-			const ev = event as unknown as PlayCharacterViewChangedEvent;
+			const ev = event as unknown as PlayCharacterViewChanged;
 			applyPlayCharacterViewFromEngine(
 				ev,
 				refs.playCharacterViewRef,
 				refs.entityTransformsRef,
 				refs.playerEntityIdRef,
+				refs.editorCameraEntityIdRef,
 			);
+			const refreshId = ev.player_id ?? ev.editor_camera_id;
+			if (refreshId != null) {
+				const tr = refs.entityTransformsRef.current[refreshId];
+				if (tr) {
+					dispatch({
+						type: 'UPDATE_SELECTED_TRANSFORM',
+						payload: {
+							entityId: refreshId,
+							position: tr.position,
+							rotation: tr.rotation,
+							scale: tr.scale,
+						},
+					});
+				}
+			}
 			dispatch({ type: 'SYNC_PLAY_CHARACTER_VIEW' });
 			if (refs.sceneBurstLoadInProgressRef.current) {
 				refs.sceneBurstAwaitingPlayerViewRef.current = false;

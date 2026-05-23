@@ -22,7 +22,6 @@ pub(crate) struct ModelAnimationBinding {
     pub asset_path: String,
     /// Índices en `skinned_gpu_meshes` (una entrada por pieza del asset).
     pub part_gpu_indices: Vec<usize>,
-    pub tex_idx: usize,
     pub uv_rect: [f32; 4],
 }
 
@@ -194,12 +193,11 @@ impl State {
             part_gpu_indices.push(gpu_idx);
         }
 
-        // La textura ya está en el atlas vía mesh_3d (tex_idx / uv_rect); no reempacar aquí.
+        // La textura ya está en el atlas vía MeshComponent / uv_rect; no reempacar aquí.
 
         let binding = ModelAnimationBinding {
             asset_path: path.to_string(),
             part_gpu_indices,
-            tex_idx,
             uv_rect,
         };
         self.model_animation_bindings.insert(id, binding.clone());
@@ -222,10 +220,6 @@ impl State {
         self.model_animation_bindings.remove(&id);
         self.active_model_clips.remove(&id);
         self.model_clip_defaults.remove(&id);
-    }
-
-    pub(crate) fn has_model_animation_binding(&self, id: EntityId) -> bool {
-        self.model_animation_bindings.contains_key(&id)
     }
 
     pub(crate) fn play_model_clip(&mut self, id: EntityId, name: &str, loop_: bool) {
@@ -435,7 +429,6 @@ fn compute_joint_globals(
                 if !done[ji] {
                     global[ji] = prefix_world[ji] * locals[ji];
                     done[ji] = true;
-                    remaining -= 1;
                 }
             }
             break;

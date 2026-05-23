@@ -79,9 +79,14 @@ impl State {
                 self.handle_command(EngineCommand::SetTransform {
                     id,
                     position: Some(position),
+                    position_axis: None,
                     rotation: Some(rotation),
                     scale: Some(scale),
+                    scale_axis: None,
                     track_undo: Some(false),
+                    body_rotation_only: None,
+                    rotation_euler_delta: None,
+                    rotation_euler_degrees: None,
                 });
             }
             UndoAction::RestoreTransforms { items } => {
@@ -103,9 +108,14 @@ impl State {
                     self.handle_command(EngineCommand::SetTransform {
                         id,
                         position: Some(position),
+                        position_axis: None,
                         rotation: Some(rotation),
                         scale: Some(scale),
+                        scale_axis: None,
                         track_undo: Some(false),
+                        body_rotation_only: None,
+                        rotation_euler_delta: None,
+                        rotation_euler_degrees: None,
                     });
                 }
             }
@@ -143,9 +153,14 @@ impl State {
                 self.handle_command(EngineCommand::SetTransform {
                     id,
                     position: Some(position),
+                    position_axis: None,
                     rotation: Some(rotation),
                     scale: Some(scale),
+                    scale_axis: None,
                     track_undo: Some(false),
+                    body_rotation_only: None,
+                    rotation_euler_delta: None,
+                    rotation_euler_degrees: None,
                 });
             }
             UndoAction::RestoreTransforms { items } => {
@@ -167,9 +182,14 @@ impl State {
                     self.handle_command(EngineCommand::SetTransform {
                         id,
                         position: Some(position),
+                        position_axis: None,
                         rotation: Some(rotation),
                         scale: Some(scale),
+                        scale_axis: None,
                         track_undo: Some(false),
+                        body_rotation_only: None,
+                        rotation_euler_delta: None,
+                        rotation_euler_degrees: None,
                     });
                 }
             }
@@ -275,84 +295,126 @@ impl State {
             }
             EngineCommand::SetPlayCharacterView {
                 position,
+                position_axis,
                 yaw,
                 pitch,
                 fov_y,
                 frustum_distance,
+                camera_only,
             } => {
-                self.apply_play_character_view(position, yaw, pitch, fov_y, frustum_distance);
+                if camera_only.unwrap_or(false) {
+                    self.apply_play_camera_view_patch(
+                        position_axis,
+                        yaw,
+                        pitch,
+                        fov_y,
+                        frustum_distance,
+                    );
+                } else {
+                    let Some(pos) = position else {
+                        log::warn!("set_play_character_view: falta position (carga/restauración)");
+                        return;
+                    };
+                    self.apply_play_character_view(
+                        pos,
+                        yaw.unwrap_or(self.camera.yaw),
+                        pitch.unwrap_or(self.camera.pitch),
+                        fov_y,
+                        frustum_distance,
+                    );
+                }
             }
             EngineCommand::SetTransform {
                 id,
                 position,
+                position_axis,
                 rotation,
                 scale,
+                scale_axis,
                 track_undo,
+                body_rotation_only,
+                rotation_euler_delta,
+                rotation_euler_degrees,
             } => {
                 use glam::{Quat, Vec3};
                 let before = self.world.get::<Transform>(id).cloned();
                 let is_play_character = self.play_character_entity == Some(id);
-                let update_camera_target = self.editor_camera_follows_player();
+                let is_editor_camera = self.editor_camera_entity == Some(id);
+                let in_play_mode =
+                    self.preview_playing || self.is_play_controller_active();
 
-                if is_play_character {
-                    if let Some(before_t) = before.as_ref() {
-                    let new_rot = rotation
-                        .map(|r| Quat::from_xyzw(r[0], r[1], r[2], r[3]))
-                        .unwrap_or(before_t.rotation);
-                    let new_scale = scale
-                        .map(Vec3::from)
-                        .unwrap_or(before_t.scale);
+                let current_rot = before
+                    .as_ref()
+                    .map(|t| t.rotation)
+                    .unwrap_or(Quat::IDENTITY);
+                let current_pos = before
+                    .as_ref()
+                    .map(|t| t.position)
+                    .unwrap_or(Vec3::ZERO);
+                let current_scale = before
+                    .as_ref()
+                    .map(|t| t.scale)
+                    .unwrap_or(Vec3::ONE);
 
+                let rot_quat = crate::config_3d::resolve_set_transform_rotation(
+                    current_rot,
+                    rotation,
+                    rotation_euler_delta,
+                    rotation_euler_degrees,
+                );
+                let position_vec = crate::config_3d::resolve_axis_update(
+                    current_pos,
+                    position,
+                    position_axis,
+                );
+                let scale_vec = crate::config_3d::resolve_axis_update(
+                    current_scale,
+                    scale,
+                    scale_axis,
+                );
+                let position_arr = position_vec.map(|v| v.to_array());
+                let rotation_changed = rot_quat.is_some();
+
+                if is_editor_camera && !in_play_mode {
+                    self.apply_editor_camera_transform(id, position_arr);
+                } else if is_play_character {
+                    if body_rotation_only.unwrap_or(false) && !in_play_mode {
+                        log::trace!(
+                            "set_transform: jugador FP en editor (sin mover viewport orbital)"
+                        );
+                    }
+                    let rot_apply = if in_play_mode && rot_quat.is_some() {
+                        log::debug!(
+                            "set_transform: rotación del jugador ignorada en preview/play"
+                        );
+                        None
+                    } else {
+                        rot_quat
+                    };
+                    // Rotación en editor: solo cuerpo; posición del front desincronizada rompe el anclaje de pies.
+                    let position_apply = if rot_apply.is_some() && !in_play_mode {
+                        None
+                    } else {
+                        position_arr
+                    };
+                    self.apply_play_character_transform_editor(
+                        id,
+                        position_apply,
+                        rot_apply,
+                        scale_vec,
+                    );
+                    // No sync_player_rotation_from_look: panel Transform = solo cuerpo en editor.
+                } else if !is_editor_camera {
                     if let Some(transform) = self.world.get_mut::<Transform>(id) {
-                        if rotation.is_some() {
-                            // Mantener pies del jugador en el suelo: el offset pivote→pies rota con
-                            // el mesh; sin recalcular centro el cuerpo se “rompe” al editar Euler.
-                            let feet = crate::config_3d::character_anchor::feet_from_transform(
-                                before_t.position,
-                                before_t.scale.y,
-                                before_t.rotation,
-                            );
-                            let mut center =
-                                crate::config_3d::character_anchor::center_from_feet(
-                                    feet,
-                                    new_scale.y,
-                                    new_rot,
-                                );
-                            if let Some(p) = position {
-                                center += Vec3::from_array(p) - before_t.position;
-                            }
-                            transform.position = center;
-                            transform.rotation = new_rot;
-                            transform.scale = new_scale;
-                            if update_camera_target {
-                                self.camera.target = feet;
-                            }
-                        } else {
-                            if let Some(p) = position {
-                                transform.position = Vec3::from_array(p);
-                            }
-                            transform.rotation = new_rot;
-                            transform.scale = new_scale;
-                            if update_camera_target {
-                                self.camera.target =
-                                    crate::config_3d::character_anchor::feet_from_transform(
-                                        transform.position,
-                                        transform.scale.y,
-                                        transform.rotation,
-                                    );
-                            }
+                        if let Some(r) = rot_quat {
+                            transform.rotation = r;
                         }
-                    }
-                    }
-                } else if let Some(transform) = self.world.get_mut::<Transform>(id) {
-                    if let Some(r) = rotation {
-                        transform.rotation = Quat::from_xyzw(r[0], r[1], r[2], r[3]);
-                    }
-                    if let Some(p) = position {
-                        transform.position = Vec3::from_array(p);
-                    }
-                    if let Some(s) = scale {
-                        transform.scale = Vec3::from(s);
+                        if let Some(p) = position_vec {
+                            transform.position = p;
+                        }
+                        if let Some(s) = scale_vec {
+                            transform.scale = s;
+                        }
                     }
                 }
 
@@ -361,30 +423,30 @@ impl State {
                 }
 
                 if let Some(saved) = self.anim_saved_transforms.get_mut(&id) {
-                    if let Some(p) = position {
+                    if let Some(p) = position_vec {
                         saved.0 = if is_play_character {
                             self.world
                                 .get::<Transform>(id)
                                 .map(|t| t.position)
-                                .unwrap_or_else(|| Vec3::from_array(p))
+                                .unwrap_or(p)
                         } else {
-                            Vec3::from_array(p)
+                            p
                         };
                     }
-                    if let Some(s) = scale {
+                    if let Some(s) = scale_vec {
                         if !is_play_character {
-                            saved.1 = Vec3::from_array(s);
+                            saved.1 = s;
                         }
                     }
                 }
                 if self.camera_2d.is_some() {
-                    if let Some(p) = position {
+                    if let Some(p) = position_arr {
                         self.physics_2d.teleport_entity(id, p[0], p[1]);
                     }
-                } else if !is_play_character {
+                } else if !is_play_character && !is_editor_camera {
                     if let Some(t) = self.world.get::<Transform>(id).cloned() {
                         if self.physics.has_physics(id)
-                            && (position.is_some() || rotation.is_some() || scale.is_some())
+                            && (position_vec.is_some() || rotation_changed || scale_vec.is_some())
                         {
                             let half = [
                                 (t.scale.x * 0.5).max(0.01),
@@ -418,7 +480,7 @@ impl State {
                     }
                 }
                 if is_play_character {
-                    self.emit_play_character_view_changed();
+                    self.emit_play_character_view_changed(false);
                 }
             }
             EngineCommand::SetEntityName { id, name, force } => {
@@ -777,7 +839,7 @@ impl State {
                     }
                     self.stop_audio_internal();
                     self.sync_fps_camera_mode();
-                    self.emit_play_character_view_changed();
+                    self.emit_play_character_view_changed(false);
                 }
 
                 self.execution_overlaps.clear();
@@ -798,13 +860,13 @@ impl State {
             EngineCommand::SetCameraFov { fov_y } => {
                 self.camera.fov_y = fov_y.clamp(0.1, std::f32::consts::FRAC_PI_2 - 0.01);
                 if self.camera_2d.is_none() && self.has_play_character() {
-                    self.emit_play_character_view_changed();
+                    self.emit_play_character_view_changed(false);
                 }
             }
             EngineCommand::SetFpsEditorFrustumDistance { distance } => {
                 self.fps_editor_frustum_distance = distance.clamp(0.5, 50.0);
                 if self.camera_2d.is_none() && self.has_play_character() {
-                    self.emit_play_character_view_changed();
+                    self.emit_play_character_view_changed(false);
                 }
             }
             EngineCommand::LoadBackground { path } => {

@@ -252,7 +252,8 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 				: { ...prevState, entities: [...prevState.entities, { id: nextAction.payload }] },
 		REMOVE_ENTITY: (prevState, nextAction) => {
 			const id = nextAction.payload;
-			const without = (list: { id: number }[]) => list.filter((entry) => entry.id !== id);
+			const without = <T extends { id: number }>(list: T[]): T[] =>
+				list.filter((entry) => entry.id !== id);
 			const multiSelectedIds = prevState.multiSelectedIds.filter((selectedId) => selectedId !== id);
 			const selectedEntity =
 				prevState.selectedEntity?.id === id ? null : prevState.selectedEntity;
@@ -333,11 +334,12 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 			return { ...prevState, animationPlaying: nextMap };
 		},
 		UPDATE_ENTITY_ANIMATIONS: (prevState, nextAction) => {
-			if (prevState.selectedEntity?.id !== nextAction.payload.entityId) return prevState;
+			const selected = prevState.selectedEntity;
+			if (!selected || selected.id !== nextAction.payload.entityId) return prevState;
 			return {
 				...prevState,
 				selectedEntity: {
-					...prevState.selectedEntity,
+					...selected,
 					animations: nextAction.payload.animations,
 					...(nextAction.payload.visualModelPath !== undefined
 						? { visualModelPath: nextAction.payload.visualModelPath }
@@ -346,22 +348,24 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 			};
 		},
 		UPDATE_SELECTED_PHYSICS: (prevState, nextAction) => {
-			if (prevState.selectedEntity?.id !== nextAction.payload.entityId) return prevState;
+			const selected = prevState.selectedEntity;
+			if (!selected || selected.id !== nextAction.payload.entityId) return prevState;
 			return {
 				...prevState,
 				selectedEntity: {
-					...prevState.selectedEntity,
+					...selected,
 					physicsEnabled: nextAction.payload.enabled,
 					physicsType: nextAction.payload.bodyType,
 				},
 			};
 		},
 		UPDATE_SELECTED_TRANSFORM: (prevState, nextAction) => {
-			if (prevState.selectedEntity?.id !== nextAction.payload.entityId) return prevState;
+			const selected = prevState.selectedEntity;
+			if (!selected || selected.id !== nextAction.payload.entityId) return prevState;
 			return {
 				...prevState,
 				selectedEntity: {
-					...prevState.selectedEntity,
+					...selected,
 					position: nextAction.payload.position,
 					rotation: nextAction.payload.rotation,
 					scale: nextAction.payload.scale,
@@ -505,6 +509,7 @@ export interface EngineInternalRefs {
 	entityMetaRef: MutableRefObject<Record<number, EntityMeta>>
 	pendingRestoresRef: MutableRefObject<Map<string, PendingRestore[]>>
 	playerEntityIdRef: MutableRefObject<number | null>
+	editorCameraEntityIdRef: MutableRefObject<number | null>
 	playCharacterViewRef: MutableRefObject<import('@shared-types').SavedPlayerTransform | null>
 	pendingPlayCharacterViewRef: MutableRefObject<import('@shared-types').SavedPlayerTransform | null>
 	pendingModelPathRef: MutableRefObject<string | null>
@@ -549,6 +554,7 @@ export interface EngineContextValue extends EngineState {
 	entityMetaRef: MutableRefObject<Record<number, EntityMeta>>
 	pendingRestoresRef: MutableRefObject<Map<string, PendingRestore[]>>
 	playerEntityIdRef: MutableRefObject<number | null>
+	editorCameraEntityIdRef: MutableRefObject<number | null>
 	playCharacterViewRef: MutableRefObject<SavedPlayerTransform | null>
 	pendingPlayCharacterViewRef: MutableRefObject<SavedPlayerTransform | null>
 	pendingModelPathRef: MutableRefObject<string | null>
@@ -611,3 +617,5 @@ export interface EngineContextValue extends EngineState {
 	unregisterQuickBuildClickListener: () => void
 	setDebugMode: (show: boolean) => void
 }
+
+export { BluePrintEntry };

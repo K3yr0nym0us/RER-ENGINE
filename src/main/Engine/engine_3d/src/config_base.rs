@@ -76,6 +76,8 @@ impl State {
         self.control_bindings_by_entity.clear();
         self.clear_play_controller_script_frame();
         self.play_character_entity = None;
+        self.editor_camera_entity = None;
+        self.play_camera_eye_position = glam::Vec3::ZERO;
         self.sun_entity = None;
         self.sun_icon_mesh_idx = None;
         self.sun_icon_tex_idx = None;
@@ -254,6 +256,9 @@ impl State {
         self.camera.yaw = -std::f32::consts::FRAC_PI_2;
         self.camera.distance =
             crate::config_3d::character_anchor::PLAY_CHARACTER_EDITOR_ORBIT_DISTANCE;
+        self.editor_viewport_yaw = self.camera.yaw;
+        self.editor_viewport_pitch = self.camera.pitch;
+        self.editor_viewport_distance = self.camera.distance;
         self.clamp_play_character_camera_to_bounds();
         self.clear_color = wgpu::Color {
             r: 0.06,

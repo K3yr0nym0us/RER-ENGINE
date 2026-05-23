@@ -12,6 +12,23 @@ fn default_clip_loop() -> bool {
     true
 }
 
+/// Delta de rotación en grados sobre un eje Euler YXZ (convención `glam::EulerRot::YXZ`).
+#[derive(Debug, Deserialize, Clone)]
+pub struct RotationEulerDelta {
+    /// 0 = pitch (X), 1 = yaw (Y), 2 = roll (Z).
+    pub axis: u8,
+    pub degrees: f32,
+}
+
+/// Cambio de un solo eje (posición o escala) sin pisar los demás. El motor lee el valor actual
+/// y solo reemplaza el eje indicado — evita que el front envíe datos viejos.
+#[derive(Debug, Deserialize, Clone)]
+pub struct AxisValue {
+    /// 0 = X, 1 = Y, 2 = Z.
+    pub axis: u8,
+    pub value: f32,
+}
+
 // ---------------------------------------------------------------------------
 // Comandos que Electron envía al motor (stdin → motor)
 //
@@ -78,27 +95,59 @@ pub enum EngineCommand {
         yaw: f32,
         pitch: f32,
     },
-    /// Vista del personaje jugable: pies, orientación de cámara, FOV y frustum de editor.
+    /// Vista del personaje jugable: pies del Player, orientación de cámara, FOV y frustum de editor.
+    ///
+    /// Con `camera_only: true` solo `position_axis`, `yaw`, `fov_y` y `frustum_distance`
+    /// afectan al ojo/cono FPS (sin mover al Player). El front envía únicamente el campo modificado.
+    /// Sin `camera_only` (carga/restauración): `position` = pies del Player; `yaw`/`pitch` recomendados.
     #[serde(rename = "set_play_character_view", alias = "set_first_person_view")]
     SetPlayCharacterView {
-        position: [f32; 3],
-        yaw: f32,
-        pitch: f32,
+        #[serde(default)]
+        position: Option<[f32; 3]>,
+        #[serde(default)]
+        position_axis: Option<AxisValue>,
+        #[serde(default)]
+        yaw: Option<f32>,
+        #[serde(default)]
+        pitch: Option<f32>,
         #[serde(default)]
         fov_y: Option<f32>,
         #[serde(default)]
         frustum_distance: Option<f32>,
+        #[serde(default)]
+        camera_only: Option<bool>,
     },
     /// Actualizar transform de una entidad por id.
+    ///
+    /// **Motor-first**: el front envía únicamente el campo que cambió. Para mover un solo eje
+    /// usar `position_axis` / `scale_axis` (el motor lee el valor actual y reemplaza solo ese
+    /// eje). Los campos vectoriales (`position`, `scale`, `rotation`) son la ruta legacy y
+    /// pisan los demás ejes con datos del front (no recomendado para edición interactiva).
     SetTransform {
         id:       u32,
+        #[serde(default)]
         position: Option<[f32; 3]>,
+        #[serde(default)]
+        position_axis: Option<AxisValue>,
+        #[serde(default)]
         rotation: Option<[f32; 4]>,  // quaternion xyzw
+        #[serde(default)]
         scale:    Option<[f32; 3]>,
+        #[serde(default)]
+        scale_axis: Option<AxisValue>,
         /// Controla si el cambio se registra en historial Undo/Redo.
         /// None/true: registrar (acciones de usuario). false: no registrar (restore/carga).
         #[serde(default)]
         track_undo: Option<bool>,
+        /// Jugador FP en editor: solo transform del mesh (no mover viewport orbital).
+        #[serde(default)]
+        body_rotation_only: Option<bool>,
+        /// Incremento de un eje Euler YXZ en grados (el motor compone el quaternion).
+        #[serde(default)]
+        rotation_euler_delta: Option<RotationEulerDelta>,
+        /// Pitch, yaw, roll absolutos en grados (YXZ, misma convención que glam).
+        #[serde(default)]
+        rotation_euler_degrees: Option<[f32; 3]>,
     },
     /// Cambiar el nombre de una entidad por id.
     /// `force`: si es true, omite la validación de nombre duplicado (usado en restore de proyecto).
@@ -610,7 +659,19 @@ pub enum EngineEvent {
     PlayCharacterViewChanged {
         #[serde(skip_serializing_if = "Option::is_none")]
         player_id: Option<u32>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        editor_camera_id: Option<u32>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        editor_orbit_target: Option<[f32; 3]>,
+        /// Pies del Player (mundo). Legacy: el panel Cámara usaba esto como su POSITION
+        /// (la cámara estaba acoplada al Player). Para la posición independiente del ojo
+        /// de la cámara FPS, leer `camera_eye_position`.
         position: [f32; 3],
+        /// Posición absoluta del ojo de la cámara FPS (independiente del Player).
+        camera_eye_position: [f32; 3],
+        /// Yaw/pitch del cono FPS en editor (`self.camera`), distinto del viewport orbital.
+        fps_camera_yaw: f32,
+        fps_camera_pitch: f32,
         yaw: f32,
         pitch: f32,
         fov_y: f32,
@@ -618,6 +679,9 @@ pub enum EngineEvent {
         body_center: [f32; 3],
         body_rotation: [f32; 4],
         body_scale: [f32; 3],
+        /// true solo tras `set_play_character_view` / panel Cámara; false tras `set_transform` del jugador.
+        #[serde(default)]
+        sync_editor_viewport: bool,
     },
     /// Emitido ~1 vez por segundo con métricas de rendimiento del motor.
     DebugMetrics {

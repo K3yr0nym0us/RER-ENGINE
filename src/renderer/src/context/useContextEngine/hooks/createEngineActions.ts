@@ -1,5 +1,5 @@
 import type { Dispatch } from 'react';
-import type { BluePrintEntry, EngineAction, EngineInternalRefs, EntityMeta, EntityScripts, PendingRestore, Transform } from '../types';
+import type { BluePrintEntry, EngineAction, EngineInternalRefs, EntityMeta, EntityScripts, Transform } from '../types';
 import { buildPlayAnimationFrameCmd } from './applyPendingRestoreToEngine';
 import { beginModelReplaceLoading } from './sceneImportOverlay';
 
@@ -258,13 +258,42 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 		}
 	};
 
-	const applyTransformToEngine = (entityId: number, transform: Transform) => {
+	const applyTransformToEngine = (
+		entityId: number,
+		patch: Partial<Transform> & {
+			positionAxis?: { axis: number; value: number };
+			scaleAxis?: { axis: number; value: number };
+			rotationEulerDelta?: { axis: number; degrees: number };
+			rotationEulerDegrees?: [number, number, number];
+		},
+		opts?: { bodyRotationOnly?: boolean },
+	) => {
+		const {
+			positionAxis,
+			scaleAxis,
+			rotationEulerDelta,
+			rotationEulerDegrees,
+			...transformPatch
+		} = patch;
 		window.engine.send({
 			cmd: 'set_transform',
 			id: entityId,
-			position: transform.position,
-			rotation: transform.rotation,
-			scale: transform.scale,
+			...(positionAxis !== undefined ? { position_axis: positionAxis } : {}),
+			...(positionAxis === undefined && transformPatch.position !== undefined
+				? { position: transformPatch.position }
+				: {}),
+			...(transformPatch.rotation !== undefined ? { rotation: transformPatch.rotation } : {}),
+			...(scaleAxis !== undefined ? { scale_axis: scaleAxis } : {}),
+			...(scaleAxis === undefined && transformPatch.scale !== undefined
+				? { scale: transformPatch.scale }
+				: {}),
+			...(opts?.bodyRotationOnly ? { body_rotation_only: true } : {}),
+			...(rotationEulerDelta !== undefined
+				? { rotation_euler_delta: rotationEulerDelta }
+				: {}),
+			...(rotationEulerDegrees !== undefined
+				? { rotation_euler_degrees: rotationEulerDegrees }
+				: {}),
 		} as never);
 	};
 
@@ -292,10 +321,34 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 		id: number,
 		patch: Partial<{
 			position: [number, number, number];
+			positionAxis: { axis: number; value: number };
 			rotation: [number, number, number, number];
 			scale: [number, number, number];
+			scaleAxis: { axis: number; value: number };
+			bodyRotationOnly?: boolean;
+			rotationEulerDelta?: { axis: number; degrees: number };
+			rotationEulerDegrees?: [number, number, number];
 		}>,
 	) => {
+		const bodyRotationOnly = patch.bodyRotationOnly;
+		const isPlayer = refs.playerEntityIdRef.current === id;
+		const isEditorCamera = refs.editorCameraEntityIdRef.current === id;
+		const skipOptimisticTransform = isPlayer || isEditorCamera;
+		const {
+			bodyRotationOnly: _strip,
+			positionAxis,
+			scaleAxis,
+			rotationEulerDelta,
+			rotationEulerDegrees,
+			...transformPatch
+		} = patch;
+		const motorRotationPatch = {
+			...(rotationEulerDelta !== undefined ? { rotationEulerDelta } : {}),
+			...(rotationEulerDegrees !== undefined ? { rotationEulerDegrees } : {}),
+			...(transformPatch.rotation !== undefined && !skipOptimisticTransform
+				? { rotation: transformPatch.rotation }
+				: {}),
+		};
 		const bpId = refs.entityMetaRef.current[id]?.blueprintId;
 		const current = refs.entityTransformsRef.current[id]
 			?? {
@@ -304,18 +357,51 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 				scale: [1, 1, 1] as [number, number, number],
 			};
 
-		const nextForEntity: Transform = {
-			position: patch.position ?? current.position,
-			rotation: patch.rotation ?? current.rotation,
-			scale: patch.scale ?? current.scale,
+		const resolveAxis = (
+			vec: [number, number, number],
+			axisUpdate?: { axis: number; value: number },
+			fullVec?: [number, number, number],
+		): [number, number, number] => {
+			if (axisUpdate) {
+				const next: [number, number, number] = [...vec] as [number, number, number];
+				const i = axisUpdate.axis;
+				if (i === 0 || i === 1 || i === 2) next[i] = axisUpdate.value;
+				return next;
+			}
+			return fullVec ?? vec;
 		};
 
-		const affectsBlueprintTemplate = patch.scale !== undefined || patch.rotation !== undefined;
+		const nextForEntity: Transform = {
+			position: resolveAxis(current.position, positionAxis, transformPatch.position),
+			rotation: transformPatch.rotation ?? current.rotation,
+			scale: resolveAxis(current.scale, scaleAxis, transformPatch.scale),
+		};
+
+		const engineOpts = bodyRotationOnly ? { bodyRotationOnly: true } : undefined;
+		const affectsBlueprintTemplate =
+			transformPatch.scale !== undefined
+			|| scaleAxis !== undefined
+			|| transformPatch.rotation !== undefined
+			|| rotationEulerDelta !== undefined
+			|| rotationEulerDegrees !== undefined;
+
+		const motorAxisPatch = {
+			...(positionAxis !== undefined ? { positionAxis } : {}),
+			...(scaleAxis !== undefined ? { scaleAxis } : {}),
+		};
 
 		if (!bpId || !affectsBlueprintTemplate) {
-			refs.entityTransformsRef.current[id] = nextForEntity;
-			applyTransformToEngine(id, nextForEntity);
-			refreshSelectedTransform(id);
+			if (!skipOptimisticTransform) {
+				refs.entityTransformsRef.current[id] = nextForEntity;
+			}
+			applyTransformToEngine(
+				id,
+				{ ...transformPatch, ...motorAxisPatch, ...motorRotationPatch },
+				engineOpts,
+			);
+			if (!skipOptimisticTransform) {
+				refreshSelectedTransform(id);
+			}
 			return;
 		}
 
@@ -323,8 +409,8 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 			if (bp.id !== bpId) return bp;
 			return {
 				...bp,
-				...(patch.scale ? { scale: patch.scale } : {}),
-				...(patch.rotation ? { rotation: patch.rotation } : {}),
+				...(nextForEntity.scale ? { scale: nextForEntity.scale } : {}),
+				...(transformPatch.rotation ? { rotation: transformPatch.rotation } : {}),
 			};
 		});
 		refs.blueprintsRef.current = updatedBlueprints;
@@ -340,17 +426,33 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 			const prev = refs.entityTransformsRef.current[entityId] ?? current;
 			const merged: Transform = {
 				position:
-					entityId === id && patch.position !== undefined
-						? patch.position
+					entityId === id
+						? resolveAxis(prev.position, positionAxis, transformPatch.position)
 						: prev.position,
 				rotation: templateRotation,
 				scale: templateScale,
 			};
 			refs.entityTransformsRef.current[entityId] = merged;
-			applyTransformToEngine(entityId, merged);
+			const entityPatch =
+				entityId === id
+					? { ...transformPatch, ...motorAxisPatch }
+					: {
+						...(transformPatch.scale !== undefined ? { scale: transformPatch.scale } : {}),
+						...(transformPatch.rotation !== undefined ? { rotation: transformPatch.rotation } : {}),
+					};
+			applyTransformToEngine(
+				entityId,
+				{
+					...entityPatch,
+					...(entityId === id ? motorRotationPatch : {}),
+				},
+				entityId === id ? engineOpts : undefined,
+			);
 		}
 
-		refreshSelectedTransform(id);
+		if (!skipOptimisticTransform) {
+			refreshSelectedTransform(id);
+		}
 	};
 
 	const setEntityPhysics = (id: number, enabled: boolean, bodyType: string) => {

@@ -47,8 +47,8 @@ impl Camera {
         self.target + self.orbit_pivot_offset
     }
 
-    fn is_fps_camera_view(&self) -> bool {
-        self.distance < 0.5
+    pub(crate) fn orbit_pivot_at(&self, anchor: Vec3) -> Vec3 {
+        anchor + self.orbit_pivot_offset
     }
 
     pub(crate) fn view_forward(&self) -> Vec3 {
@@ -58,11 +58,25 @@ impl Camera {
     }
 
     pub(crate) fn position(&self) -> Vec3 {
-        let (sy, cy) = self.yaw.sin_cos();
-        let (sp, cp) = self.pitch.sin_cos();
-        let pivot = self.orbit_pivot();
+        self.position_at(self.orbit_pivot())
+    }
+
+    pub(crate) fn position_at(&self, anchor: Vec3) -> Vec3 {
+        self.position_at_angles(anchor, self.yaw, self.pitch, self.distance)
+    }
+
+    pub(crate) fn position_at_angles(
+        &self,
+        anchor: Vec3,
+        yaw: f32,
+        pitch: f32,
+        distance: f32,
+    ) -> Vec3 {
+        let (sy, cy) = yaw.sin_cos();
+        let (sp, cp) = pitch.sin_cos();
+        let pivot = self.orbit_pivot_at(anchor);
         pivot
-            + Vec3::new(cy * cp, sp, sy * cp) * self.distance
+            + Vec3::new(cy * cp, sp, sy * cp) * distance
             + Vec3::Y * self.eye_height_offset
             + self.eye_offset_local
     }
@@ -80,24 +94,43 @@ impl Camera {
         self.distance = (self.distance - delta * 0.3).clamp(0.5, 500.0);
     }
 
-    pub(crate) fn pan(&mut self, dx: f32, dy: f32) {
+    pub(crate) fn pan_offset_with_distance(
+        &self,
+        anchor: Vec3,
+        dx: f32,
+        dy: f32,
+        distance: f32,
+        yaw: f32,
+        pitch: f32,
+    ) -> Vec3 {
         const SENSITIVITY: f32 = 0.002;
-        let pos = self.position();
-        let fwd = (self.orbit_pivot() - pos).normalize();
+        let pos = self.position_at_angles(anchor, yaw, pitch, distance);
+        let pivot = self.orbit_pivot_at(anchor);
+        let fwd = (pivot - pos).normalize();
         let right = fwd.cross(Vec3::Y).normalize();
         let up = right.cross(fwd).normalize();
-        let offset =
-            right * (-dx * SENSITIVITY * self.distance) + up * (dy * SENSITIVITY * self.distance);
-        self.target += offset;
+        right * (-dx * SENSITIVITY * distance) + up * (dy * SENSITIVITY * distance)
     }
 
-    pub(crate) fn view_matrix(&self) -> Mat4 {
-        let pos = self.position();
-        if self.is_fps_camera_view() {
-            let forward = self.view_forward();
+    pub(crate) fn view_matrix_at(&self, anchor: Vec3) -> Mat4 {
+        self.view_matrix_at_angles(anchor, self.yaw, self.pitch, self.distance)
+    }
+
+    pub(crate) fn view_matrix_at_angles(
+        &self,
+        anchor: Vec3,
+        yaw: f32,
+        pitch: f32,
+        distance: f32,
+    ) -> Mat4 {
+        let pos = self.position_at_angles(anchor, yaw, pitch, distance);
+        if distance < 0.5 {
+            let (sy, cy) = yaw.sin_cos();
+            let (sp, cp) = pitch.sin_cos();
+            let forward = Vec3::new(-cy * cp, -sp, -sy * cp).normalize_or_zero();
             return Mat4::look_at_rh(pos, pos + forward, Vec3::Y);
         }
-        Mat4::look_at_rh(pos, self.orbit_pivot(), Vec3::Y)
+        Mat4::look_at_rh(pos, self.orbit_pivot_at(anchor), Vec3::Y)
     }
 
     pub(crate) fn proj_matrix(&self, aspect: f32) -> Mat4 {
@@ -105,8 +138,12 @@ impl Camera {
     }
 
     pub(crate) fn to_uniform(&self, aspect: f32) -> CameraUniform {
+        self.to_uniform_at(self.orbit_pivot(), aspect)
+    }
+
+    pub(crate) fn to_uniform_at(&self, anchor: Vec3, aspect: f32) -> CameraUniform {
         CameraUniform {
-            view_proj: (self.proj_matrix(aspect) * self.view_matrix()).to_cols_array_2d(),
+            view_proj: (self.proj_matrix(aspect) * self.view_matrix_at(anchor)).to_cols_array_2d(),
         }
     }
 

@@ -10,7 +10,7 @@ import { CreateEntityFromModelModalBody } from '../EntitiesAccordion/components/
 import { useContextEngine } from '@engine';
 import { useModal } from '@modal';
 import type { BluePrintCategory, BluePrintEntry } from '@shared-types';
-import { isEnvironmentEntity, isPlayerEntity } from '@shared-types';
+import { isEditorCameraEntity, isEnvironmentEntity, isPlayerEntity } from '@shared-types';
 import { useTraslate } from '@hooks';
 
 export function PropertiesAccordion({ projectType }: { projectType?: string }) {
@@ -23,6 +23,7 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
     entityTransformsRef,
     entityMetaRef,
     playerEntityIdRef,
+    editorCameraEntityIdRef,
     models,
     replaceEntityModel,
     removeScenario,
@@ -41,12 +42,32 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
   const [entityNameDraft, setEntityNameDraft] = useState('');
   const [isEditingEntityName, setIsEditingEntityName] = useState(false);
 
-  const handleSend = (cmd: { cmd: string; id?: number; position?: [number, number, number]; rotation?: [number, number, number, number]; scale?: [number, number, number] }) => {
+  const handleSend = (cmd: {
+    cmd: string
+    id?: number
+    position?: [number, number, number]
+    position_axis?: { axis: number; value: number }
+    rotation?: [number, number, number, number]
+    scale?: [number, number, number]
+    scale_axis?: { axis: number; value: number }
+    body_rotation_only?: boolean
+    rotation_euler_delta?: { axis: number; degrees: number }
+    rotation_euler_degrees?: [number, number, number]
+  }) => {
     if (cmd.cmd === 'set_transform' && selectedEntity && cmd.id === selectedEntity.id) {
       updateEntityTransform(selectedEntity.id, {
         ...(cmd.position !== undefined ? { position: cmd.position } : {}),
+        ...(cmd.position_axis !== undefined ? { positionAxis: cmd.position_axis } : {}),
         ...(cmd.rotation !== undefined ? { rotation: cmd.rotation } : {}),
         ...(cmd.scale !== undefined ? { scale: cmd.scale } : {}),
+        ...(cmd.scale_axis !== undefined ? { scaleAxis: cmd.scale_axis } : {}),
+        ...(cmd.body_rotation_only ? { bodyRotationOnly: true } : {}),
+        ...(cmd.rotation_euler_delta !== undefined
+          ? { rotationEulerDelta: cmd.rotation_euler_delta }
+          : {}),
+        ...(cmd.rotation_euler_degrees !== undefined
+          ? { rotationEulerDegrees: cmd.rotation_euler_degrees }
+          : {}),
       });
       return;
     }
@@ -84,6 +105,7 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
                 onClick={() => {
                   multiSelectedIds.forEach(id => {
                     if (isPlayerEntity(id, entityMetaRef.current[id], playerEntityIdRef.current)) return;
+                    if (isEditorCameraEntity(id, entityMetaRef.current[id], editorCameraEntityIdRef.current)) return;
                     const kind = entityMetaRef.current[id]?.kind;
                     if (kind === 'scenario') removeScenario(id);
                     else if (kind === 'character') removeCharacter(id);
@@ -128,6 +150,11 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
   const entityMeta = entityMetaRef.current[selectedEntity.id]
   const isEnvironment = isEnvironmentEntity(isScenario, entityMeta)
   const isPlayer = isPlayerEntity(selectedEntity.id, entityMeta, playerEntityIdRef.current)
+  const isEditorCamera = isEditorCameraEntity(
+    selectedEntity.id,
+    entityMeta,
+    editorCameraEntityIdRef.current,
+  )
   const isCharacter = characterEntities.some((c: any) => c.id === selectedEntity?.id)
   const is3D = projectType === '3D'
   const hasEmbeddedModelClips =
@@ -318,7 +345,13 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
           <Accordion.Item eventKey="transform">
             <Accordion.Header><ArrowsMove className="me-2" />{t('Transformations')}</Accordion.Header>
             <Accordion.Body className="py-2 px-2">
-              <TransformPanel entity={selectedEntity} is2D={is2D} onSend={handleSend} />
+              <TransformPanel
+                entity={selectedEntity}
+                is2D={is2D}
+                isPlayCharacter={isPlayer && is3D}
+                isEditorCamera={isEditorCamera && is3D}
+                onSend={handleSend}
+              />
             </Accordion.Body>
           </Accordion.Item>
 

@@ -70,8 +70,10 @@ pub struct SkinnedMeshPart {
 
 #[derive(Clone, Debug)]
 pub struct ModelAsset {
+    #[allow(dead_code)]
     pub path: String,
     pub joint_parents: Vec<Option<usize>>,
+    #[allow(dead_code)]
     pub inverse_bind: Vec<[[f32; 4]; 4]>,
     /// Pose local de bind por joint (base antes de mezclar clips).
     pub bind_local: Vec<Mat4>,
@@ -1002,16 +1004,6 @@ fn apply_normalize_to_skinned_vertices(vertices: &mut [SkinnedVertex], norm: Mat
         let p = norm.transform_point3(Vec3::from_array(v.position));
         v.position = p.to_array();
     }
-}
-
-/// Piezas que representan el cuerpo (Mixamo/Sketchfab traen armas/botas con AABB distinto).
-fn part_counts_for_play_upright_bounds(name: &str) -> bool {
-    let n = name.to_ascii_lowercase();
-    const BODY: &[&str] = &[
-        "body", "human", "tops", "bottoms", "torso", "shirt", "pants", "shoe", "glove",
-        "hat", "beard", "eye", "lash", "moustache", "cape",
-    ];
-    BODY.iter().any(|s| n.contains(s))
 }
 
 /// Pieza cuyo AABB local se endereza mejor (torso Mixamo suele estar en X, no en la más grande).
@@ -2026,16 +2018,4 @@ pub fn resolve_fbx_play_character_forward_xz(asset: &ModelAsset) -> glam::Vec2 {
     }
     let est = estimate_skinned_forward_from_vertices(asset);
     crate::config_3d::fbx_facing::resolve_fbx_forward_xz(meta, est)
-}
-
-pub fn clip_infos(asset: &ModelAsset) -> Vec<ModelClipInfo> {
-    asset
-        .clips
-        .iter()
-        .map(|c| ModelClipInfo {
-            name: c.name.clone(),
-            duration_s: c.duration_s,
-            fps: c.fps,
-        })
-        .collect()
 }

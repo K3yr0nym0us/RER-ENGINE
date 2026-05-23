@@ -63,84 +63,6 @@ pub(crate) fn estimate_forward_xz_from_positions(positions: &[[f32; 3]]) -> glam
     }
 }
 
-fn joint_counts_for_upright_bone(name: &str) -> bool {
-    let n = name.to_ascii_lowercase();
-    if n.is_empty() {
-        return true;
-    }
-    const SKIP: &[&str] = &[
-        "hair", "gun", "weapon", "boost", "cape", "wing", "shield", "backpack", "acc",
-        "accessory", "prop",
-    ];
-    !SKIP.iter().any(|s| n.contains(s))
-}
-
-fn find_hips_joint_index(joint_names: &[String]) -> Option<usize> {
-    joint_names
-        .iter()
-        .position(|n| n.to_ascii_lowercase().contains("hips"))
-}
-
-fn spine_name_rank(name: &str) -> Option<u32> {
-    let n = name.to_ascii_lowercase();
-    if !n.contains("spine") {
-        return None;
-    }
-    let digits: String = n.chars().rev().take_while(|c| c.is_ascii_digit()).collect();
-    let digits: String = digits.chars().rev().collect();
-    if digits.is_empty() {
-        Some(0)
-    } else {
-        digits.parse().ok()
-    }
-}
-
-fn find_top_joint_index(joint_names: &[String], bind_worlds: &[glam::Mat4]) -> Option<usize> {
-    let mut best_spine: Option<(u32, usize)> = None;
-    let mut best_head: Option<usize> = None;
-    let mut best_neck: Option<usize> = None;
-    for (i, name) in joint_names.iter().enumerate() {
-        if !joint_counts_for_upright_bone(name) {
-            continue;
-        }
-        let n = name.to_ascii_lowercase();
-        if n.contains("head") {
-            best_head = Some(i);
-        } else if n.contains("neck") {
-            best_neck = Some(i);
-        } else if let Some(rank) = spine_name_rank(name) {
-            if best_spine.map(|(r, _)| rank > r).unwrap_or(true) {
-                best_spine = Some((rank, i));
-            }
-        }
-    }
-    if let Some(i) = best_head {
-        return Some(i);
-    }
-    if let Some(i) = best_neck {
-        return Some(i);
-    }
-    if let Some((_, i)) = best_spine {
-        return Some(i);
-    }
-    let mut best_y = f32::MIN;
-    let mut best_ix = None;
-    for (i, name) in joint_names.iter().enumerate() {
-        if !joint_counts_for_upright_bone(name) {
-            continue;
-        }
-        let Some(m) = bind_worlds.get(i) else {
-            continue;
-        };
-        let y = m.transform_point3(glam::Vec3::ZERO).y;
-        if y > best_y {
-            best_y = y;
-            best_ix = Some(i);
-        }
-    }
-    best_ix
-}
-
 fn upright_candidates() -> [glam::Quat; 6] {
     use std::f32::consts::FRAC_PI_2;
     use glam::Quat;
@@ -177,53 +99,6 @@ pub(crate) fn upright_quat_from_vertex_aabb(min: [f32; 3], max: [f32; 3]) -> gla
     best
 }
 
-/// Alinea el eje Y local del nodo glTF (tras `world`) con +Y del motor.
-pub(crate) fn upright_quat_from_node_world(world: glam::Mat4) -> glam::Quat {
-    use glam::{Quat, Vec3};
-    let (_scale, rot, _trans) = world.to_scale_rotation_translation();
-    let mesh_up = rot * Vec3::Y;
-    if mesh_up.length_squared() < 1e-8 {
-        return Quat::IDENTITY;
-    }
-    let mesh_up = mesh_up.normalize();
-    if mesh_up.y >= 0.92 {
-        return Quat::IDENTITY;
-    }
-    Quat::from_rotation_arc(mesh_up, Vec3::Y)
-}
-
-/// Combina AABB, nodo de malla y huesos; gana la rotación con mayor altura en Y.
-pub(crate) fn resolve_skinned_play_upright_quat(
-    min: [f32; 3],
-    max: [f32; 3],
-    primary_mesh_bind_world: Option<glam::Mat4>,
-    bone_hint: glam::Quat,
-) -> glam::Quat {
-    let aabb_up = upright_quat_from_vertex_aabb(min, max);
-    let node_up = primary_mesh_bind_world
-        .map(upright_quat_from_node_world)
-        .unwrap_or(glam::Quat::IDENTITY);
-    let mut best = glam::Quat::IDENTITY;
-    let mut best_score = aabb_y_extent_score(min, max);
-    for cand in [
-        glam::Quat::IDENTITY,
-        aabb_up,
-        node_up,
-        bone_hint,
-        node_up * bone_hint,
-        aabb_up * bone_hint,
-    ] {
-        let mat = glam::Mat4::from_quat(cand);
-        let (tmin, tmax) = transform_aabb_corners_for_play(min, max, mat);
-        let score = aabb_y_extent_score(tmin, tmax);
-        if score > best_score + 1e-4 {
-            best_score = score;
-            best = cand;
-        }
-    }
-    best
-}
-
 /// Forward en XZ desde el eje −Z del nodo (convención glTF).
 pub(crate) fn forward_xz_from_node_world(world: glam::Mat4) -> glam::Vec2 {
     use glam::Vec3;
@@ -234,45 +109,6 @@ pub(crate) fn forward_xz_from_node_world(world: glam::Mat4) -> glam::Vec2 {
     } else {
         xz.normalize()
     }
-}
-
-/// Endereza bind pose (hips→cabeza) hacia +Y; fallback AABB si no hay hips.
-pub(crate) fn upright_quat_from_bind_bones(
-    joint_names: &[String],
-    bind_worlds: &[glam::Mat4],
-    aabb_fallback: Option<([f32; 3], [f32; 3])>,
-) -> glam::Quat {
-    use glam::{Quat, Vec3};
-
-    if let (Some(hi), Some(ti)) = (
-        find_hips_joint_index(joint_names),
-        find_top_joint_index(joint_names, bind_worlds),
-    ) {
-        if hi != ti {
-            if let (Some(hips_m), Some(top_m)) = (bind_worlds.get(hi), bind_worlds.get(ti)) {
-                let hips = hips_m.transform_point3(Vec3::ZERO);
-                let top = top_m.transform_point3(Vec3::ZERO);
-                let up = top - hips;
-                if up.length_squared() > 1e-8 {
-                    let up = up.normalize();
-                    if up.y < 0.85 {
-                        return Quat::from_rotation_arc(up, Vec3::Y);
-                    }
-                    return Quat::IDENTITY;
-                }
-            }
-        }
-    }
-
-    if let Some((min, max)) = aabb_fallback {
-        let sy = max[1] - min[1];
-        let sz = max[2] - min[2];
-        let sx = max[0] - min[0];
-        if sy < sx.max(sz) * 0.85 {
-            return Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2);
-        }
-    }
-    Quat::IDENTITY
 }
 
 pub(crate) fn transform_aabb_corners_for_play(

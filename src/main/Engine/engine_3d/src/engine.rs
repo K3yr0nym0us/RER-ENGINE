@@ -50,8 +50,17 @@ pub struct State {
     /// Quad para tooltips en pantalla (HUD); no usar `meshes[0]` (suelo).
     pub(crate) hud_quad_mesh: Mesh,
     pub camera: Camera,
+    /// Blanco de órbita del editor 3D: no sigue al transform del jugador FP.
+    pub editor_orbit_target: glam::Vec3,
+    /// Yaw/pitch/distancia del viewport orbital en editor (desacoplados de `camera` y del jugador).
+    pub editor_viewport_yaw: f32,
+    pub editor_viewport_pitch: f32,
+    pub editor_viewport_distance: f32,
     /// Profundidad del gizmo de frustum FPS en modo editor (metros).
     pub(crate) fps_editor_frustum_distance: f32,
+    /// Posición absoluta del ojo de la cámara FPS en editor. Independiente del transform
+    /// del jugador: mover al Player no la cambia. En Play se fuerza a `pies + eye_offset`.
+    pub(crate) play_camera_eye_position: glam::Vec3,
     /// Cámara 2D ortográfica activa cuando se carga una escena 2D.
     /// `None` = modo 3D (usa `camera`).
     pub camera_2d: Option<Camera2D>,
@@ -106,6 +115,8 @@ pub struct State {
     pub(crate) play_controller_lua_jump_speed: Option<f32>,
     /// Entidad `[Player]` principal de la escena 3D.
     pub(crate) play_character_entity: Option<EntityId>,
+    /// Cámara orbital del editor 3D (ECS separada del jugador FP).
+    pub(crate) editor_camera_entity: Option<EntityId>,
     /// Forward local (plano XZ) del mesh del jugador; se recalcula al reemplazar el modelo.
     pub(crate) play_character_mesh_forward_xz: glam::Vec2,
     pub(crate) tool_overlay_buffer: GizmoBuffer,

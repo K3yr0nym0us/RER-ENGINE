@@ -23,6 +23,7 @@ export const ENTITY_MARKER_PATHS = [
   '[EditorBox]',
   '[Ground]',
   '[Player]',
+  '[EditorCamera]',
   '[Sun]',
   '[Colisionador]',
   '[ExecutionArea]',
@@ -44,6 +45,18 @@ export function isEditorBoxPath(p: string | null | undefined): boolean {
 
 export function isPlayerPath(p: string | null | undefined): boolean {
   return entityPathMarker(p) === '[Player]'
+}
+
+export function isEditorCameraPath(p: string | null | undefined): boolean {
+  return entityPathMarker(p) === '[EditorCamera]'
+}
+
+export function isEditorCameraEntity(
+  id: number,
+  meta: { path?: string } | undefined,
+  editorCameraEntityId: number | null,
+): boolean {
+  return isEditorCameraPath(meta?.path) || editorCameraEntityId === id
 }
 
 export function isSunPath(p: string | null | undefined): boolean {
@@ -188,7 +201,14 @@ export interface SavedWorldConfig {
 
 /** Vista del personaje jugable en escena (cámara FPS en 3D; transform de entidad en 2D). */
 export interface SavedPlayerTransform {
+  /** Pies del Player en el mundo. */
   position: [number, number, number]
+  /** Posición absoluta del ojo de la cámara FPS, independiente del Player (3D FP). */
+  camera_eye_position?: [number, number, number]
+  /** Yaw del cono FPS en editor (rad); distinto del viewport orbital. */
+  fps_camera_yaw?: number
+  /** Pitch del cono FPS en editor (rad). */
+  fps_camera_pitch?: number
   scale:    [number, number, number]
   /** 3D: yaw de cámara en radianes. */
   yaw?:     number
@@ -203,9 +223,6 @@ export interface SavedPlayerTransform {
   /** Bindings de control Lua del jugador principal. */
   control_bindings?: SavedControlBindings
 }
-
-/** Alias de dominio: personaje jugable principal en escena 3D (mismo JSON que `SavedPlayerTransform`). */
-export type SavedPlayCharacterTransform = SavedPlayerTransform
 
 export interface SavedScene {
   id:             number
@@ -382,6 +399,9 @@ export interface PlayCharacterViewChanged {
   event:                 'play_character_view_changed' | 'first_person_view_changed'
   player_id:             number | null
   position:              [number, number, number]
+  camera_eye_position?:  [number, number, number]
+  fps_camera_yaw?:       number
+  fps_camera_pitch?:     number
   yaw:                   number
   pitch:                 number
   fov_y:                 number
@@ -389,10 +409,10 @@ export interface PlayCharacterViewChanged {
   body_center:           [number, number, number]
   body_rotation:         [number, number, number, number]
   body_scale:            [number, number, number]
+  sync_editor_viewport?: boolean
+  editor_camera_id?: number | null
+  editor_orbit_target?: [number, number, number]
 }
-
-/** @deprecated Use `PlayCharacterViewChanged` */
-export type FirstPersonViewChanged = PlayCharacterViewChanged
 
 export interface DebugMetrics {
   fps:            number

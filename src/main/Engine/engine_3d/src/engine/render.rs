@@ -67,6 +67,8 @@ impl State {
         } else {
             build_scene_uniforms(
                 &self.camera,
+                self.orbit_view_anchor(),
+                self.viewport_orbit_angles(),
                 self.size,
                 self.prev_view_proj,
                 self.taa.current_jitter,
@@ -83,7 +85,7 @@ impl State {
         let zoom_stability = if let Some(cam2d) = &self.camera_2d {
             crate::taa::zoom_stability_half_h(cam2d.half_h)
         } else {
-            crate::taa::zoom_stability_distance(self.camera.distance)
+            crate::taa::zoom_stability_distance(self.viewport_orbit_angles().2)
         };
         let shadows_enabled = is_3d && scene_uni.light_color[3] > 0.5;
         let shadow_darkness = self.shadow_darkness;
@@ -96,7 +98,9 @@ impl State {
 
         let aspect_fc = self.size.width as f32 / self.size.height as f32;
         let frustum_vp_3d: Option<glam::Mat4> = self.camera_2d.is_none().then(|| {
-            let raw = self.camera.to_uniform(aspect_fc).view_proj;
+            let raw = self
+                .camera_to_uniform_at_anchor(self.orbit_view_anchor(), aspect_fc)
+                .view_proj;
             glam::Mat4::from_cols_array_2d(&raw)
         });
         let mut entities: Vec<(crate::ecs::EntityId, usize, usize, glam::Mat4, i32, f32)> = self
@@ -453,7 +457,9 @@ impl State {
 
         if self.camera_2d.is_none() && self.world_bounds_buffer.vertex_count > 0 {
             let aspect = self.size.width as f32 / self.size.height as f32;
-            let vp = self.camera.to_uniform(aspect).view_proj;
+            let vp = self
+                .camera_to_uniform_at_anchor(self.orbit_view_anchor(), aspect)
+                .view_proj;
             let bounds_uni: [[f32; 4]; 9] = [
                 vp[0],
                 vp[1],
@@ -505,7 +511,9 @@ impl State {
                     self.fps_editor_frustum_distance,
                 );
 
-                let vp = self.camera.to_uniform(aspect).view_proj;
+                let vp = self
+                .camera_to_uniform_at_anchor(self.orbit_view_anchor(), aspect)
+                .view_proj;
                 let frustum_uni: [[f32; 4]; 9] = [
                     vp[0],
                     vp[1],
@@ -738,7 +746,8 @@ impl State {
                 let vp = if let Some(cam2d) = &self.camera_2d {
                     cam2d.view_proj(aspect).to_cols_array_2d()
                 } else {
-                    self.camera.to_uniform(aspect).view_proj
+                    self.camera_to_uniform_at_anchor(self.orbit_view_anchor(), aspect)
+                        .view_proj
                 };
 
                 let gizmo_model = glam::Mat4::from_translation(origin);
@@ -863,6 +872,8 @@ pub(crate) fn create_depth_texture(
 
 pub(crate) fn build_scene_uniforms(
     camera: &Camera,
+    orbit_anchor: glam::Vec3,
+    orbit_angles: (f32, f32, f32),
     size: PhysicalSize<u32>,
     prev_view_proj: [[f32; 4]; 4],
     jitter: [f32; 2],
@@ -875,7 +886,8 @@ pub(crate) fn build_scene_uniforms(
     let aspect = size.width as f32 / size.height as f32;
     let w = size.width.max(1) as f32;
     let h = size.height.max(1) as f32;
-    let view = camera.view_matrix();
+    let (yaw, pitch, distance) = orbit_angles;
+    let view = camera.view_matrix_at_angles(orbit_anchor, yaw, pitch, distance);
     let proj = camera.proj_matrix(aspect);
     let vp_stable = (proj * view).to_cols_array_2d();
     let mut proj_j = proj;
@@ -884,7 +896,7 @@ pub(crate) fn build_scene_uniforms(
     let vp = proj_j * view;
     let view_proj = vp.to_cols_array_2d();
     let inv_view_proj = vp.inverse().to_cols_array_2d();
-    let p = camera.position();
+    let p = camera.position_at_angles(orbit_anchor, yaw, pitch, distance);
     SceneUniforms {
         view_proj,
         view_proj_stable: vp_stable,

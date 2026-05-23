@@ -634,11 +634,13 @@ impl ApplicationHandler<EngineCommand> for App {
                         let (vw, vh) = { let s = state.size(); (s.width as f32, s.height as f32) };
                         if let Some(cam2d) = &mut state.camera_2d {
                             cam2d.pan(dx, dy, vw, vh);
+                        } else if state.uses_editor_viewport_camera() {
+                            state.orbit_editor_viewport(dx, dy);
                         } else {
                             state.camera.orbit(dx, dy);
                         }
                         } else if self.mouse_middle {
-                        state.camera.pan(dx, dy);
+                        state.pan_editor_viewport(dx, dy);
                         }
                     }
                 }
@@ -723,6 +725,8 @@ impl ApplicationHandler<EngineCommand> for App {
                         y:      cam2d.y,
                         half_h: cam2d.half_h,
                     });
+                } else if state.uses_editor_viewport_camera() {
+                    state.zoom_editor_viewport(scroll);
                 } else {
                     state.camera.zoom(scroll);
                 }

@@ -66,6 +66,24 @@ pub struct MeshComponent {
 #[derive(Debug, Clone, Default)]
 pub struct NonSelectable;
 
+/// Cámara orbital del editor 3D (entidad separada del jugador FP).
+#[derive(Debug, Clone)]
+pub struct EditorCamera {
+    pub yaw: f32,
+    pub pitch: f32,
+    pub distance: f32,
+}
+
+impl Default for EditorCamera {
+    fn default() -> Self {
+        Self {
+            yaw: -std::f32::consts::FRAC_PI_4,
+            pitch: 0.3,
+            distance: 3.0,
+        }
+    }
+}
+
 /// Control explícito del orden de renderizado (render layer).
 /// Entidades con mayor `layer` se renderizan después (encima).
 /// Dentro del mismo layer, el orden está determinado por Transform.position.z (menor z primero = back-to-front).
@@ -185,6 +203,7 @@ impl Default for World {
         w.register::<MeshComponent>();
         w.register::<NameComponent>();
         w.register::<NonSelectable>();
+        w.register::<EditorCamera>();
         w.register::<RenderLayer>();
         w
     }

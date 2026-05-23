@@ -15,10 +15,11 @@ impl State {
 
   fn build_save_scene_snapshot(&self) -> SaveSceneSnapshotPayload {
     let player_id = self.play_character_entity;
+    let editor_camera_id = self.editor_camera_entity;
     let mut entities = Vec::new();
 
     for (id, _name) in self.world.query::<crate::ecs::NameComponent>() {
-      if player_id == Some(id) {
+      if player_id == Some(id) || editor_camera_id == Some(id) {
         continue;
       }
       let Some(meta) = self.resolve_entity_save_meta(id) else {
@@ -220,11 +221,16 @@ impl State {
       .and_then(|m| m.visual_model_path.clone());
     let control_bindings = self.control_bindings_by_entity.get(&player_id).cloned();
 
+    let (yaw, pitch) = if self.uses_editor_viewport_camera() {
+      (self.editor_viewport_yaw, self.editor_viewport_pitch)
+    } else {
+      (self.camera.yaw, self.camera.pitch)
+    };
     Some(SavePlayerTransformSnapshot {
       position: feet.to_array(),
       scale,
-      yaw: self.camera.yaw,
-      pitch: self.camera.pitch,
+      yaw,
+      pitch,
       fov_y: self.camera.fov_y,
       frustum_distance: self.fps_editor_frustum_distance,
       visual_model_path,

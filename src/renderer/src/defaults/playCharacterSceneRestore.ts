@@ -1,4 +1,4 @@
-import type { SavedEntity, SavedPlayerTransform } from '@shared-types';
+import type { PlayCharacterViewChanged, SavedEntity, SavedPlayerTransform } from '@shared-types';
 import { FIRST_PERSON_PLAYER_BODY_SCALE, isPlayerPath } from '@shared-types';
 import type { MutableRefObject } from 'react';
 import type { PendingRestore, Transform } from '../context/useContextEngine/types';
@@ -9,38 +9,30 @@ export const FP_DEFAULT_YAW = -Math.PI / 2;
 export const FP_DEFAULT_FOV_Y = (45 * Math.PI) / 180;
 export const FP_DEFAULT_FRUSTUM_DISTANCE = 2.5;
 
-export interface PlayCharacterViewChangedEvent {
-	event: 'play_character_view_changed' | 'first_person_view_changed';
-	player_id: number | null;
-	position: [number, number, number];
-	yaw: number;
-	pitch: number;
-	fov_y: number;
-	frustum_distance: number;
-	body_center: [number, number, number];
-	body_rotation: [number, number, number, number];
-	body_scale: [number, number, number];
-}
-
-/** @deprecated Use `PlayCharacterViewChangedEvent` */
-export type FirstPersonViewChangedEvent = PlayCharacterViewChangedEvent;
-
 /** Aplica al estado React lo que reporta el motor (sin derivar poses en TS). */
 export function applyPlayCharacterViewFromEngine(
-	ev: PlayCharacterViewChangedEvent,
+	ev: PlayCharacterViewChanged,
 	playCharacterViewRef: MutableRefObject<SavedPlayerTransform | null>,
 	entityTransformsRef: MutableRefObject<Record<number, Transform>>,
 	playerEntityIdRef?: MutableRefObject<number | null>,
+	editorCameraEntityIdRef?: MutableRefObject<number | null>,
 ) {
 	if (ev.player_id != null && playerEntityIdRef) {
 		playerEntityIdRef.current = ev.player_id;
 	}
+	if (ev.editor_camera_id != null && editorCameraEntityIdRef) {
+		editorCameraEntityIdRef.current = ev.editor_camera_id;
+	}
 	const prev = playCharacterViewRef.current;
+	const syncViewport = ev.sync_editor_viewport === true;
 	playCharacterViewRef.current = {
-		position: ev.position,
+		position: syncViewport ? ev.position : (prev?.position ?? ev.position),
+		camera_eye_position: ev.camera_eye_position ?? prev?.camera_eye_position,
+		fps_camera_yaw: ev.fps_camera_yaw ?? prev?.fps_camera_yaw,
+		fps_camera_pitch: ev.fps_camera_pitch ?? prev?.fps_camera_pitch,
 		scale: ev.body_scale,
-		yaw: ev.yaw,
-		pitch: ev.pitch,
+		yaw: syncViewport ? ev.yaw : (prev?.yaw ?? ev.yaw),
+		pitch: syncViewport ? ev.pitch : (prev?.pitch ?? ev.pitch),
 		fov_y: ev.fov_y,
 		frustum_distance: ev.frustum_distance,
 		...(prev?.visual_model_path ? { visual_model_path: prev.visual_model_path } : {}),
@@ -53,12 +45,41 @@ export function applyPlayCharacterViewFromEngine(
 			scale: ev.body_scale,
 		};
 	}
+	if (ev.editor_camera_id != null && ev.editor_orbit_target) {
+		entityTransformsRef.current[ev.editor_camera_id] = {
+			position: ev.editor_orbit_target,
+			rotation: [0, 0, 0, 1],
+			scale: [1, 1, 1],
+		};
+	}
 }
 
-/** @deprecated Use `applyPlayCharacterViewFromEngine` */
-export const applyFirstPersonViewFromEngine = applyPlayCharacterViewFromEngine;
+/** Parche parcial de la cámara FPS (panel Cámara, tiempo real). Solo el campo modificado. */
+export type PlayCharacterCameraPatch = {
+	positionAxis?: { axis: number; value: number }
+	yaw?: number
+	fov_y?: number
+	frustum_distance?: number
+}
 
-/** Pide al motor la vista del personaje jugable; el front actualiza refs al recibir el evento. */
+/** Envía un cambio parcial de la cámara FPS; el motor lee el resto del estado actual. */
+export function applyPlayCharacterCameraPatch(patch: PlayCharacterCameraPatch) {
+	window.engine.send({
+		cmd: 'set_play_character_view',
+		camera_only: true,
+		...(patch.positionAxis !== undefined ? { position_axis: patch.positionAxis } : {}),
+		...(patch.yaw !== undefined ? { yaw: patch.yaw } : {}),
+		...(patch.fov_y !== undefined ? { fov_y: patch.fov_y } : {}),
+		...(patch.frustum_distance !== undefined ? { frustum_distance: patch.frustum_distance } : {}),
+	} as never);
+}
+
+/**
+ * Pide al motor la vista del personaje jugable; el front actualiza refs al recibir el evento.
+ *
+ * Restauración / carga: `position` = pies del Player, vista completa.
+ * Para edición interactiva del panel Cámara usar `applyPlayCharacterCameraPatch`.
+ */
 export function applySavedPlayCharacterView(
 	view: SavedPlayerTransform | null | undefined,
 	_options?: { editorOrbit?: boolean },
@@ -78,9 +99,6 @@ export function applySavedPlayCharacterView(
 		frustum_distance: view.frustum_distance ?? FP_DEFAULT_FRUSTUM_DISTANCE,
 	} as never);
 }
-
-/** @deprecated Use `applySavedPlayCharacterView` */
-export const applySavedFirstPersonView = applySavedPlayCharacterView;
 
 type SceneSlice = {
 	entities?: SavedEntity[];
@@ -120,6 +138,3 @@ export function ensurePlayCharacterOnLoad(
 		send({ cmd: 'load_character', path: '[Player]' });
 	}
 }
-
-/** @deprecated Use `ensurePlayCharacterOnLoad` */
-export const ensureFirstPersonPlayerOnLoad = ensurePlayCharacterOnLoad;

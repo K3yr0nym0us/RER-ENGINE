@@ -5,7 +5,7 @@ import type {
 	SavedScene,
 	SavedScript,
 } from '@shared-types';
-import { DEFAULT_GRAVITY_MAGNITUDE, isPlayerPath } from '@shared-types';
+import { DEFAULT_GRAVITY_MAGNITUDE, isEditorCameraPath, isPlayerPath } from '@shared-types';
 
 import type { EngineAction, EngineInternalRefs, EntityMeta, Transform } from '../types';
 
@@ -193,6 +193,8 @@ export function syncEditorStateFromSavedScene(
 		refs.playerEntityIdRef.current = null;
 		refs.mainPlayerHandled.current = false;
 	}
+	const editorCam = scene.entities.find((e) => isEditorCameraPath(e.path));
+	refs.editorCameraEntityIdRef.current = editorCam?.id ?? null;
 
 	dispatch({
 		type: 'IMPORT_SCENE_STATE',

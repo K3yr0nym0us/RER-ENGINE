@@ -55,12 +55,53 @@ impl State {
                 }
             }
         }
-        if self.editor_camera_follows_player() {
+        if self.is_play_controller_active() {
             self.camera.target = feet;
         }
     }
 
-    /// Alinea el mesh del jugador al yaw de la cámara (editor y play).
+    /// Transform del jugador desde el panel Propiedades en editor: cuerpo solo, cámara intacta.
+    pub(crate) fn apply_play_character_transform_editor(
+        &mut self,
+        id: EntityId,
+        position: Option<[f32; 3]>,
+        rotation: Option<glam::Quat>,
+        scale: Option<glam::Vec3>,
+    ) -> bool {
+        let Some(before_t) = self.world.get::<Transform>(id).cloned() else {
+            return false;
+        };
+        let new_rot = rotation.unwrap_or(before_t.rotation);
+        let new_scale = scale.unwrap_or(before_t.scale);
+        let feet = feet_from_transform(before_t.position, before_t.scale.y, before_t.rotation);
+
+        let Some(t) = self.world.get_mut::<Transform>(id) else {
+            return false;
+        };
+
+        let preserve_feet = rotation.is_some() || scale.is_some();
+        if preserve_feet {
+            let mut center = center_from_feet(feet, new_scale.y, new_rot);
+            if let Some(p) = position {
+                center += glam::Vec3::from_array(p) - before_t.position;
+            }
+            t.position = center;
+            t.rotation = new_rot;
+            t.scale = new_scale;
+        } else if let Some(p) = position {
+            t.position = glam::Vec3::from_array(p);
+            t.rotation = new_rot;
+            t.scale = new_scale;
+        } else {
+            t.rotation = new_rot;
+            t.scale = new_scale;
+        }
+
+        // Editor: cuerpo independiente del blanco orbital (cámara = gizmo). Play acopla en set_play_character_feet_position.
+        true
+    }
+
+    /// Alinea el mesh del jugador al yaw de la cámara (preview/play y panel Cámara).
     pub(crate) fn sync_player_rotation_from_look(&mut self) {
         let Some(id) = self.play_character_entity else {
             return;
@@ -117,10 +158,16 @@ impl State {
         if let Some(t) = self.world.get_mut::<Transform>(id) {
             t.position = body_center_from_feet(feet);
         }
-        self.camera.target = feet;
+        if !self.is_play_controller_active() {
+            if let Some(t) = self.world.get::<Transform>(id) {
+                self.init_editor_viewport_for_player(t.position);
+            }
+            self.ensure_editor_camera_entity();
+        }
         self.sync_player_rotation_from_look();
         self.sync_fps_camera_mode();
         self.ensure_play_character_kinematic_only();
+        self.emit_play_character_view_changed(true);
     }
 
     pub(crate) fn spawn_play_character(&mut self) {

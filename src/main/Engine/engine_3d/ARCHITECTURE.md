@@ -69,9 +69,10 @@ Soporte: `mesh.rs`, `shader.wgsl`, `gizmo.rs`, `gizmo.wgsl`, `texture.rs`, `scri
 
 ### Personaje jugable (`[Player]`)
 
-- `Transform` = centro del cuerpo; pies via `PLAY_CHARACTER_BODY_HEIGHT`; `camera.target` = pies.
+- `Transform` = centro del cuerpo; pies via `PLAY_CHARACTER_BODY_HEIGHT`.
+- **Editor 3D (sin play)**: viewport orbital en `editor_orbit_target` + `editor_viewport_*`; `SetTransform` del jugador **no** mueve ese viewport (`body_rotation_only` / `apply_play_character_transform_editor`). Rotación o escala recalculan centro desde pies fijos.
+- **Play FP**: `camera.target` = pies; cuerpo y cámara acoplados vía `set_play_character_feet_position` / mouse look.
 - `replace_entity_model`: actualizar `play_character_mesh_forward_xz`, escala 1.7 m, `sync_player_rotation_from_look()`.
-- `SetTransform` del jugador con rotacion: recalcular centro desde pies (`feet_from_transform` / `center_from_feet` en `commands.rs`).
 - Yaw: mantener alineadas `look_xz_from_mesh_yaw` y `mesh_yaw_from_camera_and_forward` con `glam::Quat::from_rotation_y`.
 
 #### Vista FP autoritativa (IPC)
