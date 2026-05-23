@@ -84,8 +84,6 @@ impl State {
             return;
         }
 
-        self.sync_fps_camera_mode();
-
         let Some((radius, half_height, _, _)) = self.play_character_capsule_for_controller()
         else {
             return;
@@ -96,6 +94,7 @@ impl State {
         let dt = delta_time.min(0.05);
         let move_speed = self.play_controller_move_speed(pressed_inputs);
         let mut feet = self.play_character_feet_position();
+        let old_feet = feet;
         let mut velocity = self.play_controller_velocity;
 
         let jump_held_now = self.play_controller_jump_request_active
@@ -162,8 +161,7 @@ impl State {
         feet = self.world_bounds_3d.clamp_sphere_center(feet, 0.0);
 
         self.set_play_character_feet_position(feet);
-        self.camera.distance = 0.01;
-        self.sync_fps_camera_mode();
+        self.sync_play_camera_on_player_feet_moved(old_feet, feet);
         self.play_controller_velocity = velocity;
         self.play_controller_on_floor = on_floor;
         self.play_controller_jump_queued = false;

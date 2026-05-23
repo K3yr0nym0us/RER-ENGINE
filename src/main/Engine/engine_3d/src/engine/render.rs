@@ -64,6 +64,20 @@ impl State {
         }
         let scene_uni = if let Some(cam2d) = &self.camera_2d {
             build_scene_uniforms_2d(cam2d, self.size)
+        } else if self.uses_play_accordion_camera() {
+            build_scene_uniforms_from_view(
+                &self.camera,
+                self.camera_view_matrix(),
+                self.camera_world_position(),
+                self.size,
+                self.prev_view_proj,
+                self.taa.current_jitter,
+                self.scene_light_dir(),
+                self.scene_light_color(),
+                self.build_light_view_proj(),
+                self.scene_light_params(),
+                self.scene_shadow_bias(),
+            )
         } else {
             build_scene_uniforms(
                 &self.camera,
@@ -84,6 +98,8 @@ impl State {
         let is_3d = self.camera_2d.is_none();
         let zoom_stability = if let Some(cam2d) = &self.camera_2d {
             crate::taa::zoom_stability_half_h(cam2d.half_h)
+        } else if self.uses_play_accordion_camera() {
+            crate::taa::zoom_stability_distance(0.01)
         } else {
             crate::taa::zoom_stability_distance(self.viewport_orbit_angles().2)
         };
@@ -108,9 +124,6 @@ impl State {
             .query2::<crate::ecs::MeshComponent, crate::ecs::Transform>()
             .filter_map(|(id, mc, t)| {
                 if self.model_animation_bindings.contains_key(&id) {
-                    return None;
-                }
-                if self.preview_playing && self.play_character_entity == Some(id) {
                     return None;
                 }
                 let mesh_idx = mc.mesh_idx;
@@ -807,9 +820,6 @@ impl State {
             return out;
         }
         for (&id, binding) in &self.model_animation_bindings {
-            if self.preview_playing && self.play_character_entity == Some(id) {
-                continue;
-            }
             let Some(t) = self.world.get::<crate::ecs::Transform>(id) else {
                 continue;
             };
@@ -883,11 +893,40 @@ pub(crate) fn build_scene_uniforms(
     light_params: [f32; 4],
     shadow_bias: [f32; 4],
 ) -> SceneUniforms {
+    let (yaw, pitch, distance) = orbit_angles;
+    let view = camera.view_matrix_at_angles(orbit_anchor, yaw, pitch, distance);
+    let eye = camera.position_at_angles(orbit_anchor, yaw, pitch, distance);
+    build_scene_uniforms_from_view(
+        camera,
+        view,
+        eye,
+        size,
+        prev_view_proj,
+        jitter,
+        light_dir,
+        light_color,
+        light_view_proj,
+        light_params,
+        shadow_bias,
+    )
+}
+
+pub(crate) fn build_scene_uniforms_from_view(
+    camera: &Camera,
+    view: Mat4,
+    eye: glam::Vec3,
+    size: PhysicalSize<u32>,
+    prev_view_proj: [[f32; 4]; 4],
+    jitter: [f32; 2],
+    light_dir: [f32; 4],
+    light_color: [f32; 4],
+    light_view_proj: [[f32; 4]; 4],
+    light_params: [f32; 4],
+    shadow_bias: [f32; 4],
+) -> SceneUniforms {
     let aspect = size.width as f32 / size.height as f32;
     let w = size.width.max(1) as f32;
     let h = size.height.max(1) as f32;
-    let (yaw, pitch, distance) = orbit_angles;
-    let view = camera.view_matrix_at_angles(orbit_anchor, yaw, pitch, distance);
     let proj = camera.proj_matrix(aspect);
     let vp_stable = (proj * view).to_cols_array_2d();
     let mut proj_j = proj;
@@ -896,13 +935,12 @@ pub(crate) fn build_scene_uniforms(
     let vp = proj_j * view;
     let view_proj = vp.to_cols_array_2d();
     let inv_view_proj = vp.inverse().to_cols_array_2d();
-    let p = camera.position_at_angles(orbit_anchor, yaw, pitch, distance);
     SceneUniforms {
         view_proj,
         view_proj_stable: vp_stable,
         prev_view_proj,
         inv_view_proj,
-        cam_pos: [p.x, p.y, p.z, 0.0],
+        cam_pos: [eye.x, eye.y, eye.z, 0.0],
         light_dir,
         light_color,
         light_view_proj,

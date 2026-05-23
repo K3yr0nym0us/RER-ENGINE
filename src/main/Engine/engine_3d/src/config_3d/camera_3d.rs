@@ -112,6 +112,14 @@ impl Camera {
         right * (-dx * SENSITIVITY * distance) + up * (dy * SENSITIVITY * distance)
     }
 
+    /// Vista FPS desde posición absoluta del ojo (acordeón Cámara en Play).
+    pub(crate) fn view_matrix_from_eye(&self, eye: Vec3, yaw: f32, pitch: f32) -> Mat4 {
+        let (sy, cy) = yaw.sin_cos();
+        let (sp, cp) = pitch.sin_cos();
+        let forward = Vec3::new(-cy * cp, -sp, -sy * cp).normalize_or_zero();
+        Mat4::look_at_rh(eye, eye + forward, Vec3::Y)
+    }
+
     pub(crate) fn view_matrix_at(&self, anchor: Vec3) -> Mat4 {
         self.view_matrix_at_angles(anchor, self.yaw, self.pitch, self.distance)
     }

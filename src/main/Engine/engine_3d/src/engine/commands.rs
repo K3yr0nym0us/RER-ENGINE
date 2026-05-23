@@ -291,7 +291,7 @@ impl State {
                 yaw,
                 pitch,
             } => {
-                self.apply_play_character_view(position, yaw, pitch, None, None);
+                self.apply_play_character_view(position, yaw, pitch, None, None, None);
             }
             EngineCommand::SetPlayCharacterView {
                 position,
@@ -301,6 +301,7 @@ impl State {
                 fov_y,
                 frustum_distance,
                 camera_only,
+                camera_follow_mode,
             } => {
                 if camera_only.unwrap_or(false) {
                     self.apply_play_camera_view_patch(
@@ -309,6 +310,7 @@ impl State {
                         pitch,
                         fov_y,
                         frustum_distance,
+                        camera_follow_mode,
                     );
                 } else {
                     let Some(pos) = position else {
@@ -321,6 +323,7 @@ impl State {
                         pitch.unwrap_or(self.camera.pitch),
                         fov_y,
                         frustum_distance,
+                        camera_follow_mode,
                     );
                 }
             }
@@ -757,10 +760,7 @@ impl State {
                 if playing {
                     self.reset_play_controller_motion();
                     self.ensure_play_character_kinematic_only();
-                    // Camera.yaw = yaw actual del cuerpo, para que el primer mouse-look
-                    // no rote el cuerpo al yaw del orbit del editor (regresión típica al
-                    // pasar de editor a play conservando la orientación en Propiedades).
-                    self.sync_camera_yaw_from_player_body();
+                    self.capture_play_camera_follow_offset();
                     self.active_tool = ActiveTool::None;
                     self.tool_overlay_buffer = gizmo::build_from_vertices(&self.device, &[]);
                     if self.pivot_edit_mode.is_some() {

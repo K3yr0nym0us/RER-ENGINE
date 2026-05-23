@@ -306,9 +306,6 @@ impl State {
                 let (_, _, yaw) = t.rotation.to_euler(glam::EulerRot::YXZ);
                 t.rotation = glam::Quat::from_rotation_y(yaw);
             }
-            if self.is_play_controller_active() {
-                self.camera.target = feet;
-            }
             self.sync_player_rotation_from_look();
             // El jugador FP usa solo la cápsula cinemática; el cuerpo Rapier estático bloquea queries.
             self.physics.remove_entity_body(id);

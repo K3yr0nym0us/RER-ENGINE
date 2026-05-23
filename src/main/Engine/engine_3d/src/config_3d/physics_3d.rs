@@ -261,6 +261,38 @@ impl PhysicsWorld {
         filter
     }
 
+    /// Distancia al primer obstáculo a lo largo de un rayo (excluye colisionador opcional).
+    pub(crate) fn raycast_first_hit_distance(
+        &mut self,
+        from: Vec3,
+        direction: Vec3,
+        max_dist: f32,
+        exclude_collider: Option<ColliderHandle>,
+    ) -> Option<f32> {
+        if max_dist <= 1e-6 {
+            return None;
+        }
+        let dir = direction.normalize_or_zero();
+        if dir.length_squared() < 1e-8 {
+            return None;
+        }
+        self.refresh_queries();
+        let ray = Ray::new(
+            point![from.x, from.y, from.z],
+            vector![dir.x, dir.y, dir.z],
+        );
+        self.query_pipeline
+            .cast_ray_and_get_normal(
+                &self.bodies,
+                &self.colliders,
+                &ray,
+                max_dist,
+                true,
+                Self::query_filter(exclude_collider),
+            )
+            .map(|(_, hit)| hit.time_of_impact)
+    }
+
     /// Altura del segmento cilíndrico de la cápsula (total ≈ scale_y con hemisferios).
     pub(crate) fn capsule_half_height_from_scale(scale_y: f32, radius: f32) -> f32 {
         (scale_y * 0.5 - radius).max(0.01)

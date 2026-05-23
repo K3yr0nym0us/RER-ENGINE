@@ -233,6 +233,7 @@ impl State {
       pitch,
       fov_y: self.camera.fov_y,
       frustum_distance: self.fps_editor_frustum_distance,
+      camera_follow_mode: self.play_camera_follow_mode,
       visual_model_path,
       control_bindings,
     })

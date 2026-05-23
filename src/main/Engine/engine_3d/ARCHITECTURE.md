@@ -62,7 +62,7 @@ Soporte: `mesh.rs`, `shader.wgsl`, `gizmo.rs`, `gizmo.wgsl`, `texture.rs`, `scri
 ## Modos de camara y render
 
 - **Editor 3D**: `camera_2d` es `None`; `Camera` orbital; gizmo y frustum FP con `preview_playing == false`.
-- **Play FP**: `preview_playing`, vista FPS, mesh del jugador oculto; capsula cinematica en `play_controller.rs`.
+- **Play FP**: `preview_playing`, vista desde acordeón Cámara; mesh del jugador visible; capsula cinematica en `play_controller.rs`.
 - **HUD** (crosshair, Esc): NDC + `hud_scene_bind_group` (identidad). No mezclar ese uniform con `scene_bind_group`.
 
 ## Contratos operativos (3D)

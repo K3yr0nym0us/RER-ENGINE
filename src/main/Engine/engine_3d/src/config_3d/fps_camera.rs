@@ -13,18 +13,6 @@ fn look_xz_from_camera_yaw(camera_yaw: f32) -> glam::Vec2 {
     glam::Vec2::new(-cy, -sy)
 }
 
-fn camera_yaw_from_look_xz(look: glam::Vec2) -> f32 {
-    (-look.y).atan2(-look.x)
-}
-
-/// Forward world del mesh tras rotar `mesh_yaw` alrededor de Y.
-fn look_xz_from_mesh_yaw(mesh_yaw: f32, mesh_forward_xz: glam::Vec2) -> glam::Vec2 {
-    let (s, c) = mesh_yaw.sin_cos();
-    let fx = mesh_forward_xz.x;
-    let fz = mesh_forward_xz.y;
-    glam::Vec2::new(fx * c + fz * s, -fx * s + fz * c)
-}
-
 /// Yaw del mesh para que su forward local apunte hacia donde mira la cámara (offset 0).
 pub(crate) fn mesh_yaw_from_camera_and_forward(
     camera_yaw: f32,
@@ -73,6 +61,7 @@ impl State {
         // el ojo es independiente: mover al Player en editor no la altera.
         self.play_camera_eye_position =
             self.play_character_feet_position() + self.play_character_eye_world_offset();
+        self.capture_play_camera_follow_offset();
         self.ensure_editor_camera_entity();
         self.sync_editor_camera_entity_from_viewport();
     }
@@ -123,39 +112,47 @@ impl State {
         self.sync_editor_camera_entity_from_viewport();
     }
 
+    /// Play: única cámara de juego = acordeón Cámara (`play_camera_eye_position` + yaw/pitch).
+    pub(crate) fn uses_play_accordion_camera(&self) -> bool {
+        self.is_play_controller_active() && self.has_play_character()
+    }
+
     pub(crate) fn camera_view_matrix(&self) -> glam::Mat4 {
+        if self.uses_play_accordion_camera() {
+            return self.camera.view_matrix_from_eye(
+                self.play_camera_eye_position,
+                self.camera.yaw,
+                self.camera.pitch,
+            );
+        }
         let anchor = self.orbit_view_anchor();
         let (yaw, pitch, dist) = self.viewport_orbit_angles();
         self.camera.view_matrix_at_angles(anchor, yaw, pitch, dist)
     }
 
     pub(crate) fn camera_world_position(&self) -> Vec3 {
+        if self.uses_play_accordion_camera() {
+            return self.play_camera_eye_position;
+        }
         let anchor = self.orbit_view_anchor();
         let (yaw, pitch, dist) = self.viewport_orbit_angles();
         self.camera.position_at_angles(anchor, yaw, pitch, dist)
     }
 
     pub(crate) fn camera_to_uniform_at_anchor(&self, anchor: Vec3, aspect: f32) -> crate::config_3d::camera_3d::CameraUniform {
-        let (yaw, pitch, dist) = self.viewport_orbit_angles();
-        let view = self.camera.view_matrix_at_angles(anchor, yaw, pitch, dist);
+        let view = if self.uses_play_accordion_camera() {
+            self.camera.view_matrix_from_eye(
+                self.play_camera_eye_position,
+                self.camera.yaw,
+                self.camera.pitch,
+            )
+        } else {
+            let (yaw, pitch, dist) = self.viewport_orbit_angles();
+            self.camera.view_matrix_at_angles(anchor, yaw, pitch, dist)
+        };
         crate::config_3d::camera_3d::CameraUniform {
             view_proj: (self.camera.proj_matrix(aspect) * view).to_cols_array_2d(),
         }
-    }
-
-    /// Inverso de `sync_player_rotation_from_look`: toma el yaw del cuerpo y lo asigna a la
-    /// cámara. Se invoca al entrar a Play para que `apply_fps_mouse_look` no haga
-    /// "snap" del cuerpo al primer movimiento de mouse.
-    pub(crate) fn sync_camera_yaw_from_player_body(&mut self) {
-        let Some(id) = self.play_character_entity else {
-            return;
-        };
-        let Some(t) = self.world.get::<Transform>(id) else {
-            return;
-        };
-        let (mesh_yaw, _, _) = t.rotation.to_euler(glam::EulerRot::YXZ);
-        let look = look_xz_from_mesh_yaw(mesh_yaw, self.play_character_mesh_forward_xz);
-        self.camera.yaw = camera_yaw_from_look_xz(look);
     }
 
     /// Pose visual de la cámara FPS para dibujar el gizmo de frustum en el editor.
@@ -201,10 +198,11 @@ impl State {
 
     pub(crate) fn sync_fps_camera_mode(&mut self) {
         if self.is_play_controller_active() {
+            // Play: sin cámara de ojos del player; render desde acordeón Cámara.
             self.camera.orbit_pivot_offset = Vec3::ZERO;
             self.camera.eye_height_offset = 0.0;
-            self.camera.eye_offset_local = self.play_character_eye_world_offset();
-            self.camera.distance = 0.01;
+            self.camera.eye_offset_local = Vec3::ZERO;
+            return;
         } else if self.has_play_character() {
             self.camera.eye_height_offset = 0.0;
             self.camera.eye_offset_local = Vec3::ZERO;
@@ -261,6 +259,120 @@ impl State {
         self.clamp_play_character_camera_to_bounds();
     }
 
+    pub(crate) fn play_character_head_world(&self) -> Vec3 {
+        self.play_character_feet_position() + self.play_character_eye_world_offset()
+    }
+
+    pub(crate) fn play_character_body_yaw(&self) -> f32 {
+        let Some(id) = self.play_character_entity else {
+            return 0.0;
+        };
+        let Some(t) = self.world.get::<Transform>(id) else {
+            return 0.0;
+        };
+        t.rotation.to_euler(glam::EulerRot::YXZ).0
+    }
+
+    fn follow_offset_world_from_local(local: Vec3, body_yaw: f32) -> Vec3 {
+        let (sy, cy) = body_yaw.sin_cos();
+        Vec3::new(
+            local.x * cy - local.z * sy,
+            local.y,
+            local.x * sy + local.z * cy,
+        )
+    }
+
+    fn follow_offset_local_from_world(world: Vec3, body_yaw: f32) -> Vec3 {
+        let (sy, cy) = body_yaw.sin_cos();
+        Vec3::new(
+            world.x * cy + world.z * sy,
+            world.y,
+            -world.x * sy + world.z * cy,
+        )
+    }
+
+    pub(crate) fn capture_play_camera_follow_offset(&mut self) {
+        if !self.has_play_character() {
+            return;
+        }
+        let head = self.play_character_head_world();
+        let world = self.play_camera_eye_position - head;
+        self.play_camera_follow_offset = world;
+        self.play_camera_follow_offset_local =
+            Self::follow_offset_local_from_world(world, self.play_character_body_yaw());
+    }
+
+    fn resolve_play_camera_eye_line_of_sight(&mut self, focus: Vec3, desired_eye: Vec3) -> Vec3 {
+        let offset = desired_eye - focus;
+        let dist = offset.length();
+        if dist < 1e-4 {
+            return desired_eye;
+        }
+        let exclude = self.play_character_exclude_collider();
+        const MARGIN: f32 = 0.12;
+        if let Some(hit_dist) = self.physics.raycast_first_hit_distance(
+            focus,
+            offset,
+            dist,
+            exclude,
+        ) {
+            let t = (hit_dist - MARGIN).max(0.0);
+            return focus + offset.normalize() * t;
+        }
+        desired_eye
+    }
+
+    pub(crate) fn apply_follow_character_camera_snap(&mut self) {
+        if self.camera_2d.is_some() {
+            return;
+        }
+        let head = self.play_character_head_world();
+        let world_offset = Self::follow_offset_world_from_local(
+            self.play_camera_follow_offset_local,
+            self.play_character_body_yaw(),
+        );
+        let desired = head + world_offset;
+        self.play_camera_eye_position =
+            self.resolve_play_camera_eye_line_of_sight(head, desired);
+        self.play_camera_follow_offset = self.play_camera_eye_position - head;
+    }
+
+    pub(crate) fn sync_play_camera_on_player_feet_moved(&mut self, old_feet: Vec3, new_feet: Vec3) {
+        if self.camera_2d.is_some() {
+            return;
+        }
+        let delta = new_feet - old_feet;
+        if delta.length_squared() < 1e-10 {
+            return;
+        }
+        match self.play_camera_follow_mode {
+            crate::ipc::PlayCameraFollowMode::MoveWithCharacter => {
+                self.play_camera_eye_position += delta;
+            }
+            crate::ipc::PlayCameraFollowMode::FollowCharacter => {
+                self.apply_follow_character_camera_snap();
+            }
+        }
+    }
+
+    pub(crate) fn set_play_camera_follow_mode(&mut self, mode: crate::ipc::PlayCameraFollowMode) {
+        if self.play_camera_follow_mode == mode {
+            return;
+        }
+        self.play_camera_follow_mode = mode;
+        self.capture_play_camera_follow_offset();
+        if mode == crate::ipc::PlayCameraFollowMode::FollowCharacter {
+            self.apply_follow_character_camera_snap();
+        }
+        log::info!(
+            "[cámara] modo de seguimiento: {}",
+            match mode {
+                crate::ipc::PlayCameraFollowMode::FollowCharacter => "seguir personaje",
+                crate::ipc::PlayCameraFollowMode::MoveWithCharacter => "moverse junto al personaje",
+            }
+        );
+    }
+
     /// Aplica cambios parciales de la cámara FPS en editor (sin tocar al Player).
     pub(crate) fn apply_play_camera_view_patch(
         &mut self,
@@ -269,6 +381,7 @@ impl State {
         pitch: Option<f32>,
         fov_y: Option<f32>,
         frustum_distance: Option<f32>,
+        camera_follow_mode: Option<crate::ipc::PlayCameraFollowMode>,
     ) {
         if self.camera_2d.is_some() {
             return;
@@ -282,6 +395,10 @@ impl State {
                 _ => {}
             }
             self.play_camera_eye_position = eye;
+            self.capture_play_camera_follow_offset();
+        }
+        if let Some(mode) = camera_follow_mode {
+            self.set_play_camera_follow_mode(mode);
         }
         if let Some(y) = yaw {
             self.camera.yaw = y;
@@ -309,6 +426,7 @@ impl State {
         pitch: f32,
         fov_y: Option<f32>,
         frustum_distance: Option<f32>,
+        camera_follow_mode: Option<crate::ipc::PlayCameraFollowMode>,
     ) {
         if self.camera_2d.is_some() {
             return;
@@ -319,6 +437,11 @@ impl State {
         }
         if let Some(dist) = frustum_distance {
             self.fps_editor_frustum_distance = dist.clamp(0.5, 50.0);
+        }
+        if let Some(mode) = camera_follow_mode {
+            self.set_play_camera_follow_mode(mode);
+        } else {
+            self.capture_play_camera_follow_offset();
         }
         self.emit_play_character_view_changed(true);
     }
@@ -366,6 +489,7 @@ impl State {
             pitch,
             fov_y: self.camera.fov_y,
             frustum_distance: self.fps_editor_frustum_distance,
+            camera_follow_mode: self.play_camera_follow_mode,
             body_center,
             body_rotation,
             body_scale,
@@ -378,7 +502,6 @@ impl State {
             return;
         }
 
-        self.sync_fps_camera_mode();
         self.camera.yaw += dx * PLAY_CHARACTER_MOUSE_SPEED;
         self.camera.pitch = (self.camera.pitch + dy * PLAY_CHARACTER_MOUSE_SPEED).clamp(
             -std::f32::consts::FRAC_PI_2 + 0.05,
@@ -396,9 +519,5 @@ impl State {
             .world_bounds_3d
             .clamp_sphere_center(self.play_character_feet_position(), 0.0);
         self.set_play_character_feet_position(feet);
-        if self.is_play_controller_active() {
-            self.camera.distance = 0.01;
-            self.sync_fps_camera_mode();
-        }
     }
 }

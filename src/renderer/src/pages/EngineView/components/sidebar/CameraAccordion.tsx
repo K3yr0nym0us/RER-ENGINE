@@ -5,7 +5,7 @@ import { CameraVideo } from 'react-bootstrap-icons';
 import { AppTooltip } from '@components';
 import { useContextEngine } from '@engine';
 import { useTraslate } from '@hooks';
-import { type GameStyle, type ProjectType, type SavedPlayerTransform } from '@shared-types';
+import { type GameStyle, type PlayCameraFollowMode, type ProjectType, type SavedPlayerTransform } from '@shared-types';
 import {
 	applyPlayCharacterCameraPatch,
 	FP_DEFAULT_FOV_Y,
@@ -62,6 +62,7 @@ export function CameraAccordion({
 	const [yawDeg, setYawDeg] = useState(formatCameraNum(FP_DEFAULT_YAW * RAD_TO_DEG));
 	const [fovDeg, setFovDeg] = useState(formatCameraNum(FP_DEFAULT_FOV_Y * RAD_TO_DEG));
 	const [frustumDist, setFrustumDist] = useState(formatCameraNum(FP_DEFAULT_FRUSTUM_DISTANCE));
+	const [followMode, setFollowMode] = useState<PlayCameraFollowMode>('move_with_character');
 
 	const [cam2dX, setCam2dX] = useState('0');
 	const [cam2dY, setCam2dY] = useState('0');
@@ -81,6 +82,7 @@ export function CameraAccordion({
 			setYawDeg(formatCameraNum(fpsYawFromView(v) * RAD_TO_DEG));
 			setFovDeg(formatCameraNum((v.fov_y ?? FP_DEFAULT_FOV_Y) * RAD_TO_DEG));
 			setFrustumDist(formatCameraNum(v.frustum_distance ?? FP_DEFAULT_FRUSTUM_DISTANCE));
+			setFollowMode(v.camera_follow_mode ?? 'move_with_character');
 			return;
 		}
 		if (!is3d && camera2dRef.current) {
@@ -126,6 +128,12 @@ export function CameraAccordion({
 		if (Number.isNaN(parsed)) return;
 		skipSyncRef.current = true;
 		applyPlayCharacterCameraPatch({ frustum_distance: parsed });
+	};
+
+	const commitFollowMode = (mode: PlayCameraFollowMode) => {
+		if (playerEntityIdRef.current == null) return;
+		setFollowMode(mode);
+		applyPlayCharacterCameraPatch({ camera_follow_mode: mode });
 	};
 
 	const commit2d = (x: string, y: string, halfH: string) => {
@@ -298,6 +306,37 @@ export function CameraAccordion({
 									}}
 									onBlur={() => finishEdit3d(frustumDist, setFrustumDist, commitFrustum)}
 								/>
+							</div>
+						</div>
+						<p className="text-secondary small mb-1 fw-semibold">{t('Camera follow mode')}</p>
+						<div className="d-flex flex-column gap-1 mb-2">
+							<div className="form-check">
+								<input
+									className="form-check-input"
+									type="radio"
+									id="cam-follow-character"
+									name="cam-follow-mode"
+									checked={followMode === 'follow_character'}
+									disabled={camDisabled}
+									onChange={() => commitFollowMode('follow_character')}
+								/>
+								<label className="form-check-label small text-light" htmlFor="cam-follow-character">
+									{t('Follow character')}
+								</label>
+							</div>
+							<div className="form-check">
+								<input
+									className="form-check-input"
+									type="radio"
+									id="cam-move-with-character"
+									name="cam-follow-mode"
+									checked={followMode === 'move_with_character'}
+									disabled={camDisabled}
+									onChange={() => commitFollowMode('move_with_character')}
+								/>
+								<label className="form-check-label small text-light" htmlFor="cam-move-with-character">
+									{t('Move together with character')}
+								</label>
 							</div>
 						</div>
 					</>

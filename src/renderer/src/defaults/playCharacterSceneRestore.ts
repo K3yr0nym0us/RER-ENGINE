@@ -1,4 +1,4 @@
-import type { PlayCharacterViewChanged, SavedEntity, SavedPlayerTransform } from '@shared-types';
+import type { PlayCharacterViewChanged, PlayCameraFollowMode, SavedEntity, SavedPlayerTransform } from '@shared-types';
 import { FIRST_PERSON_PLAYER_BODY_SCALE, isPlayerPath } from '@shared-types';
 import type { MutableRefObject } from 'react';
 import type { PendingRestore, Transform } from '../context/useContextEngine/types';
@@ -35,6 +35,7 @@ export function applyPlayCharacterViewFromEngine(
 		pitch: syncViewport ? ev.pitch : (prev?.pitch ?? ev.pitch),
 		fov_y: ev.fov_y,
 		frustum_distance: ev.frustum_distance,
+		camera_follow_mode: ev.camera_follow_mode ?? prev?.camera_follow_mode ?? 'move_with_character',
 		...(prev?.visual_model_path ? { visual_model_path: prev.visual_model_path } : {}),
 		...(prev?.control_bindings ? { control_bindings: prev.control_bindings } : {}),
 	};
@@ -60,6 +61,7 @@ export type PlayCharacterCameraPatch = {
 	yaw?: number
 	fov_y?: number
 	frustum_distance?: number
+	camera_follow_mode?: PlayCameraFollowMode
 }
 
 /** Envía un cambio parcial de la cámara FPS; el motor lee el resto del estado actual. */
@@ -71,6 +73,7 @@ export function applyPlayCharacterCameraPatch(patch: PlayCharacterCameraPatch) {
 		...(patch.yaw !== undefined ? { yaw: patch.yaw } : {}),
 		...(patch.fov_y !== undefined ? { fov_y: patch.fov_y } : {}),
 		...(patch.frustum_distance !== undefined ? { frustum_distance: patch.frustum_distance } : {}),
+		...(patch.camera_follow_mode !== undefined ? { camera_follow_mode: patch.camera_follow_mode } : {}),
 	} as never);
 }
 
@@ -97,6 +100,7 @@ export function applySavedPlayCharacterView(
 		pitch,
 		fov_y: view.fov_y ?? FP_DEFAULT_FOV_Y,
 		frustum_distance: view.frustum_distance ?? FP_DEFAULT_FRUSTUM_DISTANCE,
+		...(view.camera_follow_mode ? { camera_follow_mode: view.camera_follow_mode } : {}),
 	} as never);
 }
 

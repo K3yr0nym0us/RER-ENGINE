@@ -21,7 +21,7 @@ impl State {
         Some((radius, half_height, t.rotation, t.position))
     }
 
-    fn play_character_exclude_collider(&self) -> Option<rapier3d::prelude::ColliderHandle> {
+    pub(crate) fn play_character_exclude_collider(&self) -> Option<rapier3d::prelude::ColliderHandle> {
         self.play_character_entity
             .and_then(|id| self.physics.collider_handle_for_entity(id))
     }
@@ -54,9 +54,6 @@ impl State {
                     t.position = center_from_feet(feet, scale_y, rot);
                 }
             }
-        }
-        if self.is_play_controller_active() {
-            self.camera.target = feet;
         }
     }
 
@@ -95,6 +92,11 @@ impl State {
         } else {
             t.rotation = new_rot;
             t.scale = new_scale;
+        }
+
+        let new_feet = self.play_character_feet_position();
+        if (new_feet - feet).length_squared() > 1e-10 {
+            self.sync_play_camera_on_player_feet_moved(feet, new_feet);
         }
 
         // Editor: cuerpo independiente del blanco orbital (cámara = gizmo). Play acopla en set_play_character_feet_position.

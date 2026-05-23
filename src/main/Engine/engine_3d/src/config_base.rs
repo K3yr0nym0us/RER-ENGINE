@@ -78,6 +78,9 @@ impl State {
         self.play_character_entity = None;
         self.editor_camera_entity = None;
         self.play_camera_eye_position = glam::Vec3::ZERO;
+        self.play_camera_follow_mode = crate::ipc::PlayCameraFollowMode::MoveWithCharacter;
+        self.play_camera_follow_offset = glam::Vec3::ZERO;
+        self.play_camera_follow_offset_local = glam::Vec3::ZERO;
         self.sun_entity = None;
         self.sun_icon_mesh_idx = None;
         self.sun_icon_tex_idx = None;

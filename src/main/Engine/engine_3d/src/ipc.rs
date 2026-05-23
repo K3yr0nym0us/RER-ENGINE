@@ -29,6 +29,17 @@ pub struct AxisValue {
     pub value: f32,
 }
 
+/// Modo de seguimiento del ojo FPS respecto al jugador en editor.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PlayCameraFollowMode {
+    /// Reposiciona el ojo hacia la cabeza + offset y recorta con raycast si hay obstáculos.
+    FollowCharacter,
+    /// Traslada el ojo con el mismo delta que los pies del jugador.
+    #[default]
+    MoveWithCharacter,
+}
+
 // ---------------------------------------------------------------------------
 // Comandos que Electron envía al motor (stdin → motor)
 //
@@ -116,6 +127,8 @@ pub enum EngineCommand {
         frustum_distance: Option<f32>,
         #[serde(default)]
         camera_only: Option<bool>,
+        #[serde(default)]
+        camera_follow_mode: Option<PlayCameraFollowMode>,
     },
     /// Actualizar transform de una entidad por id.
     ///
@@ -493,6 +506,8 @@ pub struct SavePlayerTransformSnapshot {
     pub pitch: f32,
     pub fov_y: f32,
     pub frustum_distance: f32,
+    #[serde(default)]
+    pub camera_follow_mode: PlayCameraFollowMode,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub visual_model_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -676,6 +691,7 @@ pub enum EngineEvent {
         pitch: f32,
         fov_y: f32,
         frustum_distance: f32,
+        camera_follow_mode: PlayCameraFollowMode,
         body_center: [f32; 3],
         body_rotation: [f32; 4],
         body_scale: [f32; 3],

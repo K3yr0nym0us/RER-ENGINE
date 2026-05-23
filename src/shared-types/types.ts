@@ -199,6 +199,9 @@ export interface SavedWorldConfig {
   shadowDarkness?:   number
 }
 
+/** Modo de seguimiento del ojo FPS respecto al jugador en editor. */
+export type PlayCameraFollowMode = 'follow_character' | 'move_with_character'
+
 /** Vista del personaje jugable en escena (cámara FPS en 3D; transform de entidad en 2D). */
 export interface SavedPlayerTransform {
   /** Pies del Player en el mundo. */
@@ -220,6 +223,8 @@ export interface SavedPlayerTransform {
   fov_y?: number
   /** Alcance del gizmo de frustum en el editor (metros). */
   frustum_distance?: number
+  /** Seguimiento del ojo FPS respecto al jugador en editor. */
+  camera_follow_mode?: PlayCameraFollowMode
   /** Bindings de control Lua del jugador principal. */
   control_bindings?: SavedControlBindings
 }
@@ -406,6 +411,7 @@ export interface PlayCharacterViewChanged {
   pitch:                 number
   fov_y:                 number
   frustum_distance:      number
+  camera_follow_mode?:   PlayCameraFollowMode
   body_center:           [number, number, number]
   body_rotation:         [number, number, number, number]
   body_scale:            [number, number, number]

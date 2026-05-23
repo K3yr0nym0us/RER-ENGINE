@@ -15,6 +15,7 @@ use crate::config_3d::{Camera, WorldBounds3D};
 use crate::config_compat::{ActiveTool, Camera2D, GridBuffer, GridConfig, PhysicsWorld2D};
 use crate::ecs::{EntityId, NameComponent, World};
 use crate::gizmo::GizmoBuffer;
+use crate::ipc::PlayCameraFollowMode;
 use crate::mesh::Mesh;
 use crate::entity_save_meta::EntitySaveRegistry;
 use crate::scripting::ScriptEngine;
@@ -59,8 +60,14 @@ pub struct State {
     /// Profundidad del gizmo de frustum FPS en modo editor (metros).
     pub(crate) fps_editor_frustum_distance: f32,
     /// Posición absoluta del ojo de la cámara FPS en editor. Independiente del transform
-    /// del jugador: mover al Player no la cambia. En Play se fuerza a `pies + eye_offset`.
+    /// del jugador salvo modo de seguimiento activo en el panel Cámara.
     pub(crate) play_camera_eye_position: glam::Vec3,
+    /// Modo de seguimiento del ojo FPS respecto al jugador en editor.
+    pub(crate) play_camera_follow_mode: PlayCameraFollowMode,
+    /// Offset mundo ojo−cabeza (legacy / depuración).
+    pub(crate) play_camera_follow_offset: glam::Vec3,
+    /// Offset ojo−cabeza en espacio local del jugador (yaw del cuerpo); `FollowCharacter`.
+    pub(crate) play_camera_follow_offset_local: glam::Vec3,
     /// Cámara 2D ortográfica activa cuando se carga una escena 2D.
     /// `None` = modo 3D (usa `camera`).
     pub camera_2d: Option<Camera2D>,
