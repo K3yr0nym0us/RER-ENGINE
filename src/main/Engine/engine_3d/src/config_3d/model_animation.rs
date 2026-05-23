@@ -12,7 +12,7 @@ use crate::config_3d::model_asset::{
     GltfFile, ModelAsset, MAX_JOINTS,
 };
 use crate::ipc::ModelClipInfoEvent;
-use crate::ecs::EntityId;
+use crate::ecs::{EntityId, Transform};
 use crate::engine::State;
 use crate::ipc::{send_event, EngineEvent};
 use crate::mesh::{upload_skinned, SkinnedMesh};
@@ -58,15 +58,25 @@ impl State {
         self.default_animation_by_entity.remove(&id);
 
         let normalize = if self.play_character_entity == Some(id) {
-            Some(PLAY_CHARACTER_BODY_HEIGHT)
+            Some(
+                self.world
+                    .get::<Transform>(id)
+                    .map(|t| (t.scale.y * PLAY_CHARACTER_BODY_HEIGHT).max(0.1))
+                    .unwrap_or(PLAY_CHARACTER_BODY_HEIGHT),
+            )
         } else {
             None
         };
 
         let path_buf = Path::new(path);
 
-        let asset = if let Some(cached) = self.model_assets.get(path) {
-            Arc::clone(cached)
+        let cached_asset = if normalize.is_none() {
+            self.model_assets.get(path).map(Arc::clone)
+        } else {
+            None
+        };
+        let asset = if let Some(cached) = cached_asset {
+            cached
         } else if let Some(file) = gltf_file {
             match model_asset::load_model_asset_from_gltf(file, normalize) {
                 Some(loaded) => {

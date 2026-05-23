@@ -18,6 +18,7 @@ pub(crate) mod character_anchor;
 pub(crate) mod play_character;
 pub(crate) mod fps_camera;
 pub(crate) mod editor_camera;
+pub(crate) mod preview_editor;
 pub(crate) mod play_controller;
 pub(crate) mod fbx_facing;
 pub(crate) mod mesh_3d;
@@ -191,7 +192,12 @@ impl State {
 
         let is_play_character = self.play_character_entity == Some(id);
         let normalize = if is_play_character {
-            Some(PLAY_CHARACTER_BODY_HEIGHT)
+            Some(
+                self.world
+                    .get::<Transform>(id)
+                    .map(|t| (t.scale.y * PLAY_CHARACTER_BODY_HEIGHT).max(0.1))
+                    .unwrap_or(PLAY_CHARACTER_BODY_HEIGHT),
+            )
         } else {
             None
         };

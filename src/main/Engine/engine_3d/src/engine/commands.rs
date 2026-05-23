@@ -762,6 +762,7 @@ impl State {
                 self.preview_playing = playing;
 
                 if playing {
+                    self.capture_preview_editor_snapshots();
                     self.reset_play_controller_motion();
                     self.ensure_play_character_kinematic_only();
                     self.capture_play_camera_follow_offset();
@@ -785,48 +786,8 @@ impl State {
                     self.active_gizmo_axis = None;
 
                     self.script_engine.clear_control_script_cache();
-                    let model_bound: Vec<u32> =
-                        self.model_animation_bindings.keys().copied().collect();
-                    for entity_id in model_bound {
-                        let default_name = self
-                            .model_clip_defaults
-                            .get(&entity_id)
-                            .cloned()
-                            .or_else(|| {
-                                let path = self
-                                    .model_animation_bindings
-                                    .get(&entity_id)
-                                    .map(|b| b.asset_path.clone())?;
-                                self.model_assets
-                                    .get(&path)
-                                    .and_then(|a| a.clips.first().map(|c| c.name.clone()))
-                            });
-                        if let Some(name) = default_name {
-                            self.play_model_clip(entity_id, &name, true);
-                        }
-                    }
-                    let entities_with_anims: Vec<u32> = self.animations.keys().copied().collect();
-                    for entity_id in entities_with_anims {
-                        if self.model_animation_bindings.contains_key(&entity_id) {
-                            continue;
-                        }
-                        let default_name = self
-                            .default_animation_by_entity
-                            .get(&entity_id)
-                            .cloned()
-                            .or_else(|| {
-                                self.animations
-                                    .get(&entity_id)
-                                    .and_then(|m| m.keys().next().cloned())
-                            });
-                        if let Some(name) = default_name {
-                            self.handle_command(EngineCommand::PlayAnimation {
-                                id: entity_id,
-                                name,
-                                loop_: true,
-                            });
-                        }
-                    }
+                    self.restore_preview_editor_snapshots_on_enter();
+                    self.capture_play_session_rotation_baselines();
                 } else {
                     for id in self.active_model_clips.keys().copied().collect::<Vec<_>>() {
                         self.stop_model_clip(id);
@@ -842,6 +803,9 @@ impl State {
                         self.show_first_frame_of_animation(entity_id, &anim_name);
                     }
                     self.stop_audio_internal();
+                    self.commit_play_session_to_editor();
+                    self.clear_preview_editor_snapshots();
+                    self.reset_play_controller_motion();
                     self.sync_fps_camera_mode();
                     self.emit_play_character_view_changed(false);
                 }

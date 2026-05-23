@@ -85,12 +85,41 @@ pub(crate) fn aabb_y_extent_score(min: [f32; 3], max: [f32; 3]) -> f32 {
 
 /// Elige la rotación que maximiza altura en Y (Mixamo suele exportar el torso en X local).
 pub(crate) fn upright_quat_from_vertex_aabb(min: [f32; 3], max: [f32; 3]) -> glam::Quat {
+    upright_quat_from_vertices_bounds(min, max, &[])
+}
+
+fn upright_candidate_score(
+    min: [f32; 3],
+    max: [f32; 3],
+    sample_points: &[glam::Vec3],
+    cand: glam::Quat,
+) -> f32 {
+    let mat = glam::Mat4::from_quat(cand);
+    let (tmin, tmax) = transform_aabb_corners_for_play(min, max, mat);
+    let y_score = aabb_y_extent_score(tmin, tmax);
+    if sample_points.is_empty() {
+        return y_score;
+    }
+    let mid_y = (tmax[1] + tmin[1]) * 0.5;
+    let avg_y = sample_points
+        .iter()
+        .map(|p| mat.transform_point3(*p).y)
+        .sum::<f32>()
+        / sample_points.len() as f32;
+    let feet_bonus = if avg_y < mid_y { 0.1 } else { 0.0 };
+    y_score + feet_bonus
+}
+
+/// AABB + centroide bajo (pies abajo) para desempatar ±90° en Mixamo/GLB.
+pub(crate) fn upright_quat_from_vertices_bounds(
+    min: [f32; 3],
+    max: [f32; 3],
+    sample_points: &[glam::Vec3],
+) -> glam::Quat {
     let mut best = glam::Quat::IDENTITY;
-    let mut best_score = aabb_y_extent_score(min, max);
+    let mut best_score = upright_candidate_score(min, max, sample_points, best);
     for cand in upright_candidates() {
-        let mat = glam::Mat4::from_quat(cand);
-        let (tmin, tmax) = transform_aabb_corners_for_play(min, max, mat);
-        let score = aabb_y_extent_score(tmin, tmax);
+        let score = upright_candidate_score(min, max, sample_points, cand);
         if score > best_score + 1e-4 {
             best_score = score;
             best = cand;
@@ -137,28 +166,6 @@ pub(crate) fn transform_aabb_corners_for_play(
         }
     }
     (out_min, out_max)
-}
-
-/// Normalización jugador FP skinned: enderezar + escala por altura Y (como preview glTF).
-pub(crate) fn skinned_play_normalize_mat(
-    min: [f32; 3],
-    max: [f32; 3],
-    upright: glam::Quat,
-    target_height: f32,
-) -> glam::Mat4 {
-    use glam::{Mat4, Vec3};
-
-    let upright_mat = Mat4::from_quat(upright);
-    let (min_u, max_u) = transform_aabb_corners_for_play(min, max, upright_mat);
-    let height = (max_u[1] - min_u[1]).max(1e-5);
-    let scale = (target_height / height).clamp(0.001, 50.0);
-    let center = Vec3::new(
-        (min_u[0] + max_u[0]) * 0.5,
-        (min_u[1] + max_u[1]) * 0.5,
-        (min_u[2] + max_u[2]) * 0.5,
-    );
-    let height_mat = Mat4::from_scale(Vec3::splat(scale)) * Mat4::from_translation(-center);
-    height_mat * upright_mat
 }
 
 /// Despacha por extensión: glTF (`.glb`/`.gltf`) o FBX (`.fbx`).

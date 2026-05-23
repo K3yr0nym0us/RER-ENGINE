@@ -93,6 +93,7 @@ impl State {
         self.light_intensity = crate::config_3d::directional_light::DEFAULT_LIGHT_INTENSITY;
         self.shadow_darkness = crate::config_3d::directional_light::DEFAULT_SHADOW_DARKNESS;
         self.play_character_mesh_forward_xz = glam::Vec2::new(0.0, 1.0);
+        self.clear_preview_editor_snapshots();
         self.undo_stack.clear();
         self.redo_stack.clear();
         self.is_applying_undo = false;

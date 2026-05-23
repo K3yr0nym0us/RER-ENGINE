@@ -669,12 +669,14 @@ fn load_gltf_asset_from_file(
             .name()
             .map(|s| s.to_string())
             .unwrap_or_else(|| format!("part_{}", asset_parts.len()));
-        asset_parts.push(SkinnedMeshPart {
+        let mut part = SkinnedMeshPart {
             name: part_name,
             mesh: mesh_data,
             mesh_bind_world,
             inverse_bind: part_ibm,
-        });
+        };
+        bake_gltf_mesh_bind_world(&mut part);
+        asset_parts.push(part);
     }
     if asset_parts.is_empty() {
         return None;
@@ -690,9 +692,52 @@ fn load_gltf_asset_from_file(
         .collect();
 
     let mesh_normalize = if let Some(target_height) = normalize_to_extent {
-        let norm = compute_gltf_play_mesh_normalize_mat(&asset_parts, target_height)?;
+        let joint_positions = bind_joint_world_positions(
+            &joint_gltf_nodes,
+            &bind_local,
+            &scene_parents,
+            &gltf_bind_node_local,
+        );
+        let upright = upright_quat_for_gltf_play_character(
+            &asset_parts,
+            &joint_names,
+            &joint_gltf_nodes,
+            &bind_local,
+            &scene_parents,
+            &gltf_bind_node_local,
+        )?;
+        let (height, center) =
+            gltf_play_bind_height_and_center(&asset_parts, &joint_positions, upright)?;
+        let scale = (target_height / height).clamp(0.001, 50.0);
+        let mut norm =
+            Mat4::from_scale(Vec3::splat(scale)) * Mat4::from_translation(-center) * Mat4::from_quat(upright);
+        log::info!(
+            "[model_asset] glTF play scale: height={height:.4} scale={scale:.6} target={target_height:.3}",
+        );
         for part in asset_parts.iter_mut() {
             apply_normalize_to_skinned_vertices(&mut part.mesh.vertices, norm);
+        }
+        if let Some(bind_center) = gltf_play_bind_pose_aabb_center(
+            &asset_parts,
+            &joint_gltf_nodes,
+            &bind_local,
+            &scene_parents,
+            &gltf_bind_node_local,
+            norm,
+        ) {
+            if bind_center.length_squared() > 1e-10 {
+                let fix = Mat4::from_translation(-bind_center);
+                for part in asset_parts.iter_mut() {
+                    apply_normalize_to_skinned_vertices(&mut part.mesh.vertices, fix);
+                }
+                norm = fix * norm;
+                log::info!(
+                    "[model_asset] glTF play bind-pose center: ({:.4}, {:.4}, {:.4})",
+                    bind_center.x,
+                    bind_center.y,
+                    bind_center.z
+                );
+            }
         }
         norm
     } else {
@@ -1006,49 +1051,243 @@ fn apply_normalize_to_skinned_vertices(vertices: &mut [SkinnedVertex], norm: Mat
     }
 }
 
-/// Pieza cuyo AABB local se endereza mejor (torso Mixamo suele estar en X, no en la más grande).
-fn gltf_play_reference_part<'a>(parts: &'a [SkinnedMeshPart]) -> Option<&'a SkinnedMeshPart> {
-    let mut best: Option<&SkinnedMeshPart> = None;
-    let mut best_score = 0.0f32;
-    for part in parts {
-        let (min, max) = skinned_mesh_bounds(&part.mesh.vertices)?;
-        let upright = crate::config_3d::mesh_3d::upright_quat_from_vertex_aabb(min, max);
-        let mat = Mat4::from_quat(upright);
-        let (tmin, tmax) = crate::config_3d::mesh_3d::transform_aabb_corners_for_play(min, max, mat);
-        let score = crate::config_3d::mesh_3d::aabb_y_extent_score(tmin, tmax);
-        if score > best_score {
-            best_score = score;
-            best = Some(part);
-        }
+/// Hornea la transform del nodo mesh en vértices e IBM (espacio escena = joints + paleta Khronos).
+fn bake_gltf_mesh_bind_world(part: &mut SkinnedMeshPart) {
+    let bind = part.mesh_bind_world;
+    if bind == Mat4::IDENTITY {
+        return;
     }
-    best
+    let inv_bind = bind.inverse();
+    for v in part.mesh.vertices.iter_mut() {
+        v.position = bind
+            .transform_point3(Vec3::from_array(v.position))
+            .to_array();
+    }
+    for ibm in part.inverse_bind.iter_mut() {
+        *ibm = (Mat4::from_cols_array_2d(ibm) * inv_bind).to_cols_array_2d();
+    }
+    part.mesh_bind_world = Mat4::IDENTITY;
 }
 
-/// Enderezar + altura en espacio local de malla; misma matriz en vértices y paleta (skinning simétrico).
-fn compute_gltf_play_mesh_normalize_mat(
+fn gltf_skinned_parts_bounds(parts: &[SkinnedMeshPart]) -> Option<([f32; 3], [f32; 3])> {
+    let mut min = [f32::MAX; 3];
+    let mut max = [f32::MIN; 3];
+    let mut any = false;
+    for part in parts {
+        let Some((pmin, pmax)) = skinned_mesh_bounds(&part.mesh.vertices) else {
+            continue;
+        };
+        any = true;
+        for i in 0..3 {
+            min[i] = min[i].min(pmin[i]);
+            max[i] = max[i].max(pmax[i]);
+        }
+    }
+    any.then_some((min, max))
+}
+
+fn gltf_skinned_sample_points(parts: &[SkinnedMeshPart]) -> Vec<Vec3> {
+    parts
+        .iter()
+        .flat_map(|part| {
+            part.mesh
+                .vertices
+                .iter()
+                .map(|v| Vec3::from_array(v.position))
+        })
+        .collect()
+}
+
+fn find_joint_index_by_name(joint_names: &[String], needles: &[&str]) -> Option<usize> {
+    for needle in needles {
+        let needle = needle.to_ascii_lowercase();
+        if let Some(ix) = joint_names
+            .iter()
+            .position(|name| name.to_ascii_lowercase().contains(&needle))
+        {
+            return Some(ix);
+        }
+    }
+    None
+}
+
+fn bind_joint_world_positions(
+    joint_gltf_nodes: &[usize],
+    bind_local: &[Mat4],
+    scene_parents: &HashMap<usize, usize>,
+    bind_node_local: &HashMap<usize, Mat4>,
+) -> Vec<Vec3> {
+    compute_gltf_joint_worlds(
+        joint_gltf_nodes,
+        bind_local,
+        scene_parents,
+        bind_node_local,
+    )
+    .into_iter()
+    .map(|m| m.transform_point3(Vec3::ZERO))
+    .collect()
+}
+
+fn upright_quat_from_bind_joints(joint_names: &[String], positions: &[Vec3]) -> Option<Quat> {
+    if positions.is_empty() {
+        return None;
+    }
+    let mut up = if let (Some(hip), Some(head)) = (
+        find_joint_index_by_name(joint_names, &["hips", "pelvis", "root"]),
+        find_joint_index_by_name(joint_names, &["head"]),
+    ) {
+        positions[head] - positions[hip]
+    } else {
+        let (min_i, max_i) = positions.iter().enumerate().fold(
+            (0usize, 0usize),
+            |(min_i, max_i), (i, p)| {
+                let min_i = if p.y < positions[min_i].y { i } else { min_i };
+                let max_i = if p.y > positions[max_i].y { i } else { max_i };
+                (min_i, max_i)
+            },
+        );
+        positions[max_i] - positions[min_i]
+    };
+    if up.length_squared() < 1e-8 {
+        return None;
+    }
+    up = up.normalize();
+    if up.y > 0.999 {
+        return Some(Quat::IDENTITY);
+    }
+    Some(Quat::from_rotation_arc(up, Vec3::Y))
+}
+
+fn upright_quat_for_gltf_play_character(
     parts: &[SkinnedMeshPart],
-    target_height: f32,
-) -> Option<Mat4> {
-    let reference = gltf_play_reference_part(parts)?;
-    let (min, max) = skinned_mesh_bounds(&reference.mesh.vertices)?;
-    log::info!(
-        "[model_asset] glTF play upright: pieza ref '{}' ({} verts)",
-        reference.name,
-        reference.mesh.vertices.len()
+    joint_names: &[String],
+    joint_gltf_nodes: &[usize],
+    bind_local: &[Mat4],
+    scene_parents: &HashMap<usize, usize>,
+    bind_node_local: &HashMap<usize, Mat4>,
+) -> Option<Quat> {
+    let joint_positions = bind_joint_world_positions(
+        joint_gltf_nodes,
+        bind_local,
+        scene_parents,
+        bind_node_local,
     );
-    let upright = crate::config_3d::mesh_3d::upright_quat_from_vertex_aabb(min, max);
-    let norm = crate::config_3d::mesh_3d::skinned_play_normalize_mat(min, max, upright, target_height);
-    let sy = max[1] - min[1];
-    let sx = max[0] - min[0];
-    let sz = max[2] - min[2];
+    if let Some(upright) = upright_quat_from_bind_joints(joint_names, &joint_positions) {
+        log::info!(
+            "[model_asset] glTF play upright: esqueleto (joints={}) quat=({:.3},{:.3},{:.3},{:.3})",
+            joint_positions.len(),
+            upright.x,
+            upright.y,
+            upright.z,
+            upright.w
+        );
+        return Some(upright);
+    }
+    let (min, max) = gltf_skinned_parts_bounds(parts)?;
+    let points = gltf_skinned_sample_points(parts);
+    let upright =
+        crate::config_3d::mesh_3d::upright_quat_from_vertices_bounds(min, max, &points);
     log::info!(
-        "[model_asset] glTF play upright: AABB local sy={sy:.3} sx={sx:.3} sz={sz:.3} quat=({:.3},{:.3},{:.3},{:.3})",
+        "[model_asset] glTF play upright: AABB fallback quat=({:.3},{:.3},{:.3},{:.3})",
         upright.x,
         upright.y,
         upright.z,
         upright.w
     );
-    Some(norm)
+    Some(upright)
+}
+
+/// Altura y centro en espacio enderezado (malla + esqueleto) para escalar al jugador FP.
+fn gltf_play_bind_height_and_center(
+    parts: &[SkinnedMeshPart],
+    joint_positions: &[Vec3],
+    upright: Quat,
+) -> Option<(f32, Vec3)> {
+    let up_mat = Mat4::from_quat(upright);
+    let mut min_u = Vec3::splat(f32::MAX);
+    let mut max_u = Vec3::splat(f32::MIN);
+    let mut count = 0usize;
+    for p in joint_positions {
+        let pu = up_mat.transform_point3(*p);
+        min_u = min_u.min(pu);
+        max_u = max_u.max(pu);
+        count += 1;
+    }
+    for part in parts {
+        for v in &part.mesh.vertices {
+            let pu = up_mat.transform_point3(Vec3::from_array(v.position));
+            min_u = min_u.min(pu);
+            max_u = max_u.max(pu);
+            count += 1;
+        }
+    }
+    if count == 0 {
+        return None;
+    }
+    let height = (max_u.y - min_u.y).max(1e-5);
+    let center = (min_u + max_u) * 0.5;
+    Some((height, center))
+}
+
+fn skinned_vertex_position(palette: &[Mat4], vertex: &SkinnedVertex) -> Vec3 {
+    let pos = Vec4::new(
+        vertex.position[0],
+        vertex.position[1],
+        vertex.position[2],
+        1.0,
+    );
+    let mut out = Vec4::ZERO;
+    for slot in 0..4 {
+        let w = vertex.weights[slot];
+        if w <= 1e-8 {
+            continue;
+        }
+        let ji = vertex.joints[slot] as usize;
+        if ji >= palette.len() {
+            continue;
+        }
+        out += palette[ji] * pos * w;
+    }
+    out.truncate()
+}
+
+/// Centro del AABB en bind pose (tras skinning), en espacio local de entidad.
+fn gltf_play_bind_pose_aabb_center(
+    parts: &[SkinnedMeshPart],
+    joint_gltf_nodes: &[usize],
+    bind_local: &[Mat4],
+    scene_parents: &HashMap<usize, usize>,
+    bind_node_local: &HashMap<usize, Mat4>,
+    mesh_normalize: Mat4,
+) -> Option<Vec3> {
+    let joint_count = bind_local.len().min(MAX_JOINTS).min(joint_gltf_nodes.len());
+    if joint_count == 0 {
+        return None;
+    }
+    let global = compute_gltf_joint_worlds(
+        &joint_gltf_nodes[..joint_count],
+        bind_local,
+        scene_parents,
+        bind_node_local,
+    );
+    let inv_norm = mesh_normalize.inverse();
+    let mut min_p = Vec3::splat(f32::MAX);
+    let mut max_p = Vec3::splat(f32::MIN);
+    let mut any = false;
+    for part in parts {
+        let mut palette = vec![Mat4::IDENTITY; MAX_JOINTS];
+        for ji in 0..joint_count {
+            let g2b = Mat4::from_cols_array_2d(&part.inverse_bind[ji]);
+            palette[ji] = mesh_normalize * global[ji] * g2b * inv_norm;
+        }
+        for vertex in &part.mesh.vertices {
+            let p = skinned_vertex_position(&palette, vertex);
+            min_p = min_p.min(p);
+            max_p = max_p.max(p);
+            any = true;
+        }
+    }
+    any.then_some((min_p + max_p) * 0.5)
 }
 
 /// AABB de todas las mallas del FBX en espacio mundo (como `mesh_3d::load_fbx`).

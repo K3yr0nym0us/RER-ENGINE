@@ -106,6 +106,10 @@ pub struct State {
     pub(crate) quick_build_preview_kind: Option<String>,
     pub(crate) quick_build_preview_scale: Option<[f32; 3]>,
     pub preview_playing: bool,
+    pub(crate) preview_entity_transform_snapshots:
+        HashMap<EntityId, crate::config_3d::preview_editor::PreviewEntityTransform>,
+    pub(crate) preview_fp_view_snapshot:
+        Option<crate::config_3d::preview_editor::PreviewFpEditorView>,
     /// Velocidad del personaje (m/s), patrón Godot CharacterBody3D / Unity CharacterController.
     pub(crate) play_controller_velocity: GlamVec3,
     pub(crate) play_controller_on_floor: bool,
@@ -126,6 +130,8 @@ pub struct State {
     pub(crate) editor_camera_entity: Option<EntityId>,
     /// Forward local (plano XZ) del mesh del jugador; se recalcula al reemplazar el modelo.
     pub(crate) play_character_mesh_forward_xz: glam::Vec2,
+    pub(crate) play_session_body_yaw_baseline: f32,
+    pub(crate) play_session_camera_yaw_baseline: f32,
     pub(crate) tool_overlay_buffer: GizmoBuffer,
     pub(crate) snap_hint_uv: Option<[f32; 4]>,
     pub(crate) snap_hint_size: (f32, f32),

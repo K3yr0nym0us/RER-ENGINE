@@ -103,18 +103,30 @@ impl State {
         true
     }
 
-    /// Alinea el mesh del jugador al yaw de la cámara (preview/play y panel Cámara).
+    pub(crate) fn capture_play_session_rotation_baselines(&mut self) {
+        self.play_session_camera_yaw_baseline = self.camera.yaw;
+        self.play_session_body_yaw_baseline = self
+            .play_character_entity
+            .and_then(|id| self.world.get::<Transform>(id))
+            .map(|t| t.rotation.to_euler(glam::EulerRot::YXZ).0)
+            .unwrap_or(0.0);
+    }
+
     pub(crate) fn sync_player_rotation_from_look(&mut self) {
         let Some(id) = self.play_character_entity else {
             return;
         };
-        let mesh_yaw = crate::config_3d::fps_camera::mesh_yaw_from_camera_and_forward(
-            self.camera.yaw,
-            self.play_character_mesh_forward_xz,
-        );
+        let body_yaw = if self.is_play_controller_active() {
+            self.play_session_body_yaw_baseline
+                - (self.camera.yaw - self.play_session_camera_yaw_baseline)
+        } else {
+            crate::config_3d::fps_camera::mesh_yaw_from_camera_and_forward(
+                self.camera.yaw,
+                self.play_character_mesh_forward_xz,
+            )
+        };
         if let Some(t) = self.world.get_mut::<Transform>(id) {
-            // Solo yaw: pitch/roll en el transform acostaban el mesh aunque la malla esté enderezada.
-            t.rotation = glam::Quat::from_rotation_y(mesh_yaw);
+            t.rotation = glam::Quat::from_rotation_y(body_yaw);
         }
     }
 
