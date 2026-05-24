@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 
 import { useContextEngine } from '@engine'
+import { isEditorCameraEntity, isEditorCameraPath } from '@shared-types'
 
 const KEY_MAP: Record<string, string> = {
   KeyQ: 'Q',
@@ -59,7 +60,7 @@ const GAMEPAD_MAP: Record<number, string> = {
 }
 
 export function useControlBindingsRuntime() {
-  const { engineReady, previewPlaying, characterEntities, entityMetaRef, send } = useContextEngine()
+  const { engineReady, previewPlaying, characterEntities, entityMetaRef, editorCameraEntityIdRef, send } = useContextEngine()
 
   const pressedKeysRef = useRef<Set<string>>(new Set())
   const pressedMouseRef = useRef<Set<string>>(new Set())
@@ -132,6 +133,10 @@ export function useControlBindingsRuntime() {
 
         if (pressedKeyboardMouse.size > 0 || pressedGamepad.size > 0) {
           for (const character of characterEntities) {
+            if (isEditorCameraPath(character.path)) continue
+            if (isEditorCameraEntity(character.id, entityMetaRef.current[character.id], editorCameraEntityIdRef.current)) {
+              continue
+            }
             const meta = entityMetaRef.current[character.id]
             if (!meta?.controlBindings) continue
 
@@ -170,7 +175,7 @@ export function useControlBindingsRuntime() {
 
     rafId = window.requestAnimationFrame(frame)
     return () => window.cancelAnimationFrame(rafId)
-  }, [characterEntities, engineReady, entityMetaRef, previewPlaying, send])
+  }, [characterEntities, engineReady, entityMetaRef, editorCameraEntityIdRef, previewPlaying, send])
 }
 
 export default useControlBindingsRuntime

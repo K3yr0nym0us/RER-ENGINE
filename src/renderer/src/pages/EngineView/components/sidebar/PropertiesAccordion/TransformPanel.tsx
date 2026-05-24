@@ -48,10 +48,13 @@ export function TransformPanel({
   /** Quaternion acumulado mientras se arrastra (evita gimbal al recomponer Euler). */
   const rotQuatRef = useRef<[number, number, number, number]>([0, 0, 0, 1])
   const rotDraggingRef = useRef(false)
+  const rotEditingRef = useRef(false)
+  /** Grados al enfocar un input numérico (base para delta al confirmar). */
+  const rotFocusDegRef = useRef<[number, number, number]>([0, 0, 0])
 
   useEffect(() => {
     if (!entity) return
-    if (!is2D && rotDraggingRef.current) return
+    if (!is2D && (rotDraggingRef.current || rotEditingRef.current)) return
     const rot = is2D
       ? entity.rotation.map((n) => n.toFixed(1)) as [string, string, string, string]
       : (() => {
@@ -237,11 +240,13 @@ export function TransformPanel({
 
   const commitRotAxis3d = (axisIndex: 0 | 1 | 2, newDeg: number, prevDeg: number) => {
     if (!entity) return
-    const deltaDeg = shortestDegDelta(prevDeg, newDeg, 360)
+    const roundedNew = Math.round(newDeg)
+    const roundedPrev = Math.round(prevDeg)
+    const deltaDeg = shortestDegDelta(roundedPrev, roundedNew, 360)
     if (Math.abs(deltaDeg) < 1e-6) return
     setTransform((prev) => {
       const nextRot = [...prev.rot] as [string, string, string, string]
-      nextRot[axisIndex] = formatRotDisplay(axisIndex, newDeg)
+      nextRot[axisIndex] = formatRotDisplay(axisIndex, roundedNew)
       return { ...prev, rot: nextRot }
     })
     if (isPlayCharacter) {
@@ -254,18 +259,27 @@ export function TransformPanel({
     commit({ rotQuat: newQ })
   }
 
+  const commitRotationNumberInput = (axisIndex: number) => {
+    const newDeg = Math.round(parseFloat(transform.rot[axisIndex]))
+    if (!Number.isFinite(newDeg)) return
+    const baseDeg =
+      rotFocusDegRef.current[axisIndex as 0 | 1 | 2]
+      ?? Math.round(parseFloat(transform.rot[axisIndex]) || 0)
+    if (is2D) {
+      commit({ rot: transform.rot })
+      return
+    }
+    commitRotAxis3d(axisIndex as 0 | 1 | 2, newDeg, baseDeg)
+    rotFocusDegRef.current[axisIndex as 0 | 1 | 2] = newDeg
+  }
+
   const applyRotationNumberInput = (axisIndex: number, raw: string) => {
-    const prevDeg = parseFloat(transform.rot[axisIndex]) || 0
     const next = [...transform.rot] as [string, string, string, string]
     next[axisIndex] = raw
     setTransform((prev) => ({ ...prev, rot: next }))
-    const newVal = parseFloat(raw)
-    if (!Number.isFinite(newVal)) return
-    if (is2D) {
+    if (is2D && Number.isFinite(parseFloat(raw))) {
       commit({ rot: next })
-      return
     }
-    commitRotAxis3d(axisIndex as 0 | 1 | 2, newVal, prevDeg)
   }
 
   const formatRotationOnBlur = (axisIndex: number) => {
@@ -317,10 +331,37 @@ export function TransformPanel({
                   aria-label={`${is2D ? t('Rotation (xyzw)') : t('Rotation (degrees)')} ${ax}`}
                   className="form-control form-control-sm text-center bg-dark text-info border-secondary prop-input"
                   style={{ width: '4.25rem', flex: '0 0 auto' }}
+                  onFocus={() => {
+                    if (is2D || i > 2) return
+                    rotEditingRef.current = true
+                    rotFocusDegRef.current[i as 0 | 1 | 2] = Math.round(parseFloat(transform.rot[i]) || 0)
+                  }}
                   onChange={(e) => applyRotationNumberInput(i, e.target.value)}
-                  onBlur={() => formatRotationOnBlur(i)}
+                  onBlur={() => {
+                    if (!is2D && i <= 2) {
+                      commitRotationNumberInput(i)
+                      rotEditingRef.current = false
+                      return
+                    }
+                    formatRotationOnBlur(i)
+                  }}
+                  onMouseUp={() => {
+                    if (is2D || i > 2) return
+                    commitRotationNumberInput(i)
+                  }}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                    if (e.key === 'Enter') {
+                      (e.target as HTMLInputElement).blur()
+                      return
+                    }
+                    if (is2D || i > 2) return
+                    if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return
+                    e.preventDefault()
+                    const prevDeg = Math.round(parseFloat(transform.rot[i]) || 0)
+                    const step = typeof rotStep === 'number' ? rotStep : 1
+                    const nextDeg = prevDeg + (e.key === 'ArrowUp' ? step : -step)
+                    commitRotAxis3d(i as 0 | 1 | 2, nextDeg, prevDeg)
+                    rotFocusDegRef.current[i as 0 | 1 | 2] = nextDeg
                   }}
                 />
               </div>
