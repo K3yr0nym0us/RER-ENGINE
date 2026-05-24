@@ -37,6 +37,7 @@ pub struct State {
     pub(crate) _shadow_texture: wgpu::Texture,
     pub(crate) depth_view: wgpu::TextureView,
     pub(crate) taa: crate::taa::TaaPass,
+    pub(crate) vsync_enabled: bool,
     pub(crate) prev_view_proj: [[f32; 4]; 4],
     pub(crate) scene_buffer: wgpu::Buffer,
     pub(crate) scene_bind_group: wgpu::BindGroup,
@@ -235,5 +236,23 @@ impl State {
             default_base,
             names,
         )
+    }
+
+    /// Activa o desactiva V-Sync reconfigurendo el swapchain.
+    pub fn set_vsync(&mut self, enabled: bool) {
+        self.vsync_enabled = enabled;
+        self.config.present_mode = if enabled {
+            wgpu::PresentMode::AutoVsync
+        } else {
+            wgpu::PresentMode::AutoNoVsync
+        };
+        self.surface.configure(&self.device, &self.config);
+        log::info!("[vsync] V-Sync {}", if enabled { "activado" } else { "desactivado" });
+    }
+
+    /// Activa o desactiva TAA (sombra + escena).
+    pub fn set_taa(&mut self, enabled: bool) {
+        self.taa.set_enabled(enabled);
+        log::info!("[taa] TAA {}", if enabled { "activado" } else { "desactivado" });
     }
 }

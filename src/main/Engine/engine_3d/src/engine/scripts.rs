@@ -318,6 +318,12 @@ impl State {
                 ScriptCmd::PlayControllerSetJumpSpeed(speed) => {
                     self.play_controller_lua_jump_speed = Some(speed.max(0.0));
                 }
+                ScriptCmd::SetVsync { enabled } => {
+                    self.set_vsync(enabled);
+                }
+                ScriptCmd::SetTaa { enabled } => {
+                    self.set_taa(enabled);
+                }
             }
         }
     }

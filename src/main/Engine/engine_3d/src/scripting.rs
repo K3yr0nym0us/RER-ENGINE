@@ -53,6 +53,10 @@ pub enum ScriptCmd {
     PlayControllerSetSprintMultiplier(f32),
     /// Velocidad inicial de salto (m/s) para el frame actual.
     PlayControllerSetJumpSpeed(f32),
+    /// Activate or deactivate V-Sync.
+    SetVsync { enabled: bool },
+    /// Activate or deactivate temporal anti-aliasing (shadow + scene).
+    SetTaa { enabled: bool },
 }
 
 // ---------------------------------------------------------------------------
@@ -544,6 +548,22 @@ impl ScriptEngine {
         }).expect("create fp_set_jump_speed fn");
         let _ = globals.set("__api_fp_set_jump_speed", fp_set_jump_speed);
 
+        let set_vsync = lua.create_function(|lua_ctx, enabled: bool| {
+            push_cmd(lua_ctx, "set_vsync", |t| {
+                t.set("enabled", enabled)?;
+                Ok(())
+            })
+        }).expect("create set_vsync fn");
+        let _ = globals.set("__api_set_vsync", set_vsync);
+
+        let set_taa = lua.create_function(|lua_ctx, enabled: bool| {
+            push_cmd(lua_ctx, "set_taa", |t| {
+                t.set("enabled", enabled)?;
+                Ok(())
+            })
+        }).expect("create set_taa fn");
+        let _ = globals.set("__api_set_taa", set_taa);
+
         // engine table: the public API that scripts use
         // engine.move_to, engine.translate, etc.
         let engine_table = lua.create_table().expect("engine table");
@@ -567,6 +587,8 @@ impl ScriptEngine {
         let _ = engine_table.set("play_character_set_walk_speed", globals.get::<LuaFunction>("__api_fp_set_walk_speed").ok());
         let _ = engine_table.set("play_character_set_sprint_multiplier", globals.get::<LuaFunction>("__api_fp_set_sprint_multiplier").ok());
         let _ = engine_table.set("play_character_set_jump_speed", globals.get::<LuaFunction>("__api_fp_set_jump_speed").ok());
+        let _ = engine_table.set("set_vsync", globals.get::<LuaFunction>("__api_set_vsync").ok());
+        let _ = engine_table.set("set_taa", globals.get::<LuaFunction>("__api_set_taa").ok());
         let _ = globals.set("engine", engine_table);
 
     }
@@ -732,6 +754,12 @@ fn parse_cmd_table(t: LuaTable) -> LuaResult<ScriptCmd> {
         "fp_set_jump_speed" | "play_character_set_jump_speed" => {
             Ok(ScriptCmd::PlayControllerSetJumpSpeed(t.get("speed")?))
         }
+        "set_vsync" => Ok(ScriptCmd::SetVsync {
+            enabled: t.get("enabled")?,
+        }),
+        "set_taa" => Ok(ScriptCmd::SetTaa {
+            enabled: t.get("enabled")?,
+        }),
         other => Err(LuaError::runtime(format!("unknown script cmd: {other}"))),
     }
 }

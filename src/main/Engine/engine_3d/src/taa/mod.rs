@@ -329,8 +329,8 @@ impl TaaPass {
         ];
 
         Self {
-            enabled: true,
-            scene_taa_enabled: true,
+            enabled: false,
+            scene_taa_enabled: false,
             ambient_view,
             direct_view,
             depth_export_view,
@@ -532,6 +532,16 @@ impl TaaPass {
             self.scene_first_frame = true;
         }
         self.current_jitter = halton_jitter(self.frame_index);
+    }
+
+    pub fn set_enabled(&mut self, enabled: bool) {
+        if self.enabled == enabled && self.scene_taa_enabled == enabled {
+            return;
+        }
+        self.enabled = enabled;
+        self.scene_taa_enabled = enabled;
+        self.shadow_first_frame = true;
+        self.scene_first_frame = true;
     }
 
     pub fn present_scene(
