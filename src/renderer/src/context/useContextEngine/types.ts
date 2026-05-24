@@ -581,6 +581,8 @@ export interface EngineInternalRefs {
 	sceneBurstAwaitingPlayerViewRef: MutableRefObject<boolean>
 	/** Colisionadores 3D enviados sin cola de restore. */
 	sceneBurstPendingColliderCountRef: MutableRefObject<number>
+	/** Operaciones IPC pendientes durante burst load 3D (ready / cambio escena). */
+	sceneBurstPendingOpsRef: MutableRefObject<number>
 }
 
 export interface EngineContextValue extends EngineState {
@@ -594,6 +596,7 @@ export interface EngineContextValue extends EngineState {
 	sceneBurstLoadInProgressRef: MutableRefObject<boolean>
 	sceneBurstAwaitingPlayerViewRef: MutableRefObject<boolean>
 	sceneBurstPendingColliderCountRef: MutableRefObject<number>
+	sceneBurstPendingOpsRef: MutableRefObject<number>
 	entityTransformsRef: MutableRefObject<Record<number, Transform>>
 	entityMetaRef: MutableRefObject<Record<number, EntityMeta>>
 	pendingRestoresRef: MutableRefObject<Map<string, PendingRestore[]>>

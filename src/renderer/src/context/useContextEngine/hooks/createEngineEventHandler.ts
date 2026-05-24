@@ -46,7 +46,13 @@ import {
 	endSceneImportLoading,
 	needsSceneBurstLoad,
 	trackSceneBurstCollider,
+	trackSceneBurstOp,
+	trackSceneBurstModelPreloads,
+	completeSceneBurstOp,
 	tryEndSceneBurstLoad,
+	takePendingModelLoadByPath,
+	takePendingRestoreByPath,
+	drainPendingRestoreSlot,
 } from './sceneImportOverlay';
 import type { EngineAction, EngineInternalRefs, PendingRestore, Transform } from '../types';
 
@@ -255,7 +261,9 @@ export function createEngineEventHandler({
 						dispatch({ type: 'ADD_SPRITE_INFO', payload: { path: sprite.path, name: sprite.name } });
 					}
 				}
-				if (save.models && save.models.length > 0) {
+				const burstLoadPlanned = !importScene2d
+					&& needsSceneBurstLoad(projectType, gameStyle, save);
+				if (save.models && save.models.length > 0 && !burstLoadPlanned) {
 					for (const model of save.models) {
 						sendEngine({ cmd: 'load_model_asset', path: model.path, name: model.name } as never);
 						dispatch({ type: 'ADD_MODEL_INFO', payload: { path: model.path, name: model.name, loading: true } });
@@ -302,26 +310,41 @@ export function createEngineEventHandler({
 				if (burstLoad) {
 					refs.sceneBurstAwaitingPlayerViewRef.current = false;
 					refs.sceneBurstPendingColliderCountRef.current = 0;
-					beginSceneBurstLoad(dispatch, refs.sceneBurstLoadInProgressRef);
+					beginSceneBurstLoad(dispatch, refs.sceneBurstLoadInProgressRef, refs);
+					if (save.models && save.models.length > 0) {
+						trackSceneBurstModelPreloads(refs, save.models.length);
+						for (const model of save.models) {
+							sendEngine({ cmd: 'load_model_asset', path: model.path, name: model.name } as never);
+							dispatch({ type: 'ADD_MODEL_INFO', payload: { path: model.path, name: model.name, loading: true } });
+						}
+					}
 				}
 				const loadBlueprints = save.blueprints ?? refs.blueprintsRef.current;
 				for (const entity of save.entities) {
 					const transform = resolveEntityTransform(entity, loadBlueprints);
 					if (entity.kind === 'collider' && entity.points) {
-						if (burstLoad) trackSceneBurstCollider(refs);
-						sendEngine({ cmd: 'create_collider_from_points', points: entity.points, track_undo: false } as never);
+						if (projectType === '2D') {
+							if (burstLoad) {
+								trackSceneBurstCollider(refs);
+								trackSceneBurstOp(refs);
+							}
+							sendEngine({ cmd: 'create_collider_from_points', points: entity.points, track_undo: false } as never);
+						}
 					} else if (entity.kind === 'execution_area' && entity.points) {
-						const pendingRestore: PendingRestore = {
-							transform,
-							name: entity.name,
-							physicsEnabled: entity.physics_enabled ?? false,
-							physicsType: entity.physics_type ?? 'static',
-							scripts: entity.scripts,
-						};
-						const queue = refs.pendingRestoresRef.current.get('[ExecutionArea]') ?? [];
-						queue.push(pendingRestore);
-						refs.pendingRestoresRef.current.set('[ExecutionArea]', queue);
-						sendEngine({ cmd: 'create_execution_area_from_points', points: entity.points, track_undo: false } as never);
+						if (projectType === '2D') {
+							const pendingRestore: PendingRestore = {
+								transform,
+								name: entity.name,
+								physicsEnabled: entity.physics_enabled ?? false,
+								physicsType: entity.physics_type ?? 'static',
+								scripts: entity.scripts,
+							};
+							const queue = refs.pendingRestoresRef.current.get('[ExecutionArea]') ?? [];
+							queue.push(pendingRestore);
+							refs.pendingRestoresRef.current.set('[ExecutionArea]', queue);
+							if (burstLoad) trackSceneBurstOp(refs);
+							sendEngine({ cmd: 'create_execution_area_from_points', points: entity.points, track_undo: false } as never);
+						}
 					} else if (entity.kind === 'character' && isPlayerPath(entity.path)) {
 						const savedPlayer = save.playerTransform;
 						if (savedPlayer) {
@@ -339,6 +362,7 @@ export function createEngineEventHandler({
 						const queue = refs.pendingRestoresRef.current.get('[Player]') ?? [];
 						queue.push(pendingRestore);
 						refs.pendingRestoresRef.current.set('[Player]', queue);
+						if (burstLoad) trackSceneBurstOp(refs);
 						sendEngine({ cmd: 'load_character', path: entity.path } as never);
 					} else if (entity.kind === 'directional_light' || isSunPath(entity.path)) {
 						const pendingRestore: PendingRestore = {
@@ -353,6 +377,7 @@ export function createEngineEventHandler({
 						const queue = refs.pendingRestoresRef.current.get('[Sun]') ?? [];
 						queue.push(pendingRestore);
 						refs.pendingRestoresRef.current.set('[Sun]', queue);
+						if (burstLoad) trackSceneBurstOp(refs);
 						sendEngine({
 							cmd: 'spawn_sun',
 							name: entity.name ?? '',
@@ -371,6 +396,7 @@ export function createEngineEventHandler({
 						const queue = refs.pendingRestoresRef.current.get('[Ground]') ?? [];
 						queue.push(pendingRestore);
 						refs.pendingRestoresRef.current.set('[Ground]', queue);
+						if (burstLoad) trackSceneBurstOp(refs);
 						sendEngine({
 							cmd: 'spawn_ground',
 							position: entity.position,
@@ -389,12 +415,15 @@ export function createEngineEventHandler({
 						const queue = refs.pendingRestoresRef.current.get('[EditorBox]') ?? [];
 						queue.push(pendingRestore);
 						refs.pendingRestoresRef.current.set('[EditorBox]', queue);
+						if (burstLoad) trackSceneBurstOp(refs);
 						sendEngine({
 							cmd: 'spawn_editor_box',
 							name: entity.name ?? '',
 							position: entity.position,
 							scale: entity.scale,
 						} as never);
+					} else if (entity.kind === 'scenario' && projectType === '3D') {
+						// load_scenario es no-op en motor 3D; no encolar restores huérfanos.
 					} else {
 						// Si la entidad es una instancia de blueprint, heredar las propiedades
 						// del blueprint original en lugar de las guardadas por entidad.
@@ -413,16 +442,22 @@ export function createEngineEventHandler({
 							entityCategory: entity.entity_category,
 							visualModelPath: entity.visual_model_path,
 						};
-						const queue = refs.pendingRestoresRef.current.get(entity.path) ?? [];
-						queue.push(pendingRestore);
-						refs.pendingRestoresRef.current.set(entity.path, queue);
+						if (!burstLoad) {
+							const queue = refs.pendingRestoresRef.current.get(entity.path) ?? [];
+							queue.push(pendingRestore);
+							refs.pendingRestoresRef.current.set(entity.path, queue);
+						}
 						if (entity.kind === 'scenario') sendEngine({ cmd: 'load_scenario', path: entity.path } as never);
-						if (entity.kind === 'character') sendEngine({ cmd: 'load_character', path: entity.path } as never);
+						if (entity.kind === 'character') {
+							if (burstLoad) trackSceneBurstOp(refs);
+							sendEngine({ cmd: 'load_character', path: entity.path } as never);
+						}
 						if (entity.kind === 'model' && entity.path && !isEditorBoxPath(entity.path)) {
 							refs.pendingModelLoadQueueRef.current.push({
 								modelPath: entity.path,
 								pending: pendingRestore,
 							});
+							if (burstLoad) trackSceneBurstOp(refs);
 							sendEngine({
 								cmd: 'load_model',
 								path: entity.path,
@@ -514,6 +549,9 @@ export function createEngineEventHandler({
 					scale: loaded.scale,
 				};
 			}
+			let burstHandled = false;
+			let burstDeferComplete = false;
+			const burstActive = refs.sceneBurstLoadInProgressRef.current;
 			const sunQueue = refs.pendingRestoresRef.current.get('[Sun]');
 			if (sunQueue && sunQueue.length > 0) {
 				const pending = sunQueue.shift()!;
@@ -530,6 +568,7 @@ export function createEngineEventHandler({
 				});
 				applyPendingRestoreMeta(refs, id, pending);
 				if (sunQueue.length === 0) refs.pendingRestoresRef.current.delete('[Sun]');
+				burstHandled = true;
 			} else {
 			const groundQueue = refs.pendingRestoresRef.current.get('[Ground]');
 			if (groundQueue && groundQueue.length > 0) {
@@ -547,6 +586,7 @@ export function createEngineEventHandler({
 				});
 				applyPendingRestoreMeta(refs, id, pending);
 				if (groundQueue.length === 0) refs.pendingRestoresRef.current.delete('[Ground]');
+				burstHandled = true;
 			} else if (
 				loaded.name?.toLowerCase() === 'ground'
 				&& !refs.entityMetaRef.current[id]
@@ -575,13 +615,22 @@ export function createEngineEventHandler({
 				});
 				applyPendingRestoreMeta(refs, id, pending);
 				if (editorBoxQueue.length === 0) refs.pendingRestoresRef.current.delete('[EditorBox]');
+				burstHandled = true;
 			} else {
 				const spawnModelPath = refs.pendingModelPathRef.current;
 				const spawnKind = refs.pendingSpawnKindRef.current ?? 'model';
 				const spawnCategory = refs.pendingSpawnCategoryRef.current;
-				const loadItem = !spawnModelPath
-					? refs.pendingModelLoadQueueRef.current.shift()
-					: null;
+				let loadItem: { modelPath: string; pending: PendingRestore } | null = null;
+				if (!spawnModelPath) {
+					if (burstActive && loaded.path) {
+						loadItem = takePendingModelLoadByPath(
+							refs.pendingModelLoadQueueRef.current,
+							loaded.path,
+						);
+					} else if (!burstActive) {
+						loadItem = refs.pendingModelLoadQueueRef.current.shift() ?? null;
+					}
+				}
 				let modelPath = spawnModelPath ?? loadItem?.modelPath ?? null;
 				let restorePending = loadItem?.pending;
 				if (!restorePending && modelPath) {
@@ -605,7 +654,29 @@ export function createEngineEventHandler({
 						}
 					}
 				}
-				if (!restorePending && spawnModelPath) {
+				if (!restorePending && burstActive && loaded.path) {
+					const matched = takePendingRestoreByPath(
+						refs.pendingRestoresRef.current,
+						loaded.path,
+					);
+					if (matched) {
+						restorePending = matched.pending;
+						modelPath = modelPath ?? matched.path;
+					}
+				}
+				if (!restorePending && burstActive && loaded.name) {
+					for (const [key, queue] of refs.pendingRestoresRef.current.entries()) {
+						if (queue.length === 0 || key.startsWith('[')) continue;
+						const head = queue[0];
+						if (head.name && head.name === loaded.name) {
+							restorePending = queue.shift()!;
+							modelPath = modelPath ?? key;
+							if (queue.length === 0) refs.pendingRestoresRef.current.delete(key);
+							break;
+						}
+					}
+				}
+				if (!restorePending && spawnModelPath && !burstActive) {
 					for (const [key, queue] of refs.pendingRestoresRef.current.entries()) {
 						if (queue.length > 0) {
 							restorePending = queue.shift()!;
@@ -679,7 +750,11 @@ export function createEngineEventHandler({
 						} as never);
 					}
 					const visualPath = restorePending?.visualModelPath;
-					if (visualPath && visualPath !== modelPath) {
+					const pendingVisualReplace = Boolean(
+						visualPath && visualPath !== modelPath,
+					);
+					if (pendingVisualReplace) {
+						burstDeferComplete = true;
 						window.engine.send({
 							cmd: 'replace_entity_model',
 							id,
@@ -689,6 +764,14 @@ export function createEngineEventHandler({
 					refs.pendingModelPathRef.current = null;
 					refs.pendingSpawnKindRef.current = null;
 					refs.pendingSpawnCategoryRef.current = null;
+					if (burstActive && modelPath) {
+						drainPendingRestoreSlot(
+							refs.pendingRestoresRef.current,
+							refs.pendingModelLoadQueueRef.current,
+							modelPath,
+						);
+					}
+					burstHandled = true;
 				} else if (!refs.entityMetaRef.current[id]) {
 					refs.entityMetaRef.current[id] = {
 						kind: 'model',
@@ -705,6 +788,9 @@ export function createEngineEventHandler({
 				}
 			}
 			}
+			}
+			if (burstActive && burstHandled && !burstDeferComplete) {
+				completeSceneBurstOp(refs);
 			}
 			tryEndSceneBurstLoad(
 				dispatch,
@@ -749,8 +835,10 @@ export function createEngineEventHandler({
 					scale: replaced.scale,
 				};
 			}
-			if (refs.playerEntityIdRef.current === id) {
-				const meta = refs.entityMetaRef.current[id];
+			const isMainPlayer = refs.playerEntityIdRef.current === id
+				|| (meta?.kind === 'character' && isPlayerPath(meta.path));
+			if (isMainPlayer) {
+				refs.playerEntityIdRef.current = id;
 				if (meta) {
 					meta.physicsEnabled = true;
 					meta.physicsType = 'dynamic';
@@ -762,6 +850,13 @@ export function createEngineEventHandler({
 						} as never);
 					}
 				}
+				if (refs.sceneBurstLoadInProgressRef.current) {
+					refs.pendingRestoresRef.current.delete('[Player]');
+					refs.pendingPlayCharacterViewRef.current = null;
+					completeSceneBurstOp(refs);
+				}
+			} else if (refs.sceneBurstLoadInProgressRef.current) {
+				completeSceneBurstOp(refs);
 			}
 			if (refs.sceneBurstLoadInProgressRef.current) {
 				tryEndSceneBurstLoad(
@@ -999,7 +1094,7 @@ export function createEngineEventHandler({
 					}
 					const savedFpView = refs.pendingPlayCharacterViewRef.current
 						?? refs.playCharacterViewRef.current;
-					const playerVisualReplacePending = applyPendingRestore(character.id, character.path, {
+					const awaitingVisualReplace = applyPendingRestore(character.id, character.path, {
 						skipTransform: !!savedFpView?.position,
 					});
 					applySavedPlayCharacterView(savedFpView);
@@ -1017,18 +1112,8 @@ export function createEngineEventHandler({
 					refs.pendingPlayCharacterViewRef.current = null;
 					// No sobrescribir scale: el motor puede usar 1.0 tras importar modelo (malla ya normalizada).
 					applyPlayCharacterDefaultsForPlayer(character.id, gameStyle, refs);
-					if (
-						refs.sceneBurstLoadInProgressRef.current
-						&& !playerVisualReplacePending
-					) {
-						tryEndSceneBurstLoad(
-							dispatch,
-							refs.sceneBurstLoadInProgressRef,
-							refs,
-							refs.sceneImportInProgressRef,
-							refs.modelReplaceInProgressRef,
-							reportBounds,
-						);
+					if (refs.sceneBurstLoadInProgressRef.current && !awaitingVisualReplace) {
+						completeSceneBurstOp(refs);
 					}
 				} else {
 					dispatch({ type: 'ADD_CHARACTER', payload: { id: character.id, path: character.path } });
@@ -1094,6 +1179,17 @@ export function createEngineEventHandler({
 		if (event.event === 'model_asset_loaded') {
 			const model = event as unknown as { path: string; name: string };
 			dispatch({ type: 'MARK_MODEL_READY', payload: { path: model.path, name: model.name } });
+			if (refs.sceneBurstLoadInProgressRef.current) {
+				completeSceneBurstOp(refs);
+				tryEndSceneBurstLoad(
+					dispatch,
+					refs.sceneBurstLoadInProgressRef,
+					refs,
+					refs.sceneImportInProgressRef,
+					refs.modelReplaceInProgressRef,
+					reportBounds,
+				);
+			}
 		}
 
 		if (event.event === 'model_asset_removed') {
@@ -1161,6 +1257,7 @@ export function createEngineEventHandler({
 			if (refs.sceneBurstLoadInProgressRef.current) {
 				refs.sceneBurstAwaitingPlayerViewRef.current = false;
 				refs.sceneBurstPendingColliderCountRef.current = 0;
+				refs.sceneBurstPendingOpsRef.current = 0;
 				endSceneBurstLoad(
 					dispatch,
 					refs.sceneBurstLoadInProgressRef,
@@ -1253,6 +1350,7 @@ export function createEngineEventHandler({
 			if (refs.sceneBurstLoadInProgressRef.current) {
 				refs.sceneBurstAwaitingPlayerViewRef.current = false;
 				refs.sceneBurstPendingColliderCountRef.current = 0;
+				refs.sceneBurstPendingOpsRef.current = 0;
 				endSceneBurstLoad(
 					dispatch,
 					refs.sceneBurstLoadInProgressRef,

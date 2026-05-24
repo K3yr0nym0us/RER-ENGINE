@@ -18,6 +18,7 @@ import {
   beginSceneImportLoading,
   needsSceneBurstLoad,
   trackSceneBurstCollider,
+  trackSceneBurstModelPreloads,
   tryEndSceneBurstLoad,
 } from '../../../context/useContextEngine/hooks/sceneImportOverlay';
 import { useContextEngine } from '@engine';
@@ -124,6 +125,7 @@ export function SceneManagerProvider({
     sceneBurstLoadInProgressRef,
     sceneBurstAwaitingPlayerViewRef,
     sceneBurstPendingColliderCountRef,
+    sceneBurstPendingOpsRef,
     reportBounds,
     dispatch,
     send,
@@ -295,10 +297,6 @@ export function SceneManagerProvider({
       }
     }
 
-    for (const model of scene.models ?? []) {
-      loadModelAsset(model.path, model.name);
-    }
-
     if (projectType === '2D') {
       pendingRestoresRef.current.clear();
       pendingModelLoadQueueRef.current = [];
@@ -315,32 +313,41 @@ export function SceneManagerProvider({
     if (burstLoad) {
       sceneBurstAwaitingPlayerViewRef.current = false;
       sceneBurstPendingColliderCountRef.current = 0;
-      beginSceneBurstLoad(dispatch, sceneBurstLoadInProgressRef);
+      beginSceneBurstLoad(dispatch, sceneBurstLoadInProgressRef, { sceneBurstPendingOpsRef });
+      trackSceneBurstModelPreloads({ sceneBurstPendingOpsRef }, scene.models?.length ?? 0);
+    }
+
+    for (const model of scene.models ?? []) {
+      loadModelAsset(model.path, model.name);
     }
 
     for (const entity of scene.entities) {
       const transform = resolveEntityTransform(entity, blueprints);
 
       if (entity.kind === 'collider' && entity.points) {
-        if (burstLoad) {
-          trackSceneBurstCollider({ sceneBurstPendingColliderCountRef });
+        if (projectType === '2D') {
+          if (burstLoad) {
+            trackSceneBurstCollider({ sceneBurstPendingColliderCountRef });
+          }
+          send({ cmd: 'create_collider_from_points', points: entity.points, track_undo: false });
         }
-        send({ cmd: 'create_collider_from_points', points: entity.points, track_undo: false });
         continue;
       }
 
       if (entity.kind === 'execution_area' && entity.points) {
-        const eaQueue = pendingRestoresRef.current.get('[ExecutionArea]') ?? [];
-        pendingRestoresRef.current.set('[ExecutionArea]', eaQueue);
-        eaQueue.push({
-          transform,
-          name: entity.name,
-          physicsEnabled: entity.physics_enabled ?? false,
-          physicsType: entity.physics_type ?? 'static',
-          scripts: entity.scripts,
-          controlBindings: entity.control_bindings,
-        });
-        send({ cmd: 'create_execution_area_from_points', points: entity.points, track_undo: false });
+        if (projectType === '2D') {
+          const eaQueue = pendingRestoresRef.current.get('[ExecutionArea]') ?? [];
+          pendingRestoresRef.current.set('[ExecutionArea]', eaQueue);
+          eaQueue.push({
+            transform,
+            name: entity.name,
+            physicsEnabled: entity.physics_enabled ?? false,
+            physicsType: entity.physics_type ?? 'static',
+            scripts: entity.scripts,
+            controlBindings: entity.control_bindings,
+          });
+          send({ cmd: 'create_execution_area_from_points', points: entity.points, track_undo: false });
+        }
         continue;
       }
 
@@ -420,6 +427,10 @@ export function SceneManagerProvider({
         continue;
       }
 
+      if (entity.kind === 'scenario' && projectType === '3D') {
+        continue;
+      }
+
       const bp = entity.blueprint_id
         ? (blueprints ?? []).find((b) => b.id === entity.blueprint_id) ?? null
         : null;
@@ -473,6 +484,7 @@ export function SceneManagerProvider({
             mainPlayerHandled,
             sceneBurstAwaitingPlayerViewRef,
             sceneBurstPendingColliderCountRef,
+            sceneBurstPendingOpsRef,
           },
           sceneImportInProgressRef,
           modelReplaceInProgressRef,

@@ -3,9 +3,93 @@ import type { Dispatch, MutableRefObject } from 'react';
 import type { GameStyle, SavedScene } from '@shared-types';
 import { isPlayerPath } from '@shared-types';
 
-import type { EngineAction, EngineInternalRefs } from '../types';
+import type { EngineAction, EngineInternalRefs, PendingRestore } from '../types';
 
 export type ModelLoadOverlayKind = 'model' | 'entity' | 'scene';
+
+type SceneBurstRefs = Pick<
+	EngineInternalRefs,
+	| 'pendingRestoresRef'
+	| 'pendingModelLoadQueueRef'
+	| 'pendingPlayCharacterViewRef'
+	| 'mainPlayerHandled'
+	| 'sceneBurstAwaitingPlayerViewRef'
+	| 'sceneBurstPendingColliderCountRef'
+	| 'sceneBurstPendingOpsRef'
+>;
+
+export function trackSceneBurstOp(
+	refs: Pick<EngineInternalRefs, 'sceneBurstPendingOpsRef'>,
+) {
+	refs.sceneBurstPendingOpsRef.current += 1;
+}
+
+export function completeSceneBurstOp(
+	refs: Pick<EngineInternalRefs, 'sceneBurstPendingOpsRef'>,
+) {
+	if (refs.sceneBurstPendingOpsRef.current > 0) {
+		refs.sceneBurstPendingOpsRef.current -= 1;
+	}
+}
+
+/** Precargas GPU (`load_model_asset` → `model_asset_loaded`) durante ráfaga de escena. */
+export function trackSceneBurstModelPreloads(
+	refs: Pick<EngineInternalRefs, 'sceneBurstPendingOpsRef'>,
+	count: number,
+) {
+	if (count > 0) refs.sceneBurstPendingOpsRef.current += count;
+}
+
+export function modelPathBasename(path: string): string {
+	return path.split(/[/\\]/).pop()?.toLowerCase() ?? path.toLowerCase();
+}
+
+export function pathsMatchForBurstRestore(a: string, b: string): boolean {
+	if (a === b) return true;
+	return modelPathBasename(a) === modelPathBasename(b);
+}
+
+export function takePendingModelLoadByPath(
+	queue: Array<{ modelPath: string; pending: PendingRestore }>,
+	loadedPath: string,
+): { modelPath: string; pending: PendingRestore } | null {
+	const idx = queue.findIndex((item) => pathsMatchForBurstRestore(item.modelPath, loadedPath));
+	if (idx < 0) return null;
+	return queue.splice(idx, 1)[0] ?? null;
+}
+
+export function takePendingRestoreByPath(
+	restores: Map<string, PendingRestore[]>,
+	loadedPath: string,
+): { path: string; pending: PendingRestore } | null {
+	for (const [key, queue] of restores.entries()) {
+		if (queue.length === 0 || key.startsWith('[')) continue;
+		if (pathsMatchForBurstRestore(key, loadedPath)) {
+			const pending = queue.shift()!;
+			if (queue.length === 0) restores.delete(key);
+			return { path: key, pending };
+		}
+	}
+	return null;
+}
+
+/** Al consumir un restore por path, vacía también la cola duplicada en `pendingModelLoadQueueRef`. */
+export function drainPendingRestoreSlot(
+	restores: Map<string, PendingRestore[]>,
+	modelQueue: Array<{ modelPath: string; pending: PendingRestore }>,
+	path: string,
+) {
+	for (const [key, queue] of restores.entries()) {
+		if (queue.length === 0 || key.startsWith('[')) continue;
+		if (pathsMatchForBurstRestore(key, path)) {
+			queue.shift();
+			if (queue.length === 0) restores.delete(key);
+			break;
+		}
+	}
+	const idx = modelQueue.findIndex((item) => pathsMatchForBurstRestore(item.modelPath, path));
+	if (idx >= 0) modelQueue.splice(idx, 1);
+}
 
 type BlockingLoadRefs = {
 	sceneImport: MutableRefObject<boolean>;
@@ -157,9 +241,11 @@ export function needsSceneBurstLoad(
 export function beginSceneBurstLoad(
 	dispatch: Dispatch<EngineAction>,
 	sceneBurstLoadInProgressRef: MutableRefObject<boolean>,
+	refs?: Pick<EngineInternalRefs, 'sceneBurstPendingOpsRef'>,
 ) {
 	if (sceneBurstLoadInProgressRef.current) return;
 	sceneBurstLoadInProgressRef.current = true;
+	if (refs) refs.sceneBurstPendingOpsRef.current = 0;
 	dispatch({ type: 'SET_SCENE_IMPORT_LOADING', payload: true });
 	window.electronAPI?.hideEngineViewport?.();
 }
@@ -184,23 +270,9 @@ export function endSceneBurstLoad(
 	);
 }
 
-type SceneBurstRefs = Pick<
-	EngineInternalRefs,
-	| 'pendingRestoresRef'
-	| 'pendingModelLoadQueueRef'
-	| 'pendingPlayCharacterViewRef'
-	| 'mainPlayerHandled'
-	| 'sceneBurstAwaitingPlayerViewRef'
-	| 'sceneBurstPendingColliderCountRef'
->;
-
 export function hasPendingSceneBurstWork(refs: SceneBurstRefs): boolean {
-	if (refs.pendingModelLoadQueueRef.current.length > 0) return true;
+	if (refs.sceneBurstPendingOpsRef.current > 0) return true;
 	if (refs.sceneBurstPendingColliderCountRef.current > 0) return true;
-	for (const queue of refs.pendingRestoresRef.current.values()) {
-		if (queue.length > 0) return true;
-	}
-	if (refs.pendingPlayCharacterViewRef.current && !refs.mainPlayerHandled.current) return true;
 	return false;
 }
 
@@ -213,7 +285,25 @@ export function tryEndSceneBurstLoad(
 	reportBounds: () => void,
 ) {
 	if (!sceneBurstLoadInProgressRef.current) return;
-	if (hasPendingSceneBurstWork(refs)) return;
+	if (hasPendingSceneBurstWork(refs)) {
+		if (refs.sceneBurstPendingOpsRef.current === 0) {
+			const orphanModels = refs.pendingModelLoadQueueRef.current.length;
+			const orphanRestores = [...refs.pendingRestoresRef.current.entries()]
+				.filter(([, q]) => q.length > 0)
+				.map(([k, q]) => `${k}(${q.length})`);
+			if (orphanModels > 0 || orphanRestores.length > 0) {
+				console.warn(
+					'[burst_load] colas huérfanas sin contador:',
+					{ orphanModels, orphanRestores },
+				);
+				refs.pendingModelLoadQueueRef.current = [];
+				for (const [key, queue] of refs.pendingRestoresRef.current.entries()) {
+					if (!key.startsWith('[')) queue.length = 0;
+				}
+			}
+		}
+		if (hasPendingSceneBurstWork(refs)) return;
+	}
 	endSceneBurstLoad(
 		dispatch,
 		sceneBurstLoadInProgressRef,
