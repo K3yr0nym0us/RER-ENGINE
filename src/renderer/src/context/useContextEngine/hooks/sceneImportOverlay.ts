@@ -5,6 +5,8 @@ import { isPlayerPath } from '@shared-types';
 
 import type { EngineAction, EngineInternalRefs } from '../types';
 
+export type ModelLoadOverlayKind = 'model' | 'entity' | 'scene';
+
 type BlockingLoadRefs = {
 	sceneImport: MutableRefObject<boolean>;
 	burst: MutableRefObject<boolean>;
@@ -61,10 +63,56 @@ export function endSceneImportLoading(
 export function beginModelReplaceLoading(
 	dispatch: Dispatch<EngineAction>,
 	modelReplaceInProgressRef: MutableRefObject<boolean>,
+	kind: ModelLoadOverlayKind = 'model',
+	modelLoadOverlayKindRef?: MutableRefObject<ModelLoadOverlayKind | null>,
 ) {
 	modelReplaceInProgressRef.current = true;
+	if (modelLoadOverlayKindRef) {
+		modelLoadOverlayKindRef.current = kind;
+	}
 	dispatch({ type: 'SET_SCENE_IMPORT_LOADING', payload: true });
 	window.electronAPI?.hideEngineViewport?.();
+}
+
+export function trackModelAssetPreloadStart(
+	dispatch: Dispatch<EngineAction>,
+	refs: Pick<EngineInternalRefs, 'modelAssetPreloadPendingRef' | 'modelReplaceInProgressRef' | 'modelLoadOverlayKindRef'>,
+) {
+	refs.modelAssetPreloadPendingRef.current += 1;
+	beginModelReplaceLoading(
+		dispatch,
+		refs.modelReplaceInProgressRef,
+		'model',
+		refs.modelLoadOverlayKindRef,
+	);
+}
+
+export function trackModelAssetPreloadEnd(
+	dispatch: Dispatch<EngineAction>,
+	refs: Pick<
+		EngineInternalRefs,
+		| 'modelAssetPreloadPendingRef'
+		| 'modelReplaceInProgressRef'
+		| 'sceneImportInProgressRef'
+		| 'sceneBurstLoadInProgressRef'
+		| 'modelLoadOverlayKindRef'
+	>,
+	reportBounds: () => void,
+) {
+	if (refs.modelAssetPreloadPendingRef.current > 0) {
+		refs.modelAssetPreloadPendingRef.current -= 1;
+	}
+	if (refs.modelAssetPreloadPendingRef.current <= 0) {
+		refs.modelAssetPreloadPendingRef.current = 0;
+		endModelReplaceLoading(
+			dispatch,
+			refs.modelReplaceInProgressRef,
+			refs.sceneImportInProgressRef,
+			refs.sceneBurstLoadInProgressRef,
+			reportBounds,
+			refs.modelLoadOverlayKindRef,
+		);
+	}
 }
 
 export function endModelReplaceLoading(
@@ -73,9 +121,13 @@ export function endModelReplaceLoading(
 	sceneImportInProgressRef: MutableRefObject<boolean>,
 	sceneBurstLoadInProgressRef: MutableRefObject<boolean>,
 	reportBounds: () => void,
+	modelLoadOverlayKindRef?: MutableRefObject<ModelLoadOverlayKind | null>,
 ) {
 	if (!modelReplaceInProgressRef.current) return;
 	modelReplaceInProgressRef.current = false;
+	if (modelLoadOverlayKindRef) {
+		modelLoadOverlayKindRef.current = null;
+	}
 	syncBlockingLoadOverlay(
 		dispatch,
 		{
@@ -149,7 +201,6 @@ export function hasPendingSceneBurstWork(refs: SceneBurstRefs): boolean {
 		if (queue.length > 0) return true;
 	}
 	if (refs.pendingPlayCharacterViewRef.current && !refs.mainPlayerHandled.current) return true;
-	if (refs.sceneBurstAwaitingPlayerViewRef.current) return true;
 	return false;
 }
 

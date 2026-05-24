@@ -43,11 +43,9 @@ export function SideBarLeft({ projectType, gameStyle }: { projectType: ProjectTy
           <EntitiesAccordion projectType={projectType} />
         </Accordion>
 
-        {projectType !== '3D' && (
-          <Accordion className="sidebar-accordion">
-            <ToolsAccordion />
-          </Accordion>
-        )}
+        <Accordion className="sidebar-accordion">
+          <ToolsAccordion projectType={projectType} />
+        </Accordion>
 
         <Accordion className="sidebar-accordion">
           <ControlsAccordion />

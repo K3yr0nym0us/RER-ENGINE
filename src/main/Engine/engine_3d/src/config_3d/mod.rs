@@ -25,6 +25,8 @@ pub(crate) mod mesh_3d;
 pub(crate) mod model_asset;
 pub(crate) mod model_animation;
 pub(crate) mod physics_3d;
+pub(crate) mod quick_build;
+pub(crate) mod static_model_cache;
 pub(crate) mod world_bounds;
 pub(crate) use world_bounds::WorldBounds3D;
 
@@ -105,8 +107,6 @@ pub(crate) fn resolve_set_transform_rotation(
     rotation.map(|r| glam::Quat::from_xyzw(r[0], r[1], r[2], r[3]))
 }
 
-use rer_engine_shared::editor_defaults::entity_label;
-
 use std::path::Path;
 
 use glam::Vec3 as GlamVec3;
@@ -122,65 +122,27 @@ use crate::engine::State;
 use crate::ipc::{send_event, EngineEvent};
 
 impl State {
-    /// Registra un modelo 3D en el almacén de recursos (sin instanciar en escena).
-    pub(crate) fn register_model_asset(&mut self, path: &str, name: &str) {
-        if !Path::new(path).is_file() {
-            send_event(&EngineEvent::Error {
-                message: format!("No se encontró el modelo: {path}"),
-            });
+    /// Instancia un modelo 3D en la escena (reutiliza caché estática si existe).
+    pub(crate) fn load_model(&mut self, path: &str, entity_category: Option<&str>) {
+        if self.queue_load_model_if_preloading(path, entity_category, false) {
             return;
         }
-        self.model_store
-            .insert(path.to_string(), name.to_string());
-        send_event(&EngineEvent::ModelAssetLoaded {
-            path: path.to_string(),
-            name: name.to_string(),
-        });
-        log::info!("[model] registrado en recursos: {name} ({path})");
-    }
-
-    /// Instancia un modelo 3D en la escena (añade mallas sin limpiar el mundo).
-    pub(crate) fn load_model(&mut self, path: &str) {
-        match mesh_3d::load_model_file(&self.device, Path::new(path), None) {
-            Ok(loaded) => {
-                let count = loaded.len();
-                for part in loaded {
-                    let mesh_idx = self.meshes.len();
-                    let tex_idx = self.uv_rects.len();
-                    self.meshes.push(part.mesh);
-                    let uv = self
-                        .atlas
-                        .pack(&self.queue, &part.rgba, part.width, part.height);
-                    self.uv_rects.push(uv);
-
-                    let label = self.next_numbered_entity_name(entity_label::OBJECT);
-                    let id = self.world.spawn(Some(&label));
-                    self.world.insert(id, MeshComponent { mesh_idx, tex_idx });
-                    if let Some(t) = self.world.get_mut::<Transform>(id) {
-                        let forward = self.camera.view_forward();
-                        let spawn = self.camera.target + forward * 2.5;
-                        t.position = glam::Vec3::new(spawn.x, spawn.y.max(0.0), spawn.z);
-                    }
-                    self.save_registry.register_meta(
-                        id,
-                        EntitySaveMeta {
-                            kind: "model".to_string(),
-                            path: path.to_string(),
-                            visual_model_path: None,
-                            points: None,
-                        },
-                    );
-                    self.send_model_loaded_event(id, &label);
-                    self.try_bind_model_animations(id, path);
-                    self.push_remove_entity_undo(id);
-                }
-                log::info!("Modelo cargado: {path} ({count} malla/s)");
-            }
-            Err(e) => {
-                log::error!("Error cargando modelo: {e}");
-                send_event(&EngineEvent::Error { message: e });
-            }
+        if let Err(e) = self.ensure_static_model_cached(path) {
+            log::error!("Error cargando modelo: {e}");
+            send_event(&EngineEvent::Error { message: e });
+            return;
         }
+        let key = self.model_path_key(path);
+        let parts: Vec<_> = self
+            .static_model_cache
+            .get(&key)
+            .cloned()
+            .unwrap_or_default();
+        let count = parts.len();
+        for part in parts {
+            self.spawn_model_from_cached_part(part.mesh_idx, part.tex_idx, &key, entity_category);
+        }
+        log::info!("Modelo instanciado desde caché: {key} ({count} malla/s)");
     }
 
     /// Sustituye el mesh visual de una entidad existente (mismo id, sin recrear entidad).
@@ -476,32 +438,7 @@ impl State {
                             self.selected_entity = None;
                             send_event(&EngineEvent::EntityDeselected);
                         } else if let Some(active_id) = self.selected_entity {
-                            let active_name =
-                                self.world.name(active_id).unwrap_or("Entity").to_string();
-                            let active_transform = self
-                                .world
-                                .get::<Transform>(active_id)
-                                .cloned()
-                                .unwrap_or_default();
-                            let active_position = active_transform.position.to_array();
-                            let active_rotation = [
-                                active_transform.rotation.x,
-                                active_transform.rotation.y,
-                                active_transform.rotation.z,
-                                active_transform.rotation.w,
-                            ];
-                            let active_scale = active_transform.scale.to_array();
-                            let physics_enabled = self.physics.has_physics(active_id);
-                            let physics_type = self.physics.get_body_type(active_id).to_string();
-                            send_event(&EngineEvent::EntitySelected {
-                                id: active_id,
-                                name: active_name,
-                                position: active_position,
-                                rotation: active_rotation,
-                                scale: active_scale,
-                                physics_enabled,
-                                physics_type,
-                            });
+                            self.send_entity_selected_event(active_id);
                         }
                         send_event(&EngineEvent::MultiSelectChanged {
                             ids: self.selected_entities.clone(),
@@ -523,27 +460,7 @@ impl State {
                     self.selected_entities.push(entity);
                     self.selected_entity = Some(entity);
                 }
-                let name = self.world.name(entity).unwrap_or("Entity").to_string();
-                let transform = self.world.get::<Transform>(entity).cloned().unwrap_or_default();
-                let position = transform.position.to_array();
-                let rotation = [
-                    transform.rotation.x,
-                    transform.rotation.y,
-                    transform.rotation.z,
-                    transform.rotation.w,
-                ];
-                let scale = transform.scale.to_array();
-                let physics_enabled = self.physics.has_physics(entity);
-                let physics_type = self.physics.get_body_type(entity).to_string();
-                send_event(&EngineEvent::EntitySelected {
-                    id: entity,
-                    name,
-                    position,
-                    rotation,
-                    scale,
-                    physics_enabled,
-                    physics_type,
-                });
+                self.send_entity_selected_event(entity);
                 if self.editor_camera_entity == Some(entity) {
                     self.sync_editor_viewport_from_camera_entity();
                 }
@@ -701,22 +618,8 @@ impl State {
 
         let lead_id = self.selected_entity.or_else(|| selected_ids.last().copied());
         if let Some(sel_id) = lead_id {
-            let name = self.world.name(sel_id).unwrap_or("Entity").to_string();
-            if let Some(t) = self.world.get::<Transform>(sel_id) {
-                let pos = t.position.to_array();
-                let rot = [t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w];
-                let scl = t.scale.to_array();
-                let physics_enabled = self.physics.has_physics(sel_id);
-                let physics_type = self.physics.get_body_type(sel_id).to_string();
-                send_event(&EngineEvent::EntitySelected {
-                    id: sel_id,
-                    name,
-                    position: pos,
-                    rotation: rot,
-                    scale: scl,
-                    physics_enabled,
-                    physics_type,
-                });
+            if self.world.get::<Transform>(sel_id).is_some() {
+                self.send_entity_selected_event(sel_id);
             }
         }
     }

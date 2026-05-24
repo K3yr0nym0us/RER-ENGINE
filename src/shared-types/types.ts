@@ -507,6 +507,7 @@ export interface EntitySelected {
   scale:           [number, number, number]
   physics_enabled: boolean
   physics_type:    string
+  blueprint_id?:   string
 }
 
 export interface PivotSelected {
@@ -571,6 +572,8 @@ export interface SpriteInfo {
 export interface ModelInfo {
   path: string
   name: string
+  /** true mientras el motor precarga en segundo plano */
+  loading?: boolean
 }
 
 export interface SoundInfo {
@@ -605,6 +608,10 @@ export interface BluePrintEntry {
   animations?:      SavedAnimation[]
   scripts?:         SavedScript[]
   control_bindings?: SavedControlBindings
+  /** Mesh visual 3D distinto del path lógico (p. ej. personajes con GLB embebido). */
+  visualModelPath?: string
+  /** Categoría de entidad 3D (p. ej. environment para entorno con colisión estática). */
+  entity_category?: EntityCategory
 }
 
 export interface ViewportBounds {

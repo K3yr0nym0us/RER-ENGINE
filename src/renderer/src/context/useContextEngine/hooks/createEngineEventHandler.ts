@@ -34,6 +34,7 @@ import {
 	ensurePlayCharacterOnLoad,
 } from '../../../defaults/playCharacterSceneRestore';
 import { setSceneCommandForSavedProject } from '../../../defaults/projectSceneLoad';
+import { isModel3DPath } from '../../../utils/blueprintModelPath';
 import { buildImportSceneCommand, resolveEntityTransform, syncEditorStateFromSavedScene } from './buildImportSceneCommand';
 import { applyPendingRestoreMeta, buildPlayAnimationFrameCmd, sendApplyEntityRestore } from './applyPendingRestoreToEngine';
 import {
@@ -74,6 +75,7 @@ const SILENT_ENGINE_EVENTS = new Set<string>([
 	'entity_selected',
 	'physics_changed',
 	'quick_build_move',
+	'quick_build_click',
 	'camera_2d_updated',
 	'animation_logical_resolved',
 	'multi_selection_transformed',
@@ -256,7 +258,7 @@ export function createEngineEventHandler({
 				if (save.models && save.models.length > 0) {
 					for (const model of save.models) {
 						sendEngine({ cmd: 'load_model_asset', path: model.path, name: model.name } as never);
-						dispatch({ type: 'ADD_MODEL_INFO', payload: { path: model.path, name: model.name } });
+						dispatch({ type: 'ADD_MODEL_INFO', payload: { path: model.path, name: model.name, loading: true } });
 					}
 				}
 				if (save.sounds && save.sounds.length > 0) {
@@ -421,7 +423,14 @@ export function createEngineEventHandler({
 								modelPath: entity.path,
 								pending: pendingRestore,
 							});
-							sendEngine({ cmd: 'load_model', path: entity.path } as never);
+							sendEngine({
+								cmd: 'load_model',
+								path: entity.path,
+								single_instance: true,
+								...(entity.entity_category === 'environment'
+									? { entity_category: 'environment' }
+									: {}),
+							} as never);
 						}
 					}
 				}
@@ -455,9 +464,49 @@ export function createEngineEventHandler({
 				name?: string
 				position?: [number, number, number]
 				scale?: [number, number, number]
+				rotation?: [number, number, number, number]
+				path?: string
+				kind?: string
+				blueprint_id?: string
+				physics_enabled?: boolean
+				physics_type?: string
+				entity_category?: EntityCategory
 			};
 			const id = loaded.id ?? -1;
 			dispatch({ type: 'ADD_ENTITY', payload: id });
+
+			if (loaded.blueprint_id) {
+				const kind = (loaded.kind ?? 'model') as import('../types').EntityMeta['kind'];
+				refs.entityMetaRef.current[id] = {
+					kind,
+					path: loaded.path ?? '',
+					name: loaded.name ?? `Entity ${id}`,
+					physicsEnabled: loaded.physics_enabled ?? false,
+					physicsType: loaded.physics_type ?? 'static',
+					...(loaded.entity_category ? { entityCategory: loaded.entity_category } : {}),
+					blueprintId: loaded.blueprint_id,
+				};
+				if (loaded.position && loaded.scale) {
+					refs.entityTransformsRef.current[id] = {
+						position: loaded.position,
+						rotation: loaded.rotation ?? [0, 0, 0, 1],
+						scale: loaded.scale,
+					};
+				}
+				addLog(
+					`[quick_build] entidad colocada: ${loaded.name ?? id} (id=${id})`,
+				);
+				tryEndSceneBurstLoad(
+					dispatch,
+					refs.sceneBurstLoadInProgressRef,
+					refs,
+					refs.sceneImportInProgressRef,
+					refs.modelReplaceInProgressRef,
+					reportBounds,
+				);
+				return;
+			}
+
 			if (loaded.position && loaded.scale) {
 				refs.entityTransformsRef.current[id] = {
 					position: loaded.position,
@@ -533,8 +582,41 @@ export function createEngineEventHandler({
 				const loadItem = !spawnModelPath
 					? refs.pendingModelLoadQueueRef.current.shift()
 					: null;
-				const modelPath = spawnModelPath ?? loadItem?.modelPath ?? null;
-				const restorePending = loadItem?.pending;
+				let modelPath = spawnModelPath ?? loadItem?.modelPath ?? null;
+				let restorePending = loadItem?.pending;
+				if (!restorePending && modelPath) {
+					let qbQueue = refs.pendingRestoresRef.current.get(modelPath);
+					if ((!qbQueue || qbQueue.length === 0) && modelPath) {
+						const base = modelPath.split(/[/\\]/).pop()?.toLowerCase();
+						if (base) {
+							for (const [key, queue] of refs.pendingRestoresRef.current.entries()) {
+								if (queue.length > 0 && key.split(/[/\\]/).pop()?.toLowerCase() === base) {
+									qbQueue = queue;
+									modelPath = key;
+									break;
+								}
+							}
+						}
+					}
+					if (qbQueue && qbQueue.length > 0) {
+						restorePending = qbQueue.shift()!;
+						if (qbQueue.length === 0) {
+							refs.pendingRestoresRef.current.delete(modelPath);
+						}
+					}
+				}
+				if (!restorePending && spawnModelPath) {
+					for (const [key, queue] of refs.pendingRestoresRef.current.entries()) {
+						if (queue.length > 0) {
+							restorePending = queue.shift()!;
+							modelPath = modelPath ?? key;
+							if (queue.length === 0) {
+								refs.pendingRestoresRef.current.delete(key);
+							}
+							break;
+						}
+					}
+				}
 
 				if (modelPath) {
 					const isEnvironment = spawnCategory === 'environment'
@@ -645,6 +727,9 @@ export function createEngineEventHandler({
 			const id = replaced.id ?? -1;
 			if (replaced.path && refs.entityMetaRef.current[id]) {
 				refs.entityMetaRef.current[id].visualModelPath = replaced.path;
+				if (isModel3DPath(replaced.path)) {
+					refs.entityMetaRef.current[id].path = replaced.path;
+				}
 			}
 			const meta = refs.entityMetaRef.current[id];
 			if (meta && replaced.path) {
@@ -678,10 +763,7 @@ export function createEngineEventHandler({
 					}
 				}
 			}
-			if (
-				refs.sceneBurstLoadInProgressRef.current
-				&& !(gameStyle === 'first-person' && projectType === '3D' && refs.playerEntityIdRef.current === id)
-			) {
+			if (refs.sceneBurstLoadInProgressRef.current) {
 				tryEndSceneBurstLoad(
 					dispatch,
 					refs.sceneBurstLoadInProgressRef,
@@ -698,13 +780,29 @@ export function createEngineEventHandler({
 					refs.sceneImportInProgressRef,
 					refs.sceneBurstLoadInProgressRef,
 					reportBounds,
+					refs.modelLoadOverlayKindRef,
 				);
 			}
 		}
 
 		if (event.event === 'entity_selected') {
 			const selected = event as unknown as EntitySelected;
-			const meta = refs.entityMetaRef.current[selected.id];
+			let meta = refs.entityMetaRef.current[selected.id];
+			if (selected.blueprint_id) {
+				if (!meta) {
+					refs.entityMetaRef.current[selected.id] = {
+						kind: 'model',
+						path: '',
+						name: selected.name,
+						physicsEnabled: selected.physics_enabled ?? false,
+						physicsType: selected.physics_type ?? 'static',
+						blueprintId: selected.blueprint_id,
+					};
+					meta = refs.entityMetaRef.current[selected.id];
+				} else {
+					meta.blueprintId = selected.blueprint_id;
+				}
+			}
 			const bpId = meta?.blueprintId;
 			if (bpId) {
 				const bp = refs.blueprintsRef.current.find((b) => b.id === bpId);
@@ -854,7 +952,7 @@ export function createEngineEventHandler({
 				options?: { skipTransform?: boolean },
 			) => {
 				const queue = refs.pendingRestoresRef.current.get(path);
-				if (!queue || queue.length === 0) return;
+				if (!queue || queue.length === 0) return false;
 
 				const pending = queue.shift()!;
 				const isPlayer = isPlayerPath(path);
@@ -873,17 +971,10 @@ export function createEngineEventHandler({
 					if (refs.entityMetaRef.current[id]) {
 						refs.entityMetaRef.current[id].visualModelPath = pending.visualModelPath;
 					}
-					if (
-						refs.sceneBurstLoadInProgressRef.current
-						&& isPlayer
-						&& gameStyle === 'first-person'
-						&& projectType === '3D'
-					) {
-						refs.sceneBurstAwaitingPlayerViewRef.current = true;
-					}
 				}
 
 				if (queue.length === 0) refs.pendingRestoresRef.current.delete(path);
+				return Boolean(pending.visualModelPath);
 			};
 
 			if (isPlayerPath(character.path)) {
@@ -908,13 +999,7 @@ export function createEngineEventHandler({
 					}
 					const savedFpView = refs.pendingPlayCharacterViewRef.current
 						?? refs.playCharacterViewRef.current;
-					if (
-						refs.sceneBurstLoadInProgressRef.current
-						&& savedFpView?.position
-					) {
-						refs.sceneBurstAwaitingPlayerViewRef.current = true;
-					}
-					applyPendingRestore(character.id, character.path, {
+					const playerVisualReplacePending = applyPendingRestore(character.id, character.path, {
 						skipTransform: !!savedFpView?.position,
 					});
 					applySavedPlayCharacterView(savedFpView);
@@ -932,6 +1017,19 @@ export function createEngineEventHandler({
 					refs.pendingPlayCharacterViewRef.current = null;
 					// No sobrescribir scale: el motor puede usar 1.0 tras importar modelo (malla ya normalizada).
 					applyPlayCharacterDefaultsForPlayer(character.id, gameStyle, refs);
+					if (
+						refs.sceneBurstLoadInProgressRef.current
+						&& !playerVisualReplacePending
+					) {
+						tryEndSceneBurstLoad(
+							dispatch,
+							refs.sceneBurstLoadInProgressRef,
+							refs,
+							refs.sceneImportInProgressRef,
+							refs.modelReplaceInProgressRef,
+							reportBounds,
+						);
+					}
 				} else {
 					dispatch({ type: 'ADD_CHARACTER', payload: { id: character.id, path: character.path } });
 					refs.entityMetaRef.current[character.id] = { kind: 'character', path: '[Player]', physicsEnabled: false, physicsType: '' };
@@ -988,9 +1086,14 @@ export function createEngineEventHandler({
 			dispatch({ type: 'SET_SPRITES', payload: spritesList.sprites });
 		}
 
+		if (event.event === 'model_asset_preload_started') {
+			const model = event as unknown as { path: string; name: string };
+			dispatch({ type: 'SYNC_MODEL_PRELOAD', payload: { path: model.path, name: model.name } });
+		}
+
 		if (event.event === 'model_asset_loaded') {
 			const model = event as unknown as { path: string; name: string };
-			dispatch({ type: 'ADD_MODEL_INFO', payload: { path: model.path, name: model.name } });
+			dispatch({ type: 'MARK_MODEL_READY', payload: { path: model.path, name: model.name } });
 		}
 
 		if (event.event === 'model_asset_removed') {
@@ -1045,12 +1148,14 @@ export function createEngineEventHandler({
 				);
 			}
 			if (refs.modelReplaceInProgressRef.current) {
+				refs.modelAssetPreloadPendingRef.current = 0;
 				endModelReplaceLoading(
 					dispatch,
 					refs.modelReplaceInProgressRef,
 					refs.sceneImportInProgressRef,
 					refs.sceneBurstLoadInProgressRef,
 					reportBounds,
+					refs.modelLoadOverlayKindRef,
 				);
 			}
 			if (refs.sceneBurstLoadInProgressRef.current) {
@@ -1135,12 +1240,14 @@ export function createEngineEventHandler({
 					reportBounds,
 				);
 			} else if (refs.modelReplaceInProgressRef.current) {
+				refs.modelAssetPreloadPendingRef.current = 0;
 				endModelReplaceLoading(
 					dispatch,
 					refs.modelReplaceInProgressRef,
 					refs.sceneImportInProgressRef,
 					refs.sceneBurstLoadInProgressRef,
 					reportBounds,
+					refs.modelLoadOverlayKindRef,
 				);
 			}
 			if (refs.sceneBurstLoadInProgressRef.current) {
@@ -1218,6 +1325,16 @@ export function createEngineEventHandler({
 
 		if (event.event === 'tool_cancelled') {
 			dispatch({ type: 'SET_TOOL_PROGRESS', payload: null });
+			if (refs.modelReplaceInProgressRef.current) {
+				endModelReplaceLoading(
+					dispatch,
+					refs.modelReplaceInProgressRef,
+					refs.sceneImportInProgressRef,
+					refs.sceneBurstLoadInProgressRef,
+					reportBounds,
+					refs.modelLoadOverlayKindRef,
+				);
+			}
 		}
 
 		if (event.event === 'pivot_selected') {
@@ -1226,8 +1343,37 @@ export function createEngineEventHandler({
 		}
 
 		if (event.event === 'quick_build_click') {
-			const e = event as unknown as { x: number; y: number; fit_to_grid?: boolean; scale?: [number, number, number] };
-			refs.quickBuildClickListenerRef.current?.(e.x, e.y, !!e.fit_to_grid, e.scale);
+			const e = event as unknown as {
+				x: number
+				y: number
+				z?: number
+				fit_to_grid?: boolean
+				scale?: [number, number, number]
+			};
+			refs.quickBuildClickListenerRef.current?.(
+				e.x,
+				e.y,
+				e.z ?? 0,
+				!!e.fit_to_grid,
+				e.scale,
+			);
+		}
+
+		if (event.event === 'quick_build_ghost_ready') {
+			const ghost = event as { path?: string; name?: string };
+			addLog(
+				`[quick_build] herramienta activa${ghost.name ? `: ${ghost.name}` : ''}${ghost.path ? ` (${ghost.path.split(/[/\\]/).pop()})` : ''}`,
+			);
+			if (refs.modelReplaceInProgressRef.current) {
+				endModelReplaceLoading(
+					dispatch,
+					refs.modelReplaceInProgressRef,
+					refs.sceneImportInProgressRef,
+					refs.sceneBurstLoadInProgressRef,
+					reportBounds,
+					refs.modelLoadOverlayKindRef,
+				);
+			}
 		}
 
 		if (event.event === 'animation_logical_resolved') {

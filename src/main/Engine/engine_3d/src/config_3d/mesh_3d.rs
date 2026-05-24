@@ -13,6 +13,15 @@ pub(crate) struct LoadedModelMesh {
     pub(crate) forward_xz: glam::Vec2,
 }
 
+/// Malla parseada en CPU (sin upload GPU); usada por precarga en segundo plano.
+pub(crate) struct CpuModelMeshPart {
+    pub(crate) vertices: Vec<Vertex>,
+    pub(crate) indices: Vec<u32>,
+    pub(crate) rgba: Vec<u8>,
+    pub(crate) width: u32,
+    pub(crate) height: u32,
+}
+
 /// Estima hacia dónde "mira" la malla en XZ (tras centrar/normalizar). Usado por glTF/GLB y estimación FBX.
 pub(crate) fn estimate_mesh_forward_xz(vertices: &[Vertex]) -> glam::Vec2 {
     if vertices.is_empty() {
@@ -191,6 +200,26 @@ pub(crate) fn load_model_file(
             }
         }
         "fbx" => load_fbx(device, path, normalize_to_extent),
+        other => Err(format!(
+            "formato no soportado: .{other} (usa .glb, .gltf o .fbx)"
+        )),
+    }
+}
+
+/// Parsea un modelo 3D en CPU (sin GPU). Para precarga en hilo de fondo.
+pub(crate) fn load_model_file_cpu(
+    path: &Path,
+    normalize_to_extent: Option<f32>,
+) -> Result<Vec<CpuModelMeshPart>, String> {
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+
+    match ext.as_str() {
+        "glb" | "gltf" => load_gltf_cpu(path, normalize_to_extent),
+        "fbx" => load_fbx_cpu(path, normalize_to_extent),
         other => Err(format!(
             "formato no soportado: .{other} (usa .glb, .gltf o .fbx)"
         )),
@@ -469,6 +498,50 @@ fn load_gltf(
     Ok(meshes)
 }
 
+fn load_gltf_cpu(
+    path: &Path,
+    normalize_to_extent: Option<f32>,
+) -> Result<Vec<CpuModelMeshPart>, String> {
+    use glam::Mat4;
+
+    let (doc, buffers, images) = gltf::import(path).map_err(|e| format!("gltf error: {e}"))?;
+
+    let mut prims: Vec<GltfRawPrim> = Vec::new();
+
+    if let Some(scene) = doc.default_scene().or_else(|| doc.scenes().next()) {
+        for root in scene.nodes() {
+            walk_gltf_node(root, Mat4::IDENTITY, &buffers, &images, &mut prims)?;
+        }
+    } else {
+        for mesh in doc.meshes() {
+            for primitive in mesh.primitives() {
+                prims.push(read_gltf_primitive(&primitive, Mat4::IDENTITY, &buffers, &images)?);
+            }
+        }
+    }
+
+    if prims.is_empty() {
+        return Err("el archivo glTF no contiene mallas".into());
+    }
+
+    if let Some(extent) = normalize_to_extent {
+        for p in prims.iter_mut() {
+            normalize_vertices_centered_height(&mut p.vertices, extent);
+        }
+    }
+
+    Ok(prims
+        .into_iter()
+        .map(|p| CpuModelMeshPart {
+            vertices: p.vertices,
+            indices: p.indices,
+            rgba: p.rgba,
+            width: p.width,
+            height: p.height,
+        })
+        .collect())
+}
+
 fn vertex_bounds(vertices: &[Vertex]) -> ([f32; 3], [f32; 3]) {
     let mut min = [f32::MAX; 3];
     let mut max = [f32::MIN; 3];
@@ -677,6 +750,69 @@ fn load_fbx(
         width: tex_w,
         height: tex_h,
         forward_xz,
+    }])
+}
+
+fn load_fbx_cpu(
+    path: &Path,
+    normalize_to_extent: Option<f32>,
+) -> Result<Vec<CpuModelMeshPart>, String> {
+    let mut opts = ufbx::LoadOpts::default();
+    opts.generate_missing_normals = true;
+    opts.load_external_files = true;
+    opts.target_axes = ufbx::CoordinateAxes::right_handed_y_up();
+    opts.target_unit_meters = 1.0;
+    opts.space_conversion = ufbx::SpaceConversion::ModifyGeometry;
+
+    let scene = ufbx::load_file(
+        path.to_str()
+            .ok_or_else(|| "ruta FBX no válida (UTF-8)".to_string())?,
+        opts,
+    )
+    .map_err(|e| format!("fbx error: {e:?}"))?;
+
+    let fbx_dir = path.parent().unwrap_or_else(|| Path::new("."));
+    let mut vertices: Vec<Vertex> = Vec::new();
+    let mut indices: Vec<u32> = Vec::new();
+    let mut rgba = white_pixel().0;
+    let mut tex_w = 1u32;
+    let mut tex_h = 1u32;
+    let mut texture_picked = false;
+
+    for node in scene.nodes.iter() {
+        let Some(mesh_ref) = node.mesh.as_ref() else {
+            continue;
+        };
+        let mesh: &ufbx::Mesh = mesh_ref.as_ref();
+
+        if !texture_picked {
+            if let Some(mat) = mesh.materials.first().map(|m| m.as_ref()) {
+                if let Some(tex) = texture_from_material(mat) {
+                    let (r, w, h) = texture_rgba(tex, fbx_dir);
+                    rgba = r;
+                    tex_w = w;
+                    tex_h = h;
+                    texture_picked = true;
+                }
+            }
+        }
+
+        let world = ufbx_matrix_to_mat4(&node.geometry_to_world);
+        push_fbx_mesh_triangles(mesh, world, &mut vertices, &mut indices);
+    }
+
+    if vertices.is_empty() {
+        return Err("el archivo FBX no contiene mallas".into());
+    }
+
+    center_and_normalize_vertices(&mut vertices, normalize_to_extent.unwrap_or(1.8));
+
+    Ok(vec![CpuModelMeshPart {
+        vertices,
+        indices,
+        rgba,
+        width: tex_w,
+        height: tex_h,
     }])
 }
 

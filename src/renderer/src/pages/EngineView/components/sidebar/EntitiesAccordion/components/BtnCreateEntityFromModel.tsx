@@ -38,7 +38,7 @@ interface Props {
 
 export function BtnCreateEntityFromModel({ intent }: Props) {
   const { t } = useTraslate();
-  const { engineReady, models, spawnModel } = useContextEngine();
+  const { engineReady, spawnModel } = useContextEngine();
   const { openModal, closeModal } = useModal();
   const config = INTENT_CONFIG[intent];
 
@@ -47,7 +47,6 @@ export function BtnCreateEntityFromModel({ intent }: Props) {
       title: t(config.titleKey),
       body: (
         <CreateEntityFromModelModalBody
-          models={models}
           onSpawn={(path) => {
             spawnModel(
               path,

@@ -1,4 +1,5 @@
 import type { MutableRefObject } from 'react';
+import type { ModelLoadOverlayKind } from './hooks/sceneImportOverlay';
 import {
 	DEFAULT_GRAVITY_MAGNITUDE,
 	DEFAULT_LIGHT_AMBIENT,
@@ -178,7 +179,9 @@ export type EngineAction =
 	| { type: 'ADD_SPRITE_INFO'; payload: { path: string; name: string } }
 	| { type: 'REMOVE_SPRITE_INFO'; payload: string }
 	| { type: 'SET_LOADED_SPRITES_INFO'; payload: Array<{ path: string; name: string }> }
-	| { type: 'ADD_MODEL_INFO'; payload: { path: string; name: string } }
+	| { type: 'ADD_MODEL_INFO'; payload: { path: string; name: string; loading?: boolean } }
+	| { type: 'SYNC_MODEL_PRELOAD'; payload: { path: string; name: string } }
+	| { type: 'MARK_MODEL_READY'; payload: { path: string; name: string } }
 	| { type: 'REMOVE_MODEL_INFO'; payload: string }
 	| { type: 'SET_MODELS'; payload: import('@shared-types').ModelInfo[] }
 	| { type: 'SET_DEBUG_MODE'; payload: boolean }
@@ -396,15 +399,48 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 			return { ...prevState, loadedSpritesInfo: nextMap };
 		},
 		ADD_MODEL_INFO: (prevState, nextAction) => {
+			const entry = {
+				path: nextAction.payload.path,
+				name: nextAction.payload.name,
+				...(nextAction.payload.loading ? { loading: true } : {}),
+			};
 			const nextMap = new Map(prevState.loadedModelsInfo);
-			nextMap.set(nextAction.payload.path, { name: nextAction.payload.name });
-			const entry = { path: nextAction.payload.path, name: nextAction.payload.name };
+			nextMap.set(entry.path, { name: entry.name });
 			const exists = prevState.models.some((m) => m.path === entry.path);
 			return {
 				...prevState,
 				loadedModelsInfo: nextMap,
-				models: exists ? prevState.models : [...prevState.models, entry],
+				models: exists
+					? prevState.models.map((m) =>
+						m.path === entry.path ? { ...m, ...entry } : m,
+					)
+					: [...prevState.models, entry],
 			};
+		},
+		SYNC_MODEL_PRELOAD: (prevState, nextAction) => {
+			const { path, name } = nextAction.payload;
+			let synced = false;
+			const models = prevState.models.map((m) => {
+				if (!synced && m.loading && m.name === name) {
+					synced = true;
+					return { path, name, loading: true };
+				}
+				return m;
+			});
+			const nextMap = new Map(prevState.loadedModelsInfo);
+			nextMap.set(path, { name });
+			return { ...prevState, models, loadedModelsInfo: nextMap };
+		},
+		MARK_MODEL_READY: (prevState, nextAction) => {
+			const { path, name } = nextAction.payload;
+			const models = prevState.models.map((m) =>
+				m.path === path || (m.loading && m.name === name)
+					? { path, name, loading: false }
+					: m,
+			);
+			const nextMap = new Map(prevState.loadedModelsInfo);
+			nextMap.set(path, { name });
+			return { ...prevState, models, loadedModelsInfo: nextMap };
 		},
 		REMOVE_MODEL_INFO: (prevState, nextAction) => {
 			const nextMap = new Map(prevState.loadedModelsInfo);
@@ -522,9 +558,10 @@ export interface EngineInternalRefs {
 	pendingPlayerDups: MutableRefObject<Transform[]>
 	pendingDupQ: MutableRefObject<Transform[]>
 	pivotEditListenerRef: MutableRefObject<((framePath: string, px: number, py: number) => void) | null>
-	quickBuildClickListenerRef: MutableRefObject<((x: number, y: number, fitToGrid: boolean, scale?: [number, number, number]) => void) | null>
+	quickBuildClickListenerRef: MutableRefObject<((x: number, y: number, z: number, fitToGrid: boolean, scale?: [number, number, number]) => void) | null>
 	pendingEventsRef: MutableRefObject<Map<string, { resolve: (value: any) => void }>>
 	blueprintsRef: MutableRefObject<BluePrintEntry[]>
+	modelsRef: MutableRefObject<import('@shared-types').ModelInfo[]>
 	updateEntityTransformRef: MutableRefObject<
 		(id: number, patch: Partial<Transform>) => void
 	>
@@ -534,6 +571,10 @@ export interface EngineInternalRefs {
 	sceneImportInProgressRef: MutableRefObject<boolean>
 	/** Overlay mientras el motor ejecuta `replace_entity_model` (GLB/FBX). */
 	modelReplaceInProgressRef: MutableRefObject<boolean>
+	/** Texto del overlay: modelo en recursos vs entidad vs escena. */
+	modelLoadOverlayKindRef: MutableRefObject<ModelLoadOverlayKind | null>
+	/** Precargas IPC de `load_model_asset` pendientes de `model_asset_loaded`. */
+	modelAssetPreloadPendingRef: MutableRefObject<number>
 	/** Overlay de carga durante ráfaga IPC 3D (pestañas / `ready`). */
 	sceneBurstLoadInProgressRef: MutableRefObject<boolean>
 	/** FP: esperar `play_character_view_changed` tras restore del jugador. */
@@ -547,6 +588,9 @@ export interface EngineContextValue extends EngineState {
 	pendingImportSceneRef: MutableRefObject<import('@shared-types').SavedScene | null>
 	sceneImportInProgressRef: MutableRefObject<boolean>
 	modelReplaceInProgressRef: MutableRefObject<boolean>
+	modelLoadOverlayKindRef: MutableRefObject<import('./hooks/sceneImportOverlay').ModelLoadOverlayKind | null>
+	modelAssetPreloadPendingRef: MutableRefObject<number>
+	modelsRef: MutableRefObject<import('@shared-types').ModelInfo[]>
 	sceneBurstLoadInProgressRef: MutableRefObject<boolean>
 	sceneBurstAwaitingPlayerViewRef: MutableRefObject<boolean>
 	sceneBurstPendingColliderCountRef: MutableRefObject<number>
@@ -613,7 +657,7 @@ export interface EngineContextValue extends EngineState {
 	removeBackgroundFromLibrary: (path: string) => void
 	addBlueprint: (entry: BluePrintEntry) => void
 	setBlueprints: (entries: BluePrintEntry[]) => void
-	registerQuickBuildClickListener: (fn: (x: number, y: number, fitToGrid: boolean, scale?: [number, number, number]) => void) => void
+	registerQuickBuildClickListener: (fn: (x: number, y: number, z: number, fitToGrid: boolean, scale?: [number, number, number]) => void) => void
 	unregisterQuickBuildClickListener: () => void
 	setDebugMode: (show: boolean) => void
 }

@@ -1,13 +1,14 @@
 import { useState, useRef, useEffect } from 'react'
 
 import { Modal, Nav } from 'react-bootstrap'
-import { Grid3x3GapFill, TrashFill } from 'react-bootstrap-icons'
+import { Grid3x3GapFill, TrashFill, BoxSeam } from 'react-bootstrap-icons'
 import { useContextEngine } from '@engine'
 import { useModal } from '@modal'
 import { useQuickBuild } from '../../../../../../context/QuickBuildContext'
 import { useSpritePreviewImage } from '@hooks'
 import type { BluePrintCategory, BluePrintEntry } from '@shared-types'
 import { useTraslate } from '@hooks'
+import { blueprintUsesModel3D, resolveBlueprintCategory, resolveBlueprintModelPath } from '../../../../../../utils/blueprintModelPath'
 
 export function BluePrintModalBody() {
   const { t } = useTraslate()
@@ -20,13 +21,14 @@ export function BluePrintModalBody() {
     entityTransformsRef,
     removeScenario,
     removeCharacter,
+    removeEntity,
     removeCollider,
     removeExecutionArea,
   } = useContextEngine()
   const { activeBluePrint, setActiveBluePrint } = useQuickBuild()
   const { closeModal } = useModal()
 
-  const filtered = blueprints.filter(bp => bp.category === activeCategory)
+  const filtered = blueprints.filter(bp => resolveBlueprintCategory(bp) === activeCategory)
 
   const handleSelect = (bp: BluePrintEntry) => {
     setActiveBluePrint(bp)
@@ -53,6 +55,7 @@ export function BluePrintModalBody() {
       else if (kind === 'character') removeCharacter(id)
       else if (kind === 'collider') removeCollider(id)
       else if (kind === 'execution_area') removeExecutionArea(id)
+      else if (kind === 'model' || kind === 'directional_light') removeEntity(id)
     })
     setBlueprints(blueprints.filter(bp => bp.id !== pendingDelete.id))
     if (activeBluePrint?.id === pendingDelete.id) setActiveBluePrint(null)
@@ -199,12 +202,13 @@ function BluePrintCard({
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
   const firstFrame = bp.animations?.[0]?.frames?.[0]
-  // Si no hay frame de animacion, usamos la ruta principal del blueprint como preview
-  const framePath = firstFrame?.path ?? bp.path
+  const framePath = firstFrame?.path ?? resolveBlueprintModelPath(bp)
+  const isModel3D = blueprintUsesModel3D(bp)
 
-  const { imageSrc } = useSpritePreviewImage(framePath)
+  const { imageSrc } = useSpritePreviewImage(isModel3D ? '' : framePath)
 
   useEffect(() => {
+    if (isModel3D) return
     const canvas = canvasRef.current
     if (!canvas || !imageSrc) return
     const ctx = canvas.getContext('2d')
@@ -226,7 +230,7 @@ function BluePrintCard({
       }
     }
     img.src = imageSrc
-  }, [imageSrc, firstFrame])
+  }, [imageSrc, firstFrame, isModel3D])
 
   return (
     <div className="position-relative" style={{ width: 80, height: 80 }}>
@@ -236,8 +240,9 @@ function BluePrintCard({
         title={bp.name}
         onClick={() => onSelect(bp)}
       >
-        {/* Mostrar canvas si tenemos una ruta (con frame o sin animaciones) */}
-        {framePath ? (
+        {isModel3D ? (
+          <BoxSeam size={24} className="flex-shrink-0" />
+        ) : framePath && imageSrc ? (
           <canvas
             ref={canvasRef}
             width={PREVIEW_SIZE}

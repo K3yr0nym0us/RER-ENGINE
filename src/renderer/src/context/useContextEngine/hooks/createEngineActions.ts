@@ -61,7 +61,12 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 
 	const loadModelAsset = (path: string, name: string) => {
 		send({ cmd: 'load_model_asset', path, name });
-		dispatch({ type: 'ADD_MODEL_INFO', payload: { path, name } });
+		dispatch({ type: 'ADD_MODEL_INFO', payload: { path, name, loading: true } });
+	};
+
+	const isModelPreloadReady = (path: string): boolean => {
+		const entry = refs.modelsRef.current.find((m) => m.path === path);
+		return entry != null && entry.loading !== true;
 	};
 
 	const removeModelAsset = (path: string) => {
@@ -77,13 +82,29 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 		refs.pendingModelPathRef.current = path;
 		refs.pendingSpawnKindRef.current = kind;
 		refs.pendingSpawnCategoryRef.current = category ?? null;
-		send({ cmd: 'load_model', path });
+		if (!isModelPreloadReady(path)) {
+			beginModelReplaceLoading(
+				dispatch,
+				refs.modelReplaceInProgressRef,
+				'entity',
+				refs.modelLoadOverlayKindRef,
+			);
+		}
+		send({
+			cmd: 'load_model',
+			path,
+			single_instance: true,
+			...(category === 'environment' ? { entity_category: 'environment' } : {}),
+		});
 	};
 
 	const replaceEntityModel = (entityId: number, modelPath: string) => {
 		const meta = refs.entityMetaRef.current[entityId];
 		if (meta) {
 			meta.visualModelPath = modelPath;
+			if (/\.(glb|gltf|fbx)$/i.test(modelPath)) {
+				meta.path = modelPath;
+			}
 			meta.animations = [];
 		}
 		dispatch({
@@ -94,7 +115,12 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 			type: 'SET_ANIMATION_PLAYING',
 			payload: { entityId, playing: false },
 		});
-		beginModelReplaceLoading(dispatch, refs.modelReplaceInProgressRef);
+		beginModelReplaceLoading(
+			dispatch,
+			refs.modelReplaceInProgressRef,
+			'model',
+			refs.modelLoadOverlayKindRef,
+		);
 		send({ cmd: 'replace_entity_model', id: entityId, path: modelPath });
 	};
 
@@ -490,7 +516,15 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 		refs.pivotEditListenerRef.current = null;
 	};
 
-	const registerQuickBuildClickListener = (fn: (x: number, y: number, fitToGrid: boolean, scale?: [number, number, number]) => void) => {
+	const registerQuickBuildClickListener = (
+		fn: (
+			x: number,
+			y: number,
+			z: number,
+			fitToGrid: boolean,
+			scale?: [number, number, number],
+		) => void,
+	) => {
 		refs.quickBuildClickListenerRef.current = fn;
 	};
 

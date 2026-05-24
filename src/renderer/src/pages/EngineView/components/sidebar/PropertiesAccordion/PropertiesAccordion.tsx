@@ -5,6 +5,7 @@ import { CircleSquare, Check2Square, Pencil, Trash, Link45deg, ArrowsMove, BoxSe
 
 import { AppTooltip } from '@components';
 import { TransformPanel, AnimationsPanel, ScriptingPanel } from '.';
+import type { TransformSendCommand } from './TransformPanel';
 import { CreateEntityFromModelModalBody } from '../EntitiesAccordion/components/CreateEntityFromModelModalBody';
 
 import { useContextEngine } from '@engine';
@@ -12,6 +13,7 @@ import { useModal } from '@modal';
 import type { BluePrintCategory, BluePrintEntry } from '@shared-types';
 import { isEditorCameraEntity, isEnvironmentEntity, isPlayerEntity } from '@shared-types';
 import { useTraslate } from '@hooks';
+import { resolveBlueprintModelPath } from '../../../../../utils/blueprintModelPath';
 
 export function PropertiesAccordion({ projectType }: { projectType?: string }) {
   const { t } = useTraslate();
@@ -42,18 +44,7 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
   const [entityNameDraft, setEntityNameDraft] = useState('');
   const [isEditingEntityName, setIsEditingEntityName] = useState(false);
 
-  const handleSend = (cmd: {
-    cmd: string
-    id?: number
-    position?: [number, number, number]
-    position_axis?: { axis: number; value: number }
-    rotation?: [number, number, number, number]
-    scale?: [number, number, number]
-    scale_axis?: { axis: number; value: number }
-    body_rotation_only?: boolean
-    rotation_euler_delta?: { axis: number; degrees: number }
-    rotation_euler_degrees?: [number, number, number]
-  }) => {
+  const handleSend = (cmd: TransformSendCommand) => {
     if (cmd.cmd === 'set_transform' && selectedEntity && cmd.id === selectedEntity.id) {
       updateEntityTransform(selectedEntity.id, {
         ...(cmd.position !== undefined ? { position: cmd.position } : {}),
@@ -393,7 +384,6 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
                       {isPlayer ? t('Replace model player hint') : t('Replace model entity hint')}
                     </p>
                     <CreateEntityFromModelModalBody
-                      models={models}
                       onSpawn={(path) => {
                         replaceEntityModel(selectedEntity.id, path);
                         closeModal();
@@ -415,11 +405,12 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
             const kind = meta?.kind ?? 'model';
             const category: BluePrintCategory =
               kind === 'character' ? 'personaje' :
-              kind === 'scenario'  ? 'entorno'   : 'objetos';
+              kind === 'scenario'  ? 'entorno'   :
+              meta?.entityCategory === 'environment' ? 'entorno' : 'objetos';
 
             const handleConfirm = () => {
               const transform = entityTransformsRef.current[selectedEntity.id];
-              const entry: BluePrintEntry = {
+              const draft: BluePrintEntry = {
                 id:               `bp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
                 name:             selectedEntity.name,
                 category,
@@ -432,6 +423,13 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
                 animations:       meta?.animations,
                 scripts:          meta?.scripts,
                 control_bindings: meta?.controlBindings,
+                visualModelPath:  meta?.visualModelPath,
+                entity_category:  meta?.entityCategory,
+              };
+              const effectivePath = resolveBlueprintModelPath(draft);
+              const entry: BluePrintEntry = {
+                ...draft,
+                path: effectivePath,
               };
               addBlueprint(entry);
               // Vincular la entidad actual a la blueprint recién creada

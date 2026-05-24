@@ -179,6 +179,9 @@ impl State {
         }
         let mut batches: Vec<Batch> = Vec::new();
         for (entity_id, mesh_idx, tex_idx, model_matrix, _layer, _z) in &entities {
+            if self.quick_build_ghost_id == Some(*entity_id) {
+                continue;
+            }
             if self.preview_playing
                 && (self.collider_entities.contains(entity_id)
                     || self.execution_area_entities.contains(entity_id))
@@ -229,6 +232,11 @@ impl State {
             }
         }
 
+        let mut ghost_overlay: Option<(usize, crate::mesh::InstanceData)> = None;
+        if self.camera_2d.is_none() {
+            ghost_overlay = self.build_quick_build_ghost_overlay();
+        }
+
         let skinned_shadow = self.collect_skinned_draw_instances();
         let skinned_main = skinned_shadow.clone();
 
@@ -243,6 +251,9 @@ impl State {
         if self.camera_2d.is_none() {
             let mut shadow_batches: Vec<Batch> = Vec::new();
             for (entity_id, mesh_idx, _tex_idx, model_matrix, _layer, _z) in &entities {
+                if self.quick_build_ghost_id == Some(*entity_id) {
+                    continue;
+                }
                 if self.sun_entity == Some(*entity_id) {
                     continue;
                 }
@@ -466,6 +477,46 @@ impl State {
 
         if self.camera_2d.is_none() {
             self.prev_view_proj = scene_uni.view_proj_stable;
+        }
+
+        if let Some((ghost_mesh_idx, ghost_inst)) = ghost_overlay {
+            use wgpu::util::DeviceExt;
+            let ghost_inst_buf = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("qb-ghost-inst-buf"),
+                contents: bytemuck::cast_slice(&[ghost_inst]),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
+            if let Some(mesh) = self.meshes.get(ghost_mesh_idx) {
+                let mut ghost_pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("qb-ghost-overlay-pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Load,
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                        view: &self.depth_view,
+                        depth_ops: Some(wgpu::Operations {
+                            load: wgpu::LoadOp::Load,
+                            store: wgpu::StoreOp::Store,
+                        }),
+                        stencil_ops: None,
+                    }),
+                    occlusion_query_set: None,
+                    timestamp_writes: None,
+                });
+                ghost_pass.set_pipeline(&self.render_pipeline_overlay);
+                ghost_pass.set_bind_group(0, &self.scene_bind_group, &[]);
+                ghost_pass.set_bind_group(1, self.atlas.bind_group.as_ref(), &[]);
+                ghost_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
+                ghost_pass.set_vertex_buffer(1, ghost_inst_buf.slice(..));
+                ghost_pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                ghost_pass.draw_indexed(0..mesh.index_count, 0, 0..1);
+                draw_calls += 1;
+            }
         }
 
         if self.camera_2d.is_none() && self.world_bounds_buffer.vertex_count > 0 {

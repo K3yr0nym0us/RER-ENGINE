@@ -1,3 +1,5 @@
+import type { RefObject } from 'react'
+
 import { useQuickBuildPlacement } from '@hooks'
 
 /**
@@ -5,8 +7,12 @@ import { useQuickBuildPlacement } from '@hooks'
  * No renderiza nada en el DOM: el motor (Rust) dibuja el indicador visual
  * directamente sobre la ventana nativa que es siempre el elemento superior.
  */
-export function QuickBuildOverlay() {
-  useQuickBuildPlacement()
+export function QuickBuildOverlay({
+  viewportRef,
+}: {
+  viewportRef: RefObject<HTMLDivElement | null>
+}) {
+  useQuickBuildPlacement(viewportRef)
   return null
 }
 

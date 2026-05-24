@@ -40,6 +40,10 @@
   "Starting…": "Iniciando…",
   "Loading scene…": "Cargando escena…",
   "Loading model…": "Cargando modelo…",
+  "Preloading model into memory…": "Precargando modelo en memoria…",
+  "Entity is still loading,": "Aún se está cargando la entidad,",
+  "please wait a moment before using it.": "espere un momento para poder utilizarla.",
+  "Loading entity…": "Cargando entidad…",
   "Error": "Error",
 
   "Scene 1": "Escena 1",

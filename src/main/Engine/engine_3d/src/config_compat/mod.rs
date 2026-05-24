@@ -30,7 +30,7 @@ pub(crate) enum ActiveTool {
         cursor_world: Option<[f32; 2]>,
     },
     QuickBuildPlace {
-        cursor_world: Option<[f32; 2]>,
+        cursor_world: Option<[f32; 3]>,
     },
 }
 
@@ -174,11 +174,14 @@ impl State {
 
     pub(crate) fn load_quick_build_ghost(
         &mut self,
-        _path: &str,
+        path: &str,
         _kind: &str,
-        _scale: [f32; 3],
+        scale: [f32; 3],
         _src_rect: Option<[u32; 4]>,
     ) -> Option<u32> {
-        None
+        if self.camera_2d.is_some() {
+            return None;
+        }
+        self.load_quick_build_ghost_3d(path, scale)
     }
 }

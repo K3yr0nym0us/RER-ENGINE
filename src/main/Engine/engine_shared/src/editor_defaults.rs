@@ -5,6 +5,7 @@ pub mod entity_label {
     pub const SCENARIO: &str = "Scenario";
     pub const CHARACTER: &str = "Character";
     pub const OBJECT: &str = "Object";
+    pub const ENVIRONMENT: &str = "Environment";
     pub const COLLIDER: &str = "Collider";
     pub const EXECUTION_AREA: &str = "ExecutionArea";
     pub const BACKGROUND: &str = "Background";
@@ -38,6 +39,14 @@ pub fn next_numbered_entity_label(
     }
 
     format!("{clean_base}_{:02}", max_suffix.saturating_add(1))
+}
+
+/// Prefijo de nombre numerado según categoría de entidad del editor.
+pub fn entity_label_for_category(entity_category: Option<&str>) -> &'static str {
+    match entity_category {
+        Some("environment") => entity_label::ENVIRONMENT,
+        _ => entity_label::OBJECT,
+    }
 }
 
 pub fn resolve_entity_display_name(

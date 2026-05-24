@@ -1,4 +1,4 @@
-import { Accordion } from 'react-bootstrap';
+import { Accordion, Spinner } from 'react-bootstrap';
 import { Box, Trash } from 'react-bootstrap-icons';
 import { AppTooltip } from '@components';
 import { useContextEngine } from '@engine';
@@ -9,6 +9,7 @@ import BtnLoadModel from './components/BtnLoadModel';
 type ModelEntry = {
   path: string;
   name: string;
+  loading?: boolean;
 };
 
 const ModelsAccordion = () => {
@@ -57,15 +58,29 @@ const ModelsAccordion = () => {
                 <AppTooltip content={model.name} place="top">
                   <span className="text-light small text-truncate flex-fill">{model.name}</span>
                 </AppTooltip>
-                <AppTooltip content={t('Delete model')} place="top">
-                  <button
-                    className="btn btn-sm text-danger flex-shrink-0"
-                    type="button"
-                    onClick={() => handleDeleteModel(model)}
-                  >
-                    <Trash />
-                  </button>
-                </AppTooltip>
+                {model.loading ? (
+                  <AppTooltip content={t('Preloading model into memory…')} place="left">
+                    <span className="d-inline-flex flex-shrink-0" tabIndex={0}>
+                      <Spinner
+                        animation="border"
+                        size="sm"
+                        variant="primary"
+                        role="status"
+                        aria-label={t('Preloading model into memory…')}
+                      />
+                    </span>
+                  </AppTooltip>
+                ) : (
+                  <AppTooltip content={t('Delete model')} place="left">
+                    <button
+                      className="btn btn-sm text-danger flex-shrink-0"
+                      type="button"
+                      onClick={() => handleDeleteModel(model)}
+                    >
+                      <Trash />
+                    </button>
+                  </AppTooltip>
+                )}
               </span>
             </li>
           ))}

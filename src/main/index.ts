@@ -290,9 +290,12 @@ function startEngine(embed?: ViewportBounds): void {
             mainWindow.webContents.send('autosave:request', currentProjectFilePath)
           }
         }
-        // Error de arranque GPU: solo confiar en el JSON del motor (init_gpu), no en stderr.
+        // Tras ready: omitir errores GPU genéricos; dejar pasar errores de runtime (quick_build).
         if (event.event === 'error' && engineReceivedReady) {
-          continue
+          const msg = String((event as { message?: string }).message ?? '')
+          if (!msg.includes('[quick_build]')) {
+            continue
+          }
         }
         sendEventToRenderer(event)
       } catch {

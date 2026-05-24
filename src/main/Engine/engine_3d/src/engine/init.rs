@@ -697,6 +697,9 @@ impl State {
 
         let audio_slot = start_audio_thread();
 
+        let (model_preload_tx, model_preload_rx) =
+            crate::config_3d::static_model_cache::create_model_preload_channel();
+
         let taa = crate::taa::TaaPass::new(
             &device,
             format,
@@ -781,6 +784,8 @@ impl State {
             quick_build_preview_path: None,
             quick_build_preview_kind: None,
             quick_build_preview_scale: None,
+            quick_build_blueprint: None,
+            entity_blueprint_ids: HashMap::new(),
             preview_playing: false,
             preview_entity_transform_snapshots: HashMap::new(),
             preview_fp_view_snapshot: None,
@@ -830,6 +835,11 @@ impl State {
             control_bindings_by_entity: HashMap::new(),
             sprite_store: HashMap::new(),
             model_store: HashMap::new(),
+            static_model_cache: HashMap::new(),
+            model_preload_rx,
+            model_preload_tx,
+            model_preload_inflight: HashSet::new(),
+            pending_load_models: Vec::new(),
             sound_store: HashMap::new(),
             background_store: HashMap::new(),
             undo_stack: Vec::new(),

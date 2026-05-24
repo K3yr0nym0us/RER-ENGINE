@@ -56,15 +56,18 @@ export function EngineProvider({
 		pendingPlayerDups: useRef<Transform[]>([]),
 		pendingDupQ: useRef<Transform[]>([]),
 		pivotEditListenerRef: useRef<((framePath: string, px: number, py: number) => void) | null>(null),
-		quickBuildClickListenerRef: useRef<((x: number, y: number, fitToGrid: boolean, scale?: [number, number, number]) => void) | null>(null),
+		quickBuildClickListenerRef: useRef<((x: number, y: number, z: number, fitToGrid: boolean, scale?: [number, number, number]) => void) | null>(null),
 		pendingEventsRef: useRef<Map<string, { resolve: (value: any) => void }>>(new Map()),
 		pendingImportSceneRef: useRef<import('@shared-types').SavedScene | null>(null),
 		sceneImportInProgressRef: useRef(false),
 		modelReplaceInProgressRef: useRef(false),
+		modelLoadOverlayKindRef: useRef<import('./hooks/sceneImportOverlay').ModelLoadOverlayKind | null>(null),
+		modelAssetPreloadPendingRef: useRef(0),
 		sceneBurstLoadInProgressRef: useRef(false),
 		sceneBurstAwaitingPlayerViewRef: useRef(false),
 		sceneBurstPendingColliderCountRef: useRef(0),
 		blueprintsRef: useRef([]),
+		modelsRef: useRef<import('@shared-types').ModelInfo[]>([]),
 		updateEntityTransformRef: useRef((_id: number, _patch: Partial<import('./types').Transform>) => {}),
 	};
 
@@ -127,6 +130,10 @@ export function EngineProvider({
 		refs.blueprintsRef.current = state.blueprints;
 	}, [state.blueprints, refs.blueprintsRef]);
 
+	useEffect(() => {
+		refs.modelsRef.current = state.models;
+	}, [state.models, refs.modelsRef]);
+
 	refs.updateEntityTransformRef.current = actions.updateEntityTransform;
 
 	const value: EngineContextValue = {
@@ -135,6 +142,9 @@ export function EngineProvider({
 		pendingImportSceneRef: refs.pendingImportSceneRef,
 		sceneImportInProgressRef: refs.sceneImportInProgressRef,
 		modelReplaceInProgressRef: refs.modelReplaceInProgressRef,
+		modelLoadOverlayKindRef: refs.modelLoadOverlayKindRef,
+		modelAssetPreloadPendingRef: refs.modelAssetPreloadPendingRef,
+		modelsRef: refs.modelsRef,
 		sceneBurstLoadInProgressRef: refs.sceneBurstLoadInProgressRef,
 		sceneBurstAwaitingPlayerViewRef: refs.sceneBurstAwaitingPlayerViewRef,
 		sceneBurstPendingColliderCountRef: refs.sceneBurstPendingColliderCountRef,

@@ -71,7 +71,7 @@ function EngineViewInner({ projectType, gameStyle, initialSave, initialSavePath,
             style={{ background: 'transparent', marginTop: 0 }}
           >
             <EngineGpuErrorOverlay />
-            <QuickBuildOverlay />
+            <QuickBuildOverlay viewportRef={viewportRef} />
             <SceneImportLoadingOverlay />
           </main>
 

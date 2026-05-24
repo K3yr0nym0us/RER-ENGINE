@@ -4,13 +4,21 @@ import { useContextEngine } from '@engine';
 import { useTraslate } from '@hooks';
 
 export function SceneImportLoadingOverlay() {
-	const { sceneImportLoading, modelReplaceInProgressRef } = useContextEngine();
+	const {
+		sceneImportLoading,
+		modelReplaceInProgressRef,
+		modelLoadOverlayKindRef,
+	} = useContextEngine();
 	const { t } = useTraslate();
 
 	if (!sceneImportLoading) return null;
 
-	const loadingModel = modelReplaceInProgressRef.current;
-	const label = loadingModel ? t('Loading model…') : t('Loading scene…');
+	const overlayKind = modelLoadOverlayKindRef.current;
+	const label = overlayKind === 'entity'
+		? t('Loading entity…')
+		: overlayKind === 'model' || modelReplaceInProgressRef.current
+			? t('Loading model…')
+			: t('Loading scene…');
 
 	return (
 		<div

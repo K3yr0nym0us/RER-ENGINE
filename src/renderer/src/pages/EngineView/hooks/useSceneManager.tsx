@@ -446,7 +446,14 @@ export function SceneManagerProvider({
           modelPath: entity.path,
           pending: pendingRestore,
         });
-        send({ cmd: 'load_model', path: entity.path });
+        send({
+          cmd: 'load_model',
+          path: entity.path,
+          single_instance: true,
+          ...(entity.entity_category === 'environment'
+            ? { entity_category: 'environment' }
+            : {}),
+        });
       }
     }
 

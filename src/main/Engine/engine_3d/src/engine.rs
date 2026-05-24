@@ -106,6 +106,10 @@ pub struct State {
     pub(crate) quick_build_preview_path: Option<String>,
     pub(crate) quick_build_preview_kind: Option<String>,
     pub(crate) quick_build_preview_scale: Option<[f32; 3]>,
+    /// Metadatos del blueprint activo (nombre, física, rotación…) para colocar instancias.
+    pub(crate) quick_build_blueprint: Option<crate::config_3d::quick_build::QuickBuildBlueprint>,
+    /// Blueprint de origen por entidad (construcción rápida u otras vías del motor).
+    pub(crate) entity_blueprint_ids: std::collections::HashMap<EntityId, String>,
     pub preview_playing: bool,
     pub(crate) preview_entity_transform_snapshots:
         HashMap<EntityId, crate::config_3d::preview_editor::PreviewEntityTransform>,
@@ -166,6 +170,12 @@ pub struct State {
     pub(crate) sprite_store: HashMap<String, (String, u32, u32)>,
     /// Modelos 3D precargados: ruta absoluta → nombre visible.
     pub(crate) model_store: HashMap<String, String>,
+    /// Mallas estáticas en GPU indexadas por ruta (precarga al registrar recurso).
+    pub(crate) static_model_cache: crate::config_3d::static_model_cache::StaticModelCache,
+    pub(crate) model_preload_rx: crate::config_3d::static_model_cache::ModelPreloadRx,
+    pub(crate) model_preload_tx: crate::config_3d::static_model_cache::ModelPreloadTx,
+    pub(crate) model_preload_inflight: std::collections::HashSet<String>,
+    pub(crate) pending_load_models: Vec<crate::config_3d::static_model_cache::PendingLoadModel>,
     pub(crate) sound_store: HashMap<String, String>,
     pub(crate) background_store: HashMap<String, String>,
     pub(crate) undo_stack: Vec<UndoAction>,

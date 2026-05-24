@@ -64,7 +64,26 @@ pub enum EngineCommand {
         #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
         #[serde(default)] offset_y: Option<i32>,
     },
-    LoadModel { path: String },
+    LoadModel {
+        path: String,
+        #[serde(default)]
+        single_instance: Option<bool>,
+        #[serde(default)]
+        entity_category: Option<String>,
+    },
+    /// Instancia quick-build en la posición indicada (legacy; preferir place_quick_build_at_cursor).
+    SpawnQuickBuildInstance {
+        position: [f32; 3],
+        rotation: [f32; 4],
+        scale: [f32; 3],
+    },
+    /// Coloca el blueprint en cursor_world del ghost o en píxeles de viewport.
+    PlaceQuickBuildAtCursor {
+        #[serde(default)]
+        pixel_x: Option<f32>,
+        #[serde(default)]
+        pixel_y: Option<f32>,
+    },
     /// Sustituir el mesh visual de una entidad existente (sin crear entidad nueva).
     ReplaceEntityModel { id: u32, path: String },
     /// Registrar un .glb/.gltf/.fbx en el almacén de recursos (sin instanciar en escena).
@@ -260,6 +279,21 @@ pub enum EngineCommand {
         /// Se usa para mostrar solo el frame inicial cuando el blueprint viene de spritesheet.
         #[serde(default)]
         preview_src_rect: Option<[u32; 4]>,
+        /// Metadatos del blueprint (construcción rápida): rotación por defecto xyzw.
+        #[serde(default)]
+        preview_rotation: Option<[f32; 4]>,
+        /// Nombre de la entidad al colocar.
+        #[serde(default)]
+        preview_name: Option<String>,
+        #[serde(default)]
+        preview_physics_enabled: Option<bool>,
+        #[serde(default)]
+        preview_physics_type: Option<String>,
+        /// p. ej. "environment"
+        #[serde(default)]
+        preview_entity_category: Option<String>,
+        #[serde(default)]
+        preview_blueprint_id: Option<String>,
     },
     /// Recrear un colisionador de 4 puntos desde datos guardados (restauración de proyecto).
     CreateColliderFromPoints {
@@ -599,6 +633,20 @@ pub enum EngineEvent {
         position: Option<[f32; 3]>,
         #[serde(skip_serializing_if = "Option::is_none")]
         scale: Option<[f32; 3]>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        rotation: Option<[f32; 4]>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        path: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        kind: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        blueprint_id: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        physics_enabled: Option<bool>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        physics_type: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        entity_category: Option<String>,
     },
     /// Mesh visual de una entidad reemplazado por otro archivo 3D.
     EntityModelReplaced {
@@ -620,6 +668,8 @@ pub enum EngineEvent {
         scale:           [f32; 3],
         physics_enabled: bool,
         physics_type:    String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        blueprint_id:    Option<String>,
     },
     /// Emitido cuando el usuario hace click izquierdo en vacío.
     EntityDeselected,
@@ -669,8 +719,10 @@ pub enum EngineEvent {
     SpriteRemoved { path: String },
     /// Emitido como respuesta a GetSpritesList: lista de sprites disponibles.
     SpritesList { sprites: Vec<SpriteInfo> },
-    /// Modelo 3D registrado en el almacén de recursos.
+    /// Modelo 3D registrado en el almacén de recursos (GPU listo).
     ModelAssetLoaded { path: String, name: String },
+    /// Precarga de modelo 3D iniciada (parseo en segundo plano).
+    ModelAssetPreloadStarted { path: String, name: String },
     ModelAssetRemoved { path: String },
     ModelsList { models: Vec<ModelInfo> },
     /// Emitido cuando un archivo de audio se registró en el almacén.
@@ -685,12 +737,21 @@ pub enum EngineEvent {
     BackgroundAssetRemoved { path: String },
     /// Emitido como respuesta a GetBackgroundsList: lista de fondos disponibles.
     BackgroundsList { backgrounds: Vec<BackgroundInfo> },
+    /// Ghost de construcción rápida 3D listo para previsualizar.
+    QuickBuildGhostReady { path: String, #[serde(skip_serializing_if = "Option::is_none")] name: Option<String> },
     /// Emitido cuando el cursor se mueve y la herramienta quick_build_place está activa.
-    QuickBuildMove { x: f32, y: f32 },
+    QuickBuildMove { x: f32, y: f32, #[serde(default)] z: f32 },
     /// Emitido cuando el usuario hace click con la herramienta quick_build_place activa.
     /// `fit_to_grid` indica si Ctrl estaba presionado al colocar.
     /// `scale` contiene el tamaño final resuelto por el motor para esta colocación.
-    QuickBuildClick { x: f32, y: f32, fit_to_grid: bool, scale: [f32; 3] },
+    QuickBuildClick {
+        x: f32,
+        y: f32,
+        #[serde(default)]
+        z: f32,
+        fit_to_grid: bool,
+        scale: [f32; 3],
+    },
     /// Emitido cuando SetAnimation resolvió/normalizó el tamaño lógico final.
     AnimationLogicalResolved { id: u32, name: String, logical_w: u32, logical_h: u32 },
     /// Emitido cuando una entidad es eliminada del mundo (por Ctrl+Z, RemoveEntity, etc.).

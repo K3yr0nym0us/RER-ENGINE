@@ -232,8 +232,31 @@ impl State {
                     .window
                     .request_inner_size(winit::dpi::PhysicalSize::new(width, height));
             }
-            EngineCommand::LoadModel { path } => {
-                self.load_model(&path);
+            EngineCommand::LoadModel {
+                path,
+                single_instance,
+                entity_category,
+            } => {
+                let category = entity_category.as_deref();
+                if single_instance.unwrap_or(false) {
+                    self.load_model_single(&path, category);
+                } else {
+                    self.load_model(&path, category);
+                }
+            }
+            EngineCommand::SpawnQuickBuildInstance {
+                position,
+                rotation,
+                scale,
+            } => {
+                let _ = self.spawn_quick_build_instance_at(position, rotation, scale);
+            }
+            EngineCommand::PlaceQuickBuildAtCursor { pixel_x, pixel_y } => {
+                let pixels = match (pixel_x, pixel_y) {
+                    (Some(x), Some(y)) => Some((x, y)),
+                    _ => None,
+                };
+                self.place_quick_build_at_cursor(pixels);
             }
             EngineCommand::ReplaceEntityModel { id, path } => {
                 self.replace_entity_model(id, &path);
@@ -243,6 +266,7 @@ impl State {
             }
             EngineCommand::RemoveModelAsset { path } => {
                 if self.model_store.remove(&path).is_some() {
+                    self.invalidate_static_model_cache(&path);
                     send_event(&EngineEvent::ModelAssetRemoved { path: path.clone() });
                     log::info!("[model] eliminado de recursos: {}", path);
                 } else {
@@ -546,6 +570,7 @@ impl State {
                         scale,
                         physics_enabled,
                         physics_type,
+                        blueprint_id: self.entity_blueprint_ids.get(&id).cloned(),
                     });
                 }
             }
@@ -704,6 +729,7 @@ impl State {
                 self.control_bindings_by_entity.remove(&id);
                 self.script_engine.detach_entity(id);
                 self.save_registry.remove_entity(id);
+                self.entity_blueprint_ids.remove(&id);
                 if self.sun_entity == Some(id) {
                     self.sun_entity = None;
                 }
@@ -884,6 +910,12 @@ impl State {
                 preview_kind,
                 preview_scale,
                 preview_src_rect,
+                preview_rotation,
+                preview_name,
+                preview_physics_enabled,
+                preview_physics_type,
+                preview_entity_category,
+                preview_blueprint_id,
             } => {
                 if tool.is_empty() {
                     let was_active = !matches!(self.active_tool, ActiveTool::None);
@@ -893,6 +925,7 @@ impl State {
                     self.quick_build_preview_path = None;
                     self.quick_build_preview_kind = None;
                     self.quick_build_preview_scale = None;
+                    self.quick_build_blueprint = None;
                     self.active_tool = ActiveTool::None;
                     self.tool_overlay_buffer = gizmo::build_from_vertices(&self.device, &[]);
                     if was_active {
@@ -906,6 +939,7 @@ impl State {
                     self.quick_build_preview_path = None;
                     self.quick_build_preview_kind = None;
                     self.quick_build_preview_scale = None;
+                    self.quick_build_blueprint = None;
                     match tool.as_str() {
                         "draw_collider" => {
                             self.active_tool = ActiveTool::DrawCollider {
@@ -930,11 +964,58 @@ impl State {
                                 preview_kind.as_deref(),
                                 preview_scale,
                             ) {
+                                let is_environment =
+                                    preview_entity_category.as_deref() == Some("environment");
+                                let physics_enabled = if is_environment {
+                                    true
+                                } else {
+                                    preview_physics_enabled.unwrap_or(false)
+                                };
+                                let physics_type = if is_environment {
+                                    "static".to_string()
+                                } else {
+                                    preview_physics_type
+                                        .unwrap_or_else(|| "static".to_string())
+                                };
+                                self.quick_build_blueprint =
+                                    Some(crate::config_3d::quick_build::QuickBuildBlueprint {
+                                        name: preview_name
+                                            .unwrap_or_else(|| "Objeto".to_string()),
+                                        rotation: preview_rotation
+                                            .unwrap_or([0.0, 0.0, 0.0, 1.0]),
+                                        physics_enabled,
+                                        physics_type,
+                                        entity_category: preview_entity_category,
+                                        blueprint_id: preview_blueprint_id,
+                                    });
                                 self.quick_build_preview_path = Some(path.to_owned());
                                 self.quick_build_preview_kind = Some(kind.to_owned());
                                 self.quick_build_preview_scale = Some(scale);
-                                self.quick_build_ghost_id =
-                                    self.load_quick_build_ghost(path, kind, scale, preview_src_rect);
+                                self.quick_build_ghost_id = self.load_quick_build_ghost(
+                                    path,
+                                    kind,
+                                    scale,
+                                    preview_src_rect,
+                                );
+                                if self.quick_build_ghost_id.is_none() {
+                                    log::warn!(
+                                        "[quick_build] no se pudo crear ghost para preview: {path}"
+                                    );
+                                }
+                                if self.camera_2d.is_none() {
+                                    let ghost_name = self
+                                        .quick_build_blueprint
+                                        .as_ref()
+                                        .map(|b| b.name.clone());
+                                    log::info!(
+                                        "[quick_build] ghost listo id={:?} path={path}",
+                                        self.quick_build_ghost_id
+                                    );
+                                    send_event(&EngineEvent::QuickBuildGhostReady {
+                                        path: path.to_owned(),
+                                        name: ghost_name,
+                                    });
+                                }
                             }
                             log::info!("Herramienta activa: construcción rápida");
                         }

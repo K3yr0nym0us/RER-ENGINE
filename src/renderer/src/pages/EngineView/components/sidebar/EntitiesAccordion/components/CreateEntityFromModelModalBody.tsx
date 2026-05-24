@@ -1,13 +1,18 @@
-import type { ModelInfo } from '@shared-types';
+import { useContextEngine } from '@engine';
 import { useTraslate } from '@hooks';
+import { ModelPickerEntry } from './ModelPickerEntry';
 
 interface Props {
-  models: ModelInfo[];
   onSpawn: (path: string) => void;
 }
 
-export function CreateEntityFromModelModalBody({ models, onSpawn }: Props) {
+/**
+ * Lista de modelos precargados para modales de entidades.
+ * Lee `models` del contexto en vivo (no snapshot) para actualizar spinners de precarga.
+ */
+export function CreateEntityFromModelModalBody({ onSpawn }: Props) {
   const { t } = useTraslate();
+  const { models } = useContextEngine();
 
   if (models.length === 0) {
     return (
@@ -20,15 +25,7 @@ export function CreateEntityFromModelModalBody({ models, onSpawn }: Props) {
   return (
     <ul className="list-unstyled mb-0">
       {models.map((model) => (
-        <li key={model.path} className="mb-2">
-          <button
-            type="button"
-            className="btn btn-outline-light btn-sm w-100 text-start"
-            onClick={() => onSpawn(model.path)}
-          >
-            {model.name}
-          </button>
-        </li>
+        <ModelPickerEntry key={model.path} model={model} onSelect={onSpawn} />
       ))}
     </ul>
   );

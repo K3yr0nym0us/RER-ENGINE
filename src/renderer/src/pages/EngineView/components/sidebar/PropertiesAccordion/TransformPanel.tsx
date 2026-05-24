@@ -17,6 +17,19 @@ interface Transform {
   scl: [string, string, string]
 }
 
+export type TransformSendCommand = {
+  cmd: 'set_transform'
+  id: number
+  position?: [number, number, number]
+  position_axis?: { axis: number; value: number }
+  rotation?: [number, number, number, number]
+  scale?: [number, number, number]
+  scale_axis?: { axis: number; value: number }
+  body_rotation_only?: boolean
+  rotation_euler_delta?: { axis: number; degrees: number }
+  rotation_euler_degrees?: [number, number, number]
+}
+
 interface Props {
   entity: {
     id: number
@@ -28,7 +41,7 @@ interface Props {
   isPlayCharacter?: boolean
   /** Cámara orbital del editor (solo posición = blanco de órbita). */
   isEditorCamera?: boolean
-  onSend: (cmd: object) => void
+  onSend: (cmd: TransformSendCommand) => void
 }
 
 export function TransformPanel({
@@ -84,18 +97,7 @@ export function TransformPanel({
     rotationEulerDegrees?: [number, number, number]
   }) => {
     if (!entity) return
-    const cmd: {
-      cmd: 'set_transform'
-      id: number
-      position?: [number, number, number]
-      position_axis?: { axis: number; value: number }
-      rotation?: [number, number, number, number]
-      scale?: [number, number, number]
-      scale_axis?: { axis: number; value: number }
-      body_rotation_only?: boolean
-      rotation_euler_delta?: { axis: number; degrees: number }
-      rotation_euler_degrees?: [number, number, number]
-    } = { cmd: 'set_transform', id: entity.id }
+    const cmd: TransformSendCommand = { cmd: 'set_transform', id: entity.id }
 
     if (override.positionAxis !== undefined) {
       cmd.position_axis = override.positionAxis

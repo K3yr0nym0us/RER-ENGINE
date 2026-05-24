@@ -189,6 +189,8 @@ fn evaluate_scene(in: VertexOutput) -> SceneFragOut {
     var out_alpha = albedo_samp.a * in.alpha_mul;
     if in.render_kind >= 0.5 {
         out_alpha = in.alpha_mul;
+    } else if in.alpha_mul < 0.99 {
+        out_alpha = albedo_samp.a * in.alpha_mul;
     } else {
         out_alpha = 1.0;
     }

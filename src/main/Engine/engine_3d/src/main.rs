@@ -401,6 +401,10 @@ impl ApplicationHandler<EngineCommand> for App {
             }
         }
 
+        if let Some(state) = self.state.as_mut() {
+            state.poll_model_preloads();
+        }
+
         if let Some(playing) = preview_toggle {
             if let Some(mut state) = self.state.take() {
                 self.set_preview_playing(&mut state, playing);
@@ -479,6 +483,17 @@ impl ApplicationHandler<EngineCommand> for App {
                             // no se deben seleccionar entidades ni activar el gizmo.
                             let is_quick_build = matches!(state.active_tool, crate::config_compat::ActiveTool::QuickBuildPlace { .. });
 
+                            if is_quick_build && state.camera_2d.is_none() && pressed {
+                                if let Some(cur) = self.last_cursor {
+                                    let ctrl_active = self.ctrl_held || query_ctrl_held_os();
+                                    state.ctrl_held = ctrl_active;
+                                    state.place_quick_build_at_cursor(Some(cur));
+                                }
+                                self.left_click_pos = None;
+                                self.gizmo_drag_axis = None;
+                                state.set_active_gizmo_axis(None);
+                                self.gizmo_drag_start = None;
+                            } else if !pressed || !is_quick_build || state.camera_2d.is_some() {
                             // Comprobar si el click es sobre un eje del gizmo.
                             // Se omite en modo pivot/quick_build para no robar el click al handler.
                             if let Some(cur) = self.last_cursor {
@@ -521,8 +536,15 @@ impl ApplicationHandler<EngineCommand> for App {
                                 // Guardar posición inicial del click izquierdo para picking normal
                                 self.left_click_pos = self.last_cursor;
                             }
+                            }
                         } else {
-                            if self.gizmo_drag_axis.is_some() {
+                            let is_quick_build_release = matches!(
+                                state.active_tool,
+                                crate::config_compat::ActiveTool::QuickBuildPlace { .. }
+                            );
+                            if is_quick_build_release && state.camera_2d.is_none() {
+                                // Colocado en press.
+                            } else if self.gizmo_drag_axis.is_some() {
                                 // Fin del drag de gizmo
                                 self.gizmo_drag_axis = None;
                                 state.set_active_gizmo_axis(None);
@@ -567,7 +589,7 @@ impl ApplicationHandler<EngineCommand> for App {
                                             } else if !state.handle_tool_click_2d(cur.0, cur.1) {
                                                 state.pick_entity_2d(cur.0, cur.1);
                                             }
-                                        } else {
+                                        } else if !state.handle_tool_click_3d(cur.0, cur.1) {
                                             state.pick_entity(cur.0, cur.1);
                                         }
                                     }
@@ -613,6 +635,16 @@ impl ApplicationHandler<EngineCommand> for App {
                     let ctrl_active = self.ctrl_held || query_ctrl_held_os();
                     state.ctrl_held = ctrl_active;
                     state.update_tool_overlay_cursor_2d(cur.0, cur.1);
+                } else if state.camera_2d.is_none() && !state.is_preview_playing() {
+                    let is_quick_build = matches!(
+                        state.active_tool,
+                        crate::config_compat::ActiveTool::QuickBuildPlace { .. }
+                    );
+                    if is_quick_build {
+                        let ctrl_active = self.ctrl_held || query_ctrl_held_os();
+                        state.ctrl_held = ctrl_active;
+                        state.update_tool_overlay_cursor_3d(cur.0, cur.1);
+                    }
                 }
                 if let Some((lx, ly)) = self.last_cursor {
                     let dx = cur.0 - lx;
@@ -649,7 +681,7 @@ impl ApplicationHandler<EngineCommand> for App {
                     let is_quick_build = matches!(state.active_tool, crate::config_compat::ActiveTool::QuickBuildPlace { .. });
                     if state.camera_2d.is_some() && !is_quick_build {
                         state.update_hover_2d(cur.0, cur.1);
-                    } else if state.camera_2d.is_none() {
+                    } else if state.camera_2d.is_none() && !is_quick_build {
                         state.update_hover(cur.0, cur.1);
                     }
                 }
@@ -732,6 +764,7 @@ impl ApplicationHandler<EngineCommand> for App {
                 }
             }
             WindowEvent::RedrawRequested => {
+                state.poll_model_preloads();
                 state.update();
                 if state.is_play_controller_active() {
                     let inputs = state.play_controller_effective_inputs(&self.keyboard_mouse_pressed);

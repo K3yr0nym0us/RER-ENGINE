@@ -4,7 +4,7 @@ use crate::config_3d::physics_3d::PhysicsWorld;
 use crate::config_3d::mesh_3d::GROUND_PLANE_MESH_EXTENT;
 use crate::config_3d::{Camera, WorldBounds3D};
 use crate::config_compat::{ActiveTool, PhysicsWorld2D};
-use crate::ecs::{MeshComponent, NonSelectable, Transform};
+use crate::ecs::{EntityId, MeshComponent, NonSelectable, Transform};
 use crate::engine::State;
 use crate::gizmo;
 use crate::ipc::{send_event, EngineEvent};
@@ -23,6 +23,54 @@ impl State {
             name: Some(name.to_string()),
             position,
             scale,
+            rotation: None,
+            path: None,
+            kind: None,
+            blueprint_id: None,
+            physics_enabled: None,
+            physics_type: None,
+            entity_category: None,
+        });
+    }
+
+    pub(crate) fn register_entity_blueprint_id(&mut self, id: EntityId, blueprint_id: String) {
+        self.entity_blueprint_ids.insert(id, blueprint_id);
+    }
+
+    pub(crate) fn send_entity_selected_event(&self, id: EntityId) {
+        let name = self.world.name(id).unwrap_or("Entity").to_string();
+        let transform = self
+            .world
+            .get::<Transform>(id)
+            .cloned()
+            .unwrap_or_default();
+        let position = transform.position.to_array();
+        let rotation = [
+            transform.rotation.x,
+            transform.rotation.y,
+            transform.rotation.z,
+            transform.rotation.w,
+        ];
+        let scale = transform.scale.to_array();
+        let physics_enabled = if self.camera_2d.is_some() {
+            self.physics_2d.has_physics(id)
+        } else {
+            self.physics.has_physics(id)
+        };
+        let physics_type = if self.camera_2d.is_some() {
+            self.physics_2d.get_body_type(id).to_string()
+        } else {
+            self.physics.get_body_type(id).to_string()
+        };
+        send_event(&EngineEvent::EntitySelected {
+            id,
+            name,
+            position,
+            rotation,
+            scale,
+            physics_enabled,
+            physics_type,
+            blueprint_id: self.entity_blueprint_ids.get(&id).cloned(),
         });
     }
 
@@ -65,6 +113,8 @@ impl State {
         self.quick_build_preview_path = None;
         self.quick_build_preview_kind = None;
         self.quick_build_preview_scale = None;
+        self.quick_build_blueprint = None;
+        self.entity_blueprint_ids.clear();
         self.tool_overlay_buffer = gizmo::build_from_vertices(&self.device, &[]);
         self.show_snap_hint = false;
         self.snap_hint_alpha = 0.0;

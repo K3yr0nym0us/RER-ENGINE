@@ -26,7 +26,7 @@ export function UserGuide() {
           <li><strong>Cámara:</strong> en 2D, posición y zoom de la cámara del editor; en 3D FP, ojo de cámara, FOV, frustum y modo de seguimiento al personaje.</li>
           <li><strong>Recursos:</strong> carga y organización de assets — en 2D: sprites, sonidos y fondos; en 3D: modelos 3D y sonidos.</li>
           <li><strong>Entidades:</strong> creación de entorno, personajes y objetos a partir de los recursos cargados.</li>
-          <li><strong>Herramientas (2D):</strong> dibujar colisionadores, áreas de ejecución de scripts y colocar blueprints con construcción rápida.</li>
+          <li><strong>Herramientas:</strong> en 2D, dibujar colisionadores, áreas de ejecución y construcción rápida con blueprints; en 3D, construcción rápida con blueprints.</li>
           <li><strong>Controles:</strong> elige un personaje y configura teclas, mouse o mandos con scripts Lua.</li>
           <li><strong>Propiedades:</strong> aparece al seleccionar una entidad; nombre, transform, física, animaciones, scripts y acciones (eliminar, blueprint, etc.).</li>
         </ul>
