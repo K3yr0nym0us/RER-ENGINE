@@ -841,7 +841,7 @@ fn main() {
     // en entornos sin GPU hardware — subirlos a error los silencia.
     #[cfg(target_os = "windows")]
     const DEFAULT_LOG_FILTER: &str =
-        "rer_engine_3d=info,warn,wgpu_core=warn,wgpu_hal=warn,naga=warn";
+        "rer_engine_3d=warn,wgpu_core=warn,wgpu_hal=warn,naga=warn";
     #[cfg(not(target_os = "windows"))]
     const DEFAULT_LOG_FILTER: &str =
         "warn,wgpu_core=warn,wgpu_hal::vulkan::conv=error,wgpu_hal::vulkan::instance=error,wgpu_hal=warn,naga=warn";

@@ -208,7 +208,7 @@ impl State {
         self.uv_rects.push(block_uv);
 
         let mut spawn_block = |position: [f32; 3], scale: [f32; 3]| {
-            let label = self.next_numbered_entity_name("Escenario");
+            let label = self.next_numbered_entity_name(rer_engine_shared::editor_defaults::entity_label::SCENARIO);
             let id = self.world.spawn(Some(&label));
             self.world.insert(
                 id,
@@ -296,6 +296,10 @@ impl State {
 
     /// Cubo del editor (muros/cajas de plantilla) sin archivo `.glb`.
     pub(crate) fn spawn_editor_box(&mut self, name: &str, position: [f32; 3], scale: [f32; 3]) {
+        let label = self.resolve_entity_display_name(
+            name,
+            rer_engine_shared::editor_defaults::entity_label::BOX,
+        );
         let block_mesh_idx = self.meshes.len();
         self.meshes.push(mesh::create_cube(&self.device));
         let white_px = [255u8, 255, 255, 255];
@@ -303,7 +307,7 @@ impl State {
         let block_uv = self.atlas.pack(&self.queue, &white_px, 1, 1);
         self.uv_rects.push(block_uv);
 
-        let id = self.world.spawn(Some(name));
+        let id = self.world.spawn(Some(&label));
         self.world.insert(
             id,
             MeshComponent {
@@ -328,19 +332,18 @@ impl State {
                 points: None,
             },
         );
-        self.send_model_loaded_event(id, name);
+        self.send_model_loaded_event(id, &label);
         self.push_remove_entity_undo(id);
     }
 
     pub(crate) fn load_character(&mut self, path: &str) {
         let is_player = path == "[Player]" || path.ends_with("[Player]");
-        let id = self.world.spawn(Some(
-            if is_player {
-                "Player"
-            } else {
-                path.split(['/', '\\']).next_back().unwrap_or(path)
-            },
-        ));
+        let label = if is_player {
+            rer_engine_shared::editor_defaults::entity_label::PLAYER.to_string()
+        } else {
+            self.next_numbered_entity_name(rer_engine_shared::editor_defaults::entity_label::CHARACTER)
+        };
+        let id = self.world.spawn(Some(&label));
         if is_player {
             let feet = self.camera.target;
             self.setup_play_character_entity(id, feet);

@@ -53,6 +53,9 @@ body {
   flex: 1 1 0;
   min-height: 0;
   overflow-y: scroll;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
 }
 
 .section-card {
@@ -70,22 +73,24 @@ body {
 
 /* ── Acordeón del sidebar ── */
 .sidebar-accordion .accordion-item {
-  background: transparent !important;
+  background: #0f1225 !important;
   border-color: #2c3152 !important;
+  border-radius: 6px;
+  overflow: hidden;
 }
 
 .sidebar-accordion .accordion-button {
-  background: rgba(255, 255, 255, 0.03) !important;
+  background: #12162b !important;
   color: #eef2ff !important;
   border-bottom: 1px solid #2c3152 !important;
   box-shadow: none !important;
   letter-spacing: 0.06em;
-  padding: 8px 12px;
+  padding: 8px 10px;
 }
 
 .sidebar-accordion .accordion-button:not(.collapsed) {
   color: #c084fc !important;
-  background: rgba(192, 132, 252, 0.08) !important;
+  background: #161b34 !important;
 }
 
 .sidebar-accordion .accordion-button::after {
@@ -93,8 +98,8 @@ body {
 }
 
 .sidebar-accordion .accordion-body {
-  background: transparent !important;
-  padding: 8px;
+  background: #0f1225 !important;
+  padding: 8px 6px;
 }
 
 .form-control,
@@ -166,102 +171,41 @@ body {
   border: 1px solid #38bdf855;
 }
 
-/* ── Scene tabs bar ─────────────────────────────────────────────────────── */
-.scene-tabs-bar {
-  background: #090b18;
-  border-bottom: 1px solid #1f2440;
-  padding-top: 8px;
-  padding-bottom: 4px;
-}
-
-.scene-tabs-nav-wrap {
-  scrollbar-width: thin;
-}
-
-.scene-tabs-nav {
-  min-width: max-content;
-}
-
-.scene-nav-item {
-  position: relative;
-  flex: 0 0 auto;
-  width: 200px;
-  max-width: 200px;
-}
-
-.scene-nav-item--create {
-  width: 42px;
-  max-width: 42px;
-}
-
-.scene-nav-link {
-  width: 100%;
-  max-width: 100%;
-  min-height: 36px;
-  display: flex !important;
-  align-items: center;
-  padding-right: 8px !important;
-  overflow: hidden;
-  border-color: #2c3152 !important;
-}
-
-.scene-nav-link__name {
-  display: block;
+/* ── Scenes accordion (sidebar) ─────────────────────────────────────────── */
+.scenes-accordion-list {
   font-size: 12px;
-  max-width: 110px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-.scene-nav-actions {
-  margin-left: auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
+.scenes-accordion-item {
+  padding: 2px 6px;
+  min-height: 26px;
+  border: 1px solid #2c3152;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.02);
 }
 
-.scene-nav-action {
+.scenes-accordion-item--active {
+  border-color: #38bdf8;
+  background: rgba(56, 189, 248, 0.08);
+}
+
+.scenes-accordion-item__name {
+  min-width: 0;
+}
+
+.scenes-accordion-icon-wrap {
+  line-height: 0;
+}
+
+.scenes-accordion-icon-btn {
   width: 18px;
   height: 18px;
-  border: 0;
-  padding: 0;
-  background: transparent;
+  min-height: 18px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 4px;
-  color: inherit;
-  opacity: 0.75;
-}
-
-.scene-nav-action:hover,
-.scene-nav-action:focus {
-  opacity: 1;
-  background: rgba(255, 255, 255, 0.08);
-  outline: none;
-}
-
-.scene-nav-action--danger:hover,
-.scene-nav-action--danger:focus {
-  color: #ff9a9a;
-}
-
-.scene-nav-create {
-  width: 42px;
-  max-width: 42px;
-  min-width: 42px;
-  min-height: 36px;
-  font-size: 12px;
-  border: 1px solid #2c3152 !important;
-  color: #dde3f1 !important;
-  padding: 0 !important;
-}
-
-.scene-nav-create:hover,
-.scene-nav-create:focus {
-  background: rgba(174, 181, 199, 0.14) !important;
-  color: #ffffff !important;
+  flex-shrink: 0;
+  line-height: 1;
 }
 
 /* ── Project selector card ───────────────────────────────────────────────── */

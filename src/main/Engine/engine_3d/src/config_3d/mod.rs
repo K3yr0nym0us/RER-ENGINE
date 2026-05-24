@@ -105,6 +105,8 @@ pub(crate) fn resolve_set_transform_rotation(
     rotation.map(|r| glam::Quat::from_xyzw(r[0], r[1], r[2], r[3]))
 }
 
+use rer_engine_shared::editor_defaults::entity_label;
+
 use std::path::Path;
 
 use glam::Vec3 as GlamVec3;
@@ -151,7 +153,7 @@ impl State {
                         .pack(&self.queue, &part.rgba, part.width, part.height);
                     self.uv_rects.push(uv);
 
-                    let label = self.next_numbered_entity_name("Mesh");
+                    let label = self.next_numbered_entity_name(entity_label::OBJECT);
                     let id = self.world.spawn(Some(&label));
                     self.world.insert(id, MeshComponent { mesh_idx, tex_idx });
                     if let Some(t) = self.world.get_mut::<Transform>(id) {

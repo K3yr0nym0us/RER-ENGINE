@@ -14,6 +14,7 @@ import type {
 import type { EntityMeta } from '../context/useContextEngine/types';
 import type { SavedAnimation } from '@shared-types';
 import { getSceneProjectState } from '../pages/EngineView/sceneStateStore';
+import { requestEngineDefaultSceneName } from './requestEngineDefaultSceneName';
 
 const SAVE_SNAPSHOT_TIMEOUT_MS = 15_000;
 
@@ -166,10 +167,10 @@ export interface BuildProjectSaveOptions {
 }
 
 /** Combina snapshot del motor con metadatos solo del editor (pestañas, blueprints, idioma). */
-export function buildProjectSaveFromEngineSnapshot(
+export async function buildProjectSaveFromEngineSnapshot(
 	engineScene: EngineSaveSceneSnapshot,
 	options: BuildProjectSaveOptions,
-): ProjectSaveData {
+): Promise<ProjectSaveData> {
 	const {
 		projectType,
 		gameStyle,
@@ -181,14 +182,21 @@ export function buildProjectSaveFromEngineSnapshot(
 		initialGameStyle,
 	} = options;
 
-	const activeScene = engineSceneToSavedScene(engineScene, 1, 'Escena 1', entityMeta);
-
 	const sceneState = getSceneProjectState();
-	let scenes: SavedScene[] = [activeScene];
 	let activeSceneId = 1;
-
+	let activeSceneName = sceneState?.scenes.find((tab) => tab.id === sceneState.activeSceneId)?.name ?? '';
 	if (sceneState && sceneState.scenes.length > 0) {
 		activeSceneId = sceneState.activeSceneId;
+	}
+	if (!activeSceneName.trim()) {
+		activeSceneName = await requestEngineDefaultSceneName(activeSceneId);
+	}
+
+	const activeScene = engineSceneToSavedScene(engineScene, activeSceneId, activeSceneName, entityMeta);
+
+	let scenes: SavedScene[] = [activeScene];
+
+	if (sceneState && sceneState.scenes.length > 0) {
 		scenes = sceneState.scenes.map((tab) =>
 			tab.id === activeSceneId
 				? { ...tab, ...activeScene, id: tab.id, name: tab.name }

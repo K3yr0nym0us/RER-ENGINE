@@ -239,6 +239,8 @@ pub enum EngineCommand {
     SetAutosave { enabled: bool },
     /// Pedir al motor la instantánea de la escena activa para persistir en `.save`.
     ExportSaveSnapshot,
+    /// Nombre por defecto de pestaña de escena del editor (`Scene-01`, …).
+    GetDefaultSceneName { id: u32 },
     /// Mostrar colliders incluso en modo juego (debug).
     SetDebugMode { show: bool },
     /// Activar/desactivar V-Sync en el swapchain.
@@ -682,6 +684,8 @@ pub enum EngineEvent {
     AtlasExhausted { atlas_size: u32, width: u32, height: u32 },
     /// Respuesta a `export_save_snapshot`: escena activa lista para el `.save`.
     SaveSnapshotReady { scene: SaveSceneSnapshotPayload },
+    /// Respuesta a `get_default_scene_name`.
+    DefaultSceneNameReady { id: u32, name: String },
 }
 
 /// Información básica de un sprite almacenado en el motor.
@@ -735,7 +739,7 @@ pub fn start_ipc_thread(proxy: EventLoopProxy<EngineCommand>) {
                                     break; // El event loop cerró el proxy
                                 }
                             }
-                            Err(e) => eprintln!("[ipc] parse error: {e} — línea: {line}"),
+                            Err(e) => eprintln!("[ipc] parse error: {e}"),
                         }
                     }
                     Err(_) => break, // stdin cerrado

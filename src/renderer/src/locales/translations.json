@@ -43,6 +43,10 @@
   "Error": "Error",
 
   "Scene 1": "Escena 1",
+  "Scenes": "Escenas",
+  "Load scene": "Cargar escena",
+  "Edit scene name": "Editar nombre de escena",
+  "Delete scene": "Eliminar escena",
   "Create new scene": "Crear nueva escena",
   "Scene name": "Nombre de la escena",
   "Cancel": "Cancelar",

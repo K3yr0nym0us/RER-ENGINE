@@ -96,7 +96,7 @@ impl State {
         let scenario_name = display_name
             .filter(|n| !n.trim().is_empty())
             .map(|n| n.to_owned())
-            .unwrap_or_else(|| self.next_numbered_entity_name("Escenario"));
+            .unwrap_or_else(|| self.next_numbered_entity_name(rer_engine_shared::editor_defaults::entity_label::SCENARIO));
         let sc_id = if let Some(id) = forced_id {
             if !self.world.spawn_with_id(id, Some(&scenario_name)) {
                 log::warn!("[insert_scenario_at] id {id} ya en uso");
@@ -182,7 +182,7 @@ impl State {
         drop(gpu_tex);
         let tex_idx  = self.uv_rects.len();
         self.uv_rects.push(uv);
-        let background_name = self.next_numbered_entity_name("Background");
+        let background_name = self.next_numbered_entity_name(rer_engine_shared::editor_defaults::entity_label::BACKGROUND);
         let bg_id = self.world.spawn(Some(&background_name));
         self.world.insert(bg_id, MeshComponent { mesh_idx: self.canonical_quad_idx, tex_idx });
         self.world.insert(bg_id, Transform {
@@ -265,7 +265,7 @@ impl State {
         let character_name = display_name
             .filter(|n| !n.trim().is_empty())
             .map(|n| n.to_owned())
-            .unwrap_or_else(|| self.next_numbered_entity_name("Personaje"));
+            .unwrap_or_else(|| self.next_numbered_entity_name(rer_engine_shared::editor_defaults::entity_label::CHARACTER));
         let ch_id = if let Some(id) = forced_id {
             if !self.world.spawn_with_id(id, Some(&character_name)) {
                 log::warn!("[insert_character_at] id {id} ya en uso");

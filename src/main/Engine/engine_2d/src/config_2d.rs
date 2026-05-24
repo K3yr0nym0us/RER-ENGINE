@@ -842,7 +842,7 @@ pub(crate) fn restore_animation_frame(&mut self, id: u32) {
         let collider_name = display_name
             .filter(|n| !n.trim().is_empty())
             .map(|n| n.to_owned())
-            .unwrap_or_else(|| self.next_numbered_entity_name("Colisionador"));
+            .unwrap_or_else(|| self.next_numbered_entity_name(rer_engine_shared::editor_defaults::entity_label::COLLIDER));
         let (entity, pos, scale) = self.create_box_entity_at(pts, &collider_name, [60, 220, 200, 235], forced_id)?;
 
         // Marca la entidad como colisionador y añade física estática.
@@ -893,7 +893,7 @@ pub(crate) fn restore_animation_frame(&mut self, id: u32) {
         let trigger_name = display_name
             .filter(|n| !n.trim().is_empty())
             .map(|n| n.to_owned())
-            .unwrap_or_else(|| self.next_numbered_entity_name("ExecutionArea"));
+            .unwrap_or_else(|| self.next_numbered_entity_name(rer_engine_shared::editor_defaults::entity_label::EXECUTION_AREA));
         let (entity, _pos, _scale) = self.create_box_entity_at(pts, &trigger_name, [220, 80, 80, 230], forced_id)?;
 
         self.world.insert(entity, ExecutionAreaMarker {});

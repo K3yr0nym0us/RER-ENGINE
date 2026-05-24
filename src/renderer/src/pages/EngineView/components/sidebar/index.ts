@@ -1,4 +1,5 @@
 export { default as WorldAccordion } from './WorldAccordion'
+export { ScenesAccordion } from './ScenesAccordion'
 export { CameraAccordion } from './CameraAccordion'
 export { default as ScenariosAccordion } from './EntitiesAccordion/EnvironmentsAccordion/EnvironmentsAccordion'
 export { default as CharactersAccordion } from './EntitiesAccordion/CharactersAccordion/CharactersAccordion'

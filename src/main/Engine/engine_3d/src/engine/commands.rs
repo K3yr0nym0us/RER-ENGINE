@@ -977,6 +977,29 @@ impl State {
             EngineCommand::ExportSaveSnapshot => {
                 self.export_save_snapshot();
             }
+            EngineCommand::GetDefaultSceneName { id } => {
+                let name = rer_engine_shared::editor_defaults::default_scene_name(id);
+                send_event(&EngineEvent::DefaultSceneNameReady { id, name });
+            }
+            EngineCommand::ApplyEntityRestore {
+                id,
+                name,
+                transform,
+                physics,
+                control_bindings,
+                omit_scale,
+                skip_transform,
+            } => {
+                self.apply_entity_restore_inner(
+                    id,
+                    name,
+                    &transform,
+                    physics.as_ref(),
+                    control_bindings.as_ref(),
+                    omit_scale,
+                    skip_transform,
+                );
+            }
             EngineCommand::ReloadAsset { path } => {
                 log::info!("[IPC] ReloadAsset: {}", path);
                 if let Some(&uv_rect) = self.static_tex_cache.get(&path) {

@@ -202,6 +202,10 @@ impl State {
 
     /// Icono del sol seleccionable con gizmo; sin física. Idempotente al recargar `.save`.
     pub(crate) fn spawn_sun(&mut self, name: &str, position: [f32; 3], scale: [f32; 3]) {
+        let label = self.resolve_entity_display_name(
+            name,
+            rer_engine_shared::editor_defaults::entity_label::SUN,
+        );
         if let Some(id) = self.sun_entity {
             self.apply_sun_icon_visual(id);
             if let Some(t) = self.world.get_mut::<Transform>(id) {
@@ -213,11 +217,11 @@ impl State {
                 t.scale = Vec3::splat(s);
             }
             self.sync_directional_light_from_sun();
-            self.send_model_loaded_event(id, name);
+            self.send_model_loaded_event(id, &label);
             return;
         }
 
-        let id = self.world.spawn(Some(name));
+        let id = self.world.spawn(Some(&label));
         self.apply_sun_icon_visual(id);
         if let Some(t) = self.world.get_mut::<Transform>(id) {
             t.position = Vec3::from_array(position);
@@ -239,7 +243,7 @@ impl State {
                 points: None,
             },
         );
-        self.send_model_loaded_event(id, name);
+        self.send_model_loaded_event(id, &label);
     }
 
     pub(crate) fn ensure_default_sun(&mut self) {
@@ -247,6 +251,6 @@ impl State {
             return;
         }
         let pos = self.default_sun_position();
-        self.spawn_sun("Sol", pos.to_array(), [1.0, 1.0, 1.0]);
+        self.spawn_sun("", pos.to_array(), [1.0, 1.0, 1.0]);
     }
 }

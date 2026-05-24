@@ -278,7 +278,7 @@ export function createEngineEventHandler({
 				if (importScene2d) {
 					const sceneForImport: SavedScene = {
 						id: activeScene?.id ?? 1,
-						name: activeScene?.name ?? 'Escena',
+						name: activeScene?.name ?? '',
 						world: save.world!,
 						backgroundPath: save.backgroundPath,
 						entities: save.entities,
@@ -353,7 +353,7 @@ export function createEngineEventHandler({
 						refs.pendingRestoresRef.current.set('[Sun]', queue);
 						sendEngine({
 							cmd: 'spawn_sun',
-							name: entity.name ?? 'Sol',
+							name: entity.name ?? '',
 							position: entity.position,
 							scale: entity.scale,
 						} as never);
@@ -389,7 +389,7 @@ export function createEngineEventHandler({
 						refs.pendingRestoresRef.current.set('[EditorBox]', queue);
 						sendEngine({
 							cmd: 'spawn_editor_box',
-							name: entity.name ?? 'Box',
+							name: entity.name ?? '',
 							position: entity.position,
 							scale: entity.scale,
 						} as never);
@@ -488,7 +488,7 @@ export function createEngineEventHandler({
 				refs.entityMetaRef.current[id] = {
 					kind: 'model',
 					path: '[Ground]',
-					name: pending.name ?? loaded.name ?? 'Ground',
+					name: pending.name ?? loaded.name ?? '',
 					physicsEnabled: false,
 					physicsType: 'static',
 				};

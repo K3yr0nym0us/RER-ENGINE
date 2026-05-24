@@ -1,3 +1,4 @@
+pub mod editor_defaults;
 pub mod gpu;
 pub mod overlay;
 #[cfg(any(target_os = "windows", target_os = "linux"))]

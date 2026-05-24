@@ -372,6 +372,23 @@ pub enum EngineCommand {
     SetAutosave { enabled: bool },
     /// Pedir al motor la instantánea de la escena activa para persistir en `.save`.
     ExportSaveSnapshot,
+    /// Nombre por defecto de pestaña de escena del editor (`Scene-01`, …).
+    GetDefaultSceneName { id: u32 },
+    /// Restore post-carga de entidad (transform, física, bindings).
+    ApplyEntityRestore {
+        id: u32,
+        #[serde(default)]
+        name: Option<String>,
+        transform: EntityRestoreTransform,
+        #[serde(default)]
+        physics: Option<EntityRestorePhysics>,
+        #[serde(default)]
+        control_bindings: Option<ControlBindingsData>,
+        #[serde(default)]
+        omit_scale: bool,
+        #[serde(default)]
+        skip_transform: bool,
+    },
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -549,6 +566,19 @@ pub struct ControlBindingsData {
     pub keyboard_mouse: HashMap<String, ControlScriptData>,
     #[serde(default)]
     pub gamepad: HashMap<String, ControlScriptData>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct EntityRestoreTransform {
+    pub position: [f32; 3],
+    pub rotation: [f32; 4],
+    pub scale: [f32; 3],
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct EntityRestorePhysics {
+    pub enabled: bool,
+    pub body_type: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -734,6 +764,8 @@ pub enum EngineEvent {
     AutosaveTick,
     /// Respuesta a `export_save_snapshot`: escena activa lista para el `.save`.
     SaveSnapshotReady { scene: SaveSceneSnapshotPayload },
+    /// Respuesta a `get_default_scene_name`.
+    DefaultSceneNameReady { id: u32, name: String },
 }
 
 /// Información básica de un sprite almacenado en el motor.
@@ -794,7 +826,7 @@ pub fn start_ipc_thread(proxy: EventLoopProxy<EngineCommand>) {
                                     break; // El event loop cerró el proxy
                                 }
                             }
-                            Err(e) => eprintln!("[ipc] parse error: {e} — línea: {line}"),
+                            Err(e) => eprintln!("[ipc] parse error: {e}"),
                         }
                     }
                     Err(_) => break, // stdin cerrado

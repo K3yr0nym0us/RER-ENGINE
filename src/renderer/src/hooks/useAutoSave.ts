@@ -61,7 +61,7 @@ export function useAutoSave({
     try {
       const engineScene = await requestEngineSaveSnapshot();
       const defaultGameStyle = projectType === '3D' ? 'first-person' : 'top-down';
-      return buildProjectSaveFromEngineSnapshot(engineScene, {
+      return await buildProjectSaveFromEngineSnapshot(engineScene, {
         projectType,
         gameStyle: gameStyle ?? defaultGameStyle,
         locale,

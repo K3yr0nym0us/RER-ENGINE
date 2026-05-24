@@ -521,6 +521,10 @@ impl State {
             EngineCommand::ExportSaveSnapshot => {
                 self.export_save_snapshot();
             }
+            EngineCommand::GetDefaultSceneName { id } => {
+                let name = rer_engine_shared::editor_defaults::default_scene_name(id);
+                send_event(&EngineEvent::DefaultSceneNameReady { id, name });
+            }
             EngineCommand::SetDebugMode { show } => {
                 self.debug_mode = show;
                 self.physics_2d.set_debug_mode(show);

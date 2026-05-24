@@ -3,7 +3,6 @@ import { useRef } from 'react';
 import SideBarLeft from './components/SideBarLeft';
 import LogConsole from './components/LogConsole';
 import MetricsPanel from './components/MetricsPanel';
-import SceneTabsBar from './components/SceneTabsBar';
 import TopBarEngine from './components/TopBarEngine';
 import { QuickBuildOverlay } from './components/QuickBuildOverlay';
 import { SceneImportLoadingOverlay } from './components/SceneImportLoadingOverlay';
@@ -13,6 +12,7 @@ import { EngineProvider } from '@engine';
 import { ModalProvider } from '@modal';
 import { QuickBuildProvider } from '../../context/QuickBuildContext';
 import { useAutoSave } from '@hooks';
+import { SceneManagerProvider } from './hooks/useSceneManager';
 
 import type { GameStyle, ProjectType, ProjectSaveData } from '@shared-types';
 
@@ -33,7 +33,9 @@ export function EngineView({
     <EngineProvider viewportRef={viewportRef} projectType={projectType} gameStyle={gameStyle} initialSave={initialSave}>
       <QuickBuildProvider>
         <ModalProvider>
-          <EngineViewInner projectType={projectType} gameStyle={gameStyle} initialSave={initialSave} initialSavePath={initialSavePath} viewportRef={viewportRef} />
+          <SceneManagerProvider initialSave={initialSave} projectType={projectType} gameStyle={gameStyle}>
+            <EngineViewInner projectType={projectType} gameStyle={gameStyle} initialSave={initialSave} initialSavePath={initialSavePath} viewportRef={viewportRef} />
+          </SceneManagerProvider>
         </ModalProvider>
       </QuickBuildProvider>
     </EngineProvider>
@@ -51,10 +53,7 @@ function EngineViewInner({ projectType, gameStyle, initialSave, initialSavePath,
 
   return (
     <div className="app-shell d-flex flex-column">
-      <SceneTabsBar initialSave={initialSave} projectType={projectType} gameStyle={gameStyle} />
-
       <div className="d-flex flex-grow-1 overflow-hidden">
-
         <SideBarLeft projectType={projectType} gameStyle={gameStyle} />
 
         <div className="d-flex flex-column flex-fill">

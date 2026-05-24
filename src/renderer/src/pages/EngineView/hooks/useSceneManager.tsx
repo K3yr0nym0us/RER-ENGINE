@@ -1,6 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Files, Pencil, PlusLg, Trash } from 'react-bootstrap-icons';
-import Nav from 'react-bootstrap/Nav';
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import type { GameStyle, ProjectSaveData, SavedScene, SavedWorldConfig } from '@shared-types';
 import {
@@ -11,30 +9,34 @@ import {
 } from '@shared-types';
 import { isEditorBoxPath, isGroundPath, isPlayerPath, isSunPath } from '@shared-types';
 import { buildActiveSceneSnapshotFromEngine } from '../../../defaults/buildProjectSaveFromEngine';
+import { requestEngineDefaultSceneName } from '../../../defaults/requestEngineDefaultSceneName';
 import { ensurePlayCharacterOnLoad } from '../../../defaults/playCharacterSceneRestore';
 import { setSceneCommandForSavedProject } from '../../../defaults/projectSceneLoad';
 import { buildImportSceneCommand, resolveEntityTransform } from '../../../context/useContextEngine/hooks/buildImportSceneCommand';
 import {
-	beginSceneBurstLoad,
-	beginSceneImportLoading,
-	needsSceneBurstLoad,
-	trackSceneBurstCollider,
-	tryEndSceneBurstLoad,
+  beginSceneBurstLoad,
+  beginSceneImportLoading,
+  needsSceneBurstLoad,
+  trackSceneBurstCollider,
+  tryEndSceneBurstLoad,
 } from '../../../context/useContextEngine/hooks/sceneImportOverlay';
 import { useContextEngine } from '@engine';
 import { useModal } from '@modal';
-import { setSceneProjectState } from '../sceneStateStore';
 import { useTraslate } from '@hooks';
+import { setSceneProjectState } from '../sceneStateStore';
 
-interface SceneTab {
+export interface SceneTab {
   id: number;
   name: string;
 }
 
-interface Props {
-  initialSave?: ProjectSaveData | null;
-  projectType?: string;
-  gameStyle?: GameStyle;
+interface SceneManagerContextValue {
+  scenes: SceneTab[];
+  activeSceneId: number;
+  loadScene: (sceneId: number) => Promise<void>;
+  openCreateSceneModal: () => void;
+  openRenameSceneModal: (scene: SceneTab) => void;
+  openDeleteSceneModal: (scene: SceneTab) => void;
 }
 
 const DEFAULT_WORLD: SavedWorldConfig = {
@@ -50,9 +52,56 @@ const DEFAULT_WORLD: SavedWorldConfig = {
   shadowDarkness: DEFAULT_SHADOW_DARKNESS,
 };
 
-export function SceneTabsBar({ initialSave, projectType, gameStyle }: Props) {
+const SceneManagerContext = createContext<SceneManagerContextValue | null>(null);
+
+function buildInitialSceneState(initialSave?: ProjectSaveData | null) {
+  const save = initialSave;
+  if (save?.scenes && save.scenes.length > 0) {
+    const tabs = save.scenes.map((scene) => ({ id: scene.id, name: scene.name }));
+    const dataById: Record<number, SavedScene> = {};
+    for (const scene of save.scenes) {
+      dataById[scene.id] = {
+        ...scene,
+        world: { ...DEFAULT_WORLD, ...(scene.world ?? {}) },
+      };
+    }
+    const active = save.activeSceneId && dataById[save.activeSceneId]
+      ? save.activeSceneId
+      : save.scenes[0].id;
+    return { tabs, dataById, activeSceneId: active };
+  }
+
+  const legacyScene: SavedScene = {
+    id: 1,
+    name: '',
+    world: { ...DEFAULT_WORLD, ...(save?.world ?? {}) },
+    backgroundPath: save?.backgroundPath ?? null,
+    entities: save?.entities ?? [],
+    playerTransform: save?.playerTransform ?? null,
+    camera2d: save?.camera2d ?? null,
+    sprites: save?.sprites ?? [],
+  };
+  return {
+    tabs: [{ id: 1, name: '' }],
+    dataById: { 1: legacyScene },
+    activeSceneId: 1,
+  };
+}
+
+export function SceneManagerProvider({
+  children,
+  initialSave,
+  projectType,
+  gameStyle,
+}: {
+  children: ReactNode;
+  initialSave?: ProjectSaveData | null;
+  projectType?: string;
+  gameStyle?: GameStyle;
+}) {
   const { t } = useTraslate();
   const {
+    engineReady,
     worldConfig,
     backgroundPath,
     scenarioEntities,
@@ -60,7 +109,6 @@ export function SceneTabsBar({ initialSave, projectType, gameStyle }: Props) {
     colliderEntities,
     executionAreaEntities,
     loadedSpritesInfo,
-    loadedModelsInfo,
     entityTransformsRef,
     entityMetaRef,
     pendingRestoresRef,
@@ -97,48 +145,63 @@ export function SceneTabsBar({ initialSave, projectType, gameStyle }: Props) {
 
   const { openModal, closeModal } = useModal();
 
-  const initialSceneState = useMemo(() => {
-    const save = initialSave;
-    if (save?.scenes && save.scenes.length > 0) {
-      const tabs = save.scenes.map((scene) => ({ id: scene.id, name: scene.name }));
-      const dataById: Record<number, SavedScene> = {};
-      for (const scene of save.scenes) {
-        dataById[scene.id] = {
-          ...scene,
-          world: { ...DEFAULT_WORLD, ...(scene.world ?? {}) },
-        };
-      }
-      const active = save.activeSceneId && dataById[save.activeSceneId]
-        ? save.activeSceneId
-        : save.scenes[0].id;
-      return { tabs, dataById, activeSceneId: active };
-    }
-
-    const legacyScene: SavedScene = {
-      id: 1,
-      name: 'Escena 1',
-      world: { ...DEFAULT_WORLD, ...(save?.world ?? {}) },
-      backgroundPath: save?.backgroundPath ?? null,
-      entities: save?.entities ?? [],
-      playerTransform: save?.playerTransform ?? null,
-      camera2d: save?.camera2d ?? null,
-      sprites: save?.sprites ?? [],
-    };
-    return {
-      tabs: [{ id: 1, name: 'Escena 1' }],
-      dataById: { 1: legacyScene },
-      activeSceneId: 1,
-    };
-  }, [initialSave]);
+  const initialSceneState = useMemo(
+    () => buildInitialSceneState(initialSave),
+    [initialSave],
+  );
 
   const [scenes, setScenes] = useState<SceneTab[]>(initialSceneState.tabs);
   const [sceneDataById, setSceneDataById] = useState<Record<number, SavedScene>>(initialSceneState.dataById);
   const [activeSceneId, setActiveSceneId] = useState(initialSceneState.activeSceneId);
 
+  const pendingSceneNameIds = useMemo(
+    () => scenes.filter((tab) => !tab.name.trim()).map((tab) => tab.id).join(','),
+    [scenes],
+  );
+
+  useEffect(() => {
+    if (!engineReady || !pendingSceneNameIds) return;
+
+    const ids = pendingSceneNameIds.split(',').map(Number).filter((id) => !Number.isNaN(id));
+    if (ids.length === 0) return;
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const resolved = await Promise.all(
+          ids.map(async (id) => ({
+            id,
+            name: await requestEngineDefaultSceneName(id),
+          })),
+        );
+        if (cancelled) return;
+
+        setScenes((prev) => prev.map((tab) => {
+          const match = resolved.find((entry) => entry.id === tab.id);
+          return match ? { ...tab, name: match.name } : tab;
+        }));
+        setSceneDataById((prev) => {
+          const next = { ...prev };
+          for (const entry of resolved) {
+            if (next[entry.id]) {
+              next[entry.id] = { ...next[entry.id], name: entry.name };
+            }
+          }
+          return next;
+        });
+      } catch (err) {
+        console.error('[scenes] no se pudo obtener nombre por defecto del motor:', err);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [engineReady, pendingSceneNameIds]);
+
   const captureActiveSceneSnapshot = async (id: number, name: string): Promise<SavedScene> =>
     buildActiveSceneSnapshotFromEngine(id, name, entityMetaRef.current);
 
-  /** En 2D `import_scene` resetea el motor; no hace falta vaciar entidad a entidad. */
   const clearEngineBeforeSceneLoad = () => {
     if (projectType === '2D') return;
     clearCurrentSceneInEngine();
@@ -221,7 +284,6 @@ export function SceneTabsBar({ initialSave, projectType, gameStyle }: Props) {
     }
 
     if (projectType === '2D') {
-      // El fondo lo aplica `import_scene` en el motor; solo sincronizar UI.
       dispatch({ type: 'SET_BACKGROUND', payload: scene.backgroundPath });
     } else if (scene.backgroundPath != null) {
       setBackground(scene.backgroundPath);
@@ -295,7 +357,7 @@ export function SceneTabsBar({ initialSave, projectType, gameStyle }: Props) {
         });
         send({
           cmd: 'spawn_sun',
-          name: entity.name ?? 'Sol',
+          name: entity.name ?? '',
           position: entity.position,
           scale: entity.scale,
         });
@@ -335,7 +397,7 @@ export function SceneTabsBar({ initialSave, projectType, gameStyle }: Props) {
         });
         send({
           cmd: 'spawn_editor_box',
-          name: entity.name ?? 'Box',
+          name: entity.name ?? '',
           position: entity.position,
           scale: entity.scale,
         });
@@ -455,44 +517,6 @@ export function SceneTabsBar({ initialSave, projectType, gameStyle }: Props) {
     setScenes((prev) => prev.map((scene) => (scene.id === sceneId ? { ...scene, name: trimmed } : scene)));
   };
 
-  const duplicateScene = async (sceneId: number) => {
-    const sourceTab = scenes.find((scene) => scene.id === sceneId);
-    if (!sourceTab) return;
-    const sourceData = sceneId === activeSceneId
-      ? await captureActiveSceneSnapshot(sourceTab.id, sourceTab.name)
-      : sceneDataById[sceneId];
-    if (!sourceData) return;
-
-    const nextId = getNextSceneId();
-    const nextName = `${sourceTab.name} ${t('(copy)')}`;
-    const duplicatedScene: SavedScene = {
-      ...sourceData,
-      id: nextId,
-      name: nextName,
-      entities: sourceData.entities.map((entity) => ({ ...entity })),
-      sprites: (sourceData.sprites ?? []).map((sprite) => ({ ...sprite })),
-      world: { ...sourceData.world },
-      camera2d: sourceData.camera2d ? { ...sourceData.camera2d } : null,
-      playerTransform: sourceData.playerTransform
-        ? { ...sourceData.playerTransform, position: [...sourceData.playerTransform.position] as [number, number, number], scale: [...sourceData.playerTransform.scale] as [number, number, number] }
-        : null,
-    };
-
-    const current = scenes.find((scene) => scene.id === activeSceneId);
-    if (current) {
-      const snapshot = await captureActiveSceneSnapshot(current.id, current.name);
-      setSceneDataById((prev) => ({ ...prev, [current.id]: snapshot, [nextId]: duplicatedScene }));
-    } else {
-      setSceneDataById((prev) => ({ ...prev, [nextId]: duplicatedScene }));
-    }
-
-    clearEngineBeforeSceneLoad();
-    loadSceneIntoEngine(duplicatedScene);
-
-    setScenes((prev) => [...prev, { id: nextId, name: nextName }]);
-    setActiveSceneId(nextId);
-  };
-
   const deleteScene = (sceneId: number) => {
     if (scenes.length <= 1) return;
 
@@ -515,6 +539,46 @@ export function SceneTabsBar({ initialSave, projectType, gameStyle }: Props) {
       loadSceneIntoEngine(targetData);
     }
     setActiveSceneId(nextActive.id);
+  };
+
+  const loadScene = async (nextId: number) => {
+    if (Number.isNaN(nextId) || nextId === activeSceneId) return;
+
+    const current = scenes.find((scene) => scene.id === activeSceneId);
+    const target = scenes.find((scene) => scene.id === nextId);
+    if (!target) return;
+
+    const currentSnapshot = current
+      ? await captureActiveSceneSnapshot(current.id, current.name)
+      : null;
+
+    if (currentSnapshot) {
+      if (!currentSnapshot.backgroundPath && backgroundPath) {
+        currentSnapshot.backgroundPath = backgroundPath;
+      }
+      if (!currentSnapshot.camera2d && camera2dRef.current) {
+        currentSnapshot.camera2d = camera2dRef.current;
+      }
+    }
+
+    const targetSnapshot = sceneDataById[nextId] ?? {
+      id: target.id,
+      name: target.name,
+      world: { ...worldConfig },
+      backgroundPath: null,
+      entities: [],
+      playerTransform: null,
+      camera2d: camera2dRef.current,
+      sprites: [],
+    };
+
+    if (current && currentSnapshot) {
+      setSceneDataById((prev) => ({ ...prev, [current.id]: currentSnapshot }));
+    }
+
+    clearEngineBeforeSceneLoad();
+    loadSceneIntoEngine(targetSnapshot);
+    setActiveSceneId(nextId);
   };
 
   useEffect(() => {
@@ -540,42 +604,31 @@ export function SceneTabsBar({ initialSave, projectType, gameStyle }: Props) {
   }, [activeSceneId, camera2dRef, sceneDataById, scenes, worldConfig]);
 
   const openCreateSceneModal = () => {
-    const nextId = getNextSceneId();
-    let draftName = `Escena ${nextId}`;
+    void (async () => {
+      const nextId = getNextSceneId();
+      let draftName = '';
+      try {
+        draftName = await requestEngineDefaultSceneName(nextId);
+      } catch (err) {
+        console.error('[scenes] no se pudo obtener nombre por defecto del motor:', err);
+        return;
+      }
 
-    openModal({
-      title: t('Create new scene'),
-      body: (
-        <div className="d-flex flex-column gap-3">
-          <div>
-            <label htmlFor="scene-name-create" className="form-label mb-1">{t('Scene name')}</label>
-            <input
-              id="scene-name-create"
-              type="text"
-              defaultValue={draftName}
-              className="form-control"
-              onChange={(event) => {
-                draftName = event.target.value;
-              }}
-            />
-          </div>
-
-          <div className="d-flex justify-content-end gap-2">
-            <button className="btn btn-secondary" onClick={closeModal} type="button">{t('Cancel')}</button>
-            <button
-              className="btn btn-success"
-              onClick={() => {
-                createScene(draftName);
-                closeModal();
-              }}
-              type="button"
-            >
-              {t('Create scene')}
-            </button>
-          </div>
-        </div>
-      ),
-    });
+      openModal({
+        title: t('Create new scene'),
+        body: (
+          <CreateSceneModalBody
+            defaultName={draftName}
+            onCancel={closeModal}
+            onCreate={(name) => {
+              void createScene(name);
+              closeModal();
+            }}
+            t={t}
+          />
+        ),
+      });
+    })();
   };
 
   const openRenameSceneModal = (scene: SceneTab) => {
@@ -620,12 +673,7 @@ export function SceneTabsBar({ initialSave, projectType, gameStyle }: Props) {
     if (scenes.length <= 1) {
       openModal({
         title: `${t('Cannot delete')} ${scene.name}`,
-        body: (
-          <div className="d-flex flex-column gap-2">
-            <p className="mb-0">{t('You cannot delete this scene because it is the only one in the project.')}</p>
-            <small className="text-secondary">{t('There must be at least one scene to keep the editor in a valid state.')}</small>
-          </div>
-        ),
+        body: <DeleteBlockedBody t={t} />,
       });
       return;
     }
@@ -633,165 +681,144 @@ export function SceneTabsBar({ initialSave, projectType, gameStyle }: Props) {
     openModal({
       title: `${t('Delete')} ${scene.name}`,
       body: (
-        <div className="d-flex flex-column gap-3">
-          <p className="mb-0">{t('This action will delete the selected scene.')}</p>
-          <div className="d-flex justify-content-end gap-2">
-            <button className="btn btn-secondary" onClick={closeModal} type="button">{t('Cancel')}</button>
-            <button
-              className="btn btn-danger"
-              onClick={() => {
-                deleteScene(scene.id);
-                closeModal();
-              }}
-              type="button"
-            >
-              {t('Delete')}
-            </button>
-          </div>
-        </div>
+        <DeleteConfirmBody
+          onCancel={closeModal}
+          onConfirm={() => {
+            deleteScene(scene.id);
+            closeModal();
+          }}
+          t={t}
+        />
       ),
     });
   };
 
-  const openDuplicateSceneModal = (scene: SceneTab) => {
-    openModal({
-      title: `${t('Duplicate')} ${scene.name}`,
-      body: (
-        <div className="d-flex flex-column gap-3">
-          <p className="mb-0">{t('A full copy of this scene will be created.')}</p>
-          <small className="text-secondary">
-            {t('The copy will include all scene elements: scenarios, characters, colliders and the rest of its visual and logical configuration.')}
-          </small>
-          <div className="d-flex justify-content-end gap-2">
-            <button className="btn btn-secondary" onClick={closeModal} type="button">{t('Cancel')}</button>
-            <button
-              className="btn btn-success"
-              onClick={() => {
-                duplicateScene(scene.id);
-                closeModal();
-              }}
-              type="button"
-            >
-              {t('Duplicate scene')}
-            </button>
-          </div>
-        </div>
-      ),
-    });
+  const value: SceneManagerContextValue = {
+    scenes,
+    activeSceneId,
+    loadScene,
+    openCreateSceneModal,
+    openRenameSceneModal,
+    openDeleteSceneModal,
   };
 
   return (
-    <div className="scene-tabs-bar px-1 d-flex align-items-center gap-2 overflow-auto pb-0">
-      <div className="scene-tabs-nav-wrap flex-grow-1 overflow-auto">
-        <Nav
-          variant="tabs"
-          activeKey={`${activeSceneId}`}
-          className="scene-tabs-nav flex-nowrap"
-          onSelect={(eventKey) => {
-            void (async () => {
-              if (!eventKey) return;
-              if (eventKey === '__new_scene') {
-                openCreateSceneModal();
-                return;
-              }
-              const nextId = Number(eventKey);
-              if (Number.isNaN(nextId) || nextId === activeSceneId) return;
+    <SceneManagerContext.Provider value={value}>
+      {children}
+    </SceneManagerContext.Provider>
+  );
+}
 
-              const current = scenes.find((scene) => scene.id === activeSceneId);
-              const target = scenes.find((scene) => scene.id === nextId);
-              if (!target) return;
+function CreateSceneModalBody({
+  defaultName,
+  onCancel,
+  onCreate,
+  t,
+}: {
+  defaultName: string;
+  onCancel: () => void;
+  onCreate: (name: string) => void;
+  t: (key: string) => string;
+}) {
+  let draftName = defaultName;
 
-              const currentSnapshot = current
-                ? await captureActiveSceneSnapshot(current.id, current.name)
-                : null;
+  return (
+    <CreateSceneModalBodyContent
+      defaultName={defaultName}
+      onCancel={onCancel}
+      onCreate={() => onCreate(draftName)}
+      onDraftChange={(value) => {
+        draftName = value;
+      }}
+      t={t}
+    />
+  );
+}
 
-              if (currentSnapshot) {
-                if (!currentSnapshot.backgroundPath && backgroundPath) {
-                  currentSnapshot.backgroundPath = backgroundPath;
-                }
-                if (!currentSnapshot.camera2d && camera2dRef.current) {
-                  currentSnapshot.camera2d = camera2dRef.current;
-                }
-              }
-
-              const targetSnapshot = sceneDataById[nextId] ?? {
-                id: target.id,
-                name: target.name,
-                world: { ...worldConfig },
-                backgroundPath: null,
-                entities: [],
-                playerTransform: null,
-                camera2d: camera2dRef.current,
-                sprites: [],
-              };
-
-              if (current && currentSnapshot) {
-                setSceneDataById((prev) => ({ ...prev, [current.id]: currentSnapshot }));
-              }
-
-              clearEngineBeforeSceneLoad();
-              loadSceneIntoEngine(targetSnapshot);
-              setActiveSceneId(nextId);
-            })();
-          }}
-        >
-          {scenes.map((scene) => (
-            <Nav.Item key={scene.id} className="scene-nav-item">
-              <Nav.Link eventKey={`${scene.id}`} className="scene-nav-link d-flex align-items-center gap-2">
-                <span className="scene-nav-link__name">{scene.name}</span>
-                <span className="scene-nav-actions">
-                  <button
-                    className="scene-nav-action text-primary"
-                    type="button"
-                    onClick={(event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      openRenameSceneModal(scene);
-                    }}
-                    aria-label={`${t('Edit')} ${scene.name}`}
-                  >
-                    <Pencil size={14} />
-                  </button>
-
-                  <button
-                    className="scene-nav-action text-info"
-                    type="button"
-                    onClick={(event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      openDuplicateSceneModal(scene);
-                    }}
-                    aria-label={`${t('Duplicate')} ${scene.name}`}
-                  >
-                    <Files size={14} />
-                  </button>
-
-                  <button
-                    className="scene-nav-action scene-nav-action--danger text-danger"
-                    type="button"
-                    onClick={(event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      openDeleteSceneModal(scene);
-                    }}
-                    aria-label={`${t('Delete')} ${scene.name}`}
-                  >
-                    <Trash size={14} />
-                  </button>
-                </span>
-              </Nav.Link>
-            </Nav.Item>
-          ))}
-
-          <Nav.Item className="scene-nav-item scene-nav-item--create">
-            <Nav.Link eventKey="__new_scene" className="scene-nav-create d-flex align-items-center justify-content-center gap-1">
-              <PlusLg size={12} />
-            </Nav.Link>
-          </Nav.Item>
-        </Nav>
+function CreateSceneModalBodyContent({
+  defaultName,
+  onCancel,
+  onCreate,
+  onDraftChange,
+  t,
+}: {
+  defaultName: string;
+  onCancel: () => void;
+  onCreate: () => void;
+  onDraftChange: (value: string) => void;
+  t: (key: string) => string;
+}) {
+  return (
+    <div className="d-flex flex-column gap-3">
+      <CreateSceneModalBodyFields
+        defaultName={defaultName}
+        onDraftChange={onDraftChange}
+        t={t}
+      />
+      <div className="d-flex justify-content-end gap-2">
+        <button className="btn btn-secondary" onClick={onCancel} type="button">{t('Cancel')}</button>
+        <button className="btn btn-success" onClick={onCreate} type="button">{t('Create scene')}</button>
       </div>
     </div>
   );
 }
 
-export default SceneTabsBar;
+function CreateSceneModalBodyFields({
+  defaultName,
+  onDraftChange,
+  t,
+}: {
+  defaultName: string;
+  onDraftChange: (value: string) => void;
+  t: (key: string) => string;
+}) {
+  return (
+    <div>
+      <label htmlFor="scene-name-create" className="form-label mb-1">{t('Scene name')}</label>
+      <input
+        id="scene-name-create"
+        type="text"
+        defaultValue={defaultName}
+        className="form-control"
+        onChange={(event) => onDraftChange(event.target.value)}
+      />
+    </div>
+  );
+}
+
+function DeleteBlockedBody({ t }: { t: (key: string) => string }) {
+  return (
+    <div className="d-flex flex-column gap-2">
+      <p className="mb-0">{t('You cannot delete this scene because it is the only one in the project.')}</p>
+      <small className="text-secondary">{t('There must be at least one scene to keep the editor in a valid state.')}</small>
+    </div>
+  );
+}
+
+function DeleteConfirmBody({
+  onCancel,
+  onConfirm,
+  t,
+}: {
+  onCancel: () => void;
+  onConfirm: () => void;
+  t: (key: string) => string;
+}) {
+  return (
+    <div className="d-flex flex-column gap-3">
+      <p className="mb-0">{t('This action will delete the selected scene.')}</p>
+      <div className="d-flex justify-content-end gap-2">
+        <button className="btn btn-secondary" onClick={onCancel} type="button">{t('Cancel')}</button>
+        <button className="btn btn-danger" onClick={onConfirm} type="button">{t('Delete')}</button>
+      </div>
+    </div>
+  );
+}
+
+export function useSceneManager(): SceneManagerContextValue {
+  const ctx = useContext(SceneManagerContext);
+  if (!ctx) {
+    throw new Error('useSceneManager must be used within SceneManagerProvider');
+  }
+  return ctx;
+}
