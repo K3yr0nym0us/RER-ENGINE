@@ -229,9 +229,6 @@ impl State {
     }
 
     pub(crate) fn build_quick_build_ghost_overlay(&self) -> Option<(usize, mesh::InstanceData)> {
-        if self.camera_2d.is_some() {
-            return None;
-        }
         if !matches!(self.active_tool, ActiveTool::QuickBuildPlace { .. }) {
             return None;
         }

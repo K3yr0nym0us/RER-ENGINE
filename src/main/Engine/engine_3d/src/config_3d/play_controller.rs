@@ -43,7 +43,7 @@ impl State {
     }
 
     pub(crate) fn is_play_controller_active(&self) -> bool {
-        self.preview_playing && self.camera_2d.is_none()
+        self.preview_playing
     }
 
     fn play_controller_move_speed(&self, pressed_inputs: &HashSet<String>) -> f32 {

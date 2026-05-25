@@ -12,7 +12,7 @@ use crate::config_3d::model_animation::{
 use crate::config_3d::model_asset::ModelAsset;
 use crate::config_3d::physics_3d::PhysicsWorld;
 use crate::config_3d::{Camera, WorldBounds3D};
-use crate::config_compat::{ActiveTool, Camera2D, GridBuffer, GridConfig, PhysicsWorld2D};
+use crate::config_compat::{ActiveTool, GridConfig};
 use crate::ecs::{EntityId, NameComponent, World};
 use crate::gizmo::GizmoBuffer;
 use crate::ipc::PlayCameraFollowMode;
@@ -29,9 +29,6 @@ pub struct State {
     pub(crate) size: PhysicalSize<u32>,
     pub(crate) clear_color: wgpu::Color,
     pub(crate) render_pipeline: wgpu::RenderPipeline,
-    /// Pipeline para modo 2D: sin depth-write, CompareFunction::Always.
-    /// Permite que el alpha blending funcione correctamente con back-to-front sort.
-    pub(crate) render_pipeline_2d: wgpu::RenderPipeline,
     pub(crate) render_pipeline_overlay: wgpu::RenderPipeline,
     pub(crate) shadow_pipeline: wgpu::RenderPipeline,
     pub(crate) _shadow_texture: wgpu::Texture,
@@ -48,7 +45,6 @@ pub struct State {
     /// `tex_idx` de `MeshComponent` → capa en `texture_array`.
     pub(crate) tex_layers: Vec<crate::texture::TextureLayer>,
     pub(crate) fallback_layer: crate::texture::TextureLayer,
-    pub(crate) canonical_quad_idx: usize,
     /// Quad para tooltips en pantalla (HUD); no usar `meshes[0]` (suelo).
     pub(crate) hud_quad_mesh: Mesh,
     pub camera: Camera,
@@ -69,9 +65,6 @@ pub struct State {
     pub(crate) play_camera_follow_offset: glam::Vec3,
     /// Offset ojo−cabeza en espacio local del jugador (yaw del cuerpo); `FollowCharacter`.
     pub(crate) play_camera_follow_offset_local: glam::Vec3,
-    /// Cámara 2D ortográfica activa cuando se carga una escena 2D.
-    /// `None` = modo 3D (usa `camera`).
-    pub camera_2d: Option<Camera2D>,
     pub(crate) meshes: Vec<Mesh>,
     pub(crate) world: World,
     pub(crate) last_frame: Instant,
@@ -81,7 +74,6 @@ pub struct State {
     pub(crate) gizmo_bind_group: wgpu::BindGroup,
     pub(crate) gizmo_buffer_uni: wgpu::Buffer,
     pub physics: PhysicsWorld,
-    pub physics_2d: PhysicsWorld2D,
     pub selected_entity: Option<EntityId>,
     pub selected_entities: Vec<EntityId>,
     pub hovered_entity: Option<EntityId>,
@@ -94,7 +86,6 @@ pub struct State {
     pub(crate) background_path: Option<String>,
     pub(crate) grid_config: GridConfig,
     pub(crate) grid_pipeline: wgpu::RenderPipeline,
-    pub(crate) grid_buffer: GridBuffer,
     pub(crate) grid_bind_group: wgpu::BindGroup,
     pub(crate) grid_buffer_uni: wgpu::Buffer,
     pub(crate) world_bounds_3d: WorldBounds3D,
@@ -201,6 +192,9 @@ pub struct State {
     pub(crate) shadow_darkness: f32,
     pub(crate) scene_instance_pool: super::types::InstanceBufferPool,
     pub(crate) shadow_instance_pool: super::types::InstanceBufferPool,
+    pub(crate) skinned_instance_pool: super::types::InstanceBufferPool,
+    /// path absoluto de imagen → capa en `texture_array` (dedup).
+    pub(crate) texture_path_layers: HashMap<String, crate::texture::TextureLayer>,
     /// Assets de animación 3D por ruta de archivo (parseo aparte de mesh_3d).
     pub(crate) model_assets: std::collections::HashMap<String, Arc<ModelAsset>>,
     pub(crate) model_animation_bindings: std::collections::HashMap<u32, ModelAnimationBinding>,
@@ -218,6 +212,33 @@ impl State {
             .get(tex_idx)
             .copied()
             .unwrap_or(self.fallback_layer)
+    }
+
+    /// Empaqueta RGBA en el array GPU; reutiliza capa si `cache_key` ya existe.
+    pub(crate) fn pack_texture_layer(
+        &mut self,
+        cache_key: Option<&str>,
+        rgba: &[u8],
+        w: u32,
+        h: u32,
+    ) -> crate::texture::TextureLayer {
+        if let Some(key) = cache_key {
+            if let Some(&layer) = self.texture_path_layers.get(key) {
+                return layer;
+            }
+        }
+        let layer = self.texture_array.pack(&self.queue, rgba, w, h);
+        if layer >= crate::texture::TextureArray::MAX_LAYERS - 1 {
+            crate::ipc::send_event(&crate::ipc::EngineEvent::TextureArrayExhausted {
+                max_layers: crate::texture::TextureArray::MAX_LAYERS,
+            });
+        }
+        if let Some(key) = cache_key {
+            self.texture_path_layers
+                .insert(key.to_string(), layer);
+        }
+        self.tex_layers.push(layer);
+        layer
     }
 
     pub(crate) fn is_entity_name_taken(&self, name: &str, except_id: Option<u32>) -> bool {

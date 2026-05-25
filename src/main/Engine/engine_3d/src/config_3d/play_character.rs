@@ -139,7 +139,7 @@ impl State {
     }
 
     pub(crate) fn has_play_character(&self) -> bool {
-        self.play_character_entity.is_some() && self.camera_2d.is_none()
+        self.play_character_entity.is_some()
     }
 
     /// Cuerpo placeholder del jugador (cubo). La posición del transform = centro del cuerpo.

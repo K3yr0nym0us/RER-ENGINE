@@ -8,7 +8,7 @@ use crate::ipc::{send_event, EngineEvent};
 impl State {
     /// Crea la entidad de cámara orbital del editor (separada del jugador FP).
     pub(crate) fn ensure_editor_camera_entity(&mut self) {
-        if self.camera_2d.is_some() || self.editor_camera_entity.is_some() {
+        if self.editor_camera_entity.is_some() {
             return;
         }
         let id = self.world.spawn(Some("EditorCamera"));

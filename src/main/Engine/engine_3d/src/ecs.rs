@@ -50,14 +50,12 @@ impl Transform {
     }
 }
 
-/// Referencia a la malla que renderiza esta entidad.
+/// Referencia a la malla y capa de material que renderiza esta entidad 3D.
 #[derive(Debug, Clone)]
 pub struct MeshComponent {
-    /// Índice en `State.meshes` para la geometría (vértices + índices).
+    /// Índice en `State.meshes` (vértices + índices GPU).
     pub mesh_idx: usize,
-    /// Índice en `State.textures` para el bind group de textura.
-    /// Puede diferir de mesh_idx cuando múltiples sprites comparten el mismo
-    /// quad canónico (mesh_idx=0) pero tienen texturas distintas.
+    /// Índice en `State.tex_layers` → capa del `TextureArray` compartido.
     pub tex_idx:  usize,
 }
 
@@ -84,12 +82,10 @@ impl Default for EditorCamera {
     }
 }
 
-/// Control explícito del orden de renderizado (render layer).
-/// Entidades con mayor `layer` se renderizan después (encima).
-/// Dentro del mismo layer, el orden está determinado por Transform.position.z (menor z primero = back-to-front).
+/// Orden de dibujado para decals/UI en mundo (el depth buffer ordena opacos 3D).
 #[derive(Debug, Clone, Copy)]
 pub struct RenderLayer {
-    pub value: i32,  // default 0
+    pub value: i32,  // default 0; mayor = después
 }
 
 impl Default for RenderLayer {

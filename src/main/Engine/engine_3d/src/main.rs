@@ -483,7 +483,7 @@ impl ApplicationHandler<EngineCommand> for App {
                             // no se deben seleccionar entidades ni activar el gizmo.
                             let is_quick_build = matches!(state.active_tool, crate::config_compat::ActiveTool::QuickBuildPlace { .. });
 
-                            if is_quick_build && state.camera_2d.is_none() && pressed {
+                            if is_quick_build && pressed {
                                 if let Some(cur) = self.last_cursor {
                                     let ctrl_active = self.ctrl_held || query_ctrl_held_os();
                                     state.ctrl_held = ctrl_active;
@@ -493,23 +493,19 @@ impl ApplicationHandler<EngineCommand> for App {
                                 self.gizmo_drag_axis = None;
                                 state.set_active_gizmo_axis(None);
                                 self.gizmo_drag_start = None;
-                            } else if !pressed || !is_quick_build || state.camera_2d.is_some() {
+                            } else if !pressed || !is_quick_build {
                             // Comprobar si el click es sobre un eje del gizmo.
                             // Se omite en modo pivot/quick_build para no robar el click al handler.
                             if let Some(cur) = self.last_cursor {
                                 let axis = if state.pivot_edit_mode.is_none() && !is_quick_build {
-                                    if state.camera_2d.is_some() {
-                                        state.pick_gizmo_axis_2d(cur.0, cur.1)
-                                    } else {
-                                        state.pick_gizmo_axis(cur.0, cur.1)
-                                    }
+                                    state.pick_gizmo_axis(cur.0, cur.1)
                                 } else {
                                     None
                                 };
                                 self.gizmo_drag_axis = axis;
                                 if axis.is_some() {
                                     state.set_active_gizmo_axis(axis);
-                                    state.set_snap_hint_visible(state.camera_2d.is_some());
+                                    state.set_snap_hint_visible(false);
                                     let selected_ids: Vec<u32> = if !state.selected_entities.is_empty() {
                                         state.selected_entities.clone()
                                     } else {
@@ -542,7 +538,7 @@ impl ApplicationHandler<EngineCommand> for App {
                                 state.active_tool,
                                 crate::config_compat::ActiveTool::QuickBuildPlace { .. }
                             );
-                            if is_quick_build_release && state.camera_2d.is_none() {
+                            if is_quick_build_release {
                                 // Colocado en press.
                             } else if self.gizmo_drag_axis.is_some() {
                                 // Fin del drag de gizmo
@@ -583,13 +579,7 @@ impl ApplicationHandler<EngineCommand> for App {
                                         // Electron perdió el foco y el keyup no llegó.
                                         let ctrl_active = self.ctrl_held || query_ctrl_held_os();
                                         state.ctrl_held = ctrl_active;
-                                        if state.camera_2d.is_some() {
-                                            if state.pivot_edit_mode.is_some() {
-                                                state.handle_pivot_click_2d(cur.0, cur.1);
-                                            } else if !state.handle_tool_click_2d(cur.0, cur.1) {
-                                                state.pick_entity_2d(cur.0, cur.1);
-                                            }
-                                        } else if !state.handle_tool_click_3d(cur.0, cur.1) {
+                                        if !state.handle_tool_click_3d(cur.0, cur.1) {
                                             state.pick_entity(cur.0, cur.1);
                                         }
                                     }
@@ -601,15 +591,6 @@ impl ApplicationHandler<EngineCommand> for App {
                     MouseButton::Right  => {
                         self.mouse_right = pressed;
                         // Fin de pan: notificar posición actual de la cámara 2D
-                        if !pressed {
-                            if let Some(cam2d) = &state.camera_2d {
-                                ipc::send_event(&EngineEvent::Camera2dUpdated {
-                                    x:      cam2d.x,
-                                    y:      cam2d.y,
-                                    half_h: cam2d.half_h,
-                                });
-                            }
-                        }
                     }
                     MouseButton::Middle => { self.mouse_middle = pressed; }
                     _ => {}
@@ -630,12 +611,7 @@ impl ApplicationHandler<EngineCommand> for App {
                     state.set_active_gizmo_axis(None);
                     state.set_snap_hint_visible(false);
                 }
-                if state.camera_2d.is_some() && !state.is_preview_playing() {
-                    // Usar OS query directa: evita que state.ctrl_held obsoleto se propague.
-                    let ctrl_active = self.ctrl_held || query_ctrl_held_os();
-                    state.ctrl_held = ctrl_active;
-                    state.update_tool_overlay_cursor_2d(cur.0, cur.1);
-                } else if state.camera_2d.is_none() && !state.is_preview_playing() {
+                if !state.is_preview_playing() {
                     let is_quick_build = matches!(
                         state.active_tool,
                         crate::config_compat::ActiveTool::QuickBuildPlace { .. }
@@ -655,18 +631,9 @@ impl ApplicationHandler<EngineCommand> for App {
                     if !state.is_preview_playing() {
                         if let Some(axis) = self.gizmo_drag_axis {
                         // Drag de gizmo: mover entidad a lo largo del eje
-                        if state.camera_2d.is_some() {
-                            // OS query directa para snap: independiente del foco de ventana.
-                            let snap = self.ctrl_held || query_ctrl_held_os();
-                            state.drag_gizmo_2d(cur.0, cur.1, lx, ly, axis, snap);
-                        } else {
                             state.drag_gizmo(cur.0, cur.1, lx, ly, axis);
-                        }
                         } else if self.mouse_right {
-                        let (vw, vh) = { let s = state.size(); (s.width as f32, s.height as f32) };
-                        if let Some(cam2d) = &mut state.camera_2d {
-                            cam2d.pan(dx, dy, vw, vh);
-                        } else if state.uses_editor_viewport_camera() {
+                        if state.uses_editor_viewport_camera() {
                             state.orbit_editor_viewport(dx, dy);
                         } else {
                             state.camera.orbit(dx, dy);
@@ -679,9 +646,7 @@ impl ApplicationHandler<EngineCommand> for App {
                 // Hover: solo cuando no se está arrastrando
                 if !state.is_preview_playing() && !self.mouse_right && !self.mouse_middle && self.gizmo_drag_axis.is_none() {
                     let is_quick_build = matches!(state.active_tool, crate::config_compat::ActiveTool::QuickBuildPlace { .. });
-                    if state.camera_2d.is_some() && !is_quick_build {
-                        state.update_hover_2d(cur.0, cur.1);
-                    } else if state.camera_2d.is_none() && !is_quick_build {
+                    if !is_quick_build {
                         state.update_hover(cur.0, cur.1);
                     }
                 }
@@ -749,15 +714,7 @@ impl ApplicationHandler<EngineCommand> for App {
                     MouseScrollDelta::LineDelta(_, y)   => y,
                     MouseScrollDelta::PixelDelta(p)     => p.y as f32 * 0.05,
                 };
-                if let Some(cam2d) = &mut state.camera_2d {
-                    // Zoom ortográfico: reducir/aumentar half_h
-                    cam2d.half_h = (cam2d.half_h - scroll * 0.5).clamp(1.0, 50.0);
-                    ipc::send_event(&EngineEvent::Camera2dUpdated {
-                        x:      cam2d.x,
-                        y:      cam2d.y,
-                        half_h: cam2d.half_h,
-                    });
-                } else if state.uses_editor_viewport_camera() {
+                if state.uses_editor_viewport_camera() {
                     state.zoom_editor_viewport(scroll);
                 } else {
                     state.camera.zoom(scroll);
@@ -874,7 +831,7 @@ fn main() {
     // en entornos sin GPU hardware — subirlos a error los silencia.
     #[cfg(target_os = "windows")]
     const DEFAULT_LOG_FILTER: &str =
-        "rer_engine_3d=warn,wgpu_core=warn,wgpu_hal=warn,naga=warn";
+        "rer_engine_3d=warn,wgpu_core::instance=error,wgpu_hal::dx12::instance=error,wgpu_hal::auxil::dxgi::factory=error,wgpu_core=warn,wgpu_hal=warn,naga=warn";
     #[cfg(not(target_os = "windows"))]
     const DEFAULT_LOG_FILTER: &str =
         "warn,wgpu_core=warn,wgpu_hal::vulkan::conv=error,wgpu_hal::vulkan::instance=error,wgpu_hal=warn,naga=warn";

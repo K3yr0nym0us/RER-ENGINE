@@ -17,7 +17,7 @@ use super::{ActiveAnimation, AnimationState, DecodedAudio, State, UndoAction};
 impl State {
     /// Reconstruye el vertex buffer de la cuadrícula con la configuración actual.
     pub(crate) fn rebuild_grid(&mut self) {
-        self.grid_buffer = crate::config_compat::build_grid(&self.device, &self.grid_config);
+        // La cuadrícula 2D no se dibuja en el binario 3D; `grid_config` sigue usándose para snap/quick-build.
     }
 
     pub fn window(&self) -> &std::sync::Arc<winit::window::Window> {
@@ -495,11 +495,7 @@ impl State {
                         }
                     }
                 }
-                if self.camera_2d.is_some() {
-                    if let Some(p) = position_arr {
-                        self.physics_2d.teleport_entity(id, p[0], p[1]);
-                    }
-                } else if !is_play_character && !is_editor_camera {
+                if !is_play_character && !is_editor_camera {
                     if let Some(t) = self.world.get::<Transform>(id).cloned() {
                         if self.physics.has_physics(id)
                             && (position_vec.is_some() || rotation_changed || scale_vec.is_some())
@@ -576,16 +572,8 @@ impl State {
                         transform.rotation.w,
                     ];
                     let scale = transform.scale.to_array();
-                    let physics_enabled = if self.camera_2d.is_some() {
-                        self.physics_2d.has_physics(id)
-                    } else {
-                        self.physics.has_physics(id)
-                    };
-                    let physics_type = if self.camera_2d.is_some() {
-                        self.physics_2d.get_body_type(id).to_string()
-                    } else {
-                        self.physics.get_body_type(id).to_string()
-                    };
+                    let physics_enabled = self.physics.has_physics(id);
+                    let physics_type = self.physics.get_body_type(id).to_string();
 
                     send_event(&EngineEvent::EntitySelected {
                         id,
@@ -737,7 +725,6 @@ impl State {
                     send_event(&EngineEvent::EntityUnhovered);
                 }
                 self.physics.remove_entity_body(id);
-                self.physics_2d.remove_entity_body(id);
                 self.scenario_entities.retain(|&e| e != id);
                 self.character_entities.retain(|&e| e != id);
                 self.collider_entities.retain(|&e| e != id);
@@ -768,28 +755,12 @@ impl State {
                 height,
                 depth,
             } => {
-                if self.camera_2d.is_some() {
-                    self.grid_config.world_width = width.max(1.0);
-                    self.grid_config.world_height = height.max(1.0);
-                    self.rebuild_grid();
-                    if let Some(bg_id) = self.background_entity {
-                        if let Some(t) = self.world.get_mut::<Transform>(bg_id) {
-                            t.scale = GlamVec3::new(
-                                self.grid_config.world_width,
-                                self.grid_config.world_height,
-                                1.0,
-                            );
-                        }
-                    }
-                } else {
-                    self.set_world_bounds_3d_size(width, height, depth);
-                    self.clamp_play_character_camera_to_bounds();
-                }
+                self.set_world_bounds_3d_size(width, height, depth);
+                self.clamp_play_character_camera_to_bounds();
             }
             EngineCommand::SetGravity { gravity } => {
                 let magnitude = gravity.abs();
                 self.physics.set_gravity(-magnitude);
-                self.physics_2d.set_gravity(-magnitude);
                 log::info!("[physics] Gravedad actualizada: {:.2} m/s²", magnitude);
             }
             EngineCommand::SetGridVisible { visible } => {
@@ -867,23 +838,18 @@ impl State {
             EngineCommand::SetCtrlHeld { held } => {
                 self.ctrl_held = held;
             }
-            EngineCommand::SetCamera2d { x, y, half_h } => {
-                if let Some(cam2d) = &mut self.camera_2d {
-                    cam2d.x = x;
-                    cam2d.y = y;
-                    cam2d.half_h = half_h.clamp(1.0, 50.0);
-                    log::debug!("Cámara 2D restaurada: x={x} y={y} half_h={half_h}");
-                }
+            EngineCommand::SetCamera2d { .. } => {
+                log::warn!("SetCamera2d ignorado en rer_engine_3d (solo editor 3D)");
             }
             EngineCommand::SetCameraFov { fov_y } => {
                 self.camera.fov_y = fov_y.clamp(0.1, std::f32::consts::FRAC_PI_2 - 0.01);
-                if self.camera_2d.is_none() && self.has_play_character() {
+                if self.has_play_character() {
                     self.emit_play_character_view_changed(false);
                 }
             }
             EngineCommand::SetFpsEditorFrustumDistance { distance } => {
                 self.fps_editor_frustum_distance = distance.clamp(0.5, 50.0);
-                if self.camera_2d.is_none() && self.has_play_character() {
+                if self.has_play_character() {
                     self.emit_play_character_view_changed(false);
                 }
             }
@@ -897,21 +863,11 @@ impl State {
             }
             EngineCommand::SetPhysics { id, enabled, body_type } => {
                 let (pos, half) = if let Some(t) = self.world.get::<Transform>(id) {
-                    let p = if self.camera_2d.is_some() {
-                        let mut p = t.position.to_array();
-                        p[2] = 0.0;
-                        p
-                    } else {
-                        t.position.to_array()
-                    };
-                    (p, (t.scale.abs() * 0.5).to_array())
+                    (t.position.to_array(), (t.scale.abs() * 0.5).to_array())
                 } else {
                     ([0.0_f32; 3], [0.5_f32; 3])
                 };
-                if self.camera_2d.is_some() {
-                    self.physics_2d
-                        .set_entity_physics(id, enabled, &body_type, pos, half);
-                } else if self.play_character_entity == Some(id) {
+                if self.play_character_entity == Some(id) {
                     self.physics.remove_entity_body(id);
                 } else {
                     self.physics.set_entity_physics(id, enabled, &body_type, pos, half);
@@ -1026,7 +982,7 @@ impl State {
                                         "[quick_build] no se pudo crear ghost para preview: {path}"
                                     );
                                 }
-                                if self.camera_2d.is_none() {
+                                {
                                     let ghost_name = self
                                         .quick_build_blueprint
                                         .as_ref()
@@ -1047,19 +1003,11 @@ impl State {
                     }
                 }
             }
-            EngineCommand::CreateColliderFromPoints { points, track_undo } => {
-                if self.camera_2d.is_some() {
-                    self.create_collision_box_from_points(&points, track_undo.unwrap_or(true));
-                } else {
-                    log::warn!("CreateColliderFromPoints solo disponible en modo 2D");
-                }
+            EngineCommand::CreateColliderFromPoints { .. } => {
+                log::warn!("CreateColliderFromPoints no disponible en rer_engine_3d");
             }
-            EngineCommand::CreateExecutionAreaFromPoints { points, track_undo } => {
-                if self.camera_2d.is_some() {
-                    self.create_execution_area_from_points(&points, track_undo.unwrap_or(true));
-                } else {
-                    log::warn!("CreateExecutionAreaFromPoints solo disponible en modo 2D");
-                }
+            EngineCommand::CreateExecutionAreaFromPoints { .. } => {
+                log::warn!("CreateExecutionAreaFromPoints no disponible en rer_engine_3d");
             }
             EngineCommand::Undo => {
                 if self.undo_last_tool_step_2d() {

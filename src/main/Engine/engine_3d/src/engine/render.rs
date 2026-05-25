@@ -1,9 +1,7 @@
 use glam::Vec3 as GlamVec3;
-use wgpu::util::DeviceExt;
 use winit::dpi::PhysicalSize;
 
 use crate::config_3d::Camera;
-use crate::config_compat::Camera2D;
 use crate::gizmo;
 
 use glam::Mat4;
@@ -37,12 +35,12 @@ impl State {
         for &entity in self.world.entities() {
             if let Some(t) = self.world.get::<crate::ecs::Transform>(entity) {
                 let sx = t.scale.x.abs() * 0.5;
-                let sy = t.scale.y.abs() * 0.5;
+                let sz = t.scale.z.abs() * 0.5;
                 let min_x = t.position.x - sx;
-                let min_y = t.position.y - sy;
+                let min_z = t.position.z - sz;
                 let max_x = t.position.x + sx;
-                let max_y = t.position.y + sy;
-                self.spatial_grid.insert_entity(entity, [min_x, min_y, max_x, max_y]);
+                let max_z = t.position.z + sz;
+                self.spatial_grid.insert_entity(entity, [min_x, min_z, max_x, max_z]);
             }
         }
 
@@ -56,15 +54,11 @@ impl State {
                 label: Some("render-encoder"),
             });
 
-        if self.camera_2d.is_none() {
-            self.sync_directional_light_from_sun();
-        }
+        self.sync_directional_light_from_sun();
         if self.taa.enabled {
             self.taa.begin_frame(false);
         }
-        let scene_uni = if let Some(cam2d) = &self.camera_2d {
-            build_scene_uniforms_2d(cam2d, self.size)
-        } else if self.uses_play_accordion_camera() {
+        let scene_uni = if self.uses_play_accordion_camera() {
             build_scene_uniforms_from_view(
                 &self.camera,
                 self.camera_view_matrix(),
@@ -95,15 +89,12 @@ impl State {
         };
         self.queue
             .write_buffer(&self.scene_buffer, 0, bytemuck::cast_slice(&[scene_uni]));
-        let is_3d = self.camera_2d.is_none();
-        let zoom_stability = if let Some(cam2d) = &self.camera_2d {
-            crate::taa::zoom_stability_half_h(cam2d.half_h)
-        } else if self.uses_play_accordion_camera() {
+        let zoom_stability = if self.uses_play_accordion_camera() {
             crate::taa::zoom_stability_distance(0.01)
         } else {
             crate::taa::zoom_stability_distance(self.viewport_orbit_angles().2)
         };
-        let shadows_enabled = is_3d && scene_uni.light_color[3] > 0.5;
+        let shadows_enabled = scene_uni.light_color[3] > 0.5;
         let shadow_darkness = self.shadow_darkness;
 
         let ambient_view = self.taa.ambient_view();
@@ -113,13 +104,13 @@ impl State {
         let shadow_mask_view = self.taa.shadow_mask_view();
 
         let aspect_fc = self.size.width as f32 / self.size.height as f32;
-        let frustum_vp_3d: Option<glam::Mat4> = self.camera_2d.is_none().then(|| {
+        let frustum_vp = {
             let raw = self
                 .camera_to_uniform_at_anchor(self.orbit_view_anchor(), aspect_fc)
                 .view_proj;
             glam::Mat4::from_cols_array_2d(&raw)
-        });
-        let mut entities: Vec<(crate::ecs::EntityId, usize, usize, glam::Mat4, i32, f32)> = self
+        };
+        let mut entities: Vec<(crate::ecs::EntityId, usize, usize, glam::Mat4, i32)> = self
             .world
             .query2::<crate::ecs::MeshComponent, crate::ecs::Transform>()
             .filter_map(|(id, mc, t)| {
@@ -134,8 +125,7 @@ impl State {
                     .get::<crate::ecs::NameComponent>(id)
                     .is_some_and(|n| n.name.eq_ignore_ascii_case("ground"));
                 // El sol vive lejos del origen (luz direccional); no recortar por caja del mundo ni frustum.
-                if self.camera_2d.is_none()
-                    && !is_sun
+                if !is_sun
                     && !is_ground
                     && !self.world_bounds_3d.intersects_aabb(t.position, t.scale)
                 {
@@ -143,13 +133,9 @@ impl State {
                 }
                 let visible = if is_sun || is_ground {
                     true
-                } else if let Some(cam2d) = &self.camera_2d {
-                    is_visible_2d(cam2d, t.position, t.scale, aspect_fc)
-                } else if let Some(vp) = &frustum_vp_3d {
-                    let radius = t.scale.x.abs().max(t.scale.y.abs()).max(t.scale.z.abs()) * 0.87;
-                    is_visible_3d(vp, t.position, radius)
                 } else {
-                    true
+                    let radius = t.scale.x.abs().max(t.scale.y.abs()).max(t.scale.z.abs()) * 0.87;
+                    is_visible_3d(&frustum_vp, t.position, radius)
                 };
                 if !visible {
                     return None;
@@ -160,25 +146,18 @@ impl State {
                     .get::<crate::ecs::RenderLayer>(id)
                     .map(|rl| rl.value)
                     .unwrap_or(0);
-                let z = t.position.z;
-                Some((id, mesh_idx, tex_idx, model_mat, layer, z))
+                Some((id, mesh_idx, tex_idx, model_mat, layer))
             })
             .collect();
-        entities.sort_by(|a, b| {
-            let layer_cmp = a.4.cmp(&b.4);
-            if layer_cmp != std::cmp::Ordering::Equal {
-                layer_cmp
-            } else {
-                a.5.partial_cmp(&b.5).unwrap_or(std::cmp::Ordering::Equal)
-            }
-        });
+        entities.sort_by(|a, b| a.4.cmp(&b.4));
 
         struct Batch {
             mesh_idx: usize,
+            texture_layer: u32,
             instances: Vec<crate::mesh::InstanceData>,
         }
         let mut batches: Vec<Batch> = Vec::new();
-        for (entity_id, mesh_idx, tex_idx, model_matrix, _layer, _z) in &entities {
+        for (entity_id, mesh_idx, tex_idx, model_matrix, _layer) in &entities {
             if self.quick_build_ghost_id == Some(*entity_id) {
                 continue;
             }
@@ -216,21 +195,21 @@ impl State {
             } else {
                 0.0_f32
             };
-            let can_extend = batches.last().map_or(false, |b| b.mesh_idx == *mesh_idx);
+            let can_extend = batches.last().map_or(false, |b| {
+                b.mesh_idx == *mesh_idx && b.texture_layer == layer
+            });
             if can_extend {
                 batches.last_mut().unwrap().instances.push(inst);
             } else {
                 batches.push(Batch {
                     mesh_idx: *mesh_idx,
+                    texture_layer: layer,
                     instances: vec![inst],
                 });
             }
         }
 
-        let mut ghost_overlay: Option<(usize, crate::mesh::InstanceData)> = None;
-        if self.camera_2d.is_none() {
-            ghost_overlay = self.build_quick_build_ghost_overlay();
-        }
+        let ghost_overlay = self.build_quick_build_ghost_overlay();
 
         let skinned_shadow = self.collect_skinned_draw_instances();
         let skinned_main = skinned_shadow.clone();
@@ -243,9 +222,9 @@ impl State {
             self.scene_instance_pool
                 .upload(&self.device, &self.queue, &instance_slices);
 
-        if self.camera_2d.is_none() {
+        {
             let mut shadow_batches: Vec<Batch> = Vec::new();
-            for (entity_id, mesh_idx, _tex_idx, model_matrix, _layer, _z) in &entities {
+            for (entity_id, mesh_idx, _tex_idx, model_matrix, _layer) in &entities {
                 if self.quick_build_ghost_id == Some(*entity_id) {
                     continue;
                 }
@@ -271,6 +250,7 @@ impl State {
                 } else {
                     shadow_batches.push(Batch {
                         mesh_idx: *mesh_idx,
+                        texture_layer: self.fallback_layer,
                         instances: vec![inst],
                     });
                 }
@@ -320,17 +300,21 @@ impl State {
 
             if !skinned_shadow.is_empty() {
                 shadow_pass.set_pipeline(&self.skinned_shadow_pipeline);
-                for (gpu_idx, inst) in &skinned_shadow {
+                let skinned_slices: Vec<&[crate::mesh::SkinnedInstanceData]> = skinned_shadow
+                    .iter()
+                    .map(|(_, inst)| std::slice::from_ref(inst))
+                    .collect();
+                let skinned_bufs = self.skinned_instance_pool.upload_skinned(
+                    &self.device,
+                    &self.queue,
+                    &skinned_slices,
+                );
+                for ((gpu_idx, _), inst_buf) in skinned_shadow.iter().zip(skinned_bufs.iter()) {
                     let Some(entry) = self.skinned_gpu_meshes.get(*gpu_idx) else {
                         continue;
                     };
                     shadow_pass.set_bind_group(0, &self.shadow_pass_bind_group, &[]);
                     shadow_pass.set_bind_group(1, &entry.joint_bind_group, &[]);
-                    let inst_buf = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                        label: Some("skinned-shadow-inst"),
-                        contents: bytemuck::cast_slice(&[*inst]),
-                        usage: wgpu::BufferUsages::VERTEX,
-                    });
                     shadow_pass.set_vertex_buffer(0, entry.mesh.vertex_buffer.slice(..));
                     shadow_pass.set_vertex_buffer(1, inst_buf.slice(..));
                     shadow_pass.set_index_buffer(entry.mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
@@ -396,11 +380,7 @@ impl State {
                 timestamp_writes: None,
             });
 
-            if self.camera_2d.is_some() {
-                pass.set_pipeline(&self.render_pipeline_2d);
-            } else {
-                pass.set_pipeline(&self.render_pipeline);
-            }
+            pass.set_pipeline(&self.render_pipeline);
 
             pass.set_bind_group(0, &self.scene_bind_group, &[]);
             pass.set_bind_group(1, self.texture_array.bind_group.as_ref(), &[]);
@@ -416,20 +396,24 @@ impl State {
                 draw_calls += 1;
             }
 
-            if self.camera_2d.is_none() && !skinned_main.is_empty() {
+            if !skinned_main.is_empty() {
                 pass.set_pipeline(&self.skinned_render_pipeline);
                 pass.set_bind_group(0, &self.scene_bind_group, &[]);
                 pass.set_bind_group(1, self.texture_array.bind_group.as_ref(), &[]);
-                for (gpu_idx, inst) in &skinned_main {
+                let skinned_slices: Vec<&[crate::mesh::SkinnedInstanceData]> = skinned_main
+                    .iter()
+                    .map(|(_, inst)| std::slice::from_ref(inst))
+                    .collect();
+                let skinned_bufs = self.skinned_instance_pool.upload_skinned(
+                    &self.device,
+                    &self.queue,
+                    &skinned_slices,
+                );
+                for ((gpu_idx, _), inst_buf) in skinned_main.iter().zip(skinned_bufs.iter()) {
                     let Some(entry) = self.skinned_gpu_meshes.get(*gpu_idx) else {
                         continue;
                     };
                     pass.set_bind_group(2, &entry.joint_bind_group, &[]);
-                    let inst_buf = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                        label: Some("skinned-main-inst"),
-                        contents: bytemuck::cast_slice(&[*inst]),
-                        usage: wgpu::BufferUsages::VERTEX,
-                    });
                     pass.set_vertex_buffer(0, entry.mesh.vertex_buffer.slice(..));
                     pass.set_vertex_buffer(1, inst_buf.slice(..));
                     pass.set_index_buffer(entry.mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
@@ -461,7 +445,7 @@ impl State {
                 &self.queue,
                 &mut enc,
                 &view,
-                is_3d,
+                true,
                 zoom_stability,
                 self.size.width,
                 self.size.height,
@@ -470,9 +454,7 @@ impl State {
             );
         }
 
-        if self.camera_2d.is_none() {
-            self.prev_view_proj = scene_uni.view_proj_stable;
-        }
+        self.prev_view_proj = scene_uni.view_proj_stable;
 
         if let Some((ghost_mesh_idx, ghost_inst)) = ghost_overlay {
             use wgpu::util::DeviceExt;
@@ -514,7 +496,7 @@ impl State {
             }
         }
 
-        if self.camera_2d.is_none() && self.world_bounds_buffer.vertex_count > 0 {
+        if self.world_bounds_buffer.vertex_count > 0 {
             let aspect = self.size.width as f32 / self.size.height as f32;
             let vp = self
                 .camera_to_uniform_at_anchor(self.orbit_view_anchor(), aspect)
@@ -557,7 +539,7 @@ impl State {
         // Gizmo de cámara FP en modo editor: cubito en el ojo + frustum hasta el
         // rectángulo lejano, para visualizar a dónde mirará la cámara al pulsar
         // Play (estilo Godot/Unity al seleccionar una `Camera3D`).
-        if !self.preview_playing && self.camera_2d.is_none() && self.has_play_character() {
+        if !self.preview_playing && self.has_play_character() {
             if let Some((eye, yaw, pitch)) = self.play_character_camera_gizmo_pose() {
                 let aspect = self.size.width as f32 / self.size.height as f32;
                 let frustum_buf = gizmo::build_fps_camera_frustum(
@@ -694,120 +676,12 @@ impl State {
         }
 
         if !self.preview_playing {
-
-            if let Some(cam2d) = &self.camera_2d {
-                let aspect = self.size.width as f32 / self.size.height as f32;
-                let vp = cam2d.view_proj(aspect).to_cols_array_2d();
-                let grid_uni: [[f32; 4]; 9] = [
-                    vp[0],
-                    vp[1],
-                    vp[2],
-                    vp[3],
-                    [1.0, 0.0, 0.0, 0.0],
-                    [0.0, 1.0, 0.0, 0.0],
-                    [0.0, 0.0, 1.0, 0.0],
-                    [0.0, 0.0, 0.0, 1.0],
-                    [-1.0, -1.0, 0.0, 0.0],
-                ];
-                self.queue
-                    .write_buffer(&self.grid_buffer_uni, 0, bytemuck::cast_slice(&grid_uni));
-
-                let mut grd_pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("grid-pass"),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: &view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Load,
-                            store: wgpu::StoreOp::Store,
-                        },
-                    })],
-                    depth_stencil_attachment: None,
-                    occlusion_query_set: None,
-                    timestamp_writes: None,
-                });
-                grd_pass.set_pipeline(&self.grid_pipeline);
-                grd_pass.set_bind_group(0, &self.grid_bind_group, &[]);
-                grd_pass.set_vertex_buffer(0, self.grid_buffer.vertex_buffer.slice(..));
-                grd_pass.draw(0..self.grid_buffer.vertex_count, 0..1);
-                draw_calls += 1;
-            }
-        }
-
-        if !self.preview_playing && self.camera_2d.is_some() && self.tool_overlay_buffer.vertex_count > 0
-        {
-            let mut tool_pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("tool-overlay-pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                occlusion_query_set: None,
-                timestamp_writes: None,
-            });
-            tool_pass.set_pipeline(&self.grid_pipeline);
-            tool_pass.set_bind_group(0, &self.grid_bind_group, &[]);
-            tool_pass.set_vertex_buffer(0, self.tool_overlay_buffer.vertex_buffer.slice(..));
-            tool_pass.draw(0..self.tool_overlay_buffer.vertex_count, 0..1);
-            draw_calls += 1;
-        }
-
-        if let Some(hint_inst) = self.build_snap_hint_instance_2d() {
-            use wgpu::util::DeviceExt;
-            let hint_inst_buf = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("snap-hint-inst-buf"),
-                contents: bytemuck::cast_slice(&[hint_inst]),
-                usage: wgpu::BufferUsages::VERTEX,
-            });
-
-            if let Some(mesh) = self.meshes.get(self.canonical_quad_idx) {
-                let mut hint_pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("snap-hint-pass"),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: &view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Load,
-                            store: wgpu::StoreOp::Store,
-                        },
-                    })],
-                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                        view: &self.depth_view,
-                        depth_ops: Some(wgpu::Operations {
-                            load: wgpu::LoadOp::Load,
-                            store: wgpu::StoreOp::Store,
-                        }),
-                        stencil_ops: None,
-                    }),
-                    occlusion_query_set: None,
-                    timestamp_writes: None,
-                });
-                hint_pass.set_pipeline(&self.render_pipeline_overlay);
-                hint_pass.set_bind_group(0, &self.scene_bind_group, &[]);
-                hint_pass.set_bind_group(1, self.texture_array.bind_group.as_ref(), &[]);
-                hint_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
-                hint_pass.set_vertex_buffer(1, hint_inst_buf.slice(..));
-                hint_pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                hint_pass.draw_indexed(0..mesh.index_count, 0, 0..1);
-                draw_calls += 1;
-            }
-        }
-
-        if !self.preview_playing {
             if let Some(origin) = self.selection_center().filter(|_| self.pivot_edit_mode.is_none())
             {
                 let aspect = self.size.width as f32 / self.size.height as f32;
-                let vp = if let Some(cam2d) = &self.camera_2d {
-                    cam2d.view_proj(aspect).to_cols_array_2d()
-                } else {
-                    self.camera_to_uniform_at_anchor(self.orbit_view_anchor(), aspect)
-                        .view_proj
-                };
+                let vp = self
+                    .camera_to_uniform_at_anchor(self.orbit_view_anchor(), aspect)
+                    .view_proj;
 
                 let gizmo_model = glam::Mat4::from_translation(origin);
 
@@ -862,9 +736,6 @@ impl State {
     fn collect_skinned_draw_instances(&self) -> Vec<(usize, crate::mesh::SkinnedInstanceData)> {
         // Clonable lightweight list for shadow + main pass.
         let mut out = Vec::new();
-        if self.camera_2d.is_some() {
-            return out;
-        }
         for (&id, binding) in &self.model_animation_bindings {
             let Some(t) = self.world.get::<crate::ecs::Transform>(id) else {
                 continue;
@@ -994,44 +865,6 @@ pub(crate) fn build_scene_uniforms_from_view(
         jitter: [jitter[0], jitter[1], 0.0, 0.0],
         shadow_bias,
     }
-}
-
-pub(crate) fn build_scene_uniforms_2d(cam: &Camera2D, size: PhysicalSize<u32>) -> SceneUniforms {
-    let aspect = size.width as f32 / size.height as f32;
-    let view_proj = cam.view_proj(aspect).to_cols_array_2d();
-    let identity = Mat4::IDENTITY.to_cols_array_2d();
-    let p = cam.position();
-    SceneUniforms {
-        view_proj,
-        view_proj_stable: view_proj,
-        prev_view_proj: identity,
-        inv_view_proj: Mat4::from_cols_array_2d(&view_proj)
-            .inverse()
-            .to_cols_array_2d(),
-        cam_pos: [p.x, p.y, p.z, 0.0],
-        light_dir: [0.0, 1.0, 0.0, 1.0],
-        light_color: [1.0, 1.0, 1.0, 0.0],
-        light_view_proj: identity,
-        light_params: [1.0, 1.0, 0.0, 0.0],
-        jitter: [0.0; 4],
-        shadow_bias: [0.0; 4],
-    }
-}
-
-pub(crate) fn is_visible_2d(cam: &Camera2D, pos: GlamVec3, scale: GlamVec3, aspect: f32) -> bool {
-    let half_w = cam.half_h * aspect;
-    let margin = scale.x.abs().max(scale.y.abs()) * 0.5;
-    let min_x = cam.x - half_w - margin;
-    let max_x = cam.x + half_w + margin;
-    let min_y = cam.y - cam.half_h - margin;
-    let max_y = cam.y + cam.half_h + margin;
-
-    let e_min_x = pos.x - scale.x.abs() * 0.5;
-    let e_max_x = pos.x + scale.x.abs() * 0.5;
-    let e_min_y = pos.y - scale.y.abs() * 0.5;
-    let e_max_y = pos.y + scale.y.abs() * 0.5;
-
-    e_max_x >= min_x && e_min_x <= max_x && e_max_y >= min_y && e_min_y <= max_y
 }
 
 pub(crate) fn is_visible_3d(view_proj: &glam::Mat4, center: GlamVec3, radius: f32) -> bool {

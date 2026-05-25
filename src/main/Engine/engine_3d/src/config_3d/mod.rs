@@ -737,7 +737,7 @@ impl State {
         {
             self.sync_directional_light_from_sun();
         }
-        if !self.is_play_controller_active() && self.camera_2d.is_none() {
+        if !self.is_play_controller_active() {
             self.sync_editor_camera_focus();
         }
 

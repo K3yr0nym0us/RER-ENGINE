@@ -8,7 +8,7 @@ use rer_engine_shared::gpu::{init_gpu, EngineGpuProfile, GpuInitError};
 
 use crate::config_3d::physics_3d::PhysicsWorld;
 use crate::config_3d::{Camera, WorldBounds3D};
-use crate::config_compat::{ActiveTool, GridConfig, PhysicsWorld2D};
+use crate::config_compat::{ActiveTool, GridConfig};
 use crate::ecs::{MeshComponent, World};
 use crate::entity_save_meta::EntitySaveRegistry;
 use crate::gizmo;
@@ -382,51 +382,6 @@ impl State {
             cache: None,
         });
 
-        let render_pipeline_2d = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("main-pipeline-2d"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: "vs_main",
-                buffers: &[mesh::Vertex::desc(), mesh::InstanceData::desc()],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: "fs_main",
-                targets: &[
-                    Some(wgpu::ColorTargetState {
-                        format,
-                        blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                        write_mask: wgpu::ColorWrites::ALL,
-                    }),
-                    shadow_mask_target.clone(),
-                    Some(wgpu::ColorTargetState {
-                        format,
-                        blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                        write_mask: wgpu::ColorWrites::ALL,
-                    }),
-                    depth_export_target,
-                    velocity_target,
-                ],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                cull_mode: None,
-                ..Default::default()
-            },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: DEPTH_FORMAT,
-                depth_write_enabled: false,
-                depth_compare: wgpu::CompareFunction::Always,
-                stencil: wgpu::StencilState::default(),
-                bias: wgpu::DepthBiasState::default(),
-            }),
-            multisample: wgpu::MultisampleState::default(),
-            multiview: None,
-            cache: None,
-        });
-
         let render_pipeline_overlay = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("sprite-overlay-pipeline"),
             layout: Some(&pipeline_layout),
@@ -690,7 +645,6 @@ impl State {
         });
 
         let grid_config = GridConfig::default();
-        let grid_buffer = crate::config_compat::build_grid(&device, &grid_config);
         let world_bounds_3d = WorldBounds3D::default();
         let world_bounds_buffer = world_bounds_3d.build_buffer(&device);
         let crosshair_buffer = gizmo::build_crosshair(&device);
@@ -699,7 +653,6 @@ impl State {
 
         let (model_preload_tx, model_preload_rx) =
             crate::config_3d::static_model_cache::create_model_preload_channel();
-
         let taa = crate::taa::TaaPass::new(
             &device,
             format,
@@ -721,7 +674,6 @@ impl State {
                 a: 1.0,
             },
             render_pipeline,
-            render_pipeline_2d,
             render_pipeline_overlay,
             shadow_pipeline,
             _shadow_texture: shadow_texture,
@@ -736,7 +688,6 @@ impl State {
             texture_array,
             tex_layers,
             fallback_layer,
-            canonical_quad_idx: 0,
             hud_quad_mesh,
             camera,
             editor_orbit_target: glam::Vec3::ZERO,
@@ -748,7 +699,6 @@ impl State {
             play_camera_follow_mode: crate::ipc::PlayCameraFollowMode::MoveWithCharacter,
             play_camera_follow_offset: glam::Vec3::ZERO,
             play_camera_follow_offset_local: glam::Vec3::ZERO,
-            camera_2d: None,
             meshes,
             world,
             last_frame: Instant::now(),
@@ -758,7 +708,6 @@ impl State {
             gizmo_bind_group,
             gizmo_buffer_uni,
             physics: PhysicsWorld::new(),
-            physics_2d: PhysicsWorld2D::new(),
             selected_entity: None,
             selected_entities: Vec::new(),
             hovered_entity: None,
@@ -771,7 +720,6 @@ impl State {
             background_path: None,
             grid_config,
             grid_pipeline,
-            grid_buffer,
             grid_bind_group,
             grid_buffer_uni,
             world_bounds_3d,
@@ -859,6 +807,8 @@ impl State {
             shadow_darkness: DEFAULT_SHADOW_DARKNESS,
             scene_instance_pool: crate::engine::types::InstanceBufferPool::new(),
             shadow_instance_pool: crate::engine::types::InstanceBufferPool::new(),
+            skinned_instance_pool: crate::engine::types::InstanceBufferPool::new(),
+            texture_path_layers: HashMap::new(),
             model_assets: std::collections::HashMap::new(),
             model_animation_bindings: std::collections::HashMap::new(),
             active_model_clips: std::collections::HashMap::new(),

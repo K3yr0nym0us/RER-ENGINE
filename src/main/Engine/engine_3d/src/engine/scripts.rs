@@ -145,7 +145,6 @@ impl State {
                         saved.0.x = x;
                         saved.0.y = y;
                     }
-                    self.physics_2d.teleport_entity(id, x, y);
                 }
                 ScriptCmd::Translate { id, dx, dy } => {
                     self.update_entity_facing_from_horizontal(id, dx);
@@ -167,10 +166,6 @@ impl State {
                             "[script/translate] entidad {} SIN entrada en anim_saved_transforms — translate no acumulado",
                             id
                         );
-                    }
-                    let new_pos = self.world.get::<Transform>(id).map(|t| (t.position.x, t.position.y));
-                    if let Some((nx, ny)) = new_pos {
-                        self.physics_2d.teleport_entity(id, nx, ny);
                     }
                 }
                 ScriptCmd::SetScale { id, sx, sy } => {
@@ -205,10 +200,10 @@ impl State {
                 }
                 ScriptCmd::SetPhysics { id, enabled, body_type } => {
                     let already_same = if enabled {
-                        self.physics_2d.has_physics(id)
-                            && self.physics_2d.get_body_type(id) == body_type
+                        self.physics.has_physics(id)
+                            && self.physics.get_body_type(id) == body_type
                     } else {
-                        !self.physics_2d.has_physics(id)
+                        !self.physics.has_physics(id)
                     };
                     if !already_same {
                         self.handle_command(EngineCommand::SetPhysics { id, enabled, body_type });
@@ -217,28 +212,15 @@ impl State {
                 ScriptCmd::MoveEntity { id, speed, dir_x, dir_y } => {
                     self.update_entity_facing_from_horizontal(id, speed * dir_x);
                     if self.preview_playing {
-                        let moved = self.physics_2d.move_physics_entity(
-                            id,
-                            speed,
-                            dir_x,
-                            dir_y,
-                            self.delta_time,
-                        );
-                        if !moved {
-                            let dx = speed * dir_x * self.delta_time;
-                            let dy = speed * dir_y * self.delta_time;
-                            if let Some(t) = self.world.get_mut::<Transform>(id) {
-                                t.position.x += dx;
-                                t.position.y += dy;
-                            }
-                            if let Some(saved) = self.anim_saved_transforms.get_mut(&id) {
-                                saved.0.x += dx;
-                                saved.0.y += dy;
-                            }
-                            log::warn!(
-                                "[script/move_entity] entidad {} sin cuerpo físico activo — aplicado fallback translate",
-                                id
-                            );
+                        let dx = speed * dir_x * self.delta_time;
+                        let dy = speed * dir_y * self.delta_time;
+                        if let Some(t) = self.world.get_mut::<Transform>(id) {
+                            t.position.x += dx;
+                            t.position.y += dy;
+                        }
+                        if let Some(saved) = self.anim_saved_transforms.get_mut(&id) {
+                            saved.0.x += dx;
+                            saved.0.y += dy;
                         }
                     } else {
                         let dx = speed * dir_x * self.delta_time;
@@ -263,31 +245,7 @@ impl State {
                     let facing_sign = if facing_right { 1.0 } else { -1.0 };
                     let dir_x = amount_x.abs() * facing_sign;
 
-                    if self.preview_playing {
-                        let moved = self.physics_2d.move_physics_entity(
-                            id,
-                            speed,
-                            dir_x,
-                            dir_y,
-                            self.delta_time,
-                        );
-                        if !moved {
-                            let dx = speed * dir_x * self.delta_time;
-                            let dy = speed * dir_y * self.delta_time;
-                            if let Some(t) = self.world.get_mut::<Transform>(id) {
-                                t.position.x += dx;
-                                t.position.y += dy;
-                            }
-                            if let Some(saved) = self.anim_saved_transforms.get_mut(&id) {
-                                saved.0.x += dx;
-                                saved.0.y += dy;
-                            }
-                            log::warn!(
-                                "[script/move_entity_facing] entidad {} sin cuerpo físico activo — aplicado fallback translate",
-                                id
-                            );
-                        }
-                    } else {
+                    {
                         let dx = speed * dir_x * self.delta_time;
                         let dy = speed * dir_y * self.delta_time;
                         if let Some(t) = self.world.get_mut::<Transform>(id) {

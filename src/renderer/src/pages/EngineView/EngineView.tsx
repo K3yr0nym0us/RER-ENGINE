@@ -30,11 +30,26 @@ export function EngineView({
   const viewportRef = useRef<HTMLDivElement>(null)
 
   return (
-    <EngineProvider viewportRef={viewportRef} projectType={projectType} gameStyle={gameStyle} initialSave={initialSave}>
+    <EngineProvider 
+      viewportRef={viewportRef} 
+      projectType={projectType} 
+      gameStyle={gameStyle} 
+      initialSave={initialSave}
+    >
       <QuickBuildProvider>
         <ModalProvider>
-          <SceneManagerProvider initialSave={initialSave} projectType={projectType} gameStyle={gameStyle}>
-            <EngineViewInner projectType={projectType} gameStyle={gameStyle} initialSave={initialSave} initialSavePath={initialSavePath} viewportRef={viewportRef} />
+          <SceneManagerProvider 
+            initialSave={initialSave} 
+            projectType={projectType} 
+            gameStyle={gameStyle}
+          >
+            <EngineViewInner 
+              projectType={projectType} 
+              gameStyle={gameStyle} 
+              initialSave={initialSave} 
+              initialSavePath={initialSavePath} 
+              viewportRef={viewportRef} 
+            />
           </SceneManagerProvider>
         </ModalProvider>
       </QuickBuildProvider>
@@ -49,14 +64,19 @@ function EngineViewInner({ projectType, gameStyle, initialSave, initialSavePath,
   initialSavePath?: string | null
   viewportRef: React.RefObject<HTMLDivElement>
 }) {
-  const { handleSave, toggleAutoSave, hasSavedOnce, autoSaveEnabled } = useAutoSave({ projectType, gameStyle, initialSave, initialSavePath })
+  const { 
+    handleSave, 
+    toggleAutoSave, 
+    hasSavedOnce, 
+    autoSaveEnabled 
+  } = useAutoSave({ projectType, gameStyle, initialSave, initialSavePath })
 
   return (
     <div className="app-shell d-flex flex-column">
       <div className="d-flex flex-grow-1 overflow-hidden">
         <SideBarLeft projectType={projectType} gameStyle={gameStyle} />
 
-        <div className="d-flex flex-column flex-fill">
+        <div className="d-flex flex-column flex-fill" style={{ width: '75%' }}>
           <TopBarEngine 
             projectType={projectType}
             handleSave={handleSave}

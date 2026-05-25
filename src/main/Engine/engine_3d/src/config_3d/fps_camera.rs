@@ -26,7 +26,7 @@ pub(crate) fn mesh_yaw_from_camera_and_forward(
 impl State {
     /// Editor 3D (sin play activo): el viewport usa `editor_orbit_target` + `editor_viewport_*`.
     pub(crate) fn uses_editor_viewport_camera(&self) -> bool {
-        self.camera_2d.is_none() && !self.is_play_controller_active()
+        !self.is_play_controller_active()
     }
 
     /// Jugador FP en editor: el transform del mesh no mueve el viewport.
@@ -90,9 +90,6 @@ impl State {
     }
 
     pub(crate) fn pan_editor_viewport(&mut self, dx: f32, dy: f32) {
-        if self.camera_2d.is_some() {
-            return;
-        }
         let offset = self.camera.pan_offset_with_distance(
             self.editor_orbit_target,
             dx,
@@ -181,7 +178,7 @@ impl State {
 
     /// Centra la órbita del editor en la selección (jugador incluido).
     pub(crate) fn sync_editor_camera_focus(&mut self) {
-        if self.camera_2d.is_some() || self.is_play_controller_active() {
+        if self.is_play_controller_active() {
             return;
         }
 
@@ -242,9 +239,6 @@ impl State {
         pitch: f32,
         sync_editor_viewport: bool,
     ) {
-        if self.camera_2d.is_some() {
-            return;
-        }
 
         self.set_play_character_feet_position(Vec3::from_array(position));
         let pitch_clamped = pitch.clamp(
@@ -339,9 +333,6 @@ impl State {
     }
 
     pub(crate) fn apply_follow_character_camera_snap(&mut self) {
-        if self.camera_2d.is_some() {
-            return;
-        }
         let head = self.play_character_head_world();
         let world_offset = Self::follow_offset_world_from_local(
             self.play_camera_follow_offset_local,
@@ -354,9 +345,6 @@ impl State {
     }
 
     pub(crate) fn sync_play_camera_on_player_feet_moved(&mut self, old_feet: Vec3, new_feet: Vec3) {
-        if self.camera_2d.is_some() {
-            return;
-        }
         let delta = new_feet - old_feet;
         if delta.length_squared() < 1e-10 {
             return;
@@ -399,9 +387,6 @@ impl State {
         frustum_distance: Option<f32>,
         camera_follow_mode: Option<crate::ipc::PlayCameraFollowMode>,
     ) {
-        if self.camera_2d.is_some() {
-            return;
-        }
         if let Some(av) = position_axis {
             let mut eye = self.play_camera_eye_position;
             match av.axis {
@@ -444,9 +429,6 @@ impl State {
         frustum_distance: Option<f32>,
         camera_follow_mode: Option<crate::ipc::PlayCameraFollowMode>,
     ) {
-        if self.camera_2d.is_some() {
-            return;
-        }
         self.apply_play_character_saved_view(position, yaw, pitch, true);
         if let Some(fov) = fov_y {
             self.camera.fov_y = fov.clamp(0.1, std::f32::consts::FRAC_PI_2 - 0.01);
@@ -464,7 +446,7 @@ impl State {
 
     /// Emite la vista actual para que el frontend no derive poses en TypeScript.
     pub(crate) fn emit_play_character_view_changed(&self, sync_editor_viewport: bool) {
-        if self.camera_2d.is_some() || !self.has_play_character() {
+        if !self.has_play_character() {
             return;
         }
         let player_id = self.play_character_entity;
@@ -527,9 +509,6 @@ impl State {
     }
 
     pub(crate) fn clamp_play_character_camera_to_bounds(&mut self) {
-        if self.camera_2d.is_some() {
-            return;
-        }
 
         let feet = self
             .world_bounds_3d

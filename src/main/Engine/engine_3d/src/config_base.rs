@@ -3,7 +3,7 @@
 use crate::config_3d::physics_3d::PhysicsWorld;
 use crate::config_3d::mesh_3d::GROUND_PLANE_MESH_EXTENT;
 use crate::config_3d::{Camera, WorldBounds3D};
-use crate::config_compat::{ActiveTool, PhysicsWorld2D};
+use crate::config_compat::ActiveTool;
 use crate::ecs::{EntityId, MeshComponent, NonSelectable, Transform};
 use crate::engine::State;
 use crate::gizmo;
@@ -52,16 +52,8 @@ impl State {
             transform.rotation.w,
         ];
         let scale = transform.scale.to_array();
-        let physics_enabled = if self.camera_2d.is_some() {
-            self.physics_2d.has_physics(id)
-        } else {
-            self.physics.has_physics(id)
-        };
-        let physics_type = if self.camera_2d.is_some() {
-            self.physics_2d.get_body_type(id).to_string()
-        } else {
-            self.physics.get_body_type(id).to_string()
-        };
+        let physics_enabled = self.physics.has_physics(id);
+        let physics_type = self.physics.get_body_type(id).to_string();
         send_event(&EngineEvent::EntitySelected {
             id,
             name,
@@ -78,7 +70,6 @@ impl State {
     pub(crate) fn reset_runtime_scene_3d(&mut self) {
         self.stop_audio_internal();
         self.physics = PhysicsWorld::new();
-        self.physics_2d = PhysicsWorld2D::new();
         self.world.clear();
         self.meshes.clear();
         self.tex_layers.clear();
@@ -89,6 +80,7 @@ impl State {
         self.pending_load_models.clear();
         self.pending_entity_model_replaces.clear();
         self.texture_array.reset(&self.queue);
+        self.texture_path_layers.clear();
         self.reload_snap_hint_assets();
         self.animations.clear();
         self.active_animations.clear();
@@ -109,7 +101,6 @@ impl State {
         self.hovered_gizmo_axis = None;
         self.active_gizmo_axis = None;
         self.ctrl_held = false;
-        self.camera_2d = None;
         self.active_tool = ActiveTool::None;
         self.quick_build_ghost_id = None;
         self.quick_build_preview_path = None;
@@ -231,9 +222,6 @@ impl State {
 
     /// Escala el mesh del suelo (40×40 local) al cuadro de límites del accordion World.
     pub(crate) fn sync_ground_plane_to_world_bounds(&mut self) {
-        if self.camera_2d.is_some() {
-            return;
-        }
         let Some(id) = self.find_ground_entity_id() else {
             return;
         };

@@ -11,8 +11,7 @@
 
 use std::collections::HashMap;
 
-/// Tamaño de celda: unidades de mundo por celda.
-/// Para un juego 2D típico con vista de 40×30, 5.0 → 8×6 celdas.
+/// Tamaño de celda en el plano XZ del mundo 3D (metros).
 const CELL_SIZE: f32 = 5.0;
 
 /// Grid 2D para spatial partitioning.

@@ -278,7 +278,8 @@ pub enum EngineCommand {
     SetTargetFps { fps: u64 },
     /// Estado de la tecla Ctrl enviado desde Electron (ventana overlay no recibe teclado directo).
     SetCtrlHeld { held: bool },
-    /// Restaurar posición y zoom de la cámara 2D ortográfica.
+    /// Restaurar posición y zoom de la cámara 2D ortográfica (ignorado en binario 3D).
+    #[allow(dead_code)]
     SetCamera2d { x: f32, y: f32, half_h: f32 },
     /// FOV vertical de la cámara 3D (radianes).
     SetCameraFov { fov_y: f32 },
@@ -321,14 +322,16 @@ pub enum EngineCommand {
         #[serde(default)]
         preview_blueprint_id: Option<String>,
     },
-    /// Recrear un colisionador de 4 puntos desde datos guardados (restauración de proyecto).
+    /// Recrear un colisionador de 4 puntos (solo 2D; ignorado en binario 3D).
+    #[allow(dead_code)]
     CreateColliderFromPoints {
         points: [[f32; 2]; 4],
         /// true/None: registrar en undo; false: no registrar (carga/restore).
         #[serde(default)]
         track_undo: Option<bool>,
     },
-    /// Crear un área de ejecución de 4 puntos (trigger sin colisión física).
+    /// Crear un área de ejecución de 4 puntos (solo 2D; ignorado en binario 3D).
+    #[allow(dead_code)]
     CreateExecutionAreaFromPoints {
         points: [[f32; 2]; 4],
         /// true/None: registrar en undo; false: no registrar (carga/restore).
@@ -733,6 +736,9 @@ pub enum EngineEvent {
     PivotSelected { frame_path: String, pivot_x: f32, pivot_y: f32 },
     /// Emitido cuando una animación termina (no loop) o se detiene.
     AnimationFinished { entity_id: u32 },
+    /// El array de texturas 1024×256 capas está lleno.
+    #[serde(rename = "texture_array_exhausted")]
+    TextureArrayExhausted { max_layers: u32 },
     /// Clips de animación embebidos en el modelo 3D de una entidad.
     ModelClipsReady {
         id: u32,

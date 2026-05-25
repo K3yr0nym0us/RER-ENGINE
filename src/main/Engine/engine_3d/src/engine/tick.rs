@@ -171,11 +171,7 @@ impl State {
     }
 
     pub(crate) fn update_snap_hint_alpha(&mut self) {
-        let target = if self.show_snap_hint && !self.preview_playing && self.camera_2d.is_some() {
-            1.0_f32
-        } else {
-            0.0_f32
-        };
+        let target = 0.0_f32;
         let k = if target > self.snap_hint_alpha {
             4.2_f32
         } else {
@@ -189,10 +185,7 @@ impl State {
     }
 
     pub(crate) fn update_fps_exit_hint_alpha(&mut self) {
-        let target = if self.preview_playing
-            && self.camera_2d.is_none()
-            && self.play_character_entity.is_some()
-        {
+        let target = if self.preview_playing && self.play_character_entity.is_some() {
             1.0_f32
         } else {
             0.0_f32
@@ -207,66 +200,6 @@ impl State {
         if (self.fps_exit_hint_alpha - target).abs() < 0.001 {
             self.fps_exit_hint_alpha = target;
         }
-    }
-
-    pub(crate) fn build_snap_hint_instance_2d(&self) -> Option<mesh::InstanceData> {
-        if self.snap_hint_alpha <= 0.003 || self.preview_playing {
-            return None;
-        }
-        let (layer, img_w, img_h) = if self.snap_locale == "en" {
-            let layer = self.snap_hint_layer_en.or(self.snap_hint_layer)?;
-            let (w, h) = if self.snap_hint_layer_en.is_some() {
-                self.snap_hint_size_en
-            } else {
-                self.snap_hint_size
-            };
-            (layer, w, h)
-        } else {
-            let layer = self.snap_hint_layer.or(self.snap_hint_layer_en)?;
-            let (w, h) = if self.snap_hint_layer.is_some() {
-                self.snap_hint_size
-            } else {
-                self.snap_hint_size_en
-            };
-            (layer, w, h)
-        };
-        let Some(cam) = &self.camera_2d else {
-            return None;
-        };
-        if self.size.width == 0 || self.size.height == 0 || img_w <= 0.0 || img_h <= 0.0 {
-            return None;
-        }
-
-        let aspect = self.size.width as f32 / self.size.height as f32;
-        let half_w = cam.half_h * aspect;
-        let world_per_px_x = (half_w * 2.0) / self.size.width as f32;
-        let world_per_px_y = (cam.half_h * 2.0) / self.size.height as f32;
-
-        let margin_px = 18.0_f32;
-        let max_width_px = (self.size.width as f32 * 0.22).clamp(120.0, 320.0);
-        let scale_px = (max_width_px / img_w).min(1.0);
-        let draw_w_px = img_w * scale_px;
-        let draw_h_px = img_h * scale_px;
-
-        let draw_w_world = draw_w_px * world_per_px_x;
-        let draw_h_world = draw_h_px * world_per_px_y;
-        let margin_x_world = margin_px * world_per_px_x;
-        let margin_y_world = margin_px * world_per_px_y;
-
-        let a = self.snap_hint_alpha.clamp(0.0, 1.0);
-        let eased_alpha = a * a * (3.0 - 2.0 * a);
-        let scale_in = 0.92 + 0.08 * eased_alpha;
-        let slide_px = (1.0 - eased_alpha) * 14.0;
-
-        let center_x = cam.x - half_w + margin_x_world + draw_w_world * 0.5;
-        let center_y =
-            cam.y + cam.half_h - margin_y_world - draw_h_world * 0.5 - slide_px * world_per_px_y;
-        let model = Mat4::from_translation(glam::vec3(center_x, center_y, 0.9))
-            * Mat4::from_scale(glam::vec3(draw_w_world * scale_in, draw_h_world * scale_in, 1.0));
-        let mut inst = mesh::InstanceData::new(model, 0.0, layer);
-        inst.flag_pad[1] = eased_alpha;
-        inst.flag_pad[2] = mesh::RENDER_KIND_HUD_OVERLAY;
-        Some(inst)
     }
 
     /// Tooltip «Esc para salir del play» en primera persona 3D (esquina inferior izquierda).
@@ -344,22 +277,6 @@ impl State {
             .and_then(|id| self.world.get::<Transform>(id).map(|t| t.position))
     }
 
-    /// Sincroniza `anim_saved_transforms` desde la posición actual del `Transform`.
-    pub(crate) fn sync_physics_anim_origins(&mut self) {
-        let ids: Vec<u32> = self.anim_saved_transforms.keys().copied().collect();
-        for id in ids {
-            if self.physics_2d.has_physics(id) {
-                if let Some(t) = self.world.get::<Transform>(id) {
-                    let (px, py) = (t.position.x, t.position.y);
-                    if let Some(saved) = self.anim_saved_transforms.get_mut(&id) {
-                        saved.0.x = px;
-                        saved.0.y = py;
-                    }
-                }
-            }
-        }
-    }
-
     pub fn update(&mut self) {
         let now = Instant::now();
         self.delta_time = now.duration_since(self.last_frame).as_secs_f32();
@@ -371,13 +288,9 @@ impl State {
         if now.duration_since(self.metrics_last_emit) >= std::time::Duration::from_secs(1) {
             let elapsed_secs = now.duration_since(self.metrics_last_emit).as_secs_f32();
             let fps = self.metrics_frame_count as f32 / elapsed_secs;
-            let physics_bodies = if self.camera_2d.is_some() {
-                self.physics_2d.body_count()
-            } else {
-                self.physics.body_count()
-            };
+            let physics_bodies = self.physics.body_count();
             let (play_character_position, play_character_yaw, play_character_pitch) =
-                if self.camera_2d.is_none() && self.play_character_entity.is_some() {
+                if self.play_character_entity.is_some() {
                     (
                         Some(self.play_character_feet_position().to_array()),
                         Some(self.camera.yaw),
@@ -403,23 +316,14 @@ impl State {
             send_event(&EngineEvent::AutosaveTick);
             self.autosave_last_tick = now;
         }
-        if self.camera_2d.is_some() {
-            self.update_scripts();
-            if self.preview_playing {
-                self.physics_2d.step(self.delta_time, &mut self.world);
-                self.sync_physics_anim_origins();
-                self.update_execution_areas_2d();
-            }
-        } else {
-            self.update_scripts();
-            if self.preview_playing {
-                let skip_sync = self
-                    .play_character_entity
-                    .map(|id| vec![id])
-                    .unwrap_or_default();
-                self.physics
-                    .step(self.delta_time, &mut self.world, &skip_sync);
-            }
+        self.update_scripts();
+        if self.preview_playing {
+            let skip_sync = self
+                .play_character_entity
+                .map(|id| vec![id])
+                .unwrap_or_default();
+            self.physics
+                .step(self.delta_time, &mut self.world, &skip_sync);
         }
     }
 }

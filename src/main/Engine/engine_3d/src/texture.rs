@@ -44,6 +44,7 @@ impl TextureArray {
     }
 
     pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, bgl: &wgpu::BindGroupLayout) -> Self {
+        let mip_levels = mip_level_count(Self::TEXTURE_SIZE);
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("texture-array"),
             size: wgpu::Extent3d {
@@ -51,7 +52,7 @@ impl TextureArray {
                 height:                Self::TEXTURE_SIZE,
                 depth_or_array_layers: Self::MAX_LAYERS,
             },
-            mip_level_count: 1,
+            mip_level_count: mip_levels,
             sample_count:    1,
             dimension:       wgpu::TextureDimension::D2,
             format:          wgpu::TextureFormat::Rgba8UnormSrgb,
@@ -133,29 +134,71 @@ impl TextureArray {
     }
 
     fn write_layer(&self, queue: &wgpu::Queue, rgba: &[u8], layer: TextureLayer) {
-        let w = self.width;
-        let h = self.height;
-        debug_assert_eq!(rgba.len(), (w * h * 4) as usize);
-        queue.write_texture(
-            wgpu::ImageCopyTexture {
-                texture:   &self.texture,
-                mip_level: 0,
-                origin:    wgpu::Origin3d { x: 0, y: 0, z: layer },
-                aspect:    wgpu::TextureAspect::All,
-            },
-            rgba,
-            wgpu::ImageDataLayout {
-                offset:         0,
-                bytes_per_row:  Some(4 * w),
-                rows_per_image: Some(h),
-            },
-            wgpu::Extent3d {
-                width:                 w,
-                height:                h,
-                depth_or_array_layers: 1,
-            },
-        );
+        let mips = generate_mip_chain(rgba, self.width, self.height);
+        for (level, mip_data) in mips.iter().enumerate() {
+            let mip_w = (self.width >> level).max(1);
+            let mip_h = (self.height >> level).max(1);
+            queue.write_texture(
+                wgpu::ImageCopyTexture {
+                    texture:   &self.texture,
+                    mip_level: level as u32,
+                    origin:    wgpu::Origin3d {
+                        x: 0,
+                        y: 0,
+                        z: layer,
+                    },
+                    aspect:    wgpu::TextureAspect::All,
+                },
+                mip_data,
+                wgpu::ImageDataLayout {
+                    offset:         0,
+                    bytes_per_row:  Some(4 * mip_w),
+                    rows_per_image: Some(mip_h),
+                },
+                wgpu::Extent3d {
+                    width:                 mip_w,
+                    height:                mip_h,
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
     }
+}
+
+fn mip_level_count(size: u32) -> u32 {
+    let mut levels = 1u32;
+    let mut s = size;
+    while s > 1 {
+        s /= 2;
+        levels += 1;
+    }
+    levels
+}
+
+fn generate_mip_chain(base: &[u8], base_w: u32, base_h: u32) -> Vec<Vec<u8>> {
+    let mut chain = vec![base.to_vec()];
+    let mut cw = base_w;
+    let mut ch = base_h;
+    let mut current = chain[0].clone();
+    while cw > 1 || ch > 1 {
+        let nw = (cw / 2).max(1);
+        let nh = (ch / 2).max(1);
+        if let Some(img) = image::RgbaImage::from_raw(cw, ch, current) {
+            current = image::imageops::resize(
+                &img,
+                nw,
+                nh,
+                image::imageops::FilterType::Triangle,
+            )
+            .into_raw();
+            cw = nw;
+            ch = nh;
+            chain.push(current.clone());
+        } else {
+            break;
+        }
+    }
+    chain
 }
 
 fn solid_white_rgba() -> Vec<u8> {

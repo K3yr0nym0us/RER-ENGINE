@@ -2,7 +2,7 @@ use crate::ecs::Transform;
 use crate::engine::State;
 use crate::ipc::{
     send_event, EngineEvent, SaveAnimationFrameSnapshot,
-    SaveAnimationSnapshot, SaveAssetRefSnapshot, SaveCamera2dSnapshot, SaveEntitySnapshot,
+    SaveAnimationSnapshot, SaveAssetRefSnapshot, SaveEntitySnapshot,
     SavePlayerTransformSnapshot, SaveSceneSnapshotPayload, SaveScriptSnapshot, SaveWorldSnapshot,
 };
 use crate::engine::AnimationState;
@@ -141,24 +141,12 @@ impl State {
 
     let player_transform = player_id.and_then(|_| self.build_player_transform_snapshot());
 
-    let camera2d = self.camera_2d.as_ref().map(|c| SaveCamera2dSnapshot {
-      x: c.x,
-      y: c.y,
-      half_h: c.half_h,
-    });
+    let camera2d = None;
 
     SaveSceneSnapshotPayload {
       world: SaveWorldSnapshot {
-        world_width: if self.camera_2d.is_some() {
-            self.grid_config.world_width
-        } else {
-            self.world_bounds_3d.width
-        },
-        world_height: if self.camera_2d.is_some() {
-            self.grid_config.world_height
-        } else {
-            self.world_bounds_3d.height
-        },
+        world_width: self.world_bounds_3d.width,
+        world_height: self.world_bounds_3d.height,
         world_depth: self.world_bounds_3d.depth,
         grid_visible: self.grid_config.visible,
         grid_cell_size: self.grid_config.cell_size,
@@ -172,14 +160,7 @@ impl State {
       entities,
       player_transform,
       camera2d,
-      sprites: self
-        .sprite_store
-        .iter()
-        .map(|(path, (name, _, _))| SaveAssetRefSnapshot {
-          name: name.clone(),
-          path: path.clone(),
-        })
-        .collect(),
+      sprites: Vec::new(),
       models: self
         .model_store
         .iter()

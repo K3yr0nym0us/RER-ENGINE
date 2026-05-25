@@ -135,6 +135,32 @@ impl InstanceBufferPool {
         }
         &self.buffers[..count]
     }
+
+    /// Igual que `upload` pero para `SkinnedInstanceData` (pipeline skinned).
+    pub fn upload_skinned(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        batches: &[&[crate::mesh::SkinnedInstanceData]],
+    ) -> &[wgpu::Buffer] {
+        let stride = std::mem::size_of::<crate::mesh::SkinnedInstanceData>() as u64;
+        let count = batches.len();
+        while self.buffers.len() < count {
+            let cap = stride * 64;
+            self.buffers.push(create_instance_buffer(device, cap));
+            self.capacities.push(cap);
+        }
+        for (i, instances) in batches.iter().enumerate() {
+            let bytes = (instances.len() as u64).max(1) * stride;
+            if self.capacities[i] < bytes {
+                let cap = bytes.next_power_of_two().max(stride * 64);
+                self.buffers[i] = create_instance_buffer(device, cap);
+                self.capacities[i] = cap;
+            }
+            queue.write_buffer(&self.buffers[i], 0, bytemuck::cast_slice(instances));
+        }
+        &self.buffers[..count]
+    }
 }
 
 fn create_instance_buffer(device: &wgpu::Device, size: u64) -> wgpu::Buffer {

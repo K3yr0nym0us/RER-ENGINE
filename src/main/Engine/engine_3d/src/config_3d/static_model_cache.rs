@@ -184,10 +184,13 @@ impl State {
                 &part.indices,
                 &format!("preload-{i}"),
             ));
-            let layer = self
-                .texture_array
-                .pack(&self.queue, &part.rgba, part.width, part.height);
-            self.tex_layers.push(layer);
+            let cache_key = format!("{path}::part{i}");
+            self.pack_texture_layer(
+                Some(&cache_key),
+                &part.rgba,
+                part.width,
+                part.height,
+            );
             cached_parts.push(CachedStaticModelPart {
                 mesh_idx,
                 tex_idx,
@@ -325,10 +328,13 @@ impl State {
                 &part.indices,
                 &format!("sync-{i}"),
             ));
-            let layer = self
-                .texture_array
-                .pack(&self.queue, &part.rgba, part.width, part.height);
-            self.tex_layers.push(layer);
+            let cache_key = format!("{key}::part{i}");
+            self.pack_texture_layer(
+                Some(&cache_key),
+                &part.rgba,
+                part.width,
+                part.height,
+            );
             cached_parts.push(CachedStaticModelPart {
                 mesh_idx,
                 tex_idx,

@@ -33,13 +33,6 @@ pub fn zoom_stability_distance(distance: f32) -> f32 {
     1.0 - t * 0.55
 }
 
-/// Estabilidad temporal según zoom 2D ortográfico (`half_h` mayor = más lejos).
-pub fn zoom_stability_half_h(half_h: f32) -> f32 {
-    const REF: f32 = 3.5;
-    const MIN: f32 = 0.08;
-    (REF / half_h.max(0.1)).clamp(MIN, 1.0)
-}
-
 /// Jitter subpíxel Halton (2, 3) centrado en [-0.5, 0.5].
 pub fn halton_jitter(frame_index: u32) -> [f32; 2] {
     fn halton(mut index: u32, base: u32) -> f32 {
@@ -602,7 +595,7 @@ impl TaaPass {
         inv_view_proj: [[f32; 4]; 4],
         prev_view_proj: [[f32; 4]; 4],
     ) {
-        if !shadows_enabled || !self.enabled {
+        if !shadows_enabled {
             self.present_scene(
                 device,
                 queue,
@@ -618,10 +611,12 @@ impl TaaPass {
             return;
         }
 
-        self.resolve_shadow_mask(device, queue, encoder, zoom_stability, width, height);
+        if self.enabled {
+            self.resolve_shadow_mask(device, queue, encoder, zoom_stability, width, height);
+        }
         self.run_lit_composite(device, queue, encoder, shadow_darkness, true);
 
-        let use_scene_taa = self.scene_taa_enabled;
+        let use_scene_taa = self.enabled && self.scene_taa_enabled;
         if use_scene_taa {
             self.resolve_scene_soft(
                 device,
@@ -657,9 +652,10 @@ impl TaaPass {
         shadow_darkness: f32,
         shadows_enabled: bool,
     ) {
-        let bind_group = if shadows_enabled {
+        let bind_group = if shadows_enabled && self.enabled {
             &self.lit_composite_bind_groups[self.shadow_history_index as usize]
         } else {
+            // Sin TAA de sombra: máscara cruda del MRT (índice 2).
             &self.lit_composite_bind_groups[2]
         };
 
