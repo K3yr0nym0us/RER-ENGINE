@@ -552,6 +552,8 @@ export interface EngineInternalRefs {
 	pendingSpawnKindRef: MutableRefObject<EntityMeta['kind'] | null>
 	pendingSpawnCategoryRef: MutableRefObject<EntityCategory | null>
 	pendingModelLoadQueueRef: MutableRefObject<Array<{ modelPath: string; pending: PendingRestore }>>
+	/** Restore pendiente por cada `spawn_cached_model` durante burst load (orden FIFO). */
+	pendingBurstSpawnRestoreRef: MutableRefObject<PendingRestore[]>
 	camera2dRef: MutableRefObject<Camera2dState | null>
 	mainPlayerHandled: MutableRefObject<boolean>
 	playerRemoved: MutableRefObject<boolean>
@@ -608,6 +610,7 @@ export interface EngineContextValue extends EngineState {
 	pendingSpawnKindRef: MutableRefObject<EntityMeta['kind'] | null>
 	pendingSpawnCategoryRef: MutableRefObject<EntityCategory | null>
 	pendingModelLoadQueueRef: MutableRefObject<Array<{ modelPath: string; pending: PendingRestore }>>
+	pendingBurstSpawnRestoreRef: MutableRefObject<PendingRestore[]>
 	mainPlayerHandled: MutableRefObject<boolean>
 	camera2dRef: MutableRefObject<Camera2dState | null>
 	send: (cmd: object) => void

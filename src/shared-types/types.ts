@@ -67,7 +67,7 @@ export function isGroundPath(p: string | null | undefined): boolean {
   return entityPathMarker(p) === '[Ground]'
 }
 
-export type EntityCategory = 'environment'
+export type EntityCategory = 'environment' | 'object'
 
 export function isPlayerEntity(
   id: number,
@@ -282,6 +282,7 @@ export interface EngineCommand {
     | 'resize'
     | 'set_bounds'
     | 'load_model'
+    | 'spawn_cached_model'
     | 'replace_entity_model'
     | 'set_transform'
     | 'set_entity_name'
@@ -370,6 +371,8 @@ export interface EngineSaveEntitySnapshot {
   scripts?:         SavedEntity['scripts']
   control_bindings?: SavedEntity['control_bindings']
   visual_model_path?: string
+  blueprint_id?: string
+  entity_category?: EntityCategory
 }
 
 /** Escena activa exportada por el motor (`export_save_snapshot`). */

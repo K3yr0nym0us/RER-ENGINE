@@ -11,6 +11,7 @@ type SceneBurstRefs = Pick<
 	EngineInternalRefs,
 	| 'pendingRestoresRef'
 	| 'pendingModelLoadQueueRef'
+	| 'pendingBurstSpawnRestoreRef'
 	| 'pendingPlayCharacterViewRef'
 	| 'mainPlayerHandled'
 	| 'sceneBurstAwaitingPlayerViewRef'
@@ -56,6 +57,89 @@ export function takePendingModelLoadByPath(
 	const idx = queue.findIndex((item) => pathsMatchForBurstRestore(item.modelPath, loadedPath));
 	if (idx < 0) return null;
 	return queue.splice(idx, 1)[0] ?? null;
+}
+
+export function buildSpawnCachedModelCommand(
+	modelPath: string,
+	pending: PendingRestore,
+) {
+	const transform = pending.transform ?? {
+		position: [0, 0, 0] as [number, number, number],
+		rotation: [0, 0, 0, 1] as [number, number, number, number],
+		scale: [1, 1, 1] as [number, number, number],
+	};
+	return {
+		cmd: 'spawn_cached_model' as const,
+		path: modelPath,
+		name: pending.name,
+		position: transform.position,
+		rotation: transform.rotation ?? [0, 0, 0, 1],
+		scale: transform.scale,
+		...(pending.entityCategory ? { entity_category: pending.entityCategory } : {}),
+		...(pending.blueprintId ? { blueprint_id: pending.blueprintId } : {}),
+		physics_enabled: pending.physicsEnabled ?? false,
+		physics_type: pending.physicsType ?? 'static',
+	};
+}
+
+export function takePendingCachedModelSpawnsForPath(
+	queue: Array<{ modelPath: string; pending: PendingRestore }>,
+	loadedPath: string,
+): Array<{ modelPath: string; pending: PendingRestore }> {
+	const matched: Array<{ modelPath: string; pending: PendingRestore }> = [];
+	const remaining: typeof queue = [];
+	for (const item of queue) {
+		if (pathsMatchForBurstRestore(item.modelPath, loadedPath)) {
+			matched.push(item);
+		} else {
+			remaining.push(item);
+		}
+	}
+	queue.length = 0;
+	queue.push(...remaining);
+	return matched;
+}
+
+export function hasQueuedCachedModelSpawns(
+	queue: Array<{ modelPath: string; pending: PendingRestore }>,
+	loadedPath: string,
+): boolean {
+	return queue.some((item) => pathsMatchForBurstRestore(item.modelPath, loadedPath));
+}
+
+export function flushPendingCachedModelSpawnsForPath(
+	loadedPath: string,
+	queue: Array<{ modelPath: string; pending: PendingRestore }>,
+	sendEngine: (cmd: ReturnType<typeof buildSpawnCachedModelCommand>) => void,
+	refs: Pick<
+		EngineInternalRefs,
+		'sceneBurstPendingOpsRef' | 'pendingBurstSpawnRestoreRef'
+	>,
+	burstLoad: boolean,
+) {
+	const spawns = takePendingCachedModelSpawnsForPath(queue, loadedPath);
+	for (const item of spawns) {
+		if (burstLoad) trackSceneBurstOp(refs);
+		refs.pendingBurstSpawnRestoreRef.current.push(item.pending);
+		sendEngine(buildSpawnCachedModelCommand(item.modelPath, item.pending));
+	}
+}
+
+export function collectUncachedBurstModelPaths(
+	queuedPaths: string[],
+	preloadedPaths: string[],
+): Map<string, string> {
+	const extra = new Map<string, string>();
+	for (const queuedPath of queuedPaths) {
+		if (preloadedPaths.some((path) => pathsMatchForBurstRestore(path, queuedPath))) {
+			continue;
+		}
+		if ([...extra.keys()].some((path) => pathsMatchForBurstRestore(path, queuedPath))) {
+			continue;
+		}
+		extra.set(queuedPath, modelPathBasename(queuedPath));
+	}
+	return extra;
 }
 
 export function takePendingRestoreByPath(
@@ -107,8 +191,8 @@ function syncBlockingLoadOverlay(
 	dispatch({ type: 'SET_SCENE_IMPORT_LOADING', payload: stillBusy });
 	if (!stillBusy) {
 		setTimeout(() => {
-			window.electronAPI?.restoreEngineViewport?.();
 			reportBounds();
+			window.electronAPI?.restoreEngineViewport?.();
 		}, 0);
 	}
 }
@@ -241,11 +325,17 @@ export function needsSceneBurstLoad(
 export function beginSceneBurstLoad(
 	dispatch: Dispatch<EngineAction>,
 	sceneBurstLoadInProgressRef: MutableRefObject<boolean>,
-	refs?: Pick<EngineInternalRefs, 'sceneBurstPendingOpsRef'>,
+	refs?: Pick<
+		EngineInternalRefs,
+		'sceneBurstPendingOpsRef' | 'pendingBurstSpawnRestoreRef'
+	>,
 ) {
 	if (sceneBurstLoadInProgressRef.current) return;
 	sceneBurstLoadInProgressRef.current = true;
-	if (refs) refs.sceneBurstPendingOpsRef.current = 0;
+	if (refs) {
+		refs.sceneBurstPendingOpsRef.current = 0;
+		refs.pendingBurstSpawnRestoreRef.current = [];
+	}
 	dispatch({ type: 'SET_SCENE_IMPORT_LOADING', payload: true });
 	window.electronAPI?.hideEngineViewport?.();
 }
@@ -273,6 +363,8 @@ export function endSceneBurstLoad(
 export function hasPendingSceneBurstWork(refs: SceneBurstRefs): boolean {
 	if (refs.sceneBurstPendingOpsRef.current > 0) return true;
 	if (refs.sceneBurstPendingColliderCountRef.current > 0) return true;
+	if (refs.pendingModelLoadQueueRef.current.length > 0) return true;
+	if (refs.pendingBurstSpawnRestoreRef.current.length > 0) return true;
 	return false;
 }
 
@@ -285,25 +377,7 @@ export function tryEndSceneBurstLoad(
 	reportBounds: () => void,
 ) {
 	if (!sceneBurstLoadInProgressRef.current) return;
-	if (hasPendingSceneBurstWork(refs)) {
-		if (refs.sceneBurstPendingOpsRef.current === 0) {
-			const orphanModels = refs.pendingModelLoadQueueRef.current.length;
-			const orphanRestores = [...refs.pendingRestoresRef.current.entries()]
-				.filter(([, q]) => q.length > 0)
-				.map(([k, q]) => `${k}(${q.length})`);
-			if (orphanModels > 0 || orphanRestores.length > 0) {
-				console.warn(
-					'[burst_load] colas huérfanas sin contador:',
-					{ orphanModels, orphanRestores },
-				);
-				refs.pendingModelLoadQueueRef.current = [];
-				for (const [key, queue] of refs.pendingRestoresRef.current.entries()) {
-					if (!key.startsWith('[')) queue.length = 0;
-				}
-			}
-		}
-		if (hasPendingSceneBurstWork(refs)) return;
-	}
+	if (hasPendingSceneBurstWork(refs)) return;
 	endSceneBurstLoad(
 		dispatch,
 		sceneBurstLoadInProgressRef,

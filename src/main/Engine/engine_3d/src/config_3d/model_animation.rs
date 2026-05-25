@@ -22,7 +22,7 @@ pub(crate) struct ModelAnimationBinding {
     pub asset_path: String,
     /// Índices en `skinned_gpu_meshes` (una entrada por pieza del asset).
     pub part_gpu_indices: Vec<usize>,
-    pub uv_rect: [f32; 4],
+    pub tex_layer: crate::texture::TextureLayer,
 }
 
 #[derive(Clone)]
@@ -161,11 +161,7 @@ impl State {
             .get::<crate::ecs::MeshComponent>(id)
             .map(|mc| mc.tex_idx)
             .unwrap_or(0);
-        let uv_rect = self
-            .uv_rects
-            .get(tex_idx)
-            .copied()
-            .unwrap_or(self.fallback_uv);
+        let tex_layer = self.texture_layer_for(tex_idx);
 
         let joint_layout = self
             .joint_bind_group_layout
@@ -203,12 +199,12 @@ impl State {
             part_gpu_indices.push(gpu_idx);
         }
 
-        // La textura ya está en el atlas vía MeshComponent / uv_rect; no reempacar aquí.
+        // La textura ya está en el array vía MeshComponent / tex_layers; no reempacar aquí.
 
         let binding = ModelAnimationBinding {
             asset_path: path.to_string(),
             part_gpu_indices,
-            uv_rect,
+            tex_layer,
         };
         self.model_animation_bindings.insert(id, binding.clone());
 

@@ -44,10 +44,10 @@ pub struct State {
     /// Solo uniformes; evita leer el shadow map mientras se escribe en el pase de sombras.
     pub(crate) shadow_pass_bind_group: wgpu::BindGroup,
     pub(crate) hud_scene_bind_group: wgpu::BindGroup,
-    pub(crate) atlas: crate::texture::TextureAtlas,
-    pub(crate) uv_rects: Vec<[f32; 4]>,
-    pub(crate) fallback_uv: [f32; 4],
-    pub(crate) static_tex_cache: std::collections::HashMap<String, [f32; 4]>,
+    pub(crate) texture_array: crate::texture::TextureArray,
+    /// `tex_idx` de `MeshComponent` → capa en `texture_array`.
+    pub(crate) tex_layers: Vec<crate::texture::TextureLayer>,
+    pub(crate) fallback_layer: crate::texture::TextureLayer,
     pub(crate) canonical_quad_idx: usize,
     /// Quad para tooltips en pantalla (HUD); no usar `meshes[0]` (suelo).
     pub(crate) hud_quad_mesh: Mesh,
@@ -138,17 +138,17 @@ pub struct State {
     pub(crate) play_session_body_yaw_baseline: f32,
     pub(crate) play_session_camera_yaw_baseline: f32,
     pub(crate) tool_overlay_buffer: GizmoBuffer,
-    pub(crate) snap_hint_uv: Option<[f32; 4]>,
+    pub(crate) snap_hint_layer: Option<crate::texture::TextureLayer>,
     pub(crate) snap_hint_size: (f32, f32),
-    pub(crate) snap_hint_uv_en: Option<[f32; 4]>,
+    pub(crate) snap_hint_layer_en: Option<crate::texture::TextureLayer>,
     pub(crate) snap_hint_size_en: (f32, f32),
     pub(crate) snap_locale: String,
     pub(crate) show_snap_hint: bool,
     pub(crate) snap_hint_alpha: f32,
     /// Tooltip «pulsa Esc para salir» en play FPS 3D.
-    pub(crate) fps_exit_hint_uv: Option<[f32; 4]>,
+    pub(crate) fps_exit_hint_layer: Option<crate::texture::TextureLayer>,
     pub(crate) fps_exit_hint_size: (f32, f32),
-    pub(crate) fps_exit_hint_uv_en: Option<[f32; 4]>,
+    pub(crate) fps_exit_hint_layer_en: Option<crate::texture::TextureLayer>,
     pub(crate) fps_exit_hint_size_en: (f32, f32),
     pub(crate) fps_exit_hint_alpha: f32,
     pub(crate) collider_entities: Vec<EntityId>,
@@ -158,12 +158,9 @@ pub struct State {
     pub pivot_edit_mode: Option<(u32, String, u32, u32)>,
     pub logical_area_mode: Option<u32>,
     pub(crate) audio_slot: Option<AudioSlot>,
-    pub(crate) anim_texture_cache: std::collections::HashMap<String, ([f32; 4], u32, u32)>,
-    pub(crate) anim_overrides: std::collections::HashMap<usize, [f32; 4]>,
     pub(crate) animations: HashMap<u32, HashMap<String, AnimationState>>,
     pub(crate) active_animations: HashMap<u32, ActiveAnimation>,
     pub(crate) default_animation_by_entity: HashMap<u32, String>,
-    pub(crate) anim_flip_overrides: HashMap<u32, bool>,
     pub(crate) entity_facing_right: HashMap<u32, bool>,
     pub(crate) script_engine: ScriptEngine,
     pub(crate) control_bindings_by_entity: HashMap<u32, crate::ipc::ControlBindingsData>,
@@ -176,6 +173,8 @@ pub struct State {
     pub(crate) model_preload_tx: crate::config_3d::static_model_cache::ModelPreloadTx,
     pub(crate) model_preload_inflight: std::collections::HashSet<String>,
     pub(crate) pending_load_models: Vec<crate::config_3d::static_model_cache::PendingLoadModel>,
+    pub(crate) pending_entity_model_replaces:
+        Vec<crate::config_3d::static_model_cache::PendingEntityModelReplace>,
     pub(crate) sound_store: HashMap<String, String>,
     pub(crate) background_store: HashMap<String, String>,
     pub(crate) undo_stack: Vec<UndoAction>,
@@ -214,6 +213,13 @@ pub struct State {
 }
 
 impl State {
+    pub(crate) fn texture_layer_for(&self, tex_idx: usize) -> crate::texture::TextureLayer {
+        self.tex_layers
+            .get(tex_idx)
+            .copied()
+            .unwrap_or(self.fallback_layer)
+    }
+
     pub(crate) fn is_entity_name_taken(&self, name: &str, except_id: Option<u32>) -> bool {
         let target = name.trim().to_lowercase();
         if target.is_empty() {

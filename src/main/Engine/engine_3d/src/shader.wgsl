@@ -21,7 +21,7 @@ var t_shadow: texture_depth_2d;
 @group(0) @binding(2)
 var s_shadow: sampler_comparison;
 
-@group(1) @binding(0) var t_albedo: texture_2d<f32>;
+@group(1) @binding(0) var t_albedo: texture_2d_array<f32>;
 @group(1) @binding(1) var s_albedo: sampler;
 
 struct VertexInput {
@@ -36,7 +36,7 @@ struct InstanceInput {
     @location(5) model_2  : vec4<f32>,
     @location(6) model_3  : vec4<f32>,
     @location(7) flag_pad : vec4<f32>,
-    @location(8) uv_rect  : vec4<f32>,
+    @location(8) tex_layer_pad : vec4<f32>,
 }
 
 struct VertexOutput {
@@ -47,7 +47,7 @@ struct VertexOutput {
     @location(3) flag            : f32,
     @location(4) alpha_mul       : f32,
     @location(5) render_kind     : f32,
-    @location(6) uv_center       : vec2<f32>,
+    @location(6) tex_layer       : u32,
     @location(7) prev_clip_pos     : vec4<f32>,
     @location(8) curr_stable_clip  : vec4<f32>,
 }
@@ -120,11 +120,11 @@ fn vs_main(in: VertexInput, inst: InstanceInput) -> VertexOutput {
     out.clip_pos     = u.view_proj * world_pos4;
     out.world_pos    = world_pos;
     out.world_normal = normalize((model * vec4<f32>(in.normal, 0.0)).xyz);
-    out.uv           = inst.uv_rect.xy + in.uv * (inst.uv_rect.zw - inst.uv_rect.xy);
+    out.uv           = in.uv;
     out.flag         = inst.flag_pad.x;
     out.alpha_mul    = inst.flag_pad.y;
     out.render_kind  = inst.flag_pad.z;
-    out.uv_center    = (inst.uv_rect.xy + inst.uv_rect.zw) * 0.5;
+    out.tex_layer    = u32(inst.tex_layer_pad.x);
     let prev_h = u.prev_view_proj * vec4<f32>(world_pos, 1.0);
     out.prev_clip_pos = prev_h;
     out.curr_stable_clip = u.view_proj_stable * world_pos4;
@@ -145,8 +145,10 @@ fn evaluate_scene(in: VertexOutput) -> SceneFragOut {
     let prev_ndc = in.prev_clip_pos.xy / in.prev_clip_pos.w;
     let velocity = (curr_ndc - prev_ndc) * vec2<f32>(0.5, 0.5);
 
+    let layer = i32(in.tex_layer);
+
     if in.render_kind >= 2.5 {
-        let hud = textureSample(t_albedo, s_albedo, in.uv);
+        let hud = textureSample(t_albedo, s_albedo, in.uv, layer);
         let c = hud.rgb;
         return SceneFragOut(
             vec4<f32>(c, hud.a * in.alpha_mul),
@@ -158,9 +160,9 @@ fn evaluate_scene(in: VertexOutput) -> SceneFragOut {
     }
 
     var shadow = 1.0;
-    var albedo_samp = textureSample(t_albedo, s_albedo, in.uv);
+    var albedo_samp = textureSample(t_albedo, s_albedo, in.uv, layer);
     if in.render_kind >= 0.5 {
-        albedo_samp = textureSample(t_albedo, s_albedo, in.uv_center);
+        albedo_samp = textureSample(t_albedo, s_albedo, vec2<f32>(0.5, 0.5), layer);
     }
     let albedo = albedo_samp.rgb;
 

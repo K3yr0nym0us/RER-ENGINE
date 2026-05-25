@@ -611,8 +611,19 @@ function collectAssetPaths(data: ProjectSaveData): Set<string> {
     for (const bg of data.backgrounds) add(bg.path)
   }
 
+  add(data.playerTransform?.visual_model_path)
+  if (data.models) {
+    for (const model of data.models) add(model.path)
+  }
+
+  for (const scene of data.scenes ?? []) {
+    add(scene.playerTransform?.visual_model_path)
+    for (const model of scene.models ?? []) add(model.path)
+  }
+
   forEachEntity(data, (entity) => {
     if (!entityPathMarker(entity.path)) add(entity.path)
+    add(entity.visual_model_path)
     for (const anim of entity.animations ?? []) {
       add(anim.audio_path)
       for (const frame of anim.frames) {
@@ -623,6 +634,7 @@ function collectAssetPaths(data: ProjectSaveData): Set<string> {
 
   for (const bp of data.blueprints ?? []) {
     add(bp.path)
+    add(bp.visualModelPath)
     for (const anim of bp.animations ?? []) {
       add(anim.audio_path)
       for (const frame of anim.frames) {
@@ -839,6 +851,7 @@ function remapPaths(data: ProjectSaveData, map: Map<string, string>): ProjectSav
   const mapEntity = (e: ProjectSaveData['entities'][number]) => ({
     ...e,
     path: remap(e.path) as string,
+    visual_model_path: remap(e.visual_model_path) as string | undefined,
     animations: e.animations?.map((anim) => ({
       ...anim,
       audio_path: remap(anim.audio_path) as string | undefined,
@@ -849,9 +862,19 @@ function remapPaths(data: ProjectSaveData, map: Map<string, string>): ProjectSav
     })),
   })
 
+  const mapModels = (models: ProjectSaveData['models']) =>
+    models?.map((m) => ({ name: m.name, path: remap(m.path) as string }))
+
+  const mapPlayerTransform = (pt: ProjectSaveData['playerTransform']) =>
+    pt
+      ? { ...pt, visual_model_path: remap(pt.visual_model_path) as string | undefined }
+      : pt
+
   return {
     ...data,
     backgroundPath: remap(data.backgroundPath) as string | null,
+    playerTransform: mapPlayerTransform(data.playerTransform),
+    models: mapModels(data.models),
     sprites: data.sprites?.map((s) => ({
       name: s.name,
       path: remap(s.path) as string,
@@ -868,6 +891,8 @@ function remapPaths(data: ProjectSaveData, map: Map<string, string>): ProjectSav
     scenes: data.scenes?.map((scene) => ({
       ...scene,
       backgroundPath: remap(scene.backgroundPath) as string | null,
+      playerTransform: mapPlayerTransform(scene.playerTransform),
+      models: mapModels(scene.models),
       sprites: scene.sprites?.map((s) => ({
         name: s.name,
         path: remap(s.path) as string,
@@ -877,6 +902,7 @@ function remapPaths(data: ProjectSaveData, map: Map<string, string>): ProjectSav
     blueprints: data.blueprints?.map((bp) => ({
       ...bp,
       path: remap(bp.path) as string,
+      visualModelPath: remap(bp.visualModelPath) as string | undefined,
       animations: bp.animations?.map((anim) => ({
         ...anim,
         audio_path: remap(anim.audio_path) as string | undefined,
@@ -997,6 +1023,7 @@ function resolveLoadedPaths(data: ProjectSaveData, extractedDir: string): Projec
   const mapEntity = (e: ProjectSaveData['entities'][number]) => ({
     ...e,
     path: resolve(e.path) as string,
+    visual_model_path: resolve(e.visual_model_path) as string | undefined,
     scripts: e.scripts?.map((script) => ({
       ...script,
       source: resolveScriptSource(script.source, extractedDir),
@@ -1031,9 +1058,19 @@ function resolveLoadedPaths(data: ProjectSaveData, extractedDir: string): Projec
       : undefined,
   })
 
+  const mapModels = (models: ProjectSaveData['models']) =>
+    models?.map((m) => ({ name: m.name, path: resolve(m.path) as string }))
+
+  const mapPlayerTransform = (pt: ProjectSaveData['playerTransform']) =>
+    pt
+      ? { ...pt, visual_model_path: resolve(pt.visual_model_path) as string | undefined }
+      : pt
+
   return {
     ...data,
     backgroundPath: resolve(data.backgroundPath) as string | null,
+    playerTransform: mapPlayerTransform(data.playerTransform),
+    models: mapModels(data.models),
     sprites: data.sprites?.map((s) => ({
       name: s.name,
       path: resolve(s.path) as string,
@@ -1050,6 +1087,8 @@ function resolveLoadedPaths(data: ProjectSaveData, extractedDir: string): Projec
     scenes: data.scenes?.map((scene) => ({
       ...scene,
       backgroundPath: resolve(scene.backgroundPath) as string | null,
+      playerTransform: mapPlayerTransform(scene.playerTransform),
+      models: mapModels(scene.models),
       sprites: scene.sprites?.map((s) => ({
         name: s.name,
         path: resolve(s.path) as string,
@@ -1059,6 +1098,7 @@ function resolveLoadedPaths(data: ProjectSaveData, extractedDir: string): Projec
     blueprints: data.blueprints?.map((bp) => ({
       ...bp,
       path: resolve(bp.path) as string,
+      visualModelPath: resolve(bp.visualModelPath) as string | undefined,
       scripts: bp.scripts?.map((script) => ({
         ...script,
         source: resolveScriptSource(script.source, extractedDir),

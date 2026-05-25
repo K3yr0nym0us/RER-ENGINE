@@ -81,17 +81,19 @@ impl State {
         self.physics_2d = PhysicsWorld2D::new();
         self.world.clear();
         self.meshes.clear();
-        self.uv_rects.clear();
-        self.static_tex_cache.clear();
-        self.anim_texture_cache.clear();
-        self.atlas.reset(&self.queue);
+        self.tex_layers.clear();
+        self.static_model_cache.clear();
+        self.model_assets.clear();
+        self.model_store.clear();
+        self.model_preload_inflight.clear();
+        self.pending_load_models.clear();
+        self.pending_entity_model_replaces.clear();
+        self.texture_array.reset(&self.queue);
         self.reload_snap_hint_assets();
-        self.anim_overrides.clear();
         self.animations.clear();
         self.active_animations.clear();
         self.default_animation_by_entity.clear();
         self.anim_saved_transforms.clear();
-        self.anim_flip_overrides.clear();
         self.entity_facing_right.clear();
         self.scenario_entities.clear();
         self.character_entities.clear();
@@ -173,9 +175,9 @@ impl State {
                 px.extend_from_slice(&[r, g, b, 255]);
             }
         }
-        let checker_uv = self.atlas.pack(&self.queue, &px, S, S);
-        let tex_idx = self.uv_rects.len();
-        self.uv_rects.push(checker_uv);
+        let checker_layer = self.texture_array.pack(&self.queue, &px, S, S);
+        let tex_idx = self.tex_layers.len();
+        self.tex_layers.push(checker_layer);
         tex_idx
     }
 
@@ -208,6 +210,7 @@ impl State {
                 path: "[Ground]".to_string(),
                 visual_model_path: None,
                 points: None,
+                entity_category: None,
             },
         );
         self.send_model_loaded_event(plane_id, "Ground");
@@ -253,9 +256,9 @@ impl State {
         let block_mesh_idx = self.meshes.len();
         self.meshes.push(mesh::create_cube(&self.device));
         let white_px = [255u8, 255, 255, 255];
-        let block_tex_idx = self.uv_rects.len();
-        let block_uv = self.atlas.pack(&self.queue, &white_px, 1, 1);
-        self.uv_rects.push(block_uv);
+        let block_tex_idx = self.tex_layers.len();
+        let block_layer = self.texture_array.pack(&self.queue, &white_px, 1, 1);
+        self.tex_layers.push(block_layer);
 
         let mut spawn_block = |position: [f32; 3], scale: [f32; 3]| {
             let label = self.next_numbered_entity_name(rer_engine_shared::editor_defaults::entity_label::SCENARIO);
@@ -282,6 +285,7 @@ impl State {
                     path: "[EditorBox]".to_string(),
                     visual_model_path: None,
                     points: None,
+                    entity_category: None,
                 },
             );
             self.send_model_loaded_event(id, &label);
@@ -353,9 +357,9 @@ impl State {
         let block_mesh_idx = self.meshes.len();
         self.meshes.push(mesh::create_cube(&self.device));
         let white_px = [255u8, 255, 255, 255];
-        let block_tex_idx = self.uv_rects.len();
-        let block_uv = self.atlas.pack(&self.queue, &white_px, 1, 1);
-        self.uv_rects.push(block_uv);
+        let block_tex_idx = self.tex_layers.len();
+        let block_layer = self.texture_array.pack(&self.queue, &white_px, 1, 1);
+        self.tex_layers.push(block_layer);
 
         let id = self.world.spawn(Some(&label));
         self.world.insert(
@@ -380,6 +384,7 @@ impl State {
                 path: "[EditorBox]".to_string(),
                 visual_model_path: None,
                 points: None,
+                entity_category: None,
             },
         );
         self.send_model_loaded_event(id, &label);
@@ -388,18 +393,14 @@ impl State {
 
     pub(crate) fn load_character(&mut self, path: &str) {
         let is_player = path == "[Player]" || path.ends_with("[Player]");
-        let label = if is_player {
-            rer_engine_shared::editor_defaults::entity_label::PLAYER.to_string()
-        } else {
-            self.next_numbered_entity_name(rer_engine_shared::editor_defaults::entity_label::CHARACTER)
-        };
-        let id = self.world.spawn(Some(&label));
-        if is_player {
-            let feet = self.camera.target;
-            self.setup_play_character_entity(id, feet);
-        } else {
-            self.character_entities.push(id);
+        if !is_player {
+            log::error!("[load_character] en 3D solo aplica a [Player]; use load_model para modelos: {path}");
+            return;
         }
+        let label = rer_engine_shared::editor_defaults::entity_label::PLAYER.to_string();
+        let id = self.world.spawn(Some(&label));
+        let feet = self.camera.target;
+        self.setup_play_character_entity(id, feet);
         self.save_registry.register_meta(
             id,
             EntitySaveMeta {
@@ -407,6 +408,7 @@ impl State {
                 path: path.to_string(),
                 visual_model_path: None,
                 points: None,
+                entity_category: None,
             },
         );
         send_event(&EngineEvent::CharacterLoaded {
@@ -423,9 +425,9 @@ impl State {
         let cube = mesh::create_cube(&self.device);
         self.meshes.push(cube);
         let white_px = [255u8, 255, 255, 255];
-        let uv = self.atlas.pack(&self.queue, &white_px, 1, 1);
-        let tex_idx = self.uv_rects.len();
-        self.uv_rects.push(uv);
+        let layer = self.texture_array.pack(&self.queue, &white_px, 1, 1);
+        let tex_idx = self.tex_layers.len();
+        self.tex_layers.push(layer);
         let cube_id = self.world.spawn(Some("Cube"));
         self.world.insert(cube_id, MeshComponent { mesh_idx: 0, tex_idx });
 

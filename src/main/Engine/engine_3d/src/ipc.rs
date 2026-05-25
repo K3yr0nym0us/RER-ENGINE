@@ -12,6 +12,14 @@ fn default_clip_loop() -> bool {
     true
 }
 
+fn default_unit_quat() -> [f32; 4] {
+    [0.0, 0.0, 0.0, 1.0]
+}
+
+fn default_static_physics_type() -> String {
+    "static".to_string()
+}
+
 /// Delta de rotación en grados sobre un eje Euler YXZ (convención `glam::EulerRot::YXZ`).
 #[derive(Debug, Deserialize, Clone)]
 pub struct RotationEulerDelta {
@@ -70,6 +78,24 @@ pub enum EngineCommand {
         single_instance: Option<bool>,
         #[serde(default)]
         entity_category: Option<String>,
+    },
+    /// Instancia un modelo ya precargado en caché con transform y metadatos explícitos.
+    SpawnCachedModel {
+        path: String,
+        #[serde(default)]
+        name: Option<String>,
+        position: [f32; 3],
+        #[serde(default = "default_unit_quat")]
+        rotation: [f32; 4],
+        scale: [f32; 3],
+        #[serde(default)]
+        entity_category: Option<String>,
+        #[serde(default)]
+        blueprint_id: Option<String>,
+        #[serde(default)]
+        physics_enabled: bool,
+        #[serde(default = "default_static_physics_type")]
+        physics_type: String,
     },
     /// Instancia quick-build en la posición indicada (legacy; preferir place_quick_build_at_cursor).
     SpawnQuickBuildInstance {
@@ -547,6 +573,10 @@ pub struct SaveEntitySnapshot {
     pub control_bindings: Option<ControlBindingsData>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub visual_model_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blueprint_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub entity_category: Option<String>,
 }
 
 #[derive(Debug, Serialize, Clone)]

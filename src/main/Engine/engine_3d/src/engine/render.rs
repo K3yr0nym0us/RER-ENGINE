@@ -199,13 +199,8 @@ impl State {
             } else {
                 0.0_f32
             };
-            let uv = self
-                .anim_overrides
-                .get(tex_idx)
-                .copied()
-                .or_else(|| self.uv_rects.get(*tex_idx).copied())
-                .unwrap_or(self.fallback_uv);
-            let mut inst = crate::mesh::InstanceData::new(*model_matrix, flag, uv);
+            let layer = self.texture_layer_for(*tex_idx);
+            let mut inst = crate::mesh::InstanceData::new(*model_matrix, flag, layer);
             inst.flag_pad[2] = if self
                 .world
                 .get::<crate::config_compat::ColliderMarker>(*entity_id)
@@ -267,7 +262,7 @@ impl State {
                     continue;
                 }
                 let inst =
-                    crate::mesh::InstanceData::new(*model_matrix, 0.0, self.fallback_uv);
+                    crate::mesh::InstanceData::new(*model_matrix, 0.0, self.fallback_layer);
                 let can_extend = shadow_batches
                     .last()
                     .map_or(false, |b| b.mesh_idx == *mesh_idx);
@@ -408,7 +403,7 @@ impl State {
             }
 
             pass.set_bind_group(0, &self.scene_bind_group, &[]);
-            pass.set_bind_group(1, self.atlas.bind_group.as_ref(), &[]);
+            pass.set_bind_group(1, self.texture_array.bind_group.as_ref(), &[]);
 
             for (batch, inst_buf) in batches.iter().zip(instance_buffers.iter()) {
                 let Some(mesh) = self.meshes.get(batch.mesh_idx) else {
@@ -424,7 +419,7 @@ impl State {
             if self.camera_2d.is_none() && !skinned_main.is_empty() {
                 pass.set_pipeline(&self.skinned_render_pipeline);
                 pass.set_bind_group(0, &self.scene_bind_group, &[]);
-                pass.set_bind_group(1, self.atlas.bind_group.as_ref(), &[]);
+                pass.set_bind_group(1, self.texture_array.bind_group.as_ref(), &[]);
                 for (gpu_idx, inst) in &skinned_main {
                     let Some(entry) = self.skinned_gpu_meshes.get(*gpu_idx) else {
                         continue;
@@ -510,7 +505,7 @@ impl State {
                 });
                 ghost_pass.set_pipeline(&self.render_pipeline_overlay);
                 ghost_pass.set_bind_group(0, &self.scene_bind_group, &[]);
-                ghost_pass.set_bind_group(1, self.atlas.bind_group.as_ref(), &[]);
+                ghost_pass.set_bind_group(1, self.texture_array.bind_group.as_ref(), &[]);
                 ghost_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
                 ghost_pass.set_vertex_buffer(1, ghost_inst_buf.slice(..));
                 ghost_pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
@@ -687,7 +682,7 @@ impl State {
             });
             hint_pass.set_pipeline(&self.render_pipeline_overlay);
             hint_pass.set_bind_group(0, &self.hud_scene_bind_group, &[]);
-            hint_pass.set_bind_group(1, self.atlas.bind_group.as_ref(), &[]);
+            hint_pass.set_bind_group(1, self.texture_array.bind_group.as_ref(), &[]);
             hint_pass.set_vertex_buffer(0, self.hud_quad_mesh.vertex_buffer.slice(..));
             hint_pass.set_vertex_buffer(1, hint_inst_buf.slice(..));
             hint_pass.set_index_buffer(
@@ -794,7 +789,7 @@ impl State {
                 });
                 hint_pass.set_pipeline(&self.render_pipeline_overlay);
                 hint_pass.set_bind_group(0, &self.scene_bind_group, &[]);
-                hint_pass.set_bind_group(1, self.atlas.bind_group.as_ref(), &[]);
+                hint_pass.set_bind_group(1, self.texture_array.bind_group.as_ref(), &[]);
                 hint_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
                 hint_pass.set_vertex_buffer(1, hint_inst_buf.slice(..));
                 hint_pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
@@ -899,8 +894,8 @@ impl State {
             } else {
                 0.0_f32
             };
-            let uv = binding.uv_rect;
-            let inst = crate::mesh::InstanceData::new(t.to_matrix(), flag, uv);
+            let layer = binding.tex_layer;
+            let inst = crate::mesh::InstanceData::new(t.to_matrix(), flag, layer);
             let skinned_inst = crate::mesh::SkinnedInstanceData::from_instance(&inst);
             for &gpu_idx in &binding.part_gpu_indices {
                 out.push((gpu_idx, skinned_inst));

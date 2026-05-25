@@ -10,6 +10,8 @@ pub struct EntitySaveMeta {
     pub path: String,
     pub visual_model_path: Option<String>,
     pub points: Option<[[f32; 2]; 4]>,
+    /// `environment` | `object` | etc. (solo entidades `model` con mesh 3D).
+    pub entity_category: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -73,6 +75,7 @@ impl State {
                 path: "[Player]".to_string(),
                 visual_model_path: None,
                 points: None,
+                entity_category: None,
             });
         }
 
@@ -82,6 +85,7 @@ impl State {
                 path: "[Sun]".to_string(),
                 visual_model_path: None,
                 points: None,
+                entity_category: None,
             });
         }
 
@@ -91,6 +95,7 @@ impl State {
                 path: "[Colisionador]".to_string(),
                 visual_model_path: None,
                 points: self.points_from_transform_xz(id),
+                entity_category: None,
             });
         }
 
@@ -100,15 +105,7 @@ impl State {
                 path: "[ExecutionArea]".to_string(),
                 visual_model_path: None,
                 points: self.points_from_transform_xz(id),
-            });
-        }
-
-        if self.character_entities.contains(&id) {
-            return Some(EntitySaveMeta {
-                kind: "character".to_string(),
-                path: "[Character]".to_string(),
-                visual_model_path: None,
-                points: None,
+                entity_category: None,
             });
         }
 
@@ -118,6 +115,7 @@ impl State {
                 path: "[EditorBox]".to_string(),
                 visual_model_path: None,
                 points: None,
+                entity_category: None,
             });
         }
 
@@ -127,6 +125,7 @@ impl State {
                 path: "[EditorBox]".to_string(),
                 visual_model_path: None,
                 points: None,
+                entity_category: None,
             });
         }
 

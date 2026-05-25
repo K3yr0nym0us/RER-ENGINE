@@ -31,7 +31,7 @@ Runtime 3D: camara orbital en editor, primera persona en play, Rapier3D, mallas 
 - `engine_shared/src/gpu.rs`: `resolve_backend(ThreeD)` y `init_gpu(_, ThreeD)`.
 - `src/main.rs`: bucle winit, input, gizmo, play FP, setup overlay.
 - `src/engine.rs` + `src/engine/mod.rs`: `State` (GPU, ECS, caches, undo/redo, scripting).
-- `src/engine/init.rs`: instancia wgpu (Vulkan o DX12), pipelines WGSL, atlas, HUD/gizmo, TAA.
+- `src/engine/init.rs`: instancia wgpu (Vulkan o DX12), pipelines WGSL, texture array, HUD/gizmo, TAA.
 - `src/engine/commands.rs`: IPC y mutaciones de estado.
 - `src/engine/render.rs`: mundo 3D, crosshair, tooltip Esc, gizmo de editor.
 - `src/engine/tick.rs`: delta time, metricas, fade del hint Esc.

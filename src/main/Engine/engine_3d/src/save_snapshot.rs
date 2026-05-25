@@ -110,6 +110,8 @@ impl State {
         .get(&id)
         .cloned();
 
+      let blueprint_id = self.entity_blueprint_ids.get(&id).cloned();
+
       entities.push(SaveEntitySnapshot {
         id,
         name,
@@ -130,6 +132,8 @@ impl State {
         scripts,
         control_bindings,
         visual_model_path: meta.visual_model_path.clone(),
+        blueprint_id,
+        entity_category: meta.entity_category.clone(),
       });
     }
 

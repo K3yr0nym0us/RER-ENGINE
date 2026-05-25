@@ -14,7 +14,7 @@ use crate::entity_save_meta::EntitySaveRegistry;
 use crate::gizmo;
 use crate::mesh;
 use crate::scripting::ScriptEngine;
-use crate::texture::GpuTexture;
+use crate::texture::TextureArray;
 
 use super::{
     create_depth_texture, start_audio_thread, SceneUniforms, State, DEPTH_FORMAT,
@@ -248,9 +248,9 @@ impl State {
             ],
         });
 
-        let texture_bgl = GpuTexture::bind_group_layout(&device);
-        let mut atlas = crate::texture::TextureAtlas::new(&device, &queue, &texture_bgl);
-        let fallback_uv = crate::texture::TextureAtlas::fallback_uv();
+        let texture_bgl = TextureArray::bind_group_layout(&device);
+        let mut texture_array = crate::texture::TextureArray::new(&device, &queue, &texture_bgl);
+        let fallback_layer = crate::texture::TextureArray::fallback_layer();
 
         let checker_pixels = {
             const S: u32 = 128;
@@ -265,20 +265,20 @@ impl State {
             }
             px
         };
-        let checker_uv = atlas.pack(&queue, &checker_pixels, 128, 128);
-        let uv_rects = vec![checker_uv];
+        let checker_layer = texture_array.pack(&queue, &checker_pixels, 128, 128);
+        let tex_layers = vec![checker_layer];
 
-        let (snap_hint_uv, snap_hint_size) =
-            load_snap_hint_asset(&mut atlas, &queue, "tooltip-btn-ctrl-to-auto-adjust.png");
-        let (snap_hint_uv_en, snap_hint_size_en) = load_snap_hint_asset(
-            &mut atlas,
+        let (snap_hint_layer, snap_hint_size) =
+            load_snap_hint_asset(&mut texture_array, &queue, "tooltip-btn-ctrl-to-auto-adjust.png");
+        let (snap_hint_layer_en, snap_hint_size_en) = load_snap_hint_asset(
+            &mut texture_array,
             &queue,
             "tooltip-btn-ctrl-to-auto-adjust-english.png",
         );
-        let (fps_exit_hint_uv, fps_exit_hint_size) =
-            load_snap_hint_asset(&mut atlas, &queue, "tooltip-btn-esc-salir.png");
-        let (fps_exit_hint_uv_en, fps_exit_hint_size_en) =
-            load_snap_hint_asset(&mut atlas, &queue, "tooltip-btn-esc-exit.png");
+        let (fps_exit_hint_layer, fps_exit_hint_size) =
+            load_snap_hint_asset(&mut texture_array, &queue, "tooltip-btn-esc-salir.png");
+        let (fps_exit_hint_layer_en, fps_exit_hint_size_en) =
+            load_snap_hint_asset(&mut texture_array, &queue, "tooltip-btn-esc-exit.png");
 
         let shader = device.create_shader_module(include_wgsl!("../shader.wgsl"));
         let shadow_mask_target = Some(wgpu::ColorTargetState {
@@ -733,10 +733,9 @@ impl State {
             scene_bind_group: scene_bg,
             shadow_pass_bind_group,
             hud_scene_bind_group: hud_scene_bg,
-            atlas,
-            uv_rects,
-            fallback_uv,
-            static_tex_cache: std::collections::HashMap::new(),
+            texture_array,
+            tex_layers,
+            fallback_layer,
             canonical_quad_idx: 0,
             hud_quad_mesh,
             camera,
@@ -804,16 +803,16 @@ impl State {
             play_session_body_yaw_baseline: 0.0,
             play_session_camera_yaw_baseline: 0.0,
             tool_overlay_buffer: tool_overlay_buffer_init,
-            snap_hint_uv,
+            snap_hint_layer,
             snap_hint_size,
-            snap_hint_uv_en,
+            snap_hint_layer_en,
             snap_hint_size_en,
             snap_locale: "en".to_string(),
             show_snap_hint: false,
             snap_hint_alpha: 0.0,
-            fps_exit_hint_uv,
+            fps_exit_hint_layer,
             fps_exit_hint_size,
-            fps_exit_hint_uv_en,
+            fps_exit_hint_layer_en,
             fps_exit_hint_size_en,
             fps_exit_hint_alpha: 0.0,
             collider_entities: Vec::new(),
@@ -823,12 +822,9 @@ impl State {
             pivot_edit_mode: None,
             logical_area_mode: None,
             audio_slot,
-            anim_texture_cache: std::collections::HashMap::new(),
-            anim_overrides: std::collections::HashMap::new(),
             animations: HashMap::new(),
             active_animations: HashMap::new(),
             default_animation_by_entity: HashMap::new(),
-            anim_flip_overrides: HashMap::new(),
             entity_facing_right: HashMap::new(),
             script_engine: ScriptEngine::new()
                 .expect("Error al inicializar el motor de scripting Lua"),
@@ -840,6 +836,7 @@ impl State {
             model_preload_tx,
             model_preload_inflight: HashSet::new(),
             pending_load_models: Vec::new(),
+            pending_entity_model_replaces: Vec::new(),
             sound_store: HashMap::new(),
             background_store: HashMap::new(),
             undo_stack: Vec::new(),
@@ -877,10 +874,10 @@ impl State {
 }
 
 pub(crate) fn load_snap_hint_asset(
-    atlas: &mut crate::texture::TextureAtlas,
+    texture_array: &mut crate::texture::TextureArray,
     queue: &wgpu::Queue,
     filename: &str,
-) -> (Option<[f32; 4]>, (f32, f32)) {
+) -> (Option<crate::texture::TextureLayer>, (f32, f32)) {
     let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../assets")
         .join(filename);
@@ -895,8 +892,8 @@ pub(crate) fn load_snap_hint_asset(
                 Ok(img) => {
                     let img = img.to_rgba8();
                     let (w, h) = img.dimensions();
-                    let uv = atlas.pack(queue, img.as_raw(), w, h);
-                    (Some(uv), (w as f32, h as f32))
+                    let layer = texture_array.pack(queue, img.as_raw(), w, h);
+                    (Some(layer), (w as f32, h as f32))
                 }
                 Err(e) => {
                     log::warn!("[snap-hint] Error decodificando '{}': {}", path.display(), e);

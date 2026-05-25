@@ -71,6 +71,8 @@ function normalizeEngineEntity(raw: EngineSaveEntitySnapshot): SavedEntity {
 		scripts: raw.scripts,
 		control_bindings: raw.control_bindings,
 		visual_model_path: raw.visual_model_path,
+		...(raw.blueprint_id ? { blueprint_id: raw.blueprint_id } : {}),
+		...(raw.entity_category ? { entity_category: raw.entity_category } : {}),
 	};
 }
 
@@ -107,8 +109,12 @@ function mapEngineEntities(
 		return {
 			...entity,
 			...(animations ? { animations } : {}),
-			...(meta.blueprintId ? { blueprint_id: meta.blueprintId } : {}),
-			...(meta.entityCategory ? { entity_category: meta.entityCategory as EntityCategory } : {}),
+			...(entity.blueprint_id ?? meta.blueprintId
+				? { blueprint_id: entity.blueprint_id ?? meta.blueprintId }
+				: {}),
+			...(entity.entity_category ?? meta.entityCategory
+				? { entity_category: (entity.entity_category ?? meta.entityCategory) as EntityCategory }
+				: {}),
 		};
 	});
 }

@@ -50,6 +50,12 @@ pub(crate) struct PendingLoadModel {
     pub single_instance: bool,
 }
 
+/// `replace_entity_model` recibido mientras la precarga GPU del path sigue en curso.
+pub(crate) struct PendingEntityModelReplace {
+    pub id: EntityId,
+    pub path: String,
+}
+
 impl State {
     pub(crate) fn model_path_key(&self, path: &str) -> String {
         normalize_model_path(path)
@@ -164,23 +170,24 @@ impl State {
                     .unwrap_or_else(|| path.clone()),
             });
             self.flush_pending_load_models_for_path(&path);
+            self.flush_pending_entity_model_replaces_for_path(&path);
             return;
         }
 
         let mut cached_parts = Vec::with_capacity(data.parts.len());
         for (i, part) in data.parts.iter().enumerate() {
             let mesh_idx = self.meshes.len();
-            let tex_idx = self.uv_rects.len();
+            let tex_idx = self.tex_layers.len();
             self.meshes.push(crate::mesh::upload(
                 &self.device,
                 &part.vertices,
                 &part.indices,
                 &format!("preload-{i}"),
             ));
-            let uv = self
-                .atlas
+            let layer = self
+                .texture_array
                 .pack(&self.queue, &part.rgba, part.width, part.height);
-            self.uv_rects.push(uv);
+            self.tex_layers.push(layer);
             cached_parts.push(CachedStaticModelPart {
                 mesh_idx,
                 tex_idx,
@@ -209,6 +216,41 @@ impl State {
                 .unwrap_or(0)
         );
         self.flush_pending_load_models_for_path(&path);
+        self.flush_pending_entity_model_replaces_for_path(&path);
+    }
+
+    pub(crate) fn queue_entity_model_replace_if_preloading(
+        &mut self,
+        id: EntityId,
+        path: &str,
+        _is_play_character: bool,
+    ) -> bool {
+        let key = self.model_path_key(path);
+        if !self.model_preload_inflight.contains(&key) {
+            return false;
+        }
+        self.pending_entity_model_replaces
+            .push(PendingEntityModelReplace {
+                id,
+                path: path.to_string(),
+            });
+        log::info!("[model_cache] replace_entity_model en cola (precarga en curso): {key}");
+        true
+    }
+
+    fn flush_pending_entity_model_replaces_for_path(&mut self, path: &str) {
+        let key = self.model_path_key(path);
+        let pending: Vec<_> = self
+            .pending_entity_model_replaces
+            .drain(..)
+            .collect();
+        let (for_path, rest): (Vec<_>, Vec<_>) = pending
+            .into_iter()
+            .partition(|req| self.model_path_key(&req.path) == key);
+        self.pending_entity_model_replaces = rest;
+        for req in for_path {
+            self.replace_entity_model(req.id, &req.path);
+        }
     }
 
     pub(crate) fn queue_load_model_if_preloading(
@@ -276,17 +318,17 @@ impl State {
         let mut cached_parts = Vec::with_capacity(parts.len());
         for (i, part) in parts.iter().enumerate() {
             let mesh_idx = self.meshes.len();
-            let tex_idx = self.uv_rects.len();
+            let tex_idx = self.tex_layers.len();
             self.meshes.push(crate::mesh::upload(
                 &self.device,
                 &part.vertices,
                 &part.indices,
                 &format!("sync-{i}"),
             ));
-            let uv = self
-                .atlas
+            let layer = self
+                .texture_array
                 .pack(&self.queue, &part.rgba, part.width, part.height);
-            self.uv_rects.push(uv);
+            self.tex_layers.push(layer);
             cached_parts.push(CachedStaticModelPart {
                 mesh_idx,
                 tex_idx,
@@ -321,7 +363,7 @@ impl State {
         rotation: [f32; 4],
         scale: [f32; 3],
         entity_name: &str,
-        kind: &str,
+        _kind: &str,
         blueprint_id: Option<String>,
         entity_category: Option<String>,
         physics_enabled: bool,
@@ -339,10 +381,11 @@ impl State {
         self.save_registry.register_meta(
             id,
             EntitySaveMeta {
-                kind: kind.to_string(),
+                kind: "model".to_string(),
                 path: key.clone(),
                 visual_model_path: None,
                 points: None,
+                entity_category: entity_category.clone(),
             },
         );
         if physics_enabled && self.play_character_entity != Some(id) {
@@ -376,13 +419,60 @@ impl State {
             scale: Some(scale),
             rotation: Some(rotation),
             path: Some(key),
-            kind: Some(kind.to_string()),
+            kind: Some("model".to_string()),
             blueprint_id,
             physics_enabled: Some(physics_enabled),
             physics_type: Some(physics_type.to_string()),
             entity_category,
         });
         id
+    }
+
+    pub(crate) fn spawn_cached_model_from_save(
+        &mut self,
+        path: &str,
+        position: [f32; 3],
+        rotation: [f32; 4],
+        scale: [f32; 3],
+        entity_name: Option<&str>,
+        entity_category: Option<String>,
+        blueprint_id: Option<String>,
+        physics_enabled: bool,
+        physics_type: &str,
+    ) -> Result<EntityId, String> {
+        if let Err(e) = self.ensure_static_model_cached(path) {
+            return Err(e);
+        }
+        let key = self.model_path_key(path);
+        let Some(part) = self
+            .cached_static_model_parts(&key)
+            .and_then(|parts| parts.first())
+            .copied()
+        else {
+            return Err(format!("Modelo vacío: {key}"));
+        };
+        let name = entity_name
+            .filter(|n| !n.is_empty())
+            .map(|n| n.to_string())
+            .unwrap_or_else(|| {
+                self.next_numbered_entity_name(entity_label_for_category(
+                    entity_category.as_deref(),
+                ))
+            });
+        Ok(self.spawn_cached_model_part_at(
+            part.mesh_idx,
+            part.tex_idx,
+            &key,
+            position,
+            rotation,
+            scale,
+            &name,
+            "model",
+            blueprint_id,
+            entity_category,
+            physics_enabled,
+            physics_type,
+        ))
     }
 
     pub(crate) fn spawn_model_from_cached_part(

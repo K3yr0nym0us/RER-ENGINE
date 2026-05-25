@@ -18,10 +18,6 @@ impl State {
     }
 
     pub(crate) fn resolve_animation_flip(&self, entity_id: u32, anim: &AnimationState) -> bool {
-        if let Some(forced_flip) = self.anim_flip_overrides.get(&entity_id) {
-            return *forced_flip;
-        }
-
         let facing_right = self
             .entity_facing_right
             .get(&entity_id)
@@ -126,7 +122,7 @@ impl State {
         self.show_snap_hint = visible;
     }
 
-    fn load_snap_hint_uv(&mut self, filename: &str) -> (Option<[f32; 4]>, (f32, f32)) {
+    fn load_snap_hint_layer(&mut self, filename: &str) -> (Option<crate::texture::TextureLayer>, (f32, f32)) {
         let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../assets")
             .join(filename);
@@ -141,8 +137,8 @@ impl State {
                     Ok(img) => {
                         let img = img.to_rgba8();
                         let (w, h) = img.dimensions();
-                        let uv = self.atlas.pack(&self.queue, img.as_raw(), w, h);
-                        (Some(uv), (w as f32, h as f32))
+                        let layer = self.texture_array.pack(&self.queue, img.as_raw(), w, h);
+                        (Some(layer), (w as f32, h as f32))
                     }
                     Err(e) => {
                         log::warn!("[snap-hint] Error decodificando '{}': {}", path.display(), e);
@@ -158,19 +154,19 @@ impl State {
     }
 
     pub(crate) fn reload_snap_hint_assets(&mut self) {
-        let (uv_es, size_es) = self.load_snap_hint_uv("tooltip-btn-ctrl-to-auto-adjust.png");
-        let (uv_en, size_en) =
-            self.load_snap_hint_uv("tooltip-btn-ctrl-to-auto-adjust-english.png");
-        self.snap_hint_uv = uv_es;
+        let (layer_es, size_es) = self.load_snap_hint_layer("tooltip-btn-ctrl-to-auto-adjust.png");
+        let (layer_en, size_en) =
+            self.load_snap_hint_layer("tooltip-btn-ctrl-to-auto-adjust-english.png");
+        self.snap_hint_layer = layer_es;
         self.snap_hint_size = size_es;
-        self.snap_hint_uv_en = uv_en;
+        self.snap_hint_layer_en = layer_en;
         self.snap_hint_size_en = size_en;
 
-        let (fp_es, fp_size_es) = self.load_snap_hint_uv("tooltip-btn-esc-salir.png");
-        let (fp_en, fp_size_en) = self.load_snap_hint_uv("tooltip-btn-esc-exit.png");
-        self.fps_exit_hint_uv = fp_es;
+        let (fp_es, fp_size_es) = self.load_snap_hint_layer("tooltip-btn-esc-salir.png");
+        let (fp_en, fp_size_en) = self.load_snap_hint_layer("tooltip-btn-esc-exit.png");
+        self.fps_exit_hint_layer = fp_es;
         self.fps_exit_hint_size = fp_size_es;
-        self.fps_exit_hint_uv_en = fp_en;
+        self.fps_exit_hint_layer_en = fp_en;
         self.fps_exit_hint_size_en = fp_size_en;
     }
 
@@ -217,22 +213,22 @@ impl State {
         if self.snap_hint_alpha <= 0.003 || self.preview_playing {
             return None;
         }
-        let (uv, img_w, img_h) = if self.snap_locale == "en" {
-            let uv = self.snap_hint_uv_en.or(self.snap_hint_uv)?;
-            let (w, h) = if self.snap_hint_uv_en.is_some() {
+        let (layer, img_w, img_h) = if self.snap_locale == "en" {
+            let layer = self.snap_hint_layer_en.or(self.snap_hint_layer)?;
+            let (w, h) = if self.snap_hint_layer_en.is_some() {
                 self.snap_hint_size_en
             } else {
                 self.snap_hint_size
             };
-            (uv, w, h)
+            (layer, w, h)
         } else {
-            let uv = self.snap_hint_uv.or(self.snap_hint_uv_en)?;
-            let (w, h) = if self.snap_hint_uv.is_some() {
+            let layer = self.snap_hint_layer.or(self.snap_hint_layer_en)?;
+            let (w, h) = if self.snap_hint_layer.is_some() {
                 self.snap_hint_size
             } else {
                 self.snap_hint_size_en
             };
-            (uv, w, h)
+            (layer, w, h)
         };
         let Some(cam) = &self.camera_2d else {
             return None;
@@ -267,7 +263,7 @@ impl State {
             cam.y + cam.half_h - margin_y_world - draw_h_world * 0.5 - slide_px * world_per_px_y;
         let model = Mat4::from_translation(glam::vec3(center_x, center_y, 0.9))
             * Mat4::from_scale(glam::vec3(draw_w_world * scale_in, draw_h_world * scale_in, 1.0));
-        let mut inst = mesh::InstanceData::new(model, 0.0, uv);
+        let mut inst = mesh::InstanceData::new(model, 0.0, layer);
         inst.flag_pad[1] = eased_alpha;
         inst.flag_pad[2] = mesh::RENDER_KIND_HUD_OVERLAY;
         Some(inst)
@@ -278,22 +274,22 @@ impl State {
         if self.fps_exit_hint_alpha <= 0.003 {
             return None;
         }
-        let (uv, img_w, img_h) = if self.snap_locale == "en" {
-            let uv = self.fps_exit_hint_uv_en.or(self.fps_exit_hint_uv)?;
-            let (w, h) = if self.fps_exit_hint_uv_en.is_some() {
+        let (layer, img_w, img_h) = if self.snap_locale == "en" {
+            let layer = self.fps_exit_hint_layer_en.or(self.fps_exit_hint_layer)?;
+            let (w, h) = if self.fps_exit_hint_layer_en.is_some() {
                 self.fps_exit_hint_size_en
             } else {
                 self.fps_exit_hint_size
             };
-            (uv, w, h)
+            (layer, w, h)
         } else {
-            let uv = self.fps_exit_hint_uv.or(self.fps_exit_hint_uv_en)?;
-            let (w, h) = if self.fps_exit_hint_uv.is_some() {
+            let layer = self.fps_exit_hint_layer.or(self.fps_exit_hint_layer_en)?;
+            let (w, h) = if self.fps_exit_hint_layer.is_some() {
                 self.fps_exit_hint_size
             } else {
                 self.fps_exit_hint_size_en
             };
-            (uv, w, h)
+            (layer, w, h)
         };
         let w = self.size.width as f32;
         let h = self.size.height as f32;
@@ -323,7 +319,7 @@ impl State {
         let cy = -1.0 + margin_y_ndc + ndc_h * 0.5 + slide_ndc;
         let model = Mat4::from_translation(glam::vec3(cx, cy, 0.0))
             * Mat4::from_scale(glam::vec3(ndc_w, ndc_h, 1.0));
-        let mut inst = mesh::InstanceData::new(model, 0.0, uv);
+        let mut inst = mesh::InstanceData::new(model, 0.0, layer);
         inst.flag_pad[1] = eased_alpha;
         inst.flag_pad[2] = mesh::RENDER_KIND_HUD_OVERLAY;
         Some(inst)

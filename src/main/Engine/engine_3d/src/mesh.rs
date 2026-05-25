@@ -188,15 +188,15 @@ pub const RENDER_KIND_HUD_OVERLAY: f32 = 3.0;
 /// Layout (96 bytes):
 ///   offset  0..64  → model matrix, column-major (4 × vec4<f32>)
 ///   offset 64..80  → flag_pad  (x = selection flag, yzw = unused)
-///   offset 80..96  → uv_rect   [u_min, v_min, u_max, v_max] en el atlas
+///   offset 80..96  → tex_layer_pad  (x = índice de capa en texture_2d_array)
 ///
 /// Matches WGSL `InstanceInput` locations 3..8.
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct InstanceData {
-    pub model:    [[f32; 4]; 4],
-    pub flag_pad: [f32; 4],   // x: estado selección/hover, y: alpha multiplicador
-    pub uv_rect:  [f32; 4],   // sub-región del texture atlas [u_min, v_min, u_max, v_max]
+    pub model:         [[f32; 4]; 4],
+    pub flag_pad:      [f32; 4],   // x: selección/hover, y: alpha, z: render_kind
+    pub tex_layer_pad: [f32; 4],   // x: capa del array de texturas
 }
 
 impl InstanceData {
@@ -206,7 +206,7 @@ impl InstanceData {
         5 => Float32x4,  // model col 2
         6 => Float32x4,  // model col 3
         7 => Float32x4,  // flag_pad
-        8 => Float32x4,  // uv_rect  ← nuevo
+        8 => Float32x4,  // tex_layer_pad
     ];
 
     pub fn desc() -> wgpu::VertexBufferLayout<'static> {
@@ -217,11 +217,11 @@ impl InstanceData {
         }
     }
 
-    pub fn new(model: glam::Mat4, flag: f32, uv_rect: [f32; 4]) -> Self {
+    pub fn new(model: glam::Mat4, flag: f32, tex_layer: u32) -> Self {
         Self {
-            model:    model.to_cols_array_2d(),
-            flag_pad: [flag, 1.0, 0.0, 0.0],
-            uv_rect,
+            model:         model.to_cols_array_2d(),
+            flag_pad:      [flag, 1.0, 0.0, 0.0],
+            tex_layer_pad: [tex_layer as f32, 0.0, 0.0, 0.0],
         }
     }
 }
@@ -230,9 +230,9 @@ impl InstanceData {
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct SkinnedInstanceData {
-    pub model:    [[f32; 4]; 4],
-    pub flag_pad: [f32; 4],
-    pub uv_rect:  [f32; 4],
+    pub model:         [[f32; 4]; 4],
+    pub flag_pad:      [f32; 4],
+    pub tex_layer_pad: [f32; 4],
 }
 
 impl SkinnedInstanceData {
@@ -255,9 +255,9 @@ impl SkinnedInstanceData {
 
     pub fn from_instance(inst: &InstanceData) -> Self {
         Self {
-            model:    inst.model,
-            flag_pad: inst.flag_pad,
-            uv_rect:  inst.uv_rect,
+            model:         inst.model,
+            flag_pad:      inst.flag_pad,
+            tex_layer_pad: inst.tex_layer_pad,
         }
     }
 }

@@ -8,17 +8,19 @@ import {
   DEFAULT_SHADOW_DARKNESS,
 } from '@shared-types';
 import { isEditorBoxPath, isGroundPath, isPlayerPath, isSunPath } from '@shared-types';
+import { isModel3DPath, is3dModelFileEntity } from '../../../utils/blueprintModelPath';
 import { buildActiveSceneSnapshotFromEngine } from '../../../defaults/buildProjectSaveFromEngine';
 import { requestEngineDefaultSceneName } from '../../../defaults/requestEngineDefaultSceneName';
 import { ensurePlayCharacterOnLoad } from '../../../defaults/playCharacterSceneRestore';
 import { setSceneCommandForSavedProject } from '../../../defaults/projectSceneLoad';
-import { buildImportSceneCommand, resolveEntityTransform } from '../../../context/useContextEngine/hooks/buildImportSceneCommand';
+import { buildImportSceneCommand, resolveEntityTransform, resolveSavedEntityTransform } from '../../../context/useContextEngine/hooks/buildImportSceneCommand';
 import {
   beginSceneBurstLoad,
   beginSceneImportLoading,
   needsSceneBurstLoad,
   trackSceneBurstCollider,
   trackSceneBurstModelPreloads,
+  collectUncachedBurstModelPaths,
   tryEndSceneBurstLoad,
 } from '../../../context/useContextEngine/hooks/sceneImportOverlay';
 import { useContextEngine } from '@engine';
@@ -114,6 +116,7 @@ export function SceneManagerProvider({
     entityMetaRef,
     pendingRestoresRef,
     pendingModelLoadQueueRef,
+    pendingBurstSpawnRestoreRef,
     pendingPlayCharacterViewRef,
     playCharacterViewRef,
     mainPlayerHandled,
@@ -313,7 +316,10 @@ export function SceneManagerProvider({
     if (burstLoad) {
       sceneBurstAwaitingPlayerViewRef.current = false;
       sceneBurstPendingColliderCountRef.current = 0;
-      beginSceneBurstLoad(dispatch, sceneBurstLoadInProgressRef, { sceneBurstPendingOpsRef });
+      beginSceneBurstLoad(dispatch, sceneBurstLoadInProgressRef, {
+        sceneBurstPendingOpsRef,
+        pendingBurstSpawnRestoreRef,
+      });
       trackSceneBurstModelPreloads({ sceneBurstPendingOpsRef }, scene.models?.length ?? 0);
     }
 
@@ -322,7 +328,9 @@ export function SceneManagerProvider({
     }
 
     for (const entity of scene.entities) {
-      const transform = resolveEntityTransform(entity, blueprints);
+      const transform = is3dModelFileEntity(projectType, entity)
+        ? resolveSavedEntityTransform(entity)
+        : resolveEntityTransform(entity, blueprints);
 
       if (entity.kind === 'collider' && entity.points) {
         if (projectType === '2D') {
@@ -427,7 +435,7 @@ export function SceneManagerProvider({
         continue;
       }
 
-      if (entity.kind === 'scenario' && projectType === '3D') {
+      if (entity.kind === 'scenario' && projectType === '3D' && !isModel3DPath(entity.path)) {
         continue;
       }
 
@@ -451,20 +459,31 @@ export function SceneManagerProvider({
       queue.push(pendingRestore);
 
       if (entity.kind === 'scenario') send({ cmd: 'load_scenario', path: entity.path });
-      if (entity.kind === 'character') send({ cmd: 'load_character', path: entity.path });
-      if (entity.kind === 'model' && entity.path && !isEditorBoxPath(entity.path)) {
+      if (is3dModelFileEntity(projectType, entity)) {
         pendingModelLoadQueueRef.current.push({
           modelPath: entity.path,
           pending: pendingRestore,
         });
-        send({
-          cmd: 'load_model',
-          path: entity.path,
-          single_instance: true,
-          ...(entity.entity_category === 'environment'
-            ? { entity_category: 'environment' }
-            : {}),
-        });
+        if (!burstLoad) {
+          send({
+            cmd: 'load_model',
+            path: entity.path,
+            single_instance: true,
+            ...(entity.entity_category ? { entity_category: entity.entity_category } : {}),
+          });
+        }
+      }
+    }
+
+    if (burstLoad && pendingModelLoadQueueRef.current.length > 0) {
+      const preloadedPaths = (scene.models ?? []).map((model) => model.path);
+      const queuedPaths = pendingModelLoadQueueRef.current.map((item) => item.modelPath);
+      const extraPaths = collectUncachedBurstModelPaths(queuedPaths, preloadedPaths);
+      if (extraPaths.size > 0) {
+        trackSceneBurstModelPreloads({ sceneBurstPendingOpsRef }, extraPaths.size);
+        for (const [path, name] of extraPaths) {
+          loadModelAsset(path, name);
+        }
       }
     }
 
@@ -480,6 +499,7 @@ export function SceneManagerProvider({
           {
             pendingRestoresRef,
             pendingModelLoadQueueRef,
+            pendingBurstSpawnRestoreRef,
             pendingPlayCharacterViewRef,
             mainPlayerHandled,
             sceneBurstAwaitingPlayerViewRef,

@@ -176,9 +176,9 @@ impl State {
                 px.extend_from_slice(&[r8, g8, b8, 255]);
             }
         }
-        let tex_idx = self.uv_rects.len();
-        let uv = self.atlas.pack(&self.queue, &px, N, N);
-        self.uv_rects.push(uv);
+        let tex_idx = self.tex_layers.len();
+        let layer = self.texture_array.pack(&self.queue, &px, N, N);
+        self.tex_layers.push(layer);
         self.sun_icon_tex_idx = Some(tex_idx);
         tex_idx
     }
@@ -241,6 +241,7 @@ impl State {
                 path: "[Sun]".to_string(),
                 visual_model_path: None,
                 points: None,
+                entity_category: None,
             },
         );
         self.send_model_loaded_event(id, &label);

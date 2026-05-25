@@ -44,6 +44,15 @@ export function resolveEntityTransform(
 	};
 }
 
+/** Transform guardado por entidad (carga 3D; blueprint no sobreescribe pos/rot/escala). */
+export function resolveSavedEntityTransform(entity: SavedEntity): Transform {
+	return {
+		position: entity.position,
+		rotation: entity.rotation ?? [0, 0, 0, 1],
+		scale: entity.scale,
+	};
+}
+
 function resolveEntityRestore(entity: SavedEntity, blueprints?: BluePrintEntry[]) {
 	const bp = entity.blueprint_id
 		? (blueprints ?? []).find((b) => b.id === entity.blueprint_id) ?? null

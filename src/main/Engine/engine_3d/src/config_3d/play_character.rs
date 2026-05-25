@@ -147,9 +147,9 @@ impl State {
         let mesh_idx = self.meshes.len();
         self.meshes.push(mesh::create_cube(&self.device));
         let body_px = [180u8, 200, 255, 255];
-        let tex_idx = self.uv_rects.len();
-        let body_uv = self.atlas.pack(&self.queue, &body_px, 1, 1);
-        self.uv_rects.push(body_uv);
+        let tex_idx = self.tex_layers.len();
+        let body_layer = self.texture_array.pack(&self.queue, &body_px, 1, 1);
+        self.tex_layers.push(body_layer);
 
         self.world.insert(
             id,
@@ -195,6 +195,7 @@ impl State {
                 path: "[Player]".to_string(),
                 visual_model_path: None,
                 points: None,
+                entity_category: None,
             },
         );
         send_event(&EngineEvent::CharacterLoaded {

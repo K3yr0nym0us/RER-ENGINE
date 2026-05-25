@@ -244,6 +244,31 @@ impl State {
                     self.load_model(&path, category);
                 }
             }
+            EngineCommand::SpawnCachedModel {
+                path,
+                name,
+                position,
+                rotation,
+                scale,
+                entity_category,
+                blueprint_id,
+                physics_enabled,
+                physics_type,
+            } => {
+                if let Err(message) = self.spawn_cached_model_from_save(
+                    &path,
+                    position,
+                    rotation,
+                    scale,
+                    name.as_deref(),
+                    entity_category,
+                    blueprint_id,
+                    physics_enabled,
+                    &physics_type,
+                ) {
+                    send_event(&EngineEvent::Error { message });
+                }
+            }
             EngineCommand::SpawnQuickBuildInstance {
                 position,
                 rotation,
@@ -719,7 +744,6 @@ impl State {
                 self.execution_area_entities.retain(|&e| e != id);
                 self.execution_overlaps
                     .retain(|(trigger_id, actor_id)| *trigger_id != id && *actor_id != id);
-                self.anim_flip_overrides.remove(&id);
                 self.entity_facing_right.remove(&id);
                 self.default_animation_by_entity.remove(&id);
                 self.unbind_model_animations(id);
@@ -1083,35 +1107,16 @@ impl State {
             }
             EngineCommand::ReloadAsset { path } => {
                 log::info!("[IPC] ReloadAsset: {}", path);
-                if let Some(&uv_rect) = self.static_tex_cache.get(&path) {
-                    match std::fs::read(&path) {
-                        Ok(bytes) => {
-                            use image::ImageReader;
-                            match ImageReader::new(std::io::Cursor::new(&bytes))
-                                .with_guessed_format()
-                                .map_err(|e| e.to_string())
-                                .and_then(|r| r.decode().map_err(|e| e.to_string()))
-                            {
-                                Ok(img) => {
-                                    let rgba = img.to_rgba8();
-                                    self.atlas.update(&self.queue, rgba.as_raw(), uv_rect);
-                                    log::info!("[hot-reload] Textura actualizada en atlas: {}", path);
-                                }
-                                Err(e) => log::warn!(
-                                    "[hot-reload] Error decodificando PNG '{}': {}",
-                                    path,
-                                    e
-                                ),
-                            }
-                        }
-                        Err(e) => log::warn!("[hot-reload] Error leyendo archivo '{}': {}", path, e),
-                    }
-                } else if self.background_path.as_deref() == Some(path.as_str()) {
-                    self.load_background(&path);
-                    log::info!("[hot-reload] Fondo recargado: {}", path);
+                let key = self.model_path_key(&path);
+                if self.static_model_cache.remove(&key).is_some() {
+                    self.model_assets.remove(&key);
+                    log::info!(
+                        "[hot-reload] Caché de modelo invalidada; recarga al volver a instanciar: {}",
+                        path
+                    );
                 } else {
                     log::warn!(
-                        "[hot-reload] Path no encontrado en static_tex_cache ni como fondo: {}",
+                        "[hot-reload] Path no está en caché de modelos 3D: {}",
                         path
                     );
                 }
@@ -1437,7 +1442,6 @@ impl State {
                     self.stop_model_clip(id);
                     return;
                 }
-                self.anim_flip_overrides.remove(&id);
                 let stopped_animation_name =
                     self.active_animations.remove(&id).map(|a| a.animation_name);
                 if self.preview_playing {

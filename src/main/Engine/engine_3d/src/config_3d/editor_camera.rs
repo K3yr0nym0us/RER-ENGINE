@@ -34,6 +34,7 @@ impl State {
                 path: "[EditorCamera]".to_string(),
                 visual_model_path: None,
                 points: None,
+                entity_category: None,
             },
         );
         send_event(&EngineEvent::CharacterLoaded {

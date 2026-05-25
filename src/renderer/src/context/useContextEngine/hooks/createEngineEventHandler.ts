@@ -34,8 +34,8 @@ import {
 	ensurePlayCharacterOnLoad,
 } from '../../../defaults/playCharacterSceneRestore';
 import { setSceneCommandForSavedProject } from '../../../defaults/projectSceneLoad';
-import { isModel3DPath } from '../../../utils/blueprintModelPath';
-import { buildImportSceneCommand, resolveEntityTransform, syncEditorStateFromSavedScene } from './buildImportSceneCommand';
+import { isModel3DPath, is3dModelFileEntity } from '../../../utils/blueprintModelPath';
+import { buildImportSceneCommand, resolveEntityTransform, resolveSavedEntityTransform, syncEditorStateFromSavedScene } from './buildImportSceneCommand';
 import { applyPendingRestoreMeta, buildPlayAnimationFrameCmd, sendApplyEntityRestore } from './applyPendingRestoreToEngine';
 import {
 	beginSceneBurstLoad,
@@ -53,6 +53,9 @@ import {
 	takePendingModelLoadByPath,
 	takePendingRestoreByPath,
 	drainPendingRestoreSlot,
+	flushPendingCachedModelSpawnsForPath,
+	collectUncachedBurstModelPaths,
+	hasQueuedCachedModelSpawns,
 } from './sceneImportOverlay';
 import type { EngineAction, EngineInternalRefs, PendingRestore, Transform } from '../types';
 
@@ -321,7 +324,9 @@ export function createEngineEventHandler({
 				}
 				const loadBlueprints = save.blueprints ?? refs.blueprintsRef.current;
 				for (const entity of save.entities) {
-					const transform = resolveEntityTransform(entity, loadBlueprints);
+					const transform = is3dModelFileEntity(projectType, entity)
+						? resolveSavedEntityTransform(entity)
+						: resolveEntityTransform(entity, loadBlueprints);
 					if (entity.kind === 'collider' && entity.points) {
 						if (projectType === '2D') {
 							if (burstLoad) {
@@ -422,8 +427,8 @@ export function createEngineEventHandler({
 							position: entity.position,
 							scale: entity.scale,
 						} as never);
-					} else if (entity.kind === 'scenario' && projectType === '3D') {
-						// load_scenario es no-op en motor 3D; no encolar restores huérfanos.
+					} else if (entity.kind === 'scenario' && projectType === '3D' && !isModel3DPath(entity.path)) {
+						// Escenarios 2D legacy sin archivo 3D.
 					} else {
 						// Si la entidad es una instancia de blueprint, heredar las propiedades
 						// del blueprint original en lugar de las guardadas por entidad.
@@ -448,27 +453,36 @@ export function createEngineEventHandler({
 							refs.pendingRestoresRef.current.set(entity.path, queue);
 						}
 						if (entity.kind === 'scenario') sendEngine({ cmd: 'load_scenario', path: entity.path } as never);
-						if (entity.kind === 'character') {
-							if (burstLoad) trackSceneBurstOp(refs);
-							sendEngine({ cmd: 'load_character', path: entity.path } as never);
-						}
-						if (entity.kind === 'model' && entity.path && !isEditorBoxPath(entity.path)) {
+						if (is3dModelFileEntity(projectType, entity)) {
 							refs.pendingModelLoadQueueRef.current.push({
 								modelPath: entity.path,
 								pending: pendingRestore,
 							});
-							if (burstLoad) trackSceneBurstOp(refs);
-							sendEngine({
-								cmd: 'load_model',
-								path: entity.path,
-								single_instance: true,
-								...(entity.entity_category === 'environment'
-									? { entity_category: 'environment' }
-									: {}),
-							} as never);
+							if (!burstLoad) {
+								sendEngine({
+									cmd: 'load_model',
+									path: entity.path,
+									single_instance: true,
+									...(entity.entity_category
+										? { entity_category: entity.entity_category }
+										: {}),
+								} as never);
+							}
 						}
 					}
 				}
+				}
+				if (burstLoad && refs.pendingModelLoadQueueRef.current.length > 0) {
+					const preloadedPaths = (save.models ?? []).map((model) => model.path);
+					const queuedPaths = refs.pendingModelLoadQueueRef.current.map((item) => item.modelPath);
+					const extraPaths = collectUncachedBurstModelPaths(queuedPaths, preloadedPaths);
+					if (extraPaths.size > 0) {
+						trackSceneBurstModelPreloads(refs, extraPaths.size);
+						for (const [path, name] of extraPaths) {
+							sendEngine({ cmd: 'load_model_asset', path, name } as never);
+							dispatch({ type: 'ADD_MODEL_INFO', payload: { path, name, loading: true } });
+						}
+					}
 				}
 				if (gameStyle === 'first-person' && projectType === '3D') {
 					ensurePlayCharacterOnLoad(save, refs.pendingRestoresRef, (cmd) => sendEngine(cmd as never));
@@ -510,7 +524,56 @@ export function createEngineEventHandler({
 			const id = loaded.id ?? -1;
 			dispatch({ type: 'ADD_ENTITY', payload: id });
 
-			if (loaded.blueprint_id) {
+			if (
+				refs.pendingBurstSpawnRestoreRef.current.length > 0
+			) {
+				const pending = refs.pendingBurstSpawnRestoreRef.current.shift()!;
+				const kind = (loaded.kind ?? 'model') as import('../types').EntityMeta['kind'];
+				const isEnvironment = pending.entityCategory === 'environment';
+				refs.entityMetaRef.current[id] = {
+					kind,
+					path: loaded.path ?? pending.visualModelPath ?? '',
+					name: pending.name ?? loaded.name ?? `Entity ${id}`,
+					physicsEnabled: isEnvironment
+						? true
+						: (pending.physicsEnabled ?? loaded.physics_enabled ?? false),
+					physicsType: isEnvironment
+						? 'static'
+						: (pending.physicsType ?? loaded.physics_type ?? 'static'),
+					...(pending.entityCategory || loaded.entity_category
+						? { entityCategory: pending.entityCategory ?? loaded.entity_category }
+						: {}),
+					...(pending.blueprintId || loaded.blueprint_id
+						? { blueprintId: pending.blueprintId ?? loaded.blueprint_id }
+						: {}),
+				};
+				if (loaded.position && loaded.scale) {
+					refs.entityTransformsRef.current[id] = {
+						position: loaded.position,
+						rotation: loaded.rotation ?? pending.transform?.rotation ?? [0, 0, 0, 1],
+						scale: loaded.scale,
+					};
+				}
+				sendApplyEntityRestore(id, pending, {
+					skipTransform: true,
+					applyInitialAnimationFrame: true,
+				});
+				applyPendingRestoreMeta(refs, id, pending);
+				if (refs.sceneBurstLoadInProgressRef.current) {
+					completeSceneBurstOp(refs);
+					tryEndSceneBurstLoad(
+						dispatch,
+						refs.sceneBurstLoadInProgressRef,
+						refs,
+						refs.sceneImportInProgressRef,
+						refs.modelReplaceInProgressRef,
+						reportBounds,
+					);
+				}
+				return;
+			}
+
+			if (loaded.blueprint_id && !refs.sceneBurstLoadInProgressRef.current) {
 				const kind = (loaded.kind ?? 'model') as import('../types').EntityMeta['kind'];
 				refs.entityMetaRef.current[id] = {
 					kind,
@@ -854,6 +917,10 @@ export function createEngineEventHandler({
 					refs.pendingRestoresRef.current.delete('[Player]');
 					refs.pendingPlayCharacterViewRef.current = null;
 					completeSceneBurstOp(refs);
+					const savedView = refs.playCharacterViewRef.current;
+					if (savedView?.position) {
+						applySavedPlayCharacterView(savedView);
+					}
 				}
 			} else if (refs.sceneBurstLoadInProgressRef.current) {
 				completeSceneBurstOp(refs);
@@ -1179,8 +1246,24 @@ export function createEngineEventHandler({
 		if (event.event === 'model_asset_loaded') {
 			const model = event as unknown as { path: string; name: string };
 			dispatch({ type: 'MARK_MODEL_READY', payload: { path: model.path, name: model.name } });
-			if (refs.sceneBurstLoadInProgressRef.current) {
+			const burstActive = refs.sceneBurstLoadInProgressRef.current;
+			const hasQueuedSpawns = hasQueuedCachedModelSpawns(
+				refs.pendingModelLoadQueueRef.current,
+				model.path,
+			);
+			if (burstActive) {
 				completeSceneBurstOp(refs);
+			}
+			if (hasQueuedSpawns) {
+				flushPendingCachedModelSpawnsForPath(
+					model.path,
+					refs.pendingModelLoadQueueRef.current,
+					(cmd) => sendEngine(cmd as never),
+					refs,
+					burstActive,
+				);
+			}
+			if (burstActive) {
 				tryEndSceneBurstLoad(
 					dispatch,
 					refs.sceneBurstLoadInProgressRef,
@@ -1513,7 +1596,7 @@ export function createEngineEventHandler({
 		}
 
 		if (event.event === 'entity_removed') {
-			const e = event as import('@shared-types').EntityRemoved;
+			const e = event as unknown as import('@shared-types').EntityRemoved;
 			const removedKind = e.kind ?? refs.entityMetaRef.current[e.id]?.kind;
 			if (
 				e.points
@@ -1545,7 +1628,7 @@ export function createEngineEventHandler({
 		}
 
 		if (event.event === 'model_clips_ready') {
-			const clipsEvent = event as {
+			const clipsEvent = event as unknown as {
 				id: number
 				path: string
 				clips: Array<{ name: string; duration_s: number; fps: number }>

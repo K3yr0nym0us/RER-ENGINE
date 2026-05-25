@@ -12,12 +12,7 @@ import {
 } from '../utils/blueprintModelPath'
 
 function resolvePreviewKind(bp: BluePrintEntry, is3D: boolean): string {
-  if (!is3D) {
-    return bp.kind === 'scenario' ? 'scenario' : 'character'
-  }
-  if (blueprintUsesModel3D(bp)) {
-    return 'model'
-  }
+  if (is3D) return 'model'
   return bp.kind === 'scenario' ? 'scenario' : 'character'
 }
 

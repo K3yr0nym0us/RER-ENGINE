@@ -155,6 +155,16 @@ impl State {
         }
 
         let is_play_character = self.play_character_entity == Some(id);
+        if self.queue_entity_model_replace_if_preloading(id, path, is_play_character) {
+            return;
+        }
+        // El jugador necesita malla normalizada + forward del mesh; no reutilizar caché de precarga.
+        if !is_play_character
+            && self.replace_entity_model_from_static_cache(id, path, is_play_character)
+        {
+            return;
+        }
+
         let normalize = if is_play_character {
             Some(
                 self.world
@@ -182,6 +192,126 @@ impl State {
             None
         };
         self.replace_entity_model_inner(id, path, gltf_file, is_play_character, normalize);
+    }
+
+    /// Reutiliza malla/capa de textura ya en GPU (precarga o carga previa).
+    fn replace_entity_model_from_static_cache(
+        &mut self,
+        id: EntityId,
+        path: &str,
+        is_play_character: bool,
+    ) -> bool {
+        if let Err(e) = self.ensure_static_model_cached(path) {
+            log::debug!("[replace_entity_model] sin caché reutilizable para {path}: {e}");
+            return false;
+        }
+        let key = self.model_path_key(path);
+        let Some(part) = self
+            .cached_static_model_parts(&key)
+            .and_then(|parts| parts.first())
+            .copied()
+        else {
+            return false;
+        };
+
+        if let Some(mc) = self.world.get_mut::<MeshComponent>(id) {
+            mc.mesh_idx = part.mesh_idx;
+            mc.tex_idx = part.tex_idx;
+        } else {
+            self.world.insert(
+                id,
+                MeshComponent {
+                    mesh_idx: part.mesh_idx,
+                    tex_idx: part.tex_idx,
+                },
+            );
+        }
+
+        if is_play_character {
+            if let Some(m) = self.save_registry.meta.get_mut(&id) {
+                m.visual_model_path = Some(path.to_string());
+            } else {
+                self.save_registry.register_meta(
+                    id,
+                    EntitySaveMeta {
+                        kind: "character".to_string(),
+                        path: "[Player]".to_string(),
+                        visual_model_path: Some(path.to_string()),
+                        points: None,
+                        entity_category: None,
+                    },
+                );
+            }
+            let feet = self.play_character_feet_position();
+            let w = PLAY_CHARACTER_COLLIDER_RADIUS * 2.0;
+            if let Some(t) = self.world.get_mut::<Transform>(id) {
+                t.scale = glam::Vec3::new(w, 1.0, w);
+                t.position = glam::Vec3::new(
+                    feet.x,
+                    feet.y + PLAY_CHARACTER_BODY_HEIGHT * 0.5,
+                    feet.z,
+                );
+                let (_, _, yaw) = t.rotation.to_euler(glam::EulerRot::YXZ);
+                t.rotation = glam::Quat::from_rotation_y(yaw);
+            }
+            self.sync_player_rotation_from_look();
+            self.physics.remove_entity_body(id);
+            self.emit_play_character_view_changed(false);
+        } else if let Some(m) = self.save_registry.meta.get_mut(&id) {
+            m.path = path.to_string();
+            m.visual_model_path = Some(path.to_string());
+        }
+
+        if !is_play_character && self.physics.has_physics(id) {
+            if let Some(t) = self.world.get::<Transform>(id) {
+                let half = [
+                    (t.scale.x * 0.5).max(0.01),
+                    (t.scale.y * 0.5).max(0.01),
+                    (t.scale.z * 0.5).max(0.01),
+                ];
+                let pos = t.position.to_array();
+                let body_type = self.physics.get_body_type(id).to_string();
+                self.physics
+                    .set_entity_physics(id, true, &body_type, pos, half);
+            }
+        }
+
+        self.try_bind_model_animations(id, &key);
+        if is_play_character && self.model_animation_bindings.contains_key(&id) {
+            if let Some(asset) = self.model_assets.get(&key) {
+                if is_fbx_model_path(path) {
+                    self.play_character_mesh_forward_xz =
+                        model_asset::resolve_fbx_play_character_forward_xz(asset);
+                } else if is_gltf_model_path(path) {
+                    self.play_character_mesh_forward_xz =
+                        model_asset::resolve_gltf_play_character_forward_xz(asset);
+                }
+                self.sync_player_rotation_from_look();
+            }
+        }
+
+        let (position, rotation, scale) = match self.world.get::<Transform>(id) {
+            Some(t) => (
+                Some(t.position.to_array()),
+                Some([
+                    t.rotation.x,
+                    t.rotation.y,
+                    t.rotation.z,
+                    t.rotation.w,
+                ]),
+                Some(t.scale.to_array()),
+            ),
+            None => (None, None, None),
+        };
+        send_event(&EngineEvent::EntityModelReplaced {
+            id,
+            path: key.clone(),
+            position,
+            rotation,
+            scale,
+        });
+        log::info!("Modelo reemplazado desde caché en entidad {id}: {key}");
+        true
     }
 
     fn replace_entity_model_inner(
@@ -220,12 +350,12 @@ impl State {
         };
 
         let mesh_idx = self.meshes.len();
-        let tex_idx = self.uv_rects.len();
+        let tex_idx = self.tex_layers.len();
         self.meshes.push(part.mesh);
-        let uv = self
-            .atlas
+        let layer = self
+            .texture_array
             .pack(&self.queue, &part.rgba, part.width, part.height);
-        self.uv_rects.push(uv);
+        self.tex_layers.push(layer);
 
         if let Some(mc) = self.world.get_mut::<MeshComponent>(id) {
             mc.mesh_idx = mesh_idx;
@@ -251,6 +381,7 @@ impl State {
                         path: "[Player]".to_string(),
                         visual_model_path: Some(path.to_string()),
                         points: None,
+                        entity_category: None,
                     },
                 );
             }

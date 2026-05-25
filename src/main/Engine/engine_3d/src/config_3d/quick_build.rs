@@ -242,13 +242,8 @@ impl State {
             return None;
         }
         let tex_idx = mc.tex_idx;
-        let uv = self
-            .anim_overrides
-            .get(&tex_idx)
-            .copied()
-            .or_else(|| self.uv_rects.get(tex_idx).copied())
-            .unwrap_or(self.fallback_uv);
-        let mut inst = mesh::InstanceData::new(t.to_matrix(), 0.0, uv);
+        let layer = self.texture_layer_for(tex_idx);
+        let mut inst = mesh::InstanceData::new(t.to_matrix(), 0.0, layer);
         inst.flag_pad[1] = GHOST_ALPHA;
         Some((mc.mesh_idx, inst))
     }
@@ -275,10 +270,7 @@ impl State {
             .as_ref()
             .map(|b| b.rotation)
             .unwrap_or(DEFAULT_ROTATION);
-        let kind = self
-            .quick_build_preview_kind
-            .clone()
-            .unwrap_or_else(|| "model".to_string());
+        let kind = "model".to_string();
         let entity_category = bp.as_ref().and_then(|b| b.entity_category.clone());
         let is_environment = entity_category.as_deref() == Some("environment");
         let default_label = entity_label_for_category(entity_category.as_deref());

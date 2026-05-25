@@ -1,4 +1,5 @@
 import type { BluePrintEntry, BluePrintCategory, EntityCategory } from '@shared-types'
+import { isEditorBoxPath, isGroundPath, isPlayerPath, isSunPath } from '@shared-types'
 
 const MODEL_3D_EXT = /\.(glb|gltf|fbx)$/i
 
@@ -29,6 +30,19 @@ export function resolveBlueprintModelPath(bp: Pick<BluePrintEntry, 'path' | 'vis
 
 export function blueprintUsesModel3D(bp: Pick<BluePrintEntry, 'kind' | 'path' | 'visualModelPath'>): boolean {
   return bp.kind === 'model' || isModel3DPath(resolveBlueprintModelPath(bp))
+}
+
+/** Entidad 3D instanciada desde archivo .glb/.gltf/.fbx (no marcadores del editor). */
+export function is3dModelFileEntity(
+  projectType: string | undefined,
+  entity: { path: string },
+): boolean {
+  if (projectType !== '3D') return false
+  if (!isModel3DPath(entity.path)) return false
+  return !isPlayerPath(entity.path)
+    && !isSunPath(entity.path)
+    && !isGroundPath(entity.path)
+    && !isEditorBoxPath(entity.path)
 }
 
 export function resolveBlueprintCategory(
