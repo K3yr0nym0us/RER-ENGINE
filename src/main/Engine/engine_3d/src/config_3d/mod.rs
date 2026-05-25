@@ -46,6 +46,19 @@ pub(crate) fn is_gltf_model_path(path: &str) -> bool {
         })
 }
 
+/// Posición del cuerpo Rapier: pies en `transform.position` para FBX; centro en el resto.
+pub(crate) fn physics_body_position_for_model_path(
+    model_path: &str,
+    transform_position: [f32; 3],
+    half: [f32; 3],
+) -> [f32; 3] {
+    if is_fbx_model_path(model_path) {
+        physics_3d::physics_center_from_feet_position(transform_position, half)
+    } else {
+        transform_position
+    }
+}
+
 pub(crate) mod directional_light;
 
 use crate::ipc::{AxisValue, RotationEulerDelta};
@@ -113,7 +126,6 @@ use glam::Vec3 as GlamVec3;
 
 use crate::config_3d::character_anchor::{
     PLAY_CHARACTER_BODY_HEIGHT,
-    PLAY_CHARACTER_COLLIDER_RADIUS,
 };
 use crate::config_shared::point_to_segment_2d;
 use crate::ecs::{EntityId, MeshComponent, NonSelectable, Transform};
@@ -146,6 +158,10 @@ impl State {
     }
 
     /// Sustituye el mesh visual de una entidad existente (mismo id, sin recrear entidad).
+    ///
+    /// Orden: cola si precarga en curso → caché GPU (clave `::play_character` para el jugador) →
+    /// carga desde disco. No llamar `sync_player_rotation_from_look` en editor al asignar mesh:
+    /// la rotación guardada llega con `set_play_character_view` tras `entity_model_replaced`.
     pub(crate) fn replace_entity_model(&mut self, id: EntityId, path: &str) {
         if self.world.get::<Transform>(id).is_none() {
             send_event(&EngineEvent::Error {
@@ -158,10 +174,7 @@ impl State {
         if self.queue_entity_model_replace_if_preloading(id, path, is_play_character) {
             return;
         }
-        // El jugador necesita malla normalizada + forward del mesh; no reutilizar caché de precarga.
-        if !is_play_character
-            && self.replace_entity_model_from_static_cache(id, path, is_play_character)
-        {
+        if self.replace_entity_model_from_static_cache(id, path, is_play_character) {
             return;
         }
 
@@ -201,13 +214,24 @@ impl State {
         path: &str,
         is_play_character: bool,
     ) -> bool {
-        if let Err(e) = self.ensure_static_model_cached(path) {
+        let asset_key = self.model_path_key(path);
+        let mesh_cache_key = if is_play_character {
+            if let Err(e) = self.ensure_play_character_model_cached(path) {
+                log::debug!(
+                    "[replace_entity_model] sin caché jugador para {path}: {e}"
+                );
+                return false;
+            }
+            crate::config_3d::static_model_cache::play_character_cache_key(&asset_key)
+        } else if let Err(e) = self.ensure_static_model_cached(path) {
             log::debug!("[replace_entity_model] sin caché reutilizable para {path}: {e}");
             return false;
-        }
-        let key = self.model_path_key(path);
+        } else {
+            asset_key.clone()
+        };
         let Some(part) = self
-            .cached_static_model_parts(&key)
+            .static_model_cache
+            .get(&mesh_cache_key)
             .and_then(|parts| parts.first())
             .copied()
         else {
@@ -242,19 +266,17 @@ impl State {
                     },
                 );
             }
-            let feet = self.play_character_feet_position();
-            let w = PLAY_CHARACTER_COLLIDER_RADIUS * 2.0;
-            if let Some(t) = self.world.get_mut::<Transform>(id) {
-                t.scale = glam::Vec3::new(w, 1.0, w);
-                t.position = glam::Vec3::new(
-                    feet.x,
-                    feet.y + PLAY_CHARACTER_BODY_HEIGHT * 0.5,
-                    feet.z,
-                );
-                let (_, _, yaw) = t.rotation.to_euler(glam::EulerRot::YXZ);
-                t.rotation = glam::Quat::from_rotation_y(yaw);
+            self.play_character_mesh_forward_xz = part.forward_xz;
+            if is_fbx_model_path(path) {
+                if let Some(skin_fwd) = model_asset::fbx_skinned_play_forward_xz(
+                    Path::new(path),
+                    PLAY_CHARACTER_BODY_HEIGHT,
+                ) {
+                    self.play_character_mesh_forward_xz = skin_fwd;
+                }
             }
-            self.sync_player_rotation_from_look();
+            self.apply_play_character_model_placement_after_load(id, path, part.local_bounds);
+            self.sync_play_character_body_rotation_after_mesh_assign();
             self.physics.remove_entity_body(id);
             self.emit_play_character_view_changed(false);
         } else if let Some(m) = self.save_registry.meta.get_mut(&id) {
@@ -270,15 +292,16 @@ impl State {
                     (t.scale.z * 0.5).max(0.01),
                 ];
                 let pos = t.position.to_array();
+                let body_pos = physics_body_position_for_model_path(path, pos, half);
                 let body_type = self.physics.get_body_type(id).to_string();
                 self.physics
-                    .set_entity_physics(id, true, &body_type, pos, half);
+                    .set_entity_physics(id, true, &body_type, body_pos, half);
             }
         }
 
-        self.try_bind_model_animations(id, &key);
+        self.try_bind_model_animations(id, &asset_key);
         if is_play_character && self.model_animation_bindings.contains_key(&id) {
-            if let Some(asset) = self.model_assets.get(&key) {
+            if let Some(asset) = self.model_assets.get(&asset_key) {
                 if is_fbx_model_path(path) {
                     self.play_character_mesh_forward_xz =
                         model_asset::resolve_fbx_play_character_forward_xz(asset);
@@ -286,7 +309,7 @@ impl State {
                     self.play_character_mesh_forward_xz =
                         model_asset::resolve_gltf_play_character_forward_xz(asset);
                 }
-                self.sync_player_rotation_from_look();
+                self.sync_play_character_body_rotation_after_mesh_assign();
             }
         }
 
@@ -305,12 +328,14 @@ impl State {
         };
         send_event(&EngineEvent::EntityModelReplaced {
             id,
-            path: key.clone(),
+            path: asset_key.clone(),
             position,
             rotation,
             scale,
         });
-        log::info!("Modelo reemplazado desde caché en entidad {id}: {key}");
+        log::info!(
+            "Modelo reemplazado desde caché en entidad {id}: {mesh_cache_key}"
+        );
         true
     }
 
@@ -394,21 +419,8 @@ impl State {
                     self.play_character_mesh_forward_xz = skin_fwd;
                 }
             }
-            let feet = self.play_character_feet_position();
-            let w = PLAY_CHARACTER_COLLIDER_RADIUS * 2.0;
-            if let Some(t) = self.world.get_mut::<Transform>(id) {
-                // La malla ya viene normalizada a BODY_HEIGHT; scale.y=1 evita doble altura.
-                t.scale = glam::Vec3::new(w, 1.0, w);
-                t.position = glam::Vec3::new(
-                    feet.x,
-                    feet.y + PLAY_CHARACTER_BODY_HEIGHT * 0.5,
-                    feet.z,
-                );
-                let (_, _, yaw) = t.rotation.to_euler(glam::EulerRot::YXZ);
-                t.rotation = glam::Quat::from_rotation_y(yaw);
-            }
-            self.sync_player_rotation_from_look();
-            // El jugador FP usa solo la cápsula cinemática; el cuerpo Rapier estático bloquea queries.
+            self.apply_play_character_model_placement_after_load(id, path, part.local_bounds);
+            self.sync_play_character_body_rotation_after_mesh_assign();
             self.physics.remove_entity_body(id);
             self.emit_play_character_view_changed(false);
         } else {
@@ -425,9 +437,10 @@ impl State {
                     (t.scale.z * 0.5).max(0.01),
                 ];
                 let pos = t.position.to_array();
+                let body_pos = physics_body_position_for_model_path(path, pos, half);
                 let body_type = self.physics.get_body_type(id).to_string();
                 self.physics
-                    .set_entity_physics(id, true, &body_type, pos, half);
+                    .set_entity_physics(id, true, &body_type, body_pos, half);
             }
         }
 
@@ -458,7 +471,24 @@ impl State {
                     self.play_character_mesh_forward_xz =
                         model_asset::resolve_gltf_play_character_forward_xz(asset);
                 }
-                self.sync_player_rotation_from_look();
+                self.sync_play_character_body_rotation_after_mesh_assign();
+            }
+        }
+
+        if is_play_character {
+            let asset_key = self.model_path_key(path);
+            let play_key =
+                crate::config_3d::static_model_cache::play_character_cache_key(&asset_key);
+            if !self.static_model_cache.contains_key(&play_key) {
+                self.static_model_cache.insert(
+                    play_key,
+                    vec![crate::config_3d::static_model_cache::CachedStaticModelPart {
+                        mesh_idx,
+                        tex_idx,
+                        local_bounds: part.local_bounds,
+                        forward_xz: part.forward_xz,
+                    }],
+                );
             }
         }
 
@@ -722,11 +752,17 @@ impl State {
                         (t.scale.y * 0.5).max(0.01),
                         (t.scale.z * 0.5).max(0.01),
                     ];
-                    self.physics.sync_entity_physics_from_transform(
-                        sel_id,
-                        t.position.to_array(),
-                        half,
-                    );
+                    let pos = t.position.to_array();
+                    let model_path = self
+                        .save_registry
+                        .meta
+                        .get(&sel_id)
+                        .map(|m| m.path.as_str())
+                        .unwrap_or("");
+                    let body_pos =
+                        physics_body_position_for_model_path(model_path, pos, half);
+                    self.physics
+                        .sync_entity_physics_from_transform(sel_id, body_pos, half);
                 }
             }
         }

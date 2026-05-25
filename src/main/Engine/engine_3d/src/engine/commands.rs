@@ -340,7 +340,19 @@ impl State {
                 yaw,
                 pitch,
             } => {
-                self.apply_play_character_view(position, yaw, pitch, None, None, None);
+                self.apply_play_character_view(
+                    position,
+                    yaw,
+                    pitch,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                );
             }
             EngineCommand::SetPlayCharacterView {
                 position,
@@ -351,6 +363,11 @@ impl State {
                 frustum_distance,
                 camera_only,
                 camera_follow_mode,
+                body_rotation,
+                body_scale,
+                camera_eye_position,
+                fps_camera_yaw,
+                fps_camera_pitch,
             } => {
                 if camera_only.unwrap_or(false) {
                     self.apply_play_camera_view_patch(
@@ -377,6 +394,11 @@ impl State {
                         fov_y,
                         frustum_distance,
                         camera_follow_mode,
+                        body_rotation,
+                        body_scale,
+                        camera_eye_position,
+                        fps_camera_yaw,
+                        fps_camera_pitch,
                     );
                 }
             }
@@ -506,8 +528,19 @@ impl State {
                                 (t.scale.z * 0.5).max(0.01),
                             ];
                             let pos = t.position.to_array();
+                            let model_path = self
+                                .save_registry
+                                .meta
+                                .get(&id)
+                                .map(|m| m.path.as_str())
+                                .unwrap_or("");
+                            let body_pos = crate::config_3d::physics_body_position_for_model_path(
+                                model_path,
+                                pos,
+                                half,
+                            );
                             self.physics
-                                .sync_entity_physics_from_transform(id, pos, half);
+                                .sync_entity_physics_from_transform(id, body_pos, half);
                         }
                     }
                 }

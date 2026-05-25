@@ -174,6 +174,17 @@ pub enum EngineCommand {
         camera_only: Option<bool>,
         #[serde(default)]
         camera_follow_mode: Option<PlayCameraFollowMode>,
+        #[serde(default)]
+        body_rotation: Option<[f32; 4]>,
+        #[serde(default)]
+        body_scale: Option<[f32; 3]>,
+        #[serde(default)]
+        camera_eye_position: Option<[f32; 3]>,
+        /// Cono FPS en editor (rad); distinto de `yaw` orbital si el usuario orbitó el viewport.
+        #[serde(default)]
+        fps_camera_yaw: Option<f32>,
+        #[serde(default)]
+        fps_camera_pitch: Option<f32>,
     },
     /// Actualizar transform de una entidad por id.
     ///
@@ -596,6 +607,20 @@ pub struct SavePlayerTransformSnapshot {
     pub visual_model_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub control_bindings: Option<ControlBindingsData>,
+    /// Rotación del mesh del jugador (quaternion xyzw) en editor.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub body_rotation: Option<[f32; 4]>,
+    /// Escala del transform del jugador en editor (p. ej. tras reemplazar modelo).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub body_scale: Option<[f32; 3]>,
+    /// Ojo FPS en editor (independiente del viewport orbital).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub camera_eye_position: Option<[f32; 3]>,
+    /// Yaw del cono FPS (`camera.yaw`), no del viewport orbital.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fps_camera_yaw: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fps_camera_pitch: Option<f32>,
 }
 
 #[derive(Debug, Serialize, Clone)]

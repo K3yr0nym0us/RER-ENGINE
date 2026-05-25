@@ -1,12 +1,21 @@
 // ── Precarga asíncrona y caché GPU de modelos 3D ─────────────────────────────
+//
+// Dos entradas por path canónico:
+//   · clave normal — mesh tal cual (Recursos / props / `load_model`).
+//   · `{path}::play_character` — mesh normalizado (~PLAY_CHARACTER_BODY_HEIGHT) para
+//     `replace_entity_model` del jugador. No reutilizar la entrada normal en el player:
+//     el pivote/escala difieren y forzar `sync_player_rotation_from_look` en editor
+//     rompe la restauración del `.save`.
 
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::mpsc;
 use std::sync::Arc;
 
+use crate::config_3d::character_anchor::PLAY_CHARACTER_BODY_HEIGHT;
 use crate::config_3d::mesh_3d::{load_model_file_cpu, CpuModelMeshPart};
 use crate::config_3d::model_asset;
+use crate::config_3d::physics_body_position_for_model_path;
 use crate::ecs::{EntityId, MeshComponent, Transform};
 use crate::engine::State;
 use crate::entity_save_meta::EntitySaveMeta;
@@ -17,6 +26,8 @@ use rer_engine_shared::editor_defaults::entity_label_for_category;
 pub(crate) struct CachedStaticModelPart {
     pub mesh_idx: usize,
     pub tex_idx: usize,
+    pub local_bounds: ([f32; 3], [f32; 3]),
+    pub forward_xz: glam::Vec2,
 }
 
 pub(crate) struct ModelPreloadCpuResult {
@@ -42,6 +53,10 @@ pub(crate) fn normalize_model_path(path: &str) -> String {
 }
 
 pub(crate) type StaticModelCache = HashMap<String, Vec<CachedStaticModelPart>>;
+
+pub(crate) fn play_character_cache_key(canonical_path: &str) -> String {
+    format!("{canonical_path}::play_character")
+}
 
 /// `load_model` recibido mientras la precarga GPU del path sigue en curso.
 pub(crate) struct PendingLoadModel {
@@ -156,6 +171,39 @@ impl State {
         }
     }
 
+    fn upload_cpu_parts_to_static_cache(
+        &mut self,
+        cache_key: &str,
+        parts: &[CpuModelMeshPart],
+        label: &str,
+    ) -> Vec<CachedStaticModelPart> {
+        let mut cached_parts = Vec::with_capacity(parts.len());
+        for (i, part) in parts.iter().enumerate() {
+            let mesh_idx = self.meshes.len();
+            let tex_idx = self.tex_layers.len();
+            self.meshes.push(crate::mesh::upload(
+                &self.device,
+                &part.vertices,
+                &part.indices,
+                &format!("{label}-{i}"),
+            ));
+            let tex_cache_key = format!("{cache_key}::part{i}");
+            self.pack_texture_layer(
+                Some(&tex_cache_key),
+                &part.rgba,
+                part.width,
+                part.height,
+            );
+            cached_parts.push(CachedStaticModelPart {
+                mesh_idx,
+                tex_idx,
+                local_bounds: part.local_bounds,
+                forward_xz: part.forward_xz,
+            });
+        }
+        cached_parts
+    }
+
     fn commit_model_preload(&mut self, data: ModelPreloadCpuResult) {
         let path = data.path.clone();
         self.model_preload_inflight.remove(&path);
@@ -174,29 +222,7 @@ impl State {
             return;
         }
 
-        let mut cached_parts = Vec::with_capacity(data.parts.len());
-        for (i, part) in data.parts.iter().enumerate() {
-            let mesh_idx = self.meshes.len();
-            let tex_idx = self.tex_layers.len();
-            self.meshes.push(crate::mesh::upload(
-                &self.device,
-                &part.vertices,
-                &part.indices,
-                &format!("preload-{i}"),
-            ));
-            let cache_key = format!("{path}::part{i}");
-            self.pack_texture_layer(
-                Some(&cache_key),
-                &part.rgba,
-                part.width,
-                part.height,
-            );
-            cached_parts.push(CachedStaticModelPart {
-                mesh_idx,
-                tex_idx,
-            });
-        }
-
+        let cached_parts = self.upload_cpu_parts_to_static_cache(&path, &data.parts, "preload");
         self.static_model_cache.insert(path.clone(), cached_parts);
         if let Some(asset) = data.anim_asset {
             self.model_assets.insert(path.clone(), asset);
@@ -218,8 +244,60 @@ impl State {
                 .map(|p| p.len())
                 .unwrap_or(0)
         );
+        self.try_warm_play_character_model_cache(&path);
         self.flush_pending_load_models_for_path(&path);
         self.flush_pending_entity_model_replaces_for_path(&path);
+    }
+
+    /// Tras `load_model_asset`, sube la variante jugador para que el replace sea inmediato.
+    pub(crate) fn try_warm_play_character_model_cache(&mut self, canonical_path: &str) {
+        let play_key = play_character_cache_key(canonical_path);
+        if self.static_model_cache.contains_key(&play_key) {
+            return;
+        }
+        let path_buf = Path::new(canonical_path);
+        if !path_buf.is_file() {
+            return;
+        }
+        let parts = match load_model_file_cpu(path_buf, Some(PLAY_CHARACTER_BODY_HEIGHT)) {
+            Ok(parts) if !parts.is_empty() => parts,
+            Ok(_) => return,
+            Err(e) => {
+                log::debug!(
+                    "[model_cache] sin variante jugador para {canonical_path}: {e}"
+                );
+                return;
+            }
+        };
+        let cached = self.upload_cpu_parts_to_static_cache(&play_key, &parts, "play-preload");
+        self.static_model_cache.insert(play_key, cached);
+        if !self.model_assets.contains_key(canonical_path) {
+            if let Some(asset) = model_asset::load_model_asset(path_buf, None) {
+                self.model_assets.insert(canonical_path.to_string(), asset);
+            }
+        }
+        log::debug!("[model_cache] variante jugador en GPU: {canonical_path}");
+    }
+
+    pub(crate) fn ensure_play_character_model_cached(&mut self, path: &str) -> Result<(), String> {
+        let key = self.model_path_key(path);
+        let play_key = play_character_cache_key(&key);
+        if self.static_model_cache.contains_key(&play_key) {
+            return Ok(());
+        }
+        if self.model_preload_inflight.contains(&key) {
+            return Err(format!(
+                "El modelo aún se está precargando: {key}. Espera a que termine en Recursos."
+            ));
+        }
+        self.try_warm_play_character_model_cache(&key);
+        if self.static_model_cache.contains_key(&play_key) {
+            Ok(())
+        } else {
+            Err(format!(
+                "No se pudo preparar el modelo del jugador: {key}"
+            ))
+        }
     }
 
     pub(crate) fn queue_entity_model_replace_if_preloading(
@@ -318,28 +396,7 @@ impl State {
             return Err(format!("Modelo vacío: {key}"));
         }
 
-        let mut cached_parts = Vec::with_capacity(parts.len());
-        for (i, part) in parts.iter().enumerate() {
-            let mesh_idx = self.meshes.len();
-            let tex_idx = self.tex_layers.len();
-            self.meshes.push(crate::mesh::upload(
-                &self.device,
-                &part.vertices,
-                &part.indices,
-                &format!("sync-{i}"),
-            ));
-            let cache_key = format!("{key}::part{i}");
-            self.pack_texture_layer(
-                Some(&cache_key),
-                &part.rgba,
-                part.width,
-                part.height,
-            );
-            cached_parts.push(CachedStaticModelPart {
-                mesh_idx,
-                tex_idx,
-            });
-        }
+        let cached_parts = self.upload_cpu_parts_to_static_cache(&key, &parts, "sync");
         self.static_model_cache.insert(key.clone(), cached_parts);
         if let Some(asset) = model_asset::load_model_asset(Path::new(&key), None) {
             self.model_assets.insert(key, asset);
@@ -403,8 +460,9 @@ impl State {
             } else {
                 ([0.0_f32; 3], [0.5_f32; 3])
             };
+            let body_pos = physics_body_position_for_model_path(path, pos, half);
             self.physics
-                .set_entity_physics(id, true, physics_type, pos, half);
+                .set_entity_physics(id, true, physics_type, body_pos, half);
             send_event(&EngineEvent::PhysicsChanged {
                 entity_id: id,
                 enabled: true,
@@ -510,6 +568,8 @@ impl State {
     pub(crate) fn invalidate_static_model_cache(&mut self, path: &str) {
         let key = self.model_path_key(path);
         self.static_model_cache.remove(&key);
+        self.static_model_cache
+            .remove(&play_character_cache_key(&key));
         self.model_assets.remove(&key);
         self.model_preload_inflight.remove(&key);
     }

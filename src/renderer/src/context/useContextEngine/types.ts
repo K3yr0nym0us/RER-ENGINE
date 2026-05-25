@@ -530,6 +530,11 @@ export interface PendingRestore {
 	visualModelPath?: string
 }
 
+export interface PendingBurstSpawnEntry {
+	modelPath: string
+	pending: PendingRestore
+}
+
 export interface Camera2dState {
 	x: number
 	y: number
@@ -552,8 +557,8 @@ export interface EngineInternalRefs {
 	pendingSpawnKindRef: MutableRefObject<EntityMeta['kind'] | null>
 	pendingSpawnCategoryRef: MutableRefObject<EntityCategory | null>
 	pendingModelLoadQueueRef: MutableRefObject<Array<{ modelPath: string; pending: PendingRestore }>>
-	/** Restore pendiente por cada `spawn_cached_model` durante burst load (orden FIFO). */
-	pendingBurstSpawnRestoreRef: MutableRefObject<PendingRestore[]>
+	/** Restore pendiente por cada `spawn_cached_model` durante burst load (emparejado por path). */
+	pendingBurstSpawnRestoreRef: MutableRefObject<PendingBurstSpawnEntry[]>
 	camera2dRef: MutableRefObject<Camera2dState | null>
 	mainPlayerHandled: MutableRefObject<boolean>
 	playerRemoved: MutableRefObject<boolean>
@@ -579,8 +584,6 @@ export interface EngineInternalRefs {
 	modelAssetPreloadPendingRef: MutableRefObject<number>
 	/** Overlay de carga durante ráfaga IPC 3D (pestañas / `ready`). */
 	sceneBurstLoadInProgressRef: MutableRefObject<boolean>
-	/** FP: esperar `play_character_view_changed` tras restore del jugador. */
-	sceneBurstAwaitingPlayerViewRef: MutableRefObject<boolean>
 	/** Colisionadores 3D enviados sin cola de restore. */
 	sceneBurstPendingColliderCountRef: MutableRefObject<number>
 	/** Operaciones IPC pendientes durante burst load 3D (ready / cambio escena). */
@@ -596,7 +599,6 @@ export interface EngineContextValue extends EngineState {
 	modelAssetPreloadPendingRef: MutableRefObject<number>
 	modelsRef: MutableRefObject<import('@shared-types').ModelInfo[]>
 	sceneBurstLoadInProgressRef: MutableRefObject<boolean>
-	sceneBurstAwaitingPlayerViewRef: MutableRefObject<boolean>
 	sceneBurstPendingColliderCountRef: MutableRefObject<number>
 	sceneBurstPendingOpsRef: MutableRefObject<number>
 	entityTransformsRef: MutableRefObject<Record<number, Transform>>
@@ -610,7 +612,7 @@ export interface EngineContextValue extends EngineState {
 	pendingSpawnKindRef: MutableRefObject<EntityMeta['kind'] | null>
 	pendingSpawnCategoryRef: MutableRefObject<EntityCategory | null>
 	pendingModelLoadQueueRef: MutableRefObject<Array<{ modelPath: string; pending: PendingRestore }>>
-	pendingBurstSpawnRestoreRef: MutableRefObject<PendingRestore[]>
+	pendingBurstSpawnRestoreRef: MutableRefObject<PendingBurstSpawnEntry[]>
 	mainPlayerHandled: MutableRefObject<boolean>
 	camera2dRef: MutableRefObject<Camera2dState | null>
 	send: (cmd: object) => void

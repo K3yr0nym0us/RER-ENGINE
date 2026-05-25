@@ -19,6 +19,7 @@ import {
   beginSceneImportLoading,
   needsSceneBurstLoad,
   trackSceneBurstCollider,
+  trackSceneBurstOp,
   trackSceneBurstModelPreloads,
   collectUncachedBurstModelPaths,
   tryEndSceneBurstLoad,
@@ -126,7 +127,6 @@ export function SceneManagerProvider({
     sceneImportInProgressRef,
     modelReplaceInProgressRef,
     sceneBurstLoadInProgressRef,
-    sceneBurstAwaitingPlayerViewRef,
     sceneBurstPendingColliderCountRef,
     sceneBurstPendingOpsRef,
     reportBounds,
@@ -314,7 +314,6 @@ export function SceneManagerProvider({
 
     const burstLoad = needsSceneBurstLoad(projectType, gameStyle, scene);
     if (burstLoad) {
-      sceneBurstAwaitingPlayerViewRef.current = false;
       sceneBurstPendingColliderCountRef.current = 0;
       beginSceneBurstLoad(dispatch, sceneBurstLoadInProgressRef, {
         sceneBurstPendingOpsRef,
@@ -488,7 +487,9 @@ export function SceneManagerProvider({
     }
 
     if (gameStyle === 'first-person' && projectType === '3D') {
-      ensurePlayCharacterOnLoad(scene, pendingRestoresRef, send);
+      ensurePlayCharacterOnLoad(scene, pendingRestoresRef, send, {
+        onBurstOp: burstLoad ? () => trackSceneBurstOp({ sceneBurstPendingOpsRef }) : undefined,
+      });
     }
 
     if (burstLoad) {
@@ -502,7 +503,6 @@ export function SceneManagerProvider({
             pendingBurstSpawnRestoreRef,
             pendingPlayCharacterViewRef,
             mainPlayerHandled,
-            sceneBurstAwaitingPlayerViewRef,
             sceneBurstPendingColliderCountRef,
             sceneBurstPendingOpsRef,
           },

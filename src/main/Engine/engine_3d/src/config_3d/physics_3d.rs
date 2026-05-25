@@ -60,6 +60,11 @@ impl Default for PhysicsWorld {
     }
 }
 
+/// Centro del collider cuando `transform.position` está en los pies (mallas FBX con pivote en suelo).
+pub(crate) fn physics_center_from_feet_position(feet: [f32; 3], half: [f32; 3]) -> [f32; 3] {
+    [feet[0], feet[1] + half[1], feet[2]]
+}
+
 impl PhysicsWorld {
     fn refresh_queries(&mut self) {
         self.query_pipeline.update(&self.colliders);

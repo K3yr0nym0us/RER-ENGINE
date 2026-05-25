@@ -11,6 +11,20 @@ pub(crate) struct LoadedModelMesh {
     pub(crate) height: u32,
     /// Forward horizontal en espacio local de la malla (plano XZ), para alinear al jugador FP.
     pub(crate) forward_xz: glam::Vec2,
+    /// AABB en espacio local tras normalizar (para cápsula del jugador FP).
+    pub(crate) local_bounds: ([f32; 3], [f32; 3]),
+}
+
+pub(crate) fn vertex_local_bounds(vertices: &[Vertex]) -> ([f32; 3], [f32; 3]) {
+    let mut min = [f32::MAX; 3];
+    let mut max = [f32::MIN; 3];
+    for v in vertices {
+        for i in 0..3 {
+            min[i] = min[i].min(v.position[i]);
+            max[i] = max[i].max(v.position[i]);
+        }
+    }
+    (min, max)
 }
 
 /// Malla parseada en CPU (sin upload GPU); usada por precarga en segundo plano.
@@ -20,6 +34,8 @@ pub(crate) struct CpuModelMeshPart {
     pub(crate) rgba: Vec<u8>,
     pub(crate) width: u32,
     pub(crate) height: u32,
+    pub(crate) forward_xz: glam::Vec2,
+    pub(crate) local_bounds: ([f32; 3], [f32; 3]),
 }
 
 /// Estima hacia dónde "mira" la malla en XZ (tras centrar/normalizar). Usado por glTF/GLB y estimación FBX.
@@ -440,12 +456,15 @@ pub(crate) fn load_gltf_preview_from_file(
     let est_fwd = estimate_mesh_forward_xz(&vertices);
     let forward_xz = crate::config_3d::fbx_facing::resolve_fbx_forward_xz(meta_fwd, est_fwd);
 
+    let local_bounds = vertex_local_bounds(&vertices);
+
     Ok(vec![LoadedModelMesh {
         mesh: upload(device, &vertices, &indices, "gltf-preview"),
         rgba,
         width: tex_w,
         height: tex_h,
         forward_xz,
+        local_bounds,
     }])
 }
 
@@ -487,12 +506,14 @@ fn load_gltf(
     let mut meshes = Vec::with_capacity(prims.len());
     for p in prims {
         let forward_xz = estimate_mesh_forward_xz(&p.vertices);
+        let local_bounds = vertex_local_bounds(&p.vertices);
         meshes.push(LoadedModelMesh {
             mesh: upload(device, &p.vertices, &p.indices, "gltf-mesh"),
             rgba: p.rgba,
             width: p.width,
             height: p.height,
             forward_xz,
+            local_bounds,
         });
     }
     Ok(meshes)
@@ -533,6 +554,8 @@ fn load_gltf_cpu(
     Ok(prims
         .into_iter()
         .map(|p| CpuModelMeshPart {
+            forward_xz: estimate_mesh_forward_xz(&p.vertices),
+            local_bounds: vertex_local_bounds(&p.vertices),
             vertices: p.vertices,
             indices: p.indices,
             rgba: p.rgba,
@@ -568,6 +591,31 @@ fn apply_quat_to_vertices(vertices: &mut [Vertex], q: glam::Quat) {
     }
 }
 
+/// Escala por altura Y y deja los pies en Y=0; centra solo en X/Z (colocación en suelo).
+fn normalize_vertices_height_feet_pivot(vertices: &mut [Vertex], target_height: f32) {
+    if vertices.is_empty() {
+        return;
+    }
+    let mut min = [f32::MAX; 3];
+    let mut max = [f32::MIN; 3];
+    for v in vertices.iter() {
+        for i in 0..3 {
+            min[i] = min[i].min(v.position[i]);
+            max[i] = max[i].max(v.position[i]);
+        }
+    }
+    let height = (max[1] - min[1]).max(1e-5);
+    let scale = (target_height / height).clamp(0.001, 50.0);
+    let cx = (min[0] + max[0]) * 0.5;
+    let min_y = min[1];
+    let cz = (min[2] + max[2]) * 0.5;
+    for v in vertices.iter_mut() {
+        v.position[0] = (v.position[0] - cx) * scale;
+        v.position[1] = (v.position[1] - min_y) * scale;
+        v.position[2] = (v.position[2] - cz) * scale;
+    }
+}
+
 /// Centra la malla en el origen y escala a `target_height` en Y (mismo pivot que el cubo placeholder).
 fn normalize_vertices_centered_height(vertices: &mut [Vertex], target_height: f32) {
     if vertices.is_empty() {
@@ -590,39 +638,6 @@ fn normalize_vertices_centered_height(vertices: &mut [Vertex], target_height: f3
         v.position[0] = (v.position[0] - cx) * scale;
         v.position[1] = (v.position[1] - cy) * scale;
         v.position[2] = (v.position[2] - cz) * scale;
-    }
-}
-
-/// Centra la malla en el origen y escala a ~`target_extent` unidades de mundo.
-fn center_and_normalize_vertices(vertices: &mut [Vertex], target_extent: f32) {
-    if vertices.is_empty() {
-        return;
-    }
-    let mut min = [f32::MAX; 3];
-    let mut max = [f32::MIN; 3];
-    for v in vertices.iter() {
-        for i in 0..3 {
-            min[i] = min[i].min(v.position[i]);
-            max[i] = max[i].max(v.position[i]);
-        }
-    }
-    let center = [
-        (min[0] + max[0]) * 0.5,
-        (min[1] + max[1]) * 0.5,
-        (min[2] + max[2]) * 0.5,
-    ];
-    let extent = (max[0] - min[0])
-        .max(max[1] - min[1])
-        .max(max[2] - min[2]);
-    let scale = if extent > 1e-5 {
-        (target_extent / extent).clamp(0.001, 50.0)
-    } else {
-        1.0
-    };
-    for v in vertices.iter_mut() {
-        v.position[0] = (v.position[0] - center[0]) * scale;
-        v.position[1] = (v.position[1] - center[1]) * scale;
-        v.position[2] = (v.position[2] - center[2]) * scale;
     }
 }
 
@@ -738,7 +753,8 @@ fn load_fbx(
         return Err("el archivo FBX no contiene mallas".into());
     }
 
-    center_and_normalize_vertices(&mut vertices, normalize_to_extent.unwrap_or(1.8));
+    normalize_vertices_height_feet_pivot(&mut vertices, normalize_to_extent.unwrap_or(1.8));
+    let local_bounds = vertex_local_bounds(&vertices);
     let meta =
         crate::config_3d::fbx_facing::forward_xz_from_ufbx_front(scene.settings.axes.front);
     let est = estimate_mesh_forward_xz(&vertices);
@@ -750,6 +766,7 @@ fn load_fbx(
         width: tex_w,
         height: tex_h,
         forward_xz,
+        local_bounds,
     }])
 }
 
@@ -805,9 +822,11 @@ fn load_fbx_cpu(
         return Err("el archivo FBX no contiene mallas".into());
     }
 
-    center_and_normalize_vertices(&mut vertices, normalize_to_extent.unwrap_or(1.8));
+    normalize_vertices_height_feet_pivot(&mut vertices, normalize_to_extent.unwrap_or(1.8));
 
     Ok(vec![CpuModelMeshPart {
+        forward_xz: estimate_mesh_forward_xz(&vertices),
+        local_bounds: vertex_local_bounds(&vertices),
         vertices,
         indices,
         rgba,

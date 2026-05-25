@@ -115,12 +115,14 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 			type: 'SET_ANIMATION_PLAYING',
 			payload: { entityId, playing: false },
 		});
-		beginModelReplaceLoading(
-			dispatch,
-			refs.modelReplaceInProgressRef,
-			'model',
-			refs.modelLoadOverlayKindRef,
-		);
+		if (!isModelPreloadReady(modelPath)) {
+			beginModelReplaceLoading(
+				dispatch,
+				refs.modelReplaceInProgressRef,
+				'model',
+				refs.modelLoadOverlayKindRef,
+			);
+		}
 		send({ cmd: 'replace_entity_model', id: entityId, path: modelPath });
 	};
 

@@ -32,6 +32,7 @@ import {
 	applyPlayCharacterViewFromEngine,
 	applySavedPlayCharacterView,
 	ensurePlayCharacterOnLoad,
+	savedPlayCharacterViewForRestore,
 } from '../../../defaults/playCharacterSceneRestore';
 import { setSceneCommandForSavedProject } from '../../../defaults/projectSceneLoad';
 import { isModel3DPath, is3dModelFileEntity } from '../../../utils/blueprintModelPath';
@@ -50,6 +51,9 @@ import {
 	trackSceneBurstModelPreloads,
 	completeSceneBurstOp,
 	tryEndSceneBurstLoad,
+	takePendingBurstSpawnRestoreForPath,
+	isPlayCharacterVisualModelReplace,
+	finishPlayCharacterBurstRestore,
 	takePendingModelLoadByPath,
 	takePendingRestoreByPath,
 	drainPendingRestoreSlot,
@@ -311,7 +315,6 @@ export function createEngineEventHandler({
 				} else {
 				burstLoad = needsSceneBurstLoad(projectType, gameStyle, save);
 				if (burstLoad) {
-					refs.sceneBurstAwaitingPlayerViewRef.current = false;
 					refs.sceneBurstPendingColliderCountRef.current = 0;
 					beginSceneBurstLoad(dispatch, refs.sceneBurstLoadInProgressRef, refs);
 					if (save.models && save.models.length > 0) {
@@ -485,7 +488,9 @@ export function createEngineEventHandler({
 					}
 				}
 				if (gameStyle === 'first-person' && projectType === '3D') {
-					ensurePlayCharacterOnLoad(save, refs.pendingRestoresRef, (cmd) => sendEngine(cmd as never));
+					ensurePlayCharacterOnLoad(save, refs.pendingRestoresRef, (cmd) => sendEngine(cmd as never), {
+						onBurstOp: burstLoad ? () => trackSceneBurstOp(refs) : undefined,
+					});
 				}
 				if (burstLoad) {
 					setTimeout(
@@ -524,10 +529,16 @@ export function createEngineEventHandler({
 			const id = loaded.id ?? -1;
 			dispatch({ type: 'ADD_ENTITY', payload: id });
 
-			if (
-				refs.pendingBurstSpawnRestoreRef.current.length > 0
-			) {
-				const pending = refs.pendingBurstSpawnRestoreRef.current.shift()!;
+			const burstPendingSpawn =
+				refs.sceneBurstLoadInProgressRef.current
+				&& loaded.path
+					? takePendingBurstSpawnRestoreForPath(
+						refs.pendingBurstSpawnRestoreRef.current,
+						loaded.path,
+					)
+					: null;
+			if (burstPendingSpawn) {
+				const pending = burstPendingSpawn;
 				const kind = (loaded.kind ?? 'model') as import('../types').EntityMeta['kind'];
 				const isEnvironment = pending.entityCategory === 'environment';
 				refs.entityMetaRef.current[id] = {
@@ -559,17 +570,15 @@ export function createEngineEventHandler({
 					applyInitialAnimationFrame: true,
 				});
 				applyPendingRestoreMeta(refs, id, pending);
-				if (refs.sceneBurstLoadInProgressRef.current) {
-					completeSceneBurstOp(refs);
-					tryEndSceneBurstLoad(
-						dispatch,
-						refs.sceneBurstLoadInProgressRef,
-						refs,
-						refs.sceneImportInProgressRef,
-						refs.modelReplaceInProgressRef,
-						reportBounds,
-					);
-				}
+				completeSceneBurstOp(refs);
+				tryEndSceneBurstLoad(
+					dispatch,
+					refs.sceneBurstLoadInProgressRef,
+					refs,
+					refs.sceneImportInProgressRef,
+					refs.modelReplaceInProgressRef,
+					reportBounds,
+				);
 				return;
 			}
 
@@ -898,29 +907,42 @@ export function createEngineEventHandler({
 					scale: replaced.scale,
 				};
 			}
-			const isMainPlayer = refs.playerEntityIdRef.current === id
-				|| (meta?.kind === 'character' && isPlayerPath(meta.path));
-			if (isMainPlayer) {
+			const isPlayerVisual = isPlayCharacterVisualModelReplace(refs, id, replaced.path);
+			if (isPlayerVisual) {
 				refs.playerEntityIdRef.current = id;
-				if (meta) {
-					meta.physicsEnabled = true;
-					meta.physicsType = 'dynamic';
-					if (meta.controlBindings) {
+				if (!refs.entityMetaRef.current[id]) {
+					const playerPending = refs.pendingRestoresRef.current.get('[Player]')?.[0];
+					refs.entityMetaRef.current[id] = {
+						kind: 'character',
+						path: '[Player]',
+						name: 'Player',
+						physicsEnabled: true,
+						physicsType: 'dynamic',
+						controlBindings: playerPending?.controlBindings,
+						visualModelPath: replaced.path ?? playerPending?.visualModelPath,
+					};
+				}
+				const metaAfter = refs.entityMetaRef.current[id];
+				if (metaAfter) {
+					metaAfter.physicsEnabled = true;
+					metaAfter.physicsType = 'dynamic';
+					if (metaAfter.controlBindings) {
 						window.engine.send({
 							cmd: 'set_control_bindings',
 							id,
-							bindings: meta.controlBindings,
+							bindings: metaAfter.controlBindings,
 						} as never);
 					}
 				}
+				const savedView = savedPlayCharacterViewForRestore(
+					refs.pendingPlayCharacterViewRef.current,
+					refs.playCharacterViewRef.current,
+				);
+				if (savedView?.position) {
+					applySavedPlayCharacterView(savedView);
+				}
 				if (refs.sceneBurstLoadInProgressRef.current) {
-					refs.pendingRestoresRef.current.delete('[Player]');
-					refs.pendingPlayCharacterViewRef.current = null;
-					completeSceneBurstOp(refs);
-					const savedView = refs.playCharacterViewRef.current;
-					if (savedView?.position) {
-						applySavedPlayCharacterView(savedView);
-					}
+					finishPlayCharacterBurstRestore(refs);
 				}
 			} else if (refs.sceneBurstLoadInProgressRef.current) {
 				completeSceneBurstOp(refs);
@@ -1159,12 +1181,24 @@ export function createEngineEventHandler({
 						refs.entityMetaRef.current[character.id].physicsEnabled = true;
 						refs.entityMetaRef.current[character.id].physicsType = 'dynamic';
 					}
-					const savedFpView = refs.pendingPlayCharacterViewRef.current
-						?? refs.playCharacterViewRef.current;
+					const savedFpView = savedPlayCharacterViewForRestore(
+						refs.pendingPlayCharacterViewRef.current,
+						refs.playCharacterViewRef.current,
+					);
 					const awaitingVisualReplace = applyPendingRestore(character.id, character.path, {
-						skipTransform: !!savedFpView?.position,
+						skipTransform: Boolean(savedFpView?.position),
+						omitScale: !savedFpView?.body_scale,
 					});
-					applySavedPlayCharacterView(savedFpView);
+					if (!awaitingVisualReplace) {
+						applySavedPlayCharacterView(savedFpView);
+						if (refs.sceneBurstLoadInProgressRef.current) {
+							finishPlayCharacterBurstRestore(refs);
+						} else {
+							refs.pendingPlayCharacterViewRef.current = null;
+						}
+					} else if (savedFpView) {
+						refs.pendingPlayCharacterViewRef.current = savedFpView;
+					}
 					if (savedFpView?.control_bindings) {
 						const meta = refs.entityMetaRef.current[character.id];
 						if (meta) {
@@ -1176,12 +1210,8 @@ export function createEngineEventHandler({
 							bindings: savedFpView.control_bindings,
 						} as never);
 					}
-					refs.pendingPlayCharacterViewRef.current = null;
 					// No sobrescribir scale: el motor puede usar 1.0 tras importar modelo (malla ya normalizada).
 					applyPlayCharacterDefaultsForPlayer(character.id, gameStyle, refs);
-					if (refs.sceneBurstLoadInProgressRef.current && !awaitingVisualReplace) {
-						completeSceneBurstOp(refs);
-					}
 				} else {
 					dispatch({ type: 'ADD_CHARACTER', payload: { id: character.id, path: character.path } });
 					refs.entityMetaRef.current[character.id] = { kind: 'character', path: '[Player]', physicsEnabled: false, physicsType: '' };
@@ -1338,7 +1368,6 @@ export function createEngineEventHandler({
 				);
 			}
 			if (refs.sceneBurstLoadInProgressRef.current) {
-				refs.sceneBurstAwaitingPlayerViewRef.current = false;
 				refs.sceneBurstPendingColliderCountRef.current = 0;
 				refs.sceneBurstPendingOpsRef.current = 0;
 				endSceneBurstLoad(
@@ -1363,6 +1392,7 @@ export function createEngineEventHandler({
 				refs.entityTransformsRef,
 				refs.playerEntityIdRef,
 				refs.editorCameraEntityIdRef,
+				refs.pendingPlayCharacterViewRef.current?.body_rotation,
 			);
 			const refreshId = ev.player_id ?? ev.editor_camera_id;
 			if (refreshId != null) {
@@ -1381,7 +1411,6 @@ export function createEngineEventHandler({
 			}
 			dispatch({ type: 'SYNC_PLAY_CHARACTER_VIEW' });
 			if (refs.sceneBurstLoadInProgressRef.current) {
-				refs.sceneBurstAwaitingPlayerViewRef.current = false;
 				tryEndSceneBurstLoad(
 				dispatch,
 				refs.sceneBurstLoadInProgressRef,
@@ -1431,7 +1460,6 @@ export function createEngineEventHandler({
 				);
 			}
 			if (refs.sceneBurstLoadInProgressRef.current) {
-				refs.sceneBurstAwaitingPlayerViewRef.current = false;
 				refs.sceneBurstPendingColliderCountRef.current = 0;
 				refs.sceneBurstPendingOpsRef.current = 0;
 				endSceneBurstLoad(

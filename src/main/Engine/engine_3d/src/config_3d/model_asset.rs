@@ -1026,22 +1026,15 @@ fn parse_gltf_animation(
     })
 }
 
-/// Misma regla que `mesh_3d::center_and_normalize_vertices`: v' = scale * (v - center).
-fn center_scale_normalize_mat(min: [f32; 3], max: [f32; 3], target_extent: f32) -> Mat4 {
-    let center = Vec3::new(
-        (min[0] + max[0]) * 0.5,
-        (min[1] + max[1]) * 0.5,
-        (min[2] + max[2]) * 0.5,
-    );
-    let extent = (max[0] - min[0])
-        .max(max[1] - min[1])
-        .max(max[2] - min[2]);
-    let scale = if extent > 1e-5 {
-        (target_extent / extent).clamp(0.001, 50.0)
-    } else {
-        1.0
-    };
-    Mat4::from_scale(Vec3::splat(scale)) * Mat4::from_translation(-center)
+/// Como `mesh_3d::normalize_vertices_height_feet_pivot`: escala por altura Y, pies en Y=0, centro X/Z.
+fn feet_pivot_normalize_mat(min: [f32; 3], max: [f32; 3], target_height: f32) -> Mat4 {
+    let cx = (min[0] + max[0]) * 0.5;
+    let cz = (min[2] + max[2]) * 0.5;
+    let min_y = min[1];
+    let height = (max[1] - min[1]).max(1e-5);
+    let scale = (target_height / height).clamp(0.001, 50.0);
+    let pivot = Vec3::new(cx, min_y, cz);
+    Mat4::from_scale(Vec3::splat(scale)) * Mat4::from_translation(-pivot)
 }
 
 fn apply_normalize_to_skinned_vertices(vertices: &mut [SkinnedVertex], norm: Mat4) {
@@ -1439,9 +1432,9 @@ fn load_fbx_asset(path: &Path, normalize_to_extent: Option<f32>) -> Option<Arc<M
         return None;
     }
 
-    let extent = normalize_to_extent.unwrap_or(1.8);
+    let target_height = normalize_to_extent.unwrap_or(1.8);
     let mesh_normalize = fbx_scene_world_bounds(&scene)
-        .map(|(min, max)| center_scale_normalize_mat(min, max, extent))
+        .map(|(min, max)| feet_pivot_normalize_mat(min, max, target_height))
         .unwrap_or(Mat4::IDENTITY);
     for part in asset_parts.iter_mut() {
         apply_normalize_to_skinned_vertices(&mut part.mesh.vertices, mesh_normalize);
@@ -2165,7 +2158,7 @@ pub fn fbx_skinned_play_forward_xz(path: &Path, normalize_to_extent: f32) -> Opt
         return None;
     }
     let mesh_normalize = fbx_scene_world_bounds(&scene)
-        .map(|(min, max)| center_scale_normalize_mat(min, max, normalize_to_extent))
+        .map(|(min, max)| feet_pivot_normalize_mat(min, max, normalize_to_extent))
         .unwrap_or(Mat4::IDENTITY);
     for part in parts.iter_mut() {
         apply_normalize_to_skinned_vertices(&mut part.mesh.vertices, mesh_normalize);

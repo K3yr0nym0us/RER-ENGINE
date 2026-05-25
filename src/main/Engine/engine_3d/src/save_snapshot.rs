@@ -193,11 +193,6 @@ impl State {
       return None;
     }
     let feet = self.play_character_feet_position();
-    let scale = [
-      crate::config_3d::character_anchor::PLAY_CHARACTER_COLLIDER_RADIUS * 2.0,
-      crate::config_3d::character_anchor::PLAY_CHARACTER_BODY_HEIGHT,
-      crate::config_3d::character_anchor::PLAY_CHARACTER_COLLIDER_RADIUS * 2.0,
-    ];
     let player_id = self.play_character_entity?;
     let visual_model_path = self
       .save_registry
@@ -206,11 +201,38 @@ impl State {
       .and_then(|m| m.visual_model_path.clone());
     let control_bindings = self.control_bindings_by_entity.get(&player_id).cloned();
 
+    // Orbital (editor) y cono FPS se persisten por separado: orbitar para colocar props no debe
+    // pisar la mirada FPS ni la rotación del mesh guardada en `body_rotation`.
     let (yaw, pitch) = if self.uses_editor_viewport_camera() {
       (self.editor_viewport_yaw, self.editor_viewport_pitch)
     } else {
       (self.camera.yaw, self.camera.pitch)
     };
+    let (scale, body_rotation, body_scale) = self
+      .world
+      .get::<crate::ecs::Transform>(player_id)
+      .map(|t| {
+        let scale_arr = t.scale.to_array();
+        (
+          scale_arr,
+          Some([
+            t.rotation.x,
+            t.rotation.y,
+            t.rotation.z,
+            t.rotation.w,
+          ]),
+          Some(scale_arr),
+        )
+      })
+      .unwrap_or((
+        [
+          crate::config_3d::character_anchor::PLAY_CHARACTER_COLLIDER_RADIUS * 2.0,
+          1.0,
+          crate::config_3d::character_anchor::PLAY_CHARACTER_COLLIDER_RADIUS * 2.0,
+        ],
+        None,
+        None,
+      ));
     Some(SavePlayerTransformSnapshot {
       position: feet.to_array(),
       scale,
@@ -221,6 +243,11 @@ impl State {
       camera_follow_mode: self.play_camera_follow_mode,
       visual_model_path,
       control_bindings,
+      body_rotation,
+      body_scale,
+      camera_eye_position: Some(self.play_camera_eye_position.to_array()),
+      fps_camera_yaw: Some(self.camera.yaw),
+      fps_camera_pitch: Some(self.camera.pitch),
     })
   }
 

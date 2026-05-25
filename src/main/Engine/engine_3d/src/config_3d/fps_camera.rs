@@ -1,8 +1,8 @@
 use glam::Vec3;
 
 use crate::config_3d::character_anchor::{
-    body_center_from_feet, PLAY_CHARACTER_EDITOR_ORBIT_DISTANCE, PLAY_CHARACTER_EYE_OFFSET,
-    PLAY_CHARACTER_MOUSE_SPEED,
+    body_center_from_feet, center_from_feet, PLAY_CHARACTER_EDITOR_ORBIT_DISTANCE,
+    PLAY_CHARACTER_EYE_OFFSET, PLAY_CHARACTER_MOUSE_SPEED,
 };
 use crate::ecs::Transform;
 use crate::engine::State;
@@ -231,13 +231,16 @@ impl State {
         }
     }
 
-    /// Aplica vista guardada (carga de proyecto). Funciona en editor y en preview.
+    /// Vista guardada: `yaw`/`pitch` = viewport orbital; `fps_camera_*` = cono FPS (`camera.*`).
+    /// En editor el cuerpo no se gira con la órbita; `body_rotation` llega aparte en la carga.
     pub(crate) fn apply_play_character_saved_view(
         &mut self,
         position: [f32; 3],
         yaw: f32,
         pitch: f32,
         sync_editor_viewport: bool,
+        fps_camera_yaw: Option<f32>,
+        fps_camera_pitch: Option<f32>,
     ) {
 
         self.set_play_character_feet_position(Vec3::from_array(position));
@@ -245,10 +248,25 @@ impl State {
             -std::f32::consts::FRAC_PI_2 + 0.05,
             std::f32::consts::FRAC_PI_2 - 0.05,
         );
-        self.camera.yaw = yaw;
-        self.camera.pitch = pitch_clamped;
+        let cam_yaw = fps_camera_yaw.unwrap_or(yaw);
+        let cam_pitch = fps_camera_pitch.unwrap_or(pitch).clamp(
+            -std::f32::consts::FRAC_PI_2 + 0.05,
+            std::f32::consts::FRAC_PI_2 - 0.05,
+        );
+        self.camera.yaw = cam_yaw;
+        self.camera.pitch = cam_pitch;
         if sync_editor_viewport && self.uses_editor_viewport_camera() {
-            self.editor_orbit_target = body_center_from_feet(Vec3::from_array(position));
+            let feet = Vec3::from_array(position);
+            self.editor_orbit_target = if self.play_character_mesh_extents.is_some() {
+                center_from_feet(
+                    feet,
+                    1.0,
+                    glam::Quat::IDENTITY,
+                    self.play_character_mesh_extents.as_ref(),
+                )
+            } else {
+                body_center_from_feet(feet)
+            };
             self.editor_viewport_yaw = yaw;
             self.editor_viewport_pitch = pitch_clamped;
             // Reset del ojo de la cámara FPS al ojo actual del Player al cargar/aplicar vista.
@@ -419,7 +437,7 @@ impl State {
         self.emit_play_character_view_changed(false);
     }
 
-    /// Aplica vista (pies + cámara + opcional FOV/frustum) y notifica al frontend.
+    /// Aplica vista (pies + cámara + opcional FOV/frustum/cuerpo) y notifica al frontend.
     pub(crate) fn apply_play_character_view(
         &mut self,
         position: [f32; 3],
@@ -428,8 +446,47 @@ impl State {
         fov_y: Option<f32>,
         frustum_distance: Option<f32>,
         camera_follow_mode: Option<crate::ipc::PlayCameraFollowMode>,
+        body_rotation: Option<[f32; 4]>,
+        body_scale: Option<[f32; 3]>,
+        camera_eye_position: Option<[f32; 3]>,
+        fps_camera_yaw: Option<f32>,
+        fps_camera_pitch: Option<f32>,
     ) {
-        self.apply_play_character_saved_view(position, yaw, pitch, true);
+        self.apply_play_character_saved_view(
+            position,
+            yaw,
+            pitch,
+            true,
+            fps_camera_yaw,
+            fps_camera_pitch,
+        );
+        if let Some(eye) = camera_eye_position {
+            self.play_camera_eye_position = Vec3::from_array(eye);
+            self.capture_play_camera_follow_offset();
+        }
+        if let (Some(id), Some(rot), Some(scale)) = (
+            self.play_character_entity,
+            body_rotation,
+            body_scale,
+        ) {
+            let rot_q = glam::Quat::from_xyzw(rot[0], rot[1], rot[2], rot[3]);
+            self.apply_play_character_transform_editor(
+                id,
+                None,
+                Some(rot_q),
+                Some(glam::Vec3::from_array(scale)),
+            );
+        } else if let (Some(id), Some(rot)) = (self.play_character_entity, body_rotation) {
+            let rot_q = glam::Quat::from_xyzw(rot[0], rot[1], rot[2], rot[3]);
+            self.apply_play_character_transform_editor(id, None, Some(rot_q), None);
+        } else if let (Some(id), Some(scale)) = (self.play_character_entity, body_scale) {
+            self.apply_play_character_transform_editor(
+                id,
+                None,
+                None,
+                Some(glam::Vec3::from_array(scale)),
+            );
+        }
         if let Some(fov) = fov_y {
             self.camera.fov_y = fov.clamp(0.1, std::f32::consts::FRAC_PI_2 - 0.01);
         }

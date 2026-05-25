@@ -10,6 +10,7 @@ export function applyPlayCharacterViewFromEngine(
 	entityTransformsRef: MutableRefObject<Record<number, Transform>>,
 	playerEntityIdRef?: MutableRefObject<number | null>,
 	editorCameraEntityIdRef?: MutableRefObject<number | null>,
+	pendingSavedBodyRotation?: [number, number, number, number] | null,
 ) {
 	if (ev.player_id != null && playerEntityIdRef) {
 		playerEntityIdRef.current = ev.player_id;
@@ -19,6 +20,9 @@ export function applyPlayCharacterViewFromEngine(
 	}
 	const prev = playCharacterViewRef.current;
 	const syncViewport = ev.sync_editor_viewport === true;
+	// Tras replace_entity_model el motor emite sync_editor_viewport=false; no pisar body del .save.
+	const savedBody = pendingSavedBodyRotation ?? prev?.body_rotation;
+	const keepSavedBodyRotation = !syncViewport && savedBody != null;
 	playCharacterViewRef.current = {
 		position: syncViewport ? ev.position : (prev?.position ?? ev.position),
 		camera_eye_position: ev.camera_eye_position ?? prev?.camera_eye_position,
@@ -30,13 +34,17 @@ export function applyPlayCharacterViewFromEngine(
 		fov_y: ev.fov_y,
 		frustum_distance: ev.frustum_distance,
 		camera_follow_mode: ev.camera_follow_mode ?? prev?.camera_follow_mode ?? 'move_with_character',
+		body_rotation: keepSavedBodyRotation
+			? savedBody
+			: (ev.body_rotation ?? prev?.body_rotation),
+		body_scale: ev.body_scale ?? prev?.body_scale,
 		...(prev?.visual_model_path ? { visual_model_path: prev.visual_model_path } : {}),
 		...(prev?.control_bindings ? { control_bindings: prev.control_bindings } : {}),
 	};
 	if (ev.player_id != null) {
 		entityTransformsRef.current[ev.player_id] = {
 			position: ev.body_center,
-			rotation: ev.body_rotation,
+			rotation: keepSavedBodyRotation ? savedBody! : ev.body_rotation,
 			scale: ev.body_scale,
 		};
 	}
@@ -71,10 +79,7 @@ export function applyPlayCharacterCameraPatch(patch: PlayCharacterCameraPatch) {
 	} as never);
 }
 
-/**
- * Restaura vista del personaje jugable. Solo envía campos presentes en el save;
- * el motor aplica sus propios defaults para lo omitido (pitch/yaw/FOV, etc.).
- */
+/** Restaura vista del jugador desde `.save` (motor aplica defaults para campos omitidos). */
 export function applySavedPlayCharacterView(
 	view: SavedPlayerTransform | null | undefined,
 ) {
@@ -87,7 +92,19 @@ export function applySavedPlayCharacterView(
 		...(view.fov_y !== undefined ? { fov_y: view.fov_y } : {}),
 		...(view.frustum_distance !== undefined ? { frustum_distance: view.frustum_distance } : {}),
 		...(view.camera_follow_mode ? { camera_follow_mode: view.camera_follow_mode } : {}),
+		...(view.body_rotation ? { body_rotation: view.body_rotation } : {}),
+		...(view.body_scale ? { body_scale: view.body_scale } : {}),
+		...(view.camera_eye_position ? { camera_eye_position: view.camera_eye_position } : {}),
+		...(view.fps_camera_yaw !== undefined ? { fps_camera_yaw: view.fps_camera_yaw } : {}),
+		...(view.fps_camera_pitch !== undefined ? { fps_camera_pitch: view.fps_camera_pitch } : {}),
 	} as never);
+}
+
+export function savedPlayCharacterViewForRestore(
+	pending: SavedPlayerTransform | null | undefined,
+	fallback: SavedPlayerTransform | null | undefined,
+): SavedPlayerTransform | null | undefined {
+	return pending ?? fallback;
 }
 
 type SceneSlice = {
@@ -100,6 +117,7 @@ export function ensurePlayCharacterOnLoad(
 	scene: SceneSlice,
 	pendingRestoresRef: MutableRefObject<Map<string, PendingRestore[]>>,
 	send: (cmd: unknown) => void,
+	options?: { onBurstOp?: () => void },
 ) {
 	const savedPlayer = scene.playerTransform;
 	const playerInEntities = (scene.entities ?? []).some(
@@ -125,6 +143,7 @@ export function ensurePlayCharacterOnLoad(
 			queue.push(pending);
 			pendingRestoresRef.current.set('[Player]', queue);
 		}
+		options?.onBurstOp?.();
 		send({ cmd: 'load_character', path: '[Player]' });
 	}
 }

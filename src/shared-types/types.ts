@@ -227,6 +227,10 @@ export interface SavedPlayerTransform {
   camera_follow_mode?: PlayCameraFollowMode
   /** Bindings de control Lua del jugador principal. */
   control_bindings?: SavedControlBindings
+  /** Rotación del mesh del jugador (quaternion xyzw) en editor. */
+  body_rotation?: [number, number, number, number]
+  /** Escala del transform del jugador en editor. */
+  body_scale?: [number, number, number]
 }
 
 export interface SavedScene {

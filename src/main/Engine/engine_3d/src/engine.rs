@@ -126,6 +126,8 @@ pub struct State {
     pub(crate) editor_camera_entity: Option<EntityId>,
     /// Forward local (plano XZ) del mesh del jugador; se recalcula al reemplazar el modelo.
     pub(crate) play_character_mesh_forward_xz: glam::Vec2,
+    /// AABB de la malla visual del jugador (pies en `local_min_y`, típ. 0 tras normalizar).
+    pub(crate) play_character_mesh_extents: Option<crate::config_3d::character_anchor::PlayCharacterMeshExtents>,
     pub(crate) play_session_body_yaw_baseline: f32,
     pub(crate) play_session_camera_yaw_baseline: f32,
     pub(crate) tool_overlay_buffer: GizmoBuffer,

@@ -3,7 +3,7 @@ import type { Dispatch, MutableRefObject } from 'react';
 import type { GameStyle, SavedScene } from '@shared-types';
 import { isPlayerPath } from '@shared-types';
 
-import type { EngineAction, EngineInternalRefs, PendingRestore } from '../types';
+import type { EngineAction, EngineInternalRefs, PendingBurstSpawnEntry, PendingRestore } from '../types';
 
 export type ModelLoadOverlayKind = 'model' | 'entity' | 'scene';
 
@@ -14,9 +14,9 @@ type SceneBurstRefs = Pick<
 	| 'pendingBurstSpawnRestoreRef'
 	| 'pendingPlayCharacterViewRef'
 	| 'mainPlayerHandled'
-	| 'sceneBurstAwaitingPlayerViewRef'
 	| 'sceneBurstPendingColliderCountRef'
 	| 'sceneBurstPendingOpsRef'
+	| 'playerEntityIdRef'
 >;
 
 export function trackSceneBurstOp(
@@ -120,9 +120,56 @@ export function flushPendingCachedModelSpawnsForPath(
 	const spawns = takePendingCachedModelSpawnsForPath(queue, loadedPath);
 	for (const item of spawns) {
 		if (burstLoad) trackSceneBurstOp(refs);
-		refs.pendingBurstSpawnRestoreRef.current.push(item.pending);
+		refs.pendingBurstSpawnRestoreRef.current.push({
+			modelPath: item.modelPath,
+			pending: item.pending,
+		});
 		sendEngine(buildSpawnCachedModelCommand(item.modelPath, item.pending));
 	}
+}
+
+export function takePendingBurstSpawnRestoreForPath(
+	queue: PendingBurstSpawnEntry[],
+	loadedPath: string,
+): PendingRestore | null {
+	const idx = queue.findIndex((entry) => pathsMatchForBurstRestore(entry.modelPath, loadedPath));
+	if (idx < 0) return null;
+	return queue.splice(idx, 1)[0]?.pending ?? null;
+}
+
+export function pendingPlayCharacterVisualPath(
+	refs: Pick<EngineInternalRefs, 'pendingPlayCharacterViewRef' | 'pendingRestoresRef'>,
+): string | undefined {
+	return refs.pendingPlayCharacterViewRef.current?.visual_model_path
+		?? refs.pendingRestoresRef.current.get('[Player]')?.[0]?.visualModelPath;
+}
+
+/** Sustitución del mesh del jugador durante burst load (puede llegar antes que `character_loaded`). */
+export function isPlayCharacterVisualModelReplace(
+	refs: Pick<
+		EngineInternalRefs,
+		'pendingPlayCharacterViewRef' | 'pendingRestoresRef' | 'playerEntityIdRef'
+	>,
+	entityId: number,
+	replacedPath?: string,
+): boolean {
+	if (refs.playerEntityIdRef.current === entityId) return true;
+	const visual = pendingPlayCharacterVisualPath(refs);
+	if (visual && replacedPath && pathsMatchForBurstRestore(visual, replacedPath)) {
+		return true;
+	}
+	return false;
+}
+
+export function finishPlayCharacterBurstRestore(
+	refs: Pick<
+		EngineInternalRefs,
+		'sceneBurstPendingOpsRef' | 'pendingRestoresRef' | 'pendingPlayCharacterViewRef'
+	>,
+) {
+	refs.pendingRestoresRef.current.delete('[Player]');
+	refs.pendingPlayCharacterViewRef.current = null;
+	completeSceneBurstOp(refs);
 }
 
 export function collectUncachedBurstModelPaths(
@@ -365,6 +412,7 @@ export function hasPendingSceneBurstWork(refs: SceneBurstRefs): boolean {
 	if (refs.sceneBurstPendingColliderCountRef.current > 0) return true;
 	if (refs.pendingModelLoadQueueRef.current.length > 0) return true;
 	if (refs.pendingBurstSpawnRestoreRef.current.length > 0) return true;
+	if (refs.pendingPlayCharacterViewRef.current != null) return true;
 	return false;
 }
 

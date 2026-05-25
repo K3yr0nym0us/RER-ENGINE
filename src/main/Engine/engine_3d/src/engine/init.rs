@@ -748,6 +748,7 @@ impl State {
             play_character_entity: None,
             editor_camera_entity: None,
             play_character_mesh_forward_xz: glam::Vec2::new(0.0, 1.0),
+            play_character_mesh_extents: None,
             play_session_body_yaw_baseline: 0.0,
             play_session_camera_yaw_baseline: 0.0,
             tool_overlay_buffer: tool_overlay_buffer_init,
