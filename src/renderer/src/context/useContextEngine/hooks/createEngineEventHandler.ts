@@ -42,6 +42,12 @@ import {
 	beginSceneBurstLoad,
 	beginSceneImportLoading,
 	beginModelReplaceLoading,
+	beginEngineBootEntityWait,
+	completeEngineBootIpcEvent,
+	endEngineBootLoadingIfIdle,
+	isEngineBootScenePreloaded,
+	trackEngineBootIpcSeen,
+	tryFinishEngineBootLoading,
 	endModelReplaceLoading,
 	endSceneBurstLoad,
 	endSceneImportLoading,
@@ -175,7 +181,8 @@ export function createEngineEventHandler({
 			dispatch({ type: 'SET_PREVIEW_PLAYING', payload: false });
 			if (refs.readyTimer.current) clearTimeout(refs.readyTimer.current);
 			const baseSave = refs.initialSaveRef.current;
-			if (projectType) {
+			const boot3dNoSave = isEngineBootScenePreloaded(projectType, Boolean(baseSave));
+			if (projectType && !boot3dNoSave) {
 				if (baseSave) {
 					window.engine.send({
 						cmd: 'set_scene',
@@ -186,6 +193,8 @@ export function createEngineEventHandler({
 				} else {
 					window.engine.send({ cmd: 'set_scene', scene: projectType } as never);
 				}
+			} else if (boot3dNoSave) {
+				beginEngineBootEntityWait(refs);
 			}
 			window.engine.send({ cmd: 'set_preview_playing', playing: false } as never);
 			refs.mainPlayerHandled.current = false;
@@ -510,9 +519,15 @@ export function createEngineEventHandler({
 			if (motorGravity != null && savedGravity == null) {
 				dispatch({ type: 'SET_WORLD_CONFIG', payload: { gravity: motorGravity } });
 			}
+			if (boot3dNoSave) {
+				tryFinishEngineBootLoading(dispatch, refs, reportBounds);
+			} else {
+				endEngineBootLoadingIfIdle(dispatch, refs, reportBounds);
+			}
 		}
 
 		if (event.event === 'model_loaded') {
+			trackEngineBootIpcSeen(refs, projectType, Boolean(refs.initialSaveRef.current));
 			const loaded = event as {
 				id?: number
 				name?: string
@@ -864,6 +879,7 @@ export function createEngineEventHandler({
 			if (burstActive && burstHandled && !burstDeferComplete) {
 				completeSceneBurstOp(refs);
 			}
+			completeEngineBootIpcEvent(dispatch, refs, reportBounds);
 			tryEndSceneBurstLoad(
 				dispatch,
 				refs.sceneBurstLoadInProgressRef,
@@ -1129,6 +1145,7 @@ export function createEngineEventHandler({
 
 		if (event.event === 'character_loaded') {
 			if (refs.sceneImportInProgressRef.current) return;
+			trackEngineBootIpcSeen(refs, projectType, Boolean(refs.initialSaveRef.current));
 			const character = event as unknown as CharacterLoaded;
 			const applyPendingRestore = (
 				id: number,
@@ -1242,6 +1259,7 @@ export function createEngineEventHandler({
 				}
 				applyPendingRestore(character.id, character.path);
 			}
+			completeEngineBootIpcEvent(dispatch, refs, reportBounds);
 			tryEndSceneBurstLoad(
 				dispatch,
 				refs.sceneBurstLoadInProgressRef,

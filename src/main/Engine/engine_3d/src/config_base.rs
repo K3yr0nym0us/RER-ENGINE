@@ -320,6 +320,9 @@ impl State {
         self.ensure_default_sun();
 
         log::info!("Escena 3D por defecto cargada: arena base del editor");
+        send_event(&EngineEvent::Ready {
+            gravity: self.physics.gravity_magnitude(),
+        });
     }
 
     /// Escena 3D vacía: solo para abrir un `.save` (sin plantilla first-person).

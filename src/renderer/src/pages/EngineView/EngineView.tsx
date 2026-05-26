@@ -88,7 +88,7 @@ function EngineViewInner({ projectType, gameStyle, initialSave, initialSavePath,
           <main
             className="flex-fill position-relative overflow-hidden engine-viewport-area"
             ref={viewportRef}
-            style={{ background: 'transparent', marginTop: 0 }}
+            style={{ background: 'var(--bs-body-bg)', marginTop: 0 }}
           >
             <EngineGpuErrorOverlay />
             <QuickBuildOverlay viewportRef={viewportRef} />

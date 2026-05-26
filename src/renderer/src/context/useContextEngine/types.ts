@@ -212,7 +212,7 @@ export const initialState: EngineState = {
 	engineReady: false,
 	engineError: null,
 	previewPlaying: false,
-	sceneImportLoading: false,
+	sceneImportLoading: true,
 	playCharacterViewSyncSeq: 0,
 	log: [],
 	entities: [],
@@ -241,7 +241,11 @@ export const initialState: EngineState = {
 export function engineReducer(state: EngineState, action: EngineAction): EngineState {
 	const handlers: Record<string, (prevState: EngineState, nextAction: any) => EngineState> = {
 		SET_READY: (prevState) => ({ ...prevState, engineReady: true, engineError: null, previewPlaying: false }),
-		SET_ERROR: (prevState, nextAction) => ({ ...prevState, engineError: nextAction.payload }),
+		SET_ERROR: (prevState, nextAction) => ({
+			...prevState,
+			engineError: nextAction.payload,
+			sceneImportLoading: false,
+		}),
 		SET_PREVIEW_PLAYING: (prevState, nextAction) => ({ ...prevState, previewPlaying: nextAction.payload }),
 		SET_SCENE_IMPORT_LOADING: (prevState, nextAction) => ({
 			...prevState,
@@ -588,6 +592,11 @@ export interface EngineInternalRefs {
 	sceneBurstPendingColliderCountRef: MutableRefObject<number>
 	/** Operaciones IPC pendientes durante burst load 3D (ready / cambio escena). */
 	sceneBurstPendingOpsRef: MutableRefObject<number>
+	/** Arranque 3D sin `.save`: esperar IPC de entidades antes de mostrar el motor. */
+	engineBootAwaitRef: MutableRefObject<boolean>
+	engineBootIpcPendingRef: MutableRefObject<number>
+	engineBootIpcSeenRef: MutableRefObject<number>
+	engineBootFinishedRef: MutableRefObject<boolean>
 }
 
 export interface EngineContextValue extends EngineState {

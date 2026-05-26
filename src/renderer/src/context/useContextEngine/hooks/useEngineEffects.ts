@@ -2,7 +2,11 @@ import { useEffect, useRef, type Dispatch, type RefObject } from 'react';
 import type { GameStyle } from '@shared-types';
 import type { Locale } from '../LanguageContext';
 import { createEngineEventHandler } from './createEngineEventHandler';
+import { beginEngineBootLoading } from './sceneImportOverlay';
 import type { EngineAction, EngineInternalRefs } from '../types';
+
+const ENGINE_READY_TIMEOUT_MS_2D = 5_000;
+const ENGINE_READY_TIMEOUT_MS_3D = 30_000;
 
 interface UseEngineEffectsParams {
 	dispatch: Dispatch<EngineAction>
@@ -69,6 +73,7 @@ export function useEngineEffects({
 		const onRequestViewportBounds = () => reportBoundsRef.current();
 		const onViewportResize = () => reportBoundsDebouncedRef.current();
 
+		beginEngineBootLoading(dispatch);
 		reportBoundsRef.current();
 		const observer = new ResizeObserver(onViewportResize);
 		if (viewportRef.current) observer.observe(viewportRef.current);
@@ -119,17 +124,24 @@ export function useEngineEffects({
 			window.removeEventListener('keyup', onKeyUp);
 			window.removeEventListener('blur', onBlur);
 		};
-	}, []);
+	}, [dispatch]);
 
 	useEffect(() => {
+		const timeoutMs = projectType === '3D'
+			? ENGINE_READY_TIMEOUT_MS_3D
+			: ENGINE_READY_TIMEOUT_MS_2D;
 		refs.readyTimer.current = setTimeout(() => {
-			dispatch({ type: 'SET_ERROR', payload: 'El motor no respondió en 5 segundos. Puede que el binario no exista o haya fallado al iniciar.' });
-			addLogRef.current('[timeout] Motor no respondió en 5s', true);
-		}, 5000);
+			const seconds = Math.round(timeoutMs / 1000);
+			dispatch({
+				type: 'SET_ERROR',
+				payload: `El motor no respondió en ${seconds} segundos. Puede que el binario no exista o haya fallado al iniciar.`,
+			});
+			addLogRef.current(`[timeout] Motor no respondió en ${seconds}s`, true);
+		}, timeoutMs);
 		return () => {
 			if (refs.readyTimer.current) clearTimeout(refs.readyTimer.current);
 		};
-	}, []);
+	}, [dispatch, projectType]);
 
 	useEffect(() => {
 		const handleEngineEvent = (event: { event: string; [key: string]: unknown }) => {

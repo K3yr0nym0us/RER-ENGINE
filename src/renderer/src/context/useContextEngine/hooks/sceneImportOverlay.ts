@@ -7,6 +7,110 @@ import type { EngineAction, EngineInternalRefs, PendingBurstSpawnEntry, PendingR
 
 export type ModelLoadOverlayKind = 'model' | 'entity' | 'scene';
 
+/** IPC de la plantilla 3D al arrancar sin `.save` (suelo + 6 bloques + sol + jugador). */
+export const DEFAULT_3D_BOOT_IPC_EVENTS = 9;
+
+/** El motor 3D ya cargó la escena en `resumed`; no repetir `set_scene` en el front. */
+export function isEngineBootScenePreloaded(
+	projectType: string | undefined,
+	hasInitialSave: boolean,
+): boolean {
+	return projectType === '3D' && !hasInitialSave;
+}
+
+/** Overlay React mientras el proceso del motor arranca (antes de `ready`). */
+export function beginEngineBootLoading(dispatch: Dispatch<EngineAction>) {
+	dispatch({ type: 'SET_SCENE_IMPORT_LOADING', payload: true });
+}
+
+export function trackEngineBootIpcSeen(
+	refs: Pick<EngineInternalRefs, 'engineBootIpcSeenRef' | 'engineBootFinishedRef'>,
+	projectType: string | undefined,
+	hasInitialSave: boolean,
+) {
+	if (
+		refs.engineBootFinishedRef.current
+		|| refs.engineBootAwaitRef.current
+		|| !isEngineBootScenePreloaded(projectType, hasInitialSave)
+	) {
+		return;
+	}
+	refs.engineBootIpcSeenRef.current += 1;
+}
+
+export function beginEngineBootEntityWait(
+	refs: Pick<
+		EngineInternalRefs,
+		'engineBootAwaitRef' | 'engineBootIpcPendingRef' | 'engineBootIpcSeenRef'
+	>,
+) {
+	refs.engineBootAwaitRef.current = true;
+	refs.engineBootIpcPendingRef.current = Math.max(
+		0,
+		DEFAULT_3D_BOOT_IPC_EVENTS - refs.engineBootIpcSeenRef.current,
+	);
+}
+
+export function tryFinishEngineBootLoading(
+	dispatch: Dispatch<EngineAction>,
+	refs: Pick<
+		EngineInternalRefs,
+		| 'engineBootAwaitRef'
+		| 'engineBootIpcPendingRef'
+		| 'engineBootFinishedRef'
+		| 'sceneImportInProgressRef'
+		| 'sceneBurstLoadInProgressRef'
+		| 'modelReplaceInProgressRef'
+	>,
+	reportBounds: () => void,
+) {
+	if (!refs.engineBootAwaitRef.current) return;
+	if (refs.engineBootIpcPendingRef.current > 0) return;
+	refs.engineBootAwaitRef.current = false;
+	refs.engineBootFinishedRef.current = true;
+	endEngineBootLoadingIfIdle(dispatch, refs, reportBounds);
+}
+
+export function completeEngineBootIpcEvent(
+	dispatch: Dispatch<EngineAction>,
+	refs: Pick<
+		EngineInternalRefs,
+		| 'engineBootAwaitRef'
+		| 'engineBootIpcPendingRef'
+		| 'engineBootFinishedRef'
+		| 'sceneImportInProgressRef'
+		| 'sceneBurstLoadInProgressRef'
+		| 'modelReplaceInProgressRef'
+	>,
+	reportBounds: () => void,
+) {
+	if (!refs.engineBootAwaitRef.current) return;
+	if (refs.engineBootIpcPendingRef.current > 0) {
+		refs.engineBootIpcPendingRef.current -= 1;
+	}
+	tryFinishEngineBootLoading(dispatch, refs, reportBounds);
+}
+
+export function endEngineBootLoadingIfIdle(
+	dispatch: Dispatch<EngineAction>,
+	refs: Pick<
+		EngineInternalRefs,
+		'sceneImportInProgressRef' | 'sceneBurstLoadInProgressRef' | 'modelReplaceInProgressRef'
+	>,
+	reportBounds: () => void,
+) {
+	const stillBusy =
+		refs.sceneImportInProgressRef.current
+		|| refs.sceneBurstLoadInProgressRef.current
+		|| refs.modelReplaceInProgressRef.current;
+	if (stillBusy) return;
+	dispatch({ type: 'SET_SCENE_IMPORT_LOADING', payload: false });
+	window.setTimeout(() => {
+		reportBounds();
+		window.electronAPI?.restoreEngineViewport?.();
+	}, 0);
+}
+
 type SceneBurstRefs = Pick<
 	EngineInternalRefs,
 	| 'pendingRestoresRef'

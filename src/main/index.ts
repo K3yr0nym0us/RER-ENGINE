@@ -496,10 +496,29 @@ ipcMain.handle('get-image-data-url', async (_event, filePath: string): Promise<s
   }
 })
 
+function sendEngineViewportBounds(bounds: ViewportBounds): void {
+  const useScreenBounds = process.platform === 'win32' || process.platform === 'linux'
+  sendToEngine({
+    cmd:    'set_bounds',
+    x:      Math.round(bounds.x),
+    y:      Math.round(bounds.y),
+    width:  Math.max(1, Math.round(bounds.width)),
+    height: Math.max(1, Math.round(bounds.height)),
+    offset_x: useScreenBounds && lastRelativeBounds ? Math.round(lastRelativeBounds.x) : undefined,
+    offset_y: useScreenBounds && lastRelativeBounds ? Math.round(lastRelativeBounds.y) : undefined,
+  })
+}
+
+function collapsedViewportBounds(bounds: ViewportBounds): ViewportBounds {
+  return { ...bounds, width: 1, height: 1 }
+}
+
 // Oculta el motor (para que no tape modales del renderer)
 ipcMain.on('hide-engine-viewport', () => {
   if (!engineStarted) return
-  sendToEngine({ cmd: 'set_bounds', x: 0, y: 0, width: 1, height: 1 })
+  engineViewportHidden = true
+  const bounds = lastEffectiveBounds ?? { x: 0, y: 0, width: 1, height: 1 }
+  sendEngineViewportBounds(collapsedViewportBounds(bounds))
 })
 
 // Restaura el motor a los últimos bounds conocidos
@@ -512,13 +531,8 @@ ipcMain.on('restore-engine-viewport', (_event, bounds) => {
     useBounds = lastEffectiveBounds
   }
   if (!useBounds) return
-  sendToEngine({
-    cmd:    'set_bounds',
-    x:      Math.round(useBounds.x),
-    y:      Math.round(useBounds.y),
-    width:  Math.max(1, Math.round(useBounds.width)),
-    height: Math.max(1, Math.round(useBounds.height)),
-  })
+  engineViewportHidden = false
+  sendEngineViewportBounds(useBounds)
 })
 
 // ---------------------------------------------------------------------------
@@ -1229,6 +1243,8 @@ ipcMain.on('set-game-style', (_event, gameStyle: GameStyle | null) => {
 // El renderer envía los bounds del viewport una vez montado (y en cada resize).
 // Al primer mensaje arrancamos el motor con las coordenadas correctas.
 let engineStarted = false
+/** Motor arrancado en 1×1 hasta `restore-engine-viewport` (tras `ready` / fin de carga). */
+let engineViewportHidden = true
 
 // Caché de los bounds relativos del viewport (posición dentro del contenido de Electron,
 // pre-DPR). Se actualiza en cada 'viewport-bounds'.
@@ -1259,6 +1275,7 @@ ipcMain.on('viewport-bounds', (_event, bounds: ViewportBounds) => {
   // Si el proceso murió, permitir relanzar
   if (engineStarted && !engineProcess) {
     engineStarted = false
+    engineViewportHidden = true
   }
 
   const useScreenBounds = process.platform === 'win32' || process.platform === 'linux'
@@ -1266,25 +1283,16 @@ ipcMain.on('viewport-bounds', (_event, bounds: ViewportBounds) => {
   lastEffectiveBounds = effectiveBounds
 
   if (engineStarted) {
-    // Motor corriendo: reposicionar y redimensionar
-    // En Windows esto actualiza el punto de referencia del position-tracker
-    // (tamaño + posición inicial). El tracker se encarga del movimiento en tiempo real.
-    sendToEngine({
-      cmd:    'set_bounds',
-      x:      Math.round(effectiveBounds.x),
-      y:      Math.round(effectiveBounds.y),
-      width:  Math.max(1, Math.round(effectiveBounds.width)),
-      height: Math.max(1, Math.round(effectiveBounds.height)),
-      // Offsets físicos del renderer (sin conversión DPI): el tracker Rust
-      // los usa directamente para el offset relativo al área de contenido.
-      offset_x: useScreenBounds ? Math.round(bounds.x) : undefined,
-      offset_y: useScreenBounds ? Math.round(bounds.y) : undefined,
-    })
+    if (engineViewportHidden) {
+      return
+    }
+    sendEngineViewportBounds(effectiveBounds)
     return
   }
-  // Primera vez (o relanzar tras muerte): arrancar el motor
+  // Primera vez (o relanzar tras muerte): arrancar oculto (1×1) hasta `restore-engine-viewport`
   engineStarted = true
-  startEngine(effectiveBounds)
+  engineViewportHidden = true
+  startEngine(collapsedViewportBounds(effectiveBounds))
 })
 
 // ---------------------------------------------------------------------------

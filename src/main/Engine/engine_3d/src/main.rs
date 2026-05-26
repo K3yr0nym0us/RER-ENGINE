@@ -360,10 +360,8 @@ impl ApplicationHandler<EngineCommand> for App {
         self.setup_overlay_tracking(&window);
 
         match pollster::block_on(engine::State::new(Arc::clone(&window))) {
-            Ok(state) => {
-                ipc::send_event(&EngineEvent::Ready {
-                    gravity: state.physics.gravity_magnitude(),
-                });
+            Ok(mut state) => {
+                state.setup_default_3d_scene();
                 self.state = Some(state);
             }
             Err(e) => {
