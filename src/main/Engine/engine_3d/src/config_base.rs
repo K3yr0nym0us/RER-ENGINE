@@ -329,7 +329,28 @@ impl State {
     pub(crate) fn setup_empty_3d(&mut self) {
         self.reset_runtime_scene_3d();
         self.ensure_ground_plane();
+        // Igualar los defaults que usa la escena first-person para que la restauración
+        // desde `.save` no dependa de un estado "plantilla" (bounds/cámara).
+        // No cargamos escenarios ni sol por defecto aquí.
+        self.set_world_bounds_3d_size(28.0, 14.0, Some(56.0));
+
         self.camera = Camera::new();
+        let spawn_xz = (0.0_f32, 5.0_f32);
+        let ground_y = self
+            .physics
+            .find_ground_y_at(spawn_xz.0, spawn_xz.1, 10.0, 20.0)
+            .unwrap_or(0.0);
+        self.camera.target = glam::Vec3::new(spawn_xz.0, ground_y, spawn_xz.1);
+        self.camera.pitch =
+            crate::config_3d::character_anchor::PLAY_CHARACTER_EDITOR_ORBIT_PITCH;
+        self.camera.yaw =
+            crate::config_3d::character_anchor::PLAY_CHARACTER_EDITOR_ORBIT_YAW;
+        self.camera.distance =
+            crate::config_3d::character_anchor::PLAY_CHARACTER_EDITOR_ORBIT_DISTANCE;
+        self.editor_viewport_yaw = self.camera.yaw;
+        self.editor_viewport_pitch = self.camera.pitch;
+        self.editor_viewport_distance = self.camera.distance;
+        self.clamp_play_character_camera_to_bounds();
         self.clear_color = wgpu::Color {
             r: 0.06,
             g: 0.06,

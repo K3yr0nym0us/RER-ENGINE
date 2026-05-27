@@ -206,8 +206,6 @@ pub struct State {
     pub(crate) skinned_render_pipeline: wgpu::RenderPipeline,
     pub(crate) skinned_shadow_pipeline: wgpu::RenderPipeline,
     pub(crate) joint_bind_group_layout: Option<wgpu::BindGroupLayout>,
-    /// `ready` IPC pendiente hasta el primer frame tras cargar escena (terreno + entidades).
-    pub(crate) defer_editor_ready: bool,
 }
 
 impl State {

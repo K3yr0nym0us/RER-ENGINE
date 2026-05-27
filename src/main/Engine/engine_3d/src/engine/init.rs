@@ -818,7 +818,6 @@ impl State {
             skinned_render_pipeline,
             skinned_shadow_pipeline,
             joint_bind_group_layout: Some(joint_bgl),
-            defer_editor_ready: false,
         };
         state.sync_ground_plane_to_world_bounds();
         Ok(state)

@@ -46,10 +46,26 @@ pub(crate) fn create_model_preload_channel() -> (ModelPreloadTx, ModelPreloadRx)
 }
 
 pub(crate) fn normalize_model_path(path: &str) -> String {
-    Path::new(path)
+    // Normalizamos la "cache key" de forma determinista para evitar misses
+    // cuando el mismo archivo llega con variantes de string (p.ej. `\\?\` vs
+    // rutas normales o separadores `\` vs `/`).
+    let canonical = Path::new(path)
         .canonicalize()
         .map(|p| p.to_string_lossy().into_owned())
-        .unwrap_or_else(|_| path.replace('\\', "/"))
+        .unwrap_or_else(|_| path.to_string());
+
+    let mut s = canonical.replace('\\', "/");
+
+    // Convertir rutas device-prefix para que todas compartan la misma key.
+    // Ej: `\\?\C:\x\y.glb` -> `C:/x/y.glb`
+    // Ej: `\\?\UNC\server\share\...` -> `//server/share/...`
+    if let Some(rest) = s.strip_prefix("//?/UNC/") {
+        s = format!("//{rest}");
+    } else if let Some(rest) = s.strip_prefix("//?/") {
+        s = rest.to_string();
+    }
+
+    s
 }
 
 pub(crate) type StaticModelCache = HashMap<String, Vec<CachedStaticModelPart>>;

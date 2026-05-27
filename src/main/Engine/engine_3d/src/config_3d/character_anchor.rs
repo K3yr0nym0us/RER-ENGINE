@@ -44,15 +44,6 @@ pub(crate) const PLAY_CHARACTER_EDITOR_ORBIT_YAW: f32 = -std::f32::consts::FRAC_
 pub(crate) const EDITOR_DEFAULT_ORBIT_PITCH: f32 = 0.48;
 
 impl State {
-    /// Offset del origen del transform a los pies en espacio local.
-    pub(crate) fn play_character_feet_offset_local(
-        &self,
-        scale_y: f32,
-        rotation: glam::Quat,
-    ) -> Vec3 {
-        feet_offset_local(self.play_character_mesh_extents.as_ref(), scale_y, rotation)
-    }
-
     pub(crate) fn play_character_body_height_world(&self, scale_y: f32) -> f32 {
         if self.play_character_mesh_extents.is_some() {
             self.play_character_mesh_extents
