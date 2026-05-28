@@ -17,7 +17,6 @@ alwaysApply: true
 - Prefer the **least invasive** fix; suggest code before rewriting large areas.
 - Match existing project style (especially hooks and components). **Never** put async work inside a component—use a hook.
 - Engine code and structure: **English**. Logs: **Spanish**. UI copy may be Spanish or English but stay consistent within the app.
-- After large frontend changes, run `npx -y react-doctor@latest` at the repo root; fix hook/dependency issues in touched files before continuing.
 - **DRY**: reuse components, hooks, and helpers before adding new ones.
 - Split **2D vs 3D** engine logic and keep rendering code organized in dedicated modules.
 - Graphics policy lives in `engine_shared/src/gpu.rs` and `engine_shared/src/overlay.rs`. Do not reintroduce `Backends::GL`, `with_embed_parent_window`, or OpenGL compatibility branches.
