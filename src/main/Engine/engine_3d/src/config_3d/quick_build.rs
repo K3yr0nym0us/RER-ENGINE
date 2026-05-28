@@ -302,6 +302,7 @@ impl State {
             entity_category,
             physics_enabled,
             physics_type,
+            part.local_bounds,
         );
         log::info!("[quick_build] colocado {id} «{entity_name}» en {position:?}");
         Some(id)
@@ -368,7 +369,7 @@ impl State {
             });
             return;
         };
-        self.spawn_model_from_cached_part(part.mesh_idx, part.tex_idx, path, entity_category);
+        self.spawn_model_from_cached_part(*part, path, entity_category);
         log::info!("Modelo cargado (instancia única): {path}");
     }
 }

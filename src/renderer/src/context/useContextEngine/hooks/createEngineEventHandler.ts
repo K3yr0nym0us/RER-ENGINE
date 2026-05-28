@@ -867,19 +867,6 @@ export function createEngineEventHandler({
 						}
 					}
 				}
-				if (!restorePending && spawnModelPath && !burstActive) {
-					for (const [key, queue] of refs.pendingRestoresRef.current.entries()) {
-						if (queue.length > 0) {
-							restorePending = queue.shift()!;
-							modelPath = modelPath ?? key;
-							if (queue.length === 0) {
-								refs.pendingRestoresRef.current.delete(key);
-							}
-							break;
-						}
-					}
-				}
-
 				if (modelPath) {
 					const isEnvironment = spawnCategory === 'environment'
 						|| restorePending?.entityCategory === 'environment';

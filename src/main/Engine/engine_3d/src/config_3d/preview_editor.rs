@@ -129,20 +129,9 @@ impl State {
             self.ensure_play_character_kinematic_only();
         }
 
-        for &id in self.world.entities() {
-            if !self.physics.has_physics(id) {
-                continue;
-            }
-            let Some(t) = self.world.get::<Transform>(id) else {
-                continue;
-            };
-            let half = [
-                (t.scale.x * 0.5).max(0.01),
-                (t.scale.y * 0.5).max(0.01),
-                (t.scale.z * 0.5).max(0.01),
-            ];
-            self.physics
-                .sync_entity_physics_from_transform(id, t.position.to_array(), half);
+        let entity_ids: Vec<EntityId> = self.world.entities().to_vec();
+        for id in entity_ids {
+            self.sync_entity_physics_collider(id);
         }
     }
 

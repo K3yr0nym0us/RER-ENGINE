@@ -60,6 +60,61 @@ pub(crate) fn physics_body_position_for_model_path(
     }
 }
 
+/// Centro del AABB local de la malla (espacio del mesh antes del transform de entidad).
+pub(crate) fn physics_aabb_center_local(bounds: ([f32; 3], [f32; 3])) -> [f32; 3] {
+    let (min, max) = bounds;
+    [
+        (min[0] + max[0]) * 0.5,
+        (min[1] + max[1]) * 0.5,
+        (min[2] + max[2]) * 0.5,
+    ]
+}
+
+/// Posición del collider en mundo: centro del AABB escalado/rotado (GLB/GLTF);
+/// FBX mantiene convención de pies en `transform.position`.
+pub(crate) fn physics_body_world_center(
+    transform: &Transform,
+    local_bounds: Option<([f32; 3], [f32; 3])>,
+    model_path: &str,
+    half: [f32; 3],
+) -> [f32; 3] {
+    if is_fbx_model_path(model_path) {
+        return physics_body_position_for_model_path(
+            model_path,
+            transform.position.to_array(),
+            half,
+        );
+    }
+    let Some(bounds) = local_bounds else {
+        return transform.position.to_array();
+    };
+    let center_local = glam::Vec3::from_array(physics_aabb_center_local(bounds));
+    let offset = transform.rotation * (transform.scale * center_local);
+    (transform.position + offset).to_array()
+}
+
+/// Semieje del collider: AABB local de la malla × escala del transform.
+pub(crate) fn physics_half_extents_for_model(
+    scale: [f32; 3],
+    local_bounds: Option<([f32; 3], [f32; 3])>,
+) -> [f32; 3] {
+    if let Some((min, max)) = local_bounds {
+        let sx = scale[0].abs();
+        let sy = scale[1].abs();
+        let sz = scale[2].abs();
+        return [
+            ((max[0] - min[0]).abs() * 0.5 * sx).max(0.01),
+            ((max[1] - min[1]).abs() * 0.5 * sy).max(0.01),
+            ((max[2] - min[2]).abs() * 0.5 * sz).max(0.01),
+        ];
+    }
+    [
+        (scale[0].abs() * 0.5).max(0.01),
+        (scale[1].abs() * 0.5).max(0.01),
+        (scale[2].abs() * 0.5).max(0.01),
+    ]
+}
+
 pub(crate) mod directional_light;
 
 use crate::ipc::{AxisValue, RotationEulerDelta};
@@ -135,6 +190,42 @@ use crate::engine::State;
 use crate::ipc::{send_event, EngineEvent};
 
 impl State {
+    pub(crate) fn entity_model_local_bounds(&self, id: EntityId) -> Option<([f32; 3], [f32; 3])> {
+        let path = self.save_registry.meta.get(&id)?.path.as_str();
+        if path.starts_with('[') {
+            return None;
+        }
+        self.cached_static_model_parts(path)
+            .and_then(|parts| parts.first())
+            .map(|p| p.local_bounds)
+    }
+
+    pub(crate) fn set_entity_physics_from_mesh_aabb(&mut self, id: EntityId, body_type: &str) {
+        let Some(t) = self.world.get::<Transform>(id).cloned() else {
+            return;
+        };
+        let model_path = self
+            .save_registry
+            .meta
+            .get(&id)
+            .map(|m| m.path.as_str())
+            .unwrap_or("");
+        let bounds = self.entity_model_local_bounds(id);
+        let half = physics_half_extents_for_model(t.scale.abs().to_array(), bounds);
+        let body_pos = physics_body_world_center(&t, bounds, model_path, half);
+        self.physics
+            .set_entity_physics(id, true, body_type, body_pos, half);
+    }
+
+    /// Recrea el collider Rapier alineado al AABB de la malla (posición + escala actuales).
+    pub(crate) fn sync_entity_physics_collider(&mut self, id: EntityId) {
+        if !self.physics.has_physics(id) {
+            return;
+        }
+        let body_type = self.physics.get_body_type(id).to_string();
+        self.set_entity_physics_from_mesh_aabb(id, &body_type);
+    }
+
     /// Instancia un modelo 3D en la escena (reutiliza caché estática si existe).
     pub(crate) fn load_model(&mut self, path: &str, entity_category: Option<&str>) {
         if self.queue_load_model_if_preloading(path, entity_category, false) {
@@ -153,7 +244,7 @@ impl State {
             .unwrap_or_default();
         let count = parts.len();
         for part in parts {
-            self.spawn_model_from_cached_part(part.mesh_idx, part.tex_idx, &key, entity_category);
+            self.spawn_model_from_cached_part(part, &key, entity_category);
         }
         log::info!("Modelo instanciado desde caché: {key} ({count} malla/s)");
     }
@@ -285,19 +376,8 @@ impl State {
             m.visual_model_path = Some(path.to_string());
         }
 
-        if !is_play_character && self.physics.has_physics(id) {
-            if let Some(t) = self.world.get::<Transform>(id) {
-                let half = [
-                    (t.scale.x * 0.5).max(0.01),
-                    (t.scale.y * 0.5).max(0.01),
-                    (t.scale.z * 0.5).max(0.01),
-                ];
-                let pos = t.position.to_array();
-                let body_pos = physics_body_position_for_model_path(path, pos, half);
-                let body_type = self.physics.get_body_type(id).to_string();
-                self.physics
-                    .set_entity_physics(id, true, &body_type, body_pos, half);
-            }
+        if !is_play_character {
+            self.sync_entity_physics_collider(id);
         }
 
         self.try_bind_model_animations(id, &asset_key);
@@ -430,19 +510,8 @@ impl State {
                 m.visual_model_path = Some(path.to_string());
             }
         }
-        if !is_play_character && self.physics.has_physics(id) {
-            if let Some(t) = self.world.get::<Transform>(id) {
-                let half = [
-                    (t.scale.x * 0.5).max(0.01),
-                    (t.scale.y * 0.5).max(0.01),
-                    (t.scale.z * 0.5).max(0.01),
-                ];
-                let pos = t.position.to_array();
-                let body_pos = physics_body_position_for_model_path(path, pos, half);
-                let body_type = self.physics.get_body_type(id).to_string();
-                self.physics
-                    .set_entity_physics(id, true, &body_type, body_pos, half);
-            }
+        if !is_play_character {
+            self.sync_entity_physics_collider(id);
         }
 
         let (position, rotation, scale) = match self.world.get::<Transform>(id) {

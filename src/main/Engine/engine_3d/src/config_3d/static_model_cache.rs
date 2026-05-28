@@ -15,10 +15,11 @@ use std::time::{Duration, Instant};
 
 use crate::config_3d::character_anchor::PLAY_CHARACTER_BODY_HEIGHT;
 use crate::config_3d::mesh_3d::{
-    load_gltf_cpu_from_file, load_model_file_cpu, preload_model_cpu_bundle, CpuModelMeshPart,
+    load_gltf_cpu_from_file, load_model_file_cpu, preload_model_cpu_bundle,
+    vertex_local_bounds, CpuModelMeshPart,
 };
 use crate::config_3d::model_asset;
-use crate::config_3d::physics_body_position_for_model_path;
+use crate::config_3d::{physics_body_world_center, physics_half_extents_for_model};
 use crate::ecs::{EntityId, MeshComponent, Transform};
 use crate::engine::State;
 use crate::entity_save_meta::EntitySaveMeta;
@@ -256,12 +257,29 @@ impl State {
         }
     }
 
+    /// Pivote editor: base en Y=0, centrado en X/Z (misma idea que el cubo placeholder).
+    fn pivot_static_mesh_for_editor(part: &mut CpuModelMeshPart) {
+        let (min, max) = part.local_bounds;
+        let cx = (min[0] + max[0]) * 0.5;
+        let cy = min[1];
+        let cz = (min[2] + max[2]) * 0.5;
+        for v in part.vertices.iter_mut() {
+            v.position[0] -= cx;
+            v.position[1] -= cy;
+            v.position[2] -= cz;
+        }
+        part.local_bounds = vertex_local_bounds(&part.vertices);
+    }
+
     fn upload_cpu_parts_to_static_cache(
         &mut self,
         cache_key: &str,
-        parts: &[CpuModelMeshPart],
+        mut parts: Vec<CpuModelMeshPart>,
         label: &str,
     ) -> Vec<CachedStaticModelPart> {
+        for part in parts.iter_mut() {
+            Self::pivot_static_mesh_for_editor(part);
+        }
         parts
             .iter()
             .enumerate()
@@ -436,7 +454,7 @@ impl State {
             }
         };
 
-        let cached = self.upload_cpu_parts_to_static_cache(&play_key, &parts, "play-preload");
+        let cached = self.upload_cpu_parts_to_static_cache(&play_key, parts, "play-preload");
         self.static_model_cache.insert(play_key, cached);
         if !is_gltf && !self.model_assets.contains_key(canonical_path) {
             if let Some(asset) = model_asset::load_model_asset(path_buf, None) {
@@ -592,7 +610,7 @@ impl State {
             return Err(format!("Modelo vacío: {key}"));
         }
 
-        let cached_parts = self.upload_cpu_parts_to_static_cache(&key, &parts, "sync");
+        let cached_parts = self.upload_cpu_parts_to_static_cache(&key, parts, "sync");
         self.static_model_cache.insert(key.clone(), cached_parts);
         if let Some(asset) = anim_asset {
             self.model_assets.insert(key, asset);
@@ -633,6 +651,7 @@ impl State {
         entity_category: Option<String>,
         physics_enabled: bool,
         physics_type: &str,
+        local_bounds: ([f32; 3], [f32; 3]),
     ) -> EntityId {
         let key = self.model_path_key(path);
         let id = self.world.spawn(Some(entity_name));
@@ -654,17 +673,16 @@ impl State {
             },
         );
         if physics_enabled && self.play_character_entity != Some(id) {
-            let (pos, half) = if let Some(t) = self.world.get::<Transform>(id) {
-                (
-                    t.position.to_array(),
-                    (t.scale.abs() * 0.5).to_array(),
-                )
-            } else {
-                ([0.0_f32; 3], [0.5_f32; 3])
-            };
-            let body_pos = physics_body_position_for_model_path(path, pos, half);
-            self.physics
-                .set_entity_physics(id, true, physics_type, body_pos, half);
+            if let Some(t) = self.world.get::<Transform>(id).cloned() {
+                let half = physics_half_extents_for_model(
+                    t.scale.abs().to_array(),
+                    Some(local_bounds),
+                );
+                let body_pos =
+                    physics_body_world_center(&t, Some(local_bounds), path, half);
+                self.physics
+                    .set_entity_physics(id, true, physics_type, body_pos, half);
+            }
             send_event(&EngineEvent::PhysicsChanged {
                 entity_id: id,
                 enabled: true,
@@ -738,13 +756,13 @@ impl State {
             entity_category,
             physics_enabled,
             physics_type,
+            part.local_bounds,
         ))
     }
 
     pub(crate) fn spawn_model_from_cached_part(
         &mut self,
-        mesh_idx: usize,
-        tex_idx: usize,
+        part: CachedStaticModelPart,
         path: &str,
         entity_category: Option<&str>,
     ) -> EntityId {
@@ -752,8 +770,8 @@ impl State {
             .next_numbered_entity_name(entity_label_for_category(entity_category));
         let position = self.default_model_spawn_position();
         self.spawn_cached_model_part_at(
-            mesh_idx,
-            tex_idx,
+            part.mesh_idx,
+            part.tex_idx,
             path,
             position,
             [0.0, 0.0, 0.0, 1.0],
@@ -764,6 +782,7 @@ impl State {
             None,
             false,
             "static",
+            part.local_bounds,
         )
     }
 

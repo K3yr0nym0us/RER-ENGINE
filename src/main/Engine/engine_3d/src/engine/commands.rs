@@ -518,30 +518,8 @@ impl State {
                     }
                 }
                 if !is_play_character && !is_editor_camera {
-                    if let Some(t) = self.world.get::<Transform>(id).cloned() {
-                        if self.physics.has_physics(id)
-                            && (position_vec.is_some() || rotation_changed || scale_vec.is_some())
-                        {
-                            let half = [
-                                (t.scale.x * 0.5).max(0.01),
-                                (t.scale.y * 0.5).max(0.01),
-                                (t.scale.z * 0.5).max(0.01),
-                            ];
-                            let pos = t.position.to_array();
-                            let model_path = self
-                                .save_registry
-                                .meta
-                                .get(&id)
-                                .map(|m| m.path.as_str())
-                                .unwrap_or("");
-                            let body_pos = crate::config_3d::physics_body_position_for_model_path(
-                                model_path,
-                                pos,
-                                half,
-                            );
-                            self.physics
-                                .sync_entity_physics_from_transform(id, body_pos, half);
-                        }
+                    if position_vec.is_some() || rotation_changed || scale_vec.is_some() {
+                        self.sync_entity_physics_collider(id);
                     }
                 }
                 if let Some(prev) = before {
@@ -906,15 +884,12 @@ impl State {
                 self.clear_background();
             }
             EngineCommand::SetPhysics { id, enabled, body_type } => {
-                let (pos, half) = if let Some(t) = self.world.get::<Transform>(id) {
-                    (t.position.to_array(), (t.scale.abs() * 0.5).to_array())
-                } else {
-                    ([0.0_f32; 3], [0.5_f32; 3])
-                };
                 if self.play_character_entity == Some(id) {
                     self.physics.remove_entity_body(id);
+                } else if enabled {
+                    self.set_entity_physics_from_mesh_aabb(id, &body_type);
                 } else {
-                    self.physics.set_entity_physics(id, enabled, &body_type, pos, half);
+                    self.physics.remove_entity_body(id);
                 }
                 log::debug!(
                     "Física {}: entidad {} tipo='{}'",
