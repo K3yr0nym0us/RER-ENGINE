@@ -226,6 +226,20 @@ impl State {
         self.set_entity_physics_from_mesh_aabb(id, &body_type);
     }
 
+    /// AABB en mundo para hover/click: misma caja que Rapier (`local_bounds` + transform).
+    fn entity_world_pick_aabb(&self, id: EntityId, transform: &Transform) -> (GlamVec3, GlamVec3) {
+        let model_path = self
+            .save_registry
+            .meta
+            .get(&id)
+            .map(|m| m.path.as_str())
+            .unwrap_or("");
+        let bounds = self.entity_model_local_bounds(id);
+        let half = physics_half_extents_for_model(transform.scale.abs().to_array(), bounds);
+        let center = physics_body_world_center(transform, bounds, model_path, half);
+        (GlamVec3::from_array(center), GlamVec3::from_array(half))
+    }
+
     /// Instancia un modelo 3D en la escena (reutiliza caché estática si existe).
     pub(crate) fn load_model(&mut self, path: &str, entity_category: Option<&str>) {
         if self.queue_load_model_if_preloading(path, entity_category, false) {
@@ -644,9 +658,8 @@ impl State {
             let Some(transform) = self.world.get::<Transform>(entity) else {
                 continue;
             };
-            let half = transform.scale * 0.5;
-            if let Some(t) =
-                Self::ray_intersects_aabb(ray_origin, world_dir, transform.position, half)
+            let (center, half) = self.entity_world_pick_aabb(entity, transform);
+            if let Some(t) = Self::ray_intersects_aabb(ray_origin, world_dir, center, half)
             {
                 if closest.map_or(true, |(ct, _)| t < ct) {
                     closest = Some((t, entity));
