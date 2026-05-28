@@ -7,7 +7,7 @@ use crate::config_compat::ActiveTool;
 use crate::ecs::{EntityId, MeshComponent, NonSelectable, Transform};
 use crate::engine::State;
 use crate::gizmo;
-use crate::ipc::{send_event, EngineEvent};
+use crate::ipc::{send_event, send_load_progress, EngineEvent};
 use crate::entity_save_meta::EntitySaveMeta;
 use crate::mesh;
 use crate::scripting::ScriptEngine;
@@ -175,7 +175,7 @@ impl State {
         tex_idx
     }
 
-    /// Suelo checker + colisión estática. Idempotente (también tras `setup_empty_3d` al cargar `.save`).
+    /// Suelo checker + colisión estática. Idempotente al restaurar desde el manifest `[Ground]`.
     pub(crate) fn ensure_ground_plane(&mut self) {
         if self.ground_entity_id().is_some() {
             return;
@@ -211,7 +211,6 @@ impl State {
     }
 
     pub(crate) fn spawn_ground_plane(&mut self, position: [f32; 3], _scale: [f32; 3]) {
-        let already_had_ground = self.ground_entity_id().is_some();
         self.ensure_ground_plane();
         let Some(id) = self.ground_entity_id() else {
             return;
@@ -221,9 +220,6 @@ impl State {
             t.position.y = 0.0;
         }
         self.sync_ground_plane_to_world_bounds();
-        if !already_had_ground {
-            self.send_model_loaded_event(id, "Ground");
-        }
     }
 
     /// Escala el mesh del suelo (40×40 local) al cuadro de límites del accordion World.
@@ -244,7 +240,10 @@ impl State {
 
     /// Escena base del modo first-person: suelo checker y cámara a ras de editor 3D.
     pub(crate) fn setup_default_3d_scene(&mut self) {
+        send_load_progress("Cargando plantilla first-person…", None, None);
+        log::info!("Cargando plantilla first-person");
         self.reset_runtime_scene_3d();
+        send_load_progress("Insertando suelo (Ground)", None, None);
         self.ensure_ground_plane();
 
         let (block_mesh_idx, block_tex_idx) = self.ensure_editor_box_gpu_assets();
@@ -283,9 +282,11 @@ impl State {
         };
 
         // Placeholder first-person: 3 muros (environment) + 3 cubos (object).
+        send_load_progress("Insertando Paredes (3)", None, None);
         spawn_block([-6.0, 2.0, 18.0], [1.2, 4.0, 18.0], Some("environment"));
         spawn_block([6.0, 2.0, 18.0], [1.2, 4.0, 18.0], Some("environment"));
         spawn_block([0.0, 2.0, 27.0], [12.0, 4.0, 1.2], Some("environment"));
+        send_load_progress("Insertando Cubos (3)", None, None);
         spawn_block([-2.5, 0.75, 11.0], [1.5, 1.5, 1.5], Some("object"));
         spawn_block([2.0, 1.25, 15.0], [2.0, 2.5, 2.0], Some("object"));
         spawn_block([0.0, 2.5, 21.0], [1.8, 5.0, 1.8], Some("object"));
@@ -318,11 +319,13 @@ impl State {
             a: 1.0,
         };
 
+        send_load_progress("Insertando Character (Player)", None, None);
         self.spawn_play_character();
         self.sync_fps_camera_mode();
         self.ensure_default_sun();
 
-        log::info!("Escena 3D por defecto cargada: arena base del editor");
+        send_load_progress("Plantilla first-person lista", None, None);
+        log::info!("Plantilla first-person lista");
         send_event(&EngineEvent::Ready {
             gravity: self.physics.gravity_magnitude(),
         });
@@ -355,12 +358,10 @@ impl State {
         };
     }
 
-    /// Escena 3D vacía al arrancar desde `.save` (sin plantilla first-person).
+    /// Arranque 3D al abrir `.save`: el ECS ya viene vacío de `State::new`; sin plantilla FP ni suelo.
     pub(crate) fn setup_empty_3d(&mut self) {
-        self.reset_runtime_scene_3d();
-        self.ensure_ground_plane();
-        self.apply_empty_3d_editor_defaults();
-        log::info!("Escena 3D vacía — contenido desde guardado");
+        self.mount_save_on_empty_world = true;
+        log::info!("Motor 3D listo — montará escena desde .save (sin plantilla)");
     }
 
     /// Vacía entidades y estado de juego sin resetear GPU, texturas ni caché de modelos precargados.

@@ -182,6 +182,8 @@ pub struct State {
     pub(crate) autosave_last_tick: Instant,
     /// Metadatos de persistencia (rutas, tipo) y fuentes de scripts por entidad.
     pub(crate) save_registry: EntitySaveRegistry,
+    /// Próximo `load_proyect` monta el manifest sin vaciar (arranque con `.save`).
+    pub(crate) mount_save_on_empty_world: bool,
     /// Límite de FPS del bucle (sincronizado con `set_target_fps`).
     pub(crate) target_fps: u64,
     /// Entidad icono del sol (luz direccional).

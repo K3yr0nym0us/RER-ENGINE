@@ -286,7 +286,7 @@ impl State {
             Ok(mut project) => {
                 if project.r#type != "3D" {
                     log::warn!(
-                        "[load_proyect] tipo '{}' ignorado en binario 3D",
+                        "tipo '{}' ignorado en binario 3D",
                         project.r#type
                     );
                     return;
@@ -298,10 +298,10 @@ impl State {
                         send_project_loaded_3d(&project, &view);
                         send_project_load_3d_complete_event();
                     }
-                    Err(err) => log::error!("[load_proyect] error al aplicar proyecto: {err}"),
+                    Err(err) => log::error!("error al aplicar proyecto: {err}"),
                 }
             }
-            Err(err) => log::error!("[load_proyect] error al abrir '{path}': {err}"),
+            Err(err) => log::error!("error al abrir '{path}': {err}"),
         }
     }
 }
@@ -420,7 +420,7 @@ fn resolve_script_source(source: &str, extracted_dir: &Path) -> String {
     let normalized = rel.replace('/', std::path::MAIN_SEPARATOR_STR);
     let abs = extracted_dir.join(normalized);
     if !abs.is_file() {
-        log::warn!("[load_proyect] script referenciado no encontrado en save: {rel}");
+        log::warn!("script referenciado no encontrado en save: {rel}");
         return String::new();
     }
     fs::read_to_string(&abs).unwrap_or_default()
@@ -851,7 +851,7 @@ fn ensure_model_cached(state: &mut State, path: &str) -> bool {
     match state.ensure_static_model_cached(path) {
         Ok(()) => true,
         Err(err) => {
-            log::error!("[load_proyect] no se pudo cachear modelo '{path}': {err}");
+            log::error!("no se pudo cachear modelo '{path}': {err}");
             false
         }
     }
@@ -920,7 +920,7 @@ fn log_load_step(total: Instant, step: &mut Instant, message: &str) {
     let step_ms = step.elapsed().as_millis() as u64;
     let total_ms = total.elapsed().as_millis() as u64;
     log::info!(
-        "[load_proyect] {} (+{} ms, total {} ms)",
+        "{} (+{} ms, total {} ms)",
         message,
         step_ms,
         total_ms
@@ -962,9 +962,9 @@ fn kickoff_preload_models_for_save(
         if state.static_model_cache.contains_key(&key) || state.model_preload_inflight.contains(&key) {
             continue;
         }
-        let label = path_basename_lower(path);
+        let label = state.model_display_label(path);
         let msg = format!("Cargando modelo en segundo plano: {label}");
-        log::info!("[load_proyect] {msg}");
+        log::info!("{msg}");
         send_load_progress(&msg, None, None);
         let warm_play = warm_play_keys.contains(&key);
         state.start_model_preload(key, label, warm_play);
@@ -972,7 +972,7 @@ fn kickoff_preload_models_for_save(
     }
     state.poll_and_advance_model_preloads(64);
     if started == 0 {
-        log::info!("[load_proyect] Modelos 3D ya en caché, sin precarga nueva");
+        log::info!("Modelos 3D ya en caché, sin precarga nueva");
     }
 }
 
@@ -1105,11 +1105,16 @@ fn apply_loaded_proyect_3d(state: &mut State, project: &ProjectSaveData) -> Resu
         view.sceneName,
         view.entities.len()
     );
-    log::info!("[load_proyect] {open_msg}");
+    log::info!("{open_msg}");
     send_load_progress(&open_msg, None, None);
-    state.clear_scene_entities_for_save_load();
-    state.apply_empty_3d_editor_defaults();
-    log_load_step(load_started_at, &mut step_started, "Escena vaciada, leyendo mundo");
+    if state.mount_save_on_empty_world {
+        state.mount_save_on_empty_world = false;
+        log_load_step(load_started_at, &mut step_started, "Montando escena desde .save");
+    } else {
+        state.clear_scene_entities_for_save_load();
+        state.apply_empty_3d_editor_defaults();
+        log_load_step(load_started_at, &mut step_started, "Escena anterior vaciada, leyendo mundo");
+    }
     let game_style = project.gameStyle.as_str();
     let blueprints = &project.blueprints;
     let burst_load = needs_scene_burst_load(game_style, &view);
@@ -1157,6 +1162,11 @@ fn apply_loaded_proyect_3d(state: &mut State, project: &ProjectSaveData) -> Resu
 
     load_project_asset_stores(state, project);
     log_load_step(load_started_at, &mut step_started, "Sonidos y fondos registrados");
+    for model in &view.models {
+        state
+            .model_store
+            .insert(state.model_path_key(&model.path), model.name.clone());
+    }
     let scene_model_paths = collect_scene_required_model_paths(state, &view);
     let warm_play_keys = collect_play_character_warm_model_keys(state, &view);
     kickoff_preload_models_for_save(state, &scene_model_paths, &warm_play_keys);
@@ -1212,7 +1222,7 @@ fn apply_loaded_proyect_3d(state: &mut State, project: &ProjectSaveData) -> Resu
             let pending = build_generic_pending_restore(entity, transform, blueprints);
             let box_label = entity.name.as_deref().unwrap_or("Caja");
             log::info!(
-                "[load_proyect] Colocando bloque «{box_label}» en [{:.1}, {:.1}, {:.1}]",
+                "Colocando bloque «{box_label}» en [{:.1}, {:.1}, {:.1}]",
                 entity.position[0],
                 entity.position[1],
                 entity.position[2]
@@ -1258,7 +1268,7 @@ fn apply_loaded_proyect_3d(state: &mut State, project: &ProjectSaveData) -> Resu
     );
 
     if burst_load_planned {
-        log::info!("[load_proyect] Instanciando modelos 3D (carga por lotes)…");
+        log::info!("Instanciando modelos 3D (carga por lotes)…");
         state.poll_and_advance_model_preloads(64);
         for model in &view.models {
             if !model.path.trim().is_empty() {
@@ -1333,13 +1343,13 @@ fn apply_loaded_proyect_3d(state: &mut State, project: &ProjectSaveData) -> Resu
     if let Some(saved) = saved_player {
         apply_saved_play_character_view(state, saved);
         log::info!(
-            "[load_proyect] Jugador colocado en [{:.2}, {:.2}, {:.2}]",
+            "Jugador colocado en [{:.2}, {:.2}, {:.2}]",
             saved.position[0],
             saved.position[1],
             saved.position[2]
         );
     } else {
-        log::warn!("[load_proyect] El manifest no trae playerTransform; spawn por defecto");
+        log::warn!("El manifest no trae playerTransform; spawn por defecto");
     }
 
     let done_msg = format!(
@@ -1348,7 +1358,7 @@ fn apply_loaded_proyect_3d(state: &mut State, project: &ProjectSaveData) -> Resu
         view.entities.len(),
         load_started_at.elapsed().as_millis()
     );
-    log::info!("[load_proyect] {done_msg}");
+    log::info!("{done_msg}");
     send_load_progress(
         &done_msg,
         None,

@@ -120,7 +120,73 @@ const SILENT_ENGINE_EVENTS = new Set<string>([
 	'play_character_view_changed', 'first_person_view_changed',
 	'save_snapshot_ready',
 	'load_progress',
+	'model_asset_preload_started',
+	'model_asset_loaded',
 ]);
+
+/** Eventos IPC que no deben duplicar `[Carga]` durante carga de escena o plantilla FP al arrancar. */
+const SCENE_LOAD_SILENT_EVENTS = new Set<string>([
+	'model_loaded',
+	'model_clips_ready',
+	'entity_model_replaced',
+	'models_list',
+	'sounds_list',
+	'backgrounds_list',
+	'default_scene_name_ready',
+	'project_loaded_3d',
+	'project_load_3d_complete',
+]);
+
+function shouldSilenceEngineEventLog(
+	eventName: string,
+	refs: Pick<
+		EngineInternalRefs,
+		| 'sceneImportInProgressRef'
+		| 'engineBootAwaitRef'
+		| 'engineBootFinishedRef'
+		| 'initialSaveRef'
+	>,
+	projectType?: string,
+): boolean {
+	if (SILENT_ENGINE_EVENTS.has(eventName)) return true;
+	const bootPreloaded = isEngineBootScenePreloaded(
+		projectType,
+		Boolean(refs.initialSaveRef.current),
+	);
+	const bootLogsActive = bootPreloaded && !refs.engineBootFinishedRef.current;
+	const loadPanelActive =
+		refs.sceneImportInProgressRef.current
+		|| refs.engineBootAwaitRef.current
+		|| bootLogsActive;
+	if (loadPanelActive && SCENE_LOAD_SILENT_EVENTS.has(eventName)) return true;
+	return false;
+}
+
+/** Línea del panel de logs; `null` = no imprimir; `undefined` = JSON del evento. */
+function panelLogLineForEngineEvent(
+	event: RuntimeEngineEvent,
+	refs: Pick<
+		EngineInternalRefs,
+		| 'sceneImportInProgressRef'
+		| 'engineBootAwaitRef'
+		| 'engineBootFinishedRef'
+		| 'initialSaveRef'
+	>,
+	projectType?: string,
+): string | null | undefined {
+	if (event.event === 'model_loaded') {
+		const name = (event as { name?: string }).name;
+		const bootPreloaded = isEngineBootScenePreloaded(
+			projectType,
+			Boolean(refs.initialSaveRef.current),
+		);
+		if (bootPreloaded && name?.startsWith('Sun')) {
+			return '[Carga] Insertando Sol (Sun)';
+		}
+	}
+	if (shouldSilenceEngineEventLog(event.event, refs, projectType)) return null;
+	return undefined;
+}
 
 interface CreateEngineEventHandlerParams {
 	dispatch: Dispatch<EngineAction>
@@ -195,9 +261,10 @@ export function createEngineEventHandler({
 			}
 		}
 
-		// Eventos de alta frecuencia: se procesan normalmente, pero no se
-		// imprimen en la consola del panel para evitar spam visual.
-		if (!SILENT_ENGINE_EVENTS.has(event.event)) {
+		const panelLine = panelLogLineForEngineEvent(event, refs, projectType);
+		if (panelLine != null) {
+			addLog(panelLine, event.event === 'error');
+		} else if (panelLine === undefined) {
 			addLog(JSON.stringify(event), event.event === 'error');
 		}
 
@@ -550,7 +617,10 @@ export function createEngineEventHandler({
 			if (engineLoads3dSave) {
 				beginSceneImportLoading(dispatch, refs.sceneImportInProgressRef);
 			} else if (boot3dNoSave) {
-				tryFinishEngineBootLoading(dispatch, refs, reportBounds);
+				// Dejar procesar IPC pendientes (p. ej. Sun_01) antes de cerrar el boot.
+				queueMicrotask(() => {
+					tryFinishEngineBootLoading(dispatch, refs, reportBounds);
+				});
 			} else {
 				endEngineBootLoadingIfIdle(dispatch, refs, reportBounds);
 			}

@@ -244,7 +244,7 @@ impl State {
             Ok(mut project) => {
                 if project.r#type != "2D" {
                     log::warn!(
-                        "[load_proyect] tipo '{}' ignorado en binario 2D",
+                        "tipo '{}' ignorado en binario 2D",
                         project.r#type
                     );
                     return;
@@ -253,10 +253,10 @@ impl State {
                 resolve_loaded_paths(&mut project, &extract_dir);
                 match apply_loaded_proyect_2d(self, &project) {
                     Ok(view) => send_project_loaded_2d(&project, &view),
-                    Err(err) => log::error!("[load_proyect] error al aplicar proyecto: {err}"),
+                    Err(err) => log::error!("error al aplicar proyecto: {err}"),
                 }
             }
-            Err(err) => log::error!("[load_proyect] error al abrir '{path}': {err}"),
+            Err(err) => log::error!("error al abrir '{path}': {err}"),
         }
     }
 }
@@ -324,7 +324,7 @@ fn resolve_script_source(source: &str, extracted_dir: &Path) -> String {
     }
     if !source.starts_with(SCRIPT_FILE_PREFIX) {
         log::warn!(
-            "[load_proyect] script con formato inválido (se esperaba @file:scripting/...): {source}"
+            "script con formato inválido (se esperaba @file:scripting/...): {source}"
         );
         return String::new();
     }
@@ -332,7 +332,7 @@ fn resolve_script_source(source: &str, extracted_dir: &Path) -> String {
     let normalized = rel.replace('/', std::path::MAIN_SEPARATOR_STR);
     let abs = extracted_dir.join(normalized);
     if !abs.is_file() {
-        log::warn!("[load_proyect] script referenciado no encontrado en save: {rel}");
+        log::warn!("script referenciado no encontrado en save: {rel}");
         return String::new();
     }
     fs::read_to_string(&abs).unwrap_or_default()
@@ -791,7 +791,7 @@ fn apply_loaded_proyect_2d(state: &mut State, project: &ProjectSaveData) -> Resu
         state.import_scene(payload);
         load_project_asset_stores(state, project);
         log::info!(
-            "[load_proyect] escena 2D importada desde extract_dir (id={}, entidades={})",
+            "escena 2D importada desde extract_dir (id={}, entidades={})",
             view.sceneId,
             view.entities.len()
         );
@@ -846,7 +846,7 @@ fn apply_loaded_proyect_2d(state: &mut State, project: &ProjectSaveData) -> Resu
     load_project_asset_stores(state, project);
 
     log::info!(
-        "[load_proyect] proyecto 2D vacío cargado desde extract_dir (id={})",
+        "proyecto 2D vacío cargado desde extract_dir (id={})",
         view.sceneId
     );
     Ok(view)

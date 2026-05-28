@@ -2,7 +2,11 @@ import { useEffect, useRef, type Dispatch, type RefObject } from 'react';
 import type { GameStyle } from '@shared-types';
 import type { Locale } from '../LanguageContext';
 import { createEngineEventHandler } from './createEngineEventHandler';
-import { beginEngineBootLoading } from './sceneImportOverlay';
+import {
+	beginEngineBootEntityWait,
+	beginEngineBootLoading,
+	isEngineBootScenePreloaded,
+} from './sceneImportOverlay';
 import type { EngineAction, EngineInternalRefs } from '../types';
 
 const ENGINE_READY_TIMEOUT_MS_2D = 5_000;
@@ -74,6 +78,9 @@ export function useEngineEffects({
 		const onViewportResize = () => reportBoundsDebouncedRef.current();
 
 		beginEngineBootLoading(dispatch);
+		if (isEngineBootScenePreloaded(projectType, Boolean(refs.initialSaveRef.current))) {
+			beginEngineBootEntityWait(refs);
+		}
 		reportBoundsRef.current();
 		const observer = new ResizeObserver(onViewportResize);
 		if (viewportRef.current) observer.observe(viewportRef.current);

@@ -334,8 +334,8 @@ function startEngine(embed?: ViewportBounds): void {
     const lines = data.toString('utf8').split('\n').filter(Boolean)
     for (const line of lines) {
       if (isBenignEngineStderrLine(line)) continue
-      if (line.includes('[load_proyect]')) {
-        console.log('[engine]', line.trim())
+      if (/\[rer_engine_(2d|3d)::/.test(line)) {
+        console.log(line.trim())
       } else {
         console.error('[engine stderr]', line)
       }

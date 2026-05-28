@@ -109,6 +109,23 @@ impl State {
         normalize_model_path(path)
     }
 
+    /// Nombre corto del recurso (alias del proyecto) o nombre de archivo.
+    pub(crate) fn model_display_label(&self, path: &str) -> String {
+        let key = self.model_path_key(path);
+        self.model_store
+            .get(&key)
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| {
+                Path::new(path)
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or(path)
+                    .to_string()
+            })
+    }
+
     pub(crate) fn model_needs_skinned_bind(&self, path: &str) -> bool {
         let key = self.model_path_key(path);
         self.model_assets
@@ -179,7 +196,7 @@ impl State {
                 let _ = tx.send(result);
             })
         {
-            log::error!("[model_preload] no se pudo lanzar hilo: {e}");
+            log::error!("no se pudo lanzar hilo: {e}");
             self.model_preload_inflight.remove(&key);
             self.model_store.remove(&key);
             send_event(&EngineEvent::Error {
@@ -202,7 +219,7 @@ impl State {
                     self.model_preload_gpu_queue
                         .retain(|p| p.path != path);
                     self.drop_pending_load_models_for_path(&path);
-                    log::error!("[model_preload] error precargando {path}: {message}");
+                    log::error!("error precargando {path}: {message}");
                     send_event(&EngineEvent::Error { message });
                 }
             }
@@ -254,14 +271,11 @@ impl State {
 
     fn finalize_model_preload_on_gpu(&mut self, pending: PendingGpuModelPreload) {
         let path = pending.path;
-        let display_name = Path::new(&path)
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or(path.as_str());
+        let display_name = self.model_display_label(&path);
         self.model_preload_inflight.remove(&path);
 
         if pending.uploaded.is_empty() {
-            log::error!("[model_preload] modelo vacío tras subida GPU: {path}");
+            log::error!("modelo vacío tras subida GPU: {path}");
             self.model_store.remove(&path);
             send_event(&EngineEvent::Error {
                 message: format!("Modelo vacío: {path}"),
@@ -291,7 +305,7 @@ impl State {
                 .map(|p| p.len())
                 .unwrap_or(0)
         );
-        log::info!("[load_proyect] {gpu_msg}");
+        log::info!("{gpu_msg}");
         send_load_progress(&gpu_msg, None, None);
         if pending.warm_play_character {
             self.try_warm_play_character_model_cache(&path);
@@ -404,7 +418,7 @@ impl State {
                 Ok(_) => return,
                 Err(e) => {
                     log::debug!(
-                        "[model_cache] sin variante jugador para {canonical_path}: {e}"
+                        "sin variante jugador para {canonical_path}: {e}"
                     );
                     return;
                 }
@@ -415,7 +429,7 @@ impl State {
                 Ok(_) => return,
                 Err(e) => {
                     log::debug!(
-                        "[model_cache] sin variante jugador para {canonical_path}: {e}"
+                        "sin variante jugador para {canonical_path}: {e}"
                     );
                     return;
                 }
@@ -429,7 +443,7 @@ impl State {
                 self.model_assets.insert(canonical_path.to_string(), asset);
             }
         }
-        log::debug!("[model_cache] variante jugador en GPU: {canonical_path}");
+        log::debug!("variante jugador en GPU: {canonical_path}");
     }
 
     pub(crate) fn ensure_play_character_model_cached(&mut self, path: &str) -> Result<(), String> {
@@ -468,7 +482,7 @@ impl State {
                 id,
                 path: path.to_string(),
             });
-        log::info!("[model_cache] replace_entity_model en cola (precarga en curso): {key}");
+        log::info!("replace_entity_model en cola (precarga en curso): {key}");
         true
     }
 
@@ -502,7 +516,7 @@ impl State {
             entity_category: entity_category.map(str::to_owned),
             single_instance,
         });
-        log::info!("[model_cache] load_model en cola (precarga en curso): {key}");
+        log::info!("load_model en cola (precarga en curso): {key}");
         true
     }
 
@@ -534,14 +548,10 @@ impl State {
         if self.static_model_cache.contains_key(&key) {
             return Ok(());
         }
-        let display_name = Path::new(path)
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or(path)
-            .to_string();
+        let display_name = self.model_display_label(path);
         if self.model_preload_inflight.contains(&key) {
             let wait_msg = format!("Esperando precarga de «{display_name}»…");
-            log::info!("[load_proyect] {wait_msg}");
+            log::info!("{wait_msg}");
             send_load_progress(&wait_msg, None, None);
             let wait_started = Instant::now();
             const PRELOAD_WAIT: Duration = Duration::from_secs(120);
@@ -553,7 +563,7 @@ impl State {
                         "Modelo «{display_name}» listo (espera {} ms)",
                         wait_started.elapsed().as_millis()
                     );
-                    log::info!("[load_proyect] {ready_msg}");
+                    log::info!("{ready_msg}");
                     send_load_progress(&ready_msg, None, None);
                     return Ok(());
                 }
@@ -574,7 +584,7 @@ impl State {
 
         let sync_started = Instant::now();
         let sync_msg = format!("Cargando modelo «{display_name}» (hilo principal)…");
-        log::info!("[load_proyect] {sync_msg}");
+        log::info!("{sync_msg}");
         send_load_progress(&sync_msg, None, None);
         let path_buf = Path::new(&key);
         let (parts, anim_asset) = preload_model_cpu_bundle(path_buf)?;
@@ -591,7 +601,7 @@ impl State {
             "Modelo «{display_name}» listo en GPU (+{} ms)",
             sync_started.elapsed().as_millis()
         );
-        log::info!("[load_proyect] {done_msg}");
+        log::info!("{done_msg}");
         send_load_progress(&done_msg, None, None);
         Ok(())
     }

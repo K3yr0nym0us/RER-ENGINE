@@ -9,7 +9,7 @@ use rer_engine_shared::gpu::{init_gpu, EngineGpuProfile, GpuInitError};
 use crate::config_3d::physics_3d::PhysicsWorld;
 use crate::config_3d::{Camera, WorldBounds3D};
 use crate::config_compat::{ActiveTool, GridConfig};
-use crate::ecs::{MeshComponent, World};
+use crate::ecs::World;
 use crate::entity_save_meta::EntitySaveRegistry;
 use crate::gizmo;
 use crate::mesh;
@@ -420,9 +420,7 @@ impl State {
         let ground_plane = crate::config_3d::mesh_3d::create_ground_plane(&device);
         let hud_quad_mesh = mesh::create_unit_quad_xy(&device);
         let meshes = vec![ground_plane];
-        let mut world = World::new();
-        let plane_id = world.spawn(Some("Ground"));
-        world.insert(plane_id, MeshComponent { mesh_idx: 0, tex_idx: 0 });
+        let world = World::new();
         let mut camera = Camera::new();
         camera.target = glam::Vec3::new(0.0, 1.75, 5.0);
         camera.pitch = 0.0;
@@ -660,7 +658,7 @@ impl State {
             size.height,
         );
 
-        let mut state = Self {
+        let state = Self {
             window,
             surface,
             device,
@@ -821,8 +819,8 @@ impl State {
             skinned_render_pipeline,
             skinned_shadow_pipeline,
             joint_bind_group_layout: Some(joint_bgl),
+            mount_save_on_empty_world: false,
         };
-        state.sync_ground_plane_to_world_bounds();
         Ok(state)
     }
 }

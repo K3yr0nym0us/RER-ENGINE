@@ -16,6 +16,7 @@ serde_json.workspace = true
 wgpu.workspace = true
 winit.workspace = true
 log.workspace = true
+env_logger.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 x11.workspace = true

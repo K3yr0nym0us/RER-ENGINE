@@ -714,16 +714,10 @@ fn main() {
     // Logs van a stderr; IPC usa stdout.
     // wgpu_hal::vulkan genera spam de "Suboptimal present" y warnings de capas
     // en entornos sin GPU hardware — subirlos a error los silencia.
-    env_logger::Builder::from_env(
-        env_logger::Env::default().default_filter_or(
-            // `rer_engine_2d=info` permite ver logs de colisión/física sin RUST_LOG.
-            // Para silenciar, usar RUST_LOG=warn (o cambiar aquí a warn).
-            // wgpu_hal::vulkan::conv=error: oculta "Unrecognized present mode" (FIFO_LATEST_READY en NVIDIA).
-            // wgpu_hal::vulkan::instance=error: oculta capas Galaxy/Epic/registry (ruido del loader).
-            "rer_engine_2d=info,warn,wgpu_core=warn,wgpu_hal::vulkan::conv=error,wgpu_hal::vulkan::instance=error,wgpu_hal=warn,naga=warn",
-        ),
-    )
-    .init();
+    rer_engine_shared::logging::init(
+        // `rer_engine_2d=info` permite ver logs de colisión/física sin RUST_LOG.
+        "rer_engine_2d=info,warn,wgpu_core=warn,wgpu_hal::vulkan::conv=error,wgpu_hal::vulkan::instance=error,wgpu_hal=warn,naga=warn",
+    );
 
     // Canal IPC: hilo stdin → event loop vía EventLoopProxy (despierta el loop inmediatamente)
     let event_loop = EventLoop::<EngineCommand>::with_user_event()
