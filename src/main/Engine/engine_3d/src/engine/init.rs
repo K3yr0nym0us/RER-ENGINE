@@ -801,6 +801,8 @@ impl State {
             sun_entity: None,
             sun_icon_mesh_idx: None,
             sun_icon_tex_idx: None,
+            editor_box_mesh_idx: None,
+            editor_box_tex_idx: None,
             directional_light_dir: DEFAULT_LIGHT_DIR.normalize(),
             directional_light_color: DEFAULT_LIGHT_COLOR,
             directional_light_ambient: DEFAULT_LIGHT_AMBIENT,

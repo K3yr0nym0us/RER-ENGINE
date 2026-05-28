@@ -187,6 +187,9 @@ pub struct State {
     /// Mesh y textura compartidos del icono esférico del sol.
     pub(crate) sun_icon_mesh_idx: Option<usize>,
     pub(crate) sun_icon_tex_idx: Option<usize>,
+    /// Cubo blanco compartido para `[EditorBox]` (plantilla y `.save`).
+    pub(crate) editor_box_mesh_idx: Option<usize>,
+    pub(crate) editor_box_tex_idx: Option<usize>,
     pub(crate) directional_light_dir: GlamVec3,
     pub(crate) directional_light_color: GlamVec3,
     pub(crate) directional_light_ambient: f32,

@@ -104,11 +104,9 @@ export function endEngineBootLoadingIfIdle(
 		|| refs.sceneBurstLoadInProgressRef.current
 		|| refs.modelReplaceInProgressRef.current;
 	if (stillBusy) return;
+	reportBounds();
+	window.electronAPI?.restoreEngineViewport?.();
 	dispatch({ type: 'SET_SCENE_IMPORT_LOADING', payload: false });
-	window.setTimeout(() => {
-		reportBounds();
-		window.electronAPI?.restoreEngineViewport?.();
-	}, 0);
 }
 
 type SceneBurstRefs = Pick<
@@ -339,13 +337,11 @@ function syncBlockingLoadOverlay(
 ) {
 	const stillBusy =
 		refs.sceneImport.current || refs.burst.current || refs.modelReplace.current;
-	dispatch({ type: 'SET_SCENE_IMPORT_LOADING', payload: stillBusy });
 	if (!stillBusy) {
-		setTimeout(() => {
-			reportBounds();
-			window.electronAPI?.restoreEngineViewport?.();
-		}, 0);
+		reportBounds();
+		window.electronAPI?.restoreEngineViewport?.();
 	}
+	dispatch({ type: 'SET_SCENE_IMPORT_LOADING', payload: stillBusy });
 }
 
 export function beginSceneImportLoading(

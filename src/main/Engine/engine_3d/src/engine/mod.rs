@@ -2,6 +2,7 @@ mod animations;
 mod audio;
 mod commands;
 mod entity_restore;
+mod load_proyect;
 mod undo_entity;
 #[path = "../save_snapshot.rs"]
 mod save_snapshot;

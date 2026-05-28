@@ -361,7 +361,20 @@ impl ApplicationHandler<EngineCommand> for App {
 
         match pollster::block_on(engine::State::new(Arc::clone(&window))) {
             Ok(mut state) => {
-                state.setup_default_3d_scene();
+                let from_save = std::env::var("RER_3D_START_FROM_SAVE")
+                    .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                    .unwrap_or(false)
+                    || std::env::var("RER_PROJECT_EXTRACT_DIR")
+                        .map(|v| !v.trim().is_empty())
+                        .unwrap_or(false);
+                if from_save {
+                    state.setup_empty_3d();
+                    ipc::send_event(&EngineEvent::Ready {
+                        gravity: state.physics.gravity_magnitude(),
+                    });
+                } else {
+                    state.setup_default_3d_scene();
+                }
                 self.state = Some(state);
             }
             Err(e) => {
@@ -829,10 +842,10 @@ fn main() {
     // en entornos sin GPU hardware — subirlos a error los silencia.
     #[cfg(target_os = "windows")]
     const DEFAULT_LOG_FILTER: &str =
-        "rer_engine_3d=warn,wgpu_core::instance=error,wgpu_hal::dx12::instance=error,wgpu_hal::auxil::dxgi::factory=error,wgpu_core=warn,wgpu_hal=warn,naga=warn";
+        "rer_engine_3d=warn,rer_engine_3d::engine::load_proyect=info,rer_engine_3d::config_3d::static_model_cache=info,wgpu_core::instance=error,wgpu_hal::dx12::instance=error,wgpu_hal::auxil::dxgi::factory=error,wgpu_core=warn,wgpu_hal=warn,naga=warn";
     #[cfg(not(target_os = "windows"))]
     const DEFAULT_LOG_FILTER: &str =
-        "warn,wgpu_core=warn,wgpu_hal::vulkan::conv=error,wgpu_hal::vulkan::instance=error,wgpu_hal=warn,naga=warn";
+        "warn,rer_engine_3d::engine::load_proyect=info,rer_engine_3d::config_3d::static_model_cache=info,wgpu_core=warn,wgpu_hal::vulkan::conv=error,wgpu_hal::vulkan::instance=error,wgpu_hal=warn,naga=warn";
 
     env_logger::Builder::from_env(
         env_logger::Env::default().default_filter_or(DEFAULT_LOG_FILTER),

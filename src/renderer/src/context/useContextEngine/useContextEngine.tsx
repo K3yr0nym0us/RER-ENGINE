@@ -23,12 +23,16 @@ export function EngineProvider({
 	projectType,
 	gameStyle,
 	initialSave,
+	initialSavePath,
+	initialExtractDir,
 }: {
 	children: React.ReactNode;
 	viewportRef: React.RefObject<HTMLDivElement | null>;
 	projectType?: string;
 	gameStyle?: GameStyle;
 	initialSave?: ProjectSaveData | null;
+	initialSavePath?: string | null;
+	initialExtractDir?: string | null;
 }) {
 	const { setLocale } = useLanguage();
 
@@ -39,6 +43,10 @@ export function EngineProvider({
 		resizeTimerRef: useRef<ReturnType<typeof setTimeout> | null>(null),
 		logIdRef: useRef(0),
 		initialSaveRef: useRef(initialSave),
+		initialSavePathRef: useRef(initialSavePath),
+		initialExtractDirRef: useRef(initialExtractDir),
+		projectLoaded2dMetaRef: useRef<import('@shared-types').ProjectLoaded2dPayload | null>(null),
+		projectLoaded3dMetaRef: useRef<import('@shared-types').ProjectLoaded3dPayload | null>(null),
 		entityTransformsRef: useRef<Record<number, Transform>>({}),
 		entityMetaRef: useRef<Record<number, EntityMeta>>({}),
 		pendingRestoresRef: useRef<Map<string, PendingRestore[]>>(new Map()),
@@ -130,6 +138,12 @@ export function EngineProvider({
 	// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
 
+	useEffect(() => {
+		refs.initialSaveRef.current = initialSave;
+		refs.initialSavePathRef.current = initialSavePath;
+		refs.initialExtractDirRef.current = initialExtractDir;
+	}, [initialSave, initialSavePath, initialExtractDir]);
+
 	// Mantener blueprintsRef sincronizado con el estado para acceso desde acciones
 	useEffect(() => {
 		refs.blueprintsRef.current = state.blueprints;
@@ -167,6 +181,8 @@ export function EngineProvider({
 		pendingBurstSpawnRestoreRef: refs.pendingBurstSpawnRestoreRef,
 		mainPlayerHandled: refs.mainPlayerHandled,
 		camera2dRef: refs.camera2dRef,
+		projectLoaded2dMetaRef: refs.projectLoaded2dMetaRef,
+		projectLoaded3dMetaRef: refs.projectLoaded3dMetaRef,
 		send,
 		sendAsync: actions.sendAsync,
 		setAnimationPlaying: actions.setAnimationPlaying,

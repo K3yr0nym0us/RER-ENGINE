@@ -8,8 +8,10 @@ import type {
   EngineCommand, 
   EngineEvent, 
   GameStyle, 
+  EngineStartPayload,
   OpenProjectResult, 
-  ProjectSaveData 
+  ProjectSaveData,
+  ProjectType,
 } from '../shared-types/types';
 import { entityPathMarker } from '../shared-types/types';
 
@@ -36,6 +38,8 @@ let mainWindow: BrowserWindow | null = null
 let engineProcess: ChildProcess | null = null
 let currentLocale: 'en' | 'es' = 'en'
 let currentGameStyle: GameStyle | null = null
+/** Cuando `gameStyle` es null (p. ej. selector 3D), decide 2D vs 3D hasta elegir estilo. */
+let currentProjectType: ProjectType | null = null
 
 // Buffer de eventos que llegaron antes de que el renderer estuviera listo
 let rendererReady = false
@@ -43,6 +47,8 @@ const eventBuffer: EngineEvent[] = []
 
 // Path del proyecto abierto/guardado actualmente.
 let currentProjectFilePath: string | null = null
+/** Carpeta extraída del `.save` abierto (2D); el motor lee manifest + assets desde aquí. */
+let currentProjectExtractDir: string | null = null
 
 // Directorios temporales con contenido extraído de .save que deben vivir
 // mientras el proyecto está abierto para que el motor lea rutas absolutas.
@@ -56,6 +62,9 @@ let lastEffectiveBounds: ViewportBounds | null = null
 
 /** true tras recibir `ready` del proceso motor de la sesión actual. */
 let engineReceivedReady = false
+
+/** Evita reenviar `set_scene` 3D si el motor emite más de un `ready` (p. ej. tras `setup_empty_3d`). */
+let engine3dStartupSceneSent = false
 
 /** Binario base del motor en la sesión actual (`rer_engine_2d` / `rer_engine_3d`). */
 let lastEngineBinary = 'rer_engine_2d'
@@ -211,20 +220,13 @@ interface ViewportBounds {
 
 function startEngine(embed?: ViewportBounds): void {
   engineReceivedReady = false
+  engine3dStartupSceneSent = false
 
-  // Seleccionar binario según el modo del proyecto
+  // Seleccionar binario según el tipo de proyecto (2D / 3D)
   let baseBinaryName = 'rer_engine_shared'
-  if (
-    currentGameStyle === 'first-person'
-    || currentGameStyle === 'second-person'
-    || currentGameStyle === 'third-person'
-  ) {
+  if (currentProjectType === '3D') {
     baseBinaryName = 'rer_engine_3d'
-  } else if (
-    currentGameStyle === 'top-down'
-    || currentGameStyle === 'side-scroller'
-    || currentGameStyle === 'isometric'
-  ) {
+  } else if (currentProjectType === '2D') {
     baseBinaryName = 'rer_engine_2d'
   }
 
@@ -271,6 +273,27 @@ function startEngine(embed?: ViewportBounds): void {
   const engineEnv: NodeJS.ProcessEnv = { ...process.env, ...linuxEnv }
   delete engineEnv.RER_GPU_BACKEND
 
+  if (currentProjectFilePath) {
+    engineEnv.RER_PROJECT_SAVE_PATH = currentProjectFilePath
+  } else {
+    delete engineEnv.RER_PROJECT_SAVE_PATH
+  }
+
+  // 3D: escena vacía al arrancar si vamos a cargar un `.save` (ruta o carpeta extraída).
+  if (baseBinaryName === 'rer_engine_3d') {
+    if (currentProjectExtractDir || currentProjectFilePath) {
+      engineEnv.RER_3D_START_FROM_SAVE = '1'
+    } else {
+      delete engineEnv.RER_3D_START_FROM_SAVE
+    }
+  }
+
+  if (currentProjectExtractDir) {
+    engineEnv.RER_PROJECT_EXTRACT_DIR = currentProjectExtractDir
+  } else {
+    delete engineEnv.RER_PROJECT_EXTRACT_DIR
+  }
+
   engineProcess = spawn(enginePath, engineArgs, {
     stdio: ['pipe', 'pipe', 'pipe'],
     env: engineEnv,
@@ -284,6 +307,8 @@ function startEngine(embed?: ViewportBounds): void {
         const event = JSON.parse(line) as EngineEvent
         if (event.event === 'ready') {
           engineReceivedReady = true
+          sendEngine2dStartupScene()
+          sendEngine3dStartupScene()
         }
         if (event.event === 'autosave_tick') {
           if (currentProjectFilePath && mainWindow && !mainWindow.isDestroyed()) {
@@ -309,7 +334,11 @@ function startEngine(embed?: ViewportBounds): void {
     const lines = data.toString('utf8').split('\n').filter(Boolean)
     for (const line of lines) {
       if (isBenignEngineStderrLine(line)) continue
-      console.error('[engine stderr]', line)
+      if (line.includes('[load_proyect]')) {
+        console.log('[engine]', line.trim())
+      } else {
+        console.error('[engine stderr]', line)
+      }
     }
   })
 
@@ -339,6 +368,34 @@ function sendToEngine(cmd: EngineCommand): void {
     const locale = String((cmd as Record<string, unknown>)['locale'] ?? 'en')
     console.log(`[i18n] set_locale recibido en main con motor inactivo (omitido): ${locale}`)
   }
+}
+
+/** Arranque 2D: escena + carpeta extraída del proyecto (vacío si proyecto nuevo). */
+function sendEngine2dStartupScene(): void {
+  if (lastEngineBinary !== 'rer_engine_2d') return
+  const extractDir = currentProjectExtractDir ?? ''
+  sendToEngine({
+    cmd: 'set_scene',
+    scene: '2D',
+    save_path: extractDir,
+  })
+  console.log(`[engine] 2D set_scene enviado (extract_dir=${extractDir || '(nuevo)'})`)
+}
+
+/** Arranque 3D: escena + carpeta extraída del proyecto (vacío si proyecto nuevo). */
+function sendEngine3dStartupScene(): void {
+  if (lastEngineBinary !== 'rer_engine_3d') return
+  const extractDir = currentProjectExtractDir ?? ''
+  if (!extractDir) return
+  if (engine3dStartupSceneSent) return
+  engine3dStartupSceneSent = true
+  const scene = currentGameStyle ?? 'first-person'
+  sendToEngine({
+    cmd: 'set_scene',
+    scene,
+    save_path: extractDir,
+  })
+  console.log(`[engine] 3D set_scene enviado (extract_dir=${extractDir})`)
 }
 
 function stopEngine(): void {
@@ -1149,11 +1206,8 @@ function resolveLoadedPaths(data: ProjectSaveData, extractedDir: string): Projec
   }
 }
 
-/**
- * Carga un archivo .save, lo extrae a un directorio temporal y devuelve
- * los datos del proyecto con paths absolutos para consumo del motor.
- */
-function loadProjectFromSaveFile(saveFilePath: string): ProjectSaveData | null {
+/** Extrae un `.save` a un directorio temporal y registra la carpeta para su vida útil. */
+function extractSaveArchive(saveFilePath: string): string | null {
   const tempRoot = app.getPath('temp')
   const extractDir = fs.mkdtempSync(path.join(tempRoot, 'rer-save-open-'))
   try {
@@ -1167,18 +1221,49 @@ function loadProjectFromSaveFile(saveFilePath: string): ProjectSaveData | null {
       return null
     }
 
+    extractedProjectDirs.add(extractDir)
+    return extractDir
+  } catch (err) {
+    console.error('[editor] Error al extraer archivo .save:', err)
+    fs.rmSync(extractDir, { recursive: true, force: true })
+    return null
+  }
+}
+
+function readManifestMeta(extractDir: string): { type: ProjectType; gameStyle: GameStyle } | null {
+  try {
+    const manifestPath = path.join(extractDir, 'manifest.json')
     const raw = fs.readFileSync(manifestPath, 'utf8')
     const parsed = JSON.parse(raw) as unknown
     if (!(parsed !== null && typeof parsed === 'object' && 'type' in parsed && 'gameStyle' in parsed)) {
-      fs.rmSync(extractDir, { recursive: true, force: true })
       return null
     }
+    const type = (parsed as { type: unknown }).type
+    const gameStyle = (parsed as { gameStyle: unknown }).gameStyle
+    if (type !== '2D' && type !== '3D') return null
+    if (typeof gameStyle !== 'string' || !gameStyle.trim()) return null
+    return { type, gameStyle: gameStyle as GameStyle }
+  } catch (err) {
+    console.error('[editor] Error al leer manifest.json:', err)
+    return null
+  }
+}
 
-    extractedProjectDirs.add(extractDir)
+/**
+ * Lee manifest.json desde una carpeta ya extraída y devuelve el proyecto con paths absolutos.
+ */
+function loadProjectFromExtractDir(extractDir: string): ProjectSaveData | null {
+  try {
+    const manifestPath = path.join(extractDir, 'manifest.json')
+    if (!fs.existsSync(manifestPath)) return null
+    const raw = fs.readFileSync(manifestPath, 'utf8')
+    const parsed = JSON.parse(raw) as unknown
+    if (!(parsed !== null && typeof parsed === 'object' && 'type' in parsed && 'gameStyle' in parsed)) {
+      return null
+    }
     return resolveLoadedPaths(parsed as ProjectSaveData, extractDir)
   } catch (err) {
-    console.error('[editor] Error al abrir archivo .save:', err)
-    fs.rmSync(extractDir, { recursive: true, force: true })
+    console.error('[editor] Error al leer proyecto desde carpeta extraída:', err)
     return null
   }
 }
@@ -1197,13 +1282,22 @@ ipcMain.handle('open-project-dialog', async (): Promise<OpenProjectResult | null
   })
   if (result.canceled || !result.filePaths[0]) return null
   const filePath = result.filePaths[0]
-  const project = loadProjectFromSaveFile(filePath)
-  if (!project) return null
+  const extractDir = extractSaveArchive(filePath)
+  if (!extractDir) return null
+  const meta = readManifestMeta(extractDir)
+  if (!meta) {
+    fs.rmSync(extractDir, { recursive: true, force: true })
+    extractedProjectDirs.delete(extractDir)
+    return null
+  }
+
   currentProjectFilePath = filePath
-  currentGameStyle = project.gameStyle
-  // Limpiar watchers del proyecto anterior al abrir uno nuevo
+  currentProjectType = meta.type
+  currentGameStyle = meta.gameStyle
+  currentProjectExtractDir = extractDir
   clearAssetWatchers()
-  return { project, filePath }
+
+  return { filePath, extractDir, project: meta }
 })
 
 // Diálogo para guardar el proyecto (archivo .save)
@@ -1235,9 +1329,30 @@ ipcMain.handle('save-project-silent', async (_event, filePath: string, data: Pro
   return ok
 })
 
-// El renderer envía el gameStyle cuando el usuario lo selecciona
-ipcMain.on('set-game-style', (_event, gameStyle: GameStyle | null) => {
-  currentGameStyle = gameStyle
+function isEngineStartPayload(v: unknown): v is EngineStartPayload {
+  if (typeof v !== 'object' || v === null) return false
+  const o = v as Record<string, unknown>
+  return (
+    (o.projectType === '2D' || o.projectType === '3D')
+    && ('mode' in o)
+    && ('save_path' in o)
+  )
+}
+
+// El renderer envía tipo de proyecto, modo y ruta del `.save` antes de arrancar el motor.
+ipcMain.on('set-game-style', (_event, arg: unknown) => {
+  if (!isEngineStartPayload(arg)) return
+  currentProjectType = arg.projectType
+  currentGameStyle = arg.mode === false ? null : arg.mode
+  currentProjectFilePath =
+    typeof arg.save_path === 'string' && arg.save_path.trim().length > 0
+      ? arg.save_path.trim()
+      : null
+  const extractDir = arg.extract_dir
+  currentProjectExtractDir =
+    typeof extractDir === 'string' && extractDir.trim().length > 0
+      ? extractDir.trim()
+      : null
 })
 
 // El renderer envía los bounds del viewport una vez montado (y en cada resize).

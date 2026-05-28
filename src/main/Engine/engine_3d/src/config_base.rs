@@ -73,6 +73,8 @@ impl State {
         self.world.clear();
         self.meshes.clear();
         self.tex_layers.clear();
+        self.editor_box_mesh_idx = None;
+        self.editor_box_tex_idx = None;
         self.static_model_cache.clear();
         self.model_assets.clear();
         self.model_store.clear();
@@ -144,7 +146,7 @@ impl State {
         self.sync_world_bounds_3d_runtime();
     }
 
-    fn find_ground_entity_id(&self) -> Option<crate::ecs::EntityId> {
+    pub(crate) fn ground_entity_id(&self) -> Option<crate::ecs::EntityId> {
         self.world
             .query::<crate::ecs::NameComponent>()
             .find(|(_, c)| c.name.eq_ignore_ascii_case("ground"))
@@ -174,7 +176,7 @@ impl State {
 
     /// Suelo checker + colisión estática. Idempotente (también tras `setup_empty_3d` al cargar `.save`).
     pub(crate) fn ensure_ground_plane(&mut self) {
-        if self.find_ground_entity_id().is_some() {
+        if self.ground_entity_id().is_some() {
             return;
         }
 
@@ -208,8 +210,9 @@ impl State {
     }
 
     pub(crate) fn spawn_ground_plane(&mut self, position: [f32; 3], _scale: [f32; 3]) {
+        let already_had_ground = self.ground_entity_id().is_some();
         self.ensure_ground_plane();
-        let Some(id) = self.find_ground_entity_id() else {
+        let Some(id) = self.ground_entity_id() else {
             return;
         };
         if let Some(t) = self.world.get_mut::<Transform>(id) {
@@ -217,12 +220,14 @@ impl State {
             t.position.y = 0.0;
         }
         self.sync_ground_plane_to_world_bounds();
-        self.send_model_loaded_event(id, "Ground");
+        if !already_had_ground {
+            self.send_model_loaded_event(id, "Ground");
+        }
     }
 
     /// Escala el mesh del suelo (40×40 local) al cuadro de límites del accordion World.
     pub(crate) fn sync_ground_plane_to_world_bounds(&mut self) {
-        let Some(id) = self.find_ground_entity_id() else {
+        let Some(id) = self.ground_entity_id() else {
             return;
         };
         let b = self.world_bounds_3d;
@@ -241,12 +246,7 @@ impl State {
         self.reset_runtime_scene_3d();
         self.ensure_ground_plane();
 
-        let block_mesh_idx = self.meshes.len();
-        self.meshes.push(mesh::create_cube(&self.device));
-        let white_px = [255u8, 255, 255, 255];
-        let block_tex_idx = self.tex_layers.len();
-        let block_layer = self.texture_array.pack(&self.queue, &white_px, 1, 1);
-        self.tex_layers.push(block_layer);
+        let (block_mesh_idx, block_tex_idx) = self.ensure_editor_box_gpu_assets();
 
         let mut spawn_block = |position: [f32; 3], scale: [f32; 3]| {
             let label = self.next_numbered_entity_name(rer_engine_shared::editor_defaults::entity_label::SCENARIO);
@@ -325,15 +325,8 @@ impl State {
         });
     }
 
-    /// Escena 3D vacía: solo para abrir un `.save` (sin plantilla first-person).
-    pub(crate) fn setup_empty_3d(&mut self) {
-        self.reset_runtime_scene_3d();
-        self.ensure_ground_plane();
-        // Igualar los defaults que usa la escena first-person para que la restauración
-        // desde `.save` no dependa de un estado "plantilla" (bounds/cámara).
-        // No cargamos escenarios ni sol por defecto aquí.
+    pub(crate) fn apply_empty_3d_editor_defaults(&mut self) {
         self.set_world_bounds_3d_size(28.0, 14.0, Some(56.0));
-
         self.camera = Camera::new();
         let spawn_xz = (0.0_f32, 5.0_f32);
         let ground_y = self
@@ -357,7 +350,88 @@ impl State {
             b: 0.10,
             a: 1.0,
         };
+    }
+
+    /// Escena 3D vacía al arrancar desde `.save` (sin plantilla first-person).
+    pub(crate) fn setup_empty_3d(&mut self) {
+        self.reset_runtime_scene_3d();
+        self.ensure_ground_plane();
+        self.apply_empty_3d_editor_defaults();
         log::info!("Escena 3D vacía — contenido desde guardado");
+    }
+
+    /// Vacía entidades y estado de juego sin resetear GPU, texturas ni caché de modelos precargados.
+    pub(crate) fn clear_scene_entities_for_save_load(&mut self) {
+        self.stop_audio_internal();
+        self.physics = PhysicsWorld::new();
+        self.world.clear();
+        self.pending_load_models.clear();
+        self.pending_entity_model_replaces.clear();
+        self.animations.clear();
+        self.active_animations.clear();
+        self.default_animation_by_entity.clear();
+        self.anim_saved_transforms.clear();
+        self.entity_facing_right.clear();
+        self.scenario_entities.clear();
+        self.character_entities.clear();
+        self.collider_entities.clear();
+        self.execution_area_entities.clear();
+        self.execution_overlaps.clear();
+        self.background_entity = None;
+        self.background_path = None;
+        self.save_registry.clear();
+        self.selected_entity = None;
+        self.selected_entities.clear();
+        self.hovered_entity = None;
+        self.hovered_gizmo_axis = None;
+        self.active_gizmo_axis = None;
+        self.ctrl_held = false;
+        self.active_tool = ActiveTool::None;
+        self.quick_build_ghost_id = None;
+        self.quick_build_preview_path = None;
+        self.quick_build_preview_kind = None;
+        self.quick_build_preview_scale = None;
+        self.quick_build_blueprint = None;
+        self.entity_blueprint_ids.clear();
+        self.tool_overlay_buffer = gizmo::build_from_vertices(&self.device, &[]);
+        self.show_snap_hint = false;
+        self.snap_hint_alpha = 0.0;
+        self.fps_exit_hint_alpha = 0.0;
+        self.pivot_edit_mode = None;
+        self.logical_area_mode = None;
+        self.control_bindings_by_entity.clear();
+        self.clear_play_controller_script_frame();
+        self.play_character_entity = None;
+        self.editor_camera_entity = None;
+        self.play_camera_eye_position = glam::Vec3::ZERO;
+        self.play_camera_follow_mode = crate::ipc::PlayCameraFollowMode::MoveWithCharacter;
+        self.play_camera_follow_offset = glam::Vec3::ZERO;
+        self.play_camera_follow_offset_local = glam::Vec3::ZERO;
+        self.sun_entity = None;
+        self.sun_icon_mesh_idx = None;
+        self.sun_icon_tex_idx = None;
+        self.clear_preview_editor_snapshots();
+        self.undo_stack.clear();
+        self.redo_stack.clear();
+        self.is_applying_undo = false;
+    }
+
+    /// Mesh + textura 1×1 compartidos para cajas del editor (`[EditorBox]`).
+    pub(crate) fn ensure_editor_box_gpu_assets(&mut self) -> (usize, usize) {
+        if let (Some(mesh_idx), Some(tex_idx)) =
+            (self.editor_box_mesh_idx, self.editor_box_tex_idx)
+        {
+            return (mesh_idx, tex_idx);
+        }
+        let mesh_idx = self.meshes.len();
+        self.meshes.push(mesh::create_cube(&self.device));
+        let white_px = [255u8, 255, 255, 255];
+        let tex_idx = self.tex_layers.len();
+        let block_layer = self.texture_array.pack(&self.queue, &white_px, 1, 1);
+        self.tex_layers.push(block_layer);
+        self.editor_box_mesh_idx = Some(mesh_idx);
+        self.editor_box_tex_idx = Some(tex_idx);
+        (mesh_idx, tex_idx)
     }
 
     /// Cubo del editor (muros/cajas de plantilla) sin archivo `.glb`.
@@ -366,12 +440,7 @@ impl State {
             name,
             rer_engine_shared::editor_defaults::entity_label::BOX,
         );
-        let block_mesh_idx = self.meshes.len();
-        self.meshes.push(mesh::create_cube(&self.device));
-        let white_px = [255u8, 255, 255, 255];
-        let block_tex_idx = self.tex_layers.len();
-        let block_layer = self.texture_array.pack(&self.queue, &white_px, 1, 1);
-        self.tex_layers.push(block_layer);
+        let (block_mesh_idx, block_tex_idx) = self.ensure_editor_box_gpu_assets();
 
         let id = self.world.spawn(Some(&label));
         self.world.insert(
@@ -427,26 +496,5 @@ impl State {
             id,
             path: path.to_string(),
         });
-    }
-
-    /// Inicializa la escena scratch: un cubo de referencia con cámara orbital.
-    pub(crate) fn setup_scratch(&mut self) {
-        self.reset_runtime_scene_3d();
-
-        // Cubo central con textura blanca (fallback)
-        let cube = mesh::create_cube(&self.device);
-        self.meshes.push(cube);
-        let white_px = [255u8, 255, 255, 255];
-        let layer = self.texture_array.pack(&self.queue, &white_px, 1, 1);
-        let tex_idx = self.tex_layers.len();
-        self.tex_layers.push(layer);
-        let cube_id = self.world.spawn(Some("Cube"));
-        self.world.insert(cube_id, MeshComponent { mesh_idx: 0, tex_idx });
-
-        // Cámara orbital por defecto mirando el cubo
-        self.camera = Camera::new();
-        self.clear_color = wgpu::Color { r: 0.06, g: 0.06, b: 0.10, a: 1.0 };
-
-        log::info!("Escena BASE cargada: cubo de referencia");
     }
 }

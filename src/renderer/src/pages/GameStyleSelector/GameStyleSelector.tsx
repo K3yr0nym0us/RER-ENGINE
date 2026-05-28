@@ -1,7 +1,7 @@
 import { ArrowLeft } from 'react-bootstrap-icons';
 
 import { AppTooltip, LanguageToggleButton } from '@components';
-import type { ProjectType, GameStyle } from '@shared-types';
+import type { ProjectType, GameStyle, EngineStartPayload } from '@shared-types';
 import { useTraslate } from '@hooks';
 
 interface StyleOption {
@@ -82,11 +82,13 @@ function getOptionsByType(t: (key: string) => string): Partial<Record<ProjectTyp
 
 interface Props {
   projectType: ProjectType
-  onSelect:    (style: GameStyle) => void
-  onBack:      () => void
+  /** Ruta del `.save` si el flujo viene de «Abrir proyecto» antes de elegir estilo 3D. */
+  savePath?:  string | null
+  onSelect:   (style: GameStyle) => void
+  onBack:     () => void
 }
 
-export function GameStyleSelector({ projectType, onSelect, onBack }: Props) {
+export function GameStyleSelector({ projectType, savePath, onSelect, onBack }: Props) {
   const { t } = useTraslate()
 
   const options = getOptionsByType(t)[projectType] ?? []
@@ -157,7 +159,12 @@ export function GameStyleSelector({ projectType, onSelect, onBack }: Props) {
             <button
               onClick={() => {
                 if (opt.available) {
-                  window.electronAPI.setGameStyle(opt.type)
+                  const payload: EngineStartPayload = {
+                    projectType,
+                    mode: opt.type,
+                    save_path: savePath ?? false,
+                  }
+                  window.electronAPI.setGameStyle(payload)
                   onSelect(opt.type)
                 }
               }}

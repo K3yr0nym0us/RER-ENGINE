@@ -21,6 +21,7 @@ pub(crate) mod editor_camera;
 pub(crate) mod preview_editor;
 pub(crate) mod play_controller;
 pub(crate) mod fbx_facing;
+pub(crate) mod gltf_texture_load;
 pub(crate) mod mesh_3d;
 pub(crate) mod model_asset;
 pub(crate) mod model_animation;

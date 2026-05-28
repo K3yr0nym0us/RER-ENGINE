@@ -141,9 +141,14 @@ impl State {
                     });
                 }
             }
-            EngineCommand::SetScene { scene } => {
+            EngineCommand::SetScene { scene, save_path } => {
                 match scene.as_str() {
-                    "2D"      => self.setup_2d_platformer(),
+                    "2D" => {
+                        self.setup_2d_platformer();
+                        if let Some(path) = save_path.filter(|p| !p.trim().is_empty()) {
+                            self.load_proyect_from_save_path(&path);
+                        }
+                    }
                     "scratch" => self.setup_scratch(),
                     _         => log::info!("SetScene: escena '{}' no reconocida", scene),
                 }

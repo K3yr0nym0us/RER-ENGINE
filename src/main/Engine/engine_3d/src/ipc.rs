@@ -227,7 +227,11 @@ pub enum EngineCommand {
         force: bool,
     },
     /// Cambiar la escena activa solicitada por frontend.
-    SetScene { scene: String },
+    SetScene {
+        scene: String,
+        #[serde(default)]
+        save_path: Option<String>,
+    },
     /// Cargar una imagen PNG como escenario de fondo en la escena 2D.
     LoadScenario {
         path: String,
@@ -772,6 +776,14 @@ pub enum EngineEvent {
     },
     /// Progreso de carga de un GLB grande (hilo en segundo plano).
     ModelLoadProgress { path: String, stage: String },
+    /// Mensaje legible al abrir un `.save` 3D (también en stderr).
+    LoadProgress {
+        message: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        step_ms: Option<u64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        total_ms: Option<u64>,
+    },
     /// Emitido cuando el estado de física de una entidad cambia (activado/desactivado por script).
     PhysicsChanged { entity_id: u32, enabled: bool, body_type: String },
     /// Emitido cuando un sprite PNG se cargó correctamente en el almacén.
@@ -918,6 +930,92 @@ pub struct SoundInfo {
 pub struct BackgroundInfo {
     pub path: String,
     pub name: String,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct ImportSceneSprite {
+    pub path: String,
+    pub name: String,
+}
+
+#[allow(non_snake_case)]
+#[derive(Debug, Serialize, Clone)]
+pub struct ProjectLoaded3dSceneTab {
+    pub id:   u32,
+    pub name: String,
+}
+
+/// Mundo en `project_loaded_3d` — mismas claves que `SavedWorldConfig` en `types.ts`.
+#[allow(non_snake_case)]
+#[derive(Debug, Serialize, Clone)]
+pub struct ProjectLoaded3dWorld {
+    pub worldWidth:   f32,
+    pub worldHeight:  f32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub worldDepth:   Option<f32>,
+    pub gridVisible:  bool,
+    pub gridCellSize: f32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gravity:      Option<f32>,
+    pub targetFps:    f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lightAmbient:     Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lightIntensity:   Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shadowDarkness:   Option<f32>,
+}
+
+/// Evento `project_loaded_3d` (fuera de `EngineEvent` para no heredar snake_case del enum).
+#[allow(non_snake_case)]
+#[derive(Debug, Serialize)]
+pub struct ProjectLoaded3dEvent {
+    pub event:          &'static str,
+    pub activeSceneId:  u32,
+    pub sceneName:      String,
+    pub entityCount:    u32,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub scenes:         Vec<ProjectLoaded3dSceneTab>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub language:       Option<String>,
+    pub models:         Vec<ImportSceneSprite>,
+    pub sounds:         Vec<ImportSceneSprite>,
+    pub backgrounds:    Vec<ImportSceneSprite>,
+    pub blueprints:     serde_json::Value,
+    pub world:          ProjectLoaded3dWorld,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub playerTransform: Option<serde_json::Value>,
+}
+
+/// Escribe `project_loaded_3d` en stdout (claves camelCase = `ProjectLoaded3dPayload` en TS).
+pub fn send_project_loaded_3d_event(payload: &ProjectLoaded3dEvent) {
+    if let Ok(json) = serde_json::to_string(payload) {
+        let stdout = io::stdout();
+        let mut handle = stdout.lock();
+        let _ = writeln!(handle, "{json}");
+        let _ = handle.flush();
+    }
+}
+
+/// Fin de carga 3D desde `extract_dir` (el front sincroniza con snapshot).
+pub fn send_project_load_3d_complete_event() {
+    if let Ok(json) = serde_json::to_string(&serde_json::json!({
+        "event": "project_load_3d_complete",
+    })) {
+        let stdout = io::stdout();
+        let mut handle = stdout.lock();
+        let _ = writeln!(handle, "{json}");
+        let _ = handle.flush();
+    }
+}
+
+/// Progreso humano de `load_proyect` (stdout + panel del editor).
+pub fn send_load_progress(message: &str, step_ms: Option<u64>, total_ms: Option<u64>) {
+    send_event(&EngineEvent::LoadProgress {
+        message: message.to_string(),
+        step_ms,
+        total_ms,
+    });
 }
 
 /// Escribe un evento JSON en stdout y lo flushea inmediatamente.

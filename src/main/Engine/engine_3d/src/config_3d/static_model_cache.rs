@@ -11,15 +11,18 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::mpsc;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use crate::config_3d::character_anchor::PLAY_CHARACTER_BODY_HEIGHT;
-use crate::config_3d::mesh_3d::{load_model_file_cpu, CpuModelMeshPart};
+use crate::config_3d::mesh_3d::{
+    load_gltf_cpu_from_file, load_model_file_cpu, preload_model_cpu_bundle, CpuModelMeshPart,
+};
 use crate::config_3d::model_asset;
 use crate::config_3d::physics_body_position_for_model_path;
 use crate::ecs::{EntityId, MeshComponent, Transform};
 use crate::engine::State;
 use crate::entity_save_meta::EntitySaveMeta;
-use crate::ipc::{send_event, EngineEvent};
+use crate::ipc::{send_event, send_load_progress, EngineEvent};
 use rer_engine_shared::editor_defaults::entity_label_for_category;
 
 #[derive(Clone, Copy)]
@@ -34,6 +37,8 @@ pub(crate) struct ModelPreloadCpuResult {
     pub path: String,
     pub parts: Vec<CpuModelMeshPart>,
     pub anim_asset: Option<Arc<model_asset::ModelAsset>>,
+    /// Variante jugador (`::play_character`); no aplica a props/entorno.
+    pub warm_play_character: bool,
 }
 
 pub(crate) type ModelPreloadRx =
@@ -126,10 +131,15 @@ impl State {
             return;
         }
 
-        self.start_model_preload(key, name.to_string());
+        self.start_model_preload(key, name.to_string(), false);
     }
 
-    pub(crate) fn start_model_preload(&mut self, key: String, name: String) {
+    pub(crate) fn start_model_preload(
+        &mut self,
+        key: String,
+        name: String,
+        warm_play_character: bool,
+    ) {
         self.model_preload_inflight.insert(key.clone());
         send_event(&EngineEvent::ModelAssetPreloadStarted {
             path: key.clone(),
@@ -145,15 +155,13 @@ impl State {
             ))
             .spawn(move || {
                 let path_buf = Path::new(&key_for_thread);
-                let result = match load_model_file_cpu(path_buf, None) {
-                    Ok(parts) => {
-                        let anim_asset = model_asset::load_model_asset(path_buf, None);
-                        Ok(ModelPreloadCpuResult {
-                            path: key_for_thread,
-                            parts,
-                            anim_asset,
-                        })
-                    }
+                let result = match preload_model_cpu_bundle(path_buf) {
+                    Ok((parts, anim_asset)) => Ok(ModelPreloadCpuResult {
+                        path: key_for_thread,
+                        parts,
+                        anim_asset,
+                        warm_play_character,
+                    }),
                     Err(err) => Err((key_for_thread, err)),
                 };
                 let _ = tx.send(result);
@@ -222,6 +230,10 @@ impl State {
 
     fn commit_model_preload(&mut self, data: ModelPreloadCpuResult) {
         let path = data.path.clone();
+        let display_name = Path::new(&path)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(path.as_str());
         self.model_preload_inflight.remove(&path);
 
         if self.static_model_cache.contains_key(&path) {
@@ -253,14 +265,18 @@ impl State {
             path: path.clone(),
             name,
         });
-        log::info!(
-            "[model_preload] precarga GPU lista: {path} ({} parte/s)",
+        let gpu_msg = format!(
+            "Modelo «{display_name}» subido a GPU ({} parte/s)",
             self.static_model_cache
                 .get(&path)
                 .map(|p| p.len())
                 .unwrap_or(0)
         );
-        self.try_warm_play_character_model_cache(&path);
+        log::info!("[load_proyect] {gpu_msg}");
+        send_load_progress(&gpu_msg, None, None);
+        if data.warm_play_character {
+            self.try_warm_play_character_model_cache(&path);
+        }
         self.flush_pending_load_models_for_path(&path);
         self.flush_pending_entity_model_replaces_for_path(&path);
     }
@@ -275,19 +291,50 @@ impl State {
         if !path_buf.is_file() {
             return;
         }
-        let parts = match load_model_file_cpu(path_buf, Some(PLAY_CHARACTER_BODY_HEIGHT)) {
-            Ok(parts) if !parts.is_empty() => parts,
-            Ok(_) => return,
-            Err(e) => {
-                log::debug!(
-                    "[model_cache] sin variante jugador para {canonical_path}: {e}"
-                );
-                return;
+        let is_gltf = path_buf
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|e| e.eq_ignore_ascii_case("glb") || e.eq_ignore_ascii_case("gltf"));
+
+        let parts = if is_gltf {
+            match model_asset::import_gltf(path_buf).and_then(|file| {
+                if !self.model_assets.contains_key(canonical_path)
+                    && model_asset::gltf_needs_model_asset(&file)
+                {
+                    if let Some(asset) =
+                        model_asset::load_model_asset_from_gltf(&file, None)
+                    {
+                        self.model_assets
+                            .insert(canonical_path.to_string(), asset);
+                    }
+                }
+                load_gltf_cpu_from_file(&file, Some(PLAY_CHARACTER_BODY_HEIGHT))
+            }) {
+                Ok(parts) if !parts.is_empty() => parts,
+                Ok(_) => return,
+                Err(e) => {
+                    log::debug!(
+                        "[model_cache] sin variante jugador para {canonical_path}: {e}"
+                    );
+                    return;
+                }
+            }
+        } else {
+            match load_model_file_cpu(path_buf, Some(PLAY_CHARACTER_BODY_HEIGHT)) {
+                Ok(parts) if !parts.is_empty() => parts,
+                Ok(_) => return,
+                Err(e) => {
+                    log::debug!(
+                        "[model_cache] sin variante jugador para {canonical_path}: {e}"
+                    );
+                    return;
+                }
             }
         };
+
         let cached = self.upload_cpu_parts_to_static_cache(&play_key, &parts, "play-preload");
         self.static_model_cache.insert(play_key, cached);
-        if !self.model_assets.contains_key(canonical_path) {
+        if !is_gltf && !self.model_assets.contains_key(canonical_path) {
             if let Some(asset) = model_asset::load_model_asset(path_buf, None) {
                 self.model_assets.insert(canonical_path.to_string(), asset);
             }
@@ -397,26 +444,65 @@ impl State {
         if self.static_model_cache.contains_key(&key) {
             return Ok(());
         }
+        let display_name = Path::new(path)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(path)
+            .to_string();
         if self.model_preload_inflight.contains(&key) {
-            return Err(format!(
-                "El modelo aún se está precargando: {key}. Espera a que termine en Recursos."
-            ));
+            let wait_msg = format!("Esperando precarga de «{display_name}»…");
+            log::info!("[load_proyect] {wait_msg}");
+            send_load_progress(&wait_msg, None, None);
+            let wait_started = Instant::now();
+            const PRELOAD_WAIT: Duration = Duration::from_secs(120);
+            while self.model_preload_inflight.contains(&key) && wait_started.elapsed() < PRELOAD_WAIT
+            {
+                self.poll_model_preloads();
+                if self.static_model_cache.contains_key(&key) {
+                    let ready_msg = format!(
+                        "Modelo «{display_name}» listo (espera {} ms)",
+                        wait_started.elapsed().as_millis()
+                    );
+                    log::info!("[load_proyect] {ready_msg}");
+                    send_load_progress(&ready_msg, None, None);
+                    return Ok(());
+                }
+                std::thread::yield_now();
+            }
+            if self.static_model_cache.contains_key(&key) {
+                return Ok(());
+            }
+            if self.model_preload_inflight.contains(&key) {
+                return Err(format!(
+                    "Tiempo agotado esperando el modelo «{display_name}»",
+                ));
+            }
         }
         if !Path::new(&key).is_file() {
             return Err(format!("No se encontró el modelo: {key}"));
         }
 
-        log::info!("[model_cache] precarga síncrona (no estaba en caché): {key}");
-        let parts = load_model_file_cpu(Path::new(&key), None)?;
+        let sync_started = Instant::now();
+        let sync_msg = format!("Cargando modelo «{display_name}» (hilo principal)…");
+        log::info!("[load_proyect] {sync_msg}");
+        send_load_progress(&sync_msg, None, None);
+        let path_buf = Path::new(&key);
+        let (parts, anim_asset) = preload_model_cpu_bundle(path_buf)?;
         if parts.is_empty() {
             return Err(format!("Modelo vacío: {key}"));
         }
 
         let cached_parts = self.upload_cpu_parts_to_static_cache(&key, &parts, "sync");
         self.static_model_cache.insert(key.clone(), cached_parts);
-        if let Some(asset) = model_asset::load_model_asset(Path::new(&key), None) {
+        if let Some(asset) = anim_asset {
             self.model_assets.insert(key, asset);
         }
+        let done_msg = format!(
+            "Modelo «{display_name}» listo en GPU (+{} ms)",
+            sync_started.elapsed().as_millis()
+        );
+        log::info!("[load_proyect] {done_msg}");
+        send_load_progress(&done_msg, None, None);
         Ok(())
     }
 

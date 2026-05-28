@@ -620,14 +620,25 @@ impl State {
                     });
                 }
             }
-            EngineCommand::SetScene { scene } => match scene.as_str() {
-                "2D" => self.setup_2d_platformer(),
-                "empty" => self.setup_empty_3d(),
-                "first-person" | "second-person" | "third-person" => {
-                    self.setup_default_3d_scene()
+            EngineCommand::SetScene { scene, save_path } => match scene.as_str() {
+                "3D" | "first-person" | "second-person" | "third-person" => {
+                    if let Some(path) = save_path.filter(|p| !p.trim().is_empty()) {
+                        if std::path::Path::new(&path).is_dir() {
+                            self.load_proyect_from_save_path(&path);
+                        } else {
+                            log::warn!(
+                                "[SetScene] se esperaba directorio extraído, no archivo: {path}"
+                            );
+                            self.setup_default_3d_scene();
+                        }
+                    } else {
+                        self.setup_default_3d_scene();
+                    }
                 }
-                "3D" => self.setup_default_3d_scene(),
-                "scratch" => self.setup_scratch(),
+                "2D" => {
+                    let _ = save_path;
+                    self.setup_2d_platformer();
+                }
                 _ => log::info!("SetScene: escena '{}' no reconocida", scene),
             },
             EngineCommand::LoadScenario { path, track_undo } => {

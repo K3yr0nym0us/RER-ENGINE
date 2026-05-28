@@ -9,6 +9,7 @@ import {
 	type BluePrintEntry,
 	type DebugMetrics,
 	type EntityCategory,
+	type ProjectLoaded2dPayload,
 	type ProjectSaveData,
 	type SavedControlBindings,
 	type SavedPlayerTransform,
@@ -126,6 +127,10 @@ export interface EngineState {
 	debugMode: boolean
 	blueprints: BluePrintEntry[]
 	multiSelectedIds: number[]
+	/** Incrementa al aplicar metadatos 2D enviados por el motor (`project_loaded_2d`). */
+	projectLoaded2dSeq: number
+	/** Incrementa al aplicar metadatos 3D enviados por el motor (`project_loaded_3d`). */
+	projectLoaded3dSeq: number
 }
 
 export type EngineAction =
@@ -206,7 +211,9 @@ export type EngineAction =
 				backgroundPath: string | null
 				sprites: SpriteInfo[]
 			}
-	  };
+	  }
+	| { type: 'APPLY_PROJECT_LOADED_2D'; payload: ProjectLoaded2dPayload }
+	| { type: 'APPLY_PROJECT_LOADED_3D'; payload: import('@shared-types').ProjectLoaded3dPayload };
 
 export const initialState: EngineState = {
 	engineReady: false,
@@ -236,6 +243,8 @@ export const initialState: EngineState = {
 	debugMode: false,
 	blueprints: [],
 	multiSelectedIds: [],
+	projectLoaded2dSeq: 0,
+	projectLoaded3dSeq: 0,
 };
 
 export function engineReducer(state: EngineState, action: EngineAction): EngineState {
@@ -473,6 +482,60 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 				: { ...prevState, backgrounds: [...prevState.backgrounds, nextAction.payload] },
 		REMOVE_BACKGROUND: (prevState, nextAction) => ({ ...prevState, backgrounds: prevState.backgrounds.filter((b) => b.path !== nextAction.payload) }),
 		SET_BACKGROUNDS: (prevState, nextAction) => ({ ...prevState, backgrounds: nextAction.payload }),
+		APPLY_PROJECT_LOADED_2D: (prevState, nextAction) => {
+			const p = nextAction.payload;
+			const spriteMap = new Map<string, { name: string }>();
+			for (const s of p.sprites) {
+				spriteMap.set(s.path, { name: s.name });
+			}
+			return {
+				...prevState,
+				projectLoaded2dSeq: prevState.projectLoaded2dSeq + 1,
+				blueprints: p.blueprints,
+				worldConfig: {
+					...prevState.worldConfig,
+					worldWidth: p.world.worldWidth,
+					worldHeight: p.world.worldHeight,
+					worldDepth: p.world.worldDepth ?? prevState.worldConfig.worldDepth,
+					gridVisible: p.world.gridVisible,
+					gridCellSize: p.world.gridCellSize,
+					gravity: p.world.gravity ?? DEFAULT_GRAVITY_MAGNITUDE,
+					targetFps: p.world.targetFps,
+				},
+				sounds: p.sounds,
+				backgrounds: p.backgrounds,
+				loadedSpritesInfo: spriteMap,
+				backgroundPath: p.backgroundPath ?? null,
+			};
+		},
+		APPLY_PROJECT_LOADED_3D: (prevState, nextAction) => {
+			const p = nextAction.payload;
+			const modelMap = new Map<string, { name: string }>();
+			for (const m of p.models) {
+				modelMap.set(m.path, { name: m.name });
+			}
+			return {
+				...prevState,
+				projectLoaded3dSeq: prevState.projectLoaded3dSeq + 1,
+				blueprints: p.blueprints,
+				worldConfig: {
+					...prevState.worldConfig,
+					worldWidth: p.world.worldWidth,
+					worldHeight: p.world.worldHeight,
+					worldDepth: p.world.worldDepth ?? prevState.worldConfig.worldDepth,
+					gridVisible: p.world.gridVisible,
+					gridCellSize: p.world.gridCellSize,
+					gravity: p.world.gravity ?? DEFAULT_GRAVITY_MAGNITUDE,
+					targetFps: p.world.targetFps,
+					lightAmbient: p.world.lightAmbient ?? DEFAULT_LIGHT_AMBIENT,
+					lightIntensity: p.world.lightIntensity ?? DEFAULT_LIGHT_INTENSITY,
+					shadowDarkness: p.world.shadowDarkness ?? DEFAULT_SHADOW_DARKNESS,
+				},
+				sounds: p.sounds,
+				backgrounds: p.backgrounds,
+				loadedModelsInfo: modelMap,
+			};
+		},
 		IMPORT_SCENE_STATE: (prevState, nextAction) => ({
 			...prevState,
 			scenarioEntities: nextAction.payload.scenarioEntities,
@@ -550,6 +613,10 @@ export interface EngineInternalRefs {
 	resizeTimerRef: MutableRefObject<ReturnType<typeof setTimeout> | null>
 	logIdRef: MutableRefObject<number>
 	initialSaveRef: MutableRefObject<ProjectSaveData | null | undefined>
+	initialSavePathRef: MutableRefObject<string | null | undefined>
+	initialExtractDirRef: MutableRefObject<string | null | undefined>
+	projectLoaded2dMetaRef: MutableRefObject<ProjectLoaded2dPayload | null>
+	projectLoaded3dMetaRef: MutableRefObject<import('@shared-types').ProjectLoaded3dPayload | null>
 	entityTransformsRef: MutableRefObject<Record<number, Transform>>
 	entityMetaRef: MutableRefObject<Record<number, EntityMeta>>
 	pendingRestoresRef: MutableRefObject<Map<string, PendingRestore[]>>
@@ -624,6 +691,8 @@ export interface EngineContextValue extends EngineState {
 	pendingBurstSpawnRestoreRef: MutableRefObject<PendingBurstSpawnEntry[]>
 	mainPlayerHandled: MutableRefObject<boolean>
 	camera2dRef: MutableRefObject<Camera2dState | null>
+	projectLoaded2dMetaRef: MutableRefObject<ProjectLoaded2dPayload | null>
+	projectLoaded3dMetaRef: MutableRefObject<import('@shared-types').ProjectLoaded3dPayload | null>
 	send: (cmd: object) => void
 	sendAsync: <T>(cmd: object, waitForEvent: string, onStart?: () => void) => Promise<T>
 	setAnimationPlaying: (entityId: number, playing: boolean) => void

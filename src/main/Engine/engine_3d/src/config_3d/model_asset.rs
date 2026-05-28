@@ -98,17 +98,61 @@ pub struct GltfFile {
     pub path: String,
     pub doc: gltf::Document,
     pub buffers: Vec<gltf::buffer::Data>,
+    /// Todas las imágenes decodificadas (`AllEmbedded`); vacío en modo menor resolución.
     pub images: Vec<gltf::image::Data>,
+    /// Albedo único (modo `SmallestEmbedded`): se usa en malla estática y skinned.
+    pub mesh_albedo: Option<gltf::image::Data>,
+}
+
+impl GltfFile {
+    pub fn mesh_albedo_for_draw(&self) -> Option<&gltf::image::Data> {
+        self.mesh_albedo.as_ref()
+    }
 }
 
 pub fn import_gltf(path: &Path) -> Result<GltfFile, String> {
-    let (doc, buffers, images) = gltf::import(path).map_err(|e| format!("gltf error: {e}"))?;
+    import_gltf_with_mode(path, crate::config_3d::gltf_texture_load::editor_gltf_texture_load_mode())
+}
+
+pub fn import_gltf_with_mode(
+    path: &Path,
+    mode: crate::config_3d::gltf_texture_load::GltfTextureLoadMode,
+) -> Result<GltfFile, String> {
+    let gltf = gltf::Gltf::open(path).map_err(|e| format!("gltf error: {e}"))?;
+    let base = path.parent();
+    let doc = gltf.document;
+    let blob = gltf.blob;
+    let buffers = gltf::import_buffers(&doc, base, blob)
+        .map_err(|e| format!("error importando buffers glTF: {e}"))?;
+    let (images, mesh_albedo) =
+        crate::config_3d::gltf_texture_load::import_gltf_images(&doc, &buffers, base, mode)?;
     Ok(GltfFile {
         path: path.display().to_string(),
         doc,
         buffers,
         images,
+        mesh_albedo,
     })
+}
+
+/// Convierte `gltf::image::Data` a RGBA8 en CPU (malla / skinned).
+pub fn gltf_image_data_to_rgba(img: &gltf::image::Data) -> (Vec<u8>, u32, u32) {
+    use gltf::image::Format;
+    let pixels = match img.format {
+        Format::R8G8B8 => img
+            .pixels
+            .chunks_exact(3)
+            .flat_map(|p| [p[0], p[1], p[2], 255u8])
+            .collect(),
+        Format::R8G8B8A8 => img.pixels.clone(),
+        _ => vec![255, 255, 255, 255],
+    };
+    (pixels, img.width, img.height)
+}
+
+/// Props estáticos (p. ej. rocas) no necesitan `ModelAsset` (skinning/animación).
+pub fn gltf_needs_model_asset(file: &GltfFile) -> bool {
+    file.doc.skins().next().is_some() || file.doc.animations().next().is_some()
 }
 
 /// Metadatos de clips del FBX sin cargar malla skinned (para listar en UI si falla el asset completo).
@@ -598,6 +642,7 @@ fn load_gltf_asset_from_file(
     let doc = &file.doc;
     let buffers = &file.buffers;
     let images = &file.images;
+    let mesh_albedo = file.mesh_albedo_for_draw();
     let scene = doc.default_scene().or_else(|| doc.scenes().next())?;
     let scene_parents = build_gltf_node_parents(&scene);
 
@@ -653,7 +698,7 @@ fn load_gltf_asset_from_file(
         let mut merged: Option<SkinnedMeshData> = None;
         for primitive in mesh.primitives() {
             if let Some(mut data) =
-                read_skinned_gltf_primitive(&primitive, &buffers, &images)
+                read_skinned_gltf_primitive(&primitive, &buffers, &images, mesh_albedo)
             {
                 remap_gltf_vertex_joints_to_unified(&mut data, &node_skin, &node_to_joint);
                 merged = Some(match merged {
@@ -827,6 +872,7 @@ fn read_skinned_gltf_primitive(
     primitive: &gltf::Primitive,
     buffers: &[gltf::buffer::Data],
     images: &[gltf::image::Data],
+    mesh_albedo: Option<&gltf::image::Data>,
 ) -> Option<SkinnedMeshData> {
     let reader = primitive.reader(|buf| Some(&buffers[buf.index()]));
     let positions: Vec<[f32; 3]> = reader.read_positions()?.collect();
@@ -869,7 +915,7 @@ fn read_skinned_gltf_primitive(
         });
     }
 
-    let (rgba, width, height) = gltf_texture_rgba(primitive, images);
+    let (rgba, width, height) = gltf_texture_rgba(primitive, images, mesh_albedo);
 
     Some(SkinnedMeshData {
         vertices,
@@ -883,7 +929,11 @@ fn read_skinned_gltf_primitive(
 fn gltf_texture_rgba(
     primitive: &gltf::Primitive,
     images: &[gltf::image::Data],
+    mesh_albedo: Option<&gltf::image::Data>,
 ) -> (Vec<u8>, u32, u32) {
+    if let Some(img) = mesh_albedo {
+        return gltf_image_data_to_rgba(img);
+    }
     if let Some(img_idx) = primitive
         .material()
         .pbr_metallic_roughness()
@@ -891,17 +941,7 @@ fn gltf_texture_rgba(
         .map(|info| info.texture().source().index())
     {
         if let Some(img_data) = images.get(img_idx) {
-            use gltf::image::Format;
-            let pixels = match img_data.format {
-                Format::R8G8B8 => img_data
-                    .pixels
-                    .chunks_exact(3)
-                    .flat_map(|p| [p[0], p[1], p[2], 255u8])
-                    .collect(),
-                Format::R8G8B8A8 => img_data.pixels.clone(),
-                _ => vec![255, 255, 255, 255],
-            };
-            return (pixels, img_data.width, img_data.height);
+            return gltf_image_data_to_rgba(img_data);
         }
     }
     (vec![255, 255, 255, 255], 1, 1)

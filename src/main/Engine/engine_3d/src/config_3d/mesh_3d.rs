@@ -1,7 +1,9 @@
 // ── Primitivas de malla exclusivas del modo 3D ────────────────────────────────
 
 use std::path::Path;
+use std::sync::Arc;
 
+use crate::config_3d::model_asset::{self, GltfFile};
 use crate::mesh::{upload, Mesh, Vertex};
 
 pub(crate) struct LoadedModelMesh {
@@ -242,6 +244,44 @@ pub(crate) fn load_model_file_cpu(
     }
 }
 
+/// Precarga en hilo: un solo `gltf::import` para malla y, si aplica, asset animado.
+pub(crate) fn preload_model_cpu_bundle(
+    path: &Path,
+) -> Result<
+    (
+        Vec<CpuModelMeshPart>,
+        Option<Arc<model_asset::ModelAsset>>,
+    ),
+    String,
+> {
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+
+    match ext.as_str() {
+        "glb" | "gltf" => {
+            let file = model_asset::import_gltf(path)?;
+            let parts = load_gltf_cpu_from_file(&file, None)?;
+            let anim_asset = if model_asset::gltf_needs_model_asset(&file) {
+                model_asset::load_model_asset_from_gltf(&file, None)
+            } else {
+                None
+            };
+            Ok((parts, anim_asset))
+        }
+        "fbx" => {
+            let parts = load_fbx_cpu(path, None)?;
+            let anim_asset = model_asset::load_model_asset(path, None);
+            Ok((parts, anim_asset))
+        }
+        other => Err(format!(
+            "formato no soportado: .{other} (usa .glb, .gltf o .fbx)"
+        )),
+    }
+}
+
 fn white_pixel() -> (Vec<u8>, u32, u32) {
     (vec![255, 255, 255, 255], 1, 1)
 }
@@ -281,6 +321,7 @@ fn read_gltf_primitive(
     world: glam::Mat4,
     buffers: &[gltf::buffer::Data],
     images: &[gltf::image::Data],
+    mesh_albedo: Option<&gltf::image::Data>,
 ) -> Result<GltfRawPrim, String> {
     use glam::{Mat3, Vec3};
 
@@ -326,24 +367,16 @@ fn read_gltf_primitive(
         })
         .collect();
 
-    let (rgba, width, height) = if let Some(img_idx) = primitive
+    let (rgba, width, height) = if let Some(img) = mesh_albedo {
+        crate::config_3d::model_asset::gltf_image_data_to_rgba(img)
+    } else if let Some(img_idx) = primitive
         .material()
         .pbr_metallic_roughness()
         .base_color_texture()
         .map(|info| info.texture().source().index())
     {
         if let Some(img_data) = images.get(img_idx) {
-            use gltf::image::Format;
-            let pixels = match img_data.format {
-                Format::R8G8B8 => img_data
-                    .pixels
-                    .chunks_exact(3)
-                    .flat_map(|p| [p[0], p[1], p[2], 255u8])
-                    .collect(),
-                Format::R8G8B8A8 => img_data.pixels.clone(),
-                _ => vec![255, 255, 255, 255],
-            };
-            (pixels, img_data.width, img_data.height)
+            crate::config_3d::model_asset::gltf_image_data_to_rgba(img_data)
         } else {
             white_pixel()
         }
@@ -367,6 +400,7 @@ fn walk_gltf_node(
     parent_world: glam::Mat4,
     buffers: &[gltf::buffer::Data],
     images: &[gltf::image::Data],
+    mesh_albedo: Option<&gltf::image::Data>,
     out: &mut Vec<GltfRawPrim>,
 ) -> Result<(), String> {
     use glam::{Mat4, Quat, Vec3};
@@ -387,12 +421,18 @@ fn walk_gltf_node(
 
     if let Some(mesh) = node.mesh() {
         for primitive in mesh.primitives() {
-            out.push(read_gltf_primitive(&primitive, world, buffers, images)?);
+            out.push(read_gltf_primitive(
+                &primitive,
+                world,
+                buffers,
+                images,
+                mesh_albedo,
+            )?);
         }
     }
 
     for child in node.children() {
-        walk_gltf_node(child, world, buffers, images, out)?;
+        walk_gltf_node(child, world, buffers, images, mesh_albedo, out)?;
     }
     Ok(())
 }
@@ -433,7 +473,13 @@ pub(crate) fn load_gltf_preview_from_file(
     let mut tex_h = 1u32;
 
     for primitive in mesh.primitives() {
-        let prim = read_gltf_primitive(&primitive, world, &file.buffers, &file.images)?;
+        let prim = read_gltf_primitive(
+            &primitive,
+            world,
+            &file.buffers,
+            &file.images,
+            file.mesh_albedo_for_draw(),
+        )?;
         let base = vertices.len() as u32;
         vertices.extend(prim.vertices);
         indices.extend(prim.indices.iter().map(|i| i + base));
@@ -475,7 +521,11 @@ fn load_gltf(
 ) -> Result<Vec<LoadedModelMesh>, String> {
     use glam::Mat4;
 
-    let (doc, buffers, images) = gltf::import(path).map_err(|e| format!("gltf error: {e}"))?;
+    let file = model_asset::import_gltf(path)?;
+    let doc = &file.doc;
+    let buffers = &file.buffers;
+    let images = &file.images;
+    let mesh_albedo = file.mesh_albedo_for_draw();
 
     let mut prims: Vec<GltfRawPrim> = Vec::new();
 
@@ -483,12 +533,18 @@ fn load_gltf(
     // meshes con matriz identidad para no romper archivos antiguos.
     if let Some(scene) = doc.default_scene().or_else(|| doc.scenes().next()) {
         for root in scene.nodes() {
-            walk_gltf_node(root, Mat4::IDENTITY, &buffers, &images, &mut prims)?;
+            walk_gltf_node(root, Mat4::IDENTITY, buffers, images, mesh_albedo, &mut prims)?;
         }
     } else {
         for mesh in doc.meshes() {
             for primitive in mesh.primitives() {
-                prims.push(read_gltf_primitive(&primitive, Mat4::IDENTITY, &buffers, &images)?);
+                prims.push(read_gltf_primitive(
+                    &primitive,
+                    Mat4::IDENTITY,
+                    buffers,
+                    images,
+                    mesh_albedo,
+                )?);
             }
         }
     }
@@ -523,20 +579,37 @@ fn load_gltf_cpu(
     path: &Path,
     normalize_to_extent: Option<f32>,
 ) -> Result<Vec<CpuModelMeshPart>, String> {
+    let file = model_asset::import_gltf(path)?;
+    load_gltf_cpu_from_file(&file, normalize_to_extent)
+}
+
+pub(crate) fn load_gltf_cpu_from_file(
+    file: &GltfFile,
+    normalize_to_extent: Option<f32>,
+) -> Result<Vec<CpuModelMeshPart>, String> {
     use glam::Mat4;
 
-    let (doc, buffers, images) = gltf::import(path).map_err(|e| format!("gltf error: {e}"))?;
+    let doc = &file.doc;
+    let buffers = &file.buffers;
+    let images = &file.images;
+    let mesh_albedo = file.mesh_albedo_for_draw();
 
     let mut prims: Vec<GltfRawPrim> = Vec::new();
 
     if let Some(scene) = doc.default_scene().or_else(|| doc.scenes().next()) {
         for root in scene.nodes() {
-            walk_gltf_node(root, Mat4::IDENTITY, &buffers, &images, &mut prims)?;
+            walk_gltf_node(root, Mat4::IDENTITY, buffers, images, mesh_albedo, &mut prims)?;
         }
     } else {
         for mesh in doc.meshes() {
             for primitive in mesh.primitives() {
-                prims.push(read_gltf_primitive(&primitive, Mat4::IDENTITY, &buffers, &images)?);
+                prims.push(read_gltf_primitive(
+                    &primitive,
+                    Mat4::IDENTITY,
+                    buffers,
+                    images,
+                    mesh_albedo,
+                )?);
             }
         }
     }

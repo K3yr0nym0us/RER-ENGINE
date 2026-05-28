@@ -1,6 +1,19 @@
-/** Escena inicial del motor al abrir un `.save` (sin plantilla por defecto). */
-export function setSceneCommandForSavedProject(projectType?: string): string {
-	if (projectType === '3D') return 'empty';
-	if (projectType === '2D') return '2D';
-	return projectType ?? '2D';
+import type { ProjectType } from '@shared-types';
+
+export interface SetSceneEngineCommand {
+	cmd: 'set_scene';
+	scene: '2D' | '3D';
+	save_path: string;
+}
+
+/** Único IPC de arranque/cambio de escena: dimensión 2D|3D + ruta al `.save` (vacío si proyecto nuevo). */
+export function buildSetSceneCommand(
+	projectType: ProjectType | string | undefined,
+	savePath: string | null | undefined,
+): SetSceneEngineCommand {
+	return {
+		cmd: 'set_scene',
+		scene: projectType === '3D' ? '3D' : '2D',
+		save_path: savePath ?? '',
+	};
 }

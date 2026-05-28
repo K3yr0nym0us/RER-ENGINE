@@ -50,7 +50,11 @@ pub enum EngineCommand {
         force: bool,
     },
     /// Cambiar la escena activa del binario 2D (por ejemplo: "2D" o "scratch").
-    SetScene { scene: String },
+    SetScene {
+        scene: String,
+        #[serde(default)]
+        save_path: Option<String>,
+    },
     /// Cargar una imagen PNG como escenario de fondo en la escena 2D.
     LoadScenario {
         path: String,
@@ -271,6 +275,69 @@ pub enum EngineCommand {
     ImportScene(ImportScenePayload),
 }
 
+#[derive(Debug, Serialize, Clone)]
+pub struct ProjectLoaded2dSceneTab {
+    pub id:   u32,
+    pub name: String,
+}
+
+/// Cámara en `project_loaded_2d` — mismas claves que `types.ts`.
+#[allow(non_snake_case)]
+#[derive(Debug, Serialize, Clone)]
+pub struct ProjectLoaded2dCamera2d {
+    pub x:     f32,
+    pub y:     f32,
+    pub halfH: f32,
+}
+
+/// Mundo en `project_loaded_2d` — mismas claves que `SavedWorldConfig` en `types.ts`.
+#[allow(non_snake_case)]
+#[derive(Debug, Serialize, Clone)]
+pub struct ProjectLoaded2dWorld {
+    pub worldWidth:   f32,
+    pub worldHeight:  f32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub worldDepth:   Option<f32>,
+    pub gridVisible:  bool,
+    pub gridCellSize: f32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gravity:      Option<f32>,
+    pub targetFps:    f64,
+}
+
+/// Evento `project_loaded_2d` (fuera de `EngineEvent` para no heredar snake_case del enum).
+#[allow(non_snake_case)]
+#[derive(Debug, Serialize)]
+pub struct ProjectLoaded2dEvent {
+    pub event:          &'static str,
+    pub activeSceneId:  u32,
+    pub sceneName:      String,
+    pub entityCount:    u32,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub scenes:         Vec<ProjectLoaded2dSceneTab>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub language:       Option<String>,
+    pub sprites:        Vec<ImportSceneSprite>,
+    pub sounds:         Vec<ImportSceneSprite>,
+    pub backgrounds:    Vec<ImportSceneSprite>,
+    pub blueprints:     serde_json::Value,
+    pub world:          ProjectLoaded2dWorld,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub backgroundPath: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub camera2d:       Option<ProjectLoaded2dCamera2d>,
+}
+
+/// Escribe `project_loaded_2d` en stdout (claves camelCase = `ProjectLoaded2dPayload` en TS).
+pub fn send_project_loaded_2d_event(payload: &ProjectLoaded2dEvent) {
+    if let Ok(json) = serde_json::to_string(payload) {
+        let stdout = io::stdout();
+        let mut handle = stdout.lock();
+        let _ = writeln!(handle, "{json}");
+        let _ = handle.flush();
+    }
+}
+
 #[derive(Debug, Deserialize)]
 pub struct ImportSceneWorld {
     pub world_width:   f32,
@@ -283,14 +350,14 @@ pub struct ImportSceneWorld {
     pub target_fps:    u64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ImportSceneCamera2d {
     pub x:      f32,
     pub y:      f32,
     pub half_h: f32,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ImportSceneSprite {
     pub path: String,
     pub name: String,

@@ -13,6 +13,7 @@ mod audio;
 mod commands;
 mod entity_restore;
 mod import_scene;
+mod load_proyect;
 mod init;
 mod render;
 mod render_helpers;

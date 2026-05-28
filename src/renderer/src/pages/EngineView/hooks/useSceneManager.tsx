@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import type { GameStyle, ProjectSaveData, SavedScene, SavedWorldConfig } from '@shared-types';
 import {
@@ -12,7 +12,7 @@ import { isModel3DPath, is3dModelFileEntity } from '../../../utils/blueprintMode
 import { buildActiveSceneSnapshotFromEngine } from '../../../defaults/buildProjectSaveFromEngine';
 import { requestEngineDefaultSceneName } from '../../../defaults/requestEngineDefaultSceneName';
 import { ensurePlayCharacterOnLoad } from '../../../defaults/playCharacterSceneRestore';
-import { setSceneCommandForSavedProject } from '../../../defaults/projectSceneLoad';
+import { buildSetSceneCommand } from '../../../defaults/projectSceneLoad';
 import { buildImportSceneCommand, resolveEntityTransform, resolveSavedEntityTransform } from '../../../context/useContextEngine/hooks/buildImportSceneCommand';
 import {
   beginSceneBurstLoad,
@@ -95,11 +95,13 @@ function buildInitialSceneState(initialSave?: ProjectSaveData | null) {
 export function SceneManagerProvider({
   children,
   initialSave,
+  initialSavePath,
   projectType,
   gameStyle,
 }: {
   children: ReactNode;
   initialSave?: ProjectSaveData | null;
+  initialSavePath?: string | null;
   projectType?: string;
   gameStyle?: GameStyle;
 }) {
@@ -146,6 +148,10 @@ export function SceneManagerProvider({
     loadModelAsset,
     removeSprite,
     blueprints,
+    projectLoaded2dSeq,
+    projectLoaded2dMetaRef,
+    projectLoaded3dSeq,
+    projectLoaded3dMetaRef,
   } = useContextEngine();
 
   const { openModal, closeModal } = useModal();
@@ -158,6 +164,71 @@ export function SceneManagerProvider({
   const [scenes, setScenes] = useState<SceneTab[]>(initialSceneState.tabs);
   const [sceneDataById, setSceneDataById] = useState<Record<number, SavedScene>>(initialSceneState.dataById);
   const [activeSceneId, setActiveSceneId] = useState(initialSceneState.activeSceneId);
+  const lastProjectLoaded2dSeq = useRef(0);
+  const lastProjectLoaded3dSeq = useRef(0);
+
+  useEffect(() => {
+    if (projectType !== '2D' || projectLoaded2dSeq === 0) return;
+    if (projectLoaded2dSeq === lastProjectLoaded2dSeq.current) return;
+    lastProjectLoaded2dSeq.current = projectLoaded2dSeq;
+
+    const meta = projectLoaded2dMetaRef.current;
+    if (!meta) return;
+
+    const tabs = meta.scenes?.length
+      ? meta.scenes
+      : [{ id: meta.activeSceneId, name: meta.sceneName }];
+    setScenes(tabs.map((tab) => ({ id: tab.id, name: tab.name })));
+    setActiveSceneId(meta.activeSceneId);
+
+    const dataById: Record<number, SavedScene> = {};
+    for (const tab of tabs) {
+      const isActive = tab.id === meta.activeSceneId;
+      dataById[tab.id] = {
+        id: tab.id,
+        name: tab.name,
+        world: { ...DEFAULT_WORLD, ...meta.world },
+        backgroundPath: isActive ? meta.backgroundPath : null,
+        entities: [],
+        playerTransform: null,
+        camera2d: isActive ? meta.camera2d : null,
+        sprites: isActive ? meta.sprites : [],
+      };
+    }
+    setSceneDataById(dataById);
+  }, [projectType, projectLoaded2dSeq, projectLoaded2dMetaRef]);
+
+  useEffect(() => {
+    if (projectType !== '3D' || projectLoaded3dSeq === 0) return;
+    if (projectLoaded3dSeq === lastProjectLoaded3dSeq.current) return;
+    lastProjectLoaded3dSeq.current = projectLoaded3dSeq;
+
+    const meta = projectLoaded3dMetaRef.current;
+    if (!meta) return;
+
+    const tabs = meta.scenes?.length
+      ? meta.scenes
+      : [{ id: meta.activeSceneId, name: meta.sceneName }];
+    setScenes(tabs.map((tab) => ({ id: tab.id, name: tab.name })));
+    setActiveSceneId(meta.activeSceneId);
+
+    const dataById: Record<number, SavedScene> = {};
+    for (const tab of tabs) {
+      const isActive = tab.id === meta.activeSceneId;
+      dataById[tab.id] = {
+        id: tab.id,
+        name: tab.name,
+        world: { ...DEFAULT_WORLD, ...meta.world },
+        backgroundPath: null,
+        entities: [],
+        playerTransform: isActive ? (meta.playerTransform ?? null) : null,
+        camera2d: null,
+        sprites: [],
+        models: isActive ? meta.models : [],
+      };
+    }
+    setSceneDataById(dataById);
+  }, [projectType, projectLoaded3dSeq, projectLoaded3dMetaRef]);
 
   const pendingSceneNameIds = useMemo(
     () => scenes.filter((tab) => !tab.name.trim()).map((tab) => tab.id).join(','),
@@ -255,7 +326,7 @@ export function SceneManagerProvider({
       playCharacterViewRef.current = null;
     }
     if (projectType !== '2D') {
-      send({ cmd: 'set_scene', scene: setSceneCommandForSavedProject(projectType) });
+      send(buildSetSceneCommand(projectType, initialSavePath) as never);
     }
 
     if (projectType === '2D') {

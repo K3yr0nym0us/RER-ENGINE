@@ -1,5 +1,6 @@
 import type {
 	BluePrintEntry,
+	ProjectSaveData,
 	SavedAnimation,
 	SavedEntity,
 	SavedScene,
@@ -104,6 +105,49 @@ export function buildImportSceneEntity(
 		skip_transform: false,
 		apply_initial_animation_frame: true,
 	};
+}
+
+/** Proyecto 2D abierto desde `.save`: el motor carga desde `extract_dir`. */
+export function is2dProjectLoadedByEngine(
+	projectType: string | undefined,
+	extractDir: string | null | undefined,
+): boolean {
+	return projectType === '2D' && Boolean(extractDir?.trim());
+}
+
+/** Proyecto 3D abierto desde `.save`: el motor carga desde `extract_dir`. */
+export function is3dProjectLoadedByEngine(
+	projectType: string | undefined,
+	extractDir: string | null | undefined,
+): boolean {
+	return projectType === '3D' && Boolean(extractDir?.trim());
+}
+
+/** Escena activa del manifest (misma resolución que en `ready` del handler). */
+export function resolveActiveSceneSave(baseSave: ProjectSaveData): {
+	save: ProjectSaveData & { entities: SavedEntity[] };
+	activeScene: SavedScene | null;
+} {
+	const scenes = baseSave.scenes ?? [];
+	const activeScene =
+		scenes.length > 0
+			? (scenes.find((scene) => scene.id === baseSave.activeSceneId) ?? scenes[0])
+			: null;
+
+	const save = activeScene
+		? {
+				...baseSave,
+				world: activeScene.world,
+				backgroundPath: activeScene.backgroundPath,
+				entities: activeScene.entities,
+				playerTransform: activeScene.playerTransform,
+				camera2d: activeScene.camera2d,
+				sprites: activeScene.sprites,
+				models: activeScene.models,
+			}
+		: baseSave;
+
+	return { save: save as ProjectSaveData & { entities: SavedEntity[] }, activeScene };
 }
 
 export function buildImportSceneCommand(scene: SavedScene, blueprints?: BluePrintEntry[]) {

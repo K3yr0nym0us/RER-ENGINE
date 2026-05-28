@@ -65,6 +65,18 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 - [x] **Reemplazar modelo del jugador** — overlay de carga + ocultar viewport durante importación síncrona
 - [x] Acordeón Modelos: botón y diálogo **`.glb` / `.gltf` / `.fbx`** (almacén + sustitución jugador)
 
+### Carga `.save` 3D y rendimiento (mayo 2026)
+
+- [x] **Carga de proyecto 3D en Rust** — `engine_3d/src/engine/load_proyect.rs`: manifest, burst de entidades, jugador FP, sonidos/fondos; front solo refleja eventos (`project_loaded_3d`, `project_load_3d_complete`)
+- [x] **Loader de escena** — overlay hasta `project_load_3d_complete`; `ready` tras escena vacía al abrir `.save` (`RER_3D_START_FROM_SAVE`); logs `[Carga]` / `load_progress` en panel
+- [x] **Precarga y burst acotados** — solo paths GLB/FBX requeridos por entidades + `playerTransform.visual_model_path` (sin precargar toda la biblioteca `view.models`)
+- [x] **Vaciado de escena al abrir save** — `clear_scene_entities_for_save_load` sin segundo `reset_runtime_scene_3d` duplicado
+- [x] **EditorBox compartido en GPU** — `ensure_editor_box_gpu_assets` (una mesh/textura para todos los `[EditorBox]`)
+- [x] **Precarga async** — hilos de fondo + `poll_model_preloads`; burst espera caché sin bloquear arranque del motor
+- [x] **Import GLB optimizado (precarga)** — un solo `gltf::import` por archivo (`preload_model_cpu_bundle`); sin `ModelAsset` si no hay skins ni animaciones; sin `try_warm` variante jugador en props/entorno
+- [x] **Texturas GLB en editor** — `gltf_texture_load.rs`, modo por defecto `SmallestEmbedded`: solo decodifica la `baseColor` embebida de menor resolución; ignora normal/metallic y el resto del pack; `AllEmbedded` reservado para módulo de calidad futuro
+- [x] **Main Electron** — reenvío stderr `[load_proyect]`; spawn 3D con `extract_dir` / `save_path`
+
 ---
 
 ## Por implementar
@@ -77,6 +89,7 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 
 ### Prioridad baja
 
+- [ ] **Calidad de texturas GLB (UI)** — conmutar `GltfTextureLoadMode::AllEmbedded` desde configuración (hoy fijo `SmallestEmbedded` en editor)
 - [ ] Picking 3D: AABB del `Transform` vs silueta fina del modelo (mejora UX de selección)
 - [ ] `kind` en `ModelLoaded` (IPC) — sync front sin `spawnKind` local (motor-first)
 
@@ -90,6 +103,7 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 | Animaciones embebidas 3D | GLB/FBX con skinning reproducen clips en editor/play; panel y `model_clips_ready` |
 | Orientación GLB jugador FP | Modelo de pie de frente a cámara, altura ~1.7 m, sin regresión skinning |
 | Blueprints 3D | Crear/instanciar/actualizar desde editor en proyecto 3D |
+| Carga `.save` 3D | Abrir demo/proyecto 3D: loader coherente, escena en motor, sin duplicar eventos `model_loaded`; tiempo de carga aceptable en props pesados |
 
 ---
 
@@ -109,6 +123,9 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 | `play_character_view_changed` | Motor → front: estado confirmado (`body_center`, `body_rotation`, etc.) |
 | `model_clips_ready` | Motor → front: clips embebidos tras cargar GLB/FBX skinned en entidad |
 | `entity_model_replaced` | Motor → front: fin de `replace_entity_model` (quita overlay de carga) |
+| `project_loaded_3d` | Motor → front: escena activa tras parsear manifest (tabs, mundo, entidades) |
+| `project_load_3d_complete` | Motor → front: fin de burst/precarga al abrir `.save` (cierra loader) |
+| `load_progress` | Motor → front: mensaje de progreso durante carga (`step_ms`, `total_ms` opcionales) |
 
 Aliases legacy: `set_first_person_view`, `first_person_view_changed`.
 

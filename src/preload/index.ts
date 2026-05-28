@@ -1,5 +1,11 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { EngineCommand, EngineEvent, GameStyle, OpenProjectResult, ProjectSaveData } from '../shared-types/types'
+import type {
+  EngineCommand,
+  EngineEvent,
+  EngineStartPayload,
+  OpenProjectResult,
+  ProjectSaveData,
+} from '../shared-types/types'
 
 type EngineEventListener = (event: EngineEvent) => void
 
@@ -29,8 +35,8 @@ contextBridge.exposeInMainWorld('engine', {
 
 // API general para comunicación renderer ↔ main
 contextBridge.exposeInMainWorld('electronAPI', {
-  setGameStyle: (gameStyle: GameStyle | null): void => {
-    ipcRenderer.send('set-game-style', gameStyle)
+  setGameStyle: (payload: EngineStartPayload): void => {
+    ipcRenderer.send('set-game-style', payload)
   },
   sendViewportBounds: (bounds: { x: number; y: number; width: number; height: number }): void => {
     ipcRenderer.send('viewport-bounds', bounds)

@@ -21,11 +21,13 @@ export function EngineView({
   gameStyle,
   initialSave,
   initialSavePath,
+  initialExtractDir,
 }: {
   projectType: ProjectType
   gameStyle?: GameStyle
   initialSave?: ProjectSaveData | null
   initialSavePath?: string | null
+  initialExtractDir?: string | null
 }) {
   const viewportRef = useRef<HTMLDivElement>(null)
 
@@ -35,11 +37,15 @@ export function EngineView({
       projectType={projectType} 
       gameStyle={gameStyle} 
       initialSave={initialSave}
+      initialSavePath={initialSavePath}
+      initialExtractDir={initialExtractDir}
     >
       <QuickBuildProvider>
         <ModalProvider>
           <SceneManagerProvider 
             initialSave={initialSave} 
+            initialSavePath={initialSavePath}
+            initialExtractDir={initialExtractDir}
             projectType={projectType} 
             gameStyle={gameStyle}
           >
@@ -47,7 +53,8 @@ export function EngineView({
               projectType={projectType} 
               gameStyle={gameStyle} 
               initialSave={initialSave} 
-              initialSavePath={initialSavePath} 
+              initialSavePath={initialSavePath}
+              initialExtractDir={initialExtractDir}
               viewportRef={viewportRef} 
             />
           </SceneManagerProvider>
@@ -57,11 +64,12 @@ export function EngineView({
   )
 }
 
-function EngineViewInner({ projectType, gameStyle, initialSave, initialSavePath, viewportRef }: {
+function EngineViewInner({ projectType, gameStyle, initialSave, initialSavePath, initialExtractDir, viewportRef }: {
   projectType: ProjectType
   gameStyle?: GameStyle
   initialSave?: ProjectSaveData | null
   initialSavePath?: string | null
+  initialExtractDir?: string | null
   viewportRef: React.RefObject<HTMLDivElement>
 }) {
   const { 

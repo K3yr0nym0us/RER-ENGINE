@@ -10,6 +10,29 @@ export type GameStyle =
   | 'side-scroller'
   | 'isometric'
 
+/** Sincroniza tipo de proyecto, modo y rutas con Electron antes de arrancar el motor. */
+export interface EngineStartPayload {
+  projectType: ProjectType
+  /** Estilo 3D (`first-person`, etc.); `false` en proyectos 2D. */
+  mode:        GameStyle | false
+  /** Ruta absoluta del `.save` en disco (autosave); `false` si es proyecto nuevo. */
+  save_path:   string | false
+  /** 2D: carpeta ya extraída con `manifest.json` + assets; el motor lee desde aquí. */
+  extract_dir?: string | false
+}
+
+/** Metadatos mínimos del manifest al abrir `.save` 2D (sin cargar escena en el renderer). */
+export interface OpenProjectManifestMeta {
+  type:      ProjectType
+  gameStyle: GameStyle
+}
+
+export function isMinimalOpenProject(
+  project: ProjectSaveData | OpenProjectManifestMeta,
+): project is OpenProjectManifestMeta {
+  return !('version' in project)
+}
+
 export interface ProjectConfig {
   type:      ProjectType
   gameStyle: GameStyle
@@ -274,8 +297,43 @@ export interface ProjectSaveData {
 }
 
 export interface OpenProjectResult {
-  project:  ProjectSaveData
-  filePath: string
+  /** Ruta del archivo `.save` (persistencia / autosave). */
+  filePath:   string
+  /** Directorio temporal con el contenido extraído del zip. */
+  extractDir: string
+  /** Solo `type`/`gameStyle`; escena la carga el motor desde `extractDir`. */
+  project:    ProjectSaveData | OpenProjectManifestMeta
+}
+
+/** Metadatos de editor enviados por el motor 2D tras cargar desde `extract_dir`. */
+/** Metadatos de editor enviados por el motor 3D tras cargar desde `extract_dir`. */
+export interface ProjectLoaded3dPayload {
+  activeSceneId: number
+  sceneName:     string
+  entityCount:   number
+  scenes?:       Array<{ id: number; name: string }>
+  language?:     string
+  models:        Array<{ name: string; path: string }>
+  sounds:        Array<{ name: string; path: string }>
+  backgrounds:   Array<{ name: string; path: string }>
+  blueprints:    BluePrintEntry[]
+  world:         SavedWorldConfig
+  playerTransform?: SavedPlayerTransform | null
+}
+
+export interface ProjectLoaded2dPayload {
+  activeSceneId: number
+  sceneName:     string
+  entityCount:   number
+  scenes?:       Array<{ id: number; name: string }>
+  language?:     string
+  sprites:       Array<{ name: string; path: string }>
+  sounds:        Array<{ name: string; path: string }>
+  backgrounds:   Array<{ name: string; path: string }>
+  blueprints:    BluePrintEntry[]
+  world:         SavedWorldConfig
+  backgroundPath: string | null
+  camera2d:      { x: number; y: number; halfH: number } | null
 }
 
 export interface EngineCommand {
@@ -355,7 +413,7 @@ export interface EngineCommand {
 }
 
 export interface EngineEvent {
-  event: 'ready' | 'pong' | 'error' | 'model_loaded' | 'entity_model_replaced' | 'model_clips_ready' | 'stopped' | 'entity_selected' | 'entity_deselected' | 'entity_hovered' | 'entity_unhovered' | 'scenario_loaded' | 'character_loaded' | 'scene_imported' | 'camera_2d_updated' | 'background_loaded' | 'drawing_progress' | 'collider_created' | 'execution_area_created' | 'tool_cancelled' | 'pivot_selected' | 'physics_changed' | 'sprite_loaded' | 'sprite_removed' | 'sprites_list' | 'model_asset_loaded' | 'model_asset_removed' | 'models_list' | 'sound_loaded' | 'sound_removed' | 'sounds_list' | 'background_asset_loaded' | 'background_asset_removed' | 'backgrounds_list' | 'play_character_view_changed' | 'first_person_view_changed' | 'save_snapshot_ready' | 'default_scene_name_ready' | 'debug_metrics' | 'preview_playing_changed' | 'trigger_entered' | 'trigger_exited' | 'entity_removed' | 'quick_build_move' | 'quick_build_click' | 'animation_logical_resolved' | 'animation_finished' | 'autosave_tick' | 'atlas_exhausted'
+  event: 'ready' | 'pong' | 'error' | 'model_loaded' | 'entity_model_replaced' | 'model_clips_ready' | 'stopped' | 'entity_selected' | 'entity_deselected' | 'entity_hovered' | 'entity_unhovered' | 'scenario_loaded' | 'character_loaded' | 'scene_imported' | 'project_loaded_2d' | 'project_loaded_3d' | 'project_load_3d_complete' | 'load_progress' | 'camera_2d_updated' | 'background_loaded' | 'drawing_progress' | 'collider_created' | 'execution_area_created' | 'tool_cancelled' | 'pivot_selected' | 'physics_changed' | 'sprite_loaded' | 'sprite_removed' | 'sprites_list' | 'model_asset_loaded' | 'model_asset_removed' | 'models_list' | 'sound_loaded' | 'sound_removed' | 'sounds_list' | 'background_asset_loaded' | 'background_asset_removed' | 'backgrounds_list' | 'play_character_view_changed' | 'first_person_view_changed' | 'save_snapshot_ready' | 'default_scene_name_ready' | 'debug_metrics' | 'preview_playing_changed' | 'trigger_entered' | 'trigger_exited' | 'entity_removed' | 'quick_build_move' | 'quick_build_click' | 'animation_logical_resolved' | 'animation_finished' | 'autosave_tick' | 'atlas_exhausted'
   [key: string]: unknown
 }
 
@@ -638,7 +696,7 @@ declare global {
       off:  (cb?: (event: EngineEvent) => void) => void
     }
     electronAPI: {
-      setGameStyle:            (gameStyle: GameStyle | null) => void
+      setGameStyle:            (payload: EngineStartPayload) => void
       sendViewportBounds:      (bounds: ViewportBounds) => void
       openModelDialog:         () => Promise<string | null>
       openProjectDialog:       () => Promise<OpenProjectResult | null>
