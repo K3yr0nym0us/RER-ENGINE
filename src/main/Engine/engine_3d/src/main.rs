@@ -413,7 +413,9 @@ impl ApplicationHandler<EngineCommand> for App {
         }
 
         if let Some(state) = self.state.as_mut() {
-            state.poll_model_preloads();
+            state.poll_and_advance_model_preloads(
+                crate::config_3d::static_model_cache::MODEL_GPU_PARTS_PER_FRAME,
+            );
         }
 
         if let Some(playing) = preview_toggle {
@@ -732,7 +734,9 @@ impl ApplicationHandler<EngineCommand> for App {
                 }
             }
             WindowEvent::RedrawRequested => {
-                state.poll_model_preloads();
+                state.poll_and_advance_model_preloads(
+                    crate::config_3d::static_model_cache::MODEL_GPU_PARTS_PER_FRAME,
+                );
                 state.update();
                 if state.is_play_controller_active() {
                     let inputs = state.play_controller_effective_inputs(&self.keyboard_mouse_pressed);

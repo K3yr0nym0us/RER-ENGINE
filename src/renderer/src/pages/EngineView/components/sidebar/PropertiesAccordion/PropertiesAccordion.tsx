@@ -384,6 +384,13 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
                       {isPlayer ? t('Replace model player hint') : t('Replace model entity hint')}
                     </p>
                     <CreateEntityFromModelModalBody
+                      intent={
+                        isPlayer || isCharacter
+                          ? 'character'
+                          : isEnvironment
+                            ? 'environment'
+                            : 'object'
+                      }
                       onSpawn={(path) => {
                         replaceEntityModel(selectedEntity.id, path);
                         closeModal();

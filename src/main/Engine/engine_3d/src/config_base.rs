@@ -79,6 +79,7 @@ impl State {
         self.model_assets.clear();
         self.model_store.clear();
         self.model_preload_inflight.clear();
+        self.model_preload_gpu_queue.clear();
         self.pending_load_models.clear();
         self.pending_entity_model_replaces.clear();
         self.texture_array.reset(&self.queue);
@@ -248,8 +249,10 @@ impl State {
 
         let (block_mesh_idx, block_tex_idx) = self.ensure_editor_box_gpu_assets();
 
-        let mut spawn_block = |position: [f32; 3], scale: [f32; 3]| {
-            let label = self.next_numbered_entity_name(rer_engine_shared::editor_defaults::entity_label::SCENARIO);
+        let mut spawn_block =
+            |position: [f32; 3], scale: [f32; 3], entity_category: Option<&str>| {
+            let base_label = rer_engine_shared::editor_defaults::entity_label_for_category(entity_category);
+            let label = self.next_numbered_entity_name(base_label);
             let id = self.world.spawn(Some(&label));
             self.world.insert(
                 id,
@@ -273,19 +276,19 @@ impl State {
                     path: "[EditorBox]".to_string(),
                     visual_model_path: None,
                     points: None,
-                    entity_category: None,
+                    entity_category: entity_category.map(str::to_string),
                 },
             );
             self.send_model_loaded_event(id, &label);
         };
 
-        // Escenario base visible al frente para que first-person no arranque en vacío.
-        spawn_block([-6.0, 2.0, 18.0], [1.2, 4.0, 18.0]);
-        spawn_block([6.0, 2.0, 18.0], [1.2, 4.0, 18.0]);
-        spawn_block([0.0, 2.0, 27.0], [12.0, 4.0, 1.2]);
-        spawn_block([-2.5, 0.75, 11.0], [1.5, 1.5, 1.5]);
-        spawn_block([2.0, 1.25, 15.0], [2.0, 2.5, 2.0]);
-        spawn_block([0.0, 2.5, 21.0], [1.8, 5.0, 1.8]);
+        // Placeholder first-person: 3 muros (environment) + 3 cubos (object).
+        spawn_block([-6.0, 2.0, 18.0], [1.2, 4.0, 18.0], Some("environment"));
+        spawn_block([6.0, 2.0, 18.0], [1.2, 4.0, 18.0], Some("environment"));
+        spawn_block([0.0, 2.0, 27.0], [12.0, 4.0, 1.2], Some("environment"));
+        spawn_block([-2.5, 0.75, 11.0], [1.5, 1.5, 1.5], Some("object"));
+        spawn_block([2.0, 1.25, 15.0], [2.0, 2.5, 2.0], Some("object"));
+        spawn_block([0.0, 2.5, 21.0], [1.8, 5.0, 1.8], Some("object"));
 
         // Límites del mundo: el wireframe es centrado en el origen (z ∈ [-depth/2, depth/2]).
         // Los muros del placeholder llegan hasta z≈28; depth 36 dejaba max z=18 y el render los ocultaba.

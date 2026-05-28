@@ -1,16 +1,26 @@
 import React, { createContext, useContext, useEffect, useReducer, useRef } from 'react';
-import type { GameStyle, ProjectSaveData } from '@shared-types';
+import type {
+	GameStyle,
+	ModelInfo,
+	ProjectLoaded2dPayload,
+	ProjectLoaded3dPayload,
+	ProjectSaveData,
+	SavedPlayerTransform,
+	SavedScene,
+	EntityCategory,
+} from '@shared-types';
 import { useLanguage } from '../LanguageContext';
 import { createEngineActions } from './hooks/createEngineActions';
 import { useEngineEffects } from './hooks/useEngineEffects';
+import type { ModelLoadOverlayKind } from './hooks/sceneImportOverlay';
 import {
 	engineReducer,
 	initialState,
 	type Camera2dState,
-	type ColliderPoints,
 	type EngineContextValue,
 	type EngineInternalRefs,
 	type EntityMeta,
+	type PendingBurstSpawnEntry,
 	type PendingRestore,
 	type Transform,
 } from './types';
@@ -45,20 +55,20 @@ export function EngineProvider({
 		initialSaveRef: useRef(initialSave),
 		initialSavePathRef: useRef(initialSavePath),
 		initialExtractDirRef: useRef(initialExtractDir),
-		projectLoaded2dMetaRef: useRef<import('@shared-types').ProjectLoaded2dPayload | null>(null),
-		projectLoaded3dMetaRef: useRef<import('@shared-types').ProjectLoaded3dPayload | null>(null),
+		projectLoaded2dMetaRef: useRef<ProjectLoaded2dPayload | null>(null),
+		projectLoaded3dMetaRef: useRef<ProjectLoaded3dPayload | null>(null),
 		entityTransformsRef: useRef<Record<number, Transform>>({}),
 		entityMetaRef: useRef<Record<number, EntityMeta>>({}),
 		pendingRestoresRef: useRef<Map<string, PendingRestore[]>>(new Map()),
 		playerEntityIdRef: useRef<number | null>(null),
 		editorCameraEntityIdRef: useRef<number | null>(null),
-		playCharacterViewRef: useRef<import('@shared-types').SavedPlayerTransform | null>(null),
-		pendingPlayCharacterViewRef: useRef<import('@shared-types').SavedPlayerTransform | null>(null),
+		playCharacterViewRef: useRef<SavedPlayerTransform | null>(null),
+		pendingPlayCharacterViewRef: useRef<SavedPlayerTransform | null>(null),
 		pendingModelPathRef: useRef<string | null>(null),
 		pendingSpawnKindRef: useRef<EntityMeta['kind'] | null>(null),
-		pendingSpawnCategoryRef: useRef<import('@shared-types').EntityCategory | null>(null),
-		pendingModelLoadQueueRef: useRef<Array<{ modelPath: string; pending: import('./types').PendingRestore }>>([]),
-		pendingBurstSpawnRestoreRef: useRef<import('./types').PendingRestore[]>([]),
+		pendingSpawnCategoryRef: useRef<EntityCategory | null>(null),
+		pendingModelLoadQueueRef: useRef<Array<{ modelPath: string; pending: PendingRestore }>>([]),
+		pendingBurstSpawnRestoreRef: useRef<PendingBurstSpawnEntry[]>([]),
 		camera2dRef: useRef<Camera2dState | null>(null),
 		mainPlayerHandled: useRef(false),
 		playerRemoved: useRef(false),
@@ -67,10 +77,10 @@ export function EngineProvider({
 		pivotEditListenerRef: useRef<((framePath: string, px: number, py: number) => void) | null>(null),
 		quickBuildClickListenerRef: useRef<((x: number, y: number, z: number, fitToGrid: boolean, scale?: [number, number, number]) => void) | null>(null),
 		pendingEventsRef: useRef<Map<string, { resolve: (value: any) => void }>>(new Map()),
-		pendingImportSceneRef: useRef<import('@shared-types').SavedScene | null>(null),
+		pendingImportSceneRef: useRef<SavedScene | null>(null),
 		sceneImportInProgressRef: useRef(false),
 		modelReplaceInProgressRef: useRef(false),
-		modelLoadOverlayKindRef: useRef<import('./hooks/sceneImportOverlay').ModelLoadOverlayKind | null>(null),
+		modelLoadOverlayKindRef: useRef<ModelLoadOverlayKind | null>(null),
 		modelAssetPreloadPendingRef: useRef(0),
 		sceneBurstLoadInProgressRef: useRef(false),
 		sceneBurstPendingColliderCountRef: useRef(0),
@@ -80,8 +90,8 @@ export function EngineProvider({
 		engineBootIpcSeenRef: useRef(0),
 		engineBootFinishedRef: useRef(false),
 		blueprintsRef: useRef([]),
-		modelsRef: useRef<import('@shared-types').ModelInfo[]>([]),
-		updateEntityTransformRef: useRef((_id: number, _patch: Partial<import('./types').Transform>) => {}),
+		modelsRef: useRef<ModelInfo[]>([]),
+		updateEntityTransformRef: useRef((_id: number, _patch: Partial<Transform>) => {}),
 	};
 
 	const addLog = (text: string, isError = false) => {

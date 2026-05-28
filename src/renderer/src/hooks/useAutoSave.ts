@@ -34,6 +34,7 @@ export function useAutoSave({
     blueprints,
     sounds,
     backgrounds,
+    models,
   } = useContextEngine();
   const { locale } = useLanguage();
   const [hasSavedOnce, setHasSavedOnce] = useState(Boolean(initialSavePath));
@@ -68,6 +69,7 @@ export function useAutoSave({
         blueprints,
         sounds,
         backgrounds,
+        models,
         entityMeta: entityMetaRef.current,
         initialGameStyle: initialSave?.gameStyle,
       });
@@ -83,6 +85,7 @@ export function useAutoSave({
     blueprints,
     sounds,
     backgrounds,
+    models,
     locale,
   ]);
 

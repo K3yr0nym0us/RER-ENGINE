@@ -165,6 +165,8 @@ pub struct State {
     pub(crate) model_preload_rx: crate::config_3d::static_model_cache::ModelPreloadRx,
     pub(crate) model_preload_tx: crate::config_3d::static_model_cache::ModelPreloadTx,
     pub(crate) model_preload_inflight: std::collections::HashSet<String>,
+    pub(crate) model_preload_gpu_queue:
+        Vec<crate::config_3d::static_model_cache::PendingGpuModelPreload>,
     pub(crate) pending_load_models: Vec<crate::config_3d::static_model_cache::PendingLoadModel>,
     pub(crate) pending_entity_model_replaces:
         Vec<crate::config_3d::static_model_cache::PendingEntityModelReplace>,

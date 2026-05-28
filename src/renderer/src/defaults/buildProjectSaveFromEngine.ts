@@ -10,6 +10,7 @@ import type {
 	SavedScene,
 	SoundInfo,
 	BackgroundInfo,
+	ModelInfo
 } from '@shared-types';
 import type { EntityMeta } from '../context/useContextEngine/types';
 import type { SavedAnimation } from '@shared-types';
@@ -23,7 +24,7 @@ export function requestEngineSaveSnapshot(): Promise<EngineSaveSceneSnapshot> {
 		const onEngineEvent = (event: { event: string; [key: string]: unknown }) => {
 			if (event.event === 'save_snapshot_ready') {
 				cleanup();
-				resolve((event as { scene: EngineSaveSceneSnapshot }).scene);
+				resolve((event as unknown as { scene: EngineSaveSceneSnapshot }).scene);
 			}
 			if (event.event === 'error') {
 				cleanup();
@@ -169,6 +170,7 @@ export interface BuildProjectSaveOptions {
 	sounds: SoundInfo[]
 	backgrounds: BackgroundInfo[]
 	entityMeta: Record<number, EntityMeta>
+	models: ModelInfo[]
 	initialGameStyle?: GameStyle
 }
 
@@ -185,6 +187,7 @@ export async function buildProjectSaveFromEngineSnapshot(
 		sounds,
 		backgrounds,
 		entityMeta,
+		models,
 		initialGameStyle,
 	} = options;
 
@@ -199,6 +202,11 @@ export async function buildProjectSaveFromEngineSnapshot(
 	}
 
 	const activeScene = engineSceneToSavedScene(engineScene, activeSceneId, activeSceneName, entityMeta);
+	const modelsByPath = new Map(models.map((m) => [m.path, m]));
+	activeScene.models = (activeScene.models ?? []).map((m) => {
+		const known = modelsByPath.get(m.path);
+		return known?.category ? { ...m, category: known.category } : m;
+	});
 
 	let scenes: SavedScene[] = [activeScene];
 

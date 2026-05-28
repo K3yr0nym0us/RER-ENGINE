@@ -847,7 +847,7 @@ fn apply_full_entity_restore(
 }
 
 fn ensure_model_cached(state: &mut State, path: &str) -> bool {
-    state.poll_model_preloads();
+    state.poll_and_advance_model_preloads(64);
     match state.ensure_static_model_cached(path) {
         Ok(()) => true,
         Err(err) => {
@@ -970,7 +970,7 @@ fn kickoff_preload_models_for_save(
         state.start_model_preload(key, label, warm_play);
         started += 1;
     }
-    state.poll_model_preloads();
+    state.poll_and_advance_model_preloads(64);
     if started == 0 {
         log::info!("[load_proyect] Modelos 3D ya en caché, sin precarga nueva");
     }
@@ -1182,7 +1182,7 @@ fn apply_loaded_proyect_3d(state: &mut State, project: &ProjectSaveData) -> Resu
     let mut model_load_queue: Vec<(String, PendingRestore)> = Vec::new();
 
     for entity in &view.entities {
-        state.poll_model_preloads();
+        state.poll_and_advance_model_preloads(64);
         let transform = if is_3d_model_file_entity(entity) {
             resolve_saved_entity_transform(entity)
         } else {
@@ -1259,7 +1259,7 @@ fn apply_loaded_proyect_3d(state: &mut State, project: &ProjectSaveData) -> Resu
 
     if burst_load_planned {
         log::info!("[load_proyect] Instanciando modelos 3D (carga por lotes)…");
-        state.poll_model_preloads();
+        state.poll_and_advance_model_preloads(64);
         for model in &view.models {
             if !model.path.trim().is_empty() {
                 state
@@ -1278,7 +1278,7 @@ fn apply_loaded_proyect_3d(state: &mut State, project: &ProjectSaveData) -> Resu
         }
 
         for (path, pending) in model_load_queue {
-            state.poll_model_preloads();
+            state.poll_and_advance_model_preloads(64);
             if !ensure_model_cached(state, &path) {
                 continue;
             }

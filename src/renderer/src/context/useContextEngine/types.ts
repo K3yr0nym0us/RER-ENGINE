@@ -9,10 +9,14 @@ import {
 	type BluePrintEntry,
 	type DebugMetrics,
 	type EntityCategory,
+	type ModelCategory,
+	type ModelInfo,
 	type ProjectLoaded2dPayload,
+	type ProjectLoaded3dPayload,
 	type ProjectSaveData,
 	type SavedControlBindings,
 	type SavedPlayerTransform,
+	type SavedScene,
 	type SoundInfo,
 	type SpriteInfo,
 } from '@shared-types';
@@ -119,8 +123,8 @@ export interface EngineState {
 	animationPlaying: Map<number, boolean>
 	sprites: SpriteInfo[]
 	loadedSpritesInfo: Map<string, { name: string }>
-	models: import('@shared-types').ModelInfo[]
-	loadedModelsInfo: Map<string, { name: string }>
+	models: ModelInfo[]
+	loadedModelsInfo: Map<string, { name: string; category?: ModelCategory }>
 	sounds: SoundInfo[]
 	backgrounds: BackgroundInfo[]
 	debugMetrics: DebugMetrics | null
@@ -184,11 +188,19 @@ export type EngineAction =
 	| { type: 'ADD_SPRITE_INFO'; payload: { path: string; name: string } }
 	| { type: 'REMOVE_SPRITE_INFO'; payload: string }
 	| { type: 'SET_LOADED_SPRITES_INFO'; payload: Array<{ path: string; name: string }> }
-	| { type: 'ADD_MODEL_INFO'; payload: { path: string; name: string; loading?: boolean } }
+	| {
+		type: 'ADD_MODEL_INFO';
+		payload: {
+			path: string;
+			name: string;
+			loading?: boolean;
+			category?: ModelCategory;
+		}
+	}
 	| { type: 'SYNC_MODEL_PRELOAD'; payload: { path: string; name: string } }
 	| { type: 'MARK_MODEL_READY'; payload: { path: string; name: string } }
 	| { type: 'REMOVE_MODEL_INFO'; payload: string }
-	| { type: 'SET_MODELS'; payload: import('@shared-types').ModelInfo[] }
+	| { type: 'SET_MODELS'; payload: ModelInfo[] }
 	| { type: 'SET_DEBUG_MODE'; payload: boolean }
 	| { type: 'SET_DEBUG_METRICS'; payload: DebugMetrics }
 	| { type: 'ADD_BLUEPRINT'; payload: BluePrintEntry }
@@ -213,7 +225,7 @@ export type EngineAction =
 			}
 	  }
 	| { type: 'APPLY_PROJECT_LOADED_2D'; payload: ProjectLoaded2dPayload }
-	| { type: 'APPLY_PROJECT_LOADED_3D'; payload: import('@shared-types').ProjectLoaded3dPayload };
+	| { type: 'APPLY_PROJECT_LOADED_3D'; payload: ProjectLoaded3dPayload };
 
 export const initialState: EngineState = {
 	engineReady: false,
@@ -416,9 +428,13 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 				path: nextAction.payload.path,
 				name: nextAction.payload.name,
 				...(nextAction.payload.loading ? { loading: true } : {}),
+				...(nextAction.payload.category ? { category: nextAction.payload.category } : {}),
 			};
 			const nextMap = new Map(prevState.loadedModelsInfo);
-			nextMap.set(entry.path, { name: entry.name });
+			nextMap.set(entry.path, {
+				name: entry.name,
+				...(entry.category ? { category: entry.category } : {}),
+			});
 			const exists = prevState.models.some((m) => m.path === entry.path);
 			return {
 				...prevState,
@@ -432,27 +448,45 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 		},
 		SYNC_MODEL_PRELOAD: (prevState, nextAction) => {
 			const { path, name } = nextAction.payload;
+			const prevInfo = prevState.loadedModelsInfo.get(path);
 			let synced = false;
 			const models = prevState.models.map((m) => {
 				if (!synced && m.loading && m.name === name) {
 					synced = true;
-					return { path, name, loading: true };
+					return {
+						path,
+						name,
+						loading: true,
+						...(m.category ? { category: m.category } : {}),
+					};
 				}
 				return m;
 			});
 			const nextMap = new Map(prevState.loadedModelsInfo);
-			nextMap.set(path, { name });
+			nextMap.set(path, {
+				name,
+				...(prevInfo?.category ? { category: prevInfo.category } : {}),
+			});
 			return { ...prevState, models, loadedModelsInfo: nextMap };
 		},
 		MARK_MODEL_READY: (prevState, nextAction) => {
 			const { path, name } = nextAction.payload;
+			const prevInfo = prevState.loadedModelsInfo.get(path);
 			const models = prevState.models.map((m) =>
 				m.path === path || (m.loading && m.name === name)
-					? { path, name, loading: false }
+					? {
+						path,
+						name,
+						loading: false,
+						...(m.category ? { category: m.category } : {}),
+					}
 					: m,
 			);
 			const nextMap = new Map(prevState.loadedModelsInfo);
-			nextMap.set(path, { name });
+			nextMap.set(path, {
+				name,
+				...(prevInfo?.category ? { category: prevInfo.category } : {}),
+			});
 			return { ...prevState, models, loadedModelsInfo: nextMap };
 		},
 		REMOVE_MODEL_INFO: (prevState, nextAction) => {
@@ -464,7 +498,13 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 				models: prevState.models.filter((m) => m.path !== nextAction.payload),
 			};
 		},
-		SET_MODELS: (prevState, nextAction) => ({ ...prevState, models: nextAction.payload }),
+		SET_MODELS: (prevState, nextAction) => {
+			const models = nextAction.payload.map((m) => {
+				const known = prevState.loadedModelsInfo.get(m.path);
+				return known?.category ? { ...m, category: known.category } : m;
+			});
+			return { ...prevState, models };
+		},
 		SET_DEBUG_MODE: (prevState, nextAction) => ({ ...prevState, debugMode: nextAction.payload }),
 		SET_DEBUG_METRICS: (prevState, nextAction) => ({ ...prevState, debugMetrics: nextAction.payload }),
 		ADD_BLUEPRINT: (prevState, nextAction) => ({ ...prevState, blueprints: [...prevState.blueprints, nextAction.payload] }),
@@ -510,9 +550,13 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 		},
 		APPLY_PROJECT_LOADED_3D: (prevState, nextAction) => {
 			const p = nextAction.payload;
-			const modelMap = new Map<string, { name: string }>();
+			const modelMap = new Map<string, { name: string; category?: ModelCategory }>();
 			for (const m of p.models) {
-				modelMap.set(m.path, { name: m.name });
+				const known = prevState.loadedModelsInfo.get(m.path);
+				modelMap.set(m.path, {
+					name: m.name,
+					...(known?.category ? { category: known.category } : {}),
+				});
 			}
 			return {
 				...prevState,
@@ -616,14 +660,14 @@ export interface EngineInternalRefs {
 	initialSavePathRef: MutableRefObject<string | null | undefined>
 	initialExtractDirRef: MutableRefObject<string | null | undefined>
 	projectLoaded2dMetaRef: MutableRefObject<ProjectLoaded2dPayload | null>
-	projectLoaded3dMetaRef: MutableRefObject<import('@shared-types').ProjectLoaded3dPayload | null>
+	projectLoaded3dMetaRef: MutableRefObject<ProjectLoaded3dPayload | null>
 	entityTransformsRef: MutableRefObject<Record<number, Transform>>
 	entityMetaRef: MutableRefObject<Record<number, EntityMeta>>
 	pendingRestoresRef: MutableRefObject<Map<string, PendingRestore[]>>
 	playerEntityIdRef: MutableRefObject<number | null>
 	editorCameraEntityIdRef: MutableRefObject<number | null>
-	playCharacterViewRef: MutableRefObject<import('@shared-types').SavedPlayerTransform | null>
-	pendingPlayCharacterViewRef: MutableRefObject<import('@shared-types').SavedPlayerTransform | null>
+	playCharacterViewRef: MutableRefObject<SavedPlayerTransform | null>
+	pendingPlayCharacterViewRef: MutableRefObject<SavedPlayerTransform | null>
 	pendingModelPathRef: MutableRefObject<string | null>
 	pendingSpawnKindRef: MutableRefObject<EntityMeta['kind'] | null>
 	pendingSpawnCategoryRef: MutableRefObject<EntityCategory | null>
@@ -639,12 +683,12 @@ export interface EngineInternalRefs {
 	quickBuildClickListenerRef: MutableRefObject<((x: number, y: number, z: number, fitToGrid: boolean, scale?: [number, number, number]) => void) | null>
 	pendingEventsRef: MutableRefObject<Map<string, { resolve: (value: any) => void }>>
 	blueprintsRef: MutableRefObject<BluePrintEntry[]>
-	modelsRef: MutableRefObject<import('@shared-types').ModelInfo[]>
+	modelsRef: MutableRefObject<ModelInfo[]>
 	updateEntityTransformRef: MutableRefObject<
 		(id: number, patch: Partial<Transform>) => void
 	>
 	/** Escena 2D pendiente de sincronizar tras `scene_imported`. */
-	pendingImportSceneRef: MutableRefObject<import('@shared-types').SavedScene | null>
+	pendingImportSceneRef: MutableRefObject<SavedScene | null>
 	/** Evita duplicar estado React mientras el motor emite eventos de carga por entidad. */
 	sceneImportInProgressRef: MutableRefObject<boolean>
 	/** Overlay mientras el motor ejecuta `replace_entity_model` (GLB/FBX). */
@@ -668,12 +712,12 @@ export interface EngineInternalRefs {
 
 export interface EngineContextValue extends EngineState {
 	dispatch: (action: EngineAction) => void
-	pendingImportSceneRef: MutableRefObject<import('@shared-types').SavedScene | null>
+	pendingImportSceneRef: MutableRefObject<SavedScene | null>
 	sceneImportInProgressRef: MutableRefObject<boolean>
 	modelReplaceInProgressRef: MutableRefObject<boolean>
-	modelLoadOverlayKindRef: MutableRefObject<import('./hooks/sceneImportOverlay').ModelLoadOverlayKind | null>
+	modelLoadOverlayKindRef: MutableRefObject<ModelLoadOverlayKind | null>
 	modelAssetPreloadPendingRef: MutableRefObject<number>
-	modelsRef: MutableRefObject<import('@shared-types').ModelInfo[]>
+	modelsRef: MutableRefObject<ModelInfo[]>
 	sceneBurstLoadInProgressRef: MutableRefObject<boolean>
 	sceneBurstPendingColliderCountRef: MutableRefObject<number>
 	sceneBurstPendingOpsRef: MutableRefObject<number>
@@ -692,11 +736,15 @@ export interface EngineContextValue extends EngineState {
 	mainPlayerHandled: MutableRefObject<boolean>
 	camera2dRef: MutableRefObject<Camera2dState | null>
 	projectLoaded2dMetaRef: MutableRefObject<ProjectLoaded2dPayload | null>
-	projectLoaded3dMetaRef: MutableRefObject<import('@shared-types').ProjectLoaded3dPayload | null>
+	projectLoaded3dMetaRef: MutableRefObject<ProjectLoaded3dPayload | null>
 	send: (cmd: object) => void
 	sendAsync: <T>(cmd: object, waitForEvent: string, onStart?: () => void) => Promise<T>
 	setAnimationPlaying: (entityId: number, playing: boolean) => void
-	loadModelAsset: (path: string, name: string) => void
+	loadModelAsset: (
+		path: string,
+		name: string,
+		category?: ModelCategory,
+	) => void
 	spawnModel: (path: string, kind?: EntityMeta['kind'], category?: EntityCategory) => void
 	replaceEntityModel: (entityId: number, modelPath: string) => void
 	removeModelAsset: (path: string) => void

@@ -784,6 +784,7 @@ impl State {
             model_preload_rx,
             model_preload_tx,
             model_preload_inflight: HashSet::new(),
+            model_preload_gpu_queue: Vec::new(),
             pending_load_models: Vec::new(),
             pending_entity_model_replaces: Vec::new(),
             sound_store: HashMap::new(),

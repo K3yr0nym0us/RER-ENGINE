@@ -1,7 +1,16 @@
 import type { Dispatch } from 'react';
-import type { BluePrintEntry, EngineAction, EngineInternalRefs, EntityMeta, EntityScripts, Transform } from '../types';
+import type { ModelCategory } from '@shared-types';
+import type {
+	BluePrintEntry,
+	EngineAction,
+	EngineInternalRefs,
+	EntityMeta,
+	EntityScripts,
+	Transform,
+	WorldConfig,
+} from '../types';
 import { buildPlayAnimationFrameCmd } from './applyPendingRestoreToEngine';
-import { beginModelReplaceLoading } from './sceneImportOverlay';
+import { beginModelReplaceLoading, endModelReplaceLoading } from './sceneImportOverlay';
 
 interface CreateEngineActionsParams {
 	dispatch: Dispatch<EngineAction>
@@ -59,9 +68,29 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 		dispatch({ type: 'SET_ANIMATION_PLAYING', payload: { entityId, playing: false } });
 	};
 
-	const loadModelAsset = (path: string, name: string) => {
+	const loadModelAsset = (
+		path: string,
+		name: string,
+		category?: ModelCategory,
+	) => {
+		// Si quedó overlay de replace por una operación previa, no debe bloquear
+		// la carga de recursos en Models (debe seguir interactivo).
+		if (
+			refs.modelReplaceInProgressRef.current
+			&& !refs.sceneImportInProgressRef.current
+			&& !refs.sceneBurstLoadInProgressRef.current
+		) {
+			endModelReplaceLoading(
+				dispatch,
+				refs.modelReplaceInProgressRef,
+				refs.sceneImportInProgressRef,
+				refs.sceneBurstLoadInProgressRef,
+				reportBounds,
+				refs.modelLoadOverlayKindRef,
+			);
+		}
 		send({ cmd: 'load_model_asset', path, name });
-		dispatch({ type: 'ADD_MODEL_INFO', payload: { path, name, loading: true } });
+		dispatch({ type: 'ADD_MODEL_INFO', payload: { path, name, loading: true, category } });
 	};
 
 	const isModelPreloadReady = (path: string): boolean => {
@@ -115,14 +144,14 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 			type: 'SET_ANIMATION_PLAYING',
 			payload: { entityId, playing: false },
 		});
-		if (!isModelPreloadReady(modelPath)) {
-			beginModelReplaceLoading(
-				dispatch,
-				refs.modelReplaceInProgressRef,
-				'model',
-				refs.modelLoadOverlayKindRef,
-			);
-		}
+		// Mostrar overlay siempre durante replace para evitar parpadeo gris del viewport
+		// cuando la operación bloquea el hilo del motor, incluso con modelo ya precargado.
+		beginModelReplaceLoading(
+			dispatch,
+			refs.modelReplaceInProgressRef,
+			'model',
+			refs.modelLoadOverlayKindRef,
+		);
 		send({ cmd: 'replace_entity_model', id: entityId, path: modelPath });
 	};
 
@@ -171,7 +200,7 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 		intensity?: number;
 		shadowDarkness?: number;
 	}) => {
-		const payload: Partial<import('../types').WorldConfig> = {};
+		const payload: Partial<WorldConfig> = {};
 		if (settings.ambient !== undefined) payload.lightAmbient = settings.ambient;
 		if (settings.intensity !== undefined) payload.lightIntensity = settings.intensity;
 		if (settings.shadowDarkness !== undefined) payload.shadowDarkness = settings.shadowDarkness;

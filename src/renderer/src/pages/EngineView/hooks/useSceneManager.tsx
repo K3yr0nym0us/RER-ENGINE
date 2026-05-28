@@ -1,6 +1,12 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
-import type { GameStyle, ProjectSaveData, SavedScene, SavedWorldConfig } from '@shared-types';
+import type {
+  GameStyle,
+  ModelCategory,
+  ProjectSaveData,
+  SavedScene,
+  SavedWorldConfig,
+} from '@shared-types';
 import {
   DEFAULT_GRAVITY_MAGNITUDE,
   DEFAULT_LIGHT_AMBIENT,
@@ -57,6 +63,25 @@ const DEFAULT_WORLD: SavedWorldConfig = {
 };
 
 const SceneManagerContext = createContext<SceneManagerContextValue | null>(null);
+
+function inferModelCategoryFromScene(scene: SavedScene, path: string): ModelCategory | undefined {
+  const key = path.toLowerCase();
+  if (scene.playerTransform?.visual_model_path?.toLowerCase() === key) {
+    return 'character';
+  }
+  for (const entity of scene.entities) {
+    const entityPath = (entity.path ?? '').toLowerCase();
+    const visualPath = (entity.visual_model_path ?? '').toLowerCase();
+    if (entity.kind === 'character' && (entityPath === key || visualPath === key)) {
+      return 'character';
+    }
+    if (entity.kind === 'model' && entityPath === key) {
+      if (entity.entity_category === 'environment') return 'environment';
+      return 'object';
+    }
+  }
+  return undefined;
+}
 
 function buildInitialSceneState(initialSave?: ProjectSaveData | null) {
   const save = initialSave;
@@ -394,7 +419,8 @@ export function SceneManagerProvider({
     }
 
     for (const model of scene.models ?? []) {
-      loadModelAsset(model.path, model.name);
+      const category = model.category ?? inferModelCategoryFromScene(scene, model.path);
+      loadModelAsset(model.path, model.name, category);
     }
 
     for (const entity of scene.entities) {
@@ -552,7 +578,7 @@ export function SceneManagerProvider({
       if (extraPaths.size > 0) {
         trackSceneBurstModelPreloads({ sceneBurstPendingOpsRef }, extraPaths.size);
         for (const [path, name] of extraPaths) {
-          loadModelAsset(path, name);
+          loadModelAsset(path, name, inferModelCategoryFromScene(scene, path));
         }
       }
     }

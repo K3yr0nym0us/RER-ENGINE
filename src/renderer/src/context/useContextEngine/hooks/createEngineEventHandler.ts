@@ -6,6 +6,7 @@ import type {
 	Camera2dUpdated,
 	CharacterLoaded,
 	DebugMetrics,
+	EntityRemoved,
 	EntitySelected,
 	PhysicsChanged,
 	PivotSelected,
@@ -82,7 +83,7 @@ import {
 	collectUncachedBurstModelPaths,
 	hasQueuedCachedModelSpawns,
 } from './sceneImportOverlay';
-import type { EngineAction, EngineInternalRefs, PendingRestore, Transform } from '../types';
+import type { EngineAction, EngineInternalRefs, EntityMeta, PendingRestore, Transform } from '../types';
 
 type RuntimeEngineEvent = {
 	event: string
@@ -583,7 +584,7 @@ export function createEngineEventHandler({
 					: null;
 			if (burstPendingSpawn) {
 				const pending = burstPendingSpawn;
-				const kind = (loaded.kind ?? 'model') as import('../types').EntityMeta['kind'];
+				const kind = (loaded.kind ?? 'model') as EntityMeta['kind'];
 				const isEnvironment = pending.entityCategory === 'environment';
 				refs.entityMetaRef.current[id] = {
 					kind,
@@ -627,7 +628,7 @@ export function createEngineEventHandler({
 			}
 
 			if (loaded.blueprint_id && !refs.sceneBurstLoadInProgressRef.current) {
-				const kind = (loaded.kind ?? 'model') as import('../types').EntityMeta['kind'];
+				const kind = (loaded.kind ?? 'model') as EntityMeta['kind'];
 				refs.entityMetaRef.current[id] = {
 					kind,
 					path: loaded.path ?? '',
@@ -703,17 +704,6 @@ export function createEngineEventHandler({
 				applyPendingRestoreMeta(refs, id, pending);
 				if (groundQueue.length === 0) refs.pendingRestoresRef.current.delete('[Ground]');
 				burstHandled = true;
-			} else if (
-				loaded.name?.toLowerCase() === 'ground'
-				&& !refs.entityMetaRef.current[id]
-			) {
-				refs.entityMetaRef.current[id] = {
-					kind: 'model',
-					path: '[Ground]',
-					name: 'Ground',
-					physicsEnabled: false,
-					physicsType: 'static',
-				};
 			} else {
 			const editorBoxQueue = refs.pendingRestoresRef.current.get('[EditorBox]');
 			if (editorBoxQueue && editorBoxQueue.length > 0) {
@@ -733,6 +723,21 @@ export function createEngineEventHandler({
 				if (editorBoxQueue.length === 0) refs.pendingRestoresRef.current.delete('[EditorBox]');
 				burstHandled = true;
 			} else {
+				// Fallback legacy: solo cuando no hay restores pendientes de save-load.
+				// Evita clasificar como [Ground] cajas/muros llamados "Ground".
+				if (
+					!burstActive
+					&& loaded.name?.toLowerCase() === 'ground'
+					&& !refs.entityMetaRef.current[id]
+				) {
+					refs.entityMetaRef.current[id] = {
+						kind: 'model',
+						path: '[Ground]',
+						name: 'Ground',
+						physicsEnabled: false,
+						physicsType: 'static',
+					};
+				}
 				const spawnModelPath = refs.pendingModelPathRef.current;
 				const spawnKind = refs.pendingSpawnKindRef.current ?? 'model';
 				const spawnCategory = refs.pendingSpawnCategoryRef.current;
@@ -1803,7 +1808,7 @@ export function createEngineEventHandler({
 		}
 
 		if (event.event === 'entity_removed') {
-			const e = event as unknown as import('@shared-types').EntityRemoved;
+			const e = event as unknown as EntityRemoved;
 			const removedKind = e.kind ?? refs.entityMetaRef.current[e.id]?.kind;
 			if (
 				e.points

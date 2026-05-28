@@ -91,6 +91,7 @@ export function isGroundPath(p: string | null | undefined): boolean {
 }
 
 export type EntityCategory = 'environment' | 'object'
+export type ModelCategory = EntityCategory | 'character'
 
 export function isPlayerEntity(
   id: number,
@@ -265,8 +266,8 @@ export interface SavedScene {
   playerTransform: SavedPlayerTransform | null
   camera2d:       { x: number; y: number; halfH: number } | null
   sprites:        Array<{ name: string; path: string }>
-  /** Modelos 3D precargados (ruta absoluta + nombre). */
-  models?:        Array<{ name: string; path: string }>
+  /** Modelos 3D precargados (ruta absoluta + nombre + categoría opcional). */
+  models?:        Array<{ name: string; path: string; category?: ModelCategory }>
 }
 
 export interface ProjectSaveData {
@@ -285,7 +286,7 @@ export interface ProjectSaveData {
   /** Sprites precargados en el proyecto (nombre -> ruta relativa). */
   sprites?:        Array<{ name: string; path: string }>
   /** Modelos 3D precargados en el proyecto. */
-  models?:         Array<{ name: string; path: string }>
+  models?:         Array<{ name: string; path: string; category?: ModelCategory }>
   /** Sonidos precargados en el proyecto. */
   sounds?:         Array<{ name: string; path: string }>
   /** Fondos precargados en el proyecto. */
@@ -313,7 +314,7 @@ export interface ProjectLoaded3dPayload {
   entityCount:   number
   scenes?:       Array<{ id: number; name: string }>
   language?:     string
-  models:        Array<{ name: string; path: string }>
+  models:        Array<{ name: string; path: string; category?: ModelCategory }>
   sounds:        Array<{ name: string; path: string }>
   backgrounds:   Array<{ name: string; path: string }>
   blueprints:    BluePrintEntry[]
@@ -456,7 +457,7 @@ export interface EngineSaveSceneSnapshot {
   player_transform?: SavedPlayerTransform | null
   camera2d?: { x: number; y: number; half_h: number } | null
   sprites: Array<{ name: string; path: string }>
-  models?: Array<{ name: string; path: string }>
+  models?: Array<{ name: string; path: string; category?: ModelCategory }>
   sounds: Array<{ name: string; path: string }>
   backgrounds: Array<{ name: string; path: string }>
 }
@@ -639,6 +640,8 @@ export interface ModelInfo {
   name: string
   /** true mientras el motor precarga en segundo plano */
   loading?: boolean
+  /** Categoría de uso en modales de entidades 3D. */
+  category?: ModelCategory
 }
 
 export interface SoundInfo {

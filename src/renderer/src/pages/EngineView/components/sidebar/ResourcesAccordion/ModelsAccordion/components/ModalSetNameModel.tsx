@@ -2,13 +2,15 @@ import { useRef } from 'react';
 import { useModal } from '@modal';
 import { useContextEngine } from '@engine';
 import { useTraslate } from '@hooks';
+import type { ModelCategory } from '@shared-types';
 
 interface ModalSetNameModelProps {
   path: string;
   autoName: string;
+  category: ModelCategory;
 }
 
-export default function ModalSetNameModel({ path, autoName }: ModalSetNameModelProps) {
+export default function ModalSetNameModel({ path, autoName, category }: ModalSetNameModelProps) {
   const { t } = useTraslate();
   const { loadModelAsset } = useContextEngine();
   const { closeModal } = useModal();
@@ -33,7 +35,7 @@ export default function ModalSetNameModel({ path, autoName }: ModalSetNameModelP
           type="button"
           onClick={() => {
             const name = nameRef.current?.value?.trim() || autoName;
-            loadModelAsset(path, name);
+            loadModelAsset(path, name, category);
             closeModal();
           }}
         >

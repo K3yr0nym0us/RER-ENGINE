@@ -3,8 +3,13 @@ import { Box } from 'react-bootstrap-icons';
 import ModalSetNameModel from './ModalSetNameModel';
 import { useModal } from '@modal';
 import { useTraslate } from '@hooks';
+import type { ModelCategory } from '@shared-types';
 
-export const BtnLoadModel = () => {
+interface BtnLoadModelProps {
+  category: ModelCategory;
+}
+
+export const BtnLoadModel = ({ category }: BtnLoadModelProps) => {
   const { t } = useTraslate();
   const { openModal } = useModal();
 
@@ -15,9 +20,9 @@ export const BtnLoadModel = () => {
     const autoName = base.replace(/\.[^/.]+$/, '');
     openModal({
       title: t('Assign name to model'),
-      body: <ModalSetNameModel path={path} autoName={autoName} />,
+      body: <ModalSetNameModel path={path} autoName={autoName} category={category} />,
     });
-  }, [openModal, t]);
+  }, [category, openModal, t]);
 
   return (
     <button

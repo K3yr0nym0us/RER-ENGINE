@@ -47,6 +47,7 @@ export function BtnCreateEntityFromModel({ intent }: Props) {
       title: t(config.titleKey),
       body: (
         <CreateEntityFromModelModalBody
+          intent={intent}
           onSpawn={(path) => {
             spawnModel(
               path,
