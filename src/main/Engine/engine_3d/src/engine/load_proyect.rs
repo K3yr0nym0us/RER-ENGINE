@@ -825,14 +825,7 @@ fn apply_full_entity_restore(
         skip_transform,
     );
 
-    let is_environment = pending.entity_category.as_deref() == Some("environment");
-    if is_environment {
-        state.handle_command(EngineCommand::SetPhysics {
-            id,
-            enabled: true,
-            body_type: "static".to_string(),
-        });
-    }
+    state.reconcile_entity_physics_with_mesh(id);
 
     apply_entity_scripts(state, id, pending.scripts.as_deref());
     apply_entity_animations(state, id, pending.animations.as_deref());
@@ -1350,6 +1343,10 @@ fn apply_loaded_proyect_3d(state: &mut State, project: &ProjectSaveData) -> Resu
         );
     } else {
         log::warn!("El manifest no trae playerTransform; spawn por defecto");
+    }
+
+    for id in state.world.entities().to_vec() {
+        state.reconcile_entity_physics_with_mesh(id);
     }
 
     let done_msg = format!(

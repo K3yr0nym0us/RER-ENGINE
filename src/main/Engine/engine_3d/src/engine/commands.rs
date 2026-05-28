@@ -1071,6 +1071,7 @@ impl State {
                     omit_scale,
                     skip_transform,
                 );
+                self.reconcile_entity_physics_with_mesh(id);
             }
             EngineCommand::ReloadAsset { path } => {
                 log::info!("[IPC] ReloadAsset: {}", path);

@@ -226,6 +226,25 @@ impl State {
         self.set_entity_physics_from_mesh_aabb(id, &body_type);
     }
 
+    /// Tras spawn/restore/carga: entornos siempre con física estática; el resto solo si ya tenía collider.
+    pub(crate) fn reconcile_entity_physics_with_mesh(&mut self, id: EntityId) {
+        if self.play_character_entity == Some(id) {
+            return;
+        }
+        let is_environment = self
+            .save_registry
+            .meta
+            .get(&id)
+            .map(|m| m.entity_category.as_deref() == Some("environment"))
+            .unwrap_or(false);
+        if is_environment {
+            self.set_entity_physics_from_mesh_aabb(id, "static");
+        } else if self.physics.has_physics(id) {
+            let body_type = self.physics.get_body_type(id).to_string();
+            self.set_entity_physics_from_mesh_aabb(id, &body_type);
+        }
+    }
+
     /// AABB en mundo para hover/click: misma caja que Rapier (`local_bounds` + transform).
     fn entity_world_pick_aabb(&self, id: EntityId, transform: &Transform) -> (GlamVec3, GlamVec3) {
         let model_path = self
