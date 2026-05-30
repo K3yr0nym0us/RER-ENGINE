@@ -12,16 +12,6 @@ use crate::engine::State;
 #[derive(Debug)]
 pub(crate) enum ActiveTool {
     None,
-    #[allow(dead_code)]
-    DrawCollider {
-        points_world: Vec<[f32; 2]>,
-        cursor_world: Option<[f32; 2]>,
-    },
-    #[allow(dead_code)]
-    DrawExecutionArea {
-        points_world: Vec<[f32; 2]>,
-        cursor_world: Option<[f32; 2]>,
-    },
     QuickBuildPlace {
         cursor_world: Option<[f32; 3]>,
     },
@@ -41,12 +31,6 @@ pub(crate) struct ScenarioMarker {
     #[allow(dead_code)]
     pub path: String,
 }
-
-#[derive(Debug, Clone)]
-pub(crate) struct ColliderMarker;
-
-#[derive(Debug, Clone)]
-pub(crate) struct ExecutionAreaMarker;
 
 impl State {
     pub(crate) fn setup_2d_platformer(&mut self) {

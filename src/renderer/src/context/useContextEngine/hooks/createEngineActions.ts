@@ -89,7 +89,12 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 				refs.modelLoadOverlayKindRef,
 			);
 		}
-		send({ cmd: 'load_model_asset', path, name });
+		send({
+			cmd: 'load_model_asset',
+			path,
+			name,
+			...(category ? { category } : {}),
+		});
 		dispatch({ type: 'ADD_MODEL_INFO', payload: { path, name, loading: true, category } });
 	};
 

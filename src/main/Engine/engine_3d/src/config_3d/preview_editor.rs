@@ -1,6 +1,6 @@
 use glam::{Quat, Vec3};
 
-use crate::config_3d::character_anchor::{center_from_feet, feet_from_transform};
+use crate::config_3d::character_anchor::center_from_feet;
 use crate::ecs::{EntityId, Transform};
 use crate::engine::State;
 use crate::ipc::PlayCameraFollowMode;
@@ -101,22 +101,17 @@ impl State {
 
             if let Some(id) = self.play_character_entity {
                 let snap = self.preview_entity_transform_snapshots.get(&id).copied();
+                let feet = self.play_character_feet_position();
+                let feet_origin = self.play_character_mesh_origin_at_feet();
+                let mesh_ext = self.play_character_mesh_extents;
                 if let (Some(snap), Some(t)) = (snap, self.world.get_mut::<Transform>(id)) {
-                    let feet = if self.play_character_mesh_extents.is_some() {
-                        t.position
-                    } else {
-                        feet_from_transform(
-                            t.position,
-                            t.scale.y,
-                            t.rotation,
-                            None,
-                        )
-                    };
                     t.scale = snap.scale;
-                    t.position = if self.play_character_mesh_extents.is_some() {
+                    t.position = if feet_origin {
                         feet
+                    } else if let Some(ext) = mesh_ext {
+                        center_from_feet(feet, snap.scale, t.rotation, Some(&ext))
                     } else {
-                        center_from_feet(feet, snap.scale.y, t.rotation, None)
+                        center_from_feet(feet, snap.scale, t.rotation, None)
                     };
                     self.editor_orbit_target = t.position;
                 } else if let Some(t) = self.world.get::<Transform>(id) {

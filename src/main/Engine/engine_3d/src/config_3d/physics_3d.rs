@@ -258,6 +258,27 @@ impl PhysicsWorld {
         self.entity_colliders.get(&entity).copied()
     }
 
+    pub(crate) fn entity_collider_entries(&self) -> impl Iterator<Item = (EntityId, ColliderHandle)> + '_ {
+        self.entity_colliders
+            .iter()
+            .map(|(&id, &h)| (id, h))
+    }
+
+    /// AABB mundial del collider Rapier (wireframe de debug en editor).
+    pub(crate) fn collider_world_aabb(
+        &self,
+        handle: ColliderHandle,
+    ) -> Option<(glam::Vec3, glam::Vec3)> {
+        let collider = self.colliders.get(handle)?;
+        let aabb = collider.compute_aabb();
+        let c = aabb.center();
+        let h = aabb.half_extents();
+        Some((
+            glam::Vec3::new(c.x, c.y, c.z),
+            glam::Vec3::new(h.x.max(0.01), h.y.max(0.01), h.z.max(0.01)),
+        ))
+    }
+
     fn query_filter(exclude_collider: Option<ColliderHandle>) -> QueryFilter<'static> {
         let mut filter = QueryFilter::default();
         if let Some(handle) = exclude_collider {

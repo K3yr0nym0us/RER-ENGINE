@@ -1,6 +1,5 @@
 use glam::{Quat, Vec3 as GlamVec3};
 
-use crate::config_compat::{ColliderMarker, ExecutionAreaMarker};
 use crate::ecs::{MeshComponent, NonSelectable, Transform};
 use crate::ipc::{send_event, EngineEvent};
 
@@ -49,8 +48,6 @@ impl State {
             physics_half,
             in_character_list: self.character_entities.contains(&id),
             in_scenario_list: self.scenario_entities.contains(&id),
-            in_collider_list: self.collider_entities.contains(&id),
-            in_execution_list: self.execution_area_entities.contains(&id),
         })
     }
 
@@ -93,18 +90,6 @@ impl State {
         if snapshot.in_scenario_list && !self.scenario_entities.contains(&snapshot.id) {
             self.scenario_entities.push(snapshot.id);
         }
-        if snapshot.in_collider_list {
-            if !self.collider_entities.contains(&snapshot.id) {
-                self.collider_entities.push(snapshot.id);
-            }
-            self.world.insert(snapshot.id, ColliderMarker {});
-        }
-        if snapshot.in_execution_list {
-            if !self.execution_area_entities.contains(&snapshot.id) {
-                self.execution_area_entities.push(snapshot.id);
-            }
-            self.world.insert(snapshot.id, ExecutionAreaMarker {});
-        }
 
         self.save_registry
             .register_meta(snapshot.id, snapshot.save_meta.clone());
@@ -132,23 +117,6 @@ impl State {
                     id,
                     path: snapshot.save_meta.path.clone(),
                 });
-            }
-            "collider" => {
-                if let Some(points) = snapshot.save_meta.points {
-                    send_event(&EngineEvent::ColliderCreated { id, points });
-                } else {
-                    self.send_model_loaded_event(id, &snapshot.name);
-                }
-            }
-            "execution_area" => {
-                if let Some(points) = snapshot.save_meta.points {
-                    send_event(&EngineEvent::ExecutionAreaCreated { id, points });
-                } else {
-                    self.send_model_loaded_event(id, &snapshot.name);
-                }
-            }
-            "directional_light" => {
-                self.send_model_loaded_event(id, &snapshot.name);
             }
             _ => {
                 self.send_model_loaded_event(id, &snapshot.name);

@@ -26,8 +26,6 @@ const ENTITY_MARKERS: &[&str] = &[
     "[Player]",
     "[EditorCamera]",
     "[Sun]",
-    "[Colisionador]",
-    "[ExecutionArea]",
 ];
 
 // ── Manifest: nombres de campo = claves JSON en `src/shared-types/types.ts`. ─
@@ -45,9 +43,13 @@ struct ProjectSaveData {
     #[serde(default)]
     backgroundPath: Option<String>,
     #[serde(default)]
-    entities: Vec<SavedEntity>,
+    entities: Vec<SavedEntity3D>,
     #[serde(default)]
-    playerTransform: Option<SavedPlayerTransform>,
+    player: Option<SavedEntity3D>,
+    #[serde(default)]
+    config_camera: Option<SavedConfigCamera>,
+    #[serde(default)]
+    config_editor_camera: Option<SavedConfigEditorCamera>,
     #[serde(default)]
     sprites: Vec<NamedPath>,
     #[serde(default)]
@@ -89,37 +91,37 @@ struct SavedWorldConfig {
 struct NamedPath {
     name: String,
     path: String,
+    #[serde(default)]
+    category: Option<String>,
 }
 
 #[allow(non_snake_case)]
 #[derive(Debug, Deserialize, Clone, Serialize)]
-struct SavedPlayerTransform {
-    position: [f32; 3],
+struct SavedConfigCamera {
     #[serde(default)]
     camera_eye_position: Option<[f32; 3]>,
     #[serde(default)]
     fps_camera_yaw: Option<f32>,
     #[serde(default)]
     fps_camera_pitch: Option<f32>,
-    scale: [f32; 3],
     #[serde(default)]
     yaw: Option<f32>,
     #[serde(default)]
     pitch: Option<f32>,
-    #[serde(default)]
-    visual_model_path: Option<String>,
     #[serde(default)]
     fov_y: Option<f32>,
     #[serde(default)]
     frustum_distance: Option<f32>,
     #[serde(default)]
     camera_follow_mode: Option<String>,
+}
+
+#[allow(non_snake_case)]
+#[derive(Debug, Deserialize, Clone, Serialize)]
+struct SavedConfigEditorCamera {
+    position: [f32; 3],
     #[serde(default)]
-    control_bindings: Option<SavedControlBindings>,
-    #[serde(default)]
-    body_rotation: Option<[f32; 4]>,
-    #[serde(default)]
-    body_scale: Option<[f32; 3]>,
+    rotation: Option<[f32; 4]>,
 }
 
 #[allow(non_snake_case, dead_code)]
@@ -132,9 +134,13 @@ struct SavedScene {
     #[serde(default)]
     backgroundPath: Option<String>,
     #[serde(default)]
-    entities: Vec<SavedEntity>,
+    entities: Vec<SavedEntity3D>,
     #[serde(default)]
-    playerTransform: Option<SavedPlayerTransform>,
+    player: Option<SavedEntity3D>,
+    #[serde(default)]
+    config_camera: Option<SavedConfigCamera>,
+    #[serde(default)]
+    config_editor_camera: Option<SavedConfigEditorCamera>,
     #[serde(default)]
     sprites: Vec<NamedPath>,
     #[serde(default)]
@@ -142,34 +148,33 @@ struct SavedScene {
 }
 
 #[allow(non_snake_case)]
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, Serialize)]
 #[allow(dead_code)]
-struct SavedEntity {
+struct SavedEntity3D {
     id: u32,
-    #[serde(default)]
-    name: Option<String>,
-    path: String,
-    kind: String,
+    name: String,
+    category: String,
+    model: String,
     position: [f32; 3],
     #[serde(default)]
     rotation: Option<[f32; 4]>,
     scale: [f32; 3],
     #[serde(default)]
-    physics_enabled: Option<bool>,
-    #[serde(default)]
     physics_type: Option<String>,
+    #[serde(default = "default_colision_on")]
+    colision: bool,
     #[serde(default)]
     animations: Option<Vec<SavedAnimation>>,
     #[serde(default)]
     scripts: Option<Vec<SavedScript>>,
-    #[serde(default)]
-    control_bindings: Option<SavedControlBindings>,
+    #[serde(default, alias = "control_bindings")]
+    controls: Option<SavedControlBindings>,
     #[serde(default)]
     blueprint_id: Option<String>,
-    #[serde(default)]
-    visual_model_path: Option<String>,
-    #[serde(default)]
-    entity_category: Option<String>,
+}
+
+fn default_colision_on() -> bool {
+    true
 }
 
 #[derive(Debug, Deserialize, Clone, Serialize)]
@@ -221,40 +226,31 @@ struct SavedControlBindings {
     gamepad: HashMap<String, SavedScript>,
 }
 
-/// `BluePrintEntry` en types.ts.
+/// `Blueprint3D` en types.ts.
 #[allow(non_snake_case)]
 #[derive(Debug, Deserialize, Clone, Serialize)]
 struct SavedBlueprint {
     id: String,
     name: String,
     category: String,
-    kind: String,
-    path: String,
-    scale: [f32; 3],
-    #[serde(default)]
-    rotation: Option<[f32; 4]>,
-    #[serde(default)]
-    physics_enabled: Option<bool>,
+    model: String,
     #[serde(default)]
     physics_type: Option<String>,
+    #[serde(default = "default_colision_on")]
+    colision: bool,
     #[serde(default)]
     animations: Option<Vec<SavedAnimation>>,
     #[serde(default)]
     scripts: Option<Vec<SavedScript>>,
-    #[serde(default)]
-    control_bindings: Option<SavedControlBindings>,
-    #[serde(default)]
-    visualModelPath: Option<String>,
-    #[serde(default)]
-    entity_category: Option<String>,
 }
 
 #[allow(non_snake_case, dead_code)]
 struct ActiveSaveView {
     world: SavedWorldConfig,
-    entities: Vec<SavedEntity>,
+    entities: Vec<SavedEntity3D>,
     models: Vec<NamedPath>,
-    playerTransform: Option<SavedPlayerTransform>,
+    player: Option<SavedEntity3D>,
+    config_camera: Option<SavedConfigCamera>,
     sceneId: u32,
     sceneName: String,
 }
@@ -265,6 +261,7 @@ struct PendingRestore {
     name: Option<String>,
     physics_enabled: bool,
     physics_type: String,
+    colision: bool,
     animations: Option<Vec<SavedAnimation>>,
     scripts: Option<Vec<SavedScript>>,
     control_bindings: Option<ControlBindingsData>,
@@ -360,14 +357,20 @@ fn is_model_3d_path(p: &str) -> bool {
     lower.ends_with(".glb") || lower.ends_with(".gltf") || lower.ends_with(".fbx")
 }
 
-fn is_3d_model_file_entity(entity: &SavedEntity) -> bool {
-    if !is_model_3d_path(&entity.path) {
+fn is_3d_model_file_entity(entity: &SavedEntity3D) -> bool {
+    if !is_model_3d_path(&entity.model) {
         return false;
     }
-    !is_player_path(&entity.path)
-        && !is_sun_path(&entity.path)
-        && !is_ground_path(&entity.path)
-        && !is_editor_box_path(&entity.path)
+    entity_path_marker(&entity.model).is_none()
+        && !matches!(entity.category.as_str(), "sun" | "ground" | "player")
+}
+
+fn entity_library_category(category: &str) -> Option<String> {
+    if category == "environment" {
+        Some("environment".to_string())
+    } else {
+        None
+    }
 }
 
 fn path_basename_lower(p: &str) -> String {
@@ -412,9 +415,9 @@ fn resolve_script_source(source: &str, extracted_dir: &Path) -> String {
     if source.is_empty() {
         return String::new();
     }
-    // Compatibilidad con saves legacy/main: scripts inline (no @file:) se usan tal cual.
     if !source.starts_with(SCRIPT_FILE_PREFIX) {
-        return source.to_string();
+        log::warn!("script sin prefijo @file: ignorado en manifest");
+        return String::new();
     }
     let rel = &source[SCRIPT_FILE_PREFIX.len()..];
     let normalized = rel.replace('/', std::path::MAIN_SEPARATOR_STR);
@@ -471,25 +474,29 @@ fn resolve_control_bindings(
     })
 }
 
-fn resolve_player_transform(
-    pt: &Option<SavedPlayerTransform>,
-    extracted_dir: &Path,
-) -> Option<SavedPlayerTransform> {
-    pt.as_ref().map(|view| SavedPlayerTransform {
-        visual_model_path: resolve_optional_path(&view.visual_model_path, extracted_dir),
-        control_bindings: resolve_control_bindings(&view.control_bindings, extracted_dir),
-        ..view.clone()
-    })
+fn saved_control_bindings_empty(bindings: &Option<SavedControlBindings>) -> bool {
+    bindings
+        .as_ref()
+        .map(|b| b.keyboard_mouse.is_empty() && b.gamepad.is_empty())
+        .unwrap_or(true)
 }
 
-fn resolve_entity(entity: &SavedEntity, extracted_dir: &Path) -> SavedEntity {
-    SavedEntity {
-        path: resolve_path(&entity.path, extracted_dir),
+fn resolve_entity_3d(entity: &SavedEntity3D, extracted_dir: &Path) -> SavedEntity3D {
+    SavedEntity3D {
+        model: resolve_path(&entity.model, extracted_dir),
         scripts: resolve_scripts(&entity.scripts, extracted_dir),
-        control_bindings: resolve_control_bindings(&entity.control_bindings, extracted_dir),
-        visual_model_path: resolve_optional_path(&entity.visual_model_path, extracted_dir),
+        controls: resolve_control_bindings(&entity.controls, extracted_dir),
         ..entity.clone()
     }
+}
+
+fn resolve_player_entity(
+    player: &Option<SavedEntity3D>,
+    extracted_dir: &Path,
+) -> Option<SavedEntity3D> {
+    player
+        .as_ref()
+        .map(|p| resolve_entity_3d(p, extracted_dir))
 }
 
 fn resolve_loaded_paths(project: &mut ProjectSaveData, extracted_dir: &Path) {
@@ -501,6 +508,7 @@ fn resolve_loaded_paths(project: &mut ProjectSaveData, extracted_dir: &Path) {
         .map(|s| NamedPath {
             name: s.name.clone(),
             path: resolve_path(&s.path, extracted_dir),
+            category: None,
         })
         .collect();
     project.backgrounds = project
@@ -509,6 +517,7 @@ fn resolve_loaded_paths(project: &mut ProjectSaveData, extracted_dir: &Path) {
         .map(|b| NamedPath {
             name: b.name.clone(),
             path: resolve_path(&b.path, extracted_dir),
+            category: None,
         })
         .collect();
     project.models = project
@@ -517,15 +526,16 @@ fn resolve_loaded_paths(project: &mut ProjectSaveData, extracted_dir: &Path) {
         .map(|m| NamedPath {
             name: m.name.clone(),
             path: resolve_path(&m.path, extracted_dir),
+            category: m.category.clone(),
         })
         .collect();
-    project.playerTransform = resolve_player_transform(&project.playerTransform, extracted_dir);
+    project.player = resolve_player_entity(&project.player, extracted_dir);
 
     if !has_scenes {
         project.entities = project
             .entities
             .iter()
-            .map(|e| resolve_entity(e, extracted_dir))
+            .map(|e| resolve_entity_3d(e, extracted_dir))
             .collect();
     } else {
         project.entities.clear();
@@ -542,14 +552,15 @@ fn resolve_loaded_paths(project: &mut ProjectSaveData, extracted_dir: &Path) {
                 .map(|m| NamedPath {
                     name: m.name.clone(),
                     path: resolve_path(&m.path, extracted_dir),
+                    category: m.category.clone(),
                 })
                 .collect(),
             entities: scene
                 .entities
                 .iter()
-                .map(|e| resolve_entity(e, extracted_dir))
+                .map(|e| resolve_entity_3d(e, extracted_dir))
                 .collect(),
-            playerTransform: resolve_player_transform(&scene.playerTransform, extracted_dir),
+            player: resolve_player_entity(&scene.player, extracted_dir),
             ..scene.clone()
         })
         .collect();
@@ -558,10 +569,8 @@ fn resolve_loaded_paths(project: &mut ProjectSaveData, extracted_dir: &Path) {
         .blueprints
         .iter()
         .map(|bp| SavedBlueprint {
-            path: resolve_path(&bp.path, extracted_dir),
-            visualModelPath: resolve_optional_path(&bp.visualModelPath, extracted_dir),
+            model: resolve_path(&bp.model, extracted_dir),
             scripts: resolve_scripts(&bp.scripts, extracted_dir),
-            control_bindings: resolve_control_bindings(&bp.control_bindings, extracted_dir),
             ..bp.clone()
         })
         .collect();
@@ -578,10 +587,11 @@ fn pick_active_save_view(project: &ProjectSaveData) -> Result<ActiveSaveView, St
             world: active.world.clone(),
             entities: active.entities.clone(),
             models: active.models.clone(),
-            playerTransform: active
-                .playerTransform
+            player: active.player.clone().or_else(|| project.player.clone()),
+            config_camera: active
+                .config_camera
                 .clone()
-                .or_else(|| project.playerTransform.clone()),
+                .or_else(|| project.config_camera.clone()),
             sceneId: active.id,
             sceneName: active.name.clone(),
         });
@@ -596,22 +606,15 @@ fn pick_active_save_view(project: &ProjectSaveData) -> Result<ActiveSaveView, St
         world,
         entities: project.entities.clone(),
         models: project.models.clone(),
-        playerTransform: project.playerTransform.clone(),
+        player: project.player.clone(),
+        config_camera: project.config_camera.clone(),
         sceneId: 1,
         sceneName: String::new(),
     })
 }
 
 fn needs_scene_burst_load(game_style: &str, view: &ActiveSaveView) -> bool {
-    if !view.entities.is_empty() {
-        return true;
-    }
-    let saved_player = view.playerTransform.as_ref();
-    let player_in_entities = view
-        .entities
-        .iter()
-        .any(|e| e.kind == "character" && is_player_path(&e.path));
-    game_style == "first-person" && saved_player.is_some() && !player_in_entities
+    !view.entities.is_empty() || (game_style == "first-person" && view.player.is_some())
 }
 
 fn find_blueprint<'a>(id: &str, blueprints: &'a [SavedBlueprint]) -> Option<&'a SavedBlueprint> {
@@ -649,7 +652,7 @@ fn map_control_bindings(bindings: Option<&SavedControlBindings>) -> Option<Contr
     })
 }
 
-fn resolve_saved_entity_transform(entity: &SavedEntity) -> EntityRestoreTransform {
+fn resolve_saved_entity_transform(entity: &SavedEntity3D) -> EntityRestoreTransform {
     EntityRestoreTransform {
         position: entity.position,
         rotation: entity.rotation.unwrap_or([0.0, 0.0, 0.0, 1.0]),
@@ -657,27 +660,9 @@ fn resolve_saved_entity_transform(entity: &SavedEntity) -> EntityRestoreTransfor
     }
 }
 
-fn resolve_entity_transform(
-    entity: &SavedEntity,
-    blueprints: &[SavedBlueprint],
-) -> EntityRestoreTransform {
-    let bp = entity
-        .blueprint_id
-        .as_deref()
-        .and_then(|id| find_blueprint(id, blueprints));
-    EntityRestoreTransform {
-        position: entity.position,
-        rotation: bp
-            .and_then(|b| b.rotation)
-            .or(entity.rotation)
-            .unwrap_or([0.0, 0.0, 0.0, 1.0]),
-        scale: bp.map(|b| b.scale).unwrap_or(entity.scale),
-    }
-}
-
-/// Misma resolución que el `else` del `ready` del front (blueprint hereda props).
+/// Herencia de blueprint: model/physics/scripts/animations/colision; transform solo de la instancia.
 fn build_generic_pending_restore(
-    entity: &SavedEntity,
+    entity: &SavedEntity3D,
     transform: EntityRestoreTransform,
     blueprints: &[SavedBlueprint],
 ) -> PendingRestore {
@@ -685,17 +670,27 @@ fn build_generic_pending_restore(
         .blueprint_id
         .as_deref()
         .and_then(|id| find_blueprint(id, blueprints));
+    let physics_type = bp
+        .and_then(|b| b.physics_type.clone())
+        .or_else(|| entity.physics_type.clone())
+        .unwrap_or_else(|| "static".to_string());
+    let visual = {
+        let m = bp.map(|b| b.model.as_str()).unwrap_or(entity.model.as_str());
+        if entity_path_marker(m).is_some() || m == "[Player]" {
+            None
+        } else {
+            Some(m.to_string())
+        }
+    };
     PendingRestore {
         transform,
-        name: entity.name.clone(),
+        name: Some(entity.name.clone()),
         physics_enabled: bp
-            .and_then(|b| b.physics_enabled)
-            .or(entity.physics_enabled)
-            .unwrap_or(false),
-        physics_type: bp
-            .and_then(|b| b.physics_type.clone())
-            .or_else(|| entity.physics_type.clone())
-            .unwrap_or_else(|| "static".to_string()),
+            .and_then(|b| b.physics_type.as_ref())
+            .or(entity.physics_type.as_ref())
+            .is_some(),
+        physics_type,
+        colision: bp.map(|b| b.colision).unwrap_or(entity.colision),
         animations: bp
             .and_then(|b| b.animations.clone())
             .or_else(|| entity.animations.clone()),
@@ -703,37 +698,39 @@ fn build_generic_pending_restore(
             .and_then(|b| b.scripts.clone())
             .or_else(|| entity.scripts.clone()),
         control_bindings: map_control_bindings(
-            bp.and_then(|b| b.control_bindings.as_ref())
-                .or(entity.control_bindings.as_ref()),
+            entity.controls.as_ref(),
         ),
         blueprint_id: entity.blueprint_id.clone(),
-        entity_category: entity.entity_category.clone(),
-        visual_model_path: entity.visual_model_path.clone(),
+        entity_category: entity_library_category(&entity.category),
+        visual_model_path: visual,
     }
 }
 
-fn build_player_pending_restore(
-    entity: &SavedEntity,
-    transform: EntityRestoreTransform,
-    saved_player: Option<&SavedPlayerTransform>,
-) -> PendingRestore {
+fn build_player_pending_restore_from_entity(entity: &SavedEntity3D) -> PendingRestore {
+    let visual = if entity_path_marker(&entity.model).is_some() || entity.model == "[Player]" {
+        None
+    } else {
+        Some(entity.model.clone())
+    };
     PendingRestore {
-        transform,
-        name: entity.name.clone(),
-        physics_enabled: true,
-        physics_type: "dynamic".to_string(),
+        transform: EntityRestoreTransform {
+            position: entity.position,
+            rotation: entity.rotation.unwrap_or([0.0, 0.0, 0.0, 1.0]),
+            scale: entity.scale,
+        },
+        name: Some(entity.name.clone()),
+        physics_enabled: entity.physics_type.is_some(),
+        physics_type: entity
+            .physics_type
+            .clone()
+            .unwrap_or_else(|| "dynamic".to_string()),
+        colision: entity.colision,
         animations: entity.animations.clone(),
         scripts: entity.scripts.clone(),
-        control_bindings: map_control_bindings(
-            saved_player
-                .and_then(|p| p.control_bindings.as_ref())
-                .or(entity.control_bindings.as_ref()),
-        ),
+        control_bindings: map_control_bindings(entity.controls.as_ref()),
         blueprint_id: entity.blueprint_id.clone(),
-        entity_category: entity.entity_category.clone(),
-        visual_model_path: saved_player
-            .and_then(|p| p.visual_model_path.clone())
-            .or_else(|| entity.visual_model_path.clone()),
+        entity_category: None,
+        visual_model_path: visual,
     }
 }
 
@@ -825,8 +822,6 @@ fn apply_full_entity_restore(
         skip_transform,
     );
 
-    state.reconcile_entity_physics_with_mesh(id);
-
     apply_entity_scripts(state, id, pending.scripts.as_deref());
     apply_entity_animations(state, id, pending.animations.as_deref());
 
@@ -837,6 +832,34 @@ fn apply_full_entity_restore(
     {
         state.replace_entity_model(id, visual);
     }
+
+    state.entity_colision.insert(id, pending.colision);
+    state.reconcile_entity_physics_with_mesh(id);
+}
+
+/// Registra o actualiza biblioteca Resources sin borrar `category` ya guardada.
+fn upsert_model_store_entry(
+    state: &mut State,
+    path: &str,
+    name: &str,
+    category: Option<String>,
+) {
+    let key = state.model_path_key(path);
+    let prev = state.model_store.get(&key);
+    let resolved_name = if name.trim().is_empty() {
+        prev.map(|e| e.name.clone())
+            .unwrap_or_else(|| path_basename_lower(path))
+    } else {
+        name.to_string()
+    };
+    let resolved_category = category.or_else(|| prev.and_then(|e| e.category.clone()));
+    state.model_store.insert(
+        key,
+        crate::ipc::ModelStoreEntry {
+            name: resolved_name,
+            category: resolved_category,
+        },
+    );
 }
 
 fn ensure_model_cached(state: &mut State, path: &str) -> bool {
@@ -890,19 +913,12 @@ fn collect_scene_required_model_paths(state: &State, view: &ActiveSaveView) -> V
     let mut paths: Vec<String> = Vec::new();
     for entity in &view.entities {
         if is_3d_model_file_entity(entity) {
-            push_unique_model_path(&mut paths, &entity.path, key_of);
-        }
-        if let Some(visual) = entity.visual_model_path.as_ref().filter(|p| !p.trim().is_empty()) {
-            push_unique_model_path(&mut paths, visual, key_of);
+            push_unique_model_path(&mut paths, &entity.model, key_of);
         }
     }
-    if let Some(player) = view.playerTransform.as_ref() {
-        if let Some(visual) = player
-            .visual_model_path
-            .as_ref()
-            .filter(|p| !p.trim().is_empty())
-        {
-            push_unique_model_path(&mut paths, visual, key_of);
+    if let Some(player) = view.player.as_ref() {
+        if is_model_3d_path(&player.model) {
+            push_unique_model_path(&mut paths, &player.model, key_of);
         }
     }
     paths
@@ -929,16 +945,9 @@ fn collect_play_character_warm_model_keys(state: &State, view: &ActiveSaveView) 
             keys.insert(state.model_path_key(p));
         }
     };
-    if let Some(player) = view.playerTransform.as_ref() {
-        if let Some(visual) = player.visual_model_path.as_deref() {
-            add(visual);
-        }
-    }
-    for entity in &view.entities {
-        if entity.kind == "character" && is_player_path(&entity.path) {
-            if let Some(visual) = entity.visual_model_path.as_deref() {
-                add(visual);
-            }
+    if let Some(player) = view.player.as_ref() {
+        if is_model_3d_path(&player.model) {
+            add(&player.model);
         }
     }
     keys
@@ -984,19 +993,23 @@ fn load_project_asset_stores(state: &mut State, project: &ProjectSaveData) {
     }
 }
 
-/// Alinea cámara orbital + FPS antes de `load_character` (evita `sync_player_rotation_from_look` con defaults).
-fn preset_spawn_camera_from_saved(state: &mut State, saved: &SavedPlayerTransform) {
+/// Alinea cámara orbital + FPS antes de `load_character` (evita rotación por defecto).
+fn preset_spawn_camera_from_config(
+    state: &mut State,
+    feet: [f32; 3],
+    cam: &SavedConfigCamera,
+) {
     use crate::config_3d::character_anchor::{
         PLAY_CHARACTER_EDITOR_ORBIT_PITCH, PLAY_CHARACTER_EDITOR_ORBIT_YAW,
     };
 
-    state.camera.target = glam::Vec3::from_array(saved.position);
-    let orbit_yaw = saved.yaw.unwrap_or(PLAY_CHARACTER_EDITOR_ORBIT_YAW);
-    let orbit_pitch = saved.pitch.unwrap_or(PLAY_CHARACTER_EDITOR_ORBIT_PITCH);
+    state.camera.target = glam::Vec3::from_array(feet);
+    let orbit_yaw = cam.yaw.unwrap_or(PLAY_CHARACTER_EDITOR_ORBIT_YAW);
+    let orbit_pitch = cam.pitch.unwrap_or(PLAY_CHARACTER_EDITOR_ORBIT_PITCH);
     state.editor_viewport_yaw = orbit_yaw;
     state.editor_viewport_pitch = orbit_pitch;
-    let cam_yaw = saved.fps_camera_yaw.unwrap_or(orbit_yaw);
-    let cam_pitch = saved
+    let cam_yaw = cam.fps_camera_yaw.unwrap_or(orbit_yaw);
+    let cam_pitch = cam
         .fps_camera_pitch
         .unwrap_or(orbit_pitch)
         .clamp(
@@ -1005,37 +1018,43 @@ fn preset_spawn_camera_from_saved(state: &mut State, saved: &SavedPlayerTransfor
         );
     state.camera.yaw = cam_yaw;
     state.camera.pitch = cam_pitch;
-    if let Some(eye) = saved.camera_eye_position {
+    if let Some(eye) = cam.camera_eye_position {
         state.play_camera_eye_position = glam::Vec3::from_array(eye);
     }
 }
 
-/// Misma secuencia que `character_loaded` + `entity_model_replaced` en el front (`main`).
+/// Misma secuencia que `character_loaded` + restore del jugador en manifest.
 fn spawn_player_from_pending(
     state: &mut State,
     pending: &PendingRestore,
-    saved_player: Option<&SavedPlayerTransform>,
+    player_entity: Option<&SavedEntity3D>,
+    config_camera: Option<&SavedConfigCamera>,
 ) {
-    if let Some(saved) = saved_player {
-        preset_spawn_camera_from_saved(state, saved);
+    if let (Some(entity), Some(cam)) = (player_entity, config_camera) {
+        preset_spawn_camera_from_config(state, entity.position, cam);
     }
 
-    state.load_character("[Player]");
+    let needs_spawn = state
+        .play_character_entity
+        .filter(|&id| state.world.get::<crate::ecs::Transform>(id).is_some())
+        .is_none();
+    if needs_spawn {
+        state.load_character("[Player]");
+    } else {
+        log::info!(
+            "[load_proyect] reutilizando jugador existente id={:?}",
+            state.play_character_entity
+        );
+    }
     let Some(id) = state.play_character_entity.filter(|&id| id != 0) else {
         return;
     };
 
-    // Front: skipTransform si hay playerTransform; omitScale si no hay body_scale.
-    let skip_transform = saved_player.is_some();
-    let omit_scale = saved_player.is_none_or(|s| s.body_scale.is_none());
+    let skip_transform = player_entity.is_some();
+    let omit_scale = false;
 
     apply_full_entity_restore(state, id, pending, "[Player]", skip_transform, omit_scale);
     state.ensure_play_character_kinematic_only();
-
-    // Posición/orientación/cámara desde playerTransform (pies), no entity.position del manifest.
-    if let Some(saved) = saved_player {
-        apply_saved_play_character_view(state, saved);
-    }
 }
 
 fn spawn_entity_after_load_model_single(
@@ -1051,34 +1070,48 @@ fn spawn_entity_after_load_model_single(
     state.scenario_entities.last().copied()
 }
 
-/// Equivalente a `applySavedPlayCharacterView` + handler `set_play_character_view` en main.
-fn apply_saved_play_character_view(state: &mut State, view: &SavedPlayerTransform) {
+fn restore_play_character_mesh_extents_from_model(state: &mut State, model_path: &str) {
+    if is_model_3d_path(model_path) {
+        state.play_character_mesh_extents =
+            state.play_character_mesh_extents_from_visual_path(model_path);
+    }
+}
+
+/// Aplica `config_camera` + transform del objeto `player` del manifest.
+fn apply_saved_play_character_view(
+    state: &mut State,
+    player: &SavedEntity3D,
+    cam: &SavedConfigCamera,
+) {
+    if is_model_3d_path(&player.model) {
+        restore_play_character_mesh_extents_from_model(state, &player.model);
+    }
     use crate::config_3d::character_anchor::{
         PLAY_CHARACTER_EDITOR_ORBIT_PITCH, PLAY_CHARACTER_EDITOR_ORBIT_YAW,
     };
 
-    let follow_mode = view.camera_follow_mode.as_deref().map(|m| match m {
+    let follow_mode = cam.camera_follow_mode.as_deref().map(|m| match m {
         "follow_character" => crate::ipc::PlayCameraFollowMode::FollowCharacter,
         _ => crate::ipc::PlayCameraFollowMode::MoveWithCharacter,
     });
-    // Mismos defaults que `EngineCommand::SetPlayCharacterView` (no usar 0.0 si el campo falta).
-    let yaw = view.yaw.unwrap_or(PLAY_CHARACTER_EDITOR_ORBIT_YAW);
-    let pitch = view.pitch.unwrap_or(PLAY_CHARACTER_EDITOR_ORBIT_PITCH);
+    let yaw = cam.yaw.unwrap_or(PLAY_CHARACTER_EDITOR_ORBIT_YAW);
+    let pitch = cam.pitch.unwrap_or(PLAY_CHARACTER_EDITOR_ORBIT_PITCH);
+    let body_rotation = player.rotation;
+    let body_scale = Some(player.scale);
     state.apply_play_character_view(
-        view.position,
+        player.position,
         yaw,
         pitch,
-        view.fov_y,
-        view.frustum_distance,
+        cam.fov_y,
+        cam.frustum_distance,
         follow_mode,
-        view.body_rotation,
-        view.body_scale,
-        view.camera_eye_position,
-        view.fps_camera_yaw,
-        view.fps_camera_pitch,
+        body_rotation,
+        body_scale,
+        cam.camera_eye_position,
+        cam.fps_camera_yaw,
+        cam.fps_camera_pitch,
     );
-    // Tras `replace_entity_model`, placement deja solo yaw; reaplicar rotación del mesh guardada.
-    if let (Some(id), Some(rot)) = (state.play_character_entity, view.body_rotation) {
+    if let (Some(id), Some(rot)) = (state.play_character_entity, player.rotation) {
         let rot_q = glam::Quat::from_xyzw(rot[0], rot[1], rot[2], rot[3]);
         state.apply_play_character_transform_editor(id, None, Some(rot_q), None);
         if state.uses_editor_viewport_camera() {
@@ -1111,7 +1144,8 @@ fn apply_loaded_proyect_3d(state: &mut State, project: &ProjectSaveData) -> Resu
     let game_style = project.gameStyle.as_str();
     let blueprints = &project.blueprints;
     let burst_load = needs_scene_burst_load(game_style, &view);
-    let saved_player = view.playerTransform.as_ref();
+    let saved_player = view.player.clone();
+    let saved_config_camera = view.config_camera.clone();
 
     let light_ambient = view
         .world
@@ -1156,9 +1190,12 @@ fn apply_loaded_proyect_3d(state: &mut State, project: &ProjectSaveData) -> Resu
     load_project_asset_stores(state, project);
     log_load_step(load_started_at, &mut step_started, "Sonidos y fondos registrados");
     for model in &view.models {
-        state
-            .model_store
-            .insert(state.model_path_key(&model.path), model.name.clone());
+        upsert_model_store_entry(
+            state,
+            &model.path,
+            &model.name,
+            crate::ipc::normalize_model_library_category(model.category.as_deref()),
+        );
     }
     let scene_model_paths = collect_scene_required_model_paths(state, &view);
     let warm_play_keys = collect_play_character_warm_model_keys(state, &view);
@@ -1176,9 +1213,12 @@ fn apply_loaded_proyect_3d(state: &mut State, project: &ProjectSaveData) -> Resu
     if !view.models.is_empty() && !burst_load_planned {
         for model in &view.models {
             let _ = ensure_model_cached(state, &model.path);
-            state
-                .model_store
-                .insert(state.model_path_key(&model.path), model.name.clone());
+            upsert_model_store_entry(
+                state,
+                &model.path,
+                &model.name,
+                crate::ipc::normalize_model_library_category(model.category.as_deref()),
+            );
         }
     }
 
@@ -1186,70 +1226,63 @@ fn apply_loaded_proyect_3d(state: &mut State, project: &ProjectSaveData) -> Resu
 
     for entity in &view.entities {
         state.poll_and_advance_model_preloads(64);
-        let transform = if is_3d_model_file_entity(entity) {
-            resolve_saved_entity_transform(entity)
-        } else {
-            resolve_entity_transform(entity, blueprints)
-        };
+        let transform = resolve_saved_entity_transform(entity);
+        let pending = build_generic_pending_restore(entity, transform, blueprints);
 
-        if entity.kind == "character" && is_player_path(&entity.path) {
-            let pending = build_player_pending_restore(entity, transform, saved_player);
-            spawn_player_from_pending(state, &pending, saved_player);
-        } else if entity.kind == "directional_light" || is_sun_path(&entity.path) {
-            let pending = build_generic_pending_restore(entity, transform, blueprints);
-            state.spawn_sun(
-                entity.name.as_deref().unwrap_or(""),
-                entity.position,
-                entity.scale,
-            );
-            if let Some(id) = state.sun_entity {
-                apply_full_entity_restore(state, id, &pending, "[Sun]", true, false);
+        match entity.category.as_str() {
+            "player" => {
+                log::warn!(
+                    "manifest: entidad player en entities ignorada; usar objeto player del manifest"
+                );
             }
-        } else if entity.kind == "model" && is_ground_path(&entity.path) {
-            let pending = build_generic_pending_restore(entity, transform, blueprints);
-            state.spawn_ground_plane(entity.position, entity.scale);
-            if let Some(id) = state.ground_entity_id() {
-                apply_full_entity_restore(state, id, &pending, "[Ground]", true, false);
+            _ if is_editor_box_path(&entity.model) => {
+                log::info!(
+                    "Colocando bloque «{}» en [{:.1}, {:.1}, {:.1}]",
+                    entity.name,
+                    entity.position[0],
+                    entity.position[1],
+                    entity.position[2]
+                );
+                state.spawn_editor_box(&entity.name, entity.position, entity.scale);
+                if let Some(id) = state.scenario_entities.last().copied() {
+                    apply_full_entity_restore(state, id, &pending, "[EditorBox]", true, false);
+                }
             }
-        } else if entity.kind == "model" && is_editor_box_path(&entity.path) {
-            let pending = build_generic_pending_restore(entity, transform, blueprints);
-            let box_label = entity.name.as_deref().unwrap_or("Caja");
-            log::info!(
-                "Colocando bloque «{box_label}» en [{:.1}, {:.1}, {:.1}]",
-                entity.position[0],
-                entity.position[1],
-                entity.position[2]
-            );
-            state.spawn_editor_box(
-                box_label,
-                entity.position,
-                entity.scale,
-            );
-            if let Some(id) = state.scenario_entities.last().copied() {
-                apply_full_entity_restore(state, id, &pending, "[EditorBox]", true, false);
+            "sun" => {
+                state.spawn_sun(&entity.name, entity.position, entity.scale);
+                if let Some(id) = state.sun_entity {
+                    apply_full_entity_restore(state, id, &pending, "[Sun]", true, false);
+                }
             }
-        } else if entity.kind == "scenario" && !is_model_3d_path(&entity.path) {
-            // Escenarios 2D legacy sin archivo 3D.
-        } else {
-            let pending = build_generic_pending_restore(entity, transform, blueprints);
-
-            if entity.kind == "scenario" {
-                state.load_scenario(&entity.path);
+            "ground" => {
+                state.spawn_ground_plane(entity.position, entity.scale);
+                if let Some(id) = state.ground_entity_id() {
+                    apply_full_entity_restore(state, id, &pending, "[Ground]", true, false);
+                }
             }
-
-            if is_3d_model_file_entity(entity) {
-                model_load_queue.push((entity.path.clone(), pending.clone()));
+            "environment" | "object" | "character" if is_3d_model_file_entity(entity) => {
+                model_load_queue.push((entity.model.clone(), pending.clone()));
 
                 if !burst_load_planned {
-                    if !ensure_model_cached(state, &entity.path) {
+                    if !ensure_model_cached(state, &entity.model) {
                         continue;
                     }
-                    let category = entity.entity_category.as_deref();
-                    if let Some(id) = spawn_entity_after_load_model_single(state, &entity.path, category)
+                    let category = entity_library_category(&entity.category);
+                    if let Some(id) = spawn_entity_after_load_model_single(
+                        state,
+                        &entity.model,
+                        category.as_deref(),
+                    )
                     {
-                        apply_full_entity_restore(state, id, &pending, &entity.path, false, false);
+                        apply_full_entity_restore(state, id, &pending, &entity.model, false, false);
                     }
                 }
+            }
+            other => {
+                log::warn!(
+                    "entidad category='{other}' model='{}' ignorada en carga 3D",
+                    entity.model
+                );
             }
         }
     }
@@ -1265,18 +1298,20 @@ fn apply_loaded_proyect_3d(state: &mut State, project: &ProjectSaveData) -> Resu
         state.poll_and_advance_model_preloads(64);
         for model in &view.models {
             if !model.path.trim().is_empty() {
-                state
-                    .model_store
-                    .insert(state.model_path_key(&model.path), model.name.clone());
+                upsert_model_store_entry(
+                    state,
+                    &model.path,
+                    &model.name,
+                    crate::ipc::normalize_model_library_category(model.category.as_deref()),
+                );
             }
         }
 
         let queued_paths: Vec<String> = model_load_queue.iter().map(|(p, _)| p.clone()).collect();
-        for (path, name) in collect_uncached_burst_model_paths(&queued_paths, &[]) {
+        let preloaded: Vec<String> = view.models.iter().map(|m| m.path.clone()).collect();
+        for (path, name) in collect_uncached_burst_model_paths(&queued_paths, &preloaded) {
             if ensure_model_cached(state, &path) {
-                state
-                    .model_store
-                    .insert(state.model_path_key(&path), name);
+                upsert_model_store_entry(state, &path, &name, None);
             }
         }
 
@@ -1302,30 +1337,16 @@ fn apply_loaded_proyect_3d(state: &mut State, project: &ProjectSaveData) -> Resu
     }
 
     if game_style == "first-person" {
-        let player_in_entities = view
-            .entities
-            .iter()
-            .any(|e| e.kind == "character" && is_player_path(&e.path));
-        if !player_in_entities {
-            if let Some(saved) = saved_player {
-                let pending = PendingRestore {
-                    transform: EntityRestoreTransform {
-                        position: [0.0, FIRST_PERSON_PLAYER_BODY_SCALE[1] * 0.5, 0.0],
-                        rotation: [0.0, 0.0, 0.0, 1.0],
-                        scale: FIRST_PERSON_PLAYER_BODY_SCALE,
-                    },
-                    name: Some("Player".to_string()),
-                    physics_enabled: true,
-                    physics_type: "dynamic".to_string(),
-                    animations: None,
-                    scripts: None,
-                    control_bindings: map_control_bindings(saved.control_bindings.as_ref()),
-                    blueprint_id: None,
-                    entity_category: None,
-                    visual_model_path: saved.visual_model_path.clone(),
-                };
-                spawn_player_from_pending(state, &pending, saved_player);
-            }
+        if let Some(ref player_entity) = saved_player {
+            let pending = build_player_pending_restore_from_entity(player_entity);
+            spawn_player_from_pending(
+                state,
+                &pending,
+                Some(player_entity),
+                saved_config_camera.as_ref(),
+            );
+        } else {
+            log::error!("[load_proyect] first-person requiere player en manifest");
         }
     }
 
@@ -1333,16 +1354,21 @@ fn apply_loaded_proyect_3d(state: &mut State, project: &ProjectSaveData) -> Resu
         log_load_step(load_started_at, &mut step_started, "Modelos 3D instanciados");
     }
 
-    if let Some(saved) = saved_player {
-        apply_saved_play_character_view(state, saved);
+    if let (Some(player_entity), Some(cam)) = (saved_player.as_ref(), saved_config_camera.as_ref())
+    {
+        apply_saved_play_character_view(state, player_entity, cam);
         log::info!(
             "Jugador colocado en [{:.2}, {:.2}, {:.2}]",
-            saved.position[0],
-            saved.position[1],
-            saved.position[2]
+            player_entity.position[0],
+            player_entity.position[1],
+            player_entity.position[2]
         );
-    } else {
-        log::warn!("El manifest no trae playerTransform; spawn por defecto");
+    }
+
+    if let (Some(player_entity), Some(id)) = (saved_player.as_ref(), state.play_character_entity) {
+        if let Some(bindings) = map_control_bindings(player_entity.controls.as_ref()) {
+            state.handle_command(crate::ipc::EngineCommand::SetControlBindings { id, bindings });
+        }
     }
 
     for id in state.world.entities().to_vec() {
@@ -1400,16 +1426,21 @@ fn send_project_loaded_3d(project: &ProjectSaveData, view: &ActiveSaveView) {
         .map(|m| ImportSceneSprite {
             path: m.path.clone(),
             name: m.name.clone(),
+            category: crate::ipc::normalize_model_library_category(m.category.as_deref()),
         })
         .collect();
 
     let blueprints =
         serde_json::to_value(&project.blueprints).unwrap_or(serde_json::Value::Array(vec![]));
 
-    let player_transform = view
-        .playerTransform
+    let player = view
+        .player
         .as_ref()
-        .and_then(|pt| serde_json::to_value(pt).ok());
+        .and_then(|p| serde_json::to_value(p).ok());
+    let config_camera = view
+        .config_camera
+        .as_ref()
+        .and_then(|c| serde_json::to_value(c).ok());
 
     send_project_loaded_3d_event(&ProjectLoaded3dEvent {
         event: "project_loaded_3d",
@@ -1425,6 +1456,7 @@ fn send_project_loaded_3d(project: &ProjectSaveData, view: &ActiveSaveView) {
             .map(|s| ImportSceneSprite {
                 path: s.path.clone(),
                 name: s.name.clone(),
+                category: None,
             })
             .collect(),
         backgrounds: project
@@ -1433,10 +1465,12 @@ fn send_project_loaded_3d(project: &ProjectSaveData, view: &ActiveSaveView) {
             .map(|b| ImportSceneSprite {
                 path: b.path.clone(),
                 name: b.name.clone(),
+                category: None,
             })
             .collect(),
         blueprints,
         world,
-        playerTransform: player_transform,
+        player,
+        config_camera,
     });
 }

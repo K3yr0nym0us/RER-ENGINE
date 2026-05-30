@@ -20,10 +20,11 @@ impl State {
         let Some(player_id) = self.play_character_entity else {
             return false;
         };
-        self.control_bindings_by_entity
-            .get(&player_id)
-            .map(|bindings| !bindings.keyboard_mouse.is_empty())
-            .unwrap_or(false)
+        let Some(bindings) = self.control_bindings_by_entity.get(&player_id) else {
+            return false;
+        };
+        bindings.keyboard_mouse.values().any(|s| !s.source.trim().is_empty())
+            || bindings.gamepad.values().any(|s| !s.source.trim().is_empty())
     }
 
     pub(crate) fn play_controller_effective_inputs(

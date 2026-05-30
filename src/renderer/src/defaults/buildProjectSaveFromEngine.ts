@@ -1,19 +1,16 @@
 import type {
-	BluePrintEntry,
-	EngineSaveEntitySnapshot,
+	Blueprint3D,
 	EngineSaveSceneSnapshot,
-	EntityCategory,
+	Entity3D,
 	GameStyle,
 	ProjectSaveData,
 	ProjectType,
-	SavedEntity,
+	SavedAnimation,
 	SavedScene,
 	SoundInfo,
 	BackgroundInfo,
-	ModelInfo
 } from '@shared-types';
 import type { EntityMeta } from '../context/useContextEngine/types';
-import type { SavedAnimation } from '@shared-types';
 import { getSceneProjectState } from '../pages/EngineView/sceneStateStore';
 import { requestEngineDefaultSceneName } from './requestEngineDefaultSceneName';
 
@@ -47,33 +44,24 @@ export function requestEngineSaveSnapshot(): Promise<EngineSaveSceneSnapshot> {
 	});
 }
 
-function normalizeEngineEntity(raw: EngineSaveEntitySnapshot): SavedEntity {
-	const animations = raw.animations?.map((anim) => {
-		const loop = (anim.loop_ ?? anim.loop) as boolean | undefined;
-		const { loop_: _ignored, ...rest } = anim;
-		return {
-			...rest,
-			loop: loop ?? false,
-		};
-	}) as SavedEntity['animations'];
+type EngineAnim = SavedAnimation & { loop_?: boolean };
 
+function normalizeEngineAnimations(
+	animations: EngineAnim[] | undefined,
+): SavedAnimation[] | undefined {
+	if (!animations?.length) return undefined;
+	return animations.map((anim) => {
+		const loop = anim.loop_ ?? anim.loop;
+		const { loop_: _ignored, ...rest } = anim;
+		return { ...rest, loop: loop ?? false };
+	});
+}
+
+/** Copia entidad del snapshot del motor; el front solo fusiona metadatos de editor (celdas de animación). */
+function entityFromEngineSnapshot(raw: Entity3D): Entity3D {
 	return {
-		id: raw.id,
-		name: raw.name,
-		kind: raw.kind as SavedEntity['kind'],
-		path: raw.path,
-		position: raw.position,
-		rotation: raw.rotation,
-		scale: raw.scale,
-		physics_enabled: raw.physics_enabled,
-		physics_type: raw.physics_type,
-		points: raw.points,
-		animations,
-		scripts: raw.scripts,
-		control_bindings: raw.control_bindings,
-		visual_model_path: raw.visual_model_path,
-		...(raw.blueprint_id ? { blueprint_id: raw.blueprint_id } : {}),
-		...(raw.entity_category ? { entity_category: raw.entity_category } : {}),
+		...raw,
+		animations: normalizeEngineAnimations(raw.animations as EngineAnim[] | undefined),
 	};
 }
 
@@ -99,11 +87,11 @@ function mergeAnimationEditorMeta(
 }
 
 function mapEngineEntities(
-	entities: EngineSaveEntitySnapshot[],
+	entities: Entity3D[],
 	entityMeta: Record<number, EntityMeta>,
-): SavedEntity[] {
+): Entity3D[] {
 	return entities.map((raw) => {
-		const entity = normalizeEngineEntity(raw);
+		const entity = entityFromEngineSnapshot(raw);
 		const meta = entityMeta[entity.id];
 		if (!meta) return entity;
 		const animations = mergeAnimationEditorMeta(entity.animations, meta.animations);
@@ -112,9 +100,6 @@ function mapEngineEntities(
 			...(animations ? { animations } : {}),
 			...(entity.blueprint_id ?? meta.blueprintId
 				? { blueprint_id: entity.blueprint_id ?? meta.blueprintId }
-				: {}),
-			...(entity.entity_category ?? meta.entityCategory
-				? { entity_category: (entity.entity_category ?? meta.entityCategory) as EntityCategory }
 				: {}),
 		};
 	});
@@ -126,6 +111,10 @@ export function engineSceneToSavedScene(
 	name: string,
 	entityMeta: Record<number, EntityMeta>,
 ): SavedScene {
+	const player = scene.player
+		? entityFromEngineSnapshot(scene.player)
+		: null;
+
 	return {
 		id,
 		name,
@@ -143,7 +132,9 @@ export function engineSceneToSavedScene(
 		},
 		backgroundPath: scene.background_path ?? null,
 		entities: mapEngineEntities(scene.entities, entityMeta),
-		playerTransform: scene.player_transform ?? null,
+		player,
+		config_camera: scene.config_camera ?? null,
+		config_editor_camera: scene.config_editor_camera ?? null,
 		camera2d: scene.camera2d
 			? { x: scene.camera2d.x, y: scene.camera2d.y, halfH: scene.camera2d.half_h }
 			: null,
@@ -166,11 +157,10 @@ export interface BuildProjectSaveOptions {
 	projectType: ProjectType
 	gameStyle: GameStyle
 	locale: string
-	blueprints: BluePrintEntry[]
+	blueprints: Blueprint3D[]
 	sounds: SoundInfo[]
 	backgrounds: BackgroundInfo[]
 	entityMeta: Record<number, EntityMeta>
-	models: ModelInfo[]
 	initialGameStyle?: GameStyle
 }
 
@@ -187,7 +177,6 @@ export async function buildProjectSaveFromEngineSnapshot(
 		sounds,
 		backgrounds,
 		entityMeta,
-		models,
 		initialGameStyle,
 	} = options;
 
@@ -202,11 +191,6 @@ export async function buildProjectSaveFromEngineSnapshot(
 	}
 
 	const activeScene = engineSceneToSavedScene(engineScene, activeSceneId, activeSceneName, entityMeta);
-	const modelsByPath = new Map(models.map((m) => [m.path, m]));
-	activeScene.models = (activeScene.models ?? []).map((m) => {
-		const known = modelsByPath.get(m.path);
-		return known?.category ? { ...m, category: known.category } : m;
-	});
 
 	let scenes: SavedScene[] = [activeScene];
 
@@ -229,7 +213,9 @@ export async function buildProjectSaveFromEngineSnapshot(
 		world: root.world,
 		backgroundPath: root.backgroundPath,
 		entities: root.entities,
-		playerTransform: root.playerTransform,
+		player: root.player,
+		config_camera: root.config_camera,
+		config_editor_camera: root.config_editor_camera,
 		camera2d: root.camera2d,
 		savedAt: new Date().toISOString(),
 		sprites: root.sprites,

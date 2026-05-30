@@ -101,6 +101,8 @@ pub struct State {
     pub(crate) quick_build_blueprint: Option<crate::config_3d::quick_build::QuickBuildBlueprint>,
     /// Blueprint de origen por entidad (construcción rápida u otras vías del motor).
     pub(crate) entity_blueprint_ids: std::collections::HashMap<EntityId, String>,
+    /// Colisión de malla Rapier on/off por entidad (`docs/Entities_Model_3D.yaml`).
+    pub(crate) entity_colision: std::collections::HashMap<EntityId, bool>,
     pub preview_playing: bool,
     pub(crate) preview_entity_transform_snapshots:
         HashMap<EntityId, crate::config_3d::preview_editor::PreviewEntityTransform>,
@@ -144,9 +146,6 @@ pub struct State {
     pub(crate) fps_exit_hint_layer_en: Option<crate::texture::TextureLayer>,
     pub(crate) fps_exit_hint_size_en: (f32, f32),
     pub(crate) fps_exit_hint_alpha: f32,
-    pub(crate) collider_entities: Vec<EntityId>,
-    pub(crate) execution_area_entities: Vec<EntityId>,
-    pub(crate) execution_overlaps: HashSet<(EntityId, EntityId)>,
     pub(crate) anim_saved_transforms: std::collections::HashMap<u32, (GlamVec3, GlamVec3)>,
     pub pivot_edit_mode: Option<(u32, String, u32, u32)>,
     pub logical_area_mode: Option<u32>,
@@ -158,8 +157,8 @@ pub struct State {
     pub(crate) script_engine: ScriptEngine,
     pub(crate) control_bindings_by_entity: HashMap<u32, crate::ipc::ControlBindingsData>,
     pub(crate) sprite_store: HashMap<String, (String, u32, u32)>,
-    /// Modelos 3D precargados: ruta absoluta → nombre visible.
-    pub(crate) model_store: HashMap<String, String>,
+    /// Modelos 3D precargados: clave de ruta normalizada → nombre + categoría de biblioteca.
+    pub(crate) model_store: HashMap<String, crate::ipc::ModelStoreEntry>,
     /// Mallas estáticas en GPU indexadas por ruta (precarga al registrar recurso).
     pub(crate) static_model_cache: crate::config_3d::static_model_cache::StaticModelCache,
     pub(crate) model_preload_rx: crate::config_3d::static_model_cache::ModelPreloadRx,

@@ -112,9 +112,14 @@ impl State {
 
     /// Nombre corto del recurso (alias del proyecto) o nombre de archivo.
     pub(crate) fn model_display_label(&self, path: &str) -> String {
+        self.model_store_display_name(path)
+    }
+
+    pub(crate) fn model_store_display_name(&self, path: &str) -> String {
         let key = self.model_path_key(path);
         self.model_store
             .get(&key)
+            .map(|e| e.name.as_str())
             .map(|s| s.trim())
             .filter(|s| !s.is_empty())
             .map(|s| s.to_string())
@@ -134,7 +139,12 @@ impl State {
             .is_some_and(|a| !a.parts.is_empty())
     }
 
-    pub(crate) fn register_model_asset(&mut self, path: &str, name: &str) {
+    pub(crate) fn register_model_asset(
+        &mut self,
+        path: &str,
+        name: &str,
+        category: Option<&str>,
+    ) {
         let key = self.model_path_key(path);
         if !Path::new(&key).is_file() {
             send_event(&EngineEvent::Error {
@@ -143,9 +153,16 @@ impl State {
             return;
         }
 
-        self.model_store.insert(key.clone(), name.to_string());
+        let category = crate::ipc::normalize_model_library_category(category)
+            .or_else(|| self.model_store.get(&key).and_then(|e| e.category.clone()));
+        let entry = crate::ipc::ModelStoreEntry {
+            name: name.to_string(),
+            category,
+        };
+        self.model_store.insert(key.clone(), entry);
 
         if self.static_model_cache.contains_key(&key) {
+            self.ensure_play_character_model_cache_warmed(&key);
             send_event(&EngineEvent::ModelAssetLoaded {
                 path: key,
                 name: name.to_string(),
@@ -161,7 +178,16 @@ impl State {
             return;
         }
 
-        self.start_model_preload(key, name.to_string(), false);
+        self.start_model_preload(key, name.to_string(), true);
+    }
+
+    /// Variante `::play_character` en GPU para `replace_entity_model` instantáneo.
+    fn ensure_play_character_model_cache_warmed(&mut self, canonical_path: &str) {
+        let play_key = play_character_cache_key(canonical_path);
+        if self.static_model_cache.contains_key(&play_key) {
+            return;
+        }
+        self.try_warm_play_character_model_cache(canonical_path);
     }
 
     pub(crate) fn start_model_preload(
@@ -308,10 +334,7 @@ impl State {
         }
 
         let name = self
-            .model_store
-            .get(&path)
-            .cloned()
-            .unwrap_or_else(|| path.clone());
+            .model_store_display_name(&path);
         send_event(&EngineEvent::ModelAssetLoaded {
             path: path.clone(),
             name,
@@ -337,13 +360,10 @@ impl State {
 
         if self.static_model_cache.contains_key(&path) {
             self.model_preload_inflight.remove(&path);
+            self.ensure_play_character_model_cache_warmed(&path);
             send_event(&EngineEvent::ModelAssetLoaded {
                 path: path.clone(),
-                name: self
-                    .model_store
-                    .get(&path)
-                    .cloned()
-                    .unwrap_or_else(|| path.clone()),
+                name: self.model_store_display_name(&path),
             });
             self.flush_pending_load_models_for_path(&path);
             self.flush_pending_entity_model_replaces_for_path(&path);
@@ -668,7 +688,6 @@ impl State {
                 kind: "model".to_string(),
                 path: key.clone(),
                 visual_model_path: None,
-                points: None,
                 entity_category: entity_category.clone(),
             },
         );

@@ -4,20 +4,18 @@ import { TypeProjectSelector } from './pages/TypeProjectSelector/TypeProjectSele
 import { GameStyleSelector } from './pages/GameStyleSelector/GameStyleSelector';
 import { EngineView } from './pages/EngineView/EngineView';
 
-import type { ProjectType, GameStyle, OpenProjectResult, ProjectSaveData, EngineStartPayload } from '@shared-types';
+import type { ProjectType, GameStyle, OpenProjectResult, EngineStartPayload } from '@shared-types';
 
 // ── Componente principal ─────────────────────────────────────────────────────
 
 export default function App() {
   const [projectType,   setProjectType]   = useState<ProjectType   | null>(null)
   const [gameStyle,     setGameStyle]     = useState<GameStyle     | null>(null)
-  const [initialSave,   setInitialSave]   = useState<ProjectSaveData | null>(null)
   const [initialSavePath, setInitialSavePath] = useState<string | null>(null)
   const [initialExtractDir, setInitialExtractDir] = useState<string | null>(null)
 
   const handleSelectProjectType = (nextType: ProjectType) => {
     setProjectType(nextType)
-    setInitialSave(null)
     setInitialSavePath(null)
     setInitialExtractDir(null)
     if (nextType === '2D') {
@@ -40,19 +38,20 @@ export default function App() {
     }
   }
 
-  // Cargar proyecto existente: salta directamente al motor con datos previos
   const handleLoadProject = (result: OpenProjectResult) => {
-    const engineLoadsFromExtract = Boolean(result.extractDir?.trim())
-    setInitialSave(engineLoadsFromExtract ? null : (result.project as ProjectSaveData))
+    if (!result.extractDir?.trim()) {
+      console.error('[App] Abrir proyecto requiere extractDir del .save')
+      return
+    }
     setInitialSavePath(result.filePath)
-    setInitialExtractDir(engineLoadsFromExtract ? result.extractDir : null)
+    setInitialExtractDir(result.extractDir)
     setProjectType(result.project.type)
     setGameStyle(result.project.gameStyle)
     const payload: EngineStartPayload = {
       projectType: result.project.type,
       mode: result.project.type === '2D' ? false : result.project.gameStyle,
       save_path: result.filePath,
-      extract_dir: engineLoadsFromExtract ? result.extractDir : false,
+      extract_dir: result.extractDir,
     }
     window.electronAPI.setGameStyle(payload)
   }
@@ -66,12 +65,12 @@ export default function App() {
     )
   }
 
-  // 2D salta directamente al motor (sin elegir estilo de juego)
   if (!gameStyle && projectType !== '2D') {
     return (
       <GameStyleSelector
         projectType={projectType}
         savePath={initialSavePath}
+        extractDir={initialExtractDir}
         onSelect={setGameStyle}
         onBack={() => setProjectType(null)}
       />
@@ -82,7 +81,6 @@ export default function App() {
     <EngineView
       projectType={projectType}
       gameStyle={gameStyle ?? undefined}
-      initialSave={initialSave}
       initialSavePath={initialSavePath}
       initialExtractDir={initialExtractDir}
     />

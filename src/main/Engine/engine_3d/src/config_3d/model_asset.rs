@@ -1077,6 +1077,23 @@ fn feet_pivot_normalize_mat(min: [f32; 3], max: [f32; 3], target_height: f32) ->
     Mat4::from_scale(Vec3::splat(scale)) * Mat4::from_translation(-pivot)
 }
 
+pub(crate) fn model_asset_bind_pose_bounds(asset: &ModelAsset) -> Option<([f32; 3], [f32; 3])> {
+    let mut min = [f32::MAX; 3];
+    let mut max = [f32::MIN; 3];
+    let mut any = false;
+    for part in &asset.parts {
+        let Some((pmin, pmax)) = skinned_mesh_bounds(&part.mesh.vertices) else {
+            continue;
+        };
+        any = true;
+        for i in 0..3 {
+            min[i] = min[i].min(pmin[i]);
+            max[i] = max[i].max(pmax[i]);
+        }
+    }
+    any.then_some((min, max))
+}
+
 fn apply_normalize_to_skinned_vertices(vertices: &mut [SkinnedVertex], norm: Mat4) {
     for v in vertices.iter_mut() {
         let p = norm.transform_point3(Vec3::from_array(v.position));
@@ -1284,15 +1301,15 @@ fn skinned_vertex_position(palette: &[Mat4], vertex: &SkinnedVertex) -> Vec3 {
     out.truncate()
 }
 
-/// Centro del AABB en bind pose (tras skinning), en espacio local de entidad.
-fn gltf_play_bind_pose_aabb_center(
+/// AABB en bind pose deformado (glTF skinned), espacio local de entidad.
+fn gltf_play_skinned_bind_pose_aabb(
     parts: &[SkinnedMeshPart],
     joint_gltf_nodes: &[usize],
     bind_local: &[Mat4],
     scene_parents: &HashMap<usize, usize>,
     bind_node_local: &HashMap<usize, Mat4>,
     mesh_normalize: Mat4,
-) -> Option<Vec3> {
+) -> Option<([f32; 3], [f32; 3])> {
     let joint_count = bind_local.len().min(MAX_JOINTS).min(joint_gltf_nodes.len());
     if joint_count == 0 {
         return None;
@@ -1320,7 +1337,48 @@ fn gltf_play_bind_pose_aabb_center(
             any = true;
         }
     }
-    any.then_some((min_p + max_p) * 0.5)
+    any.then_some(([min_p.x, min_p.y, min_p.z], [max_p.x, max_p.y, max_p.z]))
+}
+
+/// Centro del AABB en bind pose (tras skinning), en espacio local de entidad.
+fn gltf_play_bind_pose_aabb_center(
+    parts: &[SkinnedMeshPart],
+    joint_gltf_nodes: &[usize],
+    bind_local: &[Mat4],
+    scene_parents: &HashMap<usize, usize>,
+    bind_node_local: &HashMap<usize, Mat4>,
+    mesh_normalize: Mat4,
+) -> Option<Vec3> {
+    gltf_play_skinned_bind_pose_aabb(
+        parts,
+        joint_gltf_nodes,
+        bind_local,
+        scene_parents,
+        bind_node_local,
+        mesh_normalize,
+    )
+    .map(|(min, max)| {
+        let min_v = Vec3::from_array(min);
+        let max_v = Vec3::from_array(max);
+        (min_v + max_v) * 0.5
+    })
+}
+
+/// AABB del jugador: bind pose skinned (glTF) o vértices en reposo (FBX).
+pub(crate) fn model_asset_play_character_visual_bounds(asset: &ModelAsset) -> Option<([f32; 3], [f32; 3])> {
+    if !asset.joint_gltf_nodes.is_empty() && !asset.bind_local.is_empty() {
+        if let Some(bounds) = gltf_play_skinned_bind_pose_aabb(
+            &asset.parts,
+            &asset.joint_gltf_nodes,
+            &asset.bind_local,
+            &asset.gltf_scene_parents,
+            &asset.gltf_bind_node_local,
+            asset.mesh_normalize,
+        ) {
+            return Some(bounds);
+        }
+    }
+    model_asset_bind_pose_bounds(asset)
 }
 
 /// AABB de todas las mallas del FBX en espacio mundo (como `mesh_3d::load_fbx`).

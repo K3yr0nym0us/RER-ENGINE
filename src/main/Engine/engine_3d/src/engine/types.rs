@@ -39,8 +39,6 @@ pub(crate) struct EntityUndoSnapshot {
     pub physics_half:       [f32; 3],
     pub in_character_list:  bool,
     pub in_scenario_list:   bool,
-    pub in_collider_list:   bool,
-    pub in_execution_list:  bool,
 }
 
 #[derive(Clone)]

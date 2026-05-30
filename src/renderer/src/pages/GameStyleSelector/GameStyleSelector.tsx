@@ -84,11 +84,13 @@ interface Props {
   projectType: ProjectType
   /** Ruta del `.save` si el flujo viene de «Abrir proyecto» antes de elegir estilo 3D. */
   savePath?:  string | null
+  /** Carpeta extraída del `.save`; obligatoria si `savePath` está definido. */
+  extractDir?: string | null
   onSelect:   (style: GameStyle) => void
   onBack:     () => void
 }
 
-export function GameStyleSelector({ projectType, savePath, onSelect, onBack }: Props) {
+export function GameStyleSelector({ projectType, savePath, extractDir, onSelect, onBack }: Props) {
   const { t } = useTraslate()
 
   const options = getOptionsByType(t)[projectType] ?? []
@@ -163,6 +165,7 @@ export function GameStyleSelector({ projectType, savePath, onSelect, onBack }: P
                     projectType,
                     mode: opt.type,
                     save_path: savePath ?? false,
+                    ...(extractDir?.trim() ? { extract_dir: extractDir.trim() } : {}),
                   }
                   window.electronAPI.setGameStyle(payload)
                   onSelect(opt.type)

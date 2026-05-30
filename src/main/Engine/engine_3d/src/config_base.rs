@@ -92,9 +92,6 @@ impl State {
         self.entity_facing_right.clear();
         self.scenario_entities.clear();
         self.character_entities.clear();
-        self.collider_entities.clear();
-        self.execution_area_entities.clear();
-        self.execution_overlaps.clear();
         self.background_entity = None;
         self.background_path = None;
         self.save_registry.clear();
@@ -111,6 +108,7 @@ impl State {
         self.quick_build_preview_scale = None;
         self.quick_build_blueprint = None;
         self.entity_blueprint_ids.clear();
+        self.entity_colision.clear();
         self.tool_overlay_buffer = gizmo::build_from_vertices(&self.device, &[]);
         self.show_snap_hint = false;
         self.snap_hint_alpha = 0.0;
@@ -203,7 +201,6 @@ impl State {
                 kind: "model".to_string(),
                 path: "[Ground]".to_string(),
                 visual_model_path: None,
-                points: None,
                 entity_category: None,
             },
         );
@@ -267,6 +264,7 @@ impl State {
             let half = [scale[0] * 0.5, scale[1] * 0.5, scale[2] * 0.5];
             self.physics
                 .set_entity_physics(id, true, "static", position, half);
+            self.entity_colision.insert(id, true);
             self.scenario_entities.push(id);
             self.save_registry.register_meta(
                 id,
@@ -274,7 +272,6 @@ impl State {
                     kind: "model".to_string(),
                     path: "[EditorBox]".to_string(),
                     visual_model_path: None,
-                    points: None,
                     entity_category: entity_category.map(str::to_string),
                 },
             );
@@ -378,9 +375,6 @@ impl State {
         self.entity_facing_right.clear();
         self.scenario_entities.clear();
         self.character_entities.clear();
-        self.collider_entities.clear();
-        self.execution_area_entities.clear();
-        self.execution_overlaps.clear();
         self.background_entity = None;
         self.background_path = None;
         self.save_registry.clear();
@@ -397,6 +391,7 @@ impl State {
         self.quick_build_preview_scale = None;
         self.quick_build_blueprint = None;
         self.entity_blueprint_ids.clear();
+        self.entity_colision.clear();
         self.tool_overlay_buffer = gizmo::build_from_vertices(&self.device, &[]);
         self.show_snap_hint = false;
         self.snap_hint_alpha = 0.0;
@@ -461,6 +456,7 @@ impl State {
         let half = [scale[0] * 0.5, scale[1] * 0.5, scale[2] * 0.5];
         self.physics
             .set_entity_physics(id, true, "static", position, half);
+        self.entity_colision.insert(id, true);
         self.scenario_entities.push(id);
         self.save_registry.register_meta(
             id,
@@ -468,7 +464,6 @@ impl State {
                 kind: "model".to_string(),
                 path: "[EditorBox]".to_string(),
                 visual_model_path: None,
-                points: None,
                 entity_category: None,
             },
         );
@@ -482,8 +477,21 @@ impl State {
             log::error!("[load_character] en 3D solo aplica a [Player]; use load_model para modelos: {path}");
             return;
         }
+        if let Some(id) = self.play_character_entity {
+            if self.world.get::<Transform>(id).is_some() {
+                log::info!(
+                    "[load_character] jugador ya existe (id={id}); no se crea entidad nueva"
+                );
+                send_event(&EngineEvent::CharacterLoaded {
+                    id,
+                    path: path.to_string(),
+                });
+                return;
+            }
+        }
         let label = rer_engine_shared::editor_defaults::entity_label::PLAYER.to_string();
         let id = self.world.spawn(Some(&label));
+        log::info!("[load_character] jugador placeholder creado (id={id})");
         let feet = self.camera.target;
         self.setup_play_character_entity(id, feet);
         self.save_registry.register_meta(
@@ -492,8 +500,7 @@ impl State {
                 kind: "character".to_string(),
                 path: path.to_string(),
                 visual_model_path: None,
-                points: None,
-                entity_category: None,
+                entity_category: Some("player".to_string()),
             },
         );
         send_event(&EngineEvent::CharacterLoaded {

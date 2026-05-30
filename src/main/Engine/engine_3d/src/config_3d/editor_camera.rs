@@ -33,7 +33,6 @@ impl State {
                 kind: "editor_camera".to_string(),
                 path: "[EditorCamera]".to_string(),
                 visual_model_path: None,
-                points: None,
                 entity_category: None,
             },
         );

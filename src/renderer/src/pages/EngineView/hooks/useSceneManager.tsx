@@ -1,12 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
-import type {
-  GameStyle,
-  ModelCategory,
-  ProjectSaveData,
-  SavedScene,
-  SavedWorldConfig,
-} from '@shared-types';
+import type { GameStyle, SavedScene, SavedWorldConfig } from '@shared-types';
 import {
   DEFAULT_GRAVITY_MAGNITUDE,
   DEFAULT_LIGHT_AMBIENT,
@@ -15,6 +9,7 @@ import {
 } from '@shared-types';
 import { isEditorBoxPath, isGroundPath, isPlayerPath, isSunPath } from '@shared-types';
 import { isModel3DPath, is3dModelFileEntity } from '../../../utils/blueprintModelPath';
+import { playViewFromPlayerAndCamera } from '../../../utils/entity3dEditorSync';
 import { buildActiveSceneSnapshotFromEngine } from '../../../defaults/buildProjectSaveFromEngine';
 import { requestEngineDefaultSceneName } from '../../../defaults/requestEngineDefaultSceneName';
 import { ensurePlayCharacterOnLoad } from '../../../defaults/playCharacterSceneRestore';
@@ -64,68 +59,34 @@ const DEFAULT_WORLD: SavedWorldConfig = {
 
 const SceneManagerContext = createContext<SceneManagerContextValue | null>(null);
 
-function inferModelCategoryFromScene(scene: SavedScene, path: string): ModelCategory | undefined {
-  const key = path.toLowerCase();
-  if (scene.playerTransform?.visual_model_path?.toLowerCase() === key) {
-    return 'character';
-  }
-  for (const entity of scene.entities) {
-    const entityPath = (entity.path ?? '').toLowerCase();
-    const visualPath = (entity.visual_model_path ?? '').toLowerCase();
-    if (entity.kind === 'character' && (entityPath === key || visualPath === key)) {
-      return 'character';
-    }
-    if (entity.kind === 'model' && entityPath === key) {
-      if (entity.entity_category === 'environment') return 'environment';
-      return 'object';
-    }
-  }
-  return undefined;
-}
-
-function buildInitialSceneState(initialSave?: ProjectSaveData | null) {
-  const save = initialSave;
-  if (save?.scenes && save.scenes.length > 0) {
-    const tabs = save.scenes.map((scene) => ({ id: scene.id, name: scene.name }));
-    const dataById: Record<number, SavedScene> = {};
-    for (const scene of save.scenes) {
-      dataById[scene.id] = {
-        ...scene,
-        world: { ...DEFAULT_WORLD, ...(scene.world ?? {}) },
-      };
-    }
-    const active = save.activeSceneId && dataById[save.activeSceneId]
-      ? save.activeSceneId
-      : save.scenes[0].id;
-    return { tabs, dataById, activeSceneId: active };
-  }
-
-  const legacyScene: SavedScene = {
+/** Estado inicial vacío; pestañas y escena activa llegan por `project_loaded_*` del motor. */
+function buildInitialSceneState() {
+  const scene: SavedScene = {
     id: 1,
     name: '',
-    world: { ...DEFAULT_WORLD, ...(save?.world ?? {}) },
-    backgroundPath: save?.backgroundPath ?? null,
-    entities: save?.entities ?? [],
-    playerTransform: save?.playerTransform ?? null,
-    camera2d: save?.camera2d ?? null,
-    sprites: save?.sprites ?? [],
+    world: { ...DEFAULT_WORLD },
+    backgroundPath: null,
+    entities: [],
+    player: null,
+    config_camera: null,
+    config_editor_camera: null,
+    camera2d: null,
+    sprites: [],
   };
   return {
     tabs: [{ id: 1, name: '' }],
-    dataById: { 1: legacyScene },
+    dataById: { 1: scene },
     activeSceneId: 1,
   };
 }
 
 export function SceneManagerProvider({
   children,
-  initialSave,
   initialSavePath,
   projectType,
   gameStyle,
 }: {
   children: ReactNode;
-  initialSave?: ProjectSaveData | null;
   initialSavePath?: string | null;
   projectType?: string;
   gameStyle?: GameStyle;
@@ -170,7 +131,6 @@ export function SceneManagerProvider({
     setDirectionalLight,
     setBackground,
     loadSprite,
-    loadModelAsset,
     removeSprite,
     blueprints,
     projectLoaded2dSeq,
@@ -181,10 +141,7 @@ export function SceneManagerProvider({
 
   const { openModal, closeModal } = useModal();
 
-  const initialSceneState = useMemo(
-    () => buildInitialSceneState(initialSave),
-    [initialSave],
-  );
+  const initialSceneState = useMemo(() => buildInitialSceneState(), []);
 
   const [scenes, setScenes] = useState<SceneTab[]>(initialSceneState.tabs);
   const [sceneDataById, setSceneDataById] = useState<Record<number, SavedScene>>(initialSceneState.dataById);
@@ -215,7 +172,9 @@ export function SceneManagerProvider({
         world: { ...DEFAULT_WORLD, ...meta.world },
         backgroundPath: isActive ? meta.backgroundPath : null,
         entities: [],
-        playerTransform: null,
+        player: null,
+    config_camera: null,
+    config_editor_camera: null,
         camera2d: isActive ? meta.camera2d : null,
         sprites: isActive ? meta.sprites : [],
       };
@@ -246,7 +205,9 @@ export function SceneManagerProvider({
         world: { ...DEFAULT_WORLD, ...meta.world },
         backgroundPath: null,
         entities: [],
-        playerTransform: isActive ? (meta.playerTransform ?? null) : null,
+        player: isActive ? (meta.player ?? null) : null,
+        config_camera: isActive ? (meta.config_camera ?? null) : null,
+        config_editor_camera: isActive ? (meta.config_editor_camera ?? null) : null,
         camera2d: null,
         sprites: [],
         models: isActive ? meta.models : [],
@@ -343,9 +304,15 @@ export function SceneManagerProvider({
     send({ cmd: 'set_preview_playing', playing: false });
     mainPlayerHandled.current = false;
     playerEntityIdRef.current = null;
-    if (gameStyle === 'first-person' && projectType === '3D' && scene.playerTransform) {
-      pendingPlayCharacterViewRef.current = scene.playerTransform;
-      playCharacterViewRef.current = scene.playerTransform;
+    if (
+      gameStyle === 'first-person' &&
+      projectType === '3D' &&
+      scene.player &&
+      scene.config_camera
+    ) {
+      const view = playViewFromPlayerAndCamera(scene.player, scene.config_camera);
+      pendingPlayCharacterViewRef.current = view;
+      playCharacterViewRef.current = view;
     } else {
       pendingPlayCharacterViewRef.current = null;
       playCharacterViewRef.current = null;
@@ -418,9 +385,8 @@ export function SceneManagerProvider({
       trackSceneBurstModelPreloads({ sceneBurstPendingOpsRef }, scene.models?.length ?? 0);
     }
 
-    for (const model of scene.models ?? []) {
-      const category = model.category ?? inferModelCategoryFromScene(scene, model.path);
-      loadModelAsset(model.path, model.name, category);
+    if (scene.models?.length) {
+      dispatch({ type: 'SET_MODELS', payload: scene.models });
     }
 
     for (const entity of scene.entities) {
@@ -516,18 +482,7 @@ export function SceneManagerProvider({
       }
 
       if (entity.kind === 'character' && isPlayerPath(entity.path)) {
-        const playerQueue = pendingRestoresRef.current.get('[Player]') ?? [];
-        pendingRestoresRef.current.set('[Player]', playerQueue);
-        playerQueue.push({
-          transform,
-          name: entity.name,
-          physicsEnabled: true,
-          physicsType: 'dynamic',
-          scripts: entity.scripts,
-          controlBindings: entity.control_bindings,
-          visualModelPath: entity.visual_model_path ?? scene.playerTransform?.visual_model_path,
-        });
-        send({ cmd: 'load_character', path: entity.path });
+        console.warn('[scene] entidad [Player] en entities ignorada; usar playerTransform');
         continue;
       }
 
@@ -577,9 +532,6 @@ export function SceneManagerProvider({
       const extraPaths = collectUncachedBurstModelPaths(queuedPaths, preloadedPaths);
       if (extraPaths.size > 0) {
         trackSceneBurstModelPreloads({ sceneBurstPendingOpsRef }, extraPaths.size);
-        for (const [path, name] of extraPaths) {
-          loadModelAsset(path, name, inferModelCategoryFromScene(scene, path));
-        }
       }
     }
 
@@ -634,7 +586,9 @@ export function SceneManagerProvider({
       world: { ...worldConfig },
       backgroundPath: null,
       entities: [],
-      playerTransform: null,
+      player: null,
+    config_camera: null,
+    config_editor_camera: null,
       camera2d: camera2dRef.current,
       sprites: [],
     };
@@ -703,7 +657,9 @@ export function SceneManagerProvider({
       world: { ...worldConfig },
       backgroundPath: null,
       entities: [],
-      playerTransform: null,
+      player: null,
+    config_camera: null,
+    config_editor_camera: null,
       camera2d: camera2dRef.current,
       sprites: [],
     };
@@ -728,7 +684,9 @@ export function SceneManagerProvider({
             world: { ...worldConfig },
             backgroundPath: null,
             entities: [],
-            playerTransform: null,
+            player: null,
+    config_camera: null,
+    config_editor_camera: null,
             camera2d: camera2dRef.current,
             sprites: [],
           };

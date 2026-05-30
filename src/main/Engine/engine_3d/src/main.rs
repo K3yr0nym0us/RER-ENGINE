@@ -1,6 +1,7 @@
 mod taa;
 mod ecs;
 mod entity_save_meta;
+mod save_entity_3d;
 mod gizmo;
 mod ipc;
 mod mesh;

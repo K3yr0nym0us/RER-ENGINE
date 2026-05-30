@@ -1,5 +1,10 @@
-import type { PlayCharacterViewChanged, PlayCameraFollowMode, SavedEntity, SavedPlayerTransform } from '@shared-types';
-import { FIRST_PERSON_PLAYER_BODY_SCALE, isPlayerPath } from '@shared-types';
+import type {
+	PlayCharacterViewChanged,
+	PlayCameraFollowMode,
+	SavedPlayerTransform,
+	SavedScript,
+} from '@shared-types';
+import { FIRST_PERSON_PLAYER_BODY_SCALE } from '@shared-types';
 import type { MutableRefObject } from 'react';
 import type { PendingRestore, Transform } from '../context/useContextEngine/types';
 
@@ -20,7 +25,6 @@ export function applyPlayCharacterViewFromEngine(
 	}
 	const prev = playCharacterViewRef.current;
 	const syncViewport = ev.sync_editor_viewport === true;
-	// Tras replace_entity_model el motor emite sync_editor_viewport=false; no pisar body del .save.
 	const savedBody = pendingSavedBodyRotation ?? prev?.body_rotation;
 	const keepSavedBodyRotation = !syncViewport && savedBody != null;
 	playCharacterViewRef.current = {
@@ -40,6 +44,7 @@ export function applyPlayCharacterViewFromEngine(
 		body_scale: ev.body_scale ?? prev?.body_scale,
 		...(prev?.visual_model_path ? { visual_model_path: prev.visual_model_path } : {}),
 		...(prev?.control_bindings ? { control_bindings: prev.control_bindings } : {}),
+		...(prev?.mesh_collision_extents ? { mesh_collision_extents: prev.mesh_collision_extents } : {}),
 	};
 	if (ev.player_id != null) {
 		entityTransformsRef.current[ev.player_id] = {
@@ -57,7 +62,6 @@ export function applyPlayCharacterViewFromEngine(
 	}
 }
 
-/** Parche parcial de la cámara FPS (panel Cámara, tiempo real). Solo el campo modificado. */
 export type PlayCharacterCameraPatch = {
 	positionAxis?: { axis: number; value: number }
 	yaw?: number
@@ -66,7 +70,6 @@ export type PlayCharacterCameraPatch = {
 	camera_follow_mode?: PlayCameraFollowMode
 }
 
-/** Envía un cambio parcial de la cámara FPS; el motor lee el resto del estado actual. */
 export function applyPlayCharacterCameraPatch(patch: PlayCharacterCameraPatch) {
 	window.engine.send({
 		cmd: 'set_play_character_view',
@@ -79,7 +82,6 @@ export function applyPlayCharacterCameraPatch(patch: PlayCharacterCameraPatch) {
 	} as never);
 }
 
-/** Restaura vista del jugador desde `.save` (motor aplica defaults para campos omitidos). */
 export function applySavedPlayCharacterView(
 	view: SavedPlayerTransform | null | undefined,
 ) {
@@ -107,43 +109,38 @@ export function savedPlayCharacterViewForRestore(
 	return pending ?? fallback;
 }
 
-type SceneSlice = {
-	entities?: SavedEntity[];
-	playerTransform?: SavedPlayerTransform | null;
-};
+function buildPlayerPendingFromSave(saved: SavedPlayerTransform): PendingRestore {
+	return {
+		transform: {
+			position: [0, FIRST_PERSON_PLAYER_BODY_SCALE[1] * 0.5, 0],
+			rotation: [0, 0, 0, 1],
+			scale: saved.body_scale ?? FIRST_PERSON_PLAYER_BODY_SCALE,
+		},
+		name: 'Player',
+		physicsEnabled: true,
+		physicsType: 'dynamic',
+		controlBindings: saved.control_bindings,
+		...(saved.scripts?.length
+			? { scripts: saved.scripts.map((s: SavedScript) => ({ name: s.name, source: s.source })) }
+			: {}),
+		visualModelPath: saved.visual_model_path,
+	};
+}
 
-/** Cola restore + `load_character` cuando el save no incluye entidad `[Player]`. */
+/** FP: jugador solo desde `playerTransform` (no desde `entities`). */
 export function ensurePlayCharacterOnLoad(
-	scene: SceneSlice,
+	scene: { playerTransform?: SavedPlayerTransform | null },
 	pendingRestoresRef: MutableRefObject<Map<string, PendingRestore[]>>,
 	send: (cmd: unknown) => void,
 	options?: { onBurstOp?: () => void },
 ) {
-	const savedPlayer = scene.playerTransform;
-	const playerInEntities = (scene.entities ?? []).some(
-		(e) => e.kind === 'character' && isPlayerPath(e.path),
-	);
-	const queue = pendingRestoresRef.current.get('[Player]') ?? [];
-	const alreadyQueued = queue.length > 0;
+	const saved = scene.playerTransform;
+	if (!saved) return;
 
-	if (!playerInEntities && savedPlayer) {
-		if (!alreadyQueued) {
-			const pending: PendingRestore = {
-				transform: {
-					position: [0, FIRST_PERSON_PLAYER_BODY_SCALE[1] * 0.5, 0],
-					rotation: [0, 0, 0, 1],
-					scale: FIRST_PERSON_PLAYER_BODY_SCALE,
-				},
-				name: 'Player',
-				physicsEnabled: true,
-				physicsType: 'dynamic',
-				controlBindings: savedPlayer.control_bindings,
-				visualModelPath: savedPlayer.visual_model_path,
-			};
-			queue.push(pending);
-			pendingRestoresRef.current.set('[Player]', queue);
-		}
-		options?.onBurstOp?.();
-		send({ cmd: 'load_character', path: '[Player]' });
-	}
+	const pending = buildPlayerPendingFromSave(saved);
+	const queue = pendingRestoresRef.current.get('[Player]') ?? [];
+	queue.push(pending);
+	pendingRestoresRef.current.set('[Player]', queue);
+	options?.onBurstOp?.();
+	send({ cmd: 'load_character', path: '[Player]' });
 }

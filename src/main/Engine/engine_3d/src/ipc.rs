@@ -113,7 +113,13 @@ pub enum EngineCommand {
     /// Sustituir el mesh visual de una entidad existente (sin crear entidad nueva).
     ReplaceEntityModel { id: u32, path: String },
     /// Registrar un .glb/.gltf/.fbx en el almacén de recursos (sin instanciar en escena).
-    LoadModelAsset { path: String, name: String },
+    LoadModelAsset {
+        path: String,
+        name: String,
+        /// `character` | `environment` | `object` (metadato de biblioteca Resources).
+        #[serde(default)]
+        category: Option<String>,
+    },
     /// Eliminar un modelo del almacén de recursos.
     RemoveModelAsset { path: String },
     /// Solicitar la lista de modelos 3D precargados.
@@ -305,7 +311,9 @@ pub enum EngineCommand {
     LoadBackground { path: String },
     /// Activar o desactivar física en una entidad. body_type: "dynamic" | "static" | "kinematic"
     SetPhysics { id: u32, enabled: bool, body_type: String },
-    /// Activar una herramienta de dibujo. tool: "draw_collider" | "draw_execution_area" | "" (cancelar)
+    /// Colisión de malla del último modelo 3D (on/off). Independiente de `physics_type`.
+    SetEntityColision { id: u32, colision: bool },
+    /// Activar herramienta de editor 3D (`quick_build_place` o "" para cancelar).
     SetActiveTool {
         tool: String,
         /// Path al sprite del blueprint a previsualizar como entidad fantasma.
@@ -336,22 +344,6 @@ pub enum EngineCommand {
         preview_entity_category: Option<String>,
         #[serde(default)]
         preview_blueprint_id: Option<String>,
-    },
-    /// Recrear un colisionador de 4 puntos (solo 2D; ignorado en binario 3D).
-    #[allow(dead_code)]
-    CreateColliderFromPoints {
-        points: [[f32; 2]; 4],
-        /// true/None: registrar en undo; false: no registrar (carga/restore).
-        #[serde(default)]
-        track_undo: Option<bool>,
-    },
-    /// Crear un área de ejecución de 4 puntos (solo 2D; ignorado en binario 3D).
-    #[allow(dead_code)]
-    CreateExecutionAreaFromPoints {
-        points: [[f32; 2]; 4],
-        /// true/None: registrar en undo; false: no registrar (carga/restore).
-        #[serde(default)]
-        track_undo: Option<bool>,
     },
     /// Activar modo edición de pivot: muestra el frame en la entidad y captura el siguiente click.
     /// pivot_x/pivot_y: coordenadas del pivot ya asignado (para mostrarlo visualmente).
@@ -516,13 +508,13 @@ pub struct SaveWorldSnapshot {
     pub shadow_darkness: Option<f32>,
 }
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SaveScriptSnapshot {
     pub name: String,
     pub source: String,
 }
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SaveAnimationFrameSnapshot {
     pub path: String,
     pub pivot_x: f32,
@@ -537,7 +529,7 @@ pub struct SaveAnimationFrameSnapshot {
     pub src_h: Option<u32>,
 }
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SaveAnimationSnapshot {
     pub name: String,
     pub fps: u32,
@@ -567,34 +559,72 @@ pub struct ModelClipInfoEvent {
     pub fps: f32,
 }
 
-#[derive(Debug, Serialize, Clone)]
-pub struct SaveEntitySnapshot {
+/// Entidad 3D — docs/Entities_Model_3D.yaml (`common`).
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SaveEntity3DSnapshot {
     pub id: u32,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
-    pub kind: String,
-    pub path: String,
+    pub name: String,
+    pub category: String,
+    pub model: String,
     pub position: [f32; 3],
     pub rotation: [f32; 4],
     pub scale: [f32; 3],
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub physics_enabled: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub physics_type: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub points: Option<[[f32; 2]; 4]>,
+    pub colision: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub animations: Option<Vec<SaveAnimationSnapshot>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scripts: Option<Vec<SaveScriptSnapshot>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub control_bindings: Option<ControlBindingsData>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub visual_model_path: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub blueprint_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub entity_category: Option<String>,
+    pub controls: Option<ControlBindingsData>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SaveBlueprint3DSnapshot {
+    pub id: String,
+    pub name: String,
+    pub category: String,
+    pub model: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub physics_type: Option<String>,
+    pub colision: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub animations: Option<Vec<SaveAnimationSnapshot>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scripts: Option<Vec<SaveScriptSnapshot>>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SaveConfigCameraSnapshot {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub camera_eye_position: Option<[f32; 3]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fps_camera_yaw: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fps_camera_pitch: Option<f32>,
+    pub yaw: f32,
+    pub pitch: f32,
+    pub fov_y: f32,
+    pub frustum_distance: f32,
+    #[serde(default)]
+    pub camera_follow_mode: PlayCameraFollowMode,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SaveConfigEditorCameraSnapshot {
+    pub position: [f32; 3],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rotation: Option<[f32; 4]>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct SavePlayCharacterMeshExtentsSnapshot {
+    pub local_min_y: f32,
+    pub local_max_y: f32,
+    pub radius_xz: f32,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -611,6 +641,8 @@ pub struct SavePlayerTransformSnapshot {
     pub visual_model_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub control_bindings: Option<ControlBindingsData>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scripts: Option<Vec<SaveScriptSnapshot>>,
     /// Rotación del mesh del jugador (quaternion xyzw) en editor.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub body_rotation: Option<[f32; 4]>,
@@ -625,6 +657,9 @@ pub struct SavePlayerTransformSnapshot {
     pub fps_camera_yaw: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fps_camera_pitch: Option<f32>,
+    /// Cápsula de movimiento del jugador tras reemplazar el mesh (AABB local normalizado).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mesh_collision_extents: Option<SavePlayCharacterMeshExtentsSnapshot>,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -638,6 +673,8 @@ pub struct SaveCamera2dSnapshot {
 pub struct SaveAssetRefSnapshot {
     pub name: String,
     pub path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -645,9 +682,13 @@ pub struct SaveSceneSnapshotPayload {
     pub world: SaveWorldSnapshot,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub background_path: Option<String>,
-    pub entities: Vec<SaveEntitySnapshot>,
+    pub entities: Vec<SaveEntity3DSnapshot>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub player_transform: Option<SavePlayerTransformSnapshot>,
+    pub player: Option<SaveEntity3DSnapshot>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub config_camera: Option<SaveConfigCameraSnapshot>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub config_editor_camera: Option<SaveConfigEditorCameraSnapshot>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub camera2d: Option<SaveCamera2dSnapshot>,
     pub sprites: Vec<SaveAssetRefSnapshot>,
@@ -753,12 +794,6 @@ pub enum EngineEvent {
     Camera2dUpdated { x: f32, y: f32, half_h: f32 },
     /// Emitido cuando se cargó una imagen de fondo del mundo.
     BackgroundLoaded { path: String },
-    /// Emitido mientras el usuario está colocando puntos con una herramienta de dibujo.
-    DrawingProgress { count: u32 },
-    /// Emitido cuando se creó un colisionador de 4 puntos.
-    ColliderCreated { id: u32, points: [[f32; 2]; 4] },
-    /// Emitido cuando se creó un área de ejecución de 4 puntos.
-    ExecutionAreaCreated { id: u32, points: [[f32; 2]; 4] },
     /// Emitido cuando una herramienta de dibujo fue cancelada desde el motor.
     ToolCancelled,
     /// Emitido cuando el usuario selecciona el pivot de un frame en modo edición.
@@ -890,10 +925,6 @@ pub enum EngineEvent {
     },
     /// Emitido cuando el preview cambia de estado desde el motor.
     PreviewPlayingChanged { playing: bool },
-    /// Emitido cuando un actor entra en un área de ejecución (trigger).
-    TriggerEntered { trigger_id: u32, actor_id: u32 },
-    /// Emitido cuando un actor sale de un área de ejecución (trigger).
-    TriggerExited { trigger_id: u32, actor_id: u32 },
     /// Emitido cada 5 minutos cuando el autosave está activo.
     AutosaveTick,
     /// Respuesta a `export_save_snapshot`: escena activa lista para el `.save`.
@@ -911,11 +942,29 @@ pub struct SpriteInfo {
     pub height: u32,
 }
 
+/// Entrada en `State::model_store` (biblioteca Resources / precarga).
+#[derive(Debug, Clone, Default)]
+pub struct ModelStoreEntry {
+    pub name: String,
+    pub category: Option<String>,
+}
+
 /// Información básica de un modelo 3D en el almacén de recursos.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ModelInfo {
     pub path: String,
     pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
+}
+
+/// Categorías válidas de biblioteca (`ModelCategory` en el renderer).
+pub fn normalize_model_library_category(raw: Option<&str>) -> Option<String> {
+    let s = raw?.trim();
+    match s {
+        "character" | "environment" | "object" => Some(s.to_string()),
+        _ => None,
+    }
 }
 
 /// Información básica de un sonido almacenado en el motor.
@@ -936,6 +985,8 @@ pub struct BackgroundInfo {
 pub struct ImportSceneSprite {
     pub path: String,
     pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
 }
 
 #[allow(non_snake_case)]
@@ -984,7 +1035,9 @@ pub struct ProjectLoaded3dEvent {
     pub blueprints:     serde_json::Value,
     pub world:          ProjectLoaded3dWorld,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub playerTransform: Option<serde_json::Value>,
+    pub player: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub config_camera: Option<serde_json::Value>,
 }
 
 /// Escribe `project_loaded_3d` en stdout (claves camelCase = `ProjectLoaded3dPayload` en TS).

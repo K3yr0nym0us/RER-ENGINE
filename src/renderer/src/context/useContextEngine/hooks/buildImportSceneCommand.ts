@@ -1,12 +1,14 @@
 import type {
 	BluePrintEntry,
-	ProjectSaveData,
+	Entity3D,
 	SavedAnimation,
 	SavedEntity,
+	SavedPlayerTransform,
 	SavedScene,
 	SavedScript,
 } from '@shared-types';
-import { DEFAULT_GRAVITY_MAGNITUDE, isEditorCameraPath, isPlayerPath } from '@shared-types';
+import { DEFAULT_GRAVITY_MAGNITUDE, entityPathMarker } from '@shared-types';
+import { entity3dToMeta } from '../../../utils/entity3dEditorSync';
 
 import type { EngineAction, EngineInternalRefs, EntityMeta, Transform } from '../types';
 
@@ -123,31 +125,9 @@ export function is3dProjectLoadedByEngine(
 	return projectType === '3D' && Boolean(extractDir?.trim());
 }
 
-/** Escena activa del manifest (misma resolución que en `ready` del handler). */
-export function resolveActiveSceneSave(baseSave: ProjectSaveData): {
-	save: ProjectSaveData & { entities: SavedEntity[] };
-	activeScene: SavedScene | null;
-} {
-	const scenes = baseSave.scenes ?? [];
-	const activeScene =
-		scenes.length > 0
-			? (scenes.find((scene) => scene.id === baseSave.activeSceneId) ?? scenes[0])
-			: null;
-
-	const save = activeScene
-		? {
-				...baseSave,
-				world: activeScene.world,
-				backgroundPath: activeScene.backgroundPath,
-				entities: activeScene.entities,
-				playerTransform: activeScene.playerTransform,
-				camera2d: activeScene.camera2d,
-				sprites: activeScene.sprites,
-				models: activeScene.models,
-			}
-		: baseSave;
-
-	return { save: save as ProjectSaveData & { entities: SavedEntity[] }, activeScene };
+/** Proyecto existente: Electron extrajo el `.save` y el motor lee `extract_dir`. */
+export function isProjectOpenedFromSave(extractDir: string | null | undefined): boolean {
+	return Boolean(extractDir?.trim());
 }
 
 export function buildImportSceneCommand(scene: SavedScene, blueprints?: BluePrintEntry[]) {
@@ -174,6 +154,45 @@ export function buildImportSceneCommand(scene: SavedScene, blueprints?: BluePrin
 	};
 }
 
+/** Meta del jugador desde `player` del manifest (no está en `entities`). */
+export function syncPlayerEntityMetaFromPlayer(
+	refs: EngineInternalRefs,
+	playerId: number,
+	player: Entity3D,
+) {
+	refs.entityMetaRef.current[playerId] = entity3dToMeta(player);
+}
+
+/** @deprecated Runtime FP agregado; preferir `syncPlayerEntityMetaFromPlayer`. */
+export function syncPlayerEntityMetaFromTransform(
+	refs: EngineInternalRefs,
+	playerId: number,
+	playerTransform: SavedPlayerTransform,
+) {
+	const existing = refs.entityMetaRef.current[playerId];
+	refs.entityMetaRef.current[playerId] = {
+		kind: 'character',
+		path: existing?.path ?? '[Player]',
+		name: existing?.name ?? 'Player',
+		physicsEnabled: true,
+		physicsType: 'dynamic',
+		...(playerTransform.control_bindings
+			? { controlBindings: playerTransform.control_bindings }
+			: {}),
+		...(playerTransform.scripts?.length
+			? {
+					scripts: playerTransform.scripts.map((s) => ({
+						name: s.name,
+						source: s.source,
+					})),
+				}
+			: {}),
+		...(playerTransform.visual_model_path
+			? { visualModelPath: playerTransform.visual_model_path }
+			: {}),
+	};
+}
+
 export function syncEditorStateFromSavedScene(
 	scene: SavedScene,
 	refs: EngineInternalRefs,
@@ -190,45 +209,26 @@ export function syncEditorStateFromSavedScene(
 	refs.entityTransformsRef.current = {};
 
 	for (const entity of scene.entities) {
-		const bp = entity.blueprint_id
-			? (blueprints ?? []).find((b) => b.id === entity.blueprint_id) ?? null
-			: null;
-		const restore = resolveEntityRestore(entity, blueprints);
-		const transform = resolveEntityTransform(entity, blueprints);
-		refs.entityTransformsRef.current[entity.id] = transform;
-
-		const meta: EntityMeta = {
-			kind: entity.kind,
-			path: entity.path,
-			name: entity.name,
-			physicsEnabled: restore.physicsEnabled,
-			physicsType: restore.physicsType,
-			...(entity.points ? { points: entity.points } : {}),
-			...((bp?.animations ?? entity.animations)
-				? { animations: (bp?.animations ?? entity.animations) as EntityMeta['animations'] }
-				: {}),
-			...(restore.scripts ? { scripts: restore.scripts as EntityMeta['scripts'] } : {}),
-			...(restore.controlBindings ? { controlBindings: restore.controlBindings } : {}),
-			...(entity.blueprint_id ? { blueprintId: entity.blueprint_id } : {}),
-			...(entity.entity_category ? { entityCategory: entity.entity_category } : {}),
-			...(entity.visual_model_path ? { visualModelPath: entity.visual_model_path } : {}),
-		};
+		const meta = entity3dToMeta(entity);
 		refs.entityMetaRef.current[entity.id] = meta;
+		refs.entityTransformsRef.current[entity.id] = {
+			position: entity.position,
+			rotation: entity.rotation ?? [0, 0, 0, 1],
+			scale: entity.scale,
+		};
 		entityIds.push(entity.id);
 
-		const entry = { id: entity.id, path: entity.path };
-		switch (entity.kind) {
-			case 'scenario':
-				scenarioEntities.push(entry);
-				break;
+		const entry = { id: entity.id, path: meta.path };
+		switch (entity.category) {
 			case 'character':
 				characterEntities.push(entry);
 				break;
-			case 'collider':
-				colliderEntities.push(entry);
+			case 'environment':
+			case 'object':
+				scenarioEntities.push(entry);
 				break;
-			case 'execution_area':
-				executionAreaEntities.push(entry);
+			case 'sun':
+				scenarioEntities.push(entry);
 				break;
 			default:
 				break;
@@ -237,16 +237,19 @@ export function syncEditorStateFromSavedScene(
 
 	refs.camera2dRef.current = scene.camera2d ?? DEFAULT_CAMERA_2D;
 
-	const player = scene.entities.find((e) => isPlayerPath(e.path));
-	if (player) {
-		refs.playerEntityIdRef.current = player.id;
-		refs.mainPlayerHandled.current = true;
+	if (scene.player) {
+		refs.mainPlayerHandled.current = false;
 		refs.playerRemoved.current = false;
+		const playerId = refs.playerEntityIdRef.current;
+		if (playerId != null) {
+			syncPlayerEntityMetaFromPlayer(refs, playerId, scene.player);
+			refs.mainPlayerHandled.current = true;
+		}
 	} else {
 		refs.playerEntityIdRef.current = null;
 		refs.mainPlayerHandled.current = false;
 	}
-	const editorCam = scene.entities.find((e) => isEditorCameraPath(e.path));
+	const editorCam = scene.entities.find((e) => entityPathMarker(e.model) === '[EditorCamera]');
 	refs.editorCameraEntityIdRef.current = editorCam?.id ?? null;
 
 	dispatch({

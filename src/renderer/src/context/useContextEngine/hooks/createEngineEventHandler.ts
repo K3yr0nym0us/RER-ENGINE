@@ -38,20 +38,22 @@ import { applyPlayCharacterControlDefaultsIfEmpty } from '../../../defaults/appl
 import {
 	applyPlayCharacterViewFromEngine,
 	applySavedPlayCharacterView,
-	ensurePlayCharacterOnLoad,
 	savedPlayCharacterViewForRestore,
 } from '../../../defaults/playCharacterSceneRestore';
 import { buildSetSceneCommand } from '../../../defaults/projectSceneLoad';
 import { engineSceneToSavedScene, requestEngineSaveSnapshot } from '../../../defaults/buildProjectSaveFromEngine';
 import { isModel3DPath, is3dModelFileEntity } from '../../../utils/blueprintModelPath';
+import { playViewFromPlayerAndCamera } from '../../../utils/entity3dEditorSync';
 import {
 	buildImportSceneCommand,
 	is2dProjectLoadedByEngine,
 	is3dProjectLoadedByEngine,
-	resolveActiveSceneSave,
+	isProjectOpenedFromSave,
 	resolveEntityTransform,
 	resolveSavedEntityTransform,
 	syncEditorStateFromSavedScene,
+	syncPlayerEntityMetaFromPlayer,
+	syncPlayerEntityMetaFromTransform,
 } from './buildImportSceneCommand';
 import { applyPendingRestoreMeta, buildPlayAnimationFrameCmd, sendApplyEntityRestore } from './applyPendingRestoreToEngine';
 import {
@@ -67,7 +69,6 @@ import {
 	endModelReplaceLoading,
 	endSceneBurstLoad,
 	endSceneImportLoading,
-	needsSceneBurstLoad,
 	trackSceneBurstCollider,
 	trackSceneBurstOp,
 	trackSceneBurstModelPreloads,
@@ -80,7 +81,6 @@ import {
 	takePendingRestoreByPath,
 	drainPendingRestoreSlot,
 	flushPendingCachedModelSpawnsForPath,
-	collectUncachedBurstModelPaths,
 	hasQueuedCachedModelSpawns,
 } from './sceneImportOverlay';
 import type { EngineAction, EngineInternalRefs, EntityMeta, PendingRestore, Transform } from '../types';
@@ -144,14 +144,14 @@ function shouldSilenceEngineEventLog(
 		| 'sceneImportInProgressRef'
 		| 'engineBootAwaitRef'
 		| 'engineBootFinishedRef'
-		| 'initialSaveRef'
+		| 'initialExtractDirRef'
 	>,
 	projectType?: string,
 ): boolean {
 	if (SILENT_ENGINE_EVENTS.has(eventName)) return true;
 	const bootPreloaded = isEngineBootScenePreloaded(
 		projectType,
-		Boolean(refs.initialSaveRef.current),
+		isProjectOpenedFromSave(refs.initialExtractDirRef.current),
 	);
 	const bootLogsActive = bootPreloaded && !refs.engineBootFinishedRef.current;
 	const loadPanelActive =
@@ -170,7 +170,7 @@ function panelLogLineForEngineEvent(
 		| 'sceneImportInProgressRef'
 		| 'engineBootAwaitRef'
 		| 'engineBootFinishedRef'
-		| 'initialSaveRef'
+		| 'initialExtractDirRef'
 	>,
 	projectType?: string,
 ): string | null | undefined {
@@ -178,7 +178,7 @@ function panelLogLineForEngineEvent(
 		const name = (event as { name?: string }).name;
 		const bootPreloaded = isEngineBootScenePreloaded(
 			projectType,
-			Boolean(refs.initialSaveRef.current),
+			isProjectOpenedFromSave(refs.initialExtractDirRef.current),
 		);
 		if (bootPreloaded && name?.startsWith('Sun')) {
 			return '[Carga] Insertando Sol (Sun)';
@@ -205,8 +205,8 @@ function applyPlayCharacterDefaultsForPlayer(
 	refs: EngineInternalRefs,
 ) {
 	if (gameStyle !== 'first-person') return;
-	// Proyecto abierto desde .save: bindings y entidades vienen del archivo, no de la plantilla.
-	if (refs.initialSaveRef.current) return;
+	// Proyecto abierto desde .save: bindings y entidades vienen del motor, no de la plantilla.
+	if (isProjectOpenedFromSave(refs.initialExtractDirRef.current)) return;
 
 	applyPlayCharacterControlDefaultsIfEmpty(characterId, refs.entityMetaRef, (cmd) => {
 		window.engine.send(cmd as never);
@@ -277,6 +277,7 @@ export function createEngineEventHandler({
 		const sendEngine = window.engine.send;
 
 		if (event.event === 'ready') {
+			const openedFromSave = isProjectOpenedFromSave(refs.initialExtractDirRef.current);
 			const engineLoads2dSave = is2dProjectLoadedByEngine(
 				projectType,
 				refs.initialExtractDirRef.current,
@@ -285,15 +286,13 @@ export function createEngineEventHandler({
 				projectType,
 				refs.initialExtractDirRef.current,
 			);
-			const engineLoadsSaveFromExtract = engineLoads2dSave || engineLoads3dSave;
 			dispatch({ type: 'SET_READY' });
 			dispatch({ type: 'SET_PREVIEW_PLAYING', payload: false });
 			if (refs.readyTimer.current) clearTimeout(refs.readyTimer.current);
-			const baseSave = refs.initialSaveRef.current;
 			const boot3dNoSave =
-				isEngineBootScenePreloaded(projectType, Boolean(baseSave)) && !engineLoads3dSave;
-			// Igual que main: si el motor ya cargó la plantilla 3D al arrancar, no repetir set_scene.
-			if (projectType && !engineLoadsSaveFromExtract && !boot3dNoSave) {
+				isEngineBootScenePreloaded(projectType, openedFromSave) && !engineLoads3dSave;
+			// Proyecto nuevo: plantilla vacía. Proyecto .save: el motor ya cargó desde extract_dir.
+			if (projectType && !openedFromSave && !boot3dNoSave) {
 				window.engine.send(
 					buildSetSceneCommand(projectType, refs.initialSavePathRef.current) as never,
 				);
@@ -305,319 +304,13 @@ export function createEngineEventHandler({
 			refs.playerRemoved.current = false;
 			refs.pendingPlayerDups.current = [];
 			refs.pendingDupQ.current = [];
-			let savedGravity: number | undefined;
-			if (baseSave && !engineLoadsSaveFromExtract) {
-				const { save, activeScene } = resolveActiveSceneSave(baseSave);
-				refs.initialSaveRef.current = save;
-				if (gameStyle === 'first-person' && projectType === '3D' && save.playerTransform) {
-					refs.pendingPlayCharacterViewRef.current = save.playerTransform;
-					refs.playCharacterViewRef.current = save.playerTransform;
-				}
-
-				const importScene2d = projectType === '2D' && (save.entities?.length ?? 0) > 0;
-
-				if (save.world) {
-					savedGravity = save.world.gravity;
-					const worldPayload = {
-						...save.world,
-						lightAmbient: save.world.lightAmbient ?? DEFAULT_LIGHT_AMBIENT,
-						lightIntensity: save.world.lightIntensity ?? DEFAULT_LIGHT_INTENSITY,
-						shadowDarkness: save.world.shadowDarkness ?? DEFAULT_SHADOW_DARKNESS,
-					};
-					dispatch({ type: 'SET_WORLD_CONFIG', payload: worldPayload });
-					if (!importScene2d && !engineLoads2dSave) {
-						sendEngine({
-							cmd: 'set_world_size',
-							width: save.world.worldWidth,
-							height: save.world.worldHeight,
-							depth: save.world.worldDepth,
-						} as never);
-						sendEngine({ cmd: 'set_grid_visible', visible: save.world.gridVisible } as never);
-						sendEngine({ cmd: 'set_grid_cell_size', size: save.world.gridCellSize } as never);
-						sendEngine({ cmd: 'set_target_fps', fps: save.world.targetFps } as never);
-						if (save.world.gravity != null) {
-							sendEngine({ cmd: 'set_gravity', gravity: save.world.gravity } as never);
-						}
-						if (projectType === '3D') {
-							sendEngine({
-								cmd: 'set_directional_light',
-								ambient: worldPayload.lightAmbient,
-								intensity: worldPayload.lightIntensity,
-								shadow_darkness: worldPayload.shadowDarkness,
-							} as never);
-						}
-					}
-				}
-			if (save.language && (save.language === 'en' || save.language === 'es')) {
-				const validLocale = save.language as Locale;
-				setLocale?.(validLocale);
-			}
-			if (save.camera2d) {
-				refs.camera2dRef.current = save.camera2d;
-				if (!importScene2d && !engineLoads2dSave) {
-					sendEngine({ cmd: 'set_camera2d', x: save.camera2d.x, y: save.camera2d.y, half_h: save.camera2d.halfH } as never);
-				}
-			}
-				if (engineLoads2dSave && save.sprites && save.sprites.length > 0) {
-					dispatch({ type: 'SET_LOADED_SPRITES_INFO', payload: save.sprites });
-				} else if (!importScene2d && save.sprites && save.sprites.length > 0) {
-					for (const sprite of save.sprites) {
-						sendEngine({ cmd: 'load_sprite', path: sprite.path, name: sprite.name } as never);
-						dispatch({ type: 'ADD_SPRITE_INFO', payload: { path: sprite.path, name: sprite.name } });
-					}
-				}
-				const burstLoadPlanned = !importScene2d
-					&& needsSceneBurstLoad(projectType, gameStyle, save);
-				if (save.models && save.models.length > 0 && !burstLoadPlanned) {
-					for (const model of save.models) {
-						sendEngine({ cmd: 'load_model_asset', path: model.path, name: model.name } as never);
-						dispatch({ type: 'ADD_MODEL_INFO', payload: { path: model.path, name: model.name, loading: true } });
-					}
-				}
-				if (save.sounds && save.sounds.length > 0) {
-					if (!engineLoads2dSave) {
-						for (const sound of save.sounds) {
-							sendEngine({ cmd: 'load_sound', path: sound.path, name: sound.name } as never);
-						}
-					}
-					dispatch({ type: 'SET_SOUNDS', payload: save.sounds });
-				}
-				if (save.backgrounds && save.backgrounds.length > 0) {
-					if (!engineLoads2dSave) {
-						for (const bg of save.backgrounds) {
-							sendEngine({ cmd: 'load_background_asset', path: bg.path, name: bg.name } as never);
-						}
-					}
-					dispatch({ type: 'SET_BACKGROUNDS', payload: save.backgrounds });
-				}
-				if (save.backgroundPath && !importScene2d && !engineLoads2dSave) {
-					sendEngine({ cmd: 'load_background', path: save.backgroundPath } as never);
-				}
-				let burstLoad = false;
-				if (importScene2d) {
-					if (!engineLoads2dSave) {
-						const sceneForImport: SavedScene = {
-							id: activeScene?.id ?? 1,
-							name: activeScene?.name ?? '',
-							world: save.world!,
-							backgroundPath: save.backgroundPath,
-							entities: save.entities,
-							playerTransform: save.playerTransform,
-							camera2d: save.camera2d,
-							sprites: save.sprites ?? [],
-						};
-						refs.pendingImportSceneRef.current = sceneForImport;
-						refs.pendingRestoresRef.current.clear();
-						beginSceneImportLoading(dispatch, refs.sceneImportInProgressRef);
-						sendEngine(
-							buildImportSceneCommand(
-								sceneForImport,
-								save.blueprints ?? refs.blueprintsRef.current,
-							) as never,
-						);
-					}
-				} else if (!engineLoads2dSave && !engineLoads3dSave) {
-				burstLoad = needsSceneBurstLoad(projectType, gameStyle, save);
-				if (burstLoad) {
-					refs.sceneBurstPendingColliderCountRef.current = 0;
-					beginSceneBurstLoad(dispatch, refs.sceneBurstLoadInProgressRef, refs);
-					if (save.models && save.models.length > 0) {
-						trackSceneBurstModelPreloads(refs, save.models.length);
-						for (const model of save.models) {
-							sendEngine({ cmd: 'load_model_asset', path: model.path, name: model.name } as never);
-							dispatch({ type: 'ADD_MODEL_INFO', payload: { path: model.path, name: model.name, loading: true } });
-						}
-					}
-				}
-				const loadBlueprints = save.blueprints ?? refs.blueprintsRef.current;
-				for (const entity of save.entities) {
-					const transform = is3dModelFileEntity(projectType, entity)
-						? resolveSavedEntityTransform(entity)
-						: resolveEntityTransform(entity, loadBlueprints);
-					if (entity.kind === 'collider' && entity.points) {
-						if (projectType === '2D') {
-							if (burstLoad) {
-								trackSceneBurstCollider(refs);
-								trackSceneBurstOp(refs);
-							}
-							sendEngine({ cmd: 'create_collider_from_points', points: entity.points, track_undo: false } as never);
-						}
-					} else if (entity.kind === 'execution_area' && entity.points) {
-						if (projectType === '2D') {
-							const pendingRestore: PendingRestore = {
-								transform,
-								name: entity.name,
-								physicsEnabled: entity.physics_enabled ?? false,
-								physicsType: entity.physics_type ?? 'static',
-								scripts: entity.scripts,
-							};
-							const queue = refs.pendingRestoresRef.current.get('[ExecutionArea]') ?? [];
-							queue.push(pendingRestore);
-							refs.pendingRestoresRef.current.set('[ExecutionArea]', queue);
-							if (burstLoad) trackSceneBurstOp(refs);
-							sendEngine({ cmd: 'create_execution_area_from_points', points: entity.points, track_undo: false } as never);
-						}
-					} else if (entity.kind === 'character' && isPlayerPath(entity.path)) {
-						const savedPlayer = save.playerTransform;
-						if (savedPlayer) {
-							refs.pendingPlayCharacterViewRef.current = savedPlayer;
-						}
-						const pendingRestore: PendingRestore = {
-							transform,
-							name: entity.name,
-							physicsEnabled: true,
-							physicsType: 'dynamic',
-							scripts: entity.scripts,
-							controlBindings: savedPlayer?.control_bindings ?? entity.control_bindings,
-							visualModelPath: savedPlayer?.visual_model_path ?? entity.visual_model_path,
-						};
-						const queue = refs.pendingRestoresRef.current.get('[Player]') ?? [];
-						queue.push(pendingRestore);
-						refs.pendingRestoresRef.current.set('[Player]', queue);
-						if (burstLoad) trackSceneBurstOp(refs);
-						sendEngine({ cmd: 'load_character', path: entity.path } as never);
-					} else if (entity.kind === 'directional_light' || isSunPath(entity.path)) {
-						const pendingRestore: PendingRestore = {
-							transform,
-							name: entity.name,
-							physicsEnabled: false,
-							physicsType: 'static',
-							scripts: entity.scripts,
-							controlBindings: entity.control_bindings,
-							blueprintId: entity.blueprint_id,
-						};
-						const queue = refs.pendingRestoresRef.current.get('[Sun]') ?? [];
-						queue.push(pendingRestore);
-						refs.pendingRestoresRef.current.set('[Sun]', queue);
-						if (burstLoad) trackSceneBurstOp(refs);
-						sendEngine({
-							cmd: 'spawn_sun',
-							name: entity.name ?? '',
-							position: entity.position,
-							scale: entity.scale,
-						} as never);
-					} else if (entity.kind === 'model' && isGroundPath(entity.path)) {
-						const pendingRestore: PendingRestore = {
-							transform,
-							name: entity.name,
-							physicsEnabled: false,
-							physicsType: 'static',
-							scripts: entity.scripts,
-							controlBindings: entity.control_bindings,
-						};
-						const queue = refs.pendingRestoresRef.current.get('[Ground]') ?? [];
-						queue.push(pendingRestore);
-						refs.pendingRestoresRef.current.set('[Ground]', queue);
-						if (burstLoad) trackSceneBurstOp(refs);
-						sendEngine({
-							cmd: 'spawn_ground',
-							position: entity.position,
-							scale: entity.scale,
-						} as never);
-					} else if (entity.kind === 'model' && isEditorBoxPath(entity.path)) {
-						const pendingRestore: PendingRestore = {
-							transform,
-							name: entity.name,
-							physicsEnabled: entity.physics_enabled ?? false,
-							physicsType: entity.physics_type ?? 'static',
-							scripts: entity.scripts,
-							controlBindings: entity.control_bindings,
-							blueprintId: entity.blueprint_id,
-						};
-						const queue = refs.pendingRestoresRef.current.get('[EditorBox]') ?? [];
-						queue.push(pendingRestore);
-						refs.pendingRestoresRef.current.set('[EditorBox]', queue);
-						if (burstLoad) trackSceneBurstOp(refs);
-						sendEngine({
-							cmd: 'spawn_editor_box',
-							name: entity.name ?? '',
-							position: entity.position,
-							scale: entity.scale,
-						} as never);
-					} else if (entity.kind === 'scenario' && projectType === '3D' && !isModel3DPath(entity.path)) {
-						// Escenarios 2D legacy sin archivo 3D.
-					} else {
-						// Si la entidad es una instancia de blueprint, heredar las propiedades
-						// del blueprint original en lugar de las guardadas por entidad.
-						const bp = entity.blueprint_id
-							? (save.blueprints ?? []).find((b) => b.id === entity.blueprint_id) ?? null
-							: null;
-						const pendingRestore: PendingRestore = {
-							transform,
-							name: entity.name,
-							physicsEnabled: bp?.physics_enabled ?? entity.physics_enabled ?? false,
-							physicsType: bp?.physics_type ?? entity.physics_type ?? 'static',
-							animations: bp?.animations ?? entity.animations,
-							scripts: bp?.scripts ?? entity.scripts,
-							controlBindings: bp?.control_bindings ?? entity.control_bindings,
-							blueprintId: entity.blueprint_id,
-							entityCategory: entity.entity_category,
-							visualModelPath: entity.visual_model_path,
-						};
-						if (!burstLoad) {
-							const queue = refs.pendingRestoresRef.current.get(entity.path) ?? [];
-							queue.push(pendingRestore);
-							refs.pendingRestoresRef.current.set(entity.path, queue);
-						}
-						if (entity.kind === 'scenario') sendEngine({ cmd: 'load_scenario', path: entity.path } as never);
-						if (is3dModelFileEntity(projectType, entity)) {
-							refs.pendingModelLoadQueueRef.current.push({
-								modelPath: entity.path,
-								pending: pendingRestore,
-							});
-							if (!burstLoad) {
-								sendEngine({
-									cmd: 'load_model',
-									path: entity.path,
-									single_instance: true,
-									...(entity.entity_category
-										? { entity_category: entity.entity_category }
-										: {}),
-								} as never);
-							}
-						}
-					}
-				}
-				}
-				if (burstLoad && refs.pendingModelLoadQueueRef.current.length > 0) {
-					const preloadedPaths = (save.models ?? []).map((model) => model.path);
-					const queuedPaths = refs.pendingModelLoadQueueRef.current.map((item) => item.modelPath);
-					const extraPaths = collectUncachedBurstModelPaths(queuedPaths, preloadedPaths);
-					if (extraPaths.size > 0) {
-						trackSceneBurstModelPreloads(refs, extraPaths.size);
-						for (const [path, name] of extraPaths) {
-							sendEngine({ cmd: 'load_model_asset', path, name } as never);
-							dispatch({ type: 'ADD_MODEL_INFO', payload: { path, name, loading: true } });
-						}
-					}
-				}
-				if (gameStyle === 'first-person' && projectType === '3D') {
-					ensurePlayCharacterOnLoad(save, refs.pendingRestoresRef, (cmd) => sendEngine(cmd as never), {
-						onBurstOp: burstLoad ? () => trackSceneBurstOp(refs) : undefined,
-					});
-				}
-				if (burstLoad) {
-					setTimeout(
-						() => tryEndSceneBurstLoad(
-							dispatch,
-							refs.sceneBurstLoadInProgressRef,
-							refs,
-							refs.sceneImportInProgressRef,
-							refs.modelReplaceInProgressRef,
-							reportBounds,
-						),
-						0,
-					);
-				}
-			}
 			const motorGravity = typeof event.gravity === 'number' ? event.gravity : undefined;
-			if (motorGravity != null && savedGravity == null) {
+			if (motorGravity != null) {
 				dispatch({ type: 'SET_WORLD_CONFIG', payload: { gravity: motorGravity } });
 			}
-			if (engineLoads3dSave) {
+			if (engineLoads2dSave || engineLoads3dSave) {
 				beginSceneImportLoading(dispatch, refs.sceneImportInProgressRef);
 			} else if (boot3dNoSave) {
-				// Dejar procesar IPC pendientes (p. ej. Sun_01) antes de cerrar el boot.
 				queueMicrotask(() => {
 					tryFinishEngineBootLoading(dispatch, refs, reportBounds);
 				});
@@ -627,7 +320,7 @@ export function createEngineEventHandler({
 		}
 
 		if (event.event === 'model_loaded') {
-			trackEngineBootIpcSeen(refs, projectType, Boolean(refs.initialSaveRef.current));
+			trackEngineBootIpcSeen(refs, projectType, isProjectOpenedFromSave(refs.initialExtractDirRef.current));
 			const loaded = event as {
 				id?: number
 				name?: string
@@ -793,21 +486,6 @@ export function createEngineEventHandler({
 				if (editorBoxQueue.length === 0) refs.pendingRestoresRef.current.delete('[EditorBox]');
 				burstHandled = true;
 			} else {
-				// Fallback legacy: solo cuando no hay restores pendientes de save-load.
-				// Evita clasificar como [Ground] cajas/muros llamados "Ground".
-				if (
-					!burstActive
-					&& loaded.name?.toLowerCase() === 'ground'
-					&& !refs.entityMetaRef.current[id]
-				) {
-					refs.entityMetaRef.current[id] = {
-						kind: 'model',
-						path: '[Ground]',
-						name: 'Ground',
-						physicsEnabled: false,
-						physicsType: 'static',
-					};
-				}
 				const spawnModelPath = refs.pendingModelPathRef.current;
 				const spawnKind = refs.pendingSpawnKindRef.current ?? 'model';
 				const spawnCategory = refs.pendingSpawnCategoryRef.current;
@@ -825,19 +503,7 @@ export function createEngineEventHandler({
 				let modelPath = spawnModelPath ?? loadItem?.modelPath ?? null;
 				let restorePending = loadItem?.pending;
 				if (!restorePending && modelPath) {
-					let qbQueue = refs.pendingRestoresRef.current.get(modelPath);
-					if ((!qbQueue || qbQueue.length === 0) && modelPath) {
-						const base = modelPath.split(/[/\\]/).pop()?.toLowerCase();
-						if (base) {
-							for (const [key, queue] of refs.pendingRestoresRef.current.entries()) {
-								if (queue.length > 0 && key.split(/[/\\]/).pop()?.toLowerCase() === base) {
-									qbQueue = queue;
-									modelPath = key;
-									break;
-								}
-							}
-						}
-					}
+					const qbQueue = refs.pendingRestoresRef.current.get(modelPath);
 					if (qbQueue && qbQueue.length > 0) {
 						restorePending = qbQueue.shift()!;
 						if (qbQueue.length === 0) {
@@ -853,18 +519,6 @@ export function createEngineEventHandler({
 					if (matched) {
 						restorePending = matched.pending;
 						modelPath = modelPath ?? matched.path;
-					}
-				}
-				if (!restorePending && burstActive && loaded.name) {
-					for (const [key, queue] of refs.pendingRestoresRef.current.entries()) {
-						if (queue.length === 0 || key.startsWith('[')) continue;
-						const head = queue[0];
-						if (head.name && head.name === loaded.name) {
-							restorePending = queue.shift()!;
-							modelPath = modelPath ?? key;
-							if (queue.length === 0) refs.pendingRestoresRef.current.delete(key);
-							break;
-						}
 					}
 				}
 				if (modelPath) {
@@ -1045,7 +699,32 @@ export function createEngineEventHandler({
 					refs.pendingPlayCharacterViewRef.current,
 					refs.playCharacterViewRef.current,
 				);
-				if (savedView?.position) {
+				if (replaced.position) {
+					window.engine.send({
+						cmd: 'set_play_character_view',
+						position: replaced.position,
+						...(savedView?.yaw !== undefined ? { yaw: savedView.yaw } : {}),
+						...(savedView?.pitch !== undefined ? { pitch: savedView.pitch } : {}),
+						...(savedView?.fov_y !== undefined ? { fov_y: savedView.fov_y } : {}),
+						...(savedView?.frustum_distance !== undefined
+							? { frustum_distance: savedView.frustum_distance }
+							: {}),
+						...(savedView?.camera_follow_mode
+							? { camera_follow_mode: savedView.camera_follow_mode }
+							: {}),
+						...(savedView?.body_rotation ? { body_rotation: savedView.body_rotation } : {}),
+						...(savedView?.body_scale ? { body_scale: savedView.body_scale } : {}),
+						...(savedView?.camera_eye_position
+							? { camera_eye_position: savedView.camera_eye_position }
+							: {}),
+						...(savedView?.fps_camera_yaw !== undefined
+							? { fps_camera_yaw: savedView.fps_camera_yaw }
+							: {}),
+						...(savedView?.fps_camera_pitch !== undefined
+							? { fps_camera_pitch: savedView.fps_camera_pitch }
+							: {}),
+					} as never);
+				} else if (savedView?.position) {
 					applySavedPlayCharacterView(savedView);
 				}
 				if (refs.sceneBurstLoadInProgressRef.current) {
@@ -1211,16 +890,17 @@ export function createEngineEventHandler({
 			const payload = event as unknown as ProjectLoaded3dPayload;
 			refs.projectLoaded3dMetaRef.current = payload;
 			refs.blueprintsRef.current = payload.blueprints;
-			if (payload.playerTransform) {
-				refs.pendingPlayCharacterViewRef.current = payload.playerTransform;
-				refs.playCharacterViewRef.current = payload.playerTransform;
+			if (payload.player && payload.config_camera) {
+				const view = playViewFromPlayerAndCamera(payload.player, payload.config_camera);
+				refs.pendingPlayCharacterViewRef.current = view;
+				refs.playCharacterViewRef.current = view;
 			}
 			if (payload.language === 'en' || payload.language === 'es') {
 				setLocale?.(payload.language as Locale);
 			}
 			dispatch({ type: 'APPLY_PROJECT_LOADED_3D', payload });
 			if (
-				(payload.entityCount > 0 || payload.playerTransform)
+				(payload.entityCount > 0 || payload.player)
 				&& !refs.sceneImportInProgressRef.current
 			) {
 				beginSceneImportLoading(dispatch, refs.sceneImportInProgressRef);
@@ -1253,6 +933,30 @@ export function createEngineEventHandler({
 						dispatch,
 						refs.blueprintsRef.current,
 					);
+					const playerId = refs.playerEntityIdRef.current;
+					if (playerId != null && scene.player) {
+						syncPlayerEntityMetaFromPlayer(refs, playerId, scene.player);
+						if (scene.player.controls) {
+							window.engine.send({
+								cmd: 'set_control_bindings',
+								id: playerId,
+								bindings: scene.player.controls,
+							} as never);
+						}
+						const playerView =
+							scene.config_camera
+								? playViewFromPlayerAndCamera(scene.player, scene.config_camera)
+								: refs.playCharacterViewRef.current ??
+									refs.pendingPlayCharacterViewRef.current;
+						if (playerView) {
+							refs.playCharacterViewRef.current = playerView;
+							refs.pendingPlayCharacterViewRef.current = playerView;
+						}
+						applyPlayCharacterControlDefaultsIfEmpty(playerId, refs.entityMetaRef, (cmd) => {
+							window.engine.send(cmd as never);
+						});
+						refs.mainPlayerHandled.current = true;
+					}
 					if (scene.models?.length) {
 						for (const model of scene.models) {
 							dispatch({
@@ -1261,6 +965,7 @@ export function createEngineEventHandler({
 							});
 						}
 					}
+					window.engine.send({ cmd: 'get_models_list' } as never);
 					dispatch({ type: 'SYNC_PLAY_CHARACTER_VIEW' });
 				} catch (err) {
 					console.error('[project_load_3d_complete] sync desde snapshot del motor:', err);
@@ -1367,13 +1072,14 @@ export function createEngineEventHandler({
 		}
 
 		if (event.event === 'character_loaded') {
-			if (refs.sceneImportInProgressRef.current) return;
-			trackEngineBootIpcSeen(refs, projectType, Boolean(refs.initialSaveRef.current));
+			const characterPath = (event as { path?: string }).path ?? '';
+			if (refs.sceneImportInProgressRef.current && !isPlayerPath(characterPath)) return;
+			trackEngineBootIpcSeen(refs, projectType, isProjectOpenedFromSave(refs.initialExtractDirRef.current));
 			const character = event as unknown as CharacterLoaded;
 			const applyPendingRestore = (
 				id: number,
 				path: string,
-				options?: { skipTransform?: boolean },
+				options?: { skipTransform?: boolean; omitScale?: boolean },
 			) => {
 				const queue = refs.pendingRestoresRef.current.get(path);
 				if (!queue || queue.length === 0) return false;
@@ -1381,7 +1087,7 @@ export function createEngineEventHandler({
 				const pending = queue.shift()!;
 				const isPlayer = isPlayerPath(path);
 				sendApplyEntityRestore(id, pending, {
-					omitScale: isPlayer,
+					omitScale: options?.omitScale ?? isPlayer,
 					skipTransform: options?.skipTransform,
 				});
 				applyPendingRestoreMeta(refs, id, pending);
@@ -1414,12 +1120,12 @@ export function createEngineEventHandler({
 							kind: 'character',
 							path: character.path,
 							name: 'Player',
-							physicsEnabled: true,
-							physicsType: 'dynamic',
+							physicsEnabled: false,
+							physicsType: '',
 						};
 					} else {
-						refs.entityMetaRef.current[character.id].physicsEnabled = true;
-						refs.entityMetaRef.current[character.id].physicsType = 'dynamic';
+						refs.entityMetaRef.current[character.id].physicsEnabled = false;
+						refs.entityMetaRef.current[character.id].physicsType = '';
 					}
 					const savedFpView = savedPlayCharacterViewForRestore(
 						refs.pendingPlayCharacterViewRef.current,
@@ -1517,6 +1223,7 @@ export function createEngineEventHandler({
 		if (event.event === 'model_asset_loaded') {
 			const model = event as unknown as { path: string; name: string };
 			dispatch({ type: 'MARK_MODEL_READY', payload: { path: model.path, name: model.name } });
+			window.engine.send({ cmd: 'get_models_list' } as never);
 			const burstActive = refs.sceneBurstLoadInProgressRef.current;
 			const hasQueuedSpawns = hasQueuedCachedModelSpawns(
 				refs.pendingModelLoadQueueRef.current,
@@ -1552,7 +1259,9 @@ export function createEngineEventHandler({
 		}
 
 		if (event.event === 'models_list') {
-			const modelsList = event as unknown as { models: { path: string; name: string }[] };
+			const modelsList = event as unknown as {
+				models: { path: string; name: string; category?: import('@shared-types').ModelCategory }[];
+			};
 			dispatch({ type: 'SET_MODELS', payload: modelsList.models });
 		}
 

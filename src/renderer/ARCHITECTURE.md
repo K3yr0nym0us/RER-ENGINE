@@ -63,6 +63,15 @@ Archivos clave:
 - `src/pages/EngineView/components/sidebar/CameraAccordion.tsx` — dispara `set_play_character_view`; refresca UI con `playCharacterViewSyncSeq`.
 - `src/shared-types/types.ts` — `PlayCharacterViewChanged`, comando `set_play_character_view`.
 
+## Abrir `.save`
+
+1. Main extrae el ZIP a un directorio temporal (`extractDir`) y lee solo metadatos (`type`, `gameStyle`) del `manifest.json`.
+2. El renderer recibe `initialExtractDir` + `initialSavePath`; **no** recibe `ProjectSaveData` en memoria.
+3. Al arrancar el motor, `set_scene` / spawn usan `extract_dir`; Rust carga `manifest.json` y emite `project_loaded_2d` / `project_loaded_3d` + `project_load_*_complete`.
+4. El front sincroniza pestañas, modelos y entidades desde esos eventos (y `get_models_list` si hace falta), sin reenviar `load_model_asset` ni reconstruir la escena en el handler `ready`.
+
+Proyecto **nuevo** (sin `extractDir`): en `ready` se envía `set_scene` con plantilla vacía; la carga de pestañas inactivas sigue siendo vía `import_scene` al cambiar de tab.
+
 ## Guardado `.save`
 
 El **ZIP** lo escribe Electron/main; el **contenido de la escena activa** depende del tipo de proyecto:
@@ -76,9 +85,9 @@ Flujo (ambos motores):
 1. Front → `{ cmd: 'export_save_snapshot' }`.
 2. Motor recorre la escena (entidades placeholder del template FP incluidas), mundo, jugador FP, cámara 2D si aplica, stores de assets y scripts registrados.
 3. Motor → `save_snapshot_ready` con `scene`.
-4. Front arma `ProjectSaveData`: fusiona blueprints, idioma, sonidos/fondos del contexto, pestañas **inactivas** desde `sceneStateStore`, y `blueprint_id` / categoría desde `entityMetaRef` cuando exista.
+4. Front arma `ProjectSaveData`: fusiona blueprints, idioma, sonidos/fondos del contexto, pestañas **inactivas** desde `sceneStateStore`, y `blueprint_id` / `entity_category` de entidades desde `entityMetaRef` cuando exista. La **categoría de biblioteca** (accordion Resources: character / environment / object) la guarda el motor en `model_store` y va en el snapshot (`models[].category`).
 
-El front **no** decide qué entidades van al save ni arma `playerTransform` desde refs locales (salvo metadatos de editor: blueprints, categorías).
+El front **no** decide qué entidades ni qué modelos precargados van al save ni arma `playerTransform` desde refs locales (salvo metadatos de editor: blueprints, animaciones de celda, pestañas inactivas).
 
 ## Relacion con los dos motores
 

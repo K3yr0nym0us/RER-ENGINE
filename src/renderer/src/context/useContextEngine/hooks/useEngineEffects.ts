@@ -78,7 +78,7 @@ export function useEngineEffects({
 		const onViewportResize = () => reportBoundsDebouncedRef.current();
 
 		beginEngineBootLoading(dispatch);
-		if (isEngineBootScenePreloaded(projectType, Boolean(refs.initialSaveRef.current))) {
+		if (isEngineBootScenePreloaded(projectType, Boolean(refs.initialExtractDirRef.current?.trim()))) {
 			beginEngineBootEntityWait(refs);
 		}
 		reportBoundsRef.current();

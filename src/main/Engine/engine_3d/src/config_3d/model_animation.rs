@@ -12,7 +12,7 @@ use crate::config_3d::model_asset::{
     GltfFile, ModelAsset, MAX_JOINTS,
 };
 use crate::ipc::ModelClipInfoEvent;
-use crate::ecs::{EntityId, Transform};
+use crate::ecs::EntityId;
 use crate::engine::State;
 use crate::ipc::{send_event, EngineEvent};
 use crate::mesh::{upload_skinned, SkinnedMesh};
@@ -58,12 +58,7 @@ impl State {
         self.default_animation_by_entity.remove(&id);
 
         let normalize = if self.play_character_entity == Some(id) {
-            Some(
-                self.world
-                    .get::<Transform>(id)
-                    .map(|t| (t.scale.y * PLAY_CHARACTER_BODY_HEIGHT).max(0.1))
-                    .unwrap_or(PLAY_CHARACTER_BODY_HEIGHT),
-            )
+            Some(PLAY_CHARACTER_BODY_HEIGHT)
         } else {
             None
         };
@@ -377,11 +372,9 @@ impl State {
             let mut joint_palette = vec![Mat4::IDENTITY; MAX_JOINTS];
             for ji in 0..joint_count {
                 let g2b = Mat4::from_cols_array_2d(&part.inverse_bind[ji]);
-                joint_palette[ji] = if gltf_skin {
-                    // glTF: vértices en espacio local del nodo mesh; IBM del archivo ya es Khronos estándar.
+                joint_palette[ji] = if gltf_skin && inv_mesh == Mat4::IDENTITY {
                     norm * global[ji] * g2b * inv_norm
                 } else {
-                    // FBX: vértices ya en mundo del nodo de malla
                     norm * global[ji] * g2b * inv_mesh * inv_norm
                 };
             }

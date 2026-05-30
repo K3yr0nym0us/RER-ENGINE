@@ -25,6 +25,7 @@ pub(crate) mod gltf_texture_load;
 pub(crate) mod mesh_3d;
 pub(crate) mod model_asset;
 pub(crate) mod model_animation;
+pub(crate) mod collision_overlay;
 pub(crate) mod physics_3d;
 pub(crate) mod quick_build;
 pub(crate) mod static_model_cache;
@@ -185,17 +186,13 @@ use crate::config_3d::character_anchor::{
 };
 use crate::config_shared::point_to_segment_2d;
 use crate::ecs::{EntityId, MeshComponent, NonSelectable, Transform};
-use crate::entity_save_meta::EntitySaveMeta;
 use crate::engine::State;
 use crate::ipc::{send_event, EngineEvent};
 
 impl State {
     pub(crate) fn entity_model_local_bounds(&self, id: EntityId) -> Option<([f32; 3], [f32; 3])> {
-        let path = self.save_registry.meta.get(&id)?.path.as_str();
-        if path.starts_with('[') {
-            return None;
-        }
-        self.cached_static_model_parts(path)
+        let path = self.entity_asset_path_for_bounds(id)?;
+        self.cached_static_model_parts(&path)
             .and_then(|parts| parts.first())
             .map(|p| p.local_bounds)
     }
@@ -205,16 +202,46 @@ impl State {
             return;
         };
         let model_path = self
-            .save_registry
-            .meta
-            .get(&id)
-            .map(|m| m.path.as_str())
-            .unwrap_or("");
+            .entity_asset_path_for_bounds(id)
+            .unwrap_or_default();
         let bounds = self.entity_model_local_bounds(id);
         let half = physics_half_extents_for_model(t.scale.abs().to_array(), bounds);
-        let body_pos = physics_body_world_center(&t, bounds, model_path, half);
+        let body_pos = physics_body_world_center(&t, bounds, model_path.as_str(), half);
         self.physics
             .set_entity_physics(id, true, body_type, body_pos, half);
+    }
+
+    /// Colisión de placeholders (`[EditorBox]`, cubos FP): caja estática según escala del transform.
+    pub(crate) fn set_entity_physics_from_transform_box(&mut self, id: EntityId, body_type: &str) {
+        let Some(t) = self.world.get::<Transform>(id).cloned() else {
+            return;
+        };
+        let scale = t.scale.abs().to_array();
+        let half = [
+            scale[0] * 0.5,
+            scale[1] * 0.5,
+            scale[2] * 0.5,
+        ];
+        let pos = t.position.to_array();
+        self.physics
+            .set_entity_physics(id, true, body_type, pos, half);
+    }
+
+    /// `colision` con AABB de archivo `.glb`/`.fbx`; marcadores de plantilla usan caja del transform.
+    pub(crate) fn uses_mesh_file_collision(&self, id: EntityId) -> bool {
+        let Some(meta) = self.save_registry.meta.get(&id) else {
+            return false;
+        };
+        let path = meta
+            .visual_model_path
+            .as_deref()
+            .filter(|p| !p.trim().is_empty())
+            .unwrap_or(meta.path.as_str());
+        if crate::entity_save_meta::entity_path_marker(path).is_some() {
+            return false;
+        }
+        let lower = path.to_ascii_lowercase();
+        lower.ends_with(".glb") || lower.ends_with(".gltf") || lower.ends_with(".fbx")
     }
 
     /// Recrea el collider Rapier alineado al AABB de la malla (posición + escala actuales).
@@ -226,36 +253,90 @@ impl State {
         self.set_entity_physics_from_mesh_aabb(id, &body_type);
     }
 
-    /// Tras spawn/restore/carga: entornos siempre con física estática; el resto solo si ya tenía collider.
+    /// Aplica `colision` tras spawn/carga o cambio de modelo según categoría y tipo de mesh.
     pub(crate) fn reconcile_entity_physics_with_mesh(&mut self, id: EntityId) {
-        if self.play_character_entity == Some(id) {
+        if !self.entity_colision.get(&id).copied().unwrap_or(true) {
+            if self.play_character_entity != Some(id) {
+                self.physics.remove_entity_body(id);
+            }
             return;
         }
-        let is_environment = self
+
+        if self.play_character_entity == Some(id) {
+            self.ensure_play_character_kinematic_only();
+            return;
+        }
+
+        if self.ground_entity_id() == Some(id) {
+            self.physics.remove_entity_body(id);
+            return;
+        }
+
+        if self.sun_entity == Some(id) {
+            self.physics.remove_entity_body(id);
+            return;
+        }
+
+        if self.editor_camera_entity == Some(id) {
+            self.physics.remove_entity_body(id);
+            return;
+        }
+
+        let category = self
             .save_registry
             .meta
             .get(&id)
-            .map(|m| m.entity_category.as_deref() == Some("environment"))
-            .unwrap_or(false);
-        if is_environment {
-            self.set_entity_physics_from_mesh_aabb(id, "static");
-        } else if self.physics.has_physics(id) {
-            let body_type = self.physics.get_body_type(id).to_string();
+            .and_then(|m| m.entity_category.as_deref());
+
+        if crate::entity_save_meta::entity_category_uses_character_capsule(category) {
+            self.physics.remove_entity_body(id);
+            return;
+        }
+
+        if !self.uses_mesh_file_collision(id) {
+            let body_type = if self.physics.has_physics(id) {
+                self.physics.get_body_type(id).to_string()
+            } else {
+                "static".to_string()
+            };
+            self.set_entity_physics_from_transform_box(id, &body_type);
+            return;
+        }
+
+        let body_type = if self.physics.has_physics(id) {
+            self.physics.get_body_type(id).to_string()
+        } else {
+            "static".to_string()
+        };
+
+        if crate::entity_save_meta::entity_category_uses_mesh_collision(category) {
+            self.set_entity_physics_from_mesh_aabb(id, &body_type);
+            return;
+        }
+
+        if self.physics.has_physics(id) {
             self.set_entity_physics_from_mesh_aabb(id, &body_type);
         }
     }
 
+    /// Tras `replace_entity_model` en entidades que no son el jugador principal.
+    pub(crate) fn reconcile_entity_physics_after_model_replace(&mut self, id: EntityId) {
+        self.reconcile_entity_physics_with_mesh(id);
+    }
+
     /// AABB en mundo para hover/click: misma caja que Rapier (`local_bounds` + transform).
     fn entity_world_pick_aabb(&self, id: EntityId, transform: &Transform) -> (GlamVec3, GlamVec3) {
+        if self.play_character_entity == Some(id) {
+            if let Some((center, half)) = self.play_character_world_pick_aabb() {
+                return (center, half);
+            }
+        }
         let model_path = self
-            .save_registry
-            .meta
-            .get(&id)
-            .map(|m| m.path.as_str())
-            .unwrap_or("");
+            .entity_asset_path_for_bounds(id)
+            .unwrap_or_default();
         let bounds = self.entity_model_local_bounds(id);
         let half = physics_half_extents_for_model(transform.scale.abs().to_array(), bounds);
-        let center = physics_body_world_center(transform, bounds, model_path, half);
+        let center = physics_body_world_center(transform, bounds, model_path.as_str(), half);
         (GlamVec3::from_array(center), GlamVec3::from_array(half))
     }
 
@@ -304,12 +385,7 @@ impl State {
         }
 
         let normalize = if is_play_character {
-            Some(
-                self.world
-                    .get::<Transform>(id)
-                    .map(|t| (t.scale.y * PLAY_CHARACTER_BODY_HEIGHT).max(0.1))
-                    .unwrap_or(PLAY_CHARACTER_BODY_HEIGHT),
-            )
+            Some(PLAY_CHARACTER_BODY_HEIGHT)
         } else {
             None
         };
@@ -377,20 +453,7 @@ impl State {
         }
 
         if is_play_character {
-            if let Some(m) = self.save_registry.meta.get_mut(&id) {
-                m.visual_model_path = Some(path.to_string());
-            } else {
-                self.save_registry.register_meta(
-                    id,
-                    EntitySaveMeta {
-                        kind: "character".to_string(),
-                        path: "[Player]".to_string(),
-                        visual_model_path: Some(path.to_string()),
-                        points: None,
-                        entity_category: None,
-                    },
-                );
-            }
+            self.register_or_update_visual_model_meta(id, path, true);
             self.play_character_mesh_forward_xz = part.forward_xz;
             if is_fbx_model_path(path) {
                 if let Some(skin_fwd) = model_asset::fbx_skinned_play_forward_xz(
@@ -400,21 +463,20 @@ impl State {
                     self.play_character_mesh_forward_xz = skin_fwd;
                 }
             }
-            self.apply_play_character_model_placement_after_load(id, path, part.local_bounds);
-            self.sync_play_character_body_rotation_after_mesh_assign();
             self.physics.remove_entity_body(id);
-            self.emit_play_character_view_changed(false);
-        } else if let Some(m) = self.save_registry.meta.get_mut(&id) {
-            m.path = path.to_string();
-            m.visual_model_path = Some(path.to_string());
+        } else {
+            self.register_or_update_visual_model_meta(id, path, false);
         }
 
-        if !is_play_character {
-            self.sync_entity_physics_collider(id);
+        if self.should_apply_play_character_mesh_collision(id, path) {
+            self.apply_play_character_model_placement_after_load(id, path, part.local_bounds);
+            self.sync_play_character_body_rotation_after_mesh_assign();
+        } else if !is_play_character {
+            self.reconcile_entity_physics_after_model_replace(id);
         }
 
         self.try_bind_model_animations(id, &asset_key);
-        if is_play_character && self.model_animation_bindings.contains_key(&id) {
+        if is_play_character {
             if let Some(asset) = self.model_assets.get(&asset_key) {
                 if is_fbx_model_path(path) {
                     self.play_character_mesh_forward_xz =
@@ -423,13 +485,18 @@ impl State {
                     self.play_character_mesh_forward_xz =
                         model_asset::resolve_gltf_play_character_forward_xz(asset);
                 }
-                self.sync_play_character_body_rotation_after_mesh_assign();
             }
+            self.sync_play_character_body_rotation_after_mesh_assign();
+        }
+        if self.should_apply_play_character_mesh_collision(id, path) {
+            self.finish_play_character_model_replace(id, path);
+        } else if !is_play_character {
+            self.reconcile_entity_physics_after_model_replace(id);
         }
 
         let (position, rotation, scale) = match self.world.get::<Transform>(id) {
             Some(t) => (
-                Some(t.position.to_array()),
+                Some(self.play_character_feet_position().to_array()),
                 Some([
                     t.rotation.x,
                     t.rotation.y,
@@ -510,20 +577,7 @@ impl State {
         }
 
         if is_play_character {
-            if let Some(m) = self.save_registry.meta.get_mut(&id) {
-                m.visual_model_path = Some(path.to_string());
-            } else {
-                self.save_registry.register_meta(
-                    id,
-                    EntitySaveMeta {
-                        kind: "character".to_string(),
-                        path: "[Player]".to_string(),
-                        visual_model_path: Some(path.to_string()),
-                        points: None,
-                        entity_category: None,
-                    },
-                );
-            }
+            self.register_or_update_visual_model_meta(id, path, true);
             self.play_character_mesh_forward_xz = part.forward_xz;
             if is_fbx_model_path(path) {
                 if let Some(skin_fwd) = model_asset::fbx_skinned_play_forward_xz(
@@ -533,23 +587,27 @@ impl State {
                     self.play_character_mesh_forward_xz = skin_fwd;
                 }
             }
+            self.physics.remove_entity_body(id);
+        } else {
+            self.register_or_update_visual_model_meta(id, path, false);
+        }
+
+        if self.should_apply_play_character_mesh_collision(id, path) {
             self.apply_play_character_model_placement_after_load(id, path, part.local_bounds);
             self.sync_play_character_body_rotation_after_mesh_assign();
-            self.physics.remove_entity_body(id);
-            self.emit_play_character_view_changed(false);
-        } else {
-            if let Some(m) = self.save_registry.meta.get_mut(&id) {
-                m.path = path.to_string();
-                m.visual_model_path = Some(path.to_string());
-            }
-        }
-        if !is_play_character {
-            self.sync_entity_physics_collider(id);
+        } else if !is_play_character {
+            self.reconcile_entity_physics_after_model_replace(id);
         }
 
         let (position, rotation, scale) = match self.world.get::<Transform>(id) {
             Some(t) => (
-                Some(t.position.to_array()),
+                Some(
+                    if is_play_character {
+                        self.play_character_feet_position().to_array()
+                    } else {
+                        t.position.to_array()
+                    },
+                ),
                 Some([
                     t.rotation.x,
                     t.rotation.y,
@@ -565,7 +623,7 @@ impl State {
         self.model_assets.remove(path);
         self.try_bind_model_animations_with_gltf(id, path, gltf_file.as_ref());
 
-        if is_play_character && self.model_animation_bindings.contains_key(&id) {
+        if is_play_character {
             if let Some(asset) = self.model_assets.get(path) {
                 if is_fbx_model_path(path) {
                     self.play_character_mesh_forward_xz =
@@ -574,8 +632,13 @@ impl State {
                     self.play_character_mesh_forward_xz =
                         model_asset::resolve_gltf_play_character_forward_xz(asset);
                 }
-                self.sync_play_character_body_rotation_after_mesh_assign();
             }
+            self.sync_play_character_body_rotation_after_mesh_assign();
+        }
+        if self.should_apply_play_character_mesh_collision(id, path) {
+            self.finish_play_character_model_replace(id, path);
+        } else if !is_play_character {
+            self.reconcile_entity_physics_after_model_replace(id);
         }
 
         if is_play_character {

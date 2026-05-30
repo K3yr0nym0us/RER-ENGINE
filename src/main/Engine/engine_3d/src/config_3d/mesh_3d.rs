@@ -495,9 +495,15 @@ pub(crate) fn load_gltf_preview_from_file(
     }
 
     let (min, max) = vertex_bounds(&vertices);
-    let upright = upright_quat_from_vertex_aabb(min, max);
+    let sample: Vec<glam::Vec3> = vertices
+        .iter()
+        .map(|v| glam::Vec3::from_array(v.position))
+        .collect();
+    let upright = upright_quat_from_vertices_bounds(min, max, &sample);
     apply_quat_to_vertices(&mut vertices, upright);
-    normalize_vertices_centered_height(&mut vertices, normalize_to_extent);
+    // Jugador FP: pies en Y=0 (misma convención que FBX / Godot CharacterBody3D + cápsula).
+    normalize_vertices_height_feet_pivot(&mut vertices, normalize_to_extent);
+    recenter_vertices_to_local_feet(&mut vertices);
     let meta_fwd = forward_xz_from_node_world(world);
     let est_fwd = estimate_mesh_forward_xz(&vertices);
     let forward_xz = crate::config_3d::fbx_facing::resolve_fbx_forward_xz(meta_fwd, est_fwd);
@@ -620,7 +626,8 @@ pub(crate) fn load_gltf_cpu_from_file(
 
     if let Some(extent) = normalize_to_extent {
         for p in prims.iter_mut() {
-            normalize_vertices_centered_height(&mut p.vertices, extent);
+            normalize_vertices_height_feet_pivot(&mut p.vertices, extent);
+            recenter_vertices_to_local_feet(&mut p.vertices);
         }
     }
 
@@ -690,6 +697,26 @@ fn normalize_vertices_height_feet_pivot(vertices: &mut [Vertex], target_height: 
 }
 
 /// Centra la malla en el origen y escala a `target_height` en Y (mismo pivot que el cubo placeholder).
+/// Asegura pies en Y=0 y centro XZ en origen (pivote = `Transform.position`).
+pub(crate) fn recenter_vertices_to_local_feet(vertices: &mut [Vertex]) {
+    if vertices.is_empty() {
+        return;
+    }
+    let (min, max) = vertex_local_bounds(vertices);
+    let shift = glam::Vec3::new(
+        (min[0] + max[0]) * 0.5,
+        min[1],
+        (min[2] + max[2]) * 0.5,
+    );
+    if shift.length_squared() < 1e-8 {
+        return;
+    }
+    for v in vertices.iter_mut() {
+        let p = glam::Vec3::from_array(v.position) - shift;
+        v.position = p.to_array();
+    }
+}
+
 fn normalize_vertices_centered_height(vertices: &mut [Vertex], target_height: f32) {
     if vertices.is_empty() {
         return;

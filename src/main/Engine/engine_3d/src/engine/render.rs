@@ -161,12 +161,6 @@ impl State {
             if self.quick_build_ghost_id == Some(*entity_id) {
                 continue;
             }
-            if self.preview_playing
-                && (self.collider_entities.contains(entity_id)
-                    || self.execution_area_entities.contains(entity_id))
-            {
-                continue;
-            }
             let is_selected =
                 self.selected_entity == Some(*entity_id) || self.selected_entities.contains(entity_id);
             let flag = if self.preview_playing {
@@ -179,22 +173,7 @@ impl State {
                 0.0_f32
             };
             let layer = self.texture_layer_for(*tex_idx);
-            let mut inst = crate::mesh::InstanceData::new(*model_matrix, flag, layer);
-            inst.flag_pad[2] = if self
-                .world
-                .get::<crate::config_compat::ColliderMarker>(*entity_id)
-                .is_some()
-            {
-                1.0_f32
-            } else if self
-                .world
-                .get::<crate::config_compat::ExecutionAreaMarker>(*entity_id)
-                .is_some()
-            {
-                2.0_f32
-            } else {
-                0.0_f32
-            };
+            let inst = crate::mesh::InstanceData::new(*model_matrix, flag, layer);
             let can_extend = batches.last().map_or(false, |b| {
                 b.mesh_idx == *mesh_idx && b.texture_layer == layer
             });
@@ -232,12 +211,6 @@ impl State {
                     continue;
                 }
                 if *mesh_idx == 0 {
-                    continue;
-                }
-                if self.preview_playing
-                    && (self.collider_entities.contains(entity_id)
-                        || self.execution_area_entities.contains(entity_id))
-                {
                     continue;
                 }
                 let inst =
@@ -492,6 +465,56 @@ impl State {
                 ghost_pass.set_vertex_buffer(1, ghost_inst_buf.slice(..));
                 ghost_pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
                 ghost_pass.draw_indexed(0..mesh.index_count, 0, 0..1);
+                draw_calls += 1;
+            }
+        }
+
+        if !self.preview_playing {
+            let collision_overlay =
+                crate::config_3d::collision_overlay::build_editor_collision_overlay(
+                    &self.device,
+                    self,
+                );
+            if collision_overlay.vertex_count > 0 {
+                let aspect = self.size.width as f32 / self.size.height as f32;
+                let vp = self
+                    .camera_to_uniform_at_anchor(self.orbit_view_anchor(), aspect)
+                    .view_proj;
+                let col_uni: [[f32; 4]; 9] = [
+                    vp[0],
+                    vp[1],
+                    vp[2],
+                    vp[3],
+                    [1.0, 0.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                    [0.0, 0.0, 0.0, 1.0],
+                    [-1.0, -1.0, 0.0, 0.0],
+                ];
+                self.queue.write_buffer(
+                    &self.grid_buffer_uni,
+                    0,
+                    bytemuck::cast_slice(&col_uni),
+                );
+
+                let mut col_pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("collision-debug-pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Load,
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    occlusion_query_set: None,
+                    timestamp_writes: None,
+                });
+                col_pass.set_pipeline(&self.grid_pipeline);
+                col_pass.set_bind_group(0, &self.grid_bind_group, &[]);
+                col_pass.set_vertex_buffer(0, collision_overlay.vertex_buffer.slice(..));
+                col_pass.draw(0..collision_overlay.vertex_count, 0..1);
                 draw_calls += 1;
             }
         }

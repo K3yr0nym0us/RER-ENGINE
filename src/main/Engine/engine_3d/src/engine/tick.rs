@@ -260,6 +260,15 @@ impl State {
 
     /// Centro de selección para gizmo/grupo. Si no hay grupo, usa `selected_entity`.
     pub(crate) fn selection_center(&self) -> Option<glam::Vec3> {
+        if let Some(player_id) = self.play_character_entity {
+            let player_selected = self.selected_entity == Some(player_id)
+                || self.selected_entities.contains(&player_id);
+            if player_selected {
+                if let Some((center, _)) = self.play_character_world_pick_aabb() {
+                    return Some(center);
+                }
+            }
+        }
         if !self.selected_entities.is_empty() {
             let mut sum = glam::Vec3::ZERO;
             let mut count = 0usize;

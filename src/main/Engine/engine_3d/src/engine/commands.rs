@@ -286,8 +286,8 @@ impl State {
             EngineCommand::ReplaceEntityModel { id, path } => {
                 self.replace_entity_model(id, &path);
             }
-            EngineCommand::LoadModelAsset { path, name } => {
-                self.register_model_asset(&path, &name);
+            EngineCommand::LoadModelAsset { path, name, category } => {
+                self.register_model_asset(&path, &name, category.as_deref());
             }
             EngineCommand::RemoveModelAsset { path } => {
                 if self.model_store.remove(&path).is_some() {
@@ -302,9 +302,10 @@ impl State {
                 let models: Vec<crate::ipc::ModelInfo> = self
                     .model_store
                     .iter()
-                    .map(|(path, name)| crate::ipc::ModelInfo {
+                    .map(|(path, entry)| crate::ipc::ModelInfo {
                         path: path.clone(),
-                        name: name.clone(),
+                        name: entry.name.clone(),
+                        category: entry.category.clone(),
                     })
                     .collect();
                 let count = models.len();
@@ -727,10 +728,6 @@ impl State {
                     "scenario"
                 } else if self.character_entities.contains(&id) {
                     "character"
-                } else if self.collider_entities.contains(&id) {
-                    "collider"
-                } else if self.execution_area_entities.contains(&id) {
-                    "execution_area"
                 } else {
                     "model"
                 };
@@ -749,10 +746,6 @@ impl State {
                 self.physics.remove_entity_body(id);
                 self.scenario_entities.retain(|&e| e != id);
                 self.character_entities.retain(|&e| e != id);
-                self.collider_entities.retain(|&e| e != id);
-                self.execution_area_entities.retain(|&e| e != id);
-                self.execution_overlaps
-                    .retain(|(trigger_id, actor_id)| *trigger_id != id && *actor_id != id);
                 self.entity_facing_right.remove(&id);
                 self.default_animation_by_entity.remove(&id);
                 self.unbind_model_animations(id);
@@ -763,6 +756,7 @@ impl State {
                 self.script_engine.detach_entity(id);
                 self.save_registry.remove_entity(id);
                 self.entity_blueprint_ids.remove(&id);
+                self.entity_colision.remove(&id);
                 if self.sun_entity == Some(id) {
                     self.sun_entity = None;
                 }
@@ -853,8 +847,6 @@ impl State {
                     self.emit_play_character_view_changed(false);
                 }
 
-                self.execution_overlaps.clear();
-
                 log::info!("[preview] modo {}", if playing { "juego" } else { "editor" });
             }
             EngineCommand::SetCtrlHeld { held } => {
@@ -884,7 +876,9 @@ impl State {
                 self.clear_background();
             }
             EngineCommand::SetPhysics { id, enabled, body_type } => {
-                if self.play_character_entity == Some(id) {
+                if self.play_character_entity == Some(id)
+                    || self.editor_camera_entity == Some(id)
+                {
                     self.physics.remove_entity_body(id);
                 } else if enabled {
                     self.set_entity_physics_from_mesh_aabb(id, &body_type);
@@ -902,6 +896,24 @@ impl State {
                     enabled,
                     body_type,
                 });
+            }
+            EngineCommand::SetEntityColision { id, colision } => {
+                self.entity_colision.insert(id, colision);
+                if colision {
+                    if self.physics.has_physics(id) {
+                        let body_type = self.physics.get_body_type(id).to_string();
+                        self.set_entity_physics_from_mesh_aabb(id, &body_type);
+                    } else {
+                        self.reconcile_entity_physics_with_mesh(id);
+                    }
+                } else if self.play_character_entity != Some(id) {
+                    self.physics.remove_entity_body(id);
+                }
+                log::debug!(
+                    "Colisión de malla {} en entidad {}",
+                    if colision { "activada" } else { "desactivada" },
+                    id
+                );
             }
             EngineCommand::SetActiveTool {
                 tool,
@@ -940,19 +952,11 @@ impl State {
                     self.quick_build_preview_scale = None;
                     self.quick_build_blueprint = None;
                     match tool.as_str() {
-                        "draw_collider" => {
-                            self.active_tool = ActiveTool::DrawCollider {
-                                points_world: Vec::new(),
-                                cursor_world: None,
-                            };
-                            log::info!("Herramienta activa: dibujar colisionador (4 puntos)");
-                        }
-                        "draw_execution_area" => {
-                            self.active_tool = ActiveTool::DrawExecutionArea {
-                                points_world: Vec::new(),
-                                cursor_world: None,
-                            };
-                            log::info!("Herramienta activa: dibujar área de ejecución (4 puntos)");
+                        "draw_collider" | "draw_execution_area" => {
+                            log::warn!(
+                                "[engine_3d] herramienta '{tool}' no disponible (solo 2D)"
+                            );
+                            self.active_tool = ActiveTool::None;
                         }
                         "quick_build_place" => {
                             self.active_tool = ActiveTool::QuickBuildPlace { cursor_world: None };
@@ -1021,12 +1025,6 @@ impl State {
                         _ => log::warn!("Herramienta desconocida: {}", tool),
                     }
                 }
-            }
-            EngineCommand::CreateColliderFromPoints { .. } => {
-                log::warn!("CreateColliderFromPoints no disponible en rer_engine_3d");
-            }
-            EngineCommand::CreateExecutionAreaFromPoints { .. } => {
-                log::warn!("CreateExecutionAreaFromPoints no disponible en rer_engine_3d");
             }
             EngineCommand::Undo => {
                 if self.undo_last_tool_step_2d() {

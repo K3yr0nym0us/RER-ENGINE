@@ -4,7 +4,6 @@ import type {
 	ModelInfo,
 	ProjectLoaded2dPayload,
 	ProjectLoaded3dPayload,
-	ProjectSaveData,
 	SavedPlayerTransform,
 	SavedScene,
 	EntityCategory,
@@ -32,7 +31,6 @@ export function EngineProvider({
 	viewportRef,
 	projectType,
 	gameStyle,
-	initialSave,
 	initialSavePath,
 	initialExtractDir,
 }: {
@@ -40,7 +38,6 @@ export function EngineProvider({
 	viewportRef: React.RefObject<HTMLDivElement | null>;
 	projectType?: string;
 	gameStyle?: GameStyle;
-	initialSave?: ProjectSaveData | null;
 	initialSavePath?: string | null;
 	initialExtractDir?: string | null;
 }) {
@@ -52,7 +49,6 @@ export function EngineProvider({
 		readyTimer: useRef<ReturnType<typeof setTimeout> | null>(null),
 		resizeTimerRef: useRef<ReturnType<typeof setTimeout> | null>(null),
 		logIdRef: useRef(0),
-		initialSaveRef: useRef(initialSave),
 		initialSavePathRef: useRef(initialSavePath),
 		initialExtractDirRef: useRef(initialExtractDir),
 		projectLoaded2dMetaRef: useRef<ProjectLoaded2dPayload | null>(null),
@@ -139,20 +135,10 @@ export function EngineProvider({
 		setLocale,
 	});
 
-	// Cargar blueprints desde el guardado inicial al montar
 	useEffect(() => {
-		const saved = refs.initialSaveRef.current;
-		if (saved?.blueprints && saved.blueprints.length > 0) {
-			actions.setBlueprints(saved.blueprints);
-		}
-	// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, []);
-
-	useEffect(() => {
-		refs.initialSaveRef.current = initialSave;
 		refs.initialSavePathRef.current = initialSavePath;
 		refs.initialExtractDirRef.current = initialExtractDir;
-	}, [initialSave, initialSavePath, initialExtractDir]);
+	}, [initialSavePath, initialExtractDir]);
 
 	// Mantener blueprintsRef sincronizado con el estado para acceso desde acciones
 	useEffect(() => {

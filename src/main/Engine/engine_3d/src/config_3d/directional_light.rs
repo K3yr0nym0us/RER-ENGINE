@@ -240,7 +240,6 @@ impl State {
                 kind: "directional_light".to_string(),
                 path: "[Sun]".to_string(),
                 visual_model_path: None,
-                points: None,
                 entity_category: None,
             },
         );

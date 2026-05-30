@@ -14,18 +14,16 @@ import { QuickBuildProvider } from '../../context/QuickBuildContext';
 import { useAutoSave } from '@hooks';
 import { SceneManagerProvider } from './hooks/useSceneManager';
 
-import type { GameStyle, ProjectType, ProjectSaveData } from '@shared-types';
+import type { GameStyle, ProjectType } from '@shared-types';
 
 export function EngineView({
   projectType,
   gameStyle,
-  initialSave,
   initialSavePath,
   initialExtractDir,
 }: {
   projectType: ProjectType
   gameStyle?: GameStyle
-  initialSave?: ProjectSaveData | null
   initialSavePath?: string | null
   initialExtractDir?: string | null
 }) {
@@ -36,14 +34,12 @@ export function EngineView({
       viewportRef={viewportRef} 
       projectType={projectType} 
       gameStyle={gameStyle} 
-      initialSave={initialSave}
       initialSavePath={initialSavePath}
       initialExtractDir={initialExtractDir}
     >
       <QuickBuildProvider>
         <ModalProvider>
           <SceneManagerProvider 
-            initialSave={initialSave} 
             initialSavePath={initialSavePath}
             initialExtractDir={initialExtractDir}
             projectType={projectType} 
@@ -52,7 +48,6 @@ export function EngineView({
             <EngineViewInner 
               projectType={projectType} 
               gameStyle={gameStyle} 
-              initialSave={initialSave} 
               initialSavePath={initialSavePath}
               initialExtractDir={initialExtractDir}
               viewportRef={viewportRef} 
@@ -64,10 +59,9 @@ export function EngineView({
   )
 }
 
-function EngineViewInner({ projectType, gameStyle, initialSave, initialSavePath, initialExtractDir, viewportRef }: {
+function EngineViewInner({ projectType, gameStyle, initialSavePath, initialExtractDir, viewportRef }: {
   projectType: ProjectType
   gameStyle?: GameStyle
-  initialSave?: ProjectSaveData | null
   initialSavePath?: string | null
   initialExtractDir?: string | null
   viewportRef: React.RefObject<HTMLDivElement>
@@ -77,7 +71,7 @@ function EngineViewInner({ projectType, gameStyle, initialSave, initialSavePath,
     toggleAutoSave, 
     hasSavedOnce, 
     autoSaveEnabled 
-  } = useAutoSave({ projectType, gameStyle, initialSave, initialSavePath })
+  } = useAutoSave({ projectType, gameStyle, initialSavePath })
 
   return (
     <div className="app-shell d-flex flex-column">

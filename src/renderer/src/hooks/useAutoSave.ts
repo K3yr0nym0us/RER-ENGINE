@@ -11,7 +11,6 @@ import {
 interface UseAutoSaveOptions {
   projectType?: ProjectType
   gameStyle?: GameStyle
-  initialSave?: ProjectSaveData | null
   initialSavePath?: string | null
 }
 
@@ -26,7 +25,6 @@ export interface UseAutoSaveReturn {
 export function useAutoSave({
   projectType = '2D' as ProjectType,
   gameStyle,
-  initialSave = null,
   initialSavePath = null,
 }: UseAutoSaveOptions = {}): UseAutoSaveReturn {
   const {
@@ -34,7 +32,6 @@ export function useAutoSave({
     blueprints,
     sounds,
     backgrounds,
-    models,
   } = useContextEngine();
   const { locale } = useLanguage();
   const [hasSavedOnce, setHasSavedOnce] = useState(Boolean(initialSavePath));
@@ -47,10 +44,8 @@ export function useAutoSave({
   useEffect(() => {
     if (initialSavePath) {
       setHasSavedOnce(true);
-    } else if (initialSave) {
-      setHasSavedOnce(true);
     }
-  }, [initialSave, initialSavePath]);
+  }, [initialSavePath]);
 
   useEffect(() => {
     if (initialSavePath) {
@@ -69,9 +64,8 @@ export function useAutoSave({
         blueprints,
         sounds,
         backgrounds,
-        models,
         entityMeta: entityMetaRef.current,
-        initialGameStyle: initialSave?.gameStyle,
+        initialGameStyle: gameStyle,
       });
     } catch (err) {
       console.error('[save] export_save_snapshot falló:', err);
@@ -80,12 +74,10 @@ export function useAutoSave({
   }, [
     projectType,
     gameStyle,
-    initialSave,
     entityMetaRef,
     blueprints,
     sounds,
     backgrounds,
-    models,
     locale,
   ]);
 

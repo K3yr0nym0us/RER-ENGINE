@@ -448,11 +448,15 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 		},
 		SYNC_MODEL_PRELOAD: (prevState, nextAction) => {
 			const { path, name } = nextAction.payload;
-			const prevInfo = prevState.loadedModelsInfo.get(path);
 			let synced = false;
+			let matchedCategory: ModelCategory | undefined;
 			const models = prevState.models.map((m) => {
 				if (!synced && m.loading && m.name === name) {
 					synced = true;
+					matchedCategory = m.category;
+					if (m.path !== path) {
+						prevState.loadedModelsInfo.delete(m.path);
+					}
 					return {
 						path,
 						name,
@@ -462,10 +466,12 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 				}
 				return m;
 			});
+			const prevInfo = prevState.loadedModelsInfo.get(path);
+			const category = matchedCategory ?? prevInfo?.category;
 			const nextMap = new Map(prevState.loadedModelsInfo);
 			nextMap.set(path, {
 				name,
-				...(prevInfo?.category ? { category: prevInfo.category } : {}),
+				...(category ? { category } : {}),
 			});
 			return { ...prevState, models, loadedModelsInfo: nextMap };
 		},
@@ -500,10 +506,25 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 		},
 		SET_MODELS: (prevState, nextAction) => {
 			const models = nextAction.payload.map((m) => {
-				const known = prevState.loadedModelsInfo.get(m.path);
-				return known?.category ? { ...m, category: known.category } : m;
+				const fromState = prevState.models.find(
+					(x) => x.path === m.path || (x.loading && x.name === m.name),
+				);
+				const category = m.category ?? fromState?.category;
+				const loading = fromState?.loading;
+				return {
+					...m,
+					...(category ? { category } : {}),
+					...(loading ? { loading } : {}),
+				};
 			});
-			return { ...prevState, models };
+			const nextMap = new Map<string, { name: string; category?: ModelCategory }>();
+			for (const m of models) {
+				nextMap.set(m.path, {
+					name: m.name,
+					...(m.category ? { category: m.category } : {}),
+				});
+			}
+			return { ...prevState, models, loadedModelsInfo: nextMap };
 		},
 		SET_DEBUG_MODE: (prevState, nextAction) => ({ ...prevState, debugMode: nextAction.payload }),
 		SET_DEBUG_METRICS: (prevState, nextAction) => ({ ...prevState, debugMetrics: nextAction.payload }),
@@ -551,17 +572,25 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 		APPLY_PROJECT_LOADED_3D: (prevState, nextAction) => {
 			const p = nextAction.payload;
 			const modelMap = new Map<string, { name: string; category?: ModelCategory }>();
+			const models: ModelInfo[] = [];
 			for (const m of p.models) {
 				const known = prevState.loadedModelsInfo.get(m.path);
+				const category = m.category ?? known?.category;
 				modelMap.set(m.path, {
 					name: m.name,
-					...(known?.category ? { category: known.category } : {}),
+					...(category ? { category } : {}),
+				});
+				models.push({
+					path: m.path,
+					name: m.name,
+					...(category ? { category } : {}),
 				});
 			}
 			return {
 				...prevState,
 				projectLoaded3dSeq: prevState.projectLoaded3dSeq + 1,
 				blueprints: p.blueprints,
+				models,
 				worldConfig: {
 					...prevState.worldConfig,
 					worldWidth: p.world.worldWidth,
@@ -656,7 +685,6 @@ export interface EngineInternalRefs {
 	readyTimer: MutableRefObject<ReturnType<typeof setTimeout> | null>
 	resizeTimerRef: MutableRefObject<ReturnType<typeof setTimeout> | null>
 	logIdRef: MutableRefObject<number>
-	initialSaveRef: MutableRefObject<ProjectSaveData | null | undefined>
 	initialSavePathRef: MutableRefObject<string | null | undefined>
 	initialExtractDirRef: MutableRefObject<string | null | undefined>
 	projectLoaded2dMetaRef: MutableRefObject<ProjectLoaded2dPayload | null>

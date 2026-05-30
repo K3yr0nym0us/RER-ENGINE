@@ -7,11 +7,14 @@ import AdmZip from 'adm-zip';
 import type { 
   EngineCommand, 
   EngineEvent, 
+  Entity3D,
   GameStyle, 
   EngineStartPayload,
   OpenProjectResult, 
   ProjectSaveData,
   ProjectType,
+  SavedControls,
+  SavedScript,
 } from '../shared-types/types';
 import { entityPathMarker } from '../shared-types/types';
 
@@ -796,11 +799,45 @@ function serializeScriptsToFiles(data: ProjectSaveData, scriptingDir: string): {
     }
   }
 
-  const mapEntity = (entity: ProjectSaveData['entities'][number]) => {
+  const packControls = (
+    controls: SavedControls | undefined,
+    entityFolder: string,
+  ): SavedControls | undefined => {
+    if (!controls) return undefined
+    return {
+      keyboard_mouse: Object.fromEntries(
+        Object.entries(controls.keyboard_mouse).map(([key, script], idx) => [
+          key,
+          saveScript(
+            script,
+            [entityFolder, 'controls', 'keyboard_mouse', sanitizeSegment(key, `key_${idx + 1}`)],
+            `script_${idx + 1}`,
+          ),
+        ]),
+      ),
+      gamepad: Object.fromEntries(
+        Object.entries(controls.gamepad).map(([key, script], idx) => [
+          key,
+          saveScript(
+            script,
+            [entityFolder, 'controls', 'gamepad', sanitizeSegment(key, `btn_${idx + 1}`)],
+            `script_${idx + 1}`,
+          ),
+        ]),
+      ),
+    }
+  }
+
+  const mapEntity3d = (entity: Entity3D): Entity3D => {
     const entityFolder = `entity_${entity.id}`
+    const controls =
+      entity.controls ??
+      (entity as Entity3D & { control_bindings?: SavedControls }).control_bindings
     return {
       ...entity,
-      scripts: entity.scripts?.map((script, idx) => saveScript(script, [entityFolder], `script_${idx + 1}`)),
+      scripts: entity.scripts?.map((script, idx) =>
+        saveScript(script, [entityFolder], `script_${idx + 1}`),
+      ),
       animations: entity.animations?.map((anim, animIndex) => ({
         ...anim,
         scripts: anim.scripts?.map((script, scriptIndex) =>
@@ -811,22 +848,7 @@ function serializeScriptsToFiles(data: ProjectSaveData, scriptingDir: string): {
           ),
         ),
       })),
-      control_bindings: entity.control_bindings
-        ? {
-            keyboard_mouse: Object.fromEntries(
-              Object.entries(entity.control_bindings.keyboard_mouse).map(([key, script], idx) => [
-                key,
-                saveScript(script, [entityFolder, 'controls', 'keyboard_mouse', sanitizeSegment(key, `key_${idx + 1}`)], `script_${idx + 1}`),
-              ]),
-            ),
-            gamepad: Object.fromEntries(
-              Object.entries(entity.control_bindings.gamepad).map(([key, script], idx) => [
-                key,
-                saveScript(script, [entityFolder, 'controls', 'gamepad', sanitizeSegment(key, `btn_${idx + 1}`)], `script_${idx + 1}`),
-              ]),
-            ),
-          }
-        : undefined,
+      controls: packControls(controls, entityFolder),
     }
   }
 
@@ -881,10 +903,12 @@ function serializeScriptsToFiles(data: ProjectSaveData, scriptingDir: string): {
     data: {
       ...data,
       // Con multi-escena, las entidades viven solo en cada `scene`.
-      entities: hasScenes ? [] : data.entities.map(mapEntity),
+      entities: hasScenes ? [] : data.entities.map(mapEntity3d),
+      player: data.player ? mapEntity3d(data.player) : data.player,
       scenes: data.scenes?.map((scene) => ({
         ...scene,
-        entities: scene.entities.map(mapEntity),
+        entities: scene.entities.map(mapEntity3d),
+        player: scene.player ? mapEntity3d(scene.player) : scene.player,
       })),
       blueprints: data.blueprints?.map(mapBlueprint),
     },
@@ -934,7 +958,11 @@ function remapPaths(data: ProjectSaveData, map: Map<string, string>): ProjectSav
   })
 
   const mapModels = (models: ProjectSaveData['models']) =>
-    models?.map((m) => ({ name: m.name, path: remap(m.path) as string }))
+    models?.map((m) => ({
+      name: m.name,
+      path: remap(m.path) as string,
+      ...(m.category ? { category: m.category } : {}),
+    }))
 
   const mapPlayerTransform = (pt: ProjectSaveData['playerTransform']) =>
     pt
@@ -1091,46 +1119,56 @@ function resolveLoadedPaths(data: ProjectSaveData, extractedDir: string): Projec
 
   const hasScenes = (data.scenes?.length ?? 0) > 0
 
-  const mapEntity = (e: ProjectSaveData['entities'][number]) => ({
-    ...e,
-    path: resolve(e.path) as string,
-    visual_model_path: resolve(e.visual_model_path) as string | undefined,
-    scripts: e.scripts?.map((script) => ({
-      ...script,
-      source: resolveScriptSource(script.source, extractedDir),
-    })),
-    animations: e.animations?.map((anim) => ({
-      ...anim,
-      audio_path: resolve(anim.audio_path) as string | undefined,
-      frames: anim.frames.map((f) => ({
-        ...f,
-        path: resolve(f.path) as string,
-      })),
-      scripts: anim.scripts?.map((script) => ({
+  const resolveControls = (controls: SavedControls | undefined): SavedControls | undefined => {
+    if (!controls) return undefined
+    return {
+      keyboard_mouse: Object.fromEntries(
+        Object.entries(controls.keyboard_mouse).map(([key, script]) => [
+          key,
+          { ...script, source: resolveScriptSource(script.source, extractedDir) },
+        ]),
+      ),
+      gamepad: Object.fromEntries(
+        Object.entries(controls.gamepad).map(([key, script]) => [
+          key,
+          { ...script, source: resolveScriptSource(script.source, extractedDir) },
+        ]),
+      ),
+    }
+  }
+
+  const mapEntity3d = (e: Entity3D): Entity3D => {
+    const controls =
+      e.controls ?? (e as Entity3D & { control_bindings?: SavedControls }).control_bindings
+    return {
+      ...e,
+      model: resolve(e.model) as string,
+      scripts: e.scripts?.map((script: SavedScript) => ({
         ...script,
         source: resolveScriptSource(script.source, extractedDir),
       })),
-    })),
-    control_bindings: e.control_bindings
-      ? {
-          keyboard_mouse: Object.fromEntries(
-            Object.entries(e.control_bindings.keyboard_mouse).map(([key, script]) => [
-              key,
-              { ...script, source: resolveScriptSource(script.source, extractedDir) },
-            ]),
-          ),
-          gamepad: Object.fromEntries(
-            Object.entries(e.control_bindings.gamepad).map(([key, script]) => [
-              key,
-              { ...script, source: resolveScriptSource(script.source, extractedDir) },
-            ]),
-          ),
-        }
-      : undefined,
-  })
+      animations: e.animations?.map((anim) => ({
+        ...anim,
+        audio_path: resolve(anim.audio_path) as string | undefined,
+        frames: anim.frames.map((f) => ({
+          ...f,
+          path: resolve(f.path) as string,
+        })),
+        scripts: anim.scripts?.map((script: SavedScript) => ({
+          ...script,
+          source: resolveScriptSource(script.source, extractedDir),
+        })),
+      })),
+      controls: resolveControls(controls),
+    }
+  }
 
   const mapModels = (models: ProjectSaveData['models']) =>
-    models?.map((m) => ({ name: m.name, path: resolve(m.path) as string }))
+    models?.map((m) => ({
+      name: m.name,
+      path: resolve(m.path) as string,
+      ...(m.category ? { category: m.category } : {}),
+    }))
 
   const mapPlayerTransform = (pt: ProjectSaveData['playerTransform']) =>
     pt
@@ -1154,7 +1192,8 @@ function resolveLoadedPaths(data: ProjectSaveData, extractedDir: string): Projec
       name: b.name,
       path: resolve(b.path) as string,
     })),
-    entities: hasScenes ? [] : data.entities.map(mapEntity),
+    entities: hasScenes ? [] : data.entities.map(mapEntity3d),
+    player: data.player ? mapEntity3d(data.player) : data.player,
     scenes: data.scenes?.map((scene) => ({
       ...scene,
       backgroundPath: resolve(scene.backgroundPath) as string | null,
@@ -1164,7 +1203,8 @@ function resolveLoadedPaths(data: ProjectSaveData, extractedDir: string): Projec
         name: s.name,
         path: resolve(s.path) as string,
       })),
-      entities: scene.entities.map(mapEntity),
+      entities: scene.entities.map(mapEntity3d),
+      player: scene.player ? mapEntity3d(scene.player) : scene.player,
     })),
     blueprints: data.blueprints?.map((bp) => ({
       ...bp,

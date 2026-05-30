@@ -1,7 +1,7 @@
 use glam::Vec3;
 
 use crate::config_3d::character_anchor::{
-    body_center_from_feet, center_from_feet, PLAY_CHARACTER_EDITOR_ORBIT_DISTANCE,
+    PLAY_CHARACTER_EDITOR_ORBIT_DISTANCE,
     PLAY_CHARACTER_EYE_OFFSET, PLAY_CHARACTER_MOUSE_SPEED,
 };
 use crate::ecs::Transform;
@@ -257,16 +257,8 @@ impl State {
         self.camera.pitch = cam_pitch;
         if sync_editor_viewport && self.uses_editor_viewport_camera() {
             let feet = Vec3::from_array(position);
-            self.editor_orbit_target = if self.play_character_mesh_extents.is_some() {
-                center_from_feet(
-                    feet,
-                    1.0,
-                    glam::Quat::IDENTITY,
-                    self.play_character_mesh_extents.as_ref(),
-                )
-            } else {
-                body_center_from_feet(feet)
-            };
+            let half_h = self.play_character_body_height_world(1.0) * 0.5;
+            self.editor_orbit_target = feet + glam::Vec3::new(0.0, half_h, 0.0);
             self.editor_viewport_yaw = yaw;
             self.editor_viewport_pitch = pitch_clamped;
             // Reset del ojo de la cámara FPS al ojo actual del Player al cargar/aplicar vista.
@@ -511,10 +503,11 @@ impl State {
             return;
         };
         let feet = self.play_character_feet_position();
+        let feet_arr = feet.to_array();
         let (body_center, body_rotation, body_scale) =
             if let Some(t) = self.world.get::<Transform>(id) {
                 (
-                    t.position.to_array(),
+                    feet_arr,
                     [
                         t.rotation.x,
                         t.rotation.y,

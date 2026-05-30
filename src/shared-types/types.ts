@@ -90,8 +90,8 @@ export function isGroundPath(p: string | null | undefined): boolean {
   return entityPathMarker(p) === '[Ground]'
 }
 
+/** @deprecated 3D usa `Entity3DCategory` */
 export type EntityCategory = 'environment' | 'object'
-export type ModelCategory = EntityCategory | 'character'
 
 export function isPlayerEntity(
   id: number,
@@ -111,7 +111,80 @@ export function isEnvironmentEntity(
 /** Escala del mesh placeholder del jugador FP (debe coincidir con `engine_3d`). */
 export const FIRST_PERSON_PLAYER_BODY_SCALE: [number, number, number] = [0.8, 1.7, 0.8]
 
-// ── Estado completo guardado en disco ───────────────────────────────────────
+// ── Modelo 3D (docs/Entities_Model_3D.yaml) ─────────────────────────────────
+
+export type Entity3DCategory =
+  | 'environment'
+  | 'character'
+  | 'player'
+  | 'object'
+  | 'sun'
+  | 'ground'
+
+export type PhysicsType3D = 'dynamic' | 'static' | 'kinematic'
+
+/** Modo de seguimiento del ojo FPS respecto al jugador en editor. */
+export type PlayCameraFollowMode = 'follow_character' | 'move_with_character'
+
+/** WASD / gamepad → Lua (solo `category: player` en instancias). */
+export interface SavedControls {
+  keyboard_mouse: Record<string, SavedScript>
+  gamepad: Record<string, SavedScript>
+}
+
+/** @deprecated Use `SavedControls` */
+export type SavedControlBindings = SavedControls
+
+/** Entidad 3D en manifest / escena. */
+export interface Entity3D {
+  id: number
+  name: string
+  category: Entity3DCategory
+  model: string
+  position: [number, number, number]
+  rotation: [number, number, number, number]
+  scale: [number, number, number]
+  physics_type?: PhysicsType3D
+  colision: boolean
+  animations?: SavedAnimation[]
+  scripts?: SavedScript[]
+  blueprint_id?: string
+  controls?: SavedControls
+}
+
+/** Plantilla (`project.blueprints[]`). */
+export interface Blueprint3D {
+  id: string
+  name: string
+  category: Entity3DCategory
+  model: string
+  physics_type?: PhysicsType3D
+  colision: boolean
+  animations?: SavedAnimation[]
+  scripts?: SavedScript[]
+}
+
+/** Cámara FPS (no va en `player`). */
+export interface ConfigCamera {
+  camera_eye_position?: [number, number, number]
+  fps_camera_yaw?: number
+  fps_camera_pitch?: number
+  yaw?: number
+  pitch?: number
+  fov_y?: number
+  frustum_distance?: number
+  camera_follow_mode?: PlayCameraFollowMode
+}
+
+/** Viewport orbital del editor. */
+export interface ConfigEditorCamera {
+  position: [number, number, number]
+  rotation?: [number, number, number, number]
+}
+
+export type ModelCategory = Entity3DCategory
+
+// ── 2D legacy (engine_2d) ───────────────────────────────────────────────────
 
 export interface SavedEntity {
   id:               number
@@ -223,10 +296,7 @@ export interface SavedWorldConfig {
   shadowDarkness?:   number
 }
 
-/** Modo de seguimiento del ojo FPS respecto al jugador en editor. */
-export type PlayCameraFollowMode = 'follow_character' | 'move_with_character'
-
-/** Vista del personaje jugable en escena (cámara FPS en 3D; transform de entidad en 2D). */
+/** @deprecated 3D: `player` + `config_camera`. Solo runtime 2D / migración UI. */
 export interface SavedPlayerTransform {
   /** Pies del Player en el mundo. */
   position: [number, number, number]
@@ -251,10 +321,18 @@ export interface SavedPlayerTransform {
   camera_follow_mode?: PlayCameraFollowMode
   /** Bindings de control Lua del jugador principal. */
   control_bindings?: SavedControlBindings
+  /** Scripts Lua adjuntos al jugador (no confundir con scripts embebidos en bindings). */
+  scripts?: SavedScript[]
   /** Rotación del mesh del jugador (quaternion xyzw) en editor. */
   body_rotation?: [number, number, number, number]
   /** Escala del transform del jugador en editor. */
   body_scale?: [number, number, number]
+  /** Cápsula de colisión del jugador tras reemplazar el mesh (motor). */
+  mesh_collision_extents?: {
+    local_min_y: number
+    local_max_y: number
+    radius_xz: number
+  }
 }
 
 export interface SavedScene {
@@ -262,11 +340,13 @@ export interface SavedScene {
   name:           string
   world:          SavedWorldConfig
   backgroundPath: string | null
-  entities:       SavedEntity[]
-  playerTransform: SavedPlayerTransform | null
+  entities:       Entity3D[]
+  player:         Entity3D | null
+  config_camera:  ConfigCamera | null
+  config_editor_camera: ConfigEditorCamera | null
+  blueprints?:    Blueprint3D[]
   camera2d:       { x: number; y: number; halfH: number } | null
   sprites:        Array<{ name: string; path: string }>
-  /** Modelos 3D precargados (ruta absoluta + nombre + categoría opcional). */
   models?:        Array<{ name: string; path: string; category?: ModelCategory }>
 }
 
@@ -279,8 +359,11 @@ export interface ProjectSaveData {
   activeSceneId?:  number
   world:           SavedWorldConfig
   backgroundPath:  string | null
-  entities:        SavedEntity[]
-  playerTransform: SavedPlayerTransform | null
+  entities:        Entity3D[]
+  player:          Entity3D | null
+  config_camera:   ConfigCamera | null
+  config_editor_camera: ConfigEditorCamera | null
+  blueprints?:     Blueprint3D[]
   camera2d:        { x: number; y: number; halfH: number } | null
   savedAt:         string   // ISO timestamp
   /** Sprites precargados en el proyecto (nombre -> ruta relativa). */
@@ -292,7 +375,7 @@ export interface ProjectSaveData {
   /** Fondos precargados en el proyecto. */
   backgrounds?:    Array<{ name: string; path: string }>
   /** Blueprints creados en el proyecto. */
-  blueprints?:     BluePrintEntry[]
+  blueprints?:     Blueprint3D[]
   /** Idioma/locale del proyecto (en | es). */
   language?:       string
 }
@@ -317,9 +400,10 @@ export interface ProjectLoaded3dPayload {
   models:        Array<{ name: string; path: string; category?: ModelCategory }>
   sounds:        Array<{ name: string; path: string }>
   backgrounds:   Array<{ name: string; path: string }>
-  blueprints:    BluePrintEntry[]
+  blueprints:    Blueprint3D[]
   world:         SavedWorldConfig
-  playerTransform?: SavedPlayerTransform | null
+  player?: Entity3D | null
+  config_camera?: ConfigCamera | null
 }
 
 export interface ProjectLoaded2dPayload {
@@ -418,27 +502,7 @@ export interface EngineEvent {
   [key: string]: unknown
 }
 
-/** Entidad en JSON del motor (serde snake_case). */
-export interface EngineSaveEntitySnapshot {
-  id:               number
-  name?:            string
-  kind:             string
-  path:             string
-  position:         [number, number, number]
-  rotation:         [number, number, number, number]
-  scale:            [number, number, number]
-  physics_enabled?: boolean
-  physics_type?:    string
-  points?:          SavedEntity['points']
-  animations?:      Array<Record<string, unknown>>
-  scripts?:         SavedEntity['scripts']
-  control_bindings?: SavedEntity['control_bindings']
-  visual_model_path?: string
-  blueprint_id?: string
-  entity_category?: EntityCategory
-}
-
-/** Escena activa exportada por el motor (`export_save_snapshot`). */
+/** Escena activa exportada por el motor 3D (`export_save_snapshot`). */
 export interface EngineSaveSceneSnapshot {
   world: {
     world_width: number
@@ -453,8 +517,10 @@ export interface EngineSaveSceneSnapshot {
     shadow_darkness?: number | null
   }
   background_path?: string | null
-  entities: EngineSaveEntitySnapshot[]
-  player_transform?: SavedPlayerTransform | null
+  entities: Entity3D[]
+  player?: Entity3D | null
+  config_camera?: ConfigCamera | null
+  config_editor_camera?: ConfigEditorCamera | null
   camera2d?: { x: number; y: number; half_h: number } | null
   sprites: Array<{ name: string; path: string }>
   models?: Array<{ name: string; path: string; category?: ModelCategory }>
@@ -654,33 +720,11 @@ export interface BackgroundInfo {
   name: string
 }
 
+/** @deprecated 3D usa `Blueprint3D` */
 export type BluePrintCategory = 'personaje' | 'entorno' | 'objetos'
 
-export interface BluePrintEntry {
-  /** Identificador único generado al crear el blueprint. */
-  id:               string
-  name:             string
-  category:         BluePrintCategory
-  kind:             'scenario' | 'character' | 'model' | 'collider' | 'execution_area' | 'directional_light'
-  path:             string
-  scale:            [number, number, number]
-  /** Rotación por defecto de nuevas instancias (2D: quaternion xyzw). */
-  rotation?:        [number, number, number, number]
-  physics_enabled?: boolean
-  /**
-   * Tipo de físicas del cuerpo.
-   * Valores válidos: "dynamic" (afectado por fuerzas y gravedad),
-   * "static" (no se mueve), "kinematic" (movido solo por código, sin fuerzas).
-   */
-  physics_type?:    string
-  animations?:      SavedAnimation[]
-  scripts?:         SavedScript[]
-  control_bindings?: SavedControlBindings
-  /** Mesh visual 3D distinto del path lógico (p. ej. personajes con GLB embebido). */
-  visualModelPath?: string
-  /** Categoría de entidad 3D (p. ej. environment para entorno con colisión estática). */
-  entity_category?: EntityCategory
-}
+/** @deprecated 3D usa `Blueprint3D` */
+export type BluePrintEntry = Blueprint3D
 
 export interface ViewportBounds {
   x:      number
