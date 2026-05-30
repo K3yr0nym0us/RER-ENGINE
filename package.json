@@ -20,44 +20,6 @@
     "predist": "cargo build --release --manifest-path src/main/Engine/Cargo.toml -p rer-engine-2d && cargo build --release --manifest-path src/main/Engine/Cargo.toml -p rer-engine-3d && cargo build --release --manifest-path src/main/Engine/Cargo.toml -p rer-engine-shared",
     "dist": "electron-vite build && electron-builder"
   },
-  "build": {
-    "appId": "com.rerengine.editor",
-    "productName": "RER-ENGINE",
-    "directories": {
-      "output": "dist"
-    },
-    "files": [
-      "out/**/*"
-    ],
-    "extraResources": [
-      {
-        "from": "src/main/Engine/target/release",
-        "to": "engine",
-        "filter": [
-          "rer_engine_2d*",
-          "rer_engine_3d*",
-          "rer_engine_shared*"
-        ]
-      }
-    ],
-    "linux": {
-      "target": [
-        "AppImage",
-        "deb"
-      ],
-      "category": "Development"
-    },
-    "win": {
-      "target": [
-        "nsis"
-      ]
-    },
-    "mac": {
-      "target": [
-        "dmg"
-      ]
-    }
-  },
   "devDependencies": {
     "@types/node": "^20.0.0",
     "@types/react": "^18.3.0",

@@ -1,0 +1,33 @@
+appId: com.rerengine.editor
+productName: RER-ENGINE
+# Genera iconos por plataforma desde el PNG (mín. 512×512).
+icon: src/resources/RER-ENGINE-LOGO.png
+
+directories:
+  output: dist
+
+files:
+  - out/**/*
+  - src/resources/RER-ENGINE-LOGO.png
+
+extraResources:
+  - from: src/main/Engine/target/release
+    to: engine
+    filter:
+      - rer_engine_2d*
+      - rer_engine_3d*
+      - rer_engine_shared*
+
+linux:
+  target:
+    - AppImage
+    - deb
+  category: Development
+
+win:
+  target:
+    - nsis
+
+mac:
+  target:
+    - dmg

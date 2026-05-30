@@ -129,12 +129,16 @@ function sendEventToRenderer(event: EngineEvent): void {
 function createMainWindow(): void {
   Menu.setApplicationMenu(null)
 
+  const iconPath = path.join(app.getAppPath(), 'src/resources/RER-ENGINE-LOGO.png')
+  const windowIcon = fs.existsSync(iconPath) ? iconPath : undefined
+
   mainWindow = new BrowserWindow({
     width:  1280,
     height: 800,
     minWidth:  900,
     minHeight: 600,
     title: 'RER-ENGINE',
+    ...(windowIcon ? { icon: windowIcon } : {}),
     backgroundColor: '#0d0d1a',
     webPreferences: {
       preload:          path.join(__dirname, '../preload/index.js'),
