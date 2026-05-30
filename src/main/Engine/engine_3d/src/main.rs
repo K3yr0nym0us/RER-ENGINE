@@ -845,12 +845,8 @@ fn main() {
     // Logs van a stderr; IPC usa stdout.
     // wgpu_hal::vulkan genera spam de "Suboptimal present" y warnings de capas
     // en entornos sin GPU hardware — subirlos a error los silencia.
-    #[cfg(target_os = "windows")]
     const DEFAULT_LOG_FILTER: &str =
-        "rer_engine_3d=warn,rer_engine_3d::config_base=info,rer_engine_3d::engine::load_proyect=info,rer_engine_3d::config_3d::static_model_cache=info,wgpu_core::instance=error,wgpu_hal::dx12::instance=error,wgpu_hal::auxil::dxgi::factory=error,wgpu_core=warn,wgpu_hal=warn,naga=warn";
-    #[cfg(not(target_os = "windows"))]
-    const DEFAULT_LOG_FILTER: &str =
-        "warn,rer_engine_3d::config_base=info,rer_engine_3d::engine::load_proyect=info,rer_engine_3d::config_3d::static_model_cache=info,wgpu_core=warn,wgpu_hal::vulkan::conv=error,wgpu_hal::vulkan::instance=error,wgpu_hal=warn,naga=warn";
+        "rer_engine_3d=warn,rer_engine_3d::config_base=info,rer_engine_3d::engine::load_proyect=info,rer_engine_3d::config_3d::static_model_cache=info,wgpu_core::instance=error,wgpu_hal::vulkan::conv=error,wgpu_hal::vulkan::instance=error,wgpu_core=warn,wgpu_hal=warn,naga=warn";
 
     rer_engine_shared::logging::init(DEFAULT_LOG_FILTER);
 

@@ -72,24 +72,11 @@ let engine3dStartupSceneSent = false
 /** Binario base del motor en la sesión actual (`rer_engine_2d` / `rer_engine_3d`). */
 let lastEngineBinary = 'rer_engine_2d'
 
-function expectedGpuApiLabel(baseBinaryName: string): string {
-  if (baseBinaryName === 'rer_engine_3d' && process.platform === 'win32') {
-    return 'DirectX 12'
-  }
-  return 'Vulkan'
-}
+const ENGINE_GPU_LABEL = 'Vulkan'
 
 function gpuStartupErrorMessage(): string {
-  const api = expectedGpuApiLabel(lastEngineBinary)
-  if (lastEngineBinary === 'rer_engine_3d' && process.platform === 'win32') {
-    return (
-      `No se pudo iniciar el motor gráfico con ${api}. Instala o actualiza los controladores de video ` +
-      'y asegúrate de tener DirectX 12 actualizado (Windows Update). ' +
-      'Reinicia el editor después de instalar drivers.'
-    )
-  }
   return (
-    `No se pudo iniciar el motor gráfico con ${api}. Instala o actualiza los controladores de video. ` +
+    'No se pudo iniciar el motor gráfico con Vulkan. Instala o actualiza los controladores de video. ' +
     'En WSL2: usa WSLg, instala mesa-vulkan-drivers (o drivers NVIDIA para WSL) y comprueba con vulkaninfo. ' +
     'Reinicia el editor después de instalar drivers.'
   )
@@ -274,8 +261,7 @@ function startEngine(embed?: ViewportBounds): void {
       }
     : {}
 
-  const gpuLabel = expectedGpuApiLabel(baseBinaryName)
-  console.log(`[engine] binario=${baseBinaryName} GPU esperada=${gpuLabel}`)
+  console.log(`[engine] binario=${baseBinaryName} GPU esperada=${ENGINE_GPU_LABEL}`)
 
   const engineEnv: NodeJS.ProcessEnv = { ...process.env, ...linuxEnv }
   delete engineEnv.RER_GPU_BACKEND

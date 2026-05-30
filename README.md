@@ -38,7 +38,7 @@ El render **no** ocurre dentro del DOM de Electron. Es un **proceso hijo** con v
          ▼  IPC viewport-bounds / set_bounds
 ┌─────────────────────────────────────────────────────────┐
 │  rer_engine_2d | rer_engine_3d (ventana winit overlay)  │
-│  2D/Linux/3D-Linux: Vulkan · 3D-Windows: DirectX 12    │
+│  rer_engine_2d | rer_engine_3d — Vulkan (Windows/Linux) │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -56,21 +56,19 @@ Principio **engine-first**: posiciones, cámaras, física y convenciones espacia
 
 | Regla | Detalle |
 |-------|---------|
-| **Motor 2D** | Siempre **Vulkan** (Windows y Linux). |
-| **Motor 3D en Linux** | **Vulkan**. |
-| **Motor 3D en Windows** | **DirectX 12** (fijo por perfil del binario; sin variables de entorno). |
-| **Prohibido** | OpenGL, EGL, `Backends::all()`, fallback silencioso entre Vulkan y DX12. |
+| **Motor 2D y 3D** | Siempre **Vulkan** (Windows y Linux). |
+| **Prohibido** | OpenGL, EGL, `Backends::all()`, otros backends wgpu (p. ej. DX12). |
 | **Shaders** | WGSL compilado con naga; portable entre backends wgpu. |
 | **Si la GPU falla** | El editor Electron **sí** abre; el viewport muestra ayuda. El motor emite `{"event":"error"}` y no envía `ready`. |
 
-Requisitos: Vulkan para 2D y 3D en Linux (`vulkaninfo`); en Windows, 3D requiere **DirectX 12** y drivers actualizados; 2D en Windows sigue usando Vulkan.
+Requisitos: **Vulkan** en Windows y Linux (`vulkaninfo` o drivers actualizados).
 
 ### Implementación (`engine_shared/src/gpu.rs`)
 
 | Pieza | Rol |
 |-------|-----|
 | `EngineGpuProfile::TwoD` / `ThreeD` | Lo fija cada binario al llamar `init_gpu(window, profile)`. |
-| `resolve_backend(profile)` | Elige Vulkan o DX12 solo por perfil y SO; **no** lee variables de entorno. |
+| `resolve_backend(profile)` | Siempre Vulkan; **no** lee variables de entorno. |
 | `init_gpu` | Una API wgpu por proceso; fallo → `GpuInitError` → IPC `{"event":"error"}`. |
 | Electron `startEngine` | Elimina `RER_GPU_BACKEND` del entorno del hijo para que no pueda anular la política. |
 | `EngineGpuErrorOverlay` | Ayuda en el viewport si el motor no envía `ready`. |
@@ -83,7 +81,7 @@ Requisitos: Vulkan para 2D y 3D en Linux (`vulkaninfo`); en Windows, 3D requiere
 
 | Área | Tecnologías |
 |------|-------------|
-| Motor | Rust, **wgpu** (Vulkan / DX12 según binario), winit, glam, Rapier, mlua, gltf/image |
+| Motor | Rust, **wgpu** (Vulkan), winit, glam, Rapier, mlua, gltf/image |
 | Editor | Electron, React, TypeScript, Vite (electron-vite) |
 | Scripts de juego | Lua (sandbox: sin `io`, `os`, `require`) |
 | Contrato IPC | JSON — tipos en `src/shared-types/types.ts` |
@@ -95,7 +93,7 @@ Requisitos: Vulkan para 2D y 3D en Linux (`vulkaninfo`); en Windows, 3D requiere
 - **Node.js** 20+ y **Yarn**
 - **Rust** (toolchain estable) y **Cargo**
 - **Windows 11** o **Linux con X11** (viewport overlay; en Wayland usar XWayland)
-- **GPU**: Vulkan para `rer_engine_2d` y para `rer_engine_3d` en Linux (drivers + `vulkaninfo` en WSL2 si aplica). En Windows, proyectos **3D** requieren **DirectX 12**; proyectos **2D** en Windows siguen usando Vulkan.
+- **GPU**: **Vulkan** para `rer_engine_2d` y `rer_engine_3d` (drivers + `vulkaninfo` en WSL2 si aplica).
 
 ---
 

@@ -26,7 +26,7 @@ use crate::config_3d::directional_light::{
 };
 
 impl State {
-    /// Inicializa wgpu (3D: DX12 en Windows, Vulkan en Linux; ver `rer_engine_shared::gpu`).
+    /// Inicializa wgpu (3D: Vulkan; ver `rer_engine_shared::gpu`).
     pub async fn new(window: Arc<Window>) -> Result<Self, GpuInitError> {
         let size = window.inner_size();
 

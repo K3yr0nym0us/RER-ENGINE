@@ -12,7 +12,7 @@ Este documento fija el contrato tecnico actual del motor 2D para que el codigo n
 ## Politica GPU
 
 - Perfil **TwoD**: siempre **Vulkan** (`EngineGpuProfile::TwoD`, `Backends::VULKAN`).
-- Crate `wgpu`: `default-features = false`, `features = ["wgsl", "dx12"]`; el 2D solo solicita Vulkan en runtime.
+- Crate `wgpu`: `default-features = false`, `features = ["wgsl"]`; el 2D solicita Vulkan en runtime.
 - **No** se usa OpenGL, EGL ni `Backends::all()`. No hay ramas de render por backend GL en pipelines.
 - Inicializacion: `engine::State::new` → `init_gpu(_, TwoD)`; fallo → `EngineEvent::Error` (sin `panic`, sin `ready`).
 - No se leen variables de entorno para elegir backend (política fija por perfil `TwoD`).

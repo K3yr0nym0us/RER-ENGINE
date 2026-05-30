@@ -12,9 +12,9 @@ edition = "2024"
 
 [workspace.dependencies]
 winit = "0.30"
-# Backends en runtime (`engine_shared::gpu`): Vulkan (2D/Linux/override) y DX12 (3D Windows).
-# wgpu 22: sin feature `vulkan` en Cargo; DX12 requiere feature `dx12` (HAL Windows).
-wgpu = { version = "22", default-features = false, features = ["wgsl", "dx12"] }
+# Backends en runtime (`engine_shared::gpu`): solo Vulkan (2D y 3D).
+# wgpu 22: feature `wgsl`; HAL Vulkan se habilita por target en wgc (sin feature `dx12`).
+wgpu = { version = "22", default-features = false, features = ["wgsl"] }
 pollster = "0.3"
 glam = "0.28"
 bytemuck = { version = "1", features = ["derive"] }

@@ -2,7 +2,7 @@
 
 Guía breve para escribir scripts en entidades. El motor **2D** y el **3D** comparten la misma forma de script; algunas funciones solo existen en uno de los dos.
 
-**Render del motor:** Rust + wgpu — `rer_engine_2d` y 3D en Linux: Vulkan; `rer_engine_3d` en Windows: DirectX 12 (fijo, sin variables de entorno). Ventana overlay junto al editor Electron. Los scripts Lua no configuran la GPU; solo llaman a la API `engine.*` de gameplay.
+**Render del motor:** Rust + wgpu — `rer_engine_2d` y `rer_engine_3d` usan **Vulkan** (Windows y Linux; sin variables de entorno). Ventana overlay junto al editor Electron. Los scripts Lua no configuran la GPU; solo llaman a la API `engine.*` de gameplay.
 
 ---
 

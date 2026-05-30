@@ -8,11 +8,9 @@ alwaysApply: true
 - Use **yarn** for dependency management (required).
 - Desktop app: **Electron**, **React**, **TypeScript**; game runtime in **Rust**.
 - **GPU** (`engine_shared/src/gpu.rs`, `EngineGpuProfile`):
-  - `rer_engine_2d`: always **Vulkan** (Windows and Linux).
-  - `rer_engine_3d` on Linux: **Vulkan**.
-  - `rer_engine_3d` on Windows: **DirectX 12** (fixed; no env overrides).
+  - `rer_engine_2d` and `rer_engine_3d`: always **Vulkan** (Windows and Linux).
   - Do **not** read or set `RER_GPU_BACKEND`; Electron strips it on engine spawn.
-  - No OpenGL, no `Backends::all()`, no silent fallback between Vulkan and DX12.
+  - No OpenGL, no `Backends::all()`, no DX12 or other wgpu backends.
 - **Viewport**: separate **winit overlay** window aligned to the editor hole (not embedded in Chromium; frontend does not render the game world with WebGL).
 - Prefer the **least invasive** fix; suggest code before rewriting large areas.
 - Match existing project style (especially hooks and components). **Never** put async work inside a component—use a hook.
