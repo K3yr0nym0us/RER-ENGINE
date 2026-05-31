@@ -426,6 +426,8 @@ pub enum EngineCommand {
     RemoveBackgroundAsset { path: String },
     /// Solicitar la lista de fondos cargados en el motor.
     GetBackgroundsList,
+    /// Mostrar u ocultar wireframes de colisión en editor (no aplica en preview/play).
+    SetDebugMode { show: bool },
     /// Alternar modo de prueba del juego: true = simular juego, false = modo editor.
     SetPreviewPlaying { playing: bool },
     /// Deshacer la última acción disponible.
@@ -583,21 +585,6 @@ pub struct SaveEntity3DSnapshot {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct SaveBlueprint3DSnapshot {
-    pub id: String,
-    pub name: String,
-    pub category: String,
-    pub model: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub physics_type: Option<String>,
-    pub colision: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub animations: Option<Vec<SaveAnimationSnapshot>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub scripts: Option<Vec<SaveScriptSnapshot>>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SaveConfigCameraSnapshot {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub camera_eye_position: Option<[f32; 3]>,
@@ -618,48 +605,6 @@ pub struct SaveConfigEditorCameraSnapshot {
     pub position: [f32; 3],
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rotation: Option<[f32; 4]>,
-}
-
-#[derive(Debug, Serialize, Clone)]
-pub struct SavePlayCharacterMeshExtentsSnapshot {
-    pub local_min_y: f32,
-    pub local_max_y: f32,
-    pub radius_xz: f32,
-}
-
-#[derive(Debug, Serialize, Clone)]
-pub struct SavePlayerTransformSnapshot {
-    pub position: [f32; 3],
-    pub scale: [f32; 3],
-    pub yaw: f32,
-    pub pitch: f32,
-    pub fov_y: f32,
-    pub frustum_distance: f32,
-    #[serde(default)]
-    pub camera_follow_mode: PlayCameraFollowMode,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub visual_model_path: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub control_bindings: Option<ControlBindingsData>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub scripts: Option<Vec<SaveScriptSnapshot>>,
-    /// Rotación del mesh del jugador (quaternion xyzw) en editor.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub body_rotation: Option<[f32; 4]>,
-    /// Escala del transform del jugador en editor (p. ej. tras reemplazar modelo).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub body_scale: Option<[f32; 3]>,
-    /// Ojo FPS en editor (independiente del viewport orbital).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub camera_eye_position: Option<[f32; 3]>,
-    /// Yaw del cono FPS (`camera.yaw`), no del viewport orbital.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub fps_camera_yaw: Option<f32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub fps_camera_pitch: Option<f32>,
-    /// Cápsula de movimiento del jugador tras reemplazar el mesh (AABB local normalizado).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub mesh_collision_extents: Option<SavePlayCharacterMeshExtentsSnapshot>,
 }
 
 #[derive(Debug, Serialize, Clone)]

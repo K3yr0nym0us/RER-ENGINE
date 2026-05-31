@@ -179,7 +179,8 @@ pub fn create_unit_quad_xy(device: &wgpu::Device) -> Mesh {
 // Per-instance data for the instanced rendering pipeline
 // ---------------------------------------------------------------------------
 
-/// Tooltips/HUD en PNG: UV completas, sin Lambert; alpha = tex.a × flag_pad.y (shader ≥ 2.5).
+/// Rama legacy en `shader.wgsl` (texture_2d_array). PNG de UI en pantalla: `screen_hud_image` only.
+#[allow(dead_code)]
 pub const RENDER_KIND_HUD_OVERLAY: f32 = 3.0;
 
 // ---------------------------------------------------------------------------
@@ -196,7 +197,7 @@ pub const RENDER_KIND_HUD_OVERLAY: f32 = 3.0;
 pub struct InstanceData {
     pub model:         [[f32; 4]; 4],
     pub flag_pad:      [f32; 4],   // x: selección/hover, y: alpha, z: render_kind
-    pub tex_layer_pad: [f32; 4],   // x: capa del array de texturas
+    pub tex_layer_pad: [f32; 4],   // x: capa del array; o UV rect si se usa `screen_hud_pipeline`
 }
 
 impl InstanceData {

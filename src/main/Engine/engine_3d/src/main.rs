@@ -9,6 +9,7 @@ mod platform;
 mod scripting;
 mod spatial;
 mod texture;
+mod screen_hud_image;
 
 #[path = "engine/mod.rs"]
 mod engine;

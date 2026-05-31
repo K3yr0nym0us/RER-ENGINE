@@ -62,7 +62,7 @@ Soporte: `mesh.rs`, `shader.wgsl`, `gizmo.rs`, `gizmo.wgsl`, `texture.rs`, `scri
 
 - **Editor 3D**: solo `Camera` orbital + viewport desacoplado del jugador; gizmo y frustum FP con `preview_playing == false`. No hay modo cámara 2D en este binario.
 - **Play FP**: `preview_playing`, vista desde acordeón Cámara; mesh del jugador visible; capsula cinematica en `play_controller.rs`.
-- **HUD** (crosshair, Esc): NDC + `hud_scene_bind_group` (identidad). No mezclar ese uniform con `scene_bind_group`.
+- **HUD** (crosshair, Esc): NDC + `hud_scene_bind_group` (identidad). PNG de pantalla **solo** vía `screen_hud_image` + `screen_hud_pipeline` (no `TextureArray`).
 
 ## Contratos operativos (3D)
 
@@ -127,4 +127,4 @@ Registro de rutas/tipos: `entity_save_meta` + actualizacion en spawn/load/replac
 
 ### Render HUD
 
-- Overlays en play (crosshair, tooltip Esc) usan `hud_quad_mesh` y `hud_scene_bind_group` con view-projection identidad; no reutilizar el mesh del suelo de escena.
+- Overlays en play (crosshair, tooltip Esc) usan `hud_quad_mesh`, `screen_hud_atlas` y `screen_hud_pipeline`; no reutilizar `texture_array` ni el mesh del suelo para PNG de UI.

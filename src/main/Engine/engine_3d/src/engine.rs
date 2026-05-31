@@ -47,6 +47,9 @@ pub struct State {
     pub(crate) fallback_layer: crate::texture::TextureLayer,
     /// Quad para tooltips en pantalla (HUD); no usar `meshes[0]` (suelo).
     pub(crate) hud_quad_mesh: Mesh,
+    /// Pipeline y atlas **solo** para PNG en pantalla (`screen_hud_image`; no reutilizar).
+    pub(crate) screen_hud_pipeline: wgpu::RenderPipeline,
+    pub(crate) screen_hud_atlas: crate::screen_hud_image::ScreenHudAtlas,
     pub camera: Camera,
     /// Blanco de órbita del editor 3D: no sigue al transform del jugador FP.
     pub editor_orbit_target: glam::Vec3,
@@ -104,6 +107,8 @@ pub struct State {
     /// Colisión de malla Rapier on/off por entidad (`docs/Entities_Model_3D.yaml`).
     pub(crate) entity_colision: std::collections::HashMap<EntityId, bool>,
     pub preview_playing: bool,
+    /// Wireframes de colisión en editor (IPC `set_debug_mode`).
+    pub debug_mode: bool,
     pub(crate) preview_entity_transform_snapshots:
         HashMap<EntityId, crate::config_3d::preview_editor::PreviewEntityTransform>,
     pub(crate) preview_fp_view_snapshot:
@@ -133,18 +138,10 @@ pub struct State {
     pub(crate) play_session_body_yaw_baseline: f32,
     pub(crate) play_session_camera_yaw_baseline: f32,
     pub(crate) tool_overlay_buffer: GizmoBuffer,
-    pub(crate) snap_hint_layer: Option<crate::texture::TextureLayer>,
-    pub(crate) snap_hint_size: (f32, f32),
-    pub(crate) snap_hint_layer_en: Option<crate::texture::TextureLayer>,
-    pub(crate) snap_hint_size_en: (f32, f32),
     pub(crate) snap_locale: String,
-    pub(crate) show_snap_hint: bool,
-    pub(crate) snap_hint_alpha: f32,
-    /// Tooltip «pulsa Esc para salir» en play FPS 3D.
-    pub(crate) fps_exit_hint_layer: Option<crate::texture::TextureLayer>,
-    pub(crate) fps_exit_hint_size: (f32, f32),
-    pub(crate) fps_exit_hint_layer_en: Option<crate::texture::TextureLayer>,
-    pub(crate) fps_exit_hint_size_en: (f32, f32),
+    /// Tooltip «pulsa Esc para salir» (empaquetado en `screen_hud_atlas`).
+    pub(crate) fps_exit_hint_es: Option<crate::screen_hud_image::ScreenHudPackedImage>,
+    pub(crate) fps_exit_hint_en: Option<crate::screen_hud_image::ScreenHudPackedImage>,
     pub(crate) fps_exit_hint_alpha: f32,
     pub(crate) anim_saved_transforms: std::collections::HashMap<u32, (GlamVec3, GlamVec3)>,
     pub pivot_edit_mode: Option<(u32, String, u32, u32)>,

@@ -791,6 +791,10 @@ impl State {
                 self.target_fps = fps.clamp(1, 1000);
                 log::info!("[render] Límite de FPS actualizado: {}", self.target_fps);
             }
+            EngineCommand::SetDebugMode { show } => {
+                self.debug_mode = show;
+                log::info!("[debug] modo debug (colisiones): {}", show);
+            }
             EngineCommand::SetPreviewPlaying { playing } => {
                 if self.preview_playing == playing {
                     return;

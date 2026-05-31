@@ -84,7 +84,7 @@ impl State {
         self.pending_entity_model_replaces.clear();
         self.texture_array.reset(&self.queue);
         self.texture_path_layers.clear();
-        self.reload_snap_hint_assets();
+        self.reload_screen_hud_images();
         self.animations.clear();
         self.active_animations.clear();
         self.default_animation_by_entity.clear();
@@ -110,8 +110,6 @@ impl State {
         self.entity_blueprint_ids.clear();
         self.entity_colision.clear();
         self.tool_overlay_buffer = gizmo::build_from_vertices(&self.device, &[]);
-        self.show_snap_hint = false;
-        self.snap_hint_alpha = 0.0;
         self.fps_exit_hint_alpha = 0.0;
         self.pivot_edit_mode = None;
         self.logical_area_mode = None;
@@ -393,8 +391,6 @@ impl State {
         self.entity_blueprint_ids.clear();
         self.entity_colision.clear();
         self.tool_overlay_buffer = gizmo::build_from_vertices(&self.device, &[]);
-        self.show_snap_hint = false;
-        self.snap_hint_alpha = 0.0;
         self.fps_exit_hint_alpha = 0.0;
         self.pivot_edit_mode = None;
         self.logical_area_mode = None;

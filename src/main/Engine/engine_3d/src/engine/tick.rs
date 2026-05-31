@@ -1,7 +1,5 @@
 use std::time::Instant;
 
-use glam::Mat4;
-
 use crate::ecs::Transform;
 use crate::ipc::{send_event, EngineEvent};
 use crate::mesh;
@@ -117,71 +115,18 @@ impl State {
         self.active_gizmo_axis = axis;
     }
 
-    /// Muestra/oculta el hint visual de snap a cuadrícula en el viewport 2D.
-    pub fn set_snap_hint_visible(&mut self, visible: bool) {
-        self.show_snap_hint = visible;
-    }
+    /// Compatibilidad IPC 2D: en 3D el hint Ctrl no se dibuja (solo HUD vía `screen_hud_image`).
+    pub fn set_snap_hint_visible(&mut self, _visible: bool) {}
 
-    fn load_snap_hint_layer(&mut self, filename: &str) -> (Option<crate::texture::TextureLayer>, (f32, f32)) {
-        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../assets")
-            .join(filename);
-        match std::fs::read(&path) {
-            Ok(bytes) => {
-                use image::ImageReader;
-                match ImageReader::new(std::io::Cursor::new(&bytes))
-                    .with_guessed_format()
-                    .map_err(|e| e.to_string())
-                    .and_then(|r| r.decode().map_err(|e| e.to_string()))
-                {
-                    Ok(img) => {
-                        let img = img.to_rgba8();
-                        let (w, h) = img.dimensions();
-                        let layer = self.texture_array.pack(&self.queue, img.as_raw(), w, h);
-                        (Some(layer), (w as f32, h as f32))
-                    }
-                    Err(e) => {
-                        log::warn!("[snap-hint] Error decodificando '{}': {}", path.display(), e);
-                        (None, (0.0, 0.0))
-                    }
-                }
-            }
-            Err(e) => {
-                log::warn!("[snap-hint] No se pudo leer '{}': {}", path.display(), e);
-                (None, (0.0, 0.0))
-            }
-        }
-    }
-
-    pub(crate) fn reload_snap_hint_assets(&mut self) {
-        let (layer_es, size_es) = self.load_snap_hint_layer("tooltip-btn-ctrl-to-auto-adjust.png");
-        let (layer_en, size_en) =
-            self.load_snap_hint_layer("tooltip-btn-ctrl-to-auto-adjust-english.png");
-        self.snap_hint_layer = layer_es;
-        self.snap_hint_size = size_es;
-        self.snap_hint_layer_en = layer_en;
-        self.snap_hint_size_en = size_en;
-
-        let (fp_es, fp_size_es) = self.load_snap_hint_layer("tooltip-btn-esc-salir.png");
-        let (fp_en, fp_size_en) = self.load_snap_hint_layer("tooltip-btn-esc-exit.png");
-        self.fps_exit_hint_layer = fp_es;
-        self.fps_exit_hint_size = fp_size_es;
-        self.fps_exit_hint_layer_en = fp_en;
-        self.fps_exit_hint_size_en = fp_size_en;
-    }
-
-    pub(crate) fn update_snap_hint_alpha(&mut self) {
-        let target = 0.0_f32;
-        let k = if target > self.snap_hint_alpha {
-            4.2_f32
-        } else {
-            3.4_f32
-        };
-        let blend = 1.0 - (-k * self.delta_time.max(0.0)).exp();
-        self.snap_hint_alpha += (target - self.snap_hint_alpha) * blend;
-        if (self.snap_hint_alpha - target).abs() < 0.001 {
-            self.snap_hint_alpha = target;
-        }
+    /// Recarga PNG de HUD de pantalla en `screen_hud_atlas` (no tocar `texture_array`).
+    pub(crate) fn reload_screen_hud_images(&mut self) {
+        self.screen_hud_atlas.reset(&self.queue);
+        self.fps_exit_hint_es = self
+            .screen_hud_atlas
+            .pack_png_from_engine_assets(&self.queue, "tooltip-btn-esc-salir.png");
+        self.fps_exit_hint_en = self
+            .screen_hud_atlas
+            .pack_png_from_engine_assets(&self.queue, "tooltip-btn-esc-exit.png");
     }
 
     pub(crate) fn update_fps_exit_hint_alpha(&mut self) {
@@ -202,60 +147,32 @@ impl State {
         }
     }
 
-    /// Tooltip «Esc para salir del play» en primera persona 3D (esquina inferior izquierda).
+    /// Tooltip «Esc para salir del play» (`screen_hud_image`, esquina inferior izquierda).
     pub(crate) fn build_fps_exit_hint_instance(&self) -> Option<mesh::InstanceData> {
         if self.fps_exit_hint_alpha <= 0.003 {
             return None;
         }
-        let (layer, img_w, img_h) = if self.snap_locale == "en" {
-            let layer = self.fps_exit_hint_layer_en.or(self.fps_exit_hint_layer)?;
-            let (w, h) = if self.fps_exit_hint_layer_en.is_some() {
-                self.fps_exit_hint_size_en
-            } else {
-                self.fps_exit_hint_size
-            };
-            (layer, w, h)
-        } else {
-            let layer = self.fps_exit_hint_layer.or(self.fps_exit_hint_layer_en)?;
-            let (w, h) = if self.fps_exit_hint_layer.is_some() {
-                self.fps_exit_hint_size
-            } else {
-                self.fps_exit_hint_size_en
-            };
-            (layer, w, h)
-        };
-        let w = self.size.width as f32;
-        let h = self.size.height as f32;
-        if w <= 0.0 || h <= 0.0 || img_w <= 0.0 || img_h <= 0.0 {
-            return None;
-        }
-
-        let margin_px = 18.0_f32;
-        let max_width_px = (w * 0.28).clamp(120.0, 360.0);
-        let scale_px = (max_width_px / img_w).min(1.0);
-        const DISPLAY_SCALE: f32 = 0.9;
-        let draw_w_px = img_w * scale_px * DISPLAY_SCALE;
-        let draw_h_px = img_h * scale_px * DISPLAY_SCALE;
-
+        let packed = crate::screen_hud_image::pick_localized_screen_hud(
+            &self.snap_locale,
+            self.fps_exit_hint_en,
+            self.fps_exit_hint_es,
+        )?;
+        let vw = self.size.width as f32;
+        let vh = self.size.height as f32;
         let a = self.fps_exit_hint_alpha.clamp(0.0, 1.0);
         let eased_alpha = a * a * (3.0 - 2.0 * a);
-        let scale_in = 0.92 + 0.08 * eased_alpha;
-        let slide_px = (1.0 - eased_alpha) * 14.0;
-
-        // Espacio NDC fijo en pantalla (como el crosshair): view_proj = identidad en el pass.
-        let ndc_w = 2.0 * (draw_w_px / w) * scale_in;
-        let ndc_h = 2.0 * (draw_h_px / h) * scale_in;
-        let margin_x_ndc = 2.0 * margin_px / w;
-        let margin_y_ndc = 2.0 * margin_px / h;
-        let slide_ndc = 2.0 * slide_px / h;
-        let cx = -1.0 + margin_x_ndc + ndc_w * 0.5;
-        let cy = -1.0 + margin_y_ndc + ndc_h * 0.5 + slide_ndc;
-        let model = Mat4::from_translation(glam::vec3(cx, cy, 0.0))
-            * Mat4::from_scale(glam::vec3(ndc_w, ndc_h, 1.0));
-        let mut inst = mesh::InstanceData::new(model, 0.0, layer);
-        inst.flag_pad[1] = eased_alpha;
-        inst.flag_pad[2] = mesh::RENDER_KIND_HUD_OVERLAY;
-        Some(inst)
+        let model = crate::screen_hud_image::ndc_transform_bottom_left(
+            vw,
+            vh,
+            packed,
+            crate::screen_hud_image::ScreenHudBottomLeftLayout::default(),
+            eased_alpha,
+        )?;
+        Some(crate::screen_hud_image::build_screen_hud_instance(
+            packed,
+            model,
+            eased_alpha,
+        ))
     }
 
     /// Centro de selección para gizmo/grupo. Si no hay grupo, usa `selected_entity`.
@@ -290,7 +207,6 @@ impl State {
         let now = Instant::now();
         self.delta_time = now.duration_since(self.last_frame).as_secs_f32();
         self.last_frame = now;
-        self.update_snap_hint_alpha();
         self.update_fps_exit_hint_alpha();
 
         self.metrics_frame_count += 1;

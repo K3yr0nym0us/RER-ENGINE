@@ -110,11 +110,6 @@ pub(crate) fn aabb_y_extent_score(min: [f32; 3], max: [f32; 3]) -> f32 {
     sy / sx.max(sz).max(1e-8)
 }
 
-/// Elige la rotación que maximiza altura en Y (Mixamo suele exportar el torso en X local).
-pub(crate) fn upright_quat_from_vertex_aabb(min: [f32; 3], max: [f32; 3]) -> glam::Quat {
-    upright_quat_from_vertices_bounds(min, max, &[])
-}
-
 fn upright_candidate_score(
     min: [f32; 3],
     max: [f32; 3],

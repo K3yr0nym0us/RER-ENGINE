@@ -85,10 +85,6 @@ impl PlayCharacterMeshExtents {
     }
 }
 
-/// Escala Y del transform para que la malla mida `PLAY_CHARACTER_BODY_HEIGHT` en mundo.
-pub(crate) fn play_character_mesh_scale_y_for_normalized_height(ext: &PlayCharacterMeshExtents) -> f32 {
-    (PLAY_CHARACTER_BODY_HEIGHT / ext.height().max(0.01)).max(0.01)
-}
 /// Distancia de la cámara orbital en editor (detrás del jugador, fuera de play).
 pub(crate) const PLAY_CHARACTER_EDITOR_ORBIT_DISTANCE: f32 = 5.0;
 /// Pitch orbital del editor 3D (rad). Eleva la cámara; no confundir con mirar al suelo (eso depende del pivote).

@@ -18,8 +18,6 @@ const SCRIPT_FILE_PREFIX: &str = "@file:";
 const DEFAULT_LIGHT_AMBIENT: f32 = 0.06;
 const DEFAULT_LIGHT_INTENSITY: f32 = 1.0;
 const DEFAULT_SHADOW_DARKNESS: f32 = 0.22;
-const FIRST_PERSON_PLAYER_BODY_SCALE: [f32; 3] = [0.8, 1.7, 0.8];
-
 const ENTITY_MARKERS: &[&str] = &[
     "[EditorBox]",
     "[Ground]",
@@ -336,18 +334,6 @@ fn entity_path_marker(p: &str) -> Option<&'static str> {
         .find(|m| *m == marker)
 }
 
-fn is_player_path(p: &str) -> bool {
-    entity_path_marker(p) == Some("[Player]")
-}
-
-fn is_sun_path(p: &str) -> bool {
-    entity_path_marker(p) == Some("[Sun]")
-}
-
-fn is_ground_path(p: &str) -> bool {
-    entity_path_marker(p) == Some("[Ground]")
-}
-
 fn is_editor_box_path(p: &str) -> bool {
     entity_path_marker(p) == Some("[EditorBox]")
 }
@@ -472,13 +458,6 @@ fn resolve_control_bindings(
             })
             .collect(),
     })
-}
-
-fn saved_control_bindings_empty(bindings: &Option<SavedControlBindings>) -> bool {
-    bindings
-        .as_ref()
-        .map(|b| b.keyboard_mouse.is_empty() && b.gamepad.is_empty())
-        .unwrap_or(true)
 }
 
 fn resolve_entity_3d(entity: &SavedEntity3D, extracted_dir: &Path) -> SavedEntity3D {

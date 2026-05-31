@@ -469,7 +469,7 @@ impl State {
             }
         }
 
-        if !self.preview_playing {
+        if self.debug_mode && !self.preview_playing {
             let collision_overlay =
                 crate::config_3d::collision_overlay::build_editor_collision_overlay(
                     &self.device,
@@ -685,9 +685,9 @@ impl State {
                 occlusion_query_set: None,
                 timestamp_writes: None,
             });
-            hint_pass.set_pipeline(&self.render_pipeline_overlay);
+            hint_pass.set_pipeline(&self.screen_hud_pipeline);
             hint_pass.set_bind_group(0, &self.hud_scene_bind_group, &[]);
-            hint_pass.set_bind_group(1, self.texture_array.bind_group.as_ref(), &[]);
+            hint_pass.set_bind_group(1, self.screen_hud_atlas.bind_group.as_ref(), &[]);
             hint_pass.set_vertex_buffer(0, self.hud_quad_mesh.vertex_buffer.slice(..));
             hint_pass.set_vertex_buffer(1, hint_inst_buf.slice(..));
             hint_pass.set_index_buffer(

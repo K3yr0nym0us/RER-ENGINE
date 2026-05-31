@@ -268,19 +268,17 @@ impl State {
         let checker_layer = texture_array.pack(&queue, &checker_pixels, 128, 128);
         let tex_layers = vec![checker_layer];
 
-        let (snap_hint_layer, snap_hint_size) =
-            load_snap_hint_asset(&mut texture_array, &queue, "tooltip-btn-ctrl-to-auto-adjust.png");
-        let (snap_hint_layer_en, snap_hint_size_en) = load_snap_hint_asset(
-            &mut texture_array,
-            &queue,
-            "tooltip-btn-ctrl-to-auto-adjust-english.png",
-        );
-        let (fps_exit_hint_layer, fps_exit_hint_size) =
-            load_snap_hint_asset(&mut texture_array, &queue, "tooltip-btn-esc-salir.png");
-        let (fps_exit_hint_layer_en, fps_exit_hint_size_en) =
-            load_snap_hint_asset(&mut texture_array, &queue, "tooltip-btn-esc-exit.png");
+        let screen_hud_bgl = crate::screen_hud_image::ScreenHudAtlas::bind_group_layout(&device);
+        let mut screen_hud_atlas =
+            crate::screen_hud_image::ScreenHudAtlas::new(&device, &queue, &screen_hud_bgl);
+        let fps_exit_hint_es = screen_hud_atlas
+            .pack_png_from_engine_assets(&queue, "tooltip-btn-esc-salir.png");
+        let fps_exit_hint_en = screen_hud_atlas
+            .pack_png_from_engine_assets(&queue, "tooltip-btn-esc-exit.png");
 
         let shader = device.create_shader_module(include_wgsl!("../shader.wgsl"));
+        let screen_hud_shader =
+            device.create_shader_module(include_wgsl!("../shader_screen_hud.wgsl"));
         let shadow_mask_target = Some(wgpu::ColorTargetState {
             format: crate::taa::SHADOW_MASK_FORMAT,
             blend: None,
@@ -381,6 +379,48 @@ impl State {
             multiview: None,
             cache: None,
         });
+
+        let screen_hud_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("screen-hud-pipeline-layout"),
+                bind_group_layouts: &[&bgl, &screen_hud_bgl],
+                push_constant_ranges: &[],
+            });
+        let screen_hud_pipeline =
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("screen-hud-pipeline"),
+                layout: Some(&screen_hud_pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &screen_hud_shader,
+                    entry_point: "vs_screen_hud",
+                    buffers: &[mesh::Vertex::desc(), mesh::InstanceData::desc()],
+                    compilation_options: Default::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &screen_hud_shader,
+                    entry_point: "fs_screen_hud",
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format,
+                        blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                    compilation_options: Default::default(),
+                }),
+                primitive: wgpu::PrimitiveState {
+                    cull_mode: None,
+                    ..Default::default()
+                },
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: DEPTH_FORMAT,
+                    depth_write_enabled: false,
+                    depth_compare: wgpu::CompareFunction::Always,
+                    stencil: wgpu::StencilState::default(),
+                    bias: wgpu::DepthBiasState::default(),
+                }),
+                multisample: wgpu::MultisampleState::default(),
+                multiview: None,
+                cache: None,
+            });
 
         let render_pipeline_overlay = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("sprite-overlay-pipeline"),
@@ -687,6 +727,8 @@ impl State {
             tex_layers,
             fallback_layer,
             hud_quad_mesh,
+            screen_hud_pipeline,
+            screen_hud_atlas,
             camera,
             editor_orbit_target: glam::Vec3::ZERO,
             editor_viewport_yaw: -std::f32::consts::FRAC_PI_4,
@@ -733,6 +775,7 @@ impl State {
             entity_blueprint_ids: HashMap::new(),
             entity_colision: HashMap::new(),
             preview_playing: false,
+            debug_mode: false,
             preview_entity_transform_snapshots: HashMap::new(),
             preview_fp_view_snapshot: None,
             play_controller_velocity: glam::Vec3::ZERO,
@@ -751,17 +794,9 @@ impl State {
             play_session_body_yaw_baseline: 0.0,
             play_session_camera_yaw_baseline: 0.0,
             tool_overlay_buffer: tool_overlay_buffer_init,
-            snap_hint_layer,
-            snap_hint_size,
-            snap_hint_layer_en,
-            snap_hint_size_en,
             snap_locale: "en".to_string(),
-            show_snap_hint: false,
-            snap_hint_alpha: 0.0,
-            fps_exit_hint_layer,
-            fps_exit_hint_size,
-            fps_exit_hint_layer_en,
-            fps_exit_hint_size_en,
+            fps_exit_hint_es,
+            fps_exit_hint_en,
             fps_exit_hint_alpha: 0.0,
             anim_saved_transforms: std::collections::HashMap::new(),
             pivot_edit_mode: None,
@@ -823,37 +858,3 @@ impl State {
     }
 }
 
-pub(crate) fn load_snap_hint_asset(
-    texture_array: &mut crate::texture::TextureArray,
-    queue: &wgpu::Queue,
-    filename: &str,
-) -> (Option<crate::texture::TextureLayer>, (f32, f32)) {
-    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../assets")
-        .join(filename);
-    match std::fs::read(&path) {
-        Ok(bytes) => {
-            use image::ImageReader;
-            match ImageReader::new(std::io::Cursor::new(&bytes))
-                .with_guessed_format()
-                .map_err(|e| e.to_string())
-                .and_then(|r| r.decode().map_err(|e| e.to_string()))
-            {
-                Ok(img) => {
-                    let img = img.to_rgba8();
-                    let (w, h) = img.dimensions();
-                    let layer = texture_array.pack(queue, img.as_raw(), w, h);
-                    (Some(layer), (w as f32, h as f32))
-                }
-                Err(e) => {
-                    log::warn!("[snap-hint] Error decodificando '{}': {}", path.display(), e);
-                    (None, (0.0, 0.0))
-                }
-            }
-        }
-        Err(e) => {
-            log::warn!("[snap-hint] No se pudo leer '{}': {}", path.display(), e);
-            (None, (0.0, 0.0))
-        }
-    }
-}
