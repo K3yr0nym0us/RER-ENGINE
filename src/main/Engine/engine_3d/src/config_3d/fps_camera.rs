@@ -241,6 +241,7 @@ impl State {
         sync_editor_viewport: bool,
         fps_camera_yaw: Option<f32>,
         fps_camera_pitch: Option<f32>,
+        preserve_saved_fps_eye: bool,
     ) {
 
         self.set_play_character_feet_position(Vec3::from_array(position));
@@ -261,9 +262,10 @@ impl State {
             self.editor_orbit_target = feet + glam::Vec3::new(0.0, half_h, 0.0);
             self.editor_viewport_yaw = yaw;
             self.editor_viewport_pitch = pitch_clamped;
-            // Reset del ojo de la cámara FPS al ojo actual del Player al cargar/aplicar vista.
-            self.play_camera_eye_position =
-                self.play_character_feet_position() + self.play_character_eye_world_offset();
+            if !preserve_saved_fps_eye {
+                self.play_camera_eye_position =
+                    self.play_character_feet_position() + self.play_character_eye_world_offset();
+            }
             self.ensure_editor_camera_entity();
             self.sync_editor_camera_entity_from_viewport();
         }
@@ -444,6 +446,7 @@ impl State {
         fps_camera_yaw: Option<f32>,
         fps_camera_pitch: Option<f32>,
     ) {
+        let preserve_eye = camera_eye_position.is_some();
         self.apply_play_character_saved_view(
             position,
             yaw,
@@ -451,11 +454,8 @@ impl State {
             true,
             fps_camera_yaw,
             fps_camera_pitch,
+            preserve_eye,
         );
-        if let Some(eye) = camera_eye_position {
-            self.play_camera_eye_position = Vec3::from_array(eye);
-            self.capture_play_camera_follow_offset();
-        }
         if let (Some(id), Some(rot), Some(scale)) = (
             self.play_character_entity,
             body_rotation,
@@ -488,6 +488,10 @@ impl State {
         if let Some(mode) = camera_follow_mode {
             self.set_play_camera_follow_mode(mode);
         } else {
+            self.capture_play_camera_follow_offset();
+        }
+        if let Some(eye) = camera_eye_position {
+            self.play_camera_eye_position = Vec3::from_array(eye);
             self.capture_play_camera_follow_offset();
         }
         self.emit_play_character_view_changed(true);

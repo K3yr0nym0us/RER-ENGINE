@@ -1010,7 +1010,11 @@ fn spawn_player_from_pending(
     config_camera: Option<&SavedConfigCamera>,
 ) {
     if let (Some(entity), Some(cam)) = (player_entity, config_camera) {
-        preset_spawn_camera_from_config(state, entity.position, cam);
+        if is_model_3d_path(&entity.model) {
+            restore_play_character_mesh_extents_from_model(state, &entity.model);
+        }
+        let feet = player_manifest_position_as_feet(state, entity);
+        preset_spawn_camera_from_config(state, feet, cam);
     }
 
     let needs_spawn = state
@@ -1056,6 +1060,27 @@ fn restore_play_character_mesh_extents_from_model(state: &mut State, model_path:
     }
 }
 
+/// Convierte `player.position` del manifest a pies (saves antiguos guardaban centro del mesh).
+fn player_manifest_position_as_feet(state: &State, player: &SavedEntity3D) -> [f32; 3] {
+    use crate::config_3d::character_anchor::feet_from_transform;
+    use glam::{Quat, Vec3};
+
+    if state.play_character_mesh_origin_at_feet() {
+        return player.position;
+    }
+    let rot = player
+        .rotation
+        .map(|r| Quat::from_xyzw(r[0], r[1], r[2], r[3]))
+        .unwrap_or(Quat::IDENTITY);
+    feet_from_transform(
+        Vec3::from_array(player.position),
+        Vec3::from_array(player.scale),
+        rot,
+        state.play_character_mesh_extents.as_ref(),
+    )
+    .to_array()
+}
+
 /// Aplica `config_camera` + transform del objeto `player` del manifest.
 fn apply_saved_play_character_view(
     state: &mut State,
@@ -1077,8 +1102,9 @@ fn apply_saved_play_character_view(
     let pitch = cam.pitch.unwrap_or(PLAY_CHARACTER_EDITOR_ORBIT_PITCH);
     let body_rotation = player.rotation;
     let body_scale = Some(player.scale);
+    let feet = player_manifest_position_as_feet(state, player);
     state.apply_play_character_view(
-        player.position,
+        feet,
         yaw,
         pitch,
         cam.fov_y,
@@ -1090,6 +1116,10 @@ fn apply_saved_play_character_view(
         cam.fps_camera_yaw,
         cam.fps_camera_pitch,
     );
+    if let Some(eye) = cam.camera_eye_position {
+        state.play_camera_eye_position = glam::Vec3::from_array(eye);
+        state.capture_play_camera_follow_offset();
+    }
     if let (Some(id), Some(rot)) = (state.play_character_entity, player.rotation) {
         let rot_q = glam::Quat::from_xyzw(rot[0], rot[1], rot[2], rot[3]);
         state.apply_play_character_transform_editor(id, None, Some(rot_q), None);
@@ -1317,6 +1347,7 @@ fn apply_loaded_proyect_3d(state: &mut State, project: &ProjectSaveData) -> Resu
 
     if game_style == "first-person" {
         if let Some(ref player_entity) = saved_player {
+            state.play_character_restore_in_progress = true;
             let pending = build_player_pending_restore_from_entity(player_entity);
             spawn_player_from_pending(
                 state,
@@ -1336,13 +1367,15 @@ fn apply_loaded_proyect_3d(state: &mut State, project: &ProjectSaveData) -> Resu
     if let (Some(player_entity), Some(cam)) = (saved_player.as_ref(), saved_config_camera.as_ref())
     {
         apply_saved_play_character_view(state, player_entity, cam);
+        let feet = state.play_character_feet_position();
         log::info!(
             "Jugador colocado en [{:.2}, {:.2}, {:.2}]",
-            player_entity.position[0],
-            player_entity.position[1],
-            player_entity.position[2]
+            feet.x,
+            feet.y,
+            feet.z
         );
     }
+    state.play_character_restore_in_progress = false;
 
     if let (Some(player_entity), Some(id)) = (saved_player.as_ref(), state.play_character_entity) {
         if let Some(bindings) = map_control_bindings(player_entity.controls.as_ref()) {

@@ -695,11 +695,18 @@ export function createEngineEventHandler({
 						} as never);
 					}
 				}
+				const engineLoads3dSave = is3dProjectLoadedByEngine(
+					projectType,
+					refs.initialExtractDirRef.current,
+				);
+				// El motor ya restaura jugador/cámara en `load_proyect`; IPC aquí usa refs obsoletos.
+				const skipPlayViewIpcDuringEngineSaveLoad =
+					engineLoads3dSave && refs.sceneImportInProgressRef.current;
 				const savedView = savedPlayCharacterViewForRestore(
 					refs.pendingPlayCharacterViewRef.current,
 					refs.playCharacterViewRef.current,
 				);
-				if (replaced.position) {
+				if (replaced.position && !skipPlayViewIpcDuringEngineSaveLoad) {
 					window.engine.send({
 						cmd: 'set_play_character_view',
 						position: replaced.position,
@@ -724,7 +731,7 @@ export function createEngineEventHandler({
 							? { fps_camera_pitch: savedView.fps_camera_pitch }
 							: {}),
 					} as never);
-				} else if (savedView?.position) {
+				} else if (savedView?.position && !skipPlayViewIpcDuringEngineSaveLoad) {
 					applySavedPlayCharacterView(savedView);
 				}
 				if (refs.sceneBurstLoadInProgressRef.current) {

@@ -853,6 +853,7 @@ impl State {
             skinned_shadow_pipeline,
             joint_bind_group_layout: Some(joint_bgl),
             mount_save_on_empty_world: false,
+            play_character_restore_in_progress: false,
         };
         Ok(state)
     }

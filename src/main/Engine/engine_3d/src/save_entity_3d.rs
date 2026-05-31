@@ -154,7 +154,9 @@ pub(crate) fn build_player_snapshot(state: &State) -> Option<SaveEntity3DSnapsho
     let id = state.play_character_entity?;
     let meta = state.resolve_entity_save_meta(id)?;
     let t = state.world.get::<Transform>(id)?;
-    Some(build_entity_3d_snapshot(state, id, &meta, t))
+    let mut snap = build_entity_3d_snapshot(state, id, &meta, t);
+    snap.position = state.play_character_feet_position().to_array();
+    Some(snap)
 }
 
 pub(crate) fn build_config_camera_snapshot(state: &State) -> Option<SaveConfigCameraSnapshot> {

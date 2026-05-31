@@ -614,15 +614,21 @@ function toAssetPathKey(filePath: string): string {
   return process.platform === 'win32' ? normalized.toLowerCase() : normalized
 }
 
-function forEachEntity(data: ProjectSaveData, cb: (entity: ProjectSaveData['entities'][number]) => void): void {
+function forEachEntity(data: ProjectSaveData, cb: (entity: Entity3D) => void): void {
+  const visit = (entity: Entity3D | null | undefined) => {
+    if (entity) cb(entity)
+  }
+
   if ((data.scenes?.length ?? 0) > 0) {
     for (const scene of data.scenes ?? []) {
       for (const entity of scene.entities) cb(entity)
+      visit(scene.player)
     }
     return
   }
 
   for (const entity of data.entities) cb(entity)
+  visit(data.player)
 }
 
 function countSavedEntities(data: ProjectSaveData): number {
@@ -634,7 +640,7 @@ function countSavedEntities(data: ProjectSaveData): number {
 function formatEntityKindBreakdown(data: ProjectSaveData): string {
   const byKind = new Map<string, number>()
   forEachEntity(data, (entity) => {
-    byKind.set(entity.kind, (byKind.get(entity.kind) ?? 0) + 1)
+    byKind.set(entity.category, (byKind.get(entity.category) ?? 0) + 1)
   })
   if (byKind.size === 0) return ''
   const parts = [...byKind.entries()]
@@ -675,19 +681,18 @@ function collectAssetPaths(data: ProjectSaveData): Set<string> {
     for (const bg of data.backgrounds) add(bg.path)
   }
 
-  add(data.playerTransform?.visual_model_path)
+  add(data.player?.model)
   if (data.models) {
     for (const model of data.models) add(model.path)
   }
 
   for (const scene of data.scenes ?? []) {
-    add(scene.playerTransform?.visual_model_path)
+    add(scene.player?.model)
     for (const model of scene.models ?? []) add(model.path)
   }
 
   forEachEntity(data, (entity) => {
-    if (!entityPathMarker(entity.path)) add(entity.path)
-    add(entity.visual_model_path)
+    if (!entityPathMarker(entity.model)) add(entity.model)
     for (const anim of entity.animations ?? []) {
       add(anim.audio_path)
       for (const frame of anim.frames) {
@@ -697,8 +702,7 @@ function collectAssetPaths(data: ProjectSaveData): Set<string> {
   })
 
   for (const bp of data.blueprints ?? []) {
-    add(bp.path)
-    add(bp.visualModelPath)
+    add(bp.model)
     for (const anim of bp.animations ?? []) {
       add(anim.audio_path)
       for (const frame of anim.frames) {
@@ -859,30 +863,6 @@ function serializeScriptsToFiles(data: ProjectSaveData, scriptingDir: string): {
           ),
         ),
       })),
-      control_bindings: bp.control_bindings
-        ? {
-            keyboard_mouse: Object.fromEntries(
-              Object.entries(bp.control_bindings.keyboard_mouse).map(([key, script], idx) => [
-                key,
-                saveScript(
-                  script,
-                  [blueprintFolder, 'controls', 'keyboard_mouse', sanitizeSegment(key, `key_${idx + 1}`)],
-                  `script_${idx + 1}`,
-                ),
-              ]),
-            ),
-            gamepad: Object.fromEntries(
-              Object.entries(bp.control_bindings.gamepad).map(([key, script], idx) => [
-                key,
-                saveScript(
-                  script,
-                  [blueprintFolder, 'controls', 'gamepad', sanitizeSegment(key, `btn_${idx + 1}`)],
-                  `script_${idx + 1}`,
-                ),
-              ]),
-            ),
-          }
-        : undefined,
     }
   }
 
@@ -933,10 +913,9 @@ function remapPaths(data: ProjectSaveData, map: Map<string, string>): ProjectSav
 
   const hasScenes = (data.scenes?.length ?? 0) > 0
 
-  const mapEntity = (e: ProjectSaveData['entities'][number]) => ({
+  const mapEntity = (e: Entity3D): Entity3D => ({
     ...e,
-    path: remap(e.path) as string,
-    visual_model_path: remap(e.visual_model_path) as string | undefined,
+    model: remap(e.model) as string,
     animations: e.animations?.map((anim) => ({
       ...anim,
       audio_path: remap(anim.audio_path) as string | undefined,
@@ -954,15 +933,9 @@ function remapPaths(data: ProjectSaveData, map: Map<string, string>): ProjectSav
       ...(m.category ? { category: m.category } : {}),
     }))
 
-  const mapPlayerTransform = (pt: ProjectSaveData['playerTransform']) =>
-    pt
-      ? { ...pt, visual_model_path: remap(pt.visual_model_path) as string | undefined }
-      : pt
-
   return {
     ...data,
     backgroundPath: remap(data.backgroundPath) as string | null,
-    playerTransform: mapPlayerTransform(data.playerTransform),
     models: mapModels(data.models),
     sprites: data.sprites?.map((s) => ({
       name: s.name,
@@ -977,21 +950,21 @@ function remapPaths(data: ProjectSaveData, map: Map<string, string>): ProjectSav
       path: remap(b.path) as string,
     })),
     entities: hasScenes ? [] : data.entities.map(mapEntity),
+    player: data.player ? mapEntity(data.player) : data.player,
     scenes: data.scenes?.map((scene) => ({
       ...scene,
       backgroundPath: remap(scene.backgroundPath) as string | null,
-      playerTransform: mapPlayerTransform(scene.playerTransform),
       models: mapModels(scene.models),
       sprites: scene.sprites?.map((s) => ({
         name: s.name,
         path: remap(s.path) as string,
       })),
       entities: scene.entities.map(mapEntity),
+      player: scene.player ? mapEntity(scene.player) : scene.player,
     })),
     blueprints: data.blueprints?.map((bp) => ({
       ...bp,
-      path: remap(bp.path) as string,
-      visualModelPath: remap(bp.visualModelPath) as string | undefined,
+      model: remap(bp.model) as string,
       animations: bp.animations?.map((anim) => ({
         ...anim,
         audio_path: remap(anim.audio_path) as string | undefined,
@@ -1160,15 +1133,9 @@ function resolveLoadedPaths(data: ProjectSaveData, extractedDir: string): Projec
       ...(m.category ? { category: m.category } : {}),
     }))
 
-  const mapPlayerTransform = (pt: ProjectSaveData['playerTransform']) =>
-    pt
-      ? { ...pt, visual_model_path: resolve(pt.visual_model_path) as string | undefined }
-      : pt
-
   return {
     ...data,
     backgroundPath: resolve(data.backgroundPath) as string | null,
-    playerTransform: mapPlayerTransform(data.playerTransform),
     models: mapModels(data.models),
     sprites: data.sprites?.map((s) => ({
       name: s.name,
@@ -1187,7 +1154,6 @@ function resolveLoadedPaths(data: ProjectSaveData, extractedDir: string): Projec
     scenes: data.scenes?.map((scene) => ({
       ...scene,
       backgroundPath: resolve(scene.backgroundPath) as string | null,
-      playerTransform: mapPlayerTransform(scene.playerTransform),
       models: mapModels(scene.models),
       sprites: scene.sprites?.map((s) => ({
         name: s.name,
@@ -1198,9 +1164,8 @@ function resolveLoadedPaths(data: ProjectSaveData, extractedDir: string): Projec
     })),
     blueprints: data.blueprints?.map((bp) => ({
       ...bp,
-      path: resolve(bp.path) as string,
-      visualModelPath: resolve(bp.visualModelPath) as string | undefined,
-      scripts: bp.scripts?.map((script) => ({
+      model: resolve(bp.model) as string,
+      scripts: bp.scripts?.map((script: SavedScript) => ({
         ...script,
         source: resolveScriptSource(script.source, extractedDir),
       })),
@@ -1211,27 +1176,11 @@ function resolveLoadedPaths(data: ProjectSaveData, extractedDir: string): Projec
           ...f,
           path: resolve(f.path) as string,
         })),
-        scripts: anim.scripts?.map((script) => ({
+        scripts: anim.scripts?.map((script: SavedScript) => ({
           ...script,
           source: resolveScriptSource(script.source, extractedDir),
         })),
       })),
-      control_bindings: bp.control_bindings
-        ? {
-            keyboard_mouse: Object.fromEntries(
-              Object.entries(bp.control_bindings.keyboard_mouse).map(([key, script]) => [
-                key,
-                { ...script, source: resolveScriptSource(script.source, extractedDir) },
-              ]),
-            ),
-            gamepad: Object.fromEntries(
-              Object.entries(bp.control_bindings.gamepad).map(([key, script]) => [
-                key,
-                { ...script, source: resolveScriptSource(script.source, extractedDir) },
-              ]),
-            ),
-          }
-        : undefined,
     })),
   }
 }

@@ -270,6 +270,11 @@ impl State {
         let bounds = self
             .play_character_visual_local_bounds(model_path)
             .unwrap_or(local_bounds);
+        if self.play_character_restore_in_progress {
+            self.play_character_mesh_extents =
+                Some(PlayCharacterMeshExtents::from_local_bounds(bounds.0, bounds.1));
+            return;
+        }
         self.sync_play_character_scale_to_body_height(id, model_path);
         self.apply_play_character_mesh_ground_extents(id, bounds);
         if let Some(t) = self.world.get_mut::<Transform>(id) {
@@ -299,6 +304,14 @@ impl State {
 
     /// Tras `replace_entity_model` / bind de animación: alinea transform, cámara y notifica al front.
     pub(crate) fn finish_play_character_model_replace(&mut self, id: EntityId, model_path: &str) {
+        if self.play_character_restore_in_progress {
+            if let Some((min, max)) = self.play_character_visual_local_bounds(model_path) {
+                self.play_character_mesh_extents =
+                    Some(PlayCharacterMeshExtents::from_local_bounds(min, max));
+            }
+            self.emit_play_character_view_changed(true);
+            return;
+        }
         self.sync_play_character_scale_to_body_height(id, model_path);
         self.align_play_character_transform_to_visual_mesh(id, model_path);
         self.emit_play_character_view_changed(true);
