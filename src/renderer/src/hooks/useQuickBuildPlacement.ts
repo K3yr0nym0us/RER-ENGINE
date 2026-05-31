@@ -5,8 +5,12 @@ import type { PendingRestore } from '../context/useContextEngine/types'
 import type { BluePrintEntry } from '@shared-types'
 import { beginModelReplaceLoading } from '../context/useContextEngine/hooks/sceneImportOverlay'
 import {
+  blueprintPlacementPhysics,
   blueprintUsesModel3D,
+  buildBlueprintPlacementMeta,
+  buildQuickBuildPendingRestore,
   isModel3DPath,
+  queueQuickBuildPendingRestore,
   resolveBlueprintModelPath,
   resolveEngineModelPath,
 } from '../utils/blueprintModelPath'
@@ -30,6 +34,8 @@ export function useQuickBuildPlacement(viewportRef: RefObject<HTMLDivElement | n
     modelReplaceInProgressRef,
     modelLoadOverlayKindRef,
     pendingRestoresRef,
+    modelsRef,
+    quickBuildActiveBlueprintIdRef,
     send,
     registerQuickBuildClickListener,
     unregisterQuickBuildClickListener,
@@ -43,7 +49,8 @@ export function useQuickBuildPlacement(viewportRef: RefObject<HTMLDivElement | n
   }, [projectType])
   useEffect(() => {
     activeBluePrintRef.current = activeBluePrint
-  }, [activeBluePrint])
+    quickBuildActiveBlueprintIdRef.current = activeBluePrint?.id ?? null
+  }, [activeBluePrint, quickBuildActiveBlueprintIdRef])
 
   useEffect(() => {
     if (!engineReady) return
@@ -58,7 +65,9 @@ export function useQuickBuildPlacement(viewportRef: RefObject<HTMLDivElement | n
         firstFrame?.src_y != null &&
         firstFrame?.src_w != null &&
         firstFrame?.src_h != null
-      const isEnvironment = activeBluePrint.entity_category === 'environment'
+      const placementMeta = buildBlueprintPlacementMeta(activeBluePrint, models)
+      const { physicsEnabled, physicsType } = blueprintPlacementPhysics(activeBluePrint, models)
+      const placementCategory = placementMeta.category
 
       if (is3D && blueprintUsesModel3D(activeBluePrint) && isModel3DPath(modelPath)) {
         const preloaded = models.some((m) => m.path === enginePath && m.loading !== true)
@@ -83,13 +92,10 @@ export function useQuickBuildPlacement(viewportRef: RefObject<HTMLDivElement | n
           preview_scale: activeBluePrint.scale,
           preview_rotation: activeBluePrint.rotation ?? [0, 0, 0, 1],
           preview_name: activeBluePrint.name,
-          preview_physics_enabled: isEnvironment
-            ? true
-            : (activeBluePrint.physics_enabled ?? false),
-          preview_physics_type: isEnvironment
-            ? 'static'
-            : (activeBluePrint.physics_type ?? 'static'),
-          preview_entity_category: activeBluePrint.entity_category,
+          preview_entity_category: placementCategory,
+          preview_physics_enabled: physicsEnabled,
+          preview_physics_type: physicsType,
+          preview_blueprint: placementMeta,
           preview_blueprint_id: activeBluePrint.id,
           preview_src_rect: hasCrop
             ? [
@@ -108,6 +114,7 @@ export function useQuickBuildPlacement(viewportRef: RefObject<HTMLDivElement | n
           preview_path: previewPath,
           preview_kind: activeBluePrint.kind === 'scenario' ? 'scenario' : 'character',
           preview_scale: activeBluePrint.scale,
+          preview_blueprint_id: activeBluePrint.id,
           preview_src_rect: hasCrop
             ? [
                 firstFrame!.src_x!,
@@ -145,23 +152,20 @@ export function useQuickBuildPlacement(viewportRef: RefObject<HTMLDivElement | n
       }
 
       const pending: PendingRestore = {
+        ...buildQuickBuildPendingRestore(bp),
         transform: {
           position: [worldX, worldY, worldZ],
           rotation: bp.rotation ?? [0, 0, 0, 1],
           scale: placementScale,
         },
-        name: bp.name,
-        physicsEnabled: bp.physics_enabled ?? false,
-        physicsType: bp.physics_type ?? 'static',
-        animations: bp.animations as PendingRestore['animations'],
-        scripts: bp.scripts,
-        controlBindings: bp.control_bindings,
-        blueprintId: bp.id,
       }
 
-      const queue = pendingRestoresRef.current.get(bp.path) ?? []
-      queue.push(pending)
-      pendingRestoresRef.current.set(bp.path, queue)
+      const modelPath = resolveBlueprintModelPath(bp)
+      const enginePath = resolveEngineModelPath(modelPath, modelsRef.current)
+      queueQuickBuildPendingRestore(pendingRestoresRef.current, enginePath, pending)
+      if (enginePath !== bp.path) {
+        queueQuickBuildPendingRestore(pendingRestoresRef.current, bp.path, pending)
+      }
 
       if (bp.kind === 'scenario') {
         send({ cmd: 'load_scenario', path: bp.path, track_undo: true })
@@ -182,9 +186,19 @@ export function useQuickBuildPlacement(viewportRef: RefObject<HTMLDivElement | n
     if (!el) return
 
     const onPointerDown = (e: PointerEvent) => {
-      if (!activeBluePrintRef.current) return
+      const bp = activeBluePrintRef.current
+      if (!bp) return
       if (e.button !== 0) return
-      if (!blueprintUsesModel3D(activeBluePrintRef.current)) return
+      if (!blueprintUsesModel3D(bp)) return
+
+      const modelPath = resolveBlueprintModelPath(bp)
+      const enginePath = resolveEngineModelPath(modelPath, modelsRef.current)
+      queueQuickBuildPendingRestore(
+        pendingRestoresRef.current,
+        enginePath,
+        buildQuickBuildPendingRestore(bp),
+      )
+
       const rect = el.getBoundingClientRect()
       const dpr = window.devicePixelRatio ?? 1
       send({

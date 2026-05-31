@@ -6,13 +6,13 @@ import { useContextEngine } from '@engine'
 import { useModal } from '@modal'
 import { useQuickBuild } from '../../../../../../context/QuickBuildContext'
 import { useSpritePreviewImage } from '@hooks'
-import type { BluePrintCategory, BluePrintEntry } from '@shared-types'
+import type { BlueprintTabCategory, BluePrintEntry } from '@shared-types'
 import { useTraslate } from '@hooks'
 import { blueprintUsesModel3D, resolveBlueprintCategory, resolveBlueprintModelPath } from '../../../../../../utils/blueprintModelPath'
 
 export function BluePrintModalBody() {
   const { t } = useTraslate()
-  const [activeCategory, setActiveCategory] = useState<BluePrintCategory>('personaje')
+  const [activeCategory, setActiveCategory] = useState<BlueprintTabCategory>('character')
   const [pendingDelete, setPendingDelete] = useState<BluePrintEntry | null>(null)
   const {
     blueprints,
@@ -98,16 +98,16 @@ export function BluePrintModalBody() {
         variant="tabs"
         className="mb-3"
         activeKey={activeCategory}
-        onSelect={k => setActiveCategory((k ?? 'personaje') as BluePrintCategory)}
+        onSelect={k => setActiveCategory((k ?? 'character') as BlueprintTabCategory)}
       >
         <Nav.Item>
-          <Nav.Link eventKey="personaje">{t('Character')}</Nav.Link>
+          <Nav.Link eventKey="character">{t('Character')}</Nav.Link>
         </Nav.Item>
         <Nav.Item>
-          <Nav.Link eventKey="entorno">{t('Environment')}</Nav.Link>
+          <Nav.Link eventKey="environment">{t('Environment')}</Nav.Link>
         </Nav.Item>
         <Nav.Item>
-          <Nav.Link eventKey="objetos">{t('Objects')}</Nav.Link>
+          <Nav.Link eventKey="object">{t('Objects')}</Nav.Link>
         </Nav.Item>
       </Nav>
 

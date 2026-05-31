@@ -90,8 +90,8 @@ export function isGroundPath(p: string | null | undefined): boolean {
   return entityPathMarker(p) === '[Ground]'
 }
 
-/** @deprecated 3D usa `Entity3DCategory` */
-export type EntityCategory = 'environment' | 'object'
+/** Categoría IPC del motor para colisión/nombrado (`environment` | `object` | `character`). */
+export type EntityCategory = 'environment' | 'object' | 'character'
 
 export function isPlayerEntity(
   id: number,
@@ -152,7 +152,7 @@ export interface Entity3D {
   controls?: SavedControls
 }
 
-/** Plantilla (`project.blueprints[]`). */
+/** Plantilla (`project.blueprints[]` / manifest). */
 export interface Blueprint3D {
   id: string
   name: string
@@ -162,6 +162,15 @@ export interface Blueprint3D {
   colision: boolean
   animations?: SavedAnimation[]
   scripts?: SavedScript[]
+  /** Solo editor en memoria; no se serializa en manifest. */
+  kind?: SavedEntity['kind']
+  path?: string
+  scale?: [number, number, number]
+  rotation?: [number, number, number, number]
+  physics_enabled?: boolean
+  entity_category?: EntityCategory
+  visualModelPath?: string
+  control_bindings?: SavedControlBindings
 }
 
 /** Cámara FPS (no va en `player`). */
@@ -720,8 +729,11 @@ export interface BackgroundInfo {
   name: string
 }
 
-/** @deprecated 3D usa `Blueprint3D` */
-export type BluePrintCategory = 'personaje' | 'entorno' | 'objetos'
+/** Pestañas de construcción rápida (inglés, alineado a `Entity3DCategory`). */
+export type BlueprintTabCategory = 'character' | 'environment' | 'object'
+
+/** @deprecated Usar `BlueprintTabCategory` */
+export type BluePrintCategory = BlueprintTabCategory
 
 /** @deprecated 3D usa `Blueprint3D` */
 export type BluePrintEntry = Blueprint3D

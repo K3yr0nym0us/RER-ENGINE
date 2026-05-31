@@ -11,6 +11,14 @@ import type {
 } from '../types';
 import { buildPlayAnimationFrameCmd } from './applyPendingRestoreToEngine';
 import { beginModelReplaceLoading, endModelReplaceLoading } from './sceneImportOverlay';
+import {
+	blueprintEntityCategoryForEngine,
+	blueprintPlacementCategory,
+	blueprintUsesModel3D,
+	buildBlueprintPlacementMeta,
+	normalizeBlueprintCategory,
+	reconcileCategoryWithName,
+} from '../../../utils/blueprintModelPath';
 
 interface CreateEngineActionsParams {
 	dispatch: Dispatch<EngineAction>
@@ -124,11 +132,17 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 				refs.modelLoadOverlayKindRef,
 			);
 		}
+		const entityCategory =
+			category === 'environment'
+				? 'environment'
+				: category === 'object'
+					? 'object'
+					: undefined;
 		send({
 			cmd: 'load_model',
 			path,
 			single_instance: true,
-			...(category === 'environment' ? { entity_category: 'environment' } : {}),
+			...(entityCategory ? { entity_category: entityCategory } : {}),
 		});
 	};
 
@@ -530,7 +544,14 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 		if (bpId) {
 			// Actualizar la blueprint y propagar a todas sus instancias
 			const updatedBlueprints = refs.blueprintsRef.current.map((bp) =>
-				bp.id === bpId ? { ...bp, physics_enabled: enabled, physics_type: bodyType } : bp
+				bp.id === bpId
+					? {
+						...bp,
+						colision: enabled,
+						physics_enabled: enabled,
+						physics_type: bodyType,
+					}
+					: bp
 			);
 			refs.blueprintsRef.current = updatedBlueprints;
 			dispatch({ type: 'SET_BLUEPRINTS', payload: updatedBlueprints });
@@ -625,12 +646,49 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 		dispatch({ type: 'REMOVE_BACKGROUND', payload: path });
 	};
 
+	const registerBlueprintInEngine = (bp: BluePrintEntry) => {
+		if (!blueprintUsesModel3D(bp)) return;
+		send({
+			cmd: 'register_blueprint',
+			blueprint: buildBlueprintPlacementMeta(bp, refs.modelsRef.current),
+		} as never);
+	};
+
 	const addBlueprint = (entry: BluePrintEntry) => {
-		dispatch({ type: 'ADD_BLUEPRINT', payload: entry });
+		const category = reconcileCategoryWithName(
+			normalizeBlueprintCategory(entry.category)
+				?? blueprintPlacementCategory(entry, refs.modelsRef.current),
+			entry.name,
+		);
+		const entity_category = blueprintEntityCategoryForEngine(category);
+		const normalized: BluePrintEntry = {
+			...entry,
+			category,
+			...(entity_category ? { entity_category } : {}),
+		};
+		dispatch({ type: 'ADD_BLUEPRINT', payload: normalized });
+		registerBlueprintInEngine(normalized);
 	};
 
 	const setBlueprints = (entries: BluePrintEntry[]) => {
-		dispatch({ type: 'SET_BLUEPRINTS', payload: entries });
+		const normalized = entries.map((bp) => {
+			const category = reconcileCategoryWithName(
+				normalizeBlueprintCategory(bp.category)
+					?? blueprintPlacementCategory(bp, refs.modelsRef.current),
+				bp.name,
+			);
+			const entity_category = blueprintEntityCategoryForEngine(category);
+			return {
+				...bp,
+				category,
+				...(entity_category ? { entity_category } : {}),
+			};
+		});
+		refs.blueprintsRef.current = normalized;
+		dispatch({ type: 'SET_BLUEPRINTS', payload: normalized });
+		for (const bp of normalized) {
+			registerBlueprintInEngine(bp);
+		}
 	};
 
 	return {

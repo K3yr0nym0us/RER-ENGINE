@@ -41,10 +41,28 @@ pub fn next_numbered_entity_label(
     format!("{clean_base}_{:02}", max_suffix.saturating_add(1))
 }
 
+/// Infiere categoría manifest desde etiqueta numerada (`Environment_04` → `environment`).
+pub fn infer_entity_category_from_numbered_name(name: &str) -> Option<&'static str> {
+    let base = name.split('_').next()?.trim();
+    match base {
+        "Environment" | "Scenario" => Some("environment"),
+        "Object" => Some("object"),
+        "Character" => Some("character"),
+        "Player" => Some("player"),
+        "Sun" => Some("sun"),
+        "Ground" => Some("ground"),
+        _ => None,
+    }
+}
+
 /// Prefijo de nombre numerado según categoría de entidad del editor.
 pub fn entity_label_for_category(entity_category: Option<&str>) -> &'static str {
     match entity_category {
         Some("environment") => entity_label::ENVIRONMENT,
+        Some("character") | Some("player") => entity_label::CHARACTER,
+        Some("object") => entity_label::OBJECT,
+        Some("sun") => entity_label::SUN,
+        Some("ground") => entity_label::GROUND,
         _ => entity_label::OBJECT,
     }
 }
@@ -64,7 +82,8 @@ pub fn resolve_entity_display_name(
 #[cfg(test)]
 mod tests {
     use super::{
-        default_scene_name, entity_label, next_numbered_entity_label, resolve_entity_display_name,
+        default_scene_name, entity_label, infer_entity_category_from_numbered_name,
+        next_numbered_entity_label, resolve_entity_display_name,
     };
 
     #[test]
@@ -79,6 +98,18 @@ mod tests {
         assert_eq!(
             next_numbered_entity_label(entity_label::SCENARIO, names),
             "Scenario_04"
+        );
+    }
+
+    #[test]
+    fn infer_entity_category_from_numbered_name_prefix() {
+        assert_eq!(
+            infer_entity_category_from_numbered_name("Environment_04"),
+            Some("environment")
+        );
+        assert_eq!(
+            infer_entity_category_from_numbered_name("Object_02"),
+            Some("object")
         );
     }
 

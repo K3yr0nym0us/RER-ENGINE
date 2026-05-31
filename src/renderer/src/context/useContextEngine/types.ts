@@ -8,6 +8,7 @@ import {
 	type BackgroundInfo,
 	type BluePrintEntry,
 	type DebugMetrics,
+	type Entity3DCategory,
 	type EntityCategory,
 	type ModelCategory,
 	type ModelInfo,
@@ -197,7 +198,7 @@ export type EngineAction =
 			category?: ModelCategory;
 		}
 	}
-	| { type: 'SYNC_MODEL_PRELOAD'; payload: { path: string; name: string } }
+	| { type: 'SYNC_MODEL_PRELOAD'; payload: { path: string; name: string; category?: ModelCategory } }
 	| { type: 'MARK_MODEL_READY'; payload: { path: string; name: string } }
 	| { type: 'REMOVE_MODEL_INFO'; payload: string }
 	| { type: 'SET_MODELS'; payload: ModelInfo[] }
@@ -447,9 +448,9 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 			};
 		},
 		SYNC_MODEL_PRELOAD: (prevState, nextAction) => {
-			const { path, name } = nextAction.payload;
+			const { path, name, category: payloadCategory } = nextAction.payload;
 			let synced = false;
-			let matchedCategory: ModelCategory | undefined;
+			let matchedCategory: ModelCategory | undefined = payloadCategory;
 			const models = prevState.models.map((m) => {
 				if (!synced && m.loading && m.name === name) {
 					synced = true;
@@ -652,6 +653,8 @@ export interface EntityMeta {
 	blueprintId?: string
 	/** Entorno 3D creado desde acordeón Entorno (UI solo colisión). */
 	entityCategory?: EntityCategory
+	/** Categoría manifest (`Entity3DCategory`); fuente de verdad al guardar/copiar blueprint. */
+	entity3dCategory?: Entity3DCategory
 	/** Modelo visual cargado (distinto de path lógico `[Player]` / `[EditorBox]`). */
 	visualModelPath?: string
 }
@@ -709,6 +712,8 @@ export interface EngineInternalRefs {
 	pendingDupQ: MutableRefObject<Transform[]>
 	pivotEditListenerRef: MutableRefObject<((framePath: string, px: number, py: number) => void) | null>
 	quickBuildClickListenerRef: MutableRefObject<((x: number, y: number, z: number, fitToGrid: boolean, scale?: [number, number, number]) => void) | null>
+	/** Blueprint activa en construcción rápida (fallback si el motor no envía `blueprint_id`). */
+	quickBuildActiveBlueprintIdRef: MutableRefObject<string | null>
 	pendingEventsRef: MutableRefObject<Map<string, { resolve: (value: any) => void }>>
 	blueprintsRef: MutableRefObject<BluePrintEntry[]>
 	modelsRef: MutableRefObject<ModelInfo[]>
@@ -752,6 +757,7 @@ export interface EngineContextValue extends EngineState {
 	entityTransformsRef: MutableRefObject<Record<number, Transform>>
 	entityMetaRef: MutableRefObject<Record<number, EntityMeta>>
 	pendingRestoresRef: MutableRefObject<Map<string, PendingRestore[]>>
+	quickBuildActiveBlueprintIdRef: MutableRefObject<string | null>
 	playerEntityIdRef: MutableRefObject<number | null>
 	editorCameraEntityIdRef: MutableRefObject<number | null>
 	playCharacterViewRef: MutableRefObject<SavedPlayerTransform | null>

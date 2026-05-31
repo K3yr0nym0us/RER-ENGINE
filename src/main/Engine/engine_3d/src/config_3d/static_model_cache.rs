@@ -798,7 +798,7 @@ impl State {
             &label,
             "model",
             None,
-            None,
+            entity_category.map(str::to_string),
             false,
             "static",
             part.local_bounds,

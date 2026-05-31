@@ -52,7 +52,11 @@ export function BtnCreateEntityFromModel({ intent }: Props) {
             spawnModel(
               path,
               config.kind,
-              intent === 'environment' ? 'environment' : undefined,
+              intent === 'environment'
+                ? 'environment'
+                : intent === 'object'
+                  ? 'object'
+                  : undefined,
             );
             closeModal();
           }}

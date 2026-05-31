@@ -42,7 +42,18 @@ import {
 } from '../../../defaults/playCharacterSceneRestore';
 import { buildSetSceneCommand } from '../../../defaults/projectSceneLoad';
 import { engineSceneToSavedScene, requestEngineSaveSnapshot } from '../../../defaults/buildProjectSaveFromEngine';
-import { isModel3DPath, is3dModelFileEntity } from '../../../utils/blueprintModelPath';
+import {
+	blueprintEntityCategoryForEngine,
+	blueprintFromSave,
+	buildQuickBuildPendingRestore,
+	blueprintPlacementCategory,
+	blueprintPlacementPhysics,
+	inferEntity3dCategoryFromName,
+	normalizeBlueprintCategory,
+	reconcileCategoryWithName,
+	isModel3DPath,
+	is3dModelFileEntity,
+} from '../../../utils/blueprintModelPath';
 import { playViewFromPlayerAndCamera } from '../../../utils/entity3dEditorSync';
 import {
 	buildImportSceneCommand,
@@ -199,6 +210,23 @@ interface CreateEngineEventHandlerParams {
 	reportBounds: () => void
 }
 
+/** `blueprint_id` del IPC o blueprint activa en construcción rápida (colocación 3D). */
+function resolvePlacementBlueprintId(
+	loaded: {
+		blueprint_id?: string
+		rotation?: [number, number, number, number]
+		physics_enabled?: boolean
+	},
+	refs: Pick<EngineInternalRefs, 'sceneBurstLoadInProgressRef' | 'quickBuildActiveBlueprintIdRef'>,
+): string | undefined {
+	if (loaded.blueprint_id) return loaded.blueprint_id;
+	if (refs.sceneBurstLoadInProgressRef.current) return undefined;
+	const fromQuickBuild =
+		loaded.rotation != null && loaded.physics_enabled != null;
+	if (!fromQuickBuild) return undefined;
+	return refs.quickBuildActiveBlueprintIdRef.current ?? undefined;
+}
+
 function applyPlayCharacterDefaultsForPlayer(
 	characterId: number,
 	gameStyle: GameStyle | undefined,
@@ -348,7 +376,12 @@ export function createEngineEventHandler({
 			if (burstPendingSpawn) {
 				const pending = burstPendingSpawn;
 				const kind = (loaded.kind ?? 'model') as EntityMeta['kind'];
-				const isEnvironment = pending.entityCategory === 'environment';
+				const burstCategory =
+					normalizeBlueprintCategory(pending.entityCategory ?? loaded.entity_category)
+					?? inferEntity3dCategoryFromName(pending.name ?? loaded.name);
+				const isEnvironment = burstCategory === 'environment'
+					|| pending.entityCategory === 'environment'
+					|| loaded.entity_category === 'environment';
 				refs.entityMetaRef.current[id] = {
 					kind,
 					path: loaded.path ?? pending.visualModelPath ?? '',
@@ -360,7 +393,19 @@ export function createEngineEventHandler({
 						? 'static'
 						: (pending.physicsType ?? loaded.physics_type ?? 'static'),
 					...(pending.entityCategory || loaded.entity_category
-						? { entityCategory: pending.entityCategory ?? loaded.entity_category }
+						? {
+							entityCategory:
+								(pending.entityCategory
+									?? loaded.entity_category) as EntityCategory,
+						}
+						: {}),
+					...(burstCategory
+						? {
+							entity3dCategory: reconcileCategoryWithName(
+								burstCategory,
+								pending.name ?? loaded.name,
+							),
+						}
 						: {}),
 					...(pending.blueprintId || loaded.blueprint_id
 						? { blueprintId: pending.blueprintId ?? loaded.blueprint_id }
@@ -390,23 +435,89 @@ export function createEngineEventHandler({
 				return;
 			}
 
-			if (loaded.blueprint_id && !refs.sceneBurstLoadInProgressRef.current) {
+			const placementBlueprintId = resolvePlacementBlueprintId(loaded, refs);
+			if (placementBlueprintId && !refs.sceneBurstLoadInProgressRef.current) {
+				let restorePending: PendingRestore | null = null;
+				if (loaded.path) {
+					const matched = takePendingRestoreByPath(
+						refs.pendingRestoresRef.current,
+						loaded.path,
+					);
+					if (matched) restorePending = matched.pending;
+				}
+				const bp = refs.blueprintsRef.current.find((b) => b.id === placementBlueprintId);
+				const bpPhysics = bp ? blueprintPlacementPhysics(bp) : null;
+				const placementCategory = bpPhysics?.placementCategory
+					?? (bp ? blueprintPlacementCategory(bp) : undefined);
+				const entityCategory =
+					restorePending?.entityCategory
+					?? (loaded.entity_category as EntityCategory | undefined)
+					?? bpPhysics?.entityCategory
+					?? (placementCategory
+						? blueprintEntityCategoryForEngine(placementCategory)
+						: undefined);
+				const isEnvironment = entityCategory === 'environment'
+					|| placementCategory === 'environment';
+				const physicsEnabled = isEnvironment
+					? true
+					: (restorePending?.physicsEnabled
+						?? loaded.physics_enabled
+						?? bpPhysics?.physicsEnabled
+						?? false);
+				const physicsType = isEnvironment
+					? 'static'
+					: (restorePending?.physicsType
+						?? loaded.physics_type
+						?? bpPhysics?.physicsType
+						?? 'static');
 				const kind = (loaded.kind ?? 'model') as EntityMeta['kind'];
+				const existing = refs.entityMetaRef.current[id];
 				refs.entityMetaRef.current[id] = {
+					...existing,
 					kind,
-					path: loaded.path ?? '',
-					name: loaded.name ?? `Entity ${id}`,
-					physicsEnabled: loaded.physics_enabled ?? false,
-					physicsType: loaded.physics_type ?? 'static',
-					...(loaded.entity_category ? { entityCategory: loaded.entity_category } : {}),
-					blueprintId: loaded.blueprint_id,
+					path: loaded.path ?? existing?.path ?? '',
+					name: loaded.name ?? existing?.name ?? `Entity ${id}`,
+					physicsEnabled,
+					physicsType,
+					...(placementCategory
+						? {
+							entity3dCategory: reconcileCategoryWithName(
+								placementCategory,
+								loaded.name,
+							),
+						}
+						: {}),
+					...(entityCategory ? { entityCategory } : {}),
+					blueprintId: placementBlueprintId,
+					...(restorePending?.scripts ? { scripts: restorePending.scripts } : {}),
+					...(restorePending?.controlBindings
+						? { controlBindings: restorePending.controlBindings }
+						: {}),
 				};
 				if (loaded.position && loaded.scale) {
 					refs.entityTransformsRef.current[id] = {
 						position: loaded.position,
-						rotation: loaded.rotation ?? [0, 0, 0, 1],
+						rotation: loaded.rotation ?? restorePending?.transform?.rotation ?? [0, 0, 0, 1],
 						scale: loaded.scale,
 					};
+				}
+				const restoreFromBp = bp
+					? buildQuickBuildPendingRestore(bp)
+					: null;
+				const effectiveRestore = restorePending ?? restoreFromBp;
+				if (effectiveRestore) {
+					sendApplyEntityRestore(id, effectiveRestore, {
+						skipTransform: true,
+						applyInitialAnimationFrame: false,
+					});
+					applyPendingRestoreMeta(refs, id, effectiveRestore);
+				} else if (projectType === '3D' && physicsEnabled) {
+					window.engine.send({
+						cmd: 'set_physics',
+						id,
+						enabled: true,
+						body_type: physicsType,
+					} as never);
 				}
 				addLog(
 					`[quick_build] entidad colocada: ${loaded.name ?? id} (id=${id})`,
@@ -511,6 +622,16 @@ export function createEngineEventHandler({
 						}
 					}
 				}
+				if (!restorePending && loaded.path) {
+					const matched = takePendingRestoreByPath(
+						refs.pendingRestoresRef.current,
+						loaded.path,
+					);
+					if (matched) {
+						restorePending = matched.pending;
+						modelPath = modelPath ?? matched.path;
+					}
+				}
 				if (!restorePending && burstActive && loaded.path) {
 					const matched = takePendingRestoreByPath(
 						refs.pendingRestoresRef.current,
@@ -522,23 +643,60 @@ export function createEngineEventHandler({
 					}
 				}
 				if (modelPath) {
+					const placementBlueprintId =
+						restorePending?.blueprintId ?? resolvePlacementBlueprintId(loaded, refs);
+					const bp = placementBlueprintId
+						? refs.blueprintsRef.current.find((b) => b.id === placementBlueprintId)
+						: null;
+					const bpPhysics = bp ? blueprintPlacementPhysics(bp) : null;
+					const placementCategory = bp
+						? blueprintPlacementCategory(bp)
+						: normalizeBlueprintCategory(loaded.entity_category)
+							?? inferEntity3dCategoryFromName(loaded.name)
+							?? (spawnCategory === 'environment'
+								? 'environment'
+								: spawnCategory === 'object'
+									? 'object'
+									: undefined);
 					const isEnvironment = spawnCategory === 'environment'
-						|| restorePending?.entityCategory === 'environment';
+						|| restorePending?.entityCategory === 'environment'
+						|| loaded.entity_category === 'environment'
+						|| bpPhysics?.placementCategory === 'environment'
+						|| placementCategory === 'environment';
+					const physicsEnabled = isEnvironment
+						? true
+						: (restorePending?.physicsEnabled
+							?? loaded.physics_enabled
+							?? bpPhysics?.physicsEnabled
+							?? false);
+					const physicsType = isEnvironment
+						? 'static'
+						: (restorePending?.physicsType
+							?? loaded.physics_type
+							?? bpPhysics?.physicsType
+							?? 'static');
 					refs.entityMetaRef.current[id] = {
 						kind: spawnKind,
 						path: modelPath,
 						name: restorePending?.name ?? loaded.name ?? `Entity ${id}`,
-						physicsEnabled: isEnvironment
-							? true
-							: (restorePending?.physicsEnabled ?? true),
-						physicsType: isEnvironment
-							? 'static'
-							: (restorePending?.physicsType ?? 'static'),
+						physicsEnabled,
+						physicsType,
+						...(placementCategory
+							? {
+								entity3dCategory: reconcileCategoryWithName(
+									placementCategory,
+									restorePending?.name ?? loaded.name,
+								),
+							}
+							: {}),
 						...(isEnvironment ? { entityCategory: 'environment' as EntityCategory } : {}),
 						...(restorePending?.entityCategory ? { entityCategory: restorePending.entityCategory } : {}),
+						...(placementCategory === 'object'
+							? { entityCategory: 'object' as EntityCategory }
+							: {}),
 						scripts: restorePending?.scripts,
 						controlBindings: restorePending?.controlBindings,
-						blueprintId: restorePending?.blueprintId,
+						...(placementBlueprintId ? { blueprintId: placementBlueprintId } : {}),
 						visualModelPath: restorePending?.visualModelPath,
 					};
 					if (restorePending?.name && restorePending.name.trim().length > 0) {
@@ -566,19 +724,12 @@ export function createEngineEventHandler({
 							payload: { id, path: modelPath },
 						});
 					}
-					if (isEnvironment && projectType === '3D') {
+					if (projectType === '3D' && physicsEnabled) {
 						window.engine.send({
 							cmd: 'set_physics',
 							id,
 							enabled: true,
-							body_type: 'static',
-						} as never);
-					} else if (restorePending?.physicsEnabled) {
-						window.engine.send({
-							cmd: 'set_physics',
-							id,
-							enabled: true,
-							body_type: restorePending.physicsType,
+							body_type: physicsType,
 						} as never);
 					}
 					const visualPath = restorePending?.visualModelPath;
@@ -784,11 +935,12 @@ export function createEngineEventHandler({
 			if (bpId) {
 				const bp = refs.blueprintsRef.current.find((b) => b.id === bpId);
 				if (bp) {
-					const bpRot = bp.rotation ?? [0, 0, 0, 1];
+					const bpScale = (bp as { scale?: [number, number, number] }).scale ?? [1, 1, 1];
+					const bpRot = (bp as { rotation?: [number, number, number, number] }).rotation ?? [0, 0, 0, 1];
 					const scaleChanged =
-						Math.abs(selected.scale[0] - bp.scale[0]) > 1e-4
-						|| Math.abs(selected.scale[1] - bp.scale[1]) > 1e-4
-						|| Math.abs(selected.scale[2] - bp.scale[2]) > 1e-4;
+						Math.abs(selected.scale[0] - bpScale[0]) > 1e-4
+						|| Math.abs(selected.scale[1] - bpScale[1]) > 1e-4
+						|| Math.abs(selected.scale[2] - bpScale[2]) > 1e-4;
 					const rotChanged =
 						Math.abs(selected.rotation[0] - bpRot[0]) > 1e-4
 						|| Math.abs(selected.rotation[1] - bpRot[1]) > 1e-4
@@ -896,7 +1048,7 @@ export function createEngineEventHandler({
 		if (event.event === 'project_loaded_3d') {
 			const payload = event as unknown as ProjectLoaded3dPayload;
 			refs.projectLoaded3dMetaRef.current = payload;
-			refs.blueprintsRef.current = payload.blueprints;
+			refs.blueprintsRef.current = (payload.blueprints ?? []).map(blueprintFromSave);
 			if (payload.player && payload.config_camera) {
 				const view = playViewFromPlayerAndCamera(payload.player, payload.config_camera);
 				refs.pendingPlayCharacterViewRef.current = view;
@@ -905,7 +1057,13 @@ export function createEngineEventHandler({
 			if (payload.language === 'en' || payload.language === 'es') {
 				setLocale?.(payload.language as Locale);
 			}
-			dispatch({ type: 'APPLY_PROJECT_LOADED_3D', payload });
+			dispatch({
+				type: 'APPLY_PROJECT_LOADED_3D',
+				payload: {
+					...payload,
+					blueprints: refs.blueprintsRef.current,
+				},
+			});
 			if (
 				(payload.entityCount > 0 || payload.player)
 				&& !refs.sceneImportInProgressRef.current
@@ -968,7 +1126,11 @@ export function createEngineEventHandler({
 						for (const model of scene.models) {
 							dispatch({
 								type: 'SYNC_MODEL_PRELOAD',
-								payload: { path: model.path, name: model.name },
+								payload: {
+									path: model.path,
+									name: model.name,
+									...(model.category ? { category: model.category } : {}),
+								},
 							});
 						}
 					}

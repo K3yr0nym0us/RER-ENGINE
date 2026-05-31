@@ -352,10 +352,9 @@ fn is_3d_model_file_entity(entity: &SavedEntity3D) -> bool {
 }
 
 fn entity_library_category(category: &str) -> Option<String> {
-    if category == "environment" {
-        Some("environment".to_string())
-    } else {
-        None
+    match category {
+        "environment" | "object" | "character" => Some(category.to_string()),
+        _ => None,
     }
 }
 

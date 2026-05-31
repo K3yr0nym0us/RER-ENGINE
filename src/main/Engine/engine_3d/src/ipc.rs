@@ -110,6 +110,10 @@ pub enum EngineCommand {
         #[serde(default)]
         pixel_y: Option<f32>,
     },
+    /// Registra metadata de blueprint (`docs/Entities_Model_3D.yaml` → Blueprints).
+    RegisterBlueprint {
+        blueprint: BlueprintPlacementMeta,
+    },
     /// Sustituir el mesh visual de una entidad existente (sin crear entidad nueva).
     ReplaceEntityModel { id: u32, path: String },
     /// Registrar un .glb/.gltf/.fbx en el almacén de recursos (sin instanciar en escena).
@@ -344,6 +348,9 @@ pub enum EngineCommand {
         preview_entity_category: Option<String>,
         #[serde(default)]
         preview_blueprint_id: Option<String>,
+        /// Manifest completo de la blueprint (category, model, colision, scripts, …).
+        #[serde(default)]
+        preview_blueprint: Option<BlueprintPlacementMeta>,
     },
     /// Activar modo edición de pivot: muestra el frame en la entidad y captura el siguiente click.
     /// pivot_x/pivot_y: coordenadas del pivot ya asignado (para mostrarlo visualmente).
@@ -909,6 +916,103 @@ pub fn normalize_model_library_category(raw: Option<&str>) -> Option<String> {
     match s {
         "character" | "environment" | "object" => Some(s.to_string()),
         _ => None,
+    }
+}
+
+/// Manifest de blueprint activa en construcción rápida (`docs/Entities_Model_3D.yaml` → Blueprints).
+#[derive(Debug, Clone, Deserialize)]
+pub struct BlueprintPlacementMeta {
+    #[serde(default)]
+    pub category: Option<String>,
+    #[serde(default)]
+    pub model: Option<String>,
+    #[serde(default)]
+    pub colision: Option<bool>,
+    #[serde(default)]
+    pub physics_type: Option<String>,
+    #[serde(default)]
+    pub physics_enabled: Option<bool>,
+    #[serde(default)]
+    pub rotation: Option<[f32; 4]>,
+    #[serde(default)]
+    pub scale: Option<[f32; 3]>,
+    #[serde(default)]
+    pub blueprint_id: Option<String>,
+    /// Nombre de plantilla (p. ej. `Environment_04`); no es el nombre de la instancia.
+    #[serde(default)]
+    pub template_name: Option<String>,
+    #[serde(default)]
+    pub scripts: Option<Vec<SaveScriptSnapshot>>,
+    #[serde(default)]
+    pub animations: Option<Vec<SaveAnimationSnapshot>>,
+}
+
+fn merge_optional_field<T: Clone>(dst: &mut Option<T>, src: &Option<T>) {
+    if dst.is_none() {
+        *dst = src.clone();
+    }
+}
+
+/// Completa categoría/física/scripts desde el registro del motor o la biblioteca de modelos.
+pub fn enrich_blueprint_placement_meta(
+    blueprint_registry: &std::collections::HashMap<String, BlueprintPlacementMeta>,
+    model_store: &std::collections::HashMap<String, ModelStoreEntry>,
+    model_path_key: &dyn Fn(&str) -> String,
+    meta: &mut BlueprintPlacementMeta,
+    preview_path: &str,
+) {
+    if let Some(id) = meta.blueprint_id.as_deref() {
+        if let Some(reg) = blueprint_registry.get(id) {
+            let weak = meta
+                .category
+                .as_deref()
+                .map(|c| c.trim().is_empty() || c == "object")
+                .unwrap_or(true);
+            if weak {
+                if let Some(cat) = reg.category.clone() {
+                    meta.category = Some(cat);
+                }
+            }
+            merge_optional_field(&mut meta.colision, &reg.colision);
+            merge_optional_field(&mut meta.physics_type, &reg.physics_type);
+            merge_optional_field(&mut meta.physics_enabled, &reg.physics_enabled);
+            merge_optional_field(&mut meta.scripts, &reg.scripts);
+            merge_optional_field(&mut meta.animations, &reg.animations);
+            if meta
+                .template_name
+                .as_deref()
+                .map(|n| n.trim().is_empty() || n == "Blueprint")
+                .unwrap_or(true)
+            {
+                merge_optional_field(&mut meta.template_name, &reg.template_name);
+            }
+        }
+    }
+
+    let weak_cat = meta
+        .category
+        .as_deref()
+        .map(|c| c.trim().is_empty() || c == "object")
+        .unwrap_or(true);
+    if weak_cat {
+        let key = model_path_key(preview_path);
+        if let Some(entry) = model_store.get(&key) {
+            if let Some(cat) = normalize_model_library_category(entry.category.as_deref()) {
+                meta.category = Some(cat);
+            }
+        }
+    }
+}
+
+/// Categoría para colocar instancias (nombrado incremental + físicas).
+pub fn normalize_placement_entity_category(raw: Option<&str>) -> Option<String> {
+    let s = raw?.trim();
+    match s {
+        "environment" | "object" | "character" => Some(s.to_string()),
+        "player" => Some("character".to_string()),
+        "sun" => Some("sun".to_string()),
+        "ground" => Some("ground".to_string()),
+        _ => normalize_model_library_category(raw),
     }
 }
 

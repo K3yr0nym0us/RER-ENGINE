@@ -107,6 +107,7 @@ impl State {
         self.quick_build_preview_kind = None;
         self.quick_build_preview_scale = None;
         self.quick_build_blueprint = None;
+        self.blueprint_registry.clear();
         self.entity_blueprint_ids.clear();
         self.entity_colision.clear();
         self.tool_overlay_buffer = gizmo::build_from_vertices(&self.device, &[]);
@@ -388,6 +389,7 @@ impl State {
         self.quick_build_preview_kind = None;
         self.quick_build_preview_scale = None;
         self.quick_build_blueprint = None;
+        self.blueprint_registry.clear();
         self.entity_blueprint_ids.clear();
         self.entity_colision.clear();
         self.tool_overlay_buffer = gizmo::build_from_vertices(&self.device, &[]);

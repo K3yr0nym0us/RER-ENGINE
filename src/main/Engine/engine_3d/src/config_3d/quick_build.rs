@@ -6,7 +6,13 @@ use crate::config_3d::{is_fbx_model_path, is_gltf_model_path};
 use crate::config_compat::ActiveTool;
 use crate::ecs::{EntityId, MeshComponent, NonSelectable, Transform};
 use crate::engine::State;
-use crate::ipc::{send_event, EngineEvent};
+use crate::entity_save_meta::EntitySaveMeta;
+use crate::ipc::{
+    send_event, BlueprintPlacementMeta, EngineEvent, SaveAnimationSnapshot, SaveScriptSnapshot,
+};
+use crate::engine::entity_restore::{
+    apply_entity_animations_snapshots, apply_entity_scripts_snapshots,
+};
 use crate::mesh;
 use rer_engine_shared::editor_defaults::entity_label_for_category;
 
@@ -15,19 +21,113 @@ const GHOST_ALPHA: f32 = 0.38;
 const PLACEMENT_RAY_MAX: f32 = 10_000.0;
 const DEFAULT_ROTATION: [f32; 4] = [0.0, 0.0, 0.0, 1.0];
 
-/// Metadatos del blueprint activo en construcción rápida (solo motor).
+/// Metadatos del blueprint activo en construcción rápida (manifest `Blueprints` + instancia).
 #[derive(Clone, Debug)]
 pub(crate) struct QuickBuildBlueprint {
-    pub name: String,
+    pub template_name: String,
+    pub model: String,
     pub rotation: [f32; 4],
+    pub scale: [f32; 3],
     pub physics_enabled: bool,
     pub physics_type: String,
+    pub colision: bool,
+    /// `Entity3DCategory` del manifest (`environment`, `object`, `character`, …).
+    pub category: Option<String>,
     pub entity_category: Option<String>,
     pub blueprint_id: Option<String>,
+    pub scripts: Option<Vec<SaveScriptSnapshot>>,
+    pub animations: Option<Vec<SaveAnimationSnapshot>>,
+}
+
+impl QuickBuildBlueprint {
+    pub(crate) fn from_placement_meta(meta: &BlueprintPlacementMeta, preview_path: &str) -> Self {
+        let template_name = meta
+            .template_name
+            .clone()
+            .filter(|n| !n.trim().is_empty())
+            .unwrap_or_else(|| "Blueprint".to_string());
+        let mut bp = Self {
+            template_name: template_name.clone(),
+            model: meta
+                .model
+                .clone()
+                .filter(|m| !m.trim().is_empty())
+                .unwrap_or_else(|| preview_path.to_string()),
+            rotation: meta.rotation.unwrap_or(DEFAULT_ROTATION),
+            scale: meta.scale.unwrap_or([1.0, 1.0, 1.0]),
+            physics_enabled: meta.physics_enabled.unwrap_or(false),
+            physics_type: meta
+                .physics_type
+                .clone()
+                .unwrap_or_else(|| "static".to_string()),
+            colision: meta.colision.unwrap_or(true),
+            category: meta.category.clone(),
+            entity_category: meta
+                .category
+                .as_deref()
+                .and_then(|c| crate::ipc::normalize_placement_entity_category(Some(c))),
+            blueprint_id: meta.blueprint_id.clone(),
+            scripts: meta.scripts.clone(),
+            animations: meta.animations.clone(),
+        };
+        if bp.entity_category.is_none() {
+            bp.entity_category = infer_category_from_template(&template_name, meta.category.as_deref());
+        }
+        let is_environment = bp.entity_category.as_deref() == Some("environment");
+        if is_environment {
+            bp.physics_enabled = true;
+            bp.physics_type = "static".to_string();
+            bp.colision = true;
+        }
+        bp
+    }
+}
+
+fn infer_category_from_template(
+    template_name: &str,
+    category: Option<&str>,
+) -> Option<String> {
+    category
+        .and_then(|c| crate::ipc::normalize_placement_entity_category(Some(c)))
+        .or_else(|| {
+            rer_engine_shared::editor_defaults::infer_entity_category_from_numbered_name(template_name)
+                .and_then(|c| crate::ipc::normalize_placement_entity_category(Some(c)))
+        })
 }
 
 fn is_model_file_path(path: &str) -> bool {
     is_gltf_model_path(path) || is_fbx_model_path(path)
+}
+
+/// Categoría IPC para nombrado/físicas (manifest `environment` | `object` | `character`).
+fn resolve_quick_build_entity_category(bp: &QuickBuildBlueprint) -> Option<String> {
+    bp.entity_category.clone().or_else(|| {
+        infer_category_from_template(&bp.template_name, bp.category.as_deref())
+    })
+}
+
+fn apply_blueprint_instance_metadata(state: &mut State, id: EntityId, bp: &QuickBuildBlueprint) {
+    if let Some(cat) = resolve_quick_build_entity_category(bp) {
+        if let Some(meta) = state.save_registry.meta.get_mut(&id) {
+            meta.entity_category = Some(cat.clone());
+        } else {
+            state.save_registry.register_meta(
+                id,
+                EntitySaveMeta {
+                    kind: "model".to_string(),
+                    path: state.model_path_key(&bp.model),
+                    visual_model_path: None,
+                    entity_category: Some(cat),
+                },
+            );
+        }
+    }
+    state.entity_colision.insert(id, bp.colision);
+    apply_entity_scripts_snapshots(state, id, bp.scripts.as_deref());
+    apply_entity_animations_snapshots(state, id, bp.animations.as_deref());
+    if bp.colision || bp.physics_enabled {
+        state.reconcile_entity_physics_with_mesh(id);
+    }
 }
 
 fn ray_intersect_y_plane(origin: Vec3, dir: Vec3, y: f32) -> Option<Vec3> {
@@ -268,15 +368,13 @@ impl State {
             .map(|b| b.rotation)
             .unwrap_or(DEFAULT_ROTATION);
         let kind = "model".to_string();
-        let entity_category = bp.as_ref().and_then(|b| b.entity_category.clone());
+        let entity_category = bp
+            .as_ref()
+            .and_then(resolve_quick_build_entity_category);
         let is_environment = entity_category.as_deref() == Some("environment");
         let default_label = entity_label_for_category(entity_category.as_deref());
-        let entity_name = bp
-            .as_ref()
-            .map(|b| b.name.as_str())
-            .filter(|n| !n.trim().is_empty())
-            .map(str::to_owned)
-            .unwrap_or_else(|| self.next_numbered_entity_name(default_label));
+        // Instancias: nombre nuevo por categoría (Environment_05, Object_03, …), no el de la plantilla.
+        let entity_name = self.next_numbered_entity_name(default_label);
         let physics_enabled = if is_environment {
             true
         } else {
@@ -299,11 +397,19 @@ impl State {
             &entity_name,
             &kind,
             bp.as_ref().and_then(|b| b.blueprint_id.clone()),
-            entity_category,
+            entity_category.clone(),
             physics_enabled,
             physics_type,
             part.local_bounds,
         );
+        if let Some(ref blueprint) = bp {
+            apply_blueprint_instance_metadata(self, id, blueprint);
+        } else {
+            self.entity_colision.insert(id, physics_enabled);
+            if physics_enabled {
+                self.reconcile_entity_physics_with_mesh(id);
+            }
+        }
         log::info!("[quick_build] colocado {id} «{entity_name}» en {position:?}");
         Some(id)
     }

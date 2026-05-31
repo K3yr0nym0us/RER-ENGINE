@@ -11,6 +11,7 @@ ENTITES_TYPES:
 
 common: # FORMATO COMUN DE LAS ENTIDADES
   id: number # Generado por el motor
+  category: string # Categoria de la entidad
   name: string # Generado por el motor (Editable)
   model: string # Modelo 3D (.glb|.gltf|.fbx) (Cargado en memoria GPU o en una ruta temporal del descomprimido .save)
   position: [number, number, number] # Posición en el mundo
@@ -26,6 +27,7 @@ common: # FORMATO COMUN DE LAS ENTIDADES
 Blueprints: # Configuracion de las blueprints
   id: string # Generado por el motor (debe guardarse el id del blueprint en el archivo .save y reutilizarse al cargar el proyecto)
   name: string # Generado por el motor category_01 incrementable (Editable)
+  category: string # Categoria de la blueprint
   model: string # Al cambiarle a uno se cambia a todas las entidades que tengan este blueprint
   position: [number, number, number] # Posición en el mundo (Diferente en todas las entidades que tengan este blueprint)
   rotation: [number, number, number, number] # Quaternion xyzw (mesh) (Diferente en todas las entidades que tengan este blueprint)

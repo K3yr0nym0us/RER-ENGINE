@@ -10,10 +10,15 @@ import { CreateEntityFromModelModalBody } from '../EntitiesAccordion/components/
 
 import { useContextEngine } from '@engine';
 import { useModal } from '@modal';
-import type { BluePrintCategory, BluePrintEntry } from '@shared-types';
+import type { BluePrintEntry } from '@shared-types';
 import { isEditorCameraEntity, isEnvironmentEntity, isPlayerEntity } from '@shared-types';
 import { useTraslate } from '@hooks';
-import { resolveBlueprintModelPath } from '../../../../../utils/blueprintModelPath';
+import {
+  blueprintCategoryFromEntity,
+  blueprintEntityCategoryForEngine,
+  nextBlueprintTemplateName,
+  resolveBlueprintModelPath,
+} from '../../../../../utils/blueprintModelPath';
 
 export function PropertiesAccordion({ projectType }: { projectType?: string }) {
   const { t } = useTraslate();
@@ -410,33 +415,52 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
           onClick={() => {
             const meta = entityMetaRef.current[selectedEntity.id];
             const kind = meta?.kind ?? 'model';
-            const category: BluePrintCategory =
-              kind === 'character' ? 'personaje' :
-              kind === 'scenario'  ? 'entorno'   :
-              meta?.entityCategory === 'environment' ? 'entorno' : 'objetos';
-
             const handleConfirm = () => {
               const transform = entityTransformsRef.current[selectedEntity.id];
+              const path = meta?.path ?? '';
+              const modelPath = resolveBlueprintModelPath({
+                path,
+                model: meta?.visualModelPath ?? path,
+                visualModelPath: meta?.visualModelPath,
+              });
+              const resolvedCategory = blueprintCategoryFromEntity(
+                isEnvironment,
+                kind,
+                meta?.entityCategory,
+                meta?.entity3dCategory,
+                selectedEntity.name,
+                models,
+                modelPath,
+              );
+              const bpName = nextBlueprintTemplateName(resolvedCategory, [
+                ...blueprints.map((b) => b.name),
+                ...Object.values(entityMetaRef.current)
+                  .map((m) => m.name)
+                  .filter((n): n is string => Boolean(n)),
+              ]);
+              const entity_category = blueprintEntityCategoryForEngine(resolvedCategory);
               const draft: BluePrintEntry = {
                 id:               `bp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-                name:             selectedEntity.name,
-                category,
+                name:             bpName,
+                category:         resolvedCategory,
                 kind,
-                path:             meta?.path ?? '',
+                path,
                 scale:            transform?.scale ?? [1, 1, 1],
                 rotation:         transform?.rotation ?? [0, 0, 0, 1],
+                colision:         meta?.physicsEnabled ?? true,
                 physics_enabled:  meta?.physicsEnabled,
                 physics_type:     meta?.physicsType,
                 animations:       meta?.animations,
                 scripts:          meta?.scripts,
                 control_bindings: meta?.controlBindings,
                 visualModelPath:  meta?.visualModelPath,
-                entity_category:  meta?.entityCategory,
+                ...(entity_category ? { entity_category } : {}),
               };
-              const effectivePath = resolveBlueprintModelPath(draft);
+              const model = resolveBlueprintModelPath(draft);
               const entry: BluePrintEntry = {
                 ...draft,
-                path: effectivePath,
+                model,
+                path: model,
               };
               addBlueprint(entry);
               // Vincular la entidad actual a la blueprint recién creada

@@ -21,8 +21,32 @@ pub(crate) fn entity_category_for(state: &State, id: u32, meta: &EntitySaveMeta)
     if state.character_entities.contains(&id) {
         return "character".to_string();
     }
-    if meta.entity_category.as_deref() == Some("environment") {
-        return "environment".to_string();
+    if let Some(name) = state.entity_display_name(id) {
+        if let Some(from_name) =
+            rer_engine_shared::editor_defaults::infer_entity_category_from_numbered_name(&name)
+        {
+            if matches!(from_name, "environment" | "character") {
+                return from_name.to_string();
+            }
+        }
+    }
+    if let Some(cat) = meta.entity_category.as_deref() {
+        if matches!(cat, "environment" | "character") {
+            return cat.to_string();
+        }
+        // `object` en meta puede ser genérico; el prefijo del nombre manda si es Environment_* / Object_*.
+        if cat == "object" {
+            if let Some(name) = state.entity_display_name(id) {
+                if let Some(from_name) =
+                    rer_engine_shared::editor_defaults::infer_entity_category_from_numbered_name(&name)
+                {
+                    if matches!(from_name, "environment" | "character") {
+                        return from_name.to_string();
+                    }
+                }
+            }
+            return "object".to_string();
+        }
     }
     "object".to_string()
 }

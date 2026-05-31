@@ -1,8 +1,77 @@
 use crate::ipc::{
-    ControlBindingsData, EntityRestorePhysics, EntityRestoreTransform, EngineCommand,
+    AnimScriptData, AnimationFrameData, ControlBindingsData, EntityRestorePhysics,
+    EntityRestoreTransform, EngineCommand, SaveAnimationSnapshot, SaveScriptSnapshot,
 };
 
 use super::State;
+
+pub(crate) fn apply_entity_scripts_snapshots(
+    state: &mut State,
+    id: u32,
+    scripts: Option<&[SaveScriptSnapshot]>,
+) {
+    let Some(list) = scripts else { return };
+    for script in list {
+        state.handle_command(EngineCommand::LoadScript {
+            id,
+            path: script.name.clone(),
+            source: script.source.clone(),
+        });
+    }
+}
+
+pub(crate) fn apply_entity_animations_snapshots(
+    state: &mut State,
+    id: u32,
+    animations: Option<&[SaveAnimationSnapshot]>,
+) {
+    let Some(list) = animations else { return };
+    for anim in list {
+        if anim.embedded_in_model == Some(true) || anim.frames.is_empty() {
+            continue;
+        }
+        let frames: Vec<AnimationFrameData> = anim
+            .frames
+            .iter()
+            .map(|f| AnimationFrameData {
+                path: f.path.clone(),
+                pivot_x: f.pivot_x,
+                pivot_y: f.pivot_y,
+                src_x: f.src_x,
+                src_y: f.src_y,
+                src_w: f.src_w,
+                src_h: f.src_h,
+            })
+            .collect();
+        let anim_scripts: Vec<AnimScriptData> = anim
+            .scripts
+            .iter()
+            .map(|s| AnimScriptData {
+                name: s.name.clone(),
+                source: s.source.clone(),
+            })
+            .collect();
+        state.handle_command(EngineCommand::SetAnimation {
+            id,
+            name: anim.name.clone(),
+            frames,
+            fps: anim.fps,
+            loop_: anim.loop_,
+            flip_horizontal: !(anim.facing_right.unwrap_or(true)),
+            audio_path: anim.audio_path.clone(),
+            logical_w: Some(anim.logical_w),
+            logical_h: Some(anim.logical_h),
+            scripts: anim_scripts,
+            is_cancelable: anim.is_cancelable.unwrap_or(true),
+        });
+        if anim.is_default.unwrap_or(false) {
+            state.handle_command(EngineCommand::SetDefaultAnimation {
+                id,
+                name: anim.name.clone(),
+            });
+        }
+    }
+}
 
 impl State {
     pub(crate) fn apply_entity_restore_inner(

@@ -6,6 +6,10 @@ import type {
 } from '@shared-types';
 import { entityPathMarker } from '@shared-types';
 import type { EntityMeta } from '../context/useContextEngine/types';
+import {
+	inferEntity3dCategoryFromName,
+	reconcileCategoryWithName,
+} from './blueprintModelPath';
 
 function kindFromCategory(category: Entity3DCategory): EntityMeta['kind'] {
 	switch (category) {
@@ -34,17 +38,29 @@ export function entity3dToMeta(entity: Entity3D): EntityMeta {
 					? entity.model
 					: undefined;
 
+	const entity3dCategory = reconcileCategoryWithName(
+		entity.category,
+		entity.name,
+	);
+
 	return {
-		kind: kindFromCategory(entity.category),
+		kind: kindFromCategory(entity3dCategory),
 		path,
 		name: entity.name,
-		physicsEnabled: entity.physics_type != null,
+		entity3dCategory,
+		physicsEnabled: entity.colision ?? entity.physics_type != null,
 		physicsType: entity.physics_type ?? 'static',
 		...(entity.animations?.length ? { animations: entity.animations } : {}),
 		...(entity.scripts?.length ? { scripts: entity.scripts } : {}),
 		...(entity.controls ? { controlBindings: entity.controls } : {}),
 		...(entity.blueprint_id ? { blueprintId: entity.blueprint_id } : {}),
-		...(entity.category === 'environment' ? { entityCategory: 'environment' as const } : {}),
+		...(entity3dCategory === 'environment'
+			? { entityCategory: 'environment' as const }
+			: entity3dCategory === 'object'
+				? { entityCategory: 'object' as const }
+				: entity3dCategory === 'character'
+					? { entityCategory: 'character' as const }
+					: {}),
 		...(visualModelPath && visualModelPath !== path
 			? { visualModelPath }
 			: {}),

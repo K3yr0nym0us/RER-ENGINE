@@ -102,6 +102,8 @@ pub struct State {
     pub(crate) quick_build_preview_scale: Option<[f32; 3]>,
     /// Metadatos del blueprint activo (nombre, física, rotación…) para colocar instancias.
     pub(crate) quick_build_blueprint: Option<crate::config_3d::quick_build::QuickBuildBlueprint>,
+    /// Registro IPC de blueprints (`register_blueprint`) por id.
+    pub(crate) blueprint_registry: std::collections::HashMap<String, crate::ipc::BlueprintPlacementMeta>,
     /// Blueprint de origen por entidad (construcción rápida u otras vías del motor).
     pub(crate) entity_blueprint_ids: std::collections::HashMap<EntityId, String>,
     /// Colisión de malla Rapier on/off por entidad (`docs/Entities_Model_3D.yaml`).

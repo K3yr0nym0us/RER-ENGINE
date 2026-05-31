@@ -1,5 +1,4 @@
 import type {
-	Blueprint3D,
 	EngineSaveSceneSnapshot,
 	Entity3D,
 	GameStyle,
@@ -13,6 +12,7 @@ import type {
 import type { EntityMeta } from '../context/useContextEngine/types';
 import { getSceneProjectState } from '../pages/EngineView/sceneStateStore';
 import { requestEngineDefaultSceneName } from './requestEngineDefaultSceneName';
+import { blueprintToSave } from '../utils/blueprintModelPath';
 
 const SAVE_SNAPSHOT_TIMEOUT_MS = 15_000;
 
@@ -157,7 +157,7 @@ export interface BuildProjectSaveOptions {
 	projectType: ProjectType
 	gameStyle: GameStyle
 	locale: string
-	blueprints: Blueprint3D[]
+	blueprints: import('@shared-types').BluePrintEntry[]
 	sounds: SoundInfo[]
 	backgrounds: BackgroundInfo[]
 	entityMeta: Record<number, EntityMeta>
@@ -204,6 +204,11 @@ export async function buildProjectSaveFromEngineSnapshot(
 
 	const root = scenes.find((s) => s.id === activeSceneId) ?? scenes[0];
 
+	const savedBlueprints =
+		projectType === '3D'
+			? blueprints.map(blueprintToSave)
+			: blueprints;
+
 	return {
 		version: 1,
 		type: projectType,
@@ -222,7 +227,7 @@ export async function buildProjectSaveFromEngineSnapshot(
 		models: root.models,
 		sounds,
 		backgrounds,
-		blueprints,
+		blueprints: savedBlueprints,
 		language: locale,
 	};
 }

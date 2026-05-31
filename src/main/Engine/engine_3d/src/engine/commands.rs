@@ -919,6 +919,18 @@ impl State {
                     id
                 );
             }
+            EngineCommand::RegisterBlueprint { blueprint } => {
+                if let Some(id) = blueprint.blueprint_id.clone().filter(|s| !s.trim().is_empty())
+                {
+                    log::info!(
+                        "[blueprint] registrada id={id} categoría={:?}",
+                        blueprint.category
+                    );
+                    self.blueprint_registry.insert(id, blueprint);
+                } else {
+                    log::warn!("[blueprint] register_blueprint sin blueprint_id");
+                }
+            }
             EngineCommand::SetActiveTool {
                 tool,
                 preview_path,
@@ -931,6 +943,7 @@ impl State {
                 preview_physics_type,
                 preview_entity_category,
                 preview_blueprint_id,
+                preview_blueprint,
             } => {
                 if tool.is_empty() {
                     let was_active = !matches!(self.active_tool, ActiveTool::None);
@@ -971,30 +984,51 @@ impl State {
                                 preview_kind.as_deref(),
                                 preview_scale,
                             ) {
-                                let is_environment =
-                                    preview_entity_category.as_deref() == Some("environment");
-                                let physics_enabled = if is_environment {
-                                    true
-                                } else {
-                                    preview_physics_enabled.unwrap_or(false)
-                                };
-                                let physics_type = if is_environment {
-                                    "static".to_string()
-                                } else {
-                                    preview_physics_type
-                                        .unwrap_or_else(|| "static".to_string())
-                                };
-                                self.quick_build_blueprint =
-                                    Some(crate::config_3d::quick_build::QuickBuildBlueprint {
-                                        name: preview_name
-                                            .unwrap_or_else(|| "Objeto".to_string()),
-                                        rotation: preview_rotation
-                                            .unwrap_or([0.0, 0.0, 0.0, 1.0]),
-                                        physics_enabled,
-                                        physics_type,
-                                        entity_category: preview_entity_category,
-                                        blueprint_id: preview_blueprint_id,
+                                let mut placement_meta =
+                                    preview_blueprint.clone().unwrap_or_else(|| {
+                                        crate::ipc::BlueprintPlacementMeta {
+                                            category: preview_entity_category.clone(),
+                                            model: Some(path.to_string()),
+                                            colision: None,
+                                            physics_type: preview_physics_type.clone(),
+                                            physics_enabled: preview_physics_enabled,
+                                            rotation: preview_rotation,
+                                            scale: Some(scale),
+                                            blueprint_id: preview_blueprint_id.clone(),
+                                            template_name: preview_name.clone(),
+                                            scripts: None,
+                                            animations: None,
+                                        }
                                     });
+                                if placement_meta.blueprint_id.is_none() {
+                                    placement_meta.blueprint_id = preview_blueprint_id.clone();
+                                }
+                                if placement_meta.model.as_deref().map(str::trim).unwrap_or("").is_empty() {
+                                    placement_meta.model = Some(path.to_string());
+                                }
+                                if placement_meta.category.is_none() {
+                                    placement_meta.category = preview_entity_category.clone();
+                                }
+                                crate::ipc::enrich_blueprint_placement_meta(
+                                    &self.blueprint_registry,
+                                    &self.model_store,
+                                    &|p| self.model_path_key(p),
+                                    &mut placement_meta,
+                                    path,
+                                );
+                                self.quick_build_blueprint = Some(
+                                    crate::config_3d::quick_build::QuickBuildBlueprint::from_placement_meta(
+                                        &placement_meta,
+                                        path,
+                                    ),
+                                );
+                                if let Some(ref bp) = self.quick_build_blueprint {
+                                    log::info!(
+                                        "[quick_build] blueprint activa categoría={:?} plantilla={}",
+                                        bp.entity_category,
+                                        bp.template_name
+                                    );
+                                }
                                 self.quick_build_preview_path = Some(path.to_owned());
                                 self.quick_build_preview_kind = Some(kind.to_owned());
                                 self.quick_build_preview_scale = Some(scale);
@@ -1013,7 +1047,7 @@ impl State {
                                     let ghost_name = self
                                         .quick_build_blueprint
                                         .as_ref()
-                                        .map(|b| b.name.clone());
+                                        .map(|b| b.template_name.clone());
                                     log::info!(
                                         "[quick_build] ghost listo id={:?} path={path}",
                                         self.quick_build_ghost_id
