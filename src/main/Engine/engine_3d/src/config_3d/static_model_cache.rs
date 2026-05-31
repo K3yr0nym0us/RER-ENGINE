@@ -16,7 +16,7 @@ use std::time::{Duration, Instant};
 use crate::config_3d::character_anchor::PLAY_CHARACTER_BODY_HEIGHT;
 use crate::config_3d::mesh_3d::{
     load_gltf_cpu_from_file, load_model_file_cpu, preload_model_cpu_bundle,
-    vertex_local_bounds, CpuModelMeshPart,
+    prepare_cpu_part_texture_for_gpu, vertex_local_bounds, CpuModelMeshPart,
 };
 use crate::config_3d::model_asset;
 use crate::config_3d::{physics_body_world_center, physics_half_extents_for_model};
@@ -40,6 +40,8 @@ pub(crate) struct ModelPreloadCpuResult {
     pub anim_asset: Option<Arc<model_asset::ModelAsset>>,
     /// Variante jugador (`::play_character`); no aplica a props/entorno.
     pub warm_play_character: bool,
+    /// Mallas jugador parseadas en el hilo de precarga (sin re-leer disco al warm GPU).
+    pub play_character_parts: Option<Vec<CpuModelMeshPart>>,
 }
 
 pub(crate) type ModelPreloadRx =
@@ -99,7 +101,16 @@ pub(crate) struct PendingGpuModelPreload {
     parts: Vec<CpuModelMeshPart>,
     uploaded: Vec<CachedStaticModelPart>,
     anim_asset: Option<Arc<model_asset::ModelAsset>>,
+    /// Variante jugador (`::play_character`); no aplica a props/entorno.
     warm_play_character: bool,
+    /// Malla en GPU; textura de la parte actual pendiente (presupuesto en pasos).
+    pending_part_mesh_idx: Option<usize>,
+    /// Tras este job, ejecutar flush de `load_model` / replace en cola.
+    defer_flush_path: Option<String>,
+    /// Solo calienta caché `::play_character` (sin repetir `ModelAssetLoaded`).
+    play_character_warm_only: bool,
+    /// Variante jugador ya parseada en CPU (precarga Recursos con warm).
+    play_character_parts: Option<Vec<CpuModelMeshPart>>,
 }
 
 /// Partes de malla/textura subidas por frame durante precarga en editor (evita congelar IPC).
@@ -211,13 +222,16 @@ impl State {
             ))
             .spawn(move || {
                 let path_buf = Path::new(&key_for_thread);
-                let result = match preload_model_cpu_bundle(path_buf) {
-                    Ok((parts, anim_asset)) => Ok(ModelPreloadCpuResult {
-                        path: key_for_thread,
-                        parts,
-                        anim_asset,
-                        warm_play_character,
-                    }),
+                let result = match preload_model_cpu_bundle(path_buf, warm_play_character) {
+                    Ok((parts, anim_asset, play_character_parts)) => {
+                        Ok(ModelPreloadCpuResult {
+                            path: key_for_thread,
+                            parts,
+                            anim_asset,
+                            warm_play_character,
+                            play_character_parts,
+                        })
+                    }
                     Err(err) => Err((key_for_thread, err)),
                 };
                 let _ = tx.send(result);
@@ -253,34 +267,54 @@ impl State {
         }
     }
 
-    fn upload_cpu_part_to_static_cache(
+    fn upload_mesh_for_cpu_part(
         &mut self,
-        cache_key: &str,
         part: &CpuModelMeshPart,
         part_index: usize,
         label: &str,
-    ) -> CachedStaticModelPart {
+    ) -> usize {
         let mesh_idx = self.meshes.len();
-        let tex_idx = self.tex_layers.len();
         self.meshes.push(crate::mesh::upload(
             &self.device,
             &part.vertices,
             &part.indices,
             &format!("{label}-{part_index}"),
         ));
+        mesh_idx
+    }
+
+    fn upload_texture_for_cpu_part(
+        &mut self,
+        cache_key: &str,
+        part_index: usize,
+        part: &CpuModelMeshPart,
+    ) -> usize {
+        let tex_idx = self.tex_layers.len();
         let tex_cache_key = format!("{cache_key}::part{part_index}");
-        self.pack_texture_layer(
-            Some(&tex_cache_key),
-            &part.rgba,
-            part.width,
-            part.height,
-        );
-        CachedStaticModelPart {
-            mesh_idx,
-            tex_idx,
-            local_bounds: part.local_bounds,
-            forward_xz: part.forward_xz,
+        if let Some(mips) = &part.layer_mips {
+            let layer = if let Some(&cached) = self.texture_path_layers.get(&tex_cache_key) {
+                cached
+            } else {
+                let layer = self.texture_array.pack_prepared_mips(&self.queue, mips);
+                if layer >= crate::texture::TextureArray::MAX_LAYERS - 1 {
+                    send_event(&EngineEvent::TextureArrayExhausted {
+                        max_layers: crate::texture::TextureArray::MAX_LAYERS,
+                    });
+                }
+                self.texture_path_layers
+                    .insert(tex_cache_key, layer);
+                layer
+            };
+            self.tex_layers.push(layer);
+        } else {
+            self.pack_texture_layer(
+                Some(&tex_cache_key),
+                &part.rgba,
+                part.width,
+                part.height,
+            );
         }
+        tex_idx
     }
 
     /// Pivote editor: base en Y=0, centrado en X/Z (misma idea que el cubo placeholder).
@@ -297,20 +331,69 @@ impl State {
         part.local_bounds = vertex_local_bounds(&part.vertices);
     }
 
-    fn upload_cpu_parts_to_static_cache(
+    /// Sube la variante `::play_character` a GPU de forma síncrona (replace jugador inmediato).
+    /// Reutiliza capas de textura ya empaquetadas bajo `canonical_path` (precarga Recursos).
+    fn sync_upload_play_character_cache(
         &mut self,
-        cache_key: &str,
+        canonical_path: &str,
         mut parts: Vec<CpuModelMeshPart>,
-        label: &str,
-    ) -> Vec<CachedStaticModelPart> {
+    ) {
+        let play_key = play_character_cache_key(canonical_path);
+        if self.static_model_cache.contains_key(&play_key) {
+            return;
+        }
+        if parts.is_empty() {
+            return;
+        }
         for part in parts.iter_mut() {
             Self::pivot_static_mesh_for_editor(part);
+            if part.layer_mips.is_none() {
+                prepare_cpu_part_texture_for_gpu(part);
+            }
         }
-        parts
+        let cached: Vec<CachedStaticModelPart> = parts
             .iter()
             .enumerate()
-            .map(|(i, part)| self.upload_cpu_part_to_static_cache(cache_key, part, i, label))
-            .collect()
+            .map(|(i, part)| {
+                let mesh_idx = self.upload_mesh_for_cpu_part(part, i, "play-preload");
+                let tex_idx =
+                    self.upload_texture_for_cpu_part(canonical_path, i, part);
+                CachedStaticModelPart {
+                    mesh_idx,
+                    tex_idx,
+                    local_bounds: part.local_bounds,
+                    forward_xz: part.forward_xz,
+                }
+            })
+            .collect();
+        self.static_model_cache.insert(play_key, cached);
+        log::debug!("variante jugador en GPU: {canonical_path}");
+    }
+
+    fn finalize_gpu_model_preload(&mut self, pending: PendingGpuModelPreload) {
+        if pending.play_character_warm_only {
+            self.finalize_play_character_warm_on_gpu(pending);
+            return;
+        }
+        self.finalize_model_preload_on_gpu(pending);
+    }
+
+    fn finalize_play_character_warm_on_gpu(&mut self, pending: PendingGpuModelPreload) {
+        let play_key = pending.path;
+        if pending.uploaded.is_empty() {
+            log::debug!("warm jugador vacío: {play_key}");
+        } else {
+            self.static_model_cache
+                .insert(play_key.clone(), pending.uploaded);
+            log::debug!(
+                "variante jugador en GPU: {}",
+                pending.defer_flush_path.as_deref().unwrap_or(&play_key)
+            );
+        }
+        if let Some(flush_path) = pending.defer_flush_path {
+            self.flush_pending_load_models_for_path(&flush_path);
+            self.flush_pending_entity_model_replaces_for_path(&flush_path);
+        }
     }
 
     fn finalize_model_preload_on_gpu(&mut self, pending: PendingGpuModelPreload) {
@@ -349,10 +432,78 @@ impl State {
         log::info!("{gpu_msg}");
         send_load_progress(&gpu_msg, None, None);
         if pending.warm_play_character {
-            self.try_warm_play_character_model_cache(&path);
+            if let Some(play_parts) = pending.play_character_parts {
+                self.sync_upload_play_character_cache(&path, play_parts);
+            } else if let Some(play_parts) = self.load_play_character_cpu_parts(&path) {
+                self.sync_upload_play_character_cache(&path, play_parts);
+            }
         }
         self.flush_pending_load_models_for_path(&path);
         self.flush_pending_entity_model_replaces_for_path(&path);
+    }
+
+    fn load_play_character_cpu_parts(
+        &mut self,
+        canonical_path: &str,
+    ) -> Option<Vec<CpuModelMeshPart>> {
+        let path_buf = Path::new(canonical_path);
+        if !path_buf.is_file() {
+            return None;
+        }
+        let is_gltf = path_buf
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|e| e.eq_ignore_ascii_case("glb") || e.eq_ignore_ascii_case("gltf"));
+
+        let parts = if is_gltf {
+            match model_asset::import_gltf(path_buf).and_then(|file| {
+                if !self.model_assets.contains_key(canonical_path)
+                    && model_asset::gltf_needs_model_asset(&file)
+                {
+                    if let Some(asset) =
+                        model_asset::load_model_asset_from_gltf(&file, None)
+                    {
+                        self.model_assets
+                            .insert(canonical_path.to_string(), asset);
+                    }
+                }
+                load_gltf_cpu_from_file(&file, Some(PLAY_CHARACTER_BODY_HEIGHT))
+            }) {
+                Ok(parts) if !parts.is_empty() => parts,
+                Ok(_) => return None,
+                Err(e) => {
+                    log::debug!(
+                        "sin variante jugador para {canonical_path}: {e}"
+                    );
+                    return None;
+                }
+            }
+        } else {
+            match load_model_file_cpu(path_buf, Some(PLAY_CHARACTER_BODY_HEIGHT)) {
+                Ok(parts) if !parts.is_empty() => parts,
+                Ok(_) => return None,
+                Err(e) => {
+                    log::debug!(
+                        "sin variante jugador para {canonical_path}: {e}"
+                    );
+                    return None;
+                }
+            }
+        };
+
+        if !is_gltf && !self.model_assets.contains_key(canonical_path) {
+            if let Some(asset) = model_asset::load_model_asset(path_buf, None) {
+                self.model_assets.insert(canonical_path.to_string(), asset);
+            }
+        }
+        Some(parts)
+    }
+
+    fn wait_for_static_model_cache(&mut self, key: &str) {
+        while !self.static_model_cache.contains_key(key) {
+            self.poll_and_advance_model_preloads(MODEL_GPU_PARTS_PER_FRAME);
+            std::thread::yield_now();
+        }
     }
 
     fn enqueue_model_preload_for_gpu(&mut self, data: ModelPreloadCpuResult) {
@@ -385,36 +536,54 @@ impl State {
             uploaded: Vec::new(),
             anim_asset: data.anim_asset,
             warm_play_character: data.warm_play_character,
+            pending_part_mesh_idx: None,
+            defer_flush_path: None,
+            play_character_warm_only: false,
+            play_character_parts: data.play_character_parts,
         });
     }
 
-    /// Sube hasta `max_parts` partes de malla/textura a GPU (cola FIFO).
-    pub(crate) fn advance_gpu_model_preloads(&mut self, max_parts: usize) {
-        let mut budget = max_parts;
+    /// Sube hasta `max_steps` pasos GPU (malla o textura por paso; cola FIFO).
+    pub(crate) fn advance_gpu_model_preloads(&mut self, max_steps: usize) {
+        let mut budget = max_steps;
         while budget > 0 {
             if self.model_preload_gpu_queue.is_empty() {
                 break;
             }
             let mut pending = self.model_preload_gpu_queue.remove(0);
-            let part_index = pending.uploaded.len();
-            if part_index >= pending.parts.len() {
-                self.finalize_model_preload_on_gpu(pending);
+
+            if let Some(mesh_idx) = pending.pending_part_mesh_idx.take() {
+                let part_index = pending.uploaded.len();
+                let part = &pending.parts[part_index];
+                let tex_idx =
+                    self.upload_texture_for_cpu_part(&pending.path, part_index, part);
+                pending.uploaded.push(CachedStaticModelPart {
+                    mesh_idx,
+                    tex_idx,
+                    local_bounds: part.local_bounds,
+                    forward_xz: part.forward_xz,
+                });
+                budget -= 1;
+
+                if pending.uploaded.len() >= pending.parts.len() {
+                    self.finalize_gpu_model_preload(pending);
+                } else {
+                    self.model_preload_gpu_queue.insert(0, pending);
+                }
                 continue;
             }
-            let cached = self.upload_cpu_part_to_static_cache(
-                &pending.path,
-                &pending.parts[part_index],
-                part_index,
-                "preload",
-            );
-            pending.uploaded.push(cached);
-            budget -= 1;
 
-            if pending.uploaded.len() >= pending.parts.len() {
-                self.finalize_model_preload_on_gpu(pending);
-            } else {
-                self.model_preload_gpu_queue.insert(0, pending);
+            let part_index = pending.uploaded.len();
+            if part_index >= pending.parts.len() {
+                self.finalize_gpu_model_preload(pending);
+                continue;
             }
+
+            let part = &pending.parts[part_index];
+            let mesh_idx = self.upload_mesh_for_cpu_part(part, part_index, "preload");
+            pending.pending_part_mesh_idx = Some(mesh_idx);
+            budget -= 1;
+            self.model_preload_gpu_queue.insert(0, pending);
         }
     }
 
@@ -429,59 +598,10 @@ impl State {
         if self.static_model_cache.contains_key(&play_key) {
             return;
         }
-        let path_buf = Path::new(canonical_path);
-        if !path_buf.is_file() {
+        let Some(parts) = self.load_play_character_cpu_parts(canonical_path) else {
             return;
-        }
-        let is_gltf = path_buf
-            .extension()
-            .and_then(|e| e.to_str())
-            .is_some_and(|e| e.eq_ignore_ascii_case("glb") || e.eq_ignore_ascii_case("gltf"));
-
-        let parts = if is_gltf {
-            match model_asset::import_gltf(path_buf).and_then(|file| {
-                if !self.model_assets.contains_key(canonical_path)
-                    && model_asset::gltf_needs_model_asset(&file)
-                {
-                    if let Some(asset) =
-                        model_asset::load_model_asset_from_gltf(&file, None)
-                    {
-                        self.model_assets
-                            .insert(canonical_path.to_string(), asset);
-                    }
-                }
-                load_gltf_cpu_from_file(&file, Some(PLAY_CHARACTER_BODY_HEIGHT))
-            }) {
-                Ok(parts) if !parts.is_empty() => parts,
-                Ok(_) => return,
-                Err(e) => {
-                    log::debug!(
-                        "sin variante jugador para {canonical_path}: {e}"
-                    );
-                    return;
-                }
-            }
-        } else {
-            match load_model_file_cpu(path_buf, Some(PLAY_CHARACTER_BODY_HEIGHT)) {
-                Ok(parts) if !parts.is_empty() => parts,
-                Ok(_) => return,
-                Err(e) => {
-                    log::debug!(
-                        "sin variante jugador para {canonical_path}: {e}"
-                    );
-                    return;
-                }
-            }
         };
-
-        let cached = self.upload_cpu_parts_to_static_cache(&play_key, parts, "play-preload");
-        self.static_model_cache.insert(play_key, cached);
-        if !is_gltf && !self.model_assets.contains_key(canonical_path) {
-            if let Some(asset) = model_asset::load_model_asset(path_buf, None) {
-                self.model_assets.insert(canonical_path.to_string(), asset);
-            }
-        }
-        log::debug!("variante jugador en GPU: {canonical_path}");
+        self.sync_upload_play_character_cache(canonical_path, parts);
     }
 
     pub(crate) fn ensure_play_character_model_cached(&mut self, path: &str) -> Result<(), String> {
@@ -595,7 +715,7 @@ impl State {
             const PRELOAD_WAIT: Duration = Duration::from_secs(120);
             while self.model_preload_inflight.contains(&key) && wait_started.elapsed() < PRELOAD_WAIT
             {
-                self.poll_and_advance_model_preloads(64);
+                self.poll_and_advance_model_preloads(MODEL_GPU_PARTS_PER_FRAME);
                 if self.static_model_cache.contains_key(&key) {
                     let ready_msg = format!(
                         "Modelo «{display_name}» listo (espera {} ms)",
@@ -625,16 +745,25 @@ impl State {
         log::info!("{sync_msg}");
         send_load_progress(&sync_msg, None, None);
         let path_buf = Path::new(&key);
-        let (parts, anim_asset) = preload_model_cpu_bundle(path_buf)?;
+        let (mut parts, anim_asset, _) = preload_model_cpu_bundle(path_buf, false)?;
         if parts.is_empty() {
             return Err(format!("Modelo vacío: {key}"));
         }
-
-        let cached_parts = self.upload_cpu_parts_to_static_cache(&key, parts, "sync");
-        self.static_model_cache.insert(key.clone(), cached_parts);
-        if let Some(asset) = anim_asset {
-            self.model_assets.insert(key, asset);
+        for part in &mut parts {
+            Self::pivot_static_mesh_for_editor(part);
         }
+        self.model_preload_gpu_queue.push(PendingGpuModelPreload {
+            path: key.clone(),
+            parts,
+            uploaded: Vec::new(),
+            anim_asset,
+            warm_play_character: false,
+            pending_part_mesh_idx: None,
+            defer_flush_path: None,
+            play_character_warm_only: false,
+            play_character_parts: None,
+        });
+        self.wait_for_static_model_cache(&key);
         let done_msg = format!(
             "Modelo «{display_name}» listo en GPU (+{} ms)",
             sync_started.elapsed().as_millis()

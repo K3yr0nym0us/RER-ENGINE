@@ -38,6 +38,21 @@ pub(crate) struct CpuModelMeshPart {
     pub(crate) height: u32,
     pub(crate) forward_xz: glam::Vec2,
     pub(crate) local_bounds: ([f32; 3], [f32; 3]),
+    /// Mips 1024² precalculados en hilo de precarga (evita resize/mips en subida GPU).
+    pub(crate) layer_mips: Option<Vec<Vec<u8>>>,
+}
+
+pub(crate) fn prepare_cpu_part_texture_for_gpu(part: &mut CpuModelMeshPart) {
+    if part.layer_mips.is_some() {
+        return;
+    }
+    part.layer_mips = Some(crate::texture::build_layer_mip_chain(
+        &part.rgba,
+        part.width,
+        part.height,
+    ));
+    part.width = crate::texture::TextureArray::TEXTURE_SIZE;
+    part.height = crate::texture::TextureArray::TEXTURE_SIZE;
 }
 
 /// Estima hacia dónde "mira" la malla en XZ (tras centrar/normalizar). Usado por glTF/GLB y estimación FBX.
@@ -240,12 +255,15 @@ pub(crate) fn load_model_file_cpu(
 }
 
 /// Precarga en hilo: un solo `gltf::import` para malla y, si aplica, asset animado.
+/// Si `warm_play_character`, también parsea la variante jugador en el mismo hilo.
 pub(crate) fn preload_model_cpu_bundle(
     path: &Path,
+    warm_play_character: bool,
 ) -> Result<
     (
         Vec<CpuModelMeshPart>,
         Option<Arc<model_asset::ModelAsset>>,
+        Option<Vec<CpuModelMeshPart>>,
     ),
     String,
 > {
@@ -255,26 +273,53 @@ pub(crate) fn preload_model_cpu_bundle(
         .unwrap_or("")
         .to_ascii_lowercase();
 
-    match ext.as_str() {
+    let result = match ext.as_str() {
         "glb" | "gltf" => {
             let file = model_asset::import_gltf(path)?;
             let parts = load_gltf_cpu_from_file(&file, None)?;
+            let play_parts = if warm_play_character {
+                Some(load_gltf_cpu_from_file(
+                    &file,
+                    Some(crate::config_3d::character_anchor::PLAY_CHARACTER_BODY_HEIGHT),
+                )?)
+            } else {
+                None
+            };
             let anim_asset = if model_asset::gltf_needs_model_asset(&file) {
                 model_asset::load_model_asset_from_gltf(&file, None)
             } else {
                 None
             };
-            Ok((parts, anim_asset))
+            Ok((parts, anim_asset, play_parts))
         }
         "fbx" => {
             let parts = load_fbx_cpu(path, None)?;
+            let play_parts = if warm_play_character {
+                Some(load_fbx_cpu(
+                    path,
+                    Some(crate::config_3d::character_anchor::PLAY_CHARACTER_BODY_HEIGHT),
+                )?)
+            } else {
+                None
+            };
             let anim_asset = model_asset::load_model_asset(path, None);
-            Ok((parts, anim_asset))
+            Ok((parts, anim_asset, play_parts))
         }
         other => Err(format!(
             "formato no soportado: .{other} (usa .glb, .gltf o .fbx)"
         )),
-    }
+    };
+    result.map(|(mut parts, anim, mut play_parts)| {
+        for part in &mut parts {
+            prepare_cpu_part_texture_for_gpu(part);
+        }
+        if let Some(play) = play_parts.as_mut() {
+            for part in play.iter_mut() {
+                prepare_cpu_part_texture_for_gpu(part);
+            }
+        }
+        (parts, anim, play_parts)
+    })
 }
 
 fn white_pixel() -> (Vec<u8>, u32, u32) {
@@ -636,6 +681,7 @@ pub(crate) fn load_gltf_cpu_from_file(
             rgba: p.rgba,
             width: p.width,
             height: p.height,
+            layer_mips: None,
         })
         .collect())
 }
@@ -927,6 +973,7 @@ fn load_fbx_cpu(
         rgba,
         width: tex_w,
         height: tex_h,
+        layer_mips: None,
     }])
 }
 

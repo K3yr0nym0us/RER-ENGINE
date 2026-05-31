@@ -116,10 +116,15 @@ impl TextureArray {
 
     pub fn pack(&mut self, queue: &wgpu::Queue, rgba: &[u8], w: u32, h: u32) -> TextureLayer {
         let rgba = resize_rgba_to_layer(rgba, w, h, self.width, self.height);
-        self.upload_layer(queue, &rgba)
+        self.upload_layer_from_mips(queue, &generate_mip_chain(&rgba, self.width, self.height))
     }
 
-    fn upload_layer(&mut self, queue: &wgpu::Queue, rgba: &[u8]) -> TextureLayer {
+    /// Sube mips ya preparados en CPU (p. ej. hilo de precarga de modelos).
+    pub fn pack_prepared_mips(&mut self, queue: &wgpu::Queue, mips: &[Vec<u8>]) -> TextureLayer {
+        self.upload_layer_from_mips(queue, mips)
+    }
+
+    fn upload_layer_from_mips(&mut self, queue: &wgpu::Queue, mips: &[Vec<u8>]) -> TextureLayer {
         if self.next_layer >= self.max_layers {
             log::error!(
                 "[TextureArray] array lleno ({} capas) — usando fallback",
@@ -128,13 +133,17 @@ impl TextureArray {
             return Self::fallback_layer();
         }
         let layer = self.next_layer;
-        self.write_layer(queue, rgba, layer);
+        self.write_layer_mips(queue, mips, layer);
         self.next_layer += 1;
         layer
     }
 
-    fn write_layer(&self, queue: &wgpu::Queue, rgba: &[u8], layer: TextureLayer) {
+    fn upload_layer(&mut self, queue: &wgpu::Queue, rgba: &[u8]) -> TextureLayer {
         let mips = generate_mip_chain(rgba, self.width, self.height);
+        self.upload_layer_from_mips(queue, &mips)
+    }
+
+    fn write_layer_mips(&self, queue: &wgpu::Queue, mips: &[Vec<u8>], layer: TextureLayer) {
         for (level, mip_data) in mips.iter().enumerate() {
             let mip_w = (self.width >> level).max(1);
             let mip_h = (self.height >> level).max(1);
@@ -165,16 +174,6 @@ impl TextureArray {
     }
 }
 
-fn mip_level_count(size: u32) -> u32 {
-    let mut levels = 1u32;
-    let mut s = size;
-    while s > 1 {
-        s /= 2;
-        levels += 1;
-    }
-    levels
-}
-
 fn generate_mip_chain(base: &[u8], base_w: u32, base_h: u32) -> Vec<Vec<u8>> {
     let mut chain = vec![base.to_vec()];
     let mut cw = base_w;
@@ -199,6 +198,28 @@ fn generate_mip_chain(base: &[u8], base_w: u32, base_h: u32) -> Vec<Vec<u8>> {
         }
     }
     chain
+}
+
+fn mip_level_count(size: u32) -> u32 {
+    let mut levels = 1u32;
+    let mut s = size;
+    while s > 1 {
+        s /= 2;
+        levels += 1;
+    }
+    levels
+}
+
+/// Resize a 1024² + cadena de mips en CPU (hilo de precarga de modelos).
+pub(crate) fn build_layer_mip_chain(rgba: &[u8], w: u32, h: u32) -> Vec<Vec<u8>> {
+    let layer = resize_rgba_to_layer(
+        rgba,
+        w,
+        h,
+        TextureArray::TEXTURE_SIZE,
+        TextureArray::TEXTURE_SIZE,
+    );
+    generate_mip_chain(&layer, TextureArray::TEXTURE_SIZE, TextureArray::TEXTURE_SIZE)
 }
 
 fn solid_white_rgba() -> Vec<u8> {

@@ -13,6 +13,7 @@ use crate::ipc::{
 };
 
 use super::State;
+use crate::config_3d::static_model_cache::MODEL_GPU_PARTS_PER_FRAME;
 
 const SCRIPT_FILE_PREFIX: &str = "@file:";
 const DEFAULT_LIGHT_AMBIENT: f32 = 0.06;
@@ -841,7 +842,7 @@ fn upsert_model_store_entry(
 }
 
 fn ensure_model_cached(state: &mut State, path: &str) -> bool {
-    state.poll_and_advance_model_preloads(64);
+    state.poll_and_advance_model_preloads(MODEL_GPU_PARTS_PER_FRAME);
     match state.ensure_static_model_cached(path) {
         Ok(()) => true,
         Err(err) => {
@@ -950,7 +951,7 @@ fn kickoff_preload_models_for_save(
         state.start_model_preload(key, label, warm_play);
         started += 1;
     }
-    state.poll_and_advance_model_preloads(64);
+    state.poll_and_advance_model_preloads(MODEL_GPU_PARTS_PER_FRAME);
     if started == 0 {
         log::info!("Modelos 3D ya en caché, sin precarga nueva");
     }
@@ -988,7 +989,7 @@ fn restore_player_from_manifest(
         if !ensure_model_cached(state, path) {
             log::warn!("[restore] no se pudo precargar modelo jugador: {path}");
         }
-        state.poll_and_advance_model_preloads(256);
+        state.poll_and_advance_model_preloads(MODEL_GPU_PARTS_PER_FRAME);
     }
 
     let id = state.ensure_play_character_shell(
@@ -1300,7 +1301,7 @@ fn apply_loaded_proyect_3d(state: &mut State, project: &ProjectSaveData) -> Resu
     let mut model_load_queue: Vec<(String, PendingRestore)> = Vec::new();
 
     for entity in &view.entities {
-        state.poll_and_advance_model_preloads(64);
+        state.poll_and_advance_model_preloads(MODEL_GPU_PARTS_PER_FRAME);
         let transform = resolve_saved_entity_transform(entity);
         let pending = build_generic_pending_restore(entity, transform, blueprints);
 
@@ -1370,7 +1371,7 @@ fn apply_loaded_proyect_3d(state: &mut State, project: &ProjectSaveData) -> Resu
 
     if burst_load_planned {
         log::info!("Instanciando modelos 3D (carga por lotes)…");
-        state.poll_and_advance_model_preloads(64);
+        state.poll_and_advance_model_preloads(MODEL_GPU_PARTS_PER_FRAME);
         for model in &view.models {
             if !model.path.trim().is_empty() {
                 upsert_model_store_entry(
@@ -1391,7 +1392,7 @@ fn apply_loaded_proyect_3d(state: &mut State, project: &ProjectSaveData) -> Resu
         }
 
         for (path, pending) in model_load_queue {
-            state.poll_and_advance_model_preloads(64);
+            state.poll_and_advance_model_preloads(MODEL_GPU_PARTS_PER_FRAME);
             if !ensure_model_cached(state, &path) {
                 continue;
             }
