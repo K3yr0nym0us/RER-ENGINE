@@ -3,7 +3,7 @@
 ENTITES_TYPES:
   environment: category environment # Entorno (Paredes, suelos, techos, etc.)
   character:   category character   # Personajes (NPC, Enemigos, animales, etc.) 
-  player:      category player      # Modelo visual reemplazable (rectangulo vertical)
+  player:      category player      # Modelo visual reemplazable; manifest .save FP: position = pies, scale/rotation del save
   object:      category object      # Objetos del mundo (Cajas, mesas, sillas, etc.)
   sun:         category sun         # Sol (Dirección y color de la luz)
   ground:      category ground      # Suelo (Placeholder visual cuadriculado + colision)

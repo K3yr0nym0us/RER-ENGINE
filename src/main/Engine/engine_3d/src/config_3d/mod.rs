@@ -453,50 +453,39 @@ impl State {
         }
 
         if is_play_character {
-            self.register_or_update_visual_model_meta(id, path, true);
-            self.play_character_mesh_forward_xz = part.forward_xz;
-            if is_fbx_model_path(path) {
-                if let Some(skin_fwd) = model_asset::fbx_skinned_play_forward_xz(
-                    Path::new(path),
-                    PLAY_CHARACTER_BODY_HEIGHT,
-                ) {
-                    self.play_character_mesh_forward_xz = skin_fwd;
-                }
+            if self.install_play_character_visual_from_path(id, path).is_err() {
+                return false;
             }
-            self.physics.remove_entity_body(id);
-        } else {
-            self.register_or_update_visual_model_meta(id, path, false);
+            if self.restoring_save_manifest {
+                log::info!(
+                    "Mesh jugador instalado desde caché (restore manifest, sin auto-escala): {mesh_cache_key}"
+                );
+                return true;
+            }
+            if self.should_apply_play_character_mesh_collision(id, path) {
+                self.apply_play_character_model_placement_after_load(
+                    id,
+                    path,
+                    part.local_bounds,
+                );
+                self.sync_play_character_body_rotation_after_mesh_assign();
+            }
+            if self.should_apply_play_character_mesh_collision(id, path) {
+                self.finish_play_character_model_replace(id, path);
+            }
+            self.emit_entity_model_replaced_for_play_character(id, &asset_key);
+            log::info!(
+                "Modelo reemplazado desde caché en entidad {id}: {mesh_cache_key}"
+            );
+            return true;
         }
 
-        if self.should_apply_play_character_mesh_collision(id, path) {
-            self.apply_play_character_model_placement_after_load(id, path, part.local_bounds);
-            self.sync_play_character_body_rotation_after_mesh_assign();
-        } else if !is_play_character {
-            self.reconcile_entity_physics_after_model_replace(id);
-        }
-
+        self.register_or_update_visual_model_meta(id, path, false);
         self.try_bind_model_animations(id, &asset_key);
-        if is_play_character {
-            if let Some(asset) = self.model_assets.get(&asset_key) {
-                if is_fbx_model_path(path) {
-                    self.play_character_mesh_forward_xz =
-                        model_asset::resolve_fbx_play_character_forward_xz(asset);
-                } else if is_gltf_model_path(path) {
-                    self.play_character_mesh_forward_xz =
-                        model_asset::resolve_gltf_play_character_forward_xz(asset);
-                }
-            }
-            self.sync_play_character_body_rotation_after_mesh_assign();
-        }
-        if self.should_apply_play_character_mesh_collision(id, path) {
-            self.finish_play_character_model_replace(id, path);
-        } else if !is_play_character {
-            self.reconcile_entity_physics_after_model_replace(id);
-        }
-
+        self.reconcile_entity_physics_after_model_replace(id);
         let (position, rotation, scale) = match self.world.get::<Transform>(id) {
             Some(t) => (
-                Some(self.play_character_feet_position().to_array()),
+                Some(t.position.to_array()),
                 Some([
                     t.rotation.x,
                     t.rotation.y,
@@ -590,6 +579,61 @@ impl State {
             self.physics.remove_entity_body(id);
         } else {
             self.register_or_update_visual_model_meta(id, path, false);
+        }
+
+        if is_play_character && self.restoring_save_manifest {
+            self.play_character_mesh_extents =
+                Some(crate::config_3d::character_anchor::PlayCharacterMeshExtents::from_local_bounds(
+                    part.local_bounds.0,
+                    part.local_bounds.1,
+                ));
+            self.model_assets.remove(path);
+            self.try_bind_model_animations_with_gltf(id, path, gltf_file.as_ref());
+            if let Some(asset) = self.model_assets.get(path) {
+                if is_fbx_model_path(path) {
+                    self.play_character_mesh_forward_xz =
+                        model_asset::resolve_fbx_play_character_forward_xz(asset);
+                } else if is_gltf_model_path(path) {
+                    self.play_character_mesh_forward_xz =
+                        model_asset::resolve_gltf_play_character_forward_xz(asset);
+                }
+            }
+            let asset_key = self.model_path_key(path);
+            let play_key =
+                crate::config_3d::static_model_cache::play_character_cache_key(&asset_key);
+            if !self.static_model_cache.contains_key(&play_key) {
+                self.static_model_cache.insert(
+                    play_key,
+                    vec![crate::config_3d::static_model_cache::CachedStaticModelPart {
+                        mesh_idx,
+                        tex_idx,
+                        local_bounds: part.local_bounds,
+                        forward_xz: part.forward_xz,
+                    }],
+                );
+            }
+            let (position, rotation, scale) = match self.world.get::<Transform>(id) {
+                Some(t) => (
+                    Some(self.play_character_feet_position().to_array()),
+                    Some([
+                        t.rotation.x,
+                        t.rotation.y,
+                        t.rotation.z,
+                        t.rotation.w,
+                    ]),
+                    Some(t.scale.to_array()),
+                ),
+                None => (None, None, None),
+            };
+            send_event(&EngineEvent::EntityModelReplaced {
+                id,
+                path: path.to_string(),
+                position,
+                rotation,
+                scale,
+            });
+            log::info!("[restore] mesh jugador cargado sin pipeline editor: {path}");
+            return;
         }
 
         if self.should_apply_play_character_mesh_collision(id, path) {

@@ -6,10 +6,10 @@ use std::time::Instant;
 use serde::{Deserialize, Serialize};
 
 use crate::ipc::{
-    send_load_progress, send_project_load_3d_complete_event, send_project_loaded_3d_event,
-    AnimScriptData, AnimationFrameData, ControlBindingsData, ControlScriptData, EngineCommand,
-    EntityRestorePhysics, EntityRestoreTransform, ImportSceneSprite, ProjectLoaded3dEvent,
-    ProjectLoaded3dSceneTab, ProjectLoaded3dWorld,
+    send_event, send_load_progress, send_project_load_3d_complete_event,
+    send_project_loaded_3d_event, AnimScriptData, AnimationFrameData, ControlBindingsData,
+    ControlScriptData, EngineCommand, EngineEvent, EntityRestorePhysics, EntityRestoreTransform,
+    ImportSceneSprite, ProjectLoaded3dEvent, ProjectLoaded3dSceneTab, ProjectLoaded3dWorld,
 };
 
 use super::State;
@@ -972,72 +972,133 @@ fn load_project_asset_stores(state: &mut State, project: &ProjectSaveData) {
     }
 }
 
-/// Alinea cámara orbital + FPS antes de `load_character` (evita rotación por defecto).
-fn preset_spawn_camera_from_config(
+/// Restaura jugador FP desde manifest: mesh sin auto-escala, transform y cámara del save.
+fn restore_player_from_manifest(
     state: &mut State,
-    feet: [f32; 3],
+    player: &SavedEntity3D,
     cam: &SavedConfigCamera,
 ) {
     use crate::config_3d::character_anchor::{
         PLAY_CHARACTER_EDITOR_ORBIT_PITCH, PLAY_CHARACTER_EDITOR_ORBIT_YAW,
     };
 
-    state.camera.target = glam::Vec3::from_array(feet);
-    let orbit_yaw = cam.yaw.unwrap_or(PLAY_CHARACTER_EDITOR_ORBIT_YAW);
-    let orbit_pitch = cam.pitch.unwrap_or(PLAY_CHARACTER_EDITOR_ORBIT_PITCH);
-    state.editor_viewport_yaw = orbit_yaw;
-    state.editor_viewport_pitch = orbit_pitch;
-    let cam_yaw = cam.fps_camera_yaw.unwrap_or(orbit_yaw);
-    let cam_pitch = cam
-        .fps_camera_pitch
-        .unwrap_or(orbit_pitch)
-        .clamp(
-            -std::f32::consts::FRAC_PI_2 + 0.05,
-            std::f32::consts::FRAC_PI_2 - 0.05,
-        );
-    state.camera.yaw = cam_yaw;
-    state.camera.pitch = cam_pitch;
+    let pending = build_player_pending_restore_from_entity(player);
+    let visual = pending.visual_model_path.clone();
+
+    if let Some(ref path) = visual {
+        if !ensure_model_cached(state, path) {
+            log::warn!("[restore] no se pudo precargar modelo jugador: {path}");
+        }
+        state.poll_and_advance_model_preloads(256);
+    }
+
+    let id = state.ensure_play_character_shell(
+        &player.name,
+        "[Player]",
+        visual.as_deref(),
+    );
+
+    if let Some(ref path) = visual {
+        match state.install_play_character_visual_from_path(id, path) {
+            Ok(asset_key) => {
+                log::info!("[restore] mesh jugador desde manifest: {path}");
+                state.emit_entity_model_replaced_for_play_character(id, &asset_key);
+            }
+            Err(e) => log::error!("[restore] mesh jugador: {e}"),
+        }
+    }
+
+    let feet = player_manifest_position_as_feet(state, player);
+    let feet_v = glam::Vec3::from_array(feet);
+    let rot_q = player
+        .rotation
+        .map(|r| glam::Quat::from_xyzw(r[0], r[1], r[2], r[3]));
+    let scale = glam::Vec3::from_array(player.scale);
+    state.apply_play_character_transform_editor(id, None, rot_q, Some(scale));
+    if let Some(ref path) = visual {
+        if let Some(bounds) = state.play_character_visual_local_bounds(path) {
+            state.place_play_character_at_world_feet_with_bounds(id, bounds, feet_v, false);
+        } else {
+            state.place_play_character_at_world_feet(id, path, feet_v, false);
+        }
+    } else {
+        state.set_play_character_feet_position(feet_v);
+    }
+
+    let physics = if pending.physics_enabled {
+        Some(EntityRestorePhysics {
+            enabled: true,
+            body_type: pending.physics_type.clone(),
+        })
+    } else {
+        None
+    };
+    state.apply_entity_restore_inner(
+        id,
+        pending.name.clone(),
+        &pending.transform,
+        physics.as_ref(),
+        pending.control_bindings.as_ref(),
+        true,
+        true,
+    );
+    apply_entity_scripts(state, id, pending.scripts.as_deref());
+    apply_entity_animations(state, id, pending.animations.as_deref());
+    state.entity_colision.insert(id, pending.colision);
+    state.ensure_play_character_kinematic_only();
+    state.reconcile_entity_physics_with_mesh(id);
+
+    let follow_mode = cam.camera_follow_mode.as_deref().map(|m| match m {
+        "follow_character" => crate::ipc::PlayCameraFollowMode::FollowCharacter,
+        _ => crate::ipc::PlayCameraFollowMode::MoveWithCharacter,
+    });
+    let yaw = cam.yaw.unwrap_or(PLAY_CHARACTER_EDITOR_ORBIT_YAW);
+    let pitch = cam.pitch.unwrap_or(PLAY_CHARACTER_EDITOR_ORBIT_PITCH);
+    state.apply_play_character_view(
+        feet,
+        yaw,
+        pitch,
+        cam.fov_y,
+        cam.frustum_distance,
+        follow_mode,
+        player.rotation,
+        Some(player.scale),
+        cam.camera_eye_position,
+        cam.fps_camera_yaw,
+        cam.fps_camera_pitch,
+    );
     if let Some(eye) = cam.camera_eye_position {
         state.play_camera_eye_position = glam::Vec3::from_array(eye);
+        state.capture_play_camera_follow_offset();
     }
-}
-
-/// Misma secuencia que `character_loaded` + restore del jugador en manifest.
-fn spawn_player_from_pending(
-    state: &mut State,
-    pending: &PendingRestore,
-    player_entity: Option<&SavedEntity3D>,
-    config_camera: Option<&SavedConfigCamera>,
-) {
-    if let (Some(entity), Some(cam)) = (player_entity, config_camera) {
-        if is_model_3d_path(&entity.model) {
-            restore_play_character_mesh_extents_from_model(state, &entity.model);
+    if let Some(rot) = player.rotation {
+        let rot_q = glam::Quat::from_xyzw(rot[0], rot[1], rot[2], rot[3]);
+        state.apply_play_character_transform_editor(id, None, Some(rot_q), None);
+        if state.uses_editor_viewport_camera() {
+            state.ensure_editor_camera_entity();
+            state.sync_editor_camera_entity_from_viewport();
         }
-        let feet = player_manifest_position_as_feet(state, entity);
-        preset_spawn_camera_from_config(state, feet, cam);
+    }
+    if let Some(ref path) = visual {
+        if let Some(bounds) = state.play_character_visual_local_bounds(path) {
+            state.place_play_character_at_world_feet_with_bounds(id, bounds, feet_v, false);
+        }
     }
 
-    let needs_spawn = state
-        .play_character_entity
-        .filter(|&id| state.world.get::<crate::ecs::Transform>(id).is_some())
-        .is_none();
-    if needs_spawn {
-        state.load_character("[Player]");
-    } else {
-        log::info!(
-            "[load_proyect] reutilizando jugador existente id={:?}",
-            state.play_character_entity
-        );
-    }
-    let Some(id) = state.play_character_entity.filter(|&id| id != 0) else {
-        return;
-    };
+    let char_path = visual.as_deref().unwrap_or("[Player]");
+    send_event(&EngineEvent::CharacterLoaded {
+        id,
+        path: char_path.to_string(),
+    });
+    state.emit_play_character_view_changed(true);
 
-    let skip_transform = player_entity.is_some();
-    let omit_scale = false;
-
-    apply_full_entity_restore(state, id, pending, "[Player]", skip_transform, omit_scale);
-    state.ensure_play_character_kinematic_only();
+    let feet = state.play_character_feet_position();
+    log::info!(
+        "Jugador restaurado desde manifest en [{:.2}, {:.2}, {:.2}]",
+        feet.x,
+        feet.y,
+        feet.z
+    );
 }
 
 fn spawn_entity_after_load_model_single(
@@ -1133,8 +1194,14 @@ fn apply_saved_play_character_view(
 fn apply_loaded_proyect_3d(state: &mut State, project: &ProjectSaveData) -> Result<ActiveSaveView, String> {
     let load_started_at = Instant::now();
     let mut step_started = Instant::now();
-
-    let view = pick_active_save_view(project)?;
+    state.restoring_save_manifest = true;
+    let view = match pick_active_save_view(project) {
+        Ok(v) => v,
+        Err(e) => {
+            state.restoring_save_manifest = false;
+            return Err(e);
+        }
+    };
     let open_msg = format!(
         "Abriendo escena «{}» ({} entidades)…",
         view.sceneName,
@@ -1346,36 +1413,26 @@ fn apply_loaded_proyect_3d(state: &mut State, project: &ProjectSaveData) -> Resu
     }
 
     if game_style == "first-person" {
-        if let Some(ref player_entity) = saved_player {
-            state.play_character_restore_in_progress = true;
-            let pending = build_player_pending_restore_from_entity(player_entity);
-            spawn_player_from_pending(
-                state,
-                &pending,
-                Some(player_entity),
-                saved_config_camera.as_ref(),
-            );
-        } else {
-            log::error!("[load_proyect] first-person requiere player en manifest");
+        match (saved_player.as_ref(), saved_config_camera.as_ref()) {
+            (Some(player_entity), Some(cam)) => {
+                restore_player_from_manifest(state, player_entity, cam);
+            }
+            (Some(_), None) => {
+                log::error!("[load_proyect] first-person requiere config_camera en manifest");
+            }
+            (None, _) => {
+                log::error!("[load_proyect] first-person requiere player en manifest");
+            }
         }
+    } else if let (Some(player_entity), Some(cam)) =
+        (saved_player.as_ref(), saved_config_camera.as_ref())
+    {
+        apply_saved_play_character_view(state, player_entity, cam);
     }
 
     if burst_load_planned {
         log_load_step(load_started_at, &mut step_started, "Modelos 3D instanciados");
     }
-
-    if let (Some(player_entity), Some(cam)) = (saved_player.as_ref(), saved_config_camera.as_ref())
-    {
-        apply_saved_play_character_view(state, player_entity, cam);
-        let feet = state.play_character_feet_position();
-        log::info!(
-            "Jugador colocado en [{:.2}, {:.2}, {:.2}]",
-            feet.x,
-            feet.y,
-            feet.z
-        );
-    }
-    state.play_character_restore_in_progress = false;
 
     if let (Some(player_entity), Some(id)) = (saved_player.as_ref(), state.play_character_entity) {
         if let Some(bindings) = map_control_bindings(player_entity.controls.as_ref()) {
@@ -1399,6 +1456,7 @@ fn apply_loaded_proyect_3d(state: &mut State, project: &ProjectSaveData) -> Resu
         None,
         Some(load_started_at.elapsed().as_millis() as u64),
     );
+    state.restoring_save_manifest = false;
     Ok(view)
 }
 

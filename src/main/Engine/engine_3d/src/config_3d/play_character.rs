@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use glam::Vec3;
 
 use crate::config_3d::character_anchor::{
@@ -7,6 +9,7 @@ use crate::config_3d::character_anchor::{
 };
 use crate::entity_save_meta::is_model_3d_asset_path;
 use crate::config_3d::model_asset;
+use crate::config_3d::{is_fbx_model_path, is_gltf_model_path};
 use crate::config_3d::static_model_cache::play_character_cache_key;
 use crate::config_3d::physics_3d::PhysicsWorld;
 use crate::ecs::{EntityId, MeshComponent, Transform};
@@ -270,11 +273,6 @@ impl State {
         let bounds = self
             .play_character_visual_local_bounds(model_path)
             .unwrap_or(local_bounds);
-        if self.play_character_restore_in_progress {
-            self.play_character_mesh_extents =
-                Some(PlayCharacterMeshExtents::from_local_bounds(bounds.0, bounds.1));
-            return;
-        }
         self.sync_play_character_scale_to_body_height(id, model_path);
         self.apply_play_character_mesh_ground_extents(id, bounds);
         if let Some(t) = self.world.get_mut::<Transform>(id) {
@@ -304,36 +302,43 @@ impl State {
 
     /// Tras `replace_entity_model` / bind de animación: alinea transform, cámara y notifica al front.
     pub(crate) fn finish_play_character_model_replace(&mut self, id: EntityId, model_path: &str) {
-        if self.play_character_restore_in_progress {
-            if let Some((min, max)) = self.play_character_visual_local_bounds(model_path) {
-                self.play_character_mesh_extents =
-                    Some(PlayCharacterMeshExtents::from_local_bounds(min, max));
-            }
-            self.emit_play_character_view_changed(true);
-            return;
-        }
         self.sync_play_character_scale_to_body_height(id, model_path);
         self.align_play_character_transform_to_visual_mesh(id, model_path);
         self.emit_play_character_view_changed(true);
     }
 
-    /// Alinea `Transform.position` (origen de entidad) para que los pies de la malla toquen el suelo.
-    pub(crate) fn align_play_character_transform_to_visual_mesh(
+    /// Bounds para colocación: bind pose skinned (lo que dibuja el motor), no solo caché estática.
+    fn play_character_placement_bounds(&self, model_path: &str) -> Option<([f32; 3], [f32; 3])> {
+        self.play_character_visual_local_bounds(model_path).or_else(|| {
+            let asset_key = self.model_path_key(model_path);
+            let play_key = play_character_cache_key(&asset_key);
+            self.static_model_cache
+                .get(&play_key)
+                .and_then(|parts| parts.first())
+                .map(|p| p.local_bounds)
+        })
+    }
+
+    /// Fija `Transform.position` según pies en mundo y AABB local (pivote malla normalizada).
+    pub(crate) fn place_play_character_at_world_feet_with_bounds(
         &mut self,
         id: EntityId,
-        model_path: &str,
+        local_bounds: ([f32; 3], [f32; 3]),
+        world_feet: Vec3,
+        snap_to_ground: bool,
     ) {
-        let Some((min, max)) = self.play_character_visual_local_bounds(model_path) else {
-            return;
-        };
-        let extents = PlayCharacterMeshExtents::from_local_bounds(min, max);
+        let extents = PlayCharacterMeshExtents::from_local_bounds(local_bounds.0, local_bounds.1);
         self.play_character_mesh_extents = Some(extents);
 
         let Some(t) = self.world.get::<Transform>(id).cloned() else {
             return;
         };
-        let world_feet_mesh = t.position + extents.feet_world_offset(t.scale, t.rotation);
-        let world_feet = self.snap_play_character_feet_to_ground(world_feet_mesh);
+        let world_feet = if snap_to_ground {
+            self.snap_play_character_feet_to_ground(world_feet)
+        } else {
+            world_feet
+        };
+        // Misma fórmula que `align_play_character_transform_to_visual_mesh` (skinned usa este pivote).
         let new_position = world_feet - extents.feet_world_offset(t.scale, t.rotation);
 
         let old_feet = self.play_character_feet_position();
@@ -345,12 +350,47 @@ impl State {
             self.sync_play_camera_on_player_feet_moved(old_feet, new_feet);
         }
         self.camera.target = new_feet;
-        if !self.is_play_controller_active() {
-            let body_h = self.play_character_visual_world_height();
-            let body_center = new_feet + glam::Vec3::new(0.0, body_h * 0.5, 0.0);
-            self.init_editor_viewport_for_player(body_center);
+        if snap_to_ground {
+            if !self.is_play_controller_active() {
+                let body_h = self.play_character_visual_world_height();
+                let body_center = new_feet + glam::Vec3::new(0.0, body_h * 0.5, 0.0);
+                self.init_editor_viewport_for_player(body_center);
+            }
+            self.play_camera_eye_position = new_feet + self.play_character_eye_world_offset();
         }
-        self.play_camera_eye_position = new_feet + self.play_character_eye_world_offset();
+    }
+
+    /// Colocación en carga `.save` (bounds visuales / skinned, sin snap al suelo).
+    pub(crate) fn place_play_character_at_world_feet(
+        &mut self,
+        id: EntityId,
+        model_path: &str,
+        world_feet: Vec3,
+        snap_to_ground: bool,
+    ) {
+        let Some(bounds) = self.play_character_placement_bounds(model_path) else {
+            self.set_play_character_feet_position(world_feet);
+            self.camera.target = world_feet;
+            return;
+        };
+        self.place_play_character_at_world_feet_with_bounds(id, bounds, world_feet, snap_to_ground);
+    }
+
+    /// Alinea `Transform.position` (origen de entidad) para que los pies de la malla toquen el suelo.
+    pub(crate) fn align_play_character_transform_to_visual_mesh(
+        &mut self,
+        id: EntityId,
+        model_path: &str,
+    ) {
+        let Some(bounds) = self.play_character_visual_local_bounds(model_path) else {
+            return;
+        };
+        let extents = PlayCharacterMeshExtents::from_local_bounds(bounds.0, bounds.1);
+        let Some(t) = self.world.get::<Transform>(id).cloned() else {
+            return;
+        };
+        let world_feet_mesh = t.position + extents.feet_world_offset(t.scale, t.rotation);
+        self.place_play_character_at_world_feet_with_bounds(id, bounds, world_feet_mesh, true);
     }
 
     /// Solo FBX: AABB para cápsula de suelo y `Transform.position` en los pies.
@@ -391,6 +431,135 @@ impl State {
             out.y = ground_y;
         }
         out
+    }
+
+    /// Crea o reutiliza entidad jugador sin `setup_play_character_entity` (sin órbita/rotación por defecto).
+    pub(crate) fn ensure_play_character_shell(
+        &mut self,
+        display_name: &str,
+        marker_path: &str,
+        visual_model_path: Option<&str>,
+    ) -> EntityId {
+        if let Some(id) = self.play_character_entity {
+            if self.world.get::<Transform>(id).is_some() {
+                if !self.character_entities.contains(&id) {
+                    self.character_entities.push(id);
+                }
+                if !self.scenario_entities.contains(&id) {
+                    self.scenario_entities.push(id);
+                }
+                return id;
+            }
+        }
+        let label = if display_name.trim().is_empty() {
+            "Player"
+        } else {
+            display_name
+        };
+        let id = self.world.spawn(Some(label));
+        log::info!("[restore] jugador creado id={id}");
+        self.character_entities.push(id);
+        self.scenario_entities.push(id);
+        self.play_character_entity = Some(id);
+        self.play_character_mesh_forward_xz = glam::Vec2::new(0.0, 1.0);
+        self.play_character_mesh_extents = None;
+        self.attach_play_character_body(id);
+        self.init_play_character_common_state(id);
+        self.save_registry.register_meta(
+            id,
+            EntitySaveMeta {
+                kind: "character".to_string(),
+                path: marker_path.to_string(),
+                visual_model_path: visual_model_path.map(str::to_string),
+                entity_category: Some("player".to_string()),
+            },
+        );
+        id
+    }
+
+    /// Instala mesh jugador desde caché `::play_character` (FBX/glTF) sin auto-escala ni alineación de editor.
+    pub(crate) fn install_play_character_visual_from_path(
+        &mut self,
+        id: EntityId,
+        path: &str,
+    ) -> Result<String, String> {
+        use crate::config_3d::character_anchor::PLAY_CHARACTER_BODY_HEIGHT;
+
+        let asset_key = self.model_path_key(path);
+        self.ensure_play_character_model_cached(path)?;
+        let mesh_cache_key = play_character_cache_key(&asset_key);
+        let part = self
+            .static_model_cache
+            .get(&mesh_cache_key)
+            .and_then(|parts| parts.first())
+            .copied()
+            .ok_or_else(|| format!("sin malla en caché jugador: {mesh_cache_key}"))?;
+
+        if let Some(mc) = self.world.get_mut::<MeshComponent>(id) {
+            mc.mesh_idx = part.mesh_idx;
+            mc.tex_idx = part.tex_idx;
+        } else {
+            self.world.insert(
+                id,
+                MeshComponent {
+                    mesh_idx: part.mesh_idx,
+                    tex_idx: part.tex_idx,
+                },
+            );
+        }
+
+        self.register_or_update_visual_model_meta(id, path, true);
+        self.play_character_mesh_forward_xz = part.forward_xz;
+        if is_fbx_model_path(path) {
+            if let Some(skin_fwd) = model_asset::fbx_skinned_play_forward_xz(
+                Path::new(path),
+                PLAY_CHARACTER_BODY_HEIGHT,
+            ) {
+                self.play_character_mesh_forward_xz = skin_fwd;
+            }
+        }
+        self.physics.remove_entity_body(id);
+        self.play_character_mesh_extents =
+            Some(PlayCharacterMeshExtents::from_local_bounds(
+                part.local_bounds.0,
+                part.local_bounds.1,
+            ));
+
+        self.try_bind_model_animations(id, &asset_key);
+        if let Some(asset) = self.model_assets.get(&asset_key) {
+            if is_fbx_model_path(path) {
+                self.play_character_mesh_forward_xz =
+                    model_asset::resolve_fbx_play_character_forward_xz(asset);
+            } else if is_gltf_model_path(path) {
+                self.play_character_mesh_forward_xz =
+                    model_asset::resolve_gltf_play_character_forward_xz(asset);
+            }
+        }
+
+        Ok(asset_key)
+    }
+
+    pub(crate) fn emit_entity_model_replaced_for_play_character(&self, id: EntityId, path: &str) {
+        let (position, rotation, scale) = match self.world.get::<Transform>(id) {
+            Some(t) => (
+                Some(self.play_character_feet_position().to_array()),
+                Some([
+                    t.rotation.x,
+                    t.rotation.y,
+                    t.rotation.z,
+                    t.rotation.w,
+                ]),
+                Some(t.scale.to_array()),
+            ),
+            None => (None, None, None),
+        };
+        send_event(&EngineEvent::EntityModelReplaced {
+            id,
+            path: path.to_string(),
+            position,
+            rotation,
+            scale,
+        });
     }
 
     pub(crate) fn attach_play_character_body(&mut self, id: EntityId) {

@@ -180,8 +180,8 @@ pub struct State {
     pub(crate) save_registry: EntitySaveRegistry,
     /// Próximo `load_proyect` monta el manifest sin vaciar (arranque con `.save`).
     pub(crate) mount_save_on_empty_world: bool,
-    /// Carga `.save` FP: no auto-escalar/re-alinear jugador hasta `apply_saved_play_character_view`.
-    pub(crate) play_character_restore_in_progress: bool,
+    /// Carga 3D desde manifest: el jugador no usa pipeline editor (`sync_scale` / `align`).
+    pub(crate) restoring_save_manifest: bool,
     /// Límite de FPS del bucle (sincronizado con `set_target_fps`).
     pub(crate) target_fps: u64,
     /// Entidad icono del sol (luz direccional).
