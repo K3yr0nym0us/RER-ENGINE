@@ -568,11 +568,28 @@ export interface PlayCharacterViewChanged {
   editor_orbit_target?: [number, number, number]
 }
 
+/** Plataforma para métricas GPU del shell Electron (no del motor Rust). */
+export type GpuMetricsPlatform = 'windows' | 'linux' | 'darwin' | 'other'
+
+export interface AppResourceUsage {
+  /** Suma de procesos Chromium/Electron de esta app (no del sistema). */
+  electronCpuPercent: number
+  /** % GPU de procesos Electron por PID (solo implementado en Windows). */
+  electronGpuPercent: number | null
+  gpuMetricsPlatform: GpuMetricsPlatform
+  /** Si esta plataforma puede leer % GPU de procesos Electron (hoy solo Windows). */
+  electronGpuMetricsSupported: boolean
+}
+
 export interface DebugMetrics {
   fps:            number
   frame_time_ms:  number
   draw_calls:     number
   physics_bodies: number
+  /** % CPU del proceso del motor (Rust/wgpu). */
+  cpu_percent?:   number
+  /** % GPU del proceso del motor (contadores por PID; no uso global del SO). */
+  gpu_percent?:   number
   /** 3D: posición de pies del personaje jugable. */
   play_character_position?: [number, number, number]
   play_character_yaw?:     number
@@ -769,6 +786,7 @@ declare global {
       openAudioDialog:         () => Promise<string | null>
       onRequestViewportBounds: (cb: () => void) => void
       onAutoSaveRequest:       (cb: (filePath: string) => void) => void
+      getAppResourceUsage:     () => Promise<AppResourceUsage>
     }
   }
 }

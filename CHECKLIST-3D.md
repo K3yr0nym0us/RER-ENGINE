@@ -18,6 +18,7 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 - [x] Editor: electron-vite, spawn del motor, escenas múltiples, `.save` ZIP
 - [x] `set_bounds`, evento `ready`, multiplex `engine.off()` en preload
 - [x] Undo/redo de **transformaciones** en editor (ambos motores)
+- [x] Panel **Métricas de uso** (FPS, frame time, draw calls, CPU) + GPU **Windows** (contadores por PID, Electron + motor; no % global del SO)
 
 | Plataforma | Viewport overlay |
 |------------|------------------|
@@ -83,6 +84,7 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 
 ### Prioridad media — funcionalidad
 
+- [ ] **Métricas GPU en panel (Linux)** — compatibilizar con el SO objetivo del motor: hoy **Windows** usa contadores `GPU Engine` por PID (Electron en `gpuProcessUsage.ts`, motor en `engine_shared::process_metrics`); en **Linux** el motor solo intenta `nvidia-smi` (NVIDIA); falta lectura Electron en Linux y soporte AMD/Intel en ambos procesos
 - [ ] **Orientación vertical jugador GLB** — validar en FP con GLB Mixamo reales (rest pose esqueleto + bake por pieza; pendiente prueba manual)
 - [ ] **Animaciones 3D (avanzado)** — state machine / hojas tipo Blender; más allá de clips embebidos + reproducción básica
 - [ ] **Blueprints / prefabs 3D** — equivalente unificado al flujo 2D

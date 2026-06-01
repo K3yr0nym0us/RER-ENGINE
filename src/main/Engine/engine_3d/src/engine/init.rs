@@ -824,6 +824,7 @@ impl State {
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
             is_applying_undo: false,
+            process_metrics_sampler: rer_engine_shared::process_metrics::ProcessMetricsSampler::new(),
             metrics_last_emit: Instant::now(),
             metrics_frame_count: 0,
             last_draw_calls: 0,

@@ -301,5 +301,7 @@
   "Engine GPU hint vulkaninfo": "Comprueba Vulkan con `vulkaninfo` o `vkcube` e instala o actualiza los controladores de la GPU.",
   "Engine GPU hint restart": "Reinicia el editor después de instalar drivers.",
   "Show technical details": "Ver detalle técnico",
-  "Hide technical details": "Ocultar detalle técnico"
+  "Hide technical details": "Ocultar detalle técnico",
+
+  "Usage metrics": "Métricas de uso"
 }

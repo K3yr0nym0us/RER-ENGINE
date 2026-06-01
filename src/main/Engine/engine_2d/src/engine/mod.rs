@@ -222,6 +222,7 @@ pub struct State {
     /// Evita registrar nuevas entradas de undo mientras se está aplicando una.
     pub(crate) is_applying_undo: bool,
     // ── Debug metrics ────────────────────────────────────────────────────────
+    process_metrics_sampler: rer_engine_shared::process_metrics::ProcessMetricsSampler,
     metrics_last_emit:   Instant,
     metrics_frame_count: u32,
     last_draw_calls:     u32,

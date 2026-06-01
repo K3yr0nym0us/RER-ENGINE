@@ -18,6 +18,7 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 - [x] Editor: electron-vite, spawn del motor, escenas múltiples, `.save` ZIP
 - [x] `set_bounds`, evento `ready`, multiplex `engine.off()` en preload
 - [x] Undo/redo de **transformaciones** en editor (ambos motores)
+- [x] Panel **Métricas de uso** compartido con 3D (FPS, CPU; GPU **Windows** completo)
 
 | Plataforma | Viewport overlay |
 |------------|------------------|
@@ -76,7 +77,7 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 
 ## Por implementar
 
-_(vacío — ver ítems aplazados en producto si aplica)_
+- [ ] **Métricas GPU en panel (Linux)** — mismo ítem que [CHECKLIST-3D.md](./CHECKLIST-3D.md) (compatibilizar Electron + motor fuera de Windows)
 
 ---
 

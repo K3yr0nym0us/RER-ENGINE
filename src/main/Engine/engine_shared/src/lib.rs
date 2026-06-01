@@ -2,6 +2,7 @@ pub mod editor_defaults;
 pub mod gpu;
 pub mod logging;
 pub mod overlay;
+pub mod process_metrics;
 #[cfg(any(target_os = "windows", target_os = "linux"))]
 pub mod platform;
 

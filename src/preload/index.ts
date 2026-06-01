@@ -5,6 +5,7 @@ import type {
   EngineStartPayload,
   OpenProjectResult,
   ProjectSaveData,
+  AppResourceUsage,
 } from '../shared-types/types'
 
 type EngineEventListener = (event: EngineEvent) => void
@@ -87,5 +88,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onAutoSaveRequest: (cb: (filePath: string) => void): void => {
     ipcRenderer.removeAllListeners('autosave:request')
     ipcRenderer.on('autosave:request', (_event, filePath: string) => cb(filePath))
+  },
+  getAppResourceUsage: (): Promise<AppResourceUsage> => {
+    return ipcRenderer.invoke('get-app-resource-usage')
   },
 })

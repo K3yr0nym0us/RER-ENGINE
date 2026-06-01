@@ -24,6 +24,8 @@ impl State {
                 frame_time_ms:  self.delta_time * 1000.0,
                 draw_calls:     self.last_draw_calls,
                 physics_bodies,
+                cpu_percent:    self.process_metrics_sampler.sample_cpu_percent(),
+                gpu_percent:    self.process_metrics_sampler.sample_gpu_percent(),
             });
             self.metrics_last_emit   = now;
             self.metrics_frame_count = 0;

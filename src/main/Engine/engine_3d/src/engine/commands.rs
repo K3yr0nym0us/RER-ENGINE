@@ -979,10 +979,9 @@ impl State {
                             self.active_tool = ActiveTool::QuickBuildPlace { cursor_world: None };
                             self.tool_overlay_buffer =
                                 crate::gizmo::build_from_vertices(&self.device, &[]);
-                            if let (Some(path), Some(kind), Some(scale)) = (
+                            if let (Some(path), Some(kind)) = (
                                 preview_path.as_deref(),
                                 preview_kind.as_deref(),
-                                preview_scale,
                             ) {
                                 let mut placement_meta =
                                     preview_blueprint.clone().unwrap_or_else(|| {
@@ -993,13 +992,17 @@ impl State {
                                             physics_type: preview_physics_type.clone(),
                                             physics_enabled: preview_physics_enabled,
                                             rotation: preview_rotation,
-                                            scale: Some(scale),
+                                            scale: preview_scale,
                                             blueprint_id: preview_blueprint_id.clone(),
                                             template_name: preview_name.clone(),
                                             scripts: None,
                                             animations: None,
                                         }
                                     });
+                                let scale = preview_scale
+                                    .or(placement_meta.scale)
+                                    .unwrap_or([1.0, 1.0, 1.0]);
+                                placement_meta.scale = Some(scale);
                                 if placement_meta.blueprint_id.is_none() {
                                     placement_meta.blueprint_id = preview_blueprint_id.clone();
                                 }

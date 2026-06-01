@@ -41,7 +41,6 @@ export function EngineView({
         <ModalProvider>
           <SceneManagerProvider 
             initialSavePath={initialSavePath}
-            initialExtractDir={initialExtractDir}
             projectType={projectType} 
             gameStyle={gameStyle}
           >
@@ -49,7 +48,6 @@ export function EngineView({
               projectType={projectType} 
               gameStyle={gameStyle} 
               initialSavePath={initialSavePath}
-              initialExtractDir={initialExtractDir}
               viewportRef={viewportRef} 
             />
           </SceneManagerProvider>
@@ -59,11 +57,10 @@ export function EngineView({
   )
 }
 
-function EngineViewInner({ projectType, gameStyle, initialSavePath, initialExtractDir, viewportRef }: {
+function EngineViewInner({ projectType, gameStyle, initialSavePath, viewportRef }: {
   projectType: ProjectType
   gameStyle?: GameStyle
   initialSavePath?: string | null
-  initialExtractDir?: string | null
   viewportRef: React.RefObject<HTMLDivElement>
 }) {
   const { 
@@ -98,10 +95,10 @@ function EngineViewInner({ projectType, gameStyle, initialSavePath, initialExtra
           </main>
 
           <div className="row g-0" style={{ height: 120 }}>
-            <div className="col-9">
+            <div className="col-8">
               <LogConsole />
             </div>
-            <div className="col-3">
+            <div className="col-4">
               <MetricsPanel />
             </div>
           </div>

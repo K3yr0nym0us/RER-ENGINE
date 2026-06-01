@@ -740,6 +740,9 @@ pub enum EngineEvent {
         frame_time_ms:  f32,
         draw_calls:     u32,
         physics_bodies: u32,
+        cpu_percent:    f32,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        gpu_percent:    Option<f32>,
     },
     /// Emitido cuando un actor entra en un área de ejecución (trigger).
     TriggerEntered { trigger_id: u32, actor_id: u32 },

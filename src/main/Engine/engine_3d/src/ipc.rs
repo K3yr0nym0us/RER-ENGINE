@@ -856,6 +856,9 @@ pub enum EngineEvent {
         frame_time_ms:  f32,
         draw_calls:     u32,
         physics_bodies: u32,
+        cpu_percent:    f32,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        gpu_percent:    Option<f32>,
         #[serde(
             rename = "play_character_position",
             alias = "first_person_position",
@@ -976,6 +979,7 @@ pub fn enrich_blueprint_placement_meta(
             merge_optional_field(&mut meta.colision, &reg.colision);
             merge_optional_field(&mut meta.physics_type, &reg.physics_type);
             merge_optional_field(&mut meta.physics_enabled, &reg.physics_enabled);
+            merge_optional_field(&mut meta.scale, &reg.scale);
             merge_optional_field(&mut meta.scripts, &reg.scripts);
             merge_optional_field(&mut meta.animations, &reg.animations);
             if meta

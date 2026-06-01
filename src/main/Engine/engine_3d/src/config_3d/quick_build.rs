@@ -27,7 +27,6 @@ pub(crate) struct QuickBuildBlueprint {
     pub template_name: String,
     pub model: String,
     pub rotation: [f32; 4],
-    pub scale: [f32; 3],
     pub physics_enabled: bool,
     pub physics_type: String,
     pub colision: bool,
@@ -54,7 +53,6 @@ impl QuickBuildBlueprint {
                 .filter(|m| !m.trim().is_empty())
                 .unwrap_or_else(|| preview_path.to_string()),
             rotation: meta.rotation.unwrap_or(DEFAULT_ROTATION),
-            scale: meta.scale.unwrap_or([1.0, 1.0, 1.0]),
             physics_enabled: meta.physics_enabled.unwrap_or(false),
             physics_type: meta
                 .physics_type

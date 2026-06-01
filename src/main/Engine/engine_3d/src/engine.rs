@@ -173,6 +173,7 @@ pub struct State {
     pub(crate) undo_stack: Vec<UndoAction>,
     pub(crate) redo_stack: Vec<UndoAction>,
     pub(crate) is_applying_undo: bool,
+    pub(crate) process_metrics_sampler: rer_engine_shared::process_metrics::ProcessMetricsSampler,
     pub(crate) metrics_last_emit: Instant,
     pub(crate) metrics_frame_count: u32,
     pub(crate) last_draw_calls: u32,

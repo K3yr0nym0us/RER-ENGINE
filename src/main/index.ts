@@ -15,8 +15,14 @@ import type {
   ProjectType,
   SavedControls,
   SavedScript,
+  AppResourceUsage,
 } from '../shared-types/types';
 import { entityPathMarker } from '../shared-types/types';
+import {
+  getGpuMetricsPlatform,
+  isElectronGpuMetricsSupported,
+  queryElectronAppGpuPercent,
+} from './gpuProcessUsage';
 
 // Sin GPU hardware disponible: deshabilitar el proceso GPU de Chromium
 // para evitar spam de viz_main_impl / command_buffer_proxy_impl
@@ -437,8 +443,44 @@ function clearAssetWatchers(): void {
 }
 
 // ---------------------------------------------------------------------------
+// Uso de CPU/GPU de procesos Electron (caché; sin bloquear el hilo principal)
+// ---------------------------------------------------------------------------
+const ELECTRON_RESOURCE_SAMPLE_MS = 2000
+
+let cachedElectronResourceUsage: AppResourceUsage = {
+  electronCpuPercent: 0,
+  electronGpuPercent: null,
+  gpuMetricsPlatform: getGpuMetricsPlatform(),
+  electronGpuMetricsSupported: isElectronGpuMetricsSupported(),
+}
+
+async function sampleElectronResourceUsage(): Promise<void> {
+  let electronCpuPercent = 0
+
+  for (const metric of app.getAppMetrics()) {
+    electronCpuPercent += metric.cpu?.percentCPUUsage ?? 0
+  }
+
+  const electronGpuPercent = await queryElectronAppGpuPercent()
+
+  cachedElectronResourceUsage = {
+    electronCpuPercent,
+    electronGpuPercent,
+    gpuMetricsPlatform: getGpuMetricsPlatform(),
+    electronGpuMetricsSupported: isElectronGpuMetricsSupported(),
+  }
+}
+
+function startElectronResourceSampling(): void {
+  void sampleElectronResourceUsage()
+  setInterval(() => void sampleElectronResourceUsage(), ELECTRON_RESOURCE_SAMPLE_MS)
+}
+
+// ---------------------------------------------------------------------------
 // IPC: renderer → motor y herramientas del editor
 // ---------------------------------------------------------------------------
+ipcMain.handle('get-app-resource-usage', (): AppResourceUsage => cachedElectronResourceUsage)
+
 ipcMain.on('engine:cmd', (_event, cmd: EngineCommand) => {
   if (cmd.cmd === 'set_locale') {
     const next = String((cmd as Record<string, unknown>)['locale'] ?? 'en').toLowerCase() === 'es' ? 'es' : 'en'
@@ -1404,6 +1446,8 @@ function cleanupExtractedProjectDirs(): void {
 }
 
 app.whenReady().then(() => {
+  startElectronResourceSampling()
+
   // CSP estricto solo en producción (app.isPackaged).
   // En desarrollo, Vite inyecta scripts inline para HMR/React preamble
   // que serían bloqueados. El warning de Electron en dev desaparece
