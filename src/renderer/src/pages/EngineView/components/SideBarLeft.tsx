@@ -5,6 +5,7 @@ import PropertiesPanel from './sidebar/PropertiesAccordion/PropertiesAccordion';
 import { CameraAccordion, ControlsAccordion, ScenesAccordion, WorldAccordion, ToolsAccordion } from './sidebar';
 import ResourcesAccordion from './sidebar/ResourcesAccordion/ResourcesAccordion';
 import EntitiesAccordion from './sidebar/EntitiesAccordion/EntitiesAccordion';
+import UIAccordion from './sidebar/UIAccordion/UIAccordion';
 import UserGuideButton from './sidebar/UserGuideButton';
 import { LanguageToggleButton } from '@components';
 
@@ -59,6 +60,12 @@ export function SideBarLeft({ projectType, gameStyle }: { projectType: ProjectTy
         <Accordion {...sidebarAccordion('entities')}>
           <EntitiesAccordion projectType={projectType} />
         </Accordion>
+
+        {projectType === '3D' && (
+          <Accordion {...sidebarAccordion('ui')}>
+            <UIAccordion />
+          </Accordion>
+        )}
 
         <Accordion {...sidebarAccordion('herramientas')}>
           <ToolsAccordion projectType={projectType} />

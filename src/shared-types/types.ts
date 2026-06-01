@@ -389,6 +389,49 @@ export interface ProjectSaveData {
   blueprints?:     Blueprint3D[]
   /** Idioma/locale del proyecto (en | es). */
   language?:       string
+  /** Pantallas UI del jugador (editor). */
+  playerUiScreens?: Array<{ id: string; name: string }>
+  /** Pantallas UI de menú (editor). */
+  menuUiScreens?:  Array<{ id: string; name: string }>
+  /** Cuadros de texto HUD por pantalla (motor). */
+  playerUiTextBoxes?: SavedPlayerUiTextBox[]
+  /** Botones HUD por pantalla (motor). */
+  playerUiButtons?: SavedPlayerUiButton[]
+}
+
+export interface SavedPlayerUiTextBox {
+  scope:       string
+  screen_id:   string
+  id:          number
+  font_path:   string
+  font_name:   string
+  text:        string
+  center_x:    number
+  center_y:    number
+  width:       number
+  height:      number
+}
+
+export interface SavedPlayerUiButton {
+  scope: string
+  screen_id: string
+  id: number
+  type: string
+  round: number
+  background_color: [number, number, number, number]
+  texture_path?: string | null
+  transparency_background: number
+  text: string
+  text_color: [number, number, number, number]
+  transparency_text: number
+  font_path: string
+  font_name: string
+  border_color: [number, number, number, number]
+  border_weight: number
+  center_x: number
+  center_y: number
+  width: number
+  height: number
 }
 
 export interface OpenProjectResult {
@@ -416,6 +459,8 @@ export interface ProjectLoaded3dPayload {
   world:         SavedWorldConfig
   player?: Entity3D | null
   config_camera?: ConfigCamera | null
+  playerUiScreens?: Array<{ id: string; name: string }>
+  menuUiScreens?:  Array<{ id: string; name: string }>
 }
 
 export interface ProjectLoaded2dPayload {
@@ -497,6 +542,11 @@ export interface EngineCommand {
     | 'remove_background_asset'
     | 'get_backgrounds_list'
     | 'set_preview_playing'
+    | 'set_player_ui_edit_mode'
+    | 'add_player_ui_text_box'
+    | 'remove_player_ui_text_box'
+    | 'add_player_ui_button'
+    | 'remove_player_ui_button'
     | 'set_play_character_view'
     | 'set_play_character_spawn'
     | 'set_first_person_view'
@@ -542,6 +592,39 @@ export interface EngineSaveSceneSnapshot {
   models?: Array<{ name: string; path: string; category?: ModelCategory }>
   sounds: Array<{ name: string; path: string }>
   backgrounds: Array<{ name: string; path: string }>
+  player_ui_text_boxes?: Array<{
+    scope: string
+    screen_id: string
+    id: number
+    font_path: string
+    font_name: string
+    text: string
+    center_x: number
+    center_y: number
+    width: number
+    height: number
+  }>
+  player_ui_buttons?: Array<{
+    scope: string
+    screen_id: string
+    id: number
+    type: string
+    round: number
+    background_color: [number, number, number, number]
+    texture_path?: string | null
+    transparency_background: number
+    text: string
+    text_color: [number, number, number, number]
+    transparency_text: number
+    font_path: string
+    font_name: string
+    border_color: [number, number, number, number]
+    border_weight: number
+    center_x: number
+    center_y: number
+    width: number
+    height: number
+  }>
 }
 
 export interface SaveSnapshotReady {

@@ -121,6 +121,7 @@ export function EngineProvider({
 		addLog,
 		reportBounds,
 		send,
+		projectType,
 	});
 
 	useEngineEffects({
@@ -214,6 +215,14 @@ export function EngineProvider({
 		getSpritesList: actions.getSpritesList,
 		loadCharacter: actions.loadCharacter,
 		setPreviewPlaying: actions.setPreviewPlaying,
+		addUiScreen: actions.addUiScreen,
+		removeUiScreen: actions.removeUiScreen,
+		beginUiScreenEdit: actions.beginUiScreenEdit,
+		endUiScreenEdit: actions.endUiScreenEdit,
+		addPlayerUiTextBox: actions.addPlayerUiTextBox,
+		removePlayerUiTextBox: actions.removePlayerUiTextBox,
+		addEditingUiButton: actions.addEditingUiButton,
+		removeEditingUiPlaceholder: actions.removeEditingUiPlaceholder,
 		setDebugMode: actions.setDebugMode,
 		setBackground: actions.setBackground,
 		loadSound: actions.loadSound,

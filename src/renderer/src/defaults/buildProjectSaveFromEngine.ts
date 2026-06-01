@@ -5,11 +5,14 @@ import type {
 	ProjectSaveData,
 	ProjectType,
 	SavedAnimation,
+	SavedPlayerUiTextBox,
+	SavedPlayerUiButton,
 	SavedScene,
 	FontInfo,
 	SoundInfo,
 	BackgroundInfo,
 } from '@shared-types';
+import type { UiScreenEntry } from '../context/useContextEngine/types';
 import type { EntityMeta } from '../context/useContextEngine/types';
 import { getSceneProjectState } from '../pages/EngineView/sceneStateStore';
 import { requestEngineDefaultSceneName } from './requestEngineDefaultSceneName';
@@ -164,6 +167,51 @@ export interface BuildProjectSaveOptions {
 	backgrounds: BackgroundInfo[]
 	entityMeta: Record<number, EntityMeta>
 	initialGameStyle?: GameStyle
+	playerUiScreens?: UiScreenEntry[]
+	menuUiScreens?: UiScreenEntry[]
+}
+
+function mapEngineUiTextBoxesToSave(
+	boxes: NonNullable<EngineSaveSceneSnapshot['player_ui_text_boxes']>,
+): SavedPlayerUiTextBox[] {
+	return boxes.map((b) => ({
+		scope: b.scope,
+		screen_id: b.screen_id,
+		id: b.id,
+		font_path: b.font_path,
+		font_name: b.font_name,
+		text: b.text,
+		center_x: b.center_x,
+		center_y: b.center_y,
+		width: b.width,
+		height: b.height,
+	}));
+}
+
+function mapEngineUiButtonsToSave(
+	buttons: NonNullable<EngineSaveSceneSnapshot['player_ui_buttons']>,
+): SavedPlayerUiButton[] {
+	return buttons.map((b) => ({
+		scope: b.scope,
+		screen_id: b.screen_id,
+		id: b.id,
+		type: b.type,
+		round: b.round,
+		background_color: b.background_color,
+		texture_path: b.texture_path ?? null,
+		transparency_background: b.transparency_background,
+		text: b.text,
+		text_color: b.text_color,
+		transparency_text: b.transparency_text,
+		font_path: b.font_path,
+		font_name: b.font_name,
+		border_color: b.border_color,
+		border_weight: b.border_weight,
+		center_x: b.center_x,
+		center_y: b.center_y,
+		width: b.width,
+		height: b.height,
+	}));
 }
 
 /** Combina snapshot del motor con metadatos solo del editor (pestañas, blueprints, idioma). */
@@ -181,6 +229,8 @@ export async function buildProjectSaveFromEngineSnapshot(
 		backgrounds,
 		entityMeta,
 		initialGameStyle,
+		playerUiScreens = [],
+		menuUiScreens = [],
 	} = options;
 
 	const sceneState = getSceneProjectState();
@@ -233,5 +283,13 @@ export async function buildProjectSaveFromEngineSnapshot(
 		backgrounds,
 		blueprints: savedBlueprints,
 		language: locale,
+		playerUiScreens,
+		menuUiScreens,
+		playerUiTextBoxes: engineScene.player_ui_text_boxes?.length
+			? mapEngineUiTextBoxesToSave(engineScene.player_ui_text_boxes)
+			: undefined,
+		playerUiButtons: engineScene.player_ui_buttons?.length
+			? mapEngineUiButtonsToSave(engineScene.player_ui_buttons)
+			: undefined,
 	};
 }

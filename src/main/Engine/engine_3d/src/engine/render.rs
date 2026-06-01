@@ -58,7 +58,7 @@ impl State {
         if self.taa.enabled {
             self.taa.begin_frame(false);
         }
-        let scene_uni = if self.uses_play_accordion_camera() {
+        let scene_uni = if self.uses_player_fps_viewport() {
             build_scene_uniforms_from_view(
                 &self.camera,
                 self.camera_view_matrix(),
@@ -89,7 +89,7 @@ impl State {
         };
         self.queue
             .write_buffer(&self.scene_buffer, 0, bytemuck::cast_slice(&[scene_uni]));
-        let zoom_stability = if self.uses_play_accordion_camera() {
+        let zoom_stability = if self.uses_player_fps_viewport() {
             crate::taa::zoom_stability_distance(0.01)
         } else {
             crate::taa::zoom_stability_distance(self.viewport_orbit_angles().2)
@@ -562,7 +562,7 @@ impl State {
         // Gizmo de cámara FP en modo editor: cubito en el ojo + frustum hasta el
         // rectángulo lejano, para visualizar a dónde mirará la cámara al pulsar
         // Play (estilo Godot/Unity al seleccionar una `Camera3D`).
-        if !self.preview_playing && self.has_play_character() {
+        if !self.preview_playing && !self.player_ui_edit_active && self.has_play_character() {
             if let Some((eye, yaw, pitch)) = self.play_character_camera_gizmo_pose() {
                 let aspect = self.size.width as f32 / self.size.height as f32;
                 let frustum_buf = gizmo::build_fps_camera_frustum(
@@ -698,7 +698,10 @@ impl State {
             draw_calls += 1;
         }
 
-        if !self.preview_playing {
+        draw_calls += self.draw_player_ui_screen_grid(&mut enc, &view);
+        draw_calls += self.draw_player_ui_text_boxes(&mut enc, &view);
+
+        if !self.preview_playing && !self.player_ui_edit_active {
             if let Some(origin) = self.selection_center().filter(|_| self.pivot_edit_mode.is_none())
             {
                 let aspect = self.size.width as f32 / self.size.height as f32;

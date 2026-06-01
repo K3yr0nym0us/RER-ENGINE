@@ -33,6 +33,8 @@ export function useAutoSave({
     sounds,
     fonts,
     backgrounds,
+    playerUiScreens,
+    menuUiScreens,
   } = useContextEngine();
   const { locale } = useLanguage();
   const [hasSavedOnce, setHasSavedOnce] = useState(Boolean(initialSavePath));
@@ -68,6 +70,8 @@ export function useAutoSave({
         backgrounds,
         entityMeta: entityMetaRef.current,
         initialGameStyle: gameStyle,
+        playerUiScreens,
+        menuUiScreens,
       });
     } catch (err) {
       console.error('[save] export_save_snapshot falló:', err);
@@ -82,6 +86,8 @@ export function useAutoSave({
     fonts,
     backgrounds,
     locale,
+    playerUiScreens,
+    menuUiScreens,
   ]);
 
   useEffect(() => {

@@ -22,6 +22,12 @@ import {
 	type SoundInfo,
 	type SpriteInfo,
 } from '@shared-types';
+import {
+	DEFAULT_PLAYER_UI_BUTTON_CONFIG,
+	type PlayerUiButtonConfig,
+} from '../../pages/EngineView/components/sidebar/UIAccordion/components/playerUiButtonModel';
+
+export type { PlayerUiButtonConfig };
 
 export interface Entity {
 	id: number
@@ -103,6 +109,66 @@ export const DEFAULT_WORLD_CONFIG: WorldConfig = {
 	shadowDarkness: DEFAULT_SHADOW_DARKNESS,
 };
 
+export type UiScreenScope = 'player' | 'menu';
+
+export interface UiScreenEntry {
+	id: string;
+	name: string;
+}
+
+export interface PlayerUiTextBoxEntry {
+	id: number;
+	fontName: string;
+	text: string;
+}
+
+export type EditingUiElementKind = 'text' | 'button' | 'image';
+
+export interface EditingUiButtonEntry {
+	id: number;
+	config: PlayerUiButtonConfig;
+}
+
+export type EditingUiElement =
+	| (PlayerUiTextBoxEntry & { kind: 'text' })
+	| ({ kind: 'button' } & EditingUiButtonEntry)
+	| { kind: 'image'; id: number; label: string };
+
+export function mergeEditingUiTextElements(
+	elements: EditingUiElement[],
+	textBoxes: PlayerUiTextBoxEntry[],
+): EditingUiElement[] {
+	const other = elements.filter((e) => e.kind !== 'text');
+	return [...other, ...textBoxes.map((box) => ({ kind: 'text' as const, ...box }))];
+}
+
+export function mergeEditingUiButtonElements(
+	elements: EditingUiElement[],
+	buttons: Array<{ id: number; text: string; fontName: string }>,
+	defaultConfig: PlayerUiButtonConfig,
+): EditingUiElement[] {
+	const other = elements.filter((e) => e.kind !== 'button');
+	return [
+		...other,
+		...buttons.map((b) => ({
+			kind: 'button' as const,
+			id: b.id,
+			config: {
+				...defaultConfig,
+				text: b.text,
+				fontName: b.fontName,
+			},
+		})),
+	];
+}
+
+export function filterEditingUiElementsByKind<K extends EditingUiElementKind>(
+	elements: EditingUiElement[],
+	kind: K,
+): Extract<EditingUiElement, { kind: K }>[] {
+	return elements.filter((e): e is Extract<EditingUiElement, { kind: K }> => e.kind === kind);
+}
+
 export interface EngineState {
 	engineReady: boolean
 	engineError: string | null
@@ -138,12 +204,34 @@ export interface EngineState {
 	projectLoaded2dSeq: number
 	/** Incrementa al aplicar metadatos 3D enviados por el motor (`project_loaded_3d`). */
 	projectLoaded3dSeq: number
+	playerUiScreens: UiScreenEntry[]
+	menuUiScreens: UiScreenEntry[]
+	playerUiEditingId: string | null
+	menuUiEditingId: string | null
+	/** Elementos de la pantalla UI en edición (texto sincronizado con el motor). */
+	editingUiElements: EditingUiElement[]
 }
 
 export type EngineAction =
 	| { type: 'SET_READY' }
 	| { type: 'SET_ERROR'; payload: string }
 	| { type: 'SET_PREVIEW_PLAYING'; payload: boolean }
+	| { type: 'SET_UI_SCREEN_EDITING'; payload: { playerId: string | null; menuId: string | null } }
+	| { type: 'ADD_UI_SCREEN'; payload: { scope: UiScreenScope; entry: UiScreenEntry } }
+	| { type: 'REMOVE_UI_SCREEN'; payload: { scope: UiScreenScope; id: string } }
+	| { type: 'CLEAR_EDITING_UI_ELEMENTS' }
+	| { type: 'SET_EDITING_UI_TEXT_BOXES'; payload: PlayerUiTextBoxEntry[] }
+	| {
+			type: 'SET_EDITING_UI_BUTTONS'
+			payload: Array<{ id: number; text: string; fontName: string }>
+	  }
+	| { type: 'ADD_PLAYER_UI_TEXT_BOX'; payload: PlayerUiTextBoxEntry }
+	| { type: 'UPDATE_PLAYER_UI_TEXT_BOX'; payload: { id: number; text: string } }
+	| { type: 'REMOVE_PLAYER_UI_TEXT_BOX'; payload: number }
+	| { type: 'ADD_PLAYER_UI_BUTTON'; payload: { id: number; config: PlayerUiButtonConfig } }
+	| { type: 'REMOVE_PLAYER_UI_BUTTON'; payload: number }
+	| { type: 'ADD_EDITING_UI_PLACEHOLDER'; payload: { kind: 'image'; label: string } }
+	| { type: 'REMOVE_EDITING_UI_PLACEHOLDER'; payload: { kind: 'button' | 'image'; id: number } }
 	| { type: 'SET_SCENE_IMPORT_LOADING'; payload: boolean }
 	| { type: 'SYNC_PLAY_CHARACTER_VIEW' }
 	| { type: 'ADD_LOG'; payload: LogEntry }
@@ -264,17 +352,139 @@ export const initialState: EngineState = {
 	multiSelectedIds: [],
 	projectLoaded2dSeq: 0,
 	projectLoaded3dSeq: 0,
+	playerUiScreens: [],
+	menuUiScreens: [],
+	playerUiEditingId: null,
+	menuUiEditingId: null,
+	editingUiElements: [],
 };
 
 export function engineReducer(state: EngineState, action: EngineAction): EngineState {
 	const handlers: Record<string, (prevState: EngineState, nextAction: any) => EngineState> = {
-		SET_READY: (prevState) => ({ ...prevState, engineReady: true, engineError: null, previewPlaying: false }),
+		SET_READY: (prevState) => ({
+			...prevState,
+			engineReady: true,
+			engineError: null,
+			previewPlaying: false,
+			playerUiEditingId: null,
+			menuUiEditingId: null,
+		}),
 		SET_ERROR: (prevState, nextAction) => ({
 			...prevState,
 			engineError: nextAction.payload,
 			sceneImportLoading: false,
 		}),
 		SET_PREVIEW_PLAYING: (prevState, nextAction) => ({ ...prevState, previewPlaying: nextAction.payload }),
+		SET_UI_SCREEN_EDITING: (prevState, nextAction) => {
+			const nextPlayer = nextAction.payload.playerId;
+			const nextMenu = nextAction.payload.menuId;
+			const editing = Boolean(nextPlayer || nextMenu);
+			const prevKey = prevState.playerUiEditingId ?? prevState.menuUiEditingId;
+			const nextKey = nextPlayer ?? nextMenu;
+			const screenChanged = editing && prevKey !== nextKey;
+			return {
+				...prevState,
+				playerUiEditingId: nextPlayer,
+				menuUiEditingId: nextMenu,
+				editingUiElements:
+					!editing || screenChanged ? [] : prevState.editingUiElements,
+			};
+		},
+		SET_EDITING_UI_TEXT_BOXES: (prevState, nextAction) => ({
+			...prevState,
+			editingUiElements: mergeEditingUiTextElements(
+				prevState.editingUiElements,
+				nextAction.payload,
+			),
+		}),
+		SET_EDITING_UI_BUTTONS: (prevState, nextAction) => ({
+			...prevState,
+			editingUiElements: mergeEditingUiButtonElements(
+				prevState.editingUiElements,
+				nextAction.payload,
+				DEFAULT_PLAYER_UI_BUTTON_CONFIG,
+			),
+		}),
+		CLEAR_EDITING_UI_ELEMENTS: (prevState) => ({
+			...prevState,
+			editingUiElements: [],
+		}),
+		ADD_PLAYER_UI_TEXT_BOX: (prevState, nextAction) => ({
+			...prevState,
+			editingUiElements: [
+				...prevState.editingUiElements,
+				{ kind: 'text', ...nextAction.payload },
+			],
+		}),
+		UPDATE_PLAYER_UI_TEXT_BOX: (prevState, nextAction) => ({
+			...prevState,
+			editingUiElements: prevState.editingUiElements.map((el) =>
+				el.kind === 'text' && el.id === nextAction.payload.id
+					? { ...el, text: nextAction.payload.text }
+					: el,
+			),
+		}),
+		REMOVE_PLAYER_UI_TEXT_BOX: (prevState, nextAction) => ({
+			...prevState,
+			editingUiElements: prevState.editingUiElements.filter(
+				(el) => el.kind !== 'text' || el.id !== nextAction.payload,
+			),
+		}),
+		ADD_PLAYER_UI_BUTTON: (prevState, nextAction) => ({
+			...prevState,
+			editingUiElements: [
+				...prevState.editingUiElements,
+				{
+					kind: 'button' as const,
+					id: nextAction.payload.id,
+					config: nextAction.payload.config,
+				},
+			],
+		}),
+		REMOVE_PLAYER_UI_BUTTON: (prevState, nextAction) => ({
+			...prevState,
+			editingUiElements: prevState.editingUiElements.filter(
+				(el) => el.kind !== 'button' || el.id !== nextAction.payload,
+			),
+		}),
+		ADD_EDITING_UI_PLACEHOLDER: (prevState, nextAction) => {
+			const id = Date.now();
+			return {
+				...prevState,
+				editingUiElements: [
+					...prevState.editingUiElements,
+					{ kind: 'image' as const, id, label: nextAction.payload.label },
+				],
+			};
+		},
+		REMOVE_EDITING_UI_PLACEHOLDER: (prevState, nextAction) => ({
+			...prevState,
+			editingUiElements: prevState.editingUiElements.filter(
+				(el) => el.kind !== nextAction.payload.kind || el.id !== nextAction.payload.id,
+			),
+		}),
+		ADD_UI_SCREEN: (prevState, nextAction) => {
+			const { scope, entry } = nextAction.payload;
+			if (scope === 'player') {
+				return { ...prevState, playerUiScreens: [...prevState.playerUiScreens, entry] };
+			}
+			return { ...prevState, menuUiScreens: [...prevState.menuUiScreens, entry] };
+		},
+		REMOVE_UI_SCREEN: (prevState, nextAction) => {
+			const { scope, id } = nextAction.payload;
+			if (scope === 'player') {
+				return {
+					...prevState,
+					playerUiScreens: prevState.playerUiScreens.filter((screen) => screen.id !== id),
+					playerUiEditingId: prevState.playerUiEditingId === id ? null : prevState.playerUiEditingId,
+				};
+			}
+			return {
+				...prevState,
+				menuUiScreens: prevState.menuUiScreens.filter((screen) => screen.id !== id),
+				menuUiEditingId: prevState.menuUiEditingId === id ? null : prevState.menuUiEditingId,
+			};
+		},
 		SET_SCENE_IMPORT_LOADING: (prevState, nextAction) => ({
 			...prevState,
 			sceneImportLoading: nextAction.payload,
@@ -625,6 +835,8 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 				fonts: p.fonts ?? [],
 				backgrounds: p.backgrounds,
 				loadedModelsInfo: modelMap,
+				playerUiScreens: p.playerUiScreens ?? [],
+				menuUiScreens: p.menuUiScreens ?? [],
 			};
 		},
 		IMPORT_SCENE_STATE: (prevState, nextAction) => ({
@@ -835,6 +1047,14 @@ export interface EngineContextValue extends EngineState {
 	getSpritesList: () => void
 	loadCharacter: (path: string) => void
 	setPreviewPlaying: (playing: boolean) => void
+	addUiScreen: (scope: UiScreenScope, name: string) => void
+	removeUiScreen: (scope: UiScreenScope, id: string) => void
+	beginUiScreenEdit: (scope: UiScreenScope, id: string) => void
+	endUiScreenEdit: () => void
+	addPlayerUiTextBox: (fontPath: string) => void
+	removePlayerUiTextBox: (id?: number) => void
+	addEditingUiButton: (config: PlayerUiButtonConfig) => void
+	removeEditingUiPlaceholder: (kind: 'button' | 'image', id: number) => void
 	setBackground: (path: string | null) => void
 	loadSound: (path: string, name: string) => void
 	removeSound: (path: string) => void

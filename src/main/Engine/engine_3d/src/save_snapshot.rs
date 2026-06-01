@@ -1,6 +1,7 @@
 use crate::engine::State;
 use crate::ipc::{
-    send_event, EngineEvent, SaveAssetRefSnapshot, SaveSceneSnapshotPayload, SaveWorldSnapshot,
+    send_event, EngineEvent, SaveAssetRefSnapshot, SavePlayerUiTextBoxSnapshot,
+    SaveSceneSnapshotPayload, SaveWorldSnapshot,
 };
 use crate::save_entity_3d::{
     build_config_camera_snapshot, build_config_editor_camera_snapshot, build_entity_3d_snapshot,
@@ -80,7 +81,80 @@ impl State {
                     category: None,
                 })
                 .collect(),
+            player_ui_text_boxes: self.export_player_ui_text_boxes_snapshot(),
+            player_ui_buttons: self.export_player_ui_buttons_snapshot(),
         }
+    }
+
+    fn export_player_ui_text_boxes_snapshot(&self) -> Vec<SavePlayerUiTextBoxSnapshot> {
+        let mut out = Vec::new();
+        for (key, boxes) in &self.player_ui_text_boxes {
+            let Some((scope, screen_id)) = key.split_once(':') else {
+                continue;
+            };
+            for b in boxes {
+                out.push(SavePlayerUiTextBoxSnapshot {
+                    scope: scope.to_string(),
+                    screen_id: screen_id.to_string(),
+                    id: b.id,
+                    font_path: b.font_path.clone(),
+                    font_name: b.font_name.clone(),
+                    text: b.text.clone(),
+                    center_x: b.center_x,
+                    center_y: b.center_y,
+                    width: b.width,
+                    height: b.height,
+                });
+            }
+        }
+        out.sort_by(|a, b| {
+            (a.scope.as_str(), a.screen_id.as_str(), a.id).cmp(&(
+                b.scope.as_str(),
+                b.screen_id.as_str(),
+                b.id,
+            ))
+        });
+        out
+    }
+
+    fn export_player_ui_buttons_snapshot(&self) -> Vec<crate::ipc::SavePlayerUiButtonSnapshot> {
+        let mut out = Vec::new();
+        for (key, buttons) in &self.player_ui_buttons {
+            let Some((scope, screen_id)) = key.split_once(':') else {
+                continue;
+            };
+            for b in buttons {
+                out.push(crate::ipc::SavePlayerUiButtonSnapshot {
+                    scope: scope.to_string(),
+                    screen_id: screen_id.to_string(),
+                    id: b.id,
+                    shape_type: b.shape_type.clone(),
+                    round: b.round,
+                    background_color: b.background_color,
+                    texture_path: b.texture_path.clone(),
+                    transparency_background: b.transparency_background,
+                    text: b.text.clone(),
+                    text_color: b.text_color,
+                    transparency_text: b.transparency_text,
+                    font_path: b.font_path.clone(),
+                    font_name: b.font_name.clone(),
+                    border_color: b.border_color,
+                    border_weight: b.border_weight,
+                    center_x: b.center_x,
+                    center_y: b.center_y,
+                    width: b.width,
+                    height: b.height,
+                });
+            }
+        }
+        out.sort_by(|a, b| {
+            (a.scope.as_str(), a.screen_id.as_str(), a.id).cmp(&(
+                b.scope.as_str(),
+                b.screen_id.as_str(),
+                b.id,
+            ))
+        });
+        out
     }
 
     pub(crate) fn animation_to_snapshot(

@@ -30,6 +30,7 @@ pub(crate) mod physics_3d;
 pub(crate) mod quick_build;
 pub(crate) mod static_model_cache;
 pub(crate) mod world_bounds;
+pub(crate) mod player_ui;
 pub(crate) use world_bounds::WorldBounds3D;
 
 pub(crate) fn is_fbx_model_path(path: &str) -> bool {

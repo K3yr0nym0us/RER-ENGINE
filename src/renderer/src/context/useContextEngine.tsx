@@ -12,5 +12,7 @@ export type {
 	ScenarioEntry,
 	SelectedEntity,
 	Transform,
+	UiScreenEntry,
+	UiScreenScope,
 	WorldConfig,
 } from './useContextEngine/types';

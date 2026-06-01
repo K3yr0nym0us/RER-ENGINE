@@ -276,6 +276,9 @@ impl State {
         let fps_exit_hint_en = screen_hud_atlas
             .pack_png_from_engine_assets(&queue, "tooltip-btn-esc-exit.png");
 
+        let player_ui_text_atlas =
+            crate::screen_hud_image::ScreenHudAtlas::new(&device, &queue, &screen_hud_bgl);
+
         let shader = device.create_shader_module(include_wgsl!("../shader.wgsl"));
         let screen_hud_shader =
             device.create_shader_module(include_wgsl!("../shader_screen_hud.wgsl"));
@@ -540,6 +543,9 @@ impl State {
             cache: None,
         });
         let gizmo_buffer = gizmo::build_axes(&device, 1.14);
+        let ui_work_grid_buffer = gizmo::build_from_vertices(&device, &[]);
+        let player_ui_text_overlay_buffer = gizmo::build_from_vertices(&device, &[]);
+        let player_ui_caret_buffer = gizmo::build_from_vertices(&device, &[]);
         let tool_overlay_buffer_init = gizmo::build_from_vertices(&device, &[]);
 
         let grid_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -776,6 +782,27 @@ impl State {
             entity_blueprint_ids: HashMap::new(),
             entity_colision: HashMap::new(),
             preview_playing: false,
+            player_ui_edit_active: false,
+            player_ui_edit_restore: None,
+            ui_work_grid_buffer,
+            player_ui_edit_scope: None,
+            player_ui_edit_screen_id: None,
+            player_ui_text_boxes: HashMap::new(),
+            player_ui_buttons: HashMap::new(),
+            player_ui_text_next_id: 1,
+            player_ui_text_overlay_buffer,
+            player_ui_text_atlas,
+            player_ui_font_cache: HashMap::new(),
+            player_ui_glyph_instances: Vec::new(),
+            player_ui_glyph_instance_buffer: None,
+            player_ui_selected_text_id: None,
+            player_ui_selected_button_id: None,
+            player_ui_text_editing_id: None,
+            player_ui_text_caret: 0,
+            player_ui_caret_blink_epoch: std::time::Instant::now(),
+            player_ui_caret_buffer,
+            player_ui_text_drag: None,
+            player_ui_last_text_click: None,
             debug_mode: false,
             preview_entity_transform_snapshots: HashMap::new(),
             preview_fp_view_snapshot: None,

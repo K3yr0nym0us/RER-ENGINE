@@ -28,7 +28,7 @@ use gilrs::{Button as GamepadButton, EventType as GamepadEventType, Gilrs};
 use winit::{
     application::ApplicationHandler,
     dpi::PhysicalPosition,
-    event::{DeviceEvent, ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent},
+    event::{DeviceEvent, ElementState, Ime, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent},
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
     keyboard::{KeyCode, PhysicalKey},
     window::{CursorGrabMode, Window, WindowId},
@@ -121,6 +121,8 @@ struct App {
     last_cursor:     Option<(f32, f32)>,
     // Picking con click izquierdo
     left_click_pos:  Option<(f32, f32)>,  // posición al presionar
+    /// Press izquierdo durante edición UI (para click vs drag).
+    player_ui_left_press: Option<(f32, f32)>,
     // Drag de gizmo
     gizmo_drag_axis: Option<usize>,       // eje activo (0=X,1=Y,2=Z)
     gizmo_drag_start: Option<Vec<(u32, [f32; 3], [f32; 4], [f32; 3])>>,
@@ -302,11 +304,11 @@ impl App {
         self.cursor_captured = false;
     }
 
-    fn set_preview_playing(&mut self, state: &mut engine::State, playing: bool) {
-        let was_playing = state.is_preview_playing();
-        self.reset_preview_input_state(state);
-        state.handle_command(EngineCommand::SetPreviewPlaying { playing });
-
+    fn sync_preview_playback_side_effects(
+        &mut self,
+        state: &mut engine::State,
+        was_playing: bool,
+    ) {
         if state.is_preview_playing() {
             state.window().focus_window();
             log::info!("[preview] foco transferido a la ventana del motor");
@@ -327,6 +329,13 @@ impl App {
                 playing: state.is_preview_playing(),
             });
         }
+    }
+
+    fn set_preview_playing(&mut self, state: &mut engine::State, playing: bool) {
+        let was_playing = state.is_preview_playing();
+        self.reset_preview_input_state(state);
+        state.handle_command(EngineCommand::SetPreviewPlaying { playing });
+        self.sync_preview_playback_side_effects(state, was_playing);
     }
 }
 
@@ -407,6 +416,19 @@ impl ApplicationHandler<EngineCommand> for App {
             EngineCommand::SetPreviewPlaying { playing } => {
                 preview_toggle = Some(playing);
             }
+            EngineCommand::SetPlayerUiEditMode {
+                active,
+                scope,
+                screen_id,
+            } => {
+                if let Some(state) = self.state.as_mut() {
+                    state.handle_command(EngineCommand::SetPlayerUiEditMode {
+                        active,
+                        scope,
+                        screen_id,
+                    });
+                }
+            }
             other => {
                 if let Some(state) = self.state.as_mut() {
                     state.handle_command(other);
@@ -470,6 +492,11 @@ impl ApplicationHandler<EngineCommand> for App {
             WindowEvent::Resized(size) => {
                 state.resize(size);
             }
+            WindowEvent::Ime(ime) => {
+                if let Ime::Commit(text) = ime {
+                    let _ = state.player_ui_text_ime_commit(&text);
+                }
+            }
             // ── Input de ratón para cámara orbital ───────────────────────────
             WindowEvent::MouseInput { button, state: btn_state, .. } => {
                 let pressed = btn_state == ElementState::Pressed;
@@ -489,6 +516,22 @@ impl ApplicationHandler<EngineCommand> for App {
                         if state.is_preview_playing() {
                             self.left_click_pos = None;
                             self.gizmo_drag_axis = None;
+                            state.set_active_gizmo_axis(None);
+                            state.set_snap_hint_visible(false);
+                            return;
+                        }
+                        if state.player_ui_edit_active {
+                            if let Some(cur) = self.last_cursor {
+                                if pressed {
+                                    state.player_ui_mouse_down(cur.0, cur.1);
+                                    self.player_ui_left_press = Some(cur);
+                                } else if let Some(start) = self.player_ui_left_press.take() {
+                                    state.player_ui_mouse_up(cur.0, cur.1, start.0, start.1);
+                                }
+                            }
+                            self.left_click_pos = None;
+                            self.gizmo_drag_axis = None;
+                            self.gizmo_drag_start = None;
                             state.set_active_gizmo_axis(None);
                             state.set_snap_hint_visible(false);
                             return;
@@ -616,6 +659,11 @@ impl ApplicationHandler<EngineCommand> for App {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 let cur = (position.x as f32, position.y as f32);
+                if state.player_ui_edit_active && state.player_ui_text_drag.is_some() {
+                    state.player_ui_mouse_move(cur.0, cur.1);
+                    self.last_cursor = Some(cur);
+                    return;
+                }
                 if self.cursor_captured && state.is_play_controller_active() {
                     self.last_cursor = None;
                     return;
@@ -668,10 +716,27 @@ impl ApplicationHandler<EngineCommand> for App {
                 self.last_cursor = Some(cur);
             }
             WindowEvent::KeyboardInput {
-                event: KeyEvent { physical_key: PhysicalKey::Code(code), state: key_state, repeat, .. },
+                event: KeyEvent {
+                    physical_key: PhysicalKey::Code(code),
+                    state: key_state,
+                    repeat,
+                    text,
+                    ..
+                },
                 ..
             } => {
                 let pressed = key_state == ElementState::Pressed;
+                if state.player_ui_edit_key_input(code, pressed, repeat) {
+                    return;
+                }
+                if state.player_ui_text_key_input(
+                    code,
+                    pressed,
+                    repeat,
+                    text.as_ref().map(|s| s.as_str()),
+                ) {
+                    return;
+                }
                 if pressed && !repeat && code == KeyCode::Escape && state.is_play_controller_active() {
                     preview_toggle = Some(false);
                 } else if state.is_preview_playing() {
@@ -876,6 +941,7 @@ fn main() {
         mouse_middle:        false,
         last_cursor:         None,
         left_click_pos:      None,
+        player_ui_left_press: None,
         gizmo_drag_axis:     None,
         gizmo_drag_start:    None,
         ctrl_held:           false,

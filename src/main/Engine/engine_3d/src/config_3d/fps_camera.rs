@@ -118,13 +118,8 @@ impl State {
         self.sync_editor_camera_entity_from_viewport();
     }
 
-    /// Play: única cámara de juego = acordeón Cámara (`play_camera_eye_position` + yaw/pitch).
-    pub(crate) fn uses_play_accordion_camera(&self) -> bool {
-        self.is_play_controller_active() && self.has_play_character()
-    }
-
     pub(crate) fn camera_view_matrix(&self) -> glam::Mat4 {
-        if self.uses_play_accordion_camera() {
+        if self.uses_player_fps_viewport() {
             return self.camera.view_matrix_from_eye(
                 self.play_camera_eye_position,
                 self.camera.yaw,
@@ -137,7 +132,7 @@ impl State {
     }
 
     pub(crate) fn camera_world_position(&self) -> Vec3 {
-        if self.uses_play_accordion_camera() {
+        if self.uses_player_fps_viewport() {
             return self.play_camera_eye_position;
         }
         let anchor = self.orbit_view_anchor();
@@ -146,7 +141,7 @@ impl State {
     }
 
     pub(crate) fn camera_to_uniform_at_anchor(&self, anchor: Vec3, aspect: f32) -> crate::config_3d::camera_3d::CameraUniform {
-        let view = if self.uses_play_accordion_camera() {
+        let view = if self.uses_player_fps_viewport() {
             self.camera.view_matrix_from_eye(
                 self.play_camera_eye_position,
                 self.camera.yaw,

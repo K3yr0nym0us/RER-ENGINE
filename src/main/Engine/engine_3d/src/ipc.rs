@@ -443,6 +443,31 @@ pub enum EngineCommand {
     SetDebugMode { show: bool },
     /// Alternar modo de prueba del juego: true = simular juego, false = modo editor.
     SetPreviewPlaying { playing: bool },
+    /// Modo edición de UI del jugador: vista play + cuadrícula de trabajo.
+    SetPlayerUiEditMode {
+        active: bool,
+        #[serde(default)]
+        scope: Option<String>,
+        #[serde(default)]
+        screen_id: Option<String>,
+    },
+    /// Añade un cuadro de texto HUD en la pantalla UI en edición (fuente registrada).
+    AddPlayerUiTextBox { font_path: String },
+    /// Elimina el cuadro de texto seleccionado en edición UI (o el id indicado).
+    RemovePlayerUiTextBox {
+        #[serde(default)]
+        id: Option<u32>,
+    },
+    /// Añade un botón HUD en la pantalla UI en edición.
+    AddPlayerUiButton {
+        #[serde(flatten)]
+        payload: crate::config_3d::player_ui::button::AddPlayerUiButtonPayload,
+    },
+    /// Elimina un botón HUD (id opcional; sin id no hace nada por ahora).
+    RemovePlayerUiButton {
+        #[serde(default)]
+        id: Option<u32>,
+    },
     /// Deshacer la última acción disponible.
     Undo,
     /// Rehacer la última acción deshecha (si existe historial de redo).
@@ -635,6 +660,69 @@ pub struct SaveAssetRefSnapshot {
     pub category: Option<String>,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SaveUiScreenSnapshot {
+    pub id: String,
+    pub name: String,
+}
+
+/// Cuadros HUD en manifest / snapshot del motor (`screen_id`, mismo criterio que entidades).
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SavePlayerUiTextBoxSnapshot {
+    pub scope: String,
+    #[serde(alias = "screenId")]
+    pub screen_id: String,
+    pub id: u32,
+    #[serde(alias = "fontPath")]
+    pub font_path: String,
+    #[serde(alias = "fontName")]
+    pub font_name: String,
+    pub text: String,
+    #[serde(alias = "centerX")]
+    pub center_x: f32,
+    #[serde(alias = "centerY")]
+    pub center_y: f32,
+    pub width: f32,
+    pub height: f32,
+}
+
+/// Botones HUD en manifest / snapshot del motor.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SavePlayerUiButtonSnapshot {
+    pub scope: String,
+    #[serde(alias = "screenId")]
+    pub screen_id: String,
+    pub id: u32,
+    #[serde(rename = "type", alias = "shape_type")]
+    pub shape_type: String,
+    pub round: f32,
+    #[serde(alias = "backgroundColor")]
+    pub background_color: [f32; 4],
+    #[serde(default, alias = "texturePath")]
+    pub texture_path: Option<String>,
+    #[serde(alias = "transparencyBackground")]
+    pub transparency_background: f32,
+    pub text: String,
+    #[serde(alias = "textColor")]
+    pub text_color: [f32; 4],
+    #[serde(alias = "transparencyText")]
+    pub transparency_text: f32,
+    #[serde(alias = "fontPath")]
+    pub font_path: String,
+    #[serde(alias = "fontName")]
+    pub font_name: String,
+    #[serde(alias = "borderColor")]
+    pub border_color: [f32; 4],
+    #[serde(alias = "borderWeight")]
+    pub border_weight: f32,
+    #[serde(alias = "centerX")]
+    pub center_x: f32,
+    #[serde(alias = "centerY")]
+    pub center_y: f32,
+    pub width: f32,
+    pub height: f32,
+}
+
 #[derive(Debug, Serialize, Clone)]
 pub struct SaveSceneSnapshotPayload {
     pub world: SaveWorldSnapshot,
@@ -653,6 +741,10 @@ pub struct SaveSceneSnapshotPayload {
     pub models: Vec<SaveAssetRefSnapshot>,
     pub sounds: Vec<SaveAssetRefSnapshot>,
     pub backgrounds: Vec<SaveAssetRefSnapshot>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub player_ui_text_boxes: Vec<SavePlayerUiTextBoxSnapshot>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub player_ui_buttons: Vec<SavePlayerUiButtonSnapshot>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
@@ -892,12 +984,53 @@ pub enum EngineEvent {
     },
     /// Emitido cuando el preview cambia de estado desde el motor.
     PreviewPlayingChanged { playing: bool },
+    /// Cuadro de texto HUD creado en edición de UI.
+    PlayerUiTextBoxAdded {
+        id: u32,
+        font_path: String,
+        font_name: String,
+        text: String,
+        center_x: f32,
+        center_y: f32,
+        width: f32,
+        height: f32,
+    },
+    PlayerUiTextBoxUpdated { id: u32, text: String },
+    PlayerUiTextBoxRemoved { id: u32 },
+    /// Lista de cuadros de la pantalla UI al entrar en edición (sincroniza sidebar).
+    PlayerUiTextBoxesList {
+        scope: String,
+        screen_id: String,
+        boxes: Vec<PlayerUiTextBoxListItem>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        buttons: Vec<PlayerUiButtonListItem>,
+    },
+    PlayerUiButtonAdded {
+        id: u32,
+        text: String,
+        font_name: String,
+    },
+    PlayerUiButtonRemoved { id: u32 },
     /// Emitido cada 5 minutos cuando el autosave está activo.
     AutosaveTick,
     /// Respuesta a `export_save_snapshot`: escena activa lista para el `.save`.
     SaveSnapshotReady { scene: SaveSceneSnapshotPayload },
     /// Respuesta a `get_default_scene_name`.
     DefaultSceneNameReady { id: u32, name: String },
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct PlayerUiTextBoxListItem {
+    pub id: u32,
+    pub font_name: String,
+    pub text: String,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct PlayerUiButtonListItem {
+    pub id: u32,
+    pub text: String,
+    pub font_name: String,
 }
 
 /// Información básica de un sprite almacenado en el motor.
@@ -1111,6 +1244,10 @@ pub struct ProjectLoaded3dEvent {
     pub player: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub config_camera: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub playerUiScreens: Vec<SaveUiScreenSnapshot>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub menuUiScreens: Vec<SaveUiScreenSnapshot>,
 }
 
 /// Escribe `project_loaded_3d` en stdout (claves camelCase = `ProjectLoaded3dPayload` en TS).

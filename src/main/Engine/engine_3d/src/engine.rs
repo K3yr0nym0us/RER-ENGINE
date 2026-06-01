@@ -109,6 +109,31 @@ pub struct State {
     /// Colisión de malla Rapier on/off por entidad (`docs/Entities_Model_3D.yaml`).
     pub(crate) entity_colision: std::collections::HashMap<EntityId, bool>,
     pub preview_playing: bool,
+    /// Edición de UI del jugador (vista play + cuadrícula de trabajo).
+    pub(crate) player_ui_edit_active: bool,
+    pub(crate) player_ui_edit_restore: Option<crate::config_3d::player_ui::edit::PlayerUiEditViewportRestore>,
+    pub(crate) ui_work_grid_buffer: GizmoBuffer,
+    pub(crate) player_ui_edit_scope: Option<String>,
+    pub(crate) player_ui_edit_screen_id: Option<String>,
+    pub(crate) player_ui_text_boxes:
+        std::collections::HashMap<String, Vec<crate::config_3d::player_ui::PlayerUiTextBox>>,
+    pub(crate) player_ui_buttons:
+        std::collections::HashMap<String, Vec<crate::config_3d::player_ui::PlayerUiButton>>,
+    pub(crate) player_ui_text_next_id: u32,
+    pub(crate) player_ui_text_overlay_buffer: crate::gizmo::GizmoBuffer,
+    pub(crate) player_ui_text_atlas: crate::screen_hud_image::ScreenHudAtlas,
+    pub(crate) player_ui_font_cache: std::collections::HashMap<String, std::sync::Arc<ab_glyph::FontArc>>,
+    pub(crate) player_ui_glyph_instances: Vec<crate::mesh::InstanceData>,
+    pub(crate) player_ui_glyph_instance_buffer: Option<wgpu::Buffer>,
+    pub(crate) player_ui_selected_text_id: Option<u32>,
+    pub(crate) player_ui_selected_button_id: Option<u32>,
+    pub(crate) player_ui_text_editing_id: Option<u32>,
+    /// Índice de carácter (UTF-8) del cursor en el cuadro en edición.
+    pub(crate) player_ui_text_caret: usize,
+    pub(crate) player_ui_caret_blink_epoch: std::time::Instant,
+    pub(crate) player_ui_caret_buffer: crate::gizmo::GizmoBuffer,
+    pub(crate) player_ui_text_drag: Option<crate::config_3d::player_ui::PlayerUiTextDrag>,
+    pub(crate) player_ui_last_text_click: Option<(u32, std::time::Instant)>,
     /// Wireframes de colisión en editor (IPC `set_debug_mode`).
     pub debug_mode: bool,
     pub(crate) preview_entity_transform_snapshots:

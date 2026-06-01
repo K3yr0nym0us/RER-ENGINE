@@ -94,7 +94,11 @@ import {
 	flushPendingCachedModelSpawnsForPath,
 	hasQueuedCachedModelSpawns,
 } from './sceneImportOverlay';
+import {
+	DEFAULT_PLAYER_UI_BUTTON_CONFIG,
+} from '../../../pages/EngineView/components/sidebar/UIAccordion/components/playerUiButtonModel';
 import type { EngineAction, EngineInternalRefs, EntityMeta, PendingRestore, Transform } from '../types';
+import { takePendingPlayerUiButtonConfig } from './createEngineActions';
 
 type RuntimeEngineEvent = {
 	event: string
@@ -129,6 +133,12 @@ const SILENT_ENGINE_EVENTS = new Set<string>([
 	'autosave_tick',
 	'atlas_exhausted',
 	'preview_playing_changed',
+	'player_ui_text_box_added',
+	'player_ui_text_box_updated',
+	'player_ui_text_box_removed',
+	'player_ui_text_boxes_list',
+	'player_ui_button_added',
+	'player_ui_button_removed',
 	'play_character_view_changed', 'first_person_view_changed',
 	'save_snapshot_ready',
 	'load_progress',
@@ -1556,6 +1566,94 @@ export function createEngineEventHandler({
 				refs.modelReplaceInProgressRef,
 				reportBounds,
 			);
+			}
+		}
+
+		if (event.event === 'player_ui_text_box_added') {
+			const e = event as {
+				id?: number;
+				font_name?: string;
+				text?: string;
+			};
+			if (typeof e.id === 'number') {
+				dispatch({
+					type: 'ADD_PLAYER_UI_TEXT_BOX',
+					payload: {
+						id: e.id,
+						fontName: e.font_name ?? '',
+						text: e.text ?? '',
+					},
+				});
+			}
+		}
+
+		if (event.event === 'player_ui_text_box_updated') {
+			const e = event as { id?: number; text?: string };
+			if (typeof e.id === 'number' && typeof e.text === 'string') {
+				dispatch({
+					type: 'UPDATE_PLAYER_UI_TEXT_BOX',
+					payload: { id: e.id, text: e.text },
+				});
+			}
+		}
+
+		if (event.event === 'player_ui_text_box_removed') {
+			const e = event as { id?: number };
+			if (typeof e.id === 'number') {
+				dispatch({ type: 'REMOVE_PLAYER_UI_TEXT_BOX', payload: e.id });
+			}
+		}
+
+		if (event.event === 'player_ui_text_boxes_list') {
+			const e = event as {
+				boxes?: Array<{ id?: number; font_name?: string; text?: string }>;
+				buttons?: Array<{ id?: number; font_name?: string; text?: string }>;
+			};
+			const boxes = (e.boxes ?? [])
+				.filter((b): b is { id: number; font_name?: string; text?: string } =>
+					typeof b.id === 'number',
+				)
+				.map((b) => ({
+					id: b.id,
+					fontName: b.font_name ?? '',
+					text: b.text ?? '',
+				}));
+			dispatch({ type: 'SET_EDITING_UI_TEXT_BOXES', payload: boxes });
+			const buttons = (e.buttons ?? [])
+				.filter((b): b is { id: number; font_name?: string; text?: string } =>
+					typeof b.id === 'number',
+				)
+				.map((b) => ({
+					id: b.id,
+					fontName: b.font_name ?? '',
+					text: b.text ?? '',
+				}));
+			dispatch({ type: 'SET_EDITING_UI_BUTTONS', payload: buttons });
+		}
+
+		if (event.event === 'player_ui_button_added') {
+			const e = event as { id?: number; text?: string; font_name?: string };
+			if (typeof e.id === 'number') {
+				const base =
+					takePendingPlayerUiButtonConfig() ?? DEFAULT_PLAYER_UI_BUTTON_CONFIG;
+				dispatch({
+					type: 'ADD_PLAYER_UI_BUTTON',
+					payload: {
+						id: e.id,
+						config: {
+							...base,
+							text: e.text ?? base.text,
+							fontName: e.font_name ?? base.fontName,
+						},
+					},
+				});
+			}
+		}
+
+		if (event.event === 'player_ui_button_removed') {
+			const e = event as { id?: number };
+			if (typeof e.id === 'number') {
+				dispatch({ type: 'REMOVE_PLAYER_UI_BUTTON', payload: e.id });
 			}
 		}
 

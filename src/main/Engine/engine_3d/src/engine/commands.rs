@@ -15,11 +15,6 @@ use crate::ipc::{send_event, AnimationFrameData, EngineCommand, EngineEvent};
 use super::{ActiveAnimation, AnimationState, DecodedAudio, State, UndoAction};
 
 impl State {
-    /// Reconstruye el vertex buffer de la cuadrícula con la configuración actual.
-    pub(crate) fn rebuild_grid(&mut self) {
-        // La cuadrícula 2D no se dibuja en el binario 3D; `grid_config` sigue usándose para snap/quick-build.
-    }
-
     pub fn window(&self) -> &std::sync::Arc<winit::window::Window> {
         &self.window
     }
@@ -781,11 +776,15 @@ impl State {
             }
             EngineCommand::SetGridVisible { visible } => {
                 self.grid_config.visible = visible;
-                self.rebuild_grid();
+                if self.player_ui_edit_active {
+                    self.rebuild_player_ui_screen_grid();
+                }
             }
             EngineCommand::SetGridCellSize { size } => {
                 self.grid_config.cell_size = size.clamp(0.05, 100.0);
-                self.rebuild_grid();
+                if self.player_ui_edit_active {
+                    self.rebuild_player_ui_screen_grid();
+                }
             }
             EngineCommand::SetTargetFps { fps } => {
                 self.target_fps = fps.clamp(1, 1000);
@@ -795,9 +794,77 @@ impl State {
                 self.debug_mode = show;
                 log::info!("[debug] modo debug (colisiones): {}", show);
             }
+            EngineCommand::SetPlayerUiEditMode {
+                active,
+                scope,
+                screen_id,
+            } => {
+                self.apply_player_ui_edit_mode(
+                    active,
+                    scope.as_deref(),
+                    screen_id.as_deref(),
+                );
+            }
+            EngineCommand::AddPlayerUiTextBox { font_path } => {
+                match self.add_player_ui_text_box(&font_path) {
+                    Ok(id) => {
+                        if let Some(key) = self.player_ui_text_key() {
+                            if let Some(entry) = self
+                                .player_ui_text_boxes
+                                .get(&key)
+                                .and_then(|list| list.iter().find(|b| b.id == id))
+                            {
+                                send_event(&EngineEvent::PlayerUiTextBoxAdded {
+                                    id: entry.id,
+                                    font_path: entry.font_path.clone(),
+                                    font_name: entry.font_name.clone(),
+                                    text: entry.text.clone(),
+                                    center_x: entry.center_x,
+                                    center_y: entry.center_y,
+                                    width: entry.width,
+                                    height: entry.height,
+                                });
+                            }
+                        }
+                    }
+                    Err(message) => {
+                        send_event(&EngineEvent::Error { message });
+                    }
+                }
+            }
+            EngineCommand::RemovePlayerUiTextBox { id } => {
+                let removed_id = if let Some(box_id) = id {
+                    self.remove_player_ui_text_box(box_id)
+                        .then_some(box_id)
+                } else {
+                    self.remove_selected_player_ui_text_box()
+                };
+                if let Some(box_id) = removed_id {
+                    send_event(&EngineEvent::PlayerUiTextBoxRemoved { id: box_id });
+                }
+            }
+            EngineCommand::AddPlayerUiButton { payload } => {
+                match self.add_player_ui_button(payload) {
+                    Ok(_) => {}
+                    Err(message) => {
+                        send_event(&EngineEvent::Error { message });
+                    }
+                }
+            }
+            EngineCommand::RemovePlayerUiButton { id } => {
+                if let Some(button_id) = id {
+                    if self.remove_player_ui_button(button_id) {
+                        send_event(&EngineEvent::PlayerUiButtonRemoved { id: button_id });
+                    }
+                }
+            }
             EngineCommand::SetPreviewPlaying { playing } => {
                 if self.preview_playing == playing {
                     return;
+                }
+
+                if playing && self.player_ui_edit_active {
+                    self.apply_player_ui_edit_mode(false, None, None);
                 }
 
                 self.preview_playing = playing;

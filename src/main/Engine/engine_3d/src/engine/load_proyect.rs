@@ -65,6 +65,14 @@ struct ProjectSaveData {
     blueprints: Vec<SavedBlueprint>,
     #[serde(default)]
     language: Option<String>,
+    #[serde(default)]
+    playerUiScreens: Vec<crate::ipc::SaveUiScreenSnapshot>,
+    #[serde(default)]
+    menuUiScreens: Vec<crate::ipc::SaveUiScreenSnapshot>,
+    #[serde(default, rename = "playerUiTextBoxes")]
+    player_ui_text_boxes: Vec<crate::ipc::SavePlayerUiTextBoxSnapshot>,
+    #[serde(default, rename = "playerUiButtons")]
+    player_ui_buttons: Vec<crate::ipc::SavePlayerUiButtonSnapshot>,
 }
 
 #[allow(non_snake_case)]
@@ -1473,6 +1481,8 @@ fn apply_loaded_proyect_3d(state: &mut State, project: &ProjectSaveData) -> Resu
         None,
         Some(load_started_at.elapsed().as_millis() as u64),
     );
+    state.import_player_ui_text_boxes_from_save(&project.player_ui_text_boxes);
+    state.import_player_ui_buttons_from_save(&project.player_ui_buttons);
     state.restoring_save_manifest = false;
     Ok(view)
 }
@@ -1568,5 +1578,7 @@ fn send_project_loaded_3d(project: &ProjectSaveData, view: &ActiveSaveView) {
         world,
         player,
         config_camera,
+        playerUiScreens: project.playerUiScreens.clone(),
+        menuUiScreens: project.menuUiScreens.clone(),
     });
 }

@@ -1,0 +1,197 @@
+//! Lógica de botones HUD (alta/baja/lista); render en `button_render.rs`.
+
+use crate::engine::State;
+use crate::ipc::{
+    send_event, EngineEvent, PlayerUiButtonListItem, SavePlayerUiButtonSnapshot,
+};
+
+use super::config::{
+    default_button_size_ndc, parse_hex_color_rgba, PlayerUiButton, BOX_STACK_GAP,
+};
+
+#[derive(Debug, serde::Deserialize)]
+#[allow(non_snake_case)]
+pub(crate) struct AddPlayerUiButtonPayload {
+    #[serde(rename = "type")]
+    pub shape_type: String,
+    pub round: f32,
+    #[serde(rename = "backgroundColor", alias = "background_color")]
+    pub background_color: String,
+    #[serde(rename = "texturePath", alias = "texture_path", default)]
+    pub texture_path: Option<String>,
+    #[serde(rename = "transparencyBackground", alias = "transparency_background")]
+    pub transparency_background: f32,
+    pub text: String,
+    #[serde(rename = "textColor", alias = "text_color")]
+    pub text_color: String,
+    #[serde(rename = "transparencyText", alias = "transparency_text")]
+    pub transparency_text: f32,
+    #[serde(rename = "fontPath", alias = "font_path")]
+    pub font_path: String,
+    #[serde(rename = "fontName", alias = "font_name", default)]
+    pub font_name: String,
+    #[serde(rename = "borderColor", alias = "border_color")]
+    pub border_color: String,
+    #[serde(rename = "borderWeight", alias = "border_weight")]
+    pub border_weight: f32,
+}
+
+impl State {
+    pub(crate) fn add_player_ui_button(&mut self, payload: AddPlayerUiButtonPayload) -> Result<u32, String> {
+        if !self.player_ui_edit_active {
+            return Err("modo edición UI inactivo".into());
+        }
+        let key = self
+            .player_ui_screen_key()
+            .ok_or_else(|| "contexto de pantalla UI no definido".to_string())?;
+
+        let font_name = if payload.font_name.trim().is_empty() {
+            self.font_store
+                .get(&payload.font_path)
+                .cloned()
+                .unwrap_or_default()
+        } else {
+            payload.font_name
+        };
+
+        if !payload.font_path.is_empty() && !self.font_store.contains_key(&payload.font_path) {
+            return Err(format!("fuente no registrada: {}", payload.font_path));
+        }
+
+        let id = self.player_ui_text_next_id;
+        self.player_ui_text_next_id = self.player_ui_text_next_id.saturating_add(1);
+
+        let index = self.player_ui_buttons.get(&key).map_or(0, |v| v.len());
+        let (w, h) = default_button_size_ndc(&payload.shape_type);
+        let center_y = 0.12_f32 - index as f32 * BOX_STACK_GAP;
+
+        let bg_alpha = payload.transparency_background;
+        let text_alpha = payload.transparency_text;
+        let entry = PlayerUiButton {
+            id,
+            shape_type: payload.shape_type,
+            round: payload.round,
+            background_color: parse_hex_color_rgba(&payload.background_color, bg_alpha),
+            texture_path: payload.texture_path.filter(|p| !p.is_empty()),
+            transparency_background: (bg_alpha / 100.0).clamp(0.0, 1.0),
+            text: payload.text,
+            text_color: parse_hex_color_rgba(&payload.text_color, text_alpha),
+            transparency_text: (text_alpha / 100.0).clamp(0.0, 1.0),
+            font_path: payload.font_path,
+            font_name,
+            border_color: parse_hex_color_rgba(&payload.border_color, 100.0),
+            border_weight: payload.border_weight.max(0.0),
+            center_x: 0.0,
+            center_y,
+            width: w,
+            height: h,
+        };
+
+        self.player_ui_buttons.entry(key).or_default().push(entry.clone());
+        self.player_ui_selected_button_id = Some(id);
+        self.player_ui_selected_text_id = None;
+        self.player_ui_text_editing_id = None;
+        self.player_ui_text_drag = None;
+        self.rebuild_player_ui_overlay();
+        log::info!("[player-ui] botón añadido: id={}", id);
+        send_event(&EngineEvent::PlayerUiButtonAdded {
+            id: entry.id,
+            text: entry.text.clone(),
+            font_name: entry.font_name.clone(),
+        });
+        Ok(id)
+    }
+
+    pub(crate) fn remove_player_ui_button(&mut self, id: u32) -> bool {
+        let Some(key) = self.player_ui_screen_key() else {
+            return false;
+        };
+        let Some(list) = self.player_ui_buttons.get_mut(&key) else {
+            return false;
+        };
+        let before = list.len();
+        list.retain(|b| b.id != id);
+        if list.len() == before {
+            return false;
+        }
+        if self.player_ui_selected_button_id == Some(id) {
+            self.player_ui_selected_button_id = None;
+        }
+        self.player_ui_text_drag = None;
+        self.rebuild_player_ui_overlay();
+        log::info!("[player-ui] botón eliminado: id={id}");
+        true
+    }
+
+    pub(crate) fn import_player_ui_buttons_from_save(
+        &mut self,
+        buttons: &[SavePlayerUiButtonSnapshot],
+    ) {
+        self.player_ui_buttons.clear();
+        for snap in buttons {
+            let key = format!("{}:{}", snap.scope, snap.screen_id);
+            self.player_ui_buttons.entry(key).or_default().push(
+                PlayerUiButton {
+                    id: snap.id,
+                    shape_type: snap.shape_type.clone(),
+                    round: snap.round,
+                    background_color: [
+                        snap.background_color[0],
+                        snap.background_color[1],
+                        snap.background_color[2],
+                        snap.background_color[3],
+                    ],
+                    texture_path: snap.texture_path.clone(),
+                    transparency_background: snap.transparency_background,
+                    text: snap.text.clone(),
+                    text_color: [
+                        snap.text_color[0],
+                        snap.text_color[1],
+                        snap.text_color[2],
+                        snap.text_color[3],
+                    ],
+                    transparency_text: snap.transparency_text,
+                    font_path: snap.font_path.clone(),
+                    font_name: snap.font_name.clone(),
+                    border_color: [
+                        snap.border_color[0],
+                        snap.border_color[1],
+                        snap.border_color[2],
+                        snap.border_color[3],
+                    ],
+                    border_weight: snap.border_weight,
+                    center_x: snap.center_x,
+                    center_y: snap.center_y,
+                    width: snap.width,
+                    height: snap.height,
+                },
+            );
+            self.player_ui_text_next_id = self
+                .player_ui_text_next_id
+                .max(snap.id.saturating_add(1));
+        }
+        if self.player_ui_edit_active {
+            self.rebuild_player_ui_overlay();
+        }
+        log::info!(
+            "[player-ui] importados {} botones desde .save",
+            buttons.len()
+        );
+    }
+}
+
+pub(crate) fn list_buttons_for_event(state: &State, key: &str) -> Vec<PlayerUiButtonListItem> {
+    state
+        .player_ui_buttons
+        .get(key)
+        .map(|list| {
+            list.iter()
+                .map(|b| PlayerUiButtonListItem {
+                    id: b.id,
+                    text: b.text.clone(),
+                    font_name: b.font_name.clone(),
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}

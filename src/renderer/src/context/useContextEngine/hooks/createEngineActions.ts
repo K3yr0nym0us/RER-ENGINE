@@ -7,7 +7,10 @@ import type {
 	EntityMeta,
 	EntityScripts,
 	Transform,
+	UiScreenEntry,
+	UiScreenScope,
 	WorldConfig,
+	PlayerUiButtonConfig,
 } from '../types';
 import { buildPlayAnimationFrameCmd } from './applyPendingRestoreToEngine';
 import { beginModelReplaceLoading, endModelReplaceLoading } from './sceneImportOverlay';
@@ -20,15 +23,39 @@ import {
 	reconcileCategoryWithName,
 } from '../../../utils/blueprintModelPath';
 
+let uiScreenIdCounter = 0;
+let pendingPlayerUiButtonConfig: PlayerUiButtonConfig | null = null;
+
+/** Config del modal de botón pendiente de correlacionar con `player_ui_button_added`. */
+export function takePendingPlayerUiButtonConfig(): PlayerUiButtonConfig | null {
+	const config = pendingPlayerUiButtonConfig;
+	pendingPlayerUiButtonConfig = null;
+	return config;
+}
+
+const createUiScreenId = () => {
+	uiScreenIdCounter += 1;
+	return `ui_${uiScreenIdCounter}`;
+};
+
 interface CreateEngineActionsParams {
 	dispatch: Dispatch<EngineAction>
 	refs: EngineInternalRefs
 	addLog: (text: string, isError?: boolean) => void
 	reportBounds: () => void
 	send: (cmd: object) => void
+	projectType?: string
 }
 
-export function createEngineActions({ dispatch, refs, addLog, reportBounds, send }: CreateEngineActionsParams) {
+export function createEngineActions({
+	dispatch,
+	refs,
+	addLog,
+	reportBounds,
+	send,
+	projectType,
+}: CreateEngineActionsParams) {
+	const is3dProject = projectType === '3D';
 	const cloneTransform = (transform: Transform): Transform => ({
 		position: [...transform.position] as [number, number, number],
 		rotation: [...transform.rotation] as [number, number, number, number],
@@ -607,9 +634,87 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 		send({ cmd: 'load_character', path });
 	};
 
+	const syncEngineUiViewportEdit = (playerId: string | null, menuId: string | null) => {
+		dispatch({ type: 'SET_UI_SCREEN_EDITING', payload: { playerId, menuId } });
+		if (!is3dProject) return;
+		const active = Boolean(playerId || menuId);
+		if (active) {
+			const scope = playerId ? 'player' : 'menu';
+			const screenId = playerId ?? menuId;
+			send({ cmd: 'set_player_ui_edit_mode', active: true, scope, screen_id: screenId });
+		} else {
+			send({ cmd: 'set_player_ui_edit_mode', active: false });
+		}
+	};
+
+	const addPlayerUiTextBox = (fontPath: string) => {
+		if (!is3dProject) return;
+		send({ cmd: 'add_player_ui_text_box', font_path: fontPath });
+	};
+
+	const removePlayerUiTextBox = (id?: number) => {
+		if (!is3dProject) return;
+		send({ cmd: 'remove_player_ui_text_box', ...(id !== undefined ? { id } : {}) });
+	};
+
+	const addEditingUiButton = (config: PlayerUiButtonConfig) => {
+		if (!is3dProject) return;
+		pendingPlayerUiButtonConfig = config;
+		send({
+			cmd: 'add_player_ui_button',
+			type: config.type,
+			round: config.round,
+			backgroundColor: config.backgroundColor,
+			texturePath: config.texturePath,
+			transparencyBackground: config.transparencyBackground,
+			text: config.text,
+			textColor: config.textColor,
+			transparencyText: config.transparencyText,
+			fontPath: config.fontPath,
+			fontName: config.fontName,
+			borderColor: config.borderColor,
+			borderWeight: config.borderWeight,
+		});
+	};
+
+	const removeEditingUiPlaceholder = (kind: 'button' | 'image', id: number) => {
+		if (kind === 'button' && is3dProject) {
+			send({ cmd: 'remove_player_ui_button', id });
+			return;
+		}
+		dispatch({ type: 'REMOVE_EDITING_UI_PLACEHOLDER', payload: { kind, id } });
+	};
+
+	const endUiScreenEdit = () => {
+		syncEngineUiViewportEdit(null, null);
+	};
+
 	const setPreviewPlaying = (playing: boolean) => {
 		dispatch({ type: 'SET_PREVIEW_PLAYING', payload: playing });
 		send({ cmd: 'set_preview_playing', playing });
+		if (is3dProject) {
+			endUiScreenEdit();
+		}
+	};
+
+	const addUiScreen = (scope: UiScreenScope, name: string) => {
+		const trimmed = name.trim();
+		if (!trimmed) return;
+		const entry: UiScreenEntry = { id: createUiScreenId(), name: trimmed };
+		dispatch({ type: 'ADD_UI_SCREEN', payload: { scope, entry } });
+	};
+
+	const removeUiScreen = (scope: UiScreenScope, id: string) => {
+		dispatch({ type: 'REMOVE_UI_SCREEN', payload: { scope, id } });
+	};
+
+	const beginUiScreenEdit = (scope: UiScreenScope, id: string) => {
+		if (!is3dProject) return;
+		if (scope === 'player') {
+			syncEngineUiViewportEdit(id, null);
+		} else {
+			syncEngineUiViewportEdit(null, id);
+		}
 	};
 
 	const setDebugMode = (show: boolean) => {
@@ -733,6 +838,14 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 		getSpritesList,
 		loadCharacter,
 		setPreviewPlaying,
+		addUiScreen,
+		removeUiScreen,
+		beginUiScreenEdit,
+		endUiScreenEdit,
+		addPlayerUiTextBox,
+		removePlayerUiTextBox,
+		addEditingUiButton,
+		removeEditingUiPlaceholder,
 		setDebugMode,
 		setBackground,
 		loadSound,

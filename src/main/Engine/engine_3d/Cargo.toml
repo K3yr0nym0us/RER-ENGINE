@@ -28,6 +28,7 @@ mlua.workspace = true
 gilrs.workspace = true
 rer-engine-shared = { path = "../engine_shared" }
 ttf-parser.workspace = true
+ab_glyph.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 x11.workspace = true
