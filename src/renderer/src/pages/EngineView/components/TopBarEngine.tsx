@@ -33,7 +33,7 @@ export function TopBarEngine({ projectType, handleSave, toggleAutoSave, hasSaved
     <div className="custom-controls-bar border-bottom border-secondary-subtle">
       <div className="p-2 d-flex align-items-center gap-2 justify-content-between">
         <div className="d-flex align-items-center gap-2">
-          <AppTooltip content={previewPlaying ? t('Playing') : t('Start test')} place="top">
+          <AppTooltip content={previewPlaying ? t('Playing') : t('Start test')} place="left">
             <button
               className={`btn btn-sm ${previewPlaying ? 'btn-success active' : 'btn-outline-light'}`}
               disabled={!engineReady || previewPlaying}
@@ -44,7 +44,7 @@ export function TopBarEngine({ projectType, handleSave, toggleAutoSave, hasSaved
               <PlayFill size={16} />
             </button>
           </AppTooltip>
-          <AppTooltip content={isStopActive ? t('Active editor') : t('Stop test')} place="top">
+          <AppTooltip content={isStopActive ? t('Active editor') : t('Stop test')} place="left">
             <button
               className={`btn btn-sm ${isStopActive ? 'btn-danger active' : 'btn-outline-light'}`}
               disabled={!engineReady || isStopActive}
@@ -55,7 +55,7 @@ export function TopBarEngine({ projectType, handleSave, toggleAutoSave, hasSaved
               <StopFill size={16} />
             </button>
           </AppTooltip>
-          <AppTooltip content={debugMode ? t('Deactivate debug mode') : t('Activate debug mode')} place="top">
+          <AppTooltip content={debugMode ? t('Deactivate debug mode') : t('Activate debug mode')} place="right">
             <button
               className={`btn btn-sm ${debugMode ? 'btn-success active' : 'btn-outline-success'}`}
               disabled={!engineReady}
