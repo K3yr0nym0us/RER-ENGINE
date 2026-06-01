@@ -6,6 +6,7 @@ import type {
 	ProjectType,
 	SavedAnimation,
 	SavedScene,
+	FontInfo,
 	SoundInfo,
 	BackgroundInfo,
 } from '@shared-types';
@@ -159,6 +160,7 @@ export interface BuildProjectSaveOptions {
 	locale: string
 	blueprints: import('@shared-types').BluePrintEntry[]
 	sounds: SoundInfo[]
+	fonts: FontInfo[]
 	backgrounds: BackgroundInfo[]
 	entityMeta: Record<number, EntityMeta>
 	initialGameStyle?: GameStyle
@@ -175,6 +177,7 @@ export async function buildProjectSaveFromEngineSnapshot(
 		locale,
 		blueprints,
 		sounds,
+		fonts,
 		backgrounds,
 		entityMeta,
 		initialGameStyle,
@@ -226,6 +229,7 @@ export async function buildProjectSaveFromEngineSnapshot(
 		sprites: root.sprites,
 		models: root.models,
 		sounds,
+		fonts,
 		backgrounds,
 		blueprints: savedBlueprints,
 		language: locale,

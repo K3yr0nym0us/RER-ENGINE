@@ -507,6 +507,7 @@ impl State {
             control_bindings_by_entity: HashMap::new(),
             sprite_store: HashMap::new(),
             sound_store: HashMap::new(),
+            font_store: HashMap::new(),
             background_store: HashMap::new(),
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),

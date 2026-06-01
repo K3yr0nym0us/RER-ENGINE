@@ -110,6 +110,7 @@ const SILENT_ENGINE_EVENTS = new Set<string>([
 	'sprite_loaded',
 	'background_loaded',
 	'sound_loaded',
+	'font_loaded',
 	'background_asset_loaded',
 	'scenario_loaded',
 	'scene_imported',
@@ -1041,6 +1042,7 @@ export function createEngineEventHandler({
 			}
 			window.engine.send({ cmd: 'get_sprites_list' } as never);
 			window.engine.send({ cmd: 'get_sounds_list' } as never);
+			window.engine.send({ cmd: 'get_fonts_list' } as never);
 			window.engine.send({ cmd: 'get_backgrounds_list' } as never);
 			return;
 		}
@@ -1072,6 +1074,7 @@ export function createEngineEventHandler({
 			}
 			window.engine.send({ cmd: 'get_models_list' } as never);
 			window.engine.send({ cmd: 'get_sounds_list' } as never);
+			window.engine.send({ cmd: 'get_fonts_list' } as never);
 			window.engine.send({ cmd: 'get_backgrounds_list' } as never);
 			return;
 		}
@@ -1447,6 +1450,21 @@ export function createEngineEventHandler({
 		if (event.event === 'sounds_list') {
 			const soundsList = event as unknown as { sounds: { path: string; name: string }[] };
 			dispatch({ type: 'SET_SOUNDS', payload: soundsList.sounds });
+		}
+
+		if (event.event === 'font_loaded') {
+			const font = event as unknown as { path: string; name: string };
+			dispatch({ type: 'ADD_FONT', payload: { path: font.path, name: font.name } });
+		}
+
+		if (event.event === 'font_removed') {
+			const font = event as unknown as { path: string };
+			dispatch({ type: 'REMOVE_FONT', payload: font.path });
+		}
+
+		if (event.event === 'fonts_list') {
+			const fontsList = event as unknown as { fonts: { path: string; name: string }[] };
+			dispatch({ type: 'SET_FONTS', payload: fontsList.fonts });
 		}
 
 		if (event.event === 'background_asset_loaded') {

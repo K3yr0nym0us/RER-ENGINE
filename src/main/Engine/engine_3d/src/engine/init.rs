@@ -820,6 +820,7 @@ impl State {
             pending_load_models: Vec::new(),
             pending_entity_model_replaces: Vec::new(),
             sound_store: HashMap::new(),
+            font_store: HashMap::new(),
             background_store: HashMap::new(),
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),

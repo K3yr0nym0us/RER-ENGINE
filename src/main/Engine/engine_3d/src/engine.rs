@@ -169,6 +169,7 @@ pub struct State {
     pub(crate) pending_entity_model_replaces:
         Vec<crate::config_3d::static_model_cache::PendingEntityModelReplace>,
     pub(crate) sound_store: HashMap<String, String>,
+    pub(crate) font_store: HashMap<String, String>,
     pub(crate) background_store: HashMap<String, String>,
     pub(crate) undo_stack: Vec<UndoAction>,
     pub(crate) redo_stack: Vec<UndoAction>,

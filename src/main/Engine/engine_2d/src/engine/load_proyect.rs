@@ -50,6 +50,8 @@ struct ProjectSaveData {
     #[serde(default)]
     sounds: Vec<NamedPath>,
     #[serde(default)]
+    fonts: Vec<NamedPath>,
+    #[serde(default)]
     backgrounds: Vec<NamedPath>,
     #[serde(default)]
     scenes: Vec<SavedScene>,
@@ -430,6 +432,14 @@ fn resolve_loaded_paths(project: &mut ProjectSaveData, extracted_dir: &Path) {
             path: resolve_path(&s.path, extracted_dir),
         })
         .collect();
+    project.fonts = project
+        .fonts
+        .iter()
+        .map(|f| NamedPath {
+            name: f.name.clone(),
+            path: resolve_path(&f.path, extracted_dir),
+        })
+        .collect();
     project.backgrounds = project
         .backgrounds
         .iter()
@@ -774,6 +784,12 @@ fn load_project_asset_stores(state: &mut State, project: &ProjectSaveData) {
             name: sound.name.clone(),
         });
     }
+    for font in &project.fonts {
+        state.handle_command(EngineCommand::LoadFont {
+            path: font.path.clone(),
+            name: font.name.clone(),
+        });
+    }
     for bg in &project.backgrounds {
         state.handle_command(EngineCommand::LoadBackgroundAsset {
             path: bg.path.clone(),
@@ -909,6 +925,14 @@ fn send_project_loaded_2d(project: &ProjectSaveData, view: &ActiveSaveView) {
             .map(|s| ImportSceneSprite {
                 path: s.path.clone(),
                 name: s.name.clone(),
+            })
+            .collect(),
+        fonts: project
+            .fonts
+            .iter()
+            .map(|f| ImportSceneSprite {
+                path: f.path.clone(),
+                name: f.name.clone(),
             })
             .collect(),
         backgrounds: project

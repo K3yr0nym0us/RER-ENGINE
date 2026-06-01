@@ -18,6 +18,7 @@ import {
 	type SavedControlBindings,
 	type SavedPlayerTransform,
 	type SavedScene,
+	type FontInfo,
 	type SoundInfo,
 	type SpriteInfo,
 } from '@shared-types';
@@ -127,6 +128,7 @@ export interface EngineState {
 	models: ModelInfo[]
 	loadedModelsInfo: Map<string, { name: string; category?: ModelCategory }>
 	sounds: SoundInfo[]
+	fonts: FontInfo[]
 	backgrounds: BackgroundInfo[]
 	debugMetrics: DebugMetrics | null
 	debugMode: boolean
@@ -210,6 +212,9 @@ export type EngineAction =
 	| { type: 'ADD_SOUND'; payload: SoundInfo }
 	| { type: 'REMOVE_SOUND'; payload: string }
 	| { type: 'SET_SOUNDS'; payload: SoundInfo[] }
+	| { type: 'ADD_FONT'; payload: FontInfo }
+	| { type: 'REMOVE_FONT'; payload: string }
+	| { type: 'SET_FONTS'; payload: FontInfo[] }
 	| { type: 'ADD_BACKGROUND'; payload: BackgroundInfo }
 	| { type: 'REMOVE_BACKGROUND'; payload: string }
 	| { type: 'SET_BACKGROUNDS'; payload: BackgroundInfo[] }
@@ -251,6 +256,7 @@ export const initialState: EngineState = {
 	models: [],
 	loadedModelsInfo: new Map(),
 	sounds: [],
+	fonts: [],
 	backgrounds: [],
 	debugMetrics: null,
 	debugMode: false,
@@ -538,6 +544,15 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 				: { ...prevState, sounds: [...prevState.sounds, nextAction.payload] },
 		REMOVE_SOUND: (prevState, nextAction) => ({ ...prevState, sounds: prevState.sounds.filter((s) => s.path !== nextAction.payload) }),
 		SET_SOUNDS: (prevState, nextAction) => ({ ...prevState, sounds: nextAction.payload }),
+		ADD_FONT: (prevState, nextAction) =>
+			prevState.fonts.some((f) => f.path === nextAction.payload.path)
+				? prevState
+				: { ...prevState, fonts: [...prevState.fonts, nextAction.payload] },
+		REMOVE_FONT: (prevState, nextAction) => ({
+			...prevState,
+			fonts: prevState.fonts.filter((f) => f.path !== nextAction.payload),
+		}),
+		SET_FONTS: (prevState, nextAction) => ({ ...prevState, fonts: nextAction.payload }),
 		ADD_BACKGROUND: (prevState, nextAction) =>
 			prevState.backgrounds.some((b) => b.path === nextAction.payload.path)
 				? prevState
@@ -565,6 +580,7 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 					targetFps: p.world.targetFps,
 				},
 				sounds: p.sounds,
+				fonts: p.fonts ?? [],
 				backgrounds: p.backgrounds,
 				loadedSpritesInfo: spriteMap,
 				backgroundPath: p.backgroundPath ?? null,
@@ -606,6 +622,7 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 					shadowDarkness: p.world.shadowDarkness ?? DEFAULT_SHADOW_DARKNESS,
 				},
 				sounds: p.sounds,
+				fonts: p.fonts ?? [],
 				backgrounds: p.backgrounds,
 				loadedModelsInfo: modelMap,
 			};
@@ -821,6 +838,8 @@ export interface EngineContextValue extends EngineState {
 	setBackground: (path: string | null) => void
 	loadSound: (path: string, name: string) => void
 	removeSound: (path: string) => void
+	loadFont: (path: string, name: string) => void
+	removeFont: (path: string) => void
 	loadBackgroundToLibrary: (path: string, name: string) => void
 	removeBackgroundFromLibrary: (path: string) => void
 	addBlueprint: (entry: BluePrintEntry) => void

@@ -212,6 +212,8 @@ pub struct State {
     /// Almacén de sonidos registrados para reutilización en el editor.
     /// path → name; la reproducción se hace directamente con play_audio.
     pub(crate) sound_store: HashMap<String, String>, // path → name
+    /// Almacén de fuentes registradas para reutilización en el editor.
+    pub(crate) font_store: HashMap<String, String>, // path → name
     /// Almacén de fondos registrados para reutilización en el editor.
     /// path → name; el fondo activo se gestiona por separado con load_background.
     pub(crate) background_store: HashMap<String, String>, // path → name

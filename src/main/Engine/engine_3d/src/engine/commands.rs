@@ -1617,6 +1617,45 @@ impl State {
                 send_event(&EngineEvent::SoundsList { sounds });
                 log::info!("[sound] lista enviada: {} sonidos", count);
             }
+            EngineCommand::LoadFont { path, name } => {
+                match validate_font_file(&path) {
+                    Ok(()) => {
+                        self.font_store.insert(path.clone(), name.clone());
+                        send_event(&EngineEvent::FontLoaded {
+                            path: path.clone(),
+                            name: name.clone(),
+                        });
+                        log::debug!("[font] registrada: {} ({})", path, name);
+                    }
+                    Err(e) => {
+                        log::error!("[font] error cargando {}: {}", path, e);
+                        send_event(&EngineEvent::Error {
+                            message: format!("Error al cargar fuente: {e}"),
+                        });
+                    }
+                }
+            }
+            EngineCommand::RemoveFont { path } => {
+                if self.font_store.remove(&path).is_some() {
+                    send_event(&EngineEvent::FontRemoved { path: path.clone() });
+                    log::info!("[font] eliminada: {}", path);
+                } else {
+                    log::warn!("[font] intento de eliminar fuente inexistente: {}", path);
+                }
+            }
+            EngineCommand::GetFontsList => {
+                let fonts: Vec<crate::ipc::FontInfo> = self
+                    .font_store
+                    .iter()
+                    .map(|(path, name)| crate::ipc::FontInfo {
+                        path: path.clone(),
+                        name: name.clone(),
+                    })
+                    .collect();
+                let count = fonts.len();
+                send_event(&EngineEvent::FontsList { fonts });
+                log::info!("[font] lista enviada: {} fuentes", count);
+            }
             EngineCommand::LoadBackgroundAsset { path, name } => {
                 self.background_store.insert(path.clone(), name.clone());
                 send_event(&EngineEvent::BackgroundAssetLoaded {
@@ -1649,4 +1688,20 @@ impl State {
             EngineCommand::Shutdown => {}
         }
     }
+}
+
+/// Valida extensión y contenido de un archivo de fuente (.ttf / .otf).
+fn validate_font_file(path: &str) -> Result<(), String> {
+    let ext = std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    if ext != "ttf" && ext != "otf" {
+        return Err("Se esperaba un archivo .ttf u .otf".to_string());
+    }
+    let bytes =
+        std::fs::read(path).map_err(|e| format!("No se pudo leer la fuente: {e}"))?;
+    ttf_parser::Face::parse(&bytes, 0).map_err(|e| format!("Archivo de fuente inválido: {e}"))?;
+    Ok(())
 }

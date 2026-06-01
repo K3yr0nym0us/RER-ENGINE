@@ -231,6 +231,7 @@
 
   "Assign name to Sprite": "Asignar nombre al Sprite",
   "Load Sprite": "Cargar Sprite",
+  "Load Font (.ttf, .otf)": "Cargar fuente (.ttf, .otf)",
   "File:": "Archivo:",
   "Sprite name": "Nombre del sprite",
   "Load": "Cargar",

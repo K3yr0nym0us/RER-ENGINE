@@ -427,6 +427,12 @@ pub enum EngineCommand {
     RemoveSound { path: String },
     /// Solicitar la lista de sonidos cargados en el motor.
     GetSoundsList,
+    /// Registrar un archivo de fuente en el almacén del motor (nombre → ruta).
+    LoadFont { path: String, name: String },
+    /// Eliminar una fuente del almacén del motor.
+    RemoveFont { path: String },
+    /// Solicitar la lista de fuentes cargadas en el motor.
+    GetFontsList,
     /// Registrar una imagen como fondo en el almacén del motor (nombre → ruta).
     LoadBackgroundAsset { path: String, name: String },
     /// Eliminar un fondo del almacén del motor.
@@ -791,6 +797,12 @@ pub enum EngineEvent {
     SoundRemoved { path: String },
     /// Emitido como respuesta a GetSoundsList: lista de sonidos disponibles.
     SoundsList { sounds: Vec<SoundInfo> },
+    /// Emitido cuando un archivo de fuente se registró en el almacén.
+    FontLoaded { path: String, name: String },
+    /// Emitido cuando se eliminó una fuente del almacén.
+    FontRemoved { path: String },
+    /// Emitido como respuesta a GetFontsList: lista de fuentes disponibles.
+    FontsList { fonts: Vec<FontInfo> },
     /// Emitido cuando un fondo se registró en el almacén.
     BackgroundAssetLoaded { path: String, name: String },
     /// Emitido cuando se eliminó un fondo del almacén.
@@ -1027,6 +1039,13 @@ pub struct SoundInfo {
     pub name: String,
 }
 
+/// Información básica de una fuente almacenada en el motor.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct FontInfo {
+    pub path: String,
+    pub name: String,
+}
+
 /// Información básica de un fondo almacenado en el motor.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct BackgroundInfo {
@@ -1084,6 +1103,7 @@ pub struct ProjectLoaded3dEvent {
     pub language:       Option<String>,
     pub models:         Vec<ImportSceneSprite>,
     pub sounds:         Vec<ImportSceneSprite>,
+    pub fonts:          Vec<ImportSceneSprite>,
     pub backgrounds:    Vec<ImportSceneSprite>,
     pub blueprints:     serde_json::Value,
     pub world:          ProjectLoaded3dWorld,

@@ -381,6 +381,8 @@ export interface ProjectSaveData {
   models?:         Array<{ name: string; path: string; category?: ModelCategory }>
   /** Sonidos precargados en el proyecto. */
   sounds?:         Array<{ name: string; path: string }>
+  /** Fuentes precargadas en el proyecto. */
+  fonts?:          Array<{ name: string; path: string }>
   /** Fondos precargados en el proyecto. */
   backgrounds?:    Array<{ name: string; path: string }>
   /** Blueprints creados en el proyecto. */
@@ -408,6 +410,7 @@ export interface ProjectLoaded3dPayload {
   language?:     string
   models:        Array<{ name: string; path: string; category?: ModelCategory }>
   sounds:        Array<{ name: string; path: string }>
+  fonts:         Array<{ name: string; path: string }>
   backgrounds:   Array<{ name: string; path: string }>
   blueprints:    Blueprint3D[]
   world:         SavedWorldConfig
@@ -423,6 +426,7 @@ export interface ProjectLoaded2dPayload {
   language?:     string
   sprites:       Array<{ name: string; path: string }>
   sounds:        Array<{ name: string; path: string }>
+  fonts:         Array<{ name: string; path: string }>
   backgrounds:   Array<{ name: string; path: string }>
   blueprints:    BluePrintEntry[]
   world:         SavedWorldConfig
@@ -486,6 +490,9 @@ export interface EngineCommand {
     | 'load_sound'
     | 'remove_sound'
     | 'get_sounds_list'
+    | 'load_font'
+    | 'remove_font'
+    | 'get_fonts_list'
     | 'load_background_asset'
     | 'remove_background_asset'
     | 'get_backgrounds_list'
@@ -507,7 +514,7 @@ export interface EngineCommand {
 }
 
 export interface EngineEvent {
-  event: 'ready' | 'pong' | 'error' | 'model_loaded' | 'entity_model_replaced' | 'model_clips_ready' | 'stopped' | 'entity_selected' | 'entity_deselected' | 'entity_hovered' | 'entity_unhovered' | 'scenario_loaded' | 'character_loaded' | 'scene_imported' | 'project_loaded_2d' | 'project_loaded_3d' | 'project_load_3d_complete' | 'load_progress' | 'camera_2d_updated' | 'background_loaded' | 'drawing_progress' | 'collider_created' | 'execution_area_created' | 'tool_cancelled' | 'pivot_selected' | 'physics_changed' | 'sprite_loaded' | 'sprite_removed' | 'sprites_list' | 'model_asset_loaded' | 'model_asset_removed' | 'models_list' | 'sound_loaded' | 'sound_removed' | 'sounds_list' | 'background_asset_loaded' | 'background_asset_removed' | 'backgrounds_list' | 'play_character_view_changed' | 'first_person_view_changed' | 'save_snapshot_ready' | 'default_scene_name_ready' | 'debug_metrics' | 'preview_playing_changed' | 'trigger_entered' | 'trigger_exited' | 'entity_removed' | 'quick_build_move' | 'quick_build_click' | 'animation_logical_resolved' | 'animation_finished' | 'autosave_tick' | 'atlas_exhausted'
+  event: 'ready' | 'pong' | 'error' | 'model_loaded' | 'entity_model_replaced' | 'model_clips_ready' | 'stopped' | 'entity_selected' | 'entity_deselected' | 'entity_hovered' | 'entity_unhovered' | 'scenario_loaded' | 'character_loaded' | 'scene_imported' | 'project_loaded_2d' | 'project_loaded_3d' | 'project_load_3d_complete' | 'load_progress' | 'camera_2d_updated' | 'background_loaded' | 'drawing_progress' | 'collider_created' | 'execution_area_created' | 'tool_cancelled' | 'pivot_selected' | 'physics_changed' | 'sprite_loaded' | 'sprite_removed' | 'sprites_list' | 'model_asset_loaded' | 'model_asset_removed' | 'models_list' | 'sound_loaded' | 'sound_removed' | 'sounds_list' | 'font_loaded' | 'font_removed' | 'fonts_list' | 'background_asset_loaded' | 'background_asset_removed' | 'backgrounds_list' | 'play_character_view_changed' | 'first_person_view_changed' | 'save_snapshot_ready' | 'default_scene_name_ready' | 'debug_metrics' | 'preview_playing_changed' | 'trigger_entered' | 'trigger_exited' | 'entity_removed' | 'quick_build_move' | 'quick_build_click' | 'animation_logical_resolved' | 'animation_finished' | 'autosave_tick' | 'atlas_exhausted'
   [key: string]: unknown
 }
 
@@ -741,6 +748,11 @@ export interface SoundInfo {
   name: string
 }
 
+export interface FontInfo {
+  path: string
+  name: string
+}
+
 export interface BackgroundInfo {
   path: string
   name: string
@@ -784,6 +796,7 @@ declare global {
       getImageDataUrl:         (filePath: string) => Promise<string | null>
       openBackgroundDialog:    () => Promise<string | null>
       openAudioDialog:         () => Promise<string | null>
+      openFontDialog:          () => Promise<string | null>
       onRequestViewportBounds: (cb: () => void) => void
       onAutoSaveRequest:       (cb: (filePath: string) => void) => void
       getAppResourceUsage:     () => Promise<AppResourceUsage>

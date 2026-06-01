@@ -521,6 +521,17 @@ ipcMain.handle('open-audio-dialog', async () => {
   return result.canceled ? null : result.filePaths[0] ?? null
 })
 
+// Diálogo para abrir archivo de fuente (TTF, OTF)
+ipcMain.handle('open-font-dialog', async () => {
+  if (!mainWindow) return null
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title:      'Cargar fuente',
+    filters:    [{ name: 'Fuentes', extensions: ['ttf', 'otf'] }],
+    properties: ['openFile'],
+  })
+  return result.canceled ? null : result.filePaths[0] ?? null
+})
+
 // Diálogo para abrir imagen PNG como escenario 2D
 ipcMain.handle('open-scenario-dialog', async () => {
   if (!mainWindow) return null
@@ -637,6 +648,7 @@ function ensureSaveExtension(filePath: string): string {
 
 const SCRIPT_FILE_PREFIX = '@file:'
 const AUDIO_EXTENSIONS = new Set(['.wav', '.ogg', '.mp3', '.flac', '.aac', '.m4a'])
+const FONT_EXTENSIONS = new Set(['.ttf', '.otf'])
 
 function sanitizeSegment(raw: string | null | undefined, fallback = 'item'): string {
   const text = (raw ?? '').trim()
@@ -649,6 +661,10 @@ function sanitizeSegment(raw: string | null | undefined, fallback = 'item'): str
 
 function isAudioAsset(filePath: string): boolean {
   return AUDIO_EXTENSIONS.has(path.extname(filePath).toLowerCase())
+}
+
+function isFontAsset(filePath: string): boolean {
+  return FONT_EXTENSIONS.has(path.extname(filePath).toLowerCase())
 }
 
 function toAssetPathKey(filePath: string): string {
@@ -677,6 +693,31 @@ function countSavedEntities(data: ProjectSaveData): number {
   let count = 0
   forEachEntity(data, () => { count += 1 })
   return count
+}
+
+/** Recursos de la librería (accordion Recursos) declarados en manifest. */
+function countManifestLibraryRefs(data: ProjectSaveData): {
+  sounds: number
+  fonts: number
+  backgrounds: number
+  sprites: number
+  models: number
+} {
+  return {
+    sounds: data.sounds?.length ?? 0,
+    fonts: data.fonts?.length ?? 0,
+    backgrounds: data.backgrounds?.length ?? 0,
+    sprites: data.sprites?.length ?? 0,
+    models: data.models?.length ?? 0,
+  }
+}
+
+function formatLibraryResourcesInLog(counts: {
+  sounds: number
+  fonts: number
+  backgrounds: number
+}): string {
+  return `fondos: ${counts.backgrounds}, sonidos: ${counts.sounds}, fuentes: ${counts.fonts}`
 }
 
 function formatEntityKindBreakdown(data: ProjectSaveData): string {
@@ -719,6 +760,10 @@ function collectAssetPaths(data: ProjectSaveData): Set<string> {
     for (const sound of data.sounds) add(sound.path)
   }
 
+  if (data.fonts) {
+    for (const font of data.fonts) add(font.path)
+  }
+
   if (data.backgrounds) {
     for (const bg of data.backgrounds) add(bg.path)
   }
@@ -757,7 +802,7 @@ function collectAssetPaths(data: ProjectSaveData): Set<string> {
 }
 
 /**
- * Copia todos los assets al directorio temporal (`assets/` y `sounds/`) y devuelve
+ * Copia todos los assets al directorio temporal (`assets/`, `sounds/`, `fonts/`) y devuelve
  * un mapa de ruta-absoluta → ruta-relativa dentro del paquete .save.
  * Si dos archivos distintos tienen el mismo nombre, se les agrega un sufijo numérico.
  */
@@ -765,16 +810,25 @@ function copyAssetsToDir(
   assetPaths: Set<string>,
   assetsDir: string,
   soundsDir: string,
+  fontsDir: string,
 ): Map<string, string> {
   fs.mkdirSync(assetsDir, { recursive: true })
   fs.mkdirSync(soundsDir, { recursive: true })
+  fs.mkdirSync(fontsDir, { recursive: true })
   const map = new Map<string, string>()
   const usedNames = new Map<string, number>()
 
   for (const src of assetPaths) {
     const baseName = path.basename(src)
-    const targetDir = isAudioAsset(src) ? soundsDir : assetsDir
-    const relPrefix = isAudioAsset(src) ? 'sounds' : 'assets'
+    let targetDir = assetsDir
+    let relPrefix = 'assets'
+    if (isAudioAsset(src)) {
+      targetDir = soundsDir
+      relPrefix = 'sounds'
+    } else if (isFontAsset(src)) {
+      targetDir = fontsDir
+      relPrefix = 'fonts'
+    }
     const key = `${relPrefix}/${baseName}`
     const count = usedNames.get(key) ?? 0
     usedNames.set(key, count + 1)
@@ -987,6 +1041,10 @@ function remapPaths(data: ProjectSaveData, map: Map<string, string>): ProjectSav
       name: s.name,
       path: remap(s.path) as string,
     })),
+    fonts: data.fonts?.map((f) => ({
+      name: f.name,
+      path: remap(f.path) as string,
+    })),
     backgrounds: data.backgrounds?.map((b) => ({
       name: b.name,
       path: remap(b.path) as string,
@@ -1028,9 +1086,10 @@ function saveProjectToFile(saveFilePath: string, data: ProjectSaveData): boolean
   try {
     const assetsDir = path.join(stagingDir, 'assets')
     const soundsDir = path.join(stagingDir, 'sounds')
+    const fontsDir = path.join(stagingDir, 'fonts')
     const scriptingDir = path.join(stagingDir, 'scripting')
     const assetPaths = collectAssetPaths(data)
-    const pathMap = copyAssetsToDir(assetPaths, assetsDir, soundsDir)
+    const pathMap = copyAssetsToDir(assetPaths, assetsDir, soundsDir, fontsDir)
     const remapped = remapPaths(data, pathMap)
     const scriptsPacked = serializeScriptsToFiles(remapped, scriptingDir)
 
@@ -1065,6 +1124,9 @@ function saveProjectToFile(saveFilePath: string, data: ProjectSaveData): boolean
     const uniqueSounds = new Set<string>()
     for (const sound of data.sounds ?? []) addRelIfPacked(uniqueSounds, sound.path)
 
+    const uniqueFonts = new Set<string>()
+    for (const font of data.fonts ?? []) addRelIfPacked(uniqueFonts, font.path)
+
     const uniqueBackgrounds = new Set<string>()
     for (const bg of data.backgrounds ?? []) addRelIfPacked(uniqueBackgrounds, bg.path)
 
@@ -1074,7 +1136,7 @@ function saveProjectToFile(saveFilePath: string, data: ProjectSaveData): boolean
       for (const sprite of scene.sprites ?? []) addRelIfPacked(uniqueSprites, sprite.path)
     }
 
-    const classifiedAssets = new Set<string>([...uniqueSounds, ...uniqueBackgrounds, ...uniqueSprites])
+    const classifiedAssets = new Set<string>([...uniqueSounds, ...uniqueFonts, ...uniqueBackgrounds, ...uniqueSprites])
     const otherAssetNames = Array.from(pathMap.values()).filter((rel) => !classifiedAssets.has(rel)).sort()
     const otherAssets = otherAssetNames.length
     const packedScriptFiles = countLuaFiles(scriptingDir)
@@ -1088,14 +1150,24 @@ function saveProjectToFile(saveFilePath: string, data: ProjectSaveData): boolean
       for (const scene of data.scenes ?? []) {
         for (const model of scene.models ?? []) addRelIfPacked(uniqueModels, model.path)
       }
+      const libraryLog = formatLibraryResourcesInLog({
+        backgrounds: uniqueBackgrounds.size,
+        sounds: uniqueSounds.size,
+        fonts: uniqueFonts.size,
+      })
       console.log(
-        `[editor] Proyecto guardado en ${saveFilePath} `
-        + `(entidades: ${entityCount}${entityKindSuffix}, modelos: ${uniqueModels.size}, fondos: ${uniqueBackgrounds.size}, sonidos: ${uniqueSounds.size}, scripts empaquetados: ${packedScriptFiles})`,
+        `[editor] Proyecto guardado `
+        + `(entidades: ${entityCount}${entityKindSuffix}, modelos: ${uniqueModels.size}, ${libraryLog}, scripts empaquetados: ${packedScriptFiles})`,
       )
     } else {
+      const libraryLog = formatLibraryResourcesInLog({
+        backgrounds: uniqueBackgrounds.size,
+        sounds: uniqueSounds.size,
+        fonts: uniqueFonts.size,
+      })
       console.log(
-        `[editor] Proyecto guardado en ${saveFilePath} `
-        + `(entidades: ${entityCount}${entityKindSuffix}, sprites: ${uniqueSprites.size}, fondos: ${uniqueBackgrounds.size}, sonidos: ${uniqueSounds.size}, scripts empaquetados: ${packedScriptFiles}, otros: ${otherAssets}${otherSuffix})`,
+        `[editor] Proyecto guardado `
+        + `(entidades: ${entityCount}${entityKindSuffix}, sprites: ${uniqueSprites.size}, ${libraryLog}, scripts empaquetados: ${packedScriptFiles}, otros: ${otherAssets}${otherSuffix})`,
       )
     }
     return true
@@ -1186,6 +1258,10 @@ function resolveLoadedPaths(data: ProjectSaveData, extractedDir: string): Projec
     sounds: data.sounds?.map((s) => ({
       name: s.name,
       path: resolve(s.path) as string,
+    })),
+    fonts: data.fonts?.map((f) => ({
+      name: f.name,
+      path: resolve(f.path) as string,
     })),
     backgrounds: data.backgrounds?.map((b) => ({
       name: b.name,
@@ -1317,6 +1393,25 @@ ipcMain.handle('open-project-dialog', async (): Promise<OpenProjectResult | null
   currentGameStyle = meta.gameStyle
   currentProjectExtractDir = extractDir
   clearAssetWatchers()
+
+  const loaded = loadProjectFromExtractDir(extractDir)
+  if (loaded) {
+    const entityCount = countSavedEntities(loaded)
+    const entityKindSuffix = formatEntityKindBreakdown(loaded)
+    const lib = countManifestLibraryRefs(loaded)
+    const libraryLog = formatLibraryResourcesInLog(lib)
+    if (loaded.type === '3D') {
+      console.log(
+        `[editor] Proyecto cargado `
+        + `(entidades: ${entityCount}${entityKindSuffix}, modelos: ${lib.models}, ${libraryLog})`,
+      )
+    } else {
+      console.log(
+        `[editor] Proyecto cargado `
+        + `(entidades: ${entityCount}${entityKindSuffix}, sprites: ${lib.sprites}, ${libraryLog})`,
+      )
+    }
+  }
 
   return { filePath, extractDir, project: meta }
 })

@@ -5,6 +5,7 @@ import SpritesAccordion from './SpritesAccordion/SpritesAccordion';
 import ModelsAccordion from './ModelsAccordion/ModelsAccordion';
 import BackgroundsAccordion from './BackgroundsAccordion/BackgroundsAccordion';
 import SoundsAccordion from './SoundsAccordion/SoundsAccordion';
+import FontsAccordion from './FontsAccordion/FontsAccordion';
 
 import { useTraslate } from '@hooks';
 import type { ProjectType } from '@shared-types';
@@ -26,6 +27,9 @@ const ResourcesAccordion = ({ projectType = '2D' }: Props) => {
         </Accordion>
         <Accordion className="sidebar-accordion mt-2">
           <SoundsAccordion />
+        </Accordion>
+        <Accordion className="sidebar-accordion mt-2">
+          <FontsAccordion />
         </Accordion>
         {!is3d && (
           <Accordion className="sidebar-accordion mt-2">

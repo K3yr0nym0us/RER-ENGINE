@@ -61,6 +61,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openAudioDialog: (): Promise<string | null> => {
     return ipcRenderer.invoke('open-audio-dialog')
   },
+  openFontDialog: (): Promise<string | null> => {
+    return ipcRenderer.invoke('open-font-dialog')
+  },
   openScenarioDialog: (): Promise<string | null> => {
     return ipcRenderer.invoke('open-scenario-dialog')
   },

@@ -636,6 +636,16 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 		dispatch({ type: 'REMOVE_SOUND', payload: path });
 	};
 
+	const loadFont = (path: string, name: string) => {
+		send({ cmd: 'load_font', path, name });
+		dispatch({ type: 'ADD_FONT', payload: { path, name } });
+	};
+
+	const removeFont = (path: string) => {
+		send({ cmd: 'remove_font', path });
+		dispatch({ type: 'REMOVE_FONT', payload: path });
+	};
+
 	const loadBackgroundToLibrary = (path: string, name: string) => {
 		send({ cmd: 'load_background_asset', path, name });
 		dispatch({ type: 'ADD_BACKGROUND', payload: { path, name } });
@@ -727,6 +737,8 @@ export function createEngineActions({ dispatch, refs, addLog, reportBounds, send
 		setBackground,
 		loadSound,
 		removeSound,
+		loadFont,
+		removeFont,
 		loadBackgroundToLibrary,
 		removeBackgroundFromLibrary,
 		addBlueprint,

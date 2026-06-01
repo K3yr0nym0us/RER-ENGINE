@@ -31,6 +31,7 @@ export function useAutoSave({
     entityMetaRef,
     blueprints,
     sounds,
+    fonts,
     backgrounds,
   } = useContextEngine();
   const { locale } = useLanguage();
@@ -63,6 +64,7 @@ export function useAutoSave({
         locale,
         blueprints,
         sounds,
+        fonts,
         backgrounds,
         entityMeta: entityMetaRef.current,
         initialGameStyle: gameStyle,
@@ -77,6 +79,7 @@ export function useAutoSave({
     entityMetaRef,
     blueprints,
     sounds,
+    fonts,
     backgrounds,
     locale,
   ]);

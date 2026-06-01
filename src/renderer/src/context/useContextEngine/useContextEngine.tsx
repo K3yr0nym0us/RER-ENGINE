@@ -218,6 +218,8 @@ export function EngineProvider({
 		setBackground: actions.setBackground,
 		loadSound: actions.loadSound,
 		removeSound: actions.removeSound,
+		loadFont: actions.loadFont,
+		removeFont: actions.removeFont,
 		loadBackgroundToLibrary: actions.loadBackgroundToLibrary,
 		removeBackgroundFromLibrary: actions.removeBackgroundFromLibrary,
 		addBlueprint: actions.addBlueprint,
