@@ -57,6 +57,12 @@ pub enum ScriptCmd {
     SetVsync { enabled: bool },
     /// Activate or deactivate temporal anti-aliasing (shadow + scene).
     SetTaa { enabled: bool },
+    /// Cambiar la pantalla Player UI activa en play (por id).
+    SetActivePlayerUiScreen { screen_id: String },
+    /// Quitar pantalla HUD activa en play.
+    ClearActivePlayerUiScreen,
+    /// Cambiar la pantalla Player UI activa por nombre visible en el editor.
+    SetActivePlayerUiScreenByName { name: String },
 }
 
 // ---------------------------------------------------------------------------
@@ -281,7 +287,7 @@ impl ScriptEngine {
         if let Some(s) = snapshot {
             snapshots.insert(entity_id, s.clone());
         }
-        self.update_snapshot_globals(&snapshots);
+        self.update_snapshot_globals(&snapshots, None);
 
         let entity_table = self.build_entity_table(entity_id, snapshot)?;
 
@@ -342,13 +348,14 @@ impl ScriptEngine {
         &mut self,
         dt: f32,
         snapshots: &HashMap<u32, EntitySnapshot>,
+        player_ui_active_screen: Option<&str>,
     ) -> Vec<ScriptCmd> {
         // Shared command queue: Lua functions append here via a Lua-side table
         // that we read back after all scripts run.
         let cmd_queue: LuaTable = self.lua.create_table().expect("tabla cmd_queue");
         self.lua.globals().set("__cmds", cmd_queue).expect("set __cmds");
 
-        self.update_snapshot_globals(snapshots);
+        self.update_snapshot_globals(snapshots, player_ui_active_screen);
 
         let mut commands = Vec::new();
 
@@ -564,6 +571,45 @@ impl ScriptEngine {
         }).expect("create set_taa fn");
         let _ = globals.set("__api_set_taa", set_taa);
 
+        let set_active_player_ui = lua
+            .create_function(|lua_ctx, screen_id: String| {
+                push_cmd(lua_ctx, "set_active_player_ui", |t| {
+                    t.set("screen_id", screen_id)?;
+                    Ok(())
+                })
+            })
+            .expect("create set_active_player_ui fn");
+        let _ = globals.set("__api_set_active_player_ui", set_active_player_ui);
+
+        let set_active_player_ui_by_name = lua
+            .create_function(|lua_ctx, name: String| {
+                push_cmd(lua_ctx, "set_active_player_ui_by_name", |t| {
+                    t.set("name", name)?;
+                    Ok(())
+                })
+            })
+            .expect("create set_active_player_ui_by_name fn");
+        let _ = globals.set(
+            "__api_set_active_player_ui_by_name",
+            set_active_player_ui_by_name,
+        );
+
+        let get_active_player_ui = lua
+            .create_function(|lua_ctx, ()| {
+                lua_ctx
+                    .globals()
+                    .get::<LuaValue>("player_ui_active_screen")
+            })
+            .expect("create get_active_player_ui fn");
+        let _ = globals.set("__api_get_active_player_ui", get_active_player_ui);
+
+        let clear_active_player_ui = lua
+            .create_function(|lua_ctx, ()| {
+                push_cmd(lua_ctx, "clear_active_player_ui", |_| Ok(()))
+            })
+            .expect("create clear_active_player_ui fn");
+        let _ = globals.set("__api_clear_active_player_ui", clear_active_player_ui);
+
         // engine table: the public API that scripts use
         // engine.move_to, engine.translate, etc.
         let engine_table = lua.create_table().expect("engine table");
@@ -589,14 +635,42 @@ impl ScriptEngine {
         let _ = engine_table.set("play_character_set_jump_speed", globals.get::<LuaFunction>("__api_fp_set_jump_speed").ok());
         let _ = engine_table.set("set_vsync", globals.get::<LuaFunction>("__api_set_vsync").ok());
         let _ = engine_table.set("set_taa", globals.get::<LuaFunction>("__api_set_taa").ok());
+        let _ = engine_table.set(
+            "set_active_player_ui",
+            globals.get::<LuaFunction>("__api_set_active_player_ui").ok(),
+        );
+        let _ = engine_table.set(
+            "set_active_player_ui_by_name",
+            globals
+                .get::<LuaFunction>("__api_set_active_player_ui_by_name")
+                .ok(),
+        );
+        let _ = engine_table.set(
+            "get_active_player_ui",
+            globals.get::<LuaFunction>("__api_get_active_player_ui").ok(),
+        );
+        let _ = engine_table.set(
+            "clear_active_player_ui",
+            globals.get::<LuaFunction>("__api_clear_active_player_ui").ok(),
+        );
         let _ = globals.set("engine", engine_table);
 
     }
 
     /// Actualiza los snapshots dinámicos visibles para Lua en este tick.
-    fn update_snapshot_globals(&self, snapshots: &HashMap<u32, EntitySnapshot>) {
+    fn update_snapshot_globals(
+        &self,
+        snapshots: &HashMap<u32, EntitySnapshot>,
+        player_ui_active_screen: Option<&str>,
+    ) {
         let globals = self.lua.globals();
         let lua = &self.lua;
+
+        if let Some(id) = player_ui_active_screen {
+            let _ = globals.set("player_ui_active_screen", id);
+        } else {
+            let _ = globals.set("player_ui_active_screen", LuaNil);
+        }
 
         // Inject entity snapshots as a read-only table (entities[id] = {x,y,...})
         let entities_table = lua.create_table().expect("entities table");
@@ -760,6 +834,13 @@ fn parse_cmd_table(t: LuaTable) -> LuaResult<ScriptCmd> {
         "set_taa" => Ok(ScriptCmd::SetTaa {
             enabled: t.get("enabled")?,
         }),
+        "set_active_player_ui" => Ok(ScriptCmd::SetActivePlayerUiScreen {
+            screen_id: t.get("screen_id")?,
+        }),
+        "set_active_player_ui_by_name" => Ok(ScriptCmd::SetActivePlayerUiScreenByName {
+            name: t.get("name")?,
+        }),
+        "clear_active_player_ui" => Ok(ScriptCmd::ClearActivePlayerUiScreen),
         other => Err(LuaError::runtime(format!("unknown script cmd: {other}"))),
     }
 }

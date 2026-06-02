@@ -116,6 +116,10 @@ pub struct State {
     pub(crate) ui_work_grid_buffer: GizmoBuffer,
     pub(crate) player_ui_edit_scope: Option<String>,
     pub(crate) player_ui_edit_screen_id: Option<String>,
+    /// Pantalla Player UI marcada como activa (play y scripts Lua).
+    pub(crate) player_ui_active_player_screen_id: Option<String>,
+    /// id → nombre de pantallas Player UI (sincronizado desde el editor).
+    pub(crate) player_ui_player_screen_names: HashMap<String, String>,
     pub(crate) player_ui_text_boxes:
         std::collections::HashMap<String, Vec<crate::config_3d::player_ui::PlayerUiTextBox>>,
     pub(crate) player_ui_buttons:

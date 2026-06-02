@@ -788,6 +788,8 @@ impl State {
             ui_work_grid_buffer,
             player_ui_edit_scope: None,
             player_ui_edit_screen_id: None,
+            player_ui_active_player_screen_id: None,
+            player_ui_player_screen_names: HashMap::new(),
             player_ui_text_boxes: HashMap::new(),
             player_ui_buttons: HashMap::new(),
             player_ui_images: HashMap::new(),

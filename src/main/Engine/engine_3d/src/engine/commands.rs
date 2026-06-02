@@ -888,6 +888,19 @@ impl State {
                     send_event(&EngineEvent::Error { message });
                 }
             }
+            EngineCommand::SyncPlayerUiScreens { screens } => {
+                self.sync_player_ui_screens(&screens);
+            }
+            EngineCommand::SetActivePlayerUiScreen { screen_id } => {
+                match screen_id.filter(|id| !id.is_empty()) {
+                    Some(id) => {
+                        if let Err(message) = self.set_active_player_ui_screen(&id) {
+                            send_event(&EngineEvent::Error { message });
+                        }
+                    }
+                    None => self.clear_active_player_ui_screen(),
+                }
+            }
             EngineCommand::SetPreviewPlaying { playing } => {
                 if self.preview_playing == playing {
                     return;
@@ -898,6 +911,7 @@ impl State {
                 }
 
                 self.preview_playing = playing;
+                self.apply_player_ui_play_hud(playing);
 
                 if playing {
                     self.capture_preview_editor_snapshots();

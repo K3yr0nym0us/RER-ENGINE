@@ -1494,6 +1494,16 @@ fn apply_loaded_proyect_3d(state: &mut State, project: &ProjectSaveData) -> Resu
     state.import_player_ui_text_boxes_from_save(&project.player_ui_text_boxes);
     state.import_player_ui_buttons_from_save(&project.player_ui_buttons);
     state.import_player_ui_images_from_save(&project.player_ui_images);
+    let player_screens: Vec<crate::ipc::PlayerUiScreenInfo> = project
+        .playerUiScreens
+        .iter()
+        .map(|s| crate::ipc::PlayerUiScreenInfo {
+            id: s.id.clone(),
+            name: s.name.clone(),
+            active: s.active,
+        })
+        .collect();
+    state.sync_player_ui_screens(&player_screens);
     state.restoring_save_manifest = false;
     Ok(view)
 }

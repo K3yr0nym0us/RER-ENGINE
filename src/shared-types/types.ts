@@ -390,7 +390,7 @@ export interface ProjectSaveData {
   /** Idioma/locale del proyecto (en | es). */
   language?:       string
   /** Pantallas UI del jugador (editor). */
-  playerUiScreens?: Array<{ id: string; name: string }>
+  playerUiScreens?: Array<{ id: string; name: string; active?: boolean }>
   /** Pantallas UI de menú (editor). */
   menuUiScreens?:  Array<{ id: string; name: string }>
   /** Cuadros de texto HUD por pantalla (motor). */
@@ -483,7 +483,7 @@ export interface ProjectLoaded3dPayload {
   world:         SavedWorldConfig
   player?: Entity3D | null
   config_camera?: ConfigCamera | null
-  playerUiScreens?: Array<{ id: string; name: string }>
+  playerUiScreens?: Array<{ id: string; name: string; active?: boolean }>
   menuUiScreens?:  Array<{ id: string; name: string }>
 }
 

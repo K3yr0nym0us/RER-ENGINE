@@ -13,10 +13,36 @@ use super::image_render;
 use super::text_render;
 
 impl State {
+    /// Clave `scope:screen_id` de la pantalla HUD activa (edición o play).
     pub(crate) fn player_ui_screen_key(&self) -> Option<String> {
-        let scope = self.player_ui_edit_scope.as_ref()?;
-        let screen_id = self.player_ui_edit_screen_id.as_ref()?;
-        Some(format!("{scope}:{screen_id}"))
+        if self.player_ui_edit_active {
+            let scope = self.player_ui_edit_scope.as_deref()?;
+            let screen_id = self.player_ui_edit_screen_id.as_deref()?;
+            return Some(format!("{scope}:{screen_id}"));
+        }
+        if self.preview_playing {
+            let screen_id = self.player_ui_play_screen_id()?;
+            return Some(format!("player:{screen_id}"));
+        }
+        None
+    }
+
+    pub(crate) fn player_ui_hud_visible(&self) -> bool {
+        self.player_ui_edit_active
+            || (self.preview_playing && self.player_ui_play_screen_id().is_some())
+    }
+
+    pub(crate) fn apply_player_ui_play_hud(&mut self, entering_play: bool) {
+        if entering_play {
+            if let Some(id) = self.player_ui_play_screen_id() {
+                self.rebuild_player_ui_overlay();
+                log::info!("[player-ui] HUD en play: pantalla {id}");
+            } else {
+                log::info!("[player-ui] play sin pantalla Player UI activa con contenido HUD");
+            }
+        } else if !self.player_ui_edit_active {
+            self.rebuild_player_ui_overlay();
+        }
     }
 
     pub(crate) fn player_ui_font_cached(&self, path: &str) -> Option<Arc<FontArc>> {
@@ -91,32 +117,34 @@ impl State {
         let mut verts = Vec::new();
         let draw_order =
             super::hud_layers::hud_draw_order(&text_boxes, &buttons, &images);
-        for layer in &draw_order {
-            match layer.kind {
-                super::hud_layers::HudLayerKind::Text => {
-                    let b = &text_boxes[layer.index];
-                    text_render::append_text_box_gizmo_verts(
-                        &mut verts,
-                        std::slice::from_ref(b),
-                        self.player_ui_selected_text_id,
-                        self.player_ui_text_editing_id,
-                    );
-                }
-                super::hud_layers::HudLayerKind::Button => {
-                    let btn = &buttons[layer.index];
-                    button_render::append_button_gizmo_verts(
-                        &mut verts,
-                        std::slice::from_ref(btn),
-                        self.player_ui_selected_button_id,
-                    );
-                }
-                super::hud_layers::HudLayerKind::Image => {
-                    let img = &images[layer.index];
-                    image_render::append_image_gizmo_verts(
-                        &mut verts,
-                        std::slice::from_ref(img),
-                        self.player_ui_selected_image_id,
-                    );
+        if self.player_ui_edit_active {
+            for layer in &draw_order {
+                match layer.kind {
+                    super::hud_layers::HudLayerKind::Text => {
+                        let b = &text_boxes[layer.index];
+                        text_render::append_text_box_gizmo_verts(
+                            &mut verts,
+                            std::slice::from_ref(b),
+                            self.player_ui_selected_text_id,
+                            self.player_ui_text_editing_id,
+                        );
+                    }
+                    super::hud_layers::HudLayerKind::Button => {
+                        let btn = &buttons[layer.index];
+                        button_render::append_button_gizmo_verts(
+                            &mut verts,
+                            std::slice::from_ref(btn),
+                            self.player_ui_selected_button_id,
+                        );
+                    }
+                    super::hud_layers::HudLayerKind::Image => {
+                        let img = &images[layer.index];
+                        image_render::append_image_gizmo_verts(
+                            &mut verts,
+                            std::slice::from_ref(img),
+                            self.player_ui_selected_image_id,
+                        );
+                    }
                 }
             }
         }
@@ -195,11 +223,12 @@ impl State {
         enc: &mut wgpu::CommandEncoder,
         view: &wgpu::TextureView,
     ) -> u32 {
-        if !self.player_ui_edit_active {
+        if !self.player_ui_hud_visible() {
             return 0;
         }
 
-        let has_gizmo = self.player_ui_text_overlay_buffer.vertex_count > 0;
+        let has_gizmo = self.player_ui_edit_active
+            && self.player_ui_text_overlay_buffer.vertex_count > 0;
         let has_glyphs = self
             .player_ui_glyph_instance_buffer
             .as_ref()

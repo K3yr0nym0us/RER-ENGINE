@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
-import { Accordion } from 'react-bootstrap';
+import { useEffect } from 'react';
+import { Accordion, Form } from 'react-bootstrap';
 import { Pencil, Trash } from 'react-bootstrap-icons';
 import { AppTooltip } from '@components';
 import { useContextEngine } from '@engine';
@@ -46,6 +47,8 @@ const UiScreensAccordion = ({
 		removePlayerUiImage,
 		removeEditingUiPlaceholder,
 		setPlayerUiHudElementProps,
+		setActivePlayerUiScreen,
+		syncPlayerUiScreensToEngine,
 		engineReady,
 	} = useContextEngine();
 
@@ -53,6 +56,12 @@ const UiScreensAccordion = ({
 	const editingId = scope === 'player' ? playerUiEditingId : menuUiEditingId;
 	const isEditing = editingId !== null;
 	const editingScreen = screens.find((screen) => screen.id === editingId);
+
+	useEffect(() => {
+		if (scope === 'player') {
+			syncPlayerUiScreensToEngine(playerUiScreens);
+		}
+	}, [scope, playerUiScreens, syncPlayerUiScreensToEngine]);
 
 	const openNewUiModal = () => {
 		const defaultName = `${defaultNamePrefix} ${screens.length + 1}`;
@@ -295,6 +304,23 @@ const UiScreensAccordion = ({
 										{screen.name}
 									</span>
 								</AppTooltip>
+
+								{scope === 'player' ? (
+									<AppTooltip content={t('Active HUD in play')} place="top">
+										<Form.Check
+											type="checkbox"
+											className="m-0 flex-shrink-0"
+											checked={Boolean(screen.active)}
+											disabled={!engineReady}
+											aria-label={t('Active HUD in play')}
+											onChange={() => {
+												setActivePlayerUiScreen(
+													screen.active ? null : screen.id,
+												);
+											}}
+										/>
+									</AppTooltip>
+								) : null}
 
 								<AppTooltip content={t('Edit UI')} place="top">
 									<span

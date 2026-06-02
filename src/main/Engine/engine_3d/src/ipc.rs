@@ -490,6 +490,15 @@ pub enum EngineCommand {
         #[serde(default)]
         z_index: Option<i32>,
     },
+    /// Sincroniza la lista de pantallas Player UI (id, nombre, activa).
+    SyncPlayerUiScreens {
+        screens: Vec<PlayerUiScreenInfo>,
+    },
+    /// Marca o desmarca la pantalla Player UI activa en play (`None` = ninguna).
+    SetActivePlayerUiScreen {
+        #[serde(default)]
+        screen_id: Option<String>,
+    },
     /// Deshacer la última acción disponible.
     Undo,
     /// Rehacer la última acción deshecha (si existe historial de redo).
@@ -683,9 +692,19 @@ pub struct SaveAssetRefSnapshot {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PlayerUiScreenInfo {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub active: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SaveUiScreenSnapshot {
     pub id: String,
     pub name: String,
+    #[serde(default)]
+    pub active: bool,
 }
 
 /// Cuadros HUD en manifest / snapshot del motor (`screen_id`, mismo criterio que entidades).
@@ -1085,6 +1104,11 @@ pub enum EngineEvent {
         image_name: String,
     },
     PlayerUiImageRemoved { id: u32 },
+    /// Pantalla Player UI activa cambiada (editor o script Lua).
+    PlayerUiActiveScreenChanged {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        screen_id: Option<String>,
+    },
     /// Emitido cada 5 minutos cuando el autosave está activo.
     AutosaveTick,
     /// Respuesta a `export_save_snapshot`: escena activa lista para el `.save`.

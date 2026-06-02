@@ -112,9 +112,16 @@ export const DEFAULT_WORLD_CONFIG: WorldConfig = {
 
 export type UiScreenScope = 'player' | 'menu';
 
+/** Normaliza flags `active` al cargar proyecto (sin forzar ninguna activa). */
+export function normalizePlayerUiScreens(screens: UiScreenEntry[]): UiScreenEntry[] {
+	return screens.map((s) => ({ ...s, active: Boolean(s.active) }));
+}
+
 export interface UiScreenEntry {
 	id: string;
 	name: string;
+	/** Pantalla HUD mostrada en play (solo scope `player`). */
+	active?: boolean;
 }
 
 export interface PlayerUiHudElementMeta {
@@ -244,6 +251,7 @@ export type EngineAction =
 	| { type: 'SET_UI_SCREEN_EDITING'; payload: { playerId: string | null; menuId: string | null } }
 	| { type: 'ADD_UI_SCREEN'; payload: { scope: UiScreenScope; entry: UiScreenEntry } }
 	| { type: 'REMOVE_UI_SCREEN'; payload: { scope: UiScreenScope; id: string } }
+	| { type: 'SET_ACTIVE_PLAYER_UI_SCREEN'; payload: string | null }
 	| { type: 'CLEAR_EDITING_UI_ELEMENTS' }
 	| { type: 'SET_EDITING_UI_TEXT_BOXES'; payload: PlayerUiTextBoxEntry[] }
 	| {
@@ -526,16 +534,32 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 		ADD_UI_SCREEN: (prevState, nextAction) => {
 			const { scope, entry } = nextAction.payload;
 			if (scope === 'player') {
-				return { ...prevState, playerUiScreens: [...prevState.playerUiScreens, entry] };
+				return {
+					...prevState,
+					playerUiScreens: [
+						...prevState.playerUiScreens,
+						{ ...entry, active: false },
+					],
+				};
 			}
 			return { ...prevState, menuUiScreens: [...prevState.menuUiScreens, entry] };
 		},
+		SET_ACTIVE_PLAYER_UI_SCREEN: (prevState, nextAction) => ({
+			...prevState,
+			playerUiScreens: prevState.playerUiScreens.map((screen) => ({
+				...screen,
+				active:
+					nextAction.payload !== null && screen.id === nextAction.payload,
+			})),
+		}),
 		REMOVE_UI_SCREEN: (prevState, nextAction) => {
 			const { scope, id } = nextAction.payload;
 			if (scope === 'player') {
 				return {
 					...prevState,
-					playerUiScreens: prevState.playerUiScreens.filter((screen) => screen.id !== id),
+					playerUiScreens: prevState.playerUiScreens.filter(
+						(screen) => screen.id !== id,
+					),
 					playerUiEditingId: prevState.playerUiEditingId === id ? null : prevState.playerUiEditingId,
 				};
 			}
@@ -904,7 +928,7 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 				fonts: p.fonts ?? [],
 				backgrounds: p.backgrounds,
 				loadedModelsInfo: modelMap,
-				playerUiScreens: p.playerUiScreens ?? [],
+				playerUiScreens: normalizePlayerUiScreens(p.playerUiScreens ?? []),
 				menuUiScreens: p.menuUiScreens ?? [],
 			};
 		},
@@ -1118,6 +1142,8 @@ export interface EngineContextValue extends EngineState {
 	setPreviewPlaying: (playing: boolean) => void
 	addUiScreen: (scope: UiScreenScope, name: string) => void
 	removeUiScreen: (scope: UiScreenScope, id: string) => void
+	setActivePlayerUiScreen: (screenId: string | null) => void
+	syncPlayerUiScreensToEngine: (screens: UiScreenEntry[]) => void
 	beginUiScreenEdit: (scope: UiScreenScope, id: string) => void
 	endUiScreenEdit: () => void
 	addPlayerUiTextBox: (fontPath: string) => void

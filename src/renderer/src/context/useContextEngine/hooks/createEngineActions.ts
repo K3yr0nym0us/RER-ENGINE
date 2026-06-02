@@ -740,6 +740,27 @@ export function createEngineActions({
 		dispatch({ type: 'REMOVE_UI_SCREEN', payload: { scope, id } });
 	};
 
+	const syncPlayerUiScreensToEngine = (screens: UiScreenEntry[]) => {
+		if (!is3dProject) return;
+		send({
+			cmd: 'sync_player_ui_screens',
+			screens: screens.map((s) => ({
+				id: s.id,
+				name: s.name,
+				active: Boolean(s.active),
+			})),
+		});
+	};
+
+	const setActivePlayerUiScreen = (screenId: string | null) => {
+		if (!is3dProject) return;
+		dispatch({ type: 'SET_ACTIVE_PLAYER_UI_SCREEN', payload: screenId });
+		send({
+			cmd: 'set_active_player_ui_screen',
+			screen_id: screenId,
+		});
+	};
+
 	const beginUiScreenEdit = (scope: UiScreenScope, id: string) => {
 		if (!is3dProject) return;
 		if (scope === 'player') {
@@ -872,6 +893,8 @@ export function createEngineActions({
 		setPreviewPlaying,
 		addUiScreen,
 		removeUiScreen,
+		setActivePlayerUiScreen,
+		syncPlayerUiScreensToEngine,
 		beginUiScreenEdit,
 		endUiScreenEdit,
 		addPlayerUiTextBox,

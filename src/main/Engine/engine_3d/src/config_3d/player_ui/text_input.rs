@@ -980,10 +980,6 @@ impl State {
         );
     }
 
-    pub(crate) fn rebuild_player_ui_text_overlay(&mut self) {
-        self.rebuild_player_ui_overlay();
-    }
-
     pub(crate) fn draw_player_ui_text_boxes(
         &mut self,
         enc: &mut wgpu::CommandEncoder,

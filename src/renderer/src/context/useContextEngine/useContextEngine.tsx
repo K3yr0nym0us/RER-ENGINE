@@ -217,6 +217,8 @@ export function EngineProvider({
 		setPreviewPlaying: actions.setPreviewPlaying,
 		addUiScreen: actions.addUiScreen,
 		removeUiScreen: actions.removeUiScreen,
+		setActivePlayerUiScreen: actions.setActivePlayerUiScreen,
+		syncPlayerUiScreensToEngine: actions.syncPlayerUiScreensToEngine,
 		beginUiScreenEdit: actions.beginUiScreenEdit,
 		endUiScreenEdit: actions.endUiScreenEdit,
 		addPlayerUiTextBox: actions.addPlayerUiTextBox,

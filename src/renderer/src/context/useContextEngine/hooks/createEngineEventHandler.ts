@@ -141,6 +141,7 @@ const SILENT_ENGINE_EVENTS = new Set<string>([
 	'player_ui_button_removed',
 	'player_ui_image_added',
 	'player_ui_image_removed',
+	'player_ui_active_screen_changed',
 	'hud_image_loaded',
 	'hud_image_removed',
 	'hud_images_list',
@@ -1061,6 +1062,15 @@ export function createEngineEventHandler({
 			window.engine.send({ cmd: 'get_hud_images_list' } as never);
 			window.engine.send({ cmd: 'get_backgrounds_list' } as never);
 			return;
+		}
+
+		if (event.event === 'player_ui_active_screen_changed') {
+			const e = event as { screen_id?: string | null };
+			const screenId =
+				typeof e.screen_id === 'string' && e.screen_id.length > 0
+					? e.screen_id
+					: null;
+			dispatch({ type: 'SET_ACTIVE_PLAYER_UI_SCREEN', payload: screenId });
 		}
 
 		if (event.event === 'project_loaded_3d') {

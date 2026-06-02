@@ -12,6 +12,7 @@ pub(crate) mod image_render;
 pub(crate) mod hud;
 pub(crate) mod hud_layers;
 pub(crate) mod hud_props;
+pub(crate) mod screens;
 pub(crate) mod edit;
 
 pub(crate) use config::{PlayerUiButton, PlayerUiImage, PlayerUiTextBox};
