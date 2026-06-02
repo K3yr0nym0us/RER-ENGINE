@@ -139,6 +139,11 @@ const SILENT_ENGINE_EVENTS = new Set<string>([
 	'player_ui_text_boxes_list',
 	'player_ui_button_added',
 	'player_ui_button_removed',
+	'player_ui_image_added',
+	'player_ui_image_removed',
+	'hud_image_loaded',
+	'hud_image_removed',
+	'hud_images_list',
 	'play_character_view_changed', 'first_person_view_changed',
 	'save_snapshot_ready',
 	'load_progress',
@@ -1053,6 +1058,7 @@ export function createEngineEventHandler({
 			window.engine.send({ cmd: 'get_sprites_list' } as never);
 			window.engine.send({ cmd: 'get_sounds_list' } as never);
 			window.engine.send({ cmd: 'get_fonts_list' } as never);
+			window.engine.send({ cmd: 'get_hud_images_list' } as never);
 			window.engine.send({ cmd: 'get_backgrounds_list' } as never);
 			return;
 		}
@@ -1085,6 +1091,7 @@ export function createEngineEventHandler({
 			window.engine.send({ cmd: 'get_models_list' } as never);
 			window.engine.send({ cmd: 'get_sounds_list' } as never);
 			window.engine.send({ cmd: 'get_fonts_list' } as never);
+			window.engine.send({ cmd: 'get_hud_images_list' } as never);
 			window.engine.send({ cmd: 'get_backgrounds_list' } as never);
 			return;
 		}
@@ -1574,6 +1581,8 @@ export function createEngineEventHandler({
 				id?: number;
 				font_name?: string;
 				text?: string;
+				z_index?: number;
+				locked?: boolean;
 			};
 			if (typeof e.id === 'number') {
 				dispatch({
@@ -1582,6 +1591,8 @@ export function createEngineEventHandler({
 						id: e.id,
 						fontName: e.font_name ?? '',
 						text: e.text ?? '',
+						zIndex: typeof e.z_index === 'number' ? e.z_index : 0,
+						locked: Boolean(e.locked),
 					},
 				});
 			}
@@ -1606,8 +1617,26 @@ export function createEngineEventHandler({
 
 		if (event.event === 'player_ui_text_boxes_list') {
 			const e = event as {
-				boxes?: Array<{ id?: number; font_name?: string; text?: string }>;
-				buttons?: Array<{ id?: number; font_name?: string; text?: string }>;
+				boxes?: Array<{
+					id?: number;
+					font_name?: string;
+					text?: string;
+					z_index?: number;
+					locked?: boolean;
+				}>;
+				buttons?: Array<{
+					id?: number;
+					font_name?: string;
+					text?: string;
+					z_index?: number;
+					locked?: boolean;
+				}>;
+				images?: Array<{
+					id?: number;
+					image_name?: string;
+					z_index?: number;
+					locked?: boolean;
+				}>;
 			};
 			const boxes = (e.boxes ?? [])
 				.filter((b): b is { id: number; font_name?: string; text?: string } =>
@@ -1617,6 +1646,8 @@ export function createEngineEventHandler({
 					id: b.id,
 					fontName: b.font_name ?? '',
 					text: b.text ?? '',
+					zIndex: typeof b.z_index === 'number' ? b.z_index : 0,
+					locked: Boolean(b.locked),
 				}));
 			dispatch({ type: 'SET_EDITING_UI_TEXT_BOXES', payload: boxes });
 			const buttons = (e.buttons ?? [])
@@ -1627,8 +1658,21 @@ export function createEngineEventHandler({
 					id: b.id,
 					fontName: b.font_name ?? '',
 					text: b.text ?? '',
+					zIndex: typeof b.z_index === 'number' ? b.z_index : 0,
+					locked: Boolean(b.locked),
 				}));
 			dispatch({ type: 'SET_EDITING_UI_BUTTONS', payload: buttons });
+			const images = (e.images ?? [])
+				.filter((img): img is { id: number; image_name?: string } =>
+					typeof img.id === 'number',
+				)
+				.map((img) => ({
+					id: img.id,
+					imageName: img.image_name ?? '',
+					zIndex: typeof img.z_index === 'number' ? img.z_index : 0,
+					locked: Boolean(img.locked),
+				}));
+			dispatch({ type: 'SET_EDITING_UI_IMAGES', payload: images });
 		}
 
 		if (event.event === 'player_ui_button_added') {
@@ -1655,6 +1699,57 @@ export function createEngineEventHandler({
 			if (typeof e.id === 'number') {
 				dispatch({ type: 'REMOVE_PLAYER_UI_BUTTON', payload: e.id });
 			}
+		}
+
+		if (event.event === 'player_ui_image_added') {
+			const e = event as {
+				id?: number;
+				image_name?: string;
+				z_index?: number;
+				locked?: boolean;
+			};
+			if (typeof e.id === 'number') {
+				dispatch({
+					type: 'ADD_PLAYER_UI_IMAGE',
+					payload: {
+						id: e.id,
+						imageName: e.image_name ?? '',
+						zIndex: typeof e.z_index === 'number' ? e.z_index : 0,
+						locked: Boolean(e.locked),
+					},
+				});
+			}
+		}
+
+		if (event.event === 'player_ui_image_removed') {
+			const e = event as { id?: number };
+			if (typeof e.id === 'number') {
+				dispatch({ type: 'REMOVE_PLAYER_UI_IMAGE', payload: e.id });
+			}
+		}
+
+		if (event.event === 'hud_image_loaded') {
+			const e = event as { path?: string; name?: string };
+			if (e.path && e.name) {
+				dispatch({ type: 'ADD_HUD_IMAGE', payload: { path: e.path, name: e.name } });
+			}
+		}
+
+		if (event.event === 'hud_image_removed') {
+			const e = event as { path?: string };
+			if (e.path) {
+				dispatch({ type: 'REMOVE_HUD_IMAGE', payload: e.path });
+			}
+		}
+
+		if (event.event === 'hud_images_list') {
+			const list = event as { images?: Array<{ path?: string; name?: string }> };
+			const images = (list.images ?? [])
+				.filter((img): img is { path: string; name: string } =>
+					Boolean(img.path && img.name),
+				)
+				.map((img) => ({ path: img.path, name: img.name }));
+			dispatch({ type: 'SET_HUD_IMAGES', payload: images });
 		}
 
 		if (event.event === 'preview_playing_changed') {

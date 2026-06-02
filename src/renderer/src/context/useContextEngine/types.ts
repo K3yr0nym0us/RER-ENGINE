@@ -19,6 +19,7 @@ import {
 	type SavedPlayerTransform,
 	type SavedScene,
 	type FontInfo,
+	type HudImageInfo,
 	type SoundInfo,
 	type SpriteInfo,
 } from '@shared-types';
@@ -116,7 +117,12 @@ export interface UiScreenEntry {
 	name: string;
 }
 
-export interface PlayerUiTextBoxEntry {
+export interface PlayerUiHudElementMeta {
+	zIndex: number;
+	locked: boolean;
+}
+
+export interface PlayerUiTextBoxEntry extends PlayerUiHudElementMeta {
 	id: number;
 	fontName: string;
 	text: string;
@@ -124,15 +130,20 @@ export interface PlayerUiTextBoxEntry {
 
 export type EditingUiElementKind = 'text' | 'button' | 'image';
 
-export interface EditingUiButtonEntry {
+export interface EditingUiButtonEntry extends PlayerUiHudElementMeta {
 	id: number;
 	config: PlayerUiButtonConfig;
+}
+
+export interface PlayerUiImageEntry extends PlayerUiHudElementMeta {
+	id: number;
+	imageName: string;
 }
 
 export type EditingUiElement =
 	| (PlayerUiTextBoxEntry & { kind: 'text' })
 	| ({ kind: 'button' } & EditingUiButtonEntry)
-	| { kind: 'image'; id: number; label: string };
+	| (PlayerUiImageEntry & { kind: 'image' });
 
 export function mergeEditingUiTextElements(
 	elements: EditingUiElement[],
@@ -158,7 +169,20 @@ export function mergeEditingUiButtonElements(
 				text: b.text,
 				fontName: b.fontName,
 			},
+			zIndex: b.zIndex,
+			locked: b.locked,
 		})),
+	];
+}
+
+export function mergeEditingUiImageElements(
+	elements: EditingUiElement[],
+	images: PlayerUiImageEntry[],
+): EditingUiElement[] {
+	const other = elements.filter((e) => e.kind !== 'image');
+	return [
+		...other,
+		...images.map((img) => ({ kind: 'image' as const, ...img })),
 	];
 }
 
@@ -195,6 +219,7 @@ export interface EngineState {
 	loadedModelsInfo: Map<string, { name: string; category?: ModelCategory }>
 	sounds: SoundInfo[]
 	fonts: FontInfo[]
+	hudImages: HudImageInfo[]
 	backgrounds: BackgroundInfo[]
 	debugMetrics: DebugMetrics | null
 	debugMode: boolean
@@ -223,15 +248,34 @@ export type EngineAction =
 	| { type: 'SET_EDITING_UI_TEXT_BOXES'; payload: PlayerUiTextBoxEntry[] }
 	| {
 			type: 'SET_EDITING_UI_BUTTONS'
-			payload: Array<{ id: number; text: string; fontName: string }>
+			payload: Array<{
+				id: number
+				text: string
+				fontName: string
+				zIndex: number
+				locked: boolean
+			}>
 	  }
-	| { type: 'ADD_PLAYER_UI_TEXT_BOX'; payload: PlayerUiTextBoxEntry }
+	| { type: 'SET_EDITING_UI_IMAGES'; payload: PlayerUiImageEntry[] }
+	| {
+			type: 'ADD_PLAYER_UI_TEXT_BOX'
+			payload: PlayerUiTextBoxEntry
+	  }
 	| { type: 'UPDATE_PLAYER_UI_TEXT_BOX'; payload: { id: number; text: string } }
 	| { type: 'REMOVE_PLAYER_UI_TEXT_BOX'; payload: number }
-	| { type: 'ADD_PLAYER_UI_BUTTON'; payload: { id: number; config: PlayerUiButtonConfig } }
+	| {
+			type: 'ADD_PLAYER_UI_BUTTON'
+			payload: {
+				id: number
+				config: PlayerUiButtonConfig
+				zIndex?: number
+				locked?: boolean
+			}
+	  }
 	| { type: 'REMOVE_PLAYER_UI_BUTTON'; payload: number }
-	| { type: 'ADD_EDITING_UI_PLACEHOLDER'; payload: { kind: 'image'; label: string } }
-	| { type: 'REMOVE_EDITING_UI_PLACEHOLDER'; payload: { kind: 'button' | 'image'; id: number } }
+	| { type: 'ADD_PLAYER_UI_IMAGE'; payload: PlayerUiImageEntry }
+	| { type: 'REMOVE_PLAYER_UI_IMAGE'; payload: number }
+	| { type: 'REMOVE_EDITING_UI_PLACEHOLDER'; payload: { kind: 'button'; id: number } }
 	| { type: 'SET_SCENE_IMPORT_LOADING'; payload: boolean }
 	| { type: 'SYNC_PLAY_CHARACTER_VIEW' }
 	| { type: 'ADD_LOG'; payload: LogEntry }
@@ -303,6 +347,9 @@ export type EngineAction =
 	| { type: 'ADD_FONT'; payload: FontInfo }
 	| { type: 'REMOVE_FONT'; payload: string }
 	| { type: 'SET_FONTS'; payload: FontInfo[] }
+	| { type: 'ADD_HUD_IMAGE'; payload: HudImageInfo }
+	| { type: 'REMOVE_HUD_IMAGE'; payload: string }
+	| { type: 'SET_HUD_IMAGES'; payload: HudImageInfo[] }
 	| { type: 'ADD_BACKGROUND'; payload: BackgroundInfo }
 	| { type: 'REMOVE_BACKGROUND'; payload: string }
 	| { type: 'SET_BACKGROUNDS'; payload: BackgroundInfo[] }
@@ -345,6 +392,7 @@ export const initialState: EngineState = {
 	loadedModelsInfo: new Map(),
 	sounds: [],
 	fonts: [],
+	hudImages: [],
 	backgrounds: [],
 	debugMetrics: null,
 	debugMode: false,
@@ -405,6 +453,13 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 				DEFAULT_PLAYER_UI_BUTTON_CONFIG,
 			),
 		}),
+		SET_EDITING_UI_IMAGES: (prevState, nextAction) => ({
+			...prevState,
+			editingUiElements: mergeEditingUiImageElements(
+				prevState.editingUiElements,
+				nextAction.payload,
+			),
+		}),
 		CLEAR_EDITING_UI_ELEMENTS: (prevState) => ({
 			...prevState,
 			editingUiElements: [],
@@ -438,6 +493,8 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 					kind: 'button' as const,
 					id: nextAction.payload.id,
 					config: nextAction.payload.config,
+					zIndex: nextAction.payload.zIndex ?? 0,
+					locked: nextAction.payload.locked ?? false,
 				},
 			],
 		}),
@@ -447,20 +504,23 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 				(el) => el.kind !== 'button' || el.id !== nextAction.payload,
 			),
 		}),
-		ADD_EDITING_UI_PLACEHOLDER: (prevState, nextAction) => {
-			const id = Date.now();
-			return {
-				...prevState,
-				editingUiElements: [
-					...prevState.editingUiElements,
-					{ kind: 'image' as const, id, label: nextAction.payload.label },
-				],
-			};
-		},
+		ADD_PLAYER_UI_IMAGE: (prevState, nextAction) => ({
+			...prevState,
+			editingUiElements: [
+				...prevState.editingUiElements,
+				{ kind: 'image' as const, ...nextAction.payload },
+			],
+		}),
+		REMOVE_PLAYER_UI_IMAGE: (prevState, nextAction) => ({
+			...prevState,
+			editingUiElements: prevState.editingUiElements.filter(
+				(el) => el.kind !== 'image' || el.id !== nextAction.payload,
+			),
+		}),
 		REMOVE_EDITING_UI_PLACEHOLDER: (prevState, nextAction) => ({
 			...prevState,
 			editingUiElements: prevState.editingUiElements.filter(
-				(el) => el.kind !== nextAction.payload.kind || el.id !== nextAction.payload.id,
+				(el) => el.kind !== 'button' || el.id !== nextAction.payload.id,
 			),
 		}),
 		ADD_UI_SCREEN: (prevState, nextAction) => {
@@ -763,6 +823,15 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 			fonts: prevState.fonts.filter((f) => f.path !== nextAction.payload),
 		}),
 		SET_FONTS: (prevState, nextAction) => ({ ...prevState, fonts: nextAction.payload }),
+		ADD_HUD_IMAGE: (prevState, nextAction) =>
+			prevState.hudImages.some((img) => img.path === nextAction.payload.path)
+				? prevState
+				: { ...prevState, hudImages: [...prevState.hudImages, nextAction.payload] },
+		REMOVE_HUD_IMAGE: (prevState, nextAction) => ({
+			...prevState,
+			hudImages: prevState.hudImages.filter((img) => img.path !== nextAction.payload),
+		}),
+		SET_HUD_IMAGES: (prevState, nextAction) => ({ ...prevState, hudImages: nextAction.payload }),
 		ADD_BACKGROUND: (prevState, nextAction) =>
 			prevState.backgrounds.some((b) => b.path === nextAction.payload.path)
 				? prevState
@@ -1054,7 +1123,16 @@ export interface EngineContextValue extends EngineState {
 	addPlayerUiTextBox: (fontPath: string) => void
 	removePlayerUiTextBox: (id?: number) => void
 	addEditingUiButton: (config: PlayerUiButtonConfig) => void
-	removeEditingUiPlaceholder: (kind: 'button' | 'image', id: number) => void
+	addPlayerUiImage: (imagePath: string) => void
+	removePlayerUiImage: (id?: number) => void
+	setPlayerUiHudElementProps: (
+		elementKind: EditingUiElementKind,
+		id: number,
+		props: { locked?: boolean; z_index?: number },
+	) => void
+	removeEditingUiPlaceholder: (kind: 'button', id: number) => void
+	loadHudImage: (path: string, name: string) => void
+	removeHudImage: (path: string) => void
 	setBackground: (path: string | null) => void
 	loadSound: (path: string, name: string) => void
 	removeSound: (path: string) => void

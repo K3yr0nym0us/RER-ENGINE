@@ -11,7 +11,7 @@ use super::config::{box_corners, HasUiHudRect, PlayerUiTextBox};
 use super::font::{build_hud_label_glyph, text_caret_line_ndc};
 use super::ndc_draw::{push_handle_disc, push_line_segment, push_quad};
 
-const HANDLE_RADIUS: f32 = 0.016;
+pub(crate) const HANDLE_RADIUS: f32 = 0.016;
 
 pub(crate) fn append_text_box_gizmo_verts(
     verts: &mut Vec<GizmoVertex>,

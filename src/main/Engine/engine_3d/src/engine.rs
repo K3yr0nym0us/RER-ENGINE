@@ -95,6 +95,7 @@ pub struct State {
     pub(crate) world_bounds_buffer: GizmoBuffer,
     pub(crate) crosshair_buffer: GizmoBuffer,
     pub(crate) ctrl_held: bool,
+    pub(crate) shift_held: bool,
     pub active_tool: ActiveTool,
     pub(crate) quick_build_ghost_id: Option<EntityId>,
     pub(crate) quick_build_preview_path: Option<String>,
@@ -119,14 +120,20 @@ pub struct State {
         std::collections::HashMap<String, Vec<crate::config_3d::player_ui::PlayerUiTextBox>>,
     pub(crate) player_ui_buttons:
         std::collections::HashMap<String, Vec<crate::config_3d::player_ui::PlayerUiButton>>,
+    pub(crate) player_ui_images:
+        std::collections::HashMap<String, Vec<crate::config_3d::player_ui::PlayerUiImage>>,
     pub(crate) player_ui_text_next_id: u32,
     pub(crate) player_ui_text_overlay_buffer: crate::gizmo::GizmoBuffer,
     pub(crate) player_ui_text_atlas: crate::screen_hud_image::ScreenHudAtlas,
+    /// UV empaquetados en `player_ui_text_atlas` por ruta de imagen (evita releer disco en cada frame).
+    pub(crate) player_ui_hud_texture_cache:
+        std::collections::HashMap<String, crate::screen_hud_image::ScreenHudPackedImage>,
     pub(crate) player_ui_font_cache: std::collections::HashMap<String, std::sync::Arc<ab_glyph::FontArc>>,
     pub(crate) player_ui_glyph_instances: Vec<crate::mesh::InstanceData>,
     pub(crate) player_ui_glyph_instance_buffer: Option<wgpu::Buffer>,
     pub(crate) player_ui_selected_text_id: Option<u32>,
     pub(crate) player_ui_selected_button_id: Option<u32>,
+    pub(crate) player_ui_selected_image_id: Option<u32>,
     pub(crate) player_ui_text_editing_id: Option<u32>,
     /// Índice de carácter (UTF-8) del cursor en el cuadro en edición.
     pub(crate) player_ui_text_caret: usize,
@@ -195,6 +202,8 @@ pub struct State {
         Vec<crate::config_3d::static_model_cache::PendingEntityModelReplace>,
     pub(crate) sound_store: HashMap<String, String>,
     pub(crate) font_store: HashMap<String, String>,
+    /// Imágenes HUD (Resources → Images): path → metadatos para UI del jugador.
+    pub(crate) hud_image_store: HashMap<String, crate::hud_image_asset::HudImageAssetMeta>,
     pub(crate) background_store: HashMap<String, String>,
     pub(crate) undo_stack: Vec<UndoAction>,
     pub(crate) redo_stack: Vec<UndoAction>,

@@ -73,6 +73,10 @@ struct ProjectSaveData {
     player_ui_text_boxes: Vec<crate::ipc::SavePlayerUiTextBoxSnapshot>,
     #[serde(default, rename = "playerUiButtons")]
     player_ui_buttons: Vec<crate::ipc::SavePlayerUiButtonSnapshot>,
+    #[serde(default, rename = "playerUiImages")]
+    player_ui_images: Vec<crate::ipc::SavePlayerUiImageSnapshot>,
+    #[serde(default, rename = "hudImages")]
+    hud_images: Vec<NamedPath>,
 }
 
 #[allow(non_snake_case)]
@@ -995,6 +999,12 @@ fn load_project_asset_stores(state: &mut State, project: &ProjectSaveData) {
             name: bg.name.clone(),
         });
     }
+    for img in &project.hud_images {
+        state.handle_command(EngineCommand::LoadHudImage {
+            path: img.path.clone(),
+            name: img.name.clone(),
+        });
+    }
 }
 
 /// Restaura jugador FP desde manifest: mesh sin auto-escala, transform y cámara del save.
@@ -1483,6 +1493,7 @@ fn apply_loaded_proyect_3d(state: &mut State, project: &ProjectSaveData) -> Resu
     );
     state.import_player_ui_text_boxes_from_save(&project.player_ui_text_boxes);
     state.import_player_ui_buttons_from_save(&project.player_ui_buttons);
+    state.import_player_ui_images_from_save(&project.player_ui_images);
     state.restoring_save_manifest = false;
     Ok(view)
 }

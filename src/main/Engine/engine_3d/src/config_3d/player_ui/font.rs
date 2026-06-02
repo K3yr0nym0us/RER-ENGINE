@@ -7,7 +7,7 @@ use glam::Mat4;
 
 use super::config::UiHudRect;
 use crate::mesh;
-use crate::screen_hud_image::{self, ScreenHudAtlas};
+use crate::screen_hud_image::{self, ScreenHudAtlas, ScreenHudPackedImage};
 
 pub(crate) fn load_font_arc(path: &str) -> Option<Arc<FontArc>> {
     let bytes = std::fs::read(path).ok()?;
@@ -174,41 +174,44 @@ pub(crate) fn build_hud_label_glyph(
     }
 }
 
-/// Textura PNG/JPEG empaquetada en el atlas HUD, escalada al rectángulo NDC.
-pub(crate) fn build_hud_texture_quad(
+/// Empaqueta la imagen en el atlas (o devuelve la entrada de caché).
+pub(crate) fn pack_hud_texture_cached(
     path: &str,
+    cache: &mut std::collections::HashMap<String, ScreenHudPackedImage>,
+    atlas: &mut ScreenHudAtlas,
+    queue: &wgpu::Queue,
+) -> Option<ScreenHudPackedImage> {
+    if let Some(packed) = cache.get(path) {
+        return Some(*packed);
+    }
+    let bytes = std::fs::read(path).ok()?;
+    use image::ImageReader;
+    let img = ImageReader::new(std::io::Cursor::new(&bytes))
+        .with_guessed_format()
+        .ok()?
+        .decode()
+        .ok()?
+        .to_rgba8();
+    let (w, h) = img.dimensions();
+    if w == 0 || h == 0 {
+        return None;
+    }
+    let packed = atlas.pack_rgba(queue, img.as_raw(), w, h);
+    cache.insert(path.to_string(), packed);
+    Some(packed)
+}
+
+/// Instancia de quad HUD con UV ya empaquetados (solo transforma al rect NDC).
+pub(crate) fn push_hud_texture_quad_instance(
+    packed: ScreenHudPackedImage,
     box_rect: UiHudRect,
     viewport_w: f32,
     viewport_h: f32,
-    atlas: &mut ScreenHudAtlas,
-    queue: &wgpu::Queue,
     out: &mut Vec<mesh::InstanceData>,
 ) {
     if viewport_w <= 0.0 || viewport_h <= 0.0 {
         return;
     }
-    let bytes = match std::fs::read(path) {
-        Ok(b) => b,
-        Err(e) => {
-            log::warn!("[player-ui] textura no legible {path}: {e}");
-            return;
-        }
-    };
-    use image::ImageReader;
-    let img = match ImageReader::new(std::io::Cursor::new(&bytes))
-        .with_guessed_format()
-        .ok()
-        .and_then(|r| r.decode().ok())
-    {
-        Some(i) => i.to_rgba8(),
-        None => return,
-    };
-    let (w, h) = img.dimensions();
-    if w == 0 || h == 0 {
-        return;
-    }
-    let packed = atlas.pack_rgba(queue, img.as_raw(), w, h);
-
     let hw = box_rect.width * 0.5;
     let hh = box_rect.height * 0.5;
     let x0_ndc = box_rect.center_x - hw;
@@ -221,6 +224,24 @@ pub(crate) fn build_hud_texture_quad(
     if let Some(model) = ndc_transform_top_left(x0_px, y0_px, w_px, h_px, viewport_w, viewport_h) {
         out.push(screen_hud_image::build_screen_hud_instance(packed, model, 1.0));
     }
+}
+
+/// Textura HUD con caché de UV (rebuild completo o preview en vivo).
+pub(crate) fn build_hud_texture_quad_cached(
+    path: &str,
+    box_rect: UiHudRect,
+    viewport_w: f32,
+    viewport_h: f32,
+    cache: &mut std::collections::HashMap<String, ScreenHudPackedImage>,
+    atlas: &mut ScreenHudAtlas,
+    queue: &wgpu::Queue,
+    out: &mut Vec<mesh::InstanceData>,
+) {
+    let Some(packed) = pack_hud_texture_cached(path, cache, atlas, queue) else {
+        log::warn!("[player-ui] textura no legible: {path}");
+        return;
+    };
+    push_hud_texture_quad_instance(packed, box_rect, viewport_w, viewport_h, out);
 }
 
 /// Buffer RGBA: origen arriba-izquierda, filas hacia abajo (igual que textura GPU).

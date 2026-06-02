@@ -7,8 +7,10 @@ import type {
 	SavedAnimation,
 	SavedPlayerUiTextBox,
 	SavedPlayerUiButton,
+	SavedPlayerUiImage,
 	SavedScene,
 	FontInfo,
+	HudImageInfo,
 	SoundInfo,
 	BackgroundInfo,
 } from '@shared-types';
@@ -164,6 +166,7 @@ export interface BuildProjectSaveOptions {
 	blueprints: import('@shared-types').BluePrintEntry[]
 	sounds: SoundInfo[]
 	fonts: FontInfo[]
+	hudImages: HudImageInfo[]
 	backgrounds: BackgroundInfo[]
 	entityMeta: Record<number, EntityMeta>
 	initialGameStyle?: GameStyle
@@ -185,6 +188,8 @@ function mapEngineUiTextBoxesToSave(
 		center_y: b.center_y,
 		width: b.width,
 		height: b.height,
+		z_index: b.z_index ?? 0,
+		locked: b.locked ?? false,
 	}));
 }
 
@@ -211,6 +216,28 @@ function mapEngineUiButtonsToSave(
 		center_y: b.center_y,
 		width: b.width,
 		height: b.height,
+		source_aspect: b.source_aspect,
+		z_index: b.z_index ?? 0,
+		locked: b.locked ?? false,
+	}));
+}
+
+function mapEngineUiImagesToSave(
+	images: NonNullable<EngineSaveSceneSnapshot['player_ui_images']>,
+): SavedPlayerUiImage[] {
+	return images.map((img) => ({
+		scope: img.scope,
+		screen_id: img.screen_id,
+		id: img.id,
+		image_path: img.image_path,
+		image_name: img.image_name,
+		center_x: img.center_x,
+		center_y: img.center_y,
+		width: img.width,
+		height: img.height,
+		source_aspect: img.source_aspect,
+		z_index: img.z_index ?? 0,
+		locked: img.locked ?? false,
 	}));
 }
 
@@ -226,6 +253,7 @@ export async function buildProjectSaveFromEngineSnapshot(
 		blueprints,
 		sounds,
 		fonts,
+		hudImages,
 		backgrounds,
 		entityMeta,
 		initialGameStyle,
@@ -280,6 +308,7 @@ export async function buildProjectSaveFromEngineSnapshot(
 		models: root.models,
 		sounds,
 		fonts,
+		hudImages: hudImages.length ? hudImages : undefined,
 		backgrounds,
 		blueprints: savedBlueprints,
 		language: locale,
@@ -290,6 +319,9 @@ export async function buildProjectSaveFromEngineSnapshot(
 			: undefined,
 		playerUiButtons: engineScene.player_ui_buttons?.length
 			? mapEngineUiButtonsToSave(engineScene.player_ui_buttons)
+			: undefined,
+		playerUiImages: engineScene.player_ui_images?.length
+			? mapEngineUiImagesToSave(engineScene.player_ui_images)
 			: undefined,
 	};
 }

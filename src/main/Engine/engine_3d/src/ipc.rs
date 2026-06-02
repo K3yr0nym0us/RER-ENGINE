@@ -433,6 +433,12 @@ pub enum EngineCommand {
     RemoveFont { path: String },
     /// Solicitar la lista de fuentes cargadas en el motor.
     GetFontsList,
+    /// Registrar imagen HUD (Resources → Images) con dimensiones para proporción.
+    LoadHudImage { path: String, name: String },
+    /// Eliminar imagen del almacén HUD.
+    RemoveHudImage { path: String },
+    /// Lista de imágenes HUD registradas.
+    GetHudImagesList,
     /// Registrar una imagen como fondo en el almacén del motor (nombre → ruta).
     LoadBackgroundAsset { path: String, name: String },
     /// Eliminar un fondo del almacén del motor.
@@ -467,6 +473,22 @@ pub enum EngineCommand {
     RemovePlayerUiButton {
         #[serde(default)]
         id: Option<u32>,
+    },
+    /// Añade una imagen HUD en la pantalla UI en edición (imagen registrada en Resources).
+    AddPlayerUiImage { image_path: String },
+    /// Elimina una imagen HUD de la pantalla en edición.
+    RemovePlayerUiImage {
+        #[serde(default)]
+        id: Option<u32>,
+    },
+    /// Bloqueo y/o `z_index` de un elemento HUD (text | button | image).
+    SetPlayerUiHudElementProps {
+        element_kind: String,
+        id: u32,
+        #[serde(default)]
+        locked: Option<bool>,
+        #[serde(default)]
+        z_index: Option<i32>,
     },
     /// Deshacer la última acción disponible.
     Undo,
@@ -684,6 +706,10 @@ pub struct SavePlayerUiTextBoxSnapshot {
     pub center_y: f32,
     pub width: f32,
     pub height: f32,
+    #[serde(default)]
+    pub z_index: i32,
+    #[serde(default)]
+    pub locked: bool,
 }
 
 /// Botones HUD en manifest / snapshot del motor.
@@ -721,6 +747,37 @@ pub struct SavePlayerUiButtonSnapshot {
     pub center_y: f32,
     pub width: f32,
     pub height: f32,
+    #[serde(default, alias = "sourceAspect")]
+    pub source_aspect: Option<f32>,
+    #[serde(default)]
+    pub z_index: i32,
+    #[serde(default)]
+    pub locked: bool,
+}
+
+/// Imágenes HUD en manifest / snapshot del motor.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SavePlayerUiImageSnapshot {
+    pub scope: String,
+    #[serde(alias = "screenId")]
+    pub screen_id: String,
+    pub id: u32,
+    #[serde(alias = "imagePath")]
+    pub image_path: String,
+    #[serde(alias = "imageName")]
+    pub image_name: String,
+    #[serde(alias = "centerX")]
+    pub center_x: f32,
+    #[serde(alias = "centerY")]
+    pub center_y: f32,
+    pub width: f32,
+    pub height: f32,
+    #[serde(alias = "sourceAspect")]
+    pub source_aspect: f32,
+    #[serde(default)]
+    pub z_index: i32,
+    #[serde(default)]
+    pub locked: bool,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -745,6 +802,8 @@ pub struct SaveSceneSnapshotPayload {
     pub player_ui_text_boxes: Vec<SavePlayerUiTextBoxSnapshot>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub player_ui_buttons: Vec<SavePlayerUiButtonSnapshot>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub player_ui_images: Vec<SavePlayerUiImageSnapshot>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
@@ -895,6 +954,14 @@ pub enum EngineEvent {
     FontRemoved { path: String },
     /// Emitido como respuesta a GetFontsList: lista de fuentes disponibles.
     FontsList { fonts: Vec<FontInfo> },
+    HudImageLoaded {
+        path: String,
+        name: String,
+        width: u32,
+        height: u32,
+    },
+    HudImageRemoved { path: String },
+    HudImagesList { images: Vec<HudImageInfo> },
     /// Emitido cuando un fondo se registró en el almacén.
     BackgroundAssetLoaded { path: String, name: String },
     /// Emitido cuando se eliminó un fondo del almacén.
@@ -1004,6 +1071,8 @@ pub enum EngineEvent {
         boxes: Vec<PlayerUiTextBoxListItem>,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         buttons: Vec<PlayerUiButtonListItem>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        images: Vec<PlayerUiImageListItem>,
     },
     PlayerUiButtonAdded {
         id: u32,
@@ -1011,6 +1080,11 @@ pub enum EngineEvent {
         font_name: String,
     },
     PlayerUiButtonRemoved { id: u32 },
+    PlayerUiImageAdded {
+        id: u32,
+        image_name: String,
+    },
+    PlayerUiImageRemoved { id: u32 },
     /// Emitido cada 5 minutos cuando el autosave está activo.
     AutosaveTick,
     /// Respuesta a `export_save_snapshot`: escena activa lista para el `.save`.
@@ -1024,6 +1098,8 @@ pub struct PlayerUiTextBoxListItem {
     pub id: u32,
     pub font_name: String,
     pub text: String,
+    pub z_index: i32,
+    pub locked: bool,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -1031,6 +1107,24 @@ pub struct PlayerUiButtonListItem {
     pub id: u32,
     pub text: String,
     pub font_name: String,
+    pub z_index: i32,
+    pub locked: bool,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct PlayerUiImageListItem {
+    pub id: u32,
+    pub image_name: String,
+    pub z_index: i32,
+    pub locked: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct HudImageInfo {
+    pub path: String,
+    pub name: String,
+    pub width: u32,
+    pub height: u32,
 }
 
 /// Información básica de un sprite almacenado en el motor.

@@ -83,6 +83,7 @@ impl State {
                 .collect(),
             player_ui_text_boxes: self.export_player_ui_text_boxes_snapshot(),
             player_ui_buttons: self.export_player_ui_buttons_snapshot(),
+            player_ui_images: self.export_player_ui_images_snapshot(),
         }
     }
 
@@ -104,6 +105,8 @@ impl State {
                     center_y: b.center_y,
                     width: b.width,
                     height: b.height,
+                    z_index: b.z_index,
+                    locked: b.locked,
                 });
             }
         }
@@ -144,6 +147,42 @@ impl State {
                     center_y: b.center_y,
                     width: b.width,
                     height: b.height,
+                    source_aspect: Some(b.source_aspect),
+                    z_index: b.z_index,
+                    locked: b.locked,
+                });
+            }
+        }
+        out.sort_by(|a, b| {
+            (a.scope.as_str(), a.screen_id.as_str(), a.id).cmp(&(
+                b.scope.as_str(),
+                b.screen_id.as_str(),
+                b.id,
+            ))
+        });
+        out
+    }
+
+    fn export_player_ui_images_snapshot(&self) -> Vec<crate::ipc::SavePlayerUiImageSnapshot> {
+        let mut out = Vec::new();
+        for (key, images) in &self.player_ui_images {
+            let Some((scope, screen_id)) = key.split_once(':') else {
+                continue;
+            };
+            for img in images {
+                out.push(crate::ipc::SavePlayerUiImageSnapshot {
+                    scope: scope.to_string(),
+                    screen_id: screen_id.to_string(),
+                    id: img.id,
+                    image_path: img.image_path.clone(),
+                    image_name: img.image_name.clone(),
+                    center_x: img.center_x,
+                    center_y: img.center_y,
+                    width: img.width,
+                    height: img.height,
+                    source_aspect: img.source_aspect,
+                    z_index: img.z_index,
+                    locked: img.locked,
                 });
             }
         }

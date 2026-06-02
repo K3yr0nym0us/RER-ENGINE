@@ -2,21 +2,17 @@
 
 use std::time::{Duration, Instant};
 
-use crate::config_3d::player_ui::config::{self, HasUiHudRect, PlayerUiButton, PlayerUiTextBox, BOX_STACK_GAP};
+use crate::config_3d::player_ui::config::{
+    self, apply_resize_free, apply_resize_locked_aspect, HasUiHudRect, PlayerUiButton,
+    PlayerUiImage, PlayerUiResizeHandle, PlayerUiTextBox, UiHudRect, BOX_STACK_GAP,
+};
+use crate::platform::{query_shift_held_os};
 use crate::config_3d::player_ui::button;
 use crate::engine::State;
 use crate::ipc::{
-    send_event, EngineEvent, PlayerUiButtonListItem, PlayerUiTextBoxListItem,
-    SavePlayerUiTextBoxSnapshot,
+    send_event, EngineEvent, PlayerUiButtonListItem, PlayerUiImageListItem,
+    PlayerUiTextBoxListItem, SavePlayerUiTextBoxSnapshot,
 };
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum PlayerUiResizeHandle {
-    TopLeft,
-    TopRight,
-    BottomLeft,
-    BottomRight,
-}
 
 #[derive(Clone, Debug)]
 pub(crate) enum PlayerUiTextDrag {
@@ -36,12 +32,31 @@ pub(crate) enum PlayerUiTextDrag {
         start_mouse: [f32; 2],
         start_center: [f32; 2],
     },
+    ButtonResize {
+        id: u32,
+        handle: PlayerUiResizeHandle,
+        start_mouse: [f32; 2],
+        start_rect: UiHudRect,
+        source_aspect: f32,
+    },
+    ImageMove {
+        id: u32,
+        start_mouse: [f32; 2],
+        start_center: [f32; 2],
+    },
+    ImageResize {
+        id: u32,
+        handle: PlayerUiResizeHandle,
+        start_mouse: [f32; 2],
+        start_image: PlayerUiImage,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PlayerUiHitTarget {
-    Text(u32),
+    Image(u32),
     Button(u32),
+    Text(u32),
 }
 
 const DEFAULT_BOX_W: f32 = 0.36;
@@ -129,6 +144,11 @@ impl State {
 
         let index = self.player_ui_text_boxes.get(&key).map_or(0, |v| v.len());
         let center_y = 0.28_f32 - index as f32 * BOX_STACK_GAP;
+        let z_index = super::hud_layers::next_z_index_for_screen(
+            self.player_ui_text_boxes.get(&key).map(|v| v.as_slice()),
+            self.player_ui_buttons.get(&key).map(|v| v.as_slice()),
+            self.player_ui_images.get(&key).map(|v| v.as_slice()),
+        );
 
         let entry = PlayerUiTextBox {
             id,
@@ -139,6 +159,8 @@ impl State {
             center_y,
             width: DEFAULT_BOX_W,
             height: DEFAULT_BOX_H,
+            z_index,
+            locked: false,
         };
 
         self.player_ui_text_boxes
@@ -204,6 +226,12 @@ impl State {
         use winit::keyboard::KeyCode;
         match code {
             KeyCode::Delete => {
+                if let Some(id) = self.player_ui_selected_image_id {
+                    if self.remove_player_ui_image(id) {
+                        self.player_ui_selected_image_id = None;
+                    }
+                    return true;
+                }
                 if let Some(id) = self.player_ui_selected_button_id {
                     if self.remove_player_ui_button(id) {
                         self.player_ui_selected_button_id = None;
@@ -234,6 +262,28 @@ impl State {
     fn player_ui_buttons_mut(&mut self) -> Option<&mut Vec<PlayerUiButton>> {
         let key = self.player_ui_text_key()?;
         self.player_ui_buttons.get_mut(&key)
+    }
+
+    fn player_ui_images_mut(&mut self) -> Option<&mut Vec<PlayerUiImage>> {
+        let key = self.player_ui_text_key()?;
+        self.player_ui_images.get_mut(&key)
+    }
+
+    fn clear_player_ui_selection_except_image(&mut self) {
+        self.player_ui_selected_text_id = None;
+        self.player_ui_selected_button_id = None;
+        self.player_ui_text_editing_id = None;
+    }
+
+    fn clear_player_ui_selection_except_button(&mut self) {
+        self.player_ui_selected_text_id = None;
+        self.player_ui_selected_image_id = None;
+        self.player_ui_text_editing_id = None;
+    }
+
+    fn clear_player_ui_selection_except_text(&mut self) {
+        self.player_ui_selected_button_id = None;
+        self.player_ui_selected_image_id = None;
     }
 
     fn find_box_by_id<'a>(boxes: &'a [PlayerUiTextBox], id: u32) -> Option<&'a PlayerUiTextBox> {
@@ -272,68 +322,139 @@ impl State {
         }
 
         if let Some(selected_id) = self.player_ui_selected_text_id {
-            if let Some(handle) = hit_test_handle(self, selected_id, ndc) {
-            if let Some(start_box) = self
-                .player_ui_text_key()
-                .and_then(|key| {
+            if !self.player_ui_text_locked(selected_id) {
+                if let Some(handle) = hit_test_text_handle(self, selected_id, ndc) {
+                if let Some(start_box) = self.player_ui_text_key().and_then(|key| {
                     self.player_ui_text_boxes
                         .get(&key)
                         .and_then(|boxes| Self::find_box_by_id(boxes, selected_id).cloned())
-                })
-            {
-                self.player_ui_text_drag = Some(PlayerUiTextDrag::Resize {
-                    id: selected_id,
-                    handle,
-                    start_mouse: ndc,
-                    start_box,
-                });
-                self.player_ui_text_editing_id = None;
-                return true;
+                }) {
+                    self.player_ui_text_drag = Some(PlayerUiTextDrag::Resize {
+                        id: selected_id,
+                        handle,
+                        start_mouse: ndc,
+                        start_box,
+                    });
+                    self.player_ui_text_editing_id = None;
+                    return true;
+                }
+                }
             }
+        }
+
+        if let Some(selected_id) = self.player_ui_selected_image_id {
+            if !self.player_ui_image_locked(selected_id) {
+                if let Some(handle) = hit_test_image_handle(self, selected_id, ndc) {
+                if let Some(start_image) = self.player_ui_text_key().and_then(|key| {
+                    self.player_ui_images
+                        .get(&key)
+                        .and_then(|list| list.iter().find(|i| i.id == selected_id).cloned())
+                }) {
+                    self.clear_player_ui_selection_except_image();
+                    self.player_ui_text_drag = Some(PlayerUiTextDrag::ImageResize {
+                        id: selected_id,
+                        handle,
+                        start_mouse: ndc,
+                        start_image,
+                    });
+                    return true;
+                }
+                }
+            }
+        }
+
+        if let Some(selected_id) = self.player_ui_selected_button_id {
+            if !self.player_ui_button_locked(selected_id) {
+                if let Some(handle) = hit_test_button_handle(self, selected_id, ndc) {
+                let resize_start = self.player_ui_text_key().and_then(|key| {
+                    self.player_ui_buttons
+                        .get(&key)
+                        .and_then(|list| list.iter().find(|b| b.id == selected_id))
+                        .map(|btn| (btn.ui_hud_rect(), btn.source_aspect))
+                });
+                if let Some((start_rect, source_aspect)) = resize_start {
+                    self.clear_player_ui_selection_except_button();
+                    self.player_ui_text_drag = Some(PlayerUiTextDrag::ButtonResize {
+                        id: selected_id,
+                        handle,
+                        start_mouse: ndc,
+                        start_rect,
+                        source_aspect,
+                    });
+                    return true;
+                }
+                }
             }
         }
 
         if let Some(target) = hit_test_top_hud(self, ndc) {
             match target {
+                PlayerUiHitTarget::Image(id) => {
+                    self.player_ui_selected_image_id = Some(id);
+                    self.clear_player_ui_selection_except_image();
+                    if !self.player_ui_image_locked(id) {
+                        let start_center = self
+                            .player_ui_text_key()
+                            .and_then(|key| {
+                                self.player_ui_images.get(&key).and_then(|list| {
+                                    list.iter()
+                                        .find(|i| i.id == id)
+                                        .map(|i| [i.center_x, i.center_y])
+                                })
+                            })
+                            .unwrap_or([0.0, 0.0]);
+                        self.player_ui_text_drag = Some(PlayerUiTextDrag::ImageMove {
+                            id,
+                            start_mouse: ndc,
+                            start_center,
+                        });
+                    }
+                    self.rebuild_player_ui_overlay();
+                    return true;
+                }
                 PlayerUiHitTarget::Button(id) => {
                     self.player_ui_selected_button_id = Some(id);
-                    self.player_ui_selected_text_id = None;
-                    let start_center = self
-                        .player_ui_text_key()
-                        .and_then(|key| {
-                            self.player_ui_buttons.get(&key).and_then(|list| {
-                                list.iter()
-                                    .find(|b| b.id == id)
-                                    .map(|b| [b.center_x, b.center_y])
+                    self.clear_player_ui_selection_except_button();
+                    if !self.player_ui_button_locked(id) {
+                        let start_center = self
+                            .player_ui_text_key()
+                            .and_then(|key| {
+                                self.player_ui_buttons.get(&key).and_then(|list| {
+                                    list.iter()
+                                        .find(|b| b.id == id)
+                                        .map(|b| [b.center_x, b.center_y])
+                                })
                             })
-                        })
-                        .unwrap_or([0.0, 0.0]);
-                    self.player_ui_text_drag = Some(PlayerUiTextDrag::ButtonMove {
-                        id,
-                        start_mouse: ndc,
-                        start_center,
-                    });
+                            .unwrap_or([0.0, 0.0]);
+                        self.player_ui_text_drag = Some(PlayerUiTextDrag::ButtonMove {
+                            id,
+                            start_mouse: ndc,
+                            start_center,
+                        });
+                    }
                     self.player_ui_text_editing_id = None;
                     self.rebuild_player_ui_overlay();
                     return true;
                 }
                 PlayerUiHitTarget::Text(id) => {
                     self.player_ui_selected_text_id = Some(id);
-                    self.player_ui_selected_button_id = None;
-                    let start_center = self
-                        .player_ui_text_key()
-                        .and_then(|key| {
-                            self.player_ui_text_boxes.get(&key).and_then(|boxes| {
-                                Self::find_box_by_id(boxes, id)
-                                    .map(|b| [b.center_x, b.center_y])
+                    self.clear_player_ui_selection_except_text();
+                    if !self.player_ui_text_locked(id) {
+                        let start_center = self
+                            .player_ui_text_key()
+                            .and_then(|key| {
+                                self.player_ui_text_boxes.get(&key).and_then(|boxes| {
+                                    Self::find_box_by_id(boxes, id)
+                                        .map(|b| [b.center_x, b.center_y])
+                                })
                             })
-                        })
-                        .unwrap_or([0.0, 0.0]);
-                    self.player_ui_text_drag = Some(PlayerUiTextDrag::Move {
-                        id,
-                        start_mouse: ndc,
-                        start_center,
-                    });
+                            .unwrap_or([0.0, 0.0]);
+                        self.player_ui_text_drag = Some(PlayerUiTextDrag::Move {
+                            id,
+                            start_mouse: ndc,
+                            start_center,
+                        });
+                    }
                     self.player_ui_text_editing_id = None;
                     self.rebuild_player_ui_overlay();
                     return true;
@@ -343,10 +464,40 @@ impl State {
 
         self.player_ui_selected_text_id = None;
         self.player_ui_selected_button_id = None;
+        self.player_ui_selected_image_id = None;
         self.player_ui_text_editing_id = None;
         self.player_ui_text_drag = None;
         self.rebuild_player_ui_overlay();
         true
+    }
+
+    fn player_ui_shift_active(&self) -> bool {
+        self.shift_held || query_shift_held_os()
+    }
+
+    /// Fija `source_aspect` al tamaño NDC actual para que resize sin Shift use esa proporción.
+    pub(crate) fn commit_player_ui_image_display_aspect(&mut self, id: u32) {
+        let vw = self.size.width.max(1) as f32;
+        let vh = self.size.height.max(1) as f32;
+        let Some(images) = self.player_ui_images_mut() else {
+            return;
+        };
+        if let Some(img) = images.iter_mut().find(|i| i.id == id) {
+            img.source_aspect =
+                config::source_aspect_from_ndc_rect(img.width, img.height, vw, vh);
+        }
+    }
+
+    /// Al soltar Shift: guardar la proporción actual y seguir en modo proporcional.
+    pub(crate) fn player_ui_on_shift_released(&mut self) {
+        if !self.player_ui_edit_active {
+            return;
+        }
+        let Some(PlayerUiTextDrag::ImageResize { id, .. }) = self.player_ui_text_drag.clone() else {
+            return;
+        };
+        self.commit_player_ui_image_display_aspect(id);
+        self.rebuild_player_ui_overlay_live();
     }
 
     pub(crate) fn player_ui_mouse_move(&mut self, px: f32, py: f32) -> bool {
@@ -357,8 +508,93 @@ impl State {
             return false;
         };
         let ndc = self.pixel_to_ndc(px, py);
+        let vw = self.size.width.max(1) as f32;
+        let vh = self.size.height.max(1) as f32;
+        let shift = self.player_ui_shift_active();
 
         match drag {
+            PlayerUiTextDrag::ImageMove {
+                id,
+                start_mouse,
+                start_center,
+            } => {
+                let dx = ndc[0] - start_mouse[0];
+                let dy = ndc[1] - start_mouse[1];
+                if let Some(images) = self.player_ui_images_mut() {
+                    if let Some(img) = images.iter_mut().find(|i| i.id == id) {
+                        img.center_x = start_center[0] + dx;
+                        img.center_y = start_center[1] + dy;
+                    }
+                }
+            }
+            PlayerUiTextDrag::ImageResize {
+                id,
+                handle,
+                start_mouse,
+                start_image,
+            } => {
+                if let Some(images) = self.player_ui_images_mut() {
+                    if let Some(img) = images.iter_mut().find(|i| i.id == id) {
+                        let start_rect = start_image.ui_hud_rect();
+                        let mut rect = start_rect;
+                        if shift {
+                            apply_resize_free(
+                                &mut rect,
+                                start_rect,
+                                handle,
+                                start_mouse,
+                                ndc,
+                                MIN_BOX_W,
+                                MIN_BOX_H,
+                            );
+                        } else {
+                            apply_resize_locked_aspect(
+                                &mut rect,
+                                start_rect,
+                                handle,
+                                start_mouse,
+                                ndc,
+                                start_image.source_aspect,
+                                vw,
+                                vh,
+                                MIN_BOX_W,
+                            );
+                        }
+                        img.center_x = rect.center_x;
+                        img.center_y = rect.center_y;
+                        img.width = rect.width;
+                        img.height = rect.height;
+                    }
+                }
+            }
+            PlayerUiTextDrag::ButtonResize {
+                id,
+                handle,
+                start_mouse,
+                start_rect,
+                source_aspect,
+            } => {
+                if let Some(buttons) = self.player_ui_buttons_mut() {
+                    if let Some(b) = buttons.iter_mut().find(|b| b.id == id) {
+                        let mut rect = start_rect;
+                        apply_resize_locked_aspect(
+                            &mut rect,
+                            start_rect,
+                            handle,
+                            start_mouse,
+                            ndc,
+                            source_aspect,
+                            vw,
+                            vh,
+                            MIN_BOX_W,
+                        );
+                        b.center_x = rect.center_x;
+                        b.center_y = rect.center_y;
+                        b.width = rect.width;
+                        b.height = rect.height;
+                    }
+                }
+            }
             PlayerUiTextDrag::ButtonMove {
                 id,
                 start_mouse,
@@ -400,7 +636,7 @@ impl State {
                 }
             }
         }
-        self.rebuild_player_ui_overlay();
+        self.rebuild_player_ui_overlay_live();
         true
     }
 
@@ -415,12 +651,16 @@ impl State {
             return false;
         }
 
+        let drag = self.player_ui_text_drag.clone();
         let was_drag = self.player_ui_text_drag.take().is_some();
         let dx = (px - press_px).abs();
         let dy = (py - press_py).abs();
         let is_click = dx < DRAG_THRESHOLD_PX && dy < DRAG_THRESHOLD_PX;
 
         if was_drag && !is_click {
+            if let Some(PlayerUiTextDrag::ImageResize { id, .. }) = drag {
+                self.commit_player_ui_image_display_aspect(id);
+            }
             self.rebuild_player_ui_overlay();
             return true;
         }
@@ -432,9 +672,16 @@ impl State {
         let ndc = self.pixel_to_ndc(px, py);
         if let Some(target) = hit_test_top_hud(self, ndc) {
             match target {
+                PlayerUiHitTarget::Image(id) => {
+                    self.player_ui_selected_image_id = Some(id);
+                    self.clear_player_ui_selection_except_image();
+                    self.player_ui_last_text_click = None;
+                    self.rebuild_player_ui_overlay();
+                    return true;
+                }
                 PlayerUiHitTarget::Button(id) => {
                     self.player_ui_selected_button_id = Some(id);
-                    self.player_ui_selected_text_id = None;
+                    self.clear_player_ui_selection_except_button();
                     self.player_ui_text_editing_id = None;
                     self.player_ui_last_text_click = None;
                     self.rebuild_player_ui_overlay();
@@ -447,7 +694,7 @@ impl State {
                     );
                     self.player_ui_last_text_click = Some((id, now));
                     self.player_ui_selected_text_id = Some(id);
-                    self.player_ui_selected_button_id = None;
+                    self.clear_player_ui_selection_except_text();
                     if double {
                         self.player_ui_begin_text_edit(id);
                         log::info!("[player-ui] edición de texto: id={id}");
@@ -674,16 +921,23 @@ impl State {
                         id: b.id,
                         font_name: b.font_name.clone(),
                         text: b.text.clone(),
+                        z_index: b.z_index,
+                        locked: b.locked,
                     })
                     .collect()
             })
             .unwrap_or_default();
         let buttons: Vec<PlayerUiButtonListItem> = button::list_buttons_for_event(self, &key);
+        let images: Vec<PlayerUiImageListItem> = crate::config_3d::player_ui::image::list_images_for_event(
+            self,
+            &key,
+        );
         send_event(&EngineEvent::PlayerUiTextBoxesList {
             scope,
             screen_id,
             boxes,
             buttons,
+            images,
         });
     }
 
@@ -708,6 +962,8 @@ impl State {
                     center_y: snap.center_y,
                     width: snap.width,
                     height: snap.height,
+                    z_index: snap.z_index,
+                    locked: snap.locked,
                 });
         }
         if max_id > 0 {
@@ -753,11 +1009,11 @@ fn hit_test_box(boxes: &[PlayerUiTextBox], id: u32, ndc: [f32; 2]) -> bool {
     ndc_in_rect(ndc, x0, y0, x1, y1)
 }
 
-fn hit_test_handle(state: &State, selected_id: u32, ndc: [f32; 2]) -> Option<PlayerUiResizeHandle> {
-    let key = state.player_ui_text_key()?;
-    let boxes = state.player_ui_text_boxes.get(&key)?;
-    let b = boxes.iter().find(|b| b.id == selected_id)?;
-    let (x0, y0, x1, y1) = box_corners(b);
+fn hit_test_handle_at_rect(
+    rect: config::UiHudRect,
+    ndc: [f32; 2],
+) -> Option<PlayerUiResizeHandle> {
+    let (x0, y0, x1, y1) = config::box_corners(rect);
     let corners = [
         (PlayerUiResizeHandle::TopLeft, x0, y1),
         (PlayerUiResizeHandle::TopRight, x1, y1),
@@ -774,6 +1030,27 @@ fn hit_test_handle(state: &State, selected_id: u32, ndc: [f32; 2]) -> Option<Pla
     None
 }
 
+fn hit_test_text_handle(state: &State, selected_id: u32, ndc: [f32; 2]) -> Option<PlayerUiResizeHandle> {
+    let key = state.player_ui_text_key()?;
+    let boxes = state.player_ui_text_boxes.get(&key)?;
+    let b = boxes.iter().find(|b| b.id == selected_id)?;
+    hit_test_handle_at_rect(b.ui_hud_rect(), ndc)
+}
+
+fn hit_test_image_handle(state: &State, selected_id: u32, ndc: [f32; 2]) -> Option<PlayerUiResizeHandle> {
+    let key = state.player_ui_text_key()?;
+    let list = state.player_ui_images.get(&key)?;
+    let img = list.iter().find(|i| i.id == selected_id)?;
+    hit_test_handle_at_rect(img.ui_hud_rect(), ndc)
+}
+
+fn hit_test_button_handle(state: &State, selected_id: u32, ndc: [f32; 2]) -> Option<PlayerUiResizeHandle> {
+    let key = state.player_ui_text_key()?;
+    let list = state.player_ui_buttons.get(&key)?;
+    let btn = list.iter().find(|b| b.id == selected_id)?;
+    hit_test_handle_at_rect(btn.ui_hud_rect(), ndc)
+}
+
 fn hit_test_hud_rect(rect: config::UiHudRect, ndc: [f32; 2]) -> bool {
     let (x0, y0, x1, y1) = config::box_corners(rect);
     ndc_in_rect(ndc, x0, y0, x1, y1)
@@ -781,17 +1058,33 @@ fn hit_test_hud_rect(rect: config::UiHudRect, ndc: [f32; 2]) -> bool {
 
 fn hit_test_top_hud(state: &State, ndc: [f32; 2]) -> Option<PlayerUiHitTarget> {
     let key = state.player_ui_text_key()?;
-    if let Some(buttons) = state.player_ui_buttons.get(&key) {
-        for b in buttons.iter().rev() {
-            if hit_test_hud_rect(b.ui_hud_rect(), ndc) {
-                return Some(PlayerUiHitTarget::Button(b.id));
+    let texts = state
+        .player_ui_text_boxes
+        .get(&key)
+        .map(|v| v.as_slice())
+        .unwrap_or(&[]);
+    let buttons = state.player_ui_buttons.get(&key).map(|v| v.as_slice()).unwrap_or(&[]);
+    let images = state.player_ui_images.get(&key).map(|v| v.as_slice()).unwrap_or(&[]);
+    let order = super::hud_layers::hud_hit_test_order(texts, buttons, images);
+    for layer in order {
+        match layer.kind {
+            super::hud_layers::HudLayerKind::Image => {
+                let img = &images[layer.index];
+                if hit_test_hud_rect(img.ui_hud_rect(), ndc) {
+                    return Some(PlayerUiHitTarget::Image(img.id));
+                }
             }
-        }
-    }
-    if let Some(boxes) = state.player_ui_text_boxes.get(&key) {
-        for b in boxes.iter().rev() {
-            if hit_test_hud_rect(b.ui_hud_rect(), ndc) {
-                return Some(PlayerUiHitTarget::Text(b.id));
+            super::hud_layers::HudLayerKind::Button => {
+                let btn = &buttons[layer.index];
+                if hit_test_hud_rect(btn.ui_hud_rect(), ndc) {
+                    return Some(PlayerUiHitTarget::Button(btn.id));
+                }
+            }
+            super::hud_layers::HudLayerKind::Text => {
+                let b = &texts[layer.index];
+                if hit_test_hud_rect(b.ui_hud_rect(), ndc) {
+                    return Some(PlayerUiHitTarget::Text(b.id));
+                }
             }
         }
     }

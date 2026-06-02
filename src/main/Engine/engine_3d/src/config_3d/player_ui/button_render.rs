@@ -7,9 +7,10 @@ use ab_glyph::FontArc;
 use crate::gizmo::GizmoVertex;
 use crate::screen_hud_image::ScreenHudAtlas;
 
-use super::config::{HasUiHudRect, PlayerUiButton, UiHudRect};
-use super::font::{build_hud_label_glyph, build_hud_texture_quad};
-use super::ndc_draw::{append_rect_fill, append_rect_outline, push_quad};
+use super::config::{box_corners, HasUiHudRect, PlayerUiButton, UiHudRect};
+use super::font::build_hud_label_glyph;
+use super::ndc_draw::{append_rect_fill, append_rect_outline, push_handle_disc, push_quad};
+use super::text_render::HANDLE_RADIUS;
 
 pub(crate) fn append_button_gizmo_verts(
     verts: &mut Vec<GizmoVertex>,
@@ -29,6 +30,11 @@ pub(crate) fn append_button_gizmo_verts(
         }
         if is_selected {
             append_rect_outline(verts, rect, [1.0_f32, 0.85, 0.2, 0.95]);
+            let (x0, y0, x1, y1) = box_corners(rect);
+            let handle_color = [1.0_f32, 0.85, 0.2, 0.95];
+            for (cx, cy) in [(x0, y1), (x1, y1), (x0, y0), (x1, y0)] {
+                push_handle_disc(verts, cx, cy, HANDLE_RADIUS, handle_color);
+            }
         }
     }
 }
@@ -41,14 +47,16 @@ pub(crate) fn append_button_hud_glyphs(
     instances: &mut Vec<crate::mesh::InstanceData>,
     viewport_w: f32,
     viewport_h: f32,
+    texture_cache: &mut std::collections::HashMap<String, crate::screen_hud_image::ScreenHudPackedImage>,
 ) {
     for btn in buttons {
         if let Some(path) = btn.texture_path.as_deref() {
-            build_hud_texture_quad(
+            super::font::build_hud_texture_quad_cached(
                 path,
                 btn.ui_hud_rect(),
                 viewport_w,
                 viewport_h,
+                texture_cache,
                 atlas,
                 queue,
                 instances,

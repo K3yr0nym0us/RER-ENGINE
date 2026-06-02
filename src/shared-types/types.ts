@@ -397,6 +397,10 @@ export interface ProjectSaveData {
   playerUiTextBoxes?: SavedPlayerUiTextBox[]
   /** Botones HUD por pantalla (motor). */
   playerUiButtons?: SavedPlayerUiButton[]
+  /** Imágenes HUD por pantalla (motor). */
+  playerUiImages?: SavedPlayerUiImage[]
+  /** Biblioteca de imágenes HUD (Resources). */
+  hudImages?: Array<{ name: string; path: string }>
 }
 
 export interface SavedPlayerUiTextBox {
@@ -410,6 +414,8 @@ export interface SavedPlayerUiTextBox {
   center_y:    number
   width:       number
   height:      number
+  z_index?:    number
+  locked?:     boolean
 }
 
 export interface SavedPlayerUiButton {
@@ -432,6 +438,24 @@ export interface SavedPlayerUiButton {
   center_y: number
   width: number
   height: number
+  source_aspect?: number
+  z_index?: number
+  locked?: boolean
+}
+
+export interface SavedPlayerUiImage {
+  scope: string
+  screen_id: string
+  id: number
+  image_path: string
+  image_name: string
+  center_x: number
+  center_y: number
+  width: number
+  height: number
+  source_aspect: number
+  z_index?: number
+  locked?: boolean
 }
 
 export interface OpenProjectResult {
@@ -538,6 +562,11 @@ export interface EngineCommand {
     | 'load_font'
     | 'remove_font'
     | 'get_fonts_list'
+    | 'load_hud_image'
+    | 'remove_hud_image'
+    | 'get_hud_images_list'
+    | 'add_player_ui_image'
+    | 'remove_player_ui_image'
     | 'load_background_asset'
     | 'remove_background_asset'
     | 'get_backgrounds_list'
@@ -564,7 +593,7 @@ export interface EngineCommand {
 }
 
 export interface EngineEvent {
-  event: 'ready' | 'pong' | 'error' | 'model_loaded' | 'entity_model_replaced' | 'model_clips_ready' | 'stopped' | 'entity_selected' | 'entity_deselected' | 'entity_hovered' | 'entity_unhovered' | 'scenario_loaded' | 'character_loaded' | 'scene_imported' | 'project_loaded_2d' | 'project_loaded_3d' | 'project_load_3d_complete' | 'load_progress' | 'camera_2d_updated' | 'background_loaded' | 'drawing_progress' | 'collider_created' | 'execution_area_created' | 'tool_cancelled' | 'pivot_selected' | 'physics_changed' | 'sprite_loaded' | 'sprite_removed' | 'sprites_list' | 'model_asset_loaded' | 'model_asset_removed' | 'models_list' | 'sound_loaded' | 'sound_removed' | 'sounds_list' | 'font_loaded' | 'font_removed' | 'fonts_list' | 'background_asset_loaded' | 'background_asset_removed' | 'backgrounds_list' | 'play_character_view_changed' | 'first_person_view_changed' | 'save_snapshot_ready' | 'default_scene_name_ready' | 'debug_metrics' | 'preview_playing_changed' | 'trigger_entered' | 'trigger_exited' | 'entity_removed' | 'quick_build_move' | 'quick_build_click' | 'animation_logical_resolved' | 'animation_finished' | 'autosave_tick' | 'atlas_exhausted'
+  event: 'ready' | 'pong' | 'error' | 'model_loaded' | 'entity_model_replaced' | 'model_clips_ready' | 'stopped' | 'entity_selected' | 'entity_deselected' | 'entity_hovered' | 'entity_unhovered' | 'scenario_loaded' | 'character_loaded' | 'scene_imported' | 'project_loaded_2d' | 'project_loaded_3d' | 'project_load_3d_complete' | 'load_progress' | 'camera_2d_updated' | 'background_loaded' | 'drawing_progress' | 'collider_created' | 'execution_area_created' | 'tool_cancelled' | 'pivot_selected' | 'physics_changed' | 'sprite_loaded' | 'sprite_removed' | 'sprites_list' | 'model_asset_loaded' | 'model_asset_removed' | 'models_list' | 'sound_loaded' | 'sound_removed' | 'sounds_list' | 'font_loaded' | 'font_removed' | 'fonts_list' | 'hud_image_loaded' | 'hud_image_removed' | 'hud_images_list' | 'background_asset_loaded' | 'background_asset_removed' | 'backgrounds_list' | 'play_character_view_changed' | 'first_person_view_changed' | 'save_snapshot_ready' | 'default_scene_name_ready' | 'debug_metrics' | 'preview_playing_changed' | 'trigger_entered' | 'trigger_exited' | 'entity_removed' | 'quick_build_move' | 'quick_build_click' | 'animation_logical_resolved' | 'animation_finished' | 'autosave_tick' | 'atlas_exhausted' | 'player_ui_image_added' | 'player_ui_image_removed'
   [key: string]: unknown
 }
 
@@ -603,6 +632,8 @@ export interface EngineSaveSceneSnapshot {
     center_y: number
     width: number
     height: number
+    z_index?: number
+    locked?: boolean
   }>
   player_ui_buttons?: Array<{
     scope: string
@@ -624,6 +655,23 @@ export interface EngineSaveSceneSnapshot {
     center_y: number
     width: number
     height: number
+    source_aspect?: number
+    z_index?: number
+    locked?: boolean
+  }>
+  player_ui_images?: Array<{
+    scope: string
+    screen_id: string
+    id: number
+    image_path: string
+    image_name: string
+    center_x: number
+    center_y: number
+    width: number
+    height: number
+    source_aspect: number
+    z_index?: number
+    locked?: boolean
   }>
 }
 
@@ -832,6 +880,11 @@ export interface SoundInfo {
 }
 
 export interface FontInfo {
+  path: string
+  name: string
+}
+
+export interface HudImageInfo {
   path: string
   name: string
 }

@@ -356,5 +356,8 @@
   "Image UI elements will be available in a future update.": "Los elementos de imagen estarán disponibles en una próxima actualización.",
   "Select font": "Seleccionar fuente",
   "Select a font for the text box": "Elige una fuente para el cuadro de texto",
-  "No fonts loaded. Load a font in Resources first.": "No hay fuentes cargadas. Carga una fuente en Recursos primero."
+  "No fonts loaded. Load a font in Resources first.": "No hay fuentes cargadas. Carga una fuente en Recursos primero.",
+  "Lock element (cannot move in viewport)": "Bloquear elemento (no se puede mover en el viewport)",
+  "Unlock element": "Desbloquear elemento",
+  "Z-index": "Z-index"
 }

@@ -10,6 +10,7 @@ mod scripting;
 mod spatial;
 mod texture;
 mod screen_hud_image;
+mod hud_image_asset;
 
 #[path = "engine/mod.rs"]
 mod engine;
@@ -35,7 +36,7 @@ use winit::{
 };
 
 use ipc::{EngineCommand, EngineEvent};
-use platform::query_ctrl_held_os;
+use platform::{query_ctrl_held_os, query_shift_held_os};
 use rer_engine_shared::gpu::{resolve_backend, EngineGpuProfile};
 use rer_engine_shared::overlay::{parse_overlay_config, OverlayConfig};
 #[cfg(any(target_os = "windows", target_os = "linux"))]
@@ -128,6 +129,7 @@ struct App {
     gizmo_drag_start: Option<Vec<(u32, [f32; 3], [f32; 4], [f32; 3])>>,
     // Teclas modificadoras
     ctrl_held:       bool,                // Ctrl izquierdo o derecho presionado
+    shift_held:      bool,                // Shift izquierdo o derecho presionado
     keyboard_mouse_pressed: HashSet<String>,
     // Input de mando (gamepad)
     gilrs:           Option<Gilrs>,
@@ -660,6 +662,9 @@ impl ApplicationHandler<EngineCommand> for App {
             WindowEvent::CursorMoved { position, .. } => {
                 let cur = (position.x as f32, position.y as f32);
                 if state.player_ui_edit_active && state.player_ui_text_drag.is_some() {
+                    let shift_active = self.shift_held || query_shift_held_os();
+                    self.shift_held = shift_active;
+                    state.shift_held = shift_active;
                     state.player_ui_mouse_move(cur.0, cur.1);
                     self.last_cursor = Some(cur);
                     return;
@@ -757,6 +762,14 @@ impl ApplicationHandler<EngineCommand> for App {
                 match code {
                     KeyCode::ControlLeft | KeyCode::ControlRight => {
                         self.ctrl_held = pressed;
+                        state.ctrl_held = pressed;
+                    }
+                    KeyCode::ShiftLeft | KeyCode::ShiftRight => {
+                        self.shift_held = pressed;
+                        state.shift_held = pressed;
+                        if !pressed && state.player_ui_edit_active {
+                            state.player_ui_on_shift_released();
+                        }
                     }
                     KeyCode::KeyZ => {
                         if pressed && !repeat {
@@ -945,6 +958,7 @@ fn main() {
         gizmo_drag_axis:     None,
         gizmo_drag_start:    None,
         ctrl_held:           false,
+        shift_held:          false,
         keyboard_mouse_pressed: HashSet::new(),
         gilrs:               Gilrs::new().ok(),
         gamepad_pressed:     HashSet::new(),

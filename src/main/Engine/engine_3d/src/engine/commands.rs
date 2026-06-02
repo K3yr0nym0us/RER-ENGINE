@@ -858,6 +858,36 @@ impl State {
                     }
                 }
             }
+            EngineCommand::AddPlayerUiImage { image_path } => {
+                match self.add_player_ui_image(&image_path) {
+                    Ok(_) => {}
+                    Err(message) => {
+                        send_event(&EngineEvent::Error { message });
+                    }
+                }
+            }
+            EngineCommand::RemovePlayerUiImage { id } => {
+                if let Some(image_id) = id {
+                    let _ = self.remove_player_ui_image(image_id);
+                } else {
+                    let _ = self.remove_selected_player_ui_image();
+                }
+            }
+            EngineCommand::SetPlayerUiHudElementProps {
+                element_kind,
+                id,
+                locked,
+                z_index,
+            } => {
+                if let Err(message) = self.set_player_ui_hud_element_props(
+                    &element_kind,
+                    id,
+                    locked,
+                    z_index,
+                ) {
+                    send_event(&EngineEvent::Error { message });
+                }
+            }
             EngineCommand::SetPreviewPlaying { playing } => {
                 if self.preview_playing == playing {
                     return;
@@ -1722,6 +1752,60 @@ impl State {
                 let count = fonts.len();
                 send_event(&EngineEvent::FontsList { fonts });
                 log::info!("[font] lista enviada: {} fuentes", count);
+            }
+            EngineCommand::LoadHudImage { path, name } => {
+                match crate::hud_image_asset::validate_hud_image_file(&path) {
+                    Ok((width_px, height_px)) => {
+                        self.hud_image_store.insert(
+                            path.clone(),
+                            crate::hud_image_asset::HudImageAssetMeta {
+                                name: name.clone(),
+                                width_px,
+                                height_px,
+                            },
+                        );
+                        send_event(&EngineEvent::HudImageLoaded {
+                            path: path.clone(),
+                            name: name.clone(),
+                            width: width_px,
+                            height: height_px,
+                        });
+                        log::debug!(
+                            "[hud-image] registrada: {} ({}) {width_px}x{height_px}",
+                            path,
+                            name
+                        );
+                    }
+                    Err(e) => {
+                        log::error!("[hud-image] error cargando {}: {}", path, e);
+                        send_event(&EngineEvent::Error {
+                            message: format!("Error al cargar imagen HUD: {e}"),
+                        });
+                    }
+                }
+            }
+            EngineCommand::RemoveHudImage { path } => {
+                if self.hud_image_store.remove(&path).is_some() {
+                    send_event(&EngineEvent::HudImageRemoved { path: path.clone() });
+                    log::info!("[hud-image] eliminada: {}", path);
+                } else {
+                    log::warn!("[hud-image] intento de eliminar imagen inexistente: {}", path);
+                }
+            }
+            EngineCommand::GetHudImagesList => {
+                let images: Vec<crate::ipc::HudImageInfo> = self
+                    .hud_image_store
+                    .iter()
+                    .map(|(path, meta)| crate::ipc::HudImageInfo {
+                        path: path.clone(),
+                        name: meta.name.clone(),
+                        width: meta.width_px,
+                        height: meta.height_px,
+                    })
+                    .collect();
+                let count = images.len();
+                send_event(&EngineEvent::HudImagesList { images });
+                log::info!("[hud-image] lista enviada: {} imágenes", count);
             }
             EngineCommand::LoadBackgroundAsset { path, name } => {
                 self.background_store.insert(path.clone(), name.clone());

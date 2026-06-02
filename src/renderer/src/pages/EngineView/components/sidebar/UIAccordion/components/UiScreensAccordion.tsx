@@ -8,8 +8,8 @@ import { useModal } from '@modal';
 import { useTraslate } from '@hooks';
 import EditingUiElementGroups from './EditingUiElementGroups';
 import ModalAddUiButton from './ModalAddUiButton';
-import ModalAddUiElementPlaceholder from './ModalAddUiElementPlaceholder';
 import ModalSelectFont from './ModalSelectFont';
+import ModalSelectHudImage from './ModalSelectHudImage';
 import ModalSetNameUi from './ModalSetNameUi';
 
 interface UiScreensAccordionProps {
@@ -42,7 +42,11 @@ const UiScreensAccordion = ({
 		addPlayerUiTextBox,
 		removePlayerUiTextBox,
 		addEditingUiButton,
+		addPlayerUiImage,
+		removePlayerUiImage,
 		removeEditingUiPlaceholder,
+		setPlayerUiHudElementProps,
+		engineReady,
 	} = useContextEngine();
 
 	const screens = scope === 'player' ? playerUiScreens : menuUiScreens;
@@ -85,7 +89,7 @@ const UiScreensAccordion = ({
 	const openAddImageModal = () => {
 		openModal({
 			title: t('Add image'),
-			body: <ModalAddUiElementPlaceholder kind="image" />,
+			body: <ModalSelectHudImage onSelect={addPlayerUiImage} />,
 		});
 	};
 
@@ -150,11 +154,7 @@ const UiScreensAccordion = ({
 		});
 	};
 
-	const confirmRemovePlaceholder = (
-		kind: 'button' | 'image',
-		id: number,
-		label: string,
-	) => {
+	const confirmRemoveButton = (id: number, label: string) => {
 		openModal({
 			title: t('Confirm deletion'),
 			body: (
@@ -171,7 +171,36 @@ const UiScreensAccordion = ({
 							className="btn btn-danger btn-sm"
 							type="button"
 							onClick={() => {
-								removeEditingUiPlaceholder(kind, id);
+								removeEditingUiPlaceholder('button', id);
+								closeModal();
+							}}
+						>
+							{t('Delete')}
+						</button>
+					</div>
+				</div>
+			),
+		});
+	};
+
+	const confirmRemoveImage = (id: number, label: string) => {
+		openModal({
+			title: t('Confirm deletion'),
+			body: (
+				<div>
+					<p className="mb-3">
+						{t('Are you sure you want to delete this element')}?{' '}
+						<strong>{label}</strong>
+					</p>
+					<div className="d-flex justify-content-end gap-2">
+						<button className="btn btn-secondary btn-sm" type="button" onClick={closeModal}>
+							{t('Cancel')}
+						</button>
+						<button
+							className="btn btn-danger btn-sm"
+							type="button"
+							onClick={() => {
+								removePlayerUiImage(id);
 								closeModal();
 							}}
 						>
@@ -202,11 +231,14 @@ const UiScreensAccordion = ({
 
 					<EditingUiElementGroups
 						elements={editingUiElements}
+						engineReady={engineReady}
 						onAddText={openAddTextModal}
 						onAddButton={openAddButtonModal}
 						onAddImage={openAddImageModal}
 						onRemoveText={confirmRemoveTextBox}
-						onRemovePlaceholder={confirmRemovePlaceholder}
+						onRemoveButton={confirmRemoveButton}
+						onRemoveImage={confirmRemoveImage}
+						onSetElementProps={setPlayerUiHudElementProps}
 					/>
 
 					<div className="d-flex gap-2">

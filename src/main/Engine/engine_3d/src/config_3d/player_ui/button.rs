@@ -63,7 +63,13 @@ impl State {
 
         let index = self.player_ui_buttons.get(&key).map_or(0, |v| v.len());
         let (w, h) = default_button_size_ndc(&payload.shape_type);
+        let source_aspect = (w / h).max(0.01);
         let center_y = 0.12_f32 - index as f32 * BOX_STACK_GAP;
+        let z_index = super::hud_layers::next_z_index_for_screen(
+            self.player_ui_text_boxes.get(&key).map(|v| v.as_slice()),
+            self.player_ui_buttons.get(&key).map(|v| v.as_slice()),
+            self.player_ui_images.get(&key).map(|v| v.as_slice()),
+        );
 
         let bg_alpha = payload.transparency_background;
         let text_alpha = payload.transparency_text;
@@ -85,11 +91,15 @@ impl State {
             center_y,
             width: w,
             height: h,
+            source_aspect,
+            z_index,
+            locked: false,
         };
 
         self.player_ui_buttons.entry(key).or_default().push(entry.clone());
         self.player_ui_selected_button_id = Some(id);
         self.player_ui_selected_text_id = None;
+        self.player_ui_selected_image_id = None;
         self.player_ui_text_editing_id = None;
         self.player_ui_text_drag = None;
         self.rebuild_player_ui_overlay();
@@ -164,11 +174,24 @@ impl State {
                     center_y: snap.center_y,
                     width: snap.width,
                     height: snap.height,
+                    source_aspect: snap
+                        .source_aspect
+                        .filter(|a| *a > 0.0)
+                        .unwrap_or_else(|| (snap.width / snap.height.max(0.01)).max(0.01)),
+                    z_index: snap.z_index,
+                    locked: snap.locked,
                 },
             );
             self.player_ui_text_next_id = self
                 .player_ui_text_next_id
                 .max(snap.id.saturating_add(1));
+        }
+        let vw = self.size.width.max(1) as f32;
+        let vh = self.size.height.max(1) as f32;
+        for list in self.player_ui_buttons.values_mut() {
+            for b in list.iter_mut() {
+                b.sync_height_for_viewport(vw, vh);
+            }
         }
         if self.player_ui_edit_active {
             self.rebuild_player_ui_overlay();
@@ -190,6 +213,8 @@ pub(crate) fn list_buttons_for_event(state: &State, key: &str) -> Vec<PlayerUiBu
                     id: b.id,
                     text: b.text.clone(),
                     font_name: b.font_name.clone(),
+                    z_index: b.z_index,
+                    locked: b.locked,
                 })
                 .collect()
         })

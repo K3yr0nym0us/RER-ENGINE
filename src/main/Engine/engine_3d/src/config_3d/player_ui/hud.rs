@@ -1,5 +1,6 @@
 //! Orquestación del overlay HUD (texto + botones).
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use ab_glyph::FontArc;
@@ -8,6 +9,7 @@ use crate::engine::State;
 use crate::gizmo;
 
 use super::button_render;
+use super::image_render;
 use super::text_render;
 
 impl State {
@@ -23,7 +25,7 @@ impl State {
 
     pub(crate) fn player_ui_font_cached_mut(
         &mut self,
-        cache: &mut std::collections::HashMap<String, Arc<FontArc>>,
+        cache: &mut HashMap<String, Arc<FontArc>>,
         path: &str,
     ) -> Option<Arc<FontArc>> {
         if let Some(font) = cache.get(path) {
@@ -34,7 +36,17 @@ impl State {
         Some(font)
     }
 
+    /// Rebuild completo: resetea atlas y caché de texturas (alta/baja/edición de texto).
     pub(crate) fn rebuild_player_ui_overlay(&mut self) {
+        self.rebuild_player_ui_overlay_inner(true);
+    }
+
+    /// Preview en vivo durante arrastre: conserva atlas + UV en caché (sin releer PNG cada frame).
+    pub(crate) fn rebuild_player_ui_overlay_live(&mut self) {
+        self.rebuild_player_ui_overlay_inner(false);
+    }
+
+    fn rebuild_player_ui_overlay_inner(&mut self, reset_atlas: bool) {
         let Some(key) = self.player_ui_screen_key() else {
             self.player_ui_text_overlay_buffer = gizmo::build_from_vertices(&self.device, &[]);
             self.player_ui_glyph_instances.clear();
@@ -47,6 +59,29 @@ impl State {
             .get(&key)
             .cloned()
             .unwrap_or_default();
+        let vw = self.size.width.max(1) as f32;
+        let vh = self.size.height.max(1) as f32;
+
+        // Solo normalizar proporción en rebuild completo; en vivo respetar width/height del drag
+        // (p. ej. resize libre con Shift).
+        if reset_atlas {
+            if let Some(list) = self.player_ui_images.get_mut(&key) {
+                for img in list.iter_mut() {
+                    img.sync_height_for_viewport(vw, vh);
+                }
+            }
+            if let Some(list) = self.player_ui_buttons.get_mut(&key) {
+                for btn in list.iter_mut() {
+                    btn.sync_height_for_viewport(vw, vh);
+                }
+            }
+        }
+
+        let images = self
+            .player_ui_images
+            .get(&key)
+            .cloned()
+            .unwrap_or_default();
         let buttons = self
             .player_ui_buttons
             .get(&key)
@@ -54,46 +89,105 @@ impl State {
             .unwrap_or_default();
 
         let mut verts = Vec::new();
-        text_render::append_text_box_gizmo_verts(
-            &mut verts,
-            &text_boxes,
-            self.player_ui_selected_text_id,
-            self.player_ui_text_editing_id,
-        );
-        button_render::append_button_gizmo_verts(
-            &mut verts,
-            &buttons,
-            self.player_ui_selected_button_id,
-        );
+        let draw_order =
+            super::hud_layers::hud_draw_order(&text_boxes, &buttons, &images);
+        for layer in &draw_order {
+            match layer.kind {
+                super::hud_layers::HudLayerKind::Text => {
+                    let b = &text_boxes[layer.index];
+                    text_render::append_text_box_gizmo_verts(
+                        &mut verts,
+                        std::slice::from_ref(b),
+                        self.player_ui_selected_text_id,
+                        self.player_ui_text_editing_id,
+                    );
+                }
+                super::hud_layers::HudLayerKind::Button => {
+                    let btn = &buttons[layer.index];
+                    button_render::append_button_gizmo_verts(
+                        &mut verts,
+                        std::slice::from_ref(btn),
+                        self.player_ui_selected_button_id,
+                    );
+                }
+                super::hud_layers::HudLayerKind::Image => {
+                    let img = &images[layer.index];
+                    image_render::append_image_gizmo_verts(
+                        &mut verts,
+                        std::slice::from_ref(img),
+                        self.player_ui_selected_image_id,
+                    );
+                }
+            }
+        }
         self.player_ui_text_overlay_buffer = gizmo::build_from_vertices(&self.device, &verts);
 
-        self.player_ui_text_atlas.reset(&self.queue);
+        if reset_atlas {
+            self.player_ui_text_atlas.reset(&self.queue);
+            self.player_ui_hud_texture_cache.clear();
+        }
+
         self.player_ui_glyph_instances.clear();
 
         let mut font_cache = self.player_ui_font_cache.clone();
-        text_render::append_text_glyphs(self, &text_boxes, &mut font_cache);
-        button_render::append_button_hud_glyphs(
-            &buttons,
-            &mut font_cache,
-            &mut self.player_ui_text_atlas,
-            &self.queue,
-            &mut self.player_ui_glyph_instances,
-            self.size.width.max(1) as f32,
-            self.size.height.max(1) as f32,
-        );
+        for layer in &draw_order {
+            match layer.kind {
+                super::hud_layers::HudLayerKind::Text => {
+                    let b = &text_boxes[layer.index];
+                    text_render::append_text_glyphs(self, std::slice::from_ref(b), &mut font_cache);
+                }
+                super::hud_layers::HudLayerKind::Button => {
+                    let btn = &buttons[layer.index];
+                    button_render::append_button_hud_glyphs(
+                        std::slice::from_ref(btn),
+                        &mut font_cache,
+                        &mut self.player_ui_text_atlas,
+                        &self.queue,
+                        &mut self.player_ui_glyph_instances,
+                        vw,
+                        vh,
+                        &mut self.player_ui_hud_texture_cache,
+                    );
+                }
+                super::hud_layers::HudLayerKind::Image => {
+                    let img = &images[layer.index];
+                    image_render::append_image_hud_glyphs(
+                        std::slice::from_ref(img),
+                        &mut self.player_ui_text_atlas,
+                        &self.queue,
+                        &mut self.player_ui_glyph_instances,
+                        vw,
+                        vh,
+                        &mut self.player_ui_hud_texture_cache,
+                    );
+                }
+            }
+        }
         self.player_ui_font_cache = font_cache;
 
+        self.upload_player_ui_glyph_instances();
+    }
+
+    fn upload_player_ui_glyph_instances(&mut self) {
+        if self.player_ui_glyph_instances.is_empty() {
+            self.player_ui_glyph_instance_buffer = None;
+            return;
+        }
+        let bytes = bytemuck::cast_slice(&self.player_ui_glyph_instances);
+        let size = bytes.len() as u64;
+        if let Some(buf) = &self.player_ui_glyph_instance_buffer {
+            if buf.size() == size {
+                self.queue.write_buffer(buf, 0, bytes);
+                return;
+            }
+        }
+        use wgpu::util::DeviceExt;
         self.player_ui_glyph_instance_buffer =
-            if self.player_ui_glyph_instances.is_empty() {
-                None
-            } else {
-                use wgpu::util::DeviceExt;
-                Some(self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("player-ui-hud-glyphs-inst"),
-                    contents: bytemuck::cast_slice(&self.player_ui_glyph_instances),
-                    usage: wgpu::BufferUsages::VERTEX,
-                }))
-            };
+            Some(self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("player-ui-hud-glyphs-inst"),
+                contents: bytes,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            }));
     }
 
     pub(crate) fn draw_player_ui_hud(

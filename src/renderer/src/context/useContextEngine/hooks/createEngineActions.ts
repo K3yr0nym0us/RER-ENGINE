@@ -677,12 +677,44 @@ export function createEngineActions({
 		});
 	};
 
-	const removeEditingUiPlaceholder = (kind: 'button' | 'image', id: number) => {
+	const addPlayerUiImage = (imagePath: string) => {
+		if (!is3dProject) return;
+		send({ cmd: 'add_player_ui_image', image_path: imagePath });
+	};
+
+	const removePlayerUiImage = (id?: number) => {
+		if (!is3dProject) return;
+		send({ cmd: 'remove_player_ui_image', ...(id !== undefined ? { id } : {}) });
+	};
+
+	const setPlayerUiHudElementProps = (
+		elementKind: 'text' | 'button' | 'image',
+		id: number,
+		props: { locked?: boolean; z_index?: number },
+	) => {
+		if (!is3dProject) return;
+		send({
+			cmd: 'set_player_ui_hud_element_props',
+			element_kind: elementKind,
+			id,
+			...props,
+		});
+	};
+
+	const removeEditingUiPlaceholder = (kind: 'button', id: number) => {
 		if (kind === 'button' && is3dProject) {
 			send({ cmd: 'remove_player_ui_button', id });
-			return;
 		}
-		dispatch({ type: 'REMOVE_EDITING_UI_PLACEHOLDER', payload: { kind, id } });
+	};
+
+	const loadHudImage = (path: string, name: string) => {
+		send({ cmd: 'load_hud_image', path, name });
+		dispatch({ type: 'ADD_HUD_IMAGE', payload: { path, name } });
+	};
+
+	const removeHudImage = (path: string) => {
+		send({ cmd: 'remove_hud_image', path });
+		dispatch({ type: 'REMOVE_HUD_IMAGE', payload: path });
 	};
 
 	const endUiScreenEdit = () => {
@@ -845,7 +877,12 @@ export function createEngineActions({
 		addPlayerUiTextBox,
 		removePlayerUiTextBox,
 		addEditingUiButton,
+		addPlayerUiImage,
+		removePlayerUiImage,
+		setPlayerUiHudElementProps,
 		removeEditingUiPlaceholder,
+		loadHudImage,
+		removeHudImage,
 		setDebugMode,
 		setBackground,
 		loadSound,
