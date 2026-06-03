@@ -6,6 +6,7 @@ import { useContextEngine } from '@engine';
 import { BtnLoadSprite } from './components/BtnLoadSprite';
 import { useModal } from '@modal';
 import { useTraslate } from '@hooks';
+import { ModalConfirmBody } from '../../../../../../modal-electron/ModalConfirmBody';
 
 type Sprite = {
   height: number;
@@ -17,35 +18,27 @@ type Sprite = {
 const SpritesAccordion = () => {
   const { t } = useTraslate();
   const { sprites, removeSprite } = useContextEngine();
-  const { openModal, closeModal } = useModal();
+  const { openModal } = useModal();
 
   const handleDeleteSprite = (sprite: Sprite) => {
     openModal({
       title: t('Delete Sprite'),
+      size: 'sm',
       body: (
-        <div className="text-center">
-          <p>{t('Are you sure you want to delete the sprite')} <strong>{sprite.name}</strong>?</p>
-          <p>{t('All configuration linked to the Sprite will be removed.')}</p>
-          <p className="text-danger">{t('This action cannot be undone.')}</p>
-          <div className="d-flex justify-content-end gap-2 mt-3">
-            <button
-              className="btn btn-secondary"
-              onClick={() => closeModal()}
-            >
-              {t('Cancel')}
-            </button>
-            <button
-              className="btn btn-danger"
-              onClick={() => {
-                removeSprite(sprite.path);
-                closeModal();
-              }}
-            >
-              {t('Yes, Delete')}
-            </button>
-          </div>
-        </div>
-      )
+        <ModalConfirmBody
+          message={
+            <>
+              <p className="mb-2">
+                {t('Are you sure you want to delete the sprite')} <strong>{sprite.name}</strong>?
+              </p>
+              <p className="small mb-1">{t('All configuration linked to the Sprite will be removed.')}</p>
+              <p className="text-danger small mb-0">{t('This action cannot be undone.')}</p>
+            </>
+          }
+          confirmLabel={t('Yes, Delete')}
+          onConfirm={() => removeSprite(sprite.path)}
+        />
+      ),
     })
   }
 

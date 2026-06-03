@@ -1,19 +1,21 @@
-import { useContextEngine } from '@engine';
+import type { ModelInfo } from '@shared-types';
 import { useTraslate } from '@hooks';
 import { ModelPickerEntry } from './ModelPickerEntry';
 
 interface Props {
   onSpawn: (path: string) => void;
   intent: 'environment' | 'character' | 'object';
+  /** Lista inyectada por modal Electron (sin EngineProvider en ventana hijo). */
+  models?: ModelInfo[];
+  hintText?: string;
 }
 
 /**
  * Lista de modelos precargados para modales de entidades.
  * Lee `models` del contexto en vivo (no snapshot) para actualizar spinners de precarga.
  */
-export function CreateEntityFromModelModalBody({ onSpawn, intent }: Props) {
+export function CreateEntityFromModelModalBody({ onSpawn, intent, models = [], hintText }: Props) {
   const { t } = useTraslate();
-  const { models } = useContextEngine();
   const filteredModels = models.filter((model) => {
     if (intent === 'character') return model.category === 'character';
     if (intent === 'environment') return model.category === 'environment';
@@ -29,11 +31,14 @@ export function CreateEntityFromModelModalBody({ onSpawn, intent }: Props) {
   }
 
   return (
+    <>
+      {hintText ? <p className="text-secondary small">{hintText}</p> : null}
     <ul className="list-unstyled mb-0">
       {filteredModels.map((model) => (
         <ModelPickerEntry key={model.path} model={model} onSelect={onSpawn} />
       ))}
     </ul>
+    </>
   );
 }
 

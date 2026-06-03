@@ -1,7 +1,6 @@
 import { useRef } from 'react';
-import { useModal } from '@modal';
 import { useContextEngine } from '@engine';
-import { useTraslate } from '@hooks';
+import { useModalClose, useTraslate } from '@hooks';
 
 interface ModalSetNameBackgroundProps {
   path: string;
@@ -11,7 +10,7 @@ interface ModalSetNameBackgroundProps {
 export default function ModalSetNameBackground({ path, autoName }: ModalSetNameBackgroundProps) {
   const { t } = useTraslate();
   const { loadBackgroundToLibrary } = useContextEngine();
-  const { closeModal } = useModal();
+  const closeModal = useModalClose();
 
   const nameRef = useRef<HTMLInputElement>(null);
 

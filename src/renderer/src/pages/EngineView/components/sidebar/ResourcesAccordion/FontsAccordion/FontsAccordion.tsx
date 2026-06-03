@@ -4,6 +4,7 @@ import { AppTooltip } from '@components';
 import { useContextEngine } from '@engine';
 import { useModal } from '@modal';
 import { useTraslate } from '@hooks';
+import { ModalConfirmBody } from '../../../../../../modal-electron/ModalConfirmBody';
 import BtnLoadFont from './components/BtnLoadFont';
 
 type Font = {
@@ -14,30 +15,25 @@ type Font = {
 const FontsAccordion = () => {
   const { t } = useTraslate();
   const { fonts, removeFont } = useContextEngine();
-  const { openModal, closeModal } = useModal();
+  const { openModal } = useModal();
 
   const handleDeleteFont = (font: Font) => {
     openModal({
       title: t('Delete Font'),
+      size: 'sm',
       body: (
-        <div className="text-center">
-          <p>{t('Are you sure you want to delete the font')} <strong>{font.name}</strong>?</p>
-          <p>{t('This action cannot be undone.')}</p>
-          <div className="d-flex justify-content-end gap-2 mt-3">
-            <button className="btn btn-secondary" onClick={() => closeModal()}>
-              {t('Cancel')}
-            </button>
-            <button
-              className="btn btn-danger"
-              onClick={() => {
-                removeFont(font.path);
-                closeModal();
-              }}
-            >
-              {t('Yes, Delete')}
-            </button>
-          </div>
-        </div>
+        <ModalConfirmBody
+          message={
+            <>
+              <p className="mb-2">
+                {t('Are you sure you want to delete the font')} <strong>{font.name}</strong>?
+              </p>
+              <p className="text-secondary small mb-0">{t('This action cannot be undone.')}</p>
+            </>
+          }
+          confirmLabel={t('Yes, Delete')}
+          onConfirm={() => removeFont(font.path)}
+        />
       ),
     });
   };

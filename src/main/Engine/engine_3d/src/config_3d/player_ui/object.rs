@@ -53,7 +53,6 @@ impl State {
             self.clear_player_ui_hud_selection();
             self.player_ui_text_editing_id = None;
             self.rebuild_player_ui_object_draw_overlay();
-            send_event(&EngineEvent::DrawingProgress { count: 0 });
             log::info!("[player-ui] modo dibujo de objeto HUD activado");
         } else {
             self.cancel_player_ui_object_draw();
@@ -74,7 +73,7 @@ impl State {
         self.player_ui_object_draw = None;
         self.player_ui_object_draw_overlay =
             gizmo::build_from_vertices(&self.device, &[]);
-        send_event(&EngineEvent::ToolCancelled);
+        send_event(&EngineEvent::PlayerUiObjectDrawEnded);
         log::info!("[player-ui] dibujo de objeto HUD cancelado");
     }
 
@@ -120,9 +119,7 @@ impl State {
         if let Some(session) = self.player_ui_object_draw.as_mut() {
             session.points_ndc.push(ndc);
             session.cursor_ndc = Some(ndc);
-            let count = session.points_ndc.len() as u32;
             self.rebuild_player_ui_object_draw_overlay();
-            send_event(&EngineEvent::DrawingProgress { count });
         }
         true
     }

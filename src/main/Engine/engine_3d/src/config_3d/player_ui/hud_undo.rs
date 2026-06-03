@@ -2,7 +2,6 @@
 
 use crate::engine::State;
 use crate::engine::UndoAction;
-use crate::ipc::{send_event, EngineEvent};
 
 use super::config::{PlayerUiButton, PlayerUiImage, PlayerUiObject, PlayerUiTextBox};
 use super::object::PlayerUiObjectDrawSession;
@@ -101,11 +100,6 @@ impl State {
 
         self.rebuild_player_ui_overlay();
         self.rebuild_player_ui_object_draw_overlay();
-        if let Some(session) = &self.player_ui_object_draw {
-            send_event(&EngineEvent::DrawingProgress {
-                count: session.points_ndc.len() as u32,
-            });
-        }
         self.emit_player_ui_text_boxes_list();
     }
 

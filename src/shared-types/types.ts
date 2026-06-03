@@ -608,7 +608,7 @@ export interface EngineCommand {
 }
 
 export interface EngineEvent {
-  event: 'ready' | 'pong' | 'error' | 'model_loaded' | 'entity_model_replaced' | 'model_clips_ready' | 'stopped' | 'entity_selected' | 'entity_deselected' | 'entity_hovered' | 'entity_unhovered' | 'scenario_loaded' | 'character_loaded' | 'scene_imported' | 'project_loaded_2d' | 'project_loaded_3d' | 'project_load_3d_complete' | 'load_progress' | 'camera_2d_updated' | 'background_loaded' | 'drawing_progress' | 'collider_created' | 'execution_area_created' | 'tool_cancelled' | 'pivot_selected' | 'physics_changed' | 'sprite_loaded' | 'sprite_removed' | 'sprites_list' | 'model_asset_loaded' | 'model_asset_removed' | 'models_list' | 'sound_loaded' | 'sound_removed' | 'sounds_list' | 'font_loaded' | 'font_removed' | 'fonts_list' | 'hud_image_loaded' | 'hud_image_removed' | 'hud_images_list' | 'background_asset_loaded' | 'background_asset_removed' | 'backgrounds_list' | 'play_character_view_changed' | 'first_person_view_changed' | 'save_snapshot_ready' | 'default_scene_name_ready' | 'debug_metrics' | 'preview_playing_changed' | 'trigger_entered' | 'trigger_exited' | 'entity_removed' | 'quick_build_move' | 'quick_build_click' | 'animation_logical_resolved' | 'animation_finished' | 'autosave_tick' | 'atlas_exhausted' | 'player_ui_image_added' | 'player_ui_image_removed' | 'player_ui_object_added' | 'player_ui_object_removed'
+  event: 'ready' | 'pong' | 'error' | 'model_loaded' | 'entity_model_replaced' | 'model_clips_ready' | 'stopped' | 'entity_selected' | 'entity_deselected' | 'entity_hovered' | 'entity_unhovered' | 'scenario_loaded' | 'character_loaded' | 'scene_imported' | 'project_loaded_2d' | 'project_loaded_3d' | 'project_load_3d_complete' | 'load_progress' | 'camera_2d_updated' | 'background_loaded' | 'drawing_progress' | 'collider_created' | 'execution_area_created' | 'tool_cancelled' | 'pivot_selected' | 'physics_changed' | 'sprite_loaded' | 'sprite_removed' | 'sprites_list' | 'model_asset_loaded' | 'model_asset_removed' | 'models_list' | 'sound_loaded' | 'sound_removed' | 'sounds_list' | 'font_loaded' | 'font_removed' | 'fonts_list' | 'hud_image_loaded' | 'hud_image_removed' | 'hud_images_list' | 'background_asset_loaded' | 'background_asset_removed' | 'backgrounds_list' | 'play_character_view_changed' | 'first_person_view_changed' | 'save_snapshot_ready' | 'default_scene_name_ready' | 'debug_metrics' | 'preview_playing_changed' | 'trigger_entered' | 'trigger_exited' | 'entity_removed' | 'quick_build_move' | 'quick_build_click' | 'animation_logical_resolved' | 'animation_finished' | 'autosave_tick' | 'atlas_exhausted' | 'player_ui_image_added' | 'player_ui_image_removed' | 'player_ui_object_added' | 'player_ui_object_removed' | 'player_ui_object_draw_ended'
   [key: string]: unknown
 }
 
@@ -934,6 +934,40 @@ export interface ViewportBounds {
   height: number
 }
 
+/** Tamaños de ventana modal Electron (aprox. Bootstrap 5). */
+export type ModalElectronSize = 'sm' | 'md' | 'lg' | 'xl'
+
+export interface ModalElectronOpenRequest {
+  size?: ModalElectronSize
+  title: string
+  handlerId: string
+  componentKey: string
+  props: Record<string, unknown>
+  /** Props función registrados en el renderer principal (no serializables). */
+  callbackKeys?: string[]
+  fonts?: FontInfo[]
+  hudImages?: HudImageInfo[]
+  sprites?: Array<{ path: string; name: string; width: number; height: number }>
+  models?: ModelInfo[]
+  blueprints?: Blueprint3D[]
+  /** blueprintId → número de entidades vinculadas (para diálogo de borrado). */
+  linkedEntityCounts?: Record<string, number>
+  /** Estado inicial del editor Player UI (modal Electron). */
+  playerUiEditorState?: Record<string, unknown>
+}
+
+export interface ModalElectronDelegateRequest {
+  handlerId: string
+  action: 'deleteWithEntities' | 'deleteKeepEntities'
+  blueprint: Blueprint3D
+}
+
+export interface ModalElectronResultPayload {
+  handlerId: string
+  result: unknown
+  callbackKey?: string
+}
+
 // Extiende la interfaz global Window para el renderer
 declare global {
   interface Window {
@@ -960,6 +994,38 @@ declare global {
       onRequestViewportBounds: (cb: () => void) => void
       onAutoSaveRequest:       (cb: (filePath: string) => void) => void
       getAppResourceUsage:     () => Promise<AppResourceUsage>
+      hideEngineViewport:      () => void
+      restoreEngineViewport:   (bounds?: ViewportBounds) => void
+      openModalElectron:       (request: ModalElectronOpenRequest) => Promise<void>
+      closeModalElectron:      () => Promise<void>
+      completeModalElectron:   (handlerId: string, result: unknown, callbackKey?: string) => void
+      notifyModalElectronReady: () => void
+      resizeModalElectron:     (contentHeight: number) => void
+      delegateModalElectron:   (request: ModalElectronDelegateRequest) => Promise<{ blueprints?: Blueprint3D[] } | null>
+      onModalElectronDelegateRequest: (
+        cb: (request: ModalElectronDelegateRequest) => Promise<{ blueprints?: Blueprint3D[] } | null>,
+      ) => () => void
+      onModalElectronRender:   (cb: (payload: ModalElectronOpenRequest) => void) => () => void
+      onModalElectronResult:   (cb: (handlerId: string, result: unknown, callbackKey?: string) => void) => () => void
+      onModalElectronParentOpenRequest: (
+        cb: (req: { parentHandlerId: string; action: string; payload?: Record<string, unknown> }) => void,
+      ) => () => void
+      requestParentModalOpen: (req: {
+        parentHandlerId: string
+        action: string
+        payload?: Record<string, unknown>
+      }) => void
+      patchModalElectron: (data: {
+        handlerId: string
+        playerUiEditorState?: unknown
+      }) => void
+      playerUiEditorAction: (handlerId: string, action: unknown) => Promise<void>
+      onModalElectronPatch: (
+        cb: (data: { handlerId: string; playerUiEditorState?: unknown }) => void,
+      ) => () => void
+      onModalElectronPlayerUiActionRequest: (
+        cb: (req: { handlerId: string; action: unknown; requestId: string }) => void | Promise<void>,
+      ) => () => void
     }
   }
 }

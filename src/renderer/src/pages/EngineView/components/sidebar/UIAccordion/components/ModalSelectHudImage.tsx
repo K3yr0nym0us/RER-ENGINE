@@ -1,15 +1,20 @@
 import { useContextEngine } from '@engine';
-import { useModal } from '@modal';
 import { useTraslate } from '@hooks';
+import type { HudImageInfo } from '@shared-types';
+import { useModalClose } from '../../../../../../modal-electron/useModalClose';
 
 interface ModalSelectHudImageProps {
   onSelect: (imagePath: string) => void;
+  hudImages?: HudImageInfo[];
+  onClose?: () => void;
 }
 
-export default function ModalSelectHudImage({ onSelect }: ModalSelectHudImageProps) {
+function ModalSelectHudImageInner({
+  onSelect,
+  hudImages,
+  onClose,
+}: ModalSelectHudImageProps & { hudImages: HudImageInfo[]; onClose: () => void }) {
   const { t } = useTraslate();
-  const { hudImages } = useContextEngine();
-  const { closeModal } = useModal();
 
   if (hudImages.length === 0) {
     return (
@@ -28,7 +33,7 @@ export default function ModalSelectHudImage({ onSelect }: ModalSelectHudImagePro
             type="button"
             onClick={() => {
               onSelect(img.path);
-              closeModal();
+              onClose();
             }}
           >
             {img.name}
@@ -37,4 +42,24 @@ export default function ModalSelectHudImage({ onSelect }: ModalSelectHudImagePro
       ))}
     </ul>
   );
+}
+
+function ModalSelectHudImageWithEngine(props: ModalSelectHudImageProps) {
+  const { hudImages } = useContextEngine();
+  const closeModal = useModalClose();
+  return (
+    <ModalSelectHudImageInner
+      {...props}
+      hudImages={props.hudImages ?? hudImages}
+      onClose={props.onClose ?? closeModal}
+    />
+  );
+}
+
+export default function ModalSelectHudImage(props: ModalSelectHudImageProps) {
+  if (props.hudImages) {
+    const onClose = props.onClose ?? (() => {});
+    return <ModalSelectHudImageInner {...props} hudImages={props.hudImages} onClose={onClose} />;
+  }
+  return <ModalSelectHudImageWithEngine {...props} />;
 }

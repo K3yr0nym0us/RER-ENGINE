@@ -1,0 +1,22 @@
+import type { EditingUiElement } from '@engine'
+
+export interface PlayerUiEditorState {
+	screenId: string
+	screenName: string
+	elements: EditingUiElement[]
+	engineReady: boolean
+	objectDrawActive: boolean
+}
+
+export type PlayerUiEditorAction =
+	| { action: 'rename'; name: string }
+	| { action: 'setElementProps'; kind: 'text' | 'image' | 'object'; id: number; props: { locked?: boolean; z_index?: number } }
+	| { action: 'addText' }
+	| { action: 'addImage' }
+	| { action: 'objectDrawStart' }
+	| { action: 'objectDrawCancel' }
+	| { action: 'removeText'; id: number; label: string }
+	| { action: 'removeImage'; id: number; label: string }
+	| { action: 'removeObject'; id: number; label: string }
+	| { action: 'save' }
+	| { action: 'cancel' }

@@ -1,7 +1,6 @@
 import { useRef } from 'react';
-import { useModal } from '@modal';
 import { useContextEngine } from '@engine';
-import { useTraslate } from '@hooks';
+import { useModalClose, useTraslate } from '@hooks';
 
 interface ModalSetNameHudImageProps {
   path: string;
@@ -11,7 +10,7 @@ interface ModalSetNameHudImageProps {
 export default function ModalSetNameHudImage({ path, autoName }: ModalSetNameHudImageProps) {
   const { t } = useTraslate();
   const { loadHudImage } = useContextEngine();
-  const { closeModal } = useModal();
+  const closeModal = useModalClose();
 
   const nameRef = useRef<HTMLInputElement>(null);
 

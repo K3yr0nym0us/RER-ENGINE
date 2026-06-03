@@ -1,5 +1,5 @@
 import { Image, Square } from 'react-bootstrap-icons';
-import { useModal } from '@modal';
+import { useModalClose } from '@hooks';
 import { useTraslate } from '@hooks';
 import type { UiElementKind } from './ModalSelectUiElement';
 
@@ -13,7 +13,7 @@ export default function ModalAddUiElementPlaceholder({
 	onBack,
 }: ModalAddUiElementPlaceholderProps) {
 	const { t } = useTraslate();
-	const { closeModal } = useModal();
+	const closeModal = useModalClose();
 
 	const isButton = kind === 'button';
 	const title = isButton ? t('Button') : t('Image');

@@ -1,7 +1,6 @@
 import { useRef } from 'react';
-import { useModal } from '@modal';
 import { useContextEngine } from '@engine';
-import { useTraslate } from '@hooks';
+import { useModalClose, useTraslate } from '@hooks';
 
 interface ModalSetNameSpriteProps {
   path: string;
@@ -11,7 +10,7 @@ interface ModalSetNameSpriteProps {
 export default function ModalSetNameSprite({ path, autoName }: ModalSetNameSpriteProps) {
   const { t } = useTraslate();
   const { loadSprite } = useContextEngine();
-  const { closeModal } = useModal();
+  const closeModal = useModalClose();
   
   const nameRef = useRef<HTMLInputElement>(null);
 

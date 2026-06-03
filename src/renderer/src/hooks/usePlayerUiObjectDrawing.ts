@@ -5,39 +5,32 @@ import { useState, useEffect, useCallback, useRef } from 'react'
  */
 export function usePlayerUiObjectDrawing(
 	send: (cmd: object) => void,
-	toolProgress: number | null,
+	drawEndTick: number,
 ) {
 	const [isActive, setIsActive] = useState(false)
-	const [pointCount, setPointCount] = useState(0)
-	const sawEngineProgressRef = useRef(false)
+	const isActiveRef = useRef(false)
+	const drawEndTickAtStartRef = useRef(drawEndTick)
 
 	useEffect(() => {
 		if (!isActive) return
-		if (toolProgress === null) {
-			if (sawEngineProgressRef.current) {
-				setIsActive(false)
-				setPointCount(0)
-				sawEngineProgressRef.current = false
-			}
-		} else {
-			sawEngineProgressRef.current = true
-			setPointCount(toolProgress)
+		if (drawEndTick !== drawEndTickAtStartRef.current) {
+			isActiveRef.current = false
+			setIsActive(false)
 		}
-	}, [toolProgress, isActive])
+	}, [drawEndTick, isActive])
 
 	const start = useCallback(() => {
+		drawEndTickAtStartRef.current = drawEndTick
+		isActiveRef.current = true
 		setIsActive(true)
-		setPointCount(0)
-		sawEngineProgressRef.current = false
 		send({ cmd: 'set_player_ui_object_draw', active: true })
-	}, [send])
+	}, [send, drawEndTick])
 
 	const cancel = useCallback(() => {
+		isActiveRef.current = false
 		setIsActive(false)
-		setPointCount(0)
-		sawEngineProgressRef.current = false
 		send({ cmd: 'set_player_ui_object_draw', active: false })
 	}, [send])
 
-	return { isActive, pointCount, start, cancel }
+	return { isActive, start, cancel, isActiveRef }
 }

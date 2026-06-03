@@ -7,6 +7,7 @@ import BtnLoadBackground from './components/BtnLoadBackground';
 import { useContextEngine } from '@engine';
 import { useModal } from '@modal';
 import { useTraslate } from '@hooks';
+import { ModalConfirmBody } from '../../../../../../modal-electron/ModalConfirmBody';
 
 type Background = {
   path: string;
@@ -16,30 +17,25 @@ type Background = {
 const BackgroundsAccordion = () => {
   const { t } = useTraslate();
   const { backgroundPath, backgrounds, removeBackgroundFromLibrary } = useContextEngine();
-  const { openModal, closeModal } = useModal();
+  const { openModal } = useModal();
 
   const handleDeleteBackground = (bg: Background) => {
     openModal({
       title: t('Delete Background'),
+      size: 'sm',
       body: (
-        <div className="text-center">
-          <p>{t('Are you sure you want to delete the background')} <strong>{bg.name}</strong>?</p>
-          <p>{t('This action cannot be undone.')}</p>
-          <div className="d-flex justify-content-end gap-2 mt-3">
-            <button className="btn btn-secondary" onClick={() => closeModal()}>
-              {t('Cancel')}
-            </button>
-            <button
-              className="btn btn-danger"
-              onClick={() => {
-                removeBackgroundFromLibrary(bg.path);
-                closeModal();
-              }}
-            >
-              {t('Yes, Delete')}
-            </button>
-          </div>
-        </div>
+        <ModalConfirmBody
+          message={
+            <>
+              <p className="mb-2">
+                {t('Are you sure you want to delete the background')} <strong>{bg.name}</strong>?
+              </p>
+              <p className="text-secondary small mb-0">{t('This action cannot be undone.')}</p>
+            </>
+          }
+          confirmLabel={t('Yes, Delete')}
+          onConfirm={() => removeBackgroundFromLibrary(bg.path)}
+        />
       ),
     });
   };

@@ -3,9 +3,9 @@ import { Tools } from 'react-bootstrap-icons'
 import { AppTooltip } from '@components'
 import { BluePrintModalBody } from './BluePrintModalBody'
 import { useContextEngine } from '@engine'
-import { useModal } from '@modal'
 import { useQuickBuild } from '../../../../../../context/QuickBuildContext'
 import { useTraslate } from '@hooks'
+import { useModal } from '@modal'
 
 export function QuickBuildToolButton() {
   const { t } = useTraslate()
@@ -16,8 +16,8 @@ export function QuickBuildToolButton() {
   const handleOpenBluePrint = () => {
     openModal({
       title: t('Construction'),
-      body: <BluePrintModalBody />,
       size: 'lg',
+      body: <BluePrintModalBody />,
     })
   }
 

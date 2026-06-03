@@ -3,6 +3,7 @@ import { MusicNote, Trash } from 'react-bootstrap-icons';
 import { AppTooltip } from '@components';
 import { useContextEngine } from '@engine';
 import { useModal } from '@modal';
+import { ModalConfirmBody } from '../../../../../../modal-electron/ModalConfirmBody';
 import { useTraslate } from '@hooks';
 import BtnLoadSound from './components/BtnLoadSound';
 
@@ -14,30 +15,25 @@ type Sound = {
 const SoundsAccordion = () => {
   const { t } = useTraslate();
   const { sounds, removeSound } = useContextEngine();
-  const { openModal, closeModal } = useModal();
+  const { openModal } = useModal();
 
   const handleDeleteSound = (sound: Sound) => {
     openModal({
       title: t('Delete Sound'),
+      size: 'sm',
       body: (
-        <div className="text-center">
-          <p>{t('Are you sure you want to delete the sound')} <strong>{sound.name}</strong>?</p>
-          <p>{t('This action cannot be undone.')}</p>
-          <div className="d-flex justify-content-end gap-2 mt-3">
-            <button className="btn btn-secondary" onClick={() => closeModal()}>
-              {t('Cancel')}
-            </button>
-            <button
-              className="btn btn-danger"
-              onClick={() => {
-                removeSound(sound.path);
-                closeModal();
-              }}
-            >
-              {t('Yes, Delete')}
-            </button>
-          </div>
-        </div>
+        <ModalConfirmBody
+          confirmLabel={t('Yes, Delete')}
+          message={
+            <div className="text-center">
+              <p className="mb-2">
+                {t('Are you sure you want to delete the sound')} <strong>{sound.name}</strong>?
+              </p>
+              <p className="text-danger small mb-0">{t('This action cannot be undone.')}</p>
+            </div>
+          }
+          onConfirm={() => removeSound(sound.path)}
+        />
       ),
     });
   };

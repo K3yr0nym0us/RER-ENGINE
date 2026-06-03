@@ -5,6 +5,7 @@ import { Globe2, Grid3x3, EyeFill, EyeSlashFill, Image, Lock, Unlock, CheckLg, S
 import { AppTooltip } from '@components';
 import { useContextEngine } from '@engine';
 import { useModal } from '@modal';
+import { ModalConfirmBody } from '../../../../modal-electron/ModalConfirmBody';
 import { useTraslate } from '@hooks';
 import {
   DEFAULT_GRAVITY_MAGNITUDE,
@@ -29,7 +30,7 @@ export function WorldAccordion({ projectType = '2D' }: { projectType?: ProjectTy
     setDirectionalLight,
     setTargetFps,
   } = useContextEngine()
-  const { openModal, closeModal } = useModal();
+  const { openModal } = useModal();
   const FPS_OPTIONS = [60, 120, 144, 240] as const;
   const is3dProject = projectType === '3D'
   const [widthStr,  setWidthStr]  = useState(String(worldConfig.worldWidth))
@@ -99,25 +100,19 @@ export function WorldAccordion({ projectType = '2D' }: { projectType?: ProjectTy
     const selectedBackground = backgrounds.find((bg) => bg.path === selectedBg);
     openModal({
       title: t('Apply Background'),
+      size: 'sm',
       body: (
-        <div className="text-center">
-          <p>{t('Apply selected background to current scene?')}</p>
-          <p><strong>{selectedBackground?.name ?? selectedBg}</strong></p>
-          <div className="d-flex justify-content-end gap-2 mt-3">
-            <button className="btn btn-secondary" onClick={() => closeModal()}>
-              {t('Cancel')}
-            </button>
-            <button
-              className="btn btn-primary"
-              onClick={() => {
-                setBackground(selectedBg);
-                closeModal();
-              }}
-            >
-              {t('Apply')}
-            </button>
-          </div>
-        </div>
+        <ModalConfirmBody
+          confirmVariant="primary"
+          confirmLabel={t('Apply')}
+          message={
+            <>
+              <p className="mb-2">{t('Apply selected background to current scene?')}</p>
+              <p className="mb-0"><strong>{selectedBackground?.name ?? selectedBg}</strong></p>
+            </>
+          }
+          onConfirm={() => setBackground(selectedBg)}
+        />
       ),
     });
   }

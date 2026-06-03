@@ -37,8 +37,6 @@ interface EditingUiElementGroupsProps {
 
 	objectDrawActive: boolean;
 
-	objectPointCount: number;
-
 	/** Ayuda de edición de texto (viewport). */
 	textEditHint?: string;
 
@@ -294,6 +292,8 @@ function GroupBody({
 
 	isEmpty,
 
+	emptyMessageClassName,
+
 	children,
 
 }: {
@@ -308,6 +308,8 @@ function GroupBody({
 
 	isEmpty: boolean;
 
+	emptyMessageClassName?: string;
+
 	children: ReactNode;
 
 }) {
@@ -320,7 +322,7 @@ function GroupBody({
 
 			{isEmpty ? (
 
-				<p className="small text-secondary text-center mb-0 py-2">{emptyMessage}</p>
+				<p className={`small text-center mb-0 py-2 ${emptyMessageClassName ?? 'text-secondary'}`}>{emptyMessage}</p>
 
 			) : (
 
@@ -362,8 +364,6 @@ export default function EditingUiElementGroups({
 
 	objectDrawActive,
 
-	objectPointCount,
-
 }: EditingUiElementGroupsProps) {
 
 	const { t } = useTraslate();
@@ -400,6 +400,8 @@ export default function EditingUiElementGroups({
 		count: number;
 
 		emptyMessage: string;
+
+		emptyMessageClassName?: string;
 
 		body: ReactNode;
 
@@ -509,11 +511,7 @@ export default function EditingUiElementGroups({
 				? t('Click to add points; click the first point again to finish (min. 3). Hold Ctrl to snap to grid. Esc cancels.')
 				: t('No objects on this screen.'),
 
-			preBody: objectDrawActive ? (
-				<p className="small text-warning mb-2 px-1">
-					{t('Drawing')}: {objectPointCount} {t('points')}
-				</p>
-			) : null,
+			emptyMessageClassName: objectDrawActive ? 'text-danger' : undefined,
 
 			body:
 				objectItems.length > 0 ? (
@@ -682,6 +680,8 @@ export default function EditingUiElementGroups({
 							addDisabled={group.addDisabled}
 
 							emptyMessage={group.emptyMessage}
+
+							emptyMessageClassName={group.emptyMessageClassName}
 
 							isEmpty={group.count === 0}
 

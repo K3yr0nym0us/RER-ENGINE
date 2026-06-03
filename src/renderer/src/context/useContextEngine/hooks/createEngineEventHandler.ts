@@ -141,6 +141,7 @@ const SILENT_ENGINE_EVENTS = new Set<string>([
 	'player_ui_button_removed',
 	'player_ui_image_added',
 	'player_ui_object_added',
+	'player_ui_object_draw_ended',
 	'player_ui_object_removed',
 	'player_ui_image_removed',
 	'player_ui_active_screen_changed',
@@ -841,6 +842,9 @@ export function createEngineEventHandler({
 			const isPlayerVisual = isPlayCharacterVisualModelReplace(refs, id, replaced.path);
 			if (isPlayerVisual) {
 				refs.playerEntityIdRef.current = id;
+				if (!refs.playerRemoved.current) {
+					dispatch({ type: 'ADD_CHARACTER', payload: { id, path: '[Player]' } });
+				}
 				if (!refs.entityMetaRef.current[id]) {
 					const playerPending = refs.pendingRestoresRef.current.get('[Player]')?.[0];
 					refs.entityMetaRef.current[id] = {
@@ -1753,7 +1757,11 @@ export function createEngineEventHandler({
 
 		if (event.event === 'player_ui_object_added') {
 			// Sidebar vía `player_ui_text_boxes_list`; aquí solo cerramos el modo dibujo.
-			dispatch({ type: 'SET_TOOL_PROGRESS', payload: null });
+			dispatch({ type: 'PLAYER_UI_OBJECT_DRAW_END' });
+		}
+
+		if (event.event === 'player_ui_object_draw_ended') {
+			dispatch({ type: 'PLAYER_UI_OBJECT_DRAW_END' });
 		}
 
 		if (event.event === 'player_ui_object_removed') {

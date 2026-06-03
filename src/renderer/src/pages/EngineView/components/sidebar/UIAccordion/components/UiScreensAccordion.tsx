@@ -7,7 +7,9 @@ import { useContextEngine } from '@engine';
 import type { UiScreenScope } from '@engine';
 import { useModal } from '@modal';
 import { useTraslate } from '@hooks';
+import { ModalConfirmBody } from '../../../../../../modal-electron/ModalConfirmBody';
 import { usePlayerUiObjectDrawing } from '@hooks';
+import { usePlayerUiEditorModal } from '../../../../../../modal-electron/usePlayerUiEditorModal';
 import EditingUiElementGroups from './EditingUiElementGroups';
 import ModalSelectFont from './ModalSelectFont';
 import ModalSelectHudImage from './ModalSelectHudImage';
@@ -29,7 +31,7 @@ const UiScreensAccordion = ({
 	defaultNamePrefix,
 }: UiScreensAccordionProps) => {
 	const { t } = useTraslate();
-	const { openModal, closeModal } = useModal();
+	const { openModal } = useModal();
 	const {
 		playerUiScreens,
 		menuUiScreens,
@@ -47,13 +49,14 @@ const UiScreensAccordion = ({
 		removePlayerUiObject,
 		setPlayerUiHudElementProps,
 		send,
-		toolProgress,
+		playerUiObjectDrawEndTick,
 		setActivePlayerUiScreen,
 		syncPlayerUiScreensToEngine,
 		renameUiScreen,
 		engineReady,
 	} = useContextEngine();
-	const objectDraw = usePlayerUiObjectDrawing(send, toolProgress);
+	const objectDraw = usePlayerUiObjectDrawing(send, playerUiObjectDrawEndTick);
+	const playerUiEditor = usePlayerUiEditorModal(scope);
 
 	const finishUiScreenEdit = () => {
 		objectDraw.cancel();
@@ -88,7 +91,12 @@ const UiScreensAccordion = ({
 			body: (
 				<ModalSetNameUi
 					defaultName={defaultName}
-					onConfirm={(name) => addUiScreen(scope, name)}
+					onConfirm={(name) => {
+						const id = addUiScreen(scope, name);
+						if (scope === 'player' && id) {
+							playerUiEditor.openEditor(id);
+						}
+					}}
 				/>
 			),
 		});
@@ -97,6 +105,7 @@ const UiScreensAccordion = ({
 	const openAddTextModal = () => {
 		openModal({
 			title: t('Add text'),
+			size: 'sm',
 			body: (
 				<ModalSelectFont onSelect={addPlayerUiTextBox} />
 			),
@@ -113,31 +122,28 @@ const UiScreensAccordion = ({
 	const confirmRemoveScreen = (id: string, name: string) => {
 		openModal({
 			title: t('Confirm deletion'),
+			size: 'sm',
 			body: (
-				<div>
-					<p className="mb-3">
-						{t('Are you sure you want to delete the UI screen')}{' '}
-						<strong>{name}</strong>?
-					</p>
-					<div className="d-flex justify-content-end gap-2">
-						<button className="btn btn-secondary btn-sm" type="button" onClick={closeModal}>
-							{t('Cancel')}
-						</button>
-						<button
-							className="btn btn-danger btn-sm"
-							type="button"
-							onClick={() => {
-								if (editingId === id) {
-									finishUiScreenEdit();
-								}
-								removeUiScreen(scope, id);
-								closeModal();
-							}}
-						>
-							{t('Delete')}
-						</button>
-					</div>
-				</div>
+				<ModalConfirmBody
+					buttonSize="sm"
+					message={
+						<>
+							{t('Are you sure you want to delete the UI screen')}{' '}
+							<strong>{name}</strong>?
+						</>
+					}
+					onConfirm={() => {
+						if (editingId === id) {
+							if (scope === 'player') {
+								void window.electronAPI.closeModalElectron();
+								endUiScreenEdit();
+							} else {
+								finishUiScreenEdit();
+							}
+						}
+						removeUiScreen(scope, id);
+					}}
+				/>
 			),
 		});
 	};
@@ -145,28 +151,18 @@ const UiScreensAccordion = ({
 	const confirmRemoveTextBox = (id: number, label: string) => {
 		openModal({
 			title: t('Confirm deletion'),
+			size: 'sm',
 			body: (
-				<div>
-					<p className="mb-3">
-						{t('Are you sure you want to delete this text box')}?{' '}
-						<strong>{label}</strong>
-					</p>
-					<div className="d-flex justify-content-end gap-2">
-						<button className="btn btn-secondary btn-sm" type="button" onClick={closeModal}>
-							{t('Cancel')}
-						</button>
-						<button
-							className="btn btn-danger btn-sm"
-							type="button"
-							onClick={() => {
-								removePlayerUiTextBox(id);
-								closeModal();
-							}}
-						>
-							{t('Delete')}
-						</button>
-					</div>
-				</div>
+				<ModalConfirmBody
+					buttonSize="sm"
+					message={
+						<>
+							{t('Are you sure you want to delete this text box')}?{' '}
+							<strong>{label}</strong>
+						</>
+					}
+					onConfirm={() => removePlayerUiTextBox(id)}
+				/>
 			),
 		});
 	};
@@ -174,28 +170,18 @@ const UiScreensAccordion = ({
 	const confirmRemoveObject = (id: number, label: string) => {
 		openModal({
 			title: t('Confirm deletion'),
+			size: 'sm',
 			body: (
-				<div>
-					<p className="mb-3">
-						{t('Are you sure you want to delete this element')}?{' '}
-						<strong>{label}</strong>
-					</p>
-					<div className="d-flex justify-content-end gap-2">
-						<button className="btn btn-secondary btn-sm" type="button" onClick={closeModal}>
-							{t('Cancel')}
-						</button>
-						<button
-							className="btn btn-danger btn-sm"
-							type="button"
-							onClick={() => {
-								removePlayerUiObject(id);
-								closeModal();
-							}}
-						>
-							{t('Delete')}
-						</button>
-					</div>
-				</div>
+				<ModalConfirmBody
+					buttonSize="sm"
+					message={
+						<>
+							{t('Are you sure you want to delete this element')}?{' '}
+							<strong>{label}</strong>
+						</>
+					}
+					onConfirm={() => removePlayerUiObject(id)}
+				/>
 			),
 		});
 	};
@@ -203,33 +189,23 @@ const UiScreensAccordion = ({
 	const confirmRemoveImage = (id: number, label: string) => {
 		openModal({
 			title: t('Confirm deletion'),
+			size: 'sm',
 			body: (
-				<div>
-					<p className="mb-3">
-						{t('Are you sure you want to delete this element')}?{' '}
-						<strong>{label}</strong>
-					</p>
-					<div className="d-flex justify-content-end gap-2">
-						<button className="btn btn-secondary btn-sm" type="button" onClick={closeModal}>
-							{t('Cancel')}
-						</button>
-						<button
-							className="btn btn-danger btn-sm"
-							type="button"
-							onClick={() => {
-								removePlayerUiImage(id);
-								closeModal();
-							}}
-						>
-							{t('Delete')}
-						</button>
-					</div>
-				</div>
+				<ModalConfirmBody
+					buttonSize="sm"
+					message={
+						<>
+							{t('Are you sure you want to delete this element')}?{' '}
+							<strong>{label}</strong>
+						</>
+					}
+					onConfirm={() => removePlayerUiImage(id)}
+				/>
 			),
 		});
 	};
 
-	if (isEditing) {
+	if (isEditing && scope !== 'player') {
 		return (
 			<Accordion.Item eventKey={eventKey}>
 				<Accordion.Header>
@@ -291,7 +267,6 @@ const UiScreensAccordion = ({
 						onRemoveImage={confirmRemoveImage}
 						onRemoveObject={confirmRemoveObject}
 						objectDrawActive={objectDraw.isActive}
-						objectPointCount={objectDraw.pointCount}
 						onSetElementProps={setPlayerUiHudElementProps}
 						textEditHint={t(
 							'Double-click a text box in the viewport to edit. Backspace removes characters. Hold Ctrl while dragging to snap to the grid.',
@@ -376,10 +351,20 @@ const UiScreensAccordion = ({
 										tabIndex={0}
 										className="text-warning"
 										style={{ cursor: 'pointer' }}
-										onClick={() => beginUiScreenEdit(scope, screen.id)}
+										onClick={() => {
+											if (scope === 'player') {
+												playerUiEditor.openEditor(screen.id);
+											} else {
+												beginUiScreenEdit(scope, screen.id);
+											}
+										}}
 										onKeyDown={(e) => {
 											if (e.key === 'Enter' || e.key === ' ') {
-												beginUiScreenEdit(scope, screen.id);
+												if (scope === 'player') {
+													playerUiEditor.openEditor(screen.id);
+												} else {
+													beginUiScreenEdit(scope, screen.id);
+												}
 											}
 										}}
 									>

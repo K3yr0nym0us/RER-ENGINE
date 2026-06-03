@@ -4,13 +4,14 @@ import { AppTooltip } from '@components';
 import { useContextEngine } from '@engine';
 import { useModal } from '@modal';
 import { useTraslate } from '@hooks';
+import { ModalConfirmBody } from '../../../../../../modal-electron/ModalConfirmBody';
 import type { ModelInfo } from '@shared-types';
 import BtnLoadModel from './components/BtnLoadModel';
 
 const ModelsAccordion = () => {
   const { t } = useTraslate();
   const { models, removeModelAsset } = useContextEngine();
-  const { openModal, closeModal } = useModal();
+  const { openModal } = useModal();
   const grouped = {
     character: models.filter((m) => m.category === 'character'),
     environment: models.filter((m) => m.category === 'environment'),
@@ -20,26 +21,20 @@ const ModelsAccordion = () => {
   const handleDeleteModel = (model: ModelInfo) => {
     openModal({
       title: t('Delete model'),
+      size: 'sm',
       body: (
-        <div className="text-center">
-          <p>{t('Are you sure you want to delete the model')} <strong>{model.name}</strong>?</p>
-          <p className="text-danger">{t('This action cannot be undone.')}</p>
-          <div className="d-flex justify-content-end gap-2 mt-3">
-            <button className="btn btn-secondary" type="button" onClick={() => closeModal()}>
-              {t('Cancel')}
-            </button>
-            <button
-              className="btn btn-danger"
-              type="button"
-              onClick={() => {
-                removeModelAsset(model.path);
-                closeModal();
-              }}
-            >
-              {t('Yes, Delete')}
-            </button>
-          </div>
-        </div>
+        <ModalConfirmBody
+          message={
+            <>
+              <p className="mb-2">
+                {t('Are you sure you want to delete the model')} <strong>{model.name}</strong>?
+              </p>
+              <p className="text-danger small mb-0">{t('This action cannot be undone.')}</p>
+            </>
+          }
+          confirmLabel={t('Yes, Delete')}
+          onConfirm={() => removeModelAsset(model.path)}
+        />
       ),
     });
   };

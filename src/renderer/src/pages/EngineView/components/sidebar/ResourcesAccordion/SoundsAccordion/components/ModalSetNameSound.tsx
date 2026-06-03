@@ -1,7 +1,6 @@
 import { useRef } from 'react';
-import { useModal } from '@modal';
 import { useContextEngine } from '@engine';
-import { useTraslate } from '@hooks';
+import { useModalClose, useTraslate } from '@hooks';
 
 interface ModalSetNameSoundProps {
   path: string;
@@ -11,7 +10,7 @@ interface ModalSetNameSoundProps {
 export default function ModalSetNameSound({ path, autoName }: ModalSetNameSoundProps) {
   const { t } = useTraslate();
   const { loadSound } = useContextEngine();
-  const { closeModal } = useModal();
+  const closeModal = useModalClose();
 
   const nameRef = useRef<HTMLInputElement>(null);
 

@@ -23,6 +23,21 @@ import {
   isElectronGpuMetricsSupported,
   queryElectronAppGpuPercent,
 } from './gpuProcessUsage';
+import {
+  initModalElectron,
+  openModalElectronWindow,
+  closeModalElectronWindow,
+  resendPendingRenderToModal,
+  destroyModalElectronWindow,
+  applyModalElectronContentHeight,
+  sendPatchToModal,
+  restackModalElectronIfOpen,
+} from './modalElectronWindow';
+import type {
+  ModalElectronDelegateRequest,
+  ModalElectronOpenRequest,
+  ModalElectronResultPayload,
+} from '../shared-types/types';
 
 // Sin GPU hardware disponible: deshabilitar el proceso GPU de Chromium
 // para evitar spam de viz_main_impl / command_buffer_proxy_impl
@@ -166,6 +181,11 @@ function createMainWindow(): void {
     if (process.platform === 'linux') {
       mainWindow?.webContents.send('request-viewport-bounds')
     }
+  })
+
+  // Clic en el viewport winit: la ventana principal pierde foco; mantener la modal encima del motor.
+  mainWindow.on('blur', () => {
+    restackModalElectronIfOpen()
   })
 
   // Una vez que el renderer cargó y sus listeners están activos,
@@ -622,6 +642,95 @@ ipcMain.on('hide-engine-viewport', () => {
   engineViewportHidden = true
   const bounds = lastEffectiveBounds ?? { x: 0, y: 0, width: 1, height: 1 }
   sendEngineViewportBounds(collapsedViewportBounds(bounds))
+})
+
+// ---------------------------------------------------------------------------
+// Modal Electron (singleton, encima del motor sin hideEngineViewport)
+// ---------------------------------------------------------------------------
+
+ipcMain.handle('modal-electron:open', async (_event, payload: ModalElectronOpenRequest) => {
+  await openModalElectronWindow(payload)
+})
+
+ipcMain.handle('modal-electron:close', () => {
+  closeModalElectronWindow()
+})
+
+ipcMain.on('modal-electron:ready', (event) => {
+  resendPendingRenderToModal(event.sender.id)
+})
+
+ipcMain.on('modal-electron:resize', (_event, contentHeight: number) => {
+  if (typeof contentHeight === 'number' && Number.isFinite(contentHeight)) {
+    applyModalElectronContentHeight(contentHeight)
+  }
+})
+
+ipcMain.handle(
+  'modal-electron:delegate',
+  async (_event, request: ModalElectronDelegateRequest): Promise<{ blueprints?: unknown[] } | null> => {
+    if (!mainWindow || mainWindow.isDestroyed()) return null
+    return new Promise((resolve) => {
+      const requestId = `${Date.now()}-${Math.random()}`
+      const channel = `modal-electron:delegate-response-${requestId}`
+      const timeout = setTimeout(() => {
+        ipcMain.removeAllListeners(channel)
+        resolve(null)
+      }, 30_000)
+      ipcMain.once(channel, (_replyEvent, result) => {
+        clearTimeout(timeout)
+        resolve(result ?? null)
+      })
+      mainWindow!.webContents.send('modal-electron:delegate-request', { ...request, requestId })
+    })
+  },
+)
+
+ipcMain.on('modal-electron:parent-open', (_event, data: {
+  parentHandlerId: string
+  action: string
+  payload?: Record<string, unknown>
+}) => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('modal-electron:parent-open', data)
+  }
+})
+
+ipcMain.on('modal-electron:patch', (_event, data: {
+  handlerId: string
+  playerUiEditorState?: unknown
+}) => {
+  sendPatchToModal(data)
+})
+
+ipcMain.handle(
+  'modal-electron:player-ui-action',
+  async (_event, req: { handlerId: string; action: unknown }) => {
+    if (!mainWindow || mainWindow.isDestroyed()) return
+    return new Promise<void>((resolve) => {
+      const requestId = `${Date.now()}-${Math.random()}`
+      const channel = `modal-electron:player-ui-action-done-${requestId}`
+      const timeout = setTimeout(() => {
+        ipcMain.removeAllListeners(channel)
+        resolve()
+      }, 30_000)
+      ipcMain.once(channel, () => {
+        clearTimeout(timeout)
+        resolve()
+      })
+      mainWindow!.webContents.send('modal-electron:player-ui-action-request', {
+        ...req,
+        requestId,
+      })
+    })
+  },
+)
+
+ipcMain.on('modal-electron:result', (_event, data: ModalElectronResultPayload) => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('modal-electron:result', data)
+  }
+  closeModalElectronWindow()
 })
 
 // Restaura el motor a los últimos bounds conocidos
@@ -1569,6 +1678,7 @@ app.whenReady().then(() => {
   }
 
   createMainWindow()
+  initModalElectron(() => mainWindow)
   // No arrancamos el motor aquí: esperamos el primer 'viewport-bounds'
 
   app.on('activate', () => {
@@ -1579,6 +1689,7 @@ app.whenReady().then(() => {
 })
 
 app.on('window-all-closed', () => {
+  destroyModalElectronWindow()
   stopEngine()
   cleanupExtractedProjectDirs()
   clearAssetWatchers()

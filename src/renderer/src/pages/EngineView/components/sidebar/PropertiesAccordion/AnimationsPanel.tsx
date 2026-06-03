@@ -9,6 +9,7 @@ import type { SpriteFrameRect } from '@components';
 import { useContextEngine } from '@engine';
 import { buildPlayAnimationFrameCmd } from '../../../../../context/useContextEngine/hooks/applyPendingRestoreToEngine';
 import { useModal } from '@modal';
+import { ModalConfirmBody } from '../../../../../modal-electron/ModalConfirmBody';
 import { useTraslate } from '@hooks';
 
 interface AnimationFrame {
@@ -63,7 +64,7 @@ export function AnimationsPanel({ projectType }: { projectType?: string }) {
   const { t } = useTraslate();
   const is3D = projectType === '3D';
   const { selectedEntity: entity, entityMetaRef, send, sendAsync, setAnimationPlaying, updateEntityAnimations, animationPlaying, sprites } = useContextEngine();
-  const { openModal, closeModal } = useModal();
+  const { openModal } = useModal();
 
   const [animations, setAnimations] = useState<Animation[]>([]);
   const [playingAnimationName, setPlayingAnimationName] = useState<string | null>(null);
@@ -184,22 +185,18 @@ export function AnimationsPanel({ projectType }: { projectType?: string }) {
 
     openModal({
       title: t('Confirm deletion'),
+      size: 'sm',
       body: (
-        <div>
-          <p className="mb-3">{t('Are you sure you want to delete the animation')} <strong>{anim.name}</strong>?</p>
-          <div className="d-flex justify-content-end gap-2">
-            <button className="btn btn-secondary btn-sm" onClick={closeModal}>{t('Cancel')}</button>
-            <button
-              className="btn btn-danger btn-sm"
-              onClick={() => {
-                removeAnimation(index);
-                closeModal();
-              }}
-            >
-              {t('Delete')}
-            </button>
-          </div>
-        </div>
+        <ModalConfirmBody
+          buttonSize="sm"
+          message={
+            <>
+              {t('Are you sure you want to delete the animation')}{' '}
+              <strong>{anim.name}</strong>?
+            </>
+          }
+          onConfirm={() => removeAnimation(index)}
+        />
       ),
     });
   };
@@ -311,9 +308,7 @@ export function AnimationsPanel({ projectType }: { projectType?: string }) {
             const resolved = syncAnimations(next);
             const synced = resolved.find((a) => a.name === updatedAnimation.name) ?? updatedAnimation;
             applyFirstFrame(synced);
-            closeModal();
           }}
-          onCancel={closeModal}
         />
       ),
     });

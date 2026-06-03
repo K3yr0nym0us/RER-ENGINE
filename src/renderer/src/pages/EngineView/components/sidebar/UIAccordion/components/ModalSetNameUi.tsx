@@ -1,6 +1,5 @@
 import { useRef } from 'react';
-import { useModal } from '@modal';
-import { useTraslate } from '@hooks';
+import { useModalClose, useTraslate } from '@hooks';
 
 interface ModalSetNameUiProps {
 	defaultName: string;
@@ -9,7 +8,7 @@ interface ModalSetNameUiProps {
 
 export default function ModalSetNameUi({ defaultName, onConfirm }: ModalSetNameUiProps) {
 	const { t } = useTraslate();
-	const { closeModal } = useModal();
+	const closeModal = useModalClose();
 	const nameRef = useRef<HTMLInputElement>(null);
 
 	const handleConfirm = () => {

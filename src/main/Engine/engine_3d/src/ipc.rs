@@ -1142,6 +1142,8 @@ pub enum EngineEvent {
         vertex_count: u32,
     },
     PlayerUiObjectRemoved { id: u32 },
+    /// Dibujo de objeto HUD cancelado (Esc o comando desde el editor).
+    PlayerUiObjectDrawEnded,
     /// Pantalla Player UI activa cambiada (editor o script Lua).
     PlayerUiActiveScreenChanged {
         #[serde(skip_serializing_if = "Option::is_none")]

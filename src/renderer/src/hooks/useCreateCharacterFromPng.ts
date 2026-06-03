@@ -4,11 +4,11 @@ import { useContextEngine } from '@engine';
  * Hook para cargar un personaje en el motor desde un PNG usando el path seleccionado.
  * Devuelve una función que recibe el path y realiza el envío al engine.
  */
-import { useModal } from '@modal';
+import { useModalClose } from '../modal-electron/useModalClose';
 
 export function useCreateCharacterFromPng(openDialog: () => Promise<string | null>) {
   const { send } = useContextEngine();
-  const { closeModal } = useModal();
+  const closeModal = useModalClose();
 
   return async () => {
     const p = await openDialog();

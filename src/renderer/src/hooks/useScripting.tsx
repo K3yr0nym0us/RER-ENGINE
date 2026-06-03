@@ -4,6 +4,7 @@ import ScriptEditorModalBody from '../components/SpritePreviewModalBody/componen
 
 import { useContextEngine } from '@engine';
 import { useModal } from '@modal';
+import { ModalConfirmBody } from '../modal-electron/ModalConfirmBody';
 
 export interface ScriptEntry {
   name:   string
@@ -19,17 +20,12 @@ export interface UseScriptingReturn {
 
 /**
  * Gestiona la lista de scripts Lua adjuntos a la entidad seleccionada.
- * - Mantiene estado local sincronizado con entityMetaRef.
- * - `openEditor` abre el modal del editor para crear un script nuevo.
- * - `editScript` abre el modal con el script existente pre-cargado.
- * - `removeScript` quita un script por nombre y notifica al motor.
  */
 export function useScripting(): UseScriptingReturn {
   const { selectedEntity, send, entityMetaRef, updateEntityScripts } = useContextEngine()
   const { openModal, closeModal } = useModal()
   const [scripts, setScripts] = useState<ScriptEntry[]>([])
 
-  // Sincronizar estado local cuando cambia la entidad seleccionada
   useEffect(() => {
     if (!selectedEntity) { setScripts([]); return }
     setScripts(entityMetaRef.current[selectedEntity.id]?.scripts ?? [])
@@ -82,34 +78,29 @@ export function useScripting(): UseScriptingReturn {
     if (!selectedEntity) return
     openModal({
       title: 'Confirmar eliminación',
+      size: 'sm',
       body: (
-        <div className="text-center">
-          <p>¿Estás seguro de que deseas eliminar el script <strong>{name}</strong>?</p>
-          <p className="text-danger">Esta acción no se puede deshacer.</p>
-          <div className="d-flex justify-content-center gap-2 mt-4">
-            <button className="btn btn-secondary" onClick={closeModal}>
-              Cancelar
-            </button>
-            <button
-              className="btn btn-danger"
-              onClick={() => {
-                const next = scripts.filter((s) => s.name !== name)
-                setScripts(next)
-                updateEntityScripts(selectedEntity.id, next)
-                if (next.length === 0) {
-                  send({ cmd: 'unload_script', id: selectedEntity.id })
-                }
-                closeModal()
-              }}
-            >
-              Sí, eliminar
-            </button>
-          </div>
-        </div>
+        <ModalConfirmBody
+          message={
+            <div className="text-center">
+              <p>¿Estás seguro de que deseas eliminar el script <strong>{name}</strong>?</p>
+              <p className="text-danger small mb-0">Esta acción no se puede deshacer.</p>
+            </div>
+          }
+          confirmLabel="Sí, eliminar"
+          cancelLabel="Cancelar"
+          onConfirm={() => {
+            const next = scripts.filter((s) => s.name !== name)
+            setScripts(next)
+            updateEntityScripts(selectedEntity.id, next)
+            if (next.length === 0) {
+              send({ cmd: 'unload_script', id: selectedEntity.id })
+            }
+          }}
+        />
       ),
     })
   }
 
   return { scripts, openEditor, editScript, removeScript }
 }
-

@@ -260,6 +260,8 @@ export interface EngineState {
 	menuUiEditingId: string | null
 	/** Elementos de la pantalla UI en edición (texto sincronizado con el motor). */
 	editingUiElements: EditingUiElement[]
+	/** Incrementa al terminar o cancelar el dibujo de objeto HUD en el viewport. */
+	playerUiObjectDrawEndTick: number
 }
 
 export type EngineAction =
@@ -327,6 +329,7 @@ export type EngineAction =
 	| { type: 'ADD_EXECUTION_AREA'; payload: ScenarioEntry }
 	| { type: 'REMOVE_EXECUTION_AREA'; payload: number }
 	| { type: 'SET_TOOL_PROGRESS'; payload: number | null }
+	| { type: 'PLAYER_UI_OBJECT_DRAW_END' }
 	| { type: 'SET_ANIMATION_PLAYING'; payload: { entityId: number; playing: boolean } }
 	| {
 		type: 'UPDATE_ENTITY_ANIMATIONS'
@@ -434,6 +437,7 @@ export const initialState: EngineState = {
 	playerUiEditingId: null,
 	menuUiEditingId: null,
 	editingUiElements: [],
+	playerUiObjectDrawEndTick: 0,
 };
 
 export function engineReducer(state: EngineState, action: EngineAction): EngineState {
@@ -708,6 +712,10 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 			executionAreaEntities: prevState.executionAreaEntities.filter((area) => area.id !== nextAction.payload),
 		}),
 		SET_TOOL_PROGRESS: (prevState, nextAction) => ({ ...prevState, toolProgress: nextAction.payload }),
+		PLAYER_UI_OBJECT_DRAW_END: (prevState) => ({
+			...prevState,
+			playerUiObjectDrawEndTick: prevState.playerUiObjectDrawEndTick + 1,
+		}),
 		SET_ANIMATION_PLAYING: (prevState, nextAction) => {
 			const nextMap = new Map(prevState.animationPlaying);
 			nextMap.set(nextAction.payload.entityId, nextAction.payload.playing);
@@ -1141,6 +1149,7 @@ export interface EngineContextValue extends EngineState {
 	pendingModelLoadQueueRef: MutableRefObject<Array<{ modelPath: string; pending: PendingRestore }>>
 	pendingBurstSpawnRestoreRef: MutableRefObject<PendingBurstSpawnEntry[]>
 	mainPlayerHandled: MutableRefObject<boolean>
+	playerRemoved: MutableRefObject<boolean>
 	camera2dRef: MutableRefObject<Camera2dState | null>
 	projectLoaded2dMetaRef: MutableRefObject<ProjectLoaded2dPayload | null>
 	projectLoaded3dMetaRef: MutableRefObject<ProjectLoaded3dPayload | null>
@@ -1191,7 +1200,7 @@ export interface EngineContextValue extends EngineState {
 	getSpritesList: () => void
 	loadCharacter: (path: string) => void
 	setPreviewPlaying: (playing: boolean) => void
-	addUiScreen: (scope: UiScreenScope, name: string) => void
+	addUiScreen: (scope: UiScreenScope, name: string) => string | null
 	removeUiScreen: (scope: UiScreenScope, id: string) => void
 	renameUiScreen: (scope: UiScreenScope, id: string, name: string) => void
 	setActivePlayerUiScreen: (screenId: string | null) => void

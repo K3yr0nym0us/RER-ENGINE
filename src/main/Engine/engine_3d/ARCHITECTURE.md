@@ -150,7 +150,7 @@ Sistema de **pantallas HUD** para el jugador en proyectos 3D FP. Clave de almace
 | Imagen | `image.rs`, `image_render.rs` | Asset de biblioteca HUD (`load_hud_image`). |
 | Objeto | `object.rs` | Polígono por clicks (≥3 vértices); cerrar clicando cerca del primer punto; preview con cruz en cursor y segmentos; relleno en play y edición. |
 
-**Dibujo de objetos:** `set_player_ui_object_draw` → clicks en viewport → `DrawingProgress` / `player_ui_object_added`; overlay con `gizmo_pipeline` (`draw_player_ui_object_draw_overlay`). Ctrl+grid: snap al colocar y al mover.
+**Dibujo de objetos:** `set_player_ui_object_draw` → clicks en viewport → `player_ui_object_added` / `player_ui_object_draw_ended`; overlay con `gizmo_pipeline` (`draw_player_ui_object_draw_overlay`). Ctrl+grid: snap al colocar y al mover.
 
 **Undo/redo (Ctrl+Z / Ctrl+Y):** snapshots de la pantalla en edición (`hud_undo.rs`, `UndoAction::RestorePlayerUiHud`). Se registra antes de cada punto de polígono, alta/baja de elementos, props (`set_player_ui_hud_element_props`) e inicio de arrastre/resize.
 

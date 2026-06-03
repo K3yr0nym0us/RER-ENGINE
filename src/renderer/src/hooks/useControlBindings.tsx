@@ -6,7 +6,7 @@ import { ControlBindingsModalBody } from '../pages/EngineView/components/sidebar
 import { useContextEngine } from '@engine'
 import { useModal } from '@modal'
 import type { SavedControlBindings } from '@shared-types'
-import { isEditorCameraEntity, isEditorCameraPath } from '@shared-types'
+import { isEditorCameraEntity, isEditorCameraPath, isPlayerPath } from '@shared-types'
 
 export type ControlDeviceMode = 'keyboard_mouse' | 'gamepad'
 
@@ -54,7 +54,14 @@ function getPathLabel(path: string): string {
 }
 
 export function useControlBindings() {
-  const { characterEntities, entityMetaRef, editorCameraEntityIdRef, send } = useContextEngine()
+  const {
+    characterEntities,
+    entityMetaRef,
+    editorCameraEntityIdRef,
+    playerEntityIdRef,
+    playCharacterViewSyncSeq,
+    send,
+  } = useContextEngine()
   const { openModal } = useModal()
 
   const [selectedCharacterId, setSelectedCharacterId] = useState<number | null>(null)
@@ -76,8 +83,21 @@ export function useControlBindings() {
         label: name && name.length > 0 ? name : getPathLabel(character.path),
       })
     }
+    const playerId = playerEntityIdRef.current
+    if (playerId != null && !seen.has(playerId)) {
+      const meta = entityMetaRef.current[playerId]
+      const path = meta?.path ?? '[Player]'
+      if (isPlayerPath(path)) {
+        seen.add(playerId)
+        const name = meta?.name?.trim()
+        options.unshift({
+          id: playerId,
+          label: name && name.length > 0 ? name : getPathLabel('[Player]'),
+        })
+      }
+    }
     return options
-  }, [characterEntities, entityMetaRef, editorCameraEntityIdRef])
+  }, [characterEntities, entityMetaRef, editorCameraEntityIdRef, playerEntityIdRef, playCharacterViewSyncSeq])
 
   const effectiveCharacterId = useMemo(() => {
     if (selectedCharacterId && characterOptions.some((item) => item.id === selectedCharacterId)) {

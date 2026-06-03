@@ -1,17 +1,25 @@
 import { Type } from 'react-bootstrap-icons';
-import { useModal } from '@modal';
+import { useModalClose } from '@hooks';
 import { useContextEngine } from '@engine';
 import { useTraslate } from '@hooks';
+import type { FontInfo } from '@shared-types';
 
 interface ModalSelectFontProps {
 	onSelect: (fontPath: string) => void;
 	onBack?: () => void;
+	/** Lista inyectada (ventana modal Electron); si falta, usa el contexto del motor. */
+	fonts?: FontInfo[];
+	/** Cerrar modal; en Electron lo provee el host. */
+	onClose?: () => void;
 }
 
-export default function ModalSelectFont({ onSelect, onBack }: ModalSelectFontProps) {
+function ModalSelectFontInner({
+	onSelect,
+	onBack,
+	fonts,
+	onClose,
+}: ModalSelectFontProps & { fonts: FontInfo[]; onClose: () => void }) {
 	const { t } = useTraslate();
-	const { fonts } = useContextEngine();
-	const { closeModal } = useModal();
 
 	const footer = (
 		<div className={`d-flex mt-3 gap-2 ${onBack ? 'justify-content-between' : 'justify-content-end'}`}>
@@ -20,7 +28,7 @@ export default function ModalSelectFont({ onSelect, onBack }: ModalSelectFontPro
 					{t('Back')}
 				</button>
 			)}
-			<button className="btn btn-secondary btn-sm" type="button" onClick={closeModal}>
+			<button className="btn btn-secondary btn-sm" type="button" onClick={onClose}>
 				{t('Cancel')}
 			</button>
 		</div>
@@ -48,7 +56,7 @@ export default function ModalSelectFont({ onSelect, onBack }: ModalSelectFontPro
 							className="btn btn-outline-secondary btn-sm w-100 text-start d-flex align-items-center gap-2"
 							onClick={() => {
 								onSelect(font.path);
-								closeModal();
+								onClose();
 							}}
 						>
 							<Type className="flex-shrink-0" />
@@ -60,4 +68,24 @@ export default function ModalSelectFont({ onSelect, onBack }: ModalSelectFontPro
 			{footer}
 		</div>
 	);
+}
+
+function ModalSelectFontWithEngine(props: ModalSelectFontProps) {
+	const { fonts } = useContextEngine();
+	const closeModal = useModalClose();
+	return (
+		<ModalSelectFontInner
+			{...props}
+			fonts={props.fonts ?? fonts}
+			onClose={props.onClose ?? closeModal}
+		/>
+	);
+}
+
+export default function ModalSelectFont(props: ModalSelectFontProps) {
+	if (props.fonts) {
+		const onClose = props.onClose ?? (() => {});
+		return <ModalSelectFontInner {...props} fonts={props.fonts} onClose={onClose} />;
+	}
+	return <ModalSelectFontWithEngine {...props} />;
 }

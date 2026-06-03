@@ -12,3 +12,5 @@ export * from './useQuickBuildPlacement';
 export * from './useScripting';
 export * from './useSpritePreviewImage';
 export * from './useTraslate';
+export * from './useModalElectron';
+export { useModalClose } from '../modal-electron/useModalClose';

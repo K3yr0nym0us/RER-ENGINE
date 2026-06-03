@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import { Image as ImageIcon } from 'react-bootstrap-icons';
-import { useModal } from '@modal';
+import { useModalClose } from '@hooks';
 import { useContextEngine } from '@engine';
 import { useTraslate } from '@hooks';
 import UiButtonPreview from './UiButtonPreview';
@@ -95,7 +95,7 @@ const SHAPE_LABEL_KEYS: Record<UiButtonShapeType, string> = {
 
 export default function ModalAddUiButton({ onConfirm, onBack }: ModalAddUiButtonProps) {
 	const { t } = useTraslate();
-	const { closeModal } = useModal();
+	const closeModal = useModalClose();
 	const { fonts } = useContextEngine();
 	const [config, setConfig] = useState<PlayerUiButtonConfig>(DEFAULT_PLAYER_UI_BUTTON_CONFIG);
 	const [error, setError] = useState<string | null>(null);

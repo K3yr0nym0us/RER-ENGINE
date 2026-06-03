@@ -1,82 +1,26 @@
-import { createContext, useCallback, useContext, useState, type ReactNode } from 'react'
-import { useContextEngine } from '@engine'
-import { Modal } from 'react-bootstrap'
+import type { ReactNode } from 'react'
 
-// ---------------------------------------------------------------------------
-// Tipos
-// ---------------------------------------------------------------------------
+import { useModalElectron, type OpenModalElectronOptions } from '../hooks/useModalElectron'
 
-export type ModalSize = 'sm' | 'lg' | 'xl'
+export type ModalSize = 'sm' | 'md' | 'lg' | 'xl'
 
 export interface ModalConfig {
-  title: string
-  body:  ReactNode
-  size?: ModalSize
+	title: string
+	body: ReactNode
+	size?: ModalSize
 }
 
-interface ModalContextType {
-  openModal:  (config: ModalConfig) => void
-  closeModal: () => void
-}
-
-// ---------------------------------------------------------------------------
-// Context
-// ---------------------------------------------------------------------------
-
-const ModalContext = createContext<ModalContextType | null>(null)
-
-// ---------------------------------------------------------------------------
-// Provider
-// ---------------------------------------------------------------------------
-
+/** Compatibilidad: delega en la ventana modal Electron (sin ocultar el motor). */
 export function ModalProvider({ children }: { children: ReactNode }) {
-  const [config, setConfig] = useState<ModalConfig | null>(null)
-
-  const { reportBounds } = useContextEngine();
-
-  const openModal = useCallback((cfg: ModalConfig) => {
-    ;(window as any).electronAPI?.hideEngineViewport?.()
-    setConfig(cfg)
-  }, [])
-
-  const closeModal = useCallback(() => {
-    setConfig(null)
-    // Usar el método oficial del engine para reportar los bounds correctos
-    setTimeout(() => {
-      (window as any).electronAPI?.restoreEngineViewport?.();
-      reportBounds();
-    }, 0);
-  }, [reportBounds])
-
-  return (
-    <ModalContext.Provider value={{ openModal, closeModal }}>
-      {children}
-
-      <Modal
-        show={config !== null}
-        onHide={closeModal}
-        size={config?.size}
-        centered
-      >
-        {config && (
-          <>
-            <Modal.Header closeButton>
-              <Modal.Title>{config.title}</Modal.Title>
-            </Modal.Header>
-            <Modal.Body>{config.body}</Modal.Body>
-          </>
-        )}
-      </Modal>
-    </ModalContext.Provider>
-  )
+	return <>{children}</>
 }
-
-// ---------------------------------------------------------------------------
-// Hook
-// ---------------------------------------------------------------------------
 
 export function useModal() {
-  const ctx = useContext(ModalContext)
-  if (!ctx) throw new Error('useModal debe usarse dentro de ModalProvider')
-  return ctx
+	const electron = useModalElectron()
+	return {
+		openModal: (cfg: ModalConfig) => {
+			void electron.openModal(cfg as OpenModalElectronOptions)
+		},
+		closeModal: electron.closeModal,
+	}
 }

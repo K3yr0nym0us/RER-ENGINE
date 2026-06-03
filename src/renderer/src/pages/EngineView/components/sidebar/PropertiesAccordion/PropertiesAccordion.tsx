@@ -10,6 +10,7 @@ import { CreateEntityFromModelModalBody } from '../EntitiesAccordion/components/
 
 import { useContextEngine } from '@engine';
 import { useModal } from '@modal';
+import { ModalConfirmBody } from '../../../../../modal-electron/ModalConfirmBody';
 import type { BluePrintEntry } from '@shared-types';
 import { isEditorCameraEntity, isEnvironmentEntity, isPlayerEntity } from '@shared-types';
 import { useTraslate } from '@hooks';
@@ -45,7 +46,7 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
     blueprints,
   } = useContextEngine()
 
-  const { openModal, closeModal } = useModal();
+  const { openModal } = useModal();
   const [entityNameDraft, setEntityNameDraft] = useState('');
   const [isEditingEntityName, setIsEditingEntityName] = useState(false);
 
@@ -91,36 +92,34 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
     const handleRemoveMultiple = () => {
       openModal({
         title: t('Confirm action'),
+        size: 'sm',
         body: (
-          <div className="text-center">
-            <p>{t('Are you sure you want to')} {t('delete')} <strong>{multiSelectedIds.length}</strong> {t('entities?')}</p>
-            <p className="text-danger">{t('This action cannot be undone.')}</p>
-            <div className="d-flex justify-content-center gap-2 mt-4">
-              <button
-                className="btn btn-danger"
-                onClick={() => {
-                  multiSelectedIds.forEach(id => {
-                    if (isPlayerEntity(id, entityMetaRef.current[id], playerEntityIdRef.current)) return;
-                    if (isEditorCameraEntity(id, entityMetaRef.current[id], editorCameraEntityIdRef.current)) return;
-                    const kind = entityMetaRef.current[id]?.kind;
-                    if (kind === 'scenario') removeScenario(id);
-                    else if (kind === 'character') removeCharacter(id);
-                    else if (kind === 'collider') removeCollider(id);
-                    else if (kind === 'execution_area') removeExecutionArea(id);
-                    else if (scenarioEntities.some((s: any) => s.id === id)) removeScenario(id);
-                    else if (characterEntities.some((c: any) => c.id === id)) removeCharacter(id);
-                    else removeEntity(id);
-                  });
-                  closeModal();
-                }}
-              >
-                {t('Yes,')} {t('delete')}
-              </button>
-              <button className="btn btn-secondary" onClick={closeModal}>
-                {t('Cancel')}
-              </button>
-            </div>
-          </div>
+          <ModalConfirmBody
+            message={
+              <>
+                <p className="mb-2">
+                  {t('Are you sure you want to')} {t('delete')}{' '}
+                  <strong>{multiSelectedIds.length}</strong> {t('entities?')}
+                </p>
+                <p className="text-danger small mb-0">{t('This action cannot be undone.')}</p>
+              </>
+            }
+            confirmLabel={`${t('Yes,')} ${t('delete')}`}
+            onConfirm={() => {
+              multiSelectedIds.forEach(id => {
+                if (isPlayerEntity(id, entityMetaRef.current[id], playerEntityIdRef.current)) return;
+                if (isEditorCameraEntity(id, entityMetaRef.current[id], editorCameraEntityIdRef.current)) return;
+                const kind = entityMetaRef.current[id]?.kind;
+                if (kind === 'scenario') removeScenario(id);
+                else if (kind === 'character') removeCharacter(id);
+                else if (kind === 'collider') removeCollider(id);
+                else if (kind === 'execution_area') removeExecutionArea(id);
+                else if (scenarioEntities.some((s: any) => s.id === id)) removeScenario(id);
+                else if (characterEntities.some((c: any) => c.id === id)) removeCharacter(id);
+                else removeEntity(id);
+              });
+            }}
+          />
         ),
       });
     };
@@ -166,27 +165,22 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
   const handleConfirmModal = (onConfirm: () => void, action: 'delete' | 'duplicate') => {
     openModal({
       title: t('Confirm action'),
+      size: 'sm',
       body: (
-        <div className="text-center">
-          <p>{t('Are you sure you want to')} {t(action)} {t('this entity?')}</p>
-          <p className="text-danger">{t('This action cannot be undone.')}</p>
-          <div className="d-flex justify-content-center gap-2 mt-4">
-            <button
-              className="btn btn-danger"
-              onClick={() => {
-                onConfirm()
-                closeModal()
-              }}
-            >
-              {t('Yes,')} {t(action)}
-            </button>
-            <button className="btn btn-secondary" onClick={closeModal}>
-              {t('Cancel')}
-            </button>
-           </div>
-         </div>
-       )
-     })
+        <ModalConfirmBody
+          message={
+            <>
+              <p className="mb-2">
+                {t('Are you sure you want to')} {t(action)} {t('this entity?')}
+              </p>
+              <p className="text-danger small mb-0">{t('This action cannot be undone.')}</p>
+            </>
+          }
+          confirmLabel={`${t('Yes,')} ${t(action)}`}
+          onConfirm={onConfirm}
+        />
+      ),
+    })
   }
 
   const handleRemove = () => {
@@ -383,25 +377,23 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
             onClick={() => {
               openModal({
                 title: t('Replace model'),
+                size: 'md',
                 body: (
-                  <div>
-                    <p className="text-secondary small">
-                      {isPlayer ? t('Replace model player hint') : t('Replace model entity hint')}
-                    </p>
-                    <CreateEntityFromModelModalBody
-                      intent={
-                        isPlayer || isCharacter
-                          ? 'character'
-                          : isEnvironment
-                            ? 'environment'
-                            : 'object'
-                      }
-                      onSpawn={(path) => {
-                        replaceEntityModel(selectedEntity.id, path);
-                        closeModal();
-                      }}
-                    />
-                  </div>
+                  <CreateEntityFromModelModalBody
+                    hintText={
+                      isPlayer ? t('Replace model player hint') : t('Replace model entity hint')
+                    }
+                    intent={
+                      isPlayer || isCharacter
+                        ? 'character'
+                        : isEnvironment
+                          ? 'environment'
+                          : 'object'
+                    }
+                    onSpawn={(path) => {
+                      replaceEntityModel(selectedEntity.id, path);
+                    }}
+                  />
                 ),
               });
             }}
@@ -467,26 +459,21 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
               if (entityMetaRef.current[selectedEntity.id]) {
                 entityMetaRef.current[selectedEntity.id].blueprintId = entry.id;
               }
-              closeModal();
             };
 
             openModal({
               title: t('Convert to Blueprint'),
+              size: 'md',
               body: (
-                <div className="text-center">
-                  <CircleSquare size={40} className="text-primary mb-3" />
-                  <p>{t('The entity will be converted to a Blueprint')} <strong>{selectedEntity.name}</strong>.</p>
-                  <p className="text-secondary small">{t('The Blueprint will save the current entity configuration: transformations, physics, animations and scripts.')}</p>
-                  <p className="text-secondary small">{t('The created Blueprint will be available in the Quick Build tool')}</p>
-                  <div className="d-flex justify-content-center gap-2 mt-4">
-                    <button className="btn btn-primary" onClick={handleConfirm}>
-                      {t('Confirm')}
-                    </button>
-                    <button className="btn btn-secondary" onClick={closeModal}>
-                      {t('Cancel')}
-                    </button>
-                  </div>
-                </div>
+                <ModalConfirmBody
+                  confirmVariant="primary"
+                  confirmLabel={t('Confirm')}
+                  messageSpec={{
+                    template: 'convertBlueprint',
+                    entityName: selectedEntity.name,
+                  }}
+                  onConfirm={handleConfirm}
+                />
               ),
             });
           }}

@@ -39,7 +39,7 @@ interface Props {
 export function BtnCreateEntityFromModel({ intent }: Props) {
   const { t } = useTraslate();
   const { engineReady, spawnModel } = useContextEngine();
-  const { openModal, closeModal } = useModal();
+  const { openModal } = useModal();
   const config = INTENT_CONFIG[intent];
 
   const handleCreate = () => {
@@ -58,7 +58,6 @@ export function BtnCreateEntityFromModel({ intent }: Props) {
                   ? 'object'
                   : undefined,
             );
-            closeModal();
           }}
         />
       ),

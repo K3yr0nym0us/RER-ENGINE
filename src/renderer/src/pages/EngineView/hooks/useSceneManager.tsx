@@ -13,11 +13,11 @@ import { playViewFromPlayerAndCamera } from '../../../utils/entity3dEditorSync';
 import { buildActiveSceneSnapshotFromEngine } from '../../../defaults/buildProjectSaveFromEngine';
 import { defaultSceneName } from '../../../defaults/defaultSceneName';
 import { ensurePlayCharacterOnLoad } from '../../../defaults/playCharacterSceneRestore';
-import { buildSetSceneCommand } from '../../../defaults/projectSceneLoad';
-import { buildImportSceneCommand, resolveEntityTransform, resolveSavedEntityTransform } from '../../../context/useContextEngine/hooks/buildImportSceneCommand';
+import { buildImportSceneCommand, resolveEntityTransform, resolveSavedEntityTransform, syncEditorStateFromSavedScene } from '../../../context/useContextEngine/hooks/buildImportSceneCommand';
 import {
   beginSceneBurstLoad,
   beginSceneImportLoading,
+  endSceneImportLoading,
   needsSceneBurstLoad,
   trackSceneBurstCollider,
   trackSceneBurstOp,
@@ -29,6 +29,12 @@ import { useContextEngine } from '@engine';
 import { useModal } from '@modal';
 import { useTraslate } from '@hooks';
 import { setSceneProjectState } from '../sceneStateStore';
+import {
+	CreateSceneModalBody,
+	DeleteBlockedBody,
+	DeleteConfirmBody,
+	SceneRenameModalBody,
+} from './sceneManagerModalBodies';
 
 export interface SceneTab {
   id: number;
@@ -110,6 +116,8 @@ export function SceneManagerProvider({
     playCharacterViewRef,
     mainPlayerHandled,
     playerEntityIdRef,
+    playerRemoved,
+    editorCameraEntityIdRef,
     camera2dRef,
     pendingImportSceneRef,
     sceneImportInProgressRef,
@@ -139,7 +147,7 @@ export function SceneManagerProvider({
     projectLoaded3dMetaRef,
   } = useContextEngine();
 
-  const { openModal, closeModal } = useModal();
+  const { openModal } = useModal();
 
   const initialSceneState = useMemo(() => buildInitialSceneState(), []);
 
@@ -225,12 +233,17 @@ export function SceneManagerProvider({
   };
 
   const clearCurrentSceneInEngine = () => {
+    const playerId = playerEntityIdRef.current;
+    if (playerId != null) {
+      removeCharacter(playerId);
+    }
+
     for (const scenario of scenarioEntities) {
       removeScenario(scenario.id);
     }
 
     for (const character of characterEntities) {
-      if (character.path === '[Player]') continue;
+      if (character.id === playerId) continue;
       removeCharacter(character.id);
     }
 
@@ -271,9 +284,6 @@ export function SceneManagerProvider({
     } else {
       pendingPlayCharacterViewRef.current = null;
       playCharacterViewRef.current = null;
-    }
-    if (projectType !== '2D') {
-      send(buildSetSceneCommand(projectType, initialSavePath) as never);
     }
 
     if (projectType === '2D') {
@@ -515,6 +525,35 @@ export function SceneManagerProvider({
           reportBounds,
         );
       }, 0);
+      return;
+    }
+
+    if (projectType !== '2D') {
+      queueMicrotask(() => {
+        syncEditorStateFromSavedScene(
+          scene,
+          {
+            entityMetaRef,
+            entityTransformsRef,
+            camera2dRef,
+            playerEntityIdRef,
+            editorCameraEntityIdRef,
+            mainPlayerHandled,
+            playerRemoved,
+          },
+          dispatch,
+          blueprints,
+        );
+        endSceneImportLoading(
+          dispatch,
+          sceneImportInProgressRef,
+          pendingImportSceneRef,
+          sceneBurstLoadInProgressRef,
+          modelReplaceInProgressRef,
+          reportBounds,
+        );
+        dispatch({ type: 'SYNC_PLAY_CHARACTER_VIEW' });
+      });
     }
   };
 
@@ -548,12 +587,8 @@ export function SceneManagerProvider({
       sprites: [],
     };
 
-    clearEngineBeforeSceneLoad();
-    loadSceneIntoEngine(emptyScene);
-
     setScenes((prev) => [...prev, nextScene]);
     setSceneDataById((prev) => ({ ...prev, [nextId]: emptyScene }));
-    setActiveSceneId(nextId);
   };
 
   const renameScene = (sceneId: number, nextName: string) => {
@@ -656,54 +691,26 @@ export function SceneManagerProvider({
     const nextId = getNextSceneId();
     openModal({
       title: t('Create new scene'),
+      size: 'sm',
       body: (
         <CreateSceneModalBody
           defaultName={defaultSceneName(nextId)}
-          onCancel={closeModal}
           onCreate={(name) => {
             void createScene(name);
-            closeModal();
           }}
-          t={t}
         />
       ),
     });
   };
 
   const openRenameSceneModal = (scene: SceneTab) => {
-    let draftName = scene.name;
-
     openModal({
       title: `${t('Edit')} ${scene.name}`,
       body: (
-        <div className="d-flex flex-column gap-3">
-          <div>
-            <label htmlFor="scene-name-rename" className="form-label mb-1">{t('Scene name')}</label>
-            <input
-              id="scene-name-rename"
-              type="text"
-              defaultValue={scene.name}
-              className="form-control"
-              onChange={(event) => {
-                draftName = event.target.value;
-              }}
-            />
-          </div>
-
-          <div className="d-flex gap-2 flex-wrap">
-            <button
-              className="btn btn-success"
-              onClick={() => {
-                renameScene(scene.id, draftName);
-                closeModal();
-              }}
-              type="button"
-            >
-              {t('Save name')}
-            </button>
-            <button className="btn btn-secondary" onClick={closeModal} type="button">{t('Cancel')}</button>
-          </div>
-        </div>
+        <SceneRenameModalBody
+          defaultName={scene.name}
+          onRename={(name) => renameScene(scene.id, name)}
+        />
       ),
     });
   };
@@ -712,7 +719,7 @@ export function SceneManagerProvider({
     if (scenes.length <= 1) {
       openModal({
         title: `${t('Cannot delete')} ${scene.name}`,
-        body: <DeleteBlockedBody t={t} />,
+        body: <DeleteBlockedBody />,
       });
       return;
     }
@@ -721,12 +728,7 @@ export function SceneManagerProvider({
       title: `${t('Delete')} ${scene.name}`,
       body: (
         <DeleteConfirmBody
-          onCancel={closeModal}
-          onConfirm={() => {
-            deleteScene(scene.id);
-            closeModal();
-          }}
-          t={t}
+          onConfirm={() => deleteScene(scene.id)}
         />
       ),
     });
@@ -745,112 +747,6 @@ export function SceneManagerProvider({
     <SceneManagerContext.Provider value={value}>
       {children}
     </SceneManagerContext.Provider>
-  );
-}
-
-function CreateSceneModalBody({
-  defaultName,
-  onCancel,
-  onCreate,
-  t,
-}: {
-  defaultName: string;
-  onCancel: () => void;
-  onCreate: (name: string) => void;
-  t: (key: string) => string;
-}) {
-  let draftName = defaultName;
-
-  return (
-    <CreateSceneModalBodyContent
-      defaultName={defaultName}
-      onCancel={onCancel}
-      onCreate={() => onCreate(draftName)}
-      onDraftChange={(value) => {
-        draftName = value;
-      }}
-      t={t}
-    />
-  );
-}
-
-function CreateSceneModalBodyContent({
-  defaultName,
-  onCancel,
-  onCreate,
-  onDraftChange,
-  t,
-}: {
-  defaultName: string;
-  onCancel: () => void;
-  onCreate: () => void;
-  onDraftChange: (value: string) => void;
-  t: (key: string) => string;
-}) {
-  return (
-    <div className="d-flex flex-column gap-3">
-      <CreateSceneModalBodyFields
-        defaultName={defaultName}
-        onDraftChange={onDraftChange}
-        t={t}
-      />
-      <div className="d-flex justify-content-end gap-2">
-        <button className="btn btn-secondary" onClick={onCancel} type="button">{t('Cancel')}</button>
-        <button className="btn btn-success" onClick={onCreate} type="button">{t('Create scene')}</button>
-      </div>
-    </div>
-  );
-}
-
-function CreateSceneModalBodyFields({
-  defaultName,
-  onDraftChange,
-  t,
-}: {
-  defaultName: string;
-  onDraftChange: (value: string) => void;
-  t: (key: string) => string;
-}) {
-  return (
-    <div>
-      <label htmlFor="scene-name-create" className="form-label mb-1">{t('Scene name')}</label>
-      <input
-        id="scene-name-create"
-        type="text"
-        defaultValue={defaultName}
-        className="form-control"
-        onChange={(event) => onDraftChange(event.target.value)}
-      />
-    </div>
-  );
-}
-
-function DeleteBlockedBody({ t }: { t: (key: string) => string }) {
-  return (
-    <div className="d-flex flex-column gap-2">
-      <p className="mb-0">{t('You cannot delete this scene because it is the only one in the project.')}</p>
-      <small className="text-secondary">{t('There must be at least one scene to keep the editor in a valid state.')}</small>
-    </div>
-  );
-}
-
-function DeleteConfirmBody({
-  onCancel,
-  onConfirm,
-  t,
-}: {
-  onCancel: () => void;
-  onConfirm: () => void;
-  t: (key: string) => string;
-}) {
-  return (
-    <div className="d-flex flex-column gap-3">
-      <p className="mb-0">{t('This action will delete the selected scene.')}</p>
-      <div className="d-flex justify-content-end gap-2">
-        <button className="btn btn-secondary" onClick={onCancel} type="button">{t('Cancel')}</button>
-        <button className="btn btn-danger" onClick={onConfirm} type="button">{t('Delete')}</button>
-      </div>
-    </div>
   );
 }
 

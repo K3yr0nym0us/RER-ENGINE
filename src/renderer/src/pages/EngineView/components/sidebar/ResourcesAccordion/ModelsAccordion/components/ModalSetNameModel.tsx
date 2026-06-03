@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { useModal } from '@modal';
+import { useModalClose } from '@hooks';
 import { useContextEngine } from '@engine';
 import { useTraslate } from '@hooks';
 import type { ModelCategory } from '@shared-types';
@@ -13,7 +13,7 @@ interface ModalSetNameModelProps {
 export default function ModalSetNameModel({ path, autoName, category }: ModalSetNameModelProps) {
   const { t } = useTraslate();
   const { loadModelAsset } = useContextEngine();
-  const { closeModal } = useModal();
+  const closeModal = useModalClose();
   const nameRef = useRef<HTMLInputElement>(null);
 
   return (

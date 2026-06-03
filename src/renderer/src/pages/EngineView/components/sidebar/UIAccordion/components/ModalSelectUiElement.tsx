@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Image, Square, Type } from 'react-bootstrap-icons';
-import { useModal } from '@modal';
+import { useModalClose } from '@hooks';
 import { useTraslate } from '@hooks';
 
 export type UiElementKind = 'button' | 'text' | 'image';
@@ -17,7 +17,7 @@ export default function ModalSelectUiElement({
 	onSelectImage,
 }: ModalSelectUiElementProps) {
 	const { t } = useTraslate();
-	const { closeModal } = useModal();
+	const closeModal = useModalClose();
 
 	const options: Array<{
 		kind: UiElementKind;

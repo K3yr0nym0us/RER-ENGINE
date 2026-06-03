@@ -1,7 +1,6 @@
 import { useRef } from 'react';
-import { useModal } from '@modal';
 import { useContextEngine } from '@engine';
-import { useTraslate } from '@hooks';
+import { useModalClose, useTraslate } from '@hooks';
 
 interface ModalSetNameFontProps {
   path: string;
@@ -11,7 +10,7 @@ interface ModalSetNameFontProps {
 export default function ModalSetNameFont({ path, autoName }: ModalSetNameFontProps) {
   const { t } = useTraslate();
   const { loadFont } = useContextEngine();
-  const { closeModal } = useModal();
+  const closeModal = useModalClose();
 
   const nameRef = useRef<HTMLInputElement>(null);
 

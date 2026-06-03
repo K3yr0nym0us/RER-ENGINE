@@ -179,6 +179,7 @@ export function EngineProvider({
 		pendingModelLoadQueueRef: refs.pendingModelLoadQueueRef,
 		pendingBurstSpawnRestoreRef: refs.pendingBurstSpawnRestoreRef,
 		mainPlayerHandled: refs.mainPlayerHandled,
+		playerRemoved: refs.playerRemoved,
 		camera2dRef: refs.camera2dRef,
 		projectLoaded2dMetaRef: refs.projectLoaded2dMetaRef,
 		projectLoaded3dMetaRef: refs.projectLoaded3dMetaRef,

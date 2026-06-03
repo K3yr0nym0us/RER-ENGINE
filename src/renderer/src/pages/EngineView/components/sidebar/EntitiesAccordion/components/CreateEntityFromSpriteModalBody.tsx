@@ -1,13 +1,15 @@
 import { useState } from 'react';
 
-import { useModal } from '@modal';
 import { SpritePreviewModalBody, type SpriteFrameRect } from '@components';
 
 import type { SpriteInfo } from '@shared-types';
 import { useTraslate } from '@hooks';
+import { useModalClose } from '../../../../../../modal-electron/useModalClose';
 
 interface CreateEntityFromSpriteModalBodyProps {
-  sprites: SpriteInfo[];
+  sprites?: SpriteInfo[];
+  parentHandlerId?: string;
+  previewTitle: string;
   onCreateEntity: (payload: {
     spritePath: string;
     animation: {
@@ -26,57 +28,32 @@ interface CreateEntityFromSpriteModalBodyProps {
       cellOffsetY?: number;
     };
   }) => void;
-  previewTitle: string;
 }
 
 export function CreateEntityFromSpriteModalBody({
-  sprites,
+  sprites = [],
+  parentHandlerId,
   onCreateEntity,
   previewTitle,
 }: CreateEntityFromSpriteModalBodyProps) {
   const { t } = useTraslate();
-  const { closeModal, openModal } = useModal();
+  const closeModal = useModalClose();
   const [selectedSpritePath, setSelectedSpritePath] = useState<string>('');
 
   const spriteName = (path: string) => path.split('/').pop() ?? path;
 
   const handleOpenPreview = () => {
-    if (!selectedSpritePath) return;
-
-    const spritePath = selectedSpritePath;
+    if (!selectedSpritePath || !parentHandlerId) return;
 
     closeModal();
     window.setTimeout(() => {
-      openModal({
-        title: previewTitle,
-        size: 'xl',
-        body: (
-          <SpritePreviewModalBody
-            src={spritePath}
-            onConfirm={(config) => {
-              onCreateEntity({
-                spritePath,
-                animation: {
-                  name: config.animationName,
-                  frames: config.frames,
-                  fps: config.fps,
-                  loop: config.loop,
-                  facingRight: config.facingRight,
-                  audioPath: config.audioPath,
-                  scripts: config.scripts,
-                  isCancelable: config.isCancelable,
-                  defaultAnimation: config.defaultAnimation,
-                  selectionMode: config.selectionMode,
-                  gridSize: config.gridSize,
-                  cellOffsetX: config.cellOffsetX,
-                  cellOffsetY: config.cellOffsetY,
-                },
-              });
-              closeModal();
-            }}
-            onCancel={closeModal}
-          />
-        ),
+      window.electronAPI.requestParentModalOpen({
+        parentHandlerId,
+        action: 'openSpritePreview',
+        payload: {
+          spritePath: selectedSpritePath,
+          previewTitle,
+        },
       });
     }, 0);
   };
@@ -110,15 +87,13 @@ export function CreateEntityFromSpriteModalBody({
       </div>
 
       <div className="d-flex gap-2 justify-content-end mt-3">
-        <button className="btn btn-secondary btn-sm" onClick={closeModal}>Cancelar</button>
+        <button className="btn btn-secondary btn-sm" onClick={closeModal}>{t('Cancel')}</button>
         {selectedSpritePath && (
           <button className="btn btn-primary btn-sm" onClick={handleOpenPreview}>
-            Configurar frames
+            {t('Configure frames')}
           </button>
         )}
       </div>
     </div>
   );
 }
-
-export default CreateEntityFromSpriteModalBody;
