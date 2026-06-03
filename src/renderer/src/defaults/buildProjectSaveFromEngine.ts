@@ -8,6 +8,7 @@ import type {
 	SavedPlayerUiTextBox,
 	SavedPlayerUiButton,
 	SavedPlayerUiImage,
+	SavedPlayerUiObject,
 	SavedScene,
 	FontInfo,
 	HudImageInfo,
@@ -17,7 +18,7 @@ import type {
 import type { UiScreenEntry } from '../context/useContextEngine/types';
 import type { EntityMeta } from '../context/useContextEngine/types';
 import { getSceneProjectState } from '../pages/EngineView/sceneStateStore';
-import { requestEngineDefaultSceneName } from './requestEngineDefaultSceneName';
+import { defaultSceneName } from './defaultSceneName';
 import { blueprintToSave } from '../utils/blueprintModelPath';
 
 const SAVE_SNAPSHOT_TIMEOUT_MS = 15_000;
@@ -241,6 +242,20 @@ function mapEngineUiImagesToSave(
 	}));
 }
 
+function mapEngineUiObjectsToSave(
+	objects: NonNullable<EngineSaveSceneSnapshot['player_ui_objects']>,
+): SavedPlayerUiObject[] {
+	return objects.map((obj) => ({
+		scope: obj.scope,
+		screen_id: obj.screen_id,
+		id: obj.id,
+		vertices: obj.vertices,
+		fill_color: obj.fill_color,
+		z_index: obj.z_index ?? 0,
+		locked: obj.locked ?? false,
+	}));
+}
+
 /** Combina snapshot del motor con metadatos solo del editor (pestañas, blueprints, idioma). */
 export async function buildProjectSaveFromEngineSnapshot(
 	engineScene: EngineSaveSceneSnapshot,
@@ -268,7 +283,7 @@ export async function buildProjectSaveFromEngineSnapshot(
 		activeSceneId = sceneState.activeSceneId;
 	}
 	if (!activeSceneName.trim()) {
-		activeSceneName = await requestEngineDefaultSceneName(activeSceneId);
+		activeSceneName = defaultSceneName(activeSceneId);
 	}
 
 	const activeScene = engineSceneToSavedScene(engineScene, activeSceneId, activeSceneName, entityMeta);
@@ -322,6 +337,9 @@ export async function buildProjectSaveFromEngineSnapshot(
 			: undefined,
 		playerUiImages: engineScene.player_ui_images?.length
 			? mapEngineUiImagesToSave(engineScene.player_ui_images)
+			: undefined,
+		playerUiObjects: engineScene.player_ui_objects?.length
+			? mapEngineUiObjectsToSave(engineScene.player_ui_objects)
 			: undefined,
 	};
 }

@@ -1,14 +1,14 @@
 import type { ReactNode } from 'react';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Accordion, Form } from 'react-bootstrap';
-import { Pencil, Trash } from 'react-bootstrap-icons';
+import { Check2Square, Pencil, Trash } from 'react-bootstrap-icons';
 import { AppTooltip } from '@components';
 import { useContextEngine } from '@engine';
 import type { UiScreenScope } from '@engine';
 import { useModal } from '@modal';
 import { useTraslate } from '@hooks';
+import { usePlayerUiObjectDrawing } from '@hooks';
 import EditingUiElementGroups from './EditingUiElementGroups';
-import ModalAddUiButton from './ModalAddUiButton';
 import ModalSelectFont from './ModalSelectFont';
 import ModalSelectHudImage from './ModalSelectHudImage';
 import ModalSetNameUi from './ModalSetNameUi';
@@ -42,20 +42,38 @@ const UiScreensAccordion = ({
 		endUiScreenEdit,
 		addPlayerUiTextBox,
 		removePlayerUiTextBox,
-		addEditingUiButton,
 		addPlayerUiImage,
 		removePlayerUiImage,
-		removeEditingUiPlaceholder,
+		removePlayerUiObject,
 		setPlayerUiHudElementProps,
+		send,
+		toolProgress,
 		setActivePlayerUiScreen,
 		syncPlayerUiScreensToEngine,
+		renameUiScreen,
 		engineReady,
 	} = useContextEngine();
+	const objectDraw = usePlayerUiObjectDrawing(send, toolProgress);
+
+	const finishUiScreenEdit = () => {
+		objectDraw.cancel();
+		endUiScreenEdit();
+	};
+
+	const [uiNameDraft, setUiNameDraft] = useState('');
+	const [isEditingUiName, setIsEditingUiName] = useState(false);
 
 	const screens = scope === 'player' ? playerUiScreens : menuUiScreens;
 	const editingId = scope === 'player' ? playerUiEditingId : menuUiEditingId;
 	const isEditing = editingId !== null;
 	const editingScreen = screens.find((screen) => screen.id === editingId);
+
+	useEffect(() => {
+		if (editingScreen) {
+			setUiNameDraft(editingScreen.name);
+			setIsEditingUiName(false);
+		}
+	}, [editingScreen?.id, editingScreen?.name]);
 
 	useEffect(() => {
 		if (scope === 'player') {
@@ -85,16 +103,6 @@ const UiScreensAccordion = ({
 		});
 	};
 
-	const openAddButtonModal = () => {
-		openModal({
-			title: t('Add button'),
-			size: 'xl',
-			body: (
-				<ModalAddUiButton onConfirm={addEditingUiButton} />
-			),
-		});
-	};
-
 	const openAddImageModal = () => {
 		openModal({
 			title: t('Add image'),
@@ -120,7 +128,7 @@ const UiScreensAccordion = ({
 							type="button"
 							onClick={() => {
 								if (editingId === id) {
-									endUiScreenEdit();
+									finishUiScreenEdit();
 								}
 								removeUiScreen(scope, id);
 								closeModal();
@@ -163,7 +171,7 @@ const UiScreensAccordion = ({
 		});
 	};
 
-	const confirmRemoveButton = (id: number, label: string) => {
+	const confirmRemoveObject = (id: number, label: string) => {
 		openModal({
 			title: t('Confirm deletion'),
 			body: (
@@ -180,7 +188,7 @@ const UiScreensAccordion = ({
 							className="btn btn-danger btn-sm"
 							type="button"
 							onClick={() => {
-								removeEditingUiPlaceholder('button', id);
+								removePlayerUiObject(id);
 								closeModal();
 							}}
 						>
@@ -230,38 +238,78 @@ const UiScreensAccordion = ({
 				</Accordion.Header>
 				<Accordion.Body className="py-2 px-2">
 					{editingScreen && (
-						<p className="small text-secondary mb-2 text-truncate">
-							{t('Editing')}: <strong className="text-light">{editingScreen.name}</strong>
-						</p>
+						<div className="mb-2">
+							<p className="prop-label small text-secondary mb-1">{t('UI name')}</p>
+							<div className="input-group input-group-sm">
+								<input
+									type="text"
+									value={uiNameDraft}
+									onChange={(e) => setUiNameDraft(e.target.value)}
+									className="form-control bg-dark text-info border-secondary prop-input"
+									aria-label={t('UI name')}
+									disabled={!isEditingUiName}
+								/>
+								{!isEditingUiName ? (
+									<AppTooltip content={t('Edit name')} place="top">
+										<button
+											type="button"
+											className="btn btn-outline-secondary"
+											onClick={() => setIsEditingUiName(true)}
+										>
+											<Pencil />
+										</button>
+									</AppTooltip>
+								) : (
+									<AppTooltip content={t('Save changes')} place="top">
+										<button
+											type="button"
+											className="btn btn-outline-info"
+											disabled={!uiNameDraft.trim()}
+											onClick={() => {
+												const trimmed = uiNameDraft.trim();
+												if (!trimmed || !editingId) return;
+												renameUiScreen(scope, editingId, trimmed);
+												setIsEditingUiName(false);
+											}}
+										>
+											<Check2Square />
+										</button>
+									</AppTooltip>
+								)}
+							</div>
+						</div>
 					)}
-					<p className="small text-secondary mb-2">
-						{t('Double-click a text box in the viewport to edit. Backspace removes characters.')}
-					</p>
 
 					<EditingUiElementGroups
 						elements={editingUiElements}
 						engineReady={engineReady}
 						onAddText={openAddTextModal}
-						onAddButton={openAddButtonModal}
 						onAddImage={openAddImageModal}
+						onAddObject={objectDraw.start}
+						onCancelObjectDraw={objectDraw.cancel}
 						onRemoveText={confirmRemoveTextBox}
-						onRemoveButton={confirmRemoveButton}
 						onRemoveImage={confirmRemoveImage}
+						onRemoveObject={confirmRemoveObject}
+						objectDrawActive={objectDraw.isActive}
+						objectPointCount={objectDraw.pointCount}
 						onSetElementProps={setPlayerUiHudElementProps}
+						textEditHint={t(
+							'Double-click a text box in the viewport to edit. Backspace removes characters. Hold Ctrl while dragging to snap to the grid.',
+						)}
 					/>
 
 					<div className="d-flex gap-2">
 						<button
 							className="btn btn-outline-secondary btn-sm flex-fill"
 							type="button"
-							onClick={endUiScreenEdit}
+							onClick={finishUiScreenEdit}
 						>
 							{t('Cancel')}
 						</button>
 						<button
 							className="btn btn-primary btn-sm flex-fill"
 							type="button"
-							onClick={endUiScreenEdit}
+							onClick={finishUiScreenEdit}
 						>
 							{t('Save')}
 						</button>

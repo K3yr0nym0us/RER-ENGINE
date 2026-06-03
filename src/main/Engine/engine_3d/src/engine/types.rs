@@ -23,6 +23,10 @@ pub(crate) enum UndoAction {
     RemoveEntity { snapshot: EntityUndoSnapshot },
     /// Redo tras Ctrl+Z en creación: volver a insertar con el mismo id.
     RestoreEntity { snapshot: EntityUndoSnapshot },
+    /// Deshacer cambios en el HUD de la pantalla UI en edición (texto, botones, imágenes, objetos, dibujo).
+    RestorePlayerUiHud {
+        snapshot: crate::config_3d::player_ui::hud_undo::PlayerUiHudUndoSnapshot,
+    },
 }
 
 #[derive(Clone)]

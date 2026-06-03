@@ -63,6 +63,28 @@ Archivos clave:
 - `src/pages/EngineView/components/sidebar/CameraAccordion.tsx` — dispara `set_play_character_view`; refresca UI con `playCharacterViewSyncSeq`.
 - `src/shared-types/types.ts` — `PlayCharacterViewChanged`, comando `set_play_character_view`.
 
+## Player UI HUD (proyectos 3D)
+
+Editor de **pantallas HUD del jugador** en el acordeón UI (scope `player`). El motor posee geometría NDC, capas, play y undo; el renderer envía comandos y refleja eventos.
+
+| Pieza | Archivo |
+|-------|---------|
+| Pantallas y edición | `UIAccordion/PlayerUiAccordion.tsx`, `UiScreensAccordion.tsx` |
+| Lista de elementos | `EditingUiElementGroups.tsx` (texto, objeto, imagen; botones en lista IPC) |
+| Dibujo de polígonos | `hooks/usePlayerUiObjectDrawing.ts` → `set_player_ui_object_draw` |
+| Estado | `useContextEngine/types.ts` — `editingUiElements`, `SET_EDITING_UI_OBJECTS` vía `player_ui_text_boxes_list` |
+| IPC | `createEngineActions.ts`, `createEngineEventHandler.ts`, `shared-types/types.ts` |
+| Save | `buildProjectSaveFromEngine.ts` — `playerUiObjects` y resto de capas HUD del snapshot |
+
+Flujo típico:
+
+1. **Editar pantalla** → `set_player_ui_edit_mode` (scope `player`, id de pantalla).
+2. **Añadir contenido** → modales de fuente/imagen o modo dibujo de objeto; el motor emite `player_ui_text_boxes_list` para sincronizar el sidebar.
+3. **Play** → pantalla marcada activa en `playerUiScreens` + `sync_player_ui_screens`; el motor dibuja el HUD en NDC.
+4. **Undo** → Ctrl+Z en el viewport (motor `Undo` / `RestorePlayerUiHud`); no duplicar pila de undo en React.
+
+Al salir de edición (`endUiScreenEdit`), cancelar dibujo de objeto en el hook para alinear estado local con el motor.
+
 ## Abrir `.save`
 
 1. Main extrae el ZIP a un directorio temporal (`extractDir`) y lee solo metadatos (`type`, `gameStyle`) del `manifest.json`.
@@ -107,7 +129,9 @@ Documentacion de motores:
 - `src/pages/EngineView/` — layout del editor, sidebars, `SceneTabsBar`.
 - `src/defaults/` — plantillas y restauracion de escena (intencion, no fisica).
 - `src/hooks/useAutoSave.ts` — snapshot del motor (2D y 3D).
+- `src/hooks/usePlayerUiObjectDrawing.ts` — modo dibujo de objetos HUD (progreso `toolProgress`).
 - `src/defaults/buildProjectSaveFromEngine.ts` — IPC `export_save_snapshot` y merge a `ProjectSaveData`.
+- `src/defaults/defaultSceneName.ts` — nombres `Scene-NN` locales (misma regla que `editor_defaults` en Rust).
 - `src/shared-types/types.ts` — contrato IPC; ampliar aqui al anadir comandos/eventos nuevos.
 
 ## Checklist para cambios nuevos

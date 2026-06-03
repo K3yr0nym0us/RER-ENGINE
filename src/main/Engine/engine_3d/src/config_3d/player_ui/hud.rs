@@ -1,4 +1,4 @@
-//! Orquestación del overlay HUD (texto + botones).
+//! Orquestación del overlay HUD (texto, botones, imágenes y objetos poligonales).
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -113,39 +113,56 @@ impl State {
             .get(&key)
             .cloned()
             .unwrap_or_default();
+        let objects = self
+            .player_ui_objects
+            .get(&key)
+            .cloned()
+            .unwrap_or_default();
 
         let mut verts = Vec::new();
         let draw_order =
-            super::hud_layers::hud_draw_order(&text_boxes, &buttons, &images);
-        if self.player_ui_edit_active {
-            for layer in &draw_order {
-                match layer.kind {
-                    super::hud_layers::HudLayerKind::Text => {
-                        let b = &text_boxes[layer.index];
-                        text_render::append_text_box_gizmo_verts(
-                            &mut verts,
-                            std::slice::from_ref(b),
-                            self.player_ui_selected_text_id,
-                            self.player_ui_text_editing_id,
-                        );
-                    }
-                    super::hud_layers::HudLayerKind::Button => {
-                        let btn = &buttons[layer.index];
-                        button_render::append_button_gizmo_verts(
-                            &mut verts,
-                            std::slice::from_ref(btn),
-                            self.player_ui_selected_button_id,
-                        );
-                    }
-                    super::hud_layers::HudLayerKind::Image => {
-                        let img = &images[layer.index];
-                        image_render::append_image_gizmo_verts(
-                            &mut verts,
-                            std::slice::from_ref(img),
-                            self.player_ui_selected_image_id,
-                        );
-                    }
+            super::hud_layers::hud_draw_order(&text_boxes, &buttons, &images, &objects);
+        for layer in &draw_order {
+            match layer.kind {
+                super::hud_layers::HudLayerKind::Object => {
+                    let obj = &objects[layer.index];
+                    let selected = if self.player_ui_edit_active {
+                        self.player_ui_selected_object_id
+                    } else {
+                        None
+                    };
+                    super::object::append_object_gizmo_verts(
+                        &mut verts,
+                        std::slice::from_ref(obj),
+                        selected,
+                    );
                 }
+                super::hud_layers::HudLayerKind::Text if self.player_ui_edit_active => {
+                    let b = &text_boxes[layer.index];
+                    text_render::append_text_box_gizmo_verts(
+                        &mut verts,
+                        std::slice::from_ref(b),
+                        self.player_ui_selected_text_id,
+                        self.player_ui_text_editing_id,
+                    );
+                }
+                super::hud_layers::HudLayerKind::Button if self.player_ui_edit_active => {
+                    let btn = &buttons[layer.index];
+                    button_render::append_button_gizmo_verts(
+                        &mut verts,
+                        std::slice::from_ref(btn),
+                        self.player_ui_selected_button_id,
+                    );
+                }
+                super::hud_layers::HudLayerKind::Image if self.player_ui_edit_active => {
+                    let img = &images[layer.index];
+                    image_render::append_image_gizmo_verts(
+                        &mut verts,
+                        std::slice::from_ref(img),
+                        self.player_ui_selected_image_id,
+                    );
+                }
+                _ => {}
             }
         }
         self.player_ui_text_overlay_buffer = gizmo::build_from_vertices(&self.device, &verts);
@@ -189,6 +206,7 @@ impl State {
                         &mut self.player_ui_hud_texture_cache,
                     );
                 }
+                super::hud_layers::HudLayerKind::Object => {}
             }
         }
         self.player_ui_font_cache = font_cache;
@@ -227,8 +245,7 @@ impl State {
             return 0;
         }
 
-        let has_gizmo = self.player_ui_edit_active
-            && self.player_ui_text_overlay_buffer.vertex_count > 0;
+        let has_gizmo = self.player_ui_text_overlay_buffer.vertex_count > 0;
         let has_glyphs = self
             .player_ui_glyph_instance_buffer
             .as_ref()

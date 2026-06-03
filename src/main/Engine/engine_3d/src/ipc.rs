@@ -481,7 +481,14 @@ pub enum EngineCommand {
         #[serde(default)]
         id: Option<u32>,
     },
-    /// Bloqueo y/o `z_index` de un elemento HUD (text | button | image).
+    /// Activa o cancela el modo dibujo de objeto HUD poligonal (clicks en viewport).
+    SetPlayerUiObjectDraw { active: bool },
+    /// Elimina un objeto HUD de la pantalla en edición.
+    RemovePlayerUiObject {
+        #[serde(default)]
+        id: Option<u32>,
+    },
+    /// Bloqueo y/o `z_index` de un elemento HUD (text | button | image | object).
     SetPlayerUiHudElementProps {
         element_kind: String,
         id: u32,
@@ -774,6 +781,26 @@ pub struct SavePlayerUiButtonSnapshot {
     pub locked: bool,
 }
 
+/// Objetos HUD poligonales en manifest / snapshot del motor.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SavePlayerUiObjectSnapshot {
+    pub scope: String,
+    #[serde(alias = "screenId")]
+    pub screen_id: String,
+    pub id: u32,
+    pub vertices: Vec<[f32; 2]>,
+    #[serde(alias = "fillColor", default = "default_object_fill")]
+    pub fill_color: [f32; 4],
+    #[serde(default)]
+    pub z_index: i32,
+    #[serde(default)]
+    pub locked: bool,
+}
+
+fn default_object_fill() -> [f32; 4] {
+    crate::config_3d::player_ui::object::DEFAULT_OBJECT_FILL
+}
+
 /// Imágenes HUD en manifest / snapshot del motor.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SavePlayerUiImageSnapshot {
@@ -823,6 +850,8 @@ pub struct SaveSceneSnapshotPayload {
     pub player_ui_buttons: Vec<SavePlayerUiButtonSnapshot>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub player_ui_images: Vec<SavePlayerUiImageSnapshot>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub player_ui_objects: Vec<SavePlayerUiObjectSnapshot>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
@@ -924,6 +953,8 @@ pub enum EngineEvent {
     BackgroundLoaded { path: String },
     /// Emitido cuando una herramienta de dibujo fue cancelada desde el motor.
     ToolCancelled,
+    /// Progreso de herramienta de dibujo por puntos (colisionador 2D u objeto HUD UI).
+    DrawingProgress { count: u32 },
     /// Emitido cuando el usuario selecciona el pivot de un frame en modo edición.
     PivotSelected { frame_path: String, pivot_x: f32, pivot_y: f32 },
     /// Emitido cuando una animación termina (no loop) o se detiene.
@@ -1092,6 +1123,8 @@ pub enum EngineEvent {
         buttons: Vec<PlayerUiButtonListItem>,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         images: Vec<PlayerUiImageListItem>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        objects: Vec<PlayerUiObjectListItem>,
     },
     PlayerUiButtonAdded {
         id: u32,
@@ -1104,6 +1137,11 @@ pub enum EngineEvent {
         image_name: String,
     },
     PlayerUiImageRemoved { id: u32 },
+    PlayerUiObjectAdded {
+        id: u32,
+        vertex_count: u32,
+    },
+    PlayerUiObjectRemoved { id: u32 },
     /// Pantalla Player UI activa cambiada (editor o script Lua).
     PlayerUiActiveScreenChanged {
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -1139,6 +1177,14 @@ pub struct PlayerUiButtonListItem {
 pub struct PlayerUiImageListItem {
     pub id: u32,
     pub image_name: String,
+    pub z_index: i32,
+    pub locked: bool,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct PlayerUiObjectListItem {
+    pub id: u32,
+    pub vertex_count: u32,
     pub z_index: i32,
     pub locked: bool,
 }

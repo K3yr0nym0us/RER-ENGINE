@@ -661,10 +661,15 @@ impl ApplicationHandler<EngineCommand> for App {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 let cur = (position.x as f32, position.y as f32);
-                if state.player_ui_edit_active && state.player_ui_text_drag.is_some() {
+                if state.player_ui_edit_active
+                    && (state.player_ui_text_drag.is_some() || state.player_ui_object_draw_active())
+                {
                     let shift_active = self.shift_held || query_shift_held_os();
                     self.shift_held = shift_active;
                     state.shift_held = shift_active;
+                    let ctrl_active = self.ctrl_held || query_ctrl_held_os();
+                    self.ctrl_held = ctrl_active;
+                    state.ctrl_held = ctrl_active;
                     state.player_ui_mouse_move(cur.0, cur.1);
                     self.last_cursor = Some(cur);
                     return;
@@ -712,7 +717,12 @@ impl ApplicationHandler<EngineCommand> for App {
                     }
                 }
                 // Hover: solo cuando no se está arrastrando
-                if !state.is_preview_playing() && !self.mouse_right && !self.mouse_middle && self.gizmo_drag_axis.is_none() {
+                if !state.is_preview_playing()
+                    && !state.player_ui_edit_active
+                    && !self.mouse_right
+                    && !self.mouse_middle
+                    && self.gizmo_drag_axis.is_none()
+                {
                     let is_quick_build = matches!(state.active_tool, crate::config_compat::ActiveTool::QuickBuildPlace { .. });
                     if !is_quick_build {
                         state.update_hover(cur.0, cur.1);

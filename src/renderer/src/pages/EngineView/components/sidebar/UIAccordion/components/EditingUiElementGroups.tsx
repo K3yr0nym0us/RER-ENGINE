@@ -4,21 +4,14 @@ import { useEffect, useState } from 'react';
 
 import { Accordion } from 'react-bootstrap';
 
-import { Image, LockFill, PlusCircle, Square, Trash, Type, Unlock } from 'react-bootstrap-icons';
+import { Box, Image, LockFill, PlusCircle, Trash, Type, Unlock } from 'react-bootstrap-icons';
 
 import { AppTooltip } from '@components';
 
 import { useTraslate } from '@hooks';
 
-import type {
-
-	EditingUiElement,
-
-	EditingUiElementKind,
-
-} from '../../../../../../context/useContextEngine/types';
-
-import { filterEditingUiElementsByKind } from '../../../../../../context/useContextEngine/types';
+import type { EditingUiElement, EditingUiElementKind } from '@engine';
+import { filterEditingUiElementsByKind } from '@engine';
 
 
 
@@ -30,15 +23,24 @@ interface EditingUiElementGroupsProps {
 
 	onAddText: () => void;
 
-	onAddButton: () => void;
-
 	onAddImage: () => void;
+
+	onAddObject: () => void;
+
+	onCancelObjectDraw: () => void;
 
 	onRemoveText: (id: number, label: string) => void;
 
-	onRemoveButton: (id: number, label: string) => void;
-
 	onRemoveImage: (id: number, label: string) => void;
+
+	onRemoveObject: (id: number, label: string) => void;
+
+	objectDrawActive: boolean;
+
+	objectPointCount: number;
+
+	/** Ayuda de edición de texto (viewport). */
+	textEditHint?: string;
 
 	onSetElementProps: (
 
@@ -244,7 +246,15 @@ function ElementListRow({
 
 
 
-function GroupAddButton({ label, onClick }: { label: string; onClick: () => void }) {
+function GroupAddButton({
+	label,
+	onClick,
+	disabled,
+}: {
+	label: string;
+	onClick: () => void;
+	disabled?: boolean;
+}) {
 
 	return (
 
@@ -255,6 +265,8 @@ function GroupAddButton({ label, onClick }: { label: string; onClick: () => void
 			type="button"
 
 			onClick={onClick}
+
+			disabled={disabled}
 
 		>
 
@@ -276,6 +288,8 @@ function GroupBody({
 
 	onAdd,
 
+	addDisabled,
+
 	emptyMessage,
 
 	isEmpty,
@@ -287,6 +301,8 @@ function GroupBody({
 	addLabel: string;
 
 	onAdd: () => void;
+
+	addDisabled?: boolean;
 
 	emptyMessage: string;
 
@@ -300,7 +316,7 @@ function GroupBody({
 
 		<div className="py-1 px-1">
 
-			<GroupAddButton label={addLabel} onClick={onAdd} />
+			<GroupAddButton label={addLabel} onClick={onAdd} disabled={addDisabled} />
 
 			{isEmpty ? (
 
@@ -328,17 +344,25 @@ export default function EditingUiElementGroups({
 
 	onAddText,
 
-	onAddButton,
-
 	onAddImage,
+
+	onAddObject,
+
+	onCancelObjectDraw,
 
 	onRemoveText,
 
-	onRemoveButton,
-
 	onRemoveImage,
 
+	onRemoveObject,
+
 	onSetElementProps,
+
+	textEditHint,
+
+	objectDrawActive,
+
+	objectPointCount,
 
 }: EditingUiElementGroupsProps) {
 
@@ -356,15 +380,12 @@ export default function EditingUiElementGroups({
 
 	const textItems = filterEditingUiElementsByKind(elements, 'text');
 
-	const buttonItems = filterEditingUiElementsByKind(elements, 'button');
-
 	const imageItems = filterEditingUiElementsByKind(elements, 'image');
+	const objectItems = filterEditingUiElementsByKind(elements, 'object');
 
 
 
 	const groups: Array<{
-
-		kind: EditingUiElementKind;
 
 		eventKey: string;
 
@@ -382,11 +403,13 @@ export default function EditingUiElementGroups({
 
 		body: ReactNode;
 
+		preBody?: ReactNode;
+
+		addDisabled?: boolean;
+
 	}> = [
 
 		{
-
-			kind: 'text',
 
 			eventKey: 'ui-el-text',
 
@@ -401,6 +424,12 @@ export default function EditingUiElementGroups({
 			count: textItems.length,
 
 			emptyMessage: t('No text elements on this screen.'),
+
+			preBody: textEditHint ? (
+
+				<p className="small text-secondary mb-2 px-1">{textEditHint}</p>
+
+			) : null,
 
 			body:
 
@@ -464,93 +493,62 @@ export default function EditingUiElementGroups({
 
 		{
 
-			kind: 'button',
+			eventKey: 'ui-el-object',
 
-			eventKey: 'ui-el-button',
+			title: t('Object'),
 
-			title: t('Button'),
+			icon: <Box className="me-2 flex-shrink-0" />,
 
-			icon: <Square className="me-2 flex-shrink-0" />,
+			addLabel: objectDrawActive ? t('Cancel drawing') : t('Add object'),
 
-			addLabel: t('Add button'),
+			onAdd: objectDrawActive ? onCancelObjectDraw : onAddObject,
 
-			onAdd: onAddButton,
+			count: objectItems.length,
 
-			count: buttonItems.length,
+			emptyMessage: objectDrawActive
+				? t('Click to add points; click the first point again to finish (min. 3). Hold Ctrl to snap to grid. Esc cancels.')
+				: t('No objects on this screen.'),
 
-			emptyMessage: t('No button elements on this screen.'),
+			preBody: objectDrawActive ? (
+				<p className="small text-warning mb-2 px-1">
+					{t('Drawing')}: {objectPointCount} {t('points')}
+				</p>
+			) : null,
 
 			body:
-
-				buttonItems.length > 0 ? (
-
+				objectItems.length > 0 ? (
 					<div className="d-flex flex-column gap-2">
-
-						{buttonItems.map((item) => {
-
-							const label =
-
-								item.config.text.trim().length > 0
-
-									? item.config.text
-
-									: t('Button');
-
+						{objectItems.map((item) => {
+							const label = `${t('Object')} #${item.id}`;
 							return (
-
 								<ElementListRow
-
-									key={`button-${item.id}`}
-
+									key={`object-${item.id}`}
 									label={label}
-
 									locked={item.locked}
-
 									zIndex={item.zIndex}
-
 									engineReady={engineReady}
-
 									lockTooltip={lockTooltip}
-
 									unlockTooltip={unlockTooltip}
-
 									zIndexLabel={zIndexLabel}
-
 									deleteTooltip={t('Delete element')}
-
 									onToggleLock={() =>
-
-										onSetElementProps('button', item.id, {
-
+										onSetElementProps('object', item.id, {
 											locked: !item.locked,
-
 										})
-
 									}
-
 									onZIndexCommit={(z_index) =>
-
-										onSetElementProps('button', item.id, { z_index })
-
+										onSetElementProps('object', item.id, { z_index })
 									}
-
-									onDelete={() => onRemoveButton(item.id, label)}
-
+									onDelete={() => onRemoveObject(item.id, label)}
 								/>
-
 							);
-
 						})}
-
 					</div>
-
 				) : null,
 
 		},
 
 		{
-
-			kind: 'image',
 
 			eventKey: 'ui-el-image',
 
@@ -634,25 +632,24 @@ export default function EditingUiElementGroups({
 
 
 
-	const defaultActiveKey = groups.filter((g) => g.count > 0).map((g) => g.eventKey);
+	const [activeGroupKey, setActiveGroupKey] = useState<string | null>(null);
 
-
+	useEffect(() => {
+		if (objectDrawActive) {
+			setActiveGroupKey('ui-el-object');
+		}
+	}, [objectDrawActive]);
 
 	return (
-
 		<Accordion
-
 			className="sidebar-accordion mb-2"
-
-			defaultActiveKey={defaultActiveKey.length > 0 ? defaultActiveKey : ['ui-el-text']}
-
-			alwaysOpen
-
+			activeKey={activeGroupKey ?? undefined}
+			onSelect={(key) => setActiveGroupKey(typeof key === 'string' ? key : null)}
 		>
 
 			{groups.map((group) => (
 
-				<Accordion.Item key={group.kind} eventKey={group.eventKey}>
+				<Accordion.Item key={group.eventKey} eventKey={group.eventKey}>
 
 					<Accordion.Header className="py-1">
 
@@ -674,11 +671,15 @@ export default function EditingUiElementGroups({
 
 					<Accordion.Body className="py-0 px-1">
 
+						{group.preBody}
+
 						<GroupBody
 
 							addLabel={group.addLabel}
 
 							onAdd={group.onAdd}
+
+							addDisabled={group.addDisabled}
 
 							emptyMessage={group.emptyMessage}
 

@@ -40,6 +40,7 @@ Runtime 3D: camara orbital en editor, primera persona en play, Rapier3D, mallas 
 - `src/config_3d/play_character.rs`: entidad `[Player]`, spawn y cuerpo placeholder.
 - `src/config_3d/fps_camera.rs`: vista FPS acoplada, IPC `play_character_view_changed`.
 - `src/config_3d/play_controller.rs`: movimiento en play (cápsula cinemática).
+- `src/config_3d/player_ui/`: editor HUD del jugador (pantallas, texto, botones, imágenes, objetos poligonales, undo).
 - `src/config_3d/mesh_3d.rs`: glTF/FBX, normalizacion, `forward_xz`.
 - `src/config_3d/physics_3d.rs`: Rapier3D y shape cast del jugador.
 - `src/config_3d/world_bounds.rs`: limites y culling AABB.
@@ -62,7 +63,8 @@ Soporte: `mesh.rs`, `shader.wgsl`, `gizmo.rs`, `gizmo.wgsl`, `texture.rs`, `scri
 
 - **Editor 3D**: solo `Camera` orbital + viewport desacoplado del jugador; gizmo y frustum FP con `preview_playing == false`. No hay modo cámara 2D en este binario.
 - **Play FP**: `preview_playing`, vista desde acordeón Cámara; mesh del jugador visible; capsula cinematica en `play_controller.rs`.
-- **HUD** (crosshair, Esc): NDC + `hud_scene_bind_group` (identidad). PNG de pantalla **solo** vía `screen_hud_image` + `screen_hud_pipeline` (no `TextureArray`).
+- **HUD play** (crosshair, Esc): NDC + `hud_scene_bind_group` (identidad). PNG de pantalla **solo** vía `screen_hud_image` + `screen_hud_pipeline` (no `TextureArray`).
+- **HUD Player UI** (autoría + play): pantallas con elementos en NDC (`config_3d/player_ui/`); en play se muestra la pantalla activa; en edición UI la cámara del jugador sin `preview_playing`.
 
 ## Contratos operativos (3D)
 
@@ -129,3 +131,43 @@ Registro de rutas/tipos: `entity_save_meta` + actualizacion en spawn/load/replac
 ### Render HUD
 
 - Overlays en play (crosshair, tooltip Esc) usan `hud_quad_mesh`, `screen_hud_atlas` y `screen_hud_pipeline`; no reutilizar `texture_array` ni el mesh del suelo para PNG de UI.
+
+### Player UI HUD (editor y play)
+
+Sistema de **pantallas HUD** para el jugador en proyectos 3D FP. Clave de almacenamiento `scope:screen_id` (p. ej. `player:<uuid>`). El renderer edita vía acordeón **UI del jugador**; el motor es autoritativo en geometría NDC, capas y persistencia.
+
+| Modo | Comportamiento |
+|------|----------------|
+| **Edición UI** | `set_player_ui_edit_mode` activo: vista FPS del jugador, cuadrícula NDC, picking solo sobre HUD (el mundo 3D no recibe hover/selección). |
+| **Play** | `preview_playing` + pantalla activa (`sync_player_ui_screens` / `set_active_player_ui_screen`): dibuja texto, botones, imágenes y relleno de polígonos. |
+
+**Tipos de elemento** (orden por `z_index` en `hud_layers.rs`):
+
+| Tipo | Módulo | Notas |
+|------|--------|--------|
+| Texto | `text_input.rs`, `text_render.rs` | Cajas con fuente TTF; doble clic para editar inline. |
+| Botón | `button.rs`, `button_render.rs` | Forma, color, textura HUD opcional. |
+| Imagen | `image.rs`, `image_render.rs` | Asset de biblioteca HUD (`load_hud_image`). |
+| Objeto | `object.rs` | Polígono por clicks (≥3 vértices); cerrar clicando cerca del primer punto; preview con cruz en cursor y segmentos; relleno en play y edición. |
+
+**Dibujo de objetos:** `set_player_ui_object_draw` → clicks en viewport → `DrawingProgress` / `player_ui_object_added`; overlay con `gizmo_pipeline` (`draw_player_ui_object_draw_overlay`). Ctrl+grid: snap al colocar y al mover.
+
+**Undo/redo (Ctrl+Z / Ctrl+Y):** snapshots de la pantalla en edición (`hud_undo.rs`, `UndoAction::RestorePlayerUiHud`). Se registra antes de cada punto de polígono, alta/baja de elementos, props (`set_player_ui_hud_element_props`) e inicio de arrastre/resize.
+
+**IPC relevante (ver `ipc.rs`):**
+
+| Comando | Rol |
+|---------|-----|
+| `set_player_ui_edit_mode` | Entrar/salir edición de una pantalla (`scope`, `screen_id`). |
+| `add_player_ui_text_box` / `remove_player_ui_text_box` | Texto. |
+| `add_player_ui_button` / `remove_player_ui_button` | Botón. |
+| `add_player_ui_image` / `remove_player_ui_image` | Imagen. |
+| `set_player_ui_object_draw` / `remove_player_ui_object` | Dibujo y borrado de objetos. |
+| `set_player_ui_hud_element_props` | `locked`, `z_index` (`text` \| `button` \| `image` \| `object`). |
+| `sync_player_ui_screens` / `set_active_player_ui_screen` | Catálogo y pantalla activa en play. |
+
+Lista unificada al editor: evento `player_ui_text_boxes_list` (texto, botones, imágenes y objetos de la pantalla en edición).
+
+**Persistencia (`.save`):** `export_save_snapshot` incluye `player_ui_text_boxes`, `player_ui_buttons`, `player_ui_images`, `player_ui_objects` y `playerUiScreens`; restauración en `load_proyect.rs`.
+
+**Scripting:** `set_active_player_ui`, `set_active_player_ui_by_name`, `clear_active_player_ui` (`scripting.rs`).

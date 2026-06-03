@@ -11,7 +11,7 @@ import { isEditorBoxPath, isGroundPath, isPlayerPath, isSunPath } from '@shared-
 import { isModel3DPath, is3dModelFileEntity } from '../../../utils/blueprintModelPath';
 import { playViewFromPlayerAndCamera } from '../../../utils/entity3dEditorSync';
 import { buildActiveSceneSnapshotFromEngine } from '../../../defaults/buildProjectSaveFromEngine';
-import { requestEngineDefaultSceneName } from '../../../defaults/requestEngineDefaultSceneName';
+import { defaultSceneName } from '../../../defaults/defaultSceneName';
 import { ensurePlayCharacterOnLoad } from '../../../defaults/playCharacterSceneRestore';
 import { buildSetSceneCommand } from '../../../defaults/projectSceneLoad';
 import { buildImportSceneCommand, resolveEntityTransform, resolveSavedEntityTransform } from '../../../context/useContextEngine/hooks/buildImportSceneCommand';
@@ -63,7 +63,7 @@ const SceneManagerContext = createContext<SceneManagerContextValue | null>(null)
 function buildInitialSceneState() {
   const scene: SavedScene = {
     id: 1,
-    name: '',
+    name: defaultSceneName(1),
     world: { ...DEFAULT_WORLD },
     backgroundPath: null,
     entities: [],
@@ -74,7 +74,7 @@ function buildInitialSceneState() {
     sprites: [],
   };
   return {
-    tabs: [{ id: 1, name: '' }],
+    tabs: [{ id: 1, name: defaultSceneName(1) }],
     dataById: { 1: scene },
     activeSceneId: 1,
   };
@@ -215,51 +215,6 @@ export function SceneManagerProvider({
     }
     setSceneDataById(dataById);
   }, [projectType, projectLoaded3dSeq, projectLoaded3dMetaRef]);
-
-  const pendingSceneNameIds = useMemo(
-    () => scenes.filter((tab) => !tab.name.trim()).map((tab) => tab.id).join(','),
-    [scenes],
-  );
-
-  useEffect(() => {
-    if (!engineReady || !pendingSceneNameIds) return;
-
-    const ids = pendingSceneNameIds.split(',').map(Number).filter((id) => !Number.isNaN(id));
-    if (ids.length === 0) return;
-
-    let cancelled = false;
-    void (async () => {
-      try {
-        const resolved = await Promise.all(
-          ids.map(async (id) => ({
-            id,
-            name: await requestEngineDefaultSceneName(id),
-          })),
-        );
-        if (cancelled) return;
-
-        setScenes((prev) => prev.map((tab) => {
-          const match = resolved.find((entry) => entry.id === tab.id);
-          return match ? { ...tab, name: match.name } : tab;
-        }));
-        setSceneDataById((prev) => {
-          const next = { ...prev };
-          for (const entry of resolved) {
-            if (next[entry.id]) {
-              next[entry.id] = { ...next[entry.id], name: entry.name };
-            }
-          }
-          return next;
-        });
-      } catch (err) {
-        console.error('[scenes] no se pudo obtener nombre por defecto del motor:', err);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [engineReady, pendingSceneNameIds]);
 
   const captureActiveSceneSnapshot = async (id: number, name: string): Promise<SavedScene> =>
     buildActiveSceneSnapshotFromEngine(id, name, entityMetaRef.current);
@@ -698,31 +653,21 @@ export function SceneManagerProvider({
   }, [activeSceneId, camera2dRef, sceneDataById, scenes, worldConfig]);
 
   const openCreateSceneModal = () => {
-    void (async () => {
-      const nextId = getNextSceneId();
-      let draftName = '';
-      try {
-        draftName = await requestEngineDefaultSceneName(nextId);
-      } catch (err) {
-        console.error('[scenes] no se pudo obtener nombre por defecto del motor:', err);
-        return;
-      }
-
-      openModal({
-        title: t('Create new scene'),
-        body: (
-          <CreateSceneModalBody
-            defaultName={draftName}
-            onCancel={closeModal}
-            onCreate={(name) => {
-              void createScene(name);
-              closeModal();
-            }}
-            t={t}
-          />
-        ),
-      });
-    })();
+    const nextId = getNextSceneId();
+    openModal({
+      title: t('Create new scene'),
+      body: (
+        <CreateSceneModalBody
+          defaultName={defaultSceneName(nextId)}
+          onCancel={closeModal}
+          onCreate={(name) => {
+            void createScene(name);
+            closeModal();
+          }}
+          t={t}
+        />
+      ),
+    });
   };
 
   const openRenameSceneModal = (scene: SceneTab) => {

@@ -18,7 +18,7 @@ RER-ENGINE separa el producto en dos capas que hablan por JSON (stdin/stdout):
 Hay **dos motores independientes**, no uno híbrido:
 
 - `rer_engine_2d` — sprites, plano XY, colliders y execution areas.
-- `rer_engine_3d` — mallas glTF/FBX, cámara orbital, primera persona en play.
+- `rer_engine_3d` — mallas glTF/FBX, cámara orbital, primera persona en play, editor **Player UI HUD** (pantallas, texto, botones, imágenes, objetos 2D en NDC).
 
 Electron arranca el binario que corresponda según el tipo de proyecto. Comparten protocolo IPC y utilidades (`engine_shared`), pero **no comparten runtime de juego**.
 

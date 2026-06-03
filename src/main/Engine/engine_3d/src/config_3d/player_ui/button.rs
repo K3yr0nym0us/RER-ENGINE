@@ -69,10 +69,13 @@ impl State {
             self.player_ui_text_boxes.get(&key).map(|v| v.as_slice()),
             self.player_ui_buttons.get(&key).map(|v| v.as_slice()),
             self.player_ui_images.get(&key).map(|v| v.as_slice()),
+            self.player_ui_objects.get(&key).map(|v| v.as_slice()),
         );
 
         let bg_alpha = payload.transparency_background;
         let text_alpha = payload.transparency_text;
+        self.push_undo_player_ui_hud();
+
         let entry = PlayerUiButton {
             id,
             shape_type: payload.shape_type,
@@ -100,6 +103,7 @@ impl State {
         self.player_ui_selected_button_id = Some(id);
         self.player_ui_selected_text_id = None;
         self.player_ui_selected_image_id = None;
+        self.player_ui_selected_object_id = None;
         self.player_ui_text_editing_id = None;
         self.player_ui_text_drag = None;
         self.rebuild_player_ui_overlay();
@@ -116,14 +120,18 @@ impl State {
         let Some(key) = self.player_ui_screen_key() else {
             return false;
         };
+        if !self
+            .player_ui_buttons
+            .get(&key)
+            .is_some_and(|list| list.iter().any(|b| b.id == id))
+        {
+            return false;
+        }
+        self.push_undo_player_ui_hud();
         let Some(list) = self.player_ui_buttons.get_mut(&key) else {
             return false;
         };
-        let before = list.len();
         list.retain(|b| b.id != id);
-        if list.len() == before {
-            return false;
-        }
         if self.player_ui_selected_button_id == Some(id) {
             self.player_ui_selected_button_id = None;
         }

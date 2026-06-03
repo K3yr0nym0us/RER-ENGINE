@@ -687,8 +687,13 @@ export function createEngineActions({
 		send({ cmd: 'remove_player_ui_image', ...(id !== undefined ? { id } : {}) });
 	};
 
+	const removePlayerUiObject = (id?: number) => {
+		if (!is3dProject) return;
+		send({ cmd: 'remove_player_ui_object', ...(id !== undefined ? { id } : {}) });
+	};
+
 	const setPlayerUiHudElementProps = (
-		elementKind: 'text' | 'button' | 'image',
+		elementKind: 'text' | 'button' | 'image' | 'object',
 		id: number,
 		props: { locked?: boolean; z_index?: number },
 	) => {
@@ -738,6 +743,12 @@ export function createEngineActions({
 
 	const removeUiScreen = (scope: UiScreenScope, id: string) => {
 		dispatch({ type: 'REMOVE_UI_SCREEN', payload: { scope, id } });
+	};
+
+	const renameUiScreen = (scope: UiScreenScope, id: string, name: string) => {
+		const trimmed = name.trim();
+		if (!trimmed) return;
+		dispatch({ type: 'RENAME_UI_SCREEN', payload: { scope, id, name: trimmed } });
 	};
 
 	const syncPlayerUiScreensToEngine = (screens: UiScreenEntry[]) => {
@@ -893,6 +904,7 @@ export function createEngineActions({
 		setPreviewPlaying,
 		addUiScreen,
 		removeUiScreen,
+		renameUiScreen,
 		setActivePlayerUiScreen,
 		syncPlayerUiScreensToEngine,
 		beginUiScreenEdit,
@@ -902,6 +914,7 @@ export function createEngineActions({
 		addEditingUiButton,
 		addPlayerUiImage,
 		removePlayerUiImage,
+		removePlayerUiObject,
 		setPlayerUiHudElementProps,
 		removeEditingUiPlaceholder,
 		loadHudImage,

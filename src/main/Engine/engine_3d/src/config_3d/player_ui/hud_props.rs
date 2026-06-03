@@ -20,7 +20,9 @@ impl State {
             .player_ui_screen_key()
             .ok_or_else(|| "contexto de pantalla UI no definido".to_string())?;
 
-        let updated = match element_kind {
+        self.push_undo_player_ui_hud();
+
+        match element_kind {
             "text" => {
                 let Some(list) = self.player_ui_text_boxes.get_mut(&key) else {
                     return Err(format!("cuadro de texto no encontrado: {id}"));
@@ -34,7 +36,6 @@ impl State {
                 if let Some(z) = z_index {
                     b.z_index = z;
                 }
-                true
             }
             "button" => {
                 let Some(list) = self.player_ui_buttons.get_mut(&key) else {
@@ -49,7 +50,6 @@ impl State {
                 if let Some(z) = z_index {
                     b.z_index = z;
                 }
-                true
             }
             "image" => {
                 let Some(list) = self.player_ui_images.get_mut(&key) else {
@@ -64,13 +64,41 @@ impl State {
                 if let Some(z) = z_index {
                     img.z_index = z;
                 }
-                true
+            }
+            "object" => {
+                let Some(list) = self.player_ui_objects.get_mut(&key) else {
+                    return Err(format!("objeto no encontrado: {id}"));
+                };
+                let Some(obj) = list.iter_mut().find(|o| o.id == id) else {
+                    return Err(format!("objeto no encontrado: {id}"));
+                };
+                if let Some(l) = locked {
+                    obj.locked = l;
+                }
+                if let Some(z) = z_index {
+                    obj.z_index = z;
+                }
             }
             _ => return Err(format!("tipo de elemento HUD desconocido: {element_kind}")),
         };
 
-        if !updated {
-            return Err(format!("elemento HUD no encontrado: {element_kind} {id}"));
+        if locked == Some(true) {
+            if self.player_ui_selected_text_id == Some(id) && element_kind == "text" {
+                self.player_ui_selected_text_id = None;
+            }
+            if self.player_ui_selected_button_id == Some(id) && element_kind == "button" {
+                self.player_ui_selected_button_id = None;
+            }
+            if self.player_ui_selected_image_id == Some(id) && element_kind == "image" {
+                self.player_ui_selected_image_id = None;
+            }
+            if self.player_ui_selected_object_id == Some(id) && element_kind == "object" {
+                self.player_ui_selected_object_id = None;
+            }
+            if self.player_ui_text_editing_id == Some(id) && element_kind == "text" {
+                self.player_ui_text_editing_id = None;
+            }
+            self.player_ui_text_drag = None;
         }
 
         self.rebuild_player_ui_overlay();

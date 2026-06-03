@@ -28,8 +28,6 @@ import {
 	type PlayerUiButtonConfig,
 } from '../../pages/EngineView/components/sidebar/UIAccordion/components/playerUiButtonModel';
 
-export type { PlayerUiButtonConfig };
-
 export interface Entity {
 	id: number
 }
@@ -135,7 +133,7 @@ export interface PlayerUiTextBoxEntry extends PlayerUiHudElementMeta {
 	text: string;
 }
 
-export type EditingUiElementKind = 'text' | 'button' | 'image';
+export type EditingUiElementKind = 'text' | 'button' | 'image' | 'object';
 
 export interface EditingUiButtonEntry extends PlayerUiHudElementMeta {
 	id: number;
@@ -147,10 +145,16 @@ export interface PlayerUiImageEntry extends PlayerUiHudElementMeta {
 	imageName: string;
 }
 
+export interface PlayerUiObjectEntry extends PlayerUiHudElementMeta {
+	id: number;
+	vertexCount: number;
+}
+
 export type EditingUiElement =
 	| (PlayerUiTextBoxEntry & { kind: 'text' })
 	| ({ kind: 'button' } & EditingUiButtonEntry)
-	| (PlayerUiImageEntry & { kind: 'image' });
+	| (PlayerUiImageEntry & { kind: 'image' })
+	| (PlayerUiObjectEntry & { kind: 'object' });
 
 export function mergeEditingUiTextElements(
 	elements: EditingUiElement[],
@@ -162,7 +166,10 @@ export function mergeEditingUiTextElements(
 
 export function mergeEditingUiButtonElements(
 	elements: EditingUiElement[],
-	buttons: Array<{ id: number; text: string; fontName: string }>,
+	buttons: Array<{
+		zIndex: any;
+		locked: any; id: number; text: string; fontName: string 
+}>,
 	defaultConfig: PlayerUiButtonConfig,
 ): EditingUiElement[] {
 	const other = elements.filter((e) => e.kind !== 'button');
@@ -190,6 +197,17 @@ export function mergeEditingUiImageElements(
 	return [
 		...other,
 		...images.map((img) => ({ kind: 'image' as const, ...img })),
+	];
+}
+
+export function mergeEditingUiObjectElements(
+	elements: EditingUiElement[],
+	objects: PlayerUiObjectEntry[],
+): EditingUiElement[] {
+	const other = elements.filter((e) => e.kind !== 'object');
+	return [
+		...other,
+		...objects.map((obj) => ({ kind: 'object' as const, ...obj })),
 	];
 }
 
@@ -251,6 +269,7 @@ export type EngineAction =
 	| { type: 'SET_UI_SCREEN_EDITING'; payload: { playerId: string | null; menuId: string | null } }
 	| { type: 'ADD_UI_SCREEN'; payload: { scope: UiScreenScope; entry: UiScreenEntry } }
 	| { type: 'REMOVE_UI_SCREEN'; payload: { scope: UiScreenScope; id: string } }
+	| { type: 'RENAME_UI_SCREEN'; payload: { scope: UiScreenScope; id: string; name: string } }
 	| { type: 'SET_ACTIVE_PLAYER_UI_SCREEN'; payload: string | null }
 	| { type: 'CLEAR_EDITING_UI_ELEMENTS' }
 	| { type: 'SET_EDITING_UI_TEXT_BOXES'; payload: PlayerUiTextBoxEntry[] }
@@ -265,6 +284,7 @@ export type EngineAction =
 			}>
 	  }
 	| { type: 'SET_EDITING_UI_IMAGES'; payload: PlayerUiImageEntry[] }
+	| { type: 'SET_EDITING_UI_OBJECTS'; payload: PlayerUiObjectEntry[] }
 	| {
 			type: 'ADD_PLAYER_UI_TEXT_BOX'
 			payload: PlayerUiTextBoxEntry
@@ -283,6 +303,7 @@ export type EngineAction =
 	| { type: 'REMOVE_PLAYER_UI_BUTTON'; payload: number }
 	| { type: 'ADD_PLAYER_UI_IMAGE'; payload: PlayerUiImageEntry }
 	| { type: 'REMOVE_PLAYER_UI_IMAGE'; payload: number }
+	| { type: 'REMOVE_PLAYER_UI_OBJECT'; payload: number }
 	| { type: 'REMOVE_EDITING_UI_PLACEHOLDER'; payload: { kind: 'button'; id: number } }
 	| { type: 'SET_SCENE_IMPORT_LOADING'; payload: boolean }
 	| { type: 'SYNC_PLAY_CHARACTER_VIEW' }
@@ -468,6 +489,13 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 				nextAction.payload,
 			),
 		}),
+		SET_EDITING_UI_OBJECTS: (prevState, nextAction) => ({
+			...prevState,
+			editingUiElements: mergeEditingUiObjectElements(
+				prevState.editingUiElements,
+				nextAction.payload,
+			),
+		}),
 		CLEAR_EDITING_UI_ELEMENTS: (prevState) => ({
 			...prevState,
 			editingUiElements: [],
@@ -525,6 +553,12 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 				(el) => el.kind !== 'image' || el.id !== nextAction.payload,
 			),
 		}),
+		REMOVE_PLAYER_UI_OBJECT: (prevState, nextAction) => ({
+			...prevState,
+			editingUiElements: prevState.editingUiElements.filter(
+				(el) => el.kind !== 'object' || el.id !== nextAction.payload,
+			),
+		}),
 		REMOVE_EDITING_UI_PLACEHOLDER: (prevState, nextAction) => ({
 			...prevState,
 			editingUiElements: prevState.editingUiElements.filter(
@@ -567,6 +601,23 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 				...prevState,
 				menuUiScreens: prevState.menuUiScreens.filter((screen) => screen.id !== id),
 				menuUiEditingId: prevState.menuUiEditingId === id ? null : prevState.menuUiEditingId,
+			};
+		},
+		RENAME_UI_SCREEN: (prevState, nextAction) => {
+			const { scope, id, name } = nextAction.payload;
+			if (scope === 'player') {
+				return {
+					...prevState,
+					playerUiScreens: prevState.playerUiScreens.map((screen) =>
+						screen.id === id ? { ...screen, name } : screen,
+					),
+				};
+			}
+			return {
+				...prevState,
+				menuUiScreens: prevState.menuUiScreens.map((screen) =>
+					screen.id === id ? { ...screen, name } : screen,
+				),
 			};
 		},
 		SET_SCENE_IMPORT_LOADING: (prevState, nextAction) => ({
@@ -806,7 +857,7 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 			};
 		},
 		SET_MODELS: (prevState, nextAction) => {
-			const models = nextAction.payload.map((m) => {
+			const models = nextAction.payload.map((m: { path: string; name: string; category: string | undefined; }) => {
 				const fromState = prevState.models.find(
 					(x) => x.path === m.path || (x.loading && x.name === m.name),
 				);
@@ -1142,15 +1193,16 @@ export interface EngineContextValue extends EngineState {
 	setPreviewPlaying: (playing: boolean) => void
 	addUiScreen: (scope: UiScreenScope, name: string) => void
 	removeUiScreen: (scope: UiScreenScope, id: string) => void
+	renameUiScreen: (scope: UiScreenScope, id: string, name: string) => void
 	setActivePlayerUiScreen: (screenId: string | null) => void
 	syncPlayerUiScreensToEngine: (screens: UiScreenEntry[]) => void
 	beginUiScreenEdit: (scope: UiScreenScope, id: string) => void
 	endUiScreenEdit: () => void
 	addPlayerUiTextBox: (fontPath: string) => void
 	removePlayerUiTextBox: (id?: number) => void
-	addEditingUiButton: (config: PlayerUiButtonConfig) => void
 	addPlayerUiImage: (imagePath: string) => void
 	removePlayerUiImage: (id?: number) => void
+	removePlayerUiObject: (id?: number) => void
 	setPlayerUiHudElementProps: (
 		elementKind: EditingUiElementKind,
 		id: number,

@@ -24,6 +24,9 @@ impl State {
             new_size.width,
             new_size.height,
         );
+        if self.player_ui_edit_active {
+            self.rebuild_player_ui_screen_grid();
+        }
     }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
@@ -699,6 +702,7 @@ impl State {
         }
 
         draw_calls += self.draw_player_ui_screen_grid(&mut enc, &view);
+        draw_calls += self.draw_player_ui_object_draw_overlay(&mut enc, &view);
         draw_calls += self.draw_player_ui_text_boxes(&mut enc, &view);
 
         if !self.preview_playing && !self.player_ui_edit_active {

@@ -121,6 +121,15 @@ impl State {
                     .push(UndoAction::RestoreEntity { snapshot });
             }
             UndoAction::RestoreEntity { .. } => {}
+            UndoAction::RestorePlayerUiHud { snapshot } => {
+                if let Some(current) =
+                    self.capture_player_ui_hud_undo_snapshot_with_key(&snapshot.key)
+                {
+                    self.redo_stack
+                        .push(UndoAction::RestorePlayerUiHud { snapshot: current });
+                }
+                self.restore_player_ui_hud_undo_snapshot(snapshot);
+            }
         }
         self.is_applying_undo = false;
     }
@@ -198,6 +207,15 @@ impl State {
                 self.handle_command(EngineCommand::RemoveEntity { id });
                 self.undo_stack
                     .push(UndoAction::RestoreEntity { snapshot });
+            }
+            UndoAction::RestorePlayerUiHud { snapshot } => {
+                if let Some(current) =
+                    self.capture_player_ui_hud_undo_snapshot_with_key(&snapshot.key)
+                {
+                    self.undo_stack
+                        .push(UndoAction::RestorePlayerUiHud { snapshot: current });
+                }
+                self.restore_player_ui_hud_undo_snapshot(snapshot);
             }
         }
         self.is_applying_undo = false;
@@ -871,6 +889,16 @@ impl State {
                     let _ = self.remove_player_ui_image(image_id);
                 } else {
                     let _ = self.remove_selected_player_ui_image();
+                }
+            }
+            EngineCommand::SetPlayerUiObjectDraw { active } => {
+                self.set_player_ui_object_draw(active);
+            }
+            EngineCommand::RemovePlayerUiObject { id } => {
+                if let Some(object_id) = id {
+                    let _ = self.remove_player_ui_object(object_id);
+                } else if let Some(object_id) = self.player_ui_selected_object_id {
+                    let _ = self.remove_player_ui_object(object_id);
                 }
             }
             EngineCommand::SetPlayerUiHudElementProps {

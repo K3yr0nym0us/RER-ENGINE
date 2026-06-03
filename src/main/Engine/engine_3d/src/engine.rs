@@ -126,6 +126,10 @@ pub struct State {
         std::collections::HashMap<String, Vec<crate::config_3d::player_ui::PlayerUiButton>>,
     pub(crate) player_ui_images:
         std::collections::HashMap<String, Vec<crate::config_3d::player_ui::PlayerUiImage>>,
+    pub(crate) player_ui_objects:
+        std::collections::HashMap<String, Vec<crate::config_3d::player_ui::PlayerUiObject>>,
+    pub(crate) player_ui_object_draw: Option<crate::config_3d::player_ui::object::PlayerUiObjectDrawSession>,
+    pub(crate) player_ui_object_draw_overlay: GizmoBuffer,
     pub(crate) player_ui_text_next_id: u32,
     pub(crate) player_ui_text_overlay_buffer: crate::gizmo::GizmoBuffer,
     pub(crate) player_ui_text_atlas: crate::screen_hud_image::ScreenHudAtlas,
@@ -138,6 +142,7 @@ pub struct State {
     pub(crate) player_ui_selected_text_id: Option<u32>,
     pub(crate) player_ui_selected_button_id: Option<u32>,
     pub(crate) player_ui_selected_image_id: Option<u32>,
+    pub(crate) player_ui_selected_object_id: Option<u32>,
     pub(crate) player_ui_text_editing_id: Option<u32>,
     /// Índice de carácter (UTF-8) del cursor en el cuadro en edición.
     pub(crate) player_ui_text_caret: usize,

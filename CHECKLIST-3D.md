@@ -44,6 +44,8 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 - [x] Jugador FP: convención pies ↔ centro de cuerpo, forward de malla, sync cámara-cuerpo
 - [x] IPC vista FP autoritativa: `set_first_person_view` → `first_person_view_changed`
 - [x] HUD play: crosshair + tooltip Esc (texturas en `Engine/assets/`)
+- [x] **Player UI HUD** — pantallas del jugador, edición FPS, texto / botón / imagen / **objeto poligonal** (clicks + cruz en cursor), capas `z_index`, bloqueo, play de pantalla activa, persistencia en `.save`
+- [x] **Player UI undo/redo** — Ctrl+Z / Ctrl+Y con snapshot por pantalla (`hud_undo.rs`, `RestorePlayerUiHud`)
 - [x] Cubos de editor (`spawn_editor_box`), modelos en almacén (`load_model_asset`)
 - [x] ECS 3D: `HashSet` + reciclado de IDs en `despawn` (`ecs.rs`)
 - [x] Undo/redo de creación de entidad — snapshot en motor (`undo_entity.rs`, `spawn_with_id`)

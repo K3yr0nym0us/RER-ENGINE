@@ -84,6 +84,7 @@ impl State {
             player_ui_text_boxes: self.export_player_ui_text_boxes_snapshot(),
             player_ui_buttons: self.export_player_ui_buttons_snapshot(),
             player_ui_images: self.export_player_ui_images_snapshot(),
+            player_ui_objects: self.export_player_ui_objects_snapshot(),
         }
     }
 
@@ -183,6 +184,37 @@ impl State {
                     source_aspect: img.source_aspect,
                     z_index: img.z_index,
                     locked: img.locked,
+                });
+            }
+        }
+        out.sort_by(|a, b| {
+            (a.scope.as_str(), a.screen_id.as_str(), a.id).cmp(&(
+                b.scope.as_str(),
+                b.screen_id.as_str(),
+                b.id,
+            ))
+        });
+        out
+    }
+
+    fn export_player_ui_objects_snapshot(&self) -> Vec<crate::ipc::SavePlayerUiObjectSnapshot> {
+        let mut out = Vec::new();
+        for (key, objects) in &self.player_ui_objects {
+            let Some((scope, screen_id)) = key.split_once(':') else {
+                continue;
+            };
+            for obj in objects {
+                if obj.vertices.len() < 3 {
+                    continue;
+                }
+                out.push(crate::ipc::SavePlayerUiObjectSnapshot {
+                    scope: scope.to_string(),
+                    screen_id: screen_id.to_string(),
+                    id: obj.id,
+                    vertices: obj.vertices.clone(),
+                    fill_color: obj.fill_color,
+                    z_index: obj.z_index,
+                    locked: obj.locked,
                 });
             }
         }

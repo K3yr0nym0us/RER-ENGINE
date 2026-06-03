@@ -797,6 +797,9 @@ impl State {
     }
 
     pub fn pick_entity(&mut self, pixel_x: f32, pixel_y: f32) {
+        if self.player_ui_edit_active {
+            return;
+        }
         match self.ray_cast(pixel_x, pixel_y) {
             Some(entity) => {
                 if self.ctrl_held {
@@ -1002,6 +1005,9 @@ impl State {
     }
 
     pub fn update_hover(&mut self, pixel_x: f32, pixel_y: f32) {
+        if self.player_ui_edit_active {
+            return;
+        }
         let prev_hover = self.hovered_entity;
         self.hovered_entity = self.ray_cast(pixel_x, pixel_y);
         self.hovered_gizmo_axis = self.pick_gizmo_axis(pixel_x, pixel_y);

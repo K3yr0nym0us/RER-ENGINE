@@ -83,5 +83,9 @@ impl State {
                 .player_ui_images
                 .get(key)
                 .is_some_and(|v| !v.is_empty())
+            || self
+                .player_ui_objects
+                .get(key)
+                .is_some_and(|v| !v.is_empty())
     }
 }

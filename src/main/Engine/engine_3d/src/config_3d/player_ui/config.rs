@@ -112,6 +112,16 @@ impl PlayerUiImage {
     }
 }
 
+/// Polígono relleno en NDC (objeto visual HUD).
+#[derive(Clone, Debug)]
+pub(crate) struct PlayerUiObject {
+    pub id: u32,
+    pub vertices: Vec<[f32; 2]>,
+    pub fill_color: [f32; 4],
+    pub z_index: i32,
+    pub locked: bool,
+}
+
 /// Alto NDC para conservar proporción de píxeles en pantalla.
 pub(crate) fn ndc_height_for_width(
     width_ndc: f32,

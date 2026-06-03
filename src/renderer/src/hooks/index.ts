@@ -7,6 +7,7 @@ export * from './useCreateCharacterFromPng';
 export * from './useCreateEntityFromSpriteAnimation';
 export * from './useLoadSprite';
 export * from './usePointDrawing';
+export * from './usePlayerUiObjectDrawing';
 export * from './useQuickBuildPlacement';
 export * from './useScripting';
 export * from './useSpritePreviewImage';

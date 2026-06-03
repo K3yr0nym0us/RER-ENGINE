@@ -15,4 +15,7 @@ export type {
 	UiScreenEntry,
 	UiScreenScope,
 	WorldConfig,
+	EditingUiElement,
+	EditingUiElementKind,
 } from './useContextEngine/types';
+export { filterEditingUiElementsByKind } from './useContextEngine/types';

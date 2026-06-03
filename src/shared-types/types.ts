@@ -399,6 +399,8 @@ export interface ProjectSaveData {
   playerUiButtons?: SavedPlayerUiButton[]
   /** Imágenes HUD por pantalla (motor). */
   playerUiImages?: SavedPlayerUiImage[]
+  /** Objetos HUD poligonales por pantalla (motor). */
+  playerUiObjects?: SavedPlayerUiObject[]
   /** Biblioteca de imágenes HUD (Resources). */
   hudImages?: Array<{ name: string; path: string }>
 }
@@ -454,6 +456,16 @@ export interface SavedPlayerUiImage {
   width: number
   height: number
   source_aspect: number
+  z_index?: number
+  locked?: boolean
+}
+
+export interface SavedPlayerUiObject {
+  scope: string
+  screen_id: string
+  id: number
+  vertices: [number, number][]
+  fill_color: [number, number, number, number]
   z_index?: number
   locked?: boolean
 }
@@ -567,6 +579,9 @@ export interface EngineCommand {
     | 'get_hud_images_list'
     | 'add_player_ui_image'
     | 'remove_player_ui_image'
+    | 'set_player_ui_object_draw'
+    | 'remove_player_ui_object'
+    | 'set_player_ui_hud_element_props'
     | 'load_background_asset'
     | 'remove_background_asset'
     | 'get_backgrounds_list'
@@ -593,7 +608,7 @@ export interface EngineCommand {
 }
 
 export interface EngineEvent {
-  event: 'ready' | 'pong' | 'error' | 'model_loaded' | 'entity_model_replaced' | 'model_clips_ready' | 'stopped' | 'entity_selected' | 'entity_deselected' | 'entity_hovered' | 'entity_unhovered' | 'scenario_loaded' | 'character_loaded' | 'scene_imported' | 'project_loaded_2d' | 'project_loaded_3d' | 'project_load_3d_complete' | 'load_progress' | 'camera_2d_updated' | 'background_loaded' | 'drawing_progress' | 'collider_created' | 'execution_area_created' | 'tool_cancelled' | 'pivot_selected' | 'physics_changed' | 'sprite_loaded' | 'sprite_removed' | 'sprites_list' | 'model_asset_loaded' | 'model_asset_removed' | 'models_list' | 'sound_loaded' | 'sound_removed' | 'sounds_list' | 'font_loaded' | 'font_removed' | 'fonts_list' | 'hud_image_loaded' | 'hud_image_removed' | 'hud_images_list' | 'background_asset_loaded' | 'background_asset_removed' | 'backgrounds_list' | 'play_character_view_changed' | 'first_person_view_changed' | 'save_snapshot_ready' | 'default_scene_name_ready' | 'debug_metrics' | 'preview_playing_changed' | 'trigger_entered' | 'trigger_exited' | 'entity_removed' | 'quick_build_move' | 'quick_build_click' | 'animation_logical_resolved' | 'animation_finished' | 'autosave_tick' | 'atlas_exhausted' | 'player_ui_image_added' | 'player_ui_image_removed'
+  event: 'ready' | 'pong' | 'error' | 'model_loaded' | 'entity_model_replaced' | 'model_clips_ready' | 'stopped' | 'entity_selected' | 'entity_deselected' | 'entity_hovered' | 'entity_unhovered' | 'scenario_loaded' | 'character_loaded' | 'scene_imported' | 'project_loaded_2d' | 'project_loaded_3d' | 'project_load_3d_complete' | 'load_progress' | 'camera_2d_updated' | 'background_loaded' | 'drawing_progress' | 'collider_created' | 'execution_area_created' | 'tool_cancelled' | 'pivot_selected' | 'physics_changed' | 'sprite_loaded' | 'sprite_removed' | 'sprites_list' | 'model_asset_loaded' | 'model_asset_removed' | 'models_list' | 'sound_loaded' | 'sound_removed' | 'sounds_list' | 'font_loaded' | 'font_removed' | 'fonts_list' | 'hud_image_loaded' | 'hud_image_removed' | 'hud_images_list' | 'background_asset_loaded' | 'background_asset_removed' | 'backgrounds_list' | 'play_character_view_changed' | 'first_person_view_changed' | 'save_snapshot_ready' | 'default_scene_name_ready' | 'debug_metrics' | 'preview_playing_changed' | 'trigger_entered' | 'trigger_exited' | 'entity_removed' | 'quick_build_move' | 'quick_build_click' | 'animation_logical_resolved' | 'animation_finished' | 'autosave_tick' | 'atlas_exhausted' | 'player_ui_image_added' | 'player_ui_image_removed' | 'player_ui_object_added' | 'player_ui_object_removed'
   [key: string]: unknown
 }
 
@@ -670,6 +685,15 @@ export interface EngineSaveSceneSnapshot {
     width: number
     height: number
     source_aspect: number
+    z_index?: number
+    locked?: boolean
+  }>
+  player_ui_objects?: Array<{
+    scope: string
+    screen_id: string
+    id: number
+    vertices: [number, number][]
+    fill_color: [number, number, number, number]
     z_index?: number
     locked?: boolean
   }>

@@ -546,6 +546,7 @@ impl State {
         let ui_work_grid_buffer = gizmo::build_from_vertices(&device, &[]);
         let player_ui_text_overlay_buffer = gizmo::build_from_vertices(&device, &[]);
         let player_ui_caret_buffer = gizmo::build_from_vertices(&device, &[]);
+        let player_ui_object_draw_overlay = gizmo::build_from_vertices(&device, &[]);
         let tool_overlay_buffer_init = gizmo::build_from_vertices(&device, &[]);
 
         let grid_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -793,6 +794,9 @@ impl State {
             player_ui_text_boxes: HashMap::new(),
             player_ui_buttons: HashMap::new(),
             player_ui_images: HashMap::new(),
+            player_ui_objects: HashMap::new(),
+            player_ui_object_draw: None,
+            player_ui_object_draw_overlay,
             player_ui_text_next_id: 1,
             player_ui_text_overlay_buffer,
             player_ui_text_atlas,
@@ -803,6 +807,7 @@ impl State {
             player_ui_selected_text_id: None,
             player_ui_selected_button_id: None,
             player_ui_selected_image_id: None,
+            player_ui_selected_object_id: None,
             player_ui_text_editing_id: None,
             player_ui_text_caret: 0,
             player_ui_caret_blink_epoch: std::time::Instant::now(),

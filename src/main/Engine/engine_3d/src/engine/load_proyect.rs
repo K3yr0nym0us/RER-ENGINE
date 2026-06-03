@@ -75,6 +75,8 @@ struct ProjectSaveData {
     player_ui_buttons: Vec<crate::ipc::SavePlayerUiButtonSnapshot>,
     #[serde(default, rename = "playerUiImages")]
     player_ui_images: Vec<crate::ipc::SavePlayerUiImageSnapshot>,
+    #[serde(default, rename = "playerUiObjects")]
+    player_ui_objects: Vec<crate::ipc::SavePlayerUiObjectSnapshot>,
     #[serde(default, rename = "hudImages")]
     hud_images: Vec<NamedPath>,
 }
@@ -1494,6 +1496,7 @@ fn apply_loaded_proyect_3d(state: &mut State, project: &ProjectSaveData) -> Resu
     state.import_player_ui_text_boxes_from_save(&project.player_ui_text_boxes);
     state.import_player_ui_buttons_from_save(&project.player_ui_buttons);
     state.import_player_ui_images_from_save(&project.player_ui_images);
+    state.import_player_ui_objects_from_save(&project.player_ui_objects);
     let player_screens: Vec<crate::ipc::PlayerUiScreenInfo> = project
         .playerUiScreens
         .iter()

@@ -140,6 +140,8 @@ const SILENT_ENGINE_EVENTS = new Set<string>([
 	'player_ui_button_added',
 	'player_ui_button_removed',
 	'player_ui_image_added',
+	'player_ui_object_added',
+	'player_ui_object_removed',
 	'player_ui_image_removed',
 	'player_ui_active_screen_changed',
 	'hud_image_loaded',
@@ -1647,6 +1649,12 @@ export function createEngineEventHandler({
 					z_index?: number;
 					locked?: boolean;
 				}>;
+				objects?: Array<{
+					id?: number;
+					vertex_count?: number;
+					z_index?: number;
+					locked?: boolean;
+				}>;
 			};
 			const boxes = (e.boxes ?? [])
 				.filter((b): b is { id: number; font_name?: string; text?: string } =>
@@ -1683,6 +1691,18 @@ export function createEngineEventHandler({
 					locked: Boolean(img.locked),
 				}));
 			dispatch({ type: 'SET_EDITING_UI_IMAGES', payload: images });
+			const objects = (e.objects ?? [])
+				.filter((obj): obj is { id: number; vertex_count?: number } =>
+					typeof obj.id === 'number',
+				)
+				.map((obj) => ({
+					id: obj.id,
+					vertexCount:
+						typeof obj.vertex_count === 'number' ? obj.vertex_count : 0,
+					zIndex: typeof obj.z_index === 'number' ? obj.z_index : 0,
+					locked: Boolean(obj.locked),
+				}));
+			dispatch({ type: 'SET_EDITING_UI_OBJECTS', payload: objects });
 		}
 
 		if (event.event === 'player_ui_button_added') {
@@ -1728,6 +1748,18 @@ export function createEngineEventHandler({
 						locked: Boolean(e.locked),
 					},
 				});
+			}
+		}
+
+		if (event.event === 'player_ui_object_added') {
+			// Sidebar vía `player_ui_text_boxes_list`; aquí solo cerramos el modo dibujo.
+			dispatch({ type: 'SET_TOOL_PROGRESS', payload: null });
+		}
+
+		if (event.event === 'player_ui_object_removed') {
+			const e = event as { id?: number };
+			if (typeof e.id === 'number') {
+				dispatch({ type: 'REMOVE_PLAYER_UI_OBJECT', payload: e.id });
 			}
 		}
 

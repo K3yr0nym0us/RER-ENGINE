@@ -32,6 +32,7 @@ impl State {
             self.player_ui_text_boxes.get(&key).map(|v| v.as_slice()),
             self.player_ui_buttons.get(&key).map(|v| v.as_slice()),
             self.player_ui_images.get(&key).map(|v| v.as_slice()),
+            self.player_ui_objects.get(&key).map(|v| v.as_slice()),
         );
 
         let source_aspect = if entry_meta.height_px > 0 {
@@ -45,6 +46,8 @@ impl State {
         let height = ndc_height_for_width(width, source_aspect, vw, vh);
 
         let image_name = entry_meta.name.clone();
+        self.push_undo_player_ui_hud();
+
         let entry = PlayerUiImage {
             id,
             image_path: image_path.to_string(),
@@ -62,6 +65,7 @@ impl State {
         self.player_ui_selected_image_id = Some(id);
         self.player_ui_selected_text_id = None;
         self.player_ui_selected_button_id = None;
+        self.player_ui_selected_object_id = None;
         self.player_ui_text_editing_id = None;
         self.player_ui_text_drag = None;
         self.rebuild_player_ui_overlay();
@@ -77,14 +81,18 @@ impl State {
         let Some(key) = self.player_ui_screen_key() else {
             return false;
         };
+        if !self
+            .player_ui_images
+            .get(&key)
+            .is_some_and(|list| list.iter().any(|img| img.id == id))
+        {
+            return false;
+        }
+        self.push_undo_player_ui_hud();
         let Some(list) = self.player_ui_images.get_mut(&key) else {
             return false;
         };
-        let before = list.len();
         list.retain(|img| img.id != id);
-        if list.len() == before {
-            return false;
-        }
         if self.player_ui_selected_image_id == Some(id) {
             self.player_ui_selected_image_id = None;
         }
