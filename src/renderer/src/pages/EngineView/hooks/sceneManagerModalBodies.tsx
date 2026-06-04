@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useTraslate } from '@hooks'
 import { useModalClose } from '../../../modal-electron/useModalClose'
+import { useModalElectronContentSize } from '../../../modal-electron/useModalElectronContentSize'
 
 export function CreateSceneModalBody({
 	defaultName,
@@ -104,6 +105,73 @@ export function DeleteBlockedBody() {
 			<small className="text-secondary">
 				{t('There must be at least one scene to keep the editor in a valid state.')}
 			</small>
+		</div>
+	)
+}
+
+export function UnsavedSceneBlockedBody({
+	onSave,
+}: {
+	onSave: () => void | Promise<void>
+}) {
+	const { t } = useTraslate()
+	const closeModal = useModalClose()
+	const contentRef = useModalElectronContentSize(true)
+
+	return (
+		<div ref={contentRef} className="d-flex flex-column gap-3">
+			<p className="mb-0">
+				{t('Save the project before switching scenes. The active scene has unsaved changes.')}
+			</p>
+			<div className="d-flex justify-content-end gap-2">
+				<button className="btn btn-secondary" onClick={closeModal} type="button">
+					{t('Cancel')}
+				</button>
+				<button
+					className="btn btn-primary"
+					onClick={() => {
+						void Promise.resolve(onSave())
+						closeModal()
+					}}
+					type="button"
+				>
+					{t('Save')}
+				</button>
+			</div>
+		</div>
+	)
+}
+
+export function SwitchSceneConfirmBody({
+	sceneName,
+	onConfirm,
+}: {
+	sceneName: string
+	onConfirm: () => void
+}) {
+	const { t } = useTraslate()
+	const closeModal = useModalClose()
+
+	return (
+		<div className="d-flex flex-column gap-3">
+			<p className="mb-0">
+				{t('Load scene «{name}»?').replace('{name}', sceneName)}
+			</p>
+			<div className="d-flex justify-content-end gap-2">
+				<button className="btn btn-secondary" onClick={closeModal} type="button">
+					{t('Cancel')}
+				</button>
+				<button
+					className="btn btn-primary"
+					onClick={() => {
+						onConfirm()
+						closeModal()
+					}}
+					type="button"
+				>
+					{t('Load scene')}
+				</button>
+			</div>
 		</div>
 	)
 }

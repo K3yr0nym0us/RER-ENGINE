@@ -24,6 +24,8 @@ import {
 	DeleteBlockedBody,
 	DeleteConfirmBody,
 	SceneRenameModalBody,
+	SwitchSceneConfirmBody,
+	UnsavedSceneBlockedBody,
 } from '../pages/EngineView/hooks/sceneManagerModalBodies'
 import { ModalConfirmBody } from './ModalConfirmBody'
 import { wireModalCallbacksForHost } from './modalElectronCallbacks'
@@ -57,7 +59,9 @@ export const MODAL_ELECTRON_REGISTRY: Record<string, RegistryEntry> = {
 	CreateSceneModalBody: CreateSceneModalBody as RegistryEntry,
 	SceneRenameModalBody: SceneRenameModalBody as RegistryEntry,
 	DeleteConfirmBody: DeleteConfirmBody as RegistryEntry,
+	SwitchSceneConfirmBody: SwitchSceneConfirmBody as RegistryEntry,
 	DeleteBlockedBody: DeleteBlockedBody as RegistryEntry,
+	UnsavedSceneBlockedBody: UnsavedSceneBlockedBody as RegistryEntry,
 	ModalConfirmBody: ModalConfirmBody as RegistryEntry,
 }
 

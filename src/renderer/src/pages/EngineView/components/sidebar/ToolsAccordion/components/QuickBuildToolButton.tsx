@@ -36,7 +36,7 @@ export function QuickBuildToolButton() {
           ? <>{t('Active mode:')} <b>{activeBluePrint.name}</b><br />{t('Click to deactivate')}</>
           : <>{t('Quick build.')}<br /><b>({t('based on BluePrints')})</b></>
       }
-      place="left"
+      place="bottom"
     >
       <button
         className={`btn btn-sm mb-2 d-flex flex-column justify-content-center align-items-center ${

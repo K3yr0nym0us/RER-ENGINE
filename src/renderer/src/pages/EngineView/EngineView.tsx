@@ -39,28 +39,24 @@ export function EngineView({
     >
       <QuickBuildProvider>
         <ModalProvider>
-          <SceneManagerProvider 
-            initialSavePath={initialSavePath}
+          <EngineViewInner 
             projectType={projectType} 
-            gameStyle={gameStyle}
-          >
-            <EngineViewInner 
-              projectType={projectType} 
-              gameStyle={gameStyle} 
-              initialSavePath={initialSavePath}
-              viewportRef={viewportRef} 
-            />
-          </SceneManagerProvider>
+            gameStyle={gameStyle} 
+            initialSavePath={initialSavePath}
+            initialExtractDir={initialExtractDir}
+            viewportRef={viewportRef} 
+          />
         </ModalProvider>
       </QuickBuildProvider>
     </EngineProvider>
   )
 }
 
-function EngineViewInner({ projectType, gameStyle, initialSavePath, viewportRef }: {
+function EngineViewInner({ projectType, gameStyle, initialSavePath, initialExtractDir, viewportRef }: {
   projectType: ProjectType
   gameStyle?: GameStyle
   initialSavePath?: string | null
+  initialExtractDir?: string | null
   viewportRef: React.RefObject<HTMLDivElement>
 }) {
   const { 
@@ -68,9 +64,16 @@ function EngineViewInner({ projectType, gameStyle, initialSavePath, viewportRef 
     toggleAutoSave, 
     hasSavedOnce, 
     autoSaveEnabled 
-  } = useAutoSave({ projectType, gameStyle, initialSavePath })
+  } = useAutoSave({ projectType, gameStyle, initialSavePath, initialExtractDir })
 
   return (
+    <SceneManagerProvider
+      initialSavePath={initialSavePath}
+      initialExtractDir={initialExtractDir}
+      projectType={projectType}
+      gameStyle={gameStyle}
+      onSaveProject={handleSave}
+    >
     <div className="app-shell d-flex flex-column">
       <div className="d-flex flex-grow-1 overflow-hidden">
         <SideBarLeft projectType={projectType} gameStyle={gameStyle} />
@@ -105,5 +108,6 @@ function EngineViewInner({ projectType, gameStyle, initialSavePath, viewportRef 
         </div>
       </div>
     </div>
+    </SceneManagerProvider>
   )
 }

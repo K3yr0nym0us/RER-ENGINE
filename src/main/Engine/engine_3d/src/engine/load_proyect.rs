@@ -29,17 +29,18 @@ const ENTITY_MARKERS: &[&str] = &[
 
 // ── Manifest: nombres de campo = claves JSON en `src/shared-types/types.ts`. ─
 
-#[allow(non_snake_case, dead_code)]
-#[derive(Debug, Deserialize)]
-struct ProjectSaveData {
+#[allow(non_snake_case)]
+#[derive(Debug, Deserialize, Clone)]
+pub(crate) struct ProjectSaveData {
     #[serde(default)]
     r#type: String,
-    gameStyle: String,
+    pub gameStyle: String,
     #[serde(default)]
     activeSceneId: Option<u32>,
     #[serde(default)]
     world: Option<SavedWorldConfig>,
     #[serde(default)]
+    #[allow(dead_code)]
     backgroundPath: Option<String>,
     #[serde(default)]
     entities: Vec<SavedEntity3D>,
@@ -48,8 +49,10 @@ struct ProjectSaveData {
     #[serde(default)]
     config_camera: Option<SavedConfigCamera>,
     #[serde(default)]
+    #[allow(dead_code)]
     config_editor_camera: Option<SavedConfigEditorCamera>,
     #[serde(default)]
+    #[allow(dead_code)]
     sprites: Vec<NamedPath>,
     #[serde(default)]
     models: Vec<NamedPath>,
@@ -60,7 +63,7 @@ struct ProjectSaveData {
     #[serde(default)]
     backgrounds: Vec<NamedPath>,
     #[serde(default)]
-    scenes: Vec<SavedScene>,
+    pub scenes: Vec<SavedScene>,
     #[serde(default)]
     blueprints: Vec<SavedBlueprint>,
     #[serde(default)]
@@ -82,8 +85,8 @@ struct ProjectSaveData {
 }
 
 #[allow(non_snake_case)]
-#[derive(Debug, Deserialize, Clone)]
-struct SavedWorldConfig {
+#[derive(Debug, Deserialize, Clone, Serialize)]
+pub(crate) struct SavedWorldConfig {
     worldWidth: f32,
     worldHeight: f32,
     #[serde(default)]
@@ -102,8 +105,8 @@ struct SavedWorldConfig {
     shadowDarkness: Option<f32>,
 }
 
-#[derive(Debug, Deserialize, Clone)]
-struct NamedPath {
+#[derive(Debug, Deserialize, Clone, Serialize)]
+pub(crate) struct NamedPath {
     name: String,
     path: String,
     #[serde(default)]
@@ -112,7 +115,7 @@ struct NamedPath {
 
 #[allow(non_snake_case)]
 #[derive(Debug, Deserialize, Clone, Serialize)]
-struct SavedConfigCamera {
+pub(crate) struct SavedConfigCamera {
     #[serde(default)]
     camera_eye_position: Option<[f32; 3]>,
     #[serde(default)]
@@ -133,59 +136,58 @@ struct SavedConfigCamera {
 
 #[allow(non_snake_case)]
 #[derive(Debug, Deserialize, Clone, Serialize)]
-struct SavedConfigEditorCamera {
+pub(crate) struct SavedConfigEditorCamera {
     position: [f32; 3],
     #[serde(default)]
     rotation: Option<[f32; 4]>,
-}
-
-#[allow(non_snake_case, dead_code)]
-#[derive(Debug, Deserialize, Clone)]
-struct SavedScene {
-    id: u32,
-    #[serde(default)]
-    name: String,
-    world: SavedWorldConfig,
-    #[serde(default)]
-    backgroundPath: Option<String>,
-    #[serde(default)]
-    entities: Vec<SavedEntity3D>,
-    #[serde(default)]
-    player: Option<SavedEntity3D>,
-    #[serde(default)]
-    config_camera: Option<SavedConfigCamera>,
-    #[serde(default)]
-    config_editor_camera: Option<SavedConfigEditorCamera>,
-    #[serde(default)]
-    sprites: Vec<NamedPath>,
-    #[serde(default)]
-    models: Vec<NamedPath>,
 }
 
 #[allow(non_snake_case)]
 #[derive(Debug, Deserialize, Clone, Serialize)]
-#[allow(dead_code)]
-struct SavedEntity3D {
-    id: u32,
-    name: String,
-    category: String,
-    model: String,
-    position: [f32; 3],
+pub(crate) struct SavedScene {
+    pub id: u32,
     #[serde(default)]
-    rotation: Option<[f32; 4]>,
-    scale: [f32; 3],
+    pub name: String,
+    pub world: SavedWorldConfig,
     #[serde(default)]
-    physics_type: Option<String>,
+    pub backgroundPath: Option<String>,
+    #[serde(default)]
+    pub entities: Vec<SavedEntity3D>,
+    #[serde(default)]
+    pub player: Option<SavedEntity3D>,
+    #[serde(default)]
+    pub config_camera: Option<SavedConfigCamera>,
+    #[serde(default)]
+    pub config_editor_camera: Option<SavedConfigEditorCamera>,
+    #[serde(default)]
+    pub sprites: Vec<NamedPath>,
+    #[serde(default)]
+    pub models: Vec<NamedPath>,
+}
+
+#[allow(non_snake_case)]
+#[derive(Debug, Deserialize, Clone, Serialize)]
+pub(crate) struct SavedEntity3D {
+    pub id: u32,
+    pub name: String,
+    pub category: String,
+    pub model: String,
+    pub position: [f32; 3],
+    #[serde(default)]
+    pub rotation: Option<[f32; 4]>,
+    pub scale: [f32; 3],
+    #[serde(default)]
+    pub physics_type: Option<String>,
     #[serde(default = "default_colision_on")]
-    colision: bool,
+    pub colision: bool,
     #[serde(default)]
-    animations: Option<Vec<SavedAnimation>>,
+    pub animations: Option<Vec<SavedAnimation>>,
     #[serde(default)]
-    scripts: Option<Vec<SavedScript>>,
+    pub scripts: Option<Vec<SavedScript>>,
     #[serde(default, alias = "control_bindings")]
-    controls: Option<SavedControlBindings>,
+    pub controls: Option<SavedControlBindings>,
     #[serde(default)]
-    blueprint_id: Option<String>,
+    pub blueprint_id: Option<String>,
 }
 
 fn default_colision_on() -> bool {
@@ -193,7 +195,7 @@ fn default_colision_on() -> bool {
 }
 
 #[derive(Debug, Deserialize, Clone, Serialize)]
-struct SavedAnimation {
+pub(crate) struct SavedAnimation {
     name: String,
     fps: u32,
     r#loop: bool,
@@ -228,13 +230,13 @@ struct SavedAnimationFrame {
 }
 
 #[derive(Debug, Deserialize, Clone, Serialize)]
-struct SavedScript {
+pub(crate) struct SavedScript {
     name: String,
     source: String,
 }
 
 #[derive(Debug, Deserialize, Clone, Serialize)]
-struct SavedControlBindings {
+pub(crate) struct SavedControlBindings {
     #[serde(default)]
     keyboard_mouse: HashMap<String, SavedScript>,
     #[serde(default)]
@@ -259,15 +261,16 @@ struct SavedBlueprint {
     scripts: Option<Vec<SavedScript>>,
 }
 
-#[allow(non_snake_case, dead_code)]
-struct ActiveSaveView {
-    world: SavedWorldConfig,
-    entities: Vec<SavedEntity3D>,
-    models: Vec<NamedPath>,
-    player: Option<SavedEntity3D>,
-    config_camera: Option<SavedConfigCamera>,
-    sceneId: u32,
-    sceneName: String,
+#[allow(non_snake_case)]
+#[derive(Debug, Clone)]
+pub(crate) struct ActiveSaveView {
+    pub world: SavedWorldConfig,
+    pub entities: Vec<SavedEntity3D>,
+    pub models: Vec<NamedPath>,
+    pub player: Option<SavedEntity3D>,
+    pub config_camera: Option<SavedConfigCamera>,
+    pub sceneId: u32,
+    pub sceneName: String,
 }
 
 #[derive(Clone)]
@@ -305,9 +308,12 @@ impl State {
                 }
                 let extract_dir = PathBuf::from(&path);
                 resolve_loaded_paths(&mut project, &extract_dir);
+                let extract_path = path.clone();
                 match apply_loaded_proyect_3d(self, &project) {
                     Ok(view) => {
-                        send_project_loaded_3d(&project, &view);
+                        send_project_loaded_3d(&project, &view, None);
+                        self.editor_scenes_init_from_project(&project, &extract_path, &view);
+                        self.clear_editor_undo_redo();
                         send_project_load_3d_complete_event();
                     }
                     Err(err) => log::error!("error al aplicar proyecto: {err}"),
@@ -318,7 +324,7 @@ impl State {
     }
 }
 
-fn load_project_from_extract_dir(extract_path: &str) -> Result<ProjectSaveData, String> {
+pub(crate) fn load_project_from_extract_dir(extract_path: &str) -> Result<ProjectSaveData, String> {
     let extract_dir = Path::new(extract_path);
     if extract_dir.is_file() {
         return Err(
@@ -1228,16 +1234,38 @@ fn apply_saved_play_character_view(
     }
 }
 
-fn apply_loaded_proyect_3d(state: &mut State, project: &ProjectSaveData) -> Result<ActiveSaveView, String> {
+pub(crate) fn apply_loaded_proyect_3d(
+    state: &mut State,
+    project: &ProjectSaveData,
+) -> Result<ActiveSaveView, String> {
+    apply_loaded_proyect_3d_with_scene(state, project, None)
+}
+
+pub(crate) fn apply_editor_scene_switch(
+    state: &mut State,
+    project: &ProjectSaveData,
+    scene: &SavedScene,
+) -> Result<ActiveSaveView, String> {
+    apply_loaded_proyect_3d_with_scene(state, project, Some(scene))
+}
+
+fn apply_loaded_proyect_3d_with_scene(
+    state: &mut State,
+    project: &ProjectSaveData,
+    forced_scene: Option<&SavedScene>,
+) -> Result<ActiveSaveView, String> {
     let load_started_at = Instant::now();
     let mut step_started = Instant::now();
     state.restoring_save_manifest = true;
-    let view = match pick_active_save_view(project) {
-        Ok(v) => v,
-        Err(e) => {
-            state.restoring_save_manifest = false;
-            return Err(e);
-        }
+    let view = match forced_scene {
+        Some(scene) => active_view_from_saved_scene(scene),
+        None => match pick_active_save_view(project) {
+            Ok(v) => v,
+            Err(e) => {
+                state.restoring_save_manifest = false;
+                return Err(e);
+            }
+        },
     };
     let open_msg = format!(
         "Abriendo escena «{}» ({} entidades)…",
@@ -1246,7 +1274,7 @@ fn apply_loaded_proyect_3d(state: &mut State, project: &ProjectSaveData) -> Resu
     );
     log::info!("{open_msg}");
     send_load_progress(&open_msg, None, None);
-    if state.mount_save_on_empty_world {
+    if forced_scene.is_none() && state.mount_save_on_empty_world {
         state.mount_save_on_empty_world = false;
         log_load_step(load_started_at, &mut step_started, "Montando escena desde .save");
     } else {
@@ -1458,7 +1486,11 @@ fn apply_loaded_proyect_3d(state: &mut State, project: &ProjectSaveData) -> Resu
                 log::error!("[load_proyect] first-person requiere config_camera en manifest");
             }
             (None, _) => {
-                log::error!("[load_proyect] first-person requiere player en manifest");
+                if view.entities.is_empty() {
+                    state.apply_fp_placeholder_sun_and_player();
+                } else {
+                    log::error!("[load_proyect] first-person requiere player en manifest");
+                }
             }
         }
     } else if let (Some(player_entity), Some(cam)) =
@@ -1507,12 +1539,53 @@ fn apply_loaded_proyect_3d(state: &mut State, project: &ProjectSaveData) -> Resu
         })
         .collect();
     state.sync_player_ui_screens(&player_screens);
+    if game_style == "first-person" {
+        if let Some(scene) = forced_scene {
+            if is_fp_placeholder_saved_scene(scene) {
+                state.finalize_first_person_placeholder_editor_scene();
+            }
+        }
+    }
     state.restoring_save_manifest = false;
     Ok(view)
 }
 
-fn send_project_loaded_3d(project: &ProjectSaveData, view: &ActiveSaveView) {
-    let scenes: Vec<ProjectLoaded3dSceneTab> = if project.scenes.is_empty() {
+fn is_fp_placeholder_saved_scene(scene: &SavedScene) -> bool {
+    scene.player.is_some()
+        && scene.models.is_empty()
+        && scene
+            .entities
+            .iter()
+            .any(|e| e.category == "sun")
+        && scene
+            .entities
+            .iter()
+            .any(|e| e.category == "ground")
+}
+
+/// Tras `switch_editor_scene`: lista de escenas del registro del editor (incluye creadas sin guardar).
+pub(crate) fn send_project_loaded_3d_with_editor_scenes(
+    project: &ProjectSaveData,
+    view: &ActiveSaveView,
+    editor_scenes: &[crate::ipc::EditorSceneListItem],
+) {
+    send_project_loaded_3d(project, view, Some(editor_scenes));
+}
+
+fn send_project_loaded_3d(
+    project: &ProjectSaveData,
+    view: &ActiveSaveView,
+    editor_scenes: Option<&[crate::ipc::EditorSceneListItem]>,
+) {
+    let scenes: Vec<ProjectLoaded3dSceneTab> = if let Some(items) = editor_scenes {
+        items
+            .iter()
+            .map(|s| ProjectLoaded3dSceneTab {
+                id: s.id,
+                name: s.name.clone(),
+            })
+            .collect()
+    } else if project.scenes.is_empty() {
         vec![ProjectLoaded3dSceneTab {
             id: view.sceneId,
             name: view.sceneName.clone(),
@@ -1605,4 +1678,274 @@ fn send_project_loaded_3d(project: &ProjectSaveData, view: &ActiveSaveView) {
         playerUiScreens: project.playerUiScreens.clone(),
         menuUiScreens: project.menuUiScreens.clone(),
     });
+}
+
+fn active_view_from_saved_scene(scene: &SavedScene) -> ActiveSaveView {
+    ActiveSaveView {
+        world: scene.world.clone(),
+        entities: scene.entities.clone(),
+        models: scene.models.clone(),
+        player: scene.player.clone(),
+        config_camera: scene.config_camera.clone(),
+        sceneId: scene.id,
+        sceneName: scene.name.clone(),
+    }
+}
+
+pub(crate) fn saved_scene_from_active_view(view: &ActiveSaveView) -> SavedScene {
+    SavedScene {
+        id: view.sceneId,
+        name: view.sceneName.clone(),
+        world: view.world.clone(),
+        backgroundPath: None,
+        entities: view.entities.clone(),
+        player: view.player.clone(),
+        config_camera: view.config_camera.clone(),
+        config_editor_camera: None,
+        sprites: Vec::new(),
+        models: view.models.clone(),
+    }
+}
+
+pub(crate) fn saved_scene_from_snapshot_payload(
+    p: &crate::ipc::SaveSceneSnapshotPayload,
+    id: u32,
+    name: &str,
+) -> SavedScene {
+    use crate::ipc::SaveEntity3DSnapshot;
+
+    fn map_entity(e: &SaveEntity3DSnapshot) -> SavedEntity3D {
+        SavedEntity3D {
+            id: e.id,
+            name: e.name.clone(),
+            category: e.category.clone(),
+            model: e.model.clone(),
+            position: e.position,
+            rotation: Some(e.rotation),
+            scale: e.scale,
+            physics_type: e.physics_type.clone(),
+            colision: e.colision,
+            animations: None,
+            scripts: None,
+            controls: e.controls.as_ref().map(|c| SavedControlBindings {
+                keyboard_mouse: c
+                    .keyboard_mouse
+                    .iter()
+                    .map(|(k, s)| {
+                        (
+                            k.clone(),
+                            SavedScript {
+                                name: s.name.clone(),
+                                source: s.source.clone(),
+                            },
+                        )
+                    })
+                    .collect(),
+                gamepad: c
+                    .gamepad
+                    .iter()
+                    .map(|(k, s)| {
+                        (
+                            k.clone(),
+                            SavedScript {
+                                name: s.name.clone(),
+                                source: s.source.clone(),
+                            },
+                        )
+                    })
+                    .collect(),
+            }),
+            blueprint_id: e.blueprint_id.clone(),
+        }
+    }
+
+    SavedScene {
+        id,
+        name: name.to_string(),
+        world: SavedWorldConfig {
+            worldWidth: p.world.world_width,
+            worldHeight: p.world.world_height,
+            worldDepth: Some(p.world.world_depth),
+            gridVisible: p.world.grid_visible,
+            gridCellSize: p.world.grid_cell_size,
+            gravity: Some(p.world.gravity),
+            targetFps: p.world.target_fps as f64,
+            lightAmbient: p.world.light_ambient,
+            lightIntensity: p.world.light_intensity,
+            shadowDarkness: p.world.shadow_darkness,
+        },
+        backgroundPath: p.background_path.clone(),
+        entities: p.entities.iter().map(map_entity).collect(),
+        player: p.player.as_ref().map(map_entity),
+        config_camera: p.config_camera.as_ref().map(|c| {
+            use crate::ipc::PlayCameraFollowMode;
+            let follow = match c.camera_follow_mode {
+                PlayCameraFollowMode::FollowCharacter => "follow_character",
+                PlayCameraFollowMode::MoveWithCharacter => "move_with_character",
+            };
+            SavedConfigCamera {
+                camera_eye_position: c.camera_eye_position,
+                fps_camera_yaw: c.fps_camera_yaw,
+                fps_camera_pitch: c.fps_camera_pitch,
+                yaw: Some(c.yaw),
+                pitch: Some(c.pitch),
+                fov_y: Some(c.fov_y),
+                frustum_distance: Some(c.frustum_distance),
+                camera_follow_mode: Some(follow.to_string()),
+            }
+        }),
+        config_editor_camera: p.config_editor_camera.as_ref().map(|c| {
+            SavedConfigEditorCamera {
+                position: c.position,
+                rotation: c.rotation,
+            }
+        }),
+        sprites: p
+            .sprites
+            .iter()
+            .map(|s| NamedPath {
+                name: s.name.clone(),
+                path: s.path.clone(),
+                category: None,
+            })
+            .collect(),
+        models: p
+            .models
+            .iter()
+            .map(|m| NamedPath {
+                name: m.name.clone(),
+                path: m.path.clone(),
+                category: m.category.clone(),
+            })
+            .collect(),
+    }
+}
+
+pub(crate) fn build_fp_placeholder_saved_scene(id: u32, name: &str) -> SavedScene {
+    use crate::config_3d::character_anchor::{
+        PLAY_CHARACTER_EDITOR_ORBIT_PITCH, PLAY_CHARACTER_EDITOR_ORBIT_YAW,
+    };
+
+    let world = SavedWorldConfig {
+        worldWidth: 28.0,
+        worldHeight: 14.0,
+        worldDepth: Some(56.0),
+        gridVisible: true,
+        gridCellSize: 1.0,
+        gravity: Some(15.0),
+        targetFps: 60.0,
+        lightAmbient: Some(DEFAULT_LIGHT_AMBIENT),
+        lightIntensity: Some(DEFAULT_LIGHT_INTENSITY),
+        shadowDarkness: Some(DEFAULT_SHADOW_DARKNESS),
+    };
+
+    let ground_scale = [28.0 / 40.0, 0.02, 56.0 / 40.0];
+    let sun_position = {
+        let center_y = world.worldHeight * 0.5;
+        let dir = crate::config_3d::directional_light::DEFAULT_LIGHT_DIR.normalize();
+        let center = glam::Vec3::new(0.0, center_y, 0.0);
+        (center + dir * crate::config_3d::directional_light::SUN_DISTANCE).to_array()
+    };
+    let entities = vec![
+        SavedEntity3D {
+            id: 0,
+            name: "Ground".to_string(),
+            category: "ground".to_string(),
+            model: "[Ground]".to_string(),
+            position: [0.0, 0.0, 0.0],
+            rotation: Some([0.0, 0.0, 0.0, 1.0]),
+            scale: ground_scale,
+            physics_type: Some("static".to_string()),
+            colision: true,
+            animations: None,
+            scripts: None,
+            controls: None,
+            blueprint_id: None,
+        },
+        SavedEntity3D {
+            id: 0,
+            name: "Sun".to_string(),
+            category: "sun".to_string(),
+            model: "[Sun]".to_string(),
+            position: sun_position,
+            rotation: Some([0.0, 0.0, 0.0, 1.0]),
+            scale: [1.0, 1.0, 1.0],
+            physics_type: Some("static".to_string()),
+            colision: true,
+            animations: None,
+            scripts: None,
+            controls: None,
+            blueprint_id: None,
+        },
+    ];
+
+    let player = SavedEntity3D {
+        id: 0,
+        name: "Player".to_string(),
+        category: "player".to_string(),
+        model: "[Player]".to_string(),
+        position: [0.0, 0.0, 5.0],
+        rotation: Some([0.0, 0.0, 0.0, 1.0]),
+        scale: [0.8, 1.7, 0.8],
+        physics_type: Some("dynamic".to_string()),
+        colision: true,
+        animations: None,
+        scripts: None,
+        controls: None,
+        blueprint_id: None,
+    };
+
+    SavedScene {
+        id,
+        name: name.to_string(),
+        world,
+        backgroundPath: None,
+        entities,
+        player: Some(player),
+        config_camera: Some(SavedConfigCamera {
+            camera_eye_position: None,
+            fps_camera_yaw: None,
+            fps_camera_pitch: None,
+            yaw: Some(PLAY_CHARACTER_EDITOR_ORBIT_YAW),
+            pitch: Some(PLAY_CHARACTER_EDITOR_ORBIT_PITCH),
+            fov_y: None,
+            frustum_distance: None,
+            camera_follow_mode: Some("move_with_character".to_string()),
+        }),
+        config_editor_camera: None,
+        sprites: Vec::new(),
+        models: Vec::new(),
+    }
+}
+
+pub(crate) fn build_minimal_project_from_store(
+    game_style: &str,
+    scenes: &[SavedScene],
+) -> ProjectSaveData {
+    ProjectSaveData {
+        r#type: "3D".to_string(),
+        gameStyle: game_style.to_string(),
+        activeSceneId: None,
+        world: None,
+        backgroundPath: None,
+        entities: Vec::new(),
+        player: None,
+        config_camera: None,
+        config_editor_camera: None,
+        sprites: Vec::new(),
+        models: Vec::new(),
+        sounds: Vec::new(),
+        fonts: Vec::new(),
+        backgrounds: Vec::new(),
+        scenes: scenes.to_vec(),
+        blueprints: Vec::new(),
+        language: None,
+        playerUiScreens: Vec::new(),
+        menuUiScreens: Vec::new(),
+        player_ui_text_boxes: Vec::new(),
+        player_ui_buttons: Vec::new(),
+        player_ui_images: Vec::new(),
+        player_ui_objects: Vec::new(),
+        hud_images: Vec::new(),
+    }
 }

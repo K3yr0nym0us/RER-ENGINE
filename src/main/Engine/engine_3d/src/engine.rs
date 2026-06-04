@@ -229,6 +229,10 @@ pub struct State {
     pub(crate) mount_save_on_empty_world: bool,
     /// Carga 3D desde manifest: el jugador no usa pipeline editor (`sync_scale` / `align`).
     pub(crate) restoring_save_manifest: bool,
+    /// Tras `set_directional_light` en cambio de escena activa: 1 frame para ver si llegan spawns del front.
+    pub(crate) fp_baseline_defer_frames: u8,
+    /// Registro multi-escena del editor (baselines, dirty, cambio de escena activa).
+    pub(crate) editor_scenes: crate::engine::editor_scenes::EditorSceneStore,
     /// Límite de FPS del bucle (sincronizado con `set_target_fps`).
     pub(crate) target_fps: u64,
     /// Entidad icono del sol (luz direccional).

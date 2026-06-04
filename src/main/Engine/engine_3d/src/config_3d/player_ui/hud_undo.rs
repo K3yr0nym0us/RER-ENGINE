@@ -76,6 +76,7 @@ impl State {
         self.redo_stack.clear();
         self.undo_stack
             .push(UndoAction::RestorePlayerUiHud { snapshot });
+        self.sync_editor_scenes_undo_dirty_to_renderer();
     }
 
     pub(crate) fn restore_player_ui_hud_undo_snapshot(

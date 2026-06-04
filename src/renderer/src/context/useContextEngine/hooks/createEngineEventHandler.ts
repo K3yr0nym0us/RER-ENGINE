@@ -80,6 +80,7 @@ import {
 	endModelReplaceLoading,
 	endSceneBurstLoad,
 	endSceneImportLoading,
+	endFpSceneBaselineLogging,
 	trackSceneBurstCollider,
 	trackSceneBurstOp,
 	trackSceneBurstModelPreloads,
@@ -114,7 +115,9 @@ const SILENT_ENGINE_EVENTS = new Set<string>([
 	'sprite_loaded',
 	'background_loaded',
 	'sound_loaded',
+	'sounds_list',
 	'font_loaded',
+	'fonts_list',
 	'background_asset_loaded',
 	'scenario_loaded',
 	'scene_imported',
@@ -148,6 +151,9 @@ const SILENT_ENGINE_EVENTS = new Set<string>([
 	'hud_image_loaded',
 	'hud_image_removed',
 	'hud_images_list',
+	'backgrounds_list',
+	'models_list',
+	'entity_removed',
 	'play_character_view_changed', 'first_person_view_changed',
 	'save_snapshot_ready',
 	'load_progress',
@@ -173,6 +179,7 @@ function shouldSilenceEngineEventLog(
 	refs: Pick<
 		EngineInternalRefs,
 		| 'sceneImportInProgressRef'
+		| 'sceneBurstLoadInProgressRef'
 		| 'engineBootAwaitRef'
 		| 'engineBootFinishedRef'
 		| 'initialExtractDirRef'
@@ -187,10 +194,109 @@ function shouldSilenceEngineEventLog(
 	const bootLogsActive = bootPreloaded && !refs.engineBootFinishedRef.current;
 	const loadPanelActive =
 		refs.sceneImportInProgressRef.current
+		|| refs.sceneBurstLoadInProgressRef.current
 		|| refs.engineBootAwaitRef.current
 		|| bootLogsActive;
 	if (loadPanelActive && SCENE_LOAD_SILENT_EVENTS.has(eventName)) return true;
 	return false;
+}
+
+/** Línea legible para suelo/sol/jugador (arranque o escena FP vacía). */
+function panelLogLineForBaselineSpawn(
+	event: RuntimeEngineEvent,
+	refs: Pick<
+		EngineInternalRefs,
+		| 'initialExtractDirRef'
+		| 'fpSceneBaselineLogRef'
+	>,
+	projectType?: string,
+): string | null {
+	const openedFromSave = isProjectOpenedFromSave(refs.initialExtractDirRef.current);
+	const bootPreloaded = isEngineBootScenePreloaded(projectType, openedFromSave);
+	const fpBaseline = refs.fpSceneBaselineLogRef.current;
+	const tag = bootPreloaded ? '[Carga]' : '[Escena]';
+
+	if (event.event === 'model_loaded') {
+		const name = (event as { name?: string }).name ?? '';
+		if (name === 'Ground') {
+			if (bootPreloaded || fpBaseline) return `${tag} Insertando suelo`;
+			return null;
+		}
+		if (name.startsWith('Sun')) {
+			if (bootPreloaded || fpBaseline) {
+				return bootPreloaded
+					? '[Carga] Insertando Sol (Sun)'
+					: '[Escena] Insertando sol';
+			}
+			return null;
+		}
+	}
+
+	if (event.event === 'character_loaded') {
+		const path = (event as { path?: string }).path ?? '';
+		if (!isPlayerPath(path)) return null;
+		if (bootPreloaded || fpBaseline) {
+			if (fpBaseline) endFpSceneBaselineLogging(refs.fpSceneBaselineLogRef);
+			return `${tag} Insertando jugador placeholder`;
+		}
+	}
+
+	return null;
+}
+
+type EditorSceneListItemPayload = { id: number; name: string; dirty?: boolean };
+
+function formatEditorSceneList(scenes: EditorSceneListItemPayload[] | undefined): string {
+	if (!scenes?.length) return '(vacía)';
+	return scenes.map((s) => `«${s.name}»`).join(', ');
+}
+
+function panelLogLineForEditorSceneEvent(event: RuntimeEngineEvent): string | null {
+	switch (event.event) {
+		case 'editor_scenes_updated': {
+			const activeId = event.active_scene_id as number | undefined;
+			const scenes = event.scenes as EditorSceneListItemPayload[] | undefined;
+			const reason = (event.update_reason as string | undefined) ?? 'sync';
+			const activeName =
+				scenes?.find((s) => s.id === activeId)?.name ?? (activeId != null ? `#${activeId}` : '?');
+			const listSummary = `${scenes?.length ?? 0} escena/s: ${formatEditorSceneList(scenes)}`;
+			switch (reason) {
+				case 'boot':
+					return `[Escenas] Registro inicializado — activa «${activeName}» (${listSummary})`;
+				case 'project_saved':
+					return `[Escenas] Registro alineado tras guardar — activa «${activeName}» (${listSummary})`;
+				case 'scene_deleted':
+					return `[Escenas] Escena eliminada — activa «${activeName}» (${listSummary})`;
+				default:
+					return `[Escenas] Lista sincronizada — activa «${activeName}» (${listSummary})`;
+			}
+		}
+		case 'editor_scene_created': {
+			const id = event.id as number | undefined;
+			const name = (event.name as string | undefined) ?? '';
+			const scenes = event.scenes as EditorSceneListItemPayload[] | undefined;
+			return `[Escenas] Creada «${name}» (id=${id ?? '?'}); lista: ${formatEditorSceneList(scenes)}`;
+		}
+		case 'editor_scene_switched': {
+			const activeId = event.active_scene_id as number | undefined;
+			const scenes = event.scenes as EditorSceneListItemPayload[] | undefined;
+			const activeName =
+				scenes?.find((s) => s.id === activeId)?.name ?? (activeId != null ? `#${activeId}` : '?');
+			return `[Escenas] Escena activa ${activeName} (id=${activeId ?? '?'})`;
+		}
+		case 'editor_scene_switch_blocked': {
+			const reason = (event.reason as string | undefined) ?? 'unknown';
+			const activeId = event.active_scene_id as number | undefined;
+			const targetId = event.target_scene_id as number | undefined;
+			const reasonLabel =
+				reason === 'unsaved_changes'
+					? 'guarda el proyecto antes de cambiar de escena'
+					: reason;
+			return `[Escenas] Cambio bloqueado (${activeId ?? '?'} → ${targetId ?? '?'}): ${reasonLabel}`;
+		}
+		default:
+			return null;
+	}
 }
 
 /** Línea del panel de logs; `null` = no imprimir; `undefined` = JSON del evento. */
@@ -199,22 +305,32 @@ function panelLogLineForEngineEvent(
 	refs: Pick<
 		EngineInternalRefs,
 		| 'sceneImportInProgressRef'
+		| 'sceneBurstLoadInProgressRef'
 		| 'engineBootAwaitRef'
 		| 'engineBootFinishedRef'
 		| 'initialExtractDirRef'
+		| 'sceneWorldCleanupRef'
+		| 'fpSceneBaselineLogRef'
 	>,
 	projectType?: string,
 ): string | null | undefined {
-	if (event.event === 'model_loaded') {
-		const name = (event as { name?: string }).name;
-		const bootPreloaded = isEngineBootScenePreloaded(
-			projectType,
-			isProjectOpenedFromSave(refs.initialExtractDirRef.current),
-		);
-		if (bootPreloaded && name?.startsWith('Sun')) {
-			return '[Carga] Insertando Sol (Sun)';
+	const editorSceneLine = panelLogLineForEditorSceneEvent(event);
+	if (editorSceneLine != null) return editorSceneLine;
+
+	if (event.event === 'entity_removed') {
+		const cleanup = refs.sceneWorldCleanupRef.current;
+		if (cleanup.active) {
+			if (!cleanup.summaryLogged) {
+				cleanup.summaryLogged = true;
+				return '[Limpieza] Limpiando mundo para la nueva escena.';
+			}
+			return null;
 		}
 	}
+
+	const baselineLine = panelLogLineForBaselineSpawn(event, refs, projectType);
+	if (baselineLine != null) return baselineLine;
+
 	if (shouldSilenceEngineEventLog(event.event, refs, projectType)) return null;
 	return undefined;
 }
@@ -539,9 +655,14 @@ export function createEngineEventHandler({
 						body_type: physicsType,
 					} as never);
 				}
-				addLog(
-					`[quick_build] entidad colocada: ${loaded.name ?? id} (id=${id})`,
-				);
+				const loadPanelActive =
+					refs.sceneImportInProgressRef.current
+					|| refs.sceneBurstLoadInProgressRef.current;
+				if (!loadPanelActive) {
+					addLog(
+						`[quick_build] entidad colocada: ${loaded.name ?? id} (id=${id})`,
+					);
+				}
 				tryEndSceneBurstLoad(
 					dispatch,
 					refs.sceneBurstLoadInProgressRef,
@@ -1117,7 +1238,11 @@ export function createEngineEventHandler({
 				projectType,
 				refs.initialExtractDirRef.current,
 			);
-			if (!engineLoads3dSave) return;
+			const motorFpSceneSwitch =
+				projectType === '3D'
+				&& gameStyle === 'first-person'
+				&& refs.sceneImportInProgressRef.current;
+			if (!engineLoads3dSave && !motorFpSceneSwitch) return;
 			const meta = refs.projectLoaded3dMetaRef.current;
 			void (async () => {
 				try {
@@ -1152,6 +1277,7 @@ export function createEngineEventHandler({
 						if (playerView) {
 							refs.playCharacterViewRef.current = playerView;
 							refs.pendingPlayCharacterViewRef.current = playerView;
+							applySavedPlayCharacterView(playerView);
 						}
 						applyPlayCharacterControlDefaultsIfEmpty(playerId, refs.entityMetaRef, (cmd) => {
 							window.engine.send(cmd as never);
@@ -1175,6 +1301,9 @@ export function createEngineEventHandler({
 				} catch (err) {
 					console.error('[project_load_3d_complete] sync desde snapshot del motor:', err);
 				} finally {
+					if (projectType === '3D' && gameStyle === 'first-person') {
+						window.engine.send({ cmd: 'clear_editor_undo_redo' } as never);
+					}
 					endSceneImportLoading(
 						dispatch,
 						refs.sceneImportInProgressRef,
@@ -1340,7 +1469,7 @@ export function createEngineEventHandler({
 						skipTransform: Boolean(savedFpView?.position),
 						omitScale: !savedFpView?.body_scale,
 					});
-					if (!awaitingVisualReplace) {
+					if (!awaitingVisualReplace && !refs.sceneImportInProgressRef.current) {
 						applySavedPlayCharacterView(savedFpView);
 						if (refs.sceneBurstLoadInProgressRef.current) {
 							finishPlayCharacterBurstRestore(refs);

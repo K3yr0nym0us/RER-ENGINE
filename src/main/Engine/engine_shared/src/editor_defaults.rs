@@ -1,4 +1,4 @@
-//! Editor defaults owned by the engine (scene tabs, entity labels, etc.).
+//! Editor defaults owned by the engine (scene names, entity labels, etc.).
 
 /// English prefixes for numbered editor entity names (`Scenario_01`, …).
 pub mod entity_label {
@@ -15,7 +15,7 @@ pub mod entity_label {
     pub const PLAYER: &str = "Player";
 }
 
-/// Default name for a project scene tab (`Scene-01`, `Scene-02`, …).
+/// Default name for a project scene (`Scene-01`, `Scene-02`, …).
 pub fn default_scene_name(scene_id: u32) -> String {
     format!("Scene-{scene_id:02}")
 }

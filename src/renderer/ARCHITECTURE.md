@@ -32,7 +32,7 @@ Si una feature necesita trigonometria espacial, conversion pies↔centro, forwar
 ## Que SI puede hacer el frontend
 
 - Formularios y validacion de entrada (numeros finitos, rangos de UI).
-- Montar listas de entidades, tabs de escena, undo de **metadatos** que el motor no posee (nombres de pestaña, rutas de assets en el proyecto).
+- Montar listas de entidades, lista de escenas (acordeón Scenes), undo de **metadatos** que el motor no posee (nombres de escena, rutas de assets en el proyecto).
 - Colas de restore al cargar `.save` (`pendingRestoresRef`, `load_character`, etc.) **sin** recalcular poses 3D.
 - Constantes de **presentacion** compartidas con el save (p. ej. `FIRST_PERSON_PLAYER_BODY_SCALE` en `@shared-types`) solo como valor por defecto de archivo, no como fuente de verdad en runtime.
 - Helpers 2D acotados al editor de sprites (recortes de canvas, frames) donde no existe motor implicado.
@@ -90,9 +90,9 @@ Al salir de edición (`endUiScreenEdit`), cancelar dibujo de objeto en el hook p
 1. Main extrae el ZIP a un directorio temporal (`extractDir`) y lee solo metadatos (`type`, `gameStyle`) del `manifest.json`.
 2. El renderer recibe `initialExtractDir` + `initialSavePath`; **no** recibe `ProjectSaveData` en memoria.
 3. Al arrancar el motor, `set_scene` / spawn usan `extract_dir`; Rust carga `manifest.json` y emite `project_loaded_2d` / `project_loaded_3d` + `project_load_*_complete`.
-4. El front sincroniza pestañas, modelos y entidades desde esos eventos (y `get_models_list` si hace falta), sin reenviar `load_model_asset` ni reconstruir la escena en el handler `ready`.
+4. El front sincroniza la lista de escenas, modelos y entidades desde esos eventos (y `get_models_list` si hace falta), sin reenviar `load_model_asset` ni reconstruir la escena en el handler `ready`.
 
-Proyecto **nuevo** (sin `extractDir`): en `ready` se envía `set_scene` con plantilla vacía; la carga de pestañas inactivas sigue siendo vía `import_scene` al cambiar de tab.
+Proyecto **nuevo** (sin `extractDir`): en `ready` se envía `set_scene` con plantilla vacía; la carga de escenas inactivas sigue siendo vía `import_scene` al activar otra escena en el acordeón (flujo legacy 2D / 3D no-FP).
 
 ## Guardado `.save`
 
@@ -100,16 +100,16 @@ El **ZIP** lo escribe Electron/main; el **contenido de la escena activa** depend
 
 | Tipo | Quién serializa la escena | Archivos |
 |------|---------------------------|----------|
-| **2D / 3D** | Motor (`export_save_snapshot` → `save_snapshot_ready`) | `useAutoSave.ts`, `buildProjectSaveFromEngine.ts`, `SceneTabsBar` |
+| **2D / 3D** | Motor (`export_save_snapshot` → `save_snapshot_ready`) | `useAutoSave.ts`, `buildProjectSaveFromEngine.ts`, `ScenesAccordion` |
 
 Flujo (ambos motores):
 
 1. Front → `{ cmd: 'export_save_snapshot' }`.
 2. Motor recorre la escena (entidades placeholder del template FP incluidas), mundo, jugador FP, cámara 2D si aplica, stores de assets y scripts registrados.
 3. Motor → `save_snapshot_ready` con `scene`.
-4. Front arma `ProjectSaveData`: fusiona blueprints, idioma, sonidos/fondos del contexto, pestañas **inactivas** desde `sceneStateStore`, y `blueprint_id` / `entity_category` de entidades desde `entityMetaRef` cuando exista. La **categoría de biblioteca** (accordion Resources: character / environment / object) la guarda el motor en `model_store` y va en el snapshot (`models[].category`).
+4. Front arma `ProjectSaveData`: fusiona blueprints, idioma, sonidos/fondos del contexto, escenas **inactivas** desde `sceneStateStore`, y `blueprint_id` / `entity_category` de entidades desde `entityMetaRef` cuando exista. La **categoría de biblioteca** (accordion Resources: character / environment / object) la guarda el motor en `model_store` y va en el snapshot (`models[].category`).
 
-El front **no** decide qué entidades ni qué modelos precargados van al save ni arma `playerTransform` desde refs locales (salvo metadatos de editor: blueprints, animaciones de celda, pestañas inactivas).
+El front **no** decide qué entidades ni qué modelos precargados van al save ni arma `playerTransform` desde refs locales (salvo metadatos de editor: blueprints, animaciones de celda, escenas inactivas).
 
 ## Relacion con los dos motores
 
@@ -126,7 +126,7 @@ Documentacion de motores:
 
 - `src/context/useContextEngine/` — estado del editor, refs, reducer, envio IPC.
 - `src/context/useContextEngine/hooks/createEngineEventHandler.ts` — unico lugar que deberia interpretar eventos del motor para estado global.
-- `src/pages/EngineView/` — layout del editor, sidebars, `SceneTabsBar`.
+- `src/pages/EngineView/` — layout del editor, sidebars, `ScenesAccordion`.
 - `src/defaults/` — plantillas y restauracion de escena (intencion, no fisica).
 - `src/hooks/useAutoSave.ts` — snapshot del motor (2D y 3D).
 - `src/hooks/usePlayerUiObjectDrawing.ts` — modo dibujo de objetos HUD (progreso `toolProgress`).

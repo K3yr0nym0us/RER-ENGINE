@@ -1,11 +1,12 @@
 import type {
+	BluePrintEntry,
 	ConfigCamera,
 	Entity3D,
 	Entity3DCategory,
 	SavedPlayerTransform,
 } from '@shared-types';
 import { entityPathMarker } from '@shared-types';
-import type { EntityMeta } from '../context/useContextEngine/types';
+import type { EntityMeta, PendingRestore, Transform } from '../context/useContextEngine/types';
 import {
 	inferEntity3dCategoryFromName,
 	reconcileCategoryWithName,
@@ -21,6 +22,41 @@ function kindFromCategory(category: Entity3DCategory): EntityMeta['kind'] {
 		default:
 			return 'model';
 	}
+}
+
+/** Path/marker para IPC y colas de restore (`[Sun]`, `.glb`, etc.). */
+export function entity3dSpawnPath(entity: Entity3D): string {
+	return entityPathMarker(entity.model) ?? entity.model;
+}
+
+export function entity3dTransform(entity: Entity3D): Transform {
+	return {
+		position: entity.position,
+		rotation: entity.rotation ?? [0, 0, 0, 1],
+		scale: entity.scale,
+	};
+}
+
+export function entity3dPendingRestore(
+	entity: Entity3D,
+	blueprints?: BluePrintEntry[],
+): PendingRestore {
+	const meta = entity3dToMeta(entity);
+	const bp = entity.blueprint_id
+		? (blueprints ?? []).find((b) => b.id === entity.blueprint_id) ?? null
+		: null;
+	return {
+		transform: entity3dTransform(entity),
+		name: entity.name,
+		physicsEnabled: meta.physicsEnabled,
+		physicsType: meta.physicsType,
+		animations: bp?.animations ?? entity.animations,
+		scripts: bp?.scripts ?? entity.scripts,
+		controlBindings: bp?.control_bindings ?? entity.controls,
+		blueprintId: entity.blueprint_id,
+		entityCategory: meta.entityCategory,
+		visualModelPath: meta.visualModelPath,
+	};
 }
 
 /** Meta de editor desde entidad 3D del manifest / snapshot del motor. */

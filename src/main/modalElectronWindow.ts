@@ -2,6 +2,7 @@ import { BrowserWindow, screen as electronScreen } from 'electron'
 import path from 'path'
 import { pathToFileURL } from 'url'
 
+import { resolveAppWindowIcon } from './appWindowIcon'
 import type { ModalElectronOpenRequest } from '../shared-types/types'
 import {
   MODAL_ELECTRON_MIN_CONTENT_HEIGHT,
@@ -69,6 +70,8 @@ function getOrCreateModalWindow(): BrowserWindow {
     return modalWindow
   }
 
+  const windowIcon = resolveAppWindowIcon()
+
   modalWindow = new BrowserWindow({
     parent: parent ?? undefined,
     modal: parent != null,
@@ -78,6 +81,7 @@ function getOrCreateModalWindow(): BrowserWindow {
     minimizable: false,
     maximizable: false,
     backgroundColor: '#1a1a2e',
+    ...(windowIcon ? { icon: windowIcon } : {}),
     webPreferences: {
       preload: preloadPath(),
       sandbox: false,
@@ -95,7 +99,7 @@ function getOrCreateModalWindow(): BrowserWindow {
   return modalWindow
 }
 
-function sendRenderToModal(payload: ModalElectronOpenRequest): void {
+function sendRenderToModal(payload: ModalElectronOpenRequest | null): void {
   if (!modalWindow || modalWindow.isDestroyed()) return
   modalWindow.webContents.send('modal-electron:render', payload)
 }
@@ -145,6 +149,8 @@ export async function openModalElectronWindow(payload: ModalElectronOpenRequest)
 
   pendingRenderPayload = payload
   const win = getOrCreateModalWindow()
+  const windowIcon = resolveAppWindowIcon()
+  if (windowIcon) win.setIcon(windowIcon)
   win.setTitle(payload.title)
   win.setContentSize(width, MODAL_ELECTRON_MIN_CONTENT_HEIGHT)
   win.center()
@@ -161,6 +167,7 @@ export async function openModalElectronWindow(payload: ModalElectronOpenRequest)
 export function closeModalElectronWindow(): void {
   if (modalWindow && !modalWindow.isDestroyed()) {
     clearModalAboveEngineViewport(modalWindow)
+    sendRenderToModal(null)
     modalWindow.hide()
   }
   pendingRenderPayload = null

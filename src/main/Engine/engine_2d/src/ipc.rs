@@ -249,7 +249,7 @@ pub enum EngineCommand {
     SetAutosave { enabled: bool },
     /// Pedir al motor la instantánea de la escena activa para persistir en `.save`.
     ExportSaveSnapshot,
-    /// Nombre por defecto de pestaña de escena del editor (`Scene-01`, …).
+    /// Nombre por defecto de escena del editor (`Scene-01`, …).
     GetDefaultSceneName { id: u32 },
     /// Mostrar colliders incluso en modo juego (debug).
     SetDebugMode { show: bool },

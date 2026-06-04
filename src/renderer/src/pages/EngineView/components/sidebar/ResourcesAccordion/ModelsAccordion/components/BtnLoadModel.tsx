@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import { Box } from 'react-bootstrap-icons';
 import ModalSetNameModel from './ModalSetNameModel';
+import { useContextEngine } from '@engine';
 import { useModal } from '@modal';
 import { useTraslate } from '@hooks';
 import type { ModelCategory } from '@shared-types';
@@ -12,6 +13,7 @@ interface BtnLoadModelProps {
 export const BtnLoadModel = ({ category }: BtnLoadModelProps) => {
   const { t } = useTraslate();
   const { openModal } = useModal();
+  const { loadModelAsset } = useContextEngine();
 
   const openLoadModelModal = useCallback(async () => {
     const path = await window.electronAPI.openModelDialog();
@@ -20,9 +22,18 @@ export const BtnLoadModel = ({ category }: BtnLoadModelProps) => {
     const autoName = base.replace(/\.[^/.]+$/, '');
     openModal({
       title: t('Assign name to model'),
-      body: <ModalSetNameModel path={path} autoName={autoName} category={category} />,
+      body: (
+        <ModalSetNameModel
+          path={path}
+          autoName={autoName}
+          category={category}
+          onConfirm={({ path: modelPath, name, category: modelCategory }) => {
+            loadModelAsset(modelPath, name, modelCategory);
+          }}
+        />
+      ),
     });
-  }, [category, openModal, t]);
+  }, [category, loadModelAsset, openModal, t]);
 
   return (
     <button

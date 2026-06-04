@@ -48,7 +48,7 @@ Los modulos bajo `src/config_compat/` son shims minimos **dentro de este crate**
 | Electron → motor | `export_save_snapshot` | Serializa mundo, entidades (scenario/character/collider/execution_area), jugador `[Player]`, camara 2D, almacenes de assets, animaciones y scripts. |
 | Motor → Electron | `save_snapshot_ready` | Payload `scene` listo para el ZIP (main escribe el `.save`). |
 
-Registro: `entity_save_meta` + inferencia desde `ScenarioMarker` / `CharacterMarker`. El renderer solo fusiona pestañas inactivas, blueprints e idioma. Ver `src/renderer/ARCHITECTURE.md`.
+Registro: `entity_save_meta` + inferencia desde `ScenarioMarker` / `CharacterMarker`. El renderer solo fusiona escenas inactivas, blueprints e idioma. Ver `src/renderer/ARCHITECTURE.md`.
 
 ## Eventos de entidades
 

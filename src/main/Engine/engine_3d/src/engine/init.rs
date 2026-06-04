@@ -689,8 +689,8 @@ impl State {
             cache: None,
         });
 
-        let grid_config = GridConfig::default();
         let world_bounds_3d = WorldBounds3D::default();
+        let grid_config = GridConfig::default();
         let world_bounds_buffer = world_bounds_3d.build_buffer(&device);
         let crosshair_buffer = gizmo::build_crosshair(&device);
 
@@ -896,6 +896,8 @@ impl State {
             joint_bind_group_layout: Some(joint_bgl),
             mount_save_on_empty_world: false,
             restoring_save_manifest: false,
+            fp_baseline_defer_frames: 0,
+            editor_scenes: crate::engine::editor_scenes::EditorSceneStore::new(),
         };
         Ok(state)
     }

@@ -1,20 +1,31 @@
 import { useRef } from 'react';
-import { useModalClose } from '@hooks';
-import { useContextEngine } from '@engine';
-import { useTraslate } from '@hooks';
+import { useModalClose, useTraslate } from '@hooks';
 import type { ModelCategory } from '@shared-types';
+
+export interface ModalSetNameModelConfirmPayload {
+  path: string;
+  name: string;
+  category: ModelCategory;
+}
 
 interface ModalSetNameModelProps {
   path: string;
   autoName: string;
   category: ModelCategory;
+  /** Registrado en el padre vía modal Electron (la ventana hijo no tiene EngineProvider). */
+  onConfirm?: (payload: ModalSetNameModelConfirmPayload) => void;
 }
 
-export default function ModalSetNameModel({ path, autoName, category }: ModalSetNameModelProps) {
+function ModalSetNameModel({ path, autoName, category, onConfirm }: ModalSetNameModelProps) {
   const { t } = useTraslate();
-  const { loadModelAsset } = useContextEngine();
   const closeModal = useModalClose();
   const nameRef = useRef<HTMLInputElement>(null);
+
+  const handleLoad = () => {
+    const name = nameRef.current?.value?.trim() || autoName;
+    onConfirm?.({ path, name, category });
+    closeModal();
+  };
 
   return (
     <div>
@@ -30,18 +41,14 @@ export default function ModalSetNameModel({ path, autoName, category }: ModalSet
         <button className="btn btn-secondary btn-sm" type="button" onClick={closeModal}>
           {t('Cancel')}
         </button>
-        <button
-          className="btn btn-primary btn-sm"
-          type="button"
-          onClick={() => {
-            const name = nameRef.current?.value?.trim() || autoName;
-            loadModelAsset(path, name, category);
-            closeModal();
-          }}
-        >
+        <button className="btn btn-primary btn-sm" type="button" onClick={handleLoad}>
           {t('Load')}
         </button>
       </div>
     </div>
   );
 }
+
+ModalSetNameModel.displayName = 'ModalSetNameModel';
+
+export default ModalSetNameModel;

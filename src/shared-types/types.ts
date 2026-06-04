@@ -279,11 +279,6 @@ export interface SavedScript {
   source: string
 }
 
-export interface SavedControlBindings {
-  keyboard_mouse: Record<string, SavedScript>
-  gamepad: Record<string, SavedScript>
-}
-
 /** Valores por defecto de luz direccional 3D (alineados con el motor). */
 export const DEFAULT_LIGHT_AMBIENT = 0.06
 export const DEFAULT_LIGHT_INTENSITY = 1.0
@@ -385,8 +380,6 @@ export interface ProjectSaveData {
   fonts?:          Array<{ name: string; path: string }>
   /** Fondos precargados en el proyecto. */
   backgrounds?:    Array<{ name: string; path: string }>
-  /** Blueprints creados en el proyecto. */
-  blueprints?:     Blueprint3D[]
   /** Idioma/locale del proyecto (en | es). */
   language?:       string
   /** Pantallas UI del jugador (editor). */
@@ -495,6 +488,7 @@ export interface ProjectLoaded3dPayload {
   world:         SavedWorldConfig
   player?: Entity3D | null
   config_camera?: ConfigCamera | null
+  config_editor_camera?: ConfigEditorCamera | null
   playerUiScreens?: Array<{ id: string; name: string; active?: boolean }>
   menuUiScreens?:  Array<{ id: string; name: string }>
 }
@@ -604,11 +598,22 @@ export interface EngineCommand {
     | 'set_debug_mode'
     | 'export_save_snapshot'
     | 'get_default_scene_name'
+    | 'create_editor_scene'
+    | 'switch_editor_scene'
+    | 'delete_editor_scene'
+    | 'notify_project_saved'
+    | 'clear_editor_undo_redo'
   [key: string]: unknown
 }
 
+export interface EditorSceneListItem {
+  id: number
+  name: string
+  dirty?: boolean
+}
+
 export interface EngineEvent {
-  event: 'ready' | 'pong' | 'error' | 'model_loaded' | 'entity_model_replaced' | 'model_clips_ready' | 'stopped' | 'entity_selected' | 'entity_deselected' | 'entity_hovered' | 'entity_unhovered' | 'scenario_loaded' | 'character_loaded' | 'scene_imported' | 'project_loaded_2d' | 'project_loaded_3d' | 'project_load_3d_complete' | 'load_progress' | 'camera_2d_updated' | 'background_loaded' | 'drawing_progress' | 'collider_created' | 'execution_area_created' | 'tool_cancelled' | 'pivot_selected' | 'physics_changed' | 'sprite_loaded' | 'sprite_removed' | 'sprites_list' | 'model_asset_loaded' | 'model_asset_removed' | 'models_list' | 'sound_loaded' | 'sound_removed' | 'sounds_list' | 'font_loaded' | 'font_removed' | 'fonts_list' | 'hud_image_loaded' | 'hud_image_removed' | 'hud_images_list' | 'background_asset_loaded' | 'background_asset_removed' | 'backgrounds_list' | 'play_character_view_changed' | 'first_person_view_changed' | 'save_snapshot_ready' | 'default_scene_name_ready' | 'debug_metrics' | 'preview_playing_changed' | 'trigger_entered' | 'trigger_exited' | 'entity_removed' | 'quick_build_move' | 'quick_build_click' | 'animation_logical_resolved' | 'animation_finished' | 'autosave_tick' | 'atlas_exhausted' | 'player_ui_image_added' | 'player_ui_image_removed' | 'player_ui_object_added' | 'player_ui_object_removed' | 'player_ui_object_draw_ended'
+  event: 'ready' | 'pong' | 'error' | 'model_loaded' | 'entity_model_replaced' | 'model_clips_ready' | 'stopped' | 'entity_selected' | 'entity_deselected' | 'entity_hovered' | 'entity_unhovered' | 'scenario_loaded' | 'character_loaded' | 'scene_imported' | 'project_loaded_2d' | 'project_loaded_3d' | 'project_load_3d_complete' | 'load_progress' | 'camera_2d_updated' | 'background_loaded' | 'drawing_progress' | 'collider_created' | 'execution_area_created' | 'tool_cancelled' | 'pivot_selected' | 'physics_changed' | 'sprite_loaded' | 'sprite_removed' | 'sprites_list' | 'model_asset_loaded' | 'model_asset_removed' | 'models_list' | 'sound_loaded' | 'sound_removed' | 'sounds_list' | 'font_loaded' | 'font_removed' | 'fonts_list' | 'hud_image_loaded' | 'hud_image_removed' | 'hud_images_list' | 'background_asset_loaded' | 'background_asset_removed' | 'backgrounds_list' | 'play_character_view_changed' | 'first_person_view_changed' | 'save_snapshot_ready' | 'default_scene_name_ready' | 'editor_scene_created' | 'editor_scene_switched' | 'editor_scene_switch_blocked' | 'editor_scenes_updated' | 'debug_metrics' | 'preview_playing_changed' | 'trigger_entered' | 'trigger_exited' | 'entity_removed' | 'quick_build_move' | 'quick_build_click' | 'animation_logical_resolved' | 'animation_finished' | 'autosave_tick' | 'atlas_exhausted' | 'player_ui_image_added' | 'player_ui_image_removed' | 'player_ui_object_added' | 'player_ui_object_removed' | 'player_ui_object_draw_ended'
   [key: string]: unknown
 }
 
@@ -984,6 +989,7 @@ declare global {
       openProjectDialog:       () => Promise<OpenProjectResult | null>
       saveProject:             (data: ProjectSaveData) => Promise<string | null>
       saveProjectSilent:       (filePath: string, data: ProjectSaveData) => Promise<boolean>
+      getProjectExtractDir:    () => Promise<string | null>
       openSpriteDialog:        () => Promise<string | null>
       openScenarioDialog:      () => Promise<string | null>
       openCharacterDialog:     () => Promise<string | null>
@@ -1005,7 +1011,7 @@ declare global {
       onModalElectronDelegateRequest: (
         cb: (request: ModalElectronDelegateRequest) => Promise<{ blueprints?: Blueprint3D[] } | null>,
       ) => () => void
-      onModalElectronRender:   (cb: (payload: ModalElectronOpenRequest) => void) => () => void
+      onModalElectronRender:   (cb: (payload: ModalElectronOpenRequest | null) => void) => () => void
       onModalElectronResult:   (cb: (handlerId: string, result: unknown, callbackKey?: string) => void) => () => void
       onModalElectronParentOpenRequest: (
         cb: (req: { parentHandlerId: string; action: string; payload?: Record<string, unknown> }) => void,

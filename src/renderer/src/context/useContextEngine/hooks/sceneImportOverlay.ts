@@ -1,7 +1,7 @@
 import type { Dispatch, MutableRefObject } from 'react';
 
 import type { GameStyle, SavedScene } from '@shared-types';
-import { isPlayerPath } from '@shared-types';
+import { entityPathMarker, isPlayerPath } from '@shared-types';
 
 import type { EngineAction, EngineInternalRefs, PendingBurstSpawnEntry, PendingRestore } from '../types';
 
@@ -24,7 +24,10 @@ export function beginEngineBootLoading(dispatch: Dispatch<EngineAction>) {
 }
 
 export function trackEngineBootIpcSeen(
-	refs: Pick<EngineInternalRefs, 'engineBootIpcSeenRef' | 'engineBootFinishedRef'>,
+	refs: Pick<
+		EngineInternalRefs,
+		'engineBootIpcSeenRef' | 'engineBootFinishedRef' | 'engineBootAwaitRef'
+	>,
 	projectType: string | undefined,
 	hasInitialSave: boolean,
 ) {
@@ -291,6 +294,43 @@ export function collectUncachedBurstModelPaths(
 	return extra;
 }
 
+/** Modelos en `scene.models` con spawns en cola (ya precargados en GPU). */
+export function countCachedBurstModelPreloads(
+	sceneModels: Array<{ path: string }> | undefined,
+	queuedPaths: string[],
+): number {
+	const seen = new Set<string>();
+	let count = 0;
+	for (const queuedPath of queuedPaths) {
+		const leaf = modelPathBasename(queuedPath);
+		if (seen.has(leaf)) continue;
+		if (!(sceneModels ?? []).some((m) => pathsMatchForBurstRestore(m.path, queuedPath))) {
+			continue;
+		}
+		seen.add(leaf);
+		count += 1;
+	}
+	return count;
+}
+
+/** Dispara `spawn_cached_model` sin esperar otro `model_asset_loaded` (modelo ya en GPU). */
+export function kickCachedBurstModelSpawns(
+	sceneModels: Array<{ path: string }> | undefined,
+	queue: Array<{ modelPath: string; pending: PendingRestore }>,
+	sendEngine: (cmd: ReturnType<typeof buildSpawnCachedModelCommand>) => void,
+	refs: Pick<EngineInternalRefs, 'sceneBurstPendingOpsRef' | 'pendingBurstSpawnRestoreRef'>,
+) {
+	const kicked = new Set<string>();
+	for (const model of sceneModels ?? []) {
+		if (!hasQueuedCachedModelSpawns(queue, model.path)) continue;
+		const leaf = modelPathBasename(model.path);
+		if (kicked.has(leaf)) continue;
+		kicked.add(leaf);
+		completeSceneBurstOp(refs);
+		flushPendingCachedModelSpawnsForPath(model.path, queue, sendEngine, refs, true);
+	}
+}
+
 export function takePendingRestoreByPath(
 	restores: Map<string, PendingRestore[]>,
 	loadedPath: string,
@@ -454,19 +494,20 @@ export function endModelReplaceLoading(
 	);
 }
 
-/** Carga 3D por ráfaga IPC (cambio de pestaña o `ready` inicial), no `import_scene` 2D. */
+/** Carga 3D por ráfaga IPC (cambio de escena activa o `ready` inicial), no `import_scene` 2D. */
 export function needsSceneBurstLoad(
 	projectType: string | undefined,
 	gameStyle: GameStyle | undefined,
-	scene: Pick<SavedScene, 'entities' | 'playerTransform'>,
+	scene: Pick<SavedScene, 'entities' | 'player'>,
 ): boolean {
 	if (projectType !== '3D') return false;
 	if ((scene.entities?.length ?? 0) > 0) return true;
-	const savedPlayer = scene.playerTransform;
-	const playerInEntities = (scene.entities ?? []).some(
-		(e) => e.kind === 'character' && isPlayerPath(e.path),
-	);
-	return gameStyle === 'first-person' && !!savedPlayer && !playerInEntities;
+	const hasPlayer = Boolean(scene.player);
+	const playerInEntities = (scene.entities ?? []).some((e) => {
+		const spawnPath = entityPathMarker(e.model) ?? e.model;
+		return e.category === 'player' || isPlayerPath(spawnPath);
+	});
+	return gameStyle === 'first-person' && hasPlayer && !playerInEntities;
 }
 
 export function beginSceneBurstLoad(
@@ -539,4 +580,49 @@ export function trackSceneBurstCollider(
 	refs: Pick<EngineInternalRefs, 'sceneBurstPendingColliderCountRef'>,
 ) {
 	refs.sceneBurstPendingColliderCountRef.current += 1;
+}
+
+export type SceneWorldCleanupState = {
+	active: boolean;
+	summaryLogged: boolean;
+};
+
+const SCENE_WORLD_CLEANUP_END_MS = 400;
+let fpSceneBaselineEndTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Agrupa `entity_removed` al cambiar de escena activa en una sola línea `[Limpieza]`. */
+export function beginSceneWorldCleanup(
+	cleanupRef: MutableRefObject<SceneWorldCleanupState>,
+) {
+	cleanupRef.current = { active: true, summaryLogged: false };
+}
+
+export function scheduleEndSceneWorldCleanup(
+	cleanupRef: MutableRefObject<SceneWorldCleanupState>,
+) {
+	setTimeout(() => {
+		cleanupRef.current = { active: false, summaryLogged: false };
+	}, SCENE_WORLD_CLEANUP_END_MS);
+}
+
+/** Escena FP vacía: suelo/sol/jugador insertados por el motor tras limpiar. */
+export function beginFpSceneBaselineLogging(
+	baselineRef: MutableRefObject<boolean>,
+) {
+	if (fpSceneBaselineEndTimer) clearTimeout(fpSceneBaselineEndTimer);
+	baselineRef.current = true;
+	fpSceneBaselineEndTimer = setTimeout(() => {
+		baselineRef.current = false;
+		fpSceneBaselineEndTimer = null;
+	}, 8000);
+}
+
+export function endFpSceneBaselineLogging(
+	baselineRef: MutableRefObject<boolean>,
+) {
+	if (fpSceneBaselineEndTimer) {
+		clearTimeout(fpSceneBaselineEndTimer);
+		fpSceneBaselineEndTimer = null;
+	}
+	baselineRef.current = false;
 }

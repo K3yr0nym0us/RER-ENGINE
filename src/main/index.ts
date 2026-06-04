@@ -33,6 +33,7 @@ import {
   sendPatchToModal,
   restackModalElectronIfOpen,
 } from './modalElectronWindow';
+import { resolveAppWindowIcon } from './appWindowIcon';
 import type {
   ModalElectronDelegateRequest,
   ModalElectronOpenRequest,
@@ -137,8 +138,7 @@ function sendEventToRenderer(event: EngineEvent): void {
 function createMainWindow(): void {
   Menu.setApplicationMenu(null)
 
-  const iconPath = path.join(app.getAppPath(), 'src/resources/RER-ENGINE-LOGO.png')
-  const windowIcon = fs.existsSync(iconPath) ? iconPath : undefined
+  const windowIcon = resolveAppWindowIcon()
 
   mainWindow = new BrowserWindow({
     width:  1280,
@@ -1540,6 +1540,7 @@ ipcMain.handle('save-project', async (_event, data: ProjectSaveData): Promise<st
   if (!ok) return null
 
   currentProjectFilePath = savePath
+  syncExtractDirFromSavePath(savePath)
   return savePath
 })
 
@@ -1550,9 +1551,23 @@ ipcMain.handle('save-project-silent', async (_event, filePath: string, data: Pro
     : path.join(app.getPath('userData'), ensureSaveExtension(filePath))
 
   const ok = saveProjectToFile(targetPath, data)
-  if (ok) currentProjectFilePath = targetPath
+  if (ok) {
+    currentProjectFilePath = targetPath
+    syncExtractDirFromSavePath(targetPath)
+  }
   return ok
 })
+
+ipcMain.handle('get-project-extract-dir', (): string | null => {
+  return currentProjectExtractDir
+})
+
+function syncExtractDirFromSavePath(savePath: string): void {
+  const extractDir = extractSaveArchive(savePath)
+  if (extractDir) {
+    currentProjectExtractDir = extractDir
+  }
+}
 
 function isEngineStartPayload(v: unknown): v is EngineStartPayload {
   if (typeof v !== 'object' || v === null) return false

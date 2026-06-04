@@ -7,7 +7,7 @@ import type {
 	SavedScene,
 	SavedScript,
 } from '@shared-types';
-import { DEFAULT_GRAVITY_MAGNITUDE, entityPathMarker } from '@shared-types';
+import { DEFAULT_GRAVITY_MAGNITUDE, entityPathMarker, isPlayerPath } from '@shared-types';
 import { entity3dToMeta } from '../../../utils/entity3dEditorSync';
 
 import type { EngineAction, EngineInternalRefs, EntityMeta, Transform } from '../types';
@@ -156,7 +156,7 @@ export function buildImportSceneCommand(scene: SavedScene, blueprints?: BluePrin
 
 /** Meta del jugador desde `player` del manifest (no está en `entities`). */
 export function syncPlayerEntityMetaFromPlayer(
-	refs: EngineInternalRefs,
+	refs: Pick<EngineInternalRefs, 'entityMetaRef'>,
 	playerId: number,
 	player: Entity3D,
 ) {
@@ -195,7 +195,16 @@ export function syncPlayerEntityMetaFromTransform(
 
 export function syncEditorStateFromSavedScene(
 	scene: SavedScene,
-	refs: EngineInternalRefs,
+	refs: Pick<
+		EngineInternalRefs,
+		| 'entityMetaRef'
+		| 'entityTransformsRef'
+		| 'camera2dRef'
+		| 'mainPlayerHandled'
+		| 'playerRemoved'
+		| 'playerEntityIdRef'
+		| 'editorCameraEntityIdRef'
+	>,
 	dispatch: (action: EngineAction) => void,
 	blueprints?: BluePrintEntry[],
 ) {

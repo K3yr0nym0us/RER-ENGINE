@@ -345,12 +345,13 @@ impl State {
         };
 
         send_load_progress("Insertando Character (Player)", None, None);
-        self.spawn_play_character();
-        self.sync_fps_camera_mode();
-        self.ensure_default_sun();
+        self.apply_fp_placeholder_sun_and_player();
 
         send_load_progress("Plantilla first-person lista", None, None);
         log::info!("Plantilla first-person lista");
+        let scene_name =
+            rer_engine_shared::editor_defaults::default_scene_name(1);
+        self.editor_scenes_init_from_boot(&scene_name);
         send_event(&EngineEvent::Ready {
             gravity: self.physics.gravity_magnitude(),
         });
@@ -381,6 +382,106 @@ impl State {
             b: 0.10,
             a: 1.0,
         };
+    }
+
+    /// Suelo checker + sol + jugador de la plantilla FP (sin muros ni cubos placeholder).
+    pub(crate) fn apply_fp_placeholder_sun_and_player(&mut self) {
+        self.ensure_ground_plane();
+        self.ensure_default_sun();
+        if self.play_character_entity.is_none() {
+            self.spawn_play_character();
+        }
+        self.sync_fps_camera_mode();
+    }
+
+    /// Tras cargar escena FP placeholder (switch sin guardar): alinear sol, luz y cámara orbital del editor.
+    pub(crate) fn finalize_first_person_placeholder_editor_scene(&mut self) {
+        use crate::config_3d::character_anchor::{
+            PLAY_CHARACTER_EDITOR_ORBIT_PITCH, PLAY_CHARACTER_EDITOR_ORBIT_YAW,
+        };
+        use crate::config_3d::directional_light::{
+            DEFAULT_LIGHT_AMBIENT, DEFAULT_LIGHT_COLOR, DEFAULT_LIGHT_INTENSITY,
+            DEFAULT_SHADOW_DARKNESS,
+        };
+
+        self.directional_light_color = DEFAULT_LIGHT_COLOR;
+        self.apply_directional_light_settings(
+            Some(DEFAULT_LIGHT_AMBIENT),
+            Some(DEFAULT_LIGHT_INTENSITY),
+            Some(DEFAULT_SHADOW_DARKNESS),
+        );
+        self.align_editor_sun_to_default_position();
+        self.sync_fps_camera_mode();
+        if !self.has_play_character() {
+            return;
+        }
+        let feet = self.play_character_feet_position().to_array();
+        let body_rotation = self.play_character_entity.and_then(|id| {
+            self.world.get::<Transform>(id).map(|t| {
+                [t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w]
+            })
+        });
+        let body_scale = self.play_character_entity.and_then(|id| {
+            self.world.get::<Transform>(id).map(|t| t.scale.to_array())
+        });
+        self.apply_play_character_view(
+            feet,
+            PLAY_CHARACTER_EDITOR_ORBIT_YAW,
+            PLAY_CHARACTER_EDITOR_ORBIT_PITCH,
+            None,
+            None,
+            Some(crate::ipc::PlayCameraFollowMode::MoveWithCharacter),
+            body_rotation,
+            body_scale,
+            None,
+            None,
+            None,
+        );
+    }
+
+    pub(crate) fn cancel_fp_baseline_defer(&mut self) {
+        self.fp_baseline_defer_frames = 0;
+    }
+
+    pub(crate) fn tick_fp_baseline_defer(&mut self) {
+        if self.fp_baseline_defer_frames == 0 {
+            return;
+        }
+        self.fp_baseline_defer_frames -= 1;
+        if self.fp_baseline_defer_frames == 0 {
+            self.try_apply_fp_placeholder_sun_and_player();
+        }
+    }
+
+    fn prune_stale_fp_entity_refs(&mut self) {
+        if let Some(id) = self.play_character_entity {
+            if self.world.get::<crate::ecs::Transform>(id).is_none() {
+                self.play_character_entity = None;
+            }
+        }
+        if let Some(id) = self.sun_entity {
+            if self.world.get::<crate::ecs::Transform>(id).is_none() {
+                self.sun_entity = None;
+            }
+        }
+        if let Some(id) = self.editor_camera_entity {
+            if self.world.get::<crate::ecs::Transform>(id).is_none() {
+                self.editor_camera_entity = None;
+            }
+        }
+    }
+
+    fn try_apply_fp_placeholder_sun_and_player(&mut self) {
+        self.prune_stale_fp_entity_refs();
+        if self.play_character_entity.is_some() || self.sun_entity.is_some() {
+            return;
+        }
+        if !self.scenario_entities.is_empty() || !self.character_entities.is_empty() {
+            return;
+        }
+        log::info!("Escena FP vacía: insertando suelo, sol y jugador placeholder");
+        self.apply_fp_placeholder_sun_and_player();
+        self.cancel_fp_baseline_defer();
     }
 
     /// Arranque 3D al abrir `.save`: el ECS ya viene vacío de `State::new`; sin plantilla FP ni suelo.

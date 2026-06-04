@@ -39,6 +39,7 @@ impl State {
         }
         self.undo_stack
             .push(UndoAction::RestoreTransform { id, position, rotation, scale });
+        self.sync_editor_scenes_undo_dirty_to_renderer();
     }
 
     pub fn push_undo_transforms(&mut self, items: Vec<(u32, [f32; 3], [f32; 4], [f32; 3])>) {
@@ -49,6 +50,15 @@ impl State {
             self.redo_stack.clear();
         }
         self.undo_stack.push(UndoAction::RestoreTransforms { items });
+        self.sync_editor_scenes_undo_dirty_to_renderer();
+    }
+
+    /// Vacía historial undo/redo tras carga de escena o guardado (estado limpio del editor).
+    pub fn clear_editor_undo_redo(&mut self) {
+        self.undo_stack.clear();
+        self.redo_stack.clear();
+        self.is_applying_undo = false;
+        self.sync_editor_scenes_undo_dirty_to_renderer();
     }
 
     pub fn apply_undo(&mut self) {
@@ -132,6 +142,7 @@ impl State {
             }
         }
         self.is_applying_undo = false;
+        self.sync_editor_scenes_undo_dirty_to_renderer();
     }
 
     pub fn apply_redo(&mut self) {
@@ -219,6 +230,7 @@ impl State {
             }
         }
         self.is_applying_undo = false;
+        self.sync_editor_scenes_undo_dirty_to_renderer();
     }
 
     pub fn handle_command(&mut self, cmd: EngineCommand) {
@@ -1225,6 +1237,21 @@ impl State {
             EngineCommand::GetDefaultSceneName { id } => {
                 let name = rer_engine_shared::editor_defaults::default_scene_name(id);
                 send_event(&EngineEvent::DefaultSceneNameReady { id, name });
+            }
+            EngineCommand::CreateEditorScene { name } => {
+                self.handle_create_editor_scene(&name);
+            }
+            EngineCommand::SwitchEditorScene { scene_id } => {
+                self.handle_switch_editor_scene(scene_id);
+            }
+            EngineCommand::DeleteEditorScene { scene_id } => {
+                self.handle_delete_editor_scene(scene_id);
+            }
+            EngineCommand::NotifyProjectSaved { extract_dir } => {
+                self.handle_notify_project_saved(&extract_dir);
+            }
+            EngineCommand::ClearEditorUndoRedo => {
+                self.clear_editor_undo_redo();
             }
             EngineCommand::ApplyEntityRestore {
                 id,

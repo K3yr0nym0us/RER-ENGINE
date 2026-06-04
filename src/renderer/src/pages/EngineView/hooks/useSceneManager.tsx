@@ -1,28 +1,38 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
-import type { GameStyle, SavedScene, SavedWorldConfig } from '@shared-types';
+import type { EditorSceneListItem, EngineEvent, GameStyle, SavedScene, SavedWorldConfig } from '@shared-types';
 import {
   DEFAULT_GRAVITY_MAGNITUDE,
   DEFAULT_LIGHT_AMBIENT,
   DEFAULT_LIGHT_INTENSITY,
   DEFAULT_SHADOW_DARKNESS,
 } from '@shared-types';
-import { isEditorBoxPath, isGroundPath, isPlayerPath, isSunPath } from '@shared-types';
-import { isModel3DPath, is3dModelFileEntity } from '../../../utils/blueprintModelPath';
-import { playViewFromPlayerAndCamera } from '../../../utils/entity3dEditorSync';
+import { isEditorBoxPath, isEditorCameraPath, isGroundPath, isPlayerPath, isSunPath } from '@shared-types';
+import { is3dModelFileEntity } from '../../../utils/blueprintModelPath';
+import {
+  entity3dPendingRestore,
+  entity3dSpawnPath,
+  entity3dTransform,
+  playViewFromPlayerAndCamera,
+} from '../../../utils/entity3dEditorSync';
 import { buildActiveSceneSnapshotFromEngine } from '../../../defaults/buildProjectSaveFromEngine';
 import { defaultSceneName } from '../../../defaults/defaultSceneName';
 import { ensurePlayCharacterOnLoad } from '../../../defaults/playCharacterSceneRestore';
-import { buildImportSceneCommand, resolveEntityTransform, resolveSavedEntityTransform, syncEditorStateFromSavedScene } from '../../../context/useContextEngine/hooks/buildImportSceneCommand';
+import { buildImportSceneCommand, syncEditorStateFromSavedScene } from '../../../context/useContextEngine/hooks/buildImportSceneCommand';
 import {
   beginSceneBurstLoad,
   beginSceneImportLoading,
+  beginFpSceneBaselineLogging,
+  beginSceneWorldCleanup,
   endSceneImportLoading,
   needsSceneBurstLoad,
+  scheduleEndSceneWorldCleanup,
   trackSceneBurstCollider,
   trackSceneBurstOp,
   trackSceneBurstModelPreloads,
   collectUncachedBurstModelPaths,
+  countCachedBurstModelPreloads,
+  kickCachedBurstModelSpawns,
   tryEndSceneBurstLoad,
 } from '../../../context/useContextEngine/hooks/sceneImportOverlay';
 import { useContextEngine } from '@engine';
@@ -34,17 +44,24 @@ import {
 	DeleteBlockedBody,
 	DeleteConfirmBody,
 	SceneRenameModalBody,
+	SwitchSceneConfirmBody,
+	UnsavedSceneBlockedBody,
 } from './sceneManagerModalBodies';
 
 export interface SceneTab {
   id: number;
   name: string;
+  /** Escena activa con pila undo no vacía (solo 3D FP, motor). */
+  dirty?: boolean;
 }
 
 interface SceneManagerContextValue {
   scenes: SceneTab[];
   activeSceneId: number;
-  loadScene: (sceneId: number) => Promise<void>;
+  scenesListLoading: boolean;
+  switchingToSceneId: number | null;
+  sceneActionsDisabled: boolean;
+  openSwitchSceneModal: (scene: SceneTab) => void;
   openCreateSceneModal: () => void;
   openRenameSceneModal: (scene: SceneTab) => void;
   openDeleteSceneModal: (scene: SceneTab) => void;
@@ -65,37 +82,41 @@ const DEFAULT_WORLD: SavedWorldConfig = {
 
 const SceneManagerContext = createContext<SceneManagerContextValue | null>(null);
 
-/** Estado inicial vacío; pestañas y escena activa llegan por `project_loaded_*` del motor. */
+/** Estado inicial vacío; lista de escenas y escena activa llegan por `project_loaded_*` del motor. */
 function buildInitialSceneState() {
-  const scene: SavedScene = {
-    id: 1,
-    name: defaultSceneName(1),
-    world: { ...DEFAULT_WORLD },
-    backgroundPath: null,
-    entities: [],
-    player: null,
-    config_camera: null,
-    config_editor_camera: null,
-    camera2d: null,
-    sprites: [],
-  };
   return {
-    tabs: [{ id: 1, name: defaultSceneName(1) }],
-    dataById: { 1: scene },
+    tabs: [] as SceneTab[],
+    dataById: {} as Record<number, SavedScene>,
     activeSceneId: 1,
   };
+}
+
+function motorManagesScenes(projectType?: string, gameStyle?: GameStyle): boolean {
+  return projectType === '3D' && gameStyle === 'first-person';
+}
+
+function tabsFromMotorItems(items: EditorSceneListItem[]): SceneTab[] {
+  return items.map((s) => ({
+    id: s.id,
+    name: s.name,
+    dirty: s.dirty === true,
+  }));
 }
 
 export function SceneManagerProvider({
   children,
   initialSavePath,
+  initialExtractDir,
   projectType,
   gameStyle,
+  onSaveProject,
 }: {
   children: ReactNode;
   initialSavePath?: string | null;
+  initialExtractDir?: string | null;
   projectType?: string;
   gameStyle?: GameStyle;
+  onSaveProject?: () => void | Promise<void>;
 }) {
   const { t } = useTraslate();
   const {
@@ -125,8 +146,11 @@ export function SceneManagerProvider({
     sceneBurstLoadInProgressRef,
     sceneBurstPendingColliderCountRef,
     sceneBurstPendingOpsRef,
+    sceneWorldCleanupRef,
+    fpSceneBaselineLogRef,
     reportBounds,
     dispatch,
+    sceneImportLoading,
     send,
     removeScenario,
     removeCharacter,
@@ -148,14 +172,143 @@ export function SceneManagerProvider({
   } = useContextEngine();
 
   const { openModal } = useModal();
+  const useMotorScenes = motorManagesScenes(projectType, gameStyle);
+  const openModalRef = useRef(openModal);
+  const onSaveProjectRef = useRef(onSaveProject);
+  const tRef = useRef(t);
+  openModalRef.current = openModal;
+  onSaveProjectRef.current = onSaveProject;
+  tRef.current = t;
 
   const initialSceneState = useMemo(() => buildInitialSceneState(), []);
 
   const [scenes, setScenes] = useState<SceneTab[]>(initialSceneState.tabs);
   const [sceneDataById, setSceneDataById] = useState<Record<number, SavedScene>>(initialSceneState.dataById);
   const [activeSceneId, setActiveSceneId] = useState(initialSceneState.activeSceneId);
+  const [switchingToSceneId, setSwitchingToSceneId] = useState<number | null>(null);
+  const scenesListLoading = sceneImportLoading && switchingToSceneId === null;
+  const sceneActionsDisabled = switchingToSceneId !== null || scenesListLoading;
+  const pendingScenesTabsRef = useRef<SceneTab[] | null>(null);
+  const scenesListLoadingRef = useRef(scenesListLoading);
+  scenesListLoadingRef.current = scenesListLoading;
   const lastProjectLoaded2dSeq = useRef(0);
   const lastProjectLoaded3dSeq = useRef(0);
+
+  const applySceneTabs = (tabs: SceneTab[]) => {
+    if (scenesListLoadingRef.current) {
+      pendingScenesTabsRef.current = tabs;
+      return;
+    }
+    setScenes(tabs);
+  };
+
+  useEffect(() => {
+    if (!scenesListLoading) return;
+    setScenes([]);
+  }, [scenesListLoading]);
+
+  useEffect(() => {
+    if (sceneImportLoading) return;
+
+    const pending = pendingScenesTabsRef.current;
+    if (pending != null && pending.length > 0) {
+      setScenes(pending);
+      pendingScenesTabsRef.current = null;
+      return;
+    }
+
+    if (projectType === '2D') {
+      const meta = projectLoaded2dMetaRef.current;
+      if (!meta) return;
+      const tabs = meta.scenes?.length
+        ? meta.scenes
+        : [{ id: meta.activeSceneId, name: meta.sceneName }];
+      setScenes(tabs.map((tab) => ({ id: tab.id, name: tab.name })));
+      return;
+    }
+
+    if (projectType === '3D') {
+      const meta = projectLoaded3dMetaRef.current;
+      if (!meta) return;
+      const tabs = meta.scenes?.length
+        ? meta.scenes
+        : [{ id: meta.activeSceneId, name: meta.sceneName }];
+      setScenes(tabs.map((tab) => ({ id: tab.id, name: tab.name })));
+    }
+  }, [
+    sceneImportLoading,
+    projectType,
+    projectLoaded2dMetaRef,
+    projectLoaded3dMetaRef,
+    projectLoaded2dSeq,
+    projectLoaded3dSeq,
+  ]);
+
+  useEffect(() => {
+    if (!sceneImportLoading && switchingToSceneId != null) {
+      setSwitchingToSceneId(null);
+    }
+  }, [sceneImportLoading, switchingToSceneId]);
+
+  useEffect(() => {
+    if (!useMotorScenes) return;
+
+    const onEngineEvent = (event: EngineEvent) => {
+      if (
+        event.event === 'editor_scene_created'
+        || event.event === 'editor_scene_switched'
+        || event.event === 'editor_scenes_updated'
+      ) {
+        const items = (event.scenes as EditorSceneListItem[] | undefined) ?? [];
+        const activeId = event.active_scene_id as number | undefined;
+        if (items.length > 0) {
+          const tabs = tabsFromMotorItems(items);
+          if (scenesListLoadingRef.current) {
+            pendingScenesTabsRef.current = tabs;
+          } else {
+            setScenes(tabs);
+          }
+        }
+        if (activeId != null && !Number.isNaN(activeId)) {
+          setActiveSceneId(activeId);
+        }
+        if (event.event === 'editor_scene_switched') {
+          setSwitchingToSceneId(null);
+        }
+      }
+      if (event.event === 'editor_scene_switch_blocked') {
+        setSwitchingToSceneId(null);
+        if (sceneImportInProgressRef.current) {
+          endSceneImportLoading(
+            dispatch,
+            sceneImportInProgressRef,
+            pendingImportSceneRef,
+            sceneBurstLoadInProgressRef,
+            modelReplaceInProgressRef,
+            reportBounds,
+          );
+        }
+        const reason = event.reason as string | undefined;
+        if (reason !== 'unsaved_changes') return;
+        openModalRef.current({
+          title: tRef.current('Unsaved scene'),
+          size: 'sm',
+          body: (
+            <UnsavedSceneBlockedBody
+              onSave={() => {
+                void onSaveProjectRef.current?.();
+              }}
+            />
+          ),
+        });
+      }
+    };
+
+    window.engine.on(onEngineEvent);
+    return () => {
+      window.engine.off(onEngineEvent);
+    };
+  }, [useMotorScenes]);
 
   useEffect(() => {
     if (projectType !== '2D' || projectLoaded2dSeq === 0) return;
@@ -168,7 +321,7 @@ export function SceneManagerProvider({
     const tabs = meta.scenes?.length
       ? meta.scenes
       : [{ id: meta.activeSceneId, name: meta.sceneName }];
-    setScenes(tabs.map((tab) => ({ id: tab.id, name: tab.name })));
+    applySceneTabs(tabs.map((tab) => ({ id: tab.id, name: tab.name })));
     setActiveSceneId(meta.activeSceneId);
 
     const dataById: Record<number, SavedScene> = {};
@@ -188,12 +341,16 @@ export function SceneManagerProvider({
       };
     }
     setSceneDataById(dataById);
-  }, [projectType, projectLoaded2dSeq, projectLoaded2dMetaRef]);
+  }, [projectType, projectLoaded2dSeq, projectLoaded2dMetaRef, scenesListLoading]);
 
   useEffect(() => {
     if (projectType !== '3D' || projectLoaded3dSeq === 0) return;
     if (projectLoaded3dSeq === lastProjectLoaded3dSeq.current) return;
+    const isInitialProjectOpen = lastProjectLoaded3dSeq.current === 0;
     lastProjectLoaded3dSeq.current = projectLoaded3dSeq;
+
+    // 3D FP: el motor manda la lista con editor_scene_*; solo hidratar React en la primera apertura.
+    if (useMotorScenes && !isInitialProjectOpen) return;
 
     const meta = projectLoaded3dMetaRef.current;
     if (!meta) return;
@@ -201,7 +358,7 @@ export function SceneManagerProvider({
     const tabs = meta.scenes?.length
       ? meta.scenes
       : [{ id: meta.activeSceneId, name: meta.sceneName }];
-    setScenes(tabs.map((tab) => ({ id: tab.id, name: tab.name })));
+    applySceneTabs(tabs.map((tab) => ({ id: tab.id, name: tab.name })));
     setActiveSceneId(meta.activeSceneId);
 
     const dataById: Record<number, SavedScene> = {};
@@ -222,14 +379,16 @@ export function SceneManagerProvider({
       };
     }
     setSceneDataById(dataById);
-  }, [projectType, projectLoaded3dSeq, projectLoaded3dMetaRef]);
+  }, [projectType, projectLoaded3dSeq, projectLoaded3dMetaRef, useMotorScenes, scenesListLoading]);
 
   const captureActiveSceneSnapshot = async (id: number, name: string): Promise<SavedScene> =>
     buildActiveSceneSnapshotFromEngine(id, name, entityMetaRef.current);
 
   const clearEngineBeforeSceneLoad = () => {
     if (projectType === '2D') return;
+    beginSceneWorldCleanup(sceneWorldCleanupRef);
     clearCurrentSceneInEngine();
+    scheduleEndSceneWorldCleanup(sceneWorldCleanupRef);
   };
 
   const clearCurrentSceneInEngine = () => {
@@ -286,6 +445,11 @@ export function SceneManagerProvider({
       playCharacterViewRef.current = null;
     }
 
+    const burstLoad =
+      projectType !== '2D' && needsSceneBurstLoad(projectType, gameStyle, scene);
+    const deferDirectionalLight =
+      burstLoad && (scene.entities?.length ?? 0) > 0;
+
     if (projectType === '2D') {
       dispatch({
         type: 'SET_WORLD_CONFIG',
@@ -304,11 +468,13 @@ export function SceneManagerProvider({
       setGridVisible(scene.world.gridVisible);
       setGridCellSize(scene.world.gridCellSize);
       setTargetFps(Number.isFinite(scene.world?.targetFps) ? scene.world.targetFps : DEFAULT_WORLD.targetFps);
-      setDirectionalLight({
-        ambient: scene.world.lightAmbient ?? DEFAULT_LIGHT_AMBIENT,
-        intensity: scene.world.lightIntensity ?? DEFAULT_LIGHT_INTENSITY,
-        shadowDarkness: scene.world.shadowDarkness ?? DEFAULT_SHADOW_DARKNESS,
-      });
+      if (!deferDirectionalLight) {
+        setDirectionalLight({
+          ambient: scene.world.lightAmbient ?? DEFAULT_LIGHT_AMBIENT,
+          intensity: scene.world.lightIntensity ?? DEFAULT_LIGHT_INTENSITY,
+          shadowDarkness: scene.world.shadowDarkness ?? DEFAULT_SHADOW_DARKNESS,
+        });
+      }
 
       if (scene.camera2d) {
         send({ cmd: 'set_camera2d', x: scene.camera2d.x, y: scene.camera2d.y, half_h: scene.camera2d.halfH });
@@ -340,14 +506,20 @@ export function SceneManagerProvider({
     pendingRestoresRef.current.clear();
     pendingModelLoadQueueRef.current = [];
 
-    const burstLoad = needsSceneBurstLoad(projectType, gameStyle, scene);
+    if (
+      projectType === '3D'
+      && gameStyle === 'first-person'
+      && (scene.entities?.length ?? 0) === 0
+    ) {
+      beginFpSceneBaselineLogging(fpSceneBaselineLogRef);
+    }
+
     if (burstLoad) {
       sceneBurstPendingColliderCountRef.current = 0;
       beginSceneBurstLoad(dispatch, sceneBurstLoadInProgressRef, {
         sceneBurstPendingOpsRef,
         pendingBurstSpawnRestoreRef,
       });
-      trackSceneBurstModelPreloads({ sceneBurstPendingOpsRef }, scene.models?.length ?? 0);
     }
 
     if (scene.models?.length) {
@@ -355,38 +527,19 @@ export function SceneManagerProvider({
     }
 
     for (const entity of scene.entities) {
-      const transform = is3dModelFileEntity(projectType, entity)
-        ? resolveSavedEntityTransform(entity)
-        : resolveEntityTransform(entity, blueprints);
+      const spawnPath = entity3dSpawnPath(entity);
+      const transform = entity3dTransform(entity);
+      const pendingRestore = entity3dPendingRestore(entity, blueprints);
 
-      if (entity.kind === 'collider' && entity.points) {
-        if (projectType === '2D') {
-          if (burstLoad) {
-            trackSceneBurstCollider({ sceneBurstPendingColliderCountRef });
-          }
-          send({ cmd: 'create_collider_from_points', points: entity.points, track_undo: false });
-        }
+      if (entity.category === 'player' || isPlayerPath(spawnPath)) {
         continue;
       }
 
-      if (entity.kind === 'execution_area' && entity.points) {
-        if (projectType === '2D') {
-          const eaQueue = pendingRestoresRef.current.get('[ExecutionArea]') ?? [];
-          pendingRestoresRef.current.set('[ExecutionArea]', eaQueue);
-          eaQueue.push({
-            transform,
-            name: entity.name,
-            physicsEnabled: entity.physics_enabled ?? false,
-            physicsType: entity.physics_type ?? 'static',
-            scripts: entity.scripts,
-            controlBindings: entity.control_bindings,
-          });
-          send({ cmd: 'create_execution_area_from_points', points: entity.points, track_undo: false });
-        }
+      if (isEditorCameraPath(spawnPath)) {
         continue;
       }
 
-      if (entity.kind === 'directional_light' || isSunPath(entity.path)) {
+      if (entity.category === 'sun' || isSunPath(spawnPath)) {
         const sunQueue = pendingRestoresRef.current.get('[Sun]') ?? [];
         pendingRestoresRef.current.set('[Sun]', sunQueue);
         sunQueue.push({
@@ -395,8 +548,9 @@ export function SceneManagerProvider({
           physicsEnabled: false,
           physicsType: 'static',
           scripts: entity.scripts,
-          controlBindings: entity.control_bindings,
+          controlBindings: entity.controls,
         });
+        if (burstLoad) trackSceneBurstOp({ sceneBurstPendingOpsRef });
         send({
           cmd: 'spawn_sun',
           name: entity.name ?? '',
@@ -406,7 +560,7 @@ export function SceneManagerProvider({
         continue;
       }
 
-      if (entity.kind === 'model' && isGroundPath(entity.path)) {
+      if (isGroundPath(spawnPath)) {
         const groundQueue = pendingRestoresRef.current.get('[Ground]') ?? [];
         pendingRestoresRef.current.set('[Ground]', groundQueue);
         groundQueue.push({
@@ -415,8 +569,9 @@ export function SceneManagerProvider({
           physicsEnabled: false,
           physicsType: 'static',
           scripts: entity.scripts,
-          controlBindings: entity.control_bindings,
+          controlBindings: entity.controls,
         });
+        if (burstLoad) trackSceneBurstOp({ sceneBurstPendingOpsRef });
         send({
           cmd: 'spawn_ground',
           position: entity.position,
@@ -425,18 +580,19 @@ export function SceneManagerProvider({
         continue;
       }
 
-      if (entity.kind === 'model' && isEditorBoxPath(entity.path)) {
+      if (isEditorBoxPath(spawnPath)) {
         const boxQueue = pendingRestoresRef.current.get('[EditorBox]') ?? [];
         pendingRestoresRef.current.set('[EditorBox]', boxQueue);
         boxQueue.push({
           transform,
           name: entity.name,
-          physicsEnabled: entity.physics_enabled ?? false,
-          physicsType: entity.physics_type ?? 'static',
+          physicsEnabled: pendingRestore.physicsEnabled,
+          physicsType: pendingRestore.physicsType,
           scripts: entity.scripts,
-          controlBindings: entity.control_bindings,
+          controlBindings: entity.controls,
           blueprintId: entity.blueprint_id,
         });
+        if (burstLoad) trackSceneBurstOp({ sceneBurstPendingOpsRef });
         send({
           cmd: 'spawn_editor_box',
           name: entity.name ?? '',
@@ -446,54 +602,42 @@ export function SceneManagerProvider({
         continue;
       }
 
-      if (entity.kind === 'character' && isPlayerPath(entity.path)) {
-        console.warn('[scene] entidad [Player] en entities ignorada; usar playerTransform');
+      if (!is3dModelFileEntity(projectType, { path: spawnPath })) {
         continue;
       }
 
-      if (entity.kind === 'scenario' && projectType === '3D' && !isModel3DPath(entity.path)) {
-        continue;
-      }
-
-      const bp = entity.blueprint_id
-        ? (blueprints ?? []).find((b) => b.id === entity.blueprint_id) ?? null
-        : null;
-      const pendingRestore = {
-        transform,
-        name: entity.name,
-        physicsEnabled: bp?.physics_enabled ?? entity.physics_enabled ?? false,
-        physicsType: bp?.physics_type ?? entity.physics_type ?? 'static',
-        animations: bp?.animations ?? entity.animations,
-        scripts: bp?.scripts ?? entity.scripts,
-        controlBindings: bp?.control_bindings ?? entity.control_bindings,
-        blueprintId: entity.blueprint_id,
-        entityCategory: entity.entity_category,
-        visualModelPath: entity.visual_model_path,
-      };
-      const queue = pendingRestoresRef.current.get(entity.path) ?? [];
-      pendingRestoresRef.current.set(entity.path, queue);
+      const modelPath = entity.model;
+      const queue = pendingRestoresRef.current.get(modelPath) ?? [];
+      pendingRestoresRef.current.set(modelPath, queue);
       queue.push(pendingRestore);
 
-      if (entity.kind === 'scenario') send({ cmd: 'load_scenario', path: entity.path });
-      if (is3dModelFileEntity(projectType, entity)) {
-        pendingModelLoadQueueRef.current.push({
-          modelPath: entity.path,
-          pending: pendingRestore,
+      pendingModelLoadQueueRef.current.push({
+        modelPath,
+        pending: pendingRestore,
+      });
+      if (!burstLoad) {
+        send({
+          cmd: 'load_model',
+          path: modelPath,
+          single_instance: true,
+          ...(pendingRestore.entityCategory ? { entity_category: pendingRestore.entityCategory } : {}),
         });
-        if (!burstLoad) {
-          send({
-            cmd: 'load_model',
-            path: entity.path,
-            single_instance: true,
-            ...(entity.entity_category ? { entity_category: entity.entity_category } : {}),
-          });
-        }
       }
     }
 
     if (burstLoad && pendingModelLoadQueueRef.current.length > 0) {
       const preloadedPaths = (scene.models ?? []).map((model) => model.path);
       const queuedPaths = pendingModelLoadQueueRef.current.map((item) => item.modelPath);
+      const cachedPreloadCount = countCachedBurstModelPreloads(scene.models, queuedPaths);
+      if (cachedPreloadCount > 0) {
+        trackSceneBurstModelPreloads({ sceneBurstPendingOpsRef }, cachedPreloadCount);
+        kickCachedBurstModelSpawns(
+          scene.models,
+          pendingModelLoadQueueRef.current,
+          (cmd) => send(cmd as never),
+          { sceneBurstPendingOpsRef, pendingBurstSpawnRestoreRef },
+        );
+      }
       const extraPaths = collectUncachedBurstModelPaths(queuedPaths, preloadedPaths);
       if (extraPaths.size > 0) {
         trackSceneBurstModelPreloads({ sceneBurstPendingOpsRef }, extraPaths.size);
@@ -503,6 +647,14 @@ export function SceneManagerProvider({
     if (gameStyle === 'first-person' && projectType === '3D') {
       ensurePlayCharacterOnLoad(scene, pendingRestoresRef, send, {
         onBurstOp: burstLoad ? () => trackSceneBurstOp({ sceneBurstPendingOpsRef }) : undefined,
+      });
+    }
+
+    if (deferDirectionalLight) {
+      setDirectionalLight({
+        ambient: scene.world.lightAmbient ?? DEFAULT_LIGHT_AMBIENT,
+        intensity: scene.world.lightIntensity ?? DEFAULT_LIGHT_INTENSITY,
+        shadowDarkness: scene.world.shadowDarkness ?? DEFAULT_SHADOW_DARKNESS,
       });
     }
 
@@ -517,6 +669,7 @@ export function SceneManagerProvider({
             pendingBurstSpawnRestoreRef,
             pendingPlayCharacterViewRef,
             mainPlayerHandled,
+            playerEntityIdRef,
             sceneBurstPendingColliderCountRef,
             sceneBurstPendingOpsRef,
           },
@@ -566,6 +719,11 @@ export function SceneManagerProvider({
     const trimmed = name.trim();
     if (!trimmed) return;
 
+    if (useMotorScenes) {
+      send({ cmd: 'create_editor_scene', name: trimmed } as never);
+      return;
+    }
+
     const current = scenes.find((scene) => scene.id === activeSceneId);
     if (current) {
       const snapshot = await captureActiveSceneSnapshot(current.id, current.name);
@@ -600,6 +758,11 @@ export function SceneManagerProvider({
   const deleteScene = (sceneId: number) => {
     if (scenes.length <= 1) return;
 
+    if (useMotorScenes) {
+      send({ cmd: 'delete_editor_scene', scene_id: sceneId } as never);
+      return;
+    }
+
     const remaining = scenes.filter((scene) => scene.id !== sceneId);
     setScenes(remaining);
     setSceneDataById((prev) => {
@@ -622,11 +785,22 @@ export function SceneManagerProvider({
   };
 
   const loadScene = async (nextId: number) => {
-    if (Number.isNaN(nextId) || nextId === activeSceneId) return;
+    if (Number.isNaN(nextId) || nextId === activeSceneId || sceneActionsDisabled) return;
+
+    setSwitchingToSceneId(nextId);
+
+    if (useMotorScenes) {
+      beginSceneImportLoading(dispatch, sceneImportInProgressRef);
+      send({ cmd: 'switch_editor_scene', scene_id: nextId } as never);
+      return;
+    }
 
     const current = scenes.find((scene) => scene.id === activeSceneId);
     const target = scenes.find((scene) => scene.id === nextId);
-    if (!target) return;
+    if (!target) {
+      setSwitchingToSceneId(null);
+      return;
+    }
 
     const currentSnapshot = current
       ? await captureActiveSceneSnapshot(current.id, current.name)
@@ -658,9 +832,13 @@ export function SceneManagerProvider({
       setSceneDataById((prev) => ({ ...prev, [current.id]: currentSnapshot }));
     }
 
-    clearEngineBeforeSceneLoad();
-    loadSceneIntoEngine(targetSnapshot);
-    setActiveSceneId(nextId);
+    try {
+      clearEngineBeforeSceneLoad();
+      loadSceneIntoEngine(targetSnapshot);
+      setActiveSceneId(nextId);
+    } finally {
+      setSwitchingToSceneId(null);
+    }
   };
 
   useEffect(() => {
@@ -687,7 +865,47 @@ export function SceneManagerProvider({
     setSceneProjectState({ scenes: orderedScenes, activeSceneId });
   }, [activeSceneId, camera2dRef, sceneDataById, scenes, worldConfig]);
 
+  const openUnsavedSceneBlockedModal = () => {
+    openModal({
+      title: t('Unsaved scene'),
+      size: 'sm',
+      body: (
+        <UnsavedSceneBlockedBody
+          onSave={() => {
+            void onSaveProjectRef.current?.();
+          }}
+        />
+      ),
+    });
+  };
+
+  const activeSceneHasUnsavedChanges = (): boolean => {
+    if (!useMotorScenes) return false;
+    return scenes.find((s) => s.id === activeSceneId)?.dirty === true;
+  };
+
+  const openSwitchSceneModal = (scene: SceneTab) => {
+    if (sceneActionsDisabled || scene.id === activeSceneId) return;
+    if (activeSceneHasUnsavedChanges()) {
+      openUnsavedSceneBlockedModal();
+      return;
+    }
+    openModal({
+      title: t('Load scene'),
+      size: 'sm',
+      body: (
+        <SwitchSceneConfirmBody
+          sceneName={scene.name}
+          onConfirm={() => {
+            void loadScene(scene.id);
+          }}
+        />
+      ),
+    });
+  };
+
   const openCreateSceneModal = () => {
+    if (sceneActionsDisabled) return;
     const nextId = getNextSceneId();
     openModal({
       title: t('Create new scene'),
@@ -704,6 +922,7 @@ export function SceneManagerProvider({
   };
 
   const openRenameSceneModal = (scene: SceneTab) => {
+    if (sceneActionsDisabled) return;
     openModal({
       title: `${t('Edit')} ${scene.name}`,
       body: (
@@ -716,6 +935,7 @@ export function SceneManagerProvider({
   };
 
   const openDeleteSceneModal = (scene: SceneTab) => {
+    if (sceneActionsDisabled) return;
     if (scenes.length <= 1) {
       openModal({
         title: `${t('Cannot delete')} ${scene.name}`,
@@ -737,7 +957,10 @@ export function SceneManagerProvider({
   const value: SceneManagerContextValue = {
     scenes,
     activeSceneId,
-    loadScene,
+    scenesListLoading,
+    switchingToSceneId,
+    sceneActionsDisabled,
+    openSwitchSceneModal,
     openCreateSceneModal,
     openRenameSceneModal,
     openDeleteSceneModal,

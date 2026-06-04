@@ -1,0 +1,161 @@
+# Escenas del editor 3D (multi-escena, dirty, cambio de escena activa)
+#
+# El motor (`engine_3d`) es la fuente de verdad: registro de escenas, baselines,
+# pila undo del mundo y carga al activar otra escena. El renderer envía comandos,
+# refleja eventos y decide qué modal mostrar según `dirty` de la escena activa.
+#
+# UI: lista en el acordeón **Scenes** del sidebar (no son pestañas).
+#
+# Relacionado con:
+#   - docs/Entities_Model_3D.yaml  (formato de entidades en escena)
+#   - manifest.json del .save       (persistencia multi-escena)
+
+principle:
+  owner: motor_3d
+  renderer_role: "UI + IPC delgado; no comparar snapshots en TypeScript para bloquear cambio de escena"
+
+baseline_kinds:
+  fp_boot_template:
+    description: "Proyecto 3D FP nuevo; plantilla completa tras setup_default_3d_scene (Scene-01)."
+  fp_placeholder:
+    description: "Escena creada desde el acordeón Scenes; suelo + sol + jugador (misma semántica que apply_fp_placeholder_sun_and_player)."
+  saved_manifest:
+    description: "Copia de la escena en manifest.json (apertura .save o tras notify_project_saved)."
+
+dirty_check:
+  when: "Al ejecutar switch_editor_scene, antes de cambiar el mundo activo."
+  rule: "Bloquear solo si undo_stack no está vacía (cambios del usuario registrados en undo)."
+  redo_stack: "No se usa para bloquear; si el usuario deshizo todo, undo vacía y puede cambiar de escena."
+  blocked_reason: unsaved_changes
+  motor_flag_dirty:
+    description: "En cada ítem de scenes[], dirty=true solo en la escena activa cuando undo_stack no está vacía."
+    sync_triggers:
+      - "push_undo_transform / push_undo_transforms"
+      - "push_remove_entity_undo"
+      - "push_undo_player_ui_hud"
+      - "clear_editor_undo_redo"
+      - "apply_undo / apply_redo"
+    event: "editor_scenes_updated con update_reason: undo_state"
+  renderer_flag_dirty:
+    description: "SceneTab.dirty en useSceneManager; se copia desde EditorSceneListItem en tabsFromMotorItems."
+    uso_ui: "Antes de abrir la modal de confirmación de cambio de escena (no esperar al bloqueo del motor)."
+
+clear_undo_redo:
+  when:
+    - "Tras cargar .save (motor en load + clear_editor_undo_redo al final de project_load_3d_complete en FP)."
+    - "Tras plantilla FP boot (editor_scenes_init_from_boot)."
+    - "Tras switch de escena limpio."
+    - "Tras notify_project_saved."
+    - "Comando explícito clear_editor_undo_redo desde el renderer."
+  effect: "Vacía undo_stack y redo_stack; emite editor_scenes_updated (undo_state) con dirty=false en la activa."
+
+commands_motor_in:
+  create_editor_scene:
+    params: { name: string }
+    effect: "Nueva entrada en EditorSceneStore con baseline fp_placeholder; no cambia escena activa."
+  switch_editor_scene:
+    params: { scene_id: number }
+    effect: "Si undo_stack no vacía → editor_scene_switch_blocked; si limpio → vacía mundo y aplica escena destino (committed o baseline)."
+  delete_editor_scene:
+    params: { scene_id: number }
+    effect: "Elimina del registro; si era la activa, cambia a otra sin validar undo."
+  notify_project_saved:
+    params: { extract_dir: string }
+    effect: "Relee manifest y actualiza baselines saved_manifest de todas las escenas."
+  clear_editor_undo_redo:
+    params: {}
+    effect: "Vacía undo/redo y sincroniza dirty al renderer."
+
+events_motor_out:
+  editor_scene_created:
+    payload: { id, name, scenes[] }
+    scenes_item: { id, name, dirty }
+  editor_scene_switched:
+    payload: { active_scene_id, scenes[] }
+  editor_scene_switch_blocked:
+    payload: { reason, active_scene_id, target_scene_id }
+    note: "Respaldo en renderer si dirty no estaba sincronizado; la UI principal ya muestra modal de guardar antes."
+  editor_scenes_updated:
+    payload: { active_scene_id, scenes[], update_reason }
+    scenes_item: { id, name, dirty }
+    update_reason_values:
+      boot: "Proyecto 3D FP nuevo."
+      scene_deleted: "Tras delete_editor_scene."
+      project_saved: "Tras notify_project_saved."
+      undo_state: "Cambió la pila undo de la escena activa (dirty true/false)."
+  console_logs:
+    note: "El renderer formatea estos eventos como [Escenas] … en el panel de logs (no JSON)."
+  project_loaded_3d:
+    note: "Primera apertura .save: scenes[] desde manifest. Tras switch limpio: scenes[] = registro del editor (send_project_loaded_3d_with_editor_scenes)."
+  project_load_3d_complete:
+    note: "Fin de carga de escena o proyecto; renderer cierra overlay y, en FP, send clear_editor_undo_redo."
+
+ui_scenes_accordion:
+  ubicacion: "src/renderer/.../ScenesAccordion.tsx + useSceneManager.tsx"
+  carga_proyecto_save:
+    cuando: "sceneImportLoading && switchingToSceneId == null (scenesListLoading)"
+    muestra: "Spinner + texto «Loading scenes…»; lista vacía; sin botón crear escena."
+    al_terminar: "Lista completa desde pending/meta o editor_scene_*; ver project_load_3d_complete."
+  cambio_escena_en_curso:
+    cuando: "switchingToSceneId != null"
+    muestra: "Spinner en la fila destino (sin icono cargar); crear / editar / eliminar deshabilitados."
+  overlay_viewport:
+    note: "SceneImportLoadingOverlay («Loading scene…») durante sceneImportLoading (apertura .save y switch)."
+
+modales_cambio_escena:
+  registro: "SwitchSceneConfirmBody y UnsavedSceneBlockedBody en modalElectronRegistry.tsx"
+  sin_cambios_dirty_false:
+    - "Usuario pulsa cargar escena en otra fila."
+    - "Modal confirmación: «¿Cargar la escena «nombre»?» → Cargar escena / Cancelar."
+    - "Al confirmar: loadScene → switch_editor_scene + overlay de carga."
+  con_cambios_dirty_true:
+    - "Usuario pulsa cargar escena."
+    - "Modal «Escena sin guardar» (guardar proyecto / cancelar). No se muestra confirmación."
+    - "Tras guardar y limpiar undo, dirty=false; el usuario puede volver a intentar el cambio."
+  respaldo_motor:
+    - "Si se confirmó con dirty desfasado, switch_editor_scene → editor_scene_switch_blocked → misma modal de guardar."
+
+flow_switch_scene:
+  - "Usuario elige otra escena en el acordeón (icono cargar escena)."
+  - "Renderer: si SceneTab.dirty en escena activa → modal guardar; si no → modal confirmación."
+  - "Tras confirmar (solo si limpio): setSwitchingToSceneId, beginSceneImportLoading, send switch_editor_scene."
+  - "Motor: si undo_stack no vacía → editor_scene_switch_blocked (sin cambiar mundo)."
+  - "Si limpio: guarda committed, apply_editor_scene_switch, project_loaded_3d + project_load_3d_complete, clear undo, editor_scene_switched."
+  - "Renderer: lista vía editor_scene_*; project_loaded_3d solo hidrata React en la primera apertura del .save (no en switches posteriores)."
+
+flow_open_save:
+  - "ready + engineLoads3dSave → sceneImportLoading; acordeón Scenes en modo «Cargando escenas…»."
+  - "project_loaded_3d: metadatos y tabs en ref pending (sin pintar lista parcial de una sola escena)."
+  - "editor_scenes_init_from_project en motor (sin emitir lista intermedia al renderer)."
+  - "project_load_3d_complete: sync entidades, endSceneImportLoading, clear_editor_undo_redo, lista visible."
+
+flow_create_scene:
+  - "Renderer: send create_editor_scene { name } (bloqueado si scenesListLoading o switch en curso)."
+  - "Motor: registro + baseline placeholder; editor_scene_created."
+  - "Usuario activa la nueva escena → flujo modales + switch_editor_scene."
+
+flow_save:
+  - "Renderer guarda .save vía Electron."
+  - "Main: syncExtractDirFromSavePath (re-extrae .save a carpeta de sesión)."
+  - "Renderer: send notify_project_saved { extract_dir }."
+  - "Motor: actualiza baselines desde manifest; clear undo; editor_scenes_updated (project_saved)."
+
+electron:
+  get_project_extract_dir: "Devuelve currentProjectExtractDir tras abrir/guardar .save."
+  sync_after_save: "Tras save-project / save-project-silent, re-extrae el .save para extract_dir de sesión."
+  modal_window_icon: "resolveAppWindowIcon() en ventana principal y modal Electron (RER-ENGINE-LOGO.png)."
+
+archivos_clave:
+  motor:
+    - "engine_3d/src/engine/editor_scenes.rs"
+    - "engine_3d/src/engine/load_proyect.rs"
+    - "engine_3d/src/engine/commands.rs (undo + clear_editor_undo_redo)"
+  renderer:
+    - "pages/EngineView/hooks/useSceneManager.tsx"
+    - "pages/EngineView/hooks/sceneManagerModalBodies.tsx"
+    - "pages/EngineView/components/sidebar/ScenesAccordion.tsx"
+    - "modal-electron/modalElectronRegistry.tsx"
+
+scope_v1:
+  in: "3D gameStyle first-person"
+  out: "2D; otros gameStyle 3D siguen flujo legacy en useSceneManager"

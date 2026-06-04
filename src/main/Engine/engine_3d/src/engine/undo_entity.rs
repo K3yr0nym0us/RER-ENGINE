@@ -61,6 +61,7 @@ impl State {
         }
         self.undo_stack
             .push(super::types::UndoAction::RemoveEntity { snapshot });
+        self.sync_editor_scenes_undo_dirty_to_renderer();
     }
 
     pub(crate) fn restore_entity_from_undo_snapshot(&mut self, snapshot: &EntityUndoSnapshot) -> bool {

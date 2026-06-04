@@ -150,7 +150,7 @@ export function engineSceneToSavedScene(
 	};
 }
 
-/** Escena activa desde el motor (p. ej. antes de cambiar de pestaña en 3D). */
+/** Escena activa desde el motor (p. ej. antes de cambiar de escena activa en 3D). */
 export async function buildActiveSceneSnapshotFromEngine(
 	id: number,
 	name: string,
@@ -256,7 +256,7 @@ function mapEngineUiObjectsToSave(
 	}));
 }
 
-/** Combina snapshot del motor con metadatos solo del editor (pestañas, blueprints, idioma). */
+/** Combina snapshot del motor con metadatos solo del editor (escenas inactivas, blueprints, idioma). */
 export async function buildProjectSaveFromEngineSnapshot(
 	engineScene: EngineSaveSceneSnapshot,
 	options: BuildProjectSaveOptions,

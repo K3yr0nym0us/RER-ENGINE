@@ -520,8 +520,18 @@ pub enum EngineCommand {
     SetAutosave { enabled: bool },
     /// Pedir al motor la instantánea de la escena activa para persistir en `.save`.
     ExportSaveSnapshot,
-    /// Nombre por defecto de pestaña de escena del editor (`Scene-01`, …).
+    /// Nombre por defecto de escena del editor (`Scene-01`, …).
     GetDefaultSceneName { id: u32 },
+    /// Crear escena del editor (registro + baseline placeholder FP).
+    CreateEditorScene { name: String },
+    /// Cambiar escena activa (valida dirty; carga desde store/manifest).
+    SwitchEditorScene { scene_id: u32 },
+    /// Eliminar escena del registro del editor (no la activa si es la única).
+    DeleteEditorScene { scene_id: u32 },
+    /// Tras guardar `.save`: actualizar baselines desde manifest en `extract_dir`.
+    NotifyProjectSaved { extract_dir: String },
+    /// Tras `project_load_3d_complete` en el renderer: vaciar pilas undo/redo (carga terminada).
+    ClearEditorUndoRedo,
     /// Restore post-carga de entidad (transform, física, bindings).
     ApplyEntityRestore {
         id: u32,
@@ -1155,6 +1165,38 @@ pub enum EngineEvent {
     SaveSnapshotReady { scene: SaveSceneSnapshotPayload },
     /// Respuesta a `get_default_scene_name`.
     DefaultSceneNameReady { id: u32, name: String },
+    /// Escena creada en el registro del motor.
+    EditorSceneCreated {
+        id: u32,
+        name: String,
+        scenes: Vec<EditorSceneListItem>,
+    },
+    /// Cambio de escena permitido.
+    EditorSceneSwitched {
+        active_scene_id: u32,
+        scenes: Vec<EditorSceneListItem>,
+    },
+    /// Cambio bloqueado (escena activa modificada vs baseline).
+    EditorSceneSwitchBlocked {
+        reason: String,
+        active_scene_id: u32,
+        target_scene_id: u32,
+    },
+    /// Lista de escenas del editor (registro sincronizado con el motor).
+    EditorScenesUpdated {
+        active_scene_id: u32,
+        scenes: Vec<EditorSceneListItem>,
+        /// `project_load` | `boot` | `scene_deleted` | `project_saved` | `sync`
+        update_reason: String,
+    },
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct EditorSceneListItem {
+    pub id: u32,
+    pub name: String,
+    #[serde(default)]
+    pub dirty: bool,
 }
 
 #[derive(Debug, Serialize, Clone)]

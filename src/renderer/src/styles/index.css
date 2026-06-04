@@ -172,6 +172,10 @@ body {
 }
 
 /* ── Scenes accordion (sidebar) ─────────────────────────────────────────── */
+.scenes-accordion-loading {
+  min-height: 72px;
+}
+
 .scenes-accordion-list {
   font-size: 12px;
 }
@@ -195,6 +199,13 @@ body {
 
 .scenes-accordion-icon-wrap {
   line-height: 0;
+}
+
+.scenes-accordion-icon-wrap--loading {
+  width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
 }
 
 .scenes-accordion-icon-btn {

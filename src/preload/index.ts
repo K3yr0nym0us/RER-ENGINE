@@ -87,6 +87,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveProjectSilent: (filePath: string, data: ProjectSaveData): Promise<boolean> => {
     return ipcRenderer.invoke('save-project-silent', filePath, data)
   },
+  getProjectExtractDir: (): Promise<string | null> => {
+    return ipcRenderer.invoke('get-project-extract-dir')
+  },
   onRequestViewportBounds: (cb: () => void): void => {
     ipcRenderer.on('request-viewport-bounds', cb)
   },
@@ -131,10 +134,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('modal-electron:delegate-request', listener)
   },
   onModalElectronRender: (
-    cb: (payload: ModalElectronOpenRequest) => void,
+    cb: (payload: ModalElectronOpenRequest | null) => void,
   ): (() => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, payload: ModalElectronOpenRequest) => {
-      cb(payload)
+    const listener = (_event: Electron.IpcRendererEvent, payload: ModalElectronOpenRequest | null) => {
+      cb(payload ?? null)
     }
     ipcRenderer.on('modal-electron:render', listener)
     return () => ipcRenderer.removeListener('modal-electron:render', listener)

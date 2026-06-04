@@ -207,6 +207,7 @@ impl State {
         let now = Instant::now();
         self.delta_time = now.duration_since(self.last_frame).as_secs_f32();
         self.last_frame = now;
+        self.tick_fp_baseline_defer();
         self.update_fps_exit_hint_alpha();
 
         self.metrics_frame_count += 1;

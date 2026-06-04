@@ -1,12 +1,14 @@
 import type {
 	PlayCharacterViewChanged,
 	PlayCameraFollowMode,
+	Entity3D,
 	SavedPlayerTransform,
 	SavedScript,
 } from '@shared-types';
 import { FIRST_PERSON_PLAYER_BODY_SCALE } from '@shared-types';
 import type { MutableRefObject } from 'react';
 import type { PendingRestore, Transform } from '../context/useContextEngine/types';
+import { entity3dPendingRestore, entity3dTransform } from '../utils/entity3dEditorSync';
 
 /** Aplica al estado React lo que reporta el motor (sin derivar poses en TS). */
 export function applyPlayCharacterViewFromEngine(
@@ -109,6 +111,20 @@ export function savedPlayCharacterViewForRestore(
 	return pending ?? fallback;
 }
 
+function buildPlayerPendingFromEntity3D(player: Entity3D): PendingRestore {
+	const pending = entity3dPendingRestore(player);
+	return {
+		...pending,
+		name: player.name?.trim() || 'Player',
+		physicsEnabled: true,
+		physicsType: 'dynamic',
+		transform: {
+			...entity3dTransform(player),
+			scale: player.scale ?? FIRST_PERSON_PLAYER_BODY_SCALE,
+		},
+	};
+}
+
 function buildPlayerPendingFromSave(saved: SavedPlayerTransform): PendingRestore {
 	return {
 		transform: {
@@ -127,13 +143,23 @@ function buildPlayerPendingFromSave(saved: SavedPlayerTransform): PendingRestore
 	};
 }
 
-/** FP: jugador solo desde `playerTransform` (no desde `entities`). */
+/** FP: jugador desde `player` del manifest/snapshot (legacy: `playerTransform`). */
 export function ensurePlayCharacterOnLoad(
-	scene: { playerTransform?: SavedPlayerTransform | null },
+	scene: { player?: Entity3D | null; playerTransform?: SavedPlayerTransform | null },
 	pendingRestoresRef: MutableRefObject<Map<string, PendingRestore[]>>,
-	send: (cmd: unknown) => void,
+	send: (cmd: object) => void,
 	options?: { onBurstOp?: () => void },
 ) {
+	if (scene.player) {
+		const pending = buildPlayerPendingFromEntity3D(scene.player);
+		const queue = pendingRestoresRef.current.get('[Player]') ?? [];
+		queue.push(pending);
+		pendingRestoresRef.current.set('[Player]', queue);
+		options?.onBurstOp?.();
+		send({ cmd: 'load_character', path: '[Player]' });
+		return;
+	}
+
 	const saved = scene.playerTransform;
 	if (!saved) return;
 

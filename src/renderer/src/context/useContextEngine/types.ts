@@ -1111,7 +1111,7 @@ export interface EngineInternalRefs {
 	modelLoadOverlayKindRef: MutableRefObject<ModelLoadOverlayKind | null>
 	/** Precargas IPC de `load_model_asset` pendientes de `model_asset_loaded`. */
 	modelAssetPreloadPendingRef: MutableRefObject<number>
-	/** Overlay de carga durante ráfaga IPC 3D (pestañas / `ready`). */
+	/** Overlay de carga durante ráfaga IPC 3D (cambio de escena / `ready`). */
 	sceneBurstLoadInProgressRef: MutableRefObject<boolean>
 	/** Colisionadores 3D enviados sin cola de restore. */
 	sceneBurstPendingColliderCountRef: MutableRefObject<number>
@@ -1122,6 +1122,10 @@ export interface EngineInternalRefs {
 	engineBootIpcPendingRef: MutableRefObject<number>
 	engineBootIpcSeenRef: MutableRefObject<number>
 	engineBootFinishedRef: MutableRefObject<boolean>
+	/** Cambio de escena activa 3D: agrupar `entity_removed` en log `[Limpieza]`. */
+	sceneWorldCleanupRef: MutableRefObject<{ active: boolean; summaryLogged: boolean }>
+	/** Escena FP vacía tras limpieza: logs legibles para suelo/sol/jugador del motor. */
+	fpSceneBaselineLogRef: MutableRefObject<boolean>
 }
 
 export interface EngineContextValue extends EngineState {
@@ -1135,6 +1139,8 @@ export interface EngineContextValue extends EngineState {
 	sceneBurstLoadInProgressRef: MutableRefObject<boolean>
 	sceneBurstPendingColliderCountRef: MutableRefObject<number>
 	sceneBurstPendingOpsRef: MutableRefObject<number>
+	sceneWorldCleanupRef: MutableRefObject<{ active: boolean; summaryLogged: boolean }>
+	fpSceneBaselineLogRef: MutableRefObject<boolean>
 	entityTransformsRef: MutableRefObject<Record<number, Transform>>
 	entityMetaRef: MutableRefObject<Record<number, EntityMeta>>
 	pendingRestoresRef: MutableRefObject<Map<string, PendingRestore[]>>

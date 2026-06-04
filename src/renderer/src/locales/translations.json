@@ -48,7 +48,11 @@
 
   "Scene 1": "Escena 1",
   "Scenes": "Escenas",
+  "Loading scenes...": "Cargando escenas...",
   "Load scene": "Cargar escena",
+  "Load scene «{name}»?": "¿Cargar la escena «{name}»?",
+  "Unsaved scene": "Escena sin guardar",
+  "Save the project before switching scenes. The active scene has unsaved changes.": "Guarda el proyecto antes de cambiar de escena. La escena activa tiene cambios sin guardar.",
   "Edit scene name": "Editar nombre de escena",
   "Delete scene": "Eliminar escena",
   "Create new scene": "Crear nueva escena",

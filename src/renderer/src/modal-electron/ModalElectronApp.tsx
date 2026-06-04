@@ -16,7 +16,7 @@ export function ModalElectronApp() {
 
   useEffect(() => {
     const removeRender = window.electronAPI.onModalElectronRender((next) => {
-      setPayload(next)
+      setPayload(next ?? null)
     })
     window.electronAPI.notifyModalElectronReady()
     return removeRender

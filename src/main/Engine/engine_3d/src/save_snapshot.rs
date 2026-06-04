@@ -14,7 +14,7 @@ impl State {
         send_event(&EngineEvent::SaveSnapshotReady { scene });
     }
 
-    fn build_save_scene_snapshot(&self) -> SaveSceneSnapshotPayload {
+    pub(crate) fn build_save_scene_snapshot(&self) -> SaveSceneSnapshotPayload {
         let player_id = self.play_character_entity;
         let editor_camera_id = self.editor_camera_entity;
         let mut entities = Vec::new();

@@ -2,7 +2,8 @@ mod animations;
 mod audio;
 mod commands;
 pub(crate) mod entity_restore;
-mod load_proyect;
+pub(crate) mod load_proyect;
+pub(crate) mod editor_scenes;
 mod undo_entity;
 #[path = "../save_snapshot.rs"]
 mod save_snapshot;

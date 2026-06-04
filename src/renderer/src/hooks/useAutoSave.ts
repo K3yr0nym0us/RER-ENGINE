@@ -12,6 +12,7 @@ interface UseAutoSaveOptions {
   projectType?: ProjectType
   gameStyle?: GameStyle
   initialSavePath?: string | null
+  initialExtractDir?: string | null
 }
 
 export interface UseAutoSaveReturn {
@@ -26,6 +27,7 @@ export function useAutoSave({
   projectType = '2D' as ProjectType,
   gameStyle,
   initialSavePath = null,
+  initialExtractDir = null,
 }: UseAutoSaveOptions = {}): UseAutoSaveReturn {
   const {
     entityMetaRef,
@@ -118,15 +120,37 @@ export function useAutoSave({
       if (!snapshotBuilder) return;
       const data = await snapshotBuilder();
       if (!data) return;
-      await window.electronAPI.saveProjectSilent(filePath, data);
+      const ok = await window.electronAPI.saveProjectSilent(filePath, data);
+      if (ok && projectType === '3D') {
+        const dir = await window.electronAPI.getProjectExtractDir();
+        if (dir?.trim()) {
+          window.engine.send({
+            cmd: 'notify_project_saved',
+            extract_dir: dir.trim(),
+          } as never);
+        }
+      }
     });
-  }, []);
+  }, [projectType]);
 
   useEffect(() => {
     return () => {
       window.engine.send({ cmd: 'set_autosave', enabled: false } as never);
     };
   }, []);
+
+  const notifyMotorProjectSaved = useCallback(async () => {
+    if (projectType !== '3D') return;
+    const dir =
+      (await window.electronAPI.getProjectExtractDir())
+      || initialExtractDir?.trim()
+      || null;
+    if (!dir) return;
+    window.engine.send({
+      cmd: 'notify_project_saved',
+      extract_dir: dir,
+    } as never);
+  }, [projectType, initialExtractDir]);
 
   const handleSave = useCallback(async () => {
     const data = await buildSaveData();
@@ -136,8 +160,9 @@ export function useAutoSave({
     if (savedPath) {
       lastSavePath.current = savedPath;
       setHasSavedOnce(true);
+      await notifyMotorProjectSaved();
     }
-  }, [buildSaveData]);
+  }, [buildSaveData, notifyMotorProjectSaved]);
 
   const setHasSavedOnceTrue = useCallback((v: boolean) => {
     setHasSavedOnce(v);

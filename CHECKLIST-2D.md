@@ -70,8 +70,8 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 - [x] Herramientas 2D (dibujo colisionador / trigger, quick build, etc.)
 - [x] Panel de propiedades y multi-selección en escena 2D
 - [x] **`import_scene` completo** — un IPC carga la escena entera (entidades + restores); sin ráfagas IPC ni `pendingRestoresRef` en el front; evento `scene_imported`
-- [x] **Flujo de restauración inicial** — `import_scene` en carga/pestaña 2D; `apply_entity_restore` para undo y casos puntuales
-- [x] Guardado engine-first: `export_save_snapshot` + merge de pestañas/blueprints en el front
+- [x] **Flujo de restauración inicial** — `import_scene` en carga/cambio de escena 2D; `apply_entity_restore` para undo y casos puntuales
+- [x] Guardado engine-first: `export_save_snapshot` + merge de escenas/blueprints en el front
 
 ---
 

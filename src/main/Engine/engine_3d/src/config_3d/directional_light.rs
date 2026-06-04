@@ -56,6 +56,25 @@ impl State {
         }
     }
 
+    /// Misma posición que `ensure_default_sun` / plantilla FP al arrancar sin `.save`.
+    pub(crate) fn align_editor_sun_to_default_position(&mut self) {
+        let pos = self.default_sun_position();
+        if let Some(id) = self.sun_entity {
+            self.apply_sun_icon_visual(id);
+            if let Some(t) = self.world.get_mut::<Transform>(id) {
+                t.position = pos;
+                t.scale = Vec3::splat(1.0);
+            }
+            self.sync_directional_light_from_sun();
+            let label = self
+                .entity_display_name(id)
+                .unwrap_or_else(|| rer_engine_shared::editor_defaults::entity_label::SUN.to_string());
+            self.send_model_loaded_event(id, &label);
+        } else {
+            self.spawn_sun("", pos.to_array(), [1.0, 1.0, 1.0]);
+        }
+    }
+
     pub(crate) fn scene_light_dir(&self) -> [f32; 4] {
         [
             self.directional_light_dir.x,
