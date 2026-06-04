@@ -794,15 +794,10 @@ impl State {
             }
             EngineCommand::SetGridVisible { visible } => {
                 self.grid_config.visible = visible;
-                if self.player_ui_edit_active {
-                    self.rebuild_player_ui_screen_grid();
-                }
             }
             EngineCommand::SetGridCellSize { size } => {
                 self.grid_config.cell_size = size.clamp(0.05, 100.0);
-                if self.player_ui_edit_active {
-                    self.rebuild_player_ui_screen_grid();
-                }
+                self.refresh_ground_checker_uv();
             }
             EngineCommand::SetTargetFps { fps } => {
                 self.target_fps = fps.clamp(1, 1000);

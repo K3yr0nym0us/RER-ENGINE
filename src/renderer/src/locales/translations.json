@@ -255,6 +255,7 @@
   "Cells": "Celdas",
   "Box": "Recuadro",
   "Cell size": "Tamaño de celda",
+  "Cell size aligns ground checker and object placement snap (Ctrl).": "El tamaño de celda alinea el checker del suelo y el snap al colocar objetos (Ctrl).",
   "Move grid": "Desplazar cuadrícula",
   "Move grid X": "Desplazar cuadrícula X",
   "Move grid X (number)": "Desplazar cuadrícula X (número)",

@@ -460,7 +460,7 @@ impl State {
             cache: None,
         });
 
-        let ground_plane = crate::config_3d::mesh_3d::create_ground_plane(&device);
+        let ground_plane = crate::config_3d::mesh_3d::create_ground_plane(&device, 100.0, 100.0, 1.0);
         let hud_quad_mesh = mesh::create_unit_quad_xy(&device);
         let meshes = vec![ground_plane];
         let world = World::new();

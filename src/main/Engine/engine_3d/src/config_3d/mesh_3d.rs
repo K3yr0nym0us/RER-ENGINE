@@ -1028,13 +1028,24 @@ fn texture_rgba(texture: &ufbx::Texture, fbx_dir: &Path) -> (Vec<u8>, u32, u32) 
 /// Extensión del plano en X/Z en espacio local (antes de `Transform.scale`).
 pub(crate) const GROUND_PLANE_MESH_EXTENT: f32 = 40.0;
 
-pub(crate) fn create_ground_plane(device: &wgpu::Device) -> Mesh {
+/// Baldosas de 8px en la textura checker 128×128 → 16 cuadros por unidad UV.
+pub(crate) const GROUND_CHECKER_TILES_PER_UV: f32 = 16.0;
+
+/// UV del suelo para que cada baldosín del checker mida `cell_size` metros en mundo
+/// (tras `sync_ground_plane_to_world_bounds`: escala = límites / `GROUND_PLANE_MESH_EXTENT`).
+pub(crate) fn create_ground_plane(
+    device: &wgpu::Device,
+    world_width: f32,
+    world_depth: f32,
+    cell_size: f32,
+) -> Mesh {
     const SEGMENTS: u32 = 20;
     const SIZE: f32 = GROUND_PLANE_MESH_EXTENT;
-    const UV_SCALE: f32 = 1.0;
 
     let half = SIZE / 2.0;
     let step = SIZE / SEGMENTS as f32;
+    let cell = cell_size.max(0.05);
+    let tiles = GROUND_CHECKER_TILES_PER_UV;
 
     let mut vertices: Vec<Vertex> = Vec::new();
     let mut indices: Vec<u32> = Vec::new();
@@ -1043,8 +1054,8 @@ pub(crate) fn create_ground_plane(device: &wgpu::Device) -> Mesh {
         for x in 0..=SEGMENTS {
             let px = -half + x as f32 * step;
             let pz = -half + z as f32 * step;
-            let u = (x as f32 / SEGMENTS as f32) * UV_SCALE;
-            let v = (z as f32 / SEGMENTS as f32) * UV_SCALE;
+            let u = (px + half) / SIZE * world_width / cell / tiles;
+            let v = (pz + half) / SIZE * world_depth / cell / tiles;
             vertices.push(Vertex {
                 position: [px, 0.0, pz],
                 normal: [0.0, 1.0, 0.0],

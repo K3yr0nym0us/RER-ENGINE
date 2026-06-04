@@ -134,8 +134,6 @@ impl State {
             height,
             depth.unwrap_or(self.world_bounds_3d.depth),
         );
-        self.grid_config.world_width = self.world_bounds_3d.width;
-        self.grid_config.world_height = self.world_bounds_3d.height;
         self.sync_world_bounds_3d_runtime();
         self.sync_ground_plane_to_world_bounds();
     }

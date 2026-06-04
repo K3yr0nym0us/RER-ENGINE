@@ -179,8 +179,14 @@ impl State {
         }
 
         let ground_mesh_idx = self.meshes.len();
-        self.meshes
-            .push(crate::config_3d::mesh_3d::create_ground_plane(&self.device));
+        let b = self.world_bounds_3d;
+        let cell = self.grid_config.cell_size;
+        self.meshes.push(crate::config_3d::mesh_3d::create_ground_plane(
+            &self.device,
+            b.width,
+            b.depth,
+            cell,
+        ));
         let tex_idx = self.pack_scene_checker_texture();
 
         let plane_id = self.world.spawn(Some("Ground"));
@@ -232,6 +238,29 @@ impl State {
             t.position.y = 0.0;
             t.scale = glam::Vec3::new(sx, 0.02, sz);
         }
+        self.refresh_ground_checker_uv();
+    }
+
+    /// Reconstruye solo las UV del mesh del suelo para alinear el checker con `grid_config.cell_size`.
+    pub(crate) fn refresh_ground_checker_uv(&mut self) {
+        let Some(id) = self.ground_entity_id() else {
+            return;
+        };
+        let Some(mesh_idx) = self
+            .world
+            .get::<crate::ecs::MeshComponent>(id)
+            .map(|mc| mc.mesh_idx)
+        else {
+            return;
+        };
+        let b = self.world_bounds_3d;
+        let cell = self.grid_config.cell_size;
+        self.meshes[mesh_idx] = crate::config_3d::mesh_3d::create_ground_plane(
+            &self.device,
+            b.width,
+            b.depth,
+            cell,
+        );
     }
 
     /// Escena base del modo first-person: suelo checker y cámara a ras de editor 3D.

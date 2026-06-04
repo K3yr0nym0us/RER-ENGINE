@@ -139,11 +139,20 @@ fn ray_intersect_y_plane(origin: Vec3, dir: Vec3, y: f32) -> Option<Vec3> {
     Some(origin + dir * t)
 }
 
-fn snap_axis(v: f32, cell: f32) -> f32 {
+/// Alinea el borde del AABB del objeto a la línea de cuadrícula más cercana (eje X o Z).
+fn snap_axis_edges_to_grid(center: f32, half_extent: f32, cell: f32) -> f32 {
     if cell <= 1e-6 {
-        return v;
+        return center;
     }
-    (v / cell).round() * cell
+    let left = center - half_extent;
+    let right = center + half_extent;
+    let left_snap = (left / cell).round() * cell;
+    let right_snap = (right / cell).round() * cell;
+    if (left - left_snap).abs() <= (right - right_snap).abs() {
+        left_snap + half_extent
+    } else {
+        right_snap - half_extent
+    }
 }
 
 fn raycast_ground_point(origin: Vec3, dir: Vec3, ground_y: f32) -> Vec3 {
@@ -205,7 +214,16 @@ impl State {
             return pos;
         }
         let cell = self.grid_config.cell_size.max(0.05);
-        [snap_axis(pos[0], cell), pos[1], snap_axis(pos[2], cell)]
+        let scale = self
+            .quick_build_effective_scale_3d()
+            .unwrap_or([1.0, 1.0, 1.0]);
+        let half_x = scale[0].abs() * 0.5;
+        let half_z = scale[2].abs() * 0.5;
+        [
+            snap_axis_edges_to_grid(pos[0], half_x, cell),
+            pos[1],
+            snap_axis_edges_to_grid(pos[2], half_z, cell),
+        ]
     }
 
     fn quick_build_effective_scale_3d(&self) -> Option<[f32; 3]> {
