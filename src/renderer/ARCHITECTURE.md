@@ -85,6 +85,39 @@ Flujo típico:
 
 Al salir de edición (`endUiScreenEdit`), cancelar dibujo de objeto en el hook para alinear estado local con el motor.
 
+## Programación visual (nodos → Rhai)
+
+Editor de grafos que compila a scripts Rhai para **escena** (`on_scene_start`, `on_scene_tick`) o **entidad** (`on_start`, `update`). Modelo completo: [`docs/Programing_Model.yaml`](../../docs/Programing_Model.yaml).
+
+| Pieza | Archivo |
+|-------|---------|
+| Catálogo y contextos | `visualScripting/nodeDefinitions.ts` |
+| Compilador + validación | `visualScripting/compileGraphToRhai.ts`, `validateGraph.ts` |
+| Panel variables (sidebar del modal) | `visualScripting/contextVariables.ts` |
+| Entidades para el modal | `visualScripting/resolveSceneEntities.ts` |
+| Persistencia escena | `visualScripting/sceneVisualScript.ts`, `sceneStateStore` |
+| Persistencia entidad | `visualScripting/entityVisualScript.ts` |
+| Canvas / modal | `visualScripting/components/VisualScriptingModalBody.tsx` |
+
+**Dónde se abre en el editor principal:**
+
+| Contexto | Ruta sidebar | Hook |
+|----------|--------------|------|
+| Escena | **Escenas → Programación** → *Lógica de escena (nodos)* o *Script de escena* | `useSceneManager` |
+| Entidad | **Propiedades → Programar entidad** → *Lógica de entidad (nodos)* o *Nuevo script* | `useScripting` |
+
+Programación **no** es un acordeón de nivel superior; vive anidado dentro de Escenas (`ScenesAccordion` + `ProgrammingAccordion`).
+
+**Modal Electron:** el canvas abre en ventana hija **sin** `EngineProvider`. `VisualScriptingModalBody` recibe `sceneEntities` y demás props serializables desde la ventana principal (`resolveSceneEntitiesForVisualScript` + `sanitizeSceneEntitiesForModal`). No usar `useContextEngine()` dentro del modal.
+
+Flujo al guardar grafo de escena:
+
+1. `compileGraphToRhai` → Rhai + errores de validación.
+2. `sceneStateStore` guarda `visualGraph` + `visualScriptRhai`.
+3. `load_scene_visual_script` al motor cuando aplica (cambio de escena / play).
+
+En entidad, el grafo va en la entidad del save; el script compilado se registra como lógica visual de esa entidad.
+
 ## Abrir `.save`
 
 1. Main extrae el ZIP a un directorio temporal (`extractDir`) y lee solo metadatos (`type`, `gameStyle`) del `manifest.json`.

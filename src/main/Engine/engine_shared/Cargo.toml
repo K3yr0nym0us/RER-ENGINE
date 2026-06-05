@@ -18,6 +18,7 @@ winit.workspace = true
 log.workspace = true
 env_logger.workspace = true
 sysinfo.workspace = true
+rhai.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 x11.workspace = true

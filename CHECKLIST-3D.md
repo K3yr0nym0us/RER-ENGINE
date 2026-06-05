@@ -13,7 +13,7 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 ```
 
 - [x] Workspace Cargo (`engine_2d`, `engine_3d`, `engine_shared`); binarios separados
-- [x] IPC stdin/stdout, winit + wgpu overlay, ECS, scripting Lua, hot reload
+- [x] IPC stdin/stdout, winit + wgpu overlay, ECS, scripting Rhai, hot reload
 - [x] GPU: Vulkan (`EngineGpuProfile::ThreeD`, Windows y Linux)
 - [x] Editor: electron-vite, spawn del motor, escenas múltiples, `.save` ZIP
 - [x] `set_bounds`, evento `ready`, multiplex `engine.off()` en preload
@@ -49,12 +49,12 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 - [x] Cubos de editor (`spawn_editor_box`), modelos en almacén (`load_model_asset`)
 - [x] ECS 3D: `HashSet` + reciclado de IDs en `despawn` (`ecs.rs`)
 - [x] Undo/redo de creación de entidad — snapshot en motor (`undo_entity.rs`, `spawn_with_id`)
-- [x] API Lua 3D FP: `fp_press_key`, `fp_jump`, `fp_set_walk_speed`, etc.
+- [x] API Rhai 3D FP: `fp_press_key`, `fp_jump`, `fp_set_walk_speed`, etc.
 - [x] `replace_entity_model` con resync de orientación, escala y forward del jugador (FBX + GLB)
 - [x] **Carga GLB/GLTF skinned** — esqueleto unificado (varios `skin` por archivo), paleta Khronos, piezas múltiples; clips embebidos en asset
 - [x] **Animaciones embebidas 3D** — pipeline skinned GPU, `play_model_clip`, `set_default_animation`, evento `model_clips_ready`
 - [x] Export escena: `export_save_snapshot` → `save_snapshot_ready` (`entity_save_meta`, jugador FP)
-- [x] Scripts Lua `update()` solo en play
+- [x] Scripts Rhai `update()` solo en play
 
 ### Editor e integración (proyecto 3D)
 
@@ -67,6 +67,7 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 - [x] Panel **Animaciones** en Propiedades (clips embebidos GLB/FBX en 3D; hojas/sprites en 2D)
 - [x] **Reemplazar modelo del jugador** — overlay de carga + ocultar viewport durante importación síncrona
 - [x] Acordeón Modelos: botón y diálogo **`.glb` / `.gltf` / `.fbx`** (almacén + sustitución jugador)
+- [x] **Programación visual** — lógica de escena y entidad (nodos → Rhai); panel de variables con entidades por categoría y animaciones; resolución jugador FP + `entityMeta` para modal Electron
 
 ### Carga `.save` 3D y rendimiento (mayo 2026)
 

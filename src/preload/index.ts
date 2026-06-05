@@ -90,6 +90,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getProjectExtractDir: (): Promise<string | null> => {
     return ipcRenderer.invoke('get-project-extract-dir')
   },
+  readProjectManifest: (): Promise<ProjectSaveData | null> => {
+    return ipcRenderer.invoke('read-project-manifest')
+  },
   onRequestViewportBounds: (cb: () => void): void => {
     ipcRenderer.on('request-viewport-bounds', cb)
   },

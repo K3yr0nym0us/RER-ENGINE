@@ -1,44 +1,48 @@
-# Scripting Lua — RER-ENGINE
+# Scripting Rhai — RER-ENGINE
 
 Guía breve para escribir scripts en entidades. El motor **2D** y el **3D** comparten la misma forma de script; algunas funciones solo existen en uno de los dos.
 
-**Render del motor:** Rust + wgpu — `rer_engine_2d` y `rer_engine_3d` usan **Vulkan** (Windows y Linux; sin variables de entorno). Ventana overlay junto al editor Electron. Los scripts Lua no configuran la GPU; solo llaman a la API `engine.*` de gameplay.
+**Render del motor:** Rust + wgpu — `rer_engine_2d` y `rer_engine_3d` usan **Vulkan** (Windows y Linux; sin variables de entorno). Ventana overlay junto al editor Electron. Los scripts Rhai no configuran la GPU; solo llaman a la API `engine.*` de gameplay.
 
 ---
 
 ## Forma de un script
 
-Devuelve una tabla con callbacks. `dt` es el delta en segundos.
+Define funciones de callback de nivel superior. `dt` es el delta en segundos.
 
-```lua
-local script = {}
+```rhai
+fn on_start(entity) {
+    engine.log("Hola desde entidad " + entity.id);
+}
 
-function script.on_start(self, entity)
-  engine.log("Hola desde entidad " .. entity.id)
-end
+fn update(entity, dt) {
+    // cada frame
+}
 
-function script.update(self, entity, dt)
-  -- cada frame
-end
-
-function script.on_stop(self, entity)
-end
-
-return script
+fn on_stop(entity) {
+}
 ```
 
 **Otros callbacks** (según tipo de script):
 
 | Callback | Cuándo |
 |----------|--------|
-| `on_press(self, entity, key)` | Tecla/control asignado — **una vez por pulsación** (sin autorepeat; ver [Gravedad y controles 2D](#gravedad-y-controles-2d)) |
-| `on_trigger_enter(self, trigger, actor)` | Un actor entra en un *execution area* (solo 2D) |
+| `on_press(entity, control_key)` | Tecla/control asignado — **una vez por pulsación** (sin autorepeat; ver [Gravedad y controles 2D](#gravedad-y-controles-2d)) |
+| `on_keep(entity, control_key)` | Tecla/control mantenido — cada frame mientras se mantiene pulsado |
+| `on_trigger_enter(trigger, actor)` | Un actor entra en un *execution area* (solo 2D) |
+
+**Scripts de escena** (Level Blueprint / nodos visuales):
+
+| Callback | Cuándo |
+|----------|--------|
+| `on_scene_start()` | Al iniciar play en la escena |
+| `on_scene_tick(dt)` | Cada frame mientras la escena está en play |
 
 ---
 
-## Datos de la entidad (`entity` / `entities`)
+## Datos de la entidad (`entity`)
 
-En cada frame el motor inyecta `entity` (la tuya) y `entities[id]` (lectura del resto).
+En cada frame el motor inyecta un mapa con los datos de la entidad.
 
 | Campo | Descripción |
 |-------|-------------|
@@ -113,29 +117,29 @@ Herramientas del plano lateral y plataformas:
 | `jump_speed_y` | Impulso vertical sumado una vez (salto). |
 | `gravity` | **Ignorado** en la implementación actual; la caída usa la gravedad del mundo configurada en el editor. |
 
-La integración real ocurre en `PhysicsWorld2D::step()` (shape-cast + suelo), no en el cuarto argumento de Lua.
+La integración real ocurre en `PhysicsWorld2D::step()` (shape-cast + suelo), no en el cuarto argumento del script.
 
 **`on_press`**:
 
 - Se ejecuta **una sola vez** por pulsación de tecla o botón (sin autorepeat). Usar para saltos y acciones discretas; el movimiento continuo va en `update` / `on_keep`.
-- Si el cuerpo es **kinematic** y el script llama `move_entity` / `move_entity_facing` desde `on_press`, el motor convierte ese desplazamiento en un **slide corto** para que se note en una pulsación única (compatibilidad con scripts legacy).
+- Si el cuerpo es **kinematic** y el script llama `move_entity` / `move_entity_facing` desde `on_press`, el motor convierte ese desplazamiento en un **slide corto** para que se note en una pulsación única.
 
 **Ejemplo de control 2D:**
 
-```lua
-function script.on_press(self, entity, key)
-  if key == "right" then
-    engine.move_entity(entity.id, 7, 1, 0)
-    engine.play_animation(entity.id, "Run")
-  elseif key == "left" then
-    engine.move_entity(entity.id, 7, -1, 0)
-    engine.play_animation(entity.id, "Run")
-  elseif key == "jump" then
-    -- jump_speed_y = impulso; el 4º argumento no altera la gravedad del mundo
-    engine.apply_kinematic_gravity(entity.id, 0, 12, 0)
-    engine.play_animation(entity.id, "Jump")
-  end
-end
+```rhai
+fn on_press(entity, key) {
+    if key == "right" {
+        engine.move_entity(entity.id, 7.0, 1.0, 0.0);
+        engine.play_animation(entity.id, "Run");
+    } else if key == "left" {
+        engine.move_entity(entity.id, 7.0, -1.0, 0.0);
+        engine.play_animation(entity.id, "Run");
+    } else if key == "jump" {
+        // jump_speed_y = impulso; el 4º argumento no altera la gravedad del mundo
+        engine.apply_kinematic_gravity(entity.id, 0.0, 12.0, 0.0);
+        engine.play_animation(entity.id, "Jump");
+    }
+}
 ```
 
 ---
@@ -158,28 +162,51 @@ En 3D las animaciones por frames 2D no son el foco; el personaje jugable en play
 
 **Ejemplo mínimo FP:**
 
-```lua
-function script.on_start(self, entity)
-  engine.fp_set_walk_speed(4.0)
-  engine.fp_set_jump_speed(6.5)
-end
+```rhai
+fn on_start(entity) {
+    engine.fp_set_walk_speed(4.0);
+    engine.fp_set_jump_speed(6.5);
+}
 
-function script.on_press(self, entity, key)
-  engine.fp_press_key(key)
-  if key == "SPACE" then engine.fp_jump() end
-end
+fn on_press(entity, key) {
+    engine.fp_press_key(key);
+    if key == "SPACE" {
+        engine.fp_jump();
+    }
+}
 ```
+
+---
+
+## Programación visual (editor de nodos)
+
+Además de escribir Rhai a mano, el editor puede **compilar grafos de nodos** a los mismos callbacks. Detalle del modelo: [`docs/Programing_Model.yaml`](./docs/Programing_Model.yaml).
+
+| Contexto | Dónde abrirlo | Callbacks generados |
+|----------|---------------|---------------------|
+| Escena | Sidebar **Escenas → Programación** | `on_scene_start()`, `on_scene_tick(dt)` |
+| Entidad | Sidebar **Propiedades → Programar entidad** | `on_start(entity)`, `update(entity, dt)` |
+
+Nodos de acción relevantes (compilación → API):
+
+| Nodo (UI) | Rhai generado |
+|-----------|---------------|
+| Print | `engine.log("…")` |
+| Play animation | `engine.play_animation(id, "nombre")` |
+| Set scale | `engine.set_scale(entity.id, sx, sy)` |
+| Teleport to | `engine.move_to(entity.id, x, y)` — posición **absoluta** |
+| Translate | `engine.translate(entity.id, dx, dy)` — **delta** relativo |
+
+En lógica de **entidad**, los nodos de movimiento y escala usan siempre `entity.id` del script en ejecución. En lógica de **escena**, *Play animation* permite elegir otra entidad por id.
 
 ---
 
 ## Sandbox
 
-**Bloqueado:** `io`, `os`, `package`, `require`, `dofile`, `loadfile`.
-
-**Permitido:** `math`, `string`, `table`, `pairs`, `ipairs`, `print`, operaciones básicas de Lua.
+Rhai se ejecuta en modo sandbox del motor: sin acceso a sistema de archivos, red ni módulos externos. Solo la API `engine.*` registrada por el runtime y operaciones básicas del lenguaje.
 
 ---
 
 ## Más detalle
 
-Implementación y límites por binario: `engine_2d/src/scripting.rs` y `engine_3d/src/scripting.rs`.
+Implementación compartida: `engine_shared/src/scripting/` (`ScriptEngine`, `api.rs`, `script_cmd.rs`). Los crates `engine_2d` y `engine_3d` reexportan el módulo.

@@ -19,9 +19,9 @@ common: # FORMATO COMUN DE LAS ENTIDADES
   scale: [number, number, number] # Tamaño de la entidad
   physics_type: dynamic | static | kinematic | undefined # Tipo de físicas (si es undefined se asume que no tiene)
   animations: optional # Animaciones de la entidad (incluidas en el modelo 3D)
-  scripts: optional # Scripts de la entidad (Lua)
+  scripts: optional # Scripts de la entidad (Rhai)
   blueprint_id: optional string # Si tiene significa que es una instancia de una blueprint existente
-  controls: optional # WASD / gamepad → Lua en preview; (Solo para Player)
+  controls: optional # WASD / gamepad → Rhai en preview; (Solo para Player)
   colision: boolean # Colisiones de la entidad (Malla fisica del ultimo modelo 3D cargado on/off default:on)
 
 Blueprints: # Configuracion de las blueprints
@@ -34,7 +34,7 @@ Blueprints: # Configuracion de las blueprints
   scale: [number, number, number] # Tamaño de la entidad (Editable por cada entidad)
   physics_type: dynamic | static | kinematic | undefined # Tipo de físicas (si es undefined se asume que no tiene)
   animations: optional # Animaciones de la entidad (incluidas en el modelo 3D)
-  scripts: optional # Scripts de la entidad (Lua)
+  scripts: optional # Scripts de la entidad (Rhai)
   colision: boolean # Colisiones de la entidad (Malla fisica del ultimo modelo 3D cargado on/off default:on)
 
 #! Al cambiar cualquier modelo 3D tanto de una entidad como de blueprint

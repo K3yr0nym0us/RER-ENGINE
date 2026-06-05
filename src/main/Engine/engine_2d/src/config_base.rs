@@ -9,7 +9,7 @@ use crate::ecs::MeshComponent;
 use crate::engine::State;
 use crate::gizmo;
 use crate::mesh;
-use crate::scripting::ScriptEngine;
+use crate::scripting::{ScriptEngine, ScriptEngineProfile};
 
 impl State {
     /// Limpieza compartida para cualquier escena 2D del editor.
@@ -63,8 +63,8 @@ impl State {
         self.pivot_edit_mode = None;
         self.logical_area_mode = None;
 
-        self.script_engine = ScriptEngine::new()
-            .expect("Error al reinicializar el motor de scripting Lua");
+        self.script_engine = ScriptEngine::new(ScriptEngineProfile::Engine2d)
+            .expect("Error al reinicializar el motor de scripting Rhai");
         self.control_bindings_by_entity.clear();
         self.save_registry.clear();
         self.blocked_on_keep_horizontal.clear();

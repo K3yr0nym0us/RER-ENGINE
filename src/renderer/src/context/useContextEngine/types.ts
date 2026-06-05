@@ -1029,6 +1029,8 @@ export interface EntityMeta {
 	points?: ColliderPoints
 	animations?: EntityAnimations
 	scripts?: EntityScripts
+	visualGraph?: import('@shared-types').VisualGraphDocument
+	visualScriptRhai?: string
 	controlBindings?: SavedControlBindings
 	/** ID de la blueprint desde la que fue instanciada esta entidad. */
 	blueprintId?: string
@@ -1047,6 +1049,8 @@ export interface PendingRestore {
 	physicsType: string
 	animations?: any[]
 	scripts?: EntityScripts
+	visualGraph?: import('@shared-types').VisualGraphDocument
+	visualScriptRhai?: string
 	controlBindings?: SavedControlBindings
 	/** ID de la blueprint desde la que fue instanciada esta entidad. */
 	blueprintId?: string
@@ -1190,6 +1194,11 @@ export interface EngineContextValue extends EngineState {
 	removeExecutionArea: (id: number) => void
 	updateEntityAnimations: (id: number, animations: any[]) => any[]
 	updateEntityScripts: (id: number, scripts: EntityScripts) => void
+	updateEntityVisualGraph: (
+		id: number,
+		graph: import('@shared-types').VisualGraphDocument,
+		rhaiSource: string,
+	) => void
 	setEntityPhysics: (id: number, enabled: boolean, bodyType: string) => void
 	updateEntityTransform: (
 		id: number,

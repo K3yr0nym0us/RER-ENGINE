@@ -28,6 +28,8 @@ import {
 	UnsavedSceneBlockedBody,
 } from '../pages/EngineView/hooks/sceneManagerModalBodies'
 import { ModalConfirmBody } from './ModalConfirmBody'
+import { VisualScriptingModalBody } from '../visualScripting/components/VisualScriptingModalBody'
+import { SceneScriptEditorModalBody } from '../visualScripting/components/SceneScriptEditorModalBody'
 import { wireModalCallbacksForHost } from './modalElectronCallbacks'
 
 export type ModalElectronHostProps = ModalElectronOpenRequest & {
@@ -35,34 +37,42 @@ export type ModalElectronHostProps = ModalElectronOpenRequest & {
 	onComplete: (result: unknown) => void
 }
 
-type RegistryEntry = ComponentType<Record<string, unknown>>
+/** Props dinámicas ensambladas en el host modal (IPC + callbacks). */
+export type RegistryEntry = ComponentType<Record<string, unknown>>
+
+/** Registra un cuerpo modal con props tipadas en el mapa del host. */
+function modalEntry(component: unknown): RegistryEntry {
+	return component as RegistryEntry
+}
 
 export const MODAL_ELECTRON_REGISTRY: Record<string, RegistryEntry> = {
-	ModalSelectFont: ModalSelectFont as RegistryEntry,
-	ModalSelectHudImage: ModalSelectHudImage as RegistryEntry,
-	ModalSetNameUi: ModalSetNameUi as RegistryEntry,
-	ModalSetNameSound: ModalSetNameSound as RegistryEntry,
-	ModalSetNameFont: ModalSetNameFont as RegistryEntry,
-	ModalSetNameBackground: ModalSetNameBackground as RegistryEntry,
-	ModalSetNameHudImage: ModalSetNameHudImage as RegistryEntry,
-	ModalSetNameSprite: ModalSetNameSprite as RegistryEntry,
-	ModalSetNameModel: ModalSetNameModel as RegistryEntry,
-	ModalAddUiButton: ModalAddUiButton as RegistryEntry,
-	ModalAddUiElementPlaceholder: ModalAddUiElementPlaceholder as RegistryEntry,
-	ModalSelectUiElement: ModalSelectUiElement as RegistryEntry,
-	ScriptEditorModalBody: ScriptEditorModalBody as RegistryEntry,
-	SpritePreviewModalBody: SpritePreviewModalBody as RegistryEntry,
-	CreateEntityFromSpriteModalBody: CreateEntityFromSpriteModalBody as RegistryEntry,
-	CreateEntityFromModelModalBody: CreateEntityFromModelModalBody as RegistryEntry,
-	ControlBindingsModalBody: ControlBindingsModalBody as RegistryEntry,
-	UserGuide: UserGuide as RegistryEntry,
-	CreateSceneModalBody: CreateSceneModalBody as RegistryEntry,
-	SceneRenameModalBody: SceneRenameModalBody as RegistryEntry,
-	DeleteConfirmBody: DeleteConfirmBody as RegistryEntry,
-	SwitchSceneConfirmBody: SwitchSceneConfirmBody as RegistryEntry,
-	DeleteBlockedBody: DeleteBlockedBody as RegistryEntry,
-	UnsavedSceneBlockedBody: UnsavedSceneBlockedBody as RegistryEntry,
-	ModalConfirmBody: ModalConfirmBody as RegistryEntry,
+	ModalSelectFont: modalEntry(ModalSelectFont),
+	ModalSelectHudImage: modalEntry(ModalSelectHudImage),
+	ModalSetNameUi: modalEntry(ModalSetNameUi),
+	ModalSetNameSound: modalEntry(ModalSetNameSound),
+	ModalSetNameFont: modalEntry(ModalSetNameFont),
+	ModalSetNameBackground: modalEntry(ModalSetNameBackground),
+	ModalSetNameHudImage: modalEntry(ModalSetNameHudImage),
+	ModalSetNameSprite: modalEntry(ModalSetNameSprite),
+	ModalSetNameModel: modalEntry(ModalSetNameModel),
+	ModalAddUiButton: modalEntry(ModalAddUiButton),
+	ModalAddUiElementPlaceholder: modalEntry(ModalAddUiElementPlaceholder),
+	ModalSelectUiElement: modalEntry(ModalSelectUiElement),
+	ScriptEditorModalBody: modalEntry(ScriptEditorModalBody),
+	SpritePreviewModalBody: modalEntry(SpritePreviewModalBody),
+	CreateEntityFromSpriteModalBody: modalEntry(CreateEntityFromSpriteModalBody),
+	CreateEntityFromModelModalBody: modalEntry(CreateEntityFromModelModalBody),
+	ControlBindingsModalBody: modalEntry(ControlBindingsModalBody),
+	UserGuide: modalEntry(UserGuide),
+	CreateSceneModalBody: modalEntry(CreateSceneModalBody),
+	SceneRenameModalBody: modalEntry(SceneRenameModalBody),
+	DeleteConfirmBody: modalEntry(DeleteConfirmBody),
+	SwitchSceneConfirmBody: modalEntry(SwitchSceneConfirmBody),
+	DeleteBlockedBody: modalEntry(DeleteBlockedBody),
+	UnsavedSceneBlockedBody: modalEntry(UnsavedSceneBlockedBody),
+	ModalConfirmBody: modalEntry(ModalConfirmBody),
+	VisualScriptingModalBody: modalEntry(VisualScriptingModalBody),
+	SceneScriptEditorModalBody: modalEntry(SceneScriptEditorModalBody),
 }
 
 export function buildModalElectronHostProps(

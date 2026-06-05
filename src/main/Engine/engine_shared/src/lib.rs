@@ -1,4 +1,5 @@
 pub mod editor_defaults;
+pub mod scripting;
 pub mod gpu;
 pub mod logging;
 pub mod overlay;

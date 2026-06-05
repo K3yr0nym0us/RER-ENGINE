@@ -100,6 +100,7 @@ export function wireModalCallbacksForHost(
 		models: payload.models,
 		blueprints: payload.blueprints,
 		linkedEntityCounts: payload.linkedEntityCounts,
+		sceneEntities: payload.props.sceneEntities ?? payload.sceneEntities,
 	}
 
 	const complete = (callbackKey: ModalCallbackKey, result?: unknown) => {

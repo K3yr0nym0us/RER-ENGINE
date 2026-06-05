@@ -975,7 +975,9 @@ impl State {
                     self.script_engine.clear_control_script_cache();
                     self.restore_preview_editor_snapshots_on_enter();
                     self.capture_play_session_rotation_baselines();
+                    self.run_scene_script_on_play_start();
                 } else {
+                    self.script_engine.reset_scene_play_state();
                     for id in self.active_model_clips.keys().copied().collect::<Vec<_>>() {
                         self.stop_model_clip(id);
                     }
@@ -1636,6 +1638,15 @@ impl State {
                 self.script_engine.detach_animation_scripts(id);
                 send_event(&EngineEvent::AnimationFinished { entity_id: id });
                 log::info!("[animation] Stopped for entity {}", id);
+            }
+            EngineCommand::LoadSceneVisualScript { scene_id, source } => {
+                log::info!("[IPC] LoadSceneVisualScript: scene_id={}", scene_id);
+                if let Err(e) = self.handle_load_scene_visual_script(scene_id, &source) {
+                    log::error!("[scene_script] Error: {e}");
+                    send_event(&EngineEvent::Error {
+                        message: format!("Error en script de escena: {e}"),
+                    });
+                }
             }
             EngineCommand::LoadScript { id, path, source } => {
                 log::info!("[IPC] LoadScript: entity_id={} path={}", id, path);

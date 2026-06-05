@@ -46,6 +46,8 @@ export function applyPendingRestoreMeta(
 	}
 	if (pending.animations) meta.animations = pending.animations;
 	if (pending.scripts) meta.scripts = pending.scripts;
+	if (pending.visualGraph) meta.visualGraph = pending.visualGraph;
+	if (pending.visualScriptRhai) meta.visualScriptRhai = pending.visualScriptRhai;
 	if (pending.controlBindings) meta.controlBindings = pending.controlBindings;
 	if (pending.blueprintId) meta.blueprintId = pending.blueprintId;
 	if (pending.entityCategory) meta.entityCategory = pending.entityCategory;

@@ -2,7 +2,7 @@
 //
 // Responsibilities:
 //   1. Log the press event so the developer can see when a key was detected.
-//   2. Execute the `on_press` Lua callback EXACTLY ONE TIME.
+//   2. Execute the `on_press` Rhai callback EXACTLY ONE TIME.
 //
 // This module has ZERO interaction with on_keep logic. It never runs per-frame
 // loops and never accesses keyboard_mouse_pressed tracking.
@@ -15,7 +15,7 @@ impl State {
     /// Called once when a key/button is pressed (no autorepeat).
     ///
     /// - Logs "[on_press] tecla X detectada".
-    /// - Runs the `on_press` Lua callback exactly one time for every entity
+    /// - Runs the `on_press` Rhai callback exactly one time for every entity
     ///   that has a control binding matching `control_key` on `device`.
     pub fn dispatch_on_press(&mut self, device: &str, control_key: &str) {
         if !self.preview_playing {

@@ -1,6 +1,14 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
-import type { EditorSceneListItem, EngineEvent, GameStyle, SavedScene, SavedWorldConfig } from '@shared-types';
+import type {
+  EditorSceneListItem,
+  EngineEvent,
+  Entity3D,
+  GameStyle,
+  SavedScene,
+  SavedWorldConfig,
+  VisualGraphDocument,
+} from '@shared-types';
 import {
   DEFAULT_GRAVITY_MAGNITUDE,
   DEFAULT_LIGHT_AMBIENT,
@@ -38,7 +46,11 @@ import {
 import { useContextEngine } from '@engine';
 import { useModal } from '@modal';
 import { useTraslate } from '@hooks';
-import { setSceneProjectState } from '../sceneStateStore';
+import { getSceneVisualGraph, getSceneScriptRhai, setSceneProjectState } from '../sceneStateStore';
+import { reloadActiveSceneVisualScript, saveSceneScriptRhai, saveSceneVisualGraph } from '../../../visualScripting/sceneVisualScript';
+import { VisualScriptingModalBody } from '../../../visualScripting/components/VisualScriptingModalBody';
+import { resolveSceneEntitiesForVisualScript } from '../../../visualScripting/resolveSceneEntities';
+import { SceneScriptEditorModalBody } from '../../../visualScripting/components/SceneScriptEditorModalBody';
 import {
 	CreateSceneModalBody,
 	DeleteBlockedBody,
@@ -65,6 +77,12 @@ interface SceneManagerContextValue {
   openCreateSceneModal: () => void;
   openRenameSceneModal: (scene: SceneTab) => void;
   openDeleteSceneModal: (scene: SceneTab) => void;
+  openVisualScriptingModal: (sceneId?: number) => void;
+  openSceneScriptEditor: (sceneId?: number) => void;
+  persistSceneVisualGraph: (
+    sceneId: number,
+    graph: VisualGraphDocument,
+  ) => { ok: boolean; errors: string[] };
 }
 
 const DEFAULT_WORLD: SavedWorldConfig = {
@@ -171,7 +189,7 @@ export function SceneManagerProvider({
     projectLoaded3dMetaRef,
   } = useContextEngine();
 
-  const { openModal } = useModal();
+  const { openModal, closeModal } = useModal();
   const useMotorScenes = motorManagesScenes(projectType, gameStyle);
   const openModalRef = useRef(openModal);
   const onSaveProjectRef = useRef(onSaveProject);
@@ -274,6 +292,9 @@ export function SceneManagerProvider({
         }
         if (event.event === 'editor_scene_switched') {
           setSwitchingToSceneId(null);
+          if (activeId != null) {
+            reloadActiveSceneVisualScript(activeId);
+          }
         }
       }
       if (event.event === 'editor_scene_switch_blocked') {
@@ -865,6 +886,142 @@ export function SceneManagerProvider({
     setSceneProjectState({ scenes: orderedScenes, activeSceneId });
   }, [activeSceneId, camera2dRef, sceneDataById, scenes, worldConfig]);
 
+  useEffect(() => {
+    reloadActiveSceneVisualScript(activeSceneId);
+  }, [activeSceneId]);
+
+  useEffect(() => {
+    if (!initialExtractDir?.trim()) return;
+    let cancelled = false;
+    void window.electronAPI.readProjectManifest().then((data) => {
+      if (cancelled || !data || !('version' in data)) return;
+      const scenesFromSave = data.scenes;
+      if (!scenesFromSave?.length) return;
+      const tabs = scenesFromSave.map((s) => ({ id: s.id, name: s.name }));
+      applySceneTabs(tabs);
+      const activeId = data.activeSceneId ?? tabs[0]?.id ?? 1;
+      setActiveSceneId(activeId);
+      const byId: Record<number, SavedScene> = {};
+      for (const scene of scenesFromSave) {
+        byId[scene.id] = scene;
+      }
+      setSceneDataById(byId);
+      reloadActiveSceneVisualScript(activeId);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [initialExtractDir]);
+
+  const persistSceneVisualGraph = (
+    sceneId: number,
+    graph: VisualGraphDocument,
+  ): { ok: boolean; errors: string[] } => {
+    const result = saveSceneVisualGraph(sceneId, graph);
+    if (!result.ok) return { ok: false, errors: result.errors };
+    setSceneDataById((prev) => {
+      const existing = prev[sceneId];
+      const tab = scenes.find((s) => s.id === sceneId);
+      const base: SavedScene = existing ?? {
+        id: sceneId,
+        name: tab?.name ?? defaultSceneName(sceneId),
+        world: { ...worldConfig },
+        backgroundPath: null,
+        entities: [],
+        player: null,
+        config_camera: null,
+        config_editor_camera: null,
+        camera2d: camera2dRef.current,
+        sprites: [],
+      };
+      return {
+        ...prev,
+        [sceneId]: {
+          ...base,
+          visualGraph: graph,
+          visualScriptRhai: result.rhaiSource,
+        },
+      };
+    });
+    return { ok: true, errors: [] };
+  };
+
+  const openVisualScriptingModal = (sceneId?: number) => {
+    const id = sceneId ?? activeSceneId;
+    const sceneName = scenes.find((s) => s.id === id)?.name;
+    const sceneData = sceneDataById[id];
+    const initialGraph = getSceneVisualGraph(id) ?? sceneData?.visualGraph;
+    const sceneEntities = resolveSceneEntitiesForVisualScript({
+      savedEntities: sceneData?.entities,
+      savedPlayer: sceneData?.player,
+      entityMeta: entityMetaRef.current,
+      entityTransforms: entityTransformsRef.current,
+    });
+    openModal({
+      title: t('Scene logic'),
+      size: 'xl',
+      body: (
+        <VisualScriptingModalBody
+          context="scene"
+          sceneId={id}
+          sceneName={sceneName}
+          sceneEntities={sceneEntities}
+          initialGraph={initialGraph}
+          onSave={(graph) => {
+            const saveResult = persistSceneVisualGraph(id, graph);
+            if (!saveResult.ok) {
+              return { ok: false, errors: saveResult.errors };
+            }
+            closeModal();
+            return { ok: true };
+          }}
+          onCancel={closeModal}
+        />
+      ),
+    });
+  };
+
+  const openSceneScriptEditor = (sceneId?: number) => {
+    const id = sceneId ?? activeSceneId;
+    const sceneName = scenes.find((s) => s.id === id)?.name;
+    const initialSource =
+      getSceneScriptRhai(id) ?? sceneDataById[id]?.sceneScriptRhai ?? '';
+    openModal({
+      title: sceneName ? `${t('Scene script')}: ${sceneName}` : t('Scene script'),
+      size: 'lg',
+      body: (
+        <SceneScriptEditorModalBody
+          initialSource={initialSource}
+          onSave={(source) => {
+            saveSceneScriptRhai(id, source);
+            setSceneDataById((prev) => {
+              const existing = prev[id];
+              const tab = scenes.find((s) => s.id === id);
+              const base: SavedScene = existing ?? {
+                id,
+                name: tab?.name ?? defaultSceneName(id),
+                world: { ...worldConfig },
+                backgroundPath: null,
+                entities: [],
+                player: null,
+                config_camera: null,
+                config_editor_camera: null,
+                camera2d: camera2dRef.current,
+                sprites: [],
+              };
+              return {
+                ...prev,
+                [id]: { ...base, sceneScriptRhai: source },
+              };
+            });
+            closeModal();
+          }}
+          onCancel={closeModal}
+        />
+      ),
+    });
+  };
+
   const openUnsavedSceneBlockedModal = () => {
     openModal({
       title: t('Unsaved scene'),
@@ -964,6 +1121,9 @@ export function SceneManagerProvider({
     openCreateSceneModal,
     openRenameSceneModal,
     openDeleteSceneModal,
+    openVisualScriptingModal,
+    openSceneScriptEditor,
+    persistSceneVisualGraph,
   };
 
   return (

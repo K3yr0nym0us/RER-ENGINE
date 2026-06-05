@@ -361,6 +361,33 @@ export function createEngineActions({
 		}
 	};
 
+	const VISUAL_LOGIC_SCRIPT_NAME = 'visual_logic';
+
+	const updateEntityVisualGraph = (
+		id: number,
+		graph: import('@shared-types').VisualGraphDocument,
+		rhaiSource: string,
+	) => {
+		if (!refs.entityMetaRef.current[id]) {
+			refs.entityMetaRef.current[id] = { kind: 'model', path: '', physicsEnabled: false, physicsType: '' };
+		}
+		const meta = refs.entityMetaRef.current[id];
+		meta.visualGraph = graph;
+		meta.visualScriptRhai = rhaiSource;
+
+		const existing = meta.scripts ?? [];
+		const withoutVisual = existing.filter((s) => s.name !== VISUAL_LOGIC_SCRIPT_NAME);
+		const nextScripts = [...withoutVisual, { name: VISUAL_LOGIC_SCRIPT_NAME, source: rhaiSource }];
+		meta.scripts = nextScripts;
+
+		window.engine.send({
+			cmd: 'load_script',
+			id,
+			path: VISUAL_LOGIC_SCRIPT_NAME,
+			source: rhaiSource,
+		} as never);
+	};
+
 	const applyTransformToEngine = (
 		entityId: number,
 		patch: Partial<Transform> & {
@@ -893,6 +920,7 @@ export function createEngineActions({
 		removeExecutionArea,
 		updateEntityAnimations,
 		updateEntityScripts,
+		updateEntityVisualGraph,
 		setEntityPhysics,
 		updateEntityTransform,
 		registerPivotEditListener,

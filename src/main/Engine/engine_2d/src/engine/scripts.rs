@@ -18,7 +18,7 @@ impl State {
 
     /// Intenta inferir intención horizontal pura desde el input bruto.
     /// Se usa para pre-filtrar scripts de movimiento cuando el actor ya está
-    /// bloqueado por colisión en esa dirección, evitando ejecutar Lua de más.
+    /// bloqueado por colisión en esa dirección, evitando ejecutar scripts de más.
     pub(crate) fn infer_horizontal_input_dir(&self, device: &str, control_key: &str) -> Option<f32> {
         match device {
             "keyboard_mouse" => match control_key {
@@ -103,7 +103,7 @@ impl State {
             map
         };
 
-        let commands = self.script_engine.tick(self.delta_time, &snapshots);
+        let commands = self.script_engine.tick(self.delta_time, &snapshots, None);
         self.apply_script_commands(commands);
     }
 
@@ -360,6 +360,15 @@ impl State {
                 ScriptCmd::SetVsync { enabled } => {
                     self.set_vsync(enabled);
                 }
+                ScriptCmd::PlayControllerPressKey { .. }
+                | ScriptCmd::PlayControllerJump
+                | ScriptCmd::PlayControllerSetWalkSpeed(_)
+                | ScriptCmd::PlayControllerSetSprintMultiplier(_)
+                | ScriptCmd::PlayControllerSetJumpSpeed(_)
+                | ScriptCmd::SetTaa { .. }
+                | ScriptCmd::SetActivePlayerUiScreen { .. }
+                | ScriptCmd::SetActivePlayerUiScreenByName { .. }
+                | ScriptCmd::ClearActivePlayerUiScreen => {}
             }
         }
     }

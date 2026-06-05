@@ -8,7 +8,22 @@ import { useModalElectronContentSize } from './useModalElectronContentSize'
 
 export function ModalElectronApp() {
   const [payload, setPayload] = useState<ModalElectronOpenRequest | null>(null)
-  const contentRef = useModalElectronContentSize(payload != null)
+  const contentRef = useModalElectronContentSize(
+    payload != null,
+    payload?.componentKey,
+    payload?.resizable,
+  )
+
+  const isResizable = payload?.resizable === true
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('modal-electron-resizable', isResizable)
+    document.body.classList.toggle('modal-electron-resizable', isResizable)
+    return () => {
+      document.documentElement.classList.remove('modal-electron-resizable')
+      document.body.classList.remove('modal-electron-resizable')
+    }
+  }, [isResizable])
 
   const closeModal = useCallback(() => {
     void window.electronAPI.closeModalElectron()
@@ -22,13 +37,19 @@ export function ModalElectronApp() {
     return removeRender
   }, [])
 
+  const modalLocale = payload?.locale === 'es' ? 'es' : 'en'
+
   return (
-    <LanguageProvider>
+    <LanguageProvider key={payload?.handlerId ?? 'idle'} initialLocale={modalLocale}>
       <ModalElectronCloseProvider closeModal={closeModal}>
         <div
           ref={contentRef}
-          className="p-3"
-          style={{ background: 'var(--bs-body-bg)', boxSizing: 'border-box' }}
+          className={`p-3${isResizable ? ' modal-electron-shell--resizable' : ''}`}
+          style={{
+            background: 'var(--bs-body-bg)',
+            boxSizing: 'border-box',
+            ...(isResizable ? { height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' } : {}),
+          }}
         >
           {payload ? (
             <ModalElectronBody
@@ -37,7 +58,7 @@ export function ModalElectronApp() {
               onClose={closeModal}
             />
           ) : (
-            <p className="text-secondary small mb-0">…</p>
+            <p className="text-secondary small mb-0">{modalLocale === 'es' ? 'Cargando…' : 'Loading…'}</p>
           )}
         </div>
       </ModalElectronCloseProvider>

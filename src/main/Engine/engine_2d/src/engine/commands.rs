@@ -363,6 +363,7 @@ impl State {
                     // de cada entidad que tenga animaciones registradas.
                     // Limpiar caché de scripts compilados para que ediciones en el editor surtan efecto.
                     self.script_engine.clear_control_script_cache();
+                    self.run_scene_script_on_play_start();
                     let entities_with_anims: Vec<u32> = self.animations.keys().copied().collect();
                     let default_count = self.default_animation_by_entity.len();
                     log::info!("[SetPreviewPlaying] entidades con animaciones: {}, con default: {}", entities_with_anims.len(), default_count);
@@ -374,6 +375,7 @@ impl State {
                         }
                     }
                 } else {
+                    self.script_engine.reset_scene_play_state();
                     // Al volver al modo editor, detener todas las animaciones activas
                     // y mostrar el primer frame de la animación correspondiente.
                     let active: Vec<(u32, String)> = self.active_animations
@@ -809,6 +811,15 @@ EngineCommand::PlayAnimation { id, name } => {
                 // Descargar scripts de la animación que estaba activa.
                 self.script_engine.detach_animation_scripts(id);
                 send_event(&EngineEvent::AnimationFinished { entity_id: id });
+            }
+            EngineCommand::LoadSceneVisualScript { scene_id, source } => {
+                log::info!("[IPC] LoadSceneVisualScript: scene_id={}", scene_id);
+                if let Err(e) = self.handle_load_scene_visual_script(scene_id, &source) {
+                    log::error!("[scene_script] Error: {e}");
+                    send_event(&EngineEvent::Error {
+                        message: format!("Error en script de escena: {e}"),
+                    });
+                }
             }
             EngineCommand::LoadScript { id, path, source } => {
                 log::info!("[IPC] LoadScript: entity_id={} path={}", id, path);

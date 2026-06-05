@@ -273,13 +273,13 @@ impl State {
                     self.queue_play_controller_jump();
                 }
                 ScriptCmd::PlayControllerSetWalkSpeed(speed) => {
-                    self.play_controller_lua_walk_speed = Some(speed.max(0.0));
+                    self.play_controller_script_walk_speed = Some(speed.max(0.0));
                 }
                 ScriptCmd::PlayControllerSetSprintMultiplier(mult) => {
-                    self.play_controller_lua_sprint_multiplier = Some(mult.max(0.0));
+                    self.play_controller_script_sprint_multiplier = Some(mult.max(0.0));
                 }
                 ScriptCmd::PlayControllerSetJumpSpeed(speed) => {
-                    self.play_controller_lua_jump_speed = Some(speed.max(0.0));
+                    self.play_controller_script_jump_speed = Some(speed.max(0.0));
                 }
                 ScriptCmd::SetVsync { enabled } => {
                     self.set_vsync(enabled);
@@ -300,6 +300,9 @@ impl State {
                 ScriptCmd::ClearActivePlayerUiScreen => {
                     self.clear_active_player_ui_screen();
                 }
+                ScriptCmd::ApplyKinematicGravity { .. }
+                | ScriptCmd::ApplyKinematicImpulse { .. }
+                | ScriptCmd::SlideEntity { .. } => {}
             }
         }
     }

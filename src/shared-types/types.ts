@@ -126,7 +126,7 @@ export type PhysicsType3D = 'dynamic' | 'static' | 'kinematic'
 /** Modo de seguimiento del ojo FPS respecto al jugador en editor. */
 export type PlayCameraFollowMode = 'follow_character' | 'move_with_character'
 
-/** WASD / gamepad → Lua (solo `category: player` en instancias). */
+/** WASD / gamepad → Rhai (solo `category: player` en instancias). */
 export interface SavedControls {
   keyboard_mouse: Record<string, SavedScript>
   gamepad: Record<string, SavedScript>
@@ -148,6 +148,9 @@ export interface Entity3D {
   colision: boolean
   animations?: SavedAnimation[]
   scripts?: SavedScript[]
+  /** Lógica visual compilada (Entity Blueprint). */
+  visualGraph?: VisualGraphDocument
+  visualScriptRhai?: string
   blueprint_id?: string
   controls?: SavedControls
 }
@@ -215,8 +218,11 @@ export interface SavedEntity {
   points?:          [[number,number],[number,number],[number,number],[number,number]]
   /** Animaciones asociadas a esta entidad. */
   animations?:      SavedAnimation[]
-  /** Scripts Lua adjuntos a esta entidad. */
+  /** Scripts Rhai adjuntos a esta entidad. */
   scripts?:         SavedScript[]
+  /** Lógica visual compilada (Entity Blueprint). */
+  visualGraph?:     VisualGraphDocument
+  visualScriptRhai?: string
   /** Mapeo de controles por entidad (personajes). */
   control_bindings?: SavedControlBindings
   /** Nombre del sprite precargado si esta entidad lo usa. */
@@ -253,7 +259,7 @@ export interface SavedAnimation {
     src_w?:  number
     src_h?:  number
   }[]
-  /** Scripts Lua asociados a esta animación. */
+  /** Scripts Rhai asociados a esta animación. */
   scripts?: SavedScript[]
   /**
    * Si true, una animación siguiente puede interrumpir/cancelar esta antes de que termine.
@@ -275,7 +281,7 @@ export interface SavedAnimation {
 export interface SavedScript {
   /** Nombre identificador del script (elegido por el usuario). */
   name:   string
-  /** Código fuente Lua completo. */
+  /** Código fuente Rhai completo. */
   source: string
 }
 
@@ -323,9 +329,9 @@ export interface SavedPlayerTransform {
   frustum_distance?: number
   /** Seguimiento del ojo FPS respecto al jugador en editor. */
   camera_follow_mode?: PlayCameraFollowMode
-  /** Bindings de control Lua del jugador principal. */
+  /** Bindings de control Rhai del jugador principal. */
   control_bindings?: SavedControlBindings
-  /** Scripts Lua adjuntos al jugador (no confundir con scripts embebidos en bindings). */
+  /** Scripts Rhai adjuntos al jugador (no confundir con scripts embebidos en bindings). */
   scripts?: SavedScript[]
   /** Rotación del mesh del jugador (quaternion xyzw) en editor. */
   body_rotation?: [number, number, number, number]
@@ -337,6 +343,35 @@ export interface SavedPlayerTransform {
     local_max_y: number
     radius_xz: number
   }
+}
+
+/** Contexto del grafo: escena (Level Blueprint) o entidad (Entity Blueprint). */
+export type VisualGraphContext = 'scene' | 'entity'
+
+/** Grafo canónico de programación visual (fuente de verdad; el motor no lee React Flow). */
+export interface VisualGraphDocument {
+  version: 1
+  /** Por defecto `scene` si falta (compatibilidad con saves antiguos). */
+  context?: VisualGraphContext
+  sceneId?: number
+  entityId?: number
+  nodes: VisualGraphNode[]
+  edges: VisualGraphEdge[]
+}
+
+export interface VisualGraphNode {
+  id: string
+  type: string
+  position: { x: number; y: number }
+  data: Record<string, unknown>
+}
+
+export interface VisualGraphEdge {
+  id: string
+  source: string
+  sourceHandle: string
+  target: string
+  targetHandle: string
 }
 
 export interface SavedScene {
@@ -352,6 +387,12 @@ export interface SavedScene {
   camera2d:       { x: number; y: number; halfH: number } | null
   sprites:        Array<{ name: string; path: string }>
   models?:        Array<{ name: string; path: string; category?: ModelCategory }>
+  /** Lógica de escena (Level Blueprint) — layout de nodos. */
+  visualGraph?:     VisualGraphDocument
+  /** Caché Rhai compilada en el editor; opcional si falta `visualGraph`. */
+  visualScriptRhai?: string
+  /** Script Rhai manual de escena (Level Blueprint). */
+  sceneScriptRhai?: string
 }
 
 export interface ProjectSaveData {
@@ -554,6 +595,7 @@ export interface EngineCommand {
     | 'play_animation'
     | 'stop_animation'
     | 'load_script'
+    | 'load_scene_visual_script'
     | 'set_control_bindings'
     | 'unload_script'
     | 'load_sprite'
@@ -940,13 +982,17 @@ export interface ViewportBounds {
 }
 
 /** Tamaños de ventana modal Electron (aprox. Bootstrap 5). */
-export type ModalElectronSize = 'sm' | 'md' | 'lg' | 'xl'
+export type ModalElectronSize = 'sm' | 'md' | 'lg' | 'xl' | 'xxl'
 
 export interface ModalElectronOpenRequest {
   size?: ModalElectronSize
   title: string
   handlerId: string
   componentKey: string
+  /** Idioma de la ventana principal (`en` | `es`). */
+  locale?: string
+  /** Permite redimensionar la ventana modal (p. ej. editor de nodos). */
+  resizable?: boolean
   props: Record<string, unknown>
   /** Props función registrados en el renderer principal (no serializables). */
   callbackKeys?: string[]
@@ -959,6 +1005,15 @@ export interface ModalElectronOpenRequest {
   linkedEntityCounts?: Record<string, number>
   /** Estado inicial del editor Player UI (modal Electron). */
   playerUiEditorState?: Record<string, unknown>
+  /** Entidades de escena para el editor de nodos (snapshot IPC, sin `undefined`). */
+  sceneEntities?: Array<{
+    id: number
+    name: string
+    category: Entity3DCategory
+    model: string
+    colision: boolean
+    animations?: Array<{ name: string }>
+  }>
 }
 
 export interface ModalElectronDelegateRequest {
@@ -990,6 +1045,8 @@ declare global {
       saveProject:             (data: ProjectSaveData) => Promise<string | null>
       saveProjectSilent:       (filePath: string, data: ProjectSaveData) => Promise<boolean>
       getProjectExtractDir:    () => Promise<string | null>
+      /** Manifest completo del .save abierto (escenas inactivas, visualGraph, etc.). */
+      readProjectManifest:     () => Promise<ProjectSaveData | null>
       openSpriteDialog:        () => Promise<string | null>
       openScenarioDialog:      () => Promise<string | null>
       openCharacterDialog:     () => Promise<string | null>

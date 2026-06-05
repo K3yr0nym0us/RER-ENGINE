@@ -211,6 +211,7 @@ export function EngineProvider({
 		removeExecutionArea: actions.removeExecutionArea,
 		updateEntityAnimations: actions.updateEntityAnimations,
 		updateEntityScripts: actions.updateEntityScripts,
+		updateEntityVisualGraph: actions.updateEntityVisualGraph,
 		setEntityPhysics: actions.setEntityPhysics,
 		updateEntityTransform: actions.updateEntityTransform,
 		registerPivotEditListener: actions.registerPivotEditListener,

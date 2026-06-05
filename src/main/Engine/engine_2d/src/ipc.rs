@@ -181,7 +181,7 @@ pub enum EngineCommand {
         logical_w:  Option<u32>,
         #[serde(default)]
         logical_h:  Option<u32>,
-        /// Scripts Lua que se ejecutan mientras esta animación está activa.
+        /// Scripts Rhai que se ejecutan mientras esta animación está activa.
         #[serde(default)]
         scripts:    Vec<AnimScriptData>,
         /// Si false (default), ninguna otra animación puede interrumpirla antes de que termine.
@@ -198,7 +198,7 @@ pub enum EngineCommand {
     PlayAnimation { id: u32, name: String },
     /// Detener la animación en curso.
     StopAnimation { id: u32 },
-    /// Adjuntar un script Lua a una entidad. `source` es el código Lua completo.
+    /// Adjuntar un script Rhai a una entidad. `source` es el código Rhai completo.
     /// `path` se usa solo para mensajes de error y logs.
     LoadScript { id: u32, path: String, source: String },
     /// Ejecutar script de control para una entidad (trigger en runtime por input).
@@ -209,6 +209,8 @@ pub enum EngineCommand {
     SetControlBindings { id: u32, bindings: ControlBindingsData },
     /// Desadjuntar todos los scripts de una entidad (sin eliminar la entidad).
     UnloadScript { id: u32 },
+    /// Cargar script Rhai compilado desde el editor de nodos (lógica por escena).
+    LoadSceneVisualScript { scene_id: u32, source: String },
     /// Cargar una imagen PNG como sprite (solo almacenamiento, no se renderiza).
     LoadSprite { path: String, name: String },
     /// Eliminar un sprite del almacén del motor.
@@ -444,7 +446,7 @@ impl AnimationFrameData {
     }
 }
 
-/// Script Lua asociado a una animación. Se ejecuta solo mientras la animación está activa.
+/// Script Rhai asociado a una animación. Se ejecuta solo mientras la animación está activa.
 #[derive(Debug, Deserialize, Clone)]
 pub struct AnimScriptData {
     pub name:   String,

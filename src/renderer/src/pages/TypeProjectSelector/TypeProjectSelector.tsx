@@ -3,6 +3,8 @@ import type { OpenProjectResult, ProjectType } from '@shared-types';
 import { useTraslate } from '@hooks';
 import { LanguageToggleButton } from '@components';
 
+import imgLogo from '../../imgs/RER-ENGINE-LOGO.png';
+
 interface ProjectOption {
   type:        ProjectType
   label:       string
@@ -84,13 +86,12 @@ export function TypeProjectSelector({ onSelect, onLoadProject }: Props) {
     >
       <LanguageToggleButton variant="compact" />
 
-      <div className="mb-5 text-center">
-        <div style={{ fontSize: 36, fontWeight: 800, color: '#c084fc', letterSpacing: '0.04em', lineHeight: 1 }}>
-          ⬡ RER-ENGINE
-        </div>
-        <div className="mt-2 selector-subtitle">
-          {t('SELECT PROJECT TYPE')}
-        </div>
+      <div className="mb-3 text-center">
+        <img src={imgLogo} alt="RER-ENGINE-LOGO" width={250} height={250} />
+      </div>
+      
+      <div className="mt-2 mb-4 selector-subtitle fw-bold">
+        {t('SELECT PROJECT TYPE')}
       </div>
 
       <div className="d-flex gap-4 align-items-stretch">

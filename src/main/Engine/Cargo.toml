@@ -30,7 +30,7 @@ parry3d = "0.17"
 rodio = { version = "0.19", default-features = false, features = ["wav", "vorbis", "mp3"] }
 getrandom = "0.2"
 raw-window-handle = "0.6"
-mlua = { version = "0.10", features = ["lua54", "vendored"] }
+rhai = { version = "1.22", features = ["sync"] }
 gilrs = "0.11"
 x11 = { version = "2", features = ["xlib"] }
 windows = { version = "0.54", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Accessibility"] }

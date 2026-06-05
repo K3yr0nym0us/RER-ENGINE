@@ -3,6 +3,7 @@ import { createElement, isValidElement, useCallback, useEffect, useRef, type Rea
 import { SpritePreviewModalBody } from '@components'
 import type { BluePrintEntry, ModalElectronOpenRequest, ModalElectronSize } from '@shared-types'
 import { useContextEngine } from '@engine'
+import { useLanguage } from '../context/LanguageContext'
 import { useQuickBuild } from '../context/QuickBuildContext'
 import { buildEngineSnapshot } from '../modal-electron/buildEngineSnapshot'
 import { getComponentKey, prepareModalElectronProps } from '../modal-electron/getComponentKey'
@@ -49,6 +50,7 @@ function createHandlerId(): string {
 
 export function useModalElectron() {
 	const engine = useContextEngine()
+	const { locale } = useLanguage()
 	const { activeBluePrint, setActiveBluePrint } = useQuickBuild()
 
 	const engineRef = useRef(engine)
@@ -126,15 +128,28 @@ export function useModalElectron() {
 			}
 		}
 
+		const preparedProps = prepareModalElectronProps(componentKey, props)
+		const engineSnapshot = buildEngineSnapshot(componentKey, engineRef.current)
 		const request: ModalElectronOpenRequest = {
 			size,
 			title,
 			handlerId,
 			componentKey,
-			props: prepareModalElectronProps(componentKey, props),
+			locale,
+			resizable: componentKey === 'VisualScriptingModalBody',
+			props: preparedProps,
 			callbackKeys,
 			...(playerUiEditorState ? { playerUiEditorState } : {}),
-			...buildEngineSnapshot(componentKey, engineRef.current),
+			...engineSnapshot,
+			...(componentKey === 'VisualScriptingModalBody'
+				? {
+					sceneEntities: (
+						Array.isArray(preparedProps.sceneEntities) && preparedProps.sceneEntities.length > 0
+							? preparedProps.sceneEntities
+							: engineSnapshot.sceneEntities
+					) as ModalElectronOpenRequest['sceneEntities'],
+				}
+				: {}),
 		}
 
 		if (componentKey === 'BluePrintModalBody') {
@@ -186,7 +201,7 @@ export function useModalElectron() {
 		// IPC structured clone: solo datos planos (sin JSX ni funciones).
 		const ipcPayload = JSON.parse(JSON.stringify(request)) as ModalElectronOpenRequest
 		await window.electronAPI.openModalElectron(ipcPayload)
-	}, [closeModal, setActiveBluePrint])
+	}, [closeModal, locale, setActiveBluePrint])
 
 	useEffect(() => {
 		setModalElectronParentBridge({ openModal })

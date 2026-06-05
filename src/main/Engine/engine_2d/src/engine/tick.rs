@@ -35,6 +35,7 @@ impl State {
             self.autosave_last_tick = now;
         }
         self.update_scripts();
+        self.update_scene_scripts();
         if self.preview_playing && self.camera_2d.is_some() {
             // Los deslizamientos pendientes (on_press slide) se avanzan antes del paso
             // de física para que la velocidad esté lista cuando Rapier integra el cuerpo.

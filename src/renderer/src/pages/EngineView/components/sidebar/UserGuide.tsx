@@ -11,6 +11,8 @@ export function UserGuide() {
           <li>Haz clic en una entidad para editarla en el accordion de &quot;Propiedades&quot;.</li>
           <li>Convierte entidades a blueprints para reutilizarlas en el accordion de &quot;Propiedades&quot; boton &quot;Convertir en Blueprint&quot;.</li>
           <li>Usa la herramienta de construcción rápida para usar las blueprints en el accordion de &quot;Herramientas&quot;.</li>
+          <li>Programa la escena desde <strong>Escenas → Programación</strong> (nodos visuales o script Rhai de escena).</li>
+          <li>Programa una entidad desde <strong>Propiedades → Programar entidad</strong> (nodos o scripts Rhai por entidad).</li>
           <li>Guarda con frecuencia o activa el guardado automático.</li>
         </ol>
       </section>
@@ -21,14 +23,14 @@ export function UserGuide() {
           La barra lateral izquierda concentra la configuracion principal:
         </p>
         <ul className="mb-0 text-secondary">
-          <li><strong>Escenas:</strong> lista de escenas del proyecto; crear, renombrar, eliminar y cambiar la escena activa.</li>
+          <li><strong>Escenas:</strong> lista de escenas del proyecto; crear, renombrar, eliminar y cambiar la escena activa. Dentro, <strong>Programación</strong> abre la lógica de escena (nodos o Rhai).</li>
           <li><strong>Mundo:</strong> tamaño del area de trabajo, cuadrícula, gravedad, FPS objetivo y (2D) fondo del nivel; en 3D también luz direccional y sombras.</li>
           <li><strong>Cámara:</strong> en 2D, posición y zoom de la cámara del editor; en 3D FP, ojo de cámara, FOV, frustum y modo de seguimiento al personaje.</li>
           <li><strong>Recursos:</strong> carga y organización de assets — en 2D: sprites, sonidos y fondos; en 3D: modelos 3D y sonidos.</li>
           <li><strong>Entidades:</strong> creación de entorno, personajes y objetos a partir de los recursos cargados.</li>
           <li><strong>Herramientas:</strong> en 2D, dibujar colisionadores, áreas de ejecución y construcción rápida con blueprints; en 3D, construcción rápida con blueprints.</li>
-          <li><strong>Controles:</strong> elige un personaje y configura teclas, mouse o mandos con scripts Lua.</li>
-          <li><strong>Propiedades:</strong> aparece al seleccionar una entidad; nombre, transform, física, animaciones, scripts y acciones (eliminar, blueprint, etc.).</li>
+          <li><strong>Controles:</strong> elige un personaje y configura teclas, mouse o mandos con scripts Rhai.</li>
+          <li><strong>Propiedades:</strong> aparece al seleccionar una entidad; nombre, transform, física, animaciones, <strong>Programar entidad</strong> (nodos o scripts Rhai) y acciones (eliminar, blueprint, etc.).</li>
         </ul>
       </section>
 

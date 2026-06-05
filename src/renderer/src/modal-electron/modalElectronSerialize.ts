@@ -1,5 +1,8 @@
 import { isValidElement } from 'react'
 
+import type { Entity3D } from '@shared-types'
+
+import { sanitizeSceneEntitiesForModal } from '../visualScripting/resolveSceneEntities'
 import { extractModalConfirmMessageSpec } from './modalConfirmMessageSpec'
 
 const REACT_ELEMENT_TYPE = Symbol.for('react.element')
@@ -66,6 +69,17 @@ export function prepareModalElectronProps(
 		return {
 			...serializeModalProps(rest),
 			...(spec ? { messageSpec: clonePlainValue(spec) } : {}),
+		}
+	}
+
+	if (componentKey === 'VisualScriptingModalBody') {
+		const { sceneEntities, ...rest } = props
+		const sanitized = Array.isArray(sceneEntities)
+			? sanitizeSceneEntitiesForModal(sceneEntities as Entity3D[])
+			: []
+		return {
+			...serializeModalProps(rest),
+			sceneEntities: sanitized,
 		}
 	}
 

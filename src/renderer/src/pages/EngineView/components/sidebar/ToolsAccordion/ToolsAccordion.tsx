@@ -23,7 +23,7 @@ export function ToolsAccordion({ projectType }: Props) {
     <Accordion.Item eventKey="herramientas">
       <Accordion.Header><Wrench className="me-2" />{t('Tools')}</Accordion.Header>
       <Accordion.Body className="py-2 px-2">
-        <div className={`d-flex ${is2D ? 'justify-content-between' : 'justify-content-center'}`}>
+        <div className={`d-flex flex-wrap gap-1 ${is2D ? 'justify-content-between' : 'justify-content-center'}`}>
           {is2D && (
             <>
               <ColliderToolButton activeTool={activePointTool} setActiveTool={setActivePointTool} />

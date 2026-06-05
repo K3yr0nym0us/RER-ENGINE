@@ -11,9 +11,9 @@ use crate::engine::State;
 impl State {
     pub(crate) fn clear_play_controller_script_frame(&mut self) {
         self.play_controller_script_input.clear();
-        self.play_controller_lua_walk_speed = None;
-        self.play_controller_lua_sprint_multiplier = None;
-        self.play_controller_lua_jump_speed = None;
+        self.play_controller_script_walk_speed = None;
+        self.play_controller_script_sprint_multiplier = None;
+        self.play_controller_script_jump_speed = None;
     }
 
     pub(crate) fn uses_scripted_play_controller(&self) -> bool {
@@ -39,7 +39,7 @@ impl State {
     }
 
     fn play_controller_jump_speed(&self) -> f32 {
-        self.play_controller_lua_jump_speed
+        self.play_controller_script_jump_speed
             .unwrap_or(PLAY_CHARACTER_JUMP_SPEED)
     }
 
@@ -49,11 +49,11 @@ impl State {
 
     fn play_controller_move_speed(&self, pressed_inputs: &HashSet<String>) -> f32 {
         let mut speed = self
-            .play_controller_lua_walk_speed
+            .play_controller_script_walk_speed
             .unwrap_or(PLAY_CHARACTER_KEYBOARD_SPEED);
         if pressed_inputs.contains("SHIFT") {
             let sprint = self
-                .play_controller_lua_sprint_multiplier
+                .play_controller_script_sprint_multiplier
                 .unwrap_or(PLAY_CHARACTER_SPRINT_MULTIPLIER);
             speed *= sprint;
         }

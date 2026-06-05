@@ -13,7 +13,7 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 ```
 
 - [x] Workspace Cargo (`engine_2d`, `engine_3d`, `engine_shared`); binarios separados
-- [x] IPC stdin/stdout, winit + wgpu overlay, ECS, scripting Lua, hot reload
+- [x] IPC stdin/stdout, winit + wgpu overlay, ECS, scripting Rhai, hot reload
 - [x] GPU fija: Vulkan (`EngineGpuProfile::TwoD` en `engine_shared/src/gpu.rs`)
 - [x] Editor: electron-vite, spawn del motor, escenas múltiples, `.save` ZIP
 - [x] `set_bounds`, evento `ready`, multiplex `engine.off()` en preload
@@ -45,8 +45,8 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 - [x] Cámara 2D (`set_camera2d`, `camera_2d_updated`)
 - [x] Quick build con snap/escala calculados en Rust
 - [x] Blueprints 2D (instanciar, actualizar desde plantilla)
-- [x] API Lua 2D: `apply_kinematic_gravity`, `move_entity_slide`, `set_vsync`, etc.
-- [x] Semántica `SetGravity`, `apply_kinematic_gravity` y `on_press` — contrato en [`LUA_API.md`](./LUA_API.md#gravedad-y-controles-2d)
+- [x] API Rhai 2D: `apply_kinematic_gravity`, `move_entity_slide`, `set_vsync`, etc.
+- [x] Semántica `SetGravity`, `apply_kinematic_gravity` y `on_press` — contrato en [`RHAI_API.md`](./RHAI_API.md#gravedad-y-controles-2d)
 - [x] Spatial grid para picking/consultas
 - [x] Undo/redo de transformaciones, herramientas de dibujo y entidades (snapshot: escenario, personaje, colisionador, trigger)
 - [x] Atlas: evento `atlas_exhausted` → consola del editor
@@ -72,6 +72,7 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 - [x] **`import_scene` completo** — un IPC carga la escena entera (entidades + restores); sin ráfagas IPC ni `pendingRestoresRef` en el front; evento `scene_imported`
 - [x] **Flujo de restauración inicial** — `import_scene` en carga/cambio de escena 2D; `apply_entity_restore` para undo y casos puntuales
 - [x] Guardado engine-first: `export_save_snapshot` + merge de escenas/blueprints en el front
+- [x] **Programación visual** — lógica de escena (Escenas → Programación) y entidad (Propiedades → Programar entidad); compilador nodos → Rhai; modal Electron con `sceneEntities` por IPC
 
 ---
 

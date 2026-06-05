@@ -288,7 +288,7 @@ export function SpritePreviewLeftPanel({
       <hr className="border-secondary opacity-50 mb-3" />
 
       <div className="mb-3">
-        <label className="text-light fw-bold d-block mb-2">{t('Lua Scripts')}</label>
+        <label className="text-light fw-bold d-block mb-2">{t('Rhai Scripts')}</label>
 
         {scripts.length > 0 && (
           <div className="d-flex flex-column gap-1 mb-2">
@@ -314,7 +314,7 @@ export function SpritePreviewLeftPanel({
           </div>
         )}
 
-        <AppTooltip content={t('Add Lua script to this animation')} place="top">
+        <AppTooltip content={t('Add Rhai script to this animation')} place="top">
           <button
             className="btn btn-outline-secondary btn-sm w-100"
             type="button"

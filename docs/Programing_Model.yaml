@@ -1,0 +1,226 @@
+# RER-ENGINE — Modelo de programación visual (nodos → Rhai)
+# Referencia para IAs y contribuidores. Junio 2026.
+
+version: 3
+updated: 2026-06-04
+
+summary: |
+  El editor de nodos compila grafos visuales a scripts Rhai que el motor ejecuta en play.
+  Hay dos contextos: lógica de escena (Level Blueprint) y lógica de entidad.
+  El grafo JSON es la fuente de verdad en el .save; el Rhai compilado se cachea en
+  visualScriptRhai y se envía al motor al guardar / cambiar escena / play.
+
+# ── Dónde abrir el editor ─────────────────────────────────────────────────────
+
+open_from:
+  scene:
+    sidebar_path: "Escenas → Programación"
+    file: src/renderer/src/pages/EngineView/components/sidebar/ScenesAccordion.tsx
+    nested_accordion: ProgrammingAccordion
+    buttons:
+      - label: "Script de escena (Rhai)"
+        action: openSceneScriptEditor
+      - label: "Lógica de escena (nodos)"
+        action: openVisualScriptingModal
+    hook: src/renderer/src/pages/EngineView/hooks/useSceneManager.tsx
+
+  entity:
+    sidebar_path: "Propiedades → Programar entidad"
+    file: src/renderer/src/pages/EngineView/components/sidebar/PropertiesAccordion/ScriptingAccordion.tsx
+    requires: entidad seleccionada en el viewport
+    buttons:
+      - label: "Lógica de entidad (nodos)"
+        action: openVisualScripting (useScripting)
+      - label: "Nuevo script (Rhai)"
+        action: openEditor
+    hook: src/renderer/src/hooks/useScripting.tsx
+
+  note: |
+    Programación ya no es un acordeón de nivel superior en SideBarLeft.
+    Solo vive dentro del acordeón Escenas (lógica de escena).
+
+# ── Modal Electron (ventana separada) ─────────────────────────────────────────
+
+modal_electron:
+  why: |
+    El canvas de nodos abre en una ventana Electron hija (modalElectronWindow).
+    Esa ventana NO tiene EngineProvider; VisualScriptingModalBody no usa useContextEngine.
+  data_flow:
+    - La ventana principal resuelve sceneEntities con resolveSceneEntitiesForVisualScript
+    - sanitizeSceneEntitiesForModal elimina campos undefined (IPC JSON estricto)
+    - Se pasan por ModalElectronOpenRequest.sceneEntities y props del modal
+  files:
+    modal_body: src/renderer/src/visualScripting/components/VisualScriptingModalBody.tsx
+    resolve: src/renderer/src/visualScripting/resolveSceneEntities.ts
+    serialize: src/renderer/src/modal-electron/modalElectronSerialize.ts
+    snapshot: src/renderer/src/modal-electron/buildEngineSnapshot.ts
+    callbacks: src/renderer/src/modal-electron/modalElectronCallbacks.ts
+    types: src/shared-types/types.ts (ModalElectronOpenRequest.sceneEntities)
+  merge_sources:
+    - entityMeta del motor (fuente principal en runtime)
+    - savedEntities del manifest / sceneStateStore
+    - savedPlayer (jugador FP va aparte de entities en SavedScene)
+    - animaciones desde meta o entidad guardada
+
+# ── Persistencia en .save ─────────────────────────────────────────────────────
+
+persistence:
+  scene:
+    fields:
+      - visualGraph: VisualGraphDocument (context scene, sceneId)
+      - visualScriptRhai: Rhai compilado (cache)
+      - sceneScriptRhai: script Rhai manual (alternativa sin nodos)
+    priority: |
+      Si visualGraph tiene nodos → visualScriptRhai (o recompilar al cargar).
+      Si no hay grafo → sceneScriptRhai.
+    store: sceneStateStore + export_save_snapshot
+    motor_ipc: load_scene_visual_script
+
+  entity:
+    fields:
+      - visualGraph: VisualGraphDocument (context entity, entityId)
+      - visualScriptRhai: Rhai compilado (cache)
+      - scripts[]: scripts Rhai manuales con nombre
+    script_name_visual: visual_logic (entityVisualScript.ts)
+    motor: el Rhai de nodos se adjunta como script de entidad al play
+
+# ── Catálogo de nodos ─────────────────────────────────────────────────────────
+
+nodes:
+  events:
+    scene:
+      - id: event.scene_begin
+        label: Scene start
+        rhai_callback: on_scene_start()
+      - id: event.tick
+        label: Each frame
+        rhai_callback: on_scene_tick(dt)
+    entity:
+      - id: event.entity_start
+        label: On start
+        rhai_callback: on_start(entity)
+      - id: event.entity_update
+        label: Each frame
+        rhai_callback: update(entity, dt)
+
+  flow:
+    shared: [scene, entity]
+    list:
+      - id: flow.sequence
+        label: Sequence
+        pins: [then_0, then_1, exec_out]
+      - id: flow.if
+        label: Branch (if)
+        field: expression (Rhai bool)
+        pins: [then_true, then_false, exec_out]
+      - id: flow.for_repeat
+        label: Repeat N times
+        field: count (entero)
+        pins: [loop_body, exec_out]
+      - id: flow.for_each_entity
+        label: For each entity
+        context: scene only
+        field: entityIds (opcional; si vacío usa todas las entidades de escena)
+        compiles_to: for entity_id in [ids] { ... }
+
+  actions:
+    - id: action.log
+      label: Print
+      contexts: [scene, entity]
+      compiles_to: engine.log("...")
+
+    - id: action.play_animation
+      label: Play animation
+      contexts: [scene, entity]
+      fields: [entityId, animationName]
+      compiles_to: engine.play_animation(id_expr, "name")
+
+    - id: action.set_scale
+      label: Set scale
+      contexts: [entity]
+      fields: [scaleX, scaleY]  # expresiones Rhai
+      compiles_to: engine.set_scale(entity.id, sx, sy)
+
+    - id: action.move_to
+      label: Teleport to
+      ui_label: Teleport to
+      internal_id: action.move_to
+      contexts: [entity]
+      fields: [x, y]  # posición absoluta, expresiones Rhai
+      compiles_to: engine.move_to(entity.id, x, y)
+      note: Teletransporte instantáneo; no usa física.
+
+    - id: action.translate
+      label: Translate
+      contexts: [entity]
+      fields: [dx, dy]  # delta relativo
+      compiles_to: engine.translate(entity.id, dx, dy)
+
+  catalog_file: src/renderer/src/visualScripting/nodeDefinitions.ts
+
+# ── Panel izquierdo del editor de nodos ───────────────────────────────────────
+
+variables_panel:
+  scene:
+    accordions:
+      - Scene logic: dt, engine.log, lista de ids, referencias por entidad
+      - Por categoría Entity3DCategory: environment, character, player, object, sun, ground
+      - Animations: subacordeón por entidad con nombres de animación (solo lectura)
+  entity:
+    accordions:
+      - Transform: entity.x, entity.y, entity.scale_x, entity.scale_y
+      - Animations: nombres de animaciones de la entidad (solo lectura)
+      - Others: entity.id, This entity
+    rule: |
+      Las acciones engine.set_scale, engine.move_to, engine.translate,
+      engine.play_animation y engine.log NO aparecen en el panel de entidad.
+      Van exclusivamente como nodos de acción en el canvas.
+  file: src/renderer/src/visualScripting/contextVariables.ts
+
+# ── Compilador ────────────────────────────────────────────────────────────────
+
+compiler:
+  entry: src/renderer/src/visualScripting/compileGraphToRhai.ts
+  validation: src/renderer/src/visualScripting/validateGraph.ts
+  helpers:
+    - compileEntityId.ts (compileEntityIdExpr, compileRhaiExprField)
+  rules:
+    - Un solo nodo raíz por evento (Scene start, Each frame, On start, Each frame entidad)
+    - Cadenas exec conectadas por exec_out → exec_in
+    - IF / Sequence / loops usan handles dedicados (then_true, loop_body, etc.)
+    - Campos numéricos en nodos pueden ser literales o expresiones Rhai (entity.x, dt, etc.)
+  output_scene: |
+    fn on_scene_start() { ... }
+    fn on_scene_tick(dt) { ... }
+  output_entity: |
+    fn on_start(entity) { ... }
+    fn update(entity, dt) { ... }
+
+# ── Archivos clave (renderer) ─────────────────────────────────────────────────
+
+files:
+  core:
+    - src/renderer/src/visualScripting/nodeDefinitions.ts
+    - src/renderer/src/visualScripting/compileGraphToRhai.ts
+    - src/renderer/src/visualScripting/validateGraph.ts
+    - src/renderer/src/visualScripting/contextVariables.ts
+    - src/renderer/src/visualScripting/resolveSceneEntities.ts
+    - src/renderer/src/visualScripting/compileEntityId.ts
+  persistence:
+    - src/renderer/src/visualScripting/sceneVisualScript.ts
+    - src/renderer/src/visualScripting/entityVisualScript.ts
+  ui:
+    - src/renderer/src/visualScripting/components/VisualScriptCanvas.tsx
+    - src/renderer/src/visualScripting/components/VisualScriptNode.tsx
+    - src/renderer/src/visualScripting/components/VisualScriptVariablesPanel.tsx
+    - src/renderer/src/visualScripting/components/VisualScriptingModalBody.tsx
+    - src/renderer/src/visualScripting/components/SceneScriptEditorModalBody.tsx
+  sidebar:
+    - src/renderer/src/pages/EngineView/components/sidebar/ScenesAccordion.tsx
+    - src/renderer/src/pages/EngineView/components/sidebar/ProgrammingAccordion/ProgrammingAccordion.tsx
+    - src/renderer/src/pages/EngineView/components/sidebar/PropertiesAccordion/ScriptingAccordion.tsx
+
+# ── Relación con RHAI_API.md ──────────────────────────────────────────────────
+
+rhai_reference: RHAI_API.md
+motor_impl: src/main/Engine/engine_shared/src/scripting/

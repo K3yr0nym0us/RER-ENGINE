@@ -116,7 +116,7 @@ pub struct State {
     pub(crate) ui_work_grid_buffer: GizmoBuffer,
     pub(crate) player_ui_edit_scope: Option<String>,
     pub(crate) player_ui_edit_screen_id: Option<String>,
-    /// Pantalla Player UI marcada como activa (play y scripts Lua).
+    /// Pantalla Player UI marcada como activa (play y scripts Rhai).
     pub(crate) player_ui_active_player_screen_id: Option<String>,
     /// id → nombre de pantallas Player UI (sincronizado desde el editor).
     pub(crate) player_ui_player_screen_names: HashMap<String, String>,
@@ -166,10 +166,10 @@ pub struct State {
     pub(crate) play_controller_jump_request_prev: bool,
     /// Teclas acumuladas por scripts de control en el frame actual (play).
     pub(crate) play_controller_script_input: HashSet<String>,
-    /// Parámetros opcionales fijados por scripts Lua de control (play).
-    pub(crate) play_controller_lua_walk_speed: Option<f32>,
-    pub(crate) play_controller_lua_sprint_multiplier: Option<f32>,
-    pub(crate) play_controller_lua_jump_speed: Option<f32>,
+    /// Parámetros opcionales fijados por scripts Rhai de control (play).
+    pub(crate) play_controller_script_walk_speed: Option<f32>,
+    pub(crate) play_controller_script_sprint_multiplier: Option<f32>,
+    pub(crate) play_controller_script_jump_speed: Option<f32>,
     /// Entidad `[Player]` principal de la escena 3D.
     pub(crate) play_character_entity: Option<EntityId>,
     /// Cámara orbital del editor 3D (ECS separada del jugador FP).

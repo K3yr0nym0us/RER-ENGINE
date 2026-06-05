@@ -79,7 +79,7 @@ let currentProjectExtractDir: string | null = null
 // mientras el proyecto está abierto para que el motor lea rutas absolutas.
 const extractedProjectDirs = new Set<string>()
 
-// Ventana secundaria del editor de scripts Lua
+// Ventana secundaria del editor de scripts Rhai
 // (eliminada — el editor ahora vive en un modal de Bootstrap dentro del renderer)
 
 // Últimos bounds efectivos del motor (para restaurarlo tras ocultarlo)
@@ -968,7 +968,7 @@ function serializeScriptsToFiles(data: ProjectSaveData, scriptingDir: string): {
     const key = `${folderKey}/${baseName}`
     const count = usedNames.get(key) ?? 0
     usedNames.set(key, count + 1)
-    return count === 0 ? baseName : `${path.basename(baseName, '.lua')}_${count}.lua`
+    return count === 0 ? baseName : `${path.basename(baseName, '.rhai')}_${count}.rhai`
   }
 
   const saveScript = (sourceScript: { name: string; source: string }, folderParts: string[], fallbackName: string) => {
@@ -983,7 +983,7 @@ function serializeScriptsToFiles(data: ProjectSaveData, scriptingDir: string): {
       }
     }
 
-    const fileBase = `${sanitizeSegment(sourceScript.name, fallbackName)}.lua`
+    const fileBase = `${sanitizeSegment(sourceScript.name, fallbackName)}.rhai`
     const fileName = nextName(folderRel, fileBase)
     const relPath = folderRel.length > 0 ? `scripting/${folderRel}/${fileName}` : `scripting/${fileName}`
     const absDir = folderRel.length > 0 ? path.join(scriptingDir, ...safeFolderParts) : scriptingDir
@@ -1209,14 +1209,14 @@ function saveProjectToFile(saveFilePath: string, data: ProjectSaveData): boolean
     zip.addLocalFolder(stagingDir)
     zip.writeZip(saveFilePath)
 
-    const countLuaFiles = (dir: string): number => {
+    const countRhaiFiles = (dir: string): number => {
       if (!fs.existsSync(dir)) return 0
       let total = 0
       for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
         const full = path.join(dir, entry.name)
         if (entry.isDirectory()) {
-          total += countLuaFiles(full)
-        } else if (entry.isFile() && path.extname(entry.name).toLowerCase() === '.lua') {
+          total += countRhaiFiles(full)
+        } else if (entry.isFile() && path.extname(entry.name).toLowerCase() === '.rhai') {
           total += 1
         }
       }
@@ -1248,7 +1248,7 @@ function saveProjectToFile(saveFilePath: string, data: ProjectSaveData): boolean
     const classifiedAssets = new Set<string>([...uniqueSounds, ...uniqueFonts, ...uniqueBackgrounds, ...uniqueSprites])
     const otherAssetNames = Array.from(pathMap.values()).filter((rel) => !classifiedAssets.has(rel)).sort()
     const otherAssets = otherAssetNames.length
-    const packedScriptFiles = countLuaFiles(scriptingDir)
+    const packedScriptFiles = countRhaiFiles(scriptingDir)
     const otherSuffix = otherAssets > 0 ? ` [${otherAssetNames.join(', ')}]` : ''
     const entityCount = countSavedEntities(data)
     const entityKindSuffix = formatEntityKindBreakdown(data)
@@ -1560,6 +1560,11 @@ ipcMain.handle('save-project-silent', async (_event, filePath: string, data: Pro
 
 ipcMain.handle('get-project-extract-dir', (): string | null => {
   return currentProjectExtractDir
+})
+
+ipcMain.handle('read-project-manifest', (): ProjectSaveData | null => {
+  if (!currentProjectExtractDir) return null
+  return loadProjectFromExtractDir(currentProjectExtractDir)
 })
 
 function syncExtractDirFromSavePath(savePath: string): void {

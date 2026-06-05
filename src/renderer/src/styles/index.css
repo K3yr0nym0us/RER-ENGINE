@@ -531,3 +531,172 @@ body {
   flex-direction: column;
   gap: 4px;
 }
+
+/* ── Modal Electron redimensionable (editor de nodos) ───────────────────── */
+html.modal-electron-resizable,
+html.modal-electron-resizable body,
+html.modal-electron-resizable #root {
+  height: 100%;
+  overflow: hidden;
+}
+
+.modal-electron-shell--resizable > * {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.visual-scripting-modal--resizable {
+  min-height: 0;
+}
+
+/* ── Visual scripting (React Flow) ───────────────────────────────────────── */
+.visual-scripting-modal .visual-scripting-canvas {
+  background: #1e2838;
+}
+
+.visual-scripting-modal .react-flow {
+  background: #1e2838;
+}
+
+.visual-scripting-modal .react-flow__controls {
+  background: #1a1f2e;
+  border: 1px solid #3d4466;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+
+.visual-scripting-modal .react-flow__controls-button {
+  background: #1a1f2e;
+  border: none;
+  border-bottom: 1px solid #3d4466;
+  fill: #c8d0e0;
+  width: 28px;
+  height: 28px;
+}
+
+.visual-scripting-modal .react-flow__controls-button:last-child {
+  border-bottom: none;
+}
+
+.visual-scripting-modal .react-flow__controls-button:hover {
+  background: #2a3350;
+}
+
+.visual-scripting-modal .react-flow__controls-button svg {
+  max-width: 14px;
+  max-height: 14px;
+}
+
+.visual-scripting-modal .react-flow__minimap {
+  background: #1a1f2e;
+  border: 1px solid #3d4466;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+
+.visual-scripting-modal .react-flow__minimap-mask {
+  fill: rgba(15, 20, 25, 0.8);
+}
+
+.visual-scripting-modal .react-flow__minimap-node {
+  stroke: #3d4466;
+}
+
+.visual-scripting-modal .react-flow__handle {
+  width: 10px;
+  height: 10px;
+}
+
+.visual-scripting-modal .react-flow__panel {
+  margin: 8px;
+}
+
+.visual-scripting-modal .visual-scripting-inspector .form-control:focus {
+  border-color: #6c757d;
+  box-shadow: none;
+}
+
+/* Panel izquierdo de referencias — mismo lenguaje visual que el inspector derecho */
+.visual-scripting-modal .visual-scripting-variables-title {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #f0f4fa;
+  letter-spacing: 0.01em;
+}
+
+.visual-scripting-modal .visual-scripting-variables-hint {
+  color: #9aa8bc;
+}
+
+.visual-scripting-modal .visual-scripting-var-tooltip-detail {
+  font-size: 0.8em;
+  color: #b8c4d6;
+  margin-top: 0.2rem;
+}
+
+.visual-scripting-modal .visual-scripting-var-tooltip-hint {
+  font-size: 0.8em;
+  color: #9aa8bc;
+  margin-top: 0.35rem;
+  padding-top: 0.25rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.visual-scripting-modal .visual-scripting-var-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.4rem 0.5rem;
+  background: #212529;
+  border: 1px solid #495057;
+  border-radius: 0.25rem;
+  color: #e8ecf4;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.visual-scripting-modal .visual-scripting-var-item:hover {
+  background: #2b3035;
+  border-color: #6c757d;
+  color: #e8ecf4;
+}
+
+.visual-scripting-modal .visual-scripting-var-item:focus-visible {
+  outline: none;
+  border-color: #6c757d;
+  box-shadow: 0 0 0 1px #6c757d;
+}
+
+.visual-scripting-modal .visual-scripting-var-label {
+  display: block;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: #e8ecf4;
+  line-height: 1.3;
+}
+
+.visual-scripting-modal .visual-scripting-var-snippet {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.7rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: #b8c4d6;
+  line-height: 1.25;
+}
+
+.visual-scripting-modal .visual-scripting-animations-nested .accordion-button {
+  padding: 0.35rem 0.5rem;
+  font-size: 0.8rem;
+}
+
+.visual-scripting-modal .visual-scripting-animations-nested .accordion-body {
+  padding: 0.35rem 0.5rem;
+}
+
+.visual-scripting-modal .visual-scripting-var-item:hover .visual-scripting-var-snippet {
+  color: #d0dae8;
+}

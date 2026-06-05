@@ -404,7 +404,7 @@ export function SpritePreviewModalBody({
           <Modal.Title>
             {scriptEditorState?.mode === 'edit'
               ? `Editar Script: ${(scriptEditorState as { mode: 'edit'; name: string }).name}`
-              : 'Nuevo Script Lua'}
+              : 'Nuevo Script Rhai'}
           </Modal.Title>
         </Modal.Header>
         <Modal.Body>

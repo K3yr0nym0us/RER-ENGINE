@@ -1,5 +1,9 @@
 import type { ModalElectronOpenRequest } from '@shared-types'
 import type { EngineContextValue } from '@engine'
+import {
+	resolveSceneEntitiesForVisualScript,
+	sanitizeSceneEntitiesForModal,
+} from '../visualScripting/resolveSceneEntities'
 import { serializeModalProps } from './modalElectronSerialize'
 
 export function buildEngineSnapshot(
@@ -21,6 +25,15 @@ export function buildEngineSnapshot(
 			return {
 				blueprints: JSON.parse(JSON.stringify(engine.blueprints)) as typeof engine.blueprints,
 				linkedEntityCounts: buildLinkedEntityCounts(engine),
+			}
+		case 'VisualScriptingModalBody':
+			return {
+				sceneEntities: sanitizeSceneEntitiesForModal(
+					resolveSceneEntitiesForVisualScript({
+						entityMeta: engine.entityMetaRef.current,
+						entityTransforms: engine.entityTransformsRef.current,
+					}),
+				),
 			}
 		default:
 			return {}

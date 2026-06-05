@@ -1,9 +1,13 @@
 import { useState, useEffect } from 'react';
 
 import ScriptEditorModalBody from '../components/SpritePreviewModalBody/components/ScriptEditorModalBody';
+import { VisualScriptingModalBody } from '../visualScripting/components/VisualScriptingModalBody';
+import { createEmptyEntityVisualGraph, saveEntityVisualGraph } from '../visualScripting/entityVisualScript';
+import { resolveSceneEntitiesForVisualScript } from '../visualScripting/resolveSceneEntities';
 
 import { useContextEngine } from '@engine';
 import { useModal } from '@modal';
+import { useTraslate } from '@hooks';
 import { ModalConfirmBody } from '../modal-electron/ModalConfirmBody';
 
 export interface ScriptEntry {
@@ -14,16 +18,25 @@ export interface ScriptEntry {
 export interface UseScriptingReturn {
   scripts:      ScriptEntry[]
   openEditor:   () => void
+  openVisualScripting: () => void
   editScript:   (name: string) => void
   removeScript: (name: string) => void
 }
 
 /**
- * Gestiona la lista de scripts Lua adjuntos a la entidad seleccionada.
+ * Gestiona la lista de scripts Rhai adjuntos a la entidad seleccionada.
  */
 export function useScripting(): UseScriptingReturn {
-  const { selectedEntity, send, entityMetaRef, updateEntityScripts } = useContextEngine()
+  const {
+    selectedEntity,
+    send,
+    entityMetaRef,
+    entityTransformsRef,
+    updateEntityScripts,
+    updateEntityVisualGraph,
+  } = useContextEngine()
   const { openModal, closeModal } = useModal()
+  const { t } = useTraslate()
   const [scripts, setScripts] = useState<ScriptEntry[]>([])
 
   useEffect(() => {
@@ -46,11 +59,45 @@ export function useScripting(): UseScriptingReturn {
   const openEditor = () => {
     if (!selectedEntity) return
     openModal({
-      title: 'Nuevo Script Lua',
+      title: t('New Rhai script'),
       size:  'lg',
       body: (
         <ScriptEditorModalBody
           onSave={(data) => handleSave(scripts, data)}
+          onCancel={closeModal}
+        />
+      ),
+    })
+  }
+
+  const openVisualScripting = () => {
+    if (!selectedEntity) return
+    const entityId = selectedEntity.id
+    const meta = entityMetaRef.current[entityId]
+    const initialGraph = meta?.visualGraph ?? createEmptyEntityVisualGraph(entityId)
+    const sceneEntities = resolveSceneEntitiesForVisualScript({
+      entityMeta: entityMetaRef.current,
+      entityTransforms: entityTransformsRef.current,
+    })
+    openModal({
+      title: t('Entity logic'),
+      size: 'xl',
+      body: (
+        <VisualScriptingModalBody
+          context="entity"
+          entityId={entityId}
+          entityName={selectedEntity.name ?? meta?.name}
+          sceneEntities={sceneEntities}
+          initialGraph={initialGraph}
+          onSave={(graph) => {
+            const saveResult = saveEntityVisualGraph(entityId, graph)
+            if (!saveResult.ok || !saveResult.rhaiSource) {
+              return { ok: false, errors: saveResult.errors }
+            }
+            updateEntityVisualGraph(entityId, graph, saveResult.rhaiSource)
+            closeModal()
+            return { ok: true }
+          }}
           onCancel={closeModal}
         />
       ),
@@ -62,7 +109,7 @@ export function useScripting(): UseScriptingReturn {
     const existing = scripts.find((s) => s.name === scriptName)
     if (!existing) return
     openModal({
-      title: `Editar Script: ${scriptName}`,
+      title: `${t('Edit script')}: ${scriptName}`,
       size:  'lg',
       body: (
         <ScriptEditorModalBody
@@ -77,18 +124,18 @@ export function useScripting(): UseScriptingReturn {
   const removeScript = (name: string) => {
     if (!selectedEntity) return
     openModal({
-      title: 'Confirmar eliminación',
+      title: t('Confirm deletion'),
       size: 'sm',
       body: (
         <ModalConfirmBody
           message={
             <div className="text-center">
-              <p>¿Estás seguro de que deseas eliminar el script <strong>{name}</strong>?</p>
-              <p className="text-danger small mb-0">Esta acción no se puede deshacer.</p>
+              <p>{t('Delete script confirm')} <strong>{name}</strong>?</p>
+              <p className="text-danger small mb-0">{t('This action cannot be undone.')}</p>
             </div>
           }
-          confirmLabel="Sí, eliminar"
-          cancelLabel="Cancelar"
+          confirmLabel={t('Yes, delete')}
+          cancelLabel={t('Cancel')}
           onConfirm={() => {
             const next = scripts.filter((s) => s.name !== name)
             setScripts(next)
@@ -102,5 +149,5 @@ export function useScripting(): UseScriptingReturn {
     })
   }
 
-  return { scripts, openEditor, editScript, removeScript }
+  return { scripts, openEditor, openVisualScripting, editScript, removeScript }
 }

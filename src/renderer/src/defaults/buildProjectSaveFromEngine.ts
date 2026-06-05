@@ -105,6 +105,9 @@ function mapEngineEntities(
 		return {
 			...entity,
 			...(animations ? { animations } : {}),
+			...(meta.scripts?.length ? { scripts: meta.scripts } : {}),
+			...(meta.visualGraph ? { visualGraph: meta.visualGraph } : {}),
+			...(meta.visualScriptRhai ? { visualScriptRhai: meta.visualScriptRhai } : {}),
 			...(entity.blueprint_id ?? meta.blueprintId
 				? { blueprint_id: entity.blueprint_id ?? meta.blueprintId }
 				: {}),

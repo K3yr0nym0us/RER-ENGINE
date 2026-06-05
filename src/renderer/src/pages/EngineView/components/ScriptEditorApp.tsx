@@ -1,6 +1,10 @@
 
-import React, { useState, useRef, useEffect, Suspense } from 'react';
+import React, { useState, useRef, useEffect, useMemo, Suspense } from 'react';
 import { FileEarmarkCode } from 'react-bootstrap-icons';
+import { RHAI_MONACO_EDITOR_OPTIONS, RHAI_MONACO_LANGUAGE, registerRhaiMonacoLanguage } from '../../../editor/rhaiMonaco';
+import { getDefaultEntityScript } from '../../../editor/rhaiScriptTemplates';
+import { useLanguage } from '../../../context/LanguageContext';
+import { useTraslate } from '@hooks';
 // Dynamic import for monaco-editor (for code splitting)
 const MonacoEditor = React.lazy(() => import('@monaco-editor/react'));
 
@@ -9,50 +13,18 @@ interface ScriptEditorInstance {
   setValue: (value: string) => void;
 }
 
-const DEFAULT_SCRIPT = `-- Escribe tu script Lua aquí
--- Parámetros disponibles:
---   entity  → snapshot de la entidad { id, x, y, scale_x, scale_y, animations }
---   dt      → tiempo en segundos desde el último frame (ej: 0.016)
---
--- ── Funciones de movimiento disponibles ──────────────────────────────────────
---
--- engine.move_entity(id, speed, dir_x, dir_y)
---   Mueve la entidad a través del sistema de físicas (shape cast + colisiones).
---   La entidad NO atravesará colisionadores. Usar para personajes y objetos
---   que deben respetar el mundo físico.
---   Ejemplo: engine.move_entity(entity.id, 15.0, 1.0, 0.0)  -- derecha a 15 u/s
---
--- engine.translate(id, dx, dy)
---   Traslada la posición directamente, IGNORANDO colisiones.
---   Útil para cinemáticas, objetos flotantes o efectos visuales donde no
---   importa la interacción física.
---   Ejemplo: engine.translate(entity.id, SPEED * dt, 0.0)
---
--- Otras API: engine.play_animation(id, name)  engine.stop_animation(id)
---            engine.move_to(id, x, y)  engine.log(msg)
--- ─────────────────────────────────────────────────────────────────────────────
-local script = {}
-
-function script.on_start(self, entity)
-end
-
-function script.update(self, entity, dt)
-end
-
-function script.on_stop(self, entity)
-end
-
-return script`
-
 /**
- * Ventana secundaria del editor de scripts Lua.
+ * Ventana secundaria del editor de scripts Rhai.
  * Se renderiza cuando la URL contiene `?mode=script-editor`.
  * Comunica el resultado al proceso main vía IPC (saveScriptEditor / cancelScriptEditor).
  */
 export function ScriptEditorApp() {
+  const { locale } = useLanguage()
+  const { t } = useTraslate()
+  const defaultScript = useMemo(() => getDefaultEntityScript(locale), [locale])
   const [isEditing, setIsEditing] = useState(false)
   const [name, setName]           = useState('')
-  const sourceRef                 = useRef<string>(DEFAULT_SCRIPT)
+  const sourceRef                 = useRef<string>(defaultScript)
   const editorRef                 = useRef<ScriptEditorInstance | null>(null)
 
   // Pedir datos iniciales al proceso main via IPC (evita el problema de
@@ -95,13 +67,15 @@ export function ScriptEditorApp() {
       {/* Cabecera */}
       <div className="d-flex align-items-center gap-2 mb-1">
         <FileEarmarkCode size={18} className="text-warning" />
-        <span className="fw-semibold" style={{ fontSize: '0.95rem' }}>{isEditing ? 'Editar Script Lua' : 'Nuevo Script Lua'}</span>
+        <span className="fw-semibold" style={{ fontSize: '0.95rem' }}>
+          {isEditing ? t('Edit Rhai script') : t('New Rhai script')}
+        </span>
       </div>
 
       {/* Nombre del script */}
       <input
         type="text"
-        placeholder="Nombre del script (ej: enemigo_movimiento)..."
+        placeholder={t('Script name placeholder')}
         value={name}
         onChange={(e) => setName(e.target.value)}
         className="form-control form-control-sm bg-dark text-light border-secondary"
@@ -110,25 +84,16 @@ export function ScriptEditorApp() {
 
       {/* Editor Monaco */}
       <div className="flex-fill rounded overflow-hidden border border-secondary" style={{ minHeight: 0 }}>
-        <Suspense fallback={<div>Cargando editor...</div>}>
+        <Suspense fallback={<div>{t('Loading editor...')}</div>}>
           <MonacoEditor
           height="100%"
-          defaultLanguage="lua"
-          defaultValue={DEFAULT_SCRIPT}
+          language={RHAI_MONACO_LANGUAGE}
+          defaultValue={defaultScript}
           theme="vs-dark"
+          beforeMount={registerRhaiMonacoLanguage}
           onChange={(val) => { sourceRef.current = val ?? '' }}
           onMount={handleMount}
-          options={{
-            fontSize:          13,
-            minimap:           { enabled: false },
-            scrollBeyondLastLine: false,
-            wordWrap:          'on',
-            tabSize:           2,
-            insertSpaces:      true,
-            automaticLayout:   true,
-            lineNumbersMinChars: 3,
-            padding:           { top: 8 },
-          }}
+          options={RHAI_MONACO_EDITOR_OPTIONS}
           />
         </Suspense>
       </div>
@@ -139,14 +104,14 @@ export function ScriptEditorApp() {
           className="btn btn-sm btn-outline-secondary"
           onClick={handleCancel}
         >
-          Cancelar
+          {t('Cancel')}
         </button>
         <button
           className="btn btn-sm btn-success"
           disabled={!name.trim()}
           onClick={handleSave}
         >
-          Guardar script
+          {t('Save script')}
         </button>
       </div>
     </div>

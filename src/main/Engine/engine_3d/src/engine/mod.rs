@@ -10,6 +10,7 @@ mod save_snapshot;
 mod init;
 mod render;
 mod scripts;
+mod scene_scripts;
 mod tick;
 mod types;
 #[path = "../engine.rs"]

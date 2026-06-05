@@ -3,10 +3,10 @@
 // Responsibilities:
 //   1. Log when a key/button transitions DOWN (first press, no repeat).
 //   2. Log when a key/button is released (UP).
-//   3. Execute the `on_keep` Lua callback every frame while held (movement, etc.).
+//   3. Execute the `on_keep` Rhai callback every frame while held (movement, etc.).
 //
 // This module has ZERO interaction with on_press logic. It never fires the
-// `on_press` Lua callback and never uses `just_pressed` guards.
+// `on_press` Rhai callback and never uses `just_pressed` guards.
 
 use crate::engine::State;
 use crate::scripting::ScriptCmd;
@@ -32,7 +32,7 @@ impl State {
     }
 
     /// Called every frame while a key/button is held (from `RedrawRequested`).
-    /// Executes the `on_keep` Lua callback for continuous movement/actions.
+    /// Executes the `on_keep` Rhai callback for continuous movement/actions.
     pub fn dispatch_on_keep_frame(&mut self, device: &str, control_key: &str) {
         if !self.preview_playing {
             return;

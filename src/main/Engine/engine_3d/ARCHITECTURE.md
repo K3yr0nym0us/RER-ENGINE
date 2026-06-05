@@ -111,7 +111,7 @@ Registro de rutas/tipos: `entity_save_meta` + actualizacion en spawn/load/replac
 
 ### Scripting
 
-- `update_scripts()` solo ejecuta el tick Lua de entidades cuando `preview_playing` es true. Los control scripts (`on_press` / `on_keep`) ya estaban acotados a play.
+- `update_scripts()` solo ejecuta el tick Rhai de entidades cuando `preview_playing` es true. Los control scripts (`on_press` / `on_keep`) ya estaban acotados a play.
 
 ### Fisica
 

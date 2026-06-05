@@ -6,12 +6,33 @@ const CONTENT_WIDTH: Record<ModalElectronSize, number> = {
   md: 500,
   lg: 800,
   xl: 1140,
+  xxl: 1680,
 }
 
 const HORIZONTAL_PADDING = 48
 
 /** Altura mínima del área web antes de medir el DOM (evita ventana gigante al abrir). */
 export const MODAL_ELECTRON_MIN_CONTENT_HEIGHT = 80
+
+/** Modales de editor de código / nodos: fracción mínima de la pantalla. */
+export const MODAL_TALL_CONTENT_HEIGHT_RATIO = 0.5
+
+export const MODAL_TALL_COMPONENT_KEYS = new Set([
+  'SceneScriptEditorModalBody',
+  'ScriptEditorModalBody',
+  'VisualScriptingModalBody',
+])
+
+export function resolveModalElectronInitialContentHeight(
+  componentKey: string,
+  screenHeight: number,
+): number {
+  if (!MODAL_TALL_COMPONENT_KEYS.has(componentKey)) {
+    return MODAL_ELECTRON_MIN_CONTENT_HEIGHT
+  }
+  const target = Math.floor(screenHeight * MODAL_TALL_CONTENT_HEIGHT_RATIO)
+  return clampModalElectronContentHeight(target, screenHeight)
+}
 
 export function resolveModalElectronWidth(
   size: ModalElectronSize | undefined,

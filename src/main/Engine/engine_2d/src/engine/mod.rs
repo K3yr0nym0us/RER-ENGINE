@@ -18,6 +18,7 @@ mod init;
 mod render;
 mod render_helpers;
 mod scripts;
+mod scene_scripts;
 mod snap_hint;
 mod tick;
 mod types;
@@ -201,7 +202,7 @@ pub struct State {
     /// Dirección actual de mirada por entidad (true = derecha, false = izquierda).
     /// Se actualiza automáticamente con movimiento horizontal en scripts.
     pub(crate) entity_facing_right: HashMap<u32, bool>,
-    /// Sistema de scripting Lua. Contiene la VM y los scripts adjuntos a entidades.
+    /// Sistema de scripting Rhai. Contiene la VM y los scripts adjuntos a entidades.
     pub(crate) script_engine: ScriptEngine,
     /// Mapa de bindings de control runtime. El frontend solo sincroniza esta
     /// configuración; el motor resuelve y ejecuta los scripts al detectar input.
@@ -233,7 +234,7 @@ pub struct State {
     /// Límite de FPS del bucle (sincronizado con `set_target_fps`).
     pub(crate) target_fps: u64,
     /// Bloqueo persistente de input horizontal para `on_keep`.
-    /// Mientras exista, la misma dirección no vuelve a ejecutar Lua.
+    /// Mientras exista, la misma dirección no vuelve a ejecutar el callback de control.
     pub(crate) blocked_on_keep_horizontal: HashMap<u32, f32>,
     /// Deslizamientos suaves en curso iniciados desde `on_press`.
     /// Cada frame, la entidad avanza hacia su destino a la velocidad indicada

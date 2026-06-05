@@ -10,7 +10,7 @@ use crate::gizmo;
 use crate::ipc::{send_event, send_load_progress, EngineEvent};
 use crate::entity_save_meta::EntitySaveMeta;
 use crate::mesh;
-use crate::scripting::ScriptEngine;
+use crate::scripting::{ScriptEngine, ScriptEngineProfile};
 
 impl State {
     pub(crate) fn send_model_loaded_event(&self, id: crate::ecs::EntityId, name: &str) {
@@ -114,8 +114,9 @@ impl State {
         self.fps_exit_hint_alpha = 0.0;
         self.pivot_edit_mode = None;
         self.logical_area_mode = None;
-        self.script_engine = ScriptEngine::new()
-            .expect("Error al reinicializar el motor de scripting Lua");
+        self.script_engine = ScriptEngine::new(ScriptEngineProfile::Engine3d)
+            .expect("Error al reinicializar el motor de scripting Rhai");
+        self.script_engine.clear_scene_script();
         self.control_bindings_by_entity.clear();
         self.clear_play_controller_script_frame();
         self.play_character_entity = None;

@@ -5,7 +5,13 @@ import type {
 	Entity3DCategory,
 	SavedPlayerTransform,
 } from '@shared-types';
-import { entityPathMarker } from '@shared-types';
+import {
+	entityPathMarker,
+	isEditorCameraPath,
+	isGroundPath,
+	isPlayerPath,
+	isSunPath,
+} from '@shared-types';
 import type { EntityMeta, PendingRestore, Transform } from '../context/useContextEngine/types';
 import {
 	inferEntity3dCategoryFromName,
@@ -22,6 +28,41 @@ function kindFromCategory(category: Entity3DCategory): EntityMeta['kind'] {
 		default:
 			return 'model';
 	}
+}
+
+/**
+ * Categoría manifest para listados de editor (nodos, UI).
+ * Corrige `object` genérico del motor usando nombre y path lógico.
+ */
+export function resolveEntity3dCategoryForScene(
+	entity: Pick<Entity3D, 'name' | 'category' | 'model'>,
+	meta?: Pick<EntityMeta, 'name' | 'entity3dCategory' | 'path' | 'kind'>,
+): Entity3DCategory {
+	const paths = [meta?.path, entity.model].filter(Boolean) as string[]
+	for (const path of paths) {
+		if (isPlayerPath(path)) return 'player'
+		if (isGroundPath(path)) return 'ground'
+		if (isSunPath(path)) return 'sun'
+	}
+
+	const name = entity.name ?? meta?.name
+	const fromName = inferEntity3dCategoryFromName(name)
+	if (fromName) return fromName
+
+	if (meta?.kind === 'character') return 'character'
+	if (meta?.kind === 'scenario') return 'environment'
+
+	const base: Entity3DCategory = meta?.entity3dCategory ?? entity.category ?? 'object'
+	return reconcileCategoryWithName(base, name)
+}
+
+/** Excluye entidades solo de editor (cámara orbital, etc.). */
+export function isEditorOnlySceneEntity(
+	entity: Pick<Entity3D, 'model'>,
+	meta?: Pick<EntityMeta, 'path'>,
+): boolean {
+	const paths = [meta?.path, entity.model].filter(Boolean) as string[]
+	return paths.some((path) => isEditorCameraPath(path) || entityPathMarker(path) === '[EditorCamera]')
 }
 
 /** Path/marker para IPC y colas de restore (`[Sun]`, `.glb`, etc.). */
@@ -52,6 +93,8 @@ export function entity3dPendingRestore(
 		physicsType: meta.physicsType,
 		animations: bp?.animations ?? entity.animations,
 		scripts: bp?.scripts ?? entity.scripts,
+		visualGraph: entity.visualGraph,
+		visualScriptRhai: entity.visualScriptRhai,
 		controlBindings: bp?.control_bindings ?? entity.controls,
 		blueprintId: entity.blueprint_id,
 		entityCategory: meta.entityCategory,
@@ -88,6 +131,8 @@ export function entity3dToMeta(entity: Entity3D): EntityMeta {
 		physicsType: entity.physics_type ?? 'static',
 		...(entity.animations?.length ? { animations: entity.animations } : {}),
 		...(entity.scripts?.length ? { scripts: entity.scripts } : {}),
+		...(entity.visualGraph ? { visualGraph: entity.visualGraph } : {}),
+		...(entity.visualScriptRhai ? { visualScriptRhai: entity.visualScriptRhai } : {}),
 		...(entity.controls ? { controlBindings: entity.controls } : {}),
 		...(entity.blueprint_id ? { blueprintId: entity.blueprint_id } : {}),
 		...(entity3dCategory === 'environment'

@@ -58,7 +58,7 @@ pub struct AnimationState {
     pub audio_decoded: Option<Arc<DecodedAudio>>,
     pub logical_w:     u32,
     pub logical_h:     u32,
-    /// Scripts Lua que se ejecutan solo mientras esta animación está activa.
+    /// Scripts Rhai que se ejecutan solo mientras esta animación está activa.
     pub scripts:       Vec<AnimScriptData>,
     /// Si false, ningún `PlayAnimation` puede interrumpirla hasta que termine.
     pub is_cancelable: bool,

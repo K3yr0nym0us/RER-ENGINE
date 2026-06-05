@@ -81,9 +81,9 @@ Requisitos: **Vulkan** en Windows y Linux (`vulkaninfo` o drivers actualizados).
 
 | Área | Tecnologías |
 |------|-------------|
-| Motor | Rust, **wgpu** (Vulkan), winit, glam, Rapier, mlua, gltf/image |
+| Motor | Rust, **wgpu** (Vulkan), winit, glam, Rapier, **rhai**, gltf/image |
 | Editor | Electron, React, TypeScript, Vite (electron-vite) |
-| Scripts de juego | Lua (sandbox: sin `io`, `os`, `require`) |
+| Scripts de juego | Rhai (sandbox: API `engine.*` registrada por el motor) |
 | Contrato IPC | JSON — tipos en `src/shared-types/types.ts` |
 
 ---
@@ -137,7 +137,8 @@ Logs del motor (opcional): `RUST_LOG=info` o `RUST_LOG=rer_engine_2d=debug`.
 
 | Archivo | Contenido |
 |---------|-----------|
-| [LUA_API.md](./LUA_API.md) | API de scripting Lua (2D y 3D), resumida |
+| [RHAI_API.md](./RHAI_API.md) | API de scripting Rhai (2D y 3D), resumida |
+| [docs/Programing_Model.yaml](./docs/Programing_Model.yaml) | Modelo de programación visual (nodos → Rhai, UI, persistencia, IPC modal) |
 | [CHECKLIST-2D.md](./CHECKLIST-2D.md) | Hecho y pendiente — motor / editor 2D |
 | [CHECKLIST-3D.md](./CHECKLIST-3D.md) | Hecho y pendiente — motor / editor 3D |
 | [`src/main/Engine/engine_2d/ARCHITECTURE.md`](src/main/Engine/engine_2d/ARCHITECTURE.md) | Contrato del motor 2D |

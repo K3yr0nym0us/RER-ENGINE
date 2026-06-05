@@ -5,8 +5,8 @@ import { pathToFileURL } from 'url'
 import { resolveAppWindowIcon } from './appWindowIcon'
 import type { ModalElectronOpenRequest } from '../shared-types/types'
 import {
-  MODAL_ELECTRON_MIN_CONTENT_HEIGHT,
   clampModalElectronContentHeight,
+  resolveModalElectronInitialContentHeight,
   resolveModalElectronWidth,
 } from './modalElectronSizes'
 
@@ -152,8 +152,20 @@ export async function openModalElectronWindow(payload: ModalElectronOpenRequest)
   const windowIcon = resolveAppWindowIcon()
   if (windowIcon) win.setIcon(windowIcon)
   win.setTitle(payload.title)
-  win.setContentSize(width, MODAL_ELECTRON_MIN_CONTENT_HEIGHT)
+  const initialHeight = resolveModalElectronInitialContentHeight(
+    payload.componentKey,
+    display.workAreaSize.height,
+  )
+  win.setContentSize(width, initialHeight)
   win.center()
+
+  const resizable = payload.resizable === true
+  win.setResizable(resizable)
+  if (resizable) {
+    win.setMinimumSize(720, 480)
+  } else {
+    win.setMinimumSize(280, 120)
+  }
 
   await ensureModalReady(win)
   sendRenderToModal(payload)

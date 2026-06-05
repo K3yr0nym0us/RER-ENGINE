@@ -1,5 +1,5 @@
 import { Accordion } from 'react-bootstrap';
-import { FileEarmarkCode, Pencil, Plus, Trash } from 'react-bootstrap-icons';
+import { Diagram3, FileEarmarkCode, Pencil, Plus, Trash } from 'react-bootstrap-icons';
 
 import { AppTooltip } from '@components';
 import type { ScriptEntry } from '@hooks';
@@ -8,24 +8,44 @@ import { useTraslate } from '@hooks';
 interface ScriptingAccordionProps {
   scripts:  ScriptEntry[]
   onNew:    () => void
+  onVisual: () => void
   onEdit:   (name: string) => void
   onRemove: (name: string) => void
 }
 
-export function ScriptingAccordion({ scripts, onNew, onEdit, onRemove }: ScriptingAccordionProps) {
+export function ScriptingAccordion({ scripts, onNew, onVisual, onEdit, onRemove }: ScriptingAccordionProps) {
   const { t } = useTraslate()
   return (
     <Accordion.Item eventKey="scripting">
-      <Accordion.Header><FileEarmarkCode className="me-2" />Scripting (Lua)</Accordion.Header>
-      <Accordion.Body className="py-2 px-2">
+      <Accordion.Header><FileEarmarkCode className="me-2" />{t('Program entity')}</Accordion.Header>
+      <Accordion.Body className="py-2 px-2 d-flex flex-column gap-2">
 
-        <button
-          className="btn btn-sm btn-outline-warning w-100 mb-2"
-          onClick={onNew}
-        >
-          <Plus size={15} className="me-1" />
-          {t('New Script')}
-        </button>
+        <AppTooltip content={t('Entity logic (nodes)')} place="top">
+          <span className="d-block">
+            <button
+              type="button"
+              className="btn btn-sm btn-outline-info w-100 d-flex align-items-center justify-content-center gap-1"
+              onClick={onVisual}
+            >
+              <Diagram3 size={15} />
+              {t('Entity logic (nodes)')}
+            </button>
+          </span>
+        </AppTooltip>
+
+        <AppTooltip content={t('New script (Rhai)')} place="top">
+          <span className="d-block">
+            <button
+              type="button"
+              className="btn btn-sm btn-outline-warning w-100 d-flex align-items-center justify-content-center gap-1"
+              onClick={onNew}
+            >
+              <Plus size={15} />
+              <FileEarmarkCode size={15} />
+              {t('New script (Rhai)')}
+            </button>
+          </span>
+        </AppTooltip>
 
         {scripts.length === 0 && (
           <div className="alert py-1 text-center mb-0" role="alert">

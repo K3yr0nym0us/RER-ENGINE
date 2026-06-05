@@ -13,7 +13,7 @@ use crate::ecs::World;
 use crate::entity_save_meta::EntitySaveRegistry;
 use crate::gizmo;
 use crate::mesh;
-use crate::scripting::ScriptEngine;
+use crate::scripting::{ScriptEngine, ScriptEngineProfile};
 use crate::texture::TextureArray;
 
 use super::{
@@ -823,9 +823,9 @@ impl State {
             play_controller_jump_request_active: false,
             play_controller_jump_request_prev: false,
             play_controller_script_input: HashSet::new(),
-            play_controller_lua_walk_speed: None,
-            play_controller_lua_sprint_multiplier: None,
-            play_controller_lua_jump_speed: None,
+            play_controller_script_walk_speed: None,
+            play_controller_script_sprint_multiplier: None,
+            play_controller_script_jump_speed: None,
             play_character_entity: None,
             editor_camera_entity: None,
             play_character_mesh_forward_xz: glam::Vec2::new(0.0, 1.0),
@@ -845,8 +845,8 @@ impl State {
             active_animations: HashMap::new(),
             default_animation_by_entity: HashMap::new(),
             entity_facing_right: HashMap::new(),
-            script_engine: ScriptEngine::new()
-                .expect("Error al inicializar el motor de scripting Lua"),
+            script_engine: ScriptEngine::new(ScriptEngineProfile::Engine3d)
+                .expect("Error al inicializar el motor de scripting Rhai"),
             control_bindings_by_entity: HashMap::new(),
             sprite_store: HashMap::new(),
             model_store: HashMap::new(),

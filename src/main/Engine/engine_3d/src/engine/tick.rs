@@ -245,6 +245,7 @@ impl State {
             self.autosave_last_tick = now;
         }
         self.update_scripts();
+        self.update_scene_scripts();
         if self.preview_playing {
             let skip_sync = self
                 .play_character_entity

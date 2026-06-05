@@ -12,7 +12,7 @@ use crate::config_compat::Camera;
 use crate::ecs::{MeshComponent, World};
 use crate::gizmo;
 use crate::mesh;
-use crate::scripting::ScriptEngine;
+use crate::scripting::{ScriptEngine, ScriptEngineProfile};
 use crate::texture::GpuTexture;
 
 use super::audio::start_audio_thread;
@@ -502,8 +502,8 @@ impl State {
             default_animation_by_entity: HashMap::new(),
             anim_flip_overrides:   HashMap::new(),
             entity_facing_right:   HashMap::new(),
-            script_engine: ScriptEngine::new()
-                .expect("Error al inicializar el motor de scripting Lua"),
+            script_engine: ScriptEngine::new(ScriptEngineProfile::Engine2d)
+                .expect("Error al inicializar el motor de scripting Rhai"),
             control_bindings_by_entity: HashMap::new(),
             sprite_store: HashMap::new(),
             sound_store: HashMap::new(),
