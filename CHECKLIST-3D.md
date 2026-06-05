@@ -49,7 +49,8 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 - [x] Cubos de editor (`spawn_editor_box`), modelos en almacén (`load_model_asset`)
 - [x] ECS 3D: `HashSet` + reciclado de IDs en `despawn` (`ecs.rs`)
 - [x] Undo/redo de creación de entidad — snapshot en motor (`undo_entity.rs`, `spawn_with_id`)
-- [x] API Rhai 3D FP: `fp_press_key`, `fp_jump`, `fp_set_walk_speed`, etc.
+- [x] API Rhai 3D FP: `fp_jump`, `fp_set_walk_speed`, etc.; tecla del binding auto-inyectada en control scripts
+- [x] Demo `DEMO_3d_FIRST_PERSON.save`: scripts `.rhai` (WASD walk speed, SHIFT sprint, SPACE jump)
 - [x] `replace_entity_model` con resync de orientación, escala y forward del jugador (FBX + GLB)
 - [x] **Carga GLB/GLTF skinned** — esqueleto unificado (varios `skin` por archivo), paleta Khronos, piezas múltiples; clips embebidos en asset
 - [x] **Animaciones embebidas 3D** — pipeline skinned GPU, `play_model_clip`, `set_default_animation`, evento `model_clips_ready`

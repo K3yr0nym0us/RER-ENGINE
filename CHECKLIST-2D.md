@@ -2,7 +2,7 @@
 
 Estado del runtime 2D y del editor en proyectos **2D**. Proyectos 3D: [CHECKLIST-3D.md](./CHECKLIST-3D.md). Contrato: [`engine_2d/ARCHITECTURE.md`](./src/main/Engine/engine_2d/ARCHITECTURE.md). Producto: [README.md](./README.md).
 
-**Última revisión:** mayo 2026
+**Última revisión:** junio 2026
 
 ---
 
@@ -45,7 +45,10 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 - [x] Cámara 2D (`set_camera2d`, `camera_2d_updated`)
 - [x] Quick build con snap/escala calculados en Rust
 - [x] Blueprints 2D (instanciar, actualizar desde plantilla)
-- [x] API Rhai 2D: `apply_kinematic_gravity`, `move_entity_slide`, `set_vsync`, etc.
+- [x] API Rhai 2D: `apply_kinematic_gravity`, `move_entity_slide`, `move_control`, `set_vsync`, etc.
+- [x] Control scripts 2D: `move_control` resuelve dirección desde el binding (sin `if control_key == "D"`)
+- [x] Invoke pattern Rhai: callbacks ven `engine` del preámbulo (`script_engine.rs`)
+- [x] Demo `DEMO_2d.save`: scripts `.rhai` (A/D on_keep, E/SPACE on_press, gamepad D-LEFT)
 - [x] Semántica `SetGravity`, `apply_kinematic_gravity` y `on_press` — contrato en [`RHAI_API.md`](./RHAI_API.md#gravedad-y-controles-2d)
 - [x] Spatial grid para picking/consultas
 - [x] Undo/redo de transformaciones, herramientas de dibujo y entidades (snapshot: escenario, personaje, colisionador, trigger)

@@ -156,6 +156,30 @@ nodes:
       fields: [dx, dy]  # delta relativo
       compiles_to: engine.translate(entity.id, dx, dy)
 
+  control_scripts:
+    context: entity control bindings (keyboard_mouse / gamepad)
+    callbacks:
+      - on_press(entity, control_key)  # once per key press
+      - on_keep(entity, control_key)   # each frame while held
+    engine_2d:
+      move_control: |
+        engine.move_control(entity.id, speed) maps the active binding key to direction
+        (A/D/W/S, D-LEFT, etc.). The engine stores the binding in ScriptApiContext;
+        scripts must not compare control_key or hardcode key names.
+      example_on_keep: |
+        fn on_keep(entity, control_key) {
+            engine.move_control(entity.id, 7.0);
+            engine.play_animation(entity.id, "Run");
+        }
+    engine_3d_fp:
+      auto_key_inject: |
+        After a control script runs, engine_3d/scripts.rs auto-injects fp_press_key
+        for the play character when the script does not call it. Scripts only set
+        walk/sprint/jump parameters; no fp_press_key("W") per binding.
+      example_bare_body: |
+        let WALK_SPEED = 4;
+        engine.fp_set_walk_speed(WALK_SPEED);
+
   catalog_file: src/renderer/src/visualScripting/nodeDefinitions.ts
 
 # ── Panel izquierdo del editor de nodos ───────────────────────────────────────
@@ -219,6 +243,22 @@ files:
     - src/renderer/src/pages/EngineView/components/sidebar/ScenesAccordion.tsx
     - src/renderer/src/pages/EngineView/components/sidebar/ProgrammingAccordion/ProgrammingAccordion.tsx
     - src/renderer/src/pages/EngineView/components/sidebar/PropertiesAccordion/ScriptingAccordion.tsx
+
+# ── Motor Rhai (invoke pattern) ───────────────────────────────────────────────
+
+rhai_runtime:
+  shared_crate: src/main/Engine/engine_shared/src/scripting/
+  invoke_pattern: |
+    User-defined callbacks (on_start, update, on_press, on_keep, on_trigger_enter,
+    on_scene_start, etc.) are invoked via run_ast_with_scope + explicit call suffix
+    (e.g. update!(entity, dt);) so the engine preamble (let engine = #{...}) is visible
+    inside the callback body. Do not use call_fn alone for user fn callbacks.
+  numeric_overloads: |
+    Native __engine_* functions register INT and f64 overloads so literals like
+    let WALK_SPEED = 4 work without casting.
+  demo_saves:
+    DEMO_2d.save: scripting/**/*.rhai (side-scroller controls with move_control)
+    DEMO_3d_FIRST_PERSON.save: scripting/**/*.rhai (FP WASD/SHIFT/SPACE bare-body scripts)
 
 # ── Relación con RHAI_API.md ──────────────────────────────────────────────────
 

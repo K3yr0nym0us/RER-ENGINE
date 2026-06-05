@@ -112,6 +112,9 @@ Registro de rutas/tipos: `entity_save_meta` + actualizacion en spawn/load/replac
 ### Scripting
 
 - `update_scripts()` solo ejecuta el tick Rhai de entidades cuando `preview_playing` es true. Los control scripts (`on_press` / `on_keep`) ya estaban acotados a play.
+- Callbacks Rhai usan **invoke pattern** en `engine_shared/src/scripting/script_engine.rs` (mismo contrato que 2D).
+- **FP control scripts:** tras ejecutar el script del binding, `engine/scripts.rs` auto-inyecta `fp_press_key` con la tecla del binding para el play character cuando el script no lo hace. Scripts típicos: solo `fp_set_walk_speed`, `fp_set_sprint_multiplier`, `fp_jump`.
+- Referencia: [`RHAI_API.md`](../../../../RHAI_API.md).
 
 ### Fisica
 

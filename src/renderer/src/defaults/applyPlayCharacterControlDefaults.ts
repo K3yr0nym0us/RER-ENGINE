@@ -32,6 +32,3 @@ export function applyPlayCharacterControlDefaultsIfEmpty(
 	send({ cmd: 'set_control_bindings', id: entityId, bindings: defaults })
 	return defaults
 }
-
-/** @deprecated Use `applyPlayCharacterControlDefaultsIfEmpty` */
-export const applyFirstPersonControlDefaultsIfEmpty = applyPlayCharacterControlDefaultsIfEmpty

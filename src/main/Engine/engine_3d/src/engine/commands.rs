@@ -1678,6 +1678,7 @@ impl State {
                 } else {
                     self.control_bindings_by_entity.insert(id, bindings);
                 }
+                self.script_engine.clear_control_script_cache();
             }
             EngineCommand::RunControlScript {
                 id,

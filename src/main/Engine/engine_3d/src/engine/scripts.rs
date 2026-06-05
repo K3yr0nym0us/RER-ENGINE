@@ -79,6 +79,13 @@ impl State {
                 e
             ),
         }
+
+        // Play character: la tecla del binding se aplica en el motor (como en b9de03b).
+        // El script solo personaliza velocidad/sprint/salto; no hace falta fp_press_key("W") etc.
+        if self.play_character_entity == Some(id) {
+            self.play_controller_script_input
+                .insert(control_key.to_string());
+        }
     }
 
     pub fn handle_runtime_control_input(&mut self, device: &str, control_key: &str) {

@@ -13,6 +13,7 @@ pub type ScriptResult<T> = Result<T, String>;
 
 struct AttachedScript {
     path: String,
+    user_source: String,
     ast: AST,
     started: bool,
 }
@@ -24,6 +25,7 @@ pub struct ScriptEngine {
     scripts: HashMap<u32, Vec<AttachedScript>>,
     control_script_cache: HashMap<String, AST>,
     scene_ast: Option<AST>,
+    scene_user_source: Option<String>,
     scene_id: u32,
     scene_started: bool,
 }
@@ -40,6 +42,7 @@ impl ScriptEngine {
             scripts: HashMap::new(),
             control_script_cache: HashMap::new(),
             scene_ast: None,
+            scene_user_source: None,
             scene_id: 0,
             scene_started: false,
         })
@@ -60,6 +63,7 @@ impl ScriptEngine {
             .or_default()
             .push(AttachedScript {
                 path: path.to_string(),
+                user_source: source.to_string(),
                 ast,
                 started: false,
             });
@@ -70,7 +74,15 @@ impl ScriptEngine {
     pub fn detach_entity(&mut self, entity_id: u32) {
         if let Some(scripts) = self.scripts.remove(&entity_id) {
             for s in scripts {
-                self.call_lifecycle(&s.ast, "on_stop", entity_id, None);
+                self.run_entity_method(
+                    &s.path,
+                    &s.user_source,
+                    &s.ast,
+                    "on_stop",
+                    "on_stop!(entity);",
+                    entity_id,
+                    None,
+                );
             }
             log::debug!("[scripting] scripts de entidad {entity_id} removidos");
         }
@@ -86,6 +98,7 @@ impl ScriptEngine {
                     .filter(|s| s.path.starts_with("$anim$::"))
                     .map(|s| AttachedScript {
                         path: s.path.clone(),
+                        user_source: s.user_source.clone(),
                         ast: s.ast.clone(),
                         started: s.started,
                     })
@@ -94,7 +107,15 @@ impl ScriptEngine {
             .unwrap_or_default();
 
         for s in &anim {
-            self.call_lifecycle(&s.ast, "on_stop", entity_id, None);
+            self.run_entity_method(
+                &s.path,
+                &s.user_source,
+                &s.ast,
+                "on_stop",
+                "on_stop!(entity);",
+                entity_id,
+                None,
+            );
         }
 
         if let Some(scripts) = self.scripts.get_mut(&entity_id) {
@@ -124,8 +145,10 @@ impl ScriptEngine {
         self.scene_started = false;
         if source.trim().is_empty() {
             self.scene_ast = None;
+            self.scene_user_source = None;
             return Ok(());
         }
+        self.scene_user_source = Some(source.to_string());
         let wrapped = wrap_scene_source(source);
         let ast = self
             .engine
@@ -137,6 +160,7 @@ impl ScriptEngine {
 
     pub fn clear_scene_script(&mut self) {
         self.scene_ast = None;
+        self.scene_user_source = None;
         self.scene_id = 0;
         self.scene_started = false;
     }
@@ -157,10 +181,14 @@ impl ScriptEngine {
         let Some(ast) = self.scene_ast.clone() else {
             return vec![];
         };
-        let mut scope = Scope::new();
-        let _ = self
-            .engine
-            .call_fn::<()>(&mut scope, &ast, "on_scene_start", ());
+        let user_source = self.scene_user_source.clone().unwrap_or_default();
+        self.run_scene_method(
+            &user_source,
+            &ast,
+            "on_scene_start",
+            "on_scene_start!();",
+            None,
+        );
         self.api_ctx.drain_cmds()
     }
 
@@ -168,25 +196,74 @@ impl ScriptEngine {
         let Some(ast) = self.scene_ast.clone() else {
             return vec![];
         };
-        let mut scope = Scope::new();
-        let _ = self
-            .engine
-            .call_fn::<()>(&mut scope, &ast, "on_scene_tick", (dt as f64,));
+        let user_source = self.scene_user_source.clone().unwrap_or_default();
+        self.run_scene_method(
+            &user_source,
+            &ast,
+            "on_scene_tick",
+            "on_scene_tick!(dt);",
+            Some(dt),
+        );
         self.api_ctx.drain_cmds()
     }
 
-    fn control_ast(&mut self, path: &str, source: &str) -> ScriptResult<AST> {
-        if let Some(ast) = self.control_script_cache.get(path) {
+    fn source_defines_fn(source: &str, method: &str) -> bool {
+        source.contains(&format!("fn {method}("))
+            || source.contains(&format!("fn {method} ("))
+    }
+
+    fn invoke_script_ast<F>(
+        &mut self,
+        cache_key: &str,
+        user_source: &str,
+        invoke_suffix: &str,
+        wrap: F,
+    ) -> ScriptResult<AST>
+    where
+        F: Fn(&str) -> String,
+    {
+        if let Some(ast) = self.control_script_cache.get(cache_key) {
             return Ok(ast.clone());
         }
-        let wrapped = wrap_user_source(self.profile, source);
+        let exec_source = if invoke_suffix.is_empty() {
+            user_source.to_string()
+        } else {
+            format!("{user_source}\n\n{invoke_suffix}")
+        };
+        let wrapped = wrap(&exec_source);
         let ast = self
             .engine
             .compile(&wrapped)
-            .map_err(|e| format!("Error compilando control script '{path}': {e}"))?;
+            .map_err(|e| format!("Error compilando script '{cache_key}': {e}"))?;
         self.control_script_cache
-            .insert(path.to_string(), ast.clone());
+            .insert(cache_key.to_string(), ast.clone());
         Ok(ast)
+    }
+
+    fn control_ast(
+        &mut self,
+        path: &str,
+        source: &str,
+        method: &str,
+        invoke_callback: bool,
+    ) -> ScriptResult<AST> {
+        let cache_key = if invoke_callback {
+            format!("{path}::{method}::invoke")
+        } else {
+            path.to_string()
+        };
+        let invoke_suffix = if invoke_callback {
+            format!("{method}!(entity, control_key);")
+        } else {
+            String::new()
+        };
+        let profile = self.profile;
+        self.invoke_script_ast(
+            &cache_key,
+            source,
+            &invoke_suffix,
+            move |s| wrap_user_source(profile, s),
+        )
     }
 
     fn run_control_script_dispatch(
@@ -198,19 +275,32 @@ impl ScriptEngine {
         snapshot: Option<&EntitySnapshot>,
         dispatch: ControlScriptDispatch,
     ) -> ScriptResult<Vec<ScriptCmd>> {
-        let ast = self.control_ast(path, source)?;
-        let entity = entity_to_dynamic(entity_id, snapshot);
-        let mut scope = Scope::new();
         let method = match dispatch {
             ControlScriptDispatch::WhileHeld => "on_keep",
             ControlScriptDispatch::JustPressed => "on_press",
         };
-        let _ = self.engine.call_fn::<()>(
-            &mut scope,
-            &ast,
-            method,
-            (entity, control_key.to_string()),
-        );
+        let has_callback = Self::source_defines_fn(source, method);
+        let ast = self.control_ast(path, source, method, has_callback)?;
+        let entity = entity_to_dynamic(entity_id, snapshot);
+        let mut scope = Scope::new();
+        scope.push("entity", entity);
+        scope.push("control_key", control_key.to_string());
+
+        if let Ok(mut guard) = self.api_ctx.control_binding_key.lock() {
+            *guard = control_key.to_string();
+        }
+
+        // Lua-style: ejecutar chunk (preámbulo + statements, o fn + `on_keep!(entity, control_key)`).
+        let run_result = self.engine.run_ast_with_scope(&mut scope, &ast);
+
+        if let Ok(mut guard) = self.api_ctx.control_binding_key.lock() {
+            guard.clear();
+        }
+
+        if let Err(e) = run_result {
+            return Err(format!("Error ejecutando control script '{path}': {e}"));
+        }
+
         Ok(self.api_ctx.drain_cmds())
     }
 
@@ -272,18 +362,42 @@ impl ScriptEngine {
         let actor = entity_to_dynamic(actor_id, actor_snapshot);
 
         if let Some(scripts) = self.scripts.get(&trigger_id) {
-            for script in scripts {
-                let mut scope = Scope::new();
-                if let Err(e) = self.engine.call_fn::<()>(
-                    &mut scope,
-                    &script.ast,
-                    "on_trigger_enter",
-                    (trigger.clone(), actor.clone()),
-                ) {
-                    log::warn!(
-                        "[scripting] on_trigger_enter '{}': {e}",
-                        script.path
-                    );
+            let scripts: Vec<_> = scripts
+                .iter()
+                .map(|s| (s.path.clone(), s.user_source.clone(), s.ast.clone()))
+                .collect();
+            for (path, user_source, ast) in scripts {
+                if Self::source_defines_fn(&user_source, "on_trigger_enter") {
+                    let cache_key = format!("{path}::on_trigger_enter::invoke");
+                    let profile = self.profile;
+                    match self.invoke_script_ast(
+                        &cache_key,
+                        &user_source,
+                        "on_trigger_enter!(trigger, actor);",
+                        move |s| wrap_user_source(profile, s),
+                    ) {
+                        Ok(ast) => {
+                            let mut scope = Scope::new();
+                            scope.push("trigger", trigger.clone());
+                            scope.push("actor", actor.clone());
+                            if let Err(e) = self.engine.run_ast_with_scope(&mut scope, &ast) {
+                                log::warn!("[scripting] on_trigger_enter '{path}': {e}");
+                            }
+                        }
+                        Err(e) => {
+                            log::warn!("[scripting] on_trigger_enter compile '{path}': {e}");
+                        }
+                    }
+                } else {
+                    let mut scope = Scope::new();
+                    if let Err(e) = self.engine.call_fn::<()>(
+                        &mut scope,
+                        &ast,
+                        "on_trigger_enter",
+                        (trigger.clone(), actor.clone()),
+                    ) {
+                        log::warn!("[scripting] on_trigger_enter '{path}': {e}");
+                    }
                 }
             }
         } else {
@@ -323,24 +437,65 @@ impl ScriptEngine {
 
         for (entity_id, idx) in pending_starts {
             let snapshot = snapshots.get(&entity_id);
-            let ast = &self.scripts.get(&entity_id).unwrap()[idx].ast;
-            self.call_lifecycle(ast, "on_start", entity_id, snapshot);
+            let (path, user_source, ast) = {
+                let script = &self.scripts.get(&entity_id).unwrap()[idx];
+                (script.path.clone(), script.user_source.clone(), script.ast.clone())
+            };
+            self.run_entity_method(
+                &path,
+                &user_source,
+                &ast,
+                "on_start",
+                "on_start!(entity);",
+                entity_id,
+                snapshot,
+            );
         }
 
         for entity_id in entity_ids {
             let snapshot = snapshots.get(&entity_id);
             let entity = entity_to_dynamic(entity_id, snapshot);
 
-            if let Some(scripts) = self.scripts.get(&entity_id) {
-                for script in scripts {
+            let scripts: Vec<_> = self
+                .scripts
+                .get(&entity_id)
+                .map(|scripts| {
+                    scripts
+                        .iter()
+                        .map(|s| (s.path.clone(), s.user_source.clone(), s.ast.clone()))
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            for (path, user_source, ast) in scripts {
+                if Self::source_defines_fn(&user_source, "update") {
+                    let cache_key = format!("{path}::update::invoke");
+                    let profile = self.profile;
+                    match self.invoke_script_ast(
+                        &cache_key,
+                        &user_source,
+                        "update!(entity, dt);",
+                        move |s| wrap_user_source(profile, s),
+                    ) {
+                        Ok(ast) => {
+                            let mut scope = Scope::new();
+                            scope.push("entity", entity.clone());
+                            scope.push("dt", dt as f64);
+                            if let Err(e) = self.engine.run_ast_with_scope(&mut scope, &ast) {
+                                log::warn!("[scripting] update '{path}': {e}");
+                            }
+                        }
+                        Err(e) => log::warn!("[scripting] update compile '{path}': {e}"),
+                    }
+                } else {
                     let mut scope = Scope::new();
                     if let Err(e) = self.engine.call_fn::<()>(
                         &mut scope,
-                        &script.ast,
+                        &ast,
                         "update",
                         (entity.clone(), dt as f64),
                     ) {
-                        log::warn!("[scripting] update '{}': {e}", script.path);
+                        log::warn!("[scripting] update '{path}': {e}");
                     }
                 }
             }
@@ -349,17 +504,358 @@ impl ScriptEngine {
         self.api_ctx.drain_cmds()
     }
 
-    fn call_lifecycle(
-        &self,
-        ast: &AST,
+    fn run_entity_method(
+        &mut self,
+        path: &str,
+        user_source: &str,
+        base_ast: &AST,
         method: &str,
+        invoke_suffix: &str,
         entity_id: u32,
         snapshot: Option<&EntitySnapshot>,
     ) {
         let entity = entity_to_dynamic(entity_id, snapshot);
-        let mut scope = Scope::new();
-        if let Err(e) = self.engine.call_fn::<()>(&mut scope, ast, method, (entity,)) {
-            log::warn!("[scripting] {method}: {e}");
+        if Self::source_defines_fn(user_source, method) {
+            let cache_key = format!("{path}::{method}::invoke");
+            let profile = self.profile;
+            match self.invoke_script_ast(
+                &cache_key,
+                user_source,
+                invoke_suffix,
+                move |s| wrap_user_source(profile, s),
+            ) {
+                Ok(ast) => {
+                    let mut scope = Scope::new();
+                    scope.push("entity", entity);
+                    if let Err(e) = self.engine.run_ast_with_scope(&mut scope, &ast) {
+                        log::warn!("[scripting] {method} '{path}': {e}");
+                    }
+                }
+                Err(e) => log::warn!("[scripting] compile {method} '{path}': {e}"),
+            }
+        } else {
+            let mut scope = Scope::new();
+            if let Err(e) = self.engine.call_fn::<()>(&mut scope, base_ast, method, (entity,)) {
+                log::warn!("[scripting] {method}: {e}");
+            }
+        }
+    }
+
+    fn run_scene_method(
+        &mut self,
+        user_source: &str,
+        base_ast: &AST,
+        method: &str,
+        invoke_suffix: &str,
+        dt: Option<f32>,
+    ) {
+        let cache_key = format!("scene::{method}::invoke");
+        if Self::source_defines_fn(user_source, method) {
+            match self.invoke_script_ast(
+                &cache_key,
+                user_source,
+                invoke_suffix,
+                wrap_scene_source,
+            ) {
+                Ok(ast) => {
+                    let mut scope = Scope::new();
+                    if let Some(dt) = dt {
+                        scope.push("dt", dt as f64);
+                    }
+                    if let Err(e) = self.engine.run_ast_with_scope(&mut scope, &ast) {
+                        log::warn!("[scripting] {method}: {e}");
+                    }
+                }
+                Err(e) => log::warn!("[scripting] compile {method}: {e}"),
+            }
+        } else {
+            let mut scope = Scope::new();
+            let result = if let Some(dt) = dt {
+                self.engine
+                    .call_fn::<()>(&mut scope, base_ast, method, (dt as f64,))
+            } else {
+                self.engine.call_fn::<()>(&mut scope, base_ast, method, ())
+            };
+            if let Err(e) = result {
+                log::warn!("[scripting] {method}: {e}");
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::scripting::api::{register_native_api, wrap_user_source, ScriptApiContext};
+
+    fn compile_control(profile: ScriptEngineProfile, source: &str) -> Result<(), String> {
+        let mut engine = ScriptEngine::new(profile).unwrap();
+        engine
+            .control_ast("test_control", source, "on_keep", false)
+            .map(|_| ())
+    }
+
+    #[test]
+    fn preamble_only_compiles() {
+        let wrapped = wrap_user_source(ScriptEngineProfile::Engine3d, "");
+        let mut engine = Engine::new();
+        register_native_api(&mut engine, &ScriptApiContext::new(ScriptEngineProfile::Engine3d));
+        engine.compile(&wrapped).expect("preamble only");
+    }
+
+    #[test]
+    fn default_fp_move_control_compiles() {
+        let source = "let WALK_SPEED = 4;\nengine.fp_set_walk_speed(WALK_SPEED);\nengine.fp_press_key(\"W\");\n";
+        compile_control(ScriptEngineProfile::Engine3d, source).expect("fp move control");
+    }
+
+    #[test]
+    fn control_bare_body_produces_fp_press_key() {
+        use crate::scripting::ScriptCmd;
+        let source = "let WALK_SPEED = 4.0;\nengine.fp_set_walk_speed(WALK_SPEED);\nengine.fp_press_key(\"W\");\n";
+        let mut se = ScriptEngine::new(ScriptEngineProfile::Engine3d).unwrap();
+        let cmds = se
+            .run_control_script_while_held(1, "W", "fp_move_forward", source, None)
+            .expect("run bare body");
+        assert!(
+            cmds.iter()
+                .any(|c| matches!(c, ScriptCmd::PlayControllerPressKey { key } if key == "W")),
+            "expected fp_press_key cmd, got {cmds:?}"
+        );
+    }
+
+    #[test]
+    fn control_bare_body_int_walk_speed_produces_fp_press_key() {
+        use crate::scripting::ScriptCmd;
+        let source = "let WALK_SPEED = 4;\nengine.fp_set_walk_speed(WALK_SPEED);\nengine.fp_press_key(\"S\");\n";
+        let mut se = ScriptEngine::new(ScriptEngineProfile::Engine3d).unwrap();
+        let cmds = se
+            .run_control_script_while_held(1, "S", "fp_move_back", source, None)
+            .expect("run bare body with int walk speed");
+        assert!(
+            cmds.iter().any(|c| matches!(
+                c,
+                ScriptCmd::PlayControllerSetWalkSpeed(s) if (*s - 4.0).abs() < f32::EPSILON
+            )),
+            "expected walk speed cmd, got {cmds:?}"
+        );
+        assert!(
+            cmds.iter()
+                .any(|c| matches!(c, ScriptCmd::PlayControllerPressKey { key } if key == "S")),
+            "expected fp_press_key cmd, got {cmds:?}"
+        );
+    }
+
+    #[test]
+    fn entity_on_start_callback_sees_engine() {
+        use crate::scripting::ScriptCmd;
+        let source = r#"fn on_start(entity) {
+    engine.log("started");
+}"#;
+        let mut se = ScriptEngine::new(ScriptEngineProfile::Engine3d).unwrap();
+        se.attach_script(1, "test_entity", source).expect("attach");
+        let cmds = se.tick(0.016, &HashMap::new(), None);
+        assert!(
+            cmds.iter()
+                .any(|c| matches!(c, ScriptCmd::Log { message } if message == "started")),
+            "expected log cmd from on_start, got {cmds:?}"
+        );
+    }
+
+    #[test]
+    fn control_on_keep_callback_produces_fp_press_key() {
+        use crate::scripting::ScriptCmd;
+        let source = r#"fn on_keep(entity, control_key) {
+    engine.fp_press_key("W");
+}"#;
+        let mut se = ScriptEngine::new(ScriptEngineProfile::Engine3d).unwrap();
+        let cmds = se
+            .run_control_script_while_held(1, "W", "fp_move_callback", source, None)
+            .expect("run on_keep callback");
+        assert!(
+            cmds.iter()
+                .any(|c| matches!(c, ScriptCmd::PlayControllerPressKey { key } if key == "W")),
+            "expected fp_press_key cmd, got {cmds:?}"
+        );
+    }
+
+    #[test]
+    fn entity_update_int_move_entity_produces_cmd() {
+        use crate::scripting::ScriptCmd;
+        let source = r#"fn update(entity, dt) {
+    engine.move_entity(entity.id, 4, 1, 0);
+}"#;
+        let mut se = ScriptEngine::new(ScriptEngineProfile::Engine2d).unwrap();
+        se.attach_script(1, "move_right", source).expect("attach");
+        let cmds = se.tick(0.016, &HashMap::new(), None);
+        assert!(
+            cmds.iter().any(|c| matches!(
+                c,
+                ScriptCmd::MoveEntity { id: 1, speed, dir_x, dir_y }
+                    if *speed == 4.0 && *dir_x == 1.0 && *dir_y == 0.0
+            )),
+            "expected move_entity cmd, got {cmds:?}"
+        );
+    }
+
+    #[test]
+    fn control_move_control_maps_binding_key() {
+        use crate::scripting::ScriptCmd;
+        let source = r#"fn on_keep(entity, control_key) {
+    engine.move_control(entity.id, 7.0);
+    engine.play_animation(entity.id, "Run");
+}"#;
+        let mut se = ScriptEngine::new(ScriptEngineProfile::Engine2d).unwrap();
+        let cmds = se
+            .run_control_script_while_held(1, "D", "move_right", source, None)
+            .expect("run move_control");
+        assert!(
+            cmds.iter().any(|c| matches!(
+                c,
+                ScriptCmd::MoveEntity { id: 1, speed, dir_x, dir_y }
+                    if (*speed - 7.0).abs() < f32::EPSILON && *dir_x == 1.0 && *dir_y == 0.0
+            )),
+            "expected move_entity from move_control, got {cmds:?}"
+        );
+    }
+
+    #[test]
+    fn scene_on_scene_start_callback_sees_engine() {
+        use crate::scripting::ScriptCmd;
+        let source = r#"fn on_scene_start() {
+    engine.log("scene ready");
+}"#;
+        let mut se = ScriptEngine::new(ScriptEngineProfile::Engine3d).unwrap();
+        se.load_scene_script(1, source).expect("load scene");
+        let cmds = se.on_scene_play_start();
+        assert!(
+            cmds.iter()
+                .any(|c| matches!(c, ScriptCmd::Log { message } if message == "scene ready")),
+            "expected log cmd from on_scene_start, got {cmds:?}"
+        );
+    }
+
+    #[test]
+    fn trigger_on_trigger_enter_callback_sees_engine() {
+        use crate::scripting::ScriptCmd;
+        let source = r#"fn on_trigger_enter(trigger, actor) {
+    engine.log("triggered");
+}"#;
+        let mut se = ScriptEngine::new(ScriptEngineProfile::Engine2d).unwrap();
+        se.attach_script(10, "trigger_script", source).expect("attach");
+        let cmds = se
+            .run_trigger_enter_hook(10, 20, None, None)
+            .expect("trigger hook");
+        assert!(
+            cmds.iter()
+                .any(|c| matches!(c, ScriptCmd::Log { message } if message == "triggered")),
+            "expected log cmd from on_trigger_enter, got {cmds:?}"
+        );
+    }
+
+    #[test]
+    fn control_on_press_callback_produces_cmd() {
+        use crate::scripting::ScriptCmd;
+        let source = r#"fn on_press(entity, control_key) {
+    engine.fp_press_key("SPACE");
+}"#;
+        let mut se = ScriptEngine::new(ScriptEngineProfile::Engine3d).unwrap();
+        let cmds = se
+            .run_control_script_just_pressed(1, "SPACE", "fp_jump_press", source, None)
+            .expect("run on_press callback");
+        assert!(
+            cmds.iter().any(
+                |c| matches!(c, ScriptCmd::PlayControllerPressKey { key } if key == "SPACE")
+            ),
+            "expected fp_press_key cmd, got {cmds:?}"
+        );
+    }
+
+    /// Compiles Rhai control scripts embedded in DEMO `.save` archives at repo root.
+    #[test]
+    fn demo_save_rhai_sources_compile() {
+        use std::io::Read;
+        use std::path::{Path, PathBuf};
+
+        fn collect_rhai_dir(dir: &Path, out: &mut Vec<(PathBuf, String)>) {
+            let Ok(entries) = std::fs::read_dir(dir) else {
+                return;
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    collect_rhai_dir(&path, out);
+                } else if path.extension().is_some_and(|e| e == "rhai") {
+                    if let Ok(source) = std::fs::read_to_string(&path) {
+                        out.push((path, source));
+                    }
+                }
+            }
+        }
+
+        fn collect_rhai_zip(save: &Path, out: &mut Vec<(PathBuf, String)>) {
+            let Ok(file) = std::fs::File::open(save) else {
+                return;
+            };
+            let Ok(mut archive) = zip::read::ZipArchive::new(file) else {
+                return;
+            };
+            for i in 0..archive.len() {
+                let Ok(mut entry) = archive.by_index(i) else {
+                    continue;
+                };
+                let name = entry.name().to_string();
+                if !name.ends_with(".rhai") {
+                    continue;
+                }
+                let mut source = String::new();
+                if entry.read_to_string(&mut source).is_ok() {
+                    out.push((PathBuf::from(name), source));
+                }
+            }
+        }
+
+        let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../..");
+        let mut sources: Vec<(ScriptEngineProfile, PathBuf, String)> = Vec::new();
+
+        let save_2d = repo.join("DEMO_2d.save");
+        let save_3d = repo.join("DEMO_3d_FIRST_PERSON.save");
+        let tmp_2d = repo.join(".tmp_demo2d");
+        let tmp_3d = repo.join(".tmp_demo3d");
+
+        let mut from_2d = Vec::new();
+        if tmp_2d.is_dir() {
+            collect_rhai_dir(&tmp_2d, &mut from_2d);
+        } else if save_2d.is_file() {
+            collect_rhai_zip(&save_2d, &mut from_2d);
+        }
+        for (path, source) in from_2d {
+            sources.push((ScriptEngineProfile::Engine2d, path, source));
+        }
+
+        let mut from_3d = Vec::new();
+        if tmp_3d.is_dir() {
+            collect_rhai_dir(&tmp_3d, &mut from_3d);
+        } else if save_3d.is_file() {
+            collect_rhai_zip(&save_3d, &mut from_3d);
+        }
+        for (path, source) in from_3d {
+            sources.push((ScriptEngineProfile::Engine3d, path, source));
+        }
+
+        assert!(
+            sources.len() >= 11,
+            "expected at least 11 demo .rhai sources from DEMO saves, got {}",
+            sources.len()
+        );
+
+        for (profile, path, source) in sources {
+            let mut engine = Engine::new();
+            register_native_api(&mut engine, &ScriptApiContext::new(profile));
+            let wrapped = wrap_user_source(profile, &source);
+            engine
+                .compile(&wrapped)
+                .unwrap_or_else(|e| panic!("compile {}: {e}", path.display()));
         }
     }
 }

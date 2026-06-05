@@ -129,7 +129,7 @@ function compileExecChain(
         const ids = fromNode.length > 0 ? fromNode : fromScene
         const body = compileExecChain(doc, byId, nextExecTarget(doc, current, LOOP_BODY), visited, options)
         lines.push(`for entity_id in [${ids.join(', ')}] {`)
-        lines.push(...indentBlock(body))
+        lines.push(...indentBlock(['let entity = #{ id: entity_id };', ...body]))
         lines.push('}')
         current = nextExecTarget(doc, current, EXEC_OUT)
         break

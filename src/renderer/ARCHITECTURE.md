@@ -118,6 +118,8 @@ Flujo al guardar grafo de escena:
 
 En entidad, el grafo va en la entidad del save; el script compilado se registra como lógica visual de esa entidad.
 
+**Scripts de control (2D / 3D FP):** bindings por tecla en acordeón Controles; Rhai manual o plantilla (`rhaiScriptTemplates.ts`, `playCharacterControlBindings.ts`). 2D: `move_control` + callbacks `on_keep`/`on_press`. 3D FP: cuerpo suelto con `fp_set_*`; el motor inyecta la tecla del binding.
+
 ## Abrir `.save`
 
 1. Main extrae el ZIP a un directorio temporal (`extractDir`) y lee solo metadatos (`type`, `gameStyle`) del `manifest.json`.

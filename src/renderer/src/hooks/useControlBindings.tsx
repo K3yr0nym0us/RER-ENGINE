@@ -7,6 +7,8 @@ import { useContextEngine } from '@engine'
 import { useModal } from '@modal'
 import type { SavedControlBindings } from '@shared-types'
 import { isEditorCameraEntity, isEditorCameraPath, isPlayerPath } from '@shared-types'
+import { useLanguage } from '../context/LanguageContext'
+import { getDefaultControlScript } from '../editor/rhaiScriptTemplates'
 
 export type ControlDeviceMode = 'keyboard_mouse' | 'gamepad'
 
@@ -63,6 +65,7 @@ export function useControlBindings() {
     send,
   } = useContextEngine()
   const { openModal } = useModal()
+  const { locale } = useLanguage()
 
   const [selectedCharacterId, setSelectedCharacterId] = useState<number | null>(null)
   const [revision, setRevision] = useState(0)
@@ -150,7 +153,10 @@ export function useControlBindings() {
         size: 'lg',
         body: (
           <ScriptEditorModalBody
-            initialData={existing ?? { name: `${mode}_${controlKey.toLowerCase()}` }}
+            initialData={existing ?? {
+              name: `${mode}_${controlKey.toLowerCase()}`,
+              source: getDefaultControlScript(locale),
+            }}
             onSave={(data) => {
               setBinding(mode, controlKey, data)
               openBindingsModal(mode)
@@ -173,7 +179,7 @@ export function useControlBindings() {
         />
       ),
     })
-  }, [effectiveCharacterId, getBindingsForCurrentCharacter, openModal, selectedCharacterLabel, setBinding])
+  }, [effectiveCharacterId, getBindingsForCurrentCharacter, locale, openModal, selectedCharacterLabel, setBinding])
 
   const currentBindings = getBindingsForCurrentCharacter()
 

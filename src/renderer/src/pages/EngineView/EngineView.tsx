@@ -11,7 +11,7 @@ import { EngineGpuErrorOverlay } from './components/EngineGpuErrorOverlay';
 import { EngineProvider } from '@engine';
 import { ModalProvider } from '@modal';
 import { QuickBuildProvider } from '../../context/QuickBuildContext';
-import { useAutoSave } from '@hooks';
+import { useAutoSave, useControlBindingsRuntime } from '@hooks';
 import { SceneManagerProvider } from './hooks/useSceneManager';
 
 import type { GameStyle, ProjectType } from '@shared-types';
@@ -65,6 +65,9 @@ function EngineViewInner({ projectType, gameStyle, initialSavePath, initialExtra
     hasSavedOnce, 
     autoSaveEnabled 
   } = useAutoSave({ projectType, gameStyle, initialSavePath, initialExtractDir })
+
+  // Teclado/mando del renderer → IPC run_control_script (ventana overlay no recibe input).
+  useControlBindingsRuntime()
 
   return (
     <SceneManagerProvider

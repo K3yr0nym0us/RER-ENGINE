@@ -10,6 +10,8 @@ Guía breve para escribir scripts en entidades. El motor **2D** y el **3D** comp
 
 Define funciones de callback de nivel superior. `dt` es el delta en segundos.
 
+El motor compila cada script con un preámbulo `let engine = #{ ... }` y **invoca** los callbacks explícitamente (`on_start!(entity);`, `update!(entity, dt);`, etc.) para que `engine` sea visible dentro del cuerpo de la función.
+
 ```rhai
 fn on_start(entity) {
     engine.log("Hola desde entidad " + entity.id);
@@ -98,6 +100,7 @@ Herramientas del plano lateral y plataformas:
 | `engine.apply_kinematic_gravity(id, speed_x, jump_speed_y, gravity)` | Impulso de salto + velocidad horizontal en cuerpo **kinematic** (ver abajo). |
 | `engine.apply_kinematic_impulse(id, dir_x, dir_y, impulse)` | Impulso puntual. |
 | `engine.move_entity_slide(id, dx, dy, speed)` | Desplazamiento con shape-cast (sin teletransporte). |
+| `engine.move_control(id, speed)` | Movimiento según la tecla del binding activo (`A`/`D`/`W`/`S`, `D-LEFT`, etc.). El motor resuelve la dirección; no compares la tecla en el script. |
 | `engine.set_vsync(enabled)` | Activa o desactiva V-Sync. |
 
 **Triggers:** coloca un script en un *execution area* y usa `on_trigger_enter(trigger, actor)` para reaccionar cuando otro personaje entra.
@@ -122,23 +125,19 @@ La integración real ocurre en `PhysicsWorld2D::step()` (shape-cast + suelo), no
 **`on_press`**:
 
 - Se ejecuta **una sola vez** por pulsación de tecla o botón (sin autorepeat). Usar para saltos y acciones discretas; el movimiento continuo va en `update` / `on_keep`.
-- Si el cuerpo es **kinematic** y el script llama `move_entity` / `move_entity_facing` desde `on_press`, el motor convierte ese desplazamiento en un **slide corto** para que se note en una pulsación única.
+- El motor pasa `control_key` con el nombre del binding activo; no hace falta `if control_key == "D"`.
 
-**Ejemplo de control 2D:**
+**Ejemplo de control 2D** (un script por tecla; la dirección la resuelve el motor):
 
 ```rhai
-fn on_press(entity, key) {
-    if key == "right" {
-        engine.move_entity(entity.id, 7.0, 1.0, 0.0);
-        engine.play_animation(entity.id, "Run");
-    } else if key == "left" {
-        engine.move_entity(entity.id, 7.0, -1.0, 0.0);
-        engine.play_animation(entity.id, "Run");
-    } else if key == "jump" {
-        // jump_speed_y = impulso; el 4º argumento no altera la gravedad del mundo
-        engine.apply_kinematic_gravity(entity.id, 0.0, 12.0, 0.0);
-        engine.play_animation(entity.id, "Jump");
-    }
+fn on_keep(entity, control_key) {
+    engine.move_control(entity.id, 7.0);
+    engine.play_animation(entity.id, "Run");
+}
+
+fn on_press(entity, control_key) {
+    engine.move_entity_facing(entity.id, 12.0, 0.2, 1.0);
+    engine.play_animation(entity.id, "JumpPj");
 }
 ```
 
@@ -150,31 +149,45 @@ Controller de **play** en proyectos 3D (hoy usado en primera persona) y objetos 
 
 | Función | Qué hace |
 |---------|----------|
-| `engine.fp_press_key(key)` | Simula tecla pulsada en play (mismos nombres que el input: `"W"`, `"S"`, `"A"`, `"D"`, `"SHIFT"`, `"SPACE"`, etc.). |
+| `engine.fp_press_key(key)` | Simula tecla pulsada en play (mismos nombres que el input: `"W"`, `"S"`, `"A"`, `"D"`, `"SHIFT"`, `"SPACE"`, etc.). **En scripts de control FP el motor aplica `control_key` automáticamente**; solo usa `fp_press_key` si necesitas otra tecla distinta al binding. |
 | `engine.fp_jump()` | Salto del jugador en play. |
 | `engine.fp_set_walk_speed(speed)` | Velocidad base al caminar. |
 | `engine.fp_set_sprint_multiplier(mult)` | Multiplicador al sprintar. |
 | `engine.fp_set_jump_speed(speed)` | Impulso de salto. |
 
-Aliases equivalentes (misma implementación): `engine.play_character_press_key`, `play_character_jump`, `play_character_set_walk_speed`, `play_character_set_sprint_multiplier`, `play_character_set_jump_speed`.
-
 En 3D las animaciones por frames 2D no son el foco; el personaje jugable en play usa cápsula cinemática (no el mismo pipeline que `move_entity` en XY de un sprite).
 
-**Ejemplo mínimo FP:**
+**Ejemplo mínimo FP (script de entidad):**
 
 ```rhai
 fn on_start(entity) {
     engine.fp_set_walk_speed(4.0);
     engine.fp_set_jump_speed(6.5);
 }
-
-fn on_press(entity, key) {
-    engine.fp_press_key(key);
-    if key == "SPACE" {
-        engine.fp_jump();
-    }
-}
 ```
+
+**Scripts de control FP** (acordeón Controles — un script por tecla; cuerpo suelto):
+
+```rhai
+// W / A / S / D — misma lógica en cada binding; el motor aplica la tecla del binding.
+let WALK_SPEED = 4;
+engine.fp_set_walk_speed(WALK_SPEED);
+```
+
+```rhai
+// SHIFT
+let SPRINT_MULTIPLIER = 3;
+engine.fp_set_sprint_multiplier(SPRINT_MULTIPLIER);
+```
+
+```rhai
+// SPACE
+let JUMP_SPEED = 6;
+engine.fp_set_jump_speed(JUMP_SPEED);
+engine.fp_jump();
+```
+
+No uses `fp_press_key` ni compares `control_key` en scripts de control FP.
 
 ---
 

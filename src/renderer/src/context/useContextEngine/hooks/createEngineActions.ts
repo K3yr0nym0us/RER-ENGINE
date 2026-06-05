@@ -22,6 +22,7 @@ import {
 	normalizeBlueprintCategory,
 	reconcileCategoryWithName,
 } from '../../../utils/blueprintModelPath';
+import { applyPlayCharacterControlDefaultsIfEmpty } from '../../../defaults/applyPlayCharacterControlDefaults';
 
 let uiScreenIdCounter = 0;
 let pendingPlayerUiButtonConfig: PlayerUiButtonConfig | null = null;
@@ -756,6 +757,16 @@ export function createEngineActions({
 	const setPreviewPlaying = (playing: boolean) => {
 		dispatch({ type: 'SET_PREVIEW_PLAYING', payload: playing });
 		send({ cmd: 'set_preview_playing', playing });
+		if (playing) {
+			const playerId = refs.playerEntityIdRef.current;
+			if (playerId != null) {
+				applyPlayCharacterControlDefaultsIfEmpty(playerId, refs.entityMetaRef, send);
+				const bindings = refs.entityMetaRef.current[playerId]?.controlBindings;
+				if (bindings) {
+					send({ cmd: 'set_control_bindings', id: playerId, bindings });
+				}
+			}
+		}
 		if (is3dProject) {
 			endUiScreenEdit();
 		}

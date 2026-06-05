@@ -1,8 +1,86 @@
 use std::sync::{Arc, Mutex};
 
-use rhai::Engine;
+use rhai::{Engine, INT};
 
 use super::script_cmd::ScriptCmd;
+
+/// Dirección XY estándar para una tecla de control (2D / side-scroller).
+fn control_key_move_dir(key: &str) -> (f32, f32) {
+    match key {
+        "A" | "D-LEFT" => (-1.0, 0.0),
+        "D" | "D-RIGHT" => (1.0, 0.0),
+        "W" | "D-UP" => (0.0, 1.0),
+        "S" | "D-DOWN" => (0.0, -1.0),
+        _ => (0.0, 0.0),
+    }
+}
+
+macro_rules! register_num_fn1 {
+    ($engine:expr, $ctx:expr, $name:expr, |$p:ident| $cmd:expr) => {{
+        {
+            let c = $ctx.clone();
+            $engine.register_fn($name, move |$p: f64| {
+                c.clone().push($cmd);
+            });
+        }
+        {
+            let c = $ctx.clone();
+            $engine.register_fn($name, move |$p: INT| {
+                c.clone().push($cmd);
+            });
+        }
+    }};
+}
+
+macro_rules! register_id_num2 {
+    ($engine:expr, $ctx:expr, $name:expr, |$id:ident, $a:ident, $b:ident| $cmd:expr) => {{
+        {
+            let c = $ctx.clone();
+            $engine.register_fn($name, move |$id: i64, $a: f64, $b: f64| {
+                c.clone().push($cmd);
+            });
+        }
+        {
+            let c = $ctx.clone();
+            $engine.register_fn($name, move |$id: i64, $a: INT, $b: INT| {
+                c.clone().push($cmd);
+            });
+        }
+        {
+            let c = $ctx.clone();
+            $engine.register_fn($name, move |$id: i64, $a: INT, $b: f64| {
+                c.clone().push($cmd);
+            });
+        }
+        {
+            let c = $ctx.clone();
+            $engine.register_fn($name, move |$id: i64, $a: f64, $b: INT| {
+                c.clone().push($cmd);
+            });
+        }
+    }};
+}
+
+macro_rules! register_id_num3 {
+    ($engine:expr, $ctx:expr, $name:expr, |$id:ident, $a:ident, $b:ident, $c:ident| $cmd:expr) => {{
+        macro_rules! reg3 {
+            ($t1:ty, $t2:ty, $t3:ty) => {{
+                let api = $ctx.clone();
+                $engine.register_fn($name, move |$id: i64, $a: $t1, $b: $t2, $c: $t3| {
+                    api.clone().push($cmd);
+                });
+            }};
+        }
+        reg3!(f64, f64, f64);
+        reg3!(INT, INT, INT);
+        reg3!(INT, INT, f64);
+        reg3!(INT, f64, INT);
+        reg3!(INT, f64, f64);
+        reg3!(f64, INT, INT);
+        reg3!(f64, INT, f64);
+        reg3!(f64, f64, INT);
+    }};
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ScriptEngineProfile {
@@ -14,6 +92,8 @@ pub enum ScriptEngineProfile {
 pub struct ScriptApiContext {
     pub cmds: Arc<Mutex<Vec<ScriptCmd>>>,
     pub player_ui_active_screen: Arc<Mutex<Option<String>>>,
+    /// Tecla del binding activo en scripts de control 2D (`move_control`).
+    pub control_binding_key: Arc<Mutex<String>>,
     pub profile: ScriptEngineProfile,
 }
 
@@ -22,6 +102,7 @@ impl ScriptApiContext {
         Self {
             cmds: Arc::new(Mutex::new(Vec::new())),
             player_ui_active_screen: Arc::new(Mutex::new(None)),
+            control_binding_key: Arc::new(Mutex::new(String::new())),
             profile,
         }
     }
@@ -46,40 +127,37 @@ pub fn register_native_api(engine: &mut Engine, ctx: &ScriptApiContext) {
         c.push(ScriptCmd::Log { message: msg });
     });
 
-    let c = ctx.clone();
-    engine.register_fn(
+    register_id_num2!(
+        engine,
+        ctx,
         "__engine_move_to",
-        move |id: i64, x: f64, y: f64| {
-            c.push(ScriptCmd::SetPosition {
-                id: id as u32,
-                x: x as f32,
-                y: y as f32,
-            });
-        },
+        |id, x, y| ScriptCmd::SetPosition {
+            id: id as u32,
+            x: x as f32,
+            y: y as f32,
+        }
     );
 
-    let c = ctx.clone();
-    engine.register_fn(
+    register_id_num2!(
+        engine,
+        ctx,
         "__engine_translate",
-        move |id: i64, dx: f64, dy: f64| {
-            c.push(ScriptCmd::Translate {
-                id: id as u32,
-                dx: dx as f32,
-                dy: dy as f32,
-            });
-        },
+        |id, dx, dy| ScriptCmd::Translate {
+            id: id as u32,
+            dx: dx as f32,
+            dy: dy as f32,
+        }
     );
 
-    let c = ctx.clone();
-    engine.register_fn(
+    register_id_num2!(
+        engine,
+        ctx,
         "__engine_set_scale",
-        move |id: i64, sx: f64, sy: f64| {
-            c.push(ScriptCmd::SetScale {
-                id: id as u32,
-                sx: sx as f32,
-                sy: sy as f32,
-            });
-        },
+        |id, sx, sy| ScriptCmd::SetScale {
+            id: id as u32,
+            sx: sx as f32,
+            sy: sy as f32,
+        }
     );
 
     let c = ctx.clone();
@@ -121,30 +199,28 @@ pub fn register_native_api(engine: &mut Engine, ctx: &ScriptApiContext) {
         },
     );
 
-    let c = ctx.clone();
-    engine.register_fn(
+    register_id_num3!(
+        engine,
+        ctx,
         "__engine_move_entity",
-        move |id: i64, speed: f64, dir_x: f64, dir_y: f64| {
-            c.push(ScriptCmd::MoveEntity {
-                id: id as u32,
-                speed: speed as f32,
-                dir_x: dir_x as f32,
-                dir_y: dir_y as f32,
-            });
-        },
+        |id, speed, dir_x, dir_y| ScriptCmd::MoveEntity {
+            id: id as u32,
+            speed: speed as f32,
+            dir_x: dir_x as f32,
+            dir_y: dir_y as f32,
+        }
     );
 
-    let c = ctx.clone();
-    engine.register_fn(
+    register_id_num3!(
+        engine,
+        ctx,
         "__engine_move_entity_facing",
-        move |id: i64, speed: f64, amount_x: f64, dir_y: f64| {
-            c.push(ScriptCmd::MoveEntityFacing {
-                id: id as u32,
-                speed: speed as f32,
-                amount_x: amount_x as f32,
-                dir_y: dir_y as f32,
-            });
-        },
+        |id, speed, amount_x, dir_y| ScriptCmd::MoveEntityFacing {
+            id: id as u32,
+            speed: speed as f32,
+            amount_x: amount_x as f32,
+            dir_y: dir_y as f32,
+        }
     );
 
     let c = ctx.clone();
@@ -153,44 +229,76 @@ pub fn register_native_api(engine: &mut Engine, ctx: &ScriptApiContext) {
     });
 
     if ctx.profile == ScriptEngineProfile::Engine2d {
-        let c = ctx.clone();
-        engine.register_fn(
+        register_id_num3!(
+            engine,
+            ctx,
             "__engine_apply_kinematic_gravity",
-            move |id: i64, speed_x: f64, jump_speed_y: f64, gravity: f64| {
-                c.push(ScriptCmd::ApplyKinematicGravity {
-                    id: id as u32,
-                    speed_x: speed_x as f32,
-                    jump_speed_y: jump_speed_y as f32,
-                    gravity: gravity as f32,
-                });
-            },
+            |id, speed_x, jump_speed_y, gravity| ScriptCmd::ApplyKinematicGravity {
+                id: id as u32,
+                speed_x: speed_x as f32,
+                jump_speed_y: jump_speed_y as f32,
+                gravity: gravity as f32,
+            }
         );
 
-        let c = ctx.clone();
-        engine.register_fn(
+        register_id_num3!(
+            engine,
+            ctx,
             "__engine_apply_kinematic_impulse",
-            move |id: i64, dir_x: f64, dir_y: f64, impulse: f64| {
-                c.push(ScriptCmd::ApplyKinematicImpulse {
-                    id: id as u32,
-                    dir_x: dir_x as f32,
-                    dir_y: dir_y as f32,
-                    impulse: impulse as f32,
-                });
-            },
+            |id, dir_x, dir_y, impulse| ScriptCmd::ApplyKinematicImpulse {
+                id: id as u32,
+                dir_x: dir_x as f32,
+                dir_y: dir_y as f32,
+                impulse: impulse as f32,
+            }
+        );
+
+        register_id_num3!(
+            engine,
+            ctx,
+            "__engine_move_entity_slide",
+            |id, dx, dy, speed| ScriptCmd::SlideEntity {
+                id: id as u32,
+                dx: dx as f32,
+                dy: dy as f32,
+                speed: speed as f32,
+            }
         );
 
         let c = ctx.clone();
-        engine.register_fn(
-            "__engine_move_entity_slide",
-            move |id: i64, dx: f64, dy: f64, speed: f64| {
-                c.push(ScriptCmd::SlideEntity {
+        engine.register_fn("__engine_move_control", move |id: i64, speed: f64| {
+            let key = c
+                .control_binding_key
+                .lock()
+                .map(|g| g.clone())
+                .unwrap_or_default();
+            let (dir_x, dir_y) = control_key_move_dir(&key);
+            if dir_x.abs() + dir_y.abs() > f32::EPSILON {
+                c.push(ScriptCmd::MoveEntity {
                     id: id as u32,
-                    dx: dx as f32,
-                    dy: dy as f32,
                     speed: speed as f32,
+                    dir_x,
+                    dir_y,
                 });
-            },
-        );
+            }
+        });
+        let c = ctx.clone();
+        engine.register_fn("__engine_move_control", move |id: i64, speed: INT| {
+            let key = c
+                .control_binding_key
+                .lock()
+                .map(|g| g.clone())
+                .unwrap_or_default();
+            let (dir_x, dir_y) = control_key_move_dir(&key);
+            if dir_x.abs() + dir_y.abs() > f32::EPSILON {
+                c.push(ScriptCmd::MoveEntity {
+                    id: id as u32,
+                    speed: speed as f32,
+                    dir_x,
+                    dir_y,
+                });
+            }
+        });
     }
 
     if ctx.profile == ScriptEngineProfile::Engine3d {
@@ -204,20 +312,26 @@ pub fn register_native_api(engine: &mut Engine, ctx: &ScriptApiContext) {
             c.push(ScriptCmd::PlayControllerJump);
         });
 
-        let c = ctx.clone();
-        engine.register_fn("__engine_fp_set_walk_speed", move |speed: f64| {
-            c.push(ScriptCmd::PlayControllerSetWalkSpeed(speed as f32));
-        });
+        register_num_fn1!(
+            engine,
+            ctx,
+            "__engine_fp_set_walk_speed",
+            |speed| ScriptCmd::PlayControllerSetWalkSpeed(speed as f32)
+        );
 
-        let c = ctx.clone();
-        engine.register_fn("__engine_fp_set_sprint_multiplier", move |mult: f64| {
-            c.push(ScriptCmd::PlayControllerSetSprintMultiplier(mult as f32));
-        });
+        register_num_fn1!(
+            engine,
+            ctx,
+            "__engine_fp_set_sprint_multiplier",
+            |mult| ScriptCmd::PlayControllerSetSprintMultiplier(mult as f32)
+        );
 
-        let c = ctx.clone();
-        engine.register_fn("__engine_fp_set_jump_speed", move |speed: f64| {
-            c.push(ScriptCmd::PlayControllerSetJumpSpeed(speed as f32));
-        });
+        register_num_fn1!(
+            engine,
+            ctx,
+            "__engine_fp_set_jump_speed",
+            |speed| ScriptCmd::PlayControllerSetJumpSpeed(speed as f32)
+        );
 
         let c = ctx.clone();
         engine.register_fn("__engine_set_taa", move |enabled: bool| {
@@ -259,51 +373,47 @@ pub fn api_preamble(profile: ScriptEngineProfile) -> &'static str {
 
 const API_PREAMBLE_2D: &str = r#"
 let engine = #{
-    log: fn(msg) { __engine_log(msg); },
-    move_to: fn(id, x, y) { __engine_move_to(id, x, y); },
-    translate: fn(id, dx, dy) { __engine_translate(id, dx, dy); },
-    set_scale: fn(id, sx, sy) { __engine_set_scale(id, sx, sy); },
-    play_animation: fn(id, name) { __engine_play_animation(id, name); },
-    set_default_animation: fn(id, name) { __engine_set_default_animation(id, name); },
-    stop_animation: fn(id) { __engine_stop_animation(id); },
-    set_physics: fn(id, enabled, body_type) { __engine_set_physics(id, enabled, body_type); },
-    move_entity: fn(id, speed, dir_x, dir_y) { __engine_move_entity(id, speed, dir_x, dir_y); },
-    move_entity_facing: fn(id, speed, amount_x, dir_y) { __engine_move_entity_facing(id, speed, amount_x, dir_y); },
-    apply_kinematic_gravity: fn(id, speed_x, jump_speed_y, gravity) { __engine_apply_kinematic_gravity(id, speed_x, jump_speed_y, gravity); },
-    apply_kinematic_impulse: fn(id, dir_x, dir_y, impulse) { __engine_apply_kinematic_impulse(id, dir_x, dir_y, impulse); },
-    move_entity_slide: fn(id, dx, dy, speed) { __engine_move_entity_slide(id, dx, dy, speed); },
-    set_vsync: fn(enabled) { __engine_set_vsync(enabled); },
+    log: |msg| { __engine_log(msg); },
+    move_to: |id, x, y| { __engine_move_to(id, x, y); },
+    translate: |id, dx, dy| { __engine_translate(id, dx, dy); },
+    set_scale: |id, sx, sy| { __engine_set_scale(id, sx, sy); },
+    play_animation: |id, name| { __engine_play_animation(id, name); },
+    set_default_animation: |id, name| { __engine_set_default_animation(id, name); },
+    stop_animation: |id| { __engine_stop_animation(id); },
+    set_physics: |id, enabled, body_type| { __engine_set_physics(id, enabled, body_type); },
+    move_entity: |id, speed, dir_x, dir_y| { __engine_move_entity(id, speed, dir_x, dir_y); },
+    move_entity_facing: |id, speed, amount_x, dir_y| { __engine_move_entity_facing(id, speed, amount_x, dir_y); },
+    apply_kinematic_gravity: |id, speed_x, jump_speed_y, gravity| { __engine_apply_kinematic_gravity(id, speed_x, jump_speed_y, gravity); },
+    apply_kinematic_impulse: |id, dir_x, dir_y, impulse| { __engine_apply_kinematic_impulse(id, dir_x, dir_y, impulse); },
+    move_entity_slide: |id, dx, dy, speed| { __engine_move_entity_slide(id, dx, dy, speed); },
+    move_control: |id, speed| { __engine_move_control(id, speed); },
+    set_vsync: |enabled| { __engine_set_vsync(enabled); },
 };
 "#;
 
 const API_PREAMBLE_3D: &str = r#"
 let engine = #{
-    log: fn(msg) { __engine_log(msg); },
-    move_to: fn(id, x, y) { __engine_move_to(id, x, y); },
-    translate: fn(id, dx, dy) { __engine_translate(id, dx, dy); },
-    set_scale: fn(id, sx, sy) { __engine_set_scale(id, sx, sy); },
-    play_animation: fn(id, name) { __engine_play_animation(id, name); },
-    set_default_animation: fn(id, name) { __engine_set_default_animation(id, name); },
-    stop_animation: fn(id) { __engine_stop_animation(id); },
-    set_physics: fn(id, enabled, body_type) { __engine_set_physics(id, enabled, body_type); },
-    move_entity: fn(id, speed, dir_x, dir_y) { __engine_move_entity(id, speed, dir_x, dir_y); },
-    move_entity_facing: fn(id, speed, amount_x, dir_y) { __engine_move_entity_facing(id, speed, amount_x, dir_y); },
-    set_vsync: fn(enabled) { __engine_set_vsync(enabled); },
-    set_taa: fn(enabled) { __engine_set_taa(enabled); },
-    fp_press_key: fn(key) { __engine_fp_press_key(key); },
-    fp_jump: fn() { __engine_fp_jump(); },
-    fp_set_walk_speed: fn(speed) { __engine_fp_set_walk_speed(speed); },
-    fp_set_sprint_multiplier: fn(mult) { __engine_fp_set_sprint_multiplier(mult); },
-    fp_set_jump_speed: fn(speed) { __engine_fp_set_jump_speed(speed); },
-    play_character_press_key: fn(key) { __engine_fp_press_key(key); },
-    play_character_jump: fn() { __engine_fp_jump(); },
-    play_character_set_walk_speed: fn(speed) { __engine_fp_set_walk_speed(speed); },
-    play_character_set_sprint_multiplier: fn(mult) { __engine_fp_set_sprint_multiplier(mult); },
-    play_character_set_jump_speed: fn(speed) { __engine_fp_set_jump_speed(speed); },
-    set_active_player_ui: fn(screen_id) { __engine_set_active_player_ui(screen_id); },
-    set_active_player_ui_by_name: fn(name) { __engine_set_active_player_ui_by_name(name); },
-    get_active_player_ui: fn() { __engine_get_active_player_ui() },
-    clear_active_player_ui: fn() { __engine_clear_active_player_ui(); },
+    log: |msg| { __engine_log(msg); },
+    move_to: |id, x, y| { __engine_move_to(id, x, y); },
+    translate: |id, dx, dy| { __engine_translate(id, dx, dy); },
+    set_scale: |id, sx, sy| { __engine_set_scale(id, sx, sy); },
+    play_animation: |id, name| { __engine_play_animation(id, name); },
+    set_default_animation: |id, name| { __engine_set_default_animation(id, name); },
+    stop_animation: |id| { __engine_stop_animation(id); },
+    set_physics: |id, enabled, body_type| { __engine_set_physics(id, enabled, body_type); },
+    move_entity: |id, speed, dir_x, dir_y| { __engine_move_entity(id, speed, dir_x, dir_y); },
+    move_entity_facing: |id, speed, amount_x, dir_y| { __engine_move_entity_facing(id, speed, amount_x, dir_y); },
+    set_vsync: |enabled| { __engine_set_vsync(enabled); },
+    set_taa: |enabled| { __engine_set_taa(enabled); },
+    fp_press_key: |key| { __engine_fp_press_key(key); },
+    fp_jump: || { __engine_fp_jump(); },
+    fp_set_walk_speed: |speed| { __engine_fp_set_walk_speed(speed); },
+    fp_set_sprint_multiplier: |mult| { __engine_fp_set_sprint_multiplier(mult); },
+    fp_set_jump_speed: |speed| { __engine_fp_set_jump_speed(speed); },
+    set_active_player_ui: |screen_id| { __engine_set_active_player_ui(screen_id); },
+    set_active_player_ui_by_name: |name| { __engine_set_active_player_ui_by_name(name); },
+    get_active_player_ui: || { __engine_get_active_player_ui() },
+    clear_active_player_ui: || { __engine_clear_active_player_ui(); },
 };
 "#;
 
@@ -314,7 +424,7 @@ pub fn wrap_user_source(profile: ScriptEngineProfile, user_source: &str) -> Stri
 pub fn scene_script_preamble() -> &'static str {
     r#"
 let engine = #{
-    log: fn(msg) { __engine_log(msg); },
+    log: |msg| { __engine_log(msg); },
 };
 "#
 }
