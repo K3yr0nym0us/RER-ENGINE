@@ -9,6 +9,7 @@ import {
 import { AppTooltip } from '@components';
 import { useContextEngine } from '@engine';
 import { useTraslate } from '@hooks';
+import { THEME_PRIMARY } from '../../../styles/theme';
 
 interface Props {
   projectType: string
@@ -67,11 +68,14 @@ export function TopBarEngine({ projectType, handleSave, toggleAutoSave, hasSaved
           </AppTooltip>
         </div>
         <div className="d-flex align-items-center">
-          <span style={{ fontSize: 16, fontWeight: 700, color: '#c084fc', letterSpacing: '0.03em' }}>
-            ⬡ RER-ENGINE
+          <span style={{ fontSize: 16, fontWeight: 700, color: THEME_PRIMARY, letterSpacing: '0.03em' }}>
+            RER-ENGINE
           </span>
-          <div className="d-flex align-items-center gap-2 ms-2">
-            <span className={`engine-type-badge engine-type-badge--${projectType}`}>
+          <div className="d-flex align-items-center gap-2">
+            <span 
+              className="engine-type-badge ms-2"
+              style={{ color: '#34d399', background: `#34d39918`, border: `1px solid #34d39940` }}
+            >
               {projectType}
             </span>
             {statusBadge}

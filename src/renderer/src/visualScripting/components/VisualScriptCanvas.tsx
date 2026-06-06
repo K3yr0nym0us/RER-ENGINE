@@ -25,9 +25,10 @@ import {
   type VisualNodeType,
 } from '../nodeDefinitions'
 import { VisualScriptNode, type VisualScriptNodeData } from './VisualScriptNode'
+import { THEME_PRIMARY } from '../../styles/theme'
 
 const MINIMAP_NODE_COLORS: Record<string, string> = {
-  event: '#6f42c1',
+  event: THEME_PRIMARY,
   flow: '#0d6efd',
   action: '#198754',
 }

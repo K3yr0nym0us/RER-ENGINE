@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { OpenProjectResult, ProjectType } from '@shared-types';
 import { useTraslate } from '@hooks';
 import { LanguageToggleButton } from '@components';
+import { THEME_PRIMARY } from '../../styles/theme';
 
 import imgLogo from '../../imgs/RER-ENGINE-LOGO.png';
 
@@ -87,10 +88,10 @@ export function TypeProjectSelector({ onSelect, onLoadProject }: Props) {
       <LanguageToggleButton variant="compact" />
 
       <div className="mb-3 text-center">
-        <img src={imgLogo} alt="RER-ENGINE-LOGO" width={250} height={250} />
+        <img src={imgLogo} alt="RER-ENGINE-LOGO" width={200} height={200} />
       </div>
       
-      <div className="mt-2 mb-4 selector-subtitle fw-bold">
+      <div className="mt-2 mb-4 selector-subtitle fw-bold fs-4">
         {t('SELECT PROJECT TYPE')}
       </div>
 
@@ -101,13 +102,13 @@ export function TypeProjectSelector({ onSelect, onLoadProject }: Props) {
             onClick={handleLoadProject}
             className="selector-card"
             style={{ height: '100%' }}
-            onMouseEnter={hoverOn('#c084fc')}
+            onMouseEnter={hoverOn(THEME_PRIMARY)}
             onMouseLeave={hoverOff}
           >
-            <div className="selector-icon" style={{ color: '#c084fc' }}>◫</div>
+            <div className="selector-icon" style={{ color: THEME_PRIMARY }}>◫</div>
             <div
               className="selector-badge"
-              style={{ background: '#c084fc22', color: '#c084fc', border: '1px solid #c084fc55' }}
+              style={{ background: `${THEME_PRIMARY}22`, color: THEME_PRIMARY, border: `1px solid ${THEME_PRIMARY}55` }}
             >
               {t('OPEN')}
             </div>

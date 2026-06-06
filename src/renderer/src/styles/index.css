@@ -4,6 +4,20 @@
 }
 
 :root {
+  --app-primary: #0355C4;
+  --app-primary-hover: #024aab;
+  --app-primary-soft: rgba(3, 85, 196, 0.13);
+  --app-primary-border-soft: rgba(3, 85, 196, 0.33);
+  --app-primary-glow: rgba(3, 85, 196, 0.27);
+  --app-primary-muted: #b3cff5;
+  --app-primary-outline: #3d6eb8;
+  --app-primary-outline-hover: #5a8fd4;
+
+  --bs-primary: #0355C4;
+  --bs-primary-rgb: 3, 85, 196;
+  --bs-link-color: #4a90e8;
+  --bs-link-hover-color: #6ba8f0;
+
   --bs-body-bg: #1f2237;
   --bs-body-color: #ffffff;
   --bs-border-color: #3b4066;
@@ -89,7 +103,7 @@ body {
 }
 
 .sidebar-accordion .accordion-button:not(.collapsed) {
-  color: #c084fc !important;
+  color: var(--app-primary) !important;
   background: #161b34 !important;
 }
 
@@ -112,13 +126,13 @@ body {
 
 .btn-outline-light {
   color: #fff !important;
-  border-color: #8087bd !important;
+  border-color: var(--app-primary-outline) !important;
 }
 
 .btn-outline-light:hover,
 .btn-outline-light:focus {
   background-color: #3a4067 !important;
-  border-color: #a0a8e0 !important;
+  border-color: var(--app-primary-outline-hover) !important;
   color: #fff !important;
 }
 
@@ -129,9 +143,37 @@ body {
 }
 
 .list-group-item.active {
-  background: #4b57d1 !important;
-  border-color: #6572f0 !important;
+  background: var(--app-primary) !important;
+  border-color: var(--app-primary-hover) !important;
   color: #fff !important;
+}
+
+.btn-primary {
+  --bs-btn-bg: var(--app-primary);
+  --bs-btn-border-color: var(--app-primary);
+  --bs-btn-hover-bg: var(--app-primary-hover);
+  --bs-btn-hover-border-color: var(--app-primary-hover);
+  --bs-btn-active-bg: var(--app-primary-hover);
+  --bs-btn-active-border-color: var(--app-primary-hover);
+  --bs-btn-disabled-bg: var(--app-primary);
+  --bs-btn-disabled-border-color: var(--app-primary);
+}
+
+.btn-outline-primary {
+  --bs-btn-color: var(--app-primary);
+  --bs-btn-border-color: var(--app-primary);
+  --bs-btn-hover-bg: var(--app-primary);
+  --bs-btn-hover-border-color: var(--app-primary);
+  --bs-btn-active-bg: var(--app-primary-hover);
+  --bs-btn-active-border-color: var(--app-primary-hover);
+}
+
+.text-primary {
+  color: var(--app-primary) !important;
+}
+
+.border-primary {
+  border-color: var(--app-primary) !important;
 }
 
 .console-panel {
@@ -302,7 +344,7 @@ body {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: #d8d4f8;
+  color: var(--app-primary-muted);
   margin-bottom: 0;
 }
 .prop-axis {
@@ -341,7 +383,7 @@ body {
 .engine-logo {
   font-size: 36px;
   font-weight: 800;
-  color: #c084fc;
+  color: var(--app-primary);
   letter-spacing: 0.04em;
   line-height: 1;
 }
@@ -430,7 +472,7 @@ body {
 
 .control-key-btn:hover,
 .control-key-btn:focus {
-  border-color: #7f8ae6;
+  border-color: var(--app-primary-outline-hover);
   background: #252c4a;
 }
 

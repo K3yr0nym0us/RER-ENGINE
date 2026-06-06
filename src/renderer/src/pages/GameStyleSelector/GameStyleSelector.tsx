@@ -4,6 +4,10 @@ import { AppTooltip, LanguageToggleButton } from '@components';
 import type { ProjectType, GameStyle, EngineStartPayload } from '@shared-types';
 import { useTraslate } from '@hooks';
 
+import { THEME_PRIMARY } from '../../styles/theme';
+
+import imgLogo from '../../imgs/RER-ENGINE-LOGO.png';
+
 interface StyleOption {
   type: GameStyle;
   label: string;
@@ -109,7 +113,7 @@ export function GameStyleSelector({ projectType, savePath, extractDir, onSelect,
           className="btn rounded-circle d-flex align-items-center justify-content-center position-fixed z-50 bg-dark border border-secondary"
           style={{ top: 24, left: 28, width: 56, height: 56 }}
           onMouseEnter={(e) => {
-            Object.assign(e.currentTarget.style, { borderColor: '#c084fc', color: '#c084fc', boxShadow: '0 0 20px #c084fc44' })
+            Object.assign(e.currentTarget.style, { borderColor: THEME_PRIMARY, color: THEME_PRIMARY, boxShadow: `0 0 20px ${THEME_PRIMARY}44` })
           }}
           onMouseLeave={(e) => {
             Object.assign(e.currentTarget.style, { borderColor: '#2c3152', color: '#94a3b8', boxShadow: 'none' })
@@ -120,37 +124,18 @@ export function GameStyleSelector({ projectType, savePath, extractDir, onSelect,
       </AppTooltip>
 
       {/* Título */}
-      <div className="mb-5 text-center">
+      <div className="mb-4 text-center">
         <div className="engine-logo">
-          ⬡ RER-ENGINE
+          <img src={imgLogo} alt="RER-ENGINE-LOGO" width={150} height={150} />
         </div>
-
-        {/* Breadcrumb */}
-        <div className="d-flex align-items-center justify-content-center gap-2 mt-3">
+        <div className="mt-3 selector-subtitle fw-bold fs-4 d-flex align-items-center justify-content-center">
+          {t('SELECT GAME STYLE')}
           <span
-            role="button"
-            tabIndex={0}
-            onClick={onBack}
-            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onBack() }}
-            className="breadcrumb-back"
-            onMouseEnter={(e) => (e.currentTarget.style.color = '#c084fc')}
-            onMouseLeave={(e) => (e.currentTarget.style.color = '#4b5280')}
-          >
-            {t('Project type')}
-          </span>
-          <span className="breadcrumb-sep">›</span>
-          <span
-            className="engine-type-badge"
+            className="engine-type-badge ms-2"
             style={{ color: typeBadgeColor, background: `${typeBadgeColor}18`, border: `1px solid ${typeBadgeColor}40` }}
           >
             {projectType}
           </span>
-          <span className="breadcrumb-sep">›</span>
-          <span className="breadcrumb-current">{t('Game style')}</span>
-        </div>
-
-        <div className="mt-3 selector-subtitle">
-          {t('SELECT GAME STYLE')}
         </div>
       </div>
 
@@ -222,7 +207,7 @@ export function GameStyleSelector({ projectType, savePath, extractDir, onSelect,
       </div>
 
       {/* Footer */}
-      <div className="engine-footer">
+      <div className="engine-footer mt-4">
         React TS · Electron TS · Rust (wgpu)
       </div>
     </div>

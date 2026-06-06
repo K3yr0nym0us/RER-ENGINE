@@ -14,6 +14,7 @@ import {
   type VisualNodeType,
 } from '../nodeDefinitions'
 import { VisualScriptHandle } from './VisualScriptHandle'
+import { THEME_PRIMARY } from '../../styles/theme'
 
 export interface VisualScriptNodeData {
   nodeType: VisualNodeType
@@ -33,7 +34,7 @@ export interface VisualScriptNodeData {
 }
 
 const categoryColor: Record<string, string> = {
-  event: '#6f42c1',
+  event: THEME_PRIMARY,
   flow: '#0d6efd',
   action: '#198754',
 }
