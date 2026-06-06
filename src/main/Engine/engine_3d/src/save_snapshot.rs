@@ -81,6 +81,24 @@ impl State {
                     category: None,
                 })
                 .collect(),
+            fonts: self
+                .font_store
+                .iter()
+                .map(|(path, name)| SaveAssetRefSnapshot {
+                    name: name.clone(),
+                    path: path.clone(),
+                    category: None,
+                })
+                .collect(),
+            hud_images: self
+                .hud_image_store
+                .iter()
+                .map(|(path, meta)| SaveAssetRefSnapshot {
+                    name: meta.name.clone(),
+                    path: path.clone(),
+                    category: None,
+                })
+                .collect(),
             player_ui_text_boxes: self.export_player_ui_text_boxes_snapshot(),
             player_ui_buttons: self.export_player_ui_buttons_snapshot(),
             player_ui_images: self.export_player_ui_images_snapshot(),

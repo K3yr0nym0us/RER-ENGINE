@@ -27,6 +27,7 @@ function entityFromMeta(id: number, meta: EntityMeta, transform?: Transform): En
     scale: transform?.scale ?? [1, 1, 1],
     colision: meta.physicsEnabled,
     animations: meta.animations,
+    ...(meta.blueprintId ? { blueprint_id: meta.blueprintId } : {}),
   }
 }
 
@@ -38,6 +39,15 @@ function mergeEntity(base: Entity3D | undefined, patch: Entity3D): Entity3D {
     ...patch,
     ...(animations?.length ? { animations } : {}),
   }
+}
+
+/** Solo un jugador en el panel de nodos (evita acordeones «Player» duplicados). */
+function dedupePlayerCategoryEntities(entities: Entity3D[], preferredPlayerId?: number): Entity3D[] {
+  const players = entities.filter((entity) => entity.category === 'player')
+  if (players.length <= 1) return entities
+  const keepId = preferredPlayerId ?? players.find((entity) => (entity.animations?.length ?? 0) > 0)?.id ?? players[0]?.id
+  if (keepId == null) return entities
+  return entities.filter((entity) => entity.category !== 'player' || entity.id === keepId)
 }
 
 /** Entidades de escena enriquecidas para el editor de nodos (categoría + animaciones). */
@@ -63,8 +73,15 @@ export function resolveSceneEntitiesForVisualScript({
     byId.set(savedPlayer.id, mergeEntity(byId.get(savedPlayer.id), savedPlayer))
   }
 
-  return [...byId.values()]
-    .filter((entity) => !isEditorOnlySceneEntity(entity, entityMeta[entity.id]))
+  const deduped = dedupePlayerCategoryEntities([...byId.values()], savedPlayer?.id)
+
+  const seenIds = new Set<number>()
+  return deduped
+    .filter((entity) => {
+      if (seenIds.has(entity.id)) return false
+      seenIds.add(entity.id)
+      return !isEditorOnlySceneEntity(entity, entityMeta[entity.id])
+    })
     .map((entity) => {
       const meta = entityMeta[entity.id]
       const animations = entity.animations?.length
@@ -94,6 +111,7 @@ export interface VisualScriptSceneEntity {
   category: Entity3DCategory
   model: string
   colision: boolean
+  blueprint_id?: string
   animations?: Array<{ name: string }>
 }
 
@@ -106,6 +124,7 @@ export function sanitizeSceneEntitiesForModal(entities: Entity3D[]): VisualScrip
       category: entity.category ?? 'object',
       model: entity.model ?? '',
       colision: Boolean(entity.colision),
+      ...(entity.blueprint_id ? { blueprint_id: entity.blueprint_id } : {}),
     }
     if (names.length > 0) {
       row.animations = names.map((name) => ({ name }))

@@ -28,9 +28,9 @@ pub fn validate_hud_image_file(path: &str) -> Result<(u32, u32), String> {
         .and_then(|e| e.to_str())
         .unwrap_or("")
         .to_ascii_lowercase();
-    if !matches!(ext.as_str(), "png" | "jpg" | "jpeg" | "webp" | "gif" | "bmp") {
+    if !matches!(ext.as_str(), "png" | "webp") {
         return Err(format!(
-            "extensión no soportada (.{ext}); use PNG, JPEG, WebP, GIF o BMP"
+            "extensión no soportada (.{ext}); use PNG o WebP (con canal alpha)"
         ));
     }
     probe_image_dimensions(path)

@@ -15,7 +15,7 @@ import {
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 
-import type { Entity3D, VisualGraphDocument, VisualGraphEdge, VisualGraphNode } from '@shared-types'
+import type { Blueprint3D, Entity3D, VisualGraphDocument, VisualGraphEdge, VisualGraphNode } from '@shared-types'
 
 import {
   NODE_DEFINITIONS,
@@ -102,6 +102,7 @@ interface Props {
   entityId?: number
   entityName?: string
   sceneEntities?: Entity3D[]
+  blueprints?: Blueprint3D[]
   initialGraph?: VisualGraphDocument
   /** Ocupa el espacio vertical disponible (ventana redimensionable). */
   fill?: boolean
@@ -115,6 +116,7 @@ export function VisualScriptCanvas({
   entityId,
   entityName,
   sceneEntities,
+  blueprints,
   initialGraph,
   fill,
   panelHeight,
@@ -264,6 +266,7 @@ export function VisualScriptCanvas({
         <VisualScriptVariablesPanel
           context={context}
           sceneEntities={sceneEntities}
+          blueprints={blueprints}
           entityId={entityId}
           entityName={entityName}
           onPickAnimation={

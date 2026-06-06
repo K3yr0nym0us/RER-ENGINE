@@ -742,3 +742,57 @@ html.modal-electron-resizable #root {
 .visual-scripting-modal .visual-scripting-var-item:hover .visual-scripting-var-snippet {
   color: #d0dae8;
 }
+
+.visual-scripting-modal .visual-scripting-accordion-header-row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 0.35rem;
+  padding-right: 0.25rem;
+}
+
+.visual-scripting-modal .visual-scripting-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: none;
+  border-radius: 0.25rem;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.visual-scripting-modal .visual-scripting-copy-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.visual-scripting-modal .visual-scripting-copy-btn:hover .text-success {
+  filter: brightness(1.15);
+}
+
+.visual-scripting-modal .visual-scripting-copy-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 1px #6c757d;
+}
+
+.visual-scripting-modal .visual-scripting-entity-row {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.5rem;
+  background: #212529;
+  border: 1px solid #495057;
+  border-radius: 0.25rem;
+}
+
+.visual-scripting-modal .visual-scripting-entity-row-label {
+  flex: 1;
+  min-width: 0;
+  color: #e8ecf4;
+  font-size: 0.8125rem;
+}

@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 
-import type { Entity3D, VisualGraphContext, VisualGraphDocument } from '@shared-types'
+import type { Blueprint3D, Entity3D, VisualGraphContext, VisualGraphDocument } from '@shared-types'
 
 import { useTraslate } from '@hooks'
 import { createEmptyEntityVisualGraph } from '../entityVisualScript'
@@ -15,6 +15,8 @@ export interface VisualScriptingModalBodyProps {
   entityName?: string
   /** Entidades resueltas en la ventana principal (IPC → modal Electron). */
   sceneEntities?: Entity3D[]
+  /** Blueprints del proyecto (agrupación Environment en panel lateral). */
+  blueprints?: Blueprint3D[]
   initialGraph?: VisualGraphDocument
   onSave: (graph: VisualGraphDocument) => { ok: boolean; errors?: string[] }
   onCancel: () => void
@@ -27,6 +29,7 @@ export function VisualScriptingModalBody({
   entityId,
   entityName,
   sceneEntities,
+  blueprints,
   initialGraph,
   onSave,
   onCancel,
@@ -68,6 +71,7 @@ export function VisualScriptingModalBody({
         entityId={entityId}
         entityName={entityName}
         sceneEntities={sceneEntities ?? []}
+        blueprints={blueprints}
         initialGraph={graphRef.current}
         fill
         onGraphChange={(doc) => {

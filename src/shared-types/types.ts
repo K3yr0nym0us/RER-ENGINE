@@ -525,6 +525,7 @@ export interface ProjectLoaded3dPayload {
   sounds:        Array<{ name: string; path: string }>
   fonts:         Array<{ name: string; path: string }>
   backgrounds:   Array<{ name: string; path: string }>
+  hudImages?:    Array<{ name: string; path: string }>
   blueprints:    Blueprint3D[]
   world:         SavedWorldConfig
   player?: Entity3D | null
@@ -683,6 +684,8 @@ export interface EngineSaveSceneSnapshot {
   models?: Array<{ name: string; path: string; category?: ModelCategory }>
   sounds: Array<{ name: string; path: string }>
   backgrounds: Array<{ name: string; path: string }>
+  fonts?: Array<{ name: string; path: string }>
+  hud_images?: Array<{ name: string; path: string }>
   player_ui_text_boxes?: Array<{
     scope: string
     screen_id: string
@@ -1012,6 +1015,7 @@ export interface ModalElectronOpenRequest {
     category: Entity3DCategory
     model: string
     colision: boolean
+    blueprint_id?: string
     animations?: Array<{ name: string }>
   }>
 }
@@ -1048,6 +1052,7 @@ declare global {
       /** Manifest completo del .save abierto (escenas inactivas, visualGraph, etc.). */
       readProjectManifest:     () => Promise<ProjectSaveData | null>
       openSpriteDialog:        () => Promise<string | null>
+      openHudImageDialog:      () => Promise<string | null>
       openScenarioDialog:      () => Promise<string | null>
       openCharacterDialog:     () => Promise<string | null>
       getImageDataUrl:         (filePath: string) => Promise<string | null>
@@ -1083,11 +1088,15 @@ declare global {
         playerUiEditorState?: unknown
       }) => void
       playerUiEditorAction: (handlerId: string, action: unknown) => Promise<void>
+      fetchPlayerUiEditorState: (handlerId: string) => Promise<unknown>
       onModalElectronPatch: (
         cb: (data: { handlerId: string; playerUiEditorState?: unknown }) => void,
       ) => () => void
       onModalElectronPlayerUiActionRequest: (
         cb: (req: { handlerId: string; action: unknown; requestId: string }) => void | Promise<void>,
+      ) => () => void
+      onModalElectronPlayerUiStateRequest: (
+        cb: (req: { handlerId: string; requestId: string }) => unknown,
       ) => () => void
     }
   }

@@ -34,6 +34,18 @@ export function PlayerUiEditorElectronHost({ payload }: PlayerUiEditorElectronHo
 		return remove
 	}, [payload.handlerId])
 
+	// Al montar, pedir al renderer principal el estado actual del motor (mismo contexto vía IPC).
+	useEffect(() => {
+		let cancelled = false
+		void window.electronAPI.fetchPlayerUiEditorState(payload.handlerId).then((next) => {
+			if (cancelled || !next) return
+			setState(next as PlayerUiEditorState)
+		})
+		return () => {
+			cancelled = true
+		}
+	}, [payload.handlerId])
+
 	const delegate = useCallback(
 		(action: PlayerUiEditorAction) => {
 			void window.electronAPI.playerUiEditorAction(payload.handlerId, action)

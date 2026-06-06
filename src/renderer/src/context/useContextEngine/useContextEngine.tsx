@@ -11,6 +11,10 @@ import type {
 import { useLanguage } from '../LanguageContext';
 import { createEngineActions } from './hooks/createEngineActions';
 import { useEngineEffects } from './hooks/useEngineEffects';
+import {
+	activePlayerUiHandlerRef,
+	pushPlayerUiEditorPatch,
+} from '../../modal-electron/playerUiEditorSessions';
 import type { ModelLoadOverlayKind } from './hooks/sceneImportOverlay';
 import {
 	engineReducer,
@@ -152,6 +156,18 @@ export function EngineProvider({
 	useEffect(() => {
 		refs.modelsRef.current = state.models;
 	}, [state.models, refs.modelsRef]);
+
+	// Ventana modal Player UI: reflejar `editingUiElements` cuando llega `player_ui_text_boxes_list`.
+	useEffect(() => {
+		const handlerId = activePlayerUiHandlerRef.current;
+		if (!handlerId) return;
+		pushPlayerUiEditorPatch(handlerId);
+	}, [
+		state.editingUiElements,
+		state.playerUiObjectDrawEndTick,
+		state.engineReady,
+		state.playerUiScreens,
+	]);
 
 	refs.updateEntityTransformRef.current = actions.updateEntityTransform;
 

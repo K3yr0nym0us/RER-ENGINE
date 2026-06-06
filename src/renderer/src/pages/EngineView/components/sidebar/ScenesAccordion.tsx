@@ -24,10 +24,6 @@ export function ScenesAccordion() {
     <Accordion.Item eventKey="scenes">
       <Accordion.Header><Collection className="me-2" />{t('Scenes')}</Accordion.Header>
       <Accordion.Body className="py-2 px-2">
-        <Accordion className="sidebar-accordion mb-2">
-          <ProgrammingAccordion />
-        </Accordion>
-
         {scenesListLoading ? (
           <div
             className="scenes-accordion-loading d-flex flex-column align-items-center justify-content-center gap-2 py-3 text-secondary"
@@ -38,6 +34,10 @@ export function ScenesAccordion() {
           </div>
         ) : (
           <>
+        <Accordion className="sidebar-accordion mb-2">
+          <ProgrammingAccordion />
+        </Accordion>
+
         <button
           className="btn btn-sm btn-outline-secondary w-100 d-flex align-items-center justify-content-center gap-1 mb-2"
           type="button"

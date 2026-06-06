@@ -34,6 +34,7 @@ export function useScripting(): UseScriptingReturn {
     entityTransformsRef,
     updateEntityScripts,
     updateEntityVisualGraph,
+    blueprints,
   } = useContextEngine()
   const { openModal, closeModal } = useModal()
   const { t } = useTraslate()
@@ -88,6 +89,7 @@ export function useScripting(): UseScriptingReturn {
           entityId={entityId}
           entityName={selectedEntity.name ?? meta?.name}
           sceneEntities={sceneEntities}
+          blueprints={blueprints}
           initialGraph={initialGraph}
           onSave={(graph) => {
             const saveResult = saveEntityVisualGraph(entityId, graph)

@@ -966,6 +966,7 @@ export function SceneManagerProvider({
           sceneId={id}
           sceneName={sceneName}
           sceneEntities={sceneEntities}
+          blueprints={blueprints}
           initialGraph={initialGraph}
           onSave={(graph) => {
             const saveResult = persistSceneVisualGraph(id, graph);

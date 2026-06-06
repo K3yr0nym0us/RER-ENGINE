@@ -1,4 +1,4 @@
-import type { Entity3D, Entity3DCategory, VisualGraphContext } from '@shared-types'
+import type { Blueprint3D, Entity3D, Entity3DCategory, VisualGraphContext } from '@shared-types'
 
 export interface ContextVariable {
   id: string
@@ -69,14 +69,6 @@ const SCENE_GLOBAL_VARIABLES: ContextVariable[] = [
     kind: 'global',
     description: 'Var scene dt',
     detail: 'dt',
-  },
-  {
-    id: 'engine.log',
-    label: 'engine.log',
-    labelKey: 'Print to console',
-    rhaiSnippet: 'engine.log("message")',
-    kind: 'global',
-    description: 'Var engine log',
   },
 ]
 
@@ -205,10 +197,6 @@ export interface AnimationAccordionGroup {
   items: ContextVariable[]
 }
 
-function escapeAnimationSnippetName(name: string): string {
-  return name.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
-}
-
 /** Animaciones agrupadas por entidad para el panel lateral del editor de nodos. */
 export function buildAnimationAccordionGroups(
   sceneEntities?: Entity3D[],
@@ -218,28 +206,166 @@ export function buildAnimationAccordionGroups(
     ? (sceneEntities ?? []).filter((entity) => entity.id === options.entityId)
     : (sceneEntities ?? [])
 
-  const groups: AnimationAccordionGroup[] = []
+  const groupsById = new Map<number, AnimationAccordionGroup>()
+
   for (const entity of entities) {
-    const animations = (entity.animations ?? [])
+    const animationNames = (entity.animations ?? [])
       .map((anim) => anim.name?.trim())
       .filter((name): name is string => Boolean(name))
-    if (animations.length === 0) continue
+    if (animationNames.length === 0) continue
 
-    groups.push({
+    const existing = groupsById.get(entity.id)
+    const mergedNames = existing
+      ? [...new Set([...existing.items.map((item) => item.label), ...animationNames])]
+      : animationNames
+
+    groupsById.set(entity.id, {
       entityId: entity.id,
       entityName: entity.name || `Entity ${entity.id}`,
       entityCategory: entity.category,
-      items: animations.map((name) => ({
+      items: mergedNames.map((name) => ({
         id: `anim_${entity.id}_${name}`,
         label: name,
-        rhaiSnippet: `engine.play_animation(${entity.id}, "${escapeAnimationSnippetName(name)}")`,
-        kind: 'animation',
+        rhaiSnippet: name,
+        kind: 'animation' as const,
         entityCategory: entity.category,
         description: 'Var animation ref',
-        detail: `${entity.name || `Entity ${entity.id}`} · id ${entity.id}`,
+        detail: `id ${entity.id}`,
       })),
     })
   }
 
-  return groups
+  return [...groupsById.values()]
+}
+
+export interface SceneEntityRow {
+  id: number
+  name: string
+}
+
+export interface SceneBlueprintGroup {
+  blueprintId: string
+  baseEntityId: number
+  baseName: string
+  instances: SceneEntityRow[]
+}
+
+export interface ScenePanelStructure {
+  globals: ContextVariable[]
+  player: {
+    entityId: number
+    entityName: string
+    animations: ContextVariable[]
+  } | null
+  characters: ContextVariable[]
+  objects: ContextVariable[]
+  environment: {
+    baseEnvironment: SceneEntityRow[]
+    standalone: SceneEntityRow[]
+    blueprintGroups: SceneBlueprintGroup[]
+  }
+}
+
+function entityToContextVariable(ent: Entity3D): ContextVariable {
+  return {
+    id: `scene_entity_${ent.id}`,
+    label: ent.name || `Entity ${ent.id}`,
+    rhaiSnippet: String(ent.id),
+    kind: 'entity',
+    entityCategory: ent.category,
+    description: 'Var scene entity ref',
+    detail: `id ${ent.id}`,
+  }
+}
+
+function resolveBlueprintBase(
+  blueprintId: string,
+  instances: Entity3D[],
+  blueprints?: Blueprint3D[],
+): { baseEntityId: number; baseName: string } {
+  const blueprint = blueprints?.find((bp) => bp.id === blueprintId)
+  const byName = blueprint
+    ? instances.find((entity) => entity.name === blueprint.name)
+    : undefined
+  const base = byName ?? instances.reduce((prev, next) => (prev.id <= next.id ? prev : next))
+  return {
+    baseEntityId: base.id,
+    baseName: blueprint?.name ?? base.name,
+  }
+}
+
+/** Estructura del panel lateral en contexto escena (Player, Environment agrupado, etc.). */
+export function buildScenePanelStructure(
+  variables: ContextVariable[],
+  sceneEntities: Entity3D[] = [],
+  blueprints?: Blueprint3D[],
+): ScenePanelStructure {
+  const globals = variables.filter((variable) => variable.kind === 'global')
+
+  const playerEntity = sceneEntities.find((entity) => entity.category === 'player') ?? null
+  const playerAnimations = playerEntity
+    ? buildAnimationAccordionGroups([playerEntity]).flatMap((group) => group.items)
+    : []
+
+  const characters = sceneEntities
+    .filter((entity) => entity.category === 'character')
+    .map(entityToContextVariable)
+
+  const objects = sceneEntities
+    .filter((entity) => entity.category === 'object')
+    .map(entityToContextVariable)
+
+  const baseEnvironment: SceneEntityRow[] = []
+  const standaloneEnvironment: SceneEntityRow[] = []
+  const blueprintInstances = new Map<string, Entity3D[]>()
+
+  for (const entity of sceneEntities) {
+    if (entity.category === 'sun' || entity.category === 'ground') {
+      baseEnvironment.push({ id: entity.id, name: entity.name || `Entity ${entity.id}` })
+      continue
+    }
+    if (entity.category !== 'environment') continue
+
+    const blueprintId = entity.blueprint_id?.trim()
+    if (blueprintId) {
+      const list = blueprintInstances.get(blueprintId) ?? []
+      list.push(entity)
+      blueprintInstances.set(blueprintId, list)
+      continue
+    }
+
+    standaloneEnvironment.push({ id: entity.id, name: entity.name || `Entity ${entity.id}` })
+  }
+
+  const blueprintGroups: SceneBlueprintGroup[] = [...blueprintInstances.entries()]
+    .map(([blueprintId, instances]) => {
+      const { baseEntityId, baseName } = resolveBlueprintBase(blueprintId, instances, blueprints)
+      return {
+        blueprintId,
+        baseEntityId,
+        baseName,
+        instances: instances
+          .map((entity) => ({ id: entity.id, name: entity.name || `Entity ${entity.id}` }))
+          .sort((a, b) => a.name.localeCompare(b.name) || a.id - b.id),
+      }
+    })
+    .sort((a, b) => a.baseName.localeCompare(b.baseName))
+
+  return {
+    globals,
+    player: playerEntity
+      ? {
+          entityId: playerEntity.id,
+          entityName: playerEntity.name || `Entity ${playerEntity.id}`,
+          animations: playerAnimations,
+        }
+      : null,
+    characters,
+    objects,
+    environment: {
+      baseEnvironment,
+      standalone: standaloneEnvironment,
+      blueprintGroups,
+    },
+  }
 }

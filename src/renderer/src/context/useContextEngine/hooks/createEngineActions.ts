@@ -772,11 +772,12 @@ export function createEngineActions({
 		}
 	};
 
-	const addUiScreen = (scope: UiScreenScope, name: string) => {
+	const addUiScreen = (scope: UiScreenScope, name: string): string | null => {
 		const trimmed = name.trim();
-		if (!trimmed) return;
+		if (!trimmed) return null;
 		const entry: UiScreenEntry = { id: createUiScreenId(), name: trimmed };
 		dispatch({ type: 'ADD_UI_SCREEN', payload: { scope, entry } });
+		return entry.id;
 	};
 
 	const removeUiScreen = (scope: UiScreenScope, id: string) => {

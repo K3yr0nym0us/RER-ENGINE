@@ -259,6 +259,16 @@ function mapEngineUiObjectsToSave(
 	}));
 }
 
+function mergeLibraryAssets(
+	fromEditor: Array<{ name: string; path: string }>,
+	fromEngine?: Array<{ name: string; path: string }>,
+): Array<{ name: string; path: string }> {
+	const byPath = new Map<string, { name: string; path: string }>();
+	for (const item of fromEditor) byPath.set(item.path, item);
+	for (const item of fromEngine ?? []) byPath.set(item.path, item);
+	return [...byPath.values()];
+}
+
 /** Combina snapshot del motor con metadatos solo del editor (escenas inactivas, blueprints, idioma). */
 export async function buildProjectSaveFromEngineSnapshot(
 	engineScene: EngineSaveSceneSnapshot,
@@ -308,6 +318,9 @@ export async function buildProjectSaveFromEngineSnapshot(
 			? blueprints.map(blueprintToSave)
 			: blueprints;
 
+	const mergedFonts = mergeLibraryAssets(fonts, engineScene.fonts);
+	const mergedHudImages = mergeLibraryAssets(hudImages, engineScene.hud_images);
+
 	return {
 		version: 1,
 		type: projectType,
@@ -325,8 +338,8 @@ export async function buildProjectSaveFromEngineSnapshot(
 		sprites: root.sprites,
 		models: root.models,
 		sounds,
-		fonts,
-		hudImages: hudImages.length ? hudImages : undefined,
+		fonts: mergedFonts,
+		hudImages: mergedHudImages.length ? mergedHudImages : undefined,
 		backgrounds,
 		blueprints: savedBlueprints,
 		language: locale,

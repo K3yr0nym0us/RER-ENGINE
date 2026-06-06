@@ -857,6 +857,10 @@ pub struct SaveSceneSnapshotPayload {
     pub sounds: Vec<SaveAssetRefSnapshot>,
     pub backgrounds: Vec<SaveAssetRefSnapshot>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fonts: Vec<SaveAssetRefSnapshot>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hud_images: Vec<SaveAssetRefSnapshot>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub player_ui_text_boxes: Vec<SavePlayerUiTextBoxSnapshot>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub player_ui_buttons: Vec<SavePlayerUiButtonSnapshot>,
@@ -1448,6 +1452,8 @@ pub struct ProjectLoaded3dEvent {
     pub sounds:         Vec<ImportSceneSprite>,
     pub fonts:          Vec<ImportSceneSprite>,
     pub backgrounds:    Vec<ImportSceneSprite>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty", rename = "hudImages")]
+    pub hud_images:     Vec<ImportSceneSprite>,
     pub blueprints:     serde_json::Value,
     pub world:          ProjectLoaded3dWorld,
     #[serde(skip_serializing_if = "Option::is_none")]

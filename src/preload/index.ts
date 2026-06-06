@@ -75,6 +75,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openSpriteDialog: (): Promise<string | null> => {
     return ipcRenderer.invoke('open-sprite-dialog')
   },
+  openHudImageDialog: (): Promise<string | null> => {
+    return ipcRenderer.invoke('open-hud-image-dialog')
+  },
   getImageDataUrl: (filePath: string): Promise<string | null> => {
     return ipcRenderer.invoke('get-image-data-url', filePath)
   },
@@ -173,6 +176,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   playerUiEditorAction: (handlerId: string, action: unknown): Promise<void> => {
     return ipcRenderer.invoke('modal-electron:player-ui-action', { handlerId, action })
   },
+  fetchPlayerUiEditorState: (handlerId: string): Promise<unknown> => {
+    return ipcRenderer.invoke('modal-electron:player-ui-state', { handlerId })
+  },
   onModalElectronPatch: (
     cb: (data: { handlerId: string; playerUiEditorState?: unknown }) => void,
   ): (() => void) => {
@@ -197,6 +203,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
     }
     ipcRenderer.on('modal-electron:player-ui-action-request', listener)
     return () => ipcRenderer.removeListener('modal-electron:player-ui-action-request', listener)
+  },
+  onModalElectronPlayerUiStateRequest: (
+    cb: (req: { handlerId: string; requestId: string }) => unknown,
+  ): (() => void) => {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      data: { handlerId: string; requestId: string },
+    ) => {
+      const state = cb(data)
+      ipcRenderer.send(`modal-electron:player-ui-state-done-${data.requestId}`, state)
+    }
+    ipcRenderer.on('modal-electron:player-ui-state-request', listener)
+    return () => ipcRenderer.removeListener('modal-electron:player-ui-state-request', listener)
   },
   onModalElectronResult: (
     cb: (handlerId: string, result: unknown, callbackKey?: string) => void,

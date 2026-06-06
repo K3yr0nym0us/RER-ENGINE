@@ -1,7 +1,6 @@
 import { createElement } from 'react'
 
-import type { UiScreenScope } from '@engine'
-import type { EngineContextValue } from '@engine'
+import type { UiScreenScope, EngineContextValue } from '../context/useContextEngine/types'
 import { ModalConfirmBody } from './ModalConfirmBody'
 import type { OpenModalElectronOptions } from '../hooks/useModalElectron'
 import ModalSelectFont from '../pages/EngineView/components/sidebar/UIAccordion/components/ModalSelectFont'
@@ -16,7 +15,7 @@ export const activePlayerUiHandlerRef = { current: null as string | null }
 export interface PlayerUiEditorSessionDeps {
 	scope: UiScreenScope
 	screenId: string
-	engine: EngineContextValue
+	getEngine: () => EngineContextValue
 	openModal: (opts: OpenModalElectronOptions) => void
 	closeModal: () => void
 	objectDrawStart: () => void
@@ -43,13 +42,14 @@ export function unregisterPlayerUiEditorSession(handlerId: string): void {
 }
 
 export function buildPlayerUiEditorState(deps: PlayerUiEditorSessionDeps): PlayerUiEditorState {
-	const screens = deps.scope === 'player' ? deps.engine.playerUiScreens : deps.engine.menuUiScreens
+	const engine = deps.getEngine()
+	const screens = deps.scope === 'player' ? engine.playerUiScreens : engine.menuUiScreens
 	const screen = screens.find((s) => s.id === deps.screenId)
 	return {
 		screenId: deps.screenId,
 		screenName: screen?.name ?? '',
-		elements: deps.engine.editingUiElements,
-		engineReady: deps.engine.engineReady,
+		elements: engine.editingUiElements,
+		engineReady: engine.engineReady,
 		objectDrawActive: deps.objectDrawActive(),
 	}
 }
@@ -60,6 +60,12 @@ export function pushPlayerUiEditorPatch(handlerId: string): void {
 	session.deps.pushPatch(handlerId, buildPlayerUiEditorState(session.deps))
 }
 
+export function resolvePlayerUiEditorState(handlerId: string): PlayerUiEditorState | null {
+	const session = sessions.get(handlerId)
+	if (!session) return null
+	return buildPlayerUiEditorState(session.deps)
+}
+
 /** La ventana modal es singleton: tras una submodal hay que reabrir el editor. */
 function reopenPlayerUiEditorModal(oldHandlerId: string): void {
 	const session = sessions.get(oldHandlerId)
@@ -67,7 +73,7 @@ function reopenPlayerUiEditorModal(oldHandlerId: string): void {
 	const { deps } = session
 	unregisterPlayerUiEditorSession(oldHandlerId)
 
-	const screen = deps.engine.playerUiScreens.find((s) => s.id === deps.screenId)
+	const screen = deps.getEngine().playerUiScreens.find((s) => s.id === deps.screenId)
 	setPendingPlayerUiEditorSession((handlerId) => {
 		activePlayerUiHandlerRef.current = handlerId
 		return { ...deps, pushPatch: deps.pushPatch }
@@ -87,7 +93,8 @@ export async function runPlayerUiEditorAction(
 	const session = sessions.get(handlerId)
 	if (!session) return
 	const { deps } = session
-	const { engine, scope, screenId } = deps
+	const { getEngine, scope, screenId } = deps
+	const engine = getEngine()
 
 	switch (req.action) {
 		case 'rename':

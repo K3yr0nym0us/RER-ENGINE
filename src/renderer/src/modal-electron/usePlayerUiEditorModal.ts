@@ -17,6 +17,8 @@ import {
 export function usePlayerUiEditorModal(scope: UiScreenScope) {
 	const { t } = useTraslate()
 	const engine = useContextEngine()
+	const engineRef = useRef(engine)
+	engineRef.current = engine
 	const { openModal } = useModal()
 	const objectDraw = usePlayerUiObjectDrawing(engine.send, engine.playerUiObjectDrawEndTick)
 
@@ -44,16 +46,14 @@ export function usePlayerUiEditorModal(scope: UiScreenScope) {
 	const openEditor = useCallback(
 		(screenId: string) => {
 			if (scope !== 'player') return
-			const screen = engine.playerUiScreens.find((s) => s.id === screenId)
+			const screen = engineRef.current.playerUiScreens.find((s) => s.id === screenId)
 			if (!screen) return
 
-			engine.beginUiScreenEdit('player', screenId)
-
-				setPendingPlayerUiEditorSession((handlerId) => {
+			setPendingPlayerUiEditorSession((handlerId) => {
 				const deps: PlayerUiEditorSessionDeps = {
 					scope: 'player',
 					screenId,
-					engine,
+					getEngine: () => engineRef.current,
 					openModal,
 					closeModal: () => void window.electronAPI.closeModalElectron(),
 					objectDrawStart: objectDraw.start,

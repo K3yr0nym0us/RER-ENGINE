@@ -99,6 +99,7 @@ import {
 	DEFAULT_PLAYER_UI_BUTTON_CONFIG,
 } from '../../../pages/EngineView/components/sidebar/UIAccordion/components/playerUiButtonModel';
 import type { EngineAction, EngineInternalRefs, EntityMeta, PendingRestore, Transform } from '../types';
+import { buildEditingUiElementsFromEngineList } from '../types';
 import { takePendingPlayerUiButtonConfig } from './createEngineActions';
 
 type RuntimeEngineEvent = {
@@ -265,6 +266,8 @@ function panelLogLineForEditorSceneEvent(event: RuntimeEngineEvent): string | nu
 					return `[Escenas] Registro inicializado — activa «${activeName}» (${listSummary})`;
 				case 'project_saved':
 					return `[Escenas] Registro alineado tras guardar — activa «${activeName}» (${listSummary})`;
+				case 'project_loaded':
+					return `[Escenas] Registro cargado — activa «${activeName}» (${listSummary})`;
 				case 'scene_deleted':
 					return `[Escenas] Escena eliminada — activa «${activeName}» (${listSummary})`;
 				default:
@@ -1301,9 +1304,6 @@ export function createEngineEventHandler({
 				} catch (err) {
 					console.error('[project_load_3d_complete] sync desde snapshot del motor:', err);
 				} finally {
-					if (projectType === '3D' && gameStyle === 'first-person') {
-						window.engine.send({ cmd: 'clear_editor_undo_redo' } as never);
-					}
 					endSceneImportLoading(
 						dispatch,
 						refs.sceneImportInProgressRef,
@@ -1789,7 +1789,7 @@ export function createEngineEventHandler({
 					locked?: boolean;
 				}>;
 			};
-			const boxes = (e.boxes ?? [])
+			const textBoxes = (e.boxes ?? [])
 				.filter((b): b is { id: number; font_name?: string; text?: string } =>
 					typeof b.id === 'number',
 				)
@@ -1800,7 +1800,6 @@ export function createEngineEventHandler({
 					zIndex: typeof b.z_index === 'number' ? b.z_index : 0,
 					locked: Boolean(b.locked),
 				}));
-			dispatch({ type: 'SET_EDITING_UI_TEXT_BOXES', payload: boxes });
 			const buttons = (e.buttons ?? [])
 				.filter((b): b is { id: number; font_name?: string; text?: string } =>
 					typeof b.id === 'number',
@@ -1812,7 +1811,6 @@ export function createEngineEventHandler({
 					zIndex: typeof b.z_index === 'number' ? b.z_index : 0,
 					locked: Boolean(b.locked),
 				}));
-			dispatch({ type: 'SET_EDITING_UI_BUTTONS', payload: buttons });
 			const images = (e.images ?? [])
 				.filter((img): img is { id: number; image_name?: string } =>
 					typeof img.id === 'number',
@@ -1823,7 +1821,6 @@ export function createEngineEventHandler({
 					zIndex: typeof img.z_index === 'number' ? img.z_index : 0,
 					locked: Boolean(img.locked),
 				}));
-			dispatch({ type: 'SET_EDITING_UI_IMAGES', payload: images });
 			const objects = (e.objects ?? [])
 				.filter((obj): obj is { id: number; vertex_count?: number } =>
 					typeof obj.id === 'number',
@@ -1835,7 +1832,16 @@ export function createEngineEventHandler({
 					zIndex: typeof obj.z_index === 'number' ? obj.z_index : 0,
 					locked: Boolean(obj.locked),
 				}));
-			dispatch({ type: 'SET_EDITING_UI_OBJECTS', payload: objects });
+			dispatch({
+				type: 'SET_EDITING_UI_ELEMENTS',
+				payload: buildEditingUiElementsFromEngineList({
+					textBoxes,
+					buttons,
+					images,
+					objects,
+					buttonDefaultConfig: DEFAULT_PLAYER_UI_BUTTON_CONFIG,
+				}),
+			});
 		}
 
 		if (event.event === 'player_ui_button_added') {

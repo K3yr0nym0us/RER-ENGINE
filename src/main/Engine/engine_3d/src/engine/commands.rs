@@ -55,10 +55,13 @@ impl State {
 
     /// Vacía historial undo/redo tras carga de escena o guardado (estado limpio del editor).
     pub fn clear_editor_undo_redo(&mut self) {
+        let had_history = !self.undo_stack.is_empty() || !self.redo_stack.is_empty();
         self.undo_stack.clear();
         self.redo_stack.clear();
         self.is_applying_undo = false;
-        self.sync_editor_scenes_undo_dirty_to_renderer();
+        if had_history {
+            self.sync_editor_scenes_undo_dirty_to_renderer();
+        }
     }
 
     pub fn apply_undo(&mut self) {

@@ -585,6 +585,17 @@ ipcMain.handle('open-sprite-dialog', async () => {
   return result.canceled ? null : result.filePaths[0] ?? null
 })
 
+// Diálogo para imágenes HUD (transparencia: PNG o WebP)
+ipcMain.handle('open-hud-image-dialog', async () => {
+  if (!mainWindow) return null
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title:      'Cargar imagen HUD',
+    filters:    [{ name: 'Imágenes HUD (PNG, WebP)', extensions: ['png', 'webp'] }],
+    properties: ['openFile'],
+  })
+  return result.canceled ? null : result.filePaths[0] ?? null
+})
+
 // Diálogo para abrir imagen PNG/GIF como fondo del mundo 2D
 ipcMain.handle('open-background-dialog', async () => {
   if (!mainWindow) return null
@@ -726,6 +737,29 @@ ipcMain.handle(
   },
 )
 
+ipcMain.handle(
+  'modal-electron:player-ui-state',
+  async (_event, req: { handlerId: string }) => {
+    if (!mainWindow || mainWindow.isDestroyed()) return null
+    return new Promise<unknown>((resolve) => {
+      const requestId = `${Date.now()}-${Math.random()}`
+      const channel = `modal-electron:player-ui-state-done-${requestId}`
+      const timeout = setTimeout(() => {
+        ipcMain.removeAllListeners(channel)
+        resolve(null)
+      }, 10_000)
+      ipcMain.once(channel, (_replyEvent, result) => {
+        clearTimeout(timeout)
+        resolve(result ?? null)
+      })
+      mainWindow!.webContents.send('modal-electron:player-ui-state-request', {
+        ...req,
+        requestId,
+      })
+    })
+  },
+)
+
 ipcMain.on('modal-electron:result', (_event, data: ModalElectronResultPayload) => {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('modal-electron:result', data)
@@ -758,6 +792,7 @@ function ensureSaveExtension(filePath: string): string {
 const SCRIPT_FILE_PREFIX = '@file:'
 const AUDIO_EXTENSIONS = new Set(['.wav', '.ogg', '.mp3', '.flac', '.aac', '.m4a'])
 const FONT_EXTENSIONS = new Set(['.ttf', '.otf'])
+const HUD_IMAGE_EXTENSIONS = new Set(['.png', '.webp'])
 
 function sanitizeSegment(raw: string | null | undefined, fallback = 'item'): string {
   const text = (raw ?? '').trim()
@@ -774,6 +809,10 @@ function isAudioAsset(filePath: string): boolean {
 
 function isFontAsset(filePath: string): boolean {
   return FONT_EXTENSIONS.has(path.extname(filePath).toLowerCase())
+}
+
+function isHudImageAsset(filePath: string): boolean {
+  return HUD_IMAGE_EXTENSIONS.has(path.extname(filePath).toLowerCase())
 }
 
 function toAssetPathKey(filePath: string): string {
@@ -809,6 +848,7 @@ function countManifestLibraryRefs(data: ProjectSaveData): {
   sounds: number
   fonts: number
   backgrounds: number
+  hudImages: number
   sprites: number
   models: number
 } {
@@ -816,6 +856,7 @@ function countManifestLibraryRefs(data: ProjectSaveData): {
     sounds: data.sounds?.length ?? 0,
     fonts: data.fonts?.length ?? 0,
     backgrounds: data.backgrounds?.length ?? 0,
+    hudImages: data.hudImages?.length ?? 0,
     sprites: data.sprites?.length ?? 0,
     models: data.models?.length ?? 0,
   }
@@ -825,8 +866,9 @@ function formatLibraryResourcesInLog(counts: {
   sounds: number
   fonts: number
   backgrounds: number
+  hudImages: number
 }): string {
-  return `fondos: ${counts.backgrounds}, sonidos: ${counts.sounds}, fuentes: ${counts.fonts}`
+  return `fondos: ${counts.backgrounds}, sonidos: ${counts.sounds}, fuentes: ${counts.fonts}, imágenes HUD: ${counts.hudImages}`
 }
 
 function formatEntityKindBreakdown(data: ProjectSaveData): string {
@@ -877,6 +919,17 @@ function collectAssetPaths(data: ProjectSaveData): Set<string> {
     for (const bg of data.backgrounds) add(bg.path)
   }
 
+  if (data.hudImages) {
+    for (const img of data.hudImages) add(img.path)
+  }
+
+  for (const box of data.playerUiTextBoxes ?? []) add(box.font_path)
+  for (const btn of data.playerUiButtons ?? []) {
+    add(btn.font_path)
+    add(btn.texture_path)
+  }
+  for (const img of data.playerUiImages ?? []) add(img.image_path)
+
   add(data.player?.model)
   if (data.models) {
     for (const model of data.models) add(model.path)
@@ -920,10 +973,12 @@ function copyAssetsToDir(
   assetsDir: string,
   soundsDir: string,
   fontsDir: string,
+  hudImagesDir: string,
 ): Map<string, string> {
   fs.mkdirSync(assetsDir, { recursive: true })
   fs.mkdirSync(soundsDir, { recursive: true })
   fs.mkdirSync(fontsDir, { recursive: true })
+  fs.mkdirSync(hudImagesDir, { recursive: true })
   const map = new Map<string, string>()
   const usedNames = new Map<string, number>()
 
@@ -937,6 +992,9 @@ function copyAssetsToDir(
     } else if (isFontAsset(src)) {
       targetDir = fontsDir
       relPrefix = 'fonts'
+    } else if (isHudImageAsset(src)) {
+      targetDir = hudImagesDir
+      relPrefix = 'hud-images'
     }
     const key = `${relPrefix}/${baseName}`
     const count = usedNames.get(key) ?? 0
@@ -1158,6 +1216,23 @@ function remapPaths(data: ProjectSaveData, map: Map<string, string>): ProjectSav
       name: b.name,
       path: remap(b.path) as string,
     })),
+    hudImages: data.hudImages?.map((img) => ({
+      name: img.name,
+      path: remap(img.path) as string,
+    })),
+    playerUiTextBoxes: data.playerUiTextBoxes?.map((box) => ({
+      ...box,
+      font_path: remap(box.font_path) as string,
+    })),
+    playerUiButtons: data.playerUiButtons?.map((btn) => ({
+      ...btn,
+      font_path: remap(btn.font_path) as string,
+      texture_path: remap(btn.texture_path) as string | undefined,
+    })),
+    playerUiImages: data.playerUiImages?.map((img) => ({
+      ...img,
+      image_path: remap(img.image_path) as string,
+    })),
     entities: hasScenes ? [] : data.entities.map(mapEntity),
     player: data.player ? mapEntity(data.player) : data.player,
     scenes: data.scenes?.map((scene) => ({
@@ -1196,9 +1271,10 @@ function saveProjectToFile(saveFilePath: string, data: ProjectSaveData): boolean
     const assetsDir = path.join(stagingDir, 'assets')
     const soundsDir = path.join(stagingDir, 'sounds')
     const fontsDir = path.join(stagingDir, 'fonts')
+    const hudImagesDir = path.join(stagingDir, 'hud-images')
     const scriptingDir = path.join(stagingDir, 'scripting')
     const assetPaths = collectAssetPaths(data)
-    const pathMap = copyAssetsToDir(assetPaths, assetsDir, soundsDir, fontsDir)
+    const pathMap = copyAssetsToDir(assetPaths, assetsDir, soundsDir, fontsDir, hudImagesDir)
     const remapped = remapPaths(data, pathMap)
     const scriptsPacked = serializeScriptsToFiles(remapped, scriptingDir)
 
@@ -1239,13 +1315,22 @@ function saveProjectToFile(saveFilePath: string, data: ProjectSaveData): boolean
     const uniqueBackgrounds = new Set<string>()
     for (const bg of data.backgrounds ?? []) addRelIfPacked(uniqueBackgrounds, bg.path)
 
+    const uniqueHudImages = new Set<string>()
+    for (const img of data.hudImages ?? []) addRelIfPacked(uniqueHudImages, img.path)
+
     const uniqueSprites = new Set<string>()
     for (const sprite of data.sprites ?? []) addRelIfPacked(uniqueSprites, sprite.path)
     for (const scene of data.scenes ?? []) {
       for (const sprite of scene.sprites ?? []) addRelIfPacked(uniqueSprites, sprite.path)
     }
 
-    const classifiedAssets = new Set<string>([...uniqueSounds, ...uniqueFonts, ...uniqueBackgrounds, ...uniqueSprites])
+    const classifiedAssets = new Set<string>([
+      ...uniqueSounds,
+      ...uniqueFonts,
+      ...uniqueBackgrounds,
+      ...uniqueHudImages,
+      ...uniqueSprites,
+    ])
     const otherAssetNames = Array.from(pathMap.values()).filter((rel) => !classifiedAssets.has(rel)).sort()
     const otherAssets = otherAssetNames.length
     const packedScriptFiles = countRhaiFiles(scriptingDir)
@@ -1263,6 +1348,7 @@ function saveProjectToFile(saveFilePath: string, data: ProjectSaveData): boolean
         backgrounds: uniqueBackgrounds.size,
         sounds: uniqueSounds.size,
         fonts: uniqueFonts.size,
+        hudImages: uniqueHudImages.size,
       })
       console.log(
         `[editor] Proyecto guardado `
@@ -1273,6 +1359,7 @@ function saveProjectToFile(saveFilePath: string, data: ProjectSaveData): boolean
         backgrounds: uniqueBackgrounds.size,
         sounds: uniqueSounds.size,
         fonts: uniqueFonts.size,
+        hudImages: uniqueHudImages.size,
       })
       console.log(
         `[editor] Proyecto guardado `
@@ -1375,6 +1462,23 @@ function resolveLoadedPaths(data: ProjectSaveData, extractedDir: string): Projec
     backgrounds: data.backgrounds?.map((b) => ({
       name: b.name,
       path: resolve(b.path) as string,
+    })),
+    hudImages: data.hudImages?.map((img) => ({
+      name: img.name,
+      path: resolve(img.path) as string,
+    })),
+    playerUiTextBoxes: data.playerUiTextBoxes?.map((box) => ({
+      ...box,
+      font_path: resolve(box.font_path) as string,
+    })),
+    playerUiButtons: data.playerUiButtons?.map((btn) => ({
+      ...btn,
+      font_path: resolve(btn.font_path) as string,
+      texture_path: resolve(btn.texture_path) as string | undefined,
+    })),
+    playerUiImages: data.playerUiImages?.map((img) => ({
+      ...img,
+      image_path: resolve(img.image_path) as string,
     })),
     entities: hasScenes ? [] : data.entities.map(mapEntity3d),
     player: data.player ? mapEntity3d(data.player) : data.player,

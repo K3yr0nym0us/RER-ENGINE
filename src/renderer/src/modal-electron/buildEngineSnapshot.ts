@@ -28,6 +28,7 @@ export function buildEngineSnapshot(
 			}
 		case 'VisualScriptingModalBody':
 			return {
+				blueprints: JSON.parse(JSON.stringify(engine.blueprints)) as typeof engine.blueprints,
 				sceneEntities: sanitizeSceneEntitiesForModal(
 					resolveSceneEntitiesForVisualScript({
 						entityMeta: engine.entityMetaRef.current,

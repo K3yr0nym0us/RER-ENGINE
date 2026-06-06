@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import { Image } from 'react-bootstrap-icons';
+import { useContextEngine } from '@engine';
 import { useModal } from '@modal';
 import { useTraslate } from '@hooks';
 import ModalSetNameHudImage from './ModalSetNameHudImage';
@@ -7,9 +8,10 @@ import ModalSetNameHudImage from './ModalSetNameHudImage';
 const BtnLoadImage = () => {
   const { t } = useTraslate();
   const { openModal } = useModal();
+  const { loadHudImage } = useContextEngine();
 
   const handleLoad = useCallback(async () => {
-    const path = await window.electronAPI.openSpriteDialog();
+    const path = await window.electronAPI.openHudImageDialog();
     if (!path) return;
     const autoName = path.replace(/\\/g, '/').split('/').pop()?.replace(/\.[^/.]+$/, '') ?? 'image';
     openModal({
@@ -18,10 +20,13 @@ const BtnLoadImage = () => {
         <ModalSetNameHudImage
           path={path}
           autoName={autoName}
+          onConfirm={({ path: imagePath, name }) => {
+            loadHudImage(imagePath, name);
+          }}
         />
       ),
     });
-  }, [openModal, t]);
+  }, [loadHudImage, openModal, t]);
 
   return (
     <button
@@ -29,7 +34,7 @@ const BtnLoadImage = () => {
       type="button"
       onClick={handleLoad}
     >
-      <Image className="me-1" aria-hidden /> {t('Load image (PNG, JPEG, WebP)')}
+      <Image className="me-1" aria-hidden /> {t('Load image (PNG, WebP)')}
     </button>
   );
 };

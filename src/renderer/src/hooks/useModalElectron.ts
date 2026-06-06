@@ -20,7 +20,9 @@ import {
 import { consumePendingPlayerUiEditorSession } from '../modal-electron/playerUiEditorBridge'
 import {
 	buildPlayerUiEditorState,
+	pushPlayerUiEditorPatch,
 	registerPlayerUiEditorSession,
+	resolvePlayerUiEditorState,
 	runPlayerUiEditorAction,
 } from '../modal-electron/playerUiEditorSessions'
 import type { PlayerUiEditorState } from '../modal-electron/playerUiEditorTypes'
@@ -43,6 +45,7 @@ const pendingParentNested = new Map<string, Record<string, ParentNestedHandler>>
 let delegateListenerInstalled = false
 let parentOpenListenerInstalled = false
 let playerUiActionListenerInstalled = false
+let playerUiStateListenerInstalled = false
 
 function createHandlerId(): string {
 	return crypto.randomUUID()
@@ -124,6 +127,7 @@ export function useModalElectron() {
 			const sessionDeps = consumePendingPlayerUiEditorSession(handlerId)
 			if (sessionDeps) {
 				registerPlayerUiEditorSession(handlerId, sessionDeps)
+				sessionDeps.getEngine().beginUiScreenEdit('player', sessionDeps.screenId)
 				playerUiEditorState = buildPlayerUiEditorState(sessionDeps)
 			}
 		}
@@ -201,6 +205,9 @@ export function useModalElectron() {
 		// IPC structured clone: solo datos planos (sin JSX ni funciones).
 		const ipcPayload = JSON.parse(JSON.stringify(request)) as ModalElectronOpenRequest
 		await window.electronAPI.openModalElectron(ipcPayload)
+		if (componentKey === 'PlayerUiEditorModalBody') {
+			pushPlayerUiEditorPatch(handlerId)
+		}
 	}, [closeModal, locale, setActiveBluePrint])
 
 	useEffect(() => {
@@ -213,6 +220,14 @@ export function useModalElectron() {
 		playerUiActionListenerInstalled = true
 		window.electronAPI.onModalElectronPlayerUiActionRequest(async (req) => {
 			await runPlayerUiEditorAction(req.handlerId, req.action as import('../modal-electron/playerUiEditorTypes').PlayerUiEditorAction)
+		})
+	}, [])
+
+	useEffect(() => {
+		if (playerUiStateListenerInstalled) return
+		playerUiStateListenerInstalled = true
+		window.electronAPI.onModalElectronPlayerUiStateRequest((req) => {
+			return resolvePlayerUiEditorState(req.handlerId)
 		})
 	}, [])
 

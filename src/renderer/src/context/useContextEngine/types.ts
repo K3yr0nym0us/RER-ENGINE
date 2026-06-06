@@ -218,6 +218,38 @@ export function filterEditingUiElementsByKind<K extends EditingUiElementKind>(
 	return elements.filter((e): e is Extract<EditingUiElement, { kind: K }> => e.kind === kind);
 }
 
+/** Lista completa del motor (`player_ui_text_boxes_list`) → estado del sidebar, como `SET_MODELS`. */
+export function buildEditingUiElementsFromEngineList(input: {
+	textBoxes: PlayerUiTextBoxEntry[];
+	buttons: Array<{
+		id: number;
+		text: string;
+		fontName: string;
+		zIndex: number;
+		locked: boolean;
+	}>;
+	images: PlayerUiImageEntry[];
+	objects: PlayerUiObjectEntry[];
+	buttonDefaultConfig: PlayerUiButtonConfig;
+}): EditingUiElement[] {
+	return [
+		...input.textBoxes.map((box) => ({ kind: 'text' as const, ...box })),
+		...input.buttons.map((b) => ({
+			kind: 'button' as const,
+			id: b.id,
+			config: {
+				...input.buttonDefaultConfig,
+				text: b.text,
+				fontName: b.fontName,
+			},
+			zIndex: b.zIndex,
+			locked: b.locked,
+		})),
+		...input.images.map((img) => ({ kind: 'image' as const, ...img })),
+		...input.objects.map((obj) => ({ kind: 'object' as const, ...obj })),
+	];
+}
+
 export interface EngineState {
 	engineReady: boolean
 	engineError: string | null
@@ -274,6 +306,7 @@ export type EngineAction =
 	| { type: 'RENAME_UI_SCREEN'; payload: { scope: UiScreenScope; id: string; name: string } }
 	| { type: 'SET_ACTIVE_PLAYER_UI_SCREEN'; payload: string | null }
 	| { type: 'CLEAR_EDITING_UI_ELEMENTS' }
+	| { type: 'SET_EDITING_UI_ELEMENTS'; payload: EditingUiElement[] }
 	| { type: 'SET_EDITING_UI_TEXT_BOXES'; payload: PlayerUiTextBoxEntry[] }
 	| {
 			type: 'SET_EDITING_UI_BUTTONS'
@@ -460,15 +493,12 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 			const nextPlayer = nextAction.payload.playerId;
 			const nextMenu = nextAction.payload.menuId;
 			const editing = Boolean(nextPlayer || nextMenu);
-			const prevKey = prevState.playerUiEditingId ?? prevState.menuUiEditingId;
-			const nextKey = nextPlayer ?? nextMenu;
-			const screenChanged = editing && prevKey !== nextKey;
 			return {
 				...prevState,
 				playerUiEditingId: nextPlayer,
 				menuUiEditingId: nextMenu,
-				editingUiElements:
-					!editing || screenChanged ? [] : prevState.editingUiElements,
+				// Solo vaciar al salir de edición; la lista del motor reemplaza todo al entrar.
+				editingUiElements: editing ? prevState.editingUiElements : [],
 			};
 		},
 		SET_EDITING_UI_TEXT_BOXES: (prevState, nextAction) => ({
@@ -499,6 +529,10 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 				prevState.editingUiElements,
 				nextAction.payload,
 			),
+		}),
+		SET_EDITING_UI_ELEMENTS: (prevState, nextAction) => ({
+			...prevState,
+			editingUiElements: nextAction.payload,
 		}),
 		CLEAR_EDITING_UI_ELEMENTS: (prevState) => ({
 			...prevState,
@@ -986,6 +1020,7 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 				sounds: p.sounds,
 				fonts: p.fonts ?? [],
 				backgrounds: p.backgrounds,
+				hudImages: p.hudImages ?? [],
 				loadedModelsInfo: modelMap,
 				playerUiScreens: normalizePlayerUiScreens(p.playerUiScreens ?? []),
 				menuUiScreens: p.menuUiScreens ?? [],

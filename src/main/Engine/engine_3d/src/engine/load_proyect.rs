@@ -313,7 +313,9 @@ impl State {
                     Ok(view) => {
                         send_project_loaded_3d(&project, &view, None);
                         self.editor_scenes_init_from_project(&project, &extract_path, &view);
+                        self.sync_active_editor_scene_committed();
                         self.clear_editor_undo_redo();
+                        self.emit_editor_scenes_updated("project_loaded");
                         send_project_load_3d_complete_event();
                     }
                     Err(err) => log::error!("error al aplicar proyecto: {err}"),
@@ -537,6 +539,40 @@ fn resolve_loaded_paths(project: &mut ProjectSaveData, extracted_dir: &Path) {
             name: m.name.clone(),
             path: resolve_path(&m.path, extracted_dir),
             category: m.category.clone(),
+        })
+        .collect();
+    project.hud_images = project
+        .hud_images
+        .iter()
+        .map(|h| NamedPath {
+            name: h.name.clone(),
+            path: resolve_path(&h.path, extracted_dir),
+            category: None,
+        })
+        .collect();
+    project.player_ui_text_boxes = project
+        .player_ui_text_boxes
+        .iter()
+        .map(|b| crate::ipc::SavePlayerUiTextBoxSnapshot {
+            font_path: resolve_path(&b.font_path, extracted_dir),
+            ..b.clone()
+        })
+        .collect();
+    project.player_ui_buttons = project
+        .player_ui_buttons
+        .iter()
+        .map(|b| crate::ipc::SavePlayerUiButtonSnapshot {
+            font_path: resolve_path(&b.font_path, extracted_dir),
+            texture_path: resolve_optional_path(&b.texture_path, extracted_dir),
+            ..b.clone()
+        })
+        .collect();
+    project.player_ui_images = project
+        .player_ui_images
+        .iter()
+        .map(|img| crate::ipc::SavePlayerUiImageSnapshot {
+            image_path: resolve_path(&img.image_path, extracted_dir),
+            ..img.clone()
         })
         .collect();
     project.player = resolve_player_entity(&project.player, extracted_dir);
@@ -1668,6 +1704,15 @@ fn send_project_loaded_3d(
             .map(|b| ImportSceneSprite {
                 path: b.path.clone(),
                 name: b.name.clone(),
+                category: None,
+            })
+            .collect(),
+        hud_images: project
+            .hud_images
+            .iter()
+            .map(|img| ImportSceneSprite {
+                path: img.path.clone(),
+                name: img.name.clone(),
                 category: None,
             })
             .collect(),

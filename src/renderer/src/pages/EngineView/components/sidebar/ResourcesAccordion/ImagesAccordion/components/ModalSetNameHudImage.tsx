@@ -1,21 +1,26 @@
 import { useRef } from 'react';
-import { useContextEngine } from '@engine';
 import { useModalClose, useTraslate } from '@hooks';
+
+export interface ModalSetNameHudImageConfirmPayload {
+  path: string;
+  name: string;
+}
 
 interface ModalSetNameHudImageProps {
   path: string;
   autoName: string;
+  /** Registrado en el padre vía modal Electron (la ventana hijo no tiene EngineProvider). */
+  onConfirm?: (payload: ModalSetNameHudImageConfirmPayload) => void;
 }
 
-export default function ModalSetNameHudImage({ path, autoName }: ModalSetNameHudImageProps) {
+function ModalSetNameHudImage({ path, autoName, onConfirm }: ModalSetNameHudImageProps) {
   const { t } = useTraslate();
-  const { loadHudImage } = useContextEngine();
   const closeModal = useModalClose();
-
   const nameRef = useRef<HTMLInputElement>(null);
 
-  const handleConfirm = (name: string) => {
-    loadHudImage(path, name);
+  const handleLoad = () => {
+    const name = nameRef.current?.value?.trim() || autoName;
+    onConfirm?.({ path, name });
     closeModal();
   };
 
@@ -40,10 +45,7 @@ export default function ModalSetNameHudImage({ path, autoName }: ModalSetNameHud
         <button
           className="btn btn-primary btn-sm"
           type="button"
-          onClick={() => {
-            const name = nameRef.current?.value || autoName;
-            handleConfirm(name);
-          }}
+          onClick={handleLoad}
         >
           {t('Load')}
         </button>
@@ -51,3 +53,7 @@ export default function ModalSetNameHudImage({ path, autoName }: ModalSetNameHud
     </div>
   );
 }
+
+ModalSetNameHudImage.displayName = 'ModalSetNameHudImage';
+
+export default ModalSetNameHudImage;
