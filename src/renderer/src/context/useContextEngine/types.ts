@@ -1,4 +1,5 @@
 import type { MutableRefObject } from 'react';
+import { defaultFpPlayerUiScreens } from '../../defaults/fpPlayerUiDefaults';
 import type { ModelLoadOverlayKind } from './hooks/sceneImportOverlay';
 import {
 	DEFAULT_GRAVITY_MAGNITUDE,
@@ -308,6 +309,7 @@ export type EngineAction =
 	| { type: 'REMOVE_UI_SCREEN'; payload: { scope: UiScreenScope; id: string } }
 	| { type: 'RENAME_UI_SCREEN'; payload: { scope: UiScreenScope; id: string; name: string } }
 	| { type: 'SET_ACTIVE_PLAYER_UI_SCREEN'; payload: string | null }
+	| { type: 'INIT_DEFAULT_FP_PLAYER_UI' }
 	| { type: 'CLEAR_EDITING_UI_ELEMENTS' }
 	| { type: 'SET_EDITING_UI_ELEMENTS'; payload: EditingUiElement[] }
 	| { type: 'SET_EDITING_UI_TEXT_BOXES'; payload: PlayerUiTextBoxEntry[] }
@@ -627,6 +629,15 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 					nextAction.payload !== null && screen.id === nextAction.payload,
 			})),
 		}),
+		INIT_DEFAULT_FP_PLAYER_UI: (prevState) => {
+			if (prevState.playerUiScreens.length > 0) {
+				return prevState;
+			}
+			return {
+				...prevState,
+				playerUiScreens: defaultFpPlayerUiScreens(),
+			};
+		},
 		REMOVE_UI_SCREEN: (prevState, nextAction) => {
 			const { scope, id } = nextAction.payload;
 			if (scope === 'player') {

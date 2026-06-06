@@ -16,6 +16,7 @@ pub(crate) mod hud_props;
 pub(crate) mod hud_undo;
 pub(crate) mod screens;
 pub(crate) mod edit;
+pub(crate) mod defaults;
 
 pub(crate) use config::{PlayerUiButton, PlayerUiImage, PlayerUiObject, PlayerUiTextBox};
 pub(crate) use text_input::PlayerUiTextDrag;

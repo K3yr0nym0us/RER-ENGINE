@@ -87,19 +87,94 @@ impl PhysicsWorld {
         self.gravity = vector![0.0, gravity_y, 0.0];
     }
 
-    #[allow(dead_code)]
     pub(crate) fn add_dynamic_sphere(
         &mut self,
         position: [f32; 3],
         radius: f32,
-    ) -> RigidBodyHandle {
+    ) -> (RigidBodyHandle, ColliderHandle) {
         let body = RigidBodyBuilder::dynamic()
+            .translation(vector![position[0], position[1], position[2]])
+            .linear_damping(0.12)
+            .angular_damping(0.18)
+            .build();
+        let handle = self.bodies.insert(body);
+        let collider = ColliderBuilder::ball(radius.max(0.01))
+            .restitution(0.5)
+            .build();
+        let collider_handle =
+            self.colliders
+                .insert_with_parent(collider, handle, &mut self.bodies);
+        (handle, collider_handle)
+    }
+
+    pub(crate) fn add_static_sphere(
+        &mut self,
+        position: [f32; 3],
+        radius: f32,
+    ) -> (RigidBodyHandle, ColliderHandle) {
+        let body = RigidBodyBuilder::fixed()
             .translation(vector![position[0], position[1], position[2]])
             .build();
         let handle = self.bodies.insert(body);
-        let collider = ColliderBuilder::ball(radius).restitution(0.5).build();
-        self.colliders.insert_with_parent(collider, handle, &mut self.bodies);
-        handle
+        let collider = ColliderBuilder::ball(radius.max(0.01)).build();
+        let collider_handle =
+            self.colliders
+                .insert_with_parent(collider, handle, &mut self.bodies);
+        (handle, collider_handle)
+    }
+
+    pub(crate) fn add_kinematic_sphere(
+        &mut self,
+        position: [f32; 3],
+        radius: f32,
+    ) -> (RigidBodyHandle, ColliderHandle) {
+        let body = RigidBodyBuilder::kinematic_position_based()
+            .translation(vector![position[0], position[1], position[2]])
+            .build();
+        let handle = self.bodies.insert(body);
+        let collider = ColliderBuilder::ball(radius.max(0.01)).build();
+        let collider_handle =
+            self.colliders
+                .insert_with_parent(collider, handle, &mut self.bodies);
+        (handle, collider_handle)
+    }
+
+    pub(crate) fn set_entity_sphere_physics(
+        &mut self,
+        entity: EntityId,
+        enabled: bool,
+        body_type: &str,
+        position: [f32; 3],
+        radius: f32,
+    ) {
+        if let Some(handle) = self.entity_bodies.remove(&entity) {
+            self.entity_body_types.remove(&entity);
+            self.entity_colliders.remove(&entity);
+            self.remove_body(handle);
+        }
+        if !enabled {
+            return;
+        }
+
+        let radius = radius.max(0.01);
+        let (handle, collider_handle) = match body_type {
+            "static" => self.add_static_sphere(position, radius),
+            "kinematic" => self.add_kinematic_sphere(position, radius),
+            _ => self.add_dynamic_sphere(position, radius),
+        };
+        self.entity_bodies.insert(entity, handle);
+        self.entity_colliders.insert(entity, collider_handle);
+        self.entity_body_types.insert(entity, body_type.to_string());
+        self.refresh_queries();
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn add_dynamic_sphere_legacy(
+        &mut self,
+        position: [f32; 3],
+        radius: f32,
+    ) -> RigidBodyHandle {
+        self.add_dynamic_sphere(position, radius).0
     }
 
     pub(crate) fn add_static_ground(&mut self) -> ColliderHandle {
@@ -285,6 +360,40 @@ impl PhysicsWorld {
             filter = filter.exclude_collider(handle);
         }
         filter
+    }
+
+    /// El jugador FP usa shape-cast (no cuerpo Rapier): empuja dinámicos al contactar.
+    fn apply_character_push_to_dynamic_hit(
+        &mut self,
+        hit_handle: ColliderHandle,
+        movement: Vec3,
+    ) {
+        let body_handle = self
+            .colliders
+            .get(hit_handle)
+            .and_then(|collider| collider.parent());
+        let Some(body_handle) = body_handle else {
+            return;
+        };
+        let Some(body) = self.bodies.get_mut(body_handle) else {
+            return;
+        };
+        if !body.is_dynamic() {
+            return;
+        }
+        let horizontal = Vec3::new(movement.x, 0.0, movement.z);
+        let speed = horizontal.length();
+        if speed <= 1e-4 {
+            return;
+        }
+        let dir = horizontal / speed;
+        let mass = body.mass().max(0.05);
+        let impulse_strength = (speed * mass * 10.0).clamp(0.5, 140.0);
+        body.apply_impulse(
+            vector![dir.x * impulse_strength, 0.0, dir.z * impulse_strength],
+            true,
+        );
+        body.wake_up(true);
     }
 
     /// Distancia al primer obstáculo a lo largo de un rayo (excluye colisionador opcional).
@@ -534,10 +643,12 @@ impl PhysicsWorld {
                 filter,
             );
 
-            let Some((_, hit_data)) = hit else {
+            let Some((hit_handle, hit_data)) = hit else {
                 current_feet += remaining;
                 break;
             };
+
+            self.apply_character_push_to_dynamic_hit(hit_handle, remaining);
 
             let toi = hit_data.time_of_impact.clamp(0.0, 1.0);
             let center = capsule_center_from_feet(current_feet, up, radius, half_height);

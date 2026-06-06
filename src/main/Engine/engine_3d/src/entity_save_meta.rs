@@ -9,6 +9,7 @@ const ENTITY_MARKERS: &[&str] = &[
     "[Player]",
     "[EditorCamera]",
     "[Sun]",
+    "[Ball]",
 ];
 
 /// `.glb` / `.gltf` / `.fbx` en disco (no marcadores `[Player]`).

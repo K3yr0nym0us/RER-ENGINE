@@ -25,6 +25,7 @@ const ENTITY_MARKERS: &[&str] = &[
     "[Player]",
     "[EditorCamera]",
     "[Sun]",
+    "[Ball]",
 ];
 
 // ── Manifest: nombres de campo = claves JSON en `src/shared-types/types.ts`. ─
@@ -361,6 +362,10 @@ fn entity_path_marker(p: &str) -> Option<&'static str> {
 
 fn is_editor_box_path(p: &str) -> bool {
     entity_path_marker(p) == Some("[EditorBox]")
+}
+
+fn is_ball_path(p: &str) -> bool {
+    entity_path_marker(p) == Some("[Ball]")
 }
 
 fn is_model_3d_path(p: &str) -> bool {
@@ -1437,6 +1442,24 @@ fn apply_loaded_proyect_3d_with_scene(
                     apply_full_entity_restore(state, id, &pending, "[Ground]", true, false);
                 }
             }
+            _ if is_ball_path(&entity.model) => {
+                let diameter = entity
+                    .scale
+                    .into_iter()
+                    .fold(f32::INFINITY, f32::min)
+                    .max(0.15);
+                let physics_type = entity
+                    .physics_type
+                    .as_deref()
+                    .unwrap_or("dynamic");
+                let id = state.spawn_physics_ball(
+                    &entity.name,
+                    entity.position,
+                    [diameter, diameter, diameter],
+                    physics_type,
+                );
+                apply_full_entity_restore(state, id, &pending, "[Ball]", true, false);
+            }
             "environment" | "object" | "character" if is_3d_model_file_entity(entity) => {
                 model_load_queue.push((entity.model.clone(), pending.clone()));
 
@@ -1565,6 +1588,9 @@ fn apply_loaded_proyect_3d_with_scene(
     state.import_player_ui_buttons_from_save(&project.player_ui_buttons);
     state.import_player_ui_images_from_save(&project.player_ui_images);
     state.import_player_ui_objects_from_save(&project.player_ui_objects);
+    if game_style == "first-person" {
+        state.ensure_default_fp_player_ui();
+    }
     let player_screens: Vec<crate::ipc::PlayerUiScreenInfo> = project
         .playerUiScreens
         .iter()
@@ -1922,6 +1948,21 @@ pub(crate) fn build_fp_placeholder_saved_scene(id: u32, name: &str) -> SavedScen
             controls: None,
             blueprint_id: None,
         },
+        SavedEntity3D {
+            id: 0,
+            name: "Ball".to_string(),
+            category: "object".to_string(),
+            model: "[Ball]".to_string(),
+            position: [1.5, 0.3, 8.0],
+            rotation: Some([0.0, 0.0, 0.0, 1.0]),
+            scale: [0.6, 0.6, 0.6],
+            physics_type: Some("dynamic".to_string()),
+            colision: true,
+            animations: None,
+            scripts: None,
+            controls: None,
+            blueprint_id: None,
+        },
     ];
 
     let player = SavedEntity3D {
@@ -1985,12 +2026,12 @@ pub(crate) fn build_minimal_project_from_store(
         scenes: scenes.to_vec(),
         blueprints: Vec::new(),
         language: None,
-        playerUiScreens: Vec::new(),
+        playerUiScreens: crate::config_3d::player_ui::defaults::default_fp_project_ui_screens(),
         menuUiScreens: Vec::new(),
         player_ui_text_boxes: Vec::new(),
         player_ui_buttons: Vec::new(),
         player_ui_images: Vec::new(),
-        player_ui_objects: Vec::new(),
+        player_ui_objects: crate::config_3d::player_ui::defaults::default_fp_project_ui_objects(),
         hud_images: Vec::new(),
     }
 }

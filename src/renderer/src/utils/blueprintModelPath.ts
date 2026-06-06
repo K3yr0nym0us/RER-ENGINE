@@ -14,6 +14,7 @@ const PLACEHOLDER_PATHS = new Set([
   '[EditorBox]',
   '[Ground]',
   '[Sun]',
+  '[Ball]',
   '[Player]',
   '[Colisionador]',
   '[ExecutionArea]',

@@ -13,6 +13,35 @@ pub mod entity_label {
     pub const BOX: &str = "Box";
     pub const GROUND: &str = "Ground";
     pub const PLAYER: &str = "Player";
+    pub const BALL: &str = "Ball";
+}
+
+/// Player UI por defecto en plantillas first-person.
+pub mod player_ui {
+    pub const DEFAULT_FP_SCREEN_ID: &str = "fp-hud-01";
+    pub const DEFAULT_FP_SCREEN_NAME: &str = "Player UI 01";
+    pub const DEFAULT_CROSSHAIR_H_OBJECT_ID: u32 = 1;
+    pub const DEFAULT_CROSSHAIR_V_OBJECT_ID: u32 = 2;
+
+    const CROSSHAIR_THICKNESS: f32 = 0.0018;
+    const CROSSHAIR_HALF_W: f32 = 0.018;
+    const CROSSHAIR_HALF_H: f32 = 0.028;
+
+    /// Barra horizontal del crosshair (rectángulo delgado en NDC).
+    pub fn default_crosshair_horizontal_vertices() -> Vec<[f32; 2]> {
+        let t = CROSSHAIR_THICKNESS;
+        let hw = CROSSHAIR_HALF_W;
+        vec![[-hw, -t], [hw, -t], [hw, t], [-hw, t]]
+    }
+
+    /// Barra vertical del crosshair (rectángulo delgado en NDC).
+    pub fn default_crosshair_vertical_vertices() -> Vec<[f32; 2]> {
+        let t = CROSSHAIR_THICKNESS;
+        let hh = CROSSHAIR_HALF_H;
+        vec![[-t, -hh], [t, -hh], [t, hh], [-t, hh]]
+    }
+
+    pub const DEFAULT_CROSSHAIR_FILL: [f32; 4] = [1.0, 1.0, 1.0, 0.92];
 }
 
 /// Default name for a project scene (`Scene-01`, `Scene-02`, …).
@@ -51,6 +80,7 @@ pub fn infer_entity_category_from_numbered_name(name: &str) -> Option<&'static s
         "Player" => Some("player"),
         "Sun" => Some("sun"),
         "Ground" => Some("ground"),
+        "Ball" => Some("object"),
         _ => None,
     }
 }

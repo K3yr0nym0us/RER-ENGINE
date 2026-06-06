@@ -158,28 +158,6 @@ pub fn build_axes(device: &wgpu::Device, length: f32) -> GizmoBuffer {
     GizmoBuffer { vertex_buffer, vertex_count: verts.len() as u32 }
 }
 
-pub fn build_crosshair(device: &wgpu::Device) -> GizmoBuffer {
-    let verts = [
-        GizmoVertex {
-            position: [-0.018, 0.0, 0.0],
-            color: [1.0, 1.0, 1.0, 0.92],
-        },
-        GizmoVertex {
-            position: [0.018, 0.0, 0.0],
-            color: [1.0, 1.0, 1.0, 0.92],
-        },
-        GizmoVertex {
-            position: [0.0, -0.028, 0.0],
-            color: [1.0, 1.0, 1.0, 0.92],
-        },
-        GizmoVertex {
-            position: [0.0, 0.028, 0.0],
-            color: [1.0, 1.0, 1.0, 0.92],
-        },
-    ];
-    build_from_vertices(device, &verts)
-}
-
 /// Frustum visual de la cámara del jugador (modo editor 3D).
 ///
 /// Dibuja un pequeño cubo en la posición del ojo + una pirámide de líneas hasta

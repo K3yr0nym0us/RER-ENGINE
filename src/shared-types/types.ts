@@ -48,6 +48,7 @@ export const ENTITY_MARKER_PATHS = [
   '[Player]',
   '[EditorCamera]',
   '[Sun]',
+  '[Ball]',
   '[Colisionador]',
   '[ExecutionArea]',
 ] as const

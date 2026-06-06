@@ -465,6 +465,9 @@ export function createEngineEventHandler({
 					buildSetSceneCommand(projectType, refs.initialSavePathRef.current) as never,
 				);
 			} else if (boot3dNoSave) {
+				if (projectType === '3D' && gameStyle === 'first-person') {
+					dispatch({ type: 'INIT_DEFAULT_FP_PLAYER_UI' });
+				}
 				beginEngineBootEntityWait(refs);
 			}
 			window.engine.send({ cmd: 'set_preview_playing', playing: false } as never);
@@ -706,6 +709,26 @@ export function createEngineEventHandler({
 				if (sunQueue.length === 0) refs.pendingRestoresRef.current.delete('[Sun]');
 				burstHandled = true;
 			} else {
+			const ballQueue = refs.pendingRestoresRef.current.get('[Ball]');
+			if (ballQueue && ballQueue.length > 0) {
+				const pending = ballQueue.shift()!;
+				refs.entityMetaRef.current[id] = {
+					kind: 'model',
+					path: '[Ball]',
+					name: pending.name ?? loaded.name ?? `Entity ${id}`,
+					physicsEnabled: pending.physicsEnabled ?? true,
+					physicsType: pending.physicsType ?? 'dynamic',
+					entityCategory: 'object',
+					entity3dCategory: 'object',
+				};
+				sendApplyEntityRestore(id, pending, {
+					skipTransform: true,
+					applyInitialAnimationFrame: false,
+				});
+				applyPendingRestoreMeta(refs, id, pending);
+				if (ballQueue.length === 0) refs.pendingRestoresRef.current.delete('[Ball]');
+				burstHandled = true;
+			} else {
 			const groundQueue = refs.pendingRestoresRef.current.get('[Ground]');
 			if (groundQueue && groundQueue.length > 0) {
 				const pending = groundQueue.shift()!;
@@ -756,7 +779,7 @@ export function createEngineEventHandler({
 						loadItem = refs.pendingModelLoadQueueRef.current.shift() ?? null;
 					}
 				}
-				let modelPath = spawnModelPath ?? loadItem?.modelPath ?? null;
+				let modelPath = spawnModelPath ?? loadItem?.modelPath ?? loaded.path ?? null;
 				let restorePending = loadItem?.pending;
 				if (!restorePending && modelPath) {
 					const qbQueue = refs.pendingRestoresRef.current.get(modelPath);
@@ -914,6 +937,7 @@ export function createEngineEventHandler({
 						refs.entityMetaRef.current[id].path = '[EditorBox]';
 					}
 				}
+			}
 			}
 			}
 			}

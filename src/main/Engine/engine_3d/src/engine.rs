@@ -93,7 +93,6 @@ pub struct State {
     pub(crate) grid_buffer_uni: wgpu::Buffer,
     pub(crate) world_bounds_3d: WorldBounds3D,
     pub(crate) world_bounds_buffer: GizmoBuffer,
-    pub(crate) crosshair_buffer: GizmoBuffer,
     pub(crate) ctrl_held: bool,
     pub(crate) shift_held: bool,
     pub active_tool: ActiveTool,

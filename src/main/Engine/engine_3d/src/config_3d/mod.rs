@@ -228,6 +228,14 @@ impl State {
             .set_entity_physics(id, true, body_type, pos, half);
     }
 
+    /// Colisión esférica para marcador `[Ball]`.
+    pub(crate) fn entity_uses_sphere_physics(&self, id: EntityId) -> bool {
+        let Some(meta) = self.save_registry.meta.get(&id) else {
+            return false;
+        };
+        crate::entity_save_meta::entity_path_marker(&meta.path) == Some("[Ball]")
+    }
+
     /// `colision` con AABB de archivo `.glb`/`.fbx`; marcadores de plantilla usan caja del transform.
     pub(crate) fn uses_mesh_file_collision(&self, id: EntityId) -> bool {
         let Some(meta) = self.save_registry.meta.get(&id) else {
@@ -300,7 +308,17 @@ impl State {
             } else {
                 "static".to_string()
             };
-            self.set_entity_physics_from_transform_box(id, &body_type);
+            if self.entity_uses_sphere_physics(id) {
+                let Some(t) = self.world.get::<Transform>(id).cloned() else {
+                    return;
+                };
+                let radius = t.scale.x.abs().max(0.01) * 0.5;
+                let pos = t.position.to_array();
+                self.physics
+                    .set_entity_sphere_physics(id, true, &body_type, pos, radius);
+            } else {
+                self.set_entity_physics_from_transform_box(id, &body_type);
+            }
             return;
         }
 

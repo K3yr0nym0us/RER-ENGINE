@@ -3,7 +3,7 @@
 
 use glam::{Mat4, Vec3};
 
-use crate::ecs::{MeshComponent, Transform};
+use crate::ecs::{EntityId, MeshComponent, Transform};
 use crate::engine::{State, SHADOW_MAP_SIZE};
 use crate::entity_save_meta::EntitySaveMeta;
 use crate::mesh;
@@ -271,5 +271,66 @@ impl State {
         }
         let pos = self.default_sun_position();
         self.spawn_sun("", pos.to_array(), [1.0, 1.0, 1.0]);
+    }
+
+    /// Esfera visual como el sol (malla UV + textura) sin luz direccional; física esférica.
+    pub(crate) fn spawn_physics_ball(
+        &mut self,
+        name: &str,
+        position: [f32; 3],
+        scale: [f32; 3],
+        physics_type: &str,
+    ) -> EntityId {
+        use crate::ipc::send_event;
+        use crate::ipc::EngineEvent;
+
+        let label = self.resolve_entity_display_name(
+            name,
+            rer_engine_shared::editor_defaults::entity_label::BALL,
+        );
+        let id = self.world.spawn(Some(&label));
+        self.apply_sun_icon_visual(id);
+        let radius = scale
+            .into_iter()
+            .fold(f32::INFINITY, f32::min)
+            .max(0.15)
+            * 0.5;
+        if let Some(t) = self.world.get_mut::<Transform>(id) {
+            t.position = Vec3::from_array(position);
+            t.scale = Vec3::splat(radius * 2.0);
+        }
+        self.physics.set_entity_sphere_physics(
+            id,
+            true,
+            physics_type,
+            position,
+            radius,
+        );
+        self.entity_colision.insert(id, true);
+        self.scenario_entities.push(id);
+        self.save_registry.register_meta(
+            id,
+            EntitySaveMeta {
+                kind: "model".to_string(),
+                path: "[Ball]".to_string(),
+                visual_model_path: None,
+                entity_category: Some("object".to_string()),
+            },
+        );
+        send_event(&EngineEvent::ModelLoaded {
+            id,
+            name: Some(label.clone()),
+            position: Some(position),
+            scale: Some([radius * 2.0; 3]),
+            rotation: Some([0.0, 0.0, 0.0, 1.0]),
+            path: Some("[Ball]".to_string()),
+            kind: Some("model".to_string()),
+            blueprint_id: None,
+            physics_enabled: Some(true),
+            physics_type: Some(physics_type.to_string()),
+            entity_category: Some("object".to_string()),
+        });
+        log::info!("Pelota física «{label}» en [{:.1}, {:.1}, {:.1}]", position[0], position[1], position[2]);
+        id
     }
 }

@@ -385,14 +385,33 @@ impl State {
         };
     }
 
-    /// Suelo checker + sol + jugador de la plantilla FP (sin muros ni cubos placeholder).
+    /// Suelo checker + sol + jugador + pelota de prueba de la plantilla FP (sin muros ni cubos).
     pub(crate) fn apply_fp_placeholder_sun_and_player(&mut self) {
         self.ensure_ground_plane();
         self.ensure_default_sun();
+        self.ensure_default_physics_ball();
         if self.play_character_entity.is_none() {
             self.spawn_play_character();
         }
+        self.ensure_default_fp_player_ui();
         self.sync_fps_camera_mode();
+    }
+
+    fn has_physics_ball(&self) -> bool {
+        self.save_registry
+            .meta
+            .values()
+            .any(|m| crate::entity_save_meta::entity_path_marker(&m.path) == Some("[Ball]"))
+    }
+
+    fn ensure_default_physics_ball(&mut self) {
+        if self.has_physics_ball() {
+            return;
+        }
+        const RADIUS: f32 = 0.3;
+        let position = [1.5_f32, RADIUS, 8.0];
+        let diameter = RADIUS * 2.0;
+        self.spawn_physics_ball("", position, [diameter, diameter, diameter], "dynamic");
     }
 
     /// Tras cargar escena FP placeholder (switch sin guardar): alinear sol, luz y cámara orbital del editor.

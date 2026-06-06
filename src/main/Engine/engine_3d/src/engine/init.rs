@@ -692,7 +692,6 @@ impl State {
         let world_bounds_3d = WorldBounds3D::default();
         let grid_config = GridConfig::default();
         let world_bounds_buffer = world_bounds_3d.build_buffer(&device);
-        let crosshair_buffer = gizmo::build_crosshair(&device);
 
         let audio_slot = start_audio_thread();
 
@@ -771,7 +770,6 @@ impl State {
             grid_buffer_uni,
             world_bounds_3d,
             world_bounds_buffer,
-            crosshair_buffer,
             ctrl_held: false,
             shift_held: false,
             active_tool: ActiveTool::None,

@@ -620,45 +620,6 @@ impl State {
             }
         }
 
-        if self.is_play_controller_active() && self.crosshair_buffer.vertex_count > 0 {
-            let crosshair_uni: [[f32; 4]; 9] = [
-                [1.0, 0.0, 0.0, 0.0],
-                [0.0, 1.0, 0.0, 0.0],
-                [0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 1.0],
-                [1.0, 0.0, 0.0, 0.0],
-                [0.0, 1.0, 0.0, 0.0],
-                [0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 1.0],
-                [-1.0, -1.0, 0.0, 0.0],
-            ];
-            self.queue.write_buffer(
-                &self.grid_buffer_uni,
-                0,
-                bytemuck::cast_slice(&crosshair_uni),
-            );
-
-            let mut crosshair_pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("crosshair-pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                occlusion_query_set: None,
-                timestamp_writes: None,
-            });
-            crosshair_pass.set_pipeline(&self.grid_pipeline);
-            crosshair_pass.set_bind_group(0, &self.grid_bind_group, &[]);
-            crosshair_pass.set_vertex_buffer(0, self.crosshair_buffer.vertex_buffer.slice(..));
-            crosshair_pass.draw(0..self.crosshair_buffer.vertex_count, 0..1);
-            draw_calls += 1;
-        }
-
         if let Some(hint_inst) = self.build_fps_exit_hint_instance() {
             use wgpu::util::DeviceExt;
             let hint_inst_buf = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
