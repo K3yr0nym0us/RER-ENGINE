@@ -254,6 +254,7 @@ function mapEngineUiObjectsToSave(
 		id: obj.id,
 		vertices: obj.vertices,
 		fill_color: obj.fill_color,
+		texture_path: obj.texture_path ?? undefined,
 		z_index: obj.z_index ?? 0,
 		locked: obj.locked ?? false,
 	}));

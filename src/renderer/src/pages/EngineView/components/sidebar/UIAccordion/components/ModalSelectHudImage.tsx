@@ -56,10 +56,20 @@ function ModalSelectHudImageWithEngine(props: ModalSelectHudImageProps) {
   );
 }
 
+/** En ventana modal Electron no hay EngineProvider: usar `hudImages` inyectado o lista vacía. */
 export default function ModalSelectHudImage(props: ModalSelectHudImageProps) {
-  if (props.hudImages) {
-    const onClose = props.onClose ?? (() => {});
-    return <ModalSelectHudImageInner {...props} hudImages={props.hudImages} onClose={onClose} />;
+  const closeModal = useModalClose();
+  const injected = props.hudImages;
+
+  if (injected != null) {
+    return (
+      <ModalSelectHudImageInner
+        {...props}
+        hudImages={injected}
+        onClose={props.onClose ?? closeModal}
+      />
+    );
   }
+
   return <ModalSelectHudImageWithEngine {...props} />;
 }

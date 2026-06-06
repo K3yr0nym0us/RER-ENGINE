@@ -734,6 +734,28 @@ export function createEngineActions({
 		});
 	};
 
+	const setPlayerUiObjectStyle = (
+		id: number,
+		style: {
+			fill_color?: [number, number, number, number];
+			texture_path?: string | null;
+			clear_texture?: boolean;
+			live?: boolean;
+			skip_undo?: boolean;
+		},
+	) => {
+		if (!is3dProject) return;
+		send({
+			cmd: 'set_player_ui_object_style',
+			id,
+			fill_color: style.fill_color,
+			texture_path: style.texture_path ?? undefined,
+			clear_texture: style.clear_texture ?? false,
+			live: style.live ?? false,
+			skip_undo: style.skip_undo ?? false,
+		});
+	};
+
 	const removeEditingUiPlaceholder = (kind: 'button', id: number) => {
 		if (kind === 'button' && is3dProject) {
 			send({ cmd: 'remove_player_ui_button', id });
@@ -956,6 +978,7 @@ export function createEngineActions({
 		removePlayerUiImage,
 		removePlayerUiObject,
 		setPlayerUiHudElementProps,
+		setPlayerUiObjectStyle,
 		removeEditingUiPlaceholder,
 		loadHudImage,
 		removeHudImage,

@@ -58,6 +58,7 @@ pub(crate) fn append_image_hud_glyphs(
             atlas,
             queue,
             instances,
+            1.0,
         );
     }
 }

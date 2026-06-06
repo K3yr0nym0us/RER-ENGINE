@@ -499,6 +499,22 @@ pub enum EngineCommand {
         #[serde(default)]
         z_index: Option<i32>,
     },
+    /// Color de relleno y/o textura de un objeto HUD poligonal.
+    SetPlayerUiObjectStyle {
+        id: u32,
+        #[serde(default)]
+        fill_color: Option<[f32; 4]>,
+        #[serde(default)]
+        texture_path: Option<String>,
+        #[serde(default)]
+        clear_texture: bool,
+        /// Preview en vivo (sin reset de atlas ni lista IPC); p. ej. arrastre del slider.
+        #[serde(default)]
+        live: bool,
+        /// No registrar undo (p. ej. ticks intermedios tras el snapshot inicial del arrastre).
+        #[serde(default, alias = "skipUndo")]
+        skip_undo: bool,
+    },
     /// Sincroniza la lista de pantallas Player UI (id, nombre, activa).
     SyncPlayerUiScreens {
         screens: Vec<PlayerUiScreenInfo>,
@@ -803,6 +819,8 @@ pub struct SavePlayerUiObjectSnapshot {
     pub vertices: Vec<[f32; 2]>,
     #[serde(alias = "fillColor", default = "default_object_fill")]
     pub fill_color: [f32; 4],
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "texturePath")]
+    pub texture_path: Option<String>,
     #[serde(default)]
     pub z_index: i32,
     #[serde(default)]
@@ -1235,6 +1253,11 @@ pub struct PlayerUiImageListItem {
 pub struct PlayerUiObjectListItem {
     pub id: u32,
     pub vertex_count: u32,
+    pub fill_color: [f32; 4],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub texture_path: Option<String>,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub texture_name: String,
     pub z_index: i32,
     pub locked: bool,
 }

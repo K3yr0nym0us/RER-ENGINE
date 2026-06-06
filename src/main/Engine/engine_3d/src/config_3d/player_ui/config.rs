@@ -118,6 +118,7 @@ pub(crate) struct PlayerUiObject {
     pub id: u32,
     pub vertices: Vec<[f32; 2]>,
     pub fill_color: [f32; 4],
+    pub texture_path: Option<String>,
     pub z_index: i32,
     pub locked: bool,
 }

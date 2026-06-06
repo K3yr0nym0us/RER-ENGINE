@@ -206,7 +206,18 @@ impl State {
                         &mut self.player_ui_hud_texture_cache,
                     );
                 }
-                super::hud_layers::HudLayerKind::Object => {}
+                super::hud_layers::HudLayerKind::Object => {
+                    let obj = &objects[layer.index];
+                    super::object::append_object_hud_glyphs(
+                        std::slice::from_ref(obj),
+                        &mut self.player_ui_text_atlas,
+                        &self.queue,
+                        &mut self.player_ui_glyph_instances,
+                        vw,
+                        vh,
+                        &mut self.player_ui_hud_texture_cache,
+                    );
+                }
             }
         }
         self.player_ui_font_cache = font_cache;

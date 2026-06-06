@@ -500,6 +500,7 @@ export interface SavedPlayerUiObject {
   id: number
   vertices: [number, number][]
   fill_color: [number, number, number, number]
+  texture_path?: string | null
   z_index?: number
   locked?: boolean
 }
@@ -619,6 +620,7 @@ export interface EngineCommand {
     | 'set_player_ui_object_draw'
     | 'remove_player_ui_object'
     | 'set_player_ui_hud_element_props'
+    | 'set_player_ui_object_style'
     | 'load_background_asset'
     | 'remove_background_asset'
     | 'get_backgrounds_list'
@@ -744,6 +746,7 @@ export interface EngineSaveSceneSnapshot {
     id: number
     vertices: [number, number][]
     fill_color: [number, number, number, number]
+    texture_path?: string | null
     z_index?: number
     locked?: boolean
   }>

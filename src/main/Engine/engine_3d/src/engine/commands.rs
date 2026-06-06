@@ -926,6 +926,25 @@ impl State {
                     send_event(&EngineEvent::Error { message });
                 }
             }
+            EngineCommand::SetPlayerUiObjectStyle {
+                id,
+                fill_color,
+                texture_path,
+                clear_texture,
+                live,
+                skip_undo,
+            } => {
+                if let Err(message) = self.set_player_ui_object_style(
+                    id,
+                    fill_color,
+                    texture_path,
+                    clear_texture,
+                    live,
+                    skip_undo,
+                ) {
+                    send_event(&EngineEvent::Error { message });
+                }
+            }
             EngineCommand::SyncPlayerUiScreens { screens } => {
                 self.sync_player_ui_screens(&screens);
             }

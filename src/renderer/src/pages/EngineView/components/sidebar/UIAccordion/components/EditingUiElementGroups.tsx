@@ -12,6 +12,8 @@ import { useTraslate } from '@hooks';
 
 import type { EditingUiElement, EditingUiElementKind } from '@engine';
 import { filterEditingUiElementsByKind } from '@engine';
+import ObjectElementAccordionRow from './ObjectElementAccordionRow';
+import type { FillColorRgba, PlayerUiObjectStyleCommitOptions } from './playerUiObjectStyle';
 
 
 
@@ -49,6 +51,14 @@ interface EditingUiElementGroupsProps {
 		props: { locked?: boolean; z_index?: number },
 
 	) => void;
+
+	onSetObjectStyle: (
+		id: number,
+		fillColor: FillColorRgba,
+		options?: PlayerUiObjectStyleCommitOptions,
+	) => void;
+
+	onAssignObjectTexture: (id: number) => void;
 
 }
 
@@ -360,6 +370,10 @@ export default function EditingUiElementGroups({
 
 	onSetElementProps,
 
+	onSetObjectStyle,
+
+	onAssignObjectTexture,
+
 	textEditHint,
 
 	objectDrawActive,
@@ -515,15 +529,13 @@ export default function EditingUiElementGroups({
 
 			body:
 				objectItems.length > 0 ? (
-					<div className="d-flex flex-column gap-2">
+					<div className="d-flex flex-column">
 						{objectItems.map((item) => {
 							const label = `${t('Object')} #${item.id}`;
 							return (
-								<ElementListRow
+								<ObjectElementAccordionRow
 									key={`object-${item.id}`}
-									label={label}
-									locked={item.locked}
-									zIndex={item.zIndex}
+									item={item}
 									engineReady={engineReady}
 									lockTooltip={lockTooltip}
 									unlockTooltip={unlockTooltip}
@@ -538,6 +550,10 @@ export default function EditingUiElementGroups({
 										onSetElementProps('object', item.id, { z_index })
 									}
 									onDelete={() => onRemoveObject(item.id, label)}
+									onAssignTexture={() => onAssignObjectTexture(item.id)}
+									onStyleChange={(fillColor, options) =>
+										onSetObjectStyle(item.id, fillColor, options)
+									}
 								/>
 							);
 						})}

@@ -109,6 +109,65 @@ impl State {
         Ok(())
     }
 
+    pub(crate) fn set_player_ui_object_style(
+        &mut self,
+        id: u32,
+        fill_color: Option<[f32; 4]>,
+        texture_path: Option<String>,
+        clear_texture: bool,
+        live: bool,
+        skip_undo: bool,
+    ) -> Result<(), String> {
+        if !self.player_ui_edit_active {
+            return Err("modo edición UI inactivo".into());
+        }
+        if fill_color.is_none() && texture_path.is_none() && !clear_texture {
+            return Err("sin cambios".into());
+        }
+        let key = self
+            .player_ui_screen_key()
+            .ok_or_else(|| "contexto de pantalla UI no definido".to_string())?;
+
+        if !skip_undo && !self.preview_playing {
+            self.push_undo_player_ui_hud();
+        }
+
+        if let Some(ref path) = texture_path {
+            if !path.trim().is_empty() && !self.hud_image_store.contains_key(path) {
+                return Err(format!("imagen no registrada: {path}"));
+            }
+        }
+
+        let Some(list) = self.player_ui_objects.get_mut(&key) else {
+            return Err(format!("objeto no encontrado: {id}"));
+        };
+        let Some(obj) = list.iter_mut().find(|o| o.id == id) else {
+            return Err(format!("objeto no encontrado: {id}"));
+        };
+
+        if let Some(color) = fill_color {
+            obj.fill_color = color;
+        }
+        if clear_texture {
+            obj.texture_path = None;
+        } else if let Some(path) = texture_path {
+            if path.trim().is_empty() {
+                obj.texture_path = None;
+            } else {
+                obj.texture_path = Some(path);
+            }
+        }
+
+        if live {
+            self.rebuild_player_ui_overlay_live();
+        } else {
+            self.rebuild_player_ui_overlay();
+            self.emit_player_ui_text_boxes_list();
+            log::info!("[player-ui] estilo objeto actualizado: id={id}");
+        }
+        Ok(())
+    }
+
     pub(crate) fn player_ui_text_locked(&self, id: u32) -> bool {
         self.player_ui_text_key()
             .and_then(|key| self.player_ui_text_boxes.get(&key))

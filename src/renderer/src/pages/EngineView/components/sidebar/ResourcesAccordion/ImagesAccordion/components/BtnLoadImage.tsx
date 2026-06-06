@@ -34,7 +34,7 @@ const BtnLoadImage = () => {
       type="button"
       onClick={handleLoad}
     >
-      <Image className="me-1" aria-hidden /> {t('Load image (PNG, WebP)')}
+      <Image className="me-1" aria-hidden /> {t('Load image (PNG, JPEG, WebP)')}
     </button>
   );
 };

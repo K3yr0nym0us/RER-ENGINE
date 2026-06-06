@@ -590,7 +590,7 @@ ipcMain.handle('open-hud-image-dialog', async () => {
   if (!mainWindow) return null
   const result = await dialog.showOpenDialog(mainWindow, {
     title:      'Cargar imagen HUD',
-    filters:    [{ name: 'Imágenes HUD (PNG, WebP)', extensions: ['png', 'webp'] }],
+    filters:    [{ name: 'Imágenes HUD (PNG, JPEG, WebP)', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
     properties: ['openFile'],
   })
   return result.canceled ? null : result.filePaths[0] ?? null
@@ -792,7 +792,7 @@ function ensureSaveExtension(filePath: string): string {
 const SCRIPT_FILE_PREFIX = '@file:'
 const AUDIO_EXTENSIONS = new Set(['.wav', '.ogg', '.mp3', '.flac', '.aac', '.m4a'])
 const FONT_EXTENSIONS = new Set(['.ttf', '.otf'])
-const HUD_IMAGE_EXTENSIONS = new Set(['.png', '.webp'])
+const HUD_IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp'])
 
 function sanitizeSegment(raw: string | null | undefined, fallback = 'item'): string {
   const text = (raw ?? '').trim()

@@ -4,24 +4,62 @@ use crate::engine::State;
 use crate::ipc::{send_event, EngineEvent, PlayerUiScreenInfo};
 
 impl State {
+    fn player_ui_screens_catalog_matches(&self, screens: &[PlayerUiScreenInfo]) -> bool {
+        if screens.len() != self.player_ui_player_screen_names.len() {
+            return false;
+        }
+        screens.iter().all(|s| {
+            self.player_ui_player_screen_names
+                .get(&s.id)
+                .is_some_and(|name| name == &s.name)
+        })
+    }
+
+    fn player_ui_active_screen_from_list(screens: &[PlayerUiScreenInfo]) -> Option<String> {
+        screens
+            .iter()
+            .find(|s| s.active)
+            .map(|s| s.id.clone())
+    }
+
+    fn player_ui_active_screen_matches(&self, screens: &[PlayerUiScreenInfo]) -> bool {
+        Self::player_ui_active_screen_from_list(screens) == self.player_ui_active_player_screen_id
+    }
+
     pub(crate) fn sync_player_ui_screens(&mut self, screens: &[PlayerUiScreenInfo]) {
+        let catalog_same = self.player_ui_screens_catalog_matches(screens);
+        let active_same = self.player_ui_active_screen_matches(screens);
+        if catalog_same && active_same {
+            return;
+        }
+
+        let prev_len = self.player_ui_player_screen_names.len();
+        let prev_active = self.player_ui_active_player_screen_id.clone();
+        let prev_ids: std::collections::HashSet<String> =
+            self.player_ui_player_screen_names.keys().cloned().collect();
+
         self.player_ui_player_screen_names.clear();
         for s in screens {
             self.player_ui_player_screen_names
                 .insert(s.id.clone(), s.name.clone());
         }
 
-        self.player_ui_active_player_screen_id = screens
-            .iter()
-            .find(|s| s.active)
-            .map(|s| s.id.clone());
+        self.player_ui_active_player_screen_id = Self::player_ui_active_screen_from_list(screens);
 
         if self.preview_playing {
-            self.rebuild_player_ui_overlay();
+            let structure_changed = screens.len() != prev_len
+                || screens.iter().any(|s| !prev_ids.contains(&s.id));
+            let active_changed = self.player_ui_active_player_screen_id != prev_active;
+            if active_changed || structure_changed {
+                self.rebuild_player_ui_overlay();
+            }
         }
     }
 
     pub(crate) fn clear_active_player_ui_screen(&mut self) {
+        if self.player_ui_active_player_screen_id.is_none() {
+            return;
+        }
         self.player_ui_active_player_screen_id = None;
         if self.preview_playing {
             self.rebuild_player_ui_overlay();
@@ -36,6 +74,9 @@ impl State {
     ) -> Result<(), String> {
         if !self.player_ui_player_screen_names.contains_key(screen_id) {
             return Err(format!("pantalla Player UI desconocida: {screen_id}"));
+        }
+        if self.player_ui_active_player_screen_id.as_deref() == Some(screen_id) {
+            return Ok(());
         }
         self.player_ui_active_player_screen_id = Some(screen_id.to_string());
         if self.preview_playing {

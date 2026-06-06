@@ -21,6 +21,12 @@ export interface PlayerUiEditorPanelProps {
 		id: number,
 		props: { locked?: boolean; z_index?: number },
 	) => void
+	onSetObjectStyle: (
+		id: number,
+		fillColor: [number, number, number, number],
+		options?: { live?: boolean; skip_undo?: boolean },
+	) => void
+	onAssignObjectTexture: (id: number) => void
 	onSave: () => void
 	onCancel: () => void
 }
@@ -36,6 +42,8 @@ export function PlayerUiEditorPanel({
 	onRemoveImage,
 	onRemoveObject,
 	onSetElementProps,
+	onSetObjectStyle,
+	onAssignObjectTexture,
 	onSave,
 	onCancel,
 }: PlayerUiEditorPanelProps) {
@@ -103,6 +111,8 @@ export function PlayerUiEditorPanel({
 				onRemoveObject={onRemoveObject}
 				objectDrawActive={state.objectDrawActive}
 				onSetElementProps={onSetElementProps}
+				onSetObjectStyle={onSetObjectStyle}
+				onAssignObjectTexture={onAssignObjectTexture}
 				textEditHint={t(
 					'Double-click a text box in the viewport to edit. Backspace removes characters. Hold Ctrl while dragging to snap to the grid.',
 				)}

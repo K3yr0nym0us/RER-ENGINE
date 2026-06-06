@@ -207,6 +207,7 @@ pub(crate) fn push_hud_texture_quad_instance(
     box_rect: UiHudRect,
     viewport_w: f32,
     viewport_h: f32,
+    opacity: f32,
     out: &mut Vec<mesh::InstanceData>,
 ) {
     if viewport_w <= 0.0 || viewport_h <= 0.0 {
@@ -222,7 +223,11 @@ pub(crate) fn push_hud_texture_quad_instance(
     let h_px = box_rect.height * 0.5 * viewport_h;
 
     if let Some(model) = ndc_transform_top_left(x0_px, y0_px, w_px, h_px, viewport_w, viewport_h) {
-        out.push(screen_hud_image::build_screen_hud_instance(packed, model, 1.0));
+        out.push(screen_hud_image::build_screen_hud_instance(
+            packed,
+            model,
+            opacity.clamp(0.0, 1.0),
+        ));
     }
 }
 
@@ -236,12 +241,20 @@ pub(crate) fn build_hud_texture_quad_cached(
     atlas: &mut ScreenHudAtlas,
     queue: &wgpu::Queue,
     out: &mut Vec<mesh::InstanceData>,
+    opacity: f32,
 ) {
     let Some(packed) = pack_hud_texture_cached(path, cache, atlas, queue) else {
         log::warn!("[player-ui] textura no legible: {path}");
         return;
     };
-    push_hud_texture_quad_instance(packed, box_rect, viewport_w, viewport_h, out);
+    push_hud_texture_quad_instance(
+        packed,
+        box_rect,
+        viewport_w,
+        viewport_h,
+        opacity,
+        out,
+    );
 }
 
 /// Buffer RGBA: origen arriba-izquierda, filas hacia abajo (igual que textura GPU).

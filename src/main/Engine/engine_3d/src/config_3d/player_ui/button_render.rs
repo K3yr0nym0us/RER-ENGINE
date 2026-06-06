@@ -60,6 +60,7 @@ pub(crate) fn append_button_hud_glyphs(
                 atlas,
                 queue,
                 instances,
+                1.0,
             );
         }
         if btn.text.trim().is_empty() || btn.font_path.is_empty() {

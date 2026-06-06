@@ -9,6 +9,7 @@ use crate::ipc::{
 use crate::platform::query_ctrl_held_os;
 
 use super::config::PlayerUiObject;
+use super::config::UiHudRect;
 use super::edit::{player_ui_grid_steps, snap_ndc_point_to_grid};
 use super::hud_layers;
 use super::ndc_draw::{push_handle_disc, push_line_segment, push_quad};
@@ -145,6 +146,7 @@ impl State {
             id,
             vertices: vertices.to_vec(),
             fill_color: DEFAULT_OBJECT_FILL,
+            texture_path: None,
             z_index,
             locked: false,
         };
@@ -210,6 +212,7 @@ impl State {
                 id: snap.id,
                 vertices: snap.vertices.clone(),
                 fill_color: snap.fill_color,
+                texture_path: snap.texture_path.clone(),
                 z_index: snap.z_index,
                 locked: snap.locked,
             });
@@ -298,11 +301,22 @@ pub(crate) fn list_objects_for_event(state: &State, key: &str) -> Vec<PlayerUiOb
         .get(key)
         .map(|list| {
             list.iter()
-                .map(|o| PlayerUiObjectListItem {
-                    id: o.id,
-                    vertex_count: o.vertices.len() as u32,
-                    z_index: o.z_index,
-                    locked: o.locked,
+                .map(|o| {
+                    let texture_name = o
+                        .texture_path
+                        .as_ref()
+                        .and_then(|p| state.hud_image_store.get(p))
+                        .map(|meta| meta.name.clone())
+                        .unwrap_or_default();
+                    PlayerUiObjectListItem {
+                        id: o.id,
+                        vertex_count: o.vertices.len() as u32,
+                        fill_color: o.fill_color,
+                        texture_path: o.texture_path.clone(),
+                        texture_name,
+                        z_index: o.z_index,
+                        locked: o.locked,
+                    }
                 })
                 .collect()
         })
@@ -406,13 +420,77 @@ pub(crate) fn append_polygon_fill(
     }
 }
 
+pub(crate) fn ui_hud_rect_from_vertices(vertices: &[[f32; 2]]) -> UiHudRect {
+    if vertices.is_empty() {
+        return UiHudRect {
+            center_x: 0.0,
+            center_y: 0.0,
+            width: 0.0,
+            height: 0.0,
+        };
+    }
+    let mut min_x = f32::INFINITY;
+    let mut max_x = f32::NEG_INFINITY;
+    let mut min_y = f32::INFINITY;
+    let mut max_y = f32::NEG_INFINITY;
+    for [x, y] in vertices {
+        min_x = min_x.min(*x);
+        max_x = max_x.max(*x);
+        min_y = min_y.min(*y);
+        max_y = max_y.max(*y);
+    }
+    UiHudRect {
+        center_x: (min_x + max_x) * 0.5,
+        center_y: (min_y + max_y) * 0.5,
+        width: (max_x - min_x).max(1e-6),
+        height: (max_y - min_y).max(1e-6),
+    }
+}
+
+pub(crate) fn append_object_hud_glyphs(
+    objects: &[PlayerUiObject],
+    atlas: &mut crate::screen_hud_image::ScreenHudAtlas,
+    queue: &wgpu::Queue,
+    instances: &mut Vec<crate::mesh::InstanceData>,
+    viewport_w: f32,
+    viewport_h: f32,
+    texture_cache: &mut std::collections::HashMap<
+        String,
+        crate::screen_hud_image::ScreenHudPackedImage,
+    >,
+) {
+    for obj in objects {
+        let Some(path) = obj.texture_path.as_deref() else {
+            continue;
+        };
+        if path.trim().is_empty() {
+            continue;
+        }
+        let rect = ui_hud_rect_from_vertices(&obj.vertices);
+        let opacity = obj.fill_color[3].clamp(0.0, 1.0);
+        super::font::build_hud_texture_quad_cached(
+            path,
+            rect,
+            viewport_w,
+            viewport_h,
+            texture_cache,
+            atlas,
+            queue,
+            instances,
+            opacity,
+        );
+    }
+}
+
 pub(crate) fn append_object_gizmo_verts(
     verts: &mut Vec<GizmoVertex>,
     objects: &[PlayerUiObject],
     selected: Option<u32>,
 ) {
     for obj in objects {
-        append_polygon_fill(verts, &obj.vertices, obj.fill_color);
+        if obj.texture_path.as_deref().is_none_or(|p| p.trim().is_empty()) {
+            append_polygon_fill(verts, &obj.vertices, obj.fill_color);
+        }
         if selected == Some(obj.id) {
             let outline = [1.0_f32, 0.85, 0.2, 0.95];
             let n = obj.vertices.len();

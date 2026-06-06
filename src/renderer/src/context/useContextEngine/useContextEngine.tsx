@@ -251,6 +251,7 @@ export function EngineProvider({
 		removePlayerUiImage: actions.removePlayerUiImage,
 		removePlayerUiObject: actions.removePlayerUiObject,
 		setPlayerUiHudElementProps: actions.setPlayerUiHudElementProps,
+		setPlayerUiObjectStyle: actions.setPlayerUiObjectStyle,
 		removeEditingUiPlaceholder: actions.removeEditingUiPlaceholder,
 		loadHudImage: actions.loadHudImage,
 		removeHudImage: actions.removeHudImage,

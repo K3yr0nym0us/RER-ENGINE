@@ -67,6 +67,10 @@ export function PlayerUiEditorElectronHost({ payload }: PlayerUiEditorElectronHo
 			onSetElementProps={(kind, id, props) =>
 				delegate({ action: 'setElementProps', kind, id, props })
 			}
+			onSetObjectStyle={(id, fillColor, options) =>
+				delegate({ action: 'setObjectStyle', id, fill_color: fillColor, ...options })
+			}
+			onAssignObjectTexture={(id) => delegate({ action: 'assignObjectTexture', id })}
 			onSave={() => delegate({ action: 'save' })}
 			onCancel={() => delegate({ action: 'cancel' })}
 		/>

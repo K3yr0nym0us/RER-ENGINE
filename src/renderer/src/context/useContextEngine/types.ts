@@ -148,6 +148,9 @@ export interface PlayerUiImageEntry extends PlayerUiHudElementMeta {
 export interface PlayerUiObjectEntry extends PlayerUiHudElementMeta {
 	id: number;
 	vertexCount: number;
+	fillColor?: [number, number, number, number];
+	texturePath?: string | null;
+	textureName?: string;
 }
 
 export type EditingUiElement =
@@ -1266,6 +1269,16 @@ export interface EngineContextValue extends EngineState {
 		elementKind: EditingUiElementKind,
 		id: number,
 		props: { locked?: boolean; z_index?: number },
+	) => void
+	setPlayerUiObjectStyle: (
+		id: number,
+		style: {
+			fill_color?: [number, number, number, number];
+			texture_path?: string | null;
+			clear_texture?: boolean;
+			live?: boolean;
+			skip_undo?: boolean;
+		},
 	) => void
 	removeEditingUiPlaceholder: (kind: 'button', id: number) => void
 	loadHudImage: (path: string, name: string) => void

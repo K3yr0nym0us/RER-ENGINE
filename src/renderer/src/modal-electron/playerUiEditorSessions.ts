@@ -105,6 +105,28 @@ export async function runPlayerUiEditorAction(
 			engine.setPlayerUiHudElementProps(req.kind, req.id, req.props)
 			pushPlayerUiEditorPatch(handlerId)
 			break
+		case 'setObjectStyle':
+			engine.setPlayerUiObjectStyle(req.id, {
+				fill_color: req.fill_color,
+				live: req.live,
+				skip_undo: req.skip_undo,
+			});
+			if (!req.live) {
+				pushPlayerUiEditorPatch(handlerId);
+			}
+			break
+		case 'assignObjectTexture':
+			deps.openModal({
+				title: deps.t('Assign texture'),
+				body: createElement(ModalSelectHudImage, {
+					hudImages: engine.hudImages ?? [],
+					onSelect: (imagePath: string) => {
+						engine.setPlayerUiObjectStyle(req.id, { texture_path: imagePath });
+						reopenPlayerUiEditorModal(handlerId);
+					},
+				}),
+			});
+			break
 		case 'addText':
 			deps.openModal({
 				title: deps.t('Add text'),

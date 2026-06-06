@@ -231,6 +231,7 @@ impl State {
                     id: obj.id,
                     vertices: obj.vertices.clone(),
                     fill_color: obj.fill_color,
+                    texture_path: obj.texture_path.clone(),
                     z_index: obj.z_index,
                     locked: obj.locked,
                 });

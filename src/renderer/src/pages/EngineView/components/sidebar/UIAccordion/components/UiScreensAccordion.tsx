@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Accordion, Form } from 'react-bootstrap';
 import { Check2Square, Pencil, Trash } from 'react-bootstrap-icons';
 import { AppTooltip } from '@components';
@@ -48,6 +48,7 @@ const UiScreensAccordion = ({
 		removePlayerUiImage,
 		removePlayerUiObject,
 		setPlayerUiHudElementProps,
+		setPlayerUiObjectStyle,
 		send,
 		playerUiObjectDrawEndTick,
 		setActivePlayerUiScreen,
@@ -70,6 +71,8 @@ const UiScreensAccordion = ({
 	const editingId = scope === 'player' ? playerUiEditingId : menuUiEditingId;
 	const isEditing = editingId !== null;
 	const editingScreen = screens.find((screen) => screen.id === editingId);
+	const syncScreensRef = useRef(syncPlayerUiScreensToEngine);
+	syncScreensRef.current = syncPlayerUiScreensToEngine;
 
 	useEffect(() => {
 		if (editingScreen) {
@@ -80,9 +83,9 @@ const UiScreensAccordion = ({
 
 	useEffect(() => {
 		if (scope === 'player') {
-			syncPlayerUiScreensToEngine(playerUiScreens);
+			syncScreensRef.current(playerUiScreens);
 		}
-	}, [scope, playerUiScreens, syncPlayerUiScreensToEngine]);
+	}, [scope, playerUiScreens]);
 
 	const openNewUiModal = () => {
 		const defaultName = `${defaultNamePrefix} ${screens.length + 1}`;
@@ -116,6 +119,19 @@ const UiScreensAccordion = ({
 		openModal({
 			title: t('Add image'),
 			body: <ModalSelectHudImage onSelect={addPlayerUiImage} />,
+		});
+	};
+
+	const openAssignObjectTextureModal = (objectId: number) => {
+		openModal({
+			title: t('Assign texture'),
+			body: (
+				<ModalSelectHudImage
+					onSelect={(imagePath) => {
+						setPlayerUiObjectStyle(objectId, { texture_path: imagePath });
+					}}
+				/>
+			),
 		});
 	};
 
@@ -268,6 +284,10 @@ const UiScreensAccordion = ({
 						onRemoveObject={confirmRemoveObject}
 						objectDrawActive={objectDraw.isActive}
 						onSetElementProps={setPlayerUiHudElementProps}
+						onSetObjectStyle={(id, fillColor, options) =>
+							setPlayerUiObjectStyle(id, { fill_color: fillColor, ...options })
+						}
+						onAssignObjectTexture={openAssignObjectTextureModal}
 						textEditHint={t(
 							'Double-click a text box in the viewport to edit. Backspace removes characters. Hold Ctrl while dragging to snap to the grid.',
 						)}

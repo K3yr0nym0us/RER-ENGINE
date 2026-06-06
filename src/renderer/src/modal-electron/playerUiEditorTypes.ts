@@ -11,6 +11,14 @@ export interface PlayerUiEditorState {
 export type PlayerUiEditorAction =
 	| { action: 'rename'; name: string }
 	| { action: 'setElementProps'; kind: 'text' | 'image' | 'object'; id: number; props: { locked?: boolean; z_index?: number } }
+	| {
+			action: 'setObjectStyle';
+			id: number;
+			fill_color: [number, number, number, number];
+			live?: boolean;
+			skip_undo?: boolean;
+	  }
+	| { action: 'assignObjectTexture'; id: number }
 	| { action: 'addText' }
 	| { action: 'addImage' }
 	| { action: 'objectDrawStart' }

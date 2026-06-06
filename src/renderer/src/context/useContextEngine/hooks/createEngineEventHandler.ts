@@ -252,7 +252,7 @@ function formatEditorSceneList(scenes: EditorSceneListItemPayload[] | undefined)
 	return scenes.map((s) => `«${s.name}»`).join(', ');
 }
 
-function panelLogLineForEditorSceneEvent(event: RuntimeEngineEvent): string | null {
+function panelLogLineForEditorSceneEvent(event: RuntimeEngineEvent): string | null | undefined {
 	switch (event.event) {
 		case 'editor_scenes_updated': {
 			const activeId = event.active_scene_id as number | undefined;
@@ -270,8 +270,9 @@ function panelLogLineForEditorSceneEvent(event: RuntimeEngineEvent): string | nu
 					return `[Escenas] Registro cargado — activa «${activeName}» (${listSummary})`;
 				case 'scene_deleted':
 					return `[Escenas] Escena eliminada — activa «${activeName}» (${listSummary})`;
+				case 'undo_state':
 				default:
-					return `[Escenas] Lista sincronizada — activa «${activeName}» (${listSummary})`;
+					return null;
 			}
 		}
 		case 'editor_scene_created': {
@@ -298,7 +299,7 @@ function panelLogLineForEditorSceneEvent(event: RuntimeEngineEvent): string | nu
 			return `[Escenas] Cambio bloqueado (${activeId ?? '?'} → ${targetId ?? '?'}): ${reasonLabel}`;
 		}
 		default:
-			return null;
+			return undefined;
 	}
 }
 
@@ -318,7 +319,7 @@ function panelLogLineForEngineEvent(
 	projectType?: string,
 ): string | null | undefined {
 	const editorSceneLine = panelLogLineForEditorSceneEvent(event);
-	if (editorSceneLine != null) return editorSceneLine;
+	if (editorSceneLine !== undefined) return editorSceneLine;
 
 	if (event.event === 'entity_removed') {
 		const cleanup = refs.sceneWorldCleanupRef.current;
@@ -1829,6 +1830,11 @@ export function createEngineEventHandler({
 					id: obj.id,
 					vertexCount:
 						typeof obj.vertex_count === 'number' ? obj.vertex_count : 0,
+					fillColor: Array.isArray(obj.fill_color) && obj.fill_color.length === 4
+						? obj.fill_color as [number, number, number, number]
+						: undefined,
+					texturePath: typeof obj.texture_path === 'string' ? obj.texture_path : null,
+					textureName: typeof obj.texture_name === 'string' ? obj.texture_name : '',
 					zIndex: typeof obj.z_index === 'number' ? obj.z_index : 0,
 					locked: Boolean(obj.locked),
 				}));
