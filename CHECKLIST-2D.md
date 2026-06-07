@@ -1,6 +1,6 @@
 # CHECKLIST — Motor 2D (`rer_engine_2d`)
 
-Estado del runtime 2D y del editor en proyectos **2D**. Proyectos 3D: [CHECKLIST-3D.md](./CHECKLIST-3D.md). Contrato: [`engine_2d/ARCHITECTURE.md`](./src/main/Engine/engine_2d/ARCHITECTURE.md). Producto: [README.md](./README.md).
+Estado del runtime 2D y del editor en proyectos **2D**. Proyectos 3D: [CHECKLIST-3D.md](./CHECKLIST-3D.md). Tareas globales: [CHECKLIST.md](./CHECKLIST.md). Contrato: [`engine_2d/ARCHITECTURE.md`](./src/main/Engine/engine_2d/ARCHITECTURE.md). Producto: [README.md](./README.md).
 
 **Última revisión:** junio 2026
 
@@ -81,7 +81,7 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 
 ## Por implementar
 
-- [ ] **Métricas GPU en panel (Linux)** — mismo ítem que [CHECKLIST-3D.md](./CHECKLIST-3D.md) (compatibilizar Electron + motor fuera de Windows)
+_(Vacío — ver tareas compartidas en [CHECKLIST.md](./CHECKLIST.md).)_
 
 ---
 
@@ -91,14 +91,6 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 |------|----------|
 | `import_scene` | Un IPC carga escena + restores; `scene_imported` sincroniza React |
 | Undo entidades | Crear/borrar escenario, personaje, colisionador y trigger con Ctrl+Z / Ctrl+Y simétricos |
-
----
-
-## Aplazado (producto)
-
-- partículas/shaders experimentales
-- Multiplayer
-- IA generativa en assets
 
 ---
 

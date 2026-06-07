@@ -1,10 +1,10 @@
 # CHECKLIST — Motor 3D (`rer_engine_3d`)
 
-Estado del runtime 3D y del editor en proyectos **3D** / primera persona. Proyectos 2D: [CHECKLIST-2D.md](./CHECKLIST-2D.md). Contrato: [`engine_3d/ARCHITECTURE.md`](./src/main/Engine/engine_3d/ARCHITECTURE.md). Producto: [README.md](./README.md).
+Estado del runtime 3D y del editor en proyectos **3D** / primera persona. Proyectos 2D: [CHECKLIST-2D.md](./CHECKLIST-2D.md). Tareas globales: [CHECKLIST.md](./CHECKLIST.md). Contrato: [`engine_3d/ARCHITECTURE.md`](./src/main/Engine/engine_3d/ARCHITECTURE.md). Producto: [README.md](./README.md).
 
-**Última revisión:** mayo 2026
+**Última revisión:** junio 2026
 
----
+Documentación relacionada: [docs/Escenes_Model_3D.yaml](./docs/Escenes_Model_3D.yaml), [docs/Entities_Model_3D.yaml](./docs/Entities_Model_3D.yaml), [docs/Save_Proyect_Model.yaml](./docs/Save_Proyect_Model.yaml).
 
 ## Monorepo (compartido)
 
@@ -43,7 +43,7 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 - [x] **Física 3D de producto** — Rapier en objetos (`set_entity_physics`, sync `Transform` en editor); jugador FP solo con shape cast; play sin traspasos (movimiento, salto, static/dynamic, límites del mundo)
 - [x] Jugador FP: convención pies ↔ centro de cuerpo, forward de malla, sync cámara-cuerpo
 - [x] IPC vista FP autoritativa: `set_first_person_view` → `first_person_view_changed`
-- [x] HUD play: crosshair + tooltip Esc (texturas en `Engine/assets/`)
+- [x] HUD play: crosshair por defecto como **objetos Player UI** (barras H/V en `fp-hud-01`); tooltip Esc en play
 - [x] **Player UI HUD** — pantallas del jugador, edición FPS, texto / botón / imagen / **objeto poligonal** (clicks + cruz en cursor), capas `z_index`, bloqueo, play de pantalla activa, persistencia en `.save`
 - [x] **Player UI undo/redo** — Ctrl+Z / Ctrl+Y con snapshot por pantalla (`hud_undo.rs`, `RestorePlayerUiHud`)
 - [x] Cubos de editor (`spawn_editor_box`), modelos en almacén (`load_model_asset`)
@@ -54,6 +54,7 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 - [x] `replace_entity_model` con resync de orientación, escala y forward del jugador (FBX + GLB)
 - [x] **Carga GLB/GLTF skinned** — esqueleto unificado (varios `skin` por archivo), paleta Khronos, piezas múltiples; clips embebidos en asset
 - [x] **Animaciones embebidas 3D** — pipeline skinned GPU, `play_model_clip`, `set_default_animation`, evento `model_clips_ready`
+- [x] **Orientación malla jugador (GLB/FBX)** — `upright_quat_from_vertices_bounds`, corrección yaw cadera Mixamo, forward skinned (`model_asset.rs`, `mesh_3d.rs`); aplicada al spawn/replace FP
 - [x] Export escena: `export_save_snapshot` → `save_snapshot_ready` (`entity_save_meta`, jugador FP)
 - [x] Scripts Rhai `update()` solo en play
 
@@ -63,11 +64,13 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 - [x] `playCharacterViewRef` vía `play_character_view_changed` (UI editor; save 3D vía snapshot del motor)
 - [x] Herramientas 3D (gizmo, spawn caja/modelo, play FP)
 - [x] Eliminar entidades 3D (modelos/cajas) — `remove_entity` + panel Propiedades; sync listas vía `entity_removed`
-- [x] Carga de escena 3D + `pendingRestores` / vista FP desde motor al abrir `.save`
+- [x] Carga de escena 3D al abrir `.save` — burst/precarga en Rust (`load_proyect.rs`); front refleja `project_loaded_3d` / `project_load_3d_complete` (`pendingRestores` solo en rutas puntuales del handler, no carga principal)
 - [x] Guardado engine-first: `export_save_snapshot` + merge en el front
 - [x] Panel **Animaciones** en Propiedades (clips embebidos GLB/FBX en 3D; hojas/sprites en 2D)
 - [x] **Reemplazar modelo del jugador** — overlay de carga + ocultar viewport durante importación síncrona
 - [x] Acordeón Modelos: botón y diálogo **`.glb` / `.gltf` / `.fbx`** (almacén + sustitución jugador)
+- [x] **Blueprints / prefabs 3D** — convertir entidad (`PropertiesAccordion`), `register_blueprint` en motor, construcción rápida (`quick_build` + `BlueprintPlacementMeta`), propagación a instancias (transform, física, scripts, animaciones), persistencia en `project.blueprints[]`
+- [x] **Multi-escena editor 3D** — registro en motor (`editor_scenes.rs`), dirty vía undo, `switch_editor_scene`, baselines boot/placeholder/saved; UI acordeón Scenes (`docs/Escenes_Model_3D.yaml`)
 - [x] **Programación visual** — lógica de escena y entidad (nodos → Rhai); panel de variables con entidades por categoría y animaciones; resolución jugador FP + `entityMeta` para modal Electron
 
 ### Carga `.save` 3D y rendimiento (mayo 2026)
@@ -88,16 +91,14 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 
 ### Prioridad media — funcionalidad
 
-- [ ] **Métricas GPU en panel (Linux)** — compatibilizar con el SO objetivo del motor: hoy **Windows** usa contadores `GPU Engine` por PID (Electron en `gpuProcessUsage.ts`, motor en `engine_shared::process_metrics`); en **Linux** el motor solo intenta `nvidia-smi` (NVIDIA); falta lectura Electron en Linux y soporte AMD/Intel en ambos procesos
-- [ ] **Orientación vertical jugador GLB** — validar en FP con GLB Mixamo reales (rest pose esqueleto + bake por pieza; pendiente prueba manual)
+- [ ] **QA orientación jugador GLB Mixamo** — la lógica de bake/orientación ya está en motor; falta validación manual con varios GLB Mixamo reales en FP (altura ~1.7 m, de pie de frente, sin regresión skinning)
 - [ ] **Animaciones 3D (avanzado)** — state machine / hojas tipo Blender; más allá de clips embebidos + reproducción básica
-- [ ] **Blueprints / prefabs 3D** — equivalente unificado al flujo 2D
 
 ### Prioridad baja
 
 - [ ] **Calidad de texturas GLB (UI)** — conmutar `GltfTextureLoadMode::AllEmbedded` desde configuración (hoy fijo `SmallestEmbedded` en editor)
-- [ ] Picking 3D: AABB del `Transform` vs silueta fina del modelo (mejora UX de selección)
-- [ ] `kind` en `ModelLoaded` (IPC) — sync front sin `spawnKind` local (motor-first)
+- [ ] Picking 3D: AABB del `Transform` vs silueta fina del modelo (hoy `entity_world_pick_aabb` + ray-AABB en `config_3d/mod.rs`)
+- [ ] **`kind` en `ModelLoaded` (IPC) — sync front sin `spawnKind` local** — el motor envía `kind` en spawn por caché/burst, pero el front aún usa `pendingSpawnKindRef` en spawn manual (`createEngineEventHandler.ts`); unificar criterio motor-first
 
 ---
 
@@ -107,17 +108,9 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 |------|----------|
 | Física 3D producto | Play FP + colisiones Rapier sin traspasos; sync editor en gizmo/`set_transform` |
 | Animaciones embebidas 3D | GLB/FBX con skinning reproducen clips en editor/play; panel y `model_clips_ready` |
-| Orientación GLB jugador FP | Modelo de pie de frente a cámara, altura ~1.7 m, sin regresión skinning |
-| Blueprints 3D | Crear/instanciar/actualizar desde editor en proyecto 3D |
+| Orientación GLB jugador FP | Código en motor aplicado; QA con GLB Mixamo variados confirma pie de frente ~1.7 m sin regresión skinning |
+| Blueprints 3D | Crear/instanciar/actualizar desde editor; quick build; propagación; `.save` |
 | Carga `.save` 3D | Abrir demo/proyecto 3D: loader coherente, escena en motor, sin duplicar eventos `model_loaded`; tiempo de carga aceptable en props pesados |
-
----
-
-## Aplazado (producto)
-
-- Multiplayer 
-- IA generativa en assets 
-- partículas/shaders experimentales
 
 ---
 

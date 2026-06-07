@@ -923,12 +923,7 @@ function collectAssetPaths(data: ProjectSaveData): Set<string> {
     for (const img of data.hudImages) add(img.path)
   }
 
-  for (const box of data.playerUiTextBoxes ?? []) add(box.font_path)
-  for (const btn of data.playerUiButtons ?? []) {
-    add(btn.font_path)
-    add(btn.texture_path)
-  }
-  for (const img of data.playerUiImages ?? []) add(img.image_path)
+  // playerUi* solo referencian fonts[] / hudImages[] — no empaquetar otra vez aquí.
 
   add(data.player?.model)
   if (data.models) {
@@ -1233,6 +1228,10 @@ function remapPaths(data: ProjectSaveData, map: Map<string, string>): ProjectSav
       ...img,
       image_path: remap(img.image_path) as string,
     })),
+    playerUiObjects: data.playerUiObjects?.map((obj) => ({
+      ...obj,
+      texture_path: remap(obj.texture_path) as string | undefined,
+    })),
     entities: hasScenes ? [] : data.entities.map(mapEntity),
     player: data.player ? mapEntity(data.player) : data.player,
     scenes: data.scenes?.map((scene) => ({
@@ -1443,6 +1442,55 @@ function resolveLoadedPaths(data: ProjectSaveData, extractedDir: string): Projec
       ...(m.category ? { category: m.category } : {}),
     }))
 
+  const pathBasenameLower = (p: string): string =>
+    path.basename(p.split('/').join(path.sep)).toLowerCase()
+
+  /** Referencia a `hudImages` (Resources). */
+  const resolveHudTextureRef = (
+    texturePath: string | null | undefined,
+    resolvedHudImages: { path: string }[],
+  ): string | null | undefined => {
+    if (!texturePath) return texturePath
+    const direct = resolve(texturePath) as string
+    if (fs.existsSync(direct)) return direct
+    const rawBase = pathBasenameLower(texturePath)
+    for (const img of resolvedHudImages) {
+      if (pathBasenameLower(img.path) === rawBase) return img.path
+    }
+    return direct
+  }
+
+  const resolveHudImagePathRef = (
+    imagePath: string,
+    resolvedHudImages: { path: string }[],
+  ): string => resolveHudTextureRef(imagePath, resolvedHudImages) as string
+
+  /** Referencia a `fonts` (Resources). */
+  const resolveFontRef = (
+    fontPath: string,
+    resolvedFonts: { path: string }[],
+  ): string => {
+    const direct = resolve(fontPath) as string
+    if (fs.existsSync(direct)) return direct
+    const rawBase = pathBasenameLower(fontPath)
+    for (const font of resolvedFonts) {
+      if (pathBasenameLower(font.path) === rawBase) return font.path
+    }
+    return direct
+  }
+
+  const resolvedFonts =
+    data.fonts?.map((f) => ({
+      name: f.name,
+      path: resolve(f.path) as string,
+    })) ?? []
+
+  const resolvedHudImages =
+    data.hudImages?.map((img) => ({
+      name: img.name,
+      path: resolve(img.path) as string,
+    })) ?? []
+
   return {
     ...data,
     backgroundPath: resolve(data.backgroundPath) as string | null,
@@ -1455,30 +1503,32 @@ function resolveLoadedPaths(data: ProjectSaveData, extractedDir: string): Projec
       name: s.name,
       path: resolve(s.path) as string,
     })),
-    fonts: data.fonts?.map((f) => ({
-      name: f.name,
-      path: resolve(f.path) as string,
-    })),
+    fonts: resolvedFonts.length ? resolvedFonts : undefined,
     backgrounds: data.backgrounds?.map((b) => ({
       name: b.name,
       path: resolve(b.path) as string,
     })),
-    hudImages: data.hudImages?.map((img) => ({
-      name: img.name,
-      path: resolve(img.path) as string,
-    })),
+    hudImages: resolvedHudImages.length ? resolvedHudImages : undefined,
     playerUiTextBoxes: data.playerUiTextBoxes?.map((box) => ({
       ...box,
-      font_path: resolve(box.font_path) as string,
+      font_path: resolveFontRef(box.font_path, resolvedFonts),
     })),
     playerUiButtons: data.playerUiButtons?.map((btn) => ({
       ...btn,
-      font_path: resolve(btn.font_path) as string,
-      texture_path: resolve(btn.texture_path) as string | undefined,
+      font_path: resolveFontRef(btn.font_path, resolvedFonts),
+      texture_path: resolveHudTextureRef(btn.texture_path, resolvedHudImages) as
+        | string
+        | undefined,
     })),
     playerUiImages: data.playerUiImages?.map((img) => ({
       ...img,
-      image_path: resolve(img.image_path) as string,
+      image_path: resolveHudImagePathRef(img.image_path, resolvedHudImages),
+    })),
+    playerUiObjects: data.playerUiObjects?.map((obj) => ({
+      ...obj,
+      texture_path: resolveHudTextureRef(obj.texture_path, resolvedHudImages) as
+        | string
+        | undefined,
     })),
     entities: hasScenes ? [] : data.entities.map(mapEntity3d),
     player: data.player ? mapEntity3d(data.player) : data.player,

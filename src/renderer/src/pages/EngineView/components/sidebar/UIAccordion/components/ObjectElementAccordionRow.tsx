@@ -49,8 +49,8 @@ export default function ObjectElementAccordionRow({
 	const [zDraft, setZDraft] = useState(String(item.zIndex));
 	const [colorHex, setColorHex] = useState(() => fillColorToHex(fill));
 	const [transparency, setTransparency] = useState(() => fillColorToTransparencyPercent(fill));
-	const transparencyDraggingRef = useRef(false);
-	const transparencyUndoPushedRef = useRef(false);
+	const styleDraggingRef = useRef(false);
+	const liveUndoPushedRef = useRef(false);
 	const pendingLiveFillRef = useRef<FillColorRgba | null>(null);
 	const liveStyleRafRef = useRef<number | null>(null);
 
@@ -59,7 +59,7 @@ export default function ObjectElementAccordionRow({
 	}, [item.zIndex]);
 
 	useEffect(() => {
-		if (transparencyDraggingRef.current) return;
+		if (styleDraggingRef.current) return;
 		const nextFill = item.fillColor ?? DEFAULT_OBJECT_FILL_COLOR;
 		setColorHex(fillColorToHex(nextFill));
 		setTransparency(fillColorToTransparencyPercent(nextFill));
@@ -81,30 +81,30 @@ export default function ObjectElementAccordionRow({
 		onStyleChange(hexAndTransparencyToFillColor(hex, transparencyPercent), options);
 	};
 
-	const flushLiveTransparencyStyle = () => {
+	const flushLiveStyle = () => {
 		liveStyleRafRef.current = null;
 		const fill = pendingLiveFillRef.current;
 		if (!fill) return;
 		pendingLiveFillRef.current = null;
 		onStyleChange(fill, {
 			live: true,
-			skip_undo: transparencyUndoPushedRef.current,
+			skip_undo: liveUndoPushedRef.current,
 		});
-		transparencyUndoPushedRef.current = true;
+		liveUndoPushedRef.current = true;
 	};
 
-	const scheduleLiveTransparencyStyle = (hex: string, transparencyPercent: number) => {
+	const scheduleLiveStyle = (hex: string, transparencyPercent: number) => {
 		pendingLiveFillRef.current = hexAndTransparencyToFillColor(hex, transparencyPercent);
 		if (liveStyleRafRef.current != null) return;
-		liveStyleRafRef.current = requestAnimationFrame(flushLiveTransparencyStyle);
+		liveStyleRafRef.current = requestAnimationFrame(flushLiveStyle);
 	};
 
-	const beginTransparencyDrag = () => {
-		transparencyDraggingRef.current = true;
-		transparencyUndoPushedRef.current = false;
+	const beginStyleDrag = () => {
+		styleDraggingRef.current = true;
+		liveUndoPushedRef.current = false;
 	};
 
-	const endTransparencyDrag = (hex: string, transparencyPercent: number) => {
+	const endStyleDrag = (hex: string, transparencyPercent: number) => {
 		if (liveStyleRafRef.current != null) {
 			cancelAnimationFrame(liveStyleRafRef.current);
 			liveStyleRafRef.current = null;
@@ -112,7 +112,7 @@ export default function ObjectElementAccordionRow({
 		const fill =
 			pendingLiveFillRef.current ?? hexAndTransparencyToFillColor(hex, transparencyPercent);
 		pendingLiveFillRef.current = null;
-		transparencyDraggingRef.current = false;
+		styleDraggingRef.current = false;
 		onStyleChange(fill, { live: false, skip_undo: true });
 	};
 	const commitZ = () => {
@@ -216,10 +216,18 @@ export default function ObjectElementAccordionRow({
 								style={{ width: 40, height: 32, padding: 2 }}
 								disabled={!engineReady}
 								value={colorHex}
+								onPointerDown={beginStyleDrag}
+								onPointerUp={() => endStyleDrag(colorHex, transparency)}
+								onPointerCancel={() => endStyleDrag(colorHex, transparency)}
+								onBlur={() => {
+									if (liveUndoPushedRef.current) {
+										endStyleDrag(colorHex, transparency);
+									}
+								}}
 								onChange={(e) => {
 									const next = e.target.value;
-								setColorHex(next);
-								commitStyle(next, transparency);
+									setColorHex(next);
+									scheduleLiveStyle(next, transparency);
 								}}
 							/>
 							<input
@@ -250,18 +258,18 @@ export default function ObjectElementAccordionRow({
 							step={1}
 							disabled={!engineReady}
 							value={transparency}
-							onPointerDown={beginTransparencyDrag}
-							onPointerUp={() => endTransparencyDrag(colorHex, transparency)}
-							onPointerCancel={() => endTransparencyDrag(colorHex, transparency)}
+							onPointerDown={beginStyleDrag}
+							onPointerUp={() => endStyleDrag(colorHex, transparency)}
+							onPointerCancel={() => endStyleDrag(colorHex, transparency)}
 							onBlur={() => {
-								if (transparencyUndoPushedRef.current) {
-									endTransparencyDrag(colorHex, transparency);
+								if (liveUndoPushedRef.current) {
+									endStyleDrag(colorHex, transparency);
 								}
 							}}
 							onChange={(e) => {
 								const next = Number(e.target.value);
 								setTransparency(next);
-								scheduleLiveTransparencyStyle(colorHex, next);
+								scheduleLiveStyle(colorHex, next);
 							}}
 						/>
 					</div>

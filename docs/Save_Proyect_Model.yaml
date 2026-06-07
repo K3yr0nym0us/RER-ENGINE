@@ -1,0 +1,202 @@
+# Modelo de recursos y empaquetado del .save
+#
+# Principio: el acordeón **Resources** del sidebar es la puerta de entrada de
+# todos los archivos externos del proyecto. Nada se empaqueta ni se carga en
+# memoria más de una vez por path lógico.
+#
+# Relacionado con:
+#   - src/renderer/.../ResourcesAccordion/   (UI de bibliotecas)
+#   - src/main/index.ts                        (empaquetar / extraer .save)
+#   - engine_2d|3d/.../load_proyect.rs         (carga en stores del motor)
+#   - src/renderer/defaults/buildProjectSaveFromEngine.ts
+
+principle:
+  owner_ui: Resources_accordion
+  owner_runtime: motor
+  rule: |
+    1. El usuario importa un archivo desde Resources → el motor lo registra en su
+       store en memoria (path absoluto en disco mientras no hay .save).
+    2. El resto del editor (entidades, HUD, animaciones) **referencia** esos paths;
+       no vuelve a importar el archivo ni lo duplica en el manifest como asset propio.
+    3. Al guardar .save, Electron copia cada archivo **una sola vez** a carpetas
+       por categoría y escribe rutas relativas en manifest.json.
+    4. Al abrir .save, se resuelven rutas relativas → extract_dir y se registran
+       otra vez en los stores del motor; los consumidores usan el mismo path resuelto.
+
+# ---------------------------------------------------------------------------
+# Bibliotecas (Resources accordion ↔ manifest ↔ store del motor)
+# ---------------------------------------------------------------------------
+
+libraries:
+  2D:
+    sprites:
+      ui: ResourcesAccordion / SpritesAccordion
+      manifest: "scene.sprites[] (por escena)"
+      motor_store: sprite_store
+      pack_dir: assets/
+      load_cmd: LoadSprite
+    sounds:
+      ui: SoundsAccordion
+      manifest: sounds[]
+      motor_store: sound_store
+      pack_dir: sounds/
+      load_cmd: LoadSound
+    fonts:
+      ui: FontsAccordion
+      manifest: fonts[]
+      motor_store: font_store
+      pack_dir: fonts/
+      load_cmd: LoadFont
+    backgrounds:
+      ui: BackgroundsAccordion
+      manifest: backgrounds[]
+      motor_store: background_store
+      pack_dir: assets/   # imágenes de fondo genéricas
+      load_cmd: LoadBackgroundAsset
+
+  3D:
+    models:
+      ui: ResourcesAccordion / ModelsAccordion
+      manifest: "models[] (raíz) y scene.models[] (por escena activa al guardar)"
+      motor_store: model_store + static_model_cache (GPU bajo demanda)
+      pack_dir: assets/
+      load_cmd: LoadModelAsset / precarga spawn
+    sounds:  { same_as: 2D.sounds }
+    fonts:   { same_as: 2D.fonts }
+    hud_images:
+      ui: ResourcesAccordion / ImagesAccordion
+      manifest: hudImages[]
+      motor_store: hud_image_store
+      pack_dir: hud-images/
+      load_cmd: LoadHudImage
+    # 3D no usa BackgroundsAccordion en Resources; fondos vía escena si aplica.
+
+# ---------------------------------------------------------------------------
+# Referencias (no son bibliotecas; apuntan a un ítem ya cargado en Resources)
+# ---------------------------------------------------------------------------
+
+references:
+  entity_3d.model:
+    points_to: models library
+    note: "Spawn/replace desde ModelsAccordion; path en entidad = path del store."
+  player_ui_text_box.font_path:
+    points_to: fonts library
+  player_ui_button.font_path:
+    points_to: fonts library
+  player_ui_button.texture_path:
+    points_to: hudImages library
+    picker: ModalSelectHudImage
+  player_ui_image.image_path:
+    points_to: hudImages library
+    picker: ModalSelectHudImage
+  player_ui_object.texture_path:
+    points_to: hudImages library
+    picker: ModalSelectHudImage
+  animation.frames[].path:
+    note: "Frames de sprite sheet por entidad; no pasan por Resources como ítem suelto."
+  animation.audio_path:
+    points_to: sounds library (cuando se usa audio de biblioteca)
+  blueprint.model:
+    points_to: models library
+  scene.backgroundPath:
+    points_to: backgrounds library (2D)
+
+# ---------------------------------------------------------------------------
+# Flujo en sesión de edición (antes del .save)
+# ---------------------------------------------------------------------------
+
+session_flow:
+  import:
+    - "BtnLoad* en Resources → diálogo Electron → load_* IPC al motor."
+    - "Motor valida, inserta en store, emite *_loaded / *_list."
+    - "Renderer actualiza estado React (sounds, fonts, hudImages, models, …)."
+  use:
+    - "Modales de selección (ModalSelectHudImage, spawn model, etc.) devuelven el path del store."
+    - "HUD / entidades guardan ese path como referencia, no copian el archivo."
+  memory:
+    - "Un path = una entrada en store (+ caché GPU/textura cuando el motor la necesita)."
+
+# ---------------------------------------------------------------------------
+# Guardar .save (Electron main: src/main/index.ts)
+# ---------------------------------------------------------------------------
+
+save_flow:
+  steps:
+    1_build_manifest:
+      file: src/renderer/defaults/buildProjectSaveFromEngine.ts
+      action: |
+        export_save_snapshot del motor + merge con metadatos del editor.
+        Bibliotecas en manifest: sounds, fonts, backgrounds, hudImages (renderer);
+        fonts/hudImages también se fusionan con snapshot del motor (mergeLibraryAssets).
+        models[] sale del model_store del motor (escena activa).
+    2_collect_asset_paths:
+      file: src/main/index.ts → collectAssetPaths
+      rule: |
+        Solo rutas absolutas que deben empaquetarse. Fuentes de verdad:
+        - Arrays de biblioteca: sounds, fonts, backgrounds, hudImages, models, sprites.
+        - Assets de contenido de escena NO registrados en Resources: frames de animación,
+          audio_path de animaciones, blueprints.model, entity.model (deduplicado vía Set).
+        NO empaquetar otra vez paths solo porque aparecen en playerUi*; esas entradas
+        son referencias a fonts[] / hudImages[].
+    3_copy_and_remap:
+      action: copyAssetsToDir → remapPaths
+      pack_layout:
+        assets/: modelos 3D, sprites, fondos genéricos, frames
+        sounds/: audio
+        fonts/: fuentes
+        hud-images/: imágenes HUD (Resources Images 3D)
+      dedup: "Set<toAssetPathKey> evita copiar dos veces el mismo archivo en disco."
+    4_zip:
+      output: "*.save (ZIP + manifest.json)"
+
+# ---------------------------------------------------------------------------
+# Cargar .save
+# ---------------------------------------------------------------------------
+
+load_flow:
+  electron:
+    file: src/main/index.ts
+    steps:
+      - extractSaveArchive → extract_dir
+      - resolveLoadedPaths: relativas → absolutas bajo extract_dir
+      - referencias HUD: texture_path / image_path se resuelven contra hudImages[]
+      - referencias fuente: font_path se resuelve contra fonts[] (saves legacy)
+  motor_3d:
+    file: engine_3d/.../load_proyect.rs
+    steps:
+      - resolve_loaded_paths (misma semántica que Electron)
+      - load_project_asset_stores: sounds, fonts, backgrounds, hud_images (una Load* por ítem)
+      - upsert model_store desde view.models
+      - precarga/spawn entidades reutilizando static_model_cache por path
+      - import_player_ui_* con paths ya resueltos (sin LoadHudImage extra)
+  motor_2d:
+    file: engine_2d/.../load_proyect.rs
+    steps:
+      - LoadSprite por scene.sprites
+      - load_project_asset_stores: sounds, fonts, backgrounds
+  renderer_sync:
+    events: project_loaded_2d | project_loaded_3d
+    action: "SET_* en React + get_*_list al motor para alinear UI Resources."
+
+# ---------------------------------------------------------------------------
+# Verificación de cumplimiento (estado actual del código)
+# ---------------------------------------------------------------------------
+
+compliance:
+  ok:
+    - "Resources accordion concentra import de modelos, sonidos, fuentes, imágenes HUD, sprites, fondos."
+    - "Motor mantiene stores por categoría; load_project_asset_stores carga bibliotecas una vez."
+    - "ModalSelectHudImage asigna path de hudImages a objetos/imágenes HUD (referencia)."
+    - "collectAssetPaths usa Set → sin duplicado en disco aunque el path aparezca en entidad y en models[]."
+    - "remapPaths remapea referencias playerUi* al mismo path relativo que la biblioteca."
+    - "playerUiObjects.texture_path ya no se empaqueta aparte; resolución al cargar vía hudImages[]."
+    - "Eliminado collect_extra_hud_texture_paths (no segundo LoadHudImage por objetos/botones)."
+  fixed_with_this_doc:
+    - "collectAssetPaths ya no incluye font_path/texture_path/image_path de capas playerUi*."
+    - "Al cargar, botones/imágenes HUD resuelven image_path/texture_path contra hudImages[]."
+    - "Al cargar, font_path de HUD resuelve contra fonts[] si el save trae ruta absoluta legacy."
+  notes:
+    - "frames de animación y algunos assets de entidad siguen en collectAssetPaths porque no son fila en Resources."
+    - "entity.model aparece en collectAssetPaths además de models[]; el Set deduplica; es redundante pero seguro."
+    - "sprites 2D viven en scene.sprites (por escena), no en un array global del manifest."
+    - "sounds/backgrounds en save salen del estado React; fonts/hudImages se fusionan también con snapshot del motor."

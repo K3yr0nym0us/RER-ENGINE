@@ -426,6 +426,54 @@ fn resolve_optional_path(p: &Option<String>, extracted_dir: &Path) -> Option<Str
         .map(|s| resolve_path(s, extracted_dir))
 }
 
+/// Resuelve referencia a imagen HUD (Resources) ya empaquetada en `hud_images`.
+fn resolve_hud_image_path_reference(
+    raw: &str,
+    resolved_hud_images: &[NamedPath],
+    extracted_dir: &Path,
+) -> String {
+    let direct = resolve_path(raw, extracted_dir);
+    if Path::new(&direct).is_file() {
+        return direct;
+    }
+    let raw_base = path_basename_lower(raw);
+    for img in resolved_hud_images {
+        if path_basename_lower(&img.path) == raw_base {
+            return img.path.clone();
+        }
+    }
+    direct
+}
+
+fn resolve_hud_texture_reference(
+    raw: &Option<String>,
+    resolved_hud_images: &[NamedPath],
+    extracted_dir: &Path,
+) -> Option<String> {
+    raw.as_ref()
+        .filter(|s| !s.trim().is_empty())
+        .map(|s| resolve_hud_image_path_reference(s, resolved_hud_images, extracted_dir))
+}
+
+/// Resuelve referencia a fuente (Resources) ya empaquetada en `fonts`.
+fn resolve_library_font_reference(
+    raw: &str,
+    resolved_fonts: &[NamedPath],
+    extracted_dir: &Path,
+) -> String {
+    let direct = resolve_path(raw, extracted_dir);
+    if Path::new(&direct).is_file() {
+        return direct;
+    }
+    let raw_base = path_basename_lower(raw);
+    for font in resolved_fonts {
+        if path_basename_lower(&font.path) == raw_base {
+            return font.path.clone();
+        }
+    }
+    direct
+}
+
 fn resolve_script_source(source: &str, extracted_dir: &Path) -> String {
     if source.is_empty() {
         return String::new();
@@ -555,11 +603,13 @@ fn resolve_loaded_paths(project: &mut ProjectSaveData, extracted_dir: &Path) {
             category: None,
         })
         .collect();
+    let resolved_fonts = project.fonts.clone();
+    let resolved_hud_images = project.hud_images.clone();
     project.player_ui_text_boxes = project
         .player_ui_text_boxes
         .iter()
         .map(|b| crate::ipc::SavePlayerUiTextBoxSnapshot {
-            font_path: resolve_path(&b.font_path, extracted_dir),
+            font_path: resolve_library_font_reference(&b.font_path, &resolved_fonts, extracted_dir),
             ..b.clone()
         })
         .collect();
@@ -567,8 +617,12 @@ fn resolve_loaded_paths(project: &mut ProjectSaveData, extracted_dir: &Path) {
         .player_ui_buttons
         .iter()
         .map(|b| crate::ipc::SavePlayerUiButtonSnapshot {
-            font_path: resolve_path(&b.font_path, extracted_dir),
-            texture_path: resolve_optional_path(&b.texture_path, extracted_dir),
+            font_path: resolve_library_font_reference(&b.font_path, &resolved_fonts, extracted_dir),
+            texture_path: resolve_hud_texture_reference(
+                &b.texture_path,
+                &resolved_hud_images,
+                extracted_dir,
+            ),
             ..b.clone()
         })
         .collect();
@@ -576,8 +630,24 @@ fn resolve_loaded_paths(project: &mut ProjectSaveData, extracted_dir: &Path) {
         .player_ui_images
         .iter()
         .map(|img| crate::ipc::SavePlayerUiImageSnapshot {
-            image_path: resolve_path(&img.image_path, extracted_dir),
+            image_path: resolve_hud_image_path_reference(
+                &img.image_path,
+                &resolved_hud_images,
+                extracted_dir,
+            ),
             ..img.clone()
+        })
+        .collect();
+    project.player_ui_objects = project
+        .player_ui_objects
+        .iter()
+        .map(|obj| crate::ipc::SavePlayerUiObjectSnapshot {
+            texture_path: resolve_hud_texture_reference(
+                &obj.texture_path,
+                &resolved_hud_images,
+                extracted_dir,
+            ),
+            ..obj.clone()
         })
         .collect();
     project.player = resolve_player_entity(&project.player, extracted_dir);
