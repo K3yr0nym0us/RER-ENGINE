@@ -12,6 +12,7 @@ import type {
 	SavedScene,
 	FontInfo,
 	HudImageInfo,
+	ModelInfo,
 	SoundInfo,
 	BackgroundInfo,
 } from '@shared-types';
@@ -149,7 +150,7 @@ export function engineSceneToSavedScene(
 			? { x: scene.camera2d.x, y: scene.camera2d.y, halfH: scene.camera2d.half_h }
 			: null,
 		sprites: scene.sprites ?? [],
-		models: scene.models,
+		models: [],
 	};
 }
 
@@ -171,6 +172,7 @@ export interface BuildProjectSaveOptions {
 	sounds: SoundInfo[]
 	fonts: FontInfo[]
 	hudImages: HudImageInfo[]
+	models: ModelInfo[]
 	backgrounds: BackgroundInfo[]
 	entityMeta: Record<number, EntityMeta>
 	initialGameStyle?: GameStyle
@@ -283,6 +285,7 @@ export async function buildProjectSaveFromEngineSnapshot(
 		sounds,
 		fonts,
 		hudImages,
+		models,
 		backgrounds,
 		entityMeta,
 		initialGameStyle,
@@ -307,8 +310,8 @@ export async function buildProjectSaveFromEngineSnapshot(
 	if (sceneState && sceneState.scenes.length > 0) {
 		scenes = sceneState.scenes.map((tab) =>
 			tab.id === activeSceneId
-				? { ...tab, ...activeScene, id: tab.id, name: tab.name }
-				: tab,
+				? { ...tab, ...activeScene, id: tab.id, name: tab.name, models: [] }
+				: { ...tab, models: [] },
 		);
 	}
 
@@ -321,6 +324,15 @@ export async function buildProjectSaveFromEngineSnapshot(
 
 	const mergedFonts = mergeLibraryAssets(fonts, engineScene.fonts);
 	const mergedHudImages = mergeLibraryAssets(hudImages, engineScene.hud_images);
+	const mergedModels = mergeLibraryAssets(
+		models,
+		engineScene.models?.map((m) => ({
+			name: m.name,
+			path: m.path,
+		})),
+	);
+
+	const hasScenes = scenes.length > 0;
 
 	return {
 		version: 1,
@@ -328,16 +340,16 @@ export async function buildProjectSaveFromEngineSnapshot(
 		gameStyle: initialGameStyle ?? gameStyle,
 		scenes,
 		activeSceneId,
-		world: root.world,
-		backgroundPath: root.backgroundPath,
-		entities: root.entities,
-		player: root.player,
-		config_camera: root.config_camera,
-		config_editor_camera: root.config_editor_camera,
-		camera2d: root.camera2d,
+		world: hasScenes ? undefined : root.world,
+		backgroundPath: hasScenes ? null : root.backgroundPath,
+		entities: hasScenes ? [] : root.entities,
+		player: hasScenes ? null : root.player,
+		config_camera: hasScenes ? null : root.config_camera,
+		config_editor_camera: hasScenes ? null : root.config_editor_camera,
+		camera2d: hasScenes ? null : root.camera2d,
 		savedAt: new Date().toISOString(),
-		sprites: root.sprites,
-		models: root.models,
+		sprites: hasScenes ? [] : root.sprites,
+		models: mergedModels,
 		sounds,
 		fonts: mergedFonts,
 		hudImages: mergedHudImages.length ? mergedHudImages : undefined,

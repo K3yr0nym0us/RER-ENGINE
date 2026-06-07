@@ -303,9 +303,8 @@ fn resolve_path(p: &str, extracted_dir: &Path) -> String {
     if entity_path_marker(p).is_some() {
         return entity_path_marker(p).unwrap().to_string();
     }
-    let path = Path::new(p);
-    if path.is_absolute() {
-        return p.replace('/', std::path::MAIN_SEPARATOR_STR);
+    if Path::new(p).is_absolute() {
+        log::error!("[load] manifest path must be relative to .save extract dir: {p}");
     }
     let normalized = p.replace('/', std::path::MAIN_SEPARATOR_STR);
     extracted_dir
@@ -457,6 +456,8 @@ fn resolve_loaded_paths(project: &mut ProjectSaveData, extracted_dir: &Path) {
             .collect();
     } else {
         project.entities.clear();
+        project.backgroundPath = None;
+        project.sprites.clear();
     }
 
     project.scenes = project

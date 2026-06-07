@@ -57,10 +57,11 @@ libraries:
   3D:
     models:
       ui: ResourcesAccordion / ModelsAccordion
-      manifest: "models[] (raíz) y scene.models[] (por escena activa al guardar)"
+      manifest: "models[] (biblioteca global en raíz del manifest)"
       motor_store: model_store + static_model_cache (GPU bajo demanda)
       pack_dir: assets/
       load_cmd: LoadModelAsset / precarga spawn
+      note: "scene.models[] debe estar vacío; las entidades referencian paths de models[]."
     sounds:  { same_as: 2D.sounds }
     fonts:   { same_as: 2D.fonts }
     hud_images:
@@ -126,9 +127,10 @@ save_flow:
       file: src/renderer/defaults/buildProjectSaveFromEngine.ts
       action: |
         export_save_snapshot del motor + merge con metadatos del editor.
-        Bibliotecas en manifest: sounds, fonts, backgrounds, hudImages (renderer);
-        fonts/hudImages también se fusionan con snapshot del motor (mergeLibraryAssets).
-        models[] sale del model_store del motor (escena activa).
+        Bibliotecas globales: sounds, fonts, backgrounds, hudImages, models (renderer + snapshot).
+        Con scenes[]: datos de escena solo en scenes[] (entities, player, world, config_camera…);
+        la raíz no duplica la escena activa (entities/player/config_* vacíos o null).
+        scene.models[] siempre vacío; models[] solo en raíz.
     2_collect_asset_paths:
       file: src/main/index.ts → collectAssetPaths
       rule: |
@@ -154,21 +156,28 @@ save_flow:
 # ---------------------------------------------------------------------------
 
 load_flow:
+  contract:
+    paths: "Solo rutas relativas al extract_dir del .save (forward slashes en JSON)."
+    multi_scene: |
+      scenes[] contiene world/entities/player/config_camera por escena.
+      Raíz: bibliotecas (models, sounds, fonts, hudImages, …) y metadatos del proyecto;
+      sin duplicar entities/player/world de la escena activa en raíz.
+    references: |
+      playerUi*.font_path / texture_path / image_path deben coincidir exactamente con
+      el path relativo del ítem en fonts[] / hudImages[] (misma cadena tras remap).
   electron:
     file: src/main/index.ts
     steps:
       - extractSaveArchive → extract_dir
-      - resolveLoadedPaths: relativas → absolutas bajo extract_dir
-      - referencias HUD: texture_path / image_path se resuelven contra hudImages[]
-      - referencias fuente: font_path se resuelve contra fonts[] (saves legacy)
+      - resolveLoadedPaths: relativas → absolutas bajo extract_dir (sin passthrough absoluto)
   motor_3d:
     file: engine_3d/.../load_proyect.rs
     steps:
       - resolve_loaded_paths (misma semántica que Electron)
       - load_project_asset_stores: sounds, fonts, backgrounds, hud_images (una Load* por ítem)
-      - upsert model_store desde view.models
+      - upsert model_store desde project.models[] (biblioteca global)
       - precarga/spawn entidades reutilizando static_model_cache por path
-      - import_player_ui_* con paths ya resueltos (sin LoadHudImage extra)
+      - import_player_ui_* con paths ya resueltos
   motor_2d:
     file: engine_2d/.../load_proyect.rs
     steps:
@@ -189,12 +198,9 @@ compliance:
     - "ModalSelectHudImage asigna path de hudImages a objetos/imágenes HUD (referencia)."
     - "collectAssetPaths usa Set → sin duplicado en disco aunque el path aparezca en entidad y en models[]."
     - "remapPaths remapea referencias playerUi* al mismo path relativo que la biblioteca."
-    - "playerUiObjects.texture_path ya no se empaqueta aparte; resolución al cargar vía hudImages[]."
-    - "Eliminado collect_extra_hud_texture_paths (no segundo LoadHudImage por objetos/botones)."
-  fixed_with_this_doc:
-    - "collectAssetPaths ya no incluye font_path/texture_path/image_path de capas playerUi*."
-    - "Al cargar, botones/imágenes HUD resuelven image_path/texture_path contra hudImages[]."
-    - "Al cargar, font_path de HUD resuelve contra fonts[] si el save trae ruta absoluta legacy."
+    - "playerUiObjects.texture_path no se empaqueta aparte; referencia hudImages[]."
+    - "Sin fallback por basename ni rutas absolutas en manifest."
+    - "Multi-escena: raíz sin duplicar escena activa; models[] solo global."
   notes:
     - "frames de animación y algunos assets de entidad siguen en collectAssetPaths porque no son fila en Resources."
     - "entity.model aparece en collectAssetPaths además de models[]; el Set deduplica; es redundante pero seguro."

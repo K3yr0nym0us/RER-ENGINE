@@ -409,9 +409,8 @@ fn resolve_path(p: &str, extracted_dir: &Path) -> String {
     if entity_path_marker(p).is_some() {
         return entity_path_marker(p).unwrap().to_string();
     }
-    let path = Path::new(p);
-    if path.is_absolute() {
-        return p.replace('/', std::path::MAIN_SEPARATOR_STR);
+    if Path::new(p).is_absolute() {
+        log::error!("[load] manifest path must be relative to .save extract dir: {p}");
     }
     let normalized = p.replace('/', std::path::MAIN_SEPARATOR_STR);
     extracted_dir
@@ -424,54 +423,6 @@ fn resolve_optional_path(p: &Option<String>, extracted_dir: &Path) -> Option<Str
     p.as_ref()
         .filter(|s| !s.trim().is_empty())
         .map(|s| resolve_path(s, extracted_dir))
-}
-
-/// Resuelve referencia a imagen HUD (Resources) ya empaquetada en `hud_images`.
-fn resolve_hud_image_path_reference(
-    raw: &str,
-    resolved_hud_images: &[NamedPath],
-    extracted_dir: &Path,
-) -> String {
-    let direct = resolve_path(raw, extracted_dir);
-    if Path::new(&direct).is_file() {
-        return direct;
-    }
-    let raw_base = path_basename_lower(raw);
-    for img in resolved_hud_images {
-        if path_basename_lower(&img.path) == raw_base {
-            return img.path.clone();
-        }
-    }
-    direct
-}
-
-fn resolve_hud_texture_reference(
-    raw: &Option<String>,
-    resolved_hud_images: &[NamedPath],
-    extracted_dir: &Path,
-) -> Option<String> {
-    raw.as_ref()
-        .filter(|s| !s.trim().is_empty())
-        .map(|s| resolve_hud_image_path_reference(s, resolved_hud_images, extracted_dir))
-}
-
-/// Resuelve referencia a fuente (Resources) ya empaquetada en `fonts`.
-fn resolve_library_font_reference(
-    raw: &str,
-    resolved_fonts: &[NamedPath],
-    extracted_dir: &Path,
-) -> String {
-    let direct = resolve_path(raw, extracted_dir);
-    if Path::new(&direct).is_file() {
-        return direct;
-    }
-    let raw_base = path_basename_lower(raw);
-    for font in resolved_fonts {
-        if path_basename_lower(&font.path) == raw_base {
-            return font.path.clone();
-        }
-    }
-    direct
 }
 
 fn resolve_script_source(source: &str, extracted_dir: &Path) -> String {
@@ -603,13 +554,11 @@ fn resolve_loaded_paths(project: &mut ProjectSaveData, extracted_dir: &Path) {
             category: None,
         })
         .collect();
-    let resolved_fonts = project.fonts.clone();
-    let resolved_hud_images = project.hud_images.clone();
     project.player_ui_text_boxes = project
         .player_ui_text_boxes
         .iter()
         .map(|b| crate::ipc::SavePlayerUiTextBoxSnapshot {
-            font_path: resolve_library_font_reference(&b.font_path, &resolved_fonts, extracted_dir),
+            font_path: resolve_path(&b.font_path, extracted_dir),
             ..b.clone()
         })
         .collect();
@@ -617,12 +566,8 @@ fn resolve_loaded_paths(project: &mut ProjectSaveData, extracted_dir: &Path) {
         .player_ui_buttons
         .iter()
         .map(|b| crate::ipc::SavePlayerUiButtonSnapshot {
-            font_path: resolve_library_font_reference(&b.font_path, &resolved_fonts, extracted_dir),
-            texture_path: resolve_hud_texture_reference(
-                &b.texture_path,
-                &resolved_hud_images,
-                extracted_dir,
-            ),
+            font_path: resolve_path(&b.font_path, extracted_dir),
+            texture_path: resolve_optional_path(&b.texture_path, extracted_dir),
             ..b.clone()
         })
         .collect();
@@ -630,11 +575,7 @@ fn resolve_loaded_paths(project: &mut ProjectSaveData, extracted_dir: &Path) {
         .player_ui_images
         .iter()
         .map(|img| crate::ipc::SavePlayerUiImageSnapshot {
-            image_path: resolve_hud_image_path_reference(
-                &img.image_path,
-                &resolved_hud_images,
-                extracted_dir,
-            ),
+            image_path: resolve_path(&img.image_path, extracted_dir),
             ..img.clone()
         })
         .collect();
@@ -642,17 +583,13 @@ fn resolve_loaded_paths(project: &mut ProjectSaveData, extracted_dir: &Path) {
         .player_ui_objects
         .iter()
         .map(|obj| crate::ipc::SavePlayerUiObjectSnapshot {
-            texture_path: resolve_hud_texture_reference(
-                &obj.texture_path,
-                &resolved_hud_images,
-                extracted_dir,
-            ),
+            texture_path: resolve_optional_path(&obj.texture_path, extracted_dir),
             ..obj.clone()
         })
         .collect();
-    project.player = resolve_player_entity(&project.player, extracted_dir);
 
     if !has_scenes {
+        project.player = resolve_player_entity(&project.player, extracted_dir);
         project.entities = project
             .entities
             .iter()
@@ -660,6 +597,11 @@ fn resolve_loaded_paths(project: &mut ProjectSaveData, extracted_dir: &Path) {
             .collect();
     } else {
         project.entities.clear();
+        project.player = None;
+        project.config_camera = None;
+        project.config_editor_camera = None;
+        project.backgroundPath = None;
+        project.sprites.clear();
     }
 
     project.scenes = project
@@ -667,15 +609,7 @@ fn resolve_loaded_paths(project: &mut ProjectSaveData, extracted_dir: &Path) {
         .iter()
         .map(|scene| SavedScene {
             backgroundPath: resolve_optional_path(&scene.backgroundPath, extracted_dir),
-            models: scene
-                .models
-                .iter()
-                .map(|m| NamedPath {
-                    name: m.name.clone(),
-                    path: resolve_path(&m.path, extracted_dir),
-                    category: m.category.clone(),
-                })
-                .collect(),
+            models: Vec::new(),
             entities: scene
                 .entities
                 .iter()
@@ -707,12 +641,9 @@ fn pick_active_save_view(project: &ProjectSaveData) -> Result<ActiveSaveView, St
         return Ok(ActiveSaveView {
             world: active.world.clone(),
             entities: active.entities.clone(),
-            models: active.models.clone(),
-            player: active.player.clone().or_else(|| project.player.clone()),
-            config_camera: active
-                .config_camera
-                .clone()
-                .or_else(|| project.config_camera.clone()),
+            models: project.models.clone(),
+            player: active.player.clone(),
+            config_camera: active.config_camera.clone(),
             sceneId: active.id,
             sceneName: active.name.clone(),
         });
@@ -1441,7 +1372,7 @@ fn apply_loaded_proyect_3d_with_scene(
 
     load_project_asset_stores(state, project);
     log_load_step(load_started_at, &mut step_started, "Sonidos y fondos registrados");
-    for model in &view.models {
+    for model in &project.models {
         upsert_model_store_entry(
             state,
             &model.path,
@@ -1462,15 +1393,9 @@ fn apply_loaded_proyect_3d_with_scene(
     );
 
     let burst_load_planned = burst_load;
-    if !view.models.is_empty() && !burst_load_planned {
-        for model in &view.models {
+    if !project.models.is_empty() && !burst_load_planned {
+        for model in &project.models {
             let _ = ensure_model_cached(state, &model.path);
-            upsert_model_store_entry(
-                state,
-                &model.path,
-                &model.name,
-                crate::ipc::normalize_model_library_category(model.category.as_deref()),
-            );
         }
     }
 
@@ -1566,7 +1491,7 @@ fn apply_loaded_proyect_3d_with_scene(
     if burst_load_planned {
         log::info!("Instanciando modelos 3D (carga por lotes)…");
         state.poll_and_advance_model_preloads(MODEL_GPU_PARTS_PER_FRAME);
-        for model in &view.models {
+        for model in &project.models {
             if !model.path.trim().is_empty() {
                 upsert_model_store_entry(
                     state,
@@ -1578,7 +1503,7 @@ fn apply_loaded_proyect_3d_with_scene(
         }
 
         let queued_paths: Vec<String> = model_load_queue.iter().map(|(p, _)| p.clone()).collect();
-        let preloaded: Vec<String> = view.models.iter().map(|m| m.path.clone()).collect();
+        let preloaded: Vec<String> = project.models.iter().map(|m| m.path.clone()).collect();
         for (path, name) in collect_uncached_burst_model_paths(&queued_paths, &preloaded) {
             if ensure_model_cached(state, &path) {
                 upsert_model_store_entry(state, &path, &name, None);
@@ -1825,7 +1750,7 @@ fn active_view_from_saved_scene(scene: &SavedScene) -> ActiveSaveView {
     ActiveSaveView {
         world: scene.world.clone(),
         entities: scene.entities.clone(),
-        models: scene.models.clone(),
+        models: Vec::new(),
         player: scene.player.clone(),
         config_camera: scene.config_camera.clone(),
         sceneId: scene.id,
@@ -1844,7 +1769,7 @@ pub(crate) fn saved_scene_from_active_view(view: &ActiveSaveView) -> SavedScene 
         config_camera: view.config_camera.clone(),
         config_editor_camera: None,
         sprites: Vec::new(),
-        models: view.models.clone(),
+        models: Vec::new(),
     }
 }
 

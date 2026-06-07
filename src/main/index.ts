@@ -1193,12 +1193,15 @@ function remapPaths(data: ProjectSaveData, map: Map<string, string>): ProjectSav
 
   return {
     ...data,
-    backgroundPath: remap(data.backgroundPath) as string | null,
+    world: hasScenes ? undefined : data.world,
+    backgroundPath: hasScenes ? null : (remap(data.backgroundPath) as string | null),
     models: mapModels(data.models),
-    sprites: data.sprites?.map((s) => ({
-      name: s.name,
-      path: remap(s.path) as string,
-    })),
+    sprites: hasScenes
+      ? []
+      : data.sprites?.map((s) => ({
+          name: s.name,
+          path: remap(s.path) as string,
+        })),
     sounds: data.sounds?.map((s) => ({
       name: s.name,
       path: remap(s.path) as string,
@@ -1233,11 +1236,13 @@ function remapPaths(data: ProjectSaveData, map: Map<string, string>): ProjectSav
       texture_path: remap(obj.texture_path) as string | undefined,
     })),
     entities: hasScenes ? [] : data.entities.map(mapEntity),
-    player: data.player ? mapEntity(data.player) : data.player,
+    player: hasScenes ? null : data.player ? mapEntity(data.player) : data.player,
+    config_camera: hasScenes ? null : data.config_camera,
+    config_editor_camera: hasScenes ? null : data.config_editor_camera,
     scenes: data.scenes?.map((scene) => ({
       ...scene,
       backgroundPath: remap(scene.backgroundPath) as string | null,
-      models: mapModels(scene.models),
+      models: [],
       sprites: scene.sprites?.map((s) => ({
         name: s.name,
         path: remap(s.path) as string,
@@ -1383,8 +1388,9 @@ function resolveLoadedPaths(data: ProjectSaveData, extractedDir: string): Projec
     if (!p) return p
     const marker = entityPathMarker(p)
     if (marker) return marker
-    if (path.isAbsolute(p)) return p
-    // El JSON siempre guarda rutas con '/' — normalizamos al separador del OS actual
+    if (path.isAbsolute(p)) {
+      console.error('[editor] manifest path must be relative inside .save:', p)
+    }
     const normalized = p.split('/').join(path.sep)
     return path.join(extractedDir, normalized)
   }
@@ -1442,100 +1448,58 @@ function resolveLoadedPaths(data: ProjectSaveData, extractedDir: string): Projec
       ...(m.category ? { category: m.category } : {}),
     }))
 
-  const pathBasenameLower = (p: string): string =>
-    path.basename(p.split('/').join(path.sep)).toLowerCase()
-
-  /** Referencia a `hudImages` (Resources). */
-  const resolveHudTextureRef = (
-    texturePath: string | null | undefined,
-    resolvedHudImages: { path: string }[],
-  ): string | null | undefined => {
-    if (!texturePath) return texturePath
-    const direct = resolve(texturePath) as string
-    if (fs.existsSync(direct)) return direct
-    const rawBase = pathBasenameLower(texturePath)
-    for (const img of resolvedHudImages) {
-      if (pathBasenameLower(img.path) === rawBase) return img.path
-    }
-    return direct
-  }
-
-  const resolveHudImagePathRef = (
-    imagePath: string,
-    resolvedHudImages: { path: string }[],
-  ): string => resolveHudTextureRef(imagePath, resolvedHudImages) as string
-
-  /** Referencia a `fonts` (Resources). */
-  const resolveFontRef = (
-    fontPath: string,
-    resolvedFonts: { path: string }[],
-  ): string => {
-    const direct = resolve(fontPath) as string
-    if (fs.existsSync(direct)) return direct
-    const rawBase = pathBasenameLower(fontPath)
-    for (const font of resolvedFonts) {
-      if (pathBasenameLower(font.path) === rawBase) return font.path
-    }
-    return direct
-  }
-
-  const resolvedFonts =
-    data.fonts?.map((f) => ({
-      name: f.name,
-      path: resolve(f.path) as string,
-    })) ?? []
-
-  const resolvedHudImages =
-    data.hudImages?.map((img) => ({
-      name: img.name,
-      path: resolve(img.path) as string,
-    })) ?? []
-
   return {
     ...data,
-    backgroundPath: resolve(data.backgroundPath) as string | null,
+    world: hasScenes ? undefined : data.world,
+    backgroundPath: hasScenes ? null : (resolve(data.backgroundPath) as string | null),
     models: mapModels(data.models),
-    sprites: data.sprites?.map((s) => ({
-      name: s.name,
-      path: resolve(s.path) as string,
-    })),
+    sprites: hasScenes
+      ? []
+      : data.sprites?.map((s) => ({
+          name: s.name,
+          path: resolve(s.path) as string,
+        })),
     sounds: data.sounds?.map((s) => ({
       name: s.name,
       path: resolve(s.path) as string,
     })),
-    fonts: resolvedFonts.length ? resolvedFonts : undefined,
+    fonts: data.fonts?.map((f) => ({
+      name: f.name,
+      path: resolve(f.path) as string,
+    })),
     backgrounds: data.backgrounds?.map((b) => ({
       name: b.name,
       path: resolve(b.path) as string,
     })),
-    hudImages: resolvedHudImages.length ? resolvedHudImages : undefined,
+    hudImages: data.hudImages?.map((img) => ({
+      name: img.name,
+      path: resolve(img.path) as string,
+    })),
     playerUiTextBoxes: data.playerUiTextBoxes?.map((box) => ({
       ...box,
-      font_path: resolveFontRef(box.font_path, resolvedFonts),
+      font_path: resolve(box.font_path) as string,
     })),
     playerUiButtons: data.playerUiButtons?.map((btn) => ({
       ...btn,
-      font_path: resolveFontRef(btn.font_path, resolvedFonts),
-      texture_path: resolveHudTextureRef(btn.texture_path, resolvedHudImages) as
-        | string
-        | undefined,
+      font_path: resolve(btn.font_path) as string,
+      texture_path: resolve(btn.texture_path) as string | undefined,
     })),
     playerUiImages: data.playerUiImages?.map((img) => ({
       ...img,
-      image_path: resolveHudImagePathRef(img.image_path, resolvedHudImages),
+      image_path: resolve(img.image_path) as string,
     })),
     playerUiObjects: data.playerUiObjects?.map((obj) => ({
       ...obj,
-      texture_path: resolveHudTextureRef(obj.texture_path, resolvedHudImages) as
-        | string
-        | undefined,
+      texture_path: resolve(obj.texture_path) as string | undefined,
     })),
     entities: hasScenes ? [] : data.entities.map(mapEntity3d),
-    player: data.player ? mapEntity3d(data.player) : data.player,
+    player: hasScenes ? null : data.player ? mapEntity3d(data.player) : data.player,
+    config_camera: hasScenes ? null : data.config_camera,
+    config_editor_camera: hasScenes ? null : data.config_editor_camera,
     scenes: data.scenes?.map((scene) => ({
       ...scene,
       backgroundPath: resolve(scene.backgroundPath) as string | null,
-      models: mapModels(scene.models),
+      models: [],
       sprites: scene.sprites?.map((s) => ({
         name: s.name,
         path: resolve(s.path) as string,

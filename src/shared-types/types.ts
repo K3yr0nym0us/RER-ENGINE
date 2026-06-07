@@ -403,7 +403,8 @@ export interface ProjectSaveData {
   /** Escenas del proyecto (multi-escena). */
   scenes?:         SavedScene[]
   activeSceneId?:  number
-  world:           SavedWorldConfig
+  /** Omitido cuando `scenes[]` define el mundo por escena. */
+  world?:          SavedWorldConfig
   backgroundPath:  string | null
   entities:        Entity3D[]
   player:          Entity3D | null
