@@ -1,0 +1,70 @@
+# Configuración 3D fuera de Entities_Model_3D.yaml
+#
+# Referencia principal: Entities_Model_3D.yaml
+#
+# Campos en manifest / runtime que no forman parte del contrato corto de
+# entidades/blueprints. Decidir si se consolidan en el YAML principal o se eliminan.
+
+reference: Entities_Model_3D.yaml
+
+manifest_fields_outside_entity_contract:
+  - field: config_camera
+    location: SavedScene, raíz manifest
+    note: Cámara FPS separada del player
+  - field: config_editor_camera
+    location: SavedScene
+    note: Viewport orbital del editor
+  - field: world
+    location: escena
+    note: Tamaño, grilla, gravedad, luz ambiente/intensidad/sombras
+  - field: backgroundPath
+    location: escena
+    note: Fondo del mundo
+  - field: camera2d
+    location: escena
+    note: Solo proyectos 2D
+  - field: "sprites, models, sounds, backgrounds"
+    location: proyecto
+    note: Precarga de assets
+  - field: "scenes, activeSceneId, version, gameStyle, language"
+    location: manifest
+    note: Metadatos de proyecto
+  - field: "Marcadores runtime ([Player], [Ground], [EditorBox], …)"
+    location: motor interno
+    note: Colisión distinta por tipo; ver collision_by_entity_type
+
+collision_by_entity_type:
+  description: Comportamiento de colision en motor cuando colision es true
+  entries:
+    - entity: Player
+      motor: Cápsula de movimiento (shape cast); sin cuerpo Rapier de malla en la entidad
+    - entity: Ground
+      motor: Halfspace global (add_static_ground); sin cuerpo por entidad
+    - entity: Sun
+      motor: Sin collider físico
+    - entity: "[EditorBox] / cubos FP"
+      motor: Caja estática según escala del transform (no AABB de malla GLB)
+    - entity: "Modelo .glb / .fbx"
+      motor: AABB de la malla cargada (+ physics_type si aplica)
+    - entity: "[Colisionador] / [ExecutionArea]"
+      motor: Muro/trigger plano 3D (herramientas Tools); collider estático o solo visual
+
+internal_runtime_only:
+  - concept: EntitySaveMeta.path / visual_model_path
+    location: Rust
+    note: Puente interno hasta consolidar todo en model
+  - concept: SavedPlayerTransform
+    location: refs UI FP
+    note: Vista agregada runtime (player + config_camera)
+  - concept: Animaciones 2D (frames, pivot, selection_mode)
+    location: tipos compartidos
+    note: Solo engine_2d
+  - concept: Colliders / execution_area dibujados 2D
+    location: engine_2d
+    note: Cuadriláteros por puntos en plano XY
+  - concept: Quick Build estado UI
+    location: front
+    note: No va al .save
+  - concept: mesh_collision_extents
+    location: runtime jugador
+    note: Cápsula tras reemplazar mesh; no en YAML de entidades

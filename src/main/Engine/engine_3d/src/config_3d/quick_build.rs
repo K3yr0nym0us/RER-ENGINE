@@ -16,7 +16,7 @@ use crate::engine::entity_restore::{
 use crate::mesh;
 use rer_engine_shared::editor_defaults::entity_label_for_category;
 
-const GHOST_OFFSCREEN: f32 = -99999.0;
+pub(crate) const GHOST_OFFSCREEN: f32 = -99999.0;
 const GHOST_ALPHA: f32 = 0.38;
 const PLACEMENT_RAY_MAX: f32 = 10_000.0;
 const DEFAULT_ROTATION: [f32; 4] = [0.0, 0.0, 0.0, 1.0];
@@ -140,7 +140,7 @@ fn ray_intersect_y_plane(origin: Vec3, dir: Vec3, y: f32) -> Option<Vec3> {
 }
 
 /// Alinea el borde del AABB del objeto a la línea de cuadrícula más cercana (eje X o Z).
-fn snap_axis_edges_to_grid(center: f32, half_extent: f32, cell: f32) -> f32 {
+pub(crate) fn snap_axis_edges_to_grid(center: f32, half_extent: f32, cell: f32) -> f32 {
     if cell <= 1e-6 {
         return center;
     }
@@ -155,7 +155,7 @@ fn snap_axis_edges_to_grid(center: f32, half_extent: f32, cell: f32) -> f32 {
     }
 }
 
-fn raycast_ground_point(origin: Vec3, dir: Vec3, ground_y: f32) -> Vec3 {
+pub(crate) fn raycast_ground_point(origin: Vec3, dir: Vec3, ground_y: f32) -> Vec3 {
     if let Some(p) = ray_intersect_y_plane(origin, dir, ground_y) {
         return p;
     }
@@ -268,6 +268,13 @@ impl State {
     }
 
     pub(crate) fn update_tool_overlay_cursor_3d(&mut self, pixel_x: f32, pixel_y: f32) {
+        self.tool_cursor_pixels = Some((pixel_x, pixel_y));
+
+        if matches!(self.active_tool, ActiveTool::PlacePlaneTool { .. }) {
+            self.update_plane_tool_cursor_3d(pixel_x, pixel_y);
+            return;
+        }
+
         if !matches!(self.active_tool, ActiveTool::QuickBuildPlace { .. }) {
             return;
         }
@@ -342,6 +349,11 @@ impl State {
 
         }
         true
+    }
+
+    pub(crate) fn build_tool_ghost_overlay(&self) -> Option<(usize, mesh::InstanceData)> {
+        self.build_plane_tool_ghost_overlay()
+            .or_else(|| self.build_quick_build_ghost_overlay())
     }
 
     pub(crate) fn build_quick_build_ghost_overlay(&self) -> Option<(usize, mesh::InstanceData)> {

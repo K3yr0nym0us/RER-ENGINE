@@ -63,6 +63,8 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 - [x] Acordeón cámara FP (envía `set_play_character_view`, no calcula poses en TS)
 - [x] `playCharacterViewRef` vía `play_character_view_changed` (UI editor; save 3D vía snapshot del motor)
 - [x] Herramientas 3D (gizmo, spawn caja/modelo, play FP)
+- [x] **Herramientas plano 3D** — muro invisible (`[Colisionador]`) y trigger (`[ExecutionArea]`): toggle, ghost, Q/E, colocación con click, foco editor al colocar, rotación en `.save`, colisión orientada Rapier, ocultos en play, sin sombras
+- [x] **Triggers 3D en play** — `update_execution_areas_3d`, `trigger_entered` / `trigger_exited`, `on_trigger_enter`, log panel `[trigger]`
 - [x] Eliminar entidades 3D (modelos/cajas) — `remove_entity` + panel Propiedades; sync listas vía `entity_removed`
 - [x] Carga de escena 3D al abrir `.save` — burst/precarga en Rust (`load_proyect.rs`); front refleja `project_loaded_3d` / `project_load_3d_complete` (`pendingRestores` solo en rutas puntuales del handler, no carga principal)
 - [x] Guardado engine-first: `export_save_snapshot` + merge en el front
@@ -125,6 +127,9 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 | `project_loaded_3d` | Motor → front: escena activa tras parsear manifest (tabs, mundo, entidades) |
 | `project_load_3d_complete` | Motor → front: fin de burst/precarga al abrir `.save` (cierra loader) |
 | `load_progress` | Motor → front: mensaje de progreso durante carga (`step_ms`, `total_ms` opcionales) |
+| `plane_tool_ready` / `tool_cancelled` | Motor → front: herramienta plano 3D activa / cancelada (silenciosos en panel) |
+| `trigger_entered` | Motor → front: actor entró en execution area (`has_attached_script` opcional); log `[trigger]` |
+| `collider_created` / `execution_area_created` | Motor → front: plano 3D colocado (`position` + `scale`); Electron devuelve foco al editor |
 
 Aliases legacy: `set_first_person_view`, `first_person_view_changed`.
 

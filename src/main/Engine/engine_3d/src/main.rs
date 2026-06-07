@@ -44,6 +44,24 @@ use rer_engine_shared::platform::{start_position_tracker, TrackerOffset};
 #[cfg(target_os = "linux")]
 use rer_engine_shared::platform::setup_overlay_x11;
 
+use crate::config_3d::plane_tool_rotate_dbg;
+
+/// Evita que Q/E se consuman como texto en player_ui mientras la herramienta plano está activa.
+fn is_plane_tool_rotate_key(key: PhysicalKey, text: Option<&str>) -> bool {
+    if matches!(key, PhysicalKey::Code(KeyCode::KeyQ | KeyCode::KeyE)) {
+        return true;
+    }
+    text.as_deref()
+        .is_some_and(|t| t.eq_ignore_ascii_case("q") || t.eq_ignore_ascii_case("e"))
+}
+
+fn key_code_from_physical(key: PhysicalKey) -> Option<KeyCode> {
+    match key {
+        PhysicalKey::Code(code) => Some(code),
+        _ => None,
+    }
+}
+
 /// Convierte un `KeyCode` de winit a la string de control usada en los bindings.
 ///
 /// Usa el nombre del variant (via Debug) para mapear automáticamente cualquier tecla
@@ -388,6 +406,7 @@ impl ApplicationHandler<EngineCommand> for App {
                 } else {
                     state.setup_default_3d_scene();
                 }
+                state.editor_parent_id = self.tracker_parent_id;
                 self.state = Some(state);
             }
             Err(e) => {
@@ -541,23 +560,31 @@ impl ApplicationHandler<EngineCommand> for App {
                         if pressed {
                             // En modo quick_build_place los clicks son capturados por la herramienta;
                             // no se deben seleccionar entidades ni activar el gizmo.
-                            let is_quick_build = matches!(state.active_tool, crate::config_compat::ActiveTool::QuickBuildPlace { .. });
+                            let is_placement_tool = crate::config_compat::is_editor_placement_tool(&state.active_tool);
 
-                            if is_quick_build && pressed {
+                            if is_placement_tool && pressed {
                                 if let Some(cur) = self.last_cursor {
                                     let ctrl_active = self.ctrl_held || query_ctrl_held_os();
                                     state.ctrl_held = ctrl_active;
-                                    state.place_quick_build_at_cursor(Some(cur));
+                                    match &state.active_tool {
+                                        crate::config_compat::ActiveTool::QuickBuildPlace { .. } => {
+                                            state.place_quick_build_at_cursor(Some(cur));
+                                        }
+                                        crate::config_compat::ActiveTool::PlacePlaneTool { .. } => {
+                                            state.place_plane_tool_at_cursor(Some(cur));
+                                        }
+                                        _ => {}
+                                    }
                                 }
                                 self.left_click_pos = None;
                                 self.gizmo_drag_axis = None;
                                 state.set_active_gizmo_axis(None);
                                 self.gizmo_drag_start = None;
-                            } else if !pressed || !is_quick_build {
+                            } else if !pressed || !is_placement_tool {
                             // Comprobar si el click es sobre un eje del gizmo.
-                            // Se omite en modo pivot/quick_build para no robar el click al handler.
+                            // Se omite en modo pivot/placement para no robar el click al handler.
                             if let Some(cur) = self.last_cursor {
-                                let axis = if state.pivot_edit_mode.is_none() && !is_quick_build {
+                                let axis = if state.pivot_edit_mode.is_none() && !is_placement_tool {
                                     state.pick_gizmo_axis(cur.0, cur.1)
                                 } else {
                                     None
@@ -594,11 +621,8 @@ impl ApplicationHandler<EngineCommand> for App {
                             }
                             }
                         } else {
-                            let is_quick_build_release = matches!(
-                                state.active_tool,
-                                crate::config_compat::ActiveTool::QuickBuildPlace { .. }
-                            );
-                            if is_quick_build_release {
+                            let is_placement_tool_release = crate::config_compat::is_editor_placement_tool(&state.active_tool);
+                            if is_placement_tool_release {
                                 // Colocado en press.
                             } else if self.gizmo_drag_axis.is_some() {
                                 // Fin del drag de gizmo
@@ -685,11 +709,8 @@ impl ApplicationHandler<EngineCommand> for App {
                     state.set_snap_hint_visible(false);
                 }
                 if !state.is_preview_playing() {
-                    let is_quick_build = matches!(
-                        state.active_tool,
-                        crate::config_compat::ActiveTool::QuickBuildPlace { .. }
-                    );
-                    if is_quick_build {
+                    let is_placement_tool = crate::config_compat::is_editor_placement_tool(&state.active_tool);
+                    if is_placement_tool {
                         let ctrl_active = self.ctrl_held || query_ctrl_held_os();
                         state.ctrl_held = ctrl_active;
                         state.update_tool_overlay_cursor_3d(cur.0, cur.1);
@@ -723,24 +744,49 @@ impl ApplicationHandler<EngineCommand> for App {
                     && !self.mouse_middle
                     && self.gizmo_drag_axis.is_none()
                 {
-                    let is_quick_build = matches!(state.active_tool, crate::config_compat::ActiveTool::QuickBuildPlace { .. });
-                    if !is_quick_build {
+                    let is_placement_tool = crate::config_compat::is_editor_placement_tool(&state.active_tool);
+                    let is_plane_preview = crate::config_compat::is_plane_tool_active(&state.active_tool);
+                    if !is_placement_tool && !is_plane_preview {
                         state.update_hover(cur.0, cur.1);
                     }
                 }
                 self.last_cursor = Some(cur);
             }
-            WindowEvent::KeyboardInput {
-                event: KeyEvent {
-                    physical_key: PhysicalKey::Code(code),
+            WindowEvent::KeyboardInput { event, .. } => {
+                let KeyEvent {
+                    physical_key,
                     state: key_state,
                     repeat,
                     text,
                     ..
-                },
-                ..
-            } => {
+                } = event;
                 let pressed = key_state == ElementState::Pressed;
+
+                let plane_tool_active = matches!(
+                    state.active_tool,
+                    crate::config_compat::ActiveTool::PlacePlaneTool { .. }
+                );
+
+                if plane_tool_active
+                    && plane_tool_rotate_dbg::is_rotate_related_winit_key(physical_key, text.as_deref())
+                {
+                    plane_tool_rotate_dbg::log_winit_key(
+                        physical_key,
+                        text.as_deref(),
+                        pressed,
+                        repeat,
+                    );
+                }
+
+                if plane_tool_active && is_plane_tool_rotate_key(physical_key, text.as_deref())
+                {
+                    return;
+                }
+
+                let Some(code) = key_code_from_physical(physical_key) else {
+                    return;
+                };
+
                 if state.player_ui_edit_key_input(code, pressed, repeat) {
                     return;
                 }
@@ -800,15 +846,17 @@ impl ApplicationHandler<EngineCommand> for App {
                     _ => {}
                 }
             }
-            WindowEvent::Focused(false) => {
-                self.keyboard_mouse_pressed.clear();
-                self.gamepad_pressed.clear();
-                if self.cursor_captured {
-                    release_cursor_on_focus_loss = true;
-                }
-            }
-            WindowEvent::Focused(true) => {
-                if state.is_play_controller_active() {
+            WindowEvent::Focused(focused) => {
+                state.engine_window_focused = focused;
+                plane_tool_rotate_dbg::log_focus(focused);
+                if !focused {
+                    self.keyboard_mouse_pressed.clear();
+                    self.gamepad_pressed.clear();
+                    state.clear_plane_tool_rotate_held();
+                    if self.cursor_captured {
+                        release_cursor_on_focus_loss = true;
+                    }
+                } else if state.is_play_controller_active() {
                     recapture_cursor_on_focus_gain = true;
                 }
             }

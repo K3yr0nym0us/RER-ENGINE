@@ -27,7 +27,15 @@ import {
 } from '../modal-electron/playerUiEditorSessions'
 import type { PlayerUiEditorState } from '../modal-electron/playerUiEditorTypes'
 
-export type { ModalElectronSize }
+/**
+ * Abre ventanas modales Electron (ventana hija; el motor sigue visible).
+ *
+ * IMPORTANTE — al añadir un modal nuevo:
+ *   1. Registrar el componente en modal-electron/modalElectronRegistry.tsx
+ *   2. Seguir docs/MODAL_ELECTRON.yaml
+ *
+ * Si falta el registro aparece: "Componente modal no soportado: NombreComponente"
+ */
 
 export interface OpenModalElectronOptions {
 	title: string
@@ -35,7 +43,11 @@ export interface OpenModalElectronOptions {
 	size?: ModalElectronSize
 }
 
-type DelegateHandler = (data: BluePrintModalDelegateAction) => Promise<{ blueprints?: BluePrintEntry[] } | null>
+export type { ModalElectronSize }
+
+type DelegateHandler = (
+	data: BluePrintModalDelegateAction,
+) => Promise<{ blueprints?: BluePrintEntry[] } | null>
 
 type ParentNestedHandler = (payload: Record<string, unknown>) => void
 
@@ -160,7 +172,7 @@ export function useModalElectron() {
 			pendingDelegates.set(handlerId, async (data) => {
 				const current = bluePrintDepsRef.current
 				if (!current) return null
-				return runBluePrintModalDelegate(data, current)
+				return runBluePrintModalDelegate(data as BluePrintModalDelegateAction, current)
 			})
 		}
 

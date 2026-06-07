@@ -10,6 +10,8 @@ const ENTITY_MARKERS: &[&str] = &[
     "[EditorCamera]",
     "[Sun]",
     "[Ball]",
+    "[Colisionador]",
+    "[ExecutionArea]",
 ];
 
 /// `.glb` / `.gltf` / `.fbx` en disco (no marcadores `[Player]`).
@@ -192,6 +194,24 @@ impl State {
             return Some(EntitySaveMeta {
                 kind: "directional_light".to_string(),
                 path: "[Sun]".to_string(),
+                visual_model_path: None,
+                entity_category: None,
+            });
+        }
+
+        if self.collider_entities.contains(&id) {
+            return Some(EntitySaveMeta {
+                kind: "collider".to_string(),
+                path: "[Colisionador]".to_string(),
+                visual_model_path: None,
+                entity_category: None,
+            });
+        }
+
+        if self.execution_area_entities.contains(&id) {
+            return Some(EntitySaveMeta {
+                kind: "execution_area".to_string(),
+                path: "[ExecutionArea]".to_string(),
                 visual_model_path: None,
                 entity_category: None,
             });

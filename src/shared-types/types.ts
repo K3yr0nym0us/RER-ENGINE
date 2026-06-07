@@ -583,6 +583,7 @@ export interface EngineCommand {
     | 'set_ctrl_held'
     | 'set_physics'
     | 'set_active_tool'
+    | 'update_plane_tool_preview'
     | 'create_collider_from_points'
     | 'create_execution_area_from_points'
     | 'play_animation_frame'
@@ -913,6 +914,8 @@ export interface TriggerEntered {
   event:      'trigger_entered'
   trigger_id: number
   actor_id:   number
+  /** Scripts Rhai adjuntos en runtime (motor). */
+  has_attached_script?: boolean
 }
 
 export interface TriggerExited {

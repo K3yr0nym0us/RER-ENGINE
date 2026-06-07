@@ -20,6 +20,7 @@ import {
 	type SavedPlayerTransform,
 	type SavedScene,
 	type FontInfo,
+	type GameStyle,
 	type HudImageInfo,
 	type SoundInfo,
 	type SpriteInfo,
@@ -1182,6 +1183,8 @@ export interface EngineInternalRefs {
 }
 
 export interface EngineContextValue extends EngineState {
+	projectType?: string
+	gameStyle?: GameStyle
 	dispatch: (action: EngineAction) => void
 	pendingImportSceneRef: MutableRefObject<SavedScene | null>
 	sceneImportInProgressRef: MutableRefObject<boolean>

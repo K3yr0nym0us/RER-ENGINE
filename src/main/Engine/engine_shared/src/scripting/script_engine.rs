@@ -135,6 +135,12 @@ impl ScriptEngine {
         self.scripts.keys().copied().collect()
     }
 
+    pub fn entity_has_scripts(&self, entity_id: u32) -> bool {
+        self.scripts
+            .get(&entity_id)
+            .is_some_and(|scripts| !scripts.is_empty())
+    }
+
     pub fn clear_control_script_cache(&mut self) {
         self.control_script_cache.clear();
         log::debug!("[scripting] caché de control scripts limpiada");

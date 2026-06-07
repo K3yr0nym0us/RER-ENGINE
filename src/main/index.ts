@@ -133,6 +133,12 @@ function sendEventToRenderer(event: EngineEvent): void {
   }
 }
 
+function focusMainEditorWindow(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  mainWindow.focus()
+  mainWindow.webContents.focus()
+}
+
 // ---------------------------------------------------------------------------
 // Ventana principal (UI React)
 // ---------------------------------------------------------------------------
@@ -341,6 +347,12 @@ function startEngine(embed?: ViewportBounds): void {
           if (!msg.includes('[quick_build]')) {
             continue
           }
+        }
+        if (
+          (event.event === 'collider_created' || event.event === 'execution_area_created')
+          && (event as { position?: unknown }).position != null
+        ) {
+          focusMainEditorWindow()
         }
         sendEventToRenderer(event)
       } catch {

@@ -760,7 +760,12 @@ pub enum EngineEvent {
         gpu_percent:    Option<f32>,
     },
     /// Emitido cuando un actor entra en un área de ejecución (trigger).
-    TriggerEntered { trigger_id: u32, actor_id: u32 },
+    TriggerEntered {
+        trigger_id: u32,
+        actor_id: u32,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        has_attached_script: Option<bool>,
+    },
     /// Emitido cuando un actor sale de un área de ejecución (trigger).
     TriggerExited { trigger_id: u32, actor_id: u32 },
     /// Emitido cada 5 minutos cuando el autosave está activo.

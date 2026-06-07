@@ -168,6 +168,7 @@ fn evaluate_scene(in: VertexOutput) -> SceneFragOut {
 
     var amb = albedo;
     var dir = vec3<f32>(0.0);
+    let skip_shadow_receive = in.render_kind >= 0.25 && in.render_kind < 0.5;
     if in.render_kind < 0.5 {
         let n = normalize(in.world_normal);
         let l = scene_light_dir_norm();
@@ -177,7 +178,7 @@ fn evaluate_scene(in: VertexOutput) -> SceneFragOut {
         let intensity = u.light_params.x;
         amb = albedo * ambient * lc * intensity;
         dir = albedo * (1.0 - ambient) * ndotl * lc * intensity;
-        if u.light_color.w > 0.5 {
+        if u.light_color.w > 0.5 && !skip_shadow_receive {
             shadow = scene_shadow(in.world_pos, n);
         }
     }

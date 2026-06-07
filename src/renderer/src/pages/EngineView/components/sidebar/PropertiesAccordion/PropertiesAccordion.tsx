@@ -330,6 +330,23 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
         )
       )}
 
+      {(isCollider || isExecutionArea) && (
+        <Accordion className="prop-accordion">
+          <Accordion.Item eventKey="transform">
+            <Accordion.Header><ArrowsMove className="me-2" />{t('Transformations')}</Accordion.Header>
+            <Accordion.Body className="py-2 px-2">
+              <TransformPanel
+                entity={selectedEntity}
+                is2D={is2D}
+                isPlayCharacter={false}
+                isEditorCamera={false}
+                onSend={handleSend}
+              />
+            </Accordion.Body>
+          </Accordion.Item>
+        </Accordion>
+      )}
+
       {!isCollider && !isExecutionArea && (
         <Accordion className="prop-accordion">
           <Accordion.Item eventKey="transform">
@@ -358,6 +375,8 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
       )}
 
       <div className="mt-3 pt-2 border-top border-secondary">
+        {!isCollider && !isExecutionArea && (
+        <>
         {isFromBlueprint ? (
           <div className="d-flex align-items-center justify-content-center gap-2 mb-2 px-1 py-1 rounded small text-white">
             <Link45deg className="flex-shrink-0" />
@@ -481,6 +500,8 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
           <CircleSquare className="me-2" />
           {t('Convert to Blueprint')}
         </button>
+        </>
+        )}
         </>
         )}
         {!isPlayer && (

@@ -162,6 +162,23 @@ pub fn create_uv_sphere(device: &wgpu::Device, segments: u32) -> Mesh {
     upload(device, &vertices, &indices, "uv-sphere")
 }
 
+/// Quad en XY (normal +Z), doble cara; muros/triggers del editor (sin grosor visible).
+pub fn create_unit_wall_quad_xy(device: &wgpu::Device) -> Mesh {
+    #[rustfmt::skip]
+    let vertices: Vec<Vertex> = vec![
+        Vertex { position: [-0.5, -0.5, 0.0], normal: [0.0, 0.0, 1.0], uv: [0.0, 1.0] },
+        Vertex { position: [ 0.5, -0.5, 0.0], normal: [0.0, 0.0, 1.0], uv: [1.0, 1.0] },
+        Vertex { position: [ 0.5,  0.5, 0.0], normal: [0.0, 0.0, 1.0], uv: [1.0, 0.0] },
+        Vertex { position: [-0.5,  0.5, 0.0], normal: [0.0, 0.0, 1.0], uv: [0.0, 0.0] },
+    ];
+    #[rustfmt::skip]
+    let indices: Vec<u32> = vec![
+        0, 1, 2, 2, 3, 0,
+        0, 2, 1, 2, 0, 3,
+    ];
+    upload(device, &vertices, &indices, "unit-wall-quad-xy")
+}
+
 /// Quad unitario en el plano XY (Z=0), normal +Z; para overlays HUD texturizados.
 pub fn create_unit_quad_xy(device: &wgpu::Device) -> Mesh {
     #[rustfmt::skip]

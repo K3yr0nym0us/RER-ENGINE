@@ -1,5 +1,21 @@
 import type { ComponentType } from 'react'
 
+/**
+ * REGISTRO DE MODALES ELECTRON
+ * =============================
+ * Todas las ventanas abiertas con `useModal()` / `openModal({ body: <MiModal /> })`
+ * se renderizan en una ventana Electron **hija**, no en el DOM del editor.
+ *
+ * Si olvidas registrar un modal aquí verás:
+ *   "Componente modal no soportado: NombreDelComponente"
+ *
+ * Checklist al añadir un modal nuevo → docs/MODAL_ELECTRON.yaml
+ *
+ * Excepciones con host dedicado (no van en este mapa):
+ *   - BluePrintModalBody      → BluePrintModalElectronHost
+ *   - PlayerUiEditorModalBody → PlayerUiEditorElectronHost
+ */
+
 import type { ModalElectronOpenRequest } from '@shared-types'
 import { ScriptEditorModalBody } from '../components/SpritePreviewModalBody/components/ScriptEditorModalBody'
 import { SpritePreviewModalBody } from '@components'

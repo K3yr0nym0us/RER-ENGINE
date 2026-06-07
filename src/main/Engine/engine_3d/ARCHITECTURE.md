@@ -43,6 +43,8 @@ Runtime 3D: camara orbital en editor, primera persona en play, Rapier3D, mallas 
 - `src/config_3d/player_ui/`: editor HUD del jugador (pantallas, texto, botones, imágenes, objetos poligonales, undo).
 - `src/config_3d/mesh_3d.rs`: glTF/FBX, normalizacion, `forward_xz`.
 - `src/config_3d/physics_3d.rs`: Rapier3D y shape cast del jugador.
+- `src/config_3d/plane_tools.rs`: herramientas de muro invisible (colisionador) y trigger 3D (quad delgado, ghost, Q/E, colocación).
+- `src/config_3d/execution_areas_3d.rs`: detección de triggers en play (OBB + cápsula jugador, `on_trigger_enter`, IPC).
 - `src/config_3d/world_bounds.rs`: limites y culling AABB.
 - `src/config_base.rs`: `setup_default_3d_scene`, `reset_runtime_scene_3d`.
 - `src/ecs.rs`: `Transform`, `MeshComponent`, marcadores.
@@ -113,14 +115,33 @@ Registro de rutas/tipos: `entity_save_meta` + actualizacion en spawn/load/replac
 
 - `update_scripts()` solo ejecuta el tick Rhai de entidades cuando `preview_playing` es true. Los control scripts (`on_press` / `on_keep`) ya estaban acotados a play.
 - Callbacks Rhai usan **invoke pattern** en `engine_shared/src/scripting/script_engine.rs` (mismo contrato que 2D).
+- **Triggers 3D:** `on_trigger_enter(trigger, actor)` en execution areas planas; detección en `execution_areas_3d.rs`.
 - **FP control scripts:** tras ejecutar el script del binding, `engine/scripts.rs` auto-inyecta `fp_press_key` con la tecla del binding para el play character cuando el script no lo hace. Scripts típicos: solo `fp_set_walk_speed`, `fp_set_sprint_multiplier`, `fp_jump`.
 - Referencia: [`RHAI_API.md`](../../../../RHAI_API.md).
 
 ### Fisica
 
 - Objetos: Rapier3D (`set_entity_physics`, sync con `Transform` al editar y al usar gizmo).
+- Muros invisibles 3D (`[Colisionador]`): caja Rapier orientada al yaw del plano (`set_entity_physics_oriented`, `sync_plane_wall_physics`); colisión en play, ocultos salvo `debug_mode`.
 - Jugador en play: shape cast (`move_character_capsule_at_feet`); sin rigid body Rapier en el mesh visual del player.
 - En play, `physics.step` sincroniza cuerpos dynamic con ECS; el id del jugador FP se excluye de ese sync.
+
+### Herramientas plano 3D (colisionador / trigger)
+
+Herramientas del acordeón **Tools** en proyectos 3D (no son el dibujo por puntos del 2D).
+
+| Aspecto | Comportamiento |
+|---------|----------------|
+| Toggle | `set_active_tool` → ghost semitransparente en el motor; click en viewport coloca **una** vez y desactiva la herramienta. |
+| Rotación | **Q / E** en el motor (polling OS + swallow winit); yaw persistido en `Transform.rotation`. |
+| Colisionador | Marcador `[Colisionador]`; Rapier static orientado; invisible en play (salvo debug). |
+| Trigger | Marcador `[ExecutionArea]`; sin física; invisible en play; scripts/nodos vía Rhai. |
+| Foco | Al activar herramienta → foco ventana overlay; al colocar → `focus_overlay_parent_window` + `mainWindow.focus()` en Electron. |
+| `.save` | Posición, escala y **rotación** (quaternion) en snapshot; restauración vía `restore_*_plane_from_save` + `apply_entity_restore`. |
+| Render | `render_kind = 0.25`: iluminación normal, sin recibir ni proyectar sombras (excluidos del shadow pass). |
+| Play | `update_execution_areas_3d` en tick; eventos `trigger_entered` / `trigger_exited`; panel front `[trigger]` con `has_attached_script`. |
+
+Implementación front: `usePlaneToolPlacement`, `PlaneToolContext`, botones `ColliderToolButton` / `ExecutionAreaToolButton`.
 
 ### IPC
 

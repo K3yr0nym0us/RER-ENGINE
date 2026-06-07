@@ -161,6 +161,9 @@ const SILENT_ENGINE_EVENTS = new Set<string>([
 	'load_progress',
 	'model_asset_preload_started',
 	'model_asset_loaded',
+	'plane_tool_ready',
+	'tool_cancelled',
+	'trigger_exited',
 ]);
 
 /** Eventos IPC que no deben duplicar `[Carga]` durante carga de escena o plantilla FP al arrancar. */
@@ -306,6 +309,27 @@ function panelLogLineForEditorSceneEvent(event: RuntimeEngineEvent): string | nu
 	}
 }
 
+/** Línea `[trigger]` al entrar un actor en un execution area. */
+function panelLogLineForTriggerEntered(
+	event: RuntimeEngineEvent,
+	entityMetaRef: EngineInternalRefs['entityMetaRef'],
+): string {
+	const triggerId = event.trigger_id as number;
+	const actorId = event.actor_id as number;
+	const hasFromEngine = event.has_attached_script as boolean | undefined;
+	const meta = entityMetaRef.current[triggerId];
+	const hasFromMeta = Boolean(
+		meta?.scripts?.length
+		|| meta?.visualScriptRhai?.trim()
+		|| (meta?.visualGraph?.nodes?.length ?? 0) > 0,
+	);
+	const hasCode = hasFromEngine ?? hasFromMeta;
+	const label = meta?.name?.trim() || `trigger ${triggerId}`;
+	return hasCode
+		? `[trigger] Activado «${label}» (id=${triggerId}, actor=${actorId}) — con código adjunto`
+		: `[trigger] Activado «${label}» (id=${triggerId}, actor=${actorId}) — sin código adjunto`;
+}
+
 /** Línea del panel de logs; `null` = no imprimir; `undefined` = JSON del evento. */
 function panelLogLineForEngineEvent(
 	event: RuntimeEngineEvent,
@@ -318,9 +342,14 @@ function panelLogLineForEngineEvent(
 		| 'initialExtractDirRef'
 		| 'sceneWorldCleanupRef'
 		| 'fpSceneBaselineLogRef'
+		| 'entityMetaRef'
 	>,
 	projectType?: string,
 ): string | null | undefined {
+	if (event.event === 'trigger_entered') {
+		return panelLogLineForTriggerEntered(event, refs.entityMetaRef);
+	}
+
 	const editorSceneLine = panelLogLineForEditorSceneEvent(event);
 	if (editorSceneLine !== undefined) return editorSceneLine;
 
@@ -2037,11 +2066,32 @@ export function createEngineEventHandler({
 
 		if (event.event === 'collider_created') {
 			if (refs.sceneImportInProgressRef.current) return;
-			const collider = event as { id?: number; points?: [[number, number], [number, number], [number, number], [number, number]] };
+			const collider = event as {
+				id?: number
+				points?: [[number, number], [number, number], [number, number], [number, number]]
+				position?: [number, number, number]
+				scale?: [number, number, number]
+			};
 			const id = collider.id ?? -1;
-			refs.entityMetaRef.current[id] = { kind: 'collider', path: '[Colisionador]', physicsEnabled: true, physicsType: 'static', points: collider.points };
+			const transformFrom3d =
+				collider.position && collider.scale
+					? {
+							position: collider.position,
+							rotation: [0, 0, 0, 1] as [number, number, number, number],
+							scale: collider.scale,
+						}
+					: null;
+			refs.entityMetaRef.current[id] = {
+				kind: 'collider',
+				path: '[Colisionador]',
+				physicsEnabled: true,
+				physicsType: 'static',
+				points: collider.points,
+			};
 			const transformFromPoints = buildTransformFromPoints(collider.points);
-			if (transformFromPoints) {
+			if (transformFrom3d) {
+				refs.entityTransformsRef.current[id] = transformFrom3d;
+			} else if (transformFromPoints) {
 				refs.entityTransformsRef.current[id] = transformFromPoints;
 			}
 			dispatch({ type: 'ADD_COLLIDER', payload: { id, path: '[Colisionador]' } });
@@ -2064,11 +2114,32 @@ export function createEngineEventHandler({
 
 		if (event.event === 'execution_area_created') {
 			if (refs.sceneImportInProgressRef.current) return;
-			const area = event as { id?: number; points?: [[number, number], [number, number], [number, number], [number, number]] };
+			const area = event as {
+				id?: number
+				points?: [[number, number], [number, number], [number, number], [number, number]]
+				position?: [number, number, number]
+				scale?: [number, number, number]
+			};
 			const id = area.id ?? -1;
-			refs.entityMetaRef.current[id] = { kind: 'execution_area', path: '[ExecutionArea]', physicsEnabled: false, physicsType: 'static', points: area.points };
+			const transformFrom3d =
+				area.position && area.scale
+					? {
+							position: area.position,
+							rotation: [0, 0, 0, 1] as [number, number, number, number],
+							scale: area.scale,
+						}
+					: null;
+			refs.entityMetaRef.current[id] = {
+				kind: 'execution_area',
+				path: '[ExecutionArea]',
+				physicsEnabled: false,
+				physicsType: 'static',
+				points: area.points,
+			};
 			const transformFromPoints = buildTransformFromPoints(area.points);
-			if (transformFromPoints) {
+			if (transformFrom3d) {
+				refs.entityTransformsRef.current[id] = transformFrom3d;
+			} else if (transformFromPoints) {
 				refs.entityTransformsRef.current[id] = transformFromPoints;
 			}
 			const queue = refs.pendingRestoresRef.current.get('[ExecutionArea]');

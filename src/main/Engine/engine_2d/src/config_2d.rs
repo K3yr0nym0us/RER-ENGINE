@@ -963,7 +963,12 @@ pub(crate) fn restore_animation_frame(&mut self, id: u32) {
                 }
 
                 log::debug!("[trigger] entrada detectada: trigger={} actor={}", trigger_id, actor_id);
-                crate::ipc::send_event(&crate::ipc::EngineEvent::TriggerEntered { trigger_id, actor_id: *actor_id });
+                let has_attached_script = self.script_engine.entity_has_scripts(trigger_id);
+                crate::ipc::send_event(&crate::ipc::EngineEvent::TriggerEntered {
+                    trigger_id,
+                    actor_id: *actor_id,
+                    has_attached_script: Some(has_attached_script),
+                });
 
                 let trigger_snapshot = self.build_script_snapshot(trigger_id);
                 let actor_snapshot = self.build_script_snapshot(*actor_id);

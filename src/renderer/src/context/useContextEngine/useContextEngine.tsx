@@ -173,6 +173,8 @@ export function EngineProvider({
 
 	const value: EngineContextValue = {
 		...state,
+		projectType,
+		gameStyle,
 		dispatch,
 		pendingImportSceneRef: refs.pendingImportSceneRef,
 		sceneImportInProgressRef: refs.sceneImportInProgressRef,

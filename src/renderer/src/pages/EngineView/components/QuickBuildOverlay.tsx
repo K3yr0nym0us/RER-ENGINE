@@ -1,6 +1,7 @@
 import type { RefObject } from 'react'
 
 import { useQuickBuildPlacement } from '@hooks'
+import { usePlaneToolPlacement } from '@hooks'
 
 /**
  * Activa el modo de construcción rápida registrando el hook IPC.
@@ -13,6 +14,7 @@ export function QuickBuildOverlay({
   viewportRef: RefObject<HTMLDivElement | null>
 }) {
   useQuickBuildPlacement(viewportRef)
+  usePlaneToolPlacement(viewportRef)
   return null
 }
 

@@ -1,5 +1,6 @@
 import { useEffect, useRef, type RefObject } from 'react'
 import { useQuickBuild } from '../context/QuickBuildContext'
+import { usePlaneTool } from '../context/PlaneToolContext'
 import { useContextEngine } from '@engine'
 import type { PendingRestore } from '../context/useContextEngine/types'
 import type { BluePrintEntry } from '@shared-types'
@@ -26,6 +27,7 @@ function resolvePreviewKind(bp: BluePrintEntry, is3D: boolean): string {
  */
 export function useQuickBuildPlacement(viewportRef: RefObject<HTMLDivElement | null>) {
   const { activeBluePrint } = useQuickBuild()
+  const { activePlaneTool, setActivePlaneTool } = usePlaneTool()
   const {
     engineReady,
     projectType,
@@ -44,6 +46,8 @@ export function useQuickBuildPlacement(viewportRef: RefObject<HTMLDivElement | n
   const is3D = projectType === '3D'
   const is3DRef = useRef(is3D)
   const activeBluePrintRef = useRef(activeBluePrint)
+  const hadBluePrintRef = useRef(false)
+  const activePlaneToolRef = useRef(activePlaneTool)
   useEffect(() => {
     is3DRef.current = projectType === '3D'
   }, [projectType])
@@ -51,11 +55,21 @@ export function useQuickBuildPlacement(viewportRef: RefObject<HTMLDivElement | n
     activeBluePrintRef.current = activeBluePrint
     quickBuildActiveBlueprintIdRef.current = activeBluePrint?.id ?? null
   }, [activeBluePrint, quickBuildActiveBlueprintIdRef])
+  useEffect(() => {
+    activePlaneToolRef.current = activePlaneTool
+  }, [activePlaneTool])
+
+  useEffect(() => {
+    if (activeBluePrint) {
+      setActivePlaneTool(null)
+    }
+  }, [activeBluePrint, setActivePlaneTool])
 
   useEffect(() => {
     if (!engineReady) return
 
     if (activeBluePrint) {
+      hadBluePrintRef.current = true
       const modelPath = resolveBlueprintModelPath(activeBluePrint)
       const enginePath = resolveEngineModelPath(modelPath, models)
       const firstFrame = activeBluePrint.animations?.[0]?.frames?.[0]
@@ -125,7 +139,8 @@ export function useQuickBuildPlacement(viewportRef: RefObject<HTMLDivElement | n
             : undefined,
         })
       }
-    } else {
+    } else if (hadBluePrintRef.current && !activePlaneToolRef.current) {
+      hadBluePrintRef.current = false
       send({ cmd: 'set_active_tool', tool: '' })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

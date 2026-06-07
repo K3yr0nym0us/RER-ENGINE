@@ -223,3 +223,36 @@ pub fn start_position_tracker(engine_xid: u32, parent_xid: u32, offset: TrackerO
         })
         .expect("No se pudo crear el hilo position-tracker");
 }
+
+/// Devuelve el foco del teclado a la ventana Electron (padre del overlay).
+pub fn focus_overlay_parent_window(parent_id: u64) {
+    if parent_id == 0 {
+        return;
+    }
+    #[cfg(target_os = "windows")]
+    {
+        use windows::Win32::Foundation::HWND;
+        use windows::Win32::UI::WindowsAndMessaging::{
+            AllowSetForegroundWindow, SetForegroundWindow, ShowWindow, ASFW_ANY, SW_SHOW,
+        };
+        unsafe {
+            let _ = AllowSetForegroundWindow(ASFW_ANY);
+            let hwnd = HWND(parent_id as isize);
+            let _ = ShowWindow(hwnd, SW_SHOW);
+            let _ = SetForegroundWindow(hwnd);
+        }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        unsafe {
+            let display = x11::xlib::XOpenDisplay(std::ptr::null());
+            if display.is_null() {
+                return;
+            }
+            x11::xlib::XRaiseWindow(display, parent_id);
+            x11::xlib::XSetInputFocus(display, parent_id, x11::xlib::RevertToParent, x11::xlib::CurrentTime);
+            x11::xlib::XFlush(display);
+            x11::xlib::XCloseDisplay(display);
+        }
+    }
+}

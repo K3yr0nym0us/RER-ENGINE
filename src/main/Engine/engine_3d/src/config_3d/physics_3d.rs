@@ -183,49 +183,17 @@ impl PhysicsWorld {
         self.colliders.insert(collider)
     }
 
-    pub(crate) fn add_dynamic_box(
+    pub(crate) fn add_static_oriented_box(
         &mut self,
         position: [f32; 3],
+        rotation: UnitQuaternion<f32>,
         half_extents: [f32; 3],
     ) -> (RigidBodyHandle, ColliderHandle) {
-        let body = RigidBodyBuilder::dynamic()
-            .translation(vector![position[0], position[1], position[2]])
-            .build();
-        let handle = self.bodies.insert(body);
-        let collider = ColliderBuilder::cuboid(half_extents[0], half_extents[1], half_extents[2])
-            .restitution(0.3)
-            .build();
-        let collider_handle =
-            self.colliders
-                .insert_with_parent(collider, handle, &mut self.bodies);
-        (handle, collider_handle)
-    }
-
-    pub(crate) fn add_static_box(
-        &mut self,
-        position: [f32; 3],
-        half_extents: [f32; 3],
-    ) -> (RigidBodyHandle, ColliderHandle) {
-        let body = RigidBodyBuilder::fixed()
-            .translation(vector![position[0], position[1], position[2]])
-            .build();
-        let handle = self.bodies.insert(body);
-        let collider = ColliderBuilder::cuboid(half_extents[0], half_extents[1], half_extents[2])
-            .build();
-        let collider_handle =
-            self.colliders
-                .insert_with_parent(collider, handle, &mut self.bodies);
-        (handle, collider_handle)
-    }
-
-    pub(crate) fn add_kinematic_box(
-        &mut self,
-        position: [f32; 3],
-        half_extents: [f32; 3],
-    ) -> (RigidBodyHandle, ColliderHandle) {
-        let body = RigidBodyBuilder::kinematic_position_based()
-            .translation(vector![position[0], position[1], position[2]])
-            .build();
+        let pose = Isometry::from_parts(
+            Translation3::new(position[0], position[1], position[2]),
+            rotation,
+        );
+        let body = RigidBodyBuilder::fixed().position(pose).build();
         let handle = self.bodies.insert(body);
         let collider = ColliderBuilder::cuboid(half_extents[0], half_extents[1], half_extents[2])
             .build();
@@ -243,6 +211,26 @@ impl PhysicsWorld {
         position: [f32; 3],
         half_ext: [f32; 3],
     ) {
+        self.set_entity_physics_oriented(
+            entity,
+            enabled,
+            body_type,
+            position,
+            glam::Quat::IDENTITY,
+            half_ext,
+        );
+    }
+
+    /// Caja con rotación (muros invisibles del editor: alineados al yaw del transform).
+    pub(crate) fn set_entity_physics_oriented(
+        &mut self,
+        entity: EntityId,
+        enabled: bool,
+        body_type: &str,
+        position: [f32; 3],
+        rotation: glam::Quat,
+        half_ext: [f32; 3],
+    ) {
         if let Some(handle) = self.entity_bodies.remove(&entity) {
             self.entity_body_types.remove(&entity);
             self.entity_colliders.remove(&entity);
@@ -257,10 +245,39 @@ impl PhysicsWorld {
             half_ext[1].max(0.01),
             half_ext[2].max(0.01),
         ];
+        let rot = glam_quat_to_unit(rotation);
+        let pose = |pos: [f32; 3]| {
+            Isometry::from_parts(
+                Translation3::new(pos[0], pos[1], pos[2]),
+                rot,
+            )
+        };
         let (handle, collider_handle) = match body_type {
-            "static" => self.add_static_box(position, half),
-            "kinematic" => self.add_kinematic_box(position, half),
-            _ => self.add_dynamic_box(position, half),
+            "static" => self.add_static_oriented_box(position, rot, half),
+            "kinematic" => {
+                let body = RigidBodyBuilder::kinematic_position_based()
+                    .position(pose(position))
+                    .build();
+                let handle = self.bodies.insert(body);
+                let collider = ColliderBuilder::cuboid(half[0], half[1], half[2]).build();
+                let collider_handle =
+                    self.colliders
+                        .insert_with_parent(collider, handle, &mut self.bodies);
+                (handle, collider_handle)
+            }
+            _ => {
+                let body = RigidBodyBuilder::dynamic()
+                    .position(pose(position))
+                    .build();
+                let handle = self.bodies.insert(body);
+                let collider = ColliderBuilder::cuboid(half[0], half[1], half[2])
+                    .restitution(0.3)
+                    .build();
+                let collider_handle =
+                    self.colliders
+                        .insert_with_parent(collider, handle, &mut self.bodies);
+                (handle, collider_handle)
+            }
         };
         self.entity_bodies.insert(entity, handle);
         self.entity_colliders.insert(entity, collider_handle);
@@ -725,6 +742,10 @@ impl PhysicsWorld {
 
         self.refresh_queries();
     }
+}
+
+fn glam_quat_to_unit(q: glam::Quat) -> UnitQuaternion<f32> {
+    UnitQuaternion::from_quaternion(Quaternion::new(q.w, q.x, q.y, q.z))
 }
 
 fn capsule_center_from_feet(feet: Vec3, up: Vec3, radius: f32, half_height: f32) -> Vec3 {

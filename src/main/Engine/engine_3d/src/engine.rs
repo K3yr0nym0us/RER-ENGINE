@@ -85,6 +85,10 @@ pub struct State {
     pub(crate) spatial_grid: crate::spatial::SpatialGrid,
     pub(crate) scenario_entities: Vec<EntityId>,
     pub(crate) character_entities: Vec<EntityId>,
+    pub(crate) collider_entities: Vec<EntityId>,
+    pub(crate) execution_area_entities: Vec<EntityId>,
+    /// Pares (trigger, actor) dentro de un execution area en play (3D).
+    pub(crate) execution_overlaps: std::collections::HashSet<(EntityId, EntityId)>,
     pub(crate) background_entity: Option<EntityId>,
     pub(crate) background_path: Option<String>,
     pub(crate) grid_config: GridConfig,
@@ -97,6 +101,18 @@ pub struct State {
     pub(crate) shift_held: bool,
     pub active_tool: ActiveTool,
     pub(crate) quick_build_ghost_id: Option<EntityId>,
+    pub(crate) plane_tool_ghost_id: Option<EntityId>,
+    pub(crate) plane_tool_preview_scale: Option<[f32; 3]>,
+    pub(crate) plane_tool_tex_cache: std::collections::HashMap<[u8; 4], usize>,
+    /// Reservado (obsoleto): rotación Q/E solo vía polling OS en el tick del motor.
+    pub(crate) plane_tool_rotate_left: bool,
+    pub(crate) plane_tool_rotate_right: bool,
+    /// Ventana nativa con foco: rotación vía OS. Sin foco: flags IPC (sidebar Electron).
+    pub(crate) engine_window_focused: bool,
+    /// HWND/XID de la ventana Electron (padre del overlay); devolver foco al colocar herramientas plano.
+    pub(crate) editor_parent_id: u64,
+    /// Última posición del cursor en píxeles del viewport (ghost de herramientas).
+    pub(crate) tool_cursor_pixels: Option<(f32, f32)>,
     pub(crate) quick_build_preview_path: Option<String>,
     pub(crate) quick_build_preview_kind: Option<String>,
     pub(crate) quick_build_preview_scale: Option<[f32; 3]>,
@@ -242,6 +258,8 @@ pub struct State {
     /// Cubo blanco compartido para `[EditorBox]` (plantilla y `.save`).
     pub(crate) editor_box_mesh_idx: Option<usize>,
     pub(crate) editor_box_tex_idx: Option<usize>,
+    /// Quad delgado compartido para muros/triggers 3D (colisionador / execution area).
+    pub(crate) plane_tool_wall_mesh_idx: Option<usize>,
     pub(crate) directional_light_dir: GlamVec3,
     pub(crate) directional_light_color: GlamVec3,
     pub(crate) directional_light_ambient: f32,

@@ -8,6 +8,7 @@ use rodio::Source as RodioSource;
 use winit::dpi::PhysicalSize;
 
 use crate::config_compat::ActiveTool;
+use crate::config_3d::plane_tools::{PlaneToolKind, plane_tool_scale_from_preview};
 use crate::ecs::{NameComponent, Transform};
 use crate::gizmo;
 use crate::ipc::{send_event, AnimationFrameData, EngineCommand, EngineEvent};
@@ -309,7 +310,13 @@ impl State {
                     (Some(x), Some(y)) => Some((x, y)),
                     _ => None,
                 };
-                self.place_quick_build_at_cursor(pixels);
+                if !self.place_plane_tool_at_cursor(pixels) {
+                    self.place_quick_build_at_cursor(pixels);
+                }
+            }
+            EngineCommand::SetPlaneToolRotateHeld { .. } => {
+                // Obsoleto: rotación Q/E solo vía polling OS en apply_plane_tool_held_rotation.
+                log::debug!("[plane_rot] IPC set_rotate_held ignorado (detección solo en motor)");
             }
             EngineCommand::ReplaceEntityModel { id, path } => {
                 self.replace_entity_model(id, &path);
@@ -752,7 +759,11 @@ impl State {
                 log::info!("[audio] detenido por comando externo");
             }
             EngineCommand::RemoveEntity { id } => {
-                let removed_kind = if self.scenario_entities.contains(&id) {
+                let removed_kind = if self.collider_entities.contains(&id) {
+                    "collider"
+                } else if self.execution_area_entities.contains(&id) {
+                    "execution_area"
+                } else if self.scenario_entities.contains(&id) {
                     "scenario"
                 } else if self.character_entities.contains(&id) {
                     "character"
@@ -774,6 +785,10 @@ impl State {
                 self.physics.remove_entity_body(id);
                 self.scenario_entities.retain(|&e| e != id);
                 self.character_entities.retain(|&e| e != id);
+                self.collider_entities.retain(|&e| e != id);
+                self.execution_area_entities.retain(|&e| e != id);
+                self.execution_overlaps
+                    .retain(|(trigger_id, actor_id)| *trigger_id != id && *actor_id != id);
                 self.entity_facing_right.remove(&id);
                 self.default_animation_by_entity.remove(&id);
                 self.unbind_model_animations(id);
@@ -1021,6 +1036,8 @@ impl State {
                     self.emit_play_character_view_changed(false);
                 }
 
+                self.execution_overlaps.clear();
+
                 log::info!("[preview] modo {}", if playing { "juego" } else { "editor" });
             }
             EngineCommand::SetCtrlHeld { held } => {
@@ -1120,6 +1137,7 @@ impl State {
                     if let Some(ghost_id) = self.quick_build_ghost_id.take() {
                         self.world.despawn(ghost_id);
                     }
+                    self.deactivate_plane_tool();
                     self.quick_build_preview_path = None;
                     self.quick_build_preview_kind = None;
                     self.quick_build_preview_scale = None;
@@ -1134,16 +1152,28 @@ impl State {
                     if let Some(ghost_id) = self.quick_build_ghost_id.take() {
                         self.world.despawn(ghost_id);
                     }
+                    let plane_tool_cmd = matches!(tool.as_str(), "draw_collider" | "draw_execution_area");
+                    if !plane_tool_cmd {
+                        self.deactivate_plane_tool();
+                    }
                     self.quick_build_preview_path = None;
                     self.quick_build_preview_kind = None;
                     self.quick_build_preview_scale = None;
                     self.quick_build_blueprint = None;
                     match tool.as_str() {
-                        "draw_collider" | "draw_execution_area" => {
-                            log::warn!(
-                                "[engine_3d] herramienta '{tool}' no disponible (solo 2D)"
+                        "draw_collider" => {
+                            let scale = plane_tool_scale_from_preview(preview_scale);
+                            self.sync_plane_tool_from_set_active(
+                                PlaneToolKind::Collider,
+                                [scale[0], scale[1]],
                             );
-                            self.active_tool = ActiveTool::None;
+                        }
+                        "draw_execution_area" => {
+                            let scale = plane_tool_scale_from_preview(preview_scale);
+                            self.sync_plane_tool_from_set_active(
+                                PlaneToolKind::ExecutionArea,
+                                [scale[0], scale[1]],
+                            );
                         }
                         "quick_build_place" => {
                             self.active_tool = ActiveTool::QuickBuildPlace { cursor_world: None };

@@ -26,6 +26,8 @@ const ENTITY_MARKERS: &[&str] = &[
     "[EditorCamera]",
     "[Sun]",
     "[Ball]",
+    "[Colisionador]",
+    "[ExecutionArea]",
 ];
 
 // ── Manifest: nombres de campo = claves JSON en `src/shared-types/types.ts`. ─
@@ -366,6 +368,14 @@ fn is_editor_box_path(p: &str) -> bool {
 
 fn is_ball_path(p: &str) -> bool {
     entity_path_marker(p) == Some("[Ball]")
+}
+
+fn is_collider_path(p: &str) -> bool {
+    entity_path_marker(p) == Some("[Colisionador]")
+}
+
+fn is_execution_area_path(p: &str) -> bool {
+    entity_path_marker(p) == Some("[ExecutionArea]")
 }
 
 fn is_model_3d_path(p: &str) -> bool {
@@ -1411,6 +1421,42 @@ fn apply_loaded_proyect_3d_with_scene(
                 log::warn!(
                     "manifest: entidad player en entities ignorada; usar objeto player del manifest"
                 );
+            }
+            _ if is_collider_path(&entity.model) => {
+                log::info!(
+                    "Colocando colisionador «{}» en [{:.1}, {:.1}, {:.1}]",
+                    entity.name,
+                    entity.position[0],
+                    entity.position[1],
+                    entity.position[2]
+                );
+                if let Some(id) = state.restore_collider_plane_from_save(
+                    &entity.name,
+                    entity.position,
+                    entity.scale,
+                    entity.rotation,
+                    None,
+                ) {
+                    apply_full_entity_restore(state, id, &pending, "[Colisionador]", false, false);
+                }
+            }
+            _ if is_execution_area_path(&entity.model) => {
+                log::info!(
+                    "Colocando trigger «{}» en [{:.1}, {:.1}, {:.1}]",
+                    entity.name,
+                    entity.position[0],
+                    entity.position[1],
+                    entity.position[2]
+                );
+                if let Some(id) = state.restore_trigger_plane_from_save(
+                    &entity.name,
+                    entity.position,
+                    entity.scale,
+                    entity.rotation,
+                    None,
+                ) {
+                    apply_full_entity_restore(state, id, &pending, "[ExecutionArea]", false, false);
+                }
             }
             _ if is_editor_box_path(&entity.model) => {
                 log::info!(

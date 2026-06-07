@@ -245,6 +245,7 @@ impl State {
             self.autosave_last_tick = now;
         }
         self.update_scripts();
+        self.apply_plane_tool_held_rotation();
         self.update_scene_scripts();
         if self.preview_playing {
             let skip_sync = self
@@ -253,6 +254,7 @@ impl State {
                 .unwrap_or_default();
             self.physics
                 .step(self.delta_time, &mut self.world, &skip_sync);
+            self.update_execution_areas_3d();
         }
     }
 }

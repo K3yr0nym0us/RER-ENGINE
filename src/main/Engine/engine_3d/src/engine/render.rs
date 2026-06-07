@@ -161,7 +161,16 @@ impl State {
         }
         let mut batches: Vec<Batch> = Vec::new();
         for (entity_id, mesh_idx, tex_idx, model_matrix, _layer) in &entities {
-            if self.quick_build_ghost_id == Some(*entity_id) {
+            if self.quick_build_ghost_id == Some(*entity_id)
+                || self.plane_tool_ghost_id == Some(*entity_id)
+            {
+                continue;
+            }
+            if self.preview_playing
+                && !self.debug_mode
+                && (self.collider_entities.contains(entity_id)
+                    || self.execution_area_entities.contains(entity_id))
+            {
                 continue;
             }
             let is_selected =
@@ -176,7 +185,11 @@ impl State {
                 0.0_f32
             };
             let layer = self.texture_layer_for(*tex_idx);
-            let inst = crate::mesh::InstanceData::new(*model_matrix, flag, layer);
+            let mut inst = crate::mesh::InstanceData::new(*model_matrix, flag, layer);
+            if self.is_plane_wall_entity(*entity_id) {
+                inst.flag_pad[1] = crate::config_3d::plane_tools::PLANE_WALL_VISUAL_ALPHA;
+                inst.flag_pad[2] = crate::config_3d::plane_tools::PLANE_WALL_RENDER_KIND;
+            }
             let can_extend = batches.last().map_or(false, |b| {
                 b.mesh_idx == *mesh_idx && b.texture_layer == layer
             });
@@ -191,10 +204,41 @@ impl State {
             }
         }
 
-        let ghost_overlay = self.build_quick_build_ghost_overlay();
+        let ghost_overlay = self.build_tool_ghost_overlay();
 
         let skinned_shadow = self.collect_skinned_draw_instances();
         let skinned_main = skinned_shadow.clone();
+
+        let mut shadow_batches: Vec<Batch> = Vec::new();
+        for (entity_id, mesh_idx, _tex_idx, model_matrix, _layer) in &entities {
+            if self.quick_build_ghost_id == Some(*entity_id)
+                || self.plane_tool_ghost_id == Some(*entity_id)
+            {
+                continue;
+            }
+            if self.is_plane_wall_entity(*entity_id) {
+                continue;
+            }
+            if self.sun_entity == Some(*entity_id) {
+                continue;
+            }
+            if *mesh_idx == 0 {
+                continue;
+            }
+            let inst = crate::mesh::InstanceData::new(*model_matrix, 0.0, self.fallback_layer);
+            let can_extend = shadow_batches
+                .last()
+                .map_or(false, |b| b.mesh_idx == *mesh_idx);
+            if can_extend {
+                shadow_batches.last_mut().unwrap().instances.push(inst);
+            } else {
+                shadow_batches.push(Batch {
+                    mesh_idx: *mesh_idx,
+                    texture_layer: self.fallback_layer,
+                    instances: vec![inst],
+                });
+            }
+        }
 
         let mut instance_slices = Vec::with_capacity(batches.len());
         for b in &batches {
@@ -205,32 +249,6 @@ impl State {
                 .upload(&self.device, &self.queue, &instance_slices);
 
         {
-            let mut shadow_batches: Vec<Batch> = Vec::new();
-            for (entity_id, mesh_idx, _tex_idx, model_matrix, _layer) in &entities {
-                if self.quick_build_ghost_id == Some(*entity_id) {
-                    continue;
-                }
-                if self.sun_entity == Some(*entity_id) {
-                    continue;
-                }
-                if *mesh_idx == 0 {
-                    continue;
-                }
-                let inst =
-                    crate::mesh::InstanceData::new(*model_matrix, 0.0, self.fallback_layer);
-                let can_extend = shadow_batches
-                    .last()
-                    .map_or(false, |b| b.mesh_idx == *mesh_idx);
-                if can_extend {
-                    shadow_batches.last_mut().unwrap().instances.push(inst);
-                } else {
-                    shadow_batches.push(Batch {
-                        mesh_idx: *mesh_idx,
-                        texture_layer: self.fallback_layer,
-                        instances: vec![inst],
-                    });
-                }
-            }
             let mut shadow_slices = Vec::with_capacity(shadow_batches.len());
             for b in &shadow_batches {
                 shadow_slices.push(b.instances.as_slice());

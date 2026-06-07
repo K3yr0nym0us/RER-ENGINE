@@ -65,7 +65,14 @@ export function useControlBindingsRuntime() {
   const pressedKeysRef = useRef<Set<string>>(new Set())
   const pressedMouseRef = useRef<Set<string>>(new Set())
 
+  // Solo capturar teclado/ratón en preview/play; en edición el motor y las herramientas usan Q/R, etc.
   useEffect(() => {
+    if (!previewPlaying) {
+      pressedKeysRef.current.clear()
+      pressedMouseRef.current.clear()
+      return
+    }
+
     const onKeyDown = (event: KeyboardEvent) => {
       const mapped = KEY_MAP[event.code]
       if (!mapped) return
@@ -107,8 +114,10 @@ export function useControlBindingsRuntime() {
       window.removeEventListener('mousedown', onMouseDown)
       window.removeEventListener('mouseup', onMouseUp)
       window.removeEventListener('blur', onBlur)
+      pressedKeysRef.current.clear()
+      pressedMouseRef.current.clear()
     }
-  }, [])
+  }, [previewPlaying])
 
   useEffect(() => {
     let rafId = 0

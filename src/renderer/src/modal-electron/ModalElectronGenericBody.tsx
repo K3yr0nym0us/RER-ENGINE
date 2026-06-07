@@ -21,7 +21,9 @@ export function ModalElectronGenericBody({ payload, onClose }: ModalElectronGene
 	if (!Component) {
 		return (
 			<p className="text-danger small mb-0">
-				Componente modal no soportado: {payload.componentKey}
+				Componente modal no soportado: <strong>{payload.componentKey}</strong>.
+				{' '}Regístralo en <code>modalElectronRegistry.tsx</code> (ver{' '}
+				<code>docs/MODAL_ELECTRON.yaml</code>).
 			</p>
 		)
 	}

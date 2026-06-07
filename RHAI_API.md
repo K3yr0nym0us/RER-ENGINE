@@ -31,7 +31,7 @@ fn on_stop(entity) {
 |----------|--------|
 | `on_press(entity, control_key)` | Tecla/control asignado — **una vez por pulsación** (sin autorepeat; ver [Gravedad y controles 2D](#gravedad-y-controles-2d)) |
 | `on_keep(entity, control_key)` | Tecla/control mantenido — cada frame mientras se mantiene pulsado |
-| `on_trigger_enter(trigger, actor)` | Un actor entra en un *execution area* (solo 2D) |
+| `on_trigger_enter(trigger, actor)` | Un actor entra en un *execution area* (2D AABB; 3D plano orientado) |
 
 **Scripts de escena** (Level Blueprint / nodos visuales):
 
@@ -103,7 +103,7 @@ Herramientas del plano lateral y plataformas:
 | `engine.move_control(id, speed)` | Movimiento según la tecla del binding activo (`A`/`D`/`W`/`S`, `D-LEFT`, etc.). El motor resuelve la dirección; no compares la tecla en el script. |
 | `engine.set_vsync(enabled)` | Activa o desactiva V-Sync. |
 
-**Triggers:** coloca un script en un *execution area* y usa `on_trigger_enter(trigger, actor)` para reaccionar cuando otro personaje entra.
+**Triggers:** coloca un script en un *execution area* (2D o trigger plano 3D) y usa `on_trigger_enter(trigger, actor)` para reaccionar cuando otro personaje entra. En el editor, el panel de logs muestra `[trigger]` al activarse (con/sin código adjunto).
 
 ### Gravedad y controles (2D)
 

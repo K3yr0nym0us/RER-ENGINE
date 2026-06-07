@@ -75,6 +75,7 @@ impl State {
         self.tex_layers.clear();
         self.editor_box_mesh_idx = None;
         self.editor_box_tex_idx = None;
+        self.plane_tool_wall_mesh_idx = None;
         self.static_model_cache.clear();
         self.model_assets.clear();
         self.model_store.clear();
@@ -92,6 +93,9 @@ impl State {
         self.entity_facing_right.clear();
         self.scenario_entities.clear();
         self.character_entities.clear();
+        self.collider_entities.clear();
+        self.execution_area_entities.clear();
+        self.execution_overlaps.clear();
         self.background_entity = None;
         self.background_path = None;
         self.save_registry.clear();
@@ -103,6 +107,8 @@ impl State {
         self.ctrl_held = false;
         self.active_tool = ActiveTool::None;
         self.quick_build_ghost_id = None;
+        self.plane_tool_ghost_id = None;
+        self.plane_tool_preview_scale = None;
         self.quick_build_preview_path = None;
         self.quick_build_preview_kind = None;
         self.quick_build_preview_scale = None;
@@ -524,6 +530,9 @@ impl State {
         self.entity_facing_right.clear();
         self.scenario_entities.clear();
         self.character_entities.clear();
+        self.collider_entities.clear();
+        self.execution_area_entities.clear();
+        self.execution_overlaps.clear();
         self.background_entity = None;
         self.background_path = None;
         self.save_registry.clear();
@@ -535,6 +544,8 @@ impl State {
         self.ctrl_held = false;
         self.active_tool = ActiveTool::None;
         self.quick_build_ghost_id = None;
+        self.plane_tool_ghost_id = None;
+        self.plane_tool_preview_scale = None;
         self.quick_build_preview_path = None;
         self.quick_build_preview_kind = None;
         self.quick_build_preview_scale = None;

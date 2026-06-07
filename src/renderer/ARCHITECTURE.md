@@ -85,6 +85,12 @@ Flujo típico:
 
 Al salir de edición (`endUiScreenEdit`), cancelar dibujo de objeto en el hook para alinear estado local con el motor.
 
+## Modales (`useModal` / Electron)
+
+Todos los diálogos del editor usan **ventana Electron hija**, no `<Modal>` in-process. Cada cuerpo modal debe registrarse en `modal-electron/modalElectronRegistry.tsx`; si no, el usuario ve *Componente modal no soportado*.
+
+Guía completa y checklist: [`docs/MODAL_ELECTRON.yaml`](../../docs/MODAL_ELECTRON.yaml).
+
 ## Programación visual (nodos → Rhai)
 
 Editor de grafos que compila a scripts Rhai para **escena** (`on_scene_start`, `on_scene_tick`) o **entidad** (`on_start`, `update`). Modelo completo: [`docs/Programing_Model.yaml`](../../docs/Programing_Model.yaml).
@@ -149,7 +155,7 @@ El front **no** decide qué entidades ni qué modelos precargados van al save ni
 ## Relacion con los dos motores
 
 - Proyecto **2D** → proceso `rer_engine_2d`; UI usa herramientas 2D (colliders, areas de ejecucion, `camera_2d_updated`).
-- Proyecto **3D** FP → proceso `rer_engine_3d`; UI de camara FP y jugador sigue el contrato anterior.
+- Proyecto **3D** FP → proceso `rer_engine_3d`; UI de camara FP y jugador sigue el contrato anterior; herramientas plano (colisionador/trigger) vía `usePlaneToolPlacement` + `set_active_tool` / `place_quick_build_at_cursor`.
 - `set_scene` / `projectType` eligen binario en main; el renderer no mezcla semantica de ambos en un mismo modulo de runtime.
 
 Documentacion de motores:
@@ -164,6 +170,7 @@ Documentacion de motores:
 - `src/pages/EngineView/` — layout del editor, sidebars, `ScenesAccordion`.
 - `src/defaults/` — plantillas y restauracion de escena (intencion, no fisica).
 - `src/hooks/useAutoSave.ts` — snapshot del motor (2D y 3D).
+- `src/hooks/usePlaneToolPlacement.ts` — herramientas plano 3D (colisionador / trigger): toggle, IPC, foco al colocar.
 - `src/hooks/usePlayerUiObjectDrawing.ts` — modo dibujo de objetos HUD (progreso `toolProgress`).
 - `src/defaults/buildProjectSaveFromEngine.ts` — IPC `export_save_snapshot` y merge a `ProjectSaveData`.
 - `src/defaults/defaultSceneName.ts` — nombres `Scene-NN` locales (misma regla que `editor_defaults` en Rust).

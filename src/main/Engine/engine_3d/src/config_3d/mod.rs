@@ -28,6 +28,9 @@ pub(crate) mod model_animation;
 pub(crate) mod collision_overlay;
 pub(crate) mod physics_3d;
 pub(crate) mod quick_build;
+pub(crate) mod plane_tools;
+pub(crate) mod execution_areas_3d;
+pub(crate) mod plane_tool_rotate_dbg;
 pub(crate) mod static_model_cache;
 pub(crate) mod world_bounds;
 pub(crate) mod player_ui;
@@ -258,12 +261,24 @@ impl State {
         if !self.physics.has_physics(id) {
             return;
         }
+        if self.is_plane_wall_entity(id) && self.collider_entities.contains(&id) {
+            self.sync_plane_wall_physics(id);
+            return;
+        }
         let body_type = self.physics.get_body_type(id).to_string();
         self.set_entity_physics_from_mesh_aabb(id, &body_type);
     }
 
     /// Aplica `colision` tras spawn/carga o cambio de modelo según categoría y tipo de mesh.
     pub(crate) fn reconcile_entity_physics_with_mesh(&mut self, id: EntityId) {
+        if self.is_plane_wall_entity(id) {
+            if self.collider_entities.contains(&id)
+                && self.entity_colision.get(&id).copied().unwrap_or(true)
+            {
+                self.sync_plane_wall_physics(id);
+            }
+            return;
+        }
         if !self.entity_colision.get(&id).copied().unwrap_or(true) {
             if self.play_character_entity != Some(id) {
                 self.physics.remove_entity_body(id);
@@ -977,7 +992,9 @@ impl State {
                 t.position += axis_world * world_delta;
             }
             if let Some(t) = self.world.get::<Transform>(sel_id).cloned() {
-                if self.physics.has_physics(sel_id) {
+                if self.is_plane_wall_entity(sel_id) && self.collider_entities.contains(&sel_id) {
+                    self.sync_plane_wall_physics(sel_id);
+                } else if self.physics.has_physics(sel_id) {
                     let half = [
                         (t.scale.x * 0.5).max(0.01),
                         (t.scale.y * 0.5).max(0.01),

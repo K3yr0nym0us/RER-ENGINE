@@ -352,6 +352,14 @@ pub enum EngineCommand {
         #[serde(default)]
         preview_blueprint: Option<BlueprintPlacementMeta>,
     },
+    /// Obsoleto: la rotación Q/E se detecta en el motor vía polling OS.
+    #[allow(dead_code)]
+    SetPlaneToolRotateHeld {
+        #[serde(alias = "left")]
+        rotate_left: bool,
+        #[serde(alias = "right")]
+        rotate_right: bool,
+    },
     /// Activar modo edición de pivot: muestra el frame en la entidad y captura el siguiente click.
     /// pivot_x/pivot_y: coordenadas del pivot ya asignado (para mostrarlo visualmente).
     SetPivotEditMode { id: u32, frame_path: String, pivot_x: f32, pivot_y: f32 },
@@ -989,6 +997,26 @@ pub enum EngineEvent {
     ToolCancelled,
     /// Progreso de herramienta de dibujo por puntos (colisionador 2D u objeto HUD UI).
     DrawingProgress { count: u32 },
+    /// Colisionador creado (2D: `points`; 3D: `position` + `scale` del muro plano).
+    ColliderCreated {
+        id: u32,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        points: Option<[[f32; 2]; 4]>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        position: Option<[f32; 3]>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        scale: Option<[f32; 3]>,
+    },
+    /// Área de ejecución creada (2D: `points`; 3D: `position` + `scale` del plano trigger).
+    ExecutionAreaCreated {
+        id: u32,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        points: Option<[[f32; 2]; 4]>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        position: Option<[f32; 3]>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        scale: Option<[f32; 3]>,
+    },
     /// Emitido cuando el usuario selecciona el pivot de un frame en modo edición.
     PivotSelected { frame_path: String, pivot_x: f32, pivot_y: f32 },
     /// Emitido cuando una animación termina (no loop) o se detiene.
@@ -1054,6 +1082,8 @@ pub enum EngineEvent {
     BackgroundsList { backgrounds: Vec<BackgroundInfo> },
     /// Ghost de construcción rápida 3D listo para previsualizar.
     QuickBuildGhostReady { path: String, #[serde(skip_serializing_if = "Option::is_none")] name: Option<String> },
+    /// Herramienta muro/trigger 3D activa (ghost listo).
+    PlaneToolReady { tool: String, width: f32, height: f32 },
     /// Emitido cuando el cursor se mueve y la herramienta quick_build_place está activa.
     QuickBuildMove { x: f32, y: f32, #[serde(default)] z: f32 },
     /// Emitido cuando el usuario hace click con la herramienta quick_build_place activa.
@@ -1072,6 +1102,15 @@ pub enum EngineEvent {
     /// Emitido cuando una entidad es eliminada del mundo (por Ctrl+Z, RemoveEntity, etc.).
     /// `kind` permite al frontend sincronizar estado sin inferencias locales.
     EntityRemoved { id: u32, kind: String },
+    /// Emitido cuando un actor entra en un área de ejecución (trigger).
+    TriggerEntered {
+        trigger_id: u32,
+        actor_id: u32,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        has_attached_script: Option<bool>,
+    },
+    /// Emitido cuando un actor sale de un área de ejecución (trigger).
+    TriggerExited { trigger_id: u32, actor_id: u32 },
     /// Emitido cuando el usuario mantiene Ctrl y hace click añadiendo/quitando entidades
     /// a la selección múltiple. `ids` contiene todos los IDs actualmente seleccionados.
     MultiSelectChanged { ids: Vec<u32> },

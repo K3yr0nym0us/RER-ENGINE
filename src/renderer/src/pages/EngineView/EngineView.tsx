@@ -11,6 +11,7 @@ import { EngineGpuErrorOverlay } from './components/EngineGpuErrorOverlay';
 import { EngineProvider } from '@engine';
 import { ModalProvider } from '@modal';
 import { QuickBuildProvider } from '../../context/QuickBuildContext';
+import { PlaneToolProvider } from '../../context/PlaneToolContext';
 import { useAutoSave, useControlBindingsRuntime } from '@hooks';
 import { SceneManagerProvider } from './hooks/useSceneManager';
 
@@ -38,6 +39,7 @@ export function EngineView({
       initialExtractDir={initialExtractDir}
     >
       <QuickBuildProvider>
+        <PlaneToolProvider>
         <ModalProvider>
           <EngineViewInner 
             projectType={projectType} 
@@ -47,6 +49,7 @@ export function EngineView({
             viewportRef={viewportRef} 
           />
         </ModalProvider>
+        </PlaneToolProvider>
       </QuickBuildProvider>
     </EngineProvider>
   )
