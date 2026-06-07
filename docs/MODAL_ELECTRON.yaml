@@ -1,0 +1,92 @@
+# Modales Electron (ventana hija)
+#
+# En RER-ENGINE no hay modales React Bootstrap in-process en el editor principal.
+# useModal() abre una ventana Electron separada para que el viewport del motor (winit)
+# siga visible debajo.
+
+principle: |
+  openModal({ body: <Foo /> }) no renderiza en el DOM del editor; serializa el componente
+  por nombre (componentKey) y lo monta en la ventana modal hija vía IPC.
+
+flow: |
+  Editor (React)                    Ventana modal (React)
+  ─────────────────                 ─────────────────────
+  openModal({ body: <Foo /> })
+    → useModalElectron
+    → getComponentKey(Foo) = "Foo"
+    → serializa props + callbackKeys
+    → IPC openModalElectron ──────→ ModalElectronApp
+                                      → MODAL_ELECTRON_REGISTRY["Foo"]
+                                      → render <Foo {...wiredProps} />
+    ← completeModalElectron ─────── onConfirm(result)
+    → dispatchModalElectronResult
+    → callback en el editor
+
+key_files:
+  - path: src/renderer/src/context/ModalContext.tsx
+    role: useModal() delega en Electron
+  - path: src/renderer/src/hooks/useModalElectron.ts
+    role: Serializa, registra callbacks, abre IPC
+  - path: src/renderer/src/modal-electron/modalElectronRegistry.tsx
+    role: Mapa nombre → componente (registro obligatorio)
+  - path: src/renderer/src/modal-electron/ModalElectronGenericBody.tsx
+    role: Resuelve componente o host especial
+  - path: src/renderer/src/modal-electron/modalElectronCallbacks.ts
+    role: Puente de callbacks (onConfirm, …)
+  - path: src/main/modalElectronWindow.ts
+    role: Ventana nativa Electron
+
+frequent_error:
+  message: "Componente modal no soportado: MiModalBody"
+  cause: |
+    El componente no está registrado en MODAL_ELECTRON_REGISTRY.
+    componentKey = nombre de la función exportada (MiModalBody), no el nombre del archivo.
+
+checklist_new_modal:
+  - step: 1
+    action: Crear cuerpo con nombre de función explícito
+    example: |
+      export function MiModalBody({ onConfirm }: { onConfirm: (data: MiResult) => void }) {
+        const closeModal = useModalClose() // modal-electron, NO @hooks
+        // ...
+      }
+  - step: 2
+    action: Registrar en MODAL_ELECTRON_REGISTRY
+    example: |
+      import { MiModalBody } from '../pages/.../MiModalBody'
+      MiModalBody: modalEntry(MiModalBody),
+    note: La clave del mapa debe coincidir con MiModalBody.name
+  - step: 3
+    action: Props serializables únicamente
+    note: |
+      strings, numbers, booleans, arrays/objetos planos.
+      No JSX, refs ni funciones salvo callbacks conocidos.
+  - step: 4
+    action: Callbacks al padre vía MODAL_CALLBACK_KEYS
+    keys: [onConfirm, onSelect, onCreate, onRename, onCancel, onSave]
+    editor: 'openModal({ body: <MiModalBody onConfirm={(r) => { ... }} /> })'
+    child: onConfirm(result) en el modal; IPC devuelve resultado al padre
+  - step: 5
+    action: Cerrar ventana
+    use: modal-electron/useModalClose.ts
+  - step: 6
+    action: Datos del engine en el modal
+    note: Revisar buildEngineSnapshot.ts; añadir case para componentKey si hace falta
+
+dedicated_hosts:
+  description: |
+    Modales con delegación bidireccional compleja; host propio en ModalElectronGenericBody.tsx
+    (no basta el registro simple).
+  entries:
+    - componentKey: BluePrintModalBody
+      host: BluePrintModalElectronHost
+      extra: delegate IPC en useModalElectron.ts
+    - componentKey: PlayerUiEditorModalBody
+      host: PlayerUiEditorElectronHost
+      extra: sesiones en playerUiEditorSessions.ts
+
+do_not:
+  - Asumir que Modal de react-bootstrap en el editor funcionará encima del motor winit
+  - Olvidar el registro y depender solo de openModal({ body: <X /> })
+  - Usar useContextEngine() dentro del modal hijo (no hay EngineProvider)
+  - Pasar funciones con nombres arbitrarios; solo MODAL_CALLBACK_KEYS cruzan IPC
