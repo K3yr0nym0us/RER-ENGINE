@@ -8,6 +8,7 @@ import type {
   EngineCommand, 
   EngineEvent, 
   Entity3D,
+  SavedEntity,
   GameStyle, 
   EngineStartPayload,
   OpenProjectResult, 
@@ -820,7 +821,58 @@ function toAssetPathKey(filePath: string): string {
   return process.platform === 'win32' ? normalized.toLowerCase() : normalized
 }
 
-function forEachEntity(data: ProjectSaveData, cb: (entity: Entity3D) => void): void {
+/** Entidad 2D (`path`) o 3D (`model`) en manifest. */
+type SaveManifestEntity = Entity3D & Partial<Pick<SavedEntity, 'path' | 'kind' | 'control_bindings'>>
+
+function getEntityAssetPath(entity: SaveManifestEntity): string | undefined {
+  const pathField = entity.path?.trim()
+  if (pathField) return pathField
+  const modelField = entity.model?.trim()
+  if (modelField) return modelField
+  return undefined
+}
+
+function getBlueprintAssetPath(
+  bp: NonNullable<ProjectSaveData['blueprints']>[number],
+): string | undefined {
+  const pathField = bp.path?.trim()
+  if (pathField) return pathField
+  const modelField = bp.model?.trim()
+  if (modelField) return modelField
+  return undefined
+}
+
+function mapEntityAssetPaths<T extends SaveManifestEntity>(
+  entity: T,
+  mapPath: (p: string | null | undefined) => string | null | undefined,
+): T {
+  const assetPath = getEntityAssetPath(entity)
+  const remapped = assetPath ? (mapPath(assetPath) as string) : undefined
+  const next = { ...entity } as T & { path?: string; model?: string }
+  if (typeof next.path === 'string' && remapped) next.path = remapped
+  if (typeof next.model === 'string' && remapped) next.model = remapped
+  return next as T
+}
+
+function mapEntityAnimations<T extends SaveManifestEntity>(
+  entity: T,
+  mapPath: (p: string | null | undefined) => string | null | undefined,
+): T {
+  if (!entity.animations?.length) return entity
+  return {
+    ...entity,
+    animations: entity.animations.map((anim) => ({
+      ...anim,
+      audio_path: mapPath(anim.audio_path) as string | undefined,
+      frames: anim.frames.map((f) => ({
+        ...f,
+        path: mapPath(f.path) as string,
+      })),
+    })),
+  }
+}
+
+function forEachEntity(data: ProjectSaveData, cb: (entity: SaveManifestEntity) => void): void {
   const visit = (entity: Entity3D | null | undefined) => {
     if (entity) cb(entity)
   }
@@ -843,6 +895,22 @@ function countSavedEntities(data: ProjectSaveData): number {
   return count
 }
 
+function countActiveSceneEntities(data: ProjectSaveData): number {
+  const hasScenes = (data.scenes?.length ?? 0) > 0
+  if (!hasScenes) return data.entities?.length ?? 0
+  const active =
+    data.scenes?.find((s) => s.id === data.activeSceneId) ?? data.scenes?.[0]
+  return active?.entities?.length ?? 0
+}
+
+function countActiveSceneSprites(data: ProjectSaveData): number {
+  const hasScenes = (data.scenes?.length ?? 0) > 0
+  if (!hasScenes) return data.sprites?.length ?? 0
+  const active =
+    data.scenes?.find((s) => s.id === data.activeSceneId) ?? data.scenes?.[0]
+  return active?.sprites?.length ?? 0
+}
+
 /** Recursos de la librería (accordion Recursos) declarados en manifest. */
 function countManifestLibraryRefs(data: ProjectSaveData): {
   sounds: number
@@ -857,7 +925,7 @@ function countManifestLibraryRefs(data: ProjectSaveData): {
     fonts: data.fonts?.length ?? 0,
     backgrounds: data.backgrounds?.length ?? 0,
     hudImages: data.hudImages?.length ?? 0,
-    sprites: data.sprites?.length ?? 0,
+    sprites: countActiveSceneSprites(data),
     models: data.models?.length ?? 0,
   }
 }
@@ -874,7 +942,11 @@ function formatLibraryResourcesInLog(counts: {
 function formatEntityKindBreakdown(data: ProjectSaveData): string {
   const byKind = new Map<string, number>()
   forEachEntity(data, (entity) => {
-    byKind.set(entity.category, (byKind.get(entity.category) ?? 0) + 1)
+    const kind =
+      entity.category
+      ?? (entity as { kind?: string }).kind
+      ?? 'unknown'
+    byKind.set(kind, (byKind.get(kind) ?? 0) + 1)
   })
   if (byKind.size === 0) return ''
   const parts = [...byKind.entries()]
@@ -889,21 +961,21 @@ function formatEntityKindBreakdown(data: ProjectSaveData): string {
  */
 function collectAssetPaths(data: ProjectSaveData): Set<string> {
   const paths = new Set<string>()
+  const hasScenes = (data.scenes?.length ?? 0) > 0
   const add = (p: string | null | undefined) => {
     if (!p || !path.isAbsolute(p) || !fs.existsSync(p)) return
     // En Windows evitamos duplicados del mismo archivo por separadores distintos (\ vs /).
     paths.add(toAssetPathKey(p))
   }
 
-  add(data.backgroundPath)
+  if (!hasScenes) {
+    add(data.backgroundPath)
+    if (data.sprites) {
+      for (const sprite of data.sprites) add(sprite.path)
+    }
+  }
   for (const scene of data.scenes ?? []) {
     add(scene.backgroundPath)
-  }
-
-  if (data.sprites) {
-    for (const sprite of data.sprites) add(sprite.path)
-  }
-  for (const scene of data.scenes ?? []) {
     for (const sprite of scene.sprites ?? []) add(sprite.path)
   }
 
@@ -936,7 +1008,8 @@ function collectAssetPaths(data: ProjectSaveData): Set<string> {
   }
 
   forEachEntity(data, (entity) => {
-    if (!entityPathMarker(entity.model)) add(entity.model)
+    const assetPath = getEntityAssetPath(entity)
+    if (assetPath && !entityPathMarker(assetPath)) add(assetPath)
     for (const anim of entity.animations ?? []) {
       add(anim.audio_path)
       for (const frame of anim.frames) {
@@ -946,7 +1019,7 @@ function collectAssetPaths(data: ProjectSaveData): Set<string> {
   })
 
   for (const bp of data.blueprints ?? []) {
-    add(bp.model)
+    add(getBlueprintAssetPath(bp))
     for (const anim of bp.animations ?? []) {
       add(anim.audio_path)
       for (const frame of anim.frames) {
@@ -1171,18 +1244,8 @@ function remapPaths(data: ProjectSaveData, map: Map<string, string>): ProjectSav
 
   const hasScenes = (data.scenes?.length ?? 0) > 0
 
-  const mapEntity = (e: Entity3D): Entity3D => ({
-    ...e,
-    model: remap(e.model) as string,
-    animations: e.animations?.map((anim) => ({
-      ...anim,
-      audio_path: remap(anim.audio_path) as string | undefined,
-      frames: anim.frames.map((f) => ({
-        ...f,
-        path: remap(f.path) as string,
-      })),
-    })),
-  })
+  const mapEntity = (e: SaveManifestEntity): SaveManifestEntity =>
+    mapEntityAnimations(mapEntityAssetPaths(e, remap), remap)
 
   const mapModels = (models: ProjectSaveData['models']) =>
     models?.map((m) => ({
@@ -1239,6 +1302,7 @@ function remapPaths(data: ProjectSaveData, map: Map<string, string>): ProjectSav
     player: hasScenes ? null : data.player ? mapEntity(data.player) : data.player,
     config_camera: hasScenes ? null : data.config_camera,
     config_editor_camera: hasScenes ? null : data.config_editor_camera,
+    camera2d: hasScenes ? null : data.camera2d,
     scenes: data.scenes?.map((scene) => ({
       ...scene,
       backgroundPath: remap(scene.backgroundPath) as string | null,
@@ -1250,18 +1314,23 @@ function remapPaths(data: ProjectSaveData, map: Map<string, string>): ProjectSav
       entities: scene.entities.map(mapEntity),
       player: scene.player ? mapEntity(scene.player) : scene.player,
     })),
-    blueprints: data.blueprints?.map((bp) => ({
-      ...bp,
-      model: remap(bp.model) as string,
-      animations: bp.animations?.map((anim) => ({
-        ...anim,
-        audio_path: remap(anim.audio_path) as string | undefined,
-        frames: anim.frames.map((f) => ({
-          ...f,
-          path: remap(f.path) as string,
+    blueprints: data.blueprints?.map((bp) => {
+      const assetPath = getBlueprintAssetPath(bp)
+      const remappedAsset = assetPath ? (remap(assetPath) as string) : undefined
+      return {
+        ...bp,
+        ...(bp.model !== undefined && remappedAsset ? { model: remappedAsset } : {}),
+        ...(bp.path !== undefined && remappedAsset ? { path: remappedAsset } : {}),
+        animations: bp.animations?.map((anim) => ({
+          ...anim,
+          audio_path: remap(anim.audio_path) as string | undefined,
+          frames: anim.frames.map((f) => ({
+            ...f,
+            path: remap(f.path) as string,
+          })),
         })),
-      })),
-    })),
+      }
+    }),
   }
 }
 
@@ -1415,29 +1484,25 @@ function resolveLoadedPaths(data: ProjectSaveData, extractedDir: string): Projec
     }
   }
 
-  const mapEntity3d = (e: Entity3D): Entity3D => {
+  const mapSaveEntity = (e: SaveManifestEntity): SaveManifestEntity => {
     const controls =
-      e.controls ?? (e as Entity3D & { control_bindings?: SavedControls }).control_bindings
+      e.controls ?? e.control_bindings
+    const withPaths = mapEntityAnimations(mapEntityAssetPaths(e, resolve), resolve)
     return {
-      ...e,
-      model: resolve(e.model) as string,
-      scripts: e.scripts?.map((script: SavedScript) => ({
+      ...withPaths,
+      scripts: withPaths.scripts?.map((script: SavedScript) => ({
         ...script,
         source: resolveScriptSource(script.source, extractedDir),
       })),
-      animations: e.animations?.map((anim) => ({
+      animations: withPaths.animations?.map((anim) => ({
         ...anim,
-        audio_path: resolve(anim.audio_path) as string | undefined,
-        frames: anim.frames.map((f) => ({
-          ...f,
-          path: resolve(f.path) as string,
-        })),
         scripts: anim.scripts?.map((script: SavedScript) => ({
           ...script,
           source: resolveScriptSource(script.source, extractedDir),
         })),
       })),
-      controls: resolveControls(controls),
+      ...(controls ? { controls: resolveControls(controls) } : {}),
+      ...(e.control_bindings ? { control_bindings: resolveControls(e.control_bindings) } : {}),
     }
   }
 
@@ -1492,10 +1557,11 @@ function resolveLoadedPaths(data: ProjectSaveData, extractedDir: string): Projec
       ...obj,
       texture_path: resolve(obj.texture_path) as string | undefined,
     })),
-    entities: hasScenes ? [] : data.entities.map(mapEntity3d),
-    player: hasScenes ? null : data.player ? mapEntity3d(data.player) : data.player,
+    entities: hasScenes ? [] : data.entities.map(mapSaveEntity),
+    player: hasScenes ? null : data.player ? mapSaveEntity(data.player) : data.player,
     config_camera: hasScenes ? null : data.config_camera,
     config_editor_camera: hasScenes ? null : data.config_editor_camera,
+    camera2d: hasScenes ? null : data.camera2d,
     scenes: data.scenes?.map((scene) => ({
       ...scene,
       backgroundPath: resolve(scene.backgroundPath) as string | null,
@@ -1504,29 +1570,34 @@ function resolveLoadedPaths(data: ProjectSaveData, extractedDir: string): Projec
         name: s.name,
         path: resolve(s.path) as string,
       })),
-      entities: scene.entities.map(mapEntity3d),
-      player: scene.player ? mapEntity3d(scene.player) : scene.player,
+      entities: scene.entities.map(mapSaveEntity),
+      player: scene.player ? mapSaveEntity(scene.player) : scene.player,
     })),
-    blueprints: data.blueprints?.map((bp) => ({
-      ...bp,
-      model: resolve(bp.model) as string,
-      scripts: bp.scripts?.map((script: SavedScript) => ({
-        ...script,
-        source: resolveScriptSource(script.source, extractedDir),
-      })),
-      animations: bp.animations?.map((anim) => ({
-        ...anim,
-        audio_path: resolve(anim.audio_path) as string | undefined,
-        frames: anim.frames.map((f) => ({
-          ...f,
-          path: resolve(f.path) as string,
-        })),
-        scripts: anim.scripts?.map((script: SavedScript) => ({
+    blueprints: data.blueprints?.map((bp) => {
+      const assetPath = getBlueprintAssetPath(bp)
+      const remappedAsset = assetPath ? (resolve(assetPath) as string) : undefined
+      return {
+        ...bp,
+        ...(bp.model !== undefined && remappedAsset ? { model: remappedAsset } : {}),
+        ...(bp.path !== undefined && remappedAsset ? { path: remappedAsset } : {}),
+        scripts: bp.scripts?.map((script: SavedScript) => ({
           ...script,
           source: resolveScriptSource(script.source, extractedDir),
         })),
-      })),
-    })),
+        animations: bp.animations?.map((anim) => ({
+          ...anim,
+          audio_path: resolve(anim.audio_path) as string | undefined,
+          frames: anim.frames.map((f) => ({
+            ...f,
+            path: resolve(f.path) as string,
+          })),
+          scripts: anim.scripts?.map((script: SavedScript) => ({
+            ...script,
+            source: resolveScriptSource(script.source, extractedDir),
+          })),
+        })),
+      }
+    }),
   }
 }
 
@@ -1623,7 +1694,10 @@ ipcMain.handle('open-project-dialog', async (): Promise<OpenProjectResult | null
 
   const loaded = loadProjectFromExtractDir(extractDir)
   if (loaded) {
-    const entityCount = countSavedEntities(loaded)
+    const entityCount =
+      loaded.type === '2D'
+        ? countActiveSceneEntities(loaded)
+        : countSavedEntities(loaded)
     const entityKindSuffix = formatEntityKindBreakdown(loaded)
     const lib = countManifestLibraryRefs(loaded)
     const libraryLog = formatLibraryResourcesInLog(lib)
@@ -1633,9 +1707,12 @@ ipcMain.handle('open-project-dialog', async (): Promise<OpenProjectResult | null
         + `(entidades: ${entityCount}${entityKindSuffix}, modelos: ${lib.models}, ${libraryLog})`,
       )
     } else {
+      const sceneCount = loaded.scenes?.length ?? 1
       console.log(
-        `[editor] Proyecto cargado `
-        + `(entidades: ${entityCount}${entityKindSuffix}, sprites: ${lib.sprites}, ${libraryLog})`,
+        `[editor] Proyecto 2D cargado `
+        + `(escena activa: ${loaded.activeSceneId ?? 1}, `
+        + `${sceneCount} escena/s, entidades activas: ${entityCount}${entityKindSuffix}, `
+        + `sprites escena: ${lib.sprites}, ${libraryLog})`,
       )
     }
   }

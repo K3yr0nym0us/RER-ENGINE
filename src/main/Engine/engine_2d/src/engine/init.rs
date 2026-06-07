@@ -522,6 +522,7 @@ impl State {
             blocked_on_keep_horizontal: HashMap::new(),
             pending_slides:      HashMap::new(),
             save_registry: EntitySaveRegistry::new(),
+            suppress_scene_setup_logs: false,
         })
     }
 }

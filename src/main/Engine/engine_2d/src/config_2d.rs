@@ -873,7 +873,11 @@ pub(crate) fn restore_animation_frame(&mut self, id: u32) {
         }
 
         send_event(&EngineEvent::ColliderCreated { id: entity, points: *pts });
-        log::info!("[tool] colisionador creado: entidad {entity} en {:?}", pts);
+        if track_undo {
+            log::info!("[tool] colisionador creado: entidad {entity} en {:?}", pts);
+        } else {
+            log::debug!("[import] colisionador restaurado: entidad {entity}");
+        }
         Some(entity)
     }
 
@@ -912,7 +916,11 @@ pub(crate) fn restore_animation_frame(&mut self, id: u32) {
         }
 
         send_event(&EngineEvent::ExecutionAreaCreated { id: entity, points: *pts });
-        log::info!("[tool] área de ejecución creada: entidad {entity} en {:?}", pts);
+        if track_undo {
+            log::info!("[tool] área de ejecución creada: entidad {entity} en {:?}", pts);
+        } else {
+            log::debug!("[import] área de ejecución restaurada: entidad {entity}");
+        }
         Some(entity)
     }
 

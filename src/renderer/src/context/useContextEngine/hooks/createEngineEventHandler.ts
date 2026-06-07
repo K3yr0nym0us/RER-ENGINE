@@ -114,6 +114,7 @@ const SILENT_ENGINE_EVENTS = new Set<string>([
 	'player_ready',
 	'character_loaded',
 	'sprite_loaded',
+	'sprites_list',
 	'background_loaded',
 	'sound_loaded',
 	'sounds_list',
@@ -171,7 +172,9 @@ const SCENE_LOAD_SILENT_EVENTS = new Set<string>([
 	'sounds_list',
 	'backgrounds_list',
 	'default_scene_name_ready',
+	'project_loaded_2d',
 	'project_loaded_3d',
+	'project_load_2d_complete',
 	'project_load_3d_complete',
 ]);
 
@@ -1214,7 +1217,6 @@ export function createEngineEventHandler({
 			window.engine.send({ cmd: 'get_sprites_list' } as never);
 			window.engine.send({ cmd: 'get_sounds_list' } as never);
 			window.engine.send({ cmd: 'get_fonts_list' } as never);
-			window.engine.send({ cmd: 'get_hud_images_list' } as never);
 			window.engine.send({ cmd: 'get_backgrounds_list' } as never);
 			return;
 		}
@@ -1256,8 +1258,52 @@ export function createEngineEventHandler({
 			window.engine.send({ cmd: 'get_models_list' } as never);
 			window.engine.send({ cmd: 'get_sounds_list' } as never);
 			window.engine.send({ cmd: 'get_fonts_list' } as never);
-			window.engine.send({ cmd: 'get_hud_images_list' } as never);
+			if (projectType === '3D') {
+				window.engine.send({ cmd: 'get_hud_images_list' } as never);
+			}
 			window.engine.send({ cmd: 'get_backgrounds_list' } as never);
+			return;
+		}
+
+		if (event.event === 'project_load_2d_complete') {
+			const engineLoads2dSave = is2dProjectLoadedByEngine(
+				projectType,
+				refs.initialExtractDirRef.current,
+			);
+			if (!engineLoads2dSave) return;
+			const meta = refs.projectLoaded2dMetaRef.current;
+			void (async () => {
+				try {
+					const snapshot = await requestEngineSaveSnapshot();
+					const scene = engineSceneToSavedScene(
+						snapshot,
+						meta?.activeSceneId ?? 1,
+						meta?.sceneName ?? '',
+						refs.entityMetaRef.current,
+					);
+					syncEditorStateFromSavedScene(
+						scene,
+						refs,
+						dispatch,
+						refs.blueprintsRef.current,
+					);
+					if (scene.sprites?.length) {
+						dispatch({ type: 'SET_LOADED_SPRITES_INFO', payload: scene.sprites });
+					}
+					dispatch({ type: 'SYNC_PLAY_CHARACTER_VIEW' });
+				} catch (err) {
+					console.error('[project_load_2d_complete] sync desde snapshot del motor:', err);
+				} finally {
+					endSceneImportLoading(
+						dispatch,
+						refs.sceneImportInProgressRef,
+						refs.pendingImportSceneRef,
+						refs.sceneBurstLoadInProgressRef,
+						refs.modelReplaceInProgressRef,
+						reportBounds,
+					);
+				}
+			})();
 			return;
 		}
 
@@ -1348,39 +1394,6 @@ export function createEngineEventHandler({
 				refs.initialExtractDirRef.current,
 			);
 			if (engineLoads2dSave) {
-				const meta = refs.projectLoaded2dMetaRef.current;
-				void (async () => {
-					try {
-						const snapshot = await requestEngineSaveSnapshot();
-						const scene = engineSceneToSavedScene(
-							snapshot,
-							meta?.activeSceneId ?? 1,
-							meta?.sceneName ?? '',
-							refs.entityMetaRef.current,
-						);
-						syncEditorStateFromSavedScene(
-							scene,
-							refs,
-							dispatch,
-							refs.blueprintsRef.current,
-						);
-						if (scene.sprites?.length) {
-							dispatch({ type: 'SET_LOADED_SPRITES_INFO', payload: scene.sprites });
-						}
-						dispatch({ type: 'SYNC_PLAY_CHARACTER_VIEW' });
-					} catch (err) {
-						console.error('[project_loaded_2d] sync desde snapshot del motor:', err);
-					} finally {
-						endSceneImportLoading(
-							dispatch,
-							refs.sceneImportInProgressRef,
-							refs.pendingImportSceneRef,
-							refs.sceneBurstLoadInProgressRef,
-							refs.modelReplaceInProgressRef,
-							reportBounds,
-						);
-					}
-				})();
 				return;
 			}
 

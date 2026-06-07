@@ -241,6 +241,8 @@ pub struct State {
     /// usando el shape-cast kinematic (colisiones incluidas).
     pub(crate) pending_slides: HashMap<u32, PendingSlide>,
     pub(crate) save_registry: EntitySaveRegistry,
+    /// Suprime logs de plantilla/setup durante `import_scene` (carga .save o cambio de escena).
+    pub(crate) suppress_scene_setup_logs: bool,
 }
 
 impl State {

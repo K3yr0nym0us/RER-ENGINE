@@ -1,15 +1,17 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 
 use crate::ipc::{
-    send_project_loaded_2d_event, AnimationFrameData, ControlBindingsData, ControlScriptData,
-    EngineCommand, EntityRestoreAnimation, EntityRestorePhysics, EntityRestoreScript,
-    EntityRestoreTransform, ImportSceneCamera2d, ImportSceneEntity, ImportScenePayload,
-    ImportSceneSprite, ImportSceneWorld, ProjectLoaded2dCamera2d, ProjectLoaded2dEvent,
-    ProjectLoaded2dSceneTab, ProjectLoaded2dWorld,
+    send_load_progress, send_project_load_2d_complete_event, send_project_loaded_2d_event,
+    AnimationFrameData, ControlBindingsData, ControlScriptData, EngineCommand,
+    EntityRestoreAnimation, EntityRestorePhysics, EntityRestoreScript, EntityRestoreTransform,
+    ImportSceneCamera2d, ImportSceneEntity, ImportScenePayload, ImportSceneSprite,
+    ImportSceneWorld, ProjectLoaded2dCamera2d, ProjectLoaded2dEvent, ProjectLoaded2dSceneTab,
+    ProjectLoaded2dWorld,
 };
 
 use super::State;
@@ -253,8 +255,30 @@ impl State {
                 }
                 let extract_dir = PathBuf::from(&path);
                 resolve_loaded_paths(&mut project, &extract_dir);
-                match apply_loaded_proyect_2d(self, &project) {
-                    Ok(view) => send_project_loaded_2d(&project, &view),
+                let load_started_at = Instant::now();
+                let mut step_started = Instant::now();
+                let open_msg = match pick_active_save_view(&project) {
+                    Ok(v) => format!(
+                        "Abriendo escena «{}» ({} entidades)…",
+                        v.sceneName,
+                        v.entities.len()
+                    ),
+                    Err(_) => "Abriendo proyecto 2D…".to_string(),
+                };
+                log::info!("{open_msg}");
+                send_load_progress(&open_msg, None, None);
+                match apply_loaded_proyect_2d(self, &project, load_started_at, &mut step_started) {
+                    Ok(view) => {
+                        send_project_loaded_2d(&project, &view);
+                        send_project_load_2d_complete_event();
+                        let done_msg = format!(
+                            "Carga terminada — escena «{}» ({} entidades, {} ms)",
+                            view.sceneName,
+                            view.entities.len(),
+                            load_started_at.elapsed().as_millis()
+                        );
+                        log_load_step(load_started_at, &mut step_started, &done_msg);
+                    }
                     Err(err) => log::error!("error al aplicar proyecto: {err}"),
                 }
             }
@@ -414,15 +438,6 @@ fn resolve_entity(entity: &SavedEntity, extracted_dir: &Path) -> SavedEntity {
 fn resolve_loaded_paths(project: &mut ProjectSaveData, extracted_dir: &Path) {
     let has_scenes = !project.scenes.is_empty();
 
-    project.backgroundPath = resolve_optional_path(&project.backgroundPath, extracted_dir);
-    project.sprites = project
-        .sprites
-        .iter()
-        .map(|s| NamedPath {
-            name: s.name.clone(),
-            path: resolve_path(&s.path, extracted_dir),
-        })
-        .collect();
     project.sounds = project
         .sounds
         .iter()
@@ -449,15 +464,27 @@ fn resolve_loaded_paths(project: &mut ProjectSaveData, extracted_dir: &Path) {
         .collect();
 
     if !has_scenes {
+        project.backgroundPath = resolve_optional_path(&project.backgroundPath, extracted_dir);
+        project.sprites = project
+            .sprites
+            .iter()
+            .map(|s| NamedPath {
+                name: s.name.clone(),
+                path: resolve_path(&s.path, extracted_dir),
+            })
+            .collect();
         project.entities = project
             .entities
             .iter()
             .map(|e| resolve_entity(e, extracted_dir))
             .collect();
+        project.camera2d = project.camera2d.clone();
     } else {
         project.entities.clear();
         project.backgroundPath = None;
         project.sprites.clear();
+        project.world = None;
+        project.camera2d = None;
     }
 
     project.scenes = project
@@ -799,18 +826,41 @@ fn load_project_asset_stores(state: &mut State, project: &ProjectSaveData) {
     }
 }
 
-fn apply_loaded_proyect_2d(state: &mut State, project: &ProjectSaveData) -> Result<ActiveSaveView, String> {
-    let view = pick_active_save_view(project)?;
-    let import_scene_2d = !view.entities.is_empty();
+fn log_load_step(total: Instant, step: &mut Instant, message: &str) {
+    let step_ms = step.elapsed().as_millis() as u64;
+    let total_ms = total.elapsed().as_millis() as u64;
+    log::info!("{message} (+{step_ms} ms, total {total_ms} ms)");
+    send_load_progress(message, Some(step_ms), Some(total_ms));
+    *step = Instant::now();
+}
 
-    if import_scene_2d {
+fn apply_loaded_proyect_2d(
+    state: &mut State,
+    project: &ProjectSaveData,
+    load_started_at: Instant,
+    step_started: &mut Instant,
+) -> Result<ActiveSaveView, String> {
+    let view = pick_active_save_view(project)?;
+
+    load_project_asset_stores(state, project);
+    log_load_step(
+        load_started_at,
+        step_started,
+        &format!(
+            "Bibliotecas registradas ({} sonidos, {} fuentes, {} fondos)",
+            project.sounds.len(),
+            project.fonts.len(),
+            project.backgrounds.len()
+        ),
+    );
+
+    if !view.entities.is_empty() {
         let payload = build_import_scene_payload(&view, &project.blueprints);
         state.import_scene(payload);
-        load_project_asset_stores(state, project);
-        log::info!(
-            "escena 2D importada desde extract_dir (id={}, entidades={})",
-            view.sceneId,
-            view.entities.len()
+        log_load_step(
+            load_started_at,
+            step_started,
+            &format!("Escena importada ({} entidades)", view.entities.len()),
         );
         return Ok(view);
     }
@@ -860,12 +910,7 @@ fn apply_loaded_proyect_2d(state: &mut State, project: &ProjectSaveData) -> Resu
         });
     }
 
-    load_project_asset_stores(state, project);
-
-    log::info!(
-        "proyecto 2D vacío cargado desde extract_dir (id={})",
-        view.sceneId
-    );
+    log_load_step(load_started_at, step_started, "Proyecto 2D vacío listo");
     Ok(view)
 }
 

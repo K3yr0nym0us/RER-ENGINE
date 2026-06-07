@@ -813,7 +813,7 @@ EngineCommand::PlayAnimation { id, name } => {
                 send_event(&EngineEvent::AnimationFinished { entity_id: id });
             }
             EngineCommand::LoadSceneVisualScript { scene_id, source } => {
-                log::info!("[IPC] LoadSceneVisualScript: scene_id={}", scene_id);
+                log::debug!("[IPC] LoadSceneVisualScript: scene_id={}", scene_id);
                 if let Err(e) = self.handle_load_scene_visual_script(scene_id, &source) {
                     log::error!("[scene_script] Error: {e}");
                     send_event(&EngineEvent::Error {
@@ -906,7 +906,7 @@ EngineCommand::PlayAnimation { id, name } => {
                     .collect();
                 let count = sprites.len();
                 send_event(&EngineEvent::SpritesList { sprites });
-                log::info!("[sprite] lista enviada: {} sprites", count);
+                log::debug!("[sprite] lista enviada: {} sprites", count);
             }
             EngineCommand::LoadSound { path, name } => {
                 self.sound_store.insert(path.clone(), name.clone());
@@ -928,7 +928,7 @@ EngineCommand::PlayAnimation { id, name } => {
                     .collect();
                 let count = sounds.len();
                 send_event(&EngineEvent::SoundsList { sounds });
-                log::info!("[sound] lista enviada: {} sonidos", count);
+                log::debug!("[sound] lista enviada: {} sonidos", count);
             }
             EngineCommand::LoadFont { path, name } => {
                 match validate_font_file(&path) {
@@ -967,7 +967,7 @@ EngineCommand::PlayAnimation { id, name } => {
                     .collect();
                 let count = fonts.len();
                 send_event(&EngineEvent::FontsList { fonts });
-                log::info!("[font] lista enviada: {} fuentes", count);
+                log::debug!("[font] lista enviada: {} fuentes", count);
             }
             EngineCommand::LoadBackgroundAsset { path, name } => {
                 self.background_store.insert(path.clone(), name.clone());
@@ -989,7 +989,7 @@ EngineCommand::PlayAnimation { id, name } => {
                     .collect();
                 let count = backgrounds.len();
                 send_event(&EngineEvent::BackgroundsList { backgrounds });
-                log::info!("[background] lista enviada: {} fondos", count);
+                log::debug!("[background] lista enviada: {} fondos", count);
             }
             EngineCommand::ApplyEntityRestore {
                 id,

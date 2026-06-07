@@ -31,7 +31,7 @@ libraries:
   2D:
     sprites:
       ui: ResourcesAccordion / SpritesAccordion
-      manifest: "scene.sprites[] (por escena)"
+      manifest: "scene.sprites[] (por escena; raíz vacía con scenes[])"
       motor_store: sprite_store
       pack_dir: assets/
       load_cmd: LoadSprite
@@ -152,6 +152,25 @@ save_flow:
       output: "*.save (ZIP + manifest.json)"
 
 # ---------------------------------------------------------------------------
+# Capas del manifest (no confundir biblioteca vs contenido de escena)
+# ---------------------------------------------------------------------------
+
+manifest_layers:
+  global_libraries:
+    description: "Resources accordion — cargadas una vez al abrir .save (todas las escenas)."
+    2D: [sounds, fonts, backgrounds]
+    3D: [sounds, fonts, backgrounds, models, hudImages]
+  scene_content:
+    description: "Contenido del nivel; vive en scenes[] cuando hay multi-escena."
+    fields: [world, entities, camera2d, backgroundPath, sprites, player, config_camera]
+    note: |
+      backgroundPath y entity.path referencian ítems de bibliotecas globales.
+      sprites[] en escena = precarga/referencias de esa escena, no duplica la biblioteca.
+  future_per_scene_resources:
+    status: pendiente
+    ref: CHECKLIST.md — recursos por escena + carga lazy al cambiar escena activa
+
+# ---------------------------------------------------------------------------
 # Cargar .save
 # ---------------------------------------------------------------------------
 
@@ -159,9 +178,9 @@ load_flow:
   contract:
     paths: "Solo rutas relativas al extract_dir del .save (forward slashes en JSON)."
     multi_scene: |
-      scenes[] contiene world/entities/player/config_camera por escena.
-      Raíz: bibliotecas (models, sounds, fonts, hudImages, …) y metadatos del proyecto;
-      sin duplicar entities/player/world de la escena activa en raíz.
+      scenes[] contiene world/entities/player/config_camera/camera2d/sprites/backgroundPath por escena (2D y 3D).
+      Raíz: bibliotecas globales (sounds, fonts, backgrounds, models, hudImages) y metadatos;
+      sin duplicar escena activa en raíz (entities/sprites/world/camera2d vacíos o null).
     references: |
       playerUi*.font_path / texture_path / image_path deben coincidir exactamente con
       el path relativo del ítem en fonts[] / hudImages[] (misma cadena tras remap).
@@ -181,11 +200,15 @@ load_flow:
   motor_2d:
     file: engine_2d/.../load_proyect.rs
     steps:
-      - LoadSprite por scene.sprites
-      - load_project_asset_stores: sounds, fonts, backgrounds
+      - resolve_loaded_paths (relativas; limpia raíz si scenes[])
+      - load_project_asset_stores: sounds, fonts, backgrounds (biblioteca global)
+      - import_scene: sprites de escena, backgroundPath, entidades (si hay contenido)
+      - project_loaded_2d → metadata al renderer
+      - project_load_2d_complete → front sincroniza con export_save_snapshot
+      - load_progress: mensajes [Carga] en panel (misma semántica que 3D)
   renderer_sync:
-    events: project_loaded_2d | project_loaded_3d
-    action: "SET_* en React + get_*_list al motor para alinear UI Resources."
+    events: project_loaded_2d | project_loaded_3d | project_load_2d_complete | project_load_3d_complete | load_progress
+    action: "SET_* en React + get_*_list al motor para alinear UI Resources (sin get_hud_images_list en 2D)."
 
 # ---------------------------------------------------------------------------
 # Verificación de cumplimiento (estado actual del código)
@@ -200,7 +223,9 @@ compliance:
     - "remapPaths remapea referencias playerUi* al mismo path relativo que la biblioteca."
     - "playerUiObjects.texture_path no se empaqueta aparte; referencia hudImages[]."
     - "Sin fallback por basename ni rutas absolutas en manifest."
-    - "Multi-escena: raíz sin duplicar escena activa; models[] solo global."
+    - "Multi-escena: raíz sin duplicar escena activa; models[] solo global (3D)."
+    - "2D: sprites[] y backgroundPath por escena; entidades usan path (no model)."
+    - "Carga 2D: load_progress + project_load_2d_complete alineados con 3D; IPC ruidoso silenciado en panel."
   notes:
     - "frames de animación y algunos assets de entidad siguen en collectAssetPaths porque no son fila en Resources."
     - "entity.model aparece en collectAssetPaths además de models[]; el Set deduplica; es redundante pero seguro."

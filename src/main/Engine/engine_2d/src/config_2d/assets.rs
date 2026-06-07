@@ -34,7 +34,9 @@ impl State {
         // Fondo oscuro azulado (estilo Hollow Knight)
         self.clear_color = wgpu::Color { r: 0.04, g: 0.04, b: 0.10, a: 1.0 };
 
-        log::info!("Escena 2D cargada: plataformer vista lateral");
+        if !self.suppress_scene_setup_logs {
+            log::info!("Escena 2D cargada: plataformer vista lateral");
+        }
     }
 
     // ── Escenario PNG de fondo ────────────────────────────────────────────────

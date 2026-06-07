@@ -7,6 +7,7 @@ use super::State;
 
 impl State {
     pub(crate) fn import_scene(&mut self, payload: ImportScenePayload) {
+        self.suppress_scene_setup_logs = true;
         match payload.scene.as_str() {
             "2D" => self.setup_2d_platformer(),
             "scratch" => self.setup_scratch(),
@@ -59,10 +60,11 @@ impl State {
             self.import_scene_entity(ent);
         }
 
-        log::info!("[import_scene] escena importada: {entity_count} entidades");
+        log::debug!("[import_scene] escena importada: {entity_count} entidades");
         send_event(&EngineEvent::SceneImported {
             entity_count: entity_count as u32,
         });
+        self.suppress_scene_setup_logs = false;
     }
 
     fn import_scene_entity(&mut self, ent: &ImportSceneEntity) {

@@ -771,6 +771,15 @@ pub enum EngineEvent {
     SaveSnapshotReady { scene: SaveSceneSnapshotPayload },
     /// Respuesta a `get_default_scene_name`.
     DefaultSceneNameReady { id: u32, name: String },
+    /// Progreso humano de `load_proyect` (stdout + panel del editor).
+    #[serde(rename = "load_progress")]
+    LoadProgress {
+        message: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        step_ms: Option<u64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        total_ms: Option<u64>,
+    },
 }
 
 /// Información básica de un sprite almacenado en el motor.
@@ -801,6 +810,27 @@ pub struct FontInfo {
 pub struct BackgroundInfo {
     pub path: String,
     pub name: String,
+}
+
+/// Fin de carga 2D desde `extract_dir` (el front sincroniza con snapshot).
+pub fn send_project_load_2d_complete_event() {
+    if let Ok(json) = serde_json::to_string(&serde_json::json!({
+        "event": "project_load_2d_complete",
+    })) {
+        let stdout = io::stdout();
+        let mut handle = stdout.lock();
+        let _ = writeln!(handle, "{json}");
+        let _ = handle.flush();
+    }
+}
+
+/// Progreso humano de `load_proyect` (stdout + panel del editor).
+pub fn send_load_progress(message: &str, step_ms: Option<u64>, total_ms: Option<u64>) {
+    send_event(&EngineEvent::LoadProgress {
+        message: message.to_string(),
+        step_ms,
+        total_ms,
+    });
 }
 
 /// Escribe un evento JSON en stdout y lo flushea inmediatamente.
