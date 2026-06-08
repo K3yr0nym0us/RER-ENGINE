@@ -86,6 +86,8 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 - [x] **Import GLB optimizado (precarga)** — un solo `gltf::import` por archivo (`preload_model_cpu_bundle`); sin `ModelAsset` si no hay skins ni animaciones; sin `try_warm` variante jugador en props/entorno
 - [x] **Texturas GLB en editor** — `gltf_texture_load.rs`, modo por defecto `SmallestEmbedded`: solo decodifica la `baseColor` embebida de menor resolución; ignora normal/metallic y el resto del pack; `AllEmbedded` reservado para módulo de calidad futuro
 - [x] **Main Electron** — reenvío stderr `[load_proyect]`; spawn 3D con `extract_dir` / `save_path`
+- [x] **`kind` en `ModelLoaded` (IPC)** — `load_model` acepta `kind`; el motor lo reenvía en `model_loaded`; el front usa `loaded.kind` (sin `pendingSpawnKindRef`)
+- [x] **Spawn personaje 3D desde Characters** — `entity_label_for_spawn` → nombre `Character_*`; `entity_category` + `character_entities` en motor; modal y acordeón Entidades reconocen personaje (no `Object_*`)
 
 ---
 
@@ -100,7 +102,6 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 
 - [ ] **Calidad de texturas GLB (UI)** — conmutar `GltfTextureLoadMode::AllEmbedded` desde configuración (hoy fijo `SmallestEmbedded` en editor)
 - [ ] Picking 3D: AABB del `Transform` vs silueta fina del modelo (hoy `entity_world_pick_aabb` + ray-AABB en `config_3d/mod.rs`)
-- [ ] **`kind` en `ModelLoaded` (IPC) — sync front sin `spawnKind` local** — el motor envía `kind` en spawn por caché/burst, pero el front aún usa `pendingSpawnKindRef` en spawn manual (`createEngineEventHandler.ts`); unificar criterio motor-first
 
 ---
 
@@ -127,6 +128,8 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 | `project_loaded_3d` | Motor → front: escena activa tras parsear manifest (tabs, mundo, entidades) |
 | `project_load_3d_complete` | Motor → front: fin de burst/precarga al abrir `.save` (cierra loader) |
 | `load_progress` | Motor → front: mensaje de progreso durante carga (`step_ms`, `total_ms` opcionales) |
+| `load_model` (`kind`, `entity_category`) | Front → motor: instancia modelo precargado; `kind` (`model` \| `character`) define prefijo de nombre y meta |
+| `model_loaded` (`kind`, `entity_category`) | Motor → front: entidad creada; el front clasifica sin estado local `pendingSpawnKindRef` |
 | `plane_tool_ready` / `tool_cancelled` | Motor → front: herramienta plano 3D activa / cancelada (silenciosos en panel) |
 | `trigger_entered` | Motor → front: actor entró en execution area (`has_attached_script` opcional); log `[trigger]` |
 | `collider_created` / `execution_area_created` | Motor → front: plano 3D colocado (`position` + `scale`); Electron devuelve foco al editor |

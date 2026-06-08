@@ -150,7 +150,6 @@ export function createEngineActions({
 
 	const spawnModel = (path: string, kind: EntityMeta['kind'] = 'model', category?: EntityMeta['entityCategory']) => {
 		refs.pendingModelPathRef.current = path;
-		refs.pendingSpawnKindRef.current = kind;
 		refs.pendingSpawnCategoryRef.current = category ?? null;
 		if (!isModelPreloadReady(path)) {
 			beginModelReplaceLoading(
@@ -165,11 +164,14 @@ export function createEngineActions({
 				? 'environment'
 				: category === 'object'
 					? 'object'
-					: undefined;
+					: kind === 'character'
+						? 'character'
+						: undefined;
 		send({
 			cmd: 'load_model',
 			path,
 			single_instance: true,
+			kind,
 			...(entityCategory ? { entity_category: entityCategory } : {}),
 		});
 	};

@@ -488,8 +488,8 @@ impl State {
     }
 
     /// Instancia un modelo 3D como una sola entidad (primera malla del archivo).
-    pub(crate) fn load_model_single(&mut self, path: &str, entity_category: Option<&str>) {
-        if self.queue_load_model_if_preloading(path, entity_category, true) {
+    pub(crate) fn load_model_single(&mut self, path: &str, entity_category: Option<&str>, kind: &str) {
+        if self.queue_load_model_if_preloading(path, entity_category, true, kind) {
             return;
         }
         if let Err(e) = self.ensure_static_model_cached(path) {
@@ -503,7 +503,7 @@ impl State {
             });
             return;
         };
-        self.spawn_model_from_cached_part(*part, path, entity_category);
+        self.spawn_model_from_cached_part(*part, path, entity_category, kind);
         log::info!("Modelo cargado (instancia única): {path}");
     }
 }

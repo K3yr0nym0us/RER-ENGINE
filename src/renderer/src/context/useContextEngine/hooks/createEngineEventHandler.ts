@@ -804,7 +804,7 @@ export function createEngineEventHandler({
 				burstHandled = true;
 			} else {
 				const spawnModelPath = refs.pendingModelPathRef.current;
-				const spawnKind = refs.pendingSpawnKindRef.current ?? 'model';
+				const spawnKind = (loaded.kind ?? 'model') as EntityMeta['kind'];
 				const spawnCategory = refs.pendingSpawnCategoryRef.current;
 				let loadItem: { modelPath: string; pending: PendingRestore } | null = null;
 				if (!spawnModelPath) {
@@ -857,13 +857,15 @@ export function createEngineEventHandler({
 					const bpPhysics = bp ? blueprintPlacementPhysics(bp) : null;
 					const placementCategory = bp
 						? blueprintPlacementCategory(bp)
-						: normalizeBlueprintCategory(loaded.entity_category)
-							?? inferEntity3dCategoryFromName(loaded.name)
-							?? (spawnCategory === 'environment'
-								? 'environment'
-								: spawnCategory === 'object'
-									? 'object'
-									: undefined);
+						: spawnKind === 'character' || loaded.kind === 'character'
+							? 'character'
+							: normalizeBlueprintCategory(loaded.entity_category)
+								?? (spawnCategory === 'environment'
+									? 'environment'
+									: spawnCategory === 'object'
+										? 'object'
+										: undefined)
+								?? inferEntity3dCategoryFromName(loaded.name);
 					const isEnvironment = spawnCategory === 'environment'
 						|| restorePending?.entityCategory === 'environment'
 						|| loaded.entity_category === 'environment'
@@ -899,6 +901,9 @@ export function createEngineEventHandler({
 						...(restorePending?.entityCategory ? { entityCategory: restorePending.entityCategory } : {}),
 						...(placementCategory === 'object'
 							? { entityCategory: 'object' as EntityCategory }
+							: {}),
+						...(placementCategory === 'character'
+							? { entity3dCategory: 'character' as const }
 							: {}),
 						scripts: restorePending?.scripts,
 						controlBindings: restorePending?.controlBindings,
@@ -951,7 +956,6 @@ export function createEngineEventHandler({
 						} as never);
 					}
 					refs.pendingModelPathRef.current = null;
-					refs.pendingSpawnKindRef.current = null;
 					refs.pendingSpawnCategoryRef.current = null;
 					if (burstActive && modelPath) {
 						drainPendingRestoreSlot(

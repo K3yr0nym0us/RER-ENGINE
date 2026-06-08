@@ -1148,7 +1148,6 @@ export interface EngineInternalRefs {
 	playCharacterViewRef: MutableRefObject<SavedPlayerTransform | null>
 	pendingPlayCharacterViewRef: MutableRefObject<SavedPlayerTransform | null>
 	pendingModelPathRef: MutableRefObject<string | null>
-	pendingSpawnKindRef: MutableRefObject<EntityMeta['kind'] | null>
 	pendingSpawnCategoryRef: MutableRefObject<EntityCategory | null>
 	pendingModelLoadQueueRef: MutableRefObject<Array<{ modelPath: string; pending: PendingRestore }>>
 	/** Restore pendiente por cada `spawn_cached_model` durante burst load (emparejado por path). */
@@ -1219,7 +1218,6 @@ export interface EngineContextValue extends EngineState {
 	playCharacterViewRef: MutableRefObject<SavedPlayerTransform | null>
 	pendingPlayCharacterViewRef: MutableRefObject<SavedPlayerTransform | null>
 	pendingModelPathRef: MutableRefObject<string | null>
-	pendingSpawnKindRef: MutableRefObject<EntityMeta['kind'] | null>
 	pendingSpawnCategoryRef: MutableRefObject<EntityCategory | null>
 	pendingModelLoadQueueRef: MutableRefObject<Array<{ modelPath: string; pending: PendingRestore }>>
 	pendingBurstSpawnRestoreRef: MutableRefObject<PendingBurstSpawnEntry[]>

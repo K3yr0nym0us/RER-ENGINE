@@ -24,7 +24,7 @@ use crate::ecs::{EntityId, MeshComponent, Transform};
 use crate::engine::State;
 use crate::entity_save_meta::EntitySaveMeta;
 use crate::ipc::{send_event, send_load_progress, EngineEvent};
-use rer_engine_shared::editor_defaults::entity_label_for_category;
+use rer_engine_shared::editor_defaults::entity_label_for_spawn;
 
 #[derive(Clone, Copy)]
 pub(crate) struct CachedStaticModelPart {
@@ -87,6 +87,7 @@ pub(crate) struct PendingLoadModel {
     pub path: String,
     pub entity_category: Option<String>,
     pub single_instance: bool,
+    pub kind: String,
 }
 
 /// `replace_entity_model` recibido mientras la precarga GPU del path sigue en curso.
@@ -664,6 +665,7 @@ impl State {
         path: &str,
         entity_category: Option<&str>,
         single_instance: bool,
+        kind: &str,
     ) -> bool {
         let key = self.model_path_key(path);
         if !self.model_preload_inflight.contains(&key) {
@@ -673,6 +675,7 @@ impl State {
             path: path.to_string(),
             entity_category: entity_category.map(str::to_owned),
             single_instance,
+            kind: kind.to_string(),
         });
         log::info!("load_model en cola (precarga en curso): {key}");
         true
@@ -694,9 +697,9 @@ impl State {
         for req in ready {
             let category = req.entity_category.as_deref();
             if req.single_instance {
-                self.load_model_single(&req.path, category);
+                self.load_model_single(&req.path, category, &req.kind);
             } else {
-                self.load_model(&req.path, category);
+                self.load_model(&req.path, category, &req.kind);
             }
         }
     }
@@ -795,7 +798,7 @@ impl State {
         rotation: [f32; 4],
         scale: [f32; 3],
         entity_name: &str,
-        _kind: &str,
+        kind: &str,
         blueprint_id: Option<String>,
         entity_category: Option<String>,
         physics_enabled: bool,
@@ -803,8 +806,18 @@ impl State {
         local_bounds: ([f32; 3], [f32; 3]),
     ) -> EntityId {
         let key = self.model_path_key(path);
+        let resolved_category = entity_category.clone().or_else(|| {
+            if kind == "character" {
+                Some("character".to_string())
+            } else {
+                None
+            }
+        });
         let id = self.world.spawn(Some(entity_name));
         self.world.insert(id, MeshComponent { mesh_idx, tex_idx });
+        if kind == "character" && !self.character_entities.contains(&id) {
+            self.character_entities.push(id);
+        }
         if let Some(t) = self.world.get_mut::<Transform>(id) {
             t.position = glam::Vec3::from_array(position);
             t.rotation =
@@ -814,10 +827,10 @@ impl State {
         self.save_registry.register_meta(
             id,
             EntitySaveMeta {
-                kind: "model".to_string(),
+                kind: kind.to_string(),
                 path: key.clone(),
                 visual_model_path: None,
-                entity_category: entity_category.clone(),
+                entity_category: resolved_category.clone(),
             },
         );
         if physics_enabled && self.play_character_entity != Some(id) {
@@ -851,11 +864,11 @@ impl State {
             scale: Some(scale),
             rotation: Some(rotation),
             path: Some(key),
-            kind: Some("model".to_string()),
+            kind: Some(kind.to_string()),
             blueprint_id,
             physics_enabled: Some(physics_enabled),
             physics_type: Some(physics_type.to_string()),
-            entity_category,
+            entity_category: resolved_category,
         });
         id
     }
@@ -883,11 +896,17 @@ impl State {
         else {
             return Err(format!("Modelo vacío: {key}"));
         };
+        let kind = if entity_category.as_deref() == Some("character") {
+            "character"
+        } else {
+            "model"
+        };
         let name = entity_name
             .filter(|n| !n.is_empty())
             .map(|n| n.to_string())
             .unwrap_or_else(|| {
-                self.next_numbered_entity_name(entity_label_for_category(
+                self.next_numbered_entity_name(entity_label_for_spawn(
+                    kind,
                     entity_category.as_deref(),
                 ))
             });
@@ -899,7 +918,7 @@ impl State {
             rotation,
             scale,
             &name,
-            "model",
+            kind,
             blueprint_id,
             entity_category,
             physics_enabled,
@@ -913,9 +932,10 @@ impl State {
         part: CachedStaticModelPart,
         path: &str,
         entity_category: Option<&str>,
+        kind: &str,
     ) -> EntityId {
         let label = self
-            .next_numbered_entity_name(entity_label_for_category(entity_category));
+            .next_numbered_entity_name(entity_label_for_spawn(kind, entity_category));
         let position = self.default_model_spawn_position();
         self.spawn_cached_model_part_at(
             part.mesh_idx,
@@ -925,7 +945,7 @@ impl State {
             [0.0, 0.0, 0.0, 1.0],
             [1.0, 1.0, 1.0],
             &label,
-            "model",
+            kind,
             None,
             entity_category.map(str::to_string),
             false,

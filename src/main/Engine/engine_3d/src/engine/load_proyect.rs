@@ -1200,9 +1200,10 @@ fn spawn_entity_after_load_model_single(
     state: &mut State,
     path: &str,
     entity_category: Option<&str>,
+    kind: &str,
 ) -> Option<u32> {
     let before = state.scenario_entities.len();
-    state.load_model_single(path, entity_category);
+    state.load_model_single(path, entity_category, kind);
     if state.scenario_entities.len() > before {
         return state.scenario_entities.get(before).copied();
     }
@@ -1509,10 +1510,16 @@ fn apply_loaded_proyect_3d_with_scene(
                         continue;
                     }
                     let category = entity_library_category(&entity.category);
+                    let kind = if entity.category == "character" {
+                        "character"
+                    } else {
+                        "model"
+                    };
                     if let Some(id) = spawn_entity_after_load_model_single(
                         state,
                         &entity.model,
                         category.as_deref(),
+                        kind,
                     )
                     {
                         apply_full_entity_restore(state, id, &pending, &entity.model, false, false);

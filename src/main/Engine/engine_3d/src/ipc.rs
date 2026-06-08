@@ -78,6 +78,9 @@ pub enum EngineCommand {
         single_instance: Option<bool>,
         #[serde(default)]
         entity_category: Option<String>,
+        /// `model` | `character` | … — el motor lo reenvía en `model_loaded`.
+        #[serde(default)]
+        kind: Option<String>,
     },
     /// Instancia un modelo ya precargado en caché con transform y metadatos explícitos.
     SpawnCachedModel {

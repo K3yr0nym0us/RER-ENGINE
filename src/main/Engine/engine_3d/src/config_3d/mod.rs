@@ -375,8 +375,8 @@ impl State {
     }
 
     /// Instancia un modelo 3D en la escena (reutiliza caché estática si existe).
-    pub(crate) fn load_model(&mut self, path: &str, entity_category: Option<&str>) {
-        if self.queue_load_model_if_preloading(path, entity_category, false) {
+    pub(crate) fn load_model(&mut self, path: &str, entity_category: Option<&str>, kind: &str) {
+        if self.queue_load_model_if_preloading(path, entity_category, false, kind) {
             return;
         }
         if let Err(e) = self.ensure_static_model_cached(path) {
@@ -392,7 +392,7 @@ impl State {
             .unwrap_or_default();
         let count = parts.len();
         for part in parts {
-            self.spawn_model_from_cached_part(part, &key, entity_category);
+            self.spawn_model_from_cached_part(part, &key, entity_category, kind);
         }
         log::info!("Modelo instanciado desde caché: {key} ({count} malla/s)");
     }

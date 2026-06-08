@@ -97,6 +97,18 @@ pub fn entity_label_for_category(entity_category: Option<&str>) -> &'static str 
     }
 }
 
+/// Prefijo de nombre al instanciar: `entity_category` manda; si falta, usa `kind` IPC (`character` → Character_*).
+pub fn entity_label_for_spawn(kind: &str, entity_category: Option<&str>) -> &'static str {
+    if entity_category.is_some() {
+        return entity_label_for_category(entity_category);
+    }
+    match kind {
+        "character" => entity_label::CHARACTER,
+        "scenario" => entity_label::SCENARIO,
+        _ => entity_label::OBJECT,
+    }
+}
+
 pub fn resolve_entity_display_name(
     requested: &str,
     default_base: &str,

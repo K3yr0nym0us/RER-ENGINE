@@ -265,12 +265,14 @@ impl State {
                 path,
                 single_instance,
                 entity_category,
+                kind,
             } => {
                 let category = entity_category.as_deref();
+                let kind = kind.as_deref().unwrap_or("model");
                 if single_instance.unwrap_or(false) {
-                    self.load_model_single(&path, category);
+                    self.load_model_single(&path, category, kind);
                 } else {
-                    self.load_model(&path, category);
+                    self.load_model(&path, category, kind);
                 }
             }
             EngineCommand::SpawnCachedModel {
