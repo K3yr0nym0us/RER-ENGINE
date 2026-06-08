@@ -23,6 +23,12 @@ export const MODAL_TALL_COMPONENT_KEYS = new Set([
   'VisualScriptingModalBody',
 ])
 
+/** Modales anclados a la esquina superior izquierda del viewport del motor (no centrados). */
+export const MODAL_VIEWPORT_CORNER_COMPONENT_KEYS = new Set(['EntityPropertiesModalBody'])
+
+/** Margen respecto a la esquina superior izquierda del viewport del motor. */
+export const MODAL_VIEWPORT_CORNER_OFFSET = 48
+
 export function resolveModalElectronInitialContentHeight(
   componentKey: string,
   screenHeight: number,

@@ -6,6 +6,8 @@ import { resolveAppWindowIcon } from './appWindowIcon'
 import type { ModalElectronOpenRequest } from '../shared-types/types'
 import {
   clampModalElectronContentHeight,
+  MODAL_VIEWPORT_CORNER_COMPONENT_KEYS,
+  MODAL_VIEWPORT_CORNER_OFFSET,
   resolveModalElectronInitialContentHeight,
   resolveModalElectronWidth,
 } from './modalElectronSizes'
@@ -13,6 +15,7 @@ import {
 let lastModalContentWidth = 400
 
 let getMainWindow: () => BrowserWindow | null = () => null
+let getViewportScreenOrigin: () => { x: number; y: number } | null = () => null
 let modalWindow: BrowserWindow | null = null
 let pendingRenderPayload: ModalElectronOpenRequest | null = null
 
@@ -38,8 +41,58 @@ function clearModalAboveEngineViewport(win: BrowserWindow): void {
   }
 }
 
-export function initModalElectron(getParent: () => BrowserWindow | null): void {
+export function initModalElectron(
+  getParent: () => BrowserWindow | null,
+  getViewportOrigin?: () => { x: number; y: number } | null,
+): void {
   getMainWindow = getParent
+  getViewportScreenOrigin = getViewportOrigin ?? (() => null)
+}
+
+/**
+ * Ancla la modal a la esquina superior izquierda del viewport del motor.
+ * En Windows/Linux las modales hijas usan coordenadas relativas al padre, no de pantalla.
+ */
+function placeModalAtViewportCorner(win: BrowserWindow): void {
+  const parent = getMainWindow()
+  if (!parent || parent.isDestroyed()) {
+    win.center()
+    return
+  }
+
+  const offset = MODAL_VIEWPORT_CORNER_OFFSET
+  const origin = getViewportScreenOrigin()
+  const content = parent.getContentBounds()
+
+  const screenX = (origin?.x ?? content.x) + offset
+  const screenY = (origin?.y ?? content.y) + offset
+
+  const frame = win.getBounds()
+  const outerWidth = frame.width
+  const outerHeight = frame.height
+
+  let x = screenX
+  let y = screenY
+
+  if (process.platform === 'win32' || process.platform === 'linux') {
+    const parentBounds = parent.getBounds()
+    x = screenX - parentBounds.x
+    y = screenY - parentBounds.y
+    x = Math.max(0, Math.min(x, parentBounds.width - outerWidth))
+    y = Math.max(0, Math.min(y, parentBounds.height - outerHeight))
+  } else {
+    const display = getDisplayForModal()
+    const { x: workX, y: workY, width: workW, height: workH } = display.workArea
+    x = Math.max(workX, Math.min(screenX, workX + workW - outerWidth))
+    y = Math.max(workY, Math.min(screenY, workY + workH - outerHeight))
+  }
+
+  win.setBounds({
+    x: Math.round(x),
+    y: Math.round(y),
+    width: outerWidth,
+    height: outerHeight,
+  })
 }
 
 /** Respaldo cuando el foco sale al viewport nativo del motor (blur de la ventana principal). */
@@ -163,7 +216,7 @@ export async function openModalElectronWindow(payload: ModalElectronOpenRequest)
     display.workAreaSize.height,
   )
   win.setContentSize(width, initialHeight)
-  win.center()
+  const isViewportCornerModal = MODAL_VIEWPORT_CORNER_COMPONENT_KEYS.has(payload.componentKey)
 
   const resizable = payload.resizable === true
   win.setResizable(resizable)
@@ -177,6 +230,12 @@ export async function openModalElectronWindow(payload: ModalElectronOpenRequest)
   sendRenderToModal(payload)
   if (!win.isVisible()) {
     win.show()
+  }
+  if (isViewportCornerModal) {
+    // Tras show(): en Windows la modal hija puede recentrarse si se posicionó antes.
+    placeModalAtViewportCorner(win)
+  } else {
+    win.center()
   }
   raiseModalAboveEngineViewport(win)
   win.focus()

@@ -1860,6 +1860,18 @@ function viewportToScreenBounds(bounds: ViewportBounds): ViewportBounds {
   }
 }
 
+/** Origen en pantalla (DIP) de la esquina superior izquierda del viewport del motor. */
+function getEngineViewportScreenOrigin(): { x: number; y: number } | null {
+  if (!mainWindow || mainWindow.isDestroyed() || !lastRelativeBounds) return null
+
+  const cb = mainWindow.getContentBounds()
+  const scaleFactor = electronScreen.getDisplayMatching(mainWindow.getBounds()).scaleFactor
+  return {
+    x: cb.x + Math.round(lastRelativeBounds.x / scaleFactor),
+    y: cb.y + Math.round(lastRelativeBounds.y / scaleFactor),
+  }
+}
+
 ipcMain.on('viewport-bounds', (_event, bounds: ViewportBounds) => {
   lastRelativeBounds = bounds
 
@@ -1929,7 +1941,7 @@ app.whenReady().then(() => {
   }
 
   createMainWindow()
-  initModalElectron(() => mainWindow)
+  initModalElectron(() => mainWindow, getEngineViewportScreenOrigin)
   // No arrancamos el motor aquí: esperamos el primer 'viewport-bounds'
 
   app.on('activate', () => {
