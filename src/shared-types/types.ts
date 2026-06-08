@@ -574,6 +574,7 @@ export interface EngineCommand {
     | 'set_character_scale'
     | 'duplicate_character'
     | 'remove_entity'
+    | 'deselect_entity'
     | 'set_world_size'
     | 'set_grid_visible'
     | 'set_grid_cell_size'
@@ -1016,6 +1017,8 @@ export interface ModalElectronOpenRequest {
   linkedEntityCounts?: Record<string, number>
   /** Estado inicial del editor Player UI (modal Electron). */
   playerUiEditorState?: Record<string, unknown>
+  /** Estado del panel de propiedades de entidad (modal Electron). */
+  entityPropertiesState?: Record<string, unknown>
   /** Entidades de escena para el editor de nodos (snapshot IPC, sin `undefined`). */
   sceneEntities?: Array<{
     id: number
@@ -1094,11 +1097,23 @@ declare global {
       patchModalElectron: (data: {
         handlerId: string
         playerUiEditorState?: unknown
+        entityPropertiesState?: unknown
       }) => void
+      entityPropertiesAction: (handlerId: string, action: unknown) => Promise<void>
+      onModalElectronEntityPropertiesActionRequest: (
+        cb: (req: { handlerId: string; action: unknown; requestId: string }) => void | Promise<void>,
+      ) => () => void
+      onModalElectronClosed: (
+        cb: (data: { componentKey?: string }) => void,
+      ) => () => void
       playerUiEditorAction: (handlerId: string, action: unknown) => Promise<void>
       fetchPlayerUiEditorState: (handlerId: string) => Promise<unknown>
       onModalElectronPatch: (
-        cb: (data: { handlerId: string; playerUiEditorState?: unknown }) => void,
+        cb: (data: {
+          handlerId: string
+          playerUiEditorState?: unknown
+          entityPropertiesState?: unknown
+        }) => void,
       ) => () => void
       onModalElectronPlayerUiActionRequest: (
         cb: (req: { handlerId: string; action: unknown; requestId: string }) => void | Promise<void>,

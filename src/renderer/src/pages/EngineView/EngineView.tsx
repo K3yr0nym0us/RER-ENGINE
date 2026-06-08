@@ -13,6 +13,7 @@ import { ModalProvider } from '@modal';
 import { QuickBuildProvider } from '../../context/QuickBuildContext';
 import { PlaneToolProvider } from '../../context/PlaneToolContext';
 import { useAutoSave, useControlBindingsRuntime } from '@hooks';
+import { useEntityPropertiesModal } from './hooks/useEntityPropertiesModal';
 import { SceneManagerProvider } from './hooks/useSceneManager';
 
 import type { GameStyle, ProjectType } from '@shared-types';
@@ -71,6 +72,7 @@ function EngineViewInner({ projectType, gameStyle, initialSavePath, initialExtra
 
   // Teclado/mando del renderer → IPC run_control_script (ventana overlay no recibe input).
   useControlBindingsRuntime()
+  useEntityPropertiesModal()
 
   return (
     <SceneManagerProvider

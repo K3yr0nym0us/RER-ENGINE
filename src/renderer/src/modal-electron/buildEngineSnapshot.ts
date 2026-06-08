@@ -5,6 +5,7 @@ import {
 	sanitizeSceneEntitiesForModal,
 } from '../visualScripting/resolveSceneEntities'
 import { serializeModalProps } from './modalElectronSerialize'
+import { buildEntityPropertiesState } from './entityPropertiesModalSessions'
 
 export function buildEngineSnapshot(
 	componentKey: string,
@@ -35,6 +36,15 @@ export function buildEngineSnapshot(
 						entityTransforms: engine.entityTransformsRef.current,
 					}),
 				),
+			}
+		case 'EntityPropertiesModalBody':
+			return {
+				entityPropertiesState: JSON.parse(
+					JSON.stringify(buildEntityPropertiesState(engine)),
+				),
+				sprites: serializeModalProps({ sprites: engine.sprites }).sprites,
+				models: serializeModalProps({ models: engine.models }).models,
+				blueprints: JSON.parse(JSON.stringify(engine.blueprints)) as typeof engine.blueprints,
 			}
 		default:
 			return {}

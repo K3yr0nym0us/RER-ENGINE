@@ -26,6 +26,14 @@ import {
 	runPlayerUiEditorAction,
 } from '../modal-electron/playerUiEditorSessions'
 import type { PlayerUiEditorState } from '../modal-electron/playerUiEditorTypes'
+import {
+	buildEntityPropertiesState,
+	pushEntityPropertiesPatch,
+	registerEntityPropertiesSession,
+	runEntityPropertiesAction,
+	unregisterEntityPropertiesSession,
+} from '../modal-electron/entityPropertiesModalSessions'
+import { useTraslate } from './useTraslate'
 
 /**
  * Abre ventanas modales Electron (ventana hija; el motor sigue visible).
@@ -58,6 +66,7 @@ let delegateListenerInstalled = false
 let parentOpenListenerInstalled = false
 let playerUiActionListenerInstalled = false
 let playerUiStateListenerInstalled = false
+let entityPropertiesActionListenerInstalled = false
 
 function createHandlerId(): string {
 	return crypto.randomUUID()
@@ -67,6 +76,9 @@ export function useModalElectron() {
 	const engine = useContextEngine()
 	const { locale } = useLanguage()
 	const { activeBluePrint, setActiveBluePrint } = useQuickBuild()
+	const { t } = useTraslate()
+	const tRef = useRef(t)
+	tRef.current = t
 
 	const engineRef = useRef(engine)
 	engineRef.current = engine
@@ -134,6 +146,24 @@ export function useModalElectron() {
 			})
 		}
 
+		let entityPropertiesState: ReturnType<typeof buildEntityPropertiesState> | undefined
+		if (componentKey === 'EntityPropertiesModalBody') {
+			registerEntityPropertiesSession(handlerId, {
+				getEngine: () => engineRef.current,
+				openModal,
+				closeModal,
+				pushPatch: (hid, state) => {
+					window.electronAPI.patchModalElectron({ handlerId: hid, entityPropertiesState: state })
+				},
+				onCloseModal: () => {
+					engineRef.current.send({ cmd: 'deselect_entity' })
+					unregisterEntityPropertiesSession(handlerId)
+				},
+				t: (key) => tRef.current(key),
+			})
+			entityPropertiesState = buildEntityPropertiesState(engineRef.current)
+		}
+
 		let playerUiEditorState: PlayerUiEditorState | undefined
 		if (componentKey === 'PlayerUiEditorModalBody') {
 			const sessionDeps = consumePendingPlayerUiEditorSession(handlerId)
@@ -155,6 +185,7 @@ export function useModalElectron() {
 			resizable: componentKey === 'VisualScriptingModalBody',
 			props: preparedProps,
 			callbackKeys,
+			...(entityPropertiesState ? { entityPropertiesState } : {}),
 			...(playerUiEditorState ? { playerUiEditorState } : {}),
 			...engineSnapshot,
 			...(componentKey === 'VisualScriptingModalBody'
@@ -220,6 +251,9 @@ export function useModalElectron() {
 		if (componentKey === 'PlayerUiEditorModalBody') {
 			pushPlayerUiEditorPatch(handlerId)
 		}
+		if (componentKey === 'EntityPropertiesModalBody') {
+			pushEntityPropertiesPatch(handlerId)
+		}
 	}, [closeModal, locale, setActiveBluePrint])
 
 	useEffect(() => {
@@ -240,6 +274,14 @@ export function useModalElectron() {
 		playerUiStateListenerInstalled = true
 		window.electronAPI.onModalElectronPlayerUiStateRequest((req) => {
 			return resolvePlayerUiEditorState(req.handlerId)
+		})
+	}, [])
+
+	useEffect(() => {
+		if (entityPropertiesActionListenerInstalled) return
+		entityPropertiesActionListenerInstalled = true
+		window.electronAPI.onModalElectronEntityPropertiesActionRequest(async (req) => {
+			await runEntityPropertiesAction(req.handlerId, req.action as import('../modal-electron/entityPropertiesTypes').EntityPropertiesAction)
 		})
 	}, [])
 

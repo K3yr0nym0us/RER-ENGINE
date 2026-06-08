@@ -13,13 +13,10 @@ interface ScriptingAccordionProps {
   onRemove: (name: string) => void
 }
 
-export function ScriptingAccordion({ scripts, onNew, onVisual, onEdit, onRemove }: ScriptingAccordionProps) {
+export function ScriptingPanelContent({ scripts, onNew, onVisual, onEdit, onRemove }: ScriptingAccordionProps) {
   const { t } = useTraslate()
   return (
-    <Accordion.Item eventKey="scripting">
-      <Accordion.Header><FileEarmarkCode className="me-2" />{t('Program entity')}</Accordion.Header>
-      <Accordion.Body className="py-2 px-2 d-flex flex-column gap-2">
-
+    <div className="py-2 px-1 d-flex flex-column gap-2">
         <AppTooltip content={t('Entity logic (nodes)')} place="top">
           <span className="d-block">
             <button
@@ -83,6 +80,23 @@ export function ScriptingAccordion({ scripts, onNew, onVisual, onEdit, onRemove 
           </div>
         ))}
 
+    </div>
+  )
+}
+
+export function ScriptingAccordion({ scripts, onNew, onVisual, onEdit, onRemove }: ScriptingAccordionProps) {
+  const { t } = useTraslate()
+  return (
+    <Accordion.Item eventKey="scripting">
+      <Accordion.Header><FileEarmarkCode className="me-2" />{t('Program entity')}</Accordion.Header>
+      <Accordion.Body className="py-2 px-2">
+        <ScriptingPanelContent
+          scripts={scripts}
+          onNew={onNew}
+          onVisual={onVisual}
+          onEdit={onEdit}
+          onRemove={onRemove}
+        />
       </Accordion.Body>
     </Accordion.Item>
   )

@@ -46,6 +46,7 @@ import {
 import { ModalConfirmBody } from './ModalConfirmBody'
 import { VisualScriptingModalBody } from '../visualScripting/components/VisualScriptingModalBody'
 import { SceneScriptEditorModalBody } from '../visualScripting/components/SceneScriptEditorModalBody'
+import { EntityPropertiesModalBody } from './EntityPropertiesElectronHost'
 import { wireModalCallbacksForHost } from './modalElectronCallbacks'
 
 export type ModalElectronHostProps = ModalElectronOpenRequest & {
@@ -89,6 +90,7 @@ export const MODAL_ELECTRON_REGISTRY: Record<string, RegistryEntry> = {
 	ModalConfirmBody: modalEntry(ModalConfirmBody),
 	VisualScriptingModalBody: modalEntry(VisualScriptingModalBody),
 	SceneScriptEditorModalBody: modalEntry(SceneScriptEditorModalBody),
+	EntityPropertiesModalBody: modalEntry(EntityPropertiesModalBody),
 }
 
 export function buildModalElectronHostProps(

@@ -170,8 +170,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   patchModalElectron: (data: {
     handlerId: string
     playerUiEditorState?: unknown
+    entityPropertiesState?: unknown
   }): void => {
     ipcRenderer.send('modal-electron:patch', data)
+  },
+  entityPropertiesAction: (handlerId: string, action: unknown): Promise<void> => {
+    return ipcRenderer.invoke('modal-electron:entity-properties-action', { handlerId, action })
   },
   playerUiEditorAction: (handlerId: string, action: unknown): Promise<void> => {
     return ipcRenderer.invoke('modal-electron:player-ui-action', { handlerId, action })
@@ -180,16 +184,47 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke('modal-electron:player-ui-state', { handlerId })
   },
   onModalElectronPatch: (
-    cb: (data: { handlerId: string; playerUiEditorState?: unknown }) => void,
+    cb: (data: {
+      handlerId: string
+      playerUiEditorState?: unknown
+      entityPropertiesState?: unknown
+    }) => void,
   ): (() => void) => {
     const listener = (
       _event: Electron.IpcRendererEvent,
-      data: { handlerId: string; playerUiEditorState?: unknown },
+      data: {
+        handlerId: string
+        playerUiEditorState?: unknown
+        entityPropertiesState?: unknown
+      },
     ) => {
       cb(data)
     }
     ipcRenderer.on('modal-electron:patch', listener)
     return () => ipcRenderer.removeListener('modal-electron:patch', listener)
+  },
+  onModalElectronEntityPropertiesActionRequest: (
+    cb: (req: { handlerId: string; action: unknown; requestId: string }) => void,
+  ): (() => void) => {
+    const listener = async (
+      _event: Electron.IpcRendererEvent,
+      data: { handlerId: string; action: unknown; requestId: string },
+    ) => {
+      await cb(data)
+      ipcRenderer.send(`modal-electron:entity-properties-action-done-${data.requestId}`)
+    }
+    ipcRenderer.on('modal-electron:entity-properties-action-request', listener)
+    return () =>
+      ipcRenderer.removeListener('modal-electron:entity-properties-action-request', listener)
+  },
+  onModalElectronClosed: (
+    cb: (data: { componentKey?: string }) => void,
+  ): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: { componentKey?: string }) => {
+      cb(data)
+    }
+    ipcRenderer.on('modal-electron:closed', listener)
+    return () => ipcRenderer.removeListener('modal-electron:closed', listener)
   },
   onModalElectronPlayerUiActionRequest: (
     cb: (req: { handlerId: string; action: unknown; requestId: string }) => void,

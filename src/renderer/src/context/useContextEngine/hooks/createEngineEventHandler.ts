@@ -22,6 +22,10 @@ import type {
 	SavedScene,
 } from '@shared-types';
 import {
+	activeEntityPropertiesHandlerRef,
+	pushEntityPropertiesPatch,
+} from '../../../modal-electron/entityPropertiesModalSessions';
+import {
 	DEFAULT_LIGHT_AMBIENT,
 	DEFAULT_LIGHT_INTENSITY,
 	DEFAULT_SHADOW_DARKNESS,
@@ -1205,6 +1209,9 @@ export function createEngineEventHandler({
 					scripts: meta?.scripts,
 				},
 			});
+			if (activeEntityPropertiesHandlerRef.current) {
+				pushEntityPropertiesPatch(activeEntityPropertiesHandlerRef.current);
+			}
 		}
 
 		if (event.event === 'entity_deselected') {
@@ -2271,6 +2278,9 @@ export function createEngineEventHandler({
 		if (event.event === 'multi_select_changed') {
 			const e = event as unknown as { ids: number[] };
 			dispatch({ type: 'SET_MULTI_SELECT', payload: e.ids });
+			if (activeEntityPropertiesHandlerRef.current) {
+				pushEntityPropertiesPatch(activeEntityPropertiesHandlerRef.current);
+			}
 		}
 
 		if (event.event === 'multi_selection_transformed') {
@@ -2281,6 +2291,9 @@ export function createEngineEventHandler({
 					rotation: entity.rotation,
 					scale: entity.scale,
 				};
+			}
+			if (activeEntityPropertiesHandlerRef.current) {
+				pushEntityPropertiesPatch(activeEntityPropertiesHandlerRef.current);
 			}
 		}
 
@@ -2362,6 +2375,9 @@ export function createEngineEventHandler({
 				type: 'UPDATE_SELECTED_PHYSICS',
 				payload: { entityId: physicsChanged.entity_id, enabled: physicsChanged.enabled, bodyType: physicsChanged.body_type },
 			});
+			if (activeEntityPropertiesHandlerRef.current) {
+				pushEntityPropertiesPatch(activeEntityPropertiesHandlerRef.current);
+			}
 		}
 
 		if (event.event === 'debug_metrics') {

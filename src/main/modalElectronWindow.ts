@@ -90,6 +90,11 @@ function getOrCreateModalWindow(): BrowserWindow {
     },
   })
 
+  modalWindow.on('close', (e) => {
+    e.preventDefault()
+    closeModalElectronWindow()
+  })
+
   modalWindow.on('closed', () => {
     modalWindow = null
     pendingRenderPayload = null
@@ -107,6 +112,7 @@ function sendRenderToModal(payload: ModalElectronOpenRequest | null): void {
 export function sendPatchToModal(data: {
   handlerId: string
   playerUiEditorState?: unknown
+  entityPropertiesState?: unknown
 }): void {
   if (!modalWindow || modalWindow.isDestroyed()) return
   modalWindow.webContents.send('modal-electron:patch', data)
@@ -177,6 +183,11 @@ export async function openModalElectronWindow(payload: ModalElectronOpenRequest)
 }
 
 export function closeModalElectronWindow(): void {
+  const componentKey = pendingRenderPayload?.componentKey
+  const parent = getMainWindow()
+  if (componentKey && parent && !parent.isDestroyed()) {
+    parent.webContents.send('modal-electron:closed', { componentKey })
+  }
   if (modalWindow && !modalWindow.isDestroyed()) {
     clearModalAboveEngineViewport(modalWindow)
     sendRenderToModal(null)

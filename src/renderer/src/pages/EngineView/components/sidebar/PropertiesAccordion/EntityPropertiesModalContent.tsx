@@ -1,0 +1,697 @@
+import { useEffect, useMemo, useState } from 'react'
+
+import { Modal, Nav, Tab } from 'react-bootstrap'
+import {
+	CircleSquare,
+	Check2Square,
+	Pencil,
+	Trash,
+	BoxSeam,
+	PlayFill,
+	StopFill,
+} from 'react-bootstrap-icons'
+
+import { AppTooltip } from '@components'
+import { TransformPanel, ScriptingPanelContent } from '.'
+import type { TransformSendCommand } from './TransformPanel'
+import { useTraslate } from '@hooks'
+import type {
+	EntityPropertiesAction,
+	EntityPropertiesAnimation,
+	EntityPropertiesState,
+} from '../../../../../modal-electron/entityPropertiesTypes'
+
+type PropertiesTab = 'physics' | 'transform' | 'animations' | 'scripting'
+
+export interface EntityPropertiesModalContentProps {
+	state: EntityPropertiesState
+	onAction: (action: EntityPropertiesAction) => void
+}
+
+export function EntityPropertiesModalContent({
+	state,
+	onAction,
+}: EntityPropertiesModalContentProps) {
+	const { t } = useTraslate()
+	const {
+		projectType,
+		selectedEntity,
+		multiSelectedIds,
+		isCharacter,
+		isEnvironment,
+		isPlayer,
+		isEditorCamera,
+		isCollider,
+		isExecutionArea,
+		isFromBlueprint,
+		linkedBlueprintName,
+		scripts,
+		animationPlayingIds,
+	} = state
+
+	const [entityNameDraft, setEntityNameDraft] = useState('')
+	const [isEditingEntityName, setIsEditingEntityName] = useState(false)
+	const [animations, setAnimations] = useState<EntityPropertiesAnimation[]>([])
+	const [playingAnimationName, setPlayingAnimationName] = useState<string | null>(null)
+	const [pendingConfirm, setPendingConfirm] = useState<{
+		title: string
+		message: React.ReactNode
+		confirmLabel: string
+		onConfirm: () => void
+	} | null>(null)
+	const [activeTab, setActiveTab] = useState<PropertiesTab>('transform')
+
+	const is2D = projectType === '2D'
+	const is3D = projectType === '3D'
+	const isMultiSelect = multiSelectedIds.length > 1
+
+	useEffect(() => {
+		setEntityNameDraft(selectedEntity?.name ?? '')
+		setIsEditingEntityName(false)
+	}, [selectedEntity?.id, selectedEntity?.name])
+
+	useEffect(() => {
+		if (!selectedEntity?.id) {
+			setAnimations([])
+			setPlayingAnimationName(null)
+			return
+		}
+		setAnimations(selectedEntity.animations ?? [])
+		setPlayingAnimationName(null)
+	}, [selectedEntity?.id, selectedEntity?.animations])
+
+	useEffect(() => {
+		if (!selectedEntity?.id) return
+		if (!animationPlayingIds.includes(selectedEntity.id)) {
+			setPlayingAnimationName(null)
+		}
+	}, [selectedEntity?.id, animationPlayingIds])
+
+	const handleSend = (cmd: TransformSendCommand) => {
+		onAction({ action: 'setTransform', cmd })
+	}
+
+	const physicsEnabled = selectedEntity?.physicsEnabled ?? false
+	const physicsType = selectedEntity?.physicsType || 'dynamic'
+	const hasEmbeddedModelClips =
+		is3D && (animations.some((a) => a.embedded_in_model) ?? false)
+
+	const tabs = useMemo(() => {
+		const list: PropertiesTab[] = []
+		if (!isCollider && !isExecutionArea) list.push('physics')
+		list.push('transform')
+		if (!isCollider && !isExecutionArea && (is2D || hasEmbeddedModelClips)) {
+			list.push('animations')
+		}
+		if (!isCollider) list.push('scripting')
+		return list
+	}, [isCollider, isExecutionArea, is2D, hasEmbeddedModelClips])
+
+	useEffect(() => {
+		setActiveTab((prev) => (tabs.includes(prev) ? prev : (tabs[0] ?? 'transform')))
+	}, [selectedEntity?.id, tabs])
+
+	const openConfirm = (
+		message: React.ReactNode,
+		onConfirm: () => void,
+		confirmLabel?: string,
+		title?: string,
+	) => {
+		setPendingConfirm({
+			title: title ?? t('Confirm action'),
+			message,
+			confirmLabel: confirmLabel ?? t('Confirm'),
+			onConfirm,
+		})
+	}
+
+	const syncAnimations = (next: EntityPropertiesAnimation[]) => {
+		if (!selectedEntity?.id) {
+			setAnimations(next)
+			return next
+		}
+		onAction({ action: 'updateAnimations', id: selectedEntity.id, animations: next })
+		setAnimations(next)
+		return next
+	}
+
+	if (!selectedEntity && !isMultiSelect) {
+		return (
+			<p className="text-secondary fst-italic small mb-0 px-1">
+				{t('Click on an object to view it')}
+			</p>
+		)
+	}
+
+	if (isMultiSelect) {
+		return (
+			<div>
+				<p className="text-secondary fst-italic small mb-0 px-1">
+					{multiSelectedIds.length} {t('entities selected')}
+				</p>
+				<div className="mt-3 pt-2 border-top border-secondary">
+					<button
+						type="button"
+						className="btn btn-sm btn-outline-danger w-100"
+						onClick={() =>
+							openConfirm(
+								<>
+									<p className="mb-2">
+										{t('Are you sure you want to')} {t('delete')}{' '}
+										<strong>{multiSelectedIds.length}</strong> {t('entities?')}
+									</p>
+									<p className="text-danger small mb-0">{t('This action cannot be undone.')}</p>
+								</>,
+								() => onAction({ action: 'removeMultiple', ids: multiSelectedIds }),
+								`${t('Yes,')} ${t('delete')}`,
+							)
+						}
+					>
+						<Trash className="me-2" />
+						{t('Delete')} ({multiSelectedIds.length})
+					</button>
+				</div>
+				{pendingConfirm && (
+					<ConfirmSubModal
+						{...pendingConfirm}
+						onClose={() => setPendingConfirm(null)}
+					/>
+				)}
+			</div>
+		)
+	}
+
+	if (!selectedEntity) return null
+
+	const trimmedEntityName = entityNameDraft.trim()
+	const hasValidEntityName = trimmedEntityName.length > 0
+	const canRename = hasValidEntityName && trimmedEntityName !== selectedEntity.name
+
+	const handleRemove = () => {
+		if (isPlayer) return
+		openConfirm(
+			<>
+				<p className="mb-2">
+					{t('Are you sure you want to')} {t('delete')} {t('this entity?')}
+				</p>
+				<p className="text-danger small mb-0">{t('This action cannot be undone.')}</p>
+			</>,
+			() => onAction({ action: 'removeEntity', id: selectedEntity.id }),
+			`${t('Yes,')} ${t('delete')}`,
+		)
+	}
+
+	const openCreateAnimationModal = () => {
+		onAction({
+			action: 'openNestedModal',
+			kind: 'createAnimation',
+			payload: { entityId: selectedEntity.id },
+		})
+	}
+
+	const removeAnimation = (index: number) => {
+		const anim = animations[index]
+		if (!anim) return
+		if (animationPlayingIds.includes(selectedEntity.id)) {
+			onAction({ action: 'send', cmd: { cmd: 'stop_animation', id: selectedEntity.id } })
+		}
+		onAction({ action: 'send', cmd: { cmd: 'remove_animation', id: selectedEntity.id, name: anim.name } })
+		syncAnimations(animations.filter((_, i) => i !== index))
+	}
+
+	const playAnimation = async (index: number) => {
+		const anim = animations[index]
+		if (!anim) return
+		const canPlayEmbedded3D = is3D && !!anim.embedded_in_model
+		if (!canPlayEmbedded3D && anim.frames.length === 0) return
+
+		const isPlayingThis =
+			animationPlayingIds.includes(selectedEntity.id) && playingAnimationName === anim.name
+		if (isPlayingThis) {
+			onAction({ action: 'send', cmd: { cmd: 'stop_animation', id: selectedEntity.id } })
+			onAction({ action: 'setAnimationPlaying', id: selectedEntity.id, playing: false })
+			setPlayingAnimationName(null)
+			return
+		}
+		if (animationPlayingIds.includes(selectedEntity.id)) {
+			onAction({ action: 'send', cmd: { cmd: 'stop_animation', id: selectedEntity.id } })
+		}
+		if (anim.loop) {
+			onAction({
+				action: 'send',
+				cmd: { cmd: 'play_animation', id: selectedEntity.id, name: anim.name, loop: anim.loop },
+			})
+			onAction({ action: 'setAnimationPlaying', id: selectedEntity.id, playing: true })
+			setPlayingAnimationName(anim.name)
+		} else {
+			await onAction({
+				action: 'sendAsync',
+				cmd: { cmd: 'play_animation', id: selectedEntity.id, name: anim.name, loop: anim.loop },
+				waitEvent: 'animation_finished',
+			})
+			setPlayingAnimationName(null)
+		}
+	}
+
+	const editAnimation = (index: number) => {
+		const anim = animations[index]
+		if (!anim) return
+		const spritePath = anim.frames[0]?.path
+		if (!spritePath) return
+		onAction({
+			action: 'openNestedModal',
+			kind: 'editAnimation',
+			payload: {
+				entityId: selectedEntity.id,
+				animationIndex: index,
+				spritePath,
+				animationName: anim.name,
+				initialFrames: anim.frames.map((f) => ({
+					x: f.src_x ?? 0,
+					y: f.src_y ?? 0,
+					width: f.src_w ?? anim.logical_w ?? 64,
+					height: f.src_h ?? anim.logical_h ?? 64,
+					pivot_x: f.pivot_x,
+					pivot_y: f.pivot_y,
+				})),
+				initialFps: anim.fps,
+				initialLoop: anim.loop,
+				initialIsDefault: anim.is_default ?? false,
+				initialIsCancelable: anim.is_cancelable ?? false,
+				initialFacingRight: anim.facing_right ?? true,
+				initialAudioPath: anim.audio_path,
+				initialScripts: anim.scripts,
+				initialSelectionMode: anim.selection_mode,
+				initialGridSize: anim.grid_size,
+				initialCellOffsetX: anim.cell_offset_x,
+				initialCellOffsetY: anim.cell_offset_y,
+			},
+		})
+	}
+
+	const scriptingHandlers = {
+		onNew: () =>
+			onAction({
+				action: 'openNestedModal',
+				kind: 'scriptEditor',
+				payload: { entityId: selectedEntity.id, title: t('New Rhai script') },
+			}),
+		onVisual: () => onAction({ action: 'openNestedModal', kind: 'visualScripting', payload: {} }),
+		onEdit: (name: string) => {
+			const existing = scripts.find((s) => s.name === name)
+			if (!existing) return
+			onAction({
+				action: 'openNestedModal',
+				kind: 'scriptEditor',
+				payload: {
+					entityId: selectedEntity.id,
+					title: `${t('Edit script')}: ${name}`,
+					initialData: existing,
+					replacing: name,
+				},
+			})
+		},
+		onRemove: (name: string) =>
+			openConfirm(
+				<div className="text-center">
+					<p>
+						{t('Delete script confirm')} <strong>{name}</strong>?
+					</p>
+					<p className="text-danger small mb-0">{t('This action cannot be undone.')}</p>
+				</div>,
+				() => {
+					const next = scripts.filter((s) => s.name !== name)
+					onAction({ action: 'updateScripts', id: selectedEntity.id, scripts: next })
+					if (next.length === 0) {
+						onAction({ action: 'send', cmd: { cmd: 'unload_script', id: selectedEntity.id } })
+					}
+				},
+				t('Yes, delete'),
+			),
+	}
+
+	const blueprintTooltip = linkedBlueprintName
+		? `${t('Based on blueprint')}: ${linkedBlueprintName}`
+		: t('Based on blueprint')
+
+	const showModelActions = !isCollider && !isExecutionArea
+
+	return (
+		<div>
+			<div className="entity-props-toolbar d-flex align-items-stretch gap-1 mb-2 flex-nowrap">
+				<div className="input-group input-group-sm flex-grow-1 min-w-0">
+					<input
+						type="text"
+						value={entityNameDraft}
+						onChange={(e) => setEntityNameDraft(e.target.value)}
+						className="form-control bg-dark text-info border-secondary prop-input"
+						aria-label={t('Entity name')}
+						disabled={!isEditingEntityName}
+					/>
+					{!isEditingEntityName ? (
+						<AppTooltip content={t('Edit name')} place="bottom">
+							<button
+								type="button"
+								className="btn btn-outline-secondary"
+								onClick={() => setIsEditingEntityName(true)}
+							>
+								<Pencil />
+							</button>
+						</AppTooltip>
+					) : (
+						<AppTooltip content={t('Save changes')} place="bottom">
+							<button
+								type="button"
+								className="btn btn-outline-info"
+								disabled={!hasValidEntityName}
+								onClick={() => {
+									if (!hasValidEntityName) return
+									if (canRename) {
+										onAction({
+											action: 'setEntityName',
+											id: selectedEntity.id,
+											name: trimmedEntityName,
+										})
+									}
+									setIsEditingEntityName(false)
+								}}
+							>
+								<Check2Square />
+							</button>
+						</AppTooltip>
+					)}
+				</div>
+				{showModelActions && is3D && !isFromBlueprint && (
+					<AppTooltip content={t('Replace model')} place="left">
+						<button
+							type="button"
+							className="btn btn-sm btn-outline-info flex-shrink-0"
+							onClick={() =>
+								onAction({
+									action: 'openNestedModal',
+									kind: 'replaceModel',
+									payload: {
+										hintText: isPlayer
+											? t('Replace model player hint')
+											: t('Replace model entity hint'),
+										isPlayer,
+										isCharacter,
+										isEnvironment,
+									},
+								})
+							}
+						>
+							<BoxSeam />
+						</button>
+					</AppTooltip>
+				)}
+				{showModelActions && (
+					isFromBlueprint ? (
+						<AppTooltip content={blueprintTooltip} place="left">
+							<span className="d-inline-flex flex-shrink-0">
+								<button
+									type="button"
+									className="btn btn-sm btn-outline-secondary"
+									disabled
+									aria-label={blueprintTooltip}
+								>
+									<CircleSquare />
+								</button>
+							</span>
+						</AppTooltip>
+					) : (
+						<AppTooltip content={t('Convert to Blueprint')} place="left">
+							<button
+								type="button"
+								className="btn btn-sm btn-outline-primary flex-shrink-0"
+								onClick={() =>
+									onAction({ action: 'openNestedModal', kind: 'convertBlueprint', payload: {} })
+								}
+							>
+								<CircleSquare />
+							</button>
+						</AppTooltip>
+					)
+				)}
+				{!isPlayer && (
+					<AppTooltip content={t('Delete')} place="left">
+						<button
+							type="button"
+							className="btn btn-sm btn-outline-danger flex-shrink-0"
+							onClick={handleRemove}
+						>
+							<Trash />
+						</button>
+					</AppTooltip>
+				)}
+			</div>
+
+			<Tab.Container activeKey={activeTab} onSelect={(k) => k && setActiveTab(k as PropertiesTab)}>
+				<Nav variant="tabs" className="entity-props-nav mb-2">
+					{tabs.includes('physics') && (
+						<Nav.Item>
+							<Nav.Link eventKey="physics">{t('Physics')}</Nav.Link>
+						</Nav.Item>
+					)}
+					{tabs.includes('transform') && (
+						<Nav.Item>
+							<Nav.Link eventKey="transform">{t('Transformations')}</Nav.Link>
+						</Nav.Item>
+					)}
+					{tabs.includes('animations') && (
+						<Nav.Item>
+							<Nav.Link eventKey="animations">{t('Animations')}</Nav.Link>
+						</Nav.Item>
+					)}
+					{tabs.includes('scripting') && (
+						<Nav.Item>
+							<Nav.Link eventKey="scripting">{t('Program entity')}</Nav.Link>
+						</Nav.Item>
+					)}
+				</Nav>
+				<Tab.Content>
+					{tabs.includes('physics') && (
+						<Tab.Pane eventKey="physics" className="py-1 px-1">
+							{isEnvironment ? (
+								<div className="d-flex align-items-center gap-2">
+									<input
+										type="checkbox"
+										id="environment-collision"
+										className="form-check-input"
+										checked={physicsEnabled}
+										onChange={(e) => {
+											onAction({
+												action: 'setPhysics',
+												id: selectedEntity.id,
+												enabled: e.target.checked,
+												bodyType: 'static',
+											})
+										}}
+									/>
+									<label htmlFor="environment-collision" className="form-check-label text-light small mb-0">
+										{t('With collision')}
+									</label>
+								</div>
+							) : isPlayer ? (
+								<>
+									<div className="d-flex align-items-center gap-2">
+										<input type="checkbox" id="player-physics" className="form-check-input" checked disabled readOnly />
+										<label htmlFor="player-physics" className="form-check-label text-light small mb-0">
+											{t('Enable physics')}
+										</label>
+									</div>
+									<select
+										value="dynamic"
+										className="form-select form-select-sm bg-dark text-light border-secondary mt-2"
+										disabled
+									>
+										<option value="dynamic">{t('Dynamic (gravity)')}</option>
+									</select>
+									<p className="text-secondary small mb-0 mt-2">{t('Player physics managed by engine')}</p>
+								</>
+							) : (
+								<>
+									<div className="d-flex align-items-center gap-2">
+										<input
+											type="checkbox"
+											id="physics-enabled"
+											className="form-check-input"
+											checked={physicsEnabled}
+											onChange={(e) => {
+												const next = e.target.checked
+												const bodyType = next && isCharacter ? 'kinematic' : physicsType
+												onAction({
+													action: 'setPhysics',
+													id: selectedEntity.id,
+													enabled: next,
+													bodyType,
+												})
+											}}
+										/>
+										<label htmlFor="physics-enabled" className="form-check-label text-light small mb-0">
+											{t('Enable physics')}
+										</label>
+									</div>
+									{physicsEnabled && (
+										<select
+											value={physicsType}
+											className="form-select form-select-sm bg-dark text-light border-secondary mt-2"
+											onChange={(e) => {
+												onAction({
+													action: 'setPhysics',
+													id: selectedEntity.id,
+													enabled: true,
+													bodyType: e.target.value,
+												})
+											}}
+										>
+											<option value="dynamic">{t('Dynamic (gravity)')}</option>
+											<option value="static">{t('Static (does not move)')}</option>
+											<option value="kinematic">{t('Kinematic (by code)')}</option>
+										</select>
+									)}
+								</>
+							)}
+						</Tab.Pane>
+					)}
+					{tabs.includes('transform') && (
+						<Tab.Pane eventKey="transform" className="py-1 px-1">
+							<TransformPanel
+								entity={selectedEntity}
+								is2D={is2D}
+								isPlayCharacter={isPlayer && is3D && !isCollider && !isExecutionArea}
+								isEditorCamera={isEditorCamera && is3D && !isCollider && !isExecutionArea}
+								onSend={handleSend}
+							/>
+						</Tab.Pane>
+					)}
+					{tabs.includes('animations') && (
+						<Tab.Pane eventKey="animations" className="py-1 px-1">
+							{!is3D && (
+								<button
+									type="button"
+									className="btn btn-outline-success btn-sm w-100 fw-bold mb-2"
+									onClick={openCreateAnimationModal}
+								>
+									{t('+ New animation')}
+								</button>
+							)}
+							{!is3D && animations.length === 0 && (
+								<div className="alert alert-secondary py-1 text-center small mb-0" role="alert">
+									{t('No animations. Add a new one to start.')}
+								</div>
+							)}
+							{animations.length > 0 && (
+								<div className="d-flex flex-column gap-1">
+									{animations.map((anim, idx) => {
+										const canPlay = is3D ? !!anim.embedded_in_model : anim.frames.length > 0
+										const isPlayingThis =
+											animationPlayingIds.includes(selectedEntity.id) &&
+											playingAnimationName === anim.name
+										return (
+											<div
+												key={anim.id ?? `${anim.name}-${idx}`}
+												className="d-flex align-items-center gap-2 p-1 border border-secondary rounded bg-dark"
+											>
+												<span className="small text-light flex-fill text-truncate">{anim.name}</span>
+												<span
+													role="button"
+													tabIndex={canPlay ? 0 : -1}
+													className={isPlayingThis ? 'text-danger' : 'text-success'}
+													style={{ cursor: canPlay ? 'pointer' : 'not-allowed', opacity: canPlay ? 1 : 0.5 }}
+													onClick={canPlay ? () => void playAnimation(idx) : undefined}
+												>
+													{isPlayingThis ? <StopFill /> : <PlayFill />}
+												</span>
+												{!is3D && (
+													<span
+														role="button"
+														tabIndex={canPlay ? 0 : -1}
+														className="text-warning"
+														style={{ cursor: canPlay ? 'pointer' : 'not-allowed' }}
+														onClick={canPlay ? () => editAnimation(idx) : undefined}
+													>
+														<Pencil />
+													</span>
+												)}
+												{!is3D && (
+													<span
+														role="button"
+														tabIndex={0}
+														className="text-danger"
+														style={{ cursor: 'pointer' }}
+														onClick={() =>
+															openConfirm(
+																<>
+																	{t('Are you sure you want to delete the animation')}{' '}
+																	<strong>{anim.name}</strong>?
+																</>,
+																() => removeAnimation(idx),
+															)
+														}
+													>
+														<Trash />
+													</span>
+												)}
+											</div>
+										)
+									})}
+								</div>
+							)}
+						</Tab.Pane>
+					)}
+					{tabs.includes('scripting') && (
+						<Tab.Pane eventKey="scripting" className="py-0">
+							<ScriptingPanelContent scripts={scripts} {...scriptingHandlers} />
+						</Tab.Pane>
+					)}
+				</Tab.Content>
+			</Tab.Container>
+
+			{pendingConfirm && (
+				<ConfirmSubModal {...pendingConfirm} onClose={() => setPendingConfirm(null)} />
+			)}
+		</div>
+	)
+}
+
+function ConfirmSubModal({
+	title,
+	message,
+	confirmLabel,
+	onConfirm,
+	onClose,
+}: {
+	title: string
+	message: React.ReactNode
+	confirmLabel: string
+	onConfirm: () => void
+	onClose: () => void
+}) {
+	const { t } = useTraslate()
+	return (
+		<Modal show onHide={onClose} centered>
+			<Modal.Header closeButton>
+				<Modal.Title>{title}</Modal.Title>
+			</Modal.Header>
+			<Modal.Body>{message}</Modal.Body>
+			<Modal.Footer>
+				<button type="button" className="btn btn-secondary btn-sm" onClick={onClose}>
+					{t('Cancel')}
+				</button>
+				<button
+					type="button"
+					className="btn btn-danger btn-sm"
+					onClick={() => {
+						onConfirm()
+						onClose()
+					}}
+				>
+					{confirmLabel}
+				</button>
+			</Modal.Footer>
+		</Modal>
+	)
+}
+
+export default EntityPropertiesModalContent

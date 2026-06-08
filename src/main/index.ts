@@ -723,9 +723,33 @@ ipcMain.on('modal-electron:parent-open', (_event, data: {
 ipcMain.on('modal-electron:patch', (_event, data: {
   handlerId: string
   playerUiEditorState?: unknown
+  entityPropertiesState?: unknown
 }) => {
   sendPatchToModal(data)
 })
+
+ipcMain.handle(
+  'modal-electron:entity-properties-action',
+  async (_event, req: { handlerId: string; action: unknown }) => {
+    if (!mainWindow || mainWindow.isDestroyed()) return
+    return new Promise<void>((resolve) => {
+      const requestId = `${Date.now()}-${Math.random()}`
+      const channel = `modal-electron:entity-properties-action-done-${requestId}`
+      const timeout = setTimeout(() => {
+        ipcMain.removeAllListeners(channel)
+        resolve()
+      }, 30_000)
+      ipcMain.once(channel, () => {
+        clearTimeout(timeout)
+        resolve()
+      })
+      mainWindow!.webContents.send('modal-electron:entity-properties-action-request', {
+        ...req,
+        requestId,
+      })
+    })
+  },
+)
 
 ipcMain.handle(
   'modal-electron:player-ui-action',

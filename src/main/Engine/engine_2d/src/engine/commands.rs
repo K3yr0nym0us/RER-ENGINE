@@ -233,6 +233,13 @@ impl State {
             EngineCommand::StopAudio => {
                 self.stop_audio_internal();
             }
+            EngineCommand::DeselectEntity => {
+                if self.selected_entity.is_some() || !self.selected_entities.is_empty() {
+                    self.selected_entity = None;
+                    self.selected_entities.clear();
+                    send_event(&EngineEvent::EntityDeselected);
+                }
+            }
             EngineCommand::RemoveEntity { id } => {
                 if !self.is_applying_undo {
                     if let Some(snapshot) = self.capture_entity_undo_snapshot(id) {

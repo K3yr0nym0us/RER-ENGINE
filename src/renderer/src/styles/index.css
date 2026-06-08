@@ -357,6 +357,33 @@ body {
   padding: 2px 4px !important;
 }
 
+.entity-props-nav {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border-bottom: 1px solid var(--bs-border-color);
+}
+.entity-props-nav .nav-link {
+  font-size: 0.72rem;
+  padding: 0.35rem 0.5rem;
+  white-space: nowrap;
+}
+.entity-props-nav::-webkit-scrollbar {
+  height: 3px;
+}
+.entity-props-nav::-webkit-scrollbar:vertical {
+  display: none;
+  width: 0;
+}
+
+.entity-props-toolbar .input-group {
+  min-width: 0;
+}
+.entity-props-toolbar .btn {
+  padding-left: 0.45rem;
+  padding-right: 0.45rem;
+}
+
 /* ── Selector icon (large emoji/symbol) ─────────────────────────────────── */
 .selector-icon {
   font-size: 42px;

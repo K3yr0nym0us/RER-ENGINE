@@ -286,6 +286,8 @@ pub enum EngineCommand {
     RestoreAnimationFrame { id: u32 },
     /// Eliminar una entidad de la escena por su ID.
     RemoveEntity { id: u32 },
+    /// Deseleccionar la entidad activa (limpia gizmo y multi-selección).
+    DeselectEntity,
     /// Definir el tamaño del área de trabajo del mundo (unidades de mundo).
     SetWorldSize {
         width: f32,

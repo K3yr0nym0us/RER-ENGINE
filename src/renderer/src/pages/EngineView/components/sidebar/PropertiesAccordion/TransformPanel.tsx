@@ -142,29 +142,33 @@ export function TransformPanel({
       hiddenAxes?:    number[]
       labelAction?:   ReactNode
       extraOnChange?: (i: number, next: [string, string, string]) => [string, string, string]
+      labelClassName?: string
     } = {},
   ) => {
-    const { hiddenAxes = [], labelAction, extraOnChange } = options
+    const { hiddenAxes = [], labelAction, extraOnChange, labelClassName } = options
     return (
       <div className="mb-2">
-        <p className="prop-label">{label}</p>
-        <div className="d-flex gap-1 mt-1 align-items-end">
+        <p className={`prop-label${labelClassName ? ` ${labelClassName}` : ''}`}>{label}</p>
+        <div className="d-flex gap-1 mt-1 align-items-stretch">
           {(['X', 'Y', 'Z'] as const).map((ax, i) => {
             if (hiddenAxes.includes(i)) return null
             return (
-              <div key={ax} className="flex-fill">
-                <div className={`prop-axis ${axisColors[i]}`}>{ax}</div>
+              <div key={ax} className="input-group input-group-sm flex-fill">
+                <span
+                  className={`input-group-text bg-dark border-secondary py-0 px-2 prop-axis ${axisColors[i]}`}
+                >
+                  {ax}
+                </span>
                 <input
                   type="number"
                   step={Array.isArray(step) ? step[i] : step}
                   value={vals[i]}
                   aria-label={`${label} ${ax}`}
-                  className="form-control form-control-sm text-center bg-dark text-light border-secondary prop-input"
+                  className="form-control text-center bg-dark text-light border-secondary prop-input"
                   onChange={(e) => {
                     const raw = e.target.value
                     let next = [...vals] as [string, string, string]
                     next[i] = raw
-                    // extraOnChange (proporciones bloqueadas) modifica varios ejes a la vez.
                     const couplesAxes = !!extraOnChange
                     if (extraOnChange) next = extraOnChange(i, next)
                     const updated = { ...transform, [key]: next }
@@ -182,8 +186,7 @@ export function TransformPanel({
             )
           })}
           {labelAction && (
-            <div className="d-flex flex-column align-items-center">
-              <div className="prop-axis" style={{ visibility: 'hidden' }}>·</div>
+            <div className="d-flex align-items-center flex-shrink-0">
               {labelAction}
             </div>
           )}
@@ -222,7 +225,7 @@ export function TransformPanel({
   }
 
   const lockBtn = (
-    <AppTooltip content={lockProportions ? t('Lock proportions') : t('Keep proportions')} place="top">
+    <AppTooltip content={lockProportions ? t('Lock proportions') : t('Keep proportions')} place="left">
       <button
         type="button"
         className={`btn btn-sm ${lockProportions ? 'btn-info' : 'btn-outline-secondary'}`}
@@ -306,71 +309,27 @@ export function TransformPanel({
         hiddenAxes:    is2D ? [2] : [],
         labelAction:   lockBtn,
         extraOnChange: lockProportions ? proportionOnChange : undefined,
+        labelClassName: 'mt-2',
       })}
       {!isEditorCamera && (
       <div className="mb-2">
-        <p className="prop-label">{is2D ? t('Rotation (xyzw)') : t('Rotation (degrees)')}</p>
+        <p className="prop-label mt-2">{is2D ? t('Rotation (xyzw)') : t('Rotation (degrees)')}</p>
         {!is2D && isPlayCharacter && (
           <p className="text-secondary small mb-1">{t('Transform rotation player hint')}</p>
         )}
-        <div className="d-flex flex-column gap-2 mt-1">
+        <div className="d-flex flex-column gap-1 mt-1">
           {rotationAxes.map((ax, i) => (
-            <div key={ax} className="flex-fill">
-              <div className="d-flex align-items-center justify-content-between gap-1 mb-0">
-                <span
-                  className={`prop-axis small mb-0 ${i < 3 ? axisColors[i] : ''}`}
-                  style={i === 3 ? { color: '#a78bfa' } : undefined}
-                >
-                  {ax}
-                </span>
-                <input
-                  id={`transform-rot-num-${ax}`}
-                  type="number"
-                  step={is2D ? 0.01 : 0.1}
-                  min={rotMin}
-                  max={rotMax}
-                  value={transform.rot[i]}
-                  aria-label={`${is2D ? t('Rotation (xyzw)') : t('Rotation (degrees)')} ${ax}`}
-                  className="form-control form-control-sm text-center bg-dark text-info border-secondary prop-input"
-                  style={{ width: '4.25rem', flex: '0 0 auto' }}
-                  onFocus={() => {
-                    if (is2D || i > 2) return
-                    rotEditingRef.current = true
-                    rotFocusDegRef.current[i as 0 | 1 | 2] = Math.round(parseFloat(transform.rot[i]) || 0)
-                  }}
-                  onChange={(e) => applyRotationNumberInput(i, e.target.value)}
-                  onBlur={() => {
-                    if (!is2D && i <= 2) {
-                      commitRotationNumberInput(i)
-                      rotEditingRef.current = false
-                      return
-                    }
-                    formatRotationOnBlur(i)
-                  }}
-                  onMouseUp={() => {
-                    if (is2D || i > 2) return
-                    commitRotationNumberInput(i)
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      (e.target as HTMLInputElement).blur()
-                      return
-                    }
-                    if (is2D || i > 2) return
-                    if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return
-                    e.preventDefault()
-                    const prevDeg = Math.round(parseFloat(transform.rot[i]) || 0)
-                    const step = typeof rotStep === 'number' ? rotStep : 1
-                    const nextDeg = prevDeg + (e.key === 'ArrowUp' ? step : -step)
-                    commitRotAxis3d(i as 0 | 1 | 2, nextDeg, prevDeg)
-                    rotFocusDegRef.current[i as 0 | 1 | 2] = nextDeg
-                  }}
-                />
-              </div>
+            <div key={ax} className="d-flex align-items-center gap-1">
+              <span
+                className={`prop-axis small mb-0 flex-shrink-0 ${i < 3 ? axisColors[i] : ''}`}
+                style={{ width: '1rem', ...(i === 3 ? { color: '#a78bfa' } : {}) }}
+              >
+                {ax}
+              </span>
               <input
                 id={`transform-rot-range-${ax}`}
                 type="range"
-                className="form-range mb-0"
+                className="form-range mb-0 flex-grow-1 me-2"
                 min={rotMin}
                 max={rotMax}
                 step={rotStep}
@@ -390,6 +349,49 @@ export function TransformPanel({
                   const newDeg = Math.round(parseFloat(e.target.value))
                   const prevDeg = Math.round(parseFloat(transform.rot[i]) || 0)
                   commitRotAxis3d(i as 0 | 1 | 2, newDeg, prevDeg)
+                }}
+              />
+              <input
+                id={`transform-rot-num-${ax}`}
+                type="number"
+                step={is2D ? 0.01 : 0.1}
+                min={rotMin}
+                max={rotMax}
+                value={transform.rot[i]}
+                aria-label={`${is2D ? t('Rotation (xyzw)') : t('Rotation (degrees)')} ${ax}`}
+                className="form-control form-control-sm text-center bg-dark text-info border-secondary prop-input flex-shrink-0"
+                style={{ width: '3.25rem' }}
+                onFocus={() => {
+                  if (is2D || i > 2) return
+                  rotEditingRef.current = true
+                  rotFocusDegRef.current[i as 0 | 1 | 2] = Math.round(parseFloat(transform.rot[i]) || 0)
+                }}
+                onChange={(e) => applyRotationNumberInput(i, e.target.value)}
+                onBlur={() => {
+                  if (!is2D && i <= 2) {
+                    commitRotationNumberInput(i)
+                    rotEditingRef.current = false
+                    return
+                  }
+                  formatRotationOnBlur(i)
+                }}
+                onMouseUp={() => {
+                  if (is2D || i > 2) return
+                  commitRotationNumberInput(i)
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    (e.target as HTMLInputElement).blur()
+                    return
+                  }
+                  if (is2D || i > 2) return
+                  if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return
+                  e.preventDefault()
+                  const prevDeg = Math.round(parseFloat(transform.rot[i]) || 0)
+                  const step = typeof rotStep === 'number' ? rotStep : 1
+                  const nextDeg = prevDeg + (e.key === 'ArrowUp' ? step : -step)
+                  commitRotAxis3d(i as 0 | 1 | 2, nextDeg, prevDeg)
+                  rotFocusDegRef.current[i as 0 | 1 | 2] = nextDeg
                 }}
               />
             </div>

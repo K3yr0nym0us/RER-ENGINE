@@ -758,6 +758,13 @@ impl State {
                 self.stop_audio_internal();
                 log::info!("[audio] detenido por comando externo");
             }
+            EngineCommand::DeselectEntity => {
+                if self.selected_entity.is_some() || !self.selected_entities.is_empty() {
+                    self.selected_entity = None;
+                    self.selected_entities.clear();
+                    send_event(&EngineEvent::EntityDeselected);
+                }
+            }
             EngineCommand::RemoveEntity { id } => {
                 let removed_kind = if self.collider_entities.contains(&id) {
                     "collider"
