@@ -57,6 +57,29 @@ Backlog transversal del monorepo (2D + 3D + Electron). Estado por motor: [CHECKL
 
 ---
 
+### Gameplay — proyectiles, enemigos e IA (2D + 3D)
+
+- [ ] **Categoría y entidad tipo proyectil**
+  - Crear categoría de recurso/entidad **proyectil** en el editor (spawn, inspector, persistencia en `.save`).
+  - Diferenciarla de `character`, `object`, etc., en motor y renderer.
+
+- [ ] **Disparo de proyectil configurable**
+  - Acción/comportamiento de disparo con parámetros editables en UI:
+    - **Velocidad**
+    - **Dirección**
+    - **Distancia** (alcance o recorrido máximo)
+  - Sincronizar valores con el motor y reflejarlos en el snapshot de entidad.
+
+- [ ] **Character tipo enemy**
+  - Variante de personaje **enemy** (categoría, etiquetas, defaults de editor).
+  - Propiedades y filtros en sidebar / inspector distintos del player.
+
+- [ ] **IA de enemigos y NPCs**
+  - Sistema de comportamiento para enemigos y NPCs (patrulla, persecución, ataque, estados básicos).
+  - Integración con scripts Rhai y/o nodos visuales según el flujo del motor.
+
+---
+
 ## Aplazado (producto)
 
 Ítems fuera de alcance actual; compartidos por 2D y 3D.
