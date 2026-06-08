@@ -228,16 +228,22 @@ export function syncEditorStateFromSavedScene(
 		entityIds.push(entity.id);
 
 		const entry = { id: entity.id, path: meta.path };
-		switch (entity.category) {
+		const listKind = meta.kind ?? entity.category;
+		switch (listKind) {
 			case 'character':
 				characterEntities.push(entry);
 				break;
+			case 'scenario':
 			case 'environment':
 			case 'object':
-				scenarioEntities.push(entry);
-				break;
 			case 'sun':
 				scenarioEntities.push(entry);
+				break;
+			case 'collider':
+				colliderEntities.push(entry);
+				break;
+			case 'execution_area':
+				executionAreaEntities.push(entry);
 				break;
 			default:
 				break;

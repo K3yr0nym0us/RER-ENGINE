@@ -1328,6 +1328,14 @@ export function createEngineEventHandler({
 						dispatch,
 						refs.blueprintsRef.current,
 					);
+					for (const [idStr, meta] of Object.entries(refs.entityMetaRef.current)) {
+						if (meta.kind !== 'character' || !meta.controlBindings) continue;
+						window.engine.send({
+							cmd: 'set_control_bindings',
+							id: Number(idStr),
+							bindings: meta.controlBindings,
+						} as never);
+					}
 					if (scene.sprites?.length) {
 						dispatch({ type: 'SET_LOADED_SPRITES_INFO', payload: scene.sprites });
 					}

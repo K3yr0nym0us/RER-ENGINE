@@ -439,9 +439,9 @@ fn resolve_script_source(source: &str, extracted_dir: &Path) -> String {
     if source.is_empty() {
         return String::new();
     }
+    // Rhai embebido en manifest (sin referencia @file:scripting/...).
     if !source.starts_with(SCRIPT_FILE_PREFIX) {
-        log::warn!("script sin prefijo @file: ignorado en manifest");
-        return String::new();
+        return source.to_string();
     }
     let rel = &source[SCRIPT_FILE_PREFIX.len()..];
     let normalized = rel.replace('/', std::path::MAIN_SEPARATOR_STR);

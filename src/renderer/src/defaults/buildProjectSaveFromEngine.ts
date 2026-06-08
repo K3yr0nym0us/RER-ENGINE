@@ -65,12 +65,50 @@ function normalizeEngineAnimations(
 	});
 }
 
-/** Copia entidad del snapshot del motor; el front solo fusiona metadatos de editor (celdas de animación). */
-function entityFromEngineSnapshot(raw: Entity3D): Entity3D {
+type EngineEntitySnapshotWire = Entity3D & {
+	kind?: string
+	path?: string
+	control_bindings?: Entity3D['controls']
+	physics_enabled?: boolean
+}
+
+function kindToEntityCategory(kind?: string): Entity3D['category'] | undefined {
+	switch (kind) {
+		case 'character':
+			return 'character'
+		case 'scenario':
+			return 'environment'
+		case 'collider':
+		case 'execution_area':
+		case 'model':
+			return 'object'
+		default:
+			return undefined
+	}
+}
+
+/** Normaliza entidades 2D del motor (`kind`, `path`, `control_bindings`) al contrato `Entity3D`. */
+function normalizeEngineEntitySnapshot(raw: EngineEntitySnapshotWire): Entity3D {
+	const model = raw.model ?? raw.path ?? ''
+	const category =
+		raw.category
+		?? kindToEntityCategory(raw.kind)
+		?? 'object'
+	const controls = raw.controls ?? raw.control_bindings
+	const colision = raw.colision ?? Boolean(raw.physics_enabled)
 	return {
 		...raw,
+		model,
+		category,
+		colision,
+		...(controls ? { controls } : {}),
 		animations: normalizeEngineAnimations(raw.animations as EngineAnim[] | undefined),
-	};
+	}
+}
+
+/** Copia entidad del snapshot del motor; el front solo fusiona metadatos de editor (celdas de animación). */
+function entityFromEngineSnapshot(raw: Entity3D): Entity3D {
+	return normalizeEngineEntitySnapshot(raw as EngineEntitySnapshotWire)
 }
 
 function mergeAnimationEditorMeta(
