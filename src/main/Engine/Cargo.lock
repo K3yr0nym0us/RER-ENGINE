@@ -2605,6 +2605,7 @@ checksum = "19b30a45b0cd0bcca8037f3d0dc3421eaf95327a17cad11964fb8179b4fc4832"
 name = "rer-engine-2d"
 version = "0.1.0"
 dependencies = [
+ "ab_glyph",
  "bytemuck",
  "env_logger",
  "getrandom 0.2.17",
@@ -2661,7 +2662,10 @@ dependencies = [
 name = "rer-engine-shared"
 version = "0.1.0"
 dependencies = [
+ "bytemuck",
  "env_logger",
+ "glam",
+ "image",
  "log",
  "rhai",
  "serde",

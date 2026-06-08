@@ -5,28 +5,10 @@
 // siempre sean visibles encima de la escena del editor.
 // ---------------------------------------------------------------------------
 
-use bytemuck::{Pod, Zeroable};
+use bytemuck;
 use wgpu::util::DeviceExt;
 
-#[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable)]
-pub struct GizmoVertex {
-    pub position: [f32; 3],
-    pub color:    [f32; 4],
-}
-
-impl GizmoVertex {
-    const ATTRIBS: [wgpu::VertexAttribute; 2] =
-        wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x4];
-
-    pub fn desc() -> wgpu::VertexBufferLayout<'static> {
-        wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<Self>() as wgpu::BufferAddress,
-            step_mode:    wgpu::VertexStepMode::Vertex,
-            attributes:   &Self::ATTRIBS,
-        }
-    }
-}
+pub use rer_engine_shared::player_ui::ndc_draw::NdcVertex as GizmoVertex;
 
 pub struct GizmoBuffer {
     pub vertex_buffer: wgpu::Buffer,

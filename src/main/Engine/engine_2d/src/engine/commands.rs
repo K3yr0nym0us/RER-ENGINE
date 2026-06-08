@@ -339,7 +339,12 @@ impl State {
                     return;
                 }
 
+                if playing && self.player_ui_edit_active {
+                    self.apply_player_ui_edit_mode(false, None, None);
+                }
+
                 self.preview_playing = playing;
+                self.apply_player_ui_play_hud(playing);
 
                 if playing {
                     self.active_tool = ActiveTool::None;
@@ -538,6 +543,136 @@ impl State {
             EngineCommand::GetDefaultSceneName { id } => {
                 let name = rer_engine_shared::editor_defaults::default_scene_name(id);
                 send_event(&EngineEvent::DefaultSceneNameReady { id, name });
+            }
+            EngineCommand::SetPlayerUiEditMode {
+                active,
+                scope,
+                screen_id,
+            } => {
+                self.apply_player_ui_edit_mode(
+                    active,
+                    scope.as_deref(),
+                    screen_id.as_deref(),
+                );
+            }
+            EngineCommand::AddPlayerUiTextBox { font_path } => {
+                match self.add_player_ui_text_box(&font_path) {
+                    Ok(id) => {
+                        if let Some(key) = self.player_ui_text_key() {
+                            if let Some(entry) = self
+                                .player_ui_text_boxes
+                                .get(&key)
+                                .and_then(|list| list.iter().find(|b| b.id == id))
+                            {
+                                send_event(&EngineEvent::PlayerUiTextBoxAdded {
+                                    id: entry.id,
+                                    font_path: entry.font_path.clone(),
+                                    font_name: entry.font_name.clone(),
+                                    text: entry.text.clone(),
+                                    center_x: entry.center_x,
+                                    center_y: entry.center_y,
+                                    width: entry.width,
+                                    height: entry.height,
+                                });
+                            }
+                        }
+                    }
+                    Err(message) => {
+                        send_event(&EngineEvent::Error { message });
+                    }
+                }
+            }
+            EngineCommand::RemovePlayerUiTextBox { id } => {
+                let removed_id = if let Some(box_id) = id {
+                    self.remove_player_ui_text_box(box_id)
+                        .then_some(box_id)
+                } else {
+                    self.remove_selected_player_ui_text_box()
+                };
+                if let Some(box_id) = removed_id {
+                    send_event(&EngineEvent::PlayerUiTextBoxRemoved { id: box_id });
+                }
+            }
+            EngineCommand::AddPlayerUiButton { payload } => {
+                if let Err(message) = self.add_player_ui_button(payload) {
+                    send_event(&EngineEvent::Error { message });
+                }
+            }
+            EngineCommand::RemovePlayerUiButton { id } => {
+                if let Some(button_id) = id {
+                    if self.remove_player_ui_button(button_id) {
+                        send_event(&EngineEvent::PlayerUiButtonRemoved { id: button_id });
+                    }
+                }
+            }
+            EngineCommand::AddPlayerUiImage { image_path } => {
+                if let Err(message) = self.add_player_ui_image(&image_path) {
+                    send_event(&EngineEvent::Error { message });
+                }
+            }
+            EngineCommand::RemovePlayerUiImage { id } => {
+                if let Some(image_id) = id {
+                    let _ = self.remove_player_ui_image(image_id);
+                } else {
+                    let _ = self.remove_selected_player_ui_image();
+                }
+            }
+            EngineCommand::SetPlayerUiObjectDraw { active } => {
+                self.set_player_ui_object_draw(active);
+            }
+            EngineCommand::RemovePlayerUiObject { id } => {
+                if let Some(object_id) = id {
+                    let _ = self.remove_player_ui_object(object_id);
+                } else if let Some(object_id) = self.player_ui_selected_object_id {
+                    let _ = self.remove_player_ui_object(object_id);
+                }
+            }
+            EngineCommand::SetPlayerUiHudElementProps {
+                element_kind,
+                id,
+                locked,
+                z_index,
+            } => {
+                if let Err(message) = self.set_player_ui_hud_element_props(
+                    &element_kind,
+                    id,
+                    locked,
+                    z_index,
+                ) {
+                    send_event(&EngineEvent::Error { message });
+                }
+            }
+            EngineCommand::SetPlayerUiObjectStyle {
+                id,
+                fill_color,
+                texture_path,
+                clear_texture,
+                live,
+                skip_undo,
+            } => {
+                if let Err(message) = self.set_player_ui_object_style(
+                    id,
+                    fill_color,
+                    texture_path,
+                    clear_texture,
+                    live,
+                    skip_undo,
+                ) {
+                    send_event(&EngineEvent::Error { message });
+                }
+            }
+            EngineCommand::SyncPlayerUiScreens { screens } => {
+                self.sync_player_ui_screens(&screens);
+            }
+            EngineCommand::SetActivePlayerUiScreen { screen_id } => {
+                match screen_id.filter(|id| !id.is_empty()) {
+                    Some(id) => {
+                        if let Err(message) = self.set_active_player_ui_screen(&id) {
+                            send_event(&EngineEvent::Error { message });
+                        }
+                    }
+                    None => self.clear_active_player_ui_screen(),
+                }
             }
             EngineCommand::SetDebugMode { show } => {
                 self.debug_mode = show;
@@ -975,6 +1110,54 @@ EngineCommand::PlayAnimation { id, name } => {
                 let count = fonts.len();
                 send_event(&EngineEvent::FontsList { fonts });
                 log::debug!("[font] lista enviada: {} fuentes", count);
+            }
+            EngineCommand::LoadHudImage { path, name } => {
+                match crate::hud_image_asset::validate_hud_image_file(&path) {
+                    Ok((width, height)) => {
+                        self.hud_image_store.insert(
+                            path.clone(),
+                            crate::hud_image_asset::HudImageAssetMeta {
+                                name: name.clone(),
+                                width_px: width,
+                                height_px: height,
+                            },
+                        );
+                        send_event(&EngineEvent::HudImageLoaded {
+                            path: path.clone(),
+                            name: name.clone(),
+                            width,
+                            height,
+                        });
+                        log::debug!("[hud-image] registrada: {} ({})", path, name);
+                    }
+                    Err(e) => {
+                        log::error!("[hud-image] error cargando {}: {}", path, e);
+                        send_event(&EngineEvent::Error {
+                            message: format!("Error al cargar imagen HUD: {e}"),
+                        });
+                    }
+                }
+            }
+            EngineCommand::RemoveHudImage { path } => {
+                if self.hud_image_store.remove(&path).is_some() {
+                    send_event(&EngineEvent::HudImageRemoved { path: path.clone() });
+                    log::info!("[hud-image] eliminada: {}", path);
+                } else {
+                    log::warn!("[hud-image] intento de eliminar imagen inexistente: {}", path);
+                }
+            }
+            EngineCommand::GetHudImagesList => {
+                let images: Vec<crate::ipc::HudImageInfo> = self
+                    .hud_image_store
+                    .iter()
+                    .map(|(path, meta)| crate::ipc::HudImageInfo {
+                        path: path.clone(),
+                        name: meta.name.clone(),
+                        width: meta.width_px,
+                        height: meta.height_px,
+                    })
+                    .collect();
+                send_event(&EngineEvent::HudImagesList { images });
             }
             EngineCommand::LoadBackgroundAsset { path, name } => {
                 self.background_store.insert(path.clone(), name.clone());

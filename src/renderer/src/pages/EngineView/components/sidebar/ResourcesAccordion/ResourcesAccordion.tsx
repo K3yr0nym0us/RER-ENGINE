@@ -32,11 +32,9 @@ const ResourcesAccordion = ({ projectType = '2D' }: Props) => {
         <Accordion className="sidebar-accordion mt-2">
           <FontsAccordion />
         </Accordion>
-        {is3d && (
-          <Accordion className="sidebar-accordion mt-2">
-            <ImagesAccordion />
-          </Accordion>
-        )}
+        <Accordion className="sidebar-accordion mt-2">
+          <ImagesAccordion />
+        </Accordion>
         {!is3d && (
           <Accordion className="sidebar-accordion mt-2">
             <BackgroundsAccordion />

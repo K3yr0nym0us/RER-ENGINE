@@ -4,7 +4,8 @@ use crate::engine::AnimationState;
 use crate::ipc::{
     send_event, EngineEvent, SaveAnimationFrameSnapshot, SaveAnimationSnapshot,
     SaveAssetRefSnapshot, SaveCamera2dSnapshot, SaveEntitySnapshot, SavePlayerTransformSnapshot,
-    SaveSceneSnapshotPayload, SaveScriptSnapshot, SaveWorldSnapshot,
+    SavePlayerUiButtonSnapshot, SavePlayerUiImageSnapshot, SavePlayerUiObjectSnapshot,
+    SavePlayerUiTextBoxSnapshot, SaveSceneSnapshotPayload, SaveScriptSnapshot, SaveWorldSnapshot,
 };
 
 impl State {
@@ -150,7 +151,168 @@ impl State {
                     path: path.clone(),
                 })
                 .collect(),
+            fonts: self
+                .font_store
+                .iter()
+                .map(|(path, name)| SaveAssetRefSnapshot {
+                    name: name.clone(),
+                    path: path.clone(),
+                })
+                .collect(),
+            hud_images: self
+                .hud_image_store
+                .iter()
+                .map(|(path, meta)| SaveAssetRefSnapshot {
+                    name: meta.name.clone(),
+                    path: path.clone(),
+                })
+                .collect(),
+            player_ui_text_boxes: self.export_player_ui_text_boxes_snapshot(),
+            player_ui_buttons: self.export_player_ui_buttons_snapshot(),
+            player_ui_images: self.export_player_ui_images_snapshot(),
+            player_ui_objects: self.export_player_ui_objects_snapshot(),
         }
+    }
+
+    fn export_player_ui_text_boxes_snapshot(&self) -> Vec<SavePlayerUiTextBoxSnapshot> {
+        let mut out = Vec::new();
+        for (key, boxes) in &self.player_ui_text_boxes {
+            let Some((scope, screen_id)) = key.split_once(':') else {
+                continue;
+            };
+            for b in boxes {
+                out.push(SavePlayerUiTextBoxSnapshot {
+                    scope: scope.to_string(),
+                    screen_id: screen_id.to_string(),
+                    id: b.id,
+                    font_path: b.font_path.clone(),
+                    font_name: b.font_name.clone(),
+                    text: b.text.clone(),
+                    center_x: b.center_x,
+                    center_y: b.center_y,
+                    width: b.width,
+                    height: b.height,
+                    z_index: b.z_index,
+                    locked: b.locked,
+                });
+            }
+        }
+        out.sort_by(|a, b| {
+            (a.scope.as_str(), a.screen_id.as_str(), a.id).cmp(&(
+                b.scope.as_str(),
+                b.screen_id.as_str(),
+                b.id,
+            ))
+        });
+        out
+    }
+
+    fn export_player_ui_buttons_snapshot(&self) -> Vec<SavePlayerUiButtonSnapshot> {
+        let mut out = Vec::new();
+        for (key, buttons) in &self.player_ui_buttons {
+            let Some((scope, screen_id)) = key.split_once(':') else {
+                continue;
+            };
+            for b in buttons {
+                out.push(SavePlayerUiButtonSnapshot {
+                    scope: scope.to_string(),
+                    screen_id: screen_id.to_string(),
+                    id: b.id,
+                    shape_type: b.shape_type.clone(),
+                    round: b.round,
+                    background_color: b.background_color,
+                    texture_path: b.texture_path.clone(),
+                    transparency_background: b.transparency_background,
+                    text: b.text.clone(),
+                    text_color: b.text_color,
+                    transparency_text: b.transparency_text,
+                    font_path: b.font_path.clone(),
+                    font_name: b.font_name.clone(),
+                    border_color: b.border_color,
+                    border_weight: b.border_weight,
+                    center_x: b.center_x,
+                    center_y: b.center_y,
+                    width: b.width,
+                    height: b.height,
+                    source_aspect: Some(b.source_aspect),
+                    z_index: b.z_index,
+                    locked: b.locked,
+                });
+            }
+        }
+        out.sort_by(|a, b| {
+            (a.scope.as_str(), a.screen_id.as_str(), a.id).cmp(&(
+                b.scope.as_str(),
+                b.screen_id.as_str(),
+                b.id,
+            ))
+        });
+        out
+    }
+
+    fn export_player_ui_images_snapshot(&self) -> Vec<SavePlayerUiImageSnapshot> {
+        let mut out = Vec::new();
+        for (key, images) in &self.player_ui_images {
+            let Some((scope, screen_id)) = key.split_once(':') else {
+                continue;
+            };
+            for img in images {
+                out.push(SavePlayerUiImageSnapshot {
+                    scope: scope.to_string(),
+                    screen_id: screen_id.to_string(),
+                    id: img.id,
+                    image_path: img.image_path.clone(),
+                    image_name: img.image_name.clone(),
+                    center_x: img.center_x,
+                    center_y: img.center_y,
+                    width: img.width,
+                    height: img.height,
+                    source_aspect: img.source_aspect,
+                    z_index: img.z_index,
+                    locked: img.locked,
+                });
+            }
+        }
+        out.sort_by(|a, b| {
+            (a.scope.as_str(), a.screen_id.as_str(), a.id).cmp(&(
+                b.scope.as_str(),
+                b.screen_id.as_str(),
+                b.id,
+            ))
+        });
+        out
+    }
+
+    fn export_player_ui_objects_snapshot(&self) -> Vec<SavePlayerUiObjectSnapshot> {
+        let mut out = Vec::new();
+        for (key, objects) in &self.player_ui_objects {
+            let Some((scope, screen_id)) = key.split_once(':') else {
+                continue;
+            };
+            for obj in objects {
+                if obj.vertices.len() < 3 {
+                    continue;
+                }
+                out.push(SavePlayerUiObjectSnapshot {
+                    scope: scope.to_string(),
+                    screen_id: screen_id.to_string(),
+                    id: obj.id,
+                    vertices: obj.vertices.clone(),
+                    fill_color: obj.fill_color,
+                    texture_path: obj.texture_path.clone(),
+                    z_index: obj.z_index,
+                    locked: obj.locked,
+                });
+            }
+        }
+        out.sort_by(|a, b| {
+            (a.scope.as_str(), a.screen_id.as_str(), a.id).cmp(&(
+                b.scope.as_str(),
+                b.screen_id.as_str(),
+                b.id,
+            ))
+        });
+        out
     }
 
     fn find_player_entity(&self) -> Option<u32> {

@@ -503,6 +503,8 @@ export function createEngineEventHandler({
 			} else if (boot3dNoSave) {
 				if (projectType === '3D' && gameStyle === 'first-person') {
 					dispatch({ type: 'INIT_DEFAULT_FP_PLAYER_UI' });
+				} else if (projectType === '2D') {
+					dispatch({ type: 'INIT_DEFAULT_2D_PLAYER_UI' });
 				}
 				beginEngineBootEntityWait(refs);
 			}
@@ -1253,6 +1255,7 @@ export function createEngineEventHandler({
 			window.engine.send({ cmd: 'get_sprites_list' } as never);
 			window.engine.send({ cmd: 'get_sounds_list' } as never);
 			window.engine.send({ cmd: 'get_fonts_list' } as never);
+			window.engine.send({ cmd: 'get_hud_images_list' } as never);
 			window.engine.send({ cmd: 'get_backgrounds_list' } as never);
 			return;
 		}
@@ -1294,9 +1297,7 @@ export function createEngineEventHandler({
 			window.engine.send({ cmd: 'get_models_list' } as never);
 			window.engine.send({ cmd: 'get_sounds_list' } as never);
 			window.engine.send({ cmd: 'get_fonts_list' } as never);
-			if (projectType === '3D') {
-				window.engine.send({ cmd: 'get_hud_images_list' } as never);
-			}
+			window.engine.send({ cmd: 'get_hud_images_list' } as never);
 			window.engine.send({ cmd: 'get_backgrounds_list' } as never);
 			return;
 		}

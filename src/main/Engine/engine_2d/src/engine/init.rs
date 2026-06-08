@@ -17,7 +17,7 @@ use crate::texture::GpuTexture;
 
 use super::audio::start_audio_thread;
 use super::render_helpers::{build_scene_uniforms, create_depth_texture};
-use super::types::DEPTH_FORMAT;
+use super::types::{ScreenHudSceneUniforms, DEPTH_FORMAT};
 use super::State;
 
 impl State {
@@ -410,6 +410,86 @@ impl State {
         let grid_config = GridConfig::default();
         let grid_buffer = crate::config_2d::build_grid(&device, &grid_config);
 
+        let ui_work_grid_buffer = gizmo::build_from_vertices(&device, &[]);
+        let player_ui_text_overlay_buffer = gizmo::build_from_vertices(&device, &[]);
+        let player_ui_caret_buffer = gizmo::build_from_vertices(&device, &[]);
+        let player_ui_object_draw_overlay = gizmo::build_from_vertices(&device, &[]);
+
+        let screen_hud_bgl = crate::screen_hud_image::ScreenHudAtlas::bind_group_layout(&device);
+        let player_ui_text_atlas =
+            crate::screen_hud_image::ScreenHudAtlas::new(&device, &queue, &screen_hud_bgl);
+
+        let screen_hud_shader =
+            device.create_shader_module(include_wgsl!("../shader_screen_hud.wgsl"));
+        let screen_hud_scene_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("screen-hud-scene-bgl"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
+        let hud_scene_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("hud-scene-uniforms"),
+            contents: bytemuck::cast_slice(&[ScreenHudSceneUniforms::ndc_identity()]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let hud_scene_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("hud-scene-bg"),
+            layout: &screen_hud_scene_bgl,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: hud_scene_buf.as_entire_binding(),
+            }],
+        });
+        let screen_hud_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("screen-hud-pipeline-layout"),
+                bind_group_layouts: &[&screen_hud_scene_bgl, &screen_hud_bgl],
+                push_constant_ranges: &[],
+            });
+        let screen_hud_pipeline =
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("screen-hud-pipeline"),
+                layout: Some(&screen_hud_pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &screen_hud_shader,
+                    entry_point: "vs_screen_hud",
+                    buffers: &[mesh::Vertex::desc(), mesh::InstanceData::desc()],
+                    compilation_options: Default::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &screen_hud_shader,
+                    entry_point: "fs_screen_hud",
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format,
+                        blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                    compilation_options: Default::default(),
+                }),
+                primitive: wgpu::PrimitiveState {
+                    cull_mode: None,
+                    ..Default::default()
+                },
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: DEPTH_FORMAT,
+                    depth_write_enabled: false,
+                    depth_compare: wgpu::CompareFunction::Always,
+                    stencil: wgpu::StencilState::default(),
+                    bias: wgpu::DepthBiasState::default(),
+                }),
+                multisample: wgpu::MultisampleState::default(),
+                multiview: None,
+                cache: None,
+            });
+        let hud_quad_mesh = mesh::create_unit_quad_xy(&device);
+
         // ── Audio: thread dedicado ──────────────────────────────────────────────
         // El thread de audio vive independiente del render thread para que la
         // creaci\u00f3n/destrucci\u00f3n de Sinks de rodio (que puede bloquear en ALSA/PulseAudio)
@@ -471,12 +551,46 @@ impl State {
             grid_bind_group,
             grid_buffer_uni,
             ctrl_held: false,
+            shift_held: false,
             active_tool: ActiveTool::None,
             quick_build_ghost_id: None,
             quick_build_preview_path: None,
             quick_build_preview_kind: None,
             quick_build_preview_scale: None,
             preview_playing: false,
+            player_ui_edit_active: false,
+            ui_work_grid_buffer,
+            player_ui_edit_scope: None,
+            player_ui_edit_screen_id: None,
+            player_ui_active_player_screen_id: None,
+            player_ui_player_screen_names: HashMap::new(),
+            player_ui_text_boxes: HashMap::new(),
+            player_ui_buttons: HashMap::new(),
+            player_ui_images: HashMap::new(),
+            player_ui_objects: HashMap::new(),
+            player_ui_object_draw: None,
+            player_ui_object_draw_overlay,
+            player_ui_text_next_id: 1,
+            player_ui_text_overlay_buffer,
+            player_ui_text_atlas,
+            player_ui_hud_texture_cache: HashMap::new(),
+            player_ui_font_cache: HashMap::new(),
+            player_ui_glyph_instances: Vec::new(),
+            player_ui_glyph_instance_buffer: None,
+            player_ui_selected_text_id: None,
+            player_ui_selected_button_id: None,
+            player_ui_selected_image_id: None,
+            player_ui_selected_object_id: None,
+            player_ui_text_editing_id: None,
+            player_ui_text_caret: 0,
+            player_ui_caret_blink_epoch: Instant::now(),
+            player_ui_caret_buffer,
+            player_ui_text_drag: None,
+            player_ui_last_text_click: None,
+            screen_hud_pipeline,
+            hud_scene_bind_group,
+            hud_quad_mesh,
+            hud_image_store: HashMap::new(),
             debug_mode: false,
             vsync_enabled: false,
             tool_overlay_buffer: tool_overlay_buffer_init,

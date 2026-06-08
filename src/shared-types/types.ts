@@ -552,6 +552,9 @@ export interface ProjectLoaded2dPayload {
   world:         SavedWorldConfig
   backgroundPath: string | null
   camera2d:      { x: number; y: number; halfH: number } | null
+  hudImages?:    Array<{ name: string; path: string }>
+  playerUiScreens?: Array<{ id: string; name: string; active?: boolean }>
+  menuUiScreens?: Array<{ id: string; name: string }>
 }
 
 export interface EngineCommand {

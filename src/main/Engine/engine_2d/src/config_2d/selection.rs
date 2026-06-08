@@ -24,6 +24,9 @@ impl State {
     /// Cuando varios AABBs se solapan (p.ej. escenario + player) se elige
     /// la entidad con mayor Z (más cercana a la cámara).
     pub fn pick_entity_2d(&mut self, pixel_x: f32, pixel_y: f32) {
+        if self.player_ui_edit_active {
+            return;
+        }
         let Some((wx, wy)) = self.screen_to_world_2d(pixel_x, pixel_y) else { return };
 
         // AABB en centro visual (mismo criterio que render y spatial grid).
@@ -264,6 +267,9 @@ impl State {
     /// Actualiza `hovered_entity` y `hovered_gizmo_axis` en modo 2D.
     /// Usa spatial grid para O(k) lookup en lugar de O(n) linear scan.
     pub fn update_hover_2d(&mut self, pixel_x: f32, pixel_y: f32) {
+        if self.player_ui_edit_active {
+            return;
+        }
         let prev_hover = self.hovered_entity;
         let Some((wx, wy)) = self.screen_to_world_2d(pixel_x, pixel_y) else { return };
 

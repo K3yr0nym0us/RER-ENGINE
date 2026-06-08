@@ -26,6 +26,9 @@ pub(crate) enum UndoAction {
     RemoveEntity { snapshot: EntityUndoSnapshot },
     /// Redo tras eliminar una entidad recién creada: volver a insertarla con el mismo id.
     RestoreEntity { snapshot: EntityUndoSnapshot },
+    RestorePlayerUiHud {
+        snapshot: crate::config_2d::player_ui::hud_undo::PlayerUiHudUndoSnapshot,
+    },
 }
 
 #[derive(Clone)]
@@ -87,6 +90,47 @@ pub struct ActiveAnimation {
 pub(crate) struct SceneUniforms {
     pub(crate) view_proj: [[f32; 4]; 4],
     pub(crate) cam_pos:   [f32; 4],   // xyz = posición cámara, w = sin uso
+}
+
+/// Uniformes del pass `screen_hud_pipeline` (layout completo de `shader_screen_hud.wgsl`).
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub(crate) struct ScreenHudSceneUniforms {
+    pub view_proj:         [[f32; 4]; 4],
+    pub view_proj_stable:  [[f32; 4]; 4],
+    pub prev_view_proj:    [[f32; 4]; 4],
+    pub inv_view_proj:     [[f32; 4]; 4],
+    pub cam_pos:           [f32; 4],
+    pub light_dir:         [f32; 4],
+    pub light_color:       [f32; 4],
+    pub light_view_proj:   [[f32; 4]; 4],
+    pub light_params:      [f32; 4],
+    pub jitter:            [f32; 4],
+    pub shadow_bias:       [f32; 4],
+}
+
+impl ScreenHudSceneUniforms {
+    pub(crate) fn ndc_identity() -> Self {
+        let id: [[f32; 4]; 4] = [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ];
+        Self {
+            view_proj: id,
+            view_proj_stable: id,
+            prev_view_proj: id,
+            inv_view_proj: id,
+            cam_pos: [0.0, 0.0, 5.0, 0.0],
+            light_dir: [0.0, 1.0, 0.0, 1.0],
+            light_color: [1.0, 1.0, 1.0, 0.0],
+            light_view_proj: id,
+            light_params: [0.0; 4],
+            jitter: [0.0; 4],
+            shadow_bias: [0.0; 4],
+        }
+    }
 }
 
 /// Estado de un deslizamiento suave iniciado desde `on_press`.

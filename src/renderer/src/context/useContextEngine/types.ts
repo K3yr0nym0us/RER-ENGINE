@@ -1,5 +1,5 @@
 import type { MutableRefObject } from 'react';
-import { defaultFpPlayerUiScreens } from '../../defaults/fpPlayerUiDefaults';
+import { default2dPlayerUiScreens, defaultFpPlayerUiScreens } from '../../defaults/fpPlayerUiDefaults';
 import type { ModelLoadOverlayKind } from './hooks/sceneImportOverlay';
 import {
 	DEFAULT_GRAVITY_MAGNITUDE,
@@ -311,6 +311,7 @@ export type EngineAction =
 	| { type: 'RENAME_UI_SCREEN'; payload: { scope: UiScreenScope; id: string; name: string } }
 	| { type: 'SET_ACTIVE_PLAYER_UI_SCREEN'; payload: string | null }
 	| { type: 'INIT_DEFAULT_FP_PLAYER_UI' }
+	| { type: 'INIT_DEFAULT_2D_PLAYER_UI' }
 	| { type: 'CLEAR_EDITING_UI_ELEMENTS' }
 	| { type: 'SET_EDITING_UI_ELEMENTS'; payload: EditingUiElement[] }
 	| { type: 'SET_EDITING_UI_TEXT_BOXES'; payload: PlayerUiTextBoxEntry[] }
@@ -637,6 +638,15 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 			return {
 				...prevState,
 				playerUiScreens: defaultFpPlayerUiScreens(),
+			};
+		},
+		INIT_DEFAULT_2D_PLAYER_UI: (prevState) => {
+			if (prevState.playerUiScreens.length > 0) {
+				return prevState;
+			}
+			return {
+				...prevState,
+				playerUiScreens: default2dPlayerUiScreens(),
 			};
 		},
 		REMOVE_UI_SCREEN: (prevState, nextAction) => {
@@ -993,8 +1003,11 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 				sounds: p.sounds,
 				fonts: p.fonts ?? [],
 				backgrounds: p.backgrounds,
+				hudImages: p.hudImages ?? [],
 				loadedSpritesInfo: spriteMap,
 				backgroundPath: p.backgroundPath ?? null,
+				playerUiScreens: normalizePlayerUiScreens(p.playerUiScreens ?? []),
+				menuUiScreens: p.menuUiScreens ?? [],
 			};
 		},
 		APPLY_PROJECT_LOADED_3D: (prevState, nextAction) => {

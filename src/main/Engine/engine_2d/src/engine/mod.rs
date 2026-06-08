@@ -126,6 +126,7 @@ pub struct State {
     /// Estado de la tecla Ctrl (enviado por IPC desde Electron, ya que la ventana overlay
     /// no recibe keyboard events directamente).
     pub(crate) ctrl_held:        bool,
+    pub(crate) shift_held:       bool,
     /// Herramienta de dibujo activa en modo 2D.
     pub        active_tool:      ActiveTool,
     /// Entidad fantasma para previsualizar el blueprint a colocar (Quick Build mode).
@@ -138,6 +139,45 @@ pub struct State {
     pub(crate) quick_build_preview_scale: Option<[f32; 3]>,
     /// true = modo juego (simulación), false = modo editor.
     pub        preview_playing:  bool,
+    /// Edición de UI del jugador (cuadrícula de trabajo NDC).
+    pub(crate) player_ui_edit_active: bool,
+    pub(crate) ui_work_grid_buffer: GizmoBuffer,
+    pub(crate) player_ui_edit_scope: Option<String>,
+    pub(crate) player_ui_edit_screen_id: Option<String>,
+    pub(crate) player_ui_active_player_screen_id: Option<String>,
+    pub(crate) player_ui_player_screen_names: HashMap<String, String>,
+    pub(crate) player_ui_text_boxes:
+        HashMap<String, Vec<crate::config_2d::player_ui::PlayerUiTextBox>>,
+    pub(crate) player_ui_buttons:
+        HashMap<String, Vec<crate::config_2d::player_ui::PlayerUiButton>>,
+    pub(crate) player_ui_images:
+        HashMap<String, Vec<crate::config_2d::player_ui::PlayerUiImage>>,
+    pub(crate) player_ui_objects:
+        HashMap<String, Vec<crate::config_2d::player_ui::PlayerUiObject>>,
+    pub(crate) player_ui_object_draw: Option<crate::config_2d::player_ui::object::PlayerUiObjectDrawSession>,
+    pub(crate) player_ui_object_draw_overlay: GizmoBuffer,
+    pub(crate) player_ui_text_next_id: u32,
+    pub(crate) player_ui_text_overlay_buffer: GizmoBuffer,
+    pub(crate) player_ui_text_atlas: crate::screen_hud_image::ScreenHudAtlas,
+    pub(crate) player_ui_hud_texture_cache:
+        HashMap<String, crate::screen_hud_image::ScreenHudPackedImage>,
+    pub(crate) player_ui_font_cache: HashMap<String, std::sync::Arc<ab_glyph::FontArc>>,
+    pub(crate) player_ui_glyph_instances: Vec<crate::mesh::InstanceData>,
+    pub(crate) player_ui_glyph_instance_buffer: Option<wgpu::Buffer>,
+    pub(crate) player_ui_selected_text_id: Option<u32>,
+    pub(crate) player_ui_selected_button_id: Option<u32>,
+    pub(crate) player_ui_selected_image_id: Option<u32>,
+    pub(crate) player_ui_selected_object_id: Option<u32>,
+    pub(crate) player_ui_text_editing_id: Option<u32>,
+    pub(crate) player_ui_text_caret: usize,
+    pub(crate) player_ui_caret_blink_epoch: Instant,
+    pub(crate) player_ui_caret_buffer: GizmoBuffer,
+    pub(crate) player_ui_text_drag: Option<crate::config_2d::player_ui::PlayerUiTextDrag>,
+    pub(crate) player_ui_last_text_click: Option<(u32, Instant)>,
+    pub(crate) screen_hud_pipeline: wgpu::RenderPipeline,
+    pub(crate) hud_scene_bind_group: wgpu::BindGroup,
+    pub(crate) hud_quad_mesh: Mesh,
+    pub(crate) hud_image_store: HashMap<String, crate::hud_image_asset::HudImageAssetMeta>,
     /// Muestra los colliders overlay incluso en modo juego (debug toggle).
     pub(crate) debug_mode: bool,
     /// V-Sync activado en el swapchain.
@@ -361,6 +401,15 @@ impl State {
                 self.restore_entity_from_undo_snapshot(&snapshot);
                 self.redo_stack.push(UndoAction::RemoveEntity { snapshot });
             }
+            UndoAction::RestorePlayerUiHud { snapshot } => {
+                if let Some(current) =
+                    self.capture_player_ui_hud_undo_snapshot_with_key(&snapshot.key)
+                {
+                    self.redo_stack
+                        .push(UndoAction::RestorePlayerUiHud { snapshot: current });
+                }
+                self.restore_player_ui_hud_undo_snapshot(snapshot);
+            }
         }
         self.is_applying_undo = false;
     }
@@ -420,6 +469,15 @@ impl State {
                 self.handle_command(EngineCommand::RemoveEntity { id });
                 self.undo_stack.push(UndoAction::RestoreEntity { snapshot });
             }
+            UndoAction::RestorePlayerUiHud { snapshot } => {
+                if let Some(current) =
+                    self.capture_player_ui_hud_undo_snapshot_with_key(&snapshot.key)
+                {
+                    self.undo_stack
+                        .push(UndoAction::RestorePlayerUiHud { snapshot: current });
+                }
+                self.restore_player_ui_hud_undo_snapshot(snapshot);
+            }
         }
         self.is_applying_undo = false;
     }
@@ -439,6 +497,9 @@ impl State {
             new_size.width,
             new_size.height,
         );
+        if self.player_ui_edit_active {
+            self.rebuild_player_ui_screen_grid();
+        }
     }
 
     /// Activa o desactiva V-Sync reconfigurendo el swapchain.

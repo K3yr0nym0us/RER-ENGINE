@@ -56,7 +56,7 @@ export function createEngineActions({
 	send,
 	projectType,
 }: CreateEngineActionsParams) {
-	const is3dProject = projectType === '3D';
+	const supportsPlayerUi = projectType === '2D' || projectType === '3D';
 	const cloneTransform = (transform: Transform): Transform => ({
 		position: [...transform.position] as [number, number, number],
 		rotation: [...transform.rotation] as [number, number, number, number],
@@ -664,7 +664,7 @@ export function createEngineActions({
 
 	const syncEngineUiViewportEdit = (playerId: string | null, menuId: string | null) => {
 		dispatch({ type: 'SET_UI_SCREEN_EDITING', payload: { playerId, menuId } });
-		if (!is3dProject) return;
+		if (!supportsPlayerUi) return;
 		const active = Boolean(playerId || menuId);
 		if (active) {
 			const scope = playerId ? 'player' : 'menu';
@@ -676,17 +676,17 @@ export function createEngineActions({
 	};
 
 	const addPlayerUiTextBox = (fontPath: string) => {
-		if (!is3dProject) return;
+		if (!supportsPlayerUi) return;
 		send({ cmd: 'add_player_ui_text_box', font_path: fontPath });
 	};
 
 	const removePlayerUiTextBox = (id?: number) => {
-		if (!is3dProject) return;
+		if (!supportsPlayerUi) return;
 		send({ cmd: 'remove_player_ui_text_box', ...(id !== undefined ? { id } : {}) });
 	};
 
 	const addEditingUiButton = (config: PlayerUiButtonConfig) => {
-		if (!is3dProject) return;
+		if (!supportsPlayerUi) return;
 		pendingPlayerUiButtonConfig = config;
 		send({
 			cmd: 'add_player_ui_button',
@@ -706,17 +706,17 @@ export function createEngineActions({
 	};
 
 	const addPlayerUiImage = (imagePath: string) => {
-		if (!is3dProject) return;
+		if (!supportsPlayerUi) return;
 		send({ cmd: 'add_player_ui_image', image_path: imagePath });
 	};
 
 	const removePlayerUiImage = (id?: number) => {
-		if (!is3dProject) return;
+		if (!supportsPlayerUi) return;
 		send({ cmd: 'remove_player_ui_image', ...(id !== undefined ? { id } : {}) });
 	};
 
 	const removePlayerUiObject = (id?: number) => {
-		if (!is3dProject) return;
+		if (!supportsPlayerUi) return;
 		send({ cmd: 'remove_player_ui_object', ...(id !== undefined ? { id } : {}) });
 	};
 
@@ -725,7 +725,7 @@ export function createEngineActions({
 		id: number,
 		props: { locked?: boolean; z_index?: number },
 	) => {
-		if (!is3dProject) return;
+		if (!supportsPlayerUi) return;
 		send({
 			cmd: 'set_player_ui_hud_element_props',
 			element_kind: elementKind,
@@ -744,7 +744,7 @@ export function createEngineActions({
 			skip_undo?: boolean;
 		},
 	) => {
-		if (!is3dProject) return;
+		if (!supportsPlayerUi) return;
 		send({
 			cmd: 'set_player_ui_object_style',
 			id,
@@ -757,7 +757,7 @@ export function createEngineActions({
 	};
 
 	const removeEditingUiPlaceholder = (kind: 'button', id: number) => {
-		if (kind === 'button' && is3dProject) {
+		if (kind === 'button' && supportsPlayerUi) {
 			send({ cmd: 'remove_player_ui_button', id });
 		}
 	};
@@ -789,7 +789,7 @@ export function createEngineActions({
 				}
 			}
 		}
-		if (is3dProject) {
+		if (supportsPlayerUi) {
 			endUiScreenEdit();
 		}
 	};
@@ -813,7 +813,7 @@ export function createEngineActions({
 	};
 
 	const syncPlayerUiScreensToEngine = (screens: UiScreenEntry[]) => {
-		if (!is3dProject) return;
+		if (!supportsPlayerUi) return;
 		send({
 			cmd: 'sync_player_ui_screens',
 			screens: screens.map((s) => ({
@@ -825,7 +825,7 @@ export function createEngineActions({
 	};
 
 	const setActivePlayerUiScreen = (screenId: string | null) => {
-		if (!is3dProject) return;
+		if (!supportsPlayerUi) return;
 		dispatch({ type: 'SET_ACTIVE_PLAYER_UI_SCREEN', payload: screenId });
 		send({
 			cmd: 'set_active_player_ui_screen',
@@ -834,7 +834,7 @@ export function createEngineActions({
 	};
 
 	const beginUiScreenEdit = (scope: UiScreenScope, id: string) => {
-		if (!is3dProject) return;
+		if (!supportsPlayerUi) return;
 		if (scope === 'player') {
 			syncEngineUiViewportEdit(id, null);
 		} else {

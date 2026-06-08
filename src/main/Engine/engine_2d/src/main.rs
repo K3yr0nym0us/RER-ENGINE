@@ -10,6 +10,8 @@ mod on_press;
 mod scripting;
 mod spatial;
 mod texture;
+mod screen_hud_image;
+mod hud_image_asset;
 
 #[path = "config_2d/mod.rs"]
 mod config_2d;
@@ -24,13 +26,14 @@ use gilrs::{Button as GamepadButton, EventType as GamepadEventType, Gilrs};
 
 use winit::{
     application::ApplicationHandler,
-    event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent},
+    event::{ElementState, Ime, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent},
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
     keyboard::{KeyCode, PhysicalKey},
     window::{Window, WindowId},
 };
 
 use ipc::{EngineCommand, EngineEvent};
+use rer_engine_shared::platform::query_shift_held_os;
 use rer_engine_shared::gpu::{resolve_backend, EngineGpuProfile};
 use rer_engine_shared::overlay::{parse_overlay_config, OverlayConfig};
 #[cfg(any(target_os = "windows", target_os = "linux"))]
@@ -160,6 +163,8 @@ struct App {
     gizmo_drag_start: Option<Vec<(u32, [f32; 3], [f32; 4], [f32; 3])>>,
     // Teclas modificadoras
     ctrl_held:       bool,                // Ctrl izquierdo o derecho presionado
+    shift_held:      bool,
+    player_ui_left_press: Option<(f32, f32)>,
     keyboard_mouse_pressed: HashSet<String>,
     // Input de mando (gamepad)
     gilrs:           Option<Gilrs>,
@@ -361,6 +366,11 @@ impl ApplicationHandler<EngineCommand> for App {
             WindowEvent::Resized(size) => {
                 state.resize(size);
             }
+            WindowEvent::Ime(ime) => {
+                if let Ime::Commit(text) = ime {
+                    let _ = state.player_ui_text_ime_commit(&text);
+                }
+            }
             // ── Input de ratón para editor 2D ─────────────────────────────────
             WindowEvent::MouseInput { button, state: btn_state, .. } => {
                 let pressed = btn_state == ElementState::Pressed;
@@ -381,6 +391,22 @@ impl ApplicationHandler<EngineCommand> for App {
                         if state.is_preview_playing() {
                             self.left_click_pos = None;
                             self.gizmo_drag_axis = None;
+                            state.set_active_gizmo_axis(None);
+                            state.set_snap_hint_visible(false);
+                            return;
+                        }
+                        if state.player_ui_edit_active {
+                            if let Some(cur) = self.last_cursor {
+                                if pressed {
+                                    state.player_ui_mouse_down(cur.0, cur.1);
+                                    self.player_ui_left_press = Some(cur);
+                                } else if let Some(start) = self.player_ui_left_press.take() {
+                                    state.player_ui_mouse_up(cur.0, cur.1, start.0, start.1);
+                                }
+                            }
+                            self.left_click_pos = None;
+                            self.gizmo_drag_axis = None;
+                            self.gizmo_drag_start = None;
                             state.set_active_gizmo_axis(None);
                             state.set_snap_hint_visible(false);
                             return;
@@ -501,6 +527,19 @@ impl ApplicationHandler<EngineCommand> for App {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 let cur = (position.x as f32, position.y as f32);
+                if state.player_ui_edit_active
+                    && (state.player_ui_text_drag.is_some() || state.player_ui_object_draw_active())
+                {
+                    let shift_active = self.shift_held || query_shift_held_os();
+                    self.shift_held = shift_active;
+                    state.shift_held = shift_active;
+                    let ctrl_active = self.ctrl_held || query_ctrl_held_os();
+                    self.ctrl_held = ctrl_active;
+                    state.ctrl_held = ctrl_active;
+                    state.player_ui_mouse_move(cur.0, cur.1);
+                    self.last_cursor = Some(cur);
+                    return;
+                }
                 if state.is_preview_playing() {
                     self.gizmo_drag_axis = None;
                     self.gizmo_drag_start = None;
@@ -533,7 +572,12 @@ impl ApplicationHandler<EngineCommand> for App {
                     }
                 }
                 // Hover: solo cuando no se está arrastrando
-                if !state.is_preview_playing() && !self.mouse_right && !self.mouse_middle && self.gizmo_drag_axis.is_none() {
+                if !state.is_preview_playing()
+                    && !state.player_ui_edit_active
+                    && !self.mouse_right
+                    && !self.mouse_middle
+                    && self.gizmo_drag_axis.is_none()
+                {
                     let is_quick_build = matches!(state.active_tool, crate::config_2d::ActiveTool::QuickBuildPlace { .. });
                     if !is_quick_build {
                         state.update_hover_2d(cur.0, cur.1);
@@ -542,10 +586,30 @@ impl ApplicationHandler<EngineCommand> for App {
                 self.last_cursor = Some(cur);
             }
             WindowEvent::KeyboardInput {
-                event: KeyEvent { physical_key: PhysicalKey::Code(code), state: key_state, repeat, .. },
+                event: KeyEvent {
+                    physical_key,
+                    state: key_state,
+                    repeat,
+                    text,
+                    ..
+                },
                 ..
             } => {
                 let pressed = key_state == ElementState::Pressed;
+                let PhysicalKey::Code(code) = physical_key else {
+                    return;
+                };
+                if state.player_ui_edit_key_input(code, pressed, repeat) {
+                    return;
+                }
+                if state.player_ui_text_key_input(
+                    code,
+                    pressed,
+                    repeat,
+                    text.as_ref().map(|s| s.as_str()),
+                ) {
+                    return;
+                }
                 if state.is_preview_playing() {
                     if let Some(control_key) = map_keyboard_control_key(code) {
                         if pressed {
@@ -565,6 +629,14 @@ impl ApplicationHandler<EngineCommand> for App {
                 match code {
                     KeyCode::ControlLeft | KeyCode::ControlRight => {
                         self.ctrl_held = pressed;
+                        state.ctrl_held = pressed;
+                    }
+                    KeyCode::ShiftLeft | KeyCode::ShiftRight => {
+                        self.shift_held = pressed;
+                        state.shift_held = pressed;
+                        if !pressed && state.player_ui_edit_active {
+                            state.player_ui_on_shift_released();
+                        }
                     }
                     KeyCode::KeyZ => {
                         if pressed && !repeat {
@@ -738,6 +810,8 @@ fn main() {
         gizmo_drag_axis:     None,
         gizmo_drag_start:    None,
         ctrl_held:           false,
+        shift_held:          false,
+        player_ui_left_press: None,
         keyboard_mouse_pressed: HashSet::new(),
         gilrs:               Gilrs::new().ok(),
         gamepad_pressed:     HashSet::new(),

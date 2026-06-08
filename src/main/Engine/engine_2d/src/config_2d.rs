@@ -43,6 +43,9 @@ mod assets;
 mod overlay;
 #[path = "config_2d/selection.rs"]
 mod selection;
+
+#[path = "config_2d/player_ui/mod.rs"]
+pub(crate) mod player_ui;
 use overlay::{
     build_logical_area_overlay,
     build_pivot_edit_overlay_with_cross,

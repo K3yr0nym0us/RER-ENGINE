@@ -319,10 +319,14 @@ impl State {
             }
         }
 
+        draw_calls += self.draw_player_ui_screen_grid(&mut enc, &view);
+        draw_calls += self.draw_player_ui_object_draw_overlay(&mut enc, &view);
+        draw_calls += self.draw_player_ui_text_boxes(&mut enc, &view);
+
         // ── Gizmos (segundo pass, sin depth) ─────────────────────────────────
         // Ocultar gizmo durante el modo edición de pivot: las flechas de movimiento
         // robarían el foco e impedirían hacer click libremente sobre el asset.
-        if !self.preview_playing {
+        if !self.preview_playing && !self.player_ui_edit_active {
             if let Some(origin) = self.selection_center().filter(|_| self.pivot_edit_mode.is_none()) {
             let aspect   = self.size.width as f32 / self.size.height as f32;
             let vp = if let Some(cam2d) = &self.camera_2d {

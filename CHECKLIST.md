@@ -21,7 +21,7 @@ Backlog transversal del monorepo (2D + 3D + Electron). Estado por motor: [CHECKL
 
 - [ ] **Carga lazy de recursos al abrir `.save`**
   - El motor, al activar una escena, carga en memoria **solo** los recursos globales + los de **esa** escena.
-  - Al cambiar de escena: descargar (o no precargar) recursos exclusivos de la escena anterior que no estén en uso global.
+  - Al cambiar de escena: Liberar memoria de recursos exclusivos de la escena anterior que no estén en uso global.
 
 - [ ] **Promoción a global al guardar**
   - Si un recurso de escena A se referencia desde la escena activa B (vía modal “Cargar desde otra escena”), al **guardar** el `.save`:

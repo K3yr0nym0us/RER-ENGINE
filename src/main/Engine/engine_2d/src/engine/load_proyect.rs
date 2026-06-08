@@ -9,9 +9,11 @@ use crate::ipc::{
     send_load_progress, send_project_load_2d_complete_event, send_project_loaded_2d_event,
     AnimationFrameData, ControlBindingsData, ControlScriptData, EngineCommand,
     EntityRestoreAnimation, EntityRestorePhysics, EntityRestoreScript, EntityRestoreTransform,
-    ImportSceneCamera2d, ImportSceneEntity, ImportScenePayload, ImportSceneSprite,
-    ImportSceneWorld, ProjectLoaded2dCamera2d, ProjectLoaded2dEvent, ProjectLoaded2dSceneTab,
-    ProjectLoaded2dWorld,
+    HudImageInfo, ImportSceneCamera2d, ImportSceneEntity, ImportScenePayload, ImportSceneSprite,
+    ImportSceneWorld, PlayerUiScreenInfo, ProjectLoaded2dCamera2d, ProjectLoaded2dEvent,
+    ProjectLoaded2dSceneTab, ProjectLoaded2dWorld, SavePlayerUiButtonSnapshot,
+    SavePlayerUiImageSnapshot, SavePlayerUiObjectSnapshot, SavePlayerUiTextBoxSnapshot,
+    SaveUiScreenSnapshot,
 };
 
 use super::State;
@@ -61,6 +63,20 @@ struct ProjectSaveData {
     blueprints: Vec<SavedBlueprint>,
     #[serde(default)]
     language: Option<String>,
+    #[serde(default)]
+    playerUiScreens: Vec<SaveUiScreenSnapshot>,
+    #[serde(default)]
+    menuUiScreens: Vec<SaveUiScreenSnapshot>,
+    #[serde(default, rename = "playerUiTextBoxes")]
+    player_ui_text_boxes: Vec<SavePlayerUiTextBoxSnapshot>,
+    #[serde(default, rename = "playerUiButtons")]
+    player_ui_buttons: Vec<SavePlayerUiButtonSnapshot>,
+    #[serde(default, rename = "playerUiImages")]
+    player_ui_images: Vec<SavePlayerUiImageSnapshot>,
+    #[serde(default, rename = "playerUiObjects")]
+    player_ui_objects: Vec<SavePlayerUiObjectSnapshot>,
+    #[serde(default, rename = "hudImages")]
+    hud_images: Vec<NamedPath>,
 }
 
 #[allow(non_snake_case)]
@@ -269,7 +285,7 @@ impl State {
                 send_load_progress(&open_msg, None, None);
                 match apply_loaded_proyect_2d(self, &project, load_started_at, &mut step_started) {
                     Ok(view) => {
-                        send_project_loaded_2d(&project, &view);
+                        send_project_loaded_2d(self, &project, &view);
                         send_project_load_2d_complete_event();
                         let done_msg = format!(
                             "Carga terminada — escena «{}» ({} entidades, {} ms)",
@@ -506,6 +522,48 @@ fn resolve_loaded_paths(project: &mut ProjectSaveData, extracted_dir: &Path) {
                 .map(|e| resolve_entity(e, extracted_dir))
                 .collect(),
             ..scene.clone()
+        })
+        .collect();
+
+    project.hud_images = project
+        .hud_images
+        .iter()
+        .map(|img| NamedPath {
+            name: img.name.clone(),
+            path: resolve_path(&img.path, extracted_dir),
+        })
+        .collect();
+    project.player_ui_text_boxes = project
+        .player_ui_text_boxes
+        .iter()
+        .map(|b| SavePlayerUiTextBoxSnapshot {
+            font_path: resolve_path(&b.font_path, extracted_dir),
+            ..b.clone()
+        })
+        .collect();
+    project.player_ui_buttons = project
+        .player_ui_buttons
+        .iter()
+        .map(|b| SavePlayerUiButtonSnapshot {
+            font_path: resolve_path(&b.font_path, extracted_dir),
+            texture_path: resolve_optional_path(&b.texture_path, extracted_dir),
+            ..b.clone()
+        })
+        .collect();
+    project.player_ui_images = project
+        .player_ui_images
+        .iter()
+        .map(|img| SavePlayerUiImageSnapshot {
+            image_path: resolve_path(&img.image_path, extracted_dir),
+            ..img.clone()
+        })
+        .collect();
+    project.player_ui_objects = project
+        .player_ui_objects
+        .iter()
+        .map(|obj| SavePlayerUiObjectSnapshot {
+            texture_path: resolve_optional_path(&obj.texture_path, extracted_dir),
+            ..obj.clone()
         })
         .collect();
 
@@ -824,6 +882,34 @@ fn load_project_asset_stores(state: &mut State, project: &ProjectSaveData) {
             name: bg.name.clone(),
         });
     }
+    for img in &project.hud_images {
+        state.handle_command(EngineCommand::LoadHudImage {
+            path: img.path.clone(),
+            name: img.name.clone(),
+        });
+    }
+}
+
+fn import_player_ui_from_project(state: &mut State, project: &ProjectSaveData) {
+    state.import_player_ui_text_boxes_from_save(&project.player_ui_text_boxes);
+    state.import_player_ui_buttons_from_save(&project.player_ui_buttons);
+    state.import_player_ui_images_from_save(&project.player_ui_images);
+    state.import_player_ui_objects_from_save(&project.player_ui_objects);
+    state.ensure_default_player_ui();
+    let player_screens: Vec<PlayerUiScreenInfo> = if project.playerUiScreens.is_empty() {
+        crate::config_2d::player_ui::defaults::default_2d_project_ui_screens_info()
+    } else {
+        project
+            .playerUiScreens
+            .iter()
+            .map(|s| PlayerUiScreenInfo {
+                id: s.id.clone(),
+                name: s.name.clone(),
+                active: s.active,
+            })
+            .collect()
+    };
+    state.sync_player_ui_screens(&player_screens);
 }
 
 fn log_load_step(total: Instant, step: &mut Instant, message: &str) {
@@ -862,6 +948,7 @@ fn apply_loaded_proyect_2d(
             step_started,
             &format!("Escena importada ({} entidades)", view.entities.len()),
         );
+        import_player_ui_from_project(state, project);
         return Ok(view);
     }
 
@@ -910,11 +997,13 @@ fn apply_loaded_proyect_2d(
         });
     }
 
+    import_player_ui_from_project(state, project);
+
     log_load_step(load_started_at, step_started, "Proyecto 2D vacío listo");
     Ok(view)
 }
 
-fn send_project_loaded_2d(project: &ProjectSaveData, view: &ActiveSaveView) {
+fn send_project_loaded_2d(state: &State, project: &ProjectSaveData, view: &ActiveSaveView) {
     let scenes: Vec<ProjectLoaded2dSceneTab> = if project.scenes.is_empty() {
         vec![ProjectLoaded2dSceneTab {
             id: view.sceneId,
@@ -989,6 +1078,30 @@ fn send_project_loaded_2d(project: &ProjectSaveData, view: &ActiveSaveView) {
                 name: b.name.clone(),
             })
             .collect(),
+        hudImages: state
+            .hud_image_store
+            .iter()
+            .map(|(path, meta)| HudImageInfo {
+                path: path.clone(),
+                name: meta.name.clone(),
+                width: meta.width_px,
+                height: meta.height_px,
+            })
+            .collect(),
+        playerUiScreens: if project.playerUiScreens.is_empty() {
+            crate::config_2d::player_ui::defaults::default_2d_project_ui_screens_info()
+        } else {
+            project
+                .playerUiScreens
+                .iter()
+                .map(|s| PlayerUiScreenInfo {
+                    id: s.id.clone(),
+                    name: s.name.clone(),
+                    active: s.active,
+                })
+                .collect()
+        },
+        menuUiScreens: project.menuUiScreens.clone(),
         blueprints,
         world,
         backgroundPath: view.backgroundPath.clone(),

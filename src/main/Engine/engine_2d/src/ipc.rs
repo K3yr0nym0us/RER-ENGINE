@@ -231,6 +231,83 @@ pub enum EngineCommand {
     RemoveFont { path: String },
     /// Solicitar la lista de fuentes cargadas en el motor.
     GetFontsList,
+    /// Registrar imagen HUD (Resources → Images) con dimensiones para proporción.
+    LoadHudImage { path: String, name: String },
+    /// Eliminar imagen del almacén HUD.
+    RemoveHudImage { path: String },
+    /// Lista de imágenes HUD registradas.
+    GetHudImagesList,
+    /// Modo edición de UI del jugador: cuadrícula de trabajo NDC.
+    SetPlayerUiEditMode {
+        active: bool,
+        #[serde(default)]
+        scope: Option<String>,
+        #[serde(default)]
+        screen_id: Option<String>,
+    },
+    /// Añade un cuadro de texto HUD en la pantalla UI en edición.
+    AddPlayerUiTextBox { font_path: String },
+    /// Elimina el cuadro de texto seleccionado en edición UI (o el id indicado).
+    RemovePlayerUiTextBox {
+        #[serde(default)]
+        id: Option<u32>,
+    },
+    /// Añade un botón HUD en la pantalla UI en edición.
+    AddPlayerUiButton {
+        #[serde(flatten)]
+        payload: crate::config_2d::player_ui::button::AddPlayerUiButtonPayload,
+    },
+    /// Elimina un botón HUD (id opcional).
+    RemovePlayerUiButton {
+        #[serde(default)]
+        id: Option<u32>,
+    },
+    /// Añade una imagen HUD en la pantalla UI en edición.
+    AddPlayerUiImage { image_path: String },
+    /// Elimina una imagen HUD de la pantalla en edición.
+    RemovePlayerUiImage {
+        #[serde(default)]
+        id: Option<u32>,
+    },
+    /// Activa o cancela el modo dibujo de objeto HUD poligonal.
+    SetPlayerUiObjectDraw { active: bool },
+    /// Elimina un objeto HUD de la pantalla en edición.
+    RemovePlayerUiObject {
+        #[serde(default)]
+        id: Option<u32>,
+    },
+    /// Bloqueo y/o `z_index` de un elemento HUD.
+    SetPlayerUiHudElementProps {
+        element_kind: String,
+        id: u32,
+        #[serde(default)]
+        locked: Option<bool>,
+        #[serde(default)]
+        z_index: Option<i32>,
+    },
+    /// Color de relleno y/o textura de un objeto HUD poligonal.
+    SetPlayerUiObjectStyle {
+        id: u32,
+        #[serde(default)]
+        fill_color: Option<[f32; 4]>,
+        #[serde(default)]
+        texture_path: Option<String>,
+        #[serde(default)]
+        clear_texture: bool,
+        #[serde(default)]
+        live: bool,
+        #[serde(default, alias = "skipUndo")]
+        skip_undo: bool,
+    },
+    /// Sincroniza la lista de pantallas Player UI.
+    SyncPlayerUiScreens {
+        screens: Vec<PlayerUiScreenInfo>,
+    },
+    /// Marca o desmarca la pantalla Player UI activa en play.
+    SetActivePlayerUiScreen {
+        #[serde(default)]
+        screen_id: Option<String>,
+    },
     /// Registrar una imagen como fondo en el almacén del motor (nombre → ruta).
     LoadBackgroundAsset { path: String, name: String },
     /// Eliminar un fondo del almacén del motor.
@@ -331,6 +408,12 @@ pub struct ProjectLoaded2dEvent {
     pub sounds:         Vec<ImportSceneSprite>,
     pub fonts:          Vec<ImportSceneSprite>,
     pub backgrounds:    Vec<ImportSceneSprite>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hudImages:      Vec<HudImageInfo>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub playerUiScreens: Vec<PlayerUiScreenInfo>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub menuUiScreens:  Vec<SaveUiScreenSnapshot>,
     pub blueprints:     serde_json::Value,
     pub world:          ProjectLoaded2dWorld,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -622,6 +705,132 @@ pub struct SaveAssetRefSnapshot {
     pub path: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PlayerUiScreenInfo {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub active: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SaveUiScreenSnapshot {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub active: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SavePlayerUiTextBoxSnapshot {
+    pub scope: String,
+    #[serde(alias = "screenId")]
+    pub screen_id: String,
+    pub id: u32,
+    #[serde(alias = "fontPath")]
+    pub font_path: String,
+    #[serde(alias = "fontName")]
+    pub font_name: String,
+    pub text: String,
+    #[serde(alias = "centerX")]
+    pub center_x: f32,
+    #[serde(alias = "centerY")]
+    pub center_y: f32,
+    pub width: f32,
+    pub height: f32,
+    #[serde(default)]
+    pub z_index: i32,
+    #[serde(default)]
+    pub locked: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SavePlayerUiButtonSnapshot {
+    pub scope: String,
+    #[serde(alias = "screenId")]
+    pub screen_id: String,
+    pub id: u32,
+    #[serde(rename = "type", alias = "shape_type")]
+    pub shape_type: String,
+    pub round: f32,
+    #[serde(alias = "backgroundColor")]
+    pub background_color: [f32; 4],
+    #[serde(default, alias = "texturePath")]
+    pub texture_path: Option<String>,
+    #[serde(alias = "transparencyBackground")]
+    pub transparency_background: f32,
+    pub text: String,
+    #[serde(alias = "textColor")]
+    pub text_color: [f32; 4],
+    #[serde(alias = "transparencyText")]
+    pub transparency_text: f32,
+    #[serde(alias = "fontPath")]
+    pub font_path: String,
+    #[serde(alias = "fontName")]
+    pub font_name: String,
+    #[serde(alias = "borderColor")]
+    pub border_color: [f32; 4],
+    #[serde(alias = "borderWeight")]
+    pub border_weight: f32,
+    #[serde(alias = "centerX")]
+    pub center_x: f32,
+    #[serde(alias = "centerY")]
+    pub center_y: f32,
+    pub width: f32,
+    pub height: f32,
+    #[serde(default, alias = "sourceAspect")]
+    pub source_aspect: Option<f32>,
+    #[serde(default)]
+    pub z_index: i32,
+    #[serde(default)]
+    pub locked: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SavePlayerUiObjectSnapshot {
+    pub scope: String,
+    #[serde(alias = "screenId")]
+    pub screen_id: String,
+    pub id: u32,
+    pub vertices: Vec<[f32; 2]>,
+    #[serde(alias = "fillColor", default = "default_object_fill")]
+    pub fill_color: [f32; 4],
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "texturePath")]
+    pub texture_path: Option<String>,
+    #[serde(default)]
+    pub z_index: i32,
+    #[serde(default)]
+    pub locked: bool,
+}
+
+fn default_object_fill() -> [f32; 4] {
+    crate::config_2d::player_ui::object::DEFAULT_OBJECT_FILL
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SavePlayerUiImageSnapshot {
+    pub scope: String,
+    #[serde(alias = "screenId")]
+    pub screen_id: String,
+    pub id: u32,
+    #[serde(alias = "imagePath")]
+    pub image_path: String,
+    #[serde(alias = "imageName")]
+    pub image_name: String,
+    #[serde(alias = "centerX")]
+    pub center_x: f32,
+    #[serde(alias = "centerY")]
+    pub center_y: f32,
+    pub width: f32,
+    pub height: f32,
+    #[serde(alias = "sourceAspect")]
+    pub source_aspect: f32,
+    #[serde(default)]
+    pub z_index: i32,
+    #[serde(default)]
+    pub locked: bool,
+}
+
 #[derive(Debug, Serialize, Clone)]
 pub struct SaveSceneSnapshotPayload {
     pub world: SaveWorldSnapshot,
@@ -636,6 +845,18 @@ pub struct SaveSceneSnapshotPayload {
     pub models: Vec<SaveAssetRefSnapshot>,
     pub sounds: Vec<SaveAssetRefSnapshot>,
     pub backgrounds: Vec<SaveAssetRefSnapshot>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fonts: Vec<SaveAssetRefSnapshot>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hud_images: Vec<SaveAssetRefSnapshot>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub player_ui_text_boxes: Vec<SavePlayerUiTextBoxSnapshot>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub player_ui_buttons: Vec<SavePlayerUiButtonSnapshot>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub player_ui_images: Vec<SavePlayerUiImageSnapshot>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub player_ui_objects: Vec<SavePlayerUiObjectSnapshot>,
 }
 
 // ---------------------------------------------------------------------------
@@ -722,6 +943,58 @@ pub enum EngineEvent {
     FontRemoved { path: String },
     /// Emitido como respuesta a GetFontsList: lista de fuentes disponibles.
     FontsList { fonts: Vec<FontInfo> },
+    HudImageLoaded {
+        path: String,
+        name: String,
+        width: u32,
+        height: u32,
+    },
+    HudImageRemoved { path: String },
+    HudImagesList { images: Vec<HudImageInfo> },
+    PlayerUiTextBoxAdded {
+        id: u32,
+        font_path: String,
+        font_name: String,
+        text: String,
+        center_x: f32,
+        center_y: f32,
+        width: f32,
+        height: f32,
+    },
+    PlayerUiTextBoxUpdated { id: u32, text: String },
+    PlayerUiTextBoxRemoved { id: u32 },
+    PlayerUiTextBoxesList {
+        scope: String,
+        screen_id: String,
+        boxes: Vec<PlayerUiTextBoxListItem>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        buttons: Vec<PlayerUiButtonListItem>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        images: Vec<PlayerUiImageListItem>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        objects: Vec<PlayerUiObjectListItem>,
+    },
+    PlayerUiButtonAdded {
+        id: u32,
+        text: String,
+        font_name: String,
+    },
+    PlayerUiButtonRemoved { id: u32 },
+    PlayerUiImageAdded {
+        id: u32,
+        image_name: String,
+    },
+    PlayerUiImageRemoved { id: u32 },
+    PlayerUiObjectAdded {
+        id: u32,
+        vertex_count: u32,
+    },
+    PlayerUiObjectRemoved { id: u32 },
+    PlayerUiObjectDrawEnded,
+    PlayerUiActiveScreenChanged {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        screen_id: Option<String>,
+    },
     /// Emitido cuando un fondo se registró en el almacén.
     BackgroundAssetLoaded { path: String, name: String },
     /// Emitido cuando se eliminó un fondo del almacén.
@@ -810,6 +1083,53 @@ pub struct SoundInfo {
 pub struct FontInfo {
     pub path: String,
     pub name: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct HudImageInfo {
+    pub path: String,
+    pub name: String,
+    pub width: u32,
+    pub height: u32,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct PlayerUiTextBoxListItem {
+    pub id: u32,
+    pub font_name: String,
+    pub text: String,
+    pub z_index: i32,
+    pub locked: bool,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct PlayerUiButtonListItem {
+    pub id: u32,
+    pub text: String,
+    pub font_name: String,
+    pub z_index: i32,
+    pub locked: bool,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct PlayerUiImageListItem {
+    pub id: u32,
+    pub image_name: String,
+    pub z_index: i32,
+    pub locked: bool,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct PlayerUiObjectListItem {
+    pub id: u32,
+    pub vertex_count: u32,
+    pub fill_color: [f32; 4],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub texture_path: Option<String>,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub texture_name: String,
+    pub z_index: i32,
+    pub locked: bool,
 }
 
 /// Información básica de un fondo almacenado en el motor.

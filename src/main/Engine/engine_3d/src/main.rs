@@ -36,8 +36,8 @@ use winit::{
 };
 
 use ipc::{EngineCommand, EngineEvent};
-use platform::{query_ctrl_held_os, query_shift_held_os};
 use rer_engine_shared::gpu::{resolve_backend, EngineGpuProfile};
+use rer_engine_shared::platform::{query_ctrl_held_os, query_shift_held_os};
 use rer_engine_shared::overlay::{parse_overlay_config, OverlayConfig};
 #[cfg(any(target_os = "windows", target_os = "linux"))]
 use rer_engine_shared::platform::TrackerOffset;

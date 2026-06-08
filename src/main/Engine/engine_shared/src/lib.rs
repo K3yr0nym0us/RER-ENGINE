@@ -3,6 +3,7 @@ pub mod scripting;
 pub mod gpu;
 pub mod logging;
 pub mod overlay;
+pub mod player_ui;
 pub mod process_metrics;
 #[cfg(any(target_os = "windows", target_os = "linux"))]
 pub mod platform;

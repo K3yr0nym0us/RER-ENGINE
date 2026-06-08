@@ -3,11 +3,13 @@
 use std::sync::Arc;
 
 use ab_glyph::{Font, FontArc, PxScale, ScaleFont, point};
-use glam::Mat4;
+use rer_engine_shared::player_ui::viewport::ndc_transform_top_left;
 
 use super::config::UiHudRect;
 use crate::mesh;
 use crate::screen_hud_image::{self, ScreenHudAtlas, ScreenHudPackedImage};
+
+const HUD_BITMAP_FLIP_Y: bool = true;
 
 pub(crate) fn load_font_arc(path: &str) -> Option<Arc<FontArc>> {
     let bytes = std::fs::read(path).ok()?;
@@ -169,6 +171,7 @@ pub(crate) fn build_hud_label_glyph(
         height_px as f32,
         viewport_w,
         viewport_h,
+        HUD_BITMAP_FLIP_Y,
     ) {
         out.push(screen_hud_image::build_screen_hud_instance(packed, model, 1.0));
     }
@@ -222,7 +225,15 @@ pub(crate) fn push_hud_texture_quad_instance(
     let w_px = box_rect.width * 0.5 * viewport_w;
     let h_px = box_rect.height * 0.5 * viewport_h;
 
-    if let Some(model) = ndc_transform_top_left(x0_px, y0_px, w_px, h_px, viewport_w, viewport_h) {
+    if let Some(model) = ndc_transform_top_left(
+        x0_px,
+        y0_px,
+        w_px,
+        h_px,
+        viewport_w,
+        viewport_h,
+        HUD_BITMAP_FLIP_Y,
+    ) {
         out.push(screen_hud_image::build_screen_hud_instance(
             packed,
             model,
@@ -343,26 +354,4 @@ fn rasterize_text_block(
     }
 
     Some(rgba)
-}
-
-fn ndc_transform_top_left(
-    px: f32,
-    py: f32,
-    w_px: f32,
-    h_px: f32,
-    viewport_w: f32,
-    viewport_h: f32,
-) -> Option<Mat4> {
-    if w_px <= 0.0 || h_px <= 0.0 {
-        return None;
-    }
-    let ndc_w = 2.0 * w_px / viewport_w;
-    let ndc_h = 2.0 * h_px / viewport_h;
-    let cx = -1.0 + (px / viewport_w) * 2.0 + ndc_w * 0.5;
-    let cy = 1.0 - (py / viewport_h) * 2.0 - ndc_h * 0.5;
-    // Bitmap en y-up; el quad HUD invierte solo V (Y), no U.
-    Some(
-        Mat4::from_translation(glam::vec3(cx, cy, 0.0))
-            * Mat4::from_scale(glam::vec3(ndc_w, -ndc_h, 1.0)),
-    )
 }

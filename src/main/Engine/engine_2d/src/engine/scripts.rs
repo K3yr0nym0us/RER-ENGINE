@@ -103,7 +103,12 @@ impl State {
             map
         };
 
-        let commands = self.script_engine.tick(self.delta_time, &snapshots, None);
+        let active_ui = self.player_ui_active_player_screen_id.clone();
+        let commands = self.script_engine.tick(
+            self.delta_time,
+            &snapshots,
+            active_ui.as_deref(),
+        );
         self.apply_script_commands(commands);
     }
 
@@ -365,10 +370,20 @@ impl State {
                 | ScriptCmd::PlayControllerSetWalkSpeed(_)
                 | ScriptCmd::PlayControllerSetSprintMultiplier(_)
                 | ScriptCmd::PlayControllerSetJumpSpeed(_)
-                | ScriptCmd::SetTaa { .. }
-                | ScriptCmd::SetActivePlayerUiScreen { .. }
-                | ScriptCmd::SetActivePlayerUiScreenByName { .. }
-                | ScriptCmd::ClearActivePlayerUiScreen => {}
+                | ScriptCmd::SetTaa { .. } => {}
+                ScriptCmd::SetActivePlayerUiScreen { screen_id } => {
+                    if let Err(e) = self.set_active_player_ui_screen(&screen_id) {
+                        log::warn!("[script] set_active_player_ui: {e}");
+                    }
+                }
+                ScriptCmd::SetActivePlayerUiScreenByName { name } => {
+                    if let Err(e) = self.set_active_player_ui_screen_by_name(&name) {
+                        log::warn!("[script] set_active_player_ui_by_name: {e}");
+                    }
+                }
+                ScriptCmd::ClearActivePlayerUiScreen => {
+                    self.clear_active_player_ui_screen();
+                }
             }
         }
     }

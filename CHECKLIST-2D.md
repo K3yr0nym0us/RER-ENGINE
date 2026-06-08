@@ -76,6 +76,7 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 - [x] **Flujo de restauración inicial** — `import_scene` en carga/cambio de escena 2D; `apply_entity_restore` para undo y casos puntuales
 - [x] Guardado engine-first: `export_save_snapshot` + merge de escenas/blueprints en el front
 - [x] **Programación visual** — lógica de escena (Escenas → Programación) y entidad (Propiedades → Programar entidad); compilador nodos → Rhai; modal Electron con `sceneEntities` por IPC
+- [x] **Player UI (HUD)** — acordeón **User interface** en sidebar; edición NDC sobre viewport 2D; texto, botones, imágenes y objetos; biblioteca **HUD images** en Resources; persistencia en `.save`; HUD en play
 
 ---
 

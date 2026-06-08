@@ -1,0 +1,191 @@
+//! Bloqueo y `z_index` de elementos HUD (editor).
+
+use crate::engine::State;
+
+impl State {
+    pub(crate) fn set_player_ui_hud_element_props(
+        &mut self,
+        element_kind: &str,
+        id: u32,
+        locked: Option<bool>,
+        z_index: Option<i32>,
+    ) -> Result<(), String> {
+        if !self.player_ui_edit_active {
+            return Err("modo edición UI inactivo".into());
+        }
+        if locked.is_none() && z_index.is_none() {
+            return Err("sin cambios".into());
+        }
+        let key = self
+            .player_ui_screen_key()
+            .ok_or_else(|| "contexto de pantalla UI no definido".to_string())?;
+
+        self.push_undo_player_ui_hud();
+
+        match element_kind {
+            "text" => {
+                let Some(list) = self.player_ui_text_boxes.get_mut(&key) else {
+                    return Err(format!("cuadro de texto no encontrado: {id}"));
+                };
+                let Some(b) = list.iter_mut().find(|b| b.id == id) else {
+                    return Err(format!("cuadro de texto no encontrado: {id}"));
+                };
+                if let Some(l) = locked {
+                    b.locked = l;
+                }
+                if let Some(z) = z_index {
+                    b.z_index = z;
+                }
+            }
+            "button" => {
+                let Some(list) = self.player_ui_buttons.get_mut(&key) else {
+                    return Err(format!("botón no encontrado: {id}"));
+                };
+                let Some(b) = list.iter_mut().find(|b| b.id == id) else {
+                    return Err(format!("botón no encontrado: {id}"));
+                };
+                if let Some(l) = locked {
+                    b.locked = l;
+                }
+                if let Some(z) = z_index {
+                    b.z_index = z;
+                }
+            }
+            "image" => {
+                let Some(list) = self.player_ui_images.get_mut(&key) else {
+                    return Err(format!("imagen no encontrada: {id}"));
+                };
+                let Some(img) = list.iter_mut().find(|i| i.id == id) else {
+                    return Err(format!("imagen no encontrada: {id}"));
+                };
+                if let Some(l) = locked {
+                    img.locked = l;
+                }
+                if let Some(z) = z_index {
+                    img.z_index = z;
+                }
+            }
+            "object" => {
+                let Some(list) = self.player_ui_objects.get_mut(&key) else {
+                    return Err(format!("objeto no encontrado: {id}"));
+                };
+                let Some(obj) = list.iter_mut().find(|o| o.id == id) else {
+                    return Err(format!("objeto no encontrado: {id}"));
+                };
+                if let Some(l) = locked {
+                    obj.locked = l;
+                }
+                if let Some(z) = z_index {
+                    obj.z_index = z;
+                }
+            }
+            _ => return Err(format!("tipo de elemento HUD desconocido: {element_kind}")),
+        };
+
+        if locked == Some(true) {
+            if self.player_ui_selected_text_id == Some(id) && element_kind == "text" {
+                self.player_ui_selected_text_id = None;
+            }
+            if self.player_ui_selected_button_id == Some(id) && element_kind == "button" {
+                self.player_ui_selected_button_id = None;
+            }
+            if self.player_ui_selected_image_id == Some(id) && element_kind == "image" {
+                self.player_ui_selected_image_id = None;
+            }
+            if self.player_ui_selected_object_id == Some(id) && element_kind == "object" {
+                self.player_ui_selected_object_id = None;
+            }
+            if self.player_ui_text_editing_id == Some(id) && element_kind == "text" {
+                self.player_ui_text_editing_id = None;
+            }
+            self.player_ui_text_drag = None;
+        }
+
+        self.rebuild_player_ui_overlay();
+        self.emit_player_ui_text_boxes_list();
+        log::info!(
+            "[player-ui] props HUD actualizadas: kind={element_kind} id={id} locked={locked:?} z_index={z_index:?}"
+        );
+        Ok(())
+    }
+
+    pub(crate) fn set_player_ui_object_style(
+        &mut self,
+        id: u32,
+        fill_color: Option<[f32; 4]>,
+        texture_path: Option<String>,
+        clear_texture: bool,
+        live: bool,
+        skip_undo: bool,
+    ) -> Result<(), String> {
+        if !self.player_ui_edit_active {
+            return Err("modo edición UI inactivo".into());
+        }
+        if fill_color.is_none() && texture_path.is_none() && !clear_texture {
+            return Err("sin cambios".into());
+        }
+        let key = self
+            .player_ui_screen_key()
+            .ok_or_else(|| "contexto de pantalla UI no definido".to_string())?;
+
+        if !skip_undo && !self.preview_playing {
+            self.push_undo_player_ui_hud();
+        }
+
+        if let Some(ref path) = texture_path {
+            if !path.trim().is_empty() && !self.hud_image_store.contains_key(path) {
+                return Err(format!("imagen no registrada: {path}"));
+            }
+        }
+
+        let Some(list) = self.player_ui_objects.get_mut(&key) else {
+            return Err(format!("objeto no encontrado: {id}"));
+        };
+        let Some(obj) = list.iter_mut().find(|o| o.id == id) else {
+            return Err(format!("objeto no encontrado: {id}"));
+        };
+
+        if let Some(color) = fill_color {
+            obj.fill_color = color;
+        }
+        if clear_texture {
+            obj.texture_path = None;
+        } else if let Some(path) = texture_path {
+            if path.trim().is_empty() {
+                obj.texture_path = None;
+            } else {
+                obj.texture_path = Some(path);
+            }
+        }
+
+        if live {
+            self.rebuild_player_ui_overlay_live();
+        } else {
+            self.rebuild_player_ui_overlay();
+            self.emit_player_ui_text_boxes_list();
+            log::info!("[player-ui] estilo objeto actualizado: id={id}");
+        }
+        Ok(())
+    }
+
+    pub(crate) fn player_ui_text_locked(&self, id: u32) -> bool {
+        self.player_ui_text_key()
+            .and_then(|key| self.player_ui_text_boxes.get(&key))
+            .and_then(|list| list.iter().find(|b| b.id == id))
+            .is_some_and(|b| b.locked)
+    }
+
+    pub(crate) fn player_ui_button_locked(&self, id: u32) -> bool {
+        self.player_ui_text_key()
+            .and_then(|key| self.player_ui_buttons.get(&key))
+            .and_then(|list| list.iter().find(|b| b.id == id))
+            .is_some_and(|b| b.locked)
+    }
+
+    pub(crate) fn player_ui_image_locked(&self, id: u32) -> bool {
+        self.player_ui_text_key()
+            .and_then(|key| self.player_ui_images.get(&key))
+            .and_then(|list| list.iter().find(|i| i.id == id))
+            .is_some_and(|i| i.locked)
+    }
+}
