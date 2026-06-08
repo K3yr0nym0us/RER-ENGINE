@@ -72,7 +72,6 @@ export function PlayerUiEditorElectronHost({ payload }: PlayerUiEditorElectronHo
 			}
 			onAssignObjectTexture={(id) => delegate({ action: 'assignObjectTexture', id })}
 			onSave={() => delegate({ action: 'save' })}
-			onCancel={() => delegate({ action: 'cancel' })}
 		/>
 	)
 }

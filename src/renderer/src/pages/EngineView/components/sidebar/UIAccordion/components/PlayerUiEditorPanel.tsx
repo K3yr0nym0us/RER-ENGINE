@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Check2Square, Pencil } from 'react-bootstrap-icons'
+import { Check2Square, FloppyFill, Pencil } from 'react-bootstrap-icons'
 
 import { AppTooltip } from '@components'
 import { useTraslate } from '@hooks'
@@ -28,7 +28,6 @@ export interface PlayerUiEditorPanelProps {
 	) => void
 	onAssignObjectTexture: (id: number) => void
 	onSave: () => void
-	onCancel: () => void
 }
 
 export function PlayerUiEditorPanel({
@@ -45,7 +44,6 @@ export function PlayerUiEditorPanel({
 	onSetObjectStyle,
 	onAssignObjectTexture,
 	onSave,
-	onCancel,
 }: PlayerUiEditorPanelProps) {
 	const { t } = useTraslate()
 	const [uiNameDraft, setUiNameDraft] = useState(state.screenName)
@@ -118,11 +116,9 @@ export function PlayerUiEditorPanel({
 				)}
 			/>
 
-			<div className="d-flex gap-2 mt-3">
-				<button className="btn btn-outline-secondary btn-sm flex-fill" type="button" onClick={onCancel}>
-					{t('Cancel')}
-				</button>
-				<button className="btn btn-primary btn-sm flex-fill" type="button" onClick={onSave}>
+			<div className="mt-3">
+				<button className="btn btn-primary btn-sm w-100 fw-bold" type="button" onClick={onSave}>
+					<FloppyFill className="me-2" />
 					{t('Save')}
 				</button>
 			</div>

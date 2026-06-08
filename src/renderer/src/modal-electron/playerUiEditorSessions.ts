@@ -86,6 +86,20 @@ function reopenPlayerUiEditorModal(oldHandlerId: string): void {
 	})
 }
 
+/** Cierra la sesión del editor (save/cancel/X). `skipClose` si la ventana modal ya se cerró. */
+export function finishPlayerUiEditorSession(handlerId: string, skipClose = false): void {
+	const session = sessions.get(handlerId)
+	if (!session) return
+	const { deps } = session
+	deps.objectDrawCancel()
+	deps.getEngine().endUiScreenEdit()
+	deps.onEnd()
+	unregisterPlayerUiEditorSession(handlerId)
+	if (!skipClose) {
+		deps.closeModal()
+	}
+}
+
 export async function runPlayerUiEditorAction(
 	handlerId: string,
 	req: PlayerUiEditorAction,
@@ -229,11 +243,7 @@ export async function runPlayerUiEditorAction(
 			break
 		case 'save':
 		case 'cancel':
-			deps.objectDrawCancel()
-			engine.endUiScreenEdit()
-			deps.onEnd()
-			unregisterPlayerUiEditorSession(handlerId)
-			deps.closeModal()
+			finishPlayerUiEditorSession(handlerId)
 			break
 		default:
 			break

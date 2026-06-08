@@ -9,6 +9,7 @@ import { PlayerUiEditorModalBody } from './PlayerUiEditorModalBody'
 import { setPendingPlayerUiEditorSession } from './playerUiEditorBridge'
 import {
 	activePlayerUiHandlerRef,
+	finishPlayerUiEditorSession,
 	pushPlayerUiEditorPatch,
 	type PlayerUiEditorSessionDeps,
 } from './playerUiEditorSessions'
@@ -28,6 +29,16 @@ export function usePlayerUiEditorModal(scope: UiScreenScope) {
 		},
 		[],
 	)
+
+	useEffect(() => {
+		const removeClosed = window.electronAPI.onModalElectronClosed((data) => {
+			if (data.componentKey !== 'PlayerUiEditorModalBody') return
+			const handlerId = activePlayerUiHandlerRef.current
+			if (!handlerId) return
+			finishPlayerUiEditorSession(handlerId, true)
+		})
+		return removeClosed
+	}, [])
 
 	useEffect(() => {
 		if (scope !== 'player') return
