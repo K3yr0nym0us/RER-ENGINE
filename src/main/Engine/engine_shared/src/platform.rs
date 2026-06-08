@@ -123,6 +123,38 @@ mod win32_tracker {
 #[cfg(target_os = "windows")]
 pub use win32_tracker::start_position_tracker;
 
+/// Ventana owned del editor: sin botón en la barra de tareas ni en Alt+Tab.
+#[cfg(target_os = "windows")]
+pub fn setup_overlay_win32(engine_hwnd: isize, parent_hwnd: isize, offset: TrackerOffset) {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE, GWLP_HWNDPARENT,
+        SWP_FRAMECHANGED, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WS_EX_APPWINDOW, WS_EX_NOACTIVATE,
+        WS_EX_TOOLWINDOW,
+    };
+
+    unsafe {
+        let motor = HWND(engine_hwnd);
+        let parent = HWND(parent_hwnd);
+        SetWindowLongPtrW(motor, GWLP_HWNDPARENT, parent.0 as isize);
+        let ex = GetWindowLongPtrW(motor, GWL_EXSTYLE);
+        let new_ex = (ex & !(WS_EX_APPWINDOW.0 as isize))
+            | WS_EX_NOACTIVATE.0 as isize
+            | WS_EX_TOOLWINDOW.0 as isize;
+        SetWindowLongPtrW(motor, GWL_EXSTYLE, new_ex);
+        let _ = SetWindowPos(
+            motor,
+            HWND(0isize),
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED,
+        );
+    }
+    start_position_tracker(engine_hwnd, parent_hwnd, offset);
+}
+
 // ---------------------------------------------------------------------------
 // Linux X11 position tracker + transient (Z-order)
 // ---------------------------------------------------------------------------

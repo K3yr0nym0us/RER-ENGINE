@@ -40,9 +40,11 @@ use platform::{query_ctrl_held_os, query_shift_held_os};
 use rer_engine_shared::gpu::{resolve_backend, EngineGpuProfile};
 use rer_engine_shared::overlay::{parse_overlay_config, OverlayConfig};
 #[cfg(any(target_os = "windows", target_os = "linux"))]
-use rer_engine_shared::platform::{start_position_tracker, TrackerOffset};
+use rer_engine_shared::platform::TrackerOffset;
+#[cfg(target_os = "windows")]
+use rer_engine_shared::platform::setup_overlay_win32;
 #[cfg(target_os = "linux")]
-use rer_engine_shared::platform::setup_overlay_x11;
+use rer_engine_shared::platform::{setup_overlay_x11, start_position_tracker};
 
 use crate::config_3d::plane_tool_rotate_dbg;
 
@@ -186,19 +188,8 @@ impl App {
         #[cfg(target_os = "windows")]
         {
             use raw_window_handle::RawWindowHandle;
-            use windows::Win32::Foundation::HWND;
-            use windows::Win32::UI::WindowsAndMessaging::{
-                GetWindowLongPtrW, SetWindowLongPtrW, GWL_EXSTYLE, GWLP_HWNDPARENT, WS_EX_NOACTIVATE,
-            };
             if let RawWindowHandle::Win32(h) = handle.as_raw() {
-                let motor_hwnd = HWND(h.hwnd.get() as isize);
-                let electron_hwnd = HWND(overlay.parent_id as isize);
-                unsafe {
-                    SetWindowLongPtrW(motor_hwnd, GWLP_HWNDPARENT, electron_hwnd.0 as isize);
-                    let ex = GetWindowLongPtrW(motor_hwnd, GWL_EXSTYLE);
-                    SetWindowLongPtrW(motor_hwnd, GWL_EXSTYLE, ex | WS_EX_NOACTIVATE.0 as isize);
-                }
-                start_position_tracker(motor_hwnd.0, electron_hwnd.0, offset);
+                setup_overlay_win32(h.hwnd.get() as isize, overlay.parent_id as isize, offset);
             }
         }
 
