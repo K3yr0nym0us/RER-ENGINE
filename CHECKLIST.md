@@ -44,6 +44,17 @@ Backlog transversal del monorepo (2D + 3D + Electron). Estado por motor: [CHECKL
 
 ---
 
+### Auto-actualizaciones (Electron Updater)
+
+- [ ] **Configurar electron-updater para publicar y detectar updates**
+  - Integrar `electron-updater` en el proceso main (comprobación al arranque y/o en segundo plano; notificación al renderer).
+  - Configurar `electron-builder` **publish** (p. ej. GitHub Releases, S3 u otro hosting) con URL de feed y canal de release (stable / beta).
+  - Firmar instaladores según plataforma (Windows, macOS) para que el updater pueda aplicar parches de forma segura.
+  - La **app instalada** debe detectar una versión nueva, informar al usuario y permitir descargar e instalar el update (o reiniciar para aplicarlo).
+  - Documentar el flujo de release: bump de versión, build empaquetado, subida del artefacto y verificación end-to-end con una instalación previa.
+
+---
+
 ### Asistente de IA Local y MCP en Electron
 
 - [ ] Crear boton de "Plugins" en el pie del espacio de accordiones.
