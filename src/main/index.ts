@@ -36,6 +36,23 @@ import {
   repositionViewportCornerModalIfOpen,
 } from './modalElectronWindow';
 import { resolveAppWindowIcon } from './appWindowIcon';
+import { autoStartEnabledPlugins, registerPluginIpc } from './plugins/registerPluginIpc';
+import { stopLlamaServer } from './plugins/llamaServerProcess';
+import {
+  destroyAiAssistantOverlay,
+  initAiAssistantOverlay,
+  repositionAiAssistantOverlayIfOpen,
+  resendAiAssistantConfig,
+  restackAiAssistantOverlayIfOpen,
+  setAiAssistantOverlayLayout,
+  setAiAssistantOverlayExpanded,
+  showAiAssistantOverlay,
+  hideAiAssistantOverlay,
+  beginAiAssistantFabDrag,
+  endAiAssistantFabDrag,
+  updateAiAssistantOverlayConfig,
+} from './aiAssistantWindow';
+import type { AiAssistantOverlayConfig } from './aiAssistantWindow';
 import type {
   ModalElectronDelegateRequest,
   ModalElectronOpenRequest,
@@ -180,6 +197,9 @@ function createMainWindow(): void {
 
   mainWindow.on('closed', () => {
     rendererReady = false
+    destroyAiAssistantOverlay()
+    destroyModalElectronWindow()
+    stopEngine()
     mainWindow = null
   })
 
@@ -188,6 +208,7 @@ function createMainWindow(): void {
       mainWindow?.webContents.send('request-viewport-bounds')
     }
     repositionViewportCornerModalIfOpen()
+    repositionAiAssistantOverlayIfOpen()
   }
 
   // Linux: respaldo IPC al mover (el tracker X11 escucha ConfigureNotify).
@@ -198,6 +219,7 @@ function createMainWindow(): void {
   // Clic en el viewport winit: la ventana principal pierde foco; mantener la modal encima del motor.
   mainWindow.on('blur', () => {
     restackModalElectronIfOpen()
+    restackAiAssistantOverlayIfOpen()
   })
 
   // Una vez que el renderer cargó y sus listeners están activos,
@@ -402,8 +424,10 @@ function sendToEngine(cmd: EngineCommand): void {
     const data = JSON.stringify(cmd) + '\n'
     engineProcess.stdin.write(data, () => {})
   } else if (cmd.cmd === 'set_locale') {
-    const locale = String((cmd as Record<string, unknown>)['locale'] ?? 'en')
-    console.log(`[i18n] set_locale recibido en main con motor inactivo (omitido): ${locale}`)
+    const next = String((cmd as Record<string, unknown>)['locale'] ?? 'en').toLowerCase() === 'es' ? 'es' : 'en'
+    currentLocale = next
+    updateAiAssistantOverlayConfig({ locale: next })
+    console.log(`[i18n] set_locale con motor inactivo (overlay actualizado): ${next}`)
   }
 }
 
@@ -517,12 +541,66 @@ function startElectronResourceSampling(): void {
 // ---------------------------------------------------------------------------
 // IPC: renderer → motor y herramientas del editor
 // ---------------------------------------------------------------------------
+registerPluginIpc(() => mainWindow)
+
+initAiAssistantOverlay(
+  () => mainWindow,
+  () => {
+    const origin = getEngineViewportScreenOrigin()
+    if (!origin || !lastRelativeBounds) return null
+    const scaleFactor = mainWindow
+      ? electronScreen.getDisplayMatching(mainWindow.getBounds()).scaleFactor
+      : 1
+    return {
+      x: origin.x,
+      y: origin.y,
+      width: Math.round(lastRelativeBounds.width / scaleFactor),
+      height: Math.round(lastRelativeBounds.height / scaleFactor),
+    }
+  },
+)
+
+ipcMain.handle(
+  'ai-assistant:show',
+  async (_event, config: AiAssistantOverlayConfig) => {
+    await showAiAssistantOverlay(config ?? {})
+  },
+)
+
+ipcMain.handle('ai-assistant:hide', () => {
+  hideAiAssistantOverlay()
+})
+
+ipcMain.on('ai-assistant:set-expanded', (_event, expanded: boolean) => {
+  setAiAssistantOverlayExpanded(Boolean(expanded))
+})
+
+ipcMain.on('ai-assistant:set-layout', (_event, layout: string) => {
+  const allowed = ['intro', 'thinking', 'input', 'answer'] as const
+  if (allowed.includes(layout as (typeof allowed)[number])) {
+    setAiAssistantOverlayLayout(layout as (typeof allowed)[number])
+  }
+})
+
+ipcMain.on('ai-assistant:fab-drag-start', () => {
+  beginAiAssistantFabDrag()
+})
+
+ipcMain.on('ai-assistant:fab-drag-end', () => {
+  endAiAssistantFabDrag()
+})
+
+ipcMain.on('ai-assistant:ready', (event) => {
+  resendAiAssistantConfig(event.sender.id)
+})
+
 ipcMain.handle('get-app-resource-usage', (): AppResourceUsage => cachedElectronResourceUsage)
 
 ipcMain.on('engine:cmd', (_event, cmd: EngineCommand) => {
   if (cmd.cmd === 'set_locale') {
     const next = String((cmd as Record<string, unknown>)['locale'] ?? 'en').toLowerCase() === 'es' ? 'es' : 'en'
     currentLocale = next
+    updateAiAssistantOverlayConfig({ locale: next })
     console.log(`[i18n] IPC renderer -> main set_locale: ${currentLocale}`)
   }
 
@@ -1889,6 +1967,7 @@ ipcMain.on('viewport-bounds', (_event, bounds: ViewportBounds) => {
   const useScreenBounds = process.platform === 'win32' || process.platform === 'linux'
   const effectiveBounds = useScreenBounds ? viewportToScreenBounds(bounds) : bounds
   lastEffectiveBounds = effectiveBounds
+  repositionAiAssistantOverlayIfOpen()
 
   if (engineStarted) {
     if (engineViewportHidden) {
@@ -1947,6 +2026,7 @@ app.whenReady().then(() => {
 
   createMainWindow()
   initModalElectron(() => mainWindow, getEngineViewportScreenOrigin)
+  void autoStartEnabledPlugins()
   // No arrancamos el motor aquí: esperamos el primer 'viewport-bounds'
 
   app.on('activate', () => {
@@ -1956,7 +2036,19 @@ app.whenReady().then(() => {
   })
 })
 
+let llamaShutdownInProgress = false
+
+app.on('before-quit', (event) => {
+  if (llamaShutdownInProgress) return
+  event.preventDefault()
+  llamaShutdownInProgress = true
+  void stopLlamaServer().finally(() => {
+    app.exit(0)
+  })
+})
+
 app.on('window-all-closed', () => {
+  destroyAiAssistantOverlay()
   destroyModalElectronWindow()
   stopEngine()
   cleanupExtractedProjectDirs()

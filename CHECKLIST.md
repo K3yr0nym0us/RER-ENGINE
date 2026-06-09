@@ -57,13 +57,16 @@ Backlog transversal del monorepo (2D + 3D + Electron). Estado por motor: [CHECKL
 
 ### Asistente de IA Local y MCP en Electron
 
-- [ ] Crear boton de "Plugins" en el pie del espacio de accordiones.
-- [ ] Al darle al boton abrir modal para seleccionar plugins descargables.
-- [ ] Agregar la opcion (boton) del plugin de Asistente de IA local.
-- [ ] Ventana de confirmacion con mas informacion del plugin.
-- [ ] Este debe descargar un modelo ultra ligero de IA local para exclusivo uso del MCP en electron.
-- [ ] Crear componente de burbuja flotante en el editor para al presionar abrir cuadro flotante de chat para pedir cosas a la IA.
-- [ ] La IA debe de poder usar el MCP y decirle al usuario guiandolo abriendo accordiones o hacendo focus en botones y respondiendo en una burbuja flotante lo que necesita hacer de la manera mas resumida posible.
+- [x] Crear boton de "Plugins" en el pie del espacio de accordiones.
+- [x] Al darle al boton abrir modal para seleccionar plugins descargables.
+- [x] Agregar la opcion (boton) del plugin de Asistente de IA local.
+- [x] Ventana de confirmacion con mas informacion del plugin (inline en modal; fuente oficial [Qwen/Qwen3-1.7B-GGUF](https://huggingface.co/Qwen/Qwen3-1.7B-GGUF)).
+- [x] Descarga on-demand del modelo + `llama-server` (no empaquetado en instalador base ni motor Rust). Ver [docs/AI_Assistant_Plugin.yaml](./docs/AI_Assistant_Plugin.yaml).
+- [x] Burbuja flotante en ventana overlay Electron dedicada (frameless, always-on-top sobre el motor winit).
+- [x] Guía UI v1: abrir acordeones (`OPEN_ACCORDION`) y resaltar targets (`HIGHLIGHT` + `data-plugin-target`). Contexto desde docs del repo.
+- [ ] QA end-to-end en Windows: instalación ~1.9 GB, inferencia, guía “¿dónde cargo un modelo?”.
+- [ ] **Visual C++ Redistributable (plugin IA):** detectar si falta MSVC 2015–2022 en el equipo del usuario (crash silencioso o fallo al arrancar `llama-server` aunque las DLL de llama.cpp estén presentes). Si no está instalado, ofrecer o ejecutar el instalador del redistributable como parte del flujo de instalación del plugin (antes o después de descargar el runtime).
+- [ ] MCP SDK formal / más tools (sub-acordeones, búsqueda docs dedicada).
 - [ ] Si funciona bien a futuro podriamos darle acceso al motor para realizar acciones directamente como crear entidades, asignar valores, etc.
 
 ---

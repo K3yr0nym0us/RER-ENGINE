@@ -264,4 +264,83 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('modal-electron:result', listener)
     return () => ipcRenderer.removeListener('modal-electron:result', listener)
   },
+  pluginsGetCatalog: () => ipcRenderer.invoke('plugins:get-catalog'),
+  pluginsGetState: () => ipcRenderer.invoke('plugins:get-state'),
+  pluginsSetEnabled: (pluginId: string, enabled: boolean) =>
+    ipcRenderer.invoke('plugins:set-enabled', pluginId, enabled),
+  pluginsInstall: (pluginId: string) => ipcRenderer.invoke('plugins:install', pluginId),
+  pluginsUninstall: (pluginId: string) => ipcRenderer.invoke('plugins:uninstall', pluginId),
+  pluginsGetLlmStatus: () => ipcRenderer.invoke('plugins:llm-status'),
+  pluginsChat: (request: { messages: Array<{ role: string; content: string }> }) =>
+    ipcRenderer.invoke('plugins:chat', request),
+  pluginsStartLlm: () => ipcRenderer.invoke('plugins:start-llm'),
+  pluginsStopLlm: () => ipcRenderer.invoke('plugins:stop-llm'),
+  onPluginsDownloadProgress: (
+    cb: (progress: {
+      pluginId: string
+      phase: string
+      percent: number
+      bytesReceived: number
+      bytesTotal: number
+    }) => void,
+  ): (() => void) => {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      data: {
+        pluginId: string
+        phase: string
+        percent: number
+        bytesReceived: number
+        bytesTotal: number
+      },
+    ) => {
+      cb(data)
+    }
+    ipcRenderer.on('plugins:download-progress', listener)
+    return () => ipcRenderer.removeListener('plugins:download-progress', listener)
+  },
+  onPluginsUiAction: (
+    cb: (action: { type: string; accordionKey?: string; targetId?: string }) => void,
+  ): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: Parameters<typeof cb>[0]) => {
+      cb(data)
+    }
+    ipcRenderer.on('plugins:ui-action', listener)
+    return () => ipcRenderer.removeListener('plugins:ui-action', listener)
+  },
+  onPluginsStateChanged: (cb: () => void): (() => void) => {
+    const listener = () => cb()
+    ipcRenderer.on('plugins:state-changed', listener)
+    return () => ipcRenderer.removeListener('plugins:state-changed', listener)
+  },
+  aiAssistantShow: (config: { locale?: 'en' | 'es' }) =>
+    ipcRenderer.invoke('ai-assistant:show', config),
+  aiAssistantHide: () => ipcRenderer.invoke('ai-assistant:hide'),
+  aiAssistantSetExpanded: (expanded: boolean) => {
+    ipcRenderer.send('ai-assistant:set-expanded', expanded)
+  },
+  aiAssistantSetLayout: (layout: 'intro' | 'thinking' | 'input' | 'answer') => {
+    ipcRenderer.send('ai-assistant:set-layout', layout)
+  },
+  aiAssistantFabDragStart: () => {
+    ipcRenderer.send('ai-assistant:fab-drag-start')
+  },
+  aiAssistantFabDragEnd: () => {
+    ipcRenderer.send('ai-assistant:fab-drag-end')
+  },
+  notifyAiAssistantReady: () => {
+    ipcRenderer.send('ai-assistant:ready')
+  },
+  onAiAssistantConfig: (
+    cb: (config: { locale?: 'en' | 'es' } | null) => void,
+  ): (() => void) => {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      config: { locale?: 'en' | 'es' } | null,
+    ) => {
+      cb(config)
+    }
+    ipcRenderer.on('ai-assistant:config', listener)
+    return () => ipcRenderer.removeListener('ai-assistant:config', listener)
+  },
 })

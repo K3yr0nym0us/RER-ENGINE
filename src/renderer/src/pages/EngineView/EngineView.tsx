@@ -15,6 +15,8 @@ import { PlaneToolProvider } from '../../context/PlaneToolContext';
 import { useAutoSave, useControlBindingsRuntime } from '@hooks';
 import { useEntityPropertiesModal } from './hooks/useEntityPropertiesModal';
 import { SceneManagerProvider } from './hooks/useSceneManager';
+import { SidebarAccordionProvider } from '../../context/SidebarAccordionContext';
+import { useAiAssistantOverlaySync } from '../../plugins/useAiAssistantOverlaySync';
 
 import type { GameStyle, ProjectType } from '@shared-types';
 
@@ -73,6 +75,7 @@ function EngineViewInner({ projectType, gameStyle, initialSavePath, initialExtra
   // Teclado/mando del renderer → IPC run_control_script (ventana overlay no recibe input).
   useControlBindingsRuntime()
   useEntityPropertiesModal()
+  useAiAssistantOverlaySync()
 
   return (
     <SceneManagerProvider
@@ -82,6 +85,7 @@ function EngineViewInner({ projectType, gameStyle, initialSavePath, initialExtra
       gameStyle={gameStyle}
       onSaveProject={handleSave}
     >
+    <SidebarAccordionProvider>
     <div className="app-shell d-flex flex-column">
       <div className="d-flex flex-grow-1 overflow-hidden">
         <SideBarLeft projectType={projectType} gameStyle={gameStyle} />
@@ -116,6 +120,7 @@ function EngineViewInner({ projectType, gameStyle, initialSavePath, initialExtra
         </div>
       </div>
     </div>
+    </SidebarAccordionProvider>
     </SceneManagerProvider>
   )
 }

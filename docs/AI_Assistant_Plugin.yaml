@@ -1,0 +1,58 @@
+# RER-ENGINE — Plugin Asistente de IA local
+# Junio 2026
+
+version: 1
+plugin_id: local-ai-assistant
+
+model:
+  source: official
+  repo: Qwen/Qwen3-1.7B-GGUF
+  repo_url: https://huggingface.co/Qwen/Qwen3-1.7B-GGUF
+  filename: Qwen3-1.7B-Q8_0.gguf
+  download_url: https://huggingface.co/Qwen/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q8_0.gguf
+  license: apache-2.0
+  approx_size: "~1.83 GB"
+
+runtime:
+  name: llama.cpp
+  binary: llama-server.exe
+  download: on-demand from GitHub releases (win x64 avx2 in v1)
+  api: OpenAI-compatible http://127.0.0.1:8765/v1
+  spawn_from: Electron main (src/main/plugins/llamaServerProcess.ts)
+
+context:
+  strategy: keyword search over docs/*.yaml + bundled UI hints
+  module: src/main/plugins/editorDocsIndex.ts
+  ui_targets: data-plugin-target attributes in sidebar
+
+assistant_tools_v1:
+  - search via injected doc chunks in system prompt
+  - OPEN_ACCORDION:scenes|resources|entities|ui|herramientas|controles|mundo|camera
+  - HIGHLIGHT:target-id
+
+out_of_scope_v1:
+  - engine:cmd / crear entidades desde la IA
+  - embeddings / RAG vectorial
+  - macOS / Linux binary for llama-server
+
+files:
+  main:
+    - src/main/plugins/pluginCatalog.ts
+    - src/main/plugins/pluginState.ts
+    - src/main/plugins/pluginInstall.ts
+    - src/main/plugins/fileDownload.ts
+    - src/main/plugins/llamaServerProcess.ts
+    - src/main/plugins/assistantChat.ts
+    - src/main/plugins/editorDocsIndex.ts
+    - src/main/plugins/registerPluginIpc.ts
+  renderer:
+    - src/renderer/src/plugins/PluginsButton.tsx
+    - src/renderer/src/plugins/PluginsModalBody.tsx
+    - src/renderer/src/ai-overlay/AiAssistantOverlayApp.tsx
+    - src/renderer/src/plugins/useAiAssistantOverlaySync.ts
+    - src/renderer/src/plugins/usePlugins.ts
+    - src/renderer/src/context/SidebarAccordionContext.tsx
+  overlay_window:
+    file: src/main/aiAssistantWindow.ts
+    position: viewport bottom-right screen coords
+    z_order: alwaysOnTop floating above winit engine

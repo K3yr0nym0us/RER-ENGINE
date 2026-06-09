@@ -22,7 +22,9 @@ const ResourcesAccordion = ({ projectType = '2D' }: Props) => {
 
   return (
     <Accordion.Item eventKey="resources">
-      <Accordion.Header><BoxSeam className="me-2" />{t('Resources')}</Accordion.Header>
+      <Accordion.Header data-plugin-target="accordion-resources">
+        <BoxSeam className="me-2" />{t('Resources')}
+      </Accordion.Header>
       <Accordion.Body className="py-2 px-1">
         <SidebarSubAccordion>
           {is3d ? <ModelsAccordion /> : <SpritesAccordion />}

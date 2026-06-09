@@ -1,5 +1,7 @@
 // Tipos compartidos entre main process, preload y renderer.
 
+export * from './plugins'
+
 export type ProjectType = '2D' | '3D'
 
 export type GameStyle =
@@ -1123,6 +1125,46 @@ declare global {
       ) => () => void
       onModalElectronPlayerUiStateRequest: (
         cb: (req: { handlerId: string; requestId: string }) => unknown,
+      ) => () => void
+      pluginsGetCatalog: () => Promise<import('./plugins').PluginCatalogEntry[]>
+      pluginsGetState: () => Promise<import('./plugins').PluginsState>
+      pluginsSetEnabled: (
+        pluginId: import('./plugins').PluginId,
+        enabled: boolean,
+      ) => Promise<import('./plugins').PluginsState>
+      pluginsInstall: (
+        pluginId: import('./plugins').PluginId,
+      ) => Promise<import('./plugins').PluginInstallResult>
+      pluginsUninstall: (
+        pluginId: import('./plugins').PluginId,
+      ) => Promise<import('./plugins').PluginInstallResult>
+      pluginsGetLlmStatus: () => Promise<{
+        status: string
+        error: string | null
+        enabled: boolean
+        installed: boolean
+      }>
+      pluginsChat: (
+        request: import('./plugins').AssistantChatRequest,
+      ) => Promise<import('./plugins').AssistantChatResponse>
+      pluginsStartLlm: () => Promise<{ ok: boolean; error?: string }>
+      pluginsStopLlm: () => Promise<{ ok: boolean }>
+      onPluginsDownloadProgress: (
+        cb: (progress: import('./plugins').PluginDownloadProgress) => void,
+      ) => () => void
+      onPluginsUiAction: (
+        cb: (action: import('./plugins').PluginUiAction) => void,
+      ) => () => void
+      onPluginsStateChanged: (cb: () => void) => () => void
+      aiAssistantShow: (config: { locale?: 'en' | 'es' }) => Promise<void>
+      aiAssistantHide: () => Promise<void>
+      aiAssistantSetExpanded: (expanded: boolean) => void
+      aiAssistantSetLayout: (layout: 'intro' | 'thinking' | 'input' | 'answer') => void
+      aiAssistantFabDragStart: () => void
+      aiAssistantFabDragEnd: () => void
+      notifyAiAssistantReady: () => void
+      onAiAssistantConfig: (
+        cb: (config: { locale?: 'en' | 'es' } | null) => void,
       ) => () => void
     }
   }

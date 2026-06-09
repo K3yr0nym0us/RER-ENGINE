@@ -23,7 +23,9 @@ export function ScenesAccordion() {
 
   return (
     <Accordion.Item eventKey="scenes">
-      <Accordion.Header><Collection className="me-2" />{t('Scenes')}</Accordion.Header>
+      <Accordion.Header data-plugin-target="accordion-scenes">
+        <Collection className="me-2" />{t('Scenes')}
+      </Accordion.Header>
       <Accordion.Body className="py-2 px-1">
         {scenesListLoading ? (
           <div

@@ -1,0 +1,55 @@
+# RER-ENGINE — Modelo de plugins opcionales
+# Referencia para IAs y contribuidores. Junio 2026.
+
+version: 1
+updated: 2026-06-04
+
+summary: |
+  Plugins opcionales se instalan bajo demanda desde el pie del sidebar (Plugins).
+  No se empaquetan modelos ni runtimes en el instalador base ni en el motor Rust.
+  Estado persistido en userData/plugins/state.json.
+
+principles:
+  - Cero cambios en engine_2d / engine_3d / engine_shared para plugins
+  - Descarga on-demand tras confirmación del usuario
+  - IPC bajo prefijo plugins:* en Electron main
+
+catalog:
+  - id: local-ai-assistant
+    name: Local AI Assistant
+    version: "1.0.0"
+    manifest_code: src/main/plugins/pluginCatalog.ts
+
+persistence:
+  path: "{userData}/plugins/state.json"
+  schema:
+    installed:
+      local-ai-assistant:
+        version: string
+        modelPath: string
+        llamaServerPath: string
+        installedAt: ISO-8601
+    enabled: [local-ai-assistant]
+
+ipc:
+  - plugins:get-catalog
+  - plugins:get-state
+  - plugins:set-enabled
+  - plugins:install
+  - plugins:uninstall
+  - plugins:llm-status
+  - plugins:start-llm
+  - plugins:stop-llm
+  - plugins:chat
+  - plugins:download-progress  # push main → renderer
+  - plugins:ui-action          # push main → renderer
+  - ai-assistant:show
+  - ai-assistant:hide
+  - ai-assistant:set-expanded
+  - ai-assistant:config        # push main → overlay window
+
+ui:
+  sidebar_footer: src/renderer/src/pages/EngineView/components/SideBarLeft.tsx
+  modal: src/renderer/src/plugins/PluginsModalBody.tsx
+  chat_overlay: src/main/aiAssistantWindow.ts
+  chat_ui: src/renderer/src/ai-overlay/AiAssistantOverlayApp.tsx

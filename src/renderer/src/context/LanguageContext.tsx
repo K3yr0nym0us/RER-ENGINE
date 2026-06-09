@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 
 export type Locale = 'en' | 'es'
@@ -19,6 +19,10 @@ export function LanguageProvider({
   initialLocale?: Locale
 }) {
   const [locale, setLocaleState] = useState<Locale>(initialLocale)
+
+  useEffect(() => {
+    setLocaleState(initialLocale)
+  }, [initialLocale])
 
   const setLocale = useCallback((next: Locale) => {
     if (next === locale) return
