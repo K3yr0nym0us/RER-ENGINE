@@ -1,4 +1,4 @@
-export { default as WorldAccordion } from './WorldAccordion'
+export { default as WorldAccordion } from './WorldAccordion/WorldAccordion'
 export { ScenesAccordion } from './ScenesAccordion'
 export { CameraAccordion } from './CameraAccordion'
 export { default as ScenariosAccordion } from './EntitiesAccordion/EnvironmentsAccordion/EnvironmentsAccordion'

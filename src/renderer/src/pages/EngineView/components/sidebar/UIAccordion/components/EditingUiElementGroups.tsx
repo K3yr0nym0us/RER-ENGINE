@@ -656,7 +656,7 @@ export default function EditingUiElementGroups({
 
 	return (
 		<Accordion
-			className="sidebar-accordion mb-2"
+			className="sidebar-accordion sidebar-accordion-sub mb-2"
 			activeKey={activeGroupKey ?? undefined}
 			onSelect={(key) => setActiveGroupKey(typeof key === 'string' ? key : null)}
 		>
@@ -665,7 +665,7 @@ export default function EditingUiElementGroups({
 
 				<Accordion.Item key={group.eventKey} eventKey={group.eventKey}>
 
-					<Accordion.Header className="py-1">
+					<Accordion.Header>
 
 						<span className="d-flex align-items-center small">
 
@@ -683,7 +683,7 @@ export default function EditingUiElementGroups({
 
 					</Accordion.Header>
 
-					<Accordion.Body className="py-0 px-1">
+					<Accordion.Body className="py-2 px-2">
 
 						{group.preBody}
 

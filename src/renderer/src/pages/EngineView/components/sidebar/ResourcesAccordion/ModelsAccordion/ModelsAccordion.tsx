@@ -7,6 +7,7 @@ import { useTraslate } from '@hooks';
 import { ModalConfirmBody } from '../../../../../../modal-electron/ModalConfirmBody';
 import type { ModelInfo } from '@shared-types';
 import BtnLoadModel from './components/BtnLoadModel';
+import SidebarSubAccordion from '../../SidebarSubAccordion';
 
 const ModelsAccordion = () => {
   const { t } = useTraslate();
@@ -43,7 +44,7 @@ const ModelsAccordion = () => {
     <Accordion.Item eventKey="models">
       <Accordion.Header><Box className="me-2" />{t('Models')}</Accordion.Header>
       <Accordion.Body className="py-2 px-2">
-        <Accordion className="mt-2">
+        <SidebarSubAccordion>
           {([
             ['character', t('Characters')],
             ['environment', t('Environment')],
@@ -97,7 +98,7 @@ const ModelsAccordion = () => {
               </Accordion.Item>
             );
           })}
-        </Accordion>
+        </SidebarSubAccordion>
       </Accordion.Body>
     </Accordion.Item>
   );

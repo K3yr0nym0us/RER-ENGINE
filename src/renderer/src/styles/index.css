@@ -102,6 +102,10 @@ body {
   padding: 8px 10px;
 }
 
+.sidebar-accordion:not(.sidebar-accordion-sub) > .accordion-item > .accordion-header > .accordion-button {
+  font-weight: 700;
+}
+
 .sidebar-accordion .accordion-button:not(.collapsed) {
   color: var(--app-primary) !important;
   background: #161b34 !important;
@@ -114,6 +118,17 @@ body {
 .sidebar-accordion .accordion-body {
   background: #0f1225 !important;
   padding: 8px 6px;
+}
+
+/* Sub-accordions: header más delgado (solo padding vertical del botón) */
+.sidebar-accordion.sidebar-accordion-sub .accordion-button {
+  padding-top: 6px !important;
+  padding-bottom: 6px !important;
+}
+
+/* Mismo gap que mt-2 entre wrappers hermanos (patrón Resources) */
+.sidebar-accordion.sidebar-accordion-sub > .accordion-item + .accordion-item {
+  margin-top: 0.5rem;
 }
 
 .form-control,
@@ -364,9 +379,13 @@ body {
   border-bottom: 1px solid var(--bs-border-color);
 }
 .entity-props-nav .nav-link {
-  font-size: 0.72rem;
-  padding: 0.35rem 0.5rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  padding: 0.45rem 0.65rem;
   white-space: nowrap;
+}
+.entity-props-nav .nav-link.active {
+  font-weight: 700;
 }
 .entity-props-nav::-webkit-scrollbar {
   height: 3px;

@@ -69,11 +69,9 @@ export function useEntityPropertiesModal(): void {
 		}
 
 		lastSelectionKeyRef.current = selectionKey
-		const isMulti = multiSelectedIds.length > 1
-		const entityName = selectedEntity?.name ?? `${multiSelectedIds.length} ${t('entities')}`
 
 		openModalRef.current({
-			title: isMulti ? t('Properties') : entityName,
+			title: t('Entity properties'),
 			size: 'sm',
 			body: createElement(EntityPropertiesModalBody),
 		})

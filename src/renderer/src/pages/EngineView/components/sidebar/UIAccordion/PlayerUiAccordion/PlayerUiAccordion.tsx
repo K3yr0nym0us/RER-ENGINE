@@ -10,8 +10,8 @@ const PlayerUiAccordion = () => {
 			scope="player"
 			eventKey="player-ui"
 			headerIcon={<Controller className="me-2" />}
-			headerTitle={t('Player UI')}
-			defaultNamePrefix={t('Player UI')}
+			headerTitle={t('Player HUD')}
+			defaultNamePrefix={t('Player HUD')}
 		/>
 	);
 };

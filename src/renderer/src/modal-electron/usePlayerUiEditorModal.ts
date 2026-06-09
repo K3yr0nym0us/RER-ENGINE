@@ -81,7 +81,7 @@ export function usePlayerUiEditorModal(scope: UiScreenScope) {
 			})
 
 			void openModal({
-				title: `${t('Edit UI')}: ${screen.name}`,
+				title: `${t('Edit HUD')}: ${screen.name}`,
 				size: 'sm',
 				body: createElement(PlayerUiEditorModalBody, { scope: 'player', screenId }),
 			})

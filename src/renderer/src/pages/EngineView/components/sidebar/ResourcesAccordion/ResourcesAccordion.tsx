@@ -7,6 +7,7 @@ import BackgroundsAccordion from './BackgroundsAccordion/BackgroundsAccordion';
 import SoundsAccordion from './SoundsAccordion/SoundsAccordion';
 import FontsAccordion from './FontsAccordion/FontsAccordion';
 import ImagesAccordion from './ImagesAccordion/ImagesAccordion';
+import SidebarSubAccordion from '../SidebarSubAccordion';
 
 import { useTraslate } from '@hooks';
 import type { ProjectType } from '@shared-types';
@@ -23,23 +24,13 @@ const ResourcesAccordion = ({ projectType = '2D' }: Props) => {
     <Accordion.Item eventKey="resources">
       <Accordion.Header><BoxSeam className="me-2" />{t('Resources')}</Accordion.Header>
       <Accordion.Body className="py-2 px-1">
-        <Accordion className="sidebar-accordion">
+        <SidebarSubAccordion>
           {is3d ? <ModelsAccordion /> : <SpritesAccordion />}
-        </Accordion>
-        <Accordion className="sidebar-accordion mt-2">
           <SoundsAccordion />
-        </Accordion>
-        <Accordion className="sidebar-accordion mt-2">
           <FontsAccordion />
-        </Accordion>
-        <Accordion className="sidebar-accordion mt-2">
           <ImagesAccordion />
-        </Accordion>
-        {!is3d && (
-          <Accordion className="sidebar-accordion mt-2">
-            <BackgroundsAccordion />
-          </Accordion>
-        )}
+          {!is3d && <BackgroundsAccordion />}
+        </SidebarSubAccordion>
       </Accordion.Body>
     </Accordion.Item>
   );

@@ -33,6 +33,7 @@ import {
   applyModalElectronContentHeight,
   sendPatchToModal,
   restackModalElectronIfOpen,
+  repositionViewportCornerModalIfOpen,
 } from './modalElectronWindow';
 import { resolveAppWindowIcon } from './appWindowIcon';
 import type {
@@ -182,13 +183,17 @@ function createMainWindow(): void {
     mainWindow = null
   })
 
-  // Linux: respaldo IPC al mover (el tracker X11 escucha ConfigureNotify).
-  // Windows: solo el position-tracker nativo (WinEventHook); IPC aquí causa lag.
-  mainWindow.on('move', () => {
+  const syncViewportAndModalOnMainWindowChange = (): void => {
     if (process.platform === 'linux') {
       mainWindow?.webContents.send('request-viewport-bounds')
     }
-  })
+    repositionViewportCornerModalIfOpen()
+  }
+
+  // Linux: respaldo IPC al mover (el tracker X11 escucha ConfigureNotify).
+  // Windows: el motor usa WinEventHook; la modal de propiedades se recoloca aquí.
+  mainWindow.on('move', syncViewportAndModalOnMainWindowChange)
+  mainWindow.on('resize', syncViewportAndModalOnMainWindowChange)
 
   // Clic en el viewport winit: la ventana principal pierde foco; mantener la modal encima del motor.
   mainWindow.on('blur', () => {

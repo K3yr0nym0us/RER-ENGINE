@@ -67,6 +67,12 @@ const UiScreensAccordion = ({
 	const [uiNameDraft, setUiNameDraft] = useState('');
 	const [isEditingUiName, setIsEditingUiName] = useState(false);
 
+	const isPlayerHud = scope === 'player';
+	const newScreenTitle = isPlayerHud ? t('New HUD') : t('New UI');
+	const addNewButtonLabel = isPlayerHud ? t('+ New HUD') : t('+ New UI');
+	const editScreenLabel = isPlayerHud ? t('Edit HUD') : t('Edit UI');
+	const screenNameLabel = isPlayerHud ? t('HUD name') : t('UI name');
+
 	const screens = scope === 'player' ? playerUiScreens : menuUiScreens;
 	const editingId = scope === 'player' ? playerUiEditingId : menuUiEditingId;
 	const isEditing = editingId !== null;
@@ -90,10 +96,11 @@ const UiScreensAccordion = ({
 	const openNewUiModal = () => {
 		const defaultName = `${defaultNamePrefix} ${screens.length + 1}`;
 		openModal({
-			title: t('New UI'),
+			title: newScreenTitle,
 			body: (
 				<ModalSetNameUi
 					defaultName={defaultName}
+					nameLabel={screenNameLabel}
 					onConfirm={(name) => {
 						const id = addUiScreen(scope, name);
 						if (scope === 'player' && id) {
@@ -326,7 +333,7 @@ const UiScreensAccordion = ({
 					type="button"
 					onClick={openNewUiModal}
 				>
-					{t('+ New UI')}
+					{addNewButtonLabel}
 				</button>
 
 				{screens.length === 0 && (
@@ -365,7 +372,7 @@ const UiScreensAccordion = ({
 									</AppTooltip>
 								) : null}
 
-								<AppTooltip content={t('Edit UI')} place="top">
+								<AppTooltip content={editScreenLabel} place="top">
 									<span
 										role="button"
 										tabIndex={0}

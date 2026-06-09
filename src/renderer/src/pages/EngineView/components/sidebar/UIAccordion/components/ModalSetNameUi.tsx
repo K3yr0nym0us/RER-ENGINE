@@ -3,11 +3,13 @@ import { useModalClose, useTraslate } from '@hooks';
 
 interface ModalSetNameUiProps {
 	defaultName: string;
+	nameLabel?: string;
 	onConfirm: (name: string) => void;
 }
 
-export default function ModalSetNameUi({ defaultName, onConfirm }: ModalSetNameUiProps) {
+export default function ModalSetNameUi({ defaultName, nameLabel, onConfirm }: ModalSetNameUiProps) {
 	const { t } = useTraslate();
+	const label = nameLabel ?? t('UI name');
 	const closeModal = useModalClose();
 	const nameRef = useRef<HTMLInputElement>(null);
 
@@ -21,7 +23,7 @@ export default function ModalSetNameUi({ defaultName, onConfirm }: ModalSetNameU
 	return (
 		<div>
 			<label className="form-label text-light small mb-1" htmlFor="ui-screen-name-input">
-				{t('UI name')}
+				{label}
 			</label>
 			<input
 				id="ui-screen-name-input"
@@ -29,7 +31,7 @@ export default function ModalSetNameUi({ defaultName, onConfirm }: ModalSetNameU
 				type="text"
 				defaultValue={defaultName}
 				ref={nameRef}
-				placeholder={t('UI name')}
+				placeholder={label}
 				onKeyDown={(e) => {
 					if (e.key === 'Enter') handleConfirm();
 				}}

@@ -5,15 +5,16 @@ import { EnvironmentsAccordion } from './EnvironmentsAccordion/EnvironmentsAccor
 import BtnCreateEntityFromModel from './components/BtnCreateEntityFromModel';
 import BtnCreateCharacter from './CharactersAccordion/components/BtnCreateCharacter';
 import ObjectsAccordion from './ObjectsAccordion/ObjectsAccordion';
+import SidebarSubAccordion from '../SidebarSubAccordion';
 import { useTraslate } from '@hooks';
 
 export default function EntitiesAccordeon({ projectType }: { projectType?: string }) {
   const { t } = useTraslate();
   return (
     <Accordion.Item eventKey="entities">
-      <Accordion.Header><PeopleFill className="me-2" />{t('Entities')}</Accordion.Header>
-      <Accordion.Body className="py-2 px-2">
-        <Accordion>
+      <Accordion.Header><PeopleFill className="me-2" />{t('Create entity')}</Accordion.Header>
+      <Accordion.Body className="py-2 px-1">
+        <SidebarSubAccordion>
           <Accordion.Item eventKey="escenarios">
             <Accordion.Header><TreeFill className="me-2" />{t('Environment')}</Accordion.Header>
             <Accordion.Body className="py-2 px-2">
@@ -45,7 +46,7 @@ export default function EntitiesAccordeon({ projectType }: { projectType?: strin
               {projectType === '2D' && <ObjectsAccordion />}
             </Accordion.Body>
           </Accordion.Item>
-        </Accordion>
+        </SidebarSubAccordion>
       </Accordion.Body>
     </Accordion.Item>
   )

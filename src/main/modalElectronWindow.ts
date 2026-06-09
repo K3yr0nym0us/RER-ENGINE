@@ -50,8 +50,7 @@ export function initModalElectron(
 }
 
 /**
- * Ancla la modal a la esquina superior izquierda del viewport del motor.
- * En Windows/Linux las modales hijas usan coordenadas relativas al padre, no de pantalla.
+ * Ancla la modal a la esquina superior izquierda del viewport del motor (coordenadas de pantalla).
  */
 function placeModalAtViewportCorner(win: BrowserWindow): void {
   const parent = getMainWindow()
@@ -71,21 +70,13 @@ function placeModalAtViewportCorner(win: BrowserWindow): void {
   const outerWidth = frame.width
   const outerHeight = frame.height
 
-  let x = screenX
-  let y = screenY
-
-  if (process.platform === 'win32' || process.platform === 'linux') {
-    const parentBounds = parent.getBounds()
-    x = screenX - parentBounds.x
-    y = screenY - parentBounds.y
-    x = Math.max(0, Math.min(x, parentBounds.width - outerWidth))
-    y = Math.max(0, Math.min(y, parentBounds.height - outerHeight))
-  } else {
-    const display = getDisplayForModal()
-    const { x: workX, y: workY, width: workW, height: workH } = display.workArea
-    x = Math.max(workX, Math.min(screenX, workX + workW - outerWidth))
-    y = Math.max(workY, Math.min(screenY, workY + workH - outerHeight))
-  }
+  const display = electronScreen.getDisplayNearestPoint({
+    x: Math.round(screenX),
+    y: Math.round(screenY),
+  })
+  const { x: workX, y: workY, width: workW, height: workH } = display.workArea
+  const x = Math.max(workX, Math.min(screenX, workX + workW - outerWidth))
+  const y = Math.max(workY, Math.min(screenY, workY + workH - outerHeight))
 
   win.setBounds({
     x: Math.round(x),
@@ -93,6 +84,15 @@ function placeModalAtViewportCorner(win: BrowserWindow): void {
     width: outerWidth,
     height: outerHeight,
   })
+}
+
+/** Recentra modales ancladas al viewport si la ventana principal se movió o redimensionó. */
+export function repositionViewportCornerModalIfOpen(): void {
+  if (!modalWindow || modalWindow.isDestroyed() || !modalWindow.isVisible()) return
+  if (!pendingRenderPayload) return
+  if (!MODAL_VIEWPORT_CORNER_COMPONENT_KEYS.has(pendingRenderPayload.componentKey)) return
+  placeModalAtViewportCorner(modalWindow)
+  raiseModalAboveEngineViewport(modalWindow)
 }
 
 /** Respaldo cuando el foco sale al viewport nativo del motor (blur de la ventana principal). */

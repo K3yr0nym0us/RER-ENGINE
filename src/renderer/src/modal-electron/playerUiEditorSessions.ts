@@ -80,7 +80,7 @@ function reopenPlayerUiEditorModal(oldHandlerId: string): void {
 	})
 
 	void deps.openModal({
-		title: `${deps.t('Edit UI')}: ${screen?.name ?? ''}`,
+		title: `${deps.t('Edit HUD')}: ${screen?.name ?? ''}`,
 		size: 'sm',
 		body: createElement(PlayerUiEditorModalBody, { scope: 'player', screenId: deps.screenId }),
 	})

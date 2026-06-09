@@ -57,14 +57,14 @@ export function PlayerUiEditorPanel({
 	return (
 		<div>
 			<div className="mb-2">
-				<p className="prop-label small text-secondary mb-1">{t('UI name')}</p>
+				<p className="prop-label small text-secondary mb-1">{t('HUD name')}</p>
 				<div className="input-group input-group-sm">
 					<input
 						type="text"
 						value={uiNameDraft}
 						onChange={(e) => setUiNameDraft(e.target.value)}
 						className="form-control bg-dark text-info border-secondary prop-input"
-						aria-label={t('UI name')}
+						aria-label={t('HUD name')}
 						disabled={!isEditingUiName}
 					/>
 					{!isEditingUiName ? (
