@@ -95,6 +95,12 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 
 ### Prioridad media — funcionalidad
 
+- [ ] **Herramienta 3D: física por hueso (bone physics)**
+  - Botón/herramienta exclusiva del acordeón **Tools** en proyectos **3D** (no visible en 2D).
+  - Al activarla y seleccionar una entidad basada en modelo 3D skinned (GLB/GLTF/FBX), visualizar el **esqueleto / huesos** de la entidad en el viewport.
+  - Panel o inspector para asignar **tipo de física por hueso** (p. ej. estático, dinámico, kinematic, sin simulación, etc.).
+  - Persistencia en `.save` por entidad/hueso; sincronización motor ↔ editor.
+  - Objetivo: dinamismo en personajes y escenario (pelo, pechos, ropa suelta, accesorios colgantes, elementos blandos del entorno, etc.) sin depender solo de animación de clips embebidos.
 - [ ] **QA orientación jugador GLB Mixamo** — la lógica de bake/orientación ya está en motor; falta validación manual con varios GLB Mixamo reales en FP (altura ~1.7 m, de pie de frente, sin regresión skinning)
 - [ ] **Animaciones 3D (avanzado)** — state machine / hojas tipo Blender; más allá de clips embebidos + reproducción básica
 
