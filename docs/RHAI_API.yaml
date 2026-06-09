@@ -1,0 +1,260 @@
+# RER-ENGINE — Scripting Rhai (API 2D y 3D)
+# Referencia para IAs y contribuidores. Junio 2026.
+
+version: 1
+updated: 2026-06-04
+
+summary: |
+  Guía breve para escribir scripts en entidades. El motor 2D y el 3D comparten la misma forma
+  de script; algunas funciones solo existen en uno de los dos.
+  Render del motor: Rust + wgpu — rer_engine_2d y rer_engine_3d usan Vulkan (Windows y Linux;
+  sin variables de entorno). Ventana overlay junto al editor Electron. Los scripts Rhai no
+  configuran la GPU; solo llaman a la API engine.* de gameplay.
+
+# ── Forma de un script ────────────────────────────────────────────────────────
+
+script_shape:
+  description: |
+    Define funciones de callback de nivel superior. dt es el delta en segundos.
+    El motor compila cada script con un preámbulo `let engine = #{ ... }` e invoca los
+    callbacks explícitamente (on_start!(entity);, update!(entity, dt);, etc.) para que
+    engine sea visible dentro del cuerpo de la función.
+  example: |
+    fn on_start(entity) {
+        engine.log("Hola desde entidad " + entity.id);
+    }
+
+    fn update(entity, dt) {
+        // cada frame
+    }
+
+    fn on_stop(entity) {
+    }
+
+entity_callbacks:
+  - callback: on_start(entity)
+    when: Al iniciar play en la entidad
+  - callback: update(entity, dt)
+    when: Cada frame
+  - callback: on_stop(entity)
+    when: Al detener play
+
+other_callbacks:
+  - callback: on_press(entity, control_key)
+    when: |
+      Tecla/control asignado — una vez por pulsación (sin autorepeat).
+      Ver sección gravity_and_controls_2d.
+  - callback: on_keep(entity, control_key)
+    when: Tecla/control mantenido — cada frame mientras se mantiene pulsado
+  - callback: on_trigger_enter(trigger, actor)
+    when: Un actor entra en un execution area (2D AABB; 3D plano orientado)
+
+scene_callbacks:
+  description: Scripts de escena (Level Blueprint / nodos visuales)
+  items:
+    - callback: on_scene_start()
+      when: Al iniciar play en la escena
+    - callback: on_scene_tick(dt)
+      when: Cada frame mientras la escena está en play
+
+# ── Datos de la entidad (entity) ──────────────────────────────────────────────
+
+entity_fields:
+  description: En cada frame el motor inyecta un mapa con los datos de la entidad.
+  fields:
+    - name: id
+      description: ID numérico
+    - name: x, y
+      description: Posición en el plano de juego (2D: mundo XY; 3D: uso principal en XZ del suelo)
+    - name: scale_x, scale_y
+      description: Escala
+    - name: animations
+      description: Lista de nombres de animación (2D; en 3D puede estar vacía)
+
+# ── API común (engine.*) ──────────────────────────────────────────────────────
+
+common_api:
+  description: Disponible en 2D y 3D salvo donde se indique lo contrario.
+
+  movement:
+    - function: engine.move_to(id, x, y)
+      description: Teletransporta a una posición absoluta (sin física).
+    - function: engine.translate(id, dx, dy)
+      description: Mueve un delta sin física.
+    - function: engine.move_entity(id, speed, dir_x, dir_y)
+      description: Movimiento con Rapier (respeta colisiones si hay cuerpo físico).
+    - function: engine.move_entity_facing(id, speed, amount_x, dir_y)
+      description: Como move_entity, pero el eje horizontal sigue hacia dónde mira el personaje.
+
+  appearance_and_animation:
+    note: Principalmente 2D
+    functions:
+      - function: engine.set_scale(id, sx, sy)
+        description: Cambia escala.
+      - function: engine.play_animation(id, name)
+        description: Reproduce animación por nombre; el motor espeja según la última dirección horizontal.
+      - function: engine.set_default_animation(id, name)
+        description: Animación por defecto al parar.
+      - function: engine.stop_animation(id)
+        description: Detiene y vuelve al frame 0.
+
+  physics:
+    - function: engine.set_physics(id, enabled, body_type?)
+      description: |
+        Activa/desactiva Rapier. body_type: "dynamic" (por defecto) o "static".
+
+  utility:
+    - function: engine.log(message)
+      description: Mensaje en la consola del editor.
+
+# ── Solo motor 2D ─────────────────────────────────────────────────────────────
+
+engine_2d_only:
+  description: Herramientas del plano lateral y plataformas.
+  functions:
+    - function: engine.apply_kinematic_gravity(id, speed_x, jump_speed_y, gravity)
+      description: Impulso de salto + velocidad horizontal en cuerpo kinematic (ver gravity_and_controls_2d).
+    - function: engine.apply_kinematic_impulse(id, dir_x, dir_y, impulse)
+      description: Impulso puntual.
+    - function: engine.move_entity_slide(id, dx, dy, speed)
+      description: Desplazamiento con shape-cast (sin teletransporte).
+    - function: engine.move_control(id, speed)
+      description: |
+        Movimiento según la tecla del binding activo (A/D/W/S, D-LEFT, etc.).
+        El motor resuelve la dirección; no compares la tecla en el script.
+    - function: engine.set_vsync(enabled)
+      description: Activa o desactiva V-Sync.
+
+  triggers:
+    description: |
+      Coloca un script en un execution area (2D o trigger plano 3D) y usa
+      on_trigger_enter(trigger, actor) para reaccionar cuando otro personaje entra.
+      En el editor, el panel de logs muestra [trigger] al activarse (con/sin código adjunto).
+
+gravity_and_controls_2d:
+  world_gravity:
+    source: Panel Mundo / IPC set_gravity
+    rules:
+      - El valor es una magnitud (u/s²), siempre aplicada hacia abajo en el plano XY del motor.
+      - El runtime usa internamente el eje Y negativo de Rapier (-abs(gravity)), aunque el script o el editor envíen un número positivo.
+
+  apply_kinematic_gravity:
+    scope: Solo en play, cuerpo kinematic
+    parameters:
+      - name: speed_x
+        effect: Velocidad horizontal objetivo para el siguiente paso de física.
+      - name: jump_speed_y
+        effect: Impulso vertical sumado una vez (salto).
+      - name: gravity
+        effect: Ignorado en la implementación actual; la caída usa la gravedad del mundo configurada en el editor.
+    note: |
+      La integración real ocurre en PhysicsWorld2D::step() (shape-cast + suelo),
+      no en el cuarto argumento del script.
+
+  on_press:
+    rules:
+      - Se ejecuta una sola vez por pulsación de tecla o botón (sin autorepeat).
+      - Usar para saltos y acciones discretas; el movimiento continuo va en update / on_keep.
+      - El motor pasa control_key con el nombre del binding activo; no hace falta if control_key == "D".
+
+  example_2d_control: |
+    fn on_keep(entity, control_key) {
+        engine.move_control(entity.id, 7.0);
+        engine.play_animation(entity.id, "Run");
+    }
+
+    fn on_press(entity, control_key) {
+        engine.move_entity_facing(entity.id, 12.0, 0.2, 1.0);
+        engine.play_animation(entity.id, "JumpPj");
+    }
+
+# ── Solo motor 3D ─────────────────────────────────────────────────────────────
+
+engine_3d_only:
+  description: |
+    Controller de play en proyectos 3D (hoy usado en primera persona) y objetos con Rapier.
+    En 3D las animaciones por frames 2D no son el foco; el personaje jugable en play usa
+    cápsula cinemática (no el mismo pipeline que move_entity en XY de un sprite).
+  functions:
+    - function: engine.fp_press_key(key)
+      description: |
+        Simula tecla pulsada en play (mismos nombres que el input: "W", "S", "A", "D",
+        "SHIFT", "SPACE", etc.). En scripts de control FP el motor aplica control_key
+        automáticamente; solo usa fp_press_key si necesitas otra tecla distinta al binding.
+    - function: engine.fp_jump()
+      description: Salto del jugador en play.
+    - function: engine.fp_set_walk_speed(speed)
+      description: Velocidad base al caminar.
+    - function: engine.fp_set_sprint_multiplier(mult)
+      description: Multiplicador al sprintar.
+    - function: engine.fp_set_jump_speed(speed)
+      description: Impulso de salto.
+
+  example_fp_entity: |
+    fn on_start(entity) {
+        engine.fp_set_walk_speed(4.0);
+        engine.fp_set_jump_speed(6.5);
+    }
+
+  fp_control_scripts:
+    description: |
+      Acordeón Controles — un script por tecla; cuerpo suelto.
+      No uses fp_press_key ni compares control_key en scripts de control FP.
+    examples:
+      wasd: |
+        // W / A / S / D — misma lógica en cada binding; el motor aplica la tecla del binding.
+        let WALK_SPEED = 4;
+        engine.fp_set_walk_speed(WALK_SPEED);
+      shift: |
+        // SHIFT
+        let SPRINT_MULTIPLIER = 3;
+        engine.fp_set_sprint_multiplier(SPRINT_MULTIPLIER);
+      space: |
+        // SPACE
+        let JUMP_SPEED = 6;
+        engine.fp_set_jump_speed(JUMP_SPEED);
+        engine.fp_jump();
+
+# ── Programación visual (editor de nodos) ─────────────────────────────────────
+
+visual_scripting:
+  description: |
+    Además de escribir Rhai a mano, el editor puede compilar grafos de nodos a los mismos callbacks.
+    Detalle del modelo: docs/Programing_Model.yaml
+  contexts:
+    - context: Escena
+      open_from: Sidebar Escenas → Programación
+      callbacks: on_scene_start(), on_scene_tick(dt)
+    - context: Entidad
+      open_from: Sidebar Propiedades → Programar entidad
+      callbacks: on_start(entity), update(entity, dt)
+  action_nodes:
+    - node: Print
+      rhai: engine.log("…")
+    - node: Play animation
+      rhai: engine.play_animation(id, "nombre")
+    - node: Set scale
+      rhai: engine.set_scale(entity.id, sx, sy)
+    - node: Teleport to
+      rhai: engine.move_to(entity.id, x, y) — posición absoluta
+    - node: Translate
+      rhai: engine.translate(entity.id, dx, dy) — delta relativo
+  notes:
+    - En lógica de entidad, los nodos de movimiento y escala usan siempre entity.id del script en ejecución.
+    - En lógica de escena, Play animation permite elegir otra entidad por id.
+
+# ── Sandbox ───────────────────────────────────────────────────────────────────
+
+sandbox: |
+  Rhai se ejecuta en modo sandbox del motor: sin acceso a sistema de archivos, red ni módulos
+  externos. Solo la API engine.* registrada por el runtime y operaciones básicas del lenguaje.
+
+# ── Implementación ────────────────────────────────────────────────────────────
+
+implementation:
+  shared: src/main/Engine/engine_shared/src/scripting/
+  modules:
+    - ScriptEngine
+    - api.rs
+    - script_cmd.rs
+  note: Los crates engine_2d y engine_3d reexportan el módulo.

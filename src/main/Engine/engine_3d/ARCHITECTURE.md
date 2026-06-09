@@ -117,7 +117,7 @@ Registro de rutas/tipos: `entity_save_meta` + actualizacion en spawn/load/replac
 - Callbacks Rhai usan **invoke pattern** en `engine_shared/src/scripting/script_engine.rs` (mismo contrato que 2D).
 - **Triggers 3D:** `on_trigger_enter(trigger, actor)` en execution areas planas; detección en `execution_areas_3d.rs`.
 - **FP control scripts:** tras ejecutar el script del binding, `engine/scripts.rs` auto-inyecta `fp_press_key` con la tecla del binding para el play character cuando el script no lo hace. Scripts típicos: solo `fp_set_walk_speed`, `fp_set_sprint_multiplier`, `fp_jump`.
-- Referencia: [`RHAI_API.md`](../../../../RHAI_API.md).
+- Referencia: [`docs/RHAI_API.yaml`](../../../../docs/RHAI_API.yaml).
 
 ### Fisica
 

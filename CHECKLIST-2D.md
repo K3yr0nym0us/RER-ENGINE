@@ -49,7 +49,7 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 - [x] Control scripts 2D: `move_control` resuelve dirección desde el binding (sin `if control_key == "D"`)
 - [x] Invoke pattern Rhai: callbacks ven `engine` del preámbulo (`script_engine.rs`)
 - [x] Demo `DEMO_2d.save`: scripts `.rhai` (A/D on_keep, E/SPACE on_press, gamepad D-LEFT)
-- [x] Semántica `SetGravity`, `apply_kinematic_gravity` y `on_press` — contrato en [`RHAI_API.md`](./RHAI_API.md#gravedad-y-controles-2d)
+- [x] Semántica `SetGravity`, `apply_kinematic_gravity` y `on_press` — contrato en [`docs/RHAI_API.yaml`](./docs/RHAI_API.yaml) (`gravity_and_controls_2d`)
 - [x] Spatial grid para picking/consultas
 - [x] Undo/redo de transformaciones, herramientas de dibujo y entidades (snapshot: escenario, personaje, colisionador, trigger)
 - [x] Atlas: evento `atlas_exhausted` → consola del editor

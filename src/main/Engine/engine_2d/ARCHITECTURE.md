@@ -60,7 +60,7 @@ Registro: `entity_save_meta` + inferencia desde `ScenarioMarker` / `CharacterMar
 - Callbacks Rhai usan **invoke pattern** (`run_ast_with_scope` + `update!(entity, dt);`, etc.) para que `engine` del preámbulo sea visible dentro de `fn update` / `on_trigger_enter` / controles.
 - **2D controles:** `engine.move_control(id, speed)` — el motor guarda la tecla del binding en `ScriptApiContext.control_binding_key`; no comparar `control_key` en el script.
 - **Triggers:** `on_trigger_enter(trigger, actor)` en execution areas.
-- Referencia API: [`RHAI_API.md`](../../../../RHAI_API.md). Implementación: `engine_shared/src/scripting/`.
+- Referencia API: [`docs/RHAI_API.yaml`](../../../../docs/RHAI_API.yaml). Implementación: `engine_shared/src/scripting/`.
 
 ## Atlas de texturas
 

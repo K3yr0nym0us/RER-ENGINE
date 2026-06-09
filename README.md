@@ -137,7 +137,7 @@ Logs del motor (opcional): `RUST_LOG=info` o `RUST_LOG=rer_engine_2d=debug`.
 
 | Archivo | Contenido |
 |---------|-----------|
-| [RHAI_API.md](./RHAI_API.md) | API de scripting Rhai (2D y 3D), resumida |
+| [docs/RHAI_API.yaml](./docs/RHAI_API.yaml) | API de scripting Rhai (2D y 3D), resumida |
 | [docs/Programing_Model.yaml](./docs/Programing_Model.yaml) | Modelo de programación visual (nodos → Rhai, UI, persistencia, IPC modal) |
 | [CHECKLIST-2D.md](./CHECKLIST-2D.md) | Hecho y pendiente — motor / editor 2D |
 | [CHECKLIST-3D.md](./CHECKLIST-3D.md) | Hecho y pendiente — motor / editor 3D |

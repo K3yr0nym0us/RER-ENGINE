@@ -260,7 +260,7 @@ rhai_runtime:
     DEMO_2d.save: scripting/**/*.rhai (side-scroller controls with move_control)
     DEMO_3d_FIRST_PERSON.save: scripting/**/*.rhai (FP WASD/SHIFT/SPACE bare-body scripts)
 
-# ── Relación con RHAI_API.md ──────────────────────────────────────────────────
+# ── Relación con RHAI_API.yaml ────────────────────────────────────────────────
 
-rhai_reference: RHAI_API.md
+rhai_reference: docs/RHAI_API.yaml
 motor_impl: src/main/Engine/engine_shared/src/scripting/
