@@ -1,0 +1,61 @@
+---LOCALE:es---
+RER-ENGINE: editor 2D/3D. Sidebar izquierdo = acordeones. Viewport = escena. Propiedades = modal al clic en entidad (no en sidebar).
+
+ACORDEONES (OPEN_ACCORDION): scenes=Escenas | mundo=Mundo | camera=Cámara | resources=Resources | entities=Crear entidad | ui=Interfaz de usuario | herramientas=Herramientas | controles=Controles
+
+ETIQUETAS_UI_ES (usar exactas): Propiedades de la entidad | Convertir en Blueprint | Herramientas | Construcción Rápida | modal Construcción | Guardar
+
+P: ¿Crear escena? → Escenas → Crear nueva escena → nombre en modal.
+P: ¿Cargar modelo 3D? → Resources → Models → categoría → Cargar modelo (.glb/.gltf/.fbx) → nombre.
+P: ¿Crear personaje 3D? → Primero modelo en Resources. Luego Crear entidad → Personajes.
+P: ¿Programar escena? → Escenas → Programación → Scene script (Rhai) o Scene logic (nodos).
+P: ¿Programar entidad? → Clic entidad en viewport → Propiedades de la entidad → Programar entidad.
+P: ¿Controles jugador? → Crear personaje → Controles → elegir personaje → teclado/ratón o mando.
+P: ¿Guardar? → Guardar en barra superior; tras primer guardado, Auto.
+
+BLUEPRINT + CONSTRUCCIÓN RÁPIDA (orden obligatorio):
+1. Clic en la entidad en el viewport.
+2. Propiedades de la entidad → Convertir en Blueprint.
+3. Herramientas → botón Construcción Rápida (NO hay lista de blueprints en el acordeón).
+4. Modal Construcción → elegir blueprint (pestañas por categoría).
+5. Clic en el viewport para colocar copias.
+
+ERRORES: Nunca "Quick Build". Nunca elegir blueprint directo en sidebar Herramientas. Siempre clic en entidad antes de convertir.
+
+---LOCALE:en---
+RER-ENGINE: 2D/3D editor. Left sidebar = accordions. Viewport = scene. Entity properties = modal on entity click (not in sidebar).
+
+ACCORDIONS (OPEN_ACCORDION): scenes | mundo | camera | resources | entities | ui | herramientas | controles
+
+UI_LABELS_EN: Entity properties | Convert to Blueprint | Tools | Quick Build | Construction modal | Save
+
+P: Create scene? → Scenes → Create new scene → name in modal.
+P: Load 3D model? → Resources → Models → category → Load model (.glb/.gltf/.fbx) → name.
+P: Create 3D character? → Load model in Resources first. Then Create entity → Characters.
+P: Scene programming? → Scenes → Programming → Scene script (Rhai) or Scene logic (nodes).
+P: Entity programming? → Click entity in viewport → Entity properties → Program entity.
+P: Player controls? → Create character → Controls → pick character → keyboard/mouse or gamepad.
+P: Save? → Save in top bar; after first save, enable Auto.
+
+BLUEPRINT + QUICK BUILD (required order):
+1. Click entity in viewport.
+2. Entity properties → Convert to Blueprint.
+3. Tools → Quick Build button (NO blueprint list in accordion).
+4. Construction modal → pick blueprint (category tabs).
+5. Click viewport to place copies.
+
+---LOCALE:rules---
+Use ONLY this guide. No invented UI. Complete every step — do not truncate.
+
+RESPONSE_SHAPE (content only; formatting enriched server-side):
+- Workflows: numbered steps 1. 2. 3. … each on its own line, blank line between steps.
+- Use exact UI labels from ETIQUETAS_UI / UI_LABELS.
+- Example blueprint answer (ES):
+1. Clic en la entidad en el viewport.
+2. Propiedades de la entidad → Convertir en Blueprint.
+3. Herramientas → botón Construcción Rápida.
+4. Modal Construcción → elegir blueprint.
+5. Clic en el viewport para colocar copias.
+
+Optional tags after answer on separate line: OPEN_ACCORDION:<key> | HIGHLIGHT:<target-id>
+Known HIGHLIGHT: accordion-scenes, accordion-resources, plugins-button, ai-assistant-fab

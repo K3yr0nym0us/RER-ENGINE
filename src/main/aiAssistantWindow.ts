@@ -17,17 +17,26 @@ export interface ViewportPlacementRect {
 export const FAB_SIZE = 126
 const SPEECH_BUBBLE_MAX_WIDTH = 340
 const OVERLAY_EDGE_PAD = 14
-const INTRO_BUBBLE_HEIGHT = 108
+const STACK_PAD = 16
+const STACK_GAP = 10
+const INTRO_BUBBLE_HEIGHT = 120
 const TAIL_GAP = 10
 const COLLAPSED_INTRO_WIDTH = SPEECH_BUBBLE_MAX_WIDTH + OVERLAY_EDGE_PAD
-const COLLAPSED_INTRO_HEIGHT = INTRO_BUBBLE_HEIGHT + TAIL_GAP + FAB_SIZE + OVERLAY_EDGE_PAD
+const COLLAPSED_INTRO_HEIGHT =
+  STACK_PAD + INTRO_BUBBLE_HEIGHT + TAIL_GAP + FAB_SIZE + STACK_PAD
 const INPUT_BUBBLE_MAX_WIDTH = 450
 const INPUT_FAB_GAP = 10
-const ANSWER_BUBBLE_HEIGHT = 108
+const ANSWER_BUBBLE_HEIGHT = 140
 const COLLAPSED_INPUT_WIDTH = INPUT_BUBBLE_MAX_WIDTH + INPUT_FAB_GAP + FAB_SIZE + OVERLAY_EDGE_PAD
-const COLLAPSED_INPUT_HEIGHT = FAB_SIZE + OVERLAY_EDGE_PAD
+const COLLAPSED_INPUT_HEIGHT = STACK_PAD + FAB_SIZE + STACK_PAD
 const COLLAPSED_ANSWER_WIDTH = INPUT_BUBBLE_MAX_WIDTH + OVERLAY_EDGE_PAD
-const COLLAPSED_ANSWER_HEIGHT = FAB_SIZE + TAIL_GAP + ANSWER_BUBBLE_HEIGHT + OVERLAY_EDGE_PAD
+const COLLAPSED_ANSWER_HEIGHT =
+  STACK_PAD + FAB_SIZE + STACK_GAP + ANSWER_BUBBLE_HEIGHT + STACK_PAD
+
+/** Tamaño único: evita saltos al cambiar fase (intro/input/answer). */
+const OVERLAY_WIDTH = COLLAPSED_INPUT_WIDTH
+const OVERLAY_HEIGHT =
+  Math.max(COLLAPSED_INTRO_HEIGHT, COLLAPSED_INPUT_HEIGHT, COLLAPSED_ANSWER_HEIGHT) + 16
 
 export type AiAssistantLayout = 'intro' | 'thinking' | 'input' | 'answer'
 const INITIAL_MARGIN = 16
@@ -80,19 +89,6 @@ function clearOverlayAboveEngine(win: BrowserWindow): void {
   }
 }
 
-function resolveOverlaySize(layout: AiAssistantLayout): { width: number; height: number } {
-  switch (layout) {
-    case 'thinking':
-      return { width: COLLAPSED_INTRO_WIDTH, height: COLLAPSED_INTRO_HEIGHT }
-    case 'answer':
-      return { width: COLLAPSED_ANSWER_WIDTH, height: COLLAPSED_ANSWER_HEIGHT }
-    case 'input':
-      return { width: COLLAPSED_INPUT_WIDTH, height: COLLAPSED_INPUT_HEIGHT }
-    default:
-      return { width: COLLAPSED_INTRO_WIDTH, height: COLLAPSED_INTRO_HEIGHT }
-  }
-}
-
 function defaultInitialPosition(width: number, height: number): { x: number; y: number } {
   const parent = getMainWindow()
   if (parent && !parent.isDestroyed()) {
@@ -114,21 +110,14 @@ function rememberPosition(win: BrowserWindow): void {
   savedPosition = { x, y }
 }
 
-function setOverlayBounds(
-  win: BrowserWindow,
-  layout: AiAssistantLayout,
-  anchorBottomRight: boolean,
-): void {
-  const { width, height } = resolveOverlaySize(layout)
-  const prev = win.getBounds()
+function setOverlayBounds(win: BrowserWindow, preferSaved: boolean): void {
+  const width = OVERLAY_WIDTH
+  const height = OVERLAY_HEIGHT
 
   let x: number
   let y: number
 
-  if (anchorBottomRight && prev.width > 0 && prev.height > 0) {
-    x = prev.x + prev.width - width
-    y = prev.y + prev.height - height
-  } else if (savedPosition) {
+  if (preferSaved && savedPosition) {
     x = savedPosition.x
     y = savedPosition.y
   } else {
@@ -231,7 +220,7 @@ export async function showAiAssistantOverlay(config: AiAssistantOverlayConfig = 
   }
 
   overlayLayout = 'intro'
-  setOverlayBounds(win, 'intro', false)
+  setOverlayBounds(win, false)
   sendConfigToOverlay(config)
   if (!win.isVisible()) {
     win.show()
@@ -263,7 +252,7 @@ export function restackAiAssistantOverlayIfOpen(): void {
 export function setAiAssistantOverlayLayout(layout: AiAssistantLayout): void {
   if (!overlayWindow || overlayWindow.isDestroyed()) return
   overlayLayout = layout
-  setOverlayBounds(overlayWindow, layout, true)
+  // No redimensionar: el contenido cambia dentro de la misma ventana transparente.
   raiseOverlayAboveEngine(overlayWindow)
 }
 

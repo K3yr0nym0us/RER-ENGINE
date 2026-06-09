@@ -1023,10 +1023,16 @@ html.ai-assistant-overlay #root {
 .ai-assistant-input-bubble .ai-assistant-reply,
 .ai-assistant-answer-bubble .ai-assistant-reply {
   color: #333;
-  line-height: 1.4;
-  max-height: 6.5rem;
+  line-height: 1.45;
+  max-height: 10.5rem;
   overflow-y: auto;
   padding-right: 1.5rem;
+  white-space: pre-wrap;
+}
+
+.ai-assistant-reply strong {
+  font-weight: 700;
+  color: #1a1a1a;
 }
 
 .ai-assistant-answer-bubble {
@@ -1044,24 +1050,74 @@ html.ai-assistant-overlay #root {
   padding: 0;
   border: none;
   border-radius: 50%;
-  background: #eee;
-  color: #444;
-  font-size: 1.1rem;
-  line-height: 1;
+  background: #dc3545;
+  color: #fff;
+  font-size: 0;
+  line-height: 0;
   cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  display: grid;
+  place-items: center;
   -webkit-app-region: no-drag;
 }
 
+.ai-assistant-bubble-close::before {
+  content: '×';
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1;
+  transform: translateY(-0.06em);
+}
+
 .ai-assistant-bubble-close:hover {
-  background: #ddd;
-  color: #111;
+  background: #bb2d3b;
+  color: #fff;
 }
 
 .ai-assistant-status {
   color: #666;
+}
+
+.ai-assistant-thinking {
+  display: inline-flex;
+  align-items: baseline;
+}
+
+.ai-assistant-thinking-dots {
+  display: inline-flex;
+  width: 1.1em;
+  margin-left: 0.05em;
+}
+
+.ai-assistant-thinking-dots span {
+  display: inline-block;
+  animation: ai-assistant-thinking-dot 1.2s ease-in-out infinite;
+  opacity: 0.2;
+}
+
+.ai-assistant-thinking-dots span:nth-child(1) {
+  animation-delay: 0s;
+}
+
+.ai-assistant-thinking-dots span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.ai-assistant-thinking-dots span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes ai-assistant-thinking-dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.2;
+    transform: translateY(0);
+  }
+
+  30% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
 }
 
 .ai-assistant-error {
@@ -1139,28 +1195,34 @@ html.ai-assistant-overlay #root {
 }
 
 .ai-assistant-fab {
+  position: relative;
   width: 126px;
   height: 126px;
   padding: 0;
   border: none;
   background: transparent;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
   flex-shrink: 0;
   user-select: none;
   pointer-events: none;
 }
 
-.ai-assistant-fab:hover .ai-assistant-fab-img {
+.ai-assistant-fab:hover .ai-assistant-fab-img--active {
   filter: brightness(1.1) drop-shadow(0 0 10px rgba(64, 156, 255, 0.45));
 }
 
 .ai-assistant-fab-img {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: contain;
+  object-position: center bottom;
+  opacity: 0;
   pointer-events: none;
   user-select: none;
-  transition: filter 0.15s ease, opacity 0.2s ease;
+  transition: opacity 0.15s ease, filter 0.15s ease;
+}
+
+.ai-assistant-fab-img--active {
+  opacity: 1;
 }

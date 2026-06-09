@@ -7,6 +7,7 @@ import type {
   PluginUiAction,
 } from '../../shared-types/plugins'
 import { buildSystemContext } from './editorDocsIndex'
+import { polishAssistantReply } from './assistantReplyFormat'
 import { aiLog, getAiAssistantLogFilePath } from './assistantChatLog'
 import { getLlamaServerPort, isLlamaServerRunning } from './llamaServerProcess'
 
@@ -129,8 +130,8 @@ function postChatCompletion(messages: AssistantChatMessage[]): Promise<ChatCompl
   const body = JSON.stringify({
     model: 'qwen3',
     messages,
-    temperature: 0.6,
-    max_tokens: 768,
+    temperature: 0.5,
+    max_tokens: 480,
   })
 
   aiLog('chat.request', {
@@ -211,7 +212,7 @@ const ACCORDION_FALLBACK_HINTS: Record<string, string> = {
     'Abre el acordeón Create entity (Crear entidad) para añadir personajes, objetos y otros elementos a la escena.',
   ui: 'Abre el acordeón User interface (Interfaz) para editar pantallas HUD del jugador.',
   herramientas:
-    'Abre el acordeón Tools (Herramientas) para Quick Build, dibujo de colisiones y otras utilidades.',
+    'Abre el acordeón Herramientas y pulsa Construcción Rápida; en el modal Construcción elige la blueprint y luego coloca en el viewport.',
   controles: 'Abre el acordeón Controls (Controles) para configurar el mapeo de teclas y gamepad.',
   mundo: 'Abre el acordeón World (Mundo) para ajustar iluminación, cielo y propiedades del entorno.',
   camera: 'Abre el acordeón Camera (Cámara) para configurar la vista y la cámara del editor.',
@@ -233,19 +234,27 @@ function buildFallbackFromActions(actions: PluginUiAction[]): string {
   return parts.join(' ') || 'Revisa el panel izquierdo del editor para esa opción.'
 }
 
-function prepareAssistantOutput(raw: string): { displayText: string; uiActions: PluginUiAction[] } {
+function prepareAssistantOutput(
+  raw: string,
+  locale: 'en' | 'es',
+  userQuery = '',
+): { displayText: string; uiActions: PluginUiAction[] } {
   const stripped = stripThinkingFromResponse(raw)
   const uiActions = parseToolCalls(stripped)
 
   let displayText = stripped
     .replace(/OPEN_ACCORDION:\w+/gi, '')
     .replace(/HIGHLIGHT:\S+/gi, '')
-    .replace(/\n{2,}/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
     .trim()
 
   if (!displayText && uiActions.length > 0) {
     displayText = buildFallbackFromActions(uiActions)
     aiLog('chat.fallback-text', { reason: 'only-ui-tags', uiActions, displayText: preview(displayText) })
+  }
+
+  if (displayText) {
+    displayText = polishAssistantReply(displayText, locale, userQuery)
   }
 
   return { displayText, uiActions }
@@ -271,19 +280,19 @@ function buildDebugInfo(
   }
 }
 
+const REPLY_FORMAT_RULES = [
+  'Answer as numbered steps (1. 2. 3. …) for workflows. One step per line.',
+  'Leave a blank line between steps.',
+  'Complete ALL steps of the workflow — never stop mid-answer.',
+  'Use exact UI names from the guide (bold/emojis are applied automatically).',
+  'No reasoning tags. OPEN_ACCORDION / HIGHLIGHT tags on a separate line after the answer.',
+].join('\n')
+
 function resolveLocaleInstruction(locale: 'en' | 'es'): string {
   if (locale === 'es') {
-    return [
-      'El idioma del editor RER-ENGINE es español.',
-      'Responde SIEMPRE en español, aunque la documentación de contexto esté en inglés.',
-      'Los mensajes de la interfaz del asistente también están en español.',
-    ].join(' ')
+    return 'Responde SIEMPRE en español. Lista pasos completos con nombres exactos de la UI.'
   }
-  return [
-    'The RER-ENGINE editor language is English.',
-    'Always reply in English, even if context documentation is mixed.',
-    'Assistant UI messages are in English.',
-  ].join(' ')
+  return 'Always reply in English. List complete steps with exact UI names.'
 }
 
 export async function runAssistantChat(
@@ -298,21 +307,16 @@ export async function runAssistantChat(
   }
 
   const lastUser = [...userMessages].reverse().find((m) => m.role === 'user')
-  const systemContent = buildSystemContext(lastUser?.content ?? '')
+  const systemContent = buildSystemContext(lastUser?.content ?? '', locale)
 
   const messages: AssistantChatMessage[] = [
     {
       role: 'system',
       content: [
-        systemContent,
         'You are RER-AI, the RER-ENGINE editor assistant.',
         resolveLocaleInstruction(locale),
-        'Be direct and concise.',
-        'Do not include your reasoning or internal monologue in the reply.',
-        'Always write at least one or two clear sentences answering the user before any UI tags.',
-        'Never reply with only OPEN_ACCORDION or HIGHLIGHT lines.',
-        'After your answer, you may append OPEN_ACCORDION:scenes (or resources, entities, ui, herramientas, controles, mundo, camera).',
-        'To highlight a button, append HIGHLIGHT:target-id on its own line.',
+        REPLY_FORMAT_RULES,
+        systemContent,
       ].join('\n\n'),
     },
     ...userMessages.filter((m) => m.role !== 'system'),
@@ -321,7 +325,8 @@ export async function runAssistantChat(
   try {
     const completion = await postChatCompletion(messages)
     const raw = completion.rawAnswer
-    const { displayText, uiActions } = prepareAssistantOutput(raw)
+    const userQuery = lastUser?.content ?? ''
+    const { displayText, uiActions } = prepareAssistantOutput(raw, locale, userQuery)
     const debug = buildDebugInfo(completion, raw, displayText)
 
     aiLog('chat.result', { ...debug, uiActionCount: uiActions.length })

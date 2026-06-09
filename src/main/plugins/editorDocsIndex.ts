@@ -2,57 +2,17 @@ import fs from 'fs'
 import path from 'path'
 import { app } from 'electron'
 
-export interface DocChunk {
-  id: string
-  source: string
-  keywords: string[]
-  content: string
-}
+/** Contexto compacto para el asistente IA local. */
+const AI_EDITOR_GUIDE_FILE = 'AI_Assistant_Editor_Guide.prompt.txt'
 
-const BUNDLED_CHUNKS: DocChunk[] = [
-  {
-    id: 'sidebar-scenes',
-    source: 'editor-ui',
-    keywords: ['scene', 'escena', 'programming', 'programación', 'blueprint'],
-    content:
-      'Scenes accordion: create, rename, switch scenes. Programming sub-accordion opens visual scripting or Rhai scene scripts.',
-  },
-  {
-    id: 'sidebar-resources',
-    source: 'editor-ui',
-    keywords: ['model', 'modelo', 'sprite', 'font', 'sound', 'resource', 'recurso', 'import'],
-    content:
-      'Resources accordion: import models (3D), sprites (2D), fonts, HUD images, sounds, backgrounds. Each category has its own sub-accordion.',
-  },
-  {
-    id: 'sidebar-entities',
-    source: 'editor-ui',
-    keywords: ['entity', 'entidad', 'create', 'crear', 'character', 'player'],
-    content:
-      'Create entity accordion: spawn entities from sprites (2D) or models (3D). Select category (environment, character, object, etc.).',
-  },
-  {
-    id: 'sidebar-ui',
-    source: 'editor-ui',
-    keywords: ['hud', 'ui', 'player', 'screen', 'pantalla'],
-    content:
-      'Player HUD accordion: create UI screens, add text/images/buttons, edit in viewport. Scope is player HUD for 3D projects.',
-  },
-  {
-    id: 'sidebar-tools',
-    source: 'editor-ui',
-    keywords: ['tool', 'herramienta', 'blueprint', 'quick build', 'draw', 'dibujar'],
-    content:
-      'Tools accordion: Quick Build (blueprints), drawing tools for colliders and execution areas (2D), plane tool (3D).',
-  },
-  {
-    id: 'rhai-scripting',
-    source: 'docs/RHAI_API.yaml',
-    keywords: ['script', 'rhai', 'code', 'código', 'on_start', 'update'],
-    content:
-      'Entity scripts use Rhai callbacks: on_start, update, on_press, on_keep. Scene scripts use on_scene_start, on_scene_tick. API: engine.move_to, engine.log, etc.',
-  },
-]
+const LOCALE_MARKERS = {
+  es: '---LOCALE:es---',
+  en: '---LOCALE:en---',
+  rules: '---LOCALE:rules---',
+} as const
+
+const FALLBACK_CONTEXT = `RER-ENGINE editor: Scenes, World, Camera, Resources, Create entity, UI, Tools, Controls in left sidebar.
+Entity properties open when clicking an entity. Save via top bar.`
 
 function getDocsRoot(): string | null {
   const candidates = [
@@ -66,73 +26,62 @@ function getDocsRoot(): string | null {
   return null
 }
 
-function loadYamlExcerpt(filePath: string, maxChars: number): string {
-  try {
-    const raw = fs.readFileSync(filePath, 'utf8')
-    return raw.slice(0, maxChars)
-  } catch {
-    return ''
+function extractSection(raw: string, marker: string, nextMarkers: string[]): string {
+  const start = raw.indexOf(marker)
+  if (start === -1) return ''
+
+  const contentStart = start + marker.length
+  let end = raw.length
+  for (const next of nextMarkers) {
+    const idx = raw.indexOf(next, contentStart)
+    if (idx !== -1 && idx < end) end = idx
+  }
+
+  return raw.slice(contentStart, end).trim()
+}
+
+function parsePromptFile(raw: string): { es: string; en: string; rules: string } {
+  return {
+    es: extractSection(raw, LOCALE_MARKERS.es, [LOCALE_MARKERS.en, LOCALE_MARKERS.rules]),
+    en: extractSection(raw, LOCALE_MARKERS.en, [LOCALE_MARKERS.rules]),
+    rules: extractSection(raw, LOCALE_MARKERS.rules, []),
   }
 }
 
-export function buildDocChunks(): DocChunk[] {
-  const chunks = [...BUNDLED_CHUNKS]
+let cachedSections: { es: string; en: string; rules: string } | null = null
+
+function loadPromptSections(): { es: string; en: string; rules: string } {
   const docsRoot = getDocsRoot()
-  if (!docsRoot) return chunks
-
-  const yamlFiles = [
-    { file: 'RHAI_API.yaml', keywords: ['rhai', 'script', 'engine.', 'callback'] },
-    { file: 'Programing_Model.yaml', keywords: ['visual', 'node', 'nodo', 'graph'] },
-    { file: 'MODAL_ELECTRON.yaml', keywords: ['modal', 'window', 'ventana'] },
-    { file: 'Save_Proyect_Model.yaml', keywords: ['save', 'guardar', 'project', 'manifest'] },
-  ]
-
-  for (const { file, keywords } of yamlFiles) {
-    const full = path.join(docsRoot, file)
-    const content = loadYamlExcerpt(full, 4_000)
-    if (content) {
-      chunks.push({
-        id: `doc-${file}`,
-        source: `docs/${file}`,
-        keywords,
-        content,
-      })
-    }
+  if (!docsRoot) {
+    return { es: FALLBACK_CONTEXT, en: FALLBACK_CONTEXT, rules: '' }
   }
 
-  return chunks
-}
-
-export function searchDocChunks(query: string, limit = 4): DocChunk[] {
-  const tokens = query
-    .toLowerCase()
-    .split(/\s+/)
-    .filter((t) => t.length > 2)
-
-  if (tokens.length === 0) return BUNDLED_CHUNKS.slice(0, limit)
-
-  const chunks = buildDocChunks()
-  const scored = chunks.map((chunk) => {
-    const hay = `${chunk.id} ${chunk.keywords.join(' ')} ${chunk.content}`.toLowerCase()
-    let score = 0
-    for (const token of tokens) {
-      if (hay.includes(token)) score += 1
-    }
-    return { chunk, score }
-  })
-
-  return scored
-    .filter((s) => s.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit)
-    .map((s) => s.chunk)
-}
-
-export function buildSystemContext(userQuery: string): string {
-  const hits = searchDocChunks(userQuery, 4)
-  if (hits.length === 0) {
-    return 'You help users navigate the RER-ENGINE editor. Keep answers to 2-3 short sentences with one concrete UI step.'
+  const full = path.join(docsRoot, AI_EDITOR_GUIDE_FILE)
+  try {
+    const raw = fs.readFileSync(full, 'utf8').trim()
+    if (!raw) return { es: FALLBACK_CONTEXT, en: FALLBACK_CONTEXT, rules: '' }
+    return parsePromptFile(raw)
+  } catch {
+    return { es: FALLBACK_CONTEXT, en: FALLBACK_CONTEXT, rules: '' }
   }
-  const body = hits.map((h) => `[${h.source}]\n${h.content}`).join('\n\n---\n\n')
-  return `You help users navigate the RER-ENGINE editor. Use only the context below. Keep answers to 2-3 short sentences with one concrete UI step.\n\n${body}`
+}
+
+function getPromptSections(): { es: string; en: string; rules: string } {
+  if (cachedSections == null) {
+    cachedSections = loadPromptSections()
+  }
+  return cachedSections
+}
+
+/** Recarga el prompt desde disco (p. ej. tras cambios en desarrollo). */
+export function refreshAiEditorGuideCache(): void {
+  cachedSections = null
+}
+
+export function buildSystemContext(_userQuery?: string, locale: 'en' | 'es' = 'en'): string {
+  const sections = getPromptSections()
+  const localeBlock = locale === 'es' ? sections.es : sections.en
+  const rules = sections.rules
+
+  return [localeBlock, rules].filter(Boolean).join('\n\n')
 }

@@ -5,6 +5,7 @@ import rerAiPointingIcon from '../../../resources/RER-AI-POINTING.png'
 import rerAiThinkingIcon from '../../../resources/RER-AI-THINKING.png'
 import { LanguageProvider, useLanguage } from '../context/LanguageContext'
 import { useTraslate } from '@hooks'
+import { AssistantReplyText } from './AssistantReplyText'
 
 interface ChatLine {
   role: 'user' | 'assistant'
@@ -147,6 +148,19 @@ function SpeechBubble({
   )
 }
 
+function ThinkingIndicator({ label }: { label: string }) {
+  return (
+    <p className="ai-assistant-status ai-assistant-thinking small mb-0">
+      <span className="ai-assistant-thinking-label">{label}</span>
+      <span className="ai-assistant-thinking-dots" aria-hidden="true">
+        <span>.</span>
+        <span>.</span>
+        <span>.</span>
+      </span>
+    </p>
+  )
+}
+
 function AiAssistantOverlayInner() {
   const { t } = useTraslate()
   const { locale } = useLanguage()
@@ -262,12 +276,12 @@ function AiAssistantOverlayInner() {
   })
 
   const canSend = llmStatus === 'running' || llmStatus === 'starting'
-  const fabIcon =
+  const fabVariant: 'idle' | 'thinking' | 'pointing' =
     phase === 'answer'
-      ? rerAiPointingIcon
+      ? 'pointing'
       : phase === 'thinking' || (phase === 'input' && input.length > 0)
-        ? rerAiThinkingIcon
-        : rerAiIcon
+        ? 'thinking'
+        : 'idle'
 
   const showInputRow = phase === 'input'
   const showAnswerBubble = phase === 'answer' && Boolean(lastAssistantLine)
@@ -288,7 +302,24 @@ function AiAssistantOverlayInner() {
       }}
     >
       <div className="ai-assistant-fab" aria-hidden>
-        <img src={fabIcon} alt="" className="ai-assistant-fab-img" draggable={false} />
+        <img
+          src={rerAiIcon}
+          alt=""
+          className={`ai-assistant-fab-img${fabVariant === 'idle' ? ' ai-assistant-fab-img--active' : ''}`}
+          draggable={false}
+        />
+        <img
+          src={rerAiThinkingIcon}
+          alt=""
+          className={`ai-assistant-fab-img${fabVariant === 'thinking' ? ' ai-assistant-fab-img--active' : ''}`}
+          draggable={false}
+        />
+        <img
+          src={rerAiPointingIcon}
+          alt=""
+          className={`ai-assistant-fab-img${fabVariant === 'pointing' ? ' ai-assistant-fab-img--active' : ''}`}
+          draggable={false}
+        />
       </div>
     </div>
   )
@@ -345,9 +376,7 @@ function AiAssistantOverlayInner() {
               {llmStatus === 'starting' && (
                 <p className="ai-assistant-status small mb-0">{t('AI server is starting…')}</p>
               )}
-              {llmStatus !== 'starting' && (
-                <p className="ai-assistant-status small mb-0">{t('Thinking…')}</p>
-              )}
+              {llmStatus !== 'starting' && <ThinkingIndicator label={t('Thinking')} />}
               {error && <p className="ai-assistant-error small mb-0 mt-2">{error}</p>}
             </div>
           </SpeechBubble>
@@ -370,10 +399,10 @@ function AiAssistantOverlayInner() {
                 className="ai-assistant-bubble-close"
                 aria-label={t('Close')}
                 onClick={dismissAnswer}
-              >
-                ×
-              </button>
-              <p className="ai-assistant-reply small mb-0">{lastAssistantLine.content}</p>
+              />
+              <p className="ai-assistant-reply small mb-0">
+                <AssistantReplyText text={lastAssistantLine.content} />
+              </p>
             </div>
           </SpeechBubble>
         )}

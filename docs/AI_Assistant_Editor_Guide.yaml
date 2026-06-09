@@ -1,0 +1,251 @@
+# DEPRECATED — Fuente de contexto IA movida a AI_Assistant_Editor_Guide.prompt.txt
+# Este YAML se conserva solo como referencia humana; el asistente ya no lo lee.
+# RER-ENGINE — Guía del editor para asistente IA local (único contexto)
+# Junio 2026 — Mantener breve; no duplicar otros docs del repo.
+
+version: 1
+app: RER-ENGINE
+description: Editor de juegos 2D/3D (Electron + motor Rust). Barra lateral izquierda = acordeones. Viewport central = escena. Propiedades = modal al seleccionar entidad.
+
+project_types:
+  2D:
+    resources: sprites, sounds, fonts, hud_images, backgrounds
+    entities: scenarios (PNG), characters, objects (sprites)
+    tools_extra: draw_collider, draw_execution_area
+  3D:
+    resources: models_3d (.glb/.gltf/.fbx), sounds, fonts, hud_images
+    entities: environment, characters, objects (from loaded models)
+    tools_extra: quick_build_only (no collider/execution area tools)
+    world_extra: directional_light, shadows
+    ui: player_hud screens (3D first-person)
+
+recommended_workflow:
+  - step: 1
+    action: Create or select a scene in Scenes accordion.
+  - step: 2
+    action: Configure World (workspace size, grid, physics, performance; 3D also lighting).
+  - step: 3
+    action: Load resources in Resources accordion (sprites/models, sounds, etc.).
+  - step: 4
+    action: Create entities in Create entity accordion (environment, characters, objects).
+  - step: 5
+    action: Click an entity in the viewport to open Entity properties modal (required before any property action).
+  - step: 6
+    action: Optional — In that modal, Convert to Blueprint.
+  - step: 7
+    action: Optional — Tools → Quick Build button → blueprint picker modal → click viewport to place copies.
+  - step: 8
+    action: Scene logic — Scenes → Programming → Scene script (Rhai) or Scene logic (nodes).
+  - step: 9
+    action: Entity logic — Entity properties modal → Program entity (Rhai or visual nodes).
+  - step: 10
+    action: Controls accordion — assign keyboard/mouse/gamepad to a character (Rhai bindings).
+  - step: 11
+    action: Save project (top bar); auto-save activates after first save.
+
+sidebar_accordions:
+  # eventKey = valor para OPEN_ACCORDION:<key>
+  - key: scenes
+    title: Scenes
+    location: left sidebar, top
+    highlight_target: accordion-scenes
+    contains:
+      - Programming sub-accordion (scene script Rhai, scene visual nodes)
+      - Button "Create new scene" (opens modal to type name)
+      - Scene list: load (switch), rename, delete (need at least 2 scenes to delete)
+    create_scene_steps:
+      - Open Scenes accordion
+      - Click "Create new scene"
+      - Enter name in modal and confirm
+      - New scene becomes active
+
+  - key: mundo
+    title: World
+    location: left sidebar (2D and 3D)
+    sub_accordions:
+      - Workspace: world width/height (2D) or width/height/depth (3D)
+      - Background: 2D only — level background image
+      - Grid: show grid, cell size
+      - Lighting: 3D only — directional light, shadows
+      - Physics: gravity, etc.
+      - Performance: target FPS
+
+  - key: camera
+    title: Camera
+    location: left sidebar (2D and 3D)
+    notes:
+      - 2D: editor camera position and zoom
+      - 3D first-person: eye position, yaw, FOV, frustum, follow mode for play camera
+
+  - key: resources
+    title: Resources
+    location: left sidebar
+    highlight_target: accordion-resources
+    sub_accordions:
+      2D: [Sprites, Sounds, Fonts, HUD images, Backgrounds]
+      3D: [Models, Sounds, Fonts, HUD images]
+    load_model_3d_steps:
+      - Open Resources accordion
+      - Open Models sub-accordion
+      - Choose category (Characters, Environment, or Objects)
+      - Click "Load model (.glb/.gltf/.fbx)"
+      - Pick file, assign name in modal
+    load_sprite_2d_steps:
+      - Resources → Sprites → load PNG sprite
+
+  - key: entities
+    title: Create entity
+    location: left sidebar
+    sub_accordions:
+      - Environment: 3D = create from model; 2D = add scenario PNG
+      - Characters: 3D = create from character model; 2D = create character from sprite
+      - Objects: 3D = create from object model; 2D = objects from sprites
+    note: Requires resources loaded first.
+
+  - key: ui
+    title: User interface
+    location: left sidebar
+    sub_accordions:
+      - Player HUD: create/edit HUD screens (text, images, buttons) for 3D player
+      - UI Menu: menu screens
+
+  - key: herramientas
+    title: Tools
+    title_es: Herramientas
+    location: left sidebar
+    tools:
+      - name_en: Quick Build
+        name_es: Construcción Rápida
+        ui_note_es: Button shows two lines "Construcción" and "Rápida" (yellow/wrench icon). Never say "Quick Build" in Spanish replies.
+        not_in_sidebar: Blueprints are NOT listed in the Herramientas accordion — only this button.
+        steps:
+          - Click Construcción Rápida button in Herramientas accordion
+          - Modal opens (title "Construcción" / Construction) with blueprint list by category tabs
+          - Select one blueprint in the modal — modal closes and quick build mode activates (button turns yellow)
+          - Click in the viewport to place copies (2D and 3D)
+      - Draw collider: 2D only
+      - Draw execution area: 2D only
+
+  - key: controles
+    title: Controls
+    location: left sidebar
+    steps:
+      - Select a character in dropdown (create character first)
+      - Configure keyboard + mouse OR configure gamepads
+      - Bindings use Rhai control scripts per key/button
+
+entity_properties_modal:
+  title_en: Entity properties
+  title_es: Propiedades de la entidad
+  opens_when: user clicks/selects entity in viewport (mandatory first step for blueprint, programming, physics, etc.)
+  not_in_left_sidebar: true
+  panels:
+    - Name, transform (position/rotation/scale)
+    - Physics (enable, type)
+    - Animations (if applicable)
+    - Program entity: new Rhai script or visual node graph for this entity
+    - Convert to Blueprint (es: Convertir en Blueprint): saves reusable template — only visible after opening this modal
+    - Delete / duplicate actions
+
+blueprint_workflow:
+  required_order:
+    - step: 1
+      en: Click the entity you want as template in the viewport (3D/2D scene).
+      es: Haz clic en la entidad que quieres convertir en el viewport (escena 3D/2D).
+    - step: 2
+      en: Entity properties modal opens — click "Convert to Blueprint".
+      es: Se abre el modal Propiedades de la entidad — pulsa "Convertir en Blueprint".
+    - step: 3
+      en: Open Tools accordion (Herramientas) and click the Quick Build button (Construcción Rápida).
+      es: Abre el acordeón Herramientas y pulsa el botón Construcción Rápida.
+    - step: 4
+      en: In the "Construction" modal that opens, pick a blueprint from the list (tabs by category). Modal closes and placement mode turns on.
+      es: En el modal "Construcción" que se abre, elige una blueprint de la lista (pestañas por categoría). El modal se cierra y se activa el modo de colocación.
+    - step: 5
+      en: Click in the viewport to place blueprint copies.
+      es: Haz clic en el viewport para colocar copias de la blueprint.
+  common_mistakes:
+    - Never tell user to convert to blueprint without first clicking the entity in the viewport.
+    - Never say to "select a blueprint from the tools panel/sidebar" — blueprints only appear inside the Construction modal after clicking Construcción Rápida.
+    - Never use "Quick Build" in Spanish; use "Construcción Rápida" or "Herramientas".
+    - The Herramientas accordion has tool buttons (Construcción Rápida, collider, etc.), not a blueprint dropdown.
+
+programming:
+  scene_level:
+    path: Scenes → Programming sub-accordion
+    options:
+      - Scene script: Rhai text editor for scene callbacks (on_scene_start, on_scene_tick)
+      - Scene logic (nodes): visual scripting modal for scene
+  entity_level:
+    path: Select entity → Entity properties modal → Program entity
+    options:
+      - Rhai script per entity (on_start, update, on_press, on_keep)
+      - Visual node graph per entity
+
+save_project:
+  location: top bar save button
+  note: After first manual save, auto-save can be enabled in top bar.
+
+sidebar_footer:
+  - Plugins button (install local AI assistant, etc.) — highlight plugins-button
+  - User guide button (opens this guide in a modal)
+  - Language toggle ES/EN
+
+ui_labels:
+  rule: When locale is Spanish, use exact Spanish UI strings below — never English labels from this doc.
+  es:
+    entity_properties: Propiedades de la entidad
+    convert_to_blueprint: Convertir en Blueprint
+    tools_accordion: Herramientas
+    quick_build_button: Construcción Rápida
+    construction_modal: Construcción
+    blueprint_picker_hint: Selecciona una blueprint para activar el modo de construcción rápida.
+  en:
+    entity_properties: Entity properties
+    convert_to_blueprint: Convert to Blueprint
+    tools_accordion: Tools
+    quick_build_button: Quick Build
+    construction_modal: Construction
+    blueprint_picker_hint: Select a blueprint to activate quick build mode.
+
+assistant_response_rules:
+  language: Match editor locale (Spanish or English) in every reply.
+  spanish_ui: In Spanish replies, copy button/accordion names from ui_labels.es exactly (e.g. Construcción Rápida, not Quick Build).
+  length: 2-3 short sentences plus one concrete UI step.
+  no_reasoning: Do not output thinking or internal monologue.
+  ui_tags_optional:
+    - "OPEN_ACCORDION:<key>" — keys: scenes, mundo, camera, resources, entities, ui, herramientas, controles
+    - "HIGHLIGHT:<target-id>" — known targets: accordion-scenes, accordion-resources, plugins-button, ai-assistant-fab
+  never: Reply with only tags; always include human-readable answer first.
+
+common_questions:
+  - topic: create_new_scene
+    answer: Scenes accordion → button "Create new scene" → enter name in modal.
+    tag: OPEN_ACCORDION:scenes
+  - topic: load_3d_model
+    answer: Resources → Models → pick category → "Load model" → choose .glb/.gltf/.fbx and name it.
+    tag: OPEN_ACCORDION:resources
+  - topic: create_character_3d
+    answer: First load a character model in Resources. Then Create entity → Characters → create from model.
+    tag: OPEN_ACCORDION:entities
+  - topic: scene_programming
+    answer: Scenes → Programming → "Scene script" (Rhai) or "Scene logic (nodes)".
+    tag: OPEN_ACCORDION:scenes
+  - topic: entity_programming
+    answer: Click entity in viewport → Entity properties modal → Program entity.
+  - topic: player_controls
+    answer: Create a character, then Controls accordion → select character → configure keyboard or gamepad.
+    tag: OPEN_ACCORDION:controles
+  - topic: create_blueprint
+    answer_en: Click the entity in the viewport → Entity properties modal → Convert to Blueprint.
+    answer_es: Haz clic en la entidad en el viewport → Propiedades de la entidad → Convertir en Blueprint.
+  - topic: quick_build_blueprint
+    answer_en: Click entity in viewport → Entity properties → Convert to Blueprint. Then Tools → Quick Build button → pick blueprint in the Construction modal → click viewport to place copies.
+    answer_es: Haz clic en la entidad → Propiedades de la entidad → Convertir en Blueprint. Luego Herramientas → botón Construcción Rápida → en el modal Construcción elige la blueprint → clic en el viewport para colocar copias.
+    tag: OPEN_ACCORDION:herramientas
+  - topic: place_blueprint_copies_only
+    answer_en: Open Tools → click Quick Build (not a blueprint list in the sidebar). Select blueprint in the Construction modal, then click the viewport.
+    answer_es: Abre Herramientas → pulsa Construcción Rápida (no hay lista de blueprints en el acordeón). Elige la blueprint en el modal Construcción y luego haz clic en el viewport.
+    tag: OPEN_ACCORDION:herramientas
+  - topic: save_project
+    answer: Use Save in the top bar; enable auto-save after first save.

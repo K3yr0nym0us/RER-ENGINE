@@ -2,7 +2,7 @@
 
 Backlog transversal del monorepo (2D + 3D + Electron). Estado por motor: [CHECKLIST-2D.md](./CHECKLIST-2D.md), [CHECKLIST-3D.md](./CHECKLIST-3D.md). Modelo de recursos y `.save`: [docs/Save_Proyect_Model.yaml](./docs/Save_Proyect_Model.yaml).
 
-**Última revisión:** junio 2026
+**Última revisión:** 4 junio 2026 (plugin IA local — estado overlay y i18n)
 
 ---
 
@@ -57,17 +57,51 @@ Backlog transversal del monorepo (2D + 3D + Electron). Estado por motor: [CHECKL
 
 ### Asistente de IA Local y MCP en Electron
 
-- [x] Crear boton de "Plugins" en el pie del espacio de accordiones.
-- [x] Al darle al boton abrir modal para seleccionar plugins descargables.
-- [x] Agregar la opcion (boton) del plugin de Asistente de IA local.
-- [x] Ventana de confirmacion con mas informacion del plugin (inline en modal; fuente oficial [Qwen/Qwen3-1.7B-GGUF](https://huggingface.co/Qwen/Qwen3-1.7B-GGUF)).
-- [x] Descarga on-demand del modelo + `llama-server` (no empaquetado en instalador base ni motor Rust). Ver [docs/AI_Assistant_Plugin.yaml](./docs/AI_Assistant_Plugin.yaml).
-- [x] Burbuja flotante en ventana overlay Electron dedicada (frameless, always-on-top sobre el motor winit).
-- [x] Guía UI v1: abrir acordeones (`OPEN_ACCORDION`) y resaltar targets (`HIGHLIGHT` + `data-plugin-target`). Contexto desde docs del repo.
-- [ ] QA end-to-end en Windows: instalación ~1.9 GB, inferencia, guía “¿dónde cargo un modelo?”.
-- [ ] **Visual C++ Redistributable (plugin IA):** detectar si falta MSVC 2015–2022 en el equipo del usuario (crash silencioso o fallo al arrancar `llama-server` aunque las DLL de llama.cpp estén presentes). Si no está instalado, ofrecer o ejecutar el instalador del redistributable como parte del flujo de instalación del plugin (antes o después de descargar el runtime).
-- [ ] MCP SDK formal / más tools (sub-acordeones, búsqueda docs dedicada).
-- [ ] Si funciona bien a futuro podriamos darle acceso al motor para realizar acciones directamente como crear entidades, asignar valores, etc.
+Referencia técnica: [docs/AI_Assistant_Plugin.yaml](./docs/AI_Assistant_Plugin.yaml), [docs/Plugins_Model.yaml](./docs/Plugins_Model.yaml).
+
+#### Hecho
+
+**Instalación y runtime**
+- [x] Botón **Plugins** en el pie del espacio de acordeones + modal de plugins descargables.
+- [x] Plugin **Asistente de IA local** con confirmación inline (modelo [Qwen/Qwen3-1.7B-GGUF](https://huggingface.co/Qwen/Qwen3-1.7B-GGUF)).
+- [x] Descarga on-demand del modelo GGUF + `llama-server` (Windows x64; no empaquetado en instalador base ni motor Rust).
+- [x] Instalación / desinstalación / estado en `%APPDATA%/rer-engine/plugins/`.
+- [x] Arranque y parada de `llama-server` desde Electron main; probe HTTP; `--reasoning-format deepseek`.
+- [x] Auto-arranque del servidor si el plugin quedó habilitado en sesión anterior.
+- [x] Parada de `llama-server` al cerrar la aplicación.
+
+**Chat e inferencia**
+- [x] IPC `plugins:chat` → `assistantChat.ts` (API OpenAI-compatible en `127.0.0.1:8765`).
+- [x] Contexto al modelo desde `docs/AI_Assistant_Editor_Guide.prompt.txt` (`editorDocsIndex.ts`, slice por idioma) + hints de UI.
+- [x] Herramientas v1: `OPEN_ACCORDION:*` y `HIGHLIGHT:*` parseadas en main; reenvío al renderer (`plugins:ui-action`).
+- [x] Filtrado de bloques `thinking` / `redacted_thinking`; texto fallback si el modelo solo devuelve tags.
+- [x] Log de depuración en `%APPDATA%/rer-engine/plugins/ai-assistant-chat.log`.
+- [x] Prompt de idioma explícito (en/es) según locale del editor en cada petición de chat.
+
+**Overlay UI (ventana Electron dedicada)**
+- [x] Ventana frameless, transparente, `alwaysOnTop` sobre el viewport winit (`aiAssistantWindow.ts`).
+- [x] Mascot FAB con assets `RER-AI.png`, `RER-AI-THINKING.png`, `RER-AI-POINTING.png`.
+- [x] Flujo por fases: **idle** (saludo) → **input** (pregunta lateral) → **thinking** (globo arriba, sin input) → **answer** (respuesta abajo, avatar señalando).
+- [x] Botón cerrar (×) en globo de respuesta; vuelve a avatar idle; nuevo clic abre chat de nuevo.
+- [x] Redimensionado de ventana por fase (`intro` | `thinking` | `input` | `answer`).
+- [x] Arrastre: región nativa `app-region: drag` (padding) + arrastre del personaje por IPC (bucle en main); posición libre en pantalla (sin clamp al viewport).
+- [x] `resizable: true` con min/max fijos (requisito Windows para `app-region: drag` en ventanas frameless).
+- [x] Ventana hija del editor (`parent`); destrucción del overlay y parada del motor al cerrar la ventana principal.
+- [x] Sincronización de idioma: UI del overlay (`translations.json`) + `locale` en chat al cambiar ES/EN o al cargar proyecto (`set_locale` / `project_loaded_*`).
+
+**Editor (renderer principal)**
+- [x] `SidebarAccordionContext` + `data-plugin-target` en acordeones y controles clave.
+- [x] `useAiAssistantOverlaySync` — muestra/oculta overlay según plugin habilitado e idioma.
+- [x] Traducciones ES para strings del asistente en `translations.json`.
+
+#### Pendiente
+
+- [ ] **QA end-to-end en Windows:** instalación ~1.9 GB, primera inferencia, flujo “¿dónde cargo un modelo?”, arrastre, cambio de idioma, cierre limpio de procesos.
+- [ ] **Visual C++ Redistributable (plugin IA):** detectar si falta MSVC 2015–2022 (fallo silencioso de `llama-server`); ofrecer o ejecutar el redistributable en el flujo de instalación del plugin.
+- [x] **Documentación de contexto para la IA:** prompt compacto `docs/AI_Assistant_Editor_Guide.prompt.txt` (FAQ densa, slice ES/EN); respuestas con **negrita** y pasos en líneas separadas.
+- [ ] **MCP SDK formal** / más tools (sub-acordeones, búsqueda dedicada en docs, herramientas estructuradas).
+- [ ] **Acceso al motor** (futuro): crear entidades, asignar valores, etc. vía `engine:cmd` — fuera de alcance v1.
+- [ ] **macOS / Linux:** binario `llama-server` y empaquetado del plugin fuera de Windows.
 
 ---
 

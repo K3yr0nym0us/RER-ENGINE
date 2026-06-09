@@ -21,12 +21,13 @@ runtime:
   spawn_from: Electron main (src/main/plugins/llamaServerProcess.ts)
 
 context:
-  strategy: keyword search over docs/*.yaml + bundled UI hints
+  strategy: compact prompt — docs/AI_Assistant_Editor_Guide.prompt.txt (locale slice only)
   module: src/main/plugins/editorDocsIndex.ts
+  guide_file: docs/AI_Assistant_Editor_Guide.prompt.txt
   ui_targets: data-plugin-target attributes in sidebar
 
 assistant_tools_v1:
-  - search via injected doc chunks in system prompt
+  - compact locale slice from AI_Assistant_Editor_Guide.prompt.txt
   - OPEN_ACCORDION:scenes|resources|entities|ui|herramientas|controles|mundo|camera
   - HIGHLIGHT:target-id
 
@@ -36,6 +37,8 @@ out_of_scope_v1:
   - macOS / Linux binary for llama-server
 
 files:
+  context:
+    - docs/AI_Assistant_Editor_Guide.prompt.txt
   main:
     - src/main/plugins/pluginCatalog.ts
     - src/main/plugins/pluginState.ts
@@ -54,5 +57,16 @@ files:
     - src/renderer/src/context/SidebarAccordionContext.tsx
   overlay_window:
     file: src/main/aiAssistantWindow.ts
-    position: viewport bottom-right screen coords
+    position: absolute screen coords (user-draggable; saved across sessions)
     z_order: alwaysOnTop floating above winit engine
+    parent: main BrowserWindow (closes with editor)
+    phases: [idle, input, thinking, answer]
+    drag: app-region on padding + fab pointer drag via main process loop
+    i18n: locale from editor LanguageContext; synced on set_locale and project load
+
+overlay_ui_v1:
+  intro: speech bubble above mascot (greeting)
+  input: side bubble with ask + send; mascot thinking face while typing
+  thinking: bubble above mascot; no input
+  answer: pointing mascot + response bubble below with close button
+  assets: RER-AI.png, RER-AI-THINKING.png, RER-AI-POINTING.png
