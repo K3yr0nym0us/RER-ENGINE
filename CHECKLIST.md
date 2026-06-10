@@ -2,7 +2,7 @@
 
 Backlog transversal del monorepo (2D + 3D + Electron). Estado por motor: [CHECKLIST-2D.md](./CHECKLIST-2D.md), [CHECKLIST-3D.md](./CHECKLIST-3D.md). Modelo de recursos y `.save`: [docs/Save_Proyect_Model.yaml](./docs/Save_Proyect_Model.yaml).
 
-**Última revisión:** 4 junio 2026 (plugin IA local — estado overlay y i18n)
+**Última revisión:** 4 junio 2026 (backlog IPC por motor)
 
 ---
 
@@ -34,6 +34,15 @@ Backlog transversal del monorepo (2D + 3D + Electron). Estado por motor: [CHECKL
   - Extender [docs/Save_Proyect_Model.yaml](./docs/Save_Proyect_Model.yaml) con el esquema dual global / por-escena cuando se implemente.
 
 **Motivación:** hoy el motor tiende a registrar en memoria todos los recursos del manifest al cargar el proyecto. Separar por escena y promover a global solo lo compartido reduce uso de memoria y tiempo de carga en proyectos multi-escena.
+
+### IPC por motor (2D / 3D)
+
+- [ ] **Registrar y validar IPC según el motor activo**
+  - Hoy muchos handlers viven en `src/main/index.ts` y en los binarios Rust (`engine_2d` / `engine_3d`) con comprobaciones cruzadas (`projectType`, guards en renderer, etc.), lo que hace el código pesado y frágil.
+  - Objetivo: capa en el proceso main que **active solo el conjunto de canales IPC del motor seleccionado** (2D o 3D) al abrir o cambiar de proyecto.
+  - Cada motor expone su registro de handlers (p. ej. `registerEngine2dIpc`, `registerEngine3dIpc`); el main despacha `engine:cmd` y el resto de canales sin mezclar validaciones 2D dentro del código 3D y viceversa.
+  - Preload/renderer: exponer solo la API del motor en uso (o rechazar en main con error claro si se invoca un canal del motor equivocado).
+  - Criterio: al trabajar en un proyecto 3D no debe haber ramas ni imports de lógica IPC exclusiva del 2D en el motor 3D (y al revés); la discriminación queda centralizada en main.
 
 ### Métricas GPU en panel (Linux)
 
