@@ -269,6 +269,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   pluginsSetEnabled: (pluginId: string, enabled: boolean) =>
     ipcRenderer.invoke('plugins:set-enabled', pluginId, enabled),
   pluginsInstall: (pluginId: string) => ipcRenderer.invoke('plugins:install', pluginId),
+  pluginsCancelInstall: () => ipcRenderer.invoke('plugins:cancel-install'),
   pluginsUninstall: (pluginId: string) => ipcRenderer.invoke('plugins:uninstall', pluginId),
   pluginsGetLlmStatus: () => ipcRenderer.invoke('plugins:llm-status'),
   pluginsChat: (request: { messages: Array<{ role: string; content: string }> }) =>
@@ -276,23 +277,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   pluginsStartLlm: () => ipcRenderer.invoke('plugins:start-llm'),
   pluginsStopLlm: () => ipcRenderer.invoke('plugins:stop-llm'),
   onPluginsDownloadProgress: (
-    cb: (progress: {
-      pluginId: string
-      phase: string
-      percent: number
-      bytesReceived: number
-      bytesTotal: number
-    }) => void,
+    cb: (progress: import('../shared-types/plugins').PluginDownloadProgress) => void,
   ): (() => void) => {
     const listener = (
       _event: Electron.IpcRendererEvent,
-      data: {
-        pluginId: string
-        phase: string
-        percent: number
-        bytesReceived: number
-        bytesTotal: number
-      },
+      data: import('../shared-types/plugins').PluginDownloadProgress,
     ) => {
       cb(data)
     }
@@ -316,9 +305,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   aiAssistantShow: (config: { locale?: 'en' | 'es' }) =>
     ipcRenderer.invoke('ai-assistant:show', config),
   aiAssistantHide: () => ipcRenderer.invoke('ai-assistant:hide'),
-  aiAssistantSetExpanded: (expanded: boolean) => {
-    ipcRenderer.send('ai-assistant:set-expanded', expanded)
-  },
   aiAssistantSetLayout: (layout: 'intro' | 'thinking' | 'input' | 'answer') => {
     ipcRenderer.send('ai-assistant:set-layout', layout)
   },

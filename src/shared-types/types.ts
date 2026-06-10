@@ -1135,6 +1135,7 @@ declare global {
       pluginsInstall: (
         pluginId: import('./plugins').PluginId,
       ) => Promise<import('./plugins').PluginInstallResult>
+      pluginsCancelInstall: () => Promise<{ ok: boolean }>
       pluginsUninstall: (
         pluginId: import('./plugins').PluginId,
       ) => Promise<import('./plugins').PluginInstallResult>
@@ -1158,7 +1159,6 @@ declare global {
       onPluginsStateChanged: (cb: () => void) => () => void
       aiAssistantShow: (config: { locale?: 'en' | 'es' }) => Promise<void>
       aiAssistantHide: () => Promise<void>
-      aiAssistantSetExpanded: (expanded: boolean) => void
       aiAssistantSetLayout: (layout: 'intro' | 'thinking' | 'input' | 'answer') => void
       aiAssistantFabDragStart: () => void
       aiAssistantFabDragEnd: () => void

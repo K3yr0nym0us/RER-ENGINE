@@ -11,6 +11,7 @@ import {
 import { Accordion } from 'react-bootstrap'
 
 import type { PluginUiAction } from '@shared-types'
+import { usePluginUiActionBridge } from '../plugins/usePluginUiActionBridge'
 
 type AccordionSelectKey = Parameters<
   NonNullable<ComponentProps<typeof Accordion>['onSelect']>
@@ -29,6 +30,7 @@ interface SidebarAccordionContextValue {
 const SidebarAccordionContext = createContext<SidebarAccordionContextValue | null>(null)
 
 export function SidebarAccordionProvider({ children }: { children: ReactNode }) {
+  usePluginUiActionBridge()
   const [activeKey, setActiveKey] = useState<string | null>('scenes')
 
   const openAccordion = useCallback((key: string) => {

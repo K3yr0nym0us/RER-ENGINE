@@ -45,7 +45,7 @@ ipc:
   - plugins:ui-action          # push main → renderer
   - ai-assistant:show
   - ai-assistant:hide
-  - ai-assistant:set-expanded
+  - ai-assistant:set-layout
   - ai-assistant:config        # push main → overlay window
 
 ui:

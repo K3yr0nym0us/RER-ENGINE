@@ -72,7 +72,7 @@ Referencia técnica: [docs/AI_Assistant_Plugin.yaml](./docs/AI_Assistant_Plugin.
 
 **Chat e inferencia**
 - [x] IPC `plugins:chat` → `assistantChat.ts` (API OpenAI-compatible en `127.0.0.1:8765`).
-- [x] Contexto al modelo desde `docs/AI_Assistant_Editor_Guide.prompt.txt` (`editorDocsIndex.ts`, slice por idioma) + hints de UI.
+- [x] Contexto al modelo desde `docs/AI_Assistant_Editor_Guide.es.prompt.txt` / `.en.prompt.txt` (`editorDocsIndex.ts`, un archivo por idioma) + hints de UI.
 - [x] Herramientas v1: `OPEN_ACCORDION:*` y `HIGHLIGHT:*` parseadas en main; reenvío al renderer (`plugins:ui-action`).
 - [x] Filtrado de bloques `thinking` / `redacted_thinking`; texto fallback si el modelo solo devuelve tags.
 - [x] Log de depuración en `%APPDATA%/rer-engine/plugins/ai-assistant-chat.log`.
@@ -98,7 +98,7 @@ Referencia técnica: [docs/AI_Assistant_Plugin.yaml](./docs/AI_Assistant_Plugin.
 
 - [ ] **QA end-to-end en Windows:** instalación ~1.9 GB, primera inferencia, flujo “¿dónde cargo un modelo?”, arrastre, cambio de idioma, cierre limpio de procesos.
 - [ ] **Visual C++ Redistributable (plugin IA):** detectar si falta MSVC 2015–2022 (fallo silencioso de `llama-server`); ofrecer o ejecutar el redistributable en el flujo de instalación del plugin.
-- [x] **Documentación de contexto para la IA:** prompt compacto `docs/AI_Assistant_Editor_Guide.prompt.txt` (FAQ densa, slice ES/EN); respuestas con **negrita** y pasos en líneas separadas.
+- [x] **Documentación de contexto para la IA:** prompts `docs/AI_Assistant_Editor_Guide.es.prompt.txt` y `.en.prompt.txt` (FAQ densa por idioma); respuestas con **negrita** y pasos en líneas separadas.
 - [ ] **MCP SDK formal** / más tools (sub-acordeones, búsqueda dedicada en docs, herramientas estructuradas).
 - [ ] **Acceso al motor** (futuro): crear entidades, asignar valores, etc. vía `engine:cmd` — fuera de alcance v1.
 - [ ] **macOS / Linux:** binario `llama-server` y empaquetado del plugin fuera de Windows.

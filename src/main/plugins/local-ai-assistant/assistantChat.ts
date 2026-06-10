@@ -5,7 +5,7 @@ import type {
   AssistantChatMessage,
   AssistantChatResponse,
   PluginUiAction,
-} from '../../shared-types/plugins'
+} from '../../../shared-types/plugins'
 import { buildSystemContext } from './editorDocsIndex'
 import { polishAssistantReply } from './assistantReplyFormat'
 import { aiLog, getAiAssistantLogFilePath } from './assistantChatLog'
@@ -41,23 +41,116 @@ export function stripThinkingFromResponse(text: string): string {
   return s.trim()
 }
 
+const KNOWN_ACCORDION_KEYS_LIST = [
+  'scenes',
+  'mundo',
+  'camera',
+  'resources',
+  'entities',
+  'ui',
+  'herramientas',
+  'tools',
+  'controles',
+  'controls',
+] as const
+
+const KNOWN_ACCORDION_KEYS = KNOWN_ACCORDION_KEYS_LIST.join('|')
+
+/** Cualquier valor tras OPEN_ACCORDION:/HIGHLIGHT: (el modelo inventa formatos). */
+const ANY_OPEN_ACCORDION_RE = /OPEN_ACCORDION\s*[:=]\s*(\S+)/gi
+const ANY_HIGHLIGHT_RE = /HIGHLIGHT\s*[:=]\s*(\S+)/gi
+
+/** Claves reales de `eventKey` en el sidebar (react-bootstrap Accordion). */
+const SIDEBAR_ACCORDION_EVENT_KEYS = [
+  'scenes',
+  'mundo',
+  'camera',
+  'resources',
+  'entities',
+  'ui',
+  'herramientas',
+  'controles',
+] as const
+
+const ACCORDION_KEY_ALIASES: Record<string, (typeof SIDEBAR_ACCORDION_EVENT_KEYS)[number]> = {
+  tools: 'herramientas',
+  controls: 'controles',
+}
+
+function canonicalAccordionKey(raw: string): (typeof SIDEBAR_ACCORDION_EVENT_KEYS)[number] | null {
+  const value = raw.trim().toLowerCase()
+  const aliased = ACCORDION_KEY_ALIASES[value] ?? value
+  if ((SIDEBAR_ACCORDION_EVENT_KEYS as readonly string[]).includes(aliased)) {
+    return aliased as (typeof SIDEBAR_ACCORDION_EVENT_KEYS)[number]
+  }
+  const fromHighlightId = aliased.match(/^accordion-(.+)$/)
+  if (fromHighlightId) {
+    return canonicalAccordionKey(fromHighlightId[1])
+  }
+  return null
+}
+
 function parseToolCalls(content: string): PluginUiAction[] {
   const actions: PluginUiAction[] = []
-  const accordionMatch = content.match(/OPEN_ACCORDION:(\w+)/gi)
-  if (accordionMatch) {
-    for (const m of accordionMatch) {
-      const key = m.split(':')[1]?.toLowerCase()
-      if (key) actions.push({ type: 'open_sidebar_accordion', accordionKey: key })
-    }
+  const seen = new Set<string>()
+
+  const push = (action: PluginUiAction) => {
+    const key =
+      action.type === 'open_sidebar_accordion'
+        ? `accordion:${action.accordionKey}`
+        : `highlight:${action.targetId}`
+    if (seen.has(key)) return
+    seen.add(key)
+    actions.push(action)
   }
-  const highlightMatch = content.match(/HIGHLIGHT:(\S+)/gi)
-  if (highlightMatch) {
-    for (const m of highlightMatch) {
-      const targetId = m.split(':')[1]
-      if (targetId) actions.push({ type: 'highlight_ui_target', targetId })
+
+  for (const m of content.matchAll(ANY_OPEN_ACCORDION_RE)) {
+    const raw = m[1]?.trim()
+    if (!raw) continue
+
+    const accordionKey = canonicalAccordionKey(raw)
+    if (accordionKey) {
+      push({ type: 'open_sidebar_accordion', accordionKey })
+      continue
     }
+
+    // El modelo a veces pone ids HIGHLIGHT (accordion-scenes) en OPEN_ACCORDION
+    push({ type: 'highlight_ui_target', targetId: raw })
   }
+
+  for (const m of content.matchAll(ANY_HIGHLIGHT_RE)) {
+    const targetId = m[1]?.trim()
+    if (targetId) push({ type: 'highlight_ui_target', targetId })
+  }
+
   return actions
+}
+
+/** Quita etiquetas OPEN_ACCORDION/HIGHLIGHT antes de mostrar texto al usuario. */
+function stripUiControlTags(text: string): string {
+  let s = text
+    .replace(/^\s*OPEN_ACCORDION\s*[:=]\s*\S+\s*$/gim, '')
+    .replace(/^\s*HIGHLIGHT\s*[:=]\s*\S+\s*$/gim, '')
+    .replace(/OPEN_ACCORDION\s*[:=]\s*\S+/gi, '')
+    .replace(/HIGHLIGHT\s*[:=]\s*\S+/gi, '')
+    .replace(/\|\s*HIGHLIGHT\s*[:=]\s*\S*/gi, '')
+
+  // Restos del legend del prompt: "scenes |", "-scenes |", "scenes=Escenas |"
+  s = s.replace(
+    new RegExp(
+      `(?:^|\\n)\\s*-?\\s*(?:${KNOWN_ACCORDION_KEYS})(?:\\s*=\\s*[^\\n|]+)?\\s*\\|?\\s*(?=\\n|$)`,
+      'gim',
+    ),
+    '',
+  )
+  s = s.replace(
+    new RegExp(`\\s+-?\\s*(?:${KNOWN_ACCORDION_KEYS})\\s*\\|?\\s*$`, 'im'),
+    '',
+  )
+  s = s.replace(/^\s*\|\s*$/gm, '')
+  s = s.replace(/\s+\|\s*$/gm, '')
+
+  return s.trim()
 }
 
 interface ChatCompletionMessage {
@@ -212,7 +305,7 @@ const ACCORDION_FALLBACK_HINTS: Record<string, string> = {
     'Abre el acordeón Create entity (Crear entidad) para añadir personajes, objetos y otros elementos a la escena.',
   ui: 'Abre el acordeón User interface (Interfaz) para editar pantallas HUD del jugador.',
   herramientas:
-    'Abre el acordeón Herramientas y pulsa Construcción Rápida; en el modal Construcción elige la blueprint y luego coloca en el viewport.',
+    'Abre el acordeón Herramientas y pulsa Construcción rápida; en el modal Construcción elige la blueprint y luego coloca en el viewport.',
   controles: 'Abre el acordeón Controls (Controles) para configurar el mapeo de teclas y gamepad.',
   mundo: 'Abre el acordeón World (Mundo) para ajustar iluminación, cielo y propiedades del entorno.',
   camera: 'Abre el acordeón Camera (Cámara) para configurar la vista y la cámara del editor.',
@@ -234,17 +327,68 @@ function buildFallbackFromActions(actions: PluginUiAction[]): string {
   return parts.join(' ') || 'Revisa el panel izquierdo del editor para esa opción.'
 }
 
+/** Si el modelo no emite OPEN_ACCORDION, inferir acordeón desde la pregunta del usuario. */
+function inferAccordionFromUserQuery(query: string): (typeof SIDEBAR_ACCORDION_EVENT_KEYS)[number] | null {
+  const q = query.toLowerCase().normalize('NFC')
+
+  if (
+    /renombrar|mover|rotar|f[ií]sica|colisi[oó]n|reemplazar modelo|eliminar|animaci[oó]n|script rhai|l[oó]gica visual|transform|resize|rename|move|rotate|physics|collision|replace model|delete/.test(
+      q,
+    )
+    && !/crear (personaje|entidad|character|entity)|create (character|entity)/.test(q)
+  ) {
+    return null
+  }
+
+  if (/blueprint|plantilla/.test(q)) {
+    if (/crear|convertir|create|convert/.test(q) && !/usar|uso|use|colocar|construcci/.test(q)) {
+      return null
+    }
+    return 'herramientas'
+  }
+
+  if (/control|teclado|gamepad|mando|keyboard/.test(q)) return 'controles'
+  if (/programar escena|scene program|scene script|scene logic/.test(q)) return 'scenes'
+  if (/\bescena|\bscene/.test(q)) return 'scenes'
+  if (/modelo|model|recurso|resource|sprite|\.glb|\.gltf|\.fbx|importar|load.*model/.test(q)) {
+    return 'resources'
+  }
+  if (/personaje|character|entidad|entity|objeto|object/.test(q) && /crear|create|a[nñ]adir|add/.test(q)) {
+    return 'entities'
+  }
+  if (/interfaz|hud|\bui\b|user interface/.test(q)) return 'ui'
+  if (/herramienta|tool|construcci[oó]n r[aá]pida|quick build/.test(q)) return 'herramientas'
+  if (/mundo|world|iluminaci[oó]n|lighting|cielo|sky/.test(q)) return 'mundo'
+  if (/c[aá]mara|camera/.test(q)) return 'camera'
+
+  return null
+}
+
+function mergeUiActions(
+  fromModel: PluginUiAction[],
+  userQuery: string,
+): PluginUiAction[] {
+  if (fromModel.length > 0) return fromModel
+
+  const inferredKey = inferAccordionFromUserQuery(userQuery)
+  if (!inferredKey) return fromModel
+
+  aiLog('chat.inferred-accordion', {
+    userQuery: preview(userQuery, 120),
+    accordionKey: inferredKey,
+  })
+  return [{ type: 'open_sidebar_accordion', accordionKey: inferredKey }]
+}
+
 function prepareAssistantOutput(
   raw: string,
   locale: 'en' | 'es',
   userQuery = '',
 ): { displayText: string; uiActions: PluginUiAction[] } {
   const stripped = stripThinkingFromResponse(raw)
-  const uiActions = parseToolCalls(stripped)
+  const uiActions = mergeUiActions(parseToolCalls(stripped), userQuery)
 
-  let displayText = stripped
-    .replace(/OPEN_ACCORDION:\w+/gi, '')
-    .replace(/HIGHLIGHT:\S+/gi, '')
+  let displayText = stripUiControlTags(stripped)
     .replace(/\n{3,}/g, '\n\n')
     .trim()
 
@@ -280,13 +424,12 @@ function buildDebugInfo(
   }
 }
 
-const REPLY_FORMAT_RULES = [
-  'Answer as numbered steps (1. 2. 3. …) for workflows. One step per line.',
-  'Leave a blank line between steps.',
-  'Complete ALL steps of the workflow — never stop mid-answer.',
-  'Use exact UI names from the guide (bold/emojis are applied automatically).',
-  'No reasoning tags. OPEN_ACCORDION / HIGHLIGHT tags on a separate line after the answer.',
-].join('\n')
+function resolveAssistantPreamble(locale: 'en' | 'es'): string {
+  if (locale === 'es') {
+    return 'Eres RER-AI, el asistente del editor RER-ENGINE.'
+  }
+  return 'You are RER-AI, the RER-ENGINE editor assistant.'
+}
 
 function resolveLocaleInstruction(locale: 'en' | 'es'): string {
   if (locale === 'es') {
@@ -313,9 +456,8 @@ export async function runAssistantChat(
     {
       role: 'system',
       content: [
-        'You are RER-AI, the RER-ENGINE editor assistant.',
+        resolveAssistantPreamble(locale),
         resolveLocaleInstruction(locale),
-        REPLY_FORMAT_RULES,
         systemContent,
       ].join('\n\n'),
     },

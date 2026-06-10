@@ -43,9 +43,6 @@ export function usePlugins() {
     const offProgress = window.electronAPI.onPluginsDownloadProgress((p) => {
       setDownloadProgress(p)
     })
-    const offUiAction = window.electronAPI.onPluginsUiAction((action) => {
-      window.dispatchEvent(new CustomEvent('plugins:ui-action', { detail: action }))
-    })
     const offStateChanged = window.electronAPI.onPluginsStateChanged(() => {
       void refresh()
     })
@@ -58,7 +55,6 @@ export function usePlugins() {
     window.addEventListener('plugins:refresh-request', onRefreshRequest)
     return () => {
       offProgress()
-      offUiAction()
       offStateChanged()
       offModalClosed()
       window.removeEventListener('plugins:refresh-request', onRefreshRequest)
@@ -82,6 +78,10 @@ export function usePlugins() {
     [],
   )
 
+  const clearDownloadProgress = useCallback(() => {
+    setDownloadProgress(null)
+  }, [])
+
   const install = useCallback(
     async (pluginId: PluginId): Promise<PluginInstallResult> => {
       setDownloadProgress(null)
@@ -92,6 +92,10 @@ export function usePlugins() {
     },
     [refresh],
   )
+
+  const cancelInstall = useCallback(async () => {
+    await window.electronAPI.pluginsCancelInstall()
+  }, [])
 
   const uninstall = useCallback(
     async (pluginId: PluginId): Promise<PluginInstallResult> => {
@@ -117,9 +121,11 @@ export function usePlugins() {
     state,
     llmStatus,
     downloadProgress,
+    clearDownloadProgress,
     refresh,
     setEnabled,
     install,
+    cancelInstall,
     uninstall,
     isInstalled,
     isEnabled,

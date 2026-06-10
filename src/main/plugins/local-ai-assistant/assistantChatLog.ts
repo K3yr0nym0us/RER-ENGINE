@@ -40,9 +40,9 @@ function appendToFile(line: string): void {
   }
 }
 
+/** Solo archivo en userData; no escribe en consola para no ensuciar el terminal. */
 export function aiLog(section: string, data?: unknown): void {
   const message = data === undefined ? section : `${section}\n${serialize(data)}`
-  console.log(LOG_PREFIX, message)
   appendToFile(message)
 }
 

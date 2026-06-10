@@ -46,17 +46,25 @@ export type PluginLlmStatus =
   | 'running'
   | 'error'
 
+export type PluginDownloadPhase = 'llama-server' | 'extracting' | 'model'
+
 export interface PluginDownloadProgress {
   pluginId: PluginId
-  phase: 'llama-server' | 'model'
+  phase: PluginDownloadPhase
+  step: number
+  stepsTotal: number
   percent: number
+  overallPercent: number
   bytesReceived: number
   bytesTotal: number
+  bytesOverallReceived: number
+  bytesOverallTotal: number
 }
 
 export interface PluginInstallResult {
   ok: boolean
   error?: string
+  cancelled?: boolean
 }
 
 export interface AssistantChatMessage {

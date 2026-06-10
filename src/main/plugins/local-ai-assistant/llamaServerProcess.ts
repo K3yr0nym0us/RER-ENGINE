@@ -3,8 +3,8 @@ import fs from 'fs'
 import http from 'http'
 import path from 'path'
 
-import type { PluginLlmStatus } from '../../shared-types/plugins'
-import { getPluginCatalogEntry } from './pluginCatalog'
+import type { PluginLlmStatus } from '../../../shared-types/plugins'
+import { getPluginCatalogEntry } from '../pluginCatalog'
 import { ensureLlamaRuntime, formatWindowsExitCode } from './llamaRuntime'
 
 const DEFAULT_PORT = 8765

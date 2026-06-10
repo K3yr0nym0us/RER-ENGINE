@@ -37,15 +37,15 @@ import {
 } from './modalElectronWindow';
 import { resolveAppWindowIcon } from './appWindowIcon';
 import { autoStartEnabledPlugins, registerPluginIpc } from './plugins/registerPluginIpc';
-import { stopLlamaServer } from './plugins/llamaServerProcess';
+import { stopLlamaServer } from './plugins/local-ai-assistant/llamaServerProcess';
 import {
   destroyAiAssistantOverlay,
   initAiAssistantOverlay,
+  hideAiAssistantOverlayForMainMinimize,
   repositionAiAssistantOverlayIfOpen,
   resendAiAssistantConfig,
   restackAiAssistantOverlayIfOpen,
   setAiAssistantOverlayLayout,
-  setAiAssistantOverlayExpanded,
   showAiAssistantOverlay,
   hideAiAssistantOverlay,
   beginAiAssistantFabDrag,
@@ -213,8 +213,20 @@ function createMainWindow(): void {
 
   // Linux: respaldo IPC al mover (el tracker X11 escucha ConfigureNotify).
   // Windows: el motor usa WinEventHook; la modal de propiedades se recoloca aquí.
+  const hideOverlaysOnMainMinimize = (): void => {
+    hideAiAssistantOverlayForMainMinimize()
+    if (process.platform === 'linux') {
+      mainWindow?.webContents.send('request-viewport-bounds')
+    }
+    repositionViewportCornerModalIfOpen()
+  }
+
   mainWindow.on('move', syncViewportAndModalOnMainWindowChange)
   mainWindow.on('resize', syncViewportAndModalOnMainWindowChange)
+  mainWindow.on('minimize', hideOverlaysOnMainMinimize)
+  mainWindow.on('hide', hideOverlaysOnMainMinimize)
+  mainWindow.on('restore', syncViewportAndModalOnMainWindowChange)
+  mainWindow.on('show', syncViewportAndModalOnMainWindowChange)
 
   // Clic en el viewport winit: la ventana principal pierde foco; mantener la modal encima del motor.
   mainWindow.on('blur', () => {
@@ -543,22 +555,7 @@ function startElectronResourceSampling(): void {
 // ---------------------------------------------------------------------------
 registerPluginIpc(() => mainWindow)
 
-initAiAssistantOverlay(
-  () => mainWindow,
-  () => {
-    const origin = getEngineViewportScreenOrigin()
-    if (!origin || !lastRelativeBounds) return null
-    const scaleFactor = mainWindow
-      ? electronScreen.getDisplayMatching(mainWindow.getBounds()).scaleFactor
-      : 1
-    return {
-      x: origin.x,
-      y: origin.y,
-      width: Math.round(lastRelativeBounds.width / scaleFactor),
-      height: Math.round(lastRelativeBounds.height / scaleFactor),
-    }
-  },
-)
+initAiAssistantOverlay(() => mainWindow)
 
 ipcMain.handle(
   'ai-assistant:show',
@@ -569,10 +566,6 @@ ipcMain.handle(
 
 ipcMain.handle('ai-assistant:hide', () => {
   hideAiAssistantOverlay()
-})
-
-ipcMain.on('ai-assistant:set-expanded', (_event, expanded: boolean) => {
-  setAiAssistantOverlayExpanded(Boolean(expanded))
 })
 
 ipcMain.on('ai-assistant:set-layout', (_event, layout: string) => {

@@ -1,17 +1,9 @@
-import { BrowserWindow, screen as electronScreen } from 'electron'
+import { BrowserWindow, screen as electronScreen, type Rectangle } from 'electron'
 import path from 'path'
 import { pathToFileURL } from 'url'
 
 export interface AiAssistantOverlayConfig {
   locale?: 'en' | 'es'
-}
-
-/** @deprecated Solo se conserva por compatibilidad con init; ya no restringe la posición. */
-export interface ViewportPlacementRect {
-  x: number
-  y: number
-  width: number
-  height: number
 }
 
 export const FAB_SIZE = 126
@@ -47,8 +39,9 @@ let overlayWindow: BrowserWindow | null = null
 let overlayVisible = false
 let overlayLayout: AiAssistantLayout = 'intro'
 let pendingConfig: AiAssistantOverlayConfig | null = null
-/** Posición absoluta en pantalla (esquina superior izquierda). */
-let savedPosition: { x: number; y: number } | null = null
+/** Offset desde la esquina del área de contenido de la ventana principal. */
+let savedOffsetFromContent: { x: number; y: number } | null = null
+let overlayHiddenByParentMinimize = false
 let dragGrabOffset: { x: number; y: number } | null = null
 let dragTickTimer: ReturnType<typeof setInterval> | null = null
 
@@ -76,7 +69,20 @@ function overlayUrl(): string {
   return `${pathToFileURL(file).toString()}#/ai-assistant-overlay`
 }
 
+function isMainWindowMinimized(): boolean {
+  const parent = getMainWindow()
+  if (!parent || parent.isDestroyed()) return false
+  return parent.isMinimized()
+}
+
+function shouldOverlayBeOnScreen(): boolean {
+  if (!overlayVisible || overlayHiddenByParentMinimize) return false
+  if (!overlayWindow || overlayWindow.isDestroyed()) return false
+  return !isMainWindowMinimized()
+}
+
 function raiseOverlayAboveEngine(win: BrowserWindow): void {
+  if (!shouldOverlayBeOnScreen()) return
   if (process.platform === 'win32' || process.platform === 'linux') {
     win.setAlwaysOnTop(true, 'floating')
   }
@@ -89,48 +95,114 @@ function clearOverlayAboveEngine(win: BrowserWindow): void {
   }
 }
 
-function defaultInitialPosition(width: number, height: number): { x: number; y: number } {
+function getMainContentBounds(): Rectangle | null {
   const parent = getMainWindow()
-  if (parent && !parent.isDestroyed()) {
-    const cb = parent.getContentBounds()
+  if (!parent || parent.isDestroyed()) return null
+  return parent.getContentBounds()
+}
+
+function defaultInitialOffset(width: number, height: number): { x: number; y: number } {
+  const content = getMainContentBounds()
+  if (content) {
     return {
-      x: cb.x + cb.width - width - INITIAL_MARGIN,
-      y: cb.y + cb.height - height - INITIAL_MARGIN,
+      x: content.width - width - INITIAL_MARGIN,
+      y: content.height - height - INITIAL_MARGIN,
     }
   }
   const display = electronScreen.getPrimaryDisplay().workArea
   return {
-    x: display.x + display.width - width - INITIAL_MARGIN,
-    y: display.y + display.height - height - INITIAL_MARGIN,
+    x: display.width - width - INITIAL_MARGIN,
+    y: display.height - height - INITIAL_MARGIN,
   }
+}
+
+function updateOffsetFromAbsolutePosition(absX: number, absY: number): void {
+  const content = getMainContentBounds()
+  if (!content) {
+    savedOffsetFromContent = null
+    return
+  }
+  savedOffsetFromContent = { x: absX - content.x, y: absY - content.y }
 }
 
 function rememberPosition(win: BrowserWindow): void {
   const [x, y] = win.getPosition()
-  savedPosition = { x, y }
+  updateOffsetFromAbsolutePosition(x, y)
 }
 
-function setOverlayBounds(win: BrowserWindow, preferSaved: boolean): void {
+function syncOverlayPositionToMain(win: BrowserWindow, preferSaved = true): void {
+  if (dragGrabOffset) return
+
   const width = OVERLAY_WIDTH
   const height = OVERLAY_HEIGHT
 
-  let x: number
-  let y: number
-
-  if (preferSaved && savedPosition) {
-    x = savedPosition.x
-    y = savedPosition.y
-  } else {
-    const initial = defaultInitialPosition(width, height)
-    x = initial.x
-    y = initial.y
+  if (!preferSaved || !savedOffsetFromContent) {
+    savedOffsetFromContent = defaultInitialOffset(width, height)
   }
 
-  win.setBounds({ x, y, width, height })
+  const content = getMainContentBounds()
+  if (!content || !savedOffsetFromContent) return
+
+  let x = content.x + savedOffsetFromContent.x
+  let y = content.y + savedOffsetFromContent.y
+
+  const display = electronScreen.getDisplayNearestPoint({ x: Math.round(x), y: Math.round(y) })
+  const { x: workX, y: workY, width: workW, height: workH } = display.workArea
+  x = Math.max(workX, Math.min(x, workX + workW - width))
+  y = Math.max(workY, Math.min(y, workY + workH - height))
+
+  const bounds = win.getBounds()
+  const nextX = Math.round(x)
+  const nextY = Math.round(y)
+  if (bounds.x !== nextX || bounds.y !== nextY || bounds.width !== width || bounds.height !== height) {
+    win.setBounds({ x: nextX, y: nextY, width, height })
+  }
+
   // Windows: resizable debe ser true para que app-region: drag funcione; fijamos tamaño con min/max.
   win.setMinimumSize(width, height)
   win.setMaximumSize(width, height)
+}
+
+function setOverlayBounds(win: BrowserWindow, preferSaved: boolean): void {
+  syncOverlayPositionToMain(win, preferSaved)
   rememberPosition(win)
+}
+
+function hideOverlayForMainMinimize(): void {
+  if (!overlayVisible || !overlayWindow || overlayWindow.isDestroyed()) return
+  overlayHiddenByParentMinimize = true
+  stopDragTick()
+  dragGrabOffset = null
+  clearOverlayAboveEngine(overlayWindow)
+  overlayWindow.hide()
+}
+
+function syncOverlayWithMainWindowState(): void {
+  if (!overlayVisible || !overlayWindow || overlayWindow.isDestroyed()) return
+
+  const parent = getMainWindow()
+  if (!parent || parent.isDestroyed()) return
+
+  if (parent.isMinimized()) {
+    hideOverlayForMainMinimize()
+    return
+  }
+
+  const shouldShow =
+    overlayHiddenByParentMinimize || (!overlayWindow.isVisible() && overlayVisible)
+  overlayHiddenByParentMinimize = false
+
+  syncOverlayPositionToMain(overlayWindow, true)
+
+  if (shouldShow && !overlayWindow.isVisible()) {
+    overlayWindow.show()
+  }
+  raiseOverlayAboveEngine(overlayWindow)
+}
+
+/** Llamar desde el evento `minimize` / `hide` de la ventana principal (antes que blur/restack). */
+export function hideAiAssistantOverlayForMainMinimize(): void {
+  hideOverlayForMainMinimize()
 }
 
 function sendConfigToOverlay(config: AiAssistantOverlayConfig | null): void {
@@ -146,12 +218,23 @@ async function ensureOverlayReady(win: BrowserWindow): Promise<void> {
   }
 }
 
+function attachOverlayToMainWindow(win: BrowserWindow): void {
+  const parent = getMainWindow()
+  if (parent && !parent.isDestroyed()) {
+    win.setParentWindow(parent)
+  }
+}
+
 function getOrCreateOverlayWindow(): BrowserWindow {
   if (overlayWindow && !overlayWindow.isDestroyed()) {
+    attachOverlayToMainWindow(overlayWindow)
     return overlayWindow
   }
 
+  const parent = getMainWindow()
+
   overlayWindow = new BrowserWindow({
+    parent: parent && !parent.isDestroyed() ? parent : undefined,
     modal: false,
     frame: false,
     transparent: true,
@@ -175,6 +258,7 @@ function getOrCreateOverlayWindow(): BrowserWindow {
   })
 
   overlayWindow.setBackgroundColor('#00000000')
+  attachOverlayToMainWindow(overlayWindow)
 
   overlayWindow.on('moved', () => {
     if (!overlayWindow || overlayWindow.isDestroyed() || dragGrabOffset) return
@@ -187,7 +271,8 @@ function getOrCreateOverlayWindow(): BrowserWindow {
     overlayVisible = false
     overlayLayout = 'intro'
     pendingConfig = null
-    savedPosition = null
+    savedOffsetFromContent = null
+    overlayHiddenByParentMinimize = false
     dragGrabOffset = null
   })
 
@@ -195,10 +280,7 @@ function getOrCreateOverlayWindow(): BrowserWindow {
   return overlayWindow
 }
 
-export function initAiAssistantOverlay(
-  getParent: () => BrowserWindow | null,
-  _getViewportRect?: () => ViewportPlacementRect | null,
-): void {
+export function initAiAssistantOverlay(getParent: () => BrowserWindow | null): void {
   getMainWindow = getParent
 }
 
@@ -222,43 +304,44 @@ export async function showAiAssistantOverlay(config: AiAssistantOverlayConfig = 
   overlayLayout = 'intro'
   setOverlayBounds(win, false)
   sendConfigToOverlay(config)
+  overlayVisible = true
+
+  if (isMainWindowMinimized()) {
+    overlayHiddenByParentMinimize = true
+    return
+  }
+
   if (!win.isVisible()) {
     win.show()
   }
   raiseOverlayAboveEngine(win)
-  overlayVisible = true
 }
 
 export function hideAiAssistantOverlay(): void {
   overlayVisible = false
   overlayLayout = 'intro'
   pendingConfig = null
+  overlayHiddenByParentMinimize = false
   if (!overlayWindow || overlayWindow.isDestroyed()) return
   clearOverlayAboveEngine(overlayWindow)
   sendConfigToOverlay(null)
   overlayWindow.hide()
 }
 
-/** Solo reordena z-index; no mueve la ventana. */
+/** Sigue a la ventana principal (mover/redimensionar/minimizar/restaurar) y reordena z-index. */
 export function repositionAiAssistantOverlayIfOpen(): void {
-  if (!overlayVisible || !overlayWindow || overlayWindow.isDestroyed()) return
-  raiseOverlayAboveEngine(overlayWindow)
+  syncOverlayWithMainWindowState()
 }
 
 export function restackAiAssistantOverlayIfOpen(): void {
-  repositionAiAssistantOverlayIfOpen()
+  if (!shouldOverlayBeOnScreen()) return
+  raiseOverlayAboveEngine(overlayWindow!)
 }
 
 export function setAiAssistantOverlayLayout(layout: AiAssistantLayout): void {
   if (!overlayWindow || overlayWindow.isDestroyed()) return
   overlayLayout = layout
-  // No redimensionar: el contenido cambia dentro de la misma ventana transparente.
   raiseOverlayAboveEngine(overlayWindow)
-}
-
-/** @deprecated Use setAiAssistantOverlayLayout */
-export function setAiAssistantOverlayExpanded(inputOpen: boolean): void {
-  setAiAssistantOverlayLayout(inputOpen ? 'input' : 'intro')
 }
 
 function tickFabDrag(): void {
@@ -306,7 +389,8 @@ export function destroyAiAssistantOverlay(): void {
   overlayVisible = false
   overlayLayout = 'intro'
   pendingConfig = null
-  savedPosition = null
+  savedOffsetFromContent = null
+  overlayHiddenByParentMinimize = false
   dragGrabOffset = null
 }
 

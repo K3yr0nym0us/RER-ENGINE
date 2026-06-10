@@ -18,16 +18,18 @@ runtime:
   binary: llama-server.exe
   download: on-demand from GitHub releases (win x64 avx2 in v1)
   api: OpenAI-compatible http://127.0.0.1:8765/v1
-  spawn_from: Electron main (src/main/plugins/llamaServerProcess.ts)
+  spawn_from: Electron main (src/main/plugins/local-ai-assistant/llamaServerProcess.ts)
 
 context:
-  strategy: compact prompt — docs/AI_Assistant_Editor_Guide.prompt.txt (locale slice only)
-  module: src/main/plugins/editorDocsIndex.ts
-  guide_file: docs/AI_Assistant_Editor_Guide.prompt.txt
+  strategy: compact prompt — one file per locale (ES/EN only, no dual load)
+  module: src/main/plugins/local-ai-assistant/editorDocsIndex.ts
+  guide_files:
+    es: docs/AI_Assistant_Editor_Guide.es.prompt.txt
+    en: docs/AI_Assistant_Editor_Guide.en.prompt.txt
   ui_targets: data-plugin-target attributes in sidebar
 
 assistant_tools_v1:
-  - compact locale slice from AI_Assistant_Editor_Guide.prompt.txt
+  - single locale guide file (es or en)
   - OPEN_ACCORDION:scenes|resources|entities|ui|herramientas|controles|mundo|camera
   - HIGHLIGHT:target-id
 
@@ -38,16 +40,23 @@ out_of_scope_v1:
 
 files:
   context:
-    - docs/AI_Assistant_Editor_Guide.prompt.txt
-  main:
+    - docs/AI_Assistant_Editor_Guide.es.prompt.txt
+    - docs/AI_Assistant_Editor_Guide.en.prompt.txt
+  main_shared:
     - src/main/plugins/pluginCatalog.ts
     - src/main/plugins/pluginState.ts
     - src/main/plugins/pluginInstall.ts
     - src/main/plugins/fileDownload.ts
-    - src/main/plugins/llamaServerProcess.ts
-    - src/main/plugins/assistantChat.ts
-    - src/main/plugins/editorDocsIndex.ts
+    - src/main/plugins/pluginProgressBroadcast.ts
     - src/main/plugins/registerPluginIpc.ts
+  main_local_ai_assistant:
+    - src/main/plugins/local-ai-assistant/install.ts
+    - src/main/plugins/local-ai-assistant/llamaServerProcess.ts
+    - src/main/plugins/local-ai-assistant/llamaRuntime.ts
+    - src/main/plugins/local-ai-assistant/assistantChat.ts
+    - src/main/plugins/local-ai-assistant/assistantReplyFormat.ts
+    - src/main/plugins/local-ai-assistant/editorDocsIndex.ts
+    - src/main/plugins/local-ai-assistant/ipc.ts
   renderer:
     - src/renderer/src/plugins/PluginsButton.tsx
     - src/renderer/src/plugins/PluginsModalBody.tsx

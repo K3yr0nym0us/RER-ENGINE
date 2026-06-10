@@ -2,8 +2,8 @@ import fs from 'fs'
 import path from 'path'
 import AdmZip from 'adm-zip'
 
-import type { PluginLlamaServerManifest } from '../../shared-types/plugins'
-import { downloadFile } from './fileDownload'
+import type { PluginLlamaServerManifest } from '../../../shared-types/plugins'
+import { downloadFile } from '../fileDownload'
 
 /** DLLs que deben estar junto a llama-server.exe (zip oficial de llama.cpp). */
 const RUNTIME_MARKERS = ['llama.dll', 'ggml.dll', 'ggml-base.dll', 'ggml-cpu.dll'] as const
@@ -26,6 +26,7 @@ export async function downloadAndExtractLlamaRuntime(
   manifest: PluginLlamaServerManifest,
   binDir: string,
   onProgress?: (percent: number, bytesReceived: number, bytesTotal: number) => void,
+  onExtracting?: () => void,
 ): Promise<void> {
   fs.mkdirSync(binDir, { recursive: true })
   const zipPath = path.join(binDir, 'llama-runtime.zip')
@@ -35,8 +36,10 @@ export async function downloadAndExtractLlamaRuntime(
     zipPath,
     (p) => onProgress?.(p.percent, p.bytesReceived, p.bytesTotal || manifest.sizeBytes),
     1_000_000,
+    manifest.sizeBytes,
   )
 
+  onExtracting?.()
   extractLlamaRuntimeZip(zipPath, binDir)
 
   try {

@@ -1,14 +1,9 @@
 import { ipcMain, type BrowserWindow } from 'electron'
 
-import type {
-  AssistantChatRequest,
-  AssistantChatResponse,
-  PluginId,
-  PluginInstallResult,
-  PluginsState,
-} from '../../shared-types/plugins'
-import { runAssistantChat } from './assistantChat'
-import { installPlugin, isPluginInstallInProgress, uninstallPlugin } from './pluginInstall'
+import type { PluginId, PluginInstallResult, PluginsState } from '../../shared-types/plugins'
+import { autoStartLocalAiAssistant, registerLocalAiAssistantIpc } from './local-ai-assistant/ipc'
+import { startLlamaServer, stopLlamaServer } from './local-ai-assistant/llamaServerProcess'
+import { cancelPluginInstall, installPlugin, uninstallPlugin } from './pluginInstall'
 import { PLUGIN_CATALOG } from './pluginCatalog'
 import {
   isPluginEnabled,
@@ -16,12 +11,6 @@ import {
   readPluginsState,
   writePluginsState,
 } from './pluginState'
-import {
-  getLlamaServerStatus,
-  refreshLlamaServerReachability,
-  startLlamaServer,
-  stopLlamaServer,
-} from './llamaServerProcess'
 
 type GetMainWindow = () => BrowserWindow | null
 
@@ -37,6 +26,8 @@ export function registerPluginIpc(getMainWindow: GetMainWindow): void {
   if (ipcRegistered) return
   ipcRegistered = true
 
+  registerLocalAiAssistantIpc(getMainWindow)
+
   ipcMain.handle('plugins:get-catalog', () => PLUGIN_CATALOG)
 
   ipcMain.handle('plugins:get-state', (): PluginsState => readPluginsState())
@@ -50,7 +41,7 @@ export function registerPluginIpc(getMainWindow: GetMainWindow): void {
         if (!state.enabled.includes(pluginId)) state.enabled.push(pluginId)
         writePluginsState(state)
         const record = state.installed[pluginId]
-        if (record?.modelPath && record.llamaServerPath) {
+        if (pluginId === 'local-ai-assistant' && record?.modelPath && record.llamaServerPath) {
           void startLlamaServer(record.llamaServerPath, record.modelPath).then(() => {
             notifyPluginsStateChanged(getMainWindow)
           })
@@ -60,7 +51,9 @@ export function registerPluginIpc(getMainWindow: GetMainWindow): void {
         return state
       }
       state.enabled = state.enabled.filter((id) => id !== pluginId)
-      void stopLlamaServer()
+      if (pluginId === 'local-ai-assistant') {
+        void stopLlamaServer()
+      }
       writePluginsState(state)
       notifyPluginsStateChanged(getMainWindow)
       return state
@@ -70,8 +63,8 @@ export function registerPluginIpc(getMainWindow: GetMainWindow): void {
   ipcMain.handle(
     'plugins:install',
     async (_event, pluginId: PluginId): Promise<PluginInstallResult> => {
-      const result = await installPlugin(pluginId, getMainWindow())
-      if (result.ok) {
+      const result = await installPlugin(pluginId)
+      if (result.ok && pluginId === 'local-ai-assistant') {
         const state = readPluginsState()
         const record = state.installed[pluginId]
         if (record?.modelPath && record.llamaServerPath) {
@@ -83,75 +76,22 @@ export function registerPluginIpc(getMainWindow: GetMainWindow): void {
     },
   )
 
+  ipcMain.handle('plugins:cancel-install', () => {
+    cancelPluginInstall()
+    return { ok: true }
+  })
+
   ipcMain.handle(
     'plugins:uninstall',
     async (_event, pluginId: PluginId): Promise<PluginInstallResult> => {
-      await stopLlamaServer()
       const result = await uninstallPlugin(pluginId)
       notifyPluginsStateChanged(getMainWindow)
       return result
     },
   )
-
-  ipcMain.handle('plugins:llm-status', async () => {
-    const installing = isPluginInstallInProgress()
-    if (installing) {
-      return {
-        status: 'downloading',
-        error: null,
-        enabled: isPluginEnabled('local-ai-assistant'),
-        installed: isPluginInstalled('local-ai-assistant'),
-      }
-    }
-    if (isPluginEnabled('local-ai-assistant')) {
-      await refreshLlamaServerReachability()
-    }
-    const { status, error } = getLlamaServerStatus()
-    return {
-      status,
-      error,
-      enabled: isPluginEnabled('local-ai-assistant'),
-      installed: isPluginInstalled('local-ai-assistant'),
-    }
-  })
-
-  ipcMain.handle(
-    'plugins:chat',
-    async (_event, request: AssistantChatRequest): Promise<AssistantChatResponse> => {
-      const mainWindow = getMainWindow()
-      const locale = request.locale === 'es' ? 'es' : 'en'
-      const result = await runAssistantChat(
-        request.messages,
-        (action) => {
-          if (!mainWindow || mainWindow.isDestroyed()) return
-          mainWindow.webContents.send('plugins:ui-action', action)
-        },
-        locale,
-      )
-      return { ok: result.ok, content: result.content, error: result.error, debug: result.debug }
-    },
-  )
-
-  ipcMain.handle('plugins:start-llm', async () => {
-    const state = readPluginsState()
-    const record = state.installed['local-ai-assistant']
-    if (!record?.modelPath || !record.llamaServerPath) {
-      return { ok: false, error: 'Plugin not installed' }
-    }
-    return startLlamaServer(record.llamaServerPath, record.modelPath)
-  })
-
-  ipcMain.handle('plugins:stop-llm', async () => {
-    await stopLlamaServer()
-    return { ok: true }
-  })
 }
 
-/** Arranca llama-server si el plugin quedó habilitado en sesiones anteriores. */
+/** Arranca plugins habilitados que requieren proceso en background. */
 export async function autoStartEnabledPlugins(): Promise<void> {
-  if (!isPluginEnabled('local-ai-assistant')) return
-  const state = readPluginsState()
-  const record = state.installed['local-ai-assistant']
-  if (!record?.modelPath || !record.llamaServerPath) return
-  await startLlamaServer(record.llamaServerPath, record.modelPath)
+  await autoStartLocalAiAssistant()
 }
