@@ -1,5 +1,7 @@
 # Entidades 3D (Accordion Entities)
+# Todos los modelos 3D se cargan desde Resources/Models/ y se cargan en memoria GPU o en una ruta temporal del descomprimido .save
 
+#! TIPO DE ENTIDADES
 ENTITES_TYPES:
   environment: category environment # Entorno (Paredes, suelos, techos, etc.)
   character:   category character   # Personajes (NPC, Enemigos, animales, etc.) 

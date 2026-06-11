@@ -102,20 +102,24 @@ export function entity3dPendingRestore(
 	};
 }
 
+const MODEL_3D_EXT = /\.(glb|gltf|fbx)$/i;
+
 /** Meta de editor desde entidad 3D del manifest / snapshot del motor. */
 export function entity3dToMeta(entity: Entity3D): EntityMeta {
 	const marker = entityPathMarker(entity.model);
+	const isPlayer = entity.category === 'player';
 	const path =
 		marker ??
-		(entity.category === 'player' ? '[Player]' : entity.model);
-	const visualModelPath =
-		marker && entity.model !== path
-			? entity.model
-			: !marker && entity.category === 'player'
-				? undefined
-				: !marker
-					? entity.model
-					: undefined;
+		(isPlayer ? '[Player]' : entity.model);
+	let visualModelPath: string | undefined;
+	if (marker && entity.model !== path) {
+		visualModelPath = entity.model;
+	} else if (!marker && isPlayer && MODEL_3D_EXT.test(entity.model)) {
+		// Player FP: el manifest guarda el GLB en `model`, no en un marcador `[Player]`.
+		visualModelPath = entity.model;
+	} else if (!marker && !isPlayer) {
+		visualModelPath = entity.model;
+	}
 
 	const entity3dCategory = reconcileCategoryWithName(
 		entity.category,
@@ -155,7 +159,11 @@ export function playViewFromPlayerAndCamera(
 ): SavedPlayerTransform {
 	const marker = entityPathMarker(player.model);
 	const visual =
-		marker && player.model !== '[Player]' ? player.model : undefined;
+		marker && player.model !== '[Player]'
+			? player.model
+			: !marker && MODEL_3D_EXT.test(player.model)
+				? player.model
+				: undefined;
 
 	return {
 		position: player.position,

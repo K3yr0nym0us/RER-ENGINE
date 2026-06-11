@@ -27,6 +27,7 @@ import { ModalConfirmBody } from './ModalConfirmBody'
 import { createEmptyEntityVisualGraph, saveEntityVisualGraph } from '../visualScripting/entityVisualScript'
 import { resolveSceneEntitiesForVisualScript } from '../visualScripting/resolveSceneEntities'
 import { buildPlayAnimationFrameCmd } from '../context/useContextEngine/hooks/applyPendingRestoreToEngine'
+import { pathsMatchForBurstRestore } from '../context/useContextEngine/hooks/sceneImportOverlay'
 import type { TransformSendCommand } from '../pages/EngineView/components/sidebar/PropertiesAccordion/TransformPanel'
 
 export const activeEntityPropertiesHandlerRef = { current: null as string | null }
@@ -154,8 +155,11 @@ export function buildEntityPropertiesState(engine: EngineContextValue): EntityPr
 		entityTexturesModelPath: entityMeta?.entityTexturesModelPath ?? null,
 		entityTexturesLoaded:
 			entityMeta?.entityTextures != null
-			&& entityMeta.entityTexturesModelPath === modelPath
-			&& modelPath.length > 0,
+			&& Boolean(entityMeta.entityTexturesModelPath)
+			&& (
+				entityMeta.entityTexturesModelPath === modelPath
+				|| pathsMatchForBurstRestore(entityMeta.entityTexturesModelPath, modelPath)
+			),
 		activeGraphicsTextureTier: engine.graphicsTextureTier ?? 'low',
 		showTexturesTab,
 	}

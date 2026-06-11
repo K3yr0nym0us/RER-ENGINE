@@ -95,6 +95,30 @@ pub(crate) fn gltf_image_search_label(image: gltf::Image) -> String {
     parts.join(" ")
 }
 
+/// Dimensiones JPEG/PNG sin copiar el blob embebido completo (crítico en GLB grandes).
+pub(crate) fn peek_gltf_image_dimensions(
+    image: gltf::Image,
+    buffers: &[gltf::buffer::Data],
+    base: Option<&Path>,
+) -> Option<(u32, u32)> {
+    match image.source() {
+        Source::View { view, .. } => {
+            let parent = &buffers[view.buffer().index()].0;
+            let begin = view.offset();
+            let end = begin.saturating_add(view.length()).min(parent.len());
+            peek_encoded_dimensions(&parent[begin..end])
+        }
+        Source::Uri { uri, .. } => {
+            let base = base?;
+            let path = base.join(uri.strip_prefix('/').unwrap_or(uri));
+            let mut file = std::fs::File::open(path).ok()?;
+            let mut header = [0u8; 32 * 1024];
+            let n = std::io::Read::read(&mut file, &mut header).ok()?;
+            peek_encoded_dimensions(&header[..n])
+        }
+    }
+}
+
 pub(crate) fn gltf_image_encoded_bytes(
     image: gltf::Image,
     buffers: &[gltf::buffer::Data],
@@ -137,10 +161,7 @@ fn pick_smallest_among_image_indices(
         if !allowed.is_empty() && !allowed.contains(&idx) {
             continue;
         }
-        let Ok(bytes) = gltf_image_encoded_bytes(image, buffers, base) else {
-            continue;
-        };
-        let Some((w, h)) = peek_encoded_dimensions(&bytes) else {
+        let Some((w, h)) = peek_gltf_image_dimensions(image, buffers, base) else {
             continue;
         };
         let area = u64::from(w) * u64::from(h);

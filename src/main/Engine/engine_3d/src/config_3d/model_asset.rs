@@ -102,22 +102,8 @@ pub struct GltfFile {
     pub buffers: Vec<gltf::buffer::Data>,
     /// Todas las imágenes decodificadas (`AllEmbedded`); vacío en modo menor resolución.
     pub images: Vec<gltf::image::Data>,
-    /// Albedo del material 0 (fallback legacy).
-    pub mesh_albedo: Option<gltf::image::Data>,
     /// Variante embebida más pequeña por índice de material (`SmallestEmbedded`).
     pub material_smallest_albedos: HashMap<usize, gltf::image::Data>,
-}
-
-impl GltfFile {
-    pub fn mesh_albedo_for_draw(&self) -> Option<&gltf::image::Data> {
-        self.mesh_albedo.as_ref()
-    }
-
-    pub fn albedo_for_material(&self, material_index: usize) -> Option<&gltf::image::Data> {
-        self.material_smallest_albedos
-            .get(&material_index)
-            .or(self.mesh_albedo.as_ref())
-    }
 }
 
 pub fn import_gltf(path: &Path) -> Result<GltfFile, String> {
@@ -134,7 +120,7 @@ pub fn import_gltf_with_mode(
     let blob = gltf.blob;
     let buffers = gltf::import_buffers(&doc, base, blob)
         .map_err(|e| format!("error importando buffers glTF: {e}"))?;
-    let (images, mesh_albedo) =
+    let (images, _) =
         crate::config_3d::gltf_texture_load::import_gltf_images(&doc, &buffers, base, mode)?;
     let material_smallest_albedos = match mode {
         crate::config_3d::gltf_texture_load::GltfTextureLoadMode::SmallestEmbedded => {
@@ -149,7 +135,6 @@ pub fn import_gltf_with_mode(
         doc,
         buffers,
         images,
-        mesh_albedo,
         material_smallest_albedos,
     })
 }
@@ -538,18 +523,6 @@ fn collect_gltf_scene_chain_nodes(
         }
     }
     nodes
-}
-
-fn merge_skinned_mesh_data(mut acc: SkinnedMeshData, part: SkinnedMeshData) -> SkinnedMeshData {
-    let base = acc.vertices.len() as u32;
-    acc.vertices.extend(part.vertices);
-    acc.indices.extend(part.indices.iter().map(|i| i + base));
-    if acc.width <= 1 && part.width > 1 {
-        acc.rgba = part.rgba;
-        acc.width = part.width;
-        acc.height = part.height;
-    }
-    acc
 }
 
 /// Índice del nodo con mesh más grande (preview / sustituto de malla estática).

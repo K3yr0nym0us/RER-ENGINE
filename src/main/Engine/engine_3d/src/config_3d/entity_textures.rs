@@ -132,14 +132,11 @@ pub fn catalog_gltf_embedded_textures(path: &Path) -> Result<Vec<MaterialTexture
     let mut all_variants: Vec<(u32, u32, u32)> = Vec::new();
     for image in doc.images() {
         let idx = image.index() as u32;
-        let Ok(bytes) = crate::config_3d::gltf_texture_load::gltf_image_encoded_bytes(
+        if let Some((w, h)) = crate::config_3d::gltf_texture_load::peek_gltf_image_dimensions(
             image,
             &buffers,
             path.parent(),
-        ) else {
-            continue;
-        };
-        if let Some((w, h)) = crate::config_3d::gltf_texture_load::peek_encoded_dimensions(&bytes) {
+        ) {
             all_variants.push((idx, w, h));
         }
     }
@@ -391,6 +388,9 @@ impl State {
     }
 
     fn catalog_for_path(&mut self, path: &str) -> Result<Vec<MaterialTexturesCatalog>, String> {
+        if let Some(cached) = self.glb_texture_catalog_cache.get(path) {
+            return Ok(cached.clone());
+        }
         let catalog = catalog_gltf_embedded_textures(Path::new(path))?;
         self.glb_texture_catalog_cache
             .insert(path.to_string(), catalog.clone());

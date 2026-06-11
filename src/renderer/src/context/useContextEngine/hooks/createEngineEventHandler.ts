@@ -98,6 +98,7 @@ import {
 	drainPendingRestoreSlot,
 	flushPendingCachedModelSpawnsForPath,
 	hasQueuedCachedModelSpawns,
+	pathsMatchForBurstRestore,
 } from './sceneImportOverlay';
 import {
 	DEFAULT_PLAYER_UI_BUTTON_CONFIG,
@@ -165,6 +166,7 @@ const SILENT_ENGINE_EVENTS = new Set<string>([
 	'load_progress',
 	'model_asset_preload_started',
 	'model_asset_loaded',
+	'model_asset_load_failed',
 	'plane_tool_ready',
 	'tool_cancelled',
 	'trigger_exited',
@@ -1643,6 +1645,23 @@ export function createEngineEventHandler({
 		if (event.event === 'model_asset_preload_started') {
 			const model = event as unknown as { path: string; name: string };
 			dispatch({ type: 'SYNC_MODEL_PRELOAD', payload: { path: model.path, name: model.name } });
+		}
+
+		if (event.event === 'model_asset_load_failed') {
+			const model = event as unknown as { path: string; name?: string };
+			const entry = refs.modelsRef.current.find(
+				(m) =>
+					m.loading
+					&& (m.path === model.path
+						|| pathsMatchForBurstRestore(m.path, model.path)),
+			);
+			dispatch({
+				type: 'MARK_MODEL_READY',
+				payload: {
+					path: model.path,
+					name: entry?.name ?? model.path.split(/[/\\]/).pop() ?? 'model',
+				},
+			});
 		}
 
 		if (event.event === 'model_asset_loaded') {

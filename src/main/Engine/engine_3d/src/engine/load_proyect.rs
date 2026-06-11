@@ -13,7 +13,8 @@ use crate::ipc::{
 };
 
 use super::State;
-use crate::config_3d::static_model_cache::MODEL_GPU_PARTS_PER_FRAME;
+use crate::config_3d::mesh_3d::ModelPreloadOptions;
+use crate::config_3d::static_model_cache::MODEL_GPU_PARTS_DURING_SAVE_LOAD;
 
 const SCRIPT_FILE_PREFIX: &str = "@file:";
 const DEFAULT_LIGHT_AMBIENT: f32 = 0.06;
@@ -934,7 +935,7 @@ fn upsert_model_store_entry(
 }
 
 fn ensure_model_cached(state: &mut State, path: &str) -> bool {
-    state.poll_and_advance_model_preloads(MODEL_GPU_PARTS_PER_FRAME);
+    state.poll_and_advance_model_preloads(MODEL_GPU_PARTS_DURING_SAVE_LOAD);
     match state.ensure_static_model_cached(path) {
         Ok(()) => true,
         Err(err) => {
@@ -1040,10 +1041,14 @@ fn kickoff_preload_models_for_save(
         log::info!("{msg}");
         send_load_progress(&msg, None, None);
         let warm_play = warm_play_keys.contains(&key);
-        state.start_model_preload(key, label, warm_play);
+        state.start_model_preload(
+            key,
+            label,
+            ModelPreloadOptions::scene_background(warm_play),
+        );
         started += 1;
     }
-    state.poll_and_advance_model_preloads(MODEL_GPU_PARTS_PER_FRAME);
+    state.poll_and_advance_model_preloads(MODEL_GPU_PARTS_DURING_SAVE_LOAD);
     if started == 0 {
         log::info!("Modelos 3D ya en caché, sin precarga nueva");
     }
@@ -1093,7 +1098,7 @@ fn restore_player_from_manifest(
         if !ensure_model_cached(state, path) {
             log::warn!("[restore] no se pudo precargar modelo jugador: {path}");
         }
-        state.poll_and_advance_model_preloads(MODEL_GPU_PARTS_PER_FRAME);
+        state.poll_and_advance_model_preloads(MODEL_GPU_PARTS_DURING_SAVE_LOAD);
     }
 
     let id = state.ensure_play_character_shell(
@@ -1422,7 +1427,7 @@ fn apply_loaded_proyect_3d_with_scene(
     let mut model_load_queue: Vec<(String, PendingRestore)> = Vec::new();
 
     for entity in &view.entities {
-        state.poll_and_advance_model_preloads(MODEL_GPU_PARTS_PER_FRAME);
+        state.poll_and_advance_model_preloads(MODEL_GPU_PARTS_DURING_SAVE_LOAD);
         let transform = resolve_saved_entity_transform(entity);
         let pending = build_generic_pending_restore(entity, transform, blueprints);
 
@@ -1552,7 +1557,7 @@ fn apply_loaded_proyect_3d_with_scene(
 
     if burst_load_planned {
         log::info!("Instanciando modelos 3D (carga por lotes)…");
-        state.poll_and_advance_model_preloads(MODEL_GPU_PARTS_PER_FRAME);
+        state.poll_and_advance_model_preloads(MODEL_GPU_PARTS_DURING_SAVE_LOAD);
         for model in &project.models {
             if !model.path.trim().is_empty() {
                 upsert_model_store_entry(
@@ -1579,7 +1584,7 @@ fn apply_loaded_proyect_3d_with_scene(
         }
 
         for (path, pending) in model_load_queue {
-            state.poll_and_advance_model_preloads(MODEL_GPU_PARTS_PER_FRAME);
+            state.poll_and_advance_model_preloads(MODEL_GPU_PARTS_DURING_SAVE_LOAD);
             if !ensure_model_cached(state, &path) {
                 continue;
             }

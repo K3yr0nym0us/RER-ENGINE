@@ -1107,6 +1107,8 @@ pub enum EngineEvent {
     ModelAssetLoaded { path: String, name: String },
     /// Precarga de modelo 3D iniciada (parseo en segundo plano).
     ModelAssetPreloadStarted { path: String, name: String },
+    /// Falló la carga/precarga de un modelo en Recursos (libera `loading` en el renderer).
+    ModelAssetLoadFailed { path: String, message: String },
     ModelAssetRemoved { path: String },
     ModelsList { models: Vec<ModelInfo> },
     /// Emitido cuando un archivo de audio se registró en el almacén.

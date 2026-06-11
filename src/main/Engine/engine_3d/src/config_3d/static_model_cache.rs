@@ -16,7 +16,7 @@ use std::time::{Duration, Instant};
 use crate::config_3d::character_anchor::PLAY_CHARACTER_BODY_HEIGHT;
 use crate::config_3d::mesh_3d::{
     load_gltf_cpu_from_file, load_model_file_cpu, preload_model_cpu_bundle,
-    prepare_cpu_part_texture_for_gpu, vertex_local_bounds, CpuModelMeshPart,
+    prepare_cpu_parts_textures_for_gpu, vertex_local_bounds, CpuModelMeshPart, ModelPreloadOptions,
 };
 use crate::config_3d::model_asset;
 use crate::config_3d::{physics_body_world_center, physics_half_extents_for_model};
@@ -115,10 +115,26 @@ pub(crate) struct PendingGpuModelPreload {
     play_character_parts: Option<Vec<CpuModelMeshPart>>,
 }
 
-/// Partes de malla/textura subidas por frame durante precarga en editor (evita congelar IPC).
-pub(crate) const MODEL_GPU_PARTS_PER_FRAME: usize = 1;
+/// Pasos GPU (malla o textura) por frame durante precarga en editor (event loop / IPC).
+pub(crate) const MODEL_GPU_PARTS_PER_FRAME: usize = 12;
+/// Presupuesto mayor al cargar `.save` o esperar precarga (sin redibujar ventana; ver `c51c943`).
+pub(crate) const MODEL_GPU_PARTS_DURING_SAVE_LOAD: usize = 64;
 
 impl State {
+    fn emit_model_asset_load_failed(&mut self, path: &str, message: String) {
+        let key = self.model_path_key(path);
+        self.model_preload_inflight.remove(&key);
+        self.model_store.remove(&key);
+        self.model_preload_gpu_queue.retain(|p| p.path != key);
+        self.drop_pending_load_models_for_path(&key);
+        log::error!("error cargando modelo {key}: {message}");
+        send_event(&EngineEvent::ModelAssetLoadFailed {
+            path: key,
+            message: message.clone(),
+        });
+        send_event(&EngineEvent::Error { message });
+    }
+
     pub(crate) fn model_path_key(&self, path: &str) -> String {
         normalize_model_path(path)
     }
@@ -160,14 +176,18 @@ impl State {
     ) {
         let key = self.model_path_key(path);
         if !Path::new(&key).is_file() {
-            send_event(&EngineEvent::Error {
-                message: format!("No se encontró el modelo: {path}"),
+            let message = format!("No se encontró el modelo: {path}");
+            send_event(&EngineEvent::ModelAssetLoadFailed {
+                path: key.clone(),
+                message: message.clone(),
             });
+            send_event(&EngineEvent::Error { message });
             return;
         }
 
         let category = crate::ipc::normalize_model_library_category(category)
             .or_else(|| self.model_store.get(&key).and_then(|e| e.category.clone()));
+        let is_character = category.as_deref() == Some("character");
         let entry = crate::ipc::ModelStoreEntry {
             name: name.to_string(),
             category,
@@ -175,7 +195,9 @@ impl State {
         self.model_store.insert(key.clone(), entry);
 
         if self.static_model_cache.contains_key(&key) {
-            self.ensure_play_character_model_cache_warmed(&key);
+            if is_character {
+                self.ensure_play_character_model_cache_warmed(&key);
+            }
             send_event(&EngineEvent::ModelAssetLoaded {
                 path: key,
                 name: name.to_string(),
@@ -191,7 +213,15 @@ impl State {
             return;
         }
 
-        self.start_model_preload(key, name.to_string(), true);
+        self.start_model_preload(
+            key,
+            name.to_string(),
+            ModelPreloadOptions::library(if is_character {
+                Some("character")
+            } else {
+                None
+            }),
+        );
     }
 
     /// Variante `::play_character` en GPU para `replace_entity_model` instantáneo.
@@ -207,7 +237,7 @@ impl State {
         &mut self,
         key: String,
         name: String,
-        warm_play_character: bool,
+        options: ModelPreloadOptions,
     ) {
         self.model_preload_inflight.insert(key.clone());
         send_event(&EngineEvent::ModelAssetPreloadStarted {
@@ -224,13 +254,13 @@ impl State {
             ))
             .spawn(move || {
                 let path_buf = Path::new(&key_for_thread);
-                let result = match preload_model_cpu_bundle(path_buf, warm_play_character) {
+                let result = match preload_model_cpu_bundle(path_buf, options) {
                     Ok((parts, anim_asset, play_character_parts)) => {
                         Ok(ModelPreloadCpuResult {
                             path: key_for_thread,
                             parts,
                             anim_asset,
-                            warm_play_character,
+                            warm_play_character: options.warm_play_character,
                             play_character_parts,
                         })
                     }
@@ -240,11 +270,7 @@ impl State {
             })
         {
             log::error!("no se pudo lanzar hilo: {e}");
-            self.model_preload_inflight.remove(&key);
-            self.model_store.remove(&key);
-            send_event(&EngineEvent::Error {
-                message: format!("No se pudo precargar {name}: {e}"),
-            });
+            self.emit_model_asset_load_failed(&key, format!("No se pudo precargar {name}: {e}"));
         }
     }
 
@@ -257,13 +283,7 @@ impl State {
             match result {
                 Ok(data) => self.enqueue_model_preload_for_gpu(data),
                 Err((path, message)) => {
-                    self.model_preload_inflight.remove(&path);
-                    self.model_store.remove(&path);
-                    self.model_preload_gpu_queue
-                        .retain(|p| p.path != path);
-                    self.drop_pending_load_models_for_path(&path);
-                    log::error!("error precargando {path}: {message}");
-                    send_event(&EngineEvent::Error { message });
+                    self.emit_model_asset_load_failed(&path, message);
                 }
             }
         }
@@ -288,11 +308,10 @@ impl State {
     fn upload_texture_for_cpu_part(
         &mut self,
         cache_key: &str,
-        part_index: usize,
         part: &CpuModelMeshPart,
     ) -> usize {
         let tex_idx = self.tex_layers.len();
-        let tex_cache_key = format!("{cache_key}::part{part_index}");
+        let tex_cache_key = format!("{cache_key}::mat{}", part.material_index);
         if let Some(mips) = &part.layer_mips {
             let layer = if let Some(&cached) = self.texture_path_layers.get(&tex_cache_key) {
                 cached
@@ -349,17 +368,14 @@ impl State {
         }
         for part in parts.iter_mut() {
             Self::pivot_static_mesh_for_editor(part);
-            if part.layer_mips.is_none() {
-                prepare_cpu_part_texture_for_gpu(part);
-            }
         }
+        prepare_cpu_parts_textures_for_gpu(&mut parts);
         let cached: Vec<CachedStaticModelPart> = parts
             .iter()
             .enumerate()
             .map(|(i, part)| {
                 let mesh_idx = self.upload_mesh_for_cpu_part(part, i, "play-preload");
-                let tex_idx =
-                    self.upload_texture_for_cpu_part(canonical_path, i, part);
+                let tex_idx = self.upload_texture_for_cpu_part(canonical_path, part);
                 CachedStaticModelPart {
                     mesh_idx,
                     tex_idx,
@@ -405,11 +421,7 @@ impl State {
         self.model_preload_inflight.remove(&path);
 
         if pending.uploaded.is_empty() {
-            log::error!("modelo vacío tras subida GPU: {path}");
-            self.model_store.remove(&path);
-            send_event(&EngineEvent::Error {
-                message: format!("Modelo vacío: {path}"),
-            });
+            self.emit_model_asset_load_failed(&path, format!("Modelo vacío: {path}"));
             return;
         }
 
@@ -418,12 +430,8 @@ impl State {
         if let Some(asset) = pending.anim_asset {
             self.model_assets.insert(path.clone(), asset);
         }
-        if crate::config_3d::is_gltf_model_path(&path) {
-            self.prewarm_glb_texture_catalog(&path);
-        }
 
-        let name = self
-            .model_store_display_name(&path);
+        let name = self.model_store_display_name(&path);
         send_event(&EngineEvent::ModelAssetLoaded {
             path: path.clone(),
             name,
@@ -507,7 +515,7 @@ impl State {
 
     fn wait_for_static_model_cache(&mut self, key: &str) {
         while !self.static_model_cache.contains_key(key) {
-            self.poll_and_advance_model_preloads(MODEL_GPU_PARTS_PER_FRAME);
+            self.poll_and_advance_model_preloads(MODEL_GPU_PARTS_DURING_SAVE_LOAD);
             std::thread::yield_now();
         }
     }
@@ -518,7 +526,6 @@ impl State {
         if self.static_model_cache.contains_key(&path) {
             self.model_preload_inflight.remove(&path);
             self.ensure_play_character_model_cache_warmed(&path);
-            self.prewarm_glb_texture_catalog(&path);
             send_event(&EngineEvent::ModelAssetLoaded {
                 path: path.clone(),
                 name: self.model_store_display_name(&path),
@@ -529,11 +536,7 @@ impl State {
         }
 
         if data.parts.is_empty() {
-            self.model_preload_inflight.remove(&path);
-            self.model_store.remove(&path);
-            send_event(&EngineEvent::Error {
-                message: format!("Modelo vacío: {path}"),
-            });
+            self.emit_model_asset_load_failed(&path, format!("Modelo vacío: {path}"));
             return;
         }
 
@@ -562,8 +565,7 @@ impl State {
             if let Some(mesh_idx) = pending.pending_part_mesh_idx.take() {
                 let part_index = pending.uploaded.len();
                 let part = &pending.parts[part_index];
-                let tex_idx =
-                    self.upload_texture_for_cpu_part(&pending.path, part_index, part);
+                let tex_idx = self.upload_texture_for_cpu_part(&pending.path, part);
                 pending.uploaded.push(CachedStaticModelPart {
                     mesh_idx,
                     tex_idx,
@@ -722,10 +724,13 @@ impl State {
             log::info!("{wait_msg}");
             send_load_progress(&wait_msg, None, None);
             let wait_started = Instant::now();
-            const PRELOAD_WAIT: Duration = Duration::from_secs(120);
-            while self.model_preload_inflight.contains(&key) && wait_started.elapsed() < PRELOAD_WAIT
+            let file_bytes = std::fs::metadata(&key).map(|m| m.len()).unwrap_or(0);
+            let extra_secs = (file_bytes / (5 * 1024 * 1024)).min(480);
+            let preload_wait =
+                Duration::from_secs(120).saturating_add(Duration::from_secs(extra_secs));
+            while self.model_preload_inflight.contains(&key) && wait_started.elapsed() < preload_wait
             {
-                self.poll_and_advance_model_preloads(MODEL_GPU_PARTS_PER_FRAME);
+                self.poll_and_advance_model_preloads(MODEL_GPU_PARTS_DURING_SAVE_LOAD);
                 if self.static_model_cache.contains_key(&key) {
                     let ready_msg = format!(
                         "Modelo «{display_name}» listo (espera {} ms)",
@@ -755,7 +760,13 @@ impl State {
         log::info!("{sync_msg}");
         send_load_progress(&sync_msg, None, None);
         let path_buf = Path::new(&key);
-        let (mut parts, anim_asset, _) = preload_model_cpu_bundle(path_buf, false)?;
+        let (mut parts, anim_asset, _) = preload_model_cpu_bundle(
+            path_buf,
+            ModelPreloadOptions {
+                warm_play_character: false,
+                load_skinned_asset: false,
+            },
+        )?;
         if parts.is_empty() {
             return Err(format!("Modelo vacío: {key}"));
         }

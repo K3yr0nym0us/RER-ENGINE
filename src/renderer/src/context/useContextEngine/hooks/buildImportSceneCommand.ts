@@ -160,7 +160,17 @@ export function syncPlayerEntityMetaFromPlayer(
 	playerId: number,
 	player: Entity3D,
 ) {
-	refs.entityMetaRef.current[playerId] = entity3dToMeta(player);
+	const prev = refs.entityMetaRef.current[playerId];
+	const next = entity3dToMeta(player);
+	refs.entityMetaRef.current[playerId] = {
+		...next,
+		...(prev?.entityTextures?.length
+			? {
+				entityTextures: prev.entityTextures,
+				entityTexturesModelPath: prev.entityTexturesModelPath,
+			}
+			: {}),
+	};
 }
 
 /** @deprecated Runtime FP agregado; preferir `syncPlayerEntityMetaFromPlayer`. */
