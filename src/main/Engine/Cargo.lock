@@ -2646,6 +2646,7 @@ dependencies = [
  "pollster",
  "rapier3d",
  "raw-window-handle",
+ "rayon",
  "rer-engine-shared",
  "rodio",
  "serde",

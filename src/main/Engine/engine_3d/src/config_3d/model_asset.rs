@@ -1,8 +1,9 @@
 //! Parseo de skeleton, malla skinned y clips de animación (paso aparte de `mesh_3d`).
 
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
-use std::sync::Arc;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, OnceLock};
+use rayon::prelude::*;
 
 use glam::{Mat4, Quat, Vec3, Vec4};
 
@@ -95,48 +96,222 @@ pub struct ModelAsset {
     pub gltf_bind_node_local: HashMap<usize, Mat4>,
 }
 
+/// Textura CPU compartida por material (RGBA + mips precalculados una sola vez).
+#[derive(Clone)]
+pub struct MaterialTextureCpu {
+    /// Solo se usa cuando `layer_mips` es `None`. Con mips precalculados, leer `effective_rgba()`.
+    pub rgba: Arc<[u8]>,
+    pub width: u32,
+    pub height: u32,
+    pub layer_mips: Option<Arc<Vec<Vec<u8>>>>,
+}
+
+impl MaterialTextureCpu {
+    /// Layer base listo para GPU / preview. Evita duplicar el buffer 4K cuando hay mips.
+    pub(crate) fn effective_rgba(&self) -> &[u8] {
+        self.layer_mips
+            .as_ref()
+            .and_then(|mips| mips.first())
+            .map(Vec::as_slice)
+            .unwrap_or(&self.rgba)
+    }
+}
+
+pub(crate) fn empty_rgba_placeholder() -> Arc<[u8]> {
+    static EMPTY: OnceLock<Arc<[u8]>> = OnceLock::new();
+    EMPTY
+        .get_or_init(|| Arc::from(&[][..]))
+        .clone()
+}
+
+pub(crate) fn shared_white_material_texture() -> Arc<MaterialTextureCpu> {
+    static WHITE: OnceLock<Arc<MaterialTextureCpu>> = OnceLock::new();
+    WHITE
+        .get_or_init(|| {
+            Arc::new(MaterialTextureCpu {
+                rgba: Arc::from([255u8, 255, 255, 255].as_slice()),
+                width: 1,
+                height: 1,
+                layer_mips: None,
+            })
+        })
+        .clone()
+}
+
+/// Decodifica albedos por material y genera mip chain 1024² una vez (modo editor).
+pub(crate) fn build_material_textures_with_mips(
+    doc: &gltf::Document,
+    albedos: &HashMap<usize, gltf::image::Data>,
+    model_path: Option<&str>,
+) -> HashMap<u32, Arc<MaterialTextureCpu>> {
+    let tex_size = crate::texture::TextureArray::TEXTURE_SIZE;
+    let mut material_indices: Vec<usize> = albedos.keys().copied().collect();
+    material_indices.sort_unstable();
+
+    let jobs: Vec<(usize, String)> = material_indices
+        .iter()
+        .map(|&mi| {
+            let label = doc
+                .materials()
+                .nth(mi)
+                .and_then(|m| m.name())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .unwrap_or("sin nombre")
+                .to_string();
+            (mi, label)
+        })
+        .collect();
+
+    let built: Vec<(u32, Arc<MaterialTextureCpu>, u64, u64)> = jobs
+        .par_iter()
+        .map(|(mi, label)| {
+            let img = &albedos[mi];
+            let (rgba_vec, w, h) = gltf_image_data_to_rgba(img);
+            let chain = crate::texture::build_layer_mip_chain_timed(rgba_vec, w, h);
+            if let Some(path) = model_path {
+                log::info!(
+                    "[model_tex] {path} Material {mi} ({label}) -> resize: {} ms | mips: {} ms \
+                     ({}x{} -> {tex_size}²)",
+                    chain.resize_ms,
+                    chain.mip_ms,
+                    w,
+                    h
+                );
+            }
+            let tex = Arc::new(MaterialTextureCpu {
+                rgba: empty_rgba_placeholder(),
+                width: tex_size,
+                height: tex_size,
+                layer_mips: Some(Arc::new(chain.mips)),
+            });
+            (
+                *mi as u32,
+                tex,
+                chain.resize_ms,
+                chain.mip_ms,
+            )
+        })
+        .collect();
+
+    let mut total_resize_ms = 0u64;
+    let mut total_mip_ms = 0u64;
+    let mut out = HashMap::with_capacity(built.len());
+    for (mi, tex, resize_ms, mip_ms) in built {
+        total_resize_ms += resize_ms;
+        total_mip_ms += mip_ms;
+        out.insert(mi, tex);
+    }
+    if let Some(path) = model_path {
+        log::info!(
+            "[model_tex] {path} resize: {} textura/s | total resize: {total_resize_ms} ms",
+            out.len()
+        );
+        log::info!(
+            "[model_tex] {path} mip: {} textura/s | total mip: {total_mip_ms} ms",
+            out.len()
+        );
+    }
+    out
+}
+
+fn import_gltf_texture_layers(
+    doc: &gltf::Document,
+    buffers: &[gltf::buffer::Data],
+    base: Option<&Path>,
+    model_path: &str,
+) -> (
+    HashMap<usize, gltf::image::Data>,
+    HashMap<u32, Arc<MaterialTextureCpu>>,
+) {
+    let material_smallest_albedos =
+        crate::config_3d::gltf_texture_load::import_material_smallest_albedos_profiled(
+            doc,
+            buffers,
+            base,
+            Some(model_path),
+        );
+    let material_textures = build_material_textures_with_mips(
+        doc,
+        &material_smallest_albedos,
+        Some(model_path),
+    );
+    (material_smallest_albedos, material_textures)
+}
+
 /// glTF/GLB ya parseado (evita repetir `gltf::import` en la misma carga).
 pub struct GltfFile {
     pub path: String,
     pub doc: gltf::Document,
     pub buffers: Vec<gltf::buffer::Data>,
-    /// Todas las imágenes decodificadas (`AllEmbedded`); vacío en modo menor resolución.
-    pub images: Vec<gltf::image::Data>,
-    /// Variante embebida más pequeña por índice de material (`SmallestEmbedded`).
+    /// Variante embebida más pequeña por índice de material.
     pub material_smallest_albedos: HashMap<usize, gltf::image::Data>,
+    /// RGBA + mips compartidos por `material_index` (precalculados en import).
+    pub material_textures: HashMap<u32, Arc<MaterialTextureCpu>>,
 }
 
-pub fn import_gltf(path: &Path) -> Result<GltfFile, String> {
-    import_gltf_with_mode(path, crate::config_3d::gltf_texture_load::editor_gltf_texture_load_mode())
+fn gltf_import_cache_key(path: &Path) -> String {
+    std::fs::canonicalize(path)
+        .unwrap_or_else(|_| PathBuf::from(path))
+        .display()
+        .to_string()
 }
 
-pub fn import_gltf_with_mode(
-    path: &Path,
-    mode: crate::config_3d::gltf_texture_load::GltfTextureLoadMode,
-) -> Result<GltfFile, String> {
+fn gltf_import_cache() -> &'static Mutex<HashMap<String, Arc<GltfFile>>> {
+    static CACHE: OnceLock<Mutex<HashMap<String, Arc<GltfFile>>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Invalida el parseo glTF en memoria (p. ej. tras reemplazar el archivo en disco).
+pub fn invalidate_gltf_import_cache(path: &Path) {
+    let key = gltf_import_cache_key(path);
+    if let Ok(mut cache) = gltf_import_cache().lock() {
+        cache.remove(&key);
+    }
+}
+
+fn import_gltf_uncached(path: &Path) -> Result<GltfFile, String> {
     let gltf = gltf::Gltf::open(path).map_err(|e| format!("gltf error: {e}"))?;
     let base = path.parent();
     let doc = gltf.document;
     let blob = gltf.blob;
     let buffers = gltf::import_buffers(&doc, base, blob)
         .map_err(|e| format!("error importando buffers glTF: {e}"))?;
-    let (images, _) =
-        crate::config_3d::gltf_texture_load::import_gltf_images(&doc, &buffers, base, mode)?;
-    let material_smallest_albedos = match mode {
-        crate::config_3d::gltf_texture_load::GltfTextureLoadMode::SmallestEmbedded => {
-            crate::config_3d::gltf_texture_load::import_material_smallest_albedos(
-                &doc, &buffers, base,
-            )
-        }
-        crate::config_3d::gltf_texture_load::GltfTextureLoadMode::AllEmbedded => HashMap::new(),
-    };
+    let model_path = path.display().to_string();
+    let (material_smallest_albedos, material_textures) =
+        import_gltf_texture_layers(&doc, &buffers, base, &model_path);
     Ok(GltfFile {
-        path: path.display().to_string(),
+        path: model_path,
         doc,
         buffers,
-        images,
         material_smallest_albedos,
+        material_textures,
     })
+}
+
+/// Importa glTF/GLB una sola vez por ruta canónica (decode + resize + mips compartidos).
+pub fn import_gltf(path: &Path) -> Result<Arc<GltfFile>, String> {
+    let key = gltf_import_cache_key(path);
+    if let Ok(cache) = gltf_import_cache().lock() {
+        if let Some(hit) = cache.get(&key) {
+            let label = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(&key);
+            log::info!("[GLTF_IMPORT] {label} cache=hit (sin decode/resize/mip)");
+            return Ok(Arc::clone(hit));
+        }
+    }
+    let label = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(&key);
+    log::info!("[GLTF_IMPORT] {label} cache=cold (decode + resize + mip)");
+    let file = Arc::new(import_gltf_uncached(path)?);
+    if let Ok(mut cache) = gltf_import_cache().lock() {
+        cache.insert(key, Arc::clone(&file));
+    }
+    Ok(file)
 }
 
 /// Convierte `gltf::image::Data` a RGBA8 en CPU (malla / skinned).
@@ -211,7 +386,7 @@ pub fn list_gltf_clip_infos(path: &Path) -> Vec<ModelClipInfo> {
     let Ok(file) = import_gltf(path) else {
         return Vec::new();
     };
-    list_gltf_clip_infos_from_file(&file)
+    list_gltf_clip_infos_from_file(file.as_ref())
 }
 
 pub fn list_gltf_clip_infos_from_file(file: &GltfFile) -> Vec<ModelClipInfo> {
@@ -265,7 +440,7 @@ pub fn load_model_asset(path: &Path, normalize_to_extent: Option<f32>) -> Option
     match ext.as_str() {
         "glb" | "gltf" => import_gltf(path)
             .ok()
-            .and_then(|file| load_gltf_asset_from_file(&file, normalize_to_extent)),
+            .and_then(|file| load_gltf_asset_from_file(file.as_ref(), normalize_to_extent)),
         "fbx" => load_fbx_asset(path, normalize_to_extent),
         _ => None,
     }
@@ -631,9 +806,23 @@ fn load_gltf_asset_from_file(
     file: &GltfFile,
     normalize_to_extent: Option<f32>,
 ) -> Option<Arc<ModelAsset>> {
+    let label = std::path::Path::new(&file.path)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(&file.path);
+    let variant = match normalize_to_extent {
+        None => "editor",
+        Some(h) if (h - crate::config_3d::character_anchor::PLAY_CHARACTER_BODY_HEIGHT).abs()
+            < 0.01 =>
+        {
+            "play_character"
+        }
+        Some(_) => "normalized",
+    };
+    log::info!("[LOAD_GLTF_SKINNED] {label} variant={variant}");
+
     let doc = &file.doc;
     let buffers = &file.buffers;
-    let images = &file.images;
     let scene = doc.default_scene().or_else(|| doc.scenes().next())?;
     let scene_parents = build_gltf_node_parents(&scene);
 
@@ -695,7 +884,6 @@ fn load_gltf_asset_from_file(
             let Some(mut data) = read_skinned_gltf_primitive(
                 primitive,
                 &buffers,
-                &images,
                 &file.material_smallest_albedos,
             ) else {
                 continue;
@@ -866,7 +1054,6 @@ fn gltf_skinned_vertex_count(
 fn read_skinned_gltf_primitive(
     primitive: &gltf::Primitive,
     buffers: &[gltf::buffer::Data],
-    images: &[gltf::image::Data],
     material_albedos: &HashMap<usize, gltf::image::Data>,
 ) -> Option<SkinnedMeshData> {
     let reader = primitive.reader(|buf| Some(&buffers[buf.index()]));
@@ -910,7 +1097,7 @@ fn read_skinned_gltf_primitive(
         });
     }
 
-    let (rgba, width, height) = gltf_texture_rgba(primitive, images, material_albedos);
+    let (rgba, width, height) = gltf_texture_rgba(primitive, material_albedos);
 
     Some(SkinnedMeshData {
         vertices,
@@ -923,24 +1110,14 @@ fn read_skinned_gltf_primitive(
 
 fn gltf_texture_rgba(
     primitive: &gltf::Primitive,
-    images: &[gltf::image::Data],
     material_albedos: &HashMap<usize, gltf::image::Data>,
 ) -> (Vec<u8>, u32, u32) {
     let mat_idx = primitive.material().index().unwrap_or(0);
     if let Some(img) = material_albedos.get(&mat_idx) {
-        return gltf_image_data_to_rgba(img);
+        gltf_image_data_to_rgba(img)
+    } else {
+        (vec![255, 255, 255, 255], 1, 1)
     }
-    if let Some(img_idx) = primitive
-        .material()
-        .pbr_metallic_roughness()
-        .base_color_texture()
-        .map(|info| info.texture().source().index())
-    {
-        if let Some(img_data) = images.get(img_idx) {
-            return gltf_image_data_to_rgba(img_data);
-        }
-    }
-    (vec![255, 255, 255, 255], 1, 1)
 }
 
 fn push_gltf_keyframe(

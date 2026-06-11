@@ -16,7 +16,8 @@ use std::time::{Duration, Instant};
 use crate::config_3d::character_anchor::PLAY_CHARACTER_BODY_HEIGHT;
 use crate::config_3d::mesh_3d::{
     load_gltf_cpu_from_file, load_model_file_cpu, preload_model_cpu_bundle,
-    prepare_cpu_parts_textures_for_gpu, vertex_local_bounds, CpuModelMeshPart, ModelPreloadOptions,
+    prepare_cpu_parts_textures_for_gpu, vertex_local_bounds, CpuModelMeshPart,
+    ModelPreloadOptions,
 };
 use crate::config_3d::model_asset;
 use crate::config_3d::{physics_body_world_center, physics_half_extents_for_model};
@@ -30,7 +31,6 @@ use rer_engine_shared::editor_defaults::entity_label_for_spawn;
 pub(crate) struct CachedStaticModelPart {
     pub mesh_idx: usize,
     pub tex_idx: usize,
-    pub material_index: u32,
     pub local_bounds: ([f32; 3], [f32; 3]),
     pub forward_xz: glam::Vec2,
 }
@@ -312,7 +312,7 @@ impl State {
     ) -> usize {
         let tex_idx = self.tex_layers.len();
         let tex_cache_key = format!("{cache_key}::mat{}", part.material_index);
-        if let Some(mips) = &part.layer_mips {
+        if let Some(mips) = &part.texture.layer_mips {
             let layer = if let Some(&cached) = self.texture_path_layers.get(&tex_cache_key) {
                 cached
             } else {
@@ -330,9 +330,9 @@ impl State {
         } else {
             self.pack_texture_layer(
                 Some(&tex_cache_key),
-                &part.rgba,
-                part.width,
-                part.height,
+                &part.texture.rgba,
+                part.texture.width,
+                part.texture.height,
             );
         }
         tex_idx
@@ -379,7 +379,6 @@ impl State {
                 CachedStaticModelPart {
                     mesh_idx,
                     tex_idx,
-                    material_index: part.material_index,
                     local_bounds: part.local_bounds,
                     forward_xz: part.forward_xz,
                 }
@@ -472,16 +471,16 @@ impl State {
         let parts = if is_gltf {
             match model_asset::import_gltf(path_buf).and_then(|file| {
                 if !self.model_assets.contains_key(canonical_path)
-                    && model_asset::gltf_needs_model_asset(&file)
+                    && model_asset::gltf_needs_model_asset(file.as_ref())
                 {
                     if let Some(asset) =
-                        model_asset::load_model_asset_from_gltf(&file, None)
+                        model_asset::load_model_asset_from_gltf(file.as_ref(), None)
                     {
                         self.model_assets
                             .insert(canonical_path.to_string(), Arc::clone(&asset));
                     }
                 }
-                load_gltf_cpu_from_file(&file, Some(PLAY_CHARACTER_BODY_HEIGHT))
+                load_gltf_cpu_from_file(file.as_ref(), Some(PLAY_CHARACTER_BODY_HEIGHT))
             }) {
                 Ok(parts) if !parts.is_empty() => parts,
                 Ok(_) => return None,
@@ -569,7 +568,6 @@ impl State {
                 pending.uploaded.push(CachedStaticModelPart {
                     mesh_idx,
                     tex_idx,
-                    material_index: part.material_index,
                     local_bounds: part.local_bounds,
                     forward_xz: part.forward_xz,
                 });
@@ -872,7 +870,8 @@ impl State {
             self.register_entity_blueprint_id(id, bp);
         }
         if self.model_needs_skinned_bind(&key) {
-            self.try_bind_model_animations(id, &key);
+            let gltf = model_asset::import_gltf(Path::new(&key)).ok();
+            self.try_bind_model_animations_with_gltf(id, &key, gltf.as_deref());
         }
         self.push_remove_entity_undo(id);
         send_event(&EngineEvent::ModelLoaded {
@@ -979,5 +978,6 @@ impl State {
             .remove(&play_character_cache_key(&key));
         self.model_assets.remove(&key);
         self.model_preload_inflight.remove(&key);
+        model_asset::invalidate_gltf_import_cache(Path::new(&key));
     }
 }

@@ -516,7 +516,8 @@ impl State {
         }
 
         self.register_or_update_visual_model_meta(id, path, false);
-        self.try_bind_model_animations(id, &asset_key);
+        let gltf = model_asset::import_gltf(Path::new(&asset_key)).ok();
+        self.try_bind_model_animations_with_gltf(id, &asset_key, gltf.as_deref());
         self.reconcile_entity_physics_after_model_replace(id);
         let (position, rotation, scale) = match self.world.get::<Transform>(id) {
             Some(t) => (
@@ -548,12 +549,12 @@ impl State {
         &mut self,
         id: EntityId,
         path: &str,
-        gltf_file: Option<model_asset::GltfFile>,
+        gltf_file: Option<std::sync::Arc<model_asset::GltfFile>>,
         is_play_character: bool,
         normalize: Option<f32>,
     ) {
         let path_buf = Path::new(path);
-        let loaded = match (gltf_file.as_ref(), normalize) {
+        let loaded = match (gltf_file.as_deref(), normalize) {
             (Some(file), Some(extent)) => {
                 match mesh_3d::load_gltf_preview_from_file(&self.device, file, extent) {
                     Ok(parts) => parts,
@@ -623,7 +624,7 @@ impl State {
                     part.local_bounds.1,
                 ));
             self.model_assets.remove(path);
-            self.try_bind_model_animations_with_gltf(id, path, gltf_file.as_ref());
+            self.try_bind_model_animations_with_gltf(id, path, gltf_file.as_deref());
             if let Some(asset) = self.model_assets.get(path) {
                 if is_fbx_model_path(path) {
                     self.play_character_mesh_forward_xz =
@@ -642,7 +643,6 @@ impl State {
                     vec![crate::config_3d::static_model_cache::CachedStaticModelPart {
                         mesh_idx,
                         tex_idx,
-                        material_index: 0,
                         local_bounds: part.local_bounds,
                         forward_xz: part.forward_xz,
                     }],
@@ -701,7 +701,7 @@ impl State {
 
         // Forzar recarga del asset (orientación/normalize pueden cambiar entre versiones del motor).
         self.model_assets.remove(path);
-        self.try_bind_model_animations_with_gltf(id, path, gltf_file.as_ref());
+        self.try_bind_model_animations_with_gltf(id, path, gltf_file.as_deref());
 
         if is_play_character {
             if let Some(asset) = self.model_assets.get(path) {
@@ -731,7 +731,6 @@ impl State {
                     vec![crate::config_3d::static_model_cache::CachedStaticModelPart {
                         mesh_idx,
                         tex_idx,
-                        material_index: 0,
                         local_bounds: part.local_bounds,
                         forward_xz: part.forward_xz,
                     }],

@@ -1392,6 +1392,9 @@ impl State {
                 let key = self.model_path_key(&path);
                 if self.static_model_cache.remove(&key).is_some() {
                     self.model_assets.remove(&key);
+                    crate::config_3d::model_asset::invalidate_gltf_import_cache(
+                        std::path::Path::new(&key),
+                    );
                     log::info!(
                         "[hot-reload] Caché de modelo invalidada; recarga al volver a instanciar: {}",
                         path

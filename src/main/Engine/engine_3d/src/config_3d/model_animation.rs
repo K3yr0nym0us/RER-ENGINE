@@ -44,10 +44,6 @@ pub(crate) struct GpuSkinnedMeshEntry {
 }
 
 impl State {
-    pub(crate) fn try_bind_model_animations(&mut self, id: EntityId, path: &str) {
-        self.try_bind_model_animations_with_gltf(id, path, None);
-    }
-
     pub(crate) fn try_bind_model_animations_with_gltf(
         &mut self,
         id: EntityId,
@@ -74,8 +70,12 @@ impl State {
             None
         };
         let asset = if let Some(cached) = cached_asset {
+            log::info!("[MODEL_BIND] {path} reuse=model_assets (precarga Recursos)");
             cached
         } else if let Some(file) = gltf_file {
+            log::info!(
+                "[MODEL_BIND] {path} build=skinned normalize={normalize:?} (GLB ya en caché import)"
+            );
             match model_asset::load_model_asset_from_gltf(file, normalize) {
                 Some(loaded) => {
                     self.model_assets
@@ -105,7 +105,11 @@ impl State {
                 }
             }
         } else {
-            match model_asset::load_model_asset(path_buf, normalize) {
+            log::info!("[MODEL_BIND] {path} build=skinned normalize={normalize:?} (import glTF)");
+            let loaded = model_asset::import_gltf(path_buf)
+                .ok()
+                .and_then(|file| model_asset::load_model_asset_from_gltf(file.as_ref(), normalize));
+            match loaded {
                 Some(loaded) => {
                     self.model_assets
                         .insert(path.to_string(), Arc::clone(&loaded));

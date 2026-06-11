@@ -1,33 +1,11 @@
 // Política de texturas embebidas en glTF/GLB (carga en editor).
-//
-// Por defecto solo se decodifica la imagen de **menor resolución** del archivo.
-// Un módulo de calidad futuro podrá usar `GltfTextureLoadMode::AllEmbedded`.
+// Solo se decodifica la imagen de **menor resolución** por material.
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
+use std::time::Instant;
 
 use gltf::image::Source;
-
-/// Qué imágenes embebidas decodificar al importar un glTF/GLB.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum GltfTextureLoadMode {
-    /// Una sola imagen: la de menor área (p. ej. 720p si hay 4K/1080p/720p).
-    SmallestEmbedded,
-    /// Todas las imágenes (calidad máxima; reservado para configuración futura).
-    #[allow(dead_code)]
-    AllEmbedded,
-}
-
-impl Default for GltfTextureLoadMode {
-    fn default() -> Self {
-        Self::SmallestEmbedded
-    }
-}
-
-/// Modo activo en cargas del editor (hasta existir módulo de calidad en UI).
-pub fn editor_gltf_texture_load_mode() -> GltfTextureLoadMode {
-    GltfTextureLoadMode::SmallestEmbedded
-}
 
 /// Dimensiones aproximadas leyendo solo cabecera JPEG/PNG (sin decodificar píxeles).
 pub fn peek_encoded_dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
@@ -119,36 +97,6 @@ pub(crate) fn peek_gltf_image_dimensions(
     }
 }
 
-pub(crate) fn gltf_image_encoded_bytes(
-    image: gltf::Image,
-    buffers: &[gltf::buffer::Data],
-    base: Option<&Path>,
-) -> Result<Vec<u8>, String> {
-    match image.source() {
-        Source::View { view, .. } => {
-            let parent = &buffers[view.buffer().index()].0;
-            let begin = view.offset();
-            let end = begin.saturating_add(view.length()).min(parent.len());
-            Ok(parent[begin..end].to_vec())
-        }
-        Source::Uri { uri, .. } => {
-            let base = base.ok_or_else(|| format!("imagen externa sin base: {uri}"))?;
-            std::fs::read(base.join(uri.strip_prefix('/').unwrap_or(uri)))
-                .map_err(|e| format!("no se pudo leer textura {uri}: {e}"))
-        }
-    }
-}
-
-fn base_color_image_indices(doc: &gltf::Document) -> HashSet<usize> {
-    let mut out = HashSet::new();
-    for mat in doc.materials() {
-        if let Some(info) = mat.pbr_metallic_roughness().base_color_texture() {
-            out.insert(info.texture().source().index());
-        }
-    }
-    out
-}
-
 fn pick_smallest_among_image_indices(
     doc: &gltf::Document,
     buffers: &[gltf::buffer::Data],
@@ -170,19 +118,6 @@ fn pick_smallest_among_image_indices(
         }
     }
     best.map(|(i, _)| i)
-}
-
-/// Índice de la imagen embebida con menor área (prioriza texturas `baseColor` del material).
-pub fn pick_smallest_embedded_image_index(
-    doc: &gltf::Document,
-    buffers: &[gltf::buffer::Data],
-    base: Option<&Path>,
-) -> Option<usize> {
-    let base_color = base_color_image_indices(doc);
-    if let Some(idx) = pick_smallest_among_image_indices(doc, buffers, base, &base_color) {
-        return Some(idx);
-    }
-    pick_smallest_among_image_indices(doc, buffers, base, &HashSet::new())
 }
 
 fn primary_material_token(mat_name: &str) -> Option<String> {
@@ -333,16 +268,6 @@ pub fn pick_smallest_embedded_for_material(
         .or_else(|| mat_indices.iter().copied().next())
 }
 
-/// Albedo por defecto del editor: material 0 (variante más pequeña), no la menor global del GLB.
-pub fn pick_editor_mesh_albedo_image_index(
-    doc: &gltf::Document,
-    buffers: &[gltf::buffer::Data],
-    base: Option<&Path>,
-) -> Option<usize> {
-    pick_smallest_embedded_for_material(doc, buffers, base, 0)
-        .or_else(|| pick_smallest_embedded_image_index(doc, buffers, base))
-}
-
 pub fn decode_gltf_image_at_index(
     doc: &gltf::Document,
     buffers: &[gltf::buffer::Data],
@@ -358,60 +283,44 @@ pub fn decode_gltf_image_at_index(
 }
 
 /// Decodifica la variante embebida más pequeña del `baseColor` de cada material.
-pub fn import_material_smallest_albedos(
+pub(crate) fn import_material_smallest_albedos_profiled(
     doc: &gltf::Document,
     buffers: &[gltf::buffer::Data],
     base: Option<&Path>,
+    model_path: Option<&str>,
 ) -> HashMap<usize, gltf::image::Data> {
     let mut out = HashMap::new();
-    for (mi, _) in doc.materials().enumerate() {
+    let mut total_decode_ms = 0u64;
+    for (mi, mat) in doc.materials().enumerate() {
+        let label = mat
+            .name()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .unwrap_or("sin nombre");
         let Some(img_idx) = pick_smallest_embedded_for_material(doc, buffers, base, mi) else {
             continue;
         };
-        if let Ok(data) = decode_gltf_image_at_index(doc, buffers, base, img_idx) {
-            out.insert(mi, data);
+        let decode_started = Instant::now();
+        let Ok(data) = decode_gltf_image_at_index(doc, buffers, base, img_idx) else {
+            continue;
+        };
+        let decode_ms = decode_started.elapsed().as_millis() as u64;
+        total_decode_ms += decode_ms;
+        if let Some(path) = model_path {
+            log::info!(
+                "[model_tex] {path} Material {mi} ({label}) -> decode: {decode_ms} ms \
+                 (imagen #{img_idx}, {}x{})",
+                data.width,
+                data.height
+            );
         }
+        out.insert(mi, data);
+    }
+    if let Some(path) = model_path {
+        log::info!(
+            "[model_tex] {path} decode: {} textura/s únicas | total decode: {total_decode_ms} ms",
+            out.len()
+        );
     }
     out
-}
-
-pub fn import_gltf_images(
-    doc: &gltf::Document,
-    buffers: &[gltf::buffer::Data],
-    base: Option<&Path>,
-    mode: GltfTextureLoadMode,
-) -> Result<(Vec<gltf::image::Data>, Option<gltf::image::Data>), String> {
-    match mode {
-        GltfTextureLoadMode::AllEmbedded => {
-            let images = gltf::import_images(doc, base, buffers)
-                .map_err(|e| format!("error importando imágenes glTF: {e}"))?;
-            Ok((images, None))
-        }
-        GltfTextureLoadMode::SmallestEmbedded => {
-            let count = doc.images().count();
-            if count == 0 {
-                return Ok((Vec::new(), None));
-            }
-            let material_albedos = import_material_smallest_albedos(doc, buffers, base);
-            let mesh_albedo = material_albedos
-                .get(&0)
-                .cloned()
-                .or_else(|| {
-                    pick_editor_mesh_albedo_image_index(doc, buffers, base)
-                        .and_then(|pick| decode_gltf_image_at_index(doc, buffers, base, pick).ok())
-                });
-            if let Some(ref img) = mesh_albedo {
-                log::info!(
-                    "[gltf] texturas: {count} embebida/s, {} material/es con variante menor",
-                    material_albedos.len().max(1)
-                );
-                log::debug!(
-                    "[gltf] albedo fallback mat0: {}x{}",
-                    img.width,
-                    img.height
-                );
-            }
-            Ok((Vec::new(), mesh_albedo))
-        }
-    }
 }

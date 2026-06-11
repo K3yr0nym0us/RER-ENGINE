@@ -525,7 +525,8 @@ impl State {
                 part.local_bounds.1,
             ));
 
-        self.try_bind_model_animations(id, &asset_key);
+        let gltf = model_asset::import_gltf(Path::new(path)).ok();
+        self.try_bind_model_animations_with_gltf(id, &asset_key, gltf.as_deref());
         if let Some(asset) = self.model_assets.get(&asset_key) {
             if is_fbx_model_path(path) {
                 self.play_character_mesh_forward_xz =

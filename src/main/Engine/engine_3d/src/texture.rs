@@ -1,7 +1,15 @@
 use std::sync::Arc;
+use std::time::Instant;
 
 /// Índice de capa en el array de texturas compartido (group 1 del shader).
 pub type TextureLayer = u32;
+
+/// Resultado de resize + mips en CPU (precarga de modelos).
+pub(crate) struct LayerMipChain {
+    pub mips:      Vec<Vec<u8>>,
+    pub resize_ms: u64,
+    pub mip_ms:    u64,
+}
 
 /// Array GPU `texture_2d_array`: una capa por material, UV [0,1] en el mesh.
 pub struct TextureArray {
@@ -115,8 +123,8 @@ impl TextureArray {
     }
 
     pub fn pack(&mut self, queue: &wgpu::Queue, rgba: &[u8], w: u32, h: u32) -> TextureLayer {
-        let rgba = resize_rgba_to_layer(rgba, w, h, self.width, self.height);
-        self.upload_layer_from_mips(queue, &generate_mip_chain(&rgba, self.width, self.height))
+        let chain = build_layer_mip_chain_timed(rgba.to_vec(), w, h);
+        self.upload_layer_from_mips(queue, &chain.mips)
     }
 
     /// Sube mips ya preparados en CPU (p. ej. hilo de precarga de modelos).
@@ -139,7 +147,7 @@ impl TextureArray {
     }
 
     fn upload_layer(&mut self, queue: &wgpu::Queue, rgba: &[u8]) -> TextureLayer {
-        let mips = generate_mip_chain(rgba, self.width, self.height);
+        let mips = generate_mip_chain_owned(rgba.to_vec(), self.width, self.height);
         self.upload_layer_from_mips(queue, &mips)
     }
 
@@ -174,28 +182,65 @@ impl TextureArray {
     }
 }
 
-fn generate_mip_chain(base: &[u8], base_w: u32, base_h: u32) -> Vec<Vec<u8>> {
-    let mut chain = vec![base.to_vec()];
+/// Promedia bloques 2×2 (box filter) para el siguiente nivel de mip.
+fn box_filter_halve(src: &[u8], sw: u32, sh: u32) -> (Vec<u8>, u32, u32) {
+    let dw = (sw / 2).max(1);
+    let dh = (sh / 2).max(1);
+    if sw <= 1 && sh <= 1 {
+        return (src.to_vec(), sw, sh);
+    }
+
+    let mut dst = vec![0u8; (dw * dh * 4) as usize];
+    for y in 0..dh {
+        for x in 0..dw {
+            let mut r = 0u32;
+            let mut g = 0u32;
+            let mut b = 0u32;
+            let mut a = 0u32;
+            let mut n = 0u32;
+            let sy = y * 2;
+            let sx = x * 2;
+            for dy in 0..2u32 {
+                for dx in 0..2u32 {
+                    let py = sy + dy;
+                    let px = sx + dx;
+                    if py >= sh || px >= sw {
+                        continue;
+                    }
+                    let i = ((py * sw + px) * 4) as usize;
+                    r += src[i] as u32;
+                    g += src[i + 1] as u32;
+                    b += src[i + 2] as u32;
+                    a += src[i + 3] as u32;
+                    n += 1;
+                }
+            }
+            let n = n.max(1);
+            let di = ((y * dw + x) * 4) as usize;
+            dst[di] = (r / n) as u8;
+            dst[di + 1] = (g / n) as u8;
+            dst[di + 2] = (b / n) as u8;
+            dst[di + 3] = (a / n) as u8;
+        }
+    }
+    (dst, dw, dh)
+}
+
+fn generate_mip_chain_owned(base: Vec<u8>, base_w: u32, base_h: u32) -> Vec<Vec<u8>> {
+    let level_count = mip_level_count(base_w.max(base_h)) as usize;
+    let mut chain = Vec::with_capacity(level_count);
     let mut cw = base_w;
     let mut ch = base_h;
-    let mut current = chain[0].clone();
-    while cw > 1 || ch > 1 {
-        let nw = (cw / 2).max(1);
-        let nh = (ch / 2).max(1);
-        if let Some(img) = image::RgbaImage::from_raw(cw, ch, current) {
-            current = image::imageops::resize(
-                &img,
-                nw,
-                nh,
-                image::imageops::FilterType::Triangle,
-            )
-            .into_raw();
-            cw = nw;
-            ch = nh;
-            chain.push(current.clone());
-        } else {
+    chain.push(base);
+    loop {
+        if cw <= 1 && ch <= 1 {
             break;
         }
+        let src = chain.last().expect("mip chain vacía");
+        let (next, nw, nh) = box_filter_halve(src, cw, ch);
+        cw = nw;
+        ch = nh;
+        chain.push(next);
     }
     chain
 }
@@ -210,33 +255,12 @@ fn mip_level_count(size: u32) -> u32 {
     levels
 }
 
-/// Resize a 1024² + cadena de mips en CPU (hilo de precarga de modelos).
-pub(crate) fn build_layer_mip_chain(rgba: &[u8], w: u32, h: u32) -> Vec<Vec<u8>> {
-    let layer = resize_rgba_to_layer(
-        rgba,
-        w,
-        h,
-        TextureArray::TEXTURE_SIZE,
-        TextureArray::TEXTURE_SIZE,
-    );
-    generate_mip_chain(&layer, TextureArray::TEXTURE_SIZE, TextureArray::TEXTURE_SIZE)
-}
-
-fn solid_white_rgba() -> Vec<u8> {
-    resize_rgba_to_layer(
-        &[255, 255, 255, 255],
-        1,
-        1,
-        TextureArray::TEXTURE_SIZE,
-        TextureArray::TEXTURE_SIZE,
-    )
-}
-
-fn resize_rgba_to_layer(rgba: &[u8], w: u32, h: u32, tw: u32, th: u32) -> Vec<u8> {
-    if w == tw && h == th && rgba.len() == (tw * th * 4) as usize {
-        return rgba.to_vec();
+fn resize_rgba_vec_to_layer(rgba: Vec<u8>, w: u32, h: u32, tw: u32, th: u32) -> Vec<u8> {
+    let expected = (tw * th * 4) as usize;
+    if w == tw && h == th && rgba.len() == expected {
+        return rgba;
     }
-    if let Some(img) = image::RgbaImage::from_raw(w, h, rgba.to_vec()) {
+    if let Some(img) = image::RgbaImage::from_raw(w, h, rgba) {
         let resized = image::imageops::resize(
             &img,
             tw,
@@ -248,5 +272,35 @@ fn resize_rgba_to_layer(rgba: &[u8], w: u32, h: u32, tw: u32, th: u32) -> Vec<u8
         }
         return resized.into_raw();
     }
-    vec![255; (tw * th * 4) as usize]
+    vec![255; expected]
+}
+
+/// Resize a 1024² + mips con tiempos separados (toma ownership del buffer RGBA).
+pub(crate) fn build_layer_mip_chain_timed(rgba: Vec<u8>, w: u32, h: u32) -> LayerMipChain {
+    let tw = TextureArray::TEXTURE_SIZE;
+    let th = TextureArray::TEXTURE_SIZE;
+
+    let resize_started = Instant::now();
+    let base = resize_rgba_vec_to_layer(rgba, w, h, tw, th);
+    let resize_ms = resize_started.elapsed().as_millis() as u64;
+
+    let mip_started = Instant::now();
+    let mips = generate_mip_chain_owned(base, tw, th);
+    let mip_ms = mip_started.elapsed().as_millis() as u64;
+
+    LayerMipChain {
+        mips,
+        resize_ms,
+        mip_ms,
+    }
+}
+
+fn solid_white_rgba() -> Vec<u8> {
+    resize_rgba_vec_to_layer(
+        vec![255, 255, 255, 255],
+        1,
+        1,
+        TextureArray::TEXTURE_SIZE,
+        TextureArray::TEXTURE_SIZE,
+    )
 }

@@ -3,6 +3,9 @@
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
+use crate::config_3d::model_asset::{
+    empty_rgba_placeholder, shared_white_material_texture, MaterialTextureCpu,
+};
 
 use crate::config_3d::model_asset::{self, GltfFile};
 use crate::mesh::{upload, Mesh, Vertex};
@@ -34,35 +37,37 @@ pub(crate) fn vertex_local_bounds(vertices: &[Vertex]) -> ([f32; 3], [f32; 3]) {
 pub(crate) struct CpuModelMeshPart {
     pub(crate) vertices: Vec<Vertex>,
     pub(crate) indices: Vec<u32>,
-    pub(crate) rgba: Vec<u8>,
-    pub(crate) width: u32,
-    pub(crate) height: u32,
     pub(crate) material_index: u32,
+    /// Textura compartida por material (`Arc`); mips precalculados en import GLB.
+    pub(crate) texture: Arc<MaterialTextureCpu>,
     pub(crate) forward_xz: glam::Vec2,
     pub(crate) local_bounds: ([f32; 3], [f32; 3]),
-    /// Mips 1024² precalculados en hilo de precarga (evita resize/mips en subida GPU).
-    pub(crate) layer_mips: Option<Vec<Vec<u8>>>,
 }
 
-pub(crate) fn prepare_cpu_part_texture_for_gpu(part: &mut CpuModelMeshPart) {
-    prepare_cpu_parts_textures_for_gpu(std::slice::from_mut(part));
-}
-
-/// Un mip-chain 1024² por material (no por primitiva de malla).
+/// Mip-chain 1024² por material (FBX u otros sin mips en import).
 pub(crate) fn prepare_cpu_parts_textures_for_gpu(parts: &mut [CpuModelMeshPart]) {
-    let mut mips_by_material: HashMap<u32, Vec<Vec<u8>>> = HashMap::new();
+    let tex_size = crate::texture::TextureArray::TEXTURE_SIZE;
+    let mut shared_by_material: HashMap<u32, Arc<MaterialTextureCpu>> = HashMap::new();
     for part in parts.iter_mut() {
-        if part.layer_mips.is_some() {
+        if part.texture.layer_mips.is_some() {
             continue;
         }
-        let mips = mips_by_material
+        let shared = shared_by_material
             .entry(part.material_index)
             .or_insert_with(|| {
-                crate::texture::build_layer_mip_chain(&part.rgba, part.width, part.height)
+                let chain = crate::texture::build_layer_mip_chain_timed(
+                    part.texture.rgba.to_vec(),
+                    part.texture.width,
+                    part.texture.height,
+                );
+                Arc::new(MaterialTextureCpu {
+                    rgba: empty_rgba_placeholder(),
+                    width: tex_size,
+                    height: tex_size,
+                    layer_mips: Some(Arc::new(chain.mips)),
+                })
             });
-        part.layer_mips = Some(mips.clone());
-        part.width = crate::texture::TextureArray::TEXTURE_SIZE;
-        part.height = crate::texture::TextureArray::TEXTURE_SIZE;
+        part.texture = Arc::clone(shared);
     }
 }
 
@@ -77,9 +82,10 @@ pub(crate) struct ModelPreloadOptions {
 
 impl ModelPreloadOptions {
     pub(crate) fn library(category: Option<&str>) -> Self {
+        let is_character = category == Some("character");
         Self {
-            warm_play_character: category == Some("character"),
-            load_skinned_asset: false,
+            warm_play_character: is_character,
+            load_skinned_asset: is_character,
         }
     }
 
@@ -258,7 +264,7 @@ pub(crate) fn load_model_file(
         "glb" | "gltf" => {
             if normalize_to_extent.is_some() {
                 let file = crate::config_3d::model_asset::import_gltf(path)?;
-                load_gltf_preview_from_file(device, &file, normalize_to_extent.unwrap())
+                load_gltf_preview_from_file(device, file.as_ref(), normalize_to_extent.unwrap())
             } else {
                 load_gltf(device, path, normalize_to_extent)
             }
@@ -311,19 +317,19 @@ pub(crate) fn preload_model_cpu_bundle(
     let result = match ext.as_str() {
         "glb" | "gltf" => {
             let file = model_asset::import_gltf(path)?;
-            let parts = load_gltf_cpu_from_file(&file, None)?;
+            let parts = load_gltf_cpu_from_file(file.as_ref(), None)?;
             let play_parts = if options.warm_play_character {
                 Some(load_gltf_cpu_from_file(
-                    &file,
+                    file.as_ref(),
                     Some(crate::config_3d::character_anchor::PLAY_CHARACTER_BODY_HEIGHT),
                 )?)
             } else {
                 None
             };
             let anim_asset = if options.load_skinned_asset
-                && model_asset::gltf_needs_model_asset(&file)
+                && model_asset::gltf_needs_model_asset(file.as_ref())
             {
-                model_asset::load_model_asset_from_gltf(&file, None)
+                model_asset::load_model_asset_from_gltf(file.as_ref(), None)
             } else {
                 None
             };
@@ -351,9 +357,11 @@ pub(crate) fn preload_model_cpu_bundle(
         )),
     };
     result.map(|(mut parts, anim, mut play_parts)| {
-        prepare_cpu_parts_textures_for_gpu(&mut parts);
-        if let Some(play) = play_parts.as_mut() {
-            prepare_cpu_parts_textures_for_gpu(play);
+        if ext.as_str() == "fbx" {
+            prepare_cpu_parts_textures_for_gpu(&mut parts);
+            if let Some(play) = play_parts.as_mut() {
+                prepare_cpu_parts_textures_for_gpu(play);
+            }
         }
         (parts, anim, play_parts)
     })
@@ -384,10 +392,8 @@ fn load_image_path(path: &Path) -> (Vec<u8>, u32, u32) {
 struct GltfRawPrim {
     vertices: Vec<Vertex>,
     indices: Vec<u32>,
-    rgba: Vec<u8>,
-    width: u32,
-    height: u32,
     material_index: u32,
+    texture: Arc<MaterialTextureCpu>,
 }
 
 /// Lee una primitiva glTF aplicando la matriz `world` del nodo al que pertenece
@@ -396,41 +402,22 @@ struct GltfRawPrim {
 /// rotación 90° en el `Armature`/root).
 fn decode_gltf_material_albedo(
     mat_idx: usize,
-    primitive: &gltf::Primitive,
-    images: &[gltf::image::Data],
     material_albedos: &HashMap<usize, gltf::image::Data>,
-    cache: &mut HashMap<usize, (Vec<u8>, u32, u32)>,
 ) -> (Vec<u8>, u32, u32) {
-    if let Some(cached) = cache.get(&mat_idx) {
-        return cached.clone();
-    }
-    let decoded = if let Some(img) = material_albedos.get(&mat_idx) {
+    if let Some(img) = material_albedos.get(&mat_idx) {
         crate::config_3d::model_asset::gltf_image_data_to_rgba(img)
-    } else if let Some(img_idx) = primitive
-        .material()
-        .pbr_metallic_roughness()
-        .base_color_texture()
-        .map(|info| info.texture().source().index())
-    {
-        if let Some(img_data) = images.get(img_idx) {
-            crate::config_3d::model_asset::gltf_image_data_to_rgba(img_data)
-        } else {
-            white_pixel()
-        }
     } else {
         white_pixel()
-    };
-    cache.insert(mat_idx, decoded.clone());
-    decoded
+    }
 }
 
 fn read_gltf_primitive(
     primitive: &gltf::Primitive,
     world: glam::Mat4,
     buffers: &[gltf::buffer::Data],
-    images: &[gltf::image::Data],
+    material_textures: &HashMap<u32, Arc<MaterialTextureCpu>>,
     material_albedos: &HashMap<usize, gltf::image::Data>,
-    albedo_cache: &mut HashMap<usize, (Vec<u8>, u32, u32)>,
+    albedo_cache: &mut HashMap<usize, Arc<MaterialTextureCpu>>,
 ) -> Result<GltfRawPrim, String> {
     use glam::{Mat3, Vec3};
 
@@ -477,17 +464,48 @@ fn read_gltf_primitive(
         .collect();
 
     let mat_idx = primitive.material().index().unwrap_or(0);
-    let (rgba, width, height) =
-        decode_gltf_material_albedo(mat_idx, primitive, images, material_albedos, albedo_cache);
+    let texture = resolve_gltf_primitive_texture(
+        mat_idx,
+        material_textures,
+        material_albedos,
+        albedo_cache,
+    );
 
     Ok(GltfRawPrim {
         vertices,
         indices,
-        rgba,
+        material_index: mat_idx as u32,
+        texture,
+    })
+}
+
+fn resolve_gltf_primitive_texture(
+    mat_idx: usize,
+    material_textures: &HashMap<u32, Arc<MaterialTextureCpu>>,
+    material_albedos: &HashMap<usize, gltf::image::Data>,
+    albedo_cache: &mut HashMap<usize, Arc<MaterialTextureCpu>>,
+) -> Arc<MaterialTextureCpu> {
+    let mat_key = mat_idx as u32;
+    if let Some(tex) = material_textures.get(&mat_key) {
+        return Arc::clone(tex);
+    }
+    if let Some(cached) = albedo_cache.get(&mat_idx) {
+        return Arc::clone(cached);
+    }
+    let (rgba_vec, width, height) = decode_gltf_material_albedo(mat_idx, material_albedos);
+    if width == 1 && height == 1 && rgba_vec.as_slice() == [255, 255, 255, 255] {
+        let white = shared_white_material_texture();
+        albedo_cache.insert(mat_idx, Arc::clone(&white));
+        return white;
+    }
+    let arc = Arc::new(MaterialTextureCpu {
+        rgba: Arc::from(rgba_vec.into_boxed_slice()),
         width,
         height,
-        material_index: mat_idx as u32, // glTF material index
-    })
+        layer_mips: None,
+    });
+    albedo_cache.insert(mat_idx, Arc::clone(&arc));
+    arc
 }
 
 /// Recorre el árbol de nodos acumulando la transformación de mundo. Para cada
@@ -496,9 +514,9 @@ fn walk_gltf_node(
     node: gltf::Node,
     parent_world: glam::Mat4,
     buffers: &[gltf::buffer::Data],
-    images: &[gltf::image::Data],
+    material_textures: &HashMap<u32, Arc<MaterialTextureCpu>>,
     material_albedos: &HashMap<usize, gltf::image::Data>,
-    albedo_cache: &mut HashMap<usize, (Vec<u8>, u32, u32)>,
+    albedo_cache: &mut HashMap<usize, Arc<MaterialTextureCpu>>,
     out: &mut Vec<GltfRawPrim>,
 ) -> Result<(), String> {
     use glam::{Mat4, Quat, Vec3};
@@ -523,7 +541,7 @@ fn walk_gltf_node(
                 &primitive,
                 world,
                 buffers,
-                images,
+                material_textures,
                 material_albedos,
                 albedo_cache,
             )?);
@@ -535,7 +553,7 @@ fn walk_gltf_node(
             child,
             world,
             buffers,
-            images,
+            material_textures,
             material_albedos,
             albedo_cache,
             out,
@@ -579,23 +597,23 @@ pub(crate) fn load_gltf_preview_from_file(
     let mut tex_w = 1u32;
     let mut tex_h = 1u32;
 
-    let mut albedo_cache: HashMap<usize, (Vec<u8>, u32, u32)> = HashMap::new();
+    let mut albedo_cache: HashMap<usize, Arc<MaterialTextureCpu>> = HashMap::new();
     for primitive in mesh.primitives() {
         let prim = read_gltf_primitive(
             &primitive,
             world,
             &file.buffers,
-            &file.images,
+            &file.material_textures,
             &file.material_smallest_albedos,
             &mut albedo_cache,
         )?;
         let base = vertices.len() as u32;
         vertices.extend(prim.vertices);
         indices.extend(prim.indices.iter().map(|i| i + base));
-        if tex_w <= 1 && prim.width > 1 {
-            rgba = prim.rgba;
-            tex_w = prim.width;
-            tex_h = prim.height;
+        if tex_w <= 1 && prim.texture.width > 1 {
+            rgba = prim.texture.effective_rgba().to_vec();
+            tex_w = prim.texture.width;
+            tex_h = prim.texture.height;
         }
     }
 
@@ -639,11 +657,11 @@ fn load_gltf(
     let file = model_asset::import_gltf(path)?;
     let doc = &file.doc;
     let buffers = &file.buffers;
-    let images = &file.images;
     let material_albedos = &file.material_smallest_albedos;
+    let material_textures = &file.material_textures;
 
     let mut prims: Vec<GltfRawPrim> = Vec::new();
-    let mut albedo_cache: HashMap<usize, (Vec<u8>, u32, u32)> = HashMap::new();
+    let mut albedo_cache: HashMap<usize, Arc<MaterialTextureCpu>> = HashMap::new();
 
     // Preferir la escena por defecto; si no hay escenas (raro), caer a iterar
     // meshes con matriz identidad para no romper archivos antiguos.
@@ -653,7 +671,7 @@ fn load_gltf(
                 root,
                 Mat4::IDENTITY,
                 buffers,
-                images,
+                material_textures,
                 material_albedos,
                 &mut albedo_cache,
                 &mut prims,
@@ -666,7 +684,7 @@ fn load_gltf(
                     &primitive,
                     Mat4::IDENTITY,
                     buffers,
-                    images,
+                    material_textures,
                     material_albedos,
                     &mut albedo_cache,
                 )?);
@@ -690,9 +708,9 @@ fn load_gltf(
         let local_bounds = vertex_local_bounds(&p.vertices);
         meshes.push(LoadedModelMesh {
             mesh: upload(device, &p.vertices, &p.indices, "gltf-mesh"),
-            rgba: p.rgba,
-            width: p.width,
-            height: p.height,
+            rgba: p.texture.effective_rgba().to_vec(),
+            width: p.texture.width,
+            height: p.texture.height,
             forward_xz,
             local_bounds,
         });
@@ -705,7 +723,7 @@ fn load_gltf_cpu(
     normalize_to_extent: Option<f32>,
 ) -> Result<Vec<CpuModelMeshPart>, String> {
     let file = model_asset::import_gltf(path)?;
-    load_gltf_cpu_from_file(&file, normalize_to_extent)
+    load_gltf_cpu_from_file(file.as_ref(), normalize_to_extent)
 }
 
 pub(crate) fn load_gltf_cpu_from_file(
@@ -714,13 +732,28 @@ pub(crate) fn load_gltf_cpu_from_file(
 ) -> Result<Vec<CpuModelMeshPart>, String> {
     use glam::Mat4;
 
+    let label = std::path::Path::new(&file.path)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(&file.path);
+    let variant = match normalize_to_extent {
+        None => "editor",
+        Some(h) if (h - crate::config_3d::character_anchor::PLAY_CHARACTER_BODY_HEIGHT).abs()
+            < 0.01 =>
+        {
+            "play_character"
+        }
+        Some(_) => "normalized",
+    };
+    log::info!("[LOAD_GLTF_CPU] {label} variant={variant}");
+
     let doc = &file.doc;
     let buffers = &file.buffers;
-    let images = &file.images;
     let material_albedos = &file.material_smallest_albedos;
+    let material_textures = &file.material_textures;
 
     let mut prims: Vec<GltfRawPrim> = Vec::new();
-    let mut albedo_cache: HashMap<usize, (Vec<u8>, u32, u32)> = HashMap::new();
+    let mut albedo_cache: HashMap<usize, Arc<MaterialTextureCpu>> = HashMap::new();
 
     if let Some(scene) = doc.default_scene().or_else(|| doc.scenes().next()) {
         for root in scene.nodes() {
@@ -728,7 +761,7 @@ pub(crate) fn load_gltf_cpu_from_file(
                 root,
                 Mat4::IDENTITY,
                 buffers,
-                images,
+                material_textures,
                 material_albedos,
                 &mut albedo_cache,
                 &mut prims,
@@ -741,7 +774,7 @@ pub(crate) fn load_gltf_cpu_from_file(
                     &primitive,
                     Mat4::IDENTITY,
                     buffers,
-                    images,
+                    material_textures,
                     material_albedos,
                     &mut albedo_cache,
                 )?);
@@ -767,11 +800,8 @@ pub(crate) fn load_gltf_cpu_from_file(
             local_bounds: vertex_local_bounds(&p.vertices),
             vertices: p.vertices,
             indices: p.indices,
-            rgba: p.rgba,
-            width: p.width,
-            height: p.height,
             material_index: p.material_index,
-            layer_mips: None,
+            texture: p.texture,
         })
         .collect())
 }
@@ -1060,11 +1090,13 @@ fn load_fbx_cpu(
         local_bounds: vertex_local_bounds(&vertices),
         vertices,
         indices,
-        rgba,
-        width: tex_w,
-        height: tex_h,
         material_index: 0,
-        layer_mips: None,
+        texture: Arc::new(MaterialTextureCpu {
+            rgba: Arc::from(rgba.into_boxed_slice()),
+            width: tex_w,
+            height: tex_h,
+            layer_mips: None,
+        }),
     }])
 }
 
