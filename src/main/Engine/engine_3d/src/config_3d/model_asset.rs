@@ -61,6 +61,8 @@ pub struct SkinnedMeshData {
 pub struct SkinnedMeshPart {
     /// Nombre del nodo FBX/glTF (p. ej. Body, Hair) para filtrar forward del jugador.
     pub name: String,
+    /// Índice de material glTF/FBX para textura por pieza.
+    pub material_index: u32,
     pub mesh: SkinnedMeshData,
     /// Mundo del nodo de malla en bind (FBX: vértices horneados; glTF: referencia / IBM fallback).
     pub mesh_bind_world: Mat4,
@@ -100,13 +102,21 @@ pub struct GltfFile {
     pub buffers: Vec<gltf::buffer::Data>,
     /// Todas las imágenes decodificadas (`AllEmbedded`); vacío en modo menor resolución.
     pub images: Vec<gltf::image::Data>,
-    /// Albedo único (modo `SmallestEmbedded`): se usa en malla estática y skinned.
+    /// Albedo del material 0 (fallback legacy).
     pub mesh_albedo: Option<gltf::image::Data>,
+    /// Variante embebida más pequeña por índice de material (`SmallestEmbedded`).
+    pub material_smallest_albedos: HashMap<usize, gltf::image::Data>,
 }
 
 impl GltfFile {
     pub fn mesh_albedo_for_draw(&self) -> Option<&gltf::image::Data> {
         self.mesh_albedo.as_ref()
+    }
+
+    pub fn albedo_for_material(&self, material_index: usize) -> Option<&gltf::image::Data> {
+        self.material_smallest_albedos
+            .get(&material_index)
+            .or(self.mesh_albedo.as_ref())
     }
 }
 
@@ -126,12 +136,21 @@ pub fn import_gltf_with_mode(
         .map_err(|e| format!("error importando buffers glTF: {e}"))?;
     let (images, mesh_albedo) =
         crate::config_3d::gltf_texture_load::import_gltf_images(&doc, &buffers, base, mode)?;
+    let material_smallest_albedos = match mode {
+        crate::config_3d::gltf_texture_load::GltfTextureLoadMode::SmallestEmbedded => {
+            crate::config_3d::gltf_texture_load::import_material_smallest_albedos(
+                &doc, &buffers, base,
+            )
+        }
+        crate::config_3d::gltf_texture_load::GltfTextureLoadMode::AllEmbedded => HashMap::new(),
+    };
     Ok(GltfFile {
         path: path.display().to_string(),
         doc,
         buffers,
         images,
         mesh_albedo,
+        material_smallest_albedos,
     })
 }
 
@@ -642,7 +661,6 @@ fn load_gltf_asset_from_file(
     let doc = &file.doc;
     let buffers = &file.buffers;
     let images = &file.images;
-    let mesh_albedo = file.mesh_albedo_for_draw();
     let scene = doc.default_scene().or_else(|| doc.scenes().next())?;
     let scene_parents = build_gltf_node_parents(&scene);
 
@@ -695,33 +713,37 @@ fn load_gltf_asset_from_file(
             &doc,
             &scene_parents,
         );
-        let mut merged: Option<SkinnedMeshData> = None;
-        for primitive in mesh.primitives() {
-            if let Some(mut data) =
-                read_skinned_gltf_primitive(&primitive, &buffers, &images, mesh_albedo)
-            {
-                remap_gltf_vertex_joints_to_unified(&mut data, &node_skin, &node_to_joint);
-                merged = Some(match merged {
-                    Some(acc) => merge_skinned_mesh_data(acc, data),
-                    None => data,
-                });
-            }
-        }
-        let Some(mesh_data) = merged else {
-            continue;
-        };
         let part_name = node
             .name()
             .map(|s| s.to_string())
             .unwrap_or_else(|| format!("part_{}", asset_parts.len()));
-        let mut part = SkinnedMeshPart {
-            name: part_name,
-            mesh: mesh_data,
-            mesh_bind_world,
-            inverse_bind: part_ibm,
-        };
-        bake_gltf_mesh_bind_world(&mut part);
-        asset_parts.push(part);
+        let primitives: Vec<_> = mesh.primitives().collect();
+        for (prim_i, primitive) in primitives.iter().enumerate() {
+            let Some(mut data) = read_skinned_gltf_primitive(
+                primitive,
+                &buffers,
+                &images,
+                &file.material_smallest_albedos,
+            ) else {
+                continue;
+            };
+            remap_gltf_vertex_joints_to_unified(&mut data, &node_skin, &node_to_joint);
+            let material_index = primitive.material().index().unwrap_or(0) as u32;
+            let name = if primitives.len() > 1 {
+                format!("{part_name}_m{material_index}_p{prim_i}")
+            } else {
+                part_name.clone()
+            };
+            let mut part = SkinnedMeshPart {
+                name,
+                material_index,
+                mesh: data,
+                mesh_bind_world,
+                inverse_bind: part_ibm.clone(),
+            };
+            bake_gltf_mesh_bind_world(&mut part);
+            asset_parts.push(part);
+        }
     }
     if asset_parts.is_empty() {
         return None;
@@ -872,7 +894,7 @@ fn read_skinned_gltf_primitive(
     primitive: &gltf::Primitive,
     buffers: &[gltf::buffer::Data],
     images: &[gltf::image::Data],
-    mesh_albedo: Option<&gltf::image::Data>,
+    material_albedos: &HashMap<usize, gltf::image::Data>,
 ) -> Option<SkinnedMeshData> {
     let reader = primitive.reader(|buf| Some(&buffers[buf.index()]));
     let positions: Vec<[f32; 3]> = reader.read_positions()?.collect();
@@ -915,7 +937,7 @@ fn read_skinned_gltf_primitive(
         });
     }
 
-    let (rgba, width, height) = gltf_texture_rgba(primitive, images, mesh_albedo);
+    let (rgba, width, height) = gltf_texture_rgba(primitive, images, material_albedos);
 
     Some(SkinnedMeshData {
         vertices,
@@ -929,9 +951,10 @@ fn read_skinned_gltf_primitive(
 fn gltf_texture_rgba(
     primitive: &gltf::Primitive,
     images: &[gltf::image::Data],
-    mesh_albedo: Option<&gltf::image::Data>,
+    material_albedos: &HashMap<usize, gltf::image::Data>,
 ) -> (Vec<u8>, u32, u32) {
-    if let Some(img) = mesh_albedo {
+    let mat_idx = primitive.material().index().unwrap_or(0);
+    if let Some(img) = material_albedos.get(&mat_idx) {
         return gltf_image_data_to_rgba(img);
     }
     if let Some(img_idx) = primitive
@@ -1520,6 +1543,7 @@ fn load_fbx_asset(path: &Path, normalize_to_extent: Option<f32>) -> Option<Arc<M
         };
         asset_parts.push(SkinnedMeshPart {
             name: part_name,
+            material_index: 0,
             mesh: mesh_data,
             mesh_bind_world: world,
             inverse_bind: part_ibm,
@@ -2247,6 +2271,7 @@ pub fn fbx_skinned_play_forward_xz(path: &Path, normalize_to_extent: f32) -> Opt
         };
         parts.push(SkinnedMeshPart {
             name: part_name,
+            material_index: 0,
             mesh: mesh_data,
             mesh_bind_world: world,
             inverse_bind: Vec::new(),

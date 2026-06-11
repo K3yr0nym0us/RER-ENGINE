@@ -13,6 +13,7 @@ import {
 
 import { AppTooltip } from '@components'
 import { TransformPanel, ScriptingPanelContent } from '.'
+import { EntityTexturesPanel } from './EntityTexturesPanel'
 import type { TransformSendCommand } from './TransformPanel'
 import { useTraslate } from '@hooks'
 import type {
@@ -21,7 +22,7 @@ import type {
 	EntityPropertiesState,
 } from '../../../../../modal-electron/entityPropertiesTypes'
 
-type PropertiesTab = 'physics' | 'transform' | 'animations' | 'scripting'
+type PropertiesTab = 'transform' | 'animations' | 'textures' | 'scripting'
 
 export interface EntityPropertiesModalContentProps {
 	state: EntityPropertiesState
@@ -47,6 +48,10 @@ export function EntityPropertiesModalContent({
 		linkedBlueprintName,
 		scripts,
 		animationPlayingIds,
+		entityTextures,
+		entityTexturesLoaded,
+		activeGraphicsTextureTier,
+		showTexturesTab,
 	} = state
 
 	const [entityNameDraft, setEntityNameDraft] = useState('')
@@ -96,20 +101,44 @@ export function EntityPropertiesModalContent({
 	const hasEmbeddedModelClips =
 		is3D && (animations.some((a) => a.embedded_in_model) ?? false)
 
+	const showPhysicsSection = !isCollider && !isExecutionArea
+
 	const tabs = useMemo(() => {
 		const list: PropertiesTab[] = []
-		if (!isCollider && !isExecutionArea) list.push('physics')
 		list.push('transform')
 		if (!isCollider && !isExecutionArea && (is2D || hasEmbeddedModelClips)) {
 			list.push('animations')
 		}
+		if (showTexturesTab) list.push('textures')
 		if (!isCollider) list.push('scripting')
 		return list
-	}, [isCollider, isExecutionArea, is2D, hasEmbeddedModelClips])
+	}, [isCollider, isExecutionArea, is2D, hasEmbeddedModelClips, showTexturesTab])
 
 	useEffect(() => {
 		setActiveTab((prev) => (tabs.includes(prev) ? prev : (tabs[0] ?? 'transform')))
 	}, [selectedEntity?.id, tabs])
+
+	useEffect(() => {
+		if (!selectedEntity?.id) return
+		if (activeTab === 'textures') {
+			onAction({
+				action: 'send',
+				cmd: { cmd: 'set_entity_textures_preview_focus', id: selectedEntity.id, active: true },
+			})
+			onAction({ action: 'send', cmd: { cmd: 'list_entity_textures', id: selectedEntity.id } })
+		} else {
+			onAction({
+				action: 'send',
+				cmd: { cmd: 'set_entity_textures_preview_focus', id: selectedEntity.id, active: false },
+			})
+		}
+		return () => {
+			onAction({
+				action: 'send',
+				cmd: { cmd: 'set_entity_textures_preview_focus', id: selectedEntity.id, active: false },
+			})
+		}
+	}, [activeTab, selectedEntity?.id, onAction])
 
 	const openConfirm = (
 		message: React.ReactNode,
@@ -338,7 +367,7 @@ export function EntityPropertiesModalContent({
 
 	return (
 		<div>
-			<div className="entity-props-toolbar d-flex align-items-stretch gap-1 mb-2 flex-nowrap">
+			<div className="entity-props-toolbar d-flex align-items-stretch gap-1 mb-0 flex-nowrap">
 				<div className="input-group input-group-sm flex-grow-1 min-w-0">
 					<input
 						type="text"
@@ -349,15 +378,14 @@ export function EntityPropertiesModalContent({
 						disabled={!isEditingEntityName}
 					/>
 					{!isEditingEntityName ? (
-						<AppTooltip content={t('Edit name')} place="bottom">
-							<button
-								type="button"
-								className="btn btn-outline-secondary"
-								onClick={() => setIsEditingEntityName(true)}
-							>
-								<Pencil />
-							</button>
-						</AppTooltip>
+						<button
+							type="button"
+							className="btn btn-outline-secondary d-inline-flex align-items-center gap-1"
+							onClick={() => setIsEditingEntityName(true)}
+						>
+							<Pencil />
+							<span>{t('Edit')}</span>
+						</button>
 					) : (
 						<AppTooltip content={t('Save changes')} place="bottom">
 							<button
@@ -381,11 +409,25 @@ export function EntityPropertiesModalContent({
 						</AppTooltip>
 					)}
 				</div>
-				{showModelActions && is3D && !isFromBlueprint && (
-					<AppTooltip content={t('Replace model')} place="left">
+				{!isPlayer && (
+					<AppTooltip content={t('Delete')} place="left">
 						<button
 							type="button"
-							className="btn btn-sm btn-outline-info flex-shrink-0"
+							className="btn btn-sm btn-outline-danger flex-shrink-0"
+							onClick={handleRemove}
+						>
+							<Trash />
+						</button>
+					</AppTooltip>
+				)}
+			</div>
+
+			{showModelActions && (
+				<div className="entity-props-model-actions d-flex gap-2 mt-2 w-100">
+					{is3D && !isFromBlueprint && (
+						<button
+							type="button"
+							className="btn btn-sm btn-outline-info entity-props-model-action-btn d-inline-flex align-items-center justify-content-center gap-1"
 							onClick={() =>
 								onAction({
 									action: 'openNestedModal',
@@ -402,57 +444,120 @@ export function EntityPropertiesModalContent({
 							}
 						>
 							<BoxSeam />
+							<span className="text-truncate">{t('Replace model')}</span>
 						</button>
-					</AppTooltip>
-				)}
-				{showModelActions && (
-					isFromBlueprint ? (
-						<AppTooltip content={blueprintTooltip} place="left">
-							<span className="d-inline-flex flex-shrink-0">
-								<button
-									type="button"
-									className="btn btn-sm btn-outline-secondary"
-									disabled
-									aria-label={blueprintTooltip}
-								>
-									<CircleSquare />
-								</button>
-							</span>
-						</AppTooltip>
-					) : (
-						<AppTooltip content={t('Convert to Blueprint')} place="left">
-							<button
-								type="button"
-								className="btn btn-sm btn-outline-primary flex-shrink-0"
-								onClick={() =>
-									onAction({ action: 'openNestedModal', kind: 'convertBlueprint', payload: {} })
-								}
-							>
-								<CircleSquare />
-							</button>
-						</AppTooltip>
-					)
-				)}
-				{!isPlayer && (
-					<AppTooltip content={t('Delete')} place="left">
+					)}
+					{isFromBlueprint ? (
 						<button
 							type="button"
-							className="btn btn-sm btn-outline-danger flex-shrink-0"
-							onClick={handleRemove}
+							className="btn btn-sm btn-outline-secondary entity-props-model-action-btn d-inline-flex align-items-center justify-content-center gap-1"
+							disabled
+							aria-label={blueprintTooltip}
 						>
-							<Trash />
+							<CircleSquare />
+							<span className="text-truncate">{t('Based on blueprint')}</span>
 						</button>
-					</AppTooltip>
-				)}
-			</div>
+					) : (
+						<button
+							type="button"
+							className="btn btn-sm btn-outline-primary entity-props-model-action-btn d-inline-flex align-items-center justify-content-center gap-1"
+							onClick={() =>
+								onAction({ action: 'openNestedModal', kind: 'convertBlueprint', payload: {} })
+							}
+						>
+							<CircleSquare />
+							<span className="text-truncate">{t('Convert to Blueprint')}</span>
+						</button>
+					)}
+				</div>
+			)}
+
+			{showPhysicsSection && (
+				<div className="entity-props-physics">
+					{isEnvironment ? (
+						<div className="d-flex align-items-center gap-2">
+							<input
+								type="checkbox"
+								id="environment-collision"
+								className="form-check-input"
+								checked={physicsEnabled}
+								onChange={(e) => {
+									onAction({
+										action: 'setPhysics',
+										id: selectedEntity.id,
+										enabled: e.target.checked,
+										bodyType: 'static',
+									})
+								}}
+							/>
+							<label htmlFor="environment-collision" className="form-check-label text-light small mb-0">
+								{t('With collision')}
+							</label>
+						</div>
+					) : isPlayer ? (
+						<>
+							<div className="d-flex align-items-center gap-2">
+								<input type="checkbox" id="player-physics" className="form-check-input" checked disabled readOnly />
+								<label htmlFor="player-physics" className="form-check-label text-light small mb-0">
+									{t('Enable physics')}
+								</label>
+							</div>
+							<select
+								value="dynamic"
+								className="form-select form-select-sm bg-dark text-light border-secondary"
+								disabled
+							>
+								<option value="dynamic">{t('Dynamic (gravity)')}</option>
+							</select>
+						</>
+					) : (
+						<>
+							<div className="d-flex align-items-center gap-2">
+								<input
+									type="checkbox"
+									id="physics-enabled"
+									className="form-check-input"
+									checked={physicsEnabled}
+									onChange={(e) => {
+										const next = e.target.checked
+										const bodyType = next && isCharacter ? 'kinematic' : physicsType
+										onAction({
+											action: 'setPhysics',
+											id: selectedEntity.id,
+											enabled: next,
+											bodyType,
+										})
+									}}
+								/>
+								<label htmlFor="physics-enabled" className="form-check-label text-light small mb-0">
+									{t('Enable physics')}
+								</label>
+							</div>
+							{physicsEnabled && (
+								<select
+									value={physicsType}
+									className="form-select form-select-sm bg-dark text-light border-secondary"
+									onChange={(e) => {
+										onAction({
+											action: 'setPhysics',
+											id: selectedEntity.id,
+											enabled: true,
+											bodyType: e.target.value,
+										})
+									}}
+								>
+									<option value="dynamic">{t('Dynamic (gravity)')}</option>
+									<option value="static">{t('Static (does not move)')}</option>
+									<option value="kinematic">{t('Kinematic (by code)')}</option>
+								</select>
+							)}
+						</>
+					)}
+				</div>
+			)}
 
 			<Tab.Container activeKey={activeTab} onSelect={(k) => k && setActiveTab(k as PropertiesTab)}>
-				<Nav variant="tabs" className="entity-props-nav mb-2">
-					{tabs.includes('physics') && (
-						<Nav.Item>
-							<Nav.Link eventKey="physics">{t('Physics')}</Nav.Link>
-						</Nav.Item>
-					)}
+				<Nav variant="tabs" className="entity-props-nav entity-props-nav--spaced mb-3">
 					{tabs.includes('transform') && (
 						<Nav.Item>
 							<Nav.Link eventKey="transform">{t('Transformations')}</Nav.Link>
@@ -463,97 +568,18 @@ export function EntityPropertiesModalContent({
 							<Nav.Link eventKey="animations">{t('Animations')}</Nav.Link>
 						</Nav.Item>
 					)}
+					{tabs.includes('textures') && (
+						<Nav.Item>
+							<Nav.Link eventKey="textures">{t('Textures')}</Nav.Link>
+						</Nav.Item>
+					)}
 					{tabs.includes('scripting') && (
 						<Nav.Item>
 							<Nav.Link eventKey="scripting">{t('Program entity')}</Nav.Link>
 						</Nav.Item>
 					)}
 				</Nav>
-				<Tab.Content>
-					{tabs.includes('physics') && (
-						<Tab.Pane eventKey="physics" className="py-1 px-1">
-							{isEnvironment ? (
-								<div className="d-flex align-items-center gap-2">
-									<input
-										type="checkbox"
-										id="environment-collision"
-										className="form-check-input"
-										checked={physicsEnabled}
-										onChange={(e) => {
-											onAction({
-												action: 'setPhysics',
-												id: selectedEntity.id,
-												enabled: e.target.checked,
-												bodyType: 'static',
-											})
-										}}
-									/>
-									<label htmlFor="environment-collision" className="form-check-label text-light small mb-0">
-										{t('With collision')}
-									</label>
-								</div>
-							) : isPlayer ? (
-								<>
-									<div className="d-flex align-items-center gap-2">
-										<input type="checkbox" id="player-physics" className="form-check-input" checked disabled readOnly />
-										<label htmlFor="player-physics" className="form-check-label text-light small mb-0">
-											{t('Enable physics')}
-										</label>
-									</div>
-									<select
-										value="dynamic"
-										className="form-select form-select-sm bg-dark text-light border-secondary mt-2"
-										disabled
-									>
-										<option value="dynamic">{t('Dynamic (gravity)')}</option>
-									</select>
-									<p className="text-secondary small mb-0 mt-2">{t('Player physics managed by engine')}</p>
-								</>
-							) : (
-								<>
-									<div className="d-flex align-items-center gap-2">
-										<input
-											type="checkbox"
-											id="physics-enabled"
-											className="form-check-input"
-											checked={physicsEnabled}
-											onChange={(e) => {
-												const next = e.target.checked
-												const bodyType = next && isCharacter ? 'kinematic' : physicsType
-												onAction({
-													action: 'setPhysics',
-													id: selectedEntity.id,
-													enabled: next,
-													bodyType,
-												})
-											}}
-										/>
-										<label htmlFor="physics-enabled" className="form-check-label text-light small mb-0">
-											{t('Enable physics')}
-										</label>
-									</div>
-									{physicsEnabled && (
-										<select
-											value={physicsType}
-											className="form-select form-select-sm bg-dark text-light border-secondary mt-2"
-											onChange={(e) => {
-												onAction({
-													action: 'setPhysics',
-													id: selectedEntity.id,
-													enabled: true,
-													bodyType: e.target.value,
-												})
-											}}
-										>
-											<option value="dynamic">{t('Dynamic (gravity)')}</option>
-											<option value="static">{t('Static (does not move)')}</option>
-											<option value="kinematic">{t('Kinematic (by code)')}</option>
-										</select>
-									)}
-								</>
-							)}
-						</Tab.Pane>
-					)}
+				<Tab.Content className="entity-props-tab-content">
 					{tabs.includes('transform') && (
 						<Tab.Pane eventKey="transform" className="py-1 px-1">
 							<TransformPanel
@@ -638,6 +664,17 @@ export function EntityPropertiesModalContent({
 									})}
 								</div>
 							)}
+						</Tab.Pane>
+					)}
+					{tabs.includes('textures') && selectedEntity && (
+						<Tab.Pane eventKey="textures" className="py-1 px-1">
+							<EntityTexturesPanel
+								entityId={selectedEntity.id}
+								materials={entityTextures}
+								texturesLoaded={entityTexturesLoaded}
+								activeGraphicsTextureTier={activeGraphicsTextureTier}
+								onAction={onAction}
+							/>
 						</Tab.Pane>
 					)}
 					{tabs.includes('scripting') && (

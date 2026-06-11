@@ -52,6 +52,15 @@ impl ScriptEngine {
         self.profile
     }
 
+    pub fn sync_graphics_texture_tier_readback(&self, tier: &str) {
+        if self.profile != ScriptEngineProfile::Engine3d {
+            return;
+        }
+        if let Ok(mut guard) = self.api_ctx.graphics_texture_tier.lock() {
+            *guard = tier.to_string();
+        }
+    }
+
     pub fn attach_script(&mut self, entity_id: u32, path: &str, source: &str) -> ScriptResult<()> {
         let wrapped = wrap_user_source(self.profile, source);
         let ast = self

@@ -1103,6 +1103,7 @@ declare global {
         handlerId: string
         playerUiEditorState?: unknown
         entityPropertiesState?: unknown
+        models?: ModelInfo[]
       }) => void
       entityPropertiesAction: (handlerId: string, action: unknown) => Promise<void>
       onModalElectronEntityPropertiesActionRequest: (
@@ -1118,6 +1119,7 @@ declare global {
           handlerId: string
           playerUiEditorState?: unknown
           entityPropertiesState?: unknown
+          models?: ModelInfo[]
         }) => void,
       ) => () => void
       onModalElectronPlayerUiActionRequest: (

@@ -381,6 +381,7 @@ impl State {
                         log::warn!("[script] set_active_player_ui_by_name: {e}");
                     }
                 }
+                ScriptCmd::SetGraphicsTextureTier { .. } => {}
                 ScriptCmd::ClearActivePlayerUiScreen => {
                     self.clear_active_player_ui_screen();
                 }

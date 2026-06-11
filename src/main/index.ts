@@ -800,6 +800,7 @@ ipcMain.on('modal-electron:patch', (_event, data: {
   handlerId: string
   playerUiEditorState?: unknown
   entityPropertiesState?: unknown
+  models?: unknown
 }) => {
   sendPatchToModal(data)
 })

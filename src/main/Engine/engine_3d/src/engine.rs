@@ -248,6 +248,15 @@ pub struct State {
     pub(crate) fp_baseline_defer_frames: u8,
     /// Registro multi-escena del editor (baselines, dirty, cambio de escena activa).
     pub(crate) editor_scenes: crate::engine::editor_scenes::EditorSceneStore,
+    /// Asignación de texturas embebidas por material y nivel gráfico (editor).
+    pub(crate) entity_texture_lod: HashMap<EntityId, crate::config_3d::entity_textures::EntityTextureLodState>,
+    /// Nivel gráfico activo para texturas GLB (Rhai, nodos, juego). Por defecto Bajo.
+    pub(crate) graphics_texture_tier: crate::config_3d::entity_textures::TextureGraphicsTier,
+    /// Entidad con pestaña Texturas abierta en Propiedades: sin aura/gizmo de selección.
+    pub(crate) entity_textures_preview_entity: Option<EntityId>,
+    /// Catálogo de texturas embebidas por path (precarga Recursos).
+    pub(crate) glb_texture_catalog_cache:
+        std::collections::HashMap<String, Vec<crate::config_3d::entity_textures::MaterialTexturesCatalog>>,
     /// Límite de FPS del bucle (sincronizado con `set_target_fps`).
     pub(crate) target_fps: u64,
     /// Entidad icono del sol (luz direccional).

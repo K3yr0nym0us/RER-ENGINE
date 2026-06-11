@@ -9,6 +9,27 @@ use glam::Mat4;
 use super::{SceneUniforms, State, DEPTH_FORMAT};
 
 impl State {
+    fn editor_selection_flag(
+        &self,
+        entity_id: crate::ecs::EntityId,
+        is_selected: bool,
+        is_hovered: bool,
+    ) -> f32 {
+        if self.preview_playing {
+            return 0.0;
+        }
+        if self.entity_textures_preview_entity == Some(entity_id) && is_selected {
+            return 0.0;
+        }
+        if is_selected {
+            1.0
+        } else if is_hovered {
+            2.0
+        } else {
+            0.0
+        }
+    }
+
     pub fn resize(&mut self, new_size: PhysicalSize<u32>) {
         if new_size.width == 0 || new_size.height == 0 {
             return;
@@ -175,15 +196,8 @@ impl State {
             }
             let is_selected =
                 self.selected_entity == Some(*entity_id) || self.selected_entities.contains(entity_id);
-            let flag = if self.preview_playing {
-                0.0_f32
-            } else if is_selected {
-                1.0_f32
-            } else if self.hovered_entity == Some(*entity_id) {
-                2.0_f32
-            } else {
-                0.0_f32
-            };
+            let is_hovered = self.hovered_entity == Some(*entity_id);
+            let flag = self.editor_selection_flag(*entity_id, is_selected, is_hovered);
             let layer = self.texture_layer_for(*tex_idx);
             let mut inst = crate::mesh::InstanceData::new(*model_matrix, flag, layer);
             if self.is_plane_wall_entity(*entity_id) {
@@ -684,7 +698,10 @@ impl State {
         draw_calls += self.draw_player_ui_object_draw_overlay(&mut enc, &view);
         draw_calls += self.draw_player_ui_text_boxes(&mut enc, &view);
 
-        if !self.preview_playing && !self.player_ui_edit_active {
+        if !self.preview_playing
+            && !self.player_ui_edit_active
+            && self.entity_textures_preview_entity.is_none()
+        {
             if let Some(origin) = self.selection_center().filter(|_| self.pivot_edit_mode.is_none())
             {
                 let aspect = self.size.width as f32 / self.size.height as f32;
@@ -765,20 +782,16 @@ impl State {
             }
             let is_selected = self.selected_entity == Some(id)
                 || self.selected_entities.contains(&id);
-            let flag = if self.preview_playing {
-                0.0_f32
-            } else if is_selected {
-                1.0_f32
-            } else if self.hovered_entity == Some(id) {
-                2.0_f32
-            } else {
-                0.0_f32
-            };
-            let layer = binding.tex_layer;
-            let inst = crate::mesh::InstanceData::new(t.to_matrix(), flag, layer);
-            let skinned_inst = crate::mesh::SkinnedInstanceData::from_instance(&inst);
-            for &gpu_idx in &binding.part_gpu_indices {
-                out.push((gpu_idx, skinned_inst));
+            let is_hovered = self.hovered_entity == Some(id);
+            let flag = self.editor_selection_flag(id, is_selected, is_hovered);
+            for (pi, &gpu_idx) in binding.part_gpu_indices.iter().enumerate() {
+                let layer = binding
+                    .part_tex_layers
+                    .get(pi)
+                    .copied()
+                    .unwrap_or(binding.tex_layer);
+                let inst = crate::mesh::InstanceData::new(t.to_matrix(), flag, layer);
+                out.push((gpu_idx, crate::mesh::SkinnedInstanceData::from_instance(&inst)));
             }
         }
         out

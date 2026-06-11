@@ -1,0 +1,216 @@
+# Animaciones (sprite 2D y clips GLTF 3D)
+#
+# Dos pipelines: hojas de sprites por entidad (2D y fallback 3D) y clips
+# embebidos con GPU skinning (solo modelos GLB/GLTF con rig). El motor almacena
+# definiciones y reproduce en play; el editor sincroniza vía set_animation.
+#
+# Relacionado con:
+#   - docs/Entities_Model_2D.yaml
+#   - docs/Entities_Model_3D.yaml
+#   - docs/RHAI_API.yaml              (play_animation, engine_3d clips)
+#   - docs/IPC_Protocol.yaml
+#   - docs/Save_Proyect_Model.yaml    (frames[], audio_path)
+
+version: 1
+updated: 2026-06-10
+
+principle:
+  storage: |
+    set_animation registra la definición en el motor (frames o metadatos).
+    play_animation reproduce por nombre sin reenviar frames cada vez.
+  embedded_3d_priority: |
+    Al enlazar un GLB con skinning, el motor elimina animaciones sprite 2D
+    de esa entidad y sustituye por clips embebidos (embedded_in_model: true).
+  blueprint_sync: |
+    updateEntityAnimations propaga a todas las instancias del mismo blueprint_id.
+
+# ---------------------------------------------------------------------------
+# Modos de animación
+# ---------------------------------------------------------------------------
+
+modes:
+  sprite_2d:
+    applies_to: Proyectos 2D; entidades character/scenario con PNG/sheet
+    visual: Cambio de frame UV + pivot + logical_w/h cada tick
+    flip: facing_right + flip_horizontal → espejo horizontal al mover
+  sprite_on_3d_entity:
+    applies_to: Entidades 3D sin rig GLB (raro; mismo pipeline que 2D)
+    ui: AnimationsPanel visible solo si is2D o hay clips embebidos
+  gltf_clips_3d:
+    applies_to: Modelos .glb/.gltf con joints y clips
+    visual: GPU skinning (model_animation.rs)
+    metadata: embedded_in_model: true en manifest y entityMeta
+    binding: try_bind_model_animations al cargar/reemplazar modelo
+
+# ---------------------------------------------------------------------------
+# Estructura de una animación sprite (set_animation)
+# ---------------------------------------------------------------------------
+
+sprite_animation_fields:
+  name: string
+  fps: u32
+  loop: boolean
+  is_default: boolean          # Vuelve a esta al terminar una no-loop
+  is_cancelable: boolean       # default true; si false, PlayAnimation no interrumpe
+  facing_right: boolean        # Orientación de autoría (editor → flip_horizontal motor)
+  logical_w: u32                 # Bounding box lógico fijo (píxeles mundo)
+  logical_h: u32
+  audio_path: optional string    # Referencia a sounds[]; PCM pre-decodificado en SetAnimation
+  scripts: AnimScriptData[]    # Rhai activos solo mientras la animación corre
+  frames:
+    - path: string             # Sprite o sheet
+      pivot_x: number          # Ancla (0,0 = sup-izq del frame)
+      pivot_y: number
+      src_x: optional          # Recorte dentro del sheet
+      src_y: optional
+      src_w: optional
+      src_h: optional
+  editor_only:
+    selection_mode: cell | box
+    grid_size: optional
+    cell_offset_x / cell_offset_y: optional
+
+logical_size_resolution:
+  description: |
+    Si logical_w/h faltan en set_animation, el motor normaliza con los frames
+    y animaciones existentes de la entidad.
+  event: animation_logical_resolved { id, name, logical_w, logical_h }
+
+# ---------------------------------------------------------------------------
+# Clips GLTF 3D
+# ---------------------------------------------------------------------------
+
+gltf_clips:
+  discovery: list_gltf_clip_infos / load_model_asset con skinning
+  event: model_clips_ready
+    payload:
+      id: entity_id
+      path: model_path
+      clips: [{ name, duration_s, fps }]
+  save_shape:
+    name: clip name del GLB
+    fps: from clip
+    loop: boolean
+    embedded_in_model: true
+    frames: []                 # Vacío; el motor no usa frames sprite
+  playback: play_model_clip → update_skinned_animations cada frame
+  default: set_default_model_clip / set_default_animation (mismo IPC)
+  player_normalize: |
+    Jugador FP: altura normalizada a PLAY_CHARACTER_BODY_HEIGHT al cargar asset.
+
+# ---------------------------------------------------------------------------
+# Comandos IPC
+# ---------------------------------------------------------------------------
+
+commands:
+  set_animation:
+    description: Registrar o actualizar definición (sprite o metadatos)
+    side_effects:
+      - Pre-decode audio PCM si audio_path presente
+      - Attach/detach scripts de animación al reproducir
+  remove_animation:
+    params: { id, name }
+  set_default_animation:
+    params: { id, name }       # name vacío = sin default
+  play_animation:
+    params: { id, name, loop? }
+    behavior_2d: Avanza frames según fps; respeta is_cancelable
+    behavior_3d_embedded: play_model_clip si hay binding GLTF; si no, sprite path
+  play_animation_frame:
+    description: Frame único inmediato (preview editor, restore)
+    params: id, path, pivot_*, logical_w/h, src_*
+  restore_animation_frame:
+    description: Vuelve al sprite estático de la entidad
+  stop_animation:
+    effect: Detiene activa; puede disparar fallback a default
+
+events:
+  model_clips_ready: Catálogo clips GLTF tras cargar modelo
+  animation_logical_resolved: Tamaño lógico normalizado (sprite)
+  animation_finished: Fin de animación no-loop (editor await sendAsync)
+  entity_model_replaced: Re-bind clips o limpiar animaciones
+
+# ---------------------------------------------------------------------------
+# UI del editor
+# ---------------------------------------------------------------------------
+
+ui:
+  panel: AnimationsPanel.tsx
+  visibility:
+    2d: Siempre en propiedades (salvo collider / execution_area)
+    3d: Solo si animations.some(embedded_in_model) o proyecto 2D
+  create_2d:
+    modal: CreateEntityFromSpriteModalBody
+    flow: Elegir sprite → configurar celdas/box → set_animation vía syncAnimations
+  edit_2d:
+    modal: SpritePreviewModalBody (grid, pivot, audio, scripts Rhai por anim)
+  preview:
+    2d: play_animation o play_animation_frame en viewport
+    3d_embedded: play_animation (clip name); toggle stop si ya reproduce
+  pivot_edit:
+    ipc: set_pivot_edit_mode / cancel_pivot_edit_mode
+    event: pivot_selected
+  logical_area_preview:
+    ipc: set_logical_area_mode / cancel_logical_area_mode
+
+sync_to_motor:
+  hook: updateEntityAnimations en createEngineActions.ts
+  per_animation: set_animation con todos los campos
+  default: set_default_animation tras el bucle
+  blueprint: Propaga a instancias del blueprint
+
+runtime_2d:
+  module: engine_2d/src/engine/animations.rs
+  tick: update_animations — avance por fps con corrección de drift
+  on_finish_non_loop: start_animation_deferred (default) o restore sprite
+  flip: resolve_animation_flip (facing_right vs flip_horizontal de autoría)
+  scripts: script_engine.attach_script con path $anim$::{name}::{script}
+
+runtime_3d:
+  module: engine_3d/src/config_3d/model_animation.rs
+  tick: update_skinned_animations (dt, loop, joint matrices)
+  gpu: skinned_gpu_meshes + joint_buffer por pieza del asset
+  stop: AnimationFinished event
+
+# ---------------------------------------------------------------------------
+# Persistencia en .save
+# ---------------------------------------------------------------------------
+
+persistence:
+  per_entity:
+    animations[]:
+      - Campos sprite completos (frames, logical_w/h, audio_path, scripts, …)
+      - embedded_in_model: true para clips GLTF (sin frames)
+  blueprint:
+    animations: heredadas por instancias; set_animation en carga
+  audio:
+    rule: audio_path referencia sounds[]; no duplicar archivo en animación
+
+rhai:
+  2d_primary:
+    - engine.play_animation(id, name)
+    - engine.set_default_animation(id, name)
+    - engine.stop_animation(id)
+  3d_note: |
+    play_animation invoca clip GLTF si la entidad tiene binding; el jugador FP
+    usa animación visual del modelo pero movimiento vía play_controller.
+  animation_scripts: |
+    Scripts en anim.scripts se adjuntan al reproducir y se desadjuntan al parar.
+
+key_files:
+  motor_2d_anim: src/main/Engine/engine_2d/src/engine/animations.rs
+  motor_2d_types: src/main/Engine/engine_2d/src/engine/types.rs
+  motor_3d_anim: src/main/Engine/engine_3d/src/config_3d/model_animation.rs
+  motor_3d_asset: src/main/Engine/engine_3d/src/config_3d/model_asset.rs
+  ipc: engine_2d|3d/src/ipc.rs (SetAnimation, PlayAnimation, …)
+  ui: src/renderer/src/pages/EngineView/components/sidebar/PropertiesAccordion/AnimationsPanel.tsx
+  sync: src/renderer/src/context/useContextEngine/hooks/createEngineActions.ts
+  event_handler: src/renderer/src/context/useContextEngine/hooks/createEngineEventHandler.ts
+  restore_cmd: src/renderer/src/context/useContextEngine/hooks/applyPendingRestoreToEngine.ts
+
+do_not:
+  - Reenviar todos los frames en cada play_animation (usar nombre)
+  - Crear animaciones sprite en 3D ignorando model_clips_ready del GLB
+  - Asumir que AnimationsPanel en 3D permite crear hojas sprite (solo clips embebidos o 2D)
+  - Interrumpir animación con is_cancelable=false desde otro PlayAnimation
+  - Olvidar set_default_animation tras editar lista de animaciones en UI

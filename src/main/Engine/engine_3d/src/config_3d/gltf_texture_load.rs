@@ -3,7 +3,7 @@
 // Por defecto solo se decodifica la imagen de **menor resolución** del archivo.
 // Un módulo de calidad futuro podrá usar `GltfTextureLoadMode::AllEmbedded`.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use gltf::image::Source;
@@ -72,7 +72,30 @@ pub fn peek_encoded_dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
     None
 }
 
-fn gltf_image_encoded_bytes(
+/// Texto para emparejar imágenes embebidas con materiales (nombre glTF + URI).
+pub(crate) fn gltf_image_search_label(image: gltf::Image) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    if let Some(name) = image.name() {
+        let trimmed = name.trim();
+        if !trimmed.is_empty() {
+            parts.push(trimmed.to_lowercase());
+        }
+    }
+    match image.source() {
+        Source::Uri { uri, .. } => {
+            let stem = Path::new(uri)
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or(uri);
+            parts.push(stem.to_lowercase());
+            parts.push(uri.to_lowercase());
+        }
+        _ => {}
+    }
+    parts.join(" ")
+}
+
+pub(crate) fn gltf_image_encoded_bytes(
     image: gltf::Image,
     buffers: &[gltf::buffer::Data],
     base: Option<&Path>,
@@ -102,17 +125,16 @@ fn base_color_image_indices(doc: &gltf::Document) -> HashSet<usize> {
     out
 }
 
-/// Índice de la imagen embebida con menor área (prioriza texturas `baseColor` del material).
-pub fn pick_smallest_embedded_image_index(
+fn pick_smallest_among_image_indices(
     doc: &gltf::Document,
     buffers: &[gltf::buffer::Data],
     base: Option<&Path>,
+    allowed: &HashSet<usize>,
 ) -> Option<usize> {
-    let base_color = base_color_image_indices(doc);
     let mut best: Option<(usize, u64)> = None;
     for image in doc.images() {
         let idx = image.index();
-        if !base_color.is_empty() && !base_color.contains(&idx) {
+        if !allowed.is_empty() && !allowed.contains(&idx) {
             continue;
         }
         let Ok(bytes) = gltf_image_encoded_bytes(image, buffers, base) else {
@@ -126,25 +148,178 @@ pub fn pick_smallest_embedded_image_index(
             best = Some((idx, area));
         }
     }
-    if best.is_some() {
-        return best.map(|(i, _)| i);
+    best.map(|(i, _)| i)
+}
+
+/// Índice de la imagen embebida con menor área (prioriza texturas `baseColor` del material).
+pub fn pick_smallest_embedded_image_index(
+    doc: &gltf::Document,
+    buffers: &[gltf::buffer::Data],
+    base: Option<&Path>,
+) -> Option<usize> {
+    let base_color = base_color_image_indices(doc);
+    if let Some(idx) = pick_smallest_among_image_indices(doc, buffers, base, &base_color) {
+        return Some(idx);
     }
-    // Sin materiales PBR baseColor: cualquier imagen embebida.
-    let mut fallback: Option<(usize, u64)> = None;
-    for image in doc.images() {
-        let idx = image.index();
-        let Ok(bytes) = gltf_image_encoded_bytes(image, buffers, base) else {
-            continue;
-        };
-        let Some((w, h)) = peek_encoded_dimensions(&bytes) else {
-            continue;
-        };
-        let area = u64::from(w) * u64::from(h);
-        if fallback.is_none_or(|(_, a)| area < a) {
-            fallback = Some((idx, area));
+    pick_smallest_among_image_indices(doc, buffers, base, &HashSet::new())
+}
+
+fn primary_material_token(mat_name: &str) -> Option<String> {
+    let lower = mat_name.trim().to_lowercase();
+    if lower.is_empty() {
+        return None;
+    }
+    if lower.starts_with("material") {
+        return Some(lower);
+    }
+    lower
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|t| t.len() >= 3)
+        .max_by_key(|t| t.len())
+        .map(|t| t.to_string())
+}
+
+/// `body` coincide con `body_diffuse` pero no con `bottom`.
+pub(crate) fn token_matches_label(token: &str, label: &str) -> bool {
+    if token.is_empty() || label.is_empty() {
+        return false;
+    }
+    if label == token {
+        return true;
+    }
+    if label.starts_with(token) {
+        let rest = &label[token.len()..];
+        if rest.is_empty() || rest.starts_with(|c: char| !c.is_alphanumeric()) {
+            return true;
         }
     }
-    fallback.map(|(i, _)| i)
+    for pat in [
+        format!("{token}_"),
+        format!("_{token}_"),
+        format!("_{token}"),
+        format!("-{token}-"),
+        format!("-{token}"),
+    ] {
+        if label.contains(pat.as_str()) {
+            return true;
+        }
+    }
+    false
+}
+
+pub(crate) fn material_names_related(a: &str, b: &str) -> bool {
+    let a = a.trim().to_lowercase();
+    let b = b.trim().to_lowercase();
+    if a.is_empty() || b.is_empty() {
+        return false;
+    }
+    if a == b {
+        return true;
+    }
+    match (primary_material_token(&a), primary_material_token(&b)) {
+        (Some(ta), Some(tb)) if ta == tb => true,
+        (Some(ta), _) => token_matches_label(&ta, &b),
+        (_, Some(tb)) => token_matches_label(&tb, &a),
+        _ => false,
+    }
+}
+
+pub(crate) fn material_name_matches_image_label(mat_name: &str, label: &str) -> bool {
+    let label = label.trim().to_lowercase();
+    if label.is_empty() {
+        return false;
+    }
+    let mat = mat_name.trim().to_lowercase();
+    if !mat.is_empty() && token_matches_label(&mat, &label) {
+        return true;
+    }
+    if let Some(token) = primary_material_token(mat_name) {
+        return token_matches_label(&token, &label);
+    }
+    false
+}
+
+/// Índices de imagen embebida que pertenecen a un material (catálogo UI + apply GPU).
+pub(crate) fn discover_material_image_indices(
+    doc: &gltf::Document,
+    material_index: usize,
+    mat_name: &str,
+    image_labels: &HashMap<u32, String>,
+    all_variants: &[(u32, u32, u32)],
+    all_by_image_index: &[(u32, u32, u32)],
+) -> HashSet<u32> {
+    let material_count = doc.materials().len();
+    let mut indices: HashSet<u32> = HashSet::new();
+
+    if let Some(mat) = doc.materials().nth(material_index) {
+        if let Some(info) = mat.pbr_metallic_roughness().base_color_texture() {
+            indices.insert(info.texture().source().index() as u32);
+        }
+    }
+
+    for (other_idx, other) in doc.materials().enumerate() {
+        let other_name = other.name().unwrap_or("");
+        if other_idx != material_index && !material_names_related(mat_name, other_name) {
+            continue;
+        }
+        if let Some(info) = other.pbr_metallic_roughness().base_color_texture() {
+            indices.insert(info.texture().source().index() as u32);
+        }
+    }
+
+    for &(idx, _, _) in all_variants {
+        if let Some(label) = image_labels.get(&idx) {
+            if material_name_matches_image_label(mat_name, label) {
+                indices.insert(idx);
+            }
+        }
+    }
+
+    if indices.len() <= 1 && material_count >= 2 && all_by_image_index.len() >= material_count * 2 {
+        let per_mat = all_by_image_index.len() / material_count;
+        if per_mat >= 2 {
+            let start = material_index * per_mat;
+            let end = start + per_mat;
+            if end <= all_by_image_index.len() {
+                for &(idx, _, _) in &all_by_image_index[start..end] {
+                    indices.insert(idx);
+                }
+            }
+        }
+    }
+
+    indices
+}
+
+/// Menor imagen embebida asociada al `baseColor` de un material concreto.
+pub fn pick_smallest_embedded_for_material(
+    doc: &gltf::Document,
+    buffers: &[gltf::buffer::Data],
+    base: Option<&Path>,
+    material_index: usize,
+) -> Option<usize> {
+    let mat = doc.materials().nth(material_index)?;
+    let mat_indices: HashSet<usize> = mat
+        .pbr_metallic_roughness()
+        .base_color_texture()
+        .map(|info| info.texture().source().index())
+        .into_iter()
+        .collect();
+    if mat_indices.is_empty() {
+        return None;
+    }
+    pick_smallest_among_image_indices(doc, buffers, base, &mat_indices)
+        .or_else(|| mat_indices.iter().copied().next())
+}
+
+/// Albedo por defecto del editor: material 0 (variante más pequeña), no la menor global del GLB.
+pub fn pick_editor_mesh_albedo_image_index(
+    doc: &gltf::Document,
+    buffers: &[gltf::buffer::Data],
+    base: Option<&Path>,
+) -> Option<usize> {
+    pick_smallest_embedded_for_material(doc, buffers, base, 0)
+        .or_else(|| pick_smallest_embedded_image_index(doc, buffers, base))
 }
 
 pub fn decode_gltf_image_at_index(
@@ -159,6 +334,24 @@ pub fn decode_gltf_image_at_index(
         .ok_or_else(|| format!("imagen glTF índice {index} inexistente"))?;
     gltf::image::Data::from_source(image.source(), base, buffers)
         .map_err(|e| format!("error decodificando imagen {index}: {e}"))
+}
+
+/// Decodifica la variante embebida más pequeña del `baseColor` de cada material.
+pub fn import_material_smallest_albedos(
+    doc: &gltf::Document,
+    buffers: &[gltf::buffer::Data],
+    base: Option<&Path>,
+) -> HashMap<usize, gltf::image::Data> {
+    let mut out = HashMap::new();
+    for (mi, _) in doc.materials().enumerate() {
+        let Some(img_idx) = pick_smallest_embedded_for_material(doc, buffers, base, mi) else {
+            continue;
+        };
+        if let Ok(data) = decode_gltf_image_at_index(doc, buffers, base, img_idx) {
+            out.insert(mi, data);
+        }
+    }
+    out
 }
 
 pub fn import_gltf_images(
@@ -178,14 +371,26 @@ pub fn import_gltf_images(
             if count == 0 {
                 return Ok((Vec::new(), None));
             }
-            let pick = pick_smallest_embedded_image_index(doc, buffers, base).unwrap_or(0);
-            let mesh_albedo = decode_gltf_image_at_index(doc, buffers, base, pick)?;
-            log::info!(
-                "[gltf] texturas: {count} embebida/s, usando la menor (#{pick}, {}x{})",
-                mesh_albedo.width,
-                mesh_albedo.height
-            );
-            Ok((Vec::new(), Some(mesh_albedo)))
+            let material_albedos = import_material_smallest_albedos(doc, buffers, base);
+            let mesh_albedo = material_albedos
+                .get(&0)
+                .cloned()
+                .or_else(|| {
+                    pick_editor_mesh_albedo_image_index(doc, buffers, base)
+                        .and_then(|pick| decode_gltf_image_at_index(doc, buffers, base, pick).ok())
+                });
+            if let Some(ref img) = mesh_albedo {
+                log::info!(
+                    "[gltf] texturas: {count} embebida/s, {} material/es con variante menor",
+                    material_albedos.len().max(1)
+                );
+                log::debug!(
+                    "[gltf] albedo fallback mat0: {}x{}",
+                    img.width,
+                    img.height
+                );
+            }
+            Ok((Vec::new(), mesh_albedo))
         }
     }
 }

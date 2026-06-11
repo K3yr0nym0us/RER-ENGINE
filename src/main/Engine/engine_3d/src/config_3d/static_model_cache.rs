@@ -30,6 +30,7 @@ use rer_engine_shared::editor_defaults::entity_label_for_spawn;
 pub(crate) struct CachedStaticModelPart {
     pub mesh_idx: usize,
     pub tex_idx: usize,
+    pub material_index: u32,
     pub local_bounds: ([f32; 3], [f32; 3]),
     pub forward_xz: glam::Vec2,
 }
@@ -362,6 +363,7 @@ impl State {
                 CachedStaticModelPart {
                     mesh_idx,
                     tex_idx,
+                    material_index: part.material_index,
                     local_bounds: part.local_bounds,
                     forward_xz: part.forward_xz,
                 }
@@ -416,6 +418,9 @@ impl State {
         if let Some(asset) = pending.anim_asset {
             self.model_assets.insert(path.clone(), asset);
         }
+        if crate::config_3d::is_gltf_model_path(&path) {
+            self.prewarm_glb_texture_catalog(&path);
+        }
 
         let name = self
             .model_store_display_name(&path);
@@ -465,7 +470,7 @@ impl State {
                         model_asset::load_model_asset_from_gltf(&file, None)
                     {
                         self.model_assets
-                            .insert(canonical_path.to_string(), asset);
+                            .insert(canonical_path.to_string(), Arc::clone(&asset));
                     }
                 }
                 load_gltf_cpu_from_file(&file, Some(PLAY_CHARACTER_BODY_HEIGHT))
@@ -513,6 +518,7 @@ impl State {
         if self.static_model_cache.contains_key(&path) {
             self.model_preload_inflight.remove(&path);
             self.ensure_play_character_model_cache_warmed(&path);
+            self.prewarm_glb_texture_catalog(&path);
             send_event(&EngineEvent::ModelAssetLoaded {
                 path: path.clone(),
                 name: self.model_store_display_name(&path),
@@ -561,6 +567,7 @@ impl State {
                 pending.uploaded.push(CachedStaticModelPart {
                     mesh_idx,
                     tex_idx,
+                    material_index: part.material_index,
                     local_bounds: part.local_bounds,
                     forward_xz: part.forward_xz,
                 });

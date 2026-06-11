@@ -908,6 +908,10 @@ impl State {
             restoring_save_manifest: false,
             fp_baseline_defer_frames: 0,
             editor_scenes: crate::engine::editor_scenes::EditorSceneStore::new(),
+            entity_texture_lod: HashMap::new(),
+            graphics_texture_tier: crate::config_3d::entity_textures::TextureGraphicsTier::Low,
+            entity_textures_preview_entity: None,
+            glb_texture_catalog_cache: HashMap::new(),
         };
         Ok(state)
     }

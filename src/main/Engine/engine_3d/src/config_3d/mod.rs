@@ -21,6 +21,7 @@ pub(crate) mod editor_camera;
 pub(crate) mod preview_editor;
 pub(crate) mod play_controller;
 pub(crate) mod fbx_facing;
+pub(crate) mod entity_textures;
 pub(crate) mod gltf_texture_load;
 pub(crate) mod mesh_3d;
 pub(crate) mod model_asset;
@@ -641,6 +642,7 @@ impl State {
                     vec![crate::config_3d::static_model_cache::CachedStaticModelPart {
                         mesh_idx,
                         tex_idx,
+                        material_index: 0,
                         local_bounds: part.local_bounds,
                         forward_xz: part.forward_xz,
                     }],
@@ -729,6 +731,7 @@ impl State {
                     vec![crate::config_3d::static_model_cache::CachedStaticModelPart {
                         mesh_idx,
                         tex_idx,
+                        material_index: 0,
                         local_bounds: part.local_bounds,
                         forward_xz: part.forward_xz,
                     }],

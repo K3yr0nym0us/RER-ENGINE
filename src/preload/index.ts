@@ -171,6 +171,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     handlerId: string
     playerUiEditorState?: unknown
     entityPropertiesState?: unknown
+    models?: import('../shared-types/types').ModelInfo[]
   }): void => {
     ipcRenderer.send('modal-electron:patch', data)
   },
@@ -188,6 +189,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       handlerId: string
       playerUiEditorState?: unknown
       entityPropertiesState?: unknown
+      models?: import('../shared-types/types').ModelInfo[]
     }) => void,
   ): (() => void) => {
     const listener = (
@@ -196,6 +198,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         handlerId: string
         playerUiEditorState?: unknown
         entityPropertiesState?: unknown
+        models?: import('../shared-types/types').ModelInfo[]
       },
     ) => {
       cb(data)

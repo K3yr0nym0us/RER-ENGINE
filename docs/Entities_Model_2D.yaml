@@ -1,0 +1,110 @@
+# Entidades 2D (proyectos engine_2d)
+#
+# Mundo en plano XY; sprites PNG/GIF; física Rapier 2D; cámara ortográfica.
+# Simétrico en espíritu a docs/Entities_Model_3D.yaml pero con tipos distintos.
+#
+# Relacionado con:
+#   - docs/Save_Proyect_Model.yaml   (sprites, sounds, backgrounds)
+#   - docs/Entities_Model_3D_extras.yaml (notas 2D en collision_by_entity_type)
+#   - docs/RHAI_API.yaml             (gravity_and_controls_2d)
+
+ENTITY_TYPES:
+  scenario:   category scenario   # Capas de fondo / escenario (sprite PNG)
+  character:  category character  # Personajes jugables o NPC (sprite PNG)
+  collider:   kind collider      # Muro físico (cuadrilátero 4 puntos XY)
+  execution_area: kind execution_area  # Trigger sin colisión (4 puntos XY)
+  # El jugador ([Player]) no se serializa como entidad normal en entities[]
+
+common:
+  id: number                    # Generado por el motor
+  kind: scenario | character | collider | execution_area
+  name: string                  # Editable; generado por defecto
+  path: string                  # Ruta al sprite en store o marcador [Colisionador] / [ExecutionArea]
+  position: [number, number, number]  # Z suele ser 0; mundo XY
+  rotation: [number, number, number, number]  # Quaternion (plano XY)
+  scale: [number, number, number]
+  physics_type: dynamic | static | kinematic | undefined
+  physics_enabled: boolean
+  animations: optional          # Sprite sheets por entidad (frames, pivot, logical_w/h)
+  scripts: optional             # Rhai por entidad
+  blueprint_id: optional string # Instancia de blueprint 2D
+  points: optional [[x,y]; 4]   # Solo collider / execution_area (esquinas en mundo)
+
+Blueprints:
+  id: string
+  name: string
+  kind: scenario | character
+  path: string                  # Sprite del blueprint
+  scale: [number, number, number]
+  animations: optional
+  scripts: optional
+  note: |
+    Quick Build previsualiza el sprite del blueprint como ghost;
+  set_active_tool con preview_path / preview_kind / preview_scale.
+
+animations_2d:
+  fields:
+    name: string
+    fps: number
+    loop: boolean
+    logical_w: number           # Bounding box lógico fijo
+    logical_h: number
+    facing_right: boolean       # Volteo horizontal al mover
+    frames[]:
+      path: string              # Mismo sprite sheet o frame suelto
+      pivot_x: number           # Ancla en píxeles (0,0 = sup-izq)
+      pivot_y: number
+      src_x: optional           # Recorte dentro del sheet
+      src_y: optional
+      src_w: optional
+      src_h: optional
+    selection_mode: cell | box  # Herramienta de creación en editor
+    grid_size: optional
+    audio_path: optional        # Referencia a sounds[] del manifest
+  runtime:
+    play_cmd: play_animation_frame
+    restore_cmd: restore_animation_frame
+
+world:
+  camera2d:
+    x: number
+    y: number
+    half_h: number              # Zoom ortográfico
+  worldWidth: number
+  worldHeight: number
+  gravity: number               # Eje Y negativo = abajo
+  gridVisible: boolean
+  gridCellSize: number
+  backgroundPath: optional      # Fondo de mundo (backgrounds library)
+
+collision:
+  collider:
+    motor: Rapier cubo estático desde 4 puntos en XY
+    tool: draw_collider (Tools accordion)
+    restore: create_collider_from_points
+  execution_area:
+    motor: Trigger Rhai on_trigger_enter; sin cuerpo físico
+    tool: draw_execution_area
+  character_physics:
+    motor: Kinematic character controller 2D (gravedad + suelo)
+
+controls:
+  scope: personajes character (no scenario)
+  persistence: controls[] en manifest por character entity id
+  runtime: set_control_bindings + run_control_script en preview
+  rhai: on_press / on_keep con control_key; move_control / jump_control
+
+differences_from_3d:
+  - Sin modelos GLB; sprites y sprite sheets
+  - Sin multi-escena EditorSceneStore (una escena activa "2D" o scratch)
+  - Sin entity_textures / LOD
+  - Colisionadores dibujados en plano, no mallas 3D
+  - Cámara 2D ortográfica en lugar de FPS / orbital 3D
+
+key_files:
+  save_meta: src/main/Engine/engine_2d/src/entity_save_meta.rs
+  markers: src/main/Engine/engine_2d/src/config_2d/ (ScenarioMarker, CharacterMarker)
+  physics: src/main/Engine/engine_2d/src/physics_2d.rs
+  animations: src/main/Engine/engine_2d/src/engine/animations.rs
+  import: src/main/Engine/engine_2d/src/engine/import_scene.rs
+  renderer_types: src/renderer/src/context/useContextEngine/types.ts

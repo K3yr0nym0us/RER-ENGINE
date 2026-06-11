@@ -285,6 +285,8 @@ export interface EngineState {
 	backgrounds: BackgroundInfo[]
 	debugMetrics: DebugMetrics | null
 	debugMode: boolean
+	/** Nivel gráfico activo de texturas GLB (`graphics_texture_tier_changed`). */
+	graphicsTextureTier: 'low' | 'medium' | 'high' | 'ultra'
 	blueprints: BluePrintEntry[]
 	multiSelectedIds: number[]
 	/** Incrementa al aplicar metadatos 2D enviados por el motor (`project_loaded_2d`). */
@@ -409,6 +411,7 @@ export type EngineAction =
 	| { type: 'REMOVE_MODEL_INFO'; payload: string }
 	| { type: 'SET_MODELS'; payload: ModelInfo[] }
 	| { type: 'SET_DEBUG_MODE'; payload: boolean }
+	| { type: 'SET_GRAPHICS_TEXTURE_TIER'; payload: 'low' | 'medium' | 'high' | 'ultra' }
 	| { type: 'SET_DEBUG_METRICS'; payload: DebugMetrics }
 	| { type: 'ADD_BLUEPRINT'; payload: BluePrintEntry }
 	| { type: 'SET_BLUEPRINTS'; payload: BluePrintEntry[] }
@@ -468,6 +471,7 @@ export const initialState: EngineState = {
 	backgrounds: [],
 	debugMetrics: null,
 	debugMode: false,
+	graphicsTextureTier: 'low',
 	blueprints: [],
 	multiSelectedIds: [],
 	projectLoaded2dSeq: 0,
@@ -946,6 +950,10 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 			return { ...prevState, models, loadedModelsInfo: nextMap };
 		},
 		SET_DEBUG_MODE: (prevState, nextAction) => ({ ...prevState, debugMode: nextAction.payload }),
+		SET_GRAPHICS_TEXTURE_TIER: (prevState, nextAction) => ({
+			...prevState,
+			graphicsTextureTier: nextAction.payload,
+		}),
 		SET_DEBUG_METRICS: (prevState, nextAction) => ({ ...prevState, debugMetrics: nextAction.payload }),
 		ADD_BLUEPRINT: (prevState, nextAction) => ({ ...prevState, blueprints: [...prevState.blueprints, nextAction.payload] }),
 		SET_BLUEPRINTS: (prevState, nextAction) => ({ ...prevState, blueprints: nextAction.payload }),
@@ -1103,6 +1111,9 @@ export interface EntityMeta {
 	entity3dCategory?: Entity3DCategory
 	/** Modelo visual cargado (distinto de path lógico `[Player]` / `[EditorBox]`). */
 	visualModelPath?: string
+	/** Catálogo de texturas embebidas (modal Propiedades → Texturas). */
+	entityTextures?: import('../../modal-electron/entityPropertiesTypes').EntityMaterialTextures[]
+	entityTexturesModelPath?: string
 }
 
 export interface PendingRestore {

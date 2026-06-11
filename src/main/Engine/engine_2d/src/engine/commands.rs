@@ -1181,6 +1181,17 @@ EngineCommand::PlayAnimation { id, name } => {
                 send_event(&EngineEvent::BackgroundsList { backgrounds });
                 log::debug!("[background] lista enviada: {} fondos", count);
             }
+            EngineCommand::ListEntityTextures { id: _ }
+            | EngineCommand::SetEntityTextureLod {
+                id: _,
+                material_index: _,
+                tier: _,
+                image_index: _,
+            }
+            | EngineCommand::SetEntityTexturePreviewTier { id: _, tier: _ }
+            | EngineCommand::SetGraphicsTextureTier { tier: _ }
+            | EngineCommand::SetEntityTexturesPreviewFocus { .. }
+            | EngineCommand::ResendAllModelClips => {}
             EngineCommand::ApplyEntityRestore {
                 id,
                 name,

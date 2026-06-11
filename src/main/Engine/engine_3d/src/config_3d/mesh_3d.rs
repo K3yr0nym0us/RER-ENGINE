@@ -1,5 +1,6 @@
 // ── Primitivas de malla exclusivas del modo 3D ────────────────────────────────
 
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -36,6 +37,7 @@ pub(crate) struct CpuModelMeshPart {
     pub(crate) rgba: Vec<u8>,
     pub(crate) width: u32,
     pub(crate) height: u32,
+    pub(crate) material_index: u32,
     pub(crate) forward_xz: glam::Vec2,
     pub(crate) local_bounds: ([f32; 3], [f32; 3]),
     /// Mips 1024² precalculados en hilo de precarga (evita resize/mips en subida GPU).
@@ -350,6 +352,7 @@ struct GltfRawPrim {
     rgba: Vec<u8>,
     width: u32,
     height: u32,
+    material_index: u32,
 }
 
 /// Lee una primitiva glTF aplicando la matriz `world` del nodo al que pertenece
@@ -361,7 +364,7 @@ fn read_gltf_primitive(
     world: glam::Mat4,
     buffers: &[gltf::buffer::Data],
     images: &[gltf::image::Data],
-    mesh_albedo: Option<&gltf::image::Data>,
+    material_albedos: &HashMap<usize, gltf::image::Data>,
 ) -> Result<GltfRawPrim, String> {
     use glam::{Mat3, Vec3};
 
@@ -407,7 +410,8 @@ fn read_gltf_primitive(
         })
         .collect();
 
-    let (rgba, width, height) = if let Some(img) = mesh_albedo {
+    let mat_idx = primitive.material().index().unwrap_or(0);
+    let (rgba, width, height) = if let Some(img) = material_albedos.get(&mat_idx) {
         crate::config_3d::model_asset::gltf_image_data_to_rgba(img)
     } else if let Some(img_idx) = primitive
         .material()
@@ -430,6 +434,7 @@ fn read_gltf_primitive(
         rgba,
         width,
         height,
+        material_index: mat_idx as u32, // glTF material index
     })
 }
 
@@ -440,7 +445,7 @@ fn walk_gltf_node(
     parent_world: glam::Mat4,
     buffers: &[gltf::buffer::Data],
     images: &[gltf::image::Data],
-    mesh_albedo: Option<&gltf::image::Data>,
+    material_albedos: &HashMap<usize, gltf::image::Data>,
     out: &mut Vec<GltfRawPrim>,
 ) -> Result<(), String> {
     use glam::{Mat4, Quat, Vec3};
@@ -466,13 +471,13 @@ fn walk_gltf_node(
                 world,
                 buffers,
                 images,
-                mesh_albedo,
+                material_albedos,
             )?);
         }
     }
 
     for child in node.children() {
-        walk_gltf_node(child, world, buffers, images, mesh_albedo, out)?;
+        walk_gltf_node(child, world, buffers, images, material_albedos, out)?;
     }
     Ok(())
 }
@@ -518,7 +523,7 @@ pub(crate) fn load_gltf_preview_from_file(
             world,
             &file.buffers,
             &file.images,
-            file.mesh_albedo_for_draw(),
+            &file.material_smallest_albedos,
         )?;
         let base = vertices.len() as u32;
         vertices.extend(prim.vertices);
@@ -571,7 +576,7 @@ fn load_gltf(
     let doc = &file.doc;
     let buffers = &file.buffers;
     let images = &file.images;
-    let mesh_albedo = file.mesh_albedo_for_draw();
+    let material_albedos = &file.material_smallest_albedos;
 
     let mut prims: Vec<GltfRawPrim> = Vec::new();
 
@@ -579,7 +584,7 @@ fn load_gltf(
     // meshes con matriz identidad para no romper archivos antiguos.
     if let Some(scene) = doc.default_scene().or_else(|| doc.scenes().next()) {
         for root in scene.nodes() {
-            walk_gltf_node(root, Mat4::IDENTITY, buffers, images, mesh_albedo, &mut prims)?;
+            walk_gltf_node(root, Mat4::IDENTITY, buffers, images, material_albedos, &mut prims)?;
         }
     } else {
         for mesh in doc.meshes() {
@@ -589,7 +594,7 @@ fn load_gltf(
                     Mat4::IDENTITY,
                     buffers,
                     images,
-                    mesh_albedo,
+                    material_albedos,
                 )?);
             }
         }
@@ -638,13 +643,13 @@ pub(crate) fn load_gltf_cpu_from_file(
     let doc = &file.doc;
     let buffers = &file.buffers;
     let images = &file.images;
-    let mesh_albedo = file.mesh_albedo_for_draw();
+    let material_albedos = &file.material_smallest_albedos;
 
     let mut prims: Vec<GltfRawPrim> = Vec::new();
 
     if let Some(scene) = doc.default_scene().or_else(|| doc.scenes().next()) {
         for root in scene.nodes() {
-            walk_gltf_node(root, Mat4::IDENTITY, buffers, images, mesh_albedo, &mut prims)?;
+            walk_gltf_node(root, Mat4::IDENTITY, buffers, images, material_albedos, &mut prims)?;
         }
     } else {
         for mesh in doc.meshes() {
@@ -654,7 +659,7 @@ pub(crate) fn load_gltf_cpu_from_file(
                     Mat4::IDENTITY,
                     buffers,
                     images,
-                    mesh_albedo,
+                    material_albedos,
                 )?);
             }
         }
@@ -681,6 +686,7 @@ pub(crate) fn load_gltf_cpu_from_file(
             rgba: p.rgba,
             width: p.width,
             height: p.height,
+            material_index: p.material_index,
             layer_mips: None,
         })
         .collect())
@@ -973,6 +979,7 @@ fn load_fbx_cpu(
         rgba,
         width: tex_w,
         height: tex_h,
+        material_index: 0,
         layer_mips: None,
     }])
 }

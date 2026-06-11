@@ -1,0 +1,231 @@
+# Protocolo IPC Electron ↔ motores Rust (engine:cmd / engine:event)
+#
+# Contrato JSON línea a línea entre el renderer, el proceso main de Electron
+# y el binario del motor (rer_engine_2d | rer_engine_3d).
+#
+# Relacionado con:
+#   - docs/Escenes_Model_3D.yaml       (comandos multi-escena)
+#   - docs/Entity_Textures.yaml        (list_entity_textures, …)
+#   - docs/Engine_Context.yaml         (createEngineActions / createEngineEventHandler)
+#   - docs/Save_Proyect_Model.yaml     (export_save_snapshot, load_proyect)
+
+version: 1
+updated: 2026-06-10
+
+summary: |
+  El renderer envía comandos con window.electronAPI.sendEngineCmd (preload).
+  Main reenvía por stdin del proceso hijo (una línea JSON por comando).
+  El motor escribe eventos en stdout (una línea JSON por evento); main los
+  reenvía al renderer como engine:event. La fuente de verdad del contrato es
+  engine_2d/src/ipc.rs y engine_3d/src/ipc.rs (comparten la mayoría de variantes).
+
+principle:
+  engine_first: |
+    El frontend envía intención; el motor valida, muta estado y emite eventos.
+    No reimplementar lógica espacial, clasificación de entidades ni undo en TypeScript.
+  shared_contract: |
+    Ambos binarios deserializan el mismo enum EngineCommand. Comandos exclusivos
+    de un motor se ignoran o son no-op en el otro (p. ej. texturas LOD solo en 3D).
+  types_mirror: |
+    src/shared-types/types.ts refleja el contrato para TypeScript; puede ir
+    ligeramente desfasado respecto a ipc.rs — ipc.rs manda al añadir comandos nuevos.
+
+transport:
+  renderer_to_main:
+    channel: engine:cmd
+    preload: src/preload/index.ts
+    payload: '{ "cmd": "<snake_case>", ... }'
+  main_to_engine:
+    mechanism: stdin del proceso hijo (spawn en src/main/index.ts)
+    format: JSON.stringify(cmd) + '\n'
+  engine_to_main:
+    mechanism: stdout del proceso hijo (lectura línea a línea en ipc.rs)
+    format: '{ "event": "<snake_case>", ... }'
+  main_to_renderer:
+    channel: engine:event
+    listener: window.electronAPI.onEngineEvent en createEngineEventHandler.ts
+
+flow: |
+  Renderer                    Main (Electron)                 Motor (Rust)
+  ────────                    ───────────────                 ────────────
+  sendEngineCmd({cmd:…})  →   ipcMain.on('engine:cmd')
+                                sendToEngine(cmd)         →   stdin
+                                                              handle_command
+                                ← stdout línea JSON       ←   send_event
+  onEngineEvent(cb)       ←   webContents.send('engine:event')
+
+lifecycle:
+  spawn:
+    binary: rer_engine_2d | rer_engine_3d según projectType
+    args: --overlay <parent_hwnd> <x> <y> <w> <h> [rel_x rel_y]
+    note: Ver docs/Engine_Runtime_Foundation.yaml
+  startup_2d:
+    trigger: motor listo tras spawn
+    cmd: set_scene { scene: "2D", save_path: extract_dir }
+  startup_3d:
+    trigger: proyecto con extract_dir
+    cmd: set_scene { scene: gameStyle, save_path: extract_dir }
+  shutdown:
+    cmd: shutdown
+    fallback: kill del proceso tras 2 s si no cierra
+
+command_categories:
+  viewport:
+    - set_bounds
+    - resize
+    - set_clear_color
+    note: set_bounds incluye offset_x/offset_y (DPI físico del hueco en renderer)
+  scene_and_project:
+    2d:
+      - set_scene
+      - load_scenario
+      - load_character
+      - import_scene
+    3d:
+      - set_scene
+      - create_editor_scene
+      - switch_editor_scene
+      - delete_editor_scene
+      - notify_project_saved
+      - clear_editor_undo_redo
+      - load_proyect / project_load (burst)
+  entities:
+    shared:
+      - set_transform
+      - set_entity_name
+      - remove_entity
+      - deselect_entity
+      - set_physics
+      - replace_entity_model
+      - register_blueprint
+    2d_only:
+      - load_scenario
+      - load_character
+      - set_scenario_scale
+      - set_character_scale
+      - play_animation_frame
+      - restore_animation_frame
+      - create_collider_from_points
+      - create_execution_area_from_points
+    3d_only:
+      - spawn_cached_model
+      - spawn_editor_box
+      - spawn_sun
+      - spawn_ground
+      - set_directional_light
+      - set_play_character_spawn
+      - set_play_character_view
+      - set_entity_colision
+      - list_entity_textures
+      - set_entity_texture_lod
+      - set_entity_texture_preview_tier
+  resources:
+    2d:
+      - load_sprite / load_sound / load_font / load_background
+    3d:
+      - load_model_asset
+      - remove_model_asset
+      - get_models_list
+      - load_hud_image
+  tools:
+    - set_active_tool
+    - undo
+    - redo
+  player_ui:
+    - set_player_ui_edit_mode
+    - add_player_ui_text_box | button | image | object
+    - remove_player_ui_*
+    - set_player_ui_hud_element_props
+    - sync_player_ui_screens
+    - set_active_player_ui_screen
+  play_preview:
+    - set_preview_playing
+    - set_control_bindings
+    - run_control_script
+  persistence:
+    - export_save_snapshot
+    - get_default_scene_name
+  misc:
+    - ping
+    - set_locale
+    - set_autosave
+    - set_debug_mode
+    - set_target_fps
+    - set_world_size
+    - set_gravity
+    - set_grid_visible
+    - set_grid_cell_size
+
+event_categories:
+  lifecycle:
+    - ready
+    - stopped
+    - error
+    - load_progress
+  selection_and_transform:
+    - entity_selected
+    - entity_deselected
+    - transform_updated
+    - entities_removed
+  resources:
+    - sprite_loaded / sprites_list
+    - sound_loaded / sounds_list
+    - font_loaded / fonts_list
+    - model_loaded / models_list
+    - hud_image_loaded / hud_images_list
+  project:
+    - project_loaded_2d
+    - project_loaded_3d
+    - project_load_3d_complete
+    - save_snapshot_ready
+  scenes_3d:
+    - editor_scene_created
+    - editor_scene_switched
+    - editor_scene_switch_blocked
+    - editor_scenes_updated
+  player_ui:
+    - player_ui_text_box_added | updated | removed
+    - player_ui_button_added | removed
+    - player_ui_image_added | removed
+    - player_ui_object_added | removed
+    - player_ui_text_boxes_list
+    - player_ui_active_screen_changed
+  textures_3d:
+    - entity_textures_ready
+  metrics:
+    - debug_metrics
+    - autosave_tick
+
+key_files:
+  contract_3d: src/main/Engine/engine_3d/src/ipc.rs
+  contract_2d: src/main/Engine/engine_2d/src/ipc.rs
+  dispatch_3d: src/main/Engine/engine_3d/src/engine/commands.rs
+  dispatch_2d: src/main/Engine/engine_2d/src/engine/commands.rs
+  main_bridge: src/main/index.ts
+  preload: src/preload/index.ts
+  ts_types: src/shared-types/types.ts
+  renderer_send: src/renderer/src/context/useContextEngine/hooks/createEngineActions.ts
+  renderer_receive: src/renderer/src/context/useContextEngine/hooks/createEngineEventHandler.ts
+
+patterns:
+  track_undo:
+    field: track_undo en set_transform, load_scenario, load_character, …
+    true_or_none: registrar en pila undo del motor
+    false: restore, carga de proyecto, sincronización interna
+  wait_for_event:
+    description: |
+      createEngineActions puede enviar un comando y esperar un evento concreto
+      (pendingEventsRef) — p. ej. export_save_snapshot → save_snapshot_ready.
+  burst_load:
+    description: |
+      Carga de .save: secuencia de comandos sin undo; el motor emite
+      project_loaded_* al finalizar. Ver sceneImportOverlay.ts.
+  locale_without_engine:
+    description: |
+      set_locale con motor inactivo actualiza solo overlay IA y estado main.
+
+do_not:
+  - Duplicar enums de comandos solo en TypeScript sin actualizar ipc.rs
+  - Asumir que todos los comandos del enum 3D funcionan en 2D (y viceversa)
+  - Enviar funciones o JSX por IPC; solo JSON plano
+  - Leer RER_GPU_BACKEND; Electron la elimina al spawn del motor

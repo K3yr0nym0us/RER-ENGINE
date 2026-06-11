@@ -106,7 +106,7 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 
 ### Prioridad baja
 
-- [ ] **Calidad de texturas GLB (UI)** — conmutar `GltfTextureLoadMode::AllEmbedded` desde configuración (hoy fijo `SmallestEmbedded` en editor)
+- [x] **Calidad de texturas GLB (UI)** — pestaña **Texturas** en Propiedades de entidad (3D, GLB/GLTF): niveles Bajo/Medio/Alto/Ultra, variantes embebidas por resolución y material; IPC `list_entity_textures` / `set_entity_texture_lod` / `set_entity_texture_preview_tier`; persistencia `texture_lod` en `.save`
 - [ ] Picking 3D: AABB del `Transform` vs silueta fina del modelo (hoy `entity_world_pick_aabb` + ray-AABB en `config_3d/mod.rs`)
 
 ---

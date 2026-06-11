@@ -58,6 +58,7 @@ export function VisualScriptNode({ data, selected }: NodeProps) {
   const isSetScale = nodeType === VISUAL_NODE_TYPES.SET_SCALE
   const isMoveTo = nodeType === VISUAL_NODE_TYPES.MOVE_TO
   const isTranslate = nodeType === VISUAL_NODE_TYPES.TRANSLATE
+  const isSetGraphicsTextureTier = nodeType === VISUAL_NODE_TYPES.SET_GRAPHICS_TEXTURE_TIER
   const hasLoopBody = isForRepeat || isForEach
   const hasMultipleRightOutputs = isSequence || isIf || hasLoopBody
 
@@ -104,6 +105,11 @@ export function VisualScriptNode({ data, selected }: NodeProps) {
         {isTranslate && (
           <span className="text-truncate d-block text-secondary" title={`${d.dx}, ${d.dy}`}>
             Δ {String(d.dx ?? '0.0')}, {String(d.dy ?? '0.0')}
+          </span>
+        )}
+        {isSetGraphicsTextureTier && (
+          <span className="text-truncate d-block text-secondary">
+            {String(d.tier ?? 'low')}
           </span>
         )}
         {isSequence && <span className="text-secondary">{t('Then 0 → Then 1')}</span>}

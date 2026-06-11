@@ -310,6 +310,25 @@ function mergeLibraryAssets(
 	return [...byPath.values()];
 }
 
+function mergeModelLibrary(
+	fromEditor: ModelInfo[],
+	fromEngine?: Array<{ name: string; path: string; category?: ModelInfo['category'] }>,
+): ModelInfo[] {
+	const byPath = new Map<string, ModelInfo>();
+	for (const item of fromEditor) {
+		byPath.set(item.path, { ...item });
+	}
+	for (const item of fromEngine ?? []) {
+		const prev = byPath.get(item.path);
+		byPath.set(item.path, {
+			name: item.name,
+			path: item.path,
+			...(prev?.category ?? item.category ? { category: prev?.category ?? item.category } : {}),
+		});
+	}
+	return [...byPath.values()];
+}
+
 /** Combina snapshot del motor con metadatos solo del editor (escenas inactivas, blueprints, idioma). */
 export async function buildProjectSaveFromEngineSnapshot(
 	engineScene: EngineSaveSceneSnapshot,
@@ -362,11 +381,12 @@ export async function buildProjectSaveFromEngineSnapshot(
 
 	const mergedFonts = mergeLibraryAssets(fonts, engineScene.fonts);
 	const mergedHudImages = mergeLibraryAssets(hudImages, engineScene.hud_images);
-	const mergedModels = mergeLibraryAssets(
+	const mergedModels = mergeModelLibrary(
 		models,
 		engineScene.models?.map((m) => ({
 			name: m.name,
 			path: m.path,
+			...(m.category ? { category: m.category as ModelInfo['category'] } : {}),
 		})),
 	);
 

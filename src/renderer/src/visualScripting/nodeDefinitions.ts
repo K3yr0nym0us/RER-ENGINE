@@ -13,6 +13,7 @@ export const VISUAL_NODE_TYPES = {
   SET_SCALE: 'action.set_scale',
   MOVE_TO: 'action.move_to',
   TRANSLATE: 'action.translate',
+  SET_GRAPHICS_TEXTURE_TIER: 'action.set_graphics_texture_tier',
 } as const
 
 export type VisualNodeType = (typeof VISUAL_NODE_TYPES)[keyof typeof VISUAL_NODE_TYPES]
@@ -127,6 +128,13 @@ export const NODE_DEFINITIONS: Record<VisualNodeType, NodeDefinition> = {
     category: 'action',
     contexts: ['entity'],
     defaultData: { dx: '0.0', dy: '0.0' },
+  },
+  [VISUAL_NODE_TYPES.SET_GRAPHICS_TEXTURE_TIER]: {
+    type: VISUAL_NODE_TYPES.SET_GRAPHICS_TEXTURE_TIER,
+    label: 'Set graphics texture tier',
+    category: 'action',
+    contexts: ['scene'],
+    defaultData: { tier: 'low' },
   },
 }
 

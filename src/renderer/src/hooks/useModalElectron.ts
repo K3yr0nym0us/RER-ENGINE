@@ -7,6 +7,7 @@ import { useLanguage } from '../context/LanguageContext'
 import { useQuickBuild } from '../context/QuickBuildContext'
 import { buildEngineSnapshot } from '../modal-electron/buildEngineSnapshot'
 import { getComponentKey, prepareModalElectronProps } from '../modal-electron/getComponentKey'
+import { serializeModalProps } from '../modal-electron/modalElectronSerialize'
 import { setModalElectronParentBridge } from '../modal-electron/modalElectronParentBridge'
 import {
 	dispatchModalElectronResult,
@@ -68,6 +69,22 @@ let playerUiActionListenerInstalled = false
 let playerUiStateListenerInstalled = false
 let entityPropertiesActionListenerInstalled = false
 
+/** Modal Electron visible: para parches en vivo (p. ej. modelos que terminan de precargar). */
+const activeModalRef: { current: { handlerId: string; componentKey: string } | null } = {
+	current: null,
+}
+
+const MODEL_PICKER_MODAL_KEY = 'CreateEntityFromModelModalBody'
+
+function patchActiveModelPickerModal(models: import('@shared-types').ModelInfo[]): void {
+	const active = activeModalRef.current
+	if (!active || active.componentKey !== MODEL_PICKER_MODAL_KEY) return
+	window.electronAPI.patchModalElectron({
+		handlerId: active.handlerId,
+		models: serializeModalProps({ models }).models as import('@shared-types').ModelInfo[],
+	})
+}
+
 function createHandlerId(): string {
 	return crypto.randomUUID()
 }
@@ -119,6 +136,7 @@ export function useModalElectron() {
 	}, [])
 
 	const closeModal = useCallback(() => {
+		activeModalRef.current = null
 		void window.electronAPI.closeModalElectron()
 	}, [])
 
@@ -247,6 +265,7 @@ export function useModalElectron() {
 
 		// IPC structured clone: solo datos planos (sin JSX ni funciones).
 		const ipcPayload = JSON.parse(JSON.stringify(request)) as ModalElectronOpenRequest
+		activeModalRef.current = { handlerId, componentKey }
 		await window.electronAPI.openModalElectron(ipcPayload)
 		if (componentKey === 'PlayerUiEditorModalBody') {
 			pushPlayerUiEditorPatch(handlerId)
@@ -254,7 +273,14 @@ export function useModalElectron() {
 		if (componentKey === 'EntityPropertiesModalBody') {
 			pushEntityPropertiesPatch(handlerId)
 		}
+		if (componentKey === MODEL_PICKER_MODAL_KEY) {
+			patchActiveModelPickerModal(engineRef.current.models)
+		}
 	}, [closeModal, locale, setActiveBluePrint])
+
+	useEffect(() => {
+		patchActiveModelPickerModal(engine.models)
+	}, [engine.models])
 
 	useEffect(() => {
 		setModalElectronParentBridge({ openModal })
@@ -295,6 +321,13 @@ export function useModalElectron() {
 				action(req.payload ?? {})
 			}
 		})
+	}, [])
+
+	useEffect(() => {
+		const remove = window.electronAPI.onModalElectronClosed(() => {
+			activeModalRef.current = null
+		})
+		return remove
 	}, [])
 
 	return { openModal, closeModal }

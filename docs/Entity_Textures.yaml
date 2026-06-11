@@ -1,0 +1,110 @@
+# Texturas embebidas por entidad (LOD gráfico en modelos GLB/GLTF)
+#
+# Solo proyectos 3D. Permite asignar distintas imágenes embebidas del mismo
+# material según nivel gráfico (low / medium / high / ultra) y previsualizar
+# en el editor sin reexportar el modelo.
+#
+# Relacionado con:
+#   - docs/Entities_Model_3D.yaml
+#   - docs/Entity_Properties_Modal.yaml
+#   - docs/IPC_Protocol.yaml
+
+version: 1
+updated: 2026-06-10
+
+principle:
+  owner: motor_3d
+  scope: |
+    Solo modelos .glb / .gltf con texturas embebidas. FBX u otros formatos
+    no exponen catálogo (el panel de texturas no aparece).
+  runtime_vs_preview: |
+    preview_tier controla qué imagen se muestra en el viewport del editor.
+    assignments por tier definen qué image_index usar en play según calidad gráfica.
+
+graphics_tiers:
+  - id: low
+    aliases: [bajo]
+  - id: medium
+    aliases: [medio]
+  - id: high
+    aliases: [alto]
+  - id: ultra
+    aliases: []
+
+state_per_entity:
+  preview_tier: TextureGraphicsTier
+  active_material_index: u32
+  assignments: "material_index → tier → gltf image_index"
+
+catalog:
+  source: gltf::Gltf + imágenes embebidas del archivo
+  per_material:
+    material_index: u32
+    material_name: string
+    default_image_index: optional u32
+    variants: "lista (image_index, width, height)"
+  default_assignment: |
+    Al listar por primera vez, el motor asigna tier low = imagen embebida de menor resolución.
+
+commands:
+  list_entity_textures:
+    params: { id: entity_id }
+    effect: Escanea el GLB de la entidad y emite entity_textures_ready
+    errors: Error si la entidad no tiene modelo GLB/GLTF
+  set_entity_texture_lod:
+    params:
+      id: entity_id
+      material_index: u32
+      tier: low | medium | high | ultra
+      image_index: u32
+    effect: Guarda asignación tier→image_index y reaplica preview en GPU
+  set_entity_texture_preview_tier:
+    params: { id, tier }
+    effect: Cambia solo la previsualización del editor (no las asignaciones de play)
+
+events:
+  entity_textures_ready:
+    payload:
+      entity_id: u32
+      model_path: string
+      materials:
+        - materialIndex: u32
+          materialName: string
+          defaultImageIndex: optional u32
+          variants: [{ imageIndex, width, height }]
+          tierImageIndex: { low?: u32, medium?: u32, … }
+          previewTier: string
+
+persistence:
+  save_field: texture_lod en entidad del .save (SaveMaterialTextureLod[])
+  restore: apply_entity_texture_lod_snapshot en load_proyect.rs
+  snapshot_fields:
+    - active_material_index
+    - preview_tier
+    - materials[]: { material_index, tier_assignments }
+
+ui:
+  entry: Propiedades de entidad → pestaña Texturas (solo si showTexturesTab)
+  panel: EntityTexturesPanel.tsx
+  modal_host: EntityPropertiesModalContent.tsx (ventana modal Electron)
+  open_flow: |
+    1. buildEntityPropertiesState pone showTexturesTab si hay GLB/GLTF
+    2. Al montar la pestaña → send list_entity_textures
+    3. createEngineEventHandler actualiza entityTextures en el estado del modal
+    4. Cambios de tier/imagen → set_entity_texture_* vía onAction delegate
+
+key_files:
+  motor_catalog: src/main/Engine/engine_3d/src/config_3d/entity_textures.rs
+  motor_load: src/main/Engine/engine_3d/src/config_3d/gltf_texture_load.rs
+  motor_save: src/main/Engine/engine_3d/src/save_entity_3d.rs
+  ipc: src/main/Engine/engine_3d/src/ipc.rs
+  ui_panel: src/renderer/src/pages/EngineView/components/sidebar/PropertiesAccordion/EntityTexturesPanel.tsx
+  event_handler: src/renderer/src/context/useContextEngine/hooks/createEngineEventHandler.ts
+
+engine_2d:
+  note: Los comandos list_entity_textures / set_entity_texture_* son no-op en engine_2d.
+
+do_not:
+  - Esperar catálogo de texturas en modelos FBX
+  - Persistir paths de disco; solo image_index embebido en el GLB
+  - Editar texturas desde el sidebar Properties sin abrir el modal de propiedades

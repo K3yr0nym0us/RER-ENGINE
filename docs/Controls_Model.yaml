@@ -1,0 +1,58 @@
+# Controles y bindings (teclado, ratón, gamepad)
+#
+# Asignación de acciones de juego por personaje; persistencia en .save;
+# runtime en preview vía scripts Rhai on_press / on_keep.
+#
+# Relacionado con:
+#   - docs/Entities_Model_2D.yaml / Entities_Model_3D.yaml (campo controls)
+#   - docs/RHAI_API.yaml (gravity_and_controls_2d, callbacks on_press)
+#   - docs/IPC_Protocol.yaml (set_control_bindings, run_control_script)
+
+version: 1
+updated: 2026-06-10
+
+principle:
+  scope: personajes (character / player), no escenarios ni objetos estáticos
+  owner_runtime: motor + scripting compartido (engine_shared/scripting)
+  owner_ui: acordeón Controls del sidebar
+
+ui:
+  accordion: ControlsAccordion.tsx
+  modal: ControlBindingsModalBody.tsx
+  hook: useControlBindings (selección de personaje, contadores, abrir modal)
+  runtime_hook: useControlBindingsRuntime.ts (envía bindings al motor en play)
+
+binding_kinds:
+  keyboard_mouse:
+    description: Teclas y botones de ratón mapeados a control_key lógicos
+  gamepad:
+    description: Botones y ejes de mando (donde esté soportado en preview)
+
+persistence:
+  manifest_field: controls[] o embebido en entidad según buildProjectSaveFromEngine
+  shape: SavedControlBindings por entity id
+  load: restaurado con la escena; aplicado al entrar en preview
+
+preview_runtime:
+  cmds:
+    - set_control_bindings
+    - run_control_script
+  rhai_callbacks:
+    - on_press(entity, control_key)   # una vez por pulsación
+    - on_keep(entity, control_key)    # cada frame mientras se mantiene
+  movement_2d: |
+    move_control / jump_control en RHAI_API; gravedad y suelo en motor 2D.
+  movement_3d: |
+    Controles del jugador FP vía play_controller; scripts on_press para acciones.
+
+defaults:
+  file: src/renderer/src/defaults/playCharacterControlBindings.ts
+
+key_files:
+  ui: src/renderer/src/pages/EngineView/components/sidebar/ControlsAccordion/
+  hooks: src/renderer/src/hooks/useControlBindings*.ts
+  scripting: src/main/Engine/engine_shared/src/scripting/
+
+do_not:
+  - Asignar controles a entidades scenario / sun / ground
+  - Implementar detección de input solo en TypeScript durante play (motor ejecuta)

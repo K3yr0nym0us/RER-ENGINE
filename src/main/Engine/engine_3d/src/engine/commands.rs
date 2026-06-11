@@ -1316,6 +1316,57 @@ impl State {
             EngineCommand::ClearEditorUndoRedo => {
                 self.clear_editor_undo_redo();
             }
+            EngineCommand::ListEntityTextures { id } => {
+                self.send_entity_textures_ready(id);
+            }
+            EngineCommand::SetEntityTextureLod {
+                id,
+                material_index,
+                tier,
+                image_index,
+            } => {
+                let Some(t) =
+                    crate::config_3d::entity_textures::TextureGraphicsTier::from_wire(&tier)
+                else {
+                    send_event(&EngineEvent::Error {
+                        message: format!("Nivel gráfico desconocido: {tier}"),
+                    });
+                    return;
+                };
+                self.set_entity_texture_lod(id, material_index, t, image_index);
+            }
+            EngineCommand::SetEntityTexturePreviewTier { id, tier } => {
+                let Some(t) =
+                    crate::config_3d::entity_textures::TextureGraphicsTier::from_wire(&tier)
+                else {
+                    send_event(&EngineEvent::Error {
+                        message: format!("Nivel gráfico desconocido: {tier}"),
+                    });
+                    return;
+                };
+                self.set_entity_texture_preview_tier(id, t);
+            }
+            EngineCommand::SetGraphicsTextureTier { tier } => {
+                let Some(t) =
+                    crate::config_3d::entity_textures::TextureGraphicsTier::from_wire(&tier)
+                else {
+                    send_event(&EngineEvent::Error {
+                        message: format!("Nivel gráfico desconocido: {tier}"),
+                    });
+                    return;
+                };
+                self.set_graphics_texture_tier(t);
+            }
+            EngineCommand::SetEntityTexturesPreviewFocus { id, active } => {
+                if active {
+                    self.entity_textures_preview_entity = Some(id);
+                } else if self.entity_textures_preview_entity == Some(id) {
+                    self.entity_textures_preview_entity = None;
+                }
+            }
+            EngineCommand::ResendAllModelClips => {
+                self.resend_all_model_clips_ready();
+            }
             EngineCommand::ApplyEntityRestore {
                 id,
                 name,

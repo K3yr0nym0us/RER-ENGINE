@@ -1,0 +1,98 @@
+# Modal de propiedades de entidad (ventana Electron dedicada)
+#
+# Inspector completo de la entidad seleccionada: transform, física, animaciones,
+# scripts, texturas LOD (3D), reemplazo de modelo, conversión a blueprint.
+#
+# Relacionado con:
+#   - docs/MODAL_ELECTRON.yaml
+#   - docs/Entity_Textures.yaml
+#   - docs/Engine_Context.yaml
+
+version: 1
+updated: 2026-06-10
+
+principle: |
+  Igual que Blueprint y Player UI: ventana hija sin EngineProvider.
+  El editor principal serializa EntityPropertiesState; el modal delega
+  acciones al padre vía entityPropertiesAction IPC; el padre ejecuta
+  engine:cmd y empuja parches de estado al modal.
+
+flow: |
+  Editor (con EngineProvider)              Ventana modal
+  ─────────────────────────                ─────────────
+  useEntityPropertiesModal.open()
+    → buildEntityPropertiesState(engine)
+    → openModalElectron (componentKey: EntityPropertiesModalBody)
+    → registerEntityPropertiesSession(handlerId)
+  ───────────────────────────────────────→ EntityPropertiesElectronHost
+                                           → EntityPropertiesModalContent
+  onEntityPropertiesAction(handlerId, action)
+    → entityPropertiesModalSessions handler
+    → send engine:cmd / openNestedModal / close
+  pushPatch(handlerId, newState) ────────→ onModalElectronPatch
+
+dedicated_host:
+  componentKey: EntityPropertiesModalBody
+  host: EntityPropertiesElectronHost
+  registry_note: |
+    EntityPropertiesModalBody exporta función vacía (null) solo para
+    componentKey; el render real lo hace ModalElectronGenericBody → Host.
+
+state_EntityPropertiesState:
+  projectType: 2D | 3D
+  selectedEntity: transform + physics + animations
+  multiSelectedIds: number[]
+  flags:
+    - isScenario / isCharacter / isEnvironment / isPlayer
+    - isEditorCamera / isCollider / isExecutionArea
+    - isFromBlueprint / linkedBlueprintName
+  scripts: ScriptEntry[]
+  animationPlayingIds: number[]
+  entityTextures: EntityMaterialTextures[] | null
+  entityTexturesModelPath: string | null
+  previewTextureTier: low | medium | high | ultra
+  showTexturesTab: boolean
+
+actions_EntityPropertiesAction:
+  direct_engine:
+    - setEntityName
+    - setTransform
+    - setPhysics
+    - removeEntity / removeMultiple
+    - replaceModel
+    - send / sendAsync (cmd arbitrario)
+  editor_side:
+    - convertToBlueprint
+    - updateAnimations / updateScripts
+    - setAnimationPlaying
+    - openNestedModal (confirm, replaceModel, scriptEditor, visualScripting, …)
+    - close
+
+nested_modals:
+  description: |
+    El modal de propiedades puede abrir otros modales Electron desde la sesión
+    del editor padre (tiene acceso a openModal y getEngine).
+  examples:
+    - CreateEntityFromModelModalBody (reemplazar modelo 3D)
+    - CreateEntityFromSpriteModalBody (2D)
+    - ScriptEditorModalBody / VisualScriptingModalBody
+    - SpritePreviewModalBody
+    - ModalConfirmBody
+
+sync_triggers:
+  - Selección o transform en viewport → pushPatch al modal abierto
+  - entity_textures_ready → actualiza entityTextures en estado del modal
+  - Cambio de entidad → rebuild state o cierre según useEntityPropertiesModal
+
+key_files:
+  host: src/renderer/src/modal-electron/EntityPropertiesElectronHost.tsx
+  session: src/renderer/src/modal-electron/entityPropertiesModalSessions.ts
+  types: src/renderer/src/modal-electron/entityPropertiesTypes.ts
+  content: src/renderer/src/pages/EngineView/components/sidebar/PropertiesAccordion/EntityPropertiesModalContent.tsx
+  hook: src/renderer/src/pages/EngineView/hooks/useEntityPropertiesModal.tsx
+  textures: EntityTexturesPanel.tsx
+
+do_not:
+  - Llamar useContextEngine() dentro de EntityPropertiesModalContent
+  - Olvidar registerEntityPropertiesSession al abrir y unregister al cerrar
+  - Asumir que el acordeón Properties del sidebar duplica todo el modal (UI reducida)

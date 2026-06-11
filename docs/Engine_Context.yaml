@@ -1,0 +1,108 @@
+# Engine context (useContextEngine) — hub del editor
+#
+# Estado React + refs imperativas que reflejan el motor. El renderer no es
+# fuente de verdad del mundo; solo cachea eventos y expone acciones IPC.
+#
+# Relacionado con:
+#   - docs/IPC_Protocol.yaml
+#   - docs/Escenes_Model_3D.yaml
+#   - docs/Entity_Properties_Modal.yaml
+
+version: 1
+updated: 2026-06-10
+
+principle:
+  pattern: |
+    EngineProvider envuelve EngineView. useContextEngine() devuelve estado
+    derivado de eventos del motor + acciones que envían engine:cmd.
+  refs_vs_state: |
+    Transform y meta de entidades viven en refs (entityTransformsRef, entityMetaRef)
+    para evitar re-renders masivos; el reducer actualiza listas, selección, bibliotecas.
+
+architecture:
+  provider: src/renderer/src/context/useContextEngine/useContextEngine.tsx
+  reducer: src/renderer/src/context/useContextEngine/types.ts (engineReducer, initialState)
+  actions: src/renderer/src/context/useContextEngine/hooks/createEngineActions.ts
+  events: src/renderer/src/context/useContextEngine/hooks/createEngineEventHandler.ts
+  effects: src/renderer/src/context/useContextEngine/hooks/useEngineEffects.ts
+
+data_flow: |
+  Motor emite engine:event
+    → createEngineEventHandler actualiza dispatch + refs
+    → componentes leen useContextEngine()
+  Usuario en UI
+    → createEngineActions.send({ cmd: … })
+    → preload engine:cmd → main → motor
+
+critical_refs:
+  entityTransformsRef: "id → { position, rotation, scale }"
+  entityMetaRef: "id → EntityMeta (kind, path, blueprintId, category, …)"
+  playerEntityIdRef: id del jugador activo
+  editorCameraEntityIdRef: id cámara editor 3D
+  playCharacterViewRef: vista FPS agregada (pies + yaw/pitch/fov)
+  blueprintsRef: lista de blueprints en memoria
+  modelsRef: biblioteca Resources 3D
+  pendingRestoresRef: cola de restauración tras model_loaded
+  sceneImportInProgressRef: bloquea UI durante burst load
+  pendingEventsRef: promesas sendAsync (waitEvent)
+
+state_slices:
+  selection:
+    - selectedEntity
+    - multiSelectedIds
+  libraries:
+    - sprites / sounds / fonts / backgrounds (2D)
+    - models / hudImages (3D)
+  world:
+    - worldConfig (tamaño, grilla, gravedad, luz)
+    - camera2d (2D)
+  scenes_3d:
+    - sceneTabs (desde editor_scenes_updated)
+    - activeSceneId
+  player_ui:
+    - playerUiScreens
+    - activePlayerUiScreenId
+  play:
+    - previewPlaying
+    - debugMetrics
+  project:
+    - projectType
+    - gameStyle
+    - savePath / extractDir
+
+boot_sequence:
+  1: EngineProvider monta con projectType, initialSavePath, initialExtractDir
+  2: useEngineEffects reporta viewport bounds (set_bounds) al redimensionar
+  3: Main spawnea motor con --overlay
+  4: Evento ready → ping; main envía set_scene según 2D/3D
+  5: project_loaded_* o plantilla por defecto → estado inicial del editor
+
+viewport_sync:
+  hook: reportBounds en useContextEngine
+  cmd: set_bounds { x, y, width, height, offset_x?, offset_y? }
+  note: |
+    offset_* = posición del hueco dentro del content area × devicePixelRatio.
+    Usado por position-tracker Win32 para alinear overlay winit.
+
+scene_import:
+  files:
+    - buildImportSceneCommand.ts
+    - sceneImportOverlay.ts
+    - applyPendingRestoreToEngine.ts
+  flow: |
+    Burst de comandos sin undo; overlay de carga; al completar
+    project_load_3d_complete o equivalente 2D, limpia flags y undo.
+
+modal_delegation:
+  description: |
+    Ventanas modal Electron no tienen EngineProvider. Los hosts dedicados
+    (EntityProperties, PlayerUI, Blueprint) reciben estado serializado y
+    delegan acciones al editor padre vía sesiones en main/renderer.
+  sessions:
+    - entityPropertiesModalSessions.ts
+    - playerUiEditorSessions.ts
+
+do_not:
+  - Usar useContextEngine() dentro de modales Electron hijos
+  - Comparar snapshots completos en TS para dirty de escena (motor decide undo)
+  - Poner lógica async pesada dentro de componentes; usar hooks

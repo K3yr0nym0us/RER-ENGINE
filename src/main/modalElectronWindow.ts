@@ -166,6 +166,7 @@ export function sendPatchToModal(data: {
   handlerId: string
   playerUiEditorState?: unknown
   entityPropertiesState?: unknown
+  models?: unknown
 }): void {
   if (!modalWindow || modalWindow.isDestroyed()) return
   modalWindow.webContents.send('modal-electron:patch', data)

@@ -1,0 +1,72 @@
+# Fundamentos de runtime: viewport overlay + GPU Vulkan
+#
+# Cómo el motor Rust renderiza en una ventana winit alineada al hueco del
+# editor Electron, y la política gráfica compartida 2D/3D.
+#
+# Relacionado con:
+#   - docs/IPC_Protocol.yaml (set_bounds, resize)
+#   - docs/Engine_Context.yaml (reportBounds)
+#   - .cursor/rules/rer-engine-project.mdc
+
+version: 1
+updated: 2026-06-10
+
+viewport_overlay:
+  principle: |
+    El juego NO se renderiza dentro de Chromium. Electron reserva un hueco
+    en EngineView; el binario rer_engine_2d | rer_engine_3d abre una ventana
+    winit hermana (--overlay) sincronizada en posición y tamaño.
+  spawn_args: |
+    --overlay <parent_window_id> <screen_x> <screen_y> <width> <height> [rel_x rel_y]
+    --embed es alias legacy de --overlay
+  alignment:
+    renderer: |
+      viewportRef.getBoundingClientRect() × devicePixelRatio → set_bounds
+      offset_x/offset_y = offset del hueco dentro del content area (Win32 tracker)
+    main: viewportToScreenBounds convierte coords cliente → pantalla
+    motor: engine_shared/overlay.rs + platform position-tracker (Win32 / X11)
+  files:
+    - src/main/Engine/engine_shared/src/overlay.rs
+    - src/main/Engine/engine_shared/src/platform.rs
+    - src/main/index.ts (spawn motor, viewport-bounds IPC)
+    - src/renderer/src/pages/EngineView/EngineView.tsx
+
+gpu_policy:
+  backend: Vulkan exclusivo (wgpu Backends::VULKAN)
+  profiles:
+    - EngineGpuProfile::TwoD  → rer_engine_2d
+    - EngineGpuProfile::ThreeD → rer_engine_3d
+  platforms: Windows y Linux
+  forbidden:
+    - OpenGL / Backends::GL
+    - Backends::all()
+    - DX12 u otros backends wgpu
+    - Leer o setear RER_GPU_BACKEND (Electron la elimina al spawn)
+  chromium: |
+    Electron deshabilita aceleración GPU de Chromium en el editor para evitar
+    contención con el motor Vulkan del viewport.
+  init_errors: |
+    GpuInitError en engine_shared/gpu.rs con mensajes orientados al usuario
+    (drivers, Vulkan runtime). Main reenvía error al renderer si falla arranque.
+  files:
+    - src/main/Engine/engine_shared/src/gpu.rs
+    - src/main/Engine/engine_2d/src/engine/init.rs
+    - src/main/Engine/engine_3d/src/engine/init.rs
+
+input_routing:
+  note: |
+    La ventana overlay winit recibe ratón para viewport 3D/2D. Teclado Ctrl y
+    algunos atajos llegan vía set_ctrl_held desde Electron porque el foco
+    puede estar en el editor Chromium.
+
+metrics:
+  motor: debug_metrics ~1 Hz (fps, frame_time, draw_calls, cpu_percent, gpu_percent?)
+  sampler: engine_shared/process_metrics.rs
+  electron_gpu: src/main/gpuProcessUsage.ts (Windows: contadores GPU Engine por PID)
+  ui: MetricsPanel.tsx
+  linux_gap: ver CHECKLIST.md — nvidia-smi en motor; Electron Linux sin GPU aún
+
+do_not:
+  - Reintroducir with_embed_parent_window / reparent X11
+  - Usar WebGL en el renderer para el mundo del juego
+  - Cambiar backend según variable de entorno en producción

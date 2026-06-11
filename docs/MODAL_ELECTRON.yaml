@@ -84,6 +84,9 @@ dedicated_hosts:
     - componentKey: PlayerUiEditorModalBody
       host: PlayerUiEditorElectronHost
       extra: sesiones en playerUiEditorSessions.ts
+    - componentKey: EntityPropertiesModalBody
+      host: EntityPropertiesElectronHost
+      extra: sesiones en entityPropertiesModalSessions.ts; ver docs/Entity_Properties_Modal.yaml
 
 do_not:
   - Asumir que Modal de react-bootstrap en el editor funcionará encima del motor winit

@@ -189,15 +189,24 @@ fn evaluate_scene(in: VertexOutput) -> SceneFragOut {
     let n = normalize(in.world_normal);
     let l = scene_light_dir_norm();
     let ndotl = max(dot(n, l), 0.0);
-    let shadow = scene_shadow(in.world_pos, in.world_normal);
-    let ambient = u.light_color.xyz * u.light_params.y;
-    let direct = albedo.rgb * u.light_color.xyz * ndotl * shadow;
-    var color = ambient * albedo.rgb + direct;
-    color = apply_selection_rim(color, in.flag, in.world_pos, in.world_normal);
+    let ambient_factor = u.light_dir.w;
+    let lc = u.light_color.xyz;
+    let intensity = u.light_params.x;
+    var shadow = 1.0;
+    if u.light_color.w > 0.5 {
+        shadow = scene_shadow(in.world_pos, n);
+    }
+    let amb = albedo.rgb * ambient_factor * lc * intensity;
+    let dir = albedo.rgb * (1.0 - ambient_factor) * ndotl * lc * intensity * shadow;
+    let lit = apply_selection_rim(amb + dir, in.flag, in.world_pos, in.world_normal);
+    let base = amb + dir;
+    let rim_add = lit - base;
+    let amb_out = amb + rim_add * 0.5;
+    let dir_out = dir + rim_add * 0.5;
     return SceneFragOut(
-        vec4<f32>(color, albedo.a * in.alpha_mul),
+        vec4<f32>(amb_out, albedo.a * in.alpha_mul),
         vec4<f32>(shadow, 0.0, 0.0, 0.0),
-        vec4<f32>(direct, 0.0),
+        vec4<f32>(dir_out, albedo.a * in.alpha_mul),
         vec4<f32>(linear_depth, 0.0, 0.0, 0.0),
         vec4<f32>(velocity, 0.0, 0.0),
     );

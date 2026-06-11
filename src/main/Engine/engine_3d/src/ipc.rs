@@ -563,6 +563,32 @@ pub enum EngineCommand {
     NotifyProjectSaved { extract_dir: String },
     /// Tras `project_load_3d_complete` en el renderer: vaciar pilas undo/redo (carga terminada).
     ClearEditorUndoRedo,
+    /// Listar texturas embebidas del modelo GLB de una entidad (modal Propiedades).
+    ListEntityTextures { id: u32 },
+    /// Asignar imagen embebida a un nivel gráfico para un material.
+    SetEntityTextureLod {
+        id: u32,
+        material_index: u32,
+        /// low | medium | high | ultra
+        tier: String,
+        image_index: u32,
+    },
+    /// Cambiar tier de previsualización en editor (sin alterar asignaciones guardadas).
+    SetEntityTexturePreviewTier {
+        id: u32,
+        tier: String,
+    },
+    /// Nivel gráfico global de texturas GLB (`low` | `medium` | `high` | `ultra`).
+    SetGraphicsTextureTier {
+        tier: String,
+    },
+    /// Pestaña Texturas abierta en Propiedades: ocultar aura/gizmo de la entidad.
+    SetEntityTexturesPreviewFocus {
+        id: u32,
+        active: bool,
+    },
+    /// Re-emite `model_clips_ready` para entidades con skinning ya enlazadas.
+    ResendAllModelClips,
     /// Restore post-carga de entidad (transform, física, bindings).
     ApplyEntityRestore {
         id: u32,
@@ -678,6 +704,28 @@ pub struct ModelClipInfoEvent {
     pub fps: f32,
 }
 
+/// Asignación de textura embebida por material y nivel gráfico (persistencia `.save`).
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SaveMaterialTextureLod {
+    pub material_index: u32,
+    #[serde(default)]
+    pub tier_image_index: std::collections::HashMap<String, u32>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SaveEntityTextureLodSnapshot {
+    #[serde(default = "default_texture_lod_preview_tier")]
+    pub preview_tier: String,
+    #[serde(default)]
+    pub active_material_index: u32,
+    #[serde(default)]
+    pub materials: Vec<SaveMaterialTextureLod>,
+}
+
+fn default_texture_lod_preview_tier() -> String {
+    "low".to_string()
+}
+
 /// Entidad 3D — docs/Entities_Model_3D.yaml (`common`).
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SaveEntity3DSnapshot {
@@ -699,6 +747,8 @@ pub struct SaveEntity3DSnapshot {
     pub blueprint_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub controls: Option<ControlBindingsData>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub texture_lod: Option<SaveEntityTextureLodSnapshot>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -1256,6 +1306,18 @@ pub enum EngineEvent {
         scenes: Vec<EditorSceneListItem>,
         /// `project_load` | `boot` | `scene_deleted` | `project_saved` | `sync`
         update_reason: String,
+    },
+    /// Catálogo de texturas embebidas por material (respuesta a `list_entity_textures`).
+    #[serde(rename = "entity_textures_ready")]
+    EntityTexturesReady {
+        entity_id: u32,
+        model_path: String,
+        materials: Vec<crate::config_3d::entity_textures::EntityMaterialTexturesWire>,
+        active_tier: String,
+    },
+    #[serde(rename = "graphics_texture_tier_changed")]
+    GraphicsTextureTierChanged {
+        tier: String,
     },
 }
 

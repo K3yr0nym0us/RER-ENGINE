@@ -150,6 +150,11 @@ pub(crate) fn build_entity_3d_snapshot(
         None
     };
 
+    let texture_lod = state
+        .entity_texture_lod
+        .get(&id)
+        .and_then(crate::config_3d::entity_textures::entity_texture_lod_to_snapshot);
+
     SaveEntity3DSnapshot {
         id,
         name: state
@@ -171,6 +176,7 @@ pub(crate) fn build_entity_3d_snapshot(
         scripts,
         blueprint_id: state.entity_blueprint_ids.get(&id).cloned(),
         controls,
+        texture_lod,
     }
 }
 

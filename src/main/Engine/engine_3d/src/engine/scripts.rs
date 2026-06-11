@@ -307,6 +307,15 @@ impl State {
                 ScriptCmd::ClearActivePlayerUiScreen => {
                     self.clear_active_player_ui_screen();
                 }
+                ScriptCmd::SetGraphicsTextureTier { tier } => {
+                    if let Some(t) =
+                        crate::config_3d::entity_textures::TextureGraphicsTier::from_wire(&tier)
+                    {
+                        self.set_graphics_texture_tier(t);
+                    } else {
+                        log::warn!("[script] nivel gráfico desconocido: {tier}");
+                    }
+                }
                 ScriptCmd::ApplyKinematicGravity { .. }
                 | ScriptCmd::ApplyKinematicImpulse { .. }
                 | ScriptCmd::SlideEntity { .. } => {}

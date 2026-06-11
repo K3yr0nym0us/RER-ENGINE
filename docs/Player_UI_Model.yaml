@@ -1,0 +1,91 @@
+# Player UI / HUD del jugador
+#
+# Pantallas HUD en coordenadas NDC (-1..1), editables en modo preview.
+# Elementos: texto, botones, imágenes, polígonos (objects). Persistencia
+# en manifest por escena; referencias a fonts[] y hudImages[].
+#
+# Relacionado con:
+#   - docs/Save_Proyect_Model.yaml (referencias player_ui_*)
+#   - docs/MODAL_ELECTRON.yaml (PlayerUiEditorElectronHost)
+#   - docs/IPC_Protocol.yaml
+
+version: 1
+updated: 2026-06-10
+
+principle:
+  owner_runtime: motor (config_2d/player_ui | config_3d/player_ui)
+  owner_ui: acordeón UI del sidebar + modal editor Electron
+  coordinates: NDC; origen centro pantalla; z_index para orden de dibujo
+
+screens:
+  structure:
+    id: string                    # p. ej. fp-hud-01, hud-01
+    name: string
+    active: boolean               # Una pantalla activa por scope en play
+  scope:
+    - player                      # HUD en juego
+    - menu                        # Menús overlay (futuro / según proyecto)
+  defaults:
+    3d_fp: src/renderer/src/defaults/fpPlayerUiDefaults.ts
+    2d: default2dPlayerUiScreens()
+
+element_types:
+  text_box:
+    fields: [id, font_path, text, center_x, center_y, width, height, z_index, locked]
+    font_ref: fonts library
+    commands: add_player_ui_text_box, remove_player_ui_text_box, set_player_ui_hud_element_props
+  button:
+    fields: [id, text, font_path, texture_path?, center, size, z_index, locked, …]
+    refs: fonts + hudImages
+    config_model: playerUiButtonModel.ts
+  image:
+    fields: [id, image_path, center, size, z_index, locked]
+    ref: hudImages library
+  object:
+    fields: [id, vertices[], fill_color, texture_path?, z_index, locked]
+    drawing: set_player_ui_object_draw + clic en viewport
+    ref_texture: hudImages (opcional)
+
+edit_mode:
+  cmd: set_player_ui_edit_mode { enabled, scope?, screen_id? }
+  effect: |
+    En preview pausado o play según motor: muestra handles, permite crear/mover
+    elementos; emite player_ui_* events al sidebar y al modal editor.
+  modal:
+    host: PlayerUiEditorElectronHost
+    session: playerUiEditorSessions.ts
+    patch: pushPlayerUiEditorPatch (igual patrón que Entity Properties)
+
+persistence:
+  manifest_fields:
+    - playerUiScreens[] por escena
+    - playerUiTextBoxes / Buttons / Images / Objects anidados por screen
+  pack: |
+    Solo paths de fonts e imágenes HUD; los polígonos referencian hudImages[]
+    sin empaquetar geometría aparte. Ver Save_Proyect_Model.yaml.
+  load: import_player_ui_* con paths resueltos tras extraer .save
+  undo: push_undo_player_ui_hud en motor 3D (afecta dirty de escena)
+
+events:
+  - player_ui_text_boxes_list
+  - player_ui_text_box_added | updated | removed
+  - player_ui_button_added | removed
+  - player_ui_image_added | removed
+  - player_ui_object_added | removed | draw_ended
+  - player_ui_active_screen_changed
+
+key_files:
+  motor_3d: src/main/Engine/engine_3d/src/config_3d/player_ui/
+  motor_2d: src/main/Engine/engine_2d/src/config_2d/player_ui/
+  modal: src/renderer/src/modal-electron/playerUiEditorSessions.ts
+  hook_draw: src/renderer/src/hooks/usePlayerUiObjectDrawing.ts
+  save_build: src/renderer/src/defaults/buildProjectSaveFromEngine.ts
+  sidebar: src/renderer/src/pages/EngineView/components/sidebar/UIAccordion/
+
+rhai:
+  note: API engine.* para mostrar/ocultar pantallas y leer input HUD en play.
+  see: docs/RHAI_API.yaml
+
+do_not:
+  - Duplicar archivos de fuentes o imágenes HUD en playerUi* del manifest
+  - Editar HUD desde modal sin sincronizar sync_player_ui_screens al guardar

@@ -147,9 +147,9 @@ export function TransformPanel({
   ) => {
     const { hiddenAxes = [], labelAction, extraOnChange, labelClassName } = options
     return (
-      <div className="mb-2">
+      <div className="mb-3">
         <p className={`prop-label${labelClassName ? ` ${labelClassName}` : ''}`}>{label}</p>
-        <div className="d-flex gap-1 mt-1 align-items-stretch">
+        <div className="d-flex gap-1 mt-2 align-items-stretch">
           {(['X', 'Y', 'Z'] as const).map((ax, i) => {
             if (hiddenAxes.includes(i)) return null
             return (
@@ -309,15 +309,15 @@ export function TransformPanel({
         hiddenAxes:    is2D ? [2] : [],
         labelAction:   lockBtn,
         extraOnChange: lockProportions ? proportionOnChange : undefined,
-        labelClassName: 'mt-2',
+        labelClassName: 'mt-4',
       })}
       {!isEditorCamera && (
-      <div className="mb-2">
-        <p className="prop-label mt-2">{is2D ? t('Rotation (xyzw)') : t('Rotation (degrees)')}</p>
+      <div className="mb-3 mt-4">
+        <p className="prop-label">{is2D ? t('Rotation (xyzw)') : t('Rotation (degrees)')}</p>
         {!is2D && isPlayCharacter && (
-          <p className="text-secondary small mb-1">{t('Transform rotation player hint')}</p>
+          <p className="text-secondary small mb-2 mt-1">{t('Transform rotation player hint')}</p>
         )}
-        <div className="d-flex flex-column gap-1 mt-1">
+        <div className="d-flex flex-column gap-2 mt-2">
           {rotationAxes.map((ax, i) => (
             <div key={ax} className="d-flex align-items-center gap-1">
               <span

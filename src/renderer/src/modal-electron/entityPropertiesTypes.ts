@@ -29,6 +29,23 @@ export interface EntityPropertiesAnimation {
 	cell_offset_y?: number
 }
 
+export type GraphicsTextureTier = 'low' | 'medium' | 'high' | 'ultra'
+
+export interface EmbeddedTextureVariant {
+	imageIndex: number
+	width: number
+	height: number
+}
+
+export interface EntityMaterialTextures {
+	materialIndex: number
+	materialName: string
+	defaultImageIndex?: number
+	variants: EmbeddedTextureVariant[]
+	tierImageIndex: Partial<Record<GraphicsTextureTier, number>>
+	previewTier: GraphicsTextureTier
+}
+
 export interface EntityPropertiesEntity {
 	id: number
 	name: string
@@ -55,6 +72,11 @@ export interface EntityPropertiesState {
 	linkedBlueprintName: string | null
 	scripts: ScriptEntry[]
 	animationPlayingIds: number[]
+	entityTextures: EntityMaterialTextures[] | null
+	entityTexturesModelPath: string | null
+	entityTexturesLoaded: boolean
+	activeGraphicsTextureTier: GraphicsTextureTier
+	showTexturesTab: boolean
 }
 
 export type EntityPropertiesNestedModalKind =

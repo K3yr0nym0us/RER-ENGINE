@@ -191,6 +191,8 @@ pub(crate) struct SavedEntity3D {
     pub controls: Option<SavedControlBindings>,
     #[serde(default)]
     pub blueprint_id: Option<String>,
+    #[serde(default)]
+    pub texture_lod: Option<crate::ipc::SaveEntityTextureLodSnapshot>,
 }
 
 fn default_colision_on() -> bool {
@@ -289,6 +291,7 @@ struct PendingRestore {
     blueprint_id: Option<String>,
     entity_category: Option<String>,
     visual_model_path: Option<String>,
+    texture_lod: Option<crate::ipc::SaveEntityTextureLodSnapshot>,
 }
 
 impl State {
@@ -765,6 +768,7 @@ fn build_generic_pending_restore(
         blueprint_id: entity.blueprint_id.clone(),
         entity_category: entity_library_category(&entity.category),
         visual_model_path: visual,
+        texture_lod: entity.texture_lod.clone(),
     }
 }
 
@@ -793,6 +797,7 @@ fn build_player_pending_restore_from_entity(entity: &SavedEntity3D) -> PendingRe
         blueprint_id: entity.blueprint_id.clone(),
         entity_category: None,
         visual_model_path: visual,
+        texture_lod: entity.texture_lod.clone(),
     }
 }
 
@@ -897,6 +902,10 @@ fn apply_full_entity_restore(
 
     state.entity_colision.insert(id, pending.colision);
     state.reconcile_entity_physics_with_mesh(id);
+
+    if let Some(lod) = pending.texture_lod.as_ref() {
+        crate::config_3d::entity_textures::apply_entity_texture_lod_snapshot(state, id, lod);
+    }
 }
 
 /// Registra o actualiza biblioteca Resources sin borrar `category` ya guardada.
@@ -1558,9 +1567,15 @@ fn apply_loaded_proyect_3d_with_scene(
         let queued_paths: Vec<String> = model_load_queue.iter().map(|(p, _)| p.clone()).collect();
         let preloaded: Vec<String> = project.models.iter().map(|m| m.path.clone()).collect();
         for (path, name) in collect_uncached_burst_model_paths(&queued_paths, &preloaded) {
-            if ensure_model_cached(state, &path) {
-                upsert_model_store_entry(state, &path, &name, None);
+            if !ensure_model_cached(state, &path) {
+                continue;
             }
+            let category = project.models.iter().find(|m| {
+                state.model_path_key(&m.path) == state.model_path_key(&path)
+            }).and_then(|m| {
+                crate::ipc::normalize_model_library_category(m.category.as_deref())
+            });
+            upsert_model_store_entry(state, &path, &name, category);
         }
 
         for (path, pending) in model_load_queue {
@@ -1875,6 +1890,7 @@ pub(crate) fn saved_scene_from_snapshot_payload(
                     .collect(),
             }),
             blueprint_id: e.blueprint_id.clone(),
+            texture_lod: e.texture_lod.clone(),
         }
     }
 
@@ -1980,6 +1996,7 @@ pub(crate) fn build_fp_placeholder_saved_scene(id: u32, name: &str) -> SavedScen
             scripts: None,
             controls: None,
             blueprint_id: None,
+            texture_lod: None,
         },
         SavedEntity3D {
             id: 0,
@@ -1995,6 +2012,7 @@ pub(crate) fn build_fp_placeholder_saved_scene(id: u32, name: &str) -> SavedScen
             scripts: None,
             controls: None,
             blueprint_id: None,
+            texture_lod: None,
         },
         SavedEntity3D {
             id: 0,
@@ -2010,6 +2028,7 @@ pub(crate) fn build_fp_placeholder_saved_scene(id: u32, name: &str) -> SavedScen
             scripts: None,
             controls: None,
             blueprint_id: None,
+            texture_lod: None,
         },
     ];
 
@@ -2027,6 +2046,7 @@ pub(crate) fn build_fp_placeholder_saved_scene(id: u32, name: &str) -> SavedScen
         scripts: None,
         controls: None,
         blueprint_id: None,
+        texture_lod: None,
     };
 
     SavedScene {

@@ -22,6 +22,9 @@ pub(crate) struct ModelAnimationBinding {
     pub asset_path: String,
     /// Índices en `skinned_gpu_meshes` (una entrada por pieza del asset).
     pub part_gpu_indices: Vec<usize>,
+    /// Capa de textura por pieza (alineada con `part_gpu_indices` / `asset.parts`).
+    pub part_tex_layers: Vec<crate::texture::TextureLayer>,
+    /// Primera pieza; compat con `MeshComponent.tex_idx`.
     pub tex_layer: crate::texture::TextureLayer,
 }
 
@@ -151,12 +154,7 @@ impl State {
             log::warn!("[model_anim] modelo sin clips embebidos (solo bind pose): {path}");
         }
 
-        let tex_idx = self
-            .world
-            .get::<crate::ecs::MeshComponent>(id)
-            .map(|mc| mc.tex_idx)
-            .unwrap_or(0);
-        let tex_layer = self.texture_layer_for(tex_idx);
+        let fallback_layer = self.fallback_layer;
 
         let joint_layout = self
             .joint_bind_group_layout
@@ -194,14 +192,14 @@ impl State {
             part_gpu_indices.push(gpu_idx);
         }
 
-        // La textura ya está en el array vía MeshComponent / tex_layers; no reempacar aquí.
-
         let binding = ModelAnimationBinding {
             asset_path: path.to_string(),
             part_gpu_indices,
-            tex_layer,
+            part_tex_layers: vec![fallback_layer; asset.parts.len()],
+            tex_layer: fallback_layer,
         };
         self.model_animation_bindings.insert(id, binding.clone());
+        crate::config_3d::entity_textures::bootstrap_entity_model_textures(self, id, path);
 
         send_event(&EngineEvent::ModelClipsReady {
             id,
@@ -215,6 +213,57 @@ impl State {
             asset.clips.len(),
             asset.parts.len()
         );
+    }
+
+    /// Re-emite metadatos de clips ya enlazados (p. ej. tras cargar `.save` en el renderer).
+    pub(crate) fn resend_model_clips_ready(&self, id: EntityId) {
+        let Some(binding) = self.model_animation_bindings.get(&id) else {
+            return;
+        };
+        let path = binding.asset_path.clone();
+        let clip_meta: Vec<crate::ipc::ModelClipInfoEvent> = if let Some(asset) =
+            self.model_assets.get(&path)
+        {
+            asset
+                .clips
+                .iter()
+                .map(|c| crate::ipc::ModelClipInfoEvent {
+                    name: c.name.clone(),
+                    duration_s: c.duration_s,
+                    fps: c.fps,
+                })
+                .collect()
+        } else {
+            let path_buf = Path::new(&path);
+            let infos = if crate::config_3d::is_gltf_model_path(&path) {
+                model_asset::list_gltf_clip_infos(path_buf)
+            } else {
+                model_asset::list_model_clip_infos(path_buf)
+            };
+            infos
+                .into_iter()
+                .map(|c| ModelClipInfoEvent {
+                    name: c.name,
+                    duration_s: c.duration_s,
+                    fps: c.fps,
+                })
+                .collect()
+        };
+        if clip_meta.is_empty() {
+            return;
+        }
+        send_event(&EngineEvent::ModelClipsReady {
+            id,
+            path,
+            clips: clip_meta,
+        });
+    }
+
+    pub(crate) fn resend_all_model_clips_ready(&self) {
+        let ids: Vec<EntityId> = self.model_animation_bindings.keys().copied().collect();
+        for id in ids {
+            self.resend_model_clips_ready(id);
+        }
     }
 
     pub(crate) fn unbind_model_animations(&mut self, id: EntityId) {

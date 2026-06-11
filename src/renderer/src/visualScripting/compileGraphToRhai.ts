@@ -92,6 +92,12 @@ function compileExecChain(
         current = nextExecTarget(doc, current, EXEC_OUT)
         break
       }
+      case VISUAL_NODE_TYPES.SET_GRAPHICS_TEXTURE_TIER: {
+        const tier = String(node.data?.tier ?? 'low').trim().toLowerCase()
+        lines.push(`engine.set_graphics_texture_tier("${escapeRhaiString(tier)}");`)
+        current = nextExecTarget(doc, current, EXEC_OUT)
+        break
+      }
       case VISUAL_NODE_TYPES.SEQUENCE: {
         lines.push(...compileExecChain(doc, byId, nextExecTarget(doc, current, THEN_0), visited, options))
         lines.push(...compileExecChain(doc, byId, nextExecTarget(doc, current, THEN_1), visited, options))

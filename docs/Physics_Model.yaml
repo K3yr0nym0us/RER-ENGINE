@@ -1,0 +1,241 @@
+# Física y colisiones (2D y 3D)
+#
+# Rapier en ambos motores. El editor expone gravedad global, física por entidad
+# y herramientas de colisión/trigger. La simulación vive en Rust.
+#
+# Relacionado con:
+#   - docs/Entities_Model_3D.yaml          (physics_type, colision)
+#   - docs/Entities_Model_2D.yaml          (collider, execution_area)
+#   - docs/Entities_Model_3D_extras.yaml   (collision_by_entity_type)
+#   - docs/RHAI_API.yaml                   (set_physics, kinematic 2D, fp 3D)
+#   - docs/IPC_Protocol.yaml               (set_physics, set_gravity, …)
+
+version: 1
+updated: 2026-06-10
+
+principle:
+  engine_first: |
+    Rapier, shape-casts, cápsula del jugador y reconciliación de colliders
+    ocurren en engine_2d / engine_3d. El renderer envía set_physics / set_gravity
+    y refleja physics_changed.
+  backend: |
+    Ambos binarios usan rapier3d. En 2D los ejes están restringidos a XY
+    (dinámica estrictamente plana). Gravedad en -Y con magnitud positiva
+    configurable (DEFAULT_GRAVITY_MAGNITUDE = 15.0 u/s² en engine_shared).
+
+# ---------------------------------------------------------------------------
+# Mundo (gravedad y límites)
+# ---------------------------------------------------------------------------
+
+world_config:
+  gravity:
+    default: 15.0   # rer_engine_shared::DEFAULT_GRAVITY_MAGNITUDE
+    axis: Y negativo (hacia abajo en ambos motores)
+    ui: WorldAccordion → WorldPhysicsAccordion (slider 0–50 u/s²)
+    ipc: set_gravity { gravity }
+    note: |
+      El valor del editor es magnitud positiva. El motor aplica -abs(gravity)
+      internamente. Los scripts Rhai de salto 2D usan la gravedad del mundo,
+      no el cuarto argumento de apply_kinematic_gravity.
+
+  workspace:
+    2d:
+      fields: [worldWidth, worldHeight]
+      ui: WorldWorkspaceAccordion
+      ipc: set_world_size { width, height }
+    3d:
+      fields: [worldWidth, worldHeight, worldDepth]
+      ipc: set_world_size { width, height, depth }
+      effect: WorldBounds3D + muros invisibles + suelo alineado a bounds
+
+  grid:
+    ui: WorldGridAccordion
+    ipc: set_grid_visible, set_grid_cell_size
+
+# ---------------------------------------------------------------------------
+# Tipos de cuerpo Rapier (entidades genéricas)
+# ---------------------------------------------------------------------------
+
+body_types:
+  dynamic:
+    description: Afectado por gravedad y colisiones
+    use_2d: Objetos que caen o se empujan
+    use_3d: Objetos con física activa
+  static:
+    description: No se mueve; bloquea a otros
+    use_2d: Escenarios con colisión, muros
+    use_3d: environment con colisión, props fijos
+  kinematic:
+    description: Movido por código / character controller
+    use_2d: Personajes (KinematicCharacterController + snap suelo)
+    use_3d: Entidades que el script mueve sin gravedad Rapier dinámica
+
+ipc_entity_physics:
+  set_physics:
+    params: { id, enabled, body_type }
+    effect_3d: |
+      Si enabled: set_entity_physics_from_mesh_aabb según body_type.
+      Jugador y cámara editor: siempre sin cuerpo Rapier de entidad.
+    effect_2d: |
+      Caja colisionadora XY según half_extents del sprite + collider_offset.
+    event: physics_changed { entity_id, enabled, body_type }
+  set_entity_colision:   # solo 3D
+    params: { id, colision }
+    description: |
+      Flag persistido en .save (campo colision). Activa/desactiva colisión de
+      malla del último modelo cargado. Independiente del selector body_type en UI,
+      pero al cargar reconcile_entity_physics_with_mesh lo respeta.
+    effect: |
+      colision=true → reconcilia AABB de malla o plano (muros).
+      colision=false → remove_entity_body (excepto jugador).
+
+# ---------------------------------------------------------------------------
+# UI del editor (Propiedades)
+# ---------------------------------------------------------------------------
+
+ui_properties:
+  location: PropertiesAccordion / EntityPropertiesModalContent
+  environment_3d:
+    control: checkbox "Con colisión"
+    sends: set_physics(id, enabled, 'static')
+  player_3d:
+    control: física fija (dynamic, solo lectura)
+    note: Cápsula cinemática en play; no Rapier de malla en entidad
+  character_2d:
+    default_on_enable: kinematic al activar física
+  other_entities:
+    control: checkbox + select dynamic | static | kinematic
+  blueprint_propagation: |
+    setEntityPhysics actualiza blueprint (colision, physics_enabled, physics_type)
+    y propaga a todas las instancias con el mismo blueprint_id.
+
+# ---------------------------------------------------------------------------
+# Colisión por tipo de entidad (comportamiento actual del motor)
+# ---------------------------------------------------------------------------
+
+collision_by_entity_type:
+  reference: docs/Entities_Model_3D_extras.yaml
+  summary:
+    Player_3d:
+      motor: Cápsula + shape cast (move_character_capsule_at_feet); sin malla Rapier
+      play: play_controller.rs (WASD, salto, sprint)
+    Ground_3d:
+      motor: Halfspace global (add_static_ground); sin cuerpo por entidad
+    Sun_3d:
+      motor: Sin collider
+    EditorBox_3d:
+      motor: Caja estática según escala del transform
+    Modelo_glb_fbx_3d:
+      motor: AABB de malla si colision=true y set_physics activo
+    Character_3d_NPC:
+      motor: Sin cuerpo Rapier de malla (cápsula de categoría character si aplica)
+    Collider_2d:
+      tool: draw_collider (4 puntos XY)
+      motor: Cubo estático Rapier desde cuadrilátero
+      restore: create_collider_from_points
+    ExecutionArea_2d:
+      tool: draw_execution_area
+      motor: Trigger Rhai; sin cuerpo físico
+      callback: on_trigger_enter(trigger, actor)
+    Collider_3d:
+      tool: draw_collider (plane_tools; plano orientado)
+      motor: Quad semitransparente + caja Rapier fina (PLANE_TOOL_PHYSICS_DEPTH)
+      path: "[Colisionador]"
+    ExecutionArea_3d:
+      tool: draw_execution_area (plane_tools)
+      motor: Trigger plano 3D (execution_areas_3d.rs)
+      path: "[ExecutionArea]"
+
+tools:
+  2d:
+    accordion: ToolsAccordion
+    hooks: usePointDrawing (4 puntos)
+    ipc: set_active_tool { tool: draw_collider | draw_execution_area | "" }
+    events: collider_created, execution_area_created, drawing_progress
+  3d:
+    context: PlaneToolContext
+    ipc: set_active_tool con la misma tool string
+    rotate: Q/E en viewport (polling OS); preview semitransparente
+    defaults: DEFAULT_PLANE_WIDTH=4, DEFAULT_PLANE_HEIGHT=3
+
+# ---------------------------------------------------------------------------
+# 2D — detalles de implementación
+# ---------------------------------------------------------------------------
+
+engine_2d:
+  module: src/main/Engine/engine_2d/src/physics_2d.rs
+  character_movement:
+    kinematic: KinematicCharacterController (snap_to_ground, offset)
+    velocity: kinematic_actor_vel desde scripts (move_control, apply_kinematic_gravity)
+    modules:
+      - config_2d/physics_2d/teleport_entity.rs
+      - config_2d/physics_2d/move_physics_entity.rs
+      - config_2d/physics_2d/kinematic_gravity.rs
+  collider_shape: Caja XY desde half_extents del sprite + collider_offset
+  sync_transform: teleport_entity al mover en editor con física activa
+
+# ---------------------------------------------------------------------------
+# 3D — detalles de implementación
+# ---------------------------------------------------------------------------
+
+engine_3d:
+  module: src/main/Engine/engine_3d/src/config_3d/physics_3d.rs
+  reconcile: config_3d/mod.rs → reconcile_entity_physics_with_mesh
+  mesh_aabb: set_entity_physics_from_mesh_aabb (local_bounds del GLB + transform)
+  sphere_fallback: entity_uses_sphere_physics (iconos sol, etc.)
+  play_character:
+    module: play_controller.rs + fps_camera.rs
+    movement: shape cast cápsula a nivel de pies
+    exclude: collider del propio jugador excluido del cast
+  plane_walls: sync_plane_wall_physics para muros draw_collider 3D
+
+# ---------------------------------------------------------------------------
+# Persistencia en .save
+# ---------------------------------------------------------------------------
+
+persistence:
+  entity_3d:
+    colision: boolean          # default true
+    physics_type: dynamic | static | kinematic | null
+    note: |
+      Al cargar, entity_colision map + physics_type restauran Rapier vía
+      reconcile_entity_physics_with_mesh. El renderer mapea colision →
+      physicsEnabled en entity3dEditorSync cuando aplica.
+  entity_2d:
+    physics_type: en entidad guardada
+    collider_points: en entidades kind collider / execution_area
+  world:
+    gravity: number
+    worldWidth / worldHeight / worldDepth (3D)
+  blueprint:
+    fields: [colision, physics_enabled, physics_type]
+
+rhai:
+  common:
+    - engine.set_physics(id, enabled, body_type?)
+    - engine.move_entity / move_entity_facing (con cuerpo físico)
+  2d_only:
+    - engine.apply_kinematic_gravity
+    - engine.move_control
+    - engine.move_entity_slide
+  3d_only:
+    - engine.fp_press_key / movimiento FP vía play_controller (no move_entity XY)
+
+key_files:
+  motor_2d: src/main/Engine/engine_2d/src/physics_2d.rs
+  motor_3d: src/main/Engine/engine_3d/src/config_3d/physics_3d.rs
+  reconcile_3d: src/main/Engine/engine_3d/src/config_3d/mod.rs
+  plane_tools: src/main/Engine/engine_3d/src/config_3d/plane_tools.rs
+  execution_3d: src/main/Engine/engine_3d/src/config_3d/execution_areas_3d.rs
+  play: src/main/Engine/engine_3d/src/config_3d/play_controller.rs
+  commands_2d: src/main/Engine/engine_2d/src/engine/commands.rs
+  commands_3d: src/main/Engine/engine_3d/src/engine/commands.rs
+  ui_world: src/renderer/src/pages/EngineView/components/sidebar/WorldAccordion/
+  ui_props: src/renderer/src/pages/EngineView/components/sidebar/PropertiesAccordion/
+  actions: src/renderer/src/context/useContextEngine/hooks/createEngineActions.ts (setEntityPhysics)
+
+do_not:
+  - Implementar detección de colisiones solo en TypeScript durante play
+  - Asumir que colision y physics_type son el mismo campo en el .save
+  - Activar física Rapier en Ground, Sun o jugador 3D como en un objeto dynamic
+  - Usar gravedad del script Rhai ignorando set_gravity del mundo en 2D kinematic
