@@ -1068,6 +1068,19 @@ function formatEntityKindBreakdown(data: ProjectSaveData): string {
   return ` [${parts.join(', ')}]`
 }
 
+const MODEL_SOURCE_EXTS = new Set(['.glb', '.gltf', '.fbx'])
+
+function isModelSourceFile(p: string): boolean {
+  return MODEL_SOURCE_EXTS.has(path.extname(p).toLowerCase())
+}
+
+/** Manifest v2: GLB/FBX fuente van en `imported/*.rerasset` (+ `source/` solo dev). */
+function shouldPackModelSourcePath(data: ProjectSaveData, p: string): boolean {
+  if ((data.version ?? 1) < 2) return true
+  if (!(data.resources?.models?.length)) return true
+  return !isModelSourceFile(p)
+}
+
 /**
  * Recorre un ProjectSaveData y devuelve todos los paths de archivo absolutos
  * que hay que copiar al paquete de assets del archivo .save.
@@ -1077,6 +1090,7 @@ function collectAssetPaths(data: ProjectSaveData): Set<string> {
   const hasScenes = (data.scenes?.length ?? 0) > 0
   const add = (p: string | null | undefined) => {
     if (!p || !path.isAbsolute(p) || !fs.existsSync(p)) return
+    if (!shouldPackModelSourcePath(data, p)) return
     // En Windows evitamos duplicados del mismo archivo por separadores distintos (\ vs /).
     paths.add(toAssetPathKey(p))
   }
@@ -1450,6 +1464,25 @@ function remapPaths(data: ProjectSaveData, map: Map<string, string>): ProjectSav
 /**
  * Crea un archivo .save (ZIP) con `manifest.json` + `assets/`.
  */
+function isDevSavePackage(): boolean {
+  return process.env.NODE_ENV === 'development' || !app.isPackaged
+}
+
+function copyImportedAssetsToStaging(stagingDir: string, extractDir: string | null): void {
+  if (!extractDir) return
+  const src = path.join(extractDir, 'imported')
+  if (!fs.existsSync(src)) return
+  const dest = path.join(stagingDir, 'imported')
+  fs.cpSync(src, dest, { recursive: true })
+}
+
+function copySourceAssetsToStaging(stagingDir: string, extractDir: string | null): void {
+  if (!isDevSavePackage() || !extractDir) return
+  const src = path.join(extractDir, 'source')
+  if (!fs.existsSync(src)) return
+  fs.cpSync(src, path.join(stagingDir, 'source'), { recursive: true })
+}
+
 function saveProjectToFile(saveFilePath: string, data: ProjectSaveData): boolean {
   const tempRoot = app.getPath('temp')
   const stagingDir = fs.mkdtempSync(path.join(tempRoot, 'rer-save-write-'))
@@ -1459,6 +1492,8 @@ function saveProjectToFile(saveFilePath: string, data: ProjectSaveData): boolean
     const fontsDir = path.join(stagingDir, 'fonts')
     const hudImagesDir = path.join(stagingDir, 'hud-images')
     const scriptingDir = path.join(stagingDir, 'scripting')
+    copyImportedAssetsToStaging(stagingDir, currentProjectExtractDir)
+    copySourceAssetsToStaging(stagingDir, currentProjectExtractDir)
     const assetPaths = collectAssetPaths(data)
     const pathMap = copyAssetsToDir(assetPaths, assetsDir, soundsDir, fontsDir, hudImagesDir)
     const remapped = remapPaths(data, pathMap)

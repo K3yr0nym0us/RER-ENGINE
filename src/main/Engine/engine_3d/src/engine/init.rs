@@ -859,6 +859,7 @@ impl State {
             control_bindings_by_entity: HashMap::new(),
             sprite_store: HashMap::new(),
             model_store: HashMap::new(),
+            imported_model_registry: crate::assets::ImportedModelRegistry::default(),
             static_model_cache: HashMap::new(),
             model_preload_rx,
             model_preload_tx,

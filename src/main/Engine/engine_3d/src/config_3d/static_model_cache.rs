@@ -128,9 +128,14 @@ impl State {
         self.model_preload_gpu_queue.retain(|p| p.path != key);
         self.drop_pending_load_models_for_path(&key);
         log::error!("error cargando modelo {key}: {message}");
+        let model_id = self.imported_model_registry.model_id_for_path(&key);
+        if let Some(ref id) = model_id {
+            self.imported_model_registry.set_state(id, rer_engine_shared::assets::AssetState::Failed);
+        }
         send_event(&EngineEvent::ModelAssetLoadFailed {
             path: key,
             message: message.clone(),
+            model_id,
         });
         send_event(&EngineEvent::Error { message });
     }
@@ -139,12 +144,35 @@ impl State {
         normalize_model_path(path)
     }
 
+    /// Clave de caché GPU: `model_id` si el asset importado está listo; si no, ruta fuente.
+    pub(crate) fn model_cache_key(&self, path: &str) -> String {
+        if path.starts_with("model_") {
+            return path.to_string();
+        }
+        let source_key = self.model_path_key(path);
+        if let Some(id) = self.imported_model_registry.model_id_for_path(&source_key) {
+            if self
+                .imported_model_registry
+                .get(&id)
+                .is_some_and(|e| e.state == rer_engine_shared::assets::AssetState::Ready)
+            {
+                return id;
+            }
+        }
+        source_key
+    }
+
     /// Nombre corto del recurso (alias del proyecto) o nombre de archivo.
     pub(crate) fn model_display_label(&self, path: &str) -> String {
         self.model_store_display_name(path)
     }
 
     pub(crate) fn model_store_display_name(&self, path: &str) -> String {
+        if path.starts_with("model_") {
+            if let Some(entry) = self.imported_model_registry.get(path) {
+                return entry.name.clone();
+            }
+        }
         let key = self.model_path_key(path);
         self.model_store
             .get(&key)
@@ -174,54 +202,7 @@ impl State {
         name: &str,
         category: Option<&str>,
     ) {
-        let key = self.model_path_key(path);
-        if !Path::new(&key).is_file() {
-            let message = format!("No se encontró el modelo: {path}");
-            send_event(&EngineEvent::ModelAssetLoadFailed {
-                path: key.clone(),
-                message: message.clone(),
-            });
-            send_event(&EngineEvent::Error { message });
-            return;
-        }
-
-        let category = crate::ipc::normalize_model_library_category(category)
-            .or_else(|| self.model_store.get(&key).and_then(|e| e.category.clone()));
-        let is_character = category.as_deref() == Some("character");
-        let entry = crate::ipc::ModelStoreEntry {
-            name: name.to_string(),
-            category,
-        };
-        self.model_store.insert(key.clone(), entry);
-
-        if self.static_model_cache.contains_key(&key) {
-            if is_character {
-                self.ensure_play_character_model_cache_warmed(&key);
-            }
-            send_event(&EngineEvent::ModelAssetLoaded {
-                path: key,
-                name: name.to_string(),
-            });
-            return;
-        }
-
-        if self.model_preload_inflight.contains(&key) {
-            send_event(&EngineEvent::ModelAssetPreloadStarted {
-                path: key,
-                name: name.to_string(),
-            });
-            return;
-        }
-
-        self.start_model_preload(
-            key,
-            name.to_string(),
-            ModelPreloadOptions::library(if is_character {
-                Some("character")
-            } else {
-                None
-            }),
-        );
+        self.start_imported_model_pipeline(path, name, category);
     }
 
     /// Variante `::play_character` en GPU para `replace_entity_model` instantáneo.
@@ -243,6 +224,7 @@ impl State {
         send_event(&EngineEvent::ModelAssetPreloadStarted {
             path: key.clone(),
             name: name.clone(),
+            model_id: self.imported_model_registry.model_id_for_path(&key),
         });
 
         let tx = self.model_preload_tx.clone();
@@ -281,8 +263,21 @@ impl State {
         }
         for result in results {
             match result {
-                Ok(data) => self.enqueue_model_preload_for_gpu(data),
+                Ok(data) => {
+                    if data.path.starts_with("model_") {
+                        if let Some(entry) = self.imported_model_registry.get(&data.path) {
+                            let source = entry.source_path.clone();
+                            let name = entry.name.clone();
+                            self.on_import_bake_finished(&data.path, &source, &name);
+                        }
+                    }
+                    self.enqueue_model_preload_for_gpu(data);
+                }
                 Err((path, message)) => {
+                    if path.starts_with("model_") {
+                        self.imported_model_registry
+                            .set_state(&path, rer_engine_shared::assets::AssetState::Failed);
+                    }
                     self.emit_model_asset_load_failed(&path, message);
                 }
             }
@@ -431,9 +426,15 @@ impl State {
         }
 
         let name = self.model_store_display_name(&path);
+        let model_id = if path.starts_with("model_") {
+            Some(path.clone())
+        } else {
+            self.imported_model_registry.model_id_for_path(&path)
+        };
         send_event(&EngineEvent::ModelAssetLoaded {
             path: path.clone(),
             name,
+            model_id,
         });
         let gpu_msg = format!(
             "Modelo «{display_name}» subido a GPU ({} parte/s)",
@@ -519,15 +520,21 @@ impl State {
         }
     }
 
-    fn enqueue_model_preload_for_gpu(&mut self, data: ModelPreloadCpuResult) {
+    pub(crate) fn enqueue_model_preload_for_gpu(&mut self, data: ModelPreloadCpuResult) {
         let path = data.path.clone();
 
         if self.static_model_cache.contains_key(&path) {
             self.model_preload_inflight.remove(&path);
             self.ensure_play_character_model_cache_warmed(&path);
+            let model_id = if path.starts_with("model_") {
+                Some(path.clone())
+            } else {
+                self.imported_model_registry.model_id_for_path(&path)
+            };
             send_event(&EngineEvent::ModelAssetLoaded {
                 path: path.clone(),
                 name: self.model_store_display_name(&path),
+                model_id,
             });
             self.flush_pending_load_models_for_path(&path);
             self.flush_pending_entity_model_replaces_for_path(&path);
@@ -712,9 +719,30 @@ impl State {
     }
 
     pub(crate) fn ensure_static_model_cached(&mut self, path: &str) -> Result<(), String> {
-        let key = self.model_path_key(path);
+        let source_key = self.model_path_key(path);
+        let key = self.model_cache_key(path);
         if self.static_model_cache.contains_key(&key) {
             return Ok(());
+        }
+        if let Some(entry) = self
+            .imported_model_registry
+            .get_by_source_path(&source_key)
+            .cloned()
+        {
+            if entry.state == rer_engine_shared::assets::AssetState::Ready {
+                let is_character = entry.category.as_deref() == Some("character");
+                let model_id = entry.model_id.clone();
+                let rerasset_path = entry.rerasset_path.clone();
+                let entry_name = entry.name.clone();
+                self.enqueue_gpu_from_rerasset(
+                    &model_id,
+                    &rerasset_path,
+                    &entry_name,
+                    is_character,
+                );
+                self.wait_for_static_model_cache(&model_id);
+                return Ok(());
+            }
         }
         let display_name = self.model_display_label(path);
         if self.model_preload_inflight.contains(&key) {
@@ -793,7 +821,7 @@ impl State {
     }
 
     pub(crate) fn cached_static_model_parts(&self, path: &str) -> Option<&[CachedStaticModelPart]> {
-        let key = self.model_path_key(path);
+        let key = self.model_cache_key(path);
         self.static_model_cache.get(&key).map(|v| v.as_slice())
     }
 

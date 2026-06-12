@@ -2663,6 +2663,7 @@ dependencies = [
 name = "rer-engine-shared"
 version = "0.1.0"
 dependencies = [
+ "bitflags 2.11.1",
  "bytemuck",
  "env_logger",
  "glam",

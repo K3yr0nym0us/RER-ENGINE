@@ -84,6 +84,7 @@ impl State {
         self.static_model_cache.clear();
         self.model_assets.clear();
         self.model_store.clear();
+        self.imported_model_registry = crate::assets::ImportedModelRegistry::default();
         self.model_preload_inflight.clear();
         self.model_preload_gpu_queue.clear();
         self.pending_load_models.clear();

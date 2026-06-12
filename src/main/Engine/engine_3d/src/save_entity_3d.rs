@@ -155,13 +155,17 @@ pub(crate) fn build_entity_3d_snapshot(
         .get(&id)
         .and_then(crate::config_3d::entity_textures::entity_texture_lod_to_snapshot);
 
+    let model = entity_model_for(meta);
+    let model_id = state.imported_model_registry.model_id_for_path(&model);
+
     SaveEntity3DSnapshot {
         id,
         name: state
             .entity_display_name(id)
             .unwrap_or_else(|| format!("Entity {id}")),
         category,
-        model: entity_model_for(meta),
+        model,
+        model_id,
         position: t.position.to_array(),
         rotation: [
             t.rotation.x,

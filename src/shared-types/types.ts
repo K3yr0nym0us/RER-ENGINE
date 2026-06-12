@@ -144,6 +144,8 @@ export interface Entity3D {
   name: string
   category: Entity3DCategory
   model: string
+  /** ID estable del asset importado (manifest v2). */
+  model_id?: string
   position: [number, number, number]
   rotation: [number, number, number, number]
   scale: [number, number, number]
@@ -418,7 +420,11 @@ export interface ProjectSaveData {
   /** Sprites precargados en el proyecto (nombre -> ruta relativa). */
   sprites?:        Array<{ name: string; path: string }>
   /** Modelos 3D precargados en el proyecto. */
-  models?:         Array<{ name: string; path: string; category?: ModelCategory }>
+  models?:         Array<{ name: string; path: string; category?: ModelCategory; model_id?: string; asset?: string }>
+  /** Biblioteca de assets importados (manifest v2). */
+  resources?: {
+    models?: ResourceModelEntry[]
+  }
   /** Sonidos precargados en el proyecto. */
   sounds?:         Array<{ name: string; path: string }>
   /** Fuentes precargadas en el proyecto. */
@@ -526,7 +532,7 @@ export interface ProjectLoaded3dPayload {
   entityCount:   number
   scenes?:       Array<{ id: number; name: string }>
   language?:     string
-  models:        Array<{ name: string; path: string; category?: ModelCategory }>
+  models:        Array<{ name: string; path: string; category?: ModelCategory; model_id?: string; asset?: string }>
   sounds:        Array<{ name: string; path: string }>
   fonts:         Array<{ name: string; path: string }>
   backgrounds:   Array<{ name: string; path: string }>
@@ -960,6 +966,23 @@ export interface ModelInfo {
   loading?: boolean
   /** Categoría de uso en modales de entidades 3D. */
   category?: ModelCategory
+  /** ID estable del asset importado (.rerasset). */
+  model_id?: string
+  /** Ruta relativa al `.rerasset` en el `.save`. */
+  asset?: string
+  /** importing | ready | failed */
+  state?: string
+}
+
+export interface ResourceModelEntry {
+  id: string
+  name: string
+  type: ModelCategory
+  asset: string
+  importer_version: number
+  source?: string
+  source_size?: number
+  source_mtime?: number
 }
 
 export interface SoundInfo {

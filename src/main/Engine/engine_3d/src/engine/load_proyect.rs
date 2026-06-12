@@ -37,6 +37,8 @@ const ENTITY_MARKERS: &[&str] = &[
 #[derive(Debug, Deserialize, Clone)]
 pub(crate) struct ProjectSaveData {
     #[serde(default)]
+    version: u32,
+    #[serde(default)]
     r#type: String,
     pub gameStyle: String,
     #[serde(default)]
@@ -86,6 +88,26 @@ pub(crate) struct ProjectSaveData {
     player_ui_objects: Vec<crate::ipc::SavePlayerUiObjectSnapshot>,
     #[serde(default, rename = "hudImages")]
     hud_images: Vec<NamedPath>,
+    #[serde(default)]
+    resources: Option<SavedResources>,
+}
+
+#[derive(Debug, Deserialize, Clone, Serialize)]
+pub(crate) struct SavedResources {
+    #[serde(default)]
+    models: Vec<SavedResourceModel>,
+}
+
+#[derive(Debug, Deserialize, Clone, Serialize)]
+pub(crate) struct SavedResourceModel {
+    id: String,
+    name: String,
+    #[serde(rename = "type")]
+    model_type: String,
+    asset: String,
+    importer_version: u16,
+    #[serde(default)]
+    source: Option<String>,
 }
 
 #[allow(non_snake_case)]
@@ -109,12 +131,16 @@ pub(crate) struct SavedWorldConfig {
     shadowDarkness: Option<f32>,
 }
 
-#[derive(Debug, Deserialize, Clone, Serialize)]
+#[derive(Debug, Default, Deserialize, Clone, Serialize)]
 pub(crate) struct NamedPath {
     name: String,
     path: String,
     #[serde(default)]
     category: Option<String>,
+    #[serde(default)]
+    model_id: Option<String>,
+    #[serde(default)]
+    asset: Option<String>,
 }
 
 #[allow(non_snake_case)]
@@ -176,6 +202,8 @@ pub(crate) struct SavedEntity3D {
     pub name: String,
     pub category: String,
     pub model: String,
+    #[serde(default)]
+    pub model_id: Option<String>,
     pub position: [f32; 3],
     #[serde(default)]
     pub rotation: Option<[f32; 4]>,
@@ -388,11 +416,29 @@ fn is_model_3d_path(p: &str) -> bool {
 }
 
 fn is_3d_model_file_entity(entity: &SavedEntity3D) -> bool {
+    if entity
+        .model_id
+        .as_deref()
+        .is_some_and(|id| !id.is_empty())
+    {
+        return entity_path_marker(&entity.model).is_none()
+            && !matches!(entity.category.as_str(), "sun" | "ground" | "player");
+    }
     if !is_model_3d_path(&entity.model) {
         return false;
     }
     entity_path_marker(&entity.model).is_none()
         && !matches!(entity.category.as_str(), "sun" | "ground" | "player")
+}
+
+/// Path de archivo fuente para spawn / caché (resuelve `model_id` → biblioteca).
+fn entity_source_model_path(state: &State, entity: &SavedEntity3D) -> String {
+    if let Some(id) = entity.model_id.as_deref().filter(|s| !s.is_empty()) {
+        if let Some(entry) = state.imported_model_registry.get(id) {
+            return entry.source_path.clone();
+        }
+    }
+    entity.model.clone()
 }
 
 fn entity_library_category(category: &str) -> Option<String> {
@@ -530,6 +576,8 @@ fn resolve_loaded_paths(project: &mut ProjectSaveData, extracted_dir: &Path) {
             name: s.name.clone(),
             path: resolve_path(&s.path, extracted_dir),
             category: None,
+            model_id: None,
+            asset: None,
         })
         .collect();
     project.fonts = project
@@ -539,6 +587,8 @@ fn resolve_loaded_paths(project: &mut ProjectSaveData, extracted_dir: &Path) {
             name: f.name.clone(),
             path: resolve_path(&f.path, extracted_dir),
             category: None,
+            model_id: None,
+            asset: None,
         })
         .collect();
     project.backgrounds = project
@@ -548,6 +598,8 @@ fn resolve_loaded_paths(project: &mut ProjectSaveData, extracted_dir: &Path) {
             name: b.name.clone(),
             path: resolve_path(&b.path, extracted_dir),
             category: None,
+            model_id: None,
+            asset: None,
         })
         .collect();
     project.models = project
@@ -557,6 +609,8 @@ fn resolve_loaded_paths(project: &mut ProjectSaveData, extracted_dir: &Path) {
             name: m.name.clone(),
             path: resolve_path(&m.path, extracted_dir),
             category: m.category.clone(),
+            model_id: m.model_id.clone(),
+            asset: m.asset.clone(),
         })
         .collect();
     project.hud_images = project
@@ -566,6 +620,8 @@ fn resolve_loaded_paths(project: &mut ProjectSaveData, extracted_dir: &Path) {
             name: h.name.clone(),
             path: resolve_path(&h.path, extracted_dir),
             category: None,
+            model_id: None,
+            asset: None,
         })
         .collect();
     project.player_ui_text_boxes = project
@@ -930,6 +986,8 @@ fn upsert_model_store_entry(
         crate::ipc::ModelStoreEntry {
             name: resolved_name,
             category: resolved_category,
+            model_id: prev.and_then(|e| e.model_id.clone()),
+            rerasset_path: prev.and_then(|e| e.rerasset_path.clone()),
         },
     );
 }
@@ -985,12 +1043,14 @@ fn collect_scene_required_model_paths(state: &State, view: &ActiveSaveView) -> V
     let mut paths: Vec<String> = Vec::new();
     for entity in &view.entities {
         if is_3d_model_file_entity(entity) {
-            push_unique_model_path(&mut paths, &entity.model, key_of);
+            let p = entity_source_model_path(state, entity);
+            push_unique_model_path(&mut paths, &p, key_of);
         }
     }
     if let Some(player) = view.player.as_ref() {
-        if is_model_3d_path(&player.model) {
-            push_unique_model_path(&mut paths, &player.model, key_of);
+        if is_3d_model_file_entity(player) {
+            let p = entity_source_model_path(state, player);
+            push_unique_model_path(&mut paths, &p, key_of);
         }
     }
     paths
@@ -1405,23 +1465,80 @@ fn apply_loaded_proyect_3d_with_scene(
             crate::ipc::normalize_model_library_category(model.category.as_deref()),
         );
     }
-    let scene_model_paths = collect_scene_required_model_paths(state, &view);
-    let warm_play_keys = collect_play_character_warm_model_keys(state, &view);
-    kickoff_preload_models_for_save(state, &scene_model_paths, &warm_play_keys);
-    log_load_step(
-        load_started_at,
-        &mut step_started,
-        &format!(
-            "Precarga de modelos de escena lanzada ({} archivo/s)",
-            scene_model_paths.len()
-        ),
-    );
-
-    let burst_load_planned = burst_load;
-    if !project.models.is_empty() && !burst_load_planned {
-        for model in &project.models {
-            let _ = ensure_model_cached(state, &model.path);
+    if let Some(resources) = &project.resources {
+        let extract_dir = std::env::var("RER_PROJECT_EXTRACT_DIR").unwrap_or_default();
+        let extract_path = std::path::Path::new(extract_dir.as_str());
+        for res in &resources.models {
+            let asset_abs = if extract_dir.is_empty() {
+                res.asset.clone()
+            } else {
+                resolve_path(&res.asset, extract_path)
+            };
+            let source_path = res
+                .source
+                .as_ref()
+                .map(|s| {
+                    if extract_dir.is_empty() {
+                        s.clone()
+                    } else {
+                        resolve_path(s, extract_path)
+                    }
+                })
+                .unwrap_or_else(|| asset_abs.clone());
+            state.imported_model_registry.insert(
+                crate::assets::ImportedModelEntry {
+                    model_id: res.id.clone(),
+                    name: res.name.clone(),
+                    category: crate::ipc::normalize_model_library_category(Some(
+                        res.model_type.as_str(),
+                    )),
+                    state: rer_engine_shared::assets::AssetState::Ready,
+                    rerasset_path: std::path::PathBuf::from(&asset_abs),
+                    source_path: source_path.clone(),
+                    source_size: 0,
+                    source_mtime_secs: 0,
+                    importer_version: res.importer_version,
+                },
+            );
+            let key = state.model_path_key(&source_path);
+            state.model_store.insert(
+                key,
+                crate::ipc::ModelStoreEntry {
+                    name: res.name.clone(),
+                    category: crate::ipc::normalize_model_library_category(Some(
+                        res.model_type.as_str(),
+                    )),
+                    model_id: Some(res.id.clone()),
+                    rerasset_path: Some(asset_abs),
+                },
+            );
         }
+    }
+    let burst_load_planned = burst_load;
+    if project.version < 2 {
+        let scene_model_paths = collect_scene_required_model_paths(state, &view);
+        let warm_play_keys = collect_play_character_warm_model_keys(state, &view);
+        kickoff_preload_models_for_save(state, &scene_model_paths, &warm_play_keys);
+        log_load_step(
+            load_started_at,
+            &mut step_started,
+            &format!(
+                "Precarga de modelos de escena lanzada ({} archivo/s)",
+                scene_model_paths.len()
+            ),
+        );
+
+        if !project.models.is_empty() && !burst_load_planned {
+            for model in &project.models {
+                let _ = ensure_model_cached(state, &model.path);
+            }
+        }
+    } else {
+        log_load_step(
+            load_started_at,
+            &mut step_started,
+            "Manifest v2: modelos en carga lazy (sin precarga global)",
+        );
     }
 
     let mut model_load_queue: Vec<(String, PendingRestore)> = Vec::new();
@@ -1517,10 +1634,11 @@ fn apply_loaded_proyect_3d_with_scene(
                 apply_full_entity_restore(state, id, &pending, "[Ball]", true, false);
             }
             "environment" | "object" | "character" if is_3d_model_file_entity(entity) => {
-                model_load_queue.push((entity.model.clone(), pending.clone()));
+                let model_path = entity_source_model_path(state, entity);
+                model_load_queue.push((model_path.clone(), pending.clone()));
 
                 if !burst_load_planned {
-                    if !ensure_model_cached(state, &entity.model) {
+                    if !ensure_model_cached(state, &model_path) {
                         continue;
                     }
                     let category = entity_library_category(&entity.category);
@@ -1531,12 +1649,12 @@ fn apply_loaded_proyect_3d_with_scene(
                     };
                     if let Some(id) = spawn_entity_after_load_model_single(
                         state,
-                        &entity.model,
+                        &model_path,
                         category.as_deref(),
                         kind,
                     )
                     {
-                        apply_full_entity_restore(state, id, &pending, &entity.model, false, false);
+                        apply_full_entity_restore(state, id, &pending, &model_path, false, false);
                     }
                 }
             }
@@ -1751,6 +1869,28 @@ fn send_project_loaded_3d(
             path: m.path.clone(),
             name: m.name.clone(),
             category: crate::ipc::normalize_model_library_category(m.category.as_deref()),
+            model_id: m.model_id.clone().or_else(|| {
+                project.resources.as_ref().and_then(|r| {
+                    r.models
+                        .iter()
+                        .find(|res| {
+                            res.source
+                                .as_ref()
+                                .map(|s| s == &m.path)
+                                .unwrap_or(false)
+                                || res.name == m.name
+                        })
+                        .map(|res| res.id.clone())
+                })
+            }),
+            asset: m.asset.clone().or_else(|| {
+                project.resources.as_ref().and_then(|r| {
+                    r.models
+                        .iter()
+                        .find(|res| res.name == m.name)
+                        .map(|res| res.asset.clone())
+                })
+            }),
         })
         .collect();
 
@@ -1781,6 +1921,8 @@ fn send_project_loaded_3d(
                 path: s.path.clone(),
                 name: s.name.clone(),
                 category: None,
+                model_id: None,
+                asset: None,
             })
             .collect(),
         fonts: project
@@ -1790,6 +1932,8 @@ fn send_project_loaded_3d(
                 path: f.path.clone(),
                 name: f.name.clone(),
                 category: None,
+                model_id: None,
+                asset: None,
             })
             .collect(),
         backgrounds: project
@@ -1799,6 +1943,8 @@ fn send_project_loaded_3d(
                 path: b.path.clone(),
                 name: b.name.clone(),
                 category: None,
+                model_id: None,
+                asset: None,
             })
             .collect(),
         hud_images: project
@@ -1808,6 +1954,8 @@ fn send_project_loaded_3d(
                 path: img.path.clone(),
                 name: img.name.clone(),
                 category: None,
+                model_id: None,
+                asset: None,
             })
             .collect(),
         blueprints,
@@ -1859,6 +2007,7 @@ pub(crate) fn saved_scene_from_snapshot_payload(
             name: e.name.clone(),
             category: e.category.clone(),
             model: e.model.clone(),
+            model_id: e.model_id.clone(),
             position: e.position,
             rotation: Some(e.rotation),
             scale: e.scale,
@@ -1947,6 +2096,8 @@ pub(crate) fn saved_scene_from_snapshot_payload(
                 name: s.name.clone(),
                 path: s.path.clone(),
                 category: None,
+                model_id: None,
+                asset: None,
             })
             .collect(),
         models: p
@@ -1956,6 +2107,8 @@ pub(crate) fn saved_scene_from_snapshot_payload(
                 name: m.name.clone(),
                 path: m.path.clone(),
                 category: m.category.clone(),
+                model_id: m.model_id.clone(),
+                asset: m.asset.clone(),
             })
             .collect(),
     }
@@ -2002,6 +2155,7 @@ pub(crate) fn build_fp_placeholder_saved_scene(id: u32, name: &str) -> SavedScen
             controls: None,
             blueprint_id: None,
             texture_lod: None,
+            model_id: None,
         },
         SavedEntity3D {
             id: 0,
@@ -2018,6 +2172,7 @@ pub(crate) fn build_fp_placeholder_saved_scene(id: u32, name: &str) -> SavedScen
             controls: None,
             blueprint_id: None,
             texture_lod: None,
+            model_id: None,
         },
         SavedEntity3D {
             id: 0,
@@ -2034,6 +2189,7 @@ pub(crate) fn build_fp_placeholder_saved_scene(id: u32, name: &str) -> SavedScen
             controls: None,
             blueprint_id: None,
             texture_lod: None,
+            model_id: None,
         },
     ];
 
@@ -2052,6 +2208,7 @@ pub(crate) fn build_fp_placeholder_saved_scene(id: u32, name: &str) -> SavedScen
         controls: None,
         blueprint_id: None,
         texture_lod: None,
+        model_id: None,
     };
 
     SavedScene {
@@ -2082,6 +2239,7 @@ pub(crate) fn build_minimal_project_from_store(
     scenes: &[SavedScene],
 ) -> ProjectSaveData {
     ProjectSaveData {
+        version: 0,
         r#type: "3D".to_string(),
         gameStyle: game_style.to_string(),
         activeSceneId: None,
@@ -2106,5 +2264,6 @@ pub(crate) fn build_minimal_project_from_store(
         player_ui_images: Vec::new(),
         player_ui_objects: crate::config_3d::player_ui::defaults::default_fp_project_ui_objects(),
         hud_images: Vec::new(),
+        resources: None,
     }
 }

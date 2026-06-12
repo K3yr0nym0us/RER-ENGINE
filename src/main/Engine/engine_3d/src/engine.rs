@@ -214,6 +214,8 @@ pub struct State {
     pub(crate) sprite_store: HashMap<String, (String, u32, u32)>,
     /// Modelos 3D precargados: clave de ruta normalizada → nombre + categoría de biblioteca.
     pub(crate) model_store: HashMap<String, crate::ipc::ModelStoreEntry>,
+    /// Assets importados indexados por `model_id` (.rerasset).
+    pub(crate) imported_model_registry: crate::assets::ImportedModelRegistry,
     /// Mallas estáticas en GPU indexadas por ruta (precarga al registrar recurso).
     pub(crate) static_model_cache: crate::config_3d::static_model_cache::StaticModelCache,
     pub(crate) model_preload_rx: crate::config_3d::static_model_cache::ModelPreloadRx,

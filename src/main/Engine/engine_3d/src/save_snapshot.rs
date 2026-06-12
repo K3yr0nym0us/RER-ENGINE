@@ -61,6 +61,8 @@ impl State {
                     name: entry.name.clone(),
                     path: path.clone(),
                     category: entry.category.clone(),
+                    model_id: entry.model_id.clone(),
+                    asset: entry.rerasset_path.clone(),
                 })
                 .collect(),
             sounds: self
@@ -70,6 +72,8 @@ impl State {
                     name: name.clone(),
                     path: path.clone(),
                     category: None,
+                    model_id: None,
+                    asset: None,
                 })
                 .collect(),
             backgrounds: self
@@ -79,6 +83,8 @@ impl State {
                     name: name.clone(),
                     path: path.clone(),
                     category: None,
+                    model_id: None,
+                    asset: None,
                 })
                 .collect(),
             fonts: self
@@ -88,6 +94,8 @@ impl State {
                     name: name.clone(),
                     path: path.clone(),
                     category: None,
+                    model_id: None,
+                    asset: None,
                 })
                 .collect(),
             hud_images: self
@@ -97,6 +105,8 @@ impl State {
                     name: meta.name.clone(),
                     path: path.clone(),
                     category: None,
+                    model_id: None,
+                    asset: None,
                 })
                 .collect(),
             player_ui_text_boxes: self.export_player_ui_text_boxes_snapshot(),

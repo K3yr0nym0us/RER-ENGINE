@@ -165,6 +165,8 @@ const SILENT_ENGINE_EVENTS = new Set<string>([
 	'save_snapshot_ready',
 	'load_progress',
 	'model_asset_preload_started',
+	'model_asset_importing',
+	'model_asset_imported',
 	'model_asset_loaded',
 	'model_asset_load_failed',
 	'plane_tool_ready',
@@ -1664,9 +1666,54 @@ export function createEngineEventHandler({
 			});
 		}
 
+		if (event.event === 'model_asset_importing') {
+			const model = event as unknown as { path: string; name: string; model_id: string };
+			dispatch({
+				type: 'ADD_MODEL_INFO',
+				payload: {
+					path: model.path,
+					name: model.name,
+					loading: true,
+					model_id: model.model_id,
+					state: 'importing',
+				},
+			});
+		}
+
+		if (event.event === 'model_asset_imported') {
+			const model = event as unknown as {
+				path: string
+				name: string
+				model_id: string
+				asset: string
+			};
+			dispatch({
+				type: 'MARK_MODEL_READY',
+				payload: {
+					path: model.path,
+					name: model.name,
+					model_id: model.model_id,
+					asset: model.asset,
+					state: 'importing',
+				},
+			});
+		}
+
 		if (event.event === 'model_asset_loaded') {
-			const model = event as unknown as { path: string; name: string };
-			dispatch({ type: 'MARK_MODEL_READY', payload: { path: model.path, name: model.name } });
+			const model = event as unknown as {
+				path: string
+				name: string
+				model_id?: string
+			};
+			dispatch({
+				type: 'MARK_MODEL_READY',
+				payload: {
+					path: model.path,
+					name: model.name,
+					...(model.model_id ? { model_id: model.model_id } : {}),
+					state: 'ready',
+				},
+			});
 			window.engine.send({ cmd: 'get_models_list' } as never);
 			const burstActive = refs.sceneBurstLoadInProgressRef.current;
 			const hasQueuedSpawns = hasQueuedCachedModelSpawns(
@@ -1704,7 +1751,7 @@ export function createEngineEventHandler({
 
 		if (event.event === 'models_list') {
 			const modelsList = event as unknown as {
-				models: { path: string; name: string; category?: import('@shared-types').ModelCategory }[];
+				models: import('@shared-types').ModelInfo[];
 			};
 			dispatch({ type: 'SET_MODELS', payload: modelsList.models });
 		}

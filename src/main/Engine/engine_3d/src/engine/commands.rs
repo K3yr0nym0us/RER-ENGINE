@@ -339,10 +339,27 @@ impl State {
                 let models: Vec<crate::ipc::ModelInfo> = self
                     .model_store
                     .iter()
-                    .map(|(path, entry)| crate::ipc::ModelInfo {
-                        path: path.clone(),
-                        name: entry.name.clone(),
-                        category: entry.category.clone(),
+                    .map(|(path, entry)| {
+                        let state = entry.model_id.as_ref().and_then(|id| {
+                            self.imported_model_registry.get(id).map(|e| {
+                                match e.state {
+                                    rer_engine_shared::assets::AssetState::Importing => {
+                                        "importing"
+                                    }
+                                    rer_engine_shared::assets::AssetState::Ready => "ready",
+                                    rer_engine_shared::assets::AssetState::Failed => "failed",
+                                }
+                                .to_string()
+                            })
+                        });
+                        crate::ipc::ModelInfo {
+                            path: path.clone(),
+                            name: entry.name.clone(),
+                            category: entry.category.clone(),
+                            model_id: entry.model_id.clone(),
+                            asset: entry.rerasset_path.clone(),
+                            state,
+                        }
                     })
                     .collect();
                 let count = models.len();

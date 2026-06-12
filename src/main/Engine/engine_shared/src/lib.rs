@@ -1,3 +1,4 @@
+pub mod assets;
 pub mod editor_defaults;
 pub mod scripting;
 pub mod gpu;

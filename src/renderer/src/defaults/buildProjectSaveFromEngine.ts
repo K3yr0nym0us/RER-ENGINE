@@ -2,6 +2,7 @@ import type {
 	EngineSaveSceneSnapshot,
 	Entity3D,
 	GameStyle,
+	ModelCategory,
 	ProjectSaveData,
 	ProjectType,
 	SavedAnimation,
@@ -310,6 +311,19 @@ function mergeLibraryAssets(
 	return [...byPath.values()];
 }
 
+function attachModelIdsToEntities<T extends { model: string; model_id?: string }>(
+	entities: T[],
+	models: ModelInfo[],
+): T[] {
+	const byPath = new Map(
+		models.filter((m) => m.model_id).map((m) => [m.path, m.model_id!] as const),
+	);
+	return entities.map((entity) => {
+		const model_id = entity.model_id ?? byPath.get(entity.model);
+		return model_id ? { ...entity, model_id } : entity;
+	});
+}
+
 function mergeModelLibrary(
 	fromEditor: ModelInfo[],
 	fromEngine?: Array<{ name: string; path: string; category?: ModelInfo['category'] }>,
@@ -324,6 +338,8 @@ function mergeModelLibrary(
 			name: item.name,
 			path: item.path,
 			...(prev?.category ?? item.category ? { category: prev?.category ?? item.category } : {}),
+			...(prev?.model_id ? { model_id: prev.model_id } : {}),
+			...(prev?.asset ? { asset: prev.asset } : {}),
 		});
 	}
 	return [...byPath.values()];
@@ -392,22 +408,60 @@ export async function buildProjectSaveFromEngineSnapshot(
 
 	const hasScenes = scenes.length > 0;
 
+	const scenesWithModelIds = scenes.map((tab) => ({
+		...tab,
+		entities: attachModelIdsToEntities(tab.entities, mergedModels),
+		player: tab.player
+			? attachModelIdsToEntities([tab.player], mergedModels)[0] ?? tab.player
+			: null,
+	}));
+	const rootWithIds =
+		scenesWithModelIds.find((s) => s.id === activeSceneId) ?? scenesWithModelIds[0];
+
+	const readyImported = mergedModels.filter(
+		(m) => m.model_id && m.state !== 'importing' && m.state !== 'failed',
+	);
+	const hasImportedModels = readyImported.length > 0;
+	const modelsForSave = mergedModels.map(
+		({ loading: _loading, state: _state, ...rest }) => ({
+			name: rest.name,
+			path: rest.path,
+			...(rest.category ? { category: rest.category } : {}),
+			...(rest.model_id ? { model_id: rest.model_id } : {}),
+			...(rest.asset ? { asset: rest.asset } : {}),
+		}),
+	);
+
 	return {
-		version: 1,
+		version: hasImportedModels ? 2 : 1,
 		type: projectType,
 		gameStyle: initialGameStyle ?? gameStyle,
-		scenes,
+		scenes: scenesWithModelIds,
 		activeSceneId,
-		world: hasScenes ? undefined : root.world,
-		backgroundPath: hasScenes ? null : root.backgroundPath,
-		entities: hasScenes ? [] : root.entities,
-		player: hasScenes ? null : root.player,
-		config_camera: hasScenes ? null : root.config_camera,
-		config_editor_camera: hasScenes ? null : root.config_editor_camera,
-		camera2d: hasScenes ? null : root.camera2d,
+		world: hasScenes ? undefined : rootWithIds.world,
+		backgroundPath: hasScenes ? null : rootWithIds.backgroundPath,
+		entities: hasScenes ? [] : rootWithIds.entities,
+		player: hasScenes ? null : rootWithIds.player,
+		config_camera: hasScenes ? null : rootWithIds.config_camera,
+		config_editor_camera: hasScenes ? null : rootWithIds.config_editor_camera,
+		camera2d: hasScenes ? null : rootWithIds.camera2d,
 		savedAt: new Date().toISOString(),
-		sprites: hasScenes ? [] : root.sprites,
-		models: mergedModels,
+		sprites: hasScenes ? [] : rootWithIds.sprites,
+		models: modelsForSave,
+		...(hasImportedModels
+			? {
+				resources: {
+					models: readyImported.map((m) => ({
+						id: m.model_id!,
+						name: m.name,
+						type: (m.category ?? 'object') as ModelCategory,
+						asset: m.asset ?? `imported/models/${m.model_id}.rerasset`,
+						importer_version: 2,
+						source: `source/models/${m.path.split(/[/\\]/).pop() ?? 'model.glb'}`,
+					})),
+				},
+			}
+			: {}),
 		sounds,
 		fonts: mergedFonts,
 		hudImages: mergedHudImages.length ? mergedHudImages : undefined,

@@ -11,6 +11,7 @@ mod spatial;
 mod texture;
 mod screen_hud_image;
 mod hud_image_asset;
+mod assets;
 
 #[path = "engine/mod.rs"]
 mod engine;

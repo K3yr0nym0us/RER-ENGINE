@@ -404,10 +404,22 @@ export type EngineAction =
 			name: string;
 			loading?: boolean;
 			category?: ModelCategory;
+			model_id?: string;
+			asset?: string;
+			state?: string;
 		}
 	}
 	| { type: 'SYNC_MODEL_PRELOAD'; payload: { path: string; name: string; category?: ModelCategory } }
-	| { type: 'MARK_MODEL_READY'; payload: { path: string; name: string } }
+	| {
+		type: 'MARK_MODEL_READY';
+		payload: {
+			path: string;
+			name: string;
+			model_id?: string;
+			asset?: string;
+			state?: string;
+		}
+	}
 	| { type: 'REMOVE_MODEL_INFO'; payload: string }
 	| { type: 'SET_MODELS'; payload: ModelInfo[] }
 	| { type: 'SET_DEBUG_MODE'; payload: boolean }
@@ -852,6 +864,9 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 				name: nextAction.payload.name,
 				...(nextAction.payload.loading ? { loading: true } : {}),
 				...(nextAction.payload.category ? { category: nextAction.payload.category } : {}),
+				...(nextAction.payload.model_id ? { model_id: nextAction.payload.model_id } : {}),
+				...(nextAction.payload.asset ? { asset: nextAction.payload.asset } : {}),
+				...(nextAction.payload.state ? { state: nextAction.payload.state } : {}),
 			};
 			const nextMap = new Map(prevState.loadedModelsInfo);
 			nextMap.set(entry.path, {
@@ -899,7 +914,7 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 			return { ...prevState, models, loadedModelsInfo: nextMap };
 		},
 		MARK_MODEL_READY: (prevState, nextAction) => {
-			const { path, name } = nextAction.payload;
+			const { path, name, model_id, asset, state } = nextAction.payload;
 			const prevInfo = prevState.loadedModelsInfo.get(path);
 			const models = prevState.models.map((m) =>
 				m.path === path || (m.loading && m.name === name)
@@ -908,6 +923,9 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 						name,
 						loading: false,
 						...(m.category ? { category: m.category } : {}),
+						...(model_id ?? m.model_id ? { model_id: model_id ?? m.model_id } : {}),
+						...(asset ?? m.asset ? { asset: asset ?? m.asset } : {}),
+						state: state ?? 'ready',
 					}
 					: m,
 			);
@@ -1028,11 +1046,17 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 				modelMap.set(m.path, {
 					name: m.name,
 					...(category ? { category } : {}),
+					...(m.model_id ?? known?.model_id ? { model_id: m.model_id ?? known?.model_id } : {}),
+					...(m.asset ?? known?.asset ? { asset: m.asset ?? known?.asset } : {}),
+					...(m.model_id ? { state: 'ready' as const } : {}),
 				});
 				models.push({
 					path: m.path,
 					name: m.name,
 					...(category ? { category } : {}),
+					...(m.model_id ? { model_id: m.model_id } : {}),
+					...(m.asset ? { asset: m.asset } : {}),
+					...(m.model_id ? { state: 'ready' as const } : {}),
 				});
 			}
 			return {

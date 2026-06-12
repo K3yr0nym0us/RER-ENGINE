@@ -1,0 +1,65 @@
+# Formato binario de assets importados
+#
+# Implementación: engine_shared/src/assets/
+# Pipeline 3D: engine_3d/src/assets/
+
+constants:
+  RER_ASSET_VERSION: 1
+  RER_IMPORTER_VERSION: 2
+  RTEX_VERSION: 1
+
+rerasset:
+  magic: RERA
+  layout: |
+    [AssetHeader 128 bytes]
+    [ChunkDirectory: chunk_count × 24 bytes]
+    [ChunkData blobs contiguos]
+  streaming: offsets en ChunkDirectory permiten mmap por chunk
+
+  asset_header:
+    asset_version: u16
+    importer_version: u16
+    flags: u32
+    category: u8
+    source_ext: u8   # glb | gltf | fbx
+    chunk_count: u16
+    material_count: u16
+    clip_count: u16
+    source_size: u64
+    source_mtime_secs: u64
+    source_sha256: "[u8; 32]  # opcional (export)"
+
+  chunk_types:
+    1: TEXTURE
+    2: MATERIAL
+    3: MESH_PART_META
+    4: MESH_EDITOR_VERT
+    5: MESH_EDITOR_IDX
+    6: MESH_PLAY_VERT
+    7: MESH_PLAY_IDX
+    8: MESH_SKINNED_VERT
+    9: MESH_SKINNED_IDX
+    10: SKELETON
+    11: ANIM_CLIP
+
+  notes:
+    - Texturas compartidas entre variantes editor/play_character (un chunk TEXTURE por material).
+    - Escritura atómica: .rerasset.tmp → rename.
+    - Skeleton (SKEL) y clips de animación (ANIM) serializados desde importer v2.
+    - Rebake automático si cambia size/mtime del fuente o `importer_version` del .rerasset es menor.
+
+rtex:
+  magic: RTEX
+  texture_format: 0 = RGBA8UnormSrgb (reservado BC7/ASTC)
+  compression_type: 0 = NONE
+  body: mip0..mipN RGBA8 consecutivos
+
+manifest_v2:
+  version: 2
+  resources:
+    models:
+      - id: model_fsb_operator_a1b2c3
+        name: FSB Operator
+        type: character
+        asset: imported/models/model_fsb_operator_a1b2c3.rerasset
+        importer_version: 1

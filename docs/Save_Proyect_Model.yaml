@@ -1,8 +1,8 @@
 # Modelo de recursos y empaquetado del .save
 #
 # Principio: el acordeón **Resources** del sidebar es la puerta de entrada de
-# todos los archivos externos del proyecto. Nada se empaqueta ni se carga en
-# memoria más de una vez por path lógico.
+# todos los archivos externos del proyecto. En disco (.save) cada archivo se
+# empaqueta una vez; en runtime un path lógico comparte import CPU y cachés GPU.
 #
 # Relacionado con:
 #   - src/renderer/.../ResourcesAccordion/   (UI de bibliotecas)
@@ -57,11 +57,33 @@ libraries:
   3D:
     models:
       ui: ResourcesAccordion / ModelsAccordion
-      manifest: "models[] (biblioteca global en raíz del manifest)"
-      motor_store: model_store + static_model_cache (GPU bajo demanda)
-      pack_dir: assets/
-      load_cmd: LoadModelAsset / precarga spawn
-      note: "scene.models[] debe estar vacío; las entidades referencian paths de models[]."
+      manifest_v1: "models[] (biblioteca global; path al GLB/FBX empaquetado en assets/)"
+      manifest_v2: |
+        version: 2
+        resources.models[]: id, name, type, asset (imported/models/{id}.rerasset),
+          importer_version, source (opcional, dev: source/models/…)
+        models[]: metadatos editor (path fuente lógico + model_id opcional)
+        entities[].model_id: referencia estable al asset importado
+      motor_store: |
+        imported_model_registry (model_id → .rerasset, AssetState, fingerprint fuente),
+        model_store (nombre + category + model_id),
+        static_model_cache (clave model_id si Ready, si no path fuente),
+        gltf_import_cache (sesión: decode GLB antes del bake),
+        model_assets (skinned + skeleton + clips desde .rerasset)
+      pack_dir_v1: assets/
+      pack_dir_v2: imported/models/*.rerasset (+ source/models/ solo en dev al guardar)
+      session_load: |
+        LoadModelAsset → start_imported_model_pipeline:
+        Importing → hilo CPU (preload + bake .rerasset) → GPU desde .rerasset.
+        Eventos: ModelAssetImporting, ModelAssetImported, ModelAssetLoaded/Failed.
+        Personaje (category=character): variantes editor + play_character + anim_asset.
+      save_load_v1: |
+        upsert_model_store_entry desde models[]; kickoff_preload_models_for_save (GLB global).
+      save_load_v2: |
+        Registro imported_model_registry desde resources.models[] al abrir.
+        Sin precarga global (lazy): ensure_static_model_cached al spawn por model_id.
+        entity_source_model_path resuelve model_id → source_path del registro.
+      note: "scene.models[] vacío al guardar; entidades referencian models[] y/o model_id."
     sounds:  { same_as: 2D.sounds }
     fonts:   { same_as: 2D.fonts }
     hud_images:
@@ -79,7 +101,10 @@ libraries:
 references:
   entity_3d.model:
     points_to: models library
-    note: "Spawn/replace desde ModelsAccordion; path en entidad = path del store."
+    note: "Spawn/replace desde ModelsAccordion; path en entidad = path del store. También puede usarse entity.path (mismo asset)."
+  entity_3d.model_id:
+    points_to: resources.models[].id (manifest v2)
+    note: "Referencia estable al .rerasset; entity.model conserva path fuente para compatibilidad."
   player_ui_text_box.font_path:
     points_to: fonts library
   player_ui_button.font_path:
@@ -99,8 +124,12 @@ references:
     points_to: sounds library (cuando se usa audio de biblioteca)
   blueprint.model:
     points_to: models library
+  blueprint.path:
+    note: "Alternativa a blueprint.model para el mismo archivo empaquetado."
   scene.backgroundPath:
     points_to: backgrounds library (2D)
+  entity.controls.*:
+    note: "Scripts Rhai embebidos o @file:scripting/... en manifest; ver save_flow.scripting."
 
 # ---------------------------------------------------------------------------
 # Flujo en sesión de edición (antes del .save)
@@ -115,7 +144,30 @@ session_flow:
     - "Modales de selección (ModalSelectHudImage, spawn model, etc.) devuelven el path del store."
     - "HUD / entidades guardan ese path como referencia, no copian el archivo."
   memory:
-    - "Un path = una entrada en store (+ caché GPU/textura cuando el motor la necesita)."
+    - "Un path lógico = una entrada en model_store / sound_store / …"
+    - "3D modelos: import_gltf cachea decode+resize+mip; replace/bind reutiliza Arc<GltfFile>."
+    - "GPU: static_model_cache por path; model_assets para skinned (precarga character en biblioteca)."
+
+# ---------------------------------------------------------------------------
+# Cachés de runtime (no van en el .save; viven en la sesión del motor)
+# ---------------------------------------------------------------------------
+
+runtime_caches:
+  gltf_import_cache:
+    scope: engine_3d::model_asset::import_gltf
+    key: ruta canónica del archivo
+    shares: material_smallest_albedos, material_textures (mips CPU)
+    invalidate: invalidate_gltf_import_cache / invalidate_static_model_cache / ReloadAsset
+  static_model_cache:
+    scope: engine_3d::static_model_cache
+    shares: mallas estáticas + capas GPU por path (y variante ::play_character)
+  model_assets:
+    scope: State.model_assets
+    shares: skeleton + piezas skinned + clips; puede poblarse en precarga character
+  note: |
+    Segunda instancia / replace / bind del mismo .glb NO debe repetir [model_tex]
+    si gltf_import_cache=hit. Puede repetir [LOAD_GLTF_CPU] o [LOAD_GLTF_SKINNED]
+    para variantes editor vs play_character (geometría distinta, texturas compartidas).
 
 # ---------------------------------------------------------------------------
 # Guardar .save (Electron main: src/main/index.ts)
@@ -127,29 +179,43 @@ save_flow:
       file: src/renderer/defaults/buildProjectSaveFromEngine.ts
       action: |
         export_save_snapshot del motor + merge con metadatos del editor.
-        Bibliotecas globales: sounds, fonts, backgrounds, hudImages, models (renderer + snapshot).
-        Con scenes[]: datos de escena solo en scenes[] (entities, player, world, config_camera…);
-        la raíz no duplica la escena activa (entities/player/config_* vacíos o null).
-        scene.models[] siempre vacío; models[] solo en raíz.
+        Fuentes del manifest:
+        - Escena activa: motor (world, entities, player, config_camera, config_editor_camera, playerUi*).
+        - Escenas inactivas: sceneStateStore (React).
+        - Bibliotecas globales en raíz:
+          · models, fonts, hudImages: merge editor + snapshot motor (por path).
+          · sounds, backgrounds: estado React del editor (no merge con snapshot motor).
+        - blueprints, language, playerUiScreens/menuUiScreens: editor.
+        Con scenes[]: datos de escena solo en scenes[]; raíz sin duplicar escena activa
+        (entities/player/config_* vacíos o null; sprites[] raíz vacío).
+        scene.models[] siempre vacío al guardar; models[] solo en raíz.
     2_collect_asset_paths:
       file: src/main/index.ts → collectAssetPaths
       rule: |
-        Solo rutas absolutas que deben empaquetarse. Fuentes de verdad:
-        - Arrays de biblioteca: sounds, fonts, backgrounds, hudImages, models, sprites.
-        - Assets de contenido de escena NO registrados en Resources: frames de animación,
-          audio_path de animaciones, blueprints.model, entity.model (deduplicado vía Set).
-        NO empaquetar otra vez paths solo porque aparecen en playerUi*; esas entradas
-        son referencias a fonts[] / hudImages[].
+        Solo rutas absolutas existentes en disco. Fuentes:
+        - Arrays de biblioteca: sounds, fonts, backgrounds, hudImages, models.
+        - Por escena (si scenes[]): backgroundPath, sprites[], scene.player.model, scene.models[] (legacy).
+        - Raíz legacy (sin scenes): backgroundPath, sprites[].
+        - Contenido no-Resources: frames de animación, audio_path, blueprint path/model,
+          entity path/model (vía getEntityAssetPath; excluye entityPathMarker).
+        NO empaquetar paths solo porque aparecen en playerUi* (referencias a fonts/hudImages).
+        Manifest v2: NO empaquetar .glb/.gltf/.fbx en assets/ (shouldPackModelSourcePath);
+        los modelos van en imported/ vía copyImportedAssetsToStaging; source/ solo dev.
     3_copy_and_remap:
-      action: copyAssetsToDir → remapPaths
+      action: |
+        copyImportedAssetsToStaging + copySourceAssetsToStaging (dev) →
+        copyAssetsToDir → remapPaths → serializeScriptsToFiles
       pack_layout:
-        assets/: modelos 3D, sprites, fondos genéricos, frames
+        assets/: sprites, fondos genéricos, frames de animación (v1: también modelos 3D fuente)
+        imported/models/: .rerasset (manifest v2)
+        source/models/: GLB/FBX espejo fuente (solo dev al guardar)
         sounds/: audio
         fonts/: fuentes
         hud-images/: imágenes HUD (Resources Images 3D)
+        scripting/: scripts Rhai extraídos de entity.controls (@file:scripting/...)
       dedup: "Set<toAssetPathKey> evita copiar dos veces el mismo archivo en disco."
     4_zip:
-      output: "*.save (ZIP + manifest.json)"
+      output: "*.save (ZIP con manifest.json + carpetas anteriores)"
 
 # ---------------------------------------------------------------------------
 # Capas del manifest (no confundir biblioteca vs contenido de escena)
@@ -157,15 +223,21 @@ save_flow:
 
 manifest_layers:
   global_libraries:
-    description: "Resources accordion — cargadas una vez al abrir .save (todas las escenas)."
+    description: "Resources accordion — registradas al abrir .save (todas las escenas)."
     2D: [sounds, fonts, backgrounds]
     3D: [sounds, fonts, backgrounds, models, hudImages]
+  global_editor:
+    description: "Metadatos y plantillas no ligados a una escena concreta."
+    fields: [blueprints, language, playerUiScreens, menuUiScreens]
   scene_content:
     description: "Contenido del nivel; vive en scenes[] cuando hay multi-escena."
-    fields: [world, entities, camera2d, backgroundPath, sprites, player, config_camera]
+    fields: |
+      world, entities, camera2d, backgroundPath, sprites, player, config_camera,
+      config_editor_camera
     note: |
-      backgroundPath y entity.path referencian ítems de bibliotecas globales.
+      backgroundPath y entity.model/path referencian ítems de bibliotecas globales.
       sprites[] en escena = precarga/referencias de esa escena, no duplica la biblioteca.
+      player del manifest es el jugador FP (first-person); entidades category=player en entities[] se ignoran en carga 3D.
   future_per_scene_resources:
     status: pendiente
     ref: CHECKLIST.md — recursos por escena + carga lazy al cambiar escena activa
@@ -178,9 +250,9 @@ load_flow:
   contract:
     paths: "Solo rutas relativas al extract_dir del .save (forward slashes en JSON)."
     multi_scene: |
-      scenes[] contiene world/entities/player/config_camera/camera2d/sprites/backgroundPath por escena (2D y 3D).
-      Raíz: bibliotecas globales (sounds, fonts, backgrounds, models, hudImages) y metadatos;
-      sin duplicar escena activa en raíz (entities/sprites/world/camera2d vacíos o null).
+      scenes[] contiene world/entities/player/config_camera/config_editor_camera/camera2d/
+      sprites/backgroundPath por escena (2D y 3D).
+      Raíz: bibliotecas globales + blueprints + UI screens; sin duplicar escena activa en raíz.
     references: |
       playerUi*.font_path / texture_path / image_path deben coincidir exactamente con
       el path relativo del ítem en fonts[] / hudImages[] (misma cadena tras remap).
@@ -189,14 +261,20 @@ load_flow:
     steps:
       - extractSaveArchive → extract_dir
       - resolveLoadedPaths: relativas → absolutas bajo extract_dir (sin passthrough absoluto)
+      - RER_PROJECT_EXTRACT_DIR / RER_PROJECT_SAVE_PATH al arrancar motor
   motor_3d:
     file: engine_3d/.../load_proyect.rs
     steps:
       - resolve_loaded_paths (misma semántica que Electron)
-      - load_project_asset_stores: sounds, fonts, backgrounds, hud_images (una Load* por ítem)
-      - upsert model_store desde project.models[] (biblioteca global)
-      - precarga/spawn entidades reutilizando static_model_cache por path
+      - apply_loaded_proyect_3d: mundo, iluminación, entidades, jugador FP, restore manifest
+      - load_project_asset_stores: LoadSound, LoadFont, LoadBackgroundAsset, LoadHudImage (una vez por ítem)
+      - v1: upsert_model_store_entry + kickoff_preload_models_for_save + ensure_model_cached
+      - v2: imported_model_registry desde resources.models[]; carga lazy (sin precarga global)
+      - entity_source_model_path: model_id → source_path del registro para spawn/caché
+      - burst_load (escena con entidades o first-person con player): instancia entidades y
+        ensure_static_model_cached bajo demanda (desde .rerasset si Ready)
       - import_player_ui_* con paths ya resueltos
+      - load_progress: mensajes [Carga] / pasos con tiempos
   motor_2d:
     file: engine_2d/.../load_proyect.rs
     steps:
@@ -217,17 +295,24 @@ load_flow:
 compliance:
   ok:
     - "Resources accordion concentra import de modelos, sonidos, fuentes, imágenes HUD, sprites, fondos."
-    - "Motor mantiene stores por categoría; load_project_asset_stores carga bibliotecas una vez."
+    - "Motor mantiene stores por categoría; load_project_asset_stores carga sonidos/fuentes/fondos/hud una vez."
     - "ModalSelectHudImage asigna path de hudImages a objetos/imágenes HUD (referencia)."
     - "collectAssetPaths usa Set → sin duplicado en disco aunque el path aparezca en entidad y en models[]."
     - "remapPaths remapea referencias playerUi* al mismo path relativo que la biblioteca."
     - "playerUiObjects.texture_path no se empaqueta aparte; referencia hudImages[]."
     - "Sin fallback por basename ni rutas absolutas en manifest."
-    - "Multi-escena: raíz sin duplicar escena activa; models[] solo global (3D)."
+    - "Multi-escena: raíz sin duplicar escena activa; models[] solo global (3D); scene.models[] vacío al guardar."
     - "2D: sprites[] y backgroundPath por escena; entidades usan path (no model)."
-    - "Carga 2D: load_progress + project_load_2d_complete alineados con 3D; IPC ruidoso silenciado en panel."
+    - "Carga 2D: load_progress + project_load_2d_complete alineados con 3D."
+    - "Scripts Rhai en scripting/ al guardar; controles referencian @file:scripting/... relativo."
+    - "import_gltf cache evita doble decode/resize/mip al reutilizar el mismo GLB en la sesión."
+    - "Personaje en Resources: precarga CPU incluye skinned (load_skinned_asset) además de variantes editor/play."
+    - "Manifest v2: .rerasset en imported/, model_id en entidades, lazy load al abrir .save."
+    - "Import pipeline: bake atómico, importer_version 2 con skeleton + anim clips."
   notes:
     - "frames de animación y algunos assets de entidad siguen en collectAssetPaths porque no son fila en Resources."
-    - "entity.model aparece en collectAssetPaths además de models[]; el Set deduplica; es redundante pero seguro."
+    - "entity.model/path aparece en collectAssetPaths además de models[]; el Set deduplica en disco."
     - "sprites 2D viven en scene.sprites (por escena), no en un array global del manifest."
-    - "sounds/backgrounds en save salen del estado React; fonts/hudImages se fusionan también con snapshot del motor."
+    - "sounds/backgrounds en save salen del estado React; fonts/hudImages/models se fusionan también con snapshot del motor."
+    - "Al abrir .save, models[] no dispara LoadModelAsset; la GPU se llena vía precarga/ensure_model_cached."
+    - "Logs de diagnóstico 3D: [GLTF_IMPORT], [LOAD_GLTF_CPU], [LOAD_GLTF_SKINNED], [MODEL_BIND] (ver runtime_caches)."

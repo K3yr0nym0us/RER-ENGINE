@@ -733,6 +733,8 @@ pub struct SaveEntity3DSnapshot {
     pub name: String,
     pub category: String,
     pub model: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_id: Option<String>,
     pub position: [f32; 3],
     pub rotation: [f32; 4],
     pub scale: [f32; 3],
@@ -787,6 +789,10 @@ pub struct SaveAssetRefSnapshot {
     pub path: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub category: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub asset: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -1103,12 +1109,40 @@ pub enum EngineEvent {
     SpriteRemoved { path: String },
     /// Emitido como respuesta a GetSpritesList: lista de sprites disponibles.
     SpritesList { sprites: Vec<SpriteInfo> },
+    /// Bake `.rerasset` en curso (import en Resources).
+    ModelAssetImporting {
+        model_id: String,
+        path: String,
+        name: String,
+    },
+    /// Bake `.rerasset` completado (aún puede estar subiendo a GPU).
+    ModelAssetImported {
+        model_id: String,
+        path: String,
+        name: String,
+        asset: String,
+    },
     /// Modelo 3D registrado en el almacén de recursos (GPU listo).
-    ModelAssetLoaded { path: String, name: String },
+    ModelAssetLoaded {
+        path: String,
+        name: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        model_id: Option<String>,
+    },
     /// Precarga de modelo 3D iniciada (parseo en segundo plano).
-    ModelAssetPreloadStarted { path: String, name: String },
+    ModelAssetPreloadStarted {
+        path: String,
+        name: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        model_id: Option<String>,
+    },
     /// Falló la carga/precarga de un modelo en Recursos (libera `loading` en el renderer).
-    ModelAssetLoadFailed { path: String, message: String },
+    ModelAssetLoadFailed {
+        path: String,
+        message: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        model_id: Option<String>,
+    },
     ModelAssetRemoved { path: String },
     ModelsList { models: Vec<ModelInfo> },
     /// Emitido cuando un archivo de audio se registró en el almacén.
@@ -1392,6 +1426,8 @@ pub struct SpriteInfo {
 pub struct ModelStoreEntry {
     pub name: String,
     pub category: Option<String>,
+    pub model_id: Option<String>,
+    pub rerasset_path: Option<String>,
 }
 
 /// Información básica de un modelo 3D en el almacén de recursos.
@@ -1401,6 +1437,12 @@ pub struct ModelInfo {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub category: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub asset: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub state: Option<String>,
 }
 
 /// Categorías válidas de biblioteca (`ModelCategory` en el renderer).
@@ -1531,12 +1573,16 @@ pub struct BackgroundInfo {
     pub name: String,
 }
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Default, Serialize, Clone)]
 pub struct ImportSceneSprite {
     pub path: String,
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub category: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub asset: Option<String>,
 }
 
 #[allow(non_snake_case)]
