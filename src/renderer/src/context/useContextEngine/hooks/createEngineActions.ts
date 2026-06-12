@@ -180,7 +180,7 @@ export function createEngineActions({
 		const meta = refs.entityMetaRef.current[entityId];
 		if (meta) {
 			meta.visualModelPath = modelPath;
-			if (/\.(glb|gltf|fbx)$/i.test(modelPath)) {
+			if (/\.(glb|gltf)$/i.test(modelPath)) {
 				meta.path = modelPath;
 			}
 			meta.animations = [];

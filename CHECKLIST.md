@@ -2,11 +2,36 @@
 
 Backlog transversal del monorepo (2D + 3D + Electron). Estado por motor: [CHECKLIST-2D.md](./CHECKLIST-2D.md), [CHECKLIST-3D.md](./CHECKLIST-3D.md). Modelo de recursos y `.save`: [docs/Save_Proyect_Model.yaml](./docs/Save_Proyect_Model.yaml).
 
-**Última revisión:** 4 junio 2026 (backlog IPC por motor)
+**Última revisión:** 12 junio 2026 (formato editor vs exportación por plataforma)
 
 ---
 
 ## Pendiente
+
+### Formato editor vs exportación del juego (assets / texturas)
+
+**Principio:** el editor y el build final del juego usan formatos distintos. Durante el desarrollo la prioridad es fidelidad, depuración y carga/guardado rápidos en **Windows y Linux** (únicas plataformas del editor). La optimización GPU por plataforma aplica **solo al exportar** el juego para jugadores, no al trabajar en el editor.
+
+#### Formato del editor (ahora — sin compresión GPU por plataforma)
+
+- [x] **`.rerasset` en editor: RTEX RGBA8** — albedo en `RGBA8UnormSrgb`, mipmaps opcionales, sin BC7/ASTC/BC1 en el pipeline de import/bake/carga del editor.
+- [x] **Integridad bake ↔ load** — serialización RTEX alineada (header meta 5 bytes); texturas idénticas al guardar y al abrir `.save`.
+- [ ] **`.save` del editor** — empaquetado ZIP/ZSTD de `project.save` + assets; máxima fidelidad, fácil de inspeccionar y depurar.
+- [ ] **Documentar contrato editor** — en [docs/Rerasset_Format.yaml](./docs/Rerasset_Format.yaml): RTEX v1 = RGBA8 + mips; reservar códigos de `texture_format` / `compression_type` para formatos GPU futuros sin romper assets ya guardados.
+
+#### Exportación del juego (después — compresión por plataforma objetivo)
+
+> **Aplazar** hasta tener el pipeline completo **Editor → Save → Build → Ejecutable**. La compresión GPU es optimización de distribución/runtime, no requisito para que el editor funcione (un `.rerasset` de ~80 MiB en desarrollo es aceptable).
+
+- [ ] **Paso de build separado del `.save`** — `project.save` (editor) → **Build** (plataforma elegida) → paquete de juego (p. ej. `game.rerpack` o carpeta de release) con meshes, skeleton, animaciones y texturas ya transcodificadas.
+- [ ] **Perfil Windows** — albedo → BC7, normal → BC5, ORM (occlusion/roughness/metallic) → BC4.
+- [ ] **Perfil Linux (Vulkan)** — mismo esquema que Windows (BC7 / BC5 / BC4).
+- [ ] **Perfil Android (futuro, si hay build móvil)** — albedo/normal → ASTC 6×6, ORM → ASTC 8×8.
+- [ ] **Fuera de alcance** — **no** contemplar iOS ni macOS en este pipeline de exportación.
+- [ ] **Sin duplicar en edición** — el artista importa una vez (GLB/GLTF + PNG); el proyecto conserva la versión editable RGBA8; las variantes BC7/ASTC se generan **solo en el build**, no se mantienen varias copias GPU durante la edición (modelo Unreal/Unity: *cook at build time*).
+- [ ] **Herramientas de transcodificación** — evaluar integración (texconv, Basis/ISPC, etc.) en el paso de export Electron o en binario Rust de empaquetado; sin dependencia en el flujo diario del editor.
+
+**Motivación:** evitar bugs de canal/formato en desarrollo (p. ej. desfase RGBA en RTEX), mantener el editor igual en Win/Linux y reservar BC7/ASTC para cuando existan builds finales para jugadores.
 
 ### Recursos por escena + “Cargar desde otra escena” (Resources)
 

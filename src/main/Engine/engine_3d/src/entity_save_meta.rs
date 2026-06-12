@@ -14,13 +14,13 @@ const ENTITY_MARKERS: &[&str] = &[
     "[ExecutionArea]",
 ];
 
-/// `.glb` / `.gltf` / `.fbx` en disco (no marcadores `[Player]`).
+/// `.glb` / `.gltf` en disco (no marcadores `[Player]`).
 pub(crate) fn is_model_3d_asset_path(path: &str) -> bool {
     if entity_path_marker(path).is_some() {
         return false;
     }
     let lower = path.to_ascii_lowercase();
-    lower.ends_with(".glb") || lower.ends_with(".gltf") || lower.ends_with(".fbx")
+    lower.ends_with(".glb") || lower.ends_with(".gltf")
 }
 
 /// Jugador / NPC animado: cápsula de movimiento (no collider Rapier de malla).

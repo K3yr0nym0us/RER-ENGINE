@@ -37,7 +37,7 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 
 ### Motor 3D
 
-- [x] Carga glTF/FBX, mallas normalizadas, materiales básicos + PBR en shader
+- [x] Carga glTF/GLB, mallas normalizadas, materiales básicos + PBR en shader
 - [x] Editor: cámara orbital; gizmo mover/rotar; preview FP con frustum de editor
 - [x] Play mode primera persona (cápsula cinemática, shape cast; mesh del jugador oculto)
 - [x] **Física 3D de producto** — Rapier en objetos (`set_entity_physics`, sync `Transform` en editor); jugador FP solo con shape cast; play sin traspasos (movimiento, salto, static/dynamic, límites del mundo)
@@ -51,10 +51,10 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 - [x] Undo/redo de creación de entidad — snapshot en motor (`undo_entity.rs`, `spawn_with_id`)
 - [x] API Rhai 3D FP: `fp_jump`, `fp_set_walk_speed`, etc.; tecla del binding auto-inyectada en control scripts
 - [x] Demo `DEMO_3d_FIRST_PERSON.save`: scripts `.rhai` (WASD walk speed, SHIFT sprint, SPACE jump)
-- [x] `replace_entity_model` con resync de orientación, escala y forward del jugador (FBX + GLB)
+- [x] `replace_entity_model` con resync de orientación, escala y forward del jugador (GLB/GLTF)
 - [x] **Carga GLB/GLTF skinned** — esqueleto unificado (varios `skin` por archivo), paleta Khronos, piezas múltiples; clips embebidos en asset
 - [x] **Animaciones embebidas 3D** — pipeline skinned GPU, `play_model_clip`, `set_default_animation`, evento `model_clips_ready`
-- [x] **Orientación malla jugador (GLB/FBX)** — `upright_quat_from_vertices_bounds`, corrección yaw cadera Mixamo, forward skinned (`model_asset.rs`, `mesh_3d.rs`); aplicada al spawn/replace FP
+- [x] **Orientación malla jugador (GLB/GLTF)** — `upright_quat_from_vertices_bounds`, corrección yaw cadera Mixamo, forward skinned (`model_asset.rs`, `mesh_3d.rs`); aplicada al spawn/replace FP
 - [x] Export escena: `export_save_snapshot` → `save_snapshot_ready` (`entity_save_meta`, jugador FP)
 - [x] Scripts Rhai `update()` solo en play
 
@@ -68,9 +68,9 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 - [x] Eliminar entidades 3D (modelos/cajas) — `remove_entity` + panel Propiedades; sync listas vía `entity_removed`
 - [x] Carga de escena 3D al abrir `.save` — burst/precarga en Rust (`load_proyect.rs`); front refleja `project_loaded_3d` / `project_load_3d_complete` (`pendingRestores` solo en rutas puntuales del handler, no carga principal)
 - [x] Guardado engine-first: `export_save_snapshot` + merge en el front
-- [x] Panel **Animaciones** en Propiedades (clips embebidos GLB/FBX en 3D; hojas/sprites en 2D)
+- [x] Panel **Animaciones** en Propiedades (clips embebidos GLB/GLTF en 3D; hojas/sprites en 2D)
 - [x] **Reemplazar modelo del jugador** — overlay de carga + ocultar viewport durante importación síncrona
-- [x] Acordeón Modelos: botón y diálogo **`.glb` / `.gltf` / `.fbx`** (almacén + sustitución jugador)
+- [x] Acordeón Modelos: botón y diálogo **`.glb` / `.gltf`** (almacén + sustitución jugador)
 - [x] **Blueprints / prefabs 3D** — convertir entidad (`PropertiesAccordion`), `register_blueprint` en motor, construcción rápida (`quick_build` + `BlueprintPlacementMeta`), propagación a instancias (transform, física, scripts, animaciones), persistencia en `project.blueprints[]`
 - [x] **Multi-escena editor 3D** — registro en motor (`editor_scenes.rs`), dirty vía undo, `switch_editor_scene`, baselines boot/placeholder/saved; UI acordeón Scenes (`docs/Escenes_Model_3D.yaml`)
 - [x] **Programación visual** — lógica de escena y entidad (nodos → Rhai); panel de variables con entidades por categoría y animaciones; resolución jugador FP + `entityMeta` para modal Electron
@@ -79,7 +79,7 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 
 - [x] **Carga de proyecto 3D en Rust** — `engine_3d/src/engine/load_proyect.rs`: manifest, burst de entidades, jugador FP, sonidos/fondos; front solo refleja eventos (`project_loaded_3d`, `project_load_3d_complete`)
 - [x] **Loader de escena** — overlay hasta `project_load_3d_complete`; `ready` tras escena vacía al abrir `.save` (`RER_3D_START_FROM_SAVE`); logs `[Carga]` / `load_progress` en panel
-- [x] **Precarga y burst acotados** — solo paths GLB/FBX requeridos por entidades + `playerTransform.visual_model_path` (sin precargar toda la biblioteca `view.models`)
+- [x] **Precarga y burst acotados** — solo paths GLB/GLTF requeridos por entidades + `playerTransform.visual_model_path` (sin precargar toda la biblioteca `view.models`)
 - [x] **Vaciado de escena al abrir save** — `clear_scene_entities_for_save_load` sin segundo `reset_runtime_scene_3d` duplicado
 - [x] **EditorBox compartido en GPU** — `ensure_editor_box_gpu_assets` (una mesh/textura para todos los `[EditorBox]`)
 - [x] **Precarga async** — hilos de fondo + `poll_model_preloads`; burst espera caché sin bloquear arranque del motor
@@ -93,11 +93,15 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 
 ## Por implementar
 
+### Assets y exportación (ver también [CHECKLIST.md](./CHECKLIST.md) — *Formato editor vs exportación del juego*)
+
+- [ ] **Build final con texturas por plataforma** — aplazado hasta pipeline Editor → Save → Build → Ejecutable; en editor se mantiene RTEX RGBA8; en export: BC7/BC5/BC4 (Win/Linux), ASTC (Android futuro); sin iOS/macOS.
+
 ### Prioridad media — funcionalidad
 
 - [ ] **Herramienta 3D: física por hueso (bone physics)**
   - Botón/herramienta exclusiva del acordeón **Tools** en proyectos **3D** (no visible en 2D).
-  - Al activarla y seleccionar una entidad basada en modelo 3D skinned (GLB/GLTF/FBX), visualizar el **esqueleto / huesos** de la entidad en el viewport.
+  - Al activarla y seleccionar una entidad basada en modelo 3D skinned (GLB/GLTF), visualizar el **esqueleto / huesos** de la entidad en el viewport.
   - Panel o inspector para asignar **tipo de física por hueso** (p. ej. estático, dinámico, kinematic, sin simulación, etc.).
   - Persistencia en `.save` por entidad/hueso; sincronización motor ↔ editor.
   - Objetivo: dinamismo en personajes y escenario (pelo, pechos, ropa suelta, accesorios colgantes, elementos blandos del entorno, etc.) sin depender solo de animación de clips embebidos.
@@ -116,7 +120,7 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 | Ítem | Criterio |
 |------|----------|
 | Física 3D producto | Play FP + colisiones Rapier sin traspasos; sync editor en gizmo/`set_transform` |
-| Animaciones embebidas 3D | GLB/FBX con skinning reproducen clips en editor/play; panel y `model_clips_ready` |
+| Animaciones embebidas 3D | GLB/GLTF con skinning reproducen clips en editor/play; panel y `model_clips_ready` |
 | Orientación GLB jugador FP | Código en motor aplicado; QA con GLB Mixamo variados confirma pie de frente ~1.7 m sin regresión skinning |
 | Blueprints 3D | Crear/instanciar/actualizar desde editor; quick build; propagación; `.save` |
 | Carga `.save` 3D | Abrir demo/proyecto 3D: loader coherente, escena en motor, sin duplicar eventos `model_loaded`; tiempo de carga aceptable en props pesados |
@@ -129,7 +133,7 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 |------------------|-----|
 | `set_play_character_view` | Front → motor: pies, yaw, pitch, FOV, frustum |
 | `play_character_view_changed` | Motor → front: estado confirmado (`body_center`, `body_rotation`, etc.) |
-| `model_clips_ready` | Motor → front: clips embebidos tras cargar GLB/FBX skinned en entidad |
+| `model_clips_ready` | Motor → front: clips embebidos tras cargar GLB/GLTF skinned en entidad |
 | `entity_model_replaced` | Motor → front: fin de `replace_entity_model` (quita overlay de carga) |
 | `project_loaded_3d` | Motor → front: escena activa tras parsear manifest (tabs, mundo, entidades) |
 | `project_load_3d_complete` | Motor → front: fin de burst/precarga al abrir `.save` (cierra loader) |

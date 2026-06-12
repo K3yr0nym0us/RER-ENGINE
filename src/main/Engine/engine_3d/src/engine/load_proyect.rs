@@ -327,7 +327,7 @@ fn file_size_label(path: &Path) -> String {
 
 fn log_load_manifest_summary(project: &ProjectSaveData, extract_dir: &Path) {
     let model_count = project.resources.as_ref().map(|r| r.models.len()).unwrap_or(0);
-    log::info!(
+    log::debug!(
         "[load-pack] v{} {} {} | {} modelos, {} escenas, {} entidades | {}",
         project.version,
         project.r#type,
@@ -341,7 +341,7 @@ fn log_load_manifest_summary(project: &ProjectSaveData, extract_dir: &Path) {
         for res in &resources.models {
             let disk = resolve_manifest_asset_path(&res.asset, extract_dir, &res.id);
             if disk.is_file() {
-                log::info!(
+                log::debug!(
                     "[load-pack]   «{}» {} → {} ({})",
                     res.name,
                     res.id,
@@ -389,7 +389,7 @@ impl State {
                         self.clear_editor_undo_redo();
                         self.emit_editor_scenes_updated("project_loaded");
                         send_project_load_3d_complete_event();
-                        log::info!("[load-pack] carga .save completada");
+                        log::debug!("[load-pack] carga .save completada");
                     }
                     Err(err) => {
                         log::error!("[load-pack] error al aplicar proyecto: {err}");
@@ -452,7 +452,7 @@ fn is_execution_area_path(p: &str) -> bool {
 
 fn is_model_3d_path(p: &str) -> bool {
     let lower = p.to_ascii_lowercase();
-    lower.ends_with(".glb") || lower.ends_with(".gltf") || lower.ends_with(".fbx")
+    lower.ends_with(".glb") || lower.ends_with(".gltf")
 }
 
 fn is_3d_model_file_entity(entity: &SavedEntity3D) -> bool {
@@ -1174,8 +1174,8 @@ fn restore_player_from_manifest(
     state.reconcile_entity_physics_with_mesh(id);
 
     if !state.model_animation_bindings.contains_key(&id) {
-        log::warn!(
-            "[SHADER_MAT] ent={id} jugador sin animation binding tras restore — personaje puede verse sin texturas correctas"
+        log::debug!(
+            "[load_proyect] ent={id} jugador sin animation binding tras restore"
         );
     }
 
@@ -1438,7 +1438,7 @@ fn apply_loaded_proyect_3d_with_scene(
                 });
                 continue;
             }
-            log::info!(
+            log::debug!(
                 "[load-pack] GPU «{}» desde {}",
                 res.name,
                 asset_disk.display()
@@ -1720,7 +1720,7 @@ fn apply_loaded_proyect_3d_with_scene(
         view.entities.len(),
         load_started_at.elapsed().as_millis()
     );
-    log::info!("[load-pack] {done_msg}");
+    log::debug!("[load-pack] {done_msg}");
     send_load_progress(
         &done_msg,
         None,

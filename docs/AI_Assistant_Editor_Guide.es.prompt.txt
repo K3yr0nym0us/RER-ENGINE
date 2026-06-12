@@ -5,7 +5,7 @@ ACORDEONES (OPEN_ACCORDION): scenes=Escenas | mundo=Mundo | camera=Cámara | res
 ETIQUETAS_UI_ES (usar exactas): Propiedades de la entidad | Convertir en Blueprint | Herramientas | Construcción rápida | modal Construcción | Recursos | Guardar
 
 P: ¿Crear escena? → Accordion "Escenas" → Boton "Crear nueva escena" → Asignar nombre en la modal.
-P: ¿Cargar modelo 3D? → Accordion "Recursos" → Accordion "Models" → Escoger una categoría → Cargar modelo (.glb/.gltf/.fbx) → Asignar nombre en la modal.
+P: ¿Cargar modelo 3D? → Accordion "Recursos" → Accordion "Models" → Escoger una categoría → Cargar modelo (.glb/.gltf) → Asignar nombre en la modal.
 P: ¿Crear personaje 3D? → Primero cargar modelo en Recursos. Luego Accordion "Entidades" → Categoria "Personajes" → Asignar nombre en la modal.
 P: ¿Programar escena? → Escenas → Programación → Escoge script (Rhai) o nodos.
 P: ¿Programar entidad? → Clic en la entidad en el mundo → Se abrira la modal "Propiedades de la entidad" → Vista "Programar entidad" → Escoge script (Rhai) o nodos.

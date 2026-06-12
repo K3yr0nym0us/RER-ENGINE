@@ -41,7 +41,7 @@ export const BtnLoadModel = ({ category }: BtnLoadModelProps) => {
       type="button"
       onClick={openLoadModelModal}
     >
-      <Box className="me-1" /> {t('Load model (.glb/.gltf/.fbx)')}
+      <Box className="me-1" /> {t('Load model (.glb/.gltf)')}
     </button>
   );
 };

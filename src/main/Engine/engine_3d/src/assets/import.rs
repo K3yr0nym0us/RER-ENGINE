@@ -1,4 +1,4 @@
-//! Hilo de importación: GLB/FBX → bake `.rerasset` → precarga GPU.
+//! Hilo de importación: GLB/GLTF → bake `.rerasset` → precarga GPU.
 
 use std::path::PathBuf;
 
@@ -135,7 +135,6 @@ impl State {
                         anim_asset.as_deref(),
                     );
                     bake_to_rerasset(&rerasset_path_thread, &input)?;
-                    super::bake::log_bake_material_summary(&path_buf, &input);
                     if let Some(mirrored) = super::registry::mirror_source_file(&path_buf) {
                         log::debug!(
                             "[RERASSET_IMPORT] fuente espejada: {}",

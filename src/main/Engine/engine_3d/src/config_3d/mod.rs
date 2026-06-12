@@ -3,7 +3,7 @@
 // Contiene:
 //  · camera_3d        — Camera (órbita) + CameraUniform
 //  · character_anchor / play_character / fps_camera / play_controller
-//  · load_model       — carga un .glb/.gltf/.fbx y añade mallas a la escena
+//  · load_model       — carga un .glb/.gltf y añade mallas a la escena
 //  · ray_cast         — proyecta un rayo desde píxel y devuelve la entidad más cercana
 //  · pick_entity      — dispara el picking 3D y emite IPC
 //  · project_to_screen — proyecta un punto 3D a píxeles de pantalla
@@ -20,7 +20,6 @@ pub(crate) mod fps_camera;
 pub(crate) mod editor_camera;
 pub(crate) mod preview_editor;
 pub(crate) mod play_controller;
-pub(crate) mod fbx_facing;
 pub(crate) mod entity_textures;
 pub(crate) mod gltf_texture_load;
 pub(crate) mod mesh_3d;
@@ -37,13 +36,6 @@ pub(crate) mod world_bounds;
 pub(crate) mod player_ui;
 pub(crate) use world_bounds::WorldBounds3D;
 
-pub(crate) fn is_fbx_model_path(path: &str) -> bool {
-    std::path::Path::new(path)
-        .extension()
-        .and_then(|e| e.to_str())
-        .is_some_and(|e| e.eq_ignore_ascii_case("fbx"))
-}
-
 pub(crate) fn is_gltf_model_path(path: &str) -> bool {
     std::path::Path::new(path)
         .extension()
@@ -53,17 +45,13 @@ pub(crate) fn is_gltf_model_path(path: &str) -> bool {
         })
 }
 
-/// Posición del cuerpo Rapier: pies en `transform.position` para FBX; centro en el resto.
+/// Posición del cuerpo Rapier (centro del AABB en `transform.position`).
 pub(crate) fn physics_body_position_for_model_path(
-    model_path: &str,
+    _model_path: &str,
     transform_position: [f32; 3],
-    half: [f32; 3],
+    _half: [f32; 3],
 ) -> [f32; 3] {
-    if is_fbx_model_path(model_path) {
-        physics_3d::physics_center_from_feet_position(transform_position, half)
-    } else {
-        transform_position
-    }
+    transform_position
 }
 
 /// Centro del AABB local de la malla (espacio del mesh antes del transform de entidad).
@@ -76,21 +64,13 @@ pub(crate) fn physics_aabb_center_local(bounds: ([f32; 3], [f32; 3])) -> [f32; 3
     ]
 }
 
-/// Posición del collider en mundo: centro del AABB escalado/rotado (GLB/GLTF);
-/// FBX mantiene convención de pies en `transform.position`.
+/// Posición del collider en mundo: centro del AABB escalado/rotado (GLB/GLTF).
 pub(crate) fn physics_body_world_center(
     transform: &Transform,
     local_bounds: Option<([f32; 3], [f32; 3])>,
-    model_path: &str,
-    half: [f32; 3],
+    _model_path: &str,
+    _half: [f32; 3],
 ) -> [f32; 3] {
-    if is_fbx_model_path(model_path) {
-        return physics_body_position_for_model_path(
-            model_path,
-            transform.position.to_array(),
-            half,
-        );
-    }
     let Some(bounds) = local_bounds else {
         return transform.position.to_array();
     };
@@ -240,7 +220,7 @@ impl State {
         crate::entity_save_meta::entity_path_marker(&meta.path) == Some("[Ball]")
     }
 
-    /// `colision` con AABB de archivo `.glb`/`.fbx`; marcadores de plantilla usan caja del transform.
+    /// `colision` con AABB de archivo `.glb`/`.gltf`; marcadores de plantilla usan caja del transform.
     pub(crate) fn uses_mesh_file_collision(&self, id: EntityId) -> bool {
         let Some(meta) = self.save_registry.meta.get(&id) else {
             return false;
@@ -254,7 +234,7 @@ impl State {
             return false;
         }
         let lower = path.to_ascii_lowercase();
-        lower.ends_with(".glb") || lower.ends_with(".gltf") || lower.ends_with(".fbx")
+        lower.ends_with(".glb") || lower.ends_with(".gltf")
     }
 
     /// Recrea el collider Rapier alineado al AABB de la malla (posición + escala actuales).
@@ -604,14 +584,6 @@ impl State {
         if is_play_character {
             self.register_or_update_visual_model_meta(id, path, true);
             self.play_character_mesh_forward_xz = part.forward_xz;
-            if is_fbx_model_path(path) {
-                if let Some(skin_fwd) = model_asset::fbx_skinned_play_forward_xz(
-                    Path::new(path),
-                    PLAY_CHARACTER_BODY_HEIGHT,
-                ) {
-                    self.play_character_mesh_forward_xz = skin_fwd;
-                }
-            }
             self.physics.remove_entity_body(id);
         } else {
             self.register_or_update_visual_model_meta(id, path, false);
@@ -626,10 +598,7 @@ impl State {
             self.model_assets.remove(path);
             self.try_bind_model_animations_with_gltf(id, path, gltf_file.as_deref());
             if let Some(asset) = self.model_assets.get(path) {
-                if is_fbx_model_path(path) {
-                    self.play_character_mesh_forward_xz =
-                        model_asset::resolve_fbx_play_character_forward_xz(asset);
-                } else if is_gltf_model_path(path) {
+                if is_gltf_model_path(path) {
                     self.play_character_mesh_forward_xz =
                         model_asset::resolve_gltf_play_character_forward_xz(asset);
                 }
@@ -705,10 +674,7 @@ impl State {
 
         if is_play_character {
             if let Some(asset) = self.model_assets.get(path) {
-                if is_fbx_model_path(path) {
-                    self.play_character_mesh_forward_xz =
-                        model_asset::resolve_fbx_play_character_forward_xz(asset);
-                } else if is_gltf_model_path(path) {
+                if is_gltf_model_path(path) {
                     self.play_character_mesh_forward_xz =
                         model_asset::resolve_gltf_play_character_forward_xz(asset);
                 }

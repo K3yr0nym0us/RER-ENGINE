@@ -625,7 +625,7 @@ ipcMain.handle('open-model-dialog', async () => {
   if (!mainWindow) return null
   const result = await dialog.showOpenDialog(mainWindow, {
     title:       'Abrir modelo 3D',
-    filters:     [{ name: 'Modelos 3D', extensions: ['glb', 'gltf', 'fbx'] }],
+    filters:     [{ name: 'Modelos 3D', extensions: ['glb', 'gltf'] }],
     properties:  ['openFile'],
   })
   return result.canceled ? null : result.filePaths[0] ?? null
@@ -1087,7 +1087,7 @@ function formatEntityKindBreakdown(data: ProjectSaveData): string {
   return ` [${parts.join(', ')}]`
 }
 
-const MODEL_SOURCE_EXTS = new Set(['.glb', '.gltf', '.fbx'])
+const MODEL_SOURCE_EXTS = new Set(['.glb', '.gltf'])
 
 function isModelSourceFile(p: string): boolean {
   return MODEL_SOURCE_EXTS.has(path.extname(p).toLowerCase())
@@ -1262,7 +1262,7 @@ function collectAssetPaths(data: ProjectSaveData): Set<string> {
 
   if (skippedModelSources.length > 0) {
     console.log(
-      `[save-pack] modelos fuente GLB/FBX omitidos del ZIP (${skippedModelSources.length}); van como .rerasset`,
+      `[save-pack] modelos fuente GLB/GLTF omitidos del ZIP (${skippedModelSources.length}); van como .rerasset`,
     )
     for (const p of skippedModelSources) {
       console.log(`[save-pack]   omitido fuente: ${p}`)
@@ -2013,7 +2013,6 @@ function extractSaveArchive(saveFilePath: string): string | null {
     }
 
     extractedProjectDirs.add(extractDir)
-    logPackDirectoryTree('save-load', extractDir)
     return extractDir
   } catch (err) {
     console.error('[save-load] error al extraer archivo .save:', err)
@@ -2076,7 +2075,6 @@ ipcMain.handle('open-project-dialog', async (): Promise<OpenProjectResult | null
   const filePath = result.filePaths[0]
   const extractDir = extractSaveArchive(filePath)
   if (!extractDir) return null
-  console.log(`[save-load] abriendo: ${filePath}`)
   const meta = readManifestMeta(extractDir)
   if (!meta) {
     fs.rmSync(extractDir, { recursive: true, force: true })

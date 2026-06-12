@@ -125,7 +125,7 @@ collision_by_entity_type:
       motor: Sin collider
     EditorBox_3d:
       motor: Caja estática según escala del transform
-    Modelo_glb_fbx_3d:
+    Modelo_glb_gltf_3d:
       motor: AABB de malla si colision=true y set_physics activo
     Character_3d_NPC:
       motor: Sin cuerpo Rapier de malla (cápsula de categoría character si aplica)

@@ -234,7 +234,7 @@ export interface SavedEntity {
   spriteName?:      string
   /** ID de la blueprint desde la que fue instanciada esta entidad. */
   blueprint_id?:    string
-  /** Ruta del modelo visual (.glb/.fbx) si difiere de `path` (p. ej. jugador con `[Player]`). */
+  /** Ruta del modelo visual (.glb/.gltf) si difiere de `path` (p. ej. jugador con `[Player]`). */
   visual_model_path?: string
   /** Categoría de entorno para UI de colisión en 3D. */
   entity_category?: EntityCategory
@@ -326,7 +326,7 @@ export interface SavedPlayerTransform {
   yaw?:     number
   /** 3D: pitch de cámara en radianes. */
   pitch?:   number
-  /** Modelo visual (.glb/.fbx) del jugador si se reemplazó el placeholder. */
+  /** Modelo visual (.glb/.gltf) del jugador si se reemplazó el placeholder. */
   visual_model_path?: string
   /** FOV vertical de la cámara en radianes (3D FP). */
   fov_y?: number

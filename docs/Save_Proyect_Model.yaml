@@ -57,7 +57,7 @@ libraries:
   3D:
     models:
       ui: ResourcesAccordion / ModelsAccordion
-      manifest_v1: "models[] (biblioteca global; path al GLB/FBX empaquetado en assets/)"
+      manifest_v1: "models[] (biblioteca global; path al GLB/GLTF empaquetado en assets/)"
       manifest_v2: |
         version: 2
         resources.models[]: id, name, type, asset (imported/models/{id}.rerasset),
@@ -199,7 +199,7 @@ save_flow:
         - Contenido no-Resources: frames de animación, audio_path, blueprint path/model,
           entity path/model (vía getEntityAssetPath; excluye entityPathMarker).
         NO empaquetar paths solo porque aparecen en playerUi* (referencias a fonts/hudImages).
-        Manifest v2: NO empaquetar .glb/.gltf/.fbx en assets/ (shouldPackModelSourcePath);
+        Manifest v2: NO empaquetar .glb/.gltf en assets/ (shouldPackModelSourcePath);
         los modelos van en imported/ vía copyImportedAssetsToStaging; source/ solo dev.
     3_copy_and_remap:
       action: |
@@ -208,7 +208,7 @@ save_flow:
       pack_layout:
         assets/: sprites, fondos genéricos, frames de animación (v1: también modelos 3D fuente)
         imported/models/: .rerasset (manifest v2)
-        source/models/: GLB/FBX espejo fuente (solo dev al guardar)
+        source/models/: GLB/GLTF espejo fuente (solo dev al guardar)
         sounds/: audio
         fonts/: fuentes
         hud-images/: imágenes HUD (Resources Images 3D)

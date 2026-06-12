@@ -101,10 +101,7 @@ impl State {
                 }
             }
         } else {
-            log::warn!(
-                "[SHADER_MAT] ent={id} try_bind ABORT: sin model_assets para {cache_key} \
-                 — no habrá [RERASSET_TEX] ni capas GPU skinned"
-            );
+            log::warn!("[model_anim] sin model_assets para {cache_key}");
             return;
         };
 
@@ -119,7 +116,7 @@ impl State {
             .collect();
 
         if clip_meta.is_empty() {
-            log::warn!("[model_anim] modelo sin clips embebidos (solo bind pose): {path}");
+            log::debug!("[model_anim] modelo sin clips embebidos (solo bind pose): {path}");
         }
 
         let fallback_layer = self.fallback_layer;

@@ -43,7 +43,7 @@ export interface SelectedEntity {
 	physicsEnabled: boolean
 	physicsType: string
 	path?: string
-	/** Ruta del modelo visual 3D (FBX/GLB) en la entidad. */
+	/** Ruta del modelo visual 3D (GLB/GLTF) en la entidad. */
 	visualModelPath?: string
 	animations?: {
 		name: string
@@ -1214,7 +1214,7 @@ export interface EngineInternalRefs {
 	pendingImportSceneRef: MutableRefObject<SavedScene | null>
 	/** Evita duplicar estado React mientras el motor emite eventos de carga por entidad. */
 	sceneImportInProgressRef: MutableRefObject<boolean>
-	/** Overlay mientras el motor ejecuta `replace_entity_model` (GLB/FBX). */
+	/** Overlay mientras el motor ejecuta `replace_entity_model` (GLB/GLTF). */
 	modelReplaceInProgressRef: MutableRefObject<boolean>
 	/** Texto del overlay: modelo en recursos vs entidad vs escena. */
 	modelLoadOverlayKindRef: MutableRefObject<ModelLoadOverlayKind | null>

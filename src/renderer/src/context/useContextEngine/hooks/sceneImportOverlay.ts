@@ -414,7 +414,7 @@ export function endSceneImportLoading(
 	);
 }
 
-/** Overlay mientras el motor reemplaza un modelo 3D (GLB/FBX pesado en hilo principal). */
+/** Overlay mientras el motor reemplaza un modelo 3D (GLB pesado en hilo principal). */
 export function beginModelReplaceLoading(
 	dispatch: Dispatch<EngineAction>,
 	modelReplaceInProgressRef: MutableRefObject<boolean>,

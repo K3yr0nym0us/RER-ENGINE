@@ -18,7 +18,6 @@ serde_json.workspace = true
 log.workspace = true
 env_logger.workspace = true
 gltf.workspace = true
-ufbx.workspace = true
 image.workspace = true
 rayon.workspace = true
 rapier3d.workspace = true

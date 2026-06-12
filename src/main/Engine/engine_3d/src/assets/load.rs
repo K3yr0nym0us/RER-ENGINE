@@ -1,6 +1,6 @@
 //! Carga CPU desde `.rerasset` → mallas listas para GPU + `ModelAsset` skinned.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -234,80 +234,7 @@ fn load_anim_asset(file: &RerassetFile) -> Result<Option<Arc<ModelAsset>>, Strin
     Ok(Some(Arc::new(asset)))
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct LoadRerassetOpts {
-    /// Log de texturas (desactivar en recargas internas de caché GPU).
-    pub log_textures: bool,
-}
-
-impl Default for LoadRerassetOpts {
-    fn default() -> Self {
-        Self {
-            log_textures: true,
-        }
-    }
-}
-
-fn log_rerasset_file_summary(path: &Path, file: &RerassetFile, file_bytes: usize, loaded: &LoadedRerassetCpu) {
-    let tex = file.chunks.iter().filter(|c| c.chunk_type == ChunkType::Texture).count();
-    let mat = file.chunks.iter().filter(|c| c.chunk_type == ChunkType::Material).count();
-    let label = path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("rerasset");
-    let mut skinned_mats = HashSet::new();
-    if let Some(asset) = &loaded.anim_asset {
-        for p in &asset.parts {
-            skinned_mats.insert(p.material_index);
-        }
-    }
-    let mut mat_entries: Vec<_> = file
-        .chunks
-        .iter()
-        .filter(|c| c.chunk_type == ChunkType::Material)
-        .collect();
-    mat_entries.sort_by_key(|e| e.chunk_index);
-    let mut mat_tex_pairs: Vec<(u32, u32)> = Vec::new();
-    for entry in &mat_entries {
-        let Ok(data) = file.chunk_data(entry) else {
-            continue;
-        };
-        if data.len() >= 8 {
-            let mat_idx = u32::from_le_bytes(data[0..4].try_into().unwrap());
-            let tex_idx = u32::from_le_bytes(data[4..8].try_into().unwrap());
-            mat_tex_pairs.push((mat_idx, tex_idx));
-        }
-    }
-    let skinned_set: HashSet<u32> = skinned_mats.clone();
-    let file_ref = file;
-    super::log_tex::log_rerasset_load_skinned_summary(
-        label,
-        file_bytes,
-        tex,
-        mat,
-        &skinned_set,
-        &mat_tex_pairs,
-        |tex_idx| {
-            let tex_entry = file_ref.chunks.iter().find(|c| {
-                c.chunk_type == ChunkType::Texture && c.chunk_index == tex_idx
-            })?;
-            let rtex = file_ref.read_texture(tex_entry).ok()?;
-            rtex.mips.first().cloned()
-        },
-    );
-    if tex != mat {
-        log::warn!("[RERASSET_LOAD] conteo tex ({tex}) ≠ mat ({mat})");
-    }
-}
-
 pub fn load_rerasset_cpu(path: &Path) -> Result<LoadedRerassetCpu, String> {
-    load_rerasset_cpu_opts(path, LoadRerassetOpts::default())
-}
-
-pub fn load_rerasset_cpu_opts(
-    path: &Path,
-    opts: LoadRerassetOpts,
-) -> Result<LoadedRerassetCpu, String> {
     let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
     let file = read_rerasset(&bytes).map_err(|e| e.to_string())?;
     let material_tex_chunks = material_texture_chunk_map(&file);
@@ -339,8 +266,5 @@ pub fn load_rerasset_cpu_opts(
         anim_asset,
         material_tex_chunks,
     };
-    if opts.log_textures {
-        log_rerasset_file_summary(path, &file, bytes.len(), &loaded);
-    }
     Ok(loaded)
 }

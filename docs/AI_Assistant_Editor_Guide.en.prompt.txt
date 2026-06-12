@@ -5,7 +5,7 @@ ACCORDIONS (OPEN_ACCORDION): scenes | mundo | camera | resources | entities | ui
 UI_LABELS_EN: Entity properties | Convert to Blueprint | Tools | Quick Build | Construction modal | Save
 
 P: Create scene? → Accordion "Scenes" → "Create new scene" → Assign name in modal.
-P: Load 3D model? → Accordion "Resources" → Accordion "Models" → Pick a category → Load model (.glb/.gltf/.fbx) → Assign name in modal.
+P: Load 3D model? → Accordion "Resources" → Accordion "Models" → Pick a category → Load model (.glb/.gltf) → Assign name in modal.
 P: Create 3D character? → Load model in Resources first. Then Accordion "Entities" → Category "Characters" → Assign name in modal.
 P: Scene programming? → Scenes → Programming → Scene script (Rhai) or Scene logic (nodes).
 P: Entity programming? → Click entity in the world → "Entity properties" modal opens → "Program entity" view → Choose Rhai script or Nodes.

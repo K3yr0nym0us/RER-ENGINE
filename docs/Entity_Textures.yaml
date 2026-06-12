@@ -15,7 +15,7 @@ updated: 2026-06-10
 principle:
   owner: motor_3d
   scope: |
-    Solo modelos .glb / .gltf con texturas embebidas. FBX u otros formatos
+    Solo modelos .glb / .gltf con texturas embebidas. Otros formatos
     no exponen catálogo (el panel de texturas no aparece).
   runtime_vs_preview: |
     preview_tier controla qué imagen se muestra en el viewport del editor.
@@ -105,6 +105,6 @@ engine_2d:
   note: Los comandos list_entity_textures / set_entity_texture_* son no-op en engine_2d.
 
 do_not:
-  - Esperar catálogo de texturas en modelos FBX
+  - Catálogo de texturas solo en glTF/GLB embebido
   - Persistir paths de disco; solo image_index embebido en el GLB
   - Editar texturas desde el sidebar Properties sin abrir el modal de propiedades

@@ -44,7 +44,7 @@ collision_by_entity_type:
       motor: Sin collider físico
     - entity: "[EditorBox] / cubos FP"
       motor: Caja estática según escala del transform (no AABB de malla GLB)
-    - entity: "Modelo .glb / .fbx"
+    - entity: "Modelo .glb / .gltf"
       motor: AABB de la malla cargada (+ physics_type si aplica)
     - entity: "[Colisionador] / [ExecutionArea]"
       motor: Muro/trigger plano 3D (herramientas Tools); collider estático o solo visual

@@ -119,7 +119,7 @@ pub enum EngineCommand {
     },
     /// Sustituir el mesh visual de una entidad existente (sin crear entidad nueva).
     ReplaceEntityModel { id: u32, path: String },
-    /// Registrar un .glb/.gltf/.fbx en el almacén de recursos (sin instanciar en escena).
+    /// Registrar un .glb/.gltf en el almacén de recursos (sin instanciar en escena).
     LoadModelAsset {
         path: String,
         name: String,

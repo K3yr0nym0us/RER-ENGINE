@@ -21,7 +21,7 @@ rerasset:
     importer_version: u16
     flags: u32
     category: u8
-    source_ext: u8   # glb | gltf | fbx
+    source_ext: u8   # glb | gltf (2 = fbx legado en .rerasset antiguos)
     chunk_count: u16
     material_count: u16
     clip_count: u16

@@ -16,9 +16,7 @@ use std::time::{Duration, Instant};
 use crate::config_3d::mesh_3d::{
     prepare_cpu_parts_textures_for_gpu, vertex_local_bounds, CpuModelMeshPart,
 };
-use crate::assets::load::{
-    load_rerasset_cpu_opts, material_texture_chunk_map, LoadRerassetOpts,
-};
+use crate::assets::load::{load_rerasset_cpu, material_texture_chunk_map};
 use rer_engine_shared::assets::read_rerasset;
 use crate::config_3d::model_asset;
 use crate::config_3d::{physics_body_world_center, physics_half_extents_for_model};
@@ -246,14 +244,9 @@ impl State {
         if entry.state != rer_engine_shared::assets::AssetState::Ready {
             return None;
         }
-        load_rerasset_cpu_opts(
-            &entry.rerasset_path,
-            LoadRerassetOpts {
-                log_textures: false,
-            },
-        )
-        .ok()
-        .and_then(|loaded| loaded.play_parts)
+        load_rerasset_cpu(&entry.rerasset_path)
+            .ok()
+            .and_then(|loaded| loaded.play_parts)
     }
 
     pub(crate) fn ensure_play_character_model_cached(&mut self, path: &str) -> Result<(), String> {
@@ -348,25 +341,6 @@ impl State {
             .insert(model_id.to_string(), material_texture_chunk_map(&file));
     }
 
-    fn gpu_mat_layers_for_model(&self, model_key: &str) -> Vec<(u32, u32, u32)> {
-        let prefix = format!("{model_key}::mat");
-        let mut out = Vec::new();
-        for (key, &layer) in &self.texture_path_layers {
-            if let Some(suffix) = key.strip_prefix(&prefix) {
-                if let Ok(mat) = suffix.parse::<u32>() {
-                    let tex_chunk = self
-                        .rerasset_material_tex
-                        .get(model_key)
-                        .and_then(|m| m.get(&mat).copied())
-                        .unwrap_or(mat);
-                    out.push((mat, tex_chunk, layer as u32));
-                }
-            }
-        }
-        out.sort_by_key(|(m, _, _)| *m);
-        out
-    }
-
     /// Capa GPU para un material bakeado en `.rerasset` (clave `{model_id}::mat{N}`).
     pub(crate) fn ensure_imported_material_texture_layer(
         &mut self,
@@ -379,18 +353,12 @@ impl State {
         }
         let entry = self.imported_model_registry.get(model_id)?;
         if entry.state != rer_engine_shared::assets::AssetState::Ready {
-            log::warn!(
+            log::debug!(
                 "[RERASSET_TEX] {tex_cache_key} — modelo no Ready"
             );
             return None;
         }
-        let loaded = load_rerasset_cpu_opts(
-            &entry.rerasset_path,
-            LoadRerassetOpts {
-                log_textures: false,
-            },
-        )
-        .ok()?;
+        let loaded = load_rerasset_cpu(&entry.rerasset_path).ok()?;
         self.rerasset_material_tex.insert(
             model_id.to_string(),
             loaded.material_tex_chunks.clone(),
@@ -400,7 +368,7 @@ impl State {
             .iter()
             .find(|p| p.material_index == material_index)
         else {
-            log::warn!(
+            log::debug!(
                 "[RERASSET_TEX] {tex_cache_key} — material no encontrado en editor_parts"
             );
             return None;
@@ -553,9 +521,6 @@ impl State {
         if let Some(asset) = pending.anim_asset {
             self.model_assets.insert(path.clone(), asset);
         }
-
-        let gpu_mats = self.gpu_mat_layers_for_model(&path);
-        crate::assets::log_tex::log_gpu_model_summary(&path, &gpu_mats);
 
         let name = self.model_store_display_name(&path);
         let model_id = if path.starts_with("model_") {
@@ -846,7 +811,7 @@ impl State {
         }
 
         Err(format!(
-            "Modelo «{display_name}» no importado (requiere .rerasset). Importa el GLB/FBX en Recursos."
+            "Modelo «{display_name}» no importado (requiere .rerasset). Importa el GLB/GLTF en Recursos."
         ))
     }
 

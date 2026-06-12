@@ -67,7 +67,7 @@ impl PlayCharacterMeshExtents {
         rotation * Vec3::new(f.x * scale.x, f.y * scale.y, f.z * scale.z)
     }
 
-    /// `true` si `Transform.position` es directamente los pies (FBX / preview con pies en Y≈0).
+    /// `true` si `Transform.position` es directamente los pies (preview con pies en Y≈0).
     pub(crate) fn origin_at_feet(&self) -> bool {
         self.local_min[1].abs() < PLAY_CHARACTER_MESH_FEET_ORIGIN_EPS
     }

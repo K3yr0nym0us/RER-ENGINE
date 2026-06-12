@@ -22,7 +22,6 @@ fn source_ext_from_path(path: &Path) -> SourceExt {
         .as_str()
     {
         "gltf" => SourceExt::Gltf,
-        "fbx" => SourceExt::Fbx,
         _ => SourceExt::Glb,
     }
 }
@@ -226,17 +225,6 @@ pub fn bake_to_rerasset(
         input.clips.len(),
     );
     Ok(())
-}
-
-/// Log PBR + texturas tras bake (requiere ruta GLB para comparar factores).
-pub fn log_bake_material_summary(gltf_source: &Path, input: &BakeInput) {
-    let skinned = super::log_tex::skinned_material_set_from_parts(input.skinned_parts.as_deref());
-    super::log_tex::log_bake_materials_with_gltf(
-        gltf_source,
-        &input.materials,
-        &input.textures,
-        &skinned,
-    );
 }
 
 pub fn current_importer_version() -> u16 {

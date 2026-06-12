@@ -114,7 +114,7 @@
 
   "Create entity": "Crear entidad",
   "Environment": "Entorno",
-  "Load model (.glb/.gltf/.fbx)": "Cargar modelo (.glb/.gltf/.fbx)",
+  "Load model (.glb/.gltf)": "Cargar modelo (.glb/.gltf)",
   "Models": "Modelos",
   "No models loaded": "Sin modelos cargados",
   "Model name": "Nombre del modelo",

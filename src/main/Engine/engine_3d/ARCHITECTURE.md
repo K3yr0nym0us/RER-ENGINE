@@ -6,11 +6,11 @@ Este documento fija el contrato tecnico actual del motor 3D para que el codigo n
 
 - `rer_engine_3d` y `rer_engine_2d` son **binarios distintos** con runtimes distintos.
 - Lo comun con Electron es el **protocolo IPC** (JSON por stdin/stdout) y crates de utilidades (`engine_shared`), no la logica de juego ni de editor.
-- **No se copia runtime entre motores**: la fase de reutilizar ideas del 2D en el 3D ya cerró; el 3D funciona con su propia pila (`config_3d/`, Rapier3D, primera persona, glTF/FBX). Nuevas funciones 3D se implementan solo aqui.
+- **No se copia runtime entre motores**: la fase de reutilizar ideas del 2D en el 3D ya cerró; el 3D funciona con su propia pila (`config_3d/`, Rapier3D, primera persona, glTF/GLB). Nuevas funciones 3D se implementan solo aqui.
 - Herramientas de editor 2D (colliders dibujados, execution areas, escenarios sprite, fisica XY, etc.) **no aplican** a este binario y no deben documentarse como deuda de portado.
 - Este documento no describe ni prescribe comportamiento del motor 2D.
 
-Runtime 3D: camara orbital en editor, primera persona en play, Rapier3D, mallas glTF/FBX.
+Runtime 3D: camara orbital en editor, primera persona en play, Rapier3D, mallas glTF/GLB.
 
 ## Politica GPU
 
@@ -41,7 +41,7 @@ Runtime 3D: camara orbital en editor, primera persona en play, Rapier3D, mallas 
 - `src/config_3d/fps_camera.rs`: vista FPS acoplada, IPC `play_character_view_changed`.
 - `src/config_3d/play_controller.rs`: movimiento en play (cápsula cinemática).
 - `src/config_3d/player_ui/`: editor HUD del jugador (pantallas, texto, botones, imágenes, objetos poligonales, undo).
-- `src/config_3d/mesh_3d.rs`: glTF/FBX, normalizacion, `forward_xz`.
+- `src/config_3d/mesh_3d.rs`: glTF/GLB, normalizacion, `forward_xz`.
 - `src/config_3d/physics_3d.rs`: Rapier3D y shape cast del jugador.
 - `src/config_3d/plane_tools.rs`: herramientas de muro invisible (colisionador) y trigger 3D (quad delgado, ghost, Q/E, colocación).
 - `src/config_3d/execution_areas_3d.rs`: detección de triggers en play (OBB + cápsula jugador, `on_trigger_enter`, IPC).

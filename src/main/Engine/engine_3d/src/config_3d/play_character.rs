@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use glam::Vec3;
 
 use crate::config_3d::character_anchor::{
@@ -9,7 +7,7 @@ use crate::config_3d::character_anchor::{
 };
 use crate::entity_save_meta::is_model_3d_asset_path;
 use crate::config_3d::model_asset;
-use crate::config_3d::{is_fbx_model_path, is_gltf_model_path};
+use crate::config_3d::is_gltf_model_path;
 use crate::config_3d::static_model_cache::play_character_cache_key;
 use crate::config_3d::physics_3d::PhysicsWorld;
 use crate::ecs::{EntityId, MeshComponent, Transform};
@@ -45,7 +43,7 @@ impl State {
             .and_then(|id| self.physics.collider_handle_for_entity(id))
     }
 
-    /// `true` tras reemplazar el mesh por un archivo 3D (`.glb`/`.fbx`); el cubo `[Player]` no cuenta.
+    /// `true` tras reemplazar el mesh por un archivo 3D (`.glb`/`.gltf`); el cubo `[Player]` no cuenta.
     pub(crate) fn play_character_uses_mesh_driven_capsule(&self) -> bool {
         self.play_character_mesh_extents.is_some()
     }
@@ -59,7 +57,7 @@ impl State {
         self.play_character_entity == Some(id) && is_model_3d_asset_path(model_path)
     }
 
-    /// Origen de entidad en los pies (preview/FBX), no en el centro del AABB (glTF skinned centrado).
+    /// Origen de entidad en los pies (preview/jugador), no en el centro del AABB del mesh.
     pub(crate) fn play_character_mesh_origin_at_feet(&self) -> bool {
         self.play_character_mesh_extents
             .is_some_and(|e| e.origin_at_feet())
@@ -393,7 +391,7 @@ impl State {
         self.place_play_character_at_world_feet_with_bounds(id, bounds, world_feet_mesh, true);
     }
 
-    /// Solo FBX: AABB para cápsula de suelo y `Transform.position` en los pies.
+    /// AABB para cápsula de suelo y `Transform.position` en los pies.
     fn apply_play_character_mesh_ground_extents(
         &mut self,
         id: EntityId,
@@ -515,14 +513,6 @@ impl State {
 
         self.register_or_update_visual_model_meta(id, &library_path, true);
         self.play_character_mesh_forward_xz = part.forward_xz;
-        if is_fbx_model_path(&source_for_ext) {
-            if let Some(skin_fwd) = model_asset::fbx_skinned_play_forward_xz(
-                Path::new(&source_for_ext),
-                crate::config_3d::character_anchor::PLAY_CHARACTER_BODY_HEIGHT,
-            ) {
-                self.play_character_mesh_forward_xz = skin_fwd;
-            }
-        }
         self.physics.remove_entity_body(id);
         self.play_character_mesh_extents =
             Some(PlayCharacterMeshExtents::from_local_bounds(
@@ -532,10 +522,7 @@ impl State {
 
         self.try_bind_model_animations_with_gltf(id, &cache_key, None);
         if let Some(asset) = self.model_assets.get(&cache_key) {
-            if is_fbx_model_path(&source_for_ext) {
-                self.play_character_mesh_forward_xz =
-                    model_asset::resolve_fbx_play_character_forward_xz(asset);
-            } else if is_gltf_model_path(&source_for_ext) {
+            if is_gltf_model_path(&source_for_ext) {
                 self.play_character_mesh_forward_xz =
                     model_asset::resolve_gltf_play_character_forward_xz(asset);
             }

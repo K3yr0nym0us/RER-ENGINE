@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { createContext, useContext, type ReactNode } from 'react'
 
 import { useModalElectron, type OpenModalElectronOptions } from '../hooks/useModalElectron'
 
@@ -10,13 +10,25 @@ export interface ModalConfig {
 	size?: ModalSize
 }
 
-/** Compatibilidad: delega en la ventana modal Electron (sin ocultar el motor). */
+type ModalElectronApi = ReturnType<typeof useModalElectron>
+
+const ModalElectronContext = createContext<ModalElectronApi | null>(null)
+
+/** Una sola instancia de listeners IPC modal; los hijos usan `useModal()`. */
 export function ModalProvider({ children }: { children: ReactNode }) {
-	return <>{children}</>
+	const electron = useModalElectron()
+	return (
+		<ModalElectronContext.Provider value={electron}>
+			{children}
+		</ModalElectronContext.Provider>
+	)
 }
 
 export function useModal() {
-	const electron = useModalElectron()
+	const electron = useContext(ModalElectronContext)
+	if (!electron) {
+		throw new Error('useModal debe usarse dentro de ModalProvider')
+	}
 	return {
 		openModal: (cfg: ModalConfig) => {
 			void electron.openModal(cfg as OpenModalElectronOptions)
