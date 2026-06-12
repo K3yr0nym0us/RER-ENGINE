@@ -327,10 +327,9 @@ impl State {
                 self.register_model_asset(&path, &name, category.as_deref());
             }
             EngineCommand::RemoveModelAsset { path } => {
-                if self.model_store.remove(&path).is_some() {
-                    self.invalidate_static_model_cache(&path);
-                    send_event(&EngineEvent::ModelAssetRemoved { path: path.clone() });
-                    log::info!("[model] eliminado de recursos: {}", path);
+                if let Some(removed) = self.remove_model_from_library(&path) {
+                    send_event(&EngineEvent::ModelAssetRemoved { path: removed.clone() });
+                    log::info!("[model] eliminado de recursos: {}", removed);
                 } else {
                     log::warn!("[model] intento de eliminar modelo inexistente: {}", path);
                 }

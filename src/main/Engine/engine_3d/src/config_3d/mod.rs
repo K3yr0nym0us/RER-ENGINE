@@ -450,7 +450,8 @@ impl State {
         path: &str,
         is_play_character: bool,
     ) -> bool {
-        let asset_key = self.model_path_key(path);
+        let cache_key = self.model_cache_key(path);
+        let library_path = self.model_library_path_for(path);
         let mesh_cache_key = if is_play_character {
             if let Err(e) = self.ensure_play_character_model_cached(path) {
                 log::debug!(
@@ -458,12 +459,12 @@ impl State {
                 );
                 return false;
             }
-            crate::config_3d::static_model_cache::play_character_cache_key(&asset_key)
+            crate::config_3d::static_model_cache::play_character_cache_key(&cache_key)
         } else if let Err(e) = self.ensure_static_model_cached(path) {
             log::debug!("[replace_entity_model] sin caché reutilizable para {path}: {e}");
             return false;
         } else {
-            asset_key.clone()
+            cache_key.clone()
         };
         let Some(part) = self
             .static_model_cache
@@ -508,16 +509,15 @@ impl State {
             if self.should_apply_play_character_mesh_collision(id, path) {
                 self.finish_play_character_model_replace(id, path);
             }
-            self.emit_entity_model_replaced_for_play_character(id, &asset_key);
+            self.emit_entity_model_replaced_for_play_character(id, &library_path);
             log::info!(
                 "Modelo reemplazado desde caché en entidad {id}: {mesh_cache_key}"
             );
             return true;
         }
 
-        self.register_or_update_visual_model_meta(id, path, false);
-        let gltf = model_asset::import_gltf(Path::new(&asset_key)).ok();
-        self.try_bind_model_animations_with_gltf(id, &asset_key, gltf.as_deref());
+        self.register_or_update_visual_model_meta(id, &library_path, false);
+        self.try_bind_model_animations_with_gltf(id, &cache_key, None);
         self.reconcile_entity_physics_after_model_replace(id);
         let (position, rotation, scale) = match self.world.get::<Transform>(id) {
             Some(t) => (
@@ -534,7 +534,7 @@ impl State {
         };
         send_event(&EngineEvent::EntityModelReplaced {
             id,
-            path: asset_key.clone(),
+            path: library_path.clone(),
             position,
             rotation,
             scale,

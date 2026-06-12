@@ -1,4 +1,5 @@
 use crate::engine::State;
+use crate::assets::registry::relative_rerasset_manifest_path;
 use crate::ipc::{
     send_event, EngineEvent, SaveAssetRefSnapshot, SavePlayerUiTextBoxSnapshot,
     SaveSceneSnapshotPayload, SaveWorldSnapshot,
@@ -62,7 +63,10 @@ impl State {
                     path: path.clone(),
                     category: entry.category.clone(),
                     model_id: entry.model_id.clone(),
-                    asset: entry.rerasset_path.clone(),
+                    asset: entry
+                        .model_id
+                        .as_ref()
+                        .map(|id| relative_rerasset_manifest_path(id)),
                 })
                 .collect(),
             sounds: self

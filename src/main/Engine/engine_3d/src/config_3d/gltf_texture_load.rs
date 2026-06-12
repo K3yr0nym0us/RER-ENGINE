@@ -307,7 +307,7 @@ pub(crate) fn import_material_smallest_albedos_profiled(
         let decode_ms = decode_started.elapsed().as_millis() as u64;
         total_decode_ms += decode_ms;
         if let Some(path) = model_path {
-            log::info!(
+            log::debug!(
                 "[model_tex] {path} Material {mi} ({label}) -> decode: {decode_ms} ms \
                  (imagen #{img_idx}, {}x{})",
                 data.width,
@@ -317,8 +317,8 @@ pub(crate) fn import_material_smallest_albedos_profiled(
         out.insert(mi, data);
     }
     if let Some(path) = model_path {
-        log::info!(
-            "[model_tex] {path} decode: {} textura/s únicas | total decode: {total_decode_ms} ms",
+        log::debug!(
+            "[model_tex] {path} decode: {} textura/s | {total_decode_ms} ms",
             out.len()
         );
     }

@@ -210,7 +210,33 @@ pub fn bake_to_rerasset(
     rerasset_path: &Path,
     input: &BakeInput,
 ) -> Result<(), String> {
-    write_rerasset_atomic(rerasset_path, input).map_err(|e| e.to_string())
+    write_rerasset_atomic(rerasset_path, input).map_err(|e| e.to_string())?;
+    let size = std::fs::metadata(rerasset_path).map(|m| m.len()).unwrap_or(0);
+    let skinned = input.skinned_parts.as_ref().map(|p| p.len()).unwrap_or(0);
+    let play = input.play_parts.as_ref().map(|p| p.len()).unwrap_or(0);
+    log::info!(
+        "[RERASSET_BAKE] {} | {} bytes tex={} mat={} parts=e{}/p{}/s{} clips={}",
+        rerasset_path.display(),
+        size,
+        input.textures.len(),
+        input.materials.len(),
+        input.editor_parts.len(),
+        play,
+        skinned,
+        input.clips.len(),
+    );
+    Ok(())
+}
+
+/// Log PBR + texturas tras bake (requiere ruta GLB para comparar factores).
+pub fn log_bake_material_summary(gltf_source: &Path, input: &BakeInput) {
+    let skinned = super::log_tex::skinned_material_set_from_parts(input.skinned_parts.as_deref());
+    super::log_tex::log_bake_materials_with_gltf(
+        gltf_source,
+        &input.materials,
+        &input.textures,
+        &skinned,
+    );
 }
 
 pub fn current_importer_version() -> u16 {

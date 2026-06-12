@@ -62,24 +62,20 @@ impl State {
             None
         };
 
-        let path_buf = Path::new(path);
+        let cache_key = self.model_cache_key(path);
 
-        let cached_asset = if normalize.is_none() {
-            self.model_assets.get(path).map(Arc::clone)
-        } else {
-            None
-        };
+        let cached_asset = self.model_assets.get(&cache_key).map(Arc::clone);
         let asset = if let Some(cached) = cached_asset {
-            log::info!("[MODEL_BIND] {path} reuse=model_assets (precarga Recursos)");
+            log::debug!("[MODEL_BIND] {cache_key} reuse=model_assets (.rerasset)");
             cached
         } else if let Some(file) = gltf_file {
-            log::info!(
-                "[MODEL_BIND] {path} build=skinned normalize={normalize:?} (GLB ya en caché import)"
+            log::debug!(
+                "[MODEL_BIND] {cache_key} build=skinned normalize={normalize:?} (GLB en caché import)"
             );
             match model_asset::load_model_asset_from_gltf(file, normalize) {
                 Some(loaded) => {
                     self.model_assets
-                        .insert(path.to_string(), Arc::clone(&loaded));
+                        .insert(cache_key.clone(), Arc::clone(&loaded));
                     loaded
                 }
                 None => {
@@ -96,52 +92,20 @@ impl State {
                     if !clip_meta.is_empty() {
                         send_event(&EngineEvent::ModelClipsReady {
                             id,
-                            path: path.to_string(),
+                            path: cache_key.clone(),
                             clips: clip_meta,
                         });
                     }
-                    log::warn!("[model_anim] glTF sin skinning utilizable: {path}");
+                    log::warn!("[model_anim] glTF sin skinning utilizable: {cache_key}");
                     return;
                 }
             }
         } else {
-            log::info!("[MODEL_BIND] {path} build=skinned normalize={normalize:?} (import glTF)");
-            let loaded = model_asset::import_gltf(path_buf)
-                .ok()
-                .and_then(|file| model_asset::load_model_asset_from_gltf(file.as_ref(), normalize));
-            match loaded {
-                Some(loaded) => {
-                    self.model_assets
-                        .insert(path.to_string(), Arc::clone(&loaded));
-                    loaded
-                }
-                None => {
-                    let clip_meta: Vec<ModelClipInfoEvent> = model_asset::list_model_clip_infos(
-                        path_buf,
-                    )
-                    .into_iter()
-                    .map(|c| ModelClipInfoEvent {
-                        name: c.name,
-                        duration_s: c.duration_s,
-                        fps: c.fps,
-                    })
-                    .collect();
-                    if clip_meta.is_empty() {
-                        log::warn!("[model_anim] modelo sin clips embebidos: {path}");
-                        return;
-                    }
-                    log::warn!(
-                        "[model_anim] skinning no disponible; solo metadatos de {} clip(s): {path}",
-                        clip_meta.len()
-                    );
-                    send_event(&EngineEvent::ModelClipsReady {
-                        id,
-                        path: path.to_string(),
-                        clips: clip_meta,
-                    });
-                    return;
-                }
-            }
+            log::warn!(
+                "[SHADER_MAT] ent={id} try_bind ABORT: sin model_assets para {cache_key} \
+                 — no habrá [RERASSET_TEX] ni capas GPU skinned"
+            );
+            return;
         };
 
         let clip_meta: Vec<ModelClipInfoEvent> = asset
@@ -212,8 +176,8 @@ impl State {
         });
         self.write_joint_matrices_all_parts(&binding, &asset, None, 0.0);
 
-        log::info!(
-            "[model_anim] clips enlazados para entidad {id}: {} clip(s), {} pieza(s) desde {path}",
+        log::debug!(
+            "[model_anim] clips enlazados entidad {id}: {} clip(s), {} pieza(s) ({cache_key})",
             asset.clips.len(),
             asset.parts.len()
         );

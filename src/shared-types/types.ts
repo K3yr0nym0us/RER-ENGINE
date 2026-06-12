@@ -144,7 +144,7 @@ export interface Entity3D {
   name: string
   category: Entity3DCategory
   model: string
-  /** ID estable del asset importado (manifest v2). */
+  /** ID estable del asset importado (`.rerasset` en `resources.models`). */
   model_id?: string
   position: [number, number, number]
   rotation: [number, number, number, number]
@@ -419,9 +419,7 @@ export interface ProjectSaveData {
   savedAt:         string   // ISO timestamp
   /** Sprites precargados en el proyecto (nombre -> ruta relativa). */
   sprites?:        Array<{ name: string; path: string }>
-  /** Modelos 3D precargados en el proyecto. */
-  models?:         Array<{ name: string; path: string; category?: ModelCategory; model_id?: string; asset?: string }>
-  /** Biblioteca de assets importados (manifest v2). */
+  /** Biblioteca de modelos 3D importados (única fuente en proyectos 3D). */
   resources?: {
     models?: ResourceModelEntry[]
   }
@@ -980,9 +978,6 @@ export interface ResourceModelEntry {
   type: ModelCategory
   asset: string
   importer_version: number
-  source?: string
-  source_size?: number
-  source_mtime?: number
 }
 
 export interface SoundInfo {

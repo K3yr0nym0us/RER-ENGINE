@@ -38,7 +38,8 @@ pub fn write_rtex(w: &mut impl Write, data: &RtexData) -> std::io::Result<()> {
     w.write_all(&[mip_count])?;
     w.write_all(&[data.texture_format as u8])?;
     w.write_all(&[data.compression_type as u8])?;
-    w.write_all(&[0u8; 2])?; // padding
+    // 2 bytes reservados — read_rtex consume los 5 bytes (mip_count + format + compression + reserved[2]).
+    w.write_all(&[0u8; 2])?;
     for mip in &data.mips {
         w.write_all(mip)?;
     }
@@ -68,7 +69,7 @@ pub fn read_rtex(r: &mut impl Read) -> std::io::Result<RtexData> {
     let width = u32::from_le_bytes(u32buf);
     r.read_exact(&mut u32buf)?;
     let height = u32::from_le_bytes(u32buf);
-    let mut meta = [0u8; 4];
+    let mut meta = [0u8; 5];
     r.read_exact(&mut meta)?;
     let mip_count = meta[0] as usize;
     let texture_format = match meta[1] {
@@ -119,12 +120,14 @@ mod tests {
 
     #[test]
     fn rtex_roundtrip() {
+        let mut mip0 = vec![255u8; 64];
+        mip0[0..4].copy_from_slice(&[15, 15, 15, 255]);
         let data = RtexData {
             width: 4,
             height: 4,
             texture_format: TextureFormat::Rgba8UnormSrgb,
             compression_type: CompressionType::None,
-            mips: vec![vec![255u8; 64], vec![128u8; 16]],
+            mips: vec![mip0, vec![128u8; 16]],
         };
         let mut buf = Vec::new();
         write_rtex(&mut buf, &data).unwrap();
@@ -133,5 +136,6 @@ mod tests {
         assert_eq!(back.width, 4);
         assert_eq!(back.mips.len(), 2);
         assert_eq!(back.mips[0].len(), 64);
+        assert_eq!(&back.mips[0][0..4], &[15, 15, 15, 255]);
     }
 }

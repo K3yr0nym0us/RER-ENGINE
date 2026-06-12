@@ -221,10 +221,18 @@ pub(crate) fn bootstrap_entity_model_textures(
     entity_id: EntityId,
     model_path: &str,
 ) {
-    let key = state.model_path_key(model_path);
-    if crate::config_3d::is_gltf_model_path(&key) {
-        if let Ok(catalog) = state.catalog_for_path(&key) {
-            state.ensure_entity_texture_lod_defaults(entity_id, &catalog);
+    let cache_key = state.model_cache_key(model_path);
+    let imported_ready = state
+        .imported_model_registry
+        .get(&cache_key)
+        .is_some_and(|e| e.state == rer_engine_shared::assets::AssetState::Ready);
+    if !imported_ready {
+        let library_path = state.model_library_path_for(model_path);
+        let key = state.model_path_key(&library_path);
+        if crate::config_3d::is_gltf_model_path(&key) && Path::new(&library_path).is_file() {
+            if let Ok(catalog) = state.catalog_for_path(&key) {
+                state.ensure_entity_texture_lod_defaults(entity_id, &catalog);
+            }
         }
     }
     state.apply_skinned_part_texture_layers(entity_id, state.graphics_texture_tier, None);
@@ -237,9 +245,23 @@ pub(crate) fn apply_entity_texture_lod_snapshot(
 ) {
     let preview_tier = TextureGraphicsTier::from_wire(&snap.preview_tier)
         .unwrap_or(TextureGraphicsTier::Low);
-    let catalog = state
-        .entity_model_path_for_textures(entity_id)
-        .and_then(|path| state.catalog_for_path(&path).ok());
+    let catalog = state.entity_model_path_for_textures(entity_id).and_then(|path| {
+        let cache_key = state.model_cache_key(&path);
+        if state
+            .imported_model_registry
+            .get(&cache_key)
+            .is_some_and(|e| e.state == rer_engine_shared::assets::AssetState::Ready)
+        {
+            return None;
+        }
+        let library_path = state.model_library_path_for(&path);
+        let key = state.model_path_key(&library_path);
+        if crate::config_3d::is_gltf_model_path(&key) && Path::new(&library_path).is_file() {
+            state.catalog_for_path(&key).ok()
+        } else {
+            None
+        }
+    });
     let mut assignments = HashMap::new();
     for mat in &snap.materials {
         let mut tier_map = HashMap::new();
@@ -520,35 +542,80 @@ impl State {
     ) {
         let (asset_path, parts_len) = match self.model_animation_bindings.get(&entity_id) {
             Some(b) => (b.asset_path.clone(), b.part_gpu_indices.len()),
-            None => return,
+            None => {
+                crate::assets::log_tex::log_shader_bind_skipped(
+                    entity_id,
+                    "sin model_animation_bindings (¿try_bind_model_animations no corrió?)",
+                );
+                return;
+            }
         };
-        let key = self.model_path_key(&asset_path);
-        let is_gltf = crate::config_3d::is_gltf_model_path(&key);
+        let cache_key_base = self.model_cache_key(&asset_path);
+        let imported_ready = self
+            .imported_model_registry
+            .get(&cache_key_base)
+            .is_some_and(|e| e.state == rer_engine_shared::assets::AssetState::Ready);
+        let library_path = self.model_library_path_for(&asset_path);
+        let catalog_path = self.model_path_key(&library_path);
+        let is_gltf_source = crate::config_3d::is_gltf_model_path(&catalog_path)
+            && Path::new(&library_path).is_file();
         let asset = match self.model_assets.get(&asset_path) {
             Some(a) => std::sync::Arc::clone(a),
-            None => return,
+            None => {
+                crate::assets::log_tex::log_shader_bind_skipped(
+                    entity_id,
+                    &format!(
+                        "model_assets sin «{asset_path}» (precarga GPU/.rerasset incompleta)"
+                    ),
+                );
+                return;
+            }
         };
         if asset.parts.len() != parts_len {
+            crate::assets::log_tex::log_shader_bind_skipped(
+                entity_id,
+                &format!(
+                    "partes skinned mismatch: asset={} binding={parts_len}",
+                    asset.parts.len(),
+                ),
+            );
             return;
         }
 
-        let catalog = if is_gltf {
-            self.catalog_for_path(&key).ok()
+        let catalog = if is_gltf_source && !imported_ready {
+            self.catalog_for_path(&catalog_path).ok()
         } else {
             None
         };
         let lod = self.entity_texture_lod.get(&entity_id).cloned();
 
+        let pipeline = if imported_ready {
+            "RERASSET_SAVE"
+        } else if is_gltf_source {
+            "GLTF_VIVO"
+        } else {
+            "OTRO"
+        };
+        let gltf_pbr_map = if Path::new(&library_path).is_file() {
+            crate::assets::log_tex::load_gltf_pbr_map(Path::new(&library_path))
+        } else {
+            None
+        };
         let mut layer_updates: Vec<(usize, crate::texture::TextureLayer)> =
             Vec::with_capacity(asset.parts.len());
         for (pi, part) in asset.parts.iter().enumerate() {
             if only_material.is_some_and(|m| part.material_index != m) {
                 continue;
             }
-            let layer = if is_gltf {
+            let layer = if imported_ready {
+                self.ensure_imported_material_texture_layer(
+                    &cache_key_base,
+                    part.material_index,
+                )
+            } else if is_gltf_source {
                 catalog.as_ref().and_then(|catalog| {
                     self.resolve_gltf_material_texture_layer(
-                        &key,
+                        &catalog_path,
                         part.material_index,
                         tier,
                         lod.as_ref(),
@@ -556,7 +623,7 @@ impl State {
                     )
                 })
             } else {
-                let cache_key = format!("{key}#fbx-part{pi}");
+                let cache_key = format!("{catalog_path}#fbx-part{pi}");
                 Some(self.pack_texture_layer(
                     Some(&cache_key),
                     &part.mesh.rgba,
@@ -569,6 +636,51 @@ impl State {
             };
             layer_updates.push((pi, layer));
         }
+
+        let fallback = self.fallback_layer as u32;
+        let mat_tex_chunks = self
+            .rerasset_material_tex
+            .get(&cache_key_base)
+            .cloned();
+
+        let layer_by_part: HashMap<usize, crate::texture::TextureLayer> =
+            layer_updates.iter().copied().collect();
+
+        let mut summary: HashMap<u32, (u32, u32, u32, bool)> = HashMap::new();
+        for (pi, part) in asset.parts.iter().enumerate() {
+            if only_material.is_some_and(|m| part.material_index != m) {
+                continue;
+            }
+            let assign_ok = layer_by_part.contains_key(&pi);
+            let layer = layer_by_part
+                .get(&pi)
+                .copied()
+                .unwrap_or(self.fallback_layer) as u32;
+            let tex_chunk = mat_tex_chunks
+                .as_ref()
+                .and_then(|m| m.get(&part.material_index).copied())
+                .unwrap_or(part.material_index);
+            summary
+                .entry(part.material_index)
+                .and_modify(|(_, _, count, ok)| {
+                    *count += 1;
+                    *ok &= assign_ok;
+                })
+                .or_insert((tex_chunk, layer, 1, assign_ok));
+        }
+        let mut summary_entries: Vec<(u32, u32, u32, u32, bool)> = summary
+            .into_iter()
+            .map(|(mat, (tex, layer, count, ok))| (mat, tex, layer, count, ok))
+            .collect();
+        summary_entries.sort_by_key(|(mat, _, _, _, _)| *mat);
+        crate::assets::log_tex::log_shader_bind_summary(
+            entity_id,
+            pipeline,
+            asset.parts.len(),
+            fallback,
+            &summary_entries,
+        );
+        let _ = gltf_pbr_map;
 
         if let Some(binding) = self.model_animation_bindings.get_mut(&entity_id) {
             if binding.part_tex_layers.len() < asset.parts.len() {

@@ -91,8 +91,10 @@ const eventBuffer: EngineEvent[] = []
 
 // Path del proyecto abierto/guardado actualmente.
 let currentProjectFilePath: string | null = null
-/** Carpeta extraída del `.save` abierto (2D); el motor lee manifest + assets desde aquí. */
+/** Carpeta extraída de un `.save` abierto; contiene `manifest.json` + assets empaquetados. */
 let currentProjectExtractDir: string | null = null
+/** Workspace de sesión para proyecto 3D nuevo (imported/models, source/models). No es un `.save`. */
+let currentProjectSessionDir: string | null = null
 
 // Directorios temporales con contenido extraído de .save que deben vivir
 // mientras el proyecto está abierto para que el motor lea rutas absolutas.
@@ -109,6 +111,8 @@ let engineReceivedReady = false
 
 /** Evita reenviar `set_scene` 3D si el motor emite más de un `ready` (p. ej. tras `setup_empty_3d`). */
 let engine3dStartupSceneSent = false
+/** Tras un crash del motor en sesión, no relanzar en bucle con cada `viewport-bounds`. */
+let engineSessionCrashed = false
 
 /** Binario base del motor en la sesión actual (`rer_engine_2d` / `rer_engine_3d`). */
 let lastEngineBinary = 'rer_engine_2d'
@@ -344,17 +348,18 @@ function startEngine(embed?: ViewportBounds): void {
     delete engineEnv.RER_PROJECT_SAVE_PATH
   }
 
-  // 3D: escena vacía al arrancar si vamos a cargar un `.save` (ruta o carpeta extraída).
+  // 3D: escena vacía solo al abrir un `.save` existente (no confundir con sesión de proyecto nuevo).
   if (baseBinaryName === 'rer_engine_3d') {
-    if (currentProjectExtractDir || currentProjectFilePath) {
+    if (currentProjectFilePath) {
       engineEnv.RER_3D_START_FROM_SAVE = '1'
     } else {
       delete engineEnv.RER_3D_START_FROM_SAVE
     }
   }
 
-  if (currentProjectExtractDir) {
-    engineEnv.RER_PROJECT_EXTRACT_DIR = currentProjectExtractDir
+  const engineExtractDir = currentProjectExtractDir ?? currentProjectSessionDir
+  if (engineExtractDir) {
+    engineEnv.RER_PROJECT_EXTRACT_DIR = engineExtractDir
   } else {
     delete engineEnv.RER_PROJECT_EXTRACT_DIR
   }
@@ -417,6 +422,13 @@ function startEngine(embed?: ViewportBounds): void {
     console.log(`[engine] proceso terminado con código ${code}`)
     if (code !== 0 && code !== null && !engineReceivedReady) {
       notifyEngineGpuStartupError()
+    }
+    if (code !== 0 && code !== null && engineReceivedReady) {
+      engineSessionCrashed = true
+      sendEventToRenderer({
+        event: 'error',
+        message: `El motor 3D se detuvo inesperadamente (código ${code}). Reinicia la aplicación.`,
+      } as EngineEvent)
     }
     sendEventToRenderer({ event: 'stopped', code } as EngineEvent)
     engineProcess = null
@@ -958,12 +970,15 @@ function getBlueprintAssetPath(
 function mapEntityAssetPaths<T extends SaveManifestEntity>(
   entity: T,
   mapPath: (p: string | null | undefined) => string | null | undefined,
+  skipAssetPath?: (p: string, entity: T) => boolean,
 ): T {
   const assetPath = getEntityAssetPath(entity)
-  const remapped = assetPath ? (mapPath(assetPath) as string) : undefined
   const next = { ...entity } as T & { path?: string; model?: string }
-  if (typeof next.path === 'string' && remapped) next.path = remapped
-  if (typeof next.model === 'string' && remapped) next.model = remapped
+  if (assetPath && !skipAssetPath?.(assetPath, entity)) {
+    const remapped = mapPath(assetPath) as string
+    if (typeof next.path === 'string') next.path = remapped
+    if (typeof next.model === 'string') next.model = remapped
+  }
   return next as T
 }
 
@@ -1033,13 +1048,17 @@ function countManifestLibraryRefs(data: ProjectSaveData): {
   sprites: number
   models: number
 } {
+  const importedModels =
+    data.type === '3D'
+      ? (data.resources?.models?.length ?? 0)
+      : 0
   return {
     sounds: data.sounds?.length ?? 0,
     fonts: data.fonts?.length ?? 0,
     backgrounds: data.backgrounds?.length ?? 0,
     hudImages: data.hudImages?.length ?? 0,
     sprites: countActiveSceneSprites(data),
-    models: data.models?.length ?? 0,
+    models: importedModels,
   }
 }
 
@@ -1074,11 +1093,92 @@ function isModelSourceFile(p: string): boolean {
   return MODEL_SOURCE_EXTS.has(path.extname(p).toLowerCase())
 }
 
-/** Manifest v2: GLB/FBX fuente van en `imported/*.rerasset` (+ `source/` solo dev). */
-function shouldPackModelSourcePath(data: ProjectSaveData, p: string): boolean {
-  if ((data.version ?? 1) < 2) return true
-  if (!(data.resources?.models?.length)) return true
-  return !isModelSourceFile(p)
+/** En 3D, `entity.model` puede ser `model_id` (sin ruta); no resolver contra extract_dir. */
+function isManifestModelIdRef(p: string, modelId?: string): boolean {
+  if (entityPathMarker(p)) return true
+  if (modelId && p === modelId) return true
+  if (path.isAbsolute(p)) return false
+  if (!p.includes('/') && !p.includes('\\')) {
+    const ext = path.extname(p).toLowerCase()
+    return ext === '' || (!MODEL_SOURCE_EXTS.has(ext) && ext !== '.rerasset')
+  }
+  return false
+}
+
+function formatPackBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MiB`
+}
+
+function filePackSizeLabel(filePath: string): string {
+  try {
+    return formatPackBytes(fs.statSync(filePath).size)
+  } catch {
+    return 'tamaño desconocido'
+  }
+}
+
+/** Lista recursiva de archivos bajo un directorio (para diagnóstico de .save). */
+function walkPackFiles(
+  rootDir: string,
+  baseDir = rootDir,
+): Array<{ rel: string; size: number }> {
+  if (!fs.existsSync(rootDir)) return []
+  const out: Array<{ rel: string; size: number }> = []
+  for (const entry of fs.readdirSync(rootDir, { withFileTypes: true })) {
+    const full = path.join(rootDir, entry.name)
+    const rel = path.relative(baseDir, full).replace(/\\/g, '/')
+    if (entry.isDirectory()) {
+      out.push(...walkPackFiles(full, baseDir))
+    } else if (entry.isFile()) {
+      try {
+        out.push({ rel, size: fs.statSync(full).size })
+      } catch {
+        out.push({ rel, size: 0 })
+      }
+    }
+  }
+  return out.sort((a, b) => a.rel.localeCompare(b.rel))
+}
+
+function countRhaiFiles(dir: string): number {
+  if (!fs.existsSync(dir)) return 0
+  let total = 0
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name)
+    if (entry.isDirectory()) {
+      total += countRhaiFiles(full)
+    } else if (entry.isFile() && path.extname(entry.name).toLowerCase() === '.rhai') {
+      total += 1
+    }
+  }
+  return total
+}
+
+function logPackDirectoryTree(tag: string, rootDir: string): void {
+  const files = walkPackFiles(rootDir)
+  if (files.length === 0) {
+    console.log(`[${tag}] (sin archivos) ${rootDir}`)
+    return
+  }
+  const total = files.reduce((sum, f) => sum + f.size, 0)
+  const rerassets = files.filter((f) => f.rel.endsWith('.rerasset'))
+  const rerassetNote =
+    rerassets.length > 0
+      ? `, ${rerassets.length} .rerasset (${formatPackBytes(rerassets.reduce((s, f) => s + f.size, 0))})`
+      : ''
+  console.log(
+    `[${tag}] ${files.length} archivo/s, ${formatPackBytes(total)}${rerassetNote}`,
+  )
+}
+
+function logSaveManifestSummary(data: ProjectSaveData): void {
+  const resources = data.resources?.models ?? []
+  const modelNames = resources.map((m) => m.name).join(', ') || '(ninguno)'
+  console.log(
+    `[save-pack] v${data.version} ${data.type} ${data.gameStyle} | ${resources.length} modelo/s: ${modelNames}`,
+  )
 }
 
 /**
@@ -1087,10 +1187,19 @@ function shouldPackModelSourcePath(data: ProjectSaveData, p: string): boolean {
  */
 function collectAssetPaths(data: ProjectSaveData): Set<string> {
   const paths = new Set<string>()
+  const skippedModelSources: string[] = []
+  const missingOnDisk: string[] = []
   const hasScenes = (data.scenes?.length ?? 0) > 0
   const add = (p: string | null | undefined) => {
-    if (!p || !path.isAbsolute(p) || !fs.existsSync(p)) return
-    if (!shouldPackModelSourcePath(data, p)) return
+    if (!p || !path.isAbsolute(p)) return
+    if (isModelSourceFile(p)) {
+      skippedModelSources.push(p)
+      return
+    }
+    if (!fs.existsSync(p)) {
+      missingOnDisk.push(p)
+      return
+    }
     // En Windows evitamos duplicados del mismo archivo por separadores distintos (\ vs /).
     paths.add(toAssetPathKey(p))
   }
@@ -1125,13 +1234,9 @@ function collectAssetPaths(data: ProjectSaveData): Set<string> {
   // playerUi* solo referencian fonts[] / hudImages[] — no empaquetar otra vez aquí.
 
   add(data.player?.model)
-  if (data.models) {
-    for (const model of data.models) add(model.path)
-  }
 
   for (const scene of data.scenes ?? []) {
     add(scene.player?.model)
-    for (const model of scene.models ?? []) add(model.path)
   }
 
   forEachEntity(data, (entity) => {
@@ -1154,6 +1259,22 @@ function collectAssetPaths(data: ProjectSaveData): Set<string> {
       }
     }
   }
+
+  if (skippedModelSources.length > 0) {
+    console.log(
+      `[save-pack] modelos fuente GLB/FBX omitidos del ZIP (${skippedModelSources.length}); van como .rerasset`,
+    )
+    for (const p of skippedModelSources) {
+      console.log(`[save-pack]   omitido fuente: ${p}`)
+    }
+  }
+  if (missingOnDisk.length > 0) {
+    console.warn(`[save-pack] referencias sin archivo en disco (${missingOnDisk.length})`)
+    for (const p of missingOnDisk) {
+      console.warn(`[save-pack]   faltante: ${p}`)
+    }
+  }
+  console.log(`[save-pack] assets/ sonidos/fuentes a copiar: ${paths.size} archivo/s`)
 
   return paths
 }
@@ -1202,20 +1323,30 @@ function copyAssetsToDir(
     const destAbs = path.join(targetDir, destName)
     try {
       fs.copyFileSync(src, destAbs)
-      // Siempre usar '/' en los paths del JSON para portabilidad entre OS
-      map.set(src, `${relPrefix}/${destName}`)
+      const rel = `${relPrefix}/${destName}`
+      map.set(src, rel)
+      console.log(
+        `[save-pack] asset copiado: ${src} → ${rel} (${filePackSizeLabel(src)})`,
+      )
     } catch (err) {
-      console.error(`[editor] No se pudo copiar asset ${src}:`, err)
+      console.error(`[save-pack] no se pudo copiar asset ${src}:`, err)
     }
   }
   return map
 }
 
-function serializeScriptsToFiles(data: ProjectSaveData, scriptingDir: string): { data: ProjectSaveData; count: number } {
+function serializeScriptsToFiles(
+  data: ProjectSaveData,
+  scriptingDir: string,
+  extractDir: string | null,
+): { data: ProjectSaveData; written: number; copied: number } {
   fs.mkdirSync(scriptingDir, { recursive: true })
+  const stagingRoot = path.dirname(scriptingDir)
   const usedNames = new Map<string, number>()
   const sourceCache = new Map<string, string>()
-  let total = 0
+  const copiedDest = new Set<string>()
+  let written = 0
+  let copied = 0
 
   const nextName = (folderKey: string, baseName: string) => {
     const key = `${folderKey}/${baseName}`
@@ -1224,10 +1355,46 @@ function serializeScriptsToFiles(data: ProjectSaveData, scriptingDir: string): {
     return count === 0 ? baseName : `${path.basename(baseName, '.rhai')}_${count}.rhai`
   }
 
+  const copyScriptFromExtract = (fileRef: string): boolean => {
+    const cached = sourceCache.get(fileRef)
+    if (cached) return true
+    const relPath = fileRef.slice(SCRIPT_FILE_PREFIX.length)
+    const destAbs = path.join(stagingRoot, relPath.split('/').join(path.sep))
+    if (copiedDest.has(destAbs) || fs.existsSync(destAbs)) {
+      sourceCache.set(fileRef, fileRef)
+      return true
+    }
+    if (!extractDir) {
+      console.warn(`[save-pack] script @file sin extract_dir: ${relPath}`)
+      return false
+    }
+    const srcAbs = path.join(extractDir, relPath.split('/').join(path.sep))
+    if (!fs.existsSync(srcAbs)) {
+      console.warn(`[save-pack] script @file no encontrado: ${srcAbs}`)
+      return false
+    }
+    fs.mkdirSync(path.dirname(destAbs), { recursive: true })
+    fs.copyFileSync(srcAbs, destAbs)
+    copiedDest.add(destAbs)
+    copied += 1
+    sourceCache.set(fileRef, fileRef)
+    console.log(
+      `[save-pack] script copiado desde .save: ${relPath} (${filePackSizeLabel(destAbs)})`,
+    )
+    return true
+  }
+
   const saveScript = (sourceScript: { name: string; source: string }, folderParts: string[], fallbackName: string) => {
+    const rawSource = sourceScript.source ?? ''
+    if (rawSource.startsWith(SCRIPT_FILE_PREFIX)) {
+      if (copyScriptFromExtract(rawSource)) {
+        return { ...sourceScript, source: rawSource }
+      }
+    }
+
     const safeFolderParts = folderParts.map((part) => sanitizeSegment(part, 'group'))
     const folderRel = safeFolderParts.join('/')
-    const cacheKey = `${folderRel}\n${sourceScript.name}\n${sourceScript.source ?? ''}`
+    const cacheKey = `${folderRel}\n${sourceScript.name}\n${rawSource}`
     const cachedRef = sourceCache.get(cacheKey)
     if (cachedRef) {
       return {
@@ -1241,8 +1408,8 @@ function serializeScriptsToFiles(data: ProjectSaveData, scriptingDir: string): {
     const relPath = folderRel.length > 0 ? `scripting/${folderRel}/${fileName}` : `scripting/${fileName}`
     const absDir = folderRel.length > 0 ? path.join(scriptingDir, ...safeFolderParts) : scriptingDir
     fs.mkdirSync(absDir, { recursive: true })
-    fs.writeFileSync(path.join(absDir, fileName), sourceScript.source ?? '', 'utf8')
-    total += 1
+    fs.writeFileSync(path.join(absDir, fileName), rawSource, 'utf8')
+    written += 1
     const sourceRef = `${SCRIPT_FILE_PREFIX}${relPath}`
     sourceCache.set(cacheKey, sourceRef)
     return {
@@ -1327,7 +1494,8 @@ function serializeScriptsToFiles(data: ProjectSaveData, scriptingDir: string): {
   const hasScenes = (data.scenes?.length ?? 0) > 0
 
   return {
-    count: total,
+    written,
+    copied,
     data: {
       ...data,
       // Con multi-escena, las entidades viven solo en cada `scene`.
@@ -1374,18 +1542,10 @@ function remapPaths(data: ProjectSaveData, map: Map<string, string>): ProjectSav
   const mapEntity = (e: SaveManifestEntity): SaveManifestEntity =>
     mapEntityAnimations(mapEntityAssetPaths(e, remap), remap)
 
-  const mapModels = (models: ProjectSaveData['models']) =>
-    models?.map((m) => ({
-      name: m.name,
-      path: remap(m.path) as string,
-      ...(m.category ? { category: m.category } : {}),
-    }))
-
   return {
     ...data,
     world: hasScenes ? undefined : data.world,
     backgroundPath: hasScenes ? null : (remap(data.backgroundPath) as string | null),
-    models: mapModels(data.models),
     sprites: hasScenes
       ? []
       : data.sprites?.map((s) => ({
@@ -1464,61 +1624,150 @@ function remapPaths(data: ProjectSaveData, map: Map<string, string>): ProjectSav
 /**
  * Crea un archivo .save (ZIP) con `manifest.json` + `assets/`.
  */
-function isDevSavePackage(): boolean {
-  return process.env.NODE_ENV === 'development' || !app.isPackaged
+function projectWorkspaceDir(): string | null {
+  return currentProjectExtractDir ?? currentProjectSessionDir
 }
 
-function copyImportedAssetsToStaging(stagingDir: string, extractDir: string | null): void {
-  if (!extractDir) return
-  const src = path.join(extractDir, 'imported')
-  if (!fs.existsSync(src)) return
-  const dest = path.join(stagingDir, 'imported')
-  fs.cpSync(src, dest, { recursive: true })
+function ensureProjectSessionDir(): string {
+  if (currentProjectSessionDir && fs.existsSync(currentProjectSessionDir)) {
+    return currentProjectSessionDir
+  }
+  const tempRoot = app.getPath('temp')
+  const sessionDir = fs.mkdtempSync(path.join(tempRoot, 'rer-project-session-'))
+  fs.mkdirSync(path.join(sessionDir, 'imported', 'models'), { recursive: true })
+  fs.mkdirSync(path.join(sessionDir, 'source', 'models'), { recursive: true })
+  extractedProjectDirs.add(sessionDir)
+  currentProjectSessionDir = sessionDir
+  console.log('[editor] workspace de sesión 3D:', sessionDir)
+  return sessionDir
 }
 
-function copySourceAssetsToStaging(stagingDir: string, extractDir: string | null): void {
-  if (!isDevSavePackage() || !extractDir) return
-  const src = path.join(extractDir, 'source')
-  if (!fs.existsSync(src)) return
-  fs.cpSync(src, path.join(stagingDir, 'source'), { recursive: true })
+function defaultTempImportedModelsDir(): string {
+  return path.join(app.getPath('temp'), 'rer-engine-imported', 'models')
+}
+
+function resolveRerassetCandidates(
+  res: { id: string; asset?: string },
+  workspaceDir: string | null,
+): string[] {
+  const rel = (res.asset ?? `imported/models/${res.id}.rerasset`).replace(/\//g, path.sep)
+  const tempImported = defaultTempImportedModelsDir()
+  return [
+    workspaceDir ? path.join(workspaceDir, rel) : null,
+    path.join(tempImported, `${res.id}.rerasset`),
+  ].filter((p): p is string => !!p && fs.existsSync(p))
+}
+
+/** Valida que cada `.rerasset` del manifest exista en disco antes de empaquetar. */
+function validateSavePackResources(
+  data: ProjectSaveData,
+  workspaceDir: string | null,
+): string[] {
+  const errors: string[] = []
+  const models = data.resources?.models ?? []
+  for (const res of models) {
+    const rel = (res.asset ?? `imported/models/${res.id}.rerasset`).replace(/\\/g, '/')
+    const candidates = resolveRerassetCandidates(res, workspaceDir)
+    if (candidates.length === 0) {
+      const msg = `asset no encontrado en disco: ${res.id} (${rel})`
+      console.error(`[save-pack] validación FALLO: ${msg}`)
+      errors.push(msg)
+    }
+  }
+  return errors
+}
+
+function copyImportedAssetsToStaging(
+  stagingDir: string,
+  workspaceDir: string | null,
+  data: ProjectSaveData,
+): { packed: number; missing: number } {
+  const models = data.resources?.models ?? []
+  if (models.length === 0) {
+    return { packed: 0, missing: 0 }
+  }
+
+  let packed = 0
+  let missing = 0
+
+  for (const res of models) {
+    const rel = (res.asset ?? `imported/models/${res.id}.rerasset`).replace(/\//g, path.sep)
+    const destFile = path.join(stagingDir, rel)
+    const candidates = resolveRerassetCandidates(res, workspaceDir)
+
+    if (candidates.length === 0) {
+      console.error(
+        `[save-pack] .rerasset FALTANTE en empaquetado: id=${res.id} dest=${rel.replace(/\\/g, '/')}`,
+      )
+      missing += 1
+      continue
+    }
+
+    fs.mkdirSync(path.dirname(destFile), { recursive: true })
+    fs.copyFileSync(candidates[0], destFile)
+    packed += 1
+
+    if (workspaceDir && !candidates[0].startsWith(path.join(workspaceDir, 'imported'))) {
+      const sessionFile = path.join(workspaceDir, rel)
+      if (!fs.existsSync(sessionFile)) {
+        fs.mkdirSync(path.dirname(sessionFile), { recursive: true })
+        fs.copyFileSync(candidates[0], sessionFile)
+      }
+    }
+  }
+
+  if (missing > 0) {
+    console.error(`[save-pack] .rerasset: ${missing} faltante/s de ${models.length}`)
+  }
+  return { packed, missing }
 }
 
 function saveProjectToFile(saveFilePath: string, data: ProjectSaveData): boolean {
   const tempRoot = app.getPath('temp')
   const stagingDir = fs.mkdtempSync(path.join(tempRoot, 'rer-save-write-'))
   try {
+    logSaveManifestSummary(data)
+
+    const workspaceDir = projectWorkspaceDir()
+    const packErrors = validateSavePackResources(data, workspaceDir)
+    if (packErrors.length > 0) {
+      console.error(
+        `[save-pack] guardado abortado: ${packErrors.length} .rerasset faltante/s`,
+      )
+      return false
+    }
+
     const assetsDir = path.join(stagingDir, 'assets')
     const soundsDir = path.join(stagingDir, 'sounds')
     const fontsDir = path.join(stagingDir, 'fonts')
     const hudImagesDir = path.join(stagingDir, 'hud-images')
     const scriptingDir = path.join(stagingDir, 'scripting')
-    copyImportedAssetsToStaging(stagingDir, currentProjectExtractDir)
-    copySourceAssetsToStaging(stagingDir, currentProjectExtractDir)
+    const importedPack = copyImportedAssetsToStaging(stagingDir, workspaceDir, data)
+    if (importedPack.missing > 0) {
+      console.error('[save-pack] guardado abortado: faltan .rerasset en empaquetado')
+      return false
+    }
     const assetPaths = collectAssetPaths(data)
     const pathMap = copyAssetsToDir(assetPaths, assetsDir, soundsDir, fontsDir, hudImagesDir)
     const remapped = remapPaths(data, pathMap)
-    const scriptsPacked = serializeScriptsToFiles(remapped, scriptingDir)
-
+    const scriptsPacked = serializeScriptsToFiles(
+      remapped,
+      scriptingDir,
+      currentProjectExtractDir,
+    )
+    const rhaiInStaging = countRhaiFiles(scriptingDir)
     const manifestPath = path.join(stagingDir, 'manifest.json')
-    fs.writeFileSync(manifestPath, JSON.stringify(scriptsPacked.data, null, 2), 'utf8')
+    const manifestJson = JSON.stringify(scriptsPacked.data, null, 2)
+    fs.writeFileSync(manifestPath, manifestJson, 'utf8')
 
     const zip = new AdmZip()
     zip.addLocalFolder(stagingDir)
     zip.writeZip(saveFilePath)
-
-    const countRhaiFiles = (dir: string): number => {
-      if (!fs.existsSync(dir)) return 0
-      let total = 0
-      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-        const full = path.join(dir, entry.name)
-        if (entry.isDirectory()) {
-          total += countRhaiFiles(full)
-        } else if (entry.isFile() && path.extname(entry.name).toLowerCase() === '.rhai') {
-          total += 1
-        }
-      }
-      return total
-    }
+    const stagingFiles = walkPackFiles(stagingDir)
+    const rerassetInZip = stagingFiles.filter((f) => f.rel.endsWith('.rerasset')).length
+    const stagingTotal = stagingFiles.reduce((sum, f) => sum + f.size, 0)
+    logPackDirectoryTree('save-pack', stagingDir)
+    console.log(`[save-pack] guardado: ${saveFilePath} (${filePackSizeLabel(saveFilePath)})`)
 
     const addRelIfPacked = (set: Set<string>, absPath: string | null | undefined) => {
       if (!absPath) return
@@ -1554,26 +1803,25 @@ function saveProjectToFile(saveFilePath: string, data: ProjectSaveData): boolean
     ])
     const otherAssetNames = Array.from(pathMap.values()).filter((rel) => !classifiedAssets.has(rel)).sort()
     const otherAssets = otherAssetNames.length
-    const packedScriptFiles = countRhaiFiles(scriptingDir)
+    const packedScriptFiles = rhaiInStaging
     const otherSuffix = otherAssets > 0 ? ` [${otherAssetNames.join(', ')}]` : ''
     const entityCount = countSavedEntities(data)
     const entityKindSuffix = formatEntityKindBreakdown(data)
 
     if (data.type === '3D') {
-      const uniqueModels = new Set<string>()
-      for (const model of data.models ?? []) addRelIfPacked(uniqueModels, model.path)
-      for (const scene of data.scenes ?? []) {
-        for (const model of scene.models ?? []) addRelIfPacked(uniqueModels, model.path)
-      }
+      const importedModels = data.resources?.models?.length ?? 0
       const libraryLog = formatLibraryResourcesInLog({
         backgrounds: uniqueBackgrounds.size,
         sounds: uniqueSounds.size,
         fonts: uniqueFonts.size,
         hudImages: uniqueHudImages.size,
       })
+      const modelSummary = `modelos importados: ${importedModels}, .rerasset en ZIP: ${rerassetInZip}`
       console.log(
         `[editor] Proyecto guardado `
-        + `(entidades: ${entityCount}${entityKindSuffix}, modelos: ${uniqueModels.size}, ${libraryLog}, scripts empaquetados: ${packedScriptFiles})`,
+        + `(entidades: ${entityCount}${entityKindSuffix}, ${modelSummary}, `
+        + `archivos en ZIP: ${stagingFiles.length} (${formatPackBytes(stagingTotal)}), `
+        + `${libraryLog}, scripts: ${packedScriptFiles})`,
       )
     } else {
       const libraryLog = formatLibraryResourcesInLog({
@@ -1584,7 +1832,9 @@ function saveProjectToFile(saveFilePath: string, data: ProjectSaveData): boolean
       })
       console.log(
         `[editor] Proyecto guardado `
-        + `(entidades: ${entityCount}${entityKindSuffix}, sprites: ${uniqueSprites.size}, ${libraryLog}, scripts empaquetados: ${packedScriptFiles}, otros: ${otherAssets}${otherSuffix})`,
+        + `(entidades: ${entityCount}${entityKindSuffix}, sprites: ${uniqueSprites.size}, `
+        + `archivos en ZIP: ${stagingFiles.length} (${formatPackBytes(stagingTotal)}), `
+        + `${libraryLog}, scripts: ${packedScriptFiles}, otros: ${otherAssets}${otherSuffix})`,
       )
     }
     return true
@@ -1632,10 +1882,16 @@ function resolveLoadedPaths(data: ProjectSaveData, extractedDir: string): Projec
     }
   }
 
+  const skipModelIdRef = (p: string, ent: SaveManifestEntity) =>
+    isManifestModelIdRef(p, ent.model_id)
+
   const mapSaveEntity = (e: SaveManifestEntity): SaveManifestEntity => {
     const controls =
       e.controls ?? e.control_bindings
-    const withPaths = mapEntityAnimations(mapEntityAssetPaths(e, resolve), resolve)
+    const withPaths = mapEntityAnimations(
+      mapEntityAssetPaths(e, resolve, skipModelIdRef),
+      resolve,
+    )
     return {
       ...withPaths,
       scripts: withPaths.scripts?.map((script: SavedScript) => ({
@@ -1654,18 +1910,10 @@ function resolveLoadedPaths(data: ProjectSaveData, extractedDir: string): Projec
     }
   }
 
-  const mapModels = (models: ProjectSaveData['models']) =>
-    models?.map((m) => ({
-      name: m.name,
-      path: resolve(m.path) as string,
-      ...(m.category ? { category: m.category } : {}),
-    }))
-
   return {
     ...data,
     world: hasScenes ? undefined : data.world,
     backgroundPath: hasScenes ? null : (resolve(data.backgroundPath) as string | null),
-    models: mapModels(data.models),
     sprites: hasScenes
       ? []
       : data.sprites?.map((s) => ({
@@ -1765,9 +2013,10 @@ function extractSaveArchive(saveFilePath: string): string | null {
     }
 
     extractedProjectDirs.add(extractDir)
+    logPackDirectoryTree('save-load', extractDir)
     return extractDir
   } catch (err) {
-    console.error('[editor] Error al extraer archivo .save:', err)
+    console.error('[save-load] error al extraer archivo .save:', err)
     fs.rmSync(extractDir, { recursive: true, force: true })
     return null
   }
@@ -1827,6 +2076,7 @@ ipcMain.handle('open-project-dialog', async (): Promise<OpenProjectResult | null
   const filePath = result.filePaths[0]
   const extractDir = extractSaveArchive(filePath)
   if (!extractDir) return null
+  console.log(`[save-load] abriendo: ${filePath}`)
   const meta = readManifestMeta(extractDir)
   if (!meta) {
     fs.rmSync(extractDir, { recursive: true, force: true })
@@ -1838,6 +2088,7 @@ ipcMain.handle('open-project-dialog', async (): Promise<OpenProjectResult | null
   currentProjectType = meta.type
   currentGameStyle = meta.gameStyle
   currentProjectExtractDir = extractDir
+  currentProjectSessionDir = null
   clearAssetWatchers()
 
   const loaded = loadProjectFromExtractDir(extractDir)
@@ -1937,10 +2188,16 @@ ipcMain.on('set-game-style', (_event, arg: unknown) => {
       ? arg.save_path.trim()
       : null
   const extractDir = arg.extract_dir
-  currentProjectExtractDir =
-    typeof extractDir === 'string' && extractDir.trim().length > 0
-      ? extractDir.trim()
-      : null
+  if (typeof extractDir === 'string' && extractDir.trim().length > 0) {
+    currentProjectExtractDir = extractDir.trim()
+    currentProjectSessionDir = null
+  } else if (arg.projectType === '3D' && !currentProjectFilePath) {
+    currentProjectExtractDir = null
+    ensureProjectSessionDir()
+  } else {
+    currentProjectExtractDir = null
+    currentProjectSessionDir = null
+  }
 })
 
 // El renderer envía los bounds del viewport una vez montado (y en cada resize).
@@ -1987,7 +2244,11 @@ function getEngineViewportScreenOrigin(): { x: number; y: number } | null {
 ipcMain.on('viewport-bounds', (_event, bounds: ViewportBounds) => {
   lastRelativeBounds = bounds
 
-  // Si el proceso murió, permitir relanzar
+  if (engineSessionCrashed) {
+    return
+  }
+
+  // Si el proceso murió limpiamente, permitir relanzar
   if (engineStarted && !engineProcess) {
     engineStarted = false
     engineViewportHidden = true

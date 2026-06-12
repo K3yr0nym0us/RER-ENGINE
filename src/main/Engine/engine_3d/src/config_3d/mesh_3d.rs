@@ -49,14 +49,19 @@ pub(crate) fn prepare_cpu_parts_textures_for_gpu(parts: &mut [CpuModelMeshPart])
     let tex_size = crate::texture::TextureArray::TEXTURE_SIZE;
     let mut shared_by_material: HashMap<u32, Arc<MaterialTextureCpu>> = HashMap::new();
     for part in parts.iter_mut() {
-        if part.texture.layer_mips.is_some() {
+        if part
+            .texture
+            .layer_mips
+            .as_ref()
+            .is_some_and(|mips| crate::texture::layer_mip_chain_valid_for_array(mips))
+        {
             continue;
         }
         let shared = shared_by_material
             .entry(part.material_index)
             .or_insert_with(|| {
                 let chain = crate::texture::build_layer_mip_chain_timed(
-                    part.texture.rgba.to_vec(),
+                    part.texture.effective_rgba().to_vec(),
                     part.texture.width,
                     part.texture.height,
                 );
@@ -86,13 +91,6 @@ impl ModelPreloadOptions {
         Self {
             warm_play_character: is_character,
             load_skinned_asset: is_character,
-        }
-    }
-
-    pub(crate) fn scene_background(warm_play_character: bool) -> Self {
-        Self {
-            warm_play_character,
-            load_skinned_asset: false,
         }
     }
 }
@@ -270,26 +268,6 @@ pub(crate) fn load_model_file(
             }
         }
         "fbx" => load_fbx(device, path, normalize_to_extent),
-        other => Err(format!(
-            "formato no soportado: .{other} (usa .glb, .gltf o .fbx)"
-        )),
-    }
-}
-
-/// Parsea un modelo 3D en CPU (sin GPU). Para precarga en hilo de fondo.
-pub(crate) fn load_model_file_cpu(
-    path: &Path,
-    normalize_to_extent: Option<f32>,
-) -> Result<Vec<CpuModelMeshPart>, String> {
-    let ext = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_ascii_lowercase();
-
-    match ext.as_str() {
-        "glb" | "gltf" => load_gltf_cpu(path, normalize_to_extent),
-        "fbx" => load_fbx_cpu(path, normalize_to_extent),
         other => Err(format!(
             "formato no soportado: .{other} (usa .glb, .gltf o .fbx)"
         )),
@@ -718,14 +696,6 @@ fn load_gltf(
     Ok(meshes)
 }
 
-fn load_gltf_cpu(
-    path: &Path,
-    normalize_to_extent: Option<f32>,
-) -> Result<Vec<CpuModelMeshPart>, String> {
-    let file = model_asset::import_gltf(path)?;
-    load_gltf_cpu_from_file(file.as_ref(), normalize_to_extent)
-}
-
 pub(crate) fn load_gltf_cpu_from_file(
     file: &GltfFile,
     normalize_to_extent: Option<f32>,
@@ -745,7 +715,7 @@ pub(crate) fn load_gltf_cpu_from_file(
         }
         Some(_) => "normalized",
     };
-    log::info!("[LOAD_GLTF_CPU] {label} variant={variant}");
+    log::debug!("[LOAD_GLTF_CPU] {label} variant={variant}");
 
     let doc = &file.doc;
     let buffers = &file.buffers;

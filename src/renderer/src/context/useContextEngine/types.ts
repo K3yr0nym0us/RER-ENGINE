@@ -937,12 +937,20 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 			return { ...prevState, models, loadedModelsInfo: nextMap };
 		},
 		REMOVE_MODEL_INFO: (prevState, nextAction) => {
+			const removed = nextAction.payload;
 			const nextMap = new Map(prevState.loadedModelsInfo);
-			nextMap.delete(nextAction.payload);
+			nextMap.delete(removed);
+			for (const [key, info] of prevState.loadedModelsInfo) {
+				if (key === removed) continue;
+				const model = prevState.models.find((m) => m.path === key);
+				if (model?.model_id === removed) nextMap.delete(key);
+			}
 			return {
 				...prevState,
 				loadedModelsInfo: nextMap,
-				models: prevState.models.filter((m) => m.path !== nextAction.payload),
+				models: prevState.models.filter(
+					(m) => m.path !== removed && m.model_id !== removed,
+				),
 			};
 		},
 		SET_MODELS: (prevState, nextAction) => {

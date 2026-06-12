@@ -1,5 +1,6 @@
 //! Carga CPU desde `.rerasset` → mallas listas para GPU + `ModelAsset` skinned.
 
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -8,15 +9,35 @@ use rer_engine_shared::assets::{read_rerasset, ChunkType, RerassetFile};
 use crate::config_3d::model_asset::{
     empty_rgba_placeholder, MaterialTextureCpu, ModelAsset, SkinnedMeshData, SkinnedMeshPart,
 };
-use crate::config_3d::mesh_3d::CpuModelMeshPart;
+use crate::config_3d::mesh_3d::{prepare_cpu_parts_textures_for_gpu, CpuModelMeshPart};
+use crate::texture::layer_mip_chain_valid_for_array;
 use crate::mesh::{SkinnedVertex, Vertex};
 
 use super::model_asset_blob::{deserialize_animation_clip, deserialize_skeleton};
 
 pub struct LoadedRerassetCpu {
-    pub editor_parts: Vec<CpuModelMeshPart>,
-    pub play_parts:   Option<Vec<CpuModelMeshPart>>,
-    pub anim_asset:   Option<Arc<ModelAsset>>,
+    pub editor_parts:        Vec<CpuModelMeshPart>,
+    pub play_parts:          Option<Vec<CpuModelMeshPart>>,
+    pub anim_asset:          Option<Arc<ModelAsset>>,
+    /// `material_index` GLB → índice de chunk de textura en el `.rerasset`.
+    pub material_tex_chunks: HashMap<u32, u32>,
+}
+
+/// Mapa material GLB → chunk de textura desde chunks `Material` del `.rerasset`.
+pub fn material_texture_chunk_map(file: &RerassetFile) -> HashMap<u32, u32> {
+    let mut map = HashMap::new();
+    for entry in file.chunks.iter().filter(|c| c.chunk_type == ChunkType::Material) {
+        let Ok(data) = file.chunk_data(entry) else {
+            continue;
+        };
+        if data.len() < 8 {
+            continue;
+        }
+        let mat_idx = u32::from_le_bytes(data[0..4].try_into().unwrap());
+        let tex_idx = u32::from_le_bytes(data[4..8].try_into().unwrap());
+        map.insert(mat_idx, tex_idx);
+    }
+    map
 }
 
 fn rtex_to_material_texture(file: &RerassetFile, texture_chunk_index: u32) -> Arc<MaterialTextureCpu> {
@@ -26,12 +47,27 @@ fn rtex_to_material_texture(file: &RerassetFile, texture_chunk_index: u32) -> Ar
         .find(|c| c.chunk_type == ChunkType::Texture && c.chunk_index == texture_chunk_index)
         .expect("texture chunk missing");
     let rtex = file.read_texture(entry).expect("rtex read");
-    Arc::new(MaterialTextureCpu {
-        rgba: empty_rgba_placeholder(),
-        width: rtex.width,
-        height: rtex.height,
-        layer_mips: Some(Arc::new(rtex.mips)),
-    })
+    if layer_mip_chain_valid_for_array(&rtex.mips) {
+        Arc::new(MaterialTextureCpu {
+            rgba: empty_rgba_placeholder(),
+            width: rtex.width,
+            height: rtex.height,
+            layer_mips: Some(Arc::new(rtex.mips)),
+        })
+    } else {
+        let rgba = rtex
+            .mips
+            .first()
+            .cloned()
+            .filter(|m| !m.is_empty())
+            .unwrap_or_else(|| vec![255, 255, 255, 255]);
+        Arc::new(MaterialTextureCpu {
+            rgba: Arc::from(rgba),
+            width: rtex.width,
+            height: rtex.height,
+            layer_mips: None,
+        })
+    }
 }
 
 fn material_texture_for_index(
@@ -154,15 +190,19 @@ fn load_skinned_mesh_stubs(file: &RerassetFile) -> Result<Vec<SkinnedMeshPart>, 
             })
             .unwrap_or(0);
 
+        let tex = material_texture_for_index(file, material_index);
+        let rgba = tex.effective_rgba().to_vec();
+        let width = tex.width;
+        let height = tex.height;
         out.push(SkinnedMeshPart {
             name: String::new(),
             material_index,
             mesh: SkinnedMeshData {
                 vertices,
                 indices,
-                rgba: vec![255, 255, 255, 255],
-                width: 1,
-                height: 1,
+                rgba,
+                width,
+                height,
             },
             mesh_bind_world: glam::Mat4::IDENTITY,
             inverse_bind: vec![],
@@ -194,13 +234,87 @@ fn load_anim_asset(file: &RerassetFile) -> Result<Option<Arc<ModelAsset>>, Strin
     Ok(Some(Arc::new(asset)))
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct LoadRerassetOpts {
+    /// Log de texturas (desactivar en recargas internas de caché GPU).
+    pub log_textures: bool,
+}
+
+impl Default for LoadRerassetOpts {
+    fn default() -> Self {
+        Self {
+            log_textures: true,
+        }
+    }
+}
+
+fn log_rerasset_file_summary(path: &Path, file: &RerassetFile, file_bytes: usize, loaded: &LoadedRerassetCpu) {
+    let tex = file.chunks.iter().filter(|c| c.chunk_type == ChunkType::Texture).count();
+    let mat = file.chunks.iter().filter(|c| c.chunk_type == ChunkType::Material).count();
+    let label = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("rerasset");
+    let mut skinned_mats = HashSet::new();
+    if let Some(asset) = &loaded.anim_asset {
+        for p in &asset.parts {
+            skinned_mats.insert(p.material_index);
+        }
+    }
+    let mut mat_entries: Vec<_> = file
+        .chunks
+        .iter()
+        .filter(|c| c.chunk_type == ChunkType::Material)
+        .collect();
+    mat_entries.sort_by_key(|e| e.chunk_index);
+    let mut mat_tex_pairs: Vec<(u32, u32)> = Vec::new();
+    for entry in &mat_entries {
+        let Ok(data) = file.chunk_data(entry) else {
+            continue;
+        };
+        if data.len() >= 8 {
+            let mat_idx = u32::from_le_bytes(data[0..4].try_into().unwrap());
+            let tex_idx = u32::from_le_bytes(data[4..8].try_into().unwrap());
+            mat_tex_pairs.push((mat_idx, tex_idx));
+        }
+    }
+    let skinned_set: HashSet<u32> = skinned_mats.clone();
+    let file_ref = file;
+    super::log_tex::log_rerasset_load_skinned_summary(
+        label,
+        file_bytes,
+        tex,
+        mat,
+        &skinned_set,
+        &mat_tex_pairs,
+        |tex_idx| {
+            let tex_entry = file_ref.chunks.iter().find(|c| {
+                c.chunk_type == ChunkType::Texture && c.chunk_index == tex_idx
+            })?;
+            let rtex = file_ref.read_texture(tex_entry).ok()?;
+            rtex.mips.first().cloned()
+        },
+    );
+    if tex != mat {
+        log::warn!("[RERASSET_LOAD] conteo tex ({tex}) ≠ mat ({mat})");
+    }
+}
+
 pub fn load_rerasset_cpu(path: &Path) -> Result<LoadedRerassetCpu, String> {
+    load_rerasset_cpu_opts(path, LoadRerassetOpts::default())
+}
+
+pub fn load_rerasset_cpu_opts(
+    path: &Path,
+    opts: LoadRerassetOpts,
+) -> Result<LoadedRerassetCpu, String> {
     let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
     let file = read_rerasset(&bytes).map_err(|e| e.to_string())?;
+    let material_tex_chunks = material_texture_chunk_map(&file);
 
-    let editor_parts =
+    let mut editor_parts =
         load_static_parts(&file, ChunkType::MeshEditorVert, ChunkType::MeshEditorIdx)?;
-    let play_parts = if file
+    let mut play_parts = if file
         .header
         .flags
         .contains(rer_engine_shared::assets::AssetFlags::HAS_PLAY_CHARACTER)
@@ -213,11 +327,20 @@ pub fn load_rerasset_cpu(path: &Path) -> Result<LoadedRerassetCpu, String> {
     } else {
         None
     };
+    prepare_cpu_parts_textures_for_gpu(&mut editor_parts);
+    if let Some(play) = play_parts.as_mut() {
+        prepare_cpu_parts_textures_for_gpu(play);
+    }
     let anim_asset = load_anim_asset(&file)?;
 
-    Ok(LoadedRerassetCpu {
+    let loaded = LoadedRerassetCpu {
         editor_parts,
         play_parts,
         anim_asset,
-    })
+        material_tex_chunks,
+    };
+    if opts.log_textures {
+        log_rerasset_file_summary(path, &file, bytes.len(), &loaded);
+    }
+    Ok(loaded)
 }

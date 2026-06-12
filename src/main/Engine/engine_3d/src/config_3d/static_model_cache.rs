@@ -13,12 +13,13 @@ use std::sync::mpsc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use crate::config_3d::character_anchor::PLAY_CHARACTER_BODY_HEIGHT;
 use crate::config_3d::mesh_3d::{
-    load_gltf_cpu_from_file, load_model_file_cpu, preload_model_cpu_bundle,
     prepare_cpu_parts_textures_for_gpu, vertex_local_bounds, CpuModelMeshPart,
-    ModelPreloadOptions,
 };
+use crate::assets::load::{
+    load_rerasset_cpu_opts, material_texture_chunk_map, LoadRerassetOpts,
+};
+use rer_engine_shared::assets::read_rerasset;
 use crate::config_3d::model_asset;
 use crate::config_3d::{physics_body_world_center, physics_half_extents_for_model};
 use crate::ecs::{EntityId, MeshComponent, Transform};
@@ -190,7 +191,7 @@ impl State {
     }
 
     pub(crate) fn model_needs_skinned_bind(&self, path: &str) -> bool {
-        let key = self.model_path_key(path);
+        let key = self.model_cache_key(path);
         self.model_assets
             .get(&key)
             .is_some_and(|a| !a.parts.is_empty())
@@ -205,6 +206,17 @@ impl State {
         self.start_imported_model_pipeline(path, name, category);
     }
 
+    pub(crate) fn model_library_path_for(&self, path: &str) -> String {
+        if path.starts_with("model_") {
+            self.imported_model_registry
+                .get(path)
+                .map(|e| e.source_path.clone())
+                .unwrap_or_else(|| path.to_string())
+        } else {
+            self.model_path_key(path)
+        }
+    }
+
     /// Variante `::play_character` en GPU para `replace_entity_model` instantáneo.
     fn ensure_play_character_model_cache_warmed(&mut self, canonical_path: &str) {
         let play_key = play_character_cache_key(canonical_path);
@@ -214,45 +226,54 @@ impl State {
         self.try_warm_play_character_model_cache(canonical_path);
     }
 
-    pub(crate) fn start_model_preload(
-        &mut self,
-        key: String,
-        name: String,
-        options: ModelPreloadOptions,
-    ) {
-        self.model_preload_inflight.insert(key.clone());
-        send_event(&EngineEvent::ModelAssetPreloadStarted {
-            path: key.clone(),
-            name: name.clone(),
-            model_id: self.imported_model_registry.model_id_for_path(&key),
-        });
+    /// Tras precarga/import GPU, sube la variante jugador si falta en caché.
+    fn try_warm_play_character_model_cache(&mut self, cache_key: &str) {
+        let play_key = play_character_cache_key(cache_key);
+        if self.static_model_cache.contains_key(&play_key) {
+            return;
+        }
+        let Some(parts) = self.load_play_character_cpu_parts_from_rerasset(cache_key) else {
+            return;
+        };
+        self.sync_upload_play_character_cache(cache_key, parts);
+    }
 
-        let tx = self.model_preload_tx.clone();
-        let key_for_thread = key.clone();
-        if let Err(e) = std::thread::Builder::new()
-            .name(format!(
-                "model-preload-{}",
-                key.split(['/', '\\']).last().unwrap_or("model")
+    fn load_play_character_cpu_parts_from_rerasset(
+        &self,
+        cache_key: &str,
+    ) -> Option<Vec<CpuModelMeshPart>> {
+        let entry = self.imported_model_registry.get(cache_key)?;
+        if entry.state != rer_engine_shared::assets::AssetState::Ready {
+            return None;
+        }
+        load_rerasset_cpu_opts(
+            &entry.rerasset_path,
+            LoadRerassetOpts {
+                log_textures: false,
+            },
+        )
+        .ok()
+        .and_then(|loaded| loaded.play_parts)
+    }
+
+    pub(crate) fn ensure_play_character_model_cached(&mut self, path: &str) -> Result<(), String> {
+        let cache_key = self.model_cache_key(path);
+        let play_key = play_character_cache_key(&cache_key);
+        if self.static_model_cache.contains_key(&play_key) {
+            return Ok(());
+        }
+        if self.model_preload_inflight.contains(&cache_key) {
+            return Err(format!(
+                "El modelo aún se está importando: {cache_key}. Espera a que termine en Recursos."
+            ));
+        }
+        self.try_warm_play_character_model_cache(&cache_key);
+        if self.static_model_cache.contains_key(&play_key) {
+            Ok(())
+        } else {
+            Err(format!(
+                "No se pudo preparar el modelo del jugador: {cache_key}"
             ))
-            .spawn(move || {
-                let path_buf = Path::new(&key_for_thread);
-                let result = match preload_model_cpu_bundle(path_buf, options) {
-                    Ok((parts, anim_asset, play_character_parts)) => {
-                        Ok(ModelPreloadCpuResult {
-                            path: key_for_thread,
-                            parts,
-                            anim_asset,
-                            warm_play_character: options.warm_play_character,
-                            play_character_parts,
-                        })
-                    }
-                    Err(err) => Err((key_for_thread, err)),
-                };
-                let _ = tx.send(result);
-            })
-        {
-            log::error!("no se pudo lanzar hilo: {e}");
-            self.emit_model_asset_load_failed(&key, format!("No se pudo precargar {name}: {e}"));
         }
     }
 
@@ -265,9 +286,18 @@ impl State {
             match result {
                 Ok(data) => {
                     if data.path.starts_with("model_") {
-                        if let Some(entry) = self.imported_model_registry.get(&data.path) {
-                            let source = entry.source_path.clone();
-                            let name = entry.name.clone();
+                        let import_meta = self
+                            .imported_model_registry
+                            .get(&data.path)
+                            .map(|entry| {
+                                (
+                                    entry.source_path.clone(),
+                                    entry.name.clone(),
+                                    entry.rerasset_path.clone(),
+                                )
+                            });
+                        if let Some((source, name, rerasset_path)) = import_meta {
+                            self.cache_rerasset_material_tex_map(&data.path, &rerasset_path);
                             self.on_import_bake_finished(&data.path, &source, &name);
                         }
                     }
@@ -300,6 +330,104 @@ impl State {
         mesh_idx
     }
 
+    pub(crate) fn cache_rerasset_material_tex_map(
+        &mut self,
+        model_id: &str,
+        rerasset_path: &std::path::Path,
+    ) {
+        if self.rerasset_material_tex.contains_key(model_id) {
+            return;
+        }
+        let Ok(bytes) = std::fs::read(rerasset_path) else {
+            return;
+        };
+        let Ok(file) = read_rerasset(&bytes) else {
+            return;
+        };
+        self.rerasset_material_tex
+            .insert(model_id.to_string(), material_texture_chunk_map(&file));
+    }
+
+    fn gpu_mat_layers_for_model(&self, model_key: &str) -> Vec<(u32, u32, u32)> {
+        let prefix = format!("{model_key}::mat");
+        let mut out = Vec::new();
+        for (key, &layer) in &self.texture_path_layers {
+            if let Some(suffix) = key.strip_prefix(&prefix) {
+                if let Ok(mat) = suffix.parse::<u32>() {
+                    let tex_chunk = self
+                        .rerasset_material_tex
+                        .get(model_key)
+                        .and_then(|m| m.get(&mat).copied())
+                        .unwrap_or(mat);
+                    out.push((mat, tex_chunk, layer as u32));
+                }
+            }
+        }
+        out.sort_by_key(|(m, _, _)| *m);
+        out
+    }
+
+    /// Capa GPU para un material bakeado en `.rerasset` (clave `{model_id}::mat{N}`).
+    pub(crate) fn ensure_imported_material_texture_layer(
+        &mut self,
+        model_id: &str,
+        material_index: u32,
+    ) -> Option<crate::texture::TextureLayer> {
+        let tex_cache_key = format!("{model_id}::mat{material_index}");
+        if let Some(&layer) = self.texture_path_layers.get(&tex_cache_key) {
+            return Some(layer);
+        }
+        let entry = self.imported_model_registry.get(model_id)?;
+        if entry.state != rer_engine_shared::assets::AssetState::Ready {
+            log::warn!(
+                "[RERASSET_TEX] {tex_cache_key} — modelo no Ready"
+            );
+            return None;
+        }
+        let loaded = load_rerasset_cpu_opts(
+            &entry.rerasset_path,
+            LoadRerassetOpts {
+                log_textures: false,
+            },
+        )
+        .ok()?;
+        self.rerasset_material_tex.insert(
+            model_id.to_string(),
+            loaded.material_tex_chunks.clone(),
+        );
+        let Some(tex_part) = loaded
+            .editor_parts
+            .iter()
+            .find(|p| p.material_index == material_index)
+        else {
+            log::warn!(
+                "[RERASSET_TEX] {tex_cache_key} — material no encontrado en editor_parts"
+            );
+            return None;
+        };
+        let tex = std::sync::Arc::clone(&tex_part.texture);
+        let mip0 = tex.effective_rgba();
+        let layer = if let Some(mips) = &tex.layer_mips {
+            let layer = self.texture_array.pack_prepared_mips(&self.queue, mips);
+            if layer >= crate::texture::TextureArray::MAX_LAYERS - 1 {
+                send_event(&EngineEvent::TextureArrayExhausted {
+                    max_layers: crate::texture::TextureArray::MAX_LAYERS,
+                });
+            }
+            self.texture_path_layers
+                .insert(tex_cache_key.clone(), layer);
+            layer
+        } else {
+            self.pack_texture_layer(
+                Some(&tex_cache_key),
+                mip0,
+                tex.width,
+                tex.height,
+            )
+        };
+        Some(layer)
+    }
+
     fn upload_texture_for_cpu_part(
         &mut self,
         cache_key: &str,
@@ -307,6 +435,7 @@ impl State {
     ) -> usize {
         let tex_idx = self.tex_layers.len();
         let tex_cache_key = format!("{cache_key}::mat{}", part.material_index);
+        let mip0 = part.texture.effective_rgba();
         if let Some(mips) = &part.texture.layer_mips {
             let layer = if let Some(&cached) = self.texture_path_layers.get(&tex_cache_key) {
                 cached
@@ -318,14 +447,14 @@ impl State {
                     });
                 }
                 self.texture_path_layers
-                    .insert(tex_cache_key, layer);
+                    .insert(tex_cache_key.clone(), layer);
                 layer
             };
             self.tex_layers.push(layer);
         } else {
             self.pack_texture_layer(
                 Some(&tex_cache_key),
-                &part.texture.rgba,
+                mip0,
                 part.texture.width,
                 part.texture.height,
             );
@@ -425,6 +554,9 @@ impl State {
             self.model_assets.insert(path.clone(), asset);
         }
 
+        let gpu_mats = self.gpu_mat_layers_for_model(&path);
+        crate::assets::log_tex::log_gpu_model_summary(&path, &gpu_mats);
+
         let name = self.model_store_display_name(&path);
         let model_id = if path.starts_with("model_") {
             Some(path.clone())
@@ -443,81 +575,48 @@ impl State {
                 .map(|p| p.len())
                 .unwrap_or(0)
         );
-        log::info!("{gpu_msg}");
+        log::debug!("{gpu_msg}");
         send_load_progress(&gpu_msg, None, None);
         if pending.warm_play_character {
             if let Some(play_parts) = pending.play_character_parts {
                 self.sync_upload_play_character_cache(&path, play_parts);
-            } else if let Some(play_parts) = self.load_play_character_cpu_parts(&path) {
-                self.sync_upload_play_character_cache(&path, play_parts);
+            } else {
+                self.try_warm_play_character_model_cache(&path);
             }
         }
         self.flush_pending_load_models_for_path(&path);
         self.flush_pending_entity_model_replaces_for_path(&path);
     }
 
-    fn load_play_character_cpu_parts(
-        &mut self,
-        canonical_path: &str,
-    ) -> Option<Vec<CpuModelMeshPart>> {
-        let path_buf = Path::new(canonical_path);
-        if !path_buf.is_file() {
-            return None;
-        }
-        let is_gltf = path_buf
-            .extension()
-            .and_then(|e| e.to_str())
-            .is_some_and(|e| e.eq_ignore_ascii_case("glb") || e.eq_ignore_ascii_case("gltf"));
-
-        let parts = if is_gltf {
-            match model_asset::import_gltf(path_buf).and_then(|file| {
-                if !self.model_assets.contains_key(canonical_path)
-                    && model_asset::gltf_needs_model_asset(file.as_ref())
-                {
-                    if let Some(asset) =
-                        model_asset::load_model_asset_from_gltf(file.as_ref(), None)
-                    {
-                        self.model_assets
-                            .insert(canonical_path.to_string(), Arc::clone(&asset));
-                    }
-                }
-                load_gltf_cpu_from_file(file.as_ref(), Some(PLAY_CHARACTER_BODY_HEIGHT))
-            }) {
-                Ok(parts) if !parts.is_empty() => parts,
-                Ok(_) => return None,
-                Err(e) => {
-                    log::debug!(
-                        "sin variante jugador para {canonical_path}: {e}"
-                    );
-                    return None;
-                }
-            }
-        } else {
-            match load_model_file_cpu(path_buf, Some(PLAY_CHARACTER_BODY_HEIGHT)) {
-                Ok(parts) if !parts.is_empty() => parts,
-                Ok(_) => return None,
-                Err(e) => {
-                    log::debug!(
-                        "sin variante jugador para {canonical_path}: {e}"
-                    );
-                    return None;
-                }
-            }
-        };
-
-        if !is_gltf && !self.model_assets.contains_key(canonical_path) {
-            if let Some(asset) = model_asset::load_model_asset(path_buf, None) {
-                self.model_assets.insert(canonical_path.to_string(), asset);
-            }
-        }
-        Some(parts)
-    }
-
-    fn wait_for_static_model_cache(&mut self, key: &str) {
+    fn wait_for_static_model_cache(&mut self, key: &str) -> Result<(), String> {
+        let started = Instant::now();
+        let timeout = Duration::from_secs(120);
         while !self.static_model_cache.contains_key(key) {
+            if started.elapsed() > timeout {
+                return Err(format!("Tiempo agotado esperando modelo en GPU: {key}"));
+            }
+            if self
+                .imported_model_registry
+                .get(key)
+                .is_some_and(|e| e.state == rer_engine_shared::assets::AssetState::Failed)
+            {
+                return Err(format!("Carga del modelo falló: {key}"));
+            }
+            if !self.model_preload_inflight.contains(key)
+                && self
+                    .model_preload_gpu_queue
+                    .iter()
+                    .all(|p| p.path != key)
+                && !self.static_model_cache.contains_key(key)
+            {
+                return Err(format!(
+                    "Precarga GPU detenida sin completar caché: {key}"
+                ));
+            }
             self.poll_and_advance_model_preloads(MODEL_GPU_PARTS_DURING_SAVE_LOAD);
             std::thread::yield_now();
         }
+        Ok(())
     }
 
     pub(crate) fn enqueue_model_preload_for_gpu(&mut self, data: ModelPreloadCpuResult) {
@@ -607,39 +706,6 @@ impl State {
         self.advance_gpu_model_preloads(gpu_parts_budget);
     }
 
-    /// Tras `load_model_asset`, sube la variante jugador para que el replace sea inmediato.
-    pub(crate) fn try_warm_play_character_model_cache(&mut self, canonical_path: &str) {
-        let play_key = play_character_cache_key(canonical_path);
-        if self.static_model_cache.contains_key(&play_key) {
-            return;
-        }
-        let Some(parts) = self.load_play_character_cpu_parts(canonical_path) else {
-            return;
-        };
-        self.sync_upload_play_character_cache(canonical_path, parts);
-    }
-
-    pub(crate) fn ensure_play_character_model_cached(&mut self, path: &str) -> Result<(), String> {
-        let key = self.model_path_key(path);
-        let play_key = play_character_cache_key(&key);
-        if self.static_model_cache.contains_key(&play_key) {
-            return Ok(());
-        }
-        if self.model_preload_inflight.contains(&key) {
-            return Err(format!(
-                "El modelo aún se está precargando: {key}. Espera a que termine en Recursos."
-            ));
-        }
-        self.try_warm_play_character_model_cache(&key);
-        if self.static_model_cache.contains_key(&play_key) {
-            Ok(())
-        } else {
-            Err(format!(
-                "No se pudo preparar el modelo del jugador: {key}"
-            ))
-        }
-    }
-
     pub(crate) fn queue_entity_model_replace_if_preloading(
         &mut self,
         id: EntityId,
@@ -719,105 +785,69 @@ impl State {
     }
 
     pub(crate) fn ensure_static_model_cached(&mut self, path: &str) -> Result<(), String> {
-        let source_key = self.model_path_key(path);
-        let key = self.model_cache_key(path);
-        if self.static_model_cache.contains_key(&key) {
+        let cache_key = self.model_cache_key(path);
+        if self.static_model_cache.contains_key(&cache_key) {
             return Ok(());
         }
-        if let Some(entry) = self
-            .imported_model_registry
-            .get_by_source_path(&source_key)
-            .cloned()
-        {
-            if entry.state == rer_engine_shared::assets::AssetState::Ready {
-                let is_character = entry.category.as_deref() == Some("character");
-                let model_id = entry.model_id.clone();
-                let rerasset_path = entry.rerasset_path.clone();
-                let entry_name = entry.name.clone();
-                self.enqueue_gpu_from_rerasset(
-                    &model_id,
-                    &rerasset_path,
-                    &entry_name,
-                    is_character,
-                );
-                self.wait_for_static_model_cache(&model_id);
-                return Ok(());
-            }
-        }
-        let display_name = self.model_display_label(path);
-        if self.model_preload_inflight.contains(&key) {
-            let wait_msg = format!("Esperando precarga de «{display_name}»…");
-            log::info!("{wait_msg}");
-            send_load_progress(&wait_msg, None, None);
-            let wait_started = Instant::now();
-            let file_bytes = std::fs::metadata(&key).map(|m| m.len()).unwrap_or(0);
-            let extra_secs = (file_bytes / (5 * 1024 * 1024)).min(480);
-            let preload_wait =
-                Duration::from_secs(120).saturating_add(Duration::from_secs(extra_secs));
-            while self.model_preload_inflight.contains(&key) && wait_started.elapsed() < preload_wait
-            {
-                self.poll_and_advance_model_preloads(MODEL_GPU_PARTS_DURING_SAVE_LOAD);
-                if self.static_model_cache.contains_key(&key) {
-                    let ready_msg = format!(
-                        "Modelo «{display_name}» listo (espera {} ms)",
-                        wait_started.elapsed().as_millis()
-                    );
-                    log::info!("{ready_msg}");
-                    send_load_progress(&ready_msg, None, None);
-                    return Ok(());
-                }
-                std::thread::yield_now();
-            }
-            if self.static_model_cache.contains_key(&key) {
-                return Ok(());
-            }
-            if self.model_preload_inflight.contains(&key) {
+
+        let ready_entry = if path.starts_with("model_") {
+            self.imported_model_registry.get(path).cloned()
+        } else {
+            let source_key = self.model_path_key(path);
+            self.imported_model_registry
+                .get_by_source_path(&source_key)
+                .cloned()
+                .or_else(|| {
+                    if cache_key.starts_with("model_") {
+                        self.imported_model_registry.get(&cache_key).cloned()
+                    } else {
+                        None
+                    }
+                })
+        };
+
+        if let Some(entry) = ready_entry.filter(|e| {
+            e.state == rer_engine_shared::assets::AssetState::Ready
+        }) {
+            let is_character = entry.category.as_deref() == Some("character");
+            let model_id = entry.model_id.clone();
+            let rerasset_path = entry.rerasset_path.clone();
+            let entry_name = entry.name.clone();
+            if !rerasset_path.is_file() {
                 return Err(format!(
-                    "Tiempo agotado esperando el modelo «{display_name}»",
+                    "Archivo .rerasset no encontrado: {}",
+                    rerasset_path.display()
                 ));
             }
-        }
-        if !Path::new(&key).is_file() {
-            return Err(format!("No se encontró el modelo: {key}"));
+            self.enqueue_gpu_from_rerasset(
+                &model_id,
+                &rerasset_path,
+                &entry_name,
+                is_character,
+            );
+            if !self.static_model_cache.contains_key(&model_id)
+                && !self.model_preload_inflight.contains(&model_id)
+            {
+                return Err(format!(
+                    "No se pudo iniciar carga GPU desde .rerasset: {model_id}"
+                ));
+            }
+            self.wait_for_static_model_cache(&model_id)?;
+            return Ok(());
         }
 
-        let sync_started = Instant::now();
-        let sync_msg = format!("Cargando modelo «{display_name}» (hilo principal)…");
-        log::info!("{sync_msg}");
-        send_load_progress(&sync_msg, None, None);
-        let path_buf = Path::new(&key);
-        let (mut parts, anim_asset, _) = preload_model_cpu_bundle(
-            path_buf,
-            ModelPreloadOptions {
-                warm_play_character: false,
-                load_skinned_asset: false,
-            },
-        )?;
-        if parts.is_empty() {
-            return Err(format!("Modelo vacío: {key}"));
+        let display_name = self.model_display_label(path);
+        if self.model_preload_inflight.contains(&cache_key) {
+            let wait_msg = format!("Esperando importación de «{display_name}»…");
+            log::info!("{wait_msg}");
+            send_load_progress(&wait_msg, None, None);
+            self.wait_for_static_model_cache(&cache_key)?;
+            return Ok(());
         }
-        for part in &mut parts {
-            Self::pivot_static_mesh_for_editor(part);
-        }
-        self.model_preload_gpu_queue.push(PendingGpuModelPreload {
-            path: key.clone(),
-            parts,
-            uploaded: Vec::new(),
-            anim_asset,
-            warm_play_character: false,
-            pending_part_mesh_idx: None,
-            defer_flush_path: None,
-            play_character_warm_only: false,
-            play_character_parts: None,
-        });
-        self.wait_for_static_model_cache(&key);
-        let done_msg = format!(
-            "Modelo «{display_name}» listo en GPU (+{} ms)",
-            sync_started.elapsed().as_millis()
-        );
-        log::info!("{done_msg}");
-        send_load_progress(&done_msg, None, None);
-        Ok(())
+
+        Err(format!(
+            "Modelo «{display_name}» no importado (requiere .rerasset). Importa el GLB/FBX en Recursos."
+        ))
     }
 
     pub(crate) fn cached_static_model_parts(&self, path: &str) -> Option<&[CachedStaticModelPart]> {
@@ -898,8 +928,7 @@ impl State {
             self.register_entity_blueprint_id(id, bp);
         }
         if self.model_needs_skinned_bind(&key) {
-            let gltf = model_asset::import_gltf(Path::new(&key)).ok();
-            self.try_bind_model_animations_with_gltf(id, &key, gltf.as_deref());
+            self.try_bind_model_animations_with_gltf(id, &key, None);
         }
         self.push_remove_entity_undo(id);
         send_event(&EngineEvent::ModelLoaded {
@@ -933,12 +962,12 @@ impl State {
         if let Err(e) = self.ensure_static_model_cached(path) {
             return Err(e);
         }
-        let key = self.model_path_key(path);
         let Some(part) = self
-            .cached_static_model_parts(&key)
+            .cached_static_model_parts(path)
             .and_then(|parts| parts.first())
             .copied()
         else {
+            let key = self.model_cache_key(path);
             return Err(format!("Modelo vacío: {key}"));
         };
         let kind = if entity_category.as_deref() == Some("character") {
@@ -958,7 +987,7 @@ impl State {
         Ok(self.spawn_cached_model_part_at(
             part.mesh_idx,
             part.tex_idx,
-            &key,
+            path,
             position,
             rotation,
             scale,
@@ -1000,12 +1029,66 @@ impl State {
     }
 
     pub(crate) fn invalidate_static_model_cache(&mut self, path: &str) {
-        let key = self.model_path_key(path);
+        let key = self.model_cache_key(path);
         self.static_model_cache.remove(&key);
         self.static_model_cache
             .remove(&play_character_cache_key(&key));
         self.model_assets.remove(&key);
         self.model_preload_inflight.remove(&key);
-        model_asset::invalidate_gltf_import_cache(Path::new(&key));
+        if let Some(source) = self.imported_model_registry.get(&key) {
+            let source_key = self.model_path_key(&source.source_path);
+            self.model_preload_inflight.remove(&source_key);
+        }
+    }
+
+    /// Elimina un modelo de la biblioteca Resources (`model_store` + registro importado + caché GPU).
+    /// Devuelve la clave canónica (`model_id`) si se eliminó algo.
+    pub(crate) fn remove_model_from_library(&mut self, path: &str) -> Option<String> {
+        let key = self.model_path_key(path);
+        let model_id = if key.starts_with("model_") {
+            Some(key.clone())
+        } else {
+            self.imported_model_registry.model_id_for_path(&key)
+        };
+
+        let store_keys: Vec<String> = self
+            .model_store
+            .iter()
+            .filter(|(store_key, entry)| {
+                **store_key == key
+                    || entry
+                        .model_id
+                        .as_deref()
+                        .is_some_and(|id| model_id.as_deref() == Some(id))
+            })
+            .map(|(store_key, _)| store_key.clone())
+            .collect();
+
+        if store_keys.is_empty() && model_id.is_none() {
+            return None;
+        }
+
+        if let Some(ref id) = model_id {
+            self.imported_model_registry.remove(id);
+            self.invalidate_static_model_cache(id);
+        }
+
+        let canonical = model_id
+            .or_else(|| {
+                store_keys
+                    .iter()
+                    .find(|k| k.starts_with("model_"))
+                    .cloned()
+            })
+            .unwrap_or_else(|| key.clone());
+
+        for store_key in store_keys {
+            self.invalidate_static_model_cache(&store_key);
+            self.model_store.remove(&store_key);
+            self.model_preload_gpu_queue.retain(|p| p.path != store_key);
+            self.drop_pending_load_models_for_path(&store_key);
+        }
+
+        Some(canonical)
     }
 }

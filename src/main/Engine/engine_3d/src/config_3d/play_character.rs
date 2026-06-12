@@ -227,15 +227,15 @@ impl State {
         if let Some(e) = self.play_character_mesh_extents {
             return Some(e);
         }
-        let asset_key = self.model_path_key(visual_path);
-        let play_key = play_character_cache_key(&asset_key);
+        let cache_key = self.model_cache_key(visual_path);
+        let play_key = play_character_cache_key(&cache_key);
         let part = self
             .static_model_cache
             .get(&play_key)
             .and_then(|parts| parts.first())
             .or_else(|| {
                 self.static_model_cache
-                    .get(&asset_key)
+                    .get(&cache_key)
                     .and_then(|parts| parts.first())
             })?;
         Some(PlayCharacterMeshExtents::from_local_bounds(
@@ -286,7 +286,7 @@ impl State {
         &self,
         model_path: &str,
     ) -> Option<([f32; 3], [f32; 3])> {
-        let key = self.model_path_key(model_path);
+        let key = self.model_cache_key(model_path);
         if let Some(asset) = self.model_assets.get(&key) {
             if let Some(b) = model_asset::model_asset_play_character_visual_bounds(asset) {
                 return Some(b);
@@ -310,8 +310,8 @@ impl State {
     /// Bounds para colocación: bind pose skinned (lo que dibuja el motor), no solo caché estática.
     fn play_character_placement_bounds(&self, model_path: &str) -> Option<([f32; 3], [f32; 3])> {
         self.play_character_visual_local_bounds(model_path).or_else(|| {
-            let asset_key = self.model_path_key(model_path);
-            let play_key = play_character_cache_key(&asset_key);
+            let cache_key = self.model_cache_key(model_path);
+            let play_key = play_character_cache_key(&cache_key);
             self.static_model_cache
                 .get(&play_key)
                 .and_then(|parts| parts.first())
@@ -477,17 +477,22 @@ impl State {
         id
     }
 
-    /// Instala mesh jugador desde caché `::play_character` (FBX/glTF) sin auto-escala ni alineación de editor.
+    /// Instala mesh jugador desde caché `::play_character` (.rerasset) sin auto-escala ni alineación de editor.
     pub(crate) fn install_play_character_visual_from_path(
         &mut self,
         id: EntityId,
         path: &str,
     ) -> Result<String, String> {
-        use crate::config_3d::character_anchor::PLAY_CHARACTER_BODY_HEIGHT;
+        let cache_key = self.model_cache_key(path);
+        let library_path = self.model_library_path_for(path);
+        let source_for_ext = self
+            .imported_model_registry
+            .get(&cache_key)
+            .map(|e| e.source_path.clone())
+            .unwrap_or_else(|| library_path.clone());
 
-        let asset_key = self.model_path_key(path);
         self.ensure_play_character_model_cached(path)?;
-        let mesh_cache_key = play_character_cache_key(&asset_key);
+        let mesh_cache_key = play_character_cache_key(&cache_key);
         let part = self
             .static_model_cache
             .get(&mesh_cache_key)
@@ -508,12 +513,12 @@ impl State {
             );
         }
 
-        self.register_or_update_visual_model_meta(id, path, true);
+        self.register_or_update_visual_model_meta(id, &library_path, true);
         self.play_character_mesh_forward_xz = part.forward_xz;
-        if is_fbx_model_path(path) {
+        if is_fbx_model_path(&source_for_ext) {
             if let Some(skin_fwd) = model_asset::fbx_skinned_play_forward_xz(
-                Path::new(path),
-                PLAY_CHARACTER_BODY_HEIGHT,
+                Path::new(&source_for_ext),
+                crate::config_3d::character_anchor::PLAY_CHARACTER_BODY_HEIGHT,
             ) {
                 self.play_character_mesh_forward_xz = skin_fwd;
             }
@@ -525,19 +530,18 @@ impl State {
                 part.local_bounds.1,
             ));
 
-        let gltf = model_asset::import_gltf(Path::new(path)).ok();
-        self.try_bind_model_animations_with_gltf(id, &asset_key, gltf.as_deref());
-        if let Some(asset) = self.model_assets.get(&asset_key) {
-            if is_fbx_model_path(path) {
+        self.try_bind_model_animations_with_gltf(id, &cache_key, None);
+        if let Some(asset) = self.model_assets.get(&cache_key) {
+            if is_fbx_model_path(&source_for_ext) {
                 self.play_character_mesh_forward_xz =
                     model_asset::resolve_fbx_play_character_forward_xz(asset);
-            } else if is_gltf_model_path(path) {
+            } else if is_gltf_model_path(&source_for_ext) {
                 self.play_character_mesh_forward_xz =
                     model_asset::resolve_gltf_play_character_forward_xz(asset);
             }
         }
 
-        Ok(asset_key)
+        Ok(cache_key)
     }
 
     pub(crate) fn emit_entity_model_replaced_for_play_character(&self, id: EntityId, path: &str) {

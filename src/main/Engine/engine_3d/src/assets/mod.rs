@@ -3,6 +3,7 @@
 pub mod bake;
 pub mod import;
 pub mod load;
+pub mod log_tex;
 pub mod model_asset_blob;
 pub mod registry;
 

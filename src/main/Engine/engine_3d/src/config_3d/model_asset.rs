@@ -170,7 +170,7 @@ pub(crate) fn build_material_textures_with_mips(
             let (rgba_vec, w, h) = gltf_image_data_to_rgba(img);
             let chain = crate::texture::build_layer_mip_chain_timed(rgba_vec, w, h);
             if let Some(path) = model_path {
-                log::info!(
+                log::debug!(
                     "[model_tex] {path} Material {mi} ({label}) -> resize: {} ms | mips: {} ms \
                      ({}x{} -> {tex_size}²)",
                     chain.resize_ms,
@@ -203,12 +203,8 @@ pub(crate) fn build_material_textures_with_mips(
         out.insert(mi, tex);
     }
     if let Some(path) = model_path {
-        log::info!(
-            "[model_tex] {path} resize: {} textura/s | total resize: {total_resize_ms} ms",
-            out.len()
-        );
-        log::info!(
-            "[model_tex] {path} mip: {} textura/s | total mip: {total_mip_ms} ms",
+        log::debug!(
+            "[model_tex] {path} resize+mip: {} textura/s | resize {total_resize_ms} ms | mip {total_mip_ms} ms",
             out.len()
         );
     }
@@ -280,6 +276,7 @@ fn import_gltf_uncached(path: &Path) -> Result<GltfFile, String> {
     let model_path = path.display().to_string();
     let (material_smallest_albedos, material_textures) =
         import_gltf_texture_layers(&doc, &buffers, base, &model_path);
+    crate::assets::log_tex::log_gltf_materials_from_doc(&doc);
     Ok(GltfFile {
         path: model_path,
         doc,
@@ -298,7 +295,7 @@ pub fn import_gltf(path: &Path) -> Result<Arc<GltfFile>, String> {
                 .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or(&key);
-            log::info!("[GLTF_IMPORT] {label} cache=hit (sin decode/resize/mip)");
+            log::debug!("[GLTF_IMPORT] {label} cache=hit");
             return Ok(Arc::clone(hit));
         }
     }
@@ -306,7 +303,7 @@ pub fn import_gltf(path: &Path) -> Result<Arc<GltfFile>, String> {
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or(&key);
-    log::info!("[GLTF_IMPORT] {label} cache=cold (decode + resize + mip)");
+    log::debug!("[GLTF_IMPORT] {label} cache=cold");
     let file = Arc::new(import_gltf_uncached(path)?);
     if let Ok(mut cache) = gltf_import_cache().lock() {
         cache.insert(key, Arc::clone(&file));
@@ -819,7 +816,7 @@ fn load_gltf_asset_from_file(
         }
         Some(_) => "normalized",
     };
-    log::info!("[LOAD_GLTF_SKINNED] {label} variant={variant}");
+    log::debug!("[LOAD_GLTF_SKINNED] {label} variant={variant}");
 
     let doc = &file.doc;
     let buffers = &file.buffers;
@@ -981,7 +978,7 @@ fn load_gltf_asset_from_file(
         }
     }
 
-    log::info!(
+    log::debug!(
         "[model_asset] glTF skinned: {} skin(s), {} huesos, {} pieza(s) desde {}",
         unified.skin_count,
         joint_count,

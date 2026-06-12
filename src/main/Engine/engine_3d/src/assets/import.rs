@@ -11,7 +11,8 @@ use crate::ipc::{send_event, EngineEvent};
 
 use super::bake::{bake_to_rerasset, build_bake_input, current_importer_version};
 use super::registry::{
-    generate_model_id, rerasset_path_for_id, source_fingerprint, ImportedModelEntry,
+    generate_model_id, relative_rerasset_manifest_path, rerasset_path_for_id,
+    source_fingerprint, ImportedModelEntry,
 };
 
 impl State {
@@ -134,7 +135,13 @@ impl State {
                         anim_asset.as_deref(),
                     );
                     bake_to_rerasset(&rerasset_path_thread, &input)?;
-                    let _ = super::registry::mirror_source_file(&path_buf);
+                    super::bake::log_bake_material_summary(&path_buf, &input);
+                    if let Some(mirrored) = super::registry::mirror_source_file(&path_buf) {
+                        log::debug!(
+                            "[RERASSET_IMPORT] fuente espejada: {}",
+                            mirrored.display()
+                        );
+                    }
                     Ok(ModelPreloadCpuResult {
                         path: model_id_thread.clone(),
                         parts,
@@ -196,6 +203,11 @@ impl State {
             }
         };
 
+        self.rerasset_material_tex.insert(
+            model_id.to_string(),
+            loaded.material_tex_chunks.clone(),
+        );
+
         self.model_preload_inflight.insert(model_id.to_string());
         send_event(&EngineEvent::ModelAssetPreloadStarted {
             path: model_id.to_string(),
@@ -219,14 +231,15 @@ impl State {
             rerasset_path.clone(),
             RER_IMPORTER_VERSION,
         );
+        let asset_rel = relative_rerasset_manifest_path(model_id);
         if let Some(store) = self.model_store.get_mut(source_key) {
-            store.rerasset_path = Some(rerasset_path.to_string_lossy().into_owned());
+            store.rerasset_path = Some(asset_rel.clone());
         }
         send_event(&EngineEvent::ModelAssetImported {
             model_id: model_id.to_string(),
             path: source_key.to_string(),
             name: name.to_string(),
-            asset: rerasset_path.to_string_lossy().into_owned(),
+            asset: asset_rel,
         });
     }
 }

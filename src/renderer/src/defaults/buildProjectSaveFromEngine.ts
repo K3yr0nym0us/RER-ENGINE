@@ -5,6 +5,7 @@ import type {
 	ModelCategory,
 	ProjectSaveData,
 	ProjectType,
+	ResourceModelEntry,
 	SavedAnimation,
 	SavedPlayerUiTextBox,
 	SavedPlayerUiButton,
@@ -17,6 +18,7 @@ import type {
 	SoundInfo,
 	BackgroundInfo,
 } from '@shared-types';
+import { entityPathMarker } from '@shared-types';
 import type { UiScreenEntry } from '../context/useContextEngine/types';
 import type { EntityMeta } from '../context/useContextEngine/types';
 import { getSceneProjectState } from '../pages/EngineView/sceneStateStore';
@@ -311,38 +313,109 @@ function mergeLibraryAssets(
 	return [...byPath.values()];
 }
 
+function modelBasename(p: string): string {
+	return p.split(/[/\\]/).pop() ?? p
+}
+
 function attachModelIdsToEntities<T extends { model: string; model_id?: string }>(
 	entities: T[],
 	models: ModelInfo[],
 ): T[] {
 	const byPath = new Map(
 		models.filter((m) => m.model_id).map((m) => [m.path, m.model_id!] as const),
-	);
+	)
+	const byModelId = new Map(
+		models.filter((m) => m.model_id).map((m) => [m.model_id!, m.model_id!] as const),
+	)
+	const byBasename = new Map(
+		models
+			.filter((m) => m.model_id)
+			.map((m) => [modelBasename(m.path).toLowerCase(), m.model_id!] as const),
+	)
 	return entities.map((entity) => {
-		const model_id = entity.model_id ?? byPath.get(entity.model);
-		return model_id ? { ...entity, model_id } : entity;
-	});
+		const model_id =
+			entity.model_id ??
+			byModelId.get(entity.model) ??
+			byPath.get(entity.model) ??
+			byBasename.get(modelBasename(entity.model).toLowerCase())
+		return model_id ? { ...entity, model_id } : entity
+	})
+}
+
+/** Entidades 3D referencian `model_id` (runtime carga desde `.rerasset`, no GLB fuente). */
+function rewriteImportedEntityPaths<T extends { model: string; model_id?: string }>(
+	entities: T[],
+): T[] {
+	return entities.map((entity) => {
+		if (!entity.model_id || entityPathMarker(entity.model)) {
+			return entity
+		}
+		return { ...entity, model: entity.model_id }
+	})
+}
+
+function importedModelAssetPath(modelId: string, asset?: string): string {
+	return asset ?? `imported/models/${modelId}.rerasset`
+}
+
+const RERASSET_IMPORTER_VERSION = 2
+
+/** Biblioteca 3D: solo `resources.models` (motor → `model_store`). */
+function buildResourcesModelsForSave(
+	engineModels: EngineSaveSceneSnapshot['models'],
+	editorModels: ModelInfo[],
+): ResourceModelEntry[] {
+	const byId = new Map<string, ResourceModelEntry>()
+	for (const m of engineModels ?? []) {
+		if (!m.model_id) continue
+		byId.set(m.model_id, {
+			id: m.model_id,
+			name: m.name,
+			type: (m.category ?? 'object') as ModelCategory,
+			asset: importedModelAssetPath(m.model_id, m.asset),
+			importer_version: RERASSET_IMPORTER_VERSION,
+		})
+	}
+	for (const m of editorModels) {
+		if (!m.model_id || m.state === 'importing' || m.state === 'failed') continue
+		if (byId.has(m.model_id)) continue
+		byId.set(m.model_id, {
+			id: m.model_id,
+			name: m.name,
+			type: (m.category ?? 'object') as ModelCategory,
+			asset: importedModelAssetPath(m.model_id, m.asset),
+			importer_version: RERASSET_IMPORTER_VERSION,
+		})
+	}
+	return [...byId.values()]
 }
 
 function mergeModelLibrary(
 	fromEditor: ModelInfo[],
-	fromEngine?: Array<{ name: string; path: string; category?: ModelInfo['category'] }>,
+	fromEngine?: Array<{
+		name: string
+		path: string
+		category?: ModelInfo['category']
+		model_id?: string
+		asset?: string
+	}>,
 ): ModelInfo[] {
-	const byPath = new Map<string, ModelInfo>();
+	const byPath = new Map<string, ModelInfo>()
 	for (const item of fromEditor) {
-		byPath.set(item.path, { ...item });
+		byPath.set(item.path, { ...item })
 	}
 	for (const item of fromEngine ?? []) {
-		const prev = byPath.get(item.path);
+		const prev = byPath.get(item.path)
 		byPath.set(item.path, {
 			name: item.name,
 			path: item.path,
 			...(prev?.category ?? item.category ? { category: prev?.category ?? item.category } : {}),
-			...(prev?.model_id ? { model_id: prev.model_id } : {}),
-			...(prev?.asset ? { asset: prev.asset } : {}),
-		});
+			...(prev?.model_id ?? item.model_id ? { model_id: prev?.model_id ?? item.model_id } : {}),
+			...(prev?.asset ?? item.asset ? { asset: prev?.asset ?? item.asset } : {}),
+			...(prev?.state ? { state: prev.state } : {}),
+		})
 	}
-	return [...byPath.values()];
+	return [...byPath.values()]
 }
 
 /** Combina snapshot del motor con metadatos solo del editor (escenas inactivas, blueprints, idioma). */
@@ -403,6 +476,8 @@ export async function buildProjectSaveFromEngineSnapshot(
 			name: m.name,
 			path: m.path,
 			...(m.category ? { category: m.category as ModelInfo['category'] } : {}),
+			...(m.model_id ? { model_id: m.model_id } : {}),
+			...(m.asset ? { asset: m.asset } : {}),
 		})),
 	);
 
@@ -415,28 +490,27 @@ export async function buildProjectSaveFromEngineSnapshot(
 			? attachModelIdsToEntities([tab.player], mergedModels)[0] ?? tab.player
 			: null,
 	}));
+	const scenesRewritten = scenesWithModelIds.map((tab) => ({
+		...tab,
+		entities: rewriteImportedEntityPaths(tab.entities),
+		player: tab.player ? rewriteImportedEntityPaths([tab.player])[0] ?? tab.player : null,
+	}));
 	const rootWithIds =
-		scenesWithModelIds.find((s) => s.id === activeSceneId) ?? scenesWithModelIds[0];
+		scenesRewritten.find((s) => s.id === activeSceneId) ?? scenesRewritten[0];
 
 	const readyImported = mergedModels.filter(
 		(m) => m.model_id && m.state !== 'importing' && m.state !== 'failed',
 	);
-	const hasImportedModels = readyImported.length > 0;
-	const modelsForSave = mergedModels.map(
-		({ loading: _loading, state: _state, ...rest }) => ({
-			name: rest.name,
-			path: rest.path,
-			...(rest.category ? { category: rest.category } : {}),
-			...(rest.model_id ? { model_id: rest.model_id } : {}),
-			...(rest.asset ? { asset: rest.asset } : {}),
-		}),
-	);
+	const is3d = projectType === '3D';
+	const resourcesModels = is3d
+		? buildResourcesModelsForSave(engineScene.models, readyImported)
+		: [];
 
 	return {
-		version: hasImportedModels ? 2 : 1,
+		version: 1,
 		type: projectType,
 		gameStyle: initialGameStyle ?? gameStyle,
-		scenes: scenesWithModelIds,
+		scenes: scenesRewritten,
 		activeSceneId,
 		world: hasScenes ? undefined : rootWithIds.world,
 		backgroundPath: hasScenes ? null : rootWithIds.backgroundPath,
@@ -447,21 +521,7 @@ export async function buildProjectSaveFromEngineSnapshot(
 		camera2d: hasScenes ? null : rootWithIds.camera2d,
 		savedAt: new Date().toISOString(),
 		sprites: hasScenes ? [] : rootWithIds.sprites,
-		models: modelsForSave,
-		...(hasImportedModels
-			? {
-				resources: {
-					models: readyImported.map((m) => ({
-						id: m.model_id!,
-						name: m.name,
-						type: (m.category ?? 'object') as ModelCategory,
-						asset: m.asset ?? `imported/models/${m.model_id}.rerasset`,
-						importer_version: 2,
-						source: `source/models/${m.path.split(/[/\\]/).pop() ?? 'model.glb'}`,
-					})),
-				},
-			}
-			: {}),
+		...(is3d ? { resources: { models: resourcesModels } } : {}),
 		sounds,
 		fonts: mergedFonts,
 		hudImages: mergedHudImages.length ? mergedHudImages : undefined,

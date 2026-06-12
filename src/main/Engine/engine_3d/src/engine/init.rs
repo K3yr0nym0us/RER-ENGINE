@@ -860,6 +860,7 @@ impl State {
             sprite_store: HashMap::new(),
             model_store: HashMap::new(),
             imported_model_registry: crate::assets::ImportedModelRegistry::default(),
+            rerasset_material_tex: std::collections::HashMap::new(),
             static_model_cache: HashMap::new(),
             model_preload_rx,
             model_preload_tx,

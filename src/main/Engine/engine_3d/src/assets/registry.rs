@@ -41,9 +41,34 @@ impl ImportedModelRegistry {
     }
 
     pub fn insert(&mut self, entry: ImportedModelEntry) {
-        let key = normalize_source_key(&entry.source_path);
-        self.path_to_id.insert(key, entry.model_id.clone());
-        self.by_id.insert(entry.model_id.clone(), entry);
+        let model_id = entry.model_id.clone();
+        let source_path = entry.source_path.clone();
+        self.by_id.insert(model_id.clone(), entry);
+        self.link_imported_model_aliases(&model_id, &source_path);
+    }
+
+    /// Registra alias de path → `model_id` (basename, `source/models/…`, id).
+    pub fn link_imported_model_aliases(&mut self, model_id: &str, source_path: &str) {
+        if !self.by_id.contains_key(model_id) {
+            return;
+        }
+        self.link_alias(model_id, source_path);
+        self.link_alias(model_id, model_id);
+        if let Some(base) = Path::new(source_path)
+            .file_name()
+            .and_then(|n| n.to_str())
+        {
+            self.link_alias(model_id, base);
+            self.link_alias(model_id, &relative_source_manifest_path(base));
+        }
+    }
+
+    fn link_alias(&mut self, model_id: &str, alias_path: &str) {
+        if alias_path.is_empty() {
+            return;
+        }
+        self.path_to_id
+            .insert(normalize_source_key(alias_path), model_id.to_string());
     }
 
     pub fn set_state(&mut self, model_id: &str, state: AssetState) {
@@ -60,20 +85,15 @@ impl ImportedModelRegistry {
         }
     }
 
-    pub fn remove_by_source_path(&mut self, path: &str) -> Option<ImportedModelEntry> {
-        let key = normalize_source_key(path);
-        let id = self.path_to_id.remove(&key)?;
-        self.by_id.remove(&id)
-    }
-
-    pub fn ready_entries(&self) -> impl Iterator<Item = &ImportedModelEntry> {
-        self.by_id
-            .values()
-            .filter(|e| e.state == AssetState::Ready)
-    }
-
     pub fn iter(&self) -> impl Iterator<Item = &ImportedModelEntry> {
         self.by_id.values()
+    }
+
+    /// Quita un modelo importado y todos sus alias de path.
+    pub fn remove(&mut self, model_id: &str) -> Option<ImportedModelEntry> {
+        let entry = self.by_id.remove(model_id)?;
+        self.path_to_id.retain(|_, id| id != model_id);
+        Some(entry)
     }
 }
 
@@ -131,8 +151,43 @@ pub fn generate_model_id(display_name: &str, source_path: &str) -> String {
     format!("model_{slug}_{hash6}")
 }
 
+pub fn relative_rerasset_manifest_path(model_id: &str) -> String {
+    format!("imported/models/{model_id}.rerasset")
+}
+
+pub fn relative_source_manifest_path(basename: &str) -> String {
+    format!("source/models/{basename}")
+}
+
 pub fn rerasset_path_for_id(model_id: &str) -> PathBuf {
     imported_models_dir().join(format!("{model_id}.rerasset"))
+}
+
+pub fn resolve_rerasset_on_disk(extract_dir: &Path, model_id: &str) -> PathBuf {
+    if extract_dir.as_os_str().is_empty() {
+        rerasset_path_for_id(model_id)
+    } else {
+        extract_dir.join(relative_rerasset_manifest_path(model_id))
+    }
+}
+
+/// Resuelve `resources.models[].asset` (relativo al extract dir) a path en disco.
+pub fn resolve_manifest_asset_path(asset: &str, extract_dir: &Path, model_id: &str) -> PathBuf {
+    let normalized = normalize_source_key(asset);
+    if !asset.is_empty()
+        && !Path::new(asset).is_absolute()
+        && normalized.starts_with("imported/")
+    {
+        if extract_dir.as_os_str().is_empty() {
+            rerasset_path_for_id(model_id)
+        } else {
+            extract_dir.join(asset.replace('/', std::path::MAIN_SEPARATOR_STR))
+        }
+    } else if Path::new(asset).is_absolute() {
+        PathBuf::from(asset)
+    } else {
+        resolve_rerasset_on_disk(extract_dir, model_id)
+    }
 }
 
 pub fn source_models_dir() -> PathBuf {

@@ -216,6 +216,8 @@ pub struct State {
     pub(crate) model_store: HashMap<String, crate::ipc::ModelStoreEntry>,
     /// Assets importados indexados por `model_id` (.rerasset).
     pub(crate) imported_model_registry: crate::assets::ImportedModelRegistry,
+    /// `model_id` → (`material_index` → `texture_chunk`) del último `.rerasset` cargado.
+    pub(crate) rerasset_material_tex: std::collections::HashMap<String, std::collections::HashMap<u32, u32>>,
     /// Mallas estáticas en GPU indexadas por ruta (precarga al registrar recurso).
     pub(crate) static_model_cache: crate::config_3d::static_model_cache::StaticModelCache,
     pub(crate) model_preload_rx: crate::config_3d::static_model_cache::ModelPreloadRx,

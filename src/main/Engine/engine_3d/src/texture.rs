@@ -129,6 +129,16 @@ impl TextureArray {
 
     /// Sube mips ya preparados en CPU (p. ej. hilo de precarga de modelos).
     pub fn pack_prepared_mips(&mut self, queue: &wgpu::Queue, mips: &[Vec<u8>]) -> TextureLayer {
+        if !layer_mip_chain_valid_for_array(mips) {
+            log::error!(
+                "[TextureArray] mip chain inválida ({} niveles) — reconstruyendo desde mip0",
+                mips.len()
+            );
+            let base = mips.first().cloned().unwrap_or_else(|| vec![255, 255, 255, 255]);
+            let (w, h) = infer_base_dimensions_from_mip0(&base);
+            let chain = build_layer_mip_chain_timed(base, w, h);
+            return self.upload_layer_from_mips(queue, &chain.mips);
+        }
         self.upload_layer_from_mips(queue, mips)
     }
 
@@ -243,6 +253,35 @@ fn generate_mip_chain_owned(base: Vec<u8>, base_w: u32, base_h: u32) -> Vec<Vec<
         chain.push(next);
     }
     chain
+}
+
+pub(crate) fn layer_mip_chain_valid_for_array(mips: &[Vec<u8>]) -> bool {
+    let tex_size = TextureArray::TEXTURE_SIZE;
+    let expected_levels = mip_level_count(tex_size) as usize;
+    if mips.len() != expected_levels {
+        return false;
+    }
+    let mut w = tex_size;
+    let mut h = tex_size;
+    for mip in mips {
+        let expected = (w as usize) * (h as usize) * 4;
+        if mip.len() != expected {
+            return false;
+        }
+        w = (w / 2).max(1);
+        h = (h / 2).max(1);
+    }
+    true
+}
+
+fn infer_base_dimensions_from_mip0(mip0: &[u8]) -> (u32, u32) {
+    let pixels = (mip0.len() / 4).max(1) as u32;
+    let side = (pixels as f64).sqrt().round() as u32;
+    if side * side * 4 == mip0.len() as u32 {
+        (side, side)
+    } else {
+        (1, 1)
+    }
 }
 
 fn mip_level_count(size: u32) -> u32 {

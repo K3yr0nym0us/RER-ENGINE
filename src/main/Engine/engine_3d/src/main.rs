@@ -386,10 +386,7 @@ impl ApplicationHandler<EngineCommand> for App {
             Ok(mut state) => {
                 let from_save = std::env::var("RER_3D_START_FROM_SAVE")
                     .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-                    .unwrap_or(false)
-                    || std::env::var("RER_PROJECT_EXTRACT_DIR")
-                        .map(|v| !v.trim().is_empty())
-                        .unwrap_or(false);
+                    .unwrap_or(false);
                 if from_save {
                     state.setup_empty_3d();
                     ipc::send_event(&EngineEvent::Ready {
@@ -976,9 +973,12 @@ fn main() {
     // en entornos sin GPU hardware — subirlos a error los silencia.
     const DEFAULT_LOG_FILTER: &str =
         "rer_engine_3d=warn,rer_engine_3d::config_base=info,rer_engine_3d::engine::load_proyect=info,\
-rer_engine_3d::config_3d::static_model_cache=info,rer_engine_3d::config_3d::gltf_texture_load=info,\
-rer_engine_3d::config_3d::model_asset=info,rer_engine_3d::config_3d::mesh_3d=info,\
-rer_engine_3d::config_3d::model_animation=info,wgpu_core::instance=error,wgpu_hal::vulkan::conv=error,\
+rer_engine_3d::assets::load=info,rer_engine_3d::assets::bake=info,rer_engine_3d::assets::import=info,\
+rer_engine_3d::assets::log_tex=info,\
+rer_engine_3d::config_3d::static_model_cache=info,rer_engine_3d::config_3d::entity_textures=info,\
+rer_engine_3d::config_3d::gltf_texture_load=info,rer_engine_3d::config_3d::model_asset=info,\
+rer_engine_3d::config_3d::mesh_3d=info,rer_engine_3d::config_3d::model_animation=info,\
+wgpu_core::instance=error,wgpu_hal::vulkan::conv=error,\
 wgpu_hal::vulkan::instance=error,wgpu_core=warn,wgpu_hal=warn,naga=warn";
 
     rer_engine_shared::logging::init(DEFAULT_LOG_FILTER);
