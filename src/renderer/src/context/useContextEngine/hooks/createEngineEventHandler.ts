@@ -2382,66 +2382,6 @@ export function createEngineEventHandler({
 			}
 		}
 
-		if (event.event === 'graphics_texture_tier_changed') {
-			const tierEvent = event as unknown as { tier: string }
-			const tier = tierEvent.tier
-			if (tier === 'low' || tier === 'medium' || tier === 'high' || tier === 'ultra') {
-				dispatch({ type: 'SET_GRAPHICS_TEXTURE_TIER', payload: tier })
-				if (activeEntityPropertiesHandlerRef.current) {
-					pushEntityPropertiesPatch(activeEntityPropertiesHandlerRef.current)
-				}
-			}
-		}
-
-		if (event.event === 'entity_textures_ready') {
-			const texEvent = event as unknown as {
-				entity_id: number
-				model_path: string
-				active_tier?: string
-				materials: Array<{
-					materialIndex: number
-					materialName: string
-					defaultImageIndex?: number
-					variants: Array<{ imageIndex: number; width: number; height: number }>
-					tierImageIndex: Record<string, number>
-					previewTier: string
-				}>
-			}
-			const id = texEvent.entity_id
-			if (
-				texEvent.active_tier === 'low'
-				|| texEvent.active_tier === 'medium'
-				|| texEvent.active_tier === 'high'
-				|| texEvent.active_tier === 'ultra'
-			) {
-				dispatch({ type: 'SET_GRAPHICS_TEXTURE_TIER', payload: texEvent.active_tier })
-			}
-			const materials = (texEvent.materials ?? []).map((m) => ({
-				materialIndex: m.materialIndex,
-				materialName: m.materialName,
-				defaultImageIndex: m.defaultImageIndex,
-				variants: (m.variants ?? []).map((v) => ({
-					imageIndex: v.imageIndex,
-					width: v.width,
-					height: v.height,
-				})),
-				tierImageIndex: (m.tierImageIndex ?? {}) as import('../../../modal-electron/entityPropertiesTypes').EntityMaterialTextures['tierImageIndex'],
-				previewTier: (m.previewTier || 'low') as import('../../../modal-electron/entityPropertiesTypes').GraphicsTextureTier,
-			}))
-			const prevMeta = refs.entityMetaRef.current[id]
-			refs.entityMetaRef.current[id] = {
-				kind: 'model',
-				path: texEvent.model_path,
-				...prevMeta,
-				entityTextures: materials,
-				entityTexturesModelPath: texEvent.model_path,
-				visualModelPath: prevMeta?.visualModelPath ?? texEvent.model_path,
-			}
-			if (activeEntityPropertiesHandlerRef.current) {
-				pushEntityPropertiesPatch(activeEntityPropertiesHandlerRef.current)
-			}
-		}
-
 		if (event.event === 'model_clips_ready') {
 			const clipsEvent = event as unknown as {
 				id: number

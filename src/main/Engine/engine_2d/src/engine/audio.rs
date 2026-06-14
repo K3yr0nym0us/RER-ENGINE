@@ -112,8 +112,7 @@ pub(super) fn start_audio_thread() -> Option<AudioSlot> {
                             sink.play();
                             sink.detach();
                         }
-                        log::debug!("[audio] reproduciendo ({} muestras, {}ch, {}Hz, loop={})",
-                            audio.samples.len(), audio.channels, audio.sample_rate, loop_);
+                        
                     }
                 }
             }

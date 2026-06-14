@@ -92,7 +92,6 @@ pub enum ScriptEngineProfile {
 pub struct ScriptApiContext {
     pub cmds: Arc<Mutex<Vec<ScriptCmd>>>,
     pub player_ui_active_screen: Arc<Mutex<Option<String>>>,
-    pub graphics_texture_tier: Arc<Mutex<String>>,
     /// Tecla del binding activo en scripts de control 2D (`move_control`).
     pub control_binding_key: Arc<Mutex<String>>,
     pub profile: ScriptEngineProfile,
@@ -103,7 +102,6 @@ impl ScriptApiContext {
         Self {
             cmds: Arc::new(Mutex::new(Vec::new())),
             player_ui_active_screen: Arc::new(Mutex::new(None)),
-            graphics_texture_tier: Arc::new(Mutex::new("low".to_string())),
             control_binding_key: Arc::new(Mutex::new(String::new())),
             profile,
         }
@@ -363,20 +361,6 @@ pub fn register_native_api(engine: &mut Engine, ctx: &ScriptApiContext) {
                 .and_then(|g| g.clone())
                 .unwrap_or_default()
         });
-
-        let c = ctx.clone();
-        engine.register_fn("__engine_set_graphics_texture_tier", move |tier: String| {
-            c.push(ScriptCmd::SetGraphicsTextureTier { tier });
-        });
-
-        let tier_ctx = ctx.graphics_texture_tier.clone();
-        engine.register_fn("__engine_get_graphics_texture_tier", move || {
-            tier_ctx
-                .lock()
-                .ok()
-                .map(|g| g.clone())
-                .unwrap_or_else(|| "low".to_string())
-        });
     }
 }
 
@@ -430,8 +414,6 @@ let engine = #{
     set_active_player_ui_by_name: |name| { __engine_set_active_player_ui_by_name(name); },
     get_active_player_ui: || { __engine_get_active_player_ui() },
     clear_active_player_ui: || { __engine_clear_active_player_ui(); },
-    set_graphics_texture_tier: |tier| { __engine_set_graphics_texture_tier(tier); },
-    get_graphics_texture_tier: || { __engine_get_graphics_texture_tier() },
 };
 "#;
 

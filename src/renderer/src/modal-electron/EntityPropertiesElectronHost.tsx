@@ -28,11 +28,6 @@ export function EntityPropertiesElectronHost({ payload }: EntityPropertiesElectr
 			linkedBlueprintName: null,
 			scripts: [],
 			animationPlayingIds: [],
-			entityTextures: null,
-			entityTexturesModelPath: null,
-			entityTexturesLoaded: false,
-			activeGraphicsTextureTier: 'low',
-			showTexturesTab: false,
 		},
 	)
 

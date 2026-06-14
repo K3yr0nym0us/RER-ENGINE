@@ -63,19 +63,21 @@ impl State {
         };
 
         let cache_key = self.model_cache_key(path);
+        let asset_key = crate::config_3d::static_model_cache::model_asset_cache_key(
+            &cache_key,
+            normalize,
+        );
 
-        let cached_asset = self.model_assets.get(&cache_key).map(Arc::clone);
+        let cached_asset = self.model_assets.get(&asset_key).map(Arc::clone);
         let asset = if let Some(cached) = cached_asset {
-            log::debug!("[MODEL_BIND] {cache_key} reuse=model_assets (.rerasset)");
+            
             cached
         } else if let Some(file) = gltf_file {
-            log::debug!(
-                "[MODEL_BIND] {cache_key} build=skinned normalize={normalize:?} (GLB en caché import)"
-            );
+            
             match model_asset::load_model_asset_from_gltf(file, normalize) {
                 Some(loaded) => {
                     self.model_assets
-                        .insert(cache_key.clone(), Arc::clone(&loaded));
+                        .insert(asset_key.clone(), Arc::clone(&loaded));
                     loaded
                 }
                 None => {
@@ -96,13 +98,24 @@ impl State {
                             clips: clip_meta,
                         });
                     }
-                    log::warn!("[model_anim] glTF sin skinning utilizable: {cache_key}");
+                    log::warn!("[model_anim] glTF sin skinning utilizable: {asset_key}");
                     return;
                 }
             }
         } else {
-            log::warn!("[model_anim] sin model_assets para {cache_key}");
-            return;
+            let load_path = self.model_library_path_for(path);
+            
+            match model_asset::load_model_asset(Path::new(&load_path), normalize) {
+                Some(loaded) => {
+                    self.model_assets
+                        .insert(asset_key.clone(), Arc::clone(&loaded));
+                    loaded
+                }
+                None => {
+                    log::warn!("[model_anim] sin model_assets para {asset_key}");
+                    return;
+                }
+            }
         };
 
         let clip_meta: Vec<ModelClipInfoEvent> = asset
@@ -114,10 +127,6 @@ impl State {
                 fps: c.fps,
             })
             .collect();
-
-        if clip_meta.is_empty() {
-            log::debug!("[model_anim] modelo sin clips embebidos (solo bind pose): {path}");
-        }
 
         let fallback_layer = self.fallback_layer;
 
@@ -173,11 +182,7 @@ impl State {
         });
         self.write_joint_matrices_all_parts(&binding, &asset, None, 0.0);
 
-        log::debug!(
-            "[model_anim] clips enlazados entidad {id}: {} clip(s), {} pieza(s) ({cache_key})",
-            asset.clips.len(),
-            asset.parts.len()
-        );
+        
     }
 
     /// Re-emite metadatos de clips ya enlazados (p. ej. tras cargar `.save` en el renderer).
@@ -242,7 +247,7 @@ impl State {
             Some(b) => b.clone(),
             None => return,
         };
-        let asset = match self.get_model_asset(&binding.asset_path) {
+        let asset = match self.get_model_asset_for_entity(&binding.asset_path, id) {
             Some(a) => a,
             None => return,
         };
@@ -264,7 +269,7 @@ impl State {
                 finished: false,
             },
         );
-        log::debug!("[model_anim] play '{name}' en entidad {id} (loop={loop_})");
+        
     }
 
     pub(crate) fn stop_model_clip(&mut self, id: EntityId) {
@@ -292,7 +297,7 @@ impl State {
                 Some(b) => b.clone(),
                 None => continue,
             };
-            let asset = match self.get_model_asset(&binding.asset_path) {
+            let asset = match self.get_model_asset_for_entity(&binding.asset_path, id) {
                 Some(a) => a,
                 None => continue,
             };
@@ -359,7 +364,13 @@ impl State {
             apply_clip_to_locals(clip, time_s, &mut local_transforms);
         }
 
-        let global = asset_joint_globals_with_clip(asset, clip, time_s);
+        let use_per_part_ibm =
+            asset.bind_pose_from_ibm && !asset.joint_gltf_nodes.is_empty();
+        let shared_global = if use_per_part_ibm {
+            None
+        } else {
+            Some(asset_joint_globals_with_clip(asset, clip, time_s))
+        };
 
         let norm = asset.mesh_normalize;
         let inv_norm = norm.inverse();
@@ -367,6 +378,15 @@ impl State {
         for (pi, &gpu_idx) in binding.part_gpu_indices.iter().enumerate() {
             let Some(part) = asset.parts.get(pi) else {
                 continue;
+            };
+            let global = if use_per_part_ibm {
+                gltf_bind_globals_from_ibm(
+                    &part.inverse_bind,
+                    &asset.bind_local[..joint_count],
+                    &local_transforms,
+                )
+            } else {
+                shared_global.as_ref().expect("shared_global").clone()
             };
             let inv_mesh = part.mesh_bind_world.inverse();
             let gltf_skin = !asset.joint_gltf_nodes.is_empty();

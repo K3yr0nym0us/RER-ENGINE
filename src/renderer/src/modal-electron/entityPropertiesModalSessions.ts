@@ -27,7 +27,6 @@ import { ModalConfirmBody } from './ModalConfirmBody'
 import { createEmptyEntityVisualGraph, saveEntityVisualGraph } from '../visualScripting/entityVisualScript'
 import { resolveSceneEntitiesForVisualScript } from '../visualScripting/resolveSceneEntities'
 import { buildPlayAnimationFrameCmd } from '../context/useContextEngine/hooks/applyPendingRestoreToEngine'
-import { pathsMatchForBurstRestore } from '../context/useContextEngine/hooks/sceneImportOverlay'
 import type { TransformSendCommand } from '../pages/EngineView/components/sidebar/PropertiesAccordion/TransformPanel'
 
 export const activeEntityPropertiesHandlerRef = { current: null as string | null }
@@ -78,11 +77,6 @@ export function buildEntityPropertiesState(engine: EngineContextValue): EntityPr
 			linkedBlueprintName: null,
 			scripts: [],
 			animationPlayingIds: [],
-			entityTextures: null,
-			entityTexturesModelPath: null,
-			entityTexturesLoaded: false,
-			activeGraphicsTextureTier: 'low',
-			showTexturesTab: false,
 		}
 	}
 
@@ -99,19 +93,6 @@ export function buildEntityPropertiesState(engine: EngineContextValue): EntityPr
 	const isCollider = entityMeta?.kind === 'collider'
 	const isExecutionArea = entityMeta?.kind === 'execution_area'
 	const isFromBlueprint = !!entityMeta?.blueprintId
-	const modelPath =
-		entityMeta?.visualModelPath
-		?? entityMeta?.path
-		?? selectedEntity.visualModelPath
-		?? selectedEntity.path
-		?? ''
-	const showTexturesTab =
-		(engine.projectType ?? '2D') === '3D'
-		&& !isCollider
-		&& !isExecutionArea
-		&& !isEditorCamera
-		&& /\.(glb|gltf)$/i.test(modelPath)
-		&& !modelPath.startsWith('[')
 	const linkedBlueprintName = isFromBlueprint
 		? (engine.blueprints.find((bp) => bp.id === entityMeta?.blueprintId)?.name ?? null)
 		: null
@@ -151,17 +132,6 @@ export function buildEntityPropertiesState(engine: EngineContextValue): EntityPr
 		animationPlayingIds: [...engine.animationPlaying.entries()]
 			.filter(([, playing]) => playing)
 			.map(([id]) => id),
-		entityTextures: entityMeta?.entityTextures ?? null,
-		entityTexturesModelPath: entityMeta?.entityTexturesModelPath ?? null,
-		entityTexturesLoaded:
-			entityMeta?.entityTextures != null
-			&& Boolean(entityMeta.entityTexturesModelPath)
-			&& (
-				entityMeta.entityTexturesModelPath === modelPath
-				|| pathsMatchForBurstRestore(entityMeta.entityTexturesModelPath, modelPath)
-			),
-		activeGraphicsTextureTier: engine.graphicsTextureTier ?? 'low',
-		showTexturesTab,
 	}
 }
 
@@ -214,14 +184,6 @@ export async function runEntityPropertiesAction(
 
 	switch (action.action) {
 		case 'close': {
-			const selectedId = engine.selectedEntity?.id
-			if (selectedId != null) {
-				engine.send({
-					cmd: 'set_entity_textures_preview_focus',
-					id: selectedId,
-					active: false,
-				})
-			}
 			session.deps.onCloseModal()
 			session.deps.closeModal()
 			return

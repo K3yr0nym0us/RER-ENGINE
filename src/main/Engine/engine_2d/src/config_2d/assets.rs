@@ -135,7 +135,7 @@ impl State {
             default_pivot_x: img_width as f32 * 0.5,
             default_pivot_y: img_height as f32,
         });
-        log::debug!("[insert_scenario_at] entidad {sc_id} creada {img_width}×{img_height}: {path}");
+        
         true
     }
 
@@ -197,7 +197,7 @@ impl State {
         self.background_entity = Some(bg_id);
 
         send_event(&EngineEvent::BackgroundLoaded { path: path.to_owned() });
-        log::debug!("[load_background] fondo cargado {img_w}×{img_h} escala {world_w}×{world_h}: {path}");
+        
     }
 
     /// Elimina el fondo actual del mundo 2D, si existe.
@@ -303,7 +303,7 @@ impl State {
             default_pivot_x: img_width as f32 * 0.5,
             default_pivot_y: img_height as f32,
         });
-        log::debug!("[insert_character_at] entidad {ch_id} creada {img_width}×{img_height}: {path}");
+        
         true
     }
 
@@ -367,7 +367,7 @@ impl State {
             ..Default::default()
         });
         self.world.insert(ghost_id, crate::ecs::NonSelectable);
-        log::debug!("[quick_build] entidad fantasma {ghost_id} creada desde {path} ({kind})");
+        
         Some(ghost_id)
     }
 }

@@ -11,14 +11,11 @@ use super::{SceneUniforms, State, DEPTH_FORMAT};
 impl State {
     fn editor_selection_flag(
         &self,
-        entity_id: crate::ecs::EntityId,
+        _entity_id: crate::ecs::EntityId,
         is_selected: bool,
         is_hovered: bool,
     ) -> f32 {
         if self.preview_playing {
-            return 0.0;
-        }
-        if self.entity_textures_preview_entity == Some(entity_id) && is_selected {
             return 0.0;
         }
         if is_selected {
@@ -700,7 +697,6 @@ impl State {
 
         if !self.preview_playing
             && !self.player_ui_edit_active
-            && self.entity_textures_preview_entity.is_none()
         {
             let skeleton_overlay =
                 crate::config_3d::skeleton_debug::build_selected_skeleton_overlay(
@@ -752,7 +748,6 @@ impl State {
 
         if !self.preview_playing
             && !self.player_ui_edit_active
-            && self.entity_textures_preview_entity.is_none()
         {
             if let Some(origin) = self.selection_center().filter(|_| self.pivot_edit_mode.is_none())
             {

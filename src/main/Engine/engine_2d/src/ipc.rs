@@ -338,21 +338,6 @@ pub enum EngineCommand {
     SetVsync { enabled: bool },
     /// Restore post-carga de entidad 2D (transform, física, animaciones, scripts).
     /// Sustituye ráfagas de IPC desde el front al aplicar `pendingRestores`.
-    #[allow(dead_code)]
-    ListEntityTextures { id: u32 },
-    #[allow(dead_code)]
-    SetEntityTextureLod {
-        id: u32,
-        material_index: u32,
-        tier: String,
-        image_index: u32,
-    },
-    #[allow(dead_code)]
-    SetEntityTexturePreviewTier { id: u32, tier: String },
-    #[allow(dead_code)]
-    SetGraphicsTextureTier { tier: String },
-    #[allow(dead_code)]
-    SetEntityTexturesPreviewFocus { id: u32, active: bool },
     ResendAllModelClips,
     ApplyEntityRestore {
         id: u32,

@@ -457,15 +457,11 @@ impl State {
         let cache_key = self.model_cache_key(path);
         let library_path = self.model_library_path_for(path);
         let mesh_cache_key = if is_play_character {
-            if let Err(e) = self.ensure_play_character_model_cached(path) {
-                log::debug!(
-                    "[replace_entity_model] sin caché jugador para {path}: {e}"
-                );
+            if self.ensure_play_character_model_cached(path).is_err() {
                 return false;
             }
             crate::config_3d::static_model_cache::play_character_cache_key(&cache_key)
-        } else if let Err(e) = self.ensure_static_model_cached(path) {
-            log::debug!("[replace_entity_model] sin caché reutilizable para {path}: {e}");
+        } else if self.ensure_static_model_cached(path).is_err() {
             return false;
         } else {
             cache_key.clone()
@@ -627,9 +623,13 @@ impl State {
                     part.local_bounds.0,
                     part.local_bounds.1,
                 ));
-            self.model_assets.remove(path);
+            self.model_assets.remove(&crate::config_3d::static_model_cache::model_asset_cache_key(
+                &self.model_cache_key(path),
+                Some(PLAY_CHARACTER_BODY_HEIGHT),
+            ));
+            self.model_assets.remove(&self.model_cache_key(path));
             self.try_bind_model_animations_with_gltf(id, path, gltf_file.as_deref());
-            if let Some(asset) = self.get_model_asset(path) {
+            if let Some(asset) = self.get_model_asset_for_entity(path, id) {
                 if is_fbx_model_path(path) {
                     self.play_character_mesh_forward_xz =
                         model_asset::resolve_fbx_play_character_forward_xz(&asset);
@@ -704,11 +704,19 @@ impl State {
         };
 
         // Forzar recarga del asset (orientación/normalize pueden cambiar entre versiones del motor).
-        self.model_assets.remove(path);
+        if is_play_character {
+            self.model_assets.remove(
+                &crate::config_3d::static_model_cache::model_asset_cache_key(
+                    &self.model_cache_key(path),
+                    Some(PLAY_CHARACTER_BODY_HEIGHT),
+                ),
+            );
+        }
+        self.model_assets.remove(&self.model_cache_key(path));
         self.try_bind_model_animations_with_gltf(id, path, gltf_file.as_deref());
 
         if is_play_character {
-            if let Some(asset) = self.get_model_asset(path) {
+            if let Some(asset) = self.get_model_asset_for_entity(path, id) {
                 if is_fbx_model_path(path) {
                     self.play_character_mesh_forward_xz =
                         model_asset::resolve_fbx_play_character_forward_xz(&asset);

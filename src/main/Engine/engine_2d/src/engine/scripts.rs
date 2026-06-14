@@ -206,7 +206,7 @@ impl State {
                         if let Some(saved) = self.anim_saved_transforms.get_mut(&id) {
                             saved.0.x += dx;
                             saved.0.y += dy;
-                            log::debug!("[script/translate] entidad {} saved_x={:.3} (+{:.3})", id, saved.0.x, dx);
+                            
                         } else {
                             log::warn!("[script/translate] entidad {} SIN entrada en anim_saved_transforms — translate no acumulado", id);
                         }
@@ -381,7 +381,6 @@ impl State {
                         log::warn!("[script] set_active_player_ui_by_name: {e}");
                     }
                 }
-                ScriptCmd::SetGraphicsTextureTier { .. } => {}
                 ScriptCmd::ClearActivePlayerUiScreen => {
                     self.clear_active_player_ui_screen();
                 }

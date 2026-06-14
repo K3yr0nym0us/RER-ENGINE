@@ -117,22 +117,7 @@ fn fbx_scene_world_bounds(scene: &ufbx::Scene) -> Option<([f32; 3], [f32; 3])> {
     any.then_some((min, max))
 }
 
-fn skinned_mesh_bounds(vertices: &[SkinnedVertex]) -> Option<([f32; 3], [f32; 3])> {
-    if vertices.is_empty() {
-        return None;
-    }
-    let mut min = [f32::MAX; 3];
-    let mut max = [f32::MIN; 3];
-    for v in vertices.iter() {
-        for i in 0..3 {
-            min[i] = min[i].min(v.position[i]);
-            max[i] = max[i].max(v.position[i]);
-        }
-    }
-    Some((min, max))
-}
-
-// ÔöÇÔöÇ FBX (ufbx) ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+// ── FBX (ufbx) ───────────────────────────────────────────────────────────────
 
 pub(crate) fn load_fbx_asset(path: &Path, normalize_to_extent: Option<f32>) -> Option<Arc<ModelAsset>> {
     let mut opts = ufbx::LoadOpts::default();

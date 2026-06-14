@@ -167,12 +167,7 @@ impl State {
                     if let Some(saved) = self.anim_saved_transforms.get_mut(&id) {
                         saved.0.x += dx;
                         saved.0.y += dy;
-                        log::debug!(
-                            "[script/translate] entidad {} saved_x={:.3} (+{:.3})",
-                            id,
-                            saved.0.x,
-                            dx
-                        );
+                        
                     } else {
                         log::warn!(
                             "[script/translate] entidad {} SIN entrada en anim_saved_transforms — translate no acumulado",
@@ -270,9 +265,7 @@ impl State {
                         }
                     }
                 }
-                ScriptCmd::Log { message } => {
-                    log::debug!("[script] {message}");
-                }
+                ScriptCmd::Log { .. } => {}
                 ScriptCmd::PlayControllerPressKey { key } => {
                     self.play_controller_script_input.insert(key);
                 }
@@ -306,15 +299,6 @@ impl State {
                 }
                 ScriptCmd::ClearActivePlayerUiScreen => {
                     self.clear_active_player_ui_screen();
-                }
-                ScriptCmd::SetGraphicsTextureTier { tier } => {
-                    if let Some(t) =
-                        crate::config_3d::entity_textures::TextureGraphicsTier::from_wire(&tier)
-                    {
-                        self.set_graphics_texture_tier(t);
-                    } else {
-                        log::warn!("[script] nivel gráfico desconocido: {tier}");
-                    }
                 }
                 ScriptCmd::ApplyKinematicGravity { .. }
                 | ScriptCmd::ApplyKinematicImpulse { .. }

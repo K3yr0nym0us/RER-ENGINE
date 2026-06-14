@@ -14,7 +14,6 @@ import {
 import { AppTooltip } from '@components'
 import { InlineNestedDialog } from '../../../../../modal-electron/InlineNestedDialog'
 import { TransformPanel, ScriptingPanelContent } from '.'
-import { EntityTexturesPanel } from './EntityTexturesPanel'
 import type { TransformSendCommand } from './TransformPanel'
 import { useTraslate } from '@hooks'
 import type {
@@ -23,7 +22,7 @@ import type {
 	EntityPropertiesState,
 } from '../../../../../modal-electron/entityPropertiesTypes'
 
-type PropertiesTab = 'transform' | 'animations' | 'textures' | 'scripting'
+type PropertiesTab = 'transform' | 'animations' | 'scripting'
 
 export interface EntityPropertiesModalContentProps {
 	state: EntityPropertiesState
@@ -49,10 +48,6 @@ export function EntityPropertiesModalContent({
 		linkedBlueprintName,
 		scripts,
 		animationPlayingIds,
-		entityTextures,
-		entityTexturesLoaded,
-		activeGraphicsTextureTier,
-		showTexturesTab,
 	} = state
 
 	const [entityNameDraft, setEntityNameDraft] = useState('')
@@ -110,36 +105,13 @@ export function EntityPropertiesModalContent({
 		if (!isCollider && !isExecutionArea && (is2D || hasEmbeddedModelClips)) {
 			list.push('animations')
 		}
-		if (showTexturesTab) list.push('textures')
 		if (!isCollider) list.push('scripting')
 		return list
-	}, [isCollider, isExecutionArea, is2D, hasEmbeddedModelClips, showTexturesTab])
+	}, [isCollider, isExecutionArea, is2D, hasEmbeddedModelClips])
 
 	useEffect(() => {
 		setActiveTab((prev) => (tabs.includes(prev) ? prev : (tabs[0] ?? 'transform')))
 	}, [selectedEntity?.id, tabs])
-
-	useEffect(() => {
-		if (!selectedEntity?.id) return
-		if (activeTab === 'textures') {
-			onAction({
-				action: 'send',
-				cmd: { cmd: 'set_entity_textures_preview_focus', id: selectedEntity.id, active: true },
-			})
-			onAction({ action: 'send', cmd: { cmd: 'list_entity_textures', id: selectedEntity.id } })
-		} else {
-			onAction({
-				action: 'send',
-				cmd: { cmd: 'set_entity_textures_preview_focus', id: selectedEntity.id, active: false },
-			})
-		}
-		return () => {
-			onAction({
-				action: 'send',
-				cmd: { cmd: 'set_entity_textures_preview_focus', id: selectedEntity.id, active: false },
-			})
-		}
-	}, [activeTab, selectedEntity?.id, onAction])
 
 	const openConfirm = (
 		message: React.ReactNode,
@@ -569,11 +541,6 @@ export function EntityPropertiesModalContent({
 							<Nav.Link eventKey="animations">{t('Animations')}</Nav.Link>
 						</Nav.Item>
 					)}
-					{tabs.includes('textures') && (
-						<Nav.Item>
-							<Nav.Link eventKey="textures">{t('Textures')}</Nav.Link>
-						</Nav.Item>
-					)}
 					{tabs.includes('scripting') && (
 						<Nav.Item>
 							<Nav.Link eventKey="scripting">{t('Program entity')}</Nav.Link>
@@ -665,17 +632,6 @@ export function EntityPropertiesModalContent({
 									})}
 								</div>
 							)}
-						</Tab.Pane>
-					)}
-					{tabs.includes('textures') && selectedEntity && (
-						<Tab.Pane eventKey="textures" className="py-1 px-1">
-							<EntityTexturesPanel
-								entityId={selectedEntity.id}
-								materials={entityTextures}
-								texturesLoaded={entityTexturesLoaded}
-								activeGraphicsTextureTier={activeGraphicsTextureTier}
-								onAction={onAction}
-							/>
 						</Tab.Pane>
 					)}
 					{tabs.includes('scripting') && (

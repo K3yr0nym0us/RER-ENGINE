@@ -87,7 +87,7 @@ pub(crate) fn build_entity_3d_snapshot(
             .unwrap_or_default();
         if list.is_empty() {
             if let Some(binding) = state.model_animation_bindings.get(&id) {
-                if let Some(asset) = state.get_model_asset(&binding.asset_path) {
+                if let Some(asset) = state.get_model_asset_for_entity(&binding.asset_path, id) {
                     let default_name = state.model_clip_defaults.get(&id);
                     list = asset
                         .clips
@@ -150,11 +150,6 @@ pub(crate) fn build_entity_3d_snapshot(
         None
     };
 
-    let texture_lod = state
-        .entity_texture_lod
-        .get(&id)
-        .and_then(crate::config_3d::entity_textures::entity_texture_lod_to_snapshot);
-
     let model = entity_model_for(meta);
     let model_id = state.imported_model_registry.model_id_for_path(&model);
 
@@ -180,7 +175,7 @@ pub(crate) fn build_entity_3d_snapshot(
         scripts,
         blueprint_id: state.entity_blueprint_ids.get(&id).cloned(),
         controls,
-        texture_lod,
+        texture_lod: None,
     }
 }
 

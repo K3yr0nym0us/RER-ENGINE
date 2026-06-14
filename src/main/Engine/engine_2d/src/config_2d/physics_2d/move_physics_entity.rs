@@ -173,11 +173,7 @@ impl PhysicsWorld2D {
                     let dot    = vel.dot(&wall_normal);
                     let slide  = vel - dot * wall_normal;
 
-                    log::debug!(
-                        "[move_entity] entidad {} deslizando en pared \
-                         (normal=({:.2},{:.2}), slide=({:.2},{:.2}))",
-                        entity, wall_normal.x, wall_normal.y, slide.x, slide.y
-                    );
+                    
 
                     let vy = if controls_y { slide.y } else { current_vy };
                     (slide.x, vy)
@@ -185,10 +181,7 @@ impl PhysicsWorld2D {
                     // Obstáculo a toi fracción del frame — avanzar hasta el borde.
                     // effective_speed = toi * speed (sin divisiones frágiles por dt).
                     let safe_speed = toi * speed;
-                    log::debug!(
-                        "[move_entity] entidad {} vel limitada {:.2} → {:.2} (toi={toi:.3})",
-                        entity, speed, safe_speed
-                    );
+                    
                     let vy = if controls_y { ny * safe_speed } else { current_vy };
                     (nx * safe_speed, vy)
                 }

@@ -24,5 +24,4 @@ pub enum ScriptCmd {
     SetActivePlayerUiScreen { screen_id: String },
     ClearActivePlayerUiScreen,
     SetActivePlayerUiScreenByName { name: String },
-    SetGraphicsTextureTier { tier: String },
 }

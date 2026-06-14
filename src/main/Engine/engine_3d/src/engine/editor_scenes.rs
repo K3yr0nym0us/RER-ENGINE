@@ -169,9 +169,7 @@ impl State {
         if let Some(rec) = self.editor_scenes.records.get_mut(&active_id) {
             rec.committed = Some(scene);
         }
-        log::debug!(
-            "[editor_scenes] committed sincronizado para escena activa {active_id} («{name}»)"
-        );
+        
     }
 
     pub(crate) fn handle_create_editor_scene(&mut self, name: &str) {
@@ -238,10 +236,7 @@ impl State {
         let current_id = self.editor_scenes.active_scene_id;
 
         if !skip_dirty_check && !self.undo_stack.is_empty() {
-            log::debug!(
-                "[editor_scenes] switch bloqueado: escena {current_id} tiene {} acción(es) en undo",
-                self.undo_stack.len()
-            );
+            
             send_event(&EngineEvent::EditorSceneSwitchBlocked {
                 reason: "unsaved_changes".to_string(),
                 active_scene_id: current_id,

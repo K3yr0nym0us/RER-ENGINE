@@ -316,7 +316,6 @@ struct PendingRestore {
     blueprint_id: Option<String>,
     entity_category: Option<String>,
     visual_model_path: Option<String>,
-    texture_lod: Option<crate::ipc::SaveEntityTextureLodSnapshot>,
 }
 
 fn file_size_label(path: &Path) -> String {
@@ -877,7 +876,6 @@ fn build_generic_pending_restore(
         blueprint_id: entity.blueprint_id.clone(),
         entity_category: entity_library_category(&entity.category),
         visual_model_path: visual,
-        texture_lod: entity.texture_lod.clone(),
     }
 }
 
@@ -910,7 +908,6 @@ fn build_player_pending_restore_from_entity(entity: &SavedEntity3D) -> PendingRe
         blueprint_id: entity.blueprint_id.clone(),
         entity_category: None,
         visual_model_path: visual,
-        texture_lod: entity.texture_lod.clone(),
     }
 }
 
@@ -1015,10 +1012,6 @@ fn apply_full_entity_restore(
 
     state.entity_colision.insert(id, pending.colision);
     state.reconcile_entity_physics_with_mesh(id);
-
-    if let Some(lod) = pending.texture_lod.as_ref() {
-        crate::config_3d::entity_textures::apply_entity_texture_lod_snapshot(state, id, lod);
-    }
 }
 
 fn ensure_model_cached(state: &mut State, path: &str) -> bool {
@@ -1060,12 +1053,7 @@ fn collect_scene_required_model_ids(
 fn log_load_step(total: Instant, step: &mut Instant, message: &str) {
     let step_ms = step.elapsed().as_millis() as u64;
     let total_ms = total.elapsed().as_millis() as u64;
-    log::debug!(
-        "[load-pack] {} (+{} ms, total {} ms)",
-        message,
-        step_ms,
-        total_ms
-    );
+    
     send_load_progress(message, Some(step_ms), Some(total_ms));
     *step = Instant::now();
 }
@@ -1126,7 +1114,7 @@ fn restore_player_from_manifest(
     if let Some(ref model_id) = cache_key {
         match state.install_play_character_visual_from_path(id, model_id) {
             Ok(asset_key) => {
-                log::debug!("[restore] mesh jugador desde manifest: {model_id}");
+                
                 state.emit_entity_model_replaced_for_play_character(id, &asset_key);
             }
             Err(e) => log::error!("[restore] mesh jugador: {e}"),
@@ -1220,14 +1208,6 @@ fn restore_player_from_manifest(
         path: char_path,
     });
     state.emit_play_character_view_changed(true);
-
-    let feet = state.play_character_feet_position();
-    log::debug!(
-        "Jugador restaurado desde manifest en [{:.2}, {:.2}, {:.2}]",
-        feet.x,
-        feet.y,
-        feet.z
-    );
 }
 
 fn spawn_entity_after_load_model_single(
@@ -1359,7 +1339,7 @@ fn apply_loaded_proyect_3d_with_scene(
         view.sceneName,
         view.entities.len()
     );
-    log::debug!("{open_msg}");
+    
     send_load_progress(&open_msg, None, None);
     if forced_scene.is_none() && state.mount_save_on_empty_world {
         state.mount_save_on_empty_world = false;
@@ -1483,12 +1463,7 @@ fn apply_loaded_proyect_3d_with_scene(
             .chain(view.player.iter())
         {
             if let Ok(model_id) = entity_model_cache_lookup(state, entity) {
-                log::debug!(
-                    "[load-pack] alias «{}» {} → {}",
-                    entity.name,
-                    entity.model,
-                    model_id
-                );
+                
                 state
                     .imported_model_registry
                     .link_imported_model_aliases(&model_id, &entity.model);
@@ -1522,13 +1497,7 @@ fn apply_loaded_proyect_3d_with_scene(
                 );
             }
             _ if is_collider_path(&entity.model) => {
-                log::debug!(
-                    "Colocando colisionador «{}» en [{:.1}, {:.1}, {:.1}]",
-                    entity.name,
-                    entity.position[0],
-                    entity.position[1],
-                    entity.position[2]
-                );
+                
                 if let Some(id) = state.restore_collider_plane_from_save(
                     &entity.name,
                     entity.position,
@@ -1540,13 +1509,7 @@ fn apply_loaded_proyect_3d_with_scene(
                 }
             }
             _ if is_execution_area_path(&entity.model) => {
-                log::debug!(
-                    "Colocando trigger «{}» en [{:.1}, {:.1}, {:.1}]",
-                    entity.name,
-                    entity.position[0],
-                    entity.position[1],
-                    entity.position[2]
-                );
+                
                 if let Some(id) = state.restore_trigger_plane_from_save(
                     &entity.name,
                     entity.position,
@@ -1558,13 +1521,7 @@ fn apply_loaded_proyect_3d_with_scene(
                 }
             }
             _ if is_editor_box_path(&entity.model) => {
-                log::debug!(
-                    "Colocando bloque «{}» en [{:.1}, {:.1}, {:.1}]",
-                    entity.name,
-                    entity.position[0],
-                    entity.position[1],
-                    entity.position[2]
-                );
+                
                 state.spawn_editor_box(&entity.name, entity.position, entity.scale);
                 if let Some(id) = state.scenario_entities.last().copied() {
                     apply_full_entity_restore(state, id, &pending, "[EditorBox]", true, false);
@@ -1647,7 +1604,7 @@ fn apply_loaded_proyect_3d_with_scene(
     );
 
     if burst_load_planned {
-        log::debug!("Instanciando modelos 3D (carga por lotes)…");
+        
         state.poll_and_advance_model_preloads(MODEL_GPU_PARTS_DURING_SAVE_LOAD);
 
         let queued_ids: Vec<String> = model_load_queue.iter().map(|(p, _)| p.clone()).collect();

@@ -226,7 +226,7 @@ impl State {
                 t.rotation = Quat::from_rotation_y(new_yaw);
             }
         }
-        log::debug!("[plane_tool] yaw={new_yaw:.2} rad");
+        
     }
 
     pub(crate) fn clear_plane_tool_rotate_held(&mut self) {

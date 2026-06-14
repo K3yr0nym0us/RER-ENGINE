@@ -115,7 +115,7 @@ pub(crate) fn build_entity_skeleton_overlay(
     let Some(binding) = state.model_animation_bindings.get(&entity_id) else {
         return gizmo::build_from_vertices(device, &[]);
     };
-    let Some(asset) = state.get_model_asset(&binding.asset_path) else {
+    let Some(asset) = state.get_model_asset_for_entity(&binding.asset_path, entity_id) else {
         return gizmo::build_from_vertices(device, &[]);
     };
     let Some(t) = state.world.get::<Transform>(entity_id) else {

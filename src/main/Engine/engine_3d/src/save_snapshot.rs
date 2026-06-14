@@ -63,11 +63,7 @@ impl State {
                     let model_id = entry.model_id.as_ref()?;
                     let reg = self.imported_model_registry.get(model_id)?;
                     if reg.state != AssetState::Ready {
-                        log::debug!(
-                            "[save] biblioteca omitida (import no listo): {} ({})",
-                            entry.name,
-                            model_id
-                        );
+                        
                         return None;
                     }
                     if !reg.rerasset_path.is_file() {

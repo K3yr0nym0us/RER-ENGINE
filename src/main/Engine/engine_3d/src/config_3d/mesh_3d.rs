@@ -692,21 +692,6 @@ pub(crate) fn load_gltf_cpu_from_file(
 ) -> Result<Vec<CpuModelMeshPart>, String> {
     use glam::Mat4;
 
-    let label = std::path::Path::new(&file.path)
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or(&file.path);
-    let variant = match normalize_to_extent {
-        None => "editor",
-        Some(h) if (h - crate::config_3d::character_anchor::PLAY_CHARACTER_BODY_HEIGHT).abs()
-            < 0.01 =>
-        {
-            "play_character"
-        }
-        Some(_) => "normalized",
-    };
-    log::debug!("[LOAD_GLTF_CPU] {label} variant={variant}");
-
     let doc = &file.doc;
     let buffers = &file.buffers;
     let material_albedos = &file.material_smallest_albedos;

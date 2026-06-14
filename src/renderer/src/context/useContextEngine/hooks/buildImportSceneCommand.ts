@@ -164,12 +164,7 @@ export function syncPlayerEntityMetaFromPlayer(
 	const next = entity3dToMeta(player);
 	refs.entityMetaRef.current[playerId] = {
 		...next,
-		...(prev?.entityTextures?.length
-			? {
-				entityTextures: prev.entityTextures,
-				entityTexturesModelPath: prev.entityTexturesModelPath,
-			}
-			: {}),
+		...(prev?.visualModelPath ? { visualModelPath: prev.visualModelPath } : {}),
 	};
 }
 

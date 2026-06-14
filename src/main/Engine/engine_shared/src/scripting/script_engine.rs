@@ -52,15 +52,6 @@ impl ScriptEngine {
         self.profile
     }
 
-    pub fn sync_graphics_texture_tier_readback(&self, tier: &str) {
-        if self.profile != ScriptEngineProfile::Engine3d {
-            return;
-        }
-        if let Ok(mut guard) = self.api_ctx.graphics_texture_tier.lock() {
-            *guard = tier.to_string();
-        }
-    }
-
     pub fn attach_script(&mut self, entity_id: u32, path: &str, source: &str) -> ScriptResult<()> {
         let wrapped = wrap_user_source(self.profile, source);
         let ast = self
@@ -76,7 +67,7 @@ impl ScriptEngine {
                 ast,
                 started: false,
             });
-        log::debug!("[scripting] script Rhai '{path}' adjuntado a entidad {entity_id}");
+        
         Ok(())
     }
 
@@ -93,7 +84,7 @@ impl ScriptEngine {
                     None,
                 );
             }
-            log::debug!("[scripting] scripts de entidad {entity_id} removidos");
+            
         }
     }
 
@@ -133,11 +124,7 @@ impl ScriptEngine {
         if anim.is_empty() {
             return;
         }
-        log::debug!(
-            "[scripting] {} script(s) de animación removidos de entidad {}",
-            anim.len(),
-            entity_id
-        );
+        
     }
 
     pub fn entity_ids(&self) -> Vec<u32> {
@@ -152,7 +139,7 @@ impl ScriptEngine {
 
     pub fn clear_control_script_cache(&mut self) {
         self.control_script_cache.clear();
-        log::debug!("[scripting] caché de control scripts limpiada");
+        
     }
 
     pub fn load_scene_script(&mut self, scene_id: u32, source: &str) -> ScriptResult<()> {

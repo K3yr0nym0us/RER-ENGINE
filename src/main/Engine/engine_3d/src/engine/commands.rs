@@ -318,7 +318,7 @@ impl State {
             }
             EngineCommand::SetPlaneToolRotateHeld { .. } => {
                 // Obsoleto: rotación Q/E solo vía polling OS en apply_plane_tool_held_rotation.
-                log::debug!("[plane_rot] IPC set_rotate_held ignorado (detección solo en motor)");
+                
             }
             EngineCommand::ReplaceEntityModel { id, path } => {
                 self.replace_entity_model(id, &path);
@@ -516,9 +516,7 @@ impl State {
                         );
                     }
                     let rot_apply = if in_play_mode && rot_quat.is_some() {
-                        log::debug!(
-                            "set_transform: rotación del jugador ignorada en preview/play"
-                        );
+                        
                         None
                     } else {
                         rot_quat
@@ -1101,12 +1099,7 @@ impl State {
                 } else {
                     self.physics.remove_entity_body(id);
                 }
-                log::debug!(
-                    "Física {}: entidad {} tipo='{}'",
-                    if enabled { "activada" } else { "desactivada" },
-                    id,
-                    body_type
-                );
+                
                 send_event(&EngineEvent::PhysicsChanged {
                     entity_id: id,
                     enabled,
@@ -1125,11 +1118,7 @@ impl State {
                 } else if self.play_character_entity != Some(id) {
                     self.physics.remove_entity_body(id);
                 }
-                log::debug!(
-                    "Colisión de malla {} en entidad {}",
-                    if colision { "activada" } else { "desactivada" },
-                    id
-                );
+                
             }
             EngineCommand::RegisterBlueprint { blueprint } => {
                 if let Some(id) = blueprint.blueprint_id.clone().filter(|s| !s.trim().is_empty())
@@ -1332,54 +1321,6 @@ impl State {
             EngineCommand::ClearEditorUndoRedo => {
                 self.clear_editor_undo_redo();
             }
-            EngineCommand::ListEntityTextures { id } => {
-                self.send_entity_textures_ready(id);
-            }
-            EngineCommand::SetEntityTextureLod {
-                id,
-                material_index,
-                tier,
-                image_index,
-            } => {
-                let Some(t) =
-                    crate::config_3d::entity_textures::TextureGraphicsTier::from_wire(&tier)
-                else {
-                    send_event(&EngineEvent::Error {
-                        message: format!("Nivel gráfico desconocido: {tier}"),
-                    });
-                    return;
-                };
-                self.set_entity_texture_lod(id, material_index, t, image_index);
-            }
-            EngineCommand::SetEntityTexturePreviewTier { id, tier } => {
-                let Some(t) =
-                    crate::config_3d::entity_textures::TextureGraphicsTier::from_wire(&tier)
-                else {
-                    send_event(&EngineEvent::Error {
-                        message: format!("Nivel gráfico desconocido: {tier}"),
-                    });
-                    return;
-                };
-                self.set_entity_texture_preview_tier(id, t);
-            }
-            EngineCommand::SetGraphicsTextureTier { tier } => {
-                let Some(t) =
-                    crate::config_3d::entity_textures::TextureGraphicsTier::from_wire(&tier)
-                else {
-                    send_event(&EngineEvent::Error {
-                        message: format!("Nivel gráfico desconocido: {tier}"),
-                    });
-                    return;
-                };
-                self.set_graphics_texture_tier(t);
-            }
-            EngineCommand::SetEntityTexturesPreviewFocus { id, active } => {
-                if active {
-                    self.entity_textures_preview_entity = Some(id);
-                } else if self.entity_textures_preview_entity == Some(id) {
-                    self.entity_textures_preview_entity = None;
-                }
-            }
             EngineCommand::ResendAllModelClips => {
                 self.resend_all_model_clips_ready();
             }
@@ -1436,14 +1377,7 @@ impl State {
                 is_cancelable,
                 ..
             } => {
-                log::debug!(
-                    "[IPC] SetAnimation: entity_id={}, name='{}', frames={}, audio={:?}, scripts={}",
-                    id,
-                    name,
-                    frames.len(),
-                    audio_path,
-                    scripts.len()
-                );
+                
 
                 let fallback_logical_w = logical_w.unwrap_or(64).max(1);
                 let fallback_logical_h = logical_h.unwrap_or(64).max(1);
@@ -1503,13 +1437,7 @@ impl State {
                     let channels = decoder.channels();
                     let sample_rate = decoder.sample_rate();
                     let samples: Vec<i16> = decoder.collect();
-                    log::debug!(
-                        "[SetAnimation] audio decodificado: {} ({} muestras, {}ch, {}Hz)",
-                        p,
-                        samples.len(),
-                        channels,
-                        sample_rate
-                    );
+                    
                     Some(Arc::new(DecodedAudio {
                         samples,
                         channels,
@@ -1553,11 +1481,7 @@ impl State {
                     logical_w: resolved_logical_w,
                     logical_h: resolved_logical_h,
                 });
-                log::debug!(
-                    "[IPC] Animación '{}' guardada y pre-cargada para entidad {}",
-                    name,
-                    id
-                );
+                
             }
             EngineCommand::RemoveAnimation { id, name } => {
                 log::info!("[IPC] RemoveAnimation: entity_id={}, name='{}'", id, name);
@@ -1573,7 +1497,7 @@ impl State {
 
                 if let Some(entity_anims) = self.animations.get_mut(&id) {
                     entity_anims.remove(&name);
-                    log::debug!("[animation] Eliminada '{}' de entidad {}", name, id);
+                    
 
                     if entity_anims.is_empty() {
                         self.animations.remove(&id);
@@ -1590,15 +1514,11 @@ impl State {
                         match new_default {
                             Some(new_name) => {
                                 self.default_animation_by_entity.insert(id, new_name.clone());
-                                log::debug!(
-                                    "[animation] Predeterminada cambiada a '{}' para entidad {}",
-                                    new_name,
-                                    id
-                                );
+                                
                             }
                             None => {
                                 self.default_animation_by_entity.remove(&id);
-                                log::debug!("[animation] Sin animaciones restantes para entidad {}", id);
+                                
                             }
                         }
                     }
@@ -1607,7 +1527,7 @@ impl State {
             EngineCommand::SetDefaultAnimation { id, name } => {
                 if self.model_animation_bindings.contains_key(&id) {
                     self.set_default_model_clip(id, &name);
-                    log::debug!("[model_anim] predeterminada entidad {} => {}", id, name);
+                    
                     return;
                 }
                 let exists = self
@@ -1617,7 +1537,7 @@ impl State {
                     .unwrap_or(false);
                 if exists {
                     self.default_animation_by_entity.insert(id, name.clone());
-                    log::debug!("[animation] predeterminada de entidad {} => {}", id, name);
+                    
                 } else {
                     log::warn!(
                         "[animation] set_default_animation ignorado: '{}' no existe en entidad {}",
@@ -1627,7 +1547,7 @@ impl State {
                 }
             }
             EngineCommand::PlayAnimation { id, name, loop_ } => {
-                log::debug!("[IPC] PlayAnimation: entity_id={}, name='{}'", id, name);
+                
 
                 if self.model_animation_bindings.contains_key(&id) {
                     self.play_model_clip(id, &name, loop_);
@@ -1644,12 +1564,7 @@ impl State {
                             .map(|a| a.is_cancelable)
                             .unwrap_or(true);
                         if !is_cancelable {
-                            log::debug!(
-                                "[animation] PlayAnimation '{}' bloqueado: '{}' no es cancelable en entidad {}",
-                                name,
-                                current_name,
-                                id
-                            );
+                            
                             return;
                         }
                     }
@@ -1708,14 +1623,6 @@ impl State {
                                 );
                             }
                         }
-                        if !anim.scripts.is_empty() {
-                            log::debug!(
-                                "[scripting] {} script(s) de animación '{}' cargados para entidad {}",
-                                anim.scripts.len(),
-                                name,
-                                id
-                            );
-                        }
 
                         self.active_animations.insert(
                             id,
@@ -1727,13 +1634,7 @@ impl State {
                                 finished: false,
                             },
                         );
-                        log::debug!(
-                            "[animation] Iniciada '{}' para entidad {} (fps={}, frames={})",
-                            name,
-                            id,
-                            anim.fps,
-                            anim.frames.len()
-                        );
+                        
                     }
                 }
             }
@@ -1837,21 +1738,13 @@ impl State {
                                 let img = img.to_rgba8();
                                 let (w, h) = img.dimensions();
                                 self.sprite_store.insert(path.clone(), (name.clone(), w, h));
-                                let path_for_log = path.clone();
-                                let name_for_log = name.clone();
                                 send_event(&EngineEvent::SpriteLoaded {
                                     path,
                                     name,
                                     width: w,
                                     height: h,
                                 });
-                                log::debug!(
-                                    "[sprite] cargado: {} ({}) ({}x{})",
-                                    path_for_log,
-                                    name_for_log,
-                                    w,
-                                    h
-                                );
+                                
                             }
                             Err(e) => {
                                 log::error!("[sprite] error decodificando {}: {}", path, e);
@@ -1898,7 +1791,7 @@ impl State {
                     path: path.clone(),
                     name: name.clone(),
                 });
-                log::debug!("[sound] registrado: {} ({})", path, name);
+                
             }
             EngineCommand::RemoveSound { path } => {
                 if self.sound_store.remove(&path).is_some() {
@@ -1929,7 +1822,7 @@ impl State {
                             path: path.clone(),
                             name: name.clone(),
                         });
-                        log::debug!("[font] registrada: {} ({})", path, name);
+                        
                     }
                     Err(e) => {
                         log::error!("[font] error cargando {}: {}", path, e);
@@ -1977,11 +1870,7 @@ impl State {
                             width: width_px,
                             height: height_px,
                         });
-                        log::debug!(
-                            "[hud-image] registrada: {} ({}) {width_px}x{height_px}",
-                            path,
-                            name
-                        );
+                        
                     }
                     Err(e) => {
                         log::error!("[hud-image] error cargando {}: {}", path, e);
@@ -2020,7 +1909,7 @@ impl State {
                     path: path.clone(),
                     name: name.clone(),
                 });
-                log::debug!("[background] registrado: {} ({})", path, name);
+                
             }
             EngineCommand::RemoveBackgroundAsset { path } => {
                 if self.background_store.remove(&path).is_some() {

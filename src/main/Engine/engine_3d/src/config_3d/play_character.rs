@@ -287,6 +287,13 @@ impl State {
         model_path: &str,
     ) -> Option<([f32; 3], [f32; 3])> {
         let key = self.model_cache_key(model_path);
+        let play_asset_key =
+            crate::config_3d::static_model_cache::play_character_cache_key(&key);
+        if let Some(asset) = self.model_assets.get(&play_asset_key) {
+            if let Some(b) = model_asset::model_asset_play_character_visual_bounds(asset) {
+                return Some(b);
+            }
+        }
         if let Some(asset) = self.model_assets.get(&key) {
             if let Some(b) = model_asset::model_asset_play_character_visual_bounds(asset) {
                 return Some(b);
@@ -530,8 +537,10 @@ impl State {
                 part.local_bounds.1,
             ));
 
-        self.try_bind_model_animations_with_gltf(id, &cache_key, None);
-        if let Some(asset) = self.model_assets.get(&cache_key) {
+        self.try_bind_model_animations_with_gltf(id, path, None);
+        let play_asset_key =
+            play_character_cache_key(&cache_key);
+        if let Some(asset) = self.model_assets.get(&play_asset_key) {
             if is_fbx_model_path(&source_for_ext) {
                 self.play_character_mesh_forward_xz =
                     model_asset::resolve_fbx_play_character_forward_xz(asset);

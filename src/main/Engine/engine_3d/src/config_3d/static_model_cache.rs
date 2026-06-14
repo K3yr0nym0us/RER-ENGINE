@@ -82,6 +82,18 @@ pub(crate) fn play_character_cache_key(canonical_path: &str) -> String {
     format!("{canonical_path}::play_character")
 }
 
+/// Clave de `model_assets` (skinning/clips); distinta de la malla estática del editor.
+pub(crate) fn model_asset_cache_key(canonical_path: &str, normalize: Option<f32>) -> String {
+    use crate::config_3d::character_anchor::PLAY_CHARACTER_BODY_HEIGHT;
+    match normalize {
+        None => canonical_path.to_string(),
+        Some(h) if (h - PLAY_CHARACTER_BODY_HEIGHT).abs() < 0.05 => {
+            play_character_cache_key(canonical_path)
+        }
+        Some(h) => format!("{canonical_path}::norm_{h:.3}"),
+    }
+}
+
 /// `load_model` recibido mientras la precarga GPU del path sigue en curso.
 pub(crate) struct PendingLoadModel {
     pub path: String,
@@ -167,7 +179,7 @@ impl State {
         source_key
     }
 
-    /// `model_assets` se indexa por [`Self::model_cache_key`], no por la ruta visual del proyecto.
+    /// `model_assets` se indexa por [`Self::model_asset_cache_key`], no por la ruta visual del proyecto.
     pub(crate) fn get_model_asset(
         &self,
         path: &str,
@@ -175,6 +187,21 @@ impl State {
         self.model_assets
             .get(&self.model_cache_key(path))
             .cloned()
+    }
+
+    pub(crate) fn get_model_asset_for_entity(
+        &self,
+        path: &str,
+        entity_id: crate::ecs::EntityId,
+    ) -> Option<std::sync::Arc<crate::config_3d::model_asset::ModelAsset>> {
+        let base = self.model_cache_key(path);
+        let normalize = if self.play_character_entity == Some(entity_id) {
+            Some(crate::config_3d::character_anchor::PLAY_CHARACTER_BODY_HEIGHT)
+        } else {
+            None
+        };
+        let key = model_asset_cache_key(&base, normalize);
+        self.model_assets.get(&key).cloned()
     }
 
     /// Nombre corto del recurso (alias del proyecto) o nombre de archivo.
@@ -369,9 +396,7 @@ impl State {
         }
         let entry = self.imported_model_registry.get(model_id)?;
         if entry.state != rer_engine_shared::assets::AssetState::Ready {
-            log::debug!(
-                "[RERASSET_TEX] {tex_cache_key} — modelo no Ready"
-            );
+            
             return None;
         }
         let loaded = load_rerasset_cpu(&entry.rerasset_path).ok()?;
@@ -384,9 +409,7 @@ impl State {
             .iter()
             .find(|p| p.material_index == material_index)
         else {
-            log::debug!(
-                "[RERASSET_TEX] {tex_cache_key} — material no encontrado en editor_parts"
-            );
+            
             return None;
         };
         let tex = std::sync::Arc::clone(&tex_part.texture);
@@ -493,7 +516,7 @@ impl State {
             })
             .collect();
         self.static_model_cache.insert(play_key, cached);
-        log::debug!("variante jugador en GPU: {canonical_path}");
+        
     }
 
     fn finalize_gpu_model_preload(&mut self, pending: PendingGpuModelPreload) {
@@ -506,15 +529,9 @@ impl State {
 
     fn finalize_play_character_warm_on_gpu(&mut self, pending: PendingGpuModelPreload) {
         let play_key = pending.path;
-        if pending.uploaded.is_empty() {
-            log::debug!("warm jugador vacío: {play_key}");
-        } else {
+        if !pending.uploaded.is_empty() {
             self.static_model_cache
                 .insert(play_key.clone(), pending.uploaded);
-            log::debug!(
-                "variante jugador en GPU: {}",
-                pending.defer_flush_path.as_deref().unwrap_or(&play_key)
-            );
         }
         if let Some(flush_path) = pending.defer_flush_path {
             self.flush_pending_load_models_for_path(&flush_path);
@@ -556,7 +573,7 @@ impl State {
                 .map(|p| p.len())
                 .unwrap_or(0)
         );
-        log::debug!("{gpu_msg}");
+        
         send_load_progress(&gpu_msg, None, None);
         if pending.warm_play_character {
             if let Some(play_parts) = pending.play_character_parts {

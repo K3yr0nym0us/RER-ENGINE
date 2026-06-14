@@ -139,10 +139,7 @@ impl State {
             } else {
                 self.show_first_frame_of_animation(entity_id, &animation_name);
             }
-            log::debug!(
-                "[animation] Enviando AnimationFinished para entidad {}",
-                entity_id
-            );
+            
             send_event(&EngineEvent::AnimationFinished { entity_id });
         }
 

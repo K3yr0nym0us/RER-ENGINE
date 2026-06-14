@@ -397,7 +397,7 @@ impl State {
                     tight_bounds,
                 };
                 self.anim_texture_cache.insert(cache_key, cache_entry);
-                log::debug!("[play_animation_frame] frame cargado al atlas (cache miss): {path}");
+                
                 cache_entry
             };
 
@@ -564,7 +564,7 @@ impl State {
             // tight_bounds solo se calcula aquí (preload/edición), nunca en hot path.
             tight_bounds: compute_tight_bounds(&processed),
         });
-        log::debug!("[preload] frame pre-empacado en atlas: {path}");
+        
     }
 
     /// Restaura el sprite original de una entidad después de una animación.
@@ -878,8 +878,6 @@ pub(crate) fn restore_animation_frame(&mut self, id: u32) {
         send_event(&EngineEvent::ColliderCreated { id: entity, points: *pts });
         if track_undo {
             log::info!("[tool] colisionador creado: entidad {entity} en {:?}", pts);
-        } else {
-            log::debug!("[import] colisionador restaurado: entidad {entity}");
         }
         Some(entity)
     }
@@ -921,8 +919,6 @@ pub(crate) fn restore_animation_frame(&mut self, id: u32) {
         send_event(&EngineEvent::ExecutionAreaCreated { id: entity, points: *pts });
         if track_undo {
             log::info!("[tool] área de ejecución creada: entidad {entity} en {:?}", pts);
-        } else {
-            log::debug!("[import] área de ejecución restaurada: entidad {entity}");
         }
         Some(entity)
     }
@@ -965,7 +961,7 @@ pub(crate) fn restore_animation_frame(&mut self, id: u32) {
                     continue;
                 }
 
-                log::debug!("[trigger] entrada detectada: trigger={} actor={}", trigger_id, actor_id);
+                
                 let has_attached_script = self.script_engine.entity_has_scripts(trigger_id);
                 crate::ipc::send_event(&crate::ipc::EngineEvent::TriggerEntered {
                     trigger_id,
@@ -994,7 +990,7 @@ pub(crate) fn restore_animation_frame(&mut self, id: u32) {
             .cloned()
             .collect();
         for (trigger_id, actor_id) in exited {
-            log::debug!("[trigger] salida detectada: trigger={} actor={}", trigger_id, actor_id);
+            
             crate::ipc::send_event(&crate::ipc::EngineEvent::TriggerExited { trigger_id, actor_id });
         }
 

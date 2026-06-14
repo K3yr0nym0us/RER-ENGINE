@@ -70,11 +70,6 @@ impl State {
     pub(crate) fn reset_runtime_scene_3d(&mut self) {
         self.stop_audio_internal();
         self.physics = PhysicsWorld::new();
-        self.entity_texture_lod.clear();
-        self.graphics_texture_tier =
-            crate::config_3d::entity_textures::TextureGraphicsTier::Low;
-        self.entity_textures_preview_entity = None;
-        self.glb_texture_catalog_cache.clear();
         self.world.clear();
         self.meshes.clear();
         self.tex_layers.clear();

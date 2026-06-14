@@ -258,9 +258,6 @@ impl PhysicsWorld2D {
             let col_handle = self.colliders.insert_with_parent(col, body_handle, &mut self.bodies);
             self.entity_colliders.insert(entity, col_handle);
             self.collider_shape_set.insert(entity);
-            if self.debug_mode {
-                log::debug!("[collider] entidad {entity} shape inicial: ({hx:.4},{hy:.4}) offset=({:.4},{:.4})", collider_offset[0], collider_offset[1]);
-            }
         } else if let Some(&col_handle) = self.entity_colliders.get(&entity) {
             // Ya tiene collider — solo mover el offset sin tocar la forma.
             if let Some(collider) = self.colliders.get_mut(col_handle) {

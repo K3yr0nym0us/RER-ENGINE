@@ -60,7 +60,7 @@ impl State {
             self.import_scene_entity(ent);
         }
 
-        log::debug!("[import_scene] escena importada: {entity_count} entidades");
+        
         send_event(&EngineEvent::SceneImported {
             entity_count: entity_count as u32,
         });

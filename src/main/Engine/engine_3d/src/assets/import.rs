@@ -135,12 +135,7 @@ impl State {
                         anim_asset.as_deref(),
                     );
                     bake_to_rerasset(&rerasset_path_thread, &input)?;
-                    if let Some(mirrored) = super::registry::mirror_source_file(&path_buf) {
-                        log::debug!(
-                            "[RERASSET_IMPORT] fuente espejada: {}",
-                            mirrored.display()
-                        );
-                    }
+                    let _ = super::registry::mirror_source_file(&path_buf);
                     Ok(ModelPreloadCpuResult {
                         path: model_id_thread.clone(),
                         parts,

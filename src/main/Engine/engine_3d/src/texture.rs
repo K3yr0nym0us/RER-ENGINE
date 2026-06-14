@@ -1,14 +1,11 @@
 use std::sync::Arc;
-use std::time::Instant;
 
 /// Índice de capa en el array de texturas compartido (group 1 del shader).
 pub type TextureLayer = u32;
 
 /// Resultado de resize + mips en CPU (precarga de modelos).
 pub(crate) struct LayerMipChain {
-    pub mips:      Vec<Vec<u8>>,
-    pub resize_ms: u64,
-    pub mip_ms:    u64,
+    pub mips: Vec<Vec<u8>>,
 }
 
 /// Array GPU `texture_2d_array`: una capa por material, UV [0,1] en el mesh.
@@ -306,32 +303,18 @@ fn resize_rgba_vec_to_layer(rgba: Vec<u8>, w: u32, h: u32, tw: u32, th: u32) -> 
             th,
             image::imageops::FilterType::Triangle,
         );
-        if w != tw || h != th {
-            log::debug!("[TextureArray] textura {w}×{h} escalada a {tw}×{th}");
-        }
         return resized.into_raw();
     }
     vec![255; expected]
 }
 
-/// Resize a 1024² + mips con tiempos separados (toma ownership del buffer RGBA).
+/// Resize a 1024² + mips (toma ownership del buffer RGBA).
 pub(crate) fn build_layer_mip_chain_timed(rgba: Vec<u8>, w: u32, h: u32) -> LayerMipChain {
     let tw = TextureArray::TEXTURE_SIZE;
     let th = TextureArray::TEXTURE_SIZE;
-
-    let resize_started = Instant::now();
     let base = resize_rgba_vec_to_layer(rgba, w, h, tw, th);
-    let resize_ms = resize_started.elapsed().as_millis() as u64;
-
-    let mip_started = Instant::now();
     let mips = generate_mip_chain_owned(base, tw, th);
-    let mip_ms = mip_started.elapsed().as_millis() as u64;
-
-    LayerMipChain {
-        mips,
-        resize_ms,
-        mip_ms,
-    }
+    LayerMipChain { mips }
 }
 
 fn solid_white_rgba() -> Vec<u8> {

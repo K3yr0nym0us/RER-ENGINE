@@ -143,73 +143,34 @@ pub(crate) fn shared_white_material_texture() -> Arc<MaterialTextureCpu> {
 
 /// Decodifica albedos por material y genera mip chain 1024² una vez (modo editor).
 pub(crate) fn build_material_textures_with_mips(
-    doc: &gltf::Document,
+    _doc: &gltf::Document,
     albedos: &HashMap<usize, gltf::image::Data>,
-    model_path: Option<&str>,
+    _model_path: Option<&str>,
 ) -> HashMap<u32, Arc<MaterialTextureCpu>> {
     let tex_size = crate::texture::TextureArray::TEXTURE_SIZE;
     let mut material_indices: Vec<usize> = albedos.keys().copied().collect();
     material_indices.sort_unstable();
 
-    let jobs: Vec<(usize, String)> = material_indices
-        .iter()
-        .map(|&mi| {
-            let label = doc
-                .materials()
-                .nth(mi)
-                .and_then(|m| m.name())
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-                .unwrap_or("sin nombre")
-                .to_string();
-            (mi, label)
-        })
-        .collect();
-
-    let built: Vec<(u32, Arc<MaterialTextureCpu>, u64, u64)> = jobs
+    let built: Vec<(u32, Arc<MaterialTextureCpu>)> = material_indices
         .par_iter()
-        .map(|(mi, label)| {
-            let img = &albedos[mi];
+        .map(|mi| {
+            let mi = *mi;
+            let img = albedos.get(&mi).expect("material index from albedos keys");
             let (rgba_vec, w, h) = gltf_image_data_to_rgba(img);
             let chain = crate::texture::build_layer_mip_chain_timed(rgba_vec, w, h);
-            if let Some(path) = model_path {
-                log::debug!(
-                    "[model_tex] {path} Material {mi} ({label}) -> resize: {} ms | mips: {} ms \
-                     ({}x{} -> {tex_size}²)",
-                    chain.resize_ms,
-                    chain.mip_ms,
-                    w,
-                    h
-                );
-            }
             let tex = Arc::new(MaterialTextureCpu {
                 rgba: empty_rgba_placeholder(),
                 width: tex_size,
                 height: tex_size,
                 layer_mips: Some(Arc::new(chain.mips)),
             });
-            (
-                *mi as u32,
-                tex,
-                chain.resize_ms,
-                chain.mip_ms,
-            )
+            (mi as u32, tex)
         })
         .collect();
 
-    let mut total_resize_ms = 0u64;
-    let mut total_mip_ms = 0u64;
     let mut out = HashMap::with_capacity(built.len());
-    for (mi, tex, resize_ms, mip_ms) in built {
-        total_resize_ms += resize_ms;
-        total_mip_ms += mip_ms;
+    for (mi, tex) in built {
         out.insert(mi, tex);
-    }
-    if let Some(path) = model_path {
-        log::debug!(
-            "[model_tex] {path} resize+mip: {} textura/s | resize {total_resize_ms} ms | mip {total_mip_ms} ms",
-            out.len()
-        );
     }
     out
 }
@@ -293,19 +254,9 @@ pub fn import_gltf(path: &Path) -> Result<Arc<GltfFile>, String> {
     let key = gltf_import_cache_key(path);
     if let Ok(cache) = gltf_import_cache().lock() {
         if let Some(hit) = cache.get(&key) {
-            let label = path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or(&key);
-            log::debug!("[GLTF_IMPORT] {label} cache=hit");
             return Ok(Arc::clone(hit));
         }
     }
-    let label = path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or(&key);
-    log::debug!("[GLTF_IMPORT] {label} cache=cold");
     let file = Arc::new(import_gltf_uncached(path)?);
     if let Ok(mut cache) = gltf_import_cache().lock() {
         cache.insert(key, Arc::clone(&file));
@@ -480,35 +431,18 @@ enum GltfJointOrigin {
     AnimNode,
 }
 
-impl GltfJointOrigin {
-    fn label(self) -> &'static str {
-        match self {
-            Self::SkinJoint => "skin_joint",
-            Self::SkeletonRoot => "skeleton_root",
-            Self::SceneAncestor => "scene_ancestor",
-            Self::AnimNode => "anim_node",
-        }
-    }
-}
-
 /// Esqueleto unificado: varios `skin` en un GLB comparten nodos o usan listas distintas (Godot los fusiona).
 struct GltfUnifiedSkeleton {
     node_to_unified: HashMap<usize, usize>,
     joint_gltf_nodes: Vec<usize>,
     joint_names: Vec<String>,
     joint_origins: Vec<GltfJointOrigin>,
-    skin_count: usize,
-    /// Nodos únicos en todos los skins (sin truncar).
-    raw_unique_joints: usize,
-    /// Nodos que no cupieron por MAX_JOINTS.
-    joints_truncated: usize,
 }
 
 /// Nodo con malla skinned y el `skin` glTF a usar (propio o heredado del padre).
 struct SkinnedMeshNode {
     node_index: usize,
     skin_index: usize,
-    inherited_skin: bool,
 }
 
 fn build_gltf_unified_skeleton(
@@ -584,9 +518,6 @@ fn build_gltf_unified_skeleton(
         joint_gltf_nodes,
         joint_names,
         joint_origins,
-        skin_count: skins_ordered.len(),
-        raw_unique_joints,
-        joints_truncated,
     })
 }
 
@@ -925,99 +856,6 @@ pub(crate) fn node_local_matrix(node: &gltf::Node) -> Mat4 {
     }
 }
 
-/// Transform crudo del nodo glTF tal como lo expone la crate (Matrix vs Decomposed).
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct GltfNodeTransformRaw {
-    pub storage:           &'static str,
-    pub translation:       [f32; 3],
-    pub rotation:          [f32; 4],
-    pub scale:             [f32; 3],
-    pub matrix_cols:       [[f32; 4]; 4],
-    pub trs_is_identity:   bool,
-    pub matrix_is_identity: bool,
-}
-
-fn vec3_is_zero(v: [f32; 3], eps: f32) -> bool {
-    v.iter().all(|c| c.abs() < eps)
-}
-
-fn quat_is_identity(q: [f32; 4], eps: f32) -> bool {
-    (q[0].abs() < eps && q[1].abs() < eps && q[2].abs() < eps && (q[3] - 1.0).abs() < eps)
-        || (q[0].abs() < eps && q[1].abs() < eps && q[2].abs() < eps && (q[3] + 1.0).abs() < eps)
-}
-
-pub(crate) fn mat4_is_identity(m: Mat4, eps: f32) -> bool {
-    m.to_cols_array()
-        .iter()
-        .zip(Mat4::IDENTITY.to_cols_array())
-        .all(|(a, b)| (a - b).abs() < eps)
-}
-
-pub(crate) fn gltf_node_transform_raw(node: &gltf::Node) -> GltfNodeTransformRaw {
-    const EPS: f32 = 1e-5;
-    match node.transform() {
-        gltf::scene::Transform::Matrix { matrix } => {
-            let m = Mat4::from_cols_array_2d(&matrix);
-            let (s, r, t) = m.to_scale_rotation_translation();
-            let translation = t.to_array();
-            let rotation = r.to_array();
-            let scale = s.to_array();
-            GltfNodeTransformRaw {
-                storage: "Matrix",
-                translation,
-                rotation,
-                scale,
-                matrix_cols: matrix,
-                trs_is_identity: vec3_is_zero(translation, EPS)
-                    && quat_is_identity(rotation, EPS)
-                    && scale.iter().all(|c| (c - 1.0).abs() < EPS),
-                matrix_is_identity: mat4_is_identity(m, EPS),
-            }
-        }
-        gltf::scene::Transform::Decomposed {
-            translation,
-            rotation,
-            scale,
-        } => {
-            let translation = Vec3::from(translation).to_array();
-            let rotation = rotation;
-            let scale = Vec3::from(scale).to_array();
-            let m = Mat4::from_scale_rotation_translation(
-                Vec3::from_array(scale),
-                Quat::from_array(rotation),
-                Vec3::from_array(translation),
-            );
-            GltfNodeTransformRaw {
-                storage: "Decomposed",
-                translation,
-                rotation,
-                scale,
-                matrix_cols: m.to_cols_array_2d(),
-                trs_is_identity: vec3_is_zero(translation, EPS)
-                    && quat_is_identity(rotation, EPS)
-                    && scale.iter().all(|c| (c - 1.0).abs() < EPS),
-                matrix_is_identity: mat4_is_identity(m, EPS),
-            }
-        }
-    }
-}
-
-/// Simula un loader que ignora `node.matrix` (hipótesis de bug).
-pub(crate) fn gltf_node_local_ignore_matrix(node: &gltf::Node) -> Mat4 {
-    match node.transform() {
-        gltf::scene::Transform::Matrix { .. } => Mat4::IDENTITY,
-        gltf::scene::Transform::Decomposed {
-            translation,
-            rotation,
-            scale,
-        } => Mat4::from_scale_rotation_translation(
-            Vec3::from(scale),
-            Quat::from_array(rotation),
-            Vec3::from(translation),
-        ),
-    }
-}
-
 /// Inversa segura de IBM (evita NaN con matrices cero; no filtra por determinante).
 pub(crate) fn mat4_from_ibm_inverse(ibm: &[[f32; 4]; 4]) -> Option<Mat4> {
     if ibm.iter().flatten().all(|&c| c == 0.0) {
@@ -1032,6 +870,141 @@ pub(crate) fn mat4_from_ibm_inverse(ibm: &[[f32; 4]; 4]) -> Option<Mat4> {
         return None;
     }
     Some(inv)
+}
+
+fn gltf_ibm_is_populated(ibm: &[[f32; 4]; 4]) -> bool {
+    !ibm.iter().flatten().all(|&c| c == 0.0)
+}
+
+/// Fusiona IBM por hueso unificado desde todas las piezas skinned (varios `skin` en un GLB).
+fn merge_gltf_unified_inverse_bind(
+    parts: &[SkinnedMeshPart],
+    joint_count: usize,
+) -> (Vec<[[f32; 4]; 4]>, usize) {
+    let empty = [[0.0f32; 4]; 4];
+    let mut merged = vec![empty; joint_count];
+    let mut gaps_filled = 0usize;
+    for (pi, part) in parts.iter().enumerate() {
+        for ji in 0..joint_count.min(part.inverse_bind.len()) {
+            let src = &part.inverse_bind[ji];
+            if !gltf_ibm_is_populated(src) {
+                continue;
+            }
+            if !gltf_ibm_is_populated(&merged[ji]) {
+                merged[ji] = *src;
+                if pi > 0 {
+                    gaps_filled += 1;
+                }
+            }
+        }
+    }
+    (merged, gaps_filled)
+}
+
+/// Rellena huecos de IBM por pieza (p. ej. Head en skin del cuerpo) sin pisar la IBM propia del skin.
+fn fill_gltf_part_inverse_bind_gaps(
+    parts: &mut [SkinnedMeshPart],
+    unified: &[[[f32; 4]; 4]],
+) {
+    for part in parts.iter_mut() {
+        for ji in 0..part.inverse_bind.len().min(unified.len()) {
+            if !gltf_ibm_is_populated(&part.inverse_bind[ji])
+                && gltf_ibm_is_populated(&unified[ji])
+            {
+                part.inverse_bind[ji] = unified[ji];
+            }
+        }
+    }
+}
+
+/// Endereza rigs IBM-only cuyo AABB no tiene Y como eje principal (p. ej. GLB 4K acostado).
+fn apply_editor_upright_ibm_skinned(
+    parts: &mut [SkinnedMeshPart],
+    default_ibm: &mut Vec<[[f32; 4]; 4]>,
+    bind_local: &[Mat4],
+    joint_names: &[String],
+) -> bool {
+    let Some((min, max)) = gltf_skinned_parts_bounds(parts) else {
+        return false;
+    };
+    let span = Vec3::from_array(max) - Vec3::from_array(min);
+    let max_axis = span.x.max(span.y).max(span.z);
+    if max_axis < 1e-4 || span.y >= max_axis * 0.82 {
+        return false;
+    }
+    let ibm_globals = gltf_bind_globals_from_ibm(default_ibm, bind_local, bind_local);
+    let joint_positions: Vec<Vec3> = ibm_globals
+        .iter()
+        .map(|m| m.transform_point3(Vec3::ZERO))
+        .collect();
+    let points = gltf_skinned_sample_points(parts);
+    let upright = upright_quat_from_bind_joints(joint_names, &joint_positions).unwrap_or_else(
+        || crate::config_3d::mesh_3d::upright_quat_from_vertices_bounds(min, max, &points),
+    );
+    if upright.w.abs() > 0.9999 && upright.x.abs() < 1e-4 && upright.y.abs() < 1e-4 {
+        return false;
+    }
+    let norm = Mat4::from_quat(upright);
+    let inv_norm = norm.inverse();
+    for part in parts.iter_mut() {
+        apply_normalize_to_skinned_vertices(&mut part.mesh.vertices, norm);
+        for ibm in part.inverse_bind.iter_mut() {
+            let m = Mat4::from_cols_array_2d(ibm);
+            *ibm = (m * inv_norm).to_cols_array_2d();
+        }
+    }
+    for ibm in default_ibm.iter_mut() {
+        if gltf_ibm_is_populated(ibm) {
+            let m = Mat4::from_cols_array_2d(ibm);
+            *ibm = (m * inv_norm).to_cols_array_2d();
+        }
+    }
+    true
+}
+
+/// Omite props/armas rígidas emparentadas al personaje (KSVR, kits sin skin, etc.).
+fn should_skip_gltf_rigid_mesh(
+    mesh_name: &str,
+    skinned_part_count: usize,
+    rigid_candidate_count: usize,
+) -> bool {
+    let n = mesh_name.to_ascii_lowercase();
+    const KEYWORDS: &[&str] = &[
+        "ksvr",
+        "gun",
+        "weapon",
+        "rifle",
+        "pistol",
+        "firearm",
+        "barrel",
+        "trigger",
+        "stockframe",
+        "stockback",
+        "stockthing",
+        "stockbutton",
+        "mag_low",
+        "_mag",
+        "muzzle",
+        "silencer",
+        "topgun",
+        "bottomgun",
+        "frontgrip",
+        "frontsight",
+        "backsight",
+        "siderail",
+        "toprail",
+    ];
+    if KEYWORDS.iter().any(|k| n.contains(k)) {
+        return true;
+    }
+    // Kit de muchas piezas sin nombre (Object_N) + pocos skins de personaje.
+    if skinned_part_count <= 5
+        && rigid_candidate_count >= 12
+        && (n.starts_with("object_") || n.is_empty())
+    {
+        return true;
+    }
+    false
 }
 
 /// global[j] = inverse(IBM[j]) × (local[j] × inverse(bind_local[j]))
@@ -1052,6 +1025,33 @@ pub(crate) fn gltf_bind_globals_from_ibm(
                 .unwrap_or(Mat4::IDENTITY)
         })
         .collect()
+}
+
+/// Globals de bind para paleta GPU (IBM por pieza si `bind_pose_from_ibm`).
+pub(crate) fn gltf_skinned_part_globals_for_palette(
+    asset: &ModelAsset,
+    part: &SkinnedMeshPart,
+    locals: &[Mat4],
+) -> Vec<Mat4> {
+    let joint_count = asset
+        .joint_parents
+        .len()
+        .min(MAX_JOINTS)
+        .min(asset.bind_local.len())
+        .min(locals.len());
+    if asset.bind_pose_from_ibm && !asset.joint_gltf_nodes.is_empty() {
+        return gltf_bind_globals_from_ibm(
+            &part.inverse_bind,
+            &asset.bind_local[..joint_count],
+            &locals[..joint_count],
+        );
+    }
+    compute_gltf_joint_worlds(
+        &asset.joint_gltf_nodes[..joint_count.min(asset.joint_gltf_nodes.len())],
+        &locals[..joint_count],
+        &asset.gltf_scene_parents,
+        &asset.gltf_bind_node_local,
+    )
 }
 
 fn skinned_mesh_extent(vertices: &[SkinnedVertex]) -> f32 {
@@ -1097,33 +1097,7 @@ fn skeleton_extent_from_globals(globals: &[Mat4]) -> f32 {
     }
 }
 
-/// Extent del esqueleto en el mismo espacio que la malla dibujada (post-`mesh_normalize`).
-pub(crate) fn skeleton_extent_mesh_space(globals: &[Mat4], mesh_normalize: Mat4) -> f32 {
-    if mesh_normalize == Mat4::IDENTITY {
-        return skeleton_extent_from_globals(globals);
-    }
-    let mut min = [f32::MAX; 3];
-    let mut max = [f32::MIN; 3];
-    let mut any = false;
-    for g in globals {
-        let p = mesh_normalize.transform_point3(g.transform_point3(Vec3::ZERO));
-        if !p.is_finite() {
-            continue;
-        }
-        any = true;
-        for i in 0..3 {
-            min[i] = min[i].min(p[i]);
-            max[i] = max[i].max(p[i]);
-        }
-    }
-    if any {
-        (Vec3::from_array(max) - Vec3::from_array(min)).length()
-    } else {
-        0.0
-    }
-}
-
-/// Estadísticas compartidas entre detector y `[SKIN_XFORM]`.
+/// Estadísticas de jerarquía vs IBM para detectar rigs con bind pose en IBM.
 pub(crate) fn skin_bind_hierarchy_ibm_stats(
     hierarchy_globals: &[Mat4],
     inverse_bind: &[[[f32; 4]; 4]],
@@ -1183,34 +1157,38 @@ pub(crate) fn detect_bind_pose_from_ibm(
 }
 
 const EDITOR_IBM_SKINNED_TARGET_EXTENT: f32 = 1.8;
+const EDITOR_IBM_SKINNED_MAX_Y: f32 = 2.2;
 
-/// Escala mallas FBX→GLB gigantes (~100 m) a ~1.8 m en editor.
+/// Escala mallas IBM-only demasiado altas (~2.7 m) a ~1.8 m en editor.
 /// También ajusta IBM: `IBM' = IBM × inverse(norm)` para que malla y skinning compartan espacio.
-fn editor_normalize_oversized_ibm_skinned(parts: &mut [SkinnedMeshPart]) -> bool {
-    let Some((min, max)) = gltf_skinned_parts_bounds(parts) else {
+fn editor_normalize_oversized_ibm_skinned(
+    parts: &mut [SkinnedMeshPart],
+    skinned_only: usize,
+) -> bool {
+    let n = skinned_only.min(parts.len());
+    if n == 0 {
+        return false;
+    }
+    let Some((min, max)) = gltf_skinned_parts_bounds(&parts[..n]) else {
         return false;
     };
     let span = Vec3::from_array(max) - Vec3::from_array(min);
-    if span.length() <= 5.0 {
+    let y_span = span.y;
+    if y_span <= EDITOR_IBM_SKINNED_MAX_Y && span.length() <= 5.0 {
         return false;
     }
-    let scale = EDITOR_IBM_SKINNED_TARGET_EXTENT / span.length();
+    let extent = y_span.max(span.length()).max(1e-4);
+    let scale = EDITOR_IBM_SKINNED_TARGET_EXTENT / extent;
     let center = (Vec3::from_array(min) + Vec3::from_array(max)) * 0.5;
     let norm = Mat4::from_scale(Vec3::splat(scale)) * Mat4::from_translation(-center);
     let inv_norm = norm.inverse();
-    for part in parts.iter_mut() {
+    for part in parts.iter_mut().take(n) {
         apply_normalize_to_skinned_vertices(&mut part.mesh.vertices, norm);
         for ibm in part.inverse_bind.iter_mut() {
             let m = Mat4::from_cols_array_2d(ibm);
             *ibm = (m * inv_norm).to_cols_array_2d();
         }
     }
-    log::info!(
-        "[SKIN_XFORM] editor normalize | extent={:.3}m → {:.3}m scale={scale:.6} \
-         (vértices + IBM ajustados; mesh_normalize=IDENTITY)",
-        span.length(),
-        EDITOR_IBM_SKINNED_TARGET_EXTENT,
-    );
     true
 }
 
@@ -1218,21 +1196,6 @@ fn load_gltf_asset_from_file(
     file: &GltfFile,
     normalize_to_extent: Option<f32>,
 ) -> Option<Arc<ModelAsset>> {
-    let label = std::path::Path::new(&file.path)
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or(&file.path);
-    let variant = match normalize_to_extent {
-        None => "editor",
-        Some(h) if (h - crate::config_3d::character_anchor::PLAY_CHARACTER_BODY_HEIGHT).abs()
-            < 0.01 =>
-        {
-            "play_character"
-        }
-        Some(_) => "normalized",
-    };
-    log::debug!("[LOAD_GLTF_SKINNED] {label} variant={variant}");
-
     let doc = &file.doc;
     let buffers = &file.buffers;
     let scene = doc.default_scene().or_else(|| doc.scenes().next())?;
@@ -1245,6 +1208,10 @@ fn load_gltf_asset_from_file(
     }
     if skinned_nodes.is_empty() {
         if doc.skins().next().is_some() {
+            let label = std::path::Path::new(&file.path)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(&file.path);
             skin_diag::log_skinned_unavailable(
                 label,
                 "glTF tiene skins pero ningún nodo mesh+skin reconocido",
@@ -1259,23 +1226,13 @@ fn load_gltf_asset_from_file(
         .and_then(|n| n.to_str())
         .unwrap_or(&model_label)
         .to_string();
-    let _skins = unique_skin_count(&skinned_nodes);
 
     let mut unified = build_gltf_unified_skeleton(&doc, &buffers, &skinned_nodes)?;
-    let bones_skin_before_extend = unified.joint_gltf_nodes.len();
     let skin_joint_set: HashSet<usize> = unified.joint_gltf_nodes.iter().copied().collect();
-    let skeleton_roots_added = extend_gltf_unified_with_skin_skeleton_roots(&doc, &mut unified);
-    let ancestors_added =
-        extend_gltf_unified_with_scene_ancestors(&doc, &all_node_parents, &mut unified);
+    extend_gltf_unified_with_skin_skeleton_roots(&doc, &mut unified);
+    extend_gltf_unified_with_scene_ancestors(&doc, &all_node_parents, &mut unified);
     extend_gltf_unified_with_anim_nodes(&doc, &mut unified);
     let joint_count = unified.joint_gltf_nodes.len();
-    if skeleton_roots_added > 0 || ancestors_added > 0 {
-        log::debug!(
-            "[SKIN_XFORM] {label} extend | skeleton_roots={skeleton_roots_added} \
-             scene_ancestors={ancestors_added} bones_skin={bones_skin_before_extend} \
-             bones_runtime={joint_count}"
-        );
-    }
     let node_to_joint = unified.node_to_unified.clone();
     let joint_gltf_nodes = unified.joint_gltf_nodes.clone();
     let joint_names = unified.joint_names.clone();
@@ -1291,10 +1248,8 @@ fn load_gltf_asset_from_file(
     }
 
     let mut asset_parts: Vec<SkinnedMeshPart> = Vec::new();
-    let mut remap_drops = skin_diag::RemapDropCollector::default();
-    let mut primary_skin_set = false;
+    let mut remap_drops = skin_diag::RemapDropCollector::with_max_samples(8);
     let mut v0_pre_remap: Option<SkinnedVertex> = None;
-    let mut mesh_nodes_loaded_skinned: HashSet<usize> = HashSet::new();
     for entry in &skinned_nodes {
         let node_index = entry.node_index;
         let node = match doc.nodes().nth(node_index) {
@@ -1319,9 +1274,6 @@ fn load_gltf_asset_from_file(
             &doc,
             &all_node_parents,
         );
-        if !primary_skin_set {
-            primary_skin_set = true;
-        }
         let part_name = node
             .name()
             .map(|s| s.to_string())
@@ -1362,7 +1314,6 @@ fn load_gltf_asset_from_file(
             };
             bake_gltf_mesh_bind_world(&mut part);
             asset_parts.push(part);
-            mesh_nodes_loaded_skinned.insert(node_index);
         }
     }
 
@@ -1387,19 +1338,13 @@ fn load_gltf_asset_from_file(
         &gltf_bind_node_local,
     );
 
-    let ibm_for_detect = asset_parts
-        .first()
-        .map(|p| p.inverse_bind.clone())
-        .unwrap_or_else(|| vec![[[0.0; 4]; 4]; joint_count]);
+    let (mut default_ibm, _ibm_gaps_filled) =
+        merge_gltf_unified_inverse_bind(&asset_parts, joint_count);
+    fill_gltf_part_inverse_bind_gaps(&mut asset_parts, &default_ibm);
 
     let bind_pose_from_ibm = asset_parts.first().map_or(false, |first| {
-        detect_bind_pose_from_ibm(&globals, &ibm_for_detect, &first.mesh.vertices)
+        detect_bind_pose_from_ibm(&globals, &default_ibm, &first.mesh.vertices)
     });
-
-    let default_ibm = asset_parts
-        .first()
-        .map(|p| p.inverse_bind.clone())
-        .unwrap_or_else(|| vec![[[0.0; 4]; 4]; joint_count]);
 
     let mut runtime_globals = if bind_pose_from_ibm {
         gltf_bind_globals_from_ibm(&default_ibm, &bind_local, &bind_local)
@@ -1407,68 +1352,60 @@ fn load_gltf_asset_from_file(
         globals.clone()
     };
 
-    let rigid_ibm = asset_parts.first().map(|p| p.inverse_bind.clone());
+    if bind_pose_from_ibm && normalize_to_extent.is_none() {
+        if apply_editor_upright_ibm_skinned(
+            &mut asset_parts,
+            &mut default_ibm,
+            &bind_local,
+            &joint_names,
+        ) {
+            fill_gltf_part_inverse_bind_gaps(&mut asset_parts, &default_ibm);
+            runtime_globals = gltf_bind_globals_from_ibm(&default_ibm, &bind_local, &bind_local);
+        }
+    }
+
+    let rigid_ibm = Some(default_ibm.clone());
+    let skinned_part_count = asset_parts.len();
     let loaded_skinned_nodes: HashSet<usize> =
         skinned_nodes.iter().map(|n| n.node_index).collect();
     let mut scene_mesh_nodes: Vec<(usize, String)> = Vec::new();
     for root in scene.nodes() {
         collect_gltf_scene_mesh_nodes(root, &mut scene_mesh_nodes);
     }
-    let mut rigid_parts_loaded = 0usize;
-    let mut rigid_parts_skipped = 0usize;
-    let mut mesh_nodes_loaded_rigid: HashSet<usize> = HashSet::new();
-    let mut mesh_nodes_rigid_no_joint: HashSet<usize> = HashSet::new();
-    let mut rigid_bind_diags: Vec<RigidBindDiag> = Vec::new();
-    let mut rigid_bind_diag_nodes: HashSet<usize> = HashSet::new();
-    let mut rigid_spatial_fallback_count = 0usize;
     let mut rigid_candidate_count = 0usize;
+    for (node_index, _node_name) in &scene_mesh_nodes {
+        if !loaded_skinned_nodes.contains(node_index) {
+            rigid_candidate_count += 1;
+        }
+    }
     if let Some(ibm) = rigid_ibm {
         for (node_index, node_name) in &scene_mesh_nodes {
             if loaded_skinned_nodes.contains(node_index) {
                 continue;
             }
-            rigid_candidate_count += 1;
+            if should_skip_gltf_rigid_mesh(
+                node_name,
+                skinned_part_count,
+                rigid_candidate_count,
+            ) {
+                continue;
+            }
             let (mesh_bind_world, mesh_world_ref) =
                 gltf_rigid_mesh_spatial_reference(&doc, &buffers, &scene_parents, *node_index);
-            log_rigid_world_probe(&label, node_name, *node_index, mesh_bind_world, mesh_world_ref);
-            let Some(trace) = trace_rigid_anchor_for_node(
-                &label,
-                node_name,
+            let Some(joint_ui) = resolve_rigid_joint_ui(
                 *node_index,
                 mesh_world_ref,
                 &all_node_parents,
                 &node_to_joint,
                 &skin_joint_set,
                 &joint_origins,
-                &joint_names,
                 &runtime_globals,
-                Some(&doc),
             ) else {
                 log::warn!(
-                    "[SKIN_LOAD] {label} malla «{node_name}» sin skin ni joint ancestro — omitida"
+                    "[model_asset] {label} malla «{node_name}» sin skin ni joint ancestro — omitida"
                 );
-                rigid_parts_skipped += 1;
-                mesh_nodes_rigid_no_joint.insert(*node_index);
                 continue;
             };
-            let joint_ui = trace.anchor_ui;
-            if trace.spatial_fallback {
-                rigid_spatial_fallback_count += 1;
-            }
-            if rigid_bind_diag_nodes.insert(*node_index) {
-                let parent_ix = all_node_parents.get(node_index).copied();
-                rigid_bind_diags.push(RigidBindDiag {
-                    mesh_name: node_name.clone(),
-                    gltf_node: *node_index,
-                    parent_node_ix: parent_ix,
-                    parent_node_name: parent_ix
-                        .map(|p| gltf_node_display_name(&doc, p))
-                        .unwrap_or_else(|| "-".to_string()),
-                    trace,
-                    mesh_bind_world,
-                    mesh_world_ref,
-                });
-            }
             let node = match doc.nodes().nth(*node_index) {
                 Some(n) => n,
                 None => continue,
@@ -1486,7 +1423,7 @@ fn load_gltf_asset_from_file(
                     joint_ui as u32,
                 ) else {
                     log::warn!(
-                        "[SKIN_LOAD] {label} primitiva rígida {node_name} p{prim_i} omitida (sin POSITION)"
+                        "[model_asset] {label} primitiva rígida {node_name} p{prim_i} omitida (sin POSITION)"
                     );
                     continue;
                 };
@@ -1505,160 +1442,134 @@ fn load_gltf_asset_from_file(
                 };
                 bake_gltf_mesh_bind_world(&mut part);
                 asset_parts.push(part);
-                rigid_parts_loaded += 1;
-                mesh_nodes_loaded_rigid.insert(*node_index);
             }
         }
-        if rigid_candidate_count > 0 {
-            log::info!(
-                "[RIGID_NEAREST] {label} resumen fallback_espacial={rigid_spatial_fallback_count}/{rigid_candidate_count} \
-                 omitidas={rigid_parts_skipped} skin_joint_set={}",
-                skin_joint_set.len(),
-            );
-        }
     }
-
-    log_gltf_mesh_classification_audit(
-        &label,
-        &doc,
-        &buffers,
-        &scene,
-        &scene_mesh_nodes,
-        &skinned_nodes,
-        &all_node_parents,
-        &node_to_joint,
-        &joint_gltf_nodes,
-        &joint_names,
-        &mesh_nodes_loaded_skinned,
-        &mesh_nodes_loaded_rigid,
-        &mesh_nodes_rigid_no_joint,
-        &skin_joint_set,
-        &joint_origins,
-        &runtime_globals,
-        unified.skin_count,
-        joint_count,
-    );
 
     remap_drops.log_if_any(&label);
 
     let mut mesh_normalize = if let Some(target_height) = normalize_to_extent {
-        let joint_positions = bind_joint_world_positions(
-            &joint_gltf_nodes,
-            &bind_local,
-            &all_node_parents,
-            &gltf_bind_node_local,
-        );
-        let upright = upright_quat_for_gltf_play_character(
-            &asset_parts,
-            &joint_names,
-            &joint_gltf_nodes,
-            &bind_local,
-            &all_node_parents,
-            &gltf_bind_node_local,
-        )?;
+        let upright = if bind_pose_from_ibm {
+            let ibm_globals =
+                gltf_bind_globals_from_ibm(&default_ibm, &bind_local, &bind_local);
+            let joint_positions: Vec<Vec3> = ibm_globals
+                .iter()
+                .map(|m| m.transform_point3(Vec3::ZERO))
+                .collect();
+            upright_quat_from_bind_joints(&joint_names, &joint_positions).or_else(|| {
+                let (min, max) = gltf_skinned_parts_bounds(&asset_parts)?;
+                let span = Vec3::from_array(max) - Vec3::from_array(min);
+                let max_axis = span.x.max(span.y).max(span.z);
+                if span.y < max_axis * 0.82 {
+                    let points = gltf_skinned_sample_points(&asset_parts);
+                    Some(crate::config_3d::mesh_3d::upright_quat_from_vertices_bounds(
+                        min, max, &points,
+                    ))
+                } else {
+                    Some(Quat::IDENTITY)
+                }
+            })?
+        } else {
+            upright_quat_for_gltf_play_character(
+                &asset_parts,
+                &joint_names,
+                &joint_gltf_nodes,
+                &bind_local,
+                &all_node_parents,
+                &gltf_bind_node_local,
+            )?
+        };
+        let joint_positions = if bind_pose_from_ibm {
+            let ibm_globals =
+                gltf_bind_globals_from_ibm(&default_ibm, &bind_local, &bind_local);
+            ibm_globals
+                .iter()
+                .map(|m| m.transform_point3(Vec3::ZERO))
+                .collect()
+        } else {
+            bind_joint_world_positions(
+                &joint_gltf_nodes,
+                &bind_local,
+                &all_node_parents,
+                &gltf_bind_node_local,
+            )
+        };
         let (height, center) =
             gltf_play_bind_height_and_center(&asset_parts, &joint_positions, upright)?;
         let scale = (target_height / height).clamp(0.001, 50.0);
         let mut norm =
             Mat4::from_scale(Vec3::splat(scale)) * Mat4::from_translation(-center) * Mat4::from_quat(upright);
-        log::info!(
-            "[model_asset] glTF play scale: height={height:.4} scale={scale:.6} target={target_height:.3}",
-        );
+        let inv_norm = norm.inverse();
         for part in asset_parts.iter_mut() {
             apply_normalize_to_skinned_vertices(&mut part.mesh.vertices, norm);
-        }
-        if let Some(bind_center) = gltf_play_bind_pose_aabb_center(
-            &asset_parts,
-            &joint_gltf_nodes,
-            &bind_local,
-            &scene_parents,
-            &gltf_bind_node_local,
-            norm,
-        ) {
-            if bind_center.length_squared() > 1e-10 {
-                let fix = Mat4::from_translation(-bind_center);
-                for part in asset_parts.iter_mut() {
-                    apply_normalize_to_skinned_vertices(&mut part.mesh.vertices, fix);
+            if bind_pose_from_ibm {
+                for ibm in part.inverse_bind.iter_mut() {
+                    let m = Mat4::from_cols_array_2d(ibm);
+                    *ibm = (m * inv_norm).to_cols_array_2d();
                 }
-                norm = fix * norm;
-                log::info!(
-                    "[model_asset] glTF play bind-pose center: ({:.4}, {:.4}, {:.4})",
-                    bind_center.x,
-                    bind_center.y,
-                    bind_center.z
-                );
             }
         }
-        norm
+        if bind_pose_from_ibm {
+            for ibm in default_ibm.iter_mut() {
+                if gltf_ibm_is_populated(ibm) {
+                    let m = Mat4::from_cols_array_2d(ibm);
+                    *ibm = (m * inv_norm).to_cols_array_2d();
+                }
+            }
+            fill_gltf_part_inverse_bind_gaps(&mut asset_parts, &default_ibm);
+        }
+        let bind_center = if bind_pose_from_ibm {
+            gltf_skinned_parts_bounds(&asset_parts).map(|(min, max)| {
+                (Vec3::from_array(min) + Vec3::from_array(max)) * 0.5
+            })
+        } else {
+            gltf_play_bind_pose_aabb_center(
+                &asset_parts,
+                &joint_gltf_nodes,
+                &bind_local,
+                &scene_parents,
+                &gltf_bind_node_local,
+                norm,
+            )
+        };
+        if let Some(bind_center) = bind_center {
+            if bind_center.length_squared() > 1e-10 {
+                let fix = Mat4::from_translation(-bind_center);
+                let fix_inv = fix.inverse();
+                for part in asset_parts.iter_mut() {
+                    apply_normalize_to_skinned_vertices(&mut part.mesh.vertices, fix);
+                    if bind_pose_from_ibm {
+                        for ibm in part.inverse_bind.iter_mut() {
+                            let m = Mat4::from_cols_array_2d(ibm);
+                            *ibm = (m * fix_inv).to_cols_array_2d();
+                        }
+                    }
+                }
+                if bind_pose_from_ibm {
+                    for ibm in default_ibm.iter_mut() {
+                        if gltf_ibm_is_populated(ibm) {
+                            let m = Mat4::from_cols_array_2d(ibm);
+                            *ibm = (m * fix_inv).to_cols_array_2d();
+                        }
+                    }
+                }
+                norm = fix * norm;
+            }
+        }
+        if bind_pose_from_ibm {
+            Mat4::IDENTITY
+        } else {
+            norm
+        }
     } else {
         Mat4::IDENTITY
     };
 
     if bind_pose_from_ibm && normalize_to_extent.is_none() {
-        if editor_normalize_oversized_ibm_skinned(&mut asset_parts) {
+        if editor_normalize_oversized_ibm_skinned(&mut asset_parts, skinned_part_count) {
             mesh_normalize = Mat4::IDENTITY;
-            let default_ibm = asset_parts
-                .first()
-                .map(|p| p.inverse_bind.clone())
-                .unwrap_or_else(|| default_ibm.clone());
-            runtime_globals = gltf_bind_globals_from_ibm(&default_ibm, &bind_local, &bind_local);
-        }
-    }
-
-    if bind_pose_from_ibm {
-        log::info!(
-            "[SKIN_XFORM] {label} bind_pose_from_ibm=true | skel_span_hier={:.3}m \
-             skel_span_runtime={:.3}m skel_span_mesh={:.3}m mesh_span={:.3}m",
-            skeleton_extent_from_globals(&globals),
-            skeleton_extent_from_globals(&runtime_globals),
-            skeleton_extent_mesh_space(&runtime_globals, mesh_normalize),
-            skinned_mesh_extent(
-                asset_parts
-                    .first()
-                    .map(|p| p.mesh.vertices.as_slice())
-                    .unwrap_or(&[]),
-            ),
-        );
-    }
-
-    log_rigid_bind_diagnostics(
-        &label,
-        bind_pose_from_ibm,
-        ancestors_added,
-        &globals,
-        &runtime_globals,
-        &joint_names,
-        &rigid_bind_diags,
-    );
-
-    if primary_skin_set {
-        if let Some(first) = asset_parts.first() {
-            skin_diag::log_skin_transform_probe(
-                &label,
-                &doc,
-                &joint_gltf_nodes,
-                &joint_names,
-                &bind_local,
-                &globals,
-                &runtime_globals,
-                &first.inverse_bind,
-                &all_node_parents,
-                &first.mesh.vertices,
-                bones_skin_before_extend,
-                joint_count,
-                remap_drops.total,
-                bind_pose_from_ibm,
-                mesh_normalize,
-            );
-            skin_diag::log_skin_dual_space_report(
-                &label,
-                &joint_names,
-                &bind_local,
-                &globals,
-                &runtime_globals,
-                &first.inverse_bind,
-                mesh_normalize,
-            );
+            default_ibm = merge_gltf_unified_inverse_bind(&asset_parts, joint_count).0;
+            fill_gltf_part_inverse_bind_gaps(&mut asset_parts, &default_ibm);
         }
     }
 
@@ -1671,44 +1582,7 @@ fn load_gltf_asset_from_file(
         }
     }
 
-    log::info!(
-        "[SKIN_LOAD] {label} | piezas={} (skinned={} rigid={}) huesos={} \
-         mallas_escena={} rigid_omitidas={} vértices={} tex_embebidas={}/{}",
-        asset_parts.len(),
-        asset_parts.len().saturating_sub(rigid_parts_loaded),
-        rigid_parts_loaded,
-        joint_count,
-        scene_mesh_nodes.len(),
-        rigid_parts_skipped,
-        asset_parts
-            .iter()
-            .map(|p| p.mesh.vertices.len())
-            .sum::<usize>(),
-        asset_parts
-            .iter()
-            .filter(|p| p.mesh.width > 1 || p.mesh.height > 1)
-            .count(),
-        asset_parts.len(),
-    );
-    for (pi, part) in asset_parts.iter().enumerate() {
-        log::debug!(
-            "[SKIN_LOAD] {label} p{pi} «{}» verts={} tris={} mat={} tex={}x{}",
-            part.name,
-            part.mesh.vertices.len(),
-            part.mesh.indices.len() / 3,
-            part.material_index,
-            part.mesh.width,
-            part.mesh.height,
-        );
-    }
-
-    log::debug!(
-        "[model_asset] glTF skinned: {} skin(s), {} huesos, {} pieza(s) desde {}",
-        unified.skin_count,
-        joint_count,
-        asset_parts.len(),
-        file.path
-    );
+    
 
     Some(Arc::new(ModelAsset {
         path: file.path.clone(),
@@ -1737,14 +1611,6 @@ fn load_gltf_asset_from_file(
     }))
 }
 
-fn unique_skin_count(nodes: &[SkinnedMeshNode]) -> usize {
-    let mut seen = HashSet::new();
-    for n in nodes {
-        seen.insert(n.skin_index);
-    }
-    seen.len()
-}
-
 fn collect_gltf_skinned_mesh_nodes(
     node: gltf::Node,
     inherited_skin: Option<usize>,
@@ -1756,7 +1622,6 @@ fn collect_gltf_skinned_mesh_nodes(
             out.push(SkinnedMeshNode {
                 node_index: node.index(),
                 skin_index,
-                inherited_skin: node.skin().is_none(),
             });
         }
     }
@@ -1779,223 +1644,6 @@ fn collect_gltf_scene_mesh_nodes(node: gltf::Node, out: &mut Vec<(usize, String)
     }
 }
 
-/// Mapea nodos mesh alcanzables con skin propio o heredado (misma regla que `collect_gltf_skinned_mesh_nodes`).
-fn map_gltf_mesh_effective_skin(
-    scene: &gltf::Scene,
-    out: &mut HashMap<usize, (usize, bool)>,
-) {
-    fn walk(node: gltf::Node, inherited_skin: Option<usize>, out: &mut HashMap<usize, (usize, bool)>) {
-        let skin_ix = node.skin().map(|s| s.index()).or(inherited_skin);
-        if node.mesh().is_some() {
-            if let Some(skin_index) = skin_ix {
-                out.insert(node.index(), (skin_index, node.skin().is_none()));
-            }
-        }
-        let child_inherit = node.skin().map(|s| s.index()).or(inherited_skin);
-        for child in node.children() {
-            walk(child, child_inherit, out);
-        }
-    }
-    for root in scene.nodes() {
-        walk(root, None, out);
-    }
-}
-
-fn log_gltf_mesh_classification_audit(
-    label: &str,
-    doc: &gltf::Document,
-    buffers: &[gltf::buffer::Data],
-    scene: &gltf::Scene,
-    scene_mesh_nodes: &[(usize, String)],
-    skinned_nodes: &[SkinnedMeshNode],
-    all_node_parents: &HashMap<usize, usize>,
-    node_to_joint: &HashMap<usize, usize>,
-    joint_gltf_nodes: &[usize],
-    joint_names: &[String],
-    loaded_skinned: &HashSet<usize>,
-    loaded_rigid: &HashSet<usize>,
-    rigid_no_joint: &HashSet<usize>,
-    skin_joint_set: &HashSet<usize>,
-    joint_origins: &[GltfJointOrigin],
-    runtime_globals: &[Mat4],
-    skin_count: usize,
-    joint_count: usize,
-) {
-    let mut effective_skin = HashMap::new();
-    map_gltf_mesh_effective_skin(scene, &mut effective_skin);
-    let scene_parents = build_gltf_node_parents(scene);
-    let skinned_in_tree: HashSet<usize> = skinned_nodes.iter().map(|n| n.node_index).collect();
-    let doc_skin_total = doc.skins().count();
-
-    let mut count_skinned_tree = 0usize;
-    let mut count_rigid_tree = 0usize;
-    let mut count_omitida = 0usize;
-    let mut skinned_names: Vec<String> = Vec::new();
-
-    for (idx, (node_index, node_name)) in scene_mesh_nodes.iter().enumerate() {
-        let gltf_skin_prop = doc
-            .nodes()
-            .nth(*node_index)
-            .and_then(|n| n.skin())
-            .map(|s| s.index());
-
-        let (class, skin_index_str, anchor_str, extra) =
-            if skinned_in_tree.contains(node_index) {
-                count_skinned_tree += 1;
-                let entry = skinned_nodes
-                    .iter()
-                    .find(|e| e.node_index == *node_index);
-                let Some(entry) = entry else {
-                    log::warn!(
-                        "[SKIN_MESH_AUDIT] {label} node={node_index} «{node_name}» \
-                         inconsistencia: en skinned_in_tree sin entrada"
-                    );
-                    continue;
-                };
-                skinned_names.push(format!(
-                    "«{node_name}» skin={}{}",
-                    entry.skin_index,
-                    if entry.inherited_skin { " heredado" } else { "" }
-                ));
-                let loaded = if loaded_skinned.contains(node_index) {
-                    "si"
-                } else {
-                    "no_primitivas"
-                };
-                (
-                    "skinned",
-                    format!("{}", entry.skin_index),
-                    "-".to_string(),
-                    format!(
-                        "skin_propio={} skin_heredado={} gltf_skin={} cargada={loaded}",
-                        !entry.inherited_skin,
-                        entry.inherited_skin,
-                        gltf_skin_prop
-                            .map(|i| i.to_string())
-                            .unwrap_or_else(|| "-".to_string()),
-                    ),
-                )
-            } else if let Some(joint_ui) = nearest_unified_joint_for_node(
-                label,
-                node_name,
-                *node_index,
-                gltf_rigid_mesh_spatial_reference(doc, buffers, &scene_parents, *node_index).1,
-                all_node_parents,
-                node_to_joint,
-                skin_joint_set,
-                joint_origins,
-                joint_names,
-                runtime_globals,
-                Some(doc),
-            ) {
-                count_rigid_tree += 1;
-                let joint_gltf_node = joint_gltf_nodes.get(joint_ui).copied();
-                let joint_label = joint_names
-                    .get(joint_ui)
-                    .map(String::as_str)
-                    .unwrap_or("?");
-                let loaded = if loaded_rigid.contains(node_index) {
-                    "si"
-                } else {
-                    "no"
-                };
-                let in_effective = effective_skin.contains_key(node_index);
-                (
-                    "rigid",
-                    "-".to_string(),
-                    format!(
-                        "ui={joint_ui} «{joint_label}» gltf_node={}",
-                        joint_gltf_node
-                            .map(|n| n.to_string())
-                            .unwrap_or_else(|| "?".to_string())
-                    ),
-                    format!(
-                        "skin_en_arbol=false gltf_skin={} cargada={loaded} \
-                         motivo=fuera_cadena_skin_desde_raiz in_effective_skin_map={in_effective}",
-                        gltf_skin_prop
-                            .map(|i| i.to_string())
-                            .unwrap_or_else(|| "-".to_string()),
-                    ),
-                )
-            } else {
-                count_omitida += 1;
-                let motivo = if rigid_no_joint.contains(node_index) {
-                    "sin_joint_ancestro"
-                } else {
-                    "sin_clasificar"
-                };
-                (
-                    "omitida",
-                    "-".to_string(),
-                    "-".to_string(),
-                    format!(
-                        "gltf_skin={} motivo={motivo}",
-                        gltf_skin_prop
-                            .map(|i| i.to_string())
-                            .unwrap_or_else(|| "-".to_string()),
-                    ),
-                )
-            };
-
-        log::debug!(
-            "[SKIN_MESH_AUDIT] {label} [{:02}/{}] node={node_index} «{node_name}» \
-             class={class} skin_index={skin_index_str} anchor={anchor_str} {extra}",
-            idx + 1,
-            scene_mesh_nodes.len(),
-        );
-    }
-
-    if !skinned_names.is_empty() {
-        log::info!(
-            "[SKIN_MESH_AUDIT] {label} piezas_skinned: {}",
-            skinned_names.join(", "),
-        );
-    }
-
-    log::info!(
-        "[SKIN_MESH_AUDIT] {label} | mallas={} skins_gltf={doc_skin_total} skins_carga={skin_count} \
-         huesos={joint_count} skinned={count_skinned_tree} rigid={count_rigid_tree} omitida={count_omitida} \
-         fuera_arbol_skinned={}",
-        scene_mesh_nodes.len(),
-        scene_mesh_nodes.len().saturating_sub(effective_skin.len()),
-    );
-
-    log::debug!(
-        "[SKIN_MESH_AUDIT] {label} cargadas GPU: skinned={} rigid={}",
-        loaded_skinned.len(),
-        loaded_rigid.len(),
-    );
-}
-
-fn nearest_unified_joint_for_node(
-    label: &str,
-    mesh_name: &str,
-    node_index: usize,
-    mesh_world_ref: Vec3,
-    scene_parents: &HashMap<usize, usize>,
-    node_to_joint: &HashMap<usize, usize>,
-    skin_joint_set: &HashSet<usize>,
-    joint_origins: &[GltfJointOrigin],
-    joint_names: &[String],
-    runtime_globals: &[Mat4],
-    doc: Option<&gltf::Document>,
-) -> Option<usize> {
-    trace_rigid_anchor_for_node(
-        label,
-        mesh_name,
-        node_index,
-        mesh_world_ref,
-        scene_parents,
-        node_to_joint,
-        skin_joint_set,
-        joint_origins,
-        joint_names,
-        runtime_globals,
-        doc,
-    )
-    .map(|t| t.anchor_ui)
-}
-
 fn is_valid_rigid_anchor_origin(origin: GltfJointOrigin) -> bool {
     matches!(
         origin,
@@ -2003,59 +1651,8 @@ fn is_valid_rigid_anchor_origin(origin: GltfJointOrigin) -> bool {
     )
 }
 
-struct RigidAnchorChainStep {
-    node_ix:   usize,
-    name:      String,
-    joint_ui:  Option<usize>,
-}
-
-#[derive(Clone)]
-struct SkinJointInChain {
-    gltf_node:       usize,
-    ui:              usize,
-    name:            String,
-    steps_from_mesh: usize,
-}
-
-struct RigidAnchorTrace {
-    anchor_ui:          usize,
-    anchor_gltf_node:   usize,
-    anchor_name:        String,
-    anchor_origin:      GltfJointOrigin,
-    /// Niveles de padres subidos desde la malla hasta el anchor (0 = la propia malla).
-    anchor_depth:       usize,
-    stopped_at_node:    usize,
-    chain:              Vec<RigidAnchorChainStep>,
-    reason:             String,
-    nearest_skin_joint: Option<SkinJointInChain>,
-    spatial_fallback:   bool,
-}
-
-struct RigidBindDiag {
-    mesh_name:        String,
-    gltf_node:        usize,
-    parent_node_ix:   Option<usize>,
-    parent_node_name: String,
-    trace:            RigidAnchorTrace,
-    mesh_bind_world:  Mat4,
-    /// Centro AABB de la geometría en espacio escena (referencia espacial del fallback).
-    mesh_world_ref:   Vec3,
-}
-
-fn gltf_node_display_name(doc: &gltf::Document, node_ix: usize) -> String {
-    doc.nodes()
-        .nth(node_ix)
-        .and_then(|n| n.name())
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| format!("node_{node_ix}"))
-}
-
 fn mat4_world_translation(m: Mat4) -> Vec3 {
     m.transform_point3(Vec3::ZERO)
-}
-
-fn format_vec3_xyz(v: Vec3) -> String {
-    format!("({:.3},{:.3},{:.3})", v.x, v.y, v.z)
 }
 
 /// Centro del AABB de todas las primitivas POSITION del nodo mesh (espacio local del nodo).
@@ -2099,149 +1696,50 @@ fn gltf_rigid_mesh_spatial_reference(
     (mesh_bind_world, mesh_world_ref)
 }
 
-fn log_rigid_world_probe(
-    label: &str,
-    mesh_name: &str,
-    node_index: usize,
-    mesh_bind_world: Mat4,
+fn nearest_skin_joint_spatial(
     mesh_world_ref: Vec3,
-) {
-    let node_origin = mat4_world_translation(mesh_bind_world);
-    log::info!(
-        "[RIGID_WORLD] {label} mesh=«{mesh_name}» node={node_index} \
-         node_origin={} world_pos={}",
-        format_vec3_xyz(node_origin),
-        format_vec3_xyz(mesh_world_ref),
-    );
-}
-
-const RIGID_BIND_DETAIL_OFFSET_M: f32 = 0.5;
-
-const RIGID_BIND_DETAIL_KEYWORDS: &[&str] = &[
-    "eye", "head", "face", "hair", "helmet", "hat", "glasses", "mask",
-];
-
-fn rigid_bind_detail_keyword_mesh(name: &str) -> bool {
-    let n = name.to_ascii_lowercase();
-    RIGID_BIND_DETAIL_KEYWORDS.iter().any(|k| n.contains(k))
-}
-
-fn should_log_rigid_bind_detail(mesh_name: &str, offset_m: f32) -> bool {
-    offset_m > RIGID_BIND_DETAIL_OFFSET_M || rigid_bind_detail_keyword_mesh(mesh_name)
-}
-
-fn log_rigid_bind_detail(
-    mesh_name: &str,
-    anchor_name: &str,
-    anchor_is_joint: bool,
-    anchor_depth: usize,
-    offset_m: f32,
-    world_pos: Vec3,
-) {
-    log::info!(
-        "[RIGID_BIND_DETAIL]\n\
-         mesh={mesh_name}\n\
-         anchor={anchor_name}\n\
-         anchor_is_joint={anchor_is_joint}\n\
-         anchor_depth={anchor_depth}\n\
-         offset={offset_m:.3}m\n\
-         world_pos=({:.2},{:.2},{:.2})",
-        world_pos.x,
-        world_pos.y,
-        world_pos.z,
-    );
+    skin_joint_set: &HashSet<usize>,
+    node_to_joint: &HashMap<usize, usize>,
+    runtime_globals: &[Mat4],
+) -> Option<usize> {
+    if skin_joint_set.is_empty() {
+        return None;
+    }
+    let mut best: Option<(usize, f32)> = None;
+    for &gltf_node in skin_joint_set {
+        let Some(&ui) = node_to_joint.get(&gltf_node) else {
+            continue;
+        };
+        let joint_m = runtime_globals.get(ui).copied().unwrap_or(Mat4::IDENTITY);
+        let joint_pos = mat4_world_translation(joint_m);
+        let dist = (mesh_world_ref - joint_pos).length();
+        if best.as_ref().map_or(true, |(_, d)| dist < *d) {
+            best = Some((ui, dist));
+        }
+    }
+    best.map(|(ui, _)| ui)
 }
 
 /// Recorre padres desde la malla; el anchor válido es el primer nodo en `node_to_joint`
-/// con origen `SkinJoint` o `AnimNode`. `SceneAncestor` y `SkeletonRoot` se ignoran.
-/// Si no hay anchor en cadena, fallback espacial al `skin.joints` más cercano (`runtime_globals`).
-/// `mesh_world_ref` debe ser el centro AABB de la geometría en espacio escena, no el origen del nodo.
-fn trace_rigid_anchor_for_node(
-    label: &str,
-    mesh_name: &str,
+/// con origen `SkinJoint` o `AnimNode`. Si no hay anchor en cadena, fallback espacial.
+fn resolve_rigid_joint_ui(
     mesh_node: usize,
     mesh_world_ref: Vec3,
     scene_parents: &HashMap<usize, usize>,
     node_to_joint: &HashMap<usize, usize>,
     skin_joint_set: &HashSet<usize>,
     joint_origins: &[GltfJointOrigin],
-    joint_names: &[String],
     runtime_globals: &[Mat4],
-    doc: Option<&gltf::Document>,
-) -> Option<RigidAnchorTrace> {
-    let node_name = |ix: usize| -> String {
-        doc.map(|d| gltf_node_display_name(d, ix))
-            .unwrap_or_else(|| format!("node_{ix}"))
-    };
-
-    let mut chain: Vec<RigidAnchorChainStep> = Vec::new();
-    let mut skin_joints_in_chain: Vec<SkinJointInChain> = Vec::new();
+) -> Option<usize> {
     let mut cur = mesh_node;
-    for step in 0..512 {
-        let name = node_name(cur);
-        let joint_ui = node_to_joint.get(&cur).copied();
-        if skin_joint_set.contains(&cur) {
-            if let Some(ui) = joint_ui {
-                skin_joints_in_chain.push(SkinJointInChain {
-                    gltf_node: cur,
-                    ui,
-                    name: name.clone(),
-                    steps_from_mesh: step,
-                });
-            }
-        }
-        chain.push(RigidAnchorChainStep {
-            node_ix: cur,
-            name: name.clone(),
-            joint_ui,
-        });
-        if let Some(anchor_ui) = joint_ui {
+    for _ in 0..512 {
+        if let Some(&anchor_ui) = node_to_joint.get(&cur) {
             let anchor_origin = joint_origins
                 .get(anchor_ui)
                 .copied()
                 .unwrap_or(GltfJointOrigin::SkinJoint);
             if is_valid_rigid_anchor_origin(anchor_origin) {
-                let nearest_skin_joint = skin_joints_in_chain.first().cloned();
-                let skin_joint_note = match &nearest_skin_joint {
-                    Some(sj) if sj.gltf_node == cur => {
-                        "coincide con el primer skin.joints en la cadena".to_string()
-                    }
-                    Some(sj) => format!(
-                        "primer skin.joints «{}» ui={} node={} a {} nivel/es arriba",
-                        sj.name, sj.ui, sj.gltf_node, sj.steps_from_mesh,
-                    ),
-                    None => "ningún skin.joints en la cadena de padres".to_string(),
-                };
-                let reason = if step == 0 {
-                    format!(
-                        "nodo mesh en node_to_joint ui={anchor_ui} origen={} ({skin_joint_note})",
-                        anchor_origin.label(),
-                    )
-                } else {
-                    format!(
-                        "anchor en cadena: node={cur} «{name}» ui={anchor_ui} \
-                         (+{step} niveles; origen={}; {skin_joint_note})",
-                        anchor_origin.label(),
-                    )
-                };
-                log_rigid_graph_trace(
-                    label,
-                    mesh_name,
-                    &chain,
-                    &skin_joints_in_chain,
-                );
-                return Some(RigidAnchorTrace {
-                    anchor_ui,
-                    anchor_gltf_node: cur,
-                    anchor_name: name,
-                    anchor_origin,
-                    anchor_depth: step,
-                    stopped_at_node: cur,
-                    chain,
-                    reason,
-                    nearest_skin_joint,
-                    spatial_fallback: false,
-                });
+                return Some(anchor_ui);
             }
         }
         let Some(&parent) = scene_parents.get(&cur) else {
@@ -2250,249 +1748,16 @@ fn trace_rigid_anchor_for_node(
         cur = parent;
     }
 
-    log_rigid_graph_trace(label, mesh_name, &chain, &skin_joints_in_chain);
-
-    let (anchor_ui, anchor_gltf_node, anchor_name, dist) = match nearest_skin_joint_spatial(
-        mesh_world_ref,
-        skin_joint_set,
-        node_to_joint,
-        joint_names,
-        runtime_globals,
-        doc,
-    ) {
-        Some(found) => found,
-        None => {
+    nearest_skin_joint_spatial(mesh_world_ref, skin_joint_set, node_to_joint, runtime_globals)
+        .or_else(|| {
             log::warn!(
-                "[RIGID_NEAREST] {label} mesh=«{mesh_name}» dist=- joint=- \
-                 (fallback falló: skin_joint_set={} sin entrada en node_to_joint)",
+                "[model_asset] malla rígida sin joint cercano (skin_joint_set={})",
                 skin_joint_set.len(),
             );
-            return None;
-        }
-    };
-    let nearest_skin_joint = Some(SkinJointInChain {
-        gltf_node: anchor_gltf_node,
-        ui: anchor_ui,
-        name: anchor_name.clone(),
-        steps_from_mesh: 0,
-    });
-    log::info!(
-        "[RIGID_NEAREST] {label} mesh=«{mesh_name}» joint=«{anchor_name}» dist={dist:.4}m",
-    );
-    let reason = format!(
-        "fallback espacial a skin.joints más cercano → «{anchor_name}» ui={anchor_ui} dist={dist:.4}m",
-    );
-    Some(RigidAnchorTrace {
-        anchor_ui,
-        anchor_gltf_node,
-        anchor_name,
-        anchor_origin: GltfJointOrigin::SkinJoint,
-        anchor_depth: chain.len().saturating_sub(1),
-        stopped_at_node: mesh_node,
-        chain,
-        reason,
-        nearest_skin_joint,
-        spatial_fallback: true,
-    })
-}
-
-fn log_rigid_graph_trace(
-    label: &str,
-    mesh_name: &str,
-    chain: &[RigidAnchorChainStep],
-    skin_joints_in_chain: &[SkinJointInChain],
-) {
-    let skin_list: Vec<String> = skin_joints_in_chain
-        .iter()
-        .map(|sj| format!("«{}» ui={} node={} (+{})", sj.name, sj.ui, sj.gltf_node, sj.steps_from_mesh))
-        .collect();
-    log::debug!(
-        "[RIGID_GRAPH] {label} mesh=«{mesh_name}» parent_chain={} \
-         skin_joints_in_chain=[{}] intersection_count={}",
-        format_rigid_anchor_chain(chain),
-        if skin_list.is_empty() {
-            "-".to_string()
-        } else {
-            skin_list.join(", ")
-        },
-        skin_joints_in_chain.len(),
-    );
-}
-
-fn nearest_skin_joint_spatial(
-    mesh_world_ref: Vec3,
-    skin_joint_set: &HashSet<usize>,
-    node_to_joint: &HashMap<usize, usize>,
-    joint_names: &[String],
-    runtime_globals: &[Mat4],
-    doc: Option<&gltf::Document>,
-) -> Option<(usize, usize, String, f32)> {
-    if skin_joint_set.is_empty() {
-        return None;
-    }
-    let mut best: Option<(usize, usize, String, f32)> = None;
-    for &gltf_node in skin_joint_set {
-        let Some(&ui) = node_to_joint.get(&gltf_node) else {
-            continue;
-        };
-        let joint_m = runtime_globals.get(ui).copied().unwrap_or(Mat4::IDENTITY);
-        let joint_pos = mat4_world_translation(joint_m);
-        let dist = (mesh_world_ref - joint_pos).length();
-        if best.as_ref().map_or(true, |(_, _, _, d)| dist < *d) {
-            let name = joint_names
-                .get(ui)
-                .cloned()
-                .or_else(|| doc.map(|d| gltf_node_display_name(d, gltf_node)))
-                .unwrap_or_else(|| format!("node_{gltf_node}"));
-            best = Some((ui, gltf_node, name, dist));
-        }
-    }
-    best
-}
-
-fn format_rigid_anchor_chain(chain: &[RigidAnchorChainStep]) -> String {
-    chain
-        .iter()
-        .map(|s| {
-            let joint = s
-                .joint_ui
-                .map(|ui| format!("joint=ui{ui}"))
-                .unwrap_or_else(|| "joint=-".to_string());
-            format!("node{}«{}»[{joint}]", s.node_ix, s.name)
+            None
         })
-        .collect::<Vec<_>>()
-        .join(" → ")
 }
 
-fn format_skin_joint_in_chain(sj: Option<&SkinJointInChain>) -> String {
-    match sj {
-        Some(s) => format!(
-            "«{}» ui={} node={} (+{} niveles)",
-            s.name, s.ui, s.gltf_node, s.steps_from_mesh
-        ),
-        None => "ninguno en cadena GLTF".to_string(),
-    }
-}
-
-fn log_rigid_bind_diagnostics(
-    label: &str,
-    bind_pose_from_ibm: bool,
-    _scene_ancestors_added: usize,
-    hierarchy_globals: &[Mat4],
-    runtime_globals: &[Mat4],
-    joint_names: &[String],
-    diags: &[RigidBindDiag],
-) {
-    if diags.is_empty() {
-        return;
-    }
-
-    let skel_span_hier = skeleton_extent_from_globals(hierarchy_globals);
-    let mut offset_max = 0.0f32;
-    let mut offset_sum = 0.0f32;
-    let mut anchor_counts: HashMap<(usize, String), usize> = HashMap::new();
-    let mut anchor_origin_counts: HashMap<GltfJointOrigin, usize> = HashMap::new();
-    let mut no_skin_joint_in_chain = 0usize;
-
-    for diag in diags {
-        let anchor_name = joint_names
-            .get(diag.trace.anchor_ui)
-            .cloned()
-            .unwrap_or_else(|| diag.trace.anchor_name.clone());
-        let mesh_pos = diag.mesh_world_ref;
-        let node_origin = mat4_world_translation(diag.mesh_bind_world);
-        let joint_hier = hierarchy_globals
-            .get(diag.trace.anchor_ui)
-            .copied()
-            .unwrap_or(Mat4::IDENTITY);
-        let joint_pos_hier = mat4_world_translation(joint_hier);
-        let joint_rt = runtime_globals
-            .get(diag.trace.anchor_ui)
-            .copied()
-            .unwrap_or(Mat4::IDENTITY);
-        let joint_pos_rt = mat4_world_translation(joint_rt);
-        let offset_hier = (mesh_pos - joint_pos_hier).length();
-        let offset_rt = (mesh_pos - joint_pos_rt).length();
-        offset_max = offset_max.max(offset_rt);
-        offset_sum += offset_rt;
-        *anchor_counts
-            .entry((diag.trace.anchor_ui, anchor_name.clone()))
-            .or_insert(0) += 1;
-        *anchor_origin_counts
-            .entry(diag.trace.anchor_origin)
-            .or_insert(0) += 1;
-        if diag.trace.nearest_skin_joint.is_none() {
-            no_skin_joint_in_chain += 1;
-        }
-
-        if should_log_rigid_bind_detail(&diag.mesh_name, offset_rt) {
-            log_rigid_bind_detail(
-                &diag.mesh_name,
-                &anchor_name,
-                is_valid_rigid_anchor_origin(diag.trace.anchor_origin),
-                diag.trace.anchor_depth,
-                offset_rt,
-                mesh_pos,
-            );
-        }
-
-        let parent_gltf = diag
-            .parent_node_ix
-            .map(|p| p.to_string())
-            .unwrap_or_else(|| "-".to_string());
-
-        log::debug!(
-            "[RIGID_BIND] {label} mesh=«{}» gltf_node={} parent_gltf={parent_gltf} parent=«{}» | \
-             cadena={} | anchor=«{anchor_name}» ui={} gltf_node={} origen={} | \
-             skin_joint_en_cadena={} | mesh_ref={} node_origin={} anchor_hier={} anchor_rt={} \
-             offset_hier={offset_hier:.4}m offset_rt={offset_rt:.4}m | {}",
-            diag.mesh_name,
-            diag.gltf_node,
-            diag.parent_node_name,
-            format_rigid_anchor_chain(&diag.trace.chain),
-            diag.trace.anchor_ui,
-            diag.trace.anchor_gltf_node,
-            diag.trace.anchor_origin.label(),
-            format_skin_joint_in_chain(diag.trace.nearest_skin_joint.as_ref()),
-            format_vec3_xyz(mesh_pos),
-            format_vec3_xyz(node_origin),
-            format_vec3_xyz(joint_pos_hier),
-            format_vec3_xyz(joint_pos_rt),
-            diag.trace.reason,
-        );
-    }
-
-    let n = diags.len() as f32;
-    let offset_avg = if n > 0.0 { offset_sum / n } else { 0.0 };
-    let scene_ancestor_anchors = anchor_origin_counts
-        .get(&GltfJointOrigin::SceneAncestor)
-        .copied()
-        .unwrap_or(0);
-    let dominant = anchor_counts
-        .iter()
-        .max_by_key(|(_, c)| *c)
-        .map(|((ui, name), c)| (*ui, name.clone(), *c));
-
-    if let Some((ui, name, count)) = dominant {
-        log::info!(
-            "[RIGID_BIND] {label} | rigid={} bind_pose_from_ibm={bind_pose_from_ibm} \
-             skel_span_hier={skel_span_hier:.3}m anchor_dominante=«{name}» ui={ui} ({count}/{}) \
-             offset_max={offset_max:.3}m offset_avg={offset_avg:.3}m \
-             scene_ancestor={scene_ancestor_anchors}/{} sin_skin_joint_en_cadena={no_skin_joint_in_chain}/{}",
-            diags.len(),
-            diags.len(),
-            diags.len(),
-            diags.len(),
-        );
-    }
-
-    if bind_pose_from_ibm {
-        log::debug!(
-            "[RIGID_BIND] {label} bind_pose_from_ibm | anchor search usa node_to_joint, no IBM; \
-             skel_span_hier≈0 → anchor_bind_hier≈(0,0,0); scene_ancestor indica piezas fuera de skin.joints"
-        );
-    }
-}
 
 fn gltf_skinned_vertex_count(
     doc: &gltf::Document,
@@ -2905,27 +2170,12 @@ fn upright_quat_for_gltf_play_character(
         bind_node_local,
     );
     if let Some(upright) = upright_quat_from_bind_joints(joint_names, &joint_positions) {
-        log::info!(
-            "[model_asset] glTF play upright: esqueleto (joints={}) quat=({:.3},{:.3},{:.3},{:.3})",
-            joint_positions.len(),
-            upright.x,
-            upright.y,
-            upright.z,
-            upright.w
-        );
         return Some(upright);
     }
     let (min, max) = gltf_skinned_parts_bounds(parts)?;
     let points = gltf_skinned_sample_points(parts);
     let upright =
         crate::config_3d::mesh_3d::upright_quat_from_vertices_bounds(min, max, &points);
-    log::info!(
-        "[model_asset] glTF play upright: AABB fallback quat=({:.3},{:.3},{:.3},{:.3})",
-        upright.x,
-        upright.y,
-        upright.z,
-        upright.w
-    );
     Some(upright)
 }
 
@@ -2984,14 +2234,46 @@ fn skinned_vertex_position(palette: &[Mat4], vertex: &SkinnedVertex) -> Vec3 {
 }
 
 /// AABB en bind pose deformado (glTF skinned), espacio local de entidad.
-fn gltf_play_skinned_bind_pose_aabb(
+fn gltf_play_skinned_bind_pose_aabb(asset: &ModelAsset) -> Option<([f32; 3], [f32; 3])> {
+    let joint_count = asset
+        .bind_local
+        .len()
+        .min(MAX_JOINTS)
+        .min(asset.joint_gltf_nodes.len());
+    if joint_count == 0 {
+        return None;
+    }
+    let locals = &asset.bind_local[..joint_count];
+    let inv_norm = asset.mesh_normalize.inverse();
+    let mut min_p = Vec3::splat(f32::MAX);
+    let mut max_p = Vec3::splat(f32::MIN);
+    let mut any = false;
+    for part in &asset.parts {
+        let global = gltf_skinned_part_globals_for_palette(asset, part, locals);
+        let mut palette = vec![Mat4::IDENTITY; MAX_JOINTS];
+        for ji in 0..joint_count.min(global.len()) {
+            let g2b = Mat4::from_cols_array_2d(&part.inverse_bind[ji]);
+            palette[ji] = asset.mesh_normalize * global[ji] * g2b * inv_norm;
+        }
+        for vertex in &part.mesh.vertices {
+            let p = skinned_vertex_position(&palette, vertex);
+            min_p = min_p.min(p);
+            max_p = max_p.max(p);
+            any = true;
+        }
+    }
+    any.then_some(([min_p.x, min_p.y, min_p.z], [max_p.x, max_p.y, max_p.z]))
+}
+
+/// Centro del AABB en bind pose (jerarquía glTF, rigs con TRS en nodos).
+fn gltf_play_bind_pose_aabb_center(
     parts: &[SkinnedMeshPart],
     joint_gltf_nodes: &[usize],
     bind_local: &[Mat4],
     scene_parents: &HashMap<usize, usize>,
     bind_node_local: &HashMap<usize, Mat4>,
     mesh_normalize: Mat4,
-) -> Option<([f32; 3], [f32; 3])> {
+) -> Option<Vec3> {
     let joint_count = bind_local.len().min(MAX_JOINTS).min(joint_gltf_nodes.len());
     if joint_count == 0 {
         return None;
@@ -3019,44 +2301,13 @@ fn gltf_play_skinned_bind_pose_aabb(
             any = true;
         }
     }
-    any.then_some(([min_p.x, min_p.y, min_p.z], [max_p.x, max_p.y, max_p.z]))
-}
-
-/// Centro del AABB en bind pose (tras skinning), en espacio local de entidad.
-fn gltf_play_bind_pose_aabb_center(
-    parts: &[SkinnedMeshPart],
-    joint_gltf_nodes: &[usize],
-    bind_local: &[Mat4],
-    scene_parents: &HashMap<usize, usize>,
-    bind_node_local: &HashMap<usize, Mat4>,
-    mesh_normalize: Mat4,
-) -> Option<Vec3> {
-    gltf_play_skinned_bind_pose_aabb(
-        parts,
-        joint_gltf_nodes,
-        bind_local,
-        scene_parents,
-        bind_node_local,
-        mesh_normalize,
-    )
-    .map(|(min, max)| {
-        let min_v = Vec3::from_array(min);
-        let max_v = Vec3::from_array(max);
-        (min_v + max_v) * 0.5
-    })
+    any.then_some((min_p + max_p) * 0.5)
 }
 
 /// AABB del jugador: bind pose skinned o vértices en reposo.
 pub(crate) fn model_asset_play_character_visual_bounds(asset: &ModelAsset) -> Option<([f32; 3], [f32; 3])> {
     if !asset.joint_gltf_nodes.is_empty() && !asset.bind_local.is_empty() {
-        if let Some(bounds) = gltf_play_skinned_bind_pose_aabb(
-            &asset.parts,
-            &asset.joint_gltf_nodes,
-            &asset.bind_local,
-            &asset.gltf_scene_parents,
-            &asset.gltf_bind_node_local,
-            asset.mesh_normalize,
-        ) {
+        if let Some(bounds) = gltf_play_skinned_bind_pose_aabb(asset) {
             return Some(bounds);
         }
     }
