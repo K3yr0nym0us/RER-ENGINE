@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 
-import { Modal, Nav, Tab } from 'react-bootstrap'
+import { Nav, Tab } from 'react-bootstrap'
 import {
 	CircleSquare,
 	Check2Square,
@@ -12,6 +12,7 @@ import {
 } from 'react-bootstrap-icons'
 
 import { AppTooltip } from '@components'
+import { InlineNestedDialog } from '../../../../../modal-electron/InlineNestedDialog'
 import { TransformPanel, ScriptingPanelContent } from '.'
 import { EntityTexturesPanel } from './EntityTexturesPanel'
 import type { TransformSendCommand } from './TransformPanel'
@@ -174,7 +175,7 @@ export function EntityPropertiesModalContent({
 
 	if (isMultiSelect) {
 		return (
-			<div>
+			<div className="position-relative">
 				<p className="text-secondary fst-italic small mb-0 px-1">
 					{multiSelectedIds.length} {t('entities selected')}
 				</p>
@@ -366,7 +367,7 @@ export function EntityPropertiesModalContent({
 	const showModelActions = !isCollider && !isExecutionArea
 
 	return (
-		<div>
+		<div className="position-relative">
 			<div className="entity-props-toolbar d-flex align-items-stretch gap-1 mb-0 flex-nowrap">
 				<div className="input-group input-group-sm flex-grow-1 min-w-0">
 					<input
@@ -707,27 +708,29 @@ function ConfirmSubModal({
 }) {
 	const { t } = useTraslate()
 	return (
-		<Modal show onHide={onClose} centered>
-			<Modal.Header closeButton>
-				<Modal.Title>{title}</Modal.Title>
-			</Modal.Header>
-			<Modal.Body>{message}</Modal.Body>
-			<Modal.Footer>
-				<button type="button" className="btn btn-secondary btn-sm" onClick={onClose}>
-					{t('Cancel')}
-				</button>
-				<button
-					type="button"
-					className="btn btn-danger btn-sm"
-					onClick={() => {
-						onConfirm()
-						onClose()
-					}}
-				>
-					{confirmLabel}
-				</button>
-			</Modal.Footer>
-		</Modal>
+		<InlineNestedDialog
+			title={title}
+			onClose={onClose}
+			footer={
+				<div className="d-flex justify-content-end gap-2">
+					<button type="button" className="btn btn-secondary btn-sm" onClick={onClose}>
+						{t('Cancel')}
+					</button>
+					<button
+						type="button"
+						className="btn btn-danger btn-sm"
+						onClick={() => {
+							onConfirm()
+							onClose()
+						}}
+					>
+						{confirmLabel}
+					</button>
+				</div>
+			}
+		>
+			{message}
+		</InlineNestedDialog>
 	)
 }
 

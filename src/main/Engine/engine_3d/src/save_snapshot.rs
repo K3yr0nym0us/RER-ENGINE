@@ -1,5 +1,6 @@
 use crate::engine::State;
 use crate::assets::registry::relative_rerasset_manifest_path;
+use rer_engine_shared::assets::AssetState;
 use crate::ipc::{
     send_event, EngineEvent, SaveAssetRefSnapshot, SavePlayerUiTextBoxSnapshot,
     SaveSceneSnapshotPayload, SaveWorldSnapshot,
@@ -58,15 +59,32 @@ impl State {
             models: self
                 .model_store
                 .iter()
-                .map(|(path, entry)| SaveAssetRefSnapshot {
-                    name: entry.name.clone(),
-                    path: path.clone(),
-                    category: entry.category.clone(),
-                    model_id: entry.model_id.clone(),
-                    asset: entry
-                        .model_id
-                        .as_ref()
-                        .map(|id| relative_rerasset_manifest_path(id)),
+                .filter_map(|(path, entry)| {
+                    let model_id = entry.model_id.as_ref()?;
+                    let reg = self.imported_model_registry.get(model_id)?;
+                    if reg.state != AssetState::Ready {
+                        log::debug!(
+                            "[save] biblioteca omitida (import no listo): {} ({})",
+                            entry.name,
+                            model_id
+                        );
+                        return None;
+                    }
+                    if !reg.rerasset_path.is_file() {
+                        log::warn!(
+                            "[save] biblioteca omitida (sin .rerasset): {} ({})",
+                            entry.name,
+                            model_id
+                        );
+                        return None;
+                    }
+                    Some(SaveAssetRefSnapshot {
+                        name: entry.name.clone(),
+                        path: path.clone(),
+                        category: entry.category.clone(),
+                        model_id: Some(model_id.clone()),
+                        asset: Some(relative_rerasset_manifest_path(model_id)),
+                    })
                 })
                 .collect(),
             sounds: self

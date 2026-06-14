@@ -702,6 +702,58 @@ impl State {
             && !self.player_ui_edit_active
             && self.entity_textures_preview_entity.is_none()
         {
+            let skeleton_overlay =
+                crate::config_3d::skeleton_debug::build_selected_skeleton_overlay(
+                    &self.device,
+                    self,
+                );
+            if skeleton_overlay.vertex_count > 0 {
+                let aspect = self.size.width as f32 / self.size.height as f32;
+                let vp = self
+                    .camera_to_uniform_at_anchor(self.orbit_view_anchor(), aspect)
+                    .view_proj;
+                let skel_uni: [[f32; 4]; 9] = [
+                    vp[0],
+                    vp[1],
+                    vp[2],
+                    vp[3],
+                    [1.0, 0.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                    [0.0, 0.0, 0.0, 1.0],
+                    [-1.0, -1.0, 0.0, 0.0],
+                ];
+                self.queue.write_buffer(
+                    &self.grid_buffer_uni,
+                    0,
+                    bytemuck::cast_slice(&skel_uni),
+                );
+                let mut skel_pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("skeleton-debug-pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Load,
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    occlusion_query_set: None,
+                    timestamp_writes: None,
+                });
+                skel_pass.set_pipeline(&self.grid_pipeline);
+                skel_pass.set_bind_group(0, &self.grid_bind_group, &[]);
+                skel_pass.set_vertex_buffer(0, skeleton_overlay.vertex_buffer.slice(..));
+                skel_pass.draw(0..skeleton_overlay.vertex_count, 0..1);
+                draw_calls += 1;
+            }
+        }
+
+        if !self.preview_playing
+            && !self.player_ui_edit_active
+            && self.entity_textures_preview_entity.is_none()
+        {
             if let Some(origin) = self.selection_center().filter(|_| self.pivot_edit_mode.is_none())
             {
                 let aspect = self.size.width as f32 / self.size.height as f32;

@@ -12,9 +12,11 @@ export function ModalElectronApp() {
     payload != null,
     payload?.componentKey,
     payload?.resizable,
+    payload?.blockingOverlay,
   )
 
   const isResizable = payload?.resizable === true
+  const isBlockingOverlay = payload?.blockingOverlay === true
 
   useEffect(() => {
     document.documentElement.classList.toggle('modal-electron-resizable', isResizable)
@@ -44,11 +46,19 @@ export function ModalElectronApp() {
       <ModalElectronCloseProvider closeModal={closeModal}>
         <div
           ref={contentRef}
-          className={`p-3${isResizable ? ' modal-electron-shell--resizable' : ''}`}
+          className={
+            isBlockingOverlay
+              ? 'modal-electron-shell--blocking'
+              : `p-3${isResizable ? ' modal-electron-shell--resizable' : ''}`
+          }
           style={{
-            background: 'var(--bs-body-bg)',
+            background: isBlockingOverlay ? 'transparent' : 'var(--bs-body-bg)',
             boxSizing: 'border-box',
-            ...(isResizable ? { height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' } : {}),
+            ...(isResizable
+              ? { height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }
+              : isBlockingOverlay
+                ? { height: '100vh', overflow: 'hidden' }
+                : {}),
           }}
         >
           {payload ? (

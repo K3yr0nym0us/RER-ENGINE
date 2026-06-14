@@ -1650,7 +1650,7 @@ export function createEngineEventHandler({
 		}
 
 		if (event.event === 'model_asset_load_failed') {
-			const model = event as unknown as { path: string; name?: string };
+			const model = event as unknown as { path: string; name?: string; model_id?: string };
 			const entry = refs.modelsRef.current.find(
 				(m) =>
 					m.loading
@@ -1662,6 +1662,8 @@ export function createEngineEventHandler({
 				payload: {
 					path: model.path,
 					name: entry?.name ?? model.path.split(/[/\\]/).pop() ?? 'model',
+					...(model.model_id ? { model_id: model.model_id } : {}),
+					state: 'failed',
 				},
 			});
 		}

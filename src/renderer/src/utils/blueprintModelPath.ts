@@ -8,7 +8,7 @@ import type {
 import type { PendingRestore } from '../context/useContextEngine/types'
 import { isEditorBoxPath, isGroundPath, isPlayerPath, isSunPath } from '@shared-types'
 
-const MODEL_3D_EXT = /\.(glb|gltf)$/i
+const MODEL_3D_EXT = /\.(glb|gltf|fbx)$/i
 
 const PLACEHOLDER_PATHS = new Set([
   '[EditorBox]',
@@ -96,7 +96,7 @@ export function blueprintFromSave(bp: Blueprint3D): BluePrintEntry {
   }
 }
 
-/** Entidad 3D instanciada desde archivo .glb/.gltf (no marcadores del editor). */
+/** Entidad 3D instanciada desde archivo .glb/.gltf/.fbx (no marcadores del editor). */
 export function is3dModelFileEntity(
   projectType: string | undefined,
   entity: { path: string },

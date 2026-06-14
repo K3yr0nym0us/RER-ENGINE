@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef } from 'react'
 
 import {
+  isBlockingOverlayModalComponent,
   isResizableModalComponent,
   isTallModalComponent,
   modalTallContentHeightPx,
@@ -14,11 +15,13 @@ export function useModalElectronContentSize(
   active: boolean,
   componentKey?: string,
   resizable?: boolean,
+  blockingOverlay?: boolean,
 ) {
   const contentRef = useRef<HTMLDivElement>(null)
 
   useLayoutEffect(() => {
     if (!active || !contentRef.current) return
+    if (isBlockingOverlayModalComponent(componentKey, blockingOverlay)) return
     if (resizable || isResizableModalComponent(componentKey)) return
 
     const minHeight = isTallModalComponent(componentKey)
@@ -39,7 +42,7 @@ export function useModalElectronContentSize(
     const observer = new ResizeObserver(() => report())
     observer.observe(contentRef.current)
     return () => observer.disconnect()
-  }, [active, componentKey, resizable])
+  }, [active, componentKey, resizable, blockingOverlay])
 
   return contentRef
 }

@@ -135,9 +135,9 @@ export function useModalElectron() {
 		})
 	}, [])
 
-	const closeModal = useCallback(() => {
+	const closeModal = useCallback(async () => {
 		activeModalRef.current = null
-		void window.electronAPI.closeModalElectron()
+		await window.electronAPI.closeModalElectron()
 	}, [])
 
 	const openModal = useCallback(async (opts: OpenModalElectronOptions) => {

@@ -1,7 +1,10 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { createElement, useState, useEffect, useRef, useCallback } from 'react';
 
 import { useContextEngine } from '@engine';
 import { useLanguage } from '@context';
+import { useModal } from '@modal';
+import { useTraslate } from '@hooks';
+import { ProjectSaveBlockingModalBody } from '../modal-electron/ProjectSaveBlockingModalBody';
 import type { GameStyle, ProjectType, ProjectSaveData } from '@shared-types';
 import {
 	buildProjectSaveFromEngineSnapshot,
@@ -21,6 +24,7 @@ export interface UseAutoSaveReturn {
   hasSavedOnce: boolean
   setHasSavedOnce: (v: boolean) => void
   handleSave: () => Promise<void>
+  savingProject: boolean
 }
 
 export function useAutoSave({
@@ -41,8 +45,12 @@ export function useAutoSave({
     menuUiScreens,
   } = useContextEngine();
   const { locale } = useLanguage();
+  const { openModal, closeModal } = useModal();
+  const { t } = useTraslate();
   const [hasSavedOnce, setHasSavedOnce] = useState(Boolean(initialSavePath));
   const [autoSaveEnabled, setAutoSaveEnabled] = useState(false);
+  const [savingProject, setSavingProject] = useState(false);
+  const savingProjectRef = useRef(false);
   const lastSavePath = useRef<string | null>(initialSavePath);
   const autoSaveEnabledRef = useRef(false);
   const buildSaveDataRef = useRef<(() => Promise<ProjectSaveData | null>) | null>(null);
@@ -156,16 +164,45 @@ export function useAutoSave({
   }, [projectType, initialExtractDir]);
 
   const handleSave = useCallback(async () => {
-    const data = await buildSaveData();
-    if (!data) return;
+    if (savingProjectRef.current) return;
+    savingProjectRef.current = true;
+    setSavingProject(true);
+    let saveModalOpen = false;
+    try {
+      const data = await buildSaveData();
+      if (!data) return;
 
-    const savedPath = await window.electronAPI.saveProject(data);
-    if (savedPath) {
-      lastSavePath.current = savedPath;
-      setHasSavedOnce(true);
-      await notifyMotorProjectSaved();
+      const pickedPath = await window.electronAPI.pickProjectSavePath();
+      if (!pickedPath) return;
+
+      await openModal({
+        title: t('Saving project…'),
+        size: 'sm',
+        body: createElement(ProjectSaveBlockingModalBody),
+      });
+      saveModalOpen = true;
+
+      // Dejar que la ventana modal Electron pinte antes del empaquetado (bloquea main).
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => resolve());
+        });
+      });
+
+      const ok = await window.electronAPI.saveProjectSilent(pickedPath, data);
+      if (ok) {
+        lastSavePath.current = pickedPath;
+        setHasSavedOnce(true);
+        await notifyMotorProjectSaved();
+      }
+    } finally {
+      savingProjectRef.current = false;
+      setSavingProject(false);
+      if (saveModalOpen) {
+        await closeModal();
+      }
     }
-  }, [buildSaveData, notifyMotorProjectSaved]);
+  }, [buildSaveData, notifyMotorProjectSaved, openModal, closeModal, t]);
 
   const setHasSavedOnceTrue = useCallback((v: boolean) => {
     setHasSavedOnce(v);
@@ -186,5 +223,6 @@ export function useAutoSave({
     hasSavedOnce,
     setHasSavedOnce: setHasSavedOnceTrue,
     handleSave,
+    savingProject,
   };
 }

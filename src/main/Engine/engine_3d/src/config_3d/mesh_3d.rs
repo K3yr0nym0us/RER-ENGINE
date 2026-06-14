@@ -8,6 +8,7 @@ use crate::config_3d::model_asset::{
 };
 
 use crate::config_3d::model_asset::{self, GltfFile};
+use crate::config_3d::skin_diag;
 use crate::mesh::{upload, Mesh, Vertex};
 
 pub(crate) struct LoadedModelMesh {
@@ -81,8 +82,6 @@ pub(crate) fn prepare_cpu_parts_textures_for_gpu(parts: &mut [CpuModelMeshPart])
 pub(crate) struct ModelPreloadOptions {
     /// Variante `::play_character` (~1.7 m); solo personajes.
     pub warm_play_character: bool,
-    /// Skinning + clips; se difiere al spawn si es `false` (carga en biblioteca).
-    pub load_skinned_asset: bool,
 }
 
 impl ModelPreloadOptions {
@@ -90,7 +89,6 @@ impl ModelPreloadOptions {
         let is_character = category == Some("character");
         Self {
             warm_play_character: is_character,
-            load_skinned_asset: is_character,
         }
     }
 }
@@ -279,8 +277,9 @@ pub(crate) fn load_model_file(
                 load_gltf(device, path, normalize_to_extent)
             }
         }
+        "fbx" => super::mesh_3d_fbx::load_fbx(device, path, normalize_to_extent),
         other => Err(format!(
-            "formato no soportado: .{other} (usa .glb o .gltf)"
+            "formato no soportado: .{other} (usa .glb, .gltf o .fbx)"
         )),
     }
 }
@@ -315,17 +314,41 @@ pub(crate) fn preload_model_cpu_bundle(
             } else {
                 None
             };
-            let anim_asset = if options.load_skinned_asset
-                && model_asset::gltf_needs_model_asset(file.as_ref())
-            {
-                model_asset::load_model_asset_from_gltf(file.as_ref(), None)
+            let anim_asset = if model_asset::gltf_needs_model_asset(file.as_ref()) {
+                let label = path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("model");
+                match model_asset::load_model_asset_from_gltf(file.as_ref(), None) {
+                    Some(asset) => Some(asset),
+                    None => {
+                        skin_diag::log_skinned_unavailable(
+                            label,
+                            "load_model_asset_from_gltf devolvió None",
+                        );
+                        None
+                    }
+                }
             } else {
                 None
             };
             Ok((parts, anim_asset, play_parts))
         }
+        "fbx" => {
+            let parts = super::mesh_3d_fbx::load_fbx_cpu(path, None)?;
+            let play_parts = if options.warm_play_character {
+                Some(super::mesh_3d_fbx::load_fbx_cpu(
+                    path,
+                    Some(crate::config_3d::character_anchor::PLAY_CHARACTER_BODY_HEIGHT),
+                )?)
+            } else {
+                None
+            };
+            let anim_asset = model_asset::load_model_asset(path, None);
+            Ok((parts, anim_asset, play_parts))
+        }
         other => Err(format!(
-            "formato no soportado: .{other} (usa .glb o .gltf)"
+            "formato no soportado: .{other} (usa .glb, .gltf o .fbx)"
         )),
     }
 }
@@ -770,7 +793,7 @@ fn apply_quat_to_vertices(vertices: &mut [Vertex], q: glam::Quat) {
 }
 
 /// Escala por altura Y y deja los pies en Y=0; centra solo en X/Z (colocación en suelo).
-fn normalize_vertices_height_feet_pivot(vertices: &mut [Vertex], target_height: f32) {
+pub(crate) fn normalize_vertices_height_feet_pivot(vertices: &mut [Vertex], target_height: f32) {
     if vertices.is_empty() {
         return;
     }

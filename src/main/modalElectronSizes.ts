@@ -26,6 +26,9 @@ export const MODAL_TALL_COMPONENT_KEYS = new Set([
 /** Modales anclados a la esquina superior izquierda del viewport del motor (no centrados). */
 export const MODAL_VIEWPORT_CORNER_COMPONENT_KEYS = new Set(['EntityPropertiesModalBody'])
 
+/** Overlay bloqueante a tamaño de la ventana principal (solo con `blockingOverlay: true`). */
+export const MODAL_BLOCKING_OVERLAY_COMPONENT_KEYS = new Set<string>()
+
 /** Margen respecto a la esquina superior izquierda del viewport del motor. */
 export const MODAL_VIEWPORT_CORNER_OFFSET = 48
 

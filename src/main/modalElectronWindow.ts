@@ -6,6 +6,8 @@ import { resolveAppWindowIcon } from './appWindowIcon'
 import type { ModalElectronOpenRequest } from '../shared-types/types'
 import {
   clampModalElectronContentHeight,
+  MODAL_BLOCKING_OVERLAY_COMPONENT_KEYS,
+  MODAL_ELECTRON_MIN_CONTENT_HEIGHT,
   MODAL_VIEWPORT_CORNER_COMPONENT_KEYS,
   MODAL_VIEWPORT_CORNER_OFFSET,
   resolveModalElectronInitialContentHeight,
@@ -86,10 +88,32 @@ function placeModalAtViewportCorner(win: BrowserWindow): void {
   })
 }
 
+/** Cubre la ventana principal del editor (overlay bloqueante). */
+function placeModalAsBlockingOverlay(win: BrowserWindow): void {
+  const parent = getMainWindow()
+  if (!parent || parent.isDestroyed()) {
+    win.center()
+    return
+  }
+
+  const bounds = parent.getBounds()
+  win.setBounds({
+    x: Math.round(bounds.x),
+    y: Math.round(bounds.y),
+    width: Math.round(bounds.width),
+    height: Math.round(bounds.height),
+  })
+}
+
 /** Recentra modales ancladas al viewport si la ventana principal se movió o redimensionó. */
 export function repositionViewportCornerModalIfOpen(): void {
   if (!modalWindow || modalWindow.isDestroyed() || !modalWindow.isVisible()) return
   if (!pendingRenderPayload) return
+  if (MODAL_BLOCKING_OVERLAY_COMPONENT_KEYS.has(pendingRenderPayload.componentKey)) {
+    placeModalAsBlockingOverlay(modalWindow)
+    raiseModalAboveEngineViewport(modalWindow)
+    return
+  }
   if (!MODAL_VIEWPORT_CORNER_COMPONENT_KEYS.has(pendingRenderPayload.componentKey)) return
   placeModalAtViewportCorner(modalWindow)
   raiseModalAboveEngineViewport(modalWindow)
@@ -145,6 +169,8 @@ function getOrCreateModalWindow(): BrowserWindow {
 
   modalWindow.on('close', (e) => {
     e.preventDefault()
+    if (pendingRenderPayload?.blockingOverlay) return
+    if (pendingRenderPayload?.componentKey === 'ProjectSaveBlockingModalBody') return
     closeModalElectronWindow()
   })
 
@@ -204,18 +230,49 @@ export function applyModalElectronContentHeight(contentHeight: number): void {
 
 export async function openModalElectronWindow(payload: ModalElectronOpenRequest): Promise<void> {
   const display = getDisplayForModal()
-  const { width } = resolveModalElectronWidth(payload.size, display.workAreaSize.width)
-  lastModalContentWidth = width
+  const isBlockingOverlay =
+    payload.blockingOverlay === true
+    || MODAL_BLOCKING_OVERLAY_COMPONENT_KEYS.has(payload.componentKey)
 
   pendingRenderPayload = payload
   const win = getOrCreateModalWindow()
   const windowIcon = resolveAppWindowIcon()
   if (windowIcon) win.setIcon(windowIcon)
   win.setTitle(payload.title)
+  win.setResizable(false)
+  win.setMinimumSize(280, 120)
+
+  if (isBlockingOverlay) {
+    await ensureModalReady(win)
+    sendRenderToModal(payload)
+    placeModalAsBlockingOverlay(win)
+    if (!win.isVisible()) {
+      win.show()
+    }
+    raiseModalAboveEngineViewport(win)
+    win.focus()
+    return
+  }
+
+  const { width } = resolveModalElectronWidth(payload.size, display.workAreaSize.width)
+  lastModalContentWidth = width
   const initialHeight = resolveModalElectronInitialContentHeight(
     payload.componentKey,
     display.workAreaSize.height,
   )
+  // Restaurar tamaño si una sesión previa dejó la ventana a pantalla completa.
+  const parent = getMainWindow()
+  if (parent && !parent.isDestroyed()) {
+    const parentBounds = parent.getBounds()
+    const winBounds = win.getBounds()
+    if (
+      winBounds.width >= parentBounds.width - 4
+      && winBounds.height >= parentBounds.height - 4
+    ) {
+      win.setContentSize(width, initialHeight)
+      win.center()
+    }
+  }
   win.setContentSize(width, initialHeight)
   const isViewportCornerModal = MODAL_VIEWPORT_CORNER_COMPONENT_KEYS.has(payload.componentKey)
 
@@ -223,8 +280,6 @@ export async function openModalElectronWindow(payload: ModalElectronOpenRequest)
   win.setResizable(resizable)
   if (resizable) {
     win.setMinimumSize(720, 480)
-  } else {
-    win.setMinimumSize(280, 120)
   }
 
   await ensureModalReady(win)
@@ -244,6 +299,10 @@ export async function openModalElectronWindow(payload: ModalElectronOpenRequest)
 
 export function closeModalElectronWindow(): void {
   const componentKey = pendingRenderPayload?.componentKey
+  const wasBlockingOverlay =
+    pendingRenderPayload?.blockingOverlay === true
+    || (pendingRenderPayload?.componentKey != null
+      && MODAL_BLOCKING_OVERLAY_COMPONENT_KEYS.has(pendingRenderPayload.componentKey))
   const parent = getMainWindow()
   if (componentKey && parent && !parent.isDestroyed()) {
     parent.webContents.send('modal-electron:closed', { componentKey })
@@ -251,6 +310,10 @@ export function closeModalElectronWindow(): void {
   if (modalWindow && !modalWindow.isDestroyed()) {
     clearModalAboveEngineViewport(modalWindow)
     sendRenderToModal(null)
+    if (wasBlockingOverlay) {
+      modalWindow.setContentSize(348, MODAL_ELECTRON_MIN_CONTENT_HEIGHT)
+      modalWindow.center()
+    }
     modalWindow.hide()
   }
   pendingRenderPayload = null

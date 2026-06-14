@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect } from 'react'
 
-import { Modal, Nav } from 'react-bootstrap'
+import { Nav } from 'react-bootstrap'
 import { Grid3x3GapFill, TrashFill, BoxSeam } from 'react-bootstrap-icons'
 import { useContextEngine } from '@engine'
 import { useModalClose } from '../../../../../../modal-electron/useModalClose'
+import { InlineNestedDialog } from '../../../../../../modal-electron/InlineNestedDialog'
 import { useQuickBuild } from '../../../../../../context/QuickBuildContext'
 import { useSpritePreviewImage } from '@hooks'
 import type { BlueprintTabCategory, BluePrintEntry } from '@shared-types'
@@ -54,7 +55,7 @@ export function BluePrintModalContent({
 	}
 
 	return (
-		<>
+		<div className="position-relative">
 			<div>
 				<Nav
 					variant="tabs"
@@ -96,19 +97,14 @@ export function BluePrintModalContent({
 				)}
 			</div>
 
-			<Modal
-				show={pendingDelete !== null}
-				onHide={() => setPendingDelete(null)}
-				centered
-				backdrop={false}
-			>
-				<Modal.Header closeButton>
-					<Modal.Title>{t('Delete blueprint')}</Modal.Title>
-				</Modal.Header>
-				<Modal.Body>
+			{pendingDelete !== null && (
+				<InlineNestedDialog
+					title={t('Delete blueprint')}
+					onClose={() => setPendingDelete(null)}
+				>
 					<p className="mb-2">
 						{t('This action will delete the blueprint')}{' '}
-						<strong>{pendingDelete?.name}</strong>.
+						<strong>{pendingDelete.name}</strong>.
 					</p>
 					{linkedCount > 0 ? (
 						<>
@@ -141,9 +137,9 @@ export function BluePrintModalContent({
 							</div>
 						</>
 					)}
-				</Modal.Body>
-			</Modal>
-		</>
+				</InlineNestedDialog>
+			)}
+		</div>
 	)
 }
 

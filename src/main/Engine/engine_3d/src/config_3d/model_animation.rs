@@ -8,8 +8,8 @@ use glam::{Mat4, Quat, Vec3};
 
 use crate::config_3d::character_anchor::PLAY_CHARACTER_BODY_HEIGHT;
 use crate::config_3d::model_asset::{
-    self, compute_gltf_joint_worlds, AnimChannel, AnimKeyframe, AnimProperty, AnimationClip,
-    GltfFile, ModelAsset, MAX_JOINTS,
+    self, compute_gltf_joint_worlds, gltf_bind_globals_from_ibm, AnimChannel, AnimKeyframe,
+    AnimProperty, AnimationClip, GltfFile, ModelAsset, MAX_JOINTS,
 };
 use crate::ipc::ModelClipInfoEvent;
 use crate::ecs::EntityId;
@@ -242,8 +242,8 @@ impl State {
             Some(b) => b.clone(),
             None => return,
         };
-        let asset = match self.model_assets.get(&binding.asset_path) {
-            Some(a) => Arc::clone(a),
+        let asset = match self.get_model_asset(&binding.asset_path) {
+            Some(a) => a,
             None => return,
         };
         let _clip = match asset.clips.iter().find(|c| c.name == name) {
@@ -292,8 +292,8 @@ impl State {
                 Some(b) => b.clone(),
                 None => continue,
             };
-            let asset = match self.model_assets.get(&binding.asset_path) {
-                Some(a) => Arc::clone(a),
+            let asset = match self.get_model_asset(&binding.asset_path) {
+                Some(a) => a,
                 None => continue,
             };
 
@@ -359,20 +359,7 @@ impl State {
             apply_clip_to_locals(clip, time_s, &mut local_transforms);
         }
 
-        let global = if !asset.joint_gltf_nodes.is_empty() {
-            compute_gltf_joint_worlds(
-                &asset.joint_gltf_nodes[..joint_count],
-                &local_transforms,
-                &asset.gltf_scene_parents,
-                &asset.gltf_bind_node_local,
-            )
-        } else {
-            compute_joint_globals(
-                &asset.joint_parents[..joint_count],
-                &local_transforms,
-                &asset.joint_prefix_world[..joint_count],
-            )
-        };
+        let global = asset_joint_globals_with_clip(asset, clip, time_s);
 
         let norm = asset.mesh_normalize;
         let inv_norm = norm.inverse();
@@ -402,6 +389,45 @@ impl State {
                 );
             }
         }
+    }
+}
+
+/// Matrices globales de bind (sin IBM) para overlay de esqueleto.
+pub(crate) fn asset_joint_globals_bind(asset: &ModelAsset) -> Vec<Mat4> {
+    let joint_count = asset.joint_parents.len().min(MAX_JOINTS);
+    asset_joint_globals_with_locals(asset, &asset.bind_local[..joint_count])
+}
+
+pub(crate) fn asset_joint_globals_with_clip(
+    asset: &ModelAsset,
+    clip: Option<&AnimationClip>,
+    time_s: f32,
+) -> Vec<Mat4> {
+    let joint_count = asset.joint_parents.len().min(MAX_JOINTS);
+    let mut locals = asset.bind_local[..joint_count].to_vec();
+    if let Some(clip) = clip {
+        apply_clip_to_locals(clip, time_s, &mut locals);
+    }
+    asset_joint_globals_with_locals(asset, &locals)
+}
+
+fn asset_joint_globals_with_locals(asset: &ModelAsset, locals: &[Mat4]) -> Vec<Mat4> {
+    if asset.bind_pose_from_ibm && !asset.joint_gltf_nodes.is_empty() {
+        return gltf_bind_globals_from_ibm(&asset.inverse_bind, &asset.bind_local, locals);
+    }
+    if !asset.joint_gltf_nodes.is_empty() {
+        compute_gltf_joint_worlds(
+            &asset.joint_gltf_nodes[..locals.len()],
+            locals,
+            &asset.gltf_scene_parents,
+            &asset.gltf_bind_node_local,
+        )
+    } else {
+        compute_joint_globals(
+            &asset.joint_parents[..locals.len()],
+            locals,
+            &asset.joint_prefix_world[..locals.len()],
+        )
     }
 }
 

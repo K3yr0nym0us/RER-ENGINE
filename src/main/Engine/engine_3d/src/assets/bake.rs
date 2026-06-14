@@ -22,6 +22,7 @@ fn source_ext_from_path(path: &Path) -> SourceExt {
         .as_str()
     {
         "gltf" => SourceExt::Gltf,
+        "fbx" => SourceExt::Fbx,
         _ => SourceExt::Glb,
     }
 }

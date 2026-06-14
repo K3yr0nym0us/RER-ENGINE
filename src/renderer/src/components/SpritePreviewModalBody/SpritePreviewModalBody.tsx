@@ -1,5 +1,4 @@
 import { useMemo, useReducer, useState, useEffect, useRef } from 'react';
-import { Modal } from 'react-bootstrap';
 
 import { 
   SpritePreviewLeftPanel, 
@@ -17,6 +16,7 @@ import {
   type SelectionMode,
 } from './components';
 import { ScriptEditorModalBody } from './components/';
+import { InlineNestedDialog } from '../../modal-electron/InlineNestedDialog';
 
 import { useContextEngine } from '@engine';
 import { useSpritePreviewImage } from '@hooks';
@@ -262,7 +262,7 @@ export function SpritePreviewModalBody({
   };
 
   return (
-    <div>
+    <div className="position-relative">
       <div data-bs-theme="dark" className="row g-3 p-3 rounded-3 pt-0" style={{ minHeight: 300 }}>
         <div className="col-3">
           <SpritePreviewLeftPanel
@@ -356,79 +356,68 @@ export function SpritePreviewModalBody({
         onCancel={onCancel}
       />
 
-      {/* Modal de confirmación de eliminación de script */}
-      <Modal
-        show={confirmRemoveScript !== null}
-        onHide={() => setConfirmRemoveScript(null)}
-        size="sm"
-        centered
-      >
-        <Modal.Header closeButton>
-          <Modal.Title>Eliminar script</Modal.Title>
-        </Modal.Header>
-        <Modal.Body>
+      {confirmRemoveScript !== null && (
+        <InlineNestedDialog
+          title="Eliminar script"
+          onClose={() => setConfirmRemoveScript(null)}
+          footer={
+            <div className="d-flex justify-content-end gap-2">
+              <button
+                className="btn btn-sm btn-outline-secondary"
+                onClick={() => setConfirmRemoveScript(null)}
+              >
+                Cancelar
+              </button>
+              <button
+                className="btn btn-sm btn-danger"
+                onClick={() => {
+                  if (confirmRemoveScript) {
+                    dispatch({ type: 'patch', payload: { scripts: scripts.filter((s) => s.name !== confirmRemoveScript) } });
+                  }
+                  setConfirmRemoveScript(null);
+                }}
+              >
+                Eliminar
+              </button>
+            </div>
+          }
+        >
           <p className="mb-0">
             ¿Seguro que quieres eliminar el script{' '}
             <strong>{confirmRemoveScript}</strong>? Esta acción no se puede deshacer.
           </p>
-        </Modal.Body>
-        <Modal.Footer>
-          <button
-            className="btn btn-sm btn-outline-secondary"
-            onClick={() => setConfirmRemoveScript(null)}
-          >
-            Cancelar
-          </button>
-          <button
-            className="btn btn-sm btn-danger"
-            onClick={() => {
-              if (confirmRemoveScript) {
-                dispatch({ type: 'patch', payload: { scripts: scripts.filter((s) => s.name !== confirmRemoveScript) } });
-              }
-              setConfirmRemoveScript(null);
-            }}
-          >
-            Eliminar
-          </button>
-        </Modal.Footer>
-      </Modal>
+        </InlineNestedDialog>
+      )}
 
-      {/* Modal local para el editor de scripts — evita reemplazar el modal padre */}
-      <Modal
-        show={scriptEditorState !== null}
-        onHide={closeScriptEditor}
-        size="lg"
-        centered
-      >
-        <Modal.Header closeButton>
-          <Modal.Title>
-            {scriptEditorState?.mode === 'edit'
+      {scriptEditorState !== null && (
+        <InlineNestedDialog
+          title={
+            scriptEditorState.mode === 'edit'
               ? `Editar Script: ${(scriptEditorState as { mode: 'edit'; name: string }).name}`
-              : 'Nuevo Script Rhai'}
-          </Modal.Title>
-        </Modal.Header>
-        <Modal.Body>
-          {scriptEditorState !== null && (
-            <ScriptEditorModalBody
-              initialData={
-                scriptEditorState.mode === 'edit'
-                  ? scripts.find((s) => s.name === (scriptEditorState as { mode: 'edit'; name: string }).name)
-                  : undefined
+              : 'Nuevo Script Rhai'
+          }
+          onClose={closeScriptEditor}
+          size="lg"
+        >
+          <ScriptEditorModalBody
+            initialData={
+              scriptEditorState.mode === 'edit'
+                ? scripts.find((s) => s.name === (scriptEditorState as { mode: 'edit'; name: string }).name)
+                : undefined
+            }
+            onSave={(data) => {
+              if (scriptEditorState.mode === 'add') {
+                dispatch({ type: 'patch', payload: { scripts: [...scripts, data] } });
+              } else {
+                const editName = (scriptEditorState as { mode: 'edit'; name: string }).name;
+                dispatch({ type: 'patch', payload: { scripts: scripts.map((s) => s.name === editName ? data : s) } });
               }
-              onSave={(data) => {
-                if (scriptEditorState.mode === 'add') {
-                  dispatch({ type: 'patch', payload: { scripts: [...scripts, data] } });
-                } else {
-                  const editName = (scriptEditorState as { mode: 'edit'; name: string }).name;
-                  dispatch({ type: 'patch', payload: { scripts: scripts.map((s) => s.name === editName ? data : s) } });
-                }
-                closeScriptEditor();
-              }}
-              onCancel={closeScriptEditor}
-            />
-          )}
-        </Modal.Body>
-      </Modal>
+              closeScriptEditor();
+            }}
+            onCancel={closeScriptEditor}
+          />
+        </InlineNestedDialog>
+      )}
     </div>
   );
 }

@@ -972,7 +972,8 @@ fn main() {
     // wgpu_hal::vulkan genera spam de "Suboptimal present" y warnings de capas
     // en entornos sin GPU hardware — subirlos a error los silencia.
     const DEFAULT_LOG_FILTER: &str =
-        "rer_engine_3d=warn,rer_engine_3d::config_base=info,\
+        "rer_engine_3d=warn,rer_engine_3d::config_base=info,rer_engine_3d::config_3d::skin_diag=info,\
+rer_engine_3d::config_3d::model_asset=info,\
 wgpu_core::instance=error,wgpu_hal::vulkan::conv=error,\
 wgpu_hal::vulkan::instance=error,wgpu_core=warn,wgpu_hal=warn,naga=warn";
 

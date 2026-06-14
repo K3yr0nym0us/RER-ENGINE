@@ -1,4 +1,4 @@
-const MAX_JOINTS: u32 = 256u;
+const MAX_JOINTS: u32 = 512u;
 
 struct SceneUniforms {
     view_proj         : mat4x4<f32>,

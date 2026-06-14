@@ -44,6 +44,7 @@ import {
 	UnsavedSceneBlockedBody,
 } from '../pages/EngineView/hooks/sceneManagerModalBodies'
 import { ModalConfirmBody } from './ModalConfirmBody'
+import { ProjectSaveBlockingModalBody } from './ProjectSaveBlockingModalBody'
 import { VisualScriptingModalBody } from '../visualScripting/components/VisualScriptingModalBody'
 import { SceneScriptEditorModalBody } from '../visualScripting/components/SceneScriptEditorModalBody'
 import { EntityPropertiesModalBody } from './EntityPropertiesElectronHost'
@@ -89,6 +90,7 @@ export const MODAL_ELECTRON_REGISTRY: Record<string, RegistryEntry> = {
 	DeleteBlockedBody: modalEntry(DeleteBlockedBody),
 	UnsavedSceneBlockedBody: modalEntry(UnsavedSceneBlockedBody),
 	ModalConfirmBody: modalEntry(ModalConfirmBody),
+	ProjectSaveBlockingModalBody: modalEntry(ProjectSaveBlockingModalBody),
 	VisualScriptingModalBody: modalEntry(VisualScriptingModalBody),
 	SceneScriptEditorModalBody: modalEntry(SceneScriptEditorModalBody),
 	EntityPropertiesModalBody: modalEntry(EntityPropertiesModalBody),

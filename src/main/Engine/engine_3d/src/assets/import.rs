@@ -1,4 +1,4 @@
-//! Hilo de importación: GLB/GLTF → bake `.rerasset` → precarga GPU.
+//! Hilo de importación: GLB/FBX → bake `.rerasset` → precarga GPU.
 
 use std::path::PathBuf;
 
@@ -157,6 +157,7 @@ impl State {
             self.model_preload_inflight.remove(&model_id);
             self.imported_model_registry
                 .set_state(&model_id, AssetState::Failed);
+            self.model_store.remove(&key);
             let message = format!("No se pudo importar {name}: {e}");
             send_event(&EngineEvent::ModelAssetLoadFailed {
                 path: key,

@@ -410,7 +410,7 @@ function startEngine(embed?: ViewportBounds): void {
     const lines = data.toString('utf8').split('\n').filter(Boolean)
     for (const line of lines) {
       if (isBenignEngineStderrLine(line)) continue
-      if (/\[rer_engine_(2d|3d)::/.test(line)) {
+      if (/\[rer_engine_(2d|3d)::/.test(line) || /\[SKIN_(XFORM|LOAD|MESH_AUDIT|DUAL|JOINT)\]|\[RIGID_(BIND|GRAPH|NEAREST|WORLD)/.test(line)) {
         console.log(line.trim())
       } else {
         console.error('[engine stderr]', line)
@@ -625,7 +625,7 @@ ipcMain.handle('open-model-dialog', async () => {
   if (!mainWindow) return null
   const result = await dialog.showOpenDialog(mainWindow, {
     title:       'Abrir modelo 3D',
-    filters:     [{ name: 'Modelos 3D', extensions: ['glb', 'gltf'] }],
+    filters:     [{ name: 'Modelos 3D', extensions: ['glb', 'gltf', 'fbx'] }],
     properties:  ['openFile'],
   })
   return result.canceled ? null : result.filePaths[0] ?? null
@@ -1087,7 +1087,7 @@ function formatEntityKindBreakdown(data: ProjectSaveData): string {
   return ` [${parts.join(', ')}]`
 }
 
-const MODEL_SOURCE_EXTS = new Set(['.glb', '.gltf'])
+const MODEL_SOURCE_EXTS = new Set(['.glb', '.gltf', '.fbx'])
 
 function isModelSourceFile(p: string): boolean {
   return MODEL_SOURCE_EXTS.has(path.extname(p).toLowerCase())
@@ -1262,7 +1262,7 @@ function collectAssetPaths(data: ProjectSaveData): Set<string> {
 
   if (skippedModelSources.length > 0) {
     console.log(
-      `[save-pack] modelos fuente GLB/GLTF omitidos del ZIP (${skippedModelSources.length}); van como .rerasset`,
+      `[save-pack] modelos fuente GLB/GLTF/FBX omitidos del ZIP (${skippedModelSources.length}); van como .rerasset`,
     )
     for (const p of skippedModelSources) {
       console.log(`[save-pack]   omitido fuente: ${p}`)
@@ -2117,6 +2117,18 @@ ipcMain.handle('open-project-dialog', async (): Promise<OpenProjectResult | null
   return { filePath, extractDir, project: meta }
 })
 
+// Diálogo para elegir ruta del .save (sin empaquetar aún).
+ipcMain.handle('pick-project-save-path', async (): Promise<string | null> => {
+  if (!mainWindow) return null
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: 'Guardar proyecto',
+    defaultPath: currentProjectFilePath ?? 'project.save',
+    filters: [{ name: 'Proyecto RER Save', extensions: ['save'] }],
+  })
+  if (result.canceled || !result.filePath) return null
+  return ensureSaveExtension(result.filePath)
+})
+
 // Diálogo para guardar el proyecto (archivo .save)
 ipcMain.handle('save-project', async (_event, data: ProjectSaveData): Promise<string | null> => {
   if (!mainWindow) return null
@@ -2138,6 +2150,9 @@ ipcMain.handle('save-project', async (_event, data: ProjectSaveData): Promise<st
 
 // Guardado silencioso (auto-save): sobrescribe el archivo .save indicado.
 ipcMain.handle('save-project-silent', async (_event, filePath: string, data: ProjectSaveData): Promise<boolean> => {
+  // Ceder un tick para que la ventana modal Electron pinte antes del empaquetado (bloquea main).
+  await new Promise<void>((resolve) => setTimeout(resolve, 120))
+
   const targetPath = path.isAbsolute(filePath)
     ? ensureSaveExtension(filePath)
     : path.join(app.getPath('userData'), ensureSaveExtension(filePath))

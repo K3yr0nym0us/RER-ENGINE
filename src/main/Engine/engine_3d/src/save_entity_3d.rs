@@ -87,7 +87,7 @@ pub(crate) fn build_entity_3d_snapshot(
             .unwrap_or_default();
         if list.is_empty() {
             if let Some(binding) = state.model_animation_bindings.get(&id) {
-                if let Some(asset) = state.model_assets.get(&binding.asset_path) {
+                if let Some(asset) = state.get_model_asset(&binding.asset_path) {
                     let default_name = state.model_clip_defaults.get(&id);
                     list = asset
                         .clips

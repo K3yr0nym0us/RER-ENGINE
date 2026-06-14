@@ -26,7 +26,7 @@ pub enum AssetState {
 pub enum SourceExt {
     Glb  = 0,
     Gltf = 1,
-    /// Legado — `.rerasset` antiguos; el editor ya no importa `.fbx`.
+    /// Legado — `.rerasset` antiguos importados desde `.fbx`.
     Fbx  = 2,
 }
 

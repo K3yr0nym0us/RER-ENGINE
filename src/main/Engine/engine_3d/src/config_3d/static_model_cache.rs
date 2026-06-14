@@ -123,6 +123,12 @@ impl State {
     fn emit_model_asset_load_failed(&mut self, path: &str, message: String) {
         let key = self.model_path_key(path);
         self.model_preload_inflight.remove(&key);
+        if path.starts_with("model_") {
+            if let Some(entry) = self.imported_model_registry.get(path) {
+                let source_key = self.model_path_key(&entry.source_path);
+                self.model_store.remove(&source_key);
+            }
+        }
         self.model_store.remove(&key);
         self.model_preload_gpu_queue.retain(|p| p.path != key);
         self.drop_pending_load_models_for_path(&key);
@@ -159,6 +165,16 @@ impl State {
             }
         }
         source_key
+    }
+
+    /// `model_assets` se indexa por [`Self::model_cache_key`], no por la ruta visual del proyecto.
+    pub(crate) fn get_model_asset(
+        &self,
+        path: &str,
+    ) -> Option<std::sync::Arc<crate::config_3d::model_asset::ModelAsset>> {
+        self.model_assets
+            .get(&self.model_cache_key(path))
+            .cloned()
     }
 
     /// Nombre corto del recurso (alias del proyecto) o nombre de archivo.
@@ -811,7 +827,7 @@ impl State {
         }
 
         Err(format!(
-            "Modelo «{display_name}» no importado (requiere .rerasset). Importa el GLB/GLTF en Recursos."
+            "Modelo «{display_name}» no importado (requiere .rerasset). Importa el GLB/GLTF/FBX en Recursos."
         ))
     }
 

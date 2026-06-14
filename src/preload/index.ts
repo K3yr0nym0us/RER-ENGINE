@@ -87,6 +87,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveProject: (data: ProjectSaveData): Promise<string | null> => {
     return ipcRenderer.invoke('save-project', data)
   },
+  pickProjectSavePath: (): Promise<string | null> => {
+    return ipcRenderer.invoke('pick-project-save-path')
+  },
   saveProjectSilent: (filePath: string, data: ProjectSaveData): Promise<boolean> => {
     return ipcRenderer.invoke('save-project-silent', filePath, data)
   },

@@ -558,11 +558,11 @@ impl State {
         let catalog_path = self.model_path_key(&library_path);
         let is_gltf_source = crate::config_3d::is_gltf_model_path(&catalog_path)
             && Path::new(&library_path).is_file();
-        let asset = match self.model_assets.get(&asset_path) {
-            Some(a) => std::sync::Arc::clone(a),
+        let asset = match self.get_model_asset(&asset_path) {
+            Some(a) => a,
             None => {
                 log::debug!(
-                    "[entity_textures] ent={entity_id} model_assets sin «{asset_path}»"
+                    "[entity_textures] ent={entity_id} model_assets sin «{asset_path}» (cache={cache_key_base})"
                 );
                 return;
             }
@@ -594,23 +594,20 @@ impl State {
                     part.material_index,
                 )
             } else if is_gltf_source {
-                catalog.as_ref().and_then(|catalog| {
-                    self.resolve_gltf_material_texture_layer(
-                        &catalog_path,
-                        part.material_index,
-                        tier,
-                        lod.as_ref(),
-                        catalog,
-                    )
-                })
+                catalog
+                    .as_ref()
+                    .and_then(|catalog| {
+                        self.resolve_gltf_material_texture_layer(
+                            &catalog_path,
+                            part.material_index,
+                            tier,
+                            lod.as_ref(),
+                            catalog,
+                        )
+                    })
+                    .or_else(|| Self::pack_skinned_part_embedded_texture(self, &catalog_path, pi, part))
             } else {
-                let cache_key = format!("{catalog_path}#part{pi}");
-                Some(self.pack_texture_layer(
-                    Some(&cache_key),
-                    &part.mesh.rgba,
-                    part.mesh.width,
-                    part.mesh.height,
-                ))
+                Self::pack_skinned_part_embedded_texture(self, &catalog_path, pi, part)
             };
             let Some(layer) = layer else {
                 continue;
@@ -644,6 +641,24 @@ impl State {
                 mc.tex_idx = tex_idx;
             }
         }
+    }
+
+    fn pack_skinned_part_embedded_texture(
+        state: &mut State,
+        catalog_path: &str,
+        part_index: usize,
+        part: &crate::config_3d::model_asset::SkinnedMeshPart,
+    ) -> Option<crate::texture::TextureLayer> {
+        if part.mesh.width <= 1 && part.mesh.height <= 1 {
+            return None;
+        }
+        let cache_key = format!("{catalog_path}#part{part_index}");
+        Some(state.pack_texture_layer(
+            Some(&cache_key),
+            &part.mesh.rgba,
+            part.mesh.width,
+            part.mesh.height,
+        ))
     }
 
     fn resolve_gltf_material_texture_layer(

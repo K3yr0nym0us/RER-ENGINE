@@ -102,7 +102,7 @@ export function entity3dPendingRestore(
 	};
 }
 
-const MODEL_3D_EXT = /\.(glb|gltf)$/i;
+const MODEL_3D_EXT = /\.(glb|gltf|fbx)$/i;
 
 /** Meta de editor desde entidad 3D del manifest / snapshot del motor. */
 export function entity3dToMeta(entity: Entity3D): EntityMeta {

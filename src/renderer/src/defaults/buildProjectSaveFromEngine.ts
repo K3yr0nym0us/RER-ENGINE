@@ -360,14 +360,14 @@ function importedModelAssetPath(modelId: string, asset?: string): string {
 
 const RERASSET_IMPORTER_VERSION = 2
 
-/** Biblioteca 3D: solo `resources.models` (motor → `model_store`). */
+/** Biblioteca 3D: solo `resources.models` con importación lista (motor → `model_store` filtrado). */
 function buildResourcesModelsForSave(
 	engineModels: EngineSaveSceneSnapshot['models'],
 	editorModels: ModelInfo[],
 ): ResourceModelEntry[] {
 	const byId = new Map<string, ResourceModelEntry>()
 	for (const m of engineModels ?? []) {
-		if (!m.model_id) continue
+		if (!m.model_id || !m.asset) continue
 		byId.set(m.model_id, {
 			id: m.model_id,
 			name: m.name,

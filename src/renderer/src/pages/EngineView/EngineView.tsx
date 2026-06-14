@@ -69,7 +69,8 @@ function EngineViewInner({ projectType, gameStyle, initialSavePath, initialExtra
     handleSave, 
     toggleAutoSave, 
     hasSavedOnce, 
-    autoSaveEnabled 
+    autoSaveEnabled,
+    savingProject,
   } = useAutoSave({ projectType, gameStyle, initialSavePath, initialExtractDir })
 
   // Teclado/mando del renderer → IPC run_control_script (ventana overlay no recibe input).
@@ -97,6 +98,7 @@ function EngineViewInner({ projectType, gameStyle, initialSavePath, initialExtra
             toggleAutoSave={toggleAutoSave}
             hasSavedOnce={hasSavedOnce}
             autoSaveEnabled={autoSaveEnabled}
+            savingProject={savingProject}
           />
 
           <main

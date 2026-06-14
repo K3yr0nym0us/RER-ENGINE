@@ -12,6 +12,8 @@ export const MODAL_TALL_COMPONENT_KEYS = new Set([
 /** Ventanas que el usuario puede redimensionar manualmente. */
 export const MODAL_RESIZABLE_COMPONENT_KEYS = new Set(['VisualScriptingModalBody'])
 
+export const MODAL_BLOCKING_OVERLAY_COMPONENT_KEYS = new Set<string>()
+
 export function screenAvailHeightPx(): number {
   return window.screen?.availHeight ?? 900
 }
@@ -28,4 +30,12 @@ export function isTallModalComponent(componentKey: string | undefined): boolean 
 
 export function isResizableModalComponent(componentKey: string | undefined): boolean {
   return componentKey != null && MODAL_RESIZABLE_COMPONENT_KEYS.has(componentKey)
+}
+
+export function isBlockingOverlayModalComponent(
+  componentKey: string | undefined,
+  blockingOverlay?: boolean,
+): boolean {
+  return blockingOverlay === true
+    || (componentKey != null && MODAL_BLOCKING_OVERLAY_COMPONENT_KEYS.has(componentKey))
 }

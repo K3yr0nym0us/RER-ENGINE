@@ -13,13 +13,14 @@ import { THEME_PRIMARY } from '../../../styles/theme';
 
 interface Props {
   projectType: string
-  handleSave: () => void
+  handleSave: () => void | Promise<void>
   toggleAutoSave: () => void
   hasSavedOnce: boolean
   autoSaveEnabled: boolean
+  savingProject: boolean
 }
 
-export function TopBarEngine({ projectType, handleSave, toggleAutoSave, hasSavedOnce, autoSaveEnabled }: Props) {
+export function TopBarEngine({ projectType, handleSave, toggleAutoSave, hasSavedOnce, autoSaveEnabled, savingProject }: Props) {
   const { engineReady, engineError, previewPlaying, setPreviewPlaying, debugMode, setDebugMode } = useContextEngine();
   const { t } = useTraslate();
   const isStopActive = !previewPlaying;
@@ -84,8 +85,8 @@ export function TopBarEngine({ projectType, handleSave, toggleAutoSave, hasSaved
         <div className="d-flex align-items-center gap-2">
           <button
             className="btn btn-sm btn-outline-light d-flex align-items-center gap-2"
-            disabled={!engineReady}
-            onClick={handleSave}
+            disabled={!engineReady || savingProject}
+            onClick={() => void handleSave()}
             type="button"
           >
             <FloppyFill size={13} />

@@ -10,7 +10,8 @@ use crate::config_3d::model_asset::{
 };
 
 const SKEL_MAGIC: &[u8; 4] = b"SKEL";
-const SKEL_VERSION: u16 = 1;
+const SKEL_VERSION: u16 = 2;
+const SKEL_VERSION_MIN: u16 = 1;
 const ANIM_MAGIC: &[u8; 4] = b"ANIM";
 const ANIM_VERSION: u16 = 1;
 
@@ -169,6 +170,7 @@ pub fn serialize_skeleton(asset: &ModelAsset) -> Vec<u8> {
     write_mat4(&mut buf, &asset.mesh_normalize).unwrap();
     buf.write_all(&asset.facing_forward_xz.x.to_le_bytes()).unwrap();
     buf.write_all(&asset.facing_forward_xz.y.to_le_bytes()).unwrap();
+    buf.write_all(&[u8::from(asset.bind_pose_from_ibm)]).unwrap();
 
     let node_count = u16::try_from(asset.joint_gltf_nodes.len()).unwrap();
     buf.write_all(&node_count.to_le_bytes()).unwrap();
@@ -213,9 +215,10 @@ pub fn deserialize_skeleton(
     }
     let mut ver = [0u8; 2];
     r.read_exact(&mut ver).map_err(|e| e.to_string())?;
-    if u16::from_le_bytes(ver) != SKEL_VERSION {
+    if u16::from_le_bytes(ver) < SKEL_VERSION_MIN || u16::from_le_bytes(ver) > SKEL_VERSION {
         return Err("versión SKEL no soportada".into());
     }
+    let skel_version = u16::from_le_bytes(ver);
 
     let path = read_string(&mut r).map_err(|e| e.to_string())?;
     let joint_parents = read_option_usize_vec(&mut r).map_err(|e| e.to_string())?;
@@ -236,6 +239,14 @@ pub fn deserialize_skeleton(
         f32::from_le_bytes(xz[0..4].try_into().unwrap()),
         f32::from_le_bytes(xz[4..8].try_into().unwrap()),
     );
+
+    let bind_pose_from_ibm = if skel_version >= 2 {
+        let mut flag = [0u8; 1];
+        r.read_exact(&mut flag).map_err(|e| e.to_string())?;
+        flag[0] != 0
+    } else {
+        false
+    };
 
     r.read_exact(&mut count_buf).map_err(|e| e.to_string())?;
     let node_count = u16::from_le_bytes(count_buf) as usize;
@@ -322,6 +333,7 @@ pub fn deserialize_skeleton(
         joint_gltf_nodes,
         gltf_scene_parents,
         gltf_bind_node_local,
+        bind_pose_from_ibm,
     })
 }
 

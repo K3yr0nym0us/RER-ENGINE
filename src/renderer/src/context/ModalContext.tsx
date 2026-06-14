@@ -30,9 +30,7 @@ export function useModal() {
 		throw new Error('useModal debe usarse dentro de ModalProvider')
 	}
 	return {
-		openModal: (cfg: ModalConfig) => {
-			void electron.openModal(cfg as OpenModalElectronOptions)
-		},
+		openModal: (cfg: ModalConfig) => electron.openModal(cfg as OpenModalElectronOptions),
 		closeModal: electron.closeModal,
 	}
 }

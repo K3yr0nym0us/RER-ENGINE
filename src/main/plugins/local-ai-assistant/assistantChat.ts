@@ -350,7 +350,7 @@ function inferAccordionFromUserQuery(query: string): (typeof SIDEBAR_ACCORDION_E
   if (/control|teclado|gamepad|mando|keyboard/.test(q)) return 'controles'
   if (/programar escena|scene program|scene script|scene logic/.test(q)) return 'scenes'
   if (/\bescena|\bscene/.test(q)) return 'scenes'
-  if (/modelo|model|recurso|resource|sprite|\.glb|\.gltf|importar|load.*model/.test(q)) {
+  if (/modelo|model|recurso|resource|sprite|\.glb|\.gltf|\.fbx|importar|load.*model/.test(q)) {
     return 'resources'
   }
   if (/personaje|character|entidad|entity|objeto|object/.test(q) && /crear|create|a[nñ]adir|add/.test(q)) {
