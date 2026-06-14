@@ -158,7 +158,7 @@ pub enum EngineCommand {
         shadow_darkness: Option<f32>,
     },
     /// Restaurar posición y orientación del personaje jugable (carga de `.save`).
-    #[serde(rename = "set_play_character_spawn", alias = "set_first_person_spawn")]
+    #[serde(rename = "set_play_character_spawn")]
     SetPlayCharacterSpawn {
         position: [f32; 3],
         yaw: f32,
@@ -169,7 +169,7 @@ pub enum EngineCommand {
     /// Con `camera_only: true` solo `position_axis`, `yaw`, `fov_y` y `frustum_distance`
     /// afectan al ojo/cono FPS (sin mover al Player). El front envía únicamente el campo modificado.
     /// Sin `camera_only` (carga/restauración): `position` = pies del Player; `yaw`/`pitch` recomendados.
-    #[serde(rename = "set_play_character_view", alias = "set_first_person_view")]
+    #[serde(rename = "set_play_character_view")]
     SetPlayCharacterView {
         #[serde(default)]
         position: Option<[f32; 3]>,
@@ -306,6 +306,10 @@ pub enum EngineCommand {
     SetGridCellSize { size: f32 },
     /// Cambiar el límite de FPS del loop principal.
     SetTargetFps { fps: u64 },
+    /// Nivel gráfico global de texturas GLB (`low` | `medium` | `high` | `ultra`).
+    SetGraphicsTextureTier { tier: String },
+    /// Distancia (m) a la cámara con textura al tope del tier activo.
+    SetTextureDetailDistance { distance_m: f32 },
     /// Estado de la tecla Ctrl enviado desde Electron (ventana overlay no recibe teclado directo).
     SetCtrlHeld { held: bool },
     /// Restaurar posición y zoom de la cámara 2D ortográfica (ignorado en binario 3D).
@@ -313,9 +317,9 @@ pub enum EngineCommand {
     SetCamera2d { x: f32, y: f32, half_h: f32 },
     /// FOV vertical de la cámara 3D (radianes).
     SetCameraFov { fov_y: f32 },
-    /// Alcance del gizmo de frustum de cámara FPS en el editor (metros).
-    #[serde(rename = "set_fps_editor_frustum_distance", alias = "set_fp_editor_frustum_distance")]
-    SetFpsEditorFrustumDistance { distance: f32 },
+    /// Alcance del gizmo de frustum de cámara play character en el editor (metros).
+    #[serde(rename = "set_play_editor_frustum_distance")]
+    SetPlayEditorFrustumDistance { distance: f32 },
     /// Cargar una imagen PNG/GIF como fondo de mundo (cubre todo el área del mundo).
     LoadBackground { path: String },
     /// Activar o desactivar física en una entidad. body_type: "dynamic" | "static" | "kinematic"
@@ -627,6 +631,10 @@ pub struct SaveWorldSnapshot {
     pub light_intensity: Option<f32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shadow_darkness: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub graphics_texture_tier: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub texture_detail_distance_m: Option<f32>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -1182,7 +1190,7 @@ pub enum EngineEvent {
     /// a la selección múltiple. `ids` contiene todos los IDs actualmente seleccionados.
     MultiSelectChanged { ids: Vec<u32> },
     /// Vista del personaje jugable (pies, cámara y transform del mesh).
-    #[serde(rename = "play_character_view_changed", alias = "first_person_view_changed")]
+    #[serde(rename = "play_character_view_changed")]
     PlayCharacterViewChanged {
         #[serde(skip_serializing_if = "Option::is_none")]
         player_id: Option<u32>,
@@ -1211,6 +1219,10 @@ pub enum EngineEvent {
         #[serde(default)]
         sync_editor_viewport: bool,
     },
+    #[serde(rename = "graphics_texture_tier_changed")]
+    GraphicsTextureTierChanged { tier: String },
+    #[serde(rename = "texture_detail_distance_changed")]
+    TextureDetailDistanceChanged { distance_m: f32 },
     /// Emitido ~1 vez por segundo con métricas de rendimiento del motor.
     DebugMetrics {
         fps:            f32,
@@ -1220,23 +1232,11 @@ pub enum EngineEvent {
         cpu_percent:    f32,
         #[serde(skip_serializing_if = "Option::is_none")]
         gpu_percent:    Option<f32>,
-        #[serde(
-            rename = "play_character_position",
-            alias = "first_person_position",
-            skip_serializing_if = "Option::is_none"
-        )]
+        #[serde(skip_serializing_if = "Option::is_none")]
         play_character_position: Option<[f32; 3]>,
-        #[serde(
-            rename = "play_character_yaw",
-            alias = "first_person_yaw",
-            skip_serializing_if = "Option::is_none"
-        )]
+        #[serde(skip_serializing_if = "Option::is_none")]
         play_character_yaw: Option<f32>,
-        #[serde(
-            rename = "play_character_pitch",
-            alias = "first_person_pitch",
-            skip_serializing_if = "Option::is_none"
-        )]
+        #[serde(skip_serializing_if = "Option::is_none")]
         play_character_pitch: Option<f32>,
     },
     /// Emitido cuando el preview cambia de estado desde el motor.
@@ -1575,6 +1575,10 @@ pub struct ProjectLoaded3dWorld {
     pub lightIntensity:   Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub shadowDarkness:   Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub graphicsTextureTier: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub textureDetailDistance: Option<f32>,
 }
 
 /// Evento `project_loaded_3d` (fuera de `EngineEvent` para no heredar snake_case del enum).

@@ -1,5 +1,5 @@
 import type { MutableRefObject } from 'react';
-import { default2dPlayerUiScreens, defaultFpPlayerUiScreens } from '../../defaults/fpPlayerUiDefaults';
+import { default2dPlayerUiScreens, default3dPlayerUiScreens } from '../../defaults/fpPlayerUiDefaults';
 import type { ModelLoadOverlayKind } from './hooks/sceneImportOverlay';
 import {
 	DEFAULT_GRAVITY_MAGNITUDE,
@@ -84,6 +84,14 @@ export interface ScenarioEntry {
 
 export type CharacterEntry = ScenarioEntry;
 
+export type GraphicsTextureTier = 'low' | 'medium' | 'high' | 'ultra';
+
+export function normalizeGraphicsTextureTier(value: unknown): GraphicsTextureTier {
+	const s = String(value ?? 'medium').trim().toLowerCase();
+	if (s === 'low' || s === 'medium' || s === 'high' || s === 'ultra') return s;
+	return 'medium';
+}
+
 export interface WorldConfig {
 	worldWidth: number
 	worldHeight: number
@@ -95,6 +103,8 @@ export interface WorldConfig {
 	lightAmbient: number
 	lightIntensity: number
 	shadowDarkness: number
+	graphicsTextureTier: GraphicsTextureTier
+	textureDetailDistance: number
 }
 
 export const DEFAULT_WORLD_CONFIG: WorldConfig = {
@@ -108,6 +118,8 @@ export const DEFAULT_WORLD_CONFIG: WorldConfig = {
 	lightAmbient: DEFAULT_LIGHT_AMBIENT,
 	lightIntensity: DEFAULT_LIGHT_INTENSITY,
 	shadowDarkness: DEFAULT_SHADOW_DARKNESS,
+	graphicsTextureTier: 'medium',
+	textureDetailDistance: 10,
 };
 
 export type UiScreenScope = 'player' | 'menu';
@@ -261,7 +273,7 @@ export interface EngineState {
 	previewPlaying: boolean
 	/** Overlay mientras el motor ejecuta `import_scene` (2D). */
 	sceneImportLoading: boolean
-	/** Incrementa al recibir `first_person_view_changed` (refrescar UI de cámara FP). */
+	/** Incrementa al recibir `play_character_view_changed` (refrescar UI de cámara play character). */
 	playCharacterViewSyncSeq: number
 	log: LogEntry[]
 	entities: Entity[]
@@ -310,7 +322,7 @@ export type EngineAction =
 	| { type: 'REMOVE_UI_SCREEN'; payload: { scope: UiScreenScope; id: string } }
 	| { type: 'RENAME_UI_SCREEN'; payload: { scope: UiScreenScope; id: string; name: string } }
 	| { type: 'SET_ACTIVE_PLAYER_UI_SCREEN'; payload: string | null }
-	| { type: 'INIT_DEFAULT_FP_PLAYER_UI' }
+	| { type: 'INIT_DEFAULT_3D_PLAYER_UI' }
 	| { type: 'INIT_DEFAULT_2D_PLAYER_UI' }
 	| { type: 'CLEAR_EDITING_UI_ELEMENTS' }
 	| { type: 'SET_EDITING_UI_ELEMENTS'; payload: EditingUiElement[] }
@@ -643,13 +655,13 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 					nextAction.payload !== null && screen.id === nextAction.payload,
 			})),
 		}),
-		INIT_DEFAULT_FP_PLAYER_UI: (prevState) => {
+		INIT_DEFAULT_3D_PLAYER_UI: (prevState) => {
 			if (prevState.playerUiScreens.length > 0) {
 				return prevState;
 			}
 			return {
 				...prevState,
-				playerUiScreens: defaultFpPlayerUiScreens(),
+				playerUiScreens: default3dPlayerUiScreens(),
 			};
 		},
 		INIT_DEFAULT_2D_PLAYER_UI: (prevState) => {
@@ -1076,6 +1088,12 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 					lightAmbient: p.world.lightAmbient ?? DEFAULT_LIGHT_AMBIENT,
 					lightIntensity: p.world.lightIntensity ?? DEFAULT_LIGHT_INTENSITY,
 					shadowDarkness: p.world.shadowDarkness ?? DEFAULT_SHADOW_DARKNESS,
+					graphicsTextureTier: normalizeGraphicsTextureTier(p.world.graphicsTextureTier),
+					textureDetailDistance:
+						typeof p.world.textureDetailDistance === 'number' &&
+						Number.isFinite(p.world.textureDetailDistance)
+							? p.world.textureDetailDistance
+							: DEFAULT_WORLD_CONFIG.textureDetailDistance,
 				},
 				sounds: p.sounds,
 				fonts: p.fonts ?? [],
@@ -1285,6 +1303,8 @@ export interface EngineContextValue extends EngineState {
 		shadowDarkness?: number
 	}) => void
 	setTargetFps: (fps: number) => void
+	setGraphicsTextureTier: (tier: GraphicsTextureTier) => void
+	setTextureDetailDistance: (distanceM: number) => void
 	removeCollider: (id: number) => void
 	removeExecutionArea: (id: number) => void
 	updateEntityAnimations: (id: number, animations: any[]) => any[]

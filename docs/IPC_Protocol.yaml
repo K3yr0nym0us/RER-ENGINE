@@ -10,7 +10,7 @@
 #   - docs/Save_Proyect_Model.yaml     (export_save_snapshot, load_proyect)
 
 version: 1
-updated: 2026-06-10
+updated: 2026-06-14
 
 summary: |
   El renderer envía comandos con window.electronAPI.sendEngineCmd (preload).
@@ -63,8 +63,11 @@ lifecycle:
     trigger: motor listo tras spawn
     cmd: set_scene { scene: "2D", save_path: extract_dir }
   startup_3d:
-    trigger: proyecto con extract_dir
-    cmd: set_scene { scene: gameStyle, save_path: extract_dir }
+    trigger: proyecto con extract_dir (o plantilla si proyecto nuevo)
+    cmd: set_scene { scene: gameStyle | "3D" | DEFAULT, save_path: extract_dir }
+    note: |
+      gameStyle en manifest = modo de cámara 3D (p. ej. first-person). Proyecto nuevo 3D
+      abre el editor directo; el usuario cambia la cámara en acordeón Camera (sidebar).
   shutdown:
     cmd: shutdown
     fallback: kill del proceso tras 2 s si no cierra

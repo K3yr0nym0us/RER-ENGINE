@@ -300,6 +300,13 @@ impl State {
                 ScriptCmd::ClearActivePlayerUiScreen => {
                     self.clear_active_player_ui_screen();
                 }
+                ScriptCmd::SetGraphicsTextureTier { tier } => {
+                    if let Some(t) =
+                        crate::config_3d::texture_graphics::TextureGraphicsTier::from_wire(&tier)
+                    {
+                        self.set_graphics_texture_tier(t);
+                    }
+                }
                 ScriptCmd::ApplyKinematicGravity { .. }
                 | ScriptCmd::ApplyKinematicImpulse { .. }
                 | ScriptCmd::SlideEntity { .. } => {}

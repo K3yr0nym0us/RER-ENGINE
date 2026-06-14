@@ -142,6 +142,15 @@ impl ScriptEngine {
         
     }
 
+    pub fn sync_graphics_texture_tier_readback(&self, tier: &str) {
+        if self.profile != ScriptEngineProfile::Engine3d {
+            return;
+        }
+        if let Ok(mut guard) = self.api_ctx.graphics_texture_tier.lock() {
+            *guard = tier.to_string();
+        }
+    }
+
     pub fn load_scene_script(&mut self, scene_id: u32, source: &str) -> ScriptResult<()> {
         self.scene_id = scene_id;
         self.scene_started = false;
@@ -151,7 +160,7 @@ impl ScriptEngine {
             return Ok(());
         }
         self.scene_user_source = Some(source.to_string());
-        let wrapped = wrap_scene_source(source);
+        let wrapped = wrap_scene_source(self.profile, source);
         let ast = self
             .engine
             .compile(&wrapped)
@@ -553,11 +562,12 @@ impl ScriptEngine {
     ) {
         let cache_key = format!("scene::{method}::invoke");
         if Self::source_defines_fn(user_source, method) {
+            let profile = self.profile;
             match self.invoke_script_ast(
                 &cache_key,
                 user_source,
                 invoke_suffix,
-                wrap_scene_source,
+                |src| wrap_scene_source(profile, src),
             ) {
                 Ok(ast) => {
                     let mut scope = Scope::new();

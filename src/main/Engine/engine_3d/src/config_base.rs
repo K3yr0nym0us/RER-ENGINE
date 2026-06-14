@@ -86,6 +86,8 @@ impl State {
         self.pending_entity_model_replaces.clear();
         self.texture_array.reset(&self.queue);
         self.texture_path_layers.clear();
+        self.glb_texture_catalog_cache.clear();
+        self.entity_texture_effective_cap.clear();
         self.reload_screen_hud_images();
         self.animations.clear();
         self.active_animations.clear();
@@ -271,10 +273,10 @@ impl State {
         );
     }
 
-    /// Escena base del modo first-person: suelo checker y cámara a ras de editor 3D.
+    /// Plantilla 3D por defecto (proyecto nuevo): suelo checker y cámara play character a ras de editor.
     pub(crate) fn setup_default_3d_scene(&mut self) {
-        send_load_progress("Cargando plantilla first-person…", None, None);
-        log::info!("Cargando plantilla first-person");
+        send_load_progress("Cargando plantilla 3D…", None, None);
+        log::info!("Cargando plantilla 3D por defecto");
         self.reset_runtime_scene_3d();
         send_load_progress("Insertando suelo (Ground)", None, None);
         self.ensure_ground_plane();
@@ -314,7 +316,7 @@ impl State {
             self.send_model_loaded_event(id, &label);
         };
 
-        // Placeholder first-person: 3 muros (environment) + 3 cubos (object).
+        // Placeholder plantilla 3D: 3 muros (environment) + 3 cubos (object).
         send_load_progress("Insertando Paredes (3)", None, None);
         spawn_block([-6.0, 2.0, 18.0], [1.2, 4.0, 18.0], Some("environment"));
         spawn_block([6.0, 2.0, 18.0], [1.2, 4.0, 18.0], Some("environment"));
@@ -353,10 +355,10 @@ impl State {
         };
 
         send_load_progress("Insertando Character (Player)", None, None);
-        self.apply_fp_placeholder_sun_and_player();
+        self.apply_3d_placeholder_sun_and_player();
 
-        send_load_progress("Plantilla first-person lista", None, None);
-        log::info!("Plantilla first-person lista");
+        send_load_progress("Plantilla 3D lista", None, None);
+        log::info!("Plantilla 3D por defecto lista");
         let scene_name =
             rer_engine_shared::editor_defaults::default_scene_name(1);
         self.editor_scenes_init_from_boot(&scene_name);
@@ -393,14 +395,14 @@ impl State {
     }
 
     /// Suelo checker + sol + jugador + pelota de prueba de la plantilla FP (sin muros ni cubos).
-    pub(crate) fn apply_fp_placeholder_sun_and_player(&mut self) {
+    pub(crate) fn apply_3d_placeholder_sun_and_player(&mut self) {
         self.ensure_ground_plane();
         self.ensure_default_sun();
         self.ensure_default_physics_ball();
         if self.play_character_entity.is_none() {
             self.spawn_play_character();
         }
-        self.ensure_default_fp_player_ui();
+        self.ensure_default_3d_player_ui();
         self.sync_fps_camera_mode();
     }
 
@@ -422,7 +424,7 @@ impl State {
     }
 
     /// Tras cargar escena FP placeholder (switch sin guardar): alinear sol, luz y cámara orbital del editor.
-    pub(crate) fn finalize_first_person_placeholder_editor_scene(&mut self) {
+    pub(crate) fn finalize_3d_placeholder_editor_scene(&mut self) {
         use crate::config_3d::character_anchor::{
             PLAY_CHARACTER_EDITOR_ORBIT_PITCH, PLAY_CHARACTER_EDITOR_ORBIT_YAW,
         };
@@ -476,7 +478,7 @@ impl State {
         }
         self.fp_baseline_defer_frames -= 1;
         if self.fp_baseline_defer_frames == 0 {
-            self.try_apply_fp_placeholder_sun_and_player();
+            self.try_apply_3d_placeholder_sun_and_player();
         }
     }
 
@@ -498,7 +500,7 @@ impl State {
         }
     }
 
-    fn try_apply_fp_placeholder_sun_and_player(&mut self) {
+    fn try_apply_3d_placeholder_sun_and_player(&mut self) {
         self.prune_stale_fp_entity_refs();
         if self.play_character_entity.is_some() || self.sun_entity.is_some() {
             return;
@@ -507,7 +509,7 @@ impl State {
             return;
         }
         log::info!("Escena FP vacía: insertando suelo, sol y jugador placeholder");
-        self.apply_fp_placeholder_sun_and_player();
+        self.apply_3d_placeholder_sun_and_player();
         self.cancel_fp_baseline_defer();
     }
 

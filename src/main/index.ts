@@ -18,7 +18,7 @@ import type {
   SavedScript,
   AppResourceUsage,
 } from '../shared-types/types';
-import { entityPathMarker } from '../shared-types/types';
+import { DEFAULT_3D_CAMERA_MODE, entityPathMarker } from '../shared-types/types';
 import {
   getGpuMetricsPlatform,
   isElectronGpuMetricsSupported,
@@ -82,7 +82,7 @@ let mainWindow: BrowserWindow | null = null
 let engineProcess: ChildProcess | null = null
 let currentLocale: 'en' | 'es' = 'en'
 let currentGameStyle: GameStyle | null = null
-/** Cuando `gameStyle` es null (p. ej. selector 3D), decide 2D vs 3D hasta elegir estilo. */
+/** Cuando `gameStyle` es null, decide 2D vs 3D hasta arrancar el motor. */
 let currentProjectType: ProjectType | null = null
 
 // Buffer de eventos que llegaron antes de que el renderer estuviera listo
@@ -474,7 +474,7 @@ function sendEngine3dStartupScene(): void {
   if (!extractDir) return
   if (engine3dStartupSceneSent) return
   engine3dStartupSceneSent = true
-  const scene = currentGameStyle ?? 'first-person'
+  const scene = currentGameStyle ?? DEFAULT_3D_CAMERA_MODE
   sendToEngine({
     cmd: 'set_scene',
     scene,

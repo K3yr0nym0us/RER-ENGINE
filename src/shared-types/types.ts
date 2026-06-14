@@ -5,17 +5,23 @@ export * from './plugins'
 export type ProjectType = '2D' | '3D'
 
 export type GameStyle =
-  | 'first-person'
+  | 'first-person'   // tipo de cámara 3D (vista desde los ojos)
   | 'second-person'
   | 'third-person'
-  | 'top-down'
-  | 'side-scroller'
+  | 'top-down'       // perspectiva 2D
+  | 'side-scroller'  // perspectiva 2D
   | 'isometric'
 
-/** Sincroniza tipo de proyecto, modo y rutas con Electron antes de arrancar el motor. */
+/** Modo de cámara 3D por defecto al crear un proyecto nuevo. */
+export const DEFAULT_3D_CAMERA_MODE: GameStyle = 'first-person'
+
+/** Escala del mesh placeholder del jugador 3D (debe coincidir con `engine_3d`). */
+export const PLAY_CHARACTER_BODY_SCALE: [number, number, number] = [0.8, 1.7, 0.8]
+
+/** Sincroniza tipo de proyecto, modo de cámara y rutas con Electron antes de arrancar el motor. */
 export interface EngineStartPayload {
   projectType: ProjectType
-  /** Estilo 3D (`first-person`, etc.); `false` en proyectos 2D. */
+  /** Modo de cámara 3D; `false` en proyectos 2D. */
   mode:        GameStyle | false
   /** Ruta absoluta del `.save` en disco (autosave); `false` si es proyecto nuevo. */
   save_path:   string | false
@@ -37,6 +43,7 @@ export function isMinimalOpenProject(
 
 export interface ProjectConfig {
   type:      ProjectType
+  /** Modo de cámara 3D (manifest); en 2D define perspectiva del juego (top-down, etc.). */
   gameStyle: GameStyle
 }
 
@@ -111,9 +118,6 @@ export function isEnvironmentEntity(
   return isScenario || isEditorBoxPath(meta?.path) || meta?.entityCategory === 'environment'
 }
 
-/** Escala del mesh placeholder del jugador FP (debe coincidir con `engine_3d`). */
-export const FIRST_PERSON_PLAYER_BODY_SCALE: [number, number, number] = [0.8, 1.7, 0.8]
-
 // ── Modelo 3D (docs/Entities_Model_3D.yaml) ─────────────────────────────────
 
 export type Entity3DCategory =
@@ -126,7 +130,7 @@ export type Entity3DCategory =
 
 export type PhysicsType3D = 'dynamic' | 'static' | 'kinematic'
 
-/** Modo de seguimiento del ojo FPS respecto al jugador en editor. */
+/** Modo de seguimiento del ojo de cámara play character respecto al jugador en editor. */
 export type PlayCameraFollowMode = 'follow_character' | 'move_with_character'
 
 /** WASD / gamepad → Rhai (solo `category: player` en instancias). */
@@ -309,17 +313,21 @@ export interface SavedWorldConfig {
   lightIntensity?:   number
   /** 3D: oscuridad de sombras proyectadas (0.02–1, menor = más oscuro). */
   shadowDarkness?:   number
+  /** 3D: nivel global de texturas GLB embebidas. */
+  graphicsTextureTier?: 'low' | 'medium' | 'high' | 'ultra'
+  /** 3D: distancia (m) con textura al tope del tier activo. */
+  textureDetailDistance?: number
 }
 
 /** @deprecated 3D: `player` + `config_camera`. Solo runtime 2D / migración UI. */
 export interface SavedPlayerTransform {
   /** Pies del Player en el mundo. */
   position: [number, number, number]
-  /** Posición absoluta del ojo de la cámara FPS, independiente del Player (3D FP). */
+  /** Posición absoluta del ojo de la cámara play character, independiente del Player (3D). */
   camera_eye_position?: [number, number, number]
-  /** Yaw del cono FPS en editor (rad); distinto del viewport orbital. */
+  /** Yaw del cono de cámara play character en editor (rad); distinto del viewport orbital. */
   fps_camera_yaw?: number
-  /** Pitch del cono FPS en editor (rad). */
+  /** Pitch del cono de cámara play character en editor (rad). */
   fps_camera_pitch?: number
   scale:    [number, number, number]
   /** 3D: yaw de cámara en radianes. */
@@ -328,11 +336,11 @@ export interface SavedPlayerTransform {
   pitch?:   number
   /** Modelo visual (.glb/.fbx) del jugador si se reemplazó el placeholder. */
   visual_model_path?: string
-  /** FOV vertical de la cámara en radianes (3D FP). */
+  /** FOV vertical de la cámara en radianes (3D, cámara play character). */
   fov_y?: number
   /** Alcance del gizmo de frustum en el editor (metros). */
   frustum_distance?: number
-  /** Seguimiento del ojo FPS respecto al jugador en editor. */
+  /** Seguimiento del ojo de cámara play character respecto al jugador en editor. */
   camera_follow_mode?: PlayCameraFollowMode
   /** Bindings de control Rhai del jugador principal. */
   control_bindings?: SavedControlBindings
@@ -645,8 +653,6 @@ export interface EngineCommand {
     | 'remove_player_ui_button'
     | 'set_play_character_view'
     | 'set_play_character_spawn'
-    | 'set_first_person_view'
-    | 'set_first_person_spawn'
     | 'run_control_script'
     | 'undo'
     | 'clear_background'
@@ -671,7 +677,7 @@ export interface EditorSceneListItem {
 }
 
 export interface EngineEvent {
-  event: 'ready' | 'pong' | 'error' | 'model_loaded' | 'entity_model_replaced' | 'model_clips_ready' | 'stopped' | 'entity_selected' | 'entity_deselected' | 'entity_hovered' | 'entity_unhovered' | 'scenario_loaded' | 'character_loaded' | 'scene_imported' | 'project_loaded_2d' | 'project_loaded_3d' | 'project_load_2d_complete' | 'project_load_3d_complete' | 'load_progress' | 'camera_2d_updated' | 'background_loaded' | 'drawing_progress' | 'collider_created' | 'execution_area_created' | 'tool_cancelled' | 'pivot_selected' | 'physics_changed' | 'sprite_loaded' | 'sprite_removed' | 'sprites_list' | 'model_asset_loaded' | 'model_asset_removed' | 'models_list' | 'sound_loaded' | 'sound_removed' | 'sounds_list' | 'font_loaded' | 'font_removed' | 'fonts_list' | 'hud_image_loaded' | 'hud_image_removed' | 'hud_images_list' | 'background_asset_loaded' | 'background_asset_removed' | 'backgrounds_list' | 'play_character_view_changed' | 'first_person_view_changed' | 'save_snapshot_ready' | 'default_scene_name_ready' | 'editor_scene_created' | 'editor_scene_switched' | 'editor_scene_switch_blocked' | 'editor_scenes_updated' | 'debug_metrics' | 'preview_playing_changed' | 'trigger_entered' | 'trigger_exited' | 'entity_removed' | 'quick_build_move' | 'quick_build_click' | 'animation_logical_resolved' | 'animation_finished' | 'autosave_tick' | 'atlas_exhausted' | 'player_ui_image_added' | 'player_ui_image_removed' | 'player_ui_object_added' | 'player_ui_object_removed' | 'player_ui_object_draw_ended'
+  event: 'ready' | 'pong' | 'error' | 'model_loaded' | 'entity_model_replaced' | 'model_clips_ready' | 'stopped' | 'entity_selected' | 'entity_deselected' | 'entity_hovered' | 'entity_unhovered' | 'scenario_loaded' | 'character_loaded' | 'scene_imported' | 'project_loaded_2d' | 'project_loaded_3d' | 'project_load_2d_complete' | 'project_load_3d_complete' | 'load_progress' | 'camera_2d_updated' | 'background_loaded' | 'drawing_progress' | 'collider_created' | 'execution_area_created' | 'tool_cancelled' | 'pivot_selected' | 'physics_changed' | 'sprite_loaded' | 'sprite_removed' | 'sprites_list' | 'model_asset_loaded' | 'model_asset_removed' | 'models_list' | 'sound_loaded' | 'sound_removed' | 'sounds_list' | 'font_loaded' | 'font_removed' | 'fonts_list' | 'hud_image_loaded' | 'hud_image_removed' | 'hud_images_list' | 'background_asset_loaded' | 'background_asset_removed' | 'backgrounds_list' | 'play_character_view_changed' | 'save_snapshot_ready' | 'default_scene_name_ready' | 'editor_scene_created' | 'editor_scene_switched' | 'editor_scene_switch_blocked' | 'editor_scenes_updated' | 'debug_metrics' | 'preview_playing_changed' | 'trigger_entered' | 'trigger_exited' | 'entity_removed' | 'quick_build_move' | 'quick_build_click' | 'animation_logical_resolved' | 'animation_finished' | 'autosave_tick' | 'atlas_exhausted' | 'player_ui_image_added' | 'player_ui_image_removed' | 'player_ui_object_added' | 'player_ui_object_removed' | 'player_ui_object_draw_ended'
   [key: string]: unknown
 }
 
@@ -777,7 +783,7 @@ export interface DefaultSceneNameReady {
 }
 
 export interface PlayCharacterViewChanged {
-  event:                 'play_character_view_changed' | 'first_person_view_changed'
+  event:                 'play_character_view_changed'
   player_id:             number | null
   position:              [number, number, number]
   camera_eye_position?:  [number, number, number]
@@ -822,12 +828,6 @@ export interface DebugMetrics {
   play_character_position?: [number, number, number]
   play_character_yaw?:     number
   play_character_pitch?:   number
-  /** @deprecated Alias de `play_character_position` */
-  first_person_position?: [number, number, number]
-  /** @deprecated Alias de `play_character_yaw` */
-  first_person_yaw?:     number
-  /** @deprecated Alias de `play_character_pitch` */
-  first_person_pitch?:   number
 }
 
 export interface Camera2dUpdated {

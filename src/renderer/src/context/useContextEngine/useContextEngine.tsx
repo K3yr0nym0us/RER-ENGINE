@@ -223,6 +223,8 @@ export function EngineProvider({
 		setGravity: actions.setGravity,
 		setDirectionalLight: actions.setDirectionalLight,
 		setTargetFps: actions.setTargetFps,
+		setGraphicsTextureTier: actions.setGraphicsTextureTier,
+		setTextureDetailDistance: actions.setTextureDetailDistance,
 		removeCollider: actions.removeCollider,
 		removeExecutionArea: actions.removeExecutionArea,
 		updateEntityAnimations: actions.updateEntityAnimations,

@@ -5,7 +5,14 @@ import { CameraVideo } from 'react-bootstrap-icons';
 import { AppTooltip } from '@components';
 import { useContextEngine } from '@engine';
 import { useTraslate } from '@hooks';
-import { type GameStyle, type PlayCameraFollowMode, type ProjectType, type SavedPlayerTransform } from '@shared-types';
+import { get3DCameraModeOptions } from '../../../../constants/cameraModeOptions';
+import {
+	type EngineStartPayload,
+	type GameStyle,
+	type ProjectType,
+	type SavedPlayerTransform,
+	DEFAULT_3D_CAMERA_MODE,
+} from '@shared-types';
 import {
 	applyPlayCharacterCameraPatch,
 } from '../../../../defaults/playCharacterSceneRestore';
@@ -13,7 +20,13 @@ import {
 const RAD_TO_DEG = 180 / Math.PI;
 const DEG_TO_RAD = Math.PI / 180;
 const INPUT_CLASS = 'form-control form-control-sm bg-dark text-light border-secondary w-100';
+const SELECT_CLASS = 'form-select form-select-sm bg-dark text-light border-secondary w-100';
 const FIELD_COL_STYLE: React.CSSProperties = { flex: '1 1 0', minWidth: 0 };
+
+/** Controles numéricos del acordeón (ojo/yaw/FOV) solo para modos de cámara implementados. */
+function cameraModeHasEditorControls(mode: GameStyle): boolean {
+	return mode === 'first-person';
+}
 
 function formatCameraNum(n: number): string {
 	if (!Number.isFinite(n)) return '0';
@@ -27,17 +40,23 @@ function parseCameraNum(s: string): number {
 	return Math.round(n * 10) / 10;
 }
 
-function fpsYawFromView(v: SavedPlayerTransform): number | null {
+function playCameraYawFromView(v: SavedPlayerTransform): number | null {
 	const y = v.fps_camera_yaw ?? v.yaw;
 	return y !== undefined ? y : null;
 }
 
 export function CameraAccordion({
 	projectType = '2D',
-	gameStyle,
+	gameStyle = DEFAULT_3D_CAMERA_MODE,
+	initialSavePath,
+	initialExtractDir,
+	onGameStyleChange,
 }: {
 	projectType?: ProjectType
 	gameStyle?: GameStyle
+	initialSavePath?: string | null
+	initialExtractDir?: string | null
+	onGameStyleChange?: (mode: GameStyle) => void
 }) {
 	const { t } = useTraslate();
 	const {
@@ -52,7 +71,8 @@ export function CameraAccordion({
 	} = useContextEngine();
 
 	const is3d = projectType === '3D';
-	const is3dFp = is3d && gameStyle === 'first-person';
+	const showCameraControls = is3d && cameraModeHasEditorControls(gameStyle);
+	const cameraModeOptions = get3DCameraModeOptions();
 
 	const [posX, setPosX] = useState('0');
 	const [posY, setPosY] = useState('0');
@@ -60,7 +80,6 @@ export function CameraAccordion({
 	const [yawDeg, setYawDeg] = useState('0');
 	const [fovDeg, setFovDeg] = useState('0');
 	const [frustumDist, setFrustumDist] = useState('0');
-	const [followMode, setFollowMode] = useState<PlayCameraFollowMode>('move_with_character');
 
 	const [cam2dX, setCam2dX] = useState('0');
 	const [cam2dY, setCam2dY] = useState('0');
@@ -70,14 +89,14 @@ export function CameraAccordion({
 	const hasPlayer = playerEntityIdRef.current != null;
 
 	const loadFromScene = useCallback(() => {
-		if (is3dFp) {
+		if (showCameraControls) {
 			const v = playCharacterViewRef.current;
 			if (!v?.camera_eye_position) return;
 			const eye = v.camera_eye_position;
 			setPosX(formatCameraNum(eye[0]));
 			setPosY(formatCameraNum(eye[1]));
 			setPosZ(formatCameraNum(eye[2]));
-			const yaw = fpsYawFromView(v);
+			const yaw = playCameraYawFromView(v);
 			if (yaw !== null) {
 				setYawDeg(formatCameraNum(yaw * RAD_TO_DEG));
 			}
@@ -87,7 +106,6 @@ export function CameraAccordion({
 			if (v.frustum_distance !== undefined) {
 				setFrustumDist(formatCameraNum(v.frustum_distance));
 			}
-			setFollowMode(v.camera_follow_mode ?? 'move_with_character');
 			return;
 		}
 		if (!is3d && camera2dRef.current) {
@@ -96,12 +114,12 @@ export function CameraAccordion({
 			setCam2dY(formatCameraNum(c.y));
 			setCam2dHalfH(formatCameraNum(c.halfH));
 		}
-	}, [is3dFp, is3d, camera2dRef, playCharacterViewRef]);
+	}, [showCameraControls, is3d, camera2dRef, playCharacterViewRef]);
 
 	useEffect(() => {
 		if (skipSyncRef.current) return;
 		loadFromScene();
-	}, [loadFromScene, selectedEntity?.id, engineReady, playCharacterViewSyncSeq, previewPlaying]);
+	}, [loadFromScene, selectedEntity?.id, engineReady, playCharacterViewSyncSeq, previewPlaying, gameStyle]);
 
 	const commitPosAxis = (axis: 0 | 1 | 2, raw: string) => {
 		if (playerEntityIdRef.current == null) return;
@@ -135,12 +153,6 @@ export function CameraAccordion({
 		applyPlayCharacterCameraPatch({ frustum_distance: parsed });
 	};
 
-	const commitFollowMode = (mode: PlayCameraFollowMode) => {
-		if (playerEntityIdRef.current == null) return;
-		setFollowMode(mode);
-		applyPlayCharacterCameraPatch({ camera_follow_mode: mode });
-	};
-
 	const commit2d = (x: string, y: string, halfH: string) => {
 		const px = parseCameraNum(x);
 		const py = parseCameraNum(y);
@@ -149,6 +161,21 @@ export function CameraAccordion({
 		skipSyncRef.current = true;
 		send({ cmd: 'set_camera2d', x: px, y: py, half_h: ph });
 		camera2dRef.current = { x: px, y: py, halfH: ph };
+	};
+
+	const handleCameraModeChange = (nextMode: GameStyle) => {
+		if (!is3d || nextMode === gameStyle) return;
+		const option = cameraModeOptions.find((o) => o.type === nextMode);
+		if (!option?.available) return;
+
+		const payload: EngineStartPayload = {
+			projectType: '3D',
+			mode: nextMode,
+			save_path: initialSavePath ?? false,
+			...(initialExtractDir?.trim() ? { extract_dir: initialExtractDir.trim() } : {}),
+		};
+		window.electronAPI.setGameStyle(payload);
+		onGameStyleChange?.(nextMode);
 	};
 
 	const finishEdit3d = (
@@ -197,7 +224,25 @@ export function CameraAccordion({
 				{t('Camera')}
 			</Accordion.Header>
 			<Accordion.Body className="py-2 px-2">
-				{is3dFp && (
+				{is3d && (
+					<>
+						<p className="text-secondary small mb-1 fw-semibold">{t('Camera type')}</p>
+						<select
+							id="cam-mode-select"
+							className={`${SELECT_CLASS} mb-2`}
+							value={gameStyle}
+							disabled={!engineReady}
+							onChange={(e) => handleCameraModeChange(e.target.value as GameStyle)}
+						>
+							{cameraModeOptions.map((opt) => (
+								<option key={opt.type} value={opt.type} disabled={!opt.available}>
+									{t(opt.labelKey)}{!opt.available ? ` (${t('COMING SOON')})` : ''}
+								</option>
+							))}
+						</select>
+					</>
+				)}
+				{showCameraControls && (
 					<>
 						<p className="text-secondary small mb-1 fw-semibold">{t('Camera position')}</p>
 						<div className="d-flex gap-1 mb-2">
@@ -313,38 +358,12 @@ export function CameraAccordion({
 								/>
 							</div>
 						</div>
-						<p className="text-secondary small mb-1 fw-semibold">{t('Camera follow mode')}</p>
-						<div className="d-flex flex-column gap-1 mb-2">
-							<div className="form-check">
-								<input
-									className="form-check-input"
-									type="radio"
-									id="cam-follow-character"
-									name="cam-follow-mode"
-									checked={followMode === 'follow_character'}
-									disabled={camDisabled}
-									onChange={() => commitFollowMode('follow_character')}
-								/>
-								<label className="form-check-label small text-light" htmlFor="cam-follow-character">
-									{t('Follow character')}
-								</label>
-							</div>
-							<div className="form-check">
-								<input
-									className="form-check-input"
-									type="radio"
-									id="cam-move-with-character"
-									name="cam-follow-mode"
-									checked={followMode === 'move_with_character'}
-									disabled={camDisabled}
-									onChange={() => commitFollowMode('move_with_character')}
-								/>
-								<label className="form-check-label small text-light" htmlFor="cam-move-with-character">
-									{t('Move together with character')}
-								</label>
-							</div>
-						</div>
 					</>
+				)}
+				{is3d && !showCameraControls && (
+					<p className="text-secondary small mb-0 fst-italic">
+						{t('Detailed camera controls for this mode are not available yet.')}
+					</p>
 				)}
 				{!is3d && (
 					<>
@@ -418,11 +437,6 @@ export function CameraAccordion({
 							</div>
 						</div>
 					</>
-				)}
-				{is3d && !is3dFp && (
-					<p className="text-secondary small mb-0 fst-italic">
-						{t('Camera settings are available in first-person 3D projects.')}
-					</p>
 				)}
 			</Accordion.Body>
 		</Accordion.Item>

@@ -10,7 +10,19 @@ import { useSidebarAccordion } from '../../../context/SidebarAccordionContext';
 
 import type { GameStyle, ProjectType } from '@shared-types';
 
-export function SideBarLeft({ projectType, gameStyle }: { projectType: ProjectType; gameStyle?: GameStyle }) {
+export function SideBarLeft({
+  projectType,
+  gameStyle,
+  initialSavePath,
+  initialExtractDir,
+  onGameStyleChange,
+}: {
+  projectType: ProjectType
+  gameStyle?: GameStyle
+  initialSavePath?: string | null
+  initialExtractDir?: string | null
+  onGameStyleChange?: (mode: GameStyle) => void
+}) {
   const sidebarAccordion = useSidebarAccordion();
 
   return (
@@ -27,7 +39,13 @@ export function SideBarLeft({ projectType, gameStyle }: { projectType: ProjectTy
             </Accordion>
 
             <Accordion {...sidebarAccordion.propsFor('camera')}>
-              <CameraAccordion projectType={projectType} gameStyle={gameStyle} />
+              <CameraAccordion
+                projectType={projectType}
+                gameStyle={gameStyle}
+                initialSavePath={initialSavePath}
+                initialExtractDir={initialExtractDir}
+                onGameStyleChange={onGameStyleChange}
+              />
             </Accordion>
 
             <Accordion {...sidebarAccordion.propsFor('resources')}>

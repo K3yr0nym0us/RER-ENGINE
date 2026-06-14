@@ -172,14 +172,14 @@ gravity_and_controls_2d:
 
 engine_3d_only:
   description: |
-    Controller de play en proyectos 3D (hoy usado en primera persona) y objetos con Rapier.
+    Controller de play en proyectos 3D (cámara play character; `gameStyle` first-person) y objetos con Rapier.
     En 3D las animaciones por frames 2D no son el foco; el personaje jugable en play usa
     cápsula cinemática (no el mismo pipeline que move_entity en XY de un sprite).
   functions:
     - function: engine.fp_press_key(key)
       description: |
         Simula tecla pulsada en play (mismos nombres que el input: "W", "S", "A", "D",
-        "SHIFT", "SPACE", etc.). En scripts de control FP el motor aplica control_key
+        "SHIFT", "SPACE", etc.). En scripts de control play character el motor aplica control_key
         automáticamente; solo usa fp_press_key si necesitas otra tecla distinta al binding.
     - function: engine.fp_jump()
       description: Salto del jugador en play.

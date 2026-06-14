@@ -334,6 +334,8 @@ impl State {
                 self.target_fps = fps.clamp(1, 1000);
                 log::info!("[render] Límite de FPS actualizado: {}", self.target_fps);
             }
+            EngineCommand::SetGraphicsTextureTier { .. }
+            | EngineCommand::SetTextureDetailDistance { .. } => {}
             EngineCommand::SetPreviewPlaying { playing } => {
                 if self.preview_playing == playing {
                     return;

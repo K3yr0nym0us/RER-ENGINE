@@ -10,7 +10,7 @@ reference: Entities_Model_3D.yaml
 manifest_fields_outside_entity_contract:
   - field: config_camera
     location: SavedScene, raíz manifest
-    note: Cámara FPS separada del player
+    note: Cámara play character (modo gameStyle first-person); separada del player en manifest
   - field: config_editor_camera
     location: SavedScene
     note: Viewport orbital del editor
@@ -28,7 +28,7 @@ manifest_fields_outside_entity_contract:
     note: Precarga de assets
   - field: "scenes, activeSceneId, version, gameStyle, language"
     location: manifest
-    note: Metadatos de proyecto
+    note: Metadatos de proyecto; gameStyle = modo de cámara 3D (first-person, third-person, …)
   - field: "Marcadores runtime ([Player], [Ground], [EditorBox], …)"
     location: motor interno
     note: Colisión distinta por tipo; ver collision_by_entity_type

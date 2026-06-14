@@ -258,7 +258,7 @@ rhai_runtime:
     let WALK_SPEED = 4 work without casting.
   demo_saves:
     DEMO_2d.save: scripting/**/*.rhai (side-scroller controls with move_control)
-    DEMO_3d_FIRST_PERSON.save: scripting/**/*.rhai (FP WASD/SHIFT/SPACE bare-body scripts)
+    DEMO_3d_FIRST_PERSON.save: demo 3D con cámara play character — scripting/**/*.rhai (WASD walk speed, SHIFT sprint, SPACE jump)
 
 # ── Relación con RHAI_API.yaml ────────────────────────────────────────────────
 

@@ -856,6 +856,16 @@ impl State {
                 self.target_fps = fps.clamp(1, 1000);
                 log::info!("[render] Límite de FPS actualizado: {}", self.target_fps);
             }
+            EngineCommand::SetGraphicsTextureTier { tier } => {
+                if let Some(t) =
+                    crate::config_3d::texture_graphics::TextureGraphicsTier::from_wire(&tier)
+                {
+                    self.set_graphics_texture_tier(t);
+                }
+            }
+            EngineCommand::SetTextureDetailDistance { distance_m } => {
+                self.set_texture_detail_near_m(distance_m);
+            }
             EngineCommand::SetDebugMode { show } => {
                 self.debug_mode = show;
                 log::info!("[debug] modo debug (colisiones): {}", show);
@@ -1075,7 +1085,7 @@ impl State {
                     self.emit_play_character_view_changed(false);
                 }
             }
-            EngineCommand::SetFpsEditorFrustumDistance { distance } => {
+            EngineCommand::SetPlayEditorFrustumDistance { distance } => {
                 self.fps_editor_frustum_distance = distance.clamp(0.5, 50.0);
                 if self.has_play_character() {
                     self.emit_play_character_view_changed(false);

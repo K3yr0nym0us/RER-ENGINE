@@ -25,11 +25,13 @@ export function EngineView({
   gameStyle,
   initialSavePath,
   initialExtractDir,
+  onGameStyleChange,
 }: {
   projectType: ProjectType
   gameStyle?: GameStyle
   initialSavePath?: string | null
   initialExtractDir?: string | null
+  onGameStyleChange?: (mode: GameStyle) => void
 }) {
   const viewportRef = useRef<HTMLDivElement>(null)
 
@@ -49,6 +51,7 @@ export function EngineView({
             gameStyle={gameStyle} 
             initialSavePath={initialSavePath}
             initialExtractDir={initialExtractDir}
+            onGameStyleChange={onGameStyleChange}
             viewportRef={viewportRef} 
           />
         </ModalProvider>
@@ -58,11 +61,12 @@ export function EngineView({
   )
 }
 
-function EngineViewInner({ projectType, gameStyle, initialSavePath, initialExtractDir, viewportRef }: {
+function EngineViewInner({ projectType, gameStyle, initialSavePath, initialExtractDir, onGameStyleChange, viewportRef }: {
   projectType: ProjectType
   gameStyle?: GameStyle
   initialSavePath?: string | null
   initialExtractDir?: string | null
+  onGameStyleChange?: (mode: GameStyle) => void
   viewportRef: React.RefObject<HTMLDivElement>
 }) {
   const { 
@@ -89,7 +93,13 @@ function EngineViewInner({ projectType, gameStyle, initialSavePath, initialExtra
     <SidebarAccordionProvider>
     <div className="app-shell d-flex flex-column">
       <div className="d-flex flex-grow-1 overflow-hidden">
-        <SideBarLeft projectType={projectType} gameStyle={gameStyle} />
+        <SideBarLeft
+          projectType={projectType}
+          gameStyle={gameStyle}
+          initialSavePath={initialSavePath}
+          initialExtractDir={initialExtractDir}
+          onGameStyleChange={onGameStyleChange}
+        />
 
         <div className="d-flex flex-column flex-fill" style={{ width: '75%' }}>
           <TopBarEngine 

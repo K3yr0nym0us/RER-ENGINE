@@ -126,6 +126,10 @@ pub(crate) struct SavedWorldConfig {
     lightIntensity: Option<f32>,
     #[serde(default)]
     shadowDarkness: Option<f32>,
+    #[serde(default)]
+    graphicsTextureTier: Option<String>,
+    #[serde(default)]
+    textureDetailDistance: Option<f32>,
 }
 
 #[derive(Debug, Default, Deserialize, Clone, Serialize)]
@@ -786,8 +790,8 @@ fn pick_active_save_view(project: &ProjectSaveData) -> Result<ActiveSaveView, St
     })
 }
 
-fn needs_scene_burst_load(game_style: &str, view: &ActiveSaveView) -> bool {
-    !view.entities.is_empty() || (game_style == "first-person" && view.player.is_some())
+fn needs_scene_burst_load(_game_style: &str, view: &ActiveSaveView) -> bool {
+    !view.entities.is_empty() || view.player.is_some()
 }
 
 fn find_blueprint<'a>(id: &str, blueprints: &'a [SavedBlueprint]) -> Option<&'a SavedBlueprint> {
@@ -1085,7 +1089,7 @@ fn load_project_asset_stores(state: &mut State, project: &ProjectSaveData) {
     }
 }
 
-/// Restaura jugador FP desde manifest: mesh sin auto-escala, transform y cámara del save.
+/// Restaura jugador 3D desde manifest: mesh sin auto-escala, transform y cámara del save.
 fn restore_player_from_manifest(
     state: &mut State,
     player: &SavedEntity3D,
@@ -1224,13 +1228,6 @@ fn spawn_entity_after_load_model_single(
     state.scenario_entities.last().copied()
 }
 
-fn restore_play_character_mesh_extents_from_model(state: &mut State, model_path: &str) {
-    if is_model_3d_path(model_path) {
-        state.play_character_mesh_extents =
-            state.play_character_mesh_extents_from_visual_path(model_path);
-    }
-}
-
 /// Convierte `player.position` del manifest a pies (saves antiguos guardaban centro del mesh).
 fn player_manifest_position_as_feet(state: &State, player: &SavedEntity3D) -> [f32; 3] {
     use crate::config_3d::character_anchor::feet_from_transform;
@@ -1250,55 +1247,6 @@ fn player_manifest_position_as_feet(state: &State, player: &SavedEntity3D) -> [f
         state.play_character_mesh_extents.as_ref(),
     )
     .to_array()
-}
-
-/// Aplica `config_camera` + transform del objeto `player` del manifest.
-fn apply_saved_play_character_view(
-    state: &mut State,
-    player: &SavedEntity3D,
-    cam: &SavedConfigCamera,
-) {
-    if is_model_3d_path(&player.model) {
-        restore_play_character_mesh_extents_from_model(state, &player.model);
-    }
-    use crate::config_3d::character_anchor::{
-        PLAY_CHARACTER_EDITOR_ORBIT_PITCH, PLAY_CHARACTER_EDITOR_ORBIT_YAW,
-    };
-
-    let follow_mode = cam.camera_follow_mode.as_deref().map(|m| match m {
-        "follow_character" => crate::ipc::PlayCameraFollowMode::FollowCharacter,
-        _ => crate::ipc::PlayCameraFollowMode::MoveWithCharacter,
-    });
-    let yaw = cam.yaw.unwrap_or(PLAY_CHARACTER_EDITOR_ORBIT_YAW);
-    let pitch = cam.pitch.unwrap_or(PLAY_CHARACTER_EDITOR_ORBIT_PITCH);
-    let body_rotation = player.rotation;
-    let body_scale = Some(player.scale);
-    let feet = player_manifest_position_as_feet(state, player);
-    state.apply_play_character_view(
-        feet,
-        yaw,
-        pitch,
-        cam.fov_y,
-        cam.frustum_distance,
-        follow_mode,
-        body_rotation,
-        body_scale,
-        cam.camera_eye_position,
-        cam.fps_camera_yaw,
-        cam.fps_camera_pitch,
-    );
-    if let Some(eye) = cam.camera_eye_position {
-        state.play_camera_eye_position = glam::Vec3::from_array(eye);
-        state.capture_play_camera_follow_offset();
-    }
-    if let (Some(id), Some(rot)) = (state.play_character_entity, player.rotation) {
-        let rot_q = glam::Quat::from_xyzw(rot[0], rot[1], rot[2], rot[3]);
-        state.apply_play_character_transform_editor(id, None, Some(rot_q), None);
-        if state.uses_editor_viewport_camera() {
-            state.ensure_editor_camera_entity();
-            state.sync_editor_camera_entity_from_viewport();
-        }
-    }
 }
 
 pub(crate) fn apply_loaded_proyect_3d(
@@ -1393,6 +1341,17 @@ fn apply_loaded_proyect_3d_with_scene(
         ambient: Some(light_ambient),
         intensity: Some(light_intensity),
         shadow_darkness: Some(shadow_darkness),
+    });
+    crate::config_3d::entity_textures::apply_graphics_settings_from_world_wire(
+        state,
+        view.world.graphicsTextureTier.as_deref(),
+        view.world.textureDetailDistance,
+    );
+    send_event(&EngineEvent::GraphicsTextureTierChanged {
+        tier: state.graphics_texture_tier.wire().to_string(),
+    });
+    send_event(&EngineEvent::TextureDetailDistanceChanged {
+        distance_m: state.texture_detail_near_m,
     });
 
     load_project_asset_stores(state, project);
@@ -1635,26 +1594,20 @@ fn apply_loaded_proyect_3d_with_scene(
         }
     }
 
-    if game_style == "first-person" {
-        match (saved_player.as_ref(), saved_config_camera.as_ref()) {
-            (Some(player_entity), Some(cam)) => {
-                restore_player_from_manifest(state, player_entity, cam);
-            }
-            (Some(_), None) => {
-                log::error!("[load_proyect] first-person requiere config_camera en manifest");
-            }
-            (None, _) => {
-                if view.entities.is_empty() {
-                    state.apply_fp_placeholder_sun_and_player();
-                } else {
-                    log::error!("[load_proyect] first-person requiere player en manifest");
-                }
+    match (saved_player.as_ref(), saved_config_camera.as_ref()) {
+        (Some(player_entity), Some(cam)) => {
+            restore_player_from_manifest(state, player_entity, cam);
+        }
+        (Some(_), None) => {
+            log::error!("[load_proyect] proyecto 3D requiere config_camera en manifest");
+        }
+        (None, _) => {
+            if view.entities.is_empty() {
+                state.apply_3d_placeholder_sun_and_player();
+            } else {
+                log::error!("[load_proyect] proyecto 3D requiere player en manifest");
             }
         }
-    } else if let (Some(player_entity), Some(cam)) =
-        (saved_player.as_ref(), saved_config_camera.as_ref())
-    {
-        apply_saved_play_character_view(state, player_entity, cam);
     }
 
     if burst_load_planned {
@@ -1687,9 +1640,7 @@ fn apply_loaded_proyect_3d_with_scene(
     state.import_player_ui_buttons_from_save(&project.player_ui_buttons);
     state.import_player_ui_images_from_save(&project.player_ui_images);
     state.import_player_ui_objects_from_save(&project.player_ui_objects);
-    if game_style == "first-person" {
-        state.ensure_default_fp_player_ui();
-    }
+    state.ensure_default_3d_player_ui();
     let player_screens: Vec<crate::ipc::PlayerUiScreenInfo> = project
         .playerUiScreens
         .iter()
@@ -1700,18 +1651,16 @@ fn apply_loaded_proyect_3d_with_scene(
         })
         .collect();
     state.sync_player_ui_screens(&player_screens);
-    if game_style == "first-person" {
-        if let Some(scene) = forced_scene {
-            if is_fp_placeholder_saved_scene(scene) {
-                state.finalize_first_person_placeholder_editor_scene();
-            }
+    if let Some(scene) = forced_scene {
+        if is_3d_placeholder_saved_scene(scene) {
+            state.finalize_3d_placeholder_editor_scene();
         }
     }
     state.restoring_save_manifest = false;
     Ok(view)
 }
 
-fn is_fp_placeholder_saved_scene(scene: &SavedScene) -> bool {
+fn is_3d_placeholder_saved_scene(scene: &SavedScene) -> bool {
     scene.player.is_some()
         && scene.models.is_empty()
         && scene
@@ -1796,6 +1745,14 @@ fn send_project_loaded_3d(
         lightAmbient: view.world.lightAmbient,
         lightIntensity: view.world.lightIntensity,
         shadowDarkness: view.world.shadowDarkness,
+        graphicsTextureTier: view
+            .world
+            .graphicsTextureTier
+            .clone()
+            .or_else(|| Some("medium".to_string())),
+        textureDetailDistance: view.world.textureDetailDistance.or_else(|| {
+            Some(crate::config_3d::entity_textures::default_texture_detail_near_m())
+        }),
     };
 
     let models = editor_models_from_manifest(project);
@@ -1967,6 +1924,8 @@ pub(crate) fn saved_scene_from_snapshot_payload(
             lightAmbient: p.world.light_ambient,
             lightIntensity: p.world.light_intensity,
             shadowDarkness: p.world.shadow_darkness,
+            graphicsTextureTier: p.world.graphics_texture_tier.clone(),
+            textureDetailDistance: p.world.texture_detail_distance_m,
         },
         backgroundPath: p.background_path.clone(),
         entities: p.entities.iter().map(map_entity).collect(),
@@ -2025,6 +1984,10 @@ pub(crate) fn build_fp_placeholder_saved_scene(id: u32, name: &str) -> SavedScen
         lightAmbient: Some(DEFAULT_LIGHT_AMBIENT),
         lightIntensity: Some(DEFAULT_LIGHT_INTENSITY),
         shadowDarkness: Some(DEFAULT_SHADOW_DARKNESS),
+        graphicsTextureTier: Some("medium".to_string()),
+        textureDetailDistance: Some(
+            crate::config_3d::entity_textures::default_texture_detail_near_m(),
+        ),
     };
 
     let ground_scale = [28.0 / 40.0, 0.02, 56.0 / 40.0];
@@ -2151,12 +2114,12 @@ pub(crate) fn build_minimal_project_from_store(
         scenes: scenes.to_vec(),
         blueprints: Vec::new(),
         language: None,
-        playerUiScreens: crate::config_3d::player_ui::defaults::default_fp_project_ui_screens(),
+        playerUiScreens: crate::config_3d::player_ui::defaults::default_3d_project_ui_screens(),
         menuUiScreens: Vec::new(),
         player_ui_text_boxes: Vec::new(),
         player_ui_buttons: Vec::new(),
         player_ui_images: Vec::new(),
-        player_ui_objects: crate::config_3d::player_ui::defaults::default_fp_project_ui_objects(),
+        player_ui_objects: crate::config_3d::player_ui::defaults::default_3d_project_ui_objects(),
         hud_images: Vec::new(),
         resources: None,
     }

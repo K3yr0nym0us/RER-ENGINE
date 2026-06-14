@@ -9,7 +9,7 @@
 #   - docs/IPC_Protocol.yaml (set_control_bindings, run_control_script)
 
 version: 1
-updated: 2026-06-10
+updated: 2026-06-14
 
 principle:
   scope: personajes (character / player), no escenarios ni objetos estáticos
@@ -43,7 +43,7 @@ preview_runtime:
   movement_2d: |
     move_control / jump_control en RHAI_API; gravedad y suelo en motor 2D.
   movement_3d: |
-    Controles del jugador FP vía play_controller; scripts on_press para acciones.
+    Controles del jugador play character (cámara first-person) vía play_controller; scripts on_press para acciones.
 
 defaults:
   file: src/renderer/src/defaults/playCharacterControlBindings.ts

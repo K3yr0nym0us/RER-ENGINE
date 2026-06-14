@@ -48,6 +48,8 @@ impl State {
                 light_ambient: Some(self.directional_light_ambient),
                 light_intensity: Some(self.light_intensity),
                 shadow_darkness: Some(self.shadow_darkness),
+                graphics_texture_tier: Some(self.graphics_texture_tier.wire().to_string()),
+                texture_detail_distance_m: Some(self.texture_detail_near_m),
             },
             background_path: self.background_path.clone(),
             entities,

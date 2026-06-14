@@ -2,15 +2,22 @@
 
 Este documento fija el contrato tecnico actual del motor 3D para que el codigo no siga siendo la unica fuente de verdad implicita. Las tareas de producto pendientes están en [`CHECKLIST-3D.md`](../../../../CHECKLIST-3D.md).
 
+## Terminologia (modo 3D y camara)
+
+- **Proyecto 3D**: tipo en manifest (`type: "3D"`). Al crearlo, el editor abre directo; no hay pantalla de «estilo de juego».
+- **`gameStyle` en manifest**: **modo de cámara** 3D (`first-person`, `third-person`, …). El usuario lo elige en el acordeón **Camera** del renderer.
+- **`first-person`**: valor de `gameStyle` para el tipo de cámara «vista desde los ojos» (opción del select Camera).
+- **Play character / vista play character**: jugador `[Player]` + IPC `set_play_character_view` / `play_character_view_changed`.
+
 ## Relacion con `engine_2d`
 
 - `rer_engine_3d` y `rer_engine_2d` son **binarios distintos** con runtimes distintos.
 - Lo comun con Electron es el **protocolo IPC** (JSON por stdin/stdout) y crates de utilidades (`engine_shared`), no la logica de juego ni de editor.
-- **No se copia runtime entre motores**: la fase de reutilizar ideas del 2D en el 3D ya cerró; el 3D funciona con su propia pila (`config_3d/`, Rapier3D, primera persona, glTF/GLB). Nuevas funciones 3D se implementan solo aqui.
+- **No se copia runtime entre motores**: la fase de reutilizar ideas del 2D en el 3D ya cerró; el 3D funciona con su propia pila (`config_3d/`, Rapier3D, cámara play character, glTF/GLB). Nuevas funciones 3D se implementan solo aqui.
 - Herramientas de editor 2D (colliders dibujados, execution areas, escenarios sprite, fisica XY, etc.) **no aplican** a este binario y no deben documentarse como deuda de portado.
 - Este documento no describe ni prescribe comportamiento del motor 2D.
 
-Runtime 3D: camara orbital en editor, primera persona en play, Rapier3D, mallas glTF/GLB.
+Runtime 3D: camara orbital en editor, play con jugador `[Player]`, Rapier3D, mallas glTF/GLB. El tipo de cámara en play (`gameStyle`) se elige en el acordeón Camera.
 
 ## Politica GPU
 
@@ -28,7 +35,7 @@ Runtime 3D: camara orbital en editor, primera persona en play, Rapier3D, mallas 
 ## Archivos fuente de verdad
 
 - `engine_shared/src/gpu.rs`: `resolve_backend(ThreeD)` y `init_gpu(_, ThreeD)`.
-- `src/main.rs`: bucle winit, input, gizmo, play FP, setup overlay.
+- `src/main.rs`: bucle winit, input, gizmo, play (cámara play character), setup overlay.
 - `src/engine.rs` + `src/engine/mod.rs`: `State` (GPU, ECS, caches, undo/redo, scripting).
 - `src/engine/init.rs`: instancia wgpu (Vulkan), pipelines WGSL, texture array, HUD/gizmo, TAA.
 - `src/engine/commands.rs`: IPC y mutaciones de estado.
@@ -38,7 +45,7 @@ Runtime 3D: camara orbital en editor, primera persona en play, Rapier3D, mallas 
 - `src/config_3d/camera_3d.rs`: camara orbital y uniforms.
 - `src/config_3d/character_anchor.rs`: pies ↔ centro del personaje jugable.
 - `src/config_3d/play_character.rs`: entidad `[Player]`, spawn y cuerpo placeholder.
-- `src/config_3d/fps_camera.rs`: vista FPS acoplada, IPC `play_character_view_changed`.
+- `src/config_3d/fps_camera.rs`: vista play character acoplada, IPC `play_character_view_changed`.
 - `src/config_3d/play_controller.rs`: movimiento en play (cápsula cinemática).
 - `src/config_3d/player_ui/`: editor HUD del jugador (pantallas, texto, botones, imágenes, objetos poligonales, undo).
 - `src/config_3d/mesh_3d.rs`: glTF/GLB, normalizacion, `forward_xz`.
@@ -63,8 +70,8 @@ Soporte: `mesh.rs`, `shader.wgsl`, `gizmo.rs`, `gizmo.wgsl`, `texture.rs`, `scri
 
 ## Modos de camara y render
 
-- **Editor 3D**: solo `Camera` orbital + viewport desacoplado del jugador; gizmo y frustum FP con `preview_playing == false`. No hay modo cámara 2D en este binario.
-- **Play FP**: `preview_playing`, vista desde acordeón Cámara; mesh del jugador visible; capsula cinematica en `play_controller.rs`.
+- **Editor 3D**: solo `Camera` orbital + viewport desacoplado del jugador; gizmo y frustum de cámara play character con `preview_playing == false`. No hay modo cámara 2D en este binario.
+- **Play 3D**: `preview_playing`, vista desde acordeón Camera; mesh del jugador visible; capsula cinematica en `play_controller.rs`.
 - **HUD play** (crosshair, Esc): NDC + `hud_scene_bind_group` (identidad). PNG de pantalla **solo** vía `screen_hud_image` + `screen_hud_pipeline` (no `TextureArray`).
 - **HUD Player UI** (autoría + play): pantallas con elementos en NDC (`config_3d/player_ui/`); en play se muestra la pantalla activa; en edición UI la cámara del jugador sin `preview_playing`.
 
@@ -74,12 +81,12 @@ Soporte: `mesh.rs`, `shader.wgsl`, `gizmo.rs`, `gizmo.wgsl`, `texture.rs`, `scri
 
 - `Transform` = centro del cuerpo; pies via `PLAY_CHARACTER_BODY_HEIGHT`.
 - **Editor 3D (sin play)**: viewport orbital en `editor_orbit_target` + `editor_viewport_*`; `SetTransform` del jugador **no** mueve ese viewport (`body_rotation_only` / `apply_play_character_transform_editor`). Rotación o escala recalculan centro desde pies fijos.
-- **Play FP**: `camera.target` = pies; cuerpo y cámara acoplados vía `set_play_character_feet_position` / mouse look.
-- **Carga `.save` FP** (`restoring_save_manifest`): mesh sin escala 1.7 m; `place_play_character_at_world_feet` usa bounds skinned (bind pose) y la misma fórmula que `align_*` (`position = pies − feet_world_offset`); cápsula/cámara usan pies del manifest; `player.position` en save = pies.
+- **Play 3D**: `camera.target` = pies; cuerpo y cámara acoplados vía `set_play_character_feet_position` / mouse look.
+- **Carga `.save` 3D** (`restoring_save_manifest`): mesh sin escala 1.7 m; `place_play_character_at_world_feet` usa bounds skinned (bind pose) y la misma fórmula que `align_*` (`position = pies − feet_world_offset`); cápsula/cámara usan pies del manifest; `player.position` en save = pies.
 - `replace_entity_model` (editor / cambio de modelo en vivo): actualizar `play_character_mesh_forward_xz`, escala 1.7 m, `sync_player_rotation_from_look()`. Con `restoring_save_manifest` el jugador omite ese pipeline.
 - Yaw: mantener alineadas `look_xz_from_mesh_yaw` y `mesh_yaw_from_camera_and_forward` con `glam::Quat::from_rotation_y`.
 
-#### Vista FP autoritativa (IPC)
+#### Vista play character autoritativa (IPC)
 
 El frontend **no** debe derivar centro de cuerpo, quaterniones ni forward de malla. Solo envia intencion y refleja lo que el motor confirma.
 
@@ -88,16 +95,14 @@ El frontend **no** debe derivar centro de cuerpo, quaterniones ni forward de mal
 | Electron → motor | `set_play_character_view` | Pies, `yaw`, `pitch`; opcional `fov_y`, `frustum_distance`. Aplica camara + cuerpo y emite evento. |
 | Motor → Electron | `play_character_view_changed` | Estado confirmado: pies, orientacion de camara, FOV/frustum, `body_center`, `body_rotation`, `body_scale`, `player_id`. |
 
-Aliases legacy (misma semantica): `set_first_person_view`, `set_first_person_spawn`, `first_person_view_changed`, `set_fp_editor_frustum_distance`.
-
 Implementacion: `apply_play_character_view()` / `emit_play_character_view_changed()` en `config_3d/fps_camera.rs`; handler en `engine/commands.rs`.
 
 El motor emite `play_character_view_changed` tras, entre otros:
 
-- `set_play_character_view` (y spawn legacy),
+- `set_play_character_view` (y spawn),
 - `set_transform` del personaje jugable,
 - salir de play (`set_preview_playing` false),
-- `set_camera_fov` / `set_fps_editor_frustum_distance` con personaje activo,
+- `set_camera_fov` / `set_play_editor_frustum_distance` con personaje activo,
 - `replace_entity_model` del jugador.
 
 El renderer **no** arma `playerTransform` del `.save` desde refs locales: lo incluye el snapshot (`export_save_snapshot`). La vista en editor sigue `play_character_view_changed` (`position` = pies). Ver `src/renderer/ARCHITECTURE.md`.
@@ -116,7 +121,7 @@ Registro de rutas/tipos: `entity_save_meta` + actualizacion en spawn/load/replac
 - `update_scripts()` solo ejecuta el tick Rhai de entidades cuando `preview_playing` es true. Los control scripts (`on_press` / `on_keep`) ya estaban acotados a play.
 - Callbacks Rhai usan **invoke pattern** en `engine_shared/src/scripting/script_engine.rs` (mismo contrato que 2D).
 - **Triggers 3D:** `on_trigger_enter(trigger, actor)` en execution areas planas; detección en `execution_areas_3d.rs`.
-- **FP control scripts:** tras ejecutar el script del binding, `engine/scripts.rs` auto-inyecta `fp_press_key` con la tecla del binding para el play character cuando el script no lo hace. Scripts típicos: solo `fp_set_walk_speed`, `fp_set_sprint_multiplier`, `fp_jump`.
+- **Control scripts play character:** tras ejecutar el script del binding, `engine/scripts.rs` auto-inyecta `fp_press_key` con la tecla del binding cuando el script no lo hace. Scripts típicos: solo `fp_set_walk_speed`, `fp_set_sprint_multiplier`, `fp_jump`.
 - Referencia: [`docs/RHAI_API.yaml`](../../../../docs/RHAI_API.yaml).
 
 ### Fisica
@@ -124,7 +129,7 @@ Registro de rutas/tipos: `entity_save_meta` + actualizacion en spawn/load/replac
 - Objetos: Rapier3D (`set_entity_physics`, sync con `Transform` al editar y al usar gizmo).
 - Muros invisibles 3D (`[Colisionador]`): caja Rapier orientada al yaw del plano (`set_entity_physics_oriented`, `sync_plane_wall_physics`); colisión en play, ocultos salvo `debug_mode`.
 - Jugador en play: shape cast (`move_character_capsule_at_feet`); sin rigid body Rapier en el mesh visual del player.
-- En play, `physics.step` sincroniza cuerpos dynamic con ECS; el id del jugador FP se excluye de ese sync.
+- En play, `physics.step` sincroniza cuerpos dynamic con ECS; el id del jugador play character se excluye de ese sync.
 
 ### Herramientas plano 3D (colisionador / trigger)
 
@@ -158,7 +163,7 @@ Implementación front: `usePlaneToolPlacement`, `PlaneToolContext`, botones `Col
 
 ### Player UI HUD (editor y play)
 
-Sistema de **pantallas HUD** para el jugador en proyectos 3D FP. Clave de almacenamiento `scope:screen_id` (p. ej. `player:<uuid>`). El renderer edita vía acordeón **UI del jugador**; el motor es autoritativo en geometría NDC, capas y persistencia.
+Sistema de **pantallas HUD** para el jugador en proyectos **3D** (cámara play character). Clave de almacenamiento `scope:screen_id` (p. ej. `player:<uuid>`). El renderer edita vía acordeón **UI del jugador**; el motor es autoritativo en geometría NDC, capas y persistencia.
 
 | Modo | Comportamiento |
 |------|----------------|

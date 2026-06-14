@@ -87,7 +87,7 @@ fn on_scene_tick(dt) {
 `
 
 const CONTROL_SCRIPT_EN = `// Control script — runs each frame while the key is held
-// 3D FP: customize walk speed, sprint, jump. The engine applies the bound key.
+// 3D play character: customize walk speed, sprint, jump. The engine applies the bound key.
 // 2D: use fn on_keep(entity, control_key) { engine.move_control(entity.id, 7.0); }
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -95,7 +95,7 @@ engine.fp_set_walk_speed(4.0);
 `
 
 const CONTROL_SCRIPT_ES = `// Script de control — se ejecuta cada frame mientras la tecla está pulsada
-// 3D FP: personaliza velocidad, sprint, salto. El motor aplica la tecla del binding.
+// 3D play character: personaliza velocidad, sprint, salto. El motor aplica la tecla del binding.
 // 2D: fn on_keep(entity, control_key) { engine.move_control(entity.id, 7.0); }
 // ─────────────────────────────────────────────────────────────────────────────
 

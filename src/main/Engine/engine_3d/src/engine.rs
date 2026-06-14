@@ -254,6 +254,14 @@ pub struct State {
     pub(crate) editor_scenes: crate::engine::editor_scenes::EditorSceneStore,
     /// Límite de FPS del bucle (sincronizado con `set_target_fps`).
     pub(crate) target_fps: u64,
+    /// Nivel gráfico global de texturas GLB embebidas.
+    pub(crate) graphics_texture_tier: crate::config_3d::texture_graphics::TextureGraphicsTier,
+    /// Distancia (m) a la cámara con textura al tope del tier activo.
+    pub(crate) texture_detail_near_m: f32,
+    pub(crate) glb_texture_catalog_cache:
+        HashMap<String, Vec<crate::config_3d::entity_textures::MaterialTexturesCatalog>>,
+    pub(crate) entity_texture_effective_cap: HashMap<EntityId, u32>,
+    pub(crate) texture_lod_last_update: Instant,
     /// Entidad icono del sol (luz direccional).
     pub(crate) sun_entity: Option<EntityId>,
     /// Mesh y textura compartidos del icono esférico del sol.

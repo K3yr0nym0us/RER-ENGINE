@@ -16,10 +16,10 @@ pub mod entity_label {
     pub const BALL: &str = "Ball";
 }
 
-/// Player UI por defecto en plantillas first-person.
+/// Player UI por defecto en plantillas 3D (cámara play character).
 pub mod player_ui {
-    pub const DEFAULT_FP_SCREEN_ID: &str = "fp-hud-01";
-    pub const DEFAULT_FP_SCREEN_NAME: &str = "Player UI 01";
+    pub const DEFAULT_3D_PLAYER_UI_SCREEN_ID: &str = "player-hud-01";
+    pub const DEFAULT_3D_PLAYER_UI_SCREEN_NAME: &str = "Player UI 01";
     pub const DEFAULT_CROSSHAIR_H_OBJECT_ID: u32 = 1;
     pub const DEFAULT_CROSSHAIR_V_OBJECT_ID: u32 = 2;
 

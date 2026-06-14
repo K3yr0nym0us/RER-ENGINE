@@ -9,6 +9,7 @@ import WorldGridAccordion from './WorldGridAccordion'
 import WorldLightingAccordion from './WorldLightingAccordion'
 import WorldPerformanceAccordion from './WorldPerformanceAccordion'
 import WorldPhysicsAccordion from './WorldPhysicsAccordion'
+import WorldTexturesAccordion from './WorldTexturesAccordion'
 import WorldWorkspaceAccordion from './WorldWorkspaceAccordion'
 
 export function WorldAccordion({ projectType = '2D' }: { projectType?: ProjectType }) {
@@ -27,6 +28,7 @@ export function WorldAccordion({ projectType = '2D' }: { projectType?: ProjectTy
 					{!is3dProject && <WorldBackgroundAccordion />}
 					<WorldGridAccordion projectType={projectType} />
 					{is3dProject && <WorldLightingAccordion />}
+					{is3dProject && <WorldTexturesAccordion />}
 					<WorldPhysicsAccordion />
 					<WorldPerformanceAccordion />
 				</SidebarSubAccordion>

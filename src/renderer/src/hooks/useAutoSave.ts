@@ -6,6 +6,7 @@ import { useModal } from '@modal';
 import { useTraslate } from '@hooks';
 import { ProjectSaveBlockingModalBody } from '../modal-electron/ProjectSaveBlockingModalBody';
 import type { GameStyle, ProjectType, ProjectSaveData } from '@shared-types';
+import { DEFAULT_3D_CAMERA_MODE } from '@shared-types';
 import {
 	buildProjectSaveFromEngineSnapshot,
 	requestEngineSaveSnapshot,
@@ -71,7 +72,7 @@ export function useAutoSave({
   const buildSaveData = useCallback(async (): Promise<ProjectSaveData | null> => {
     try {
       const engineScene = await requestEngineSaveSnapshot();
-      const defaultGameStyle = projectType === '3D' ? 'first-person' : 'top-down';
+      const defaultGameStyle = projectType === '3D' ? DEFAULT_3D_CAMERA_MODE : 'top-down';
       return await buildProjectSaveFromEngineSnapshot(engineScene, {
         projectType,
         gameStyle: gameStyle ?? defaultGameStyle,

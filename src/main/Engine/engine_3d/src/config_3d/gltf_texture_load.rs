@@ -1,5 +1,4 @@
-// Política de texturas embebidas en glTF/GLB (carga en editor).
-// Solo se decodifica la imagen de **menor resolución** por material.
+// Política de texturas embebidas en glTF/GLB (carga en editor + catálogo por material).
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -49,6 +48,29 @@ pub fn peek_encoded_dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
     None
 }
 
+/// Texto para emparejar imágenes embebidas con materiales (nombre glTF + URI).
+pub(crate) fn gltf_image_search_label(image: gltf::Image) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    if let Some(name) = image.name() {
+        let trimmed = name.trim();
+        if !trimmed.is_empty() {
+            parts.push(trimmed.to_lowercase());
+        }
+    }
+    match image.source() {
+        Source::Uri { uri, .. } => {
+            let stem = Path::new(uri)
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or(uri);
+            parts.push(stem.to_lowercase());
+            parts.push(uri.to_lowercase());
+        }
+        _ => {}
+    }
+    parts.join(" ")
+}
+
 /// Dimensiones JPEG/PNG sin copiar el blob embebido completo (crítico en GLB grandes).
 pub(crate) fn peek_gltf_image_dimensions(
     image: gltf::Image,
@@ -94,6 +116,131 @@ fn pick_smallest_among_image_indices(
         }
     }
     best.map(|(i, _)| i)
+}
+
+fn primary_material_token(mat_name: &str) -> Option<String> {
+    let lower = mat_name.trim().to_lowercase();
+    if lower.is_empty() {
+        return None;
+    }
+    if lower.starts_with("material") {
+        return Some(lower);
+    }
+    lower
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|t| t.len() >= 3)
+        .max_by_key(|t| t.len())
+        .map(|t| t.to_string())
+}
+
+pub(crate) fn token_matches_label(token: &str, label: &str) -> bool {
+    if token.is_empty() || label.is_empty() {
+        return false;
+    }
+    if label == token {
+        return true;
+    }
+    if label.starts_with(token) {
+        let rest = &label[token.len()..];
+        if rest.is_empty() || rest.starts_with(|c: char| !c.is_alphanumeric()) {
+            return true;
+        }
+    }
+    for pat in [
+        format!("{token}_"),
+        format!("_{token}_"),
+        format!("_{token}"),
+        format!("-{token}-"),
+        format!("-{token}"),
+    ] {
+        if label.contains(pat.as_str()) {
+            return true;
+        }
+    }
+    false
+}
+
+pub(crate) fn material_names_related(a: &str, b: &str) -> bool {
+    let a = a.trim().to_lowercase();
+    let b = b.trim().to_lowercase();
+    if a.is_empty() || b.is_empty() {
+        return false;
+    }
+    if a == b {
+        return true;
+    }
+    match (primary_material_token(&a), primary_material_token(&b)) {
+        (Some(ta), Some(tb)) if ta == tb => true,
+        (Some(ta), _) => token_matches_label(&ta, &b),
+        (_, Some(tb)) => token_matches_label(&tb, &a),
+        _ => false,
+    }
+}
+
+pub(crate) fn material_name_matches_image_label(mat_name: &str, label: &str) -> bool {
+    let label = label.trim().to_lowercase();
+    if label.is_empty() {
+        return false;
+    }
+    let mat = mat_name.trim().to_lowercase();
+    if !mat.is_empty() && token_matches_label(&mat, &label) {
+        return true;
+    }
+    if let Some(token) = primary_material_token(mat_name) {
+        return token_matches_label(&token, &label);
+    }
+    false
+}
+
+pub(crate) fn discover_material_image_indices(
+    doc: &gltf::Document,
+    material_index: usize,
+    mat_name: &str,
+    image_labels: &HashMap<u32, String>,
+    all_variants: &[(u32, u32, u32)],
+    all_by_image_index: &[(u32, u32, u32)],
+) -> HashSet<u32> {
+    let material_count = doc.materials().len();
+    let mut indices: HashSet<u32> = HashSet::new();
+
+    if let Some(mat) = doc.materials().nth(material_index) {
+        if let Some(info) = mat.pbr_metallic_roughness().base_color_texture() {
+            indices.insert(info.texture().source().index() as u32);
+        }
+    }
+
+    for (other_idx, other) in doc.materials().enumerate() {
+        let other_name = other.name().unwrap_or("");
+        if other_idx != material_index && !material_names_related(mat_name, other_name) {
+            continue;
+        }
+        if let Some(info) = other.pbr_metallic_roughness().base_color_texture() {
+            indices.insert(info.texture().source().index() as u32);
+        }
+    }
+
+    for &(idx, _, _) in all_variants {
+        if let Some(label) = image_labels.get(&idx) {
+            if material_name_matches_image_label(mat_name, label) {
+                indices.insert(idx);
+            }
+        }
+    }
+
+    if indices.len() <= 1 && material_count >= 2 && all_by_image_index.len() >= material_count * 2 {
+        let per_mat = all_by_image_index.len() / material_count;
+        if per_mat >= 2 {
+            let start = material_index * per_mat;
+            let end = start + per_mat;
+            if end <= all_by_image_index.len() {
+                for &(idx, _, _) in &all_by_image_index[start..end] {
+                    indices.insert(idx);
+                }
+            }
+        }
+    }
+
+    indices
 }
 
 /// Menor imagen embebida asociada al `baseColor` de un material concreto.

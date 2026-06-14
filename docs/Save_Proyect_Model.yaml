@@ -237,7 +237,7 @@ manifest_layers:
     note: |
       backgroundPath y entity.model/path referencian ítems de bibliotecas globales.
       sprites[] en escena = precarga/referencias de esa escena, no duplica la biblioteca.
-      player del manifest es el jugador FP (first-person); entidades category=player en entities[] se ignoran en carga 3D.
+      player del manifest es el jugador play character (cámara `first-person` en gameStyle); entidades category=player en entities[] se ignoran en carga 3D.
   future_per_scene_resources:
     status: pendiente
     ref: CHECKLIST.md — recursos por escena + carga lazy al cambiar escena activa
@@ -266,12 +266,12 @@ load_flow:
     file: engine_3d/.../load_proyect.rs
     steps:
       - resolve_loaded_paths (misma semántica que Electron)
-      - apply_loaded_proyect_3d: mundo, iluminación, entidades, jugador FP, restore manifest
+      - apply_loaded_proyect_3d: mundo, iluminación, entidades, jugador play character, restore manifest
       - load_project_asset_stores: LoadSound, LoadFont, LoadBackgroundAsset, LoadHudImage (una vez por ítem)
       - v1: upsert_model_store_entry + kickoff_preload_models_for_save + ensure_model_cached
       - v2: imported_model_registry desde resources.models[]; carga lazy (sin precarga global)
       - entity_source_model_path: model_id → source_path del registro para spawn/caché
-      - burst_load (escena con entidades o first-person con player): instancia entidades y
+      - burst_load (escena con entidades o cámara play character con player): instancia entidades y
         ensure_static_model_cached bajo demanda (desde .rerasset si Ready)
       - import_player_ui_* con paths ya resueltos
       - load_progress: mensajes [Carga] / pasos con tiempos

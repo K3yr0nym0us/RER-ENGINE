@@ -29,7 +29,7 @@ import {
 	DEFAULT_LIGHT_AMBIENT,
 	DEFAULT_LIGHT_INTENSITY,
 	DEFAULT_SHADOW_DARKNESS,
-	FIRST_PERSON_PLAYER_BODY_SCALE,
+	PLAY_CHARACTER_BODY_SCALE,
 	isEditorBoxPath,
 	isEditorCameraPath,
 	isPlayerEntity,
@@ -104,7 +104,7 @@ import {
 	DEFAULT_PLAYER_UI_BUTTON_CONFIG,
 } from '../../../pages/EngineView/components/sidebar/UIAccordion/components/playerUiButtonModel';
 import type { EngineAction, EngineInternalRefs, EntityMeta, PendingRestore, Transform } from '../types';
-import { buildEditingUiElementsFromEngineList } from '../types';
+import { buildEditingUiElementsFromEngineList, normalizeGraphicsTextureTier } from '../types';
 import { takePendingPlayerUiButtonConfig } from './createEngineActions';
 
 type RuntimeEngineEvent = {
@@ -161,7 +161,7 @@ const SILENT_ENGINE_EVENTS = new Set<string>([
 	'backgrounds_list',
 	'models_list',
 	'entity_removed',
-	'play_character_view_changed', 'first_person_view_changed',
+	'play_character_view_changed',
 	'save_snapshot_ready',
 	'load_progress',
 	'model_asset_preload_started',
@@ -174,7 +174,7 @@ const SILENT_ENGINE_EVENTS = new Set<string>([
 	'trigger_exited',
 ]);
 
-/** Eventos IPC que no deben duplicar `[Carga]` durante carga de escena o plantilla FP al arrancar. */
+/** Eventos IPC que no deben duplicar `[Carga]` durante carga de escena o plantilla 3D al arrancar. */
 const SCENE_LOAD_SILENT_EVENTS = new Set<string>([
 	'model_loaded',
 	'model_clips_ready',
@@ -216,7 +216,7 @@ function shouldSilenceEngineEventLog(
 	return false;
 }
 
-/** Línea legible para suelo/sol/jugador (arranque o escena FP vacía). */
+/** Línea legible para suelo/sol/jugador (arranque o escena 3D vacía). */
 function panelLogLineForBaselineSpawn(
 	event: RuntimeEngineEvent,
 	refs: Pick<
@@ -409,10 +409,10 @@ function resolvePlacementBlueprintId(
 
 function applyPlayCharacterDefaultsForPlayer(
 	characterId: number,
-	gameStyle: GameStyle | undefined,
+	projectType: string | undefined,
 	refs: EngineInternalRefs,
 ) {
-	if (gameStyle !== 'first-person') return;
+	if (projectType !== '3D') return;
 	// Proyecto abierto desde .save: bindings y entidades vienen del motor, no de la plantilla.
 	if (isProjectOpenedFromSave(refs.initialExtractDirRef.current)) return;
 
@@ -505,8 +505,8 @@ export function createEngineEventHandler({
 					buildSetSceneCommand(projectType, refs.initialSavePathRef.current) as never,
 				);
 			} else if (boot3dNoSave) {
-				if (projectType === '3D' && gameStyle === 'first-person') {
-					dispatch({ type: 'INIT_DEFAULT_FP_PLAYER_UI' });
+				if (projectType === '3D') {
+					dispatch({ type: 'INIT_DEFAULT_3D_PLAYER_UI' });
 				} else if (projectType === '2D') {
 					dispatch({ type: 'INIT_DEFAULT_2D_PLAYER_UI' });
 				}
@@ -1367,7 +1367,6 @@ export function createEngineEventHandler({
 			);
 			const motorFpSceneSwitch =
 				projectType === '3D'
-				&& gameStyle === 'first-person'
 				&& refs.sceneImportInProgressRef.current;
 			if (!engineLoads3dSave && !motorFpSceneSwitch) return;
 			const meta = refs.projectLoaded3dMetaRef.current;
@@ -1586,7 +1585,7 @@ export function createEngineEventHandler({
 						} as never);
 					}
 					// No sobrescribir scale: el motor puede usar 1.0 tras importar modelo (malla ya normalizada).
-					applyPlayCharacterDefaultsForPlayer(character.id, gameStyle, refs);
+					applyPlayCharacterDefaultsForPlayer(character.id, projectType, refs);
 				} else {
 					dispatch({ type: 'ADD_CHARACTER', payload: { id: character.id, path: character.path } });
 					refs.entityMetaRef.current[character.id] = { kind: 'character', path: '[Player]', physicsEnabled: false, physicsType: '' };
@@ -1839,10 +1838,7 @@ export function createEngineEventHandler({
 			dispatch({ type: 'ENGINE_STOPPED', payload: (event as { code?: number }).code });
 		}
 
-		if (
-			event.event === 'play_character_view_changed'
-			|| event.event === 'first_person_view_changed'
-		) {
+		if (event.event === 'play_character_view_changed') {
 			const ev = event as unknown as PlayCharacterViewChanged;
 			applyPlayCharacterViewFromEngine(
 				ev,
@@ -2468,24 +2464,38 @@ export function createEngineEventHandler({
 			}
 		}
 
+		if (event.event === 'graphics_texture_tier_changed') {
+			const tier = normalizeGraphicsTextureTier(event.tier);
+			dispatch({ type: 'SET_WORLD_CONFIG', payload: { graphicsTextureTier: tier } });
+		}
+
+		if (event.event === 'texture_detail_distance_changed') {
+			const distanceM = Number(event.distance_m);
+			if (Number.isFinite(distanceM)) {
+				dispatch({
+					type: 'SET_WORLD_CONFIG',
+					payload: { textureDetailDistance: Math.max(1, Math.min(500, distanceM)) },
+				});
+			}
+		}
+
 		if (event.event === 'debug_metrics') {
 			const metrics = event as unknown as DebugMetrics;
 			dispatch({ type: 'SET_DEBUG_METRICS', payload: metrics });
 			// Solo actualizar la vista guardada (pies/yaw/pitch). No reescribir entityTransformsRef
 			// en play: eso desalineaba centro/pivot respecto al motor y el panel de Propiedades.
 			if (
-				gameStyle === 'first-person'
-				&& projectType === '3D'
-				&& (metrics.play_character_position ?? metrics.first_person_position)
-				&& (metrics.play_character_yaw ?? metrics.first_person_yaw) != null
-				&& (metrics.play_character_pitch ?? metrics.first_person_pitch) != null
+				projectType === '3D'
+				&& metrics.play_character_position
+				&& metrics.play_character_yaw != null
+				&& metrics.play_character_pitch != null
 			) {
 				const prev = refs.playCharacterViewRef.current;
 				refs.playCharacterViewRef.current = {
-					position: (metrics.play_character_position ?? metrics.first_person_position)!,
-					scale: prev?.scale ?? FIRST_PERSON_PLAYER_BODY_SCALE,
-					yaw: (metrics.play_character_yaw ?? metrics.first_person_yaw)!,
-					pitch: (metrics.play_character_pitch ?? metrics.first_person_pitch)!,
+					position: metrics.play_character_position,
+					scale: prev?.scale ?? PLAY_CHARACTER_BODY_SCALE,
+					yaw: metrics.play_character_yaw,
+					pitch: metrics.play_character_pitch,
 					...(prev?.visual_model_path ? { visual_model_path: prev.visual_model_path } : {}),
 				};
 			}

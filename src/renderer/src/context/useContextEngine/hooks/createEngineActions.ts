@@ -11,7 +11,9 @@ import type {
 	UiScreenScope,
 	WorldConfig,
 	PlayerUiButtonConfig,
+	GraphicsTextureTier,
 } from '../types';
+import { normalizeGraphicsTextureTier } from '../types';
 import { buildPlayAnimationFrameCmd } from './applyPendingRestoreToEngine';
 import { beginModelReplaceLoading, endModelReplaceLoading } from './sceneImportOverlay';
 import {
@@ -269,6 +271,18 @@ export function createEngineActions({
 		const normalizedFps = Math.max(1, Math.min(1000, Math.round(parsedFps)));
 		dispatch({ type: 'SET_WORLD_CONFIG', payload: { targetFps: normalizedFps } });
 		send({ cmd: 'set_target_fps', fps: normalizedFps });
+	};
+
+	const setGraphicsTextureTier = (tier: GraphicsTextureTier) => {
+		const normalized = normalizeGraphicsTextureTier(tier);
+		dispatch({ type: 'SET_WORLD_CONFIG', payload: { graphicsTextureTier: normalized } });
+		send({ cmd: 'set_graphics_texture_tier', tier: normalized });
+	};
+
+	const setTextureDetailDistance = (distanceM: number) => {
+		const normalized = Math.max(1, Math.min(500, distanceM));
+		dispatch({ type: 'SET_WORLD_CONFIG', payload: { textureDetailDistance: normalized } });
+		send({ cmd: 'set_texture_detail_distance', distance_m: normalized });
 	};
 
 	const removeCollider = (id: number) => removeEntity(id);
@@ -952,6 +966,8 @@ export function createEngineActions({
 		setGravity,
 		setDirectionalLight,
 		setTargetFps,
+		setGraphicsTextureTier,
+		setTextureDetailDistance,
 		removeCollider,
 		removeExecutionArea,
 		updateEntityAnimations,

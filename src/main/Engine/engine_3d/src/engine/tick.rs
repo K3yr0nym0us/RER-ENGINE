@@ -247,6 +247,7 @@ impl State {
         self.update_scripts();
         self.apply_plane_tool_held_rotation();
         self.update_scene_scripts();
+        self.update_texture_distance_lod();
         if self.preview_playing {
             let skip_sync = self
                 .play_character_entity

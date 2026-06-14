@@ -1,10 +1,10 @@
 import { useState } from 'react';
 
 import { TypeProjectSelector } from './pages/TypeProjectSelector/TypeProjectSelector';
-import { GameStyleSelector } from './pages/GameStyleSelector/GameStyleSelector';
 import { EngineView } from './pages/EngineView/EngineView';
 
 import type { ProjectType, GameStyle, OpenProjectResult, EngineStartPayload } from '@shared-types';
+import { DEFAULT_3D_CAMERA_MODE } from '@shared-types';
 
 // ── Componente principal ─────────────────────────────────────────────────────
 
@@ -28,10 +28,11 @@ export default function App() {
       }
       window.electronAPI.setGameStyle(payload)
     } else {
-      setGameStyle(null)
+      const defaultCameraMode = DEFAULT_3D_CAMERA_MODE
+      setGameStyle(defaultCameraMode)
       const payload: EngineStartPayload = {
         projectType: nextType,
-        mode: 'first-person',
+        mode: defaultCameraMode,
         save_path: false,
       }
       window.electronAPI.setGameStyle(payload)
@@ -65,24 +66,13 @@ export default function App() {
     )
   }
 
-  if (!gameStyle && projectType !== '2D') {
-    return (
-      <GameStyleSelector
-        projectType={projectType}
-        savePath={initialSavePath}
-        extractDir={initialExtractDir}
-        onSelect={setGameStyle}
-        onBack={() => setProjectType(null)}
-      />
-    )
-  }
-
   return (
     <EngineView
       projectType={projectType}
       gameStyle={gameStyle ?? undefined}
       initialSavePath={initialSavePath}
       initialExtractDir={initialExtractDir}
+      onGameStyleChange={setGameStyle}
     />
   )
 }

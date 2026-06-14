@@ -21,7 +21,7 @@ pub(crate) struct Camera {
     pub fov_y: f32,
     pub near: f32,
     pub far: f32,
-    /// Desplazamiento vertical de la vista en primera persona (ojos sobre el collider).
+    /// Desplazamiento vertical de la vista play character (ojos sobre el collider).
     pub(crate) eye_height_offset: f32,
     /// Offset de ojos en espacio local del jugador (Play FP).
     pub(crate) eye_offset_local: Vec3,

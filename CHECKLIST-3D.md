@@ -1,6 +1,6 @@
 # CHECKLIST — Motor 3D (`rer_engine_3d`)
 
-Estado del runtime 3D y del editor en proyectos **3D** / primera persona. Proyectos 2D: [CHECKLIST-2D.md](./CHECKLIST-2D.md). Tareas globales: [CHECKLIST.md](./CHECKLIST.md). Contrato: [`engine_3d/ARCHITECTURE.md`](./src/main/Engine/engine_3d/ARCHITECTURE.md). Producto: [README.md](./README.md).
+Estado del runtime 3D y del editor en proyectos **3D**. El **tipo de cámara** (p. ej. primera persona) se elige en el acordeón **Camera** del sidebar; ya no hay pantalla intermedia de «estilo de juego». Proyectos 2D: [CHECKLIST-2D.md](./CHECKLIST-2D.md). Tareas globales: [CHECKLIST.md](./CHECKLIST.md). Contrato: [`engine_3d/ARCHITECTURE.md`](./src/main/Engine/engine_3d/ARCHITECTURE.md). Producto: [README.md](./README.md).
 
 **Última revisión:** junio 2026
 
@@ -38,31 +38,32 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 ### Motor 3D
 
 - [x] Carga glTF/GLB, mallas normalizadas, materiales básicos + PBR en shader
-- [x] Editor: cámara orbital; gizmo mover/rotar; preview FP con frustum de editor
-- [x] Play mode primera persona (cápsula cinemática, shape cast; mesh del jugador oculto)
-- [x] **Física 3D de producto** — Rapier en objetos (`set_entity_physics`, sync `Transform` en editor); jugador FP solo con shape cast; play sin traspasos (movimiento, salto, static/dynamic, límites del mundo)
-- [x] Jugador FP: convención pies ↔ centro de cuerpo, forward de malla, sync cámara-cuerpo
-- [x] IPC vista FP autoritativa: `set_first_person_view` → `first_person_view_changed`
+- [x] Editor: cámara orbital; gizmo mover/rotar; preview play character con frustum de editor
+- [x] Play con cámara play character (cápsula cinemática, shape cast; mesh del jugador oculto en editor)
+- [x] **Física 3D de producto** — Rapier en objetos (`set_entity_physics`, sync `Transform` en editor); jugador play character solo con shape cast; play sin traspasos (movimiento, salto, static/dynamic, límites del mundo)
+- [x] Jugador play character: convención pies ↔ centro de cuerpo, forward de malla, sync cámara-cuerpo
+- [x] IPC vista play character: `set_play_character_view` → `play_character_view_changed`
 - [x] HUD play: crosshair por defecto como **objetos Player UI** (barras H/V en `fp-hud-01`); tooltip Esc en play
-- [x] **Player UI HUD** — pantallas del jugador, edición FPS, texto / botón / imagen / **objeto poligonal** (clicks + cruz en cursor), capas `z_index`, bloqueo, play de pantalla activa, persistencia en `.save`
+- [x] **Player UI HUD** — pantallas del jugador, edición en play, texto / botón / imagen / **objeto poligonal** (clicks + cruz en cursor), capas `z_index`, bloqueo, play de pantalla activa, persistencia en `.save`
 - [x] **Player UI undo/redo** — Ctrl+Z / Ctrl+Y con snapshot por pantalla (`hud_undo.rs`, `RestorePlayerUiHud`)
 - [x] Cubos de editor (`spawn_editor_box`), modelos en almacén (`load_model_asset`)
 - [x] ECS 3D: `HashSet` + reciclado de IDs en `despawn` (`ecs.rs`)
 - [x] Undo/redo de creación de entidad — snapshot en motor (`undo_entity.rs`, `spawn_with_id`)
-- [x] API Rhai 3D FP: `fp_jump`, `fp_set_walk_speed`, etc.; tecla del binding auto-inyectada en control scripts
+- [x] API Rhai play character (`fp_jump`, `fp_set_walk_speed`, …); tecla del binding auto-inyectada en control scripts
 - [x] Demo `DEMO_3d_FIRST_PERSON.save`: scripts `.rhai` (WASD walk speed, SHIFT sprint, SPACE jump)
 - [x] `replace_entity_model` con resync de orientación, escala y forward del jugador (GLB/GLTF)
 - [x] **Carga GLB/GLTF skinned** — esqueleto unificado (varios `skin` por archivo), paleta Khronos, piezas múltiples; clips embebidos en asset
 - [x] **Animaciones embebidas 3D** — pipeline skinned GPU, `play_model_clip`, `set_default_animation`, evento `model_clips_ready`
-- [x] **Orientación malla jugador (GLB/GLTF)** — `upright_quat_from_vertices_bounds`, corrección yaw cadera Mixamo, forward skinned (`model_asset.rs`, `mesh_3d.rs`); aplicada al spawn/replace FP
-- [x] Export escena: `export_save_snapshot` → `save_snapshot_ready` (`entity_save_meta`, jugador FP)
+- [x] **Orientación malla jugador (GLB/GLTF)** — `upright_quat_from_vertices_bounds`, corrección yaw cadera Mixamo, forward skinned (`model_asset.rs`, `mesh_3d.rs`); aplicada al spawn/replace del jugador play character
+- [x] Export escena: `export_save_snapshot` → `save_snapshot_ready` (`entity_save_meta`, jugador play character)
 - [x] Scripts Rhai `update()` solo en play
 
 ### Editor e integración (proyecto 3D)
 
-- [x] Acordeón cámara FP (envía `set_play_character_view`, no calcula poses en TS)
+- [x] Flujo nuevo proyecto 3D → editor directo (sin `GameStyleSelector`); select **Tipo de cámara** en acordeón Camera (`manifest.gameStyle` = modo de cámara)
+- [x] Acordeón Camera 3D (envía `set_play_character_view`, no calcula poses en TS)
 - [x] `playCharacterViewRef` vía `play_character_view_changed` (UI editor; save 3D vía snapshot del motor)
-- [x] Herramientas 3D (gizmo, spawn caja/modelo, play FP)
+- [x] Herramientas 3D (gizmo, spawn caja/modelo, play con cámara play character)
 - [x] **Herramientas plano 3D** — muro invisible (`[Colisionador]`) y trigger (`[ExecutionArea]`): toggle, ghost, Q/E, colocación con click, foco editor al colocar, rotación en `.save`, colisión orientada Rapier, ocultos en play, sin sombras
 - [x] **Triggers 3D en play** — `update_execution_areas_3d`, `trigger_entered` / `trigger_exited`, `on_trigger_enter`, log panel `[trigger]`
 - [x] Eliminar entidades 3D (modelos/cajas) — `remove_entity` + panel Propiedades; sync listas vía `entity_removed`
@@ -73,11 +74,11 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 - [x] Acordeón Modelos: botón y diálogo **`.glb` / `.gltf`** (almacén + sustitución jugador)
 - [x] **Blueprints / prefabs 3D** — convertir entidad (`PropertiesAccordion`), `register_blueprint` en motor, construcción rápida (`quick_build` + `BlueprintPlacementMeta`), propagación a instancias (transform, física, scripts, animaciones), persistencia en `project.blueprints[]`
 - [x] **Multi-escena editor 3D** — registro en motor (`editor_scenes.rs`), dirty vía undo, `switch_editor_scene`, baselines boot/placeholder/saved; UI acordeón Scenes (`docs/Escenes_Model_3D.yaml`)
-- [x] **Programación visual** — lógica de escena y entidad (nodos → Rhai); panel de variables con entidades por categoría y animaciones; resolución jugador FP + `entityMeta` para modal Electron
+- [x] **Programación visual** — lógica de escena y entidad (nodos → Rhai); panel de variables con entidades por categoría y animaciones; resolución jugador play character + `entityMeta` para modal Electron
 
 ### Carga `.save` 3D y rendimiento (mayo 2026)
 
-- [x] **Carga de proyecto 3D en Rust** — `engine_3d/src/engine/load_proyect.rs`: manifest, burst de entidades, jugador FP, sonidos/fondos; front solo refleja eventos (`project_loaded_3d`, `project_load_3d_complete`)
+- [x] **Carga de proyecto 3D en Rust** — `engine_3d/src/engine/load_proyect.rs`: manifest, burst de entidades, jugador play character, sonidos/fondos; front solo refleja eventos (`project_loaded_3d`, `project_load_3d_complete`)
 - [x] **Loader de escena** — overlay hasta `project_load_3d_complete`; `ready` tras escena vacía al abrir `.save` (`RER_3D_START_FROM_SAVE`); logs `[Carga]` / `load_progress` en panel
 - [x] **Precarga y burst acotados** — solo paths GLB/GLTF requeridos por entidades + `playerTransform.visual_model_path` (sin precargar toda la biblioteca `view.models`)
 - [x] **Vaciado de escena al abrir save** — `clear_scene_entities_for_save_load` sin segundo `reset_runtime_scene_3d` duplicado
@@ -105,7 +106,7 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
   - Panel o inspector para asignar **tipo de física por hueso** (p. ej. estático, dinámico, kinematic, sin simulación, etc.).
   - Persistencia en `.save` por entidad/hueso; sincronización motor ↔ editor.
   - Objetivo: dinamismo en personajes y escenario (pelo, pechos, ropa suelta, accesorios colgantes, elementos blandos del entorno, etc.) sin depender solo de animación de clips embebidos.
-- [ ] **QA orientación jugador GLB Mixamo** — la lógica de bake/orientación ya está en motor; falta validación manual con varios GLB Mixamo reales en FP (altura ~1.7 m, de pie de frente, sin regresión skinning)
+- [ ] **QA orientación jugador GLB Mixamo** — la lógica de bake/orientación ya está en motor; falta validación manual con varios GLB Mixamo reales en cámara play character (altura ~1.7 m, de pie de frente, sin regresión skinning)
 - [ ] **Animaciones 3D (avanzado)** — state machine / hojas tipo Blender; más allá de clips embebidos + reproducción básica
 
 ### Prioridad baja
@@ -119,15 +120,15 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 
 | Ítem | Criterio |
 |------|----------|
-| Física 3D producto | Play FP + colisiones Rapier sin traspasos; sync editor en gizmo/`set_transform` |
+| Física 3D producto | Play con cámara play character + colisiones Rapier sin traspasos; sync editor en gizmo/`set_transform` |
 | Animaciones embebidas 3D | GLB/GLTF con skinning reproducen clips en editor/play; panel y `model_clips_ready` |
-| Orientación GLB jugador FP | Código en motor aplicado; QA con GLB Mixamo variados confirma pie de frente ~1.7 m sin regresión skinning |
+| Orientación GLB jugador play character | Código en motor aplicado; QA con GLB Mixamo variados confirma pie de frente ~1.7 m sin regresión skinning |
 | Blueprints 3D | Crear/instanciar/actualizar desde editor; quick build; propagación; `.save` |
 | Carga `.save` 3D | Abrir demo/proyecto 3D: loader coherente, escena en motor, sin duplicar eventos `model_loaded`; tiempo de carga aceptable en props pesados |
 
 ---
 
-## Notas IPC (3D / FP)
+## Notas IPC (3D / cámara play character)
 
 | Comando / evento | Uso |
 |------------------|-----|
@@ -144,8 +145,6 @@ Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
 | `trigger_entered` | Motor → front: actor entró en execution area (`has_attached_script` opcional); log `[trigger]` |
 | `collider_created` / `execution_area_created` | Motor → front: plano 3D colocado (`position` + `scale`); Electron devuelve foco al editor |
 
-Aliases legacy: `set_first_person_view`, `first_person_view_changed`.
-
-El frontend **no** deriva poses FP para el `.save`; el snapshot del motor es autoritativo. Ver `src/renderer/ARCHITECTURE.md`.
+El frontend **no** deriva poses de cámara play character para el `.save`; el snapshot del motor es autoritativo. Ver `src/renderer/ARCHITECTURE.md`.
 
 Comandos del protocolo **solo 2D** están stubbeados en este binario; el front 3D no debe depender de ellos.

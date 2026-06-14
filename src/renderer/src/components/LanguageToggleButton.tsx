@@ -40,7 +40,7 @@ export function LanguageToggleButton({ variant = 'compact', className = '' }: La
     );
   }
 
-  // variant === 'compact' (usado en TypeProjectSelector y GameStyleSelector)
+  // variant === 'compact' (usado en TypeProjectSelector)
   return (
     <button
       onClick={toggleLocale}

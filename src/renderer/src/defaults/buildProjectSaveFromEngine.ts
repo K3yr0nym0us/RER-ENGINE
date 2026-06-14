@@ -181,6 +181,8 @@ export function engineSceneToSavedScene(
 			lightAmbient: scene.world.light_ambient ?? undefined,
 			lightIntensity: scene.world.light_intensity ?? undefined,
 			shadowDarkness: scene.world.shadow_darkness ?? undefined,
+			graphicsTextureTier: scene.world.graphics_texture_tier ?? undefined,
+			textureDetailDistance: scene.world.texture_detail_distance_m ?? undefined,
 		},
 		backgroundPath: scene.background_path ?? null,
 		entities: mapEngineEntities(scene.entities, entityMeta),

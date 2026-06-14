@@ -219,31 +219,6 @@ impl State {
         self.play_character_entity.is_some()
     }
 
-    /// AABB de colisión del mesh visual (runtime o caché `::play_character`).
-    pub(crate) fn play_character_mesh_extents_from_visual_path(
-        &self,
-        visual_path: &str,
-    ) -> Option<PlayCharacterMeshExtents> {
-        if let Some(e) = self.play_character_mesh_extents {
-            return Some(e);
-        }
-        let cache_key = self.model_cache_key(visual_path);
-        let play_key = play_character_cache_key(&cache_key);
-        let part = self
-            .static_model_cache
-            .get(&play_key)
-            .and_then(|parts| parts.first())
-            .or_else(|| {
-                self.static_model_cache
-                    .get(&cache_key)
-                    .and_then(|parts| parts.first())
-            })?;
-        Some(PlayCharacterMeshExtents::from_local_bounds(
-            part.local_bounds.0,
-            part.local_bounds.1,
-        ))
-    }
-
     /// Escala Y y extents desde bounds visuales para que el mesh mida 1.7 m en mundo.
     pub(crate) fn sync_play_character_scale_to_body_height(
         &mut self,

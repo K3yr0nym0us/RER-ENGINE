@@ -9,7 +9,7 @@
 #   - docs/Entity_Properties_Modal.yaml
 
 version: 1
-updated: 2026-06-10
+updated: 2026-06-14
 
 principle:
   pattern: |
@@ -39,7 +39,7 @@ critical_refs:
   entityMetaRef: "id → EntityMeta (kind, path, blueprintId, category, …)"
   playerEntityIdRef: id del jugador activo
   editorCameraEntityIdRef: id cámara editor 3D
-  playCharacterViewRef: vista FPS agregada (pies + yaw/pitch/fov)
+  playCharacterViewRef: vista play character agregada (pies + yaw/pitch/fov); solo cámara first-person en 3D
   blueprintsRef: lista de blueprints en memoria
   modelsRef: biblioteca Resources 3D
   pendingRestoresRef: cola de restauración tras model_loaded
@@ -67,7 +67,7 @@ state_slices:
     - debugMetrics
   project:
     - projectType
-    - gameStyle
+    - gameStyle  # modo de cámara 3D en manifest (first-person, third-person, …); 2D usa top-down/side-scroller
     - savePath / extractDir
 
 boot_sequence:

@@ -507,7 +507,7 @@ export function needsSceneBurstLoad(
 		const spawnPath = entityPathMarker(e.model) ?? e.model;
 		return e.category === 'player' || isPlayerPath(spawnPath);
 	});
-	return gameStyle === 'first-person' && hasPlayer && !playerInEntities;
+	return hasPlayer && !playerInEntities;
 }
 
 export function beginSceneBurstLoad(
@@ -605,7 +605,7 @@ export function scheduleEndSceneWorldCleanup(
 	}, SCENE_WORLD_CLEANUP_END_MS);
 }
 
-/** Escena FP vacía: suelo/sol/jugador insertados por el motor tras limpiar. */
+/** Escena 3D vacía: suelo/sol/jugador insertados por el motor tras limpiar. */
 export function beginFpSceneBaselineLogging(
 	baselineRef: MutableRefObject<boolean>,
 ) {

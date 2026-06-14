@@ -42,6 +42,7 @@ impl EditorSceneStore {
         Self {
             active_scene_id: 1,
             next_scene_id: 2,
+            // Modo de cámara por defecto en proyectos 3D nuevos (manifest.gameStyle).
             game_style: "first-person".to_string(),
             ..Default::default()
         }

@@ -384,6 +384,7 @@ impl State {
                 ScriptCmd::ClearActivePlayerUiScreen => {
                     self.clear_active_player_ui_screen();
                 }
+                ScriptCmd::SetGraphicsTextureTier { .. } => {}
             }
         }
     }

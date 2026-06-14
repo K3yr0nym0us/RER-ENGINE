@@ -22,6 +22,7 @@ pub(crate) mod preview_editor;
 pub(crate) mod play_controller;
 pub(crate) mod entity_textures;
 pub(crate) mod gltf_texture_load;
+pub(crate) mod texture_graphics;
 pub(crate) mod fbx_facing;
 pub(crate) mod mesh_3d;
 pub(crate) mod mesh_3d_fbx;

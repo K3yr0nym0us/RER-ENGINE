@@ -5,7 +5,7 @@ import type {
 	SavedPlayerTransform,
 	SavedScript,
 } from '@shared-types';
-import { FIRST_PERSON_PLAYER_BODY_SCALE } from '@shared-types';
+import { PLAY_CHARACTER_BODY_SCALE } from '@shared-types';
 import type { MutableRefObject } from 'react';
 import type { PendingRestore, Transform } from '../context/useContextEngine/types';
 import { entity3dPendingRestore, entity3dTransform } from '../utils/entity3dEditorSync';
@@ -120,7 +120,7 @@ function buildPlayerPendingFromEntity3D(player: Entity3D): PendingRestore {
 		physicsType: 'dynamic',
 		transform: {
 			...entity3dTransform(player),
-			scale: player.scale ?? FIRST_PERSON_PLAYER_BODY_SCALE,
+			scale: player.scale ?? PLAY_CHARACTER_BODY_SCALE,
 		},
 	};
 }
@@ -128,9 +128,9 @@ function buildPlayerPendingFromEntity3D(player: Entity3D): PendingRestore {
 function buildPlayerPendingFromSave(saved: SavedPlayerTransform): PendingRestore {
 	return {
 		transform: {
-			position: [0, FIRST_PERSON_PLAYER_BODY_SCALE[1] * 0.5, 0],
+			position: [0, PLAY_CHARACTER_BODY_SCALE[1] * 0.5, 0],
 			rotation: [0, 0, 0, 1],
-			scale: saved.body_scale ?? FIRST_PERSON_PLAYER_BODY_SCALE,
+			scale: saved.body_scale ?? PLAY_CHARACTER_BODY_SCALE,
 		},
 		name: 'Player',
 		physicsEnabled: true,

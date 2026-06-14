@@ -311,7 +311,7 @@ body {
   margin-bottom: 10px;
 }
 
-/* ── Style-card (GameStyleSelector option buttons) ───────────────────────── */
+/* ── Style-card (legacy; pantalla GameStyleSelector eliminada) ───────────── */
 .style-card {
   width: 100%;
   background: rgba(14, 16, 30, 0.95);
@@ -427,7 +427,7 @@ body {
   font-size: 12px;
 }
 
-/* ── GameStyleSelector page ──────────────────────────────────────────────── */
+/* ── Legacy style-selector page (GameStyleSelector eliminado; estilos conservados por si se reutilizan) */
 .style-selector-page {
   display: flex;
   flex-direction: column;

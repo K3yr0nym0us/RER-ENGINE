@@ -63,7 +63,7 @@ import {
 export interface SceneTab {
   id: number;
   name: string;
-  /** Escena activa con pila undo no vacía (solo 3D FP, motor). */
+  /** Escena activa con pila undo no vacía (proyectos 3D, motor). */
   dirty?: boolean;
 }
 
@@ -109,8 +109,8 @@ function buildInitialSceneState() {
   };
 }
 
-function motorManagesScenes(projectType?: string, gameStyle?: GameStyle): boolean {
-  return projectType === '3D' && gameStyle === 'first-person';
+function motorManagesScenes(projectType?: string, _gameStyle?: GameStyle): boolean {
+  return projectType === '3D';
 }
 
 function tabsFromMotorItems(items: EditorSceneListItem[]): SceneTab[] {
@@ -370,7 +370,7 @@ export function SceneManagerProvider({
     const isInitialProjectOpen = lastProjectLoaded3dSeq.current === 0;
     lastProjectLoaded3dSeq.current = projectLoaded3dSeq;
 
-    // 3D FP: el motor manda la lista con editor_scene_*; solo hidratar React en la primera apertura.
+    // 3D: el motor manda la lista con editor_scene_*; solo hidratar React en la primera apertura.
     if (useMotorScenes && !isInitialProjectOpen) return;
 
     const meta = projectLoaded3dMetaRef.current;
@@ -453,7 +453,6 @@ export function SceneManagerProvider({
     mainPlayerHandled.current = false;
     playerEntityIdRef.current = null;
     if (
-      gameStyle === 'first-person' &&
       projectType === '3D' &&
       scene.player &&
       scene.config_camera
@@ -529,7 +528,6 @@ export function SceneManagerProvider({
 
     if (
       projectType === '3D'
-      && gameStyle === 'first-person'
       && (scene.entities?.length ?? 0) === 0
     ) {
       beginFpSceneBaselineLogging(fpSceneBaselineLogRef);
@@ -665,7 +663,7 @@ export function SceneManagerProvider({
       }
     }
 
-    if (gameStyle === 'first-person' && projectType === '3D') {
+    if (projectType === '3D') {
       ensurePlayCharacterOnLoad(scene, pendingRestoresRef, send, {
         onBurstOp: burstLoad ? () => trackSceneBurstOp({ sceneBurstPendingOpsRef }) : undefined,
       });

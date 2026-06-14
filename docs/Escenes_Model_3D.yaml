@@ -16,9 +16,9 @@ principle:
 
 baseline_kinds:
   fp_boot_template:
-    description: "Proyecto 3D FP nuevo; plantilla completa tras setup_default_3d_scene (Scene-01)."
+    description: "Proyecto 3D nuevo (cámara por defecto en manifest.gameStyle); plantilla completa tras setup_default_3d_scene (Scene-01)."
   fp_placeholder:
-    description: "Escena creada desde el acordeón Scenes; suelo + sol + jugador (misma semántica que apply_fp_placeholder_sun_and_player)."
+    description: "Escena creada desde el acordeón Scenes; suelo + sol + jugador play character (apply_fp_placeholder_sun_and_player)."
   saved_manifest:
     description: "Copia de la escena en manifest.json (apertura .save o tras notify_project_saved)."
 
@@ -42,8 +42,8 @@ dirty_check:
 
 clear_undo_redo:
   when:
-    - "Tras cargar .save (motor en load + clear_editor_undo_redo al final de project_load_3d_complete en FP)."
-    - "Tras plantilla FP boot (editor_scenes_init_from_boot)."
+    - "Tras cargar .save (motor en load + clear_editor_undo_redo al final de project_load_3d_complete en 3D)."
+    - "Tras plantilla boot 3D (editor_scenes_init_from_boot)."
     - "Tras switch de escena limpio."
     - "Tras notify_project_saved."
     - "Comando explícito clear_editor_undo_redo desde el renderer."
@@ -79,7 +79,7 @@ events_motor_out:
     payload: { active_scene_id, scenes[], update_reason }
     scenes_item: { id, name, dirty }
     update_reason_values:
-      boot: "Proyecto 3D FP nuevo."
+      boot: "Proyecto 3D nuevo."
       scene_deleted: "Tras delete_editor_scene."
       project_saved: "Tras notify_project_saved."
       undo_state: "Cambió la pila undo de la escena activa (dirty true/false)."
@@ -88,7 +88,7 @@ events_motor_out:
   project_loaded_3d:
     note: "Primera apertura .save: scenes[] desde manifest. Tras switch limpio: scenes[] = registro del editor (send_project_loaded_3d_with_editor_scenes)."
   project_load_3d_complete:
-    note: "Fin de carga de escena o proyecto; renderer cierra overlay y, en FP, send clear_editor_undo_redo."
+    note: "Fin de carga de escena o proyecto; renderer cierra overlay y, en 3D, send clear_editor_undo_redo."
 
 ui_scenes_accordion:
   ubicacion: "src/renderer/.../ScenesAccordion.tsx + useSceneManager.tsx"
@@ -154,8 +154,9 @@ archivos_clave:
     - "pages/EngineView/hooks/useSceneManager.tsx"
     - "pages/EngineView/hooks/sceneManagerModalBodies.tsx"
     - "pages/EngineView/components/sidebar/ScenesAccordion.tsx"
+    - "pages/EngineView/components/sidebar/CameraAccordion.tsx"
     - "modal-electron/modalElectronRegistry.tsx"
 
 scope_v1:
-  in: "3D gameStyle first-person"
-  out: "2D; otros gameStyle 3D siguen flujo legacy en useSceneManager"
+  in: "Proyectos 3D (multi-escena en motor; manifest.gameStyle = modo de cámara, p. ej. first-person)"
+  out: "2D; modos de cámara 3D no implementados (third-person, top-down, …) — pendiente"

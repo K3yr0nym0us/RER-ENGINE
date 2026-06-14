@@ -297,7 +297,7 @@ impl App {
             Ok(()) => {
                 window.set_cursor_visible(false);
                 self.cursor_captured = true;
-                log::info!("[preview] cursor capturado para runtime first-person");
+                log::info!("[preview] cursor capturado para play (cámara play character)");
             }
             Err(err) => {
                 window.set_cursor_visible(true);

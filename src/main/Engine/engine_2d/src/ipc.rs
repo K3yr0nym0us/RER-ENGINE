@@ -114,6 +114,15 @@ pub enum EngineCommand {
     SetGridCellSize { size: f32 },
     /// Cambiar el límite de FPS del loop principal.
     SetTargetFps { fps: u64 },
+    /// No-op en 2D (texturas GLB solo en motor 3D).
+    SetGraphicsTextureTier {
+        #[serde(rename = "tier")]
+        _tier: String,
+    },
+    SetTextureDetailDistance {
+        #[serde(rename = "distance_m")]
+        _distance_m: f32,
+    },
     /// Estado de la tecla Ctrl enviado desde Electron (ventana overlay no recibe teclado directo).
     SetCtrlHeld { held: bool },
     /// Restaurar posición y zoom de la cámara 2D ortográfica.
