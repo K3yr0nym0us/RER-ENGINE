@@ -8,7 +8,7 @@
 // loops and never accesses keyboard_mouse_pressed tracking.
 
 use crate::engine::State;
-use crate::ipc::EngineCommand;
+use crate::ipc::{EngineCommand, EngineCommandCommon};
 use crate::scripting::ScriptCmd;
 
 impl State {
@@ -40,7 +40,7 @@ impl State {
         for (id, path, source) in bindings {
             if let Some(dir_x) = self.infer_horizontal_input_dir(device, control_key) {
                 if self.physics_2d.has_physics(id) && self.physics_2d.is_horizontal_blocked(id, dir_x) {
-                    self.handle_command(EngineCommand::StopAnimation { id });
+                    self.handle_command(EngineCommand::Common(EngineCommandCommon::StopAnimation { id }));
                     continue;
                 }
             }

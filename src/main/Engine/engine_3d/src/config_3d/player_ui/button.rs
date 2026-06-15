@@ -2,39 +2,12 @@
 
 use crate::engine::State;
 use crate::ipc::{
-    send_event, EngineEvent, PlayerUiButtonListItem, SavePlayerUiButtonSnapshot,
+    send_event, AddPlayerUiButtonPayload, EngineEvent, PlayerUiButtonListItem, SavePlayerUiButtonSnapshot,
 };
 
 use super::config::{
     default_button_size_ndc, parse_hex_color_rgba, PlayerUiButton, BOX_STACK_GAP,
 };
-
-#[derive(Debug, serde::Deserialize)]
-#[allow(non_snake_case)]
-pub(crate) struct AddPlayerUiButtonPayload {
-    #[serde(rename = "type")]
-    pub shape_type: String,
-    pub round: f32,
-    #[serde(rename = "backgroundColor", alias = "background_color")]
-    pub background_color: String,
-    #[serde(rename = "texturePath", alias = "texture_path", default)]
-    pub texture_path: Option<String>,
-    #[serde(rename = "transparencyBackground", alias = "transparency_background")]
-    pub transparency_background: f32,
-    pub text: String,
-    #[serde(rename = "textColor", alias = "text_color")]
-    pub text_color: String,
-    #[serde(rename = "transparencyText", alias = "transparency_text")]
-    pub transparency_text: f32,
-    #[serde(rename = "fontPath", alias = "font_path")]
-    pub font_path: String,
-    #[serde(rename = "fontName", alias = "font_name", default)]
-    pub font_name: String,
-    #[serde(rename = "borderColor", alias = "border_color")]
-    pub border_color: String,
-    #[serde(rename = "borderWeight", alias = "border_weight")]
-    pub border_weight: f32,
-}
 
 impl State {
     pub(crate) fn add_player_ui_button(&mut self, payload: AddPlayerUiButtonPayload) -> Result<u32, String> {

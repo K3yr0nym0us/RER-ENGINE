@@ -1,3 +1,4 @@
+mod engine_command;
 mod ecs;
 mod entity_save_meta;
 mod engine;
@@ -32,7 +33,7 @@ use winit::{
     window::{Window, WindowId},
 };
 
-use ipc::{EngineCommand, EngineEvent};
+use ipc::{EngineCommand, EngineCommandCommon, EngineEvent};
 use rer_engine_shared::platform::query_shift_held_os;
 use rer_engine_shared::gpu::{resolve_backend, EngineGpuProfile};
 use rer_engine_shared::overlay::{parse_overlay_config, OverlayConfig};
@@ -323,21 +324,21 @@ impl ApplicationHandler<EngineCommand> for App {
 
     fn user_event(&mut self, event_loop: &ActiveEventLoop, cmd: EngineCommand) {
         // El IPC thread envió un comando vía EventLoopProxy — procesar de inmediato.
-        if matches!(cmd, EngineCommand::Shutdown) {
+        if matches!(cmd, EngineCommand::Common(EngineCommandCommon::Shutdown)) {
             event_loop.exit();
             return;
         }
-        if let EngineCommand::SetTargetFps { fps } = &cmd {
+        if let EngineCommand::Common(EngineCommandCommon::SetTargetFps { fps }) = &cmd {
             self.target_fps = (*fps).clamp(1, 1000);
             self.next_frame_at = std::time::Instant::now();
         }
         #[cfg(any(target_os = "windows", target_os = "linux"))]
-        if let EngineCommand::SetBounds { x, y, offset_x, offset_y, .. } = &cmd {
+        if let EngineCommand::Common(EngineCommandCommon::SetBounds { x, y, offset_x, offset_y, .. }) = &cmd {
             self.update_tracker_offset(*x, *y, *offset_x, *offset_y);
         }
         // When entering game mode, automatically focus the engine window
         // so keyboard/mouse input is captured without requiring a manual click.
-        let entering_play = matches!(cmd, EngineCommand::SetPreviewPlaying { playing: true });
+        let entering_play = matches!(cmd, EngineCommand::Common(EngineCommandCommon::SetPreviewPlaying { playing: true }));
 
         if let Some(state) = self.state.as_mut() {
             state.handle_command(cmd);
@@ -642,7 +643,7 @@ impl ApplicationHandler<EngineCommand> for App {
                         if pressed && !repeat {
                             let ctrl_active = self.ctrl_held || query_ctrl_held_os();
                             if ctrl_active {
-                                state.handle_command(EngineCommand::Undo);
+                                state.handle_command(EngineCommand::Common(EngineCommandCommon::Undo));
                             }
                         }
                     }
@@ -650,7 +651,7 @@ impl ApplicationHandler<EngineCommand> for App {
                         if pressed && !repeat {
                             let ctrl_active = self.ctrl_held || query_ctrl_held_os();
                             if ctrl_active {
-                                state.handle_command(EngineCommand::Redo);
+                                state.handle_command(EngineCommand::Common(EngineCommandCommon::Redo));
                             }
                         }
                     }

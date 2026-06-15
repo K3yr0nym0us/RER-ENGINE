@@ -12,7 +12,8 @@ Este documento fija el contrato tecnico actual del motor 3D para que el codigo n
 ## Relacion con `engine_2d`
 
 - `rer_engine_3d` y `rer_engine_2d` son **binarios distintos** con runtimes distintos.
-- Lo comun con Electron es el **protocolo IPC** (JSON por stdin/stdout) y crates de utilidades (`engine_shared`), no la logica de juego ni de editor.
+- Lo comun con Electron es el **canal** IPC (`engine:cmd` / `engine:event`) y crates de utilidades (`engine_shared`), no un enum de comandos unico ni la logica de juego.
+- Contrato por motor: `engine_3d/src/ipc.rs`; validacion en main (`engineCommandCatalog.ts`). Ver `docs/IPC_Protocol.yaml`.
 - **No se copia runtime entre motores**: la fase de reutilizar ideas del 2D en el 3D ya cerró; el 3D funciona con su propia pila (`config_3d/`, Rapier3D, cámara play character, glTF/GLB). Nuevas funciones 3D se implementan solo aqui.
 - Herramientas de editor 2D (colliders dibujados, execution areas, escenarios sprite, fisica XY, etc.) **no aplican** a este binario y no deben documentarse como deuda de portado.
 - Este documento no describe ni prescribe comportamiento del motor 2D.
@@ -59,12 +60,12 @@ Runtime 3D: camara orbital en editor, play con jugador `[Player]`, Rapier3D, mal
 
 Soporte: `mesh.rs`, `shader.wgsl`, `gizmo.rs`, `gizmo.wgsl`, `texture.rs`, `scripting.rs`.
 
-## Que NO es runtime 3D real
+## Soporte interno 3D (no es IPC del otro motor)
 
-`src/config_compat/` solo cumple variantes del **enum IPC compartido** que este binario no ejecuta: stubs, vacios o `warn`. No es un submotor 2D ni un lugar para pegar logica copiada de `engine_2d`.
+`src/config_compat/` agrupa tipos de herramientas del editor 3D (`ActiveTool`, `GridConfig`) y utilidades de quick-build/plane tools. **No** es un submotor 2D ni un lugar para stubs de comandos IPC ajenos; esos comandos ya no existen en `ipc.rs` 3D.
 
 - Implementacion 3D nueva → `config_3d/` o `engine/`.
-- No ampliar `config_compat` con comportamiento de gameplay o editor.
+- No reintroducir variantes 2D en el enum IPC 3D “por compatibilidad”.
 
 `src/config_shared.rs` reexporta utilidades de `engine_shared`.
 

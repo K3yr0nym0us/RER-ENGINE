@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::ecs::Transform;
-use crate::ipc::EngineCommand;
+use crate::ipc::{EngineCommand, EngineCommandCommon};
 use crate::scripting::{EntitySnapshot, ScriptCmd};
 
 use super::types::PendingSlide;
@@ -63,14 +63,14 @@ impl State {
             if sign * dir_x < -EPS {
                 self.blocked_on_keep_horizontal.remove(&entity_id);
             } else if sign * dir_x > EPS {
-                self.handle_command(EngineCommand::StopAnimation { id: entity_id });
+                self.handle_command(EngineCommand::Common(EngineCommandCommon::StopAnimation { id: entity_id }));
                 return true;
             }
         }
 
         if self.physics_2d.has_physics(entity_id) && self.physics_2d.is_horizontal_blocked(entity_id, dir_x) {
             self.blocked_on_keep_horizontal.insert(entity_id, dir_x.signum());
-            self.handle_command(EngineCommand::StopAnimation { id: entity_id });
+            self.handle_command(EngineCommand::Common(EngineCommandCommon::StopAnimation { id: entity_id }));
             return true;
         }
 
@@ -236,14 +236,14 @@ impl State {
                         .map(|a| a.animation_name == name)
                         .unwrap_or(false);
                     if !already_active {
-                        self.handle_command(EngineCommand::PlayAnimation { id, name });
+                        self.handle_command(EngineCommand::Common(EngineCommandCommon::PlayAnimation { id, name, loop_: true }));
                     }
                 }
                 ScriptCmd::SetDefaultAnimation { id, name } => {
-                    self.handle_command(EngineCommand::SetDefaultAnimation { id, name });
+                    self.handle_command(EngineCommand::Common(EngineCommandCommon::SetDefaultAnimation { id, name }));
                 }
                 ScriptCmd::StopAnimation { id } => {
-                    self.handle_command(EngineCommand::StopAnimation { id });
+                    self.handle_command(EngineCommand::Common(EngineCommandCommon::StopAnimation { id }));
                 }
                 ScriptCmd::SetPhysics { id, enabled, body_type } => {
                     // Evitar recrear el cuerpo Rapier si ya tiene el estado correcto.
@@ -256,7 +256,7 @@ impl State {
                         !self.physics_2d.has_physics(id)
                     };
                     if !already_same {
-                        self.handle_command(EngineCommand::SetPhysics { id, enabled, body_type });
+                        self.handle_command(EngineCommand::Common(EngineCommandCommon::SetPhysics { id, enabled, body_type }));
                     }
                 }
                 ScriptCmd::MoveEntity { id, speed, dir_x, dir_y } => {

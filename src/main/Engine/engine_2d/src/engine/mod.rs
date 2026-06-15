@@ -42,7 +42,7 @@ use crate::config_2d::PhysicsWorld2D;
 use crate::entity_save_meta::EntitySaveRegistry;
 use crate::ecs::{NameComponent, Transform, World};
 use crate::gizmo::GizmoBuffer;
-use crate::ipc::EngineCommand;
+use crate::ipc::{EngineCommand, EngineCommandCommon};
 use crate::mesh::Mesh;
 use crate::scripting::ScriptEngine;
 
@@ -359,13 +359,18 @@ impl State {
                         scale: t.scale.to_array(),
                     });
                 }
-                self.handle_command(EngineCommand::SetTransform {
+                self.handle_command(EngineCommand::Common(EngineCommandCommon::SetTransform {
                     id,
                     position: Some(position),
                     rotation: Some(rotation),
                     scale: Some(scale),
                     track_undo: Some(false),
-                });
+                    position_axis: None,
+                    scale_axis: None,
+                    body_rotation_only: None,
+                    rotation_euler_delta: None,
+                    rotation_euler_degrees: None,
+                }));
             }
             UndoAction::RestoreTransforms { items } => {
                 let mut redo_items: Vec<(u32, [f32; 3], [f32; 4], [f32; 3])> = Vec::new();
@@ -383,18 +388,23 @@ impl State {
                     self.redo_stack.push(UndoAction::RestoreTransforms { items: redo_items });
                 }
                 for (id, position, rotation, scale) in items {
-                    self.handle_command(EngineCommand::SetTransform {
+                    self.handle_command(EngineCommand::Common(EngineCommandCommon::SetTransform {
                         id,
                         position: Some(position),
                         rotation: Some(rotation),
                         scale: Some(scale),
                         track_undo: Some(false),
-                    });
+                        position_axis: None,
+                        scale_axis: None,
+                        body_rotation_only: None,
+                        rotation_euler_delta: None,
+                        rotation_euler_degrees: None,
+                    }));
                 }
             }
             UndoAction::RemoveEntity { snapshot } => {
                 let id = snapshot.id;
-                self.handle_command(EngineCommand::RemoveEntity { id });
+                self.handle_command(EngineCommand::Common(EngineCommandCommon::RemoveEntity { id }));
                 self.redo_stack.push(UndoAction::RestoreEntity { snapshot });
             }
             UndoAction::RestoreEntity { snapshot } => {
@@ -427,13 +437,18 @@ impl State {
                         scale: t.scale.to_array(),
                     });
                 }
-                self.handle_command(EngineCommand::SetTransform {
+                self.handle_command(EngineCommand::Common(EngineCommandCommon::SetTransform {
                     id,
                     position: Some(position),
                     rotation: Some(rotation),
                     scale: Some(scale),
                     track_undo: Some(false),
-                });
+                    position_axis: None,
+                    scale_axis: None,
+                    body_rotation_only: None,
+                    rotation_euler_delta: None,
+                    rotation_euler_degrees: None,
+                }));
             }
             UndoAction::RestoreTransforms { items } => {
                 let mut undo_items: Vec<(u32, [f32; 3], [f32; 4], [f32; 3])> = Vec::new();
@@ -451,13 +466,18 @@ impl State {
                     self.undo_stack.push(UndoAction::RestoreTransforms { items: undo_items });
                 }
                 for (id, position, rotation, scale) in items {
-                    self.handle_command(EngineCommand::SetTransform {
+                    self.handle_command(EngineCommand::Common(EngineCommandCommon::SetTransform {
                         id,
                         position: Some(position),
                         rotation: Some(rotation),
                         scale: Some(scale),
                         track_undo: Some(false),
-                    });
+                        position_axis: None,
+                        scale_axis: None,
+                        body_rotation_only: None,
+                        rotation_euler_delta: None,
+                        rotation_euler_degrees: None,
+                    }));
                 }
             }
             UndoAction::RestoreEntity { snapshot } => {
@@ -466,7 +486,7 @@ impl State {
             }
             UndoAction::RemoveEntity { snapshot } => {
                 let id = snapshot.id;
-                self.handle_command(EngineCommand::RemoveEntity { id });
+                self.handle_command(EngineCommand::Common(EngineCommandCommon::RemoveEntity { id }));
                 self.undo_stack.push(UndoAction::RestoreEntity { snapshot });
             }
             UndoAction::RestorePlayerUiHud { snapshot } => {

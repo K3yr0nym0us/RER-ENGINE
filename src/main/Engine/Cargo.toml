@@ -3,6 +3,7 @@ members = [
 	"engine_2d",
 	"engine_3d",
 	"engine_shared",
+	"engine_ipc_common",
 ]
 resolver = "2"
 

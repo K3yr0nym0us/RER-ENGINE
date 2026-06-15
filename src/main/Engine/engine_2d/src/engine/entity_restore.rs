@@ -1,9 +1,4 @@
-use crate::ipc::{
-    ControlBindingsData, EntityRestoreAnimation, EntityRestorePhysics, EntityRestoreScript,
-    EntityRestoreTransform,
-};
-
-use crate::ipc::EngineCommand;
+use crate::ipc::{ControlBindingsData, EngineCommand, EngineCommandCommon, EntityRestoreAnimation, EntityRestorePhysics, EntityRestoreScript, EntityRestoreTransform};
 
 use super::State;
 
@@ -22,14 +17,14 @@ impl State {
         apply_initial_animation_frame: bool,
     ) {
         if let Some(name) = name.filter(|n| !n.trim().is_empty()) {
-            self.handle_command(EngineCommand::SetEntityName {
+            self.handle_command(EngineCommand::Common(EngineCommandCommon::SetEntityName {
                 id,
                 name,
                 force: true,
-            });
+            }));
         }
         if !skip_transform {
-            self.handle_command(EngineCommand::SetTransform {
+            self.handle_command(EngineCommand::Common(EngineCommandCommon::SetTransform {
                 id,
                 position: Some(transform.position),
                 rotation: Some(transform.rotation),
@@ -39,20 +34,25 @@ impl State {
                     Some(transform.scale)
                 },
                 track_undo: Some(false),
-            });
+                position_axis: None,
+                scale_axis: None,
+                body_rotation_only: None,
+                rotation_euler_delta: None,
+                rotation_euler_degrees: None,
+            }));
         }
         if let Some(physics) = physics {
             if physics.enabled {
-                self.handle_command(EngineCommand::SetPhysics {
+                self.handle_command(EngineCommand::Common(EngineCommandCommon::SetPhysics {
                     id,
                     enabled: true,
                     body_type: physics.body_type.clone(),
-                });
+                }));
             }
         }
         if let Some(anims) = animations {
             for anim in anims {
-                self.handle_command(EngineCommand::SetAnimation {
+                self.handle_command(EngineCommand::Common(EngineCommandCommon::SetAnimation {
                     id,
                     name: anim.name.clone(),
                     frames: anim.frames.clone(),
@@ -64,18 +64,18 @@ impl State {
                     logical_h: None,
                     scripts: anim.scripts.clone(),
                     is_cancelable: anim.is_cancelable,
-                });
+                }));
             }
             if let Some(default) = anims.iter().find(|a| a.is_default) {
-                self.handle_command(EngineCommand::SetDefaultAnimation {
+                self.handle_command(EngineCommand::Common(EngineCommandCommon::SetDefaultAnimation {
                     id,
                     name: default.name.clone(),
-                });
+                }));
             } else {
-                self.handle_command(EngineCommand::SetDefaultAnimation {
+                self.handle_command(EngineCommand::Common(EngineCommandCommon::SetDefaultAnimation {
                     id,
                     name: String::new(),
-                });
+                }));
             }
             if apply_initial_animation_frame {
                 let preview_anim = anims.iter().find(|a| a.is_default).or(anims.first());
@@ -109,18 +109,18 @@ impl State {
         }
         if let Some(script_list) = scripts {
             for script in script_list {
-                self.handle_command(EngineCommand::LoadScript {
+                self.handle_command(EngineCommand::Common(EngineCommandCommon::LoadScript {
                     id,
                     path: script.path.clone(),
                     source: script.source.clone(),
-                });
+                }));
             }
         }
         if let Some(bindings) = control_bindings {
-            self.handle_command(EngineCommand::SetControlBindings {
+            self.handle_command(EngineCommand::Common(EngineCommandCommon::SetControlBindings {
                 id,
                 bindings: bindings.clone(),
-            });
+            }));
         }
     }
 }

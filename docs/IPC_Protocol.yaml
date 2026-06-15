@@ -1,7 +1,7 @@
 # Protocolo IPC Electron ↔ motores Rust (engine:cmd / engine:event)
 #
-# Contrato JSON línea a línea entre el renderer, el proceso main de Electron
-# y el binario del motor (rer_engine_2d | rer_engine_3d).
+# Contratos JSON línea a línea entre el renderer, el proceso main de Electron
+# y el binario del motor en ejecución (rer_engine_2d | rer_engine_3d).
 #
 # Relacionado con:
 #   - docs/Escenes_Model_3D.yaml       (comandos multi-escena)
@@ -9,26 +9,54 @@
 #   - docs/Engine_Context.yaml         (createEngineActions / createEngineEventHandler)
 #   - docs/Save_Proyect_Model.yaml     (export_save_snapshot, load_proyect)
 
-version: 1
+version: 2
 updated: 2026-06-14
 
 summary: |
-  El renderer envía comandos con window.electronAPI.sendEngineCmd (preload).
-  Main reenvía por stdin del proceso hijo (una línea JSON por comando).
-  El motor escribe eventos en stdout (una línea JSON por evento); main los
-  reenvía al renderer como engine:event. La fuente de verdad del contrato es
-  engine_2d/src/ipc.rs y engine_3d/src/ipc.rs (comparten la mayoría de variantes).
+  El renderer envía comandos con window.engine.send (preload → engine:cmd).
+  Main valida el comando contra el catálogo del motor activo (2D o 3D), aplica
+  side-effects propios de main (p. ej. watchers PNG solo en 2D) y reenvía por
+  stdin del proceso hijo (una línea JSON por comando).
+  El motor escribe eventos en stdout; main los reenvía al renderer como engine:event.
+
+  **No hay un tercer contrato IPC:** rer_engine_shared es crate de biblioteca
+  (GPU, overlay, scripting, .rerasset, métricas, helpers Player UI). El binario
+  homónimo solo imprime un JSON de estado y no participa en engine:cmd.
 
 principle:
   engine_first: |
     El frontend envía intención; el motor valida, muta estado y emite eventos.
     No reimplementar lógica espacial, clasificación de entidades ni undo en TypeScript.
-  shared_contract: |
-    Ambos binarios deserializan el mismo enum EngineCommand. Comandos exclusivos
-    de un motor se ignoran o son no-op en el otro (p. ej. texturas LOD solo en 3D).
+  per_motor_contract: |
+    Cada binario ensambla `EngineCommand` en engine_command.rs:
+      - `Common(EngineCommandCommon)` — crate rer-engine-ipc-common (stdin JSON `cmd`)
+      - `Only2d` / `Only3d` — variantes exclusivas en engine_command.rs del motor
+    ipc.rs reexporta tipos y eventos; ya no duplica el enum monolítico.
+  main_gate: |
+    Antes de stdin, src/main/engine/engineCommandCatalog.ts define:
+      - ENGINE_COMMANDS_SHARED — presentes en ambos ipc.rs (recursos, undo, UI, …)
+      - ENGINE_COMMANDS_2D_ONLY / ENGINE_COMMANDS_3D_ONLY — exclusivos
+    registerEngineCmdIpc rechaza comandos del motor equivocado (log
+    `[ipc] comando "…" rechazado para motor …`). Fuente de verdad al añadir
+    comandos: actualizar ipc.rs del motor correspondiente **y** el catálogo en main.
   types_mirror: |
     src/shared-types/types.ts refleja el contrato para TypeScript; puede ir
     ligeramente desfasado respecto a ipc.rs — ipc.rs manda al añadir comandos nuevos.
+    Pendiente: tipos discriminados EngineCommand2D / EngineCommand3D (compile-time).
+
+engine_shared_crate:
+  role: biblioteca Rust (rer-engine-shared), dependencia de engine_2d y engine_3d
+  not_ipc: |
+    No lee stdin ni define EngineCommand. Código compartido: gpu, overlay winit,
+    scripting Rhai, formato .rerasset, player_ui (macros), process_metrics, etc.
+  binary_rer_engine_shared: |
+    Artefacto empaquetado en extraResources; main.rs imprime un JSON de prueba.
+    Electron **no** lo usa como motor del viewport (spawn siempre 2d o 3d según projectType).
+  relation_to_shared_commands: |
+    Los comandos "compartidos" del catálogo IPC son los de `EngineCommandCommon`
+    en `src/main/Engine/engine_ipc_common` (serde tag `cmd`). Cada motor despacha
+    `EngineCommand::Common(...)` en commands.rs; la lógica de ejecución sigue en
+    el binario correspondiente.
 
 transport:
   renderer_to_main:
@@ -48,11 +76,15 @@ transport:
 flow: |
   Renderer                    Main (Electron)                 Motor (Rust)
   ────────                    ───────────────                 ────────────
-  sendEngineCmd({cmd:…})  →   ipcMain.on('engine:cmd')
+  engine.send({cmd:…})    →   ipcMain.on('engine:cmd')
+                                handleEngineCommand:
+                                  · set_locale (siempre)
+                                  · catálogo 2D|3D
+                                  · side-effects 2D (watchers PNG)
                                 sendToEngine(cmd)         →   stdin
                                                               handle_command
                                 ← stdout línea JSON       ←   send_event
-  onEngineEvent(cb)       ←   webContents.send('engine:event')
+  engine.on(cb)           ←   webContents.send('engine:event')
 
 lifecycle:
   spawn:
@@ -204,11 +236,25 @@ key_files:
   contract_2d: src/main/Engine/engine_2d/src/ipc.rs
   dispatch_3d: src/main/Engine/engine_3d/src/engine/commands.rs
   dispatch_2d: src/main/Engine/engine_2d/src/engine/commands.rs
+  main_catalog: src/main/engine/engineCommandCatalog.ts
+  main_registry: src/main/engine/registerEngineCmdIpc.ts
+  main_startup_scene: src/main/engine/engineStartupScene.ts
   main_bridge: src/main/index.ts
   preload: src/preload/index.ts
+  shared_library: src/main/Engine/engine_shared/   # sin IPC stdin
   ts_types: src/shared-types/types.ts
   renderer_send: src/renderer/src/context/useContextEngine/hooks/createEngineActions.ts
   renderer_receive: src/renderer/src/context/useContextEngine/hooks/createEngineEventHandler.ts
+
+adding_a_command:
+  steps:
+    - Decidir motor: 2D, 3D o ambos (si ambos, añadir a los dos ipc.rs con misma semántica JSON).
+    - Añadir variante en engine_{2d|3d}/src/ipc.rs y brazo en engine/commands.rs.
+    - Actualizar ENGINE_COMMANDS_*_ONLY o SHARED en engineCommandCatalog.ts.
+    - Ampliar types.ts y handlers del renderer si el front debe usarlo.
+  do_not: |
+    Añadir la variante solo en un ipc.rs y confiar en stubs/no-op en el otro binario.
+    Ese patrón está eliminado.
 
 patterns:
   track_undo:
@@ -228,7 +274,8 @@ patterns:
       set_locale con motor inactivo actualiza solo overlay IA y estado main.
 
 do_not:
-  - Duplicar enums de comandos solo en TypeScript sin actualizar ipc.rs
-  - Asumir que todos los comandos del enum 3D funcionan en 2D (y viceversa)
+  - Duplicar enums de comandos solo en TypeScript sin actualizar ipc.rs y el catálogo main
+  - Enviar comandos 2D al binario 3D (o viceversa); main los rechaza y el otro ipc.rs no debe aceptarlos
+  - Asumir que rer_engine_shared escucha engine:cmd (es biblioteca, no motor del viewport)
   - Enviar funciones o JSX por IPC; solo JSON plano
   - Leer RER_GPU_BACKEND; Electron la elimina al spawn del motor

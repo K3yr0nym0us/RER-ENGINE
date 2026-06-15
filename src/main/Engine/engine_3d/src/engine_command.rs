@@ -1,0 +1,140 @@
+//! Ensamblaje del contrato IPC 3D: comandos comunes + extensión exclusiva.
+
+use serde::Deserialize;
+
+pub use rer_engine_ipc_common::EngineCommandCommon;
+
+use crate::ipc::{BlueprintPlacementMeta, PlayCameraFollowMode};
+
+fn default_unit_quat() -> [f32; 4] {
+    [0.0, 0.0, 0.0, 1.0]
+}
+
+fn default_static_physics_type() -> String {
+    "static".to_string()
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub enum EngineCommand {
+    Common(EngineCommandCommon),
+    Only3d(EngineCommand3dOnly),
+}
+
+/// Comandos solo en `rer_engine_3d` (rechazados en main si projectType es 2D).
+#[derive(Debug, Deserialize)]
+#[serde(tag = "cmd", rename_all = "snake_case")]
+pub enum EngineCommand3dOnly {
+    SpawnCachedModel {
+        path: String,
+        #[serde(default)]
+        name: Option<String>,
+        position: [f32; 3],
+        #[serde(default = "default_unit_quat")]
+        rotation: [f32; 4],
+        scale: [f32; 3],
+        #[serde(default)]
+        entity_category: Option<String>,
+        #[serde(default)]
+        blueprint_id: Option<String>,
+        #[serde(default)]
+        physics_enabled: bool,
+        #[serde(default = "default_static_physics_type")]
+        physics_type: String,
+    },
+    SpawnQuickBuildInstance {
+        position: [f32; 3],
+        rotation: [f32; 4],
+        scale: [f32; 3],
+    },
+    PlaceQuickBuildAtCursor {
+        #[serde(default)]
+        pixel_x: Option<f32>,
+        #[serde(default)]
+        pixel_y: Option<f32>,
+    },
+    RegisterBlueprint {
+        blueprint: BlueprintPlacementMeta,
+    },
+    LoadModelAsset {
+        path: String,
+        name: String,
+        #[serde(default)]
+        category: Option<String>,
+    },
+    RemoveModelAsset { path: String },
+    GetModelsList,
+    SpawnEditorBox {
+        name: String,
+        position: [f32; 3],
+        scale: [f32; 3],
+    },
+    SpawnSun {
+        name: String,
+        position: [f32; 3],
+        scale: [f32; 3],
+    },
+    SpawnGround {
+        position: [f32; 3],
+        scale: [f32; 3],
+    },
+    SetDirectionalLight {
+        #[serde(default)]
+        ambient: Option<f32>,
+        #[serde(default)]
+        intensity: Option<f32>,
+        #[serde(default)]
+        shadow_darkness: Option<f32>,
+    },
+    #[serde(rename = "set_play_character_spawn")]
+    SetPlayCharacterSpawn {
+        position: [f32; 3],
+        yaw: f32,
+        pitch: f32,
+    },
+    #[serde(rename = "set_play_character_view")]
+    SetPlayCharacterView {
+        #[serde(default)]
+        position: Option<[f32; 3]>,
+        #[serde(default)]
+        position_axis: Option<rer_engine_ipc_common::AxisValue>,
+        #[serde(default)]
+        yaw: Option<f32>,
+        #[serde(default)]
+        pitch: Option<f32>,
+        #[serde(default)]
+        fov_y: Option<f32>,
+        #[serde(default)]
+        frustum_distance: Option<f32>,
+        #[serde(default)]
+        camera_only: Option<bool>,
+        #[serde(default)]
+        camera_follow_mode: Option<PlayCameraFollowMode>,
+        #[serde(default)]
+        body_rotation: Option<[f32; 4]>,
+        #[serde(default)]
+        body_scale: Option<[f32; 3]>,
+        #[serde(default)]
+        camera_eye_position: Option<[f32; 3]>,
+        #[serde(default)]
+        fps_camera_yaw: Option<f32>,
+        #[serde(default)]
+        fps_camera_pitch: Option<f32>,
+    },
+    SetGraphicsTextureTier { tier: String },
+    SetTextureDetailDistance { distance_m: f32 },
+    SetCameraFov { fov_y: f32 },
+    #[serde(rename = "set_play_editor_frustum_distance")]
+    SetPlayEditorFrustumDistance { distance: f32 },
+    SetEntityColision { id: u32, colision: bool },
+    LoadCharacter {
+        path: String,
+        #[serde(default)]
+        track_undo: Option<bool>,
+    },
+    CreateEditorScene { name: String },
+    SwitchEditorScene { scene_id: u32 },
+    DeleteEditorScene { scene_id: u32 },
+    NotifyProjectSaved { extract_dir: String },
+    ClearEditorUndoRedo,
+}

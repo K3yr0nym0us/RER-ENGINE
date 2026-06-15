@@ -1,8 +1,8 @@
 # CHECKLIST — Tareas pendientes globales
 
-Backlog transversal del monorepo (2D + 3D + Electron). Estado por motor: [CHECKLIST-2D.md](./CHECKLIST-2D.md), [CHECKLIST-3D.md](./CHECKLIST-3D.md). Modelo de recursos y `.save`: [docs/Save_Proyect_Model.yaml](./docs/Save_Proyect_Model.yaml).
+Backlog transversal del monorepo (2D + 3D + Electron). Estado por motor: [CHECKLIST-2D.md](./CHECKLIST-2D.md), [CHECKLIST-3D.md](./CHECKLIST-3D.md). Modelo de recursos y empaquetado: [docs/Save_Proyect_Model.yaml](./docs/Save_Proyect_Model.yaml).
 
-**Última revisión:** 12 junio 2026 (formato editor vs exportación por plataforma)
+**Última revisión:** 14 junio 2026 (IPC por motor en main)
 
 ---
 
@@ -15,8 +15,7 @@ Backlog transversal del monorepo (2D + 3D + Electron). Estado por motor: [CHECKL
 #### Formato del editor (ahora — sin compresión GPU por plataforma)
 
 - [x] **`.rerasset` en editor: RTEX RGBA8** — albedo en `RGBA8UnormSrgb`, mipmaps opcionales, sin BC7/ASTC/BC1 en el pipeline de import/bake/carga del editor.
-- [x] **Integridad bake ↔ load** — serialización RTEX alineada (header meta 5 bytes); texturas idénticas al guardar y al abrir `.save`.
-- [ ] **`.save` del editor** — empaquetado ZIP/ZSTD de `project.save` + assets; máxima fidelidad, fácil de inspeccionar y depurar.
+- [x] **Integridad bake ↔ load** — serialización RTEX alineada (header meta 5 bytes); texturas idénticas al guardar y al abrir proyecto.
 - [ ] **Documentar contrato editor** — en [docs/Rerasset_Format.yaml](./docs/Rerasset_Format.yaml): RTEX v1 = RGBA8 + mips; reservar códigos de `texture_format` / `compression_type` para formatos GPU futuros sin romper assets ya guardados.
 
 #### Exportación del juego (después — compresión por plataforma objetivo)
@@ -32,6 +31,32 @@ Backlog transversal del monorepo (2D + 3D + Electron). Estado por motor: [CHECKL
 - [ ] **Herramientas de transcodificación** — evaluar integración (texconv, Basis/ISPC, etc.) en el paso de export Electron o en binario Rust de empaquetado; sin dependencia en el flujo diario del editor.
 
 **Motivación:** evitar bugs de canal/formato en desarrollo (p. ej. desfase RGBA en RTEX), mantener el editor igual en Win/Linux y reservar BC7/ASTC para cuando existan builds finales para jugadores.
+
+### Formato `.rersave` (reemplazo de `.save`)
+
+**Principio:** contenedor binario propio del editor, mismo espíritu que `.rerasset` (`RERS` magic + header + tabla de entradas + blobs). **Sin ZIP** (ni como formato ni envuelto por dentro). **Sin soporte legacy** de `.save`: corte limpio al migrar.
+
+#### Especificación e implementación
+
+- [ ] **Documentar formato** — nuevo `docs/Rersave_Format.yaml` (o sección en Save_Proyect_Model): magic `RERS`, versión, flags, tabla de entradas (path relativo UTF-8, offset, size, `compression` por blob, CRC opcional), sección de datos contigua; `manifest` como primera entrada o chunk tipado (JSON UTF-8 comprimido).
+- [ ] **Read/write en Rust** — `engine_shared` (p. ej. `rersave.rs`), escritura atómica `.rersave.tmp` → rename; reutilizar patrones de `rerasset.rs` (header fijo, directory, blobs).
+- [ ] **Compresión por entrada** — `zstd` o `deflate` por blob (manifest, scripts, PNG, `.rerasset` embebidos, etc.); **no** archivo ZIP; blobs ya comprimidos pueden ir `stored`.
+- [ ] **Integrar en Electron main** — sustituir `AdmZip` en `saveProjectToFile` / `extractSaveArchive` por API Rust (CLI ligero, N-API o invocación del binario shared); mismo staging lógico de paths que hoy, otro contenedor en disco.
+- [ ] **Contrato runtime** — al abrir: extraer entradas a `extract_dir` temporal (o mmap por offset si más adelante se optimiza); motores siguen leyendo `manifest.json` + paths relativos bajo `extract_dir` hasta que se valore carga directa desde `.rersave`.
+- [ ] **Renombrar extensión y UI** — diálogos, autosave, `ensureSaveExtension`, tipos TS (`save_path` → `.rersave`), logs y copy de usuario; eliminar referencias a extensión `.save` en flujos activos.
+
+#### Integración con el sistema operativo
+
+- [ ] **`fileAssociations` en `electron-builder.yml`** — extensión `.rersave`, nombre “RER-ENGINE Project”, icono de la app.
+- [ ] **Abrir con doble clic** — `app.on('open-file')`, `second-instance` / argv en Windows y Linux; pasar ruta al renderer para cargar proyecto si la app ya está abierta.
+- [ ] **Probar en build instalado** — asociación e icono no aplican en `yarn dev` sin empaquetar; verificar en NSIS / AppImage / deb.
+
+#### Documentación y corte
+
+- [ ] **Actualizar** [docs/Save_Proyect_Model.yaml](./docs/Save_Proyect_Model.yaml), README y ARCHITECTURE donde digan “ZIP / `.save`”.
+- [ ] **Sin migrador automático** — proyectos antiguos `.save` quedan fuera de alcance; comunicar en release notes que hay que re-guardar o reexportar desde una versión intermedia si hiciera falta (solo si se publica transición; objetivo final: solo `.rersave`).
+
+**Motivación:** identidad de archivo propia (magic, icono, doble clic), compresión controlada por entrada sin depender de ZIP, y alineación con el stack binario ya usado en `.rerasset`.
 
 ### Recursos por escena + “Cargar desde otra escena” (Resources)
 
@@ -62,12 +87,16 @@ Backlog transversal del monorepo (2D + 3D + Electron). Estado por motor: [CHECKL
 
 ### IPC por motor (2D / 3D)
 
-- [ ] **Registrar y validar IPC según el motor activo**
-  - Hoy muchos handlers viven en `src/main/index.ts` y en los binarios Rust (`engine_2d` / `engine_3d`) con comprobaciones cruzadas (`projectType`, guards en renderer, etc.), lo que hace el código pesado y frágil.
-  - Objetivo: capa en el proceso main que **active solo el conjunto de canales IPC del motor seleccionado** (2D o 3D) al abrir o cambiar de proyecto.
-  - Cada motor expone su registro de handlers (p. ej. `registerEngine2dIpc`, `registerEngine3dIpc`); el main despacha `engine:cmd` y el resto de canales sin mezclar validaciones 2D dentro del código 3D y viceversa.
-  - Preload/renderer: exponer solo la API del motor en uso (o rechazar en main con error claro si se invoca un canal del motor equivocado).
-  - Criterio: al trabajar en un proyecto 3D no debe haber ramas ni imports de lógica IPC exclusiva del 2D en el motor 3D (y al revés); la discriminación queda centralizada en main.
+- [x] **Catálogo de comandos por motor en main** — `src/main/engine/engineCommandCatalog.ts`: listas `ENGINE_COMMAND_SET_2D` / `ENGINE_COMMAND_SET_3D`; `engine:cmd` rechaza comandos del motor equivocado (log `[ipc] comando … rechazado`).
+- [x] **Registro modular `engine:cmd`** — `registerEngineCmdIpc` + `engineIpcRegistry.ts` (side-effects 2D: watchers PNG); patrón alineado con `registerPluginIpc`.
+- [x] **Arranque `set_scene` unificado** — `engineStartupScene.ts` sustituye el doble guard `sendEngine2dStartupScene` / `sendEngine3dStartupScene`.
+- [x] **Rust: quitar IPC 2D del binario 3D** — variantes `LoadScenario`, `PlayAnimationFrame`, `SetCamera2d`, etc. eliminadas de `engine_3d/src/ipc.rs`; stubs `config_compat` de IPC 2D retirados; `SetGraphicsTextureTier` / `SetTextureDetailDistance` quitados de `engine_2d`.
+- [ ] **Tipos TS discriminados** — `EngineCommand2D` / `EngineCommand3D` en `shared-types`; helpers `send2d` / `send3d` en hooks del renderer (compile-time).
+- [x] **Rust: `engine_ipc_common`** — crate `rer-engine-ipc-common` con `EngineCommandCommon` + tipos compartidos; cada motor extiende con `EngineCommand2dOnly` / `EngineCommand3dOnly` en `engine_command.rs`.
+- [ ] **Preload opcional** — `window.engine2d` / `window.engine3d` si se quiere enforcement en renderer además de main.
+- [x] **Documentar** — `docs/IPC_Protocol.yaml` y ARCHITECTURE de motores (modelo por motor + `engine_shared` sin IPC).
+
+**Motivación:** hoy cada comando nuevo obligaba a duplicar o stubear en ambos `ipc.rs`. Main valida por motor; falta partir tipos TS y el contrato Rust.
 
 ### Métricas GPU en panel (Linux)
 

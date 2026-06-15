@@ -26,7 +26,7 @@ type PropertiesTab = 'transform' | 'animations' | 'scripting'
 
 export interface EntityPropertiesModalContentProps {
 	state: EntityPropertiesState
-	onAction: (action: EntityPropertiesAction) => void
+	onAction: (action: EntityPropertiesAction) => void | Promise<void>
 }
 
 export function EntityPropertiesModalContent({
@@ -74,19 +74,14 @@ export function EntityPropertiesModalContent({
 	useEffect(() => {
 		if (!selectedEntity?.id) {
 			setAnimations([])
-			setPlayingAnimationName(null)
 			return
 		}
 		setAnimations(selectedEntity.animations ?? [])
-		setPlayingAnimationName(null)
 	}, [selectedEntity?.id, selectedEntity?.animations])
 
 	useEffect(() => {
-		if (!selectedEntity?.id) return
-		if (!animationPlayingIds.includes(selectedEntity.id)) {
-			setPlayingAnimationName(null)
-		}
-	}, [selectedEntity?.id, animationPlayingIds])
+		setPlayingAnimationName(null)
+	}, [selectedEntity?.id])
 
 	const handleSend = (cmd: TransformSendCommand) => {
 		onAction({ action: 'setTransform', cmd })
@@ -227,8 +222,7 @@ export function EntityPropertiesModalContent({
 		const canPlayEmbedded3D = is3D && !!anim.embedded_in_model
 		if (!canPlayEmbedded3D && anim.frames.length === 0) return
 
-		const isPlayingThis =
-			animationPlayingIds.includes(selectedEntity.id) && playingAnimationName === anim.name
+		const isPlayingThis = playingAnimationName === anim.name
 		if (isPlayingThis) {
 			onAction({ action: 'send', cmd: { cmd: 'stop_animation', id: selectedEntity.id } })
 			onAction({ action: 'setAnimationPlaying', id: selectedEntity.id, playing: false })
@@ -238,20 +232,22 @@ export function EntityPropertiesModalContent({
 		if (animationPlayingIds.includes(selectedEntity.id)) {
 			onAction({ action: 'send', cmd: { cmd: 'stop_animation', id: selectedEntity.id } })
 		}
+		setPlayingAnimationName(anim.name)
 		if (anim.loop) {
 			onAction({
 				action: 'send',
 				cmd: { cmd: 'play_animation', id: selectedEntity.id, name: anim.name, loop: anim.loop },
 			})
 			onAction({ action: 'setAnimationPlaying', id: selectedEntity.id, playing: true })
-			setPlayingAnimationName(anim.name)
 		} else {
-			await onAction({
+			onAction({ action: 'setAnimationPlaying', id: selectedEntity.id, playing: true })
+			void onAction({
 				action: 'sendAsync',
 				cmd: { cmd: 'play_animation', id: selectedEntity.id, name: anim.name, loop: anim.loop },
 				waitEvent: 'animation_finished',
+			}).then(() => {
+				setPlayingAnimationName(null)
 			})
-			setPlayingAnimationName(null)
 		}
 	}
 
@@ -579,9 +575,7 @@ export function EntityPropertiesModalContent({
 								<div className="d-flex flex-column gap-1">
 									{animations.map((anim, idx) => {
 										const canPlay = is3D ? !!anim.embedded_in_model : anim.frames.length > 0
-										const isPlayingThis =
-											animationPlayingIds.includes(selectedEntity.id) &&
-											playingAnimationName === anim.name
+										const isPlayingThis = playingAnimationName === anim.name
 										return (
 											<div
 												key={anim.id ?? `${anim.name}-${idx}`}

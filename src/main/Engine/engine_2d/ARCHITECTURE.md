@@ -5,7 +5,8 @@ Este documento fija el contrato tecnico actual del motor 2D para que el codigo n
 ## Relacion con `engine_3d`
 
 - `rer_engine_2d` y `rer_engine_3d` son **binarios distintos** con runtimes distintos.
-- Lo comun con Electron es el **protocolo IPC** (JSON por stdin/stdout) y crates de utilidades (`engine_shared`), no la logica de juego ni de editor.
+- Lo comun con Electron es el **canal** IPC (`engine:cmd` / `engine:event`) y crates de utilidades (`engine_shared`), no un enum de comandos unico ni la logica de juego.
+- Contrato por motor: `engine_2d/src/ipc.rs`; validacion en main (`engineCommandCatalog.ts`). Ver `docs/IPC_Protocol.yaml`.
 - **No se copia runtime entre motores**: lo que el producto 3D necesitaba del stack 2D ya se extrajo; nuevas funciones 2D se implementan solo aqui (`config_2d/`, `physics_2d.rs`, `engine/`).
 - Este documento no describe ni prescribe comportamiento del motor 3D.
 

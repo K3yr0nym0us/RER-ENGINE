@@ -78,10 +78,11 @@ impl State {
             .and_then(|anim| {
                 anim.frames.first().map(|first| {
                     let flip = self.resolve_animation_flip(entity_id, anim);
+                    let (px, py) = first.resolved_pivot(anim.logical_w, anim.logical_h);
                     (
                         first.path.clone(),
-                        first.pivot_x,
-                        first.pivot_y,
+                        px,
+                        py,
                         anim.logical_w,
                         anim.logical_h,
                         first

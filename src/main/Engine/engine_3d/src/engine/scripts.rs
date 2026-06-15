@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::ecs::Transform;
-use crate::ipc::EngineCommand;
+use crate::ipc::{EngineCommand, EngineCommandCommon};
 use crate::scripting::{EntitySnapshot, ScriptCmd};
 
 use super::State;
@@ -192,18 +192,18 @@ impl State {
                         .map(|a| a.animation_name == name)
                         .unwrap_or(false);
                     if !already_active {
-                        self.handle_command(EngineCommand::PlayAnimation {
+                        self.handle_command(EngineCommand::Common(EngineCommandCommon::PlayAnimation {
                             id,
                             name,
                             loop_: true,
-                        });
+                        }));
                     }
                 }
                 ScriptCmd::SetDefaultAnimation { id, name } => {
-                    self.handle_command(EngineCommand::SetDefaultAnimation { id, name });
+                    self.handle_command(EngineCommand::Common(EngineCommandCommon::SetDefaultAnimation { id, name }));
                 }
                 ScriptCmd::StopAnimation { id } => {
-                    self.handle_command(EngineCommand::StopAnimation { id });
+                    self.handle_command(EngineCommand::Common(EngineCommandCommon::StopAnimation { id }));
                 }
                 ScriptCmd::SetPhysics { id, enabled, body_type } => {
                     let already_same = if enabled {
@@ -213,7 +213,7 @@ impl State {
                         !self.physics.has_physics(id)
                     };
                     if !already_same {
-                        self.handle_command(EngineCommand::SetPhysics { id, enabled, body_type });
+                        self.handle_command(EngineCommand::Common(EngineCommandCommon::SetPhysics { id, enabled, body_type }));
                     }
                 }
                 ScriptCmd::MoveEntity { id, speed, dir_x, dir_y } => {

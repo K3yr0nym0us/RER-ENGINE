@@ -18,7 +18,7 @@ import type {
   SavedScript,
   AppResourceUsage,
 } from '../shared-types/types';
-import { DEFAULT_3D_CAMERA_MODE, entityPathMarker } from '../shared-types/types';
+import { entityPathMarker } from '../shared-types/types';
 import {
   getGpuMetricsPlatform,
   isElectronGpuMetricsSupported,
@@ -36,6 +36,8 @@ import {
   repositionViewportCornerModalIfOpen,
 } from './modalElectronWindow';
 import { resolveAppWindowIcon } from './appWindowIcon';
+import { registerEngineCmdIpc } from './engine/registerEngineCmdIpc';
+import { sendEngineStartupScene } from './engine/engineStartupScene';
 import { autoStartEnabledPlugins, registerPluginIpc } from './plugins/registerPluginIpc';
 import { stopLlamaServer } from './plugins/local-ai-assistant/llamaServerProcess';
 import {
@@ -377,8 +379,15 @@ function startEngine(embed?: ViewportBounds): void {
         const event = JSON.parse(line) as EngineEvent
         if (event.event === 'ready') {
           engineReceivedReady = true
-          sendEngine2dStartupScene()
-          sendEngine3dStartupScene()
+          sendEngineStartupScene({
+            getEngineBinary: () => lastEngineBinary,
+            getProjectType: () => currentProjectType,
+            getExtractDir: () => currentProjectExtractDir ?? '',
+            getGameStyle: () => currentGameStyle,
+            sendToEngine,
+            is3dStartupSceneSent: () => engine3dStartupSceneSent,
+            mark3dStartupSceneSent: () => { engine3dStartupSceneSent = true },
+          })
         }
         if (event.event === 'autosave_tick') {
           if (currentProjectFilePath && mainWindow && !mainWindow.isDestroyed()) {
@@ -425,9 +434,10 @@ function startEngine(embed?: ViewportBounds): void {
     }
     if (code !== 0 && code !== null && engineReceivedReady) {
       engineSessionCrashed = true
+      const motorLabel = lastEngineBinary === 'rer_engine_3d' ? '3D' : '2D'
       sendEventToRenderer({
         event: 'error',
-        message: `El motor 3D se detuvo inesperadamente (código ${code}). Reinicia la aplicación.`,
+        message: `El motor ${motorLabel} se detuvo inesperadamente (código ${code}). Reinicia la aplicación.`,
       } as EngineEvent)
     }
     sendEventToRenderer({ event: 'stopped', code } as EngineEvent)
@@ -453,34 +463,6 @@ function sendToEngine(cmd: EngineCommand): void {
     updateAiAssistantOverlayConfig({ locale: next })
     console.log(`[i18n] set_locale con motor inactivo (overlay actualizado): ${next}`)
   }
-}
-
-/** Arranque 2D: escena + carpeta extraída del proyecto (vacío si proyecto nuevo). */
-function sendEngine2dStartupScene(): void {
-  if (lastEngineBinary !== 'rer_engine_2d') return
-  const extractDir = currentProjectExtractDir ?? ''
-  sendToEngine({
-    cmd: 'set_scene',
-    scene: '2D',
-    save_path: extractDir,
-  })
-  console.log(`[engine] 2D set_scene enviado (extract_dir=${extractDir || '(nuevo)'})`)
-}
-
-/** Arranque 3D: escena + carpeta extraída del proyecto (vacío si proyecto nuevo). */
-function sendEngine3dStartupScene(): void {
-  if (lastEngineBinary !== 'rer_engine_3d') return
-  const extractDir = currentProjectExtractDir ?? ''
-  if (!extractDir) return
-  if (engine3dStartupSceneSent) return
-  engine3dStartupSceneSent = true
-  const scene = currentGameStyle ?? DEFAULT_3D_CAMERA_MODE
-  sendToEngine({
-    cmd: 'set_scene',
-    scene,
-    save_path: extractDir,
-  })
-  console.log(`[engine] 3D set_scene enviado (extract_dir=${extractDir})`)
 }
 
 function stopEngine(): void {
@@ -567,6 +549,16 @@ function startElectronResourceSampling(): void {
 // ---------------------------------------------------------------------------
 registerPluginIpc(() => mainWindow)
 
+registerEngineCmdIpc({
+  getProjectType: () => currentProjectType,
+  sendToEngine,
+  setLocale: (locale) => {
+    currentLocale = locale
+    updateAiAssistantOverlayConfig({ locale })
+  },
+  watchPngAsset: watchAsset,
+})
+
 initAiAssistantOverlay(() => mainWindow)
 
 ipcMain.handle(
@@ -600,25 +592,6 @@ ipcMain.on('ai-assistant:ready', (event) => {
 })
 
 ipcMain.handle('get-app-resource-usage', (): AppResourceUsage => cachedElectronResourceUsage)
-
-ipcMain.on('engine:cmd', (_event, cmd: EngineCommand) => {
-  if (cmd.cmd === 'set_locale') {
-    const next = String((cmd as Record<string, unknown>)['locale'] ?? 'en').toLowerCase() === 'es' ? 'es' : 'en'
-    currentLocale = next
-    updateAiAssistantOverlayConfig({ locale: next })
-    console.log(`[i18n] IPC renderer -> main set_locale: ${currentLocale}`)
-  }
-
-  // Registrar file watcher para assets cargados por path
-  const c = cmd as Record<string, unknown>
-  if (
-    typeof c['path'] === 'string' &&
-    (c['cmd'] === 'load_character' || c['cmd'] === 'load_scenario' || c['cmd'] === 'load_background')
-  ) {
-    watchAsset(c['path'] as string)
-  }
-  sendToEngine(cmd)
-})
 
 // Diálogo para abrir modelos 3D
 ipcMain.handle('open-model-dialog', async () => {

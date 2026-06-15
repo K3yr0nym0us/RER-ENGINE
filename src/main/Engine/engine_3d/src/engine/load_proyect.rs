@@ -5,12 +5,7 @@ use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 
-use crate::ipc::{
-    send_event, send_load_progress, send_project_load_3d_complete_event,
-    send_project_loaded_3d_event, AnimScriptData, AnimationFrameData, ControlBindingsData,
-    ControlScriptData, EngineCommand, EngineEvent, EntityRestorePhysics, EntityRestoreTransform,
-    ImportSceneSprite, ProjectLoaded3dEvent, ProjectLoaded3dSceneTab, ProjectLoaded3dWorld,
-};
+use crate::ipc::{send_event, send_load_progress, send_project_load_3d_complete_event, send_project_loaded_3d_event, AnimScriptData, AnimationFrameData, ControlBindingsData, ControlScriptData, EngineCommand, EngineCommand3dOnly, EngineCommandCommon, EngineEvent, EntityRestorePhysics, EntityRestoreTransform, ImportSceneSprite, ProjectLoaded3dEvent, ProjectLoaded3dSceneTab, ProjectLoaded3dWorld};
 
 use super::State;
 use crate::assets::registry::{relative_rerasset_manifest_path, resolve_manifest_asset_path};
@@ -918,11 +913,11 @@ fn build_player_pending_restore_from_entity(entity: &SavedEntity3D) -> PendingRe
 fn apply_entity_scripts(state: &mut State, id: u32, scripts: Option<&[SavedScript]>) {
     let Some(list) = scripts else { return };
     for script in list {
-        state.handle_command(EngineCommand::LoadScript {
+        state.handle_command(EngineCommand::Common(EngineCommandCommon::LoadScript {
             id,
             path: script.name.clone(),
             source: script.source.clone(),
-        });
+        }));
     }
 }
 
@@ -934,8 +929,8 @@ fn apply_entity_animations(state: &mut State, id: u32, animations: Option<&[Save
             .iter()
             .map(|f| AnimationFrameData {
                 path: f.path.clone(),
-                pivot_x: f.pivot_x,
-                pivot_y: f.pivot_y,
+                pivot_x: Some(f.pivot_x),
+                pivot_y: Some(f.pivot_y),
                 src_x: f.src_x,
                 src_y: f.src_y,
                 src_w: f.src_w,
@@ -955,7 +950,7 @@ fn apply_entity_animations(state: &mut State, id: u32, animations: Option<&[Save
                     .collect()
             })
             .unwrap_or_default();
-        state.handle_command(EngineCommand::SetAnimation {
+        state.handle_command(EngineCommand::Common(EngineCommandCommon::SetAnimation {
             id,
             name: anim.name.clone(),
             frames,
@@ -967,12 +962,12 @@ fn apply_entity_animations(state: &mut State, id: u32, animations: Option<&[Save
             logical_h: Some(anim.logical_h),
             scripts: anim_scripts,
             is_cancelable: anim.is_cancelable.unwrap_or(true),
-        });
+        }));
         if anim.is_default.unwrap_or(false) {
-            state.handle_command(EngineCommand::SetDefaultAnimation {
+            state.handle_command(EngineCommand::Common(EngineCommandCommon::SetDefaultAnimation {
                 id,
                 name: anim.name.clone(),
-            });
+            }));
         }
     }
 }
@@ -1064,28 +1059,28 @@ fn log_load_step(total: Instant, step: &mut Instant, message: &str) {
 
 fn load_project_asset_stores(state: &mut State, project: &ProjectSaveData) {
     for sound in &project.sounds {
-        state.handle_command(EngineCommand::LoadSound {
+        state.handle_command(EngineCommand::Common(EngineCommandCommon::LoadSound {
             path: sound.path.clone(),
             name: sound.name.clone(),
-        });
+        }));
     }
     for font in &project.fonts {
-        state.handle_command(EngineCommand::LoadFont {
+        state.handle_command(EngineCommand::Common(EngineCommandCommon::LoadFont {
             path: font.path.clone(),
             name: font.name.clone(),
-        });
+        }));
     }
     for bg in &project.backgrounds {
-        state.handle_command(EngineCommand::LoadBackgroundAsset {
+        state.handle_command(EngineCommand::Common(EngineCommandCommon::LoadBackgroundAsset {
             path: bg.path.clone(),
             name: bg.name.clone(),
-        });
+        }));
     }
     for img in &project.hud_images {
-        state.handle_command(EngineCommand::LoadHudImage {
+        state.handle_command(EngineCommand::Common(EngineCommandCommon::LoadHudImage {
             path: img.path.clone(),
             name: img.name.clone(),
-        });
+        }));
     }
 }
 
@@ -1317,31 +1312,31 @@ fn apply_loaded_proyect_3d_with_scene(
         .unwrap_or(DEFAULT_SHADOW_DARKNESS);
 
     let depth = view.world.worldDepth.unwrap_or(50.0);
-    state.handle_command(EngineCommand::SetWorldSize {
+    state.handle_command(EngineCommand::Common(EngineCommandCommon::SetWorldSize {
         width: view.world.worldWidth,
         height: view.world.worldHeight,
         depth: Some(depth),
-    });
-    state.handle_command(EngineCommand::SetGridVisible {
+    }));
+    state.handle_command(EngineCommand::Common(EngineCommandCommon::SetGridVisible {
         visible: view.world.gridVisible,
-    });
-    state.handle_command(EngineCommand::SetGridCellSize {
+    }));
+    state.handle_command(EngineCommand::Common(EngineCommandCommon::SetGridCellSize {
         size: view.world.gridCellSize,
-    });
+    }));
     let target_fps = if view.world.targetFps.is_finite() && view.world.targetFps > 0.0 {
         view.world.targetFps as u64
     } else {
         60
     };
-    state.handle_command(EngineCommand::SetTargetFps { fps: target_fps });
+    state.handle_command(EngineCommand::Common(EngineCommandCommon::SetTargetFps { fps: target_fps }));
     if let Some(gravity) = view.world.gravity {
-        state.handle_command(EngineCommand::SetGravity { gravity });
+        state.handle_command(EngineCommand::Common(EngineCommandCommon::SetGravity { gravity }));
     }
-    state.handle_command(EngineCommand::SetDirectionalLight {
+    state.handle_command(EngineCommand::Only3d(EngineCommand3dOnly::SetDirectionalLight {
         ambient: Some(light_ambient),
         intensity: Some(light_intensity),
         shadow_darkness: Some(shadow_darkness),
-    });
+    }));
     crate::config_3d::entity_textures::apply_graphics_settings_from_world_wire(
         state,
         view.world.graphicsTextureTier.as_deref(),
@@ -1616,7 +1611,7 @@ fn apply_loaded_proyect_3d_with_scene(
 
     if let (Some(player_entity), Some(id)) = (saved_player.as_ref(), state.play_character_entity) {
         if let Some(bindings) = map_control_bindings(player_entity.controls.as_ref()) {
-            state.handle_command(crate::ipc::EngineCommand::SetControlBindings { id, bindings });
+            state.handle_command(crate::ipc::EngineCommand::Common(EngineCommandCommon::SetControlBindings { id, bindings }));
         }
     }
 

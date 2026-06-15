@@ -47,9 +47,8 @@ export function EntityPropertiesElectronHost({ payload }: EntityPropertiesElectr
 	}, [payload.handlerId])
 
 	const delegate = useCallback(
-		(action: EntityPropertiesAction) => {
-			void window.electronAPI.entityPropertiesAction(payload.handlerId, action)
-		},
+		(action: EntityPropertiesAction) =>
+			window.electronAPI.entityPropertiesAction(payload.handlerId, action),
 		[payload.handlerId],
 	)
 

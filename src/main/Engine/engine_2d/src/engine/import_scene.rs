@@ -1,7 +1,4 @@
-use crate::ipc::{
-    send_event, EngineCommand, EngineEvent, ImportSceneCamera2d, ImportSceneEntity,
-    ImportScenePayload,
-};
+use crate::ipc::{send_event, EngineCommand, EngineCommand2dOnly, EngineCommandCommon, EngineEvent, ImportSceneCamera2d, ImportSceneEntity, ImportScenePayload};
 
 use super::State;
 
@@ -17,31 +14,32 @@ impl State {
             }
         }
 
-        self.handle_command(EngineCommand::SetWorldSize {
+        self.handle_command(EngineCommand::Common(EngineCommandCommon::SetWorldSize {
             width:  payload.world.world_width,
             height: payload.world.world_height,
-        });
-        self.handle_command(EngineCommand::SetGridVisible {
+            depth: None,
+        }));
+        self.handle_command(EngineCommand::Common(EngineCommandCommon::SetGridVisible {
             visible: payload.world.grid_visible,
-        });
-        self.handle_command(EngineCommand::SetGridCellSize {
+        }));
+        self.handle_command(EngineCommand::Common(EngineCommandCommon::SetGridCellSize {
             size: payload.world.grid_cell_size,
-        });
-        self.handle_command(EngineCommand::SetTargetFps {
+        }));
+        self.handle_command(EngineCommand::Common(EngineCommandCommon::SetTargetFps {
             fps: payload.world.target_fps,
-        });
+        }));
         let gravity = payload.world.gravity.unwrap_or(rer_engine_shared::DEFAULT_GRAVITY_MAGNITUDE);
-        self.handle_command(EngineCommand::SetGravity { gravity });
+        self.handle_command(EngineCommand::Common(EngineCommandCommon::SetGravity { gravity }));
 
         if let Some(ImportSceneCamera2d { x, y, half_h }) = payload.camera2d {
-            self.handle_command(EngineCommand::SetCamera2d { x, y, half_h });
+            self.handle_command(EngineCommand::Only2d(EngineCommand2dOnly::SetCamera2d { x, y, half_h }));
         }
 
         for sprite in &payload.sprites {
-            self.handle_command(EngineCommand::LoadSprite {
+            self.handle_command(EngineCommand::Common(EngineCommandCommon::LoadSprite {
                 path: sprite.path.clone(),
                 name: sprite.name.clone(),
-            });
+            }));
         }
 
         match payload.background_path.as_deref() {

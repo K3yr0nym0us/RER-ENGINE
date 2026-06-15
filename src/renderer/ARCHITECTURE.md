@@ -176,7 +176,7 @@ Documentacion de motores:
 - `src/hooks/usePlayerUiObjectDrawing.ts` — modo dibujo de objetos HUD (progreso `toolProgress`).
 - `src/defaults/buildProjectSaveFromEngine.ts` — IPC `export_save_snapshot` y merge a `ProjectSaveData`.
 - `src/defaults/defaultSceneName.ts` — nombres `Scene-NN` locales (misma regla que `editor_defaults` en Rust).
-- `src/shared-types/types.ts` — contrato IPC; ampliar aqui al anadir comandos/eventos nuevos.
+- `src/shared-types/types.ts` — contrato IPC; ampliar aqui al anadir comandos/eventos nuevos. Validacion por motor en main (`engineCommandCatalog.ts`); ver `docs/IPC_Protocol.yaml`.
 
 ## Checklist para cambios nuevos
 

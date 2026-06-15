@@ -2618,6 +2618,7 @@ dependencies = [
  "pollster",
  "rapier3d",
  "raw-window-handle",
+ "rer-engine-ipc-common",
  "rer-engine-shared",
  "rodio",
  "serde",
@@ -2647,6 +2648,7 @@ dependencies = [
  "rapier3d",
  "raw-window-handle",
  "rayon",
+ "rer-engine-ipc-common",
  "rer-engine-shared",
  "rodio",
  "serde",
@@ -2657,6 +2659,14 @@ dependencies = [
  "windows 0.54.0",
  "winit",
  "x11",
+]
+
+[[package]]
+name = "rer-engine-ipc-common"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

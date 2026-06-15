@@ -10,7 +10,7 @@ use winit::dpi::PhysicalSize;
 use crate::config_2d::ActiveTool;
 use crate::ecs::{NameComponent, Transform};
 use crate::gizmo;
-use crate::ipc::{send_event, AnimationFrameData, EngineCommand, EngineEvent};
+use crate::ipc::{send_event, AnimationFrameData, EngineCommand, EngineCommand2dOnly, EngineCommandCommon, EngineEvent};
 
 use super::audio::DecodedAudio;
 use super::types::{ActiveAnimation, AnimationState};
@@ -19,15 +19,15 @@ use super::State;
 impl State {
     pub fn handle_command(&mut self, cmd: EngineCommand) {
         match cmd {
-            EngineCommand::Ping => {
+            EngineCommand::Common(EngineCommandCommon::Ping) => {
                 send_event(&EngineEvent::Pong);
             }
-            EngineCommand::SetClearColor { r, g, b } => {
+            EngineCommand::Common(EngineCommandCommon::SetClearColor { r, g, b }) => {
                 self.clear_color = wgpu::Color { r, g, b, a: 1.0 };
             }
-            EngineCommand::Resize { width, height } => {
+            EngineCommand::Common(EngineCommandCommon::Resize { width, height }) => {
                 self.resize(PhysicalSize::new(width, height));
-            }            EngineCommand::SetBounds { x, y, width, height, .. } => {
+            }            EngineCommand::Common(EngineCommandCommon::SetBounds { x, y, width, height, .. }) => {
                 // Mover/redimensionar la ventana overlay
                 let _ = self.window.set_outer_position(
                     winit::dpi::PhysicalPosition::new(x, y)
@@ -39,19 +39,19 @@ impl State {
                     winit::dpi::PhysicalSize::new(width, height)
                 );
             }
-            EngineCommand::LoadModel { path } => {
+            EngineCommand::Common(EngineCommandCommon::LoadModel { path, .. }) => {
                 send_event(&EngineEvent::Error {
                     message: format!("Este binario es 2D: carga de modelos no disponible ({path})"),
                 });
             }
-            EngineCommand::ReplaceEntityModel { id, path } => {
+            EngineCommand::Common(EngineCommandCommon::ReplaceEntityModel { id, path }) => {
                 send_event(&EngineEvent::Error {
                     message: format!(
                         "Este binario es 2D: reemplazo de modelo no disponible (entidad {id}, {path})"
                     ),
                 });
             }
-            EngineCommand::SetTransform { id, position, rotation, scale, track_undo } => {
+            EngineCommand::Common(EngineCommandCommon::SetTransform { id, position, rotation, scale, track_undo, .. }) => {
                 use glam::{Quat, Vec3};
                 let before = self.world.get::<Transform>(id).cloned();
                 if let Some(transform) = self.world.get_mut::<Transform>(id) {
@@ -99,7 +99,7 @@ impl State {
                     }
                 }
             }
-            EngineCommand::SetEntityName { id, name, force } => {
+            EngineCommand::Common(EngineCommandCommon::SetEntityName { id, name, force }) => {
                 let next_name = name.trim();
                 if next_name.is_empty() {
                     send_event(&EngineEvent::Error { message: "El nombre no puede estar vacio".to_string() });
@@ -141,7 +141,7 @@ impl State {
                     });
                 }
             }
-            EngineCommand::SetScene { scene, save_path } => {
+            EngineCommand::Common(EngineCommandCommon::SetScene { scene, save_path }) => {
                 match scene.as_str() {
                     "2D" => {
                         self.setup_2d_platformer();
@@ -153,7 +153,7 @@ impl State {
                     _         => log::info!("SetScene: escena '{}' no reconocida", scene),
                 }
             }
-            EngineCommand::LoadScenario { path, track_undo } => {
+            EngineCommand::Only2d(EngineCommand2dOnly::LoadScenario { path, track_undo }) => {
                 self.load_scenario(&path);
                 if track_undo.unwrap_or(false) {
                     if let Some(&id) = self.scenario_entities.last() {
@@ -162,7 +162,7 @@ impl State {
                     }
                 }
             }
-            EngineCommand::SetScenarioScale { id, scale } => {
+            EngineCommand::Only2d(EngineCommand2dOnly::SetScenarioScale { id, scale }) => {
                 let marker = self.world.get::<crate::config_2d::ScenarioMarker>(id).cloned();
                 if let Some(m) = marker {
                     let aspect = m.img_width as f32 / m.img_height.max(1) as f32;
@@ -175,7 +175,7 @@ impl State {
                     }
                 }
             }
-            EngineCommand::LoadCharacter { path, track_undo } => {
+            EngineCommand::Only2d(EngineCommand2dOnly::LoadCharacter { path, track_undo }) => {
                 self.load_character(&path);
                 if track_undo.unwrap_or(false) {
                     if let Some(&id) = self.character_entities.last() {
@@ -184,10 +184,10 @@ impl State {
                     }
                 }
             }
-            EngineCommand::SetCharacterScale { id, scale } => {
+            EngineCommand::Only2d(EngineCommand2dOnly::SetCharacterScale { id, scale }) => {
                 self.set_character_scale(id, scale);
             }
-            EngineCommand::PlayAnimationFrame { id, path, pivot_x, pivot_y, logical_w, logical_h, src_x, src_y, src_w, src_h } => {
+            EngineCommand::Only2d(EngineCommand2dOnly::PlayAnimationFrame { id, path, pivot_x, pivot_y, logical_w, logical_h, src_x, src_y, src_w, src_h }) => {
                 if self.pivot_edit_mode.is_some() {
                     // Ignorar: el modo edición de pivot tiene prioridad para no interferir con la textura/escala
                     return;
@@ -198,22 +198,22 @@ impl State {
                 };
                 self.play_animation_frame(id, &path, pivot_x, pivot_y, logical_w, logical_h, src_x.zip(src_y).zip(src_w.zip(src_h)).map(|((x, y), (w, h))| (x, y, w, h)), false);
             }
-            EngineCommand::RestoreAnimationFrame { id } => {
+            EngineCommand::Only2d(EngineCommand2dOnly::RestoreAnimationFrame { id }) => {
                 self.restore_animation_frame(id);
             }
-            EngineCommand::SetPivotEditMode { id, frame_path, pivot_x, pivot_y } => {
+            EngineCommand::Only2d(EngineCommand2dOnly::SetPivotEditMode { id, frame_path, pivot_x, pivot_y }) => {
                 self.enter_pivot_edit_mode(id, &frame_path, pivot_x, pivot_y);
             }
-            EngineCommand::CancelPivotEditMode => {
+            EngineCommand::Only2d(EngineCommand2dOnly::CancelPivotEditMode) => {
                 self.cancel_pivot_edit_mode();
             }
-            EngineCommand::SetLogicalAreaMode { id, w, h } => {
+            EngineCommand::Only2d(EngineCommand2dOnly::SetLogicalAreaMode { id, w, h }) => {
                 self.enter_logical_area_mode(id, w, h);
             }
-            EngineCommand::CancelLogicalAreaMode => {
+            EngineCommand::Only2d(EngineCommand2dOnly::CancelLogicalAreaMode) => {
                 self.cancel_logical_area_mode();
             }
-            EngineCommand::PlayAudio { path, loop_ } => {
+            EngineCommand::Common(EngineCommandCommon::PlayAudio { path, loop_ }) => {
                 // Decodificar a PCM y enviar al Sink persistente.
                 let decoded = std::fs::read(&path).ok()
                     .and_then(|b| {
@@ -230,17 +230,17 @@ impl State {
                     None => log::error!("[audio] no se pudo cargar o decodificar: {path}"),
                 }
             }
-            EngineCommand::StopAudio => {
+            EngineCommand::Common(EngineCommandCommon::StopAudio) => {
                 self.stop_audio_internal();
             }
-            EngineCommand::DeselectEntity => {
+            EngineCommand::Common(EngineCommandCommon::DeselectEntity) => {
                 if self.selected_entity.is_some() || !self.selected_entities.is_empty() {
                     self.selected_entity = None;
                     self.selected_entities.clear();
                     send_event(&EngineEvent::EntityDeselected);
                 }
             }
-            EngineCommand::RemoveEntity { id } => {
+            EngineCommand::Common(EngineCommandCommon::RemoveEntity { id }) => {
                 if !self.is_applying_undo {
                     if let Some(snapshot) = self.capture_entity_undo_snapshot(id) {
                         self.undo_stack
@@ -304,7 +304,7 @@ impl State {
                     points,
                 });
             }
-            EngineCommand::SetWorldSize { width, height } => {
+            EngineCommand::Common(EngineCommandCommon::SetWorldSize { width, height, .. }) => {
                 self.grid_config.world_width  = width.max(1.0);
                 self.grid_config.world_height = height.max(1.0);
                 self.rebuild_grid();
@@ -315,28 +315,26 @@ impl State {
                     }
                 }
             }
-            EngineCommand::SetGravity { gravity } => {
+            EngineCommand::Common(EngineCommandCommon::SetGravity { gravity }) => {
                 // Contrato legacy actual: el IPC acepta un valor "gravedad" y el
                 // runtime lo normaliza siempre hacia abajo para preservar semantica.
                 // Revisarlo cambiaria comportamiento de proyectos existentes.
                 self.physics_2d.set_gravity(-gravity.abs());
                 log::info!("[physics] Gravedad actualizada: -{:.2}", gravity.abs());
             }
-            EngineCommand::SetGridVisible { visible } => {
+            EngineCommand::Common(EngineCommandCommon::SetGridVisible { visible }) => {
                 self.grid_config.visible = visible;
                 self.rebuild_grid();
             }
-            EngineCommand::SetGridCellSize { size } => {
+            EngineCommand::Common(EngineCommandCommon::SetGridCellSize { size }) => {
                 self.grid_config.cell_size = size.clamp(0.05, 100.0);
                 self.rebuild_grid();
             }
-            EngineCommand::SetTargetFps { fps } => {
+            EngineCommand::Common(EngineCommandCommon::SetTargetFps { fps }) => {
                 self.target_fps = fps.clamp(1, 1000);
                 log::info!("[render] Límite de FPS actualizado: {}", self.target_fps);
             }
-            EngineCommand::SetGraphicsTextureTier { .. }
-            | EngineCommand::SetTextureDetailDistance { .. } => {}
-            EngineCommand::SetPreviewPlaying { playing } => {
+            EngineCommand::Common(EngineCommandCommon::SetPreviewPlaying { playing }) => {
                 if self.preview_playing == playing {
                     return;
                 }
@@ -385,7 +383,7 @@ impl State {
                         let default_name = self.default_animation_by_entity.get(&entity_id).cloned();
                         if let Some(name) = default_name {
                             log::info!("[SetPreviewPlaying] iniciando animación '{}' para entidad {}", name, entity_id);
-                            self.handle_command(EngineCommand::PlayAnimation { id: entity_id, name });
+                            self.handle_command(EngineCommand::Common(EngineCommandCommon::PlayAnimation { id: entity_id, name, loop_: true }));
                         }
                     }
                 } else {
@@ -413,10 +411,10 @@ impl State {
                     if playing { "juego" } else { "editor" }
                 );
             }
-            EngineCommand::SetCtrlHeld { held } => {
+            EngineCommand::Common(EngineCommandCommon::SetCtrlHeld { held }) => {
                 self.ctrl_held = held;
             }
-            EngineCommand::SetCamera2d { x, y, half_h } => {
+            EngineCommand::Only2d(EngineCommand2dOnly::SetCamera2d { x, y, half_h }) => {
                 if let Some(cam2d) = &mut self.camera_2d {
                     cam2d.x      = x;
                     cam2d.y      = y;
@@ -424,15 +422,15 @@ impl State {
                     
                 }
             }
-            EngineCommand::LoadBackground { path } => {
+            EngineCommand::Only2d(EngineCommand2dOnly::LoadBackground { path }) => {
                 self.background_path = Some(path.clone());
                 self.load_background(&path);
             }
-            EngineCommand::ClearBackground => {
+            EngineCommand::Only2d(EngineCommand2dOnly::ClearBackground) => {
                 self.background_path = None;
                 self.clear_background();
             }
-            EngineCommand::SetPhysics { id, enabled, body_type } => {
+            EngineCommand::Common(EngineCommandCommon::SetPhysics { id, enabled, body_type }) => {
                 let (pos, half, collider_offset) = if let Some(t) = self.world.get::<Transform>(id) {
                     // Forzar z=0 en la posición física: el Z del Transform es visual
                     // (orden de capas), pero la física usa XYZ interno. Si dos cuerpos
@@ -456,7 +454,7 @@ impl State {
                 
                 send_event(&EngineEvent::PhysicsChanged { entity_id: id, enabled, body_type });
             }
-            EngineCommand::SetActiveTool { tool, preview_path, preview_kind, preview_scale, preview_src_rect } => {
+            EngineCommand::Common(EngineCommandCommon::SetActiveTool { tool, preview_path, preview_kind, preview_scale, preview_src_rect, .. }) => {
                 if tool.is_empty() {
                     // Solo cancelar si había una herramienta activa (evita eventos espurios al inicio)
                     let was_active = !matches!(self.active_tool, ActiveTool::None);
@@ -506,57 +504,57 @@ impl State {
                     }
                 }
             }
-            EngineCommand::CreateColliderFromPoints { points, track_undo } => {
+            EngineCommand::Only2d(EngineCommand2dOnly::CreateColliderFromPoints { points, track_undo }) => {
                 if self.camera_2d.is_some() {
                     self.create_collision_box_from_points(&points, track_undo.unwrap_or(true));
                 } else {
                     log::warn!("CreateColliderFromPoints solo disponible en modo 2D");
                 }
             }
-            EngineCommand::CreateExecutionAreaFromPoints { points, track_undo } => {
+            EngineCommand::Only2d(EngineCommand2dOnly::CreateExecutionAreaFromPoints { points, track_undo }) => {
                 if self.camera_2d.is_some() {
                     self.create_execution_area_from_points(&points, track_undo.unwrap_or(true));
                 } else {
                     log::warn!("CreateExecutionAreaFromPoints solo disponible en modo 2D");
                 }
             }
-            EngineCommand::Undo => {
+            EngineCommand::Common(EngineCommandCommon::Undo) => {
                 if self.undo_last_tool_step_2d() {
                     return;
                 }
                 self.apply_undo();
             }
-            EngineCommand::Redo => {
+            EngineCommand::Common(EngineCommandCommon::Redo) => {
                 self.apply_redo();
             }
-            EngineCommand::SetLocale { locale } => {
+            EngineCommand::Common(EngineCommandCommon::SetLocale { locale }) => {
                 log::info!("[IPC] SetLocale: {}", locale);
                 self.snap_locale = locale;
             }
-            EngineCommand::SetAutosave { enabled } => {
+            EngineCommand::Common(EngineCommandCommon::SetAutosave { enabled }) => {
                 self.autosave_enabled = enabled;
                 self.autosave_last_tick = Instant::now();
                 log::info!("[autosave] {}", if enabled { "activado" } else { "desactivado" });
             }
-            EngineCommand::ExportSaveSnapshot => {
+            EngineCommand::Common(EngineCommandCommon::ExportSaveSnapshot) => {
                 self.export_save_snapshot();
             }
-            EngineCommand::GetDefaultSceneName { id } => {
+            EngineCommand::Common(EngineCommandCommon::GetDefaultSceneName { id }) => {
                 let name = rer_engine_shared::editor_defaults::default_scene_name(id);
                 send_event(&EngineEvent::DefaultSceneNameReady { id, name });
             }
-            EngineCommand::SetPlayerUiEditMode {
+            EngineCommand::Common(EngineCommandCommon::SetPlayerUiEditMode {
                 active,
                 scope,
                 screen_id,
-            } => {
+            }) => {
                 self.apply_player_ui_edit_mode(
                     active,
                     scope.as_deref(),
                     screen_id.as_deref(),
                 );
             }
-            EngineCommand::AddPlayerUiTextBox { font_path } => {
+            EngineCommand::Common(EngineCommandCommon::AddPlayerUiTextBox { font_path }) => {
                 match self.add_player_ui_text_box(&font_path) {
                     Ok(id) => {
                         if let Some(key) = self.player_ui_text_key() {
@@ -583,7 +581,7 @@ impl State {
                     }
                 }
             }
-            EngineCommand::RemovePlayerUiTextBox { id } => {
+            EngineCommand::Common(EngineCommandCommon::RemovePlayerUiTextBox { id }) => {
                 let removed_id = if let Some(box_id) = id {
                     self.remove_player_ui_text_box(box_id)
                         .then_some(box_id)
@@ -594,46 +592,46 @@ impl State {
                     send_event(&EngineEvent::PlayerUiTextBoxRemoved { id: box_id });
                 }
             }
-            EngineCommand::AddPlayerUiButton { payload } => {
+            EngineCommand::Common(EngineCommandCommon::AddPlayerUiButton { payload }) => {
                 if let Err(message) = self.add_player_ui_button(payload) {
                     send_event(&EngineEvent::Error { message });
                 }
             }
-            EngineCommand::RemovePlayerUiButton { id } => {
+            EngineCommand::Common(EngineCommandCommon::RemovePlayerUiButton { id }) => {
                 if let Some(button_id) = id {
                     if self.remove_player_ui_button(button_id) {
                         send_event(&EngineEvent::PlayerUiButtonRemoved { id: button_id });
                     }
                 }
             }
-            EngineCommand::AddPlayerUiImage { image_path } => {
+            EngineCommand::Common(EngineCommandCommon::AddPlayerUiImage { image_path }) => {
                 if let Err(message) = self.add_player_ui_image(&image_path) {
                     send_event(&EngineEvent::Error { message });
                 }
             }
-            EngineCommand::RemovePlayerUiImage { id } => {
+            EngineCommand::Common(EngineCommandCommon::RemovePlayerUiImage { id }) => {
                 if let Some(image_id) = id {
                     let _ = self.remove_player_ui_image(image_id);
                 } else {
                     let _ = self.remove_selected_player_ui_image();
                 }
             }
-            EngineCommand::SetPlayerUiObjectDraw { active } => {
+            EngineCommand::Common(EngineCommandCommon::SetPlayerUiObjectDraw { active }) => {
                 self.set_player_ui_object_draw(active);
             }
-            EngineCommand::RemovePlayerUiObject { id } => {
+            EngineCommand::Common(EngineCommandCommon::RemovePlayerUiObject { id }) => {
                 if let Some(object_id) = id {
                     let _ = self.remove_player_ui_object(object_id);
                 } else if let Some(object_id) = self.player_ui_selected_object_id {
                     let _ = self.remove_player_ui_object(object_id);
                 }
             }
-            EngineCommand::SetPlayerUiHudElementProps {
+            EngineCommand::Common(EngineCommandCommon::SetPlayerUiHudElementProps {
                 element_kind,
                 id,
                 locked,
                 z_index,
-            } => {
+            }) => {
                 if let Err(message) = self.set_player_ui_hud_element_props(
                     &element_kind,
                     id,
@@ -643,14 +641,14 @@ impl State {
                     send_event(&EngineEvent::Error { message });
                 }
             }
-            EngineCommand::SetPlayerUiObjectStyle {
+            EngineCommand::Common(EngineCommandCommon::SetPlayerUiObjectStyle {
                 id,
                 fill_color,
                 texture_path,
                 clear_texture,
                 live,
                 skip_undo,
-            } => {
+            }) => {
                 if let Err(message) = self.set_player_ui_object_style(
                     id,
                     fill_color,
@@ -662,10 +660,10 @@ impl State {
                     send_event(&EngineEvent::Error { message });
                 }
             }
-            EngineCommand::SyncPlayerUiScreens { screens } => {
+            EngineCommand::Common(EngineCommandCommon::SyncPlayerUiScreens { screens }) => {
                 self.sync_player_ui_screens(&screens);
             }
-            EngineCommand::SetActivePlayerUiScreen { screen_id } => {
+            EngineCommand::Common(EngineCommandCommon::SetActivePlayerUiScreen { screen_id }) => {
                 match screen_id.filter(|id| !id.is_empty()) {
                     Some(id) => {
                         if let Err(message) = self.set_active_player_ui_screen(&id) {
@@ -675,15 +673,15 @@ impl State {
                     None => self.clear_active_player_ui_screen(),
                 }
             }
-            EngineCommand::SetDebugMode { show } => {
+            EngineCommand::Common(EngineCommandCommon::SetDebugMode { show }) => {
                 self.debug_mode = show;
                 self.physics_2d.set_debug_mode(show);
                 log::info!("[debug] modo debug: {}", show);
             }
-            EngineCommand::SetVsync { enabled } => {
+            EngineCommand::Only2d(EngineCommand2dOnly::SetVsync { enabled }) => {
                 self.set_vsync(enabled);
             }
-            EngineCommand::ReloadAsset { path } => {
+            EngineCommand::Common(EngineCommandCommon::ReloadAsset { path }) => {
                 log::info!("[IPC] ReloadAsset: {}", path);
                 // Buscar UV rect pre-asignado en el atlas (sin re-empacar, sin cambiar ECS).
                 if let Some(&uv_rect) = self.static_tex_cache.get(&path) {
@@ -713,7 +711,7 @@ impl State {
                     log::warn!("[hot-reload] Path no encontrado en static_tex_cache ni como fondo: {}", path);
                 }
             }
-            EngineCommand::SetAnimation { id, name, frames, fps, loop_, flip_horizontal, audio_path, logical_w, logical_h, scripts, is_cancelable, .. } => {
+            EngineCommand::Common(EngineCommandCommon::SetAnimation { id, name, frames, fps, loop_, flip_horizontal, audio_path, logical_w, logical_h, scripts, is_cancelable, .. }) => {
                 
 
                 let fallback_logical_w = logical_w.unwrap_or(64).max(1);
@@ -794,7 +792,7 @@ impl State {
                 });
                 
             }
-            EngineCommand::RemoveAnimation { id, name } => {
+            EngineCommand::Common(EngineCommandCommon::RemoveAnimation { id, name }) => {
                 log::info!("[IPC] RemoveAnimation: entity_id={}, name='{}'", id, name);
 
                 // Detener la animación si está activa
@@ -824,7 +822,7 @@ impl State {
                     
                 }
             }
-            EngineCommand::SetDefaultAnimation { id, name } => {
+            EngineCommand::Common(EngineCommandCommon::SetDefaultAnimation { id, name }) => {
                 if name.is_empty() {
                     self.default_animation_by_entity.remove(&id);
                     
@@ -841,7 +839,7 @@ impl State {
                     log::warn!("[animation] set_default_animation ignorado: '{}' no existe en entidad {}", name, id);
                 }
             }
-EngineCommand::PlayAnimation { id, name } => {
+EngineCommand::Common(EngineCommandCommon::PlayAnimation { id, name, .. }) => {
                 
 
                 // Si hay una animación activa con is_cancelable=false que aún no terminó,
@@ -930,7 +928,7 @@ EngineCommand::PlayAnimation { id, name } => {
                     }
                 }
             }
-            EngineCommand::StopAnimation { id } => {
+            EngineCommand::Common(EngineCommandCommon::StopAnimation { id }) => {
                 self.anim_flip_overrides.remove(&id);
                 let Some(stopped_animation_name) = self.active_animations.remove(&id).map(|a| a.animation_name) else {
                     // Ya estaba detenida: no repetir fallback, audio stop, detach ni logs.
@@ -951,7 +949,7 @@ EngineCommand::PlayAnimation { id, name } => {
                 self.script_engine.detach_animation_scripts(id);
                 send_event(&EngineEvent::AnimationFinished { entity_id: id });
             }
-            EngineCommand::LoadSceneVisualScript { scene_id, source } => {
+            EngineCommand::Common(EngineCommandCommon::LoadSceneVisualScript { scene_id, source }) => {
                 
                 if let Err(e) = self.handle_load_scene_visual_script(scene_id, &source) {
                     log::error!("[scene_script] Error: {e}");
@@ -960,7 +958,7 @@ EngineCommand::PlayAnimation { id, name } => {
                     });
                 }
             }
-            EngineCommand::LoadScript { id, path, source } => {
+            EngineCommand::Common(EngineCommandCommon::LoadScript { id, path, source }) => {
                 log::info!("[IPC] LoadScript: entity_id={} path={}", id, path);
                 if let Err(e) = self.script_engine.attach_script(id, &path, &source) {
                     log::error!("[scripting] Error cargando script '{}': {}", path, e);
@@ -984,22 +982,22 @@ EngineCommand::PlayAnimation { id, name } => {
                     }
                 }
             }
-            EngineCommand::SetControlBindings { id, bindings } => {
+            EngineCommand::Common(EngineCommandCommon::SetControlBindings { id, bindings }) => {
                 if bindings.keyboard_mouse.is_empty() && bindings.gamepad.is_empty() {
                     self.control_bindings_by_entity.remove(&id);
                 } else {
                     self.control_bindings_by_entity.insert(id, bindings);
                 }
             }
-            EngineCommand::RunControlScript { id, control_key, path, source } => {
+            EngineCommand::Common(EngineCommandCommon::RunControlScript { id, control_key, path, source }) => {
                 self.execute_control_script(id, &control_key, &path, &source);
             }
-            EngineCommand::UnloadScript { id } => {
+            EngineCommand::Common(EngineCommandCommon::UnloadScript { id }) => {
                 log::info!("[IPC] UnloadScript: entity_id={}", id);
                 self.script_engine.detach_entity(id);
                 self.save_registry.script_sources.remove(&id);
             }
-            EngineCommand::LoadSprite { path, name } => {
+            EngineCommand::Common(EngineCommandCommon::LoadSprite { path, name }) => {
                 // Cargar PNG y almacenar sus dimensiones; no se crea entidad ECS.
                 match std::fs::read(&path) {
                     Ok(bytes) => {
@@ -1027,7 +1025,7 @@ EngineCommand::PlayAnimation { id, name } => {
                     }
                 }
             }
-            EngineCommand::RemoveSprite { path } => {
+            EngineCommand::Common(EngineCommandCommon::RemoveSprite { path }) => {
                 if self.sprite_store.remove(&path).is_some() {
                     send_event(&EngineEvent::SpriteRemoved { path: path.clone() });
                     log::info!("[sprite] eliminado: {}", path);
@@ -1035,19 +1033,19 @@ EngineCommand::PlayAnimation { id, name } => {
                     log::warn!("[sprite] intento de eliminar sprite inexistente: {}", path);
                 }
             }
-            EngineCommand::GetSpritesList => {
+            EngineCommand::Common(EngineCommandCommon::GetSpritesList) => {
                 let sprites: Vec<crate::ipc::SpriteInfo> = self.sprite_store
                     .iter()
                     .map(|(path, &(ref name, w, h))| crate::ipc::SpriteInfo { path: path.clone(), name: name.clone(), width: w, height: h })
                     .collect();
                 send_event(&EngineEvent::SpritesList { sprites });
             }
-            EngineCommand::LoadSound { path, name } => {
+            EngineCommand::Common(EngineCommandCommon::LoadSound { path, name }) => {
                 self.sound_store.insert(path.clone(), name.clone());
                 send_event(&EngineEvent::SoundLoaded { path: path.clone(), name: name.clone() });
                 
             }
-            EngineCommand::RemoveSound { path } => {
+            EngineCommand::Common(EngineCommandCommon::RemoveSound { path }) => {
                 if self.sound_store.remove(&path).is_some() {
                     send_event(&EngineEvent::SoundRemoved { path: path.clone() });
                     log::info!("[sound] eliminado: {}", path);
@@ -1055,14 +1053,14 @@ EngineCommand::PlayAnimation { id, name } => {
                     log::warn!("[sound] intento de eliminar sonido inexistente: {}", path);
                 }
             }
-            EngineCommand::GetSoundsList => {
+            EngineCommand::Common(EngineCommandCommon::GetSoundsList) => {
                 let sounds: Vec<crate::ipc::SoundInfo> = self.sound_store
                     .iter()
                     .map(|(path, name)| crate::ipc::SoundInfo { path: path.clone(), name: name.clone() })
                     .collect();
                 send_event(&EngineEvent::SoundsList { sounds });
             }
-            EngineCommand::LoadFont { path, name } => {
+            EngineCommand::Common(EngineCommandCommon::LoadFont { path, name }) => {
                 match validate_font_file(&path) {
                     Ok(()) => {
                         self.font_store.insert(path.clone(), name.clone());
@@ -1080,7 +1078,7 @@ EngineCommand::PlayAnimation { id, name } => {
                     }
                 }
             }
-            EngineCommand::RemoveFont { path } => {
+            EngineCommand::Common(EngineCommandCommon::RemoveFont { path }) => {
                 if self.font_store.remove(&path).is_some() {
                     send_event(&EngineEvent::FontRemoved { path: path.clone() });
                     log::info!("[font] eliminada: {}", path);
@@ -1088,7 +1086,7 @@ EngineCommand::PlayAnimation { id, name } => {
                     log::warn!("[font] intento de eliminar fuente inexistente: {}", path);
                 }
             }
-            EngineCommand::GetFontsList => {
+            EngineCommand::Common(EngineCommandCommon::GetFontsList) => {
                 let fonts: Vec<crate::ipc::FontInfo> = self
                     .font_store
                     .iter()
@@ -1099,7 +1097,7 @@ EngineCommand::PlayAnimation { id, name } => {
                     .collect();
                 send_event(&EngineEvent::FontsList { fonts });
             }
-            EngineCommand::LoadHudImage { path, name } => {
+            EngineCommand::Common(EngineCommandCommon::LoadHudImage { path, name }) => {
                 match crate::hud_image_asset::validate_hud_image_file(&path) {
                     Ok((width, height)) => {
                         self.hud_image_store.insert(
@@ -1126,7 +1124,7 @@ EngineCommand::PlayAnimation { id, name } => {
                     }
                 }
             }
-            EngineCommand::RemoveHudImage { path } => {
+            EngineCommand::Common(EngineCommandCommon::RemoveHudImage { path }) => {
                 if self.hud_image_store.remove(&path).is_some() {
                     send_event(&EngineEvent::HudImageRemoved { path: path.clone() });
                     log::info!("[hud-image] eliminada: {}", path);
@@ -1134,7 +1132,7 @@ EngineCommand::PlayAnimation { id, name } => {
                     log::warn!("[hud-image] intento de eliminar imagen inexistente: {}", path);
                 }
             }
-            EngineCommand::GetHudImagesList => {
+            EngineCommand::Common(EngineCommandCommon::GetHudImagesList) => {
                 let images: Vec<crate::ipc::HudImageInfo> = self
                     .hud_image_store
                     .iter()
@@ -1147,12 +1145,12 @@ EngineCommand::PlayAnimation { id, name } => {
                     .collect();
                 send_event(&EngineEvent::HudImagesList { images });
             }
-            EngineCommand::LoadBackgroundAsset { path, name } => {
+            EngineCommand::Common(EngineCommandCommon::LoadBackgroundAsset { path, name }) => {
                 self.background_store.insert(path.clone(), name.clone());
                 send_event(&EngineEvent::BackgroundAssetLoaded { path: path.clone(), name: name.clone() });
                 
             }
-            EngineCommand::RemoveBackgroundAsset { path } => {
+            EngineCommand::Common(EngineCommandCommon::RemoveBackgroundAsset { path }) => {
                 if self.background_store.remove(&path).is_some() {
                     send_event(&EngineEvent::BackgroundAssetRemoved { path: path.clone() });
                     log::info!("[background] eliminado: {}", path);
@@ -1160,15 +1158,15 @@ EngineCommand::PlayAnimation { id, name } => {
                     log::warn!("[background] intento de eliminar fondo inexistente: {}", path);
                 }
             }
-            EngineCommand::GetBackgroundsList => {
+            EngineCommand::Common(EngineCommandCommon::GetBackgroundsList) => {
                 let backgrounds: Vec<crate::ipc::BackgroundInfo> = self.background_store
                     .iter()
                     .map(|(path, name)| crate::ipc::BackgroundInfo { path: path.clone(), name: name.clone() })
                     .collect();
                 send_event(&EngineEvent::BackgroundsList { backgrounds });
             }
-            EngineCommand::ResendAllModelClips => {}
-            EngineCommand::ApplyEntityRestore {
+            EngineCommand::Common(EngineCommandCommon::ResendAllModelClips) => {}
+            EngineCommand::Common(EngineCommandCommon::ApplyEntityRestore {
                 id,
                 name,
                 transform,
@@ -1179,7 +1177,7 @@ EngineCommand::PlayAnimation { id, name } => {
                 omit_scale,
                 skip_transform,
                 apply_initial_animation_frame,
-            } => {
+            }) => {
                 self.apply_entity_restore_inner(
                     id,
                     name,
@@ -1193,10 +1191,10 @@ EngineCommand::PlayAnimation { id, name } => {
                     apply_initial_animation_frame.unwrap_or(true),
                 );
             }
-            EngineCommand::ImportScene(payload) => {
+            EngineCommand::Only2d(EngineCommand2dOnly::ImportScene(payload)) => {
                 self.import_scene(payload);
             }
-            EngineCommand::Shutdown => {}
+            EngineCommand::Common(EngineCommandCommon::Shutdown) => {}
         }
     }
 }

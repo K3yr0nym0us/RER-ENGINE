@@ -5,16 +5,7 @@ use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 
-use crate::ipc::{
-    send_load_progress, send_project_load_2d_complete_event, send_project_loaded_2d_event,
-    AnimationFrameData, ControlBindingsData, ControlScriptData, EngineCommand,
-    EntityRestoreAnimation, EntityRestorePhysics, EntityRestoreScript, EntityRestoreTransform,
-    HudImageInfo, ImportSceneCamera2d, ImportSceneEntity, ImportScenePayload, ImportSceneSprite,
-    ImportSceneWorld, PlayerUiScreenInfo, ProjectLoaded2dCamera2d, ProjectLoaded2dEvent,
-    ProjectLoaded2dSceneTab, ProjectLoaded2dWorld, SavePlayerUiButtonSnapshot,
-    SavePlayerUiImageSnapshot, SavePlayerUiObjectSnapshot, SavePlayerUiTextBoxSnapshot,
-    SaveUiScreenSnapshot,
-};
+use crate::ipc::{send_load_progress, send_project_load_2d_complete_event, send_project_loaded_2d_event, AnimationFrameData, ControlBindingsData, ControlScriptData, EngineCommand, EngineCommand2dOnly, EngineCommandCommon, EntityRestoreAnimation, EntityRestorePhysics, EntityRestoreScript, EntityRestoreTransform, HudImageInfo, ImportSceneCamera2d, ImportSceneEntity, ImportScenePayload, ImportSceneSprite, ImportSceneWorld, PlayerUiScreenInfo, ProjectLoaded2dCamera2d, ProjectLoaded2dEvent, ProjectLoaded2dSceneTab, ProjectLoaded2dWorld, SavePlayerUiButtonSnapshot, SavePlayerUiImageSnapshot, SavePlayerUiObjectSnapshot, SavePlayerUiTextBoxSnapshot, SaveUiScreenSnapshot};
 
 use super::State;
 
@@ -863,28 +854,28 @@ fn build_import_scene_payload(
 
 fn load_project_asset_stores(state: &mut State, project: &ProjectSaveData) {
     for sound in &project.sounds {
-        state.handle_command(EngineCommand::LoadSound {
+        state.handle_command(EngineCommand::Common(EngineCommandCommon::LoadSound {
             path: sound.path.clone(),
             name: sound.name.clone(),
-        });
+        }));
     }
     for font in &project.fonts {
-        state.handle_command(EngineCommand::LoadFont {
+        state.handle_command(EngineCommand::Common(EngineCommandCommon::LoadFont {
             path: font.path.clone(),
             name: font.name.clone(),
-        });
+        }));
     }
     for bg in &project.backgrounds {
-        state.handle_command(EngineCommand::LoadBackgroundAsset {
+        state.handle_command(EngineCommand::Common(EngineCommandCommon::LoadBackgroundAsset {
             path: bg.path.clone(),
             name: bg.name.clone(),
-        });
+        }));
     }
     for img in &project.hud_images {
-        state.handle_command(EngineCommand::LoadHudImage {
+        state.handle_command(EngineCommand::Common(EngineCommandCommon::LoadHudImage {
             path: img.path.clone(),
             name: img.name.clone(),
-        });
+        }));
     }
 }
 
@@ -950,39 +941,40 @@ fn apply_loaded_proyect_2d(
         return Ok(view);
     }
 
-    state.handle_command(EngineCommand::SetWorldSize {
+    state.handle_command(EngineCommand::Common(EngineCommandCommon::SetWorldSize {
         width: view.world.worldWidth,
         height: view.world.worldHeight,
-    });
-    state.handle_command(EngineCommand::SetGridVisible {
+        depth: None,
+    }));
+    state.handle_command(EngineCommand::Common(EngineCommandCommon::SetGridVisible {
         visible: view.world.gridVisible,
-    });
-    state.handle_command(EngineCommand::SetGridCellSize {
+    }));
+    state.handle_command(EngineCommand::Common(EngineCommandCommon::SetGridCellSize {
         size: view.world.gridCellSize,
-    });
+    }));
     let target_fps = if view.world.targetFps.is_finite() && view.world.targetFps > 0.0 {
         view.world.targetFps as u64
     } else {
         60
     };
-    state.handle_command(EngineCommand::SetTargetFps { fps: target_fps });
+    state.handle_command(EngineCommand::Common(EngineCommandCommon::SetTargetFps { fps: target_fps }));
     if let Some(gravity) = view.world.gravity {
-        state.handle_command(EngineCommand::SetGravity { gravity });
+        state.handle_command(EngineCommand::Common(EngineCommandCommon::SetGravity { gravity }));
     }
 
     if let Some(camera) = &view.camera2d {
-        state.handle_command(EngineCommand::SetCamera2d {
+        state.handle_command(EngineCommand::Only2d(EngineCommand2dOnly::SetCamera2d {
             x: camera.x,
             y: camera.y,
             half_h: camera.halfH,
-        });
+        }));
     }
 
     for sprite in &view.sprites {
-        state.handle_command(EngineCommand::LoadSprite {
+        state.handle_command(EngineCommand::Common(EngineCommandCommon::LoadSprite {
             path: sprite.path.clone(),
             name: sprite.name.clone(),
-        });
+        }));
     }
 
     if let Some(path) = view
@@ -990,9 +982,9 @@ fn apply_loaded_proyect_2d(
         .as_ref()
         .filter(|p| !p.trim().is_empty())
     {
-        state.handle_command(EngineCommand::LoadBackground {
+        state.handle_command(EngineCommand::Only2d(EngineCommand2dOnly::LoadBackground {
             path: path.clone(),
-        });
+        }));
     }
 
     import_player_ui_from_project(state, project);

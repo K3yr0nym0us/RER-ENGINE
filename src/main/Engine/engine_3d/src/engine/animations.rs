@@ -87,8 +87,8 @@ impl State {
                             let flip = self.resolve_animation_flip(entity_id, anim);
                             (
                                 f.path.clone(),
-                                f.pivot_x,
-                                f.pivot_y,
+                                f.resolved_pivot(anim.logical_w, anim.logical_h).0,
+                                f.resolved_pivot(anim.logical_w, anim.logical_h).1,
                                 anim.logical_w,
                                 anim.logical_h,
                                 f.src_x

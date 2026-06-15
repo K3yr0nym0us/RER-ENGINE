@@ -1,4 +1,5 @@
 mod animations;
+mod animation_frame_stubs;
 mod audio;
 mod commands;
 pub(crate) mod entity_restore;
