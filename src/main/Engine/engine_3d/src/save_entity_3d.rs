@@ -25,13 +25,13 @@ pub(crate) fn entity_category_for(state: &State, id: u32, meta: &EntitySaveMeta)
         if let Some(from_name) =
             rer_engine_shared::editor_defaults::infer_entity_category_from_numbered_name(&name)
         {
-            if matches!(from_name, "environment" | "character") {
+            if matches!(from_name, "environment" | "character" | "weapon" | "projectile") {
                 return from_name.to_string();
             }
         }
     }
     if let Some(cat) = meta.entity_category.as_deref() {
-        if matches!(cat, "environment" | "character") {
+        if matches!(cat, "environment" | "character" | "weapon" | "projectile") {
             return cat.to_string();
         }
         // `object` en meta puede ser genérico; el prefijo del nombre manda si es Environment_* / Object_*.
@@ -40,7 +40,7 @@ pub(crate) fn entity_category_for(state: &State, id: u32, meta: &EntitySaveMeta)
                 if let Some(from_name) =
                     rer_engine_shared::editor_defaults::infer_entity_category_from_numbered_name(&name)
                 {
-                    if matches!(from_name, "environment" | "character") {
+                    if matches!(from_name, "environment" | "character" | "weapon" | "projectile") {
                         return from_name.to_string();
                     }
                 }
@@ -153,6 +153,19 @@ pub(crate) fn build_entity_3d_snapshot(
     let model = entity_model_for(meta);
     let model_id = state.imported_model_registry.model_id_for_path(&model);
 
+    let attachment = state.entity_attachments.get(&id);
+    let attach_parent_id = attachment.map(|a| a.parent_id);
+    let attach_local_position = attachment.map(|a| a.local_position.to_array());
+    let attach_local_rotation = attachment.map(|a| {
+        [
+            a.local_rotation.x,
+            a.local_rotation.y,
+            a.local_rotation.z,
+            a.local_rotation.w,
+        ]
+    });
+    let attach_local_scale = attachment.map(|a| a.child_world_scale.to_array());
+
     SaveEntity3DSnapshot {
         id,
         name: state
@@ -176,6 +189,10 @@ pub(crate) fn build_entity_3d_snapshot(
         blueprint_id: state.entity_blueprint_ids.get(&id).cloned(),
         controls,
         texture_lod: None,
+        attach_parent_id,
+        attach_local_position,
+        attach_local_rotation,
+        attach_local_scale,
     }
 }
 

@@ -218,6 +218,14 @@ pub(crate) struct SavedEntity3D {
     pub blueprint_id: Option<String>,
     #[serde(default)]
     pub texture_lod: Option<crate::ipc::SaveEntityTextureLodSnapshot>,
+    #[serde(default, alias = "attachParentId")]
+    pub attach_parent_id: Option<u32>,
+    #[serde(default, alias = "attachLocalPosition")]
+    pub attach_local_position: Option<[f32; 3]>,
+    #[serde(default, alias = "attachLocalRotation")]
+    pub attach_local_rotation: Option<[f32; 4]>,
+    #[serde(default, alias = "attachLocalScale")]
+    pub attach_local_scale: Option<[f32; 3]>,
 }
 
 fn default_colision_on() -> bool {
@@ -317,6 +325,8 @@ struct PendingRestore {
     blueprint_id: Option<String>,
     entity_category: Option<String>,
     visual_model_path: Option<String>,
+    /// Id estable del manifest; debe coincidir al spawnear para restaurar fusiones.
+    saved_entity_id: u32,
 }
 
 fn file_size_label(path: &Path) -> String {
@@ -508,7 +518,7 @@ fn entity_model_cache_lookup(state: &State, entity: &SavedEntity3D) -> Result<St
 
 fn entity_library_category(category: &str) -> Option<String> {
     match category {
-        "environment" | "object" | "character" => Some(category.to_string()),
+        "environment" | "object" | "character" | "weapon" | "projectile" => Some(category.to_string()),
         _ => None,
     }
 }
@@ -948,6 +958,7 @@ fn build_generic_pending_restore(
         blueprint_id: entity.blueprint_id.clone(),
         entity_category: entity_library_category(&entity.category),
         visual_model_path: visual,
+        saved_entity_id: entity.id,
     }
 }
 
@@ -980,6 +991,7 @@ fn build_player_pending_restore_from_entity(entity: &SavedEntity3D) -> PendingRe
         blueprint_id: entity.blueprint_id.clone(),
         entity_category: None,
         visual_model_path: visual,
+        saved_entity_id: entity.id,
     }
 }
 
@@ -1181,6 +1193,7 @@ fn restore_player_from_manifest(
         &player.name,
         "[Player]",
         cache_key.as_deref(),
+        Some(player.id),
     );
 
     if let Some(ref model_id) = cache_key {
@@ -1280,20 +1293,6 @@ fn restore_player_from_manifest(
         path: char_path,
     });
     state.emit_play_character_view_changed(true);
-}
-
-fn spawn_entity_after_load_model_single(
-    state: &mut State,
-    path: &str,
-    entity_category: Option<&str>,
-    kind: &str,
-) -> Option<u32> {
-    let before = state.scenario_entities.len();
-    state.load_model_single(path, entity_category, kind);
-    if state.scenario_entities.len() > before {
-        return state.scenario_entities.get(before).copied();
-    }
-    state.scenario_entities.last().copied()
 }
 
 /// `player.position` en el manifest = pies en mundo (`build_player_snapshot`).
@@ -1586,19 +1585,18 @@ fn apply_loaded_proyect_3d_with_scene(
                     if !ensure_model_cached(state, &model_key) {
                         continue;
                     }
-                    let category = entity_library_category(&entity.category);
-                    let kind = if entity.category == "character" {
-                        "character"
-                    } else {
-                        "model"
-                    };
-                    if let Some(id) = spawn_entity_after_load_model_single(
-                        state,
+                    if let Ok(id) = state.spawn_cached_model_from_save(
                         &model_key,
-                        category.as_deref(),
-                        kind,
-                    )
-                    {
+                        pending.transform.position,
+                        pending.transform.rotation,
+                        pending.transform.scale,
+                        pending.name.as_deref(),
+                        pending.entity_category.clone(),
+                        pending.blueprint_id.clone(),
+                        pending.physics_enabled,
+                        &pending.physics_type,
+                        Some(pending.saved_entity_id),
+                    ) {
                         apply_full_entity_restore(state, id, &pending, &model_key, false, false);
                     }
                 }
@@ -1644,6 +1642,7 @@ fn apply_loaded_proyect_3d_with_scene(
                 pending.blueprint_id.clone(),
                 pending.physics_enabled,
                 &pending.physics_type,
+                Some(pending.saved_entity_id),
             ) {
                 apply_full_entity_restore(state, id, &pending, &path, false, false);
             }
@@ -1712,8 +1711,46 @@ fn apply_loaded_proyect_3d_with_scene(
             state.finalize_3d_placeholder_editor_scene();
         }
     }
+    restore_entity_attachments_after_scene_load(state, &view);
     state.restoring_save_manifest = false;
     Ok(view)
+}
+
+fn collect_saved_entity_attachments(
+    view: &ActiveSaveView,
+) -> Vec<crate::config_3d::entity_attachments::SavedEntityAttachment> {
+    let mut out = Vec::new();
+    let mut push = |entity: &SavedEntity3D| {
+        let (Some(parent_id), Some(local_position), Some(local_rotation), Some(child_world_scale)) = (
+            entity.attach_parent_id,
+            entity.attach_local_position,
+            entity.attach_local_rotation,
+            entity.attach_local_scale,
+        ) else {
+            return;
+        };
+        out.push(crate::config_3d::entity_attachments::SavedEntityAttachment {
+            entity_id: entity.id,
+            parent_id,
+            local_position,
+            local_rotation,
+            child_world_scale,
+        });
+    };
+    for entity in &view.entities {
+        push(entity);
+    }
+    if let Some(player) = &view.player {
+        push(player);
+    }
+    out
+}
+
+fn restore_entity_attachments_after_scene_load(state: &mut State, view: &ActiveSaveView) {
+    let saved = collect_saved_entity_attachments(view);
+    if !saved.is_empty() {
+        state.restore_entity_attachments_from_saved(&saved);
+    }
 }
 
 fn is_3d_placeholder_saved_scene(scene: &SavedScene) -> bool {
@@ -1963,6 +2000,10 @@ pub(crate) fn saved_scene_from_snapshot_payload(
             }),
             blueprint_id: e.blueprint_id.clone(),
             texture_lod: e.texture_lod.clone(),
+            attach_parent_id: e.attach_parent_id,
+            attach_local_position: e.attach_local_position,
+            attach_local_rotation: e.attach_local_rotation,
+            attach_local_scale: e.attach_local_scale,
         }
     }
 
@@ -2070,6 +2111,10 @@ pub(crate) fn build_fp_placeholder_saved_scene(id: u32, name: &str) -> SavedScen
             blueprint_id: None,
             texture_lod: None,
             model_id: None,
+            attach_parent_id: None,
+            attach_local_position: None,
+            attach_local_rotation: None,
+            attach_local_scale: None,
         },
         SavedEntity3D {
             id: 0,
@@ -2087,6 +2132,10 @@ pub(crate) fn build_fp_placeholder_saved_scene(id: u32, name: &str) -> SavedScen
             blueprint_id: None,
             texture_lod: None,
             model_id: None,
+            attach_parent_id: None,
+            attach_local_position: None,
+            attach_local_rotation: None,
+            attach_local_scale: None,
         },
         SavedEntity3D {
             id: 0,
@@ -2104,6 +2153,10 @@ pub(crate) fn build_fp_placeholder_saved_scene(id: u32, name: &str) -> SavedScen
             blueprint_id: None,
             texture_lod: None,
             model_id: None,
+            attach_parent_id: None,
+            attach_local_position: None,
+            attach_local_rotation: None,
+            attach_local_scale: None,
         },
     ];
 
@@ -2123,6 +2176,10 @@ pub(crate) fn build_fp_placeholder_saved_scene(id: u32, name: &str) -> SavedScen
         blueprint_id: None,
         texture_lod: None,
         model_id: None,
+        attach_parent_id: None,
+        attach_local_position: None,
+        attach_local_rotation: None,
+        attach_local_scale: None,
     };
 
     SavedScene {

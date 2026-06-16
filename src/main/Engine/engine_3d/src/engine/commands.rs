@@ -295,6 +295,7 @@ impl State {
                     blueprint_id,
                     physics_enabled,
                     &physics_type,
+                    None,
                 ) {
                     send_event(&EngineEvent::Error { message });
                 }
@@ -592,6 +593,7 @@ impl State {
                 if is_play_character {
                     self.emit_play_character_view_changed(false);
                 }
+                self.handle_entity_attachment_after_transform(&[id]);
             }
             EngineCommand::Common(EngineCommandCommon::SetEntityName { id, name, force }) => {
                 let next_name = name.trim();
@@ -747,6 +749,7 @@ impl State {
                 self.save_registry.remove_entity(id);
                 self.entity_blueprint_ids.remove(&id);
                 self.entity_colision.remove(&id);
+                self.clear_entity_attachments_for_removed(id);
                 if self.sun_entity == Some(id) {
                     self.sun_entity = None;
                 }
@@ -1237,6 +1240,9 @@ impl State {
             }
             EngineCommand::Only3d(EngineCommand3dOnly::ClearEditorUndoRedo) => {
                 self.clear_editor_undo_redo();
+            }
+            EngineCommand::Only3d(EngineCommand3dOnly::MergeEntities { ids }) => {
+                self.merge_entities(&ids);
             }
             EngineCommand::Common(EngineCommandCommon::ResendAllModelClips) => {
                 self.resend_all_model_clips_ready();

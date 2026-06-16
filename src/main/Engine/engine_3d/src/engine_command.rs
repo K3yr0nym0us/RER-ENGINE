@@ -137,4 +137,22 @@ pub enum EngineCommand3dOnly {
     DeleteEditorScene { scene_id: u32 },
     NotifyProjectSaved { extract_dir: String },
     ClearEditorUndoRedo,
+    MergeEntities { ids: Vec<u32> },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn deserialize_merge_entities_command() {
+        let json = r#"{"cmd":"merge_entities","ids":[101,202]}"#;
+        let cmd: EngineCommand = serde_json::from_str(json).expect("merge_entities IPC");
+        match cmd {
+            EngineCommand::Only3d(EngineCommand3dOnly::MergeEntities { ids }) => {
+                assert_eq!(ids, vec![101, 202]);
+            }
+            other => panic!("expected Only3d MergeEntities, got {other:?}"),
+        }
+    }
 }

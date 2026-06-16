@@ -38,7 +38,7 @@ pub(crate) fn is_play_character_visual_model_path(path: &str) -> bool {
 
 /// Entorno y objetos estáticos: colisión por AABB de malla.
 pub(crate) fn entity_category_uses_mesh_collision(category: Option<&str>) -> bool {
-    matches!(category, Some("environment") | Some("object"))
+    matches!(category, Some("environment") | Some("object") | Some("weapon") | Some("projectile"))
 }
 
 /// Ruta simbólica de plantilla (`[Player]`, `[EditorBox]`, …), no un archivo en disco.

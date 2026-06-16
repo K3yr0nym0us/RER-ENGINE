@@ -39,9 +39,27 @@ impl State {
         Some((radius, half_height, t.rotation, t.position))
     }
 
-    pub(crate) fn play_character_exclude_collider(&self) -> Option<rapier3d::prelude::ColliderHandle> {
-        self.play_character_entity
-            .and_then(|id| self.physics.collider_handle_for_entity(id))
+    /// Colliders que la cápsula de movimiento y la cámara FP no deben tratar como obstáculo
+    /// (jugador + accesorios fusionados al jugador).
+    pub(crate) fn play_character_movement_excluded_colliders(
+        &self,
+    ) -> Vec<rapier3d::prelude::ColliderHandle> {
+        let mut out = Vec::new();
+        let Some(player_id) = self.play_character_entity else {
+            return out;
+        };
+        if let Some(handle) = self.physics.collider_handle_for_entity(player_id) {
+            out.push(handle);
+        }
+        for (child_id, attachment) in &self.entity_attachments {
+            if attachment.parent_id != player_id {
+                continue;
+            }
+            if let Some(handle) = self.physics.collider_handle_for_entity(*child_id) {
+                out.push(handle);
+            }
+        }
+        out
     }
 
     /// `true` tras reemplazar el mesh por un archivo 3D (`.glb`/`.fbx`); el cubo `[Player]` no cuenta.
@@ -108,6 +126,7 @@ impl State {
         if let Some(t) = self.world.get_mut::<Transform>(id) {
             t.position = center;
         }
+        self.sync_attached_children_of(id);
     }
 
     /// Transform del jugador desde el panel Propiedades en editor: cuerpo solo, cámara intacta.
@@ -158,6 +177,7 @@ impl State {
         let new_feet = self.play_character_feet_position();
         if (new_feet - feet).length_squared() > 1e-10 {
             self.sync_play_camera_on_player_feet_moved(feet, new_feet);
+            self.sync_attached_children_of(id);
         }
 
         // Editor: cuerpo independiente del blanco orbital (cámara = gizmo). Play acopla en set_play_character_feet_position.
@@ -330,6 +350,7 @@ impl State {
         let new_feet = self.play_character_feet_position();
         if (new_feet - old_feet).length_squared() > 1e-10 {
             self.sync_play_camera_on_player_feet_moved(old_feet, new_feet);
+            self.sync_attached_children_of(id);
         }
         self.camera.target = new_feet;
         if snap_to_ground {
@@ -421,6 +442,7 @@ impl State {
         display_name: &str,
         marker_path: &str,
         visual_model_path: Option<&str>,
+        desired_id: Option<EntityId>,
     ) -> EntityId {
         if let Some(id) = self.play_character_entity {
             if self.world.get::<Transform>(id).is_some() {
@@ -438,7 +460,16 @@ impl State {
         } else {
             display_name
         };
-        let id = self.world.spawn(Some(label));
+        let id = if let Some(desired) = desired_id.filter(|&d| d != 0) {
+            if self.world.spawn_with_id(desired, Some(label)) {
+                desired
+            } else {
+                log::warn!("[restore] id jugador guardado {desired} en uso; generando id nuevo");
+                self.world.spawn(Some(label))
+            }
+        } else {
+            self.world.spawn(Some(label))
+        };
         log::info!("[restore] jugador creado id={id}");
         self.character_entities.push(id);
         self.scenario_entities.push(id);
@@ -731,11 +762,5 @@ impl State {
     pub(crate) fn play_character_capsule_wire_dims(&self) -> Option<(Vec3, f32, f32)> {
         let cap = self.play_character_collision_capsule();
         Some((self.play_character_feet_position(), cap.radius, cap.height))
-    }
-
-    pub(crate) fn play_character_exclude_collider_for_controller(
-        &self,
-    ) -> Option<rapier3d::prelude::ColliderHandle> {
-        self.play_character_exclude_collider()
     }
 }

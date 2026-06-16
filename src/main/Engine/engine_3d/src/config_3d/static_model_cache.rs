@@ -942,6 +942,7 @@ impl State {
         physics_enabled: bool,
         physics_type: &str,
         local_bounds: ([f32; 3], [f32; 3]),
+        desired_id: Option<EntityId>,
     ) -> EntityId {
         let key = self.model_path_key(path);
         let resolved_category = entity_category.clone().or_else(|| {
@@ -951,7 +952,16 @@ impl State {
                 None
             }
         });
-        let id = self.world.spawn(Some(entity_name));
+        let id = if let Some(desired) = desired_id.filter(|&d| d != 0) {
+            if self.world.spawn_with_id(desired, Some(entity_name)) {
+                desired
+            } else {
+                log::warn!("[restore] id guardado {desired} en uso; generando id nuevo");
+                self.world.spawn(Some(entity_name))
+            }
+        } else {
+            self.world.spawn(Some(entity_name))
+        };
         self.world.insert(id, MeshComponent { mesh_idx, tex_idx });
         if kind == "character" && !self.character_entities.contains(&id) {
             self.character_entities.push(id);
@@ -1022,6 +1032,7 @@ impl State {
         blueprint_id: Option<String>,
         physics_enabled: bool,
         physics_type: &str,
+        desired_id: Option<EntityId>,
     ) -> Result<EntityId, String> {
         if let Err(e) = self.ensure_static_model_cached(path) {
             return Err(e);
@@ -1062,6 +1073,7 @@ impl State {
             physics_enabled,
             physics_type,
             part.local_bounds,
+            desired_id,
         ))
     }
 
@@ -1100,6 +1112,7 @@ impl State {
             false,
             "static",
             part.local_bounds,
+            None,
         )
     }
 

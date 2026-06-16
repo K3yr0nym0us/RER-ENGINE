@@ -278,6 +278,8 @@ const NUMBERED_NAME_CATEGORY: Record<string, Entity3DCategory> = {
   Object: 'object',
   Character: 'character',
   Player: 'player',
+  Weapon: 'weapon',
+  Projectile: 'projectile',
   Sun: 'sun',
   Ground: 'ground',
 }
@@ -287,6 +289,8 @@ const ENTITY_3D_CATEGORY_VALUES: Entity3DCategory[] = [
   'character',
   'player',
   'object',
+  'weapon',
+  'projectile',
   'sun',
   'ground',
 ]
@@ -400,6 +404,8 @@ export function blueprintEntityCategoryForEngine(
   const norm = normalizeBlueprintCategory(category)
   if (norm === 'environment') return 'environment'
   if (norm === 'object') return 'object'
+  if (norm === 'weapon') return 'weapon'
+  if (norm === 'projectile') return 'projectile'
   if (norm === 'character' || norm === 'player') return 'character'
   return undefined
 }

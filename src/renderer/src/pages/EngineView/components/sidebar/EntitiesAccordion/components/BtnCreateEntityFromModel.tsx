@@ -1,12 +1,20 @@
 import { PlusLg } from 'react-bootstrap-icons';
 
 import { CreateEntityFromModelModalBody } from './CreateEntityFromModelModalBody';
+import type { EntityCategory } from '@shared-types';
 import type { EntityMeta } from '@engine';
 import { useContextEngine } from '@engine';
 import { useModal } from '@modal';
 import { useTraslate } from '@hooks';
 
-export type ModelEntityIntent = 'environment' | 'character' | 'object';
+export type ModelEntityIntent = 'environment' | 'character' | 'object' | 'weapon' | 'projectile';
+
+const ENTITY_CATEGORY_BY_INTENT: Partial<Record<ModelEntityIntent, EntityCategory>> = {
+  environment: 'environment',
+  object: 'object',
+  weapon: 'weapon',
+  projectile: 'projectile',
+};
 
 const INTENT_CONFIG: Record<
   ModelEntityIntent,
@@ -30,6 +38,18 @@ const INTENT_CONFIG: Record<
     labelKey: 'Create object',
     kind: 'model',
   },
+  weapon: {
+    btnClass: 'btn-outline-danger',
+    titleKey: 'Create weapon',
+    labelKey: 'Create weapon',
+    kind: 'model',
+  },
+  projectile: {
+    btnClass: 'btn-outline-secondary',
+    titleKey: 'Create projectile',
+    labelKey: 'Create projectile',
+    kind: 'model',
+  },
 };
 
 interface Props {
@@ -49,15 +69,7 @@ export function BtnCreateEntityFromModel({ intent }: Props) {
         <CreateEntityFromModelModalBody
           intent={intent}
           onSpawn={(path) => {
-            spawnModel(
-              path,
-              config.kind,
-              intent === 'environment'
-                ? 'environment'
-                : intent === 'object'
-                  ? 'object'
-                  : undefined,
-            );
+            spawnModel(path, config.kind, ENTITY_CATEGORY_BY_INTENT[intent]);
           }}
         />
       ),

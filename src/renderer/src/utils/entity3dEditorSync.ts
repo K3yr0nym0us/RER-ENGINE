@@ -143,13 +143,43 @@ export function entity3dToMeta(entity: Entity3D): EntityMeta {
 			? { entityCategory: 'environment' as const }
 			: entity3dCategory === 'object'
 				? { entityCategory: 'object' as const }
-				: entity3dCategory === 'character'
-					? { entityCategory: 'character' as const }
-					: {}),
+				: entity3dCategory === 'weapon'
+					? { entityCategory: 'weapon' as const }
+					: entity3dCategory === 'projectile'
+						? { entityCategory: 'projectile' as const }
+						: entity3dCategory === 'character'
+						? { entityCategory: 'character' as const }
+						: {}),
 		...(visualModelPath && visualModelPath !== path
 			? { visualModelPath }
 			: {}),
+		...(entity.attach_parent_id != null
+			? { attachParentId: entity.attach_parent_id }
+			: {}),
 	};
+}
+
+/** True si cada hijo de la selección ya está fusionado a un padre dentro de la misma selección. */
+export function isMultiSelectionMerged(
+	ids: number[],
+	entityMeta: Record<number, EntityMeta>,
+): boolean {
+	if (ids.length < 2) return false;
+	const selected = new Set(ids);
+	let attachedChildren = 0;
+	let parentsInSelection = 0;
+	for (const id of ids) {
+		const parentId = entityMeta[id]?.attachParentId;
+		if (parentId != null && selected.has(parentId)) {
+			attachedChildren += 1;
+		}
+	}
+	for (const id of ids) {
+		if (ids.some((other) => entityMeta[other]?.attachParentId === id)) {
+			parentsInSelection += 1;
+		}
+	}
+	return attachedChildren > 0 && attachedChildren === ids.length - parentsInSelection;
 }
 
 /** Vista runtime FP (refs del editor) desde `player` + `config_camera` del manifest. */

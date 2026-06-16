@@ -102,8 +102,8 @@ export function isGroundPath(p: string | null | undefined): boolean {
   return entityPathMarker(p) === '[Ground]'
 }
 
-/** Categoría IPC del motor para colisión/nombrado (`environment` | `object` | `character`). */
-export type EntityCategory = 'environment' | 'object' | 'character'
+/** Categoría IPC del motor para colisión/nombrado. */
+export type EntityCategory = 'environment' | 'object' | 'character' | 'weapon' | 'projectile'
 
 export function isPlayerEntity(
   id: number,
@@ -127,6 +127,8 @@ export type Entity3DCategory =
   | 'character'
   | 'player'
   | 'object'
+  | 'weapon'
+  | 'projectile'
   | 'sun'
   | 'ground'
 
@@ -164,6 +166,12 @@ export interface Entity3D {
   visualScriptRhai?: string
   blueprint_id?: string
   controls?: SavedControls
+  /** Fusión en editor: id del padre (solo en entidades hijas). */
+  attach_parent_id?: number
+  attach_local_position?: [number, number, number]
+  attach_local_rotation?: [number, number, number, number]
+  /** Escala mundial del hijo al fusionar (no hereda escala del padre). */
+  attach_local_scale?: [number, number, number]
 }
 
 /** Plantilla (`project.blueprints[]` / manifest). */

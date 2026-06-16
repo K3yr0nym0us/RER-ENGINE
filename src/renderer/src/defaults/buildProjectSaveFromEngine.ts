@@ -75,6 +75,23 @@ type EngineEntitySnapshotWire = Entity3D & {
 	physics_enabled?: boolean
 }
 
+function pickEntityFusionFields(
+	raw: EngineEntitySnapshotWire,
+): Pick<
+	Entity3D,
+	'attach_parent_id' | 'attach_local_position' | 'attach_local_rotation' | 'attach_local_scale'
+> {
+	const out: Pick<
+		Entity3D,
+		'attach_parent_id' | 'attach_local_position' | 'attach_local_rotation' | 'attach_local_scale'
+	> = {}
+	if (raw.attach_parent_id != null) out.attach_parent_id = raw.attach_parent_id
+	if (raw.attach_local_position != null) out.attach_local_position = raw.attach_local_position
+	if (raw.attach_local_rotation != null) out.attach_local_rotation = raw.attach_local_rotation
+	if (raw.attach_local_scale != null) out.attach_local_scale = raw.attach_local_scale
+	return out
+}
+
 function kindToEntityCategory(kind?: string): Entity3D['category'] | undefined {
 	switch (kind) {
 		case 'character':
@@ -101,6 +118,7 @@ function normalizeEngineEntitySnapshot(raw: EngineEntitySnapshotWire): Entity3D 
 	const colision = raw.colision ?? Boolean(raw.physics_enabled)
 	return {
 		...raw,
+		...pickEntityFusionFields(raw),
 		model,
 		category,
 		colision,

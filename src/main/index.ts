@@ -1425,8 +1425,17 @@ function serializeScriptsToFiles(
     const controls =
       entity.controls ??
       (entity as Entity3D & { control_bindings?: SavedControls }).control_bindings
+    const fusion: Pick<
+      Entity3D,
+      'attach_parent_id' | 'attach_local_position' | 'attach_local_rotation' | 'attach_local_scale'
+    > = {}
+    if (entity.attach_parent_id != null) fusion.attach_parent_id = entity.attach_parent_id
+    if (entity.attach_local_position != null) fusion.attach_local_position = entity.attach_local_position
+    if (entity.attach_local_rotation != null) fusion.attach_local_rotation = entity.attach_local_rotation
+    if (entity.attach_local_scale != null) fusion.attach_local_scale = entity.attach_local_scale
     return {
       ...entity,
+      ...fusion,
       scripts: entity.scripts?.map((script, idx) =>
         saveScript(script, [entityFolder], `script_${idx + 1}`),
       ),

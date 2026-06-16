@@ -140,6 +140,7 @@ const SILENT_ENGINE_EVENTS = new Set<string>([
 	'camera_2d_updated',
 	'animation_logical_resolved',
 	'multi_selection_transformed',
+	'multi_select_changed',
 	'autosave_tick',
 	'atlas_exhausted',
 	'preview_playing_changed',
@@ -172,6 +173,9 @@ const SILENT_ENGINE_EVENTS = new Set<string>([
 	'plane_tool_ready',
 	'tool_cancelled',
 	'trigger_exited',
+	'graphics_texture_tier_changed',
+	'texture_detail_distance_changed',
+	'model_clips_ready',
 ]);
 
 /** Eventos IPC que no deben duplicar `[Carga]` durante carga de escena o plantilla 3D al arrancar. */
@@ -374,6 +378,23 @@ function panelLogLineForEngineEvent(
 
 	const baselineLine = panelLogLineForBaselineSpawn(event, refs, projectType);
 	if (baselineLine != null) return baselineLine;
+
+	if (event.event === 'entities_merged') {
+		const parentId = event.parent_id as number;
+		const childIds = (event.child_ids as number[] | undefined) ?? [];
+		return `[Fusión] ${childIds.length} entidad(es) vinculadas al padre ${parentId}`;
+	}
+
+	if (event.event === 'entities_attachments_restored') {
+		const count = event.count as number;
+		return count > 0 ? `[Fusión] ${count} vínculo(s) restaurados al cargar escena` : null;
+	}
+
+	if (event.event === 'model_loaded') {
+		if (shouldSilenceEngineEventLog(event.event, refs, projectType)) return null;
+		const name = (event.name as string | undefined)?.trim() || 'entidad';
+		return `[Modelo] Instanciado «${name}»`;
+	}
 
 	if (shouldSilenceEngineEventLog(event.event, refs, projectType)) return null;
 	return undefined;
@@ -2379,6 +2400,34 @@ export function createEngineEventHandler({
 		if (event.event === 'multi_select_changed') {
 			const e = event as unknown as { ids: number[] };
 			dispatch({ type: 'SET_MULTI_SELECT', payload: e.ids });
+			if (activeEntityPropertiesHandlerRef.current) {
+				pushEntityPropertiesPatch(activeEntityPropertiesHandlerRef.current);
+			}
+		}
+
+		if (event.event === 'entities_merged') {
+			const e = event as { parent_id?: number; child_ids?: number[] };
+			const parentId = e.parent_id;
+			const childIds = e.child_ids ?? [];
+			if (parentId != null) {
+				for (const childId of childIds) {
+					if (!refs.entityMetaRef.current[childId]) {
+						refs.entityMetaRef.current[childId] = {
+							kind: 'model',
+							path: '',
+							physicsEnabled: false,
+							physicsType: 'static',
+						};
+					}
+					refs.entityMetaRef.current[childId].attachParentId = parentId;
+				}
+				if (childIds.length > 0) {
+					dispatch({
+						type: 'SET_MULTI_SELECT',
+						payload: [...new Set([parentId, ...childIds])],
+					});
+				}
+			}
 			if (activeEntityPropertiesHandlerRef.current) {
 				pushEntityPropertiesPatch(activeEntityPropertiesHandlerRef.current);
 			}

@@ -124,6 +124,9 @@ pub struct State {
     pub(crate) entity_blueprint_ids: std::collections::HashMap<EntityId, String>,
     /// Colisión de malla Rapier on/off por entidad (`docs/Entities_Model_3D.yaml`).
     pub(crate) entity_colision: std::collections::HashMap<EntityId, bool>,
+    /// Hijo → padre + transform local (fusión de entidades en editor).
+    pub(crate) entity_attachments:
+        std::collections::HashMap<EntityId, crate::config_3d::entity_attachments::EntityAttachmentLocal>,
     pub preview_playing: bool,
     /// Edición de UI del jugador (vista play + cuadrícula de trabajo).
     pub(crate) player_ui_edit_active: bool,

@@ -130,6 +130,7 @@ export const ENGINE_COMMANDS_3D_ONLY = [
   'delete_editor_scene',
   'notify_project_saved',
   'clear_editor_undo_redo',
+  'merge_entities',
 ] as const
 
 function toSet<T extends string>(items: readonly T[]): ReadonlySet<string> {

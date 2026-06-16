@@ -173,9 +173,13 @@ export function createEngineActions({
 				? 'environment'
 				: category === 'object'
 					? 'object'
-					: kind === 'character'
-						? 'character'
-						: undefined;
+					: category === 'weapon'
+						? 'weapon'
+						: category === 'projectile'
+							? 'projectile'
+							: kind === 'character'
+								? 'character'
+								: undefined;
 		sendMotor({
 			cmd: 'load_model',
 			path,

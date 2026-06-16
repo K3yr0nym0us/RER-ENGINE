@@ -148,6 +148,15 @@ pub struct SaveEntity3DSnapshot {
     pub controls: Option<ControlBindingsData>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub texture_lod: Option<SaveEntityTextureLodSnapshot>,
+    /// Padre de fusión (entidad ancla; esta entidad es el hijo).
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "attachParentId")]
+    pub attach_parent_id: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "attachLocalPosition")]
+    pub attach_local_position: Option<[f32; 3]>,
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "attachLocalRotation")]
+    pub attach_local_rotation: Option<[f32; 4]>,
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "attachLocalScale")]
+    pub attach_local_scale: Option<[f32; 3]>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -573,6 +582,15 @@ pub enum EngineEvent {
     /// Emitido cuando el usuario mantiene Ctrl y hace click añadiendo/quitando entidades
     /// a la selección múltiple. `ids` contiene todos los IDs actualmente seleccionados.
     MultiSelectChanged { ids: Vec<u32> },
+    /// Entidades fusionadas en editor (padre + hijos con offset local).
+    #[serde(rename = "entities_merged")]
+    EntitiesMerged {
+        parent_id: u32,
+        child_ids: Vec<u32>,
+    },
+    /// Vínculos de fusión restaurados al cargar escena desde `.save`.
+    #[serde(rename = "entities_attachments_restored")]
+    EntitiesAttachmentsRestored { count: usize },
     /// Vista del personaje jugable (pies, cámara y transform del mesh).
     #[serde(rename = "play_character_view_changed")]
     PlayCharacterViewChanged {
@@ -797,7 +815,7 @@ pub struct ModelInfo {
 pub fn normalize_model_library_category(raw: Option<&str>) -> Option<String> {
     let s = raw?.trim();
     match s {
-        "character" | "environment" | "object" => Some(s.to_string()),
+        "character" | "environment" | "object" | "weapon" | "projectile" => Some(s.to_string()),
         _ => None,
     }
 }
@@ -892,7 +910,7 @@ pub fn enrich_blueprint_placement_meta(
 pub fn normalize_placement_entity_category(raw: Option<&str>) -> Option<String> {
     let s = raw?.trim();
     match s {
-        "environment" | "object" | "character" => Some(s.to_string()),
+        "environment" | "object" | "character" | "weapon" | "projectile" => Some(s.to_string()),
         "player" => Some("character".to_string()),
         "sun" => Some("sun".to_string()),
         "ground" => Some("ground".to_string()),

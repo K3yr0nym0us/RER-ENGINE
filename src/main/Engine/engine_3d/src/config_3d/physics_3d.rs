@@ -1,6 +1,6 @@
 // ── Física 3D — integración con Rapier3D ─────────────────────────────────────
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use glam::Vec3;
 use rapier3d::na::{Isometry, Quaternion, Translation3, UnitQuaternion};
@@ -371,14 +371,6 @@ impl PhysicsWorld {
         ))
     }
 
-    fn query_filter(exclude_collider: Option<ColliderHandle>) -> QueryFilter<'static> {
-        let mut filter = QueryFilter::default();
-        if let Some(handle) = exclude_collider {
-            filter = filter.exclude_collider(handle);
-        }
-        filter
-    }
-
     /// El jugador FP usa shape-cast (no cuerpo Rapier): empuja dinámicos al contactar.
     fn apply_character_push_to_dynamic_hit(
         &mut self,
@@ -413,13 +405,13 @@ impl PhysicsWorld {
         body.wake_up(true);
     }
 
-    /// Distancia al primer obstáculo a lo largo de un rayo (excluye colisionador opcional).
+    /// Distancia al primer obstáculo a lo largo de un rayo (ignora colliders en `exclude_colliders`).
     pub(crate) fn raycast_first_hit_distance(
         &mut self,
         from: Vec3,
         direction: Vec3,
         max_dist: f32,
-        exclude_collider: Option<ColliderHandle>,
+        exclude_colliders: &[ColliderHandle],
     ) -> Option<f32> {
         if max_dist <= 1e-6 {
             return None;
@@ -429,6 +421,17 @@ impl PhysicsWorld {
             return None;
         }
         self.refresh_queries();
+        let excluded: HashSet<ColliderHandle> = exclude_colliders.iter().copied().collect();
+        let filter = if excluded.is_empty() {
+            QueryFilter::default()
+        } else if excluded.len() == 1 {
+            QueryFilter::default().exclude_collider(*excluded.iter().next().unwrap())
+        } else {
+            QueryFilter {
+                predicate: Some(&|handle, _| !excluded.contains(&handle)),
+                ..QueryFilter::default()
+            }
+        };
         let ray = Ray::new(
             point![from.x, from.y, from.z],
             vector![dir.x, dir.y, dir.z],
@@ -440,7 +443,7 @@ impl PhysicsWorld {
                 &ray,
                 max_dist,
                 true,
-                Self::query_filter(exclude_collider),
+                filter,
             )
             .map(|(_, hit)| hit.time_of_impact)
     }
@@ -519,11 +522,21 @@ impl PhysicsWorld {
     pub(crate) fn floor_probe(
         &mut self,
         feet: Vec3,
-        exclude_collider: Option<ColliderHandle>,
+        exclude_colliders: &[ColliderHandle],
     ) -> Option<f32> {
         self.refresh_queries();
 
-        let filter = Self::query_filter(exclude_collider);
+        let excluded: HashSet<ColliderHandle> = exclude_colliders.iter().copied().collect();
+        let filter = if excluded.is_empty() {
+            QueryFilter::default()
+        } else if excluded.len() == 1 {
+            QueryFilter::default().exclude_collider(*excluded.iter().next().unwrap())
+        } else {
+            QueryFilter {
+                predicate: Some(&|handle, _| !excluded.contains(&handle)),
+                ..QueryFilter::default()
+            }
+        };
         // SKIN hacia arriba: arranca el ray ligeramente sobre los pies para no partir
         // dentro de un piso con micro-penetración. PROBE: cuánto buscar suelo abajo.
         const SKIN: f32 = 0.02;
@@ -567,7 +580,7 @@ impl PhysicsWorld {
         radius: f32,
         half_height: f32,
         _ground_probe: f32,
-        exclude_collider: Option<ColliderHandle>,
+        exclude_colliders: &[ColliderHandle],
     ) -> (Vec3, bool) {
         let up = up.normalize_or_zero();
         let radius = radius.max(0.05);
@@ -583,7 +596,7 @@ impl PhysicsWorld {
                 horizontal,
                 radius,
                 half_height,
-                Self::query_filter(exclude_collider),
+                exclude_colliders,
             );
         }
 
@@ -597,7 +610,7 @@ impl PhysicsWorld {
                 vertical_motion,
                 radius,
                 half_height,
-                Self::query_filter(exclude_collider),
+                exclude_colliders,
             );
         }
 
@@ -605,7 +618,7 @@ impl PhysicsWorld {
         let on_floor = if velocity.y > 0.0 {
             false
         } else {
-            match self.floor_probe(feet_pos, exclude_collider) {
+            match self.floor_probe(feet_pos, exclude_colliders) {
                 Some(ground_y) => {
                     // Pega los pies EXACTAMENTE al suelo: nada de flotar 1-2 cm.
                     feet_pos.y = ground_y;
@@ -625,13 +638,25 @@ impl PhysicsWorld {
         movement: Vec3,
         radius: f32,
         half_height: f32,
-        filter: QueryFilter,
+        exclude_colliders: &[ColliderHandle],
     ) -> Vec3 {
         if movement.length_squared() <= 1e-6 {
             return feet;
         }
 
         self.refresh_queries();
+
+        let excluded: HashSet<ColliderHandle> = exclude_colliders.iter().copied().collect();
+        let filter = if excluded.is_empty() {
+            QueryFilter::default()
+        } else if excluded.len() == 1 {
+            QueryFilter::default().exclude_collider(*excluded.iter().next().unwrap())
+        } else {
+            QueryFilter {
+                predicate: Some(&|handle, _| !excluded.contains(&handle)),
+                ..QueryFilter::default()
+            }
+        };
 
         let capsule = Capsule::new_y(half_height, radius);
         let up = up.normalize_or_zero();

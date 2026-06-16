@@ -9,6 +9,7 @@ import {
 	BoxSeam,
 	PlayFill,
 	StopFill,
+	Link45deg,
 } from 'react-bootstrap-icons'
 
 import { AppTooltip } from '@components'
@@ -38,6 +39,7 @@ export function EntityPropertiesModalContent({
 		projectType,
 		selectedEntity,
 		multiSelectedIds,
+		multiSelectAlreadyMerged,
 		isCharacter,
 		isEnvironment,
 		isPlayer,
@@ -146,7 +148,22 @@ export function EntityPropertiesModalContent({
 				<p className="text-secondary fst-italic small mb-0 px-1">
 					{multiSelectedIds.length} {t('entities selected')}
 				</p>
-				<div className="mt-3 pt-2 border-top border-secondary">
+				<div className="mt-3 pt-2 border-top border-secondary d-flex flex-column gap-2">
+					{is3D &&
+						(multiSelectAlreadyMerged ? (
+							<p className="text-secondary small mb-0 px-1 fst-italic">
+								{t('Entities already merged')}
+							</p>
+						) : (
+							<button
+								type="button"
+								className="btn btn-sm btn-outline-primary w-100"
+								onClick={() => onAction({ action: 'mergeEntities', ids: multiSelectedIds })}
+							>
+								<Link45deg className="me-2" />
+								{t('Merge entities')}
+							</button>
+						))}
 					<button
 						type="button"
 						className="btn btn-sm btn-outline-danger w-100"

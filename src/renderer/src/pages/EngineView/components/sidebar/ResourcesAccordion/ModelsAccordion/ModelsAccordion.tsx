@@ -17,6 +17,8 @@ const ModelsAccordion = () => {
     character: models.filter((m) => m.category === 'character'),
     environment: models.filter((m) => m.category === 'environment'),
     object: models.filter((m) => m.category === 'object' || m.category == null),
+    weapon: models.filter((m) => m.category === 'weapon'),
+    projectile: models.filter((m) => m.category === 'projectile'),
   };
 
   const handleDeleteModel = (model: ModelInfo) => {
@@ -47,8 +49,10 @@ const ModelsAccordion = () => {
         <SidebarSubAccordion>
           {([
             ['character', t('Characters')],
-            ['environment', t('Environment')],
+            ['environment', t('Environments')],
             ['object', t('Objects')],
+            ['weapon', t('Weapons')],
+            ['projectile', t('Projectiles')],
           ] as const).map(([key, label]) => {
             const list = grouped[key];
             return (
@@ -61,7 +65,7 @@ const ModelsAccordion = () => {
                       <li className="text-muted small">{t('No models loaded')}</li>
                     )}
                     {list.map((model) => (
-                      <li key={model.path} className="mb-1">
+                      <li key={`${key}-${model.model_id ?? model.path}`} className="mb-1">
                         <span className="d-flex align-items-center gap-2 border rounded p-1 ps-2">
                           <Box className="flex-shrink-0" />
                           <AppTooltip content={model.name} place="top">

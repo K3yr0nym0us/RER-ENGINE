@@ -65,6 +65,8 @@
   "You cannot delete this scene because it is the only one in the project.": "No puedes eliminar esta escena porque es la única del proyecto.",
   "There must be at least one scene to keep the editor in a valid state.": "Debe existir al menos una escena para mantener el editor en un estado válido.",
   "Delete": "Eliminar",
+  "Merge entities": "Fusionar entidades",
+  "Entities already merged": "Entidades ya fusionadas",
   "This action will delete the selected scene.": "Esta acción eliminará la escena seleccionada.",
   "Duplicate": "Duplicar",
   "A full copy of this scene will be created.": "Se creará una copia completa de esta escena.",
@@ -114,6 +116,7 @@
 
   "Create entity": "Crear entidad",
   "Environment": "Entorno",
+  "Environments": "Entornos",
   "Load model (.glb/.gltf/.fbx)": "Cargar modelo (.glb/.gltf/.fbx)",
   "Models": "Modelos",
   "No models loaded": "Sin modelos cargados",
@@ -126,6 +129,10 @@
   "No scenarios loaded": "Sin escenarios cargados",
   "Characters": "Personajes",
   "Objects": "Objetos",
+  "Weapons": "Armas",
+  "Create weapon": "Crear arma",
+  "Projectiles": "Proyectiles",
+  "Create projectile": "Crear proyectil",
 
   "Confirm action": "Confirmar acción",
   "Are you sure you want to {action} this entity?": "¿Estás seguro de que deseas {action} esta entidad?",

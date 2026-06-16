@@ -1153,6 +1153,8 @@ export interface EntityMeta {
 	entity3dCategory?: Entity3DCategory
 	/** Modelo visual cargado (distinto de path lógico `[Player]` / `[EditorBox]`). */
 	visualModelPath?: string
+	/** Padre de fusión 3D (esta entidad es hijo). */
+	attachParentId?: number
 }
 
 export interface PendingRestore {

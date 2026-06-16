@@ -6,7 +6,7 @@ import { ModelPickerEntry } from './ModelPickerEntry';
 
 interface Props {
   onSpawn: (path: string) => void;
-  intent: 'environment' | 'character' | 'object';
+  intent: 'environment' | 'character' | 'object' | 'weapon' | 'projectile';
   /** Lista inyectada por modal Electron (snapshot IPC al abrir). */
   models?: ModelInfo[];
   hintText?: string;
@@ -44,6 +44,8 @@ export function CreateEntityFromModelModalBody({
   const filteredModels = models.filter((model) => {
     if (intent === 'character') return model.category === 'character';
     if (intent === 'environment') return model.category === 'environment';
+    if (intent === 'weapon') return model.category === 'weapon';
+    if (intent === 'projectile') return model.category === 'projectile';
     return model.category === 'object' || model.category == null;
   });
 

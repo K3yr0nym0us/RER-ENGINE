@@ -20,6 +20,7 @@ import {
   nextBlueprintTemplateName,
   resolveBlueprintModelPath,
 } from '../../../../../utils/blueprintModelPath';
+import { isMultiSelectionMerged } from '../../../../../utils/entity3dEditorSync';
 
 export function PropertiesAccordion({ projectType }: { projectType?: string }) {
   const { t } = useTraslate();
@@ -72,7 +73,12 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
   };
   
   const is2D = projectType === '2D'
+  const is3D = projectType === '3D'
   const isMultiSelect = multiSelectedIds.length > 1
+  const multiSelectAlreadyMerged = isMultiSelectionMerged(
+    multiSelectedIds,
+    entityMetaRef.current,
+  )
 
   useEffect(() => {
     setEntityNameDraft(selectedEntity?.name ?? '');
@@ -128,7 +134,22 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
         <p className="text-secondary fst-italic small mb-0 px-1">
           {multiSelectedIds.length} {t('entities selected')}
         </p>
-        <div className="mt-3 pt-2 border-top border-secondary">
+        <div className="mt-3 pt-2 border-top border-secondary d-flex flex-column gap-2">
+          {is3D &&
+            (multiSelectAlreadyMerged ? (
+              <p className="text-secondary small mb-0 px-1 fst-italic">
+                {t('Entities already merged')}
+              </p>
+            ) : (
+              <button
+                type="button"
+                className="btn btn-sm btn-outline-primary w-100"
+                onClick={() => send({ cmd: 'merge_entities', ids: multiSelectedIds })}
+              >
+                <Link45deg className="me-2" />
+                {t('Merge entities')}
+              </button>
+            ))}
           <button
             className="btn btn-sm btn-outline-danger w-100"
             onClick={handleRemoveMultiple}
@@ -151,7 +172,6 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
     editorCameraEntityIdRef.current,
   )
   const isCharacter = characterEntities.some((c: any) => c.id === selectedEntity?.id)
-  const is3D = projectType === '3D'
   const hasEmbeddedModelClips =
     is3D &&
     (entityMeta?.animations?.some((a) => a.embedded_in_model) ?? false)

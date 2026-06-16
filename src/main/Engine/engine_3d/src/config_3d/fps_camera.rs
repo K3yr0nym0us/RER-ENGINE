@@ -265,7 +265,7 @@ impl State {
             self.sync_editor_camera_entity_from_viewport();
         }
         // En editor: NO girar el mesh del jugador al editar la cámara (entidades desacopladas).
-        // En play: el mouse-look usa `apply_fps_mouse_look` que sí alinea cuerpo ↔ cámara.
+        // En play: el mouse-look usa `apply_fps_mouse_look` que sí alinea cuerpo ��� cámara.
         if self.is_play_controller_active() {
             self.sync_player_rotation_from_look();
         }
@@ -325,13 +325,13 @@ impl State {
         if dist < 1e-4 {
             return desired_eye;
         }
-        let exclude = self.play_character_exclude_collider();
+        let exclude = self.play_character_movement_excluded_colliders();
         const MARGIN: f32 = 0.12;
         if let Some(hit_dist) = self.physics.raycast_first_hit_distance(
             focus,
             offset,
             dist,
-            exclude,
+            &exclude,
         ) {
             let t = (hit_dist - MARGIN).max(0.0);
             return focus + offset.normalize() * t;

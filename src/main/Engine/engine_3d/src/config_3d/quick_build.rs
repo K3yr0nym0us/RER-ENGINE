@@ -200,7 +200,7 @@ impl State {
 
         if let Some(dist) = self
             .physics
-            .raycast_first_hit_distance(origin, dir, PLACEMENT_RAY_MAX, None)
+            .raycast_first_hit_distance(origin, dir, PLACEMENT_RAY_MAX, &[])
         {
             let hit = origin + dir * dist;
             return Some(hit.to_array());
@@ -429,6 +429,7 @@ impl State {
             physics_enabled,
             physics_type,
             part.local_bounds,
+            None,
         );
         if let Some(ref blueprint) = bp {
             apply_blueprint_instance_metadata(self, id, blueprint);

@@ -40,6 +40,7 @@ pub(crate) mod plane_tool_rotate_dbg;
 pub(crate) mod static_model_cache;
 pub(crate) mod world_bounds;
 pub(crate) mod player_ui;
+pub(crate) mod entity_attachments;
 pub(crate) use world_bounds::WorldBounds3D;
 
 pub(crate) fn is_fbx_model_path(path: &str) -> bool {
@@ -1097,6 +1098,8 @@ impl State {
                 self.send_entity_selected_event(sel_id);
             }
         }
+
+        self.handle_entity_attachment_after_transform(&selected_ids);
     }
 
     pub fn update_hover(&mut self, pixel_x: f32, pixel_y: f32) {

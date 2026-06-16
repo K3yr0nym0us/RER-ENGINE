@@ -17,6 +17,7 @@ import {
 	isEnvironmentEntity,
 	isPlayerEntity,
 } from '@shared-types'
+import { isMultiSelectionMerged } from '../utils/entity3dEditorSync'
 import type { BluePrintEntry } from '@shared-types'
 import { CreateEntityFromModelModalBody } from '../pages/EngineView/components/sidebar/EntitiesAccordion/components/CreateEntityFromModelModalBody'
 import { CreateEntityFromSpriteModalBody } from '../pages/EngineView/components/sidebar/EntitiesAccordion/components/CreateEntityFromSpriteModalBody'
@@ -66,6 +67,10 @@ export function buildEntityPropertiesState(engine: EngineContextValue): EntityPr
 			projectType: engine.projectType ?? '2D',
 			selectedEntity: null,
 			multiSelectedIds: [...multiSelectedIds],
+			multiSelectAlreadyMerged: isMultiSelectionMerged(
+				multiSelectedIds,
+				engine.entityMetaRef.current,
+			),
 			isScenario: false,
 			isCharacter: false,
 			isEnvironment: false,
@@ -119,6 +124,10 @@ export function buildEntityPropertiesState(engine: EngineContextValue): EntityPr
 				: never,
 		},
 		multiSelectedIds: [...multiSelectedIds],
+		multiSelectAlreadyMerged: isMultiSelectionMerged(
+			multiSelectedIds,
+			engine.entityMetaRef.current,
+		),
 		isScenario,
 		isCharacter,
 		isEnvironment,
@@ -223,6 +232,9 @@ export async function runEntityPropertiesAction(
 				}
 				removeEntityByKind(engine, id)
 			})
+			return
+		case 'mergeEntities':
+			engine.send({ cmd: 'merge_entities', ids: action.ids })
 			return
 		case 'replaceModel':
 			engine.replaceEntityModel(action.id, action.path)

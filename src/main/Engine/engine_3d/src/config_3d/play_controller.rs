@@ -90,7 +90,7 @@ impl State {
             return;
         };
         let up = Vec3::Y;
-        let exclude = self.play_character_exclude_collider_for_controller();
+        let exclude = self.play_character_movement_excluded_colliders();
 
         let dt = delta_time.min(0.05);
         let move_speed = self.play_controller_move_speed(pressed_inputs);
@@ -150,7 +150,7 @@ impl State {
             radius,
             half_height,
             PLAY_CHARACTER_GROUND_PROBE,
-            exclude,
+            &exclude,
         );
         feet = new_feet;
         on_floor = slide_on_floor;

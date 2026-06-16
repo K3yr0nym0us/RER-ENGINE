@@ -17,6 +17,7 @@ export function EntityPropertiesElectronHost({ payload }: EntityPropertiesElectr
 			projectType: '2D',
 			selectedEntity: null,
 			multiSelectedIds: [],
+			multiSelectAlreadyMerged: false,
 			isScenario: false,
 			isCharacter: false,
 			isEnvironment: false,

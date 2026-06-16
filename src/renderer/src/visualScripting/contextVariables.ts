@@ -38,6 +38,8 @@ export const ENTITY_3D_CATEGORY_ORDER: Entity3DCategory[] = [
   'character',
   'player',
   'object',
+  'weapon',
+  'projectile',
   'sun',
   'ground',
 ]
@@ -47,6 +49,8 @@ export const ENTITY_CATEGORY_LABEL_KEYS: Record<Entity3DCategory, string> = {
   character: 'Characters',
   player: 'Player',
   object: 'Objects',
+  weapon: 'Weapons',
+  projectile: 'Projectiles',
   sun: 'Sun',
   ground: 'Ground',
 }

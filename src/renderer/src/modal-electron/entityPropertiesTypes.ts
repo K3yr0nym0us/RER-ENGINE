@@ -44,6 +44,7 @@ export interface EntityPropertiesState {
 	projectType: string
 	selectedEntity: EntityPropertiesEntity | null
 	multiSelectedIds: number[]
+	multiSelectAlreadyMerged: boolean
 	isScenario: boolean
 	isCharacter: boolean
 	isEnvironment: boolean
@@ -75,6 +76,7 @@ export type EntityPropertiesAction =
 	| { action: 'setPhysics'; id: number; enabled: boolean; bodyType: string }
 	| { action: 'removeEntity'; id: number }
 	| { action: 'removeMultiple'; ids: number[] }
+	| { action: 'mergeEntities'; ids: number[] }
 	| { action: 'replaceModel'; id: number; path: string }
 	| { action: 'convertToBlueprint'; id: number }
 	| { action: 'updateAnimations'; id: number; animations: EntityPropertiesAnimation[] }

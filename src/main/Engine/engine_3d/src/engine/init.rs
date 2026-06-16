@@ -792,6 +792,7 @@ impl State {
             blueprint_registry: HashMap::new(),
             entity_blueprint_ids: HashMap::new(),
             entity_colision: HashMap::new(),
+            entity_attachments: HashMap::new(),
             preview_playing: false,
             player_ui_edit_active: false,
             player_ui_edit_restore: None,

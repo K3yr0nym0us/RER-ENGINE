@@ -14,6 +14,8 @@ pub mod entity_label {
     pub const GROUND: &str = "Ground";
     pub const PLAYER: &str = "Player";
     pub const BALL: &str = "Ball";
+    pub const WEAPON: &str = "Weapon";
+    pub const PROJECTILE: &str = "Projectile";
 }
 
 /// Player UI por defecto en plantillas 3D (cámara play character).
@@ -77,6 +79,8 @@ pub fn infer_entity_category_from_numbered_name(name: &str) -> Option<&'static s
         "Environment" | "Scenario" => Some("environment"),
         "Object" => Some("object"),
         "Character" => Some("character"),
+        "Weapon" => Some("weapon"),
+        "Projectile" => Some("projectile"),
         "Player" => Some("player"),
         "Sun" => Some("sun"),
         "Ground" => Some("ground"),
@@ -91,6 +95,8 @@ pub fn entity_label_for_category(entity_category: Option<&str>) -> &'static str 
         Some("environment") => entity_label::ENVIRONMENT,
         Some("character") | Some("player") => entity_label::CHARACTER,
         Some("object") => entity_label::OBJECT,
+        Some("weapon") => entity_label::WEAPON,
+        Some("projectile") => entity_label::PROJECTILE,
         Some("sun") => entity_label::SUN,
         Some("ground") => entity_label::GROUND,
         _ => entity_label::OBJECT,
