@@ -25,6 +25,7 @@ import {
 	reconcileCategoryWithName,
 } from '../../../utils/blueprintModelPath';
 import { applyPlayCharacterControlDefaultsIfEmpty } from '../../../defaults/applyPlayCharacterControlDefaults';
+import type { EngineCommand2D, EngineCommand3D } from '@shared-types';
 
 let uiScreenIdCounter = 0;
 let pendingPlayerUiButtonConfig: PlayerUiButtonConfig | null = null;
@@ -46,7 +47,9 @@ interface CreateEngineActionsParams {
 	refs: EngineInternalRefs
 	addLog: (text: string, isError?: boolean) => void
 	reportBounds: () => void
-	send: (cmd: object) => void
+	send: (cmd: EngineCommand2D | EngineCommand3D) => void
+	send2d: (cmd: EngineCommand2D) => void
+	send3d: (cmd: EngineCommand3D) => void
 	projectType?: string
 }
 
@@ -56,8 +59,12 @@ export function createEngineActions({
 	addLog,
 	reportBounds,
 	send,
+	send2d: send2dFn,
+	send3d: send3dFn,
 	projectType,
 }: CreateEngineActionsParams) {
+	const is3D = projectType === '3D';
+	const sendMotor = is3D ? send3dFn : send2dFn;
 	const supportsPlayerUi = projectType === '2D' || projectType === '3D';
 	const cloneTransform = (transform: Transform): Transform => ({
 		position: [...transform.position] as [number, number, number],
@@ -79,11 +86,11 @@ export function createEngineActions({
 	const cloneScripts = (scripts?: EntityScripts) =>
 		scripts?.map((script) => ({ ...script }));
 
-	const sendAsync = <T,>(cmd: object, waitForEvent: string, onStart?: () => void): Promise<T> => {
+	const sendAsync = <T,>(cmd: EngineCommand2D | EngineCommand3D, waitForEvent: string, onStart?: () => void): Promise<T> => {
 		if (onStart) onStart();
 		return new Promise((resolve) => {
 			refs.pendingEventsRef.current.set(waitForEvent, { resolve });
-			window.engine.send(cmd as never);
+			send(cmd);
 		});
 	};
 
@@ -99,8 +106,8 @@ export function createEngineActions({
 		const firstFrame = defaultAnim.frames?.[0];
 		if (!firstFrame?.path) return;
 
-		window.engine.send(
-			buildPlayAnimationFrameCmd(entityId, defaultAnim, firstFrame) as never,
+		send2dFn(
+			buildPlayAnimationFrameCmd(entityId, defaultAnim, firstFrame),
 		);
 
 		dispatch({ type: 'SET_ANIMATION_PLAYING', payload: { entityId, playing: false } });
@@ -127,7 +134,7 @@ export function createEngineActions({
 				refs.modelLoadOverlayKindRef,
 			);
 		}
-		send({
+		send3dFn({
 			cmd: 'load_model_asset',
 			path,
 			name,
@@ -142,12 +149,12 @@ export function createEngineActions({
 	};
 
 	const removeModelAsset = (path: string) => {
-		send({ cmd: 'remove_model_asset', path });
+		send3dFn({ cmd: 'remove_model_asset', path });
 		dispatch({ type: 'REMOVE_MODEL_INFO', payload: path });
 	};
 
 	const getModelsList = () => {
-		send({ cmd: 'get_models_list' });
+		send3dFn({ cmd: 'get_models_list' });
 	};
 
 	const spawnModel = (path: string, kind: EntityMeta['kind'] = 'model', category?: EntityMeta['entityCategory']) => {
@@ -169,7 +176,7 @@ export function createEngineActions({
 					: kind === 'character'
 						? 'character'
 						: undefined;
-		send({
+		sendMotor({
 			cmd: 'load_model',
 			path,
 			single_instance: true,
@@ -203,7 +210,7 @@ export function createEngineActions({
 			'model',
 			refs.modelLoadOverlayKindRef,
 		);
-		send({ cmd: 'replace_entity_model', id: entityId, path: modelPath });
+		sendMotor({ cmd: 'replace_entity_model', id: entityId, path: modelPath });
 	};
 
 	const retryEngine = () => {
@@ -213,7 +220,7 @@ export function createEngineActions({
 	};
 
 	const removeEntity = (id: number) => {
-		send({ cmd: 'remove_entity', id });
+		sendMotor({ cmd: 'remove_entity', id });
 		dispatch({ type: 'REMOVE_ENTITY', payload: id });
 		if (refs.playerEntityIdRef.current === id) refs.playerEntityIdRef.current = null;
 		delete refs.entityMetaRef.current[id];
@@ -228,22 +235,22 @@ export function createEngineActions({
 			? { worldWidth: width, worldHeight: height, worldDepth: depth }
 			: { worldWidth: width, worldHeight: height };
 		dispatch({ type: 'SET_WORLD_CONFIG', payload });
-		send({ cmd: 'set_world_size', width, height, depth });
+		sendMotor({ cmd: 'set_world_size', width, height, depth });
 	};
 
 	const setGridVisible = (visible: boolean) => {
 		dispatch({ type: 'SET_WORLD_CONFIG', payload: { gridVisible: visible } });
-		send({ cmd: 'set_grid_visible', visible });
+		sendMotor({ cmd: 'set_grid_visible', visible });
 	};
 
 	const setGridCellSize = (size: number) => {
 		dispatch({ type: 'SET_WORLD_CONFIG', payload: { gridCellSize: size } });
-		send({ cmd: 'set_grid_cell_size', size });
+		sendMotor({ cmd: 'set_grid_cell_size', size });
 	};
 
 	const setGravity = (gravity: number) => {
 		dispatch({ type: 'SET_WORLD_CONFIG', payload: { gravity } });
-		send({ cmd: 'set_gravity', gravity });
+		sendMotor({ cmd: 'set_gravity', gravity });
 	};
 
 	const setDirectionalLight = (settings: {
@@ -258,7 +265,7 @@ export function createEngineActions({
 		if (Object.keys(payload).length > 0) {
 			dispatch({ type: 'SET_WORLD_CONFIG', payload });
 		}
-		send({
+		send3dFn({
 			cmd: 'set_directional_light',
 			ambient: settings.ambient,
 			intensity: settings.intensity,
@@ -270,19 +277,19 @@ export function createEngineActions({
 		const parsedFps = Number.isFinite(fps) ? fps : 60;
 		const normalizedFps = Math.max(1, Math.min(1000, Math.round(parsedFps)));
 		dispatch({ type: 'SET_WORLD_CONFIG', payload: { targetFps: normalizedFps } });
-		send({ cmd: 'set_target_fps', fps: normalizedFps });
+		sendMotor({ cmd: 'set_target_fps', fps: normalizedFps });
 	};
 
 	const setGraphicsTextureTier = (tier: GraphicsTextureTier) => {
 		const normalized = normalizeGraphicsTextureTier(tier);
 		dispatch({ type: 'SET_WORLD_CONFIG', payload: { graphicsTextureTier: normalized } });
-		send({ cmd: 'set_graphics_texture_tier', tier: normalized });
+		send3dFn({ cmd: 'set_graphics_texture_tier', tier: normalized });
 	};
 
 	const setTextureDetailDistance = (distanceM: number) => {
 		const normalized = Math.max(1, Math.min(500, distanceM));
 		dispatch({ type: 'SET_WORLD_CONFIG', payload: { textureDetailDistance: normalized } });
-		send({ cmd: 'set_texture_detail_distance', distance_m: normalized });
+		send3dFn({ cmd: 'set_texture_detail_distance', distance_m: normalized });
 	};
 
 	const removeCollider = (id: number) => removeEntity(id);
@@ -295,7 +302,7 @@ export function createEngineActions({
 			if (!refs.entityMetaRef.current[entityId]) return;
 			refs.entityMetaRef.current[entityId].animations = animations;
 			for (const anim of animations) {
-				window.engine.send({
+				sendMotor({
 					cmd: 'set_animation',
 					id: entityId,
 					name: anim.name,
@@ -308,13 +315,13 @@ export function createEngineActions({
 					is_cancelable: anim.is_cancelable ?? true,
 					logical_w: anim.logical_w > 0 ? anim.logical_w : undefined,
 					logical_h: anim.logical_h > 0 ? anim.logical_h : undefined,
-				} as never);
+				});
 			}
 			const defaultAnim = animations.find((anim) => anim?.is_default);
 			if (defaultAnim?.name) {
-				window.engine.send({ cmd: 'set_default_animation', id: entityId, name: defaultAnim.name } as never);
+				sendMotor({ cmd: 'set_default_animation', id: entityId, name: defaultAnim.name });
 			} else {
-				window.engine.send({ cmd: 'set_default_animation', id: entityId, name: '' } as never);
+				sendMotor({ cmd: 'set_default_animation', id: entityId, name: '' });
 			}
 		};
 
@@ -354,7 +361,7 @@ export function createEngineActions({
 			if (!refs.entityMetaRef.current[entityId]) return;
 			refs.entityMetaRef.current[entityId].scripts = scripts;
 			for (const script of scripts) {
-				window.engine.send({ cmd: 'load_script', id: entityId, path: script.name, source: script.source } as never);
+				sendMotor({ cmd: 'load_script', id: entityId, path: script.name, source: script.source });
 			}
 		};
 
@@ -397,12 +404,12 @@ export function createEngineActions({
 		const nextScripts = [...withoutVisual, { name: VISUAL_LOGIC_SCRIPT_NAME, source: rhaiSource }];
 		meta.scripts = nextScripts;
 
-		window.engine.send({
+		sendMotor({
 			cmd: 'load_script',
 			id,
 			path: VISUAL_LOGIC_SCRIPT_NAME,
 			source: rhaiSource,
-		} as never);
+		});
 	};
 
 	const applyTransformToEngine = (
@@ -422,7 +429,7 @@ export function createEngineActions({
 			rotationEulerDegrees,
 			...transformPatch
 		} = patch;
-		window.engine.send({
+		sendMotor({
 			cmd: 'set_transform',
 			id: entityId,
 			...(positionAxis !== undefined ? { position_axis: positionAxis } : {}),
@@ -441,7 +448,7 @@ export function createEngineActions({
 			...(rotationEulerDegrees !== undefined
 				? { rotation_euler_degrees: rotationEulerDegrees }
 				: {}),
-		} as never);
+		});
 	};
 
 	const refreshSelectedTransform = (entityId: number) => {
@@ -609,7 +616,7 @@ export function createEngineActions({
 			if (!refs.entityMetaRef.current[entityId]) return;
 			refs.entityMetaRef.current[entityId].physicsEnabled = enabled;
 			refs.entityMetaRef.current[entityId].physicsType = bodyType;
-			window.engine.send({ cmd: 'set_physics', id: entityId, enabled, body_type: bodyType } as never);
+			sendMotor({ cmd: 'set_physics', id: entityId, enabled, body_type: bodyType });
 		};
 
 		if (bpId) {
@@ -661,21 +668,21 @@ export function createEngineActions({
 	};
 
 	const loadSprite = (path: string, name: string) => {
-		send({ cmd: 'load_sprite', path, name });
+		sendMotor({ cmd: 'load_sprite', path, name });
 		dispatch({ type: 'ADD_SPRITE_INFO', payload: { path, name } });
 	};
 
 	const removeSprite = (path: string) => {
-		send({ cmd: 'remove_sprite', path });
+		sendMotor({ cmd: 'remove_sprite', path });
 		dispatch({ type: 'REMOVE_SPRITE_INFO', payload: path });
 	};
 
 	const getSpritesList = () => {
-		send({ cmd: 'get_sprites_list' });
+		sendMotor({ cmd: 'get_sprites_list' });
 	};
 
 	const loadCharacter = (path: string) => {
-		send({ cmd: 'load_character', path });
+		sendMotor({ cmd: 'load_character', path });
 	};
 
 	const syncEngineUiViewportEdit = (playerId: string | null, menuId: string | null) => {
@@ -685,26 +692,26 @@ export function createEngineActions({
 		if (active) {
 			const scope = playerId ? 'player' : 'menu';
 			const screenId = playerId ?? menuId;
-			send({ cmd: 'set_player_ui_edit_mode', active: true, scope, screen_id: screenId });
+			sendMotor({ cmd: 'set_player_ui_edit_mode', active: true, scope, screen_id: screenId });
 		} else {
-			send({ cmd: 'set_player_ui_edit_mode', active: false });
+			sendMotor({ cmd: 'set_player_ui_edit_mode', active: false });
 		}
 	};
 
 	const addPlayerUiTextBox = (fontPath: string) => {
 		if (!supportsPlayerUi) return;
-		send({ cmd: 'add_player_ui_text_box', font_path: fontPath });
+		sendMotor({ cmd: 'add_player_ui_text_box', font_path: fontPath });
 	};
 
 	const removePlayerUiTextBox = (id?: number) => {
 		if (!supportsPlayerUi) return;
-		send({ cmd: 'remove_player_ui_text_box', ...(id !== undefined ? { id } : {}) });
+		sendMotor({ cmd: 'remove_player_ui_text_box', ...(id !== undefined ? { id } : {}) });
 	};
 
 	const addEditingUiButton = (config: PlayerUiButtonConfig) => {
 		if (!supportsPlayerUi) return;
 		pendingPlayerUiButtonConfig = config;
-		send({
+		sendMotor({
 			cmd: 'add_player_ui_button',
 			type: config.type,
 			round: config.round,
@@ -723,17 +730,17 @@ export function createEngineActions({
 
 	const addPlayerUiImage = (imagePath: string) => {
 		if (!supportsPlayerUi) return;
-		send({ cmd: 'add_player_ui_image', image_path: imagePath });
+		sendMotor({ cmd: 'add_player_ui_image', image_path: imagePath });
 	};
 
 	const removePlayerUiImage = (id?: number) => {
 		if (!supportsPlayerUi) return;
-		send({ cmd: 'remove_player_ui_image', ...(id !== undefined ? { id } : {}) });
+		sendMotor({ cmd: 'remove_player_ui_image', ...(id !== undefined ? { id } : {}) });
 	};
 
 	const removePlayerUiObject = (id?: number) => {
 		if (!supportsPlayerUi) return;
-		send({ cmd: 'remove_player_ui_object', ...(id !== undefined ? { id } : {}) });
+		sendMotor({ cmd: 'remove_player_ui_object', ...(id !== undefined ? { id } : {}) });
 	};
 
 	const setPlayerUiHudElementProps = (
@@ -742,7 +749,7 @@ export function createEngineActions({
 		props: { locked?: boolean; z_index?: number },
 	) => {
 		if (!supportsPlayerUi) return;
-		send({
+		sendMotor({
 			cmd: 'set_player_ui_hud_element_props',
 			element_kind: elementKind,
 			id,
@@ -761,7 +768,7 @@ export function createEngineActions({
 		},
 	) => {
 		if (!supportsPlayerUi) return;
-		send({
+		sendMotor({
 			cmd: 'set_player_ui_object_style',
 			id,
 			fill_color: style.fill_color,
@@ -774,17 +781,17 @@ export function createEngineActions({
 
 	const removeEditingUiPlaceholder = (kind: 'button', id: number) => {
 		if (kind === 'button' && supportsPlayerUi) {
-			send({ cmd: 'remove_player_ui_button', id });
+			sendMotor({ cmd: 'remove_player_ui_button', id });
 		}
 	};
 
 	const loadHudImage = (path: string, name: string) => {
-		send({ cmd: 'load_hud_image', path, name });
+		sendMotor({ cmd: 'load_hud_image', path, name });
 		dispatch({ type: 'ADD_HUD_IMAGE', payload: { path, name } });
 	};
 
 	const removeHudImage = (path: string) => {
-		send({ cmd: 'remove_hud_image', path });
+		sendMotor({ cmd: 'remove_hud_image', path });
 		dispatch({ type: 'REMOVE_HUD_IMAGE', payload: path });
 	};
 
@@ -794,14 +801,14 @@ export function createEngineActions({
 
 	const setPreviewPlaying = (playing: boolean) => {
 		dispatch({ type: 'SET_PREVIEW_PLAYING', payload: playing });
-		send({ cmd: 'set_preview_playing', playing });
+		sendMotor({ cmd: 'set_preview_playing', playing });
 		if (playing) {
 			const playerId = refs.playerEntityIdRef.current;
 			if (playerId != null) {
 				applyPlayCharacterControlDefaultsIfEmpty(playerId, refs.entityMetaRef, send);
 				const bindings = refs.entityMetaRef.current[playerId]?.controlBindings;
 				if (bindings) {
-					send({ cmd: 'set_control_bindings', id: playerId, bindings });
+					sendMotor({ cmd: 'set_control_bindings', id: playerId, bindings });
 				}
 			}
 		}
@@ -830,7 +837,7 @@ export function createEngineActions({
 
 	const syncPlayerUiScreensToEngine = (screens: UiScreenEntry[]) => {
 		if (!supportsPlayerUi) return;
-		send({
+		sendMotor({
 			cmd: 'sync_player_ui_screens',
 			screens: screens.map((s) => ({
 				id: s.id,
@@ -843,7 +850,7 @@ export function createEngineActions({
 	const setActivePlayerUiScreen = (screenId: string | null) => {
 		if (!supportsPlayerUi) return;
 		dispatch({ type: 'SET_ACTIVE_PLAYER_UI_SCREEN', payload: screenId });
-		send({
+		sendMotor({
 			cmd: 'set_active_player_ui_screen',
 			screen_id: screenId,
 		});
@@ -860,54 +867,54 @@ export function createEngineActions({
 
 	const setDebugMode = (show: boolean) => {
 		dispatch({ type: 'SET_DEBUG_MODE', payload: show });
-		send({ cmd: 'set_debug_mode', show });
+		sendMotor({ cmd: 'set_debug_mode', show });
 	};
 
 	const setBackground = (path: string | null) => {
 		dispatch({ type: 'SET_BACKGROUND', payload: path });
 		if (path) {
-			send({ cmd: 'load_background', path });
+			send2dFn({ cmd: 'load_background', path });
 		} else {
-			send({ cmd: 'clear_background' });
+			send2dFn({ cmd: 'clear_background' });
 		}
 	};
 
 	const loadSound = (path: string, name: string) => {
-		send({ cmd: 'load_sound', path, name });
+		sendMotor({ cmd: 'load_sound', path, name });
 		dispatch({ type: 'ADD_SOUND', payload: { path, name } });
 	};
 
 	const removeSound = (path: string) => {
-		send({ cmd: 'remove_sound', path });
+		sendMotor({ cmd: 'remove_sound', path });
 		dispatch({ type: 'REMOVE_SOUND', payload: path });
 	};
 
 	const loadFont = (path: string, name: string) => {
-		send({ cmd: 'load_font', path, name });
+		sendMotor({ cmd: 'load_font', path, name });
 		dispatch({ type: 'ADD_FONT', payload: { path, name } });
 	};
 
 	const removeFont = (path: string) => {
-		send({ cmd: 'remove_font', path });
+		sendMotor({ cmd: 'remove_font', path });
 		dispatch({ type: 'REMOVE_FONT', payload: path });
 	};
 
 	const loadBackgroundToLibrary = (path: string, name: string) => {
-		send({ cmd: 'load_background_asset', path, name });
+		sendMotor({ cmd: 'load_background_asset', path, name });
 		dispatch({ type: 'ADD_BACKGROUND', payload: { path, name } });
 	};
 
 	const removeBackgroundFromLibrary = (path: string) => {
-		send({ cmd: 'remove_background_asset', path });
+		sendMotor({ cmd: 'remove_background_asset', path });
 		dispatch({ type: 'REMOVE_BACKGROUND', payload: path });
 	};
 
 	const registerBlueprintInEngine = (bp: BluePrintEntry) => {
 		if (!blueprintUsesModel3D(bp)) return;
-		send({
+		send3dFn({
 			cmd: 'register_blueprint',
 			blueprint: buildBlueprintPlacementMeta(bp, refs.modelsRef.current),
-		} as never);
+		});
 	};
 
 	const addBlueprint = (entry: BluePrintEntry) => {

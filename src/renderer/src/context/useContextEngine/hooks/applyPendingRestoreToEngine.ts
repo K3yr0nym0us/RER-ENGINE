@@ -1,4 +1,5 @@
 import type { EngineInternalRefs, PendingRestore } from '../types';
+import { send2d } from '../../../engine/engineSend';
 
 /** IPC `play_animation_frame` con pivot opcional (el motor resuelve si falta). */
 export function buildPlayAnimationFrameCmd(
@@ -60,7 +61,7 @@ export function sendApplyEntityRestore(
 	pending: PendingRestore,
 	options?: { omitScale?: boolean; skipTransform?: boolean; applyInitialAnimationFrame?: boolean },
 ) {
-	window.engine.send({
+	send2d({
 		cmd: 'apply_entity_restore',
 		id: entityId,
 		...(pending.name?.trim() ? { name: pending.name } : {}),

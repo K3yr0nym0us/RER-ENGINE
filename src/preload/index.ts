@@ -1,7 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import './engineBridge'
 import type {
-  EngineCommand,
-  EngineEvent,
   EngineStartPayload,
   OpenProjectResult,
   ProjectSaveData,
@@ -9,32 +8,6 @@ import type {
   ModalElectronOpenRequest,
   ModalElectronDelegateRequest,
 } from '../shared-types/types'
-
-type EngineEventListener = (event: EngineEvent) => void
-
-const engineEventListeners = new Set<EngineEventListener>()
-
-ipcRenderer.on('engine:event', (_ipcEvent, data: EngineEvent) => {
-  for (const listener of engineEventListeners) {
-    listener(data)
-  }
-})
-
-contextBridge.exposeInMainWorld('engine', {
-  send: (cmd: EngineCommand): void => {
-    ipcRenderer.send('engine:cmd', cmd)
-  },
-  on: (cb: EngineEventListener): void => {
-    engineEventListeners.add(cb)
-  },
-  off: (cb?: EngineEventListener): void => {
-    if (cb) {
-      engineEventListeners.delete(cb)
-    } else {
-      engineEventListeners.clear()
-    }
-  },
-})
 
 // API general para comunicación renderer ↔ main
 contextBridge.exposeInMainWorld('electronAPI', {

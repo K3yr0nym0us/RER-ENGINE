@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
+import { send2d } from '../engine/engineSend'
 
 export type Locale = 'en' | 'es'
 
@@ -27,13 +28,13 @@ export function LanguageProvider({
   const setLocale = useCallback((next: Locale) => {
     if (next === locale) return
     setLocaleState(next)
-    try { window.engine.send({ cmd: 'set_locale', locale: next }) } catch { /* engine no iniciado */ }
+    try { send2d({ cmd: 'set_locale', locale: next }) } catch { /* engine no iniciado */ }
   }, [locale])
 
   const toggleLocale = useCallback(() => {
     const next: Locale = locale === 'en' ? 'es' : 'en'
     setLocaleState(next)
-    try { window.engine.send({ cmd: 'set_locale', locale: next }) } catch { /* engine no iniciado */ }
+    try { send2d({ cmd: 'set_locale', locale: next }) } catch { /* engine no iniciado */ }
   }, [locale])
 
   return (

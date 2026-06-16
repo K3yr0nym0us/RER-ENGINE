@@ -10,6 +10,7 @@ import type {
 } from '@shared-types';
 import { useLanguage } from '../LanguageContext';
 import { createEngineActions } from './hooks/createEngineActions';
+import { createEngineSend, send2d, send3d } from '../../engine/engineSend';
 import { useEngineEffects } from './hooks/useEngineEffects';
 import {
 	activePlayerUiHandlerRef,
@@ -118,7 +119,7 @@ export function EngineProvider({
 		refs.resizeTimerRef.current = setTimeout(reportBounds, 200);
 	};
 
-	const send = (cmd: object) => window.engine.send(cmd as never);
+	const send = createEngineSend(projectType === '3D' ? '3D' : '2D');
 
 	const actions = createEngineActions({
 		dispatch,
@@ -126,6 +127,8 @@ export function EngineProvider({
 		addLog,
 		reportBounds,
 		send,
+		send2d,
+		send3d,
 		projectType,
 	});
 

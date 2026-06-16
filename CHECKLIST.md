@@ -1,4 +1,4 @@
-# CHECKLIST — Tareas pendientes globales
+# CHECKLIST — Tareas pendientes globales (Al terminar una tarea completa documentar en /docs y luego eliminar de la lista del checklist)
 
 Backlog transversal (2D + 3D + Electron). Por motor: [CHECKLIST-2D.md](./CHECKLIST-2D.md), [CHECKLIST-3D.md](./CHECKLIST-3D.md).
 
@@ -61,10 +61,10 @@ Referencia perfiles: [CHECKLIST-TEXTURAS-3D.md](./CHECKLIST-TEXTURAS-3D.md)
 
 ### IPC por motor (2D / 3D)
 
-**Documentado:** [docs/IPC_Protocol.yaml](./docs/IPC_Protocol.yaml) · `engine_ipc_common` · `engineCommandCatalog.ts`
+**Documentado:** [docs/IPC_Protocol.yaml](./docs/IPC_Protocol.yaml) · `engine_ipc_common` · `engineCommandCatalog.ts` · `engineCommands.ts`
 
-- [ ] **Tipos TS discriminados** — `EngineCommand2D` / `EngineCommand3D` en shared-types; `send2d` / `send3d`.
-- [ ] **Preload opcional** — `window.engine2d` / `window.engine3d` para enforcement en renderer.
+- [x] **Tipos TS discriminados** — `EngineCommand2D` / `EngineCommand3D` en shared-types; `send2d` / `send3d` / `sendMotor`.
+- [x] **Preload opcional** — `window.engine2d` / `window.engine3d` para enforcement en renderer.
 
 ---
 

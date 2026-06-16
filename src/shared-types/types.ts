@@ -1,5 +1,7 @@
 // Tipos compartidos entre main process, preload y renderer.
 
+import type { EngineCommandName2D, EngineCommandName3D } from './engineCommands'
+
 export * from './plugins'
 
 export type ProjectType = '2D' | '3D'
@@ -574,103 +576,30 @@ export interface ProjectLoaded2dPayload {
 }
 
 export interface EngineCommand {
-  cmd:
-    | 'ping'
-    | 'shutdown'
-    | 'set_clear_color'
-    | 'resize'
-    | 'set_bounds'
-    | 'load_model'
-    | 'spawn_cached_model'
-    | 'replace_entity_model'
-    | 'set_transform'
-    | 'set_entity_name'
-    | 'set_scene'
-    | 'load_scenario'
-    | 'set_scenario_scale'
-    | 'duplicate_scenario'
-    | 'load_character'
-    | 'set_character_scale'
-    | 'duplicate_character'
-    | 'remove_entity'
-    | 'deselect_entity'
-    | 'set_world_size'
-    | 'set_grid_visible'
-    | 'set_grid_cell_size'
-    | 'set_target_fps'
-    | 'set_gravity'
-    | 'set_directional_light'
-    | 'set_ctrl_held'
-    | 'set_physics'
-    | 'set_active_tool'
-    | 'update_plane_tool_preview'
-    | 'create_collider_from_points'
-    | 'create_execution_area_from_points'
-    | 'play_animation_frame'
-    | 'restore_animation_frame'
-    | 'set_pivot_edit_mode'
-    | 'cancel_pivot_edit_mode'
-    | 'set_logical_area_mode'
-    | 'cancel_logical_area_mode'
-    | 'play_audio'
-    | 'stop_audio'
-    | 'set_animation'
-    | 'remove_animation'
-    | 'set_default_animation'
-    | 'play_animation'
-    | 'stop_animation'
-    | 'load_script'
-    | 'load_scene_visual_script'
-    | 'set_control_bindings'
-    | 'unload_script'
-    | 'load_sprite'
-    | 'remove_sprite'
-    | 'get_sprites_list'
-    | 'load_model_asset'
-    | 'remove_model_asset'
-    | 'get_models_list'
-    | 'load_sound'
-    | 'remove_sound'
-    | 'get_sounds_list'
-    | 'load_font'
-    | 'remove_font'
-    | 'get_fonts_list'
-    | 'load_hud_image'
-    | 'remove_hud_image'
-    | 'get_hud_images_list'
-    | 'add_player_ui_image'
-    | 'remove_player_ui_image'
-    | 'set_player_ui_object_draw'
-    | 'remove_player_ui_object'
-    | 'set_player_ui_hud_element_props'
-    | 'set_player_ui_object_style'
-    | 'load_background_asset'
-    | 'remove_background_asset'
-    | 'get_backgrounds_list'
-    | 'set_preview_playing'
-    | 'set_player_ui_edit_mode'
-    | 'add_player_ui_text_box'
-    | 'remove_player_ui_text_box'
-    | 'add_player_ui_button'
-    | 'remove_player_ui_button'
-    | 'set_play_character_view'
-    | 'set_play_character_spawn'
-    | 'run_control_script'
-    | 'undo'
-    | 'clear_background'
-    | 'reload_asset'
-    | 'set_locale'
-    | 'set_autosave'
-    | 'set_debug_mode'
-    | 'export_save_snapshot'
-    | 'get_default_scene_name'
-    | 'create_editor_scene'
-    | 'switch_editor_scene'
-    | 'delete_editor_scene'
-    | 'notify_project_saved'
-    | 'clear_editor_undo_redo'
+  cmd: EngineCommandName2D | EngineCommandName3D
   [key: string]: unknown
 }
+
+export type {
+  EngineCommand2D,
+  EngineCommand3D,
+  EngineCommandName2D,
+  EngineCommandName3D,
+  EngineCommandNameShared,
+  Engine2dApi,
+  Engine3dApi,
+  EngineApi,
+} from './engineCommands'
+
+export {
+  ENGINE_COMMANDS_SHARED,
+  ENGINE_COMMANDS_2D_ONLY,
+  ENGINE_COMMANDS_3D_ONLY,
+  ENGINE_COMMAND_SET_2D,
+  ENGINE_COMMAND_SET_3D,
+  engineCommandSetFor,
+  isCommandAllowedForMotor,
+} from './engineCommandCatalog'
 
 export interface EditorSceneListItem {
   id: number
@@ -1073,12 +1002,9 @@ export interface ModalElectronResultPayload {
 // Extiende la interfaz global Window para el renderer
 declare global {
   interface Window {
-    engine: {
-      send: (cmd: EngineCommand) => void
-      on:   (cb: (event: EngineEvent) => void) => void
-      /** Quita un listener concreto; sin argumento borra todos. */
-      off:  (cb?: (event: EngineEvent) => void) => void
-    }
+    engine: import('./engineCommands').EngineApi
+    engine2d: import('./engineCommands').Engine2dApi
+    engine3d: import('./engineCommands').Engine3dApi
     electronAPI: {
       setGameStyle:            (payload: EngineStartPayload) => void
       sendViewportBounds:      (bounds: ViewportBounds) => void

@@ -40,9 +40,10 @@ principle:
     `[ipc] comando "…" rechazado para motor …`). Fuente de verdad al añadir
     comandos: actualizar ipc.rs del motor correspondiente **y** el catálogo en main.
   types_mirror: |
-    src/shared-types/types.ts refleja el contrato para TypeScript; puede ir
-    ligeramente desfasado respecto a ipc.rs — ipc.rs manda al añadir comandos nuevos.
-    Pendiente: tipos discriminados EngineCommand2D / EngineCommand3D (compile-time).
+    src/shared-types/engineCommandCatalog.ts + engineCommands.ts:
+    EngineCommand2D / EngineCommand3D discriminados por motor.
+    Preload: window.engine2d.send / window.engine3d.send (enforcement compile-time).
+    window.engine.send sigue disponible como unión + send2d/send3d helpers.
 
 engine_shared_crate:
   role: biblioteca Rust (rer-engine-shared), dependencia de engine_2d y engine_3d
@@ -243,7 +244,9 @@ key_files:
   preload: src/preload/index.ts
   shared_library: src/main/Engine/engine_shared/   # sin IPC stdin
   ts_types: src/shared-types/types.ts
-  renderer_send: src/renderer/src/context/useContextEngine/hooks/createEngineActions.ts
+  ts_command_catalog: src/shared-types/engineCommandCatalog.ts
+  ts_command_types: src/shared-types/engineCommands.ts
+  renderer_send: src/renderer/src/engine/engineSend.ts
   renderer_receive: src/renderer/src/context/useContextEngine/hooks/createEngineEventHandler.ts
 
 adding_a_command:
