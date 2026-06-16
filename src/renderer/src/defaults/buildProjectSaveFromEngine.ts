@@ -356,6 +356,19 @@ function rewriteImportedEntityPaths<T extends { model: string; model_id?: string
 	})
 }
 
+function attachModelIdsToBlueprints<T extends { model: string; model_id?: string }>(
+	blueprints: T[],
+	models: ModelInfo[],
+): T[] {
+	return attachModelIdsToEntities(blueprints, models)
+}
+
+function rewriteImportedBlueprintPaths<T extends { model: string; model_id?: string }>(
+	blueprints: T[],
+): T[] {
+	return rewriteImportedEntityPaths(blueprints)
+}
+
 function importedModelAssetPath(modelId: string, asset?: string): string {
 	return asset ?? `imported/models/${modelId}.rerasset`
 }
@@ -465,11 +478,6 @@ export async function buildProjectSaveFromEngineSnapshot(
 
 	const root = scenes.find((s) => s.id === activeSceneId) ?? scenes[0];
 
-	const savedBlueprints =
-		projectType === '3D'
-			? blueprints.map(blueprintToSave)
-			: blueprints;
-
 	const mergedFonts = mergeLibraryAssets(fonts, engineScene.fonts);
 	const mergedHudImages = mergeLibraryAssets(hudImages, engineScene.hud_images);
 	const mergedModels = mergeModelLibrary(
@@ -482,6 +490,13 @@ export async function buildProjectSaveFromEngineSnapshot(
 			...(m.asset ? { asset: m.asset } : {}),
 		})),
 	);
+
+	const savedBlueprints =
+		projectType === '3D'
+			? rewriteImportedBlueprintPaths(
+					attachModelIdsToBlueprints(blueprints.map(blueprintToSave), mergedModels),
+				)
+			: blueprints;
 
 	const hasScenes = scenes.length > 0;
 

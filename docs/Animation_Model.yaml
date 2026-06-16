@@ -193,7 +193,19 @@ rhai:
     - engine.stop_animation(id)
   3d_note: |
     play_animation invoca clip GLTF si la entidad tiene binding; el jugador FP
-    usa animación visual del modelo pero movimiento vía play_controller.
+    usa animación visual del modelo pero movimiento vía play_controller (cápsula).
+  planned_root_motion:
+    status: pendiente
+    ref: CHECKLIST-3D.md
+    ui_label_es: "Esta animación controla el movimiento"
+    description: |
+      Flag opcional por clip embebido: al reproducir, extraer delta de posición
+      (y opcionalmente rotación) del hueso raíz del GLTF y aplicarlo al Transform
+      de la entidad en el motor. Complementa WASD/cápsula; no sustituye state machine.
+    use_cases:
+      - Ataques con paso adelante (dash, golpe con lunge)
+      - Animaciones de escalada o empuje autorizadas en Blender
+      - NPCs con locomoción 100 % driven por clip
   animation_scripts: |
     Scripts en anim.scripts se adjuntan al reproducir y se desadjuntan al parar.
 

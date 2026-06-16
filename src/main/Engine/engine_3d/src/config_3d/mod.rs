@@ -104,6 +104,29 @@ pub(crate) fn physics_body_world_center(
     (transform.position + offset).to_array()
 }
 
+/// Posición del `Transform` para que el centro visual del mesh quede en `desired_center`.
+pub(crate) fn transform_position_for_visual_center(
+    desired_center: glam::Vec3,
+    rotation: glam::Quat,
+    scale: glam::Vec3,
+    model_path: &str,
+    local_bounds: Option<([f32; 3], [f32; 3])>,
+) -> glam::Vec3 {
+    let probe = Transform {
+        position: glam::Vec3::ZERO,
+        rotation,
+        scale,
+    };
+    let half = physics_half_extents_for_model(scale.abs().to_array(), local_bounds);
+    let visual = glam::Vec3::from_array(physics_body_world_center(
+        &probe,
+        local_bounds,
+        model_path,
+        half,
+    ));
+    desired_center - visual
+}
+
 /// Semieje del collider: AABB local de la malla × escala del transform.
 pub(crate) fn physics_half_extents_for_model(
     scale: [f32; 3],
@@ -201,10 +224,28 @@ use crate::ipc::{send_event, EngineEvent};
 
 impl State {
     pub(crate) fn entity_model_local_bounds(&self, id: EntityId) -> Option<([f32; 3], [f32; 3])> {
-        let path = self.entity_asset_path_for_bounds(id)?;
-        self.cached_static_model_parts(&path)
+        let asset_path = self.entity_asset_path_for_bounds(id)?;
+
+        // `static_model_cache` está indexada por `model_id` para assets importados.
+        // En el editor el `EntitySaveMeta` puede apuntar a la ruta “fuente” (GLB/GLTF/FBX),
+        // así que intentamos primero con `asset_path` y si no hay caché, resolvemos
+        // `model_id` para encontrar los bounds correctos.
+        if let Some(bounds) = self
+            .cached_static_model_parts(&asset_path)
             .and_then(|parts| parts.first())
             .map(|p| p.local_bounds)
+        {
+            return Some(bounds);
+        }
+
+        if let Some(model_id) = self.imported_model_registry.model_id_for_path(&asset_path) {
+            return self
+                .cached_static_model_parts(&model_id)
+                .and_then(|parts| parts.first())
+                .map(|p| p.local_bounds);
+        }
+
+        None
     }
 
     pub(crate) fn set_entity_physics_from_mesh_aabb(&mut self, id: EntityId, body_type: &str) {
@@ -365,7 +406,11 @@ impl State {
     }
 
     /// AABB en mundo para hover/click: misma caja que Rapier (`local_bounds` + transform).
-    fn entity_world_pick_aabb(&self, id: EntityId, transform: &Transform) -> (GlamVec3, GlamVec3) {
+    pub(crate) fn entity_world_pick_aabb(
+        &self,
+        id: EntityId,
+        transform: &Transform,
+    ) -> (GlamVec3, GlamVec3) {
         if self.play_character_entity == Some(id) {
             if let Some((center, half)) = self.play_character_world_pick_aabb() {
                 return (center, half);

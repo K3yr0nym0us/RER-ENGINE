@@ -32,29 +32,77 @@ export function isModel3DPath(path: string | undefined): boolean {
   return MODEL_3D_EXT.test(path)
 }
 
+/** `model_*` del manifest v2 (asset importado, no ruta GLB en disco). */
+export function isImportedModelId(path: string | undefined): boolean {
+  return Boolean(path?.startsWith('model_'))
+}
+
+/** Ruta de archivo 3D o `model_id` importado listo para caché GPU. */
+export function isLoadableModelPath(path: string | undefined): boolean {
+  if (!path) return false
+  return isImportedModelId(path) || isModel3DPath(path)
+}
+
+/** `model_id` desde biblioteca Resources si el path es GLB o alias. */
+export function resolveModelIdFromLibrary(
+  modelPath: string | undefined,
+  models?: Array<{ path: string; model_id?: string }>,
+): string | undefined {
+  if (!modelPath?.trim()) return undefined
+  if (isImportedModelId(modelPath)) return modelPath
+  const norm = (p: string) => p.replace(/\\/g, '/').toLowerCase()
+  const target = norm(modelPath)
+  const leaf = target.split('/').pop() ?? target
+  const hit = models?.find((m) => {
+    if (m.model_id === modelPath) return true
+    const mp = norm(m.path)
+    return mp === target || mp.endsWith(`/${leaf}`) || mp === leaf
+  })
+  return hit?.model_id
+}
+
 /** Ruta del archivo 3D a cargar para ghost/spawn (visual reemplazado o path principal). */
 export function resolveBlueprintModelPath(
-  bp: Pick<BluePrintEntry, 'model' | 'path' | 'visualModelPath'>,
+  bp: Pick<BluePrintEntry, 'model' | 'model_id' | 'path' | 'visualModelPath'>,
 ): string {
-  if (bp.visualModelPath && isModel3DPath(bp.visualModelPath)) {
+  if (bp.model_id?.trim()) return bp.model_id.trim()
+  if (bp.visualModelPath && isLoadableModelPath(bp.visualModelPath)) {
     return bp.visualModelPath
   }
   const primary = bp.model ?? bp.path ?? ''
-  if (primary && isModel3DPath(primary) && !PLACEHOLDER_PATHS.has(primary)) {
+  if (primary && isLoadableModelPath(primary) && !PLACEHOLDER_PATHS.has(primary)) {
     return primary
   }
   return bp.visualModelPath ?? primary
 }
 
+/** Clave canónica para motor / caché (`model_id` o ruta resuelta). */
+export function resolveBlueprintCacheKey(
+  bp: Pick<BluePrintEntry, 'model' | 'model_id' | 'path' | 'visualModelPath'>,
+  models?: Array<{ path: string; model_id?: string }>,
+): string {
+  const fromBp = bp.model_id?.trim()
+  if (fromBp) return fromBp
+  const resolved = resolveBlueprintModelPath(bp)
+  if (isImportedModelId(resolved)) return resolved
+  return resolveModelIdFromLibrary(resolved, models) ?? resolved
+}
+
 export function blueprintUsesModel3D(
-  bp: Pick<BluePrintEntry, 'kind' | 'model' | 'path' | 'visualModelPath'>,
+  bp: Pick<BluePrintEntry, 'kind' | 'model' | 'model_id' | 'path' | 'visualModelPath'>,
 ): boolean {
-  return bp.kind === 'model' || isModel3DPath(resolveBlueprintModelPath(bp))
+  const path = resolveBlueprintModelPath(bp)
+  if (PLACEHOLDER_PATHS.has(path)) return false
+  return isLoadableModelPath(path)
 }
 
 /** Blueprint del editor → manifest `.save` (`Blueprint3D`). */
 export function blueprintToSave(bp: BluePrintEntry): Blueprint3D {
   const model = resolveBlueprintModelPath(bp)
+  const model_id =
+    bp.model_id ??
+    resolveModelIdFromLibrary(model) ??
+    (isImportedModelId(model) ? model : undefined)
   const category = blueprintPlacementCategory(bp)
   const colision = bp.colision ?? bp.physics_enabled ?? category === 'environment'
   return {
@@ -63,6 +111,7 @@ export function blueprintToSave(bp: BluePrintEntry): Blueprint3D {
     category,
     model,
     colision,
+    ...(model_id ? { model_id } : {}),
     ...(bp.physics_type ? { physics_type: bp.physics_type } : {}),
     ...(bp.animations?.length ? { animations: bp.animations } : {}),
     ...(bp.scripts?.length ? { scripts: bp.scripts } : {}),
@@ -73,7 +122,8 @@ export function blueprintToSave(bp: BluePrintEntry): Blueprint3D {
 export function blueprintFromSave(bp: Blueprint3D): BluePrintEntry {
   const rawCategory = normalizeBlueprintCategory(bp.category) ?? 'object'
   const category = reconcileCategoryWithName(rawCategory, bp.name)
-  const model = bp.model?.trim() ? bp.model : ''
+  const model_id = bp.model_id?.trim() || (isImportedModelId(bp.model) ? bp.model : undefined)
+  const model = model_id ?? (bp.model?.trim() ? bp.model : '')
   const kind: BluePrintEntry['kind'] =
     category === 'character' || category === 'player'
       ? 'character'
@@ -87,6 +137,7 @@ export function blueprintFromSave(bp: Blueprint3D): BluePrintEntry {
     model,
     path: model,
     kind,
+    ...(model_id ? { model_id } : {}),
     colision: bp.colision,
     physics_enabled: bp.colision,
     physics_type: bp.physics_type ?? 'static',
@@ -129,13 +180,14 @@ export function normalizeBlueprintCategory(
 /** Categoría del modelo en biblioteca Resources (`models_list`). */
 export function categoryFromModelLibrary(
   modelPath: string | undefined,
-  models: Array<{ path: string; category?: string }> | undefined,
+  models: Array<{ path: string; model_id?: string; category?: string }> | undefined,
 ): Entity3DCategory | undefined {
   if (!modelPath?.trim() || !models?.length) return undefined
   const norm = (p: string) => p.replace(/\\/g, '/').toLowerCase()
   const target = norm(modelPath)
   const leaf = target.split('/').pop() ?? target
   const hit = models.find((m) => {
+    if (m.model_id === modelPath) return true
     const mp = norm(m.path)
     return mp === target || mp.endsWith(`/${leaf}`) || mp === leaf
   })
@@ -211,7 +263,12 @@ export function blueprintTabCategory(
 export function resolveBlueprintCategory(
   bp: Pick<BluePrintEntry, 'kind' | 'category' | 'entity_category' | 'name'>,
 ): BlueprintTabCategory {
-  const norm = blueprintPlacementCategory(bp)
+  const norm = blueprintPlacementCategory({
+    ...bp,
+    model: '',
+    path: '',
+    visualModelPath: undefined,
+  })
   return blueprintTabCategory(norm)
 }
 
@@ -357,9 +414,9 @@ export function placementCategoryForEngine(category: Entity3DCategory): string {
 /** Manifest de blueprint para construcción rápida (`docs/Entities_Model_3D.yaml` → Blueprints). */
 export function buildBlueprintPlacementMeta(
   bp: BluePrintEntry,
-  models?: Array<{ path: string; category?: string }>,
+  models?: Array<{ path: string; model_id?: string; category?: string }>,
 ) {
-  const model = resolveBlueprintModelPath(bp)
+  const model = resolveBlueprintCacheKey(bp, models)
   const category = blueprintPlacementCategory(bp, models)
   const { physicsEnabled, physicsType } = blueprintPlacementPhysics(bp, models)
   const colision = bp.colision ?? bp.physics_enabled ?? category === 'environment'
@@ -411,11 +468,17 @@ export function buildBlueprintPlacementMeta(
 /** Alinea una ruta de blueprint con la ruta canónica precargada en el motor. */
 export function resolveEngineModelPath(
   path: string,
-  models: ReadonlyArray<{ path: string; loading?: boolean }>,
+  models: ReadonlyArray<{ path: string; model_id?: string; loading?: boolean }>,
 ): string {
   if (!path) return path
+  if (isImportedModelId(path)) {
+    const byId = models.find((m) => m.model_id === path && m.loading !== true)
+    return byId?.path ?? path
+  }
   const exact = models.find((m) => m.path === path && m.loading !== true)
   if (exact) return exact.path
+  const byModelId = models.find((m) => m.model_id === path && m.loading !== true)
+  if (byModelId) return byModelId.path
   const base = path.split(/[/\\]/).pop()?.toLowerCase()
   if (!base) return path
   const byName = models.find(

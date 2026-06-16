@@ -1,100 +1,11 @@
 # CHECKLIST — Motor 2D (`rer_engine_2d`)
 
-Estado del runtime 2D y del editor en proyectos **2D**. Proyectos 3D: [CHECKLIST-3D.md](./CHECKLIST-3D.md). Tareas globales: [CHECKLIST.md](./CHECKLIST.md). Contrato: [`engine_2d/ARCHITECTURE.md`](./src/main/Engine/engine_2d/ARCHITECTURE.md). Producto: [README.md](./README.md).
+Solo **tareas pendientes**. Lo implementado está en [docs/README.md](./docs/README.md) y [docs/Entities_Model_2D.yaml](./docs/Entities_Model_2D.yaml).
 
-**Última revisión:** junio 2026
-
----
-
-## Monorepo (compartido)
-
-```
-Electron (React/TS)  ←→  IPC JSON  ←→  rer_engine_2d | rer_engine_3d
-```
-
-- [x] Workspace Cargo (`engine_2d`, `engine_3d`, `engine_shared`); binarios separados
-- [x] IPC stdin/stdout, winit + wgpu overlay, ECS, scripting Rhai, hot reload
-- [x] GPU fija: Vulkan (`EngineGpuProfile::TwoD` en `engine_shared/src/gpu.rs`)
-- [x] Editor: electron-vite, spawn del motor, escenas múltiples, `.save` ZIP
-- [x] `set_bounds`, evento `ready`, multiplex `engine.off()` en preload
-- [x] Undo/redo de **transformaciones** en editor (ambos motores)
-- [x] Panel **Métricas de uso** compartido con 3D (FPS, CPU; GPU **Windows** completo)
-
-| Plataforma | Viewport overlay |
-|------------|------------------|
-| Linux X11 | Ventana separada + position-tracker + `XSetTransientForHint` |
-| Windows | Popup owned + position-tracker (`GWLP_HWNDPARENT`) |
-| Wayland | XWayland o `ELECTRON_OZONE_PLATFORM_HINT=x11` |
-
-| GPU | Siempre Vulkan (`engine_shared::gpu`, perfil TwoD); sin OpenGL |
-| Arranque motor | `--overlay` (alias `--embed`); fallo GPU → evento `error` + overlay en editor |
-
-**Nota:** Avisos del loader Vulkan en consola (Epic Games, Galaxy Overlay, `Unrecognized present mode`) son ruido habitual en Windows y **no** indican fallo si el motor envía `ready`.
-
----
-
-## Implementado
-
-### Motor 2D
-
-- [x] Sprites, fondos, escenarios y personajes 2D
-- [x] Animaciones por frames + espejo horizontal automático
-- [x] Rapier 2D: `move_entity`, kinematic gravity/impulse, slide con shape-cast
-- [x] Colliders y execution areas dibujados en editor
-- [x] Triggers `on_trigger_enter` / eventos `trigger_entered` / `trigger_exited`
-- [x] Cámara 2D (`set_camera2d`, `camera_2d_updated`)
-- [x] Quick build con snap/escala calculados en Rust
-- [x] Blueprints 2D (instanciar, actualizar desde plantilla)
-- [x] API Rhai 2D: `apply_kinematic_gravity`, `move_entity_slide`, `move_control`, `set_vsync`, etc.
-- [x] Control scripts 2D: `move_control` resuelve dirección desde el binding (sin `if control_key == "D"`)
-- [x] Invoke pattern Rhai: callbacks ven `engine` del preámbulo (`script_engine.rs`)
-- [x] Demo `DEMO_2d.save`: scripts `.rhai` (A/D on_keep, E/SPACE on_press, gamepad D-LEFT)
-- [x] Semántica `SetGravity`, `apply_kinematic_gravity` y `on_press` — contrato en [`docs/RHAI_API.yaml`](./docs/RHAI_API.yaml) (`gravity_and_controls_2d`)
-- [x] Spatial grid para picking/consultas
-- [x] Undo/redo de transformaciones, herramientas de dibujo y entidades (snapshot: escenario, personaje, colisionador, trigger)
-- [x] Atlas: evento `atlas_exhausted` → consola del editor
-- [x] `entity_removed` con snapshot de puntos (colliders / execution areas)
-- [x] Export escena: `export_save_snapshot` → `save_snapshot_ready` (`entity_save_meta`, marcadores scenario/character/collider)
-- [x] Asignación de IDs de entidad: `HashSet` + cola de IDs reciclados en `ecs.rs` (escenas grandes)
-- [x] Física 2D unificada: eliminado shim `config_compat/physics`; solo `PhysicsWorld2D`
-- [x] Conversión pantalla↔mundo XY centralizada (`config_2d/world_xy.rs`; picking, hover, herramientas)
-- [x] Centro visual unificado (`visual_offsets`): render, spatial grid, picking, hover y triggers con actor
-
-### Motor-first (2D)
-
-- [x] `normalizeAnimations` solo en motor — `SetAnimation` resuelve `logical_w/h`; front vía `animation_logical_resolved`
-- [x] Defaults `logical` / `pivot` en motor al cargar sprite y en `SetAnimation` / `PlayAnimationFrame`
-- [x] Personaje nuevo ~1,5 celdas; colisión desde `tight_bounds`
-- [x] `apply_entity_restore` IPC (restore post-carga por entidad)
-- [x] Redo de `RemoveEntity` fiable — undo al borrar desde Propiedades y construcción rápida
-
-### Editor e integración (proyecto 2D)
-
-- [x] Herramientas 2D (dibujo colisionador / trigger, quick build, etc.)
-- [x] Panel de propiedades y multi-selección en escena 2D
-- [x] **`import_scene` completo** — un IPC carga la escena entera (entidades + restores); sin ráfagas IPC ni `pendingRestoresRef` en el front; evento `scene_imported`
-- [x] **Flujo de restauración inicial** — `import_scene` en carga/cambio de escena 2D; `apply_entity_restore` para undo y casos puntuales
-- [x] Guardado engine-first: `export_save_snapshot` + merge de escenas/blueprints en el front
-- [x] **Programación visual** — lógica de escena (Escenas → Programación) y entidad (Propiedades → Programar entidad); compilador nodos → Rhai; modal Electron con `sceneEntities` por IPC
-- [x] **Player UI (HUD)** — acordeón **User interface** en sidebar; edición NDC sobre viewport 2D; texto, botones, imágenes y objetos; biblioteca **HUD images** en Resources; persistencia en `.save`; HUD en play
+Tareas globales: [CHECKLIST.md](./CHECKLIST.md). Contrato motor: [`engine_2d/ARCHITECTURE.md`](./src/main/Engine/engine_2d/ARCHITECTURE.md).
 
 ---
 
 ## Por implementar
 
-_(Vacío — ver tareas compartidas en [CHECKLIST.md](./CHECKLIST.md).)_
-
----
-
-## Criterios «hecho»
-
-| Ítem | Criterio |
-|------|----------|
-| `import_scene` | Un IPC carga escena + restores; `scene_imported` sincroniza React |
-| Undo entidades | Crear/borrar escenario, personaje, colisionador y trigger con Ctrl+Z / Ctrl+Y simétricos |
-
----
-
-## Notas IPC (solo 2D)
-
-Comandos que **solo** ejecuta este binario (`play_animation_frame`, `create_collider_from_points`, etc.). `engine_3d` los stubbea en `config_compat`.
+_(Vacío.)_

@@ -68,3 +68,28 @@ internal_runtime_only:
   - concept: mesh_collision_extents
     location: runtime jugador
     note: Cápsula tras reemplazar mesh; no en YAML de entidades
+
+player_glb_orientation:
+  applies_to: Jugador play character al spawn o replace_entity_model (GLB/GLTF skinned)
+  motor:
+    - upright_quat_from_vertices_bounds
+    - corrección yaw cadera Mixamo
+    - forward skinned coherente con cápsula de movimiento
+  files:
+    - src/main/Engine/engine_3d/src/config_3d/model_asset.rs
+    - src/main/Engine/engine_3d/src/config_3d/mesh_3d.rs
+  ipc: replace_entity_model → entity_model_replaced (quita overlay de carga)
+  qa_manual: |
+    Validar con varios GLB Mixamo reales en cámara play character (~1.7 m, de pie,
+    sin regresión skinning). Pendiente en CHECKLIST-3D.
+
+editor_flow_3d:
+  new_project: editor directo sin GameStyleSelector; gameStyle = modo de cámara en manifest
+  camera_accordion: set_play_character_view; poses autoritativas en motor (no TS para save)
+  models_accordion: import .glb/.gltf; sustitución jugador con overlay
+  blueprints: register_blueprint, quick_build, propagación instancias, project.blueprints[]
+  animations_panel: clips embebidos + play/stop; ver Animation_Model.yaml
+  textures_tab: Entity_Textures.yaml
+  load_save: Project_Load_3D.yaml
+  multi_scene: Escenes_Model_3D.yaml
+  triggers_play: update_execution_areas_3d, trigger_entered/exited, on_trigger_enter

@@ -53,8 +53,7 @@ impl WorldBounds3D {
         )
     }
 
-    pub(crate) fn intersects_aabb(&self, center: Vec3, scale: Vec3) -> bool {
-        let half = scale.abs() * 0.5;
+    pub(crate) fn intersects_world_aabb(&self, center: Vec3, half: Vec3) -> bool {
         let entity_min = center - half;
         let entity_max = center + half;
         let bounds_min = self.min_corner();

@@ -507,13 +507,16 @@ impl State {
             }
         }
         self.physics.remove_entity_body(id);
-        self.play_character_mesh_extents =
-            Some(PlayCharacterMeshExtents::from_local_bounds(
-                part.local_bounds.0,
-                part.local_bounds.1,
-            ));
 
         self.try_bind_model_animations_with_gltf(id, path, None);
+        let placement_bounds = self
+            .play_character_visual_local_bounds(path)
+            .unwrap_or(part.local_bounds);
+        self.play_character_mesh_extents =
+            Some(PlayCharacterMeshExtents::from_local_bounds(
+                placement_bounds.0,
+                placement_bounds.1,
+            ));
         let play_asset_key =
             play_character_cache_key(&cache_key);
         if let Some(asset) = self.model_assets.get(&play_asset_key) {

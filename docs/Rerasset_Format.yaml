@@ -2,11 +2,27 @@
 #
 # Implementación: engine_shared/src/assets/
 # Pipeline 3D: engine_3d/src/assets/
+#
+# Relacionado con:
+#   - docs/Save_Proyect_Model.yaml (manifest v2 resources.models)
+#   - CHECKLIST-TEXTURAS-3D.md (perfiles GPU solo en exportación final)
 
 constants:
   RER_ASSET_VERSION: 1
   RER_IMPORTER_VERSION: 2
   RTEX_VERSION: 1
+
+editor_contract:
+  principle: |
+    En el editor (Windows y Linux) todos los albedos bakeados usan RTEX v1 con
+    RGBA8 sin compresión GPU (BC7/ASTC/BC1 no participan en import/bake/carga).
+    La optimización por plataforma es solo al exportar el juego compilado.
+  supported_read_write:
+    texture_format: 0  # Rgba8UnormSrgb
+    compression_type: 0  # None — mips son RGBA8 crudos consecutivos
+  integrity: |
+    Serialización alineada en engine_shared/src/assets/rtex.rs (header meta 5 bytes).
+    Roundtrip bake ↔ load preserva píxeles idénticos al guardar y reabrir proyecto.
 
 rerasset:
   magic: RERA
@@ -46,13 +62,68 @@ rerasset:
     - Texturas compartidas entre variantes editor/play_character (un chunk TEXTURE por material).
     - Escritura atómica: .rerasset.tmp → rename.
     - Skeleton (SKEL) y clips de animación (ANIM) serializados desde importer v2.
-    - Rebake automático si cambia size/mtime del fuente o `importer_version` del .rerasset es menor.
+    - Rebake automático si cambia size/mtime del fuente o importer_version del .rerasset es menor.
 
 rtex:
   magic: RTEX
-  texture_format: 0 = RGBA8UnormSrgb (reservado BC7/ASTC)
-  compression_type: 0 = NONE
-  body: mip0..mipN RGBA8 consecutivos
+  version: 1
+  layout_bytes: |
+    [4]  magic "RTEX"
+    [2]  version u16 LE (= 1)
+    [4]  width u32 LE
+    [4]  height u32 LE
+    [1]  mip_count
+    [1]  texture_format
+    [1]  compression_type
+    [2]  reserved (0 en editor v1)
+    […]  mip0 .. mipN (RGBA8, 4 bytes/pixel por nivel; tamaños /4 cada mip)
+
+  texture_format:
+    0:
+      id: Rgba8UnormSrgb
+      status: active_editor
+      body: mips RGBA8 consecutivos sin bloques comprimidos
+    1:
+      id: BC7
+      status: reserved_export
+      note: albedo en build Windows/Linux — no leer en editor actual
+    2:
+      id: ASTC_6x6
+      status: reserved_export
+      note: albedo/normal Android futuro
+    3:
+      id: BC5
+      status: reserved_export
+      note: normal map en build
+    4:
+      id: BC4
+      status: reserved_export
+      note: ORM (canal único) en build
+    5:
+      id: BC6H
+      status: reserved_export
+      note: HDR emissive
+    rule: |
+      read_rtex en editor solo acepta texture_format=0. Otros valores → error hasta
+      implementar loader de build. Assets guardados hoy con 0 permanecen válidos.
+
+  compression_type:
+    0:
+      id: None
+      status: active_editor
+    1:
+      id: GPUBlockCompressed
+      status: reserved_export
+      note: mips contienen bloques BC/ASTC según texture_format
+    rule: |
+      read_rtex en editor solo acepta compression_type=0.
+
+  export_profiles:
+    ref: CHECKLIST-TEXTURAS-3D.md
+    when: pipeline Editor → Save → Build → Ejecutable (aplazado)
+    cook_at_build_time: |
+      El artista importa una vez; el .save conserva RGBA8 editable; variantes BC7/ASTC
+      se generan solo en el paso de build, no durante la edición.
 
 manifest_v2:
   version: 2
@@ -63,3 +134,8 @@ manifest_v2:
         type: character
         asset: imported/models/model_fsb_operator_a1b2c3.rerasset
         importer_version: 1
+
+implementation:
+  rtex: src/main/Engine/engine_shared/src/assets/rtex.rs
+  rerasset: src/main/Engine/engine_shared/src/assets/rerasset.rs
+  tests: rtex_roundtrip en rtex.rs

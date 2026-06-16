@@ -94,7 +94,7 @@ fn infer_category_from_template(
 }
 
 fn is_model_file_path(path: &str) -> bool {
-    is_gltf_model_path(path) || is_fbx_model_path(path)
+    path.starts_with("model_") || is_gltf_model_path(path) || is_fbx_model_path(path)
 }
 
 /// Categoría IPC para nombrado/físicas (manifest `environment` | `object` | `character`).

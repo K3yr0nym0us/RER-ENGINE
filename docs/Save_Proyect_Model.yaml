@@ -264,6 +264,7 @@ load_flow:
       - RER_PROJECT_EXTRACT_DIR / RER_PROJECT_SAVE_PATH al arrancar motor
   motor_3d:
     file: engine_3d/.../load_proyect.rs
+    detail: docs/Project_Load_3D.yaml
     steps:
       - resolve_loaded_paths (misma semántica que Electron)
       - apply_loaded_proyect_3d: mundo, iluminación, entidades, jugador play character, restore manifest

@@ -19,7 +19,9 @@ use crate::config_3d::mesh_3d::{
 use crate::assets::load::{load_rerasset_cpu, material_texture_chunk_map};
 use rer_engine_shared::assets::read_rerasset;
 use crate::config_3d::model_asset;
-use crate::config_3d::{physics_body_world_center, physics_half_extents_for_model};
+use crate::config_3d::{
+    physics_body_world_center, physics_half_extents_for_model, transform_position_for_visual_center,
+};
 use crate::ecs::{EntityId, MeshComponent, Transform};
 use crate::engine::State;
 use crate::entity_save_meta::EntitySaveMeta;
@@ -1072,7 +1074,18 @@ impl State {
     ) -> EntityId {
         let label = self
             .next_numbered_entity_name(entity_label_for_spawn(kind, entity_category));
-        let position = self.default_model_spawn_position();
+        let desired = glam::Vec3::from_array(self.default_model_spawn_position());
+        let rotation = glam::Quat::IDENTITY;
+        let scale = glam::Vec3::ONE;
+        let key = self.model_path_key(path);
+        let position = transform_position_for_visual_center(
+            desired,
+            rotation,
+            scale,
+            &key,
+            Some(part.local_bounds),
+        )
+        .to_array();
         self.spawn_cached_model_part_at(
             part.mesh_idx,
             part.tex_idx,

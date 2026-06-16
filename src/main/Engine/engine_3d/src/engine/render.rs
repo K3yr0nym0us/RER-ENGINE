@@ -146,17 +146,23 @@ impl State {
                     .get::<crate::ecs::NameComponent>(id)
                     .is_some_and(|n| n.name.eq_ignore_ascii_case("ground"));
                 // El sol vive lejos del origen (luz direccional); no recortar por caja del mundo ni frustum.
+                let (mesh_center, mesh_half) = if is_sun || is_ground {
+                    (t.position, t.scale.abs() * 0.5)
+                } else {
+                    self.entity_world_pick_aabb(id, t)
+                };
                 if !is_sun
                     && !is_ground
-                    && !self.world_bounds_3d.intersects_aabb(t.position, t.scale)
+                    && !self
+                        .world_bounds_3d
+                        .intersects_world_aabb(mesh_center, mesh_half)
                 {
                     return None;
                 }
                 let visible = if is_sun || is_ground {
                     true
                 } else {
-                    let radius = t.scale.x.abs().max(t.scale.y.abs()).max(t.scale.z.abs()) * 0.87;
-                    is_visible_3d(&frustum_vp, t.position, radius)
+                    is_aabb_visible_3d(&frustum_vp, mesh_center, mesh_half)
                 };
                 if !visible {
                     return None;
@@ -217,7 +223,7 @@ impl State {
 
         let ghost_overlay = self.build_tool_ghost_overlay();
 
-        let skinned_shadow = self.collect_skinned_draw_instances();
+        let skinned_shadow = self.collect_skinned_draw_instances(&frustum_vp);
         let skinned_main = skinned_shadow.clone();
 
         let mut shadow_batches: Vec<Batch> = Vec::new();
@@ -806,7 +812,10 @@ impl State {
         Ok(())
     }
 
-    fn collect_skinned_draw_instances(&self) -> Vec<(usize, crate::mesh::SkinnedInstanceData)> {
+    fn collect_skinned_draw_instances(
+        &self,
+        frustum_vp: &Mat4,
+    ) -> Vec<(usize, crate::mesh::SkinnedInstanceData)> {
         // Clonable lightweight list for shadow + main pass.
         let mut out = Vec::new();
         for (&id, binding) in &self.model_animation_bindings {
@@ -820,11 +829,19 @@ impl State {
                 .world
                 .get::<crate::ecs::NameComponent>(id)
                 .is_some_and(|n| n.name.eq_ignore_ascii_case("ground"));
+            let (mesh_center, mesh_half) = if is_ground {
+                (t.position, t.scale.abs() * 0.5)
+            } else {
+                self.entity_world_pick_aabb(id, t)
+            };
             if !is_ground
                 && !self
                     .world_bounds_3d
-                    .intersects_aabb(t.position, t.scale)
+                    .intersects_world_aabb(mesh_center, mesh_half)
             {
+                continue;
+            }
+            if !is_ground && !is_aabb_visible_3d(frustum_vp, mesh_center, mesh_half) {
                 continue;
             }
             let is_selected = self.selected_entity == Some(id)
@@ -936,7 +953,11 @@ pub(crate) fn build_scene_uniforms_from_view(
     }
 }
 
-pub(crate) fn is_visible_3d(view_proj: &glam::Mat4, center: GlamVec3, radius: f32) -> bool {
+pub(crate) fn is_aabb_visible_3d(
+    view_proj: &glam::Mat4,
+    center: GlamVec3,
+    half: GlamVec3,
+) -> bool {
     let m = view_proj.to_cols_array_2d();
     let r0 = [m[0][0], m[1][0], m[2][0], m[3][0]];
     let r1 = [m[0][1], m[1][1], m[2][1], m[3][1]];
@@ -953,12 +974,12 @@ pub(crate) fn is_visible_3d(view_proj: &glam::Mat4, center: GlamVec3, radius: f3
     ];
 
     for plane in &planes {
-        let len = (plane[0] * plane[0] + plane[1] * plane[1] + plane[2] * plane[2]).sqrt();
-        if len < 1e-6 {
-            continue;
-        }
-        let dist = (plane[0] * center.x + plane[1] * center.y + plane[2] * center.z + plane[3]) / len;
-        if dist < -radius {
+        let extent = half.x * plane[0].abs()
+            + half.y * plane[1].abs()
+            + half.z * plane[2].abs();
+        let dist =
+            plane[0] * center.x + plane[1] * center.y + plane[2] * center.z + plane[3];
+        if dist < -extent {
             return false;
         }
     }

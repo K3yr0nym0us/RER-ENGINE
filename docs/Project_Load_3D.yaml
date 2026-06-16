@@ -1,0 +1,103 @@
+# Carga de proyecto 3D al abrir .save (rendimiento y flujo)
+#
+# El motor hace el trabajo pesado en Rust; el renderer solo refleja eventos.
+# Complementa load_flow.motor_3d en Save_Proyect_Model.yaml.
+#
+# Relacionado con:
+#   - docs/Save_Proyect_Model.yaml
+#   - docs/IPC_Protocol.yaml
+#   - docs/Escenes_Model_3D.yaml
+
+version: 1
+updated: 2026-06-14
+
+principle: |
+  Abrir un .save 3D no debe bloquear el arranque del motor ni precargar toda la
+  biblioteca de modelos. Solo se importan/decodifican los GLB/GLTF referenciados
+  por entidades de la escena activa y el modelo visual del jugador play character.
+
+entry_point:
+  file: src/main/Engine/engine_3d/src/engine/load_proyect.rs
+  function: apply_loaded_proyect_3d
+
+startup:
+  env: RER_3D_START_FROM_SAVE
+  ready: Motor emite ready tras escena vacía; burst continúa en segundo plano
+  overlay: Renderer muestra loader hasta project_load_3d_complete
+
+phases:
+  1_resolve_paths:
+    action: resolve_loaded_paths (relativas bajo extract_dir)
+  2_world_and_stores:
+    action: mundo, iluminación, LoadSound/Font/HudImage, imported_model_registry (v2)
+  3_clear_scene:
+    action: clear_scene_entities_for_save_load (sin doble reset_runtime_scene_3d)
+  4_burst_spawn:
+    action: |
+      Instancia entidades de la escena activa; ensure_static_model_cached bajo demanda.
+      Jugador play character desde playerTransform + config_camera.
+  5_player_ui:
+    action: import_player_ui_* con paths ya resueltos
+  6_complete:
+    event: project_load_3d_complete
+    front: cierra overlay, clear_editor_undo_redo, sincroniza React
+
+preload_strategy:
+  scoped: |
+    Solo paths GLB/GLTF requeridos por entities[] + playerTransform.visual_model_path.
+    No precargar view.models[] completo del manifest.
+  async:
+    mechanism: hilos de fondo + poll_model_preloads
+    note: burst espera caché sin bloquear el hilo principal del motor al arranque
+  gltf_import:
+    file: preload_model_cpu_bundle
+    rule: un solo gltf::import por archivo por sesión (gltf_import_cache)
+    skip_model_asset: |
+      Sin ModelAsset en CPU si el archivo no tiene skins ni animaciones (props estáticos).
+    skip_player_warm: |
+      Sin try_warm variante play_character en props/entorno (solo character en biblioteca).
+
+gpu_optimizations:
+  editor_box_shared:
+    file: ensure_editor_box_gpu_assets
+    effect: una mesh/textura GPU compartida para todos los [EditorBox]
+  static_model_cache:
+    key: model_id (v2) o path fuente
+    source: .rerasset cuando AssetState::Ready
+
+textures_glb_editor:
+  file: config_3d/gltf_texture_load.rs
+  default_mode: SmallestEmbedded
+  behavior: |
+    Solo decodifica baseColor embebida de menor resolución por material.
+    Ignora normal/metallic y resto del pack en carga inicial.
+  reserved: AllEmbedded para módulo de calidad futuro (ver Entity_Textures.yaml)
+
+electron_main:
+  stderr: reenvío líneas [load_proyect] al panel del editor
+  spawn_args: extract_dir + save_path al proceso rer_engine_3d
+
+events:
+  project_loaded_3d:
+    when: Tras parsear manifest y aplicar escena activa (tabs, mundo, entidades base)
+  project_load_3d_complete:
+    when: Fin de burst/precarga; cierra loader
+  load_progress:
+    payload: mensaje + step_ms / total_ms opcionales
+    ui: panel consola [Carga]
+  model_loaded:
+    fields: kind (model | character), entity_category
+    note: front clasifica entidad sin pendingSpawnKindRef
+
+spawn_character:
+  from: Characters accordion / load_model con kind=character
+  naming: entity_label_for_spawn → Character_*
+  motor: character_entities + entity_category en meta
+  ui: modal y acordeón Entidades reconocen personaje (no Object_*)
+
+key_files:
+  - src/main/Engine/engine_3d/src/engine/load_proyect.rs
+  - src/main/Engine/engine_3d/src/config_3d/static_model_cache.rs
+  - src/main/Engine/engine_3d/src/config_3d/gltf_texture_load.rs
+  - src/main/index.ts
+  - src/renderer/src/context/useContextEngine/hooks/createEngineEventHandler.ts

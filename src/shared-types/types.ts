@@ -170,6 +170,8 @@ export interface Blueprint3D {
   name: string
   category: Entity3DCategory
   model: string
+  /** Asset importado (`model_*`); clave canónica GPU / `.rerasset`. */
+  model_id?: string
   physics_type?: PhysicsType3D
   colision: boolean
   animations?: SavedAnimation[]

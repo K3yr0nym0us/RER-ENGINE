@@ -84,6 +84,16 @@ sync_triggers:
   - entity_textures_ready → actualiza entityTextures en estado del modal
   - Cambio de entidad → rebuild state o cierre según useEntityPropertiesModal
 
+animations_tab:
+  scope: Sprite 2D o clips embebidos GLB (3D)
+  play_stop_ui: |
+    El icono Play/Stop usa estado local playingAnimationName en el modal.
+    No resetear playingAnimationName en el useEffect que sincroniza animations[]
+    (cada patch IPC recrea el array); solo limpiar al cambiar selectedEntity.id.
+    Stop envía stop_animation + setAnimationPlaying(false).
+  non_loop: sendAsync espera animation_finished; onAction devuelve promesa IPC
+  ref: docs/Animation_Model.yaml
+
 key_files:
   host: src/renderer/src/modal-electron/EntityPropertiesElectronHost.tsx
   session: src/renderer/src/modal-electron/entityPropertiesModalSessions.ts

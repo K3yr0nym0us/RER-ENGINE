@@ -187,12 +187,33 @@ impl State {
                 }
             }
         }
+
+        // Para modelos 3D (environment/object/model), el gizmo debe seguir el centro real del
+        // AABB de la malla. Algunos GLB (p.ej. terrain) tienen pivot lejos del volumen,
+        // y si anclamos en `Transform.position` el gizmo queda desplazado.
+        let model_aabb_center_for = |id: u32| -> Option<glam::Vec3> {
+            let t = self.world.get::<Transform>(id)?.clone();
+            let bounds = self.entity_model_local_bounds(id)?;
+            let model_path = self.entity_asset_path_for_bounds(id)?;
+            let half = crate::config_3d::physics_half_extents_for_model(
+                t.scale.abs().to_array(),
+                Some(bounds),
+            );
+            let center = crate::config_3d::physics_body_world_center(
+                &t,
+                Some(bounds),
+                model_path.as_str(),
+                half,
+            );
+            Some(glam::Vec3::from_array(center))
+        };
+
         if !self.selected_entities.is_empty() {
             let mut sum = glam::Vec3::ZERO;
             let mut count = 0usize;
             for &id in &self.selected_entities {
                 if let Some(t) = self.world.get::<Transform>(id) {
-                    sum += t.position;
+                    sum += model_aabb_center_for(id).unwrap_or(t.position);
                     count += 1;
                 }
             }
@@ -201,7 +222,13 @@ impl State {
             }
         }
         self.selected_entity
-            .and_then(|id| self.world.get::<Transform>(id).map(|t| t.position))
+            .and_then(|id| {
+                if let Some(t) = self.world.get::<Transform>(id) {
+                    Some(model_aabb_center_for(id).unwrap_or(t.position))
+                } else {
+                    None
+                }
+            })
     }
 
     pub fn update(&mut self) {

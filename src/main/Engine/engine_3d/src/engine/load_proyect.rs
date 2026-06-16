@@ -282,6 +282,8 @@ struct SavedBlueprint {
     category: String,
     model: String,
     #[serde(default)]
+    model_id: Option<String>,
+    #[serde(default)]
     physics_type: Option<String>,
     #[serde(default = "default_colision_on")]
     colision: bool,
@@ -908,12 +910,19 @@ fn build_generic_pending_restore(
         let marker_model = bp
             .map(|b| b.model.as_str())
             .unwrap_or(entity.model.as_str());
+        let marker_model_id = bp
+            .and_then(|b| b.model_id.as_deref())
+            .filter(|s| !s.is_empty());
         if entity_path_marker(marker_model).is_some() || marker_model == "[Player]" {
             None
         } else if let Some(id) = entity.model_id.as_ref().filter(|s| !s.is_empty()) {
             Some(id.clone())
+        } else if let Some(id) = marker_model_id {
+            Some(id.to_string())
         } else if is_imported_model_id(&entity.model) {
             Some(entity.model.clone())
+        } else if is_imported_model_id(marker_model) {
+            Some(marker_model.to_string())
         } else {
             Some(marker_model.to_string())
         }
@@ -1287,25 +1296,9 @@ fn spawn_entity_after_load_model_single(
     state.scenario_entities.last().copied()
 }
 
-/// Convierte `player.position` del manifest a pies (saves antiguos guardaban centro del mesh).
-fn player_manifest_position_as_feet(state: &State, player: &SavedEntity3D) -> [f32; 3] {
-    use crate::config_3d::character_anchor::feet_from_transform;
-    use glam::{Quat, Vec3};
-
-    if state.play_character_mesh_origin_at_feet() {
-        return player.position;
-    }
-    let rot = player
-        .rotation
-        .map(|r| Quat::from_xyzw(r[0], r[1], r[2], r[3]))
-        .unwrap_or(Quat::IDENTITY);
-    feet_from_transform(
-        Vec3::from_array(player.position),
-        Vec3::from_array(player.scale),
-        rot,
-        state.play_character_mesh_extents.as_ref(),
-    )
-    .to_array()
+/// `player.position` en el manifest = pies en mundo (`build_player_snapshot`).
+fn player_manifest_position_as_feet(_state: &State, player: &SavedEntity3D) -> [f32; 3] {
+    player.position
 }
 
 pub(crate) fn apply_loaded_proyect_3d(

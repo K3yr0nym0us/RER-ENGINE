@@ -141,8 +141,10 @@ Logs del motor (opcional): `RUST_LOG=info` o `RUST_LOG=rer_engine_2d=debug`.
 | [docs/Programing_Model.yaml](./docs/Programing_Model.yaml) | Modelo de programación visual (nodos → Rhai, UI, persistencia, IPC modal) |
 | [docs/Plugins_Model.yaml](./docs/Plugins_Model.yaml) | Plugins opcionales (catálogo, IPC, persistencia) |
 | [docs/AI_Assistant_Plugin.yaml](./docs/AI_Assistant_Plugin.yaml) | Plugin asistente IA local (Qwen3, llama.cpp, chat) |
-| [CHECKLIST-2D.md](./CHECKLIST-2D.md) | Hecho y pendiente — motor / editor 2D |
-| [CHECKLIST-3D.md](./CHECKLIST-3D.md) | Hecho y pendiente — motor / editor 3D |
+| [docs/README.md](./docs/README.md) | Índice de documentación (funcionalidad implementada) |
+| [CHECKLIST.md](./CHECKLIST.md) | Backlog global pendiente |
+| [CHECKLIST-2D.md](./CHECKLIST-2D.md) | Pendiente motor / editor 2D |
+| [CHECKLIST-3D.md](./CHECKLIST-3D.md) | Pendiente motor / editor 3D |
 | [`src/main/Engine/engine_2d/ARCHITECTURE.md`](src/main/Engine/engine_2d/ARCHITECTURE.md) | Contrato del motor 2D |
 | [`src/main/Engine/engine_3d/ARCHITECTURE.md`](src/main/Engine/engine_3d/ARCHITECTURE.md) | Contrato del motor 3D |
 | [`src/renderer/ARCHITECTURE.md`](src/renderer/ARCHITECTURE.md) | Rol del frontend y qué no duplicar |

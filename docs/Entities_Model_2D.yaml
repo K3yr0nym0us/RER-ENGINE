@@ -101,6 +101,35 @@ differences_from_3d:
   - Colisionadores dibujados en plano, no mallas 3D
   - Cámara 2D ortográfica en lugar de FPS / orbital 3D
 
+import_scene:
+  command: import_scene
+  owner: engine_2d
+  file: src/main/Engine/engine_2d/src/engine/import_scene.rs
+  purpose: |
+    Un solo IPC carga la escena entera (sprites, background, entidades + restores).
+    Sustituye ráfagas de spawn/restore en el front al abrir .save o cambiar escena.
+  event: scene_imported
+  renderer: |
+    createEngineEventHandler sincroniza React; sin pendingRestoresRef en carga principal.
+    apply_entity_restore queda para undo y casos puntuales.
+  ref: docs/Save_Proyect_Model.yaml → load_flow.motor_2d
+
+editor_integration:
+  properties_panel: multi-selección y modal Propiedades (EntityPropertiesModalContent)
+  tools: dibujo colisionador/trigger, quick build (snap/escala en Rust)
+  visual_programming: docs/Programing_Model.yaml
+  player_ui: docs/Player_UI_Model.yaml
+  save: export_save_snapshot engine-first + merge front
+
+motor_first_2d:
+  normalizeAnimations: solo motor; evento animation_logical_resolved al front
+  logical_pivot_defaults: SetAnimation / PlayAnimationFrame / carga sprite
+  character_spawn: ~1,5 celdas; colisión desde tight_bounds
+  entity_ids: HashSet + cola reciclada en ecs.rs
+  visual_offsets: render, spatial grid, picking, hover, triggers unificados
+  undo: transformaciones, herramientas dibujo, entidades (escenario, personaje, collider, trigger)
+  atlas_exhausted: evento → consola editor
+
 key_files:
   save_meta: src/main/Engine/engine_2d/src/entity_save_meta.rs
   markers: src/main/Engine/engine_2d/src/config_2d/ (ScenarioMarker, CharacterMarker)
