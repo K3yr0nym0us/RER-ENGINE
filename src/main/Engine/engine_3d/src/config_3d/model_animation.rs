@@ -68,7 +68,17 @@ impl State {
             normalize,
         );
 
-        let cached_asset = self.model_assets.get(&asset_key).map(Arc::clone);
+        let cached_asset = self
+            .model_assets
+            .get(&asset_key)
+            .or_else(|| {
+                if asset_key != cache_key {
+                    self.model_assets.get(&cache_key)
+                } else {
+                    None
+                }
+            })
+            .map(Arc::clone);
         let asset = if let Some(cached) = cached_asset {
             
             cached
@@ -112,8 +122,32 @@ impl State {
                     loaded
                 }
                 None => {
-                    log::warn!("[model_anim] sin model_assets para {asset_key}");
-                    return;
+                    let warm_play = normalize.is_some();
+                    self.ensure_model_anim_assets_from_rerasset(&cache_key, warm_play);
+                    let resolved = self
+                        .model_assets
+                        .get(&asset_key)
+                        .or_else(|| {
+                            if asset_key != cache_key {
+                                self.model_assets.get(&cache_key)
+                            } else {
+                                None
+                            }
+                        })
+                        .map(Arc::clone);
+                    match resolved {
+                        Some(loaded) => {
+                            if !self.model_assets.contains_key(&asset_key) {
+                                self.model_assets
+                                    .insert(asset_key.clone(), Arc::clone(&loaded));
+                            }
+                            loaded
+                        }
+                        None => {
+                            log::warn!("[model_anim] sin model_assets para {asset_key}");
+                            return;
+                        }
+                    }
                 }
             }
         };

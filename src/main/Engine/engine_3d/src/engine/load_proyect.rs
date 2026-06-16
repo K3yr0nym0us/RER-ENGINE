@@ -525,6 +525,64 @@ fn paths_match_for_burst(a: &str, b: &str) -> bool {
     path_basename_lower(a) == path_basename_lower(b)
 }
 
+/// `model_*` del manifest v2 no es una ruta en disco bajo extract_dir.
+fn is_imported_model_id(p: &str) -> bool {
+    p.starts_with("model_")
+}
+
+/// Resuelve paths de assets en el `.save`; preserva marcadores y `model_id`.
+fn resolve_asset_path(p: &str, extracted_dir: &Path) -> String {
+    if p.is_empty() {
+        return p.to_string();
+    }
+    if entity_path_marker(p).is_some() || is_imported_model_id(p) {
+        return p.to_string();
+    }
+    resolve_path(p, extracted_dir)
+}
+
+/// Misma referencia de asset importado (model_id o alias en registro).
+fn models_refer_to_same_asset(state: &State, a: &str, b: &str) -> bool {
+    if paths_match_for_burst(a, b) {
+        return true;
+    }
+    state.model_cache_key(a) == state.model_cache_key(b)
+}
+
+fn source_path_for_imported_model(
+    project: &ProjectSaveData,
+    model_id: &str,
+    extract_dir: &Path,
+) -> String {
+    for scene in &project.scenes {
+        for entity in scene
+            .entities
+            .iter()
+            .chain(scene.player.iter())
+        {
+            if entity.model_id.as_deref() == Some(model_id) && !entity.model.is_empty() {
+                if is_imported_model_id(&entity.model) {
+                    continue;
+                }
+                if is_model_3d_path(&entity.model) || entity.model.contains('/') {
+                    return resolve_asset_path(&entity.model, extract_dir);
+                }
+            }
+        }
+    }
+    for entity in project.entities.iter().chain(project.player.iter()) {
+        if entity.model_id.as_deref() == Some(model_id) && !entity.model.is_empty() {
+            if is_imported_model_id(&entity.model) {
+                continue;
+            }
+            if is_model_3d_path(&entity.model) || entity.model.contains('/') {
+                return resolve_asset_path(&entity.model, extract_dir);
+            }
+        }
+    }
+    model_id.to_string()
+}
+
 fn resolve_path(p: &str, extracted_dir: &Path) -> String {
     if p.is_empty() {
         return p.to_string();
@@ -613,7 +671,7 @@ fn resolve_control_bindings(
 
 fn resolve_entity_3d(entity: &SavedEntity3D, extracted_dir: &Path) -> SavedEntity3D {
     SavedEntity3D {
-        model: resolve_path(&entity.model, extracted_dir),
+        model: resolve_asset_path(&entity.model, extracted_dir),
         scripts: resolve_scripts(&entity.scripts, extracted_dir),
         controls: resolve_control_bindings(&entity.controls, extracted_dir),
         ..entity.clone()
@@ -746,7 +804,7 @@ fn resolve_loaded_paths(project: &mut ProjectSaveData, extracted_dir: &Path) {
         .blueprints
         .iter()
         .map(|bp| SavedBlueprint {
-            model: resolve_path(&bp.model, extracted_dir),
+            model: resolve_asset_path(&bp.model, extracted_dir),
             scripts: resolve_scripts(&bp.scripts, extracted_dir),
             ..bp.clone()
         })
@@ -847,11 +905,17 @@ fn build_generic_pending_restore(
         .or_else(|| entity.physics_type.clone())
         .unwrap_or_else(|| "static".to_string());
     let visual = {
-        let m = bp.map(|b| b.model.as_str()).unwrap_or(entity.model.as_str());
-        if entity_path_marker(m).is_some() || m == "[Player]" {
+        let marker_model = bp
+            .map(|b| b.model.as_str())
+            .unwrap_or(entity.model.as_str());
+        if entity_path_marker(marker_model).is_some() || marker_model == "[Player]" {
             None
+        } else if let Some(id) = entity.model_id.as_ref().filter(|s| !s.is_empty()) {
+            Some(id.clone())
+        } else if is_imported_model_id(&entity.model) {
+            Some(entity.model.clone())
         } else {
-            Some(m.to_string())
+            Some(marker_model.to_string())
         }
     };
     PendingRestore {
@@ -1004,7 +1068,7 @@ fn apply_full_entity_restore(
     if let Some(visual) = pending
         .visual_model_path
         .as_ref()
-        .filter(|p| !p.is_empty() && !paths_match_for_burst(p, model_path))
+        .filter(|p| !p.is_empty() && !models_refer_to_same_asset(state, p, model_path))
     {
         state.replace_entity_model(id, visual);
     }
@@ -1377,7 +1441,7 @@ fn apply_loaded_proyect_3d_with_scene(
                 res.name,
                 asset_disk.display()
             );
-            let source_path = res.id.clone();
+            let source_path = source_path_for_imported_model(project, &res.id, extract_path);
             state.cache_rerasset_material_tex_map(&res.id, &asset_disk);
             state.imported_model_registry.insert(
                 crate::assets::ImportedModelEntry {
@@ -1398,7 +1462,11 @@ fn apply_loaded_proyect_3d_with_scene(
                 .imported_model_registry
                 .link_imported_model_aliases(&res.id, &source_path);
             let asset_rel = relative_rerasset_manifest_path(&res.id);
-            let key = state.model_path_key(&source_path);
+            let key = if is_imported_model_id(&source_path) {
+                source_path.clone()
+            } else {
+                state.model_path_key(&source_path)
+            };
             state.model_store.insert(
                 key,
                 crate::ipc::ModelStoreEntry {

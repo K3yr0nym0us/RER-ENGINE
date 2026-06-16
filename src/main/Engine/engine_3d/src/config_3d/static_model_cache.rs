@@ -258,6 +258,62 @@ impl State {
         }
     }
 
+    /// Registra `ModelAsset` skinned bajo la clave canónica y, si aplica, `::play_character`.
+    fn register_model_anim_assets(
+        &mut self,
+        canonical_path: &str,
+        anim_asset: Arc<model_asset::ModelAsset>,
+        warm_play_character: bool,
+    ) {
+        self.model_assets
+            .insert(canonical_path.to_string(), Arc::clone(&anim_asset));
+        if warm_play_character {
+            let play_key = play_character_cache_key(canonical_path);
+            self.model_assets.insert(play_key, anim_asset);
+        }
+    }
+
+    /// Tras cargar `.rerasset`, asegura `ModelAsset` skinned en `model_assets`.
+    pub(crate) fn ensure_model_anim_assets_from_rerasset(
+        &mut self,
+        model_id: &str,
+        warm_play_character: bool,
+    ) -> bool {
+        let play_key = warm_play_character.then(|| play_character_cache_key(model_id));
+        if let Some(ref pk) = play_key {
+            if self.model_assets.contains_key(pk) {
+                return true;
+            }
+        } else if self.model_assets.contains_key(model_id) {
+            return true;
+        }
+        if let Some(base) = self.model_assets.get(model_id).cloned() {
+            if let Some(pk) = play_key {
+                self.model_assets.insert(pk, base);
+            }
+            return true;
+        }
+        let Some(entry) = self.imported_model_registry.get(model_id) else {
+            return false;
+        };
+        if entry.state != rer_engine_shared::assets::AssetState::Ready {
+            return false;
+        }
+        let Ok(loaded) = crate::assets::load::load_rerasset_cpu(&entry.rerasset_path) else {
+            return false;
+        };
+        let Some(asset) = loaded.anim_asset else {
+            return false;
+        };
+        self.register_model_anim_assets(model_id, asset, warm_play_character);
+        true
+    }
+
+    /// Tras cargar `.rerasset`, el jugador enlaza skinning con clave `model_id::play_character`.
+    pub(crate) fn ensure_play_character_model_assets_cached(&mut self, model_id: &str) -> bool {
+        self.ensure_model_anim_assets_from_rerasset(model_id, true)
+    }
+
     /// Variante `::play_character` en GPU para `replace_entity_model` instantáneo.
     fn ensure_play_character_model_cache_warmed(&mut self, canonical_path: &str) {
         let play_key = play_character_cache_key(canonical_path);
@@ -552,7 +608,7 @@ impl State {
         self.static_model_cache
             .insert(path.clone(), pending.uploaded);
         if let Some(asset) = pending.anim_asset {
-            self.model_assets.insert(path.clone(), asset);
+            self.register_model_anim_assets(&path, asset, pending.warm_play_character);
         }
 
         let name = self.model_store_display_name(&path);
@@ -623,6 +679,9 @@ impl State {
         if self.static_model_cache.contains_key(&path) {
             self.model_preload_inflight.remove(&path);
             self.ensure_play_character_model_cache_warmed(&path);
+            if path.starts_with("model_") {
+                self.ensure_play_character_model_assets_cached(&path);
+            }
             let model_id = if path.starts_with("model_") {
                 Some(path.clone())
             } else {
@@ -831,6 +890,11 @@ impl State {
                 ));
             }
             self.wait_for_static_model_cache(&model_id)?;
+            if is_character {
+                self.ensure_play_character_model_assets_cached(&model_id);
+            } else if self.model_needs_skinned_bind(path) {
+                self.ensure_model_anim_assets_from_rerasset(&model_id, false);
+            }
             return Ok(());
         }
 

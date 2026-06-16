@@ -170,6 +170,10 @@ impl State {
         is_character: bool,
     ) {
         if self.static_model_cache.contains_key(model_id) {
+            if is_character {
+                let _ = self.ensure_play_character_model_cached(model_id);
+                self.ensure_play_character_model_assets_cached(model_id);
+            }
             send_event(&EngineEvent::ModelAssetLoaded {
                 path: model_id.to_string(),
                 name: name.to_string(),

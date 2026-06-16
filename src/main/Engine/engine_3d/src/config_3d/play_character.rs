@@ -474,6 +474,7 @@ impl State {
             .unwrap_or_else(|| library_path.clone());
 
         self.ensure_play_character_model_cached(path)?;
+        self.ensure_play_character_model_assets_cached(&cache_key);
         let mesh_cache_key = play_character_cache_key(&cache_key);
         let part = self
             .static_model_cache
