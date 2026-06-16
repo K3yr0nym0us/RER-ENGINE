@@ -32,8 +32,10 @@
 
 | Documento | Contenido |
 |-----------|-----------|
-| [Entities_Model_2D.yaml](./Entities_Model_2D.yaml) | Tipos 2D, blueprints, `import_scene`, colliders, animaciones sprite |
-| [Entities_Model_3D.yaml](./Entities_Model_3D.yaml) | Tipos 3D, blueprints, modelos GLB/GLTF |
+| [Entities_Model_2D.yaml](./Entities_Model_2D.yaml) | Tipos 2D, entidades, sprites |
+| [Blueprints_Model_2D.yaml](./Blueprints_Model_2D.yaml) | Blueprints 2D, quick build, snap, propagación, `.save` |
+| [Entities_Model_3D.yaml](./Entities_Model_3D.yaml) | Tipos 3D, entidades, modelos GLB/GLTF |
+| [Blueprints_Model_3D.yaml](./Blueprints_Model_3D.yaml) | Blueprints 3D, model_id, quick build, propagación, `.save` |
 | [Entities_Model_3D_extras.yaml](./Entities_Model_3D_extras.yaml) | Cámara play character, colisión por tipo, orientación GLB jugador |
 | [Physics_Model.yaml](./Physics_Model.yaml) | Rapier 2D/3D, herramientas plano 3D, jugador shape cast |
 | [Animation_Model.yaml](./Animation_Model.yaml) | Sprite 2D, clips GLTF skinned, `play_animation`, blueprints |

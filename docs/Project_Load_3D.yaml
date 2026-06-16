@@ -5,6 +5,7 @@
 #
 # Relacionado con:
 #   - docs/Save_Proyect_Model.yaml
+#   - docs/Blueprints_Model_3D.yaml
 #   - docs/IPC_Protocol.yaml
 #   - docs/Escenes_Model_3D.yaml
 
@@ -36,6 +37,8 @@ phases:
     action: |
       Instancia entidades de la escena activa; ensure_static_model_cached bajo demanda.
       Jugador play character desde playerTransform + config_camera.
+      Instancias con blueprint_id: build_generic_pending_restore hereda model_id y metadatos
+      de project.blueprints[] (ver Blueprints_Model_3D.yaml).
   5_player_ui:
     action: import_player_ui_* con paths ya resueltos
   6_complete:
@@ -44,8 +47,8 @@ phases:
 
 preload_strategy:
   scoped: |
-    Solo paths GLB/GLTF requeridos por entities[] + playerTransform.visual_model_path.
-    No precargar view.models[] completo del manifest.
+    Solo paths GLB/GLTF o model_id requeridos por entities[] + blueprints referenciados
+    + playerTransform.visual_model_path. No precargar view.models[] completo del manifest.
   async:
     mechanism: hilos de fondo + poll_model_preloads
     note: burst espera caché sin bloquear el hilo principal del motor al arranque

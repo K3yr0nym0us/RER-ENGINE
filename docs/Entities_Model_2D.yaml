@@ -5,6 +5,7 @@
 #
 # Relacionado con:
 #   - docs/Save_Proyect_Model.yaml   (sprites, sounds, backgrounds)
+#   - docs/Blueprints_Model_2D.yaml  (plantillas, quick build, propagación)
 #   - docs/Entities_Model_3D_extras.yaml (notas 2D en collision_by_entity_type)
 #   - docs/RHAI_API.yaml             (gravity_and_controls_2d)
 
@@ -31,16 +32,11 @@ common:
   points: optional [[x,y]; 4]   # Solo collider / execution_area (esquinas en mundo)
 
 Blueprints:
-  id: string
-  name: string
-  kind: scenario | character
-  path: string                  # Sprite del blueprint
-  scale: [number, number, number]
-  animations: optional
-  scripts: optional
-  note: |
-    Quick Build previsualiza el sprite del blueprint como ghost;
-  set_active_tool con preview_path / preview_kind / preview_scale.
+  reference: docs/Blueprints_Model_2D.yaml
+  summary: |
+    Plantillas globales (project.blueprints[]). Solo scenario y character (sprite path).
+    Instancias usan blueprint_id; heredan escala, animaciones, scripts y física.
+    Crear: Propiedades → Convertir en Blueprint. Usar: Herramientas → Construcción rápida.
 
 animations_2d:
   fields:

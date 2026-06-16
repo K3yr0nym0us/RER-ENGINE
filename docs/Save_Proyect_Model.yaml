@@ -124,8 +124,13 @@ references:
     points_to: sounds library (cuando se usa audio de biblioteca)
   blueprint.model:
     points_to: models library
+    note: "En manifest guardado suele ser model_id (model_*), no ruta GLB fuente."
+  blueprint.model_id:
+    points_to: resources.models[].id
+    note: "Clave canónica; blueprint.model se reescribe a model_id al guardar si el asset está importado."
   blueprint.path:
-    note: "Alternativa a blueprint.model para el mismo archivo empaquetado."
+    points_to: sprites library (2D) o models library (3D legacy)
+    note: "2D: ruta PNG/GIF del sprite. 3D legacy: alternativa a blueprint.model."
   scene.backgroundPath:
     points_to: backgrounds library (2D)
   entity.controls.*:
@@ -281,7 +286,8 @@ load_flow:
     steps:
       - resolve_loaded_paths (relativas; limpia raíz si scenes[])
       - load_project_asset_stores: sounds, fonts, backgrounds (biblioteca global)
-      - import_scene: sprites de escena, backgroundPath, entidades (si hay contenido)
+      - import_scene: sprites de escena, backgroundPath, entidades; resolve_entity_restore
+        hereda metadatos de project.blueprints[] si blueprint_id (Blueprints_Model_2D.yaml)
       - project_loaded_2d → metadata al renderer
       - project_load_2d_complete → front sincroniza con export_save_snapshot
       - load_progress: mensajes [Carga] en panel (misma semántica que 3D)

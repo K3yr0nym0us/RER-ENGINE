@@ -1,0 +1,209 @@
+# Blueprints 3D (prefabs / plantillas reutilizables)
+#
+# Contrato de blueprints en proyectos `rer_engine_3d`: creación, construcción rápida,
+# propagación a instancias, persistencia en `.save` y resolución de `model_id` (.rerasset).
+#
+# Relacionado con:
+#   - docs/Entities_Model_3D.yaml      (tipos de entidad, blueprint_id en instancias)
+#   - docs/Save_Proyect_Model.yaml     (project.blueprints[], resources.models[])
+#   - docs/Rerasset_Format.yaml        (model_id → .rerasset en GPU)
+#   - docs/Project_Load_3D.yaml        (herencia blueprint al abrir .save)
+#   - docs/Physics_Model.yaml          (setEntityPhysics + propagación)
+#   - docs/Animation_Model.yaml        (animaciones + propagación)
+#   - docs/Entity_Properties_Modal.yaml (convertToBlueprint, replaceModel)
+#   - docs/MODAL_ELECTRON.yaml        (BluePrintModalElectronHost)
+#
+# Última revisión: junio 2026
+
+overview: |
+  Una blueprint 3D es una plantilla con id estable (`bp_*` en editor, persistido en manifest).
+  Las instancias en escena guardan `blueprint_id` y heredan modelo, física, scripts y animaciones
+  de la plantilla. Posición es por instancia; escala y rotación del mesh son compartidas
+  (plantilla) salvo que se edite solo la instancia sin afectar plantilla.
+
+# ---------------------------------------------------------------------------
+# Esquema manifest (`Blueprint3D` en src/shared-types/types.ts)
+# ---------------------------------------------------------------------------
+
+schema:
+  Blueprint3D:
+    id: string                    # Obligatorio; estable entre sesiones (.save)
+    name: string                  # Plantilla editable (p. ej. Environment_03)
+    category: environment | object | character | player
+    model: string                 # Clave de asset: model_id o ruta GLB/GLTF/FBX
+    model_id: optional string     # Asset importado (`model_*`); clave canónica GPU / .rerasset
+    physics_type: optional dynamic | static | kinematic
+    colision: boolean             # Malla física on/off (default environment → on)
+    animations: optional          # Clips embebidos o sprite (heredados por instancias)
+    scripts: optional             # Rhai por entidad (heredados)
+    scale: optional               # Solo editor en memoria; plantilla compartida
+    rotation: optional            # Quaternion xyzw; plantilla compartida
+    kind_path_visualModelPath:    # Solo UI editor; no serializan en manifest 3D limpio
+
+  instance_entity:
+    blueprint_id: optional string # Si presente → instancia de blueprint
+    position: per_instance        # Siempre de la entidad en escena
+    rotation_scale: from_template # Heredados de blueprint al editar plantilla compartida
+    model_model_id: from_blueprint # Al cargar .save el motor resuelve visual desde blueprint
+
+# ---------------------------------------------------------------------------
+# model_id y rutas de modelo (cambio 2026)
+# ---------------------------------------------------------------------------
+
+model_resolution:
+  rule: |
+    Modelos importados en Resources generan `model_id` (`model_*`) y `.rerasset`.
+    Blueprints y entidades deben referenciar el asset empaquetado, no la ruta GLB fuente
+    del disco del desarrollador.
+  editor_helpers:
+    file: src/renderer/src/utils/blueprintModelPath.ts
+    functions:
+      resolveBlueprintCacheKey: clave canónica para motor/caché (model_id preferido)
+      resolveBlueprintModelPath: path para ghost/spawn/UI
+      blueprintToSave: adjunta model_id desde biblioteca al guardar
+      blueprintFromSave: restaura model_id si model ya es model_*
+      buildBlueprintPlacementMeta: IPC register_blueprint / quick_build
+  save_flow:
+    file: src/renderer/defaults/buildProjectSaveFromEngine.ts
+    steps:
+      - attachModelIdsToBlueprints desde resources.models[]
+      - rewriteImportedBlueprintPaths: blueprint.model ← model_id (marcadores excluidos)
+  load_flow:
+    file: src/main/Engine/engine_3d/src/engine/load_proyect.rs
+    steps:
+      - build_generic_pending_restore hereda model/model_id de blueprint si blueprint_id
+      - entity_model_cache_lookup resuelve model_id → .rerasset → static_model_cache
+      - imported_model_registry enlaza alias (basename, path fuente) → model_id
+
+# ---------------------------------------------------------------------------
+# Flujo editor: crear blueprint
+# ---------------------------------------------------------------------------
+
+create:
+  ui:
+    - Seleccionar entidad 3D (no instancia de blueprint para reemplazar modelo libremente)
+    - Modal "Propiedades de la entidad" → "Convertir en Blueprint" → confirmar
+  motor:
+    - addBlueprint → register_blueprint IPC (solo si blueprintUsesModel3D)
+    - entityMetaRef[id].blueprintId = nuevo id
+  snapshot:
+    - Copia transform (scale, rotation), física, animaciones, scripts, visualModelPath
+    - Nombre plantilla: nextBlueprintTemplateName(category, existingNames)
+  restrictions:
+    - Instancias de blueprint: isFromBlueprint; "Reemplazar modelo" deshabilitado en instancia
+    - Player [Player]: no se convierte en blueprint desde el mismo flujo de entidad jugador
+
+# ---------------------------------------------------------------------------
+# Flujo editor: usar blueprint (construcción rápida)
+# ---------------------------------------------------------------------------
+
+quick_build:
+  ui:
+    - Herramientas → Construcción → modal Blueprint → categoría → elegir plantilla
+    - Click en viewport coloca instancia (ghost semitransparente previo)
+  ipc:
+    set_active_tool:
+      tool: quick_build_place
+      preview_path: resolveBlueprintCacheKey(blueprint, models)
+      preview_blueprint: buildBlueprintPlacementMeta(...)
+      preview_blueprint_id: blueprint.id
+  motor:
+    file: src/main/Engine/engine_3d/src/config_3d/quick_build.rs
+    steps:
+      - enrich_blueprint_placement_meta (registro + categoría biblioteca)
+      - Ghost con mesh del model_id / path
+      - Colocación: spawn con blueprint_id, scripts/animaciones/física de plantilla
+      - Nombre instancia incremental (Environment_05, Object_02, …)
+      - Spawn usa transform_position_for_visual_center (centro mesh en punto de click)
+  events:
+    - quick_build_ghost_ready
+    - entity_spawned / restore con blueprint_id en meta
+
+register_blueprint:
+  cmd: register_blueprint
+  when:
+    - addBlueprint / setBlueprints (carga proyecto, conversión, lista actualizada)
+  payload: BlueprintPlacementMeta (ipc.rs)
+  storage: State.blueprint_registry por blueprint_id
+  purpose: enrich_blueprint_placement_meta en quick_build sin reenviar todo el manifest
+
+# ---------------------------------------------------------------------------
+# Propagación plantilla → instancias (editor React)
+# ---------------------------------------------------------------------------
+
+propagation:
+  shared_fields:
+    - model / model_id (vía actualización blueprint + replace en instancias al cambiar plantilla)
+    - physics_type, colision, physics_enabled
+    - scripts, animations (incl. default animation, logical_w/h vía animation_logical_resolved)
+    - scale, rotation (plantilla; posición NO se propaga)
+  per_instance:
+    - position
+  implementation:
+    file: src/renderer/src/context/useContextEngine/hooks/createEngineActions.ts
+    functions:
+      updateEntityAnimations: actualiza blueprint + todas las instancias
+      updateEntityScripts: idem
+      setEntityPhysics: idem
+      updateEntityTransform: si blueprintId y cambia scale/rotation → plantilla + todas las instancias
+  load:
+    file: load_proyect.rs → build_generic_pending_restore
+    inherits: model, model_id, physics, colision, animations, scripts
+    instance_only: transform.position (y scale/rotation guardados en entidad si difieren)
+
+# ---------------------------------------------------------------------------
+# Borrado de blueprint
+# ---------------------------------------------------------------------------
+
+delete:
+  modal: BluePrintModalBody → InlineNestedDialog
+  options:
+    deleteWithEntities:
+      file: bluePrintModalActions.ts
+      action: removeEntity en todas las instancias con meta.blueprintId
+    deleteKeepEntities:
+      action: quita blueprintId; conserva física/scripts/animaciones en cada entidad
+  ipc: delegateModalElectron (ventana modal Electron)
+
+# ---------------------------------------------------------------------------
+# Persistencia `.save`
+# ---------------------------------------------------------------------------
+
+persistence:
+  location: project.blueprints[] (raíz manifest; global al proyecto, no por escena)
+  entities: entities[].blueprint_id en cada escena (scenes[].entities)
+  merge_on_save:
+    - Editor: blueprintsRef (React)
+    - buildProjectSaveFromEngine: blueprintToSave + model_id + rewrite model → model_id
+  on_load:
+    - blueprintFromSave en front (project_loaded_3d)
+    - setBlueprints → register_blueprint por cada entrada
+    - Motor: burst precarga model_id requeridos por entidades + blueprints
+
+# ---------------------------------------------------------------------------
+# Diferencias con blueprints 2D
+# ---------------------------------------------------------------------------
+
+differences_from_2d:
+  reference: docs/Blueprints_Model_2D.yaml
+  summary:
+    - Modelo: GLB/GLTF/FBX + model_id (.rerasset), no sprite path
+    - register_blueprint IPC (solo 3D)
+    - Física Rapier 3D + colisión por AABB de malla
+    - Animaciones: clips embebidos GLTF (embedded_in_model)
+    - Quick build: raycast plano Y + snap a grilla (no plano XY 2D)
+
+# ---------------------------------------------------------------------------
+# Archivos clave
+# ---------------------------------------------------------------------------
+
+key_files:
+  types: src/shared-types/types.ts (Blueprint3D)
+  paths: src/renderer/src/utils/blueprintModelPath.ts
+  actions: src/renderer/src/context/useContextEngine/hooks/createEngineActions.ts
+  quick_build_hook: src/renderer/src/hooks/useQuickBuildPlacement.ts
+  modal: src/renderer/src/pages/EngineView/components/sidebar/ToolsAccordion/components/BluePrintModalBody.tsx
+  motor_registry: src/main/Engine/engine_3d/src/engine/commands.rs (RegisterBlueprint)
+  motor_placement: src/main/Engine/engine_3d/src/config_3d/quick_build.rs
+  motor_load: src/main/Engine/engine_3d/src/engine/load_proyect.rs
+  ipc_meta: src/main/Engine/engine_3d/src/ipc.rs (BlueprintPlacementMeta, enrich_blueprint_placement_meta)

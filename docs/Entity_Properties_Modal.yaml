@@ -62,7 +62,7 @@ actions_EntityPropertiesAction:
     - replaceModel
     - send / sendAsync (cmd arbitrario)
   editor_side:
-    - convertToBlueprint
+    - convertToBlueprint  # docs/Blueprints_Model_2D.yaml | Blueprints_Model_3D.yaml
     - updateAnimations / updateScripts
     - setAnimationPlaying
     - openNestedModal (confirm, replaceModel, scriptEditor, visualScripting, …)

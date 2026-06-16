@@ -411,7 +411,7 @@ export function placementCategoryForEngine(category: Entity3DCategory): string {
   return norm
 }
 
-/** Manifest de blueprint para construcción rápida (`docs/Entities_Model_3D.yaml` → Blueprints). */
+/** Manifest de blueprint para construcción rápida (`docs/Blueprints_Model_3D.yaml`). */
 export function buildBlueprintPlacementMeta(
   bp: BluePrintEntry,
   models?: Array<{ path: string; model_id?: string; category?: string }>,

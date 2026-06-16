@@ -182,6 +182,7 @@ persistence:
       - Campos sprite completos (frames, logical_w/h, audio_path, scripts, …)
       - embedded_in_model: true para clips GLTF (sin frames)
   blueprint:
+    reference: docs/Blueprints_Model_3D.yaml
     animations: heredadas por instancias; set_animation en carga
   audio:
     rule: audio_path referencia sounds[]; no duplicar archivo en animación

@@ -108,6 +108,7 @@ ui_properties:
   blueprint_propagation: |
     setEntityPhysics actualiza blueprint (colision, physics_enabled, physics_type)
     y propaga a todas las instancias con el mismo blueprint_id.
+    Contrato completo: docs/Blueprints_Model_3D.yaml → propagation
 
 # ---------------------------------------------------------------------------
 # Colisión por tipo de entidad (comportamiento actual del motor)

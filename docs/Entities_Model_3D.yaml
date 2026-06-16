@@ -15,7 +15,8 @@ common: # FORMATO COMUN DE LAS ENTIDADES
   id: number # Generado por el motor
   category: string # Categoria de la entidad
   name: string # Generado por el motor (Editable)
-  model: string # Modelo 3D (.glb|.gltf) (Cargado en memoria GPU o en una ruta temporal del descomprimido .save)
+  model: string # Modelo 3D: model_id importado o ruta .glb|.gltf|.fbx (ver docs/Blueprints_Model_3D.yaml)
+  model_id: optional string # Asset importado (model_*); clave canónica GPU / .rerasset
   position: [number, number, number] # Posición en el mundo
   rotation: [number, number, number, number] # Quaternion xyzw (mesh)
   scale: [number, number, number] # Tamaño de la entidad
@@ -26,19 +27,9 @@ common: # FORMATO COMUN DE LAS ENTIDADES
   controls: optional # WASD / gamepad → Rhai en preview; (Solo para Player)
   colision: boolean # Colisiones de la entidad (Malla fisica del ultimo modelo 3D cargado on/off default:on)
 
-Blueprints: # Configuracion de las blueprints
-  id: string # Generado por el motor (debe guardarse el id del blueprint en el archivo .save y reutilizarse al cargar el proyecto)
-  name: string # Generado por el motor category_01 incrementable (Editable)
-  category: string # Categoria de la blueprint
-  model: string # Al cambiarle a uno se cambia a todas las entidades que tengan este blueprint
-  position: [number, number, number] # Posición en el mundo (Diferente en todas las entidades que tengan este blueprint)
-  rotation: [number, number, number, number] # Quaternion xyzw (mesh) (Diferente en todas las entidades que tengan este blueprint)
-  scale: [number, number, number] # Tamaño de la entidad (Editable por cada entidad)
-  physics_type: dynamic | static | kinematic | undefined # Tipo de físicas (si es undefined se asume que no tiene)
-  animations: optional # Animaciones de la entidad (incluidas en el modelo 3D)
-  scripts: optional # Scripts de la entidad (Rhai)
-  colision: boolean # Colisiones de la entidad (Malla fisica del ultimo modelo 3D cargado on/off default:on)
-
-#! Al cambiar cualquier modelo 3D tanto de una entidad como de blueprint
-#! se debe mantener todo el resto de configuracion de la entidad o blueprint.
-#! Y toda esta configuracion debe ser guardada en el archivo .save y reutilizada al cargar el proyecto.
+Blueprints:
+  reference: docs/Blueprints_Model_3D.yaml
+  summary: |
+    Plantillas globales (project.blueprints[]). Instancias usan blueprint_id.
+    model + model_id, física, scripts y animaciones se propagan; position es por instancia.
+    Crear: Propiedades → Convertir en Blueprint. Usar: Herramientas → Construcción rápida.

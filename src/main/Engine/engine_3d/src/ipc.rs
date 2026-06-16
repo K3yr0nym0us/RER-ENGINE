@@ -802,7 +802,7 @@ pub fn normalize_model_library_category(raw: Option<&str>) -> Option<String> {
     }
 }
 
-/// Manifest de blueprint activa en construcción rápida (`docs/Entities_Model_3D.yaml` → Blueprints).
+/// Manifest de blueprint activa en construcción rápida (`docs/Blueprints_Model_3D.yaml`).
 #[derive(Debug, Clone, Deserialize)]
 pub struct BlueprintPlacementMeta {
     #[serde(default)]

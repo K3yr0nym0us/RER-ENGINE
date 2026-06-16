@@ -87,7 +87,7 @@ editor_flow_3d:
   new_project: editor directo sin GameStyleSelector; gameStyle = modo de cámara en manifest
   camera_accordion: set_play_character_view; poses autoritativas en motor (no TS para save)
   models_accordion: import .glb/.gltf; sustitución jugador con overlay
-  blueprints: register_blueprint, quick_build, propagación instancias, project.blueprints[]
+  blueprints: ver docs/Blueprints_Model_3D.yaml (register_blueprint, model_id, quick_build, propagación)
   animations_panel: clips embebidos + play/stop; ver Animation_Model.yaml
   textures_tab: Entity_Textures.yaml
   load_save: Project_Load_3D.yaml

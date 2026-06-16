@@ -1,0 +1,196 @@
+# Blueprints 2D (prefabs / plantillas reutilizables)
+#
+# Contrato de blueprints en proyectos `rer_engine_2d`: escenarios y personajes sprite,
+# construcción rápida, propagación a instancias y persistencia en `.save`.
+#
+# Relacionado con:
+#   - docs/Entities_Model_2D.yaml       (tipos de entidad, blueprint_id en instancias)
+#   - docs/Blueprints_Model_3D.yaml     (contrato 3D; model_id, register_blueprint)
+#   - docs/Save_Proyect_Model.yaml      (project.blueprints[], sprites[])
+#   - docs/Animation_Model.yaml         (sprite sheets, propagación animaciones)
+#   - docs/Physics_Model.yaml           (setEntityPhysics + propagación)
+#   - docs/Entity_Properties_Modal.yaml (convertToBlueprint)
+#   - docs/MODAL_ELECTRON.yaml          (BluePrintModalElectronHost)
+#
+# Última revisión: junio 2026
+
+overview: |
+  Una blueprint 2D es una plantilla con id estable (`bp_*` en editor, persistido en manifest).
+  Solo aplica a escenarios (`kind: scenario`) y personajes (`kind: character`) con sprite PNG/GIF.
+  Las instancias guardan `blueprint_id` y heredan path del sprite, escala, rotación, física,
+  animaciones, scripts y controles de la plantilla. La posición es siempre por instancia.
+
+# ---------------------------------------------------------------------------
+# Esquema manifest (`BluePrintEntry` / `Blueprint3D` en types.ts)
+# ---------------------------------------------------------------------------
+
+schema:
+  blueprint:
+    id: string                    # Obligatorio; estable entre sesiones
+    name: string                  # Plantilla editable (p. ej. Scenario_02, Character_01)
+    category: character | environment | object  # Tabs del modal; environment ↔ scenario
+    kind: scenario | character    # Motor 2D: tipo de spawn (load_scenario / load_character)
+    path: string                  # Ruta al sprite en store / `.save` (sprites library)
+    scale: [number, number, number]
+    rotation: optional            # Quaternion; plantilla compartida al propagar
+    physics_enabled: optional boolean
+    physics_type: optional dynamic | static | kinematic
+    animations: optional          # Sprite sheets (frames, pivot, logical_w/h, crop src_*)
+    scripts: optional             # Rhai por entidad
+    control_bindings: optional    # Solo personajes (WASD / gamepad → Rhai)
+    visualModelPath: optional     # Alias editor; no sustituye path en 2D salvo UI
+
+  instance_entity:
+    blueprint_id: optional string
+    kind: scenario | character    # De la instancia en escena
+    path: string                  # Sprite de la instancia (mismo que blueprint.path al heredar)
+    position: per_instance
+    rotation_scale: from_blueprint # Heredados de plantilla al editar escala/rotación compartida
+
+  not_used_in_2d:
+    - model_id / .rerasset (solo 3D)
+    - register_blueprint IPC
+    - colision (3D mesh); en 2D → physics_enabled
+
+# ---------------------------------------------------------------------------
+# Asset: sprite path y recorte de animación
+# ---------------------------------------------------------------------------
+
+sprite_resolution:
+  primary: blueprint.path → archivo PNG/GIF en sprites[] del manifest
+  quick_build_preview: |
+    Si la blueprint tiene animaciones con frames[0], el ghost usa firstFrame.path
+    y opcionalmente preview_src_rect [src_x, src_y, src_w, src_h] para recorte del sheet.
+  helpers:
+    file: src/renderer/src/utils/blueprintModelPath.ts
+    functions:
+      resolveBlueprintModelPath: path principal (2D: path / visualModelPath)
+      buildQuickBuildPendingRestore: metadatos restore al colocar
+
+# ---------------------------------------------------------------------------
+# Flujo editor: crear blueprint
+# ---------------------------------------------------------------------------
+
+create:
+  ui:
+    - Seleccionar escenario o personaje 2D
+    - Modal "Propiedades de la entidad" → "Convertir en Blueprint" → confirmar
+  snapshot:
+    - Copia kind, path, scale, rotation, física, animaciones, scripts, control_bindings
+    - Nombre plantilla: nextBlueprintTemplateName(category, existingNames)
+    - addBlueprint en React (sin register_blueprint en motor 2D)
+    - entityMetaRef[id].blueprintId = nuevo id
+  restrictions:
+    - Colliders y execution areas no se convierten en blueprint
+    - Instancias de blueprint: isFromBlueprint en modal propiedades
+
+# ---------------------------------------------------------------------------
+# Flujo editor: usar blueprint (construcción rápida)
+# ---------------------------------------------------------------------------
+
+quick_build:
+  ui:
+    - Herramientas → Construcción → modal Blueprint → pestaña Character / Environment / Objects
+    - Click en viewport coloca instancia (ghost semitransparente sigue al cursor)
+  ipc:
+    set_active_tool:
+      tool: quick_build_place
+      preview_path: firstFrame.path ?? blueprint.path
+      preview_kind: scenario | character
+      preview_scale: blueprint.scale
+      preview_blueprint_id: blueprint.id
+      preview_src_rect: optional crop del primer frame
+  motor_ghost:
+    file: src/main/Engine/engine_2d/src/config_2d/assets.rs → load_quick_build_ghost
+    note: Empaqueta sprite en atlas; entidad __qb_ghost__ fuera de pantalla hasta mover cursor
+  placement:
+    file: src/renderer/src/hooks/useQuickBuildPlacement.ts
+    flow:
+      - Motor emite QuickBuildClick { x, y, fit_to_grid, scale }
+      - Front encola PendingRestore (blueprintId, animaciones, scripts, física)
+      - load_scenario o load_character según bp.kind
+      - apply_entity_restore / scene import aplica transform en posición del click
+  snap_2d:
+    file: src/main/Engine/engine_2d/src/config_2d.rs
+    ctrl_held:
+      - Escenario: escala ajustada a celdas de grilla (snap_size_to_grid_2d)
+      - Snap a instancias adyacentes con el mismo preview_path (mismo sprite)
+      - Personaje: snap por borde horizontal/vertical a otros del mismo path
+
+# ---------------------------------------------------------------------------
+# Propagación plantilla → instancias (editor React)
+# ---------------------------------------------------------------------------
+
+propagation:
+  shared_with_3d: true
+  file: src/renderer/src/context/useContextEngine/hooks/createEngineActions.ts
+  shared_fields:
+    - scripts, animations (y default animation)
+    - physics_enabled, physics_type
+    - scale, rotation (plantilla; posición NO se propaga)
+  per_instance:
+    - position
+  load:
+    file: src/main/Engine/engine_2d/src/engine/load_proyect.rs
+    function: resolve_entity_restore
+    inherits: scale, rotation, physics, animations, scripts, control_bindings
+    entity_path: permanece path de la entidad en manifest (sprite de instancia)
+    import: build_import_scene_entity → import_scene unifica carga de escena
+
+# ---------------------------------------------------------------------------
+# Borrado de blueprint
+# ---------------------------------------------------------------------------
+
+delete:
+  shared_ui: BluePrintModalBody (mismo modal que 3D)
+  file: src/renderer/src/pages/EngineView/components/sidebar/ToolsAccordion/components/bluePrintModalActions.ts
+  options:
+    deleteWithEntities: borra todas las instancias vinculadas (scenario/character)
+    deleteKeepEntities: quita blueprintId; conserva metadatos en cada entidad
+
+# ---------------------------------------------------------------------------
+# Persistencia `.save`
+# ---------------------------------------------------------------------------
+
+persistence:
+  location: project.blueprints[] (raíz manifest; global al proyecto)
+  entities: entities[].blueprint_id en cada escena (scenes[].entities)
+  save_2d:
+    file: src/renderer/defaults/buildProjectSaveFromEngine.ts
+    rule: |
+      Proyecto 2D: serializa blueprints[] del editor tal cual (BluePrintEntry).
+      No aplica blueprintToSave ni model_id (solo proyectos 3D).
+  on_load:
+    - project_loaded_2d → blueprintFromSave por entrada
+    - setBlueprints en React
+    - import_scene con resolve_entity_restore por entidad con blueprint_id
+
+# ---------------------------------------------------------------------------
+# Diferencias con blueprints 3D
+# ---------------------------------------------------------------------------
+
+differences_from_3d:
+  reference: docs/Blueprints_Model_3D.yaml
+  summary:
+    - Asset: sprite path en sprites[], no GLB ni model_id
+    - Sin register_blueprint ni BlueprintPlacementMeta en motor
+    - Colocación: load_scenario / load_character + pendingRestores (no spawn_cached_model)
+    - Snap: grilla XY y adyacencia por mismo sprite path (Rust)
+    - Categorías modal: character / environment / object (object tab para blueprints legacy)
+    - Física: Rapier 2D kinematic en personajes; escenarios sin cuerpo salvo physics_enabled
+
+# ---------------------------------------------------------------------------
+# Archivos clave
+# ---------------------------------------------------------------------------
+
+key_files:
+  types: src/shared-types/types.ts (BluePrintEntry / Blueprint3D compartido)
+  paths: src/renderer/src/utils/blueprintModelPath.ts
+  quick_build_hook: src/renderer/src/hooks/useQuickBuildPlacement.ts
+  actions: src/renderer/src/context/useContextEngine/hooks/createEngineActions.ts
+  modal: src/renderer/src/pages/EngineView/components/sidebar/ToolsAccordion/components/BluePrintModalBody.tsx
+  motor_ghost: src/main/Engine/engine_2d/src/config_2d/assets.rs
+  motor_snap: src/main/Engine/engine_2d/src/config_2d.rs
+  motor_load: src/main/Engine/engine_2d/src/engine/load_proyect.rs
+  motor_import: src/main/Engine/engine_2d/src/engine/import_scene.rs
+  motor_commands: src/main/Engine/engine_2d/src/engine/commands.rs (set_active_tool, load_scenario)
