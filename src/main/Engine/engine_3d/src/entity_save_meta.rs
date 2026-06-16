@@ -28,6 +28,14 @@ pub(crate) fn entity_category_uses_character_capsule(category: Option<&str>) -> 
     matches!(category, Some("player") | Some("character"))
 }
 
+/// Jugador con mesh importado (`model_id` en biblioteca o archivo `.fbx`/`.glb`).
+pub(crate) fn is_play_character_visual_model_path(path: &str) -> bool {
+    if is_model_3d_asset_path(path) {
+        return true;
+    }
+    path.starts_with("model_")
+}
+
 /// Entorno y objetos estáticos: colisión por AABB de malla.
 pub(crate) fn entity_category_uses_mesh_collision(category: Option<&str>) -> bool {
     matches!(category, Some("environment") | Some("object"))

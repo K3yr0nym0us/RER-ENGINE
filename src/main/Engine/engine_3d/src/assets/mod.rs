@@ -1,6 +1,7 @@
 //! Pipeline de assets importados (.rerasset) en el motor 3D.
 
 pub mod bake;
+pub mod bundled;
 pub mod import;
 pub mod load;
 pub mod model_asset_blob;

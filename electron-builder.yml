@@ -17,6 +17,8 @@ extraResources:
       - rer_engine_2d*
       - rer_engine_3d*
       - rer_engine_shared*
+  - from: src/main/Engine/Models
+    to: engine/Models
 
 linux:
   target:

@@ -355,6 +355,7 @@ impl State {
         };
 
         send_load_progress("Insertando Character (Player)", None, None);
+        let _ = crate::assets::bundled::ensure_bundled_default_player_model(self);
         self.apply_3d_placeholder_sun_and_player();
 
         send_load_progress("Plantilla 3D lista", None, None);

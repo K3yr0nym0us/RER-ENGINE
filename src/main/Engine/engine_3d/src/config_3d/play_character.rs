@@ -7,7 +7,6 @@ use crate::config_3d::character_anchor::{
     PLAY_CHARACTER_BODY_HEIGHT,
     PLAY_CHARACTER_COLLIDER_RADIUS,
 };
-use crate::entity_save_meta::is_model_3d_asset_path;
 use crate::config_3d::model_asset;
 use crate::config_3d::{is_fbx_model_path, is_gltf_model_path};
 use crate::config_3d::static_model_cache::play_character_cache_key;
@@ -56,7 +55,8 @@ impl State {
         id: EntityId,
         model_path: &str,
     ) -> bool {
-        self.play_character_entity == Some(id) && is_model_3d_asset_path(model_path)
+        self.play_character_entity == Some(id)
+            && crate::entity_save_meta::is_play_character_visual_model_path(model_path)
     }
 
     /// Origen de entidad en los pies (preview/FBX), no en el centro del AABB (glTF skinned centrado).
@@ -578,14 +578,28 @@ impl State {
     }
 
     pub(crate) fn setup_play_character_entity(&mut self, id: EntityId, feet: glam::Vec3) {
-        self.character_entities.push(id);
-        self.play_character_entity = Some(id);
-        self.play_character_mesh_forward_xz = glam::Vec2::new(0.0, 1.0);
-        self.play_character_mesh_extents = None;
+        self.init_play_character_entity_core(id, feet);
         self.attach_play_character_body(id);
         if let Some(t) = self.world.get_mut::<Transform>(id) {
             t.position = body_center_from_feet(feet);
         }
+        self.finish_play_character_entity_setup(id);
+    }
+
+    /// Jugador sin cubo placeholder: transform provisional en los pies hasta instalar mesh.
+    fn init_play_character_entity_core(&mut self, id: EntityId, feet: glam::Vec3) {
+        self.character_entities.push(id);
+        self.play_character_entity = Some(id);
+        self.play_character_mesh_forward_xz = glam::Vec2::new(0.0, 1.0);
+        self.play_character_mesh_extents = None;
+        if let Some(t) = self.world.get_mut::<Transform>(id) {
+            t.position = feet;
+            t.rotation = glam::Quat::IDENTITY;
+            t.scale = glam::Vec3::ONE;
+        }
+    }
+
+    fn finish_play_character_entity_setup(&mut self, id: EntityId) {
         if !self.is_play_controller_active() {
             if let Some(t) = self.world.get::<Transform>(id) {
                 self.init_editor_viewport_for_player(t.position);
@@ -598,16 +612,106 @@ impl State {
         self.emit_play_character_view_changed(true);
     }
 
+    fn wait_for_play_character_model_gpu(&mut self, model_id: &str) -> bool {
+        use std::time::{Duration, Instant};
+
+        let started = Instant::now();
+        let timeout = Duration::from_secs(60);
+        while started.elapsed() < timeout {
+            if self.ensure_play_character_model_cached(model_id).is_ok() {
+                self.ensure_play_character_model_assets_cached(model_id);
+                return true;
+            }
+            if self
+                .imported_model_registry
+                .get(model_id)
+                .is_some_and(|e| e.state == rer_engine_shared::assets::AssetState::Failed)
+            {
+                return false;
+            }
+            self.poll_and_advance_model_preloads(
+                crate::config_3d::static_model_cache::MODEL_GPU_PARTS_DURING_SAVE_LOAD,
+            );
+            std::thread::yield_now();
+        }
+        log::warn!("Tiempo agotado esperando mesh base del jugador: {model_id}");
+        false
+    }
+
+    fn apply_play_character_visual_install(
+        &mut self,
+        id: EntityId,
+        model_path: &str,
+        feet: glam::Vec3,
+    ) -> bool {
+        let local_bounds = self
+            .static_model_cache
+            .get(&play_character_cache_key(&self.model_cache_key(model_path)))
+            .and_then(|parts| parts.first())
+            .map(|p| p.local_bounds);
+
+        if self
+            .install_play_character_visual_from_path(id, model_path)
+            .is_err()
+        {
+            return false;
+        }
+
+        if let Some(bounds) = local_bounds {
+            self.apply_play_character_model_placement_after_load(id, model_path, bounds);
+        } else {
+            self.sync_play_character_scale_to_body_height(id, model_path);
+            self.place_play_character_at_world_feet(id, model_path, feet, true);
+        }
+        self.sync_play_character_body_rotation_after_mesh_assign();
+        self.finish_play_character_model_replace(id, model_path);
+        let library_path = self.model_library_path_for(model_path);
+        self.emit_entity_model_replaced_for_play_character(id, &library_path);
+        true
+    }
+
+    /// Instala el mesh empaquetado sin cubo intermedio (mismo pipeline que replace manual).
+    fn try_spawn_play_character_with_bundled_model(
+        &mut self,
+        id: EntityId,
+        feet: glam::Vec3,
+    ) -> bool {
+        let Some(model_id) = crate::assets::bundled::ensure_bundled_default_player_model(self)
+        else {
+            return false;
+        };
+        if !self.wait_for_play_character_model_gpu(&model_id) {
+            return false;
+        }
+
+        self.init_play_character_entity_core(id, feet);
+        if !self.apply_play_character_visual_install(id, &model_id, feet) {
+            return false;
+        }
+        self.finish_play_character_entity_setup(id);
+        log::info!("Jugador creado con mesh base empaquetado: {model_id}");
+        true
+    }
+
     pub(crate) fn spawn_play_character(&mut self) {
         let feet = self.camera.target;
         let id = self.world.spawn(Some("Player"));
-        self.setup_play_character_entity(id, feet);
+
+        if !self.try_spawn_play_character_with_bundled_model(id, feet) {
+            log::info!("Mesh base no disponible; jugador con cubo placeholder (id={id})");
+            self.setup_play_character_entity(id, feet);
+        }
+
         self.save_registry.register_meta(
             id,
             EntitySaveMeta {
                 kind: "character".to_string(),
                 path: "[Player]".to_string(),
-                visual_model_path: None,
+                visual_model_path: self
+                    .save_registry
+                    .meta
+                    .get(&id)
+                    .and_then(|m| m.visual_model_path.clone()),
                 entity_category: Some("player".to_string()),
             },
         );

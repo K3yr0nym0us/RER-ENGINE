@@ -1940,14 +1940,21 @@ export function createEngineEventHandler({
 				objects?: Array<{
 					id?: number;
 					vertex_count?: number;
+					fill_color?: [number, number, number, number];
+					texture_path?: string | null;
+					texture_name?: string;
 					z_index?: number;
 					locked?: boolean;
 				}>;
 			};
 			const textBoxes = (e.boxes ?? [])
-				.filter((b): b is { id: number; font_name?: string; text?: string } =>
-					typeof b.id === 'number',
-				)
+				.filter((b): b is {
+					id: number;
+					font_name?: string;
+					text?: string;
+					z_index?: number;
+					locked?: boolean;
+				} => typeof b.id === 'number')
 				.map((b) => ({
 					id: b.id,
 					fontName: b.font_name ?? '',
@@ -1956,9 +1963,13 @@ export function createEngineEventHandler({
 					locked: Boolean(b.locked),
 				}));
 			const buttons = (e.buttons ?? [])
-				.filter((b): b is { id: number; font_name?: string; text?: string } =>
-					typeof b.id === 'number',
-				)
+				.filter((b): b is {
+					id: number;
+					font_name?: string;
+					text?: string;
+					z_index?: number;
+					locked?: boolean;
+				} => typeof b.id === 'number')
 				.map((b) => ({
 					id: b.id,
 					fontName: b.font_name ?? '',
@@ -1967,9 +1978,12 @@ export function createEngineEventHandler({
 					locked: Boolean(b.locked),
 				}));
 			const images = (e.images ?? [])
-				.filter((img): img is { id: number; image_name?: string } =>
-					typeof img.id === 'number',
-				)
+				.filter((img): img is {
+					id: number;
+					image_name?: string;
+					z_index?: number;
+					locked?: boolean;
+				} => typeof img.id === 'number')
 				.map((img) => ({
 					id: img.id,
 					imageName: img.image_name ?? '',
@@ -1977,9 +1991,15 @@ export function createEngineEventHandler({
 					locked: Boolean(img.locked),
 				}));
 			const objects = (e.objects ?? [])
-				.filter((obj): obj is { id: number; vertex_count?: number } =>
-					typeof obj.id === 'number',
-				)
+				.filter((obj): obj is {
+					id: number;
+					vertex_count?: number;
+					fill_color?: [number, number, number, number];
+					texture_path?: string | null;
+					texture_name?: string;
+					z_index?: number;
+					locked?: boolean;
+				} => typeof obj.id === 'number')
 				.map((obj) => ({
 					id: obj.id,
 					vertexCount:

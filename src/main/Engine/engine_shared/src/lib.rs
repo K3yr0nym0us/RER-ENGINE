@@ -1,4 +1,5 @@
 pub mod assets;
+pub mod bundled_models;
 pub mod editor_defaults;
 pub mod scripting;
 pub mod gpu;
