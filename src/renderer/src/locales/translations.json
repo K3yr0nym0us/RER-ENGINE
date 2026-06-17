@@ -563,5 +563,41 @@
   "Drag to move": "Arrastrar para mover",
   "AI server is starting…": "El servidor de IA está iniciando…",
   "Hi! I'm RER-AI, your AI assistant. If you need anything, don't hesitate to ask me.": "Hola soy RER-AI tu asistente de IA, si necesitas algo no dudes en consultarme",
-  "The model returned an empty response. Try again.": "El modelo devolvió una respuesta vacía. Inténtalo de nuevo."
+  "The model returned an empty response. Try again.": "El modelo devolvió una respuesta vacía. Inténtalo de nuevo.",
+
+  "Add Socket": "Añadir socket",
+  "Bone": "Hueso",
+  "Select bone": "Seleccionar hueso",
+  "Cancel bone selection": "Cancelar selección de hueso",
+  "No bone selected": "Ningún hueso seleccionado",
+  "Click a bone in the viewport to assign it to this socket.": "Haz clic en un hueso del viewport para asignarlo a este socket.",
+
+  "Create sockets": "Crear sockets",
+  "Sockets": "Sockets",
+  "Socket": "Socket",
+  "Select a socket": "Selecciona un socket",
+  "Create attachment sockets on an entity.": "Crea sockets de acople en una entidad.",
+  "Click an entity in the viewport if none is selected yet.": "Haz clic en una entidad del viewport si aún no hay ninguna seleccionada.",
+  "Click an entity in the viewport to manage its sockets.": "Haz clic en una entidad del viewport para gestionar sus sockets.",
+  "This entity cannot have sockets. Click another entity in the viewport.": "Esta entidad no puede tener sockets. Haz clic en otra entidad del viewport.",
+
+  "Link sockets": "Vincular sockets",
+  "Link": "Vincular",
+  "Link object": "Vincular objeto",
+  "Link objects to sockets and manage attachments.": "Vincula objetos a sockets y gestiona los acoples.",
+  "Click the host entity, then the object to attach.": "Haz clic en la entidad host y luego en el objeto a acoplar.",
+  "Click the entity with sockets in the viewport (e.g. the player).": "Haz clic en la entidad con sockets en el viewport (p. ej. el jugador).",
+  "This entity has no sockets. Click the character or prop that owns the sockets.": "Esta entidad no tiene sockets. Haz clic en el personaje u objeto que los tenga.",
+  "Host": "Host",
+  "Click the object in the viewport to link it to socket": "Haz clic en el objeto del viewport para vincularlo al socket",
+  "That entity cannot be linked to this socket. Click another object.": "Esa entidad no se puede vincular a este socket. Haz clic en otro objeto.",
+  "No sockets on this entity. Use Create Sockets in Tools first.": "Esta entidad no tiene sockets. Usa primero Crear sockets en Herramientas.",
+  "No linked objects": "Sin objetos vinculados",
+  "Unlink": "Desvincular",
+
+  "Socket configuration": "Configuración de sockets",
+  "Config": "Config",
+  "Create sockets and link objects to them.": "Crea sockets y vincula objetos a ellos.",
+  "Select entity": "Seleccionar entidad",
+  "Select host entity": "Seleccionar entidad host"
 }

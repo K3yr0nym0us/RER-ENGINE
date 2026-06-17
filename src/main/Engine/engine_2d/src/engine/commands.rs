@@ -924,7 +924,7 @@ EngineCommand::Common(EngineCommandCommon::PlayAnimation { id, name, .. }) => {
                             fps: anim.fps,
                             finished: false,
                         });
-                        
+                        self.emit_entity_animation_play_state(id);
                     }
                 }
             }
@@ -947,7 +947,13 @@ EngineCommand::Common(EngineCommandCommon::PlayAnimation { id, name, .. }) => {
                 self.stop_audio_internal();
                 // Descargar scripts de la animación que estaba activa.
                 self.script_engine.detach_animation_scripts(id);
+                self.emit_entity_animation_play_state(id);
                 send_event(&EngineEvent::AnimationFinished { entity_id: id });
+            }
+            EngineCommand::Common(EngineCommandCommon::QueryEntityAnimationPlayState {
+                entity_id,
+            }) => {
+                self.emit_entity_animation_play_state(entity_id);
             }
             EngineCommand::Common(EngineCommandCommon::LoadSceneVisualScript { scene_id, source }) => {
                 

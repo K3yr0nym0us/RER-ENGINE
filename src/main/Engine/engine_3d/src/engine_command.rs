@@ -138,6 +138,25 @@ pub enum EngineCommand3dOnly {
     NotifyProjectSaved { extract_dir: String },
     ClearEditorUndoRedo,
     MergeEntities { ids: Vec<u32> },
+    ListEntityBones { entity_id: u32 },
+    ListEntitySockets { entity_id: u32 },
+    UpsertEntitySocket {
+        entity_id: u32,
+        name: String,
+        bone_name: String,
+        #[serde(default)]
+        local_position: [f32; 3],
+        #[serde(default = "default_unit_quat")]
+        local_rotation: [f32; 4],
+    },
+    RemoveEntitySocket { entity_id: u32, name: String },
+    AttachToSocket {
+        child_ids: Vec<u32>,
+        host_id: u32,
+        socket_name: String,
+    },
+    DetachFromSocket { child_id: u32 },
+    SetSocketBonePickMode { entity_id: u32, active: bool },
 }
 
 #[cfg(test)]

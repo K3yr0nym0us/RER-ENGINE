@@ -172,6 +172,18 @@ export interface Entity3D {
   attach_local_rotation?: [number, number, number, number]
   /** Escala mundial del hijo al fusionar (no hereda escala del padre). */
   attach_local_scale?: [number, number, number]
+  /** Hijo enganchado a socket de otra entidad. */
+  attach_socket_host_id?: number
+  attach_socket_name?: string
+  /** Sockets definidos en esta entidad host. */
+  sockets?: EntitySocket3D[]
+}
+
+export interface EntitySocket3D {
+  name: string
+  bone_name: string
+  local_position: [number, number, number]
+  local_rotation: [number, number, number, number]
 }
 
 /** Plantilla (`project.blueprints[]` / manifest). */
@@ -983,6 +995,8 @@ export interface ModalElectronOpenRequest {
   playerUiEditorState?: Record<string, unknown>
   /** Estado del panel de propiedades de entidad (modal Electron). */
   entityPropertiesState?: Record<string, unknown>
+  /** Estado de configuración de sockets (modal Electron). */
+  socketConfigModalState?: Record<string, unknown>
   /** Entidades de escena para el editor de nodos (snapshot IPC, sin `undefined`). */
   sceneEntities?: Array<{
     id: number
@@ -1061,10 +1075,15 @@ declare global {
         handlerId: string
         playerUiEditorState?: unknown
         entityPropertiesState?: unknown
+        socketConfigModalState?: unknown
         models?: ModelInfo[]
       }) => void
       entityPropertiesAction: (handlerId: string, action: unknown) => Promise<void>
+      socketConfigModalAction: (handlerId: string, action: unknown) => Promise<void>
       onModalElectronEntityPropertiesActionRequest: (
+        cb: (req: { handlerId: string; action: unknown; requestId: string }) => void | Promise<void>,
+      ) => () => void
+      onModalElectronSocketConfigModalActionRequest: (
         cb: (req: { handlerId: string; action: unknown; requestId: string }) => void | Promise<void>,
       ) => () => void
       onModalElectronClosed: (
@@ -1077,6 +1096,7 @@ declare global {
           handlerId: string
           playerUiEditorState?: unknown
           entityPropertiesState?: unknown
+          socketConfigModalState?: unknown
           models?: ModelInfo[]
         }) => void,
       ) => () => void

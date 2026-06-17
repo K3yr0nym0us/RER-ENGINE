@@ -483,6 +483,16 @@ pub enum EngineEvent {
     PivotSelected { frame_path: String, pivot_x: f32, pivot_y: f32 },
     /// Emitido cuando una animación termina (no loop) o se detiene.
     AnimationFinished { entity_id: u32 },
+    /// Estado de reproducción de animación de una entidad (consulta o tras play/stop).
+    #[serde(rename = "entity_animation_play_state")]
+    EntityAnimationPlayState {
+        entity_id: u32,
+        playing: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        name: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        loop_: Option<bool>,
+    },
     /// Emitido cuando el estado de física de una entidad cambia (activado/desactivado por script).
     PhysicsChanged { entity_id: u32, enabled: bool, body_type: String },
     /// Emitido cuando un sprite PNG se cargó correctamente en el almacén.

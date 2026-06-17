@@ -303,7 +303,7 @@ impl State {
                 finished: false,
             },
         );
-        
+        self.emit_entity_animation_play_state(id);
     }
 
     pub(crate) fn stop_model_clip(&mut self, id: EntityId) {
@@ -312,6 +312,7 @@ impl State {
             active.time_s = 0.0;
             active.finished = true;
         }
+        self.emit_entity_animation_play_state(id);
         send_event(&EngineEvent::AnimationFinished { entity_id: id });
     }
 
@@ -380,6 +381,7 @@ impl State {
                 active.playing = false;
                 active.finished = true;
             }
+            self.emit_entity_animation_play_state(id);
             send_event(&EngineEvent::AnimationFinished { entity_id: id });
         }
     }
@@ -444,12 +446,6 @@ impl State {
             }
         }
     }
-}
-
-/// Matrices globales de bind (sin IBM) para overlay de esqueleto.
-pub(crate) fn asset_joint_globals_bind(asset: &ModelAsset) -> Vec<Mat4> {
-    let joint_count = asset.joint_parents.len().min(MAX_JOINTS);
-    asset_joint_globals_with_locals(asset, &asset.bind_local[..joint_count])
 }
 
 pub(crate) fn asset_joint_globals_with_clip(

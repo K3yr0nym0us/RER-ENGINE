@@ -29,6 +29,7 @@ export function EntityPropertiesElectronHost({ payload }: EntityPropertiesElectr
 			linkedBlueprintName: null,
 			scripts: [],
 			animationPlayingIds: [],
+			playingAnimationName: null,
 		},
 	)
 

@@ -14,6 +14,6 @@ Tareas globales: [CHECKLIST.md](./CHECKLIST.md). Contrato motor: [`engine_3d/ARC
 
 - [ ] **Root motion en animaciones 3D** — en Propiedades → Animaciones, marcar un clip embebido como *«Esta animación controla el movimiento»* (root motion): mientras se reproduce, el desplazamiento del hueso raíz del clip mueve la entidad en el mundo (además o en lugar del slide WASD de la cápsula). Útil para ataques con paso, empujones, trepar, cinemáticas de locomoción hechas en Blender. Hoy el jugador play character se mueve solo por shape cast + input; los clips son solo visuales. Persistencia en `.save`, motor autoritativo, opcional por animación.
 
-### Assets y exportación (Prioridad baja final del proyecto)
+- [ ] **Reflejos con nivel (Desactivado, Bajo, Medio, Alto)** - En el accordion World poner en algun lado un selector de nivel de reflejos que sean compatibles con tecnologia RTX.
+Hay que crear toda la logica detras de esto y debe poder tambien modificarse por Rhai o Nodos.
 
-- [ ] **Build final con texturas por plataforma** — aplazado hasta pipeline Editor → Save → Build → Ejecutable. Editor: RTEX RGBA8 ([Rerasset_Format.yaml](./docs/Rerasset_Format.yaml)). Export: BC7/BC5/BC4 (Win/Linux), ASTC (Android futuro). Ver [CHECKLIST.md](./CHECKLIST.md) y [CHECKLIST-TEXTURAS-3D.md](./CHECKLIST-TEXTURAS-3D.md).

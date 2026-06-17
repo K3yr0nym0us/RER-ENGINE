@@ -785,7 +785,8 @@ ipcMain.on('modal-electron:patch', (_event, data: {
   handlerId: string
   playerUiEditorState?: unknown
   entityPropertiesState?: unknown
-  models?: unknown
+    socketConfigModalState?: unknown
+    models?: unknown
 }) => {
   sendPatchToModal(data)
 })
@@ -829,6 +830,29 @@ ipcMain.handle(
         resolve()
       })
       mainWindow!.webContents.send('modal-electron:entity-properties-action-request', {
+        ...req,
+        requestId,
+      })
+    })
+  },
+)
+
+ipcMain.handle(
+  'modal-electron:socket-config-modal-action',
+  async (_event, req: { handlerId: string; action: unknown }) => {
+    if (!mainWindow || mainWindow.isDestroyed()) return
+    return new Promise<void>((resolve) => {
+      const requestId = `${Date.now()}-${Math.random()}`
+      const channel = `modal-electron:socket-config-modal-action-done-${requestId}`
+      const timeout = setTimeout(() => {
+        ipcMain.removeAllListeners(channel)
+        resolve()
+      }, 30_000)
+      ipcMain.once(channel, () => {
+        clearTimeout(timeout)
+        resolve()
+      })
+      mainWindow!.webContents.send('modal-electron:socket-config-modal-action-request', {
         ...req,
         requestId,
       })
@@ -1427,12 +1451,21 @@ function serializeScriptsToFiles(
       (entity as Entity3D & { control_bindings?: SavedControls }).control_bindings
     const fusion: Pick<
       Entity3D,
-      'attach_parent_id' | 'attach_local_position' | 'attach_local_rotation' | 'attach_local_scale'
+      | 'attach_parent_id'
+      | 'attach_local_position'
+      | 'attach_local_rotation'
+      | 'attach_local_scale'
+      | 'attach_socket_host_id'
+      | 'attach_socket_name'
+      | 'sockets'
     > = {}
     if (entity.attach_parent_id != null) fusion.attach_parent_id = entity.attach_parent_id
     if (entity.attach_local_position != null) fusion.attach_local_position = entity.attach_local_position
     if (entity.attach_local_rotation != null) fusion.attach_local_rotation = entity.attach_local_rotation
     if (entity.attach_local_scale != null) fusion.attach_local_scale = entity.attach_local_scale
+    if (entity.attach_socket_host_id != null) fusion.attach_socket_host_id = entity.attach_socket_host_id
+    if (entity.attach_socket_name != null) fusion.attach_socket_name = entity.attach_socket_name
+    if (entity.sockets?.length) fusion.sockets = entity.sockets
     return {
       ...entity,
       ...fusion,

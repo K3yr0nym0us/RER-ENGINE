@@ -52,7 +52,7 @@ impl State {
             out.push(handle);
         }
         for (child_id, attachment) in &self.entity_attachments {
-            if attachment.parent_id != player_id {
+            if attachment.parent_id() != Some(player_id) {
                 continue;
             }
             if let Some(handle) = self.physics.collider_handle_for_entity(*child_id) {

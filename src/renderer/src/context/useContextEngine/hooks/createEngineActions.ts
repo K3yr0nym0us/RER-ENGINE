@@ -94,8 +94,19 @@ export function createEngineActions({
 		});
 	};
 
-	const setAnimationPlaying = (entityId: number, playing: boolean) => {
+	const setAnimationPlaying = (
+		entityId: number,
+		playing: boolean,
+		animationName?: string | null,
+	) => {
 		dispatch({ type: 'SET_ANIMATION_PLAYING', payload: { entityId, playing } });
+		const meta = refs.entityMetaRef.current[entityId];
+		if (!meta) return;
+		if (playing && animationName) {
+			meta.playingAnimationName = animationName;
+		} else if (!playing) {
+			delete meta.playingAnimationName;
+		}
 	};
 
 	const applyInitialAnimationFrame = (entityId: number, animations?: any[]) => {

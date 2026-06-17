@@ -8,13 +8,13 @@ use crate::ecs::Transform;
 use crate::engine::State;
 use crate::ipc::{send_event, EngineEvent};
 
-/// Forward de la cámara proyectado al plano XZ. Coincide con `Camera::view_forward` con pitch=0.
+/// Forward de la c?mara proyectado al plano XZ. Coincide con `Camera::view_forward` con pitch=0.
 fn look_xz_from_camera_yaw(camera_yaw: f32) -> glam::Vec2 {
     let (sy, cy) = camera_yaw.sin_cos();
     glam::Vec2::new(-cy, -sy)
 }
 
-/// Yaw del mesh para que su forward local apunte hacia donde mira la cámara (offset 0).
+/// Yaw del mesh para que su forward local apunte hacia donde mira la c?mara (offset 0).
 pub(crate) fn mesh_yaw_from_camera_and_forward(
     camera_yaw: f32,
     mesh_forward_xz: glam::Vec2,
@@ -58,7 +58,7 @@ impl State {
         if self.editor_viewport_distance < 0.5 {
             self.editor_viewport_distance = PLAY_CHARACTER_EDITOR_ORBIT_DISTANCE;
         }
-        // Posición inicial del ojo de la cámara FPS: en el ojo del Player. Una vez aquí,
+        // Posici?n inicial del ojo de la c?mara FPS: en el ojo del Player. Una vez aqu?,
         // el ojo es independiente: mover al Player en editor no la altera.
         self.play_camera_eye_position =
             self.play_character_feet_position() + self.play_character_eye_world_offset();
@@ -67,7 +67,7 @@ impl State {
         self.sync_editor_camera_entity_from_viewport();
     }
 
-    /// Punto al que mira la órbita del editor (pivote de `look_at`, no la posición del ojo).
+    /// Punto al que mira la ?rbita del editor (pivote de `look_at`, no la posici?n del ojo).
     pub(crate) fn editor_orbit_look_at_pivot(&self) -> Vec3 {
         let pivot = if let Some(id) = self.editor_camera_entity {
             if let Some(t) = self.world.get::<Transform>(id) {
@@ -81,7 +81,7 @@ impl State {
         pivot
     }
 
-    /// Punto al que mira la cámara orbital del viewport.
+    /// Punto al que mira la c?mara orbital del viewport.
     pub(crate) fn orbit_view_anchor(&self) -> Vec3 {
         if self.uses_editor_viewport_camera() {
             return self.editor_orbit_look_at_pivot();
@@ -156,9 +156,9 @@ impl State {
         }
     }
 
-    /// Pose visual de la cámara FPS para dibujar el gizmo de frustum en el editor.
+    /// Pose visual de la c?mara FPS para dibujar el gizmo de frustum en el editor.
     ///
-    /// Posición/yaw/pitch vienen del estado independiente de la cámara FPS
+    /// Posici?n/yaw/pitch vienen del estado independiente de la c?mara FPS
     /// (`self.play_camera_eye_position`, `self.camera.yaw/pitch`).
     /// Mover o rotar al Player en el panel Transform NO afecta este gizmo.
     pub(crate) fn play_character_camera_gizmo_pose(&self) -> Option<(Vec3, f32, f32)> {
@@ -171,7 +171,7 @@ impl State {
         Vec3::new(0.0, PLAY_CHARACTER_EYE_OFFSET, 0.0)
     }
 
-    /// Centra la órbita del editor en la selección (jugador incluido).
+    /// Centra la ?rbita del editor en la selecci?n (jugador incluido).
     pub(crate) fn sync_editor_camera_focus(&mut self) {
         if self.is_play_controller_active() {
             return;
@@ -206,7 +206,7 @@ impl State {
 
     pub(crate) fn sync_fps_camera_mode(&mut self) {
         if self.is_play_controller_active() {
-            // Play: sin cámara de ojos del player; render desde acordeón Cámara.
+            // Play: sin c?mara de ojos del player; render desde acorde?n C?mara.
             self.camera.orbit_pivot_offset = Vec3::ZERO;
             self.camera.eye_height_offset = 0.0;
             self.camera.eye_offset_local = Vec3::ZERO;
@@ -227,7 +227,7 @@ impl State {
     }
 
     /// Vista guardada: `yaw`/`pitch` = viewport orbital; `fps_camera_*` = cono FPS (`camera.*`).
-    /// En editor el cuerpo no se gira con la órbita; `body_rotation` llega aparte en la carga.
+    /// En editor el cuerpo no se gira con la ?rbita; `body_rotation` llega aparte en la carga.
     pub(crate) fn apply_play_character_saved_view(
         &mut self,
         position: [f32; 3],
@@ -264,8 +264,8 @@ impl State {
             self.ensure_editor_camera_entity();
             self.sync_editor_camera_entity_from_viewport();
         }
-        // En editor: NO girar el mesh del jugador al editar la cámara (entidades desacopladas).
-        // En play: el mouse-look usa `apply_fps_mouse_look` que sí alinea cuerpo ��� cámara.
+        // En editor: NO girar el mesh del jugador al editar la camara (entidades desacopladas).
+        // En play: el mouse-look usa `apply_fps_mouse_look` que si alinea cuerpo y camara.
         if self.is_play_controller_active() {
             self.sync_player_rotation_from_look();
         }
@@ -376,7 +376,7 @@ impl State {
             self.apply_follow_character_camera_snap();
         }
         log::info!(
-            "[cámara] modo de seguimiento: {}",
+            "[c?mara] modo de seguimiento: {}",
             match mode {
                 crate::ipc::PlayCameraFollowMode::FollowCharacter => "seguir personaje",
                 crate::ipc::PlayCameraFollowMode::MoveWithCharacter => "moverse junto al personaje",
@@ -384,7 +384,7 @@ impl State {
         );
     }
 
-    /// Aplica cambios parciales de la cámara FPS en editor (sin tocar al Player).
+    /// Aplica cambios parciales de la c?mara FPS en editor (sin tocar al Player).
     pub(crate) fn apply_play_camera_view_patch(
         &mut self,
         position_axis: Option<crate::ipc::AxisValue>,
@@ -426,7 +426,7 @@ impl State {
         self.emit_play_character_view_changed(false);
     }
 
-    /// Aplica vista (pies + cámara + opcional FOV/frustum/cuerpo) y notifica al frontend.
+    /// Aplica vista (pies + c?mara + opcional FOV/frustum/cuerpo) y notifica al frontend.
     pub(crate) fn apply_play_character_view(
         &mut self,
         position: [f32; 3],

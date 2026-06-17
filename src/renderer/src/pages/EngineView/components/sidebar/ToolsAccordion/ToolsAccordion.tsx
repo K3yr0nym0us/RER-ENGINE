@@ -5,6 +5,7 @@ import { Accordion } from 'react-bootstrap';
 import { Wrench } from 'react-bootstrap-icons';
 
 import { ColliderToolButton } from './components/ColliderToolButton';
+import { SocketConfigToolButton } from './components/SocketConfigToolButton';
 import { ExecutionAreaToolButton } from './components/ExecutionAreaToolButton';
 import { QuickBuildToolButton } from './components/QuickBuildToolButton';
 import { useTraslate } from '@hooks';
@@ -34,6 +35,7 @@ export function ToolsAccordion({ projectType }: Props) {
             setActiveTool={setActivePointTool}
           />
           <QuickBuildToolButton />
+          <SocketConfigToolButton projectType={projectType} />
         </div>
       </Accordion.Body>
     </Accordion.Item>

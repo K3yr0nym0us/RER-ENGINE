@@ -87,6 +87,9 @@ dedicated_hosts:
     - componentKey: EntityPropertiesModalBody
       host: EntityPropertiesElectronHost
       extra: sesiones en entityPropertiesModalSessions.ts; ver docs/Entity_Properties_Modal.yaml
+    - componentKey: SocketConfigModalBody
+      host: SocketConfigModalElectronHost
+      extra: sesiones en socketConfigModalSessions.ts; ver docs/Sockets_3D.yaml
 
 do_not:
   - Asumir que Modal de react-bootstrap en el editor funcionará encima del motor winit

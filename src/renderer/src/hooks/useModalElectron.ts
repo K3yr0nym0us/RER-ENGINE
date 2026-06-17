@@ -31,9 +31,17 @@ import {
 	buildEntityPropertiesState,
 	pushEntityPropertiesPatch,
 	registerEntityPropertiesSession,
+	requestEntityAnimationPlayStateSync,
 	runEntityPropertiesAction,
 	unregisterEntityPropertiesSession,
 } from '../modal-electron/entityPropertiesModalSessions'
+import {
+	pushSocketConfigModalPatch,
+	registerSocketConfigModalSession,
+	runSocketConfigModalAction,
+	unregisterSocketConfigModalSession,
+	activeSocketConfigModalHandlerRef,
+} from '../modal-electron/socketConfigModalSessions'
 import { useTraslate } from './useTraslate'
 
 /**
@@ -68,6 +76,7 @@ let parentOpenListenerInstalled = false
 let playerUiActionListenerInstalled = false
 let playerUiStateListenerInstalled = false
 let entityPropertiesActionListenerInstalled = false
+let socketConfigModalActionListenerInstalled = false
 
 /** Modal Electron visible: para parches en vivo (p. ej. modelos que terminan de precargar). */
 const activeModalRef: { current: { handlerId: string; componentKey: string } | null } = {
@@ -180,6 +189,21 @@ export function useModalElectron() {
 				t: (key) => tRef.current(key),
 			})
 			entityPropertiesState = buildEntityPropertiesState(engineRef.current)
+			const entityId = engineRef.current.selectedEntity?.id
+			if (entityId != null) {
+				requestEntityAnimationPlayStateSync(engineRef.current, entityId)
+			}
+		}
+
+		let socketConfigModalState: ReturnType<typeof buildSocketConfigModalState> | undefined
+		if (componentKey === 'SocketConfigModalBody') {
+			socketConfigModalState = registerSocketConfigModalSession(handlerId, {
+				getEngine: () => engineRef.current,
+				closeModal,
+				pushPatch: (hid, state) => {
+					window.electronAPI.patchModalElectron({ handlerId: hid, socketConfigModalState: state })
+				},
+			})
 		}
 
 		let playerUiEditorState: PlayerUiEditorState | undefined
@@ -204,6 +228,7 @@ export function useModalElectron() {
 			props: preparedProps,
 			callbackKeys,
 			...(entityPropertiesState ? { entityPropertiesState } : {}),
+			...(socketConfigModalState ? { socketConfigModalState } : {}),
 			...(playerUiEditorState ? { playerUiEditorState } : {}),
 			...engineSnapshot,
 			...(componentKey === 'VisualScriptingModalBody'
@@ -273,6 +298,9 @@ export function useModalElectron() {
 		if (componentKey === 'EntityPropertiesModalBody') {
 			pushEntityPropertiesPatch(handlerId)
 		}
+		if (componentKey === 'SocketConfigModalBody') {
+			pushSocketConfigModalPatch(handlerId)
+		}
 		if (componentKey === MODEL_PICKER_MODAL_KEY) {
 			patchActiveModelPickerModal(engineRef.current.models)
 		}
@@ -312,6 +340,14 @@ export function useModalElectron() {
 	}, [])
 
 	useEffect(() => {
+		if (socketConfigModalActionListenerInstalled) return
+		socketConfigModalActionListenerInstalled = true
+		window.electronAPI.onModalElectronSocketConfigModalActionRequest(async (req) => {
+			await runSocketConfigModalAction(req.handlerId, req.action as import('../modal-electron/socketConfigModalTypes').SocketConfigModalAction)
+		})
+	}, [])
+
+	useEffect(() => {
 		if (parentOpenListenerInstalled) return
 		parentOpenListenerInstalled = true
 		window.electronAPI.onModalElectronParentOpenRequest((req) => {
@@ -324,8 +360,11 @@ export function useModalElectron() {
 	}, [])
 
 	useEffect(() => {
-		const remove = window.electronAPI.onModalElectronClosed(() => {
+		const remove = window.electronAPI.onModalElectronClosed((data) => {
 			activeModalRef.current = null
+			if (data.componentKey === 'SocketConfigModalBody' && activeSocketConfigModalHandlerRef.current) {
+				unregisterSocketConfigModalSession(activeSocketConfigModalHandlerRef.current)
+			}
 		})
 		return remove
 	}, [])

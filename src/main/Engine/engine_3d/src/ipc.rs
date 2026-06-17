@@ -157,6 +157,14 @@ pub struct SaveEntity3DSnapshot {
     pub attach_local_rotation: Option<[f32; 4]>,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "attachLocalScale")]
     pub attach_local_scale: Option<[f32; 3]>,
+    /// Host del socket (esta entidad es hijo enganchado a un socket).
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "attachSocketHostId")]
+    pub attach_socket_host_id: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "attachSocketName")]
+    pub attach_socket_name: Option<String>,
+    /// Sockets definidos en esta entidad host.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sockets: Vec<crate::config_3d::entity_sockets::EntitySocketSnapshot>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -459,6 +467,16 @@ pub enum EngineEvent {
     PivotSelected { frame_path: String, pivot_x: f32, pivot_y: f32 },
     /// Emitido cuando una animación termina (no loop) o se detiene.
     AnimationFinished { entity_id: u32 },
+    /// Estado de reproducción de animación de una entidad (consulta o tras play/stop).
+    #[serde(rename = "entity_animation_play_state")]
+    EntityAnimationPlayState {
+        entity_id: u32,
+        playing: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        name: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        loop_: Option<bool>,
+    },
     /// El array de texturas 1024×256 capas está lleno.
     #[serde(rename = "texture_array_exhausted")]
     TextureArrayExhausted { max_layers: u32 },
@@ -591,6 +609,48 @@ pub enum EngineEvent {
     /// Vínculos de fusión restaurados al cargar escena desde `.save`.
     #[serde(rename = "entities_attachments_restored")]
     EntitiesAttachmentsRestored { count: usize },
+    /// Lista de huesos del modelo skinned de una entidad.
+    #[serde(rename = "entity_bones_list")]
+    EntityBonesList {
+        entity_id: u32,
+        bones: Vec<String>,
+    },
+    /// Respuesta de consulta de sockets (sin mutación; no re-disparar fetch).
+    #[serde(rename = "entity_sockets_list")]
+    EntitySocketsList {
+        entity_id: u32,
+        sockets: Vec<crate::config_3d::entity_sockets::EntitySocketSnapshot>,
+    },
+    /// Sockets de una entidad host actualizados (mutación: crear/editar/eliminar).
+    #[serde(rename = "entity_sockets_changed")]
+    EntitySocketsChanged {
+        entity_id: u32,
+        sockets: Vec<crate::config_3d::entity_sockets::EntitySocketSnapshot>,
+    },
+    /// Hueso elegido con click en viewport (modo socket).
+    #[serde(rename = "socket_bone_picked")]
+    SocketBonePicked {
+        entity_id: u32,
+        bone_name: String,
+    },
+    /// Entidad(es) vinculada(s) a un socket.
+    #[serde(rename = "entity_socket_attached")]
+    EntitySocketAttached {
+        host_id: u32,
+        socket_name: String,
+        child_ids: Vec<u32>,
+    },
+    /// Attachment de una entidad restaurado (undo/redo de vínculo a socket).
+    #[serde(rename = "entity_attachment_restored")]
+    EntityAttachmentRestored {
+        child_id: u32,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        attach_parent_id: Option<u32>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        attach_socket_host_id: Option<u32>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        attach_socket_name: Option<String>,
+    },
     /// Vista del personaje jugable (pies, cámara y transform del mesh).
     #[serde(rename = "play_character_view_changed")]
     PlayCharacterViewChanged {

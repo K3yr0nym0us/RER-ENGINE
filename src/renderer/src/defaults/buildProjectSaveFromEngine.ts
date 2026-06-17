@@ -79,16 +79,31 @@ function pickEntityFusionFields(
 	raw: EngineEntitySnapshotWire,
 ): Pick<
 	Entity3D,
-	'attach_parent_id' | 'attach_local_position' | 'attach_local_rotation' | 'attach_local_scale'
+	| 'attach_parent_id'
+	| 'attach_local_position'
+	| 'attach_local_rotation'
+	| 'attach_local_scale'
+	| 'attach_socket_host_id'
+	| 'attach_socket_name'
+	| 'sockets'
 > {
 	const out: Pick<
 		Entity3D,
-		'attach_parent_id' | 'attach_local_position' | 'attach_local_rotation' | 'attach_local_scale'
+		| 'attach_parent_id'
+		| 'attach_local_position'
+		| 'attach_local_rotation'
+		| 'attach_local_scale'
+		| 'attach_socket_host_id'
+		| 'attach_socket_name'
+		| 'sockets'
 	> = {}
 	if (raw.attach_parent_id != null) out.attach_parent_id = raw.attach_parent_id
 	if (raw.attach_local_position != null) out.attach_local_position = raw.attach_local_position
 	if (raw.attach_local_rotation != null) out.attach_local_rotation = raw.attach_local_rotation
 	if (raw.attach_local_scale != null) out.attach_local_scale = raw.attach_local_scale
+	if (raw.attach_socket_host_id != null) out.attach_socket_host_id = raw.attach_socket_host_id
+	if (raw.attach_socket_name != null) out.attach_socket_name = raw.attach_socket_name
+	if (raw.sockets?.length) out.sockets = raw.sockets
 	return out
 }
 

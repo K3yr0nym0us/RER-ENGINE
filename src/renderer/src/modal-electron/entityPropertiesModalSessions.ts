@@ -17,7 +17,9 @@ import {
 	isEnvironmentEntity,
 	isPlayerEntity,
 } from '@shared-types'
-import { isMultiSelectionMerged } from '../utils/entity3dEditorSync'
+import {
+	isMultiSelectionMerged,
+} from '../utils/entity3dEditorSync'
 import type { BluePrintEntry } from '@shared-types'
 import { CreateEntityFromModelModalBody } from '../pages/EngineView/components/sidebar/EntitiesAccordion/components/CreateEntityFromModelModalBody'
 import { CreateEntityFromSpriteModalBody } from '../pages/EngineView/components/sidebar/EntitiesAccordion/components/CreateEntityFromSpriteModalBody'
@@ -82,6 +84,7 @@ export function buildEntityPropertiesState(engine: EngineContextValue): EntityPr
 			linkedBlueprintName: null,
 			scripts: [],
 			animationPlayingIds: [],
+			playingAnimationName: null,
 		}
 	}
 
@@ -138,10 +141,18 @@ export function buildEntityPropertiesState(engine: EngineContextValue): EntityPr
 		isFromBlueprint,
 		linkedBlueprintName,
 		scripts: entityMeta?.scripts ?? [],
-		animationPlayingIds: [...engine.animationPlaying.entries()]
-			.filter(([, playing]) => playing)
-			.map(([id]) => id),
+		animationPlayingIds: entityMeta?.playingAnimationName
+			? [selectedEntity.id]
+			: [],
+		playingAnimationName: entityMeta?.playingAnimationName ?? null,
 	}
+}
+
+export function requestEntityAnimationPlayStateSync(
+	engine: EngineContextValue,
+	entityId: number,
+): void {
+	engine.send({ cmd: 'query_entity_animation_play_state', entity_id: entityId } as never)
 }
 
 export function pushEntityPropertiesPatch(handlerId: string): void {
@@ -310,7 +321,7 @@ export async function runEntityPropertiesAction(
 			pushEntityPropertiesPatch(handlerId)
 			return
 		case 'setAnimationPlaying':
-			engine.setAnimationPlaying(action.id, action.playing)
+			engine.setAnimationPlaying(action.id, action.playing, action.animationName)
 			pushEntityPropertiesPatch(handlerId)
 			return
 		case 'updateScripts':

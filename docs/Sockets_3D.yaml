@@ -1,0 +1,138 @@
+# Sockets 3D — anclajes en huesos y vínculos de objetos
+#
+# Solo motor 3D. Permite definir puntos nombrados en el esqueleto de un modelo skinned
+# (p. ej. mano derecha) y acoplar objetos (armas, escudos) que siguen la animación del host.
+
+scope: 3D_only
+
+concept: |
+  Un **socket** es un punto de anclaje en un hueso del host:
+  nombre, bone_name, offset local (posición + rotación).
+  Un **vínculo** une un objeto hijo a un socket del host; el motor sincroniza su transform
+  cada frame según la pose del hueso (incluida animación skinned).
+
+  El host guarda la lista de sockets. El hijo guarda attach_socket_host_id + attach_socket_name.
+
+editor:
+  entry: Herramientas → botón Socket / Config ("Configuración de sockets")
+  modal: SocketConfigModalBody (modal Electron; ver MODAL_ELECTRON.yaml)
+  tabs:
+    create:
+      title: Crear sockets
+      flow: |
+        1. Pestaña activa → clic en entidad host en el viewport (o botón "Seleccionar entidad").
+        2. Añadir socket: nombre, hueso (pick en viewport o lista), offset local.
+        3. Lista inferior con sockets ya creados (editar / eliminar).
+      requires: Entidad con modelo skinned (GLB con esqueleto).
+    links:
+      title: Vincular sockets
+      flow: |
+        1. Seleccionar entidad host (con sockets).
+        2. Por cada socket: ver objetos vinculados, "Vincular objeto" o "Desvincular".
+        3. Al vincular: clic en el objeto en el viewport.
+      note: |
+        Si ya elegiste el host en la pestaña Crear, al cambiar de pestaña se reutiliza.
+        Los clics en el viewport solo aplican a la pestaña activa.
+
+  restrictions:
+    host_cannot_be:
+      - collider
+      - execution_area
+      - editor_camera
+    host_must_have: modelo skinned (entityHasSkinnedModel)
+    child_cannot_be:
+      - collider
+      - execution_area
+      - ground / sun (entity3dCategory)
+    child_cannot_be: el mismo host
+
+engine:
+  module: engine_3d/src/config_3d/entity_sockets.rs
+  state:
+    entity_sockets: HashMap<EntityId, Vec<EntitySocket>>  # definición en el host
+    entity_attachments: AttachmentAnchor::Socket { host_entity_id, socket_name }
+  sync: |
+    sync_socket_attached_children() cada frame: posición mundial del socket desde
+    bone_world_transform + offset local; el hijo hereda escala y offset guardados al vincular.
+  bone_pick: engine_3d/src/config_3d/socket_bone_pick.rs
+  gizmos: sockets visibles en editor al seleccionar host (módulo de gizmos asociado)
+
+ipc_commands:
+  catalog: engine_3d only (EngineCommand3dOnly)
+  list:
+    - cmd: list_entity_sockets
+      args: { entity_id }
+      effect: emite entity_sockets_list (lectura, sin dirty)
+    - cmd: upsert_entity_socket
+      args: { entity_id, name, bone_name, local_position, local_rotation }
+      effect: crea o actualiza; emite entity_sockets_changed
+    - cmd: remove_entity_socket
+      args: { entity_id, name }
+      effect: elimina; emite entity_sockets_changed
+    - cmd: attach_to_socket
+      args: { child_ids, host_id, socket_name }
+      effect: vincula hijos; emite entity_socket_attached
+    - cmd: detach_from_socket
+      args: { child_id }
+      effect: suelta hijo; emite entity_attachment_restored
+    - cmd: set_socket_bone_pick_mode
+      args: { entity_id, active }
+      effect: modo pick de hueso en viewport; emite socket_bone_picked al clicar
+    - cmd: list_entity_bones
+      args: { entity_id }
+      effect: lista huesos del modelo (complemento al pick)
+
+ipc_events:
+  - entity_sockets_list      # respuesta list_entity_sockets
+  - entity_sockets_changed   # mutación de sockets del host
+  - socket_bone_picked       # hueso elegido en viewport
+  - entity_socket_attached   # { host_id, socket_name, child_ids }
+  - entity_attachment_restored  # undo / detach; incluye attach_socket_* si aplica
+
+persistence:
+  file: .save (escena 3D; ver Save_Proyect_Model.yaml / Project_Load_3D.yaml)
+  host_fields:
+    sockets:
+      - name
+      - bone_name
+      - local_position: [f32; 3]
+      - local_rotation: [f32; 4]  # quaternion
+  child_fields:
+    attach_socket_host_id: u32 | null
+    attach_socket_name: string | null
+    attach_local_position / attach_local_rotation / attach_local_scale: offset al vincular
+  load: restore_entity_sockets_after_scene_load + reaplicar vínculos por attach_socket_*
+
+undo:
+  create_socket: UndoAction::RemoveEntitySocket → deshacer elimina el socket creado
+  attach_to_socket: UndoAction::RestoreSocketAttachment → restaura transform y attachment previo
+  scene_dirty: ambas operaciones marcan escena para guardar antes de cambiar de escena
+
+frontend:
+  session: src/renderer/src/modal-electron/socketConfigModalSessions.ts
+  ui:
+    - ToolsAccordion/components/SocketConfigToolButton.tsx
+    - ToolsAccordion/components/SocketConfigModalContent.tsx
+    - ToolsAccordion/components/SocketsModalContent.tsx   # pestaña crear
+    - ToolsAccordion/components/SocketLinksModalContent.tsx  # pestaña vínculos
+    - PropertiesAccordion/SocketsPanel.tsx                # formulario socket
+  meta_sync: createEngineEventHandler.ts actualiza entityMetaRef (sockets, attachSocketHostId)
+  block_properties: useEntityPropertiesModal no abre propiedades si SocketConfigModal está activa
+
+logs:
+  panel_human:
+    - "[Socket] Se creó un socket con nombre X asignado al hueso Y."
+    - "[Socket] La entidad X fue vinculada al socket Y."
+    - "[Socket] La entidad X fue desvinculada del socket."
+  silenced_in_panel:
+    - entity_sockets_list
+    - socket_bone_picked
+    - entity_attachment_restored
+    - entity_animation_play_state
+
+related_docs:
+  - Entities_Model_3D.yaml
+  - Animation_Model.yaml
+  - MODAL_ELECTRON.yaml
+  - IPC_Protocol.yaml
+  - Escenes_Model_3D.yaml

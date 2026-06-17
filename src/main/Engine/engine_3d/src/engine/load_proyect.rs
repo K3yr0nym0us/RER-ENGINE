@@ -226,6 +226,12 @@ pub(crate) struct SavedEntity3D {
     pub attach_local_rotation: Option<[f32; 4]>,
     #[serde(default, alias = "attachLocalScale")]
     pub attach_local_scale: Option<[f32; 3]>,
+    #[serde(default, alias = "attachSocketHostId")]
+    pub attach_socket_host_id: Option<u32>,
+    #[serde(default, alias = "attachSocketName")]
+    pub attach_socket_name: Option<String>,
+    #[serde(default)]
+    pub sockets: Vec<crate::config_3d::entity_sockets::EntitySocketSnapshot>,
 }
 
 fn default_colision_on() -> bool {
@@ -1571,7 +1577,8 @@ fn apply_loaded_proyect_3d_with_scene(
                 );
                 apply_full_entity_restore(state, id, &pending, "[Ball]", true, false);
             }
-            "environment" | "object" | "character" if is_3d_model_file_entity(entity) => {
+            "environment" | "object" | "character" | "weapon" | "projectile"
+                if is_3d_model_file_entity(entity) => {
                 let model_key = match entity_model_cache_lookup(state, entity) {
                     Ok(id) => id,
                     Err(e) => {
@@ -1711,6 +1718,7 @@ fn apply_loaded_proyect_3d_with_scene(
             state.finalize_3d_placeholder_editor_scene();
         }
     }
+    restore_entity_sockets_after_scene_load(state, &view);
     restore_entity_attachments_after_scene_load(state, &view);
     state.restoring_save_manifest = false;
     Ok(view)
@@ -1721,17 +1729,42 @@ fn collect_saved_entity_attachments(
 ) -> Vec<crate::config_3d::entity_attachments::SavedEntityAttachment> {
     let mut out = Vec::new();
     let mut push = |entity: &SavedEntity3D| {
-        let (Some(parent_id), Some(local_position), Some(local_rotation), Some(child_world_scale)) = (
-            entity.attach_parent_id,
+        let (Some(local_position), Some(local_rotation), Some(child_world_scale)) = (
             entity.attach_local_position,
             entity.attach_local_rotation,
             entity.attach_local_scale,
         ) else {
             return;
         };
+
+        let is_socket = entity.attach_socket_host_id.is_some()
+            && entity
+                .attach_socket_name
+                .as_ref()
+                .is_some_and(|n| !n.trim().is_empty());
+        let is_entity = entity.attach_parent_id.is_some();
+
+        if !is_socket && !is_entity {
+            return;
+        }
+
         out.push(crate::config_3d::entity_attachments::SavedEntityAttachment {
             entity_id: entity.id,
-            parent_id,
+            parent_id: if is_socket {
+                None
+            } else {
+                entity.attach_parent_id
+            },
+            attach_socket_host_id: if is_socket {
+                entity.attach_socket_host_id
+            } else {
+                None
+            },
+            attach_socket_name: if is_socket {
+                entity.attach_socket_name.clone()
+            } else {
+                None
+            },
             local_position,
             local_rotation,
             child_world_scale,
@@ -1744,6 +1777,21 @@ fn collect_saved_entity_attachments(
         push(player);
     }
     out
+}
+
+fn restore_entity_sockets_after_scene_load(state: &mut State, view: &ActiveSaveView) {
+    let mut restore = |entity: &SavedEntity3D| {
+        if !entity.sockets.is_empty() {
+            state.restore_entity_sockets_from_saved(entity.id, &entity.sockets);
+            state.emit_entity_sockets_if_any(entity.id);
+        }
+    };
+    for entity in &view.entities {
+        restore(entity);
+    }
+    if let Some(player) = &view.player {
+        restore(player);
+    }
 }
 
 fn restore_entity_attachments_after_scene_load(state: &mut State, view: &ActiveSaveView) {
@@ -2004,6 +2052,9 @@ pub(crate) fn saved_scene_from_snapshot_payload(
             attach_local_position: e.attach_local_position,
             attach_local_rotation: e.attach_local_rotation,
             attach_local_scale: e.attach_local_scale,
+            attach_socket_host_id: e.attach_socket_host_id,
+            attach_socket_name: e.attach_socket_name.clone(),
+            sockets: e.sockets.clone(),
         }
     }
 
@@ -2115,6 +2166,9 @@ pub(crate) fn build_fp_placeholder_saved_scene(id: u32, name: &str) -> SavedScen
             attach_local_position: None,
             attach_local_rotation: None,
             attach_local_scale: None,
+            attach_socket_host_id: None,
+            attach_socket_name: None,
+            sockets: vec![],
         },
         SavedEntity3D {
             id: 0,
@@ -2136,6 +2190,9 @@ pub(crate) fn build_fp_placeholder_saved_scene(id: u32, name: &str) -> SavedScen
             attach_local_position: None,
             attach_local_rotation: None,
             attach_local_scale: None,
+            attach_socket_host_id: None,
+            attach_socket_name: None,
+            sockets: vec![],
         },
         SavedEntity3D {
             id: 0,
@@ -2157,6 +2214,9 @@ pub(crate) fn build_fp_placeholder_saved_scene(id: u32, name: &str) -> SavedScen
             attach_local_position: None,
             attach_local_rotation: None,
             attach_local_scale: None,
+            attach_socket_host_id: None,
+            attach_socket_name: None,
+            sockets: vec![],
         },
     ];
 
@@ -2180,6 +2240,9 @@ pub(crate) fn build_fp_placeholder_saved_scene(id: u32, name: &str) -> SavedScen
         attach_local_position: None,
         attach_local_rotation: None,
         attach_local_scale: None,
+        attach_socket_host_id: None,
+        attach_socket_name: None,
+        sockets: vec![],
     };
 
     SavedScene {

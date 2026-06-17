@@ -140,6 +140,7 @@ impl State {
                 self.show_first_frame_of_animation(entity_id, &animation_name);
             }
             
+            self.emit_entity_animation_play_state(entity_id);
             send_event(&EngineEvent::AnimationFinished { entity_id });
         }
 

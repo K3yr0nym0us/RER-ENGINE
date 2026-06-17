@@ -23,6 +23,7 @@ mod snap_hint;
 mod tick;
 mod types;
 mod undo_entity;
+mod animation_play_state;
 
 #[allow(unused_imports)]
 pub use audio::{AudioCmd, DecodedAudio};

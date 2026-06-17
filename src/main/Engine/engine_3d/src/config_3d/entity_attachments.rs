@@ -1,5 +1,5 @@
 //! Vínculo padre–hijo entre entidades (accesorios, armas, etc.).
-//! Offset de posición y rotación en espacio local del padre; la escala del hijo no se hereda.
+//! Offset de posición y rotación en espacio local del ancla; la escala del hijo no se hereda.
 
 use std::collections::HashSet;
 
@@ -9,13 +9,38 @@ use crate::ecs::{EntityId, Transform};
 use crate::engine::State;
 use crate::ipc::{send_event, EngineEvent};
 
+/// Ancla de un attachment: entidad raíz o socket en hueso.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum AttachmentAnchor {
+    Entity(EntityId),
+    Socket {
+        host_entity_id: EntityId,
+        socket_name: String,
+    },
+}
+
+impl AttachmentAnchor {
+    pub(crate) fn entity_parent_id(&self) -> Option<EntityId> {
+        match self {
+            Self::Entity(id) => Some(*id),
+            Self::Socket { .. } => None,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct EntityAttachmentLocal {
-    pub parent_id: EntityId,
+    pub anchor: AttachmentAnchor,
     pub local_position: Vec3,
     pub local_rotation: Quat,
     /// Escala mundial del hijo (independiente del padre; evita deformar accesorios).
     pub child_world_scale: Vec3,
+}
+
+impl EntityAttachmentLocal {
+    pub(crate) fn parent_id(&self) -> Option<EntityId> {
+        self.anchor.entity_parent_id()
+    }
 }
 
 pub(crate) fn compute_local_attachment(
@@ -111,7 +136,7 @@ impl State {
             self.entity_attachments.insert(
                 child_id,
                 EntityAttachmentLocal {
-                    parent_id,
+                    anchor: AttachmentAnchor::Entity(parent_id),
                     local_position,
                     local_rotation,
                     child_world_scale,
@@ -124,7 +149,7 @@ impl State {
             let child_ids: Vec<EntityId> = self
                 .entity_attachments
                 .iter()
-                .filter(|(_, attachment)| attachment.parent_id == parent_id)
+                .filter(|(_, attachment)| attachment.parent_id() == Some(parent_id))
                 .map(|(id, _)| *id)
                 .filter(|id| ids.contains(id))
                 .collect();
@@ -158,7 +183,7 @@ impl State {
             current = self
                 .entity_attachments
                 .get(&id)
-                .map(|attachment| attachment.parent_id);
+                .and_then(|attachment| attachment.parent_id());
         }
         false
     }
@@ -168,32 +193,42 @@ impl State {
     }
 
     pub(crate) fn detach_children_of(&mut self, parent_id: EntityId) {
-        self.entity_attachments
-            .retain(|_, attachment| attachment.parent_id != parent_id);
+        self.entity_attachments.retain(|_, attachment| {
+            attachment.parent_id() != Some(parent_id)
+        });
     }
 
     pub(crate) fn clear_entity_attachments_for_removed(&mut self, id: EntityId) {
         self.entity_attachments.remove(&id);
-        self.entity_attachments
-            .retain(|_, attachment| attachment.parent_id != id);
+        self.entity_attachments.retain(|_, attachment| {
+            attachment.parent_id() != Some(id)
+        });
+        self.clear_entity_sockets_for_removed(id);
     }
 
     pub(crate) fn recapture_entity_attachment(&mut self, child_id: EntityId) {
         let Some(attachment) = self.entity_attachments.get(&child_id).cloned() else {
             return;
         };
-        let Some(parent_t) = self.world.get::<Transform>(attachment.parent_id).cloned() else {
-            return;
-        };
-        let Some(child_t) = self.world.get::<Transform>(child_id).cloned() else {
-            return;
-        };
-        let (local_position, local_rotation, child_world_scale) =
-            compute_local_attachment(&parent_t, &child_t);
-        if let Some(attachment) = self.entity_attachments.get_mut(&child_id) {
-            attachment.local_position = local_position;
-            attachment.local_rotation = local_rotation;
-            attachment.child_world_scale = child_world_scale;
+        match &attachment.anchor {
+            AttachmentAnchor::Entity(parent_id) => {
+                let Some(parent_t) = self.world.get::<Transform>(*parent_id).cloned() else {
+                    return;
+                };
+                let Some(child_t) = self.world.get::<Transform>(child_id).cloned() else {
+                    return;
+                };
+                let (local_position, local_rotation, child_world_scale) =
+                    compute_local_attachment(&parent_t, &child_t);
+                if let Some(attachment) = self.entity_attachments.get_mut(&child_id) {
+                    attachment.local_position = local_position;
+                    attachment.local_rotation = local_rotation;
+                    attachment.child_world_scale = child_world_scale;
+                }
+            }
+            AttachmentAnchor::Socket { .. } => {
+                self.recapture_socket_attachment(child_id);
+            }
         }
     }
 
@@ -201,7 +236,7 @@ impl State {
         let children: Vec<EntityId> = self
             .entity_attachments
             .iter()
-            .filter(|(_, attachment)| attachment.parent_id == parent_id)
+            .filter(|(_, attachment)| attachment.parent_id() == Some(parent_id))
             .map(|(id, _)| *id)
             .collect();
         if children.is_empty() {
@@ -241,23 +276,27 @@ impl State {
 
         for &id in changed_ids {
             if self.entity_attachments.contains_key(&id) {
-                let parent_id = self.entity_attachments[&id].parent_id;
-                if !changed.contains(&parent_id) {
+                let parent_moved = match &self.entity_attachments[&id].anchor {
+                    AttachmentAnchor::Entity(parent_id) => changed.contains(parent_id),
+                    AttachmentAnchor::Socket { host_entity_id, .. } => {
+                        changed.contains(host_entity_id)
+                    }
+                };
+                if !parent_moved {
                     self.recapture_entity_attachment(id);
                 }
             }
         }
 
         for &id in changed_ids {
-            let has_children = self
-                .entity_attachments
-                .values()
-                .any(|attachment| attachment.parent_id == id);
-            if !has_children {
+            let has_entity_children = self.entity_attachments.values().any(|attachment| {
+                attachment.parent_id() == Some(id)
+            });
+            if !has_entity_children {
                 continue;
             }
             let any_child_selected = self.entity_attachments.iter().any(|(child_id, attachment)| {
-                attachment.parent_id == id && changed.contains(child_id)
+                attachment.parent_id() == Some(id) && changed.contains(child_id)
             });
             if !any_child_selected {
                 self.sync_attached_children_of(id);
@@ -271,20 +310,47 @@ impl State {
     ) {
         self.entity_attachments.clear();
         for entry in saved {
-            if self.world.get::<Transform>(entry.entity_id).is_none()
-                || self.world.get::<Transform>(entry.parent_id).is_none()
-            {
+            if self.world.get::<Transform>(entry.entity_id).is_none() {
                 log::warn!(
-                    "[Fusión] omitiendo vínculo guardado {} → {} (entidad ausente)",
-                    entry.entity_id,
-                    entry.parent_id
+                    "[Fusión] omitiendo vínculo guardado {} (entidad ausente)",
+                    entry.entity_id
                 );
                 continue;
             }
+            let anchor = if let (Some(host_id), Some(socket_name)) =
+                (entry.attach_socket_host_id, entry.attach_socket_name.as_deref())
+            {
+                if self.world.get::<Transform>(host_id).is_none() {
+                    log::warn!(
+                        "[Sockets] omitiendo vínculo {} → socket {} en host {} (host ausente)",
+                        entry.entity_id,
+                        socket_name,
+                        host_id
+                    );
+                    continue;
+                }
+                AttachmentAnchor::Socket {
+                    host_entity_id: host_id,
+                    socket_name: socket_name.to_string(),
+                }
+            } else if let Some(parent_id) = entry.parent_id {
+                if self.world.get::<Transform>(parent_id).is_none() {
+                    log::warn!(
+                        "[Fusión] omitiendo vínculo guardado {} → {} (padre ausente)",
+                        entry.entity_id,
+                        parent_id
+                    );
+                    continue;
+                }
+                AttachmentAnchor::Entity(parent_id)
+            } else {
+                continue;
+            };
+
             self.entity_attachments.insert(
                 entry.entity_id,
                 EntityAttachmentLocal {
-                    parent_id: entry.parent_id,
+                    anchor,
                     local_position: Vec3::from_array(entry.local_position),
                     local_rotation: Quat::from_xyzw(
                         entry.local_rotation[0],
@@ -302,14 +368,15 @@ impl State {
         }
 
         let count = self.entity_attachments.len();
-        let parent_ids: HashSet<EntityId> = self
+        let entity_parent_ids: HashSet<EntityId> = self
             .entity_attachments
             .values()
-            .map(|a| a.parent_id)
+            .filter_map(|a| a.parent_id())
             .collect();
-        for parent_id in parent_ids {
+        for parent_id in entity_parent_ids {
             self.sync_attached_children_of(parent_id);
         }
+        self.sync_socket_attached_children();
         log::info!("[Fusión] {count} vínculo(s) restaurados desde manifest");
         send_event(&EngineEvent::EntitiesAttachmentsRestored { count });
     }
@@ -318,7 +385,9 @@ impl State {
 #[derive(Clone, Debug)]
 pub(crate) struct SavedEntityAttachment {
     pub entity_id: EntityId,
-    pub parent_id: EntityId,
+    pub parent_id: Option<EntityId>,
+    pub attach_socket_host_id: Option<EntityId>,
+    pub attach_socket_name: Option<String>,
     pub local_position: [f32; 3],
     pub local_rotation: [f32; 4],
     pub child_world_scale: [f32; 3],

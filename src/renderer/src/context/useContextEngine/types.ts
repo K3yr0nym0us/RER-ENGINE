@@ -1155,6 +1155,15 @@ export interface EntityMeta {
 	visualModelPath?: string
 	/** Padre de fusión 3D (esta entidad es hijo). */
 	attachParentId?: number
+	/** Hijo enganchado a socket de otra entidad. */
+	attachSocketHostId?: number
+	attachSocketName?: string
+	/** Sockets definidos en esta entidad host. */
+	sockets?: import('@shared-types').EntitySocket3D[]
+	/** Huesos del modelo skinned (cache editor). */
+	boneNames?: string[]
+	/** Animación en reproducción en el editor (preview desde propiedades). */
+	playingAnimationName?: string
 }
 
 export interface PendingRestore {
@@ -1280,7 +1289,7 @@ export interface EngineContextValue extends EngineState {
 	projectLoaded3dMetaRef: MutableRefObject<ProjectLoaded3dPayload | null>
 	send: (cmd: object) => void
 	sendAsync: <T>(cmd: object, waitForEvent: string, onStart?: () => void) => Promise<T>
-	setAnimationPlaying: (entityId: number, playing: boolean) => void
+	setAnimationPlaying: (entityId: number, playing: boolean, animationName?: string | null) => void
 	loadModelAsset: (
 		path: string,
 		name: string,

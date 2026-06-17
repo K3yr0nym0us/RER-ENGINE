@@ -26,6 +26,12 @@ import {
 	pushEntityPropertiesPatch,
 } from '../../../modal-electron/entityPropertiesModalSessions';
 import {
+	activeSocketConfigModalHandlerRef,
+	pushSocketConfigModalPatch,
+	recordSocketBonePick,
+	tryAssignSocketConfigModalEntity,
+} from '../../../modal-electron/socketConfigModalSessions';
+import {
 	DEFAULT_LIGHT_AMBIENT,
 	DEFAULT_LIGHT_INTENSITY,
 	DEFAULT_SHADOW_DARKNESS,
@@ -58,7 +64,7 @@ import {
 	isModel3DPath,
 	is3dModelFileEntity,
 } from '../../../utils/blueprintModelPath';
-import { playViewFromPlayerAndCamera } from '../../../utils/entity3dEditorSync';
+import { entityHasSkinnedModel, playViewFromPlayerAndCamera } from '../../../utils/entity3dEditorSync';
 import {
 	buildImportSceneCommand,
 	is2dProjectLoadedByEngine,
@@ -321,6 +327,64 @@ function panelLogLineForEditorSceneEvent(event: RuntimeEngineEvent): string | nu
 	}
 }
 
+/** Líneas `[Socket]` al crear o vincular; `null` = no imprimir. */
+function panelLogLineForSocketEvent(
+	event: RuntimeEngineEvent,
+	refs: Pick<
+		EngineInternalRefs,
+		| 'entityMetaRef'
+		| 'sceneImportInProgressRef'
+		| 'sceneBurstLoadInProgressRef'
+		| 'engineBootAwaitRef'
+	>,
+): string | null | undefined {
+	switch (event.event) {
+		case 'entity_sockets_list':
+		case 'socket_bone_picked':
+		case 'entity_attachment_restored':
+		case 'entity_animation_play_state':
+			return null;
+
+		case 'entity_sockets_changed': {
+			const loadPanelActive =
+				refs.sceneImportInProgressRef.current
+				|| refs.sceneBurstLoadInProgressRef.current
+				|| refs.engineBootAwaitRef.current;
+			if (loadPanelActive) return null;
+
+			const e = event as {
+				entity_id: number;
+				sockets: Array<{ name: string; bone_name: string }>;
+			};
+			const prev = refs.entityMetaRef.current[e.entity_id]?.sockets ?? [];
+			const prevNames = new Set(prev.map((s) => s.name.trim().toLowerCase()));
+			const created = (e.sockets ?? []).find(
+				(s) => !prevNames.has(s.name.trim().toLowerCase()),
+			);
+			if (!created) return null;
+			return `[Socket] Se creó un socket con nombre ${created.name} asignado al hueso ${created.bone_name}.`;
+		}
+
+		case 'entity_socket_attached': {
+			const e = event as {
+				socket_name: string;
+				child_ids: number[];
+			};
+			const childIds = e.child_ids ?? [];
+			if (childIds.length === 0) return null;
+			const labels = childIds.map((id) => {
+				const meta = refs.entityMetaRef.current[id];
+				return meta?.name?.trim() || `#${id}`;
+			});
+			const entityLabel = labels.length === 1 ? labels[0] : labels.join(', ');
+			return `[Socket] La entidad ${entityLabel} fue vinculada al socket ${e.socket_name}.`;
+		}
+
+		default:
+			return undefined;
+	}
+}
+
 /** Línea `[trigger]` al entrar un actor en un execution area. */
 function panelLogLineForTriggerEntered(
 	event: RuntimeEngineEvent,
@@ -361,6 +425,9 @@ function panelLogLineForEngineEvent(
 	if (event.event === 'trigger_entered') {
 		return panelLogLineForTriggerEntered(event, refs.entityMetaRef);
 	}
+
+	const socketLine = panelLogLineForSocketEvent(event, refs);
+	if (socketLine !== undefined) return socketLine;
 
 	const editorSceneLine = panelLogLineForEditorSceneEvent(event);
 	if (editorSceneLine !== undefined) return editorSceneLine;
@@ -1242,6 +1309,9 @@ export function createEngineEventHandler({
 			});
 			if (activeEntityPropertiesHandlerRef.current) {
 				pushEntityPropertiesPatch(activeEntityPropertiesHandlerRef.current);
+			}
+			if (activeSocketConfigModalHandlerRef.current) {
+				tryAssignSocketConfigModalEntity(activeSocketConfigModalHandlerRef.current, selected.id);
 			}
 		}
 
@@ -2400,6 +2470,14 @@ export function createEngineEventHandler({
 		if (event.event === 'multi_select_changed') {
 			const e = event as unknown as { ids: number[] };
 			dispatch({ type: 'SET_MULTI_SELECT', payload: e.ids });
+			if (e.ids.length > 1) {
+				for (const id of e.ids) {
+					const meta = refs.entityMetaRef.current[id];
+					if (entityHasSkinnedModel(meta)) {
+						sendEngine({ cmd: 'list_entity_sockets', entity_id: id } as never);
+					}
+				}
+			}
 			if (activeEntityPropertiesHandlerRef.current) {
 				pushEntityPropertiesPatch(activeEntityPropertiesHandlerRef.current);
 			}
@@ -2420,6 +2498,8 @@ export function createEngineEventHandler({
 						};
 					}
 					refs.entityMetaRef.current[childId].attachParentId = parentId;
+					delete refs.entityMetaRef.current[childId].attachSocketHostId;
+					delete refs.entityMetaRef.current[childId].attachSocketName;
 				}
 				if (childIds.length > 0) {
 					dispatch({
@@ -2430,6 +2510,173 @@ export function createEngineEventHandler({
 			}
 			if (activeEntityPropertiesHandlerRef.current) {
 				pushEntityPropertiesPatch(activeEntityPropertiesHandlerRef.current);
+			}
+		}
+
+		if (event.event === 'entity_bones_list') {
+			const e = event as { entity_id: number; bones: string[] };
+			const meta = refs.entityMetaRef.current[e.entity_id];
+			const prev = meta?.boneNames;
+			if (prev && prev.length === e.bones.length && prev.every((b, i) => b === e.bones[i])) {
+				return;
+			}
+			if (meta) {
+				meta.boneNames = e.bones;
+			} else {
+				refs.entityMetaRef.current[e.entity_id] = {
+					kind: 'model',
+					path: '',
+					physicsEnabled: false,
+					physicsType: 'static',
+					boneNames: e.bones,
+				};
+			}
+			if (activeEntityPropertiesHandlerRef.current) {
+				pushEntityPropertiesPatch(activeEntityPropertiesHandlerRef.current);
+			}
+		}
+
+		if (event.event === 'socket_bone_picked') {
+			const e = event as { entity_id: number; bone_name: string };
+			recordSocketBonePick(e.entity_id, e.bone_name);
+			if (activeSocketConfigModalHandlerRef.current) {
+				pushSocketConfigModalPatch(activeSocketConfigModalHandlerRef.current);
+			}
+		}
+
+		if (event.event === 'entity_sockets_list') {
+			const e = event as {
+				entity_id: number;
+				sockets: import('@shared-types').EntitySocket3D[];
+			};
+			const meta = refs.entityMetaRef.current[e.entity_id];
+			const prev = meta?.sockets;
+			const unchanged =
+				JSON.stringify(prev ?? []) === JSON.stringify(e.sockets ?? []);
+			if (unchanged) {
+				return;
+			}
+			if (meta) {
+				meta.sockets = e.sockets;
+			} else {
+				refs.entityMetaRef.current[e.entity_id] = {
+					kind: 'model',
+					path: '',
+					physicsEnabled: false,
+					physicsType: 'static',
+					sockets: e.sockets,
+				};
+			}
+			if (activeEntityPropertiesHandlerRef.current) {
+				pushEntityPropertiesPatch(activeEntityPropertiesHandlerRef.current);
+			}
+			if (activeSocketConfigModalHandlerRef.current) {
+				pushSocketConfigModalPatch(activeSocketConfigModalHandlerRef.current);
+			}
+			if (activeSocketConfigModalHandlerRef.current) {
+				pushSocketConfigModalPatch(activeSocketConfigModalHandlerRef.current);
+			}
+		}
+
+		if (event.event === 'entity_sockets_changed') {
+			const e = event as {
+				entity_id: number;
+				sockets: import('@shared-types').EntitySocket3D[];
+			};
+			const meta = refs.entityMetaRef.current[e.entity_id];
+			const prev = meta?.sockets;
+			const unchanged =
+				JSON.stringify(prev ?? []) === JSON.stringify(e.sockets ?? []);
+			if (meta) {
+				meta.sockets = e.sockets;
+			} else {
+				refs.entityMetaRef.current[e.entity_id] = {
+					kind: 'model',
+					path: '',
+					physicsEnabled: false,
+					physicsType: 'static',
+					sockets: e.sockets,
+				};
+			}
+			if (!unchanged && activeEntityPropertiesHandlerRef.current) {
+				pushEntityPropertiesPatch(activeEntityPropertiesHandlerRef.current);
+			}
+			if (!unchanged && activeSocketConfigModalHandlerRef.current) {
+				pushSocketConfigModalPatch(activeSocketConfigModalHandlerRef.current);
+			}
+			if (!unchanged && activeSocketConfigModalHandlerRef.current) {
+				pushSocketConfigModalPatch(activeSocketConfigModalHandlerRef.current);
+			}
+		}
+
+		if (event.event === 'entity_socket_attached') {
+			const e = event as {
+				host_id: number;
+				socket_name: string;
+				child_ids: number[];
+			};
+			for (const childId of e.child_ids ?? []) {
+				if (!refs.entityMetaRef.current[childId]) {
+					refs.entityMetaRef.current[childId] = {
+						kind: 'model',
+						path: '',
+						physicsEnabled: false,
+						physicsType: 'static',
+					};
+				}
+				refs.entityMetaRef.current[childId].attachSocketHostId = e.host_id;
+				refs.entityMetaRef.current[childId].attachSocketName = e.socket_name;
+				delete refs.entityMetaRef.current[childId].attachParentId;
+			}
+			if ((e.child_ids?.length ?? 0) > 0) {
+				dispatch({
+					type: 'SET_MULTI_SELECT',
+					payload: [...new Set([e.host_id, ...(e.child_ids ?? [])])],
+				});
+			}
+			if (activeEntityPropertiesHandlerRef.current) {
+				pushEntityPropertiesPatch(activeEntityPropertiesHandlerRef.current);
+			}
+			if (activeSocketConfigModalHandlerRef.current) {
+				pushSocketConfigModalPatch(activeSocketConfigModalHandlerRef.current);
+			}
+		}
+
+		if (event.event === 'entity_attachment_restored') {
+			const e = event as {
+				child_id: number;
+				attach_parent_id?: number;
+				attach_socket_host_id?: number;
+				attach_socket_name?: string;
+			};
+			const childId = e.child_id;
+			if (!refs.entityMetaRef.current[childId]) {
+				refs.entityMetaRef.current[childId] = {
+					kind: 'model',
+					path: '',
+					physicsEnabled: false,
+					physicsType: 'static',
+				};
+			}
+			const meta = refs.entityMetaRef.current[childId];
+			if (e.attach_socket_host_id != null && e.attach_socket_name) {
+				meta.attachSocketHostId = e.attach_socket_host_id;
+				meta.attachSocketName = e.attach_socket_name;
+				delete meta.attachParentId;
+			} else if (e.attach_parent_id != null) {
+				meta.attachParentId = e.attach_parent_id;
+				delete meta.attachSocketHostId;
+				delete meta.attachSocketName;
+			} else {
+				delete meta.attachParentId;
+				delete meta.attachSocketHostId;
+				delete meta.attachSocketName;
+			}
+			if (activeEntityPropertiesHandlerRef.current) {
+				pushEntityPropertiesPatch(activeEntityPropertiesHandlerRef.current);
+			}
+			if (activeSocketConfigModalHandlerRef.current) {
+				pushSocketConfigModalPatch(activeSocketConfigModalHandlerRef.current);
 			}
 		}
 
@@ -2508,6 +2755,29 @@ export function createEngineEventHandler({
 			}
 		}
 
+		if (event.event === 'entity_animation_play_state') {
+			const e = event as {
+				entity_id: number;
+				playing: boolean;
+				name?: string;
+			};
+			dispatch({
+				type: 'SET_ANIMATION_PLAYING',
+				payload: { entityId: e.entity_id, playing: e.playing },
+			});
+			const meta = refs.entityMetaRef.current[e.entity_id];
+			if (meta) {
+				if (e.playing && e.name) {
+					meta.playingAnimationName = e.name;
+				} else {
+					delete meta.playingAnimationName;
+				}
+			}
+			if (activeEntityPropertiesHandlerRef.current) {
+				pushEntityPropertiesPatch(activeEntityPropertiesHandlerRef.current);
+			}
+		}
+
 		if (event.event === 'animation_finished') {
 			const animationFinished = event as unknown as AnimationFinished;
 			const pending = refs.pendingEventsRef.current.get('animation_finished');
@@ -2516,6 +2786,12 @@ export function createEngineEventHandler({
 				refs.pendingEventsRef.current.delete('animation_finished');
 			}
 			dispatch({ type: 'SET_ANIMATION_PLAYING', payload: { entityId: animationFinished.entity_id, playing: false } });
+			if (refs.entityMetaRef.current[animationFinished.entity_id]) {
+				delete refs.entityMetaRef.current[animationFinished.entity_id].playingAnimationName;
+			}
+			if (activeEntityPropertiesHandlerRef.current) {
+				pushEntityPropertiesPatch(activeEntityPropertiesHandlerRef.current);
+			}
 		}
 
 		if (event.event === 'physics_changed') {

@@ -154,7 +154,17 @@ pub(crate) fn build_entity_3d_snapshot(
     let model_id = state.imported_model_registry.model_id_for_path(&model);
 
     let attachment = state.entity_attachments.get(&id);
-    let attach_parent_id = attachment.map(|a| a.parent_id);
+    let attach_parent_id = attachment.and_then(|a| a.parent_id());
+    let (attach_socket_host_id, attach_socket_name) = attachment
+        .and_then(|a| match &a.anchor {
+            crate::config_3d::entity_attachments::AttachmentAnchor::Socket {
+                host_entity_id,
+                socket_name,
+            } => Some((*host_entity_id, Some(socket_name.clone()))),
+            _ => None,
+        })
+        .map(|(host, name)| (Some(host), name))
+        .unwrap_or((None, None));
     let attach_local_position = attachment.map(|a| a.local_position.to_array());
     let attach_local_rotation = attachment.map(|a| {
         [
@@ -165,6 +175,12 @@ pub(crate) fn build_entity_3d_snapshot(
         ]
     });
     let attach_local_scale = attachment.map(|a| a.child_world_scale.to_array());
+
+    let sockets = state
+        .entity_sockets
+        .get(&id)
+        .map(|list| list.iter().map(|s| s.to_snapshot()).collect())
+        .unwrap_or_default();
 
     SaveEntity3DSnapshot {
         id,
@@ -193,6 +209,9 @@ pub(crate) fn build_entity_3d_snapshot(
         attach_local_position,
         attach_local_rotation,
         attach_local_scale,
+        attach_socket_host_id,
+        attach_socket_name,
+        sockets,
     }
 }
 

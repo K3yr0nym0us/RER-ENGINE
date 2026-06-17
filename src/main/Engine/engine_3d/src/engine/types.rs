@@ -27,6 +27,25 @@ pub(crate) enum UndoAction {
     RestorePlayerUiHud {
         snapshot: crate::config_3d::player_ui::hud_undo::PlayerUiHudUndoSnapshot,
     },
+    /// Deshacer creación de socket: eliminar el socket creado.
+    RemoveEntitySocket {
+        entity_id: u32,
+        socket: crate::config_3d::entity_sockets::EntitySocketSnapshot,
+    },
+    /// Redo tras deshacer creación de socket.
+    RestoreEntitySocket {
+        entity_id: u32,
+        socket: crate::config_3d::entity_sockets::EntitySocketSnapshot,
+    },
+    /// Deshacer vinculación a socket: restaurar attachment/transform previos.
+    RestoreSocketAttachment {
+        child_id: u32,
+        previous_attachment: Option<crate::config_3d::entity_attachments::EntityAttachmentLocal>,
+        previous_position: [f32; 3],
+        previous_rotation: [f32; 4],
+        previous_scale: [f32; 3],
+        applied_attachment: crate::config_3d::entity_attachments::EntityAttachmentLocal,
+    },
 }
 
 #[derive(Clone)]

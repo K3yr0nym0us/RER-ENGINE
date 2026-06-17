@@ -1,6 +1,7 @@
 import type { ModalElectronOpenRequest } from '@shared-types'
 import { BluePrintModalElectronHost } from './BluePrintModalElectronHost'
 import { EntityPropertiesElectronHost } from './EntityPropertiesElectronHost'
+import { SocketConfigModalElectronHost } from './SocketConfigModalElectronHost'
 import { PlayerUiEditorElectronHost } from './PlayerUiEditorElectronHost'
 import { buildModalElectronHostProps, MODAL_ELECTRON_REGISTRY } from './modalElectronRegistry'
 
@@ -20,6 +21,10 @@ export function ModalElectronGenericBody({ payload, onClose }: ModalElectronGene
 
 	if (payload.componentKey === 'EntityPropertiesModalBody') {
 		return <EntityPropertiesElectronHost payload={payload} />
+	}
+
+	if (payload.componentKey === 'SocketConfigModalBody') {
+		return <SocketConfigModalElectronHost payload={payload} />
 	}
 
 	const Component = MODAL_ELECTRON_REGISTRY[payload.componentKey]

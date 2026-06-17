@@ -8,6 +8,7 @@ import {
 	pushEntityPropertiesPatch,
 	unregisterEntityPropertiesSession,
 } from '../../../modal-electron/entityPropertiesModalSessions'
+import { activeSocketConfigModalHandlerRef } from '../../../modal-electron/socketConfigModalSessions'
 import { EntityPropertiesModalBody } from '../../../modal-electron/EntityPropertiesElectronHost'
 
 export function useEntityPropertiesModal(): void {
@@ -58,10 +59,17 @@ export function useEntityPropertiesModal(): void {
 			return
 		}
 
+		if (activeSocketConfigModalHandlerRef.current) {
+			return
+		}
+
 		if (modalOpenRef.current) {
 			if (lastSelectionKeyRef.current !== selectionKey) {
 				lastSelectionKeyRef.current = selectionKey
 				if (activeEntityPropertiesHandlerRef.current) {
+					if (selectedEntity?.id != null) {
+						send({ cmd: 'query_entity_animation_play_state', entity_id: selectedEntity.id } as never)
+					}
 					pushEntityPropertiesPatch(activeEntityPropertiesHandlerRef.current)
 				}
 			}
@@ -76,7 +84,10 @@ export function useEntityPropertiesModal(): void {
 			body: createElement(EntityPropertiesModalBody),
 		})
 		modalOpenRef.current = true
-	}, [selectedEntity?.id, selectedEntity?.name, multiSelectedIds.join(','), t])
+		if (selectedEntity?.id != null) {
+			send({ cmd: 'query_entity_animation_play_state', entity_id: selectedEntity.id } as never)
+		}
+	}, [selectedEntity?.id, selectedEntity?.name, multiSelectedIds.join(','), t, send])
 
 	useEffect(() => {
 		if (!modalOpenRef.current || !activeEntityPropertiesHandlerRef.current) return

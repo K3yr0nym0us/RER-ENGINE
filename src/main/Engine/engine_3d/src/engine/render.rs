@@ -11,11 +11,14 @@ use super::{SceneUniforms, State, DEPTH_FORMAT};
 impl State {
     fn editor_selection_flag(
         &self,
-        _entity_id: crate::ecs::EntityId,
+        entity_id: crate::ecs::EntityId,
         is_selected: bool,
         is_hovered: bool,
     ) -> f32 {
         if self.preview_playing {
+            return 0.0;
+        }
+        if self.socket_bone_pick_entity == Some(entity_id) {
             return 0.0;
         }
         if is_selected {
@@ -50,6 +53,7 @@ impl State {
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
         self.update_animations();
         self.update_skinned_animations();
+        self.sync_socket_attached_children();
         let mut draw_calls: u32 = 0;
 
         self.spatial_grid.clear();
@@ -748,6 +752,53 @@ impl State {
                 skel_pass.set_bind_group(0, &self.grid_bind_group, &[]);
                 skel_pass.set_vertex_buffer(0, skeleton_overlay.vertex_buffer.slice(..));
                 skel_pass.draw(0..skeleton_overlay.vertex_count, 0..1);
+                draw_calls += 1;
+            }
+
+            let socket_overlay =
+                crate::config_3d::socket_debug::build_selected_socket_overlay(
+                    &self.device,
+                    self,
+                );
+            if socket_overlay.vertex_count > 0 {
+                let aspect = self.size.width as f32 / self.size.height as f32;
+                let vp = self
+                    .camera_to_uniform_at_anchor(self.orbit_view_anchor(), aspect)
+                    .view_proj;
+                let skel_uni: [[f32; 4]; 9] = [
+                    vp[0],
+                    vp[1],
+                    vp[2],
+                    vp[3],
+                    [1.0, 0.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                    [0.0, 0.0, 0.0, 1.0],
+                    [-1.0, -1.0, 0.0, 0.0],
+                ];
+                self.queue.write_buffer(
+                    &self.grid_buffer_uni,
+                    0,
+                    bytemuck::cast_slice(&skel_uni),
+                );
+                let mut sock_pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("socket-debug-pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Load,
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    occlusion_query_set: None,
+                    timestamp_writes: None,
+                });
+                sock_pass.set_pipeline(&self.grid_pipeline);
+                sock_pass.set_bind_group(0, &self.grid_bind_group, &[]);
+                sock_pass.set_vertex_buffer(0, socket_overlay.vertex_buffer.slice(..));
+                sock_pass.draw(0..socket_overlay.vertex_count, 0..1);
                 draw_calls += 1;
             }
         }

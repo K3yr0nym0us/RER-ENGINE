@@ -124,9 +124,17 @@ pub struct State {
     pub(crate) entity_blueprint_ids: std::collections::HashMap<EntityId, String>,
     /// Colisión de malla Rapier on/off por entidad (`docs/Entities_Model_3D.yaml`).
     pub(crate) entity_colision: std::collections::HashMap<EntityId, bool>,
-    /// Hijo → padre + transform local (fusión de entidades en editor).
+    /// Hijo → ancla + transform local (fusión de entidades o socket en editor).
     pub(crate) entity_attachments:
         std::collections::HashMap<EntityId, crate::config_3d::entity_attachments::EntityAttachmentLocal>,
+    /// Sockets nombrados por entidad host con esqueleto.
+    pub(crate) entity_sockets:
+        std::collections::HashMap<EntityId, Vec<crate::config_3d::entity_sockets::EntitySocket>>,
+    /// Cache hueso → índice joint (invalidar al cambiar modelo).
+    pub(crate) bone_index_cache: std::collections::HashMap<(EntityId, String), usize>,
+    /// Modo editor: seleccionar hueso con click para un socket.
+    pub(crate) socket_bone_pick_entity: Option<EntityId>,
+    pub(crate) socket_bone_pick_hovered_joint: Option<usize>,
     pub preview_playing: bool,
     /// Edición de UI del jugador (vista play + cuadrícula de trabajo).
     pub(crate) player_ui_edit_active: bool,

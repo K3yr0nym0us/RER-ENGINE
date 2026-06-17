@@ -48,6 +48,8 @@ import { ProjectSaveBlockingModalBody } from './ProjectSaveBlockingModalBody'
 import { VisualScriptingModalBody } from '../visualScripting/components/VisualScriptingModalBody'
 import { SceneScriptEditorModalBody } from '../visualScripting/components/SceneScriptEditorModalBody'
 import { EntityPropertiesModalBody } from './EntityPropertiesElectronHost'
+import { AttachToSocketModalBody } from '../pages/EngineView/components/sidebar/PropertiesAccordion/AttachToSocketModalBody'
+import { SocketConfigModalBody } from './SocketConfigModalElectronHost'
 import { PluginsModalBody } from '../plugins/PluginsModalBody'
 import { wireModalCallbacksForHost } from './modalElectronCallbacks'
 
@@ -94,6 +96,8 @@ export const MODAL_ELECTRON_REGISTRY: Record<string, RegistryEntry> = {
 	VisualScriptingModalBody: modalEntry(VisualScriptingModalBody),
 	SceneScriptEditorModalBody: modalEntry(SceneScriptEditorModalBody),
 	EntityPropertiesModalBody: modalEntry(EntityPropertiesModalBody),
+	AttachToSocketModalBody: modalEntry(AttachToSocketModalBody),
+	SocketConfigModalBody: modalEntry(SocketConfigModalBody),
 	PluginsModalBody: modalEntry(PluginsModalBody),
 }
 

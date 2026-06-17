@@ -144,6 +144,7 @@ pub enum EngineCommandCommon {
         loop_: bool,
     },
     StopAnimation { id: u32 },
+    QueryEntityAnimationPlayState { entity_id: u32 },
     LoadScript { id: u32, path: String, source: String },
     RunControlScript {
         id: u32,

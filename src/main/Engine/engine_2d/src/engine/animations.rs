@@ -211,6 +211,7 @@ impl State {
             // El audio no-looping se agota solo cuando las muestras PCM terminan.
             // No enviamos Stop aquí para evitar que sobrescriba un Play ya encolado
             // si el usuario dispara la siguiente animación justo al terminar esta.
+            self.emit_entity_animation_play_state(entity_id);
             send_event(&EngineEvent::AnimationFinished { entity_id });
         }
 

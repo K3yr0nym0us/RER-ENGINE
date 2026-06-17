@@ -147,12 +147,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     handlerId: string
     playerUiEditorState?: unknown
     entityPropertiesState?: unknown
+    socketConfigModalState?: unknown
     models?: import('../shared-types/types').ModelInfo[]
   }): void => {
     ipcRenderer.send('modal-electron:patch', data)
   },
   entityPropertiesAction: (handlerId: string, action: unknown): Promise<void> => {
     return ipcRenderer.invoke('modal-electron:entity-properties-action', { handlerId, action })
+  },
+  socketConfigModalAction: (handlerId: string, action: unknown): Promise<void> => {
+    return ipcRenderer.invoke('modal-electron:socket-config-modal-action', { handlerId, action })
   },
   playerUiEditorAction: (handlerId: string, action: unknown): Promise<void> => {
     return ipcRenderer.invoke('modal-electron:player-ui-action', { handlerId, action })
@@ -165,6 +169,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       handlerId: string
       playerUiEditorState?: unknown
       entityPropertiesState?: unknown
+      socketConfigModalState?: unknown
       models?: import('../shared-types/types').ModelInfo[]
     }) => void,
   ): (() => void) => {
@@ -174,6 +179,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         handlerId: string
         playerUiEditorState?: unknown
         entityPropertiesState?: unknown
+        socketConfigModalState?: unknown
         models?: import('../shared-types/types').ModelInfo[]
       },
     ) => {
@@ -195,6 +201,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('modal-electron:entity-properties-action-request', listener)
     return () =>
       ipcRenderer.removeListener('modal-electron:entity-properties-action-request', listener)
+  },
+  onModalElectronSocketConfigModalActionRequest: (
+    cb: (req: { handlerId: string; action: unknown; requestId: string }) => void,
+  ): (() => void) => {
+    const listener = async (
+      _event: Electron.IpcRendererEvent,
+      data: { handlerId: string; action: unknown; requestId: string },
+    ) => {
+      await cb(data)
+      ipcRenderer.send(`modal-electron:socket-config-modal-action-done-${data.requestId}`)
+    }
+    ipcRenderer.on('modal-electron:socket-config-modal-action-request', listener)
+    return () =>
+      ipcRenderer.removeListener('modal-electron:socket-config-modal-action-request', listener)
   },
   onModalElectronClosed: (
     cb: (data: { componentKey?: string }) => void,

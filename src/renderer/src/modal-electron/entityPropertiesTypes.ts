@@ -56,6 +56,7 @@ export interface EntityPropertiesState {
 	linkedBlueprintName: string | null
 	scripts: ScriptEntry[]
 	animationPlayingIds: number[]
+	playingAnimationName: string | null
 }
 
 export type EntityPropertiesNestedModalKind =
@@ -82,7 +83,7 @@ export type EntityPropertiesAction =
 	| { action: 'updateAnimations'; id: number; animations: EntityPropertiesAnimation[] }
 	| { action: 'send'; cmd: Record<string, unknown> }
 	| { action: 'sendAsync'; cmd: Record<string, unknown>; waitEvent: string }
-	| { action: 'setAnimationPlaying'; id: number; playing: boolean }
+	| { action: 'setAnimationPlaying'; id: number; playing: boolean; animationName?: string | null }
 	| { action: 'updateScripts'; id: number; scripts: ScriptEntry[] }
 	| { action: 'openNestedModal'; kind: EntityPropertiesNestedModalKind; payload: Record<string, unknown> }
 	| { action: 'close' }

@@ -16,9 +16,7 @@ Backlog transversal (2D + 3D + Electron). Por motor: [CHECKLIST-2D.md](./CHECKLI
 
 **Documentado (editor):** [docs/Rerasset_Format.yaml](./docs/Rerasset_Format.yaml)
 
-#### Exportación del juego (aplazado)
-
-> Pipeline completo **Editor → Save → Build → Ejecutable** antes de implementar.
+#### Exportación del juego (aplazado hasta pipeline Editor → Save → Build → Ejecutable)
 
 - [ ] **Paso de build separado del `.save`** — `project.save` → Build → paquete con meshes/texturas transcodificadas.
 - [ ] **Perfil Windows** — albedo BC7, normal BC5, ORM BC4.
@@ -26,6 +24,7 @@ Backlog transversal (2D + 3D + Electron). Por motor: [CHECKLIST-2D.md](./CHECKLI
 - [ ] **Perfil Android (futuro)** — ASTC 6×6 / 8×8.
 - [ ] **Sin duplicar en edición** — variantes GPU solo en build (*cook at build time*).
 - [ ] **Herramientas de transcodificación** — texconv, Basis/ISPC, etc. en export Electron o binario Rust.
+- [ ] **Build final con texturas por plataforma (en motor 3D)** — aplazado hasta pipeline Editor → Save → Build → Ejecutable. Editor: RTEX RGBA8 ([Rerasset_Format.yaml](./docs/Rerasset_Format.yaml)). Export: BC7/BC5/BC4 (Win/Linux), ASTC (Android futuro). Ver [CHECKLIST.md](./CHECKLIST.md) y [CHECKLIST-TEXTURAS-3D.md](./CHECKLIST-TEXTURAS-3D.md).
 
 Referencia perfiles: [CHECKLIST-TEXTURAS-3D.md](./CHECKLIST-TEXTURAS-3D.md)
 

@@ -143,6 +143,48 @@ impl State {
                 }
                 self.restore_player_ui_hud_undo_snapshot(snapshot);
             }
+            UndoAction::RemoveEntitySocket { entity_id, socket } => {
+                self.redo_stack
+                    .push(UndoAction::RestoreEntitySocket { entity_id, socket: socket.clone() });
+                self.apply_undo_remove_entity_socket(entity_id, &socket);
+            }
+            UndoAction::RestoreEntitySocket { .. } => {}
+            UndoAction::RestoreSocketAttachment {
+                child_id,
+                previous_attachment,
+                previous_position,
+                previous_rotation,
+                previous_scale,
+                applied_attachment,
+            } => {
+                self.redo_stack.push(UndoAction::RestoreSocketAttachment {
+                    child_id,
+                    previous_attachment: self.entity_attachments.get(&child_id).cloned(),
+                    previous_position: self
+                        .world
+                        .get::<Transform>(child_id)
+                        .map(|t| t.position.to_array())
+                        .unwrap_or(previous_position),
+                    previous_rotation: self
+                        .world
+                        .get::<Transform>(child_id)
+                        .map(|t| [t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w])
+                        .unwrap_or(previous_rotation),
+                    previous_scale: self
+                        .world
+                        .get::<Transform>(child_id)
+                        .map(|t| t.scale.to_array())
+                        .unwrap_or(previous_scale),
+                    applied_attachment: applied_attachment.clone(),
+                });
+                self.apply_undo_socket_attachment(
+                    child_id,
+                    previous_attachment,
+                    previous_position,
+                    previous_rotation,
+                    previous_scale,
+                );
+            }
         }
         self.is_applying_undo = false;
         self.sync_editor_scenes_undo_dirty_to_renderer();
@@ -230,6 +272,37 @@ impl State {
                         .push(UndoAction::RestorePlayerUiHud { snapshot: current });
                 }
                 self.restore_player_ui_hud_undo_snapshot(snapshot);
+            }
+            UndoAction::RemoveEntitySocket { .. } => {}
+            UndoAction::RestoreEntitySocket { entity_id, socket } => {
+                self.undo_stack
+                    .push(UndoAction::RemoveEntitySocket { entity_id, socket: socket.clone() });
+                self.apply_redo_restore_entity_socket(entity_id, &socket);
+            }
+            UndoAction::RestoreSocketAttachment {
+                child_id,
+                previous_attachment: _,
+                previous_position: _,
+                previous_rotation: _,
+                previous_scale: _,
+                applied_attachment,
+            } => {
+                if let Some(t) = self.world.get::<Transform>(child_id) {
+                    self.undo_stack.push(UndoAction::RestoreSocketAttachment {
+                        child_id,
+                        previous_attachment: self.entity_attachments.get(&child_id).cloned(),
+                        previous_position: t.position.to_array(),
+                        previous_rotation: [
+                            t.rotation.x,
+                            t.rotation.y,
+                            t.rotation.z,
+                            t.rotation.w,
+                        ],
+                        previous_scale: t.scale.to_array(),
+                        applied_attachment: applied_attachment.clone(),
+                    });
+                }
+                self.apply_redo_socket_attachment(child_id, &applied_attachment);
             }
         }
         self.is_applying_undo = false;
@@ -1244,6 +1317,65 @@ impl State {
             EngineCommand::Only3d(EngineCommand3dOnly::MergeEntities { ids }) => {
                 self.merge_entities(&ids);
             }
+            EngineCommand::Only3d(EngineCommand3dOnly::ListEntityBones { entity_id }) => {
+                let bones = self.list_entity_bone_names(entity_id);
+                send_event(&crate::ipc::EngineEvent::EntityBonesList {
+                    entity_id,
+                    bones,
+                });
+            }
+            EngineCommand::Only3d(EngineCommand3dOnly::ListEntitySockets { entity_id }) => {
+                let sockets = self.list_entity_sockets(entity_id);
+                send_event(&crate::ipc::EngineEvent::EntitySocketsList {
+                    entity_id,
+                    sockets,
+                });
+            }
+            EngineCommand::Only3d(EngineCommand3dOnly::UpsertEntitySocket {
+                entity_id,
+                name,
+                bone_name,
+                local_position,
+                local_rotation,
+            }) => {
+                use glam::{Quat, Vec3};
+                let socket = crate::config_3d::entity_sockets::EntitySocket {
+                    name,
+                    bone_name,
+                    local_position: Vec3::from_array(local_position),
+                    local_rotation: Quat::from_xyzw(
+                        local_rotation[0],
+                        local_rotation[1],
+                        local_rotation[2],
+                        local_rotation[3],
+                    ),
+                };
+                match self.upsert_entity_socket(entity_id, socket) {
+                    Ok(()) => {}
+                    Err(message) => {
+                        send_event(&crate::ipc::EngineEvent::Error { message });
+                    }
+                }
+            }
+            EngineCommand::Only3d(EngineCommand3dOnly::RemoveEntitySocket { entity_id, name }) => {
+                self.remove_entity_socket(entity_id, &name);
+            }
+            EngineCommand::Only3d(EngineCommand3dOnly::AttachToSocket {
+                child_ids,
+                host_id,
+                socket_name,
+            }) => {
+                self.attach_to_socket(&child_ids, host_id, &socket_name);
+            }
+            EngineCommand::Only3d(EngineCommand3dOnly::DetachFromSocket { child_id }) => {
+                self.detach_from_socket(child_id);
+            }
+            EngineCommand::Only3d(EngineCommand3dOnly::SetSocketBonePickMode {
+                entity_id,
+                active,
+            }) => {
+                self.set_socket_bone_pick_mode(entity_id, active);
+            }
             EngineCommand::Common(EngineCommandCommon::ResendAllModelClips) => {
                 self.resend_all_model_clips_ready();
             }
@@ -1560,7 +1692,7 @@ impl State {
                                 finished: false,
                             },
                         );
-                        
+                        self.emit_entity_animation_play_state(id);
                     }
                 }
             }
@@ -1594,8 +1726,14 @@ impl State {
                 }
                 self.stop_audio_internal();
                 self.script_engine.detach_animation_scripts(id);
+                self.emit_entity_animation_play_state(id);
                 send_event(&EngineEvent::AnimationFinished { entity_id: id });
                 log::info!("[animation] Stopped for entity {}", id);
+            }
+            EngineCommand::Common(EngineCommandCommon::QueryEntityAnimationPlayState {
+                entity_id,
+            }) => {
+                self.emit_entity_animation_play_state(entity_id);
             }
             EngineCommand::Common(EngineCommandCommon::LoadSceneVisualScript { scene_id, source }) => {
                 log::info!("[IPC] LoadSceneVisualScript: scene_id={}", scene_id);

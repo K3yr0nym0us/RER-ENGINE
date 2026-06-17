@@ -3,10 +3,12 @@ import type {
 	ConfigCamera,
 	Entity3D,
 	Entity3DCategory,
+	EntitySocket3D,
 	SavedPlayerTransform,
 } from '@shared-types';
 import {
 	entityPathMarker,
+	isEditorCameraEntity,
 	isEditorCameraPath,
 	isGroundPath,
 	isPlayerPath,
@@ -156,7 +158,114 @@ export function entity3dToMeta(entity: Entity3D): EntityMeta {
 		...(entity.attach_parent_id != null
 			? { attachParentId: entity.attach_parent_id }
 			: {}),
+		...(entity.attach_socket_host_id != null
+			? { attachSocketHostId: entity.attach_socket_host_id }
+			: {}),
+		...(entity.attach_socket_name != null
+			? { attachSocketName: entity.attach_socket_name }
+			: {}),
+		...(entity.sockets?.length ? { sockets: entity.sockets } : {}),
 	};
+}
+
+export function entityHasSkinnedModel(meta?: Pick<EntityMeta, 'animations' | 'visualModelPath'>): boolean {
+	if (meta?.animations?.some((a) => a.embedded_in_model)) return true
+	const path = meta?.visualModelPath ?? ''
+	return /\.(glb|gltf|fbx)$/i.test(path)
+}
+
+export function entityCanHaveSockets(
+	entityId: number,
+	meta: EntityMeta | undefined,
+	editorCameraEntityId: number | null,
+): boolean {
+	if (!meta) return false
+	if (meta.kind === 'collider' || meta.kind === 'execution_area') return false
+	if (isEditorCameraEntity(entityId, meta, editorCameraEntityId)) return false
+	return entityHasSkinnedModel(meta)
+}
+
+/** Host con sockets en multiselección (exactamente uno con sockets definidos). */
+export function resolveSocketAttachHost(
+	ids: number[],
+	entityMeta: Record<number, EntityMeta>,
+): { hostId: number; sockets: EntitySocket3D[] } | null {
+	const hosts = ids.filter((id) => (entityMeta[id]?.sockets?.length ?? 0) > 0)
+	if (hosts.length !== 1) return null
+	const hostId = hosts[0]
+	const sockets = entityMeta[hostId]?.sockets ?? []
+	return sockets.length > 0 ? { hostId, sockets } : null
+}
+
+export interface SocketAttachmentLink {
+	childId: number
+	childName: string
+	socketName: string
+}
+
+export function resolveEntityEditorName(
+	entityId: number,
+	entityMeta: Record<number, EntityMeta>,
+	selectedEntity?: { id: number; name: string } | null,
+): string {
+	const meta = entityMeta[entityId]
+	if (meta?.name?.trim()) return meta.name.trim()
+	if (selectedEntity?.id === entityId && selectedEntity.name?.trim()) {
+		return selectedEntity.name.trim()
+	}
+	return `Entity ${entityId}`
+}
+
+/** Vínculos activos de objetos enganchados a sockets del host. */
+export function listSocketAttachmentsForHost(
+	hostId: number,
+	entityMeta: Record<number, EntityMeta>,
+	selectedEntity?: { id: number; name: string } | null,
+): SocketAttachmentLink[] {
+	const out: SocketAttachmentLink[] = []
+	for (const [idStr, meta] of Object.entries(entityMeta)) {
+		const childId = Number(idStr)
+		if (!Number.isFinite(childId)) continue
+		if (meta.attachSocketHostId !== hostId || !meta.attachSocketName?.trim()) continue
+		out.push({
+			childId,
+			childName: resolveEntityEditorName(childId, entityMeta, selectedEntity),
+			socketName: meta.attachSocketName,
+		})
+	}
+	return out.sort((a, b) => {
+		const bySocket = a.socketName.localeCompare(b.socketName, undefined, { sensitivity: 'accent' })
+		if (bySocket !== 0) return bySocket
+		return a.childName.localeCompare(b.childName, undefined, { sensitivity: 'accent' })
+	})
+}
+
+/** Host inicial para modal de vínculos (entidad seleccionada con sockets). */
+export function resolveSocketLinksModalHost(
+	engine: Pick<import('@engine').EngineContextValue, 'selectedEntity' | 'entityMetaRef' | 'editorCameraEntityIdRef'>,
+): number | null {
+	const id = engine.selectedEntity?.id
+	if (id == null) return null
+	const meta = engine.entityMetaRef.current[id]
+	if ((meta?.sockets?.length ?? 0) === 0) return null
+	if (!entityCanHaveSockets(id, meta, engine.editorCameraEntityIdRef.current)) return null
+	return id
+}
+
+/** Hijos candidatos para attach a socket (no host, no forbidden kinds). */
+export function socketAttachChildCandidates(
+	ids: number[],
+	hostId: number,
+	entityMeta: Record<number, EntityMeta>,
+): number[] {
+	return ids.filter((id) => {
+		if (id === hostId) return false
+		const meta = entityMeta[id]
+		if (!meta) return false
+		if (meta.kind === 'collider' || meta.kind === 'execution_area') return false
+		if (meta.entity3dCategory === 'ground' || meta.entity3dCategory === 'sun') return false
+		return true
+	})
 }
 
 /** True si cada hijo de la selección ya está fusionado a un padre dentro de la misma selección. */

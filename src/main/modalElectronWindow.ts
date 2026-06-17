@@ -192,6 +192,7 @@ export function sendPatchToModal(data: {
   handlerId: string
   playerUiEditorState?: unknown
   entityPropertiesState?: unknown
+  socketConfigModalState?: unknown
   models?: unknown
 }): void {
   if (!modalWindow || modalWindow.isDestroyed()) return

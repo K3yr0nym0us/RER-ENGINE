@@ -37,6 +37,7 @@ export const ENGINE_COMMANDS_SHARED = [
   'set_default_animation',
   'play_animation',
   'stop_animation',
+  'query_entity_animation_play_state',
   'load_script',
   'run_control_script',
   'set_control_bindings',
@@ -131,6 +132,13 @@ export const ENGINE_COMMANDS_3D_ONLY = [
   'notify_project_saved',
   'clear_editor_undo_redo',
   'merge_entities',
+  'list_entity_bones',
+  'list_entity_sockets',
+  'upsert_entity_socket',
+  'remove_entity_socket',
+  'attach_to_socket',
+  'detach_from_socket',
+  'set_socket_bone_pick_mode',
 ] as const
 
 function toSet<T extends string>(items: readonly T[]): ReadonlySet<string> {

@@ -50,12 +50,12 @@ export function EntityPropertiesModalContent({
 		linkedBlueprintName,
 		scripts,
 		animationPlayingIds,
+		playingAnimationName,
 	} = state
 
 	const [entityNameDraft, setEntityNameDraft] = useState('')
 	const [isEditingEntityName, setIsEditingEntityName] = useState(false)
 	const [animations, setAnimations] = useState<EntityPropertiesAnimation[]>([])
-	const [playingAnimationName, setPlayingAnimationName] = useState<string | null>(null)
 	const [pendingConfirm, setPendingConfirm] = useState<{
 		title: string
 		message: React.ReactNode
@@ -81,10 +81,6 @@ export function EntityPropertiesModalContent({
 		setAnimations(selectedEntity.animations ?? [])
 	}, [selectedEntity?.id, selectedEntity?.animations])
 
-	useEffect(() => {
-		setPlayingAnimationName(null)
-	}, [selectedEntity?.id])
-
 	const handleSend = (cmd: TransformSendCommand) => {
 		onAction({ action: 'setTransform', cmd })
 	}
@@ -104,7 +100,7 @@ export function EntityPropertiesModalContent({
 		}
 		if (!isCollider) list.push('scripting')
 		return list
-	}, [isCollider, isExecutionArea, is2D, hasEmbeddedModelClips])
+	}, [isCollider, isExecutionArea, is2D, hasEmbeddedModelClips, is3D])
 
 	useEffect(() => {
 		setActiveTab((prev) => (tabs.includes(prev) ? prev : (tabs[0] ?? 'transform')))
@@ -243,27 +239,34 @@ export function EntityPropertiesModalContent({
 		if (isPlayingThis) {
 			onAction({ action: 'send', cmd: { cmd: 'stop_animation', id: selectedEntity.id } })
 			onAction({ action: 'setAnimationPlaying', id: selectedEntity.id, playing: false })
-			setPlayingAnimationName(null)
 			return
 		}
 		if (animationPlayingIds.includes(selectedEntity.id)) {
 			onAction({ action: 'send', cmd: { cmd: 'stop_animation', id: selectedEntity.id } })
+			onAction({ action: 'setAnimationPlaying', id: selectedEntity.id, playing: false })
 		}
-		setPlayingAnimationName(anim.name)
 		if (anim.loop) {
 			onAction({
 				action: 'send',
 				cmd: { cmd: 'play_animation', id: selectedEntity.id, name: anim.name, loop: anim.loop },
 			})
-			onAction({ action: 'setAnimationPlaying', id: selectedEntity.id, playing: true })
+			onAction({
+				action: 'setAnimationPlaying',
+				id: selectedEntity.id,
+				playing: true,
+				animationName: anim.name,
+			})
 		} else {
-			onAction({ action: 'setAnimationPlaying', id: selectedEntity.id, playing: true })
+			onAction({
+				action: 'setAnimationPlaying',
+				id: selectedEntity.id,
+				playing: true,
+				animationName: anim.name,
+			})
 			void onAction({
 				action: 'sendAsync',
 				cmd: { cmd: 'play_animation', id: selectedEntity.id, name: anim.name, loop: anim.loop },
 				waitEvent: 'animation_finished',
-			}).then(() => {
-				setPlayingAnimationName(null)
 			})
 		}
 	}
