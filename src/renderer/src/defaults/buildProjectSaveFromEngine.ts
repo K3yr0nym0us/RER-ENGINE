@@ -86,6 +86,7 @@ function pickEntityFusionFields(
 	| 'attach_socket_host_id'
 	| 'attach_socket_name'
 	| 'sockets'
+	| 'bone_physics'
 > {
 	const out: Pick<
 		Entity3D,
@@ -96,6 +97,7 @@ function pickEntityFusionFields(
 		| 'attach_socket_host_id'
 		| 'attach_socket_name'
 		| 'sockets'
+		| 'bone_physics'
 	> = {}
 	if (raw.attach_parent_id != null) out.attach_parent_id = raw.attach_parent_id
 	if (raw.attach_local_position != null) out.attach_local_position = raw.attach_local_position
@@ -104,6 +106,7 @@ function pickEntityFusionFields(
 	if (raw.attach_socket_host_id != null) out.attach_socket_host_id = raw.attach_socket_host_id
 	if (raw.attach_socket_name != null) out.attach_socket_name = raw.attach_socket_name
 	if (raw.sockets?.length) out.sockets = raw.sockets
+	if (raw.bone_physics?.length) out.bone_physics = raw.bone_physics
 	return out
 }
 

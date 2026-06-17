@@ -8,6 +8,7 @@ use crate::gizmo::{self, GizmoVertex};
 
 const COLOR_BONE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 const COLOR_BONE_HOVER: [f32; 4] = [1.0, 0.85, 0.15, 1.0];
+const COLOR_BONE_PHYSICS: [f32; 4] = [0.2, 0.85, 1.0, 1.0];
 const COLOR_ROOT: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 const BONE_CROSS_SIZE: f32 = 0.075;
 const BONE_HOVER_CROSS_SIZE: f32 = 0.12;
@@ -74,6 +75,8 @@ pub(crate) fn build_selected_skeleton_overlay(
 ) -> gizmo::GizmoBuffer {
     let id = state
         .socket_bone_pick_entity
+        .or(state.bone_physics_pick_entity)
+        .or(state.bone_physics_editor_entity)
         .or(state.selected_entity)
         .unwrap_or(0);
     if id == 0 {
@@ -81,10 +84,23 @@ pub(crate) fn build_selected_skeleton_overlay(
     }
     let hovered = if state.socket_bone_pick_entity == Some(id) {
         state.socket_bone_pick_hovered_joint
+    } else if state.bone_physics_pick_entity == Some(id) {
+        state.bone_physics_pick_hovered_joint
     } else {
         None
     };
-    build_entity_skeleton_overlay(device, state, id, hovered)
+    let physics_joints = state.bone_physics_joint_indices(id);
+    build_entity_skeleton_overlay(device, state, id, hovered, &physics_joints)
+}
+
+fn bone_line_color(ji: usize, hovered_joint: Option<usize>, physics_joints: &[usize]) -> [f32; 4] {
+    if hovered_joint == Some(ji) {
+        COLOR_BONE_HOVER
+    } else if physics_joints.contains(&ji) {
+        COLOR_BONE_PHYSICS
+    } else {
+        COLOR_BONE
+    }
 }
 
 fn push_skeleton_lines(
@@ -93,6 +109,7 @@ fn push_skeleton_lines(
     globals: &[Mat4],
     entity_model: Mat4,
     hovered_joint: Option<usize>,
+    physics_joints: &[usize],
 ) {
     let joint_positions = joint_positions_mesh_space(asset, globals);
     let joint_count = asset
@@ -110,11 +127,7 @@ fn push_skeleton_lines(
         let mut has_parent = vec![false; gltf_count];
         for ji in 0..gltf_count {
             let is_hover = hovered_joint == Some(ji);
-            let line_color = if is_hover {
-                COLOR_BONE_HOVER
-            } else {
-                COLOR_BONE
-            };
+            let line_color = bone_line_color(ji, hovered_joint, physics_joints);
             let Some(pi) = skeleton_parent_index(
                 &asset.joint_gltf_nodes[..gltf_count],
                 &asset.gltf_scene_parents,
@@ -159,11 +172,7 @@ fn push_skeleton_lines(
 
     for ji in 0..joint_count {
         let is_hover = hovered_joint == Some(ji);
-        let line_color = if is_hover {
-            COLOR_BONE_HOVER
-        } else {
-            COLOR_BONE
-        };
+        let line_color = bone_line_color(ji, hovered_joint, physics_joints);
         let wp = entity_model.transform_point3(joint_positions[ji]);
         let size = if is_hover {
             BONE_HOVER_CROSS_SIZE
@@ -185,6 +194,7 @@ pub(crate) fn build_entity_skeleton_overlay(
     state: &State,
     entity_id: u32,
     hovered_joint: Option<usize>,
+    physics_joints: &[usize],
 ) -> gizmo::GizmoBuffer {
     let Some((asset, globals, entity_model)) = state.entity_skeleton_globals(entity_id) else {
         return gizmo::build_from_vertices(device, &[]);
@@ -197,6 +207,7 @@ pub(crate) fn build_entity_skeleton_overlay(
         &globals,
         entity_model,
         hovered_joint,
+        physics_joints,
     );
 
     gizmo::build_from_vertices(device, &verts)

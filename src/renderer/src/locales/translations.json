@@ -599,5 +599,21 @@
   "Config": "Config",
   "Create sockets and link objects to them.": "Crea sockets y vincula objetos a ellos.",
   "Select entity": "Seleccionar entidad",
-  "Select host entity": "Seleccionar entidad host"
+  "Select host entity": "Seleccionar entidad host",
+
+  "Edit bone physics": "Editar física de huesos",
+  "Bones": "Huesos",
+  "Physics": "Física",
+  "Assign secondary physics per bone on skinned models.": "Asigna física secundaria por hueso en modelos skinned.",
+  "Click an entity in the viewport to edit bone physics.": "Haz clic en una entidad del viewport para editar la física de huesos.",
+  "This entity cannot have bone physics. Click another entity in the viewport.": "Esta entidad no puede tener física de huesos. Haz clic en otra entidad del viewport.",
+  "Click a bone in the viewport to assign bone physics.": "Haz clic en un hueso del viewport para asignarle física.",
+  "Configured bones": "Huesos configurados",
+  "Physics type": "Tipo de física",
+  "Apply": "Aplicar",
+  "None": "Ninguno",
+  "Inherit from entity": "Heredar de la entidad",
+  "Static": "Estático",
+  "Dynamic": "Dinámico",
+  "Kinematic": "Cinemático"
 }

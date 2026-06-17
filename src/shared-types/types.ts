@@ -177,6 +177,8 @@ export interface Entity3D {
   attach_socket_name?: string
   /** Sockets definidos en esta entidad host. */
   sockets?: EntitySocket3D[]
+  /** Física secundaria por hueso (jiggle). */
+  bone_physics?: EntityBonePhysics3D[]
 }
 
 export interface EntitySocket3D {
@@ -184,6 +186,11 @@ export interface EntitySocket3D {
   bone_name: string
   local_position: [number, number, number]
   local_rotation: [number, number, number, number]
+}
+
+export interface EntityBonePhysics3D {
+  bone_name: string
+  mode: 'none' | 'inherit' | 'static' | 'dynamic' | 'kinematic'
 }
 
 /** Plantilla (`project.blueprints[]` / manifest). */

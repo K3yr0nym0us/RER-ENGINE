@@ -157,6 +157,18 @@ pub enum EngineCommand3dOnly {
     },
     DetachFromSocket { child_id: u32 },
     SetSocketBonePickMode { entity_id: u32, active: bool },
+    SetBonePhysicsEditorEntity {
+        entity_id: u32,
+        active: bool,
+    },
+    SetBonePhysicsPickMode { entity_id: u32, active: bool },
+    SetBonePhysics {
+        entity_id: u32,
+        bone_name: String,
+        mode: String,
+    },
+    RemoveBonePhysics { entity_id: u32, bone_name: String },
+    ListEntityBonePhysics { entity_id: u32 },
 }
 
 #[cfg(test)]

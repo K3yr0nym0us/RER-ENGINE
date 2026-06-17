@@ -1,0 +1,108 @@
+# Física por hueso (bone physics) — jiggle procedural en skinned
+#
+# Solo motor 3D. Simulación spring-damper sobre la pose animada de huesos
+# concretos (pelo, pechos, aros, etc.). No es un collider Rapier por hueso.
+
+scope: 3D_only
+
+concept: |
+  **Bone physics** aplica inercia/muelle a huesos seleccionados del esqueleto skinned
+  antes de escribir la joint palette GPU. La animación define la pose objetivo;
+  el motor simula un offset rotacional (spring-damper) hacia esa pose.
+
+  Distinto de la física Rapier de entidad (`physics_type` en Properties).
+  Distinto de sockets (anclajes de objetos hijos).
+
+modes:
+  none:
+    description: Sin simulación; pose 100% animada (default si no hay entrada)
+  inherit:
+    description: Resuelve al physics_type de la entidad en runtime (static / dynamic / kinematic)
+  static:
+    description: Sin jiggle; hueso fijado a la pose animada (override explícito)
+  dynamic:
+    description: Spring-damper + influencia de gravedad/inercia
+  kinematic:
+    description: Spring-damper hacia pose objetivo sin gravedad (balanceo suave)
+
+editor:
+  entry: Propiedades de entidad → pestaña Huesos (nav «Bones» / «Huesos»)
+  modal: EntityPropertiesModalBody (pestaña bones; ver Entity_Properties_Modal.yaml)
+  flow: |
+    1. Seleccionar entidad skinned en el viewport (abre Propiedades).
+    2. Pestaña Huesos → esqueleto visible en viewport.
+    3. Seleccionar hueso → tipo de física → Aplicar.
+    4. Lista inferior: editar modo o quitar por hueso.
+  restrictions:
+    same_as_sockets: |
+      Host debe tener modelo skinned con esqueleto (al menos un hueso); no collider,
+      execution_area ni cámara editor. entityCanHaveBonePhysics exige entityHasBones
+      (lista del motor vía list_entity_bones).
+
+engine:
+  module: engine_3d/src/config_3d/bone_physics.rs
+  integration: |
+    write_joint_matrices_all_parts (model_animation.rs):
+      apply_clip_to_locals → apply_bone_physics_to_locals → compute_joint_globals
+  pick: engine_3d/src/config_3d/bone_physics_pick.rs
+  shared_pick: pick_bone_at_pixel en socket_bone_pick.rs (mutuamente excluyente con socket pick)
+  skeleton_overlay: skeleton_debug.rs (cyan = hueso con física; amarillo = hover)
+  sim_constants:
+    dynamic: { stiffness: 140, damping: 16, gravity_tilt: 3.2 }
+    kinematic: { stiffness: 90, damping: 14 }
+  state:
+    entity_bone_physics: HashMap<EntityId, Vec<BonePhysicsEntry>>  # persistido
+    bone_physics_sim: HashMap<(EntityId, joint_index), BonePhysicsSimState>  # runtime
+
+ipc_commands:
+  catalog: engine_3d only (EngineCommand3dOnly)
+  list:
+    - cmd: set_bone_physics_editor_entity
+      args: { entity_id, active }
+      effect: muestra esqueleto sin modo pick (preview con modal abierta)
+    - cmd: set_bone_physics_pick_mode
+      args: { entity_id, active }
+      effect: pick de hueso; emite bone_physics_picked al clicar
+    - cmd: set_bone_physics
+      args: { entity_id, bone_name, mode }
+      effect: asigna modo; undo; emite entity_bone_physics_changed
+    - cmd: remove_bone_physics
+      args: { entity_id, bone_name }
+      effect: quita entrada; undo; emite entity_bone_physics_changed
+    - cmd: list_entity_bone_physics
+      args: { entity_id }
+      effect: emite entity_bone_physics_list
+
+ipc_events:
+  - bone_physics_picked
+  - entity_bone_physics_list
+  - entity_bone_physics_changed
+
+save:
+  field: bone_physics
+  format:
+    - bone_name: "mixamorig:Hair_01"
+      mode: dynamic
+  files:
+    serialize: engine_3d/src/save_entity_3d.rs
+    restore: engine_3d/src/engine/load_proyect.rs (restore_entity_bone_physics_after_scene_load)
+
+frontend:
+  panel: EntityPropertiesBonesPanel.tsx (pestaña Huesos en EntityPropertiesModalContent)
+  sessions: entityPropertiesModalSessions.ts + entityPropertiesBonePhysics.ts
+  sync: createEngineEventHandler.ts → entityMetaRef.bonePhysics
+
+key_files:
+  rust:
+    - src/main/Engine/engine_3d/src/config_3d/bone_physics.rs
+    - src/main/Engine/engine_3d/src/config_3d/bone_physics_pick.rs
+    - src/main/Engine/engine_3d/src/config_3d/model_animation.rs
+    - src/main/Engine/engine_3d/src/engine/undo_bone_physics.rs
+  ts:
+    - src/renderer/src/modal-electron/entityPropertiesBonePhysics.ts
+    - src/renderer/src/pages/EngineView/components/sidebar/PropertiesAccordion/EntityPropertiesBonesPanel.tsx
+
+do_not:
+  - Confundir con colliders Rapier por hueso
+  - Simular todos los joints del modelo (solo entradas activas)
+  - Activar socket bone pick y bone physics pick a la vez

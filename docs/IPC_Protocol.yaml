@@ -44,6 +44,7 @@ principle:
     EngineCommand2D / EngineCommand3D discriminados por motor.
     Preload: window.engine2d.send / window.engine3d.send (enforcement compile-time).
     window.engine.send sigue disponible como unión + send2d/send3d helpers.
+    Renderer: engine/engineSend.ts — send2d, send3d, sendMotor(projectType, cmd), createEngineSend.
 
 engine_shared_crate:
   role: biblioteca Rust (rer-engine-shared), dependencia de engine_2d y engine_3d

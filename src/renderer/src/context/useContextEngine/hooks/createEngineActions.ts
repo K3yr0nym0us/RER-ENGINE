@@ -16,6 +16,7 @@ import type {
 import { normalizeGraphicsTextureTier } from '../types';
 import { buildPlayAnimationFrameCmd } from './applyPendingRestoreToEngine';
 import { beginModelReplaceLoading, endModelReplaceLoading } from './sceneImportOverlay';
+import { invalidateEntityBoneNames } from '../../../utils/entity3dEditorSync';
 import {
 	blueprintEntityCategoryForEngine,
 	blueprintPlacementCategory,
@@ -203,6 +204,7 @@ export function createEngineActions({
 	const replaceEntityModel = (entityId: number, modelPath: string) => {
 		const meta = refs.entityMetaRef.current[entityId];
 		if (meta) {
+			invalidateEntityBoneNames(meta);
 			meta.visualModelPath = modelPath;
 			if (/\.(glb|gltf|fbx)$/i.test(modelPath)) {
 				meta.path = modelPath;

@@ -24,6 +24,7 @@ import type {
 import {
 	activeEntityPropertiesHandlerRef,
 	pushEntityPropertiesPatch,
+	onEntityPropertiesBonePhysicsPicked,
 } from '../../../modal-electron/entityPropertiesModalSessions';
 import {
 	activeSocketConfigModalHandlerRef,
@@ -64,7 +65,7 @@ import {
 	isModel3DPath,
 	is3dModelFileEntity,
 } from '../../../utils/blueprintModelPath';
-import { entityHasSkinnedModel, playViewFromPlayerAndCamera } from '../../../utils/entity3dEditorSync';
+import { entityHasSkinnedModel, invalidateEntityBoneNames, playViewFromPlayerAndCamera } from '../../../utils/entity3dEditorSync';
 import {
 	buildImportSceneCommand,
 	is2dProjectLoadedByEngine,
@@ -1099,6 +1100,7 @@ export function createEngineEventHandler({
 			};
 			const id = replaced.id ?? -1;
 			if (replaced.path && refs.entityMetaRef.current[id]) {
+				invalidateEntityBoneNames(refs.entityMetaRef.current[id]);
 				refs.entityMetaRef.current[id].visualModelPath = replaced.path;
 				if (isModel3DPath(replaced.path)) {
 					refs.entityMetaRef.current[id].path = replaced.path;
@@ -1216,6 +1218,9 @@ export function createEngineEventHandler({
 					reportBounds,
 					refs.modelLoadOverlayKindRef,
 				);
+			}
+			if (activeEntityPropertiesHandlerRef.current) {
+				pushEntityPropertiesPatch(activeEntityPropertiesHandlerRef.current);
 			}
 		}
 
@@ -2544,6 +2549,44 @@ export function createEngineEventHandler({
 			}
 		}
 
+		if (event.event === 'bone_physics_picked') {
+			const e = event as { entity_id: number; bone_name: string };
+			if (activeEntityPropertiesHandlerRef.current) {
+				onEntityPropertiesBonePhysicsPicked(
+					activeEntityPropertiesHandlerRef.current,
+					e.entity_id,
+					e.bone_name,
+				);
+			}
+		}
+
+		if (event.event === 'entity_bone_physics_list' || event.event === 'entity_bone_physics_changed') {
+			const e = event as {
+				entity_id: number;
+				entries: import('@shared-types').EntityBonePhysics3D[];
+			};
+			const meta = refs.entityMetaRef.current[e.entity_id];
+			const prev = meta?.bonePhysics;
+			const unchanged = JSON.stringify(prev ?? []) === JSON.stringify(e.entries ?? []);
+			if (unchanged) {
+				return;
+			}
+			if (meta) {
+				meta.bonePhysics = e.entries;
+			} else {
+				refs.entityMetaRef.current[e.entity_id] = {
+					kind: 'model',
+					path: '',
+					physicsEnabled: false,
+					physicsType: 'static',
+					bonePhysics: e.entries,
+				};
+			}
+			if (activeEntityPropertiesHandlerRef.current) {
+				pushEntityPropertiesPatch(activeEntityPropertiesHandlerRef.current);
+			}
+		}
+
 		if (event.event === 'entity_sockets_list') {
 			const e = event as {
 				entity_id: number;
@@ -2722,10 +2765,12 @@ export function createEngineEventHandler({
 				mapped[0].is_default = true;
 			}
 			if (prevMeta) {
+				invalidateEntityBoneNames(prevMeta);
 				refs.entityMetaRef.current[id] = {
 					...prevMeta,
 					animations: mapped,
 					visualModelPath: clipsEvent.path,
+					skinnedModelBound: true,
 				};
 			} else {
 				refs.entityMetaRef.current[id] = {
@@ -2736,6 +2781,7 @@ export function createEngineEventHandler({
 					physicsType: 'static',
 					animations: mapped,
 					visualModelPath: clipsEvent.path,
+					skinnedModelBound: true,
 				};
 			}
 			const defaultClip = mapped.find((a) => a.is_default)?.name ?? mapped[0]?.name;

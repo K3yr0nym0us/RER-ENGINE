@@ -1,5 +1,15 @@
 import type { TransformSendCommand } from '../pages/EngineView/components/sidebar/PropertiesAccordion/TransformPanel'
 import type { ScriptEntry } from '@hooks'
+import type { EntityBonePhysics3D } from '@shared-types'
+
+export type BonePhysicsMode = EntityBonePhysics3D['mode']
+
+export interface EntityPropertiesBonePhysicsUi {
+	entries: EntityBonePhysics3D[]
+	selectedBoneName: string | null
+	draftMode: BonePhysicsMode
+	bonePickActive: boolean
+}
 
 export interface EntityPropertiesAnimation {
 	id?: string
@@ -57,6 +67,8 @@ export interface EntityPropertiesState {
 	scripts: ScriptEntry[]
 	animationPlayingIds: number[]
 	playingAnimationName: string | null
+	canHaveBonePhysics: boolean
+	bonePhysics: EntityPropertiesBonePhysicsUi | null
 }
 
 export type EntityPropertiesNestedModalKind =
@@ -86,4 +98,11 @@ export type EntityPropertiesAction =
 	| { action: 'setAnimationPlaying'; id: number; playing: boolean; animationName?: string | null }
 	| { action: 'updateScripts'; id: number; scripts: ScriptEntry[] }
 	| { action: 'openNestedModal'; kind: EntityPropertiesNestedModalKind; payload: Record<string, unknown> }
+	| { action: 'setBonesTabActive'; active: boolean }
+	| { action: 'setBonePickMode'; active: boolean }
+	| { action: 'setBoneDraftMode'; mode: BonePhysicsMode }
+	| { action: 'applyBonePhysics' }
+	| { action: 'removeBonePhysics'; boneName: string }
+	| { action: 'setBoneEntryMode'; boneName: string; mode: BonePhysicsMode }
+	| { action: 'requestBonePhysicsList' }
 	| { action: 'close' }

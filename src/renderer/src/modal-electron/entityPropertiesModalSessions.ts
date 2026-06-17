@@ -31,6 +31,18 @@ import { createEmptyEntityVisualGraph, saveEntityVisualGraph } from '../visualSc
 import { resolveSceneEntitiesForVisualScript } from '../visualScripting/resolveSceneEntities'
 import { buildPlayAnimationFrameCmd } from '../context/useContextEngine/hooks/applyPendingRestoreToEngine'
 import type { TransformSendCommand } from '../pages/EngineView/components/sidebar/PropertiesAccordion/TransformPanel'
+import {
+	buildEntityPropertiesBonePhysicsUi,
+	createBonePhysicsSession,
+	disableEntityBonePick,
+	entityPropertiesCanHaveBonePhysics,
+	onEntityPropertiesBonePicked,
+	requestEntityBoneNamesIfNeeded,
+	resetBonePhysicsSessionForEntity,
+	syncEntityPropertiesBonePhysicsEditor,
+	teardownEntityPropertiesBonePhysics,
+	type EntityPropertiesBonePhysicsSession,
+} from './entityPropertiesBonePhysics'
 
 export const activeEntityPropertiesHandlerRef = { current: null as string | null }
 
@@ -46,23 +58,31 @@ export interface EntityPropertiesSessionDeps {
 interface Session {
 	handlerId: string
 	deps: EntityPropertiesSessionDeps
+	bonePhysics: EntityPropertiesBonePhysicsSession
 }
 
 const sessions = new Map<string, Session>()
 
 export function registerEntityPropertiesSession(handlerId: string, deps: EntityPropertiesSessionDeps): void {
-	sessions.set(handlerId, { handlerId, deps })
+	sessions.set(handlerId, { handlerId, deps, bonePhysics: createBonePhysicsSession() })
 	activeEntityPropertiesHandlerRef.current = handlerId
 }
 
 export function unregisterEntityPropertiesSession(handlerId: string): void {
+	const session = sessions.get(handlerId)
+	if (session) {
+		teardownEntityPropertiesBonePhysics(session.deps.getEngine(), session.bonePhysics)
+	}
 	sessions.delete(handlerId)
 	if (activeEntityPropertiesHandlerRef.current === handlerId) {
 		activeEntityPropertiesHandlerRef.current = null
 	}
 }
 
-export function buildEntityPropertiesState(engine: EngineContextValue): EntityPropertiesState {
+export function buildEntityPropertiesState(
+	engine: EngineContextValue,
+	session?: EntityPropertiesBonePhysicsSession,
+): EntityPropertiesState {
 	const { selectedEntity, multiSelectedIds, scenarioEntities, characterEntities } = engine
 	if (!selectedEntity) {
 		return {
@@ -85,6 +105,8 @@ export function buildEntityPropertiesState(engine: EngineContextValue): EntityPr
 			scripts: [],
 			animationPlayingIds: [],
 			playingAnimationName: null,
+			canHaveBonePhysics: false,
+			bonePhysics: null,
 		}
 	}
 
@@ -145,7 +167,25 @@ export function buildEntityPropertiesState(engine: EngineContextValue): EntityPr
 			? [selectedEntity.id]
 			: [],
 		playingAnimationName: entityMeta?.playingAnimationName ?? null,
+		canHaveBonePhysics:
+			multiSelectedIds.length <= 1 &&
+			entityPropertiesCanHaveBonePhysics(engine, selectedEntity.id),
+		bonePhysics: session
+			? buildEntityPropertiesBonePhysicsUi(engine, selectedEntity.id, session)
+			: null,
 	}
+}
+
+export function onEntityPropertiesBonePhysicsPicked(
+	handlerId: string,
+	entityId: number,
+	boneName: string,
+): void {
+	const session = sessions.get(handlerId)
+	if (!session) return
+	const engine = session.deps.getEngine()
+	onEntityPropertiesBonePicked(engine, session.bonePhysics, entityId, boneName)
+	pushEntityPropertiesPatch(handlerId)
 }
 
 export function requestEntityAnimationPlayStateSync(
@@ -158,7 +198,16 @@ export function requestEntityAnimationPlayStateSync(
 export function pushEntityPropertiesPatch(handlerId: string): void {
 	const session = sessions.get(handlerId)
 	if (!session) return
-	session.deps.pushPatch(handlerId, buildEntityPropertiesState(session.deps.getEngine()))
+	const engine = session.deps.getEngine()
+	const entityId = engine.selectedEntity?.id ?? null
+	if (engine.multiSelectedIds.length <= 1) {
+		requestEntityBoneNamesIfNeeded(engine, entityId)
+	}
+	resetBonePhysicsSessionForEntity(session.bonePhysics, entityId)
+	session.deps.pushPatch(
+		handlerId,
+		buildEntityPropertiesState(engine, session.bonePhysics),
+	)
 }
 
 function handleTransform(engine: EngineContextValue, cmd: TransformSendCommand): void {
@@ -204,6 +253,7 @@ export async function runEntityPropertiesAction(
 
 	switch (action.action) {
 		case 'close': {
+			teardownEntityPropertiesBonePhysics(engine, session.bonePhysics)
 			session.deps.onCloseModal()
 			session.deps.closeModal()
 			return
@@ -328,6 +378,86 @@ export async function runEntityPropertiesAction(
 			engine.updateEntityScripts(action.id, action.scripts)
 			pushEntityPropertiesPatch(handlerId)
 			return
+		case 'setBonesTabActive': {
+			const entityId = engine.selectedEntity?.id ?? null
+			session.bonePhysics.bonesTabActive = action.active
+			resetBonePhysicsSessionForEntity(session.bonePhysics, entityId)
+			if (!action.active) {
+				disableEntityBonePick(engine, entityId, session.bonePhysics)
+			}
+			syncEntityPropertiesBonePhysicsEditor(engine, entityId, session.bonePhysics)
+			pushEntityPropertiesPatch(handlerId)
+			return
+		}
+		case 'setBonePickMode': {
+			const entityId = engine.selectedEntity?.id
+			if (entityId == null || !entityPropertiesCanHaveBonePhysics(engine, entityId)) return
+			session.bonePhysics.boneEntityId = entityId
+			session.bonePhysics.bonePickActive = action.active
+			engine.send({
+				cmd: 'set_bone_physics_pick_mode',
+				entity_id: entityId,
+				active: action.active,
+			})
+			pushEntityPropertiesPatch(handlerId)
+			return
+		}
+		case 'setBoneDraftMode':
+			session.bonePhysics.draftMode = action.mode
+			pushEntityPropertiesPatch(handlerId)
+			return
+		case 'applyBonePhysics': {
+			const entityId = engine.selectedEntity?.id
+			const boneName = session.bonePhysics.selectedBoneName?.trim()
+			if (entityId == null || !boneName) return
+			engine.send({
+				cmd: 'set_bone_physics',
+				entity_id: entityId,
+				bone_name: boneName,
+				mode: session.bonePhysics.draftMode,
+			})
+			session.bonePhysics.bonePickActive = false
+			session.bonePhysics.selectedBoneName = null
+			engine.send({
+				cmd: 'set_bone_physics_pick_mode',
+				entity_id: entityId,
+				active: false,
+			})
+			pushEntityPropertiesPatch(handlerId)
+			return
+		}
+		case 'removeBonePhysics': {
+			const entityId = engine.selectedEntity?.id
+			if (entityId == null) return
+			engine.send({
+				cmd: 'remove_bone_physics',
+				entity_id: entityId,
+				bone_name: action.boneName,
+			})
+			if (session.bonePhysics.selectedBoneName === action.boneName) {
+				session.bonePhysics.selectedBoneName = null
+			}
+			pushEntityPropertiesPatch(handlerId)
+			return
+		}
+		case 'setBoneEntryMode': {
+			const entityId = engine.selectedEntity?.id
+			if (entityId == null) return
+			engine.send({
+				cmd: 'set_bone_physics',
+				entity_id: entityId,
+				bone_name: action.boneName,
+				mode: action.mode,
+			})
+			pushEntityPropertiesPatch(handlerId)
+			return
+		}
+		case 'requestBonePhysicsList': {
+			const entityId = engine.selectedEntity?.id
+			if (entityId == null) return
+			engine.send({ cmd: 'list_entity_bone_physics', entity_id: entityId })
+			return
+		}
 		case 'openNestedModal':
 			await openEntityPropertiesNestedModal(handlerId, action.kind, action.payload, {
 				engine,

@@ -135,6 +135,22 @@ pub struct State {
     /// Modo editor: seleccionar hueso con click para un socket.
     pub(crate) socket_bone_pick_entity: Option<EntityId>,
     pub(crate) socket_bone_pick_hovered_joint: Option<usize>,
+    /// Entidad con esqueleto visible en editor de física por hueso.
+    pub(crate) bone_physics_editor_entity: Option<EntityId>,
+    pub(crate) bone_physics_pick_entity: Option<EntityId>,
+    pub(crate) bone_physics_pick_hovered_joint: Option<usize>,
+    /// Configuración persistida de física por hueso.
+    pub(crate) entity_bone_physics:
+        std::collections::HashMap<EntityId, Vec<crate::config_3d::bone_physics::BonePhysicsEntry>>,
+    /// Estado de simulación jiggle (no persistido).
+    pub(crate) bone_physics_sim: std::collections::HashMap<
+        (EntityId, usize),
+        crate::config_3d::bone_physics::BonePhysicsSimState,
+    >,
+    pub(crate) bone_physics_entity_motion: std::collections::HashMap<
+        EntityId,
+        crate::config_3d::bone_physics::BonePhysicsEntityMotion,
+    >,
     pub preview_playing: bool,
     /// Edición de UI del jugador (vista play + cuadrícula de trabajo).
     pub(crate) player_ui_edit_active: bool,

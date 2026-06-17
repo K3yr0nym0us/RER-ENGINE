@@ -7,6 +7,7 @@ pub(crate) mod load_proyect;
 pub(crate) mod editor_scenes;
 mod undo_entity;
 mod undo_sockets;
+mod undo_bone_physics;
 mod animation_play_state;
 #[path = "../save_snapshot.rs"]
 mod save_snapshot;

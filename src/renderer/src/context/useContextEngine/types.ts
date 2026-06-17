@@ -1160,8 +1160,12 @@ export interface EntityMeta {
 	attachSocketName?: string
 	/** Sockets definidos en esta entidad host. */
 	sockets?: import('@shared-types').EntitySocket3D[]
-	/** Huesos del modelo skinned (cache editor). */
+	/** Física secundaria por hueso. */
+	bonePhysics?: import('@shared-types').EntityBonePhysics3D[]
+	/** Huesos del modelo skinned (cache editor; invalidar al cambiar visualModelPath). */
 	boneNames?: string[]
+	/** El motor enlazó animación/esqueleto skinned (`model_clips_ready`). */
+	skinnedModelBound?: boolean
 	/** Animación en reproducción en el editor (preview desde propiedades). */
 	playingAnimationName?: string
 }

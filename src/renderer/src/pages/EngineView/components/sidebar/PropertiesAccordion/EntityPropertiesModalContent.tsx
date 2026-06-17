@@ -15,6 +15,7 @@ import {
 import { AppTooltip } from '@components'
 import { InlineNestedDialog } from '../../../../../modal-electron/InlineNestedDialog'
 import { TransformPanel, ScriptingPanelContent } from '.'
+import { EntityPropertiesBonesPanel } from './EntityPropertiesBonesPanel'
 import type { TransformSendCommand } from './TransformPanel'
 import { useTraslate } from '@hooks'
 import type {
@@ -23,7 +24,7 @@ import type {
 	EntityPropertiesState,
 } from '../../../../../modal-electron/entityPropertiesTypes'
 
-type PropertiesTab = 'transform' | 'animations' | 'scripting'
+type PropertiesTab = 'transform' | 'animations' | 'scripting' | 'bones'
 
 export interface EntityPropertiesModalContentProps {
 	state: EntityPropertiesState
@@ -51,6 +52,8 @@ export function EntityPropertiesModalContent({
 		scripts,
 		animationPlayingIds,
 		playingAnimationName,
+		canHaveBonePhysics,
+		bonePhysics,
 	} = state
 
 	const [entityNameDraft, setEntityNameDraft] = useState('')
@@ -99,12 +102,18 @@ export function EntityPropertiesModalContent({
 			list.push('animations')
 		}
 		if (!isCollider) list.push('scripting')
+		if (is3D && canHaveBonePhysics) list.push('bones')
 		return list
-	}, [isCollider, isExecutionArea, is2D, hasEmbeddedModelClips, is3D])
+	}, [isCollider, isExecutionArea, is2D, hasEmbeddedModelClips, is3D, canHaveBonePhysics])
 
 	useEffect(() => {
 		setActiveTab((prev) => (tabs.includes(prev) ? prev : (tabs[0] ?? 'transform')))
 	}, [selectedEntity?.id, tabs])
+
+	useEffect(() => {
+		onAction({ action: 'setBonesTabActive', active: activeTab === 'bones' })
+		// eslint-disable-next-line react-hooks/exhaustive-deps -- solo al cambiar pestaña
+	}, [activeTab, selectedEntity?.id])
 
 	const openConfirm = (
 		message: React.ReactNode,
@@ -562,6 +571,11 @@ export function EntityPropertiesModalContent({
 							<Nav.Link eventKey="scripting">{t('Program entity')}</Nav.Link>
 						</Nav.Item>
 					)}
+					{tabs.includes('bones') && (
+						<Nav.Item>
+							<Nav.Link eventKey="bones">{t('Bones')}</Nav.Link>
+						</Nav.Item>
+					)}
 				</Nav>
 				<Tab.Content className="entity-props-tab-content">
 					{tabs.includes('transform') && (
@@ -651,6 +665,11 @@ export function EntityPropertiesModalContent({
 					{tabs.includes('scripting') && (
 						<Tab.Pane eventKey="scripting" className="py-0">
 							<ScriptingPanelContent scripts={scripts} {...scriptingHandlers} />
+						</Tab.Pane>
+					)}
+					{tabs.includes('bones') && bonePhysics && (
+						<Tab.Pane eventKey="bones" className="py-1 px-1">
+							<EntityPropertiesBonesPanel bonePhysics={bonePhysics} onAction={onAction} />
 						</Tab.Pane>
 					)}
 				</Tab.Content>

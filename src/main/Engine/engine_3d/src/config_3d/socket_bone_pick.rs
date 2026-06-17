@@ -8,8 +8,6 @@ use crate::ecs::{EntityId, Transform};
 use crate::engine::State;
 use crate::ipc::{send_event, EngineEvent};
 
-const PICK_THRESHOLD_PX: f32 = 22.0;
-
 pub(crate) struct JointScreenHit {
     pub joint_index: usize,
     pub bone_name: String,
@@ -19,8 +17,12 @@ pub(crate) struct JointScreenHit {
 impl State {
     pub(crate) fn set_socket_bone_pick_mode(&mut self, entity_id: EntityId, active: bool) {
         if active {
+            self.bone_physics_pick_entity = None;
+            self.bone_physics_pick_hovered_joint = None;
             self.socket_bone_pick_entity = Some(entity_id);
             self.socket_bone_pick_hovered_joint = None;
+            self.hovered_gizmo_axis = None;
+            self.active_gizmo_axis = None;
         } else if self.socket_bone_pick_entity == Some(entity_id) {
             self.socket_bone_pick_entity = None;
             self.socket_bone_pick_hovered_joint = None;
@@ -32,7 +34,7 @@ impl State {
             return;
         };
         self.socket_bone_pick_hovered_joint = self
-            .pick_socket_bone_at_pixel(entity_id, pixel_x, pixel_y)
+            .pick_bone_at_pixel(entity_id, pixel_x, pixel_y)
             .map(|(ji, _)| ji);
     }
 
@@ -41,7 +43,7 @@ impl State {
         let Some(entity_id) = self.socket_bone_pick_entity else {
             return false;
         };
-        let Some((_, bone_name)) = self.pick_socket_bone_at_pixel(entity_id, pixel_x, pixel_y) else {
+        let Some((_, bone_name)) = self.pick_bone_at_pixel(entity_id, pixel_x, pixel_y) else {
             return true;
         };
         self.socket_bone_pick_entity = None;
@@ -51,27 +53,6 @@ impl State {
             bone_name,
         });
         true
-    }
-
-    fn pick_socket_bone_at_pixel(
-        &self,
-        entity_id: EntityId,
-        pixel_x: f32,
-        pixel_y: f32,
-    ) -> Option<(usize, String)> {
-        let hits = self.collect_joint_screen_hits(entity_id)?;
-        let mut best: Option<(f32, usize, String)> = None;
-        for hit in hits {
-            let dx = hit.screen.0 - pixel_x;
-            let dy = hit.screen.1 - pixel_y;
-            let dist = (dx * dx + dy * dy).sqrt();
-            if dist <= PICK_THRESHOLD_PX
-                && best.as_ref().map_or(true, |(bd, _, _)| dist < *bd)
-            {
-                best = Some((dist, hit.joint_index, hit.bone_name));
-            }
-        }
-        best.map(|(_, ji, name)| (ji, name))
     }
 
     pub(crate) fn collect_joint_screen_hits(

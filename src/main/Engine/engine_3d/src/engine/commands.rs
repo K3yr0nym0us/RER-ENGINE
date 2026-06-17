@@ -185,6 +185,20 @@ impl State {
                     previous_scale,
                 );
             }
+            UndoAction::RestoreBonePhysics {
+                entity_id,
+                bone_name,
+                before,
+                after,
+            } => {
+                self.redo_stack.push(UndoAction::RestoreBonePhysics {
+                    entity_id,
+                    bone_name: bone_name.clone(),
+                    before: after,
+                    after: before,
+                });
+                self.apply_undo_bone_physics(entity_id, &bone_name, before);
+            }
         }
         self.is_applying_undo = false;
         self.sync_editor_scenes_undo_dirty_to_renderer();
@@ -303,6 +317,20 @@ impl State {
                     });
                 }
                 self.apply_redo_socket_attachment(child_id, &applied_attachment);
+            }
+            UndoAction::RestoreBonePhysics {
+                entity_id,
+                bone_name,
+                before,
+                after,
+            } => {
+                self.undo_stack.push(UndoAction::RestoreBonePhysics {
+                    entity_id,
+                    bone_name: bone_name.clone(),
+                    before: after,
+                    after: before,
+                });
+                self.apply_undo_bone_physics(entity_id, &bone_name, after);
             }
         }
         self.is_applying_undo = false;
@@ -1375,6 +1403,50 @@ impl State {
                 active,
             }) => {
                 self.set_socket_bone_pick_mode(entity_id, active);
+            }
+            EngineCommand::Only3d(EngineCommand3dOnly::SetBonePhysicsEditorEntity {
+                entity_id,
+                active,
+            }) => {
+                self.set_bone_physics_editor_entity(entity_id, active);
+            }
+            EngineCommand::Only3d(EngineCommand3dOnly::SetBonePhysicsPickMode {
+                entity_id,
+                active,
+            }) => {
+                self.set_bone_physics_pick_mode(entity_id, active);
+            }
+            EngineCommand::Only3d(EngineCommand3dOnly::SetBonePhysics {
+                entity_id,
+                bone_name,
+                mode,
+            }) => {
+                use crate::config_3d::bone_physics::parse_bone_physics_mode;
+                match parse_bone_physics_mode(&mode) {
+                    Some(parsed) => {
+                        if let Err(message) = self.set_bone_physics(entity_id, &bone_name, parsed) {
+                            send_event(&crate::ipc::EngineEvent::Error { message });
+                        }
+                    }
+                    None => {
+                        send_event(&crate::ipc::EngineEvent::Error {
+                            message: format!("Modo de física por hueso inválido: {mode}"),
+                        });
+                    }
+                }
+            }
+            EngineCommand::Only3d(EngineCommand3dOnly::RemoveBonePhysics {
+                entity_id,
+                bone_name,
+            }) => {
+                self.remove_bone_physics(entity_id, &bone_name);
+            }
+            EngineCommand::Only3d(EngineCommand3dOnly::ListEntityBonePhysics { entity_id }) => {
+                let entries = self.list_entity_bone_physics(entity_id);
+                send_event(&crate::ipc::EngineEvent::EntityBonePhysicsList {
+                    entity_id,
+                    entries,
+                });
             }
             EngineCommand::Common(EngineCommandCommon::ResendAllModelClips) => {
                 self.resend_all_model_clips_ready();

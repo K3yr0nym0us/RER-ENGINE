@@ -21,6 +21,9 @@ impl State {
         if self.socket_bone_pick_entity == Some(entity_id) {
             return 0.0;
         }
+        if self.bone_physics_pick_entity == Some(entity_id) {
+            return 0.0;
+        }
         if is_selected {
             1.0
         } else if is_hovered {
@@ -805,6 +808,8 @@ impl State {
 
         if !self.preview_playing
             && !self.player_ui_edit_active
+            && self.socket_bone_pick_entity.is_none()
+            && self.bone_physics_pick_entity.is_none()
         {
             if let Some(origin) = self.selection_center().filter(|_| self.pivot_edit_mode.is_none())
             {

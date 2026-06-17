@@ -43,6 +43,8 @@ pub(crate) mod player_ui;
 pub(crate) mod entity_attachments;
 pub(crate) mod entity_sockets;
 pub(crate) mod socket_bone_pick;
+pub(crate) mod bone_physics;
+pub(crate) mod bone_physics_pick;
 pub(crate) mod socket_debug;
 pub(crate) use world_bounds::WorldBounds3D;
 
@@ -901,6 +903,10 @@ impl State {
             let _ = self.try_pick_socket_bone_click(pixel_x, pixel_y);
             return;
         }
+        if self.bone_physics_pick_entity.is_some() {
+            let _ = self.try_pick_bone_physics_click(pixel_x, pixel_y);
+            return;
+        }
         match self.ray_cast(pixel_x, pixel_y) {
             Some(entity) => {
                 if self.ctrl_held {
@@ -971,6 +977,9 @@ impl State {
     }
 
     pub fn pick_gizmo_axis(&self, pixel_x: f32, pixel_y: f32) -> Option<usize> {
+        if self.socket_bone_pick_entity.is_some() || self.bone_physics_pick_entity.is_some() {
+            return None;
+        }
         let origin = self.selection_center()?;
         let so = self.project_to_screen(origin)?;
 
@@ -1115,6 +1124,15 @@ impl State {
         }
         if self.socket_bone_pick_entity.is_some() {
             self.update_socket_bone_pick_hover(pixel_x, pixel_y);
+            if self.hovered_entity.is_some() {
+                self.hovered_entity = None;
+                crate::ipc::send_event(&crate::ipc::EngineEvent::EntityUnhovered);
+            }
+            self.hovered_gizmo_axis = None;
+            return;
+        }
+        if self.bone_physics_pick_entity.is_some() {
+            self.update_bone_physics_pick_hover(pixel_x, pixel_y);
             if self.hovered_entity.is_some() {
                 self.hovered_entity = None;
                 crate::ipc::send_event(&crate::ipc::EngineEvent::EntityUnhovered);

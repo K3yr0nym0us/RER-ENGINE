@@ -10,26 +10,6 @@ Backlog transversal (2D + 3D + Electron). Por motor: [CHECKLIST-2D.md](./CHECKLI
 
 ## Pendiente
 
-### Formato editor vs exportación del juego (assets / texturas)
-
-**Principio:** editor = RTEX RGBA8 en Win/Linux; compresión GPU solo al exportar el juego.
-
-**Documentado (editor):** [docs/Rerasset_Format.yaml](./docs/Rerasset_Format.yaml)
-
-#### Exportación del juego (aplazado hasta pipeline Editor → Save → Build → Ejecutable)
-
-- [ ] **Paso de build separado del `.save`** — `project.save` → Build → paquete con meshes/texturas transcodificadas.
-- [ ] **Perfil Windows** — albedo BC7, normal BC5, ORM BC4.
-- [ ] **Perfil Linux (Vulkan)** — mismo esquema que Windows.
-- [ ] **Perfil Android (futuro)** — ASTC 6×6 / 8×8.
-- [ ] **Sin duplicar en edición** — variantes GPU solo en build (*cook at build time*).
-- [ ] **Herramientas de transcodificación** — texconv, Basis/ISPC, etc. en export Electron o binario Rust.
-- [ ] **Build final con texturas por plataforma (en motor 3D)** — aplazado hasta pipeline Editor → Save → Build → Ejecutable. Editor: RTEX RGBA8 ([Rerasset_Format.yaml](./docs/Rerasset_Format.yaml)). Export: BC7/BC5/BC4 (Win/Linux), ASTC (Android futuro). Ver [CHECKLIST.md](./CHECKLIST.md) y [CHECKLIST-TEXTURAS-3D.md](./CHECKLIST-TEXTURAS-3D.md).
-
-Referencia perfiles: [CHECKLIST-TEXTURAS-3D.md](./CHECKLIST-TEXTURAS-3D.md)
-
----
-
 ### Formato `.rersave` (reemplazo de `.save`)
 
 **Principio:** contenedor binario `RERS`, sin ZIP, sin soporte legacy `.save`.
@@ -55,15 +35,6 @@ Referencia perfiles: [CHECKLIST-TEXTURAS-3D.md](./CHECKLIST-TEXTURAS-3D.md)
 - [ ] **Carga lazy al abrir `.save`** — solo global + escena activa; liberar al cambiar escena.
 - [ ] **Promoción a global al guardar** — recurso compartido entre escenas → mover a biblioteca global.
 - [ ] **Documentar** — extender Save_Proyect_Model cuando exista el esquema.
-
----
-
-### IPC por motor (2D / 3D)
-
-**Documentado:** [docs/IPC_Protocol.yaml](./docs/IPC_Protocol.yaml) · `engine_ipc_common` · `engineCommandCatalog.ts` · `engineCommands.ts`
-
-- [x] **Tipos TS discriminados** — `EngineCommand2D` / `EngineCommand3D` en shared-types; `send2d` / `send3d` / `sendMotor`.
-- [x] **Preload opcional** — `window.engine2d` / `window.engine3d` para enforcement en renderer.
 
 ---
 
@@ -97,6 +68,27 @@ Referencia perfiles: [CHECKLIST-TEXTURAS-3D.md](./CHECKLIST-TEXTURAS-3D.md)
 - [ ] **Disparo configurable** — velocidad, dirección, distancia.
 - [ ] **Character tipo enemy** — categoría y defaults distintos del player.
 - [ ] **IA enemigos y NPCs** — patrulla, persecución, ataque; Rhai / nodos visuales.
+
+---
+
+## Build final del juego (compilar el juego)
+
+> **Aplazado** hasta cerrar el resto de este checklist. Pipeline objetivo: **Editor → Save → Build → Ejecutable**.
+
+**Principio (editor):** RTEX RGBA8 en Win/Linux; compresión GPU solo al exportar el juego.
+**Documentado (editor):** [docs/Rerasset_Format.yaml](./docs/Rerasset_Format.yaml)
+
+### Exportación — assets y texturas
+
+- [ ] **Paso de build separado del `.save`** — `project.save` → Build → paquete con meshes/texturas transcodificadas.
+- [ ] **Perfil Windows** — albedo BC7, normal BC5, ORM BC4.
+- [ ] **Perfil Linux (Vulkan)** — mismo esquema que Windows.
+- [ ] **Perfil Android (futuro)** — ASTC 6×6 / 8×8.
+- [ ] **Sin duplicar en edición** — variantes GPU solo en build (*cook at build time*).
+- [ ] **Herramientas de transcodificación** — texconv, Basis/ISPC, etc. en export Electron o binario Rust.
+- [ ] **Build final con texturas por plataforma (motor 3D)** — export BC7/BC5/BC4 (Win/Linux), ASTC (Android futuro). Editor: RTEX RGBA8. Ver [CHECKLIST-TEXTURAS-3D.md](./CHECKLIST-TEXTURAS-3D.md).
+
+Referencia perfiles: [CHECKLIST-TEXTURAS-3D.md](./CHECKLIST-TEXTURAS-3D.md)
 
 ---
 

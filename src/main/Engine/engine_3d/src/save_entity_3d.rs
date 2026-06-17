@@ -182,6 +182,8 @@ pub(crate) fn build_entity_3d_snapshot(
         .map(|list| list.iter().map(|s| s.to_snapshot()).collect())
         .unwrap_or_default();
 
+    let bone_physics = state.list_entity_bone_physics(id);
+
     SaveEntity3DSnapshot {
         id,
         name: state
@@ -212,6 +214,7 @@ pub(crate) fn build_entity_3d_snapshot(
         attach_socket_host_id,
         attach_socket_name,
         sockets,
+        bone_physics,
     }
 }
 

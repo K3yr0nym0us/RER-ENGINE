@@ -165,6 +165,9 @@ pub struct SaveEntity3DSnapshot {
     /// Sockets definidos en esta entidad host.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sockets: Vec<crate::config_3d::entity_sockets::EntitySocketSnapshot>,
+    /// Física secundaria por hueso (jiggle).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub bone_physics: Vec<crate::config_3d::bone_physics::BonePhysicsSnapshot>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -632,6 +635,24 @@ pub enum EngineEvent {
     SocketBonePicked {
         entity_id: u32,
         bone_name: String,
+    },
+    /// Hueso elegido con click en viewport (modo física por hueso).
+    #[serde(rename = "bone_physics_picked")]
+    BonePhysicsPicked {
+        entity_id: u32,
+        bone_name: String,
+    },
+    /// Lista de física por hueso de una entidad.
+    #[serde(rename = "entity_bone_physics_list")]
+    EntityBonePhysicsList {
+        entity_id: u32,
+        entries: Vec<crate::config_3d::bone_physics::BonePhysicsSnapshot>,
+    },
+    /// Física por hueso actualizada.
+    #[serde(rename = "entity_bone_physics_changed")]
+    EntityBonePhysicsChanged {
+        entity_id: u32,
+        entries: Vec<crate::config_3d::bone_physics::BonePhysicsSnapshot>,
     },
     /// Entidad(es) vinculada(s) a un socket.
     #[serde(rename = "entity_socket_attached")]

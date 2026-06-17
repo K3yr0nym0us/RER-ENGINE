@@ -165,10 +165,33 @@ export function entity3dToMeta(entity: Entity3D): EntityMeta {
 			? { attachSocketName: entity.attach_socket_name }
 			: {}),
 		...(entity.sockets?.length ? { sockets: entity.sockets } : {}),
+		...(entity.bone_physics?.length ? { bonePhysics: entity.bone_physics } : {}),
 	};
 }
 
-export function entityHasSkinnedModel(meta?: Pick<EntityMeta, 'animations' | 'visualModelPath'>): boolean {
+export function invalidateEntityBoneNames(meta?: Pick<EntityMeta, 'boneNames' | 'skinnedModelBound'>): void {
+	if (!meta) return
+	delete meta.boneNames
+	delete meta.skinnedModelBound
+}
+
+export function entityHasBones(meta?: Pick<EntityMeta, 'boneNames'>): boolean {
+	return (meta?.boneNames?.length ?? 0) > 0
+}
+
+export function entityCanHaveBonePhysics(
+	entityId: number,
+	meta: EntityMeta | undefined,
+	editorCameraEntityId: number | null,
+): boolean {
+	if (!entityCanHaveSockets(entityId, meta, editorCameraEntityId)) return false
+	return entityHasBones(meta)
+}
+
+export function entityHasSkinnedModel(
+	meta?: Pick<EntityMeta, 'animations' | 'visualModelPath' | 'skinnedModelBound'>,
+): boolean {
+	if (meta?.skinnedModelBound) return true
 	if (meta?.animations?.some((a) => a.embedded_in_model)) return true
 	const path = meta?.visualModelPath ?? ''
 	return /\.(glb|gltf|fbx)$/i.test(path)

@@ -214,7 +214,7 @@ impl State {
             path: path.to_string(),
             clips: clip_meta,
         });
-        self.write_joint_matrices_all_parts(&binding, &asset, None, 0.0);
+        self.write_joint_matrices_all_parts(id, &binding, &asset, None, 0.0);
 
         
     }
@@ -342,7 +342,7 @@ impl State {
                     Some(a) if a.playing && !a.finished => a,
                     _ => {
                         // Pose bind: tiempo 0, sin clip activo
-                        self.write_joint_matrices_all_parts(&binding, &asset, None, 0.0);
+                        self.write_joint_matrices_all_parts(id, &binding, &asset, None, 0.0);
                         continue;
                     }
                 };
@@ -373,7 +373,7 @@ impl State {
                 active.time_s = new_time;
             }
 
-            self.write_joint_matrices_all_parts(&binding, &asset, Some(clip), new_time);
+            self.write_joint_matrices_all_parts(id, &binding, &asset, Some(clip), new_time);
         }
 
         for id in finished_ids {
@@ -388,6 +388,7 @@ impl State {
 
     fn write_joint_matrices_all_parts(
         &mut self,
+        entity_id: EntityId,
         binding: &ModelAnimationBinding,
         asset: &ModelAsset,
         clip: Option<&AnimationClip>,
@@ -400,12 +401,14 @@ impl State {
             apply_clip_to_locals(clip, time_s, &mut local_transforms);
         }
 
+        self.apply_bone_physics_to_locals(entity_id, asset, self.delta_time, &mut local_transforms);
+
         let use_per_part_ibm =
             asset.bind_pose_from_ibm && !asset.joint_gltf_nodes.is_empty();
         let shared_global = if use_per_part_ibm {
             None
         } else {
-            Some(asset_joint_globals_with_clip(asset, clip, time_s))
+            Some(asset_joint_globals_with_locals(asset, &local_transforms))
         };
 
         let norm = asset.mesh_normalize;

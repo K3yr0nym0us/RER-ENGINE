@@ -232,6 +232,8 @@ pub(crate) struct SavedEntity3D {
     pub attach_socket_name: Option<String>,
     #[serde(default)]
     pub sockets: Vec<crate::config_3d::entity_sockets::EntitySocketSnapshot>,
+    #[serde(default)]
+    pub bone_physics: Vec<crate::config_3d::bone_physics::BonePhysicsSnapshot>,
 }
 
 fn default_colision_on() -> bool {
@@ -1719,6 +1721,7 @@ fn apply_loaded_proyect_3d_with_scene(
         }
     }
     restore_entity_sockets_after_scene_load(state, &view);
+    restore_entity_bone_physics_after_scene_load(state, &view);
     restore_entity_attachments_after_scene_load(state, &view);
     state.restoring_save_manifest = false;
     Ok(view)
@@ -1784,6 +1787,21 @@ fn restore_entity_sockets_after_scene_load(state: &mut State, view: &ActiveSaveV
         if !entity.sockets.is_empty() {
             state.restore_entity_sockets_from_saved(entity.id, &entity.sockets);
             state.emit_entity_sockets_if_any(entity.id);
+        }
+    };
+    for entity in &view.entities {
+        restore(entity);
+    }
+    if let Some(player) = &view.player {
+        restore(player);
+    }
+}
+
+fn restore_entity_bone_physics_after_scene_load(state: &mut State, view: &ActiveSaveView) {
+    let mut restore = |entity: &SavedEntity3D| {
+        if !entity.bone_physics.is_empty() {
+            state.restore_entity_bone_physics_from_saved(entity.id, &entity.bone_physics);
+            state.emit_entity_bone_physics_if_any(entity.id);
         }
     };
     for entity in &view.entities {
@@ -2055,6 +2073,7 @@ pub(crate) fn saved_scene_from_snapshot_payload(
             attach_socket_host_id: e.attach_socket_host_id,
             attach_socket_name: e.attach_socket_name.clone(),
             sockets: e.sockets.clone(),
+            bone_physics: e.bone_physics.clone(),
         }
     }
 
@@ -2169,6 +2188,7 @@ pub(crate) fn build_fp_placeholder_saved_scene(id: u32, name: &str) -> SavedScen
             attach_socket_host_id: None,
             attach_socket_name: None,
             sockets: vec![],
+            bone_physics: vec![],
         },
         SavedEntity3D {
             id: 0,
@@ -2193,6 +2213,7 @@ pub(crate) fn build_fp_placeholder_saved_scene(id: u32, name: &str) -> SavedScen
             attach_socket_host_id: None,
             attach_socket_name: None,
             sockets: vec![],
+            bone_physics: vec![],
         },
         SavedEntity3D {
             id: 0,
@@ -2217,6 +2238,7 @@ pub(crate) fn build_fp_placeholder_saved_scene(id: u32, name: &str) -> SavedScen
             attach_socket_host_id: None,
             attach_socket_name: None,
             sockets: vec![],
+            bone_physics: vec![],
         },
     ];
 
@@ -2243,6 +2265,7 @@ pub(crate) fn build_fp_placeholder_saved_scene(id: u32, name: &str) -> SavedScen
         attach_socket_host_id: None,
         attach_socket_name: None,
         sockets: vec![],
+        bone_physics: vec![],
     };
 
     SavedScene {

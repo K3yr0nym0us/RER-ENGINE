@@ -211,6 +211,22 @@ persistence:
   blueprint:
     fields: [colision, physics_enabled, physics_type]
 
+# ---------------------------------------------------------------------------
+# Física secundaria por hueso (3D skinned) — no Rapier
+# ---------------------------------------------------------------------------
+
+bone_physics_3d:
+  doc: docs/Bone_Physics_3D.yaml
+  description: |
+    Jiggle procedural (spring-damper) en joints skinned concretos. Integrado en
+    el pipeline de animación antes de la joint palette GPU.
+  distinct_from:
+    - Rapier entity physics (physics_type / colision)
+    - Sockets (attach de objetos hijos a huesos)
+  modes: [none, inherit, static, dynamic, kinematic]
+  save_field: bone_physics
+  ui: Herramientas → Editar física de huesos (modal Electron)
+
 rhai:
   common:
     - engine.set_physics(id, enabled, body_type?)

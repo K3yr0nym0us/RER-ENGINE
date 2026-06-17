@@ -46,6 +46,12 @@ pub(crate) enum UndoAction {
         previous_scale: [f32; 3],
         applied_attachment: crate::config_3d::entity_attachments::EntityAttachmentLocal,
     },
+    RestoreBonePhysics {
+        entity_id: u32,
+        bone_name: String,
+        before: Option<crate::config_3d::bone_physics::BonePhysicsMode>,
+        after: Option<crate::config_3d::bone_physics::BonePhysicsMode>,
+    },
 }
 
 #[derive(Clone)]

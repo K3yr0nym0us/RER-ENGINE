@@ -36,6 +36,7 @@ import {
 	unregisterEntityPropertiesSession,
 } from '../modal-electron/entityPropertiesModalSessions'
 import {
+	buildSocketConfigModalState,
 	pushSocketConfigModalPatch,
 	registerSocketConfigModalSession,
 	runSocketConfigModalAction,

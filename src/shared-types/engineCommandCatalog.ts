@@ -139,6 +139,11 @@ export const ENGINE_COMMANDS_3D_ONLY = [
   'attach_to_socket',
   'detach_from_socket',
   'set_socket_bone_pick_mode',
+  'set_bone_physics_editor_entity',
+  'set_bone_physics_pick_mode',
+  'set_bone_physics',
+  'remove_bone_physics',
+  'list_entity_bone_physics',
 ] as const
 
 function toSet<T extends string>(items: readonly T[]): ReadonlySet<string> {

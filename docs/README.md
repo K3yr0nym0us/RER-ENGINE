@@ -50,6 +50,7 @@
 |-----------|-----------|
 | [Entity_Properties_Modal.yaml](./Entity_Properties_Modal.yaml) | Modal propiedades entidad (transform, animaciones, texturas, blueprint) |
 | [Sockets_3D.yaml](./Sockets_3D.yaml) | Sockets en huesos skinned, vínculos objeto↔socket, modal Configuración de sockets |
+| [Bone_Physics_3D.yaml](./Bone_Physics_3D.yaml) | Física secundaria por hueso (jiggle), modal Editar física de huesos |
 | [Entity_Textures.yaml](./Entity_Textures.yaml) | LOD texturas embebidas GLB (pestaña Texturas 3D) |
 | [Player_UI_Model.yaml](./Player_UI_Model.yaml) | HUD jugador, pantallas, undo/redo, NDC |
 | [Programing_Model.yaml](./Programing_Model.yaml) | Programación visual (escena + entidad), nodos → Rhai |
