@@ -93,6 +93,7 @@ pub struct ScriptApiContext {
     pub cmds: Arc<Mutex<Vec<ScriptCmd>>>,
     pub player_ui_active_screen: Arc<Mutex<Option<String>>>,
     pub graphics_texture_tier: Arc<Mutex<String>>,
+    pub reflection_tier: Arc<Mutex<String>>,
     /// Tecla del binding activo en scripts de control 2D (`move_control`).
     pub control_binding_key: Arc<Mutex<String>>,
     pub profile: ScriptEngineProfile,
@@ -104,6 +105,7 @@ impl ScriptApiContext {
             cmds: Arc::new(Mutex::new(Vec::new())),
             player_ui_active_screen: Arc::new(Mutex::new(None)),
             graphics_texture_tier: Arc::new(Mutex::new("medium".to_string())),
+            reflection_tier: Arc::new(Mutex::new("off".to_string())),
             control_binding_key: Arc::new(Mutex::new(String::new())),
             profile,
         }
@@ -377,6 +379,20 @@ pub fn register_native_api(engine: &mut Engine, ctx: &ScriptApiContext) {
                 .map(|g| g.clone())
                 .unwrap_or_else(|| "medium".to_string())
         });
+
+        let c = ctx.clone();
+        engine.register_fn("__engine_set_reflection_tier", move |tier: String| {
+            c.push(ScriptCmd::SetReflectionTier { tier });
+        });
+
+        let refl_ctx = ctx.reflection_tier.clone();
+        engine.register_fn("__engine_get_reflection_tier", move || {
+            refl_ctx
+                .lock()
+                .ok()
+                .map(|g| g.clone())
+                .unwrap_or_else(|| "off".to_string())
+        });
     }
 }
 
@@ -432,6 +448,8 @@ let engine = #{
     clear_active_player_ui: || { __engine_clear_active_player_ui(); },
     set_graphics_texture_tier: |tier| { __engine_set_graphics_texture_tier(tier); },
     get_graphics_texture_tier: || { __engine_get_graphics_texture_tier() },
+    set_reflection_tier: |tier| { __engine_set_reflection_tier(tier); },
+    get_reflection_tier: || { __engine_get_reflection_tier() },
 };
 "#;
 
@@ -457,6 +475,8 @@ let engine = #{
     log: |msg| { __engine_log(msg); },
     set_graphics_texture_tier: |tier| { __engine_set_graphics_texture_tier(tier); },
     get_graphics_texture_tier: || { __engine_get_graphics_texture_tier() },
+    set_reflection_tier: |tier| { __engine_set_reflection_tier(tier); },
+    get_reflection_tier: || { __engine_get_reflection_tier() },
 };
 "#;
 

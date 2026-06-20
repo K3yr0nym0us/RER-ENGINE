@@ -15,3 +15,9 @@ Tareas globales: [CHECKLIST.md](./CHECKLIST.md). Contrato motor: [`engine_3d/ARC
 - [ ] **Reflejos con nivel (Desactivado, Bajo, Medio, Alto)** - En el accordion World poner en algun lado un selector de nivel de reflejos que sean compatibles con tecnologia RTX.
 Hay que crear toda la logica detras de esto y debe poder tambien modificarse el nivel de reflejos por Rhai o Nodos.
 
+### Gráficos / Preset de calidad
+
+- [ ] **Cascades / CSM (Cascaded Shadow Maps)** — Hoy el motor usa un único shadow map (sin cascadas). Implementar CSM con número de cascadas por tier del preset de calidad: **Low 2, Medium 3, High 4, Ultra 4**. En **Ultra** además *Extended Shadow Distance* (distancia de sombras extendida). Sistema nuevo grande: split de cascadas por distancia, multiples matrices de luz, selección de cascada en el shader, atlas/array de shadow maps.
+
+- [ ] **MSAA (anti-aliasing por multisampling)** — No existe hoy (todos los render targets son `sample_count: 1`). Añadir MSAA con nivel por tier del preset: **Low Off, Medium 2x, High 4x, Ultra 8x**. Cambio transversal: `sample_count` + texturas multisample + pase de *resolve* en todos los pipelines de la escena 3D (y compatibilidad con TAA/composite/reflejos).
+

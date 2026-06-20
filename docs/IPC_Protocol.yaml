@@ -156,6 +156,10 @@ command_categories:
       - list_entity_textures
       - set_entity_texture_lod
       - set_entity_texture_preview_tier
+      - set_graphics_texture_tier
+      - set_texture_detail_distance
+      - set_reflection_tier
+      - set_reflection_debug_view
   resources:
     2d:
       - load_sprite / load_sound / load_font / load_background

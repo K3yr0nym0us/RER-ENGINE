@@ -205,16 +205,17 @@ pub const RENDER_KIND_HUD_OVERLAY: f32 = 3.0;
 ///
 /// Layout (96 bytes):
 ///   offset  0..64  → model matrix, column-major (4 × vec4<f32>)
-///   offset 64..80  → flag_pad  (x = selection flag, yzw = unused)
-///   offset 80..96  → tex_layer_pad  (x = índice de capa en texture_2d_array)
+///   offset 64..80  → flag_pad  (x = selection flag, y = alpha, z = render_kind, w = roughness o -1)
+///   offset 80..96  → tex_layer_pad  (x = capa en texture_2d_array; y = metallic; z = índice
+///                    de reflection probe en el cube array, -1 = sin probe)
 ///
 /// Matches WGSL `InstanceInput` locations 3..8.
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct InstanceData {
     pub model:         [[f32; 4]; 4],
-    pub flag_pad:      [f32; 4],   // x: selección/hover, y: alpha, z: render_kind
-    pub tex_layer_pad: [f32; 4],   // x: capa del array; o UV rect si se usa `screen_hud_pipeline`
+    pub flag_pad:      [f32; 4],   // x: selección/hover, y: alpha, z: render_kind, w: roughness (-1 = default)
+    pub tex_layer_pad: [f32; 4],   // x: capa del array; y: metallic; o UV rect en HUD
 }
 
 impl InstanceData {
@@ -238,8 +239,9 @@ impl InstanceData {
     pub fn new(model: glam::Mat4, flag: f32, tex_layer: u32) -> Self {
         Self {
             model:         model.to_cols_array_2d(),
-            flag_pad:      [flag, 1.0, 0.0, 0.0],
-            tex_layer_pad: [tex_layer as f32, 0.0, 0.0, 0.0],
+            flag_pad:      [flag, 1.0, 0.0, -1.0],
+            // z = índice de reflection probe (-1 = sin probe → entorno procedural).
+            tex_layer_pad: [tex_layer as f32, 0.0, -1.0, 0.0],
         }
     }
 }

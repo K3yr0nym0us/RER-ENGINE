@@ -1,0 +1,100 @@
+# Auditoría de diseño — reflejos 3D (post RTIOW v2)
+#
+# Resultado de aplicar el plan de diagnóstico estático + fixes mínimos en código.
+# Validación visual manual pendiente en editor (RefTest R0 centrado).
+
+version: 1
+updated: 2026-06-20
+
+reference:
+  rtiow: https://raytracing.github.io/books/RayTracingInOneWeekend.html
+  pipeline_doc: docs/Reflections_3D.yaml
+
+audit_matrix:
+  fase0_escena:
+    status: pass_with_manual_step
+    finding: |
+      Log [SSR] centro sin hit era esperable: cámara orbital apunta a jugador/suelo
+      (roughness 0.9 por defecto, sin SurfacePbr). Esferas RefTest en z=1.5 no están
+      en el centro de pantalla por defecto.
+    fix_applied:
+      - fs_log codifica motivo de miss (-1..-4) con rough/metallic/strength
+      - ssr_trace_readback decodifica y loguea en español
+      - set_reflection_tier loguea hint para centrar RefTest R0
+    manual_check:
+      - Orbitar RefTest R0 al centro; debug roughness/metallic/trace_strength/ssr_hits
+      - Log debe pasar a miss=marcha o hit_uv según geometría visible
+
+  fase1_gbuffer:
+    status: pass
+    finding: |
+      Bindings SSR/RT coinciden con render pass real. normal_roughness_view apunta a
+      velocity_view (velocity.xy + normal octahedral .zw) — correcto, nombre confuso.
+    fix_applied:
+      - Reflections_3D.yaml alineado con shader.wgsl SceneFragOut y tabla ssr_rt_bindings
+    bugs: []
+
+  fase2_ssr:
+    status: pass_with_limitation
+    finding: |
+      trace_ssr usa reflect RTIOW, F0 unificado y atenuación albedo. Sample de lit_scene
+      incluye cubemap ya compuesto en metales → composite aditivo puede duplicar energía
+      de entorno (aceptado v1: detalle on-screen, no path tracing).
+    fix_applied:
+      - Miss codes distinguen rugosidad vs fuerza vs marcha
+    bugs: []
+    limitations:
+      - lit_scene como color de rebote ≠ radiancia de superficie pura RTIOW
+
+  fase3_rt:
+    status: pass_with_fix
+    finding: |
+      RT v1 usa ray_aabb sin triángulos; refl_rt_hit_depth_reject_m mínimo 0.75 m
+      rechazaba hits válidos en esferas RefTest (radio 0.8 m) por error AABB vs depth.
+    fix_applied:
+      - refl_rt_hit_depth_reject_m: max(1.6, step_size * 4.0) en reflection_math.wgsl
+      - Log debug TLAS instance count al dispatch RT
+    limitations:
+      - Sin skinned en TLAS (diseño)
+      - RT solo si pasa gates roughness/strength iguales a SSR
+      - rt_weight = (1 - ssr.a) * strength * rt_blend
+
+  fase4_cubemap:
+    status: pass
+    finding: |
+      Forward y skinned usan reflect + Fresnel metal F0=albedo + cubemap probe.
+      SSR/RT usan refl_trace_strength equivalente (reflection_math.wgsl).
+      Jugador excluido de TLAS pero con probe en forward/skinned.
+    bugs: []
+
+  fase5_tiers:
+    status: pass
+    finding: |
+      Tiers off/low/medium/high/ultra mapean a presets en reflection_graphics.rs.
+      Profiler IPC + log consola cada ~15 frames con reflejos activos.
+    fix_applied:
+      - log::info profiler en render.rs (ssr/temporal/rt/composite ms)
+
+bugs_fixed:
+  - id: ssr-log-ambiguous
+    summary: Log centro sin hit no distinguía cielo/mate/marcha
+    files: [ssr.wgsl, ssr_trace_readback.rs]
+  - id: rt-depth-reject-aabb
+    summary: Tolerancia depth RT demasiado baja para proxy AABB en esferas pequeñas
+    files: [reflection_math.wgsl]
+  - id: gbuffer-docs-wrong
+    summary: Reflections_3D.yaml MRT no coincidía con shader.wgsl
+    files: [Reflections_3D.yaml]
+
+limitations_v1_accepted:
+  - RT AABB sin BLAS por triángulo
+  - lit_scene incluye cubemap en rebote SSR/RT
+  - Readback SSR fijo en (0.5, 0.5) — no sigue el objetivo visual
+  - normal_roughness_view alias de velocity_view (mantenimiento)
+
+manual_test_steps:
+  - tier High, centrar RefTest R0, debug trace_strength blanco en centro
+  - debug ssr_hits visible con otra esfera en pantalla
+  - tier High, ángulo off-screen entre esferas, reflection_color con RT
+  - comparar cubemap (5) vs ssr_final_composite (26) en R0
+  - recorrer off→ultra y ver profiler en consola

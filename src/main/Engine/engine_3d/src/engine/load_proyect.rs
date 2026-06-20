@@ -125,6 +125,10 @@ pub(crate) struct SavedWorldConfig {
     graphicsTextureTier: Option<String>,
     #[serde(default)]
     textureDetailDistance: Option<f32>,
+    #[serde(default)]
+    reflectionTier: Option<String>,
+    #[serde(default)]
+    shadowTier: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize, Clone, Serialize)]
@@ -1406,11 +1410,26 @@ fn apply_loaded_proyect_3d_with_scene(
         view.world.graphicsTextureTier.as_deref(),
         view.world.textureDetailDistance,
     );
+    crate::config_3d::reflection_settings::apply_reflection_settings_from_world_wire(
+        state,
+        view.world.reflectionTier.as_deref(),
+    );
+    crate::config_3d::shadow_settings::apply_shadow_settings_from_world_wire(
+        state,
+        view.world.shadowTier.as_deref(),
+    );
+    state.ensure_reflection_test_spheres();
     send_event(&EngineEvent::GraphicsTextureTierChanged {
         tier: state.graphics_texture_tier.wire().to_string(),
     });
     send_event(&EngineEvent::TextureDetailDistanceChanged {
         distance_m: state.texture_detail_near_m,
+    });
+    send_event(&EngineEvent::ReflectionTierChanged {
+        tier: state.reflection_tier.wire().to_string(),
+    });
+    send_event(&EngineEvent::ShadowTierChanged {
+        tier: state.shadow_tier.wire().to_string(),
     });
 
     load_project_asset_stores(state, project);
@@ -1912,6 +1931,24 @@ fn send_project_loaded_3d(
         textureDetailDistance: view.world.textureDetailDistance.or_else(|| {
             Some(crate::config_3d::entity_textures::default_texture_detail_near_m())
         }),
+        reflectionTier: view
+            .world
+            .reflectionTier
+            .clone()
+            .or_else(|| {
+                Some(
+                    crate::config_3d::reflection_graphics::DEFAULT_REFLECTION_TIER
+                        .wire()
+                        .to_string(),
+                )
+            }),
+        shadowTier: view.world.shadowTier.clone().or_else(|| {
+            Some(
+                crate::config_3d::shadow_graphics::DEFAULT_SHADOW_TIER
+                    .wire()
+                    .to_string(),
+            )
+        }),
     };
 
     let models = editor_models_from_manifest(project);
@@ -2093,6 +2130,8 @@ pub(crate) fn saved_scene_from_snapshot_payload(
             shadowDarkness: p.world.shadow_darkness,
             graphicsTextureTier: p.world.graphics_texture_tier.clone(),
             textureDetailDistance: p.world.texture_detail_distance_m,
+            reflectionTier: p.world.reflection_tier.clone(),
+            shadowTier: p.world.shadow_tier.clone(),
         },
         backgroundPath: p.background_path.clone(),
         entities: p.entities.iter().map(map_entity).collect(),
@@ -2154,6 +2193,16 @@ pub(crate) fn build_fp_placeholder_saved_scene(id: u32, name: &str) -> SavedScen
         graphicsTextureTier: Some("medium".to_string()),
         textureDetailDistance: Some(
             crate::config_3d::entity_textures::default_texture_detail_near_m(),
+        ),
+        reflectionTier: Some(
+            crate::config_3d::reflection_graphics::DEFAULT_REFLECTION_TIER
+                .wire()
+                .to_string(),
+        ),
+        shadowTier: Some(
+            crate::config_3d::shadow_graphics::DEFAULT_SHADOW_TIER
+                .wire()
+                .to_string(),
         ),
     };
 

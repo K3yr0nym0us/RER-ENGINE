@@ -1,5 +1,6 @@
 mod engine_command;
 mod taa;
+mod reflections;
 mod ecs;
 mod entity_save_meta;
 mod save_entity_3d;
@@ -975,6 +976,10 @@ fn main() {
     const DEFAULT_LOG_FILTER: &str =
         "rer_engine_3d=warn,rer_engine_3d::config_base=info,rer_engine_3d::config_3d::skin_diag=info,\
 rer_engine_3d::config_3d::model_asset=info,\
+rer_engine_3d::config_3d::reflection_settings=info,\
+rer_engine_3d::engine::commands=info,\
+rer_engine_3d::reflections=info,\
+rer_engine_3d::engine::render=info,\
 wgpu_core::instance=error,wgpu_hal::vulkan::conv=error,\
 wgpu_hal::vulkan::instance=error,wgpu_core=warn,wgpu_hal=warn,naga=warn";
 

@@ -50,6 +50,8 @@ impl State {
                 shadow_darkness: Some(self.shadow_darkness),
                 graphics_texture_tier: Some(self.graphics_texture_tier.wire().to_string()),
                 texture_detail_distance_m: Some(self.texture_detail_near_m),
+                reflection_tier: Some(self.reflection_tier.wire().to_string()),
+                shadow_tier: Some(self.shadow_tier.wire().to_string()),
             },
             background_path: self.background_path.clone(),
             entities,

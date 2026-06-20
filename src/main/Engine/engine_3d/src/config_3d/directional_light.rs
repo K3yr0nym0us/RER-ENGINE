@@ -4,7 +4,7 @@
 use glam::{Mat4, Vec3};
 
 use crate::ecs::{EntityId, MeshComponent, Transform};
-use crate::engine::{State, SHADOW_MAP_SIZE};
+use crate::engine::State;
 use crate::entity_save_meta::EntitySaveMeta;
 use crate::mesh;
 
@@ -107,7 +107,7 @@ impl State {
         [
             self.light_intensity,
             0.0,
-            1.0 / SHADOW_MAP_SIZE as f32,
+            1.0 / self.shadow_map_size as f32,
             pcf_radius,
         ]
     }
@@ -136,7 +136,7 @@ impl State {
         let eye = center + dir * extent * 2.5;
         let view = Mat4::look_at_rh(eye, center, up);
         let center_ls = view.transform_point3(center);
-        let texel = (2.0 * extent) / SHADOW_MAP_SIZE as f32;
+        let texel = (2.0 * extent) / self.shadow_map_size as f32;
         let cx = (center_ls.x / texel).floor() * texel + texel * 0.5;
         let cy = (center_ls.y / texel).floor() * texel + texel * 0.5;
         let proj = Mat4::orthographic_rh(
@@ -205,6 +205,58 @@ impl State {
     fn apply_sun_icon_visual(&mut self, id: crate::ecs::EntityId) {
         let mesh_idx = self.sun_icon_mesh_idx();
         let tex_idx = self.sun_icon_texture_idx();
+        if let Some(mc) = self.world.get_mut::<MeshComponent>(id) {
+            mc.mesh_idx = mesh_idx;
+            mc.tex_idx = tex_idx;
+        } else {
+            self.world.insert(
+                id,
+                MeshComponent {
+                    mesh_idx,
+                    tex_idx,
+                },
+            );
+        }
+    }
+
+    fn reflection_probe_slot(roughness: f32) -> usize {
+        match (roughness * 4.0).round() as i32 {
+            0 => 0,
+            1 => 1,
+            2 => 2,
+            3 => 3,
+            _ => 4,
+        }
+    }
+
+    fn reflection_probe_texture_idx(&mut self, roughness: f32) -> usize {
+        let slot = Self::reflection_probe_slot(roughness);
+        if let Some(idx) = self.reflection_probe_tex_idx[slot] {
+            return idx;
+        }
+        // F0 metálico tipo ACERO pulido: gris neutro medio (≈0.55), un punto más claro en
+        // liso. En metal el albedo ES el F0 (color de reflexión). Gris medio (no blanco)
+        // para que se lea como acero y el reflejo SSR resalte por contraste.
+        const N: u32 = 4;
+        let r = roughness.clamp(0.0, 1.0);
+        let base = 0.58 - 0.10 * r;
+        let rr = (base * 255.0) as u8;
+        let gg = (base * 0.97 * 255.0) as u8;
+        let bb = (base * 0.92 * 255.0) as u8;
+        let mut px: Vec<u8> = Vec::with_capacity((N * N * 4) as usize);
+        for _ in 0..(N * N) {
+            px.extend_from_slice(&[rr, gg, bb, 255]);
+        }
+        let tex_idx = self.tex_layers.len();
+        let layer = self.texture_array.pack(&self.queue, &px, N, N);
+        self.tex_layers.push(layer);
+        self.reflection_probe_tex_idx[slot] = Some(tex_idx);
+        tex_idx
+    }
+
+    pub(crate) fn apply_reflection_probe_visual(&mut self, id: crate::ecs::EntityId, roughness: f32) {
+        let mesh_idx = self.sun_icon_mesh_idx();
+        let tex_idx = self.reflection_probe_texture_idx(roughness);
         if let Some(mc) = self.world.get_mut::<MeshComponent>(id) {
             mc.mesh_idx = mesh_idx;
             mc.tex_idx = tex_idx;
@@ -331,6 +383,66 @@ impl State {
             entity_category: Some("object".to_string()),
         });
         log::info!("Pelota física «{label}» en [{:.1}, {:.1}, {:.1}]", position[0], position[1], position[2]);
+        id
+    }
+
+    /// Esfera estática (misma malla que la pelota) para probar reflejos / roughness PBR.
+    pub(crate) fn spawn_static_reflection_probe_sphere(
+        &mut self,
+        name: &str,
+        position: [f32; 3],
+        radius: f32,
+        roughness: f32,
+    ) -> EntityId {
+        use crate::ecs::SurfacePbr;
+        use crate::ipc::send_event;
+        use crate::ipc::EngineEvent;
+
+        let label = self.resolve_entity_display_name(
+            name,
+            rer_engine_shared::editor_defaults::entity_label::REFLECTION_PROBE,
+        );
+        let id = self.world.spawn(Some(&label));
+        self.apply_reflection_probe_visual(id, roughness);
+        if let Some(t) = self.world.get_mut::<Transform>(id) {
+            t.position = Vec3::from_array(position);
+            t.scale = Vec3::splat(radius * 2.0);
+        }
+        self.world.insert(
+            id,
+            SurfacePbr::metal_probe(roughness),
+        );
+        self.entity_colision.insert(id, false);
+        self.scenario_entities.push(id);
+        self.save_registry.register_meta(
+            id,
+            EntitySaveMeta {
+                kind: "model".to_string(),
+                path: "[ReflectionProbe]".to_string(),
+                visual_model_path: None,
+                entity_category: Some("object".to_string()),
+            },
+        );
+        send_event(&EngineEvent::ModelLoaded {
+            id,
+            name: Some(label.clone()),
+            position: Some(position),
+            scale: Some([radius * 2.0; 3]),
+            rotation: Some([0.0, 0.0, 0.0, 1.0]),
+            path: Some("[ReflectionProbe]".to_string()),
+            kind: Some("model".to_string()),
+            blueprint_id: None,
+            physics_enabled: Some(false),
+            physics_type: None,
+            entity_category: Some("object".to_string()),
+        });
+        log::info!(
+            "Sonda de reflejo «{label}» roughness={:.2} en [{:.1}, {:.1}, {:.1}]",
+            roughness,
+            position[0],
+            position[1],
+            position[2]
+        );
         id
     }
 }

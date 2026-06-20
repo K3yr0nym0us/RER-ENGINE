@@ -14,6 +14,7 @@ pub mod entity_label {
     pub const GROUND: &str = "Ground";
     pub const PLAYER: &str = "Player";
     pub const BALL: &str = "Ball";
+    pub const REFLECTION_PROBE: &str = "RefProbe";
     pub const WEAPON: &str = "Weapon";
     pub const PROJECTILE: &str = "Projectile";
 }

@@ -408,6 +408,21 @@ export function VisualScriptCanvas({
             />
           </div>
         )}
+        {selectedData?.nodeType === VISUAL_NODE_TYPES.SET_REFLECTION_TIER && (
+          <div className="border-start border-secondary p-2 bg-dark text-light visual-scripting-inspector" style={{ width: 240 }}>
+            <label className="form-label small mb-1 text-secondary">{t('Reflection tier')}</label>
+            <select
+              className="form-select form-select-sm bg-dark text-light border-secondary"
+              value={String(selectedData.tier ?? 'off')}
+              onChange={(e) => updateSelectedField({ tier: e.target.value })}
+            >
+              <option value="off">{t('Off')}</option>
+              <option value="low">{t('Low')}</option>
+              <option value="medium">{t('Medium')}</option>
+              <option value="high">{t('High')}</option>
+            </select>
+          </div>
+        )}
         {selectedData?.nodeType === VISUAL_NODE_TYPES.PLAY_ANIMATION && (
           <div className="border-start border-secondary p-2 bg-dark text-light visual-scripting-inspector" style={{ width: 240 }}>
             <label className="form-label small mb-1 text-secondary">{t('Entity')}</label>

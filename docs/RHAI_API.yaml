@@ -189,6 +189,12 @@ engine_3d_only:
       description: Multiplicador al sprintar.
     - function: engine.fp_set_jump_speed(speed)
       description: Impulso de salto.
+    - function: engine.set_reflection_tier(tier)
+      description: |
+        Nivel global de reflejos: "off", "low", "medium", "high".
+        También en World → Reflejos y nodo de escena Set reflection tier.
+    - function: engine.get_reflection_tier()
+      description: Devuelve el tier activo como string.
 
   example_fp_entity: |
     fn on_start(entity) {
@@ -239,6 +245,8 @@ visual_scripting:
       rhai: engine.move_to(entity.id, x, y) — posición absoluta
     - node: Translate
       rhai: engine.translate(entity.id, dx, dy) — delta relativo
+    - node: Set reflection tier
+      rhai: engine.set_reflection_tier("medium") — solo lógica de escena
   notes:
     - En lógica de entidad, los nodos de movimiento y escala usan siempre entity.id del script en ejecución.
     - En lógica de escena, Play animation permite elegir otra entidad por id.

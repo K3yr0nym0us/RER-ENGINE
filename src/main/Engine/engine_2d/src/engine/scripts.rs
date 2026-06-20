@@ -385,6 +385,7 @@ impl State {
                     self.clear_active_player_ui_screen();
                 }
                 ScriptCmd::SetGraphicsTextureTier { .. } => {}
+                ScriptCmd::SetReflectionTier { .. } => {}
             }
         }
     }

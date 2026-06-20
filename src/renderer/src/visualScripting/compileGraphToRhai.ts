@@ -12,6 +12,7 @@ import {
   type VisualGraphContext,
 } from './nodeDefinitions'
 import { compileEntityIdExpr, compileRhaiExprField, graphContext } from './compileEntityId'
+import { normalizeReflectionTier } from '../context/useContextEngine/types'
 import { validateGraph } from './validateGraph'
 
 function escapeRhaiString(s: string): string {
@@ -89,6 +90,12 @@ function compileExecChain(
         const dx = compileRhaiExprField(node.data?.dx, '0.0')
         const dy = compileRhaiExprField(node.data?.dy, '0.0')
         lines.push(`engine.translate(entity.id, ${dx}, ${dy});`)
+        current = nextExecTarget(doc, current, EXEC_OUT)
+        break
+      }
+      case VISUAL_NODE_TYPES.SET_REFLECTION_TIER: {
+        const tier = normalizeReflectionTier(node.data?.tier)
+        lines.push(`engine.set_reflection_tier("${tier}");`)
         current = nextExecTarget(doc, current, EXEC_OUT)
         break
       }

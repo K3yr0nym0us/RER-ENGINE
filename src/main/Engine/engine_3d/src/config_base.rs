@@ -400,6 +400,7 @@ impl State {
         self.ensure_ground_plane();
         self.ensure_default_sun();
         self.ensure_default_physics_ball();
+        self.ensure_reflection_test_spheres();
         if self.play_character_entity.is_none() {
             self.spawn_play_character();
         }
@@ -422,6 +423,77 @@ impl State {
         let position = [1.5_f32, RADIUS, 8.0];
         let diameter = RADIUS * 2.0;
         self.spawn_physics_ball("", position, [diameter, diameter, diameter], "dynamic");
+    }
+
+    fn reflection_probe_entities(&self) -> Vec<crate::ecs::EntityId> {
+        let mut ids: Vec<_> = self
+            .save_registry
+            .meta
+            .iter()
+            .filter_map(|(id, m)| {
+                if crate::entity_save_meta::entity_path_marker(&m.path) == Some("[ReflectionProbe]") {
+                    Some(*id)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        ids.sort_unstable();
+        ids
+    }
+
+    /// Probes a capturar este frame: (entidad, centro world). Orden estable por id, limitado a
+    /// `MAX_PROBES`. Fuente única del índice de capa del cubemap (render + captura coinciden).
+    pub(crate) fn reflection_probe_render_list(&self) -> Vec<(crate::ecs::EntityId, glam::Vec3)> {
+        self.reflection_probe_entities()
+            .into_iter()
+            .take(crate::reflections::probe_env::MAX_PROBES)
+            .filter_map(|id| {
+                self.world
+                    .get::<crate::ecs::Transform>(id)
+                    .map(|t| (id, t.position))
+            })
+            .collect()
+    }
+
+    /// Radio de influencia del probe (metros) para parallax del cubemap.
+    pub(crate) fn reflection_probe_world_radius(&self, id: crate::ecs::EntityId) -> f32 {
+        self.world
+            .get::<crate::ecs::Transform>(id)
+            .map(|t| (t.scale.x.abs() * 0.5).max(0.1))
+            .unwrap_or(1.0)
+    }
+
+    pub(crate) fn ensure_reflection_test_spheres(&mut self) {
+        const RADIUS: f32 = 0.8;
+        /// Detrás del jugador (spawn ~z=5): fila en el espacio libre hacia la cámara.
+        const Z: f32 = 1.5;
+        const ROUGHNESS: [f32; 5] = [0.0, 0.25, 0.5, 0.75, 1.0];
+        const X_POSITIONS: [f32; 5] = [-4.0, -2.0, 0.0, 2.0, 4.0];
+
+        let existing = self.reflection_probe_entities();
+        if existing.len() >= 5 {
+            for (i, &id) in existing.iter().take(5).enumerate() {
+                let position = [X_POSITIONS[i], RADIUS, Z];
+                if let Some(t) = self.world.get_mut::<crate::ecs::Transform>(id) {
+                    t.position = glam::Vec3::from_array(position);
+                    t.scale = glam::Vec3::splat(RADIUS * 2.0);
+                }
+                if let Some(pbr) = self.world.get_mut::<crate::ecs::SurfacePbr>(id) {
+                    *pbr = crate::ecs::SurfacePbr::metal_probe(ROUGHNESS[i]);
+                } else {
+                    self.world.insert(id, crate::ecs::SurfacePbr::metal_probe(ROUGHNESS[i]));
+                }
+                self.apply_reflection_probe_visual(id, ROUGHNESS[i]);
+            }
+            return;
+        }
+
+        for (i, &roughness) in ROUGHNESS.iter().enumerate() {
+            let label = format!("RefTest R{roughness}");
+            let position = [X_POSITIONS[i], RADIUS, Z];
+            self.spawn_static_reflection_probe_sphere(&label, position, RADIUS, roughness);
+        }
     }
 
     /// Tras cargar escena FP placeholder (switch sin guardar): alinear sol, luz y cámara orbital del editor.

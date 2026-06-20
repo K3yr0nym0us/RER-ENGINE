@@ -12,8 +12,11 @@ import type {
 	WorldConfig,
 	PlayerUiButtonConfig,
 	GraphicsTextureTier,
+	ReflectionTier,
+	ReflectionDebugView,
+	ShadowTier,
 } from '../types';
-import { normalizeGraphicsTextureTier } from '../types';
+import { normalizeGraphicsTextureTier, normalizeReflectionTier, normalizeReflectionDebugView, normalizeShadowTier } from '../types';
 import { buildPlayAnimationFrameCmd } from './applyPendingRestoreToEngine';
 import { beginModelReplaceLoading, endModelReplaceLoading } from './sceneImportOverlay';
 import { invalidateEntityBoneNames } from '../../../utils/entity3dEditorSync';
@@ -301,6 +304,27 @@ export function createEngineActions({
 		const normalized = normalizeGraphicsTextureTier(tier);
 		dispatch({ type: 'SET_WORLD_CONFIG', payload: { graphicsTextureTier: normalized } });
 		send3dFn({ cmd: 'set_graphics_texture_tier', tier: normalized });
+	};
+
+	const setReflectionTier = (tier: ReflectionTier) => {
+		const normalized = normalizeReflectionTier(tier);
+		dispatch({ type: 'SET_WORLD_CONFIG', payload: { reflectionTier: normalized } });
+		send3dFn({ cmd: 'set_reflection_tier', tier: normalized });
+		addLog(`[Reflejos] Nivel solicitado: ${normalized}`);
+	};
+
+	const setShadowTier = (tier: ShadowTier) => {
+		const normalized = normalizeShadowTier(tier);
+		dispatch({ type: 'SET_WORLD_CONFIG', payload: { shadowTier: normalized } });
+		send3dFn({ cmd: 'set_shadow_tier', tier: normalized });
+		addLog(`[Sombras] Nivel solicitado: ${normalized}`);
+	};
+
+	const setReflectionDebugView = (view: ReflectionDebugView | string) => {
+		const normalized = normalizeReflectionDebugView(view);
+		dispatch({ type: 'SET_WORLD_CONFIG', payload: { reflectionDebugView: normalized } });
+		send3dFn({ cmd: 'set_reflection_debug_view', view: normalized });
+		addLog(`[Reflejos] Vista debug solicitada: ${normalized}`);
 	};
 
 	const setTextureDetailDistance = (distanceM: number) => {
@@ -991,6 +1015,9 @@ export function createEngineActions({
 		setDirectionalLight,
 		setTargetFps,
 		setGraphicsTextureTier,
+		setReflectionTier,
+		setShadowTier,
+		setReflectionDebugView,
 		setTextureDetailDistance,
 		removeCollider,
 		removeExecutionArea,

@@ -11,6 +11,7 @@ struct SceneUniforms {
     light_view_proj : mat4x4<f32>,
     light_params    : vec4<f32>,
     jitter          : vec4<f32>,
+    depth_plane     : vec4<f32>,
     shadow_bias     : vec4<f32>,
 }
 
@@ -30,11 +31,10 @@ var s_shadow: sampler_comparison;
 @group(1) @binding(0) var t_albedo: texture_2d_array<f32>;
 @group(1) @binding(1) var s_albedo: sampler;
 
-/// Pase de sombras skinned: layout [shadow_pass, joints] → grupo 1.
-@group(1) @binding(0)
-var<uniform> joint_mats_shadow: JointMatrices;
+@group(2) @binding(0) var t_probe_env: texture_cube_array<f32>;
+@group(2) @binding(1) var s_probe_env: sampler;
 
-@group(2) @binding(0)
+@group(3) @binding(0)
 var<uniform> joint_mats: JointMatrices;
 
 struct VertexInput {
@@ -65,6 +65,9 @@ struct VertexOutput {
     @location(6) tex_layer       : u32,
     @location(7) prev_clip_pos     : vec4<f32>,
     @location(8) curr_stable_clip  : vec4<f32>,
+    @location(9) surface_roughness  : f32,
+    @location(10) surface_metallic  : f32,
+    @location(11) probe_index       : f32,
 }
 
 fn skin_matrix(joints: vec4<u32>, weights: vec4<f32>) -> mat4x4<f32> {
@@ -79,14 +82,7 @@ fn skin_matrix(joints: vec4<u32>, weights: vec4<f32>) -> mat4x4<f32> {
 }
 
 fn skin_matrix_shadow(joints: vec4<u32>, weights: vec4<f32>) -> mat4x4<f32> {
-    let j0 = min(joints.x, MAX_JOINTS - 1u);
-    let j1 = min(joints.y, MAX_JOINTS - 1u);
-    let j2 = min(joints.z, MAX_JOINTS - 1u);
-    let j3 = min(joints.w, MAX_JOINTS - 1u);
-    return joint_mats_shadow.joints[j0] * weights.x
-         + joint_mats_shadow.joints[j1] * weights.y
-         + joint_mats_shadow.joints[j2] * weights.z
-         + joint_mats_shadow.joints[j3] * weights.w;
+    return skin_matrix(joints, weights);
 }
 
 fn scene_light_dir_norm() -> vec3<f32> {
@@ -123,6 +119,21 @@ fn scene_shadow(world_pos: vec3<f32>, world_normal: vec3<f32>) -> f32 {
         }
     }
     return sum / 9.0;
+}
+
+fn fake_environment(refl_dir: vec3<f32>) -> vec3<f32> {
+    let sky     = vec3<f32>(0.72, 0.75, 0.80);
+    let horizon = vec3<f32>(0.42, 0.43, 0.45);
+    let ground  = vec3<f32>(0.12, 0.12, 0.13);
+    let t = clamp(refl_dir.y * 0.5 + 0.5, 0.0, 1.0);
+    if t > 0.5 {
+        return mix(horizon, sky, (t - 0.5) * 2.0);
+    }
+    return mix(ground, horizon, t * 2.0);
+}
+
+fn fresnel_schlick_metal(f0: vec3<f32>, cos_theta: f32) -> vec3<f32> {
+    return f0 + (vec3<f32>(1.0) - f0) * pow(1.0 - cos_theta, 5.0);
 }
 
 fn apply_selection_rim(color: vec3<f32>, flag: f32, world_pos: vec3<f32>, world_normal: vec3<f32>) -> vec3<f32> {
@@ -165,6 +176,9 @@ fn vs_main_skinned(in: VertexInput, inst: InstanceInput) -> VertexOutput {
     out.alpha_mul = inst.flag_pad.y;
     out.render_kind = inst.flag_pad.z;
     out.tex_layer = u32(inst.tex_layer_pad.x);
+    out.surface_roughness = inst.flag_pad.w;
+    out.surface_metallic = inst.tex_layer_pad.y;
+    out.probe_index = inst.tex_layer_pad.z;
     let prev_h = u.prev_view_proj * vec4<f32>(world_pos, 1.0);
     out.prev_clip_pos = prev_h;
     out.curr_stable_clip = u.view_proj_stable * world_pos4;
@@ -176,16 +190,58 @@ struct SceneFragOut {
     @location(1) shadow  : vec4<f32>,
     @location(2) direct  : vec4<f32>,
     @location(3) depth   : vec4<f32>,
-    @location(4) velocity : vec4<f32>,
+    @location(4) velocity_normal : vec4<f32>,
 }
 
-fn evaluate_scene(in: VertexOutput) -> SceneFragOut {
-    let linear_depth = in.clip_pos.z / in.clip_pos.w;
+fn parallax_cubemap_dir(world_pos: vec3<f32>, view_dir: vec3<f32>, n: vec3<f32>, probe_idx: i32) -> vec3<f32> {
+    _ = view_dir;
+    _ = probe_idx;
+    let incident = normalize(world_pos - u.cam_pos.xyz);
+    return reflect(incident, normalize(n));
+}
+
+fn encode_octahedral(n: vec3<f32>) -> vec2<f32> {
+    let inv_sum = 1.0 / (abs(n.x) + abs(n.y) + abs(n.z));
+    var p = n.xy * inv_sum;
+    if n.z < 0.0 {
+        let ox = p.x;
+        let oy = p.y;
+        p.x = (1.0 - abs(oy)) * sign(ox);
+        p.y = (1.0 - abs(ox)) * sign(oy);
+    }
+    return p * 0.5 + vec2<f32>(0.5);
+}
+
+fn pack_velocity_normal(velocity: vec2<f32>, n: vec3<f32>) -> vec4<f32> {
+    return vec4<f32>(velocity, encode_octahedral(normalize(n)));
+}
+
+/// PBR-friendly: por defecto, superficies mate (0.9). El SSR/RT solo afecta materiales
+/// con `SurfacePbr` explícito. Coherente con Unreal.
+fn resolve_surface_roughness(inst_roughness: f32) -> f32 {
+    return select(0.9, inst_roughness, inst_roughness >= 0.0);
+}
+
+fn pack_depth_export(view_depth_m: f32) -> vec4<f32> {
+    return vec4<f32>(view_depth_m, 0.0, 0.0, 0.0);
+}
+
+fn ndc_z_to_view_depth_m(ndc_z: f32) -> f32 {
+    let n = u.depth_plane.x;
+    let f = u.depth_plane.y;
+    return (n * f) / (f - ndc_z * (f - n));
+}
+
+fn evaluate_scene(in: VertexOutput, env_override: vec3<f32>, has_env_override: bool) -> SceneFragOut {
+    let view_depth_m = ndc_z_to_view_depth_m(in.clip_pos.z);
     let curr_ndc = in.curr_stable_clip.xy / in.curr_stable_clip.w;
     let prev_ndc = in.prev_clip_pos.xy / in.prev_clip_pos.w;
     let velocity = (curr_ndc - prev_ndc) * vec2<f32>(0.5, 0.5);
+    let surface_roughness = resolve_surface_roughness(in.surface_roughness);
+    let surface_metallic = in.surface_metallic;
 
     let albedo = textureSample(t_albedo, s_albedo, in.uv, i32(in.tex_layer));
+    let albedo_rgb = albedo.rgb;
     let n = normalize(in.world_normal);
     let l = scene_light_dir_norm();
     let ndotl = max(dot(n, l), 0.0);
@@ -196,8 +252,24 @@ fn evaluate_scene(in: VertexOutput) -> SceneFragOut {
     if u.light_color.w > 0.5 {
         shadow = scene_shadow(in.world_pos, n);
     }
-    let amb = albedo.rgb * ambient_factor * lc * intensity;
-    let dir = albedo.rgb * (1.0 - ambient_factor) * ndotl * lc * intensity * shadow;
+    var amb = albedo_rgb * ambient_factor * lc * intensity;
+    var dir = albedo_rgb * (1.0 - ambient_factor) * ndotl * lc * intensity * shadow;
+    if surface_metallic > 0.5 {
+        let v = normalize(u.cam_pos.xyz - in.world_pos);
+        let cos_theta = max(dot(n, v), 0.0);
+        let f0 = albedo_rgb;
+        let fres = fresnel_schlick_metal(f0, cos_theta);
+        let env_proc = fake_environment(reflect(-v, n));
+        let env_avg = vec3<f32>(0.40, 0.41, 0.43);
+        let env_proc_eff = mix(env_proc, env_avg, surface_roughness);
+        let env_eff = select(env_proc_eff, env_override, has_env_override);
+        amb = env_eff * fres;
+
+        let h = normalize(l + v);
+        let spec_power = mix(512.0, 16.0, surface_roughness);
+        let spec = pow(max(dot(n, h), 0.0), spec_power);
+        dir = lc * spec * intensity * ndotl * shadow * (1.0 - surface_roughness * 0.6);
+    }
     let lit = apply_selection_rim(amb + dir, in.flag, in.world_pos, in.world_normal);
     let base = amb + dir;
     let rim_add = lit - base;
@@ -205,14 +277,40 @@ fn evaluate_scene(in: VertexOutput) -> SceneFragOut {
     let dir_out = dir + rim_add * 0.5;
     return SceneFragOut(
         vec4<f32>(amb_out, albedo.a * in.alpha_mul),
-        vec4<f32>(shadow, 0.0, 0.0, 0.0),
-        vec4<f32>(dir_out, albedo.a * in.alpha_mul),
-        vec4<f32>(linear_depth, 0.0, 0.0, 0.0),
-        vec4<f32>(velocity, 0.0, 0.0),
+        vec4<f32>(shadow, surface_roughness, 0.0, 0.0),
+        vec4<f32>(dir_out, surface_metallic),
+        pack_depth_export(view_depth_m),
+        pack_velocity_normal(velocity, n),
     );
+}
+
+fn sample_surface_albedo_skinned(in: VertexOutput) -> vec3<f32> {
+    let layer = i32(in.tex_layer);
+    return textureSample(t_albedo, s_albedo, in.uv, layer).rgb;
+}
+
+@fragment
+fn fs_export_base_color_skinned(in: VertexOutput) -> @location(0) vec4<f32> {
+    return vec4<f32>(sample_surface_albedo_skinned(in), 1.0);
 }
 
 @fragment
 fn fs_main_skinned(in: VertexOutput) -> SceneFragOut {
-    return evaluate_scene(in);
+    let v = normalize(u.cam_pos.xyz - in.world_pos);
+    let nn = normalize(in.world_normal);
+    let layer_i = i32(in.probe_index);
+    let refl = parallax_cubemap_dir(in.world_pos, v, nn, layer_i);
+    let rough = resolve_surface_roughness(in.surface_roughness);
+    let layer = max(layer_i, 0);
+    let lod = select(0.0, clamp(rough * 3.0, 1.0, 4.0), rough > 0.05);
+    let env_cube = textureSampleLevel(t_probe_env, s_probe_env, refl, layer, lod).rgb;
+    let has_override = in.surface_metallic > 0.5 && in.probe_index >= 0.0;
+    return evaluate_scene(in, env_cube, has_override);
+}
+
+/// Captura del jugador en el cubemap del probe: color lit en un solo target.
+@fragment
+fn fs_overlay_skinned(in: VertexOutput) -> @location(0) vec4<f32> {
+    let out = evaluate_scene(in, vec3<f32>(0.0), false);
+    return vec4<f32>(out.ambient.rgb + out.direct.rgb, out.ambient.a);
 }

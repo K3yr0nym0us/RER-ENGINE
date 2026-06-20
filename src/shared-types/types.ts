@@ -348,6 +348,10 @@ export interface SavedWorldConfig {
   graphicsTextureTier?: 'low' | 'medium' | 'high' | 'ultra'
   /** 3D: distancia (m) con textura al tope del tier activo. */
   textureDetailDistance?: number
+  /** 3D: nivel global de reflejos (SSR / temporal / RT). */
+  reflectionTier?: 'off' | 'low' | 'medium' | 'high' | 'ultra'
+  /** 3D: nivel de calidad de sombras (resolución del shadow map por tier). */
+  shadowTier?: 'low' | 'medium' | 'high' | 'ultra'
 }
 
 /** @deprecated 3D: `player` + `config_camera`. Solo runtime 2D / migración UI. */

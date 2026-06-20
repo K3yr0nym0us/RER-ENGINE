@@ -151,6 +151,15 @@ impl ScriptEngine {
         }
     }
 
+    pub fn sync_reflection_tier_readback(&self, tier: &str) {
+        if self.profile != ScriptEngineProfile::Engine3d {
+            return;
+        }
+        if let Ok(mut guard) = self.api_ctx.reflection_tier.lock() {
+            *guard = tier.to_string();
+        }
+    }
+
     pub fn load_scene_script(&mut self, scene_id: u32, source: &str) -> ScriptResult<()> {
         self.scene_id = scene_id;
         self.scene_started = false;

@@ -12,6 +12,7 @@ import {
   type VisualGraphContext,
   type VisualNodeType,
 } from './nodeDefinitions'
+import { normalizeReflectionTier } from '../context/useContextEngine/types'
 
 export interface GraphValidationIssue {
   message: string
@@ -161,6 +162,15 @@ export function validateGraph(doc: VisualGraphDocument): GraphValidationIssue[] 
     if (node.type === VISUAL_NODE_TYPES.TRANSLATE) {
       if (!String(node.data?.dx ?? '').trim() || !String(node.data?.dy ?? '').trim()) {
         issues.push({ message: `Translate node ${node.id}: empty value` })
+      }
+    }
+    if (node.type === VISUAL_NODE_TYPES.SET_REFLECTION_TIER && context !== 'scene') {
+      issues.push({ message: 'Set reflection tier is only available in scene logic' })
+    }
+    if (node.type === VISUAL_NODE_TYPES.SET_REFLECTION_TIER) {
+      const tier = normalizeReflectionTier(node.data?.tier)
+      if (!['off', 'low', 'medium', 'high'].includes(tier)) {
+        issues.push({ message: `Set reflection tier node ${node.id}: invalid tier` })
       }
     }
     if (node.type === VISUAL_NODE_TYPES.PLAY_ANIMATION) {

@@ -307,6 +307,13 @@ impl State {
                         self.set_graphics_texture_tier(t);
                     }
                 }
+                ScriptCmd::SetReflectionTier { tier } => {
+                    if let Some(t) =
+                        crate::config_3d::reflection_graphics::ReflectionTier::from_wire(&tier)
+                    {
+                        self.set_reflection_tier(t);
+                    }
+                }
                 ScriptCmd::ApplyKinematicGravity { .. }
                 | ScriptCmd::ApplyKinematicImpulse { .. }
                 | ScriptCmd::SlideEntity { .. } => {}

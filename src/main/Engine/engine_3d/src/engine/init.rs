@@ -18,7 +18,6 @@ use crate::texture::TextureArray;
 
 use super::{
     create_depth_texture, start_audio_thread, SceneUniforms, State, DEPTH_FORMAT,
-    SHADOW_MAP_SIZE,
 };
 use crate::config_3d::directional_light::{
     DEFAULT_LIGHT_AMBIENT, DEFAULT_LIGHT_COLOR, DEFAULT_LIGHT_DIR, DEFAULT_LIGHT_INTENSITY,
@@ -70,6 +69,8 @@ impl State {
         let camera = Camera::new();
         let aspect = size.width as f32 / size.height as f32;
         let p = camera.position();
+        let shadow_tier = crate::config_3d::shadow_graphics::DEFAULT_SHADOW_TIER;
+        let shadow_map_size = shadow_tier.shadow_map_size();
         let identity_vp = glam::Mat4::IDENTITY.to_cols_array_2d();
         let cam_vp = camera.to_uniform(aspect).view_proj;
         let uniforms = SceneUniforms {
@@ -94,10 +95,11 @@ impl State {
             light_params: [
                 DEFAULT_LIGHT_INTENSITY,
                 0.0,
-                1.0 / SHADOW_MAP_SIZE as f32,
+                1.0 / shadow_map_size as f32,
                 1.0,
             ],
             jitter: [0.0; 4],
+            depth_plane: [camera.near, camera.far, 0.0, 0.0],
             shadow_bias: [
                 crate::config_3d::directional_light::SHADOW_NORMAL_BIAS_MIN,
                 crate::config_3d::directional_light::SHADOW_NORMAL_BIAS_MAX,
@@ -111,8 +113,8 @@ impl State {
         let shadow_texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("shadow-map"),
             size: wgpu::Extent3d {
-                width: SHADOW_MAP_SIZE,
-                height: SHADOW_MAP_SIZE,
+                width: shadow_map_size,
+                height: shadow_map_size,
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
@@ -222,6 +224,7 @@ impl State {
             light_view_proj: identity_vp,
             light_params: [DEFAULT_LIGHT_INTENSITY, 0.0, 0.0, 0.0],
             jitter: [0.0; 4],
+            depth_plane: [camera.near, camera.far, 0.0, 0.0],
             shadow_bias: [0.0; 4],
         };
         let hud_scene_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -285,12 +288,12 @@ impl State {
         let shadow_mask_target = Some(wgpu::ColorTargetState {
             format: crate::taa::SHADOW_MASK_FORMAT,
             blend: None,
-            write_mask: wgpu::ColorWrites::RED,
+            write_mask: wgpu::ColorWrites::RED | wgpu::ColorWrites::GREEN,
         });
         let depth_export_target = Some(wgpu::ColorTargetState {
             format: crate::taa::DEPTH_EXPORT_FORMAT,
             blend: None,
-            write_mask: wgpu::ColorWrites::RED,
+            write_mask: wgpu::ColorWrites::ALL,
         });
         let velocity_target = Some(wgpu::ColorTargetState {
             format: crate::taa::VELOCITY_FORMAT,
@@ -299,22 +302,35 @@ impl State {
         });
         let mrt_targets = [
             Some(wgpu::ColorTargetState {
-                format,
+                format: crate::taa::MRT_LIT_FORMAT,
                 blend: None,
                 write_mask: wgpu::ColorWrites::ALL,
             }),
             shadow_mask_target.clone(),
             Some(wgpu::ColorTargetState {
-                format,
+                format: crate::taa::MRT_LIT_FORMAT,
                 blend: None,
                 write_mask: wgpu::ColorWrites::ALL,
             }),
             depth_export_target.clone(),
             velocity_target.clone(),
         ];
+        let base_color_only = [Some(wgpu::ColorTargetState {
+            format: crate::taa::BASE_COLOR_FORMAT,
+            blend: None,
+            write_mask: wgpu::ColorWrites::ALL,
+        })];
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("pipeline-layout"),
             bind_group_layouts: &[&bgl, &texture_bgl],
+            push_constant_ranges: &[],
+        });
+        // Layout del shader principal: añade el grupo 2 (cubemap array de los reflection probes).
+        // El overlay/captura siguen usando `pipeline_layout` (sin grupo 2).
+        let probe_env_bgl = crate::reflections::probe_env::ProbeEnvPass::sample_bind_group_layout(&device);
+        let main_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("main-pipeline-layout"),
+            bind_group_layouts: &[&bgl, &texture_bgl, &probe_env_bgl],
             push_constant_ranges: &[],
         });
         let shadow_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -324,7 +340,7 @@ impl State {
         });
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("main-pipeline"),
-            layout: Some(&pipeline_layout),
+            layout: Some(&main_pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: "vs_main",
@@ -348,6 +364,37 @@ impl State {
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
+        let base_color_depth = wgpu::DepthStencilState {
+            format: DEPTH_FORMAT,
+            depth_write_enabled: false,
+            depth_compare: wgpu::CompareFunction::LessEqual,
+            stencil: wgpu::StencilState::default(),
+            bias: wgpu::DepthBiasState::default(),
+        };
+        let base_color_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("base-color-export-pipeline"),
+            layout: Some(&main_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: "vs_main",
+                buffers: &[mesh::Vertex::desc(), mesh::InstanceData::desc()],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: "fs_export_base_color",
+                targets: &base_color_only,
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                cull_mode: Some(wgpu::Face::Back),
+                ..Default::default()
+            },
+            depth_stencil: Some(base_color_depth.clone()),
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
             cache: None,
@@ -618,10 +665,14 @@ impl State {
                 count: None,
             }],
         });
+        let empty_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("empty-bgl"),
+            entries: &[],
+        });
         let skinned_shader = device.create_shader_module(include_wgsl!("../shader_skinned.wgsl"));
         let skinned_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("skinned-pipeline-layout"),
-            bind_group_layouts: &[&bgl, &texture_bgl, &joint_bgl],
+            bind_group_layouts: &[&bgl, &texture_bgl, &probe_env_bgl, &joint_bgl],
             push_constant_ranges: &[],
         });
         let skinned_render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -654,9 +705,34 @@ impl State {
             multiview: None,
             cache: None,
         });
+        let skinned_base_color_pipeline =
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("skinned-base-color-export-pipeline"),
+                layout: Some(&skinned_pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &skinned_shader,
+                    entry_point: "vs_main_skinned",
+                    buffers: &[mesh::SkinnedVertex::desc(), mesh::SkinnedInstanceData::desc()],
+                    compilation_options: Default::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &skinned_shader,
+                    entry_point: "fs_export_base_color_skinned",
+                    targets: &base_color_only,
+                    compilation_options: Default::default(),
+                }),
+                primitive: wgpu::PrimitiveState {
+                    cull_mode: Some(wgpu::Face::Back),
+                    ..Default::default()
+                },
+                depth_stencil: Some(base_color_depth),
+                multisample: wgpu::MultisampleState::default(),
+                multiview: None,
+                cache: None,
+            });
         let skinned_shadow_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("skinned-shadow-layout"),
-            bind_group_layouts: &[&shadow_pass_bgl, &joint_bgl],
+            bind_group_layouts: &[&shadow_pass_bgl, &empty_bgl, &empty_bgl, &joint_bgl],
             push_constant_ranges: &[],
         });
         let skinned_shadow_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -699,9 +775,42 @@ impl State {
             crate::config_3d::static_model_cache::create_model_preload_channel();
         let taa = crate::taa::TaaPass::new(
             &device,
+            crate::taa::MRT_LIT_FORMAT,
             format,
             size.width,
             size.height,
+        );
+        let reflections = crate::reflections::ReflectionPass::new(
+            &device,
+            crate::taa::MRT_LIT_FORMAT,
+            format,
+            size.width,
+            size.height,
+        );
+        let rt_reflections_available =
+            crate::reflections::rt_reflections::adapter_supports_rt(&device);
+        if !rt_reflections_available {
+            log::info!(
+                "[RT] RT hardware desactivado (v1 AABB); High/Ultra usan cubemap+SSR+temporal. \
+                 Referencia futura: VK_KHR_ray_tracing_pipeline (rust-raytracing)"
+            );
+        }
+
+        let probe_cubemap_size =
+            crate::config_3d::reflection_graphics::DEFAULT_REFLECTION_TIER.cubemap_face_size();
+        let probe_env = crate::reflections::probe_env::ProbeEnvPass::new(
+            &device,
+            crate::taa::MRT_LIT_FORMAT,
+            DEPTH_FORMAT,
+            std::mem::size_of::<SceneUniforms>() as u64,
+            &bgl,
+            &texture_bgl,
+            &joint_bgl,
+            &probe_env_bgl,
+            &shadow_map_view,
+            &shader,
+            &skinned_shader,
+            probe_cubemap_size,
         );
 
         let state = Self {
@@ -718,6 +827,7 @@ impl State {
                 a: 1.0,
             },
             render_pipeline,
+            base_color_pipeline,
             render_pipeline_overlay,
             shadow_pipeline,
             _shadow_texture: shadow_texture,
@@ -895,6 +1005,20 @@ impl State {
             save_registry: EntitySaveRegistry::new(),
             target_fps: 60,
             graphics_texture_tier: crate::config_3d::texture_graphics::TextureGraphicsTier::Medium,
+            reflection_tier: crate::config_3d::reflection_graphics::DEFAULT_REFLECTION_TIER,
+            reflection_debug_view:
+                crate::config_3d::reflection_graphics::ReflectionDebugView::Final,
+            reflections,
+            rt_reflections_available,
+            probe_env,
+            probe_capture_cursor: 0,
+            probe_capture_burst_all: false,
+            probe_cubemap_size,
+            scene_bind_group_layout: bgl,
+            hud_scene_buffer: hud_scene_buf,
+            shadow_sampler,
+            shadow_tier,
+            shadow_map_size,
             texture_detail_near_m: crate::config_3d::entity_textures::default_texture_detail_near_m(),
             glb_texture_catalog_cache: HashMap::new(),
             entity_texture_effective_cap: HashMap::new(),
@@ -902,6 +1026,7 @@ impl State {
             sun_entity: None,
             sun_icon_mesh_idx: None,
             sun_icon_tex_idx: None,
+            reflection_probe_tex_idx: [None; 5],
             editor_box_mesh_idx: None,
             editor_box_tex_idx: None,
             plane_tool_wall_mesh_idx: None,
@@ -920,6 +1045,7 @@ impl State {
             model_clip_defaults: std::collections::HashMap::new(),
             skinned_gpu_meshes: Vec::new(),
             skinned_render_pipeline,
+            skinned_base_color_pipeline,
             skinned_shadow_pipeline,
             joint_bind_group_layout: Some(joint_bgl),
             mount_save_on_empty_world: false,

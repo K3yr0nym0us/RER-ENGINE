@@ -29,6 +29,7 @@ pub struct State {
     pub(crate) size: PhysicalSize<u32>,
     pub(crate) clear_color: wgpu::Color,
     pub(crate) render_pipeline: wgpu::RenderPipeline,
+    pub(crate) base_color_pipeline: wgpu::RenderPipeline,
     pub(crate) render_pipeline_overlay: wgpu::RenderPipeline,
     pub(crate) shadow_pipeline: wgpu::RenderPipeline,
     pub(crate) _shadow_texture: wgpu::Texture,
@@ -41,6 +42,14 @@ pub struct State {
     /// Solo uniformes; evita leer el shadow map mientras se escribe en el pase de sombras.
     pub(crate) shadow_pass_bind_group: wgpu::BindGroup,
     pub(crate) hud_scene_bind_group: wgpu::BindGroup,
+    /// Uniformes del bind group HUD; se conserva para reconstruir el bind group al recrear el shadow map.
+    pub(crate) hud_scene_buffer: wgpu::Buffer,
+    /// Sampler de comparación del shadow map; se conserva para reconstruir bind groups por tier.
+    pub(crate) shadow_sampler: wgpu::Sampler,
+    /// Nivel de calidad de sombras (resolución del shadow map por tier).
+    pub(crate) shadow_tier: crate::config_3d::shadow_graphics::ShadowTier,
+    /// Resolución actual del shadow map (px por lado); se recrea al cambiar de tier.
+    pub(crate) shadow_map_size: u32,
     pub(crate) texture_array: crate::texture::TextureArray,
     /// `tex_idx` de `MeshComponent` → capa en `texture_array`.
     pub(crate) tex_layers: Vec<crate::texture::TextureLayer>,
@@ -283,6 +292,24 @@ pub struct State {
     pub(crate) target_fps: u64,
     /// Nivel gráfico global de texturas GLB embebidas.
     pub(crate) graphics_texture_tier: crate::config_3d::texture_graphics::TextureGraphicsTier,
+    /// Nivel global de reflejos (Off / Low / Medium / High).
+    pub(crate) reflection_tier: crate::config_3d::reflection_graphics::ReflectionTier,
+    /// Vista debug de reflejos (editor).
+    pub(crate) reflection_debug_view:
+        crate::config_3d::reflection_graphics::ReflectionDebugView,
+    pub(crate) reflections: crate::reflections::ReflectionPass,
+    pub(crate) rt_reflections_available: bool,
+    /// Reflection probes: un cubemap por esfera/probe (entorno 360° con suelo, vecinas y jugador).
+    pub(crate) probe_env: crate::reflections::probe_env::ProbeEnvPass,
+    /// Round-robin: probe capturado este frame (los demás conservan su última captura).
+    pub(crate) probe_capture_cursor: usize,
+    /// Tras activar reflejos o recrear cubemap: capturar todos los probes en un frame.
+    pub(crate) probe_capture_burst_all: bool,
+    /// Tamaño de cara del cubemap de probes actualmente asignado (px); se recrea al cambiar tier.
+    pub(crate) probe_cubemap_size: u32,
+    /// Layout del grupo de escena (binding 0 uniform, 1 shadow map, 2 sampler). Necesario para
+    /// reconstruir bind groups al recrear el shadow map o el cubemap de probes.
+    pub(crate) scene_bind_group_layout: wgpu::BindGroupLayout,
     /// Distancia (m) a la cámara con textura al tope del tier activo.
     pub(crate) texture_detail_near_m: f32,
     pub(crate) glb_texture_catalog_cache:
@@ -294,6 +321,8 @@ pub struct State {
     /// Mesh y textura compartidos del icono esférico del sol.
     pub(crate) sun_icon_mesh_idx: Option<usize>,
     pub(crate) sun_icon_tex_idx: Option<usize>,
+    /// Texturas de prueba de reflejos (R0 … R1); índice en `tex_layers`.
+    pub(crate) reflection_probe_tex_idx: [Option<usize>; 5],
     /// Cubo blanco compartido para `[EditorBox]` (plantilla y `.save`).
     pub(crate) editor_box_mesh_idx: Option<usize>,
     pub(crate) editor_box_tex_idx: Option<usize>,
@@ -316,6 +345,7 @@ pub struct State {
     pub(crate) model_clip_defaults: std::collections::HashMap<u32, String>,
     pub(crate) skinned_gpu_meshes: Vec<GpuSkinnedMeshEntry>,
     pub(crate) skinned_render_pipeline: wgpu::RenderPipeline,
+    pub(crate) skinned_base_color_pipeline: wgpu::RenderPipeline,
     pub(crate) skinned_shadow_pipeline: wgpu::RenderPipeline,
     pub(crate) joint_bind_group_layout: Option<wgpu::BindGroupLayout>,
 }

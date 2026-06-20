@@ -48,6 +48,10 @@ pub struct SaveWorldSnapshot {
     pub graphics_texture_tier: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub texture_detail_distance_m: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reflection_tier: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shadow_tier: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -706,6 +710,19 @@ pub enum EngineEvent {
     GraphicsTextureTierChanged { tier: String },
     #[serde(rename = "texture_detail_distance_changed")]
     TextureDetailDistanceChanged { distance_m: f32 },
+    #[serde(rename = "reflection_tier_changed")]
+    ReflectionTierChanged { tier: String },
+    #[serde(rename = "shadow_tier_changed")]
+    ShadowTierChanged { tier: String },
+    #[serde(rename = "reflection_debug_view_changed")]
+    ReflectionDebugViewChanged { view: String },
+    #[serde(rename = "reflection_profiler")]
+    ReflectionProfiler {
+        ssr_ms: f32,
+        temporal_ms: f32,
+        rt_ms: f32,
+        composite_ms: f32,
+    },
     /// Emitido ~1 vez por segundo con métricas de rendimiento del motor.
     DebugMetrics {
         fps:            f32,
@@ -1062,6 +1079,10 @@ pub struct ProjectLoaded3dWorld {
     pub graphicsTextureTier: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub textureDetailDistance: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reflectionTier: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shadowTier: Option<String>,
 }
 
 /// Evento `project_loaded_3d` (fuera de `EngineEvent` para no heredar snake_case del enum).

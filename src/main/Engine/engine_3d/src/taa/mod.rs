@@ -1,6 +1,6 @@
 //! Post-proceso 3D alineado con UE / Unity / Godot 4:
 //!
-//! 1. **G-buffer ligero (MRT):** `ambient`, `direct`, máscara de sombra, depth lineal (R32), velocity (RG16).
+//! 1. **G-buffer ligero (MRT):** `ambient`, `direct`, máscara de sombra, depth en metros (R32), velocity+normal (RGBA8).
 //! 2. **Shadow map único 2D** (2048, depth compare).
 //! 3. **TAA en máscara de sombra** → **lit-composite:** `lit = ambient + direct × mix(darkness, 1, shadow)`.
 //! 4. **TAA de escena** (reproject + depth/velocity, depth vía `texture_2d` filtrable-nearest, no `textureLoad` en depth).
@@ -8,7 +8,10 @@
 //!
 //! El slider *Shadow darkness* se aplica solo en lit-composite (CPU), no en `light_params` del forward pass.
 
+mod depth_readback;
+
 use bytemuck::{Pod, Zeroable};
+use depth_readback::{DepthExportReadback, log_depth_export_stats, log_depth_probe_cpu};
 use wgpu::util::DeviceExt;
 use wgpu::{include_wgsl, Device, Queue, TextureFormat, TextureView};
 
@@ -17,13 +20,22 @@ const SHADOW_HISTORY_BLEND: f32 = 30.0 / 32.0;
 /// Acumulación escena (geometría y bordes de objetos).
 const SCENE_HISTORY_BLEND: f32 = 0.62;
 /// Umbral depth para disoclusión; algo más laxo evita cortar history en siluetas.
-const DISOCCLUSION_THRESHOLD: f32 = 0.028;
+/// Umbral de disoclusión en metros (depth export = distancia view-space).
+const DISOCCLUSION_THRESHOLD: f32 = 0.75;
 
-/// Máscara de sombra por píxel (1 = iluminado, 0 = sombra).
-pub const SHADOW_MASK_FORMAT: TextureFormat = TextureFormat::R32Float;
-/// Profundidad lineal exportada para TAA (shader WGSL vía naga; no implica backend OpenGL).
-pub const DEPTH_EXPORT_FORMAT: TextureFormat = SHADOW_MASK_FORMAT;
-pub const VELOCITY_FORMAT: TextureFormat = TextureFormat::Rg16Float;
+/// G-buffer de superficie: `.r` = máscara de sombra (1=iluminado), `.g` = roughness.
+/// `Rg16Float` cuesta 4 B/sample (vs 8 B de Rgba8Unorm) para respetar el límite WebGPU
+/// baseline de 32 B/sample, garantizado en TODA plataforma de exportación. El metallic
+/// NO cabe aquí; se empaqueta en el alpha del buffer `direct` (canal libre).
+pub const SHADOW_MASK_FORMAT: TextureFormat = TextureFormat::Rg16Float;
+/// Profundidad en metros (view depth) exportada para TAA y SSR. 4 B/sample.
+pub const DEPTH_EXPORT_FORMAT: TextureFormat = TextureFormat::R32Float;
+/// Velocity (rg) + normal xy octaédrica empaquetada (ba). 8 B/sample.
+pub const VELOCITY_FORMAT: TextureFormat = TextureFormat::Rgba8Unorm;
+/// Ambient/direct/scene internos. 8 B/sample.
+pub const MRT_LIT_FORMAT: TextureFormat = TextureFormat::Rgba8Unorm;
+/// Albedo base del material (SSR/RT F0 y atenuación metal). 4 B/sample.
+pub const BASE_COLOR_FORMAT: TextureFormat = TextureFormat::Rgba8Unorm;
 
 /// Estabilidad TAA: mantiene más acumulación a distancia media (menos dientes de sierra lejos).
 pub fn zoom_stability_distance(distance: f32) -> f32 {
@@ -93,6 +105,7 @@ pub struct TaaPass {
     direct_view: TextureView,
     depth_export_view: TextureView,
     velocity_view: TextureView,
+    base_color_view: TextureView,
     scene_color_view: TextureView,
     shadow_mask_view: TextureView,
     shadow_history_views: [TextureView; 2],
@@ -124,17 +137,21 @@ pub struct TaaPass {
     _direct_texture: wgpu::Texture,
     _depth_export_texture: wgpu::Texture,
     _velocity_texture: wgpu::Texture,
+    _base_color_texture: wgpu::Texture,
     _scene_color_texture: wgpu::Texture,
     _shadow_mask_texture: wgpu::Texture,
     _shadow_history_textures: [wgpu::Texture; 2],
     _scene_history_textures: [wgpu::Texture; 2],
     color_format: TextureFormat,
+    present_format: TextureFormat,
+    depth_readback: DepthExportReadback,
 }
 
 impl TaaPass {
     pub fn new(
         device: &Device,
         color_format: TextureFormat,
+        present_format: TextureFormat,
         width: u32,
         height: u32,
     ) -> Self {
@@ -145,7 +162,9 @@ impl TaaPass {
         let (depth_export_texture, depth_export_view) =
             create_texture(device, DEPTH_EXPORT_FORMAT, width, height, "depth-export");
         let (velocity_texture, velocity_view) =
-            create_texture(device, VELOCITY_FORMAT, width, height, "velocity");
+            create_texture(device, VELOCITY_FORMAT, width, height, "velocity-normal");
+        let (base_color_texture, base_color_view) =
+            create_texture(device, BASE_COLOR_FORMAT, width, height, "base-color");
         let (scene_color_texture, scene_color_view) =
             create_texture(device, color_format, width, height, "scene-lit");
         let (shadow_mask_texture, shadow_mask_view) =
@@ -237,7 +256,7 @@ impl TaaPass {
             &blit_bgl,
             &blit_shader,
             "scene-blit",
-            color_format,
+            present_format,
             wgpu::ColorWrites::ALL,
         );
 
@@ -328,6 +347,7 @@ impl TaaPass {
             direct_view,
             depth_export_view,
             velocity_view,
+            base_color_view,
             scene_color_view,
             shadow_mask_view,
             shadow_history_views: [v0, v1],
@@ -359,11 +379,14 @@ impl TaaPass {
             _direct_texture: direct_texture,
             _depth_export_texture: depth_export_texture,
             _velocity_texture: velocity_texture,
+            _base_color_texture: base_color_texture,
             _scene_color_texture: scene_color_texture,
             _shadow_mask_texture: shadow_mask_texture,
             _shadow_history_textures: [h0, h1],
             _scene_history_textures: [s0, s1],
             color_format,
+            present_format,
+            depth_readback: DepthExportReadback::new(device, width, height),
         }
     }
 
@@ -461,8 +484,51 @@ impl TaaPass {
         &self.depth_export_view
     }
 
+    /// Infra de readback depth (sin logs activos).
+    #[allow(dead_code)]
+    pub(crate) fn queue_depth_export_readback(&mut self, encoder: &mut wgpu::CommandEncoder) {
+        self.depth_readback.queue_copy(encoder, &self._depth_export_texture);
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn log_depth_export_readback(
+        &mut self,
+        device: &Device,
+        near_plane: f32,
+        far_plane: f32,
+        debug_label: &str,
+        view_proj: Option<[[f32; 4]; 4]>,
+        inv_view_proj: Option<[[f32; 4]; 4]>,
+        probe_world: Option<[f32; 3]>,
+    ) -> bool {
+        if let Some(stats) = self.depth_readback.finish_and_stats(device) {
+            log_depth_export_stats(&stats, near_plane, far_plane, debug_label);
+            if let (Some(vp), Some(inv_vp), Some(w)) = (view_proj, inv_view_proj, probe_world) {
+                log_depth_probe_cpu(&vp, &inv_vp, w, near_plane, far_plane);
+            }
+            return true;
+        }
+        false
+    }
+
     pub(crate) fn velocity_view(&self) -> &TextureView {
         &self.velocity_view
+    }
+
+    pub(crate) fn base_color_view(&self) -> &TextureView {
+        &self.base_color_view
+    }
+
+    pub(crate) fn normal_roughness_view(&self) -> &TextureView {
+        &self.velocity_view
+    }
+
+    pub(crate) fn scene_color_view(&self) -> &TextureView {
+        &self.scene_color_view
+    }
+
+    pub(crate) fn scene_color_texture(&self) -> &wgpu::Texture {
+        &self._scene_color_texture
     }
 
     pub(crate) fn shadow_mask_view(&self) -> &TextureView {
@@ -473,6 +539,7 @@ impl TaaPass {
         &mut self,
         device: &Device,
         color_format: TextureFormat,
+        present_format: TextureFormat,
         width: u32,
         height: u32,
     ) {
@@ -483,7 +550,9 @@ impl TaaPass {
         let (depth_export_texture, depth_export_view) =
             create_texture(device, DEPTH_EXPORT_FORMAT, width, height, "depth-export");
         let (velocity_texture, velocity_view) =
-            create_texture(device, VELOCITY_FORMAT, width, height, "velocity");
+            create_texture(device, VELOCITY_FORMAT, width, height, "velocity-normal");
+        let (base_color_texture, base_color_view) =
+            create_texture(device, BASE_COLOR_FORMAT, width, height, "base-color");
         let (scene_color_texture, scene_color_view) =
             create_texture(device, color_format, width, height, "scene-lit");
         let (shadow_mask_texture, shadow_mask_view) =
@@ -494,6 +563,7 @@ impl TaaPass {
         let (s1, sv1) = create_texture(device, color_format, width, height, "scene-history-1");
 
         self.color_format = color_format;
+        self.present_format = present_format;
         self._ambient_texture = ambient_texture;
         self.ambient_view = ambient_view;
         self._direct_texture = direct_texture;
@@ -502,6 +572,8 @@ impl TaaPass {
         self.depth_export_view = depth_export_view;
         self._velocity_texture = velocity_texture;
         self.velocity_view = velocity_view;
+        self._base_color_texture = base_color_texture;
+        self.base_color_view = base_color_view;
         self._scene_color_texture = scene_color_texture;
         self.scene_color_view = scene_color_view;
         self._shadow_mask_texture = shadow_mask_texture;
@@ -510,6 +582,8 @@ impl TaaPass {
         self.shadow_history_views = [v0, v1];
         self._scene_history_textures = [s0, s1];
         self.scene_history_views = [sv0, sv1];
+        self.depth_readback
+            .resize(device, width.max(1), height.max(1));
         self.shadow_history_index = 0;
         self.scene_history_index = 0;
         self.shadow_first_frame = true;
@@ -641,6 +715,79 @@ impl TaaPass {
             &self.blit_bind_groups[blit_idx],
             swapchain_view,
         );
+        self.frame_index = self.frame_index.wrapping_add(1);
+    }
+
+    pub(crate) fn run_lit_composite_pub(
+        &self,
+        device: &Device,
+        queue: &Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        shadow_darkness: f32,
+        shadows_enabled: bool,
+    ) {
+        self.run_lit_composite(device, queue, encoder, shadow_darkness, shadows_enabled);
+    }
+
+    pub(crate) fn resolve_shadow_mask_pub(
+        &mut self,
+        device: &Device,
+        queue: &Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        zoom_stability: f32,
+        width: u32,
+        height: u32,
+    ) {
+        self.resolve_shadow_mask(device, queue, encoder, zoom_stability, width, height);
+    }
+
+    pub(crate) fn resolve_scene_soft_pub(
+        &mut self,
+        device: &Device,
+        queue: &Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        zoom_stability: f32,
+        width: u32,
+        height: u32,
+        inv_view_proj: [[f32; 4]; 4],
+        prev_view_proj: [[f32; 4]; 4],
+    ) {
+        self.resolve_scene_soft(
+            device,
+            queue,
+            encoder,
+            zoom_stability,
+            width,
+            height,
+            inv_view_proj,
+            prev_view_proj,
+        );
+    }
+
+    pub(crate) fn blit_present_pub(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        swapchain_view: &TextureView,
+        use_scene_taa: bool,
+    ) {
+        let blit_idx = if use_scene_taa {
+            1 + self.scene_history_index as usize
+        } else {
+            0
+        };
+        blit_cached(
+            encoder,
+            &self.blit_pipeline,
+            &self.blit_bind_groups[blit_idx],
+            swapchain_view,
+        );
+    }
+
+    pub(crate) fn scene_taa_active(&self) -> bool {
+        self.enabled && self.scene_taa_enabled
+    }
+
+    pub(crate) fn tick_frame_index(&mut self) {
         self.frame_index = self.frame_index.wrapping_add(1);
     }
 
@@ -1076,7 +1223,15 @@ fn create_texture(
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
         format,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+            | wgpu::TextureUsages::TEXTURE_BINDING
+            | if label == "scene-lit" {
+                wgpu::TextureUsages::COPY_DST
+            } else if label == "depth-export" {
+                wgpu::TextureUsages::COPY_SRC
+            } else {
+                wgpu::TextureUsages::empty()
+            },
         view_formats: &[],
     });
     let view = texture.create_view(&wgpu::TextureViewDescriptor::default());

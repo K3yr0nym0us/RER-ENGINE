@@ -98,6 +98,22 @@ pub struct NameComponent {
     pub name: String,
 }
 
+/// Roughness / metallic por entidad (G-buffer → SSR / RT).
+#[derive(Debug, Clone, Copy)]
+pub struct SurfacePbr {
+    pub roughness: f32,
+    pub metallic: f32,
+}
+
+impl SurfacePbr {
+    pub fn metal_probe(roughness: f32) -> Self {
+        Self {
+            roughness: roughness.clamp(0.0, 1.0),
+            metallic: 1.0,
+        }
+    }
+}
+
 // ── Almacenamiento de componentes ─────────────────────────────────────────────
 
 /// Almacenamiento denso para un tipo de componente.
@@ -201,6 +217,7 @@ impl Default for World {
         w.register::<NonSelectable>();
         w.register::<EditorCamera>();
         w.register::<RenderLayer>();
+        w.register::<SurfacePbr>();
         w
     }
 }

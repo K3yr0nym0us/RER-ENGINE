@@ -132,15 +132,30 @@ fn fs_main(in : VsOut) -> @location(0) vec4<f32> {
     let depth_hist = depth_at(uv_hist);
     let disoccluded = abs(depth_curr - depth_hist) > u.disocclusion;
 
+    // Reconstruye el AABB local con el vecindario 3x3 alrededor del píxel actual
+    // (clip_history hace el muestreo + clamp; aplicamos su clamp también al history
+    // reproyectado para rechazar ghosts que cayeron fuera del rango actual).
     let clipped = clip_history(uv, texel);
-    var hist = clipped.rgb;
+    var sum = vec3<f32>(0.0);
+    var sum2 = vec3<f32>(0.0);
+    for (var oy = -1; oy <= 1; oy++) {
+        for (var ox = -1; ox <= 1; ox++) {
+            let off = vec2<f32>(f32(ox), f32(oy)) * texel;
+            let c = textureSample(t_curr, s_curr, uv + off).rgb;
+            sum += c;
+            sum2 += c * c;
+        }
+    }
+    let avg_n = sum * RPC_9;
+    let dev_n = sqrt(max(sum2 * RPC_9 - avg_n * avg_n, vec3<f32>(0.0)));
+    let cmin = avg_n - dev_n * VARIANCE_BOX;
+    let cmax = avg_n + dev_n * VARIANCE_BOX;
+    var hist : vec3<f32>;
     if disoccluded {
         hist = curr_samp.rgb;
     } else {
-        hist = textureSample(t_hist, s_hist, uv_hist).rgb;
-        let cmin = clipped.rgb - vec3<f32>(VARIANCE_BOX);
-        let cmax = clipped.rgb + vec3<f32>(VARIANCE_BOX);
-        hist = clip_color(cmin, cmax, curr_samp.rgb, hist);
+        let raw = textureSample(t_hist, s_hist, uv_hist).rgb;
+        hist = clip_color(cmin, cmax, curr_samp.rgb, raw);
     }
 
     let edge_dev = clipped.a;
@@ -152,7 +167,7 @@ fn fs_main(in : VsOut) -> @location(0) vec4<f32> {
     let base_blend = mix(u.blend, u.blend * 0.82, far * 0.22);
     let edge_color = smoothstep(0.003, 0.055, edge_dev);
     let edge_sobel = smoothstep(0.012, 0.095, sobel_edge(uv, texel));
-    let depth_edge = smoothstep(0.002, 0.025, abs(depth_curr - depth_hist));
+    let depth_edge = smoothstep(0.05, 1.0, abs(depth_curr - depth_hist));
     let edge = max(max(edge_color, edge_sobel), depth_edge);
     // Más history en siluetas aliased (sube anti-aliasing en bordes de objetos).
     var blend_w = base_blend * reactive * vel_w + edge * 0.48;

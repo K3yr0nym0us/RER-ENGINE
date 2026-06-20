@@ -123,6 +123,9 @@ pub enum EngineCommand3dOnly {
     },
     SetGraphicsTextureTier { tier: String },
     SetTextureDetailDistance { distance_m: f32 },
+    SetReflectionTier { tier: String },
+    SetReflectionDebugView { view: String },
+    SetShadowTier { tier: String },
     SetCameraFov { fov_y: f32 },
     #[serde(rename = "set_play_editor_frustum_distance")]
     SetPlayEditorFrustumDistance { distance: f32 },
@@ -176,14 +179,26 @@ mod tests {
     use super::*;
 
     #[test]
-    fn deserialize_merge_entities_command() {
-        let json = r#"{"cmd":"merge_entities","ids":[101,202]}"#;
-        let cmd: EngineCommand = serde_json::from_str(json).expect("merge_entities IPC");
+    fn deserialize_set_reflection_tier_command() {
+        let json = r#"{"cmd":"set_reflection_tier","tier":"medium"}"#;
+        let cmd: EngineCommand = serde_json::from_str(json).expect("set_reflection_tier IPC");
         match cmd {
-            EngineCommand::Only3d(EngineCommand3dOnly::MergeEntities { ids }) => {
-                assert_eq!(ids, vec![101, 202]);
+            EngineCommand::Only3d(EngineCommand3dOnly::SetReflectionTier { tier }) => {
+                assert_eq!(tier, "medium");
             }
-            other => panic!("expected Only3d MergeEntities, got {other:?}"),
+            other => panic!("expected Only3d SetReflectionTier, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn deserialize_set_reflection_debug_view_command() {
+        let json = r#"{"cmd":"set_reflection_debug_view","view":"ssr_hits"}"#;
+        let cmd: EngineCommand = serde_json::from_str(json).expect("set_reflection_debug_view IPC");
+        match cmd {
+            EngineCommand::Only3d(EngineCommand3dOnly::SetReflectionDebugView { view }) => {
+                assert_eq!(view, "ssr_hits");
+            }
+            other => panic!("expected Only3d SetReflectionDebugView, got {other:?}"),
         }
     }
 }

@@ -156,6 +156,12 @@ nodes:
       fields: [dx, dy]  # delta relativo
       compiles_to: engine.translate(entity.id, dx, dy)
 
+    - id: action.set_reflection_tier
+      label: Set reflection tier
+      contexts: [scene]
+      fields: [tier]
+      compiles_to: engine.set_reflection_tier("off|low|medium|high")
+
   control_scripts:
     context: entity control bindings (keyboard_mouse / gamepad)
     callbacks:

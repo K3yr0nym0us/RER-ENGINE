@@ -1,0 +1,142 @@
+# Reflejos 3D por nivel (SSR / temporal / RT estáticos / probes)
+#
+# Solo proyectos 3D. Nivel global en World → Reflejos; presets internos en motor.
+#
+# Relacionado con:
+#   - docs/IPC_Protocol.yaml
+#   - docs/RHAI_API.yaml
+#   - docs/Programing_Model.yaml
+
+version: 2
+updated: 2026-06-20
+
+principle:
+  owner: motor_3d
+  pipeline: |
+    Off → nada.
+    Low → SSR (sin temporal).
+    Medium → SSR + acumulación temporal.
+    High → SSR + temporal + RT compute contra AABB de mallas estáticas.
+    Ultra → como High con más pasos, distancia y resolución de probes.
+    Skinned / jugador: excluidos del TLAS; contribuyen vía SSR y cubemap en forward.
+  rtiow_compat: |
+    Cubemap, SSR y RT comparten reflect(incident, normal), F0=albedo en metales,
+    atenuación albedo en el rebote y composite aditivo (detalle SSR sobre base).
+
+graphics_tiers:
+  - id: off
+    aliases: [disabled, desactivado, none]
+  - id: low
+    aliases: [bajo]
+  - id: medium
+    aliases: [medio]
+  - id: high
+    aliases: [alto]
+  - id: ultra
+
+internal_settings:
+  description: ReflectionSettings derivado del tier (no persistido en .save)
+  fields:
+    - max_steps
+    - max_distance_m
+    - temporal_blend
+    - max_roughness_to_trace
+    - rt_enabled
+    - rt_static_only
+    - rt_blend
+
+g_buffer:
+  scene_mrt: |
+    Render pass principal (`shader.wgsl` SceneFragOut), 5 targets + depth:
+    @location(0) ambient (Rgba8Unorm) — escena base; en metales incluye cubemap+Fresnel
+    @location(1) shadow_mask (Rg16Float) — .r=sombra, .g=roughness (1=mate, sin SSR)
+    @location(2) direct (Rgba8Unorm) — .rgb=luz directa, .a=metallic
+    @location(3) depth_export (R32Float) — view depth en metros (0=cielo)
+    @location(4) velocity_normal (Rgba8Unorm) — .xy=velocity TAA, .zw=normal octahedral
+  ssr_rt_bindings:
+    t_depth: depth_export_view
+    t_normal_roughness: velocity_view (alias normal_roughness_view en taa/mod.rs)
+    t_surface: shadow_mask_view (.g roughness)
+    t_direct: direct_view (.a metallic)
+    t_base_color: pase aparte base-color-export-pass (Rgba8Unorm)
+    t_lit_scene: scene_color_view post lit_composite
+  base_color: |
+    Rgba8Unorm albedo (pase aparte, depth test LE; límite MRT 32 B/muestra en pass principal)
+  ssr_center_log:
+    readback: ssr_trace_readback.rs muestrea fs_log en (0.5, 0.5)
+    miss_codes:
+      -1: cielo/sin geometría
+      -2: roughness > max_roughness_to_trace
+      -3: strength/dir (no metal o Fresnel bajo)
+      -4: marcha SSR sin intersección en pantalla
+
+probes:
+  method: texture_cube_array round-robin por frame
+  face_size_by_tier: "Off/Low 128, Medium 256, High 512, Ultra 1024"
+  probe_meta: centro + radio; solo selección de capa (sin parallax cubemap)
+
+commands:
+  set_reflection_tier:
+    params: { tier: off | low | medium | high | ultra }
+    effect: Cambia tier global y emite reflection_tier_changed
+  set_reflection_debug_view:
+    params:
+      view: final | normals | depth | ssr_hits | reflection_mask | base_color | trace_strength | ssr_final_composite | …
+    effect: Vista debug en viewport (editor)
+
+events:
+  reflection_tier_changed:
+    payload: { tier: string }
+  reflection_debug_view_changed:
+    payload: { view: string }
+  reflection_profiler:
+    payload: { ssr_ms, temporal_ms, rt_ms, composite_ms }
+    rate: ~cada 15 frames con reflejos activos
+
+persistence:
+  save_field: reflectionTier en world del .save
+  default: medium
+
+scripting:
+  rhai:
+    - engine.set_reflection_tier(tier)
+    - engine.get_reflection_tier()
+  visual_node:
+    id: action.set_reflection_tier
+    context: scene
+    compiles_to: engine.set_reflection_tier("…")
+
+rt_v1:
+  method: compute shader + TLAS AABB estáticos (hasta 256 instancias) — desactivado en runtime
+  status: |
+    El stub AABB generaba grano blanco al mezclarse en composite (rt_weight alto sin geometría real).
+    High/Ultra = cubemap + SSR + temporal. RT hardware pendiente (VK_KHR_ray_tracing_pipeline;
+    referencia https://github.com/jdonald/rust-raytracing ).
+  excludes: skinned, play character
+  blend: rt_blend configurable (default 0.85); refuerza píxeles donde SSR falla
+  parity: normal_bias, depth_reject, thickness y hit depth reject compartidos con SSR vía reflection_math.wgsl
+  hit_depth_reject: max(1.6m, step_size×4) — tolerancia AABB v1 (ver Reflections_Diagnostics.yaml)
+  adapter_supports_rt: stub true (sin ray queries nativas aún)
+  future: BLAS por triángulo + ray queries wgpu cuando esté estable
+
+debug_views:
+  active:
+    - final
+    - normals
+    - depth
+    - ssr_hits
+    - reflection_mask
+    - base_color
+    - trace_strength
+    - ssr_final_composite
+  deprecated:
+    - ssr_hit_uv_world_screen_pair
+    - ssr_hit_uv_world_screen_delta
+    - ssr_hit_uv_world_screen_split
+    note: world/screen eran idénticos tras unificar dirección RTIOW; alias de ssr_hit_uv
+
+ui:
+  accordion: World → Reflejos (tier + debug view)
+
+diagnostics:
+  audit_report: docs/Reflections_Diagnostics.yaml

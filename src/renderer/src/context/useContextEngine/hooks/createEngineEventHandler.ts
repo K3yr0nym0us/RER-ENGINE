@@ -111,7 +111,7 @@ import {
 	DEFAULT_PLAYER_UI_BUTTON_CONFIG,
 } from '../../../pages/EngineView/components/sidebar/UIAccordion/components/playerUiButtonModel';
 import type { EngineAction, EngineInternalRefs, EntityMeta, PendingRestore, Transform } from '../types';
-import { buildEditingUiElementsFromEngineList, normalizeGraphicsTextureTier } from '../types';
+import { buildEditingUiElementsFromEngineList, normalizeGraphicsTextureTier, normalizeReflectionTier, normalizeReflectionDebugView, normalizeShadowTier } from '../types';
 import { takePendingPlayerUiButtonConfig } from './createEngineActions';
 
 type RuntimeEngineEvent = {
@@ -182,6 +182,10 @@ const SILENT_ENGINE_EVENTS = new Set<string>([
 	'trigger_exited',
 	'graphics_texture_tier_changed',
 	'texture_detail_distance_changed',
+	'reflection_tier_changed',
+	'shadow_tier_changed',
+	'reflection_debug_view_changed',
+	'reflection_profiler',
 	'model_clips_ready',
 ]);
 
@@ -2868,6 +2872,24 @@ export function createEngineEventHandler({
 					payload: { textureDetailDistance: Math.max(1, Math.min(500, distanceM)) },
 				});
 			}
+		}
+
+		if (event.event === 'reflection_tier_changed') {
+			const tier = normalizeReflectionTier(event.tier);
+			dispatch({ type: 'SET_WORLD_CONFIG', payload: { reflectionTier: tier } });
+			addLog(`[Reflejos] Motor confirmó nivel: ${tier}`);
+		}
+
+		if (event.event === 'shadow_tier_changed') {
+			const tier = normalizeShadowTier(event.tier);
+			dispatch({ type: 'SET_WORLD_CONFIG', payload: { shadowTier: tier } });
+			addLog(`[Sombras] Motor confirmó nivel: ${tier}`);
+		}
+
+		if (event.event === 'reflection_debug_view_changed') {
+			const view = normalizeReflectionDebugView(event.view);
+			dispatch({ type: 'SET_WORLD_CONFIG', payload: { reflectionDebugView: view } });
+			addLog(`[Reflejos] Motor confirmó vista debug: ${view}`);
 		}
 
 		if (event.event === 'debug_metrics') {

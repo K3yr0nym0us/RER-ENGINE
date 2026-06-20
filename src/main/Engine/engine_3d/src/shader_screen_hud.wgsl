@@ -12,6 +12,7 @@ struct SceneUniforms {
     light_view_proj   : mat4x4<f32>,
     light_params      : vec4<f32>,
     jitter            : vec4<f32>,
+    depth_plane       : vec4<f32>,
     shadow_bias       : vec4<f32>,
 }
 

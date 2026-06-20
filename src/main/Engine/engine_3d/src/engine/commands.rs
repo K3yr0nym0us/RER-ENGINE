@@ -894,6 +894,34 @@ impl State {
             EngineCommand::Only3d(EngineCommand3dOnly::SetTextureDetailDistance { distance_m }) => {
                 self.set_texture_detail_near_m(distance_m);
             }
+            EngineCommand::Only3d(EngineCommand3dOnly::SetReflectionTier { tier }) => {
+                log::info!("[reflexiones] IPC set_reflection_tier: {tier}");
+                if let Some(t) =
+                    crate::config_3d::reflection_graphics::ReflectionTier::from_wire(&tier)
+                {
+                    self.set_reflection_tier(t);
+                } else {
+                    log::warn!("[reflexiones] tier IPC no reconocido: {tier}");
+                }
+            }
+            EngineCommand::Only3d(EngineCommand3dOnly::SetReflectionDebugView { view }) => {
+                log::info!("[reflexiones] IPC set_reflection_debug_view: {view}");
+                if let Some(v) =
+                    crate::config_3d::reflection_graphics::ReflectionDebugView::from_wire(&view)
+                {
+                    self.set_reflection_debug_view(v);
+                } else {
+                    log::warn!("[reflexiones] vista debug IPC no reconocida: {view}");
+                }
+            }
+            EngineCommand::Only3d(EngineCommand3dOnly::SetShadowTier { tier }) => {
+                log::info!("[sombras] IPC set_shadow_tier: {tier}");
+                if let Some(t) = crate::config_3d::shadow_graphics::ShadowTier::from_wire(&tier) {
+                    self.set_shadow_tier(t);
+                } else {
+                    log::warn!("[sombras] tier IPC no reconocido: {tier}");
+                }
+            }
             EngineCommand::Common(EngineCommandCommon::SetDebugMode { show }) => {
                 self.debug_mode = show;
                 log::info!("[debug] modo debug (colisiones): {}", show);

@@ -92,6 +92,104 @@ export function normalizeGraphicsTextureTier(value: unknown): GraphicsTextureTie
 	return 'medium';
 }
 
+export type ReflectionTier = 'off' | 'low' | 'medium' | 'high' | 'ultra';
+
+export function normalizeReflectionTier(value: unknown): ReflectionTier {
+	const s = String(value ?? 'off').trim().toLowerCase();
+	if (s === 'off' || s === 'disabled' || s === 'none') return 'off';
+	if (s === 'low') return 'low';
+	if (s === 'medium' || s === 'medio') return 'medium';
+	if (s === 'high') return 'high';
+	if (s === 'ultra') return 'ultra';
+	return 'off';
+}
+
+export type ShadowTier = 'low' | 'medium' | 'high' | 'ultra';
+
+export function normalizeShadowTier(value: unknown): ShadowTier {
+	const s = String(value ?? 'low').trim().toLowerCase();
+	if (s === 'low' || s === 'bajo') return 'low';
+	if (s === 'medium' || s === 'medio') return 'medium';
+	if (s === 'high' || s === 'alto') return 'high';
+	if (s === 'ultra') return 'ultra';
+	return 'low';
+}
+
+export type ReflectionDebugView =
+	| 'final'
+	| 'normals'
+	| 'depth'
+	| 'ssr_hits'
+	| 'reflection_mask'
+	| 'cubemap'
+	| 'reflection_color'
+	| 'roughness'
+	| 'metallic'
+	| 'recon_world'
+	| 'recon_ndc'
+	| 'recon_view'
+	| 'reproject_uv'
+	| 'ssr_view_vector'
+	| 'ssr_reflection_vector'
+	| 'ssr_raymarch_path'
+	| 'ssr_hit_depth_delta'
+	| 'ssr_hit_uv'
+	| 'ssr_hit_color_raw'
+	| 'ssr_hit_color_blurred'
+	| 'ssr_no_blur'
+	| 'ssr_hit_uv_world_screen'
+	| 'ssr_hit_uv_world_screen_delta'
+	| 'ssr_hit_uv_world_screen_split'
+	| 'ssr_final_composite';
+
+export function normalizeReflectionDebugView(value: unknown): ReflectionDebugView {
+	const s = String(value ?? 'final').trim().toLowerCase();
+	if (s === 'normals' || s === 'normal') return 'normals';
+	if (s === 'depth') return 'depth';
+	if (s === 'ssr_hits' || s === 'ssrhits' || s === 'hits') return 'ssr_hits';
+	if (s === 'reflection_mask' || s === 'mask') return 'reflection_mask';
+	if (s === 'cubemap' || s === 'cube' || s === 'env') return 'cubemap';
+	if (s === 'reflection_color' || s === 'refl_color' || s === 'ssr_rt') return 'reflection_color';
+	if (s === 'roughness' || s === 'rough') return 'roughness';
+	if (s === 'metallic' || s === 'metal') return 'metallic';
+	if (s === 'recon_world' || s === 'world_pos') return 'recon_world';
+	if (s === 'recon_ndc' || s === 'ndc') return 'recon_ndc';
+	if (s === 'recon_view' || s === 'view_pos') return 'recon_view';
+	if (s === 'reproject_uv' || s === 'reproj_uv') return 'reproject_uv';
+	if (s === 'ssr_view_vector' || s === 'view_vector') return 'ssr_view_vector';
+	if (s === 'ssr_reflection_vector' || s === 'reflection_vector' || s === 'refl_vector')
+		return 'ssr_reflection_vector';
+	if (s === 'ssr_raymarch_path' || s === 'raymarch_path' || s === 'ray_path')
+		return 'ssr_raymarch_path';
+	if (s === 'ssr_hit_depth_delta' || s === 'hit_depth_delta' || s === 'depth_delta')
+		return 'ssr_hit_depth_delta';
+	if (s === 'ssr_hit_uv' || s === 'hit_uv') return 'ssr_hit_uv';
+	if (s === 'ssr_hit_color_raw' || s === 'hit_color_raw') return 'ssr_hit_color_raw';
+	if (s === 'ssr_hit_color_blurred' || s === 'hit_color_blurred') return 'ssr_hit_color_blurred';
+	if (s === 'ssr_no_blur' || s === 'no_blur') return 'ssr_no_blur';
+	if (s === 'ssr_hit_color_uv' || s === 'hit_color_uv' || s === 'hit_uv_color_uv')
+		return 'ssr_hit_uv_world_screen';
+	if (s === 'ssr_hit_color_uv_delta' || s === 'hit_color_uv_delta' || s === 'color_uv_delta')
+		return 'ssr_hit_uv_world_screen_delta';
+	if (s === 'ssr_hit_uv_world_screen' || s === 'hit_uv_world_screen' || s === 'world_screen_pair')
+		return 'ssr_hit_uv_world_screen';
+	if (
+		s === 'ssr_hit_uv_world_screen_delta' ||
+		s === 'hit_uv_world_screen_delta' ||
+		s === 'world_screen_delta'
+	)
+		return 'ssr_hit_uv_world_screen_delta';
+	if (
+		s === 'ssr_hit_uv_world_screen_split' ||
+		s === 'hit_uv_world_screen_split' ||
+		s === 'world_screen_split'
+	)
+		return 'ssr_hit_uv_world_screen_split';
+	if (s === 'ssr_final_composite' || s === 'final_composite' || s === 'composite')
+		return 'ssr_final_composite';
+	return 'final';
+}
+
 export interface WorldConfig {
 	worldWidth: number
 	worldHeight: number
@@ -105,6 +203,9 @@ export interface WorldConfig {
 	shadowDarkness: number
 	graphicsTextureTier: GraphicsTextureTier
 	textureDetailDistance: number
+	reflectionTier: ReflectionTier
+	reflectionDebugView: ReflectionDebugView
+	shadowTier: ShadowTier
 }
 
 export const DEFAULT_WORLD_CONFIG: WorldConfig = {
@@ -120,6 +221,9 @@ export const DEFAULT_WORLD_CONFIG: WorldConfig = {
 	shadowDarkness: DEFAULT_SHADOW_DARKNESS,
 	graphicsTextureTier: 'medium',
 	textureDetailDistance: 10,
+	reflectionTier: 'off',
+	reflectionDebugView: 'final',
+	shadowTier: 'low',
 };
 
 export type UiScreenScope = 'player' | 'menu';
@@ -1094,6 +1198,8 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 						Number.isFinite(p.world.textureDetailDistance)
 							? p.world.textureDetailDistance
 							: DEFAULT_WORLD_CONFIG.textureDetailDistance,
+					reflectionTier: normalizeReflectionTier(p.world.reflectionTier),
+					shadowTier: normalizeShadowTier(p.world.shadowTier),
 				},
 				sounds: p.sounds,
 				fonts: p.fonts ?? [],
@@ -1319,6 +1425,9 @@ export interface EngineContextValue extends EngineState {
 	}) => void
 	setTargetFps: (fps: number) => void
 	setGraphicsTextureTier: (tier: GraphicsTextureTier) => void
+	setReflectionTier: (tier: ReflectionTier) => void
+	setReflectionDebugView: (view: ReflectionDebugView) => void
+	setShadowTier: (tier: ShadowTier) => void
 	setTextureDetailDistance: (distanceM: number) => void
 	removeCollider: (id: number) => void
 	removeExecutionArea: (id: number) => void

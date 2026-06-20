@@ -25,4 +25,5 @@ pub enum ScriptCmd {
     ClearActivePlayerUiScreen,
     SetActivePlayerUiScreenByName { name: String },
     SetGraphicsTextureTier { tier: String },
+    SetReflectionTier { tier: String },
 }

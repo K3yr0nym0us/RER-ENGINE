@@ -10,6 +10,7 @@ const ENTITY_MARKERS: &[&str] = &[
     "[EditorCamera]",
     "[Sun]",
     "[Ball]",
+    "[ReflectionProbe]",
     "[Colisionador]",
     "[ExecutionArea]",
 ];

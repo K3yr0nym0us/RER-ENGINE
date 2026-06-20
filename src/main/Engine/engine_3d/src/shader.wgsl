@@ -9,6 +9,7 @@ struct SceneUniforms {
     light_view_proj : mat4x4<f32>,
     light_params    : vec4<f32>,
     jitter          : vec4<f32>,
+    depth_plane     : vec4<f32>,
     shadow_bias     : vec4<f32>,
 }
 
@@ -23,6 +24,18 @@ var s_shadow: sampler_comparison;
 
 @group(1) @binding(0) var t_albedo: texture_2d_array<f32>;
 @group(1) @binding(1) var s_albedo: sampler;
+
+// Reflection probes (grupo 2): cubemap array con el entorno capturado por cada esfera/probe
+// (suelo, vecinas y jugador en 360°). Solo lo usa `fs_main`; `fs_overlay` (pase de captura y
+// ghost) NO lo referencia, por eso su pipeline no necesita declarar el grupo 2.
+@group(2) @binding(0) var t_probe_env: texture_cube_array<f32>;
+@group(2) @binding(1) var s_probe_env: sampler;
+
+struct ProbeMeta {
+    center_radius : array<vec4<f32>, 8>,
+}
+
+@group(2) @binding(2) var<uniform> probe_meta : ProbeMeta;
 
 struct VertexInput {
     @location(0) position : vec3<f32>,
@@ -50,6 +63,10 @@ struct VertexOutput {
     @location(6) tex_layer       : u32,
     @location(7) prev_clip_pos     : vec4<f32>,
     @location(8) curr_stable_clip  : vec4<f32>,
+    @location(9) surface_roughness  : f32,
+    @location(10) surface_metallic  : f32,
+    /// Índice de capa del probe en el cube array (-1 = sin probe → entorno procedural).
+    @location(11) probe_index       : f32,
 }
 
 fn scene_light_dir_norm() -> vec3<f32> {
@@ -125,6 +142,9 @@ fn vs_main(in: VertexInput, inst: InstanceInput) -> VertexOutput {
     out.alpha_mul    = inst.flag_pad.y;
     out.render_kind  = inst.flag_pad.z;
     out.tex_layer    = u32(inst.tex_layer_pad.x);
+    out.surface_roughness = inst.flag_pad.w;
+    out.surface_metallic = inst.tex_layer_pad.y;
+    out.probe_index = inst.tex_layer_pad.z;
     let prev_h = u.prev_view_proj * vec4<f32>(world_pos, 1.0);
     out.prev_clip_pos = prev_h;
     out.curr_stable_clip = u.view_proj_stable * world_pos4;
@@ -136,26 +156,99 @@ struct SceneFragOut {
     @location(1) shadow  : vec4<f32>,
     @location(2) direct  : vec4<f32>,
     @location(3) depth   : vec4<f32>,
-    @location(4) velocity : vec4<f32>,
+    @location(4) velocity_normal : vec4<f32>,
 }
 
-fn evaluate_scene(in: VertexOutput) -> SceneFragOut {
-    let linear_depth = in.clip_pos.z / in.clip_pos.w;
+fn encode_octahedral(n: vec3<f32>) -> vec2<f32> {
+    let inv_sum = 1.0 / (abs(n.x) + abs(n.y) + abs(n.z));
+    var p = n.xy * inv_sum;
+    if n.z < 0.0 {
+        let ox = p.x;
+        let oy = p.y;
+        p.x = (1.0 - abs(oy)) * sign(ox);
+        p.y = (1.0 - abs(ox)) * sign(oy);
+    }
+    return p * 0.5 + vec2<f32>(0.5);
+}
+
+fn pack_velocity_normal(velocity: vec2<f32>, n: vec3<f32>) -> vec4<f32> {
+    return vec4<f32>(velocity, encode_octahedral(normalize(n)));
+}
+
+/// PBR-friendly: por defecto, las superficies son MATE (rugosidad alta) → sin reflejos.
+/// El SSR/RT solo afecta materiales con `SurfacePbr` explícito (rugosidad baja, metallic).
+/// Coherente con Unreal: el reflejo es opt-in por material, no aplicado a todo.
+fn resolve_surface_roughness(inst_roughness: f32) -> f32 {
+    return select(0.9, inst_roughness, inst_roughness >= 0.0);
+}
+
+fn pack_depth_export(view_depth_m: f32) -> vec4<f32> {
+    return vec4<f32>(view_depth_m, 0.0, 0.0, 0.0);
+}
+
+/// `ndc_z` = `@builtin(position).z` en fragmento: profundidad Vulkan [0,1] ya dividida (near=0, far=1).
+/// NO usar `position.z / position.w`: en WGSL `.w` es `1/clip_w`, y esa división devuelve `clip_z`
+/// (clip space OpenGL de glam, negativo delante de la cámara), no NDC.
+fn ndc_z_to_view_depth_m(ndc_z: f32) -> f32 {
+    let n = u.depth_plane.x;
+    let f = u.depth_plane.y;
+    return (n * f) / (f - ndc_z * (f - n));
+}
+
+/// Reflejo de entorno aproximado para el metal (IBL fake; NO es el cielo del mundo, solo
+/// se ve DENTRO del metal). Gradiente neutro con contraste claro→oscuro según la dirección
+/// de reflexión: da al metal su aspecto pulido cuando el SSR no tiene geometría que reflejar.
+/// El SSR sustituye este fallback donde sí golpea el suelo/personaje.
+fn fake_environment(refl_dir: vec3<f32>) -> vec3<f32> {
+    // Entorno cromado: cielo, una BANDA DE HORIZONTE clara (la "línea" brillante típica de
+    // un metal pulido que da el look cromo en toda la circunferencia) y un suelo gris medio
+    // que aproxima el reflejo del piso donde el SSR no llega. Esto evita que el borde de la
+    // esfera se vea liso/plano: ahora toda la superficie lee como reflectante.
+    let sky     = vec3<f32>(0.50, 0.57, 0.72);  // arriba (cielo/techo)
+    let horizon = vec3<f32>(0.82, 0.84, 0.88);  // banda clara de horizonte (luz rasante)
+    let ground  = vec3<f32>(0.26, 0.27, 0.29);  // abajo (suelo reflejado)
+    let y = clamp(refl_dir.y, -1.0, 1.0);
+    if y >= 0.0 {
+        // Horizonte → cielo (curva para concentrar el brillo cerca del ecuador).
+        return mix(horizon, sky, pow(y, 0.45));
+    }
+    // Horizonte → suelo.
+    return mix(horizon, ground, pow(-y, 0.55));
+}
+
+fn fresnel_schlick_metal(f0: vec3<f32>, cos_theta: f32) -> vec3<f32> {
+    return f0 + (vec3<f32>(1.0) - f0) * pow(1.0 - cos_theta, 5.0);
+}
+
+/// Dirección de muestreo del cubemap: reflexión geométrica (RTIOW).
+/// `probe_idx` solo elige capa del array; `probe_meta` no desvía el vector.
+fn parallax_cubemap_dir(world_pos: vec3<f32>, view_dir: vec3<f32>, n: vec3<f32>, probe_idx: i32) -> vec3<f32> {
+    _ = view_dir;
+    _ = probe_idx;
+    let incident = normalize(world_pos - u.cam_pos.xyz);
+    return reflect(incident, normalize(n));
+}
+
+fn evaluate_scene(in: VertexOutput, env_override: vec3<f32>, has_env_override: bool) -> SceneFragOut {
+    // Export coherente con SSR legacy: clip_pos.z (interpolado) como ndc_z Vulkan.
+    let view_depth_m = ndc_z_to_view_depth_m(in.clip_pos.z);
     let curr_ndc = in.curr_stable_clip.xy / in.curr_stable_clip.w;
     let prev_ndc = in.prev_clip_pos.xy / in.prev_clip_pos.w;
     let velocity = (curr_ndc - prev_ndc) * vec2<f32>(0.5, 0.5);
 
     let layer = i32(in.tex_layer);
+    let surface_roughness = resolve_surface_roughness(in.surface_roughness);
+    let surface_metallic = in.surface_metallic;
 
     if in.render_kind >= 2.5 {
         let hud = textureSample(t_albedo, s_albedo, in.uv, layer);
         let c = hud.rgb;
         return SceneFragOut(
             vec4<f32>(c, hud.a * in.alpha_mul),
-            vec4<f32>(1.0, 0.0, 0.0, 0.0),
+            vec4<f32>(1.0, 1.0, 0.0, 0.0),  // HUD: sin reflejos (rugosidad 1.0)
             vec4<f32>(0.0, 0.0, 0.0, 0.0),
-            vec4<f32>(linear_depth, 0.0, 0.0, 0.0),
-            vec4<f32>(velocity, 0.0, 0.0),
+            pack_depth_export(view_depth_m),
+            pack_velocity_normal(velocity, vec3<f32>(0.0, 0.0, 1.0)),
         );
     }
 
@@ -198,22 +291,94 @@ fn evaluate_scene(in: VertexOutput) -> SceneFragOut {
         out_alpha = 1.0;
     }
 
+    let n = normalize(in.world_normal);
+
+    // PBR metálico: en metales NO hay diffuse Lambertiano. Lo que da el "color" es la
+    // reflexión del entorno tintada por F0 = albedo. Sin IBL real, se aproxima con un
+    // entorno procedural (gradiente cielo→suelo) que da el look cromado base; la composite
+    // SSR/RT añade reflejos reales encima cuando los hay. Mismo enfoque que Unreal usa
+    // como fallback cuando la captura de entorno falla (forums.unrealengine.com).
+    if surface_metallic > 0.5 {
+        let v = normalize(u.cam_pos.xyz - in.world_pos);
+        let l = scene_light_dir_norm();
+        let ndotl = max(dot(n, l), 0.0);
+        let cos_theta = max(dot(n, v), 0.0);
+        let lc = u.light_color.xyz;
+        let intensity = u.light_params.x;
+        let f0 = albedo;
+        let fres = fresnel_schlick_metal(f0, cos_theta);
+        // En un metal, la apariencia ES el entorno reflejado tintado por su F0 (color de la
+        // textura). Sin IBL real se aproxima con el gradiente; el SSR sustituye encima donde
+        // hay geometría on-screen. Rugosidad alta aplana el reflejo hacia el promedio.
+        // Con probe: cubemap real del entorno (suelo/vecinas/jugador en 360°). Sin él:
+        // gradiente procedural cromado. El SSR/RT sustituye encima donde hay geometría on-screen.
+        let env_proc = fake_environment(reflect(-v, n));
+        let env_avg = vec3<f32>(0.40, 0.41, 0.43);
+        // Procedural: aplana hacia el promedio según rugosidad. Cubemap: ya viene difuminado
+        // por el bias de mip en `fs_main` (auto-LOD anti-moiré), se usa tal cual.
+        let env_proc_eff = mix(env_proc, env_avg, surface_roughness);
+        let env_eff = select(env_proc_eff, env_override, has_env_override);
+        // Reflectancia PBR = Fresnel (ya incluye F0; aclara en bordes rasantes).
+        amb = env_eff * fres;
+
+        // Highlight especular de la luz direccional (glint del sol sobre el metal).
+        let h = normalize(l + v);
+        let spec_power = mix(512.0, 16.0, surface_roughness);
+        let spec = pow(max(dot(n, h), 0.0), spec_power);
+        dir = lc * spec * intensity * ndotl * (1.0 - surface_roughness * 0.6);
+    }
+
     return SceneFragOut(
         vec4<f32>(amb, out_alpha),
-        vec4<f32>(shadow, 0.0, 0.0, 0.0),
-        vec4<f32>(dir, out_alpha),
-        vec4<f32>(linear_depth, 0.0, 0.0, 0.0),
-        vec4<f32>(velocity, 0.0, 0.0),
+        // surface (Rg16Float): .r = shadow, .g = roughness.
+        vec4<f32>(shadow, surface_roughness, 0.0, 0.0),
+        // direct: .rgb = luz directa, .a = metallic (canal libre; lit_composite usa amb.a).
+        vec4<f32>(dir, surface_metallic),
+        pack_depth_export(view_depth_m),
+        pack_velocity_normal(velocity, n),
     );
+}
+
+fn sample_surface_albedo(in: VertexOutput) -> vec3<f32> {
+    let layer = i32(in.tex_layer);
+    var albedo_samp = textureSample(t_albedo, s_albedo, in.uv, layer);
+    if in.render_kind >= 0.5 {
+        albedo_samp = textureSample(t_albedo, s_albedo, vec2<f32>(0.5, 0.5), layer);
+    }
+    return albedo_samp.rgb;
+}
+
+/// Pase aparte (1 MRT): límite wgpu 32 B/muestra impide 6.º target en el pass principal.
+@fragment
+fn fs_export_base_color(in: VertexOutput) -> @location(0) vec4<f32> {
+    if in.render_kind >= 2.5 {
+        return vec4<f32>(0.0);
+    }
+    return vec4<f32>(sample_surface_albedo(in), 1.0);
 }
 
 @fragment
 fn fs_main(in: VertexOutput) -> SceneFragOut {
-    return evaluate_scene(in);
+    // El cubemap del probe es la reflexión COMPLETA del entorno (captura 360° desde el
+    // centro de la esfera: suelo, vecinas, jugador aunque esté detrás de la cámara FPS).
+    // SSR/RT solo añaden detalle nítido de geometría on-screen encima (capa secundaria).
+    let v = normalize(u.cam_pos.xyz - in.world_pos);
+    let n = normalize(in.world_normal);
+    let layer_i = i32(in.probe_index);
+    let refl = parallax_cubemap_dir(in.world_pos, v, n, layer_i);
+    let rough = resolve_surface_roughness(in.surface_roughness);
+    let layer = max(layer_i, 0);
+    // Espejo (rough≈0): mip0 nítido (RTIOW). Rugosidad alta: mips anti-moiré.
+    let lod = select(0.0, clamp(rough * 3.0, 1.0, 4.0), rough > 0.05);
+    let env_cube = textureSampleLevel(t_probe_env, s_probe_env, refl, layer, lod).rgb;
+    let has_override = in.surface_metallic > 0.5 && in.probe_index >= 0.0;
+    return evaluate_scene(in, env_cube, has_override);
 }
 
 @fragment
 fn fs_overlay(in: VertexOutput) -> @location(0) vec4<f32> {
-    let out = evaluate_scene(in);
+    // El pase de captura del probe usa este entry: NO samplea el cubemap (evita recursión
+    // y mantiene su pipeline sin el grupo 2).
+    let out = evaluate_scene(in, vec3<f32>(0.0), false);
     return vec4<f32>(out.ambient.rgb + out.direct.rgb, out.ambient.a);
 }
