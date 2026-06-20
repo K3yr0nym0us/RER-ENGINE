@@ -308,9 +308,13 @@ fn fs_main_skinned(in: VertexOutput) -> SceneFragOut {
     return evaluate_scene(in, env_cube, has_override);
 }
 
-/// Captura del jugador en el cubemap del probe: color lit en un solo target.
+/// Captura del jugador en el cubemap del probe: IBL sin glint especular en metales.
 @fragment
 fn fs_overlay_skinned(in: VertexOutput) -> @location(0) vec4<f32> {
     let out = evaluate_scene(in, vec3<f32>(0.0), false);
-    return vec4<f32>(out.ambient.rgb + out.direct.rgb, out.ambient.a);
+    var rgb = out.ambient.rgb;
+    if in.surface_metallic <= 0.5 {
+        rgb += out.direct.rgb;
+    }
+    return vec4<f32>(rgb, out.ambient.a);
 }

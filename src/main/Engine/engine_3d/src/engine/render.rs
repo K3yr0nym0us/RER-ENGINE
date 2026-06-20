@@ -39,17 +39,17 @@ impl State {
         }
     }
 
-    /// Instancias estáticas para escena o captura de probe. `exclude_entity` omite la sonda
-    /// que se está capturando (evita auto-reflejo corrupto en el cubemap).
+    /// Instancias estáticas para escena o captura de probe. Con `for_probe_capture`, omite
+    /// todas las sondas (cubemap = estático + jugador; vecinas vía SSR on-screen).
     fn build_scene_instance_batches(
         &self,
         entities: &[(crate::ecs::EntityId, usize, usize, Mat4, i32)],
         probe_index_map: &std::collections::HashMap<crate::ecs::EntityId, usize>,
-        exclude_entity: Option<crate::ecs::EntityId>,
+        for_probe_capture: bool,
     ) -> Vec<SceneInstanceBatch> {
         let mut batches: Vec<SceneInstanceBatch> = Vec::new();
         for (entity_id, mesh_idx, tex_idx, model_matrix, _layer) in entities {
-            if exclude_entity == Some(*entity_id) {
+            if for_probe_capture && probe_index_map.contains_key(entity_id) {
                 continue;
             }
             if self.quick_build_ghost_id == Some(*entity_id)
@@ -345,13 +345,12 @@ impl State {
 
         struct Batch {
             mesh_idx: usize,
-            texture_layer: u32,
             instances: Vec<crate::mesh::InstanceData>,
         }
         let batches = self.build_scene_instance_batches(
             &entities,
             &probe_index_map,
-            None,
+            false,
         );
 
         let ghost_overlay = self.build_tool_ghost_overlay();
@@ -385,7 +384,6 @@ impl State {
             } else {
                 shadow_batches.push(Batch {
                     mesh_idx: *mesh_idx,
-                    texture_layer: self.fallback_layer,
                     instances: vec![inst],
                 });
             }
@@ -491,11 +489,10 @@ impl State {
                 .collect();
 
             for &probe_idx in &probe_indices {
-                let exclude_probe = probe_list[probe_idx].0;
                 let capture_batches = self.build_scene_instance_batches(
                     &entities,
                     &probe_index_map,
-                    Some(exclude_probe),
+                    true,
                 );
                 let capture_slices: Vec<_> = capture_batches
                     .iter()

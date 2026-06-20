@@ -377,8 +377,12 @@ fn fs_main(in: VertexOutput) -> SceneFragOut {
 
 @fragment
 fn fs_overlay(in: VertexOutput) -> @location(0) vec4<f32> {
-    // El pase de captura del probe usa este entry: NO samplea el cubemap (evita recursión
-    // y mantiene su pipeline sin el grupo 2).
+    // Captura IBL: entorno difuso/reflexión base, sin glint especular del sol (evita manchas
+    // blancas circulares al reflejar otras esferas metálicas en el cubemap).
     let out = evaluate_scene(in, vec3<f32>(0.0), false);
-    return vec4<f32>(out.ambient.rgb + out.direct.rgb, out.ambient.a);
+    var rgb = out.ambient.rgb;
+    if in.surface_metallic <= 0.5 {
+        rgb += out.direct.rgb;
+    }
+    return vec4<f32>(rgb, out.ambient.a);
 }

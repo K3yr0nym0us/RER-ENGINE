@@ -127,6 +127,17 @@ fn lit_scene_blurred(hit_uv : vec2<f32>, spacing_px : f32) -> vec3<f32> {
     return acc / w_sum;
 }
 
+/// Color de rebote SSR: en metales, quitar direct (glint) para no duplicar hotspots blancos.
+fn reflection_hit_color(hit_uv : vec2<f32>, spacing_px : f32) -> vec3<f32> {
+    let lit = lit_scene_blurred(hit_uv, spacing_px);
+    let hit_px = texel_px(hit_uv);
+    let hit_direct = textureLoad(t_direct, hit_px, 0);
+    if hit_direct.a > 0.5 {
+        return max(lit - hit_direct.rgb, vec3<f32>(0.0));
+    }
+    return lit;
+}
+
 fn depth_at(uv : vec2<f32>) -> f32 {
     let px = texel_px(uv);
     return textureLoad(t_depth, px, 0).r;
@@ -273,7 +284,7 @@ fn fs_main(in : VsOut) -> SsrOut {
 
     let spacing_px = refl_blur_spacing_px(hit.roughness, hit.march_dist_m);
     let hit_color = refl_metal_attenuate(
-        lit_scene_blurred(hit.hit_uv, spacing_px),
+        reflection_hit_color(hit.hit_uv, spacing_px),
         albedo,
         metallic,
     );
