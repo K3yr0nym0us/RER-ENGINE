@@ -5,10 +5,14 @@ pub(crate) mod bvh;
 pub(crate) mod probe_env;
 pub(crate) mod skinned_blas;
 pub(crate) mod skinned_rt;
+pub(crate) mod rt_material;
 pub(crate) mod rt_sparse;
 pub(crate) mod rt_extensions;
 pub(crate) mod rt_accel;
 pub(crate) mod rt_reflections_v2;
+pub(crate) mod rt_pipeline;
+pub(crate) mod rt_pathtrace;
+pub(crate) mod ssil;
 pub(crate) mod tlas;
 mod ssr_trace_readback;
 
@@ -22,8 +26,11 @@ use wgpu::{include_wgsl, Device, Queue, TextureFormat, TextureView};
 use crate::config_3d::reflection_graphics::{
     ReflectionDebugView, ReflectionProfilerMs, ReflectionSettings,
 };
+use crate::engine::SceneUniforms;
 use crate::reflections::rt_accel::RtAccel;
+use crate::reflections::rt_pathtrace::RtPathTracePass;
 use crate::reflections::rt_reflections_v2::RtReflectionPassV2;
+use crate::reflections::ssil::SsilPass;
 use crate::reflections::ssr_trace_readback::SsrTraceReadback;
 
 #[repr(C)]
@@ -80,7 +87,7 @@ struct TemporalUniforms {
 #[derive(Clone, Copy, Pod, Zeroable)]
 struct CompositeUniforms {
     strength: f32,
-    _pad0: f32,
+    ssil_strength: f32,
     _pad1: f32,
     _pad2: f32,
 }
@@ -153,6 +160,8 @@ pub struct ReflectionPass {
     present_format: TextureFormat,
     pub profiler: ReflectionProfilerMs,
     rt_pass: RtReflectionPassV2,
+    path_trace_pass: RtPathTracePass,
+    ssil_pass: SsilPass,
     rt_hw_available: bool,
     /// SSR centro readback (desactivado; evita spam en consola).
     #[allow(dead_code)]
@@ -244,6 +253,7 @@ impl ReflectionPass {
                 texture_entry(1, true),
                 texture_entry(2, true),
                 sampler_entry(3, true),
+                texture_entry(4, true),
             ],
         });
         let debug_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -423,7 +433,7 @@ impl ReflectionPass {
             label: Some("refl-composite-uniforms"),
             contents: bytemuck::bytes_of(&CompositeUniforms {
                 strength: 1.0,
-                _pad0: 0.0,
+                ssil_strength: 0.0,
                 _pad1: 0.0,
                 _pad2: 0.0,
             }),
@@ -495,6 +505,7 @@ impl ReflectionPass {
             &composite_uniform_buffer,
             &reflection_view,
             &reflection_view,
+            &reflection_view,
             &linear_sampler,
         );
         let debug_bind_group = make_debug_bind_group(
@@ -558,6 +569,8 @@ impl ReflectionPass {
             present_format,
             profiler: ReflectionProfilerMs::default(),
             rt_pass: RtReflectionPassV2::new(device, color_format, width, height, rt_hw_available),
+            path_trace_pass: RtPathTracePass::new(device, width, height),
+            ssil_pass: SsilPass::new(device, color_format, width, height),
             rt_hw_available,
             _ssr_log_texture: ssr_log_texture,
             ssr_log_view,
@@ -612,6 +625,9 @@ impl ReflectionPass {
         clear_color: wgpu::Color,
         rt_available: bool,
         probe_bind_group: &wgpu::BindGroup,
+        shadow_view: &TextureView,
+        shadow_sampler: &wgpu::Sampler,
+        scene_uniforms: &SceneUniforms,
     ) -> bool {
         if !settings.active() {
             self.profiler = ReflectionProfilerMs::default();
@@ -627,6 +643,84 @@ impl ReflectionPass {
             .clamp(0.05, 0.25);
         let frame_index = self.reflection_frame_index;
         self.reflection_frame_index = self.reflection_frame_index.wrapping_add(1);
+
+        if debug_view == ReflectionDebugView::PathTrace {
+            if accel.node_count > 0 {
+                self.path_trace_pass.dispatch(
+                    device,
+                    queue,
+                    encoder,
+                    accel,
+                    depth_export_view,
+                    surface_view,
+                    direct_view,
+                    base_color_view,
+                    inv_view_proj,
+                    view_proj,
+                    cam_pos,
+                    near_plane,
+                    far_plane,
+                    settings,
+                    frame_index,
+                    probe_bind_group,
+                    shadow_view,
+                    shadow_sampler,
+                    scene_uniforms,
+                );
+            }
+            let debug_u = DebugUniforms {
+                mode: debug_view.shader_index(),
+                max_roughness: settings.max_roughness_to_trace,
+                near_plane,
+                far_plane,
+                cam_pos: [cam_pos.x, cam_pos.y, cam_pos.z, 1.0],
+                inv_view_proj: inv_view_proj.to_cols_array_2d(),
+                view_proj: view_proj.to_cols_array_2d(),
+                view: view.to_cols_array_2d(),
+                resolution: [self.width as f32, self.height as f32],
+                max_steps: settings.max_steps,
+                max_distance_m: settings.max_distance_m,
+                step_size: (settings.max_distance_m / settings.max_steps.max(1) as f32).clamp(0.05, 0.25),
+                ssr_blur_enabled: 0.0,
+                _struct_pad: [0.0; 2],
+            };
+            queue.write_buffer(&self.debug_uniform_buffer, 0, bytemuck::bytes_of(&debug_u));
+            self.debug_bind_group = make_debug_bind_group(
+                device,
+                &self.debug_bgl,
+                &self.debug_uniform_buffer,
+                lit_scene_view,
+                depth_export_view,
+                normal_roughness_view,
+                self.path_trace_pass.output_view(),
+                surface_view,
+                direct_view,
+                base_color_view,
+                &self.linear_sampler,
+                &self.nearest_sampler,
+            );
+            self.reflection_resolved_from_history = false;
+            return true;
+        }
+
+        if crate::reflections::rt_extensions::rt_diffuse_gi_enabled(&settings) {
+            self.ssil_pass.dispatch(
+                device,
+                queue,
+                encoder,
+                depth_export_view,
+                normal_roughness_view,
+                lit_scene_view,
+                direct_view,
+                surface_view,
+                inv_view_proj,
+                view_proj,
+                cam_pos,
+                near_plane,
+                far_plane,
+            );
+        }
+
         let ssr_blur = ssr_blur_enabled_for_ssr_pass(debug_view);
         let ssr_u = SsrUniforms {
             inv_view_proj: inv_view_proj.to_cols_array_2d(),
@@ -818,6 +912,9 @@ impl ReflectionPass {
                     self.height,
                     frame_index,
                     probe_bind_group,
+                    shadow_view,
+                    shadow_sampler,
+                    scene_uniforms,
                 );
             }
             let dst_texture: &wgpu::Texture = if from_history {
@@ -897,6 +994,7 @@ impl ReflectionPass {
         scene_view: &TextureView,
         scene_texture: &wgpu::Texture,
         strength: f32,
+        ssil_strength: f32,
     ) {
         let t0 = Instant::now();
         let reflection_view: &TextureView = if self.reflection_resolved_from_history {
@@ -906,7 +1004,7 @@ impl ReflectionPass {
         };
         let composite_u = CompositeUniforms {
             strength,
-            _pad0: 0.0,
+            ssil_strength,
             _pad1: 0.0,
             _pad2: 0.0,
         };
@@ -921,6 +1019,7 @@ impl ReflectionPass {
             &self.composite_uniform_buffer,
             scene_view,
             reflection_view,
+            &self.ssil_pass.output_view(),
             &self.linear_sampler,
         );
         {
@@ -1400,6 +1499,7 @@ fn make_composite_bind_group(
     uniforms: &wgpu::Buffer,
     scene: &TextureView,
     reflection: &TextureView,
+    ssil: &TextureView,
     sampler: &wgpu::Sampler,
 ) -> wgpu::BindGroup {
     device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -1421,6 +1521,10 @@ fn make_composite_bind_group(
             wgpu::BindGroupEntry {
                 binding: 3,
                 resource: wgpu::BindingResource::Sampler(sampler),
+            },
+            wgpu::BindGroupEntry {
+                binding: 4,
+                resource: wgpu::BindingResource::TextureView(ssil),
             },
         ],
     })

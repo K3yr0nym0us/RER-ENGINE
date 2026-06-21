@@ -481,6 +481,9 @@ fn fs_main(in : VsOut) -> @location(0) vec4<f32> {
             let detail = max(refl.rgb - base.rgb, vec3<f32>(0.0));
             return vec4<f32>(base.rgb + detail * k, 1.0);
         }
+        case 27u: {
+            return vec4<f32>(textureSample(t_reflection, s_linear, in.uv).rgb, 1.0);
+        }
         default: {
             return textureSample(t_scene, s_linear, in.uv);
         }

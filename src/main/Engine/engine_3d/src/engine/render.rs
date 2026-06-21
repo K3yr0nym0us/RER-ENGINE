@@ -75,6 +75,7 @@ impl State {
             if let Some(pbr) = self.world.get::<crate::ecs::SurfacePbr>(*entity_id) {
                 inst.flag_pad[3] = pbr.roughness;
                 inst.tex_layer_pad[1] = pbr.metallic;
+                inst.tex_layer_pad[3] = pbr.ior;
             }
             if let Some(&probe_idx) = probe_index_map.get(entity_id) {
                 inst.tex_layer_pad[2] = probe_idx as f32;
@@ -165,6 +166,7 @@ impl State {
         zoom_stability: f32,
         inv_view_proj: [[f32; 4]; 4],
         prev_view_proj: [[f32; 4]; 4],
+        ssil_strength: f32,
     ) {
         self.reflections.composite_into(
             &self.device,
@@ -173,6 +175,7 @@ impl State {
             self.taa.scene_color_view(),
             self.taa.scene_color_texture(),
             1.0,
+            ssil_strength,
         );
 
         let use_scene_taa = self.taa.scene_taa_active();
@@ -819,9 +822,12 @@ impl State {
             let include_skinned = !reflection_settings.rt_static_only;
             let instances =
                 crate::reflections::tlas::collect_rt_instances(self, include_skinned);
+            let rt_materials =
+                crate::reflections::rt_material::build_rt_materials(self, &instances);
             let meshes = &self.meshes;
             let skinned_meshes = &self.skinned_gpu_meshes;
             self.rt_accel.sync_scene(
+                &rt_materials,
                 &instances,
                 meshes,
                 skinned_meshes,
@@ -848,6 +854,10 @@ impl State {
         let normal_roughness_view = self.taa.normal_roughness_view();
         let shadow_mask_view = self.taa.shadow_mask_view();
         let view_mat = self.camera_view_matrix();
+        let shadow_map_view = self._shadow_texture.create_view(&wgpu::TextureViewDescriptor {
+            label: Some("shadow-map-rt"),
+            ..Default::default()
+        });
 
         let ran_reflections = if reflection_settings.active() {
             self.reflections.run(
@@ -874,6 +884,9 @@ impl State {
                 self.clear_color,
                 self.rt_reflections_available,
                 self.probe_env.sample_bind_group(),
+                &shadow_map_view,
+                &self.shadow_sampler,
+                &scene_uni,
             )
         } else {
             false
@@ -891,6 +904,13 @@ impl State {
             );
             self.taa.tick_frame_index();
         } else if ran_reflections {
+            let ssil_strength = if crate::reflections::rt_extensions::rt_diffuse_gi_enabled(
+                &reflection_settings,
+            ) {
+                0.65
+            } else {
+                0.0
+            };
             self.present_scene_with_reflections(
                 &mut enc,
                 &view,
@@ -899,6 +919,7 @@ impl State {
                 zoom_stability,
                 inv_vp,
                 prev_vp,
+                ssil_strength,
             );
         } else if shadows_enabled {
             self.taa.resolve_shadow_and_present(
@@ -1388,6 +1409,7 @@ impl State {
                 if let Some(pbr) = self.world.get::<crate::ecs::SurfacePbr>(id) {
                     inst.flag_pad[3] = pbr.roughness;
                     inst.tex_layer_pad[1] = pbr.metallic;
+                    inst.tex_layer_pad[3] = pbr.ior;
                 }
                 if let Some(&probe_idx) = probe_index_map.get(&id) {
                     inst.tex_layer_pad[2] = probe_idx as f32;

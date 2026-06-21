@@ -98,11 +98,13 @@ pub struct NameComponent {
     pub name: String,
 }
 
-/// Roughness / metallic por entidad (G-buffer → SSR / RT).
+/// Roughness / metallic / IOR por entidad (G-buffer → SSR / RT).
 #[derive(Debug, Clone, Copy)]
 pub struct SurfacePbr {
     pub roughness: f32,
     pub metallic: f32,
+    /// 0 = no dieléctrico; >1 = índice de refracción (vidrio ~1.5).
+    pub ior: f32,
 }
 
 impl SurfacePbr {
@@ -110,6 +112,15 @@ impl SurfacePbr {
         Self {
             roughness: roughness.clamp(0.0, 1.0),
             metallic: 1.0,
+            ior: 0.0,
+        }
+    }
+
+    pub fn dielectric_glass(roughness: f32, ior: f32) -> Self {
+        Self {
+            roughness: roughness.clamp(0.0, 1.0),
+            metallic: 0.0,
+            ior: ior.max(1.0),
         }
     }
 }

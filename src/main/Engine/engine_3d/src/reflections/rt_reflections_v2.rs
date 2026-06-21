@@ -6,8 +6,10 @@ use wgpu::util::DeviceExt;
 use wgpu::{Device, Queue, TextureFormat, TextureView};
 
 use crate::config_3d::reflection_graphics::ReflectionSettings;
+use crate::engine::SceneUniforms;
 use crate::reflections::probe_env::ProbeEnvPass;
 use crate::reflections::rt_accel::RtAccel;
+use crate::reflections::rt_extensions;
 use crate::reflections::rt_sparse::RtSparseDispatch;
 
 #[repr(C)]
@@ -26,7 +28,7 @@ struct RtUniforms {
     near_plane: f32,
     far_plane: f32,
     frame_index: u32,
-    _pad: u32,
+    material_count: u32,
 }
 
 const _: () = assert!(std::mem::size_of::<RtUniforms>() == 192);
@@ -45,12 +47,49 @@ struct RtHwUniforms {
     near_plane: f32,
     far_plane: f32,
     frame_index: u32,
-    _pad0: u32,
+    material_count: u32,
+    _pad0: f32,
     _pad1: f32,
-    _pad2: f32,
 }
 
 const _: () = assert!(std::mem::size_of::<RtHwUniforms>() == 192);
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct RtLightUniform {
+    light_dir: [f32; 4],
+    light_view_proj: [[f32; 4]; 4],
+    light_params: [f32; 4],
+    shadow_bias: [f32; 4],
+    light_color: [f32; 4],
+    rt_flags: [f32; 4],
+}
+
+const _: () = assert!(std::mem::size_of::<RtLightUniform>() == 144);
+
+fn rt_light_from_scene(scene: &SceneUniforms, settings: &ReflectionSettings) -> RtLightUniform {
+    RtLightUniform {
+        light_dir: scene.light_dir,
+        light_view_proj: scene.light_view_proj,
+        light_params: scene.light_params,
+        shadow_bias: scene.shadow_bias,
+        light_color: scene.light_color,
+        rt_flags: [
+            if rt_extensions::dielectric_rt_enabled(settings) {
+                1.0
+            } else {
+                0.0
+            },
+            if rt_extensions::rt_diffuse_gi_enabled(settings) {
+                1.0
+            } else {
+                0.0
+            },
+            0.0,
+            0.0,
+        ],
+    }
+}
 
 enum RtPipelineMode {
     Bvh,
@@ -70,6 +109,8 @@ pub struct RtReflectionPassV2 {
     hw_uniform_buffer: wgpu::Buffer,
     bvh_bind_group: wgpu::BindGroup,
     hw_bind_group: Option<wgpu::BindGroup>,
+    rt_light_bgl: wgpu::BindGroupLayout,
+    rt_light_buffer: wgpu::Buffer,
     width: u32,
     height: u32,
 }
@@ -99,12 +140,21 @@ impl RtReflectionPassV2 {
                 texture_entry(10, false),
                 storage_buffer_entry(11, true),
                 storage_buffer_entry(12, true),
+                storage_buffer_entry(13, true),
             ],
         });
         let probe_bgl = ProbeEnvPass::sample_bind_group_layout(device);
+        let rt_light_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("rt-light-bgl"),
+            entries: &[
+                shadow_depth_texture_entry(0),
+                shadow_sampler_entry(1),
+                uniform_entry(2),
+            ],
+        });
         let bvh_pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("rt-bvh-pl"),
-            bind_group_layouts: &[Some(&bvh_bgl), Some(&probe_bgl)],
+            bind_group_layouts: &[Some(&bvh_bgl), Some(&probe_bgl), Some(&rt_light_bgl)],
             immediate_size: 0,
         });
         let bvh_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
@@ -153,11 +203,12 @@ impl RtReflectionPassV2 {
                     texture_entry(9, false),
                     storage_buffer_entry(10, true),
                     storage_buffer_entry(11, true),
+                    storage_buffer_entry(12, true),
                 ],
             });
             let pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("rt-hw-pl"),
-                bind_group_layouts: &[Some(&bgl), Some(&probe_bgl)],
+                bind_group_layouts: &[Some(&bgl), Some(&probe_bgl), Some(&rt_light_bgl)],
                 immediate_size: 0,
             });
             let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
@@ -203,7 +254,7 @@ impl RtReflectionPassV2 {
                 near_plane: 0.1,
                 far_plane: 1000.0,
                 frame_index: 0,
-                _pad: 0,
+                material_count: 0,
             }),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
@@ -222,11 +273,31 @@ impl RtReflectionPassV2 {
                 near_plane: 0.1,
                 far_plane: 1000.0,
                 frame_index: 0,
-                _pad0: 0,
+                material_count: 0,
+                _pad0: 0.0,
                 _pad1: 0.0,
-                _pad2: 0.0,
             }),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let rt_light_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("rt-light-uniforms"),
+            contents: bytemuck::bytes_of(&RtLightUniform {
+                light_dir: [0.0, 1.0, 0.0, 1.0],
+                light_view_proj: Mat4::IDENTITY.to_cols_array_2d(),
+                light_params: [0.0; 4],
+                shadow_bias: [0.0; 4],
+                light_color: [1.0, 1.0, 1.0, 0.0],
+                rt_flags: [0.0; 4],
+            }),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let dummy_material = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("rt-dummy-material"),
+            size: 32,
+            usage: wgpu::BufferUsages::STORAGE,
+            mapped_at_creation: false,
         });
 
         let dummy_tile_list = device.create_buffer(&wgpu::BufferDescriptor {
@@ -271,6 +342,7 @@ impl RtReflectionPassV2 {
             &dummy_texture_view(device, color_format, width, height),
             &dummy_tile_list,
             &dummy_tile_count,
+            &dummy_material,
         );
 
         Self {
@@ -286,6 +358,8 @@ impl RtReflectionPassV2 {
             hw_uniform_buffer,
             bvh_bind_group,
             hw_bind_group: None,
+            rt_light_bgl,
+            rt_light_buffer,
             width: width.max(1),
             height: height.max(1),
         }
@@ -322,6 +396,9 @@ impl RtReflectionPassV2 {
         height: u32,
         frame_index: u32,
         probe_bind_group: &wgpu::BindGroup,
+        shadow_view: &TextureView,
+        shadow_sampler: &wgpu::Sampler,
+        scene_uniforms: &SceneUniforms,
     ) {
         if accel.node_count == 0 && accel.tlas().is_none() {
             return;
@@ -333,6 +410,27 @@ impl RtReflectionPassV2 {
 
         let step_size = (settings.max_distance_m / settings.max_steps.max(1) as f32)
             .clamp(0.05, 0.25);
+
+        let rt_light = rt_light_from_scene(scene_uniforms, &settings);
+        queue.write_buffer(&self.rt_light_buffer, 0, bytemuck::bytes_of(&rt_light));
+        let rt_light_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("rt-light-bg"),
+            layout: &self.rt_light_bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(shadow_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(shadow_sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: self.rt_light_buffer.as_entire_binding(),
+                },
+            ],
+        });
 
         self.sparse.prepare_frame(
             device,
@@ -375,6 +473,9 @@ impl RtReflectionPassV2 {
                         height,
                         frame_index,
                         probe_bind_group,
+                        shadow_view,
+                        shadow_sampler,
+                        scene_uniforms,
                     );
                     return;
                 };
@@ -393,9 +494,9 @@ impl RtReflectionPassV2 {
                     near_plane,
                     far_plane,
                     frame_index,
-                    _pad0: 0,
+                    material_count: accel.instance_material_count,
+                    _pad0: 0.0,
                     _pad1: 0.0,
-                    _pad2: 0.0,
                 };
                 queue.write_buffer(&self.hw_uniform_buffer, 0, bytemuck::bytes_of(&hw_u));
                 self.hw_bind_group = Some(device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -450,6 +551,10 @@ impl RtReflectionPassV2 {
                             binding: 11,
                             resource: self.sparse.tile_count_buffer().as_entire_binding(),
                         },
+                        wgpu::BindGroupEntry {
+                            binding: 12,
+                            resource: accel.instance_material_buffer().as_entire_binding(),
+                        },
                     ],
                 }));
                 let Some(bg) = self.hw_bind_group.as_ref() else {
@@ -465,6 +570,7 @@ impl RtReflectionPassV2 {
                 pass.set_pipeline(sparse_pipeline);
                 pass.set_bind_group(0, bg, &[]);
                 pass.set_bind_group(1, probe_bind_group, &[]);
+                pass.set_bind_group(2, &rt_light_bind_group, &[]);
                 pass.dispatch_workgroups_indirect(self.sparse.indirect_buffer(), 0);
             }
             RtPipelineMode::Bvh => {
@@ -493,6 +599,9 @@ impl RtReflectionPassV2 {
                     height,
                     frame_index,
                     probe_bind_group,
+                    shadow_view,
+                    shadow_sampler,
+                    scene_uniforms,
                 );
             }
         }
@@ -525,7 +634,31 @@ fn dispatch_bvh(
     height: u32,
     frame_index: u32,
     probe_bind_group: &wgpu::BindGroup,
+    shadow_view: &TextureView,
+    shadow_sampler: &wgpu::Sampler,
+    scene_uniforms: &SceneUniforms,
 ) {
+    let rt_light = rt_light_from_scene(scene_uniforms, &settings);
+    queue.write_buffer(&pass_state.rt_light_buffer, 0, bytemuck::bytes_of(&rt_light));
+    let rt_light_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("rt-light-bg-bvh"),
+        layout: &pass_state.rt_light_bgl,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(shadow_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::Sampler(shadow_sampler),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: pass_state.rt_light_buffer.as_entire_binding(),
+            },
+        ],
+    });
+
     let uniforms = RtUniforms {
         inv_view_proj: inv_view_proj.to_cols_array_2d(),
         view_proj: view_proj.to_cols_array_2d(),
@@ -540,7 +673,7 @@ fn dispatch_bvh(
         near_plane,
         far_plane,
         frame_index,
-        _pad: 0,
+        material_count: accel.instance_material_count,
     };
     queue.write_buffer(&pass_state.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
     pass_state.bvh_bind_group = make_bvh_bind_group(
@@ -559,6 +692,7 @@ fn dispatch_bvh(
         base_color_view,
         pass_state.sparse.tile_list_buffer(),
         pass_state.sparse.tile_count_buffer(),
+        accel.instance_material_buffer(),
     );
     let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
         label: Some("rt-bvh-sparse-pass"),
@@ -567,6 +701,7 @@ fn dispatch_bvh(
     pass.set_pipeline(&pass_state.bvh_sparse_pipeline);
     pass.set_bind_group(0, &pass_state.bvh_bind_group, &[]);
     pass.set_bind_group(1, probe_bind_group, &[]);
+    pass.set_bind_group(2, &rt_light_bind_group, &[]);
     pass.dispatch_workgroups_indirect(pass_state.sparse.indirect_buffer(), 0);
 }
 
@@ -660,6 +795,28 @@ fn storage_texture_entry(
     }
 }
 
+fn shadow_sampler_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
+    wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::COMPUTE,
+        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison),
+        count: None,
+    }
+}
+
+fn shadow_depth_texture_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
+    wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::COMPUTE,
+        ty: wgpu::BindingType::Texture {
+            sample_type: wgpu::TextureSampleType::Depth,
+            view_dimension: wgpu::TextureViewDimension::D2,
+            multisampled: false,
+        },
+        count: None,
+    }
+}
+
 fn depth_texture_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
     wgpu::BindGroupLayoutEntry {
         binding,
@@ -703,6 +860,7 @@ fn make_bvh_bind_group(
     base_color: &TextureView,
     tile_list: &wgpu::Buffer,
     tile_count: &wgpu::Buffer,
+    instance_materials: &wgpu::Buffer,
 ) -> wgpu::BindGroup {
     device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("rt-bvh-bg"),
@@ -759,6 +917,10 @@ fn make_bvh_bind_group(
             wgpu::BindGroupEntry {
                 binding: 12,
                 resource: tile_count.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 13,
+                resource: instance_materials.as_entire_binding(),
             },
         ],
     })

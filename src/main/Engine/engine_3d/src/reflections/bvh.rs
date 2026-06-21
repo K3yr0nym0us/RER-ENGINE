@@ -15,6 +15,7 @@ pub struct RtTriangle {
     pub v0: Vec3,
     pub v1: Vec3,
     pub v2: Vec3,
+    pub instance_slot: u32,
 }
 
 #[repr(C, align(16))]
@@ -28,7 +29,7 @@ pub struct RtTriangleGpu {
 impl From<RtTriangle> for RtTriangleGpu {
     fn from(t: RtTriangle) -> Self {
         Self {
-            v0: [t.v0.x, t.v0.y, t.v0.z, 0.0],
+            v0: [t.v0.x, t.v0.y, t.v0.z, f32::from_bits(t.instance_slot)],
             v1: [t.v1.x, t.v1.y, t.v1.z, 0.0],
             v2: [t.v2.x, t.v2.y, t.v2.z, 0.0],
         }

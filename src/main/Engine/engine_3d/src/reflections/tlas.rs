@@ -110,7 +110,12 @@ pub fn mesh_triangles_world(mesh: &Mesh, transform: Mat4) -> Vec<RtTriangle> {
         let v0 = transform.transform_point3(Vec3::from_array(pos[i0]));
         let v1 = transform.transform_point3(Vec3::from_array(pos[i1]));
         let v2 = transform.transform_point3(Vec3::from_array(pos[i2]));
-        tris.push(RtTriangle { v0, v1, v2 });
+        tris.push(RtTriangle {
+            v0,
+            v1,
+            v2,
+            instance_slot: 0,
+        });
     }
     tris
 }

@@ -10,9 +10,9 @@ struct RtUniforms {
     near_plane      : f32,
     far_plane       : f32,
     frame_index     : u32,
-    _pad0           : u32,
+    material_count  : u32,
+    _pad0           : f32,
     _pad1           : f32,
-    _pad2           : f32,
 }
 
 const RT_TILE_SIZE : u32 = 16u;
@@ -29,17 +29,18 @@ const RT_TILE_SIZE : u32 = 16u;
 @group(0) @binding(9) var t_base_color : texture_2d<f32>;
 @group(0) @binding(10) var<storage, read> tile_list : array<u32>;
 @group(0) @binding(11) var<storage, read> tile_count_buf : array<u32>;
+@group(0) @binding(12) var<storage, read> instance_materials : array<RtInstanceMaterial>;
 
 @group(1) @binding(0) var t_probe_env : texture_cube_array<f32>;
 @group(1) @binding(1) var s_probe_env : sampler;
 @group(1) @binding(2) var<uniform> probe_meta : ReflProbeMeta;
 
+@group(2) @binding(0) var t_shadow : texture_depth_2d;
+@group(2) @binding(1) var s_shadow : sampler_comparison;
+@group(2) @binding(2) var<uniform> rt_light : RtLightUniform;
+
 fn world_pos_from_depth(uv : vec2<f32>, view_depth_m : f32) -> vec3<f32> {
     return refl_world_pos_from_depth(uv, view_depth_m, u.inv_view_proj, u.near_plane, u.far_plane);
-}
-
-fn view_depth_m_from_world(world : vec3<f32>) -> f32 {
-    return refl_view_depth_m_from_world(world, u.view_proj, u.near_plane, u.far_plane);
 }
 
 fn project_uv(world : vec3<f32>) -> vec2<f32> {
@@ -62,50 +63,26 @@ fn normal_from_packed(packed: vec4<f32>) -> vec3<f32> {
     return decode_octahedral(packed.zw);
 }
 
-fn texel_px(uv : vec2<f32>) -> vec2<i32> {
+fn base_color_at(uv : vec2<f32>) -> vec3<f32> {
     let clamped = clamp(uv, vec2<f32>(0.0), vec2<f32>(1.0));
     let fc = clamped * u.resolution - vec2<f32>(0.5);
-    return vec2<i32>(fc);
-}
-
-fn base_color_at(uv : vec2<f32>) -> vec3<f32> {
-    return textureLoad(t_base_color, texel_px(uv), 0).rgb;
-}
-
-fn lit_scene_blurred(uv : vec2<f32>, spacing_px : f32) -> vec3<f32> {
-    let ref_depth_m = textureLoad(t_depth, vec2<i32>(uv * u.resolution), 0).r;
-    if ref_depth_m <= 0.0001 {
-        return textureLoad(t_lit_scene, vec2<i32>(uv * u.resolution), 0).rgb;
-    }
-    let depth_reject_m = refl_depth_reject_m(u.step_size);
-    let texel = vec2<f32>(1.0) / u.resolution;
-    var acc = vec3<f32>(0.0);
-    var wsum = 0.0;
-    for (var oy = -3; oy <= 3; oy++) {
-        for (var ox = -3; ox <= 3; ox++) {
-            let p = uv + vec2<f32>(f32(ox), f32(oy)) * spacing_px * texel;
-            let px = vec2<i32>(p * u.resolution);
-            let tap_depth_m = textureLoad(t_depth, px, 0).r;
-            if tap_depth_m <= 0.0001 {
-                continue;
-            }
-            if abs(tap_depth_m - ref_depth_m) > depth_reject_m {
-                continue;
-            }
-            acc += textureLoad(t_lit_scene, px, 0).rgb;
-            wsum += 1.0;
-        }
-    }
-    if wsum < 1.0 {
-        return textureLoad(t_lit_scene, vec2<i32>(uv * u.resolution), 0).rgb;
-    }
-    return acc / wsum;
+    return textureLoad(t_base_color, vec2<i32>(fc), 0).rgb;
 }
 
 const RAY_FLAG_FORCE_OPAQUE : u32 = 0x1u;
 const RAY_QUERY_INTERSECTION_NONE : u32 = 0u;
 
-fn trace_rt_hw(origin : vec3<f32>, dir : vec3<f32>, t_max : f32) -> f32 {
+struct HwHit {
+    found : bool,
+    t : f32,
+    instance_slot : u32,
+}
+
+fn trace_rt_hw(origin : vec3<f32>, dir : vec3<f32>, t_max : f32) -> HwHit {
+    var out : HwHit;
+    out.found = false;
+    out.t = -1.0;
+    out.instance_slot = 0u;
     var rq : ray_query;
     let desc = RayDesc(
         RAY_FLAG_FORCE_OPAQUE,
@@ -123,9 +100,12 @@ fn trace_rt_hw(origin : vec3<f32>, dir : vec3<f32>, t_max : f32) -> f32 {
     }
     let hit = rayQueryGetCommittedIntersection(&rq);
     if hit.kind == RAY_QUERY_INTERSECTION_NONE {
-        return -1.0;
+        return out;
     }
-    return hit.t;
+    out.found = true;
+    out.t = hit.t;
+    out.instance_slot = hit.instance_custom_data;
+    return out;
 }
 
 fn rt_shade_pixel_at(gid : vec2<u32>) {
@@ -146,6 +126,7 @@ fn rt_shade_pixel_at(gid : vec2<u32>) {
     let n = normal_from_packed(packed);
     let roughness = textureLoad(t_surface, px, 0).g;
     let metallic = textureLoad(t_direct, px, 0).a;
+    let src_ior = textureLoad(t_direct, px, 0).b * 10.0;
     let albedo = base_color_at(uv);
     if roughness > u.max_roughness {
         textureStore(reflection_out, px, ssr);
@@ -154,7 +135,7 @@ fn rt_shade_pixel_at(gid : vec2<u32>) {
 
     let world_pos = world_pos_from_depth(uv, view_depth_m);
     let v = normalize(u.cam_pos.xyz - world_pos);
-    let refl_dir = refl_fuzzy_mirror_dir_temporal(
+    var trace_dir = refl_fuzzy_mirror_dir_temporal(
         world_pos,
         u.cam_pos.xyz,
         n,
@@ -162,7 +143,11 @@ fn rt_shade_pixel_at(gid : vec2<u32>) {
         u.frame_index,
         uv,
     );
-    if dot(refl_dir, refl_dir) <= 1e-8 {
+    if rt_light.rt_flags.x > 0.5 && src_ior > 1.0 && metallic < 0.5 {
+        let eta = 1.0 / src_ior;
+        trace_dir = refl_refract_dir(normalize(world_pos - u.cam_pos.xyz), n, eta);
+    }
+    if dot(trace_dir, trace_dir) <= 1e-8 {
         textureStore(reflection_out, px, ssr);
         return;
     }
@@ -175,46 +160,48 @@ fn rt_shade_pixel_at(gid : vec2<u32>) {
 
     let normal_bias = refl_normal_bias(u.step_size);
     let ray_origin = world_pos + n * normal_bias;
-    let closest = trace_rt_hw(ray_origin, refl_dir, u.max_distance_m);
-    if closest < 0.0 {
+    let hw_hit = trace_rt_hw(ray_origin, trace_dir, u.max_distance_m);
+    if !hw_hit.found {
         textureStore(reflection_out, px, ssr);
         return;
     }
 
-    let hit_pos = ray_origin + refl_dir * closest;
+    let hit_pos = ray_origin + trace_dir * hw_hit.t;
+    let hit_normal = -normalize(trace_dir);
     let sample_uv = project_uv(hit_pos);
     let on_screen = sample_uv.x >= 0.0 && sample_uv.x <= 1.0 && sample_uv.y >= 0.0 && sample_uv.y <= 1.0;
+    let spacing_px = refl_blur_spacing_px(roughness, hw_hit.t);
 
-    let spacing_px = refl_blur_spacing_px(roughness, closest);
-    var scene_col = vec3<f32>(0.0);
-    var valid_hit = false;
-
-    if on_screen {
-        let hit_px = vec2<i32>(sample_uv * u.resolution);
-        let hit_depth_m = textureLoad(t_depth, hit_px, 0).r;
-        let ray_depth_m = view_depth_m_from_world(hit_pos);
-        if abs(ray_depth_m - hit_depth_m) <= refl_rt_hit_depth_reject_m(u.step_size) {
-            let hit_metallic = textureLoad(t_direct, hit_px, 0).a;
-            let hit_albedo = textureLoad(t_base_color, hit_px, 0).rgb;
-            scene_col = refl_metal_attenuate(
-                lit_scene_blurred(sample_uv, spacing_px),
-                hit_albedo,
-                hit_metallic,
-            );
-            valid_hit = true;
-        }
+    var hit_mat = RtInstanceMaterial(vec4<f32>(1.0), vec4<f32>(0.5, 0.0, 0.0, 0.0));
+    let has_mat = hw_hit.instance_slot < u.material_count;
+    if has_mat {
+        hit_mat = instance_materials[hw_hit.instance_slot];
     }
-
-    if !valid_hit {
-        scene_col = refl_sample_probe_at_hit(
-            hit_pos,
-            refl_dir,
-            roughness,
-            probe_meta,
-            t_probe_env,
-            s_probe_env,
-        );
-    }
+    let scene_col = refl_resolve_hit_radiance(
+        hit_pos,
+        hit_normal,
+        trace_dir,
+        sample_uv,
+        on_screen,
+        spacing_px,
+        hit_mat,
+        has_mat,
+        probe_meta,
+        t_probe_env,
+        s_probe_env,
+        rt_light,
+        t_shadow,
+        s_shadow,
+        t_lit_scene,
+        t_depth,
+        t_direct,
+        t_base_color,
+        u.resolution,
+        u.step_size,
+        u.view_proj,
+        u.near_plane,
+        u.far_plane,
+    );
 
     let rt_weight = (1.0 - ssr.a) * strength * u.rt_blend;
     if rt_weight < 0.01 {

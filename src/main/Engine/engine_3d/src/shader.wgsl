@@ -67,6 +67,8 @@ struct VertexOutput {
     @location(10) surface_metallic  : f32,
     /// Índice de capa del probe en el cube array (-1 = sin probe → entorno procedural).
     @location(11) probe_index       : f32,
+    /// IOR del material (0 = no dieléctrico).
+    @location(12) surface_ior       : f32,
 }
 
 fn scene_light_dir_norm() -> vec3<f32> {
@@ -145,6 +147,7 @@ fn vs_main(in: VertexInput, inst: InstanceInput) -> VertexOutput {
     out.surface_roughness = inst.flag_pad.w;
     out.surface_metallic = inst.tex_layer_pad.y;
     out.probe_index = inst.tex_layer_pad.z;
+    out.surface_ior = inst.tex_layer_pad.w;
     let prev_h = u.prev_view_proj * vec4<f32>(world_pos, 1.0);
     out.prev_clip_pos = prev_h;
     out.curr_stable_clip = u.view_proj_stable * world_pos4;
@@ -278,6 +281,12 @@ fn evaluate_scene(in: VertexOutput, env_override: vec3<f32>, has_env_override: b
     amb = amb + rim_add * 0.5;
     dir = dir + rim_add * 0.5;
 
+    let ior_b = select(
+        dir.b,
+        clamp(in.surface_ior * 0.1, 0.0, 1.0),
+        in.surface_ior > 1.0,
+    );
+
     var out_alpha = albedo_samp.a * in.alpha_mul;
     if in.render_kind >= 0.5 {
         out_alpha = in.alpha_mul;
@@ -338,8 +347,8 @@ fn evaluate_scene(in: VertexOutput, env_override: vec3<f32>, has_env_override: b
         vec4<f32>(amb, out_alpha),
         // surface (Rg16Float): .r = shadow, .g = roughness.
         vec4<f32>(shadow, surface_roughness, 0.0, 0.0),
-        // direct: .rgb = luz directa, .a = metallic (canal libre; lit_composite usa amb.a).
-        vec4<f32>(dir, surface_metallic),
+        // direct: .rgb = luz directa, .b = IOR×0.1 si dieléctrico, .a = metallic.
+        vec4<f32>(dir.r, dir.g, ior_b, surface_metallic),
         pack_depth_export(view_depth_m),
         pack_velocity_normal(velocity, n),
     );

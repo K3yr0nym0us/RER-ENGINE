@@ -68,7 +68,12 @@ pub fn skinned_mesh_triangles_world(
         let w0 = transform.transform_point3(deform_vertex(v0, palette));
         let w1 = transform.transform_point3(deform_vertex(v1, palette));
         let w2 = transform.transform_point3(deform_vertex(v2, palette));
-        tris.push(RtTriangle { v0: w0, v1: w1, v2: w2 });
+        tris.push(RtTriangle {
+            v0: w0,
+            v1: w1,
+            v2: w2,
+            instance_slot: 0,
+        });
     }
     tris
 }

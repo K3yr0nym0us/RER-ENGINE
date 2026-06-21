@@ -68,6 +68,7 @@ struct VertexOutput {
     @location(9) surface_roughness  : f32,
     @location(10) surface_metallic  : f32,
     @location(11) probe_index       : f32,
+    @location(12) surface_ior       : f32,
 }
 
 fn skin_matrix(joints: vec4<u32>, weights: vec4<f32>) -> mat4x4<f32> {
@@ -179,6 +180,7 @@ fn vs_main_skinned(in: VertexInput, inst: InstanceInput) -> VertexOutput {
     out.surface_roughness = inst.flag_pad.w;
     out.surface_metallic = inst.tex_layer_pad.y;
     out.probe_index = inst.tex_layer_pad.z;
+    out.surface_ior = inst.tex_layer_pad.w;
     let prev_h = u.prev_view_proj * vec4<f32>(world_pos, 1.0);
     out.prev_clip_pos = prev_h;
     out.curr_stable_clip = u.view_proj_stable * world_pos4;
@@ -283,10 +285,15 @@ fn evaluate_scene(in: VertexOutput, env_override: vec3<f32>, has_env_override: b
     let rim_add = lit - base;
     let amb_out = amb + rim_add * 0.5;
     let dir_out = dir + rim_add * 0.5;
+    let ior_b = select(
+        dir_out.b,
+        clamp(in.surface_ior * 0.1, 0.0, 1.0),
+        in.surface_ior > 1.0,
+    );
     return SceneFragOut(
         vec4<f32>(amb_out, albedo.a * in.alpha_mul),
         vec4<f32>(shadow, surface_roughness, 0.0, 0.0),
-        vec4<f32>(dir_out, surface_metallic),
+        vec4<f32>(dir_out.r, dir_out.g, ior_b, surface_metallic),
         pack_depth_export(view_depth_m),
         pack_velocity_normal(velocity, n),
     );

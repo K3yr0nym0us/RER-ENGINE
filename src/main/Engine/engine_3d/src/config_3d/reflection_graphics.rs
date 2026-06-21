@@ -62,6 +62,8 @@ pub enum ReflectionDebugView {
     BaseColor,
     /// Máscara `refl_trace_strength` (F0 unificado + rugosidad).
     TraceStrength,
+    /// Path tracer debug (2 rebotes, referencia RTIOW).
+    PathTrace,
 }
 
 impl ReflectionDebugView {
@@ -112,6 +114,7 @@ impl ReflectionDebugView {
             }
             "base_color" | "albedo" => Some(Self::BaseColor),
             "trace_strength" | "refl_strength" => Some(Self::TraceStrength),
+            "path_trace" | "pathtrace" | "rt_pathtrace" => Some(Self::PathTrace),
             _ => None,
         }
     }
@@ -145,6 +148,7 @@ impl ReflectionDebugView {
             Self::SsrFinalComposite => "ssr_final_composite",
             Self::BaseColor => "base_color",
             Self::TraceStrength => "trace_strength",
+            Self::PathTrace => "path_trace",
         }
     }
 
@@ -177,6 +181,7 @@ impl ReflectionDebugView {
             Self::SsrHitUvWorldScreenDelta => 24,
             Self::SsrHitUvWorldScreenSplit => 25,
             Self::SsrFinalComposite => 26,
+            Self::PathTrace => 27,
         }
     }
 }

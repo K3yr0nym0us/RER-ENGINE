@@ -2,6 +2,8 @@
 
 #![allow(dead_code)]
 
+use crate::config_3d::reflection_graphics::{ReflectionSettings, ReflectionTier};
+
 /// BLAS/TLAS hardware para mallas skinned (refit por frame).
 pub fn skinned_tlas_supported() -> bool {
     true
@@ -11,6 +13,7 @@ pub fn skinned_tlas_supported() -> bool {
 pub const RT_PIPELINE_V2_REFERENCE: &str = "https://github.com/gfx-rs/wgpu/pull/9450";
 
 /// Gate de producto: pipeline RT completo con `@ray_generation` (Fase E).
+/// Permanece desactivado hasta wgpu PR #9450 estable; ver `rt_pipeline/`.
 pub fn rt_generation_pipeline_enabled() -> bool {
     false
 }
@@ -29,9 +32,14 @@ fn refl_blue_noise_seed(frame_index : u32, uv : vec2<f32>) -> vec2<f32> {
 }
 ";
 
-/// Dieléctricos (refracción RTIOW Book 1) en SSR/RT — desactivado hasta requisito de producto.
-pub fn dielectric_rt_enabled() -> bool {
-    false
+/// Dieléctricos (refracción RTIOW) en SSR/RT — tier Ultra.
+pub fn dielectric_rt_enabled(settings: &ReflectionSettings) -> bool {
+    settings.tier == ReflectionTier::Ultra
+}
+
+/// Indirecto difuso acotado (SSIL) — tier Ultra.
+pub fn rt_diffuse_gi_enabled(settings: &ReflectionSettings) -> bool {
+    settings.tier == ReflectionTier::Ultra
 }
 
 /// Suelo RT single-sided (evita hits duplicados en rayos rasos).

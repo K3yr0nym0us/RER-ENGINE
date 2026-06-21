@@ -8,14 +8,16 @@ use std::time::Instant;
 use wgpu::util::DeviceExt;
 use wgpu::{CommandEncoder, Device, Queue, Tlas, TlasInstance};
 
-use crate::mesh::Mesh;
 use crate::config_3d::model_animation::GpuSkinnedMeshEntry;
+use crate::mesh::Mesh;
 use crate::reflections::blas::BlasCache;
 use crate::reflections::bvh::{build_bvh, BvhNodeGpu, RtTriangleGpu};
+use crate::reflections::rt_material::{
+    instance_triangles_tagged, RtInstanceMaterialGpu, MAX_RT_MATERIALS,
+};
 use crate::reflections::skinned_blas::SkinnedBlasCache;
 use crate::reflections::tlas::{
-    instance_triangles_world, mat4_to_tlas_transform, RtInstanceDesc, MAX_SKINNED_RT_INSTANCES,
-    MAX_STATIC_RT_INSTANCES,
+    mat4_to_tlas_transform, RtInstanceDesc, MAX_SKINNED_RT_INSTANCES, MAX_STATIC_RT_INSTANCES,
 };
 
 const ASYNC_BVH_TRI_THRESHOLD: usize = 8192;
@@ -33,6 +35,8 @@ pub struct RtAccel {
     pub hw_available: bool,
     bvh_node_buffer: wgpu::Buffer,
     bvh_tri_buffer: wgpu::Buffer,
+    instance_material_buffer: wgpu::Buffer,
+    pub instance_material_count: u32,
     blas_cache: BlasCache,
     skinned_blas_cache: SkinnedBlasCache,
     scene_hash: u64,
@@ -43,6 +47,7 @@ impl RtAccel {
     pub fn new(device: &Device, hw_available: bool) -> Self {
         let empty_node = BvhNodeGpu::default();
         let empty_tri = RtTriangleGpu::default();
+        let empty_mat = RtInstanceMaterialGpu::default();
         let bvh_node_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("rt-bvh-nodes"),
             contents: bytemuck::bytes_of(&empty_node),
@@ -51,6 +56,11 @@ impl RtAccel {
         let bvh_tri_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("rt-bvh-tris"),
             contents: bytemuck::bytes_of(&empty_tri),
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        });
+        let instance_material_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("rt-instance-materials"),
+            contents: bytemuck::bytes_of(&empty_mat),
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         });
         let hw_tlas = if hw_available {
@@ -70,6 +80,8 @@ impl RtAccel {
             hw_available,
             bvh_node_buffer,
             bvh_tri_buffer,
+            instance_material_buffer,
+            instance_material_count: 0,
             blas_cache: BlasCache::new(),
             skinned_blas_cache: SkinnedBlasCache::new(),
             scene_hash: 0,
@@ -83,6 +95,10 @@ impl RtAccel {
 
     pub fn tri_buffer(&self) -> &wgpu::Buffer {
         &self.bvh_tri_buffer
+    }
+
+    pub fn instance_material_buffer(&self) -> &wgpu::Buffer {
+        &self.instance_material_buffer
     }
 
     pub fn tlas(&self) -> Option<&Tlas> {
@@ -114,6 +130,32 @@ impl RtAccel {
             }
         }
         h.finish()
+    }
+
+    fn upload_materials(
+        &mut self,
+        materials: &[RtInstanceMaterialGpu],
+        device: &Device,
+        queue: &Queue,
+    ) {
+        self.instance_material_count = materials.len().min(u32::MAX as usize) as u32;
+        if materials.is_empty() {
+            return;
+        }
+        let bytes = materials.len() * std::mem::size_of::<RtInstanceMaterialGpu>();
+        if self.instance_material_buffer.size() < bytes as u64 {
+            self.instance_material_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("rt-instance-materials"),
+                size: bytes.max(64) as u64,
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+        }
+        queue.write_buffer(
+            &self.instance_material_buffer,
+            0,
+            bytemuck::cast_slice(materials),
+        );
     }
 
     fn upload_bvh(
@@ -178,6 +220,7 @@ impl RtAccel {
 
     pub fn sync_scene(
         &mut self,
+        materials: &[RtInstanceMaterialGpu],
         instances: &[RtInstanceDesc],
         meshes: &[Mesh],
         skinned_meshes: &[GpuSkinnedMeshEntry],
@@ -187,91 +230,40 @@ impl RtAccel {
     ) {
         self.poll_pending_bvh(device, queue);
 
+        self.upload_materials(materials, device, queue);
+
         let hash = Self::scene_hash(instances, skinned_meshes);
         if hash == self.scene_hash && self.node_count > 0 {
+            if self.hw_available {
+                self.sync_hw_accel(instances, meshes, skinned_meshes, device, queue, encoder);
+            }
             return;
         }
 
         if let Some(pending) = &self.pending_bvh {
             if pending.scene_hash == hash {
+                if self.hw_available {
+                    self.sync_hw_accel(instances, meshes, skinned_meshes, device, queue, encoder);
+                }
                 return;
             }
         }
 
         let mut world_tris = Vec::new();
-        for inst in instances {
-            world_tris.extend(instance_triangles_world(meshes, skinned_meshes, inst));
-            if self.hw_available {
-                if let Some(mesh_idx) = inst.mesh_idx {
-                    if let Some(mesh) = meshes.get(mesh_idx) {
-                        self.blas_cache.ensure(device, mesh_idx, mesh);
-                    }
-                }
-                if let Some(gpu_idx) = inst.skinned_gpu_idx {
-                    if let Some(entry) = skinned_meshes.get(gpu_idx) {
-                        self.skinned_blas_cache.ensure(device, gpu_idx, entry);
-                        self.skinned_blas_cache.update_pose(queue, gpu_idx, entry);
-                    }
-                }
+        for (slot, inst) in instances.iter().enumerate() {
+            if slot >= MAX_RT_MATERIALS {
+                break;
             }
+            world_tris.extend(instance_triangles_tagged(
+                meshes,
+                skinned_meshes,
+                inst,
+                slot as u32,
+            ));
         }
 
         if self.hw_available {
-            self.blas_cache.build_pending(encoder, meshes);
-            self.skinned_blas_cache.build_updates(encoder);
-            if let Some(tlas) = self.hw_tlas.as_mut() {
-                let mut slot = 0usize;
-                let mut skinned_slots = 0usize;
-                for inst in instances {
-                    if slot >= MAX_STATIC_RT_INSTANCES {
-                        break;
-                    }
-                    if let Some(mesh_idx) = inst.mesh_idx {
-                        if let Some(slot_inst) = tlas.get_mut_single(slot) {
-                            if let Some(blas) = self.blas_cache.get(mesh_idx) {
-                                *slot_inst = Some(TlasInstance::new(
-                                    blas,
-                                    mat4_to_tlas_transform(inst.transform),
-                                    inst.entity_id & 0x00FF_FFFF,
-                                    0xFF,
-                                ));
-                                slot += 1;
-                            }
-                        }
-                    }
-                }
-                for inst in instances {
-                    if slot >= MAX_STATIC_RT_INSTANCES {
-                        break;
-                    }
-                    let Some(gpu_idx) = inst.skinned_gpu_idx else {
-                        continue;
-                    };
-                    if skinned_slots >= MAX_SKINNED_RT_INSTANCES {
-                        break;
-                    }
-                    if let Some(slot_inst) = tlas.get_mut_single(slot) {
-                        if let Some(blas) = self.skinned_blas_cache.get(gpu_idx) {
-                            *slot_inst = Some(TlasInstance::new(
-                                blas,
-                                mat4_to_tlas_transform(inst.transform),
-                                inst.entity_id & 0x00FF_FFFF,
-                                0xFF,
-                            ));
-                            slot += 1;
-                            skinned_slots += 1;
-                        }
-                    }
-                }
-                for clear in slot..MAX_STATIC_RT_INSTANCES {
-                    if let Some(slot_inst) = tlas.get_mut_single(clear) {
-                        *slot_inst = None;
-                    }
-                }
-            }
-            if let Some(tlas) = self.hw_tlas.as_ref() {
-                encoder.build_acceleration_structures(std::iter::empty(), std::iter::once(tlas));
-            }
+            self.sync_hw_accel(instances, meshes, skinned_meshes, device, queue, encoder);
         }
 
         if world_tris.len() >= ASYNC_BVH_TRI_THRESHOLD {
@@ -310,5 +302,85 @@ impl RtAccel {
         }
         self.scene_hash = hash;
         self.upload_bvh(nodes, tris, device, queue);
+    }
+
+    fn sync_hw_accel(
+        &mut self,
+        instances: &[RtInstanceDesc],
+        meshes: &[Mesh],
+        skinned_meshes: &[GpuSkinnedMeshEntry],
+        device: &Device,
+        queue: &Queue,
+        encoder: &mut CommandEncoder,
+    ) {
+        for inst in instances {
+            if let Some(mesh_idx) = inst.mesh_idx {
+                if let Some(mesh) = meshes.get(mesh_idx) {
+                    self.blas_cache.ensure(device, mesh_idx, mesh);
+                }
+            }
+            if let Some(gpu_idx) = inst.skinned_gpu_idx {
+                if let Some(entry) = skinned_meshes.get(gpu_idx) {
+                    self.skinned_blas_cache.ensure(device, gpu_idx, entry);
+                    self.skinned_blas_cache.update_pose(queue, gpu_idx, entry);
+                }
+            }
+        }
+
+        self.blas_cache.build_pending(encoder, meshes);
+        self.skinned_blas_cache.build_updates(encoder);
+        if let Some(tlas) = self.hw_tlas.as_mut() {
+            let mut slot = 0usize;
+            let mut skinned_slots = 0usize;
+            for (mat_slot, inst) in instances.iter().enumerate() {
+                if slot >= MAX_STATIC_RT_INSTANCES {
+                    break;
+                }
+                if let Some(mesh_idx) = inst.mesh_idx {
+                    if let Some(slot_inst) = tlas.get_mut_single(slot) {
+                        if let Some(blas) = self.blas_cache.get(mesh_idx) {
+                            *slot_inst = Some(TlasInstance::new(
+                                blas,
+                                mat4_to_tlas_transform(inst.transform),
+                                mat_slot as u32,
+                                0xFF,
+                            ));
+                            slot += 1;
+                        }
+                    }
+                }
+            }
+            for (mat_slot, inst) in instances.iter().enumerate() {
+                if slot >= MAX_STATIC_RT_INSTANCES {
+                    break;
+                }
+                let Some(gpu_idx) = inst.skinned_gpu_idx else {
+                    continue;
+                };
+                if skinned_slots >= MAX_SKINNED_RT_INSTANCES {
+                    break;
+                }
+                if let Some(slot_inst) = tlas.get_mut_single(slot) {
+                    if let Some(blas) = self.skinned_blas_cache.get(gpu_idx) {
+                        *slot_inst = Some(TlasInstance::new(
+                            blas,
+                            mat4_to_tlas_transform(inst.transform),
+                            mat_slot as u32,
+                            0xFF,
+                        ));
+                        slot += 1;
+                        skinned_slots += 1;
+                    }
+                }
+            }
+            for clear in slot..MAX_STATIC_RT_INSTANCES {
+                if let Some(slot_inst) = tlas.get_mut_single(clear) {
+                    *slot_inst = None;
+                }
+            }
+        }
+        if let Some(tlas) = self.hw_tlas.as_ref() {
+            encoder.build_acceleration_structures(std::iter::empty(), std::iter::once(tlas));
+        }
     }
 }
