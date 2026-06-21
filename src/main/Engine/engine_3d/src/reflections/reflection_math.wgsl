@@ -1,6 +1,9 @@
 // Shared depth / projection math for SSR, RT and debug passes.
 // Must stay inverse-consistent with shader.wgsl `ndc_z_to_view_depth_m` / G-buffer export.
 
+/// RTIOW hit interval lower bound (shadow acne / self-intersection).
+const REFL_RAY_T_MIN : f32 = 0.001;
+
 fn refl_uv_to_ndc_xy(uv : vec2<f32>) -> vec2<f32> {
     return vec2<f32>(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0);
 }
@@ -67,27 +70,79 @@ fn refl_mirror_dir(world_pos : vec3<f32>, cam_pos : vec3<f32>, n : vec3<f32>) ->
     return reflect(incident, nn);
 }
 
-/// RTIOW fuzzy metal (Book 1, determinista v1): espejo + desvío hacia la normal si rough > 0.5.
-/// Rechaza dot(reflected, normal) <= 0 (rayo absorbido). LOD cubemap usa el mismo rough².
+/// Deterministic pseudo-random unit vector (RTIOW `random_in_unit_sphere` sin RNG global).
+fn refl_random_unit_vector(seed : vec2<f32>) -> vec3<f32> {
+    let h1 = fract(sin(dot(seed, vec2<f32>(127.1, 311.7))) * 43758.5453);
+    let h2 = fract(sin(dot(seed + vec2<f32>(17.0, 31.0), vec2<f32>(269.5, 183.3))) * 43758.5453);
+    let h3 = fract(sin(dot(seed + vec2<f32>(53.0, 97.0), vec2<f32>(419.2, 371.9))) * 43758.5453);
+    let z = 1.0 - 2.0 * h1;
+    let r = sqrt(max(1.0 - z * z, 0.0));
+    let phi = 6.2831853 * h2;
+    return vec3<f32>(r * cos(phi), r * sin(phi), z);
+}
+
+/// RTIOW Book 1 fuzzy metal: `normalize(reflect) + fuzz * random_unit_vector`.
+fn refl_metal_fuzz_from_roughness(roughness : f32) -> f32 {
+    return clamp(roughness, 0.0, 1.0) * 0.5;
+}
+
+fn refl_apply_fuzzy_metal(reflected : vec3<f32>, n : vec3<f32>, fuzz : f32, seed : vec2<f32>) -> vec3<f32> {
+    let nn = normalize(n);
+    var refl = normalize(reflected);
+    if dot(refl, nn) <= 0.0 {
+        return vec3<f32>(0.0);
+    }
+    if fuzz <= 1e-6 {
+        return refl;
+    }
+    let scattered = normalize(refl + fuzz * refl_random_unit_vector(seed));
+    if dot(scattered, nn) <= 0.0 {
+        return vec3<f32>(0.0);
+    }
+    return scattered;
+}
+
+/// Dirección de traza metálica (SSR/RT): RTIOW fuzzy + rechazo grazing.
 fn refl_fuzzy_mirror_dir(
     world_pos : vec3<f32>,
     cam_pos : vec3<f32>,
     n : vec3<f32>,
     roughness : f32,
+    seed : vec2<f32>,
 ) -> vec3<f32> {
-    let nn = normalize(n);
-    var refl = refl_mirror_dir(world_pos, cam_pos, nn);
-    if dot(refl, nn) <= 0.0 {
-        return vec3<f32>(0.0);
-    }
+    let refl = refl_mirror_dir(world_pos, cam_pos, n);
+    let fuzz = refl_metal_fuzz_from_roughness(roughness);
+    return refl_apply_fuzzy_metal(refl, n, fuzz, seed);
+}
+
+/// Fuzzy con semilla blue-noise temporal (frame + UV).
+fn refl_blue_noise_seed(frame_index : u32, uv : vec2<f32>) -> vec2<f32> {
+    let f = f32(frame_index) * 0.6180339887;
+    return vec2<f32>(uv.x + f * 0.173, uv.y + f * 0.271);
+}
+
+fn refl_fuzzy_mirror_dir_temporal(
+    world_pos : vec3<f32>,
+    cam_pos : vec3<f32>,
+    n : vec3<f32>,
+    roughness : f32,
+    frame_index : u32,
+    uv : vec2<f32>,
+) -> vec3<f32> {
+    return refl_fuzzy_mirror_dir(
+        world_pos,
+        cam_pos,
+        n,
+        roughness,
+        refl_blue_noise_seed(frame_index, uv),
+    );
+}
+
+/// Mip LOD del cubemap alineado al fuzz RTIOW (split-sum aproximado).
+fn refl_env_cubemap_lod(roughness : f32) -> f32 {
     let r = clamp(roughness, 0.0, 1.0);
-    if r > 0.5 {
-        refl = normalize(mix(refl, nn, r * r));
-        if dot(refl, nn) <= 0.0 {
-            return vec3<f32>(0.0);
-        }
-    }
-    return refl;
+    let fuzz = refl_metal_fuzz_from_roughness(r);
+    return clamp(r * r * 4.0 + fuzz * 2.0, 0.0, 4.0);
 }
 
 /// Blur kernel spacing (px): más rugosidad → kernel más ancho en SSR/composite.
@@ -128,7 +183,7 @@ fn refl_trace_strength(
 }
 
 fn refl_normal_bias(step_size : f32) -> f32 {
-    return max(0.001, max(0.002, step_size * 0.05));
+    return max(REFL_RAY_T_MIN, max(0.002, step_size * 0.05));
 }
 
 fn refl_depth_reject_m(step_size : f32) -> f32 {
@@ -139,9 +194,9 @@ fn refl_thickness_m(step_size : f32, roughness : f32) -> f32 {
     return max(step_size * 1.5, 0.04) + roughness * 0.06;
 }
 
-/// TLAS v1: el impacto cae en la AABB, no en la malla; tolerancia > grosor SSR.
+/// Tolerancia reproyección depth tras hit de triángulo (superficie real, no AABB).
 fn refl_rt_hit_depth_reject_m(step_size : f32) -> f32 {
-    return max(1.6, step_size * 4.0);
+    return max(0.12, step_size * 1.25);
 }
 
 /// RTIOW metal.rs: color del rebote *= albedo del metal en el punto de reflexión.
@@ -150,4 +205,56 @@ fn refl_metal_attenuate(hit_rgb : vec3<f32>, albedo_rgb : vec3<f32>, metallic : 
         return hit_rgb * albedo_rgb;
     }
     return hit_rgb;
+}
+
+const REFL_MAX_PROBES : u32 = 8u;
+
+struct ReflProbeMeta {
+    entries : array<vec4<f32>, 8>,
+}
+
+/// Entorno procedural (mismo gradiente que shader.wgsl fake_environment).
+fn refl_fake_environment(refl_dir : vec3<f32>) -> vec3<f32> {
+    let sky = vec3<f32>(0.50, 0.57, 0.72);
+    let horizon = vec3<f32>(0.82, 0.84, 0.88);
+    let ground = vec3<f32>(0.26, 0.27, 0.29);
+    let y = clamp(refl_dir.y, -1.0, 1.0);
+    if y >= 0.0 {
+        return mix(horizon, sky, pow(y, 0.45));
+    }
+    return mix(horizon, ground, pow(-y, 0.55));
+}
+
+fn refl_nearest_probe_layer(hit_pos : vec3<f32>, probe_meta : ReflProbeMeta) -> i32 {
+    var best_i = -1;
+    var best_d = 1e30;
+    for (var i = 0u; i < REFL_MAX_PROBES; i++) {
+        let e = probe_meta.entries[i];
+        if e.w <= 0.0 {
+            continue;
+        }
+        let d = distance(hit_pos, e.xyz);
+        if d < best_d {
+            best_d = d;
+            best_i = i32(i);
+        }
+    }
+    return best_i;
+}
+
+fn refl_sample_probe_at_hit(
+    hit_pos : vec3<f32>,
+    sample_dir : vec3<f32>,
+    roughness : f32,
+    probe_meta : ReflProbeMeta,
+    t_probe : texture_cube_array<f32>,
+    s_probe : sampler,
+) -> vec3<f32> {
+    let dir_n = normalize(sample_dir);
+    let layer_i = refl_nearest_probe_layer(hit_pos, probe_meta);
+    if layer_i >= 0 {
+        let lod = refl_env_cubemap_lod(roughness);
+        return textureSampleLevel(t_probe, s_probe, dir_n, layer_i, lod).rgb;
+    }
+    return refl_fake_environment(dir_n);
 }

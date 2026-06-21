@@ -299,6 +299,7 @@ pub struct State {
         crate::config_3d::reflection_graphics::ReflectionDebugView,
     pub(crate) reflections: crate::reflections::ReflectionPass,
     pub(crate) rt_reflections_available: bool,
+    pub(crate) rt_accel: crate::reflections::rt_accel::RtAccel,
     /// Reflection probes: un cubemap por esfera/probe (entorno 360° con suelo, vecinas y jugador).
     pub(crate) probe_env: crate::reflections::probe_env::ProbeEnvPass,
     /// Round-robin: probe capturado este frame (los demás conservan su última captura).

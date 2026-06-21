@@ -285,7 +285,7 @@ impl ReflectionSettings {
                 temporal_blend: 0.45,
                 max_roughness_to_trace: 0.80,
                 rt_enabled: rt_available,
-                rt_static_only: true,
+                rt_static_only: false,
                 rt_blend: 0.85,
             },
         }

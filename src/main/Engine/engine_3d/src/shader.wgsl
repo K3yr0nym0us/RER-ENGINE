@@ -220,34 +220,9 @@ fn fresnel_schlick_metal(f0: vec3<f32>, cos_theta: f32) -> vec3<f32> {
     return f0 + (vec3<f32>(1.0) - f0) * pow(1.0 - cos_theta, 5.0);
 }
 
-/// Mip del cubemap según rugosidad perceptual (rough² × max_mip; coherente con fuzzy RTIOW y SSR).
-fn env_cubemap_lod(roughness: f32) -> f32 {
-    let r = clamp(roughness, 0.0, 1.0);
-    return r * r * 4.0;
-}
-
-/// RTIOW fuzzy metal (Book 1): espejo + desvío hacia normal si rough > 0.5; absorb si dot <= 0.
-fn apply_fuzzy_reflection(refl: vec3<f32>, n: vec3<f32>, roughness: f32) -> vec3<f32> {
-    let nn = normalize(n);
-    var dir = refl;
-    if dot(dir, nn) <= 0.0 {
-        return vec3<f32>(0.0);
-    }
-    let r = clamp(roughness, 0.0, 1.0);
-    if r > 0.5 {
-        dir = normalize(mix(dir, nn, r * r));
-        if dot(dir, nn) <= 0.0 {
-            return vec3<f32>(0.0);
-        }
-    }
-    return dir;
-}
-
-/// Dirección de muestreo del cubemap: reflexión geométrica (RTIOW). `probe_idx` solo elige capa.
 fn cubemap_sample_dir(world_pos: vec3<f32>, n: vec3<f32>, probe_idx: i32) -> vec3<f32> {
     _ = probe_idx;
-    let incident = normalize(world_pos - u.cam_pos.xyz);
-    return reflect(incident, normalize(n));
+    return refl_mirror_dir(world_pos, u.cam_pos.xyz, n);
 }
 
 fn evaluate_scene(in: VertexOutput, env_override: vec3<f32>, has_env_override: bool) -> SceneFragOut {
@@ -333,8 +308,13 @@ fn evaluate_scene(in: VertexOutput, env_override: vec3<f32>, has_env_override: b
         // hay geometría on-screen. Rugosidad alta aplana el reflejo hacia el promedio.
         // Con probe: cubemap real del entorno (suelo/vecinas/jugador en 360°). Sin él:
         // gradiente procedural cromado. El SSR/RT sustituye encima donde hay geometría on-screen.
-        let incident = normalize(in.world_pos - u.cam_pos.xyz);
-        let refl_proc = apply_fuzzy_reflection(reflect(incident, n), n, surface_roughness);
+        let refl_proc = refl_fuzzy_mirror_dir(
+            in.world_pos,
+            u.cam_pos.xyz,
+            n,
+            surface_roughness,
+            in.uv,
+        );
         let env_proc = fake_environment(
             select(reflect(-v, n), refl_proc, dot(refl_proc, refl_proc) > 1e-8),
         );
@@ -393,7 +373,7 @@ fn fs_main(in: VertexOutput) -> SceneFragOut {
     let rough = resolve_surface_roughness(in.surface_roughness);
     let sample_dir = cubemap_sample_dir(in.world_pos, n, layer_i);
     let layer = max(layer_i, 0);
-    let lod = env_cubemap_lod(rough);
+    let lod = refl_env_cubemap_lod(rough);
     var env_cube = vec3<f32>(0.0);
     var has_override = false;
     // Rugosidad del cubemap = mip LOD; fuzzy de dirección solo en SSR/RT (reflection_math.wgsl).

@@ -32,14 +32,27 @@ impl State {
         let (_instance, surface, adapter) =
             init_gpu(window.clone(), EngineGpuProfile::ThreeD).await?;
 
+        let rt_features =
+            crate::reflections::rt_reflections_v2::request_rt_device_features(&adapter);
+        let rt_reflections_available =
+            crate::reflections::rt_reflections_v2::adapter_supports_rt(&adapter);
+        let experimental = if rt_reflections_available {
+            unsafe { wgpu::ExperimentalFeatures::enabled() }
+        } else {
+            wgpu::ExperimentalFeatures::disabled()
+        };
+
         let (device, queue) = adapter
             .request_device(
                 &wgpu::DeviceDescriptor {
                     label: Some("oxide-device"),
-                    required_features: wgpu::Features::empty(),
-                    required_limits: wgpu::Limits::default(),
+                    required_features: rt_features,
+                    required_limits: crate::reflections::rt_reflections_v2::request_rt_device_limits(
+                        &adapter,
+                        rt_reflections_available,
+                    ),
                     memory_hints: Default::default(),
-                    experimental_features: wgpu::ExperimentalFeatures::disabled(),
+                    experimental_features: experimental,
                     trace: wgpu::Trace::Off,
                 },
             )
@@ -283,7 +296,7 @@ impl State {
         let player_ui_text_atlas =
             crate::screen_hud_image::ScreenHudAtlas::new(&device, &queue, &screen_hud_bgl);
 
-        let shader = device.create_shader_module(include_wgsl!("../shader.wgsl"));
+        let shader = crate::shader_loader::load_scene_wgsl(&device, "main-shader", include_str!("../shader.wgsl"));
         let screen_hud_shader =
             device.create_shader_module(include_wgsl!("../shader_screen_hud.wgsl"));
         let shadow_mask_target = Some(wgpu::ColorTargetState {
@@ -670,7 +683,11 @@ impl State {
             label: Some("empty-bgl"),
             entries: &[],
         });
-        let skinned_shader = device.create_shader_module(include_wgsl!("../shader_skinned.wgsl"));
+        let skinned_shader = crate::shader_loader::load_scene_wgsl(
+            &device,
+            "skinned-shader",
+            include_str!("../shader_skinned.wgsl"),
+        );
         let skinned_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("skinned-pipeline-layout"),
             bind_group_layouts: &[Some(&bgl), Some(&texture_bgl), Some(&probe_env_bgl), Some(&joint_bgl)],
@@ -787,14 +804,13 @@ impl State {
             format,
             size.width,
             size.height,
+            rt_reflections_available,
         );
-        let rt_reflections_available =
-            crate::reflections::rt_reflections::adapter_supports_rt(&device);
-        if !rt_reflections_available {
-            log::info!(
-                "[RT] RT hardware desactivado (v1 AABB); High/Ultra usan cubemap+SSR+temporal. \
-                 Referencia futura: VK_KHR_ray_tracing_pipeline (rust-raytracing)"
-            );
+        let rt_accel = crate::reflections::rt_accel::RtAccel::new(&device, rt_reflections_available);
+        if rt_reflections_available {
+            log::info!("[RT] Ray query Vulkan activo — RT v2 hardware + BVH fallback");
+        } else {
+            log::info!("[RT] Ray query no disponible — RT v2 usa BVH compute sobre triángulos");
         }
 
         let probe_cubemap_size =
@@ -1011,6 +1027,7 @@ impl State {
                 crate::config_3d::reflection_graphics::ReflectionDebugView::Final,
             reflections,
             rt_reflections_available,
+            rt_accel,
             probe_env,
             probe_capture_cursor: 0,
             probe_capture_burst_all: false,

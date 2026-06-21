@@ -66,6 +66,21 @@ pub struct Mesh {
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer:  wgpu::Buffer,
     pub index_count:   u32,
+    /// Posiciones locales + índices para BLAS/BVH (RT v2).
+    pub rt_positions: Vec<[f32; 3]>,
+    pub rt_indices:   Vec<u32>,
+    /// Índices RT en GPU cuando difieren del draw (p. ej. suelo single-sided).
+    pub rt_index_buffer: Option<wgpu::Buffer>,
+}
+
+impl Mesh {
+    pub fn rt_index_count(&self) -> u32 {
+        self.rt_indices.len() as u32
+    }
+
+    pub fn rt_index_buffer(&self) -> &wgpu::Buffer {
+        self.rt_index_buffer.as_ref().unwrap_or(&self.index_buffer)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -116,7 +131,7 @@ pub fn create_cube(device: &wgpu::Device) -> Mesh {
         20, 21, 22, 22, 23, 20,  // Left
     ];
 
-    upload(device, &vertices, &indices, "cube")
+    upload(device, &vertices, &indices, "cube", None)
 }
 
 /// Esfera UV unitaria (radio 0.5) para el icono del sol.
@@ -159,7 +174,7 @@ pub fn create_uv_sphere(device: &wgpu::Device, segments: u32) -> Mesh {
         }
     }
 
-    upload(device, &vertices, &indices, "uv-sphere")
+    upload(device, &vertices, &indices, "uv-sphere", None)
 }
 
 /// Quad en XY (normal +Z), doble cara; muros/triggers del editor (sin grosor visible).
@@ -176,7 +191,7 @@ pub fn create_unit_wall_quad_xy(device: &wgpu::Device) -> Mesh {
         0, 1, 2, 2, 3, 0,
         0, 2, 1, 2, 0, 3,
     ];
-    upload(device, &vertices, &indices, "unit-wall-quad-xy")
+    upload(device, &vertices, &indices, "unit-wall-quad-xy", None)
 }
 
 /// Quad unitario en el plano XY (Z=0), normal +Z; para overlays HUD texturizados.
@@ -189,7 +204,7 @@ pub fn create_unit_quad_xy(device: &wgpu::Device) -> Mesh {
         Vertex { position: [-0.5,  0.5, 0.0], normal: [0.0, 0.0, 1.0], uv: [0.0, 0.0] },
     ];
     let indices: Vec<u32> = vec![0, 1, 2, 2, 3, 0];
-    upload(device, &vertices, &indices, "unit-quad-xy")
+    upload(device, &vertices, &indices, "unit-quad-xy", None)
 }
 
 // ---------------------------------------------------------------------------
@@ -316,16 +331,42 @@ pub(crate) fn upload_skinned(
     }
 }
 
-pub(crate) fn upload(device: &wgpu::Device, vertices: &[Vertex], indices: &[u32], label: &str) -> Mesh {
+pub(crate) fn upload(
+    device: &wgpu::Device,
+    vertices: &[Vertex],
+    indices: &[u32],
+    label: &str,
+    rt_indices: Option<&[u32]>,
+) -> Mesh {
+    let rt_indices_vec: Vec<u32> = rt_indices
+        .map(|s| s.to_vec())
+        .unwrap_or_else(|| indices.to_vec());
+    let rt_positions: Vec<[f32; 3]> = vertices.iter().map(|v| v.position).collect();
     let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label:    Some(&format!("{label}-vbo")),
         contents: bytemuck::cast_slice(vertices),
-        usage:    wgpu::BufferUsages::VERTEX,
+        usage:    wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::BLAS_INPUT,
     });
     let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label:    Some(&format!("{label}-ibo")),
         contents: bytemuck::cast_slice(indices),
-        usage:    wgpu::BufferUsages::INDEX,
+        usage:    wgpu::BufferUsages::INDEX | wgpu::BufferUsages::BLAS_INPUT,
     });
-    Mesh { vertex_buffer, index_buffer, index_count: indices.len() as u32 }
+    let rt_index_buffer = if rt_indices.is_some() && rt_indices_vec.len() != indices.len() {
+        Some(device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label:    Some(&format!("{label}-rt-ibo")),
+            contents: bytemuck::cast_slice(&rt_indices_vec),
+            usage:    wgpu::BufferUsages::INDEX | wgpu::BufferUsages::BLAS_INPUT,
+        }))
+    } else {
+        None
+    };
+    Mesh {
+        vertex_buffer,
+        index_buffer,
+        index_count: indices.len() as u32,
+        rt_positions,
+        rt_indices: rt_indices_vec,
+        rt_index_buffer,
+    }
 }

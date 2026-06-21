@@ -606,7 +606,7 @@ pub(crate) fn load_gltf_preview_from_file(
     let local_bounds = vertex_local_bounds(&vertices);
 
     Ok(vec![LoadedModelMesh {
-        mesh: upload(device, &vertices, &indices, "gltf-preview"),
+        mesh: upload(device, &vertices, &indices, "gltf-preview", None),
         rgba,
         width: tex_w,
         height: tex_h,
@@ -675,7 +675,7 @@ fn load_gltf(
         let forward_xz = estimate_mesh_forward_xz(&p.vertices);
         let local_bounds = vertex_local_bounds(&p.vertices);
         meshes.push(LoadedModelMesh {
-            mesh: upload(device, &p.vertices, &p.indices, "gltf-mesh"),
+            mesh: upload(device, &p.vertices, &p.indices, "gltf-mesh", None),
             rgba: p.texture.effective_rgba().to_vec(),
             width: p.texture.width,
             height: p.texture.height,
@@ -887,6 +887,7 @@ pub(crate) fn create_ground_plane(
     }
 
     let stride = SEGMENTS + 1;
+    let mut rt_indices: Vec<u32> = Vec::new();
     for z in 0..SEGMENTS {
         for x in 0..SEGMENTS {
             let tl = z * stride + x;
@@ -896,8 +897,10 @@ pub(crate) fn create_ground_plane(
             indices.extend_from_slice(&[tl, bl, tr, tr, bl, br]);
             // Cara opuesta: visible desde arriba (FPS) y desde abajo sin depender del cull global.
             indices.extend_from_slice(&[tl, tr, bl, tr, br, bl]);
+            // RT: solo cara superior (normal +Y) para evitar hits duplicados.
+            rt_indices.extend_from_slice(&[tl, bl, tr, tr, bl, br]);
         }
     }
 
-    upload(device, &vertices, &indices, "ground-plane")
+    upload(device, &vertices, &indices, "ground-plane", Some(&rt_indices))
 }

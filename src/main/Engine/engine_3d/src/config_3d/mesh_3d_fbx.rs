@@ -144,7 +144,7 @@ pub(crate) fn load_fbx(
     let forward_xz = crate::config_3d::fbx_facing::resolve_fbx_forward_xz(meta, est);
 
     Ok(vec![LoadedModelMesh {
-        mesh: upload(device, &vertices, &indices, "fbx-mesh"),
+        mesh: upload(device, &vertices, &indices, "fbx-mesh", None),
         rgba,
         width: tex_w,
         height: tex_h,

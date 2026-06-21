@@ -1,8 +1,15 @@
 //! Reflejos: SSR, acumulación temporal, composite y debug views.
 
-pub(crate) mod accel;
+pub(crate) mod blas;
+pub(crate) mod bvh;
 pub(crate) mod probe_env;
-pub(crate) mod rt_reflections;
+pub(crate) mod skinned_blas;
+pub(crate) mod skinned_rt;
+pub(crate) mod rt_sparse;
+pub(crate) mod rt_extensions;
+pub(crate) mod rt_accel;
+pub(crate) mod rt_reflections_v2;
+pub(crate) mod tlas;
 mod ssr_trace_readback;
 
 use std::time::Instant;
@@ -15,8 +22,8 @@ use wgpu::{include_wgsl, Device, Queue, TextureFormat, TextureView};
 use crate::config_3d::reflection_graphics::{
     ReflectionDebugView, ReflectionProfilerMs, ReflectionSettings,
 };
-use crate::reflections::accel::{StaticInstanceGpu, MAX_STATIC_REFLECTION_INSTANCES};
-use crate::reflections::rt_reflections::RtReflectionPass;
+use crate::reflections::rt_accel::RtAccel;
+use crate::reflections::rt_reflections_v2::RtReflectionPassV2;
 use crate::reflections::ssr_trace_readback::SsrTraceReadback;
 
 #[repr(C)]
@@ -34,8 +41,10 @@ struct SsrUniforms {
     far_plane: f32,
     clear_color: [f32; 4],
     ssr_blur_enabled: f32,
-    _pad: f32,
-    _struct_pad: [f32; 2],
+    frame_index: u32,
+    _struct_pad: f32,
+    /// Padding implícito WGSL (struct uniform alineado a 16 B → 208 B total).
+    _tail_pad: u32,
 }
 
 const _: () = assert!(std::mem::size_of::<SsrUniforms>() == 208);
@@ -143,7 +152,8 @@ pub struct ReflectionPass {
     color_format: TextureFormat,
     present_format: TextureFormat,
     pub profiler: ReflectionProfilerMs,
-    rt_pass: RtReflectionPass,
+    rt_pass: RtReflectionPassV2,
+    rt_hw_available: bool,
     /// SSR centro readback (desactivado; evita spam en consola).
     #[allow(dead_code)]
     _ssr_log_texture: wgpu::Texture,
@@ -152,6 +162,7 @@ pub struct ReflectionPass {
     #[allow(dead_code)]
     ssr_trace_readback: SsrTraceReadback,
     rt_tlas_log_cooldown: u32,
+    reflection_frame_index: u32,
 }
 
 impl ReflectionPass {
@@ -161,6 +172,7 @@ impl ReflectionPass {
         present_format: TextureFormat,
         width: u32,
         height: u32,
+        rt_hw_available: bool,
     ) -> Self {
         let linear_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("reflection-linear"),
@@ -390,8 +402,9 @@ impl ReflectionPass {
                 far_plane: 1000.0,
                 clear_color: [0.1, 0.1, 0.12, 1.0],
                 ssr_blur_enabled: 1.0,
-                _pad: 0.0,
-                _struct_pad: [0.0; 2],
+                frame_index: 0,
+                _struct_pad: 0.0,
+                _tail_pad: 0,
             }),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
@@ -544,11 +557,13 @@ impl ReflectionPass {
             color_format,
             present_format,
             profiler: ReflectionProfilerMs::default(),
-            rt_pass: RtReflectionPass::new(device, color_format, width, height),
+            rt_pass: RtReflectionPassV2::new(device, color_format, width, height, rt_hw_available),
+            rt_hw_available,
             _ssr_log_texture: ssr_log_texture,
             ssr_log_view,
             ssr_trace_readback: SsrTraceReadback::new(device),
             rt_tlas_log_cooldown: 0,
+            reflection_frame_index: 0,
         }
     }
 
@@ -562,6 +577,7 @@ impl ReflectionPass {
             self.present_format,
             width.max(1),
             height.max(1),
+            self.rt_hw_available,
         );
     }
 
@@ -586,7 +602,7 @@ impl ReflectionPass {
         base_color_view: &TextureView,
         depth_export_view: &TextureView,
         velocity_view: &TextureView,
-        static_instances: &[StaticInstanceGpu],
+        accel: &mut RtAccel,
         inv_view_proj: Mat4,
         view_proj: Mat4,
         view: Mat4,
@@ -595,6 +611,7 @@ impl ReflectionPass {
         far_plane: f32,
         clear_color: wgpu::Color,
         rt_available: bool,
+        probe_bind_group: &wgpu::BindGroup,
     ) -> bool {
         if !settings.active() {
             self.profiler = ReflectionProfilerMs::default();
@@ -608,6 +625,8 @@ impl ReflectionPass {
         // (steps × paso) sigue siendo suficiente para la escena.
         let step_size = (settings.max_distance_m / settings.max_steps.max(1) as f32)
             .clamp(0.05, 0.25);
+        let frame_index = self.reflection_frame_index;
+        self.reflection_frame_index = self.reflection_frame_index.wrapping_add(1);
         let ssr_blur = ssr_blur_enabled_for_ssr_pass(debug_view);
         let ssr_u = SsrUniforms {
             inv_view_proj: inv_view_proj.to_cols_array_2d(),
@@ -622,8 +641,9 @@ impl ReflectionPass {
             far_plane,
             clear_color: [clear_color.r as f32, clear_color.g as f32, clear_color.b as f32, 1.0],
             ssr_blur_enabled: ssr_blur,
-            _pad: 0.0,
-            _struct_pad: [0.0; 2],
+            frame_index,
+            _struct_pad: 0.0,
+            _tail_pad: 0,
         };
         queue.write_buffer(&self.ssr_uniform_buffer, 0, bytemuck::bytes_of(&ssr_u));
 
@@ -754,21 +774,19 @@ impl ReflectionPass {
         self.profiler.temporal_ms = t1.elapsed().as_secs_f32() * 1000.0;
 
         let t2 = Instant::now();
-        if settings.rt_enabled && rt_available && settings.rt_static_only {
-            let instance_count = static_instances.len().min(MAX_STATIC_REFLECTION_INSTANCES);
-            if instance_count == 0 {
-                log::warn!("[RT] TLAS estático vacío — sin AABB para trazar");
+        if settings.rt_enabled && rt_available {
+            if accel.node_count == 0 {
+                log::warn!("[RT] BVH v2 vacío — sin geometría trazable");
             } else if self.rt_tlas_log_cooldown == 0 {
                 log::info!(
-                    "[RT] TLAS estático: {instance_count} instancias (máx {MAX_STATIC_REFLECTION_INSTANCES})"
+                    "[RT] BVH v2: {} nodos, {} triángulos",
+                    accel.node_count,
+                    accel.tri_count
                 );
                 self.rt_tlas_log_cooldown = 180;
             } else {
                 self.rt_tlas_log_cooldown -= 1;
             }
-            // RT refina el buffer que leerá el composite (historial temporal si hubo
-            // acumulación, o el SSR crudo si no). Lee ese buffer como `t_ssr`, escribe en
-            // el scratch y lo copia de vuelta al mismo buffer.
             let resolved_idx = self.reflection_history_index as usize;
             let from_history = self.reflection_resolved_from_history;
             {
@@ -781,7 +799,7 @@ impl ReflectionPass {
                     device,
                     queue,
                     encoder,
-                    static_instances,
+                    accel,
                     src_view,
                     &self.reflection_rt_scratch_view,
                     depth_export_view,
@@ -798,6 +816,8 @@ impl ReflectionPass {
                     settings,
                     self.width,
                     self.height,
+                    frame_index,
+                    probe_bind_group,
                 );
             }
             let dst_texture: &wgpu::Texture = if from_history {

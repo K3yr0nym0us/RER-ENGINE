@@ -716,13 +716,6 @@ pub enum EngineEvent {
     ShadowTierChanged { tier: String },
     #[serde(rename = "reflection_debug_view_changed")]
     ReflectionDebugViewChanged { view: String },
-    #[serde(rename = "reflection_profiler")]
-    ReflectionProfiler {
-        ssr_ms: f32,
-        temporal_ms: f32,
-        rt_ms: f32,
-        composite_ms: f32,
-    },
     /// Emitido ~1 vez por segundo con métricas de rendimiento del motor.
     DebugMetrics {
         fps:            f32,

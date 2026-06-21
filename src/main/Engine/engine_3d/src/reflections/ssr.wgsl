@@ -11,8 +11,8 @@ struct SsrUniforms {
     far_plane         : f32,
     clear_color       : vec4<f32>,
     ssr_blur_enabled  : f32,
-    _pad              : f32,
-    _struct_pad       : vec2<f32>,
+    frame_index       : u32,
+    _struct_pad       : f32,
 }
 
 @group(0) @binding(0) var<uniform> u : SsrUniforms;
@@ -171,7 +171,14 @@ fn trace_ssr(
     miss.march_dist_m = 0.0;
 
     let view_dir = normalize(u.cam_pos.xyz - world_pos);
-    let refl_dir = refl_fuzzy_mirror_dir(world_pos, u.cam_pos.xyz, n, roughness);
+    let refl_dir = refl_fuzzy_mirror_dir_temporal(
+        world_pos,
+        u.cam_pos.xyz,
+        n,
+        roughness,
+        u.frame_index,
+        surf_uv,
+    );
 
     if dot(refl_dir, refl_dir) <= 1e-8 {
         return miss;
@@ -317,7 +324,14 @@ fn ssr_diagnostic_at(surf_uv : vec2<f32>) -> vec4<f32> {
 
     let world_pos = world_pos_from_depth(surf_uv, view_depth_m);
     let view_dir = normalize(u.cam_pos.xyz - world_pos);
-    let refl_dir = refl_fuzzy_mirror_dir(world_pos, u.cam_pos.xyz, n, roughness);
+    let refl_dir = refl_fuzzy_mirror_dir_temporal(
+        world_pos,
+        u.cam_pos.xyz,
+        n,
+        roughness,
+        u.frame_index,
+        surf_uv,
+    );
     let strength = refl_trace_strength(roughness, metallic, n, view_dir, albedo);
     if dot(refl_dir, refl_dir) <= 1e-8 {
         return vec4<f32>(-3.0, roughness, metallic, strength);

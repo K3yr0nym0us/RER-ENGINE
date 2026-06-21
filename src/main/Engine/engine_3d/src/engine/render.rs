@@ -813,12 +813,23 @@ impl State {
         // marching deben usar ESA misma matriz para que el test de profundidad coincida.
         let view_proj = glam::Mat4::from_cols_array_2d(&scene_uni.view_proj);
         let inv_view_proj = glam::Mat4::from_cols_array_2d(&inv_vp);
+        let rt_sync = reflection_settings.active() && reflection_settings.rt_enabled;
 
-        let static_instances = if reflection_settings.active() && reflection_settings.rt_enabled {
-            crate::reflections::accel::collect_static_instances(self)
-        } else {
-            Vec::new()
-        };
+        if rt_sync {
+            let include_skinned = !reflection_settings.rt_static_only;
+            let instances =
+                crate::reflections::tlas::collect_rt_instances(self, include_skinned);
+            let meshes = &self.meshes;
+            let skinned_meshes = &self.skinned_gpu_meshes;
+            self.rt_accel.sync_scene(
+                &instances,
+                meshes,
+                skinned_meshes,
+                &self.device,
+                &self.queue,
+                &mut enc,
+            );
+        }
 
         if reflection_settings.active() {
             self.prepare_lit_scene(
@@ -836,6 +847,7 @@ impl State {
         let base_color_view = self.taa.base_color_view();
         let normal_roughness_view = self.taa.normal_roughness_view();
         let shadow_mask_view = self.taa.shadow_mask_view();
+        let view_mat = self.camera_view_matrix();
 
         let ran_reflections = if reflection_settings.active() {
             self.reflections.run(
@@ -852,15 +864,16 @@ impl State {
                 base_color_view,
                 depth_export_view,
                 velocity_view,
-                &static_instances,
+                &mut self.rt_accel,
                 inv_view_proj,
                 view_proj,
-                self.camera_view_matrix(),
+                view_mat,
                 cam_pos,
                 self.camera.near,
                 self.camera.far,
                 self.clear_color,
                 self.rt_reflections_available,
+                self.probe_env.sample_bind_group(),
             )
         } else {
             false
@@ -914,16 +927,6 @@ impl State {
                 inv_vp,
                 prev_vp,
             );
-        }
-
-        if ran_reflections && self.metrics_frame_count % 15 == 0 {
-            let p = self.reflections.profiler;
-            crate::ipc::send_event(&crate::ipc::EngineEvent::ReflectionProfiler {
-                ssr_ms: p.ssr_ms,
-                temporal_ms: p.temporal_ms,
-                rt_ms: p.rt_ms,
-                composite_ms: p.composite_ms,
-            });
         }
 
         self.prev_view_proj = scene_uni.view_proj_stable;

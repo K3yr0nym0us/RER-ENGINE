@@ -185,7 +185,6 @@ const SILENT_ENGINE_EVENTS = new Set<string>([
 	'reflection_tier_changed',
 	'shadow_tier_changed',
 	'reflection_debug_view_changed',
-	'reflection_profiler',
 	'model_clips_ready',
 ]);
 

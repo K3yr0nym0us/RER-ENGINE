@@ -420,6 +420,7 @@ impl State {
             &part.vertices,
             &part.indices,
             &format!("{label}-{part_index}"),
+            None,
         ));
         mesh_idx
     }

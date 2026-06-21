@@ -49,12 +49,16 @@ impl State {
         let shadow_view = self
             ._shadow_texture
             .create_view(&wgpu::TextureViewDescriptor::default());
-        let shader = self
-            .device
-            .create_shader_module(wgpu::include_wgsl!("../shader.wgsl"));
-        let skinned_shader = self
-            .device
-            .create_shader_module(wgpu::include_wgsl!("../shader_skinned.wgsl"));
+        let shader = crate::shader_loader::load_scene_wgsl(
+            &self.device,
+            "main-shader-probe-resize",
+            include_str!("../shader.wgsl"),
+        );
+        let skinned_shader = crate::shader_loader::load_scene_wgsl(
+            &self.device,
+            "skinned-shader-probe-resize",
+            include_str!("../shader_skinned.wgsl"),
+        );
         let new_probe = {
             let joint_bgl = self
                 .joint_bind_group_layout

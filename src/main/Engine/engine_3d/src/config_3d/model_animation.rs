@@ -9,7 +9,7 @@ use glam::{Mat4, Quat, Vec3};
 use crate::config_3d::character_anchor::PLAY_CHARACTER_BODY_HEIGHT;
 use crate::config_3d::model_asset::{
     self, compute_gltf_joint_worlds, gltf_bind_globals_from_ibm, AnimChannel, AnimKeyframe,
-    AnimProperty, AnimationClip, GltfFile, ModelAsset, MAX_JOINTS,
+    AnimProperty, AnimationClip, GltfFile, ModelAsset, SkinnedMeshData, MAX_JOINTS,
 };
 use crate::ipc::ModelClipInfoEvent;
 use crate::ecs::EntityId;
@@ -39,8 +39,16 @@ pub(crate) struct ActiveModelClip {
 
 pub(crate) struct GpuSkinnedMeshEntry {
     pub mesh: SkinnedMesh,
+    pub rt_mesh: SkinnedMeshData,
     pub joint_buffer: wgpu::Buffer,
     pub joint_bind_group: wgpu::BindGroup,
+    joint_palette: Vec<[[f32; 4]; 4]>,
+}
+
+impl GpuSkinnedMeshEntry {
+    pub fn joint_palette(&self) -> &[[[f32; 4]; 4]] {
+        &self.joint_palette
+    }
 }
 
 impl State {
@@ -194,8 +202,10 @@ impl State {
             let gpu_idx = self.skinned_gpu_meshes.len();
             self.skinned_gpu_meshes.push(GpuSkinnedMeshEntry {
                 mesh: gpu_mesh,
+                rt_mesh: part.mesh.clone(),
                 joint_buffer,
                 joint_bind_group,
+                joint_palette: vec![Mat4::IDENTITY.to_cols_array_2d(); MAX_JOINTS],
             });
             part_gpu_indices.push(gpu_idx);
         }
@@ -440,7 +450,8 @@ impl State {
             }
             let flat: Vec<[[f32; 4]; 4]> =
                 joint_palette.iter().map(|m| m.to_cols_array_2d()).collect();
-            if let Some(entry) = self.skinned_gpu_meshes.get(gpu_idx) {
+            if let Some(entry) = self.skinned_gpu_meshes.get_mut(gpu_idx) {
+                entry.joint_palette = flat.clone();
                 self.queue.write_buffer(
                     &entry.joint_buffer,
                     0,
