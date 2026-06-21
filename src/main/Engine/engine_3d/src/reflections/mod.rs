@@ -88,7 +88,7 @@ struct TemporalUniforms {
 struct CompositeUniforms {
     strength: f32,
     ssil_strength: f32,
-    _pad1: f32,
+    shadow_influence: f32,
     _pad2: f32,
 }
 
@@ -260,6 +260,7 @@ impl ReflectionPass {
                 texture_entry(2, true),
                 sampler_entry(3, true),
                 texture_entry(4, true),
+                texture_entry_typed(5, wgpu::TextureSampleType::Float { filterable: false }),
             ],
         });
         let debug_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -440,7 +441,7 @@ impl ReflectionPass {
             contents: bytemuck::bytes_of(&CompositeUniforms {
                 strength: 1.0,
                 ssil_strength: 0.0,
-                _pad1: 0.0,
+                shadow_influence: 0.1,
                 _pad2: 0.0,
             }),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
@@ -513,6 +514,7 @@ impl ReflectionPass {
             &reflection_view,
             &reflection_view,
             &linear_sampler,
+            &hit_uv_view,
         );
         let debug_bind_group = make_debug_bind_group(
             device,
@@ -1009,6 +1011,7 @@ impl ReflectionPass {
         scene_texture: &wgpu::Texture,
         strength: f32,
         ssil_strength: f32,
+        shadow_mask_view: &TextureView,
     ) {
         let t0 = Instant::now();
         let reflection_view: &TextureView = if self.reflection_resolved_from_history {
@@ -1019,7 +1022,7 @@ impl ReflectionPass {
         let composite_u = CompositeUniforms {
             strength,
             ssil_strength,
-            _pad1: 0.0,
+            shadow_influence: 0.1,
             _pad2: 0.0,
         };
         queue.write_buffer(
@@ -1035,6 +1038,7 @@ impl ReflectionPass {
             reflection_view,
             &self.ssil_pass.output_view(),
             &self.linear_sampler,
+            shadow_mask_view,
         );
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -1515,6 +1519,7 @@ fn make_composite_bind_group(
     reflection: &TextureView,
     ssil: &TextureView,
     sampler: &wgpu::Sampler,
+    shadow_mask: &TextureView,
 ) -> wgpu::BindGroup {
     device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("refl-composite-bg"),
@@ -1539,6 +1544,10 @@ fn make_composite_bind_group(
             wgpu::BindGroupEntry {
                 binding: 4,
                 resource: wgpu::BindingResource::TextureView(ssil),
+            },
+            wgpu::BindGroupEntry {
+                binding: 5,
+                resource: wgpu::BindingResource::TextureView(shadow_mask),
             },
         ],
     })

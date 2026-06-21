@@ -345,6 +345,7 @@ pub struct State {
     pub(crate) shadow_darkness: f32,
     pub(crate) scene_instance_pool: super::types::InstanceBufferPool,
     pub(crate) shadow_instance_pool: super::types::InstanceBufferPool,
+    pub(crate) capture_instance_pool: super::types::InstanceBufferPool,
     pub(crate) skinned_instance_pool: super::types::InstanceBufferPool,
     /// path absoluto de imagen → capa en `texture_array` (dedup).
     pub(crate) texture_path_layers: HashMap<String, crate::texture::TextureLayer>,

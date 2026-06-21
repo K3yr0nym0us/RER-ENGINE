@@ -1057,6 +1057,7 @@ impl State {
             shadow_darkness: DEFAULT_SHADOW_DARKNESS,
             scene_instance_pool: crate::engine::types::InstanceBufferPool::new(),
             shadow_instance_pool: crate::engine::types::InstanceBufferPool::new(),
+            capture_instance_pool: crate::engine::types::InstanceBufferPool::new(),
             skinned_instance_pool: crate::engine::types::InstanceBufferPool::new(),
             texture_path_layers: HashMap::new(),
             model_assets: std::collections::HashMap::new(),

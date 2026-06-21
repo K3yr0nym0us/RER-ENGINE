@@ -229,6 +229,7 @@ export function EngineProvider({
 		setGraphicsTextureTier: actions.setGraphicsTextureTier,
 		setReflectionTier: actions.setReflectionTier,
 		setShadowTier: actions.setShadowTier,
+		setTaaEnabled: actions.setTaaEnabled,
 		setReflectionDebugView: actions.setReflectionDebugView,
 		setTextureDetailDistance: actions.setTextureDetailDistance,
 		removeCollider: actions.removeCollider,

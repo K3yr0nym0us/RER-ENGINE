@@ -320,6 +320,12 @@ export function createEngineActions({
 		addLog(`[Sombras] Nivel solicitado: ${normalized}`);
 	};
 
+	const setTaaEnabled = (enabled: boolean) => {
+		dispatch({ type: 'SET_WORLD_CONFIG', payload: { taaEnabled: enabled } });
+		send3dFn({ cmd: 'set_taa', enabled });
+		addLog(`[TAA] ${enabled ? 'Activado' : 'Desactivado'}`);
+	};
+
 	const setReflectionDebugView = (view: ReflectionDebugView | string) => {
 		const normalized = normalizeReflectionDebugView(view);
 		dispatch({ type: 'SET_WORLD_CONFIG', payload: { reflectionDebugView: normalized } });
@@ -1017,6 +1023,7 @@ export function createEngineActions({
 		setGraphicsTextureTier,
 		setReflectionTier,
 		setShadowTier,
+		setTaaEnabled,
 		setReflectionDebugView,
 		setTextureDetailDistance,
 		removeCollider,

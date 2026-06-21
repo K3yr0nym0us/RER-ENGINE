@@ -922,6 +922,11 @@ impl State {
                     log::warn!("[sombras] tier IPC no reconocido: {tier}");
                 }
             }
+            EngineCommand::Only3d(EngineCommand3dOnly::SetTaa { enabled }) => {
+                log::info!("[taa] IPC set_taa: {enabled}");
+                self.set_taa(enabled);
+                send_event(&EngineEvent::TaaChanged { enabled });
+            }
             EngineCommand::Common(EngineCommandCommon::SetDebugMode { show }) => {
                 self.debug_mode = show;
                 log::info!("[debug] modo debug (colisiones): {}", show);

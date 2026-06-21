@@ -1431,6 +1431,9 @@ fn apply_loaded_proyect_3d_with_scene(
     send_event(&EngineEvent::ShadowTierChanged {
         tier: state.shadow_tier.wire().to_string(),
     });
+    send_event(&EngineEvent::TaaChanged {
+        enabled: state.taa.enabled,
+    });
 
     load_project_asset_stores(state, project);
     log_load_step(load_started_at, &mut step_started, "Sonidos y fondos registrados");

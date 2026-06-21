@@ -186,6 +186,7 @@ const SILENT_ENGINE_EVENTS = new Set<string>([
 	'reflection_tier_effective',
 	'shadow_tier_changed',
 	'reflection_debug_view_changed',
+	'taa_changed',
 	'model_clips_ready',
 ]);
 
@@ -2907,6 +2908,12 @@ export function createEngineEventHandler({
 			const view = normalizeReflectionDebugView(event.view);
 			dispatch({ type: 'SET_WORLD_CONFIG', payload: { reflectionDebugView: view } });
 			addLog(`[Reflejos] Motor confirmó vista debug: ${view}`);
+		}
+
+		if (event.event === 'taa_changed') {
+			const enabled = Boolean(event.enabled);
+			dispatch({ type: 'SET_WORLD_CONFIG', payload: { taaEnabled: enabled } });
+			addLog(`[TAA] Motor confirmó: ${enabled ? 'Activado' : 'Desactivado'}`);
 		}
 
 		if (event.event === 'debug_metrics') {

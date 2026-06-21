@@ -210,6 +210,7 @@ export interface WorldConfig {
 	reflectionRtAvailable?: boolean
 	reflectionDebugView: ReflectionDebugView
 	shadowTier: ShadowTier
+	taaEnabled: boolean
 }
 
 export const DEFAULT_WORLD_CONFIG: WorldConfig = {
@@ -228,6 +229,7 @@ export const DEFAULT_WORLD_CONFIG: WorldConfig = {
 	reflectionTier: 'off',
 	reflectionDebugView: 'final',
 	shadowTier: 'low',
+	taaEnabled: true,
 };
 
 export type UiScreenScope = 'player' | 'menu';
@@ -1432,6 +1434,7 @@ export interface EngineContextValue extends EngineState {
 	setReflectionTier: (tier: ReflectionTier) => void
 	setReflectionDebugView: (view: ReflectionDebugView) => void
 	setShadowTier: (tier: ShadowTier) => void
+	setTaaEnabled: (enabled: boolean) => void
 	setTextureDetailDistance: (distanceM: number) => void
 	removeCollider: (id: number) => void
 	removeExecutionArea: (id: number) => void

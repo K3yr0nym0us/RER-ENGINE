@@ -126,6 +126,7 @@ pub enum EngineCommand3dOnly {
     SetReflectionTier { tier: String },
     SetReflectionDebugView { view: String },
     SetShadowTier { tier: String },
+    SetTaa { enabled: bool },
     SetCameraFov { fov_y: f32 },
     #[serde(rename = "set_play_editor_frustum_distance")]
     SetPlayEditorFrustumDistance { distance: f32 },
@@ -187,6 +188,18 @@ mod tests {
                 assert_eq!(tier, "medium");
             }
             other => panic!("expected Only3d SetReflectionTier, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn deserialize_set_taa_command() {
+        let json = r#"{"cmd":"set_taa","enabled":true}"#;
+        let cmd: EngineCommand = serde_json::from_str(json).expect("set_taa IPC");
+        match cmd {
+            EngineCommand::Only3d(EngineCommand3dOnly::SetTaa { enabled }) => {
+                assert!(enabled);
+            }
+            other => panic!("expected Only3d SetTaa, got {other:?}"),
         }
     }
 

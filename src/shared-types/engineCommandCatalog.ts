@@ -129,6 +129,7 @@ export const ENGINE_COMMANDS_3D_ONLY = [
   'set_reflection_tier',
   'set_reflection_debug_view',
   'set_shadow_tier',
+  'set_taa',
   'create_editor_scene',
   'switch_editor_scene',
   'delete_editor_scene',

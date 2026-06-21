@@ -157,45 +157,6 @@ impl State {
         );
     }
 
-    fn present_scene_with_reflections(
-        &mut self,
-        enc: &mut wgpu::CommandEncoder,
-        swapchain_view: &wgpu::TextureView,
-        _shadows_enabled: bool,
-        _shadow_darkness: f32,
-        zoom_stability: f32,
-        inv_view_proj: [[f32; 4]; 4],
-        prev_view_proj: [[f32; 4]; 4],
-        ssil_strength: f32,
-    ) {
-        self.reflections.composite_into(
-            &self.device,
-            &self.queue,
-            enc,
-            self.taa.scene_color_view(),
-            self.taa.scene_color_texture(),
-            1.0,
-            ssil_strength,
-        );
-
-        let use_scene_taa = self.taa.scene_taa_active();
-        if use_scene_taa {
-            self.taa.resolve_scene_soft_pub(
-                &self.device,
-                &self.queue,
-                enc,
-                zoom_stability,
-                self.size.width,
-                self.size.height,
-                inv_view_proj,
-                prev_view_proj,
-            );
-        }
-        self.taa
-            .blit_present_pub(enc, swapchain_view, use_scene_taa);
-        self.taa.tick_frame_index();
-    }
-
     pub fn render(&mut self) -> Result<(), SurfacePresentError> {
         self.update_animations();
         self.update_skinned_animations();
@@ -531,7 +492,7 @@ impl State {
                     .iter()
                     .map(|b| b.instances.as_slice())
                     .collect();
-                let capture_instance_buffers = self.shadow_instance_pool.upload(
+                let capture_instance_buffers = self.capture_instance_pool.upload(
                     &self.device,
                     &self.queue,
                     &capture_slices,
@@ -950,16 +911,32 @@ impl State {
             } else {
                 0.0
             };
-            self.present_scene_with_reflections(
+            self.reflections.composite_into(
+                &self.device,
+                &self.queue,
                 &mut enc,
-                &view,
-                shadows_enabled,
-                shadow_darkness,
-                zoom_stability,
-                inv_vp,
-                prev_vp,
+                self.taa.scene_color_view(),
+                self.taa.scene_color_texture(),
+                1.0,
                 ssil_strength,
+                self.taa.shadow_mask_view(),
             );
+            let use_scene_taa = self.taa.scene_taa_active();
+            if use_scene_taa {
+                self.taa.resolve_scene_soft_pub(
+                    &self.device,
+                    &self.queue,
+                    &mut enc,
+                    zoom_stability,
+                    self.size.width,
+                    self.size.height,
+                    inv_vp,
+                    prev_vp,
+                );
+            }
+            self.taa
+                .blit_present_pub(&mut enc, &view, use_scene_taa);
+            self.taa.tick_frame_index();
         } else if shadows_enabled {
             self.taa.resolve_shadow_and_present(
                 &self.device,

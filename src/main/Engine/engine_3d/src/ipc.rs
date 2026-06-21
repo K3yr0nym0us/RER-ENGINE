@@ -723,6 +723,8 @@ pub enum EngineEvent {
     ShadowTierChanged { tier: String },
     #[serde(rename = "reflection_debug_view_changed")]
     ReflectionDebugViewChanged { view: String },
+    #[serde(rename = "taa_changed")]
+    TaaChanged { enabled: bool },
     /// Emitido ~1 vez por segundo con métricas de rendimiento del motor.
     DebugMetrics {
         fps:            f32,
