@@ -28,6 +28,10 @@ impl BlasCache {
         }
     }
 
+    pub fn contains(&self, mesh_idx: usize) -> bool {
+        self.entries.contains_key(&mesh_idx)
+    }
+
     pub fn ensure(&mut self, device: &Device, mesh_idx: usize, mesh: &Mesh) -> Option<&Blas> {
         let rt_count = mesh.rt_index_count();
         if rt_count == 0 || rt_count % 3 != 0 || mesh.rt_indices.is_empty() {

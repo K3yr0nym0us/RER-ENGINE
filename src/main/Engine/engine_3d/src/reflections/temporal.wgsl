@@ -3,7 +3,7 @@ struct TemporalUniforms {
     blend          : f32,
     enabled        : f32,
     depth_reject_m : f32,
-    _struct_pad    : f32,
+    gbuffer_scale  : f32,
 }
 
 @group(0) @binding(0) var<uniform> u : TemporalUniforms;
@@ -64,7 +64,8 @@ const RPC_9 : f32 = 1.0 / 9.0;
 
 fn depth_at(uv : vec2<f32>) -> f32 {
     let clamped = clamp(uv, vec2<f32>(0.0), vec2<f32>(1.0));
-    let fc = clamped * u.resolution - vec2<f32>(0.5);
+    let gb_res = u.resolution * u.gbuffer_scale;
+    let fc = clamped * gb_res - vec2<f32>(0.5);
     let px = vec2<i32>(fc);
     return textureLoad(t_depth, px, 0).r;
 }

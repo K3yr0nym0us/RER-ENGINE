@@ -326,3 +326,29 @@ fn solid_white_rgba() -> Vec<u8> {
         TextureArray::TEXTURE_SIZE,
     )
 }
+
+/// Promedio RGB mip0 (sRGB bytes → linear aproximado).
+pub fn rgba_mip0_average_linear(mip0: &[u8]) -> [f32; 3] {
+    if mip0.len() < 4 {
+        return [1.0, 1.0, 1.0];
+    }
+    let px = mip0.len() / 4;
+    if px == 0 {
+        return [1.0, 1.0, 1.0];
+    }
+    let mut r = 0u64;
+    let mut g = 0u64;
+    let mut b = 0u64;
+    for i in 0..px {
+        let o = i * 4;
+        r += mip0[o] as u64;
+        g += mip0[o + 1] as u64;
+        b += mip0[o + 2] as u64;
+    }
+    let n = px as f64;
+    [
+        (r as f64 / n / 255.0) as f32,
+        (g as f64 / n / 255.0) as f32,
+        (b as f64 / n / 255.0) as f32,
+    ]
+}

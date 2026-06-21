@@ -517,6 +517,8 @@ impl State {
                 layer
             };
             self.tex_layers.push(layer);
+            self.tex_layer_albedo
+                .push(crate::texture::rgba_mip0_average_linear(&mips[0]));
         } else {
             self.pack_texture_layer(
                 Some(&tex_cache_key),

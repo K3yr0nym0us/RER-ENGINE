@@ -7,7 +7,8 @@ struct MaskUniforms {
     threshold     : f32,
     tiles_x       : u32,
     tiles_y       : u32,
-    _pad          : u32,
+    gbuffer_scale : f32,
+    _pad          : f32,
 }
 
 @group(0) @binding(0) var<uniform> u : MaskUniforms;
@@ -53,18 +54,19 @@ fn cs_build_mask(@builtin(global_invocation_id) gid : vec3<u32>) {
                 i32(min(base_x + ox, u32(u.resolution.x) - 1u)),
                 i32(min(base_y + oy, u32(u.resolution.y) - 1u)),
             );
+            let gb_px = vec2<i32>(vec2<f32>(px) * u.gbuffer_scale);
             let ssr = textureLoad(t_ssr, px, 0);
             if (1.0 - ssr.a) * ssr.a < 0.0001 && ssr.a > 0.95 {
                 continue;
             }
-            let view_depth_m = textureLoad(t_depth, px, 0).r;
+            let view_depth_m = textureLoad(t_depth, gb_px, 0).r;
             if view_depth_m <= 0.0001 {
                 continue;
             }
-            let packed = textureLoad(t_normal_roughness, px, 0);
+            let packed = textureLoad(t_normal_roughness, gb_px, 0);
             let n = normal_from_packed(packed);
-            let roughness = textureLoad(t_surface, px, 0).g;
-            let metallic = textureLoad(t_direct, px, 0).a;
+            let roughness = textureLoad(t_surface, gb_px, 0).g;
+            let metallic = textureLoad(t_direct, gb_px, 0).a;
             if roughness > u.max_roughness || metallic < 0.05 {
                 continue;
             }

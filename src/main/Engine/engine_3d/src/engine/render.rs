@@ -822,8 +822,11 @@ impl State {
             let include_skinned = !reflection_settings.rt_static_only;
             let instances =
                 crate::reflections::tlas::collect_rt_instances(self, include_skinned);
-            let rt_materials =
-                crate::reflections::rt_material::build_rt_materials(self, &instances);
+            let rt_materials = crate::reflections::rt_material::build_rt_materials(
+                self,
+                &instances,
+                &probe_index_map,
+            );
             let meshes = &self.meshes;
             let skinned_meshes = &self.skinned_gpu_meshes;
             self.rt_accel.sync_scene(

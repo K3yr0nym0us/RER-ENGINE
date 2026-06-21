@@ -1,6 +1,7 @@
 //! Orquestador RT v2: BVH CPU + BLAS/TLAS hardware opcional.
 
 use std::collections::hash_map::DefaultHasher;
+use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -24,7 +25,7 @@ const ASYNC_BVH_TRI_THRESHOLD: usize = 8192;
 const BVH_BUILD_BUDGET_MS: f64 = 2.0;
 
 struct PendingBvh {
-    scene_hash: u64,
+    static_hash: u64,
     result: Arc<Mutex<Option<(Vec<BvhNodeGpu>, Vec<RtTriangleGpu>)>>>,
 }
 
@@ -35,12 +36,19 @@ pub struct RtAccel {
     pub hw_available: bool,
     bvh_node_buffer: wgpu::Buffer,
     bvh_tri_buffer: wgpu::Buffer,
+    hw_tri_buffer: wgpu::Buffer,
+    instance_tri_base_buffer: wgpu::Buffer,
+    pub hw_tri_count: u32,
     instance_material_buffer: wgpu::Buffer,
     pub instance_material_count: u32,
     blas_cache: BlasCache,
     skinned_blas_cache: SkinnedBlasCache,
-    scene_hash: u64,
+    static_scene_hash: u64,
+    pose_hash: u64,
     pending_bvh: Option<PendingBvh>,
+    tlas_geom_dirty: bool,
+    tlas_instance_dirty: bool,
+    last_tlas_slot_count: usize,
 }
 
 impl RtAccel {
@@ -56,6 +64,16 @@ impl RtAccel {
         let bvh_tri_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("rt-bvh-tris"),
             contents: bytemuck::bytes_of(&empty_tri),
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        });
+        let hw_tri_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("rt-hw-tris"),
+            contents: bytemuck::bytes_of(&empty_tri),
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        });
+        let instance_tri_base_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("rt-instance-tri-base"),
+            contents: bytemuck::cast_slice(&[0u32; MAX_RT_MATERIALS]),
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         });
         let instance_material_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -80,12 +98,19 @@ impl RtAccel {
             hw_available,
             bvh_node_buffer,
             bvh_tri_buffer,
+            hw_tri_buffer,
+            instance_tri_base_buffer,
+            hw_tri_count: 0,
             instance_material_buffer,
             instance_material_count: 0,
             blas_cache: BlasCache::new(),
             skinned_blas_cache: SkinnedBlasCache::new(),
-            scene_hash: 0,
+            static_scene_hash: 0,
+            pose_hash: 0,
             pending_bvh: None,
+            tlas_geom_dirty: true,
+            tlas_instance_dirty: true,
+            last_tlas_slot_count: 0,
         }
     }
 
@@ -97,6 +122,14 @@ impl RtAccel {
         &self.bvh_tri_buffer
     }
 
+    pub fn hw_tri_buffer(&self) -> &wgpu::Buffer {
+        &self.hw_tri_buffer
+    }
+
+    pub fn instance_tri_base_buffer(&self) -> &wgpu::Buffer {
+        &self.instance_tri_base_buffer
+    }
+
     pub fn instance_material_buffer(&self) -> &wgpu::Buffer {
         &self.instance_material_buffer
     }
@@ -105,10 +138,7 @@ impl RtAccel {
         self.hw_tlas.as_ref()
     }
 
-    fn scene_hash(
-        instances: &[RtInstanceDesc],
-        skinned_meshes: &[GpuSkinnedMeshEntry],
-    ) -> u64 {
+    fn static_scene_hash(instances: &[RtInstanceDesc]) -> u64 {
         let mut h = DefaultHasher::new();
         for inst in instances {
             inst.entity_id.hash(&mut h);
@@ -117,8 +147,19 @@ impl RtAccel {
             for f in inst.transform.to_cols_array() {
                 f.to_bits().hash(&mut h);
             }
+        }
+        h.finish()
+    }
+
+    fn pose_hash(
+        instances: &[RtInstanceDesc],
+        skinned_meshes: &[GpuSkinnedMeshEntry],
+    ) -> u64 {
+        let mut h = DefaultHasher::new();
+        for inst in instances {
             if let Some(gpu_idx) = inst.skinned_gpu_idx {
                 if let Some(entry) = skinned_meshes.get(gpu_idx) {
+                    gpu_idx.hash(&mut h);
                     for mat in entry.joint_palette() {
                         for row in mat {
                             for f in row {
@@ -130,6 +171,59 @@ impl RtAccel {
             }
         }
         h.finish()
+    }
+
+    fn active_skinned_gpu_indices(instances: &[RtInstanceDesc]) -> HashSet<usize> {
+        instances
+            .iter()
+            .filter_map(|inst| inst.skinned_gpu_idx)
+            .collect()
+    }
+
+    fn build_hw_triangle_lookup(
+        instances: &[RtInstanceDesc],
+        meshes: &[Mesh],
+        skinned_meshes: &[GpuSkinnedMeshEntry],
+    ) -> (Vec<RtTriangleGpu>, [u32; MAX_RT_MATERIALS]) {
+        let mut tris = Vec::new();
+        let mut bases = [u32::MAX; MAX_RT_MATERIALS];
+        for (slot, inst) in instances.iter().enumerate() {
+            if slot >= MAX_RT_MATERIALS {
+                break;
+            }
+            bases[slot] = tris.len() as u32;
+            let tagged = instance_triangles_tagged(meshes, skinned_meshes, inst, slot as u32);
+            tris.extend(tagged.into_iter().map(RtTriangleGpu::from));
+        }
+        (tris, bases)
+    }
+
+    fn upload_hw_triangles(
+        &mut self,
+        tris: &[RtTriangleGpu],
+        bases: &[u32; MAX_RT_MATERIALS],
+        device: &Device,
+        queue: &Queue,
+    ) {
+        self.hw_tri_count = tris.len().min(u32::MAX as usize) as u32;
+        if tris.is_empty() {
+            return;
+        }
+        let tri_bytes = tris.len() * std::mem::size_of::<RtTriangleGpu>();
+        if self.hw_tri_buffer.size() < tri_bytes as u64 {
+            self.hw_tri_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("rt-hw-tris"),
+                size: tri_bytes.max(256) as u64,
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+        }
+        queue.write_buffer(&self.hw_tri_buffer, 0, bytemuck::cast_slice(tris));
+        queue.write_buffer(
+            &self.instance_tri_base_buffer,
+            0,
+            bytemuck::cast_slice(bases),
+        );
     }
 
     fn upload_materials(
@@ -211,7 +305,7 @@ impl RtAccel {
             guard.take()
         };
         if let Some((nodes, tris)) = ready {
-            self.scene_hash = pending.scene_hash;
+            self.static_scene_hash = pending.static_hash;
             self.upload_bvh(nodes, tris, device, queue);
         } else {
             self.pending_bvh = Some(pending);
@@ -229,21 +323,48 @@ impl RtAccel {
         encoder: &mut CommandEncoder,
     ) {
         self.poll_pending_bvh(device, queue);
-
         self.upload_materials(materials, device, queue);
 
-        let hash = Self::scene_hash(instances, skinned_meshes);
-        if hash == self.scene_hash && self.node_count > 0 {
+        let static_hash = Self::static_scene_hash(instances);
+        let pose_hash = Self::pose_hash(instances, skinned_meshes);
+        let static_unchanged = static_hash == self.static_scene_hash && self.node_count > 0;
+        let pose_only = static_unchanged && pose_hash != self.pose_hash;
+
+        if static_unchanged {
             if self.hw_available {
-                self.sync_hw_accel(instances, meshes, skinned_meshes, device, queue, encoder);
+                self.sync_hw_accel(
+                    instances,
+                    meshes,
+                    skinned_meshes,
+                    device,
+                    queue,
+                    encoder,
+                    static_hash,
+                    pose_hash,
+                );
             }
-            return;
+            if pose_only && self.hw_available {
+                self.pose_hash = pose_hash;
+                return;
+            }
+            if static_unchanged && !pose_only {
+                return;
+            }
         }
 
         if let Some(pending) = &self.pending_bvh {
-            if pending.scene_hash == hash {
+            if pending.static_hash == static_hash {
                 if self.hw_available {
-                    self.sync_hw_accel(instances, meshes, skinned_meshes, device, queue, encoder);
+                    self.sync_hw_accel(
+                        instances,
+                        meshes,
+                        skinned_meshes,
+                        device,
+                        queue,
+                        encoder,
+                        static_hash,
+                        pose_hash,
+                    );
                 }
                 return;
             }
@@ -263,7 +384,21 @@ impl RtAccel {
         }
 
         if self.hw_available {
-            self.sync_hw_accel(instances, meshes, skinned_meshes, device, queue, encoder);
+            self.sync_hw_accel(
+                instances,
+                meshes,
+                skinned_meshes,
+                device,
+                queue,
+                encoder,
+                static_hash,
+                pose_hash,
+            );
+        }
+
+        if pose_only && self.hw_available {
+            self.pose_hash = pose_hash;
+            return;
         }
 
         if world_tris.len() >= ASYNC_BVH_TRI_THRESHOLD {
@@ -276,7 +411,7 @@ impl RtAccel {
                 *result_bg.lock().expect("bvh lock") = Some((nodes, tris));
             });
             self.pending_bvh = Some(PendingBvh {
-                scene_hash: hash,
+                static_hash,
                 result,
             });
             let elapsed_ms = build_start.elapsed().as_secs_f64() * 1000.0;
@@ -300,7 +435,8 @@ impl RtAccel {
                 BVH_BUILD_BUDGET_MS
             );
         }
-        self.scene_hash = hash;
+        self.static_scene_hash = static_hash;
+        self.pose_hash = pose_hash;
         self.upload_bvh(nodes, tris, device, queue);
     }
 
@@ -312,25 +448,48 @@ impl RtAccel {
         device: &Device,
         queue: &Queue,
         encoder: &mut CommandEncoder,
+        static_hash: u64,
+        pose_hash: u64,
     ) {
+        let geom_changed = static_hash != self.static_scene_hash;
+        let _pose_changed = pose_hash != self.pose_hash;
+        if geom_changed {
+            self.tlas_geom_dirty = true;
+            self.tlas_instance_dirty = true;
+        }
+        // Pose skinned solo refitea BLAS; no reconstruir TLAS cada frame.
+
         for inst in instances {
             if let Some(mesh_idx) = inst.mesh_idx {
                 if let Some(mesh) = meshes.get(mesh_idx) {
-                    self.blas_cache.ensure(device, mesh_idx, mesh);
+                    if !self.blas_cache.contains(mesh_idx) {
+                        self.blas_cache.ensure(device, mesh_idx, mesh);
+                        self.tlas_geom_dirty = true;
+                    }
                 }
             }
             if let Some(gpu_idx) = inst.skinned_gpu_idx {
                 if let Some(entry) = skinned_meshes.get(gpu_idx) {
-                    self.skinned_blas_cache.ensure(device, gpu_idx, entry);
+                    if !self.skinned_blas_cache.contains(gpu_idx) {
+                        self.skinned_blas_cache.ensure(device, gpu_idx, entry);
+                        self.tlas_geom_dirty = true;
+                    }
                     self.skinned_blas_cache.update_pose(queue, gpu_idx, entry);
                 }
             }
         }
 
         self.blas_cache.build_pending(encoder, meshes);
-        self.skinned_blas_cache.build_updates(encoder);
+        let active_skinned = Self::active_skinned_gpu_indices(instances);
+        self.skinned_blas_cache
+            .build_updates(encoder, &active_skinned);
+
+        let (hw_tris, tri_bases) =
+            Self::build_hw_triangle_lookup(instances, meshes, skinned_meshes);
+        self.upload_hw_triangles(&hw_tris, &tri_bases, device, queue);
+
+        let mut slot = 0usize;
         if let Some(tlas) = self.hw_tlas.as_mut() {
-            let mut slot = 0usize;
             let mut skinned_slots = 0usize;
             for (mat_slot, inst) in instances.iter().enumerate() {
                 if slot >= MAX_STATIC_RT_INSTANCES {
@@ -379,8 +538,22 @@ impl RtAccel {
                 }
             }
         }
-        if let Some(tlas) = self.hw_tlas.as_ref() {
-            encoder.build_acceleration_structures(std::iter::empty(), std::iter::once(tlas));
+
+        let slot_count_changed = slot != self.last_tlas_slot_count;
+        if slot_count_changed {
+            self.tlas_geom_dirty = true;
+            self.last_tlas_slot_count = slot;
         }
+
+        if self.tlas_geom_dirty || self.tlas_instance_dirty {
+            if let Some(tlas) = self.hw_tlas.as_ref() {
+                encoder.build_acceleration_structures(std::iter::empty(), std::iter::once(tlas));
+            }
+            self.tlas_geom_dirty = false;
+            self.tlas_instance_dirty = false;
+        }
+
+        self.static_scene_hash = static_hash;
+        self.pose_hash = pose_hash;
     }
 }

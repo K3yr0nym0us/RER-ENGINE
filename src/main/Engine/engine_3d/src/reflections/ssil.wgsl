@@ -8,7 +8,7 @@ struct SsilUniforms {
     sample_radius : f32,
     strength      : f32,
     depth_reject_m : f32,
-    _pad          : u32,
+    gbuffer_scale : f32,
 }
 
 @group(0) @binding(0) var<uniform> u : SsilUniforms;
@@ -58,23 +58,24 @@ fn cs_main(@builtin(global_invocation_id) gid : vec3<u32>) {
     }
     let px = vec2<i32>(i32(gid.x), i32(gid.y));
     let uv = (vec2<f32>(gid.xy) + vec2<f32>(0.5)) / u.resolution;
-    let view_depth_m = textureLoad(t_depth, px, 0).r;
+    let gb_px = vec2<i32>(vec2<f32>(px) * u.gbuffer_scale);
+    let view_depth_m = textureLoad(t_depth, gb_px, 0).r;
     if view_depth_m <= 0.0001 {
         textureStore(ssil_out, px, vec4<f32>(0.0));
         return;
     }
 
-    let roughness = textureLoad(t_surface, px, 0).g;
-    let metallic = textureLoad(t_direct, px, 0).a;
+    let roughness = textureLoad(t_surface, gb_px, 0).g;
+    let metallic = textureLoad(t_direct, gb_px, 0).a;
     if metallic > 0.5 || roughness < 0.35 {
         textureStore(ssil_out, px, vec4<f32>(0.0));
         return;
     }
 
-    let packed = textureLoad(t_normal_roughness, px, 0);
+    let packed = textureLoad(t_normal_roughness, gb_px, 0);
     let n = normal_from_packed(packed);
     let world_pos = world_pos_from_depth(uv, view_depth_m);
-    let base_lit = textureLoad(t_lit_scene, px, 0).rgb;
+    let base_lit = textureLoad(t_lit_scene, gb_px, 0).rgb;
 
     var accum = vec3<f32>(0.0);
     var weight_sum = 0.0;
@@ -88,8 +89,8 @@ fn cs_main(@builtin(global_invocation_id) gid : vec3<u32>) {
             continue;
         }
         let sample_px = vec2<i32>(
-            i32(sample_uv.x * u.resolution.x),
-            i32(sample_uv.y * u.resolution.y),
+            i32(sample_uv.x * u.resolution.x * u.gbuffer_scale),
+            i32(sample_uv.y * u.resolution.y * u.gbuffer_scale),
         );
         let sample_depth = textureLoad(t_depth, sample_px, 0).r;
         if sample_depth <= 0.0001 {

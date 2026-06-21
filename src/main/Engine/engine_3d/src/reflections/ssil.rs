@@ -17,7 +17,7 @@ struct SsilUniforms {
     sample_radius: f32,
     strength: f32,
     depth_reject_m: f32,
-    _pad: u32,
+    gbuffer_scale: f32,
 }
 
 pub struct SsilPass {
@@ -71,7 +71,7 @@ impl SsilPass {
                 sample_radius: 14.0,
                 strength: 0.18,
                 depth_reject_m: 0.12,
-                _pad: 0,
+                gbuffer_scale: 1.0,
             }),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
@@ -115,6 +115,7 @@ impl SsilPass {
         cam_pos: glam::Vec3,
         near_plane: f32,
         far_plane: f32,
+        gbuffer_scale: f32,
     ) {
         let uniforms = SsilUniforms {
             inv_view_proj: inv_view_proj.to_cols_array_2d(),
@@ -126,7 +127,7 @@ impl SsilPass {
             sample_radius: 14.0,
             strength: 0.18,
             depth_reject_m: 0.12,
-            _pad: 0,
+            gbuffer_scale,
         };
         queue.write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {

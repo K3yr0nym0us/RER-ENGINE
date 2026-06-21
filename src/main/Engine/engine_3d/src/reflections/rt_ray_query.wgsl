@@ -11,8 +11,8 @@ struct RtUniforms {
     far_plane       : f32,
     frame_index     : u32,
     material_count  : u32,
+    gbuffer_scale   : f32,
     _pad0           : f32,
-    _pad1           : f32,
 }
 
 const RT_TILE_SIZE : u32 = 16u;
@@ -30,6 +30,8 @@ const RT_TILE_SIZE : u32 = 16u;
 @group(0) @binding(10) var<storage, read> tile_list : array<u32>;
 @group(0) @binding(11) var<storage, read> tile_count_buf : array<u32>;
 @group(0) @binding(12) var<storage, read> instance_materials : array<RtInstanceMaterial>;
+@group(0) @binding(13) var<storage, read> hw_triangles : array<RtTri>;
+@group(0) @binding(14) var<storage, read> instance_tri_base : array<u32>;
 
 @group(1) @binding(0) var t_probe_env : texture_cube_array<f32>;
 @group(1) @binding(1) var s_probe_env : sampler;
@@ -65,7 +67,8 @@ fn normal_from_packed(packed: vec4<f32>) -> vec3<f32> {
 
 fn base_color_at(uv : vec2<f32>) -> vec3<f32> {
     let clamped = clamp(uv, vec2<f32>(0.0), vec2<f32>(1.0));
-    let fc = clamped * u.resolution - vec2<f32>(0.5);
+    let gb_res = u.resolution * u.gbuffer_scale;
+    let fc = clamped * gb_res - vec2<f32>(0.5);
     return textureLoad(t_base_color, vec2<i32>(fc), 0).rgb;
 }
 
@@ -76,6 +79,27 @@ struct HwHit {
     found : bool,
     t : f32,
     instance_slot : u32,
+    primitive_index : u32,
+    front_face : bool,
+}
+
+fn hw_hit_normal(slot : u32, primitive_index : u32, front_face : bool) -> vec3<f32> {
+    if slot >= u.material_count {
+        return vec3<f32>(0.0, 1.0, 0.0);
+    }
+    let base = instance_tri_base[slot];
+    if base == 0xFFFFFFFFu {
+        return vec3<f32>(0.0, 1.0, 0.0);
+    }
+    let tri_idx = base + primitive_index;
+    if tri_idx >= arrayLength(&hw_triangles) {
+        return vec3<f32>(0.0, 1.0, 0.0);
+    }
+    var n = refl_tri_normal(hw_triangles[tri_idx]);
+    if !front_face {
+        n = -n;
+    }
+    return n;
 }
 
 fn trace_rt_hw(origin : vec3<f32>, dir : vec3<f32>, t_max : f32) -> HwHit {
@@ -83,6 +107,8 @@ fn trace_rt_hw(origin : vec3<f32>, dir : vec3<f32>, t_max : f32) -> HwHit {
     out.found = false;
     out.t = -1.0;
     out.instance_slot = 0u;
+    out.primitive_index = 0u;
+    out.front_face = true;
     var rq : ray_query;
     let desc = RayDesc(
         RAY_FLAG_FORCE_OPAQUE,
@@ -105,6 +131,8 @@ fn trace_rt_hw(origin : vec3<f32>, dir : vec3<f32>, t_max : f32) -> HwHit {
     out.found = true;
     out.t = hit.t;
     out.instance_slot = hit.instance_custom_data;
+    out.primitive_index = hit.primitive_index;
+    out.front_face = hit.front_face;
     return out;
 }
 
@@ -115,18 +143,19 @@ fn rt_shade_pixel_at(gid : vec2<u32>) {
     let px = vec2<i32>(i32(gid.x), i32(gid.y));
     let uv = (vec2<f32>(gid) + vec2<f32>(0.5)) / u.resolution;
     let ssr = textureLoad(t_ssr, px, 0);
+    let gb_px = vec2<i32>(vec2<f32>(px) * u.gbuffer_scale);
 
-    let view_depth_m = textureLoad(t_depth, px, 0).r;
+    let view_depth_m = textureLoad(t_depth, gb_px, 0).r;
     if view_depth_m <= 0.0001 {
         textureStore(reflection_out, px, ssr);
         return;
     }
 
-    let packed = textureLoad(t_normal_roughness, px, 0);
+    let packed = textureLoad(t_normal_roughness, gb_px, 0);
     let n = normal_from_packed(packed);
-    let roughness = textureLoad(t_surface, px, 0).g;
-    let metallic = textureLoad(t_direct, px, 0).a;
-    let src_ior = textureLoad(t_direct, px, 0).b * 10.0;
+    let roughness = textureLoad(t_surface, gb_px, 0).g;
+    let metallic = textureLoad(t_direct, gb_px, 0).a;
+    let src_ior = textureLoad(t_direct, gb_px, 0).b * 10.0;
     let albedo = base_color_at(uv);
     if roughness > u.max_roughness {
         textureStore(reflection_out, px, ssr);
@@ -167,12 +196,12 @@ fn rt_shade_pixel_at(gid : vec2<u32>) {
     }
 
     let hit_pos = ray_origin + trace_dir * hw_hit.t;
-    let hit_normal = -normalize(trace_dir);
+    let hit_normal = hw_hit_normal(hw_hit.instance_slot, hw_hit.primitive_index, hw_hit.front_face);
     let sample_uv = project_uv(hit_pos);
     let on_screen = sample_uv.x >= 0.0 && sample_uv.x <= 1.0 && sample_uv.y >= 0.0 && sample_uv.y <= 1.0;
     let spacing_px = refl_blur_spacing_px(roughness, hw_hit.t);
 
-    var hit_mat = RtInstanceMaterial(vec4<f32>(1.0), vec4<f32>(0.5, 0.0, 0.0, 0.0));
+    var hit_mat = RtInstanceMaterial(vec4<f32>(1.0), vec4<f32>(0.5, 0.0, 0.0, 0.0), vec4<f32>(-1.0, 0.0, 0.0, 0.0));
     let has_mat = hw_hit.instance_slot < u.material_count;
     if has_mat {
         hit_mat = instance_materials[hw_hit.instance_slot];
@@ -196,7 +225,7 @@ fn rt_shade_pixel_at(gid : vec2<u32>) {
         t_depth,
         t_direct,
         t_base_color,
-        u.resolution,
+        u.resolution * u.gbuffer_scale,
         u.step_size,
         u.view_proj,
         u.near_plane,

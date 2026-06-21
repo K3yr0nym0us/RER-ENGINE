@@ -80,7 +80,7 @@ struct TemporalUniforms {
     blend: f32,
     enabled: f32,
     depth_reject_m: f32,
-    _struct_pad: f32,
+    gbuffer_scale: f32,
 }
 
 #[repr(C)]
@@ -172,6 +172,9 @@ pub struct ReflectionPass {
     ssr_trace_readback: SsrTraceReadback,
     rt_tlas_log_cooldown: u32,
     reflection_frame_index: u32,
+    /// Resolución interna SSR/temporal/RT/SSIL (½ viewport).
+    refl_width: u32,
+    refl_height: u32,
 }
 
 impl ReflectionPass {
@@ -196,18 +199,21 @@ impl ReflectionPass {
             ..Default::default()
         });
 
+        let refl_width = (width / 2).max(1);
+        let refl_height = (height / 2).max(1);
+
         let (reflection_texture, reflection_view) =
-            create_color_texture(device, color_format, width, height, "reflection");
+            create_color_texture(device, color_format, refl_width, refl_height, "reflection");
         let (hit_uv_tex, hit_uv_view) =
-            create_hit_uv_texture(device, width, height, "reflection-hit-uv");
-        let (h0, hv0) = create_color_texture(device, color_format, width, height, "reflection-hist-0");
-        let (h1, hv1) = create_color_texture(device, color_format, width, height, "reflection-hist-1");
+            create_hit_uv_texture(device, refl_width, refl_height, "reflection-hit-uv");
+        let (h0, hv0) = create_color_texture(device, color_format, refl_width, refl_height, "reflection-hist-0");
+        let (h1, hv1) = create_color_texture(device, color_format, refl_width, refl_height, "reflection-hist-1");
         let (hit_uv_h0, hit_uv_hv0) =
-            create_hit_uv_texture(device, width, height, "reflection-hit-uv-hist-0");
+            create_hit_uv_texture(device, refl_width, refl_height, "reflection-hit-uv-hist-0");
         let (hit_uv_h1, hit_uv_hv1) =
-            create_hit_uv_texture(device, width, height, "reflection-hit-uv-hist-1");
+            create_hit_uv_texture(device, refl_width, refl_height, "reflection-hit-uv-hist-1");
         let (reflection_rt_scratch_texture, reflection_rt_scratch_view) =
-            create_rt_scratch_texture(device, color_format, width, height);
+            create_rt_scratch_texture(device, color_format, refl_width, refl_height);
         let (composite_scratch_texture, composite_scratch_view) =
             create_composite_scratch_texture(device, color_format, width, height);
         let (debug_scratch_texture, debug_scratch_view) =
@@ -425,7 +431,7 @@ impl ReflectionPass {
                 blend: 0.55,
                 enabled: 1.0,
                 depth_reject_m: 0.35,
-                _struct_pad: 0.0,
+                gbuffer_scale: 1.0,
             }),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
@@ -568,15 +574,17 @@ impl ReflectionPass {
             color_format,
             present_format,
             profiler: ReflectionProfilerMs::default(),
-            rt_pass: RtReflectionPassV2::new(device, color_format, width, height, rt_hw_available),
-            path_trace_pass: RtPathTracePass::new(device, width, height),
-            ssil_pass: SsilPass::new(device, color_format, width, height),
+            rt_pass: RtReflectionPassV2::new(device, color_format, refl_width, refl_height, rt_hw_available),
+            path_trace_pass: RtPathTracePass::new(device, refl_width, refl_height),
+            ssil_pass: SsilPass::new(device, color_format, refl_width, refl_height),
             rt_hw_available,
             _ssr_log_texture: ssr_log_texture,
             ssr_log_view,
             ssr_trace_readback: SsrTraceReadback::new(device),
             rt_tlas_log_cooldown: 0,
             reflection_frame_index: 0,
+            refl_width,
+            refl_height,
         }
     }
 
@@ -641,6 +649,7 @@ impl ReflectionPass {
         // (steps × paso) sigue siendo suficiente para la escena.
         let step_size = (settings.max_distance_m / settings.max_steps.max(1) as f32)
             .clamp(0.05, 0.25);
+        let gbuffer_scale = self.width.max(1) as f32 / self.refl_width.max(1) as f32;
         let frame_index = self.reflection_frame_index;
         self.reflection_frame_index = self.reflection_frame_index.wrapping_add(1);
 
@@ -718,6 +727,7 @@ impl ReflectionPass {
                 cam_pos,
                 near_plane,
                 far_plane,
+                gbuffer_scale,
             );
         }
 
@@ -726,7 +736,7 @@ impl ReflectionPass {
             inv_view_proj: inv_view_proj.to_cols_array_2d(),
             view_proj: view_proj.to_cols_array_2d(),
             cam_pos: [cam_pos.x, cam_pos.y, cam_pos.z, 1.0],
-            resolution: [self.width as f32, self.height as f32],
+            resolution: [self.refl_width as f32, self.refl_height as f32],
             max_steps: settings.max_steps,
             max_distance_m: settings.max_distance_m,
             max_roughness: settings.max_roughness_to_trace,
@@ -790,14 +800,78 @@ impl ReflectionPass {
         }
         self.profiler.ssr_ms = t0.elapsed().as_secs_f32() * 1000.0;
 
+        let t2 = Instant::now();
+        if settings.rt_enabled && rt_available {
+            if accel.node_count == 0 {
+                log::warn!("[RT] BVH v2 vacío — sin geometría trazable");
+            } else if self.rt_tlas_log_cooldown == 0 {
+                log::info!(
+                    "[RT] BVH v2: {} nodos, {} triángulos",
+                    accel.node_count,
+                    accel.tri_count
+                );
+                self.rt_tlas_log_cooldown = 180;
+            } else {
+                self.rt_tlas_log_cooldown -= 1;
+            }
+            self.rt_pass.dispatch(
+                device,
+                queue,
+                encoder,
+                accel,
+                &self.reflection_view,
+                &self.reflection_rt_scratch_view,
+                depth_export_view,
+                normal_roughness_view,
+                lit_scene_view,
+                direct_view,
+                surface_view,
+                base_color_view,
+                inv_view_proj,
+                view_proj,
+                cam_pos,
+                near_plane,
+                far_plane,
+                settings,
+                self.refl_width,
+                self.refl_height,
+                gbuffer_scale,
+                frame_index,
+                probe_bind_group,
+                shadow_view,
+                shadow_sampler,
+                scene_uniforms,
+            );
+            encoder.copy_texture_to_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &self._reflection_rt_scratch_texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                wgpu::TexelCopyTextureInfo {
+                    texture: &self._reflection_texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                wgpu::Extent3d {
+                    width: self.refl_width.max(1),
+                    height: self.refl_height.max(1),
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
+        self.profiler.rt_ms = t2.elapsed().as_secs_f32() * 1000.0;
+
         let t1 = Instant::now();
         if settings.temporal_blend > 0.0 {
             // Ping-pong: `reflection_history_index` apunta SIEMPRE al último resultado
-            // (lo que lee el composite). Se lee de él y se escribe en el otro buffer.
+            // (lo que lee el composite). Acumula SSR+RT mezclados en `reflection_view`.
             let read_idx = self.reflection_history_index as usize;
             let write_idx = 1 - read_idx;
             let temporal_u = TemporalUniforms {
-                resolution: [self.width as f32, self.height as f32],
+                resolution: [self.refl_width as f32, self.refl_height as f32],
                 blend: if self.reflection_first_frame {
                     0.0
                 } else {
@@ -805,7 +879,7 @@ impl ReflectionPass {
                 },
                 enabled: 1.0,
                 depth_reject_m: 0.35,
-                _struct_pad: 0.0,
+                gbuffer_scale,
             };
             queue.write_buffer(
                 &self.temporal_uniform_buffer,
@@ -866,83 +940,6 @@ impl ReflectionPass {
             self.reflection_resolved_from_history = false;
         }
         self.profiler.temporal_ms = t1.elapsed().as_secs_f32() * 1000.0;
-
-        let t2 = Instant::now();
-        if settings.rt_enabled && rt_available {
-            if accel.node_count == 0 {
-                log::warn!("[RT] BVH v2 vacío — sin geometría trazable");
-            } else if self.rt_tlas_log_cooldown == 0 {
-                log::info!(
-                    "[RT] BVH v2: {} nodos, {} triángulos",
-                    accel.node_count,
-                    accel.tri_count
-                );
-                self.rt_tlas_log_cooldown = 180;
-            } else {
-                self.rt_tlas_log_cooldown -= 1;
-            }
-            let resolved_idx = self.reflection_history_index as usize;
-            let from_history = self.reflection_resolved_from_history;
-            {
-                let src_view: &TextureView = if from_history {
-                    &self.reflection_history_views[resolved_idx]
-                } else {
-                    &self.reflection_view
-                };
-                self.rt_pass.dispatch(
-                    device,
-                    queue,
-                    encoder,
-                    accel,
-                    src_view,
-                    &self.reflection_rt_scratch_view,
-                    depth_export_view,
-                    normal_roughness_view,
-                    lit_scene_view,
-                    direct_view,
-                    surface_view,
-                    base_color_view,
-                    inv_view_proj,
-                    view_proj,
-                    cam_pos,
-                    near_plane,
-                    far_plane,
-                    settings,
-                    self.width,
-                    self.height,
-                    frame_index,
-                    probe_bind_group,
-                    shadow_view,
-                    shadow_sampler,
-                    scene_uniforms,
-                );
-            }
-            let dst_texture: &wgpu::Texture = if from_history {
-                &self._reflection_history_textures[resolved_idx]
-            } else {
-                &self._reflection_texture
-            };
-            encoder.copy_texture_to_texture(
-                wgpu::TexelCopyTextureInfo {
-                    texture: &self._reflection_rt_scratch_texture,
-                    mip_level: 0,
-                    origin: wgpu::Origin3d::ZERO,
-                    aspect: wgpu::TextureAspect::All,
-                },
-                wgpu::TexelCopyTextureInfo {
-                    texture: dst_texture,
-                    mip_level: 0,
-                    origin: wgpu::Origin3d::ZERO,
-                    aspect: wgpu::TextureAspect::All,
-                },
-                wgpu::Extent3d {
-                    width: self.width.max(1),
-                    height: self.height.max(1),
-                    depth_or_array_layers: 1,
-                },
-            );
-        }
-        self.profiler.rt_ms = t2.elapsed().as_secs_f32() * 1000.0;
 
         if debug_view != ReflectionDebugView::Final {
             let debug_u = DebugUniforms {

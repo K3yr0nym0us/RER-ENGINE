@@ -22,6 +22,8 @@ struct RtUniforms {
     far_plane       : f32,
     frame_index     : u32,
     material_count  : u32,
+    gbuffer_scale   : f32,
+    _pad            : f32,
 }
 
 const RT_TILE_SIZE : u32 = 16u;
@@ -79,7 +81,8 @@ fn normal_from_packed(packed: vec4<f32>) -> vec3<f32> {
 
 fn texel_px(uv : vec2<f32>) -> vec2<i32> {
     let clamped = clamp(uv, vec2<f32>(0.0), vec2<f32>(1.0));
-    let fc = clamped * u.resolution - vec2<f32>(0.5);
+    let gb_res = u.resolution * u.gbuffer_scale;
+    let fc = clamped * gb_res - vec2<f32>(0.5);
     return vec2<i32>(fc);
 }
 
@@ -88,22 +91,22 @@ fn base_color_at(uv : vec2<f32>) -> vec3<f32> {
 }
 
 fn lit_scene_at(uv : vec2<f32>) -> vec3<f32> {
-    return textureLoad(t_lit_scene, vec2<i32>(uv * u.resolution), 0).rgb;
+    return textureLoad(t_lit_scene, texel_px(uv), 0).rgb;
 }
 
 fn lit_scene_blurred(uv : vec2<f32>, spacing_px : f32) -> vec3<f32> {
-    let ref_depth_m = textureLoad(t_depth, vec2<i32>(uv * u.resolution), 0).r;
+    let ref_depth_m = textureLoad(t_depth, texel_px(uv), 0).r;
     if ref_depth_m <= 0.0001 {
         return lit_scene_at(uv);
     }
     let depth_reject_m = refl_depth_reject_m(u.step_size);
-    let texel = vec2<f32>(1.0) / u.resolution;
+    let texel = vec2<f32>(1.0) / (u.resolution * u.gbuffer_scale);
     var acc = vec3<f32>(0.0);
     var wsum = 0.0;
     for (var oy = -3; oy <= 3; oy++) {
         for (var ox = -3; ox <= 3; ox++) {
             let p = uv + vec2<f32>(f32(ox), f32(oy)) * spacing_px * texel;
-            let px = vec2<i32>(p * u.resolution);
+            let px = texel_px(p);
             let tap_depth_m = textureLoad(t_depth, px, 0).r;
             if tap_depth_m <= 0.0001 {
                 continue;
@@ -255,18 +258,19 @@ fn rt_shade_pixel_at(gid : vec2<u32>) {
     let px = vec2<i32>(i32(gid.x), i32(gid.y));
     let uv = (vec2<f32>(gid) + vec2<f32>(0.5)) / u.resolution;
     let ssr = textureLoad(t_ssr, px, 0);
+    let gb_px = vec2<i32>(vec2<f32>(px) * u.gbuffer_scale);
 
-    let view_depth_m = textureLoad(t_depth, px, 0).r;
+    let view_depth_m = textureLoad(t_depth, gb_px, 0).r;
     if view_depth_m <= 0.0001 {
         textureStore(reflection_out, px, ssr);
         return;
     }
 
-    let packed = textureLoad(t_normal_roughness, px, 0);
+    let packed = textureLoad(t_normal_roughness, gb_px, 0);
     let n = normal_from_packed(packed);
-    let roughness = textureLoad(t_surface, px, 0).g;
-    let metallic = textureLoad(t_direct, px, 0).a;
-    let src_ior = textureLoad(t_direct, px, 0).b * 10.0;
+    let roughness = textureLoad(t_surface, gb_px, 0).g;
+    let metallic = textureLoad(t_direct, gb_px, 0).a;
+    let src_ior = textureLoad(t_direct, gb_px, 0).b * 10.0;
     let albedo = base_color_at(uv);
     if roughness > u.max_roughness {
         textureStore(reflection_out, px, ssr);
@@ -314,7 +318,7 @@ fn rt_shade_pixel_at(gid : vec2<u32>) {
     let on_screen = sample_uv.x >= 0.0 && sample_uv.x <= 1.0 && sample_uv.y >= 0.0 && sample_uv.y <= 1.0;
 
     let spacing_px = refl_blur_spacing_px(roughness, bvh_hit.t);
-    var hit_mat = RtInstanceMaterial(vec4<f32>(1.0), vec4<f32>(0.5, 0.0, 0.0, 0.0));
+    var hit_mat = RtInstanceMaterial(vec4<f32>(1.0), vec4<f32>(0.5, 0.0, 0.0, 0.0), vec4<f32>(-1.0, 0.0, 0.0, 0.0));
     let has_mat = instance_slot < u.material_count;
     if has_mat {
         hit_mat = instance_materials[instance_slot];
@@ -338,7 +342,7 @@ fn rt_shade_pixel_at(gid : vec2<u32>) {
         t_depth,
         t_direct,
         t_base_color,
-        u.resolution,
+        u.resolution * u.gbuffer_scale,
         u.step_size,
         u.view_proj,
         u.near_plane,

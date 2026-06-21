@@ -858,6 +858,7 @@ impl State {
             hud_scene_bind_group: hud_scene_bg,
             texture_array,
             tex_layers,
+            tex_layer_albedo: vec![[0.75, 0.75, 0.75]],
             fallback_layer,
             hud_quad_mesh,
             screen_hud_pipeline,

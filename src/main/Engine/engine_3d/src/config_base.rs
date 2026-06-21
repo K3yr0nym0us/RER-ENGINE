@@ -73,6 +73,7 @@ impl State {
         self.world.clear();
         self.meshes.clear();
         self.tex_layers.clear();
+        self.tex_layer_albedo.clear();
         self.editor_box_mesh_idx = None;
         self.editor_box_tex_idx = None;
         self.plane_tool_wall_mesh_idx = None;

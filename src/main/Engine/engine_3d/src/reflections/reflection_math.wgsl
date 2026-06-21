@@ -265,6 +265,31 @@ fn refl_sample_probe_at_hit(
     return refl_fake_environment(dir_n);
 }
 
+fn refl_sample_probe_for_material(
+    hit_pos : vec3<f32>,
+    sample_dir : vec3<f32>,
+    roughness : f32,
+    mat : RtInstanceMaterial,
+    has_material : bool,
+    probe_meta : ReflProbeMeta,
+    t_probe : texture_cube_array<f32>,
+    s_probe : sampler,
+) -> vec3<f32> {
+    let dir_n = normalize(sample_dir);
+    var layer_i = -1;
+    if has_material && mat.probe.x >= 0.0 {
+        layer_i = i32(mat.probe.x);
+    }
+    if layer_i < 0 {
+        layer_i = refl_nearest_probe_layer(hit_pos, probe_meta);
+    }
+    if layer_i >= 0 {
+        let lod = refl_env_cubemap_lod(roughness);
+        return textureSampleLevel(t_probe, s_probe, dir_n, layer_i, lod).rgb;
+    }
+    return refl_fake_environment(dir_n);
+}
+
 // ── RT Hit Lighting lite (Fase A/D/C) ────────────────────────────────────────
 
 const RT_MAT_FLAG_DIELECTRIC : u32 = 1u;
@@ -272,6 +297,8 @@ const RT_MAT_FLAG_DIELECTRIC : u32 = 1u;
 struct RtInstanceMaterial {
     albedo : vec4<f32>,
     pbr : vec4<f32>,
+    /// x = probe layer (-1 = nearest to hit), yzw unused
+    probe : vec4<f32>,
 }
 
 struct RtLightUniform {
@@ -346,23 +373,33 @@ fn refl_hit_lighting_lite(
     t_shadow : texture_depth_2d,
     s_shadow : sampler_comparison,
 ) -> vec3<f32> {
+    _ = rt_light;
+    _ = t_shadow;
+    _ = s_shadow;
     if !has_material {
         return refl_sample_probe_at_hit(hit_pos, view_dir, 0.0, probe_meta, t_probe, s_probe);
     }
     let albedo = mat.albedo.xyz;
     let metallic = mat.pbr.y;
     let roughness = mat.pbr.x;
-    let env = refl_sample_probe_at_hit(
+    let env = refl_sample_probe_for_material(
         hit_pos,
         view_dir,
         roughness,
+        mat,
+        has_material,
         probe_meta,
         t_probe,
         s_probe,
     );
-    let shadow = refl_rt_shadow_at(hit_pos, hit_normal, rt_light, t_shadow, s_shadow);
-    let direct = env * shadow;
-    return refl_metal_attenuate(direct, albedo, metallic);
+    let n = normalize(hit_normal);
+    let v = normalize(view_dir);
+    let ndotv = max(dot(n, v), 0.0);
+    let f0 = mix(vec3<f32>(0.04), albedo, metallic);
+    let fresnel = f0 + (vec3<f32>(1.0) - f0) * pow(vec3<f32>(1.0 - ndotv), vec3<f32>(5.0));
+    let spec = env * fresnel;
+    let diff = env * (1.0 - metallic) * albedo * (vec3<f32>(1.0) - fresnel);
+    return spec + diff;
 }
 
 fn refl_refract_dir(incident : vec3<f32>, normal : vec3<f32>, eta : f32) -> vec3<f32> {
@@ -419,9 +456,7 @@ fn refl_resolve_hit_radiance(
         if abs(ray_depth_m - hit_depth_m) <= refl_rt_hit_depth_reject_m(step_size) {
             let hit_metallic = textureLoad(t_direct, hit_px, 0).a;
             let hit_albedo = textureLoad(t_base_color, hit_px, 0).rgb;
-            var lit = textureLoad(t_lit_scene, hit_px, 0).rgb;
-            let shadow = refl_rt_shadow_at(hit_pos, hit_normal, rt_light, t_shadow, s_shadow);
-            lit = lit * shadow;
+            let lit = textureLoad(t_lit_scene, hit_px, 0).rgb;
             return refl_metal_attenuate(lit, hit_albedo, hit_metallic);
         }
     }

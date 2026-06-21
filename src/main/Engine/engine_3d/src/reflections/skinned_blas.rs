@@ -1,6 +1,8 @@
-//! BLAS Vulkan para mallas skinned (refit por frame con PreferUpdate).
+//! BLAS Vulkan para mallas skinned (refit por frame).
 
 use std::collections::HashMap;
+
+use std::collections::HashSet;
 
 use wgpu::util::DeviceExt;
 use wgpu::{
@@ -27,6 +29,10 @@ impl SkinnedBlasCache {
         Self {
             entries: HashMap::new(),
         }
+    }
+
+    pub fn contains(&self, gpu_idx: usize) -> bool {
+        self.entries.contains_key(&gpu_idx)
     }
 
     pub fn ensure(&mut self, device: &Device, gpu_idx: usize, entry: &GpuSkinnedMeshEntry) {
@@ -66,7 +72,7 @@ impl SkinnedBlasCache {
             &CreateBlasDescriptor {
                 label: Some(&format!("rt-skinned-blas-{gpu_idx}")),
                 flags: wgpu::AccelerationStructureFlags::PREFER_FAST_TRACE,
-                update_mode: wgpu::AccelerationStructureUpdateMode::PreferUpdate,
+                update_mode: wgpu::AccelerationStructureUpdateMode::Build,
             },
             sizes,
         );
@@ -96,9 +102,12 @@ impl SkinnedBlasCache {
         );
     }
 
-    pub fn build_updates(&self, encoder: &mut CommandEncoder) {
+    pub fn build_updates(&self, encoder: &mut CommandEncoder, active: &HashSet<usize>) {
         let mut builds = Vec::new();
-        for slot in self.entries.values() {
+        for (&gpu_idx, slot) in self.entries.iter() {
+            if !active.contains(&gpu_idx) {
+                continue;
+            }
             builds.push(BlasBuildEntry {
                 blas: &slot.blas,
                 geometry: BlasGeometries::TriangleGeometries(vec![BlasTriangleGeometry {

@@ -53,6 +53,8 @@ pub struct State {
     pub(crate) texture_array: crate::texture::TextureArray,
     /// `tex_idx` de `MeshComponent` → capa en `texture_array`.
     pub(crate) tex_layers: Vec<crate::texture::TextureLayer>,
+    /// Albedo promedio por `tex_idx` (paralelo a `tex_layers`).
+    pub(crate) tex_layer_albedo: Vec<[f32; 3]>,
     pub(crate) fallback_layer: crate::texture::TextureLayer,
     /// Quad para tooltips en pantalla (HUD); no usar `meshes[0]` (suelo).
     pub(crate) hud_quad_mesh: Mesh,
@@ -383,6 +385,8 @@ impl State {
                 .insert(key.to_string(), layer);
         }
         self.tex_layers.push(layer);
+        let albedo = crate::texture::rgba_mip0_average_linear(rgba);
+        self.tex_layer_albedo.push(albedo);
         layer
     }
 

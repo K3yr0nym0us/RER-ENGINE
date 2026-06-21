@@ -15,9 +15,8 @@ struct MaskUniforms {
     threshold: f32,
     tiles_x: u32,
     tiles_y: u32,
-    _pad: u32,
-    /// Padding implícito WGSL (uniform struct → 32 B).
-    _tail_pad: u32,
+    gbuffer_scale: f32,
+    _pad: f32,
 }
 
 const _: () = assert!(std::mem::size_of::<MaskUniforms>() == 32);
@@ -195,6 +194,7 @@ impl RtSparseDispatch {
         surface_view: &TextureView,
         direct_view: &TextureView,
         max_roughness: f32,
+        gbuffer_scale: f32,
     ) {
         queue.write_buffer(&self.tile_count_buffer, 0, bytemuck::bytes_of(&0u32));
 
@@ -206,8 +206,8 @@ impl RtSparseDispatch {
             threshold: TILE_THRESHOLD,
             tiles_x,
             tiles_y,
-            _pad: 0,
-            _tail_pad: 0,
+            gbuffer_scale,
+            _pad: 0.0,
         };
         queue.write_buffer(&self.mask_uniform_buffer, 0, bytemuck::bytes_of(&mask_u));
 
