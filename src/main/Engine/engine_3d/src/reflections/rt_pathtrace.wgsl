@@ -208,17 +208,17 @@ fn path_trace_ray(origin : vec3<f32>, dir : vec3<f32>, seed : vec2<f32>) -> vec3
 
         if metallic > 0.5 {
             weight = weight * albedo;
-            ray_dir = refl_fuzzy_mirror_dir_temporal(
-                hit_pos,
-                u.cam_pos.xyz,
-                n,
-                roughness,
-                u.frame_index + depth,
-                cur_seed,
-            );
+            let T_pt = refl_tangent(n);
+            let B_pt = refl_bitangent(n, T_pt);
+            let H_local_pt = ggx_sample_ndf(roughness, cur_seed);
+            let H_pt = normalize(H_local_pt.x * T_pt + H_local_pt.y * B_pt + H_local_pt.z * n);
+            ray_dir = reflect(-ray_dir, H_pt);
         } else {
-            weight = weight * albedo * 0.45;
-            ray_dir = normalize(n + vec3<f32>(cur_seed.x - 0.5, cur_seed.y - 0.5, 0.5 - cur_seed.x));
+            weight = weight * albedo;
+            let T_pt = refl_tangent(n);
+            let B_pt = refl_bitangent(n, T_pt);
+            let cos_sample = refl_cosine_hemisphere_sample(cur_seed);
+            ray_dir = normalize(cos_sample.x * T_pt + cos_sample.y * B_pt + cos_sample.z * n);
         }
         ray_origin = hit_pos + n * 0.02;
         cur_seed = cur_seed + vec2<f32>(0.11, 0.23);

@@ -166,6 +166,50 @@ fn refl_fresnel_schlick_scalar(cos_theta : f32, f0 : f32) -> f32 {
     return f0 + (1.0 - f0) * pow(1.0 - cos_theta, 5.0);
 }
 
+// ── GGX Microfacet BRDF ───────────────────────────────────────────────
+
+fn ggx_alpha(roughness : f32) -> f32 {
+    return max(roughness * roughness, 0.001);
+}
+
+/// Sample microfacet normal from GGX NDF (Walter 2007)
+fn ggx_sample_ndf(roughness : f32, seed : vec2<f32>) -> vec3<f32> {
+    let alpha = ggx_alpha(roughness);
+    let phi = 6.2831853 * seed.x;
+    let cos_theta = sqrt((1.0 - seed.y) / max(1.0 + (alpha * alpha - 1.0) * seed.y, 1e-8));
+    let sin_theta = sqrt(max(1.0 - cos_theta * cos_theta, 0.0));
+    return vec3<f32>(sin_theta * cos(phi), sin_theta * sin(phi), cos_theta);
+}
+
+/// Orthonormal tangent from normal (Y-up, fallback Z-up when N ∥ Y)
+fn refl_tangent(normal : vec3<f32>) -> vec3<f32> {
+    let N = normalize(normal);
+    let up = select(
+        vec3<f32>(0.0, 0.0, 1.0),
+        vec3<f32>(0.0, 1.0, 0.0),
+        abs(N.y) < 0.999,
+    );
+    return normalize(cross(up, N));
+}
+
+/// Orthonormal bitangent from normal and tangent
+fn refl_bitangent(normal : vec3<f32>, tangent : vec3<f32>) -> vec3<f32> {
+    return cross(normalize(normal), tangent);
+}
+
+/// Cosine-weighted hemisphere sample for diffuse BRDF
+fn refl_cosine_hemisphere_sample(seed : vec2<f32>) -> vec3<f32> {
+    let phi = 6.2831853 * seed.x;
+    let r = sqrt(seed.y);
+    return vec3<f32>(r * cos(phi), r * sin(phi), sqrt(max(1.0 - seed.y, 0.0)));
+}
+
+/// Smith G1 geometry term for GGX / Schlick-Smith
+fn ggx_smith_g1(cos_theta : f32, alpha : f32) -> f32 {
+    let k = alpha * 0.5;
+    return cos_theta / max(cos_theta * (1.0 - k) + k, 1e-8);
+}
+
 /// Máscara SSR/RT (alpha): RTIOW Fresnel + rugosidad, sin metallic_boost artístico.
 fn refl_trace_strength(
     roughness : f32,

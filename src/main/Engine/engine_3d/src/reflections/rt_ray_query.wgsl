@@ -243,14 +243,12 @@ fn rt_shade_pixel_at(gid : vec2<u32>) {
 
     let world_pos = world_pos_from_depth(uv, view_depth_m);
     let v = normalize(u.cam_pos.xyz - world_pos);
-    var trace_dir = refl_fuzzy_mirror_dir_temporal(
-        world_pos,
-        u.cam_pos.xyz,
-        n,
-        roughness,
-        u.frame_index,
-        uv,
-    );
+    let seed = refl_blue_noise_seed(u.frame_index, uv);
+    let T = refl_tangent(n);
+    let B = refl_bitangent(n, T);
+    let H_local = ggx_sample_ndf(roughness, seed);
+    let H = normalize(H_local.x * T + H_local.y * B + H_local.z * n);
+    var trace_dir = reflect(v, H);
     if rt_light.rt_flags.x > 0.5 && src_ior > 1.0 && metallic < 0.5 {
         let eta = 1.0 / src_ior;
         trace_dir = refl_refract_dir(normalize(world_pos - u.cam_pos.xyz), n, eta);
@@ -309,14 +307,13 @@ fn rt_shade_pixel_at(gid : vec2<u32>) {
         let hit_dielectric = (hit_flags & RT_MAT_FLAG_DIELECTRIC) != 0u;
         let sec_origin = hit_pos + hit_normal * normal_bias;
         if hit_metallic > 0.5 && hit_rough < 0.85 {
-            let sec_dir = refl_fuzzy_mirror_dir_temporal(
-                hit_pos,
-                u.cam_pos.xyz,
-                hit_normal,
-                hit_rough,
-                u.frame_index + 17u,
-                sample_uv,
-            );
+            let sec_seed = refl_blue_noise_seed(u.frame_index + 17u, sample_uv);
+            let sec_T = refl_tangent(hit_normal);
+            let sec_B = refl_bitangent(hit_normal, sec_T);
+            let sec_H_local = ggx_sample_ndf(hit_rough, sec_seed);
+            let sec_H = normalize(sec_H_local.x * sec_T + sec_H_local.y * sec_B + sec_H_local.z * hit_normal);
+            let sec_incident = normalize(hit_pos - u.cam_pos.xyz);
+            let sec_dir = reflect(sec_incident, sec_H);
             let sec_hit = trace_rt_hw(sec_origin, sec_dir, u.max_distance_m * 0.5);
             if sec_hit.found {
                 let sec_pos = sec_origin + sec_dir * sec_hit.t;

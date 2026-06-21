@@ -54,6 +54,7 @@ struct SsrUniforms {
 
 const _: () = assert!(std::mem::size_of::<SsrUniforms>() == 208);
 const _: () = assert!(std::mem::size_of::<TemporalUniforms>() == 24);
+const _: () = assert!(std::mem::size_of::<DenoiseUniforms>() == 32);
 const _: () = assert!(std::mem::size_of::<CompositeUniforms>() == 16);
 const _: () = assert!(std::mem::size_of::<DebugUniforms>() == 256);
 
@@ -73,6 +74,17 @@ struct TemporalUniforms {
     enabled: f32,
     depth_reject_m: f32,
     gbuffer_scale: f32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct DenoiseUniforms {
+    resolution: [f32; 2],
+    depth_sigma: f32,
+    normal_sigma: f32,
+    luminance_sigma: f32,
+    gbuffer_scale: f32,
+    _pad: [f32; 2],
 }
 
 #[repr(C)]
@@ -145,6 +157,12 @@ pub struct ReflectionPass {
     color_format: TextureFormat,
     present_format: TextureFormat,
     pub profiler: ReflectionProfilerMs,
+    denoise_pipeline: wgpu::ComputePipeline,
+    denoise_bgl: wgpu::BindGroupLayout,
+    denoise_uniform_buffer: wgpu::Buffer,
+    _denoise_scratch_texture: wgpu::Texture,
+    denoise_scratch_view: TextureView,
+    denoise_bind_group: wgpu::BindGroup,
     rt_pass: RtReflectionPassV2,
     ssil_pass: SsilPass,
     rt_hw_available: bool,
@@ -201,6 +219,28 @@ impl ReflectionPass {
             create_rt_scratch_texture(device, color_format, refl_width, refl_height);
         let (composite_scratch_texture, composite_scratch_view) =
             create_composite_scratch_texture(device, color_format, width, height);
+        let (denoise_scratch_texture, denoise_scratch_view) = {
+            let tex = device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("denoise-scratch"),
+                size: wgpu::Extent3d {
+                    width: refl_width.max(1),
+                    height: refl_height.max(1),
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: color_format,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING
+                    | wgpu::TextureUsages::STORAGE_BINDING
+                    | wgpu::TextureUsages::COPY_DST
+                    | wgpu::TextureUsages::COPY_SRC,
+                view_formats: &[],
+            });
+            let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
+            (tex, view)
+        };
         let (ssr_log_texture, ssr_log_view) = create_ssr_log_texture(device);
 
         let ssr_shader = load_refl_wgsl(device, "ssr", include_str!("ssr.wgsl"));
@@ -245,6 +285,81 @@ impl ReflectionPass {
                 texture_entry(4, true),
             ],
         });
+        let denoise_shader = load_refl_wgsl(device, "denoiser", include_str!("denoiser.wgsl"));
+        let denoise_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("denoise-bgl"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 5,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::StorageTexture {
+                        access: wgpu::StorageTextureAccess::WriteOnly,
+                        format: color_format,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                    },
+                    count: None,
+                },
+            ],
+        });
+        let denoise_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("denoise-pipeline"),
+            layout: Some(&device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("denoise-pl"),
+                bind_group_layouts: &[Some(&denoise_bgl)],
+                immediate_size: 0,
+            })),
+            module: &denoise_shader,
+            entry_point: Some("cs_main"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
+
         let debug_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("reflection-debug-bgl"),
             entries: &[
@@ -484,6 +599,49 @@ impl ReflectionPass {
             &nearest_sampler,
         );
 
+        let denoise_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("denoise-uniforms"),
+            contents: bytemuck::bytes_of(&DenoiseUniforms {
+                resolution: [refl_width as f32, refl_height as f32],
+                depth_sigma: 4.0,
+                normal_sigma: 32.0,
+                luminance_sigma: 16.0,
+                gbuffer_scale: 1.0,
+                _pad: [0.0; 2],
+            }),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let denoise_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("denoise-bg"),
+            layout: &denoise_bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: denoise_uniform_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&reflection_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(&reflection_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(&reflection_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::Sampler(&linear_sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: wgpu::BindingResource::TextureView(&denoise_scratch_view),
+                },
+            ],
+        });
+
         Self {
             ssr_pipeline,
             ssr_log_pipeline,
@@ -524,6 +682,12 @@ impl ReflectionPass {
             color_format,
             present_format,
             profiler: ReflectionProfilerMs::default(),
+            denoise_pipeline,
+            denoise_bgl,
+            denoise_uniform_buffer,
+            _denoise_scratch_texture: denoise_scratch_texture,
+            denoise_scratch_view,
+            denoise_bind_group,
             rt_pass: RtReflectionPassV2::new(device, color_format, refl_width, refl_height, rt_hw_available),
             ssil_pass: SsilPass::new(device, color_format, refl_width, refl_height),
             rt_hw_available,
@@ -838,9 +1002,92 @@ impl ReflectionPass {
             self.reflection_history_index = write_idx as u8;
             self.reflection_first_frame = false;
             self.reflection_resolved_from_history = true;
+
+            // Denoiser espacial: 5×5 bilateral edge-aware sobre el resultado temporal
+            let t_denoise = Instant::now();
+            if debug_view == ReflectionDebugView::Final {
+                let denoise_u = DenoiseUniforms {
+                    resolution: [self.refl_width as f32, self.refl_height as f32],
+                    depth_sigma: 4.0,
+                    normal_sigma: 32.0,
+                    luminance_sigma: 16.0,
+                    gbuffer_scale,
+                    _pad: [0.0; 2],
+                };
+                queue.write_buffer(
+                    &self.denoise_uniform_buffer,
+                    0,
+                    bytemuck::bytes_of(&denoise_u),
+                );
+                self.denoise_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("denoise-bg-frame"),
+                    layout: &self.denoise_bgl,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: self.denoise_uniform_buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: wgpu::BindingResource::TextureView(
+                                &self.reflection_history_views[write_idx],
+                            ),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 2,
+                            resource: wgpu::BindingResource::TextureView(depth_export_view),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 3,
+                            resource: wgpu::BindingResource::TextureView(normal_roughness_view),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 4,
+                            resource: wgpu::BindingResource::Sampler(&self.linear_sampler),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 5,
+                            resource: wgpu::BindingResource::TextureView(&self.denoise_scratch_view),
+                        },
+                    ],
+                });
+                {
+                    let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                        label: Some("denoise-pass"),
+                        timestamp_writes: None,
+                    });
+                    pass.set_pipeline(&self.denoise_pipeline);
+                    pass.set_bind_group(0, &self.denoise_bind_group, &[]);
+                    let dispatch_x = (self.refl_width + 7) / 8;
+                    let dispatch_y = (self.refl_height + 7) / 8;
+                    pass.dispatch_workgroups(dispatch_x, dispatch_y, 1);
+                }
+                // Copiar resultado denoised → history (reemplaza la entrada ruidosa)
+                encoder.copy_texture_to_texture(
+                    wgpu::TexelCopyTextureInfo {
+                        texture: &self._denoise_scratch_texture,
+                        mip_level: 0,
+                        origin: wgpu::Origin3d::ZERO,
+                        aspect: wgpu::TextureAspect::All,
+                    },
+                    wgpu::TexelCopyTextureInfo {
+                        texture: &self._reflection_history_textures[write_idx],
+                        mip_level: 0,
+                        origin: wgpu::Origin3d::ZERO,
+                        aspect: wgpu::TextureAspect::All,
+                    },
+                    wgpu::Extent3d {
+                        width: self.refl_width.max(1),
+                        height: self.refl_height.max(1),
+                        depth_or_array_layers: 1,
+                    },
+                );
+            }
+            self.profiler.denoise_ms = t_denoise.elapsed().as_secs_f32() * 1000.0;
         } else {
             self.reflection_first_frame = true;
             self.reflection_resolved_from_history = false;
+            self.profiler.denoise_ms = 0.0;
         }
         self.profiler.temporal_ms = t1.elapsed().as_secs_f32() * 1000.0;
 

@@ -195,6 +195,7 @@ pub const DEFAULT_REFLECTION_TIER: ReflectionTier = ReflectionTier::Off;
 pub struct ReflectionProfilerMs {
     pub ssr_ms: f32,
     pub temporal_ms: f32,
+    pub denoise_ms: f32,
     pub rt_ms: f32,
     pub composite_ms: f32,
 }
