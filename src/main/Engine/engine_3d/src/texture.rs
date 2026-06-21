@@ -77,7 +77,7 @@ impl TextureArray {
             address_mode_w: wgpu::AddressMode::Repeat,
             mag_filter:     wgpu::FilterMode::Linear,
             min_filter:     wgpu::FilterMode::Linear,
-            mipmap_filter:  wgpu::FilterMode::Linear,
+            mipmap_filter:  wgpu::MipmapFilterMode::Linear,
             ..Default::default()
         });
 
@@ -163,7 +163,7 @@ impl TextureArray {
             let mip_w = (self.width >> level).max(1);
             let mip_h = (self.height >> level).max(1);
             queue.write_texture(
-                wgpu::ImageCopyTexture {
+                wgpu::TexelCopyTextureInfo {
                     texture:   &self.texture,
                     mip_level: level as u32,
                     origin:    wgpu::Origin3d {
@@ -174,7 +174,7 @@ impl TextureArray {
                     aspect:    wgpu::TextureAspect::All,
                 },
                 mip_data,
-                wgpu::ImageDataLayout {
+                wgpu::TexelCopyBufferLayout {
                     offset:         0,
                     bytes_per_row:  Some(4 * mip_w),
                     rows_per_image: Some(mip_h),

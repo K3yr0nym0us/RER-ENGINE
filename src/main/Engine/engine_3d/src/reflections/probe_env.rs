@@ -17,7 +17,7 @@
 use glam::{Mat4, Vec3};
 use wgpu::{Device, Queue, TextureFormat, TextureView};
 
-/// Metadatos por probe: centro xyz + radio w (solo selección de capa cubemap; sin parallax).
+/// Metadatos por probe: centro xyz + radio w (parallax esférico al samplear cubemap).
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct ProbeMetaUniform {
@@ -201,14 +201,14 @@ impl ProbeEnvPass {
 
         let capture_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("probe-env-capture-layout"),
-            bind_group_layouts: &[scene_bgl, texture_bgl],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(scene_bgl), Some(texture_bgl)],
+            immediate_size: 0,
         });
         let capture_skinned_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("probe-env-capture-skinned-layout"),
-                bind_group_layouts: &[scene_bgl, texture_bgl, sample_bgl, joint_bgl],
-                push_constant_ranges: &[],
+                bind_group_layouts: &[Some(scene_bgl), Some(texture_bgl), Some(sample_bgl), Some(joint_bgl)],
+                immediate_size: 0,
             });
 
         let color_target = [Some(wgpu::ColorTargetState {
@@ -218,8 +218,8 @@ impl ProbeEnvPass {
         })];
         let depth_state = wgpu::DepthStencilState {
             format: depth_format,
-            depth_write_enabled: true,
-            depth_compare: wgpu::CompareFunction::Less,
+            depth_write_enabled: Some(true),
+            depth_compare: Some(wgpu::CompareFunction::Less),
             stencil: wgpu::StencilState::default(),
             bias: wgpu::DepthBiasState::default(),
         };
@@ -229,7 +229,7 @@ impl ProbeEnvPass {
             layout: Some(&capture_layout),
             vertex: wgpu::VertexState {
                 module: shader,
-                entry_point: "vs_main",
+                entry_point: Some("vs_main"),
                 buffers: &[
                     crate::mesh::Vertex::desc(),
                     crate::mesh::InstanceData::desc(),
@@ -238,7 +238,7 @@ impl ProbeEnvPass {
             },
             fragment: Some(wgpu::FragmentState {
                 module: shader,
-                entry_point: "fs_overlay",
+                entry_point: Some("fs_overlay"),
                 targets: &color_target,
                 compilation_options: Default::default(),
             }),
@@ -248,7 +248,7 @@ impl ProbeEnvPass {
             },
             depth_stencil: Some(depth_state.clone()),
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 
@@ -258,7 +258,7 @@ impl ProbeEnvPass {
                 layout: Some(&capture_skinned_layout),
                 vertex: wgpu::VertexState {
                     module: skinned_shader,
-                    entry_point: "vs_main_skinned",
+                    entry_point: Some("vs_main_skinned"),
                     buffers: &[
                         crate::mesh::SkinnedVertex::desc(),
                         crate::mesh::SkinnedInstanceData::desc(),
@@ -267,7 +267,7 @@ impl ProbeEnvPass {
                 },
                 fragment: Some(wgpu::FragmentState {
                     module: skinned_shader,
-                    entry_point: "fs_overlay_skinned",
+                    entry_point: Some("fs_overlay_skinned"),
                     targets: &color_target,
                     compilation_options: Default::default(),
                 }),
@@ -277,7 +277,7 @@ impl ProbeEnvPass {
                 },
                 depth_stencil: Some(depth_state),
                 multisample: wgpu::MultisampleState::default(),
-                multiview: None,
+                multiview_mask: None,
                 cache: None,
             });
 
@@ -306,28 +306,28 @@ impl ProbeEnvPass {
         let mip_shader = device.create_shader_module(wgpu::include_wgsl!("probe_mip.wgsl"));
         let mip_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("probe-mip-layout"),
-            bind_group_layouts: &[&mip_bgl],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&mip_bgl)],
+            immediate_size: 0,
         });
         let mip_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("probe-mip-pipeline"),
             layout: Some(&mip_layout),
             vertex: wgpu::VertexState {
                 module: &mip_shader,
-                entry_point: "vs_mip",
+                entry_point: Some("vs_mip"),
                 buffers: &[],
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
                 module: &mip_shader,
-                entry_point: "fs_mip",
+                entry_point: Some("fs_mip"),
                 targets: &color_target,
                 compilation_options: Default::default(),
             }),
             primitive: wgpu::PrimitiveState::default(),
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
         let mip_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
@@ -346,7 +346,7 @@ impl ProbeEnvPass {
             address_mode_w: wgpu::AddressMode::ClampToEdge,
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::MipmapFilterMode::Linear,
             ..Default::default()
         });
         let probe_meta_buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -442,6 +442,7 @@ impl ProbeEnvPass {
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                         view: &dst_view,
                         resolve_target: None,
+                        depth_slice: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
                             store: wgpu::StoreOp::Store,
@@ -450,6 +451,7 @@ impl ProbeEnvPass {
                     depth_stencil_attachment: None,
                     occlusion_query_set: None,
                     timestamp_writes: None,
+                    multiview_mask: None,
                 });
                 pass.set_pipeline(&self.mip_pipeline);
                 pass.set_bind_group(0, &bg, &[]);
@@ -491,12 +493,13 @@ impl ProbeEnvPass {
 /// FOV 90°, aspecto 1, profundidad [0,1] (perspective_rh, convención wgpu/Vulkan).
 pub(crate) fn cube_face_view_projs(center: Vec3, near: f32, far: f32) -> [[[f32; 4]; 4]; FACES] {
     let proj = Mat4::perspective_rh(std::f32::consts::FRAC_PI_2, 1.0, near, far);
-    // (dir, up) según convención Khronos/WGSL para cubemap (+Y up = -Z, -Y up = +Z).
+    // (dir, up) por capa wgpu (+X,-X,+Y,-Y,+Z,-Z). +Y/-Y intercambiadas (suelo/cielo).
+    // Capas 2/3: +90° CW en pantalla respecto a up=±X (continuidad del damero con ±X/±Z).
     let faces: [(Vec3, Vec3); FACES] = [
         (Vec3::X, Vec3::NEG_Y),
         (Vec3::NEG_X, Vec3::NEG_Y),
-        (Vec3::Y, Vec3::NEG_Z),
-        (Vec3::NEG_Y, Vec3::Z),
+        (Vec3::NEG_Y, Vec3::NEG_Z),
+        (Vec3::Y, Vec3::NEG_Z), // capa -Y wgpu: +180° en plano (up era +Z)
         (Vec3::Z, Vec3::NEG_Y),
         (Vec3::NEG_Z, Vec3::NEG_Y),
     ];

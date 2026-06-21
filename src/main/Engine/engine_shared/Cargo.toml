@@ -25,7 +25,7 @@ bitflags = "2"
 image.workspace = true
 
 [dev-dependencies]
-zip = "2.2"
+zip.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 x11.workspace = true

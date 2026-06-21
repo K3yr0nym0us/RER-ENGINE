@@ -164,8 +164,8 @@ fn cs_main(@builtin(global_invocation_id) gid : vec3<u32>) {
 
     let world_pos = world_pos_from_depth(uv, view_depth_m);
     let v = normalize(u.cam_pos.xyz - world_pos);
-    let refl_dir = refl_mirror_dir(world_pos, u.cam_pos.xyz, n);
-    if dot(refl_dir, n) <= 0.0 {
+    let refl_dir = refl_fuzzy_mirror_dir(world_pos, u.cam_pos.xyz, n, roughness);
+    if dot(refl_dir, refl_dir) <= 1e-8 {
         textureStore(reflection_out, px, ssr);
         return;
     }

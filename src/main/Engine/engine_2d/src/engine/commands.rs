@@ -219,9 +219,9 @@ impl State {
                     .and_then(|b| {
                         let cursor = std::io::Cursor::new(b);
                         rodio::Decoder::new(cursor).ok().map(|dec| {
-                            let ch = dec.channels();
-                            let sr = dec.sample_rate();
-                            let s: Vec<i16> = dec.collect();
+                            let ch = dec.channels().get();
+                            let sr = dec.sample_rate().get();
+                            let s: Vec<f32> = dec.collect();
                             Arc::new(DecodedAudio { samples: s, channels: ch, sample_rate: sr })
                         })
                     });
@@ -742,7 +742,7 @@ impl State {
                 }
 
                 // Pre-decodificar audio a muestras PCM durante SetAnimation.
-                // En PlayAnimation solo se clona un Vec<i16> — cero I/O, cero decode.
+                // En PlayAnimation solo se clona un Vec<f32> — cero I/O, cero decode.
                 let audio_decoded: Option<Arc<DecodedAudio>> = audio_path.as_deref().and_then(|p| {
                     let bytes = match std::fs::read(p) {
                         Ok(b) => b,
@@ -753,10 +753,10 @@ impl State {
                         Ok(d) => d,
                         Err(e) => { log::warn!("[SetAnimation] error decodificando audio {}: {}", p, e); return None; }
                     };
-                    let channels    = decoder.channels();
-                    let sample_rate = decoder.sample_rate();
-                    let samples: Vec<i16> = decoder.collect();
-                    
+                    let channels = decoder.channels().get();
+                    let sample_rate = decoder.sample_rate().get();
+                    let samples: Vec<f32> = decoder.collect();
+
                     Some(Arc::new(DecodedAudio { samples, channels, sample_rate }))
                 });
 

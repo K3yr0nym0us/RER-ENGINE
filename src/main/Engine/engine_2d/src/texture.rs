@@ -46,7 +46,7 @@ impl GpuTexture {
             address_mode_w: wgpu::AddressMode::Repeat,
             mag_filter:     wgpu::FilterMode::Linear,
             min_filter:     wgpu::FilterMode::Linear,
-            mipmap_filter:  wgpu::FilterMode::Nearest,
+            mipmap_filter:  wgpu::MipmapFilterMode::Nearest,
             ..Default::default()
         });
 
@@ -214,7 +214,7 @@ impl TextureAtlas {
             address_mode_w: wgpu::AddressMode::ClampToEdge,
             mag_filter:     wgpu::FilterMode::Linear,
             min_filter:     wgpu::FilterMode::Linear,
-            mipmap_filter:  wgpu::FilterMode::Nearest,
+            mipmap_filter:  wgpu::MipmapFilterMode::Nearest,
             ..Default::default()
         });
         let bg = std::sync::Arc::new(device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -287,14 +287,14 @@ impl TextureAtlas {
         }
 
         queue.write_texture(
-            wgpu::ImageCopyTexture {
+            wgpu::TexelCopyTextureInfo {
                 texture:   &self.texture,
                 mip_level: 0,
                 origin:    wgpu::Origin3d { x: self.cursor_x, y: self.cursor_y, z: 0 },
                 aspect:    wgpu::TextureAspect::All,
             },
             rgba,
-            wgpu::ImageDataLayout {
+            wgpu::TexelCopyBufferLayout {
                 offset:         0,
                 bytes_per_row:  Some(4 * w),
                 rows_per_image: None,
@@ -322,14 +322,14 @@ impl TextureAtlas {
         let h = ((uv_rect[3] - uv_rect[1]) * self.height as f32).round() as u32;
         if w == 0 || h == 0 { return; }
         queue.write_texture(
-            wgpu::ImageCopyTexture {
+            wgpu::TexelCopyTextureInfo {
                 texture:   &self.texture,
                 mip_level: 0,
                 origin:    wgpu::Origin3d { x, y, z: 0 },
                 aspect:    wgpu::TextureAspect::All,
             },
             rgba,
-            wgpu::ImageDataLayout {
+            wgpu::TexelCopyBufferLayout {
                 offset:         0,
                 bytes_per_row:  Some(4 * w),
                 rows_per_image: None,

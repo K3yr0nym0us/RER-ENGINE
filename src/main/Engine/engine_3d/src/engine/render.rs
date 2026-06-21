@@ -1,6 +1,8 @@
 use glam::Vec3 as GlamVec3;
 use winit::dpi::PhysicalSize;
 
+use rer_engine_shared::wgpu_surface::{acquire_surface_texture, SurfacePresentError};
+
 use crate::config_3d::Camera;
 use crate::gizmo;
 
@@ -191,7 +193,7 @@ impl State {
         self.taa.tick_frame_index();
     }
 
-    pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
+    pub fn render(&mut self) -> Result<(), SurfacePresentError> {
         self.update_animations();
         self.update_skinned_animations();
         self.sync_socket_attached_children();
@@ -210,7 +212,7 @@ impl State {
             }
         }
 
-        let output = self.surface.get_current_texture()?;
+        let output = acquire_surface_texture(&self.surface)?;
         let view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
@@ -417,6 +419,7 @@ impl State {
                 }),
                 occlusion_query_set: None,
                 timestamp_writes: None,
+                multiview_mask: None,
             });
             shadow_pass.set_pipeline(&self.shadow_pipeline);
             shadow_pass.set_bind_group(0, &self.shadow_pass_bind_group, &[]);
@@ -533,6 +536,7 @@ impl State {
                         color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                             view: self.probe_env.face_view(probe_idx, f),
                             resolve_target: None,
+                            depth_slice: None,
                             ops: wgpu::Operations {
                                 load: wgpu::LoadOp::Clear(self.clear_color),
                                 store: wgpu::StoreOp::Store,
@@ -548,6 +552,7 @@ impl State {
                         }),
                         occlusion_query_set: None,
                         timestamp_writes: None,
+                        multiview_mask: None,
                     });
 
                     cap_pass.set_pipeline(self.probe_env.capture_pipeline());
@@ -617,6 +622,7 @@ impl State {
                     Some(wgpu::RenderPassColorAttachment {
                         view: ambient_view,
                         resolve_target: None,
+                        depth_slice: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Clear(self.clear_color),
                             store: wgpu::StoreOp::Store,
@@ -625,6 +631,7 @@ impl State {
                     Some(wgpu::RenderPassColorAttachment {
                         view: shadow_mask_view,
                         resolve_target: None,
+                        depth_slice: None,
                         ops: wgpu::Operations {
                             // Rg16Float: .r=shadow (1=sin sombra), .g=roughness (1=máximo
                             // mate → sin reflejos). Píxeles sin geometría quedan fuera de
@@ -641,6 +648,7 @@ impl State {
                     Some(wgpu::RenderPassColorAttachment {
                         view: direct_view,
                         resolve_target: None,
+                        depth_slice: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
                             store: wgpu::StoreOp::Store,
@@ -649,6 +657,7 @@ impl State {
                     Some(wgpu::RenderPassColorAttachment {
                         view: depth_export_view,
                         resolve_target: None,
+                        depth_slice: None,
                         ops: wgpu::Operations {
                             // R32Float: distancia en metros (0 = cielo/sin geometría).
                             load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
@@ -658,6 +667,7 @@ impl State {
                     Some(wgpu::RenderPassColorAttachment {
                         view: velocity_view,
                         resolve_target: None,
+                        depth_slice: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
                             store: wgpu::StoreOp::Store,
@@ -674,6 +684,7 @@ impl State {
                 }),
                 occlusion_query_set: None,
                 timestamp_writes: None,
+                multiview_mask: None,
             });
 
             pass.set_pipeline(&self.render_pipeline);
@@ -729,6 +740,7 @@ impl State {
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                         view: base_color_view,
                         resolve_target: None,
+                        depth_slice: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
                             store: wgpu::StoreOp::Store,
@@ -744,6 +756,7 @@ impl State {
                     }),
                     occlusion_query_set: None,
                     timestamp_writes: None,
+                    multiview_mask: None,
                 });
                 albedo_pass.set_pipeline(&self.base_color_pipeline);
                 albedo_pass.set_bind_group(0, &self.scene_bind_group, &[]);
@@ -905,13 +918,6 @@ impl State {
 
         if ran_reflections && self.metrics_frame_count % 15 == 0 {
             let p = self.reflections.profiler;
-            log::info!(
-                "[reflexiones] profiler ssr={:.2}ms temporal={:.2}ms rt={:.2}ms composite={:.2}ms",
-                p.ssr_ms,
-                p.temporal_ms,
-                p.rt_ms,
-                p.composite_ms
-            );
             crate::ipc::send_event(&crate::ipc::EngineEvent::ReflectionProfiler {
                 ssr_ms: p.ssr_ms,
                 temporal_ms: p.temporal_ms,
@@ -935,6 +941,7 @@ impl State {
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                         view: &view,
                         resolve_target: None,
+                        depth_slice: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Load,
                             store: wgpu::StoreOp::Store,
@@ -950,6 +957,7 @@ impl State {
                     }),
                     occlusion_query_set: None,
                     timestamp_writes: None,
+                    multiview_mask: None,
                 });
                 ghost_pass.set_pipeline(&self.render_pipeline_overlay);
                 ghost_pass.set_bind_group(0, &self.scene_bind_group, &[]);
@@ -995,6 +1003,7 @@ impl State {
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                         view: &view,
                         resolve_target: None,
+                        depth_slice: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Load,
                             store: wgpu::StoreOp::Store,
@@ -1003,6 +1012,7 @@ impl State {
                     depth_stencil_attachment: None,
                     occlusion_query_set: None,
                     timestamp_writes: None,
+                    multiview_mask: None,
                 });
                 col_pass.set_pipeline(&self.grid_pipeline);
                 col_pass.set_bind_group(0, &self.grid_bind_group, &[]);
@@ -1036,6 +1046,7 @@ impl State {
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &view,
                     resolve_target: None,
+                    depth_slice: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Load,
                         store: wgpu::StoreOp::Store,
@@ -1044,6 +1055,7 @@ impl State {
                 depth_stencil_attachment: None,
                 occlusion_query_set: None,
                 timestamp_writes: None,
+                multiview_mask: None,
             });
             bounds_pass.set_pipeline(&self.grid_pipeline);
             bounds_pass.set_bind_group(0, &self.grid_bind_group, &[]);
@@ -1093,6 +1105,7 @@ impl State {
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                         view: &view,
                         resolve_target: None,
+                        depth_slice: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Load,
                             store: wgpu::StoreOp::Store,
@@ -1101,6 +1114,7 @@ impl State {
                     depth_stencil_attachment: None,
                     occlusion_query_set: None,
                     timestamp_writes: None,
+                    multiview_mask: None,
                 });
                 frustum_pass.set_pipeline(&self.grid_pipeline);
                 frustum_pass.set_bind_group(0, &self.grid_bind_group, &[]);
@@ -1123,6 +1137,7 @@ impl State {
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &view,
                     resolve_target: None,
+                    depth_slice: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Load,
                         store: wgpu::StoreOp::Store,
@@ -1138,6 +1153,7 @@ impl State {
                 }),
                 occlusion_query_set: None,
                 timestamp_writes: None,
+                multiview_mask: None,
             });
             hint_pass.set_pipeline(&self.screen_hud_pipeline);
             hint_pass.set_bind_group(0, &self.hud_scene_bind_group, &[]);
@@ -1190,6 +1206,7 @@ impl State {
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                         view: &view,
                         resolve_target: None,
+                        depth_slice: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Load,
                             store: wgpu::StoreOp::Store,
@@ -1198,6 +1215,7 @@ impl State {
                     depth_stencil_attachment: None,
                     occlusion_query_set: None,
                     timestamp_writes: None,
+                    multiview_mask: None,
                 });
                 skel_pass.set_pipeline(&self.grid_pipeline);
                 skel_pass.set_bind_group(0, &self.grid_bind_group, &[]);
@@ -1237,6 +1255,7 @@ impl State {
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                         view: &view,
                         resolve_target: None,
+                        depth_slice: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Load,
                             store: wgpu::StoreOp::Store,
@@ -1245,6 +1264,7 @@ impl State {
                     depth_stencil_attachment: None,
                     occlusion_query_set: None,
                     timestamp_writes: None,
+                    multiview_mask: None,
                 });
                 sock_pass.set_pipeline(&self.grid_pipeline);
                 sock_pass.set_bind_group(0, &self.grid_bind_group, &[]);
@@ -1293,6 +1313,7 @@ impl State {
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                         view: &view,
                         resolve_target: None,
+                        depth_slice: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Load,
                             store: wgpu::StoreOp::Store,
@@ -1301,6 +1322,7 @@ impl State {
                     depth_stencil_attachment: None,
                     occlusion_query_set: None,
                     timestamp_writes: None,
+                    multiview_mask: None,
                 });
                 gpass.set_pipeline(&self.gizmo_pipeline);
                 gpass.set_bind_group(0, &self.gizmo_bind_group, &[]);
@@ -1311,9 +1333,6 @@ impl State {
         }
 
         self.queue.submit(std::iter::once(enc.finish()));
-        if ran_reflections {
-            self.reflections.log_ssr_trace_readback(&self.device);
-        }
         self.last_draw_calls = draw_calls;
         output.present();
         Ok(())

@@ -1,4 +1,5 @@
 use glam::Mat4;
+use rer_engine_shared::wgpu_surface::{acquire_surface_texture, SurfacePresentError};
 use wgpu::util::DeviceExt;
 
 use crate::config_2d::{build_scenario_collision_overlay, transform_visual_center};
@@ -9,7 +10,7 @@ use super::render_helpers::{build_scene_uniforms, build_scene_uniforms_2d, is_vi
 use super::State;
 
 impl State {
-    pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
+    pub fn render(&mut self) -> Result<(), SurfacePresentError> {
         self.update_animations();
         let mut draw_calls: u32 = 0;
 
@@ -31,7 +32,7 @@ impl State {
             }
         }
 
-        let output  = self.surface.get_current_texture()?;
+        let output  = acquire_surface_texture(&self.surface)?;
         let view    = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
         let mut enc = self.device.create_command_encoder(
             &wgpu::CommandEncoderDescriptor { label: Some("render-encoder") },
@@ -153,6 +154,7 @@ impl State {
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view:           &scene_view,
                     resolve_target: None,
+                    depth_slice: None,
                     ops: wgpu::Operations {
                         load:  wgpu::LoadOp::Clear(self.clear_color),
                         store: wgpu::StoreOp::Store,
@@ -168,6 +170,7 @@ impl State {
                 }),
                 occlusion_query_set: None,
                 timestamp_writes:    None,
+                multiview_mask: None,
             });
 
             // En 2D usamos el pipeline sin depth-write: el sort back-to-front
@@ -214,8 +217,9 @@ impl State {
                     label: Some("grid-pass"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                         view:           &view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
+                    resolve_target: None,
+                    depth_slice: None,
+                    ops: wgpu::Operations {
                             load:  wgpu::LoadOp::Load,
                             store: wgpu::StoreOp::Store,
                         },
@@ -223,6 +227,7 @@ impl State {
                     depth_stencil_attachment: None,
                     occlusion_query_set:      None,
                     timestamp_writes:         None,
+                    multiview_mask: None,
                 });
                 grd_pass.set_pipeline(&self.grid_pipeline);
                 grd_pass.set_bind_group(0, &self.grid_bind_group, &[]);
@@ -237,8 +242,9 @@ impl State {
                     label: Some("collision-overlay-pass"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                         view:           &view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
+                    resolve_target: None,
+                    depth_slice: None,
+                    ops: wgpu::Operations {
                             load:  wgpu::LoadOp::Load,
                             store: wgpu::StoreOp::Store,
                         },
@@ -246,6 +252,7 @@ impl State {
                     depth_stencil_attachment: None,
                     occlusion_query_set:      None,
                     timestamp_writes:         None,
+                    multiview_mask: None,
                 });
                 collision_pass.set_pipeline(&self.grid_pipeline);
                 collision_pass.set_bind_group(0, &self.grid_bind_group, &[]);
@@ -262,6 +269,7 @@ impl State {
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view:           &view,
                     resolve_target: None,
+                    depth_slice: None,
                     ops: wgpu::Operations {
                         load:  wgpu::LoadOp::Load,
                         store: wgpu::StoreOp::Store,
@@ -270,6 +278,7 @@ impl State {
                 depth_stencil_attachment: None,
                 occlusion_query_set:      None,
                 timestamp_writes:         None,
+                multiview_mask: None,
             });
             tool_pass.set_pipeline(&self.grid_pipeline);          // LineList, sin depth
             tool_pass.set_bind_group(0, &self.grid_bind_group, &[]); // view_proj actualizado
@@ -291,8 +300,9 @@ impl State {
                     label: Some("snap-hint-pass"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                         view:           &view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
+                    resolve_target: None,
+                    depth_slice: None,
+                    ops: wgpu::Operations {
                             load:  wgpu::LoadOp::Load,
                             store: wgpu::StoreOp::Store,
                         },
@@ -307,6 +317,7 @@ impl State {
                     }),
                     occlusion_query_set:      None,
                     timestamp_writes:         None,
+                    multiview_mask: None,
                 });
                 hint_pass.set_pipeline(&self.render_pipeline_overlay);
                 hint_pass.set_bind_group(0, &self.scene_bind_group, &[]);
@@ -355,6 +366,7 @@ impl State {
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view:           &view,
                     resolve_target: None,
+                    depth_slice: None,
                     ops: wgpu::Operations {
                         load:  wgpu::LoadOp::Load,   // preservar frame anterior
                         store: wgpu::StoreOp::Store,
@@ -363,6 +375,7 @@ impl State {
                 depth_stencil_attachment: None,
                 occlusion_query_set:      None,
                 timestamp_writes:         None,
+                multiview_mask: None,
             });
             gpass.set_pipeline(&self.gizmo_pipeline);
             gpass.set_bind_group(0, &self.gizmo_bind_group, &[]);

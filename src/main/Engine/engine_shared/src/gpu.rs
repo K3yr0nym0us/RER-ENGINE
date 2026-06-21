@@ -80,9 +80,10 @@ pub async fn init_gpu(
     let backend = resolve_backend(profile);
     let backends = backend.wgpu_backends();
 
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-        backends,
-        ..Default::default()
+    let instance = wgpu::Instance::new({
+        let mut desc = wgpu::InstanceDescriptor::new_without_display_handle();
+        desc.backends = backends;
+        desc
     });
 
     let surface = instance.create_surface(window).map_err(|e| GpuInitError {
@@ -99,10 +100,12 @@ pub async fn init_gpu(
             force_fallback_adapter: false,
         })
         .await
-        .ok_or_else(|| GpuInitError {
+        .map_err(|e| GpuInitError {
             message: user_facing_message(
                 backend,
-                "No se encontró ningún adaptador gráfico compatible con la superficie.",
+                &format!(
+                    "No se encontró ningún adaptador gráfico compatible con la superficie: {e}"
+                ),
             ),
         })?;
 

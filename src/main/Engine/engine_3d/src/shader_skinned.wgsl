@@ -136,6 +136,28 @@ fn fresnel_schlick_metal(f0: vec3<f32>, cos_theta: f32) -> vec3<f32> {
     return f0 + (vec3<f32>(1.0) - f0) * pow(1.0 - cos_theta, 5.0);
 }
 
+fn env_cubemap_lod(roughness: f32) -> f32 {
+    let r = clamp(roughness, 0.0, 1.0);
+    return r * r * 4.0;
+}
+
+/// RTIOW fuzzy metal (Book 1): espejo + desvío hacia normal si rough > 0.5; absorb si dot <= 0.
+fn apply_fuzzy_reflection(refl: vec3<f32>, n: vec3<f32>, roughness: f32) -> vec3<f32> {
+    let nn = normalize(n);
+    var dir = refl;
+    if dot(dir, nn) <= 0.0 {
+        return vec3<f32>(0.0);
+    }
+    let r = clamp(roughness, 0.0, 1.0);
+    if r > 0.5 {
+        dir = normalize(mix(dir, nn, r * r));
+        if dot(dir, nn) <= 0.0 {
+            return vec3<f32>(0.0);
+        }
+    }
+    return dir;
+}
+
 fn apply_selection_rim(color: vec3<f32>, flag: f32, world_pos: vec3<f32>, world_normal: vec3<f32>) -> vec3<f32> {
     let v = normalize(u.cam_pos.xyz - world_pos);
     let n = normalize(world_normal);
@@ -193,8 +215,7 @@ struct SceneFragOut {
     @location(4) velocity_normal : vec4<f32>,
 }
 
-fn parallax_cubemap_dir(world_pos: vec3<f32>, view_dir: vec3<f32>, n: vec3<f32>, probe_idx: i32) -> vec3<f32> {
-    _ = view_dir;
+fn cubemap_sample_dir(world_pos: vec3<f32>, n: vec3<f32>, probe_idx: i32) -> vec3<f32> {
     _ = probe_idx;
     let incident = normalize(world_pos - u.cam_pos.xyz);
     return reflect(incident, normalize(n));
@@ -259,9 +280,14 @@ fn evaluate_scene(in: VertexOutput, env_override: vec3<f32>, has_env_override: b
         let cos_theta = max(dot(n, v), 0.0);
         let f0 = albedo_rgb;
         let fres = fresnel_schlick_metal(f0, cos_theta);
-        let env_proc = fake_environment(reflect(-v, n));
-        let env_avg = vec3<f32>(0.40, 0.41, 0.43);
-        let env_proc_eff = mix(env_proc, env_avg, surface_roughness);
+        let incident = normalize(in.world_pos - u.cam_pos.xyz);
+        let refl_fuzzy = apply_fuzzy_reflection(reflect(incident, n), n, surface_roughness);
+        let env_proc = fake_environment(
+            select(reflect(-v, n), refl_fuzzy, dot(refl_fuzzy, refl_fuzzy) > 1e-8),
+        );
+        let proc_lum = dot(env_proc, vec3<f32>(0.2126, 0.7152, 0.0722));
+        let blur_w = surface_roughness * surface_roughness;
+        let env_proc_eff = mix(env_proc, vec3<f32>(proc_lum), blur_w);
         let env_eff = select(env_proc_eff, env_override, has_env_override);
         amb = env_eff * fres;
 
@@ -299,12 +325,16 @@ fn fs_main_skinned(in: VertexOutput) -> SceneFragOut {
     let v = normalize(u.cam_pos.xyz - in.world_pos);
     let nn = normalize(in.world_normal);
     let layer_i = i32(in.probe_index);
-    let refl = parallax_cubemap_dir(in.world_pos, v, nn, layer_i);
     let rough = resolve_surface_roughness(in.surface_roughness);
+    let sample_dir = cubemap_sample_dir(in.world_pos, nn, layer_i);
     let layer = max(layer_i, 0);
-    let lod = select(0.0, clamp(rough * 3.0, 1.0, 4.0), rough > 0.05);
-    let env_cube = textureSampleLevel(t_probe_env, s_probe_env, refl, layer, lod).rgb;
-    let has_override = in.surface_metallic > 0.5 && in.probe_index >= 0.0;
+    let lod = env_cubemap_lod(rough);
+    var env_cube = vec3<f32>(0.0);
+    var has_override = false;
+    if in.surface_metallic > 0.5 && in.probe_index >= 0.0 {
+        env_cube = textureSampleLevel(t_probe_env, s_probe_env, sample_dir, layer, lod).rgb;
+        has_override = true;
+    }
     return evaluate_scene(in, env_cube, has_override);
 }
 

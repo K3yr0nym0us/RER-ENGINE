@@ -31,8 +31,8 @@ impl PhysicsWorld2D {
     pub(crate) fn teleport_entity(&mut self, entity: EntityId, x: f32, y: f32) {
         if let Some(&handle) = self.entity_bodies.get(&entity) {
             if let Some(body) = self.bodies.get_mut(handle) {
-                body.set_translation(vector![x, y, 0.0], true);
-                body.set_linvel(vector![0.0, 0.0, 0.0], true);
+                body.set_translation(Vector::new(x, y, 0.0), true);
+                body.set_linvel(Vector::ZERO, true);
             }
             self.kinematic_actor_vel.remove(&entity);
         }

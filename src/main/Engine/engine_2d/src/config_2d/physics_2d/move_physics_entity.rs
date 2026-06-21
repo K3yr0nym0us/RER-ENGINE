@@ -30,8 +30,8 @@
 //
 // Retorna true si la entidad tiene cuerpo físico activo.
 
+use rapier3d::parry::query::ShapeCastOptions;
 use rapier3d::prelude::*;
-use parry3d::query::ShapeCastOptions;
 
 use super::PhysicsWorld2D;
 use crate::ecs::EntityId;
@@ -60,12 +60,12 @@ impl PhysicsWorld2D {
                 let vy = self.bodies.get(body_handle)
                     .map(|b| b.linvel().y)
                     .unwrap_or(0.0);
-                self.set_kinematic_actor_vel_xy(entity, vector![0.0, vy, 0.0]);
+                self.set_kinematic_actor_vel_xy(entity, Vector::new(0.0, vy, 0.0));
                 return true;
             }
             if let Some(body) = self.bodies.get_mut(body_handle) {
                 let vy = body.linvel().y;
-                body.set_linvel(vector![0.0, vy, 0.0], true);
+                body.set_linvel(Vector::new(0.0, vy, 0.0), true);
             }
             return true;
         }
@@ -83,12 +83,12 @@ impl PhysicsWorld2D {
             // empuje X y permitir solo que se aleje en sentido contrario.
             if self.is_horizontal_blocked(entity, nx) {
                 let target_vy = if ny.abs() > 1e-6 { ny * speed } else { vy_base };
-                self.set_kinematic_actor_vel_xy(entity, vector![0.0, target_vy, 0.0]);
+                self.set_kinematic_actor_vel_xy(entity, Vector::new(0.0, target_vy, 0.0));
                 return true;
             }
 
             let target_vy = if ny.abs() > 1e-6 { ny * speed } else { vy_base };
-            self.set_kinematic_actor_vel_xy(entity, vector![nx * speed, target_vy, 0.0]);
+            self.set_kinematic_actor_vel_xy(entity, Vector::new(nx * speed, target_vy, 0.0));
             return true;
         }
         let (nx, ny) = (dir_x / len, dir_y / len);
@@ -102,7 +102,7 @@ impl PhysicsWorld2D {
                 // Sin colisionador: aplicar velocidad directamente
                 if let Some(body) = self.bodies.get_mut(body_handle) {
                     let vy = if controls_y { ny * speed } else { current_vy };
-                    body.set_linvel(vector![nx * speed, vy, 0.0], true);
+                    body.set_linvel(Vector::new(nx * speed, vy, 0.0), true);
                 }
                 return true;
             }
@@ -126,28 +126,22 @@ impl PhysicsWorld2D {
         // Esto hace que effective_speed = toi * speed sea directamente correcto
         // sin ninguna conversión extra.
         let dt_safe = dt.max(1e-4);
-        let shape_vel = vector![nx * speed * dt_safe, ny * speed * dt_safe, 0.0];
+        let shape_vel = Vector::new(nx * speed * dt_safe, ny * speed * dt_safe, 0.0);
 
         let filter = QueryFilter::default().exclude_collider(col_handle);
 
         let hit = if let Some(col) = self.colliders.get(col_handle) {
-            self.query_pipeline.cast_shape(
-                &self.bodies,
-                &self.colliders,
+            let queries = self.query_pipeline(filter);
+            queries.cast_shape(
                 &shape_pos,
-                &shape_vel,
+                shape_vel,
                 col.shape(),
                 ShapeCastOptions {
-                    // Fracción máxima del desplazamiento a buscar (1.0 = todo el frame)
                     max_time_of_impact:                    1.0,
-                    // Margen de piel: no llegamos exactamente a la superficie
                     target_distance:                       0.01,
-                    // false = ignorar penetraciones existentes (cuerpo apoyado en suelo).
-                    // Permite moverse mientras se está en contacto con una superficie.
                     stop_at_penetration:                   false,
                     compute_impact_geometry_on_penetration: false,
                 },
-                filter,
             )
         } else {
             None
@@ -166,12 +160,12 @@ impl PhysicsWorld2D {
                     // Ya pegado a la superficie — deslizar sobre la normal del obstáculo.
                     // normal2 = normal exterior del obstáculo, apunta hacia el personaje.
                     // slide(v, n) = v - (v·n)*n  →  componente perpendicular a la pared.
-                    let wall_normal = hit_data.normal2.into_inner();
+                    let wall_normal = hit_data.normal2;
                     let vx_req = nx * speed;
                     let vy_req = if controls_y { ny * speed } else { 0.0 };
-                    let vel    = vector![vx_req, vy_req, 0.0f32];
-                    let dot    = vel.dot(&wall_normal);
-                    let slide  = vel - dot * wall_normal;
+                    let vel    = Vector::new(vx_req, vy_req, 0.0);
+                    let dot    = vel.dot(wall_normal);
+                    let slide  = vel - wall_normal * dot;
 
                     
 
@@ -189,7 +183,7 @@ impl PhysicsWorld2D {
         };
 
         if let Some(body) = self.bodies.get_mut(body_handle) {
-            body.set_linvel(vector![final_vx, final_vy, 0.0], true);
+            body.set_linvel(Vector::new(final_vx, final_vy, 0.0), true);
         }
         true
     }

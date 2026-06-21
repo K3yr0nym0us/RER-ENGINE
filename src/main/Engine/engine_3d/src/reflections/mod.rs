@@ -97,6 +97,7 @@ struct DebugUniforms {
 
 pub struct ReflectionPass {
     ssr_pipeline: wgpu::RenderPipeline,
+    #[allow(dead_code)]
     ssr_log_pipeline: wgpu::RenderPipeline,
     temporal_pipeline: wgpu::RenderPipeline,
     composite_pipeline: wgpu::RenderPipeline,
@@ -143,8 +144,12 @@ pub struct ReflectionPass {
     present_format: TextureFormat,
     pub profiler: ReflectionProfilerMs,
     rt_pass: RtReflectionPass,
+    /// SSR centro readback (desactivado; evita spam en consola).
+    #[allow(dead_code)]
     _ssr_log_texture: wgpu::Texture,
+    #[allow(dead_code)]
     ssr_log_view: TextureView,
+    #[allow(dead_code)]
     ssr_trace_readback: SsrTraceReadback,
     rt_tlas_log_cooldown: u32,
 }
@@ -265,8 +270,8 @@ impl ReflectionPass {
 
         let ssr_pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("ssr-pl"),
-            bind_group_layouts: &[&ssr_bgl],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&ssr_bgl)],
+            immediate_size: 0,
         });
         let ssr_pipeline = device.create_render_pipeline(&fullscreen_pipeline_desc(
             "ssr-pipeline",
@@ -286,27 +291,27 @@ impl ReflectionPass {
             layout: Some(&ssr_pl),
             vertex: wgpu::VertexState {
                 module: &ssr_shader,
-                entry_point: "vs_main",
+                entry_point: Some("vs_main"),
                 buffers: &[],
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
                 module: &ssr_shader,
-                entry_point: "fs_log",
+                entry_point: Some("fs_log"),
                 targets: &ssr_log_target,
                 compilation_options: Default::default(),
             }),
             primitive: wgpu::PrimitiveState::default(),
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 
         let temporal_pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("refl-temporal-pl"),
-            bind_group_layouts: &[&temporal_bgl],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&temporal_bgl)],
+            immediate_size: 0,
         });
         let temporal_pipeline = device.create_render_pipeline(&fullscreen_pipeline_desc(
             "reflection-temporal-pipeline",
@@ -318,8 +323,8 @@ impl ReflectionPass {
 
         let composite_pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("refl-composite-pl"),
-            bind_group_layouts: &[&composite_bgl],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&composite_bgl)],
+            immediate_size: 0,
         });
         let composite_pipeline = device.create_render_pipeline(&fullscreen_pipeline_desc(
             "reflection-composite-pipeline",
@@ -331,8 +336,8 @@ impl ReflectionPass {
 
         let debug_pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("refl-debug-pl"),
-            bind_group_layouts: &[&debug_bgl],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&debug_bgl)],
+            immediate_size: 0,
         });
         let debug_pipeline = device.create_render_pipeline(&fullscreen_pipeline_desc(
             "reflection-debug-pipeline",
@@ -353,8 +358,8 @@ impl ReflectionPass {
         });
         let debug_present_blit_pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("reflection-debug-present-blit-pl"),
-            bind_group_layouts: &[&debug_present_blit_bgl],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&debug_present_blit_bgl)],
+            immediate_size: 0,
         });
         let debug_present_blit_pipeline = device.create_render_pipeline(&fullscreen_pipeline_desc(
             "reflection-debug-present-blit",
@@ -644,6 +649,7 @@ impl ReflectionPass {
                     Some(wgpu::RenderPassColorAttachment {
                         view: &self.reflection_view,
                         resolve_target: None,
+                        depth_slice: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
                             store: wgpu::StoreOp::Store,
@@ -652,6 +658,7 @@ impl ReflectionPass {
                     Some(wgpu::RenderPassColorAttachment {
                         view: &self.reflection_hit_uv_view,
                         resolve_target: None,
+                        depth_slice: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
                             store: wgpu::StoreOp::Store,
@@ -661,36 +668,13 @@ impl ReflectionPass {
                 depth_stencil_attachment: None,
                 occlusion_query_set: None,
                 timestamp_writes: None,
+                multiview_mask: None,
             });
             pass.set_pipeline(&self.ssr_pipeline);
             pass.set_bind_group(0, &self.ssr_bind_group, &[]);
             pass.draw(0..3, 0..1);
         }
         self.profiler.ssr_ms = t0.elapsed().as_secs_f32() * 1000.0;
-
-        if self.ssr_trace_readback.should_sample() {
-            {
-                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("ssr-log-pass"),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: &self.ssr_log_view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                            store: wgpu::StoreOp::Store,
-                        },
-                    })],
-                    depth_stencil_attachment: None,
-                    occlusion_query_set: None,
-                    timestamp_writes: None,
-                });
-                pass.set_pipeline(&self.ssr_log_pipeline);
-                pass.set_bind_group(0, &self.ssr_bind_group, &[]);
-                pass.draw(0..3, 0..1);
-            }
-            self.ssr_trace_readback
-                .queue_pixel(encoder, &self._ssr_log_texture);
-        }
 
         let t1 = Instant::now();
         if settings.temporal_blend > 0.0 {
@@ -735,6 +719,7 @@ impl ReflectionPass {
                         Some(wgpu::RenderPassColorAttachment {
                             view: out_view,
                             resolve_target: None,
+                            depth_slice: None,
                             ops: wgpu::Operations {
                                 load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
                                 store: wgpu::StoreOp::Store,
@@ -743,6 +728,7 @@ impl ReflectionPass {
                         Some(wgpu::RenderPassColorAttachment {
                             view: hit_uv_out_view,
                             resolve_target: None,
+                            depth_slice: None,
                             ops: wgpu::Operations {
                                 load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
                                 store: wgpu::StoreOp::Store,
@@ -752,6 +738,7 @@ impl ReflectionPass {
                     depth_stencil_attachment: None,
                     occlusion_query_set: None,
                     timestamp_writes: None,
+                    multiview_mask: None,
                 });
                 pass.set_pipeline(&self.temporal_pipeline);
                 pass.set_bind_group(0, &self.temporal_bind_groups[write_idx], &[]);
@@ -819,13 +806,13 @@ impl ReflectionPass {
                 &self._reflection_texture
             };
             encoder.copy_texture_to_texture(
-                wgpu::ImageCopyTexture {
+                wgpu::TexelCopyTextureInfo {
                     texture: &self._reflection_rt_scratch_texture,
                     mip_level: 0,
                     origin: wgpu::Origin3d::ZERO,
                     aspect: wgpu::TextureAspect::All,
                 },
-                wgpu::ImageCopyTexture {
+                wgpu::TexelCopyTextureInfo {
                     texture: dst_texture,
                     mip_level: 0,
                     origin: wgpu::Origin3d::ZERO,
@@ -922,6 +909,7 @@ impl ReflectionPass {
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &self.composite_scratch_view,
                     resolve_target: None,
+                    depth_slice: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
                         store: wgpu::StoreOp::Store,
@@ -930,19 +918,20 @@ impl ReflectionPass {
                 depth_stencil_attachment: None,
                 occlusion_query_set: None,
                 timestamp_writes: None,
+                multiview_mask: None,
             });
             pass.set_pipeline(&self.composite_pipeline);
             pass.set_bind_group(0, &self.composite_bind_group, &[]);
             pass.draw(0..3, 0..1);
         }
         encoder.copy_texture_to_texture(
-            wgpu::ImageCopyTexture {
+            wgpu::TexelCopyTextureInfo {
                 texture: &self._composite_scratch_texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
             },
-            wgpu::ImageCopyTexture {
+            wgpu::TexelCopyTextureInfo {
                 texture: scene_texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
@@ -991,10 +980,6 @@ impl ReflectionPass {
             );
         }
     }
-
-    pub fn log_ssr_trace_readback(&mut self, device: &Device) {
-        self.ssr_trace_readback.finish_and_log(device);
-    }
 }
 
 fn fullscreen_pipeline_desc<'a>(
@@ -1009,20 +994,20 @@ fn fullscreen_pipeline_desc<'a>(
         layout,
         vertex: wgpu::VertexState {
             module,
-            entry_point: entry,
+            entry_point: Some(entry),
             buffers: &[],
             compilation_options: Default::default(),
         },
         fragment: Some(wgpu::FragmentState {
             module,
-            entry_point: "fs_main",
+            entry_point: Some("fs_main"),
             targets: color_target,
             compilation_options: Default::default(),
         }),
         primitive: wgpu::PrimitiveState::default(),
         depth_stencil: None,
         multisample: wgpu::MultisampleState::default(),
-        multiview: None,
+        multiview_mask: None,
         cache: None,
     }
 }
@@ -1189,6 +1174,7 @@ fn draw_fullscreen_pass(
         color_attachments: &[Some(wgpu::RenderPassColorAttachment {
             view: output_view,
             resolve_target: None,
+            depth_slice: None,
             ops: wgpu::Operations {
                 load,
                 store: wgpu::StoreOp::Store,
@@ -1197,6 +1183,7 @@ fn draw_fullscreen_pass(
         depth_stencil_attachment: None,
         occlusion_query_set: None,
         timestamp_writes: None,
+        multiview_mask: None,
     });
     pass.set_pipeline(pipeline);
     pass.set_bind_group(0, bind_group, &[]);

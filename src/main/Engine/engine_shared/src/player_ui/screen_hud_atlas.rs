@@ -102,7 +102,7 @@ impl ScreenHudAtlas {
             address_mode_w: wgpu::AddressMode::ClampToEdge,
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
             ..Default::default()
         });
         let bind_group = Arc::new(device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -196,7 +196,7 @@ impl ScreenHudAtlas {
         }
 
         queue.write_texture(
-            wgpu::ImageCopyTexture {
+            wgpu::TexelCopyTextureInfo {
                 texture: &self.texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d {
@@ -207,7 +207,7 @@ impl ScreenHudAtlas {
                 aspect: wgpu::TextureAspect::All,
             },
             rgba,
-            wgpu::ImageDataLayout {
+            wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(4 * w),
                 rows_per_image: None,

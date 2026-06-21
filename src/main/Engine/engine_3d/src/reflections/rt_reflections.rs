@@ -68,15 +68,15 @@ impl RtReflectionPass {
 
         let pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("rt-refl-pl"),
-            bind_group_layouts: &[&bgl],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&bgl)],
+            immediate_size: 0,
         });
 
         let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
             label: Some("rt-refl-pipeline"),
             layout: Some(&pl),
             module: &shader,
-            entry_point: "cs_main",
+            entry_point: Some("cs_main"),
             compilation_options: Default::default(),
             cache: None,
         });

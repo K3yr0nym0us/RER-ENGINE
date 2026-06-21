@@ -17,15 +17,20 @@ mod win32_tracker {
     use windows::Win32::UI::Accessibility::{SetWinEventHook, UnhookWinEvent, HWINEVENTHOOK};
     use windows::Win32::UI::WindowsAndMessaging::{
         DispatchMessageW, IsWindow, PeekMessageW, SetWindowPos, TranslateMessage,
-        EVENT_OBJECT_LOCATIONCHANGE, MSG, PM_REMOVE, SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOZORDER,
-        WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS,
+        EVENT_OBJECT_LOCATIONCHANGE, HWND_TOP, MSG, PM_REMOVE, SWP_NOACTIVATE, SWP_NOSIZE,
+        SWP_NOZORDER, WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS,
     };
 
     use super::TrackerOffset;
 
+    #[inline]
+    fn hwnd_from_isize(v: isize) -> HWND {
+        HWND(v as *mut _)
+    }
+
     struct TrackerState {
-        engine: HWND,
-        parent: HWND,
+        engine_hwnd: isize,
+        parent_hwnd: isize,
         offset: TrackerOffset,
     }
 
@@ -33,15 +38,17 @@ mod win32_tracker {
 
     fn sync_engine_position(state: &TrackerState) {
         unsafe {
+            let engine = hwnd_from_isize(state.engine_hwnd);
+            let parent = hwnd_from_isize(state.parent_hwnd);
             let mut pt = POINT { x: 0, y: 0 };
-            if !ClientToScreen(state.parent, &mut pt).as_bool() {
+            if !ClientToScreen(parent, &mut pt).as_bool() {
                 return;
             }
             let off_x = state.offset.0.load(Ordering::Relaxed);
             let off_y = state.offset.1.load(Ordering::Relaxed);
             let _ = SetWindowPos(
-                state.engine,
-                HWND(0isize),
+                engine,
+                Some(HWND_TOP),
                 pt.x + off_x,
                 pt.y + off_y,
                 0,
@@ -66,7 +73,9 @@ mod win32_tracker {
         let Some(state) = TRACKER_STATE.get() else {
             return;
         };
-        if hwnd != state.parent && hwnd != state.engine {
+        let parent = hwnd_from_isize(state.parent_hwnd);
+        let engine = hwnd_from_isize(state.engine_hwnd);
+        if hwnd != parent && hwnd != engine {
             return;
         }
         sync_engine_position(state);
@@ -74,8 +83,8 @@ mod win32_tracker {
 
     pub fn start_position_tracker(engine_hwnd: isize, parent_hwnd: isize, offset: TrackerOffset) {
         let state = Arc::new(TrackerState {
-            engine: HWND(engine_hwnd),
-            parent: HWND(parent_hwnd),
+            engine_hwnd,
+            parent_hwnd,
             offset,
         });
         let _ = TRACKER_STATE.set(Arc::clone(&state));
@@ -100,11 +109,11 @@ mod win32_tracker {
                 loop {
                     unsafe {
                         let mut msg = MSG::default();
-                        while PeekMessageW(&mut msg, HWND(0isize), 0, 0, PM_REMOVE).into() {
+                        while PeekMessageW(&mut msg, None, 0, 0, PM_REMOVE).into() {
                             let _ = TranslateMessage(&msg);
                             let _ = DispatchMessageW(&msg);
                         }
-                        if !IsWindow(state.parent).as_bool() {
+                        if !IsWindow(Some(hwnd_from_isize(state.parent_hwnd))).as_bool() {
                             if !hook.is_invalid() {
                                 let _ = UnhookWinEvent(hook);
                             }
@@ -129,14 +138,14 @@ pub fn setup_overlay_win32(engine_hwnd: isize, parent_hwnd: isize, offset: Track
     use windows::Win32::Foundation::HWND;
     use windows::Win32::UI::WindowsAndMessaging::{
         GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE, GWLP_HWNDPARENT,
-        SWP_FRAMECHANGED, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WS_EX_APPWINDOW, WS_EX_NOACTIVATE,
-        WS_EX_TOOLWINDOW,
+        HWND_TOP, SWP_FRAMECHANGED, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WS_EX_APPWINDOW,
+        WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
     };
 
     unsafe {
-        let motor = HWND(engine_hwnd);
-        let parent = HWND(parent_hwnd);
-        SetWindowLongPtrW(motor, GWLP_HWNDPARENT, parent.0 as isize);
+        let motor = HWND(engine_hwnd as *mut _);
+        let parent = HWND(parent_hwnd as *mut _);
+        SetWindowLongPtrW(motor, GWLP_HWNDPARENT, parent.0 as usize as isize);
         let ex = GetWindowLongPtrW(motor, GWL_EXSTYLE);
         let new_ex = (ex & !(WS_EX_APPWINDOW.0 as isize))
             | WS_EX_NOACTIVATE.0 as isize
@@ -144,7 +153,7 @@ pub fn setup_overlay_win32(engine_hwnd: isize, parent_hwnd: isize, offset: Track
         SetWindowLongPtrW(motor, GWL_EXSTYLE, new_ex);
         let _ = SetWindowPos(
             motor,
-            HWND(0isize),
+            Some(HWND_TOP),
             0,
             0,
             0,
@@ -335,7 +344,7 @@ pub fn focus_overlay_parent_window(parent_id: u64) {
         };
         unsafe {
             let _ = AllowSetForegroundWindow(ASFW_ANY);
-            let hwnd = HWND(parent_id as isize);
+            let hwnd = HWND(parent_id as *mut _);
             let _ = ShowWindow(hwnd, SW_SHOW);
             let _ = SetForegroundWindow(hwnd);
         }

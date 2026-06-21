@@ -1,4 +1,5 @@
 //! Readback 1×1 Rgba32Float del pass `fs_log` en `ssr.wgsl` (centro de pantalla).
+#![allow(dead_code)]
 
 /// ~3 s a 60 FPS (~0,3 logs/s). Antes: 45 frames (~1,3/s).
 const LOG_COOLDOWN_FRAMES: u32 = 180;
@@ -39,15 +40,15 @@ impl SsrTraceReadback {
         texture: &wgpu::Texture,
     ) {
         encoder.copy_texture_to_buffer(
-            wgpu::ImageCopyTexture {
+            wgpu::TexelCopyTextureInfo {
                 texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
             },
-            wgpu::ImageCopyBuffer {
+            wgpu::TexelCopyBufferInfo {
                 buffer: &self.staging,
-                layout: wgpu::ImageDataLayout {
+                layout: wgpu::TexelCopyBufferLayout {
                     offset: 0,
                     bytes_per_row: Some(256),
                     rows_per_image: Some(1),
@@ -75,7 +76,7 @@ impl SsrTraceReadback {
         slice.map_async(wgpu::MapMode::Read, move |result| {
             let _ = tx.send(result);
         });
-        let _ = device.poll(wgpu::Maintain::Wait);
+        let _ = device.poll(wgpu::PollType::wait_indefinitely());
         if rx.recv().ok().and_then(|r| r.ok()).is_none() {
             log::warn!("[SSR] readback: falló map_async");
             return;

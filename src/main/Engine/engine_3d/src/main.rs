@@ -40,6 +40,7 @@ use winit::{
 
 use ipc::{EngineCommand, EngineCommandCommon, EngineEvent};
 use rer_engine_shared::gpu::{resolve_backend, EngineGpuProfile};
+use rer_engine_shared::wgpu_surface::SurfacePresentError;
 use rer_engine_shared::platform::{query_ctrl_held_os, query_shift_held_os};
 use rer_engine_shared::overlay::{parse_overlay_config, OverlayConfig};
 #[cfg(any(target_os = "windows", target_os = "linux"))]
@@ -225,7 +226,7 @@ impl App {
             use windows::Win32::Graphics::Gdi::ClientToScreen;
             unsafe {
                 let mut pt = POINT { x: 0, y: 0 };
-                if ClientToScreen(HWND(self.tracker_parent_id as isize), &mut pt).as_bool() {
+                if ClientToScreen(HWND(self.tracker_parent_id as *mut _), &mut pt).as_bool() {
                     self.tracker_offset.0.store(x - pt.x, Ordering::Relaxed);
                     self.tracker_offset.1.store(y - pt.y, Ordering::Relaxed);
                 }
@@ -873,16 +874,14 @@ impl ApplicationHandler<EngineCommand> for App {
                 }
                 match state.render() {
                     Ok(_) => {}
-                    // Surface perdida: reconfigurar con el tamaño actual
-                    Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
+                    Err(SurfacePresentError::Reconfigure) => {
                         let size = state.size();
                         state.resize(size);
                     }
-                    Err(wgpu::SurfaceError::OutOfMemory) => {
-                        log::error!("Out of memory — cerrando");
-                        event_loop.exit();
+                    Err(SurfacePresentError::SkipFrame) => {}
+                    Err(SurfacePresentError::Validation) => {
+                        log::warn!("render validation error");
                     }
-                    Err(e) => log::warn!("render error: {e:?}"),
                 }
                 // NO llamar request_redraw() aquí: lo hace about_to_wait con WaitUntil.
                 // Hacerlo aquí + ControlFlow::Poll crea un busy loop que consume CPU al 100%.

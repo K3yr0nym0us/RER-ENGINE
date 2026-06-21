@@ -182,7 +182,7 @@ fn trace_ssr_screen_debug(surf_uv : vec2<f32>) -> SsrTraceDbg {
 
     let world_pos = world_pos_from_depth(surf_uv, view_depth_m);
     let view_dir = normalize(u.cam_pos.xyz - world_pos);
-    let refl_dir = refl_mirror_dir(world_pos, u.cam_pos.xyz, n);
+    let refl_dir = refl_fuzzy_mirror_dir(world_pos, u.cam_pos.xyz, n, roughness);
     out.view_dir = view_dir;
     out.refl_dir = refl_dir;
 

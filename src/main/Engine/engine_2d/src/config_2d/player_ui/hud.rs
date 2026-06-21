@@ -289,6 +289,7 @@ impl State {
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view,
                     resolve_target: None,
+                    depth_slice: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Load,
                         store: wgpu::StoreOp::Store,
@@ -297,6 +298,7 @@ impl State {
                 depth_stencil_attachment: None,
                 occlusion_query_set: None,
                 timestamp_writes: None,
+                multiview_mask: None,
             });
             pass.set_pipeline(&self.gizmo_pipeline);
             pass.set_bind_group(0, &self.gizmo_bind_group, &[]);
@@ -320,6 +322,7 @@ impl State {
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                         view,
                         resolve_target: None,
+                        depth_slice: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Load,
                             store: wgpu::StoreOp::Store,
@@ -328,6 +331,7 @@ impl State {
                     depth_stencil_attachment: None,
                     occlusion_query_set: None,
                     timestamp_writes: None,
+                    multiview_mask: None,
                 });
                 pass.set_pipeline(&self.gizmo_pipeline);
                 pass.set_bind_group(0, &self.gizmo_bind_group, &[]);
@@ -345,6 +349,7 @@ impl State {
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                         view,
                         resolve_target: None,
+                        depth_slice: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Load,
                             store: wgpu::StoreOp::Store,
@@ -360,6 +365,7 @@ impl State {
                     }),
                     occlusion_query_set: None,
                     timestamp_writes: None,
+                    multiview_mask: None,
                 });
                 pass.set_pipeline(&self.screen_hud_pipeline);
                 pass.set_bind_group(0, &self.hud_scene_bind_group, &[]);

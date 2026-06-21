@@ -1,35 +1,35 @@
+use std::num::{NonZeroU16, NonZeroU32};
 use std::sync::{Arc, Condvar, Mutex};
 
-use rodio;
 use rodio::Source as RodioSource;
 
 use super::State;
 
 /// Audio pre-decodificado a muestras PCM listas para reproducción instantánea.
-/// Se genera una vez en `SetAnimation` y se reutiliza en cada `PlayAnimation`.
 pub struct DecodedAudio {
-    pub samples: Vec<i16>,
+    pub samples: Vec<f32>,
     pub channels: u16,
     pub sample_rate: u32,
 }
 
 /// Comandos enviados al thread de audio.
 pub enum AudioCmd {
-    /// Reproducir audio desde muestras PCM ya decodificadas en RAM.
-    /// El Sink nunca se destruye: solo se vacía la cola y se agrega el nuevo source.
     Play { audio: Arc<DecodedAudio>, loop_: bool },
-    /// Detener el audio en curso (vacía la cola, el Sink sigue vivo).
     Stop,
 }
 
-/// Single-slot "latest wins": solo el comando más reciente importa.
 pub(crate) type AudioSlot = Arc<(Mutex<Option<AudioCmd>>, Condvar)>;
 
-/// Envía un comando al thread de audio sobreescribiendo cualquier comando pendiente.
 pub(crate) fn send_audio(slot: &AudioSlot, cmd: AudioCmd) {
     let (lock, cvar) = &**slot;
     *lock.lock().unwrap() = Some(cmd);
     cvar.notify_one();
+}
+
+fn samples_buffer(audio: &DecodedAudio) -> rodio::buffer::SamplesBuffer {
+    let channels = NonZeroU16::new(audio.channels).expect("channels > 0");
+    let sample_rate = NonZeroU32::new(audio.sample_rate).expect("sample_rate > 0");
+    rodio::buffer::SamplesBuffer::new(channels, sample_rate, audio.samples.clone())
 }
 
 /// Lanza el thread dedicado de audio.
@@ -39,8 +39,8 @@ pub(crate) fn start_audio_thread() -> Option<AudioSlot> {
     std::thread::Builder::new()
         .name("audio".into())
         .spawn(move || {
-            let (_stream, handle) = match rodio::OutputStream::try_default() {
-                Ok(pair) => pair,
+            let device_sink = match rodio::DeviceSinkBuilder::open_default_sink() {
+                Ok(handle) => handle,
                 Err(e) => {
                     log::error!("[audio] thread: no se pudo abrir dispositivo: {e}");
                     return;
@@ -48,7 +48,7 @@ pub(crate) fn start_audio_thread() -> Option<AudioSlot> {
             };
 
             let (lock, cvar) = &*slot_thread;
-            let mut loop_sink: Option<rodio::Sink> = None;
+            let mut loop_player: Option<rodio::Player> = None;
 
             loop {
                 let cmd = {
@@ -62,43 +62,31 @@ pub(crate) fn start_audio_thread() -> Option<AudioSlot> {
                 };
                 match cmd {
                     AudioCmd::Stop => {
-                        if let Some(s) = loop_sink.take() {
-                            drop(s);
-                            
+                        if let Some(player) = loop_player.take() {
+                            drop(player);
                         }
                     }
                     AudioCmd::Play { audio, loop_ } => {
-                        let sink = match rodio::Sink::try_new(&handle) {
-                            Ok(s) => s,
-                            Err(e) => {
-                                log::error!("[audio] no se pudo crear sink: {e}");
-                                continue;
-                            }
-                        };
-                        let source = rodio::buffer::SamplesBuffer::new(
-                            audio.channels,
-                            audio.sample_rate,
-                            audio.samples.clone(),
-                        );
+                        let player = rodio::Player::connect_new(device_sink.mixer());
+                        let source = samples_buffer(&audio);
                         if loop_ {
-                            if let Some(prev) = loop_sink.take() {
+                            if let Some(prev) = loop_player.take() {
                                 drop(prev);
                             }
-                            sink.append(source.repeat_infinite());
-                            sink.play();
-                            loop_sink = Some(sink);
+                            player.append(source.repeat_infinite());
+                            player.play();
+                            loop_player = Some(player);
                         } else {
-                            sink.append(source);
-                            sink.play();
-                            sink.detach();
+                            player.append(source);
+                            player.play();
+                            player.detach();
                         }
-                        
                     }
                 }
             }
         })
         .expect("no se pudo crear el thread de audio");
-    
+
     Some(slot)
 }
 

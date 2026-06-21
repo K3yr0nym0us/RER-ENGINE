@@ -36,8 +36,9 @@ impl State {
                     required_features: wgpu::Features::empty(),
                     required_limits:   wgpu::Limits::default(),
                     memory_hints:      Default::default(),
+                    experimental_features: wgpu::ExperimentalFeatures::disabled(),
+                    trace:             wgpu::Trace::Off,
                 },
-                None,
             )
             .await
             .expect("no se pudo crear el Device");
@@ -155,21 +156,21 @@ impl State {
         let shader = device.create_shader_module(include_wgsl!("../shader.wgsl"));
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label:                Some("pipeline-layout"),
-            bind_group_layouts:   &[&bgl, &texture_bgl],
-            push_constant_ranges: &[],
+            bind_group_layouts:   &[Some(&bgl), Some(&texture_bgl)],
+            immediate_size: 0,
         });
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label:  Some("main-pipeline"),
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
                 module:              &shader,
-                entry_point:         "vs_main",
+                entry_point: Some("vs_main"),
                 buffers:             &[mesh::Vertex::desc(), mesh::InstanceData::desc()],
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
                 module:      &shader,
-                entry_point: "fs_main",
+                entry_point: Some("fs_main"),
                 targets:     &[Some(wgpu::ColorTargetState {
                     format,
                     blend:      Some(wgpu::BlendState::ALPHA_BLENDING),
@@ -183,13 +184,13 @@ impl State {
             },
             depth_stencil: Some(wgpu::DepthStencilState {
                 format:              DEPTH_FORMAT,
-                depth_write_enabled: true,
-                depth_compare:       wgpu::CompareFunction::Less,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::Less),
                 stencil:             wgpu::StencilState::default(),
                 bias:                wgpu::DepthBiasState::default(),
             }),
             multisample: wgpu::MultisampleState::default(),
-            multiview:   None,
+            multiview_mask: None,
             cache:       None,
         });
 
@@ -200,13 +201,13 @@ impl State {
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
                 module:              &shader,
-                entry_point:         "vs_main",
+                entry_point: Some("vs_main"),
                 buffers:             &[mesh::Vertex::desc(), mesh::InstanceData::desc()],
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
                 module:      &shader,
-                entry_point: "fs_main",
+                entry_point: Some("fs_main"),
                 targets:     &[
                     Some(wgpu::ColorTargetState {
                         format,
@@ -222,13 +223,13 @@ impl State {
             },
             depth_stencil: Some(wgpu::DepthStencilState {
                 format:              DEPTH_FORMAT,
-                depth_write_enabled: false,
-                depth_compare:       wgpu::CompareFunction::Always,
+                depth_write_enabled: Some(false),
+                depth_compare: Some(wgpu::CompareFunction::Always),
                 stencil:             wgpu::StencilState::default(),
                 bias:                wgpu::DepthBiasState::default(),
             }),
             multisample: wgpu::MultisampleState::default(),
-            multiview:   None,
+            multiview_mask: None,
             cache:       None,
         });
 
@@ -237,13 +238,13 @@ impl State {
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
                 module:              &shader,
-                entry_point:         "vs_main",
+                entry_point: Some("vs_main"),
                 buffers:             &[mesh::Vertex::desc(), mesh::InstanceData::desc()],
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
                 module:      &shader,
-                entry_point: "fs_overlay",
+                entry_point: Some("fs_overlay"),
                 targets:     &[Some(wgpu::ColorTargetState {
                     format,
                     blend:      Some(wgpu::BlendState::ALPHA_BLENDING),
@@ -257,13 +258,13 @@ impl State {
             },
             depth_stencil: Some(wgpu::DepthStencilState {
                 format:              DEPTH_FORMAT,
-                depth_write_enabled: false,
-                depth_compare:       wgpu::CompareFunction::Always,
+                depth_write_enabled: Some(false),
+                depth_compare: Some(wgpu::CompareFunction::Always),
                 stencil:             wgpu::StencilState::default(),
                 bias:                wgpu::DepthBiasState::default(),
             }),
             multisample: wgpu::MultisampleState::default(),
-            multiview:   None,
+            multiview_mask: None,
             cache:       None,
         });
 
@@ -320,21 +321,21 @@ impl State {
         });
         let gizmo_pl_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label:                Some("gizmo-pl-layout"),
-            bind_group_layouts:   &[&gizmo_bgl],
-            push_constant_ranges: &[],
+            bind_group_layouts:   &[Some(&gizmo_bgl)],
+            immediate_size: 0,
         });
         let gizmo_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label:  Some("gizmo-pipeline"),
             layout: Some(&gizmo_pl_layout),
             vertex: wgpu::VertexState {
                 module:      &gizmo_shader,
-                entry_point: "vs_main",
+                entry_point: Some("vs_main"),
                 buffers:     &[gizmo::GizmoVertex::desc()],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
                 module:      &gizmo_shader,
-                entry_point: "fs_main",
+                entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
                     format:     config.format,
                     blend:      Some(wgpu::BlendState::ALPHA_BLENDING),
@@ -350,7 +351,7 @@ impl State {
             // Sin depth test — los gizmos siempre visibles
             depth_stencil: None,
             multisample:   wgpu::MultisampleState::default(),
-            multiview:     None,
+            multiview_mask: None,
             cache:         None,
         });
         let gizmo_buffer = gizmo::build_axes(&device, 1.14);
@@ -362,13 +363,13 @@ impl State {
             layout: Some(&gizmo_pl_layout),
             vertex: wgpu::VertexState {
                 module:      &gizmo_shader,
-                entry_point: "vs_main",
+                entry_point: Some("vs_main"),
                 buffers:     &[gizmo::GizmoVertex::desc()],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
                 module:      &gizmo_shader,
-                entry_point: "fs_main",
+                entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
                     format:     config.format,
                     blend:      Some(wgpu::BlendState::ALPHA_BLENDING),
@@ -383,7 +384,7 @@ impl State {
             },
             depth_stencil: None,
             multisample:   wgpu::MultisampleState::default(),
-            multiview:     None,
+            multiview_mask: None,
             cache:         None,
         });
         // Buffer de uniforms del grid (view_proj se actualiza en render; model = identity; flags = -1)
@@ -450,8 +451,8 @@ impl State {
         let screen_hud_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("screen-hud-pipeline-layout"),
-                bind_group_layouts: &[&screen_hud_scene_bgl, &screen_hud_bgl],
-                push_constant_ranges: &[],
+                bind_group_layouts: &[Some(&screen_hud_scene_bgl), Some(&screen_hud_bgl)],
+                immediate_size: 0,
             });
         let screen_hud_pipeline =
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -459,13 +460,13 @@ impl State {
                 layout: Some(&screen_hud_pipeline_layout),
                 vertex: wgpu::VertexState {
                     module: &screen_hud_shader,
-                    entry_point: "vs_screen_hud",
+                    entry_point: Some("vs_screen_hud"),
                     buffers: &[mesh::Vertex::desc(), mesh::InstanceData::desc()],
                     compilation_options: Default::default(),
                 },
                 fragment: Some(wgpu::FragmentState {
                     module: &screen_hud_shader,
-                    entry_point: "fs_screen_hud",
+                    entry_point: Some("fs_screen_hud"),
                     targets: &[Some(wgpu::ColorTargetState {
                         format,
                         blend: Some(wgpu::BlendState::ALPHA_BLENDING),
@@ -479,13 +480,13 @@ impl State {
                 },
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: DEPTH_FORMAT,
-                    depth_write_enabled: false,
-                    depth_compare: wgpu::CompareFunction::Always,
+                    depth_write_enabled: Some(false),
+                    depth_compare: Some(wgpu::CompareFunction::Always),
                     stencil: wgpu::StencilState::default(),
                     bias: wgpu::DepthBiasState::default(),
                 }),
                 multisample: wgpu::MultisampleState::default(),
-                multiview: None,
+                multiview_mask: None,
                 cache: None,
             });
         let hud_quad_mesh = mesh::create_unit_quad_xy(&device);

@@ -34,7 +34,7 @@ impl PhysicsWorld2D {
             .map(|b| b.linvel().y)
             .unwrap_or(0.0);
         let mut cur = self.kinematic_actor_vel.remove(&entity)
-            .unwrap_or(vector![speed_x, vy_from_rapier, 0.0]);
+            .unwrap_or(Vector::new(speed_x, vy_from_rapier, 0.0));
         cur.x = speed_x;
         cur.y += jump_speed_y;
         self.kinematic_actor_vel.insert(entity, cur);
@@ -64,8 +64,8 @@ impl PhysicsWorld2D {
             return true;
         }
         let v = self.bodies.get(body_handle)
-            .map(|b| *b.linvel())
-            .unwrap_or(vector![0.0, 0.0, 0.0]);
+            .map(|b| b.linvel())
+            .unwrap_or(Vector::ZERO);
         let mut cur = self.kinematic_actor_vel.remove(&entity).unwrap_or(v);
         cur.x += dir_x / len * impulse;
         cur.y += dir_y / len * impulse;

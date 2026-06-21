@@ -20,7 +20,7 @@ pub type EntityId = u32;
 fn new_entity_id(alive: &HashSet<EntityId>) -> EntityId {
     let mut buf = [0u8; 4];
     loop {
-        getrandom::getrandom(&mut buf).expect("getrandom no disponible");
+        getrandom::fill(&mut buf).expect("getrandom no disponible");
         let id = u32::from_ne_bytes(buf);
         if id != 0 && !alive.contains(&id) {
             return id;

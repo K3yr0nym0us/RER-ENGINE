@@ -3,7 +3,7 @@
 use std::collections::{HashMap, HashSet};
 
 use glam::Vec3;
-use rapier3d::na::{Isometry, Quaternion, Translation3, UnitQuaternion};
+use rapier3d::na::Unit;
 use rapier3d::parry::query::ShapeCastOptions;
 use rapier3d::prelude::*;
 
@@ -19,7 +19,7 @@ pub(crate) struct RigidBodyComponent {
 }
 
 pub(crate) struct PhysicsWorld {
-    gravity: Vector<f32>,
+    gravity: Vector,
     integration_params: IntegrationParameters,
     physics_pipeline: PhysicsPipeline,
     island_manager: IslandManager,
@@ -30,7 +30,6 @@ pub(crate) struct PhysicsWorld {
     impulse_joints: ImpulseJointSet,
     multibody_joints: MultibodyJointSet,
     ccd_solver: CCDSolver,
-    query_pipeline: QueryPipeline,
     entity_bodies: HashMap<EntityId, RigidBodyHandle>,
     entity_body_types: HashMap<EntityId, String>,
     entity_colliders: HashMap<EntityId, ColliderHandle>,
@@ -40,7 +39,7 @@ pub(crate) struct PhysicsWorld {
 impl Default for PhysicsWorld {
     fn default() -> Self {
         Self {
-            gravity: vector![0.0, -DEFAULT_GRAVITY_MAGNITUDE, 0.0],
+            gravity: Vector::new(0.0, -DEFAULT_GRAVITY_MAGNITUDE, 0.0),
             integration_params: IntegrationParameters::default(),
             physics_pipeline: PhysicsPipeline::new(),
             island_manager: IslandManager::new(),
@@ -51,7 +50,6 @@ impl Default for PhysicsWorld {
             impulse_joints: ImpulseJointSet::new(),
             multibody_joints: MultibodyJointSet::new(),
             ccd_solver: CCDSolver::new(),
-            query_pipeline: QueryPipeline::new(),
             entity_bodies: HashMap::new(),
             entity_body_types: HashMap::new(),
             entity_colliders: HashMap::new(),
@@ -66,12 +64,17 @@ pub(crate) fn physics_center_from_feet_position(feet: [f32; 3], half: [f32; 3]) 
 }
 
 impl PhysicsWorld {
-    fn refresh_queries(&mut self) {
-        self.query_pipeline.update(&self.colliders);
-    }
-
     pub(crate) fn new() -> Self {
         Self::default()
+    }
+
+    fn query_pipeline<'a>(&'a self, filter: QueryFilter<'a>) -> QueryPipeline<'a> {
+        self.broad_phase.as_query_pipeline(
+            self.narrow_phase.query_dispatcher(),
+            &self.bodies,
+            &self.colliders,
+            filter,
+        )
     }
 
     pub(crate) fn body_count(&self) -> u32 {
@@ -84,7 +87,7 @@ impl PhysicsWorld {
     }
 
     pub(crate) fn set_gravity(&mut self, gravity_y: f32) {
-        self.gravity = vector![0.0, gravity_y, 0.0];
+        self.gravity = Vector::new(0.0, gravity_y, 0.0);
     }
 
     pub(crate) fn add_dynamic_sphere(
@@ -93,7 +96,7 @@ impl PhysicsWorld {
         radius: f32,
     ) -> (RigidBodyHandle, ColliderHandle) {
         let body = RigidBodyBuilder::dynamic()
-            .translation(vector![position[0], position[1], position[2]])
+            .translation(Vector::new(position[0], position[1], position[2]))
             .linear_damping(0.12)
             .angular_damping(0.18)
             .build();
@@ -113,7 +116,7 @@ impl PhysicsWorld {
         radius: f32,
     ) -> (RigidBodyHandle, ColliderHandle) {
         let body = RigidBodyBuilder::fixed()
-            .translation(vector![position[0], position[1], position[2]])
+            .translation(Vector::new(position[0], position[1], position[2]))
             .build();
         let handle = self.bodies.insert(body);
         let collider = ColliderBuilder::ball(radius.max(0.01)).build();
@@ -129,7 +132,7 @@ impl PhysicsWorld {
         radius: f32,
     ) -> (RigidBodyHandle, ColliderHandle) {
         let body = RigidBodyBuilder::kinematic_position_based()
-            .translation(vector![position[0], position[1], position[2]])
+            .translation(Vector::new(position[0], position[1], position[2]))
             .build();
         let handle = self.bodies.insert(body);
         let collider = ColliderBuilder::ball(radius.max(0.01)).build();
@@ -165,7 +168,6 @@ impl PhysicsWorld {
         self.entity_bodies.insert(entity, handle);
         self.entity_colliders.insert(entity, collider_handle);
         self.entity_body_types.insert(entity, body_type.to_string());
-        self.refresh_queries();
     }
 
     #[allow(dead_code)]
@@ -178,22 +180,19 @@ impl PhysicsWorld {
     }
 
     pub(crate) fn add_static_ground(&mut self) -> ColliderHandle {
-        let collider =
-            ColliderBuilder::halfspace(UnitVector::new_normalize(vector![0.0, 1.0, 0.0])).build();
+        let normal = Unit::new_unchecked(Vector::Y);
+        let collider = ColliderBuilder::halfspace(normal).build();
         self.colliders.insert(collider)
     }
 
     pub(crate) fn add_static_oriented_box(
         &mut self,
         position: [f32; 3],
-        rotation: UnitQuaternion<f32>,
+        rotation: Rotation,
         half_extents: [f32; 3],
     ) -> (RigidBodyHandle, ColliderHandle) {
-        let pose = Isometry::from_parts(
-            Translation3::new(position[0], position[1], position[2]),
-            rotation,
-        );
-        let body = RigidBodyBuilder::fixed().position(pose).build();
+        let pose = pose_from_parts(position, rotation);
+        let body = RigidBodyBuilder::fixed().pose(pose).build();
         let handle = self.bodies.insert(body);
         let collider = ColliderBuilder::cuboid(half_extents[0], half_extents[1], half_extents[2])
             .build();
@@ -245,18 +244,13 @@ impl PhysicsWorld {
             half_ext[1].max(0.01),
             half_ext[2].max(0.01),
         ];
-        let rot = glam_quat_to_unit(rotation);
-        let pose = |pos: [f32; 3]| {
-            Isometry::from_parts(
-                Translation3::new(pos[0], pos[1], pos[2]),
-                rot,
-            )
-        };
+        let rot = glam_quat_to_rotation(rotation);
+        let pose = |pos: [f32; 3]| pose_from_parts(pos, rot);
         let (handle, collider_handle) = match body_type {
             "static" => self.add_static_oriented_box(position, rot, half),
             "kinematic" => {
                 let body = RigidBodyBuilder::kinematic_position_based()
-                    .position(pose(position))
+                    .pose(pose(position))
                     .build();
                 let handle = self.bodies.insert(body);
                 let collider = ColliderBuilder::cuboid(half[0], half[1], half[2]).build();
@@ -267,7 +261,7 @@ impl PhysicsWorld {
             }
             _ => {
                 let body = RigidBodyBuilder::dynamic()
-                    .position(pose(position))
+                    .pose(pose(position))
                     .build();
                 let handle = self.bodies.insert(body);
                 let collider = ColliderBuilder::cuboid(half[0], half[1], half[2])
@@ -282,7 +276,6 @@ impl PhysicsWorld {
         self.entity_bodies.insert(entity, handle);
         self.entity_colliders.insert(entity, collider_handle);
         self.entity_body_types.insert(entity, body_type.to_string());
-        self.refresh_queries();
     }
 
     pub(crate) fn remove_entity_body(&mut self, entity: EntityId) {
@@ -290,7 +283,6 @@ impl PhysicsWorld {
             self.entity_body_types.remove(&entity);
             self.entity_colliders.remove(&entity);
             self.remove_body(handle);
-            self.refresh_queries();
         }
     }
 
@@ -399,7 +391,7 @@ impl PhysicsWorld {
         let mass = body.mass().max(0.05);
         let impulse_strength = (speed * mass * 10.0).clamp(0.5, 140.0);
         body.apply_impulse(
-            vector![dir.x * impulse_strength, 0.0, dir.z * impulse_strength],
+            Vector::new(dir.x * impulse_strength, 0.0, dir.z * impulse_strength),
             true,
         );
         body.wake_up(true);
@@ -420,7 +412,6 @@ impl PhysicsWorld {
         if dir.length_squared() < 1e-8 {
             return None;
         }
-        self.refresh_queries();
         let excluded: HashSet<ColliderHandle> = exclude_colliders.iter().copied().collect();
         let filter = if excluded.is_empty() {
             QueryFilter::default()
@@ -433,18 +424,11 @@ impl PhysicsWorld {
             }
         };
         let ray = Ray::new(
-            point![from.x, from.y, from.z],
-            vector![dir.x, dir.y, dir.z],
+            Vector::new(from.x, from.y, from.z),
+            Vector::new(dir.x, dir.y, dir.z),
         );
-        self.query_pipeline
-            .cast_ray_and_get_normal(
-                &self.bodies,
-                &self.colliders,
-                &ray,
-                max_dist,
-                true,
-                filter,
-            )
+        self.query_pipeline(filter)
+            .cast_ray_and_get_normal(&ray, max_dist, true)
             .map(|(_, hit)| hit.time_of_impact)
     }
 
@@ -464,50 +448,42 @@ impl PhysicsWorld {
         let hz = (bounds.depth * 0.5).max(0.5);
 
         let floor = ColliderBuilder::cuboid(hx, WALL_THICKNESS, hz)
-            .translation(vector![0.0, -WALL_THICKNESS, 0.0])
+            .translation(Vector::new(0.0, -WALL_THICKNESS, 0.0))
             .build();
         self.world_bounds_colliders.push(self.colliders.insert(floor));
 
         let left_wall = ColliderBuilder::cuboid(WALL_THICKNESS, hy, hz + WALL_THICKNESS)
-            .translation(vector![-hx - WALL_THICKNESS, hy, 0.0])
+            .translation(Vector::new(-hx - WALL_THICKNESS, hy, 0.0))
             .build();
         self.world_bounds_colliders
             .push(self.colliders.insert(left_wall));
 
         let right_wall = ColliderBuilder::cuboid(WALL_THICKNESS, hy, hz + WALL_THICKNESS)
-            .translation(vector![hx + WALL_THICKNESS, hy, 0.0])
+            .translation(Vector::new(hx + WALL_THICKNESS, hy, 0.0))
             .build();
         self.world_bounds_colliders
             .push(self.colliders.insert(right_wall));
 
         let back_wall = ColliderBuilder::cuboid(hx + WALL_THICKNESS, hy, WALL_THICKNESS)
-            .translation(vector![0.0, hy, -hz - WALL_THICKNESS])
+            .translation(Vector::new(0.0, hy, -hz - WALL_THICKNESS))
             .build();
         self.world_bounds_colliders
             .push(self.colliders.insert(back_wall));
 
         let front_wall = ColliderBuilder::cuboid(hx + WALL_THICKNESS, hy, WALL_THICKNESS)
-            .translation(vector![0.0, hy, hz + WALL_THICKNESS])
+            .translation(Vector::new(0.0, hy, hz + WALL_THICKNESS))
             .build();
         self.world_bounds_colliders
             .push(self.colliders.insert(front_wall));
-
-        self.refresh_queries();
     }
 
     /// Raycast vertical para colocar pies al spawn (solo contacto, sin Y fijo).
     pub(crate) fn find_ground_y_at(&mut self, x: f32, z: f32, from_y: f32, max_down: f32) -> Option<f32> {
-        self.refresh_queries();
         let filter = QueryFilter::default();
-        let ray = Ray::new(point![x, from_y, z], vector![0.0, -1.0, 0.0]);
-        let hit = self.query_pipeline.cast_ray_and_get_normal(
-            &self.bodies,
-            &self.colliders,
-            &ray,
-            max_down.max(0.1),
-            true,
-            filter,
-        );
+        let ray = Ray::new(Vector::new(x, from_y, z), Vector::new(0.0, -1.0, 0.0));
+        let hit = self
+            .query_pipeline(filter)
+            .cast_ray_and_get_normal(&ray, max_down.max(0.1), true);
         if let Some((_, hit)) = hit {
             if hit.normal.y > 0.45 {
                 return Some(from_y - hit.time_of_impact + 0.02);
@@ -524,8 +500,6 @@ impl PhysicsWorld {
         feet: Vec3,
         exclude_colliders: &[ColliderHandle],
     ) -> Option<f32> {
-        self.refresh_queries();
-
         let excluded: HashSet<ColliderHandle> = exclude_colliders.iter().copied().collect();
         let filter = if excluded.is_empty() {
             QueryFilter::default()
@@ -537,23 +511,16 @@ impl PhysicsWorld {
                 ..QueryFilter::default()
             }
         };
-        // SKIN hacia arriba: arranca el ray ligeramente sobre los pies para no partir
-        // dentro de un piso con micro-penetración. PROBE: cuánto buscar suelo abajo.
         const SKIN: f32 = 0.02;
         const PROBE: f32 = 0.10;
-        let origin = point![feet.x, feet.y + SKIN, feet.z];
-        let dir = vector![0.0, -1.0, 0.0];
+        let origin = Vector::new(feet.x, feet.y + SKIN, feet.z);
+        let dir = Vector::new(0.0, -1.0, 0.0);
         let ray = Ray::new(origin, dir);
 
-        if let Some((_, hit)) = self.query_pipeline.cast_ray_and_get_normal(
-            &self.bodies,
-            &self.colliders,
-            &ray,
-            SKIN + PROBE,
-            true,
-            filter,
-        ) {
-            // Godot floor_max_angle: cos(45°) ≈ 0.707.
+        if let Some((_, hit)) = self
+            .query_pipeline(filter)
+            .cast_ray_and_get_normal(&ray, SKIN + PROBE, true)
+        {
             if hit.normal.y > 0.707 {
                 let ground_y = feet.y + SKIN - hit.time_of_impact;
                 return Some(ground_y);
@@ -563,14 +530,6 @@ impl PhysicsWorld {
     }
 
     /// `move_and_slide` con cápsula anclada en los pies (CharacterBody3D-style).
-    ///
-    /// Reglas estilo Godot:
-    /// 1. Movimiento horizontal con deslizamiento sobre paredes.
-    /// 2. Movimiento vertical con detección de contacto (gravedad/salto).
-    /// 3. Tras mover, si `velocity.y <= 0` y hay suelo bajo los pies, hacer
-    ///    **snap a la `y` real del contacto** y reportar `on_floor = true`.
-    ///    Si `velocity.y > 0` (saltando), nunca se reporta on_floor (evita auto-snap
-    ///    inmediato al despegar y permite que la gravedad actúe siempre).
     pub(crate) fn move_character_capsule_at_feet(
         &mut self,
         feet: Vec3,
@@ -587,7 +546,6 @@ impl PhysicsWorld {
         let half_height = half_height.max(0.01);
         let mut feet_pos = feet;
 
-        // 1) Horizontal: desliza sobre paredes.
         let horizontal = Vec3::new(velocity.x, 0.0, velocity.z) * dt;
         if horizontal.length_squared() > 1e-6 {
             feet_pos = self.move_capsule_at_feet(
@@ -600,7 +558,6 @@ impl PhysicsWorld {
             );
         }
 
-        // 2) Vertical: gravedad / salto, detenido por colisión.
         let vertical_delta = velocity.y * dt;
         if vertical_delta.abs() > 1e-6 {
             let vertical_motion = Vec3::Y * vertical_delta;
@@ -614,13 +571,11 @@ impl PhysicsWorld {
             );
         }
 
-        // 3) Suelo + snap. Solo si NO estamos ascendiendo (vy>0 = en pleno salto).
         let on_floor = if velocity.y > 0.0 {
             false
         } else {
             match self.floor_probe(feet_pos, exclude_colliders) {
                 Some(ground_y) => {
-                    // Pega los pies EXACTAMENTE al suelo: nada de flotar 1-2 cm.
                     feet_pos.y = ground_y;
                     true
                 }
@@ -644,8 +599,6 @@ impl PhysicsWorld {
             return feet;
         }
 
-        self.refresh_queries();
-
         let excluded: HashSet<ColliderHandle> = exclude_colliders.iter().copied().collect();
         let filter = if excluded.is_empty() {
             QueryFilter::default()
@@ -668,13 +621,12 @@ impl PhysicsWorld {
                 break;
             }
 
-            let pose = capsule_isometry_at_feet(current_feet, up, radius, half_height);
+            let pose = capsule_pose_at_feet(current_feet, up, radius, half_height);
             let falling = remaining.y < -1e-6;
-            let hit = self.query_pipeline.cast_shape(
-                &self.bodies,
-                &self.colliders,
+            let queries = self.query_pipeline(filter);
+            let hit = queries.cast_shape(
                 &pose,
-                &vector![remaining.x, remaining.y, remaining.z],
+                Vector::new(remaining.x, remaining.y, remaining.z),
                 &capsule,
                 ShapeCastOptions {
                     max_time_of_impact: 1.0,
@@ -682,7 +634,6 @@ impl PhysicsWorld {
                     stop_at_penetration: falling,
                     compute_impact_geometry_on_penetration: falling,
                 },
-                filter,
             );
 
             let Some((hit_handle, hit_data)) = hit else {
@@ -698,13 +649,13 @@ impl PhysicsWorld {
             current_feet = feet_from_capsule_center(new_center, up, radius, half_height);
 
             if falling {
-                let n = hit_data.normal2.into_inner();
+                let n = hit_data.normal2;
                 if n.y > 0.45 {
                     break;
                 }
             }
 
-            let normal = hit_data.normal2.into_inner();
+            let normal = hit_data.normal2;
             let slide_normal = Vec3::new(normal.x, normal.y, normal.z).normalize_or_zero();
             let slide = remaining - slide_normal * remaining.dot(slide_normal);
             let remainder_factor = (1.0 - toi).max(0.0);
@@ -731,7 +682,7 @@ impl PhysicsWorld {
         self.integration_params.dt = dt.clamp(0.0001, 0.05);
 
         self.physics_pipeline.step(
-            &self.gravity,
+            self.gravity,
             &self.integration_params,
             &mut self.island_manager,
             &mut self.broad_phase,
@@ -741,7 +692,6 @@ impl PhysicsWorld {
             &mut self.impulse_joints,
             &mut self.multibody_joints,
             &mut self.ccd_solver,
-            Some(&mut self.query_pipeline),
             &(),
             &(),
         );
@@ -758,19 +708,23 @@ impl PhysicsWorld {
                     let r = body.rotation();
                     if let Some(transform) = ecs.get_mut::<Transform>(entity) {
                         transform.position = glam::Vec3::new(t.x, t.y, t.z);
-                        transform.rotation =
-                            glam::Quat::from_xyzw(r.i, r.j, r.k, r.w);
+                        transform.rotation = glam::Quat::from_xyzw(r.x, r.y, r.z, r.w);
                     }
                 }
             }
         }
-
-        self.refresh_queries();
     }
 }
 
-fn glam_quat_to_unit(q: glam::Quat) -> UnitQuaternion<f32> {
-    UnitQuaternion::from_quaternion(Quaternion::new(q.w, q.x, q.y, q.z))
+fn pose_from_parts(position: [f32; 3], rotation: Rotation) -> Pose {
+    Pose::from_parts(
+        Vector::new(position[0], position[1], position[2]),
+        rotation,
+    )
+}
+
+fn glam_quat_to_rotation(q: glam::Quat) -> Rotation {
+    q
 }
 
 fn capsule_center_from_feet(feet: Vec3, up: Vec3, radius: f32, half_height: f32) -> Vec3 {
@@ -781,20 +735,14 @@ fn feet_from_capsule_center(center: Vec3, up: Vec3, radius: f32, half_height: f3
     center - up.normalize_or_zero() * (half_height + radius)
 }
 
-fn capsule_isometry_at_feet(
+fn capsule_pose_at_feet(
     feet: Vec3,
     up: Vec3,
     radius: f32,
     half_height: f32,
-) -> Isometry<f32, UnitQuaternion<f32>, 3> {
+) -> Pose {
     let up = up.normalize_or_zero();
     let center = capsule_center_from_feet(feet, up, radius, half_height);
-    let rot = glam::Quat::from_rotation_arc(glam::Vec3::Y, up);
-    let na_rot = UnitQuaternion::from_quaternion(Quaternion::new(
-        rot.w, rot.x, rot.y, rot.z,
-    ));
-    Isometry::from_parts(
-        Translation3::new(center.x, center.y, center.z),
-        na_rot,
-    )
+    let rot = Rotation::from_rotation_arc(Vector::Y, up);
+    Pose::from_parts(center, rot)
 }

@@ -67,13 +67,34 @@ fn refl_mirror_dir(world_pos : vec3<f32>, cam_pos : vec3<f32>, n : vec3<f32>) ->
     return reflect(incident, nn);
 }
 
-/// Blur kernel spacing (px): stable across camera motion for low roughness.
+/// RTIOW fuzzy metal (Book 1, determinista v1): espejo + desvío hacia la normal si rough > 0.5.
+/// Rechaza dot(reflected, normal) <= 0 (rayo absorbido). LOD cubemap usa el mismo rough².
+fn refl_fuzzy_mirror_dir(
+    world_pos : vec3<f32>,
+    cam_pos : vec3<f32>,
+    n : vec3<f32>,
+    roughness : f32,
+) -> vec3<f32> {
+    let nn = normalize(n);
+    var refl = refl_mirror_dir(world_pos, cam_pos, nn);
+    if dot(refl, nn) <= 0.0 {
+        return vec3<f32>(0.0);
+    }
+    let r = clamp(roughness, 0.0, 1.0);
+    if r > 0.5 {
+        refl = normalize(mix(refl, nn, r * r));
+        if dot(refl, nn) <= 0.0 {
+            return vec3<f32>(0.0);
+        }
+    }
+    return refl;
+}
+
+/// Blur kernel spacing (px): más rugosidad → kernel más ancho en SSR/composite.
 fn refl_blur_spacing_px(roughness : f32, hit_dist_m : f32) -> f32 {
     let dist_term = min(hit_dist_m * 0.06, 0.5);
-    if roughness < 0.3 {
-        return clamp(roughness * 5.0, 0.0, 2.0);
-    }
-    return clamp(roughness * 5.0 + dist_term, 0.0, 2.0);
+    let r = clamp(roughness, 0.0, 1.0);
+    return clamp(r * r * 8.0 + dist_term, 0.0, 6.0);
 }
 
 /// F0 coherente con forward (`shader.wgsl`: albedo en metales, 0.04 en dieléctricos).

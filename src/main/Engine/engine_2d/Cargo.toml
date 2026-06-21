@@ -20,7 +20,6 @@ env_logger.workspace = true
 gltf.workspace = true
 image.workspace = true
 rapier3d.workspace = true
-parry3d.workspace = true
 rodio.workspace = true
 getrandom.workspace = true
 raw-window-handle.workspace = true
@@ -29,7 +28,6 @@ rer-engine-shared = { path = "../engine_shared" }
 rer-engine-ipc-common = { path = "../engine_ipc_common" }
 ttf-parser.workspace = true
 ab_glyph.workspace = true
-zip.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 x11.workspace = true

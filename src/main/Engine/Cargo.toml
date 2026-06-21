@@ -14,29 +14,28 @@ edition = "2024"
 [workspace.dependencies]
 winit = "0.30"
 # Backends en runtime (`engine_shared::gpu`): solo Vulkan (2D y 3D).
-# wgpu 22: feature `wgsl`; HAL Vulkan se habilita por target en wgc (sin feature `dx12`).
-wgpu = { version = "22", default-features = false, features = ["wgsl"] }
-pollster = "0.3"
-glam = "0.28"
+# wgpu 29: `default-features = false`; hay que activar `vulkan` explícitamente (no basta `wgsl`).
+wgpu = { version = "29", default-features = false, features = ["wgsl", "vulkan"] }
+pollster = "0.4"
+glam = "0.33"
 bytemuck = { version = "1", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 log = "0.4"
 env_logger = "0.11"
 gltf = "1"
-ufbx = "0.10"
+ufbx = "0.11"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
 rayon = "1.10"
-rapier3d = { version = "0.22", features = ["default"] }
-parry3d = "0.17"
-rodio = { version = "0.19", default-features = false, features = ["wav", "vorbis", "mp3"] }
-getrandom = "0.2"
+rapier3d = { version = "0.33", features = ["default"] }
+rodio = { version = "0.22", default-features = false, features = ["playback", "wav", "vorbis", "mp3"] }
+getrandom = "0.4"
 raw-window-handle = "0.6"
 rhai = { version = "1.22", features = ["sync"] }
 gilrs = "0.11"
 x11 = { version = "2", features = ["xlib"] }
-windows = { version = "0.54", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Accessibility"] }
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Accessibility"] }
 ttf-parser = "0.25"
 ab_glyph = "0.2"
-zip = { version = "2", default-features = false, features = ["deflate"] }
-sysinfo = "0.33"
+zip = { version = "8", default-features = false, features = ["deflate"] }
+sysinfo = "0.39"

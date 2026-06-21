@@ -945,6 +945,7 @@ fn draw_fullscreen(
         color_attachments: &[Some(wgpu::RenderPassColorAttachment {
             view: output_view,
             resolve_target: None,
+            depth_slice: None,
             ops: wgpu::Operations {
                 load,
                 store: wgpu::StoreOp::Store,
@@ -953,6 +954,7 @@ fn draw_fullscreen(
         depth_stencil_attachment: None,
         occlusion_query_set: None,
         timestamp_writes: None,
+        multiview_mask: None,
     });
     pass.set_pipeline(pipeline);
     pass.set_bind_group(0, bind_group, &[]);
@@ -1175,21 +1177,21 @@ fn build_fullscreen_pipeline(
 ) -> wgpu::RenderPipeline {
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("fullscreen-pl"),
-        bind_group_layouts: &[bind_group_layout],
-        push_constant_ranges: &[],
+        bind_group_layouts: &[Some(bind_group_layout)],
+        immediate_size: 0,
     });
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some(label),
         layout: Some(&pipeline_layout),
         vertex: wgpu::VertexState {
             module: shader,
-            entry_point: "vs_main",
+            entry_point: Some("vs_main"),
             buffers: &[],
             compilation_options: Default::default(),
         },
         fragment: Some(wgpu::FragmentState {
             module: shader,
-            entry_point: "fs_main",
+            entry_point: Some("fs_main"),
             targets: &[Some(wgpu::ColorTargetState {
                 format: color_format,
                 blend: None,
@@ -1200,7 +1202,7 @@ fn build_fullscreen_pipeline(
         primitive: wgpu::PrimitiveState::default(),
         depth_stencil: None,
         multisample: wgpu::MultisampleState::default(),
-        multiview: None,
+        multiview_mask: None,
         cache: None,
     })
 }

@@ -219,30 +219,16 @@ impl State {
         }
     }
 
-    fn reflection_probe_slot(roughness: f32) -> usize {
-        match (roughness * 4.0).round() as i32 {
-            0 => 0,
-            1 => 1,
-            2 => 2,
-            3 => 3,
-            _ => 4,
-        }
-    }
-
-    fn reflection_probe_texture_idx(&mut self, roughness: f32) -> usize {
-        let slot = Self::reflection_probe_slot(roughness);
-        if let Some(idx) = self.reflection_probe_tex_idx[slot] {
+    fn reflection_probe_texture_idx(&mut self, _roughness: f32) -> usize {
+        // F0 único para todas las sondas: la rugosidad solo vive en SurfacePbr, no en el albedo.
+        if let Some(idx) = self.reflection_probe_tex_idx[0] {
             return idx;
         }
-        // F0 metálico tipo ACERO pulido: gris neutro medio (≈0.55), un punto más claro en
-        // liso. En metal el albedo ES el F0 (color de reflexión). Gris medio (no blanco)
-        // para que se lea como acero y el reflejo SSR resalte por contraste.
         const N: u32 = 4;
-        let r = roughness.clamp(0.0, 1.0);
-        let base = 0.58 - 0.10 * r;
-        let rr = (base * 255.0) as u8;
-        let gg = (base * 0.97 * 255.0) as u8;
-        let bb = (base * 0.92 * 255.0) as u8;
+        const BASE: f32 = 0.55;
+        let rr = (BASE * 255.0) as u8;
+        let gg = (BASE * 0.97 * 255.0) as u8;
+        let bb = (BASE * 0.92 * 255.0) as u8;
         let mut px: Vec<u8> = Vec::with_capacity((N * N * 4) as usize);
         for _ in 0..(N * N) {
             px.extend_from_slice(&[rr, gg, bb, 255]);
@@ -250,7 +236,7 @@ impl State {
         let tex_idx = self.tex_layers.len();
         let layer = self.texture_array.pack(&self.queue, &px, N, N);
         self.tex_layers.push(layer);
-        self.reflection_probe_tex_idx[slot] = Some(tex_idx);
+        self.reflection_probe_tex_idx[0] = Some(tex_idx);
         tex_idx
     }
 

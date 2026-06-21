@@ -782,9 +782,9 @@ impl State {
                 let decoded = std::fs::read(&path).ok().and_then(|b| {
                     let cursor = std::io::Cursor::new(b);
                     rodio::Decoder::new(cursor).ok().map(|dec| {
-                        let ch = dec.channels();
-                        let sr = dec.sample_rate();
-                        let s: Vec<i16> = dec.collect();
+                        let ch = dec.channels().get();
+                        let sr = dec.sample_rate().get();
+                        let s: Vec<f32> = dec.collect();
                         Arc::new(DecodedAudio {
                             samples: s,
                             channels: ch,
@@ -1590,10 +1590,10 @@ impl State {
                             return None;
                         }
                     };
-                    let channels = decoder.channels();
-                    let sample_rate = decoder.sample_rate();
-                    let samples: Vec<i16> = decoder.collect();
-                    
+                    let channels = decoder.channels().get();
+                    let sample_rate = decoder.sample_rate().get();
+                    let samples: Vec<f32> = decoder.collect();
+
                     Some(Arc::new(DecodedAudio {
                         samples,
                         channels,

@@ -3,6 +3,7 @@ pub mod bundled_models;
 pub mod editor_defaults;
 pub mod scripting;
 pub mod gpu;
+pub mod wgpu_surface;
 pub mod logging;
 pub mod overlay;
 pub mod player_ui;
