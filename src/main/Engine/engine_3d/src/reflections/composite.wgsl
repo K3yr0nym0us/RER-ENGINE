@@ -1,7 +1,7 @@
 struct CompositeUniforms {
     strength : f32,
     ssil_strength : f32,
-    shadow_influence : f32,
+    _pad1 : f32,
     _pad2 : f32,
 }
 
@@ -10,7 +10,6 @@ struct CompositeUniforms {
 @group(0) @binding(2) var t_reflection : texture_2d<f32>;
 @group(0) @binding(3) var s_linear : sampler;
 @group(0) @binding(4) var t_ssil : texture_2d<f32>;
-@group(0) @binding(5) var t_shadow_mask : texture_2d<f32>;
 
 struct VsOut {
     @builtin(position) pos : vec4<f32>,
@@ -44,13 +43,8 @@ fn fs_main(in : VsOut) -> @location(0) vec4<f32> {
     if k < 0.01 {
         return base;
     }
-    // Atenuar reflejo por sombra del receptor: en zonas oscuras el reflejo
-    // se reduce en lugar de reemplazar la iluminacion base y ocultar sombras.
-    let shadow = textureLoad(t_shadow_mask, vec2<i32>(in.pos.xy), 0).r;
-    let shadow_atten = mix(u.shadow_influence, 1.0, shadow);
-    let k_atten = k * shadow_atten;
-    // Additive blend: el reflejo se suma como indirect specular sobre la base,
-    // preservando las sombras que ya estan en la escena iluminada.
-    let out_rgb = base.rgb + refl.rgb * k_atten;
+    // SSR como detalle on-screen sobre la base (cubemap+Fresnel), no reemplazo ciego.
+    let detail = max(refl.rgb - base.rgb, vec3<f32>(0.0));
+    let out_rgb = base.rgb + detail * k;
     return vec4<f32>(out_rgb, base.a);
 }

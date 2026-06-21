@@ -919,7 +919,6 @@ impl State {
                 self.taa.scene_color_texture(),
                 1.0,
                 ssil_strength,
-                self.taa.shadow_mask_view(),
             );
             let use_scene_taa = self.taa.scene_taa_active();
             if use_scene_taa {
