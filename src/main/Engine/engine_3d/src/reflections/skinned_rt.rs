@@ -72,6 +72,9 @@ pub fn skinned_mesh_triangles_world(
             v0: w0,
             v1: w1,
             v2: w2,
+            uv0: v0.uv,
+            uv1: v1.uv,
+            uv2: v2.uv,
             instance_slot: 0,
         });
     }

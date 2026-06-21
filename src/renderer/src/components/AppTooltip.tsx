@@ -1,4 +1,4 @@
-import { isValidElement, useId, type ComponentProps, type ReactElement, type ReactNode } from 'react';
+import { isValidElement, useId, useMemo, type ComponentProps, type ReactElement, type ReactNode } from 'react';
 
 import { OverlayTrigger, Tooltip } from 'react-bootstrap';
 
@@ -16,6 +16,50 @@ interface AppTooltipProps {
   children: ReactElement;
 }
 
+function tooltipContainer(): HTMLElement {
+  return document.body;
+}
+
+function buildPopperConfig(offset?: number) {
+  const modifiers: Record<string, unknown>[] = [
+    {
+      name: 'flip',
+      options: {
+        fallbackPlacements: [
+          'top',
+          'top-start',
+          'top-end',
+          'bottom',
+          'bottom-start',
+          'bottom-end',
+          'left',
+          'right',
+        ],
+      },
+    },
+    {
+      name: 'preventOverflow',
+      options: {
+        padding: 8,
+        rootBoundary: 'viewport',
+        altAxis: true,
+        tether: true,
+      },
+    },
+  ];
+
+  if (offset !== undefined) {
+    modifiers.unshift({
+      name: 'offset',
+      options: {
+        offset: [0, offset],
+      },
+    });
+  }
+
+  return { strategy: 'fixed' as const, modifiers };
+}
+
 export function AppTooltip({
   content,
   place = 'top',
@@ -27,6 +71,8 @@ export function AppTooltip({
   children,
 }: AppTooltipProps) {
   const tooltipId = useId().replace(/:/g, '');
+
+  const popperConfig = useMemo(() => buildPopperConfig(offset), [offset]);
 
   if (!content || !isValidElement(children)) {
     return children;
@@ -40,24 +86,12 @@ export function AppTooltip({
     .filter(Boolean)
     .join(' ');
 
-  const popperConfig = offset !== undefined
-    ? {
-        modifiers: [
-          {
-            name: 'offset',
-            options: {
-              offset: [0, offset],
-            },
-          },
-        ],
-      }
-    : undefined;
-
   return (
     <OverlayTrigger
       trigger={['hover', 'focus']}
       placement={place}
       delay={delay}
+      container={tooltipContainer}
       popperConfig={popperConfig}
       overlay={
         <Tooltip id={tooltipId} className={className || undefined}>

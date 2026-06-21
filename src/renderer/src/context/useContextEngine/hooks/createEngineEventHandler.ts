@@ -183,6 +183,7 @@ const SILENT_ENGINE_EVENTS = new Set<string>([
 	'graphics_texture_tier_changed',
 	'texture_detail_distance_changed',
 	'reflection_tier_changed',
+	'reflection_tier_effective',
 	'shadow_tier_changed',
 	'reflection_debug_view_changed',
 	'model_clips_ready',
@@ -2877,6 +2878,23 @@ export function createEngineEventHandler({
 			const tier = normalizeReflectionTier(event.tier);
 			dispatch({ type: 'SET_WORLD_CONFIG', payload: { reflectionTier: tier } });
 			addLog(`[Reflejos] Motor confirmó nivel: ${tier}`);
+		}
+
+		if (event.event === 'reflection_tier_effective') {
+			const requested = normalizeReflectionTier(event.requested);
+			const effective = normalizeReflectionTier(event.effective);
+			dispatch({
+				type: 'SET_WORLD_CONFIG',
+				payload: {
+					reflectionTierEffective: effective,
+					reflectionRtAvailable: Boolean(event.rt_available),
+				},
+			});
+			if (requested !== effective) {
+				addLog(
+					`[Reflejos] GPU sin RT — usando ${effective} (pedido: ${requested})`,
+				);
+			}
 		}
 
 		if (event.event === 'shadow_tier_changed') {

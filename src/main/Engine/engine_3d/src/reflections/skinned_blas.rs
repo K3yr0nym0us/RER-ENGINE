@@ -1,4 +1,8 @@
 //! BLAS Vulkan para mallas skinned (refit por frame).
+//!
+//! `AccelerationStructureUpdateMode::Build` es obligatorio en cada pose hasta que wgpu
+//! exponga refit real (ver `rt_extensions::RT_PIPELINE_MIGRATION_NOTE`). `build_updates`
+//! limita el rebuild al conjunto activo de instancias skinned visibles en RT.
 
 use std::collections::HashMap;
 
@@ -129,5 +133,9 @@ impl SkinnedBlasCache {
 
     pub fn get(&self, gpu_idx: usize) -> Option<&Blas> {
         self.entries.get(&gpu_idx).map(|e| &e.blas)
+    }
+
+    pub fn clear(&mut self) {
+        self.entries.clear();
     }
 }

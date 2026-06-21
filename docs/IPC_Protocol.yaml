@@ -233,6 +233,10 @@ event_categories:
     - player_ui_active_screen_changed
   textures_3d:
     - entity_textures_ready
+  reflections_3d:
+    - reflection_tier_changed
+    - reflection_tier_effective
+    - reflection_debug_view_changed
   metrics:
     - debug_metrics
     - autosave_tick

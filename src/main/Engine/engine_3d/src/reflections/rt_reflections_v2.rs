@@ -82,12 +82,16 @@ fn rt_light_from_scene(scene: &SceneUniforms, settings: &ReflectionSettings) -> 
             } else {
                 0.0
             },
+            if rt_extensions::rt_second_bounce_enabled(settings) {
+                1.0
+            } else {
+                0.0
+            },
             if rt_extensions::rt_diffuse_gi_enabled(settings) {
                 1.0
             } else {
                 0.0
             },
-            0.0,
             0.0,
         ],
     }
@@ -100,10 +104,8 @@ enum RtPipelineMode {
 
 pub struct RtReflectionPassV2 {
     mode: RtPipelineMode,
-    bvh_pipeline: wgpu::ComputePipeline,
     bvh_sparse_pipeline: wgpu::ComputePipeline,
     bvh_bgl: wgpu::BindGroupLayout,
-    hw_pipeline: Option<wgpu::ComputePipeline>,
     hw_sparse_pipeline: Option<wgpu::ComputePipeline>,
     hw_bgl: Option<wgpu::BindGroupLayout>,
     sparse: RtSparseDispatch,
@@ -148,6 +150,7 @@ impl RtReflectionPassV2 {
             ],
         });
         let probe_bgl = ProbeEnvPass::sample_bind_group_layout(device);
+        let texture_bgl = crate::texture::TextureArray::bind_group_layout(device);
         let rt_light_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("rt-light-bgl"),
             entries: &[
@@ -158,16 +161,8 @@ impl RtReflectionPassV2 {
         });
         let bvh_pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("rt-bvh-pl"),
-            bind_group_layouts: &[Some(&bvh_bgl), Some(&probe_bgl), Some(&rt_light_bgl)],
+            bind_group_layouts: &[Some(&bvh_bgl), Some(&probe_bgl), Some(&rt_light_bgl), Some(&texture_bgl)],
             immediate_size: 0,
-        });
-        let bvh_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("rt-bvh-pipeline"),
-            layout: Some(&bvh_pl),
-            module: &bvh_shader,
-            entry_point: Some("cs_main"),
-            compilation_options: Default::default(),
-            cache: None,
         });
         let bvh_sparse_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
             label: Some("rt-bvh-sparse-pipeline"),
@@ -180,7 +175,7 @@ impl RtReflectionPassV2 {
 
         let sparse = RtSparseDispatch::new(device, color_format);
 
-        let (hw_pipeline, hw_sparse_pipeline, hw_bgl) = if hw_available {
+        let (hw_sparse_pipeline, hw_bgl) = if hw_available {
             let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: Some("rt-ray-query"),
                 source: wgpu::ShaderSource::Wgsl(
@@ -214,16 +209,8 @@ impl RtReflectionPassV2 {
             });
             let pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("rt-hw-pl"),
-                bind_group_layouts: &[Some(&bgl), Some(&probe_bgl), Some(&rt_light_bgl)],
+                bind_group_layouts: &[Some(&bgl), Some(&probe_bgl), Some(&rt_light_bgl), Some(&texture_bgl)],
                 immediate_size: 0,
-            });
-            let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                label: Some("rt-hw-pipeline"),
-                layout: Some(&pl),
-                module: &shader,
-                entry_point: Some("cs_main"),
-                compilation_options: Default::default(),
-                cache: None,
             });
             let sparse_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
                 label: Some("rt-hw-sparse-pipeline"),
@@ -233,12 +220,12 @@ impl RtReflectionPassV2 {
                 compilation_options: Default::default(),
                 cache: None,
             });
-            (Some(pipeline), Some(sparse_pipeline), Some(bgl))
+            (Some(sparse_pipeline), Some(bgl))
         } else {
-            (None, None, None)
+            (None, None)
         };
 
-        let mode = if hw_pipeline.is_some() {
+        let mode = if hw_sparse_pipeline.is_some() {
             RtPipelineMode::HardwareRayQuery
         } else {
             RtPipelineMode::Bvh
@@ -355,10 +342,8 @@ impl RtReflectionPassV2 {
 
         Self {
             mode,
-            bvh_pipeline,
             bvh_sparse_pipeline,
             bvh_bgl,
-            hw_pipeline,
             hw_sparse_pipeline,
             hw_bgl,
             sparse,
@@ -372,14 +357,6 @@ impl RtReflectionPassV2 {
             width: width.max(1),
             height: height.max(1),
         }
-    }
-
-    pub fn resize(&mut self, width: u32, height: u32) {
-        self.width = width.max(1);
-        self.height = height.max(1);
-        self.sparse.resize(self.width, self.height);
-        self.rt_light_bind_group = None;
-        self.hw_bind_group = None;
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -411,8 +388,9 @@ impl RtReflectionPassV2 {
         shadow_view: &TextureView,
         shadow_sampler: &wgpu::Sampler,
         scene_uniforms: &SceneUniforms,
+        texture_bind_group: &wgpu::BindGroup,
     ) {
-        if accel.node_count == 0 && accel.tlas().is_none() {
+        if !accel.has_traceable_geometry() {
             return;
         }
 
@@ -493,6 +471,7 @@ impl RtReflectionPassV2 {
                         shadow_view,
                         shadow_sampler,
                         scene_uniforms,
+                        texture_bind_group,
                     );
                     return;
                 };
@@ -596,6 +575,7 @@ impl RtReflectionPassV2 {
                 pass.set_bind_group(0, bg, &[]);
                 pass.set_bind_group(1, probe_bind_group, &[]);
                 pass.set_bind_group(2, rt_light_bind_group, &[]);
+                pass.set_bind_group(3, texture_bind_group, &[]);
                 pass.dispatch_workgroups_indirect(self.sparse.indirect_buffer(), 0);
             }
             RtPipelineMode::Bvh => {
@@ -628,6 +608,7 @@ impl RtReflectionPassV2 {
                     shadow_view,
                     shadow_sampler,
                     scene_uniforms,
+                    texture_bind_group,
                 );
             }
         }
@@ -664,6 +645,7 @@ fn dispatch_bvh(
     shadow_view: &TextureView,
     shadow_sampler: &wgpu::Sampler,
     scene_uniforms: &SceneUniforms,
+    texture_bind_group: &wgpu::BindGroup,
 ) {
     let rt_light = rt_light_from_scene(scene_uniforms, &settings);
     queue.write_buffer(&pass_state.rt_light_buffer, 0, bytemuck::bytes_of(&rt_light));
@@ -734,6 +716,7 @@ fn dispatch_bvh(
     pass.set_bind_group(0, &pass_state.bvh_bind_group, &[]);
     pass.set_bind_group(1, probe_bind_group, &[]);
     pass.set_bind_group(2, rt_light_bind_group, &[]);
+    pass.set_bind_group(3, texture_bind_group, &[]);
     pass.dispatch_workgroups_indirect(pass_state.sparse.indirect_buffer(), 0);
 }
 

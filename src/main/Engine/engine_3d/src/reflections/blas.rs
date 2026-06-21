@@ -132,4 +132,9 @@ impl BlasCache {
     pub fn get(&self, mesh_idx: usize) -> Option<&Blas> {
         self.entries.get(&mesh_idx).map(|e| &e.blas)
     }
+
+    pub fn clear(&mut self) {
+        self.entries.clear();
+        self.pending_build.clear();
+    }
 }

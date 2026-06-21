@@ -81,20 +81,12 @@ impl RtAccel {
             contents: bytemuck::bytes_of(&empty_mat),
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         });
-        let hw_tlas = if hw_available {
-            Some(device.create_tlas(&wgpu::CreateTlasDescriptor {
-                label: Some("rt-tlas"),
-                max_instances: MAX_STATIC_RT_INSTANCES as u32,
-                flags: wgpu::AccelerationStructureFlags::PREFER_FAST_TRACE,
-                update_mode: wgpu::AccelerationStructureUpdateMode::Build,
-            }))
-        } else {
-            None
-        };
+        // TLAS lazy: se crea en `ensure_hw` cuando el tier activo es High/Ultra.
+        let _ = device;
         Self {
             node_count: 0,
             tri_count: 0,
-            hw_tlas,
+            hw_tlas: None,
             hw_available,
             bvh_node_buffer,
             bvh_tri_buffer,
@@ -136,6 +128,54 @@ impl RtAccel {
 
     pub fn tlas(&self) -> Option<&Tlas> {
         self.hw_tlas.as_ref()
+    }
+
+    pub fn hw_active(&self) -> bool {
+        self.hw_available && self.hw_tlas.is_some()
+    }
+
+    /// Hay geometría trazable (BVH CPU o TLAS HW con triángulos).
+    pub fn has_traceable_geometry(&self) -> bool {
+        self.node_count > 0 || (self.hw_active() && self.hw_tri_count > 0)
+    }
+
+    /// Reserva TLAS/BLAS solo cuando el tier pide RT (High/Ultra).
+    pub fn ensure_hw(&mut self, device: &Device) {
+        if !self.hw_available || self.hw_tlas.is_some() {
+            return;
+        }
+        self.hw_tlas = Some(device.create_tlas(&wgpu::CreateTlasDescriptor {
+            label: Some("rt-tlas"),
+            max_instances: MAX_STATIC_RT_INSTANCES as u32,
+            flags: wgpu::AccelerationStructureFlags::PREFER_FAST_TRACE,
+            update_mode: wgpu::AccelerationStructureUpdateMode::Build,
+        }));
+        self.tlas_geom_dirty = true;
+        self.tlas_instance_dirty = true;
+    }
+
+    /// Libera aceleración HW (Low/Medium/Off).
+    pub fn release_hw(&mut self) {
+        self.hw_tlas = None;
+        self.blas_cache.clear();
+        self.skinned_blas_cache.clear();
+        self.tlas_geom_dirty = true;
+        self.tlas_instance_dirty = true;
+        self.last_tlas_slot_count = 0;
+    }
+
+    /// Limpia BVH CPU y materiales (p. ej. al bajar tier).
+    pub fn clear(&mut self) {
+        self.node_count = 0;
+        self.tri_count = 0;
+        self.hw_tri_count = 0;
+        self.instance_material_count = 0;
+        self.static_scene_hash = 0;
+        self.pose_hash = 0;
+        self.pending_bvh = None;
+        self.tlas_geom_dirty = true;
+        self.tlas_instance_dirty = true;
+        self.last_tlas_slot_count = 0;
     }
 
     fn static_scene_hash(instances: &[RtInstanceDesc]) -> u64 {
@@ -321,8 +361,11 @@ impl RtAccel {
         device: &Device,
         queue: &Queue,
         encoder: &mut CommandEncoder,
+        build_cpu_bvh: bool,
     ) {
-        self.poll_pending_bvh(device, queue);
+        if build_cpu_bvh {
+            self.poll_pending_bvh(device, queue);
+        }
         self.upload_materials(materials, device, queue);
 
         let static_hash = Self::static_scene_hash(instances);
@@ -330,42 +373,34 @@ impl RtAccel {
         let static_unchanged = static_hash == self.static_scene_hash && self.node_count > 0;
         let pose_only = static_unchanged && pose_hash != self.pose_hash;
 
+        if self.hw_active() {
+            self.sync_hw_accel(
+                instances,
+                meshes,
+                skinned_meshes,
+                device,
+                queue,
+                encoder,
+                static_hash,
+                pose_hash,
+            );
+        }
+
+        if !build_cpu_bvh {
+            self.static_scene_hash = static_hash;
+            self.pose_hash = pose_hash;
+            return;
+        }
+
         if static_unchanged {
-            if self.hw_available {
-                self.sync_hw_accel(
-                    instances,
-                    meshes,
-                    skinned_meshes,
-                    device,
-                    queue,
-                    encoder,
-                    static_hash,
-                    pose_hash,
-                );
-            }
-            if pose_only && self.hw_available {
+            if pose_only {
                 self.pose_hash = pose_hash;
-                return;
             }
-            if static_unchanged && !pose_only {
-                return;
-            }
+            return;
         }
 
         if let Some(pending) = &self.pending_bvh {
             if pending.static_hash == static_hash {
-                if self.hw_available {
-                    self.sync_hw_accel(
-                        instances,
-                        meshes,
-                        skinned_meshes,
-                        device,
-                        queue,
-                        encoder,
-                        static_hash,
-                        pose_hash,
-                    );
-                }
                 return;
             }
         }
@@ -381,24 +416,6 @@ impl RtAccel {
                 inst,
                 slot as u32,
             ));
-        }
-
-        if self.hw_available {
-            self.sync_hw_accel(
-                instances,
-                meshes,
-                skinned_meshes,
-                device,
-                queue,
-                encoder,
-                static_hash,
-                pose_hash,
-            );
-        }
-
-        if pose_only && self.hw_available {
-            self.pose_hash = pose_hash;
-            return;
         }
 
         if world_tris.len() >= ASYNC_BVH_TRI_THRESHOLD {

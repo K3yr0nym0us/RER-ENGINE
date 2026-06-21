@@ -268,10 +268,37 @@ impl State {
         let shadows_enabled = scene_uni.light_color[3] > 0.5;
         let shadow_darkness = self.shadow_darkness;
 
-        let reflection_settings = crate::config_3d::reflection_graphics::ReflectionSettings::from_tier(
-            self.reflection_tier,
-            self.rt_reflections_available,
-        );
+        let reflection_settings = {
+            let (settings, degraded) = crate::config_3d::reflection_graphics::effective_reflection_settings(
+                self.reflection_tier,
+                self.rt_reflections_available,
+            );
+            let effective_tier = if degraded {
+                crate::config_3d::reflection_graphics::ReflectionTier::Medium
+            } else {
+                self.reflection_tier
+            };
+            let ipc_key = (
+                self.reflection_tier,
+                effective_tier,
+                self.rt_reflections_available,
+            );
+            if self.reflection_tier_effective_ipc.as_ref() != Some(&ipc_key) {
+                self.reflection_tier_effective_ipc = Some(ipc_key);
+                crate::ipc::send_event(&crate::ipc::EngineEvent::ReflectionTierEffective {
+                    requested: self.reflection_tier.wire().to_string(),
+                    effective: effective_tier.wire().to_string(),
+                    rt_available: self.rt_reflections_available,
+                });
+            }
+            if degraded {
+                log::warn!(
+                    "[Reflejos] GPU sin ray tracing — degradando {} a Medium (SSR + temporal, sin RT)",
+                    self.reflection_tier.wire()
+                );
+            }
+            settings
+        };
 
         // Reflection probes: lista ordenada (id, centro) y mapa id→índice de capa del cubemap.
         // Solo activo con reflejos encendidos; si no, las instancias quedan con probe_index = -1.
@@ -819,9 +846,16 @@ impl State {
         let rt_sync = reflection_settings.active() && reflection_settings.rt_enabled;
 
         if rt_sync {
+            self.rt_accel.ensure_hw(&self.device);
+            let path_trace_debug = self.reflection_debug_view
+                == crate::config_3d::reflection_graphics::ReflectionDebugView::PathTrace;
+            let build_cpu_bvh = path_trace_debug || !self.rt_accel.hw_active();
             let include_skinned = !reflection_settings.rt_static_only;
-            let instances =
-                crate::reflections::tlas::collect_rt_instances(self, include_skinned);
+            let instances = crate::reflections::tlas::collect_rt_instances(
+                self,
+                include_skinned,
+                &frustum_vp,
+            );
             let rt_materials = crate::reflections::rt_material::build_rt_materials(
                 self,
                 &instances,
@@ -837,6 +871,7 @@ impl State {
                 &self.device,
                 &self.queue,
                 &mut enc,
+                build_cpu_bvh,
             );
         }
 
@@ -890,6 +925,7 @@ impl State {
                 &shadow_map_view,
                 &self.shadow_sampler,
                 &scene_uni,
+                &self.texture_array.bind_group,
             )
         } else {
             false

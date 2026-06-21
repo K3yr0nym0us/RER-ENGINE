@@ -1,16 +1,44 @@
 import { Accordion } from 'react-bootstrap'
 import { Stars } from 'react-bootstrap-icons'
 
+import { AppTooltip } from '@components'
 import { useContextEngine } from '@engine'
 import { useTraslate } from '@hooks'
 
+import { ReflectionTierTooltipNote } from './ReflectionTierTooltipNote'
+
 const TIERS = [
-	{ key: 'off' as const, labelKey: 'Off' },
-	{ key: 'low' as const, labelKey: 'Low' },
-	{ key: 'medium' as const, labelKey: 'Medium' },
-	{ key: 'high' as const, labelKey: 'High' },
-	{ key: 'ultra' as const, labelKey: 'Ultra' },
-]
+	{
+		key: 'off' as const,
+		labelKey: 'Off',
+		descKey: 'Reflections off: no SSR, probes, or RT.',
+		tooltipPlace: 'top' as const,
+	},
+	{
+		key: 'low' as const,
+		labelKey: 'Low',
+		descKey: 'SSR on screen + environment probes (128px). No temporal smoothing.',
+		tooltipPlace: 'top' as const,
+	},
+	{
+		key: 'medium' as const,
+		labelKey: 'Medium',
+		descKey: 'SSR + temporal accumulation + probes (256px). No ray tracing.',
+		tooltipPlace: 'top' as const,
+	},
+	{
+		key: 'high' as const,
+		labelKey: 'High',
+		descKey: 'Medium + hardware RT on static meshes (1 bounce).',
+		tooltipPlace: 'top-end' as const,
+	},
+	{
+		key: 'ultra' as const,
+		labelKey: 'Ultra',
+		descKey: 'High + skinned meshes in RT, 2nd bounce, dielectrics, SSIL.',
+		tooltipPlace: 'top-end' as const,
+	},
+] as const
 
 const DEBUG_VIEWS = [
 	{ key: 'final', labelKey: 'Reflection debug final' },
@@ -46,6 +74,11 @@ export default function WorldReflectionsAccordion() {
 		useContextEngine()
 
 	const activeTier = worldConfig.reflectionTier ?? 'off'
+	const effectiveTier = worldConfig.reflectionTierEffective
+	const tierDegraded =
+		effectiveTier != null
+		&& effectiveTier !== activeTier
+		&& (activeTier === 'high' || activeTier === 'ultra')
 	const activeDebugView = worldConfig.reflectionDebugView ?? 'final'
 
 	return (
@@ -59,20 +92,36 @@ export default function WorldReflectionsAccordion() {
 					{t('World reflections tier hint')}
 				</p>
 
+				{tierDegraded && (
+					<p className="text-warning mb-2" style={{ fontSize: '0.72rem' }}>
+						{t('Reflection tier degraded hint')
+							.replace('{{requested}}', activeTier)
+							.replace('{{effective}}', effectiveTier ?? 'medium')}
+					</p>
+				)}
+
 				<label className="form-label small text-secondary mb-1">{t('Reflection tier')}</label>
 				<div className="d-flex flex-wrap gap-1 mb-3">
-					{TIERS.map(({ key, labelKey }) => (
-						<button
+					{TIERS.map(({ key, labelKey, descKey, tooltipPlace }) => (
+						<AppTooltip
 							key={key}
-							type="button"
-							className={`btn btn-sm ${
-								activeTier === key ? 'btn-info' : 'btn-outline-secondary'
-							}`}
-							disabled={!engineReady}
-							onClick={() => setReflectionTier(key)}
+							content={<ReflectionTierTooltipNote descKey={descKey} />}
+							place={tooltipPlace}
+							tooltipClassName="app-tooltip--compact app-tooltip--tier-hint"
 						>
-							{t(labelKey)}
-						</button>
+							<span className="d-inline-block">
+								<button
+									type="button"
+									className={`btn btn-sm ${
+										activeTier === key ? 'btn-info' : 'btn-outline-secondary'
+									}`}
+									disabled={!engineReady}
+									onClick={() => setReflectionTier(key)}
+								>
+									{t(labelKey)}
+								</button>
+							</span>
+						</AppTooltip>
 					))}
 				</div>
 
@@ -84,7 +133,7 @@ export default function WorldReflectionsAccordion() {
 				</p>
 				<select
 					id="reflection-debug-view"
-					className="form-select form-select-sm mb-0"
+					className="form-select form-select-sm bg-dark text-light border-secondary mb-0"
 					value={activeDebugView}
 					disabled={!engineReady || activeTier === 'off'}
 					onChange={(e) => setReflectionDebugView(e.target.value)}

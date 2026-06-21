@@ -1,4 +1,4 @@
-# Reflejos 3D por nivel (SSR / temporal / RT estáticos / probes)
+# Reflejos 3D por nivel (SSR / temporal / RT HW / probes)
 #
 # Solo proyectos 3D. Nivel global en World → Reflejos; presets internos en motor.
 #
@@ -7,18 +7,18 @@
 #   - docs/RHAI_API.yaml
 #   - docs/Programing_Model.yaml
 
-version: 2
-updated: 2026-06-20
+version: 3
+updated: 2026-06-21
 
 principle:
   owner: motor_3d
   pipeline: |
     Off → nada.
-    Low → SSR (sin temporal).
-    Medium → SSR + acumulación temporal.
-    High → SSR + temporal + RT compute contra AABB de mallas estáticas.
-    Ultra → como High con más pasos, distancia y resolución de probes.
-    Skinned / jugador: excluidos del TLAS; contribuyen vía SSR y cubemap en forward.
+    Low → SSR (sin temporal) + IBL probes en forward. Sin RT.
+    Medium → SSR + acumulación temporal + probes. Sin RT.
+    High → SSR + temporal + RT compute (1 rebote, TLAS estático, ray query wgpu).
+    Ultra → High + skinned en TLAS + 2º rebote especular + dieléctricos + SSIL.
+    Skinned / jugador: en Ultra entran al TLAS; en High solo SSR/probes/RT estático.
   rtiow_compat: |
     Cubemap, SSR y RT comparten reflect(incident, normal), F0=albedo en metales,
     atenuación albedo en el rebote y composite aditivo (detalle SSR sobre base).
@@ -28,11 +28,19 @@ graphics_tiers:
     aliases: [disabled, desactivado, none]
   - id: low
     aliases: [bajo]
+    rt: false
+    note: SSR barato + probes/IBL; dispositivos sin RT
   - id: medium
     aliases: [medio]
+    rt: false
   - id: high
     aliases: [alto]
+    rt: true
+    rt_static_only: true
   - id: ultra
+    aliases: [ultra]
+    rt: true
+    rt_static_only: false
 
 internal_settings:
   description: ReflectionSettings derivado del tier (no persistido en .save)
@@ -44,6 +52,9 @@ internal_settings:
     - rt_enabled
     - rt_static_only
     - rt_blend
+  effective_degrade: |
+    Si tier High/Ultra pero GPU sin EXPERIMENTAL_RAY_QUERY → preset Medium + log español.
+    Evento IPC reflection_tier_effective + aviso en World → Reflejos (editor).
 
 g_buffer:
   scene_mrt: |
@@ -78,15 +89,18 @@ probes:
 commands:
   set_reflection_tier:
     params: { tier: off | low | medium | high | ultra }
-    effect: Cambia tier global y emite reflection_tier_changed
+    effect: Cambia tier global, libera TLAS si baja de High, emite reflection_tier_changed
   set_reflection_debug_view:
     params:
-      view: final | normals | depth | ssr_hits | reflection_mask | base_color | trace_strength | ssr_final_composite | …
-    effect: Vista debug en viewport (editor)
+      view: final | normals | depth | ssr_hits | reflection_mask | base_color | trace_strength | path_trace | …
+    effect: Vista debug en viewport (editor). path_trace requiere tier High+ y RT GPU.
 
 events:
   reflection_tier_changed:
     payload: { tier: string }
+  reflection_tier_effective:
+    payload: { requested: string, effective: string, rt_available: bool }
+    note: Emitido al cambiar tier o disponibilidad RT; effective puede ser medium si requested es high/ultra sin ray query.
   reflection_debug_view_changed:
     payload: { view: string }
   reflection_profiler:
@@ -106,18 +120,21 @@ scripting:
     context: scene
     compiles_to: engine.set_reflection_tier("…")
 
-rt_v1:
-  method: compute shader + TLAS AABB estáticos (hasta 256 instancias) — desactivado en runtime
+rt_v2:
+  production_path: compute_ray_query
+  method: compute sparse + wgpu_ray_query inline contra BLAS/TLAS Vulkan
   status: |
-    El stub AABB generaba grano blanco al mezclarse en composite (rt_weight alto sin geometría real).
-    High/Ultra = cubemap + SSR + temporal. RT hardware pendiente (VK_KHR_ray_tracing_pipeline;
-    referencia https://github.com/jdonald/rust-raytracing ).
-  excludes: skinned, play character
-  blend: rt_blend configurable (default 0.85); refuerza píxeles donde SSR falla
-  parity: normal_bias, depth_reject, thickness y hit depth reject compartidos con SSR vía reflection_math.wgsl
-  hit_depth_reject: max(1.6m, step_size×4) — tolerancia AABB v1 (ver Reflections_Diagnostics.yaml)
-  adapter_supports_rt: stub true (sin ray queries nativas aún)
-  future: BLAS por triángulo + ray queries wgpu cuando esté estable
+    Path de producción estable: compute inline + ray query (rt_ray_query.wgsl / rt_bvh.wgsl fallback).
+    @ray_generation diferido hasta wgpu PR #9450 (stub en reflections/rt_pipeline/).
+    Activo en High/Ultra cuando adapter soporta EXPERIMENTAL_RAY_QUERY.
+    Fallback BVH CPU en compute si no hay TLAS.
+    Hit shading: material por instancia (refl_hit_lighting_lite + textura UV baricéntrica);
+    reproyección G-buffer solo refuerzo cuando depth/normal coherentes.
+    Ultra: 2º rebote metal + refracción dieléctrica en hit.
+  limits:
+    static_instances: 512
+    skinned_instances: 32
+  reference: https://github.com/jdonald/rust-raytracing
 
 debug_views:
   active:
@@ -129,6 +146,7 @@ debug_views:
     - base_color
     - trace_strength
     - ssr_final_composite
+    - path_trace
   deprecated:
     - ssr_hit_uv_world_screen_pair
     - ssr_hit_uv_world_screen_delta

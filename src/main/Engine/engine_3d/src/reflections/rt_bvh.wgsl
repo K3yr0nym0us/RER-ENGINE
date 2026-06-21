@@ -51,6 +51,55 @@ const RT_TILE_SIZE : u32 = 16u;
 @group(2) @binding(1) var s_shadow : sampler_comparison;
 @group(2) @binding(2) var<uniform> rt_light : RtLightUniform;
 
+@group(3) @binding(0) var t_albedo_array : texture_2d_array<f32>;
+@group(3) @binding(1) var s_albedo : sampler;
+
+fn rt_resolve_hit(
+    hit_pos : vec3<f32>,
+    hit_normal : vec3<f32>,
+    refl_dir : vec3<f32>,
+    hit_tri : RtTri,
+    has_tri : bool,
+    sample_uv : vec2<f32>,
+    on_screen : bool,
+    spacing_px : f32,
+    mat : RtInstanceMaterial,
+    has_mat : bool,
+) -> vec3<f32> {
+    let bary = select(vec3<f32>(1.0, 0.0, 0.0), refl_tri_barycentric(hit_tri, hit_pos), has_tri);
+    return refl_resolve_hit_radiance(
+        hit_pos,
+        hit_normal,
+        refl_dir,
+        sample_uv,
+        on_screen,
+        spacing_px,
+        mat,
+        has_mat,
+        has_tri,
+        hit_tri,
+        bary,
+        probe_meta,
+        t_probe_env,
+        s_probe_env,
+        t_albedo_array,
+        s_albedo,
+        rt_light,
+        t_shadow,
+        s_shadow,
+        t_lit_scene,
+        t_depth,
+        t_normal_roughness,
+        t_direct,
+        t_base_color,
+        u.resolution * u.gbuffer_scale,
+        u.step_size,
+        u.view_proj,
+        u.near_plane,
+        u.far_plane,
+    );
+}
+
 fn world_pos_from_depth(uv : vec2<f32>, view_depth_m : f32) -> vec3<f32> {
     return refl_world_pos_from_depth(uv, view_depth_m, u.inv_view_proj, u.near_plane, u.far_plane);
 }
@@ -323,31 +372,100 @@ fn rt_shade_pixel_at(gid : vec2<u32>) {
     if has_mat {
         hit_mat = instance_materials[instance_slot];
     }
-    let scene_col = refl_resolve_hit_radiance(
+    let scene_col = rt_resolve_hit(
         hit_pos,
         hit_normal,
         trace_dir,
+        tri,
+        true,
         sample_uv,
         on_screen,
         spacing_px,
         hit_mat,
         has_mat,
-        probe_meta,
-        t_probe_env,
-        s_probe_env,
-        rt_light,
-        t_shadow,
-        s_shadow,
-        t_lit_scene,
-        t_depth,
-        t_direct,
-        t_base_color,
-        u.resolution * u.gbuffer_scale,
-        u.step_size,
-        u.view_proj,
-        u.near_plane,
-        u.far_plane,
     );
+
+    var final_col = scene_col;
+    if rt_light.rt_flags.y > 0.5 && has_mat {
+        let hit_metallic = hit_mat.pbr.y;
+        let hit_rough = hit_mat.pbr.x;
+        let hit_albedo = hit_mat.albedo.xyz;
+        let hit_flags = bitcast<u32>(hit_mat.albedo.w);
+        let hit_dielectric = (hit_flags & RT_MAT_FLAG_DIELECTRIC) != 0u;
+        let sec_origin = hit_pos + hit_normal * normal_bias;
+        if hit_metallic > 0.5 && hit_rough < 0.85 {
+            let sec_dir = refl_fuzzy_mirror_dir_temporal(
+                hit_pos,
+                u.cam_pos.xyz,
+                hit_normal,
+                hit_rough,
+                u.frame_index + 17u,
+                sample_uv,
+            );
+            let sec_hit = bvh_trace(sec_origin, sec_dir, u.max_distance_m * 0.5);
+            if sec_hit.found {
+                let sec_pos = sec_origin + sec_dir * sec_hit.t;
+                let sec_tri = bvh_tris[sec_hit.tri_idx];
+                let sec_n = refl_tri_normal(sec_tri);
+                let sec_slot = refl_tri_instance_slot(sec_tri);
+                let sec_uv = project_uv(sec_pos);
+                let sec_on = sec_uv.x >= 0.0 && sec_uv.x <= 1.0 && sec_uv.y >= 0.0 && sec_uv.y <= 1.0;
+                var sec_mat = hit_mat;
+                var sec_has = false;
+                if sec_slot < u.material_count {
+                    sec_mat = instance_materials[sec_slot];
+                    sec_has = true;
+                }
+                let sec_col = rt_resolve_hit(
+                    sec_pos,
+                    sec_n,
+                    sec_dir,
+                    sec_tri,
+                    true,
+                    sec_uv,
+                    sec_on,
+                    spacing_px,
+                    sec_mat,
+                    sec_has,
+                );
+                final_col = hit_albedo * scene_col + sec_col * 0.35;
+            }
+        } else if hit_dielectric && rt_light.rt_flags.x > 0.5 {
+            let ior = max(hit_mat.pbr.z, 1.01);
+            let eta = 1.0 / ior;
+            let sec_dir = refl_refract_dir(-trace_dir, hit_normal, eta);
+            if dot(sec_dir, sec_dir) > 1e-8 {
+                let sec_hit = bvh_trace(sec_origin, sec_dir, u.max_distance_m * 0.5);
+                if sec_hit.found {
+                    let sec_pos = sec_origin + sec_dir * sec_hit.t;
+                    let sec_tri = bvh_tris[sec_hit.tri_idx];
+                    let sec_n = refl_tri_normal(sec_tri);
+                    let sec_slot = refl_tri_instance_slot(sec_tri);
+                    let sec_uv = project_uv(sec_pos);
+                    let sec_on = sec_uv.x >= 0.0 && sec_uv.x <= 1.0 && sec_uv.y >= 0.0 && sec_uv.y <= 1.0;
+                    var sec_mat = hit_mat;
+                    var sec_has = false;
+                    if sec_slot < u.material_count {
+                        sec_mat = instance_materials[sec_slot];
+                        sec_has = true;
+                    }
+                    let sec_col = rt_resolve_hit(
+                        sec_pos,
+                        sec_n,
+                        sec_dir,
+                        sec_tri,
+                        true,
+                        sec_uv,
+                        sec_on,
+                        spacing_px,
+                        sec_mat,
+                        sec_has,
+                    );
+                    final_col = mix(scene_col, sec_col, 0.45);
+                }
+            }
+        }
+    }
 
     let rt_weight = (1.0 - ssr.a) * strength * u.rt_blend;
     if rt_weight < 0.01 {
@@ -355,7 +473,7 @@ fn rt_shade_pixel_at(gid : vec2<u32>) {
         return;
     }
 
-    let out_rgb = mix(ssr.rgb, scene_col, rt_weight);
+    let out_rgb = mix(ssr.rgb, final_col, rt_weight);
     let out_a = max(ssr.a, rt_weight);
     textureStore(reflection_out, px, vec4<f32>(out_rgb, out_a));
 }

@@ -115,14 +115,6 @@ impl SurfacePbr {
             ior: 0.0,
         }
     }
-
-    pub fn dielectric_glass(roughness: f32, ior: f32) -> Self {
-        Self {
-            roughness: roughness.clamp(0.0, 1.0),
-            metallic: 0.0,
-            ior: ior.max(1.0),
-        }
-    }
 }
 
 // ── Almacenamiento de componentes ─────────────────────────────────────────────

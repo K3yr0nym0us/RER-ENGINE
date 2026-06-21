@@ -68,6 +68,7 @@ pub struct Mesh {
     pub index_count:   u32,
     /// Posiciones locales + índices para BLAS/BVH (RT v2).
     pub rt_positions: Vec<[f32; 3]>,
+    pub rt_uvs:       Vec<[f32; 2]>,
     pub rt_indices:   Vec<u32>,
     /// Índices RT en GPU cuando difieren del draw (p. ej. suelo single-sided).
     pub rt_index_buffer: Option<wgpu::Buffer>,
@@ -342,6 +343,7 @@ pub(crate) fn upload(
         .map(|s| s.to_vec())
         .unwrap_or_else(|| indices.to_vec());
     let rt_positions: Vec<[f32; 3]> = vertices.iter().map(|v| v.position).collect();
+    let rt_uvs: Vec<[f32; 2]> = vertices.iter().map(|v| v.uv).collect();
     let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label:    Some(&format!("{label}-vbo")),
         contents: bytemuck::cast_slice(vertices),
@@ -366,6 +368,7 @@ pub(crate) fn upload(
         index_buffer,
         index_count: indices.len() as u32,
         rt_positions,
+        rt_uvs,
         rt_indices: rt_indices_vec,
         rt_index_buffer,
     }

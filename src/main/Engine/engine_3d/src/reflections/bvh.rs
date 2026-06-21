@@ -15,6 +15,9 @@ pub struct RtTriangle {
     pub v0: Vec3,
     pub v1: Vec3,
     pub v2: Vec3,
+    pub uv0: [f32; 2],
+    pub uv1: [f32; 2],
+    pub uv2: [f32; 2],
     pub instance_slot: u32,
 }
 
@@ -24,6 +27,9 @@ pub struct RtTriangleGpu {
     pub v0: [f32; 4],
     pub v1: [f32; 4],
     pub v2: [f32; 4],
+    pub uv0: [f32; 4],
+    pub uv1: [f32; 4],
+    pub uv2: [f32; 4],
 }
 
 impl From<RtTriangle> for RtTriangleGpu {
@@ -32,6 +38,9 @@ impl From<RtTriangle> for RtTriangleGpu {
             v0: [t.v0.x, t.v0.y, t.v0.z, f32::from_bits(t.instance_slot)],
             v1: [t.v1.x, t.v1.y, t.v1.z, 0.0],
             v2: [t.v2.x, t.v2.y, t.v2.z, 0.0],
+            uv0: [t.uv0[0], t.uv0[1], 0.0, 0.0],
+            uv1: [t.uv1[0], t.uv1[1], 0.0, 0.0],
+            uv2: [t.uv2[0], t.uv2[1], 0.0, 0.0],
         }
     }
 }

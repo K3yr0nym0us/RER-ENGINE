@@ -87,14 +87,6 @@ impl SsilPass {
         }
     }
 
-    pub fn resize(&mut self, device: &Device, width: u32, height: u32) {
-        self.width = width.max(1);
-        self.height = height.max(1);
-        let (texture, view) = create_ssil_texture(device, self.width, self.height);
-        self._texture = texture;
-        self.output_view = view;
-    }
-
     pub fn output_view(&self) -> &TextureView {
         &self.output_view
     }

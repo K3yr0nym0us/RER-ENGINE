@@ -4,6 +4,11 @@
 
 use crate::config_3d::reflection_graphics::{ReflectionSettings, ReflectionTier};
 
+/// Segundo rebote especular — tier Ultra.
+pub fn rt_second_bounce_enabled(settings: &ReflectionSettings) -> bool {
+    settings.tier == ReflectionTier::Ultra
+}
+
 /// BLAS/TLAS hardware para mallas skinned (refit por frame).
 pub fn skinned_tlas_supported() -> bool {
     true

@@ -301,6 +301,13 @@ pub struct State {
         crate::config_3d::reflection_graphics::ReflectionDebugView,
     pub(crate) reflections: crate::reflections::ReflectionPass,
     pub(crate) rt_reflections_available: bool,
+    /// Último `(requested, effective, rt_available)` emitido por IPC (evita spam).
+    pub(crate) reflection_tier_effective_ipc:
+        Option<(
+            crate::config_3d::reflection_graphics::ReflectionTier,
+            crate::config_3d::reflection_graphics::ReflectionTier,
+            bool,
+        )>,
     pub(crate) rt_accel: crate::reflections::rt_accel::RtAccel,
     /// Reflection probes: un cubemap por esfera/probe (entorno 360° con suelo, vecinas y jugador).
     pub(crate) probe_env: crate::reflections::probe_env::ProbeEnvPass,

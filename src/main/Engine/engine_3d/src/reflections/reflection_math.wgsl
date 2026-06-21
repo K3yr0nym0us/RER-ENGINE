@@ -213,6 +213,13 @@ struct RtTri {
     v0 : vec4<f32>,
     v1 : vec4<f32>,
     v2 : vec4<f32>,
+    uv0 : vec4<f32>,
+    uv1 : vec4<f32>,
+    uv2 : vec4<f32>,
+}
+
+fn refl_tri_bary_uv(tri : RtTri, bary : vec3<f32>) -> vec2<f32> {
+    return tri.uv0.xy * bary.x + tri.uv1.xy * bary.y + tri.uv2.xy * bary.z;
 }
 
 struct ReflProbeMeta {
@@ -360,28 +367,85 @@ fn refl_rt_shadow_at(
     return sum / 9.0;
 }
 
+fn refl_tri_barycentric(tri : RtTri, p : vec3<f32>) -> vec3<f32> {
+    let v0 = tri.v0.xyz;
+    let v1 = tri.v1.xyz;
+    let v2 = tri.v2.xyz;
+    let v0v1 = v1 - v0;
+    let v0v2 = v2 - v0;
+    let v0p = p - v0;
+    let d00 = dot(v0v1, v0v1);
+    let d01 = dot(v0v1, v0v2);
+    let d11 = dot(v0v2, v0v2);
+    let d20 = dot(v0p, v0v1);
+    let d21 = dot(v0p, v0v2);
+    let denom = d00 * d11 - d01 * d01;
+    if abs(denom) < 1e-8 {
+        return vec3<f32>(1.0, 0.0, 0.0);
+    }
+    let v = (d11 * d20 - d01 * d21) / denom;
+    let w = (d00 * d21 - d01 * d20) / denom;
+    let u = 1.0 - v - w;
+    return vec3<f32>(u, v, w);
+}
+
+fn refl_normal_from_packed(packed : vec4<f32>) -> vec3<f32> {
+    var p = packed.zw * 2.0 - vec2<f32>(1.0);
+    var n = vec3<f32>(p.x, p.y, 1.0 - abs(p.x) - abs(p.y));
+    if n.z < 0.0 {
+        let ox = n.x;
+        let oy = n.y;
+        n.x = (1.0 - abs(oy)) * sign(ox);
+        n.y = (1.0 - abs(ox)) * sign(oy);
+    }
+    return normalize(n);
+}
+
+fn refl_material_albedo(
+    mat : RtInstanceMaterial,
+    has_tri : bool,
+    tri : RtTri,
+    bary : vec3<f32>,
+    t_albedo : texture_2d_array<f32>,
+    s_albedo : sampler,
+) -> vec3<f32> {
+    if has_tri {
+        let layer = i32(mat.pbr.w);
+        if layer >= 0 {
+            let uv = refl_tri_bary_uv(tri, bary);
+            return textureSampleLevel(t_albedo, s_albedo, uv, layer, 0.0).rgb;
+        }
+    }
+    return mat.albedo.xyz;
+}
+
 fn refl_hit_lighting_lite(
     hit_pos : vec3<f32>,
     hit_normal : vec3<f32>,
     view_dir : vec3<f32>,
     mat : RtInstanceMaterial,
     has_material : bool,
+    has_tri : bool,
+    hit_tri : RtTri,
+    bary : vec3<f32>,
     probe_meta : ReflProbeMeta,
     t_probe : texture_cube_array<f32>,
     s_probe : sampler,
+    t_albedo : texture_2d_array<f32>,
+    s_albedo : sampler,
     rt_light : RtLightUniform,
     t_shadow : texture_depth_2d,
     s_shadow : sampler_comparison,
 ) -> vec3<f32> {
-    _ = rt_light;
-    _ = t_shadow;
-    _ = s_shadow;
     if !has_material {
         return refl_sample_probe_at_hit(hit_pos, view_dir, 0.0, probe_meta, t_probe, s_probe);
     }
-    let albedo = mat.albedo.xyz;
-    let metallic = mat.pbr.y;
+    let flags = bitcast<u32>(mat.albedo.w);
+    let is_dielectric = (flags & RT_MAT_FLAG_DIELECTRIC) != 0u;
+    let albedo = refl_material_albedo(mat, has_tri, hit_tri, bary, t_albedo, s_albedo);
+    let metallic = select(mat.pbr.y, 0.0, is_dielectric);
     let roughness = mat.pbr.x;
+    let ior = max(mat.pbr.z, 1.01);
     let env = refl_sample_probe_for_material(
         hit_pos,
         view_dir,
@@ -395,11 +459,27 @@ fn refl_hit_lighting_lite(
     let n = normalize(hit_normal);
     let v = normalize(view_dir);
     let ndotv = max(dot(n, v), 0.0);
-    let f0 = mix(vec3<f32>(0.04), albedo, metallic);
+    var f0 = mix(vec3<f32>(0.04), albedo, metallic);
+    if is_dielectric {
+        let cos_theta = max(dot(-v, n), 0.0);
+        let fr = refl_dielectric_fresnel(cos_theta, ior);
+        f0 = vec3<f32>(fr);
+    }
     let fresnel = f0 + (vec3<f32>(1.0) - f0) * pow(vec3<f32>(1.0 - ndotv), vec3<f32>(5.0));
     let spec = env * fresnel;
     let diff = env * (1.0 - metallic) * albedo * (vec3<f32>(1.0) - fresnel);
-    return spec + diff;
+
+    var l = rt_light.light_dir.xyz;
+    if dot(l, l) < 1e-6 {
+        l = vec3<f32>(0.45, 1.0, 0.35);
+    }
+    l = normalize(l);
+    let shadow = refl_rt_shadow_at(hit_pos, n, rt_light, t_shadow, s_shadow);
+    let ndotl = max(dot(n, l), 0.0);
+    let direct = rt_light.light_color.rgb * ndotl * shadow;
+    let direct_diff = direct * albedo * (1.0 - metallic) * (vec3<f32>(1.0) - fresnel);
+    let direct_spec = direct * fresnel * (1.0 - roughness) * metallic;
+    return spec + diff + direct_diff + direct_spec;
 }
 
 fn refl_refract_dir(incident : vec3<f32>, normal : vec3<f32>, eta : f32) -> vec3<f32> {
@@ -422,6 +502,39 @@ fn refl_dielectric_fresnel(cos_theta : f32, ref_idx : f32) -> f32 {
     return r0 + (1.0 - r0) * pow(1.0 - cos_theta, 5.0);
 }
 
+fn refl_screen_gbuffer_blend_weight(
+    hit_pos : vec3<f32>,
+    hit_normal : vec3<f32>,
+    sample_uv : vec2<f32>,
+    on_screen : bool,
+    step_size : f32,
+    t_depth : texture_2d<f32>,
+    t_normal_roughness : texture_2d<f32>,
+    view_proj : mat4x4<f32>,
+    near_plane : f32,
+    far_plane : f32,
+    gb_resolution : vec2<f32>,
+) -> f32 {
+    if !on_screen {
+        return 0.0;
+    }
+    let hit_px = vec2<i32>(sample_uv * gb_resolution);
+    let hit_depth_m = textureLoad(t_depth, hit_px, 0).r;
+    let clip = view_proj * vec4<f32>(hit_pos, 1.0);
+    let ray_depth_m = (near_plane * far_plane)
+        / (far_plane - refl_gl_ndc_z_to_vk(clip.z / clip.w) * (far_plane - near_plane));
+    let depth_delta = abs(ray_depth_m - hit_depth_m);
+    let depth_reject = refl_rt_hit_depth_reject_m(step_size);
+    if depth_delta > depth_reject {
+        return 0.0;
+    }
+    var w = 1.0 - clamp(depth_delta / depth_reject, 0.0, 1.0);
+    let gb_n = refl_normal_from_packed(textureLoad(t_normal_roughness, hit_px, 0));
+    let n_dot = max(dot(normalize(hit_normal), gb_n), 0.0);
+    w *= smoothstep(0.3, 0.95, n_dot);
+    return w;
+}
+
 fn refl_resolve_hit_radiance(
     hit_pos : vec3<f32>,
     hit_normal : vec3<f32>,
@@ -431,14 +544,20 @@ fn refl_resolve_hit_radiance(
     spacing_px : f32,
     mat : RtInstanceMaterial,
     has_material : bool,
+    has_tri : bool,
+    hit_tri : RtTri,
+    bary : vec3<f32>,
     probe_meta : ReflProbeMeta,
     t_probe : texture_cube_array<f32>,
     s_probe : sampler,
+    t_albedo : texture_2d_array<f32>,
+    s_albedo : sampler,
     rt_light : RtLightUniform,
     t_shadow : texture_depth_2d,
     s_shadow : sampler_comparison,
     t_lit_scene : texture_2d<f32>,
     t_depth : texture_2d<f32>,
+    t_normal_roughness : texture_2d<f32>,
     t_direct : texture_2d<f32>,
     t_base_color : texture_2d<f32>,
     resolution : vec2<f32>,
@@ -447,13 +566,66 @@ fn refl_resolve_hit_radiance(
     near_plane : f32,
     far_plane : f32,
 ) -> vec3<f32> {
+    _ = spacing_px;
+    let view_dir = normalize(refl_dir);
+    if has_material {
+        let instance_col = refl_hit_lighting_lite(
+            hit_pos,
+            hit_normal,
+            view_dir,
+            mat,
+            has_material,
+            has_tri,
+            hit_tri,
+            bary,
+            probe_meta,
+            t_probe,
+            s_probe,
+            t_albedo,
+            s_albedo,
+            rt_light,
+            t_shadow,
+            s_shadow,
+        );
+        let blend_w = refl_screen_gbuffer_blend_weight(
+            hit_pos,
+            hit_normal,
+            sample_uv,
+            on_screen,
+            step_size,
+            t_depth,
+            t_normal_roughness,
+            view_proj,
+            near_plane,
+            far_plane,
+            resolution,
+        );
+        if blend_w > 0.001 {
+            let hit_px = vec2<i32>(sample_uv * resolution);
+            let hit_metallic = textureLoad(t_direct, hit_px, 0).a;
+            let hit_albedo = textureLoad(t_base_color, hit_px, 0).rgb;
+            let lit = textureLoad(t_lit_scene, hit_px, 0).rgb;
+            let screen_col = refl_metal_attenuate(lit, hit_albedo, hit_metallic);
+            return mix(instance_col, screen_col, blend_w);
+        }
+        return instance_col;
+    }
     if on_screen {
-        let hit_px = vec2<i32>(sample_uv * resolution);
-        let hit_depth_m = textureLoad(t_depth, hit_px, 0).r;
-        let clip = view_proj * vec4<f32>(hit_pos, 1.0);
-        let ray_depth_m = (near_plane * far_plane)
-            / (far_plane - refl_gl_ndc_z_to_vk(clip.z / clip.w) * (far_plane - near_plane));
-        if abs(ray_depth_m - hit_depth_m) <= refl_rt_hit_depth_reject_m(step_size) {
+        let blend_w = refl_screen_gbuffer_blend_weight(
+            hit_pos,
+            hit_normal,
+            sample_uv,
+            on_screen,
+            step_size,
+            t_depth,
+            t_normal_roughness,
+            view_proj,
+            near_plane,
+            far_plane,
+            resolution,
+        );
+        if blend_w > 0.001 {
+            let hit_px = vec2<i32>(sample_uv * resolution);
             let hit_metallic = textureLoad(t_direct, hit_px, 0).a;
             let hit_albedo = textureLoad(t_base_color, hit_px, 0).rgb;
             let lit = textureLoad(t_lit_scene, hit_px, 0).rgb;
@@ -463,12 +635,17 @@ fn refl_resolve_hit_radiance(
     return refl_hit_lighting_lite(
         hit_pos,
         hit_normal,
-        normalize(refl_dir),
+        view_dir,
         mat,
         has_material,
+        has_tri,
+        hit_tri,
+        bary,
         probe_meta,
         t_probe,
         s_probe,
+        t_albedo,
+        s_albedo,
         rt_light,
         t_shadow,
         s_shadow,

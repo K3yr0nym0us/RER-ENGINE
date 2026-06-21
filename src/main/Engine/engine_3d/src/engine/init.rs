@@ -1028,6 +1028,7 @@ impl State {
                 crate::config_3d::reflection_graphics::ReflectionDebugView::Final,
             reflections,
             rt_reflections_available,
+            reflection_tier_effective_ipc: None,
             rt_accel,
             probe_env,
             probe_capture_cursor: 0,

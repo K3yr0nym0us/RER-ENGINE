@@ -204,6 +204,10 @@ export interface WorldConfig {
 	graphicsTextureTier: GraphicsTextureTier
 	textureDetailDistance: number
 	reflectionTier: ReflectionTier
+	/** Tier que corre el motor si difiere del pedido (p. ej. High → Medium sin RT). */
+	reflectionTierEffective?: ReflectionTier
+	/** Si la GPU expone ray query (evento reflection_tier_effective). */
+	reflectionRtAvailable?: boolean
 	reflectionDebugView: ReflectionDebugView
 	shadowTier: ShadowTier
 }

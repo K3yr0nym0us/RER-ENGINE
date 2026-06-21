@@ -636,6 +636,7 @@ impl ReflectionPass {
         shadow_view: &TextureView,
         shadow_sampler: &wgpu::Sampler,
         scene_uniforms: &SceneUniforms,
+        texture_bind_group: &wgpu::BindGroup,
     ) -> bool {
         if !settings.active() {
             self.profiler = ReflectionProfilerMs::default();
@@ -654,7 +655,7 @@ impl ReflectionPass {
         self.reflection_frame_index = self.reflection_frame_index.wrapping_add(1);
 
         if debug_view == ReflectionDebugView::PathTrace {
-            if accel.node_count > 0 {
+            if settings.rt_enabled && rt_available && accel.node_count > 0 {
                 self.path_trace_pass.dispatch(
                     device,
                     queue,
@@ -802,18 +803,32 @@ impl ReflectionPass {
 
         let t2 = Instant::now();
         if settings.rt_enabled && rt_available {
-            if accel.node_count == 0 {
-                log::warn!("[RT] BVH v2 vacío — sin geometría trazable");
+            if !accel.has_traceable_geometry() {
+                if self.rt_tlas_log_cooldown == 0 {
+                    log::warn!("[RT] Sin geometría trazable (BVH/TLAS vacío)");
+                    self.rt_tlas_log_cooldown = 180;
+                } else {
+                    self.rt_tlas_log_cooldown -= 1;
+                }
             } else if self.rt_tlas_log_cooldown == 0 {
-                log::info!(
-                    "[RT] BVH v2: {} nodos, {} triángulos",
-                    accel.node_count,
-                    accel.tri_count
-                );
+                if accel.hw_active() && accel.node_count == 0 {
+                    log::info!(
+                        "[RT] TLAS HW: {} triángulos, {} instancias",
+                        accel.hw_tri_count,
+                        accel.instance_material_count
+                    );
+                } else {
+                    log::info!(
+                        "[RT] BVH v2: {} nodos, {} triángulos",
+                        accel.node_count,
+                        accel.tri_count
+                    );
+                }
                 self.rt_tlas_log_cooldown = 180;
             } else {
                 self.rt_tlas_log_cooldown -= 1;
             }
+            if accel.has_traceable_geometry() {
             self.rt_pass.dispatch(
                 device,
                 queue,
@@ -841,6 +856,7 @@ impl ReflectionPass {
                 shadow_view,
                 shadow_sampler,
                 scene_uniforms,
+                texture_bind_group,
             );
             encoder.copy_texture_to_texture(
                 wgpu::TexelCopyTextureInfo {
@@ -861,6 +877,7 @@ impl ReflectionPass {
                     depth_or_array_layers: 1,
                 },
             );
+            }
         }
         self.profiler.rt_ms = t2.elapsed().as_secs_f32() * 1000.0;
 

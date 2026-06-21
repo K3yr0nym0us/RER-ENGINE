@@ -16,6 +16,10 @@ impl State {
         self.reflection_tier = tier;
         self.probe_capture_burst_all = tier != ReflectionTier::Off;
         self.reflections.invalidate_temporal();
+        if !tier.uses_rt_hw() {
+            self.rt_accel.clear();
+            self.rt_accel.release_hw();
+        }
         // Cubemap de probes por tier (Low 128 … Ultra 1024): recrear solo si cambia el tamaño.
         let new_cubemap_size = tier.cubemap_face_size();
         if new_cubemap_size != self.probe_cubemap_size {

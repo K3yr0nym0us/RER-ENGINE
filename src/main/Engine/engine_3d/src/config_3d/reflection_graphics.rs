@@ -222,6 +222,11 @@ impl ReflectionTier {
         }
     }
 
+    /// High/Ultra: sincronizan TLAS/BLAS y ejecutan RT compute.
+    pub fn uses_rt_hw(self) -> bool {
+        matches!(self, Self::High | Self::Ultra)
+    }
+
     /// Resolución por cara del cubemap de probes según el tier (px). Off conserva el mínimo
     /// (no captura, pero la textura existe). Low 128, Medium 256, High 512, Ultra 1024.
     pub fn cubemap_face_size(self) -> u32 {
@@ -299,6 +304,23 @@ impl ReflectionSettings {
     pub fn active(self) -> bool {
         self.tier != ReflectionTier::Off
     }
+}
+
+/// Preset efectivo: degrada High/Ultra a Medium si la GPU no expone ray query.
+pub fn effective_reflection_settings(
+    requested: ReflectionTier,
+    rt_available: bool,
+) -> (ReflectionSettings, bool) {
+    if requested.uses_rt_hw() && !rt_available {
+        return (
+            ReflectionSettings::from_tier(ReflectionTier::Medium, false),
+            true,
+        );
+    }
+    (
+        ReflectionSettings::from_tier(requested, rt_available),
+        false,
+    )
 }
 
 pub const DEFAULT_REFLECTION_TIER: ReflectionTier = ReflectionTier::Off;

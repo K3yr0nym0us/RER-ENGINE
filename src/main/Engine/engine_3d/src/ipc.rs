@@ -712,6 +712,13 @@ pub enum EngineEvent {
     TextureDetailDistanceChanged { distance_m: f32 },
     #[serde(rename = "reflection_tier_changed")]
     ReflectionTierChanged { tier: String },
+    /// Tier de reflejos pedido vs efectivo (p. ej. High degradado a Medium sin RT).
+    #[serde(rename = "reflection_tier_effective")]
+    ReflectionTierEffective {
+        requested: String,
+        effective: String,
+        rt_available: bool,
+    },
     #[serde(rename = "shadow_tier_changed")]
     ShadowTierChanged { tier: String },
     #[serde(rename = "reflection_debug_view_changed")]
