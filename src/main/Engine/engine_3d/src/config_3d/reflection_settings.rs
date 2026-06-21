@@ -104,27 +104,6 @@ impl State {
             prev.wire(),
             view.wire()
         );
-        match view {
-            ReflectionDebugView::SsrFinalComposite => {
-                log::info!("[SSR] vista final composite — mezcla scene+SSR post-composite");
-            }
-            ReflectionDebugView::SsrHitUvWorldScreenPair => {
-                log::info!(
-                    "[SSR] vista hit UV world/screen — RG=world hit_uv, BA=screen hit_uv"
-                );
-            }
-            ReflectionDebugView::SsrHitUvWorldScreenDelta => {
-                log::info!(
-                    "[SSR] vista ΔUV world/screen — R=|Δu| G=|Δv| B=|Δuv|×50"
-                );
-            }
-            ReflectionDebugView::SsrHitUvWorldScreenSplit => {
-                log::info!(
-                    "[SSR] vista split world/screen — izq=hit UV world, der=hit UV screen"
-                );
-            }
-            _ => {}
-        }
     }
 }
 

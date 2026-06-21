@@ -1,8 +1,9 @@
 import { useRef } from 'react';
 
-import SideBarLeft from './components/SideBarLeft';
+import SidebarLeft from './components/SidebarLeft';
+import SidebarRight from './components/SidebarRight';
 import LogConsole from './components/LogConsole';
-import MetricsPanel from './components/MetricsPanel';
+
 import TopBarEngine from './components/TopBarEngine';
 import { QuickBuildOverlay } from './components/QuickBuildOverlay';
 import { SceneImportLoadingOverlay } from './components/SceneImportLoadingOverlay';
@@ -93,7 +94,7 @@ function EngineViewInner({ projectType, gameStyle, initialSavePath, initialExtra
     <SidebarAccordionProvider>
     <div className="app-shell d-flex flex-column">
       <div className="d-flex flex-grow-1 overflow-hidden">
-        <SideBarLeft
+        <SidebarLeft
           projectType={projectType}
           gameStyle={gameStyle}
           initialSavePath={initialSavePath}
@@ -122,14 +123,13 @@ function EngineViewInner({ projectType, gameStyle, initialSavePath, initialExtra
           </main>
 
           <div className="row g-0" style={{ height: 120 }}>
-            <div className="col-8">
+            <div className="col-12">
               <LogConsole />
-            </div>
-            <div className="col-4">
-              <MetricsPanel />
             </div>
           </div>
         </div>
+
+        <SidebarRight projectType={projectType} />
       </div>
     </div>
     </SidebarAccordionProvider>

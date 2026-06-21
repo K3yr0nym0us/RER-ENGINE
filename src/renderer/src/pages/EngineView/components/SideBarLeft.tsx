@@ -1,5 +1,5 @@
 import { Accordion } from 'react-bootstrap';
-import { CameraAccordion, ControlsAccordion, ScenesAccordion, WorldAccordion, ToolsAccordion } from './sidebar';
+import { CameraAccordion, ControlsAccordion, ScenesAccordion, ToolsAccordion } from './sidebar';
 import ResourcesAccordion from './sidebar/ResourcesAccordion/ResourcesAccordion';
 import EntitiesAccordion from './sidebar/EntitiesAccordion/EntitiesAccordion';
 import UIAccordion from './sidebar/UIAccordion/UIAccordion';
@@ -10,7 +10,7 @@ import { useSidebarAccordion } from '../../../context/SidebarAccordionContext';
 
 import type { GameStyle, ProjectType } from '@shared-types';
 
-export function SideBarLeft({
+export function SidebarLeft({
   projectType,
   gameStyle,
   initialSavePath,
@@ -34,10 +34,6 @@ export function SideBarLeft({
 
         {(projectType === '2D' || projectType === '3D') && (
           <>
-            <Accordion {...sidebarAccordion.propsFor('mundo')}>
-              <WorldAccordion projectType={projectType} />
-            </Accordion>
-
             <Accordion {...sidebarAccordion.propsFor('camera')}>
               <CameraAccordion
                 projectType={projectType}
@@ -81,4 +77,4 @@ export function SideBarLeft({
   );
 }
 
-export default SideBarLeft;
+export default SidebarLeft;

@@ -89,7 +89,7 @@ export function MetricsPanel() {
   const gpuPercent = combinedAppGpuPercent(resourceUsage, debugMetrics?.gpu_percent);
 
   return (
-    <div className="metrics-panel d-flex flex-column h-100 px-2 py-2">
+    <div className="metrics-panel d-flex flex-column px-2 py-2">
       <span
         className="fw-bold text-secondary d-block text-center w-100"
         style={{ fontSize: 13, letterSpacing: '0.04em' }}

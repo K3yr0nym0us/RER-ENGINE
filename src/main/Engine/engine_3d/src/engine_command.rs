@@ -126,7 +126,13 @@ pub enum EngineCommand3dOnly {
     SetReflectionTier { tier: String },
     SetReflectionDebugView { view: String },
     SetShadowTier { tier: String },
-    SetTaa { enabled: bool },
+    SetTaa {
+        enabled: bool,
+        #[serde(default)]
+        blend: Option<f32>,
+        #[serde(default)]
+        jitter_scale: Option<f32>,
+    },
     SetCameraFov { fov_y: f32 },
     #[serde(rename = "set_play_editor_frustum_distance")]
     SetPlayEditorFrustumDistance { distance: f32 },
@@ -196,8 +202,22 @@ mod tests {
         let json = r#"{"cmd":"set_taa","enabled":true}"#;
         let cmd: EngineCommand = serde_json::from_str(json).expect("set_taa IPC");
         match cmd {
-            EngineCommand::Only3d(EngineCommand3dOnly::SetTaa { enabled }) => {
+            EngineCommand::Only3d(EngineCommand3dOnly::SetTaa { enabled, .. }) => {
                 assert!(enabled);
+            }
+            other => panic!("expected Only3d SetTaa, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn deserialize_set_taa_command_with_params() {
+        let json = r#"{"cmd":"set_taa","enabled":true,"blend":0.7,"jitter_scale":0.8}"#;
+        let cmd: EngineCommand = serde_json::from_str(json).expect("set_taa IPC with params");
+        match cmd {
+            EngineCommand::Only3d(EngineCommand3dOnly::SetTaa { enabled, blend, jitter_scale }) => {
+                assert!(enabled);
+                assert_eq!(blend, Some(0.7));
+                assert_eq!(jitter_scale, Some(0.8));
             }
             other => panic!("expected Only3d SetTaa, got {other:?}"),
         }

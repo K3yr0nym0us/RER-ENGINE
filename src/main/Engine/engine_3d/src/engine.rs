@@ -444,9 +444,19 @@ impl State {
         log::info!("[vsync] V-Sync {}", if enabled { "activado" } else { "desactivado" });
     }
 
-    /// Activa o desactiva TAA (sombra + escena).
-    pub fn set_taa(&mut self, enabled: bool) {
+    /// Activa o desactiva TAA (sombra + escena) y opcionalmente ajusta blend/jitter.
+    pub fn set_taa(&mut self, enabled: bool, blend: Option<f32>, jitter_scale: Option<f32>) {
+        if let Some(b) = blend {
+            self.taa.blend = b.clamp(0.0, 1.0);
+        }
+        if let Some(j) = jitter_scale {
+            self.taa.jitter_scale = j.clamp(0.0, 2.0);
+        }
         self.taa.set_enabled(enabled);
-        log::info!("[taa] TAA {}", if enabled { "activado" } else { "desactivado" });
+        log::info!(
+            "[taa] TAA: enabled={enabled}, blend={:.2}, jitter={:.2}",
+            self.taa.blend,
+            self.taa.jitter_scale
+        );
     }
 }

@@ -101,6 +101,8 @@ struct LitCompositeUniforms {
 pub struct TaaPass {
     pub enabled: bool,
     pub scene_taa_enabled: bool,
+    pub blend: f32,
+    pub jitter_scale: f32,
     ambient_view: TextureView,
     direct_view: TextureView,
     depth_export_view: TextureView,
@@ -371,6 +373,8 @@ impl TaaPass {
             lit_composite_uniform_buffer,
             sampler,
             shadow_sampler,
+            blend: SCENE_HISTORY_BLEND,
+            jitter_scale: 1.0,
             frame_index: 0,
             current_jitter: [0.0; 2],
             shadow_first_frame: true,
@@ -588,6 +592,8 @@ impl TaaPass {
         self.scene_history_index = 0;
         self.shadow_first_frame = true;
         self.scene_first_frame = true;
+        self.blend = SCENE_HISTORY_BLEND;
+        self.jitter_scale = 1.0;
         self.frame_index = 0;
 
         self.rebuild_cached_bind_groups(device);
@@ -598,7 +604,10 @@ impl TaaPass {
             self.shadow_first_frame = true;
             self.scene_first_frame = true;
         }
-        self.current_jitter = halton_jitter(self.frame_index);
+        let mut jit = halton_jitter(self.frame_index);
+        jit[0] *= self.jitter_scale;
+        jit[1] *= self.jitter_scale;
+        self.current_jitter = jit;
     }
 
     pub fn set_enabled(&mut self, enabled: bool) {
@@ -844,7 +853,7 @@ impl TaaPass {
         let blend = if self.scene_first_frame {
             0.0
         } else {
-            SCENE_HISTORY_BLEND
+            self.blend
         };
         queue.write_buffer(
             &self.scene_taa_uniform_buffer,

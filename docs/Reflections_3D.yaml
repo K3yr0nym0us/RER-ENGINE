@@ -6,8 +6,10 @@
 #   - docs/IPC_Protocol.yaml
 #   - docs/RHAI_API.yaml
 #   - docs/Programing_Model.yaml
+#   - docs/TAA_3D.yaml
+#   - docs/Shadows_3D.yaml
 
-version: 3
+version: 4
 updated: 2026-06-21
 
 principle:
@@ -92,8 +94,14 @@ commands:
     effect: Cambia tier global, libera TLAS si baja de High, emite reflection_tier_changed
   set_reflection_debug_view:
     params:
-      view: final | normals | depth | ssr_hits | reflection_mask | base_color | trace_strength | path_trace | …
-    effect: Vista debug en viewport (editor). path_trace requiere tier High+ y RT GPU.
+      view: final | normals | roughness | ssr_hits | reflection_mask
+    effect: |
+      Vista debug en viewport (editor).
+      final: salida normal compuesta.
+      normals: normales del G-buffer (octahedral empaquetado).
+      roughness: rugosidad cruda (1=mate, 0=espejo).
+      ssr_hits: píxeles donde SSR encuentra superficie.
+      reflection_mask: máscara de fuerza de rastreo (F0 unificado + rugosidad).
 
 events:
   reflection_tier_changed:
@@ -140,18 +148,9 @@ debug_views:
   active:
     - final
     - normals
-    - depth
+    - roughness
     - ssr_hits
     - reflection_mask
-    - base_color
-    - trace_strength
-    - ssr_final_composite
-    - path_trace
-  deprecated:
-    - ssr_hit_uv_world_screen_pair
-    - ssr_hit_uv_world_screen_delta
-    - ssr_hit_uv_world_screen_split
-    note: world/screen eran idénticos tras unificar dirección RTIOW; alias de ssr_hit_uv
 
 ui:
   accordion: World → Reflejos (tier + debug view)

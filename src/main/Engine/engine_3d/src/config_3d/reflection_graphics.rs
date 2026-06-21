@@ -14,56 +14,9 @@ pub enum ReflectionTier {
 pub enum ReflectionDebugView {
     Final,
     Normals,
-    Depth,
+    Roughness,
     SsrHits,
     ReflectionMask,
-    /// Solo el buffer `ambient`: en el metal ES la contribución del cubemap (entorno). Aísla
-    /// si el grano viene del cubemap (sin SSR/RT encima).
-    Cubemap,
-    /// Solo el color del reflejo SSR+RT (`t_reflection.rgb`). Aísla si el grano viene de SSR/RT.
-    ReflectionColor,
-    /// Rugosidad cruda del G-buffer (`surface.g`: blanco=1 mate, negro=0 espejo).
-    Roughness,
-    /// Metallic crudo del G-buffer (`direct.a`: blanco=1 metal, negro=0 dieléctrico).
-    Metallic,
-    /// Posición mundo reconstruida desde depth (patrón RGB).
-    ReconWorld,
-    /// NDC OpenGL usado en inv_view_proj (z ya convertido de Vulkan).
-    ReconNdc,
-    /// Posición en espacio vista (matriz view del frame).
-    ReconView,
-    /// UV reproyectada world→clip→uv; canal B = error |Δuv|.
-    ReprojectUv,
-    /// RGB = view_dir mundo (superficie → cámara).
-    SsrViewVector,
-    /// RGB = refl_dir mundo tras reflect(incident, normal).
-    SsrReflectionVector,
-    /// R = recorrido UV (px), G = progreso march, B = hit.
-    SsrRaymarchPath,
-    /// |Δdepth| rayo vs buffer en el hit (escala ×10).
-    SsrHitDepthDelta,
-    /// UV final del impacto SSR (RG).
-    SsrHitUv,
-    /// Color lit_scene en hit UV sin blur (ambient+direct).
-    SsrHitColorRaw,
-    /// Color lit_scene en hit UV con blur 7×7 (como SSR).
-    SsrHitColorBlurred,
-    /// Salida SSR sin blur (re-ejecuta SSR con ssr_blur_enabled=0).
-    SsrNoBlur,
-    /// RG = hit_uv world-space, BA = hit_uv screen-space (march en UV/proyección).
-    SsrHitUvWorldScreenPair,
-    /// R=|Δu| G=|Δv| B=|Δuv|×50 entre hit world-space y screen-space.
-    SsrHitUvWorldScreenDelta,
-    /// Mitad izq.: hit UV world (RG); mitad der.: hit UV screen (RG).
-    SsrHitUvWorldScreenSplit,
-    /// Escena post-composite (misma mezcla que Final, sin TAA escena).
-    SsrFinalComposite,
-    /// Albedo del G-buffer (`base_color` Rgba8Unorm) para validar tinte RTIOW.
-    BaseColor,
-    /// Máscara `refl_trace_strength` (F0 unificado + rugosidad).
-    TraceStrength,
-    /// Path tracer debug (2 rebotes, referencia RTIOW).
-    PathTrace,
 }
 
 impl ReflectionDebugView {
@@ -71,50 +24,9 @@ impl ReflectionDebugView {
         match s.trim().to_lowercase().as_str() {
             "final" | "" => Some(Self::Final),
             "normals" | "normal" => Some(Self::Normals),
-            "depth" => Some(Self::Depth),
+            "roughness" | "rough" => Some(Self::Roughness),
             "ssr_hits" | "ssrhits" | "hits" => Some(Self::SsrHits),
             "reflection_mask" | "mask" => Some(Self::ReflectionMask),
-            "cubemap" | "cube" | "env" => Some(Self::Cubemap),
-            "reflection_color" | "refl_color" | "ssr_rt" => Some(Self::ReflectionColor),
-            "roughness" | "rough" => Some(Self::Roughness),
-            "metallic" | "metal" => Some(Self::Metallic),
-            "recon_world" | "world_pos" => Some(Self::ReconWorld),
-            "recon_ndc" | "ndc" => Some(Self::ReconNdc),
-            "recon_view" | "view_pos" => Some(Self::ReconView),
-            "reproject_uv" | "reproj_uv" => Some(Self::ReprojectUv),
-            "ssr_view_vector" | "view_vector" => Some(Self::SsrViewVector),
-            "ssr_reflection_vector" | "reflection_vector" | "refl_vector" => {
-                Some(Self::SsrReflectionVector)
-            }
-            "ssr_raymarch_path" | "raymarch_path" | "ray_path" => Some(Self::SsrRaymarchPath),
-            "ssr_hit_depth_delta" | "hit_depth_delta" | "depth_delta" => {
-                Some(Self::SsrHitDepthDelta)
-            }
-            "ssr_hit_uv" | "hit_uv" => Some(Self::SsrHitUv),
-            "ssr_hit_color_raw" | "hit_color_raw" => Some(Self::SsrHitColorRaw),
-            "ssr_hit_color_blurred" | "hit_color_blurred" => Some(Self::SsrHitColorBlurred),
-            "ssr_no_blur" | "no_blur" => Some(Self::SsrNoBlur),
-            "ssr_hit_color_uv" | "hit_color_uv" | "hit_uv_color_uv" => {
-                Some(Self::SsrHitUvWorldScreenPair)
-            }
-            "ssr_hit_color_uv_delta" | "hit_color_uv_delta" | "color_uv_delta" => {
-                Some(Self::SsrHitUvWorldScreenDelta)
-            }
-            "ssr_hit_uv_world_screen" | "hit_uv_world_screen" | "world_screen_pair" => {
-                Some(Self::SsrHitUvWorldScreenPair)
-            }
-            "ssr_hit_uv_world_screen_delta" | "hit_uv_world_screen_delta" | "world_screen_delta" => {
-                Some(Self::SsrHitUvWorldScreenDelta)
-            }
-            "ssr_hit_uv_world_screen_split" | "hit_uv_world_screen_split" | "world_screen_split" => {
-                Some(Self::SsrHitUvWorldScreenSplit)
-            }
-            "ssr_final_composite" | "final_composite" | "composite" => {
-                Some(Self::SsrFinalComposite)
-            }
-            "base_color" | "albedo" => Some(Self::BaseColor),
-            "trace_strength" | "refl_strength" => Some(Self::TraceStrength),
-            "path_trace" | "pathtrace" | "rt_pathtrace" => Some(Self::PathTrace),
             _ => None,
         }
     }
@@ -123,32 +35,9 @@ impl ReflectionDebugView {
         match self {
             Self::Final => "final",
             Self::Normals => "normals",
-            Self::Depth => "depth",
+            Self::Roughness => "roughness",
             Self::SsrHits => "ssr_hits",
             Self::ReflectionMask => "reflection_mask",
-            Self::Cubemap => "cubemap",
-            Self::ReflectionColor => "reflection_color",
-            Self::Roughness => "roughness",
-            Self::Metallic => "metallic",
-            Self::ReconWorld => "recon_world",
-            Self::ReconNdc => "recon_ndc",
-            Self::ReconView => "recon_view",
-            Self::ReprojectUv => "reproject_uv",
-            Self::SsrViewVector => "ssr_view_vector",
-            Self::SsrReflectionVector => "ssr_reflection_vector",
-            Self::SsrRaymarchPath => "ssr_raymarch_path",
-            Self::SsrHitDepthDelta => "ssr_hit_depth_delta",
-            Self::SsrHitUv => "ssr_hit_uv",
-            Self::SsrHitColorRaw => "ssr_hit_color_raw",
-            Self::SsrHitColorBlurred => "ssr_hit_color_blurred",
-            Self::SsrNoBlur => "ssr_no_blur",
-            Self::SsrHitUvWorldScreenPair => "ssr_hit_uv_world_screen",
-            Self::SsrHitUvWorldScreenDelta => "ssr_hit_uv_world_screen_delta",
-            Self::SsrHitUvWorldScreenSplit => "ssr_hit_uv_world_screen_split",
-            Self::SsrFinalComposite => "ssr_final_composite",
-            Self::BaseColor => "base_color",
-            Self::TraceStrength => "trace_strength",
-            Self::PathTrace => "path_trace",
         }
     }
 
@@ -156,32 +45,9 @@ impl ReflectionDebugView {
         match self {
             Self::Final => 0,
             Self::Normals => 1,
-            Self::Depth => 2,
-            Self::SsrHits => 3,
-            Self::ReflectionMask => 4,
-            Self::Cubemap => 5,
-            Self::ReflectionColor => 6,
-            Self::Roughness => 7,
-            Self::Metallic => 8,
-            Self::ReconWorld => 9,
-            Self::ReconNdc => 10,
-            Self::ReconView => 11,
-            Self::ReprojectUv => 12,
-            Self::SsrViewVector => 13,
-            Self::SsrReflectionVector => 14,
-            Self::SsrRaymarchPath => 15,
-            Self::SsrHitDepthDelta => 16,
-            Self::SsrHitUv => 17,
-            Self::SsrHitColorRaw => 18,
-            Self::SsrHitColorBlurred => 19,
-            Self::SsrNoBlur => 20,
-            Self::BaseColor => 21,
-            Self::TraceStrength => 22,
-            Self::SsrHitUvWorldScreenPair => 23,
-            Self::SsrHitUvWorldScreenDelta => 24,
-            Self::SsrHitUvWorldScreenSplit => 25,
-            Self::SsrFinalComposite => 26,
-            Self::PathTrace => 27,
+            Self::SsrHits => 2,
+            Self::ReflectionMask => 3,
+            Self::Roughness => 4,
         }
     }
 }

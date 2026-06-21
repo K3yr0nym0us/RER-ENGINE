@@ -905,7 +905,6 @@ impl State {
                 }
             }
             EngineCommand::Only3d(EngineCommand3dOnly::SetReflectionDebugView { view }) => {
-                log::info!("[reflexiones] IPC set_reflection_debug_view: {view}");
                 if let Some(v) =
                     crate::config_3d::reflection_graphics::ReflectionDebugView::from_wire(&view)
                 {
@@ -922,10 +921,10 @@ impl State {
                     log::warn!("[sombras] tier IPC no reconocido: {tier}");
                 }
             }
-            EngineCommand::Only3d(EngineCommand3dOnly::SetTaa { enabled }) => {
-                log::info!("[taa] IPC set_taa: {enabled}");
-                self.set_taa(enabled);
-                send_event(&EngineEvent::TaaChanged { enabled });
+            EngineCommand::Only3d(EngineCommand3dOnly::SetTaa { enabled, blend, jitter_scale }) => {
+                // TAA IPC log suppressed
+                self.set_taa(enabled, blend, jitter_scale);
+                send_event(&EngineEvent::TaaChanged { enabled, blend, jitter_scale });
             }
             EngineCommand::Common(EngineCommandCommon::SetDebugMode { show }) => {
                 self.debug_mode = show;

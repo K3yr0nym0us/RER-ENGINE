@@ -326,6 +326,12 @@ export function createEngineActions({
 		addLog(`[TAA] ${enabled ? 'Activado' : 'Desactivado'}`);
 	};
 
+	const setTaaParams = (params: { blend: number; jitterScale: number; enabled: boolean }) => {
+		dispatch({ type: 'SET_WORLD_CONFIG', payload: { taaBlend: params.blend, taaJitterScale: params.jitterScale } });
+		send3dFn({ cmd: 'set_taa', enabled: params.enabled, blend: params.blend, jitter_scale: params.jitterScale });
+		// Params log suppressed
+	};
+
 	const setReflectionDebugView = (view: ReflectionDebugView | string) => {
 		const normalized = normalizeReflectionDebugView(view);
 		dispatch({ type: 'SET_WORLD_CONFIG', payload: { reflectionDebugView: normalized } });
@@ -1024,6 +1030,7 @@ export function createEngineActions({
 		setReflectionTier,
 		setShadowTier,
 		setTaaEnabled,
+		setTaaParams,
 		setReflectionDebugView,
 		setTextureDetailDistance,
 		removeCollider,

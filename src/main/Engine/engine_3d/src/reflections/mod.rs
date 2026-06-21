@@ -11,7 +11,6 @@ pub(crate) mod rt_extensions;
 pub(crate) mod rt_accel;
 pub(crate) mod rt_reflections_v2;
 pub(crate) mod rt_pipeline;
-pub(crate) mod rt_pathtrace;
 pub(crate) mod ssil;
 pub(crate) mod tlas;
 mod ssr_trace_readback;
@@ -28,7 +27,6 @@ use crate::config_3d::reflection_graphics::{
 };
 use crate::engine::SceneUniforms;
 use crate::reflections::rt_accel::RtAccel;
-use crate::reflections::rt_pathtrace::RtPathTracePass;
 use crate::reflections::rt_reflections_v2::RtReflectionPassV2;
 use crate::reflections::ssil::SsilPass;
 use crate::reflections::ssr_trace_readback::SsrTraceReadback;
@@ -59,18 +57,12 @@ const _: () = assert!(std::mem::size_of::<TemporalUniforms>() == 24);
 const _: () = assert!(std::mem::size_of::<CompositeUniforms>() == 16);
 const _: () = assert!(std::mem::size_of::<DebugUniforms>() == 256);
 
-fn ssr_blur_enabled_for_ssr_pass(debug_view: ReflectionDebugView) -> f32 {
-    match debug_view {
-        ReflectionDebugView::SsrNoBlur | ReflectionDebugView::SsrHitColorRaw => 0.0,
-        _ => 1.0,
-    }
+fn ssr_blur_enabled_for_ssr_pass(_debug_view: ReflectionDebugView) -> f32 {
+    1.0
 }
 
-fn ssr_blur_enabled_for_debug_shader(debug_view: ReflectionDebugView) -> f32 {
-    match debug_view {
-        ReflectionDebugView::SsrHitColorRaw | ReflectionDebugView::SsrNoBlur => 0.0,
-        _ => 1.0,
-    }
+fn ssr_blur_enabled_for_debug_shader(_debug_view: ReflectionDebugView) -> f32 {
+    1.0
 }
 
 #[repr(C)]
@@ -142,12 +134,6 @@ pub struct ReflectionPass {
     reflection_rt_scratch_view: TextureView,
     _composite_scratch_texture: wgpu::Texture,
     composite_scratch_view: TextureView,
-    /// Scratch con COPY_SRC para readback CPU en vista `ssr_hit_color_uv_delta`.
-    _debug_scratch_texture: wgpu::Texture,
-    debug_scratch_view: TextureView,
-    debug_present_blit_pipeline: wgpu::RenderPipeline,
-    _debug_present_blit_bgl: wgpu::BindGroupLayout,
-    debug_present_blit_bind_group: wgpu::BindGroup,
     reflection_history_index: u8,
     reflection_first_frame: bool,
     /// Tras temporal, el resultado válido está en history.
@@ -160,7 +146,6 @@ pub struct ReflectionPass {
     present_format: TextureFormat,
     pub profiler: ReflectionProfilerMs,
     rt_pass: RtReflectionPassV2,
-    path_trace_pass: RtPathTracePass,
     ssil_pass: SsilPass,
     rt_hw_available: bool,
     /// SSR centro readback (desactivado; evita spam en consola).
@@ -216,8 +201,6 @@ impl ReflectionPass {
             create_rt_scratch_texture(device, color_format, refl_width, refl_height);
         let (composite_scratch_texture, composite_scratch_view) =
             create_composite_scratch_texture(device, color_format, width, height);
-        let (debug_scratch_texture, debug_scratch_view) =
-            create_debug_scratch_texture(device, present_format, width, height);
         let (ssr_log_texture, ssr_log_view) = create_ssr_log_texture(device);
 
         let ssr_shader = load_refl_wgsl(device, "ssr", include_str!("ssr.wgsl"));
@@ -375,34 +358,6 @@ impl ReflectionPass {
             Some(&debug_pl),
         ));
 
-        let debug_present_blit_shader =
-            device.create_shader_module(include_wgsl!("../taa/taa_blit.wgsl"));
-        let debug_present_blit_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("reflection-debug-present-blit-bgl"),
-            entries: &[
-                texture_entry(0, true),
-                sampler_entry(1, true),
-            ],
-        });
-        let debug_present_blit_pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("reflection-debug-present-blit-pl"),
-            bind_group_layouts: &[Some(&debug_present_blit_bgl)],
-            immediate_size: 0,
-        });
-        let debug_present_blit_pipeline = device.create_render_pipeline(&fullscreen_pipeline_desc(
-            "reflection-debug-present-blit",
-            &debug_present_blit_shader,
-            "vs_main",
-            &present_target,
-            Some(&debug_present_blit_pl),
-        ));
-        let debug_present_blit_bind_group = make_present_blit_bind_group(
-            device,
-            &debug_present_blit_bgl,
-            &debug_scratch_view,
-            &linear_sampler,
-        );
-
         let ssr_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("ssr-uniforms"),
             contents: bytemuck::bytes_of(&SsrUniforms {
@@ -559,11 +514,6 @@ impl ReflectionPass {
             reflection_rt_scratch_view,
             _composite_scratch_texture: composite_scratch_texture,
             composite_scratch_view,
-            _debug_scratch_texture: debug_scratch_texture,
-            debug_scratch_view,
-            debug_present_blit_pipeline,
-            _debug_present_blit_bgl: debug_present_blit_bgl,
-            debug_present_blit_bind_group,
             reflection_history_index: 0,
             reflection_first_frame: true,
             reflection_resolved_from_history: false,
@@ -575,7 +525,6 @@ impl ReflectionPass {
             present_format,
             profiler: ReflectionProfilerMs::default(),
             rt_pass: RtReflectionPassV2::new(device, color_format, refl_width, refl_height, rt_hw_available),
-            path_trace_pass: RtPathTracePass::new(device, refl_width, refl_height),
             ssil_pass: SsilPass::new(device, color_format, refl_width, refl_height),
             rt_hw_available,
             _ssr_log_texture: ssr_log_texture,
@@ -654,64 +603,6 @@ impl ReflectionPass {
         let frame_index = self.reflection_frame_index;
         self.reflection_frame_index = self.reflection_frame_index.wrapping_add(1);
 
-        if debug_view == ReflectionDebugView::PathTrace {
-            if settings.rt_enabled && rt_available && accel.node_count > 0 {
-                self.path_trace_pass.dispatch(
-                    device,
-                    queue,
-                    encoder,
-                    accel,
-                    depth_export_view,
-                    surface_view,
-                    direct_view,
-                    base_color_view,
-                    inv_view_proj,
-                    view_proj,
-                    cam_pos,
-                    near_plane,
-                    far_plane,
-                    settings,
-                    frame_index,
-                    probe_bind_group,
-                    shadow_view,
-                    shadow_sampler,
-                    scene_uniforms,
-                );
-            }
-            let debug_u = DebugUniforms {
-                mode: debug_view.shader_index(),
-                max_roughness: settings.max_roughness_to_trace,
-                near_plane,
-                far_plane,
-                cam_pos: [cam_pos.x, cam_pos.y, cam_pos.z, 1.0],
-                inv_view_proj: inv_view_proj.to_cols_array_2d(),
-                view_proj: view_proj.to_cols_array_2d(),
-                view: view.to_cols_array_2d(),
-                resolution: [self.width as f32, self.height as f32],
-                max_steps: settings.max_steps,
-                max_distance_m: settings.max_distance_m,
-                step_size: (settings.max_distance_m / settings.max_steps.max(1) as f32).clamp(0.05, 0.25),
-                ssr_blur_enabled: 0.0,
-                _struct_pad: [0.0; 2],
-            };
-            queue.write_buffer(&self.debug_uniform_buffer, 0, bytemuck::bytes_of(&debug_u));
-            self.debug_bind_group = make_debug_bind_group(
-                device,
-                &self.debug_bgl,
-                &self.debug_uniform_buffer,
-                lit_scene_view,
-                depth_export_view,
-                normal_roughness_view,
-                self.path_trace_pass.output_view(),
-                surface_view,
-                direct_view,
-                base_color_view,
-                &self.linear_sampler,
-                &self.nearest_sampler,
-            );
-            self.reflection_resolved_from_history = false;
-            return true;
-        }
 
         if crate::reflections::rt_extensions::rt_diffuse_gi_enabled(&settings) {
             self.ssil_pass.dispatch(
@@ -1083,30 +974,14 @@ impl ReflectionPass {
         if debug_view == ReflectionDebugView::Final {
             return;
         }
-        let uv_delta_log = debug_view == ReflectionDebugView::SsrHitUvWorldScreenDelta;
-        let render_target = if uv_delta_log {
-            &self.debug_scratch_view
-        } else {
-            surface_view
-        };
         draw_fullscreen_pass(
             encoder,
             &self.debug_pipeline,
             &self.debug_bind_group,
-            render_target,
+            surface_view,
             wgpu::LoadOp::Clear(wgpu::Color::BLACK),
             Some("reflection-debug-blit"),
         );
-        if uv_delta_log {
-            draw_fullscreen_pass(
-                encoder,
-                &self.debug_present_blit_pipeline,
-                &self.debug_present_blit_bind_group,
-                surface_view,
-                wgpu::LoadOp::Load,
-                Some("reflection-debug-present-blit"),
-            );
-        }
     }
 }
 
@@ -1244,31 +1119,7 @@ fn create_composite_scratch_texture(
     (texture, view)
 }
 
-fn create_debug_scratch_texture(
-    device: &Device,
-    format: TextureFormat,
-    width: u32,
-    height: u32,
-) -> (wgpu::Texture, TextureView) {
-    let texture = device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("reflection-debug-scratch"),
-        size: wgpu::Extent3d {
-            width: width.max(1),
-            height: height.max(1),
-            depth_or_array_layers: 1,
-        },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-            | wgpu::TextureUsages::TEXTURE_BINDING
-            | wgpu::TextureUsages::COPY_SRC,
-        view_formats: &[],
-    });
-    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-    (texture, view)
-}
+
 
 fn create_ssr_log_texture(device: &Device) -> (wgpu::Texture, TextureView) {
     let texture = device.create_texture(&wgpu::TextureDescriptor {
@@ -1318,27 +1169,7 @@ fn draw_fullscreen_pass(
     pass.draw(0..3, 0..1);
 }
 
-fn make_present_blit_bind_group(
-    device: &Device,
-    layout: &wgpu::BindGroupLayout,
-    source: &TextureView,
-    sampler: &wgpu::Sampler,
-) -> wgpu::BindGroup {
-    device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("reflection-debug-present-blit-bg"),
-        layout,
-        entries: &[
-            wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::TextureView(source),
-            },
-            wgpu::BindGroupEntry {
-                binding: 1,
-                resource: wgpu::BindingResource::Sampler(sampler),
-            },
-        ],
-    })
-}
+
 
 fn uniform_entry(binding: u32, visibility: wgpu::ShaderStages) -> wgpu::BindGroupLayoutEntry {
     wgpu::BindGroupLayoutEntry {

@@ -463,10 +463,8 @@ function panelLogLineForEngineEvent(
 		return count > 0 ? `[Fusión] ${count} vínculo(s) restaurados al cargar escena` : null;
 	}
 
-	if (event.event === 'model_loaded') {
-		if (shouldSilenceEngineEventLog(event.event, refs, projectType)) return null;
-		const name = (event.name as string | undefined)?.trim() || 'entidad';
-		return `[Modelo] Instanciado «${name}»`;
+	if (event.event === 'model_loaded' || event.event === 'entity_model_replaced') {
+		return null;
 	}
 
 	if (shouldSilenceEngineEventLog(event.event, refs, projectType)) return null;
@@ -2912,8 +2910,10 @@ export function createEngineEventHandler({
 
 		if (event.event === 'taa_changed') {
 			const enabled = Boolean(event.enabled);
-			dispatch({ type: 'SET_WORLD_CONFIG', payload: { taaEnabled: enabled } });
-			addLog(`[TAA] Motor confirmó: ${enabled ? 'Activado' : 'Desactivado'}`);
+			const payload: Record<string, unknown> = { taaEnabled: enabled };
+			if (event.blend != null) payload.taaBlend = event.blend;
+			if (event.jitter_scale != null) payload.taaJitterScale = event.jitter_scale;
+			dispatch({ type: 'SET_WORLD_CONFIG', payload });
 		}
 
 		if (event.event === 'debug_metrics') {

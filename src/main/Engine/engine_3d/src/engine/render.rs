@@ -808,9 +808,7 @@ impl State {
 
         if rt_sync {
             self.rt_accel.ensure_hw(&self.device);
-            let path_trace_debug = self.reflection_debug_view
-                == crate::config_3d::reflection_graphics::ReflectionDebugView::PathTrace;
-            let build_cpu_bvh = path_trace_debug || !self.rt_accel.hw_active();
+            let build_cpu_bvh = !self.rt_accel.hw_active();
             let include_skinned = !reflection_settings.rt_static_only;
             let instances = crate::reflections::tlas::collect_rt_instances(
                 self,

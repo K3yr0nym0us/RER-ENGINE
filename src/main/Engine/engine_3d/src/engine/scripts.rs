@@ -285,7 +285,7 @@ impl State {
                     self.set_vsync(enabled);
                 }
                 ScriptCmd::SetTaa { enabled } => {
-                    self.set_taa(enabled);
+                    self.set_taa(enabled, None, None);
                 }
                 ScriptCmd::SetActivePlayerUiScreen { screen_id } => {
                     if let Err(e) = self.set_active_player_ui_screen(&screen_id) {

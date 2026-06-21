@@ -724,7 +724,13 @@ pub enum EngineEvent {
     #[serde(rename = "reflection_debug_view_changed")]
     ReflectionDebugViewChanged { view: String },
     #[serde(rename = "taa_changed")]
-    TaaChanged { enabled: bool },
+    TaaChanged {
+        enabled: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        blend: Option<f32>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        jitter_scale: Option<f32>,
+    },
     /// Emitido ~1 vez por segundo con métricas de rendimiento del motor.
     DebugMetrics {
         fps:            f32,

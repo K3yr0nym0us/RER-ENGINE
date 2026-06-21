@@ -28,6 +28,16 @@
 
 ---
 
+## Renderización 3D
+
+| Documento | Contenido |
+|-----------|-----------|
+| [Reflections_3D.yaml](./Reflections_3D.yaml) | Reflejos SSR/RT/probes por tier, debug views, G-buffer, RT v2 |
+| [TAA_3D.yaml](./TAA_3D.yaml) | Anti-aliasing temporal: blend, jitter, pipeline, IPC |
+| [Shadows_3D.yaml](./Shadows_3D.yaml) | Shadow map único, tiers de resolución, IPC |
+
+---
+
 ## Entidades y gameplay
 
 | Documento | Contenido |

@@ -1433,6 +1433,8 @@ fn apply_loaded_proyect_3d_with_scene(
     });
     send_event(&EngineEvent::TaaChanged {
         enabled: state.taa.enabled,
+        blend: Some(state.taa.blend),
+        jitter_scale: Some(state.taa.jitter_scale),
     });
 
     load_project_asset_stores(state, project);

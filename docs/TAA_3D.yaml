@@ -1,0 +1,81 @@
+# TAA 3D (temporal anti-aliasing)
+#
+# Post-proceso 3D alineado con UE / Unity / Godot 4.
+# Solo proyectos 3D. Control en World → Anti-Aliasing.
+#
+# Relacionado con:
+#   - docs/Reflections_3D.yaml
+#   - docs/Shadows_3D.yaml
+#   - docs/IPC_Protocol.yaml
+
+version: 1
+updated: 2026-06-21
+
+principle:
+  owner: motor_3d
+  pipeline: |
+    1. G-buffer ligero (MRT): ambient, direct, shadow_mask, depth_export (R32), velocity+normal (RGBA8).
+    2. Shadow map único 2D (depth compare, resolución por tier de sombras).
+    3. TAA en máscara de sombra → lit-composite:
+       lit = ambient + direct × mix(darkness, 1, shadow).
+    4. TAA de escena (reproject + depth/velocity, depth vía texture_2d filtrable-nearest).
+    5. Blit al swapchain; overlays del editor después del blit.
+  shadow_history_blend: |
+    Acumulación temporal para sombras (más alto = bordes más suaves).
+    Constante interna SHADOW_HISTORY_BLEND = 30/32 ≈ 0.9375.
+  scene_history_blend: |
+    Acumulación temporal de escena (geometría y bordes de objetos).
+    Ajustable por usuario vía blend (0–1, default 0.62).
+  disocclusion_threshold: 0.75 m
+  zoom_stability: |
+    Mantiene más acumulación a distancia media (menos dientes de sierra lejos).
+    Rango 2.5–48 m con factor 1.0 → 0.45.
+
+jitter:
+  method: Halton (2, 3) centrado en [-0.5, 0.5]
+  scale: |
+    Ajustable por usuario (jitter_scale 0–2, default 1.0).
+    Escala el offset subpíxel antes de aplicarlo a la matriz proyección.
+
+commands:
+  set_taa:
+    params:
+      enabled: bool
+      blend: float (0–1, opcional)
+      jitter_scale: float (0–2, opcional)
+    effect: |
+      Activa/desactiva TAA (sombra + escena).
+      blend controla la acumulación temporal de escena (más alto = más suave, más ghosting).
+      jitter_scale escala el subpíxel jitter (más alto = más anti-aliasing, más parpadeo).
+    examples:
+      - '{"cmd":"set_taa","enabled":true}'
+      - '{"cmd":"set_taa","enabled":true,"blend":0.7,"jitter_scale":0.8}'
+
+events:
+  taa_changed:
+    payload: { enabled: bool, blend: float?, jitter_scale: float? }
+    note: |
+      Enviado al cambiar TAA. blend y jitter_scale se omiten (no se serializan)
+      cuando el motor no los ha modificado (Option::None → skip_serializing).
+
+persistence:
+  save_field: taaEnabled, taaBlend, taaJitterScale en world del .save
+  default: { enabled: true, blend: 0.62, jitter_scale: 1.0 }
+
+scripting:
+  rhai:
+    - engine.set_taa(enabled)
+
+format_constants:
+  SHADOW_MASK_FORMAT: Rg16Float
+  DEPTH_EXPORT_FORMAT: R32Float
+  VELOCITY_FORMAT: Rgba8Unorm
+  MRT_LIT_FORMAT: Rgba8Unorm
+  BASE_COLOR_FORMAT: Rgba8Unorm
+
+ui:
+  accordion: World → Anti-Aliasing
+  controls:
+    - toggle: enabled/disabled
+    - slider: blend (0–1, paso 0.01)
+    - slider: jitter_scale (0–2, paso 0.05)

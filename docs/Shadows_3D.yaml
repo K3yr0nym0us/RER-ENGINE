@@ -1,0 +1,67 @@
+# Sombras 3D por nivel (resolución del shadow map)
+#
+# El motor usa un único shadow map 2D (depth compare, sin cascadas CSM).
+# El nivel de calidad controla la resolución del shadow map.
+# CSM (cascaded shadow maps) y distancia extendida de Ultra están en CHECKLIST-3D.md
+# como tarea pendiente.
+#
+# Relacionado con:
+#   - docs/TAA_3D.yaml
+#   - docs/Reflections_3D.yaml
+#   - docs/IPC_Protocol.yaml
+
+version: 1
+updated: 2026-06-21
+
+principle:
+  owner: motor_3d
+  pipeline: |
+    1. Shadow map único 2D (depth compare, resolución variable por tier).
+    2. Sombreado en forward pass vía shadow sampler + scene uniforms.
+    3. TAA en máscara de sombra (shadow_history_blend = 30/32) → lit-composite.
+    4. Slider Shadow darkness se aplica solo en lit-composite (CPU),
+       no en light_params del forward pass.
+  note: |
+    Sin CSM aún. Un solo shadow map ortográfico centrado en la escena.
+    El tier Ultra usa 8192 px, que da cobertura para escenas grandes pero
+    con menor densidad de píxeles de sombra lejos de la cámara.
+
+graphics_tiers:
+  - id: low
+    aliases: [bajo]
+    resolution: 1024
+    note: Resolución base del motor (SHADOW_MAP_SIZE = 1024)
+  - id: medium
+    aliases: [medio]
+    resolution: 2048
+  - id: high
+    aliases: [alto]
+    resolution: 4096
+  - id: ultra
+    aliases: [ultra]
+    resolution: 8192
+
+commands:
+  set_shadow_tier:
+    params: { tier: low | medium | high | ultra }
+    effect: |
+      Cambia la resolución del shadow map. Recrea la textura y todos los
+      bind groups que la referencian (scene + HUD + probe_env cubemap).
+      No hay degradado efectivo: todos los tiers están siempre disponibles.
+
+events:
+  shadow_tier_changed:
+    payload: { tier: string }
+
+persistence:
+  save_field: shadowTier en world del .save
+  default: low
+
+scripting:
+  rhai:
+    - engine.set_shadow_tier(tier)
+
+ui:
+  accordion: World → Shadows
+  controls:
+    - tier selector: low | medium | high | ultra

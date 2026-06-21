@@ -211,6 +211,8 @@ export interface WorldConfig {
 	reflectionDebugView: ReflectionDebugView
 	shadowTier: ShadowTier
 	taaEnabled: boolean
+	taaBlend: number
+	taaJitterScale: number
 }
 
 export const DEFAULT_WORLD_CONFIG: WorldConfig = {
@@ -230,6 +232,8 @@ export const DEFAULT_WORLD_CONFIG: WorldConfig = {
 	reflectionDebugView: 'final',
 	shadowTier: 'low',
 	taaEnabled: true,
+	taaBlend: 0.62,
+	taaJitterScale: 1.0,
 };
 
 export type UiScreenScope = 'player' | 'menu';
@@ -1435,6 +1439,7 @@ export interface EngineContextValue extends EngineState {
 	setReflectionDebugView: (view: ReflectionDebugView) => void
 	setShadowTier: (tier: ShadowTier) => void
 	setTaaEnabled: (enabled: boolean) => void
+	setTaaParams: (params: { blend: number; jitterScale: number; enabled: boolean }) => void
 	setTextureDetailDistance: (distanceM: number) => void
 	removeCollider: (id: number) => void
 	removeExecutionArea: (id: number) => void

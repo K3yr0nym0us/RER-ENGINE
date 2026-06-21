@@ -602,7 +602,7 @@ impl State {
 
     fn finalize_model_preload_on_gpu(&mut self, pending: PendingGpuModelPreload) {
         let path = pending.path;
-        let display_name = self.model_display_label(&path);
+        let _display_name = self.model_display_label(&path);
         self.model_preload_inflight.remove(&path);
 
         if pending.uploaded.is_empty() {
@@ -627,15 +627,7 @@ impl State {
             name,
             model_id,
         });
-        let gpu_msg = format!(
-            "Modelo «{display_name}» subido a GPU ({} parte/s)",
-            self.static_model_cache
-                .get(&path)
-                .map(|p| p.len())
-                .unwrap_or(0)
-        );
-        
-        send_load_progress(&gpu_msg, None, None);
+        // GPU upload progress log suppressed
         if pending.warm_play_character {
             if let Some(play_parts) = pending.play_character_parts {
                 self.sync_upload_play_character_cache(&path, play_parts);
