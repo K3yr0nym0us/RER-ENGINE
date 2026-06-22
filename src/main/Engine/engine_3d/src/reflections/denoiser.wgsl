@@ -7,7 +7,7 @@ struct DenoiseUniforms {
     _pad           : vec2<f32>,
 }
 
-const DENOISE_RADIUS : u32 = 2u;
+const DENOISE_RADIUS : u32 = 3u;
 
 @group(0) @binding(0) var<uniform> u : DenoiseUniforms;
 @group(0) @binding(1) var t_input : texture_2d<f32>;

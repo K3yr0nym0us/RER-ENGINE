@@ -9,8 +9,8 @@
 #   - docs/TAA_3D.yaml
 #   - docs/Shadows_3D.yaml
 
-version: 4
-updated: 2026-06-21
+version: 5
+updated: 2026-06-22
 
 principle:
   owner: motor_3d
@@ -19,11 +19,17 @@ principle:
     Low → SSR (sin temporal) + IBL probes en forward. Sin RT.
     Medium → SSR + acumulación temporal + probes. Sin RT.
     High → SSR + temporal + RT compute (1 rebote, TLAS estático, ray query wgpu).
+            RT shadows activas (sustituyen shadow map para reflejos).
     Ultra → High + skinned en TLAS + 2º rebote especular + dieléctricos + SSIL.
     Skinned / jugador: en Ultra entran al TLAS; en High solo SSR/probes/RT estático.
   rtiow_compat: |
     Cubemap, SSR y RT comparten reflect(incident, normal), F0=albedo en metales,
     atenuación albedo en el rebote y composite aditivo (detalle SSR sobre base).
+  rt_quality: |
+    RT reflections usan GGX importance sampling (NDF) + Cook-Torrance BRDF
+    con división por PDF, firefly clamping, y spatiotemporal denoising.
+    Ray direction: ggx_sample_ndf → reflect(v, H). Weight: F*G*|wo·h|/(|n·wo|*|n·h|).
+    Dielectric refraction usa refl_refract_dir cuando rt_flags.x está activo.
 
 graphics_tiers:
   - id: off
@@ -46,10 +52,11 @@ graphics_tiers:
 
 internal_settings:
   description: ReflectionSettings derivado del tier (no persistido en .save)
+  note: rt_shadows_enabled se eliminó; RT shadows se activan automáticamente cuando tier ≥ High (vía rt_flags.w).
   fields:
     - max_steps
     - max_distance_m
-    - temporal_blend
+    - temporal_blend (base para blend adaptativo por varianza)
     - max_roughness_to_trace
     - rt_enabled
     - rt_static_only
@@ -87,6 +94,13 @@ probes:
   method: texture_cube_array round-robin por frame
   face_size_by_tier: "Off/Low 128, Medium 256, High 512, Ultra 1024"
   probe_meta: centro + radio; solo selección de capa (sin parallax cubemap)
+
+rt_shadows:
+  activation: Automática. rt_flags.w > 0.5 cuando ReflectionTier ≥ High.
+    Sin IPC manual ni toggle en UI. Se desactiva en Low/Medium/Off.
+  ray: trace_rt_hw (HW) o bvh_trace (BVH) desde hit_pos + n*normal_bias hacia light_dir.
+    Occlusion: select(1.0, 0.0, hit.found). Reemplaza PCF cuando está activo.
+  note: Skinned meshes solo en TLAS en Ultra; en High el shadow ray usa BVH fallback si la instancia no está en HW.
 
 commands:
   set_reflection_tier:
@@ -139,6 +153,30 @@ rt_v2:
     Hit shading: material por instancia (refl_hit_lighting_lite + textura UV baricéntrica);
     reproyección G-buffer solo refuerzo cuando depth/normal coherentes.
     Ultra: 2º rebote metal + refracción dieléctrica en hit.
+  sampling: |
+    GGX importance sampling (ggx_sample_ndf) para la dirección del rayo de reflexión.
+    Ray direction: reflect(v, H_local→world) donde H_local se genera desde ggx_sample_ndf(roughness, seed).
+    BRDF/PDF weight: F * G * |wo·h| / (|n·wo| * |n·h|) aplicado al resultado del trace.
+    Cook-Torrance: D (ggx_d), G (ggx_smith_g1 full Smith), F (Schlick).
+    Dielectric refraction: refl_refract_dir cuando rt_flags.x > 0.5 (sin peso GGX).
+  firefly_clamp: refl_firefly_clamp(color, 50.0) en todos los outputs de RT primario y 2º rebote.
+  denoiser: |
+    Espacial: 7×7 bilateral edge-aware (DENOISE_RADIUS=3).
+    depth_sigma=4.0, normal_sigma=12.0, luminance_sigma=8.0.
+    Normal weight: pow(max(dot(n1,n2),0), sigma) — sigma reducido para preservar curvas.
+  temporal:
+    method: full-screen quad con AABB color clipping (VARIANCE_BOX=1.20) + variance-adaptive blend.
+    blend: base_blend * 1/(1 + lum_dev * VARIANCE_ADAPT_K) donde K=8.
+    Alta varianza (ruido) → blend bajo (más peso al frame actual).
+    depth_reject_m: 0.35. Blend mínimo: 0.05.
+  backface_culling: |
+    HW RT (ray query): RAY_FLAG_CULL_BACK_FACING_TRIANGLES (0x10) activo en todos los rayos.
+    BVH fallback: ya lo hacía en ray_tri_moller (dot(face_n, dir) ≥ 0 → rechazo).
+    Coherente con shadow rays.
+  tlas_update: |
+    TLAS creado con update_mode: PreferUpdate + flag ALLOW_UPDATE.
+    wgpu hace build completo en primera vez, update incremental cuando solo cambian transforms de instancias.
+    Cuando geometría cambia (nuevo BLAS), wgpu cae a build completo automáticamente.
   limits:
     static_instances: 512
     skinned_instances: 32

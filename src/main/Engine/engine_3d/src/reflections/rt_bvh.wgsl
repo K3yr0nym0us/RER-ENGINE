@@ -394,6 +394,17 @@ fn rt_shade_pixel_at(gid : vec2<u32>) {
     );
 
     var final_col = scene_col;
+    // GGX importance sampling BRDF/PDF weight for primary reflection ray
+    let is_refrac_primary = rt_light.rt_flags.x > 0.5 && src_ior > 1.0 && metallic < 0.5;
+    if !is_refrac_primary {
+        let ndotv_val = max(dot(n, v), 1e-8);
+        let ndotl_val = max(dot(n, trace_dir), 1e-8);
+        let ndoth_val = max(dot(n, H), 1e-8);
+        let vdoth_val = max(dot(v, H), 1e-8);
+        let f0 = refl_metal_f0(albedo, metallic);
+        let w = ggx_reflection_weight(roughness, ndotv_val, ndotl_val, ndoth_val, vdoth_val, f0);
+        final_col = refl_firefly_clamp(final_col * w, 50.0);
+    }
     if rt_light.rt_flags.y > 0.5 && has_mat {
         let hit_metallic = hit_mat.pbr.y;
         let hit_rough = hit_mat.pbr.x;
@@ -442,7 +453,7 @@ fn rt_shade_pixel_at(gid : vec2<u32>) {
                     sec_has,
                     sec_shadow_occlusion,
                 );
-                final_col = hit_albedo * scene_col + sec_col * 0.35;
+                final_col = refl_firefly_clamp(hit_albedo * scene_col + sec_col * 0.35, 50.0);
             }
         } else if hit_dielectric && rt_light.rt_flags.x > 0.5 {
             let ior = max(hit_mat.pbr.z, 1.01);
@@ -482,7 +493,7 @@ fn rt_shade_pixel_at(gid : vec2<u32>) {
                         sec_has,
                         sec2_shadow_occlusion,
                     );
-                    final_col = mix(scene_col, sec_col, 0.45);
+                    final_col = refl_firefly_clamp(mix(scene_col, sec_col, 0.45), 50.0);
                 }
             }
         }

@@ -61,6 +61,7 @@ fn clip_vec4(aabb_min : vec4<f32>, aabb_max : vec4<f32>, anchor : vec4<f32>, q :
 
 const VARIANCE_BOX : f32 = 1.20;
 const RPC_9 : f32 = 1.0 / 9.0;
+const VARIANCE_ADAPT_K : f32 = 8.0;
 
 fn depth_at(uv : vec2<f32>) -> f32 {
     let clamped = clamp(uv, vec2<f32>(0.0), vec2<f32>(1.0));
@@ -91,7 +92,10 @@ fn temporal_blend(curr : vec4<f32>, hist_raw : vec4<f32>, uv : vec2<f32>) -> vec
     let cmin = avg - dev * VARIANCE_BOX;
     let cmax = avg + dev * VARIANCE_BOX;
     let hist = clip_vec4(cmin, cmax, curr, hist_raw);
-    let b = clamp(u.blend, 0.0, 0.95);
+    let lum_dev = dot(dev.rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
+    let var_factor = 1.0 / (1.0 + lum_dev * VARIANCE_ADAPT_K);
+    let base_b = clamp(u.blend, 0.0, 0.95);
+    let b = max(base_b * var_factor, 0.05);
     return mix(curr, hist, b);
 }
 

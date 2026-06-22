@@ -604,8 +604,8 @@ impl ReflectionPass {
             contents: bytemuck::bytes_of(&DenoiseUniforms {
                 resolution: [refl_width as f32, refl_height as f32],
                 depth_sigma: 4.0,
-                normal_sigma: 32.0,
-                luminance_sigma: 16.0,
+                normal_sigma: 12.0,
+                luminance_sigma: 8.0,
                 gbuffer_scale: 1.0,
                 _pad: [0.0; 2],
             }),
@@ -1009,8 +1009,8 @@ impl ReflectionPass {
                 let denoise_u = DenoiseUniforms {
                     resolution: [self.refl_width as f32, self.refl_height as f32],
                     depth_sigma: 4.0,
-                    normal_sigma: 32.0,
-                    luminance_sigma: 16.0,
+                    normal_sigma: 12.0,
+                    luminance_sigma: 8.0,
                     gbuffer_scale,
                     _pad: [0.0; 2],
                 };

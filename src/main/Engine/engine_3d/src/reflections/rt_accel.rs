@@ -147,8 +147,9 @@ impl RtAccel {
         self.hw_tlas = Some(device.create_tlas(&wgpu::CreateTlasDescriptor {
             label: Some("rt-tlas"),
             max_instances: MAX_STATIC_RT_INSTANCES as u32,
-            flags: wgpu::AccelerationStructureFlags::PREFER_FAST_TRACE,
-            update_mode: wgpu::AccelerationStructureUpdateMode::Build,
+            flags: wgpu::AccelerationStructureFlags::PREFER_FAST_TRACE
+                | wgpu::AccelerationStructureFlags::ALLOW_UPDATE,
+            update_mode: wgpu::AccelerationStructureUpdateMode::PreferBuild,
         }));
         self.tlas_geom_dirty = true;
         self.tlas_instance_dirty = true;

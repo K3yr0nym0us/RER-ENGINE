@@ -10,8 +10,8 @@
 #   - docs/Reflections_3D.yaml
 #   - docs/IPC_Protocol.yaml
 
-version: 1
-updated: 2026-06-21
+version: 2
+updated: 2026-06-22
 
 principle:
   owner: motor_3d
@@ -25,8 +25,19 @@ principle:
     Sin CSM aún. Un solo shadow map ortográfico centrado en la escena.
     El tier Ultra usa 8192 px, que da cobertura para escenas grandes pero
     con menor densidad de píxeles de sombra lejos de la cámara.
+  rt_shadows: |
+    RT shadows se activan automáticamente cuando ReflectionTier ≥ High,
+    independientemente del ShadowTier. Usan trace_rt_hw / bvh_trace desde
+    el hit point de la reflexión hacia la luz. Reemplazan PCF en reflejos.
+    No hay toggle manual; la activación va en rt_flags.w.
+    En ShadowTier::Off se deshabilita todo shadow sampling (light_color.w=0).
 
 graphics_tiers:
+  - id: off
+    aliases: [desactivado, none]
+    resolution: 1
+    note: 1×1 dummy shadow map. No se ejecuta shadow pass.
+      light_color.w=0 propaga a todos los shaders para saltar sampling.
   - id: low
     aliases: [bajo]
     resolution: 1024
@@ -43,11 +54,12 @@ graphics_tiers:
 
 commands:
   set_shadow_tier:
-    params: { tier: low | medium | high | ultra }
+    params: { tier: off | low | medium | high | ultra }
     effect: |
-      Cambia la resolución del shadow map. Recrea la textura y todos los
-      bind groups que la referencian (scene + HUD + probe_env cubemap).
-      No hay degradado efectivo: todos los tiers están siempre disponibles.
+      Cambia la resolución del shadow map (o desactiva con Off).
+      Recrea la textura y todos los bind groups que la referencian
+      (scene + HUD + probe_env cubemap).
+      En Off se salta el shadow pass completo.
 
 events:
   shadow_tier_changed:
@@ -64,4 +76,4 @@ scripting:
 ui:
   accordion: World → Shadows
   controls:
-    - tier selector: low | medium | high | ultra
+    - tier selector: off | low | medium | high | ultra

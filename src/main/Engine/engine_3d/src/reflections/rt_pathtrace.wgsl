@@ -213,12 +213,19 @@ fn path_trace_ray(origin : vec3<f32>, dir : vec3<f32>, seed : vec2<f32>) -> vec3
         accumulated += weight * direct;
 
         if metallic > 0.5 {
-            weight = weight * albedo;
             let T_pt = refl_tangent(n);
             let B_pt = refl_bitangent(n, T_pt);
             let H_local_pt = ggx_sample_ndf(roughness, cur_seed);
             let H_pt = normalize(H_local_pt.x * T_pt + H_local_pt.y * B_pt + H_local_pt.z * n);
-            ray_dir = reflect(-ray_dir, H_pt);
+            let new_ray_dir = reflect(-ray_dir, H_pt);
+            let ndotv_pt = max(dot(n, -ray_dir), 1e-8);
+            let ndotl_pt = max(dot(n, new_ray_dir), 1e-8);
+            let ndoth_pt = max(dot(n, H_pt), 1e-8);
+            let vdoth_pt = max(dot(-ray_dir, H_pt), 1e-8);
+            let f0 = refl_metal_f0(albedo, metallic);
+            let brdf_w = ggx_reflection_weight(roughness, ndotv_pt, ndotl_pt, ndoth_pt, vdoth_pt, f0);
+            weight = weight * brdf_w;
+            ray_dir = new_ray_dir;
         } else {
             weight = weight * albedo;
             let T_pt = refl_tangent(n);
@@ -230,7 +237,7 @@ fn path_trace_ray(origin : vec3<f32>, dir : vec3<f32>, seed : vec2<f32>) -> vec3
         cur_seed = cur_seed + vec2<f32>(0.11, 0.23);
     }
 
-    return accumulated + weight * path_sky(ray_dir);
+    return refl_firefly_clamp(accumulated + weight * path_sky(ray_dir), 100.0);
 }
 
 @compute @workgroup_size(8, 8)

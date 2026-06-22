@@ -3,6 +3,7 @@
 
 /// RTIOW hit interval lower bound (shadow acne / self-intersection).
 const REFL_RAY_T_MIN : f32 = 0.001;
+const PI : f32 = 3.14159265359;
 
 fn refl_uv_to_ndc_xy(uv : vec2<f32>) -> vec2<f32> {
     return vec2<f32>(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0);
@@ -204,10 +205,34 @@ fn refl_cosine_hemisphere_sample(seed : vec2<f32>) -> vec3<f32> {
     return vec3<f32>(r * cos(phi), r * sin(phi), sqrt(max(1.0 - seed.y, 0.0)));
 }
 
-/// Smith G1 geometry term for GGX / Schlick-Smith
+/// Smith G1 geometry term for GGX (Walter et al. 2007 full form).
 fn ggx_smith_g1(cos_theta : f32, alpha : f32) -> f32 {
-    let k = alpha * 0.5;
-    return cos_theta / max(cos_theta * (1.0 - k) + k, 1e-8);
+    let a2 = alpha * alpha;
+    let cos2 = cos_theta * cos_theta;
+    return 2.0 * cos_theta / max(cos_theta + sqrt(a2 + cos2 - a2 * cos2), 1e-8);
+}
+
+/// GGX NDF (Trowbridge-Reitz) distribution term.
+fn ggx_d(alpha : f32, ndoth : f32) -> f32 {
+    let a2 = alpha * alpha;
+    let denom = ndoth * ndoth * (a2 - 1.0) + 1.0;
+    return a2 / (PI * denom * denom);
+}
+
+/// BRDF/PDF weight for GGX importance-sampled reflections.
+/// Derived from Cook-Torrance fr * |n·wi| / pdf_ggx:
+///   fr * |n·wi| / pdf = F * G * |wo·h| / (|n·wo| * |n·h|)
+fn ggx_reflection_weight(roughness : f32, ndotv : f32, ndotl : f32, ndoth : f32, vdoth : f32, f0 : vec3<f32>) -> vec3<f32> {
+    let alpha = ggx_alpha(roughness);
+    let F = refl_fresnel_schlick_vec3(vdoth, f0);
+    let G = ggx_smith_g1(ndotv, alpha) * ggx_smith_g1(ndotl, alpha);
+    return F * G * vdoth / max(ndotv * ndoth, 1e-8);
+}
+
+/// Firefly clamp: scale color when luminance exceeds max_lum.
+fn refl_firefly_clamp(color : vec3<f32>, max_lum : f32) -> vec3<f32> {
+    let lum = dot(color, vec3<f32>(0.2126, 0.7152, 0.0722));
+    return select(color, color * (max_lum / lum), lum > max_lum);
 }
 
 /// Máscara SSR/RT (alpha): RTIOW Fresnel + rugosidad, sin metallic_boost artístico.

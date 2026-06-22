@@ -12,8 +12,11 @@ Tareas globales: [CHECKLIST.md](./CHECKLIST.md). Contrato motor: [`engine_3d/ARC
 
 - [ ] **Root motion en animaciones 3D** — en Propiedades → Animaciones, marcar un clip embebido como *«Esta animación controla el movimiento»* (root motion): mientras se reproduce, el desplazamiento del hueso raíz del clip mueve la entidad en el mundo (además o en lugar del slide WASD de la cápsula). Útil para ataques con paso, empujones, trepar, cinemáticas de locomoción hechas en Blender. Hoy el jugador play character se mueve solo por shape cast + input; los clips son solo visuales. Persistencia en `.save`, motor autoritativo, opcional por animación.
 
-- [ ] **Reflejos con nivel (Desactivado, Bajo, Medio, Alto)** - En el accordion World poner en algun lado un selector de nivel de reflejos que sean compatibles con tecnologia RTX.
-Hay que crear toda la logica detras de esto y debe poder tambien modificarse el nivel de reflejos por Rhai o Nodos.
+- [x] **Reflejos con nivel (Off, Low, Medium, High, Ultra)** — Tier selector via IPC + Rhai/Nodos. Implementa SSR, temporal accumulation, RT HW (GGX importance sampling + Cook-Torrance BRDF/PDF + firefly clamp + spatiotemporal denoising + back-face culling + TLAS PreferUpdate), RT shadows automático en ≥High, y ShadowTier::Off. Docs en Reflections_3D.yaml v5, Shadows_3D.yaml v2.
+
+### Infraestructura RT
+
+- [ ] **TLAS PreferUpdate real (wgpu)** — Hoy usa `PreferBuild` + flag `ALLOW_UPDATE` porque wgpu no implementa `PreferUpdate` y logea cada frame. Cuando wgpu lo implemente, cambiar `update_mode` a `PreferUpdate` en `rt_accel.rs` y verificar que haga update incremental (solo cuando cambian transforms, no geometría).
 
 ### Gráficos / Preset de calidad
 
