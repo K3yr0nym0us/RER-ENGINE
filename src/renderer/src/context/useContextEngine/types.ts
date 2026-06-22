@@ -104,10 +104,11 @@ export function normalizeReflectionTier(value: unknown): ReflectionTier {
 	return 'off';
 }
 
-export type ShadowTier = 'low' | 'medium' | 'high' | 'ultra';
+export type ShadowTier = 'off' | 'low' | 'medium' | 'high' | 'ultra';
 
 export function normalizeShadowTier(value: unknown): ShadowTier {
 	const s = String(value ?? 'low').trim().toLowerCase();
+	if (s === 'off' || s === 'apagado') return 'off';
 	if (s === 'low' || s === 'bajo') return 'low';
 	if (s === 'medium' || s === 'medio') return 'medium';
 	if (s === 'high' || s === 'alto') return 'high';

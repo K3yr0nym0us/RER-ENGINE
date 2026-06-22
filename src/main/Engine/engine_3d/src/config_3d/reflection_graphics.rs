@@ -1,6 +1,6 @@
 //! Nivel global de reflejos (Off / Low / Medium / High) y presets internos.
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Hash, Default)]
 pub enum ReflectionTier {
     #[default]
     Off,

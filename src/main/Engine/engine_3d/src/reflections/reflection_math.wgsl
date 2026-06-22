@@ -377,7 +377,11 @@ fn refl_rt_shadow_at(
     rt_light : RtLightUniform,
     t_shadow : texture_depth_2d,
     s_shadow : sampler_comparison,
+    rt_occlusion : f32,
 ) -> f32 {
+    if rt_light.rt_flags.w > 0.5 {
+        return rt_occlusion;
+    }
     if rt_light.light_color.w <= 0.5 {
         return 1.0;
     }
@@ -480,6 +484,7 @@ fn refl_hit_lighting_lite(
     rt_light : RtLightUniform,
     t_shadow : texture_depth_2d,
     s_shadow : sampler_comparison,
+    rt_occlusion : f32,
 ) -> vec3<f32> {
     if !has_material {
         return refl_sample_probe_at_hit(hit_pos, view_dir, 0.0, probe_meta, t_probe, s_probe);
@@ -518,7 +523,7 @@ fn refl_hit_lighting_lite(
         l = vec3<f32>(0.45, 1.0, 0.35);
     }
     l = normalize(l);
-    let shadow = refl_rt_shadow_at(hit_pos, n, rt_light, t_shadow, s_shadow);
+    let shadow = refl_rt_shadow_at(hit_pos, n, rt_light, t_shadow, s_shadow, rt_occlusion);
     let ndotl = max(dot(n, l), 0.0);
     let direct = rt_light.light_color.rgb * ndotl * shadow;
     let direct_diff = direct * albedo * (1.0 - metallic) * (vec3<f32>(1.0) - fresnel);
@@ -609,6 +614,7 @@ fn refl_resolve_hit_radiance(
     view_proj : mat4x4<f32>,
     near_plane : f32,
     far_plane : f32,
+    rt_occlusion : f32,
 ) -> vec3<f32> {
     _ = spacing_px;
     let view_dir = normalize(refl_dir);
@@ -630,6 +636,7 @@ fn refl_resolve_hit_radiance(
             rt_light,
             t_shadow,
             s_shadow,
+            rt_occlusion,
         );
         let blend_w = refl_screen_gbuffer_blend_weight(
             hit_pos,
@@ -693,5 +700,6 @@ fn refl_resolve_hit_radiance(
         rt_light,
         t_shadow,
         s_shadow,
+        rt_occlusion,
     );
 }

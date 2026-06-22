@@ -280,7 +280,11 @@ fn rt_light_from_scene(scene: &SceneUniforms, settings: &ReflectionSettings) -> 
             } else {
                 0.0
             },
-            0.0,
+            if rt_extensions::rt_shadows_enabled(settings) {
+                1.0
+            } else {
+                0.0
+            },
             0.0,
         ],
     }

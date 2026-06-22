@@ -50,6 +50,7 @@ pub struct State {
     pub(crate) shadow_tier: crate::config_3d::shadow_graphics::ShadowTier,
     /// Resolución actual del shadow map (px por lado); se recrea al cambiar de tier.
     pub(crate) shadow_map_size: u32,
+
     pub(crate) texture_array: crate::texture::TextureArray,
     /// `tex_idx` de `MeshComponent` → capa en `texture_array`.
     pub(crate) tex_layers: Vec<crate::texture::TextureLayer>,

@@ -5,6 +5,7 @@ import { useContextEngine } from '@engine'
 import { useTraslate } from '@hooks'
 
 const TIERS = [
+	{ key: 'off' as const, labelKey: 'Off' },
 	{ key: 'low' as const, labelKey: 'Low' },
 	{ key: 'medium' as const, labelKey: 'Medium' },
 	{ key: 'high' as const, labelKey: 'High' },

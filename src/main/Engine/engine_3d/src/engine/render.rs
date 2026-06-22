@@ -393,61 +393,65 @@ impl State {
                 &shadow_slices,
             );
 
-            let shadow_map_view = self._shadow_texture.create_view(&wgpu::TextureViewDescriptor {
-                label: Some("shadow-map-pass"),
-                ..Default::default()
-            });
-            let mut shadow_pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("shadow-pass"),
-                color_attachments: &[],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &shadow_map_view,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
-                        store: wgpu::StoreOp::Store,
+            if self.shadow_tier == crate::config_3d::shadow_graphics::ShadowTier::Off {
+                // sombras desactivadas — saltamos el pase de shadow map
+            } else {
+                let shadow_map_view = self._shadow_texture.create_view(&wgpu::TextureViewDescriptor {
+                    label: Some("shadow-map-pass"),
+                    ..Default::default()
+                });
+                let mut shadow_pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("shadow-pass"),
+                    color_attachments: &[],
+                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                        view: &shadow_map_view,
+                        depth_ops: Some(wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(1.0),
+                            store: wgpu::StoreOp::Store,
+                        }),
+                        stencil_ops: None,
                     }),
-                    stencil_ops: None,
-                }),
-                occlusion_query_set: None,
-                timestamp_writes: None,
-                multiview_mask: None,
-            });
-            shadow_pass.set_pipeline(&self.shadow_pipeline);
-            shadow_pass.set_bind_group(0, &self.shadow_pass_bind_group, &[]);
-            for (batch, inst_buf) in shadow_batches
-                .iter()
-                .zip(shadow_instance_buffers.iter())
-            {
-                let Some(mesh) = self.meshes.get(batch.mesh_idx) else {
-                    continue;
-                };
-                shadow_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
-                shadow_pass.set_vertex_buffer(1, inst_buf.slice(..));
-                shadow_pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                shadow_pass.draw_indexed(0..mesh.index_count, 0, 0..batch.instances.len() as u32);
-            }
-
-            if !skinned_shadow.is_empty() {
-                shadow_pass.set_pipeline(&self.skinned_shadow_pipeline);
-                let skinned_slices: Vec<&[crate::mesh::SkinnedInstanceData]> = skinned_shadow
+                    occlusion_query_set: None,
+                    timestamp_writes: None,
+                    multiview_mask: None,
+                });
+                shadow_pass.set_pipeline(&self.shadow_pipeline);
+                shadow_pass.set_bind_group(0, &self.shadow_pass_bind_group, &[]);
+                for (batch, inst_buf) in shadow_batches
                     .iter()
-                    .map(|(_, inst)| std::slice::from_ref(inst))
-                    .collect();
-                let skinned_bufs = self.skinned_instance_pool.upload_skinned(
-                    &self.device,
-                    &self.queue,
-                    &skinned_slices,
-                );
-                for ((gpu_idx, _), inst_buf) in skinned_shadow.iter().zip(skinned_bufs.iter()) {
-                    let Some(entry) = self.skinned_gpu_meshes.get(*gpu_idx) else {
+                    .zip(shadow_instance_buffers.iter())
+                {
+                    let Some(mesh) = self.meshes.get(batch.mesh_idx) else {
                         continue;
                     };
-                    shadow_pass.set_bind_group(0, &self.shadow_pass_bind_group, &[]);
-                    shadow_pass.set_bind_group(3, &entry.joint_bind_group, &[]);
-                    shadow_pass.set_vertex_buffer(0, entry.mesh.vertex_buffer.slice(..));
+                    shadow_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
                     shadow_pass.set_vertex_buffer(1, inst_buf.slice(..));
-                    shadow_pass.set_index_buffer(entry.mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                    shadow_pass.draw_indexed(0..entry.mesh.index_count, 0, 0..1);
+                    shadow_pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                    shadow_pass.draw_indexed(0..mesh.index_count, 0, 0..batch.instances.len() as u32);
+                }
+
+                if !skinned_shadow.is_empty() {
+                    shadow_pass.set_pipeline(&self.skinned_shadow_pipeline);
+                    let skinned_slices: Vec<&[crate::mesh::SkinnedInstanceData]> = skinned_shadow
+                        .iter()
+                        .map(|(_, inst)| std::slice::from_ref(inst))
+                        .collect();
+                    let skinned_bufs = self.skinned_instance_pool.upload_skinned(
+                        &self.device,
+                        &self.queue,
+                        &skinned_slices,
+                    );
+                    for ((gpu_idx, _), inst_buf) in skinned_shadow.iter().zip(skinned_bufs.iter()) {
+                        let Some(entry) = self.skinned_gpu_meshes.get(*gpu_idx) else {
+                            continue;
+                        };
+                        shadow_pass.set_bind_group(0, &self.shadow_pass_bind_group, &[]);
+                        shadow_pass.set_bind_group(3, &entry.joint_bind_group, &[]);
+                        shadow_pass.set_vertex_buffer(0, entry.mesh.vertex_buffer.slice(..));
+                        shadow_pass.set_vertex_buffer(1, inst_buf.slice(..));
+                        shadow_pass.set_index_buffer(entry.mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                        shadow_pass.draw_indexed(0..entry.mesh.index_count, 0, 0..1);
+                    }
                 }
             }
         }

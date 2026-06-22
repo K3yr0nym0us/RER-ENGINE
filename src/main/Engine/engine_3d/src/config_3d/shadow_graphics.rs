@@ -6,6 +6,7 @@
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
 pub enum ShadowTier {
+    Off,
     #[default]
     Low,
     Medium,
@@ -16,6 +17,7 @@ pub enum ShadowTier {
 impl ShadowTier {
     pub fn from_wire(s: &str) -> Option<Self> {
         match s.trim().to_lowercase().as_str() {
+            "off" | "apagado" => Some(Self::Off),
             "low" | "bajo" => Some(Self::Low),
             "medium" | "medio" => Some(Self::Medium),
             "high" | "alto" => Some(Self::High),
@@ -26,6 +28,7 @@ impl ShadowTier {
 
     pub fn wire(self) -> &'static str {
         match self {
+            Self::Off => "off",
             Self::Low => "low",
             Self::Medium => "medium",
             Self::High => "high",
@@ -33,10 +36,11 @@ impl ShadowTier {
         }
     }
 
-    /// Resolución del shadow map (px por lado) según el tier. Low reutiliza el tamaño base del
-    /// motor (`SHADOW_MAP_SIZE`); el resto escala ×2 hasta 8192 en Ultra.
+    /// Resolución del shadow map (px por lado) según el tier. Off usa 1×1 (mínimo,
+    /// no se renderiza ni se muestrea). Low reutiliza el tamaño base; el resto ×2 hasta 8192.
     pub fn shadow_map_size(self) -> u32 {
         match self {
+            Self::Off => 1,
             Self::Low => crate::engine::SHADOW_MAP_SIZE,
             Self::Medium => 2048,
             Self::High => 4096,

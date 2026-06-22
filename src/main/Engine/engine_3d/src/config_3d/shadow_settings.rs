@@ -32,7 +32,7 @@ impl State {
     /// que basta con sustituir la textura. El cubemap de probes captura con sombras, por lo que
     /// también se recrea (sus bind groups apuntaban a la vista anterior).
     pub(crate) fn recreate_shadow_map(&mut self, size: u32) {
-        let size = size.clamp(256, 8192);
+        let size = size.clamp(1, 8192);
         let shadow_texture = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("shadow-map"),
             size: wgpu::Extent3d {

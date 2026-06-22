@@ -201,7 +201,13 @@ fn path_trace_ray(origin : vec3<f32>, dir : vec3<f32>, seed : vec2<f32>) -> vec3
             metallic = mat.pbr.y;
         }
 
-        let shadow = refl_rt_shadow_at(hit_pos, n, rt_light, t_shadow, s_shadow);
+        var rt_shadow_occlusion = 1.0;
+        if rt_light.rt_flags.w > 0.5 {
+            let light_dir = normalize(rt_light.light_dir.xyz);
+            let shadow_hit = bvh_trace(hit_pos + n * REFL_RAY_T_MIN, light_dir, u.max_distance_m);
+            rt_shadow_occlusion = select(1.0, 0.0, shadow_hit.found);
+        }
+        let shadow = refl_rt_shadow_at(hit_pos, n, rt_light, t_shadow, s_shadow, rt_shadow_occlusion);
         let ndotl = max(dot(n, light), 0.0);
         let direct = albedo * ndotl * shadow * rt_light.light_color.xyz * rt_light.light_params.x;
         accumulated += weight * direct;

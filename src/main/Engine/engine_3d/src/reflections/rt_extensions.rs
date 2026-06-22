@@ -47,6 +47,11 @@ pub fn rt_diffuse_gi_enabled(settings: &ReflectionSettings) -> bool {
     settings.tier == ReflectionTier::Ultra
 }
 
+/// Sombras RT — tier High y Ultra.
+pub fn rt_shadows_enabled(settings: &ReflectionSettings) -> bool {
+    settings.tier >= ReflectionTier::High
+}
+
 /// Suelo RT single-sided (evita hits duplicados en rayos rasos).
 pub fn rt_ground_single_sided_enabled() -> bool {
     true

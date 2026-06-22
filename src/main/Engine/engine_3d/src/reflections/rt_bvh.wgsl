@@ -65,6 +65,7 @@ fn rt_resolve_hit(
     spacing_px : f32,
     mat : RtInstanceMaterial,
     has_mat : bool,
+    rt_occlusion : f32,
 ) -> vec3<f32> {
     let bary = select(vec3<f32>(1.0, 0.0, 0.0), refl_tri_barycentric(hit_tri, hit_pos), has_tri);
     return refl_resolve_hit_radiance(
@@ -97,6 +98,7 @@ fn rt_resolve_hit(
         u.view_proj,
         u.near_plane,
         u.far_plane,
+        rt_occlusion,
     );
 }
 
@@ -370,6 +372,13 @@ fn rt_shade_pixel_at(gid : vec2<u32>) {
     if has_mat {
         hit_mat = instance_materials[instance_slot];
     }
+    var rt_shadow_occlusion = 1.0;
+    if rt_light.rt_flags.w > 0.5 {
+        let light_dir = normalize(rt_light.light_dir.xyz);
+        let shadow_hit = bvh_trace(hit_pos + n * normal_bias, light_dir, u.max_distance_m);
+        rt_shadow_occlusion = select(1.0, 0.0, shadow_hit.found);
+    }
+
     let scene_col = rt_resolve_hit(
         hit_pos,
         hit_normal,
@@ -381,6 +390,7 @@ fn rt_shade_pixel_at(gid : vec2<u32>) {
         spacing_px,
         hit_mat,
         has_mat,
+        rt_shadow_occlusion,
     );
 
     var final_col = scene_col;
@@ -413,6 +423,12 @@ fn rt_shade_pixel_at(gid : vec2<u32>) {
                     sec_mat = instance_materials[sec_slot];
                     sec_has = true;
                 }
+                var sec_shadow_occlusion = 1.0;
+                if rt_light.rt_flags.w > 0.5 {
+                    let light_dir = normalize(rt_light.light_dir.xyz);
+                    let sec_shadow_hit = bvh_trace(sec_pos + sec_n * normal_bias, light_dir, u.max_distance_m);
+                    sec_shadow_occlusion = select(1.0, 0.0, sec_shadow_hit.found);
+                }
                 let sec_col = rt_resolve_hit(
                     sec_pos,
                     sec_n,
@@ -424,6 +440,7 @@ fn rt_shade_pixel_at(gid : vec2<u32>) {
                     spacing_px,
                     sec_mat,
                     sec_has,
+                    sec_shadow_occlusion,
                 );
                 final_col = hit_albedo * scene_col + sec_col * 0.35;
             }
@@ -446,6 +463,12 @@ fn rt_shade_pixel_at(gid : vec2<u32>) {
                         sec_mat = instance_materials[sec_slot];
                         sec_has = true;
                     }
+                    var sec2_shadow_occlusion = 1.0;
+                    if rt_light.rt_flags.w > 0.5 {
+                        let light_dir = normalize(rt_light.light_dir.xyz);
+                        let sec2_shadow_hit = bvh_trace(sec_pos + sec_n * normal_bias, light_dir, u.max_distance_m);
+                        sec2_shadow_occlusion = select(1.0, 0.0, sec2_shadow_hit.found);
+                    }
                     let sec_col = rt_resolve_hit(
                         sec_pos,
                         sec_n,
@@ -457,11 +480,13 @@ fn rt_shade_pixel_at(gid : vec2<u32>) {
                         spacing_px,
                         sec_mat,
                         sec_has,
+                        sec2_shadow_occlusion,
                     );
                     final_col = mix(scene_col, sec_col, 0.45);
                 }
             }
         }
+
     }
 
     let rt_weight = (1.0 - ssr.a) * strength * u.rt_blend;

@@ -85,11 +85,16 @@ impl State {
     }
 
     pub(crate) fn scene_light_color(&self) -> [f32; 4] {
+        let shadows_enabled = if self.shadow_tier == crate::config_3d::shadow_graphics::ShadowTier::Off {
+            0.0
+        } else {
+            1.0
+        };
         [
             self.directional_light_color.x,
             self.directional_light_color.y,
             self.directional_light_color.z,
-            1.0,
+            shadows_enabled,
         ]
     }
 
