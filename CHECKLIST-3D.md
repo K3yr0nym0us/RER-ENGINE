@@ -16,7 +16,7 @@ Tareas globales: [CHECKLIST.md](./CHECKLIST.md). Contrato motor: [`engine_3d/ARC
 
 ### Infraestructura RT
 
-- [ ] **TLAS PreferUpdate real (wgpu)** — Hoy usa `PreferBuild` + flag `ALLOW_UPDATE` porque wgpu no implementa `PreferUpdate` y logea cada frame. Cuando wgpu lo implemente, cambiar `update_mode` a `PreferUpdate` en `rt_accel.rs` y verificar que haga update incremental (solo cuando cambian transforms, no geometría).
+- [ ] **TLAS PreferUpdate real (wgpu)** — Hoy usa `Build` + flag `ALLOW_UPDATE` porque wgpu no implementa `PreferUpdate` y logea cada frame. Cuando wgpu lo implemente, cambiar `update_mode` a `PreferUpdate` en `rt_accel.rs` y verificar que haga update incremental (solo cuando cambian transforms, no geometría).
 
 ### Gráficos / Preset de calidad
 
