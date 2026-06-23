@@ -45,6 +45,10 @@ fn fs_main(in : VsOut) -> @location(0) vec4<f32> {
     }
     // SSR como detalle on-screen sobre la base (cubemap+Fresnel), no reemplazo ciego.
     let detail = max(refl.rgb - base.rgb, vec3<f32>(0.0));
-    let out_rgb = base.rgb + detail * k;
+    // Atenuar sparkles cuando el SSR discrepa mucho de la base IBL (típico con cubemap activo).
+    let detail_mag = length(detail);
+    let spike_guard = smoothstep(0.18, 0.55, detail_mag);
+    let k_eff = k * (1.0 - spike_guard * 0.75);
+    let out_rgb = base.rgb + detail * k_eff;
     return vec4<f32>(out_rgb, base.a);
 }

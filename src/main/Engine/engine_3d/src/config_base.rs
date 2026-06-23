@@ -138,6 +138,8 @@ impl State {
         self.sun_entity = None;
         self.sun_icon_mesh_idx = None;
         self.sun_icon_tex_idx = None;
+        self.probe_entity_slots.clear();
+        self.last_probe_capture_ids = None;
         self.directional_light_dir =
             crate::config_3d::directional_light::DEFAULT_LIGHT_DIR.normalize();
         self.directional_light_color =
@@ -443,18 +445,71 @@ impl State {
         ids
     }
 
-    /// Probes a capturar este frame: (entidad, centro world). Orden estable por id, limitado a
-    /// `MAX_PROBES`. Fuente única del índice de capa del cubemap (render + captura coinciden).
-    pub(crate) fn reflection_probe_render_list(&self) -> Vec<(crate::ecs::EntityId, glam::Vec3)> {
+    pub(crate) fn is_reflection_probe_entity(&self, id: EntityId) -> bool {
+        self.save_registry
+            .meta
+            .get(&id)
+            .is_some_and(|m| {
+                crate::entity_save_meta::entity_path_marker(&m.path) == Some("[ReflectionProbe]")
+            })
+    }
+
+    /// Asigna ranura fija 0..MAX_PROBES-1; reutiliza la existente si ya estaba registrada.
+    pub(crate) fn allocate_probe_slot(&mut self, id: EntityId) -> Option<usize> {
+        use crate::reflections::probe_env::MAX_PROBES;
+        if let Some(&slot) = self.probe_entity_slots.get(&id) {
+            return Some(slot);
+        }
+        let used: std::collections::HashSet<usize> =
+            self.probe_entity_slots.values().copied().collect();
+        for slot in 0..MAX_PROBES {
+            if !used.contains(&slot) {
+                self.probe_entity_slots.insert(id, slot);
+                return Some(slot);
+            }
+        }
+        log::warn!("[reflexiones] sin ranuras libres en cubemap para probe {id}");
+        None
+    }
+
+    pub(crate) fn release_probe_entity_slot(&mut self, id: EntityId) {
+        if self.probe_entity_slots.remove(&id).is_some() {
+            self.request_probe_capture_burst_if_reflections_active();
+        }
+    }
+
+    /// Asegura ranura para cada probe registrado (cargas .save, plantilla FP, etc.).
+    pub(crate) fn ensure_probe_slots_allocated(&mut self) {
+        for id in self.reflection_probe_entities() {
+            self.allocate_probe_slot(id);
+        }
+    }
+
+    /// Probes activos: (entidad, centro, ranura cubemap). La ranura es estable por `EntityId`.
+    pub(crate) fn reflection_probe_render_list(
+        &self,
+    ) -> Vec<(crate::ecs::EntityId, glam::Vec3, usize)> {
         self.reflection_probe_entities()
             .into_iter()
-            .take(crate::reflections::probe_env::MAX_PROBES)
             .filter_map(|id| {
-                self.world
-                    .get::<crate::ecs::Transform>(id)
-                    .map(|t| (id, t.position))
+                let slot = self.probe_entity_slots.get(&id).copied()?;
+                let center = self.world.get::<crate::ecs::Transform>(id)?.position;
+                Some((id, center, slot))
             })
+            .take(crate::reflections::probe_env::MAX_PROBES)
             .collect()
+    }
+
+    /// Si el conjunto de probes activos cambió, solicita burst de captura.
+    pub(crate) fn sync_probe_capture_burst_for_entity_set(&mut self, probe_ids: &[EntityId]) {
+        let changed = self
+            .last_probe_capture_ids
+            .as_ref()
+            .map_or(true, |prev| prev.as_slice() != probe_ids);
+        if changed {
+            self.last_probe_capture_ids = Some(probe_ids.to_vec());
+            self.request_probe_capture_burst_if_reflections_active();
+        }
     }
 
     /// Radio de influencia del probe (metros) para parallax del cubemap.
@@ -486,7 +541,9 @@ impl State {
                     self.world.insert(id, crate::ecs::SurfacePbr::metal_probe(ROUGHNESS[i]));
                 }
                 self.apply_reflection_probe_visual(id, ROUGHNESS[i]);
+                self.allocate_probe_slot(id);
             }
+            self.request_probe_capture_burst_if_reflections_active();
             return;
         }
 
@@ -495,6 +552,7 @@ impl State {
             let position = [X_POSITIONS[i], RADIUS, Z];
             self.spawn_static_reflection_probe_sphere(&label, position, RADIUS, roughness);
         }
+        self.request_probe_capture_burst_if_reflections_active();
     }
 
     /// Tras cargar escena FP placeholder (switch sin guardar): alinear sol, luz y cámara orbital del editor.
@@ -645,6 +703,8 @@ impl State {
         self.sun_entity = None;
         self.sun_icon_mesh_idx = None;
         self.sun_icon_tex_idx = None;
+        self.probe_entity_slots.clear();
+        self.last_probe_capture_ids = None;
         self.clear_preview_editor_snapshots();
         self.undo_stack.clear();
         self.redo_stack.clear();

@@ -7,6 +7,13 @@ use crate::engine::State;
 use crate::ipc::{send_event, EngineEvent};
 
 impl State {
+    /// Fuerza captura burst del cubemap si los reflejos están activos (p. ej. nuevas sondas).
+    pub(crate) fn request_probe_capture_burst_if_reflections_active(&mut self) {
+        if self.reflection_tier != ReflectionTier::Off {
+            self.probe_capture_burst_all = true;
+        }
+    }
+
     pub(crate) fn set_reflection_tier(&mut self, tier: ReflectionTier) {
         let prev = self.reflection_tier;
         if prev == tier {
@@ -87,6 +94,7 @@ impl State {
         self.probe_cubemap_size = face_size.max(8);
         self.probe_capture_cursor = 0;
         self.probe_capture_burst_all = self.reflection_tier != ReflectionTier::Off;
+        self.last_probe_capture_ids = None;
     }
 
     pub(crate) fn set_reflection_debug_view(&mut self, view: ReflectionDebugView) {

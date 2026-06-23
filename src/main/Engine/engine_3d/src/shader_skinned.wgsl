@@ -34,6 +34,12 @@ var s_shadow: sampler_comparison;
 @group(2) @binding(0) var t_probe_env: texture_cube_array<f32>;
 @group(2) @binding(1) var s_probe_env: sampler;
 
+struct ProbeMeta {
+    entries : array<vec4<f32>, 8>,
+}
+
+@group(2) @binding(2) var<uniform> probe_meta : ProbeMeta;
+
 @group(3) @binding(0)
 var<uniform> joint_mats: JointMatrices;
 
@@ -196,8 +202,7 @@ struct SceneFragOut {
 }
 
 fn cubemap_sample_dir(world_pos: vec3<f32>, n: vec3<f32>, probe_idx: i32) -> vec3<f32> {
-    _ = probe_idx;
-    return refl_mirror_dir(world_pos, u.cam_pos.xyz, n);
+    return refl_cubemap_sample_dir(world_pos, u.cam_pos.xyz, n, probe_idx, probe_meta.entries);
 }
 
 fn encode_octahedral(n: vec3<f32>) -> vec2<f32> {
@@ -311,17 +316,15 @@ fn fs_export_base_color_skinned(in: VertexOutput) -> @location(0) vec4<f32> {
 
 @fragment
 fn fs_main_skinned(in: VertexOutput) -> SceneFragOut {
-    let v = normalize(u.cam_pos.xyz - in.world_pos);
     let nn = normalize(in.world_normal);
-    let layer_i = i32(in.probe_index);
     let rough = resolve_surface_roughness(in.surface_roughness);
-    let sample_dir = cubemap_sample_dir(in.world_pos, nn, layer_i);
-    let layer = max(layer_i, 0);
+    let layer_i = refl_nearest_probe_layer_entries(in.world_pos, probe_meta.entries);
+    let sample_dir = refl_cubemap_sample_dir(in.world_pos, u.cam_pos.xyz, nn, layer_i, probe_meta.entries);
     let lod = refl_env_cubemap_lod(rough);
     var env_cube = vec3<f32>(0.0);
     var has_override = false;
-    if in.surface_metallic > 0.5 && in.probe_index >= 0.0 {
-        env_cube = textureSampleLevel(t_probe_env, s_probe_env, sample_dir, layer, lod).rgb;
+    if in.surface_metallic > 0.5 && layer_i >= 0 {
+        env_cube = textureSampleLevel(t_probe_env, s_probe_env, sample_dir, layer_i, lod).rgb;
         has_override = true;
     }
     return evaluate_scene(in, env_cube, has_override);

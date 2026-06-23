@@ -414,6 +414,7 @@ impl State {
                 entity_category: Some("object".to_string()),
             },
         );
+        self.allocate_probe_slot(id);
         send_event(&EngineEvent::ModelLoaded {
             id,
             name: Some(label.clone()),

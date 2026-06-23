@@ -71,6 +71,46 @@ fn refl_mirror_dir(world_pos : vec3<f32>, cam_pos : vec3<f32>, n : vec3<f32>) ->
     return reflect(incident, nn);
 }
 
+/// Dirección de muestreo del cubemap con parallax esférico (meta.w = radio de influencia).
+fn refl_cubemap_sample_dir(
+    world_pos : vec3<f32>,
+    cam_pos : vec3<f32>,
+    n : vec3<f32>,
+    probe_idx : i32,
+    probe_entries : array<vec4<f32>, 8>,
+) -> vec3<f32> {
+    let refl = refl_mirror_dir(world_pos, cam_pos, n);
+    if probe_idx < 0 {
+        return refl;
+    }
+    let probe_entry = probe_entries[probe_idx];
+    let probe_r = probe_entry.w;
+    if probe_r <= 0.0 {
+        return refl;
+    }
+    let probe_center = probe_entry.xyz;
+    let dist_center = length(world_pos - probe_center);
+    // En la superficie de la sonda (malla = la esfera del probe), el cubemap ya está
+    // centrado en probe_center: parallax empeora el muestreo y genera bandas brillantes.
+    if dist_center <= probe_r * 1.05 {
+        return refl;
+    }
+    let oc = world_pos - probe_center;
+    let a = dot(refl, refl);
+    let b = 2.0 * dot(oc, refl);
+    let c = dot(oc, oc) - probe_r * probe_r;
+    let disc = b * b - a * c;
+    if disc < 0.0 {
+        return refl;
+    }
+    let t = (-b - sqrt(disc)) / max(a, 1e-8);
+    if t < 0.0 {
+        return refl;
+    }
+    let sample_pos = world_pos + refl * t;
+    return normalize(sample_pos - probe_center);
+}
+
 /// Deterministic pseudo-random unit vector (RTIOW `random_in_unit_sphere` sin RNG global).
 fn refl_random_unit_vector(seed : vec2<f32>) -> vec3<f32> {
     let h1 = fract(sin(dot(seed, vec2<f32>(127.1, 311.7))) * 43758.5453);
@@ -308,10 +348,15 @@ fn refl_fake_environment(refl_dir : vec3<f32>) -> vec3<f32> {
 }
 
 fn refl_nearest_probe_layer(hit_pos : vec3<f32>, probe_meta : ReflProbeMeta) -> i32 {
+    return refl_nearest_probe_layer_entries(hit_pos, probe_meta.entries);
+}
+
+/// Capa de cubemap del probe más cercano a `hit_pos` (independiente del índice por instancia).
+fn refl_nearest_probe_layer_entries(hit_pos : vec3<f32>, entries : array<vec4<f32>, 8>) -> i32 {
     var best_i = -1;
     var best_d = 1e30;
     for (var i = 0u; i < REFL_MAX_PROBES; i++) {
-        let e = probe_meta.entries[i];
+        let e = entries[i];
         if e.w <= 0.0 {
             continue;
         }

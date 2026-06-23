@@ -316,6 +316,10 @@ pub struct State {
     pub(crate) probe_capture_cursor: usize,
     /// Tras activar reflejos o recrear cubemap: capturar todos los probes en un frame.
     pub(crate) probe_capture_burst_all: bool,
+    /// Ranura fija del cubemap por entidad probe (no se recompacta al borrar).
+    pub(crate) probe_entity_slots: std::collections::HashMap<EntityId, usize>,
+    /// Último conjunto de probes activos; si cambia → burst de captura.
+    pub(crate) last_probe_capture_ids: Option<Vec<EntityId>>,
     /// Tamaño de cara del cubemap de probes actualmente asignado (px); se recrea al cambiar tier.
     pub(crate) probe_cubemap_size: u32,
     /// Layout del grupo de escena (binding 0 uniform, 1 shadow map, 2 sampler). Necesario para

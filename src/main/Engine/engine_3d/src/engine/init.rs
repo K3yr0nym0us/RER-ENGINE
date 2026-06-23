@@ -1033,6 +1033,8 @@ impl State {
             probe_env,
             probe_capture_cursor: 0,
             probe_capture_burst_all: false,
+            probe_entity_slots: std::collections::HashMap::new(),
+            last_probe_capture_ids: None,
             probe_cubemap_size,
             scene_bind_group_layout: bgl,
             hud_scene_buffer: hud_scene_buf,

@@ -13,6 +13,8 @@ use super::{SceneUniforms, State, DEPTH_FORMAT};
 struct SceneInstanceBatch {
     mesh_idx: usize,
     texture_layer: u32,
+    /// Ranura cubemap (-1 = sin probe); evita mezclar instancias con distinto probe_index.
+    probe_layer: i32,
     instances: Vec<crate::mesh::InstanceData>,
 }
 
@@ -77,15 +79,20 @@ impl State {
                 inst.tex_layer_pad[1] = pbr.metallic;
                 inst.tex_layer_pad[3] = pbr.ior;
             }
-            if let Some(&probe_idx) = probe_index_map.get(entity_id) {
+            let probe_layer = if let Some(&probe_idx) = probe_index_map.get(entity_id) {
                 inst.tex_layer_pad[2] = probe_idx as f32;
-            }
+                probe_idx as i32
+            } else {
+                -1
+            };
             if self.is_plane_wall_entity(*entity_id) {
                 inst.flag_pad[1] = crate::config_3d::plane_tools::PLANE_WALL_VISUAL_ALPHA;
                 inst.flag_pad[2] = crate::config_3d::plane_tools::PLANE_WALL_RENDER_KIND;
             }
             let can_extend = batches.last().map_or(false, |b| {
-                b.mesh_idx == *mesh_idx && b.texture_layer == layer
+                b.mesh_idx == *mesh_idx
+                    && b.texture_layer == layer
+                    && b.probe_layer == probe_layer
             });
             if can_extend {
                 batches.last_mut().unwrap().instances.push(inst);
@@ -93,11 +100,63 @@ impl State {
                 batches.push(SceneInstanceBatch {
                     mesh_idx: *mesh_idx,
                     texture_layer: layer,
+                    probe_layer,
                     instances: vec![inst],
                 });
             }
         }
         batches
+    }
+
+    /// Geometría estática para captura de cubemap: sin cull por frustum de la cámara FPS
+    /// (el probe captura 360° desde su centro, no desde el ojo del editor).
+    fn collect_probe_capture_static_entities(
+        &self,
+    ) -> Vec<(crate::ecs::EntityId, usize, usize, Mat4, i32)> {
+        self.world
+            .query2::<crate::ecs::MeshComponent, crate::ecs::Transform>()
+            .filter_map(|(id, mc, t)| {
+                if self.model_animation_bindings.contains_key(&id) {
+                    return None;
+                }
+                if self.quick_build_ghost_id == Some(id)
+                    || self.plane_tool_ghost_id == Some(id)
+                {
+                    return None;
+                }
+                if self.preview_playing
+                    && !self.debug_mode
+                    && (self.collider_entities.contains(&id)
+                        || self.execution_area_entities.contains(&id))
+                {
+                    return None;
+                }
+                let is_sun = self.sun_entity == Some(id);
+                let is_ground = self
+                    .world
+                    .get::<crate::ecs::NameComponent>(id)
+                    .is_some_and(|n| n.name.eq_ignore_ascii_case("ground"));
+                let (mesh_center, mesh_half) = if is_sun || is_ground {
+                    (t.position, t.scale.abs() * 0.5)
+                } else {
+                    self.entity_world_pick_aabb(id, t)
+                };
+                if !is_sun
+                    && !is_ground
+                    && !self
+                        .world_bounds_3d
+                        .intersects_world_aabb(mesh_center, mesh_half)
+                {
+                    return None;
+                }
+                let layer = self
+                    .world
+                    .get::<crate::ecs::RenderLayer>(id)
+                    .map(|rl| rl.value)
+                    .unwrap_or(0);
+                Some((id, mc.mesh_idx, mc.tex_idx, t.to_matrix(), layer))
+            })
+            .collect()
     }
 
     pub fn resize(&mut self, new_size: PhysicalSize<u32>) {
@@ -261,23 +320,27 @@ impl State {
             settings
         };
 
-        // Reflection probes: lista ordenada (id, centro) y mapa id→índice de capa del cubemap.
+        // Reflection probes: ranura cubemap estable por entidad + mapa id→ranura.
         // Solo activo con reflejos encendidos; si no, las instancias quedan con probe_index = -1.
+        self.ensure_probe_slots_allocated();
         let probe_list = if reflection_settings.active() {
             self.reflection_probe_render_list()
         } else {
             Vec::new()
         };
+        if reflection_settings.active() {
+            let probe_ids: Vec<_> = probe_list.iter().map(|(id, _, _)| *id).collect();
+            self.sync_probe_capture_burst_for_entity_set(&probe_ids);
+        }
         let probe_index_map: std::collections::HashMap<crate::ecs::EntityId, usize> = probe_list
             .iter()
-            .enumerate()
-            .map(|(i, (id, _))| (*id, i))
+            .map(|(id, _, slot)| (*id, *slot))
             .collect();
         if reflection_settings.active() {
             let mut probe_meta = crate::reflections::probe_env::ProbeMetaUniform::default();
-            for (i, &(id, center)) in probe_list.iter().enumerate() {
+            for &(id, center, slot) in &probe_list {
                 let radius = self.reflection_probe_world_radius(id);
-                probe_meta.entries[i] = [center.x, center.y, center.z, radius];
+                probe_meta.entries[slot] = [center.x, center.y, center.z, radius];
             }
             self.probe_env.write_probe_meta(&self.queue, &probe_meta);
         }
@@ -468,6 +531,13 @@ impl State {
                     "[reflexiones] captura burst de {} probes (cubemap)",
                     probe_list.len()
                 );
+                for &(id, _, slot) in &probe_list {
+                    log::info!("[reflexiones] probe entidad {id} → ranura cubemap {slot}");
+                }
+                (0..probe_list.len()).collect()
+            } else if probe_list.len() <= 5 {
+                // Escena de test (≤5 sondas): refrescar todos cada frame para evitar cubemaps
+                // obsoletos con round-robin mientras el jugador/entorno se mueven.
                 (0..probe_list.len()).collect()
             } else {
                 let idx = self.probe_capture_cursor % probe_list.len();
@@ -486,9 +556,11 @@ impl State {
                 })
                 .collect();
 
-            for &probe_idx in &probe_indices {
+            let probe_capture_static = self.collect_probe_capture_static_entities();
+
+            for &list_idx in &probe_indices {
                 let capture_batches = self.build_scene_instance_batches(
-                    &entities,
+                    &probe_capture_static,
                     &probe_index_map,
                     true,
                 );
@@ -502,7 +574,7 @@ impl State {
                     &capture_slices,
                 );
 
-                let center = probe_list[probe_idx].1;
+                let (_, center, cubemap_slot) = probe_list[list_idx];
                 let face_vps =
                     crate::reflections::probe_env::cube_face_view_projs(center, 0.05, 200.0);
 
@@ -529,7 +601,7 @@ impl State {
                     let mut cap_pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                         label: Some("probe-env-capture-pass"),
                         color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                            view: self.probe_env.face_view(probe_idx, f),
+                            view: self.probe_env.face_view(cubemap_slot, f),
                             resolve_target: None,
                             depth_slice: None,
                             ops: wgpu::Operations {
@@ -590,7 +662,8 @@ impl State {
                     }
                 }
 
-                self.probe_env.generate_mips(&self.device, &mut enc, probe_idx);
+                self.probe_env
+                    .generate_mips(&self.device, &mut enc, cubemap_slot);
             }
         }
 

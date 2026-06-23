@@ -848,6 +848,9 @@ impl State {
                 self.control_bindings_by_entity.remove(&id);
                 self.script_engine.detach_entity(id);
                 self.save_registry.remove_entity(id);
+                if self.is_reflection_probe_entity(id) {
+                    self.release_probe_entity_slot(id);
+                }
                 self.entity_blueprint_ids.remove(&id);
                 self.entity_colision.remove(&id);
                 self.clear_entity_attachments_for_removed(id);

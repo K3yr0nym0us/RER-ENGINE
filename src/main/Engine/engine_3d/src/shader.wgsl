@@ -32,7 +32,7 @@ var s_shadow: sampler_comparison;
 @group(2) @binding(1) var s_probe_env: sampler;
 
 struct ProbeMeta {
-    center_radius : array<vec4<f32>, 8>,
+    entries : array<vec4<f32>, 8>,
 }
 
 @group(2) @binding(2) var<uniform> probe_meta : ProbeMeta;
@@ -224,8 +224,7 @@ fn fresnel_schlick_metal(f0: vec3<f32>, cos_theta: f32) -> vec3<f32> {
 }
 
 fn cubemap_sample_dir(world_pos: vec3<f32>, n: vec3<f32>, probe_idx: i32) -> vec3<f32> {
-    _ = probe_idx;
-    return refl_mirror_dir(world_pos, u.cam_pos.xyz, n);
+    return refl_cubemap_sample_dir(world_pos, u.cam_pos.xyz, n, probe_idx, probe_meta.entries);
 }
 
 fn evaluate_scene(in: VertexOutput, env_override: vec3<f32>, has_env_override: bool) -> SceneFragOut {
@@ -378,16 +377,15 @@ fn fs_main(in: VertexOutput) -> SceneFragOut {
     // centro de la esfera: suelo, vecinas, jugador aunque esté detrás de la cámara FPS).
     // SSR/RT solo añaden detalle nítido de geometría on-screen encima (capa secundaria).
     let n = normalize(in.world_normal);
-    let layer_i = i32(in.probe_index);
     let rough = resolve_surface_roughness(in.surface_roughness);
-    let sample_dir = cubemap_sample_dir(in.world_pos, n, layer_i);
-    let layer = max(layer_i, 0);
+    // Ranura por posición world (probe_meta), no por instancia: evita desync GPU/instancing.
+    let layer_i = refl_nearest_probe_layer_entries(in.world_pos, probe_meta.entries);
+    let sample_dir = refl_cubemap_sample_dir(in.world_pos, u.cam_pos.xyz, n, layer_i, probe_meta.entries);
     let lod = refl_env_cubemap_lod(rough);
     var env_cube = vec3<f32>(0.0);
     var has_override = false;
-    // Rugosidad del cubemap = mip LOD; fuzzy de dirección solo en SSR/RT (reflection_math.wgsl).
-    if in.surface_metallic > 0.5 && in.probe_index >= 0.0 {
-        env_cube = textureSampleLevel(t_probe_env, s_probe_env, sample_dir, layer, lod).rgb;
+    if in.surface_metallic > 0.5 && layer_i >= 0 {
+        env_cube = textureSampleLevel(t_probe_env, s_probe_env, sample_dir, layer_i, lod).rgb;
         has_override = true;
     }
     return evaluate_scene(in, env_cube, has_override);
