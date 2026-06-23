@@ -21,7 +21,7 @@ export function SidebarRight({
   const is3dProject = projectType === '3D';
 
   return (
-    <aside className="app-sidebar px-1 pb-2 border-start border-secondary-subtle d-flex flex-column">
+    <aside className="app-sidebar px-1 ps-2 pe-0 pb-2 border-start border-secondary-subtle d-flex flex-column">
       <div className="flex-grow-1 sidebar-scroll">
 
         <h6 className="text-secondary text-uppercase fw-bold text-center mt-3 mb-1 px-2">
@@ -42,9 +42,7 @@ export function SidebarRight({
         </SidebarSubAccordion>
       </div>
 
-      <div className="border-top border-secondary-subtle">
-        <MetricsPanel />
-      </div>
+      <MetricsPanel />
     </aside>
   );
 }

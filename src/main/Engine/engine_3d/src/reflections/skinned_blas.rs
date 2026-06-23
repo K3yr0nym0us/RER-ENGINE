@@ -11,7 +11,7 @@ use std::collections::HashSet;
 use wgpu::util::DeviceExt;
 use wgpu::{
     Blas, BlasBuildEntry, BlasGeometries, BlasGeometrySizeDescriptors, BlasTriangleGeometry,
-    BlasTriangleGeometrySizeDescriptor, CommandEncoder, CreateBlasDescriptor, Device, Queue,
+    BlasTriangleGeometrySizeDescriptor, CreateBlasDescriptor, Device, Queue,
 };
 
 use crate::config_3d::model_animation::GpuSkinnedMeshEntry;
@@ -106,13 +106,16 @@ impl SkinnedBlasCache {
         );
     }
 
-    pub fn build_updates(&self, encoder: &mut CommandEncoder, active: &HashSet<usize>) {
-        let mut builds = Vec::new();
+    pub fn build_updates<'a>(
+        &'a self,
+        active: &HashSet<usize>,
+        out: &mut Vec<BlasBuildEntry<'a>>,
+    ) {
         for (&gpu_idx, slot) in self.entries.iter() {
             if !active.contains(&gpu_idx) {
                 continue;
             }
-            builds.push(BlasBuildEntry {
+            out.push(BlasBuildEntry {
                 blas: &slot.blas,
                 geometry: BlasGeometries::TriangleGeometries(vec![BlasTriangleGeometry {
                     size: &slot.geometry_size,
@@ -125,9 +128,6 @@ impl SkinnedBlasCache {
                     transform_buffer_offset: None,
                 }]),
             });
-        }
-        if !builds.is_empty() {
-            encoder.build_acceleration_structures(builds.iter(), std::iter::empty());
         }
     }
 

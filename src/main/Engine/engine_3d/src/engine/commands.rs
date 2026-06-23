@@ -1379,7 +1379,7 @@ impl State {
             }
             EngineCommand::Only3d(EngineCommand3dOnly::ListEntityBones { entity_id }) => {
                 let bones = self.list_entity_bone_names(entity_id);
-                send_event(&crate::ipc::EngineEvent::EntityBonesList {
+                crate::ipc::send_event_silent(&crate::ipc::EngineEvent::EntityBonesList {
                     entity_id,
                     bones,
                 });
@@ -1475,7 +1475,7 @@ impl State {
             }
             EngineCommand::Only3d(EngineCommand3dOnly::ListEntityBonePhysics { entity_id }) => {
                 let entries = self.list_entity_bone_physics(entity_id);
-                send_event(&crate::ipc::EngineEvent::EntityBonePhysicsList {
+                crate::ipc::send_event_silent(&crate::ipc::EngineEvent::EntityBonePhysicsList {
                     entity_id,
                     entries,
                 });

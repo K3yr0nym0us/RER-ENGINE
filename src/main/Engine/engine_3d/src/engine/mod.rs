@@ -26,7 +26,6 @@ pub use types::{ActiveAnimation, AnimationState};
 
 pub(crate) use audio::{start_audio_thread, AudioSlot};
 pub(crate) use render::create_depth_texture;
-pub(crate) use render::is_aabb_visible_3d;
 pub(crate) use types::{
     SceneUniforms, UndoAction, AUTOSAVE_INTERVAL, DEPTH_FORMAT, SHADOW_MAP_SIZE,
 };

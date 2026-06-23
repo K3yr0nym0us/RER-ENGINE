@@ -500,7 +500,7 @@ fn rt_shade_pixel_at(gid : vec2<u32>) {
 
     }
 
-    let rt_weight = (1.0 - ssr.a) * strength * u.rt_blend;
+    let rt_weight = strength * u.rt_blend;
     if rt_weight < 0.01 {
         textureStore(reflection_out, px, ssr);
         return;

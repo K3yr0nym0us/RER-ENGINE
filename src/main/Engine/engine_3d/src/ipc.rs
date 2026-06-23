@@ -1164,6 +1164,18 @@ pub fn send_event(event: &EngineEvent) {
     }
 }
 
+/// Escribe un evento JSON a stderr con prefijo `[IPC_EVENT]` para que el handler de
+/// Electron lo reconozca y lo reenvíe al renderer sin mostrar en la terminal.
+/// Útil para eventos ruidosos como `entity_bones_list` / `entity_bone_physics_list`.
+pub fn send_event_silent(event: &EngineEvent) {
+    if let Ok(json) = serde_json::to_string(event) {
+        let stderr = io::stderr();
+        let mut handle = stderr.lock();
+        let _ = writeln!(handle, "[IPC_EVENT]{json}");
+        let _ = handle.flush();
+    }
+}
+
 /// Lanza un hilo dedicado que lee stdin línea a línea y envía
 /// los comandos parseados al event loop del motor vía EventLoopProxy.
 /// El proxy despierta el event loop inmediatamente (sin esperar el siguiente frame),

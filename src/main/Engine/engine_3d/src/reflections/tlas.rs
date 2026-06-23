@@ -3,7 +3,6 @@
 use glam::{Mat4, Vec3};
 
 use crate::ecs::{MeshComponent, Transform};
-use crate::engine::is_aabb_visible_3d;
 use crate::engine::State;
 use crate::mesh::Mesh;
 use crate::reflections::bvh::RtTriangle;
@@ -44,7 +43,7 @@ fn rt_entity_visible(
     state: &State,
     entity: crate::ecs::EntityId,
     transform: &Transform,
-    frustum_vp: &Mat4,
+    _frustum_vp: &Mat4,
     is_player: bool,
 ) -> bool {
     let is_ground = state
@@ -64,7 +63,7 @@ fn rt_entity_visible(
     {
         return false;
     }
-    is_aabb_visible_3d(frustum_vp, mesh_center, mesh_half)
+    true
 }
 
 /// Recolecta instancias RT (estáticas y opcionalmente skinned), con culling de frustum/mundo.

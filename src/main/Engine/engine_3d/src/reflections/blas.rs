@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use wgpu::{
     Blas, BlasBuildEntry, BlasGeometries, BlasGeometrySizeDescriptors, BlasTriangleGeometry,
-    BlasTriangleGeometrySizeDescriptor, CommandEncoder, CreateBlasDescriptor, Device,
+    BlasTriangleGeometrySizeDescriptor, CreateBlasDescriptor, Device,
 };
 
 use crate::mesh::Mesh;
@@ -69,7 +69,12 @@ impl BlasCache {
         self.entries.get(&mesh_idx).map(|e| &e.blas)
     }
 
-    pub fn build_pending(&mut self, encoder: &mut CommandEncoder, meshes: &[Mesh]) {
+    pub fn build_pending<'a>(
+        &'a mut self,
+        meshes: &'a [Mesh],
+        out: &mut Vec<BlasBuildEntry<'a>>,
+        sizes: &'a mut Vec<BlasTriangleGeometrySizeDescriptor>,
+    ) {
         if self.pending_build.is_empty() {
             return;
         }
@@ -96,8 +101,15 @@ impl BlasCache {
                 entry.uses_rt_ibo,
             ));
         }
-        let mut builds = Vec::new();
-        for (mesh_idx, size_desc, uses_rt_ibo) in &pending_sizes {
+        // First pass: push all size descriptors into the output vec (mutable access only)
+        let mut build_params: Vec<(usize, bool)> = Vec::new();
+        for (mesh_idx, size_desc, uses_rt_ibo) in pending_sizes {
+            sizes.push(size_desc);
+            build_params.push((mesh_idx, uses_rt_ibo));
+        }
+        // Second pass: create builds referencing sizes (immutable access only)
+        let base = sizes.len() - build_params.len();
+        for (i, (mesh_idx, uses_rt_ibo)) in build_params.iter().enumerate() {
             let Some(entry) = self.entries.get(mesh_idx) else {
                 continue;
             };
@@ -109,10 +121,11 @@ impl BlasCache {
             } else {
                 &mesh.index_buffer
             };
-            builds.push(BlasBuildEntry {
+            let sd = &sizes[base + i];
+            out.push(BlasBuildEntry {
                 blas: &entry.blas,
                 geometry: BlasGeometries::TriangleGeometries(vec![BlasTriangleGeometry {
-                    size: size_desc,
+                    size: sd,
                     vertex_buffer: &mesh.vertex_buffer,
                     first_vertex: 0,
                     vertex_stride: std::mem::size_of::<crate::mesh::Vertex>() as wgpu::BufferAddress,
@@ -122,9 +135,6 @@ impl BlasCache {
                     transform_buffer_offset: None,
                 }]),
             });
-        }
-        if !builds.is_empty() {
-            encoder.build_acceleration_structures(builds.iter(), std::iter::empty());
         }
         self.pending_build.clear();
     }

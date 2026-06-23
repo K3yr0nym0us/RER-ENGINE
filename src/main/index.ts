@@ -418,6 +418,16 @@ function startEngine(embed?: ViewportBounds): void {
   engineProcess.stderr?.on('data', (data: Buffer) => {
     const lines = data.toString('utf8').split('\n').filter(Boolean)
     for (const line of lines) {
+      // Eventos silenciosos del motor (IPC que no debe mostrarse en terminal)
+      if (line.startsWith('[IPC_EVENT]')) {
+        try {
+          const event = JSON.parse(line.slice('[IPC_EVENT]'.length)) as EngineEvent
+          sendEventToRenderer(event)
+        } catch {
+          console.error('[engine stderr]', line)
+        }
+        continue
+      }
       if (isBenignEngineStderrLine(line)) continue
       if (/\[rer_engine_(2d|3d)::/.test(line) || /\[SKIN_(XFORM|LOAD|MESH_AUDIT|DUAL|JOINT)\]|\[RIGID_(BIND|GRAPH|NEAREST|WORLD)/.test(line)) {
         console.log(line.trim())

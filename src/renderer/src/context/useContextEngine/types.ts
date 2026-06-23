@@ -141,7 +141,8 @@ export type ReflectionDebugView =
 	| 'ssr_hit_uv_world_screen'
 	| 'ssr_hit_uv_world_screen_delta'
 	| 'ssr_hit_uv_world_screen_split'
-	| 'ssr_final_composite';
+	| 'ssr_final_composite'
+	| 'rt_instances';
 
 export function normalizeReflectionDebugView(value: unknown): ReflectionDebugView {
 	const s = String(value ?? 'final').trim().toLowerCase();
@@ -188,6 +189,7 @@ export function normalizeReflectionDebugView(value: unknown): ReflectionDebugVie
 		return 'ssr_hit_uv_world_screen_split';
 	if (s === 'ssr_final_composite' || s === 'final_composite' || s === 'composite')
 		return 'ssr_final_composite';
+	if (s === 'rt_instances' || s === 'rt_diag') return 'rt_instances';
 	return 'final';
 }
 

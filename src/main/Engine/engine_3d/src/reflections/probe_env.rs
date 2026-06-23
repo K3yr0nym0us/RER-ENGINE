@@ -53,6 +53,10 @@ pub(crate) struct ProbeEnvPass {
     mip_sampler: wgpu::Sampler,
     /// Bind group que expone el cube array al shader principal (grupo 2).
     sample_bind_group: wgpu::BindGroup,
+    /// Bind group dummy (1×1 cube array) para captura skinned, evita conflicto RESOURCE + COLOR_TARGET.
+    capture_sample_bind_group: wgpu::BindGroup,
+    /// Mantiene viva la dummy texture mientras el bind group la referencie.
+    _capture_dummy_cube: wgpu::Texture,
     probe_meta_buffer: wgpu::Buffer,
 }
 
@@ -375,6 +379,41 @@ impl ProbeEnvPass {
             ],
         });
 
+        // Dummy 1×1 cube array texture + bind group for capture (avoids RESOURCE + COLOR_TARGET conflict).
+        let dummy_cube = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("probe-env-capture-dummy"),
+            size: wgpu::Extent3d { width: 1, height: 1, depth_or_array_layers: 6 },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: color_format,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let dummy_cube_view = dummy_cube.create_view(&wgpu::TextureViewDescriptor {
+            label: Some("probe-env-capture-dummy-view"),
+            dimension: Some(wgpu::TextureViewDimension::CubeArray),
+            ..Default::default()
+        });
+        let capture_sample_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("probe-env-capture-sample-bg"),
+            layout: sample_bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&dummy_cube_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&sample_sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: probe_meta_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
         Self {
             cube,
             face_views,
@@ -387,6 +426,8 @@ impl ProbeEnvPass {
             mip_bgl,
             mip_sampler,
             sample_bind_group,
+            capture_sample_bind_group,
+            _capture_dummy_cube: dummy_cube,
             probe_meta_buffer,
         }
     }
@@ -463,6 +504,10 @@ impl ProbeEnvPass {
 
     pub(crate) fn sample_bind_group(&self) -> &wgpu::BindGroup {
         &self.sample_bind_group
+    }
+
+    pub(crate) fn capture_sample_bind_group(&self) -> &wgpu::BindGroup {
+        &self.capture_sample_bind_group
     }
 
     pub(crate) fn capture_pipeline(&self) -> &wgpu::RenderPipeline {

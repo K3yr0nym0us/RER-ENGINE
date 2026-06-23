@@ -46,6 +46,7 @@ const DEBUG_VIEWS = [
 	{ key: 'roughness', labelKey: 'Reflection debug roughness' },
 	{ key: 'ssr_hits', labelKey: 'Reflection debug ssr hits' },
 	{ key: 'reflection_mask', labelKey: 'Reflection debug mask' },
+	{ key: 'rt_instances', labelKey: 'RT instances (diagnostic)' },
 ] as const
 
 export default function WorldReflectionsAccordion() {

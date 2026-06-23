@@ -571,7 +571,7 @@ impl State {
                         cap_pass.set_pipeline(self.probe_env.capture_skinned_pipeline());
                         cap_pass.set_bind_group(0, self.probe_env.face_scene_bind_group(f), &[]);
                         cap_pass.set_bind_group(1, self.texture_array.bind_group.as_ref(), &[]);
-                        cap_pass.set_bind_group(2, self.probe_env.sample_bind_group(), &[]);
+                        cap_pass.set_bind_group(2, self.probe_env.capture_sample_bind_group(), &[]);
                         for ((gpu_idx, _), inst_buf) in
                             skinned_probe.iter().zip(probe_skinned_bufs.iter())
                         {
@@ -826,6 +826,37 @@ impl State {
             );
             let meshes = &self.meshes;
             let skinned_meshes = &self.skinned_gpu_meshes;
+            if self.reflection_debug_view
+                == crate::config_3d::reflection_graphics::ReflectionDebugView::RtInstances
+            {
+                let header = format!(
+                    "[RT_DIAG] {:>3} | {:<10} | {:<6} | {:<3} | {:<5} | {:<5} | {:<4} | {:<10}",
+                    "slot", "entity_id", "mesh", "tex", "rough", "metal", "ior", "flags"
+                );
+                log::info!("[RT_DIAG] {:-<95}", "");
+                log::info!("{header}");
+                log::info!("[RT_DIAG] {:-<95}", "");
+                for (slot, inst) in instances.iter().enumerate() {
+                    if slot >= 64 {
+                        break;
+                    }
+                    let mat = rt_materials.get(slot);
+                    let tex_idx = self
+                        .world
+                        .get::<crate::ecs::MeshComponent>(inst.entity_id)
+                        .map(|m| m.tex_idx)
+                        .unwrap_or(0xFFFF);
+                    let (rough, metal, ior) = mat
+                        .map(|m| (m.pbr[0], m.pbr[1], m.pbr[2]))
+                        .unwrap_or((f32::NAN, f32::NAN, f32::NAN));
+                    let flags = mat.map(|m| f32::to_bits(m.albedo[3])).unwrap_or(0);
+                    log::info!(
+                        "[RT_DIAG] {:>3} | {:<10} | {:<6?} | {:<3} | {:<5.3} | {:<5.3} | {:<4.2} | 0x{:08X}",
+                        slot, inst.entity_id, inst.mesh_idx, tex_idx, rough, metal, ior, flags,
+                    );
+                }
+                log::info!("[RT_DIAG] {:-<95}", "");
+            }
             self.rt_accel.sync_scene(
                 &rt_materials,
                 &instances,
@@ -895,8 +926,7 @@ impl State {
         };
 
         let debug_reflections = ran_reflections
-            && self.reflection_debug_view
-                != crate::config_3d::reflection_graphics::ReflectionDebugView::Final;
+            && self.reflection_debug_view.is_visual_debug();
 
         if debug_reflections {
             self.reflections.run_debug_blit(

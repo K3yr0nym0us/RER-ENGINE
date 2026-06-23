@@ -1218,7 +1218,9 @@ impl ReflectionPass {
         surface_view: &TextureView,
         debug_view: ReflectionDebugView,
     ) {
-        if debug_view == ReflectionDebugView::Final {
+        if debug_view == ReflectionDebugView::Final
+            || debug_view == ReflectionDebugView::RtInstances
+        {
             return;
         }
         draw_fullscreen_pass(

@@ -17,6 +17,7 @@ pub enum ReflectionDebugView {
     Roughness,
     SsrHits,
     ReflectionMask,
+    RtInstances,
 }
 
 impl ReflectionDebugView {
@@ -27,6 +28,7 @@ impl ReflectionDebugView {
             "roughness" | "rough" => Some(Self::Roughness),
             "ssr_hits" | "ssrhits" | "hits" => Some(Self::SsrHits),
             "reflection_mask" | "mask" => Some(Self::ReflectionMask),
+            "rt_instances" | "rt_diag" => Some(Self::RtInstances),
             _ => None,
         }
     }
@@ -38,7 +40,12 @@ impl ReflectionDebugView {
             Self::Roughness => "roughness",
             Self::SsrHits => "ssr_hits",
             Self::ReflectionMask => "reflection_mask",
+            Self::RtInstances => "rt_instances",
         }
+    }
+
+    pub fn is_visual_debug(self) -> bool {
+        !matches!(self, Self::Final | Self::RtInstances)
     }
 
     pub fn shader_index(self) -> u32 {
@@ -48,6 +55,7 @@ impl ReflectionDebugView {
             Self::SsrHits => 2,
             Self::ReflectionMask => 3,
             Self::Roughness => 4,
+            Self::RtInstances => 3,
         }
     }
 }

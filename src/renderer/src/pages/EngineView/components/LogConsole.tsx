@@ -13,7 +13,8 @@ export function LogConsole() {
   return (
     <div
       ref={logRef}
-      className="console-panel overflow-auto font-monospace px-3 py-2 small"
+      className="console-panel overflow-auto font-monospace px-3 py-2 small border-top border-secondary-subtle"
+      style={{ height: '25vh' }}
     >
       {log.length === 0
         ? <span className="text-secondary">Sin eventos aún…</span>

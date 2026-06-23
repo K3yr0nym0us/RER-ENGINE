@@ -470,12 +470,11 @@ impl RtAccel {
         pose_hash: u64,
     ) {
         let geom_changed = static_hash != self.static_scene_hash;
-        let _pose_changed = pose_hash != self.pose_hash;
-        if geom_changed {
+        let pose_changed = pose_hash != self.pose_hash;
+        if geom_changed || pose_changed {
             self.tlas_geom_dirty = true;
             self.tlas_instance_dirty = true;
         }
-        // Pose skinned solo refitea BLAS; no reconstruir TLAS cada frame.
 
         for inst in instances {
             if let Some(mesh_idx) = inst.mesh_idx {
@@ -497,17 +496,12 @@ impl RtAccel {
             }
         }
 
-        self.blas_cache.build_pending(encoder, meshes);
-        let active_skinned = Self::active_skinned_gpu_indices(instances);
-        self.skinned_blas_cache
-            .build_updates(encoder, &active_skinned);
+        // Take TLAS ownership to avoid self-borrow conflicts with BLAS builds
+        let mut hw_tlas = self.hw_tlas.take();
 
-        let (hw_tris, tri_bases) =
-            Self::build_hw_triangle_lookup(instances, meshes, skinned_meshes);
-        self.upload_hw_triangles(&hw_tris, &tri_bases, device, queue);
-
+        // Instance setup: populate TLAS slots
         let mut slot = 0usize;
-        if let Some(tlas) = self.hw_tlas.as_mut() {
+        if let Some(ref mut tlas) = hw_tlas {
             let mut skinned_slots = 0usize;
             for (mat_slot, inst) in instances.iter().enumerate() {
                 if slot >= MAX_STATIC_RT_INSTANCES {
@@ -557,20 +551,36 @@ impl RtAccel {
             }
         }
 
-        let slot_count_changed = slot != self.last_tlas_slot_count;
-        if slot_count_changed {
-            self.tlas_geom_dirty = true;
-            self.last_tlas_slot_count = slot;
-        }
+        let (hw_tris, tri_bases) =
+            Self::build_hw_triangle_lookup(instances, meshes, skinned_meshes);
+        self.upload_hw_triangles(&hw_tris, &tri_bases, device, queue);
 
-        if self.tlas_geom_dirty || self.tlas_instance_dirty {
-            if let Some(tlas) = self.hw_tlas.as_ref() {
-                encoder.build_acceleration_structures(std::iter::empty(), std::iter::once(tlas));
+        // Collect all BLAS builds
+        let mut blas_builds = Vec::new();
+        let mut blas_build_sizes = Vec::new();
+        self.blas_cache
+            .build_pending(meshes, &mut blas_builds, &mut blas_build_sizes);
+        let active_skinned = Self::active_skinned_gpu_indices(instances);
+        self.skinned_blas_cache
+            .build_updates(&active_skinned, &mut blas_builds);
+
+        let rebuild_tlas = self.tlas_geom_dirty
+            || self.tlas_instance_dirty
+            || slot != self.last_tlas_slot_count;
+
+        // Build BLAS + TLAS together in one call
+        if rebuild_tlas || !blas_builds.is_empty() {
+            if let Some(ref tlas) = hw_tlas {
+                encoder.build_acceleration_structures(blas_builds.iter(), std::iter::once(tlas));
+            } else if !blas_builds.is_empty() {
+                encoder.build_acceleration_structures(blas_builds.iter(), std::iter::empty());
             }
             self.tlas_geom_dirty = false;
             self.tlas_instance_dirty = false;
+            self.last_tlas_slot_count = slot;
         }
 
+        self.hw_tlas = hw_tlas;
         self.static_scene_hash = static_hash;
         self.pose_hash = pose_hash;
     }

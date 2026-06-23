@@ -102,7 +102,7 @@ function EngineViewInner({ projectType, gameStyle, initialSavePath, initialExtra
           onGameStyleChange={onGameStyleChange}
         />
 
-        <div className="d-flex flex-column flex-fill" style={{ width: '75%' }}>
+        <div className="d-flex flex-column flex-fill" style={{ width: '60%' }}>
           <TopBarEngine 
             projectType={projectType}
             handleSave={handleSave}
@@ -122,11 +122,7 @@ function EngineViewInner({ projectType, gameStyle, initialSavePath, initialExtra
             <SceneImportLoadingOverlay />
           </main>
 
-          <div className="row g-0" style={{ height: 120 }}>
-            <div className="col-12">
-              <LogConsole />
-            </div>
-          </div>
+          <LogConsole />
         </div>
 
         <SidebarRight projectType={projectType} />

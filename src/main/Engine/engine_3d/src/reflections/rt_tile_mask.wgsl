@@ -55,10 +55,6 @@ fn cs_build_mask(@builtin(global_invocation_id) gid : vec3<u32>) {
                 i32(min(base_y + oy, u32(u.resolution.y) - 1u)),
             );
             let gb_px = vec2<i32>(vec2<f32>(px) * u.gbuffer_scale);
-            let ssr = textureLoad(t_ssr, px, 0);
-            if (1.0 - ssr.a) * ssr.a < 0.0001 && ssr.a > 0.95 {
-                continue;
-            }
             let view_depth_m = textureLoad(t_depth, gb_px, 0).r;
             if view_depth_m <= 0.0001 {
                 continue;
@@ -71,8 +67,7 @@ fn cs_build_mask(@builtin(global_invocation_id) gid : vec3<u32>) {
                 continue;
             }
             let strength = (1.0 - roughness) * (1.0 - roughness) * metallic;
-            let rt_weight = (1.0 - ssr.a) * strength;
-            if rt_weight > u.threshold {
+            if strength > u.threshold {
                 need_rt = true;
                 break;
             }
