@@ -36,6 +36,7 @@ const FACES: usize = 6;
 const MIP_LEVELS: u32 = 5;
 
 pub(crate) struct ProbeEnvPass {
+    face_size: u32,
     cube: wgpu::Texture,
     /// Vistas D2 de cada (probe, cara), mip 0, como render target. Índice = probe*6 + cara.
     face_views: Vec<TextureView>,
@@ -125,7 +126,9 @@ impl ProbeEnvPass {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: color_format,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::COPY_SRC,
             view_formats: &[],
         });
 
@@ -415,6 +418,7 @@ impl ProbeEnvPass {
         });
 
         Self {
+            face_size,
             cube,
             face_views,
             capture_depth_view,
@@ -500,6 +504,14 @@ impl ProbeEnvPass {
                 pass.draw(0..3, 0..1);
             }
         }
+    }
+
+    pub(crate) fn face_size(&self) -> u32 {
+        self.face_size
+    }
+
+    pub(crate) fn cube_texture(&self) -> &wgpu::Texture {
+        &self.cube
     }
 
     pub(crate) fn sample_bind_group(&self) -> &wgpu::BindGroup {

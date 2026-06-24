@@ -44,7 +44,7 @@ impl State {
         );
         if tier != ReflectionTier::Off {
             log::info!(
-                "[reflexiones] diagnóstico: centra RefTest R0 en pantalla y usa debug roughness/metallic/trace_strength/ssr_hits"
+                "[reflexiones] diagnóstico: usa debug roughness/metallic/trace_strength/ssr_hits o probe_layers"
             );
         }
     }
@@ -104,6 +104,10 @@ impl State {
             return;
         }
         self.reflection_debug_view = view;
+        if view.is_probe_log() {
+            self.probe_diag.bump_epoch();
+            crate::reflections::probes::diagnostics::log_mode_activated(view);
+        }
         send_event(&EngineEvent::ReflectionDebugViewChanged {
             view: view.wire().to_string(),
         });

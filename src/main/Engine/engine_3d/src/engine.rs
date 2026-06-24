@@ -322,6 +322,9 @@ pub struct State {
     pub(crate) last_probe_capture_ids: Option<Vec<EntityId>>,
     /// Tamaño de cara del cubemap de probes actualmente asignado (px); se recrea al cambiar tier.
     pub(crate) probe_cubemap_size: u32,
+    /// Throttle de logs de diagnóstico de probes (`ReflectionDebugView::ProbeLog*`).
+    pub(crate) probe_diag: crate::reflections::probes::diagnostics::ProbeDiagState,
+    pub(crate) probe_cubemap_readback: crate::reflections::probes::cubemap_readback::ProbeCubemapReadback,
     /// Layout del grupo de escena (binding 0 uniform, 1 shadow map, 2 sampler). Necesario para
     /// reconstruir bind groups al recrear el shadow map o el cubemap de probes.
     pub(crate) scene_bind_group_layout: wgpu::BindGroupLayout,
@@ -341,6 +344,9 @@ pub struct State {
     /// Cubo blanco compartido para `[EditorBox]` (plantilla y `.save`).
     pub(crate) editor_box_mesh_idx: Option<usize>,
     pub(crate) editor_box_tex_idx: Option<usize>,
+    /// Quad + texturas cacheadas para la escena MatVal.
+    pub(crate) mat_val_label_mesh_idx: Option<usize>,
+    pub(crate) mat_val_texture_cache: HashMap<String, usize>,
     /// Quad delgado compartido para muros/triggers 3D (colisionador / execution area).
     pub(crate) plane_tool_wall_mesh_idx: Option<usize>,
     pub(crate) directional_light_dir: GlamVec3,

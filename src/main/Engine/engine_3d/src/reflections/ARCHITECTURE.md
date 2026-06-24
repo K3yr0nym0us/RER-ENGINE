@@ -13,10 +13,21 @@ Cambios en B pueden no verse si A ya cubre el mismo aspecto y C solo suma el del
 
 ## Política de probes (`policy.rs`)
 
-- Entidad `[ReflectionProbe]` con `probe_index` en instancia (≥ 0): samplea **su propia ranura** (pendiente Fase 4; actualmente forward usa **nearest** como antes).
-- Resto de superficies: **nearest** por `probe_meta.entries` (`refl_resolve_probe_layer` en `reflection_math.wgsl`).
+- Entidades `[ReflectionProbe]` en el save registry: cada una tiene ranura cubemap y centro en su `Transform`.
+- Sin probes colocados: el sistema inyecta una **sonda de respaldo** (`FALLBACK_SCENE_PROBE_ID`) centrada en el plano horizontal del mundo y **~1.2 m sobre el suelo** (no el centro vertical del AABB, que produciría captura cenital).
+- Resto de superficies (MatVal, GLB, suelo, etc.): **nearest** por `probe_meta.entries` (`refl_nearest_probe_layer_entries` en forward).
 
-Rust escribe `tex_layer_pad[2]` solo para entidades en `probe_index_map`.
+Rust escribe `tex_layer_pad[2]` solo para entidades en `probe_index_map` (probes reales + id virtual de respaldo).
+
+## Contenido demo vs arquitectura
+
+| Qué | Rol |
+|-----|-----|
+| `[ReflectionProbe]` | Parte del sistema de reflejos; captura cubemap |
+| `[MatVal]` / `[MatValLabel]` | Demo PBR; entidades normales con `SurfacePbr`; **no** son probes |
+| Modelos importados | Deben llevar `SurfacePbr` desde material del asset (metallic, roughness, IOR); mismos shaders SSR/IBL |
+
+Borrar todas las esferas MatVal **no** desactiva reflejos ni elimina probes.
 
 ## Orden del frame (`frame.rs`)
 

@@ -19,16 +19,31 @@ pub struct ProbeFrameData {
 
 pub fn prepare_probe_frame(state: &mut State, settings: &ReflectionSettings) -> ProbeFrameData {
     state.ensure_probe_slots_allocated();
-    let probe_list = if settings.active() {
+    let mut probe_list = if settings.active() {
         state.reflection_probe_render_list()
     } else {
         Vec::new()
     };
+    if settings.active() && probe_list.is_empty() {
+        let min = state.world_bounds_3d.min_corner();
+        let max = state.world_bounds_3d.max_corner();
+        probe_list.push((
+            registry::FALLBACK_SCENE_PROBE_ID,
+            registry::fallback_probe_center_from_bounds(min, max),
+            0,
+        ));
+    }
     if settings.active() {
         let probe_ids: Vec<_> = probe_list.iter().map(|(id, _, _)| *id).collect();
         state.sync_probe_capture_burst_for_entity_set(&probe_ids);
+        let bounds_min = state.world_bounds_3d.min_corner();
+        let bounds_max = state.world_bounds_3d.max_corner();
         let meta = registry::build_probe_meta(&probe_list, |id| {
-            state.reflection_probe_world_radius(id)
+            if registry::is_fallback_scene_probe(id) {
+                registry::fallback_probe_radius_from_bounds(bounds_min, bounds_max)
+            } else {
+                state.reflection_probe_world_radius(id)
+            }
         });
         state
             .probe_env

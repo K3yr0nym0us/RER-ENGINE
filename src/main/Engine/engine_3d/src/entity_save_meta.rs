@@ -11,6 +11,8 @@ const ENTITY_MARKERS: &[&str] = &[
     "[Sun]",
     "[Ball]",
     "[ReflectionProbe]",
+    "[MatVal]",
+    "[MatValLabel]",
     "[Colisionador]",
     "[ExecutionArea]",
 ];

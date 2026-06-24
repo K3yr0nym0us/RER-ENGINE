@@ -130,6 +130,7 @@ pub struct ReflectionPass {
     temporal_bgl: wgpu::BindGroupLayout,
     composite_bgl: wgpu::BindGroupLayout,
     debug_bgl: wgpu::BindGroupLayout,
+    probe_sample_bgl: wgpu::BindGroupLayout,
     ssr_uniform_buffer: wgpu::Buffer,
     temporal_uniform_buffer: wgpu::Buffer,
     composite_uniform_buffer: wgpu::Buffer,
@@ -192,6 +193,7 @@ impl ReflectionPass {
         width: u32,
         height: u32,
         rt_hw_available: bool,
+        probe_sample_bgl: &wgpu::BindGroupLayout,
     ) -> Self {
         let linear_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("reflection-linear"),
@@ -466,7 +468,7 @@ impl ReflectionPass {
 
         let debug_pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("refl-debug-pl"),
-            bind_group_layouts: &[Some(&debug_bgl)],
+            bind_group_layouts: &[Some(&debug_bgl), Some(probe_sample_bgl)],
             immediate_size: 0,
         });
         let debug_pipeline = device.create_render_pipeline(&fullscreen_pipeline_desc(
@@ -656,6 +658,7 @@ impl ReflectionPass {
             temporal_bgl,
             composite_bgl,
             debug_bgl,
+            probe_sample_bgl: probe_sample_bgl.clone(),
             ssr_uniform_buffer,
             temporal_uniform_buffer,
             composite_uniform_buffer,
@@ -716,6 +719,7 @@ impl ReflectionPass {
             width.max(1),
             height.max(1),
             self.rt_hw_available,
+            &self.probe_sample_bgl,
         );
     }
 
@@ -1221,6 +1225,7 @@ impl ReflectionPass {
         encoder: &mut wgpu::CommandEncoder,
         surface_view: &TextureView,
         debug_view: ReflectionDebugView,
+        probe_bind_group: &wgpu::BindGroup,
     ) {
         if debug_view == ReflectionDebugView::Final
             || debug_view == ReflectionDebugView::RtInstances
@@ -1231,6 +1236,7 @@ impl ReflectionPass {
             encoder,
             &self.debug_pipeline,
             &self.debug_bind_group,
+            Some(probe_bind_group),
             surface_view,
             wgpu::LoadOp::Clear(wgpu::Color::BLACK),
             Some("reflection-debug-blit"),
@@ -1397,6 +1403,7 @@ fn draw_fullscreen_pass(
     encoder: &mut wgpu::CommandEncoder,
     pipeline: &wgpu::RenderPipeline,
     bind_group: &wgpu::BindGroup,
+    probe_bind_group: Option<&wgpu::BindGroup>,
     output_view: &TextureView,
     load: wgpu::LoadOp<wgpu::Color>,
     label: Option<&str>,
@@ -1419,6 +1426,9 @@ fn draw_fullscreen_pass(
     });
     pass.set_pipeline(pipeline);
     pass.set_bind_group(0, bind_group, &[]);
+    if let Some(probe_bg) = probe_bind_group {
+        pass.set_bind_group(1, probe_bg, &[]);
+    }
     pass.draw(0..3, 0..1);
 }
 

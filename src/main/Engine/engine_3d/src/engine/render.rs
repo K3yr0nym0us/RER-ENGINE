@@ -14,8 +14,10 @@ pub(crate) struct SceneInstanceBatch {
     pub(crate) mesh_idx: usize,
     texture_layer: u32,
     /// Ranura cubemap (-1 = sin probe); evita mezclar instancias con distinto probe_index.
-    probe_layer: i32,
+    pub(crate) probe_layer: i32,
     pub(crate) instances: Vec<crate::mesh::InstanceData>,
+    /// Paralelo a `instances` (misma longitud); solo para diagnóstico de probes.
+    pub(crate) entity_ids: Vec<crate::ecs::EntityId>,
 }
 
 impl State {
@@ -96,12 +98,14 @@ impl State {
             });
             if can_extend {
                 batches.last_mut().unwrap().instances.push(inst);
+                batches.last_mut().unwrap().entity_ids.push(*entity_id);
             } else {
                 batches.push(SceneInstanceBatch {
                     mesh_idx: *mesh_idx,
                     texture_layer: layer,
                     probe_layer,
                     instances: vec![inst],
+                    entity_ids: vec![*entity_id],
                 });
             }
         }
@@ -510,13 +514,57 @@ impl State {
             },
         );
 
+        if self.reflection_debug_view
+            == crate::config_3d::reflection_graphics::ReflectionDebugView::ProbeLogCubemap
+            && reflection_settings.active()
+        {
+            let frame_id = self.probe_diag.tick_frame();
+            if crate::reflections::probes::diagnostics::should_log_cubemap(
+                frame_id,
+                &mut self.probe_diag,
+            ) {
+                self.probe_cubemap_readback.queue(
+                    &mut enc,
+                    self.probe_env.cube_texture(),
+                    self.probe_env.face_size(),
+                    &probe_frame.probe_list,
+                );
+                self.probe_diag.pending_cubemap_log_frame = Some(frame_id);
+            }
+        }
+
         let mut instance_slices = Vec::with_capacity(batches.len());
         for b in &batches {
             instance_slices.push(b.instances.as_slice());
         }
+
+        let probe_meta_for_diag = if self.reflection_debug_view.is_probe_log()
+            && self.reflection_debug_view
+                != crate::config_3d::reflection_graphics::ReflectionDebugView::ProbeLogCubemap
+        {
+            Some(crate::reflections::probes::registry::build_probe_meta(
+                &probe_frame.probe_list,
+                |id| self.reflection_probe_world_radius(id),
+            ))
+        } else {
+            None
+        };
+
         let instance_buffers =
             self.scene_instance_pool
                 .upload(&self.device, &self.queue, &instance_slices);
+
+        if let Some(probe_meta) = &probe_meta_for_diag {
+            let frame_id = self.probe_diag.tick_frame();
+            crate::reflections::probes::diagnostics::run_frame_diagnostics(
+                self.reflection_debug_view,
+                frame_id,
+                &mut self.probe_diag,
+                &probe_frame,
+                &batches,
+                probe_meta,
+            );
+        }
 
         {
             let ambient_view = self.taa.ambient_view();
@@ -851,6 +899,7 @@ impl State {
                 &mut enc,
                 &view,
                 self.reflection_debug_view,
+                self.probe_env.sample_bind_group(),
             );
             self.taa.tick_frame_index();
         } else if ran_reflections {
@@ -1322,6 +1371,15 @@ impl State {
         }
 
         self.queue.submit(std::iter::once(enc.finish()));
+        if let Some(frame_id) = self.probe_diag.pending_cubemap_log_frame.take() {
+            if self.probe_cubemap_readback.is_pending() {
+                self.probe_cubemap_readback.finish_and_log(
+                    &self.device,
+                    frame_id,
+                    self.probe_env.face_size(),
+                );
+            }
+        }
         self.last_draw_calls = draw_calls;
         output.present();
         Ok(())

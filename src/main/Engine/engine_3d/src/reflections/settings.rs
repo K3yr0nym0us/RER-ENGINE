@@ -20,6 +20,14 @@ pub enum ReflectionDebugView {
     RtInstances,
     /// Colorea por índice de ranura de probe resuelto (nearest / own-slot).
     ProbeLayers,
+    /// Log consola: inputs réplica CPU de fs_main por probe (throttled).
+    ProbeLogShader,
+    /// Log consola: snapshot buffer instancias pre-draw (throttled).
+    ProbeLogBuffers,
+    /// Log consola: hash instance + probe_meta por frame (throttled).
+    ProbeLogHash,
+    /// Log consola (hash cubemap post-captura) + vista: capa resuelta | muestreo cubemap.
+    ProbeLogCubemap,
 }
 
 impl ReflectionDebugView {
@@ -32,6 +40,10 @@ impl ReflectionDebugView {
             "reflection_mask" | "mask" => Some(Self::ReflectionMask),
             "rt_instances" | "rt_diag" => Some(Self::RtInstances),
             "probe_layers" | "probe_slots" | "probes" => Some(Self::ProbeLayers),
+            "probe_log_shader" | "log_shader" | "shader_input" => Some(Self::ProbeLogShader),
+            "probe_log_buffers" | "log_buffers" | "draw_buffer" => Some(Self::ProbeLogBuffers),
+            "probe_log_hash" | "log_hash" | "buffer_hash" => Some(Self::ProbeLogHash),
+            "probe_log_cubemap" | "log_cubemap" | "cubemap_capture" => Some(Self::ProbeLogCubemap),
             _ => None,
         }
     }
@@ -45,11 +57,29 @@ impl ReflectionDebugView {
             Self::ReflectionMask => "reflection_mask",
             Self::RtInstances => "rt_instances",
             Self::ProbeLayers => "probe_layers",
+            Self::ProbeLogShader => "probe_log_shader",
+            Self::ProbeLogBuffers => "probe_log_buffers",
+            Self::ProbeLogHash => "probe_log_hash",
+            Self::ProbeLogCubemap => "probe_log_cubemap",
         }
     }
 
+    pub fn is_probe_log(self) -> bool {
+        matches!(
+            self,
+            Self::ProbeLogShader | Self::ProbeLogBuffers | Self::ProbeLogHash | Self::ProbeLogCubemap
+        )
+    }
+
     pub fn is_visual_debug(self) -> bool {
-        !matches!(self, Self::Final | Self::RtInstances)
+        !matches!(
+            self,
+            Self::Final
+                | Self::RtInstances
+                | Self::ProbeLogShader
+                | Self::ProbeLogBuffers
+                | Self::ProbeLogHash
+        )
     }
 
     pub fn shader_index(self) -> u32 {
@@ -61,6 +91,8 @@ impl ReflectionDebugView {
             Self::Roughness => 4,
             Self::RtInstances => 3,
             Self::ProbeLayers => 28,
+            Self::ProbeLogCubemap => 29,
+            Self::ProbeLogShader | Self::ProbeLogBuffers | Self::ProbeLogHash => 0,
         }
     }
 }

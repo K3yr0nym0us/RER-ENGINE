@@ -76,6 +76,8 @@ impl State {
         self.tex_layer_albedo.clear();
         self.editor_box_mesh_idx = None;
         self.editor_box_tex_idx = None;
+        self.mat_val_label_mesh_idx = None;
+        self.mat_val_texture_cache.clear();
         self.plane_tool_wall_mesh_idx = None;
         self.static_model_cache.clear();
         self.model_assets.clear();
@@ -403,7 +405,7 @@ impl State {
         self.ensure_ground_plane();
         self.ensure_default_sun();
         self.ensure_default_physics_ball();
-        self.ensure_reflection_test_spheres();
+        self.ensure_material_validation_demo();
         if self.play_character_entity.is_none() {
             self.spawn_play_character();
         }
@@ -491,39 +493,9 @@ impl State {
         crate::reflections::probes::registry::probe_world_radius(half)
     }
 
-    pub(crate) fn ensure_reflection_test_spheres(&mut self) {
-        const RADIUS: f32 = 0.8;
-        /// Detrás del jugador (spawn ~z=5): fila en el espacio libre hacia la cámara.
-        const Z: f32 = 1.5;
-        const ROUGHNESS: [f32; 5] = [0.0, 0.25, 0.5, 0.75, 1.0];
-        const X_POSITIONS: [f32; 5] = [-4.0, -2.0, 0.0, 2.0, 4.0];
-
-        let existing = self.reflection_probe_entities();
-        if existing.len() >= 5 {
-            for (i, &id) in existing.iter().take(5).enumerate() {
-                let position = [X_POSITIONS[i], RADIUS, Z];
-                if let Some(t) = self.world.get_mut::<crate::ecs::Transform>(id) {
-                    t.position = glam::Vec3::from_array(position);
-                    t.scale = glam::Vec3::splat(RADIUS * 2.0);
-                }
-                if let Some(pbr) = self.world.get_mut::<crate::ecs::SurfacePbr>(id) {
-                    *pbr = crate::ecs::SurfacePbr::metal_probe(ROUGHNESS[i]);
-                } else {
-                    self.world.insert(id, crate::ecs::SurfacePbr::metal_probe(ROUGHNESS[i]));
-                }
-                self.apply_reflection_probe_visual(id, ROUGHNESS[i]);
-                self.allocate_probe_slot(id);
-            }
-            self.request_probe_capture_burst_if_reflections_active();
-            return;
-        }
-
-        for (i, &roughness) in ROUGHNESS.iter().enumerate() {
-            let label = format!("RefTest R{roughness}");
-            let position = [X_POSITIONS[i], RADIUS, Z];
-            self.spawn_static_reflection_probe_sphere(&label, position, RADIUS, roughness);
-        }
-        self.request_probe_capture_burst_if_reflections_active();
+    /// Esferas demo PBR (`[MatVal]`). Independiente del pipeline de reflejos / probes.
+    pub(crate) fn ensure_material_validation_demo(&mut self) {
+        crate::config_3d::material_validation::ensure_material_validation_scene(self);
     }
 
     /// Tras cargar escena FP placeholder (switch sin guardar): alinear sol, luz y cámara orbital del editor.

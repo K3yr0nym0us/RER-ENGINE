@@ -47,6 +47,10 @@ const DEBUG_VIEWS = [
 	{ key: 'ssr_hits', labelKey: 'Reflection debug ssr hits' },
 	{ key: 'reflection_mask', labelKey: 'Reflection debug mask' },
 	{ key: 'rt_instances', labelKey: 'RT instances (diagnostic)' },
+	{ key: 'probe_log_shader', labelKey: 'Probe log shader input' },
+	{ key: 'probe_log_buffers', labelKey: 'Probe log draw buffers' },
+	{ key: 'probe_log_hash', labelKey: 'Probe log buffer hash' },
+	{ key: 'probe_log_cubemap', labelKey: 'Probe log cubemap capture' },
 ] as const
 
 export default function WorldReflectionsAccordion() {
@@ -116,7 +120,7 @@ export default function WorldReflectionsAccordion() {
 					id="reflection-debug-view"
 					className="form-select form-select-sm bg-dark text-light border-secondary mb-0"
 					value={activeDebugView}
-					disabled={!engineReady || activeTier === 'off'}
+					disabled={!engineReady}
 					onChange={(e) => setReflectionDebugView(e.target.value)}
 				>
 					{DEBUG_VIEWS.map(({ key, labelKey }) => (

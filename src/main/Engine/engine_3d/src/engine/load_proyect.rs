@@ -1418,7 +1418,7 @@ fn apply_loaded_proyect_3d_with_scene(
         state,
         view.world.shadowTier.as_deref(),
     );
-    state.ensure_reflection_test_spheres();
+    state.ensure_material_validation_demo();
     send_event(&EngineEvent::GraphicsTextureTierChanged {
         tier: state.graphics_texture_tier.wire().to_string(),
     });

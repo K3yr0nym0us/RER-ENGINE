@@ -28,6 +28,8 @@ pub(crate) mod reflection_settings;
 pub(crate) mod shadow_graphics;
 pub(crate) mod shadow_settings;
 pub(crate) mod fbx_facing;
+pub(crate) mod pbr_presets;
+pub(crate) mod material_validation;
 pub(crate) mod mesh_3d;
 pub(crate) mod mesh_3d_fbx;
 pub(crate) mod model_asset;

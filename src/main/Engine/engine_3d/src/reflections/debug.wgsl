@@ -26,6 +26,10 @@ struct DebugUniforms {
 @group(0) @binding(8) var t_direct : texture_2d<f32>;
 @group(0) @binding(9) var t_base_color : texture_2d<f32>;
 
+@group(1) @binding(0) var t_probe_env : texture_cube_array<f32>;
+@group(1) @binding(1) var s_probe_env : sampler;
+@group(1) @binding(2) var<uniform> probe_meta : ReflProbeMeta;
+
 struct VsOut {
     @builtin(position) pos : vec4<f32>,
     @location(0) uv          : vec2<f32>,
@@ -485,15 +489,70 @@ fn fs_main(in : VsOut) -> @location(0) vec4<f32> {
             return vec4<f32>(textureSample(t_reflection, s_linear, in.uv).rgb, 1.0);
         }
         case 28u: {
-            // Vista aproximada por posición world (sin probe_meta en este pass).
             let d_m = depth_at(in.uv, textureDimensions(t_depth));
             if d_m <= 0.0001 {
                 return vec4<f32>(0.0, 0.0, 0.0, 1.0);
             }
             let wp = world_pos_from_depth(in.uv, d_m);
-            let slot = f32(i32(fract(dot(wp, vec3<f32>(12.9898, 78.233, 45.164))) * 8.0));
-            let hue = slot / 8.0;
-            return vec4<f32>(fract(vec3<f32>(hue, hue * 0.7, hue * 0.35) + vec3<f32>(0.2)), 1.0);
+            let layer_i = refl_nearest_probe_layer_entries(wp, probe_meta.entries);
+            let slot = u32(max(layer_i, 0));
+            let hues = array<vec3<f32>, 8>(
+                vec3<f32>(1.0, 0.15, 0.15),
+                vec3<f32>(0.15, 1.0, 0.2),
+                vec3<f32>(0.2, 0.35, 1.0),
+                vec3<f32>(1.0, 0.9, 0.15),
+                vec3<f32>(1.0, 0.2, 0.95),
+                vec3<f32>(0.15, 0.95, 0.95),
+                vec3<f32>(1.0, 0.55, 0.1),
+                vec3<f32>(0.65, 0.2, 1.0),
+            );
+            if layer_i < 0 {
+                return vec4<f32>(0.08, 0.08, 0.1, 1.0);
+            }
+            return vec4<f32>(hues[slot], 1.0);
+        }
+        case 29u: {
+            // Izquierda: capa nearest resuelta; derecha: RGB del cubemap (mismo layer/dir que fs_main).
+            let d_m = depth_at(in.uv, textureDimensions(t_depth));
+            if d_m <= 0.0001 {
+                return vec4<f32>(0.05, 0.05, 0.08, 1.0);
+            }
+            let wp = world_pos_from_depth(in.uv, d_m);
+            let gb_px = texel_px(in.uv, textureDimensions(t_normal_roughness));
+            let packed = textureLoad(t_normal_roughness, gb_px, 0);
+            let n = decode_octahedral(packed.xy);
+            let metallic = textureLoad(t_direct, gb_px, 0).a;
+            let layer_i = refl_nearest_probe_layer_entries(wp, probe_meta.entries);
+            let slot = u32(max(layer_i, 0));
+            let hues = array<vec3<f32>, 8>(
+                vec3<f32>(1.0, 0.15, 0.15),
+                vec3<f32>(0.15, 1.0, 0.2),
+                vec3<f32>(0.2, 0.35, 1.0),
+                vec3<f32>(1.0, 0.9, 0.15),
+                vec3<f32>(1.0, 0.2, 0.95),
+                vec3<f32>(0.15, 0.95, 0.95),
+                vec3<f32>(1.0, 0.55, 0.1),
+                vec3<f32>(0.65, 0.2, 1.0),
+            );
+            var layer_vis = vec3<f32>(0.1, 0.1, 0.12);
+            if layer_i >= 0 {
+                layer_vis = hues[slot];
+            }
+            var cubemap_rgb = vec3<f32>(0.02, 0.02, 0.03);
+            if layer_i >= 0 && metallic > 0.5 {
+                let sample_dir = refl_cubemap_sample_dir(
+                    wp,
+                    u.cam_pos.xyz,
+                    n,
+                    layer_i,
+                    probe_meta.entries,
+                );
+                cubemap_rgb = textureSampleLevel(t_probe_env, s_probe_env, sample_dir, layer_i, 0.0).rgb;
+            }
+            if in.uv.x < 0.5 {
+                return vec4<f32>(layer_vis, 1.0);
+            }
+            return vec4<f32>(cubemap_rgb, 1.0);
         }
         default: {
             return textureSample(t_scene, s_linear, in.uv);

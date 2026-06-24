@@ -142,7 +142,11 @@ export type ReflectionDebugView =
 	| 'ssr_hit_uv_world_screen_delta'
 	| 'ssr_hit_uv_world_screen_split'
 	| 'ssr_final_composite'
-	| 'rt_instances';
+	| 'rt_instances'
+	| 'probe_log_shader'
+	| 'probe_log_buffers'
+	| 'probe_log_hash'
+	| 'probe_log_cubemap';
 
 export function normalizeReflectionDebugView(value: unknown): ReflectionDebugView {
 	const s = String(value ?? 'final').trim().toLowerCase();
@@ -190,6 +194,10 @@ export function normalizeReflectionDebugView(value: unknown): ReflectionDebugVie
 	if (s === 'ssr_final_composite' || s === 'final_composite' || s === 'composite')
 		return 'ssr_final_composite';
 	if (s === 'rt_instances' || s === 'rt_diag') return 'rt_instances';
+	if (s === 'probe_log_shader' || s === 'log_shader' || s === 'shader_input') return 'probe_log_shader';
+	if (s === 'probe_log_buffers' || s === 'log_buffers' || s === 'draw_buffer') return 'probe_log_buffers';
+	if (s === 'probe_log_hash' || s === 'log_hash' || s === 'buffer_hash') return 'probe_log_hash';
+	if (s === 'probe_log_cubemap' || s === 'log_cubemap' || s === 'cubemap_capture') return 'probe_log_cubemap';
 	return 'final';
 }
 

@@ -805,6 +805,7 @@ impl State {
             size.width,
             size.height,
             rt_reflections_available,
+            &probe_env_bgl,
         );
         let rt_accel = crate::reflections::rt_accel::RtAccel::new(&device, rt_reflections_available);
         if rt_reflections_available {
@@ -829,6 +830,9 @@ impl State {
             &skinned_shader,
             probe_cubemap_size,
         );
+
+        let probe_cubemap_readback =
+            crate::reflections::probes::cubemap_readback::ProbeCubemapReadback::new(&device);
 
         let state = Self {
             window,
@@ -1036,6 +1040,8 @@ impl State {
             probe_entity_slots: std::collections::HashMap::new(),
             last_probe_capture_ids: None,
             probe_cubemap_size,
+            probe_diag: crate::reflections::probes::diagnostics::ProbeDiagState::new(),
+            probe_cubemap_readback,
             scene_bind_group_layout: bgl,
             hud_scene_buffer: hud_scene_buf,
             shadow_sampler,
@@ -1051,6 +1057,8 @@ impl State {
             reflection_probe_tex_idx: [None; 5],
             editor_box_mesh_idx: None,
             editor_box_tex_idx: None,
+            mat_val_label_mesh_idx: None,
+            mat_val_texture_cache: HashMap::new(),
             plane_tool_wall_mesh_idx: None,
             directional_light_dir: DEFAULT_LIGHT_DIR.normalize(),
             directional_light_color: DEFAULT_LIGHT_COLOR,

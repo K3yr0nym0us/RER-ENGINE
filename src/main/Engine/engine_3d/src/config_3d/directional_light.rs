@@ -172,7 +172,7 @@ impl State {
         }
     }
 
-    fn sun_icon_mesh_idx(&mut self) -> usize {
+    pub(crate) fn sun_icon_mesh_idx(&mut self) -> usize {
         if let Some(idx) = self.sun_icon_mesh_idx {
             return idx;
         }
