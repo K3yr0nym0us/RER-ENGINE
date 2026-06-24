@@ -351,7 +351,18 @@ fn refl_nearest_probe_layer(hit_pos : vec3<f32>, probe_meta : ReflProbeMeta) -> 
     return refl_nearest_probe_layer_entries(hit_pos, probe_meta.entries);
 }
 
-/// Capa de cubemap del probe más cercano a `hit_pos` (independiente del índice por instancia).
+/// Política unificada: entidad probe (inst_probe_layer ≥ 0) → su ranura; resto → nearest.
+fn refl_resolve_probe_layer(
+    world_pos: vec3<f32>,
+    inst_probe_layer: i32,
+    entries: array<vec4<f32>, 8>,
+) -> i32 {
+    if inst_probe_layer >= 0 {
+        return inst_probe_layer;
+    }
+    return refl_nearest_probe_layer_entries(world_pos, entries);
+}
+
 fn refl_nearest_probe_layer_entries(hit_pos : vec3<f32>, entries : array<vec4<f32>, 8>) -> i32 {
     var best_i = -1;
     var best_d = 1e30;

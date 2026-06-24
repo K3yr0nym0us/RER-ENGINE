@@ -10,12 +10,12 @@ use glam::Mat4;
 
 use super::{SceneUniforms, State, DEPTH_FORMAT};
 
-struct SceneInstanceBatch {
-    mesh_idx: usize,
+pub(crate) struct SceneInstanceBatch {
+    pub(crate) mesh_idx: usize,
     texture_layer: u32,
     /// Ranura cubemap (-1 = sin probe); evita mezclar instancias con distinto probe_index.
     probe_layer: i32,
-    instances: Vec<crate::mesh::InstanceData>,
+    pub(crate) instances: Vec<crate::mesh::InstanceData>,
 }
 
 impl State {
@@ -45,7 +45,7 @@ impl State {
 
     /// Instancias estáticas para escena o captura de probe. Con `for_probe_capture`, omite
     /// todas las sondas (cubemap = estático + jugador; vecinas vía SSR on-screen).
-    fn build_scene_instance_batches(
+    pub(crate) fn build_scene_instance_batches(
         &self,
         entities: &[(crate::ecs::EntityId, usize, usize, Mat4, i32)],
         probe_index_map: &std::collections::HashMap<crate::ecs::EntityId, usize>,
@@ -110,7 +110,7 @@ impl State {
 
     /// Geometría estática para captura de cubemap: sin cull por frustum de la cámara FPS
     /// (el probe captura 360° desde su centro, no desde el ojo del editor).
-    fn collect_probe_capture_static_entities(
+    pub(crate) fn collect_probe_capture_static_entities(
         &self,
     ) -> Vec<(crate::ecs::EntityId, usize, usize, Mat4, i32)> {
         self.world
@@ -321,29 +321,8 @@ impl State {
         };
 
         // Reflection probes: ranura cubemap estable por entidad + mapa id→ranura.
-        // Solo activo con reflejos encendidos; si no, las instancias quedan con probe_index = -1.
-        self.ensure_probe_slots_allocated();
-        let probe_list = if reflection_settings.active() {
-            self.reflection_probe_render_list()
-        } else {
-            Vec::new()
-        };
-        if reflection_settings.active() {
-            let probe_ids: Vec<_> = probe_list.iter().map(|(id, _, _)| *id).collect();
-            self.sync_probe_capture_burst_for_entity_set(&probe_ids);
-        }
-        let probe_index_map: std::collections::HashMap<crate::ecs::EntityId, usize> = probe_list
-            .iter()
-            .map(|(id, _, slot)| (*id, *slot))
-            .collect();
-        if reflection_settings.active() {
-            let mut probe_meta = crate::reflections::probe_env::ProbeMetaUniform::default();
-            for &(id, center, slot) in &probe_list {
-                let radius = self.reflection_probe_world_radius(id);
-                probe_meta.entries[slot] = [center.x, center.y, center.z, radius];
-            }
-            self.probe_env.write_probe_meta(&self.queue, &probe_meta);
-        }
+        let probe_frame = crate::reflections::frame::prepare_probes(self, &reflection_settings);
+        let probe_index_map = probe_frame.probe_index_map.clone();
 
         let aspect_fc = self.size.width as f32 / self.size.height as f32;
         let frustum_vp = {
@@ -520,152 +499,16 @@ impl State {
         }
 
         // ── Captura de reflection probes (un cubemap por esfera) ─────────────────────────
-        // Captura el entorno 360° (suelo, vecinas y jugador) alrededor del centro del probe.
-        // Round-robin: un probe por frame; burst tras activar reflejos o recrear cubemap.
-        if reflection_settings.active() && !probe_list.is_empty() {
-            use wgpu::util::DeviceExt;
-
-            let probe_indices: Vec<usize> = if self.probe_capture_burst_all {
-                self.probe_capture_burst_all = false;
-                log::info!(
-                    "[reflexiones] captura burst de {} probes (cubemap)",
-                    probe_list.len()
-                );
-                for &(id, _, slot) in &probe_list {
-                    log::info!("[reflexiones] probe entidad {id} → ranura cubemap {slot}");
-                }
-                (0..probe_list.len()).collect()
-            } else if probe_list.len() <= 5 {
-                // Escena de test (≤5 sondas): refrescar todos cada frame para evitar cubemaps
-                // obsoletos con round-robin mientras el jugador/entorno se mueven.
-                (0..probe_list.len()).collect()
-            } else {
-                let idx = self.probe_capture_cursor % probe_list.len();
-                self.probe_capture_cursor = self.probe_capture_cursor.wrapping_add(1);
-                vec![idx]
-            };
-
-            let probe_skinned_bufs: Vec<wgpu::Buffer> = skinned_probe
-                .iter()
-                .map(|(_, inst)| {
-                    self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                        label: Some("probe-skinned-inst"),
-                        contents: bytemuck::cast_slice(std::slice::from_ref(inst)),
-                        usage: wgpu::BufferUsages::VERTEX,
-                    })
-                })
-                .collect();
-
-            let probe_capture_static = self.collect_probe_capture_static_entities();
-
-            for &list_idx in &probe_indices {
-                let capture_batches = self.build_scene_instance_batches(
-                    &probe_capture_static,
-                    &probe_index_map,
-                    true,
-                );
-                let capture_slices: Vec<_> = capture_batches
-                    .iter()
-                    .map(|b| b.instances.as_slice())
-                    .collect();
-                let capture_instance_buffers = self.capture_instance_pool.upload(
-                    &self.device,
-                    &self.queue,
-                    &capture_slices,
-                );
-
-                let (_, center, cubemap_slot) = probe_list[list_idx];
-                let face_vps =
-                    crate::reflections::probe_env::cube_face_view_projs(center, 0.05, 200.0);
-
-                for f in 0..6usize {
-                    let su = SceneUniforms {
-                        view_proj: face_vps[f],
-                        view_proj_stable: face_vps[f],
-                        prev_view_proj: face_vps[f],
-                        inv_view_proj: face_vps[f],
-                        cam_pos: [center.x, center.y, center.z, 0.0],
-                        light_dir: scene_uni.light_dir,
-                        light_color: scene_uni.light_color,
-                        light_view_proj: scene_uni.light_view_proj,
-                        light_params: scene_uni.light_params,
-                        jitter: [0.0; 4],
-                        depth_plane: [0.05, 200.0, 0.0, 0.0],
-                        shadow_bias: scene_uni.shadow_bias,
-                    };
-                    self.probe_env
-                        .write_face_uniforms(&self.queue, f, bytemuck::bytes_of(&su));
-                }
-
-                for f in 0..6usize {
-                    let mut cap_pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
-                        label: Some("probe-env-capture-pass"),
-                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                            view: self.probe_env.face_view(cubemap_slot, f),
-                            resolve_target: None,
-                            depth_slice: None,
-                            ops: wgpu::Operations {
-                                load: wgpu::LoadOp::Clear(self.clear_color),
-                                store: wgpu::StoreOp::Store,
-                            },
-                        })],
-                        depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                            view: self.probe_env.capture_depth_view(),
-                            depth_ops: Some(wgpu::Operations {
-                                load: wgpu::LoadOp::Clear(1.0),
-                                store: wgpu::StoreOp::Store,
-                            }),
-                            stencil_ops: None,
-                        }),
-                        occlusion_query_set: None,
-                        timestamp_writes: None,
-                        multiview_mask: None,
-                    });
-
-                    cap_pass.set_pipeline(self.probe_env.capture_pipeline());
-                    cap_pass.set_bind_group(0, self.probe_env.face_scene_bind_group(f), &[]);
-                    cap_pass.set_bind_group(1, self.texture_array.bind_group.as_ref(), &[]);
-                    for (batch, inst_buf) in capture_batches
-                        .iter()
-                        .zip(capture_instance_buffers.iter())
-                    {
-                        let Some(mesh) = self.meshes.get(batch.mesh_idx) else {
-                            continue;
-                        };
-                        cap_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
-                        cap_pass.set_vertex_buffer(1, inst_buf.slice(..));
-                        cap_pass
-                            .set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                        cap_pass.draw_indexed(0..mesh.index_count, 0, 0..batch.instances.len() as u32);
-                    }
-
-                    if !skinned_probe.is_empty() {
-                        cap_pass.set_pipeline(self.probe_env.capture_skinned_pipeline());
-                        cap_pass.set_bind_group(0, self.probe_env.face_scene_bind_group(f), &[]);
-                        cap_pass.set_bind_group(1, self.texture_array.bind_group.as_ref(), &[]);
-                        cap_pass.set_bind_group(2, self.probe_env.capture_sample_bind_group(), &[]);
-                        for ((gpu_idx, _), inst_buf) in
-                            skinned_probe.iter().zip(probe_skinned_bufs.iter())
-                        {
-                            let Some(entry) = self.skinned_gpu_meshes.get(*gpu_idx) else {
-                                continue;
-                            };
-                            cap_pass.set_bind_group(3, &entry.joint_bind_group, &[]);
-                            cap_pass.set_vertex_buffer(0, entry.mesh.vertex_buffer.slice(..));
-                            cap_pass.set_vertex_buffer(1, inst_buf.slice(..));
-                            cap_pass.set_index_buffer(
-                                entry.mesh.index_buffer.slice(..),
-                                wgpu::IndexFormat::Uint32,
-                            );
-                            cap_pass.draw_indexed(0..entry.mesh.index_count, 0, 0..1);
-                        }
-                    }
-                }
-
-                self.probe_env
-                    .generate_mips(&self.device, &mut enc, cubemap_slot);
-            }
-        }
+        crate::reflections::frame::encode_probe_captures(
+            self,
+            &mut enc,
+            &crate::reflections::frame::ProbeCaptureInput {
+                settings: &reflection_settings,
+                probe_frame: &probe_frame,
+                scene_uni: &scene_uni,
+                skinned_probe: &skinned_probe,
+            },
+        );
 
         let mut instance_slices = Vec::with_capacity(batches.len());
         for b in &batches {
@@ -965,34 +808,36 @@ impl State {
         });
 
         let ran_reflections = if reflection_settings.active() {
-            self.reflections.run(
+            self.reflections.run_screen(
                 &self.device,
                 &self.queue,
                 &mut enc,
-                reflection_settings,
-                self.reflection_debug_view,
-                &depth_export_view,
-                normal_roughness_view,
-                lit_scene_view,
-                direct_view,
-                shadow_mask_view,
-                base_color_view,
-                depth_export_view,
-                velocity_view,
-                &mut self.rt_accel,
-                inv_view_proj,
-                view_proj,
-                view_mat,
-                cam_pos,
-                self.camera.near,
-                self.camera.far,
-                self.clear_color,
-                self.rt_reflections_available,
-                self.probe_env.sample_bind_group(),
-                &shadow_map_view,
-                &self.shadow_sampler,
-                &scene_uni,
-                &self.texture_array.bind_group,
+                crate::reflections::frame::ReflectionScreenInput {
+                    settings: reflection_settings,
+                    debug_view: self.reflection_debug_view,
+                    depth_view: &depth_export_view,
+                    normal_roughness_view,
+                    lit_scene_view,
+                    direct_view,
+                    surface_view: shadow_mask_view,
+                    base_color_view,
+                    depth_export_view: &depth_export_view,
+                    velocity_view,
+                    accel: &mut self.rt_accel,
+                    inv_view_proj,
+                    view_proj,
+                    view: view_mat,
+                    cam_pos,
+                    near_plane: self.camera.near,
+                    far_plane: self.camera.far,
+                    clear_color: self.clear_color,
+                    rt_available: self.rt_reflections_available,
+                    probe_bind_group: self.probe_env.sample_bind_group(),
+                    shadow_view: &shadow_map_view,
+                    shadow_sampler: &self.shadow_sampler,
+                    scene_uniforms: &scene_uni,
+                    texture_bind_group: &self.texture_array.bind_group,
+                },
             )
         } else {
             false

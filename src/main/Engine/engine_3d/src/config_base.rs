@@ -429,95 +429,66 @@ impl State {
     }
 
     fn reflection_probe_entities(&self) -> Vec<crate::ecs::EntityId> {
-        let mut ids: Vec<_> = self
-            .save_registry
-            .meta
-            .iter()
-            .filter_map(|(id, m)| {
-                if crate::entity_save_meta::entity_path_marker(&m.path) == Some("[ReflectionProbe]") {
-                    Some(*id)
-                } else {
-                    None
-                }
-            })
-            .collect();
-        ids.sort_unstable();
-        ids
+        crate::reflections::probes::registry::reflection_probe_entities(&self.save_registry)
     }
 
     pub(crate) fn is_reflection_probe_entity(&self, id: EntityId) -> bool {
-        self.save_registry
-            .meta
-            .get(&id)
-            .is_some_and(|m| {
-                crate::entity_save_meta::entity_path_marker(&m.path) == Some("[ReflectionProbe]")
-            })
+        crate::reflections::probes::registry::is_reflection_probe_entity(&self.save_registry, id)
     }
 
     /// Asigna ranura fija 0..MAX_PROBES-1; reutiliza la existente si ya estaba registrada.
     pub(crate) fn allocate_probe_slot(&mut self, id: EntityId) -> Option<usize> {
-        use crate::reflections::probe_env::MAX_PROBES;
-        if let Some(&slot) = self.probe_entity_slots.get(&id) {
-            return Some(slot);
-        }
-        let used: std::collections::HashSet<usize> =
-            self.probe_entity_slots.values().copied().collect();
-        for slot in 0..MAX_PROBES {
-            if !used.contains(&slot) {
-                self.probe_entity_slots.insert(id, slot);
-                return Some(slot);
-            }
-        }
-        log::warn!("[reflexiones] sin ranuras libres en cubemap para probe {id}");
-        None
+        crate::reflections::probes::registry::allocate_probe_slot(&mut self.probe_entity_slots, id)
     }
 
     pub(crate) fn release_probe_entity_slot(&mut self, id: EntityId) {
-        if self.probe_entity_slots.remove(&id).is_some() {
+        if crate::reflections::probes::registry::release_probe_slot(&mut self.probe_entity_slots, id)
+        {
             self.request_probe_capture_burst_if_reflections_active();
         }
     }
 
     /// Asegura ranura para cada probe registrado (cargas .save, plantilla FP, etc.).
     pub(crate) fn ensure_probe_slots_allocated(&mut self) {
-        for id in self.reflection_probe_entities() {
-            self.allocate_probe_slot(id);
-        }
+        crate::reflections::probes::registry::ensure_probe_slots_allocated(
+            &self.save_registry,
+            &mut self.probe_entity_slots,
+        );
     }
 
     /// Probes activos: (entidad, centro, ranura cubemap). La ranura es estable por `EntityId`.
     pub(crate) fn reflection_probe_render_list(
         &self,
     ) -> Vec<(crate::ecs::EntityId, glam::Vec3, usize)> {
-        self.reflection_probe_entities()
-            .into_iter()
-            .filter_map(|id| {
-                let slot = self.probe_entity_slots.get(&id).copied()?;
-                let center = self.world.get::<crate::ecs::Transform>(id)?.position;
-                Some((id, center, slot))
-            })
-            .take(crate::reflections::probe_env::MAX_PROBES)
-            .collect()
+        crate::reflections::probes::registry::reflection_probe_render_list(
+            &self.save_registry,
+            &self.probe_entity_slots,
+            |id| {
+                self.world
+                    .get::<crate::ecs::Transform>(id)
+                    .map(|t| t.position)
+            },
+        )
     }
 
     /// Si el conjunto de probes activos cambió, solicita burst de captura.
     pub(crate) fn sync_probe_capture_burst_for_entity_set(&mut self, probe_ids: &[EntityId]) {
-        let changed = self
-            .last_probe_capture_ids
-            .as_ref()
-            .map_or(true, |prev| prev.as_slice() != probe_ids);
-        if changed {
-            self.last_probe_capture_ids = Some(probe_ids.to_vec());
+        if crate::reflections::probes::registry::sync_capture_burst_for_entity_set(
+            &mut self.last_probe_capture_ids,
+            probe_ids,
+        ) {
             self.request_probe_capture_burst_if_reflections_active();
         }
     }
 
     /// Radio de influencia del probe (metros) para parallax del cubemap.
     pub(crate) fn reflection_probe_world_radius(&self, id: crate::ecs::EntityId) -> f32 {
-        self.world
+        let half = self
+            .world
             .get::<crate::ecs::Transform>(id)
-            .map(|t| (t.scale.x.abs() * 0.5).max(0.1))
-            .unwrap_or(1.0)
+            .map(|t| t.scale.x.abs() * 0.5)
+            .unwrap_or(1.0);
+        crate::reflections::probes::registry::probe_world_radius(half)
     }
 
     pub(crate) fn ensure_reflection_test_spheres(&mut self) {

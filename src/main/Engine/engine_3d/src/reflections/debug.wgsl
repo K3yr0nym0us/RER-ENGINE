@@ -484,6 +484,17 @@ fn fs_main(in : VsOut) -> @location(0) vec4<f32> {
         case 27u: {
             return vec4<f32>(textureSample(t_reflection, s_linear, in.uv).rgb, 1.0);
         }
+        case 28u: {
+            // Vista aproximada por posición world (sin probe_meta en este pass).
+            let d_m = depth_at(in.uv, textureDimensions(t_depth));
+            if d_m <= 0.0001 {
+                return vec4<f32>(0.0, 0.0, 0.0, 1.0);
+            }
+            let wp = world_pos_from_depth(in.uv, d_m);
+            let slot = f32(i32(fract(dot(wp, vec3<f32>(12.9898, 78.233, 45.164))) * 8.0));
+            let hue = slot / 8.0;
+            return vec4<f32>(fract(vec3<f32>(hue, hue * 0.7, hue * 0.35) + vec3<f32>(0.2)), 1.0);
+        }
         default: {
             return textureSample(t_scene, s_linear, in.uv);
         }

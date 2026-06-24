@@ -3,6 +3,10 @@
 pub(crate) mod blas;
 pub(crate) mod bvh;
 pub(crate) mod probe_env;
+pub(crate) mod policy;
+pub(crate) mod probes;
+pub(crate) mod frame;
+pub(crate) mod settings;
 pub(crate) mod skinned_blas;
 pub(crate) mod skinned_rt;
 pub(crate) mod rt_material;

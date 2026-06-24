@@ -128,21 +128,6 @@ fn scene_shadow(world_pos: vec3<f32>, world_normal: vec3<f32>) -> f32 {
     return sum / 9.0;
 }
 
-fn fake_environment(refl_dir: vec3<f32>) -> vec3<f32> {
-    let sky     = vec3<f32>(0.72, 0.75, 0.80);
-    let horizon = vec3<f32>(0.42, 0.43, 0.45);
-    let ground  = vec3<f32>(0.12, 0.12, 0.13);
-    let t = clamp(refl_dir.y * 0.5 + 0.5, 0.0, 1.0);
-    if t > 0.5 {
-        return mix(horizon, sky, (t - 0.5) * 2.0);
-    }
-    return mix(ground, horizon, t * 2.0);
-}
-
-fn fresnel_schlick_metal(f0: vec3<f32>, cos_theta: f32) -> vec3<f32> {
-    return f0 + (vec3<f32>(1.0) - f0) * pow(1.0 - cos_theta, 5.0);
-}
-
 fn apply_selection_rim(color: vec3<f32>, flag: f32, world_pos: vec3<f32>, world_normal: vec3<f32>) -> vec3<f32> {
     let v = normalize(u.cam_pos.xyz - world_pos);
     let n = normalize(world_normal);
@@ -201,10 +186,6 @@ struct SceneFragOut {
     @location(4) velocity_normal : vec4<f32>,
 }
 
-fn cubemap_sample_dir(world_pos: vec3<f32>, n: vec3<f32>, probe_idx: i32) -> vec3<f32> {
-    return refl_cubemap_sample_dir(world_pos, u.cam_pos.xyz, n, probe_idx, probe_meta.entries);
-}
-
 fn encode_octahedral(n: vec3<f32>) -> vec2<f32> {
     let inv_sum = 1.0 / (abs(n.x) + abs(n.y) + abs(n.z));
     var p = n.xy * inv_sum;
@@ -260,30 +241,22 @@ fn evaluate_scene(in: VertexOutput, env_override: vec3<f32>, has_env_override: b
     var amb = albedo_rgb * ambient_factor * lc * intensity;
     var dir = albedo_rgb * (1.0 - ambient_factor) * ndotl * lc * intensity * shadow;
     if surface_metallic > 0.5 {
-        let v = normalize(u.cam_pos.xyz - in.world_pos);
-        let cos_theta = max(dot(n, v), 0.0);
-        let f0 = albedo_rgb;
-        let fres = fresnel_schlick_metal(f0, cos_theta);
-        let refl_fuzzy = refl_fuzzy_mirror_dir(
+        let metal = forward_evaluate_metallic_pbr_skinned(
+            albedo_rgb,
             in.world_pos,
-            u.cam_pos.xyz,
             n,
             surface_roughness,
             in.uv,
+            u.cam_pos.xyz,
+            l,
+            lc,
+            intensity,
+            ndotl * shadow,
+            env_override,
+            has_env_override,
         );
-        let env_proc = fake_environment(
-            select(reflect(-v, n), refl_fuzzy, dot(refl_fuzzy, refl_fuzzy) > 1e-8),
-        );
-        let proc_lum = dot(env_proc, vec3<f32>(0.2126, 0.7152, 0.0722));
-        let blur_w = surface_roughness * surface_roughness;
-        let env_proc_eff = mix(env_proc, vec3<f32>(proc_lum), blur_w);
-        let env_eff = select(env_proc_eff, env_override, has_env_override);
-        amb = env_eff * fres;
-
-        let h = normalize(l + v);
-        let spec_power = mix(512.0, 16.0, surface_roughness);
-        let spec = pow(max(dot(n, h), 0.0), spec_power);
-        dir = lc * spec * intensity * ndotl * shadow * (1.0 - surface_roughness * 0.6);
+        amb = metal.ambient;
+        dir = metal.direct;
     }
     let lit = apply_selection_rim(amb + dir, in.flag, in.world_pos, in.world_normal);
     let base = amb + dir;
@@ -319,15 +292,18 @@ fn fs_main_skinned(in: VertexOutput) -> SceneFragOut {
     let nn = normalize(in.world_normal);
     let rough = resolve_surface_roughness(in.surface_roughness);
     let layer_i = refl_nearest_probe_layer_entries(in.world_pos, probe_meta.entries);
-    let sample_dir = refl_cubemap_sample_dir(in.world_pos, u.cam_pos.xyz, nn, layer_i, probe_meta.entries);
-    let lod = refl_env_cubemap_lod(rough);
-    var env_cube = vec3<f32>(0.0);
-    var has_override = false;
-    if in.surface_metallic > 0.5 && layer_i >= 0 {
-        env_cube = textureSampleLevel(t_probe_env, s_probe_env, sample_dir, layer_i, lod).rgb;
-        has_override = true;
-    }
-    return evaluate_scene(in, env_cube, has_override);
+    let env = forward_sample_metallic_env(
+        t_probe_env,
+        s_probe_env,
+        in.world_pos,
+        u.cam_pos.xyz,
+        nn,
+        in.surface_metallic,
+        rough,
+        layer_i,
+        probe_meta.entries,
+    );
+    return evaluate_scene(in, env.xyz, env.w > 0.5);
 }
 
 /// Captura del jugador en el cubemap del probe: IBL sin glint especular en metales.

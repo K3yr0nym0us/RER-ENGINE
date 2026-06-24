@@ -198,35 +198,6 @@ fn ndc_z_to_view_depth_m(ndc_z: f32) -> f32 {
     return (n * f) / (f - ndc_z * (f - n));
 }
 
-/// Reflejo de entorno aproximado para el metal (IBL fake; NO es el cielo del mundo, solo
-/// se ve DENTRO del metal). Gradiente neutro con contraste claro→oscuro según la dirección
-/// de reflexión: da al metal su aspecto pulido cuando el SSR no tiene geometría que reflejar.
-/// El SSR sustituye este fallback donde sí golpea el suelo/personaje.
-fn fake_environment(refl_dir: vec3<f32>) -> vec3<f32> {
-    // Entorno cromado: cielo, una BANDA DE HORIZONTE clara (la "línea" brillante típica de
-    // un metal pulido que da el look cromo en toda la circunferencia) y un suelo gris medio
-    // que aproxima el reflejo del piso donde el SSR no llega. Esto evita que el borde de la
-    // esfera se vea liso/plano: ahora toda la superficie lee como reflectante.
-    let sky     = vec3<f32>(0.50, 0.57, 0.72);  // arriba (cielo/techo)
-    let horizon = vec3<f32>(0.82, 0.84, 0.88);  // banda clara de horizonte (luz rasante)
-    let ground  = vec3<f32>(0.26, 0.27, 0.29);  // abajo (suelo reflejado)
-    let y = clamp(refl_dir.y, -1.0, 1.0);
-    if y >= 0.0 {
-        // Horizonte → cielo (curva para concentrar el brillo cerca del ecuador).
-        return mix(horizon, sky, pow(y, 0.45));
-    }
-    // Horizonte → suelo.
-    return mix(horizon, ground, pow(-y, 0.55));
-}
-
-fn fresnel_schlick_metal(f0: vec3<f32>, cos_theta: f32) -> vec3<f32> {
-    return f0 + (vec3<f32>(1.0) - f0) * pow(1.0 - cos_theta, 5.0);
-}
-
-fn cubemap_sample_dir(world_pos: vec3<f32>, n: vec3<f32>, probe_idx: i32) -> vec3<f32> {
-    return refl_cubemap_sample_dir(world_pos, u.cam_pos.xyz, n, probe_idx, probe_meta.entries);
-}
-
 fn evaluate_scene(in: VertexOutput, env_override: vec3<f32>, has_env_override: bool) -> SceneFragOut {
     // Export coherente con SSR legacy: clip_pos.z (interpolado) como ndc_z Vulkan.
     let view_depth_m = ndc_z_to_view_depth_m(in.clip_pos.z);
@@ -303,43 +274,26 @@ fn evaluate_scene(in: VertexOutput, env_override: vec3<f32>, has_env_override: b
     // SSR/RT añade reflejos reales encima cuando los hay. Mismo enfoque que Unreal usa
     // como fallback cuando la captura de entorno falla (forums.unrealengine.com).
     if surface_metallic > 0.5 {
-        let v = normalize(u.cam_pos.xyz - in.world_pos);
         let l = scene_light_dir_norm();
         let ndotl = max(dot(n, l), 0.0);
-        let cos_theta = max(dot(n, v), 0.0);
         let lc = u.light_color.xyz;
         let intensity = u.light_params.x;
-        let f0 = albedo;
-        let fres = fresnel_schlick_metal(f0, cos_theta);
-        // En un metal, la apariencia ES el entorno reflejado tintado por su F0 (color de la
-        // textura). Sin IBL real se aproxima con el gradiente; el SSR sustituye encima donde
-        // hay geometría on-screen. Rugosidad alta aplana el reflejo hacia el promedio.
-        // Con probe: cubemap real del entorno (suelo/vecinas/jugador en 360°). Sin él:
-        // gradiente procedural cromado. El SSR/RT sustituye encima donde hay geometría on-screen.
-        let refl_proc = refl_fuzzy_mirror_dir(
+        let metal = forward_evaluate_metallic_pbr(
+            albedo,
             in.world_pos,
-            u.cam_pos.xyz,
             n,
             surface_roughness,
             in.uv,
+            u.cam_pos.xyz,
+            l,
+            lc,
+            intensity,
+            ndotl,
+            env_override,
+            has_env_override,
         );
-        let env_proc = fake_environment(
-            select(reflect(-v, n), refl_proc, dot(refl_proc, refl_proc) > 1e-8),
-        );
-        // Tier Off (procedural): difuminar hacia luminancia local — aplana líneas/contrastes
-        // sin oscurecer el F0 de la esfera (evita confundir rugosidad con color base).
-        let proc_lum = dot(env_proc, vec3<f32>(0.2126, 0.7152, 0.0722));
-        let blur_w = surface_roughness * surface_roughness;
-        let env_proc_eff = mix(env_proc, vec3<f32>(proc_lum), blur_w);
-        // Cubemap (tier Low+): env_override ya viene prefiltrado por mip en fs_main.
-        let env_eff = select(env_proc_eff, env_override, has_env_override);
-        amb = env_eff * fres;
-
-        // Highlight especular de la luz direccional (glint del sol sobre el metal).
-        let h = normalize(l + v);
-        let spec_power = mix(512.0, 16.0, surface_roughness);
-        let spec = pow(max(dot(n, h), 0.0), spec_power);
-        dir = lc * spec * intensity * ndotl * (1.0 - surface_roughness * 0.6);
+        amb = metal.ambient;
+        dir = metal.direct;
     }
 
     return SceneFragOut(
@@ -373,22 +327,22 @@ fn fs_export_base_color(in: VertexOutput) -> @location(0) vec4<f32> {
 
 @fragment
 fn fs_main(in: VertexOutput) -> SceneFragOut {
-    // El cubemap del probe es la reflexión COMPLETA del entorno (captura 360° desde el
-    // centro de la esfera: suelo, vecinas, jugador aunque esté detrás de la cámara FPS).
-    // SSR/RT solo añaden detalle nítido de geometría on-screen encima (capa secundaria).
     let n = normalize(in.world_normal);
     let rough = resolve_surface_roughness(in.surface_roughness);
-    // Ranura por posición world (probe_meta), no por instancia: evita desync GPU/instancing.
+    // Comportamiento original: nearest por posición world (no por instancia).
     let layer_i = refl_nearest_probe_layer_entries(in.world_pos, probe_meta.entries);
-    let sample_dir = refl_cubemap_sample_dir(in.world_pos, u.cam_pos.xyz, n, layer_i, probe_meta.entries);
-    let lod = refl_env_cubemap_lod(rough);
-    var env_cube = vec3<f32>(0.0);
-    var has_override = false;
-    if in.surface_metallic > 0.5 && layer_i >= 0 {
-        env_cube = textureSampleLevel(t_probe_env, s_probe_env, sample_dir, layer_i, lod).rgb;
-        has_override = true;
-    }
-    return evaluate_scene(in, env_cube, has_override);
+    let env = forward_sample_metallic_env(
+        t_probe_env,
+        s_probe_env,
+        in.world_pos,
+        u.cam_pos.xyz,
+        n,
+        in.surface_metallic,
+        rough,
+        layer_i,
+        probe_meta.entries,
+    );
+    return evaluate_scene(in, env.xyz, env.w > 0.5);
 }
 
 @fragment
