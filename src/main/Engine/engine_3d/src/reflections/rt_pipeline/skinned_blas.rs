@@ -15,7 +15,7 @@ use wgpu::{
 };
 
 use crate::config_3d::model_animation::GpuSkinnedMeshEntry;
-use crate::reflections::skinned_rt::skinned_local_positions;
+use super::skinned_rt::skinned_local_positions;
 
 pub struct SkinnedBlasCache {
     entries: HashMap<usize, SkinnedBlasEntry>,

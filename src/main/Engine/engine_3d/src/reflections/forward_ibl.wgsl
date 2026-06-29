@@ -72,16 +72,9 @@ fn forward_sample_metallic_env(
     );
 }
 
-/// Entorno procedural cromado (mismo gradiente que `shader.wgsl` antes de la extracción).
-fn forward_fake_environment(refl_dir: vec3<f32>) -> vec3<f32> {
-    let sky = vec3<f32>(0.50, 0.57, 0.72);
-    let horizon = vec3<f32>(0.82, 0.84, 0.88);
-    let ground = vec3<f32>(0.26, 0.27, 0.29);
-    let y = clamp(refl_dir.y, -1.0, 1.0);
-    if y >= 0.0 {
-        return mix(horizon, sky, pow(y, 0.45));
-    }
-    return mix(horizon, ground, pow(-y, 0.55));
+/// Entorno procedural cromado (mismo celeste uniforme que el cielo esférico de límites).
+fn forward_fake_environment(_refl_dir: vec3<f32>) -> vec3<f32> {
+    return vec3<f32>(0.72, 0.86, 0.98);
 }
 
 fn forward_fresnel_schlick_metal(f0: vec3<f32>, cos_theta: f32) -> vec3<f32> {

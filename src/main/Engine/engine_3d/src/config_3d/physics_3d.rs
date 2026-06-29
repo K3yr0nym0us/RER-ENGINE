@@ -438,43 +438,17 @@ impl PhysicsWorld {
     }
 
     pub(crate) fn rebuild_world_bounds_colliders(&mut self, bounds: &WorldBounds3D) {
-        const WALL_THICKNESS: f32 = 0.5;
+        const FLOOR_THICKNESS: f32 = 0.5;
 
         let handles = std::mem::take(&mut self.world_bounds_colliders);
         self.clear_collider_handles(handles);
 
-        let hx = (bounds.width * 0.5).max(0.5);
-        let hy = (bounds.height * 0.5).max(0.5);
-        let hz = (bounds.depth * 0.5).max(0.5);
+        let floor_radius = bounds.radius.max(0.5);
 
-        let floor = ColliderBuilder::cuboid(hx, WALL_THICKNESS, hz)
-            .translation(Vector::new(0.0, -WALL_THICKNESS, 0.0))
+        let floor = ColliderBuilder::cylinder(FLOOR_THICKNESS, floor_radius)
+            .translation(Vector::new(0.0, -FLOOR_THICKNESS, 0.0))
             .build();
         self.world_bounds_colliders.push(self.colliders.insert(floor));
-
-        let left_wall = ColliderBuilder::cuboid(WALL_THICKNESS, hy, hz + WALL_THICKNESS)
-            .translation(Vector::new(-hx - WALL_THICKNESS, hy, 0.0))
-            .build();
-        self.world_bounds_colliders
-            .push(self.colliders.insert(left_wall));
-
-        let right_wall = ColliderBuilder::cuboid(WALL_THICKNESS, hy, hz + WALL_THICKNESS)
-            .translation(Vector::new(hx + WALL_THICKNESS, hy, 0.0))
-            .build();
-        self.world_bounds_colliders
-            .push(self.colliders.insert(right_wall));
-
-        let back_wall = ColliderBuilder::cuboid(hx + WALL_THICKNESS, hy, WALL_THICKNESS)
-            .translation(Vector::new(0.0, hy, -hz - WALL_THICKNESS))
-            .build();
-        self.world_bounds_colliders
-            .push(self.colliders.insert(back_wall));
-
-        let front_wall = ColliderBuilder::cuboid(hx + WALL_THICKNESS, hy, WALL_THICKNESS)
-            .translation(Vector::new(0.0, hy, hz + WALL_THICKNESS))
-            .build();
-        self.world_bounds_colliders
-            .push(self.colliders.insert(front_wall));
     }
 
     /// Raycast vertical para colocar pies al spawn (solo contacto, sin Y fijo).

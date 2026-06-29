@@ -47,3 +47,25 @@ fn vs_main(in: VIn, @builtin(vertex_index) vtx_idx: u32) -> VOut {
 fn fs_main(in: VOut) -> @location(0) vec4<f32> {
     return in.color;
 }
+
+struct SkyFragOut {
+    @location(0) ambient          : vec4<f32>,
+    @location(1) shadow             : vec4<f32>,
+    @location(2) direct           : vec4<f32>,
+    @location(3) depth            : vec4<f32>,
+    @location(4) velocity_normal  : vec4<f32>,
+}
+
+/// Salida MRT del cielo interior (mismos targets que el pass principal).
+@fragment
+fn fs_sky_mrt(in: VOut) -> SkyFragOut {
+    var out: SkyFragOut;
+    out.ambient = in.color;
+    // Sin sombra; rugosidad máxima → SSR/RT no trazan en píxeles de cielo.
+    out.shadow = vec4<f32>(1.0, 1.0, 0.0, 0.0);
+    out.direct = vec4<f32>(0.0);
+    // 0 = sin geometría (coherente con el clear del G-buffer de profundidad).
+    out.depth = vec4<f32>(0.0);
+    out.velocity_normal = vec4<f32>(0.0);
+    return out;
+}

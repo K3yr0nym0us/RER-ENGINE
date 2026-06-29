@@ -42,15 +42,10 @@ const TIERS = [
 
 const DEBUG_VIEWS = [
 	{ key: 'final', labelKey: 'Reflection debug final' },
-	{ key: 'normals', labelKey: 'Reflection debug normals' },
-	{ key: 'roughness', labelKey: 'Reflection debug roughness' },
-	{ key: 'ssr_hits', labelKey: 'Reflection debug ssr hits' },
-	{ key: 'reflection_mask', labelKey: 'Reflection debug mask' },
-	{ key: 'rt_instances', labelKey: 'RT instances (diagnostic)' },
-	{ key: 'probe_log_shader', labelKey: 'Probe log shader input' },
-	{ key: 'probe_log_buffers', labelKey: 'Probe log draw buffers' },
-	{ key: 'probe_log_hash', labelKey: 'Probe log buffer hash' },
-	{ key: 'probe_log_cubemap', labelKey: 'Probe log cubemap capture' },
+	{ key: 'ssr_debug', labelKey: 'Reflection debug ssr debug' },
+	{ key: 'ssr_miss_green', labelKey: 'Reflection debug ssr miss green' },
+	{ key: 'ssr_exit_reason', labelKey: 'Reflection debug ssr exit reason' },
+	{ key: 'ssr_vector_rgb', labelKey: 'Reflection debug ssr vector rgb' },
 ] as const
 
 export default function WorldReflectionsAccordion() {
@@ -114,7 +109,7 @@ export default function WorldReflectionsAccordion() {
 					{t('Reflection debug view')}
 				</label>
 				<p className="text-secondary mb-2" style={{ fontSize: '0.72rem' }}>
-					{t('Reflection debug view hint')}
+					{t('Reflection debug view hint ssr')}
 				</p>
 				<select
 					id="reflection-debug-view"

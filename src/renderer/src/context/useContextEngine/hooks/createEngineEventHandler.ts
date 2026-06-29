@@ -184,8 +184,10 @@ const SILENT_ENGINE_EVENTS = new Set<string>([
 	'texture_detail_distance_changed',
 	'reflection_tier_changed',
 	'reflection_tier_effective',
-	'shadow_tier_changed',
+	'reflection_raytracing_changed',
 	'reflection_debug_view_changed',
+	'ssr_debug_mode_changed',
+	'shadow_tier_changed',
 	'taa_changed',
 	'model_clips_ready',
 ]);
@@ -2896,16 +2898,28 @@ export function createEngineEventHandler({
 			}
 		}
 
-		if (event.event === 'shadow_tier_changed') {
-			const tier = normalizeShadowTier(event.tier);
-			dispatch({ type: 'SET_WORLD_CONFIG', payload: { shadowTier: tier } });
-			addLog(`[Sombras] Motor confirmó nivel: ${tier}`);
+		if (event.event === 'reflection_raytracing_changed') {
+			const enabled = Boolean(event.enabled);
+			dispatch({ type: 'SET_WORLD_CONFIG', payload: { reflectionRaytracing: enabled } });
+			addLog(`[Reflejos] Motor confirmó ray tracing: ${enabled ? 'on' : 'off'}`);
 		}
 
 		if (event.event === 'reflection_debug_view_changed') {
 			const view = normalizeReflectionDebugView(event.view);
 			dispatch({ type: 'SET_WORLD_CONFIG', payload: { reflectionDebugView: view } });
 			addLog(`[Reflejos] Motor confirmó vista debug: ${view}`);
+		}
+
+		if (event.event === 'ssr_debug_mode_changed') {
+			const enabled = Boolean(event.enabled);
+			dispatch({ type: 'SET_WORLD_CONFIG', payload: { ssrDebugMode: enabled } });
+			addLog(`[SSR debug] Motor confirmó modo depuración: ${enabled ? 'activado' : 'desactivado'}`);
+		}
+
+		if (event.event === 'shadow_tier_changed') {
+			const tier = normalizeShadowTier(event.tier);
+			dispatch({ type: 'SET_WORLD_CONFIG', payload: { shadowTier: tier } });
+			addLog(`[Sombras] Motor confirmó nivel: ${tier}`);
 		}
 
 		if (event.event === 'taa_changed') {

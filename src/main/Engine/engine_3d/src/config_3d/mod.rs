@@ -707,6 +707,9 @@ impl State {
                         tex_idx,
                         local_bounds: part.local_bounds,
                         forward_xz: part.forward_xz,
+                        roughness: -1.0,
+                        metallic: 0.0,
+                        ior: 0.0,
                     }],
                 );
             }
@@ -803,9 +806,13 @@ impl State {
                         tex_idx,
                         local_bounds: part.local_bounds,
                         forward_xz: part.forward_xz,
+                        roughness: -1.0,
+                        metallic: 0.0,
+                        ior: 0.0,
                     }],
                 );
             }
+
         }
 
         send_event(&EngineEvent::EntityModelReplaced {

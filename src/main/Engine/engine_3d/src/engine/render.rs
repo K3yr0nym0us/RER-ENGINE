@@ -4,6 +4,7 @@ use winit::dpi::PhysicalSize;
 use rer_engine_shared::wgpu_surface::{acquire_surface_texture, SurfacePresentError};
 
 use crate::config_3d::Camera;
+use crate::config_3d::reflection_graphics::{ReflectionSettings, ReflectionTier};
 use crate::gizmo;
 
 use glam::Mat4;
@@ -184,6 +185,11 @@ impl State {
             new_size.width,
             new_size.height,
         );
+        if self.reflection_tier != ReflectionTier::Off {
+            let tier_settings = ReflectionSettings::from_tier(self.reflection_tier);
+            self.reflections
+                .set_screen_fraction(&self.device, tier_settings.screen_fraction);
+        }
         self.reflections.invalidate_temporal();
         if self.player_ui_edit_active {
             self.rebuild_player_ui_screen_grid();
@@ -293,40 +299,24 @@ impl State {
         let shadow_darkness = self.shadow_darkness;
 
         let reflection_settings = {
-            let (settings, degraded) = crate::config_3d::reflection_graphics::effective_reflection_settings(
-                self.reflection_tier,
-                self.rt_reflections_available,
-            );
-            let effective_tier = if degraded {
-                crate::config_3d::reflection_graphics::ReflectionTier::Medium
-            } else {
-                self.reflection_tier
-            };
-            let ipc_key = (
-                self.reflection_tier,
-                effective_tier,
-                self.rt_reflections_available,
-            );
-            if self.reflection_tier_effective_ipc.as_ref() != Some(&ipc_key) {
-                self.reflection_tier_effective_ipc = Some(ipc_key);
+            let settings = crate::config_3d::reflection_graphics::ReflectionSettings::from_tier(self.reflection_tier);
+            let ipc_prev = self.reflection_tier_effective_ipc.replace(self.reflection_tier);
+            if ipc_prev != Some(self.reflection_tier) {
                 crate::ipc::send_event(&crate::ipc::EngineEvent::ReflectionTierEffective {
                     requested: self.reflection_tier.wire().to_string(),
-                    effective: effective_tier.wire().to_string(),
-                    rt_available: self.rt_reflections_available,
+                    effective: self.reflection_tier.wire().to_string(),
                 });
-            }
-            if degraded {
-                log::warn!(
-                    "[Reflejos] GPU sin ray tracing — degradando {} a Medium (SSR + temporal, sin RT)",
-                    self.reflection_tier.wire()
-                );
             }
             settings
         };
 
-        // Reflection probes: ranura cubemap estable por entidad + mapa id→ranura.
-        let probe_frame = crate::reflections::frame::prepare_probes(self, &reflection_settings);
-        let probe_index_map = probe_frame.probe_index_map.clone();
+        // Probes: solo cuando PROBES_ENABLED (fase SSR-only usa mapa vacío).
+        let probe_index_map = if reflection_settings.uses_probes() {
+            crate::reflections::frame::prepare_probes(self, &reflection_settings)
+                .probe_index_map
+        } else {
+            std::collections::HashMap::new()
+        };
 
         let aspect_fc = self.size.width as f32 / self.size.height as f32;
         let frustum_vp = {
@@ -396,7 +386,7 @@ impl State {
 
         let skinned_shadow = self.collect_skinned_draw_instances(&frustum_vp, &probe_index_map);
         let skinned_main = skinned_shadow.clone();
-        let skinned_probe = self.collect_skinned_probe_instances(&frustum_vp);
+        let _skinned_probe = self.collect_skinned_probe_instances(&frustum_vp);
 
         let mut shadow_batches: Vec<Batch> = Vec::new();
         for (entity_id, mesh_idx, _tex_idx, model_matrix, _layer) in &entities {
@@ -502,69 +492,16 @@ impl State {
             }
         }
 
-        // ── Captura de reflection probes (un cubemap por esfera) ─────────────────────────
-        crate::reflections::frame::encode_probe_captures(
-            self,
-            &mut enc,
-            &crate::reflections::frame::ProbeCaptureInput {
-                settings: &reflection_settings,
-                probe_frame: &probe_frame,
-                scene_uni: &scene_uni,
-                skinned_probe: &skinned_probe,
-            },
-        );
-
-        if self.reflection_debug_view
-            == crate::config_3d::reflection_graphics::ReflectionDebugView::ProbeLogCubemap
-            && reflection_settings.active()
-        {
-            let frame_id = self.probe_diag.tick_frame();
-            if crate::reflections::probes::diagnostics::should_log_cubemap(
-                frame_id,
-                &mut self.probe_diag,
-            ) {
-                self.probe_cubemap_readback.queue(
-                    &mut enc,
-                    self.probe_env.cube_texture(),
-                    self.probe_env.face_size(),
-                    &probe_frame.probe_list,
-                );
-                self.probe_diag.pending_cubemap_log_frame = Some(frame_id);
-            }
-        }
-
         let mut instance_slices = Vec::with_capacity(batches.len());
         for b in &batches {
             instance_slices.push(b.instances.as_slice());
         }
 
-        let probe_meta_for_diag = if self.reflection_debug_view.is_probe_log()
-            && self.reflection_debug_view
-                != crate::config_3d::reflection_graphics::ReflectionDebugView::ProbeLogCubemap
-        {
-            Some(crate::reflections::probes::registry::build_probe_meta(
-                &probe_frame.probe_list,
-                |id| self.reflection_probe_world_radius(id),
-            ))
-        } else {
-            None
-        };
+        let _probe_meta_for_diag: Option<std::sync::Arc<crate::reflections::probe_env::ProbeMetaUniform>> = None;
 
         let instance_buffers =
             self.scene_instance_pool
                 .upload(&self.device, &self.queue, &instance_slices);
-
-        if let Some(probe_meta) = &probe_meta_for_diag {
-            let frame_id = self.probe_diag.tick_frame();
-            crate::reflections::probes::diagnostics::run_frame_diagnostics(
-                self.reflection_debug_view,
-                frame_id,
-                &mut self.probe_diag,
-                &probe_frame,
-                &batches,
-                probe_meta,
-            );
-        }
 
         {
             let ambient_view = self.taa.ambient_view();
@@ -647,6 +584,31 @@ impl State {
             });
 
             pass.set_pipeline(&self.render_pipeline);
+
+            if self.world_sky_buffer.vertex_count > 0 {
+                let vp = glam::Mat4::from_cols_array_2d(&scene_uni.view_proj);
+                let sky_uni: [[f32; 4]; 9] = [
+                    vp.x_axis.to_array(),
+                    vp.y_axis.to_array(),
+                    vp.z_axis.to_array(),
+                    vp.w_axis.to_array(),
+                    [1.0, 0.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                    [0.0, 0.0, 0.0, 1.0],
+                    [-1.0, -1.0, 0.0, 0.0],
+                ];
+                self.queue.write_buffer(
+                    &self.grid_buffer_uni,
+                    0,
+                    bytemuck::cast_slice(&sky_uni),
+                );
+                pass.set_pipeline(&self.sky_pipeline);
+                pass.set_bind_group(0, &self.grid_bind_group, &[]);
+                pass.set_vertex_buffer(0, self.world_sky_buffer.vertex_buffer.slice(..));
+                pass.draw(0..self.world_sky_buffer.vertex_count, 0..1);
+                pass.set_pipeline(&self.render_pipeline);
+            }
 
             pass.set_bind_group(0, &self.scene_bind_group, &[]);
             pass.set_bind_group(1, self.texture_array.bind_group.as_ref(), &[]);
@@ -772,66 +734,7 @@ impl State {
         // marching deben usar ESA misma matriz para que el test de profundidad coincida.
         let view_proj = glam::Mat4::from_cols_array_2d(&scene_uni.view_proj);
         let inv_view_proj = glam::Mat4::from_cols_array_2d(&inv_vp);
-        let rt_sync = reflection_settings.active() && reflection_settings.rt_enabled;
-
-        if rt_sync {
-            self.rt_accel.ensure_hw(&self.device);
-            let build_cpu_bvh = !self.rt_accel.hw_active();
-            let include_skinned = !reflection_settings.rt_static_only;
-            let instances = crate::reflections::tlas::collect_rt_instances(
-                self,
-                include_skinned,
-                &frustum_vp,
-            );
-            let rt_materials = crate::reflections::rt_material::build_rt_materials(
-                self,
-                &instances,
-                &probe_index_map,
-            );
-            let meshes = &self.meshes;
-            let skinned_meshes = &self.skinned_gpu_meshes;
-            if self.reflection_debug_view
-                == crate::config_3d::reflection_graphics::ReflectionDebugView::RtInstances
-            {
-                let header = format!(
-                    "[RT_DIAG] {:>3} | {:<10} | {:<6} | {:<3} | {:<5} | {:<5} | {:<4} | {:<10}",
-                    "slot", "entity_id", "mesh", "tex", "rough", "metal", "ior", "flags"
-                );
-                log::info!("[RT_DIAG] {:-<95}", "");
-                log::info!("{header}");
-                log::info!("[RT_DIAG] {:-<95}", "");
-                for (slot, inst) in instances.iter().enumerate() {
-                    if slot >= 64 {
-                        break;
-                    }
-                    let mat = rt_materials.get(slot);
-                    let tex_idx = self
-                        .world
-                        .get::<crate::ecs::MeshComponent>(inst.entity_id)
-                        .map(|m| m.tex_idx)
-                        .unwrap_or(0xFFFF);
-                    let (rough, metal, ior) = mat
-                        .map(|m| (m.pbr[0], m.pbr[1], m.pbr[2]))
-                        .unwrap_or((f32::NAN, f32::NAN, f32::NAN));
-                    let flags = mat.map(|m| f32::to_bits(m.albedo[3])).unwrap_or(0);
-                    log::info!(
-                        "[RT_DIAG] {:>3} | {:<10} | {:<6?} | {:<3} | {:<5.3} | {:<5.3} | {:<4.2} | 0x{:08X}",
-                        slot, inst.entity_id, inst.mesh_idx, tex_idx, rough, metal, ior, flags,
-                    );
-                }
-                log::info!("[RT_DIAG] {:-<95}", "");
-            }
-            self.rt_accel.sync_scene(
-                &rt_materials,
-                &instances,
-                meshes,
-                skinned_meshes,
-                &self.device,
-                &self.queue,
-                &mut enc,
-                build_cpu_bvh,
-            );
-        }
+        // RT disabled
 
         if reflection_settings.active() {
             self.prepare_lit_scene(
@@ -871,7 +774,6 @@ impl State {
                     base_color_view,
                     depth_export_view: &depth_export_view,
                     velocity_view,
-                    accel: &mut self.rt_accel,
                     inv_view_proj,
                     view_proj,
                     view: view_mat,
@@ -879,12 +781,12 @@ impl State {
                     near_plane: self.camera.near,
                     far_plane: self.camera.far,
                     clear_color: self.clear_color,
-                    rt_available: self.rt_reflections_available,
                     probe_bind_group: self.probe_env.sample_bind_group(),
                     shadow_view: &shadow_map_view,
                     shadow_sampler: &self.shadow_sampler,
                     scene_uniforms: &scene_uni,
                     texture_bind_group: &self.texture_array.bind_group,
+                    ssr_debug_mode: self.ssr_debug_mode,
                 },
             )
         } else {
@@ -903,20 +805,14 @@ impl State {
             );
             self.taa.tick_frame_index();
         } else if ran_reflections {
-            let ssil_strength = if crate::reflections::rt_extensions::rt_diffuse_gi_enabled(
-                &reflection_settings,
-            ) {
-                0.65
-            } else {
-                0.0
-            };
+            let ssil_strength = 0.0;
             self.reflections.composite_into(
                 &self.device,
                 &self.queue,
                 &mut enc,
                 self.taa.scene_color_view(),
                 self.taa.scene_color_texture(),
-                1.0,
+                3.0,
                 ssil_strength,
             );
             let use_scene_taa = self.taa.scene_taa_active();
@@ -1008,59 +904,64 @@ impl State {
             }
         }
 
-        if self.debug_mode && !self.preview_playing {
-            let collision_overlay =
-                crate::config_3d::collision_overlay::build_editor_collision_overlay(
-                    &self.device,
-                    self,
-                );
-            if collision_overlay.vertex_count > 0 {
-                let aspect = self.size.width as f32 / self.size.height as f32;
-                let vp = self
-                    .camera_to_uniform_at_anchor(self.orbit_view_anchor(), aspect)
-                    .view_proj;
-                let col_uni: [[f32; 4]; 9] = [
-                    vp[0],
-                    vp[1],
-                    vp[2],
-                    vp[3],
-                    [1.0, 0.0, 0.0, 0.0],
-                    [0.0, 1.0, 0.0, 0.0],
-                    [0.0, 0.0, 1.0, 0.0],
-                    [0.0, 0.0, 0.0, 1.0],
-                    [-1.0, -1.0, 0.0, 0.0],
-                ];
-                self.queue.write_buffer(
-                    &self.grid_buffer_uni,
-                    0,
-                    bytemuck::cast_slice(&col_uni),
-                );
+        if self.debug_mode {
+            if !self.preview_playing {
+                let collision_overlay =
+                    crate::config_3d::collision_overlay::build_editor_collision_overlay(
+                        &self.device,
+                        self,
+                    );
+                if collision_overlay.vertex_count > 0 {
+                    let aspect = self.size.width as f32 / self.size.height as f32;
+                    let vp = self
+                        .camera_to_uniform_at_anchor(self.orbit_view_anchor(), aspect)
+                        .view_proj;
+                    let col_uni: [[f32; 4]; 9] = [
+                        vp[0],
+                        vp[1],
+                        vp[2],
+                        vp[3],
+                        [1.0, 0.0, 0.0, 0.0],
+                        [0.0, 1.0, 0.0, 0.0],
+                        [0.0, 0.0, 1.0, 0.0],
+                        [0.0, 0.0, 0.0, 1.0],
+                        [-1.0, -1.0, 0.0, 0.0],
+                    ];
+                    self.queue.write_buffer(
+                        &self.grid_buffer_uni,
+                        0,
+                        bytemuck::cast_slice(&col_uni),
+                    );
 
-                let mut col_pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("collision-debug-pass"),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: &view,
-                        resolve_target: None,
-                        depth_slice: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Load,
-                            store: wgpu::StoreOp::Store,
-                        },
-                    })],
-                    depth_stencil_attachment: None,
-                    occlusion_query_set: None,
-                    timestamp_writes: None,
-                    multiview_mask: None,
-                });
-                col_pass.set_pipeline(&self.grid_pipeline);
-                col_pass.set_bind_group(0, &self.grid_bind_group, &[]);
-                col_pass.set_vertex_buffer(0, collision_overlay.vertex_buffer.slice(..));
-                col_pass.draw(0..collision_overlay.vertex_count, 0..1);
-                draw_calls += 1;
+                    let mut col_pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                        label: Some("collision-debug-pass"),
+                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                            view: &view,
+                            resolve_target: None,
+                            depth_slice: None,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Load,
+                                store: wgpu::StoreOp::Store,
+                            },
+                        })],
+                        depth_stencil_attachment: None,
+                        occlusion_query_set: None,
+                        timestamp_writes: None,
+                        multiview_mask: None,
+                    });
+                    col_pass.set_pipeline(&self.grid_pipeline);
+                    col_pass.set_bind_group(0, &self.grid_bind_group, &[]);
+                    col_pass.set_vertex_buffer(0, collision_overlay.vertex_buffer.slice(..));
+                    col_pass.draw(0..collision_overlay.vertex_count, 0..1);
+                    draw_calls += 1;
+                }
             }
+
+            // Probe debug overlay disabled
         }
 
-        if self.world_bounds_buffer.vertex_count > 0 {
+        let show_world_bounds_wireframe = !self.preview_playing || self.debug_mode;
+        if show_world_bounds_wireframe && self.world_bounds_buffer.vertex_count > 0 {
             let aspect = self.size.width as f32 / self.size.height as f32;
             let vp = self
                 .camera_to_uniform_at_anchor(self.orbit_view_anchor(), aspect)
@@ -1371,6 +1272,9 @@ impl State {
         }
 
         self.queue.submit(std::iter::once(enc.finish()));
+        if self.ssr_debug_mode {
+            self.reflections.poll_ssr_debug_logs(&self.device);
+        }
         if let Some(frame_id) = self.probe_diag.pending_cubemap_log_frame.take() {
             if self.probe_cubemap_readback.is_pending() {
                 self.probe_cubemap_readback.finish_and_log(

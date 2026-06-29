@@ -46,10 +46,10 @@ pub struct RtSparseDispatch {
 
 impl RtSparseDispatch {
     pub fn new(device: &Device, color_format: wgpu::TextureFormat) -> Self {
-        let mask_shader = super::load_refl_wgsl(device, "rt-tile-mask", include_str!("rt_tile_mask.wgsl"));
+        let mask_shader = crate::reflections::load_refl_wgsl(device, "rt-tile-mask", include_str!("rt_tile_mask.wgsl"));
         let prepare_shader =
-            super::load_refl_wgsl(device, "rt-prepare-indirect", include_str!("rt_prepare_indirect.wgsl"));
-        let copy_shader = super::load_refl_wgsl(device, "rt-copy-ssr", include_str!("rt_copy_ssr.wgsl"));
+            crate::reflections::load_refl_wgsl(device, "rt-prepare-indirect", include_str!("rt_prepare_indirect.wgsl"));
+        let copy_shader = crate::reflections::load_refl_wgsl(device, "rt-copy-ssr", include_str!("rt_copy_ssr.wgsl"));
 
         let mask_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("rt-mask-bgl"),

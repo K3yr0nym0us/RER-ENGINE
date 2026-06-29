@@ -258,6 +258,20 @@ export function createEngineActions({
 		sendMotor({ cmd: 'set_world_size', width, height, depth });
 	};
 
+	const setWorldRadius = (radius: number) => {
+		const normalized = Math.max(5, Math.min(500, radius));
+		dispatch({
+			type: 'SET_WORLD_CONFIG',
+			payload: {
+				worldRadius: normalized,
+				worldWidth: normalized * 2,
+				worldHeight: normalized * 2,
+				worldDepth: normalized * 2,
+			},
+		});
+		send3dFn({ cmd: 'set_world_radius', radius: normalized } as never);
+	};
+
 	const setGridVisible = (visible: boolean) => {
 		dispatch({ type: 'SET_WORLD_CONFIG', payload: { gridVisible: visible } });
 		sendMotor({ cmd: 'set_grid_visible', visible });
@@ -313,6 +327,17 @@ export function createEngineActions({
 		addLog(`[Reflejos] Nivel solicitado: ${normalized}`);
 	};
 
+	const setReflectionRaytracing = (enabled: boolean) => {
+		dispatch({ type: 'SET_WORLD_CONFIG', payload: { reflectionRaytracing: enabled } });
+		send3dFn({ cmd: 'set_reflection_raytracing', enabled });
+		addLog(`[Reflejos] Ray tracing: ${enabled ? 'on' : 'off'}`);
+	};
+
+	const spawnReflectionProbe = () => {
+		send3dFn({ cmd: 'spawn_reflection_probe' });
+		addLog('[Reflejos] Insertando sonda de reflejo…');
+	};
+
 	const setShadowTier = (tier: ShadowTier) => {
 		const normalized = normalizeShadowTier(tier);
 		dispatch({ type: 'SET_WORLD_CONFIG', payload: { shadowTier: normalized } });
@@ -334,9 +359,23 @@ export function createEngineActions({
 
 	const setReflectionDebugView = (view: ReflectionDebugView | string) => {
 		const normalized = normalizeReflectionDebugView(view);
-		dispatch({ type: 'SET_WORLD_CONFIG', payload: { reflectionDebugView: normalized } });
+		const isSsrDebug = normalized === 'ssr_debug';
+		dispatch({
+			type: 'SET_WORLD_CONFIG',
+			payload: { reflectionDebugView: normalized, ssrDebugMode: isSsrDebug },
+		});
 		send3dFn({ cmd: 'set_reflection_debug_view', view: normalized });
-		addLog(`[Reflejos] Vista debug solicitada: ${normalized}`);
+		addLog(
+			isSsrDebug
+				? '[SSR debug] activado: aciertos en pantalla + logs en consola del motor'
+				: `[Reflejos] Vista debug: ${normalized}`,
+		);
+	};
+
+	const setSsrDebugMode = (enabled: boolean) => {
+		dispatch({ type: 'SET_WORLD_CONFIG', payload: { ssrDebugMode: enabled } });
+		send3dFn({ cmd: 'set_ssr_debug_mode', enabled });
+		addLog(`[SSR debug] modo depuración: ${enabled ? 'activado' : 'desactivado'}`);
 	};
 
 	const setTextureDetailDistance = (distanceM: number) => {
@@ -1021,6 +1060,7 @@ export function createEngineActions({
 		removeCharacter,
 		removeEntity,
 		setWorldSize,
+		setWorldRadius,
 		setGridVisible,
 		setGridCellSize,
 		setGravity,
@@ -1028,6 +1068,9 @@ export function createEngineActions({
 		setTargetFps,
 		setGraphicsTextureTier,
 		setReflectionTier,
+		setReflectionRaytracing,
+		spawnReflectionProbe,
+		setSsrDebugMode,
 		setShadowTier,
 		setTaaEnabled,
 		setTaaParams,

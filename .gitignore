@@ -26,7 +26,9 @@ Thumbs.db
 .vscode/settings.json
 
 # IA
+AGENTS.md
 .claude
+.cursor
 
 # Projects
 vampire_2d.save

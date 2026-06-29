@@ -430,6 +430,9 @@ impl State {
             physics_type,
             part.local_bounds,
             None,
+            part.roughness,
+            part.metallic,
+            part.ior,
         );
         if let Some(ref blueprint) = bp {
             apply_blueprint_instance_metadata(self, id, blueprint);

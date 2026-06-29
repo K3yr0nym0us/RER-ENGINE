@@ -5,7 +5,7 @@ use glam::{Mat4, Vec3};
 use crate::ecs::{MeshComponent, Transform};
 use crate::engine::State;
 use crate::mesh::Mesh;
-use crate::reflections::bvh::RtTriangle;
+use super::bvh::RtTriangle;
 
 pub const MAX_STATIC_RT_INSTANCES: usize = 512;
 pub const MAX_SKINNED_RT_INSTANCES: usize = 32;

@@ -1,7 +1,8 @@
 struct CompositeUniforms {
     strength : f32,
     ssil_strength : f32,
-    _pad1 : f32,
+    /// Peso de mezcla hacia el color SSR (1 = reflejo domina donde hay hit).
+    refl_mix : f32,
     _pad2 : f32,
 }
 
@@ -10,6 +11,7 @@ struct CompositeUniforms {
 @group(0) @binding(2) var t_reflection : texture_2d<f32>;
 @group(0) @binding(3) var s_linear : sampler;
 @group(0) @binding(4) var t_ssil : texture_2d<f32>;
+@group(0) @binding(5) var s_nearest : sampler;
 
 struct VsOut {
     @builtin(position) pos : vec4<f32>,
@@ -39,16 +41,11 @@ fn fs_main(in : VsOut) -> @location(0) vec4<f32> {
         base = vec4<f32>(base.rgb + ssil * u.ssil_strength, base.a);
     }
     let refl = textureSample(t_reflection, s_linear, in.uv);
-    let k = clamp(refl.a * u.strength, 0.0, 1.0);
-    if k < 0.01 {
-        return base;
-    }
-    // SSR como detalle on-screen sobre la base (cubemap+Fresnel), no reemplazo ciego.
-    let detail = max(refl.rgb - base.rgb, vec3<f32>(0.0));
-    // Atenuar sparkles cuando el SSR discrepa mucho de la base IBL (típico con cubemap activo).
-    let detail_mag = length(detail);
-    let spike_guard = smoothstep(0.18, 0.55, detail_mag);
-    let k_eff = k * (1.0 - spike_guard * 0.75);
-    let out_rgb = base.rgb + detail * k_eff;
-    return vec4<f32>(out_rgb, base.a);
+    // Conservación de energía: el reflejo atenúa el color base.
+    //   refl.a = specular_amount × visibility (energía del reflejo)
+    let factor = clamp(refl.a * u.strength * u.refl_mix, 0.0, 1.0);
+    return vec4<f32>(
+        base.rgb * (1.0 - factor) + refl.rgb * u.strength * u.refl_mix,
+        base.a,
+    );
 }

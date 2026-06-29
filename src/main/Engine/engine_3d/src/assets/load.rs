@@ -143,6 +143,9 @@ fn load_static_parts(
             texture,
             forward_xz: glam::Vec2::new(forward_xz[0], forward_xz[1]),
             local_bounds,
+            roughness: -1.0,
+            metallic: 0.0,
+            ior: 0.0,
         });
     }
 

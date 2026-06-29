@@ -13,8 +13,7 @@ use wgpu::{CommandEncoder, Device, Queue, TextureView};
 
 use crate::config_3d::reflection_graphics::{ReflectionDebugView, ReflectionSettings};
 use crate::engine::{SceneUniforms, State};
-use crate::reflections::probes::capture::{self, ProbeFrameData};
-use crate::reflections::rt_accel::RtAccel;
+use crate::reflections::probes_pipeline::capture::{self, ProbeFrameData};
 use crate::reflections::ReflectionPass;
 
 /// Prepara lista de probes, meta y mapa entidad→ranura para el main pass.
@@ -57,7 +56,6 @@ pub struct ReflectionScreenInput<'a> {
     pub base_color_view: &'a TextureView,
     pub depth_export_view: &'a TextureView,
     pub velocity_view: &'a TextureView,
-    pub accel: &'a mut RtAccel,
     pub inv_view_proj: Mat4,
     pub view_proj: Mat4,
     pub view: Mat4,
@@ -65,12 +63,12 @@ pub struct ReflectionScreenInput<'a> {
     pub near_plane: f32,
     pub far_plane: f32,
     pub clear_color: wgpu::Color,
-    pub rt_available: bool,
     pub probe_bind_group: &'a wgpu::BindGroup,
     pub shadow_view: &'a TextureView,
     pub shadow_sampler: &'a wgpu::Sampler,
     pub scene_uniforms: &'a SceneUniforms,
     pub texture_bind_group: &'a wgpu::BindGroup,
+    pub ssr_debug_mode: bool,
 }
 
 impl ReflectionPass {
@@ -95,7 +93,6 @@ impl ReflectionPass {
             input.base_color_view,
             input.depth_export_view,
             input.velocity_view,
-            input.accel,
             input.inv_view_proj,
             input.view_proj,
             input.view,
@@ -103,12 +100,12 @@ impl ReflectionPass {
             input.near_plane,
             input.far_plane,
             input.clear_color,
-            input.rt_available,
             input.probe_bind_group,
             input.shadow_view,
             input.shadow_sampler,
             input.scene_uniforms,
             input.texture_bind_group,
+            input.ssr_debug_mode,
         )
     }
 }

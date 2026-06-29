@@ -23,10 +23,8 @@ impl State {
         self.reflection_tier = tier;
         self.probe_capture_burst_all = tier != ReflectionTier::Off;
         self.reflections.invalidate_temporal();
-        if !tier.uses_rt_hw() {
-            self.rt_accel.clear();
-            self.rt_accel.release_hw();
-        }
+        let tier_settings = crate::config_3d::reflection_graphics::ReflectionSettings::from_tier(tier);
+        self.reflections.set_screen_fraction(&self.device, tier_settings.screen_fraction);
         // Cubemap de probes por tier (Low 128 … Ultra 1024): recrear solo si cambia el tamaño.
         let new_cubemap_size = tier.cubemap_face_size();
         if new_cubemap_size != self.probe_cubemap_size {
@@ -104,10 +102,11 @@ impl State {
             return;
         }
         self.reflection_debug_view = view;
-        if view.is_probe_log() {
-            self.probe_diag.bump_epoch();
-            crate::reflections::probes::diagnostics::log_mode_activated(view);
+        self.ssr_debug_mode = view.enables_ssr_stats();
+        if view.enables_ssr_stats() {
+            self.reflections.arm_ssr_debug_log();
         }
+        self.reflections.invalidate_temporal();
         send_event(&EngineEvent::ReflectionDebugViewChanged {
             view: view.wire().to_string(),
         });
@@ -117,11 +116,13 @@ impl State {
             view.wire()
         );
     }
+
 }
 
 pub(crate) fn apply_reflection_settings_from_world_wire(
     state: &mut State,
     tier: Option<&str>,
+    _raytracing: Option<bool>,
 ) {
     let resolved = tier
         .and_then(ReflectionTier::from_wire)

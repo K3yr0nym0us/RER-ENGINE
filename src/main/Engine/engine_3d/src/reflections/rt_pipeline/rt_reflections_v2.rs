@@ -8,9 +8,9 @@ use wgpu::{Device, Queue, TextureFormat, TextureView};
 use crate::config_3d::reflection_graphics::ReflectionSettings;
 use crate::engine::SceneUniforms;
 use crate::reflections::probe_env::ProbeEnvPass;
-use crate::reflections::rt_accel::RtAccel;
-use crate::reflections::rt_extensions;
-use crate::reflections::rt_sparse::RtSparseDispatch;
+use super::rt_accel::RtAccel;
+use super::rt_extensions;
+use super::rt_sparse::RtSparseDispatch;
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -133,7 +133,7 @@ impl RtReflectionPassV2 {
         height: u32,
         hw_available: bool,
     ) -> Self {
-        let bvh_shader = super::load_refl_wgsl(device, "rt-bvh", include_str!("rt_bvh.wgsl"));
+        let bvh_shader = crate::reflections::load_refl_wgsl(device, "rt-bvh", include_str!("rt_bvh.wgsl"));
         let bvh_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("rt-bvh-bgl"),
             entries: &[
@@ -185,7 +185,7 @@ impl RtReflectionPassV2 {
                 source: wgpu::ShaderSource::Wgsl(
                     format!(
                         "enable wgpu_ray_query;\n{}\n{}",
-                        include_str!("reflection_math.wgsl"),
+                        include_str!("../reflection_math.wgsl"),
                         include_str!("rt_ray_query.wgsl")
                     )
                     .into(),

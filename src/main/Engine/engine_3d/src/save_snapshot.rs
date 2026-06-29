@@ -38,9 +38,10 @@ impl State {
 
         SaveSceneSnapshotPayload {
             world: SaveWorldSnapshot {
-                world_width: self.world_bounds_3d.width,
-                world_height: self.world_bounds_3d.height,
-                world_depth: self.world_bounds_3d.depth,
+                world_radius: self.world_bounds_3d.radius,
+                world_width: self.world_bounds_3d.diameter(),
+                world_height: self.world_bounds_3d.diameter(),
+                world_depth: self.world_bounds_3d.diameter(),
                 grid_visible: self.grid_config.visible,
                 grid_cell_size: self.grid_config.cell_size,
                 gravity: self.physics.gravity_magnitude(),
@@ -51,6 +52,7 @@ impl State {
                 graphics_texture_tier: Some(self.graphics_texture_tier.wire().to_string()),
                 texture_detail_distance_m: Some(self.texture_detail_near_m),
                 reflection_tier: Some(self.reflection_tier.wire().to_string()),
+                reflection_raytracing: None,
                 shadow_tier: Some(self.shadow_tier.wire().to_string()),
             },
             background_path: self.background_path.clone(),

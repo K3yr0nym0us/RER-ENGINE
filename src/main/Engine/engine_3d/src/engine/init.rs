@@ -32,27 +32,14 @@ impl State {
         let (_instance, surface, adapter) =
             init_gpu(window.clone(), EngineGpuProfile::ThreeD).await?;
 
-        let rt_features =
-            crate::reflections::rt_reflections_v2::request_rt_device_features(&adapter);
-        let rt_reflections_available =
-            crate::reflections::rt_reflections_v2::adapter_supports_rt(&adapter);
-        let experimental = if rt_reflections_available {
-            unsafe { wgpu::ExperimentalFeatures::enabled() }
-        } else {
-            wgpu::ExperimentalFeatures::disabled()
-        };
-
         let (device, queue) = adapter
             .request_device(
                 &wgpu::DeviceDescriptor {
                     label: Some("oxide-device"),
-                    required_features: rt_features,
-                    required_limits: crate::reflections::rt_reflections_v2::request_rt_device_limits(
-                        &adapter,
-                        rt_reflections_available,
-                    ),
+                    required_features: wgpu::Features::empty(),
+                    required_limits: wgpu::Limits::default(),
                     memory_hints: Default::default(),
-                    experimental_features: experimental,
+                    experimental_features: wgpu::ExperimentalFeatures::disabled(),
                     trace: wgpu::Trace::Off,
                 },
             )
@@ -639,6 +626,37 @@ impl State {
             multiview_mask: None,
             cache: None,
         });
+        let sky_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("world-sky-pipeline"),
+            layout: Some(&gizmo_pl_layout),
+            vertex: wgpu::VertexState {
+                module: &gizmo_shader,
+                entry_point: Some("vs_main"),
+                buffers: &[gizmo::GizmoVertex::desc()],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &gizmo_shader,
+                entry_point: Some("fs_sky_mrt"),
+                targets: &mrt_targets,
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                cull_mode: Some(wgpu::Face::Back),
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::LessEqual),
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState::default(),
+            multiview_mask: None,
+            cache: None,
+        });
         let grid_uni_identity: [[f32; 4]; 9] = [
             [1.0, 0.0, 0.0, 0.0],
             [0.0, 1.0, 0.0, 0.0],
@@ -786,6 +804,7 @@ impl State {
         let world_bounds_3d = WorldBounds3D::default();
         let grid_config = GridConfig::default();
         let world_bounds_buffer = world_bounds_3d.build_buffer(&device);
+        let world_sky_buffer = world_bounds_3d.build_sky_buffer(&device);
 
         let audio_slot = start_audio_thread();
 
@@ -804,18 +823,11 @@ impl State {
             format,
             size.width,
             size.height,
-            rt_reflections_available,
             &probe_env_bgl,
+            1.0,
         );
-        let rt_accel = crate::reflections::rt_accel::RtAccel::new(&device, rt_reflections_available);
-        if rt_reflections_available {
-            log::info!("[RT] Ray query Vulkan activo — RT v2 hardware + BVH fallback");
-        } else {
-            log::info!("[RT] Ray query no disponible — RT v2 usa BVH compute sobre triángulos");
-        }
+        let probe_cubemap_readback = crate::reflections::probes_pipeline::cubemap_readback::ProbeCubemapReadback::new(&device);
 
-        let probe_cubemap_size =
-            crate::config_3d::reflection_graphics::DEFAULT_REFLECTION_TIER.cubemap_face_size();
         let probe_env = crate::reflections::probe_env::ProbeEnvPass::new(
             &device,
             crate::taa::MRT_LIT_FORMAT,
@@ -828,11 +840,8 @@ impl State {
             &shadow_map_view,
             &shader,
             &skinned_shader,
-            probe_cubemap_size,
+            8,
         );
-
-        let probe_cubemap_readback =
-            crate::reflections::probes::cubemap_readback::ProbeCubemapReadback::new(&device);
 
         let state = Self {
             window,
@@ -842,9 +851,9 @@ impl State {
             config,
             size,
             clear_color: wgpu::Color {
-                r: 0.06,
-                g: 0.06,
-                b: 0.10,
+                r: 0.72,
+                g: 0.86,
+                b: 0.98,
                 a: 1.0,
             },
             render_pipeline,
@@ -901,10 +910,12 @@ impl State {
             background_path: None,
             grid_config,
             grid_pipeline,
+            sky_pipeline,
             grid_bind_group,
             grid_buffer_uni,
             world_bounds_3d,
             world_bounds_buffer,
+            world_sky_buffer,
             ctrl_held: false,
             shift_held: false,
             active_tool: ActiveTool::None,
@@ -1028,20 +1039,20 @@ impl State {
             target_fps: 60,
             graphics_texture_tier: crate::config_3d::texture_graphics::TextureGraphicsTier::Medium,
             reflection_tier: crate::config_3d::reflection_graphics::DEFAULT_REFLECTION_TIER,
+            ssr_debug_mode: false,
             reflection_debug_view:
                 crate::config_3d::reflection_graphics::ReflectionDebugView::Final,
             reflections,
-            rt_reflections_available,
             reflection_tier_effective_ipc: None,
-            rt_accel,
             probe_env,
             probe_capture_cursor: 0,
             probe_capture_burst_all: false,
+            probe_cubemap_readback,
+            probe_diag: crate::reflections::probes_pipeline::diagnostics::ProbeDiagState::new(),
             probe_entity_slots: std::collections::HashMap::new(),
             last_probe_capture_ids: None,
-            probe_cubemap_size,
-            probe_diag: crate::reflections::probes::diagnostics::ProbeDiagState::new(),
-            probe_cubemap_readback,
+            probe_cubemap_size: 8,
+
             scene_bind_group_layout: bgl,
             hud_scene_buffer: hud_scene_buf,
             shadow_sampler,

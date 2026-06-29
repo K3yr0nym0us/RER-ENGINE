@@ -104,6 +104,15 @@ export function normalizeReflectionTier(value: unknown): ReflectionTier {
 	return 'off';
 }
 
+/** RT es independiente del tier; solo se lee del .save si está guardado explícitamente. */
+export function resolveReflectionRaytracingFromSave(
+	_tier: ReflectionTier,
+	wire: unknown,
+): boolean {
+	if (wire !== undefined && wire !== null) return Boolean(wire);
+	return false;
+}
+
 export type ShadowTier = 'off' | 'low' | 'medium' | 'high' | 'ultra';
 
 export function normalizeShadowTier(value: unknown): ShadowTier {
@@ -116,95 +125,39 @@ export function normalizeShadowTier(value: unknown): ShadowTier {
 	return 'low';
 }
 
-export type ReflectionDebugView =
-	| 'final'
-	| 'normals'
-	| 'depth'
-	| 'ssr_hits'
-	| 'reflection_mask'
-	| 'cubemap'
-	| 'reflection_color'
-	| 'roughness'
-	| 'metallic'
-	| 'recon_world'
-	| 'recon_ndc'
-	| 'recon_view'
-	| 'reproject_uv'
-	| 'ssr_view_vector'
-	| 'ssr_reflection_vector'
-	| 'ssr_raymarch_path'
-	| 'ssr_hit_depth_delta'
-	| 'ssr_hit_uv'
-	| 'ssr_hit_color_raw'
-	| 'ssr_hit_color_blurred'
-	| 'ssr_no_blur'
-	| 'ssr_hit_uv_world_screen'
-	| 'ssr_hit_uv_world_screen_delta'
-	| 'ssr_hit_uv_world_screen_split'
-	| 'ssr_final_composite'
-	| 'rt_instances'
-	| 'probe_log_shader'
-	| 'probe_log_buffers'
-	| 'probe_log_hash'
-	| 'probe_log_cubemap';
+export type ReflectionDebugView = 'final' | 'ssr_debug' | 'ssr_miss_green' | 'ssr_exit_reason' | 'ssr_vector_rgb'
 
 export function normalizeReflectionDebugView(value: unknown): ReflectionDebugView {
-	const s = String(value ?? 'final').trim().toLowerCase();
-	if (s === 'normals' || s === 'normal') return 'normals';
-	if (s === 'depth') return 'depth';
-	if (s === 'ssr_hits' || s === 'ssrhits' || s === 'hits') return 'ssr_hits';
-	if (s === 'reflection_mask' || s === 'mask') return 'reflection_mask';
-	if (s === 'cubemap' || s === 'cube' || s === 'env') return 'cubemap';
-	if (s === 'reflection_color' || s === 'refl_color' || s === 'ssr_rt') return 'reflection_color';
-	if (s === 'roughness' || s === 'rough') return 'roughness';
-	if (s === 'metallic' || s === 'metal') return 'metallic';
-	if (s === 'recon_world' || s === 'world_pos') return 'recon_world';
-	if (s === 'recon_ndc' || s === 'ndc') return 'recon_ndc';
-	if (s === 'recon_view' || s === 'view_pos') return 'recon_view';
-	if (s === 'reproject_uv' || s === 'reproj_uv') return 'reproject_uv';
-	if (s === 'ssr_view_vector' || s === 'view_vector') return 'ssr_view_vector';
-	if (s === 'ssr_reflection_vector' || s === 'reflection_vector' || s === 'refl_vector')
-		return 'ssr_reflection_vector';
-	if (s === 'ssr_raymarch_path' || s === 'raymarch_path' || s === 'ray_path')
-		return 'ssr_raymarch_path';
-	if (s === 'ssr_hit_depth_delta' || s === 'hit_depth_delta' || s === 'depth_delta')
-		return 'ssr_hit_depth_delta';
-	if (s === 'ssr_hit_uv' || s === 'hit_uv') return 'ssr_hit_uv';
-	if (s === 'ssr_hit_color_raw' || s === 'hit_color_raw') return 'ssr_hit_color_raw';
-	if (s === 'ssr_hit_color_blurred' || s === 'hit_color_blurred') return 'ssr_hit_color_blurred';
-	if (s === 'ssr_no_blur' || s === 'no_blur') return 'ssr_no_blur';
-	if (s === 'ssr_hit_color_uv' || s === 'hit_color_uv' || s === 'hit_uv_color_uv')
-		return 'ssr_hit_uv_world_screen';
-	if (s === 'ssr_hit_color_uv_delta' || s === 'hit_color_uv_delta' || s === 'color_uv_delta')
-		return 'ssr_hit_uv_world_screen_delta';
-	if (s === 'ssr_hit_uv_world_screen' || s === 'hit_uv_world_screen' || s === 'world_screen_pair')
-		return 'ssr_hit_uv_world_screen';
+	const s = String(value ?? 'final').trim().toLowerCase()
 	if (
-		s === 'ssr_hit_uv_world_screen_delta' ||
-		s === 'hit_uv_world_screen_delta' ||
-		s === 'world_screen_delta'
-	)
-		return 'ssr_hit_uv_world_screen_delta';
-	if (
-		s === 'ssr_hit_uv_world_screen_split' ||
-		s === 'hit_uv_world_screen_split' ||
-		s === 'world_screen_split'
-	)
-		return 'ssr_hit_uv_world_screen_split';
-	if (s === 'ssr_final_composite' || s === 'final_composite' || s === 'composite')
-		return 'ssr_final_composite';
-	if (s === 'rt_instances' || s === 'rt_diag') return 'rt_instances';
-	if (s === 'probe_log_shader' || s === 'log_shader' || s === 'shader_input') return 'probe_log_shader';
-	if (s === 'probe_log_buffers' || s === 'log_buffers' || s === 'draw_buffer') return 'probe_log_buffers';
-	if (s === 'probe_log_hash' || s === 'log_hash' || s === 'buffer_hash') return 'probe_log_hash';
-	if (s === 'probe_log_cubemap' || s === 'log_cubemap' || s === 'cubemap_capture') return 'probe_log_cubemap';
-	return 'final';
+		s === 'ssr_debug'
+		|| s === 'ssrdebug'
+		|| s === 'ssr'
+		|| s === 'debug'
+		|| s === 'ssr_hits'
+		|| s === 'ssrhits'
+		|| s === 'hits'
+	) {
+		return 'ssr_debug'
+	}
+	if (s === 'ssr_miss_green' || s === 'miss_green' || s === 'missgreen' || s === 'green') {
+		return 'ssr_miss_green'
+	}
+	if (s === 'ssr_exit_reason' || s === 'exit_reason' || s === 'exitreason') {
+		return 'ssr_exit_reason'
+	}
+	if (s === 'ssr_vector_rgb' || s === 'vector_rgb' || s === 'vectorrgb' || s === 'refl_vector') {
+		return 'ssr_vector_rgb'
+	}
+	return 'final'
 }
 
 export interface WorldConfig {
 	worldWidth: number
 	worldHeight: number
 	worldDepth: number
+	/** 3D: radio de la esfera de límites del mundo. */
+	worldRadius: number
 	gridVisible: boolean
 	gridCellSize: number
 	gravity: number
@@ -219,7 +172,10 @@ export interface WorldConfig {
 	reflectionTierEffective?: ReflectionTier
 	/** Si la GPU expone ray query (evento reflection_tier_effective). */
 	reflectionRtAvailable?: boolean
+	/** Ray tracing HW (toggle independiente del tier). */
+	reflectionRaytracing: boolean
 	reflectionDebugView: ReflectionDebugView
+	ssrDebugMode: boolean
 	shadowTier: ShadowTier
 	taaEnabled: boolean
 	taaBlend: number
@@ -230,6 +186,7 @@ export const DEFAULT_WORLD_CONFIG: WorldConfig = {
 	worldWidth: 100,
 	worldHeight: 50,
 	worldDepth: 100,
+	worldRadius: 50,
 	gridVisible: true,
 	gridCellSize: 1,
 	gravity: DEFAULT_GRAVITY_MAGNITUDE,
@@ -240,7 +197,9 @@ export const DEFAULT_WORLD_CONFIG: WorldConfig = {
 	graphicsTextureTier: 'medium',
 	textureDetailDistance: 10,
 	reflectionTier: 'off',
+	reflectionRaytracing: false,
 	reflectionDebugView: 'final',
+	ssrDebugMode: false,
 	shadowTier: 'low',
 	taaEnabled: true,
 	taaBlend: 0.62,
@@ -1158,6 +1117,13 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 					worldWidth: p.world.worldWidth,
 					worldHeight: p.world.worldHeight,
 					worldDepth: p.world.worldDepth ?? prevState.worldConfig.worldDepth,
+					worldRadius:
+						p.world.worldRadius
+						?? Math.min(
+							p.world.worldWidth,
+							p.world.worldHeight,
+							p.world.worldDepth ?? prevState.worldConfig.worldDepth,
+						) * 0.5,
 					gridVisible: p.world.gridVisible,
 					gridCellSize: p.world.gridCellSize,
 					gravity: p.world.gravity ?? DEFAULT_GRAVITY_MAGNITUDE,
@@ -1206,6 +1172,13 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 					worldWidth: p.world.worldWidth,
 					worldHeight: p.world.worldHeight,
 					worldDepth: p.world.worldDepth ?? prevState.worldConfig.worldDepth,
+					worldRadius:
+						p.world.worldRadius
+						?? Math.min(
+							p.world.worldWidth,
+							p.world.worldHeight,
+							p.world.worldDepth ?? prevState.worldConfig.worldDepth,
+						) * 0.5,
 					gridVisible: p.world.gridVisible,
 					gridCellSize: p.world.gridCellSize,
 					gravity: p.world.gravity ?? DEFAULT_GRAVITY_MAGNITUDE,
@@ -1220,6 +1193,10 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 							? p.world.textureDetailDistance
 							: DEFAULT_WORLD_CONFIG.textureDetailDistance,
 					reflectionTier: normalizeReflectionTier(p.world.reflectionTier),
+					reflectionRaytracing: resolveReflectionRaytracingFromSave(
+						normalizeReflectionTier(p.world.reflectionTier),
+						p.world.reflectionRaytracing,
+					),
 					shadowTier: normalizeShadowTier(p.world.shadowTier),
 				},
 				sounds: p.sounds,
@@ -1436,6 +1413,7 @@ export interface EngineContextValue extends EngineState {
 	removeCharacter: (id: number) => void
 	removeEntity: (id: number) => void
 	setWorldSize: (width: number, height: number, depth?: number) => void
+	setWorldRadius: (radius: number) => void
 	setGridVisible: (visible: boolean) => void
 	setGridCellSize: (size: number) => void
 	setGravity: (gravity: number) => void
@@ -1447,7 +1425,10 @@ export interface EngineContextValue extends EngineState {
 	setTargetFps: (fps: number) => void
 	setGraphicsTextureTier: (tier: GraphicsTextureTier) => void
 	setReflectionTier: (tier: ReflectionTier) => void
+	setReflectionRaytracing: (enabled: boolean) => void
+	spawnReflectionProbe: () => void
 	setReflectionDebugView: (view: ReflectionDebugView) => void
+	setSsrDebugMode: (enabled: boolean) => void
 	setShadowTier: (tier: ShadowTier) => void
 	setTaaEnabled: (enabled: boolean) => void
 	setTaaParams: (params: { blend: number; jitterScale: number; enabled: boolean }) => void

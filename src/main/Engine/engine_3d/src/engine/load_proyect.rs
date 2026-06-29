@@ -110,6 +110,8 @@ pub(crate) struct SavedWorldConfig {
     #[serde(default)]
     worldDepth: Option<f32>,
     #[serde(default)]
+    worldRadius: Option<f32>,
+    #[serde(default)]
     gridVisible: bool,
     gridCellSize: f32,
     #[serde(default)]
@@ -127,6 +129,8 @@ pub(crate) struct SavedWorldConfig {
     textureDetailDistance: Option<f32>,
     #[serde(default)]
     reflectionTier: Option<String>,
+    #[serde(default)]
+    reflectionRaytracing: Option<bool>,
     #[serde(default)]
     shadowTier: Option<String>,
 }
@@ -1380,11 +1384,11 @@ fn apply_loaded_proyect_3d_with_scene(
         .unwrap_or(DEFAULT_SHADOW_DARKNESS);
 
     let depth = view.world.worldDepth.unwrap_or(50.0);
-    state.handle_command(EngineCommand::Common(EngineCommandCommon::SetWorldSize {
-        width: view.world.worldWidth,
-        height: view.world.worldHeight,
-        depth: Some(depth),
-    }));
+    let radius = view
+        .world
+        .worldRadius
+        .unwrap_or_else(|| view.world.worldWidth.min(view.world.worldHeight).min(depth) * 0.5);
+    state.handle_command(EngineCommand::Only3d(EngineCommand3dOnly::SetWorldRadius { radius }));
     state.handle_command(EngineCommand::Common(EngineCommandCommon::SetGridVisible {
         visible: view.world.gridVisible,
     }));
@@ -1413,6 +1417,7 @@ fn apply_loaded_proyect_3d_with_scene(
     crate::config_3d::reflection_settings::apply_reflection_settings_from_world_wire(
         state,
         view.world.reflectionTier.as_deref(),
+        view.world.reflectionRaytracing,
     );
     crate::config_3d::shadow_settings::apply_shadow_settings_from_world_wire(
         state,
@@ -1921,6 +1926,10 @@ fn send_project_loaded_3d(
         worldWidth: view.world.worldWidth,
         worldHeight: view.world.worldHeight,
         worldDepth: view.world.worldDepth,
+        worldRadius: view.world.worldRadius.or_else(|| {
+            let d = view.world.worldDepth.unwrap_or(50.0);
+            Some(view.world.worldWidth.min(view.world.worldHeight).min(d) * 0.5)
+        }),
         gridVisible: view.world.gridVisible,
         gridCellSize: view.world.gridCellSize,
         gravity: view.world.gravity,
@@ -1947,6 +1956,7 @@ fn send_project_loaded_3d(
                         .to_string(),
                 )
             }),
+        reflectionRaytracing: view.world.reflectionRaytracing,
         shadowTier: view.world.shadowTier.clone().or_else(|| {
             Some(
                 crate::config_3d::shadow_graphics::DEFAULT_SHADOW_TIER
@@ -2126,6 +2136,7 @@ pub(crate) fn saved_scene_from_snapshot_payload(
             worldWidth: p.world.world_width,
             worldHeight: p.world.world_height,
             worldDepth: Some(p.world.world_depth),
+            worldRadius: Some(p.world.world_radius),
             gridVisible: p.world.grid_visible,
             gridCellSize: p.world.grid_cell_size,
             gravity: Some(p.world.gravity),
@@ -2136,6 +2147,7 @@ pub(crate) fn saved_scene_from_snapshot_payload(
             graphicsTextureTier: p.world.graphics_texture_tier.clone(),
             textureDetailDistance: p.world.texture_detail_distance_m,
             reflectionTier: p.world.reflection_tier.clone(),
+            reflectionRaytracing: p.world.reflection_raytracing,
             shadowTier: p.world.shadow_tier.clone(),
         },
         backgroundPath: p.background_path.clone(),
@@ -2185,9 +2197,10 @@ pub(crate) fn build_fp_placeholder_saved_scene(id: u32, name: &str) -> SavedScen
     };
 
     let world = SavedWorldConfig {
-        worldWidth: 28.0,
-        worldHeight: 14.0,
+        worldWidth: 56.0,
+        worldHeight: 56.0,
         worldDepth: Some(56.0),
+        worldRadius: Some(28.0),
         gridVisible: true,
         gridCellSize: 1.0,
         gravity: Some(15.0),
@@ -2204,6 +2217,7 @@ pub(crate) fn build_fp_placeholder_saved_scene(id: u32, name: &str) -> SavedScen
                 .wire()
                 .to_string(),
         ),
+        reflectionRaytracing: None,
         shadowTier: Some(
             crate::config_3d::shadow_graphics::DEFAULT_SHADOW_TIER
                 .wire()

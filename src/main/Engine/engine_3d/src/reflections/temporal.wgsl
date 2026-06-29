@@ -95,7 +95,7 @@ fn temporal_blend(curr : vec4<f32>, hist_raw : vec4<f32>, uv : vec2<f32>) -> vec
     let lum_dev = dot(dev.rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
     let var_factor = 1.0 / (1.0 + lum_dev * VARIANCE_ADAPT_K);
     let base_b = clamp(u.blend, 0.0, 0.95);
-    let b = max(base_b * var_factor, 0.05);
+    let b = max(base_b * var_factor, 0.02);
     return mix(curr, hist, b);
 }
 
@@ -107,8 +107,8 @@ fn fs_main(in : VsOut) -> TemporalOut {
     var out : TemporalOut;
     out.hit_uv = vec4<f32>(hit_uv_curr, 0.0, 1.0);
 
-    // Sin traza SSR este frame: no arrastrar historial (evita grano blanco en metales).
-    if curr.a < 0.01 {
+    // Sin traza este frame: no arrastrar historial (fuzzy SSR + cámara → ghosts fuertes).
+    if curr.a < 0.001 {
         out.reflection = curr;
         return out;
     }
@@ -120,29 +120,6 @@ fn fs_main(in : VsOut) -> TemporalOut {
 
     let vel = textureSample(t_velocity, s_linear, in.uv).xy;
     let prev_surface_uv = in.uv - vel;
-    let hit_curr = curr.a > 0.02;
-
-    if hit_curr {
-        var hit_uv_hist = vec2<f32>(0.0);
-        if uv_in_bounds(prev_surface_uv) {
-            hit_uv_hist = textureSample(t_hit_uv_history, s_linear, prev_surface_uv).xy;
-        }
-        let hit_uv_vel = hit_uv_curr - hit_uv_hist;
-        let prev_uv_refl = in.uv - hit_uv_vel;
-
-        if uv_in_bounds(prev_uv_refl) {
-            let depth_curr = depth_at(in.uv);
-            let depth_prev = depth_at(prev_surface_uv);
-            let depth_reject = abs(depth_curr - depth_prev) > u.depth_reject_m;
-            if !depth_reject {
-                let hist_raw = textureSample(t_history, s_linear, prev_uv_refl);
-                out.reflection = temporal_blend(curr, hist_raw, in.uv);
-                return out;
-            }
-        }
-        out.reflection = curr;
-        return out;
-    }
 
     if !uv_in_bounds(prev_surface_uv) {
         out.reflection = curr;
@@ -152,14 +129,12 @@ fn fs_main(in : VsOut) -> TemporalOut {
     let depth_curr = depth_at(in.uv);
     let depth_prev = depth_at(prev_surface_uv);
     let depth_reject = abs(depth_curr - depth_prev) > u.depth_reject_m;
-
-    let hist_raw = textureSample(t_history, s_linear, prev_surface_uv);
-    let hit_prev = hist_raw.a > 0.02;
-    if depth_reject || hit_prev {
+    if depth_reject {
         out.reflection = curr;
         return out;
     }
 
+    let hist_raw = textureSample(t_history, s_linear, prev_surface_uv);
     out.reflection = temporal_blend(curr, hist_raw, in.uv);
     return out;
 }

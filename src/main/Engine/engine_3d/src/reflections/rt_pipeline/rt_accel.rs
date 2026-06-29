@@ -11,13 +11,13 @@ use wgpu::{CommandEncoder, Device, Queue, Tlas, TlasInstance};
 
 use crate::config_3d::model_animation::GpuSkinnedMeshEntry;
 use crate::mesh::Mesh;
-use crate::reflections::blas::BlasCache;
-use crate::reflections::bvh::{build_bvh, BvhNodeGpu, RtTriangleGpu};
-use crate::reflections::rt_material::{
+use super::blas::BlasCache;
+use super::bvh::{build_bvh, BvhNodeGpu, RtTriangleGpu};
+use super::rt_material::{
     instance_triangles_tagged, RtInstanceMaterialGpu, MAX_RT_MATERIALS,
 };
-use crate::reflections::skinned_blas::SkinnedBlasCache;
-use crate::reflections::tlas::{
+use super::skinned_blas::SkinnedBlasCache;
+use super::tlas::{
     mat4_to_tlas_transform, RtInstanceDesc, MAX_SKINNED_RT_INSTANCES, MAX_STATIC_RT_INSTANCES,
 };
 

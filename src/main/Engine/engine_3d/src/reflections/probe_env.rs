@@ -37,6 +37,7 @@ const MIP_LEVELS: u32 = 5;
 
 pub(crate) struct ProbeEnvPass {
     face_size: u32,
+    mip_levels: u32,
     cube: wgpu::Texture,
     /// Vistas D2 de cada (probe, cara), mip 0, como render target. Índice = probe*6 + cara.
     face_views: Vec<TextureView>,
@@ -114,6 +115,7 @@ impl ProbeEnvPass {
         face_size: u32,
     ) -> Self {
         let face_size = face_size.max(8);
+        let mip_levels = (32 - face_size.leading_zeros()).min(MIP_LEVELS);
         let layers = (FACES * MAX_PROBES) as u32;
         let cube = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("probe-env-cube"),
@@ -122,7 +124,7 @@ impl ProbeEnvPass {
                 height: face_size,
                 depth_or_array_layers: layers,
             },
-            mip_level_count: MIP_LEVELS,
+            mip_level_count: mip_levels,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: color_format,
@@ -419,6 +421,7 @@ impl ProbeEnvPass {
 
         Self {
             face_size,
+            mip_levels,
             cube,
             face_views,
             capture_depth_view,
@@ -450,7 +453,7 @@ impl ProbeEnvPass {
     ) {
         for face in 0..FACES {
             let slot = (probe_idx * FACES + face) as u32;
-            for mip in 1..MIP_LEVELS {
+            for mip in 1..self.mip_levels {
                 let src_view = self.cube.create_view(&wgpu::TextureViewDescriptor {
                     label: Some("probe-mip-src"),
                     dimension: Some(wgpu::TextureViewDimension::D2),

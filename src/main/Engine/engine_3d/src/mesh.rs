@@ -344,21 +344,29 @@ pub(crate) fn upload(
         .unwrap_or_else(|| indices.to_vec());
     let rt_positions: Vec<[f32; 3]> = vertices.iter().map(|v| v.position).collect();
     let rt_uvs: Vec<[f32; 2]> = vertices.iter().map(|v| v.uv).collect();
+    let blas = if device
+        .features()
+        .contains(wgpu::Features::EXPERIMENTAL_RAY_QUERY)
+    {
+        wgpu::BufferUsages::BLAS_INPUT
+    } else {
+        wgpu::BufferUsages::empty()
+    };
     let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label:    Some(&format!("{label}-vbo")),
         contents: bytemuck::cast_slice(vertices),
-        usage:    wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::BLAS_INPUT,
+        usage:    wgpu::BufferUsages::VERTEX | blas,
     });
     let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label:    Some(&format!("{label}-ibo")),
         contents: bytemuck::cast_slice(indices),
-        usage:    wgpu::BufferUsages::INDEX | wgpu::BufferUsages::BLAS_INPUT,
+        usage:    wgpu::BufferUsages::INDEX | blas,
     });
     let rt_index_buffer = if rt_indices.is_some() && rt_indices_vec.len() != indices.len() {
         Some(device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label:    Some(&format!("{label}-rt-ibo")),
             contents: bytemuck::cast_slice(&rt_indices_vec),
-            usage:    wgpu::BufferUsages::INDEX | wgpu::BufferUsages::BLAS_INPUT,
+            usage:    wgpu::BufferUsages::INDEX | blas,
         }))
     } else {
         None

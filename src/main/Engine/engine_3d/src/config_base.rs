@@ -4,7 +4,7 @@ use crate::config_3d::physics_3d::PhysicsWorld;
 use crate::config_3d::mesh_3d::GROUND_PLANE_MESH_EXTENT;
 use crate::config_3d::{Camera, WorldBounds3D};
 use crate::config_compat::ActiveTool;
-use crate::ecs::{EntityId, MeshComponent, NonSelectable, Transform};
+use crate::ecs::{EntityId, MeshComponent, NonSelectable, SurfacePbr, Transform};
 use crate::engine::State;
 use crate::gizmo;
 use crate::ipc::{send_event, send_load_progress, EngineEvent};
@@ -196,10 +196,9 @@ impl State {
         let ground_mesh_idx = self.meshes.len();
         let b = self.world_bounds_3d;
         let cell = self.grid_config.cell_size;
-        self.meshes.push(crate::config_3d::mesh_3d::create_ground_plane(
+        self.meshes.push(crate::config_3d::mesh_3d::create_ground_disk(
             &self.device,
-            b.width,
-            b.depth,
+            b.radius,
             cell,
         ));
         let tex_idx = self.pack_scene_checker_texture();
@@ -213,6 +212,15 @@ impl State {
             },
         );
         self.world.insert(plane_id, NonSelectable);
+        // Suelo ligeramente reflectante para SSR (sin SurfacePbr → roughness 0.9, excluido del trace).
+        self.world.insert(
+            plane_id,
+            SurfacePbr {
+                roughness: 0.50,
+                metallic: 0.0,
+                ior: 0.0,
+            },
+        );
         self.sync_ground_plane_to_world_bounds();
         self.physics.add_static_ground();
         self.save_registry.register_meta(
@@ -244,14 +252,24 @@ impl State {
         let Some(id) = self.ground_entity_id() else {
             return;
         };
+        if self.world.get::<SurfacePbr>(id).is_none() {
+            self.world.insert(
+                id,
+                SurfacePbr {
+                    roughness: 0.35,
+                    metallic: 0.0,
+                    ior: 0.0,
+                },
+            );
+        }
         let b = self.world_bounds_3d;
-        let sx = (b.width / GROUND_PLANE_MESH_EXTENT).max(0.01);
-        let sz = (b.depth / GROUND_PLANE_MESH_EXTENT).max(0.01);
+        let diameter = b.diameter();
+        let s = (diameter / GROUND_PLANE_MESH_EXTENT).max(0.01);
         if let Some(t) = self.world.get_mut::<Transform>(id) {
             t.position.x = 0.0;
             t.position.z = 0.0;
             t.position.y = 0.0;
-            t.scale = glam::Vec3::new(sx, 0.02, sz);
+            t.scale = glam::Vec3::new(s, 0.02, s);
         }
         self.refresh_ground_checker_uv();
     }
@@ -270,10 +288,9 @@ impl State {
         };
         let b = self.world_bounds_3d;
         let cell = self.grid_config.cell_size;
-        self.meshes[mesh_idx] = crate::config_3d::mesh_3d::create_ground_plane(
+        self.meshes[mesh_idx] = crate::config_3d::mesh_3d::create_ground_disk(
             &self.device,
-            b.width,
-            b.depth,
+            b.radius,
             cell,
         );
     }
@@ -333,7 +350,7 @@ impl State {
 
         // Límites del mundo: el wireframe es centrado en el origen (z ∈ [-depth/2, depth/2]).
         // Los muros del placeholder llegan hasta z≈28; depth 36 dejaba max z=18 y el render los ocultaba.
-        self.set_world_bounds_3d_size(28.0, 14.0, Some(56.0));
+        self.set_world_bounds_3d_radius(28.0);
 
         self.camera = Camera::new();
         let spawn_xz = (0.0_f32, 5.0_f32);
@@ -353,9 +370,9 @@ impl State {
         self.editor_viewport_distance = self.camera.distance;
         self.clamp_play_character_camera_to_bounds();
         self.clear_color = wgpu::Color {
-            r: 0.06,
-            g: 0.06,
-            b: 0.10,
+            r: 0.72,
+            g: 0.86,
+            b: 0.98,
             a: 1.0,
         };
 
@@ -374,7 +391,7 @@ impl State {
     }
 
     pub(crate) fn apply_empty_3d_editor_defaults(&mut self) {
-        self.set_world_bounds_3d_size(28.0, 14.0, Some(56.0));
+        self.set_world_bounds_3d_radius(28.0);
         self.camera = Camera::new();
         let spawn_xz = (0.0_f32, 5.0_f32);
         let ground_y = self
@@ -393,9 +410,9 @@ impl State {
         self.editor_viewport_distance = self.camera.distance;
         self.clamp_play_character_camera_to_bounds();
         self.clear_color = wgpu::Color {
-            r: 0.06,
-            g: 0.06,
-            b: 0.10,
+            r: 0.72,
+            g: 0.86,
+            b: 0.98,
             a: 1.0,
         };
     }
@@ -431,20 +448,20 @@ impl State {
     }
 
     fn reflection_probe_entities(&self) -> Vec<crate::ecs::EntityId> {
-        crate::reflections::probes::registry::reflection_probe_entities(&self.save_registry)
+        crate::reflections::probes_pipeline::registry::reflection_probe_entities(&self.save_registry)
     }
 
     pub(crate) fn is_reflection_probe_entity(&self, id: EntityId) -> bool {
-        crate::reflections::probes::registry::is_reflection_probe_entity(&self.save_registry, id)
+        crate::reflections::probes_pipeline::registry::is_reflection_probe_entity(&self.save_registry, id)
     }
 
     /// Asigna ranura fija 0..MAX_PROBES-1; reutiliza la existente si ya estaba registrada.
     pub(crate) fn allocate_probe_slot(&mut self, id: EntityId) -> Option<usize> {
-        crate::reflections::probes::registry::allocate_probe_slot(&mut self.probe_entity_slots, id)
+        crate::reflections::probes_pipeline::registry::allocate_probe_slot(&mut self.probe_entity_slots, id)
     }
 
     pub(crate) fn release_probe_entity_slot(&mut self, id: EntityId) {
-        if crate::reflections::probes::registry::release_probe_slot(&mut self.probe_entity_slots, id)
+        if crate::reflections::probes_pipeline::registry::release_probe_slot(&mut self.probe_entity_slots, id)
         {
             self.request_probe_capture_burst_if_reflections_active();
         }
@@ -452,7 +469,7 @@ impl State {
 
     /// Asegura ranura para cada probe registrado (cargas .save, plantilla FP, etc.).
     pub(crate) fn ensure_probe_slots_allocated(&mut self) {
-        crate::reflections::probes::registry::ensure_probe_slots_allocated(
+        crate::reflections::probes_pipeline::registry::ensure_probe_slots_allocated(
             &self.save_registry,
             &mut self.probe_entity_slots,
         );
@@ -462,7 +479,7 @@ impl State {
     pub(crate) fn reflection_probe_render_list(
         &self,
     ) -> Vec<(crate::ecs::EntityId, glam::Vec3, usize)> {
-        crate::reflections::probes::registry::reflection_probe_render_list(
+        crate::reflections::probes_pipeline::registry::reflection_probe_render_list(
             &self.save_registry,
             &self.probe_entity_slots,
             |id| {
@@ -475,7 +492,7 @@ impl State {
 
     /// Si el conjunto de probes activos cambió, solicita burst de captura.
     pub(crate) fn sync_probe_capture_burst_for_entity_set(&mut self, probe_ids: &[EntityId]) {
-        if crate::reflections::probes::registry::sync_capture_burst_for_entity_set(
+        if crate::reflections::probes_pipeline::registry::sync_capture_burst_for_entity_set(
             &mut self.last_probe_capture_ids,
             probe_ids,
         ) {
@@ -490,12 +507,12 @@ impl State {
             .get::<crate::ecs::Transform>(id)
             .map(|t| t.scale.x.abs() * 0.5)
             .unwrap_or(1.0);
-        crate::reflections::probes::registry::probe_world_radius(half)
+        crate::reflections::probes_pipeline::registry::probe_world_radius(half)
     }
 
     /// Esferas demo PBR (`[MatVal]`). Independiente del pipeline de reflejos / probes.
     pub(crate) fn ensure_material_validation_demo(&mut self) {
-        crate::config_3d::material_validation::ensure_material_validation_scene(self);
+        crate::config_3d::material_validation::spawn_material_comparison_scene(self);
     }
 
     /// Tras cargar escena FP placeholder (switch sin guardar): alinear sol, luz y cámara orbital del editor.
@@ -673,7 +690,7 @@ impl State {
     }
 
     /// Cubo del editor (muros/cajas de plantilla) sin archivo `.glb`.
-    pub(crate) fn spawn_editor_box(&mut self, name: &str, position: [f32; 3], scale: [f32; 3]) {
+    pub(crate) fn spawn_editor_box(&mut self, name: &str, position: [f32; 3], scale: [f32; 3]) -> EntityId {
         let label = self.resolve_entity_display_name(
             name,
             rer_engine_shared::editor_defaults::entity_label::BOX,
@@ -708,6 +725,7 @@ impl State {
         );
         self.send_model_loaded_event(id, &label);
         self.push_remove_entity_undo(id);
+        id
     }
 
     pub(crate) fn load_character(&mut self, path: &str) {

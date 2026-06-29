@@ -6,7 +6,7 @@ use crate::config_3d::model_animation::GpuSkinnedMeshEntry;
 use crate::ecs::{MeshComponent, SurfacePbr};
 use crate::engine::State;
 use crate::mesh::Mesh;
-use crate::reflections::tlas::{RtInstanceDesc, MAX_SKINNED_RT_INSTANCES, MAX_STATIC_RT_INSTANCES};
+use super::tlas::{RtInstanceDesc, MAX_SKINNED_RT_INSTANCES, MAX_STATIC_RT_INSTANCES};
 
 pub const MAX_RT_MATERIALS: usize = MAX_STATIC_RT_INSTANCES + MAX_SKINNED_RT_INSTANCES;
 
@@ -115,9 +115,9 @@ pub fn instance_triangles_tagged(
     skinned_meshes: &[GpuSkinnedMeshEntry],
     inst: &RtInstanceDesc,
     instance_slot: u32,
-) -> Vec<crate::reflections::bvh::RtTriangle> {
-    use crate::reflections::skinned_rt::skinned_mesh_triangles_world;
-    use crate::reflections::tlas::mesh_triangles_world;
+) -> Vec<super::bvh::RtTriangle> {
+    use super::skinned_rt::skinned_mesh_triangles_world;
+    use super::tlas::mesh_triangles_world;
 
     let mut tris = if let Some(mesh_idx) = inst.mesh_idx {
         let Some(mesh) = meshes.get(mesh_idx) else {

@@ -64,11 +64,112 @@ fn refl_world_pos_from_depth(
     return world_h.xyz / world_h.w;
 }
 
+// ── Lettier SSR (screen-space reflection) ───────────────────────────────────
+// https://lettier.github.io/3d-game-shaders-for-beginners/screen-space-reflection.html
+
+/// Profundidad lineal (m) desde posición en view space (OpenGL: −Z hacia delante).
+fn lettier_view_depth_from_view_pos(view_pos : vec3<f32>) -> f32 {
+    return max(-view_pos.z, 1e-4);
+}
+
+/// Dirección del rayo reflejado en view space: `reflect(view_dir, normal_view)`.
+/// `view_dir` es cámara→superficie (incidente para SSR); `reflect` lo refleja en la normal
+/// y la dirección resultante apunta hacia la escena (el rebote que ve la cámara).
+fn lettier_reflection_dir(view_dir : vec3<f32>, normal_view : vec3<f32>) -> vec3<f32> {
+    return normalize(reflect(view_dir, normalize(normal_view)));
+}
+
+/// Interpolación perspectiva correcta de profundidad a lo largo del rayo.
+fn lettier_perspective_depth(start_d : f32, end_d : f32, search_t : f32) -> f32 {
+    return (start_d * end_d) / mix(end_d, start_d, search_t);
+}
+
+/// Proyecta un punto view-space a píxeles (`lensProjection * startView`, guía Lettier).
+fn lettier_view_to_frag_px(
+    view_pt : vec3<f32>,
+    inv_view : mat4x4<f32>,
+    view_proj : mat4x4<f32>,
+    tex_size : vec2<f32>,
+) -> vec2<f32> {
+    let projection = view_proj * inv_view;
+    let clip = projection * vec4<f32>(view_pt, 1.0);
+    if clip.w <= 0.0 {
+        return vec2<f32>(-1.0);
+    }
+    return refl_ndc_xy_to_uv(clip.xy / clip.w) * tex_size;
+}
+
+/// Porción de línea [0,1] a lo largo del rayo en pantalla (Lettier `search1`).
+fn lettier_line_search_t(
+    frag : vec2<f32>,
+    start_frag : vec2<f32>,
+    delta_x : f32,
+    delta_y : f32,
+    use_x : f32,
+) -> f32 {
+    return mix(
+        (frag.y - start_frag.y) / max(delta_y, 1e-6),
+        (frag.x - start_frag.x) / max(delta_x, 1e-6),
+        use_x,
+    );
+}
+
+/// Visibilidad multiplicativa tras la marcha (Lettier).
+/// `hit_refined` = `hit1`; `hit_coarse` = `hit0` (fallback si el refine no converge).
+fn lettier_ssr_visibility(
+    hit_refined : bool,
+    hit_coarse : bool,
+    view_dir : vec3<f32>,
+    reflection_dir : vec3<f32>,
+    depth_delta : f32,
+    thickness : f32,
+    surface_position_view : vec3<f32>,
+    position_to_view : vec3<f32>,
+    vis_fade_distance_m : f32,
+    hit_uv : vec2<f32>,
+) -> f32 {
+    if !hit_refined && !hit_coarse {
+        return 0.0;
+    }
+    var vis = 1.0;
+    if !hit_refined {
+        vis *= 0.5;
+    }
+    let facing = max(dot(-view_dir, reflection_dir), 0.0);
+    vis *= 1.0 - pow(facing, 4.0);
+    vis *= 1.0 - clamp(depth_delta / max(thickness, 1e-4), 0.0, 1.0);
+    vis *= 1.0 - clamp(
+        length(position_to_view - surface_position_view) / max(vis_fade_distance_m, 1e-4),
+        0.0,
+        1.0,
+    );
+    if hit_uv.x < 0.0 || hit_uv.x > 1.0 || hit_uv.y < 0.0 || hit_uv.y > 1.0 {
+        return 0.0;
+    }
+    return clamp(vis, 0.0, 1.0);
+}
+
+/// Máscara specular con Schlick Fresnel.
+///   F0 = mix(0.04, 1.0, metallic) — dieléctrico 4%, metal 100%
+///   F  = F0 + (1-F0) * (1-NdotV)^5
+///   return F * (1-roughness)²
+fn lettier_specular_amount(metallic : f32, roughness : f32, albedo_rgb : vec3<f32>, NdotV : f32) -> f32 {
+    let sharp = (1.0 - clamp(roughness, 0.0, 1.0)) * (1.0 - clamp(roughness, 0.0, 1.0));
+    let f0 = select(0.04, 1.0, metallic > 0.5);
+    let f = f0 + (1.0 - f0) * pow(1.0 - clamp(NdotV, 0.0, 1.0), 5.0);
+    return f * sharp;
+}
+
+/// Rugosidad para mezclar reflejo nítido / borroso (`roughness = 1 - shininess`).
+fn lettier_reflection_roughness(surface_roughness : f32) -> f32 {
+    return clamp(surface_roughness, 0.0, 1.0);
+}
+
 /// RTIOW metal.rs: reflect(ray toward surface, outward normal).
 fn refl_mirror_dir(world_pos : vec3<f32>, cam_pos : vec3<f32>, n : vec3<f32>) -> vec3<f32> {
-    let incident = normalize(world_pos - cam_pos);
+    let view_dir = normalize(cam_pos - world_pos);
     let nn = normalize(n);
-    return reflect(incident, nn);
+    return reflect(view_dir, nn);
 }
 
 /// Dirección de muestreo del cubemap con parallax esférico (meta.w = radio de influencia).
@@ -275,7 +376,37 @@ fn refl_firefly_clamp(color : vec3<f32>, max_lum : f32) -> vec3<f32> {
     return select(color, color * (max_lum / lum), lum > max_lum);
 }
 
-/// Máscara SSR/RT (alpha): RTIOW Fresnel + rugosidad, sin metallic_boost artístico.
+/// Entorno procedural (cielo esférico uniforme del muro de límites).
+fn refl_procedural_environment(_refl_dir : vec3<f32>) -> vec3<f32> {
+    return vec3<f32>(0.72, 0.86, 0.98);
+}
+
+/// Grosor de hit SSR: escala con profundidad + expansión por ángulo rasante.
+/// `ray_dir` es la dirección del rayo en view space (normalizada).
+/// Cuando el rayo viaja horizontal (grazing), el depth_delta salta más por píxel,
+/// por lo que necesitamos más tolerancia para no perder el impacto.
+fn ssr_hit_thickness_m(view_depth_m : f32, roughness : f32, ray_dir : vec3<f32>) -> f32 {
+    let base = clamp(view_depth_m * 0.008, 0.12, 0.55) + roughness * 0.04;
+    let horiz = length(ray_dir.xy);
+    let grazing = 1.0 + horiz * horiz * 8.0;
+    return min(base * grazing, 2.0);
+}
+
+/// Desplaza el origen del rayo en view space para evitar auto-intersección.
+fn ssr_view_normal_bias_m(view_depth_m : f32) -> f32 {
+    return clamp(view_depth_m * 0.002, 0.02, 0.12);
+}
+
+/// Rechaza self-hit solo si la profundidad es casi idéntica (Lettier no usa umbral fijo en px).
+fn ssr_reject_self_hit(
+    surf_depth_m : f32,
+    hit_depth_m : f32,
+) -> bool {
+    let depth_rel = abs(hit_depth_m - surf_depth_m) / max(surf_depth_m, 0.05);
+    return depth_rel < 0.004;
+}
+
+/// Máscara SSR/RT (alpha): RTIOW Fresnel + rugosidad (RT usa esta; SSR usa `lettier_specular_amount`).
 fn refl_trace_strength(
     roughness : f32,
     metallic : f32,
@@ -292,7 +423,7 @@ fn refl_trace_strength(
 }
 
 fn refl_normal_bias(step_size : f32) -> f32 {
-    return max(REFL_RAY_T_MIN, max(0.002, step_size * 0.05));
+    return max(REFL_RAY_T_MIN, max(0.002, step_size * 0.5));
 }
 
 fn refl_depth_reject_m(step_size : f32) -> f32 {
@@ -335,11 +466,11 @@ struct ReflProbeMeta {
     entries : array<vec4<f32>, 8>,
 }
 
-/// Entorno procedural (mismo gradiente que shader.wgsl fake_environment).
+/// Entorno procedural (mismo gradiente que `world_bounds` / forward IBL).
 fn refl_fake_environment(refl_dir : vec3<f32>) -> vec3<f32> {
-    let sky = vec3<f32>(0.50, 0.57, 0.72);
-    let horizon = vec3<f32>(0.82, 0.84, 0.88);
-    let ground = vec3<f32>(0.26, 0.27, 0.29);
+    let sky = vec3<f32>(0.42, 0.68, 0.95);
+    let horizon = vec3<f32>(0.72, 0.86, 0.98);
+    let ground = vec3<f32>(0.58, 0.62, 0.68);
     let y = clamp(refl_dir.y, -1.0, 1.0);
     if y >= 0.0 {
         return mix(horizon, sky, pow(y, 0.45));

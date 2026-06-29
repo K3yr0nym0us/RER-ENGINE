@@ -907,6 +907,10 @@ impl State {
                     log::warn!("[reflexiones] tier IPC no reconocido: {tier}");
                 }
             }
+            EngineCommand::Only3d(EngineCommand3dOnly::SetReflectionRaytracing { .. }) => {} // RT disabled
+            EngineCommand::Only3d(EngineCommand3dOnly::SpawnReflectionProbe { _position: _ }) => {
+                // Probe spawning disabled
+            }
             EngineCommand::Only3d(EngineCommand3dOnly::SetReflectionDebugView { view }) => {
                 if let Some(v) =
                     crate::config_3d::reflection_graphics::ReflectionDebugView::from_wire(&view)
@@ -916,6 +920,14 @@ impl State {
                     log::warn!("[reflexiones] vista debug IPC no reconocida: {view}");
                 }
             }
+            EngineCommand::Only3d(EngineCommand3dOnly::SetSsrDebugMode { enabled }) => {
+                self.set_reflection_debug_view(if enabled {
+                    crate::config_3d::reflection_graphics::ReflectionDebugView::SsrDebug
+                } else {
+                    crate::config_3d::reflection_graphics::ReflectionDebugView::Final
+                });
+                send_event(&EngineEvent::SsrDebugModeChanged { enabled });
+            }
             EngineCommand::Only3d(EngineCommand3dOnly::SetShadowTier { tier }) => {
                 log::info!("[sombras] IPC set_shadow_tier: {tier}");
                 if let Some(t) = crate::config_3d::shadow_graphics::ShadowTier::from_wire(&tier) {
@@ -923,6 +935,10 @@ impl State {
                 } else {
                     log::warn!("[sombras] tier IPC no reconocido: {tier}");
                 }
+            }
+            EngineCommand::Only3d(EngineCommand3dOnly::SetWorldRadius { radius }) => {
+                self.set_world_bounds_3d_radius(radius);
+                self.clamp_play_character_camera_to_bounds();
             }
             EngineCommand::Only3d(EngineCommand3dOnly::SetTaa { enabled, blend, jitter_scale }) => {
                 // TAA IPC log suppressed

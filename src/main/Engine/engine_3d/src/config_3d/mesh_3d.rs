@@ -43,6 +43,9 @@ pub(crate) struct CpuModelMeshPart {
     pub(crate) texture: Arc<MaterialTextureCpu>,
     pub(crate) forward_xz: glam::Vec2,
     pub(crate) local_bounds: ([f32; 3], [f32; 3]),
+    pub(crate) roughness: f32,
+    pub(crate) metallic: f32,
+    pub(crate) ior: f32,
 }
 
 /// Mip-chain 1024² por material (fuentes sin mips en import).
@@ -362,6 +365,9 @@ struct GltfRawPrim {
     indices: Vec<u32>,
     material_index: u32,
     texture: Arc<MaterialTextureCpu>,
+    roughness: f32,
+    metallic: f32,
+    ior: f32,
 }
 
 /// Lee una primitiva glTF aplicando la matriz `world` del nodo al que pertenece
@@ -431,7 +437,13 @@ fn read_gltf_primitive(
         })
         .collect();
 
-    let mat_idx = primitive.material().index().unwrap_or(0);
+    let material = primitive.material();
+    let mat_idx = material.index().unwrap_or(0);
+    let pbr = material.pbr_metallic_roughness();
+    let roughness = pbr.roughness_factor();
+    let metallic = pbr.metallic_factor();
+    let ior = if metallic > 0.5 { 0.0 } else { 1.5 };
+
     let texture = resolve_gltf_primitive_texture(
         mat_idx,
         material_textures,
@@ -444,6 +456,9 @@ fn read_gltf_primitive(
         indices,
         material_index: mat_idx as u32,
         texture,
+        roughness,
+        metallic,
+        ior,
     })
 }
 
@@ -747,6 +762,9 @@ pub(crate) fn load_gltf_cpu_from_file(
             indices: p.indices,
             material_index: p.material_index,
             texture: p.texture,
+            roughness: p.roughness,
+            metallic: p.metallic,
+            ior: p.ior,
         })
         .collect())
 }
@@ -903,4 +921,55 @@ pub(crate) fn create_ground_plane(
     }
 
     upload(device, &vertices, &indices, "ground-plane", Some(&rt_indices))
+}
+
+/// Disco en XZ (radio local = `GROUND_PLANE_MESH_EXTENT / 2`); escalar uniforme al radio del mundo.
+pub(crate) fn create_ground_disk(
+    device: &wgpu::Device,
+    world_radius: f32,
+    cell_size: f32,
+) -> Mesh {
+    const SEGMENTS: u32 = 96;
+    let local_radius = GROUND_PLANE_MESH_EXTENT * 0.5;
+    let cell = cell_size.max(0.05);
+    let tiles = GROUND_CHECKER_TILES_PER_UV;
+    let diameter = world_radius.max(0.1) * 2.0;
+    let size = GROUND_PLANE_MESH_EXTENT;
+
+    let uv_at = |px: f32, pz: f32| -> [f32; 2] {
+        let u = (px + local_radius) / size * diameter / cell / tiles;
+        let v = (pz + local_radius) / size * diameter / cell / tiles;
+        [u, v]
+    };
+
+    let mut vertices: Vec<Vertex> = Vec::with_capacity((SEGMENTS + 2) as usize);
+    let mut indices: Vec<u32> = Vec::new();
+    let mut rt_indices: Vec<u32> = Vec::new();
+
+    vertices.push(Vertex {
+        position: [0.0, 0.0, 0.0],
+        normal: [0.0, 1.0, 0.0],
+        uv: uv_at(0.0, 0.0),
+    });
+
+    for i in 0..=SEGMENTS {
+        let a = (i as f32 / SEGMENTS as f32) * std::f32::consts::TAU;
+        let px = a.cos() * local_radius;
+        let pz = a.sin() * local_radius;
+        vertices.push(Vertex {
+            position: [px, 0.0, pz],
+            normal: [0.0, 1.0, 0.0],
+            uv: uv_at(px, pz),
+        });
+    }
+
+    for i in 0..SEGMENTS {
+        let i0 = 1 + i;
+        let i1 = 1 + i + 1;
+        indices.extend_from_slice(&[0, i0, i1]);
+        indices.extend_from_slice(&[0, i1, i0]);
+        rt_indices.extend_from_slice(&[0, i0, i1]);
+    }
+
+    upload(device, &vertices, &indices, "ground-disk", Some(&rt_indices))
 }

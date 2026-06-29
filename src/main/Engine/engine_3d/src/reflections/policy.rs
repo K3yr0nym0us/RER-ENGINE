@@ -11,6 +11,7 @@
 /// Ranura de cubemap en el `texture_cube_array` (0..MAX_PROBES-1).
 pub type ProbeSlot = usize;
 
+#[allow(dead_code)]
 /// Cómo el shader elige la capa de cubemap al samplear.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ProbeLayerPolicy {
@@ -26,5 +27,6 @@ impl Default for ProbeLayerPolicy {
     }
 }
 
+#[allow(dead_code)]
 /// Política activa de recepción (Fase 4 la implementa en WGSL vía `refl_resolve_probe_layer`).
 pub const ACTIVE_PROBE_LAYER_POLICY: ProbeLayerPolicy = ProbeLayerPolicy::OwnSlotForProbes;

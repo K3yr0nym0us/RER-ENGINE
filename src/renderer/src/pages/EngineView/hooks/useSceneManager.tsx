@@ -89,6 +89,7 @@ const DEFAULT_WORLD: SavedWorldConfig = {
   worldWidth: 100,
   worldHeight: 50,
   worldDepth: 100,
+  worldRadius: 50,
   gridVisible: true,
   gridCellSize: 1,
   gravity: DEFAULT_GRAVITY_MAGNITUDE,
@@ -175,6 +176,7 @@ export function SceneManagerProvider({
     removeCollider,
     removeExecutionArea,
     setWorldSize,
+    setWorldRadius,
     setGridVisible,
     setGridCellSize,
     setTargetFps,
@@ -480,11 +482,11 @@ export function SceneManagerProvider({
       });
       camera2dRef.current = scene.camera2d ?? { x: 0, y: 0, halfH: 3.5 };
     } else {
-      setWorldSize(
-        scene.world.worldWidth,
-        scene.world.worldHeight,
-        scene.world.worldDepth ?? DEFAULT_WORLD.worldDepth,
-      );
+      const depth = scene.world.worldDepth ?? DEFAULT_WORLD.worldDepth ?? 100;
+      const radius =
+        scene.world.worldRadius
+        ?? Math.min(scene.world.worldWidth, scene.world.worldHeight, depth) * 0.5;
+      setWorldRadius(radius);
       setGridVisible(scene.world.gridVisible);
       setGridCellSize(scene.world.gridCellSize);
       setTargetFps(Number.isFinite(scene.world?.targetFps) ? scene.world.targetFps : DEFAULT_WORLD.targetFps);

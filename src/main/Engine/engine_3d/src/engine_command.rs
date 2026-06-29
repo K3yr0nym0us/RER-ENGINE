@@ -124,8 +124,15 @@ pub enum EngineCommand3dOnly {
     SetGraphicsTextureTier { tier: String },
     SetTextureDetailDistance { distance_m: f32 },
     SetReflectionTier { tier: String },
+    SetReflectionRaytracing { enabled: bool },
+    SpawnReflectionProbe {
+        #[serde(default)]
+        _position: Option<[f32; 3]>,
+    },
     SetReflectionDebugView { view: String },
+    SetSsrDebugMode { enabled: bool },
     SetShadowTier { tier: String },
+    SetWorldRadius { radius: f32 },
     SetTaa {
         enabled: bool,
         #[serde(default)]

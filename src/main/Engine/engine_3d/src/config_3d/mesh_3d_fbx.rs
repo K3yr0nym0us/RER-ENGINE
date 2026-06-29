@@ -178,6 +178,8 @@ pub(crate) fn load_fbx_cpu(
     let mut tex_w = 1u32;
     let mut tex_h = 1u32;
     let mut texture_picked = false;
+    let mut roughness = 0.5;
+    let mut metallic = 0.0;
 
     for node in scene.nodes.iter() {
         let Some(mesh_ref) = node.mesh.as_ref() else {
@@ -185,8 +187,8 @@ pub(crate) fn load_fbx_cpu(
         };
         let mesh: &ufbx::Mesh = mesh_ref.as_ref();
 
-        if !texture_picked {
-            if let Some(mat) = mesh.materials.first().map(|m| m.as_ref()) {
+        if let Some(mat) = mesh.materials.first().map(|m| m.as_ref()) {
+            if !texture_picked {
                 if let Some(tex) = texture_from_material(mat) {
                     let (r, w, h) = texture_rgba(tex, fbx_dir);
                     rgba = r;
@@ -195,6 +197,8 @@ pub(crate) fn load_fbx_cpu(
                     texture_picked = true;
                 }
             }
+            roughness = mat.pbr.roughness.value_vec4.x as f32;
+            metallic = mat.pbr.metalness.value_vec4.x as f32;
         }
 
         let world = ufbx_matrix_to_mat4(&node.geometry_to_world);
@@ -206,6 +210,8 @@ pub(crate) fn load_fbx_cpu(
     }
 
     normalize_vertices_height_feet_pivot(&mut vertices, normalize_to_extent.unwrap_or(1.8));
+
+    let ior = if metallic > 0.5 { 0.0 } else { 1.5 };
 
     Ok(vec![CpuModelMeshPart {
         forward_xz: estimate_mesh_forward_xz(&vertices),
@@ -219,6 +225,9 @@ pub(crate) fn load_fbx_cpu(
             height: tex_h,
             layer_mips: None,
         }),
+        roughness,
+        metallic,
+        ior,
     }])
 }
 

@@ -22,7 +22,7 @@ use crate::config_3d::model_asset;
 use crate::config_3d::{
     physics_body_world_center, physics_half_extents_for_model, transform_position_for_visual_center,
 };
-use crate::ecs::{EntityId, MeshComponent, Transform};
+use crate::ecs::{EntityId, MeshComponent, SurfacePbr, Transform};
 use crate::engine::State;
 use crate::entity_save_meta::EntitySaveMeta;
 use crate::ipc::{send_event, send_load_progress, EngineEvent};
@@ -34,6 +34,9 @@ pub(crate) struct CachedStaticModelPart {
     pub tex_idx: usize,
     pub local_bounds: ([f32; 3], [f32; 3]),
     pub forward_xz: glam::Vec2,
+    pub roughness: f32,
+    pub metallic: f32,
+    pub ior: f32,
 }
 
 pub(crate) struct ModelPreloadCpuResult {
@@ -573,6 +576,9 @@ impl State {
                     tex_idx,
                     local_bounds: part.local_bounds,
                     forward_xz: part.forward_xz,
+                    roughness: part.roughness,
+                    metallic: part.metallic,
+                    ior: part.ior,
                 }
             })
             .collect();
@@ -730,6 +736,9 @@ impl State {
                     tex_idx,
                     local_bounds: part.local_bounds,
                     forward_xz: part.forward_xz,
+                    roughness: part.roughness,
+                    metallic: part.metallic,
+                    ior: part.ior,
                 });
                 budget -= 1;
 
@@ -938,6 +947,9 @@ impl State {
         physics_type: &str,
         local_bounds: ([f32; 3], [f32; 3]),
         desired_id: Option<EntityId>,
+        roughness: f32,
+        metallic: f32,
+        ior: f32,
     ) -> EntityId {
         let key = self.model_path_key(path);
         let resolved_category = entity_category.clone().or_else(|| {
@@ -958,6 +970,16 @@ impl State {
             self.world.spawn(Some(entity_name))
         };
         self.world.insert(id, MeshComponent { mesh_idx, tex_idx });
+        if roughness >= 0.0 {
+            self.world.insert(
+                id,
+                SurfacePbr {
+                    roughness,
+                    metallic,
+                    ior,
+                },
+            );
+        }
         if kind == "character" && !self.character_entities.contains(&id) {
             self.character_entities.push(id);
         }
@@ -1069,6 +1091,9 @@ impl State {
             physics_type,
             part.local_bounds,
             desired_id,
+            part.roughness,
+            part.metallic,
+            part.ior,
         ))
     }
 
@@ -1108,6 +1133,9 @@ impl State {
             "static",
             part.local_bounds,
             None,
+            part.roughness,
+            part.metallic,
+            part.ior,
         )
     }
 

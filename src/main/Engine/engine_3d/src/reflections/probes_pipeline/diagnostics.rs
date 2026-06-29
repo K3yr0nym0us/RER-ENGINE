@@ -1,16 +1,15 @@
-//! Logs de diagnóstico para probes (activados vía `ReflectionDebugView`).
+//! Logs de diagnóstico para probes.
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
 use glam::Vec3;
 
-use crate::config_3d::reflection_graphics::ReflectionDebugView;
 use crate::ecs::EntityId;
 use crate::engine::SceneInstanceBatch;
 use crate::mesh::InstanceData;
 use crate::reflections::probe_env::{ProbeMetaUniform, MAX_PROBES};
-use crate::reflections::probes::capture::ProbeFrameData;
+use crate::reflections::probes_pipeline::capture::ProbeFrameData;
 
 const LOG_SHADER_INTERVAL: u32 = 120;
 const LOG_BUFFERS_INTERVAL: u32 = 60;
@@ -53,34 +52,6 @@ impl ProbeDiagState {
     pub fn tick_frame(&mut self) -> u32 {
         self.frame = self.frame.wrapping_add(1);
         self.frame
-    }
-}
-
-pub(crate) fn run_frame_diagnostics(
-    view: ReflectionDebugView,
-    frame_id: u32,
-    diag: &mut ProbeDiagState,
-    probe_frame: &ProbeFrameData,
-    batches: &[SceneInstanceBatch],
-    probe_meta: &ProbeMetaUniform,
-) {
-    match view {
-        ReflectionDebugView::ProbeLogShader => {
-            if should_log(frame_id, &mut diag.last_shader_frame, LOG_SHADER_INTERVAL) {
-                log_shader_inputs(frame_id, probe_frame, batches, probe_meta);
-            }
-        }
-        ReflectionDebugView::ProbeLogBuffers => {
-            if should_log(frame_id, &mut diag.last_buffers_frame, LOG_BUFFERS_INTERVAL) {
-                log_draw_buffer_snapshots(frame_id, probe_frame, batches);
-            }
-        }
-        ReflectionDebugView::ProbeLogHash => {
-            if should_log(frame_id, &mut diag.last_hash_frame, LOG_HASH_INTERVAL) {
-                log_frame_buffer_hashes(frame_id, batches, probe_meta);
-            }
-        }
-        _ => {}
     }
 }
 
@@ -304,31 +275,4 @@ fn log_frame_buffer_hashes(
     }
 }
 
-/// Cabecera al activar un modo log desde la UI.
-pub(crate) fn log_mode_activated(view: ReflectionDebugView) {
-    match view {
-        ReflectionDebugView::ProbeLogShader => {
-            log::info!(
-                "[reflexiones][shader-input] modo activo — log cada ~{LOG_SHADER_INTERVAL} frames; \
-                 compara capa_cubemap_fs_main (nearest) vs capa_own_slot vs probe_index_gpu"
-            );
-        }
-        ReflectionDebugView::ProbeLogBuffers => {
-            log::info!(
-                "[reflexiones][draw-buffer] modo activo — snapshot CPU pre-draw cada ~{LOG_BUFFERS_INTERVAL} frames (máx 8 batches)"
-            );
-        }
-        ReflectionDebugView::ProbeLogHash => {
-            log::info!(
-                "[reflexiones][buffer-hash] modo activo — hash cada ~{LOG_HASH_INTERVAL} frames"
-            );
-        }
-        ReflectionDebugView::ProbeLogCubemap => {
-            log::info!(
-                "[reflexiones][cubemap-capture] modo activo — log hash GPU cada ~{LOG_CUBEMAP_INTERVAL} frames \
-                 tras captura; vista: izquierda=capa nearest, derecha=muestreo cubemap"
-            );
-        }
-        _ => {}
-    }
-}
+

@@ -334,6 +334,8 @@ export interface SavedWorldConfig {
   worldWidth:   number
   worldHeight:  number
   worldDepth?:  number
+  /** 3D: radio de la esfera de límites. */
+  worldRadius?: number
   gridVisible:  boolean
   gridCellSize: number
   gravity?:     number
@@ -350,6 +352,8 @@ export interface SavedWorldConfig {
   textureDetailDistance?: number
   /** 3D: nivel global de reflejos (SSR / temporal / RT). */
   reflectionTier?: 'off' | 'low' | 'medium' | 'high' | 'ultra'
+  /** 3D: ray tracing HW (High/Ultra + GPU compatible). */
+  reflectionRaytracing?: boolean
   /** 3D: nivel de calidad de sombras (resolución del shadow map por tier). */
   shadowTier?: 'low' | 'medium' | 'high' | 'ultra'
 }
@@ -646,6 +650,7 @@ export interface EngineEvent {
 /** Escena activa exportada por el motor 3D (`export_save_snapshot`). */
 export interface EngineSaveSceneSnapshot {
   world: {
+    world_radius: number
     world_width: number
     world_height: number
     world_depth: number

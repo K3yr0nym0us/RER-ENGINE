@@ -1,5 +1,10 @@
 //! Nivel global de reflejos (Off / Low / Medium / High) y presets internos.
 
+/// Reactivar cuando `probes_pipeline` vuelva al frame (captura + forward IBL cubemap).
+pub const PROBES_ENABLED: bool = false;
+/// Reactivar cuando `rt_pipeline` vuelva a `ReflectionPass::run`.
+pub const RT_ENABLED: bool = false;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Hash, Default)]
 pub enum ReflectionTier {
     #[default]
@@ -13,37 +18,28 @@ pub enum ReflectionTier {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ReflectionDebugView {
     Final,
-    Normals,
-    Roughness,
-    SsrHits,
-    ReflectionMask,
-    RtInstances,
-    /// Colorea por índice de ranura de probe resuelto (nearest / own-slot).
-    ProbeLayers,
-    /// Log consola: inputs réplica CPU de fs_main por probe (throttled).
-    ProbeLogShader,
-    /// Log consola: snapshot buffer instancias pre-draw (throttled).
-    ProbeLogBuffers,
-    /// Log consola: hash instance + probe_meta por frame (throttled).
-    ProbeLogHash,
-    /// Log consola (hash cubemap post-captura) + vista: capa resuelta | muestreo cubemap.
-    ProbeLogCubemap,
+    /// Una sola vista SSR: máscara de aciertos + logs `[reflexiones][ssr]` en consola.
+    SsrDebug,
+    /// Prueba 1: verde si el SSR falla (sin hit), normal si acierta.
+    SsrMissGreen,
+    /// Prueba 2: rojo=fuea de pantalla, azul=sin iteraciones, normal=hit.
+    SsrExitReason,
+    /// Prueba 3: vector de reflexión mapeado a RGB.
+    SsrVectorRgb,
 }
 
 impl ReflectionDebugView {
     pub fn from_wire(s: &str) -> Option<Self> {
         match s.trim().to_lowercase().as_str() {
             "final" | "" => Some(Self::Final),
-            "normals" | "normal" => Some(Self::Normals),
-            "roughness" | "rough" => Some(Self::Roughness),
-            "ssr_hits" | "ssrhits" | "hits" => Some(Self::SsrHits),
-            "reflection_mask" | "mask" => Some(Self::ReflectionMask),
-            "rt_instances" | "rt_diag" => Some(Self::RtInstances),
-            "probe_layers" | "probe_slots" | "probes" => Some(Self::ProbeLayers),
-            "probe_log_shader" | "log_shader" | "shader_input" => Some(Self::ProbeLogShader),
-            "probe_log_buffers" | "log_buffers" | "draw_buffer" => Some(Self::ProbeLogBuffers),
-            "probe_log_hash" | "log_hash" | "buffer_hash" => Some(Self::ProbeLogHash),
-            "probe_log_cubemap" | "log_cubemap" | "cubemap_capture" => Some(Self::ProbeLogCubemap),
+            "ssr_debug" | "ssrdebug" | "ssr" | "debug" | "ssr_hits" | "ssrhits" | "hits" => {
+                Some(Self::SsrDebug)
+            }
+            "ssr_miss_green" | "miss_green" | "missgreen" | "green" => Some(Self::SsrMissGreen),
+            "ssr_exit_reason" | "exit_reason" | "exitreason" => Some(Self::SsrExitReason),
+            "ssr_vector_rgb" | "vector_rgb" | "vectorrgb" | "refl_vector" => {
+                Some(Self::SsrVectorRgb)
+            }
             _ => None,
         }
     }
@@ -51,48 +47,28 @@ impl ReflectionDebugView {
     pub fn wire(self) -> &'static str {
         match self {
             Self::Final => "final",
-            Self::Normals => "normals",
-            Self::Roughness => "roughness",
-            Self::SsrHits => "ssr_hits",
-            Self::ReflectionMask => "reflection_mask",
-            Self::RtInstances => "rt_instances",
-            Self::ProbeLayers => "probe_layers",
-            Self::ProbeLogShader => "probe_log_shader",
-            Self::ProbeLogBuffers => "probe_log_buffers",
-            Self::ProbeLogHash => "probe_log_hash",
-            Self::ProbeLogCubemap => "probe_log_cubemap",
+            Self::SsrDebug => "ssr_debug",
+            Self::SsrMissGreen => "ssr_miss_green",
+            Self::SsrExitReason => "ssr_exit_reason",
+            Self::SsrVectorRgb => "ssr_vector_rgb",
         }
     }
 
-    pub fn is_probe_log(self) -> bool {
-        matches!(
-            self,
-            Self::ProbeLogShader | Self::ProbeLogBuffers | Self::ProbeLogHash | Self::ProbeLogCubemap
-        )
+    pub fn is_visual_debug(self) -> bool {
+        matches!(self, Self::SsrDebug | Self::SsrMissGreen | Self::SsrExitReason | Self::SsrVectorRgb)
     }
 
-    pub fn is_visual_debug(self) -> bool {
-        !matches!(
-            self,
-            Self::Final
-                | Self::RtInstances
-                | Self::ProbeLogShader
-                | Self::ProbeLogBuffers
-                | Self::ProbeLogHash
-        )
+    pub fn enables_ssr_stats(self) -> bool {
+        matches!(self, Self::SsrDebug)
     }
 
     pub fn shader_index(self) -> u32 {
         match self {
             Self::Final => 0,
-            Self::Normals => 1,
-            Self::SsrHits => 2,
-            Self::ReflectionMask => 3,
-            Self::Roughness => 4,
-            Self::RtInstances => 3,
-            Self::ProbeLayers => 28,
-            Self::ProbeLogCubemap => 29,
-            Self::ProbeLogShader | Self::ProbeLogBuffers | Self::ProbeLogHash => 0,
+            Self::SsrDebug => 3,
+            Self::SsrMissGreen => 30,
+            Self::SsrExitReason => 31,
+            Self::SsrVectorRgb => 32,
         }
     }
 }
@@ -102,13 +78,11 @@ impl ReflectionDebugView {
 pub struct ReflectionSettings {
     pub tier: ReflectionTier,
     pub max_steps: u32,
+    pub binary_steps: u32,
     pub max_distance_m: f32,
+    pub screen_fraction: f32,
     pub temporal_blend: f32,
     pub max_roughness_to_trace: f32,
-    pub rt_enabled: bool,
-    pub rt_static_only: bool,
-    /// Peso del color RT sobre SSR donde la máscara SSR es baja (0–1).
-    pub rt_blend: f32,
 }
 
 impl ReflectionTier {
@@ -133,11 +107,6 @@ impl ReflectionTier {
         }
     }
 
-    /// High/Ultra: sincronizan TLAS/BLAS y ejecutan RT compute.
-    pub fn uses_rt_hw(self) -> bool {
-        matches!(self, Self::High | Self::Ultra)
-    }
-
     /// Resolución por cara del cubemap de probes según el tier (px). Off conserva el mínimo
     /// (no captura, pero la textura existe). Low 128, Medium 256, High 512, Ultra 1024.
     pub fn cubemap_face_size(self) -> u32 {
@@ -153,57 +122,58 @@ impl ReflectionTier {
 }
 
 impl ReflectionSettings {
-    pub fn from_tier(tier: ReflectionTier, rt_available: bool) -> Self {
+    pub fn from_tier(tier: ReflectionTier) -> Self {
+        // SSR por tier (Lettier):
+        // | Tier   | Resolución | Ray march | Binary |
+        // | Low    | 1/4        | 12        | 1      |
+        // | Medium | 1/2        | 24        | 3      |
+        // | High   | 1/2        | 48        | 5      |
+        // | Ultra  | Full       | 512       | 7      |
         match tier {
             ReflectionTier::Off => Self {
                 tier,
                 max_steps: 0,
+                binary_steps: 0,
                 max_distance_m: 0.0,
+                screen_fraction: 1.0,
                 temporal_blend: 0.0,
                 max_roughness_to_trace: 1.0,
-                rt_enabled: false,
-                rt_static_only: true,
-                rt_blend: 0.85,
             },
             ReflectionTier::Low => Self {
                 tier,
-                max_steps: 16,
-                max_distance_m: 8.0,
-                temporal_blend: 0.0,
+                max_steps: 12,
+                binary_steps: 1,
+                max_distance_m: 25.0,
+                screen_fraction: 0.25,
+                temporal_blend: 0.18,
                 max_roughness_to_trace: 0.70,
-                rt_enabled: false,
-                rt_static_only: true,
-                rt_blend: 0.85,
             },
             ReflectionTier::Medium => Self {
                 tier,
-                max_steps: 32,
-                max_distance_m: 20.0,
-                temporal_blend: 0.35,
+                max_steps: 96,
+                binary_steps: 3,
+                max_distance_m: 50.0,
+                screen_fraction: 0.50,
+                temporal_blend: 0.22,
                 max_roughness_to_trace: 0.70,
-                rt_enabled: false,
-                rt_static_only: true,
-                rt_blend: 0.85,
             },
             ReflectionTier::High => Self {
                 tier,
-                max_steps: 48,
-                max_distance_m: 40.0,
+                max_steps: 256,
+                binary_steps: 5,
+                max_distance_m: 100.0,
+                screen_fraction: 0.50,
                 temporal_blend: 0.42,
                 max_roughness_to_trace: 0.70,
-                rt_enabled: rt_available,
-                rt_static_only: true,
-                rt_blend: 0.85,
             },
             ReflectionTier::Ultra => Self {
                 tier,
-                max_steps: 64,
-                max_distance_m: 80.0,
+                max_steps: 512,
+                binary_steps: 7,
+                max_distance_m: 50.0,
+                screen_fraction: 1.0,
                 temporal_blend: 0.45,
-                max_roughness_to_trace: 0.80,
-                rt_enabled: rt_available,
-                rt_static_only: false,
-                rt_blend: 0.85,
+                max_roughness_to_trace: 0.85,
             },
         }
     }
@@ -211,23 +181,34 @@ impl ReflectionSettings {
     pub fn active(self) -> bool {
         self.tier != ReflectionTier::Off
     }
-}
 
-/// Preset efectivo: degrada High/Ultra a Medium si la GPU no expone ray query.
-pub fn effective_reflection_settings(
-    requested: ReflectionTier,
-    rt_available: bool,
-) -> (ReflectionSettings, bool) {
-    if requested.uses_rt_hw() && !rt_available {
-        return (
-            ReflectionSettings::from_tier(ReflectionTier::Medium, false),
-            true,
-        );
+    pub fn uses_probes(self) -> bool {
+        PROBES_ENABLED && self.active()
     }
-    (
-        ReflectionSettings::from_tier(requested, rt_available),
-        false,
-    )
+
+    pub fn uses_rt(self) -> bool {
+        RT_ENABLED && self.active()
+    }
+
+    /// Lettier `resolution`: fracción de píxeles del rayo en pantalla (0–1).
+    pub fn ssr_coarse_resolution(self) -> f32 {
+        crate::reflections::ssr_pipeline::ssr_settings::ssr_coarse_resolution(self.tier)
+    }
+
+    /// Tope de iteraciones del coarse pass (Lettier `int(delta)` acotado por tier).
+    pub fn ssr_coarse_max_iters(self) -> u32 {
+        self.max_steps
+    }
+
+    /// Lettier `thickness`: tolerancia del test de profundidad (metros). Guía usa 0.5 por defecto.
+    pub fn ssr_thickness_m(self) -> f32 {
+        crate::reflections::ssr_pipeline::ssr_settings::ssr_thickness_m(self.tier)
+    }
+
+    /// Lettier `steps`: iteraciones del paso de refinamiento binario.
+    pub fn ssr_binary_steps(self) -> u32 {
+        crate::reflections::ssr_pipeline::ssr_settings::ssr_binary_steps(self.tier)
+    }
 }
 
 pub const DEFAULT_REFLECTION_TIER: ReflectionTier = ReflectionTier::Off;
@@ -237,6 +218,5 @@ pub struct ReflectionProfilerMs {
     pub ssr_ms: f32,
     pub temporal_ms: f32,
     pub denoise_ms: f32,
-    pub rt_ms: f32,
     pub composite_ms: f32,
 }

@@ -327,27 +327,8 @@ fn fs_export_base_color(in: VertexOutput) -> @location(0) vec4<f32> {
 
 @fragment
 fn fs_main(in: VertexOutput) -> SceneFragOut {
-    let n = normalize(in.world_normal);
-    let rough = resolve_surface_roughness(in.surface_roughness);
-    let layer_i = refl_nearest_probe_layer_entries(in.world_pos, probe_meta.entries);
-    let albedo_rgb = sample_surface_albedo(in);
-    let env = forward_sample_probe_env(
-        t_probe_env,
-        s_probe_env,
-        in.world_pos,
-        u.cam_pos.xyz,
-        n,
-        in.surface_metallic,
-        rough,
-        albedo_rgb,
-        layer_i,
-        probe_meta.entries,
-    );
-    var out = evaluate_scene(in, env.xyz, env.w >= 0.5 && env.w < 1.5);
-    if env.w >= 1.5 {
-        out.ambient = vec4<f32>(out.ambient.rgb + env.xyz, out.ambient.a);
-    }
-    return out;
+    // Fase SSR-only: entorno procedural en metales; cubemap se reactiva con PROBES_ENABLED.
+    return evaluate_scene(in, vec3<f32>(0.0), false);
 }
 
 @fragment

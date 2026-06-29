@@ -105,10 +105,12 @@ pub struct State {
     pub(crate) background_path: Option<String>,
     pub(crate) grid_config: GridConfig,
     pub(crate) grid_pipeline: wgpu::RenderPipeline,
+    pub(crate) sky_pipeline: wgpu::RenderPipeline,
     pub(crate) grid_bind_group: wgpu::BindGroup,
     pub(crate) grid_buffer_uni: wgpu::Buffer,
     pub(crate) world_bounds_3d: WorldBounds3D,
     pub(crate) world_bounds_buffer: GizmoBuffer,
+    pub(crate) world_sky_buffer: GizmoBuffer,
     pub(crate) ctrl_held: bool,
     pub(crate) shift_held: bool,
     pub active_tool: ActiveTool,
@@ -301,30 +303,19 @@ pub struct State {
     pub(crate) reflection_debug_view:
         crate::config_3d::reflection_graphics::ReflectionDebugView,
     pub(crate) reflections: crate::reflections::ReflectionPass,
-    pub(crate) rt_reflections_available: bool,
-    /// Último `(requested, effective, rt_available)` emitido por IPC (evita spam).
+    /// Modo depuración SSR: emite logs del pipeline cada frame.
+    pub(crate) ssr_debug_mode: bool,
+    /// Último tier emitido por IPC (evita spam).
     pub(crate) reflection_tier_effective_ipc:
-        Option<(
-            crate::config_3d::reflection_graphics::ReflectionTier,
-            crate::config_3d::reflection_graphics::ReflectionTier,
-            bool,
-        )>,
-    pub(crate) rt_accel: crate::reflections::rt_accel::RtAccel,
-    /// Reflection probes: un cubemap por esfera/probe (entorno 360° con suelo, vecinas y jugador).
+        Option<crate::config_3d::reflection_graphics::ReflectionTier>,
     pub(crate) probe_env: crate::reflections::probe_env::ProbeEnvPass,
-    /// Round-robin: probe capturado este frame (los demás conservan su última captura).
     pub(crate) probe_capture_cursor: usize,
-    /// Tras activar reflejos o recrear cubemap: capturar todos los probes en un frame.
     pub(crate) probe_capture_burst_all: bool,
-    /// Ranura fija del cubemap por entidad probe (no se recompacta al borrar).
-    pub(crate) probe_entity_slots: std::collections::HashMap<EntityId, usize>,
-    /// Último conjunto de probes activos; si cambia → burst de captura.
-    pub(crate) last_probe_capture_ids: Option<Vec<EntityId>>,
-    /// Tamaño de cara del cubemap de probes actualmente asignado (px); se recrea al cambiar tier.
+    pub(crate) probe_cubemap_readback: crate::reflections::probes_pipeline::cubemap_readback::ProbeCubemapReadback,
+    pub(crate) probe_diag: crate::reflections::probes_pipeline::diagnostics::ProbeDiagState,
+    pub(crate) probe_entity_slots: std::collections::HashMap<crate::ecs::EntityId, usize>,
+    pub(crate) last_probe_capture_ids: Option<Vec<crate::ecs::EntityId>>,
     pub(crate) probe_cubemap_size: u32,
-    /// Throttle de logs de diagnóstico de probes (`ReflectionDebugView::ProbeLog*`).
-    pub(crate) probe_diag: crate::reflections::probes::diagnostics::ProbeDiagState,
-    pub(crate) probe_cubemap_readback: crate::reflections::probes::cubemap_readback::ProbeCubemapReadback,
     /// Layout del grupo de escena (binding 0 uniform, 1 shadow map, 2 sampler). Necesario para
     /// reconstruir bind groups al recrear el shadow map o el cubemap de probes.
     pub(crate) scene_bind_group_layout: wgpu::BindGroupLayout,

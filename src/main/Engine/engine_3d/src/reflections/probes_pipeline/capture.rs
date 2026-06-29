@@ -8,7 +8,7 @@ use wgpu::util::DeviceExt;
 use crate::config_3d::reflection_graphics::ReflectionSettings;
 use crate::ecs::EntityId;
 use crate::engine::{SceneUniforms, State};
-use crate::reflections::probes::registry;
+use crate::reflections::probes_pipeline::registry;
 use crate::reflections::probe_env;
 
 /// Datos de probes preparados al inicio del frame (antes del main pass).
@@ -24,7 +24,7 @@ pub fn prepare_probe_frame(state: &mut State, settings: &ReflectionSettings) -> 
     } else {
         Vec::new()
     };
-    if settings.active() && probe_list.is_empty() {
+    if settings.uses_probes() && probe_list.is_empty() {
         let min = state.world_bounds_3d.min_corner();
         let max = state.world_bounds_3d.max_corner();
         probe_list.push((
@@ -33,7 +33,7 @@ pub fn prepare_probe_frame(state: &mut State, settings: &ReflectionSettings) -> 
             0,
         ));
     }
-    if settings.active() {
+    if settings.uses_probes() {
         let probe_ids: Vec<_> = probe_list.iter().map(|(id, _, _)| *id).collect();
         state.sync_probe_capture_burst_for_entity_set(&probe_ids);
         let bounds_min = state.world_bounds_3d.min_corner();
