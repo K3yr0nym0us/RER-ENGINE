@@ -812,7 +812,7 @@ impl State {
                 &mut enc,
                 self.taa.scene_color_view(),
                 self.taa.scene_color_texture(),
-                3.0,
+                1.0,
                 ssil_strength,
             );
             let use_scene_taa = self.taa.scene_taa_active();

@@ -80,8 +80,46 @@ fn texel_px(uv : vec2<f32>, dims : vec2<u32>) -> vec2<i32> {
     return vec2<i32>(fc);
 }
 
-fn scene_depth_at_uv(uv : vec2<f32>) -> f32 {
+fn scene_depth_nearest_at_uv(uv : vec2<f32>) -> f32 {
     return textureLoad(t_depth, texel_px(uv, textureDimensions(t_depth)), 0).r;
+}
+
+/// Bilinear manual (R32Float no es filterable en wgpu; no usar s_linear en t_depth).
+fn scene_depth_bilinear_at_uv(uv : vec2<f32>) -> f32 {
+    let dims = textureDimensions(t_depth);
+    let tex_size = vec2<f32>(dims);
+    let coord = uv * tex_size - vec2<f32>(0.5);
+    let base = vec2<i32>(floor(coord));
+    let frac = coord - vec2<f32>(base);
+
+    let max_coord = vec2<i32>(i32(dims.x) - 1, i32(dims.y) - 1);
+    let c00 = clamp(base, vec2<i32>(0), max_coord);
+    let c10 = clamp(base + vec2<i32>(1, 0), vec2<i32>(0), max_coord);
+    let c01 = clamp(base + vec2<i32>(0, 1), vec2<i32>(0), max_coord);
+    let c11 = clamp(base + vec2<i32>(1, 1), vec2<i32>(0), max_coord);
+
+    let d00 = textureLoad(t_depth, c00, 0).r;
+    let d10 = textureLoad(t_depth, c10, 0).r;
+    let d01 = textureLoad(t_depth, c01, 0).r;
+    let d11 = textureLoad(t_depth, c11, 0).r;
+
+    let d0 = mix(d00, d10, frac.x);
+    let d1 = mix(d01, d11, frac.x);
+    return mix(d0, d1, frac.y);
+}
+
+/// Híbrido nearest + bilinear (Bevy raymarch): en profundidad lineal (m) el mínimo
+/// es el fragmento más cercano y reduce acne en bordes sin false-occlusion excesiva.
+fn scene_depth_at_uv(uv : vec2<f32>) -> f32 {
+    let nearest = scene_depth_nearest_at_uv(uv);
+    let linear = scene_depth_bilinear_at_uv(uv);
+    if nearest <= 1e-4 {
+        return linear;
+    }
+    if linear <= 1e-4 {
+        return nearest;
+    }
+    return min(nearest, linear);
 }
 
 fn world_from_depth(uv : vec2<f32>, view_depth_m : f32) -> vec3<f32> {
@@ -134,18 +172,19 @@ fn build_ssr_ray(position_view : vec3<f32>, normal_view : vec3<f32>, max_distanc
     let view_depth_m = lettier_view_depth_from_view_pos(position_view);
     let bias_m = min(ssr_view_normal_bias_m(view_depth_m) * 2.0, 0.1);
     ray.ray_start = position_view + normalize(normal_view) * bias_m;
-    ray.ray_end = ray.ray_start + ray.reflection_dir * max_distance;
+    ray.ray_end = ssr_clip_ray_end_view(ray.ray_start, ray.reflection_dir, max_distance);
     ray.ray_end_depth = lettier_view_depth_from_view_pos(ray.ray_end);
 
     return ray;
 }
 
-/// Núcleo SSR Lettier: marcha en espacio de pantalla + refinamiento binario.
+/// Núcleo SSR: método Sugulee (clip-space direction + frustum-bounded max distance + sin aborts).
 fn trace_lettier_ssr(
     surf_uv : vec2<f32>,
     position_view : vec3<f32>,
     normal_view : vec3<f32>,
     roughness : f32,
+    n_world : vec3<f32>,
 ) -> LettierHit {
     var out : LettierHit;
     out.found = false;
@@ -154,57 +193,71 @@ fn trace_lettier_ssr(
 
     var ray = build_ssr_ray(position_view, normal_view, u.max_distance_m);
     let ray_start_depth = lettier_view_depth_from_view_pos(ray.ray_start);
-
-    // ── Proyección del rayo a píxeles ────────────────────────────────────
     let tex_size = u.gb_resolution;
-    var start_frag = lettier_view_to_frag_px(ray.ray_start, u.inv_view, u.view_proj, tex_size);
-    var end_frag = lettier_view_to_frag_px(ray.ray_end, u.inv_view, u.view_proj, tex_size);
-    if start_frag.x < 0.0 {
+
+    // ── Segmento en UV: extremos proyectados (Bevy) en lugar del bound Sugulee ─
+    let surf_depth_m = lettier_view_depth_from_view_pos(position_view);
+    let ndc_z_vk = refl_view_depth_to_ndc_z_vk(surf_depth_m, u.near_plane, u.far_plane);
+    let start_world = (u.inv_view * vec4<f32>(ray.ray_start, 1.0)).xyz;
+    let start_uv = refl_project_uv(start_world, u.view_proj);
+    let seg = ssr_uv_ray_segment(ray.ray_start, ray.reflection_dir, u.max_distance_m, u.view_proj, u.inv_view);
+    let dp = seg.xy;
+    let seg_len_uv = seg.z;
+
+    if seg_len_uv <= 1e-6 {
         return out;
     }
-    if end_frag.x < 0.0 {
-        let dir = ray.ray_end - ray.ray_start;
-        let t_near = (-u.near_plane - ray.ray_start.z) / max(dir.z, 1e-6);
-        if t_near > 0.0 && t_near < 1.0 {
-            let clamped_end = ray.ray_start + dir * t_near * 0.999;
-            ray.ray_end = clamped_end;
-            end_frag = lettier_view_to_frag_px(ray.ray_end, u.inv_view, u.view_proj, tex_size);
-        }
-        if end_frag.x < 0.0 {
-            return out;
-        }
+
+    let rayPosTS = vec3<f32>(start_uv, ndc_z_vk);
+    let endPosTS = rayPosTS + vec3<f32>(dp, 0.0);
+
+    let startPx = rayPosTS.xy * tex_size;
+    let endPx = endPosTS.xy * tex_size;
+    let dpPx = endPx - startPx;
+    let max_dist_px = max(abs(dpPx.x), abs(dpPx.y));
+
+    if max_dist_px <= 0.0 {
+        return out;
     }
 
-    let delta_x = end_frag.x - start_frag.x;
-    let delta_y = end_frag.y - start_frag.y;
-    let use_x = select(0.0, 1.0, abs(delta_x) >= abs(delta_y));
-    let delta = mix(abs(delta_y), abs(delta_x), use_x) * clamp(u.coarse_resolution, 0.0, 1.0);
-    let line_span = max(delta, 1.0);
-    // Lettier: int(delta) iteraciones, 1 paso por unidad de línea (resolución ya en `delta`).
-    let coarse_iters = min(u32(line_span), max(u.coarse_max_iters, 1u));
-    let increment = vec2<f32>(delta_x, delta_y) / f32(coarse_iters);
+    // Lettier `resolution`: fracción de pasos sobre el delta en píxeles (0–1).
+    let coarse_iters = min(
+        max(u32(max_dist_px * u.coarse_resolution), 1u),
+        max(u.coarse_max_iters, 1u),
+    );
+    // Cubrir todo el segmento UV en `coarse_iters` pasos (Bevy: steps repartidos en [0,1]).
+    let stepVec = dp / f32(coarse_iters);
 
-    var frag = start_frag;
+    var fragPosTS = rayPosTS + vec3<f32>(stepVec, 0.0);
+
+    let use_x = select(0.0, 1.0, abs(dpPx.x) >= abs(dpPx.y));
     var search0 = 0.0;
     var search1 = 0.0;
     var hit0 = 0u;
     var hit1 = 0u;
     let thickness = max(u.thickness_m, ssr_hit_thickness_m(ray_start_depth, roughness, ray.reflection_dir));
 
-    // ── Paso 1: coarse pass ──────────────────────────────────────────────
+    // ── Coarse pass ──────────────────────────────────────────────────────
     for (var i = 0u; i < coarse_iters; i++) {
-        frag += increment;
-        let sample_uv = frag / tex_size;
-        if sample_uv.x < 0.0 || sample_uv.x > 1.0 || sample_uv.y < 0.0 || sample_uv.y > 1.0 {
+        if fragPosTS.x < 0.0 || fragPosTS.x > 1.0 || fragPosTS.y < 0.0 || fragPosTS.y > 1.0 {
             break;
         }
 
+        let sample_uv = fragPosTS.xy;
         let scene_depth_m = scene_depth_at_uv(sample_uv);
         if scene_depth_m <= 1e-4 {
+            fragPosTS += vec3<f32>(stepVec, 0.0);
             continue;
         }
 
-        search1 = clamp(lettier_line_search_t(frag, start_frag, delta_x, delta_y, use_x), 0.0, 1.0);
+        search1 = clamp(
+            mix(
+                (fragPosTS.y - rayPosTS.y) / max(dp.y, 1e-10),
+                (fragPosTS.x - rayPosTS.x) / max(dp.x, 1e-10),
+                use_x,
+            ),
+            0.0, 1.0,
+        );
         let ray_depth_m = lettier_perspective_depth(ray_start_depth, ray.ray_end_depth, search1);
         let depth_delta = ray_depth_m - scene_depth_m;
 
@@ -213,6 +266,7 @@ fn trace_lettier_ssr(
             break;
         }
         search0 = search1;
+        fragPosTS += vec3<f32>(stepVec, 0.0);
     }
 
     if hit0 == 0u {
@@ -223,16 +277,15 @@ fn trace_lettier_ssr(
     var refine_l = search0;
     var refine_r = search1;
 
-    // ── Paso 2: refinement pass (binary search simétrico) ────────────────
+    // ── Binary refinement ────────────────────────────────────────────────
     for (var j = 0u; j < refine_iters; j++) {
         let test_t = (refine_l + refine_r) * 0.5;
-        frag = mix(start_frag, end_frag, test_t);
-        let sample_uv = frag / tex_size;
-        if sample_uv.x < 0.0 || sample_uv.x > 1.0 || sample_uv.y < 0.0 || sample_uv.y > 1.0 {
+        let testTS = mix(rayPosTS.xy, endPosTS.xy, test_t);
+        if testTS.x < 0.0 || testTS.x > 1.0 || testTS.y < 0.0 || testTS.y > 1.0 {
             break;
         }
 
-        let scene_depth_m = scene_depth_at_uv(sample_uv);
+        let scene_depth_m = scene_depth_at_uv(testTS);
         if scene_depth_m <= 1e-4 {
             break;
         }
@@ -249,29 +302,36 @@ fn trace_lettier_ssr(
     }
     search1 = (refine_l + refine_r) * 0.5;
 
-    frag = mix(start_frag, end_frag, search1);
-    let hit_uv = frag / tex_size;
+    let hit_uv = mix(rayPosTS.xy, endPosTS.xy, search1);
 
-    let surf_depth_m = lettier_view_depth_from_view_pos(position_view);
-    let scene_depth_m = scene_depth_at_uv(hit_uv);
-    if ssr_reject_self_hit(surf_depth_m, scene_depth_m) {
+    let surf_depth_m2 = lettier_view_depth_from_view_pos(position_view);
+    let scene_depth_m2 = scene_depth_at_uv(hit_uv);
+    let surf_world = world_from_depth(surf_uv, surf_depth_m2);
+    let hit_world = world_from_depth(hit_uv, scene_depth_m2);
+    let n_hit_world = decode_octahedral(
+        textureLoad(t_normal_roughness, texel_px(hit_uv, textureDimensions(t_normal_roughness)), 0).zw,
+    );
+    if ssr_reject_self_reflection(
+        surf_world,
+        hit_world,
+        n_world,
+        n_hit_world,
+        surf_depth_m2,
+        scene_depth_m2,
+        surf_uv,
+        hit_uv,
+        tex_size,
+    ) {
         return out;
     }
 
-    if scene_depth_m <= 1e-4 {
+    if scene_depth_m2 <= 1e-4 {
         return out;
     }
 
-    let hit_px_dist = length((hit_uv - surf_uv) * tex_size);
-    if hit_px_dist < 1.5 {
-        return out;
-    }
+    let ray_depth_m2 = lettier_perspective_depth(ray_start_depth, ray.ray_end_depth, search1);
+    let depth_delta2 = ray_depth_m2 - scene_depth_m2;
 
-    let ray_depth_m = lettier_perspective_depth(ray_start_depth, ray.ray_end_depth, search1);
-    let depth_delta = ray_depth_m - scene_depth_m;
-
-    // Lettier `positionTo`: posición de escena en el UV de impacto (no el punto del rayo).
-    let hit_world = world_from_depth(hit_uv, scene_depth_m);
     let position_to_view = (u.view * vec4<f32>(hit_world, 1.0)).xyz;
     let vis_fade_m = min(u.max_distance_m, 50.0);
     let vis = lettier_ssr_visibility(
@@ -279,7 +339,7 @@ fn trace_lettier_ssr(
         hit0 == 1u,
         ray.view_dir,
         ray.reflection_dir,
-        depth_delta,
+        depth_delta2,
         thickness,
         position_view,
         position_to_view,
@@ -325,29 +385,27 @@ fn fs_main(in : VsOut) -> SsrOut {
     let normal_view = normalize((u.view * vec4<f32>(n_world, 0.0)).xyz);
 
     let V_view = normalize(-position_view);
-    let NdotV = max(dot(normal_view, V_view), 0.0);
-    let specular_amount = lettier_specular_amount(metallic, roughness, albedo, NdotV);
-    if specular_amount <= 0.0 {
-        return result;
-    }
+    let V_world = normalize((u.inv_view * vec4<f32>(V_view, 0.0)).xyz);
+    let trace_w = refl_trace_strength(roughness, metallic, n_world, V_world, albedo);
 
-    let hit = trace_lettier_ssr(in.uv, position_view, normal_view, roughness);
+    let hit = trace_lettier_ssr(in.uv, position_view, normal_view, roughness, n_world);
     if !hit.found {
-        // Lettier: sin hit en pantalla → reflection-color = 0 (probes/RT aparte).
+        // Sin hit en pantalla → 0 (probes/RT aparte).
         return result;
     }
 
-    // Lettier reflection-color: mix(0, sceneColor, visibility) → premultiplicado en RGB.
+    // Lettier reflection-color: escena reflejada × visibilidad de marcha.
     let blur_spacing = lettier_reflection_roughness(roughness) * 4.0 + 1.0;
     let color_sharp = ssr_reflected_radiance(hit.hit_uv);
     let color_blur = lettier_box_blur_radiance(hit.hit_uv, blur_spacing);
     let reflected = mix(color_sharp, color_blur, lettier_reflection_roughness(roughness));
 
-    // Lettier reflection.frag: mix(color, colorBlur, roughness) * specularAmount
+    // Bevy: indirect += ssr_rgb * brdf_weight * fade. Fresnel modula intensidad, no bloquea el trace.
     let vis = hit.visibility;
-    let refl_rgb = reflected * specular_amount * vis;
+    let refl_rgb = reflected * trace_w * vis;
+    let refl_lum = dot(refl_rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
 
-    result.reflection = vec4<f32>(refl_rgb, specular_amount * vis);
+    result.reflection = vec4<f32>(refl_rgb, max(trace_w * vis, saturate(refl_lum * 3.0)));
     result.hit_uv = vec4<f32>(hit.hit_uv, vis, 1.0);
     return result;
 }

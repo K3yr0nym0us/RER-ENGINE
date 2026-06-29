@@ -98,7 +98,7 @@ fn dbg_build_ssr_ray(position_view : vec3<f32>, normal_view : vec3<f32>) -> DbgS
     let view_depth_m = lettier_view_depth_from_view_pos(position_view);
     let bias_m = min(ssr_view_normal_bias_m(view_depth_m) * 2.0, 0.1);
     ray.ray_start = position_view + normalize(normal_view) * bias_m;
-    ray.ray_end = ray.ray_start + ray.reflection_dir * u.max_distance_m;
+    ray.ray_end = ssr_clip_ray_end_view(ray.ray_start, ray.reflection_dir, u.max_distance_m);
     ray.ray_end_depth = lettier_view_depth_from_view_pos(ray.ray_end);
     return ray;
 }
@@ -151,45 +151,47 @@ fn trace_ssr_lettier_debug(surf_uv : vec2<f32>) -> SsrTraceDbg {
     out.refl_dir = normalize((u.inv_view * vec4<f32>(ray.reflection_dir, 0.0)).xyz);
 
     let V_view = normalize(-position_view);
-    let NdotV = max(dot(normal_view, V_view), 0.0);
-    let specular_amount = lettier_specular_amount(metallic, roughness, albedo, NdotV);
-    out.strength = specular_amount;
-    if specular_amount <= 0.0 {
-        return out;
-    }
+    let V_world = normalize((u.inv_view * vec4<f32>(V_view, 0.0)).xyz);
+    out.strength = refl_trace_strength(roughness, metallic, n_world, V_world, albedo);
     out.eligible = true;
 
-    let march_start_depth = lettier_view_depth_from_view_pos(ray.ray_start);
-    let tex_size = u.gb_resolution;
-    var start_frag = lettier_view_to_frag_px(ray.ray_start, u.inv_view, u.view_proj, tex_size);
-    var end_frag = lettier_view_to_frag_px(ray.ray_end, u.inv_view, u.view_proj, tex_size);
-    if start_frag.x < 0.0 {
+    let start_world = (u.inv_view * vec4<f32>(ray.ray_start, 1.0)).xyz;
+    let start_uv = refl_project_uv(start_world, u.view_proj);
+    let seg = ssr_uv_ray_segment(ray.ray_start, ray.reflection_dir, u.max_distance_m, u.view_proj, u.inv_view);
+    let dp = seg.xy;
+    let seg_len_uv = seg.z;
+
+    if seg_len_uv <= 1e-6 {
         out.exit_reason = 1u;
         return out;
     }
-    if end_frag.x < 0.0 {
-        let dir = ray.ray_end - ray.ray_start;
-        let t_near = (-u.near_plane - ray.ray_start.z) / max(dir.z, 1e-6);
-        if t_near > 0.0 && t_near < 1.0 {
-            let clamped_end = ray.ray_start + dir * t_near * 0.999;
-            ray.ray_end = clamped_end;
-            end_frag = lettier_view_to_frag_px(ray.ray_end, u.inv_view, u.view_proj, tex_size);
-        }
-        if end_frag.x < 0.0 {
-            out.exit_reason = 1u;
-            return out;
-        }
+    out.exit_reason = 0u;
+
+    let surf_depth_m = lettier_view_depth_from_view_pos(position_view);
+    let ndc_z_vk = refl_view_depth_to_ndc_z_vk(surf_depth_m, u.near_plane, u.far_plane);
+    let rayPosTS = vec3<f32>(start_uv, ndc_z_vk);
+    let endPosTS = rayPosTS + vec3<f32>(dp, 0.0);
+
+    let tex_size = u.gb_resolution;
+    let startPx = rayPosTS.xy * tex_size;
+    let endPx = endPosTS.xy * tex_size;
+    let dpPx = endPx - startPx;
+    let max_dist_px = max(abs(dpPx.x), abs(dpPx.y));
+
+    if max_dist_px <= 0.0 {
+        out.exit_reason = 2u;
+        return out;
     }
 
-    let delta_x = end_frag.x - start_frag.x;
-    let delta_y = end_frag.y - start_frag.y;
-    let use_x = select(0.0, 1.0, abs(delta_x) >= abs(delta_y));
-    let delta = mix(abs(delta_y), abs(delta_x), use_x) * clamp(u.coarse_resolution, 0.0, 1.0);
-    let line_span = max(delta, 1.0);
-    let coarse_iters = min(u32(line_span), max(u.coarse_max_iters, 1u));
-    let increment = vec2<f32>(delta_x, delta_y) / f32(coarse_iters);
+    let coarse_iters = min(
+        max(u32(max_dist_px * u.coarse_resolution), 1u),
+        max(u.coarse_max_iters, 1u),
+    );
+    let stepVec = dp / f32(coarse_iters);
+    let march_start_depth = lettier_view_depth_from_view_pos(ray.ray_start);
 
-    var frag = start_frag;
+    var fragPosTS = rayPosTS + vec3<f32>(stepVec, 0.0);
+    let use_x = select(0.0, 1.0, abs(dpPx.x) >= abs(dpPx.y));
     var search0 = 0.0;
     var search1 = 0.0;
     var hit0 = 0u;
@@ -197,19 +199,26 @@ fn trace_ssr_lettier_debug(surf_uv : vec2<f32>) -> SsrTraceDbg {
     let thickness = max(u.thickness_m, ssr_hit_thickness_m(march_start_depth, roughness, ray.reflection_dir));
 
     for (var i = 0u; i < coarse_iters; i++) {
-        frag += increment;
-        let sample_uv = frag / tex_size;
-        if sample_uv.x < 0.0 || sample_uv.x > 1.0 || sample_uv.y < 0.0 || sample_uv.y > 1.0 {
-            out.exit_reason = 1u;
+        if fragPosTS.x < 0.0 || fragPosTS.x > 1.0 || fragPosTS.y < 0.0 || fragPosTS.y > 1.0 {
+            out.exit_reason = 3u;
             break;
         }
 
+        let sample_uv = fragPosTS.xy;
         let scene_depth_m = depth_at(sample_uv, depth_dims);
         if scene_depth_m <= 1e-4 {
+            fragPosTS += vec3<f32>(stepVec, 0.0);
             continue;
         }
 
-        search1 = clamp(lettier_line_search_t(frag, start_frag, delta_x, delta_y, use_x), 0.0, 1.0);
+        search1 = clamp(
+            mix(
+                (fragPosTS.y - rayPosTS.y) / max(dp.y, 1e-10),
+                (fragPosTS.x - rayPosTS.x) / max(dp.x, 1e-10),
+                use_x,
+            ),
+            0.0, 1.0,
+        );
         let ray_depth_m = lettier_perspective_depth(march_start_depth, ray.ray_end_depth, search1);
         let depth_delta = ray_depth_m - scene_depth_m;
 
@@ -218,10 +227,11 @@ fn trace_ssr_lettier_debug(surf_uv : vec2<f32>) -> SsrTraceDbg {
             break;
         }
         search0 = search1;
+        fragPosTS += vec3<f32>(stepVec, 0.0);
     }
 
     if hit0 == 0u {
-        out.exit_reason = 2u;
+        out.exit_reason = 4u;
         return out;
     }
 
@@ -230,13 +240,12 @@ fn trace_ssr_lettier_debug(surf_uv : vec2<f32>) -> SsrTraceDbg {
     let refine_iters = u.binary_steps * hit0;
     for (var j = 0u; j < refine_iters; j++) {
         let test_t = (refine_l + refine_r) * 0.5;
-        frag = mix(start_frag, end_frag, test_t);
-        let sample_uv = frag / tex_size;
-        if sample_uv.x < 0.0 || sample_uv.x > 1.0 || sample_uv.y < 0.0 || sample_uv.y > 1.0 {
+        let testTS = mix(rayPosTS.xy, endPosTS.xy, test_t);
+        if testTS.x < 0.0 || testTS.x > 1.0 || testTS.y < 0.0 || testTS.y > 1.0 {
             break;
         }
 
-        let scene_depth_m = depth_at(sample_uv, depth_dims);
+        let scene_depth_m = depth_at(testTS, depth_dims);
         if scene_depth_m <= 1e-4 {
             break;
         }
@@ -253,28 +262,38 @@ fn trace_ssr_lettier_debug(surf_uv : vec2<f32>) -> SsrTraceDbg {
     }
 
     search1 = (refine_l + refine_r) * 0.5;
-    frag = mix(start_frag, end_frag, search1);
-    let hit_uv = frag / tex_size;
+    let hit_uv = mix(rayPosTS.xy, endPosTS.xy, search1);
 
-    let surf_depth_m = lettier_view_depth_from_view_pos(position_view);
-    let scene_depth_m = depth_at(hit_uv, depth_dims);
-    if ssr_reject_self_hit(surf_depth_m, scene_depth_m) {
+    let surf_depth_m2 = lettier_view_depth_from_view_pos(position_view);
+    let scene_depth_m2 = depth_at(hit_uv, depth_dims);
+    let surf_world = world_pos_from_depth(surf_uv, surf_depth_m2);
+    let hit_world = world_pos_from_depth(hit_uv, scene_depth_m2);
+    let n_hit_world = decode_octahedral(
+        textureLoad(t_normal_roughness, texel_px(hit_uv, textureDimensions(t_normal_roughness)), 0).zw,
+    );
+    if ssr_reject_self_reflection(
+        surf_world,
+        hit_world,
+        n_world,
+        n_hit_world,
+        surf_depth_m2,
+        scene_depth_m2,
+        surf_uv,
+        hit_uv,
+        u.gb_resolution,
+    ) {
+        out.exit_reason = 5u;
         return out;
     }
 
-    if scene_depth_m <= 1e-4 {
+    if scene_depth_m2 <= 1e-4 {
+        out.exit_reason = 6u;
         return out;
     }
 
-    let hit_px_dist = length((hit_uv - surf_uv) * tex_size);
-    if hit_px_dist < 1.5 {
-        return out;
-    }
+    let ray_depth_m2 = lettier_perspective_depth(march_start_depth, ray.ray_end_depth, search1);
+    let depth_delta2 = ray_depth_m2 - scene_depth_m2;
 
-    let ray_depth_m = lettier_perspective_depth(march_start_depth, ray.ray_end_depth, search1);
-    let depth_delta = ray_depth_m - scene_depth_m;
-
-    let hit_world = world_pos_from_depth(hit_uv, scene_depth_m);
     let position_to_view = (u.view * vec4<f32>(hit_world, 1.0)).xyz;
     let vis_fade_m = min(u.max_distance_m, 50.0);
     let vis = lettier_ssr_visibility(
@@ -282,7 +301,7 @@ fn trace_ssr_lettier_debug(surf_uv : vec2<f32>) -> SsrTraceDbg {
         hit0 == 1u,
         ray.view_dir,
         ray.reflection_dir,
-        depth_delta,
+        depth_delta2,
         thickness,
         position_view,
         position_to_view,
@@ -292,15 +311,16 @@ fn trace_ssr_lettier_debug(surf_uv : vec2<f32>) -> SsrTraceDbg {
 
     out.steps_frac = search1;
     out.path_px = length((hit_uv - surf_uv) * u.resolution);
-    out.depth_delta = depth_delta;
+    out.depth_delta = depth_delta2;
     out.march_dist_m = length(position_to_view - ray.ray_start);
 
     if vis <= 0.0 {
+        out.exit_reason = 8u;
         return out;
     }
 
     out.found = true;
-    out.exit_reason = 3u;
+    out.exit_reason = 9u;
     out.hit_uv = hit_uv;
     return out;
 }

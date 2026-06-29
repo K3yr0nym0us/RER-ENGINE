@@ -1,7 +1,7 @@
 struct CompositeUniforms {
     strength : f32,
     ssil_strength : f32,
-    /// Peso de mezcla hacia el color SSR (1 = reflejo domina donde hay hit).
+    /// Cuánto se atenúa el color base donde hay hit SSR (1 = el reflejo domina).
     refl_mix : f32,
     _pad2 : f32,
 }
@@ -41,11 +41,11 @@ fn fs_main(in : VsOut) -> @location(0) vec4<f32> {
         base = vec4<f32>(base.rgb + ssil * u.ssil_strength, base.a);
     }
     let refl = textureSample(t_reflection, s_linear, in.uv);
-    // Conservación de energía: el reflejo atenúa el color base.
-    //   refl.a = specular_amount × visibility (energía del reflejo)
-    let factor = clamp(refl.a * u.strength * u.refl_mix, 0.0, 1.0);
-    return vec4<f32>(
-        base.rgb * (1.0 - factor) + refl.rgb * u.strength * u.refl_mix,
-        base.a,
-    );
+  // Atenuar base solo donde hay energía de reflejo real (evita anillo mate binario por refl.a).
+    let refl_rgb = refl.rgb * u.strength;
+    let refl_lum = dot(refl_rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
+    let blend = saturate(refl_lum * u.refl_mix * 2.5);
+    let base_keep = 1.0 - blend;
+    let out_rgb = base.rgb * base_keep + refl_rgb;
+    return vec4<f32>(out_rgb, base.a);
 }

@@ -313,10 +313,18 @@ fn fs_main(in : VsOut) -> @location(0) vec4<f32> {
             if !t.eligible {
                 return vec4<f32>(0.0, 0.0, 0.0, 1.0);
             }
+            // exit_reason: 1=segmento degenerado, 2=sin delta px, 3=UV out, 4=sin_hit_coarse,
+            // 5=self_hit, 6=sin_depth, 7=px_cerca, 8=vis_cero, 9=hit
             switch t.exit_reason {
-                case 1u: { return vec4<f32>(1.0, 0.0, 0.0, 1.0); }
-                case 2u: { return vec4<f32>(0.0, 0.0, 1.0, 1.0); }
-                default: { return vec4<f32>(lit_scene_at(t.hit_uv), 1.0); }
+                case 1u: { return vec4<f32>(1.0, 0.0, 0.0, 1.0); }      // rojo
+                case 2u: { return vec4<f32>(1.0, 0.5, 0.0, 1.0); }      // naranja
+                case 3u: { return vec4<f32>(1.0, 1.0, 0.0, 1.0); }      // amarillo
+                case 4u: { return vec4<f32>(0.0, 1.0, 0.0, 1.0); }      // verde
+                case 5u: { return vec4<f32>(0.0, 0.5, 1.0, 1.0); }      // celeste
+                case 6u: { return vec4<f32>(0.0, 0.0, 1.0, 1.0); }      // azul
+                case 7u: { return vec4<f32>(0.5, 0.0, 1.0, 1.0); }      // violeta
+                case 8u: { return vec4<f32>(1.0, 0.0, 0.5, 1.0); }      // rosa
+                default: { return vec4<f32>(lit_scene_at(t.hit_uv), 1.0); } // escena
             }
         }
         case 32u: {

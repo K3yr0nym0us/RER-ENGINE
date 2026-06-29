@@ -73,10 +73,56 @@ fn lettier_view_depth_from_view_pos(view_pos : vec3<f32>) -> f32 {
 }
 
 /// Dirección del rayo reflejado en view space: `reflect(view_dir, normal_view)`.
-/// `view_dir` es cámara→superficie (incidente para SSR); `reflect` lo refleja en la normal
-/// y la dirección resultante apunta hacia la escena (el rebote que ve la cámara).
+/// `view_dir` = superficie→cámara (`normalize(-position_view)`), coherente con `refl_mirror_dir`.
 fn lettier_reflection_dir(view_dir : vec3<f32>, normal_view : vec3<f32>) -> vec3<f32> {
     return normalize(reflect(view_dir, normalize(normal_view)));
+}
+
+/// View → NDC con división perspectiva segura (Bevy `raymarch.wgsl`).
+fn ssr_proj_view_to_ndc(proj_only : mat4x4<f32>, view_pt : vec3<f32>) -> vec3<f32> {
+    let h = proj_only * vec4<f32>(view_pt, 1.0);
+    let w_div = select(-1.0, 1.0, h.w >= 0.0) * max(abs(h.w), 1e-8);
+    return h.xyz / w_div;
+}
+
+/// Mantiene el extremo del rayo delante de la cámara (view RH: Z < 0).
+fn ssr_clip_ray_end_view(
+    ray_start : vec3<f32>,
+    reflection_dir : vec3<f32>,
+    max_dist_m : f32,
+) -> vec3<f32> {
+    let rd = normalize(reflection_dir);
+    var end = ray_start + rd * max_dist_m;
+    if end.z < -1e-4 {
+        return end;
+    }
+    if abs(rd.z) > 1e-6 {
+        let t = (-1e-3 - ray_start.z) / rd.z;
+        if t > 1e-6 {
+            return ray_start + rd * min(t, max_dist_m);
+        }
+    }
+    return vec3<f32>(ray_start.x + rd.x * max_dist_m, ray_start.y + rd.y * max_dist_m, -1e-3);
+}
+
+/// Segmento UV del rayo SSR entre extremos proyectados con `view_proj` (misma convención Y que depth).
+fn ssr_uv_ray_segment(
+    ray_start : vec3<f32>,
+    reflection_dir : vec3<f32>,
+    max_dist_m : f32,
+    view_proj : mat4x4<f32>,
+    inv_view : mat4x4<f32>,
+) -> vec4<f32> {
+    let end_view = ssr_clip_ray_end_view(ray_start, reflection_dir, max_dist_m);
+    let start_world = (inv_view * vec4<f32>(ray_start, 1.0)).xyz;
+    let end_world = (inv_view * vec4<f32>(end_view, 1.0)).xyz;
+    let start_uv = refl_project_uv(start_world, view_proj);
+    let end_uv = refl_project_uv(end_world, view_proj);
+    if start_uv.x < -0.5 || end_uv.x < -0.5 {
+        return vec4<f32>(0.0);
+    }
+    let dp = end_uv - start_uv;
+    return vec4<f32>(dp, length(dp), 0.0);
 }
 
 /// Interpolación perspectiva correcta de profundidad a lo largo del rayo.
@@ -114,8 +160,8 @@ fn lettier_line_search_t(
     );
 }
 
-/// Visibilidad multiplicativa tras la marcha (Lettier).
-/// `hit_refined` = `hit1`; `hit_coarse` = `hit0` (fallback si el refine no converge).
+/// Visibilidad tras la marcha (sin máscara `facing`: en esferas generaba un arco/cuña
+/// donde dot(-view_dir, reflection_dir) ≈ 0; Bevy no aplica ese término).
 fn lettier_ssr_visibility(
     hit_refined : bool,
     hit_coarse : bool,
@@ -128,6 +174,8 @@ fn lettier_ssr_visibility(
     vis_fade_distance_m : f32,
     hit_uv : vec2<f32>,
 ) -> f32 {
+    _ = view_dir;
+    _ = reflection_dir;
     if !hit_refined && !hit_coarse {
         return 0.0;
     }
@@ -135,8 +183,6 @@ fn lettier_ssr_visibility(
     if !hit_refined {
         vis *= 0.5;
     }
-    let facing = max(dot(-view_dir, reflection_dir), 0.0);
-    vis *= 1.0 - pow(facing, 4.0);
     vis *= 1.0 - clamp(depth_delta / max(thickness, 1e-4), 0.0, 1.0);
     vis *= 1.0 - clamp(
         length(position_to_view - surface_position_view) / max(vis_fade_distance_m, 1e-4),
@@ -397,13 +443,61 @@ fn ssr_view_normal_bias_m(view_depth_m : f32) -> f32 {
     return clamp(view_depth_m * 0.002, 0.02, 0.12);
 }
 
-/// Rechaza self-hit solo si la profundidad es casi idéntica (Lettier no usa umbral fijo en px).
-fn ssr_reject_self_hit(
+/// Rechaza autoreflexión en objetos convexos (esferas): misma capa de profundidad,
+/// normales paralelas, o la normal del hit apunta hacia el punto de origen.
+fn ssr_reject_self_reflection(
+    surf_world : vec3<f32>,
+    hit_world : vec3<f32>,
+    n_surf : vec3<f32>,
+    n_hit : vec3<f32>,
     surf_depth_m : f32,
     hit_depth_m : f32,
+    surf_uv : vec2<f32>,
+    hit_uv : vec2<f32>,
+    tex_size : vec2<f32>,
 ) -> bool {
-    let depth_rel = abs(hit_depth_m - surf_depth_m) / max(surf_depth_m, 0.05);
-    return depth_rel < 0.004;
+    let ns = normalize(n_surf);
+    let nh = normalize(n_hit);
+    let to_hit = hit_world - surf_world;
+    let world_dist = length(to_hit);
+    let abs_depth = abs(hit_depth_m - surf_depth_m);
+    let rel_depth = abs_depth / max(surf_depth_m, 0.05);
+    let n_dot = dot(ns, nh);
+
+    if rel_depth < 0.012 || abs_depth < 0.08 {
+        return true;
+    }
+
+    let px_dist = length((hit_uv - surf_uv) * tex_size);
+    if px_dist < 4.0 {
+        return true;
+    }
+    if px_dist < 16.0 && abs_depth < surf_depth_m * 0.02 + 0.06 {
+        return true;
+    }
+
+    // Misma lámina de profundidad con normales parecidas → misma cáscara (esfera).
+    if rel_depth < 0.045 && n_dot > 0.22 && px_dist < 140.0 {
+        return true;
+    }
+
+    let bubble_r = max(0.5, surf_depth_m * 0.09);
+    if world_dist < bubble_r && n_dot > 0.45 {
+        return true;
+    }
+
+    // En convexidades la normal del hit mira hacia el punto de reflexión (autoreflexión).
+    if world_dist > 1e-4 {
+        let face_along = dot(nh, to_hit / world_dist);
+        if world_dist < 0.8 && face_along > 0.18 {
+            return true;
+        }
+        if world_dist < 1.15 && face_along > 0.08 && n_dot > 0.35 {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 /// Máscara SSR/RT (alpha): RTIOW Fresnel + rugosidad (RT usa esta; SSR usa `lettier_specular_amount`).
