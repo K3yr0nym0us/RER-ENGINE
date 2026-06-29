@@ -747,6 +747,7 @@ impl State {
 
         let lit_scene_view = self.taa.scene_color_view();
         let direct_view = self.taa.direct_view();
+        let ambient_view = self.taa.ambient_view();
         let depth_export_view = self.taa.depth_export_view();
         let velocity_view = self.taa.velocity_view();
         let base_color_view = self.taa.base_color_view();
@@ -770,6 +771,7 @@ impl State {
                     normal_roughness_view,
                     lit_scene_view,
                     direct_view,
+                    ambient_view,
                     surface_view: shadow_mask_view,
                     base_color_view,
                     depth_export_view: &depth_export_view,

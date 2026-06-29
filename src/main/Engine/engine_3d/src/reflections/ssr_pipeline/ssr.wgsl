@@ -36,6 +36,7 @@ struct SsrUniforms {
 @group(0) @binding(6) var t_direct : texture_2d<f32>;
 @group(0) @binding(7) var t_surface : texture_2d<f32>;
 @group(0) @binding(8) var t_base_color : texture_2d<f32>;
+@group(0) @binding(9) var t_ambient : texture_2d<f32>;
 
 struct VsOut {
     @builtin(position) pos : vec4<f32>,
@@ -126,13 +127,18 @@ fn world_from_depth(uv : vec2<f32>, view_depth_m : f32) -> vec3<f32> {
     return refl_world_pos_from_depth(uv, view_depth_m, u.inv_view_proj, u.near_plane, u.far_plane);
 }
 
-fn lit_at_uv(uv : vec2<f32>) -> vec3<f32> {
-    return textureLoad(t_lit_scene, texel_px(uv, textureDimensions(t_lit_scene)), 0).rgb;
+/// Radiancia sin atenuación de sombras (ambient + direct). `t_lit_scene` aplica sombras
+/// solo a la luz directa; en reflejos eso oscurece asimétricamente muros en sombra.
+fn unshadowed_radiance_at_uv(uv : vec2<f32>) -> vec3<f32> {
+    let px = texel_px(uv, textureDimensions(t_ambient));
+    let amb = textureLoad(t_ambient, px, 0).rgb;
+    let dir = textureLoad(t_direct, px, 0).rgb;
+    return amb + dir;
 }
 
 /// Color de escena en UV de impacto (Lettier `colorTexture`: escena sin SSR).
 fn ssr_reflected_radiance(hit_uv : vec2<f32>) -> vec3<f32> {
-    return lit_at_uv(hit_uv);
+    return unshadowed_radiance_at_uv(hit_uv);
 }
 
 /// Box blur Lettier sobre radiancia reflejada (sin reintroducir env en metales).
@@ -142,7 +148,7 @@ fn lettier_box_blur_radiance(uv : vec2<f32>, spacing_px : f32) -> vec3<f32> {
     for (var oy = -3; oy <= 3; oy++) {
         for (var ox = -3; ox <= 3; ox++) {
             let p = uv + vec2<f32>(f32(ox), f32(oy)) * spacing_px * texel;
-            acc += textureSampleLevel(t_lit_scene, s_linear, p, 0.0).rgb;
+            acc += unshadowed_radiance_at_uv(p);
         }
     }
     return acc / 49.0;
@@ -163,14 +169,22 @@ struct SsrRay {
 }
 
 /// Construye el rayo de reflexión en view space (Lettier + bias mínimo anti self-hit).
-fn build_ssr_ray(position_view : vec3<f32>, normal_view : vec3<f32>, max_distance : f32) -> SsrRay {
+fn build_ssr_ray(
+    position_view : vec3<f32>,
+    normal_view : vec3<f32>,
+    n_world : vec3<f32>,
+    max_distance : f32,
+) -> SsrRay {
     var ray : SsrRay;
 
     ray.view_dir = normalize(-position_view);
     ray.reflection_dir = lettier_reflection_dir(ray.view_dir, normal_view);
 
     let view_depth_m = lettier_view_depth_from_view_pos(position_view);
-    let bias_m = min(ssr_view_normal_bias_m(view_depth_m) * 2.0, 0.1);
+    let is_floor = abs(n_world.y) > 0.85;
+    let bias_scale = select(2.0, 6.0, is_floor);
+    let bias_cap = select(0.1, 0.45, is_floor);
+    let bias_m = min(ssr_view_normal_bias_m(view_depth_m) * bias_scale, bias_cap);
     ray.ray_start = position_view + normalize(normal_view) * bias_m;
     ray.ray_end = ssr_clip_ray_end_view(ray.ray_start, ray.reflection_dir, max_distance);
     ray.ray_end_depth = lettier_view_depth_from_view_pos(ray.ray_end);
@@ -191,12 +205,12 @@ fn trace_lettier_ssr(
     out.hit_uv = vec2<f32>(-1.0);
     out.visibility = 0.0;
 
-    var ray = build_ssr_ray(position_view, normal_view, u.max_distance_m);
+    var ray = build_ssr_ray(position_view, normal_view, n_world, u.max_distance_m);
     let ray_start_depth = lettier_view_depth_from_view_pos(ray.ray_start);
     let tex_size = u.gb_resolution;
+    let surf_depth_m = lettier_view_depth_from_view_pos(position_view);
 
     // ── Segmento en UV: extremos proyectados (Bevy) en lugar del bound Sugulee ─
-    let surf_depth_m = lettier_view_depth_from_view_pos(position_view);
     let ndc_z_vk = refl_view_depth_to_ndc_z_vk(surf_depth_m, u.near_plane, u.far_plane);
     let start_world = (u.inv_view * vec4<f32>(ray.ray_start, 1.0)).xyz;
     let start_uv = refl_project_uv(start_world, u.view_proj);
@@ -262,6 +276,18 @@ fn trace_lettier_ssr(
         let depth_delta = ray_depth_m - scene_depth_m;
 
         if depth_delta > 0.0 && depth_delta < thickness {
+            let n_hit = decode_octahedral(
+                textureLoad(
+                    t_normal_roughness,
+                    texel_px(sample_uv, textureDimensions(t_normal_roughness)),
+                    0,
+                ).zw,
+            );
+            if ssr_coplanar_march_skip(n_world, n_hit, surf_depth_m, ray_depth_m, scene_depth_m) {
+                search0 = search1;
+                fragPosTS += vec3<f32>(stepVec, 0.0);
+                continue;
+            }
             hit0 = 1u;
             break;
         }

@@ -63,6 +63,7 @@ impl SsrPipeline {
                 bgl_texture(6, false, wgpu::ShaderStages::FRAGMENT),
                 bgl_texture(7, false, wgpu::ShaderStages::FRAGMENT),
                 bgl_texture(8, false, wgpu::ShaderStages::FRAGMENT),
+                bgl_texture(9, false, wgpu::ShaderStages::FRAGMENT),
             ],
         });
 
@@ -169,6 +170,7 @@ impl SsrPipeline {
         normal_roughness_view: &TextureView,
         lit_scene_view: &TextureView,
         direct_view: &TextureView,
+        ambient_view: &TextureView,
         surface_view: &TextureView,
         base_color_view: &TextureView,
         reflection_view: &TextureView,
@@ -242,6 +244,10 @@ impl SsrPipeline {
                 wgpu::BindGroupEntry {
                     binding: 8,
                     resource: wgpu::BindingResource::TextureView(base_color_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 9,
+                    resource: wgpu::BindingResource::TextureView(ambient_view),
                 },
             ],
         });

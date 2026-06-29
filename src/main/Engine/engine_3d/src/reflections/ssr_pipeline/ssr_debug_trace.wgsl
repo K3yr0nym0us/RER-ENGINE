@@ -91,12 +91,15 @@ struct DbgSsrRay {
     ray_end_depth   : f32,
 }
 
-fn dbg_build_ssr_ray(position_view : vec3<f32>, normal_view : vec3<f32>) -> DbgSsrRay {
+fn dbg_build_ssr_ray(position_view : vec3<f32>, normal_view : vec3<f32>, n_world : vec3<f32>) -> DbgSsrRay {
     var ray : DbgSsrRay;
     ray.view_dir = normalize(-position_view);
     ray.reflection_dir = lettier_reflection_dir(ray.view_dir, normal_view);
     let view_depth_m = lettier_view_depth_from_view_pos(position_view);
-    let bias_m = min(ssr_view_normal_bias_m(view_depth_m) * 2.0, 0.1);
+    let is_floor = abs(n_world.y) > 0.85;
+    let bias_scale = select(2.0, 6.0, is_floor);
+    let bias_cap = select(0.1, 0.45, is_floor);
+    let bias_m = min(ssr_view_normal_bias_m(view_depth_m) * bias_scale, bias_cap);
     ray.ray_start = position_view + normalize(normal_view) * bias_m;
     ray.ray_end = ssr_clip_ray_end_view(ray.ray_start, ray.reflection_dir, u.max_distance_m);
     ray.ray_end_depth = lettier_view_depth_from_view_pos(ray.ray_end);
@@ -147,7 +150,7 @@ fn trace_ssr_lettier_debug(surf_uv : vec2<f32>) -> SsrTraceDbg {
     let normal_view = normalize((u.view * vec4<f32>(n_world, 0.0)).xyz);
 
     out.view_dir = normalize(u.cam_pos.xyz - world_pos);
-    var ray = dbg_build_ssr_ray(position_view, normal_view);
+    var ray = dbg_build_ssr_ray(position_view, normal_view, n_world);
     out.refl_dir = normalize((u.inv_view * vec4<f32>(ray.reflection_dir, 0.0)).xyz);
 
     let V_view = normalize(-position_view);
@@ -223,6 +226,18 @@ fn trace_ssr_lettier_debug(surf_uv : vec2<f32>) -> SsrTraceDbg {
         let depth_delta = ray_depth_m - scene_depth_m;
 
         if depth_delta > 0.0 && depth_delta < thickness {
+            let n_hit = decode_octahedral(
+                textureLoad(
+                    t_normal_roughness,
+                    texel_px(sample_uv, textureDimensions(t_normal_roughness)),
+                    0,
+                ).zw,
+            );
+            if ssr_coplanar_march_skip(n_world, n_hit, surf_depth_m, ray_depth_m, scene_depth_m) {
+                search0 = search1;
+                fragPosTS += vec3<f32>(stepVec, 0.0);
+                continue;
+            }
             hit0 = 1u;
             break;
         }

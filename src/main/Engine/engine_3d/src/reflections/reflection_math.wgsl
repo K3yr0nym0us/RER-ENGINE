@@ -443,6 +443,24 @@ fn ssr_view_normal_bias_m(view_depth_m : f32) -> f32 {
     return clamp(view_depth_m * 0.002, 0.02, 0.12);
 }
 
+/// Durante la marcha coarse: ignora impactos en la misma lámina (suelo/alfombra coplanar)
+/// para seguir buscando geometría elevada (esferas, muros).
+fn ssr_coplanar_march_skip(
+    n_surf : vec3<f32>,
+    n_hit : vec3<f32>,
+    surf_depth_m : f32,
+    ray_depth_m : f32,
+    scene_depth_m : f32,
+) -> bool {
+    let n_dot = dot(normalize(n_surf), normalize(n_hit));
+    if n_dot < 0.82 {
+        return false;
+    }
+    let abs_d = abs(ray_depth_m - scene_depth_m);
+    let rel_d = abs_d / max(surf_depth_m, 0.05);
+    return rel_d < 0.08 || abs_d < 0.2;
+}
+
 /// Rechaza autoreflexión en objetos convexos (esferas): misma capa de profundidad,
 /// normales paralelas, o la normal del hit apunta hacia el punto de origen.
 fn ssr_reject_self_reflection(

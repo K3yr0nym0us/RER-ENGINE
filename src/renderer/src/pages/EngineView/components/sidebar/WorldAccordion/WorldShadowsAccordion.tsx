@@ -3,6 +3,7 @@ import { Moon } from 'react-bootstrap-icons'
 
 import { useContextEngine } from '@engine'
 import { useTraslate } from '@hooks'
+import { DEFAULT_SHADOW_DARKNESS } from '@shared-types'
 
 const TIERS = [
 	{ key: 'off' as const, labelKey: 'Off' },
@@ -14,7 +15,7 @@ const TIERS = [
 
 export default function WorldShadowsAccordion() {
 	const { t } = useTraslate()
-	const { engineReady, worldConfig, setShadowTier } = useContextEngine()
+	const { engineReady, worldConfig, setShadowTier, setDirectionalLight } = useContextEngine()
 
 	const activeTier = worldConfig.shadowTier ?? 'low'
 
@@ -30,7 +31,7 @@ export default function WorldShadowsAccordion() {
 				</p>
 
 				<label className="form-label small text-secondary mb-1">{t('Shadow tier')}</label>
-				<div className="d-flex flex-wrap gap-1 mb-1">
+				<div className="d-flex flex-wrap gap-1 mb-2">
 					{TIERS.map(({ key, labelKey }) => (
 						<button
 							key={key}
@@ -45,6 +46,27 @@ export default function WorldShadowsAccordion() {
 						</button>
 					))}
 				</div>
+
+				<label
+					className="form-label small text-secondary mb-1 d-flex justify-content-between"
+					htmlFor="shadow-darkness-range"
+				>
+					<span>{t('Shadow darkness')}</span>
+					<span className="text-info fw-bold">
+						{(worldConfig.shadowDarkness ?? DEFAULT_SHADOW_DARKNESS).toFixed(2)}
+					</span>
+				</label>
+				<input
+					id="shadow-darkness-range"
+					type="range"
+					className="form-range mb-0"
+					min={0.02}
+					max={0.85}
+					step={0.01}
+					value={worldConfig.shadowDarkness ?? DEFAULT_SHADOW_DARKNESS}
+					disabled={!engineReady}
+					onChange={(e) => setDirectionalLight({ shadowDarkness: parseFloat(e.target.value) })}
+				/>
 			</Accordion.Body>
 		</Accordion.Item>
 	)

@@ -3,11 +3,7 @@ import { Sun } from 'react-bootstrap-icons'
 
 import { useContextEngine } from '@engine'
 import { useTraslate } from '@hooks'
-import {
-	DEFAULT_LIGHT_AMBIENT,
-	DEFAULT_LIGHT_INTENSITY,
-	DEFAULT_SHADOW_DARKNESS,
-} from '@shared-types'
+import { DEFAULT_LIGHT_AMBIENT, DEFAULT_LIGHT_INTENSITY } from '@shared-types'
 
 export default function WorldLightingAccordion() {
 	const { t } = useTraslate()
@@ -21,7 +17,7 @@ export default function WorldLightingAccordion() {
 			</Accordion.Header>
 			<Accordion.Body className="py-2 px-2">
 				<p className="text-secondary mb-2" style={{ fontSize: '0.72rem' }}>
-					{t('Move the sun gizmo in the viewport. These values tune brightness and shadows.')}
+					{t('Move the sun gizmo in the viewport. These values tune brightness.')}
 				</p>
 
 				<label
@@ -64,27 +60,6 @@ export default function WorldLightingAccordion() {
 					value={worldConfig.lightIntensity ?? DEFAULT_LIGHT_INTENSITY}
 					disabled={!engineReady}
 					onChange={(e) => setDirectionalLight({ intensity: parseFloat(e.target.value) })}
-				/>
-
-				<label
-					className="form-label small text-secondary mb-1 d-flex justify-content-between"
-					htmlFor="shadow-darkness-range"
-				>
-					<span>{t('Shadow darkness')}</span>
-					<span className="text-info fw-bold">
-						{(worldConfig.shadowDarkness ?? DEFAULT_SHADOW_DARKNESS).toFixed(2)}
-					</span>
-				</label>
-				<input
-					id="shadow-darkness-range"
-					type="range"
-					className="form-range mb-0"
-					min={0.02}
-					max={0.85}
-					step={0.01}
-					value={worldConfig.shadowDarkness ?? DEFAULT_SHADOW_DARKNESS}
-					disabled={!engineReady}
-					onChange={(e) => setDirectionalLight({ shadowDarkness: parseFloat(e.target.value) })}
 				/>
 			</Accordion.Body>
 		</Accordion.Item>
