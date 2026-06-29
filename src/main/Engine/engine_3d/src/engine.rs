@@ -29,8 +29,16 @@ pub struct State {
     pub(crate) size: PhysicalSize<u32>,
     pub(crate) clear_color: wgpu::Color,
     pub(crate) render_pipeline: wgpu::RenderPipeline,
+    pub(crate) render_pipeline_transparent_prepass: wgpu::RenderPipeline,
     pub(crate) base_color_pipeline: wgpu::RenderPipeline,
     pub(crate) render_pipeline_overlay: wgpu::RenderPipeline,
+    pub(crate) render_pipeline_transparent: wgpu::RenderPipeline,
+    /// Bind group SSR para el pase transparente (grupo 3 del shader de escena).
+    pub(crate) transparent_refl_bgl: wgpu::BindGroupLayout,
+    pub(crate) transparent_refl_uniform_buffer: wgpu::Buffer,
+    pub(crate) _transparent_refl_fallback_texture: wgpu::Texture,
+    pub(crate) transparent_refl_fallback_view: wgpu::TextureView,
+    pub(crate) transparent_refl_sampler: wgpu::Sampler,
     pub(crate) shadow_pipeline: wgpu::RenderPipeline,
     pub(crate) _shadow_texture: wgpu::Texture,
     pub(crate) depth_view: wgpu::TextureView,
@@ -299,6 +307,8 @@ pub struct State {
     pub(crate) graphics_texture_tier: crate::config_3d::texture_graphics::TextureGraphicsTier,
     /// Nivel global de reflejos (Off / Low / Medium / High).
     pub(crate) reflection_tier: crate::config_3d::reflection_graphics::ReflectionTier,
+    /// Captura y muestreo de reflection probes (toggle editor, independiente del SSR).
+    pub(crate) reflection_probes_enabled: bool,
     /// Vista debug de reflejos (editor).
     pub(crate) reflection_debug_view:
         crate::config_3d::reflection_graphics::ReflectionDebugView,

@@ -261,7 +261,7 @@ fn rt_shade_pixel_at(gid : vec2<u32>) {
         return;
     }
 
-    let strength = refl_trace_strength(roughness, metallic, n, v, albedo);
+    let strength = refl_trace_strength(roughness, metallic, n, v, albedo, 0.0);
     if strength < 0.005 {
         textureStore(reflection_out, px, ssr);
         return;

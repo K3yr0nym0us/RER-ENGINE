@@ -103,7 +103,14 @@ fn nearest_probe_layer(world_pos: Vec3, entries: &[[f32; 4]; MAX_PROBES]) -> i32
             continue;
         }
         let center = Vec3::new(e[0], e[1], e[2]);
+        let influence_m = e[3];
+        if influence_m <= 0.0 {
+            continue;
+        }
         let d = world_pos.distance(center);
+        if d > influence_m {
+            continue;
+        }
         if d < best_d {
             best_d = d;
             best_i = i32::try_from(i).unwrap_or(-1);

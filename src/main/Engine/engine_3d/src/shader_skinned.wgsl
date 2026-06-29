@@ -257,6 +257,8 @@ fn evaluate_scene(in: VertexOutput, env_override: vec3<f32>, has_env_override: b
         );
         amb = metal.ambient;
         dir = metal.direct;
+    } else if has_env_override && surface_metallic <= 0.5 {
+        dir = dir + env_override;
     }
     let lit = apply_selection_rim(amb + dir, in.flag, in.world_pos, in.world_normal);
     let base = amb + dir;
@@ -287,10 +289,47 @@ fn fs_export_base_color_skinned(in: VertexOutput) -> @location(0) vec4<f32> {
     return vec4<f32>(sample_surface_albedo_skinned(in), 1.0);
 }
 
+fn scene_has_any_probe() -> bool {
+    for (var i = 0u; i < 8u; i++) {
+        if probe_meta.entries[i].w > 0.0 {
+            return true;
+        }
+    }
+    return false;
+}
+
+fn scene_probe_env_sample(in: VertexOutput) -> vec4<f32> {
+    if !scene_has_any_probe() {
+        return vec4<f32>(0.0);
+    }
+    let n = normalize(in.world_normal);
+    let layer = refl_resolve_probe_layer(
+        in.world_pos,
+        i32(in.probe_index),
+        probe_meta.entries,
+    );
+    let inst_roughness = in.surface_roughness;
+    let surface_roughness = resolve_surface_roughness(inst_roughness);
+    return forward_sample_probe_env(
+        t_probe_env,
+        s_probe_env,
+        in.world_pos,
+        u.cam_pos.xyz,
+        n,
+        in.surface_metallic,
+        inst_roughness,
+        surface_roughness,
+        sample_surface_albedo_skinned(in),
+        layer,
+        probe_meta.entries,
+    );
+}
+
 @fragment
 fn fs_main_skinned(in: VertexOutput) -> SceneFragOut {
-    // Fase SSR-only: entorno procedural en metales; cubemap se reactiva con PROBES_ENABLED.
-    return evaluate_scene(in, vec3<f32>(0.0), false);
+    let probe = scene_probe_env_sample(in);
+    let has_probe = probe.a > 0.5;
+    return evaluate_scene(in, probe.rgb, has_probe);
 }
 
 /// Captura del jugador en el cubemap del probe: IBL sin glint especular en metales.

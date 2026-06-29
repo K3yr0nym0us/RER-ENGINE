@@ -185,6 +185,7 @@ const SILENT_ENGINE_EVENTS = new Set<string>([
 	'reflection_tier_changed',
 	'reflection_tier_effective',
 	'reflection_raytracing_changed',
+	'reflection_probes_changed',
 	'reflection_debug_view_changed',
 	'ssr_debug_mode_changed',
 	'shadow_tier_changed',
@@ -2902,6 +2903,12 @@ export function createEngineEventHandler({
 			const enabled = Boolean(event.enabled);
 			dispatch({ type: 'SET_WORLD_CONFIG', payload: { reflectionRaytracing: enabled } });
 			addLog(`[Reflejos] Motor confirmó ray tracing: ${enabled ? 'on' : 'off'}`);
+		}
+
+		if (event.event === 'reflection_probes_changed') {
+			const enabled = Boolean(event.enabled);
+			dispatch({ type: 'SET_WORLD_CONFIG', payload: { reflectionProbes: enabled } });
+			addLog(`[Reflejos] Motor confirmó probes: ${enabled ? 'on' : 'off'}`);
 		}
 
 		if (event.event === 'reflection_debug_view_changed') {

@@ -1,7 +1,5 @@
 //! Nivel global de reflejos (Off / Low / Medium / High) y presets internos.
 
-/// Reactivar cuando `probes_pipeline` vuelva al frame (captura + forward IBL cubemap).
-pub const PROBES_ENABLED: bool = false;
 /// Reactivar cuando `rt_pipeline` vuelva a `ReflectionPass::run`.
 pub const RT_ENABLED: bool = false;
 
@@ -83,6 +81,8 @@ pub struct ReflectionSettings {
     pub screen_fraction: f32,
     pub temporal_blend: f32,
     pub max_roughness_to_trace: f32,
+    /// Toggle de editor: captura cubemap + IBL forward (independiente del SSR).
+    pub probes_enabled: bool,
 }
 
 impl ReflectionTier {
@@ -138,6 +138,7 @@ impl ReflectionSettings {
                 screen_fraction: 1.0,
                 temporal_blend: 0.0,
                 max_roughness_to_trace: 1.0,
+                probes_enabled: false,
             },
             ReflectionTier::Low => Self {
                 tier,
@@ -147,6 +148,7 @@ impl ReflectionSettings {
                 screen_fraction: 0.50,
                 temporal_blend: 0.18,
                 max_roughness_to_trace: 0.70,
+                probes_enabled: false,
             },
             ReflectionTier::Medium => Self {
                 tier,
@@ -156,6 +158,7 @@ impl ReflectionSettings {
                 screen_fraction: 0.50,
                 temporal_blend: 0.22,
                 max_roughness_to_trace: 0.70,
+                probes_enabled: false,
             },
             ReflectionTier::High => Self {
                 tier,
@@ -165,6 +168,7 @@ impl ReflectionSettings {
                 screen_fraction: 0.75,
                 temporal_blend: 0.42,
                 max_roughness_to_trace: 0.70,
+                probes_enabled: false,
             },
             ReflectionTier::Ultra => Self {
                 tier,
@@ -174,6 +178,7 @@ impl ReflectionSettings {
                 screen_fraction: 1.0,
                 temporal_blend: 0.45,
                 max_roughness_to_trace: 0.85,
+                probes_enabled: false,
             },
         }
     }
@@ -183,7 +188,7 @@ impl ReflectionSettings {
     }
 
     pub fn uses_probes(self) -> bool {
-        PROBES_ENABLED && self.active()
+        self.probes_enabled && self.active()
     }
 
     pub fn uses_rt(self) -> bool {

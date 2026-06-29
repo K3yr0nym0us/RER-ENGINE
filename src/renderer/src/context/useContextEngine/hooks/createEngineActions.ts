@@ -333,6 +333,12 @@ export function createEngineActions({
 		addLog(`[Reflejos] Ray tracing: ${enabled ? 'on' : 'off'}`);
 	};
 
+	const setReflectionProbes = (enabled: boolean) => {
+		dispatch({ type: 'SET_WORLD_CONFIG', payload: { reflectionProbes: enabled } });
+		send3dFn({ cmd: 'set_reflection_probes', enabled });
+		addLog(`[Reflejos] Probes: ${enabled ? 'on' : 'off'}`);
+	};
+
 	const spawnReflectionProbe = () => {
 		send3dFn({ cmd: 'spawn_reflection_probe' });
 		addLog('[Reflejos] Insertando sonda de reflejo…');
@@ -1069,6 +1075,7 @@ export function createEngineActions({
 		setGraphicsTextureTier,
 		setReflectionTier,
 		setReflectionRaytracing,
+		setReflectionProbes,
 		spawnReflectionProbe,
 		setSsrDebugMode,
 		setShadowTier,

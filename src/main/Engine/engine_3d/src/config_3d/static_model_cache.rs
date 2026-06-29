@@ -977,6 +977,7 @@ impl State {
                     roughness,
                     metallic,
                     ior,
+                    opacity: 1.0,
                 },
             );
         }

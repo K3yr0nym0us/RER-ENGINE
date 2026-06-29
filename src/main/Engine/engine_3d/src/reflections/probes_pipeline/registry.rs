@@ -11,34 +11,11 @@ use crate::reflections::probe_env::{ProbeMetaUniform, MAX_PROBES};
 
 pub const REFLECTION_PROBE_PATH_MARKER: &str = "[ReflectionProbe]";
 
-/// Sonda de respaldo del sistema de reflejos (sin entidad ECS). Solo se usa cuando no hay
-/// entidades `[ReflectionProbe]` en la escena; no depende de contenido demo ni MatVal.
-pub const FALLBACK_SCENE_PROBE_ID: EntityId = EntityId::MAX;
+/// Radio de influencia por defecto al insertar una probe (metros). Mismo orden que la pelota física de plantilla.
+pub const DEFAULT_REFLECTION_PROBE_INFLUENCE_M: f32 = 0.3;
 
-pub fn is_fallback_scene_probe(id: EntityId) -> bool {
-    id == FALLBACK_SCENE_PROBE_ID
-}
-
-/// Centro de la sonda de respaldo: centro horizontal del mundo, altura cerca del suelo
-/// (no el centro del AABB en Y, que en mundos altos quedaría en el cielo y captura vista cenital).
-pub fn fallback_probe_center_from_bounds(min: Vec3, max: Vec3) -> Vec3 {
-    const PROBE_HEIGHT_ABOVE_GROUND: f32 = 1.2;
-    Vec3::new(
-        (min.x + max.x) * 0.5,
-        min.y + PROBE_HEIGHT_ABOVE_GROUND,
-        (min.z + max.z) * 0.5,
-    )
-}
-
-/// Radio de influencia en el plano horizontal (metros).
-pub fn fallback_probe_radius_from_bounds(min: Vec3, max: Vec3) -> f32 {
-    let dx = max.x - min.x;
-    let dz = max.z - min.z;
-    let horizontal_half = 0.5 * (dx * dx + dz * dz).sqrt();
-    horizontal_half.max(8.0).min(64.0)
-}
-
-/// Lista ordenada de entidades marcadas `[ReflectionProbe]` en el save registry.
+/// Radio del gizmo de editor (metros); marcador fijo, no el volumen de influencia IBL.
+pub const REFLECTION_PROBE_GIZMO_RADIUS_M: f32 = 0.3;
 pub fn reflection_probe_entities(registry: &EntitySaveRegistry) -> Vec<EntityId> {
     let mut ids: Vec<_> = registry
         .meta
@@ -121,6 +98,7 @@ pub fn sync_capture_burst_for_entity_set(
     changed
 }
 
+/// Radio de influencia (metros) al buscar la probe más cercana. Coincide con la escala de la entidad.
 pub fn probe_world_radius(scale_x_abs_half: f32) -> f32 {
     scale_x_abs_half.max(0.1)
 }

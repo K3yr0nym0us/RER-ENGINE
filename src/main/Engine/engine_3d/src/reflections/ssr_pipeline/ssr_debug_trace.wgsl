@@ -155,7 +155,7 @@ fn trace_ssr_lettier_debug(surf_uv : vec2<f32>) -> SsrTraceDbg {
 
     let V_view = normalize(-position_view);
     let V_world = normalize((u.inv_view * vec4<f32>(V_view, 0.0)).xyz);
-    out.strength = refl_trace_strength(roughness, metallic, n_world, V_world, albedo);
+    out.strength = refl_trace_strength(roughness, metallic, n_world, V_world, albedo, 0.0);
     out.eligible = true;
 
     let start_world = (u.inv_view * vec4<f32>(ray.ray_start, 1.0)).xyz;

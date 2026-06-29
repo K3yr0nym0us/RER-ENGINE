@@ -889,15 +889,19 @@ impl State {
 
         let mut closest: Option<(f32, EntityId)> = None;
         for &entity in self.world.entities() {
-            if self.world.get::<NonSelectable>(entity).is_some()
-                || self.world.get::<MeshComponent>(entity).is_none()
-            {
+            if self.world.get::<NonSelectable>(entity).is_some() {
                 continue;
             }
             let Some(transform) = self.world.get::<Transform>(entity) else {
                 continue;
             };
-            let (center, half) = self.entity_world_pick_aabb(entity, transform);
+            let (center, half) = if self.is_reflection_probe_entity(entity) {
+                self.reflection_probe_pick_aabb(transform)
+            } else if self.world.get::<MeshComponent>(entity).is_none() {
+                continue;
+            } else {
+                self.entity_world_pick_aabb(entity, transform)
+            };
             if let Some(t) = Self::ray_intersects_aabb(ray_origin, world_dir, center, half)
             {
                 if closest.map_or(true, |(ct, _)| t < ct) {
@@ -1129,6 +1133,7 @@ impl State {
         }
 
         self.handle_entity_attachment_after_transform(&selected_ids);
+        self.notify_reflection_probe_transform_changed(&selected_ids);
     }
 
     pub fn update_hover(&mut self, pixel_x: f32, pixel_y: f32) {

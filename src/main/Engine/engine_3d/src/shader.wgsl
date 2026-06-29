@@ -37,6 +37,18 @@ struct ProbeMeta {
 
 @group(2) @binding(2) var<uniform> probe_meta : ProbeMeta;
 
+/// SSR en superficies transparentes (pase post-composite; grupo 3 solo en `fs_transparent`).
+struct TransparentReflUniforms {
+    enabled  : f32,
+    strength : f32,
+    refl_mix : f32,
+    _pad     : f32,
+}
+
+@group(3) @binding(0) var<uniform> transparent_refl_u : TransparentReflUniforms;
+@group(3) @binding(1) var t_screen_reflection : texture_2d<f32>;
+@group(3) @binding(2) var s_screen_refl : sampler;
+
 struct VertexInput {
     @location(0) position : vec3<f32>,
     @location(1) normal   : vec3<f32>,
@@ -198,7 +210,12 @@ fn ndc_z_to_view_depth_m(ndc_z: f32) -> f32 {
     return (n * f) / (f - ndc_z * (f - n));
 }
 
-fn evaluate_scene(in: VertexOutput, env_override: vec3<f32>, has_env_override: bool) -> SceneFragOut {
+fn evaluate_scene(
+    in: VertexOutput,
+    env_override: vec3<f32>,
+    has_env_override: bool,
+    gbuffer_transparent: bool,
+) -> SceneFragOut {
     // Export coherente con SSR legacy: clip_pos.z (interpolado) como ndc_z Vulkan.
     let view_depth_m = ndc_z_to_view_depth_m(in.clip_pos.z);
     let curr_ndc = in.curr_stable_clip.xy / in.curr_stable_clip.w;
@@ -261,7 +278,8 @@ fn evaluate_scene(in: VertexOutput, env_override: vec3<f32>, has_env_override: b
     if in.render_kind >= 0.5 {
         out_alpha = in.alpha_mul;
     } else if in.alpha_mul < 0.99 {
-        out_alpha = albedo_samp.a * in.alpha_mul;
+        // Opacidad del preset (`SurfacePbr.opacity` → `alpha_mul`); no multiplicar otra vez por textura.
+        out_alpha = in.alpha_mul;
     } else {
         out_alpha = 1.0;
     }
@@ -294,6 +312,15 @@ fn evaluate_scene(in: VertexOutput, env_override: vec3<f32>, has_env_override: b
         );
         amb = metal.ambient;
         dir = metal.direct;
+    } else if has_env_override && surface_metallic <= 0.5 {
+        // Dieléctrico reflectante: solo especular IBL (modo 2), sin tintar el diffuse base.
+        dir = dir + env_override;
+    }
+
+    // Transparentes en MRT: solo G-buffer (depth/rugosidad); color en fs_transparent.
+    if gbuffer_transparent && in.alpha_mul < 0.99 && in.render_kind < 0.5 {
+        amb = vec3<f32>(0.0);
+        dir = vec3<f32>(0.0);
     }
 
     return SceneFragOut(
@@ -325,20 +352,141 @@ fn fs_export_base_color(in: VertexOutput) -> @location(0) vec4<f32> {
     return vec4<f32>(sample_surface_albedo(in), 1.0);
 }
 
+fn scene_has_any_probe() -> bool {
+    for (var i = 0u; i < 8u; i++) {
+        if probe_meta.entries[i].w > 0.0 {
+            return true;
+        }
+    }
+    return false;
+}
+
+fn scene_probe_env_sample(in: VertexOutput) -> vec4<f32> {
+    if !scene_has_any_probe() {
+        return vec4<f32>(0.0);
+    }
+    let n = normalize(in.world_normal);
+    let layer = refl_resolve_probe_layer(
+        in.world_pos,
+        i32(in.probe_index),
+        probe_meta.entries,
+    );
+    let inst_roughness = in.surface_roughness;
+    let surface_roughness = resolve_surface_roughness(inst_roughness);
+    return forward_sample_probe_env(
+        t_probe_env,
+        s_probe_env,
+        in.world_pos,
+        u.cam_pos.xyz,
+        n,
+        in.surface_metallic,
+        inst_roughness,
+        surface_roughness,
+        sample_surface_albedo(in),
+        layer,
+        probe_meta.entries,
+    );
+}
+
 @fragment
 fn fs_main(in: VertexOutput) -> SceneFragOut {
-    // Fase SSR-only: entorno procedural en metales; cubemap se reactiva con PROBES_ENABLED.
-    return evaluate_scene(in, vec3<f32>(0.0), false);
+    let probe = scene_probe_env_sample(in);
+    let has_probe = probe.a > 0.5;
+    return evaluate_scene(in, probe.rgb, has_probe, true);
+}
+
+/// Prepass SSR: depth + rugosidad + IOR/metallic. No escribe `ambient` (conserva el fondo opaco).
+struct TransparentPrepassOut {
+    @location(1) shadow          : vec4<f32>,
+    @location(2) direct          : vec4<f32>,
+    @location(3) depth           : vec4<f32>,
+    @location(4) velocity_normal : vec4<f32>,
+}
+
+@fragment
+fn fs_transparent_prepass(in: VertexOutput) -> TransparentPrepassOut {
+    let out = evaluate_scene(in, vec3<f32>(0.0), false, true);
+    var prepass: TransparentPrepassOut;
+    prepass.shadow = out.shadow;
+    prepass.direct = out.direct;
+    prepass.depth = out.depth;
+    prepass.velocity_normal = out.velocity_normal;
+    return prepass;
 }
 
 @fragment
 fn fs_overlay(in: VertexOutput) -> @location(0) vec4<f32> {
     // Captura IBL: entorno difuso/reflexión base, sin glint especular del sol (evita manchas
     // blancas circulares al reflejar otras esferas metálicas en el cubemap).
-    let out = evaluate_scene(in, vec3<f32>(0.0), false);
+    let out = evaluate_scene(in, vec3<f32>(0.0), false, false);
     var rgb = out.ambient.rgb;
     if in.surface_metallic <= 0.5 {
         rgb += out.direct.rgb;
     }
+    return vec4<f32>(rgb, out.ambient.a);
+}
+
+fn scene_clip_to_screen_uv(clip: vec4<f32>) -> vec2<f32> {
+    var uv = clip.xy / clip.w * 0.5 + vec2<f32>(0.5);
+    uv.y = 1.0 - uv.y;
+    return uv;
+}
+
+/// Mezcla SSR en el color del fragmento. Dieléctricos: reflejo aditivo (no apagar el tinte).
+fn scene_apply_screen_reflection(rgb: vec3<f32>, clip_pos: vec4<f32>, surface_ior: f32) -> vec3<f32> {
+    if transparent_refl_u.enabled < 0.5 {
+        return rgb;
+    }
+    let uv = scene_clip_to_screen_uv(clip_pos);
+    let refl = textureSample(t_screen_reflection, s_screen_refl, uv);
+    let refl_rgb = refl.rgb * transparent_refl_u.strength;
+    if surface_ior > 1.0 {
+        return rgb + refl_rgb;
+    }
+    let refl_lum = dot(refl_rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
+    let blend = saturate(refl_lum * transparent_refl_u.refl_mix * 2.5);
+    return rgb * (1.0 - blend) + refl_rgb;
+}
+
+/// Misma iluminación que lit-composite, para el pase transparente (post-present).
+fn scene_apply_shadow_lit_rgb(
+    amb: vec3<f32>,
+    dir: vec3<f32>,
+    metallic: f32,
+    world_pos: vec3<f32>,
+    world_normal: vec3<f32>,
+    render_kind: f32,
+) -> vec3<f32> {
+    if u.light_color.w < 0.5 {
+        return amb + dir;
+    }
+    let skip_shadow = render_kind >= 0.25 && render_kind < 0.5;
+    if skip_shadow {
+        return amb + dir;
+    }
+    let n = normalize(world_normal);
+    let shadow = scene_shadow(world_pos, n);
+    let shade = mix(u.light_params.y, 1.0, shadow);
+    if metallic > 0.5 {
+        let shade_amb = mix(u.light_params.y * 0.35 + 0.65, 1.0, shadow);
+        return amb * shade_amb + dir * shade;
+    }
+    return amb + dir * shade;
+}
+
+@fragment
+fn fs_transparent(in: VertexOutput) -> @location(0) vec4<f32> {
+    let probe = scene_probe_env_sample(in);
+    let has_probe = probe.a > 0.5;
+    let out = evaluate_scene(in, probe.rgb, has_probe, false);
+    var rgb = scene_apply_shadow_lit_rgb(
+        out.ambient.rgb,
+        out.direct.rgb,
+        in.surface_metallic,
+        in.world_pos,
+        in.world_normal,
+        in.render_kind,
+    );
+    rgb = scene_apply_screen_reflection(rgb, in.clip_pos, in.surface_ior);
     return vec4<f32>(rgb, out.ambient.a);
 }

@@ -554,13 +554,12 @@ impl ProbeEnvPass {
 /// FOV 90°, aspecto 1, profundidad [0,1] (perspective_rh, convención wgpu/Vulkan).
 pub(crate) fn cube_face_view_projs(center: Vec3, near: f32, far: f32) -> [[[f32; 4]; 4]; FACES] {
     let proj = Mat4::perspective_rh(std::f32::consts::FRAC_PI_2, 1.0, near, far);
-    // (dir, up) por capa wgpu (+X,-X,+Y,-Y,+Z,-Z). +Y/-Y intercambiadas (suelo/cielo).
-    // Capas 2/3: +90° CW en pantalla respecto a up=±X (continuidad del damero con ±X/±Z).
+    // Orden wgpu: +X, -X, +Y, -Y, +Z, -Z. +Y mira al cielo, -Y al suelo.
     let faces: [(Vec3, Vec3); FACES] = [
         (Vec3::X, Vec3::NEG_Y),
         (Vec3::NEG_X, Vec3::NEG_Y),
+        (Vec3::Y, Vec3::NEG_Z),
         (Vec3::NEG_Y, Vec3::NEG_Z),
-        (Vec3::Y, Vec3::NEG_Z), // capa -Y wgpu: +180° en plano (up era +Z)
         (Vec3::Z, Vec3::NEG_Y),
         (Vec3::NEG_Z, Vec3::NEG_Y),
     ];

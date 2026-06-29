@@ -128,6 +128,7 @@ export const ENGINE_COMMANDS_3D_ONLY = [
   'set_texture_detail_distance',
   'set_reflection_tier',
   'set_reflection_raytracing',
+  'set_reflection_probes',
   'spawn_reflection_probe',
   'set_reflection_debug_view',
   'set_ssr_debug_mode',

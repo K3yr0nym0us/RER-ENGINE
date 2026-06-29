@@ -316,6 +316,18 @@ impl State {
             depth_export_target.clone(),
             velocity_target.clone(),
         ];
+        // Sin @location(0): no pisar `ambient` (fondo opaco visible tras alpha blend).
+        let transparent_prepass_targets = [
+            None,
+            shadow_mask_target.clone(),
+            Some(wgpu::ColorTargetState {
+                format: crate::taa::MRT_LIT_FORMAT,
+                blend: None,
+                write_mask: wgpu::ColorWrites::ALL,
+            }),
+            depth_export_target.clone(),
+            velocity_target.clone(),
+        ];
         let base_color_only = [Some(wgpu::ColorTargetState {
             format: crate::taa::BASE_COLOR_FORMAT,
             blend: None,
@@ -329,10 +341,93 @@ impl State {
         // Layout del shader principal: añade el grupo 2 (cubemap array de los reflection probes).
         // El overlay/captura siguen usando `pipeline_layout` (sin grupo 2).
         let probe_env_bgl = crate::reflections::probe_env::ProbeEnvPass::sample_bind_group_layout(&device);
+        let transparent_refl_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("transparent-refl-bgl"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: std::num::NonZeroU64::new(16),
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        });
         let main_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("main-pipeline-layout"),
             bind_group_layouts: &[Some(&bgl), Some(&texture_bgl), Some(&probe_env_bgl)],
             immediate_size: 0,
+        });
+        // Solo el pase transparente referencia el grupo 3 (SSR); el MRT opaco no debe exigirlo.
+        let transparent_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("transparent-pipeline-layout"),
+            bind_group_layouts: &[
+                Some(&bgl),
+                Some(&texture_bgl),
+                Some(&probe_env_bgl),
+                Some(&transparent_refl_bgl),
+            ],
+            immediate_size: 0,
+        });
+        let transparent_refl_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("transparent-refl-uniforms"),
+            contents: &[0u8; 16],
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let transparent_refl_fallback_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("transparent-refl-fallback"),
+            size: wgpu::Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let transparent_refl_fallback_view =
+            transparent_refl_fallback_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        queue.write_texture(
+            transparent_refl_fallback_texture.as_image_copy(),
+            &[0, 0, 0, 255],
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(4),
+                rows_per_image: Some(1),
+            },
+            wgpu::Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+        );
+        let transparent_refl_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("transparent-refl-sampler"),
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            ..Default::default()
         });
         let shadow_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("shadow-pipeline-layout"),
@@ -369,6 +464,37 @@ impl State {
             multiview_mask: None,
             cache: None,
         });
+        let render_pipeline_transparent_prepass =
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("transparent-gbuffer-prepass-pipeline"),
+                layout: Some(&main_pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: Some("vs_main"),
+                    buffers: &[mesh::Vertex::desc(), mesh::InstanceData::desc()],
+                    compilation_options: Default::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: Some("fs_transparent_prepass"),
+                    targets: &transparent_prepass_targets,
+                    compilation_options: Default::default(),
+                }),
+                primitive: wgpu::PrimitiveState {
+                    cull_mode: Some(wgpu::Face::Back),
+                    ..Default::default()
+                },
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: DEPTH_FORMAT,
+                    depth_write_enabled: Some(true),
+                    depth_compare: Some(wgpu::CompareFunction::Less),
+                    stencil: wgpu::StencilState::default(),
+                    bias: wgpu::DepthBiasState::default(),
+                }),
+                multisample: wgpu::MultisampleState::default(),
+                multiview_mask: None,
+                cache: None,
+            });
         let base_color_depth = wgpu::DepthStencilState {
             format: DEPTH_FORMAT,
             depth_write_enabled: Some(false),
@@ -500,6 +626,41 @@ impl State {
                 format: DEPTH_FORMAT,
                 depth_write_enabled: Some(false),
                 depth_compare: Some(wgpu::CompareFunction::Always),
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState::default(),
+            multiview_mask: None,
+            cache: None,
+        });
+
+        let render_pipeline_transparent = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("transparent-pipeline"),
+            layout: Some(&transparent_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                buffers: &[mesh::Vertex::desc(), mesh::InstanceData::desc()],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs_transparent"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                cull_mode: Some(wgpu::Face::Back),
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: Some(false),
+                depth_compare: Some(wgpu::CompareFunction::LessEqual),
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
@@ -857,8 +1018,15 @@ impl State {
                 a: 1.0,
             },
             render_pipeline,
+            render_pipeline_transparent_prepass,
             base_color_pipeline,
             render_pipeline_overlay,
+            render_pipeline_transparent,
+            transparent_refl_bgl,
+            transparent_refl_uniform_buffer,
+            _transparent_refl_fallback_texture: transparent_refl_fallback_texture,
+            transparent_refl_fallback_view,
+            transparent_refl_sampler,
             shadow_pipeline,
             _shadow_texture: shadow_texture,
             depth_view,
@@ -1039,6 +1207,7 @@ impl State {
             target_fps: 60,
             graphics_texture_tier: crate::config_3d::texture_graphics::TextureGraphicsTier::Medium,
             reflection_tier: crate::config_3d::reflection_graphics::DEFAULT_REFLECTION_TIER,
+            reflection_probes_enabled: false,
             ssr_debug_mode: false,
             reflection_debug_view:
                 crate::config_3d::reflection_graphics::ReflectionDebugView::Final,

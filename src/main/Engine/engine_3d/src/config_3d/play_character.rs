@@ -18,6 +18,23 @@ use crate::ipc::{send_event, EngineEvent};
 use crate::mesh;
 
 impl State {
+    /// Punto delante del jugador a altura de torso (colocación de reflection probes).
+    pub(crate) fn default_reflection_probe_spawn_position(&self) -> [f32; 3] {
+        const FORWARD_M: f32 = 2.0;
+
+        let feet = self.play_character_feet_position();
+        let half_h = self
+            .play_character_entity
+            .and_then(|id| self.world.get::<Transform>(id))
+            .map(|t| self.play_character_body_height_world(t.scale.y) * 0.5)
+            .unwrap_or(PLAY_CHARACTER_BODY_HEIGHT * 0.5);
+        let body_center = Vec3::new(feet.x, feet.y + half_h, feet.z);
+        let yaw = self.play_character_body_yaw();
+        let (sy, cy) = yaw.sin_cos();
+        let forward = Vec3::new(-sy, 0.0, cy);
+        (body_center + forward * FORWARD_M).to_array()
+    }
+
     /// AABB de hover/click alineado a la cápsula del jugador (pies + altura), no al cubo genérico.
     pub(crate) fn play_character_world_pick_aabb(&self) -> Option<(glam::Vec3, glam::Vec3)> {
         let id = self.play_character_entity?;

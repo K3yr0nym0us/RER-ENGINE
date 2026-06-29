@@ -219,6 +219,7 @@ impl State {
                 roughness: 0.50,
                 metallic: 0.0,
                 ior: 0.0,
+                opacity: 1.0,
             },
         );
         self.sync_ground_plane_to_world_bounds();
@@ -259,6 +260,7 @@ impl State {
                     roughness: 0.35,
                     metallic: 0.0,
                     ior: 0.0,
+                    opacity: 1.0,
                 },
             );
         }
@@ -510,9 +512,25 @@ impl State {
         crate::reflections::probes_pipeline::registry::probe_world_radius(half)
     }
 
+    /// AABB de pick/hover para probes sin malla (alineado al gizmo de editor).
+    pub(crate) fn reflection_probe_pick_aabb(
+        &self,
+        transform: &crate::ecs::Transform,
+    ) -> (glam::Vec3, glam::Vec3) {
+        use crate::reflections::probes_pipeline::registry::REFLECTION_PROBE_GIZMO_RADIUS_M;
+        let r = (REFLECTION_PROBE_GIZMO_RADIUS_M * 1.35).max(0.2);
+        (transform.position, glam::Vec3::splat(r))
+    }
+
+    pub(crate) fn notify_reflection_probe_transform_changed(&mut self, ids: &[crate::ecs::EntityId]) {
+        if ids.iter().any(|id| self.is_reflection_probe_entity(*id)) {
+            self.request_probe_capture_burst_if_reflections_active();
+        }
+    }
+
     /// Esferas demo PBR (`[MatVal]`). Independiente del pipeline de reflejos / probes.
     pub(crate) fn ensure_material_validation_demo(&mut self) {
-        crate::config_3d::material_validation::spawn_material_comparison_scene(self);
+        crate::config_3d::material_validation::ensure_material_comparison_demo(self);
     }
 
     /// Tras cargar escena FP placeholder (switch sin guardar): alinear sol, luz y cámara orbital del editor.

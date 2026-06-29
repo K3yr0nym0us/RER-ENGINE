@@ -35,11 +35,21 @@ fn vs_main(@builtin(vertex_index) vi : u32) -> VsOut {
 @fragment
 fn fs_main(in : VsOut) -> @location(0) vec4<f32> {
     let amb = textureSample(t_ambient, s_color, in.uv);
+    // Transparentes: G-buffer en MRT, color final en pase aparte con alpha blend.
+    if amb.a < 0.99 {
+        return vec4<f32>(0.0);
+    }
     let dir = textureSample(t_direct, s_color, in.uv);
     if u.shadows_enabled < 0.5 {
         return vec4<f32>(amb.rgb + dir.rgb, amb.a);
     }
     let shadow = textureSample(t_shadow, s_shadow, in.uv).r;
     let shade = mix(u.shadow_darkness, 1.0, shadow);
+    let metallic = dir.a;
+    if metallic > 0.5 {
+        // Metales: la energía solar vive en amb (IBL), no en diffuse Lambert.
+        let shade_amb = mix(u.shadow_darkness * 0.35 + 0.65, 1.0, shadow);
+        return vec4<f32>(amb.rgb * shade_amb + dir.rgb * shade, amb.a);
+    }
     return vec4<f32>(amb.rgb + dir.rgb * shade, amb.a);
 }

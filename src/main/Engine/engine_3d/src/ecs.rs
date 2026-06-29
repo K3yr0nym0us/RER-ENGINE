@@ -105,6 +105,8 @@ pub struct SurfacePbr {
     pub metallic: f32,
     /// 0 = no dieléctrico; >1 = índice de refracción (vidrio ~1.5).
     pub ior: f32,
+    /// 1 = opaco; <1 → semitransparente (`flag_pad.y` + fade en forward; SSR intacto).
+    pub opacity: f32,
 }
 
 impl SurfacePbr {
@@ -113,6 +115,7 @@ impl SurfacePbr {
             roughness: roughness.clamp(0.0, 1.0),
             metallic: 1.0,
             ior: 0.0,
+            opacity: 1.0,
         }
     }
 }

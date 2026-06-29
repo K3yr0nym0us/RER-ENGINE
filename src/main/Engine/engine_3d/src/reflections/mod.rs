@@ -936,6 +936,15 @@ impl ReflectionPass {
         true
     }
 
+    /// Textura SSR/RT que consume el composite (y el pase transparente).
+    pub fn composite_reflection_view(&self) -> &TextureView {
+        if self.reflection_resolved_from_history {
+            &self.reflection_history_views[self.reflection_history_index as usize]
+        } else {
+            &self.reflection_view
+        }
+    }
+
     pub fn composite_into(
         &mut self,
         device: &Device,

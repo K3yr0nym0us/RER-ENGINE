@@ -403,7 +403,10 @@ fn fs_main(in : VsOut) -> SsrOut {
         return result;
     }
 
-    let metallic = textureLoad(t_direct, texel_px(in.uv, textureDimensions(t_direct)), 0).a;
+    let direct_px = texel_px(in.uv, textureDimensions(t_direct));
+    let direct_s = textureLoad(t_direct, direct_px, 0);
+    let metallic = direct_s.a;
+    let ior = select(0.0, direct_s.b * 10.0, direct_s.b > 0.01);
     let albedo = textureLoad(t_base_color, surf_px, 0).rgb;
 
     let world_pos = world_from_depth(in.uv, view_depth_m);
@@ -412,7 +415,7 @@ fn fs_main(in : VsOut) -> SsrOut {
 
     let V_view = normalize(-position_view);
     let V_world = normalize((u.inv_view * vec4<f32>(V_view, 0.0)).xyz);
-    let trace_w = refl_trace_strength(roughness, metallic, n_world, V_world, albedo);
+    let trace_w = refl_trace_strength(roughness, metallic, n_world, V_world, albedo, ior);
 
     let hit = trace_lettier_ssr(in.uv, position_view, normal_view, roughness, n_world);
     if !hit.found {
@@ -426,9 +429,10 @@ fn fs_main(in : VsOut) -> SsrOut {
     let color_blur = lettier_box_blur_radiance(hit.hit_uv, blur_spacing);
     let reflected = mix(color_sharp, color_blur, lettier_reflection_roughness(roughness));
 
-    // Bevy: indirect += ssr_rgb * brdf_weight * fade. Fresnel modula intensidad, no bloquea el trace.
+    // Bevy: indirect += ssr_rgb * brdf_weight * fade. Fresnel ya en trace_w (F0=albedo); no × albedo otra vez.
     let vis = hit.visibility;
-    let refl_rgb = reflected * trace_w * vis;
+    var refl_rgb = reflected * trace_w * vis;
+    refl_rgb = refl_metal_attenuate(refl_rgb, albedo, metallic);
     let refl_lum = dot(refl_rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
 
     result.reflection = vec4<f32>(refl_rgb, max(trace_w * vis, saturate(refl_lum * 3.0)));

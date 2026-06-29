@@ -271,6 +271,58 @@ fn clear_material_comparison(state: &mut State) {
     }
 }
 
+fn material_comparison_sphere_ids(state: &State) -> Vec<EntityId> {
+    state
+        .save_registry
+        .meta
+        .iter()
+        .filter(|(_, m)| entity_path_marker(&m.path) == Some(MATERIAL_COMPARISON_PATH))
+        .filter_map(|(id, _)| {
+            state.world.get::<NameComponent>(*id).and_then(|n| {
+                if n.name.starts_with("MatComp · ")
+                    && !n.name.contains("Label")
+                    && !n.name.contains("Quad")
+                    && !n.name.contains("Wall")
+                {
+                    Some(*id)
+                } else {
+                    None
+                }
+            })
+        })
+        .collect()
+}
+
+fn sync_material_comparison_pbr(state: &mut State) {
+    let mut spheres = material_comparison_sphere_ids(state);
+    spheres.sort_unstable();
+    for (i, &id) in spheres.iter().enumerate().take(MAT_VAL_ROW_COUNT) {
+        let preset = &MATERIAL_VALIDATION_ROWS[i];
+        let roughness = preset.roughness_min;
+        let pbr = surface_pbr_from_preset(preset, roughness);
+        if let Some(existing) = state.world.get_mut::<SurfacePbr>(id) {
+            *existing = pbr;
+        } else {
+            state.world.insert(id, pbr);
+        }
+        let tex_idx = state.mat_val_texture_for_preset(preset);
+        state.apply_mat_val_sphere_visual(id, tex_idx);
+    }
+    log::info!(
+        "[MatVal] PBR sincronizado en {} esferas (GLASS/WATER opacity/ior)",
+        spheres.len().min(MAT_VAL_ROW_COUNT)
+    );
+}
+
+/// Escena comparativa: 1 esfera por material en fila, letrero arriba, pared entre cada una.
+pub fn ensure_material_comparison_demo(state: &mut State) {
+    if material_comparison_sphere_ids(state).len() != MAT_VAL_ROW_COUNT {
+        spawn_material_comparison_scene(state);
+        return;
+    }
+    sync_material_comparison_pbr(state);
+}
+
 /// Escena comparativa: 1 esfera por material en fila, letrero arriba, pared entre cada una.
 pub fn spawn_material_comparison_scene(state: &mut State) {
     clear_validation_scene(state);
@@ -442,7 +494,7 @@ impl State {
     }
 
     pub(crate) fn mat_val_texture_for_preset(&mut self, preset: &PbrMaterialPreset) -> usize {
-        let key = format!("preset:{}", preset.id);
+        let key = format!("preset:v5:{}", preset.id);
         if let Some(&idx) = self.mat_val_texture_cache.get(&key) {
             return idx;
         }

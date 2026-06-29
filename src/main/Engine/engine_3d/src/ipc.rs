@@ -54,6 +54,8 @@ pub struct SaveWorldSnapshot {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reflection_raytracing: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reflection_probes: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shadow_tier: Option<String>,
 }
 
@@ -715,6 +717,8 @@ pub enum EngineEvent {
     TextureDetailDistanceChanged { distance_m: f32 },
     #[serde(rename = "reflection_tier_changed")]
     ReflectionTierChanged { tier: String },
+    #[serde(rename = "reflection_probes_changed")]
+    ReflectionProbesChanged { enabled: bool },
     /// Tier de reflejos pedido vs efectivo (p. ej. High degradado a Medium sin RT).
     #[serde(rename = "reflection_tier_effective")]
     ReflectionTierEffective {
@@ -1097,6 +1101,8 @@ pub struct ProjectLoaded3dWorld {
     pub reflectionTier: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reflectionRaytracing: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reflectionProbes: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub shadowTier: Option<String>,
 }

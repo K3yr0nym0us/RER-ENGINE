@@ -53,6 +53,7 @@ impl State {
                 texture_detail_distance_m: Some(self.texture_detail_near_m),
                 reflection_tier: Some(self.reflection_tier.wire().to_string()),
                 reflection_raytracing: None,
+                reflection_probes: Some(self.reflection_probes_enabled),
                 shadow_tier: Some(self.shadow_tier.wire().to_string()),
             },
             background_path: self.background_path.clone(),

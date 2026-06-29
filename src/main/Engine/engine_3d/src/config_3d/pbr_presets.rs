@@ -27,6 +27,8 @@ pub struct PbrMaterialPreset {
     pub base_color: [f32; 3],
     /// 0 = metal; >1 = dielectric IOR (glass ~1.5, water ~1.33).
     pub ior: f32,
+    /// Opacidad visual (1 = opaco). Vidrio/agua usan <1 sin perder trazado SSR.
+    pub opacity: f32,
     pub albedo_kind: MatValAlbedoKind,
 }
 
@@ -43,6 +45,7 @@ pub const MATERIAL_VALIDATION_ROWS: [PbrMaterialPreset; MAT_VAL_ROW_COUNT] = [
         roughness_max: 0.05,
         base_color: [0.08, 0.08, 0.09],
         ior: 0.0,
+        opacity: 1.0,
         albedo_kind: MatValAlbedoKind::Solid,
     },
     PbrMaterialPreset {
@@ -54,6 +57,7 @@ pub const MATERIAL_VALIDATION_ROWS: [PbrMaterialPreset; MAT_VAL_ROW_COUNT] = [
         roughness_max: 0.5,
         base_color: [0.52, 0.54, 0.56],
         ior: 0.0,
+        opacity: 1.0,
         albedo_kind: MatValAlbedoKind::BrushedSteel,
     },
     PbrMaterialPreset {
@@ -65,6 +69,7 @@ pub const MATERIAL_VALIDATION_ROWS: [PbrMaterialPreset; MAT_VAL_ROW_COUNT] = [
         roughness_max: 0.2,
         base_color: [0.82, 0.18, 0.22],
         ior: 0.0,
+        opacity: 1.0,
         albedo_kind: MatValAlbedoKind::GlossyPlastic,
     },
     PbrMaterialPreset {
@@ -76,6 +81,7 @@ pub const MATERIAL_VALIDATION_ROWS: [PbrMaterialPreset; MAT_VAL_ROW_COUNT] = [
         roughness_max: 0.1,
         base_color: [0.92, 0.94, 0.96],
         ior: 1.5,
+        opacity: 0.38,
         albedo_kind: MatValAlbedoKind::Glass,
     },
     PbrMaterialPreset {
@@ -87,6 +93,7 @@ pub const MATERIAL_VALIDATION_ROWS: [PbrMaterialPreset; MAT_VAL_ROW_COUNT] = [
         roughness_max: 0.05,
         base_color: [0.08, 0.28, 0.42],
         ior: 1.33,
+        opacity: 0.48,
         albedo_kind: MatValAlbedoKind::Water,
     },
 ];
@@ -105,7 +112,22 @@ pub fn surface_pbr_from_preset(preset: &PbrMaterialPreset, roughness: f32) -> Su
         roughness: roughness.clamp(0.0, 1.0),
         metallic: preset.metallic.clamp(0.0, 1.0),
         ior: preset.ior,
+        opacity: preset.opacity.clamp(0.0, 1.0),
     }
+}
+
+/// Alpha en `InstanceData.flag_pad.y` → pase transparente + alpha blend final.
+pub fn instance_visual_alpha(pbr: &SurfacePbr) -> f32 {
+    let mut alpha = pbr.opacity.clamp(0.0, 1.0);
+    // Vidrio/agua: si opacity se perdió en save/carga, forzar semitransparencia por IOR.
+    if pbr.ior > 1.01 && alpha >= 0.99 {
+        alpha = 0.35;
+    }
+    alpha
+}
+
+pub fn uses_transparent_pass(pbr: &SurfacePbr) -> bool {
+    instance_visual_alpha(pbr) < 0.99
 }
 
 fn linear_to_u8(c: f32) -> u8 {
@@ -165,7 +187,7 @@ fn glass_rgba(base: [f32; 3], w: u32, h: u32) -> Vec<u8> {
             px[i] = linear_to_u8(base[0] * edge);
             px[i + 1] = linear_to_u8(base[1] * edge);
             px[i + 2] = linear_to_u8(base[2] * edge);
-            px[i + 3] = 220;
+            px[i + 3] = 255;
         }
     }
     px

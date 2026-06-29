@@ -195,14 +195,12 @@ fn lettier_ssr_visibility(
     return clamp(vis, 0.0, 1.0);
 }
 
-/// Máscara specular con Schlick Fresnel.
-///   F0 = mix(0.04, 1.0, metallic) — dieléctrico 4%, metal 100%
-///   F  = F0 + (1-F0) * (1-NdotV)^5
-///   return F * (1-roughness)²
+/// Máscara specular con Schlick Fresnel (F0 = albedo en metales, coherente con `refl_metal_f0`).
 fn lettier_specular_amount(metallic : f32, roughness : f32, albedo_rgb : vec3<f32>, NdotV : f32) -> f32 {
     let sharp = (1.0 - clamp(roughness, 0.0, 1.0)) * (1.0 - clamp(roughness, 0.0, 1.0));
-    let f0 = select(0.04, 1.0, metallic > 0.5);
-    let f = f0 + (1.0 - f0) * pow(1.0 - clamp(NdotV, 0.0, 1.0), 5.0);
+    let f0v = refl_metal_f0(albedo_rgb, metallic);
+    let f0_lum = dot(f0v, vec3<f32>(0.2126, 0.7152, 0.0722));
+    let f = f0_lum + (1.0 - f0_lum) * pow(1.0 - clamp(NdotV, 0.0, 1.0), 5.0);
     return f * sharp;
 }
 
@@ -525,12 +523,19 @@ fn refl_trace_strength(
     n : vec3<f32>,
     view_dir : vec3<f32>,
     albedo_rgb : vec3<f32>,
+    ior : f32,
 ) -> f32 {
-    let f0 = refl_metal_f0(albedo_rgb, metallic);
+    var f0 = refl_metal_f0(albedo_rgb, metallic);
     let cos_theta = max(dot(normalize(n), normalize(view_dir)), 0.0);
+    if metallic <= 0.5 && ior > 1.01 {
+        let fr = refl_dielectric_fresnel(cos_theta, ior);
+        f0 = vec3<f32>(fr);
+    }
     let fres = refl_fresnel_schlick_vec3(cos_theta, f0);
     let fres_w = dot(fres, vec3<f32>(0.2126, 0.7152, 0.0722));
-    let rough_term = (1.0 - roughness) * (1.0 - roughness);
+    let rough_sq = (1.0 - roughness) * (1.0 - roughness);
+    let rough_lin = 1.0 - roughness * 0.82;
+    let rough_term = select(rough_sq, rough_lin, metallic > 0.5);
     return rough_term * fres_w;
 }
 
@@ -611,10 +616,14 @@ fn refl_nearest_probe_layer_entries(hit_pos : vec3<f32>, entries : array<vec4<f3
     var best_d = 1e30;
     for (var i = 0u; i < REFL_MAX_PROBES; i++) {
         let e = entries[i];
-        if e.w <= 0.0 {
+        let influence_m = e.w;
+        if influence_m <= 0.0 {
             continue;
         }
         let d = distance(hit_pos, e.xyz);
+        if d > influence_m {
+            continue;
+        }
         if d < best_d {
             best_d = d;
             best_i = i32(i);

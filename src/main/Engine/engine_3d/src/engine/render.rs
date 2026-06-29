@@ -11,6 +11,15 @@ use glam::Mat4;
 
 use super::{SceneUniforms, State, DEPTH_FORMAT};
 
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+struct TransparentReflUniforms {
+    enabled: f32,
+    strength: f32,
+    refl_mix: f32,
+    _pad: f32,
+}
+
 pub(crate) struct SceneInstanceBatch {
     pub(crate) mesh_idx: usize,
     texture_layer: u32,
@@ -19,6 +28,72 @@ pub(crate) struct SceneInstanceBatch {
     pub(crate) instances: Vec<crate::mesh::InstanceData>,
     /// Paralelo a `instances` (misma longitud); solo para diagnóstico de probes.
     pub(crate) entity_ids: Vec<crate::ecs::EntityId>,
+}
+
+fn instance_is_transparent(inst: &crate::mesh::InstanceData) -> bool {
+    inst.flag_pad[1] < 0.99
+}
+
+fn apply_surface_pbr_to_instance(
+    inst: &mut crate::mesh::InstanceData,
+    pbr: &crate::ecs::SurfacePbr,
+) {
+    inst.flag_pad[3] = pbr.roughness;
+    inst.tex_layer_pad[1] = pbr.metallic;
+    inst.tex_layer_pad[3] = pbr.ior;
+    inst.flag_pad[1] = crate::config_3d::pbr_presets::instance_visual_alpha(pbr);
+}
+
+pub(crate) fn filter_batches_by_alpha(
+    batches: &[SceneInstanceBatch],
+    want_transparent: bool,
+) -> Vec<SceneInstanceBatch> {
+    batches
+        .iter()
+        .filter_map(|b| {
+            let mut instances = Vec::new();
+            let mut entity_ids = Vec::new();
+            for (inst, eid) in b.instances.iter().zip(b.entity_ids.iter()) {
+                if instance_is_transparent(inst) == want_transparent {
+                    instances.push(*inst);
+                    entity_ids.push(*eid);
+                }
+            }
+            if instances.is_empty() {
+                return None;
+            }
+            Some(SceneInstanceBatch {
+                mesh_idx: b.mesh_idx,
+                texture_layer: b.texture_layer,
+                probe_layer: b.probe_layer,
+                instances,
+                entity_ids,
+            })
+        })
+        .collect()
+}
+
+fn collect_sorted_transparent_draws(
+    batches: &[SceneInstanceBatch],
+    cam_pos: GlamVec3,
+) -> Vec<(usize, crate::mesh::InstanceData)> {
+    let mut draws: Vec<(usize, crate::mesh::InstanceData, f32)> = Vec::new();
+    for b in batches {
+        for inst in &b.instances {
+            if !instance_is_transparent(inst) {
+                continue;
+            }
+            let t = GlamVec3::new(inst.model[3][0], inst.model[3][1], inst.model[3][2]);
+            let dist_sq = (t - cam_pos).length_squared();
+            draws.push((b.mesh_idx, *inst, dist_sq));
+        }
+    }
+    draws.sort_by(|a, b| {
+        b.2
+            .partial_cmp(&a.2)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    draws.into_iter().map(|(mesh, inst, _)| (mesh, inst)).collect()
 }
 
 impl State {
@@ -78,9 +153,7 @@ impl State {
             let layer = self.texture_layer_for(*tex_idx);
             let mut inst = crate::mesh::InstanceData::new(*model_matrix, flag, layer);
             if let Some(pbr) = self.world.get::<crate::ecs::SurfacePbr>(*entity_id) {
-                inst.flag_pad[3] = pbr.roughness;
-                inst.tex_layer_pad[1] = pbr.metallic;
-                inst.tex_layer_pad[3] = pbr.ior;
+                apply_surface_pbr_to_instance(&mut inst, pbr);
             }
             let probe_layer = if let Some(&probe_idx) = probe_index_map.get(entity_id) {
                 inst.tex_layer_pad[2] = probe_idx as f32;
@@ -111,6 +184,101 @@ impl State {
             }
         }
         batches
+    }
+
+    fn draw_transparent_scene_pass(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        swap_view: &wgpu::TextureView,
+        batches: &[SceneInstanceBatch],
+        cam_pos: GlamVec3,
+        ssr_active: bool,
+    ) {
+        use wgpu::util::DeviceExt;
+
+        let draws = collect_sorted_transparent_draws(batches, cam_pos);
+        if draws.is_empty() {
+            return;
+        }
+
+        let refl_view = if ssr_active {
+            self.reflections.composite_reflection_view()
+        } else {
+            &self.transparent_refl_fallback_view
+        };
+        self.queue.write_buffer(
+            &self.transparent_refl_uniform_buffer,
+            0,
+            bytemuck::bytes_of(&TransparentReflUniforms {
+                enabled: if ssr_active { 1.0 } else { 0.0 },
+                strength: 1.0,
+                refl_mix: 1.0,
+                _pad: 0.0,
+            }),
+        );
+        let transparent_refl_bind_group =
+            self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("transparent-refl-bg"),
+                layout: &self.transparent_refl_bgl,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: self.transparent_refl_uniform_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::TextureView(refl_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::Sampler(&self.transparent_refl_sampler),
+                    },
+                ],
+            });
+
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("transparent-scene-pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: swap_view,
+                resolve_target: None,
+                depth_slice: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: &self.depth_view,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
+            occlusion_query_set: None,
+            timestamp_writes: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&self.render_pipeline_transparent);
+        pass.set_bind_group(0, &self.scene_bind_group, &[]);
+        pass.set_bind_group(1, self.texture_array.bind_group.as_ref(), &[]);
+        pass.set_bind_group(2, self.probe_env.sample_bind_group(), &[]);
+        pass.set_bind_group(3, &transparent_refl_bind_group, &[]);
+
+        for (mesh_idx, inst) in draws {
+            let Some(mesh) = self.meshes.get(mesh_idx) else {
+                continue;
+            };
+            let inst_buf = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("transparent-inst-buf"),
+                contents: bytemuck::cast_slice(&[inst]),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
+            pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
+            pass.set_vertex_buffer(1, inst_buf.slice(..));
+            pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+            pass.draw_indexed(0..mesh.index_count, 0, 0..1);
+        }
     }
 
     /// Geometría estática para captura de cubemap: sin cull por frustum de la cámara FPS
@@ -299,7 +467,9 @@ impl State {
         let shadow_darkness = self.shadow_darkness;
 
         let reflection_settings = {
-            let settings = crate::config_3d::reflection_graphics::ReflectionSettings::from_tier(self.reflection_tier);
+            let mut settings =
+                crate::config_3d::reflection_graphics::ReflectionSettings::from_tier(self.reflection_tier);
+            settings.probes_enabled = self.reflection_probes_enabled;
             let ipc_prev = self.reflection_tier_effective_ipc.replace(self.reflection_tier);
             if ipc_prev != Some(self.reflection_tier) {
                 crate::ipc::send_event(&crate::ipc::EngineEvent::ReflectionTierEffective {
@@ -310,13 +480,16 @@ impl State {
             settings
         };
 
-        // Probes: solo cuando PROBES_ENABLED (fase SSR-only usa mapa vacío).
-        let probe_index_map = if reflection_settings.uses_probes() {
+        // Probes: solo cuando el toggle de editor está activo (SSR puede seguir solo).
+        let probe_frame = if reflection_settings.uses_probes() {
             crate::reflections::frame::prepare_probes(self, &reflection_settings)
-                .probe_index_map
         } else {
-            std::collections::HashMap::new()
+            crate::reflections::probes_pipeline::capture::ProbeFrameData {
+                probe_list: Vec::new(),
+                probe_index_map: std::collections::HashMap::new(),
+            }
         };
+        let probe_index_map = probe_frame.probe_index_map.clone();
 
         let aspect_fc = self.size.width as f32 / self.size.height as f32;
         let frustum_vp = {
@@ -330,6 +503,9 @@ impl State {
             .query2::<crate::ecs::MeshComponent, crate::ecs::Transform>()
             .filter_map(|(id, mc, t)| {
                 if self.model_animation_bindings.contains_key(&id) {
+                    return None;
+                }
+                if self.is_reflection_probe_entity(id) {
                     return None;
                 }
                 let mesh_idx = mc.mesh_idx;
@@ -381,12 +557,14 @@ impl State {
             &probe_index_map,
             false,
         );
+        let opaque_batches = filter_batches_by_alpha(&batches, false);
+        let transparent_batches = filter_batches_by_alpha(&batches, true);
 
         let ghost_overlay = self.build_tool_ghost_overlay();
 
         let skinned_shadow = self.collect_skinned_draw_instances(&frustum_vp, &probe_index_map);
         let skinned_main = skinned_shadow.clone();
-        let _skinned_probe = self.collect_skinned_probe_instances(&frustum_vp);
+        let skinned_probe = self.collect_skinned_probe_instances(&frustum_vp);
 
         let mut shadow_batches: Vec<Batch> = Vec::new();
         for (entity_id, mesh_idx, _tex_idx, model_matrix, _layer) in &entities {
@@ -399,6 +577,9 @@ impl State {
                 continue;
             }
             if self.sun_entity == Some(*entity_id) {
+                continue;
+            }
+            if self.is_reflection_probe_entity(*entity_id) {
                 continue;
             }
             if *mesh_idx == 0 {
@@ -492,16 +673,22 @@ impl State {
             }
         }
 
-        let mut instance_slices = Vec::with_capacity(batches.len());
-        for b in &batches {
+        let mut instance_slices = Vec::with_capacity(opaque_batches.len() + transparent_batches.len());
+        for b in &opaque_batches {
+            instance_slices.push(b.instances.as_slice());
+        }
+        let opaque_buf_count = instance_slices.len();
+        for b in &transparent_batches {
             instance_slices.push(b.instances.as_slice());
         }
 
         let _probe_meta_for_diag: Option<std::sync::Arc<crate::reflections::probe_env::ProbeMetaUniform>> = None;
 
-        let instance_buffers =
+        let all_instance_buffers =
             self.scene_instance_pool
                 .upload(&self.device, &self.queue, &instance_slices);
+        let (opaque_instance_buffers, transparent_instance_buffers) =
+            all_instance_buffers.split_at(opaque_buf_count);
 
         {
             let ambient_view = self.taa.ambient_view();
@@ -615,7 +802,7 @@ impl State {
             // Grupo 2: cube array de los probes (el shader principal lo referencia siempre).
             pass.set_bind_group(2, self.probe_env.sample_bind_group(), &[]);
 
-            for (batch, inst_buf) in batches.iter().zip(instance_buffers.iter()) {
+            for (batch, inst_buf) in opaque_batches.iter().zip(opaque_instance_buffers.iter()) {
                 let Some(mesh) = self.meshes.get(batch.mesh_idx) else {
                     continue;
                 };
@@ -654,6 +841,81 @@ impl State {
             }
             }
 
+            // Prepass G-buffer transparentes (depth + rugosidad) para SSR — sin tocar `ambient`
+            // para que lit-composite conserve el fondo opaco bajo el alpha blend final.
+            if !transparent_batches.is_empty() {
+                let mut trans_pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("transparent-gbuffer-prepass"),
+                    color_attachments: &[
+                        None,
+                        Some(wgpu::RenderPassColorAttachment {
+                            view: shadow_mask_view,
+                            resolve_target: None,
+                            depth_slice: None,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Load,
+                                store: wgpu::StoreOp::Store,
+                            },
+                        }),
+                        Some(wgpu::RenderPassColorAttachment {
+                            view: direct_view,
+                            resolve_target: None,
+                            depth_slice: None,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Load,
+                                store: wgpu::StoreOp::Store,
+                            },
+                        }),
+                        Some(wgpu::RenderPassColorAttachment {
+                            view: depth_export_view,
+                            resolve_target: None,
+                            depth_slice: None,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Load,
+                                store: wgpu::StoreOp::Store,
+                            },
+                        }),
+                        Some(wgpu::RenderPassColorAttachment {
+                            view: velocity_view,
+                            resolve_target: None,
+                            depth_slice: None,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Load,
+                                store: wgpu::StoreOp::Store,
+                            },
+                        }),
+                    ],
+                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                        view: &self.depth_view,
+                        depth_ops: Some(wgpu::Operations {
+                            load: wgpu::LoadOp::Load,
+                            store: wgpu::StoreOp::Store,
+                        }),
+                        stencil_ops: None,
+                    }),
+                    occlusion_query_set: None,
+                    timestamp_writes: None,
+                    multiview_mask: None,
+                });
+                trans_pass.set_pipeline(&self.render_pipeline_transparent_prepass);
+                trans_pass.set_bind_group(0, &self.scene_bind_group, &[]);
+                trans_pass.set_bind_group(1, self.texture_array.bind_group.as_ref(), &[]);
+                trans_pass.set_bind_group(2, self.probe_env.sample_bind_group(), &[]);
+                for (batch, inst_buf) in transparent_batches
+                    .iter()
+                    .zip(transparent_instance_buffers.iter())
+                {
+                    let Some(mesh) = self.meshes.get(batch.mesh_idx) else {
+                        continue;
+                    };
+                    trans_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
+                    trans_pass.set_vertex_buffer(1, inst_buf.slice(..));
+                    trans_pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                    trans_pass.draw_indexed(0..mesh.index_count, 0, 0..batch.instances.len() as u32);
+                    draw_calls += 1;
+                }
+            }
+
             // Albedo para SSR/RT: pase aparte (1 MRT) — el principal ya usa 32 B/muestra (límite wgpu).
             if reflection_settings.active() {
                 let mut albedo_pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -683,7 +945,7 @@ impl State {
                 albedo_pass.set_bind_group(0, &self.scene_bind_group, &[]);
                 albedo_pass.set_bind_group(1, self.texture_array.bind_group.as_ref(), &[]);
                 albedo_pass.set_bind_group(2, self.probe_env.sample_bind_group(), &[]);
-                for (batch, inst_buf) in batches.iter().zip(instance_buffers.iter()) {
+                for (batch, inst_buf) in opaque_batches.iter().zip(opaque_instance_buffers.iter()) {
                     let Some(mesh) = self.meshes.get(batch.mesh_idx) else {
                         continue;
                     };
@@ -694,6 +956,27 @@ impl State {
                         wgpu::IndexFormat::Uint32,
                     );
                     albedo_pass.draw_indexed(0..mesh.index_count, 0, 0..batch.instances.len() as u32);
+                }
+                if !transparent_batches.is_empty() {
+                    for (batch, inst_buf) in transparent_batches
+                        .iter()
+                        .zip(transparent_instance_buffers.iter())
+                    {
+                        let Some(mesh) = self.meshes.get(batch.mesh_idx) else {
+                            continue;
+                        };
+                        albedo_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
+                        albedo_pass.set_vertex_buffer(1, inst_buf.slice(..));
+                        albedo_pass.set_index_buffer(
+                            mesh.index_buffer.slice(..),
+                            wgpu::IndexFormat::Uint32,
+                        );
+                        albedo_pass.draw_indexed(
+                            0..mesh.index_count,
+                            0,
+                            0..batch.instances.len() as u32,
+                        );
+                    }
                 }
                 if !skinned_main.is_empty() {
                     albedo_pass.set_pipeline(&self.skinned_base_color_pipeline);
@@ -724,6 +1007,19 @@ impl State {
                     }
                 }
             }
+        }
+
+        if reflection_settings.uses_probes() {
+            crate::reflections::frame::encode_probe_captures(
+                self,
+                &mut enc,
+                &crate::reflections::frame::ProbeCaptureInput {
+                    settings: &reflection_settings,
+                    probe_frame: &probe_frame,
+                    scene_uni: &scene_uni,
+                    skinned_probe: &skinned_probe,
+                },
+            );
         }
 
         let inv_vp = scene_uni.inv_view_proj;
@@ -864,6 +1160,8 @@ impl State {
 
         self.prev_view_proj = scene_uni.view_proj_stable;
 
+        self.draw_transparent_scene_pass(&mut enc, &view, &batches, cam_pos, ran_reflections);
+
         if let Some((ghost_mesh_idx, ghost_inst)) = ghost_overlay {
             use wgpu::util::DeviceExt;
             let ghost_inst_buf = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -958,8 +1256,62 @@ impl State {
                     draw_calls += 1;
                 }
             }
+        }
 
-            // Probe debug overlay disabled
+        let show_probe_gizmos = (!self.preview_playing || self.debug_mode)
+            && !crate::reflections::probes_pipeline::registry::reflection_probe_entities(
+                &self.save_registry,
+            )
+            .is_empty();
+        if show_probe_gizmos {
+            let probe_overlay =
+                crate::reflections::probes_pipeline::editor_overlay::build_reflection_probe_editor_overlay(
+                    &self.device,
+                    self,
+                );
+            if probe_overlay.vertex_count > 0 {
+                let aspect = self.size.width as f32 / self.size.height as f32;
+                let vp = self
+                    .camera_to_uniform_at_anchor(self.orbit_view_anchor(), aspect)
+                    .view_proj;
+                let probe_uni: [[f32; 4]; 9] = [
+                    vp[0],
+                    vp[1],
+                    vp[2],
+                    vp[3],
+                    [1.0, 0.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                    [0.0, 0.0, 0.0, 1.0],
+                    [-1.0, -1.0, 0.0, 0.0],
+                ];
+                self.queue.write_buffer(
+                    &self.grid_buffer_uni,
+                    0,
+                    bytemuck::cast_slice(&probe_uni),
+                );
+                let mut probe_pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("reflection-probe-gizmo-pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &view,
+                        resolve_target: None,
+                        depth_slice: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Load,
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    occlusion_query_set: None,
+                    timestamp_writes: None,
+                    multiview_mask: None,
+                });
+                probe_pass.set_pipeline(&self.grid_pipeline);
+                probe_pass.set_bind_group(0, &self.grid_bind_group, &[]);
+                probe_pass.set_vertex_buffer(0, probe_overlay.vertex_buffer.slice(..));
+                probe_pass.draw(0..probe_overlay.vertex_count, 0..1);
+                draw_calls += 1;
+            }
         }
 
         let show_world_bounds_wireframe = !self.preview_playing || self.debug_mode;
@@ -1336,9 +1688,7 @@ impl State {
                     .unwrap_or(binding.tex_layer);
                 let mut inst = crate::mesh::InstanceData::new(t.to_matrix(), flag, layer);
                 if let Some(pbr) = self.world.get::<crate::ecs::SurfacePbr>(id) {
-                    inst.flag_pad[3] = pbr.roughness;
-                    inst.tex_layer_pad[1] = pbr.metallic;
-                    inst.tex_layer_pad[3] = pbr.ior;
+                    apply_surface_pbr_to_instance(&mut inst, pbr);
                 }
                 if let Some(&probe_idx) = probe_index_map.get(&id) {
                     inst.tex_layer_pad[2] = probe_idx as f32;

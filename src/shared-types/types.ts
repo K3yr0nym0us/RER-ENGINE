@@ -354,6 +354,8 @@ export interface SavedWorldConfig {
   reflectionTier?: 'off' | 'low' | 'medium' | 'high' | 'ultra'
   /** 3D: ray tracing HW (High/Ultra + GPU compatible). */
   reflectionRaytracing?: boolean
+  /** 3D: reflection probes (cubemap IBL + captura). */
+  reflectionProbes?: boolean
   /** 3D: nivel de calidad de sombras (resolución del shadow map por tier). */
   shadowTier?: 'low' | 'medium' | 'high' | 'ultra'
 }

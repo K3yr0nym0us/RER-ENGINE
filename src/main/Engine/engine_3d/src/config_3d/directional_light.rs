@@ -98,7 +98,7 @@ impl State {
         ]
     }
 
-    /// x = intensidad; z = 1/texel sombra; w = radio PCF. Oscuridad → lit-composite (CPU).
+    /// x = intensidad; y = oscuridad sombra (lit-composite / pase transparente); z = 1/texel sombra; w = radio PCF.
     pub(crate) fn scene_light_params(&self) -> [f32; 4] {
         let dist = self.camera.distance;
         // Radio PCF algo mayor con shadow map 1024 para compensar resolución.
@@ -111,7 +111,7 @@ impl State {
         };
         [
             self.light_intensity,
-            0.0,
+            self.shadow_darkness,
             1.0 / self.shadow_map_size as f32,
             pcf_radius,
         ]
@@ -377,15 +377,13 @@ impl State {
         id
     }
 
-    /// Esfera estática (misma malla que la pelota) para probar reflejos / roughness PBR.
-    pub(crate) fn spawn_static_reflection_probe_sphere(
+    /// Entidad lógica de reflection probe: sin malla en escena (solo gizmo en editor/debug).
+    pub(crate) fn spawn_reflection_probe_entity(
         &mut self,
         name: &str,
         position: [f32; 3],
-        radius: f32,
-        roughness: f32,
+        influence_radius_m: f32,
     ) -> EntityId {
-        use crate::ecs::SurfacePbr;
         use crate::ipc::send_event;
         use crate::ipc::EngineEvent;
 
@@ -394,15 +392,12 @@ impl State {
             rer_engine_shared::editor_defaults::entity_label::REFLECTION_PROBE,
         );
         let id = self.world.spawn(Some(&label));
-        self.apply_reflection_probe_visual(id, roughness);
+        let influence = influence_radius_m.max(0.15);
         if let Some(t) = self.world.get_mut::<Transform>(id) {
             t.position = Vec3::from_array(position);
-            t.scale = Vec3::splat(radius * 2.0);
+            // `reflection_probe_world_radius` usa scale.x * 0.5 como radio de influencia.
+            t.scale = Vec3::splat(influence * 2.0);
         }
-        self.world.insert(
-            id,
-            SurfacePbr::metal_probe(roughness),
-        );
         self.entity_colision.insert(id, false);
         self.scenario_entities.push(id);
         self.save_registry.register_meta(
@@ -419,7 +414,7 @@ impl State {
             id,
             name: Some(label.clone()),
             position: Some(position),
-            scale: Some([radius * 2.0; 3]),
+            scale: Some([influence * 2.0; 3]),
             rotation: Some([0.0, 0.0, 0.0, 1.0]),
             path: Some("[ReflectionProbe]".to_string()),
             kind: Some("model".to_string()),
@@ -429,8 +424,7 @@ impl State {
             entity_category: Some("object".to_string()),
         });
         log::info!(
-            "Sonda de reflejo «{label}» roughness={:.2} en [{:.1}, {:.1}, {:.1}]",
-            roughness,
+            "Sonda de reflejo «{label}» radio={influence:.1}m en [{:.1}, {:.1}, {:.1}]",
             position[0],
             position[1],
             position[2]

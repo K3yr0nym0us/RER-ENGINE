@@ -125,9 +125,10 @@ pub enum EngineCommand3dOnly {
     SetTextureDetailDistance { distance_m: f32 },
     SetReflectionTier { tier: String },
     SetReflectionRaytracing { enabled: bool },
+    SetReflectionProbes { enabled: bool },
     SpawnReflectionProbe {
         #[serde(default)]
-        _position: Option<[f32; 3]>,
+        position: Option<[f32; 3]>,
     },
     SetReflectionDebugView { view: String },
     SetSsrDebugMode { enabled: bool },

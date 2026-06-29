@@ -1,4 +1,4 @@
-import { Accordion } from 'react-bootstrap'
+import { Accordion, Form } from 'react-bootstrap'
 import { Stars } from 'react-bootstrap-icons'
 
 import { AppTooltip } from '@components'
@@ -50,16 +50,24 @@ const DEBUG_VIEWS = [
 
 export default function WorldReflectionsAccordion() {
 	const { t } = useTraslate()
-	const { engineReady, worldConfig, setReflectionTier, setReflectionDebugView } =
-		useContextEngine()
+	const {
+		engineReady,
+		worldConfig,
+		setReflectionTier,
+		setReflectionProbes,
+		spawnReflectionProbe,
+		setReflectionDebugView,
+	} = useContextEngine()
 
 	const activeTier = worldConfig.reflectionTier ?? 'off'
+	const probesEnabled = worldConfig.reflectionProbes ?? false
 	const effectiveTier = worldConfig.reflectionTierEffective
 	const tierDegraded =
 		effectiveTier != null
 		&& effectiveTier !== activeTier
 		&& (activeTier === 'high' || activeTier === 'ultra')
 	const activeDebugView = worldConfig.reflectionDebugView ?? 'final'
+	const reflectionsActive = activeTier !== 'off'
 
 	return (
 		<Accordion.Item eventKey="world-reflections">
@@ -104,6 +112,39 @@ export default function WorldReflectionsAccordion() {
 						</AppTooltip>
 					))}
 				</div>
+
+				<div className="d-flex align-items-start gap-2 mb-1">
+					<Form.Check
+						type="switch"
+						id="reflection-probes-enabled"
+						className="mt-1"
+						checked={probesEnabled}
+						disabled={!engineReady || !reflectionsActive}
+						onChange={(e) => setReflectionProbes(e.target.checked)}
+					/>
+					<div>
+						<label className="form-label small text-secondary mb-0" htmlFor="reflection-probes-enabled">
+							{t('Reflection probes')}
+						</label>
+						<p className="text-secondary mb-0" style={{ fontSize: '0.72rem' }}>
+							{reflectionsActive
+								? t('Reflection probes hint')
+								: t('Reflection probes tier off hint')}
+						</p>
+					</div>
+				</div>
+
+				<button
+					type="button"
+					className="btn btn-sm btn-outline-info mb-2 mt-2"
+					disabled={!engineReady}
+					onClick={() => spawnReflectionProbe()}
+				>
+					{t('Insert reflection probe')}
+				</button>
+				<p className="text-secondary mb-3" style={{ fontSize: '0.72rem' }}>
+					{t('Insert reflection probe hint')}
+				</p>
 
 				<label className="form-label small text-secondary mb-1" htmlFor="reflection-debug-view">
 					{t('Reflection debug view')}

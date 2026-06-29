@@ -132,6 +132,8 @@ pub(crate) struct SavedWorldConfig {
     #[serde(default)]
     reflectionRaytracing: Option<bool>,
     #[serde(default)]
+    reflectionProbes: Option<bool>,
+    #[serde(default)]
     shadowTier: Option<String>,
 }
 
@@ -1418,6 +1420,7 @@ fn apply_loaded_proyect_3d_with_scene(
         state,
         view.world.reflectionTier.as_deref(),
         view.world.reflectionRaytracing,
+        view.world.reflectionProbes,
     );
     crate::config_3d::shadow_settings::apply_shadow_settings_from_world_wire(
         state,
@@ -1432,6 +1435,9 @@ fn apply_loaded_proyect_3d_with_scene(
     });
     send_event(&EngineEvent::ReflectionTierChanged {
         tier: state.reflection_tier.wire().to_string(),
+    });
+    send_event(&EngineEvent::ReflectionProbesChanged {
+        enabled: state.reflection_probes_enabled,
     });
     send_event(&EngineEvent::ShadowTierChanged {
         tier: state.shadow_tier.wire().to_string(),
@@ -1752,6 +1758,7 @@ fn apply_loaded_proyect_3d_with_scene(
     restore_entity_sockets_after_scene_load(state, &view);
     restore_entity_bone_physics_after_scene_load(state, &view);
     restore_entity_attachments_after_scene_load(state, &view);
+    state.sanitize_reflection_probe_entities();
     state.restoring_save_manifest = false;
     Ok(view)
 }
@@ -1957,6 +1964,7 @@ fn send_project_loaded_3d(
                 )
             }),
         reflectionRaytracing: view.world.reflectionRaytracing,
+        reflectionProbes: view.world.reflectionProbes,
         shadowTier: view.world.shadowTier.clone().or_else(|| {
             Some(
                 crate::config_3d::shadow_graphics::DEFAULT_SHADOW_TIER
@@ -2148,6 +2156,7 @@ pub(crate) fn saved_scene_from_snapshot_payload(
             textureDetailDistance: p.world.texture_detail_distance_m,
             reflectionTier: p.world.reflection_tier.clone(),
             reflectionRaytracing: p.world.reflection_raytracing,
+            reflectionProbes: p.world.reflection_probes,
             shadowTier: p.world.shadow_tier.clone(),
         },
         backgroundPath: p.background_path.clone(),
@@ -2218,6 +2227,7 @@ pub(crate) fn build_fp_placeholder_saved_scene(id: u32, name: &str) -> SavedScen
                 .to_string(),
         ),
         reflectionRaytracing: None,
+        reflectionProbes: None,
         shadowTier: Some(
             crate::config_3d::shadow_graphics::DEFAULT_SHADOW_TIER
                 .wire()

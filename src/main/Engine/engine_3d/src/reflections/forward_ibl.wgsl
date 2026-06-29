@@ -10,7 +10,12 @@ struct ForwardMetalLighting {
 /// Devuelve `vec4(rgb, mode)`:
 /// - `mode = 0`: sin probe / sin contribución
 /// - `mode = 1`: metal — reemplazo IBL en `evaluate_scene`
-/// - `mode = 2`: dieléctrico — sumar especular IBL sobre diffuse
+/// - `mode = 2`: dieléctrico reflectante (SurfacePbr + rugosidad trazable) — solo especular IBL
+fn forward_probe_surface_eligible(inst_roughness: f32, surface_roughness: f32) -> bool {
+    // Misma política que SSR: opt-in por SurfacePbr (inst >= 0) y rugosidad baja.
+    return inst_roughness >= 0.0 && surface_roughness <= 0.70;
+}
+
 fn forward_sample_probe_env(
     t_probe: texture_cube_array<f32>,
     s_probe: sampler,
@@ -18,6 +23,7 @@ fn forward_sample_probe_env(
     cam_pos: vec3<f32>,
     world_normal: vec3<f32>,
     surface_metallic: f32,
+    inst_roughness: f32,
     surface_roughness: f32,
     albedo: vec3<f32>,
     probe_layer: i32,
@@ -34,16 +40,14 @@ fn forward_sample_probe_env(
     if surface_metallic > 0.5 {
         return vec4<f32>(env_rgb, 1.0);
     }
-    let f0 = refl_metal_f0(albedo, surface_metallic);
-    let cos_theta = max(dot(n, v), 0.0);
-    let fres = refl_fresnel_schlick_vec3(cos_theta, f0);
-    let fres_w = dot(fres, vec3<f32>(0.2126, 0.7152, 0.0722));
-    let rough_term = (1.0 - surface_roughness) * (1.0 - surface_roughness);
-    let spec = fres_w * rough_term;
-    if spec < 0.01 {
+    if !forward_probe_surface_eligible(inst_roughness, surface_roughness) {
         return vec4<f32>(0.0, 0.0, 0.0, 0.0);
     }
-    return vec4<f32>(env_rgb * spec, 2.0);
+    let trace_w = refl_trace_strength(surface_roughness, surface_metallic, n, v, albedo, 0.0);
+    if trace_w < 0.01 {
+        return vec4<f32>(0.0, 0.0, 0.0, 0.0);
+    }
+    return vec4<f32>(env_rgb * trace_w, 2.0);
 }
 
 /// Alias metálico (compat tests / lectura).
@@ -66,6 +70,7 @@ fn forward_sample_metallic_env(
         world_normal,
         surface_metallic,
         surface_roughness,
+        surface_roughness,
         vec3<f32>(0.55),
         probe_layer,
         probe_entries,
@@ -79,6 +84,23 @@ fn forward_fake_environment(_refl_dir: vec3<f32>) -> vec3<f32> {
 
 fn forward_fresnel_schlick_metal(f0: vec3<f32>, cos_theta: f32) -> vec3<f32> {
     return f0 + (vec3<f32>(1.0) - f0) * pow(1.0 - cos_theta, 5.0);
+}
+
+/// Evita IBL metálico blanco puro en convexidades (esferas): cap por tinte F0 de la alfombra plana.
+fn forward_clamp_metal_reflection(amb: vec3<f32>, albedo: vec3<f32>) -> vec3<f32> {
+    let amb_lum = dot(amb, vec3<f32>(0.2126, 0.7152, 0.0722));
+    let ref_lum = dot(albedo, vec3<f32>(0.2126, 0.7152, 0.0722));
+    let cap = ref_lum * 1.35 + 0.14;
+    if amb_lum > cap {
+        return amb * (cap / max(amb_lum, 1e-4));
+    }
+    return amb;
+}
+
+/// Terminador solar en metales (sin diffuse Lambert): half-Lambert sobre la reflexión ambiente.
+fn forward_metal_sun_shade(ndotl: f32) -> f32 {
+    let half_lambert = ndotl * 0.5 + 0.5;
+    return 0.14 + 0.86 * half_lambert;
 }
 
 /// Bloque PBR metálico de `evaluate_scene` (procedural + cubemap opcional).
@@ -119,9 +141,19 @@ fn forward_evaluate_metallic_pbr(
     let h = normalize(light_dir + v);
     let spec_power = mix(512.0, 16.0, surface_roughness);
     let spec = pow(max(dot(n, h), 0.0), spec_power);
+    let albedo_lum = max(max(albedo.r, albedo.g), albedo.b);
+    let sun_term = forward_metal_sun_shade(ndotl);
     var out: ForwardMetalLighting;
-    out.ambient = env_eff * fres;
-    out.direct = light_color * spec * light_intensity * ndotl * (1.0 - surface_roughness * 0.6);
+    let metal_amb = forward_clamp_metal_reflection(env_eff * fres * sun_term, albedo);
+    // Reservar headroom para SSR: metales claros (steel) y rugosos tenían IBL tan alto
+    // que el composite no dejaba ver el reflejo en pantalla (chrome oscuro no sufría).
+    let spec_reserve = (1.0 - surface_roughness) * (1.0 - surface_roughness);
+    let albedo_lum_pbr = dot(albedo, vec3<f32>(0.2126, 0.7152, 0.0722));
+    let bright_suppress = mix(1.0, 0.32, smoothstep(0.12, 0.48, albedo_lum_pbr));
+    let ibl_headroom = mix(0.1, 1.0, spec_reserve) * bright_suppress;
+    out.ambient = metal_amb * ibl_headroom;
+    out.direct = light_color * spec * light_intensity * ndotl * (1.0 - surface_roughness * 0.6)
+        * (0.25 + 0.75 * albedo_lum);
     return out;
 }
 
@@ -174,8 +206,16 @@ fn forward_evaluate_metallic_pbr_skinned(
     let h = normalize(light_dir + v);
     let spec_power = mix(512.0, 16.0, surface_roughness);
     let spec = pow(max(dot(n, h), 0.0), spec_power);
+    let albedo_lum = max(max(albedo.r, albedo.g), albedo.b);
+    let sun_term = forward_metal_sun_shade(ndotl);
     var out: ForwardMetalLighting;
-    out.ambient = env_eff * fres;
-    out.direct = light_color * spec * light_intensity * ndotl * (1.0 - surface_roughness * 0.6);
+    let metal_amb = forward_clamp_metal_reflection(env_eff * fres * sun_term, albedo);
+    let spec_reserve = (1.0 - surface_roughness) * (1.0 - surface_roughness);
+    let albedo_lum_pbr = dot(albedo, vec3<f32>(0.2126, 0.7152, 0.0722));
+    let bright_suppress = mix(1.0, 0.32, smoothstep(0.12, 0.48, albedo_lum_pbr));
+    let ibl_headroom = mix(0.1, 1.0, spec_reserve) * bright_suppress;
+    out.ambient = metal_amb * ibl_headroom;
+    out.direct = light_color * spec * light_intensity * ndotl * (1.0 - surface_roughness * 0.6)
+        * (0.25 + 0.75 * albedo_lum);
     return out;
 }

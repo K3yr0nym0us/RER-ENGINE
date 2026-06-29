@@ -222,6 +222,7 @@ export function engineSceneToSavedScene(
 			textureDetailDistance: scene.world.texture_detail_distance_m ?? undefined,
 			reflectionTier: scene.world.reflection_tier ?? undefined,
 			reflectionRaytracing: scene.world.reflection_raytracing ?? undefined,
+			reflectionProbes: scene.world.reflection_probes ?? undefined,
 			shadowTier: scene.world.shadow_tier ?? undefined,
 		},
 		backgroundPath: scene.background_path ?? null,

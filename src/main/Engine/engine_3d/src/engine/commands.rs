@@ -695,6 +695,7 @@ impl State {
                     self.emit_play_character_view_changed(false);
                 }
                 self.handle_entity_attachment_after_transform(&[id]);
+                self.notify_reflection_probe_transform_changed(&[id]);
             }
             EngineCommand::Common(EngineCommandCommon::SetEntityName { id, name, force }) => {
                 let next_name = name.trim();
@@ -847,8 +848,9 @@ impl State {
                 self.anim_saved_transforms.remove(&id);
                 self.control_bindings_by_entity.remove(&id);
                 self.script_engine.detach_entity(id);
+                let was_probe = self.is_reflection_probe_entity(id);
                 self.save_registry.remove_entity(id);
-                if self.is_reflection_probe_entity(id) {
+                if was_probe {
                     self.release_probe_entity_slot(id);
                 }
                 self.entity_blueprint_ids.remove(&id);
@@ -908,8 +910,13 @@ impl State {
                 }
             }
             EngineCommand::Only3d(EngineCommand3dOnly::SetReflectionRaytracing { .. }) => {} // RT disabled
-            EngineCommand::Only3d(EngineCommand3dOnly::SpawnReflectionProbe { _position: _ }) => {
-                // Probe spawning disabled
+            EngineCommand::Only3d(EngineCommand3dOnly::SetReflectionProbes { enabled }) => {
+                log::info!("[reflexiones] IPC set_reflection_probes: {enabled}");
+                self.set_reflection_probes(enabled);
+            }
+            EngineCommand::Only3d(EngineCommand3dOnly::SpawnReflectionProbe { position }) => {
+                log::info!("[reflexiones] IPC spawn_reflection_probe");
+                let _ = self.spawn_reflection_probe(position);
             }
             EngineCommand::Only3d(EngineCommand3dOnly::SetReflectionDebugView { view }) => {
                 if let Some(v) =

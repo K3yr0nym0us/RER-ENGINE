@@ -174,6 +174,8 @@ export interface WorldConfig {
 	reflectionRtAvailable?: boolean
 	/** Ray tracing HW (toggle independiente del tier). */
 	reflectionRaytracing: boolean
+	/** Reflection probes (cubemap IBL; independiente del SSR). */
+	reflectionProbes: boolean
 	reflectionDebugView: ReflectionDebugView
 	ssrDebugMode: boolean
 	shadowTier: ShadowTier
@@ -198,6 +200,7 @@ export const DEFAULT_WORLD_CONFIG: WorldConfig = {
 	textureDetailDistance: 10,
 	reflectionTier: 'off',
 	reflectionRaytracing: false,
+	reflectionProbes: false,
 	reflectionDebugView: 'final',
 	ssrDebugMode: false,
 	shadowTier: 'low',
@@ -1197,6 +1200,7 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 						normalizeReflectionTier(p.world.reflectionTier),
 						p.world.reflectionRaytracing,
 					),
+					reflectionProbes: Boolean(p.world.reflectionProbes),
 					shadowTier: normalizeShadowTier(p.world.shadowTier),
 				},
 				sounds: p.sounds,
@@ -1426,6 +1430,7 @@ export interface EngineContextValue extends EngineState {
 	setGraphicsTextureTier: (tier: GraphicsTextureTier) => void
 	setReflectionTier: (tier: ReflectionTier) => void
 	setReflectionRaytracing: (enabled: boolean) => void
+	setReflectionProbes: (enabled: boolean) => void
 	spawnReflectionProbe: () => void
 	setReflectionDebugView: (view: ReflectionDebugView) => void
 	setSsrDebugMode: (enabled: boolean) => void

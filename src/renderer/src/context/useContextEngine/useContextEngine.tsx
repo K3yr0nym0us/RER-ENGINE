@@ -230,6 +230,7 @@ export function EngineProvider({
 		setGraphicsTextureTier: actions.setGraphicsTextureTier,
 		setReflectionTier: actions.setReflectionTier,
 		setReflectionRaytracing: actions.setReflectionRaytracing,
+		setReflectionProbes: actions.setReflectionProbes,
 		spawnReflectionProbe: actions.spawnReflectionProbe,
 		setReflectionDebugView: actions.setReflectionDebugView,
 		setSsrDebugMode: actions.setSsrDebugMode,

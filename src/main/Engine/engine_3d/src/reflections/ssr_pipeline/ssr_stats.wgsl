@@ -45,8 +45,9 @@ fn pack_lum(rgb : vec3<f32>) -> u32 {
 fn stats_specular_amount(metallic : f32, roughness : f32, albedo_rgb : vec3<f32>) -> f32 {
     let r = clamp(roughness, 0.0, 1.0);
     let sharp = (1.0 - r) * (1.0 - r);
-    let f0 = select(0.04, 1.0, metallic > 0.5);
-    return f0 * sharp;
+    let f0v = mix(vec3<f32>(0.04), albedo_rgb, clamp(metallic, 0.0, 1.0));
+    let f0_lum = dot(f0v, vec3<f32>(0.2126, 0.7152, 0.0722));
+    return f0_lum * sharp;
 }
 
 @compute @workgroup_size(8, 8, 1)

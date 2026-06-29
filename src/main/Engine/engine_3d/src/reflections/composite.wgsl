@@ -41,10 +41,13 @@ fn fs_main(in : VsOut) -> @location(0) vec4<f32> {
         base = vec4<f32>(base.rgb + ssil * u.ssil_strength, base.a);
     }
     let refl = textureSample(t_reflection, s_linear, in.uv);
-  // Atenuar base solo donde hay energía de reflejo real (evita anillo mate binario por refl.a).
     let refl_rgb = refl.rgb * u.strength;
     let refl_lum = dot(refl_rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
-    let blend = saturate(refl_lum * u.refl_mix * 2.5);
+    let refl_w = max(refl_lum, refl.a * 0.9);
+    let base_lum = dot(base.rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
+    // Base gris brillante (steel) → dejar que el SSR domine el especular.
+    let blend_gain = mix(u.refl_mix * 2.5, u.refl_mix * 4.5, smoothstep(0.18, 0.52, base_lum));
+    let blend = saturate(refl_w * blend_gain);
     let base_keep = 1.0 - blend;
     let out_rgb = base.rgb * base_keep + refl_rgb;
     return vec4<f32>(out_rgb, base.a);
