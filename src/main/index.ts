@@ -305,9 +305,10 @@ function startEngine(embed?: ViewportBounds): void {
   lastEngineBinary = baseBinaryName
 
   const binaryName = process.platform === 'win32' ? `${baseBinaryName}.exe` : baseBinaryName
+  const engineProfile = (process.env.RER_ENGINE_PROFILE || 'debug').trim()
   const enginePath = app.isPackaged
     ? path.join(process.resourcesPath, 'engine', binaryName)
-    : path.join(app.getAppPath(), 'src', 'main', 'Engine', 'target', (process.env.RER_ENGINE_PROFILE || 'debug').trim(), binaryName)
+    : path.join(app.getAppPath(), 'src', 'main', 'Engine', 'target', engineProfile, binaryName)
 
   // Modo overlay: ventana nativa separada alineada al hueco del editor.
   let engineArgs: string[] = []
@@ -339,7 +340,7 @@ function startEngine(embed?: ViewportBounds): void {
       }
     : {}
 
-  console.log(`[engine] binario=${baseBinaryName} GPU esperada=${ENGINE_GPU_LABEL}`)
+  console.log(`[engine] binario=${baseBinaryName} perfil=${engineProfile} GPU esperada=${ENGINE_GPU_LABEL}`)
 
   const engineEnv: NodeJS.ProcessEnv = { ...process.env, ...linuxEnv }
   delete engineEnv.RER_GPU_BACKEND

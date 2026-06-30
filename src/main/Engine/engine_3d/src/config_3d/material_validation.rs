@@ -255,6 +255,19 @@ fn spawn_mat_val_row_label(state: &mut State, preset: &PbrMaterialPreset, row: u
 
 pub const MATERIAL_COMPARISON_PATH: &str = "[MatComparison]";
 
+/// Alfombra MatComp: ancho X × largo Z (quad unitario escalado).
+const MAT_COMP_QUAD_X_WIDTH: f32 = 2.0;
+const MAT_COMP_QUAD_Z_LENGTH: f32 = 3.5;
+/// Delante de las esferas (z=-5): borde trasero ≈ -6.0, sin invadir la fila de esferas.
+const MAT_COMP_QUAD_Z: f32 = -4.0;
+const MAT_COMP_X_POSITIONS: [f32; MAT_VAL_ROW_COUNT] = [-6.0, -3.0, 0.0, 3.0, 6.0];
+
+fn apply_mat_comp_quad_transform(t: &mut Transform, x: f32) {
+    t.position = Vec3::new(x, 0.03, MAT_COMP_QUAD_Z);
+    t.rotation = Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2);
+    t.scale = Vec3::new(MAT_COMP_QUAD_X_WIDTH, MAT_COMP_QUAD_Z_LENGTH, 1.0);
+}
+
 fn material_comparison_ids(state: &State) -> Vec<EntityId> {
     state
         .save_registry
@@ -293,6 +306,24 @@ fn material_comparison_sphere_ids(state: &State) -> Vec<EntityId> {
         .collect()
 }
 
+fn material_comparison_quad_ids(state: &State) -> Vec<EntityId> {
+    state
+        .save_registry
+        .meta
+        .iter()
+        .filter(|(_, m)| entity_path_marker(&m.path) == Some(MATERIAL_COMPARISON_PATH))
+        .filter_map(|(id, _)| {
+            state.world.get::<NameComponent>(*id).and_then(|n| {
+                if n.name.starts_with("MatCompQuad · ") {
+                    Some(*id)
+                } else {
+                    None
+                }
+            })
+        })
+        .collect()
+}
+
 fn sync_material_comparison_pbr(state: &mut State) {
     let mut spheres = material_comparison_sphere_ids(state);
     spheres.sort_unstable();
@@ -308,9 +339,31 @@ fn sync_material_comparison_pbr(state: &mut State) {
         let tex_idx = state.mat_val_texture_for_preset(preset);
         state.apply_mat_val_sphere_visual(id, tex_idx);
     }
+
+    let mut quads = material_comparison_quad_ids(state);
+    quads.sort_unstable();
+    for (i, &id) in quads.iter().enumerate().take(MAT_VAL_ROW_COUNT) {
+        let preset = &MATERIAL_VALIDATION_ROWS[i];
+        let roughness = preset.roughness_min;
+        let pbr = surface_pbr_from_preset(preset, roughness);
+        let tex_idx = state.mat_val_texture_for_preset(preset);
+        if let Some(existing) = state.world.get_mut::<SurfacePbr>(id) {
+            *existing = pbr;
+        } else {
+            state.world.insert(id, pbr);
+        }
+        if let Some(mc) = state.world.get_mut::<MeshComponent>(id) {
+            mc.tex_idx = tex_idx;
+        }
+        if let Some(t) = state.world.get_mut::<Transform>(id) {
+            let x = MAT_COMP_X_POSITIONS.get(i).copied().unwrap_or(0.0);
+            apply_mat_comp_quad_transform(t, x);
+        }
+    }
     log::info!(
-        "[MatVal] PBR sincronizado en {} esferas (GLASS/WATER opacity/ior)",
-        spheres.len().min(MAT_VAL_ROW_COUNT)
+        "[MatVal] PBR sincronizado en {} esferas y {} alfombras",
+        spheres.len().min(MAT_VAL_ROW_COUNT),
+        quads.len().min(MAT_VAL_ROW_COUNT)
     );
 }
 
@@ -338,14 +391,10 @@ pub fn spawn_material_comparison_scene(state: &mut State) {
     const WALL_H: f32 = LABEL_Y + LABEL_H * 0.5;
     const WALL_D: f32 = 3.5;
     const WALL_T: f32 = 0.25;
-    const QUAD_Z: f32 = -3.5;
-    const QUAD_SIZE: f32 = 6.0;
-
-    let x_positions = [-6.0, -3.0, 0.0, 3.0, 6.0];
 
     for i in 0..MAT_VAL_ROW_COUNT {
         let preset = &MATERIAL_VALIDATION_ROWS[i];
-        let x = x_positions[i];
+        let x = MAT_COMP_X_POSITIONS[i];
         let tex_idx = state.mat_val_texture_for_preset(preset);
         let roughness = preset.roughness_min;
 
@@ -438,10 +487,9 @@ pub fn spawn_material_comparison_scene(state: &mut State) {
         );
         state.world.insert(quad_id, NonSelectable);
         state.world.insert(quad_id, surface_pbr_from_preset(preset, roughness));
+        state.world.insert(quad_id, crate::ecs::RenderLayer { value: 1 });
         if let Some(t) = state.world.get_mut::<Transform>(quad_id) {
-            t.position = Vec3::new(x, 0.005, QUAD_Z);
-            t.rotation = Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2);
-            t.scale = Vec3::new(1.0, QUAD_SIZE, 1.0);
+            apply_mat_comp_quad_transform(t, x);
         }
         state.save_registry.register_meta(
             quad_id,
@@ -455,8 +503,8 @@ pub fn spawn_material_comparison_scene(state: &mut State) {
         send_event(&EngineEvent::ModelLoaded {
             id: quad_id,
             name: Some(quad_name),
-            position: Some([x, 0.005, QUAD_Z]),
-            scale: Some([1.0, QUAD_SIZE, 1.0]),
+            position: Some([x, 0.03, MAT_COMP_QUAD_Z]),
+            scale: Some([MAT_COMP_QUAD_X_WIDTH, MAT_COMP_QUAD_Z_LENGTH, 1.0]),
             rotation: Some([0.0, 0.0, 0.0, 1.0]),
             path: Some(MATERIAL_COMPARISON_PATH.to_string()),
             kind: Some("model".to_string()),
@@ -468,16 +516,16 @@ pub fn spawn_material_comparison_scene(state: &mut State) {
 
         // ── Pared divisoria ──
         if i + 1 < MAT_VAL_ROW_COUNT {
-            let wall_x = (x_positions[i] + x_positions[i + 1]) * 0.5;
+            let wall_x = (MAT_COMP_X_POSITIONS[i] + MAT_COMP_X_POSITIONS[i + 1]) * 0.5;
             let wall_name = format!("MatCompWall · {}", preset.label);
             state.spawn_editor_box(&wall_name, [wall_x, WALL_H * 0.5, WALL_Z], [WALL_T, WALL_H, WALL_D]);
         }
     }
 
     // Paredes de los extremos
-    let edge_wall_x = x_positions[0] - 1.5;
+    let edge_wall_x = MAT_COMP_X_POSITIONS[0] - 1.5;
     state.spawn_editor_box("MatCompWall · left", [edge_wall_x, WALL_H * 0.5, WALL_Z], [WALL_T, WALL_H, WALL_D]);
-    let edge_wall_x = x_positions[MAT_VAL_ROW_COUNT - 1] + 1.5;
+    let edge_wall_x = MAT_COMP_X_POSITIONS[MAT_VAL_ROW_COUNT - 1] + 1.5;
     state.spawn_editor_box("MatCompWall · right", [edge_wall_x, WALL_H * 0.5, WALL_Z], [WALL_T, WALL_H, WALL_D]);
 }
 

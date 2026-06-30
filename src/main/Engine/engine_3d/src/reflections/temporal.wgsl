@@ -4,6 +4,8 @@ struct TemporalUniforms {
     enabled        : f32,
     depth_reject_m : f32,
     gbuffer_scale  : f32,
+    near_plane     : f32,
+    far_plane      : f32,
 }
 
 @group(0) @binding(0) var<uniform> u : TemporalUniforms;
@@ -63,12 +65,17 @@ const VARIANCE_BOX : f32 = 1.20;
 const RPC_9 : f32 = 1.0 / 9.0;
 const VARIANCE_ADAPT_K : f32 = 8.0;
 
-fn depth_at(uv : vec2<f32>) -> f32 {
+fn prepass_to_view_depth_m(ndc_z_gl : f32) -> f32 {
+    let ndc_z_vk = ndc_z_gl * 0.5 + 0.5;
+    return (u.near_plane * u.far_plane) / (u.far_plane - ndc_z_vk * (u.far_plane - u.near_plane));
+}
+
+fn depth_at_m(uv : vec2<f32>) -> f32 {
     let clamped = clamp(uv, vec2<f32>(0.0), vec2<f32>(1.0));
     let gb_res = u.resolution * u.gbuffer_scale;
     let fc = clamped * gb_res - vec2<f32>(0.5);
     let px = vec2<i32>(fc);
-    return textureLoad(t_depth, px, 0).r;
+    return prepass_to_view_depth_m(textureLoad(t_depth, px, 0).r);
 }
 
 fn uv_in_bounds(uv : vec2<f32>) -> bool {
@@ -126,8 +133,8 @@ fn fs_main(in : VsOut) -> TemporalOut {
         return out;
     }
 
-    let depth_curr = depth_at(in.uv);
-    let depth_prev = depth_at(prev_surface_uv);
+    let depth_curr = depth_at_m(in.uv);
+    let depth_prev = depth_at_m(prev_surface_uv);
     let depth_reject = abs(depth_curr - depth_prev) > u.depth_reject_m;
     if depth_reject {
         out.reflection = curr;

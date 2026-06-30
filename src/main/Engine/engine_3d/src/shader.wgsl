@@ -81,6 +81,8 @@ struct VertexOutput {
     @location(11) probe_index       : f32,
     /// IOR del material (0 = no dieléctrico).
     @location(12) surface_ior       : f32,
+    /// Clip jitterado (`view_proj * world`) para reconstrucción world coherente con depth prepass.
+    @location(13) jitter_clip       : vec4<f32>,
 }
 
 fn scene_light_dir_norm() -> vec3<f32> {
@@ -149,6 +151,7 @@ fn vs_main(in: VertexInput, inst: InstanceInput) -> VertexOutput {
     var out: VertexOutput;
     let world_pos = world_pos4.xyz;
     out.clip_pos     = u.view_proj * world_pos4;
+    out.jitter_clip  = out.clip_pos;
     out.world_pos    = world_pos;
     out.world_normal = normalize((model * vec4<f32>(in.normal, 0.0)).xyz);
     out.uv           = in.uv;
@@ -197,8 +200,9 @@ fn resolve_surface_roughness(inst_roughness: f32) -> f32 {
     return select(0.9, inst_roughness, inst_roughness >= 0.0);
 }
 
-fn pack_depth_export(view_depth_m: f32) -> vec4<f32> {
-    return vec4<f32>(view_depth_m, 0.0, 0.0, 0.0);
+/// Bevy prepass: GL NDC z desde `position.z` Vulkan [0,1] (coherente con reconstrucción world).
+fn pack_depth_export(ndc_z_vk: f32) -> vec4<f32> {
+    return vec4<f32>(ndc_z_vk * 2.0 - 1.0, 0.0, 0.0, 0.0);
 }
 
 /// `ndc_z` = `@builtin(position).z` en fragmento: profundidad Vulkan [0,1] ya dividida (near=0, far=1).
@@ -217,10 +221,19 @@ fn evaluate_scene(
     gbuffer_transparent: bool,
 ) -> SceneFragOut {
     // Export coherente con SSR legacy: clip_pos.z (interpolado) como ndc_z Vulkan.
+    // Export Bevy depth prepass: GL NDC z (SSR usa 1/z en raymarch).
     let view_depth_m = ndc_z_to_view_depth_m(in.clip_pos.z);
     let curr_ndc = in.curr_stable_clip.xy / in.curr_stable_clip.w;
     let prev_ndc = in.prev_clip_pos.xy / in.prev_clip_pos.w;
     let velocity = (curr_ndc - prev_ndc) * vec2<f32>(0.5, 0.5);
+    // Bevy: `world_position` del G-buffer por píxel (no varying del vértice).
+    let frag_world = refl_world_pos_at_frag(
+        in.jitter_clip,
+        in.clip_pos.z,
+        u.inv_view_proj,
+        u.depth_plane.x,
+        u.depth_plane.y,
+    );
 
     let layer = i32(in.tex_layer);
     let surface_roughness = resolve_surface_roughness(in.surface_roughness);
@@ -233,7 +246,7 @@ fn evaluate_scene(
             vec4<f32>(c, hud.a * in.alpha_mul),
             vec4<f32>(1.0, 1.0, 0.0, 0.0),  // HUD: sin reflejos (rugosidad 1.0)
             vec4<f32>(0.0, 0.0, 0.0, 0.0),
-            pack_depth_export(view_depth_m),
+            pack_depth_export(in.clip_pos.z),
             pack_velocity_normal(velocity, vec3<f32>(0.0, 0.0, 1.0)),
         );
     }
@@ -296,9 +309,11 @@ fn evaluate_scene(
         let ndotl = max(dot(n, l), 0.0);
         let lc = u.light_color.xyz;
         let intensity = u.light_params.x;
+        let ssr_active = u.depth_plane.z > 0.5;
+        let ssr_traceable = forward_probe_surface_eligible(in.surface_roughness, surface_roughness);
         let metal = forward_evaluate_metallic_pbr(
             albedo,
-            in.world_pos,
+            frag_world,
             n,
             surface_roughness,
             in.uv,
@@ -309,6 +324,7 @@ fn evaluate_scene(
             ndotl,
             env_override,
             has_env_override,
+            ssr_active && ssr_traceable,
         );
         amb = metal.ambient;
         dir = metal.direct;
@@ -329,7 +345,7 @@ fn evaluate_scene(
         vec4<f32>(shadow, surface_roughness, 0.0, 0.0),
         // direct: .rgb = luz directa, .b = IOR×0.1 si dieléctrico, .a = metallic.
         vec4<f32>(dir.r, dir.g, ior_b, surface_metallic),
-        pack_depth_export(view_depth_m),
+        pack_depth_export(in.clip_pos.z),
         pack_velocity_normal(velocity, n),
     );
 }
@@ -343,13 +359,30 @@ fn sample_surface_albedo(in: VertexOutput) -> vec3<f32> {
     return albedo_samp.rgb;
 }
 
-/// Pase aparte (1 MRT): límite wgpu 32 B/muestra impide 6.º target en el pass principal.
+/// Pase aparte (2 MRT): límite wgpu 32 B/muestra impide 6.º target en el pass principal.
+struct SurfaceGbufferExport {
+    @location(0) base_color : vec4<f32>,
+    @location(1) world_pos  : vec4<f32>,
+}
+
 @fragment
-fn fs_export_base_color(in: VertexOutput) -> @location(0) vec4<f32> {
+fn fs_export_base_color(in: VertexOutput) -> SurfaceGbufferExport {
+    var out : SurfaceGbufferExport;
     if in.render_kind >= 2.5 {
-        return vec4<f32>(0.0);
+        out.base_color = vec4<f32>(0.0);
+        out.world_pos = vec4<f32>(0.0);
+        return out;
     }
-    return vec4<f32>(sample_surface_albedo(in), 1.0);
+    out.base_color = vec4<f32>(sample_surface_albedo(in), 1.0);
+    // Posición en la cáscara visible (no cuerda del triángulo): coherente con forward IBL y prepass.
+    out.world_pos = vec4<f32>(refl_world_pos_at_frag(
+        in.jitter_clip,
+        in.clip_pos.z,
+        u.inv_view_proj,
+        u.depth_plane.x,
+        u.depth_plane.y,
+    ), 1.0);
+    return out;
 }
 
 fn scene_has_any_probe() -> bool {
@@ -366,8 +399,15 @@ fn scene_probe_env_sample(in: VertexOutput) -> vec4<f32> {
         return vec4<f32>(0.0);
     }
     let n = normalize(in.world_normal);
+    let frag_world = refl_world_pos_at_frag(
+        in.jitter_clip,
+        in.clip_pos.z,
+        u.inv_view_proj,
+        u.depth_plane.x,
+        u.depth_plane.y,
+    );
     let layer = refl_resolve_probe_layer(
-        in.world_pos,
+        frag_world,
         i32(in.probe_index),
         probe_meta.entries,
     );
@@ -376,7 +416,7 @@ fn scene_probe_env_sample(in: VertexOutput) -> vec4<f32> {
     return forward_sample_probe_env(
         t_probe_env,
         s_probe_env,
-        in.world_pos,
+        frag_world,
         u.cam_pos.xyz,
         n,
         in.surface_metallic,
@@ -391,8 +431,16 @@ fn scene_probe_env_sample(in: VertexOutput) -> vec4<f32> {
 @fragment
 fn fs_main(in: VertexOutput) -> SceneFragOut {
     let probe = scene_probe_env_sample(in);
-    let has_probe = probe.a > 0.5;
-    return evaluate_scene(in, probe.rgb, has_probe, true);
+    let ssr_active = u.depth_plane.z > 0.5;
+    let surface_roughness = resolve_surface_roughness(in.surface_roughness);
+    let defer_probe = forward_defer_probe_to_ssr(
+        ssr_active,
+        in.surface_roughness,
+        surface_roughness,
+        in.surface_metallic,
+    );
+    let use_probe = probe.a > 0.5 && !defer_probe;
+    return evaluate_scene(in, probe.rgb, use_probe, true);
 }
 
 /// Prepass SSR: depth + rugosidad + IOR/metallic. No escribe `ambient` (conserva el fondo opaco).
@@ -433,14 +481,20 @@ fn scene_clip_to_screen_uv(clip: vec4<f32>) -> vec2<f32> {
 }
 
 /// Mezcla SSR en el color del fragmento. Dieléctricos: reflejo aditivo (no apagar el tinte).
-fn scene_apply_screen_reflection(rgb: vec3<f32>, clip_pos: vec4<f32>, surface_ior: f32) -> vec3<f32> {
+fn scene_apply_screen_reflection(
+    rgb: vec3<f32>,
+    clip_pos: vec4<f32>,
+    surface_ior: f32,
+    albedo: vec3<f32>,
+) -> vec3<f32> {
     if transparent_refl_u.enabled < 0.5 {
         return rgb;
     }
     let uv = scene_clip_to_screen_uv(clip_pos);
     let refl = textureSample(t_screen_reflection, s_screen_refl, uv);
-    let refl_rgb = refl.rgb * transparent_refl_u.strength;
+    var refl_rgb = refl.rgb * transparent_refl_u.strength;
     if surface_ior > 1.0 {
+        refl_rgb = forward_tint_dielectric_env(refl_rgb, albedo);
         return rgb + refl_rgb;
     }
     let refl_lum = dot(refl_rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
@@ -477,8 +531,16 @@ fn scene_apply_shadow_lit_rgb(
 @fragment
 fn fs_transparent(in: VertexOutput) -> @location(0) vec4<f32> {
     let probe = scene_probe_env_sample(in);
-    let has_probe = probe.a > 0.5;
-    let out = evaluate_scene(in, probe.rgb, has_probe, false);
+    let ssr_active = u.depth_plane.z > 0.5;
+    let surface_roughness = resolve_surface_roughness(in.surface_roughness);
+    let defer_probe = forward_defer_probe_to_ssr(
+        ssr_active,
+        in.surface_roughness,
+        surface_roughness,
+        in.surface_metallic,
+    );
+    let use_probe = probe.a > 0.5 && !defer_probe;
+    let out = evaluate_scene(in, probe.rgb, use_probe, false);
     var rgb = scene_apply_shadow_lit_rgb(
         out.ambient.rgb,
         out.direct.rgb,
@@ -487,6 +549,6 @@ fn fs_transparent(in: VertexOutput) -> @location(0) vec4<f32> {
         in.world_normal,
         in.render_kind,
     );
-    rgb = scene_apply_screen_reflection(rgb, in.clip_pos, in.surface_ior);
+    rgb = scene_apply_screen_reflection(rgb, in.clip_pos, in.surface_ior, sample_surface_albedo(in));
     return vec4<f32>(rgb, out.ambient.a);
 }

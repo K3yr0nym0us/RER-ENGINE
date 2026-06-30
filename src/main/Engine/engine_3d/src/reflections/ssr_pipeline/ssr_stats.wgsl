@@ -50,6 +50,11 @@ fn stats_specular_amount(metallic : f32, roughness : f32, albedo_rgb : vec3<f32>
     return f0_lum * sharp;
 }
 
+/// Vacío / far plane del prepass Bevy (GL NDC z ≈ 1).
+fn depth_prepass_invalid(depth_prepass : f32) -> bool {
+    return depth_prepass > 0.999;
+}
+
 @compute @workgroup_size(8, 8, 1)
 fn cs_main(@builtin(global_invocation_id) gid : vec3<u32>) {
     let refl_dims = textureDimensions(t_reflection);
@@ -65,8 +70,8 @@ fn cs_main(@builtin(global_invocation_id) gid : vec3<u32>) {
         i32(f32(gid.x) * u_stats.gbuffer_scale + 0.5),
         i32(f32(gid.y) * u_stats.gbuffer_scale + 0.5),
     );
-    let depth_m = textureLoad(t_depth, gb_px, 0).r;
-    if depth_m <= 0.0001 {
+    let depth_prepass = textureLoad(t_depth, gb_px, 0).r;
+    if depth_prepass_invalid(depth_prepass) {
         atomicAdd(&out_buf.skip_depth, 1u);
         return;
     }

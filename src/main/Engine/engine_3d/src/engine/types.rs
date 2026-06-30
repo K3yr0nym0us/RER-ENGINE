@@ -116,7 +116,7 @@ pub(crate) struct SceneUniforms {
     pub(crate) light_params: [f32; 4],
     /// xy = jitter subpíxel en espacio de proyección; zw sin uso (near/far en `depth_plane`).
     pub(crate) jitter: [f32; 4],
-    /// x = near, y = far (metros / clip); zw reservados.
+    /// x = near, y = far; z = 1 cuando SSR/reflejos activos (forward IBL cede especular).
     pub(crate) depth_plane: [f32; 4],
     /// x = bias_min, y = bias_max, z = depth_const, w = depth_slope.
     pub(crate) shadow_bias: [f32; 4],

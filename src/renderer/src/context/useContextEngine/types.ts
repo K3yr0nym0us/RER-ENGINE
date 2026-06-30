@@ -125,7 +125,7 @@ export function normalizeShadowTier(value: unknown): ShadowTier {
 	return 'low';
 }
 
-export type ReflectionDebugView = 'final' | 'ssr_debug' | 'ssr_miss_green' | 'ssr_exit_reason' | 'ssr_vector_rgb'
+export type ReflectionDebugView = 'final' | 'ssr_debug' | 'ssr_miss_green' | 'ssr_exit_reason' | 'ssr_vector_rgb' | 'ssr_hit_class' | 'ssr_path_px' | 'ssr_march_refl_dir' | 'ssr_hit_uv' | 'ssr_hit_sample_color' | 'ssr_proj_depth_delta'
 
 export function normalizeReflectionDebugView(value: unknown): ReflectionDebugView {
 	const s = String(value ?? 'final').trim().toLowerCase()
@@ -148,6 +148,46 @@ export function normalizeReflectionDebugView(value: unknown): ReflectionDebugVie
 	}
 	if (s === 'ssr_vector_rgb' || s === 'vector_rgb' || s === 'vectorrgb' || s === 'refl_vector') {
 		return 'ssr_vector_rgb'
+	}
+	if (
+		s === 'ssr_hit_class'
+		|| s === 'ssr_hitclass'
+		|| s === 'hit_class'
+		|| s === 'self_hit'
+		|| s === 'ssr_self_hit'
+	) {
+		return 'ssr_hit_class'
+	}
+	if (s === 'ssr_path_px' || s === 'ssr_pathpx' || s === 'path_px' || s === 'ssr_ray_path') {
+		return 'ssr_path_px'
+	}
+	if (
+		s === 'ssr_march_refl_dir'
+		|| s === 'ssr_refl_dir'
+		|| s === 'ssr_r_world'
+		|| s === 'r_world'
+		|| s === 'march_refl_dir'
+	) {
+		return 'ssr_march_refl_dir'
+	}
+	if (s === 'ssr_hit_uv' || s === 'ssr_hituv' || s === 'hit_uv' || s === 'ssr_sample_uv') {
+		return 'ssr_hit_uv'
+	}
+	if (
+		s === 'ssr_hit_sample_color'
+		|| s === 'ssr_sample_color'
+		|| s === 'hit_sample_color'
+		|| s === 'ssr_lit_at_hit'
+	) {
+		return 'ssr_hit_sample_color'
+	}
+	if (
+		s === 'ssr_proj_depth_delta'
+		|| s === 'ssr_start_cs_z_delta'
+		|| s === 'proj_depth_delta'
+		|| s === 'start_cs_z_delta'
+	) {
+		return 'ssr_proj_depth_delta'
 	}
 	return 'final'
 }

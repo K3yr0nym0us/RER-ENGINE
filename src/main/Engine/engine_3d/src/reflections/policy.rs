@@ -1,9 +1,9 @@
 //! Contrato del sistema de reflejos: capas y política de ranuras de cubemap.
 //!
 //! ## Capas (orden del frame)
-//! - **A — Forward IBL** (`shader.wgsl` / `forward_ibl.wgsl`): cubemap o procedural en metales.
-//! - **B — SSR/RT** (`ssr.wgsl`, `rt_*.wgsl`): detalle on-screen por píxel.
-//! - **C — Composite** (`composite.wgsl`): `detail = max(reflection - scene, 0)`.
+//! - **A — Forward IBL** (`shader.wgsl` / `forward_ibl.wgsl`): cubemap en superficies no trazables por SSR.
+//! - **B — SSR/RT** (`ssr.wgsl`, `rt_*.wgsl`): detalle on-screen; miss SSR samplea cubemap probe (Bevy env map).
+//! - **C — Composite** (`composite.wgsl`): suma SSR encima del lit-composite.
 //! - **Captura** (`probe_env` + `fs_overlay`): alimenta capa A; no es recepción.
 //!
 //! Cambios en B no se ven si A ya pintó un cubemap similar y C solo suma el delta.

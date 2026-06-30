@@ -31,8 +31,8 @@ const SSIL_SAMPLES : array<vec2<f32>, 8> = array<vec2<f32>, 8>(
     vec2<f32>(-0.22, 0.10),
 );
 
-fn world_pos_from_depth(uv : vec2<f32>, view_depth_m : f32) -> vec3<f32> {
-    return refl_world_pos_from_depth(uv, view_depth_m, u.inv_view_proj, u.near_plane, u.far_plane);
+fn world_pos_from_depth(uv : vec2<f32>, depth_prepass : f32) -> vec3<f32> {
+    return refl_world_pos_from_depth(uv, depth_prepass, u.inv_view_proj, u.near_plane, u.far_plane);
 }
 
 fn decode_octahedral(enc: vec2<f32>) -> vec3<f32> {
@@ -59,8 +59,8 @@ fn cs_main(@builtin(global_invocation_id) gid : vec3<u32>) {
     let px = vec2<i32>(i32(gid.x), i32(gid.y));
     let uv = (vec2<f32>(gid.xy) + vec2<f32>(0.5)) / u.resolution;
     let gb_px = vec2<i32>(vec2<f32>(px) * u.gbuffer_scale);
-    let view_depth_m = textureLoad(t_depth, gb_px, 0).r;
-    if view_depth_m <= 0.0001 {
+    let depth_prepass = textureLoad(t_depth, gb_px, 0).r;
+    if refl_depth_prepass_invalid(depth_prepass) {
         textureStore(ssil_out, px, vec4<f32>(0.0));
         return;
     }
@@ -74,7 +74,7 @@ fn cs_main(@builtin(global_invocation_id) gid : vec3<u32>) {
 
     let packed = textureLoad(t_normal_roughness, gb_px, 0);
     let n = normal_from_packed(packed);
-    let world_pos = world_pos_from_depth(uv, view_depth_m);
+    let world_pos = world_pos_from_depth(uv, depth_prepass);
     let base_lit = textureLoad(t_lit_scene, gb_px, 0).rgb;
 
     var accum = vec3<f32>(0.0);
@@ -92,14 +92,16 @@ fn cs_main(@builtin(global_invocation_id) gid : vec3<u32>) {
             i32(sample_uv.x * u.resolution.x * u.gbuffer_scale),
             i32(sample_uv.y * u.resolution.y * u.gbuffer_scale),
         );
-        let sample_depth = textureLoad(t_depth, sample_px, 0).r;
-        if sample_depth <= 0.0001 {
+        let sample_prepass = textureLoad(t_depth, sample_px, 0).r;
+        if refl_depth_prepass_invalid(sample_prepass) {
             continue;
         }
-        if abs(sample_depth - view_depth_m) > u.depth_reject_m {
+        let surf_m = refl_view_depth_m_from_gl_ndc_z(depth_prepass, u.near_plane, u.far_plane);
+        let sample_m = refl_view_depth_m_from_gl_ndc_z(sample_prepass, u.near_plane, u.far_plane);
+        if abs(sample_m - surf_m) > u.depth_reject_m {
             continue;
         }
-        let sample_world = world_pos_from_depth(sample_uv, sample_depth);
+        let sample_world = world_pos_from_depth(sample_uv, sample_prepass);
         let to_sample = sample_world - world_pos;
         let dist = length(to_sample);
         if dist < 0.05 || dist > 3.0 {

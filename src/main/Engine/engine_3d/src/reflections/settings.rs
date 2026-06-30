@@ -1,7 +1,7 @@
 //! Nivel global de reflejos (Off / Low / Medium / High) y presets internos.
 
-/// Reactivar cuando `rt_pipeline` vuelva a `ReflectionPass::run`.
-pub const RT_ENABLED: bool = false;
+/// El pass RT se ejecuta solo con el switch manual del editor (`raytracing_enabled`).
+pub const RT_PIPELINE_AVAILABLE: bool = true;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Hash, Default)]
 pub enum ReflectionTier {
@@ -24,6 +24,18 @@ pub enum ReflectionDebugView {
     SsrExitReason,
     /// Prueba 3: vector de reflexión mapeado a RGB.
     SsrVectorRgb,
+    /// Rojo=self-hit rechazado, verde=hit SSR válido, azul=miss (path idéntico a `ssr.wgsl`).
+    SsrHitClass,
+    /// Escala de grises: distancia del hit en px (`path_px`); negro=miss, blanco=hit lejano.
+    SsrPathPx,
+    /// RGB = `R_world * 0.5 + 0.5` — dirección exacta pasada a `ssr_evaluate_bevy`.
+    SsrMarchReflDir,
+    /// `fract(hit_uv * 8)` — UV de muestreo en hits SSR válidos (post-reject, como `ssr.wgsl`).
+    SsrHitUv,
+    /// RGB = `ssr_reflected_radiance(hit_uv)` en hits válidos (sin composite).
+    SsrHitSampleColor,
+    /// Mapa de calor: |clip.z/w − prepass z| (moiré corona si alto).
+    SsrProjDepthDelta,
 }
 
 impl ReflectionDebugView {
@@ -38,6 +50,26 @@ impl ReflectionDebugView {
             "ssr_vector_rgb" | "vector_rgb" | "vectorrgb" | "refl_vector" => {
                 Some(Self::SsrVectorRgb)
             }
+            "ssr_hit_class"
+            | "ssr_hitclass"
+            | "hit_class"
+            | "self_hit"
+            | "ssr_self_hit" => Some(Self::SsrHitClass),
+            "ssr_path_px" | "ssr_pathpx" | "path_px" | "ssr_ray_path" => Some(Self::SsrPathPx),
+            "ssr_march_refl_dir"
+            | "ssr_refl_dir"
+            | "ssr_r_world"
+            | "R_world"
+            | "march_refl_dir" => Some(Self::SsrMarchReflDir),
+            "ssr_hit_uv" | "ssr_hituv" | "hit_uv" | "ssr_sample_uv" => Some(Self::SsrHitUv),
+            "ssr_hit_sample_color"
+            | "ssr_sample_color"
+            | "hit_sample_color"
+            | "ssr_lit_at_hit" => Some(Self::SsrHitSampleColor),
+            "ssr_proj_depth_delta"
+            | "ssr_start_cs_z_delta"
+            | "proj_depth_delta"
+            | "start_cs_z_delta" => Some(Self::SsrProjDepthDelta),
             _ => None,
         }
     }
@@ -49,11 +81,29 @@ impl ReflectionDebugView {
             Self::SsrMissGreen => "ssr_miss_green",
             Self::SsrExitReason => "ssr_exit_reason",
             Self::SsrVectorRgb => "ssr_vector_rgb",
+            Self::SsrHitClass => "ssr_hit_class",
+            Self::SsrPathPx => "ssr_path_px",
+            Self::SsrMarchReflDir => "ssr_march_refl_dir",
+            Self::SsrHitUv => "ssr_hit_uv",
+            Self::SsrHitSampleColor => "ssr_hit_sample_color",
+            Self::SsrProjDepthDelta => "ssr_proj_depth_delta",
         }
     }
 
     pub fn is_visual_debug(self) -> bool {
-        matches!(self, Self::SsrDebug | Self::SsrMissGreen | Self::SsrExitReason | Self::SsrVectorRgb)
+        matches!(
+            self,
+            Self::SsrDebug
+                | Self::SsrMissGreen
+                | Self::SsrExitReason
+                | Self::SsrVectorRgb
+                | Self::SsrHitClass
+                | Self::SsrPathPx
+                | Self::SsrMarchReflDir
+                | Self::SsrHitUv
+                | Self::SsrHitSampleColor
+                | Self::SsrProjDepthDelta
+        )
     }
 
     pub fn enables_ssr_stats(self) -> bool {
@@ -67,6 +117,12 @@ impl ReflectionDebugView {
             Self::SsrMissGreen => 30,
             Self::SsrExitReason => 31,
             Self::SsrVectorRgb => 32,
+            Self::SsrHitClass => 33,
+            Self::SsrPathPx => 34,
+            Self::SsrMarchReflDir => 35,
+            Self::SsrHitUv => 36,
+            Self::SsrHitSampleColor => 37,
+            Self::SsrProjDepthDelta => 38,
         }
     }
 }
@@ -83,6 +139,9 @@ pub struct ReflectionSettings {
     pub max_roughness_to_trace: f32,
     /// Toggle de editor: captura cubemap + IBL forward (independiente del SSR).
     pub probes_enabled: bool,
+    /// Toggle de editor: ray tracing HW (independiente del tier).
+    pub raytracing_enabled: bool,
+    pub rt_blend: f32,
 }
 
 impl ReflectionTier {
@@ -139,6 +198,8 @@ impl ReflectionSettings {
                 temporal_blend: 0.0,
                 max_roughness_to_trace: 1.0,
                 probes_enabled: false,
+                raytracing_enabled: false,
+                rt_blend: 0.85,
             },
             ReflectionTier::Low => Self {
                 tier,
@@ -149,6 +210,8 @@ impl ReflectionSettings {
                 temporal_blend: 0.18,
                 max_roughness_to_trace: 0.70,
                 probes_enabled: false,
+                raytracing_enabled: false,
+                rt_blend: 0.85,
             },
             ReflectionTier::Medium => Self {
                 tier,
@@ -159,6 +222,8 @@ impl ReflectionSettings {
                 temporal_blend: 0.22,
                 max_roughness_to_trace: 0.70,
                 probes_enabled: false,
+                raytracing_enabled: false,
+                rt_blend: 0.85,
             },
             ReflectionTier::High => Self {
                 tier,
@@ -169,6 +234,8 @@ impl ReflectionSettings {
                 temporal_blend: 0.42,
                 max_roughness_to_trace: 0.70,
                 probes_enabled: false,
+                raytracing_enabled: false,
+                rt_blend: 0.85,
             },
             ReflectionTier::Ultra => Self {
                 tier,
@@ -179,6 +246,8 @@ impl ReflectionSettings {
                 temporal_blend: 0.45,
                 max_roughness_to_trace: 0.85,
                 probes_enabled: false,
+                raytracing_enabled: false,
+                rt_blend: 0.85,
             },
         }
     }
@@ -192,7 +261,7 @@ impl ReflectionSettings {
     }
 
     pub fn uses_rt(self) -> bool {
-        RT_ENABLED && self.active()
+        RT_PIPELINE_AVAILABLE && self.raytracing_enabled && self.active()
     }
 
     /// Lettier `resolution`: fracción de píxeles del rayo en pantalla (0–1).

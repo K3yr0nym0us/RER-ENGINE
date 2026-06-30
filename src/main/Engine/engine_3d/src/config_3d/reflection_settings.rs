@@ -14,6 +14,23 @@ impl State {
         }
     }
 
+    pub(crate) fn set_reflection_raytracing(&mut self, enabled: bool) {
+        if self.reflection_raytracing_enabled == enabled {
+            log::info!(
+                "[reflexiones] RT sin cambios: {}",
+                if enabled { "activado" } else { "desactivado" }
+            );
+            return;
+        }
+        self.reflection_raytracing_enabled = enabled;
+        self.reflections.invalidate_temporal();
+        send_event(&EngineEvent::ReflectionRaytracingChanged { enabled });
+        log::info!(
+            "[reflexiones] RT {}",
+            if enabled { "activado" } else { "desactivado" }
+        );
+    }
+
     pub(crate) fn set_reflection_probes(&mut self, enabled: bool) {
         if self.reflection_probes_enabled == enabled {
             log::info!(
@@ -193,7 +210,7 @@ impl State {
 pub(crate) fn apply_reflection_settings_from_world_wire(
     state: &mut State,
     tier: Option<&str>,
-    _raytracing: Option<bool>,
+    raytracing: Option<bool>,
     probes: Option<bool>,
 ) {
     let resolved = tier
@@ -213,6 +230,11 @@ pub(crate) fn apply_reflection_settings_from_world_wire(
     if let Some(enabled) = probes {
         if state.reflection_probes_enabled != enabled {
             state.set_reflection_probes(enabled);
+        }
+    }
+    if let Some(enabled) = raytracing {
+        if state.reflection_raytracing_enabled != enabled {
+            state.set_reflection_raytracing(enabled);
         }
     }
     state.sanitize_reflection_probe_entities();

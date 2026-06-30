@@ -247,12 +247,12 @@ fn cs_main(@builtin(global_invocation_id) gid : vec3<u32>) {
     }
     let px = vec2<i32>(i32(gid.x), i32(gid.y));
     let uv = (vec2<f32>(gid.xy) + vec2<f32>(0.5)) / u.resolution;
-    let view_depth_m = textureLoad(t_depth, px, 0).r;
-    if view_depth_m <= 0.0001 {
+    let depth_prepass = textureLoad(t_depth, px, 0).r;
+    if refl_depth_prepass_invalid(depth_prepass) {
         textureStore(path_out, px, vec4<f32>(0.0));
         return;
     }
-    let world_pos = world_pos_from_depth(uv, view_depth_m);
+    let world_pos = world_pos_from_depth(uv, depth_prepass);
     let dir = normalize(world_pos - u.cam_pos.xyz);
     let seed = refl_blue_noise_seed(u.frame_index, uv);
     let col = path_trace_ray(world_pos + dir * 0.01, -dir, seed);

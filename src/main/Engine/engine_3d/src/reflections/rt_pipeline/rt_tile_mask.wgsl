@@ -55,8 +55,8 @@ fn cs_build_mask(@builtin(global_invocation_id) gid : vec3<u32>) {
                 i32(min(base_y + oy, u32(u.resolution.y) - 1u)),
             );
             let gb_px = vec2<i32>(vec2<f32>(px) * u.gbuffer_scale);
-            let view_depth_m = textureLoad(t_depth, gb_px, 0).r;
-            if view_depth_m <= 0.0001 {
+            let depth_prepass = textureLoad(t_depth, gb_px, 0).r;
+            if refl_depth_prepass_invalid(depth_prepass) {
                 continue;
             }
             let packed = textureLoad(t_normal_roughness, gb_px, 0);

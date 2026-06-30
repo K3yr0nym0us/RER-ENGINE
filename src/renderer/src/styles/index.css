@@ -353,14 +353,18 @@ body {
   font-size: 0.82rem;
 }
 
+.app-tooltip--tier-hint {
+  pointer-events: none;
+}
+
 .app-tooltip--tier-hint .tooltip-inner {
-  text-align: center;
+  text-align: left;
 }
 
 .app-tooltip--compact .reflection-tier-tooltip-note {
   margin: 0;
   line-height: 1.35;
-  text-align: center;
+  text-align: left;
   color: inherit;
 }
 

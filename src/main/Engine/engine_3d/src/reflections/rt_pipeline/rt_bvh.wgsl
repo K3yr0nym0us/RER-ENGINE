@@ -311,8 +311,8 @@ fn rt_shade_pixel_at(gid : vec2<u32>) {
     let ssr = textureLoad(t_ssr, px, 0);
     let gb_px = vec2<i32>(vec2<f32>(px) * u.gbuffer_scale);
 
-    let view_depth_m = textureLoad(t_depth, gb_px, 0).r;
-    if view_depth_m <= 0.0001 {
+    let depth_prepass = textureLoad(t_depth, gb_px, 0).r;
+    if refl_depth_prepass_invalid(depth_prepass) {
         textureStore(reflection_out, px, ssr);
         return;
     }
@@ -328,7 +328,7 @@ fn rt_shade_pixel_at(gid : vec2<u32>) {
         return;
     }
 
-    let world_pos = world_pos_from_depth(uv, view_depth_m);
+    let world_pos = world_pos_from_depth(uv, depth_prepass);
     let v = normalize(u.cam_pos.xyz - world_pos);
     let seed = refl_blue_noise_seed(u.frame_index, uv);
     let T = refl_tangent(n);

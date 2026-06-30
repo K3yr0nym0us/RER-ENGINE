@@ -21,7 +21,7 @@ use crate::config_3d::reflection_graphics::{
 use crate::engine::SceneUniforms;
 use crate::reflections::ssil::SsilPass;
 
-const _: () = assert!(std::mem::size_of::<TemporalUniforms>() == 24);
+const _: () = assert!(std::mem::size_of::<TemporalUniforms>() == 32);
 const _: () = assert!(std::mem::size_of::<DenoiseUniforms>() == 32);
 const _: () = assert!(std::mem::size_of::<CompositeUniforms>() == 16);
 
@@ -33,6 +33,8 @@ struct TemporalUniforms {
     enabled: f32,
     depth_reject_m: f32,
     gbuffer_scale: f32,
+    near_plane: f32,
+    far_plane: f32,
 }
 
 #[repr(C)]
@@ -195,9 +197,10 @@ impl ReflectionPass {
         let temporal_shader = device.create_shader_module(include_wgsl!("temporal.wgsl"));
         let composite_shader = device.create_shader_module(include_wgsl!("composite.wgsl"));
         let debug_trace_source = format!(
-            "{}\n{}",
+            "{}\n{}\n{}",
             include_str!("ssr_pipeline/ssr_debug_trace.wgsl"),
             include_str!("debug.wgsl"),
+            include_str!("ssr_pipeline/ssr_raymarch.wgsl"),
         );
         let debug_shader = load_refl_wgsl(device, "reflection-debug", &debug_trace_source);
 
@@ -313,6 +316,7 @@ impl ReflectionPass {
                 texture_entry_typed(7, wgpu::TextureSampleType::Float { filterable: false }),
                 texture_entry(8, true),
                 texture_entry_typed(9, wgpu::TextureSampleType::Float { filterable: false }),
+                texture_entry_typed(10, wgpu::TextureSampleType::Float { filterable: false }),
             ],
         });
 
@@ -372,7 +376,7 @@ impl ReflectionPass {
             Some(&debug_pl),
         ));
 
-        let ssr = ssr_pipeline::SsrPipeline::new(device, color_format, width, height);
+        let ssr = ssr_pipeline::SsrPipeline::new(device, color_format, width, height, probe_sample_bgl);
         let temporal_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("refl-temporal-uniforms"),
             contents: bytemuck::bytes_of(&TemporalUniforms {
@@ -381,6 +385,8 @@ impl ReflectionPass {
                 enabled: 1.0,
                 depth_reject_m: 0.35,
                 gbuffer_scale: 1.0,
+                near_plane: 0.1,
+                far_plane: 1000.0,
             }),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
@@ -459,6 +465,7 @@ impl ReflectionPass {
             device,
             &debug_bgl,
             &debug_uniform_buffer,
+            &reflection_view,
             &reflection_view,
             &reflection_view,
             &reflection_view,
@@ -624,6 +631,7 @@ impl ReflectionPass {
         ambient_view: &TextureView,
         surface_view: &TextureView,
         base_color_view: &TextureView,
+        world_pos_view: &TextureView,
         depth_export_view: &TextureView,
         velocity_view: &TextureView,
         inv_view_proj: Mat4,
@@ -633,7 +641,7 @@ impl ReflectionPass {
         near_plane: f32,
         far_plane: f32,
         clear_color: wgpu::Color,
-        _probe_bind_group: &wgpu::BindGroup,
+        probe_bind_group: &wgpu::BindGroup,
         _shadow_view: &TextureView,
         _shadow_sampler: &wgpu::Sampler,
         _scene_uniforms: &SceneUniforms,
@@ -673,6 +681,7 @@ impl ReflectionPass {
             ambient_view,
             surface_view,
             base_color_view,
+            world_pos_view,
             &self.reflection_view,
             &self.reflection_hit_uv_view,
             inv_view_proj,
@@ -681,6 +690,7 @@ impl ReflectionPass {
             near_plane,
             far_plane,
             clear_color,
+            probe_bind_group,
         );
         self.profiler.ssr_ms = t_ssr.elapsed().as_secs_f32() * 1000.0;
 
@@ -688,7 +698,7 @@ impl ReflectionPass {
 
         let t1 = Instant::now();
         let temporal_blend = settings.temporal_blend
-            * if crate::reflections::settings::RT_ENABLED {
+            * if settings.uses_rt() {
                 1.0
             } else {
                 0.55
@@ -708,6 +718,8 @@ impl ReflectionPass {
                 enabled: 1.0,
                 depth_reject_m: 0.35,
                 gbuffer_scale,
+                near_plane,
+                far_plane,
             };
             queue.write_buffer(
                 &self.temporal_uniform_buffer,
@@ -767,7 +779,7 @@ impl ReflectionPass {
             // Denoiser bilateral: solo con RT (en SSR-only suaviza demasiado el detalle).
             let t_denoise = Instant::now();
             if debug_view == ReflectionDebugView::Final
-                && crate::reflections::settings::RT_ENABLED
+                && settings.uses_rt()
             {
                 let denoise_u = DenoiseUniforms {
                     resolution: [self.refl_width as f32, self.refl_height as f32],
@@ -892,6 +904,7 @@ impl ReflectionPass {
                 surface_view,
                 direct_view,
                 base_color_view,
+                world_pos_view,
                 &self.linear_sampler,
                 &self.nearest_sampler,
             );
@@ -1437,6 +1450,7 @@ fn make_debug_bind_group(
     surface: &TextureView,
     direct: &TextureView,
     base_color: &TextureView,
+    world_pos: &TextureView,
     linear: &wgpu::Sampler,
     nearest: &wgpu::Sampler,
 ) -> wgpu::BindGroup {
@@ -1483,6 +1497,10 @@ fn make_debug_bind_group(
             wgpu::BindGroupEntry {
                 binding: 9,
                 resource: wgpu::BindingResource::TextureView(base_color),
+            },
+            wgpu::BindGroupEntry {
+                binding: 10,
+                resource: wgpu::BindingResource::TextureView(world_pos),
             },
         ],
     })

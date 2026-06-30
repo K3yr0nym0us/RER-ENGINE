@@ -16,6 +16,34 @@ fn forward_probe_surface_eligible(inst_roughness: f32, surface_roughness: f32) -
     return inst_roughness >= 0.0 && surface_roughness <= 0.70;
 }
 
+/// Bevy: cubemap probe = indirecto de baja frecuencia; SSR = detalle en pantalla.
+/// Si el píxel es trazable por SSR, el cubemap se aplica en el miss SSR, no en forward.
+fn forward_defer_probe_to_ssr(
+    ssr_active: bool,
+    inst_roughness: f32,
+    surface_roughness: f32,
+    surface_metallic: f32,
+) -> bool {
+    if !ssr_active {
+        return false;
+    }
+    if surface_metallic > 0.5 {
+        return true;
+    }
+    return forward_probe_surface_eligible(inst_roughness, surface_roughness);
+}
+
+/// Atenúa el dominante azul del cubemap/procedural en dieléctricos claros (vidrio).
+fn forward_tint_dielectric_env(env_rgb: vec3<f32>, albedo: vec3<f32>) -> vec3<f32> {
+    let albedo_lum = dot(albedo, vec3<f32>(0.2126, 0.7152, 0.0722));
+    if albedo_lum < 0.55 {
+        return env_rgb;
+    }
+    let env_lum = dot(env_rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
+    let neutral_tint = vec3<f32>(env_lum) * (albedo / max(albedo_lum, 1e-4));
+    return mix(env_rgb, neutral_tint, 0.72);
+}
+
 fn forward_sample_probe_env(
     t_probe: texture_cube_array<f32>,
     s_probe: sampler,
@@ -47,7 +75,8 @@ fn forward_sample_probe_env(
     if trace_w < 0.01 {
         return vec4<f32>(0.0, 0.0, 0.0, 0.0);
     }
-    return vec4<f32>(env_rgb * trace_w, 2.0);
+    let tinted_env = forward_tint_dielectric_env(env_rgb, albedo);
+    return vec4<f32>(tinted_env * trace_w, 2.0);
 }
 
 /// Alias metálico (compat tests / lectura).
@@ -117,6 +146,7 @@ fn forward_evaluate_metallic_pbr(
     ndotl: f32,
     env_override: vec3<f32>,
     has_env_override: bool,
+    defer_specular_to_ssr: bool,
 ) -> ForwardMetalLighting {
     let n = normalize(world_normal);
     let v = normalize(cam_pos - world_pos);
@@ -150,7 +180,16 @@ fn forward_evaluate_metallic_pbr(
     let spec_reserve = (1.0 - surface_roughness) * (1.0 - surface_roughness);
     let albedo_lum_pbr = dot(albedo, vec3<f32>(0.2126, 0.7152, 0.0722));
     let bright_suppress = mix(1.0, 0.32, smoothstep(0.12, 0.48, albedo_lum_pbr));
-    let ibl_headroom = mix(0.1, 1.0, spec_reserve) * bright_suppress;
+    var ibl_headroom = mix(0.1, 1.0, spec_reserve) * bright_suppress;
+    if defer_specular_to_ssr {
+        // Metales claros: reservar specular para SSR. Metales oscuros (chrome): conservar tinte IBL base.
+        let dark_metal = smoothstep(0.16, 0.05, albedo_lum_pbr);
+        ibl_headroom = mix(
+            ibl_headroom * 0.06 * bright_suppress,
+            ibl_headroom * mix(0.38, 0.24, spec_reserve),
+            dark_metal,
+        );
+    }
     out.ambient = metal_amb * ibl_headroom;
     out.direct = light_color * spec * light_intensity * ndotl * (1.0 - surface_roughness * 0.6)
         * (0.25 + 0.75 * albedo_lum);
@@ -182,6 +221,7 @@ fn forward_evaluate_metallic_pbr_skinned(
     ndotl: f32,
     env_override: vec3<f32>,
     has_env_override: bool,
+    defer_specular_to_ssr: bool,
 ) -> ForwardMetalLighting {
     let n = normalize(world_normal);
     let v = normalize(cam_pos - world_pos);
@@ -213,7 +253,15 @@ fn forward_evaluate_metallic_pbr_skinned(
     let spec_reserve = (1.0 - surface_roughness) * (1.0 - surface_roughness);
     let albedo_lum_pbr = dot(albedo, vec3<f32>(0.2126, 0.7152, 0.0722));
     let bright_suppress = mix(1.0, 0.32, smoothstep(0.12, 0.48, albedo_lum_pbr));
-    let ibl_headroom = mix(0.1, 1.0, spec_reserve) * bright_suppress;
+    var ibl_headroom = mix(0.1, 1.0, spec_reserve) * bright_suppress;
+    if defer_specular_to_ssr {
+        let dark_metal = smoothstep(0.16, 0.05, albedo_lum_pbr);
+        ibl_headroom = mix(
+            ibl_headroom * 0.06 * bright_suppress,
+            ibl_headroom * mix(0.38, 0.24, spec_reserve),
+            dark_metal,
+        );
+    }
     out.ambient = metal_amb * ibl_headroom;
     out.direct = light_color * spec * light_intensity * ndotl * (1.0 - surface_roughness * 0.6)
         * (0.25 + 0.75 * albedo_lum);

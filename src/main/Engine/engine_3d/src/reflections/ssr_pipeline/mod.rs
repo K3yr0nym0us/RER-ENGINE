@@ -1,5 +1,5 @@
-//! Screen-space reflections — implementación Lettier.
-//! https://lettier.github.io/3d-game-shaders-for-beginners/screen-space-reflection.html
+//! Screen-space reflections — Bevy `bevy_pbr/src/ssr`.
+//! https://github.com/bevyengine/bevy/tree/main/crates/bevy_pbr/src/ssr
 
 pub(crate) mod ssr_settings;
 mod stats_readback;
@@ -37,7 +37,17 @@ pub struct SsrUniforms {
     _pad2: f32,
 }
 
-const _: () = assert!(std::mem::size_of::<SsrUniforms>() % 16 == 0);
+/// Near para escala de grosor en marcha Bevy (`depth_thickness / near`).
+/// Bevy lee `clip_from_view[3][2]`; en glam RH GL suele ser −1 → usamos `camera.near`.
+fn ssr_march_near_plane(view_proj: Mat4, view: Mat4, camera_near: f32) -> f32 {
+    let clip_from_view = view_proj * view.inverse();
+    let bevy_elem = clip_from_view.w_axis.z.abs();
+    if bevy_elem > 0.01 && (bevy_elem - camera_near).abs() < camera_near * 0.25 {
+        bevy_elem
+    } else {
+        camera_near
+    }
+}
 
 pub struct SsrPipeline {
     pub uniform_buffer: wgpu::Buffer,
@@ -48,8 +58,19 @@ pub struct SsrPipeline {
 }
 
 impl SsrPipeline {
-    pub fn new(device: &Device, color_format: TextureFormat, width: u32, height: u32) -> Self {
-        let shader = load_refl_wgsl(device, "ssr", include_str!("ssr.wgsl"));
+    pub fn new(
+        device: &Device,
+        color_format: TextureFormat,
+        width: u32,
+        height: u32,
+        probe_sample_bgl: &wgpu::BindGroupLayout,
+    ) -> Self {
+        let ssr_source = format!(
+            "{}\n{}",
+            include_str!("ssr.wgsl"),
+            include_str!("ssr_raymarch.wgsl"),
+        );
+        let shader = load_refl_wgsl(device, "ssr", &ssr_source);
 
         let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("ssr-bgl"),
@@ -64,12 +85,13 @@ impl SsrPipeline {
                 bgl_texture(7, false, wgpu::ShaderStages::FRAGMENT),
                 bgl_texture(8, false, wgpu::ShaderStages::FRAGMENT),
                 bgl_texture(9, false, wgpu::ShaderStages::FRAGMENT),
+                bgl_texture(10, false, wgpu::ShaderStages::FRAGMENT),
             ],
         });
 
         let pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("ssr-pl"),
-            bind_group_layouts: &[Some(&bgl)],
+            bind_group_layouts: &[Some(&bgl), Some(probe_sample_bgl)],
             immediate_size: 0,
         });
 
@@ -173,6 +195,7 @@ impl SsrPipeline {
         ambient_view: &TextureView,
         surface_view: &TextureView,
         base_color_view: &TextureView,
+        world_pos_view: &TextureView,
         reflection_view: &TextureView,
         hit_uv_view: &TextureView,
         inv_view_proj: Mat4,
@@ -181,8 +204,10 @@ impl SsrPipeline {
         near_plane: f32,
         far_plane: f32,
         _clear_color: wgpu::Color,
+        probe_bind_group: &wgpu::BindGroup,
     ) {
         let inv_view = view.inverse();
+        let march_near = ssr_march_near_plane(view_proj, view, near_plane);
         let uniforms = SsrUniforms {
             resolution: [refl_width.max(1) as f32, refl_height.max(1) as f32],
             gb_resolution: [viewport_w.max(1) as f32, viewport_h.max(1) as f32],
@@ -190,7 +215,7 @@ impl SsrPipeline {
             view_proj: view_proj.to_cols_array_2d(),
             view: view.to_cols_array_2d(),
             inv_view: inv_view.to_cols_array_2d(),
-            near_plane,
+            near_plane: march_near,
             far_plane,
             max_distance_m: settings.max_distance_m,
             coarse_resolution: ssr_settings::ssr_coarse_resolution(settings.tier),
@@ -249,6 +274,10 @@ impl SsrPipeline {
                     binding: 9,
                     resource: wgpu::BindingResource::TextureView(ambient_view),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 10,
+                    resource: wgpu::BindingResource::TextureView(world_pos_view),
+                },
             ],
         });
 
@@ -282,6 +311,7 @@ impl SsrPipeline {
             });
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &bind_group, &[]);
+            pass.set_bind_group(1, probe_bind_group, &[]);
             pass.draw(0..3, 0..1);
         }
     }

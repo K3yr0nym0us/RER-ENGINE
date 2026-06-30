@@ -45,6 +45,7 @@ impl State {
             )
             .await
             .expect("no se pudo crear el Device");
+        let rt_hw_available = device.features().contains(wgpu::Features::EXPERIMENTAL_RAY_QUERY);
 
         let caps = surface.get_capabilities(&adapter);
         let format = caps
@@ -328,11 +329,18 @@ impl State {
             depth_export_target.clone(),
             velocity_target.clone(),
         ];
-        let base_color_only = [Some(wgpu::ColorTargetState {
-            format: crate::taa::BASE_COLOR_FORMAT,
-            blend: None,
-            write_mask: wgpu::ColorWrites::ALL,
-        })];
+        let surface_gbuffer_export_targets = [
+            Some(wgpu::ColorTargetState {
+                format: crate::taa::BASE_COLOR_FORMAT,
+                blend: None,
+                write_mask: wgpu::ColorWrites::ALL,
+            }),
+            Some(wgpu::ColorTargetState {
+                format: crate::taa::WORLD_POS_FORMAT,
+                blend: None,
+                write_mask: wgpu::ColorWrites::ALL,
+            }),
+        ];
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("pipeline-layout"),
             bind_group_layouts: &[Some(&bgl), Some(&texture_bgl)],
@@ -514,7 +522,7 @@ impl State {
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
                 entry_point: Some("fs_export_base_color"),
-                targets: &base_color_only,
+                targets: &surface_gbuffer_export_targets,
                 compilation_options: Default::default(),
             }),
             primitive: wgpu::PrimitiveState {
@@ -915,7 +923,7 @@ impl State {
                 fragment: Some(wgpu::FragmentState {
                     module: &skinned_shader,
                     entry_point: Some("fs_export_base_color_skinned"),
-                    targets: &base_color_only,
+                    targets: &surface_gbuffer_export_targets,
                     compilation_options: Default::default(),
                 }),
                 primitive: wgpu::PrimitiveState {
@@ -1208,6 +1216,8 @@ impl State {
             graphics_texture_tier: crate::config_3d::texture_graphics::TextureGraphicsTier::Medium,
             reflection_tier: crate::config_3d::reflection_graphics::DEFAULT_REFLECTION_TIER,
             reflection_probes_enabled: false,
+            reflection_raytracing_enabled: false,
+            rt_hw_available,
             ssr_debug_mode: false,
             reflection_debug_view:
                 crate::config_3d::reflection_graphics::ReflectionDebugView::Final,

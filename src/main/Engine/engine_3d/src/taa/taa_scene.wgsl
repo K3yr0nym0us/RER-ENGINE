@@ -3,9 +3,14 @@ struct SceneTaaUniforms {
     blend          : f32,
     enabled        : f32,
     zoom_stability : f32,
+    _pad_jitter    : f32,
     jitter         : vec2<f32>,
     disocclusion   : f32,
-    _pad0          : f32,
+    near_plane     : f32,
+    far_plane      : f32,
+    _pad_vec2      : f32,
+    _pad_align     : vec2<f32>,
+    _pad_mat4      : vec2<f32>,
     inv_view_proj  : mat4x4<f32>,
     prev_view_proj : mat4x4<f32>,
 }
@@ -84,8 +89,13 @@ fn sobel_edge(uv : vec2<f32>, texel : vec2<f32>) -> f32 {
     return sqrt(gx * gx + gy * gy);
 }
 
-fn depth_at(uv : vec2<f32>) -> f32 {
-    return textureSample(t_depth, s_depth, uv).r;
+fn prepass_to_view_depth_m(ndc_z_gl : f32) -> f32 {
+    let ndc_z_vk = ndc_z_gl * 0.5 + 0.5;
+    return (u.near_plane * u.far_plane) / (u.far_plane - ndc_z_vk * (u.far_plane - u.near_plane));
+}
+
+fn depth_at_m(uv : vec2<f32>) -> f32 {
+    return prepass_to_view_depth_m(textureSample(t_depth, s_depth, uv).r);
 }
 
 fn clip_history(uv : vec2<f32>, texel : vec2<f32>) -> vec4<f32> {
@@ -128,8 +138,8 @@ fn fs_main(in : VsOut) -> @location(0) vec4<f32> {
     let velocity = textureSample(t_velocity, s_velocity, uv).xy;
     let uv_hist = uv - velocity;
 
-    let depth_curr = depth_at(uv);
-    let depth_hist = depth_at(uv_hist);
+    let depth_curr = depth_at_m(uv);
+    let depth_hist = depth_at_m(uv_hist);
     let disoccluded = abs(depth_curr - depth_hist) > u.disocclusion;
 
     // Reconstruye el AABB local con el vecindario 3x3 alrededor del píxel actual

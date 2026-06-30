@@ -719,11 +719,15 @@ pub enum EngineEvent {
     ReflectionTierChanged { tier: String },
     #[serde(rename = "reflection_probes_changed")]
     ReflectionProbesChanged { enabled: bool },
+    #[serde(rename = "reflection_raytracing_changed")]
+    ReflectionRaytracingChanged { enabled: bool },
     /// Tier de reflejos pedido vs efectivo (p. ej. High degradado a Medium sin RT).
     #[serde(rename = "reflection_tier_effective")]
     ReflectionTierEffective {
         requested: String,
         effective: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        rt_available: Option<bool>,
     },
     #[serde(rename = "shadow_tier_changed")]
     ShadowTierChanged { tier: String },

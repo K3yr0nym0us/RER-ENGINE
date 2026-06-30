@@ -1,6 +1,6 @@
 //! Post-proceso 3D alineado con UE / Unity / Godot 4:
 //!
-//! 1. **G-buffer ligero (MRT):** `ambient`, `direct`, máscara de sombra, depth en metros (R32), velocity+normal (RGBA8).
+//! 1. **G-buffer ligero (MRT):** `ambient`, `direct`, máscara de sombra, depth prepass Bevy (R32 GL NDC z), velocity+normal (RGBA8).
 //! 2. **Shadow map único 2D** (2048, depth compare).
 //! 3. **TAA en máscara de sombra** → **lit-composite:** `lit = ambient + direct × mix(darkness, 1, shadow)`.
 //! 4. **TAA de escena** (reproject + depth/velocity, depth vía `texture_2d` filtrable-nearest, no `textureLoad` en depth).
@@ -19,8 +19,7 @@ use wgpu::{include_wgsl, Device, Queue, TextureFormat, TextureView};
 const SHADOW_HISTORY_BLEND: f32 = 30.0 / 32.0;
 /// Acumulación escena (geometría y bordes de objetos).
 const SCENE_HISTORY_BLEND: f32 = 0.62;
-/// Umbral depth para disoclusión; algo más laxo evita cortar history en siluetas.
-/// Umbral de disoclusión en metros (depth export = distancia view-space).
+/// Umbral de disoclusión en metros (TAA convierte prepass → metros al comparar).
 const DISOCCLUSION_THRESHOLD: f32 = 0.75;
 
 /// G-buffer de superficie: `.r` = máscara de sombra (1=iluminado), `.g` = roughness.
@@ -28,7 +27,7 @@ const DISOCCLUSION_THRESHOLD: f32 = 0.75;
 /// baseline de 32 B/sample, garantizado en TODA plataforma de exportación. El metallic
 /// NO cabe aquí; se empaqueta en el alpha del buffer `direct` (canal libre).
 pub const SHADOW_MASK_FORMAT: TextureFormat = TextureFormat::Rg16Float;
-/// Profundidad en metros (view depth) exportada para TAA y SSR. 4 B/sample.
+/// Profundidad prepass Bevy: GL NDC z (`clip.z/clip.w`) en R32Float. SSR compara `1/z`.
 pub const DEPTH_EXPORT_FORMAT: TextureFormat = TextureFormat::R32Float;
 /// Velocity (rg) + normal xy octaédrica empaquetada (ba). 8 B/sample.
 pub const VELOCITY_FORMAT: TextureFormat = TextureFormat::Rgba8Unorm;
@@ -36,6 +35,8 @@ pub const VELOCITY_FORMAT: TextureFormat = TextureFormat::Rgba8Unorm;
 pub const MRT_LIT_FORMAT: TextureFormat = TextureFormat::Rgba8Unorm;
 /// Albedo base del material (SSR/RT F0 y atenuación metal). 4 B/sample.
 pub const BASE_COLOR_FORMAT: TextureFormat = TextureFormat::Rgba8Unorm;
+/// Posición world por píxel (Bevy `world_position` deferred). 8 B/sample.
+pub const WORLD_POS_FORMAT: TextureFormat = TextureFormat::Rgba16Float;
 
 /// Estabilidad TAA: mantiene más acumulación a distancia media (menos dientes de sierra lejos).
 pub fn zoom_stability_distance(distance: f32) -> f32 {
@@ -79,14 +80,22 @@ struct SceneTaaUniforms {
     blend: f32,
     enabled: f32,
     zoom_stability: f32,
+    /// WGSL alinea `vec2` tras `f32` en offset 24 (no 20).
+    _pad_jitter: f32,
     jitter: [f32; 2],
     disocclusion: f32,
-    _pad0: f32,
-    /// Alineación WGSL: `mat4x4` empieza en offset 48 (12 bytes tras `_pad0`).
-    _pad_align: [f32; 3],
+    near_plane: f32,
+    far_plane: f32,
+    /// WGSL alinea `_pad_align` en offset 48 (no 40).
+    _pad_vec2: f32,
+    _pad_align: [f32; 2],
+    /// WGSL alinea `mat4x4` en offset 64 (no 48).
+    _pad_mat4: [f32; 2],
     inv_view_proj: [[f32; 4]; 4],
     prev_view_proj: [[f32; 4]; 4],
 }
+
+const _: () = assert!(std::mem::size_of::<SceneTaaUniforms>() == 192);
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -108,6 +117,7 @@ pub struct TaaPass {
     depth_export_view: TextureView,
     velocity_view: TextureView,
     base_color_view: TextureView,
+    world_pos_view: TextureView,
     scene_color_view: TextureView,
     shadow_mask_view: TextureView,
     shadow_history_views: [TextureView; 2],
@@ -140,6 +150,7 @@ pub struct TaaPass {
     _depth_export_texture: wgpu::Texture,
     _velocity_texture: wgpu::Texture,
     _base_color_texture: wgpu::Texture,
+    _world_pos_texture: wgpu::Texture,
     _scene_color_texture: wgpu::Texture,
     _shadow_mask_texture: wgpu::Texture,
     _shadow_history_textures: [wgpu::Texture; 2],
@@ -167,6 +178,8 @@ impl TaaPass {
             create_texture(device, VELOCITY_FORMAT, width, height, "velocity-normal");
         let (base_color_texture, base_color_view) =
             create_texture(device, BASE_COLOR_FORMAT, width, height, "base-color");
+        let (world_pos_texture, world_pos_view) =
+            create_texture(device, WORLD_POS_FORMAT, width, height, "world-pos");
         let (scene_color_texture, scene_color_view) =
             create_texture(device, color_format, width, height, "scene-lit");
         let (shadow_mask_texture, shadow_mask_view) =
@@ -203,10 +216,14 @@ impl TaaPass {
                 blend: 0.0,
                 enabled: 1.0,
                 zoom_stability: 1.0,
+                _pad_jitter: 0.0,
                 jitter: [0.0; 2],
                 disocclusion: DISOCCLUSION_THRESHOLD,
-                _pad0: 0.0,
-                _pad_align: [0.0; 3],
+                near_plane: 0.1,
+                far_plane: 1000.0,
+                _pad_vec2: 0.0,
+                _pad_align: [0.0; 2],
+                _pad_mat4: [0.0; 2],
                 inv_view_proj: glam::Mat4::IDENTITY.to_cols_array_2d(),
                 prev_view_proj: glam::Mat4::IDENTITY.to_cols_array_2d(),
             }),
@@ -350,6 +367,7 @@ impl TaaPass {
             depth_export_view,
             velocity_view,
             base_color_view,
+            world_pos_view,
             scene_color_view,
             shadow_mask_view,
             shadow_history_views: [v0, v1],
@@ -384,6 +402,7 @@ impl TaaPass {
             _depth_export_texture: depth_export_texture,
             _velocity_texture: velocity_texture,
             _base_color_texture: base_color_texture,
+            _world_pos_texture: world_pos_texture,
             _scene_color_texture: scene_color_texture,
             _shadow_mask_texture: shadow_mask_texture,
             _shadow_history_textures: [h0, h1],
@@ -523,6 +542,10 @@ impl TaaPass {
         &self.base_color_view
     }
 
+    pub(crate) fn world_pos_view(&self) -> &TextureView {
+        &self.world_pos_view
+    }
+
     pub(crate) fn normal_roughness_view(&self) -> &TextureView {
         &self.velocity_view
     }
@@ -557,6 +580,8 @@ impl TaaPass {
             create_texture(device, VELOCITY_FORMAT, width, height, "velocity-normal");
         let (base_color_texture, base_color_view) =
             create_texture(device, BASE_COLOR_FORMAT, width, height, "base-color");
+        let (world_pos_texture, world_pos_view) =
+            create_texture(device, WORLD_POS_FORMAT, width, height, "world-pos");
         let (scene_color_texture, scene_color_view) =
             create_texture(device, color_format, width, height, "scene-lit");
         let (shadow_mask_texture, shadow_mask_view) =
@@ -578,6 +603,8 @@ impl TaaPass {
         self.velocity_view = velocity_view;
         self._base_color_texture = base_color_texture;
         self.base_color_view = base_color_view;
+        self._world_pos_texture = world_pos_texture;
+        self.world_pos_view = world_pos_view;
         self._scene_color_texture = scene_color_texture;
         self.scene_color_view = scene_color_view;
         self._shadow_mask_texture = shadow_mask_texture;
@@ -632,6 +659,8 @@ impl TaaPass {
         height: u32,
         inv_view_proj: [[f32; 4]; 4],
         prev_view_proj: [[f32; 4]; 4],
+        near_plane: f32,
+        far_plane: f32,
     ) {
         self.run_lit_composite(device, queue, encoder, 0.35, false);
 
@@ -645,6 +674,8 @@ impl TaaPass {
                 height,
                 inv_view_proj,
                 prev_view_proj,
+                near_plane,
+                far_plane,
             );
             let idx = 1 + self.scene_history_index as usize;
             blit_cached(
@@ -677,6 +708,8 @@ impl TaaPass {
         height: u32,
         inv_view_proj: [[f32; 4]; 4],
         prev_view_proj: [[f32; 4]; 4],
+        near_plane: f32,
+        far_plane: f32,
     ) {
         if !shadows_enabled {
             self.present_scene(
@@ -690,6 +723,8 @@ impl TaaPass {
                 height,
                 inv_view_proj,
                 prev_view_proj,
+                near_plane,
+                far_plane,
             );
             return;
         }
@@ -710,6 +745,8 @@ impl TaaPass {
                 height,
                 inv_view_proj,
                 prev_view_proj,
+                near_plane,
+                far_plane,
             );
         }
 
@@ -760,6 +797,8 @@ impl TaaPass {
         height: u32,
         inv_view_proj: [[f32; 4]; 4],
         prev_view_proj: [[f32; 4]; 4],
+        near_plane: f32,
+        far_plane: f32,
     ) {
         self.resolve_scene_soft(
             device,
@@ -770,6 +809,8 @@ impl TaaPass {
             height,
             inv_view_proj,
             prev_view_proj,
+            near_plane,
+            far_plane,
         );
     }
 
@@ -845,6 +886,8 @@ impl TaaPass {
         height: u32,
         inv_view_proj: [[f32; 4]; 4],
         prev_view_proj: [[f32; 4]; 4],
+        near_plane: f32,
+        far_plane: f32,
     ) {
         let read_idx = self.scene_history_index as usize;
         let write_idx = 1 - read_idx;
@@ -863,10 +906,14 @@ impl TaaPass {
                 blend,
                 enabled: 1.0,
                 zoom_stability: zoom_stability.clamp(0.0, 1.0),
+                _pad_jitter: 0.0,
                 jitter: self.current_jitter,
                 disocclusion: DISOCCLUSION_THRESHOLD,
-                _pad0: 0.0,
-                _pad_align: [0.0; 3],
+                near_plane,
+                far_plane,
+                _pad_vec2: 0.0,
+                _pad_align: [0.0; 2],
+                _pad_mat4: [0.0; 2],
                 inv_view_proj,
                 prev_view_proj,
             }),

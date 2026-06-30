@@ -13,6 +13,7 @@ interface AppTooltipProps {
   delayHide?: number;
   float?: boolean;
   tooltipClassName?: string;
+  disableFlip?: boolean;
   children: ReactElement;
 }
 
@@ -20,22 +21,25 @@ function tooltipContainer(): HTMLElement {
   return document.body;
 }
 
-function buildPopperConfig(offset?: number) {
+function buildPopperConfig(offset?: number, disableFlip?: boolean) {
   const modifiers: Record<string, unknown>[] = [
     {
       name: 'flip',
-      options: {
-        fallbackPlacements: [
-          'top',
-          'top-start',
-          'top-end',
-          'bottom',
-          'bottom-start',
-          'bottom-end',
-          'left',
-          'right',
-        ],
-      },
+      enabled: !disableFlip,
+      options: disableFlip
+        ? undefined
+        : {
+            fallbackPlacements: [
+              'top',
+              'top-start',
+              'top-end',
+              'bottom',
+              'bottom-start',
+              'bottom-end',
+              'left',
+              'right',
+            ],
+          },
     },
     {
       name: 'preventOverflow',
@@ -68,11 +72,15 @@ export function AppTooltip({
   delayShow,
   delayHide,
   tooltipClassName,
+  disableFlip,
   children,
 }: AppTooltipProps) {
   const tooltipId = useId().replace(/:/g, '');
 
-  const popperConfig = useMemo(() => buildPopperConfig(offset), [offset]);
+  const popperConfig = useMemo(
+    () => buildPopperConfig(offset, disableFlip),
+    [offset, disableFlip],
+  );
 
   if (!content || !isValidElement(children)) {
     return children;

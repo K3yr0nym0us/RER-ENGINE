@@ -1439,6 +1439,9 @@ fn apply_loaded_proyect_3d_with_scene(
     send_event(&EngineEvent::ReflectionProbesChanged {
         enabled: state.reflection_probes_enabled,
     });
+    send_event(&EngineEvent::ReflectionRaytracingChanged {
+        enabled: state.reflection_raytracing_enabled,
+    });
     send_event(&EngineEvent::ShadowTierChanged {
         tier: state.shadow_tier.wire().to_string(),
     });

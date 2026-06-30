@@ -427,7 +427,22 @@ impl State {
         if self.taa.enabled {
             self.taa.begin_frame(false);
         }
-        let scene_uni = if self.uses_player_fps_viewport() {
+        let reflection_settings = {
+            let mut settings =
+                crate::config_3d::reflection_graphics::ReflectionSettings::from_tier(self.reflection_tier);
+            settings.probes_enabled = self.reflection_probes_enabled;
+            settings.raytracing_enabled = self.reflection_raytracing_enabled;
+            let ipc_prev = self.reflection_tier_effective_ipc.replace(self.reflection_tier);
+            if ipc_prev != Some(self.reflection_tier) {
+                crate::ipc::send_event(&crate::ipc::EngineEvent::ReflectionTierEffective {
+                    requested: self.reflection_tier.wire().to_string(),
+                    effective: self.reflection_tier.wire().to_string(),
+                    rt_available: Some(self.rt_hw_available),
+                });
+            }
+            settings
+        };
+        let mut scene_uni = if self.uses_player_fps_viewport() {
             build_scene_uniforms_from_view(
                 &self.camera,
                 self.camera_view_matrix(),
@@ -456,6 +471,7 @@ impl State {
                 self.scene_shadow_bias(),
             )
         };
+        scene_uni.depth_plane[2] = if reflection_settings.active() { 1.0 } else { 0.0 };
         self.queue
             .write_buffer(&self.scene_buffer, 0, bytemuck::cast_slice(&[scene_uni]));
         let zoom_stability = if self.uses_player_fps_viewport() {
@@ -465,20 +481,6 @@ impl State {
         };
         let shadows_enabled = scene_uni.light_color[3] > 0.5;
         let shadow_darkness = self.shadow_darkness;
-
-        let reflection_settings = {
-            let mut settings =
-                crate::config_3d::reflection_graphics::ReflectionSettings::from_tier(self.reflection_tier);
-            settings.probes_enabled = self.reflection_probes_enabled;
-            let ipc_prev = self.reflection_tier_effective_ipc.replace(self.reflection_tier);
-            if ipc_prev != Some(self.reflection_tier) {
-                crate::ipc::send_event(&crate::ipc::EngineEvent::ReflectionTierEffective {
-                    requested: self.reflection_tier.wire().to_string(),
-                    effective: self.reflection_tier.wire().to_string(),
-                });
-            }
-            settings
-        };
 
         // Probes: solo cuando el toggle de editor está activo (SSR puede seguir solo).
         let probe_frame = if reflection_settings.uses_probes() {
@@ -742,7 +744,7 @@ impl State {
                         resolve_target: None,
                         depth_slice: None,
                         ops: wgpu::Operations {
-                            // R32Float: distancia en metros (0 = cielo/sin geometría).
+                            // R32Float: GL NDC z (`clip.z/clip.w`) para SSR Bevy (1/z march).
                             load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
                             store: wgpu::StoreOp::Store,
                         },
@@ -916,19 +918,31 @@ impl State {
                 }
             }
 
-            // Albedo para SSR/RT: pase aparte (1 MRT) — el principal ya usa 32 B/muestra (límite wgpu).
+            // Albedo + world_pos para SSR (Bevy deferred `world_position`).
             if reflection_settings.active() {
+                let world_pos_view = self.taa.world_pos_view();
                 let mut albedo_pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("base-color-export-pass"),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: base_color_view,
-                        resolve_target: None,
-                        depth_slice: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                            store: wgpu::StoreOp::Store,
-                        },
-                    })],
+                    color_attachments: &[
+                        Some(wgpu::RenderPassColorAttachment {
+                            view: base_color_view,
+                            resolve_target: None,
+                            depth_slice: None,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                                store: wgpu::StoreOp::Store,
+                            },
+                        }),
+                        Some(wgpu::RenderPassColorAttachment {
+                            view: world_pos_view,
+                            resolve_target: None,
+                            depth_slice: None,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                                store: wgpu::StoreOp::Store,
+                            },
+                        }),
+                    ],
                     depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                         view: &self.depth_view,
                         depth_ops: Some(wgpu::Operations {
@@ -1047,6 +1061,7 @@ impl State {
         let depth_export_view = self.taa.depth_export_view();
         let velocity_view = self.taa.velocity_view();
         let base_color_view = self.taa.base_color_view();
+        let world_pos_view = self.taa.world_pos_view();
         let normal_roughness_view = self.taa.normal_roughness_view();
         let shadow_mask_view = self.taa.shadow_mask_view();
         let view_mat = self.camera_view_matrix();
@@ -1070,6 +1085,7 @@ impl State {
                     ambient_view,
                     surface_view: shadow_mask_view,
                     base_color_view,
+                    world_pos_view,
                     depth_export_view: &depth_export_view,
                     velocity_view,
                     inv_view_proj,
@@ -1124,6 +1140,8 @@ impl State {
                     self.size.height,
                     inv_vp,
                     prev_vp,
+                    self.camera.near,
+                    self.camera.far,
                 );
             }
             self.taa
@@ -1142,6 +1160,8 @@ impl State {
                 self.size.height,
                 inv_vp,
                 prev_vp,
+                self.camera.near,
+                self.camera.far,
             );
         } else {
             self.taa.present_scene(
@@ -1155,6 +1175,8 @@ impl State {
                 self.size.height,
                 inv_vp,
                 prev_vp,
+                self.camera.near,
+                self.camera.far,
             );
         }
 

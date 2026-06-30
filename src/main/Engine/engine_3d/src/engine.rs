@@ -309,12 +309,16 @@ pub struct State {
     pub(crate) reflection_tier: crate::config_3d::reflection_graphics::ReflectionTier,
     /// Captura y muestreo de reflection probes (toggle editor, independiente del SSR).
     pub(crate) reflection_probes_enabled: bool,
+    /// Ray tracing HW (toggle editor, independiente del tier).
+    pub(crate) reflection_raytracing_enabled: bool,
     /// Vista debug de reflejos (editor).
     pub(crate) reflection_debug_view:
         crate::config_3d::reflection_graphics::ReflectionDebugView,
     pub(crate) reflections: crate::reflections::ReflectionPass,
     /// Modo depuración SSR: emite logs del pipeline cada frame.
     pub(crate) ssr_debug_mode: bool,
+    /// GPU expone `EXPERIMENTAL_RAY_QUERY` (para UI / IPC).
+    pub(crate) rt_hw_available: bool,
     /// Último tier emitido por IPC (evita spam).
     pub(crate) reflection_tier_effective_ipc:
         Option<crate::config_3d::reflection_graphics::ReflectionTier>,

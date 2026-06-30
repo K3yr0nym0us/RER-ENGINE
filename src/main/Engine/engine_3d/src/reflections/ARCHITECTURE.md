@@ -4,9 +4,9 @@
 
 | Capa | Módulo / shader | Qué pinta |
 |------|-----------------|------------|
-| **A — Forward IBL** | `forward_ibl.wgsl`, `shader.wgsl` | Cubemap o entorno procedural en metales |
-| **B — SSR / RT** | `ssr.wgsl`, `rt_*.wgsl` | Detalle on-screen por píxel |
-| **C — Composite** | `composite.wgsl` | `detail = max(reflection − scene, 0)` |
+| **A — Forward IBL** | `forward_ibl.wgsl`, `shader.wgsl` | Cubemap solo si SSR no traza el píxel (rugosidad alta, etc.) |
+| **B — SSR / RT** | `ssr.wgsl`, `rt_*.wgsl` | Detalle on-screen; miss SSR → cubemap probe (como Bevy `EnvironmentMapLight`) |
+| **C — Composite** | `composite.wgsl` | Suma SSR sobre lit-composite |
 | **Captura** | `probes/capture.rs`, `fs_overlay` | Alimenta cubemaps (no es recepción) |
 
 Cambios en B pueden no verse si A ya cubre el mismo aspecto y C solo suma el delta positivo.

@@ -29,6 +29,7 @@ struct DebugUniforms {
 @group(0) @binding(7) var t_surface : texture_2d<f32>;
 @group(0) @binding(8) var t_direct : texture_2d<f32>;
 @group(0) @binding(9) var t_base_color : texture_2d<f32>;
+@group(0) @binding(10) var t_world_pos : texture_2d<f32>;
 
 @group(1) @binding(0) var t_probe_env : texture_cube_array<f32>;
 @group(1) @binding(1) var s_probe_env : sampler;
@@ -328,12 +329,80 @@ fn fs_main(in : VsOut) -> @location(0) vec4<f32> {
             }
         }
         case 32u: {
-            let t = trace_ssr_debug(in.uv);
-            if !t.eligible {
+            let m = ssr_march_inputs_at(in.uv);
+            if !m.eligible {
                 return vec4<f32>(0.0, 0.0, 0.0, 1.0);
             }
-            let refl = normalize(t.refl_dir);
-            return vec4<f32>(refl * 0.5 + vec3<f32>(0.5), 1.0);
+            return vec4<f32>(m.R_world * 0.5 + vec3<f32>(0.5), 1.0);
+        }
+        case 33u: {
+            let t = trace_ssr_debug(in.uv);
+            if !t.eligible {
+                return vec4<f32>(0.05, 0.05, 0.08, 1.0);
+            }
+            // Rojo: marcha acertó pero self-reject (corona si centro=verde).
+            if t.self_rejected {
+                return vec4<f32>(1.0, 0.0, 0.0, 1.0);
+            }
+            // Verde: hit SSR válido (centro esfera suele ser verde).
+            if t.found {
+                return vec4<f32>(0.0, 1.0, 0.0, 1.0);
+            }
+            // Azul: miss de marcha (corona si skip/rayo corto falla).
+            return vec4<f32>(0.0, 0.35, 1.0, 1.0);
+        }
+        case 34u: {
+            let t = trace_ssr_debug(in.uv);
+            if !t.eligible {
+                return vec4<f32>(0.05, 0.05, 0.08, 1.0);
+            }
+            // path_px existe tras cualquier march hit (también si luego fue rechazado).
+            if !t.march_hit {
+                return vec4<f32>(0.0, 0.0, 0.0, 1.0);
+            }
+            // 96 px ≈ blanco; <16 px ≈ autogolpe en la misma cáscara.
+            let v = clamp(t.path_px / 96.0, 0.0, 1.0);
+            return vec4<f32>(vec3<f32>(v), 1.0);
+        }
+        case 35u: {
+            // R_world exacto → `ssr_evaluate_bevy(m.R_world, m.start_cs, …)` (ver `ssr_march_inputs_at`).
+            let m = ssr_march_inputs_at(in.uv);
+            if !m.eligible {
+                return vec4<f32>(0.05, 0.05, 0.08, 1.0);
+            }
+            return vec4<f32>(m.R_world * 0.5 + vec3<f32>(0.5), 1.0);
+        }
+        case 36u: {
+            // hit_uv idéntico al que usa `ssr_reflected_radiance(hit.hit_uv)` en `ssr.wgsl`.
+            let t = trace_ssr_debug(in.uv);
+            if !t.eligible {
+                return vec4<f32>(0.05, 0.05, 0.08, 1.0);
+            }
+            if !t.found {
+                return vec4<f32>(0.0, 0.0, 0.0, 1.0);
+            }
+            let uv_pat = fract(t.hit_uv * 8.0);
+            return vec4<f32>(uv_pat.x, uv_pat.y, 0.0, 1.0);
+        }
+        case 37u: {
+            // Color exacto que entra al pass SSR: `ssr_reflected_radiance(hit.hit_uv)`.
+            let t = trace_ssr_debug(in.uv);
+            if !t.eligible {
+                return vec4<f32>(0.05, 0.05, 0.08, 1.0);
+            }
+            if !t.found {
+                return vec4<f32>(0.0, 0.0, 0.0, 1.0);
+            }
+            return vec4<f32>(ssr_reflected_radiance_at_hit(t.hit_uv), 1.0);
+        }
+        case 38u: {
+            // Δdepth: |clip.z/w desde P − prepass z| — azul≈0 (OK), rojo=desalineación (corona).
+            let delta = ssr_proj_depth_delta_at(in.uv);
+            if delta < 0.0 {
+                return vec4<f32>(0.05, 0.05, 0.08, 1.0);
+            }
+            let v = clamp(delta * 80.0, 0.0, 1.0);
+            return vec4<f32>(v, v * 0.35, 1.0 - v, 1.0);
         }
         default: {
             return textureSample(t_scene, s_linear, in.uv);

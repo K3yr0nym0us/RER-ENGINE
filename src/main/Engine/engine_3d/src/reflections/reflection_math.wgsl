@@ -1,5 +1,6 @@
 // Shared depth / projection math for SSR, RT and debug passes.
-// Must stay inverse-consistent with shader.wgsl `ndc_z_to_view_depth_m` / G-buffer export.
+// Depth prepass (R32Float): GL NDC z desde `position.z` Vulkan (near=-1, far=1).
+// La marcha Bevy usa NDC z invertido (near=1, far=0): ver `ssr_gl_ndc_z_to_bevy_march_z`.
 
 /// RTIOW hit interval lower bound (shadow acne / self-intersection).
 const REFL_RAY_T_MIN : f32 = 0.001;
@@ -38,7 +39,11 @@ fn refl_view_depth_m_from_world(
     if clip.w <= 0.0 {
         return -1.0;
     }
-    let ndc_z_gl = clip.z / clip.w;
+    return refl_view_depth_m_from_gl_ndc_z(clip.z / clip.w, near_plane, far_plane);
+}
+
+/// Profundidad lineal (m) desde NDC z OpenGL (`clip.z / clip.w`), coherente con `shader.wgsl`.
+fn refl_view_depth_m_from_gl_ndc_z(ndc_z_gl : f32, near_plane : f32, far_plane : f32) -> f32 {
     let ndc_z_vk = refl_gl_ndc_z_to_vk(ndc_z_gl);
     return (near_plane * far_plane) / (far_plane - ndc_z_vk * (far_plane - near_plane));
 }
@@ -53,15 +58,84 @@ fn refl_project_uv(world : vec3<f32>, view_proj : mat4x4<f32>) -> vec2<f32> {
 
 fn refl_world_pos_from_depth(
     uv : vec2<f32>,
-    view_depth_m : f32,
+    depth_prepass : f32,
     inv_view_proj : mat4x4<f32>,
     near_plane : f32,
     far_plane : f32,
 ) -> vec3<f32> {
-    let ndc_z_vk = refl_view_depth_to_ndc_z_vk(view_depth_m, near_plane, far_plane);
-    let ndc_z_gl = refl_vk_ndc_z_to_gl(ndc_z_vk);
-    let world_h = inv_view_proj * vec4<f32>(refl_uv_to_ndc_xy(uv), ndc_z_gl, 1.0);
+    _ = near_plane;
+    _ = far_plane;
+    // Prepass guarda GL NDC z; glam/wgpu `inv_view_proj` espera Vulkan NDC z [0,1].
+    let ndc_z_vk = refl_gl_ndc_z_to_vk(depth_prepass);
+    let world_h = inv_view_proj * vec4<f32>(refl_uv_to_ndc_xy(uv), ndc_z_vk, 1.0);
     return world_h.xyz / world_h.w;
+}
+
+/// Bevy deferred `world_position`: clip jitterado ÷ w + depth @builtin (misma matriz que depth prepass).
+/// NO usar `curr_stable_clip` (sin jitter): desalinea XY/Z en esferas con TAA activo.
+fn refl_world_pos_at_frag(
+    jitter_clip : vec4<f32>,
+    frag_ndc_z_vk : f32,
+    inv_view_proj : mat4x4<f32>,
+    near_plane : f32,
+    far_plane : f32,
+) -> vec3<f32> {
+    let ndc_xy = jitter_clip.xy / max(jitter_clip.w, 1e-8);
+    let uv = refl_ndc_xy_to_uv(ndc_xy);
+    return refl_world_pos_from_depth(
+        uv,
+        refl_vk_ndc_z_to_gl(frag_ndc_z_vk),
+        inv_view_proj,
+        near_plane,
+        far_plane,
+    );
+}
+
+/// Bevy `position_ndc_to_world(frag_coord_to_ndc(...))` para SSR (uv + prepass depth).
+fn refl_world_pos_from_prepass_uv(
+    uv : vec2<f32>,
+    depth_prepass : f32,
+    inv_view_proj : mat4x4<f32>,
+    near_plane : f32,
+    far_plane : f32,
+) -> vec3<f32> {
+    return refl_world_pos_from_depth(uv, depth_prepass, inv_view_proj, near_plane, far_plane);
+}
+
+/// Bevy `evaluate_ssr`: origen del rayo en NDC del píxel (xy desde uv; z = prepass GL NDC).
+fn ssr_ray_start_cs_at_uv(uv : vec2<f32>, depth_prepass : f32) -> vec3<f32> {
+    return vec3<f32>(refl_uv_to_ndc_xy(uv), depth_prepass);
+}
+
+/// Bevy/Lettier: refleja en view space y devuelve dirección world (misma convención que la proyección).
+fn ssr_reflection_world_view_based(
+    world_pos : vec3<f32>,
+    n_world   : vec3<f32>,
+    view      : mat4x4<f32>,
+    inv_view  : mat4x4<f32>,
+) -> vec3<f32> {
+    let pos_view = (view * vec4<f32>(world_pos, 1.0)).xyz;
+    let n_view = normalize((view * vec4<f32>(n_world, 0.0)).xyz);
+    let R_view = ssr_reflection_dir_view(pos_view, n_view);
+    return normalize((inv_view * vec4<f32>(R_view, 0.0)).xyz);
+}
+
+/// Proyecta P a NDC xy; z = prepass GL NDC (coherente con depth export, no clip.z/clip.w).
+fn ssr_ray_start_cs(world_pos : vec3<f32>, depth_prepass : f32, view_proj : mat4x4<f32>) -> vec3<f32> {
+    var cs = ssr_world_to_ndc(world_pos, view_proj);
+    cs.z = depth_prepass;
+    return cs;
+}
+
+/// Vacío / far plane del prepass Bevy (GL NDC z ≈ 1).
+fn refl_depth_prepass_invalid(depth_prepass : f32) -> bool {
+    return depth_prepass > 0.999;
+}
+
+/// Bevy `raymarch.wgsl`: NDC z con near=1, far=0 (WebGPU), desde GL NDC z de glam (`near=-1`).
+fn ssr_gl_ndc_z_to_bevy_march_z(gl_ndc_z : f32) -> f32 {
+    let vk_z = gl_ndc_z * 0.5 + 0.5;
+    return 1.0 - vk_z;
 }
 
 // ── Lettier SSR (screen-space reflection) ───────────────────────────────────
@@ -72,10 +146,88 @@ fn lettier_view_depth_from_view_pos(view_pos : vec3<f32>) -> f32 {
     return max(-view_pos.z, 1e-4);
 }
 
-/// Dirección del rayo reflejado en view space: `reflect(view_dir, normal_view)`.
-/// `view_dir` = superficie→cámara (`normalize(-position_view)`), coherente con `refl_mirror_dir`.
+/// Bevy `calculate_view` + `reflect(-V, N)`: `V` = superficie→cámara.
+/// Lettier equivalente en view space: `reflect(normalize(position_view), N_view)`.
+/// https://lettier.github.io/3d-game-shaders-for-beginners/screen-space-reflection.html
+/// https://github.com/bevyengine/bevy/blob/v0.15.2/crates/bevy_pbr/src/ssr/ssr.wgsl
+fn ssr_bevy_view_dir_world(cam_pos : vec3<f32>, world_pos : vec3<f32>) -> vec3<f32> {
+    return normalize(cam_pos - world_pos);
+}
+
+fn ssr_bevy_reflection_world(cam_pos : vec3<f32>, world_pos : vec3<f32>, n_world : vec3<f32>) -> vec3<f32> {
+    let V = ssr_bevy_view_dir_world(cam_pos, world_pos);
+    return normalize(reflect(-V, normalize(n_world)));
+}
+
+/// Dirección reflejada en view space (Bevy/Lettier: `reflect(normalize(position_view), N)`).
+fn ssr_reflection_dir_view(position_view : vec3<f32>, normal_view : vec3<f32>) -> vec3<f32> {
+    return normalize(reflect(normalize(position_view), normalize(normal_view)));
+}
+
 fn lettier_reflection_dir(view_dir : vec3<f32>, normal_view : vec3<f32>) -> vec3<f32> {
-    return normalize(reflect(view_dir, normalize(normal_view)));
+    _ = view_dir;
+    return ssr_reflection_dir_view(-view_dir, normal_view);
+}
+
+/// World → NDC xyz (post divide), Bevy `position_world_to_ndc`.
+fn ssr_world_to_ndc(world : vec3<f32>, view_proj : mat4x4<f32>) -> vec3<f32> {
+    let h = view_proj * vec4<f32>(world, 1.0);
+    let w_div = select(-1.0, 1.0, h.w >= 0.0) * max(abs(h.w), 1e-8);
+    return h.xyz / w_div;
+}
+
+/// Bevy `direction_world_to_clip`.
+fn ssr_direction_world_to_clip(world_dir : vec3<f32>, view_proj : mat4x4<f32>) -> vec4<f32> {
+    return view_proj * vec4<f32>(world_dir, 0.0);
+}
+
+/// Extremo del rayo SSR en NDC: marcha infinita en clip acotada al frustum (Bevy `depth_ray_march_to_ws_dir`).
+fn ssr_clip_ray_end_ndc(
+    start_cs : vec3<f32>,
+    world_dir : vec3<f32>,
+    view_proj : mat4x4<f32>,
+) -> vec3<f32> {
+    let dir_cs = ssr_direction_world_to_clip(world_dir, view_proj);
+    var end_cs4 = vec4<f32>(start_cs, 1.0) + dir_cs;
+    end_cs4 = end_cs4 / (select(-1.0, 1.0, end_cs4.w >= 0.0) * max(abs(end_cs4.w), 1e-10));
+
+    var delta_cs = end_cs4.xyz - start_cs;
+    let near_edge = select(
+        vec3<f32>(-1.0, -1.0, -1.0),
+        vec3<f32>(1.0, 1.0, 1.0),
+        delta_cs < vec3<f32>(0.0),
+    );
+    let dist_near = (near_edge - start_cs) / delta_cs;
+    let max_dist_near = max(max(dist_near.x, dist_near.y), dist_near.z);
+    var ray_start_cs = start_cs + delta_cs * max(0.0, max_dist_near);
+
+    delta_cs = end_cs4.xyz - ray_start_cs;
+    let far_edge = select(
+        vec3<f32>(-1.0, -1.0, -1.0),
+        vec3<f32>(1.0, 1.0, 1.0),
+        delta_cs >= vec3<f32>(0.0),
+    );
+    let dist_far = (far_edge - ray_start_cs) / delta_cs;
+    let min_dist_far = min(min(dist_far.x, dist_far.y), dist_far.z);
+    delta_cs *= min_dist_far;
+    return ray_start_cs + delta_cs;
+}
+
+/// Segmento UV del rayo SSR: extremos NDC vía Bevy clip-march (no view-space `ssr_clip_ray_end_view`).
+fn ssr_uv_ray_segment_bevy(
+    start_world : vec3<f32>,
+    R_world : vec3<f32>,
+    view_proj : mat4x4<f32>,
+) -> vec4<f32> {
+    let start_cs = ssr_world_to_ndc(start_world, view_proj);
+    let end_cs = ssr_clip_ray_end_ndc(start_cs, R_world, view_proj);
+    let start_uv = refl_ndc_xy_to_uv(start_cs.xy);
+    let end_uv = refl_ndc_xy_to_uv(end_cs.xy);
+    if start_uv.x < -0.5 || end_uv.x < -0.5 {
+        return vec4<f32>(0.0);
+    }
+    let dp = end_uv - start_uv;
+    return vec4<f32>(dp, length(dp), 0.0);
 }
 
 /// View → NDC con división perspectiva segura (Bevy `raymarch.wgsl`).
@@ -209,11 +361,9 @@ fn lettier_reflection_roughness(surface_roughness : f32) -> f32 {
     return clamp(surface_roughness, 0.0, 1.0);
 }
 
-/// RTIOW metal.rs: reflect(ray toward surface, outward normal).
+/// Bevy / forward IBL: `reflect(-V, N)` con `V` superficie→cámara.
 fn refl_mirror_dir(world_pos : vec3<f32>, cam_pos : vec3<f32>, n : vec3<f32>) -> vec3<f32> {
-    let view_dir = normalize(cam_pos - world_pos);
-    let nn = normalize(n);
-    return reflect(view_dir, nn);
+    return ssr_bevy_reflection_world(cam_pos, world_pos, n);
 }
 
 /// Dirección de muestreo del cubemap con parallax esférico (meta.w = radio de influencia).
@@ -436,31 +586,48 @@ fn ssr_hit_thickness_m(view_depth_m : f32, roughness : f32, ray_dir : vec3<f32>)
     return min(base * grazing, 2.0);
 }
 
-/// Desplaza el origen del rayo en view space para evitar auto-intersección.
+/// Desplaza el origen del rayo en view space para evitar auto-intersección (Bevy: thickness en origen).
 fn ssr_view_normal_bias_m(view_depth_m : f32) -> f32 {
     return clamp(view_depth_m * 0.002, 0.02, 0.12);
 }
 
-/// Durante la marcha coarse: ignora impactos en la misma lámina (suelo/alfombra coplanar)
-/// para seguir buscando geometría elevada (esferas, muros).
-fn ssr_coplanar_march_skip(
-    n_surf : vec3<f32>,
-    n_hit : vec3<f32>,
-    surf_depth_m : f32,
-    ray_depth_m : f32,
-    scene_depth_m : f32,
-) -> bool {
-    let n_dot = dot(normalize(n_surf), normalize(n_hit));
-    if n_dot < 0.82 {
-        return false;
-    }
-    let abs_d = abs(ray_depth_m - scene_depth_m);
-    let rel_d = abs_d / max(surf_depth_m, 0.05);
-    return rel_d < 0.08 || abs_d < 0.2;
+/// Posición coherente con prepass depth + sesgo hacia afuera para reflect().
+fn ssr_reflect_surface_at_uv(
+    uv : vec2<f32>,
+    depth_prepass : f32,
+    n_world : vec3<f32>,
+    inv_view_proj : mat4x4<f32>,
+    near_plane : f32,
+    far_plane : f32,
+) -> vec3<f32> {
+    let world_pos = refl_world_pos_from_depth(uv, depth_prepass, inv_view_proj, near_plane, far_plane);
+    let surf_depth_m = refl_view_depth_m_from_gl_ndc_z(depth_prepass, near_plane, far_plane);
+    let bias = ssr_view_normal_bias_m(surf_depth_m);
+    return world_pos + normalize(n_world) * bias;
 }
 
-/// Rechaza autoreflexión en objetos convexos (esferas): misma capa de profundidad,
-/// normales paralelas, o la normal del hit apunta hacia el punto de origen.
+/// Skip al inicio de la marcha: solo en rayos largos; rayos cortos (corona esfera) no se saltan.
+const SSR_MIN_MARCH_START_PX : f32 = 2.0;
+const SSR_SKIP_RAY_MIN_PX : f32 = 14.0;
+const SSR_SKIP_MAX_FRAC : f32 = 0.08;
+
+/// Avanza el origen de la marcha a lo largo del segmento NDC (post near-clip XY).
+fn ssr_march_skip_self_intersection_t(
+    start_cs : vec3<f32>,
+    end_cs : vec3<f32>,
+    tex_size : vec2<f32>,
+) -> f32 {
+    let start_uv = refl_ndc_xy_to_uv(start_cs.xy);
+    let end_uv = refl_ndc_xy_to_uv(end_cs.xy);
+    let ray_len_px = length((end_uv - start_uv) * tex_size);
+    // Rayos cortos/intermedios (corona esfera): skip=0 para no perder el primer hit válido.
+    if ray_len_px < SSR_SKIP_RAY_MIN_PX {
+        return 0.0;
+    }
+    return clamp(SSR_MIN_MARCH_START_PX / ray_len_px, 0.0, SSR_SKIP_MAX_FRAC);
+}
+
+/// Rechazo post-marcha: misma lámina / cáscara convexa (esferas).
 fn ssr_reject_self_reflection(
     surf_world : vec3<f32>,
     hit_world : vec3<f32>,
@@ -472,47 +639,23 @@ fn ssr_reject_self_reflection(
     hit_uv : vec2<f32>,
     tex_size : vec2<f32>,
 ) -> bool {
+    _ = surf_world;
+    _ = hit_world;
     let ns = normalize(n_surf);
     let nh = normalize(n_hit);
-    let to_hit = hit_world - surf_world;
-    let world_dist = length(to_hit);
     let abs_depth = abs(hit_depth_m - surf_depth_m);
     let rel_depth = abs_depth / max(surf_depth_m, 0.05);
     let n_dot = dot(ns, nh);
-
-    if rel_depth < 0.012 || abs_depth < 0.08 {
-        return true;
-    }
-
     let px_dist = length((hit_uv - surf_uv) * tex_size);
-    if px_dist < 4.0 {
+
+    // Mismo píxel / misma lámina: autoreflexión (equivalente a penetration≈0 en Bevy).
+    if px_dist < 2.0 && (abs_depth < 0.05 || rel_depth < 0.008) {
         return true;
     }
-    if px_dist < 16.0 && abs_depth < surf_depth_m * 0.02 + 0.06 {
+    // Misma cáscara convexa: solo hits casi coincidentes (no toda la corona 5–64 px).
+    if n_dot > 0.94 && px_dist < 10.0 && rel_depth < 0.012 {
         return true;
     }
-
-    // Misma lámina de profundidad con normales parecidas → misma cáscara (esfera).
-    if rel_depth < 0.045 && n_dot > 0.22 && px_dist < 140.0 {
-        return true;
-    }
-
-    let bubble_r = max(0.5, surf_depth_m * 0.09);
-    if world_dist < bubble_r && n_dot > 0.45 {
-        return true;
-    }
-
-    // En convexidades la normal del hit mira hacia el punto de reflexión (autoreflexión).
-    if world_dist > 1e-4 {
-        let face_along = dot(nh, to_hit / world_dist);
-        if world_dist < 0.8 && face_along > 0.18 {
-            return true;
-        }
-        if world_dist < 1.15 && face_along > 0.08 && n_dot > 0.35 {
-            return true;
-        }
-    }
-
     return false;
 }
 
@@ -901,7 +1044,11 @@ fn refl_screen_gbuffer_blend_weight(
         return 0.0;
     }
     let hit_px = vec2<i32>(sample_uv * gb_resolution);
-    let hit_depth_m = textureLoad(t_depth, hit_px, 0).r;
+    let hit_depth_m = refl_view_depth_m_from_gl_ndc_z(
+        textureLoad(t_depth, hit_px, 0).r,
+        near_plane,
+        far_plane,
+    );
     let clip = view_proj * vec4<f32>(hit_pos, 1.0);
     let ray_depth_m = (near_plane * far_plane)
         / (far_plane - refl_gl_ndc_z_to_vk(clip.z / clip.w) * (far_plane - near_plane));

@@ -909,7 +909,10 @@ impl State {
                     log::warn!("[reflexiones] tier IPC no reconocido: {tier}");
                 }
             }
-            EngineCommand::Only3d(EngineCommand3dOnly::SetReflectionRaytracing { .. }) => {} // RT disabled
+            EngineCommand::Only3d(EngineCommand3dOnly::SetReflectionRaytracing { enabled }) => {
+                log::info!("[reflexiones] IPC set_reflection_raytracing: {enabled}");
+                self.set_reflection_raytracing(enabled);
+            }
             EngineCommand::Only3d(EngineCommand3dOnly::SetReflectionProbes { enabled }) => {
                 log::info!("[reflexiones] IPC set_reflection_probes: {enabled}");
                 self.set_reflection_probes(enabled);

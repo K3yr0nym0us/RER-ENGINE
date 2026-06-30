@@ -219,8 +219,9 @@ pub fn log_depth_probe_cpu(
 
     let ndc_x = clip.x / clip_w;
     let ndc_y = clip.y / clip_w;
-    let ndc_z_gl = ndc_vk * 2.0 - 1.0;
-    let unproj = inv_vp * glam::Vec4::new(ndc_x, ndc_y, ndc_z_gl, 1.0);
+    // wgpu/Vulkan: `clip.z / clip.w` ya es NDC z [0,1] (coherente con `refl_gl_ndc_z_to_vk`).
+    let ndc_z_vk = clip_z / clip_w;
+    let unproj = inv_vp * glam::Vec4::new(ndc_x, ndc_y, ndc_z_vk, 1.0);
     let world_rt = unproj.truncate() / unproj.w;
     let clip2 = vp * glam::Vec4::new(world_rt.x, world_rt.y, world_rt.z, 1.0);
     let ndc2 = clip2.truncate() / clip2.w;
