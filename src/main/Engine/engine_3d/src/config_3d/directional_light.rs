@@ -224,44 +224,6 @@ impl State {
         }
     }
 
-    fn reflection_probe_texture_idx(&mut self, _roughness: f32) -> usize {
-        // F0 único para todas las sondas: la rugosidad solo vive en SurfacePbr, no en el albedo.
-        if let Some(idx) = self.reflection_probe_tex_idx[0] {
-            return idx;
-        }
-        const N: u32 = 4;
-        const BASE: f32 = 0.55;
-        let rr = (BASE * 255.0) as u8;
-        let gg = (BASE * 0.97 * 255.0) as u8;
-        let bb = (BASE * 0.92 * 255.0) as u8;
-        let mut px: Vec<u8> = Vec::with_capacity((N * N * 4) as usize);
-        for _ in 0..(N * N) {
-            px.extend_from_slice(&[rr, gg, bb, 255]);
-        }
-        let tex_idx = self.tex_layers.len();
-        let layer = self.texture_array.pack(&self.queue, &px, N, N);
-        self.tex_layers.push(layer);
-        self.reflection_probe_tex_idx[0] = Some(tex_idx);
-        tex_idx
-    }
-
-    pub(crate) fn apply_reflection_probe_visual(&mut self, id: crate::ecs::EntityId, roughness: f32) {
-        let mesh_idx = self.sun_icon_mesh_idx();
-        let tex_idx = self.reflection_probe_texture_idx(roughness);
-        if let Some(mc) = self.world.get_mut::<MeshComponent>(id) {
-            mc.mesh_idx = mesh_idx;
-            mc.tex_idx = tex_idx;
-        } else {
-            self.world.insert(
-                id,
-                MeshComponent {
-                    mesh_idx,
-                    tex_idx,
-                },
-            );
-        }
-    }
-
     /// Icono del sol seleccionable con gizmo; sin física. Idempotente al recargar `.save`.
     pub(crate) fn spawn_sun(&mut self, name: &str, position: [f32; 3], scale: [f32; 3]) {
         let label = self.resolve_entity_display_name(

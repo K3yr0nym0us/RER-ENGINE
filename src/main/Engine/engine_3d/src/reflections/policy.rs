@@ -2,7 +2,7 @@
 //!
 //! ## Capas (orden del frame)
 //! - **A — Forward IBL** (`shader.wgsl` / `forward_ibl.wgsl`): cubemap en superficies no trazables por SSR.
-//! - **B — SSR/RT** (`ssr.wgsl`, `rt_*.wgsl`): detalle on-screen; miss SSR samplea cubemap probe (Bevy env map).
+//! - **B — SSR/RT** (`ssr.wgsl`, `rt_*.wgsl`): detalle on-screen; miss SSR samplea cubemap probe.
 //! - **C — Composite** (`composite.wgsl`): suma SSR encima del lit-composite.
 //! - **Captura** (`probe_env` + `fs_overlay`): alimenta capa A; no es recepción.
 //!

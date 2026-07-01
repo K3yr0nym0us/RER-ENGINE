@@ -16,7 +16,7 @@ fn forward_probe_surface_eligible(inst_roughness: f32, surface_roughness: f32) -
     return inst_roughness >= 0.0 && surface_roughness <= 0.70;
 }
 
-/// Bevy: cubemap probe = indirecto de baja frecuencia; SSR = detalle en pantalla.
+/// Cubemap probe = indirecto de baja frecuencia; SSR = detalle en pantalla.
 /// Si el píxel es trazable por SSR, el cubemap se aplica en el miss SSR, no en forward.
 fn forward_defer_probe_to_ssr(
     ssr_active: bool,

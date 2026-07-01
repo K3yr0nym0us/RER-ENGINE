@@ -3,12 +3,43 @@
 # Resultado de aplicar el plan de diagnóstico estático + fixes mínimos en código.
 # Validación visual manual pendiente en editor (RefTest R0 centrado).
 
-version: 1
-updated: 2026-06-20
+version: 3
+updated: 2026-06-29
 
 reference:
   rtiow: https://raytracing.github.io/books/RayTracingInOneWeekend.html
   pipeline_doc: docs/Reflections_3D.yaml
+  subsystems:
+    ssr: docs/Reflections_SSR.yaml
+    probes: docs/Reflections_Probes.yaml
+    rt: docs/Reflections_RT.yaml
+
+post_quality_preset:
+  status: pass_manual
+  date: 2026-06-29
+  finding: |
+    Ultra + RT ON: MatComp 5 esferas alineadas visualmente con RT ON.
+    Fix espejo: REFL_MIRROR_ROUGHNESS_MAX passthrough SSR (CHROME/GLASS/WATER).
+    Low denoise = Opción A (OFF) hasta benchmark GPU.
+
+post_mirror_rt_fix:
+  status: pass_manual
+  date: 2026-06-29
+  finding: |
+    Esferas CHROME/GLASS/WATER con RT mostraban círculo cielo/probe; alfombra mismo material OK.
+    Causa: RT off-screen + compose dominado por probe en roughness ≤ 0.04 (sin ggx attenuation).
+    Fix: bypass RT en espejos; compose SSR min weight 0.55 cuando ssr_screen_hit.
+  files:
+    - reflection_math.wgsl
+    - rt_pipeline/rt_ray_query.wgsl
+    - rt_pipeline/rt_bvh.wgsl
+
+open_issues:
+  sphere_center_reflection:
+    status: open
+    symptom: centro de esfera convexas a veces no refleja (corona sí) — SSR, no RT espejo
+    debug_view: ssr_hit_class
+    next: revisar marcha skip / self-reject / grazing en ssr.wgsl + ssr_raymarch.wgsl
 
 audit_matrix:
   fase0_escena:
@@ -85,6 +116,10 @@ bugs_fixed:
   - id: gbuffer-docs-wrong
     summary: Reflections_3D.yaml MRT no coincidía con shader.wgsl
     files: [Reflections_3D.yaml]
+  - id: rt-mirror-sphere-probe
+    summary: RT probe/cielo en espejos curvos (esfera) con mismo material que alfombra plana
+    files: [reflection_math.wgsl, rt_ray_query.wgsl, rt_bvh.wgsl]
+    date: 2026-06-29
 
 limitations_v1_accepted:
   - RT AABB sin BLAS por triángulo
@@ -93,8 +128,9 @@ limitations_v1_accepted:
   - normal_roughness_view alias de velocity_view (mantenimiento)
 
 manual_test_steps:
+  - MatComp 5 esferas, tier Ultra, RT ON — CHROME/GLASS/WATER igual que STEEL/PLASTIC
   - tier High, centrar RefTest R0, debug trace_strength blanco en centro
-  - debug ssr_hits visible con otra esfera en pantalla
+  - debug ssr_hit_class en esferas (corona vs centro — issue abierto)
   - tier High, ángulo off-screen entre esferas, reflection_color con RT
   - comparar cubemap (5) vs ssr_final_composite (26) en R0
   - recorrer off→ultra y ver profiler en consola

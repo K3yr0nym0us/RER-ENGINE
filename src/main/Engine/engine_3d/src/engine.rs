@@ -220,11 +220,11 @@ pub struct State {
         HashMap<EntityId, crate::config_3d::preview_editor::PreviewEntityTransform>,
     pub(crate) preview_fp_view_snapshot:
         Option<crate::config_3d::preview_editor::PreviewFpEditorView>,
-    /// Velocidad del personaje (m/s), patrón Godot CharacterBody3D / Unity CharacterController.
+    /// Velocidad del personaje (m/s), patrón character controller.
     pub(crate) play_controller_velocity: GlamVec3,
     pub(crate) play_controller_on_floor: bool,
     pub(crate) play_controller_jump_queued: bool,
-    /// Detección de flanco (Godot `is_action_just_pressed`): true mientras el script SPACE
+    /// Detección de flanco de input: true mientras el script SPACE
     /// está pulsando este frame; comparado con `_prev` para detectar la transición.
     pub(crate) play_controller_jump_request_active: bool,
     pub(crate) play_controller_jump_request_prev: bool,
@@ -319,14 +319,14 @@ pub struct State {
     pub(crate) ssr_debug_mode: bool,
     /// GPU expone `EXPERIMENTAL_RAY_QUERY` (para UI / IPC).
     pub(crate) rt_hw_available: bool,
+    /// BVH CPU + TLAS hardware (actualizado cuando RT está activo).
+    pub(crate) rt_accel: crate::reflections::rt_pipeline::rt_accel::RtAccel,
     /// Último tier emitido por IPC (evita spam).
     pub(crate) reflection_tier_effective_ipc:
         Option<crate::config_3d::reflection_graphics::ReflectionTier>,
     pub(crate) probe_env: crate::reflections::probe_env::ProbeEnvPass,
     pub(crate) probe_capture_cursor: usize,
     pub(crate) probe_capture_burst_all: bool,
-    pub(crate) probe_cubemap_readback: crate::reflections::probes_pipeline::cubemap_readback::ProbeCubemapReadback,
-    pub(crate) probe_diag: crate::reflections::probes_pipeline::diagnostics::ProbeDiagState,
     pub(crate) probe_entity_slots: std::collections::HashMap<crate::ecs::EntityId, usize>,
     pub(crate) last_probe_capture_ids: Option<Vec<crate::ecs::EntityId>>,
     pub(crate) probe_cubemap_size: u32,
@@ -344,8 +344,6 @@ pub struct State {
     /// Mesh y textura compartidos del icono esférico del sol.
     pub(crate) sun_icon_mesh_idx: Option<usize>,
     pub(crate) sun_icon_tex_idx: Option<usize>,
-    /// Texturas de prueba de reflejos (R0 … R1); índice en `tex_layers`.
-    pub(crate) reflection_probe_tex_idx: [Option<usize>; 5],
     /// Cubo blanco compartido para `[EditorBox]` (plantilla y `.save`).
     pub(crate) editor_box_mesh_idx: Option<usize>,
     pub(crate) editor_box_tex_idx: Option<usize>,

@@ -611,7 +611,7 @@ pub(crate) fn load_gltf_preview_from_file(
         .collect();
     let upright = upright_quat_from_vertices_bounds(min, max, &sample);
     apply_quat_to_vertices(&mut vertices, upright);
-    // Jugador FP: pies en Y=0 (Godot CharacterBody3D + cápsula).
+    // Jugador FP: pies en Y=0 (cápsula de colisión).
     normalize_vertices_height_feet_pivot(&mut vertices, normalize_to_extent);
     recenter_vertices_to_local_feet(&mut vertices);
     let meta_fwd = forward_xz_from_node_world(world);

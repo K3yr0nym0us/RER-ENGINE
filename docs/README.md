@@ -2,7 +2,7 @@
 
 Índice de contratos y modelos del editor. Los checklists (`CHECKLIST*.md`) listan **solo trabajo pendiente**; lo ya implementado vive aquí.
 
-**Última revisión:** junio 2026
+**Última revisión:** junio 2026 (reflejos: quality preset, RT espejo → SSR, docs SSR/Probes/RT)
 
 ---
 
@@ -32,7 +32,11 @@
 
 | Documento | Contenido |
 |-----------|-----------|
-| [Reflections_3D.yaml](./Reflections_3D.yaml) | Reflejos SSR/RT/probes por tier, debug views, G-buffer, RT v2 |
+| [Reflections_3D.yaml](./Reflections_3D.yaml) | Índice reflejos: tiers, toggles, frame, IPC |
+| [Reflections_SSR.yaml](./Reflections_SSR.yaml) | Screen-space reflections por tier |
+| [Reflections_Probes.yaml](./Reflections_Probes.yaml) | Cubemap probes, captura, forward IBL |
+| [Reflections_RT.yaml](./Reflections_RT.yaml) | Ray tracing HW, quality preset, denoise |
+| [Reflections_Diagnostics.yaml](./Reflections_Diagnostics.yaml) | Auditoría y pruebas manuales |
 | [TAA_3D.yaml](./TAA_3D.yaml) | Anti-aliasing temporal: blend, jitter, pipeline, IPC |
 | [Shadows_3D.yaml](./Shadows_3D.yaml) | Shadow map único, tiers de resolución, IPC |
 

@@ -1,4 +1,4 @@
-//! Rasterizado TTF/OTF para UI del jugador (un bitmap + quad por cuadro, estilo Label de Godot).
+//! Rasterizado TTF/OTF para UI del jugador (un bitmap + quad por cuadro).
 
 use std::sync::Arc;
 
@@ -131,7 +131,7 @@ fn text_x_boundaries_in_bitmap(
     )
 }
 
-/// Layout en píxeles → raster → atlas → un quad con UV (como Godot `Label` / Slate font cache).
+/// Layout en píxeles → raster → atlas → un quad con UV.
 pub(crate) fn build_hud_label_glyph(
     font: &FontArc,
     text: &str,

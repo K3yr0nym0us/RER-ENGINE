@@ -155,30 +155,6 @@ impl RtAccel {
         self.tlas_instance_dirty = true;
     }
 
-    /// Libera aceleración HW (Low/Medium/Off).
-    pub fn release_hw(&mut self) {
-        self.hw_tlas = None;
-        self.blas_cache.clear();
-        self.skinned_blas_cache.clear();
-        self.tlas_geom_dirty = true;
-        self.tlas_instance_dirty = true;
-        self.last_tlas_slot_count = 0;
-    }
-
-    /// Limpia BVH CPU y materiales (p. ej. al bajar tier).
-    pub fn clear(&mut self) {
-        self.node_count = 0;
-        self.tri_count = 0;
-        self.hw_tri_count = 0;
-        self.instance_material_count = 0;
-        self.static_scene_hash = 0;
-        self.pose_hash = 0;
-        self.pending_bvh = None;
-        self.tlas_geom_dirty = true;
-        self.tlas_instance_dirty = true;
-        self.last_tlas_slot_count = 0;
-    }
-
     fn static_scene_hash(instances: &[RtInstanceDesc]) -> u64 {
         let mut h = DefaultHasher::new();
         for inst in instances {

@@ -32,20 +32,33 @@ impl State {
         let (_instance, surface, adapter) =
             init_gpu(window.clone(), EngineGpuProfile::ThreeD).await?;
 
+        let rt_features =
+            crate::reflections::rt_pipeline::rt_reflections_v2::request_rt_device_features(&adapter);
+        let rt_hw_available =
+            crate::reflections::rt_pipeline::rt_reflections_v2::adapter_supports_rt(&adapter);
+        let experimental = if rt_hw_available {
+            unsafe { wgpu::ExperimentalFeatures::enabled() }
+        } else {
+            wgpu::ExperimentalFeatures::disabled()
+        };
+
         let (device, queue) = adapter
             .request_device(
                 &wgpu::DeviceDescriptor {
                     label: Some("oxide-device"),
-                    required_features: wgpu::Features::empty(),
-                    required_limits: wgpu::Limits::default(),
+                    required_features: rt_features,
+                    required_limits:
+                        crate::reflections::rt_pipeline::rt_reflections_v2::request_rt_device_limits(
+                            &adapter,
+                            rt_hw_available,
+                        ),
                     memory_hints: Default::default(),
-                    experimental_features: wgpu::ExperimentalFeatures::disabled(),
+                    experimental_features: experimental,
                     trace: wgpu::Trace::Off,
                 },
             )
             .await
             .expect("no se pudo crear el Device");
-        let rt_hw_available = device.features().contains(wgpu::Features::EXPERIMENTAL_RAY_QUERY);
 
         let caps = surface.get_capabilities(&adapter);
         let format = caps
@@ -994,9 +1007,15 @@ impl State {
             size.height,
             &probe_env_bgl,
             1.0,
+            rt_hw_available,
         );
-        let probe_cubemap_readback = crate::reflections::probes_pipeline::cubemap_readback::ProbeCubemapReadback::new(&device);
-
+        let rt_accel =
+            crate::reflections::rt_pipeline::rt_accel::RtAccel::new(&device, rt_hw_available);
+        if rt_hw_available {
+            log::info!("[RT] Ray query Vulkan activo — RT v2 hardware + BVH fallback");
+        } else {
+            log::info!("[RT] Sin ray query HW — RT v2 usará solo BVH CPU");
+        }
         let probe_env = crate::reflections::probe_env::ProbeEnvPass::new(
             &device,
             crate::taa::MRT_LIT_FORMAT,
@@ -1222,12 +1241,11 @@ impl State {
             reflection_debug_view:
                 crate::config_3d::reflection_graphics::ReflectionDebugView::Final,
             reflections,
+            rt_accel,
             reflection_tier_effective_ipc: None,
             probe_env,
             probe_capture_cursor: 0,
             probe_capture_burst_all: false,
-            probe_cubemap_readback,
-            probe_diag: crate::reflections::probes_pipeline::diagnostics::ProbeDiagState::new(),
             probe_entity_slots: std::collections::HashMap::new(),
             last_probe_capture_ids: None,
             probe_cubemap_size: 8,
@@ -1244,7 +1262,6 @@ impl State {
             sun_entity: None,
             sun_icon_mesh_idx: None,
             sun_icon_tex_idx: None,
-            reflection_probe_tex_idx: [None; 5],
             editor_box_mesh_idx: None,
             editor_box_tex_idx: None,
             mat_val_label_mesh_idx: None,

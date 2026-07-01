@@ -109,17 +109,6 @@ pub struct SurfacePbr {
     pub opacity: f32,
 }
 
-impl SurfacePbr {
-    pub fn metal_probe(roughness: f32) -> Self {
-        Self {
-            roughness: roughness.clamp(0.0, 1.0),
-            metallic: 1.0,
-            ior: 0.0,
-            opacity: 1.0,
-        }
-    }
-}
-
 // ── Almacenamiento de componentes ─────────────────────────────────────────────
 
 /// Almacenamiento denso para un tipo de componente.

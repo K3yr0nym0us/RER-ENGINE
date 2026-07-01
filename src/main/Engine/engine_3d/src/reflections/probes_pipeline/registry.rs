@@ -11,8 +11,8 @@ use crate::reflections::probe_env::{ProbeMetaUniform, MAX_PROBES};
 
 pub const REFLECTION_PROBE_PATH_MARKER: &str = "[ReflectionProbe]";
 
-/// Radio de influencia por defecto al insertar una probe (metros). Mismo orden que la pelota física de plantilla.
-pub const DEFAULT_REFLECTION_PROBE_INFLUENCE_M: f32 = 0.3;
+/// Radio de influencia por defecto al insertar una probe (metros). Cubemap nearest sin corte duro.
+pub const DEFAULT_REFLECTION_PROBE_INFLUENCE_M: f32 = 20.0;
 
 /// Radio del gizmo de editor (metros); marcador fijo, no el volumen de influencia IBL.
 pub const REFLECTION_PROBE_GIZMO_RADIUS_M: f32 = 0.3;
@@ -103,15 +103,16 @@ pub fn probe_world_radius(scale_x_abs_half: f32) -> f32 {
     scale_x_abs_half.max(0.1)
 }
 
-/// Rellena `probe_meta.entries[slot]` con centro xyz + radio w.
+/// Rellena `probe_meta.entries[slot]` con centro xyz + flag activo en w (>0).
 pub fn build_probe_meta(
     probe_list: &[(EntityId, Vec3, ProbeSlot)],
     radius_for: impl Fn(EntityId) -> f32,
 ) -> ProbeMetaUniform {
     let mut probe_meta = ProbeMetaUniform::default();
     for &(id, center, slot) in probe_list {
-        let radius = radius_for(id);
-        probe_meta.entries[slot] = [center.x, center.y, center.z, radius];
+        let _radius = radius_for(id);
+        // w > 0 marca ranura activa; el muestreo usa nearest sin corte por distancia.
+        probe_meta.entries[slot] = [center.x, center.y, center.z, 1.0];
     }
     probe_meta
 }

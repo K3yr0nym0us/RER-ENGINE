@@ -92,7 +92,7 @@ pub struct ModelAsset {
     pub facing_forward_xz: glam::Vec2,
     /// Índice de nodo de escena por joint (`skin.joints`).
     pub joint_gltf_nodes: Vec<usize>,
-    /// glTF: padre en la escena y local de bind (cadena hasta raíz, estilo Godot/Unreal).
+    /// glTF: padre en la escena y local de bind (cadena hasta raíz).
     pub gltf_scene_parents: HashMap<usize, usize>,
     pub gltf_bind_node_local: HashMap<usize, Mat4>,
     /// Bind pose en IBM (nodos con TRS≈id); globals = inverse(IBM), no jerarquía de nodos.
@@ -358,7 +358,7 @@ pub fn load_model_asset_from_gltf(
     load_gltf_asset_from_file(file, normalize_to_extent)
 }
 
-/// Global de un joint glTF recorriendo la escena (Godot / Khronos: `globalTransform(joint)`).
+/// Global de un joint glTF recorriendo la escena (`globalTransform(joint)`).
 pub(crate) fn gltf_scene_global_for_joint(
     joint_node: usize,
     joint_locals: &[Mat4],
@@ -431,7 +431,7 @@ enum GltfJointOrigin {
     AnimNode,
 }
 
-/// Esqueleto unificado: varios `skin` en un GLB comparten nodos o usan listas distintas (Godot los fusiona).
+/// Esqueleto unificado: varios `skin` en un GLB comparten nodos o usan listas distintas.
 struct GltfUnifiedSkeleton {
     node_to_unified: HashMap<usize, usize>,
     joint_gltf_nodes: Vec<usize>,

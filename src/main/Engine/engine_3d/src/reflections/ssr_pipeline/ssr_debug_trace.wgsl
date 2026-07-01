@@ -1,4 +1,4 @@
-//! SSR debug — mismo path que `ssr.wgsl` (G-buffer world_pos + marcha Bevy).
+//! SSR debug — mismo path que `ssr.wgsl` (G-buffer world_pos + marcha SSR).
 
 fn uv_to_ndc_xy(uv : vec2<f32>) -> vec2<f32> {
     return refl_uv_to_ndc_xy(uv);
@@ -122,7 +122,7 @@ fn ssr_proj_depth_delta_at(surf_uv : vec2<f32>) -> f32 {
     return abs(proj_z - depth_prepass);
 }
 
-fn lettier_debug_box_blur(uv : vec2<f32>, spacing_px : f32) -> vec3<f32> {
+fn ssr_debug_box_blur(uv : vec2<f32>, spacing_px : f32) -> vec3<f32> {
     let texel = vec2<f32>(1.0) / u.gb_resolution;
     var acc = vec3<f32>(0.0);
     for (var oy = -3; oy <= 3; oy++) {
@@ -137,12 +137,12 @@ fn lettier_debug_box_blur(uv : vec2<f32>, spacing_px : f32) -> vec3<f32> {
 struct SsrMarchInputs {
     eligible    : bool,
     exit_reason : u32,
-    /// Idéntico al primer argumento de `ssr_evaluate_bevy` en `ssr.wgsl`.
+    /// Idéntico al primer argumento de `ssr_evaluate_trace` en `ssr.wgsl`.
     R_world     : vec3<f32>,
     start_cs    : vec3<f32>,
 }
 
-/// Misma cadena que `ssr.wgsl` antes de `ssr_evaluate_bevy` (P, N, R, start_cs).
+/// Misma cadena que `ssr.wgsl` antes de `ssr_evaluate_trace` (P, N, R, start_cs).
 fn ssr_march_inputs_at(surf_uv : vec2<f32>) -> SsrMarchInputs {
     var out : SsrMarchInputs;
     out.eligible = false;
@@ -168,7 +168,7 @@ fn ssr_march_inputs_at(surf_uv : vec2<f32>) -> SsrMarchInputs {
     }
 
     let world_pos = world_pos_at_uv(surf_uv, depth_prepass);
-    out.R_world = ssr_bevy_reflection_world(u.cam_pos.xyz, world_pos, n_world);
+    out.R_world = ssr_reflection_world(u.cam_pos.xyz, world_pos, n_world);
     out.start_cs = ssr_ray_start_cs(world_pos, depth_prepass, u.view_proj);
     out.eligible = true;
     return out;
@@ -226,12 +226,12 @@ fn trace_ssr_debug(surf_uv : vec2<f32>) -> SsrTraceDbg {
     let albedo = textureLoad(t_base_color, surf_px, 0).rgb;
 
     let world_pos = world_pos_at_uv(surf_uv, depth_at(surf_uv, textureDimensions(t_depth)));
-    out.view_dir = ssr_bevy_view_dir_world(u.cam_pos.xyz, world_pos);
+    out.view_dir = ssr_view_dir_world(u.cam_pos.xyz, world_pos);
     out.refl_dir = march_in.R_world;
     out.strength = refl_trace_strength(roughness, metallic, n_world, out.view_dir, albedo, 0.0);
     out.eligible = true;
 
-    let hit = ssr_evaluate_bevy(
+    let hit = ssr_evaluate_trace(
         march_in.R_world,
         march_in.start_cs,
         1.0,
@@ -273,6 +273,6 @@ fn compute_reflection_strength(uv : vec2<f32>) -> f32 {
     let metallic = textureLoad(t_direct, dir_px, 0).a;
     let albedo = textureLoad(t_base_color, surf_px, 0).rgb;
     let world_pos = world_pos_at_uv(uv, depth_prepass);
-    let V_world = ssr_bevy_view_dir_world(u.cam_pos.xyz, world_pos);
+    let V_world = ssr_view_dir_world(u.cam_pos.xyz, world_pos);
     return refl_trace_strength(roughness, metallic, n_world, V_world, albedo, 0.0);
 }

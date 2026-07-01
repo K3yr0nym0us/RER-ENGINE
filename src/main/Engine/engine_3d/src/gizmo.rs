@@ -143,7 +143,7 @@ pub fn build_axes(device: &wgpu::Device, length: f32) -> GizmoBuffer {
 /// Frustum visual de la cámara del jugador (modo editor 3D).
 ///
 /// Dibuja un pequeño cubo en la posición del ojo + una pirámide de líneas hasta
-/// un rectángulo lejano (estilo Godot/Unity al seleccionar una `Camera3D`).
+/// un rectángulo lejano (vista de cámara de juego seleccionada).
 /// Topología esperada: `LineList`. Vértices en espacio de mundo.
 pub fn build_fps_camera_frustum(
     device: &wgpu::Device,

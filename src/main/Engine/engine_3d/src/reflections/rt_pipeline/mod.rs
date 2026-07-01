@@ -4,7 +4,7 @@ pub(crate) mod rt_accel;
 pub(crate) mod rt_extensions;
 pub(crate) mod rt_material;
 pub(crate) mod rt_reflections_v2;
-pub(crate) mod rt_sparse;
+pub(crate) mod rt_scratch;
 pub(crate) mod skinned_blas;
 pub(crate) mod skinned_rt;
 pub(crate) mod tlas;

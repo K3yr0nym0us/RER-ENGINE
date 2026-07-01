@@ -9,9 +9,7 @@ pub(crate) const MAX_WORLD_RADIUS_3D: f32 = 500.0;
 const WORLD_BOUNDS_COLOR: [f32; 4] = [1.0, 0.35, 0.35, 0.55];
 
 /// Cielo interior esférico (también referencia para IBL/SSR procedural).
-pub(crate) const SKY_ZENITH: [f32; 3] = [0.42, 0.68, 0.95];
 pub(crate) const SKY_HORIZON: [f32; 3] = [0.72, 0.86, 0.98];
-pub(crate) const SKY_GROUND_HAZE: [f32; 3] = [0.58, 0.62, 0.68];
 
 const SKY_SHELL_INSET: f32 = 0.35;
 const SKY_SPHERE_RINGS: u32 = 32;
@@ -90,10 +88,6 @@ impl WorldBounds3D {
     pub(crate) fn from_legacy_box(width: f32, height: f32, depth: f32) -> Self {
         let r = (width.min(height).min(depth) * 0.5).max(MIN_WORLD_RADIUS_3D);
         Self::new(r)
-    }
-
-    pub(crate) fn sphere_radius(&self) -> f32 {
-        self.radius
     }
 
     /// Centro en el origen: el ecuador (y=0) coincide con el suelo.

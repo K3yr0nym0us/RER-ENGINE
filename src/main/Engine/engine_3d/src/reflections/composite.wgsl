@@ -44,7 +44,7 @@ fn fs_main(in : VsOut) -> @location(0) vec4<f32> {
     if refl.a < 0.001 {
         return base;
     }
-    // Bevy: suma SSR encima del lit-composite (peso por alpha del pass SSR).
+    // Suma SSR encima del lit-composite (peso por alpha del pass SSR).
     let refl_rgb = refl.rgb * u.strength * max(refl.a, 0.25);
     return vec4<f32>(base.rgb + refl_rgb, base.a);
 }

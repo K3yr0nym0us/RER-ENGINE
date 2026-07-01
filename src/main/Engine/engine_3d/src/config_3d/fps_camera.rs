@@ -166,7 +166,7 @@ impl State {
         Some((self.play_camera_eye_position, self.camera.yaw, self.camera.pitch))
     }
 
-    /// Eye offset SIEMPRE en world Y (estilo Godot Camera3D anclado al pivote del jugador).
+    /// Eye offset SIEMPRE en world Y (cámara FPS anclada al pivote del jugador).
     pub(crate) fn play_character_eye_world_offset(&self) -> Vec3 {
         Vec3::new(0.0, PLAY_CHARACTER_EYE_OFFSET, 0.0)
     }

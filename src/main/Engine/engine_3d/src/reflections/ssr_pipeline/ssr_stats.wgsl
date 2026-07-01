@@ -39,9 +39,9 @@ fn pack_lum(rgb : vec3<f32>) -> u32 {
     return u32(clamp(lum, 0.0, 1.0) * 10000.0);
 }
 
-/// COPIA MANUAL de `lettier_specular_amount` (reflection_math.wgsl:151)
+/// COPIA MANUAL de `ssr_specular_amount` (reflection_math.wgsl:151)
 /// SIN Schlick Fresnel (stats no tiene normal/view uniforms).
-/// Si cambias `lettier_specular_amount`, actualiza esta función también.
+/// Si cambias `ssr_specular_amount`, actualiza esta función también.
 fn stats_specular_amount(metallic : f32, roughness : f32, albedo_rgb : vec3<f32>) -> f32 {
     let r = clamp(roughness, 0.0, 1.0);
     let sharp = (1.0 - r) * (1.0 - r);
@@ -50,7 +50,7 @@ fn stats_specular_amount(metallic : f32, roughness : f32, albedo_rgb : vec3<f32>
     return f0_lum * sharp;
 }
 
-/// Vacío / far plane del prepass Bevy (GL NDC z ≈ 1).
+/// Vacío / far plane del depth prepass (GL NDC z ≈ 1).
 fn depth_prepass_invalid(depth_prepass : f32) -> bool {
     return depth_prepass > 0.999;
 }

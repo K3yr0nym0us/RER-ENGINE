@@ -362,7 +362,7 @@ fn log_ssr_debug_report(snapshot: &SsrDebugLogSnapshot, stats: &SsrStatsGpu) {
         avg_refl_lum,
     );
     log::info!(
-        "[reflexiones][ssr]   params Lettier: coarse_res={:.2} coarse_iters≤{} refine={} grosor={:.3}m \
+        "[reflexiones][ssr]   params SSR: coarse_res={:.2} coarse_iters≤{} refine={} grosor={:.3}m \
          dist_max={:.0}m rough≤{:.2} temporal_blend={:.2}",
         snapshot.coarse_resolution,
         snapshot.coarse_max_iters,
@@ -421,7 +421,7 @@ fn diagnose_ssr(
         }
         if stats.screen_hits > 0 && miss_vis_rate >= 1.0 {
             out.push(
-                "parte de impactos UV anulados por visibilidad Lettier (grazing, grosor o distancia)",
+                "parte de impactos UV anulados por visibilidad SSR (grazing, grosor o distancia)",
             );
         }
         if visible_rate > 0.0 {

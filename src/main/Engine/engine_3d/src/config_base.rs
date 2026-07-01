@@ -449,10 +449,6 @@ impl State {
         self.spawn_physics_ball("", position, [diameter, diameter, diameter], "dynamic");
     }
 
-    fn reflection_probe_entities(&self) -> Vec<crate::ecs::EntityId> {
-        crate::reflections::probes_pipeline::registry::reflection_probe_entities(&self.save_registry)
-    }
-
     pub(crate) fn is_reflection_probe_entity(&self, id: EntityId) -> bool {
         crate::reflections::probes_pipeline::registry::is_reflection_probe_entity(&self.save_registry, id)
     }

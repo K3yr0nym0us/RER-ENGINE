@@ -1,4 +1,4 @@
-//! Reflection probes dinámicos (estilo "reflection capture" de Unreal, adaptado a wgpu).
+//! Reflection probes dinámicos (captura cubemap por entidad, adaptado a wgpu).
 //!
 //! Cada esfera/probe captura el entorno alrededor de su centro en un **cubemap** (6 caras)
 //! que incluye suelo, esferas vecinas y el **jugador**. El shader principal samplea ese
@@ -36,7 +36,6 @@ const FACES: usize = 6;
 const MIP_LEVELS: u32 = 5;
 
 pub(crate) struct ProbeEnvPass {
-    face_size: u32,
     mip_levels: u32,
     cube: wgpu::Texture,
     /// Vistas D2 de cada (probe, cara), mip 0, como render target. Índice = probe*6 + cara.
@@ -420,7 +419,6 @@ impl ProbeEnvPass {
         });
 
         Self {
-            face_size,
             mip_levels,
             cube,
             face_views,
@@ -507,14 +505,6 @@ impl ProbeEnvPass {
                 pass.draw(0..3, 0..1);
             }
         }
-    }
-
-    pub(crate) fn face_size(&self) -> u32 {
-        self.face_size
-    }
-
-    pub(crate) fn cube_texture(&self) -> &wgpu::Texture {
-        &self.cube
     }
 
     pub(crate) fn sample_bind_group(&self) -> &wgpu::BindGroup {

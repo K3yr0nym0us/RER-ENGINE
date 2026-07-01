@@ -195,12 +195,12 @@ fn pack_velocity_normal(velocity: vec2<f32>, n: vec3<f32>) -> vec4<f32> {
 
 /// PBR-friendly: por defecto, las superficies son MATE (rugosidad alta) → sin reflejos.
 /// El SSR/RT solo afecta materiales con `SurfacePbr` explícito (rugosidad baja, metallic).
-/// Coherente con Unreal: el reflejo es opt-in por material, no aplicado a todo.
+/// El reflejo es opt-in por material (`SurfacePbr`), no aplicado a todo.
 fn resolve_surface_roughness(inst_roughness: f32) -> f32 {
     return select(0.9, inst_roughness, inst_roughness >= 0.0);
 }
 
-/// Bevy prepass: GL NDC z desde `position.z` Vulkan [0,1] (coherente con reconstrucción world).
+/// Depth prepass: GL NDC z desde `position.z` Vulkan [0,1] (coherente con reconstrucción world).
 fn pack_depth_export(ndc_z_vk: f32) -> vec4<f32> {
     return vec4<f32>(ndc_z_vk * 2.0 - 1.0, 0.0, 0.0, 0.0);
 }
@@ -221,12 +221,12 @@ fn evaluate_scene(
     gbuffer_transparent: bool,
 ) -> SceneFragOut {
     // Export coherente con SSR legacy: clip_pos.z (interpolado) como ndc_z Vulkan.
-    // Export Bevy depth prepass: GL NDC z (SSR usa 1/z en raymarch).
+    // Export depth prepass: GL NDC z (SSR usa 1/z en raymarch).
     let view_depth_m = ndc_z_to_view_depth_m(in.clip_pos.z);
     let curr_ndc = in.curr_stable_clip.xy / in.curr_stable_clip.w;
     let prev_ndc = in.prev_clip_pos.xy / in.prev_clip_pos.w;
     let velocity = (curr_ndc - prev_ndc) * vec2<f32>(0.5, 0.5);
-    // Bevy: `world_position` del G-buffer por píxel (no varying del vértice).
+    // `world_position` del G-buffer por píxel (no varying del vértice).
     let frag_world = refl_world_pos_at_frag(
         in.jitter_clip,
         in.clip_pos.z,
@@ -302,8 +302,7 @@ fn evaluate_scene(
     // PBR metálico: en metales NO hay diffuse Lambertiano. Lo que da el "color" es la
     // reflexión del entorno tintada por F0 = albedo. Sin IBL real, se aproxima con un
     // entorno procedural (gradiente cielo→suelo) que da el look cromado base; la composite
-    // SSR/RT añade reflejos reales encima cuando los hay. Mismo enfoque que Unreal usa
-    // como fallback cuando la captura de entorno falla (forums.unrealengine.com).
+    // SSR/RT añade reflejos reales encima cuando los hay (fallback procedural si no hay probe).
     if surface_metallic > 0.5 {
         let l = scene_light_dir_norm();
         let ndotl = max(dot(n, l), 0.0);

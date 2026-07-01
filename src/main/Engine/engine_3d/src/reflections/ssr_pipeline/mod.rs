@@ -1,5 +1,4 @@
-//! Screen-space reflections — Bevy `bevy_pbr/src/ssr`.
-//! https://github.com/bevyengine/bevy/tree/main/crates/bevy_pbr/src/ssr
+//! Screen-space reflections (SSR).
 
 pub(crate) mod ssr_settings;
 mod stats_readback;
@@ -37,13 +36,13 @@ pub struct SsrUniforms {
     _pad2: f32,
 }
 
-/// Near para escala de grosor en marcha Bevy (`depth_thickness / near`).
-/// Bevy lee `clip_from_view[3][2]`; en glam RH GL suele ser −1 → usamos `camera.near`.
+/// Near para escala de grosor en marcha SSR (`depth_thickness / near`).
+/// Lee `clip_from_view[3][2]`; en glam RH GL suele ser −1 → usamos `camera.near`.
 fn ssr_march_near_plane(view_proj: Mat4, view: Mat4, camera_near: f32) -> f32 {
     let clip_from_view = view_proj * view.inverse();
-    let bevy_elem = clip_from_view.w_axis.z.abs();
-    if bevy_elem > 0.01 && (bevy_elem - camera_near).abs() < camera_near * 0.25 {
-        bevy_elem
+    let clip_near_z = clip_from_view.w_axis.z.abs();
+    if clip_near_z > 0.01 && (clip_near_z - camera_near).abs() < camera_near * 0.25 {
+        clip_near_z
     } else {
         camera_near
     }

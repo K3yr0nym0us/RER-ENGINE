@@ -3,10 +3,15 @@
 pub(crate) mod probe_env;
 pub(crate) mod policy;
 pub(crate) mod probes_pipeline;
+pub(crate) mod rt_pipeline;
 pub(crate) mod ssr_pipeline;
 pub(crate) mod frame;
+pub(crate) mod quality_preset;
 pub(crate) mod settings;
 pub(crate) mod ssil;
+
+use rt_pipeline::rt_accel::RtAccel;
+use rt_pipeline::rt_reflections_v2::RtReflectionPassV2;
 
 use std::time::Instant;
 
@@ -45,7 +50,8 @@ struct DenoiseUniforms {
     normal_sigma: f32,
     luminance_sigma: f32,
     gbuffer_scale: f32,
-    _pad: [f32; 2],
+    radius: f32,
+    _pad: f32,
 }
 
 #[repr(C)]
@@ -106,6 +112,8 @@ pub struct ReflectionPass {
     reflection_hit_uv_history_views: [TextureView; 2],
     _reflection_history_textures: [wgpu::Texture; 2],
     reflection_history_views: [TextureView; 2],
+    _reflection_rt_scratch_texture: wgpu::Texture,
+    reflection_rt_scratch_view: TextureView,
     _composite_scratch_texture: wgpu::Texture,
     composite_scratch_view: TextureView,
     reflection_history_index: u8,
@@ -124,6 +132,9 @@ pub struct ReflectionPass {
     _denoise_scratch_texture: wgpu::Texture,
     denoise_scratch_view: TextureView,
     denoise_bind_group: wgpu::BindGroup,
+    rt_pass: RtReflectionPassV2,
+    rt_hw_available: bool,
+    rt_tlas_log_cooldown: u32,
     ssil_pass: SsilPass,
     reflection_frame_index: u32,
     screen_fraction: f32,
@@ -141,6 +152,7 @@ impl ReflectionPass {
         height: u32,
         probe_sample_bgl: &wgpu::BindGroupLayout,
         screen_fraction: f32,
+        rt_hw_available: bool,
     ) -> Self {
         let linear_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("reflection-linear"),
@@ -168,7 +180,7 @@ impl ReflectionPass {
             create_hit_uv_texture(device, refl_width, refl_height, "reflection-hit-uv-hist-0");
         let (hit_uv_h1, hit_uv_hv1) =
             create_hit_uv_texture(device, refl_width, refl_height, "reflection-hit-uv-hist-1");
-        let (_reflection_rt_scratch_texture, _reflection_rt_scratch_view) =
+        let (reflection_rt_scratch_texture, reflection_rt_scratch_view) =
             create_rt_scratch_texture(device, color_format, refl_width, refl_height);
         let (composite_scratch_texture, composite_scratch_view) =
             create_composite_scratch_texture(device, color_format, width, height);
@@ -485,7 +497,8 @@ impl ReflectionPass {
                 normal_sigma: 12.0,
                 luminance_sigma: 8.0,
                 gbuffer_scale: 1.0,
-                _pad: [0.0; 2],
+                radius: 3.0,
+                _pad: 0.0,
             }),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
@@ -543,6 +556,8 @@ impl ReflectionPass {
             reflection_hit_uv_history_views: [hit_uv_hv0, hit_uv_hv1],
             _reflection_history_textures: [h0, h1],
             reflection_history_views: [hv0, hv1],
+            _reflection_rt_scratch_texture: reflection_rt_scratch_texture,
+            reflection_rt_scratch_view,
             _composite_scratch_texture: composite_scratch_texture,
             composite_scratch_view,
             reflection_history_index: 0,
@@ -561,6 +576,15 @@ impl ReflectionPass {
             _denoise_scratch_texture: denoise_scratch_texture,
             denoise_scratch_view,
             denoise_bind_group,
+            rt_pass: RtReflectionPassV2::new(
+                device,
+                color_format,
+                refl_width,
+                refl_height,
+                rt_hw_available,
+            ),
+            rt_hw_available,
+            rt_tlas_log_cooldown: 0,
             ssil_pass: SsilPass::new(device, color_format, refl_width, refl_height),
             reflection_frame_index: 0,
             screen_fraction,
@@ -593,6 +617,7 @@ impl ReflectionPass {
             self.height,
             &self.probe_sample_bgl,
             screen_fraction,
+            self.rt_hw_available,
         );
     }
 
@@ -608,6 +633,7 @@ impl ReflectionPass {
             height.max(1),
             &self.probe_sample_bgl,
             self.screen_fraction,
+            self.rt_hw_available,
         );
     }
 
@@ -634,6 +660,7 @@ impl ReflectionPass {
         world_pos_view: &TextureView,
         depth_export_view: &TextureView,
         velocity_view: &TextureView,
+        accel: &RtAccel,
         inv_view_proj: Mat4,
         view_proj: Mat4,
         view: Mat4,
@@ -641,11 +668,12 @@ impl ReflectionPass {
         near_plane: f32,
         far_plane: f32,
         clear_color: wgpu::Color,
+        rt_available: bool,
         probe_bind_group: &wgpu::BindGroup,
-        _shadow_view: &TextureView,
-        _shadow_sampler: &wgpu::Sampler,
-        _scene_uniforms: &SceneUniforms,
-        _texture_bind_group: &wgpu::BindGroup,
+        shadow_view: &TextureView,
+        shadow_sampler: &wgpu::Sampler,
+        scene_uniforms: &SceneUniforms,
+        texture_bind_group: &wgpu::BindGroup,
         ssr_debug_mode: bool,
     ) -> bool {
         if !settings.active() {
@@ -694,15 +722,96 @@ impl ReflectionPass {
         );
         self.profiler.ssr_ms = t_ssr.elapsed().as_secs_f32() * 1000.0;
 
-        // RT disabled
+        let t_rt = Instant::now();
+        let rt_w = (self.width as f32 * settings.rt_resolution_scale).max(1.0) as u32;
+        let rt_h = (self.height as f32 * settings.rt_resolution_scale).max(1.0) as u32;
+        if settings.uses_rt() && rt_available {
+            if !accel.has_traceable_geometry() {
+                if self.rt_tlas_log_cooldown == 0 {
+                    log::warn!("[RT] Sin geometría trazable (BVH/TLAS vacío)");
+                    self.rt_tlas_log_cooldown = 180;
+                } else {
+                    self.rt_tlas_log_cooldown -= 1;
+                }
+            } else if self.rt_tlas_log_cooldown == 0 {
+                if accel.hw_active() {
+                    log::info!(
+                        "[RT] TLAS HW: {} triángulos, {} instancias (SSR+RT híbrido, res {:.0}%)",
+                        accel.hw_tri_count,
+                        accel.instance_material_count,
+                        settings.rt_resolution_scale * 100.0,
+                    );
+                } else {
+                    log::info!(
+                        "[RT] BVH CPU: {} nodos, {} triángulos (SSR+RT híbrido, res {:.0}%)",
+                        accel.node_count,
+                        accel.tri_count,
+                        settings.rt_resolution_scale * 100.0,
+                    );
+                }
+                log::info!(
+                    "[RT] Tip: vista debug ssr_miss_green o reflejo de objeto detrás de la cámara"
+                );
+                self.rt_tlas_log_cooldown = 180;
+            } else {
+                self.rt_tlas_log_cooldown -= 1;
+            }
+            if accel.has_traceable_geometry() {
+                self.rt_pass.dispatch(
+                    device,
+                    queue,
+                    encoder,
+                    accel,
+                    &self.reflection_view,
+                    &self.reflection_rt_scratch_view,
+                    &self.reflection_hit_uv_view,
+                    depth_export_view,
+                    normal_roughness_view,
+                    lit_scene_view,
+                    direct_view,
+                    surface_view,
+                    base_color_view,
+                    inv_view_proj,
+                    view_proj,
+                    cam_pos,
+                    near_plane,
+                    far_plane,
+                    settings,
+                    rt_w,
+                    rt_h,
+                    gbuffer_scale,
+                    frame_index,
+                    probe_bind_group,
+                    shadow_view,
+                    shadow_sampler,
+                    scene_uniforms,
+                    texture_bind_group,
+                );
+                encoder.copy_texture_to_texture(
+                    wgpu::TexelCopyTextureInfo {
+                        texture: &self._reflection_rt_scratch_texture,
+                        mip_level: 0,
+                        origin: wgpu::Origin3d::ZERO,
+                        aspect: wgpu::TextureAspect::All,
+                    },
+                    wgpu::TexelCopyTextureInfo {
+                        texture: &self._reflection_texture,
+                        mip_level: 0,
+                        origin: wgpu::Origin3d::ZERO,
+                        aspect: wgpu::TextureAspect::All,
+                    },
+                    wgpu::Extent3d {
+                        width: self.refl_width.max(1),
+                        height: self.refl_height.max(1),
+                        depth_or_array_layers: 1,
+                    },
+                );
+            }
+        }
+        self.profiler.rt_ms = t_rt.elapsed().as_secs_f32() * 1000.0;
 
         let t1 = Instant::now();
-        let temporal_blend = settings.temporal_blend
-            * if settings.uses_rt() {
-                1.0
-            } else {
-                0.55
-            };
+        let temporal_blend = settings.temporal_blend;
         if temporal_blend > 0.0 {
             // Ping-pong: `reflection_history_index` apunta SIEMPRE al último resultado
             // (lo que lee el composite). Acumula SSR+RT mezclados en `reflection_view`.
@@ -778,16 +887,16 @@ impl ReflectionPass {
 
             // Denoiser bilateral: solo con RT (en SSR-only suaviza demasiado el detalle).
             let t_denoise = Instant::now();
-            if debug_view == ReflectionDebugView::Final
-                && settings.uses_rt()
-            {
+            if debug_view == ReflectionDebugView::Final && settings.uses_denoise() {
+                let denoise_profile = settings.denoise_profile().expect("uses_denoise");
                 let denoise_u = DenoiseUniforms {
                     resolution: [self.refl_width as f32, self.refl_height as f32],
-                    depth_sigma: 4.0,
-                    normal_sigma: 12.0,
-                    luminance_sigma: 8.0,
+                    depth_sigma: denoise_profile.depth_sigma,
+                    normal_sigma: denoise_profile.normal_sigma,
+                    luminance_sigma: denoise_profile.luminance_sigma,
                     gbuffer_scale,
-                    _pad: [0.0; 2],
+                    radius: denoise_profile.radius as f32,
+                    _pad: 0.0,
                 };
                 queue.write_buffer(
                     &self.denoise_uniform_buffer,
@@ -1286,63 +1395,6 @@ fn sampler_entry(binding: u32, linear: bool) -> wgpu::BindGroupLayoutEntry {
 
 fn ssr_blur_enabled_for_debug_shader(_debug_view: ReflectionDebugView) -> f32 {
     1.0
-}
-
-fn make_ssr_bind_group(
-    device: &Device,
-    layout: &wgpu::BindGroupLayout,
-    uniforms: &wgpu::Buffer,
-    depth: &TextureView,
-    normal_roughness: &TextureView,
-    lit_scene: &TextureView,
-    direct: &TextureView,
-    surface: &TextureView,
-    base_color: &TextureView,
-    linear: &wgpu::Sampler,
-    nearest: &wgpu::Sampler,
-) -> wgpu::BindGroup {
-    device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("ssr-bg"),
-        layout,
-        entries: &[
-            wgpu::BindGroupEntry {
-                binding: 0,
-                resource: uniforms.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 1,
-                resource: wgpu::BindingResource::TextureView(depth),
-            },
-            wgpu::BindGroupEntry {
-                binding: 2,
-                resource: wgpu::BindingResource::TextureView(normal_roughness),
-            },
-            wgpu::BindGroupEntry {
-                binding: 3,
-                resource: wgpu::BindingResource::TextureView(lit_scene),
-            },
-            wgpu::BindGroupEntry {
-                binding: 4,
-                resource: wgpu::BindingResource::Sampler(linear),
-            },
-            wgpu::BindGroupEntry {
-                binding: 5,
-                resource: wgpu::BindingResource::Sampler(nearest),
-            },
-            wgpu::BindGroupEntry {
-                binding: 6,
-                resource: wgpu::BindingResource::TextureView(direct),
-            },
-            wgpu::BindGroupEntry {
-                binding: 7,
-                resource: wgpu::BindingResource::TextureView(surface),
-            },
-            wgpu::BindGroupEntry {
-                binding: 8,
-                resource: wgpu::BindingResource::TextureView(base_color),
-            },
-        ],
-    })
 }
 
 fn make_temporal_bind_group(

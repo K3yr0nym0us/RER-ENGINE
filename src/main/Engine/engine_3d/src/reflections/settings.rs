@@ -1,5 +1,7 @@
 //! Nivel global de reflejos (Off / Low / Medium / High) y presets internos.
 
+use super::quality_preset::{DenoiseProfile, ReflectionQualityPreset, RtMaterialQuality};
+
 /// El pass RT se ejecuta solo con el switch manual del editor (`raytracing_enabled`).
 pub const RT_PIPELINE_AVAILABLE: bool = true;
 
@@ -28,7 +30,7 @@ pub enum ReflectionDebugView {
     SsrHitClass,
     /// Escala de grises: distancia del hit en px (`path_px`); negro=miss, blanco=hit lejano.
     SsrPathPx,
-    /// RGB = `R_world * 0.5 + 0.5` — dirección exacta pasada a `ssr_evaluate_bevy`.
+    /// RGB = `R_world * 0.5 + 0.5` — dirección exacta pasada a `ssr_evaluate_trace`.
     SsrMarchReflDir,
     /// `fract(hit_uv * 8)` — UV de muestreo en hits SSR válidos (post-reject, como `ssr.wgsl`).
     SsrHitUv,
@@ -134,7 +136,10 @@ pub struct ReflectionSettings {
     pub max_steps: u32,
     pub binary_steps: u32,
     pub max_distance_m: f32,
+    /// Fracción del viewport para SSR / temporal / denoise.
     pub screen_fraction: f32,
+    /// Fracción del viewport para dispatch RT (hoy igual que `screen_fraction`).
+    pub rt_resolution_scale: f32,
     pub temporal_blend: f32,
     pub max_roughness_to_trace: f32,
     /// Toggle de editor: captura cubemap + IBL forward (independiente del SSR).
@@ -178,23 +183,46 @@ impl ReflectionTier {
             Self::Ultra => 1024,
         }
     }
+
+    /// Fracción lineal del viewport para el pass de reflejos (SSR hoy; RT usará la misma escala al cablearse).
+    /// | Tier   | Resolución |
+    /// | Low    | 25%        |
+    /// | Medium | 50%        |
+    /// | High   | 75%        |
+    /// | Ultra  | 100%       |
+    pub fn reflection_screen_fraction(self) -> f32 {
+        match self {
+            Self::Off => 1.0,
+            Self::Low => 0.25,
+            Self::Medium => 0.50,
+            Self::High => 0.75,
+            Self::Ultra => 1.0,
+        }
+    }
 }
 
 impl ReflectionSettings {
+    pub fn quality_preset(self) -> Option<ReflectionQualityPreset> {
+        ReflectionQualityPreset::from_tier(self.tier)
+    }
+
     pub fn from_tier(tier: ReflectionTier) -> Self {
-        // SSR por tier (Lettier):
-        // | Tier   | Resolución | Ray march | Binary |
-        // | Low    | 1/4        | 12        | 1      |
-        // | Medium | 1/2        | 24        | 3      |
-        // | High   | 1/2        | 48        | 5      |
-        // | Ultra  | Full       | 512       | 7      |
+        let preset = ReflectionQualityPreset::from_tier(tier);
+        let screen_fraction = preset
+            .map(|p| p.ssr_resolution_scale)
+            .unwrap_or_else(|| tier.reflection_screen_fraction());
+        let rt_resolution_scale = preset
+            .map(|p| p.rt_resolution_scale)
+            .unwrap_or(screen_fraction);
+        let max_distance_m = preset.map(|p| p.max_trace_distance_m).unwrap_or(0.0);
         match tier {
             ReflectionTier::Off => Self {
                 tier,
                 max_steps: 0,
                 binary_steps: 0,
-                max_distance_m: 0.0,
-                screen_fraction: 1.0,
+                max_distance_m,
+                screen_fraction,
+                rt_resolution_scale,
                 temporal_blend: 0.0,
                 max_roughness_to_trace: 1.0,
                 probes_enabled: false,
@@ -205,8 +233,9 @@ impl ReflectionSettings {
                 tier,
                 max_steps: 16,
                 binary_steps: 3,
-                max_distance_m: 50.0,
-                screen_fraction: 0.50,
+                max_distance_m,
+                screen_fraction,
+                rt_resolution_scale,
                 temporal_blend: 0.18,
                 max_roughness_to_trace: 0.70,
                 probes_enabled: false,
@@ -217,8 +246,9 @@ impl ReflectionSettings {
                 tier,
                 max_steps: 32,
                 binary_steps: 5,
-                max_distance_m: 50.0,
-                screen_fraction: 0.50,
+                max_distance_m,
+                screen_fraction,
+                rt_resolution_scale,
                 temporal_blend: 0.22,
                 max_roughness_to_trace: 0.70,
                 probes_enabled: false,
@@ -229,8 +259,9 @@ impl ReflectionSettings {
                 tier,
                 max_steps: 64,
                 binary_steps: 5,
-                max_distance_m: 100.0,
-                screen_fraction: 0.75,
+                max_distance_m,
+                screen_fraction,
+                rt_resolution_scale,
                 temporal_blend: 0.42,
                 max_roughness_to_trace: 0.70,
                 probes_enabled: false,
@@ -241,8 +272,9 @@ impl ReflectionSettings {
                 tier,
                 max_steps: 128,
                 binary_steps: 7,
-                max_distance_m: 100.0,
-                screen_fraction: 1.0,
+                max_distance_m,
+                screen_fraction,
+                rt_resolution_scale,
                 temporal_blend: 0.45,
                 max_roughness_to_trace: 0.85,
                 probes_enabled: false,
@@ -250,6 +282,26 @@ impl ReflectionSettings {
                 rt_blend: 0.85,
             },
         }
+    }
+
+    pub fn max_bounces(self) -> u32 {
+        self.quality_preset().map(|p| p.max_bounces).unwrap_or(0)
+    }
+
+    pub fn rt_shadow_rays(self) -> bool {
+        self.quality_preset()
+            .map(|p| p.shadow_rays)
+            .unwrap_or(false)
+    }
+
+    pub fn rt_material_quality(self) -> RtMaterialQuality {
+        self.quality_preset()
+            .map(|p| p.material_quality)
+            .unwrap_or(RtMaterialQuality::Full)
+    }
+
+    pub fn denoise_profile(self) -> Option<DenoiseProfile> {
+        self.quality_preset().and_then(|p| p.denoise)
     }
 
     pub fn active(self) -> bool {
@@ -264,22 +316,27 @@ impl ReflectionSettings {
         RT_PIPELINE_AVAILABLE && self.raytracing_enabled && self.active()
     }
 
-    /// Lettier `resolution`: fracción de píxeles del rayo en pantalla (0–1).
-    pub fn ssr_coarse_resolution(self) -> f32 {
-        crate::reflections::ssr_pipeline::ssr_settings::ssr_coarse_resolution(self.tier)
+    /// Denoise bilateral en reflejos: solo con RT activo y perfil definido por tier.
+    pub fn uses_denoise(self) -> bool {
+        self.active() && self.uses_rt() && self.denoise_profile().is_some()
     }
 
-    /// Tope de iteraciones del coarse pass (Lettier `int(delta)` acotado por tier).
+    /// Fracción de píxeles del rayo SSR en pantalla (0–1).
+    pub fn ssr_coarse_resolution(self) -> f32 {
+        self.screen_fraction
+    }
+
+    /// Tope de iteraciones del coarse pass SSR.
     pub fn ssr_coarse_max_iters(self) -> u32 {
         self.max_steps
     }
 
-    /// Lettier `thickness`: tolerancia del test de profundidad (metros). Guía usa 0.5 por defecto.
+    /// Tolerancia del test de profundidad SSR (metros).
     pub fn ssr_thickness_m(self) -> f32 {
         crate::reflections::ssr_pipeline::ssr_settings::ssr_thickness_m(self.tier)
     }
 
-    /// Lettier `steps`: iteraciones del paso de refinamiento binario.
+    /// Iteraciones del refinamiento binario SSR.
     pub fn ssr_binary_steps(self) -> u32 {
         crate::reflections::ssr_pipeline::ssr_settings::ssr_binary_steps(self.tier)
     }
@@ -290,6 +347,7 @@ pub const DEFAULT_REFLECTION_TIER: ReflectionTier = ReflectionTier::Off;
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ReflectionProfilerMs {
     pub ssr_ms: f32,
+    pub rt_ms: f32,
     pub temporal_ms: f32,
     pub denoise_ms: f32,
     pub composite_ms: f32,

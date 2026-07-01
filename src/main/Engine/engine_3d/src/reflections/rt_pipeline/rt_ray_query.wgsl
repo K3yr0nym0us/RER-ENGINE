@@ -12,10 +12,8 @@ struct RtUniforms {
     frame_index     : u32,
     material_count  : u32,
     gbuffer_scale   : f32,
-    _pad0           : f32,
+    material_quality: f32,
 }
-
-const RT_TILE_SIZE : u32 = 16u;
 
 @group(0) @binding(0) var<uniform> u : RtUniforms;
 @group(0) @binding(1) var tlas : acceleration_structure;
@@ -27,11 +25,10 @@ const RT_TILE_SIZE : u32 = 16u;
 @group(0) @binding(7) var t_direct : texture_2d<f32>;
 @group(0) @binding(8) var t_surface : texture_2d<f32>;
 @group(0) @binding(9) var t_base_color : texture_2d<f32>;
-@group(0) @binding(10) var<storage, read> tile_list : array<u32>;
-@group(0) @binding(11) var<storage, read> tile_count_buf : array<u32>;
-@group(0) @binding(12) var<storage, read> instance_materials : array<RtInstanceMaterial>;
-@group(0) @binding(13) var<storage, read> hw_triangles : array<RtTri>;
-@group(0) @binding(14) var<storage, read> instance_tri_base : array<u32>;
+@group(0) @binding(10) var<storage, read> instance_materials : array<RtInstanceMaterial>;
+@group(0) @binding(11) var<storage, read> hw_triangles : array<RtTri>;
+@group(0) @binding(12) var<storage, read> instance_tri_base : array<u32>;
+@group(0) @binding(13) var t_ssr_hit_uv : texture_2d<f32>;
 
 @group(1) @binding(0) var t_probe_env : texture_cube_array<f32>;
 @group(1) @binding(1) var s_probe_env : sampler;
@@ -119,6 +116,7 @@ fn rt_resolve_hit(
         u.near_plane,
         u.far_plane,
         rt_occlusion,
+        u.material_quality,
     );
 }
 
@@ -225,6 +223,7 @@ fn rt_shade_pixel_at(gid : vec2<u32>) {
     let px = vec2<i32>(i32(gid.x), i32(gid.y));
     let uv = (vec2<f32>(gid) + vec2<f32>(0.5)) / u.resolution;
     let ssr = textureLoad(t_ssr, px, 0);
+    let ssr_screen_hit = textureLoad(t_ssr_hit_uv, px, 0).z > 0.5;
     let gb_px = vec2<i32>(vec2<f32>(px) * u.gbuffer_scale);
 
     let depth_prepass = textureLoad(t_depth, gb_px, 0).r;
@@ -246,23 +245,28 @@ fn rt_shade_pixel_at(gid : vec2<u32>) {
 
     let world_pos = world_pos_from_depth(uv, depth_prepass);
     let v = normalize(u.cam_pos.xyz - world_pos);
-    let seed = refl_blue_noise_seed(u.frame_index, uv);
-    let T = refl_tangent(n);
-    let B = refl_bitangent(n, T);
-    let H_local = ggx_sample_ndf(roughness, seed);
-    let H = normalize(H_local.x * T + H_local.y * B + H_local.z * n);
-    var trace_dir = reflect(v, H);
-    if rt_light.rt_flags.x > 0.5 && src_ior > 1.0 && metallic < 0.5 {
-        let eta = 1.0 / src_ior;
-        trace_dir = refl_refract_dir(normalize(world_pos - u.cam_pos.xyz), n, eta);
+    var trace_dir = refl_rt_primary_trace_dir(u.cam_pos.xyz, world_pos, n, roughness, u.frame_index, uv);
+    var H = normalize(n + trace_dir);
+    if roughness > 0.04 {
+        let seed = refl_blue_noise_seed(u.frame_index, uv);
+        let T = refl_tangent(n);
+        let B = refl_bitangent(n, T);
+        let H_local = ggx_sample_ndf(roughness, seed);
+        H = normalize(H_local.x * T + H_local.y * B + H_local.z * n);
     }
     if dot(trace_dir, trace_dir) <= 1e-8 {
-        textureStore(reflection_out, px, ssr);
+        textureStore(reflection_out, px, refl_compose_rt_ssr(vec3<f32>(0.0), false, ssr, ssr_screen_hit, u.rt_blend, 0.0));
         return;
     }
 
-    let strength = refl_trace_strength(roughness, metallic, n, v, albedo, 0.0);
+    let strength = refl_trace_strength(roughness, metallic, n, v, albedo, src_ior);
     if strength < 0.005 {
+        textureStore(reflection_out, px, refl_compose_rt_ssr(vec3<f32>(0.0), false, ssr, ssr_screen_hit, u.rt_blend, strength));
+        return;
+    }
+
+    // Espejo perfecto: RT off-screen → probe/cielo; SSR ya trae entidades (esfera vs alfombra).
+    if roughness <= REFL_MIRROR_ROUGHNESS_MAX {
         textureStore(reflection_out, px, ssr);
         return;
     }
@@ -271,7 +275,7 @@ fn rt_shade_pixel_at(gid : vec2<u32>) {
     let ray_origin = world_pos + n * normal_bias;
     let hw_hit = trace_rt_hw(ray_origin, trace_dir, u.max_distance_m);
     if !hw_hit.found {
-        textureStore(reflection_out, px, ssr);
+        textureStore(reflection_out, px, refl_compose_rt_ssr(vec3<f32>(0.0), false, ssr, ssr_screen_hit, u.rt_blend, strength));
         return;
     }
 
@@ -310,9 +314,7 @@ fn rt_shade_pixel_at(gid : vec2<u32>) {
     );
 
     var final_col = scene_col;
-    // GGX importance sampling BRDF/PDF weight for primary reflection ray
-    let is_refrac_primary = rt_light.rt_flags.x > 0.5 && src_ior > 1.0 && metallic < 0.5;
-    if !is_refrac_primary {
+    if roughness > 0.04 {
         let ndotv_val = max(dot(n, v), 1e-8);
         let ndotl_val = max(dot(n, trace_dir), 1e-8);
         let ndoth_val = max(dot(n, H), 1e-8);
@@ -334,8 +336,8 @@ fn rt_shade_pixel_at(gid : vec2<u32>) {
             let sec_B = refl_bitangent(hit_normal, sec_T);
             let sec_H_local = ggx_sample_ndf(hit_rough, sec_seed);
             let sec_H = normalize(sec_H_local.x * sec_T + sec_H_local.y * sec_B + sec_H_local.z * hit_normal);
-            let sec_incident = normalize(hit_pos - u.cam_pos.xyz);
-            let sec_dir = reflect(sec_incident, sec_H);
+            let sec_incident = normalize(u.cam_pos.xyz - hit_pos);
+            let sec_dir = reflect(-sec_incident, sec_H);
             let sec_hit = trace_rt_hw(sec_origin, sec_dir, u.max_distance_m * 0.5);
             if sec_hit.found {
                 let sec_pos = sec_origin + sec_dir * sec_hit.t;
@@ -415,34 +417,14 @@ fn rt_shade_pixel_at(gid : vec2<u32>) {
         }
     }
 
-    let rt_weight = strength * u.rt_blend;
-    if rt_weight < 0.01 {
-        textureStore(reflection_out, px, ssr);
-        return;
-    }
-
-    let out_rgb = mix(ssr.rgb, final_col, rt_weight);
-    let out_a = max(ssr.a, rt_weight);
-    textureStore(reflection_out, px, vec4<f32>(out_rgb, out_a));
+    textureStore(
+        reflection_out,
+        px,
+        refl_compose_rt_ssr(final_col, true, ssr, ssr_screen_hit, u.rt_blend, strength),
+    );
 }
 
 @compute @workgroup_size(8, 8)
 fn cs_main(@builtin(global_invocation_id) gid : vec3<u32>) {
     rt_shade_pixel_at(gid.xy);
-}
-
-@compute @workgroup_size(8, 8)
-fn cs_sparse_main(
-    @builtin(workgroup_id) wg_id : vec3<u32>,
-    @builtin(local_invocation_id) lid : vec3<u32>,
-) {
-    let tile_idx = wg_id.x;
-    let active_tiles = tile_count_buf[0];
-    if tile_idx >= active_tiles {
-        return;
-    }
-    let tx = tile_list[tile_idx * 2u];
-    let ty = tile_list[tile_idx * 2u + 1u];
-    let pixel = vec2<u32>(tx * RT_TILE_SIZE + lid.x, ty * RT_TILE_SIZE + lid.y);
-    rt_shade_pixel_at(pixel);
 }

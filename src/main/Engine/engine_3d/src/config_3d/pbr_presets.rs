@@ -22,7 +22,6 @@ pub struct PbrMaterialPreset {
     pub label_tag: &'static str,
     pub metallic: f32,
     pub roughness_min: f32,
-    pub roughness_max: f32,
     /// Linear RGB 0–1
     pub base_color: [f32; 3],
     /// 0 = metal; >1 = dielectric IOR (glass ~1.5, water ~1.33).
@@ -32,7 +31,6 @@ pub struct PbrMaterialPreset {
     pub albedo_kind: MatValAlbedoKind,
 }
 
-pub const MAT_VAL_SPHERES_PER_ROW: usize = 5;
 pub const MAT_VAL_ROW_COUNT: usize = 5;
 
 pub const MATERIAL_VALIDATION_ROWS: [PbrMaterialPreset; MAT_VAL_ROW_COUNT] = [
@@ -42,7 +40,6 @@ pub const MATERIAL_VALIDATION_ROWS: [PbrMaterialPreset; MAT_VAL_ROW_COUNT] = [
         label_tag: "CHROME",
         metallic: 1.0,
         roughness_min: 0.0,
-        roughness_max: 0.05,
         base_color: [0.08, 0.08, 0.09],
         ior: 0.0,
         opacity: 1.0,
@@ -54,7 +51,6 @@ pub const MATERIAL_VALIDATION_ROWS: [PbrMaterialPreset; MAT_VAL_ROW_COUNT] = [
         label_tag: "STEEL",
         metallic: 1.0,
         roughness_min: 0.2,
-        roughness_max: 0.5,
         base_color: [0.52, 0.54, 0.56],
         ior: 0.0,
         opacity: 1.0,
@@ -66,7 +62,6 @@ pub const MATERIAL_VALIDATION_ROWS: [PbrMaterialPreset; MAT_VAL_ROW_COUNT] = [
         label_tag: "PLASTIC",
         metallic: 0.0,
         roughness_min: 0.05,
-        roughness_max: 0.2,
         base_color: [0.82, 0.18, 0.22],
         ior: 0.0,
         opacity: 1.0,
@@ -78,7 +73,6 @@ pub const MATERIAL_VALIDATION_ROWS: [PbrMaterialPreset; MAT_VAL_ROW_COUNT] = [
         label_tag: "GLASS",
         metallic: 0.0,
         roughness_min: 0.0,
-        roughness_max: 0.1,
         base_color: [0.92, 0.94, 0.96],
         ior: 1.5,
         opacity: 0.38,
@@ -90,22 +84,12 @@ pub const MATERIAL_VALIDATION_ROWS: [PbrMaterialPreset; MAT_VAL_ROW_COUNT] = [
         label_tag: "WATER",
         metallic: 0.0,
         roughness_min: 0.0,
-        roughness_max: 0.05,
         base_color: [0.08, 0.28, 0.42],
         ior: 1.33,
         opacity: 0.48,
         albedo_kind: MatValAlbedoKind::Water,
     },
 ];
-
-/// Roughness for column `col` in `0..cols` (left = min, right = max).
-pub fn preset_roughness_at_column(preset: &PbrMaterialPreset, col: usize, cols: usize) -> f32 {
-    if cols <= 1 {
-        return preset.roughness_min;
-    }
-    let t = col as f32 / (cols - 1) as f32;
-    (preset.roughness_min + t * (preset.roughness_max - preset.roughness_min)).clamp(0.0, 1.0)
-}
 
 pub fn surface_pbr_from_preset(preset: &PbrMaterialPreset, roughness: f32) -> SurfacePbr {
     SurfacePbr {
@@ -124,10 +108,6 @@ pub fn instance_visual_alpha(pbr: &SurfacePbr) -> f32 {
         alpha = 0.35;
     }
     alpha
-}
-
-pub fn uses_transparent_pass(pbr: &SurfacePbr) -> bool {
-    instance_visual_alpha(pbr) < 0.99
 }
 
 fn linear_to_u8(c: f32) -> u8 {

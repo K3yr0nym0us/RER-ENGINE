@@ -10,7 +10,7 @@ use crate::engine::SceneUniforms;
 use crate::reflections::probe_env::ProbeEnvPass;
 use super::rt_accel::RtAccel;
 use super::rt_extensions;
-use super::rt_sparse::RtSparseDispatch;
+use super::rt_scratch::RtScratchCopy;
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -30,7 +30,7 @@ struct RtUniforms {
     frame_index: u32,
     material_count: u32,
     gbuffer_scale: f32,
-    _pad: f32,
+    material_quality: f32,
 }
 
 const _: () = assert!(std::mem::size_of::<RtUniforms>() == 200);
@@ -51,7 +51,7 @@ struct RtHwUniforms {
     frame_index: u32,
     material_count: u32,
     gbuffer_scale: f32,
-    _pad0: f32,
+    material_quality: f32,
 }
 
 const _: () = assert!(std::mem::size_of::<RtHwUniforms>() == 192);
@@ -108,11 +108,11 @@ enum RtPipelineMode {
 
 pub struct RtReflectionPassV2 {
     mode: RtPipelineMode,
-    bvh_sparse_pipeline: wgpu::ComputePipeline,
+    bvh_pipeline: wgpu::ComputePipeline,
     bvh_bgl: wgpu::BindGroupLayout,
-    hw_sparse_pipeline: Option<wgpu::ComputePipeline>,
+    hw_pipeline: Option<wgpu::ComputePipeline>,
     hw_bgl: Option<wgpu::BindGroupLayout>,
-    sparse: RtSparseDispatch,
+    scratch: RtScratchCopy,
     uniform_buffer: wgpu::Buffer,
     hw_uniform_buffer: wgpu::Buffer,
     bvh_bind_group: wgpu::BindGroup,
@@ -149,8 +149,7 @@ impl RtReflectionPassV2 {
                 texture_entry(9, false),
                 texture_entry(10, false),
                 storage_buffer_entry(11, true),
-                storage_buffer_entry(12, true),
-                storage_buffer_entry(13, true),
+                texture_entry(12, true),
             ],
         });
         let probe_bgl = ProbeEnvPass::sample_bind_group_layout(device);
@@ -168,18 +167,18 @@ impl RtReflectionPassV2 {
             bind_group_layouts: &[Some(&bvh_bgl), Some(&probe_bgl), Some(&rt_light_bgl), Some(&texture_bgl)],
             immediate_size: 0,
         });
-        let bvh_sparse_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("rt-bvh-sparse-pipeline"),
+        let bvh_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("rt-bvh-pipeline"),
             layout: Some(&bvh_pl),
             module: &bvh_shader,
-            entry_point: Some("cs_sparse_main"),
+            entry_point: Some("cs_main"),
             compilation_options: Default::default(),
             cache: None,
         });
 
-        let sparse = RtSparseDispatch::new(device, color_format);
+        let scratch = RtScratchCopy::new(device, color_format);
 
-        let (hw_sparse_pipeline, hw_bgl) = if hw_available {
+        let (hw_pipeline, hw_bgl) = if hw_available {
             let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: Some("rt-ray-query"),
                 source: wgpu::ShaderSource::Wgsl(
@@ -207,8 +206,7 @@ impl RtReflectionPassV2 {
                     storage_buffer_entry(10, true),
                     storage_buffer_entry(11, true),
                     storage_buffer_entry(12, true),
-                    storage_buffer_entry(13, true),
-                    storage_buffer_entry(14, true),
+                    texture_entry(13, true),
                 ],
             });
             let pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -216,20 +214,20 @@ impl RtReflectionPassV2 {
                 bind_group_layouts: &[Some(&bgl), Some(&probe_bgl), Some(&rt_light_bgl), Some(&texture_bgl)],
                 immediate_size: 0,
             });
-            let sparse_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                label: Some("rt-hw-sparse-pipeline"),
+            let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("rt-hw-pipeline"),
                 layout: Some(&pl),
                 module: &shader,
-                entry_point: Some("cs_sparse_main"),
+                entry_point: Some("cs_main"),
                 compilation_options: Default::default(),
                 cache: None,
             });
-            (Some(sparse_pipeline), Some(bgl))
+            (Some(pipeline), Some(bgl))
         } else {
             (None, None)
         };
 
-        let mode = if hw_sparse_pipeline.is_some() {
+        let mode = if hw_pipeline.is_some() {
             RtPipelineMode::HardwareRayQuery
         } else {
             RtPipelineMode::Bvh
@@ -253,7 +251,7 @@ impl RtReflectionPassV2 {
                 frame_index: 0,
                 material_count: 0,
                 gbuffer_scale: 1.0,
-                _pad: 0.0,
+                material_quality: 0.0,
             }),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
@@ -274,7 +272,7 @@ impl RtReflectionPassV2 {
                 frame_index: 0,
                 material_count: 0,
                 gbuffer_scale: 1.0,
-                _pad0: 0.0,
+                material_quality: 0.0,
             }),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
@@ -295,19 +293,6 @@ impl RtReflectionPassV2 {
         let dummy_material = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("rt-dummy-material"),
             size: 32,
-            usage: wgpu::BufferUsages::STORAGE,
-            mapped_at_creation: false,
-        });
-
-        let dummy_tile_list = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("rt-dummy-tile-list"),
-            size: 16,
-            usage: wgpu::BufferUsages::STORAGE,
-            mapped_at_creation: false,
-        });
-        let dummy_tile_count = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("rt-dummy-tile-count"),
-            size: 16,
             usage: wgpu::BufferUsages::STORAGE,
             mapped_at_creation: false,
         });
@@ -339,18 +324,17 @@ impl RtReflectionPassV2 {
             &dummy_texture_view(device, color_format, width, height),
             &dummy_texture_view(device, color_format, width, height),
             &dummy_texture_view(device, color_format, width, height),
-            &dummy_tile_list,
-            &dummy_tile_count,
             &dummy_material,
+            &dummy_texture_view(device, color_format, width, height),
         );
 
         Self {
             mode,
-            bvh_sparse_pipeline,
+            bvh_pipeline,
             bvh_bgl,
-            hw_sparse_pipeline,
+            hw_pipeline,
             hw_bgl,
-            sparse,
+            scratch,
             uniform_buffer,
             hw_uniform_buffer,
             bvh_bind_group,
@@ -372,6 +356,7 @@ impl RtReflectionPassV2 {
         accel: &RtAccel,
         ssr_view: &TextureView,
         output_view: &TextureView,
+        ssr_hit_uv_view: &TextureView,
         depth_view: &TextureView,
         normal_roughness_view: &TextureView,
         ambient_view: &TextureView,
@@ -400,7 +385,7 @@ impl RtReflectionPassV2 {
 
         self.width = width.max(1);
         self.height = height.max(1);
-        self.sparse.resize(self.width, self.height);
+        self.scratch.resize(self.width, self.height);
 
         let step_size = (settings.max_distance_m / settings.max_steps.max(1) as f32)
             .clamp(0.05, 0.25);
@@ -429,19 +414,10 @@ impl RtReflectionPassV2 {
         }
         let rt_light_bind_group = self.rt_light_bind_group.as_ref().expect("rt-light-bg");
 
-        self.sparse.prepare_frame(
-            device,
-            queue,
-            encoder,
-            ssr_view,
-            output_view,
-            depth_view,
-            normal_roughness_view,
-            surface_view,
-            direct_view,
-            settings.max_roughness_to_trace,
-            gbuffer_scale,
-        );
+        self.scratch.seed_output_from_ssr(device, encoder, ssr_view, output_view);
+
+        let wg_x = (self.width + 7) / 8;
+        let wg_y = (self.height + 7) / 8;
 
         match self.mode {
             RtPipelineMode::HardwareRayQuery => {
@@ -454,6 +430,7 @@ impl RtReflectionPassV2 {
                         accel,
                         ssr_view,
                         output_view,
+                        ssr_hit_uv_view,
                         depth_view,
                         normal_roughness_view,
                         ambient_view,
@@ -496,7 +473,7 @@ impl RtReflectionPassV2 {
                     frame_index,
                     material_count: accel.instance_material_count,
                     gbuffer_scale,
-                    _pad0: 0.0,
+                    material_quality: settings.rt_material_quality().shader_value(),
                 };
                 queue.write_buffer(&self.hw_uniform_buffer, 0, bytemuck::bytes_of(&hw_u));
                 self.hw_bind_group = Some(device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -545,42 +522,38 @@ impl RtReflectionPassV2 {
                         },
                         wgpu::BindGroupEntry {
                             binding: 10,
-                            resource: self.sparse.tile_list_buffer().as_entire_binding(),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 11,
-                            resource: self.sparse.tile_count_buffer().as_entire_binding(),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 12,
                             resource: accel.instance_material_buffer().as_entire_binding(),
                         },
                         wgpu::BindGroupEntry {
-                            binding: 13,
+                            binding: 11,
                             resource: accel.hw_tri_buffer().as_entire_binding(),
                         },
                         wgpu::BindGroupEntry {
-                            binding: 14,
+                            binding: 12,
                             resource: accel.instance_tri_base_buffer().as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 13,
+                            resource: wgpu::BindingResource::TextureView(ssr_hit_uv_view),
                         },
                     ],
                 }));
                 let Some(bg) = self.hw_bind_group.as_ref() else {
                     return;
                 };
-                let Some(sparse_pipeline) = self.hw_sparse_pipeline.as_ref() else {
+                let Some(pipeline) = self.hw_pipeline.as_ref() else {
                     return;
                 };
                 let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                    label: Some("rt-hw-sparse-pass"),
+                    label: Some("rt-hw-pass"),
                     timestamp_writes: None,
                 });
-                pass.set_pipeline(sparse_pipeline);
+                pass.set_pipeline(pipeline);
                 pass.set_bind_group(0, bg, &[]);
                 pass.set_bind_group(1, probe_bind_group, &[]);
                 pass.set_bind_group(2, rt_light_bind_group, &[]);
                 pass.set_bind_group(3, texture_bind_group, &[]);
-                pass.dispatch_workgroups_indirect(self.sparse.indirect_buffer(), 0);
+                pass.dispatch_workgroups(wg_x, wg_y, 1);
             }
             RtPipelineMode::Bvh => {
                 dispatch_bvh(
@@ -591,6 +564,7 @@ impl RtReflectionPassV2 {
                     accel,
                     ssr_view,
                     output_view,
+                    ssr_hit_uv_view,
                     depth_view,
                     normal_roughness_view,
                     ambient_view,
@@ -628,6 +602,7 @@ fn dispatch_bvh(
     accel: &RtAccel,
     ssr_view: &TextureView,
     output_view: &TextureView,
+    ssr_hit_uv_view: &TextureView,
     depth_view: &TextureView,
     normal_roughness_view: &TextureView,
     ambient_view: &TextureView,
@@ -691,7 +666,7 @@ fn dispatch_bvh(
         frame_index,
         material_count: accel.instance_material_count,
         gbuffer_scale,
-        _pad: 0.0,
+        material_quality: settings.rt_material_quality().shader_value(),
     };
     queue.write_buffer(&pass_state.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
     pass_state.bvh_bind_group = make_bvh_bind_group(
@@ -708,20 +683,21 @@ fn dispatch_bvh(
         direct_view,
         surface_view,
         base_color_view,
-        pass_state.sparse.tile_list_buffer(),
-        pass_state.sparse.tile_count_buffer(),
         accel.instance_material_buffer(),
+        ssr_hit_uv_view,
     );
     let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-        label: Some("rt-bvh-sparse-pass"),
+        label: Some("rt-bvh-pass"),
         timestamp_writes: None,
     });
-    pass.set_pipeline(&pass_state.bvh_sparse_pipeline);
+    pass.set_pipeline(&pass_state.bvh_pipeline);
     pass.set_bind_group(0, &pass_state.bvh_bind_group, &[]);
     pass.set_bind_group(1, probe_bind_group, &[]);
     pass.set_bind_group(2, rt_light_bind_group, &[]);
     pass.set_bind_group(3, texture_bind_group, &[]);
-    pass.dispatch_workgroups_indirect(pass_state.sparse.indirect_buffer(), 0);
+    let wg_x = (width + 7) / 8;
+    let wg_y = (height + 7) / 8;
+    pass.dispatch_workgroups(wg_x, wg_y, 1);
 }
 
 pub fn adapter_supports_rt(adapter: &wgpu::Adapter) -> bool {
@@ -877,9 +853,8 @@ fn make_bvh_bind_group(
     direct: &TextureView,
     surface: &TextureView,
     base_color: &TextureView,
-    tile_list: &wgpu::Buffer,
-    tile_count: &wgpu::Buffer,
     instance_materials: &wgpu::Buffer,
+    ssr_hit_uv: &TextureView,
 ) -> wgpu::BindGroup {
     device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("rt-bvh-bg"),
@@ -931,15 +906,11 @@ fn make_bvh_bind_group(
             },
             wgpu::BindGroupEntry {
                 binding: 11,
-                resource: tile_list.as_entire_binding(),
+                resource: instance_materials.as_entire_binding(),
             },
             wgpu::BindGroupEntry {
                 binding: 12,
-                resource: tile_count.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 13,
-                resource: instance_materials.as_entire_binding(),
+                resource: wgpu::BindingResource::TextureView(ssr_hit_uv),
             },
         ],
     })

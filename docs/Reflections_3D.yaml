@@ -1,197 +1,122 @@
-# Reflejos 3D por nivel (SSR / temporal / RT HW / probes)
+# Reflejos 3D — índice general (SSR / probes / RT)
 #
-# Solo proyectos 3D. Nivel global en World → Reflejos; presets internos en motor.
+# Solo proyectos 3D. Nivel global en World → Reflejos.
+#
+# Documentación por subsistema:
+#   - docs/Reflections_SSR.yaml
+#   - docs/Reflections_Probes.yaml
+#   - docs/Reflections_RT.yaml
 #
 # Relacionado con:
 #   - docs/IPC_Protocol.yaml
-#   - docs/RHAI_API.yaml
-#   - docs/Programing_Model.yaml
 #   - docs/TAA_3D.yaml
 #   - docs/Shadows_3D.yaml
+#   - docs/Reflections_Diagnostics.yaml
 
-version: 5
-updated: 2026-06-22
+version: 6
+updated: 2026-06-29
 
 principle:
   owner: motor_3d
-  pipeline: |
-    Off → nada.
-    Low → SSR (sin temporal) + IBL probes en forward. Sin RT.
-    Medium → SSR + acumulación temporal + probes. Sin RT.
-    High → SSR + temporal + RT compute (1 rebote, TLAS estático, ray query wgpu).
-            RT shadows activas (sustituyen shadow map para reflejos).
-    Ultra → High + skinned en TLAS + 2º rebote especular + dieléctricos + SSIL.
-    Skinned / jugador: en Ultra entran al TLAS; en High solo SSR/probes/RT estático.
-  rtiow_compat: |
-    Cubemap, SSR y RT comparten reflect(incident, normal), F0=albedo en metales,
-    atenuación albedo en el rebote y composite aditivo (detalle SSR sobre base).
-  rt_quality: |
-    RT reflections usan GGX importance sampling (NDF) + Cook-Torrance BRDF
-    con división por PDF, firefly clamping, y spatiotemporal denoising.
-    Ray direction: ggx_sample_ndf → reflect(v, H). Weight: F*G*|wo·h|/(|n·wo|*|n·h|).
-    Dielectric refraction usa refl_refract_dir cuando rt_flags.x está activo.
+  philosophy: |
+    Tier = calidad de reflejos (resolución, distancia, denoise, material RT).
+    RT = fuente adicional de información (toggle editor reflectionRaytracing).
+    RT OFF → SSR + temporal + composite según tier.
+    RT ON → SSR + RT híbrido; espejos (roughness ≤ 0.04) usan solo SSR; rugosos mezclan RT+SSR.
+  pipeline_layers:
+    A_forward_ibl: forward_ibl.wgsl — cubemap si SSR no traza (ver Reflections_Probes.yaml)
+    B_ssr_rt: ssr.wgsl + rt_*.wgsl — detalle on-screen (ver Reflections_SSR.yaml, Reflections_RT.yaml)
+    C_composite: composite.wgsl — suma sobre lit-composite
+    capture: probe_env — alimenta A; no es recepción directa en pantalla
+
+subsystems:
+  ssr: docs/Reflections_SSR.yaml
+  probes: docs/Reflections_Probes.yaml
+  rt: docs/Reflections_RT.yaml
 
 graphics_tiers:
   - id: off
     aliases: [disabled, desactivado, none]
   - id: low
     aliases: [bajo]
-    rt: false
-    note: SSR barato + probes/IBL; dispositivos sin RT
   - id: medium
     aliases: [medio]
-    rt: false
   - id: high
     aliases: [alto]
-    rt: true
-    rt_static_only: true
   - id: ultra
     aliases: [ultra]
-    rt: true
-    rt_static_only: false
+
+quality_preset:
+  module: engine_3d/src/reflections/quality_preset.rs
+  note: |
+    ReflectionQualityPreset centraliza distancia RT, rebotes, shadow rays, denoise y material_quality.
+    ssr_resolution_scale y rt_resolution_scale separados (hoy iguales por tier).
+
+editor_toggles:
+  reflectionTier: calidad global (persistido .save)
+  reflectionRaytracing: RT ON/OFF (persistido .save)
+  reflectionProbes: probes ON/OFF (persistido .save)
 
 internal_settings:
-  description: ReflectionSettings derivado del tier (no persistido en .save)
-  note: rt_shadows_enabled se eliminó; RT shadows se activan automáticamente cuando tier ≥ High (vía rt_flags.w).
+  description: ReflectionSettings derivado del tier + toggles editor (no todo persistido)
+  source: reflections/settings.rs
   fields:
-    - max_steps
-    - max_distance_m
-    - temporal_blend (base para blend adaptativo por varianza)
-    - max_roughness_to_trace
-    - rt_enabled
-    - rt_static_only
+    - tier
+    - max_steps, binary_steps, max_distance_m
+    - screen_fraction, rt_resolution_scale
+    - temporal_blend, max_roughness_to_trace
+    - probes_enabled, raytracing_enabled
     - rt_blend
-  effective_degrade: |
-    Si tier High/Ultra pero GPU sin EXPERIMENTAL_RAY_QUERY → preset Medium + log español.
-    Evento IPC reflection_tier_effective + aviso en World → Reflejos (editor).
 
 g_buffer:
   scene_mrt: |
-    Render pass principal (`shader.wgsl` SceneFragOut), 5 targets + depth:
-    @location(0) ambient (Rgba8Unorm) — escena base; en metales incluye cubemap+Fresnel
-    @location(1) shadow_mask (Rg16Float) — .r=sombra, .g=roughness (1=mate, sin SSR)
-    @location(2) direct (Rgba8Unorm) — .rgb=luz directa, .a=metallic
-    @location(3) depth_export (R32Float) — view depth en metros (0=cielo)
-    @location(4) velocity_normal (Rgba8Unorm) — .xy=velocity TAA, .zw=normal octahedral
-  ssr_rt_bindings:
-    t_depth: depth_export_view
-    t_normal_roughness: velocity_view (alias normal_roughness_view en taa/mod.rs)
-    t_surface: shadow_mask_view (.g roughness)
-    t_direct: direct_view (.a metallic)
-    t_base_color: pase aparte base-color-export-pass (Rgba8Unorm)
-    t_lit_scene: scene_color_view post lit_composite
-  base_color: |
-    Rgba8Unorm albedo (pase aparte, depth test LE; límite MRT 32 B/muestra en pass principal)
-  ssr_center_log:
-    readback: ssr_trace_readback.rs muestrea fs_log en (0.5, 0.5)
-    miss_codes:
-      -1: cielo/sin geometría
-      -2: roughness > max_roughness_to_trace
-      -3: strength/dir (no metal o Fresnel bajo)
-      -4: marcha SSR sin intersección en pantalla
+    @location(0) ambient (Rgba8Unorm)
+    @location(1) shadow_mask (Rg16Float) — .r=sombra, .g=roughness
+    @location(2) direct (Rgba8Unorm) — .a=metallic
+    @location(3) depth_export (R32Float) — GL NDC z
+    @location(4) velocity_normal (Rgba8Unorm) — .xy=velocity, .zw=normal
+  exports: base_color (Rgba8Unorm), world_pos (Rgba16Float)
+  ssr_rt_bindings: ver Reflections_SSR.yaml
 
-probes:
-  method: texture_cube_array round-robin por frame
-  face_size_by_tier: "Off/Low 128, Medium 256, High 512, Ultra 1024"
-  probe_meta: centro + radio; solo selección de capa (sin parallax cubemap)
-
-rt_shadows:
-  activation: Automática. rt_flags.w > 0.5 cuando ReflectionTier ≥ High.
-    Sin IPC manual ni toggle en UI. Se desactiva en Low/Medium/Off.
-  ray: trace_rt_hw (HW) o bvh_trace (BVH) desde hit_pos + n*normal_bias hacia light_dir.
-    Occlusion: select(1.0, 0.0, hit.found). Reemplaza PCF cuando está activo.
-  note: Skinned meshes solo en TLAS en Ultra; en High el shadow ray usa BVH fallback si la instancia no está en HW.
+frame_order:
+  source: reflections/frame.rs
+  steps:
+    - prepare_probes
+    - main pass + G-buffer
+    - encode_probe_captures
+    - prepare_lit_scene
+    - ReflectionPass::run_screen (SSR, temporal, RT, denoise)
+    - composite_into + TAA escena
 
 commands:
   set_reflection_tier:
     params: { tier: off | low | medium | high | ultra }
-    effect: Cambia tier global, libera TLAS si baja de High, emite reflection_tier_changed
+  set_reflection_raytracing:
+    params: { enabled: bool }
+  set_reflection_probes:
+    params: { enabled: bool }
   set_reflection_debug_view:
-    params:
-      view: final | normals | roughness | ssr_hits | reflection_mask
-    effect: |
-      Vista debug en viewport (editor).
-      final: salida normal compuesta.
-      normals: normales del G-buffer (octahedral empaquetado).
-      roughness: rugosidad cruda (1=mate, 0=espejo).
-      ssr_hits: píxeles donde SSR encuentra superficie.
-      reflection_mask: máscara de fuerza de rastreo (F0 unificado + rugosidad).
+    params: { view: final | ssr_debug | ssr_miss_green | … }
+    note: catálogo completo en Reflections_SSR.yaml
 
 events:
-  reflection_tier_changed:
-    payload: { tier: string }
-  reflection_tier_effective:
-    payload: { requested: string, effective: string, rt_available: bool }
-    note: Emitido al cambiar tier o disponibilidad RT; effective puede ser medium si requested es high/ultra sin ray query.
-  reflection_debug_view_changed:
-    payload: { view: string }
-  reflection_profiler:
-    payload: { ssr_ms, temporal_ms, rt_ms, composite_ms }
-    rate: ~cada 15 frames con reflejos activos
+  - reflection_tier_changed
+  - reflection_tier_effective
+  - reflection_raytracing_changed
+  - reflection_probes_changed
+  - reflection_debug_view_changed
+  - reflection_profiler
 
 persistence:
-  save_field: reflectionTier en world del .save
-  default: medium
-
-scripting:
-  rhai:
-    - engine.set_reflection_tier(tier)
-    - engine.get_reflection_tier()
-  visual_node:
-    id: action.set_reflection_tier
-    context: scene
-    compiles_to: engine.set_reflection_tier("…")
-
-rt_v2:
-  production_path: compute_ray_query
-  method: compute sparse + wgpu_ray_query inline contra BLAS/TLAS Vulkan
-  status: |
-    Path de producción estable: compute inline + ray query (rt_ray_query.wgsl / rt_bvh.wgsl fallback).
-    @ray_generation diferido hasta wgpu PR #9450 (stub en reflections/rt_pipeline/).
-    Activo en High/Ultra cuando adapter soporta EXPERIMENTAL_RAY_QUERY.
-    Fallback BVH CPU en compute si no hay TLAS.
-    Hit shading: material por instancia (refl_hit_lighting_lite + textura UV baricéntrica);
-    reproyección G-buffer solo refuerzo cuando depth/normal coherentes.
-    Ultra: 2º rebote metal + refracción dieléctrica en hit.
-  sampling: |
-    GGX importance sampling (ggx_sample_ndf) para la dirección del rayo de reflexión.
-    Ray direction: reflect(v, H_local→world) donde H_local se genera desde ggx_sample_ndf(roughness, seed).
-    BRDF/PDF weight: F * G * |wo·h| / (|n·wo| * |n·h|) aplicado al resultado del trace.
-    Cook-Torrance: D (ggx_d), G (ggx_smith_g1 full Smith), F (Schlick).
-    Dielectric refraction: refl_refract_dir cuando rt_flags.x > 0.5 (sin peso GGX).
-  firefly_clamp: refl_firefly_clamp(color, 50.0) en todos los outputs de RT primario y 2º rebote.
-  denoiser: |
-    Espacial: 7×7 bilateral edge-aware (DENOISE_RADIUS=3).
-    depth_sigma=4.0, normal_sigma=12.0, luminance_sigma=8.0.
-    Normal weight: pow(max(dot(n1,n2),0), sigma) — sigma reducido para preservar curvas.
-  temporal:
-    method: full-screen quad con AABB color clipping (VARIANCE_BOX=1.20) + variance-adaptive blend.
-    blend: base_blend * 1/(1 + lum_dev * VARIANCE_ADAPT_K) donde K=8.
-    Alta varianza (ruido) → blend bajo (más peso al frame actual).
-    depth_reject_m: 0.35. Blend mínimo: 0.05.
-  backface_culling: |
-    HW RT (ray query): RAY_FLAG_CULL_BACK_FACING_TRIANGLES (0x10) activo en todos los rayos.
-    BVH fallback: ya lo hacía en ray_tri_moller (dot(face_n, dir) ≥ 0 → rechazo).
-    Coherente con shadow rays.
-  tlas_update: |
-    TLAS creado con update_mode: PreferUpdate + flag ALLOW_UPDATE.
-    wgpu hace build completo en primera vez, update incremental cuando solo cambian transforms de instancias.
-    Cuando geometría cambia (nuevo BLAS), wgpu cae a build completo automáticamente.
-  limits:
-    static_instances: 512
-    skinned_instances: 32
-  reference: https://github.com/jdonald/rust-raytracing
-
-debug_views:
-  active:
-    - final
-    - normals
-    - roughness
-    - ssr_hits
-    - reflection_mask
+  save_fields:
+    - reflectionTier
+    - reflectionRaytracing
+    - reflectionProbes
+  default_tier: off
 
 ui:
-  accordion: World → Reflejos (tier + debug view)
+  accordion: World → Reflejos (tier, RT, probes, debug view)
 
 diagnostics:
   audit_report: docs/Reflections_Diagnostics.yaml
+  architecture: src/main/Engine/engine_3d/src/reflections/ARCHITECTURE.md

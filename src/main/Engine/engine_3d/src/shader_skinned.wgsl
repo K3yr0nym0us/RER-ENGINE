@@ -205,12 +205,12 @@ fn pack_velocity_normal(velocity: vec2<f32>, n: vec3<f32>) -> vec4<f32> {
 }
 
 /// PBR-friendly: por defecto, superficies mate (0.9). El SSR/RT solo afecta materiales
-/// con `SurfacePbr` explícito. Coherente con Unreal.
+/// con `SurfacePbr` explícito. Reflejo opt-in por material.
 fn resolve_surface_roughness(inst_roughness: f32) -> f32 {
     return select(0.9, inst_roughness, inst_roughness >= 0.0);
 }
 
-/// Bevy prepass: GL NDC z desde `position.z` Vulkan [0,1].
+/// Depth prepass: GL NDC z desde `position.z` Vulkan [0,1].
 fn pack_depth_export(ndc_z_vk: f32) -> vec4<f32> {
     return vec4<f32>(ndc_z_vk * 2.0 - 1.0, 0.0, 0.0, 0.0);
 }

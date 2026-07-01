@@ -188,8 +188,8 @@ fn fs_main(in : VsOut) -> @location(0) vec4<f32> {
             if !t.found {
                 return vec4<f32>(0.0, 0.0, 0.0, 1.0);
             }
-            let spacing_px = lettier_reflection_roughness(t.roughness) * 4.0 + 1.0;
-            return vec4<f32>(lettier_debug_box_blur(t.hit_uv, spacing_px), 1.0);
+            let spacing_px = ssr_reflection_roughness(t.roughness) * 4.0 + 1.0;
+            return vec4<f32>(ssr_debug_box_blur(t.hit_uv, spacing_px), 1.0);
         }
         case 20u: {
             let r = textureSample(t_reflection, s_linear, in.uv);
@@ -365,7 +365,7 @@ fn fs_main(in : VsOut) -> @location(0) vec4<f32> {
             return vec4<f32>(vec3<f32>(v), 1.0);
         }
         case 35u: {
-            // R_world exacto → `ssr_evaluate_bevy(m.R_world, m.start_cs, …)` (ver `ssr_march_inputs_at`).
+            // R_world exacto → `ssr_evaluate_trace(m.R_world, m.start_cs, …)` (ver `ssr_march_inputs_at`).
             let m = ssr_march_inputs_at(in.uv);
             if !m.eligible {
                 return vec4<f32>(0.05, 0.05, 0.08, 1.0);

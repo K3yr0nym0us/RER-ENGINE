@@ -744,7 +744,7 @@ impl State {
                         resolve_target: None,
                         depth_slice: None,
                         ops: wgpu::Operations {
-                            // R32Float: GL NDC z (`clip.z/clip.w`) para SSR Bevy (1/z march).
+                            // R32Float: GL NDC z (`clip.z/clip.w`) para SSR (1/z march).
                             load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
                             store: wgpu::StoreOp::Store,
                         },
@@ -918,7 +918,7 @@ impl State {
                 }
             }
 
-            // Albedo + world_pos para SSR (Bevy deferred `world_position`).
+            // Albedo + world_pos para SSR (deferred `world_position`).
             if reflection_settings.active() {
                 let world_pos_view = self.taa.world_pos_view();
                 let mut albedo_pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -1044,7 +1044,32 @@ impl State {
         // marching deben usar ESA misma matriz para que el test de profundidad coincida.
         let view_proj = glam::Mat4::from_cols_array_2d(&scene_uni.view_proj);
         let inv_view_proj = glam::Mat4::from_cols_array_2d(&inv_vp);
-        // RT disabled
+
+        let rt_sync = reflection_settings.uses_rt();
+        if rt_sync {
+            self.rt_accel.ensure_hw(&self.device);
+            let build_cpu_bvh = !self.rt_accel.hw_active();
+            let instances = crate::reflections::rt_pipeline::tlas::collect_rt_instances(
+                self,
+                true,
+                &frustum_vp,
+            );
+            let rt_materials = crate::reflections::rt_pipeline::rt_material::build_rt_materials(
+                self,
+                &instances,
+                &probe_index_map,
+            );
+            self.rt_accel.sync_scene(
+                &rt_materials,
+                &instances,
+                &self.meshes,
+                &self.skinned_gpu_meshes,
+                &self.device,
+                &self.queue,
+                &mut enc,
+                build_cpu_bvh,
+            );
+        }
 
         if reflection_settings.active() {
             self.prepare_lit_scene(
@@ -1088,6 +1113,7 @@ impl State {
                     world_pos_view,
                     depth_export_view: &depth_export_view,
                     velocity_view,
+                    accel: &mut self.rt_accel,
                     inv_view_proj,
                     view_proj,
                     view: view_mat,
@@ -1095,6 +1121,7 @@ impl State {
                     near_plane: self.camera.near,
                     far_plane: self.camera.far,
                     clear_color: self.clear_color,
+                    rt_available: self.rt_hw_available,
                     probe_bind_group: self.probe_env.sample_bind_group(),
                     shadow_view: &shadow_map_view,
                     shadow_sampler: &self.shadow_sampler,
@@ -1381,7 +1408,7 @@ impl State {
 
         // Gizmo de cámara FP en modo editor: cubito en el ojo + frustum hasta el
         // rectángulo lejano, para visualizar a dónde mirará la cámara al pulsar
-        // Play (estilo Godot/Unity al seleccionar una `Camera3D`).
+        // Play: vista desde cámara de juego seleccionada.
         if !self.preview_playing && !self.player_ui_edit_active && self.has_play_character() {
             if let Some((eye, yaw, pitch)) = self.play_character_camera_gizmo_pose() {
                 let aspect = self.size.width as f32 / self.size.height as f32;
@@ -1650,15 +1677,6 @@ impl State {
         self.queue.submit(std::iter::once(enc.finish()));
         if self.ssr_debug_mode {
             self.reflections.poll_ssr_debug_logs(&self.device);
-        }
-        if let Some(frame_id) = self.probe_diag.pending_cubemap_log_frame.take() {
-            if self.probe_cubemap_readback.is_pending() {
-                self.probe_cubemap_readback.finish_and_log(
-                    &self.device,
-                    frame_id,
-                    self.probe_env.face_size(),
-                );
-            }
         }
         self.last_draw_calls = draw_calls;
         output.present();

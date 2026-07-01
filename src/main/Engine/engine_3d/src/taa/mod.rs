@@ -1,6 +1,6 @@
-//! Post-proceso 3D alineado con UE / Unity / Godot 4:
+//! Post-proceso 3D:
 //!
-//! 1. **G-buffer ligero (MRT):** `ambient`, `direct`, máscara de sombra, depth prepass Bevy (R32 GL NDC z), velocity+normal (RGBA8).
+//! 1. **G-buffer ligero (MRT):** `ambient`, `direct`, máscara de sombra, depth prepass (R32 GL NDC z), velocity+normal (RGBA8).
 //! 2. **Shadow map único 2D** (2048, depth compare).
 //! 3. **TAA en máscara de sombra** → **lit-composite:** `lit = ambient + direct × mix(darkness, 1, shadow)`.
 //! 4. **TAA de escena** (reproject + depth/velocity, depth vía `texture_2d` filtrable-nearest, no `textureLoad` en depth).
@@ -27,7 +27,7 @@ const DISOCCLUSION_THRESHOLD: f32 = 0.75;
 /// baseline de 32 B/sample, garantizado en TODA plataforma de exportación. El metallic
 /// NO cabe aquí; se empaqueta en el alpha del buffer `direct` (canal libre).
 pub const SHADOW_MASK_FORMAT: TextureFormat = TextureFormat::Rg16Float;
-/// Profundidad prepass Bevy: GL NDC z (`clip.z/clip.w`) en R32Float. SSR compara `1/z`.
+/// Profundidad prepass: GL NDC z (`clip.z/clip.w`) en R32Float. SSR compara `1/z`.
 pub const DEPTH_EXPORT_FORMAT: TextureFormat = TextureFormat::R32Float;
 /// Velocity (rg) + normal xy octaédrica empaquetada (ba). 8 B/sample.
 pub const VELOCITY_FORMAT: TextureFormat = TextureFormat::Rgba8Unorm;
@@ -35,7 +35,7 @@ pub const VELOCITY_FORMAT: TextureFormat = TextureFormat::Rgba8Unorm;
 pub const MRT_LIT_FORMAT: TextureFormat = TextureFormat::Rgba8Unorm;
 /// Albedo base del material (SSR/RT F0 y atenuación metal). 4 B/sample.
 pub const BASE_COLOR_FORMAT: TextureFormat = TextureFormat::Rgba8Unorm;
-/// Posición world por píxel (Bevy `world_position` deferred). 8 B/sample.
+/// Posición world por píxel (deferred G-buffer). 8 B/sample.
 pub const WORLD_POS_FORMAT: TextureFormat = TextureFormat::Rgba16Float;
 
 /// Estabilidad TAA: mantiene más acumulación a distancia media (menos dientes de sierra lejos).

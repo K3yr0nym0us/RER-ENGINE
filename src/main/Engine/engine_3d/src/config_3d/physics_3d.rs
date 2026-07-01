@@ -467,7 +467,7 @@ impl PhysicsWorld {
     }
 
     /// Sondea el suelo bajo los pies con un raycast vertical. Devuelve `Some(ground_y)`
-    /// si hay suelo cuya normal cumple `floor_max_angle ≈ 45°` (estilo Godot).
+    /// si hay suelo cuya normal cumple `floor_max_angle ≈ 45°`.
     /// El caller decide si hacer "snap" de los pies a `ground_y`.
     pub(crate) fn floor_probe(
         &mut self,

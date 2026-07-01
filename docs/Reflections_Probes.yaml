@@ -1,0 +1,103 @@
+# Reflection probes (cubemap) — motor 3D
+#
+# Captura de entorno + IBL forward. Independiente del tier SSR/RT salvo resolución de cubemap.
+#
+# Relacionado con:
+#   - docs/Reflections_3D.yaml
+#   - docs/Reflections_SSR.yaml (miss SSR → probe)
+#   - docs/Reflections_RT.yaml (sampleo probe en hits off-screen)
+
+version: 1
+updated: 2026-07-01
+status: implemented
+
+principle:
+  owner: motor_3d
+  role: |
+    Capa A (forward IBL) + fallback de entorno en miss SSR/RT.
+    Cada probe captura 6 caras alrededor de su centro en texture_cube_array.
+    No sustituye el detalle on-screen del SSR; lo complementa.
+  toggle: |
+    Editor: reflection_probes_enabled (persistido en .save como reflectionProbes).
+    Si OFF: no captura ni aplica probes (meta GPU en cero).
+  tier_philosophy: |
+    El tier no apaga probes; define resolución de cubemap por cara.
+    Probes OFF en preset from_tier por defecto; el editor puede activarlos en cualquier tier activo.
+
+source_of_truth:
+  rust:
+    - src/main/Engine/engine_3d/src/reflections/probe_env.rs
+    - src/main/Engine/engine_3d/src/reflections/probes_pipeline/
+    - src/main/Engine/engine_3d/src/reflections/forward_ibl.wgsl
+    - src/main/Engine/engine_3d/src/reflections/policy.rs
+  shaders:
+    - shader.wgsl / shader_skinned.wgsl (forward probe)
+    - forward_ibl.wgsl
+
+limits:
+  max_probes: 8
+  cube_array_layers: 48  # 6 caras × MAX_PROBES
+  mip_levels: 5
+  default_face_size_px: 128
+
+face_size_by_tier:
+  description: ReflectionTier::cubemap_face_size — recrea cubemap si cambia el tamaño
+  table:
+    - tier: off
+      face_px: 128
+      note: textura existe; sin captura activa
+    - tier: low
+      face_px: 128
+    - tier: medium
+      face_px: 256
+    - tier: high
+      face_px: 512
+    - tier: ultra
+      face_px: 1024
+
+entities:
+  component: ReflectionProbe
+  registry: probes_pipeline/registry.rs
+  spawn: IPC / editor — no altera el switch probes_enabled
+  influence: radio en Transform.scale (gizmo editor fijo, no volumen IBL)
+  fallback_probe: |
+    Sin probes colocados: sonda virtual FALLBACK_SCENE_PROBE_ID
+    centrada en plano horizontal ~1.2 m sobre suelo (policy.rs / ARCHITECTURE.md)
+
+capture:
+  method: round-robin por frame (una cara o probe por tick según cursor)
+  burst: probe_capture_burst_all al cambiar tier/probes o spawn
+  pipelines:
+    static: vs_main + fs_overlay
+    skinned: vs_main_skinned + fs_overlay_skinned
+  mips: downsample pass anti-moiré; shader usa LOD + bias por rugosidad
+  includes: suelo, geometría estática, jugador skinned en captura
+
+sampling:
+  forward: |
+    forward_ibl.wgsl — cubemap en metales/dieléctricos reflectantes si SSR no traza el píxel
+    (forward_defer_probe_to_ssr cuando SSR activo en superficie elegible).
+  ssr_miss: ssr_reflected_radiance → cubemap probe o procedural
+  rt_off_screen: refl_sample_probe_for_material en reflection_math.wgsl
+  parallax: radio en probe_meta.entries.w (esférico)
+  layer_policy: OwnSlotForProbes para entidades [ReflectionProbe]; nearest para el resto
+
+frame_order:
+  - prepare_probes (slots, meta GPU, probe_index_map)
+  - main pass (instancias con tex_layer_pad.z = ranura)
+  - export G-buffer
+  - encode_probe_captures (6 caras + mips)
+  - prepare_lit_scene
+  - SSR/RT pass
+
+ipc:
+  commands:
+    - set_reflection_probes: { enabled: bool }
+  events:
+    - reflection_probes_changed: { enabled: bool }
+  save_fields:
+    - reflectionProbes (world)
+    - reflectionTier (afecta face_size al cambiar)
+
+ui:
+  accordion: World → Reflejos (toggle Probes + tier)

@@ -4,9 +4,9 @@
 
 use crate::config_3d::reflection_graphics::{ReflectionSettings, ReflectionTier};
 
-/// Segundo rebote especular — tier Ultra.
+/// Segundo rebote especular — `max_bounces >= 2` (tier Ultra).
 pub fn rt_second_bounce_enabled(settings: &ReflectionSettings) -> bool {
-    settings.tier == ReflectionTier::Ultra
+    settings.max_bounces() >= 2
 }
 
 /// BLAS/TLAS hardware para mallas skinned (refit por frame).
@@ -49,7 +49,7 @@ pub fn rt_diffuse_gi_enabled(settings: &ReflectionSettings) -> bool {
 
 /// Sombras RT — tier High y Ultra.
 pub fn rt_shadows_enabled(settings: &ReflectionSettings) -> bool {
-    settings.tier >= ReflectionTier::High
+    settings.rt_shadow_rays()
 }
 
 /// Suelo RT single-sided (evita hits duplicados en rayos rasos).

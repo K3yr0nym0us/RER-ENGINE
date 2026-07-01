@@ -4,10 +4,9 @@ struct DenoiseUniforms {
     normal_sigma   : f32,
     luminance_sigma: f32,
     gbuffer_scale  : f32,
-    _pad           : vec2<f32>,
+    radius         : f32,
+    _pad           : f32,
 }
-
-const DENOISE_RADIUS : u32 = 3u;
 
 @group(0) @binding(0) var<uniform> u : DenoiseUniforms;
 @group(0) @binding(1) var t_input : texture_2d<f32>;
@@ -49,8 +48,8 @@ fn denoise_pixel(uv : vec2<f32>) -> vec4<f32> {
     var sum = center.rgb;
     var wsum = 1.0;
 
-    for (var oy = -(i32(DENOISE_RADIUS)); oy <= i32(DENOISE_RADIUS); oy++) {
-        for (var ox = -(i32(DENOISE_RADIUS)); ox <= i32(DENOISE_RADIUS); ox++) {
+    for (var oy = -(i32(u.radius)); oy <= i32(u.radius); oy++) {
+        for (var ox = -(i32(u.radius)); ox <= i32(u.radius); ox++) {
             if ox == 0 && oy == 0 {
                 continue;
             }

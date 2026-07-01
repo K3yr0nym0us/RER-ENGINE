@@ -1,0 +1,159 @@
+# Ray tracing (reflexiones HW) — motor 3D
+#
+# Fuente adicional de información cuando raytracing_enabled. Calidad por tier vía ReflectionQualityPreset.
+#
+# Relacionado con:
+#   - docs/Reflections_3D.yaml
+#   - docs/Reflections_SSR.yaml (SSR primario + mezcla en pantalla)
+#   - docs/Shadows_3D.yaml (shadow rays RT High+)
+
+version: 2
+updated: 2026-06-29
+status: implemented
+validated: 2026-06-29  # MatComp 5 esferas + RT ON; espejos usan SSR passthrough
+
+principle:
+  owner: motor_3d
+  role: |
+    Trazado hardware (Vulkan ray query) o fallback BVH compute.
+    RT OFF → pipeline no dispatch; SSR inalterado.
+    RT ON → píxeles rugosos (roughness > 0.04) trazan RT; espejos delegan en SSR.
+  toggle: |
+    reflection_raytracing_enabled (editor / .save reflectionRaytracing).
+    Independiente del tier: el tier escala calidad cuando RT está on.
+  hybrid: |
+    refl_compose_rt_ssr: RT en superficies microfacet (roughness > REFL_MIRROR_ROUGHNESS_MAX);
+    miss RT → conserva SSR; hit SSR on-screen → mezcla con mínimo 55% peso SSR.
+    Espejos perfectos (≤ 0.04): rt_ray_query / rt_bvh escriben buffer SSR sin sombrear RT
+    (RT off-screen resolvía probe/cielo en esferas curvas; alfombras planas no lo mostraban).
+    Log: [RT] TLAS HW: … (SSR+RT híbrido, res N%)
+
+source_of_truth:
+  rust:
+    - src/main/Engine/engine_3d/src/reflections/quality_preset.rs
+    - src/main/Engine/engine_3d/src/reflections/rt_pipeline/
+    - src/main/Engine/engine_3d/src/reflections/settings.rs
+  shaders:
+    - rt_pipeline/rt_ray_query.wgsl (HW)
+    - rt_pipeline/rt_bvh.wgsl (fallback)
+    - reflections/reflection_math.wgsl
+
+quality_preset:
+  module: reflections/quality_preset.rs
+  fields:
+    - rt_resolution_scale  # hoy == ssr_resolution_scale; desacoplable
+    - max_trace_distance_m
+    - max_bounces
+    - shadow_rays
+    - denoise (Option)
+    - material_quality (Simplified | Hybrid | Full)
+
+tier_table:
+  columns: [ssr_rt_res, max_distance_m, rays_per_pixel, bounces, shadow_rays, denoise, material]
+  rows:
+    - tier: low
+      ssr_rt_res: 25%
+      max_distance_m: 25
+      rays_per_pixel: 1
+      bounces: 1
+      shadow_rays: false
+      denoise: off  # Opción A; ver low_denoise_benchmark
+      material: simplified
+    - tier: medium
+      ssr_rt_res: 50%
+      max_distance_m: 50
+      rays_per_pixel: 1
+      bounces: 1
+      shadow_rays: false
+      denoise: { radius: 2, depth_sigma: 5, normal_sigma: 10, luminance_sigma: 10 }
+      material: simplified
+    - tier: high
+      ssr_rt_res: 75%
+      max_distance_m: 100
+      rays_per_pixel: 1
+      bounces: 1
+      shadow_rays: true
+      denoise: { radius: 3, depth_sigma: 4, normal_sigma: 12, luminance_sigma: 8 }
+      material: hybrid
+    - tier: ultra
+      ssr_rt_res: 100%
+      max_distance_m: 100
+      rays_per_pixel: 1
+      bounces: 2
+      shadow_rays: true
+      denoise: { radius: 3, depth_sigma: 3, normal_sigma: 14, luminance_sigma: 6 }
+      material: full
+
+low_denoise_benchmark:
+  status: option_a_shipped
+  constant: LOW_RT_DENOISE = Off en quality_preset.rs
+  option_a: denoise None (default tras prueba manual)
+  option_b: radius 1, σ 4/6/8 — cambiar a UltraLight para medir rt_ms vs denoise_ms
+
+material_quality:
+  simplified:
+    includes: [albedo, metallic, roughness]
+    excludes: [normal_maps, detail_maps, clear_coat, subsurface]
+    shader: sin mezcla G-buffer lit_scene (allow_screen_blend = false)
+  hybrid:
+    includes: simplified + normales en hits on-screen
+  full:
+    includes: path completo (Ultra)
+
+rt_flags:
+  x: refracción dieléctrica secundaria (Ultra)
+  y: segundo rebote specular (max_bounces >= 2)
+  z: SSIL / GI difuso (Ultra)
+  w: shadow rays (High+)
+
+pipeline:
+  primary: RtReflectionPassV2 — ray query contra TLAS
+  fallback: rt_bvh.wgsl si no hay TLAS
+  uniforms: material_quality en RtUniforms / RtHwUniforms
+  dispatch_resolution: rt_resolution_scale × viewport
+  output: scratch → copy a reflection_texture (misma resolución que SSR hoy)
+
+denoise:
+  gate: uses_denoise() = active && uses_rt() && denoise_profile.is_some()
+  shader: denoiser.wgsl — radius por uniform
+  note: Solo con RT ON; Low sin denoise (Opción A)
+
+sampling:
+  primary_ray: GGX NDF + reflect; 1 rayo/píxel
+  mirror_bypass: |
+    Si roughness ≤ REFL_MIRROR_ROUGHNESS_MAX (0.04): passthrough SSR en rt_ray_query.wgsl y rt_bvh.wgsl.
+    Motivo: rayos espejo en esferas suelen resolver off-screen (probe/cielo); SSR ya acierta en pantalla.
+    Materiales MatComp afectados: CHROME, GLASS, WATER (roughness_min 0). STEEL/PLASTIC siguen RT.
+  dielectric_ultra: refl_refract_dir en segundo evento si rt_flags.x (solo roughness > 0.04)
+  firefly_clamp: refl_firefly_clamp(color, 50.0)
+
+compose_hybrid:
+  function: refl_compose_rt_ssr (reflection_math.wgsl)
+  rt_miss: devuelve textura SSR (cubemap/procedural)
+  rt_hit_ssr_screen_hit: mix(rt_rgb, ssr.rgb, w) con w mínimo 0.55
+  mirror_pixels: no llegan a compose (SSR passthrough previo)
+
+limits:
+  static_instances: 512
+  skinned_instances: 32  # Ultra TLAS
+
+ipc:
+  commands:
+    - set_reflection_raytracing: { enabled: bool }
+  events:
+    - reflection_raytracing_changed: { enabled: bool }
+    - reflection_tier_effective: { requested, effective, rt_available }
+  save_fields:
+    - reflectionRaytracing (world)
+
+profiler:
+  fields: [rt_ms, denoise_ms]
+  event: reflection_profiler
+
+degrade:
+  condition: tier High/Ultra sin EXPERIMENTAL_RAY_QUERY
+  behavior: preset efectivo Medium + log español + reflection_tier_effective
+
+debug:
+  tip_log: vista ssr_miss_green o reflejo detrás de cámara
+  views: hereda debug SSR (ssr_miss_green útil para validar híbrido)

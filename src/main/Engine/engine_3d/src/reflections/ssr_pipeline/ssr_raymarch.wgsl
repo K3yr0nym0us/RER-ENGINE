@@ -1,4 +1,4 @@
-// Bevy `bevy_pbr/src/ssr/raymarch.wgsl` — port fiel (profundidad prepass = GL NDC z).
+// SSR raymarch — profundidad prepass = GL NDC z.
 
 struct SsrHybridRootFinder {
     linear_steps          : u32,
@@ -40,13 +40,13 @@ fn ssr_depth_raymarch_distance_evaluate(
     ray_point_cs : vec3<f32>,
 ) -> SsrDistanceWithPenetration {
     let interp_uv = refl_ndc_xy_to_uv(ray_point_cs.xy);
-    let ray_bevy_z = ssr_gl_ndc_z_to_bevy_march_z(ray_point_cs.z);
-    let ray_depth = 1.0 / max(ray_bevy_z, 1e-6);
+    let ray_march_z = ssr_gl_ndc_z_to_march_z(ray_point_cs.z);
+    let ray_depth = 1.0 / max(ray_march_z, 1e-6);
 
     let depth_linear_gl = ssr_march_depth_linear(interp_uv, (*distance_fn).depth_tex_size);
     let depth_nearest_gl = ssr_march_depth_nearest(interp_uv, (*distance_fn).depth_tex_size);
-    let linear_depth = 1.0 / max(ssr_gl_ndc_z_to_bevy_march_z(depth_linear_gl), 1e-6);
-    let unfiltered_depth = 1.0 / max(ssr_gl_ndc_z_to_bevy_march_z(depth_nearest_gl), 1e-6);
+    let linear_depth = 1.0 / max(ssr_gl_ndc_z_to_march_z(depth_linear_gl), 1e-6);
+    let unfiltered_depth = 1.0 / max(ssr_gl_ndc_z_to_march_z(depth_nearest_gl), 1e-6);
 
     var max_depth : f32;
     var min_depth : f32;
@@ -219,7 +219,7 @@ fn ssr_depth_ray_march_to_cs_dir_impl(
     end_cs = end_cs / (select(-1.0, 1.0, end_cs.w >= 0.0) * max(abs(end_cs.w), 1e-10));
 
     var delta_cs = end_cs.xyz - (*raymarch).ray_start_cs;
-    // Bevy `raymarch.wgsl`: near clip solo XY; Z en GL NDC [-1,1] (no WebGPU 0..1).
+    // Near clip solo XY; Z en GL NDC [-1,1] (no WebGPU 0..1).
     let near_edge = select(
         vec3<f32>(-1.0, -1.0, -1.0),
         vec3<f32>(1.0, 1.0, 1.0),
@@ -304,13 +304,13 @@ fn ssr_depth_ray_march_march(raymarch : ptr<function, SsrDepthRayMarch>) -> SsrD
     return res;
 }
 
-struct SsrBevyHit {
+struct SsrMarchHit {
     found  : bool,
     hit_uv : vec2<f32>,
 }
 
-/// Bevy `evaluate_ssr`. `start_cs` = NDC xyz del píxel (xy desde UV, z = prepass GL NDC).
-fn ssr_evaluate_bevy(
+/// Evalúa marcha SSR. `start_cs` = NDC xyz del píxel (xy desde UV, z = prepass GL NDC).
+fn ssr_evaluate_trace(
     R_world : vec3<f32>,
     start_cs : vec3<f32>,
     jitter : f32,
@@ -319,8 +319,8 @@ fn ssr_evaluate_bevy(
     bisection_steps : u32,
     thickness_linear_z : f32,
     near_plane : f32,
-) -> SsrBevyHit {
-    var out : SsrBevyHit;
+) -> SsrMarchHit {
+    var out : SsrMarchHit;
     out.found = false;
     out.hit_uv = vec2<f32>(-1.0);
 

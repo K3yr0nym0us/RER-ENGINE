@@ -134,8 +134,4 @@ impl SkinnedBlasCache {
     pub fn get(&self, gpu_idx: usize) -> Option<&Blas> {
         self.entries.get(&gpu_idx).map(|e| &e.blas)
     }
-
-    pub fn clear(&mut self) {
-        self.entries.clear();
-    }
 }

@@ -1,5 +1,4 @@
-// Screen-space reflections — Bevy `bevy_pbr/src/ssr` + `ssr/raymarch.wgsl`.
-// https://github.com/bevyengine/bevy/tree/main/crates/bevy_pbr/src/ssr
+// Screen-space reflections + raymarch.
 
 struct SsrUniforms {
     resolution        : vec2<f32>,
@@ -116,7 +115,7 @@ fn scene_depth_at_uv(uv : vec2<f32>) -> f32 {
     return scene_depth_nearest_at_uv(uv);
 }
 
-// Bevy `depth_sample_nearest` / `depth_sample_linear` (prepass = GL NDC z).
+// Depth prepass = GL NDC z.
 fn ssr_march_depth_nearest(uv : vec2<f32>, tex_size : vec2<f32>) -> f32 {
     _ = tex_size;
     return scene_depth_nearest_at_uv(uv);
@@ -176,11 +175,11 @@ fn ssr_reflect_surface(
 }
 
 fn ssr_reflected_radiance(hit_uv : vec2<f32>) -> vec3<f32> {
-    // Bevy `color_texture`: lit-composite lineal; peso Fresnel/metal va en alpha/miss, no aquí.
+    // Lit-composite lineal; peso Fresnel/metal va en alpha/miss, no aquí.
     return textureSampleLevel(t_lit_scene, s_linear, hit_uv, 0.0).rgb;
 }
 
-/// Peso especular SSR: en metales el F0 oscuro no debe anular el trazo (Bevy usa BRDF/pdf).
+/// Peso especular SSR: en metales el F0 oscuro no debe anular el trazo.
 fn ssr_specular_weight(trace_w : f32, roughness : f32, metallic : f32) -> f32 {
     if metallic > 0.5 {
         let r = clamp(roughness, 0.0, 1.0);
@@ -190,7 +189,7 @@ fn ssr_specular_weight(trace_w : f32, roughness : f32, metallic : f32) -> f32 {
     return trace_w;
 }
 
-/// Fallback en miss SSR: cubemap probe (Bevy env map) o procedural si no hay probe.
+/// Fallback en miss SSR: cubemap probe o procedural si no hay probe.
 fn ssr_environment_fallback_radiance(
     world_pos : vec3<f32>,
     cam_world : vec3<f32>,
@@ -263,16 +262,16 @@ fn fs_main(in : VsOut) -> SsrOut {
     let world_pos = world_pos_at_uv(in.uv, depth_prepass);
     let cam_world = (u.inv_view * vec4<f32>(0.0, 0.0, 0.0, 1.0)).xyz;
 
-    let V_world = ssr_bevy_view_dir_world(cam_world, world_pos);
+    let V_world = ssr_view_dir_world(cam_world, world_pos);
     let trace_w = refl_trace_strength(roughness, metallic, n_world, V_world, albedo, ior);
 
     // P desde G-buffer; start_cs.z = prepass (no clip.z/w — distinto de @builtin(position).z en wgpu).
-    let R_world = ssr_bevy_reflection_world(cam_world, world_pos, n_world);
+    let R_world = ssr_reflection_world(cam_world, world_pos, n_world);
     let start_cs = ssr_ray_start_cs(world_pos, depth_prepass, u.view_proj);
 
     let spec_w = ssr_specular_weight(trace_w, roughness, metallic);
 
-    var hit = ssr_evaluate_bevy(
+    var hit = ssr_evaluate_trace(
         R_world,
         start_cs,
         1.0,
@@ -302,7 +301,7 @@ fn fs_main(in : VsOut) -> SsrOut {
         );
     }
 
-    // spec_w solo en miss (fallback); hits Bevy no multiplican radiance por Fresnel.
+    // spec_w solo en miss (fallback); hits SSR no multiplican radiance por Fresnel.
     let refl_rgb = select(reflected * spec_w, reflected, hit.found);
     let refl_lum = dot(refl_rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
 

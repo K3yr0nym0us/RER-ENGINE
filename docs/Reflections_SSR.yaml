@@ -1,0 +1,154 @@
+# Screen-Space Reflections (SSR) — motor 3D
+#
+# Detalle on-screen de reflejos. Independiente del toggle RT; el tier define calidad.
+#
+# Relacionado con:
+#   - docs/Reflections_3D.yaml (índice general)
+#   - docs/Reflections_RT.yaml (fuente adicional cuando RT ON)
+#   - docs/Reflections_Probes.yaml (fallback cubemap en miss SSR)
+#   - docs/TAA_3D.yaml (G-buffer, depth prepass)
+
+version: 2
+updated: 2026-06-29
+status: implemented
+
+principle:
+  owner: motor_3d
+  role: |
+    Capa B del pipeline de reflejos: traza rayos en pantalla usando depth prepass (GL NDC z)
+    y G-buffer (world_pos, normal, roughness, metallic). En miss SSR samplea cubemap probe.
+  tier_philosophy: |
+    Tier = calidad de reflejos (resolución, pasos, distancia, temporal).
+    RT OFF → SSR + temporal + composite funcionan según el tier.
+    RT ON → SSR sigue activo; RT aporta información adicional (ver Reflections_RT.yaml).
+  opt_in: |
+    Solo superficies con SurfacePbr explícito y roughness ≤ max_roughness_to_trace (0.70 Low–High, 0.85 Ultra).
+
+source_of_truth:
+  rust:
+    - src/main/Engine/engine_3d/src/reflections/ssr_pipeline/
+    - src/main/Engine/engine_3d/src/reflections/settings.rs
+    - src/main/Engine/engine_3d/src/reflections/quality_preset.rs
+  shaders:
+    - src/main/Engine/engine_3d/src/reflections/ssr_pipeline/ssr.wgsl
+    - src/main/Engine/engine_3d/src/reflections/ssr_pipeline/ssr_raymarch.wgsl
+    - src/main/Engine/engine_3d/src/reflections/reflection_math.wgsl
+
+resolution_by_tier:
+  description: Fracción lineal del viewport (`screen_fraction` / `ssr_resolution_scale`)
+  table:
+    - tier: off
+      fraction: 1.0
+      ssr_active: false
+    - tier: low
+      fraction: 0.25
+    - tier: medium
+      fraction: 0.50
+    - tier: high
+      fraction: 0.75
+    - tier: ultra
+      fraction: 1.00
+
+trace_parameters_by_tier:
+  description: Valores en ReflectionSettings::from_tier (no persistidos en .save)
+  table:
+    - tier: low
+      max_steps: 16
+      binary_steps: 3
+      max_distance_m: 25
+      temporal_blend: 0.18
+      thickness_m: 0.25
+    - tier: medium
+      max_steps: 32
+      binary_steps: 5
+      max_distance_m: 50
+      temporal_blend: 0.22
+      thickness_m: 0.25
+    - tier: high
+      max_steps: 64
+      binary_steps: 5
+      max_distance_m: 100
+      temporal_blend: 0.42
+      thickness_m: 0.30
+    - tier: ultra
+      max_steps: 128
+      binary_steps: 7
+      max_distance_m: 100
+      temporal_blend: 0.45
+      thickness_m: 0.30
+
+pipeline:
+  order_in_frame: |
+    1. Main pass + G-buffer export
+    2. (Opcional) probe capture
+    3. lit-composite
+    4. SsrPipeline::run → textura reflection + hit_uv
+    5. Temporal pass (acumulación entre frames)
+    6. (Opcional) RT pass si raytracing_enabled
+    7. (Opcional) Denoise si RT ON y perfil definido
+    8. composite_into lit-composite
+  buffers:
+  reflection_texture: Rgba8Unorm a screen_fraction × viewport
+  reflection_hit_uv: Rg16Float UV de muestreo en hits
+
+g_buffer_inputs:
+  t_depth: depth_export (R32Float, GL NDC z) — marcha 1/z
+  t_normal_roughness: velocity_view (.zw normal octahedral)
+  t_surface: shadow_mask (.g roughness)
+  t_direct: direct (.a metallic)
+  t_base_color: albedo export
+  t_world_pos: world position por píxel
+  t_lit_scene: escena tras lit-composite (color en hit SSR)
+
+key_functions_wgsl:
+  ssr_evaluate_trace: marcha principal (ssr_raymarch.wgsl)
+  ssr_view_dir_world: dirección superficie→cámara
+  ssr_reflection_world: reflect(-V, N) en world
+  ssr_specular_amount: máscara Fresnel + rugosidad para miss/fallback
+  refl_compose_rt_ssr: mezcla SSR+RT en rugosos; miss RT → SSR (reflection_math.wgsl)
+
+rt_hybrid_when_enabled:
+  mirror_surfaces: |
+    roughness ≤ 0.04 → RT pass no sombrea; buffer SSR sin cambios (ver Reflections_RT.yaml).
+  rough_surfaces: RT + refl_compose_rt_ssr; si SSR hit on-screen, ≥55% peso SSR en la mezcla.
+
+known_issues:
+  sphere_center_reflection:
+    status: open
+    symptom: centro de esferas convexas puede reflejar solo en corona (anillo), no en el disco central
+    debug: ssr_hit_class (verde=hit, azul=miss marcha, rojo=self-reject)
+    note: independiente del bypass RT espejo; investigación pendiente post MatComp RT fix
+
+temporal:
+  owner: reflections/mod.rs
+  note: Blend base por tier; rechazo por depth/disoclusión en temporal.wgsl
+  independent_of_rt: true
+
+composite:
+  shader: composite.wgsl
+  behavior: Suma SSR/RT sobre lit-composite; peso por alpha del pass de reflejos
+
+debug_views:
+  wire_prefix: ssr_
+  views:
+    - id: ssr_debug
+      aliases: [ssr, debug, ssr_hits, hits]
+      stats_log: true
+    - id: ssr_miss_green
+    - id: ssr_exit_reason
+    - id: ssr_vector_rgb
+    - id: ssr_hit_class
+    - id: ssr_path_px
+    - id: ssr_march_refl_dir
+    - id: ssr_hit_uv
+    - id: ssr_hit_sample_color
+    - id: ssr_proj_depth_delta
+
+profiler:
+  field: ssr_ms
+  event: reflection_profiler (payload parcial)
+
+ipc:
+  tier: set_reflection_tier
+  debug: set_reflection_debug_view
+  note: SSR no tiene toggle propio; depende de tier ≠ off
