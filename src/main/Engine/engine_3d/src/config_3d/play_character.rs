@@ -57,10 +57,12 @@ impl State {
     }
 
     /// Colliders que la cápsula de movimiento y la cámara FP no deben tratar como obstáculo
-    /// (jugador + accesorios fusionados al jugador).
+    /// (jugador + accesorios fusionados / en socket bajo el jugador, incl. jerarquía).
     pub(crate) fn play_character_movement_excluded_colliders(
         &self,
     ) -> Vec<rapier3d::prelude::ColliderHandle> {
+        use std::collections::HashSet;
+
         let mut out = Vec::new();
         let Some(player_id) = self.play_character_entity else {
             return out;
@@ -68,12 +70,27 @@ impl State {
         if let Some(handle) = self.physics.collider_handle_for_entity(player_id) {
             out.push(handle);
         }
-        for (child_id, attachment) in &self.entity_attachments {
-            if attachment.parent_id() != Some(player_id) {
-                continue;
-            }
-            if let Some(handle) = self.physics.collider_handle_for_entity(*child_id) {
-                out.push(handle);
+
+        let mut stack = vec![player_id];
+        let mut visited = HashSet::from([player_id]);
+        while let Some(parent_id) = stack.pop() {
+            for (child_id, attachment) in &self.entity_attachments {
+                let linked = match &attachment.anchor {
+                    crate::config_3d::entity_attachments::AttachmentAnchor::Entity(id) => {
+                        *id == parent_id
+                    }
+                    crate::config_3d::entity_attachments::AttachmentAnchor::Socket {
+                        host_entity_id,
+                        ..
+                    } => *host_entity_id == parent_id,
+                };
+                if !linked || !visited.insert(*child_id) {
+                    continue;
+                }
+                if let Some(handle) = self.physics.collider_handle_for_entity(*child_id) {
+                    out.push(handle);
+                }
+                stack.push(*child_id);
             }
         }
         out
@@ -461,15 +478,36 @@ impl State {
         visual_model_path: Option<&str>,
         desired_id: Option<EntityId>,
     ) -> EntityId {
+        let desired = desired_id.filter(|&d| d != 0);
         if let Some(id) = self.play_character_entity {
             if self.world.get::<Transform>(id).is_some() {
-                if !self.character_entities.contains(&id) {
-                    self.character_entities.push(id);
+                // En carga de .save hay que respetar el id del manifest para que
+                // `attach_parent_id` de accesorios fusionados coincida con el jugador.
+                let reuse_existing = match desired {
+                    Some(wanted) if wanted != id && self.restoring_save_manifest => {
+                        log::warn!(
+                            "[restore] jugador runtime {id} ≠ id guardado {wanted}; recreando shell"
+                        );
+                        self.physics.remove_entity_body(id);
+                        self.clear_entity_attachments_for_removed(id);
+                        self.save_registry.remove_entity(id);
+                        self.world.despawn(id);
+                        self.character_entities.retain(|&e| e != id);
+                        self.scenario_entities.retain(|&e| e != id);
+                        self.play_character_entity = None;
+                        false
+                    }
+                    _ => true,
+                };
+                if reuse_existing {
+                    if !self.character_entities.contains(&id) {
+                        self.character_entities.push(id);
+                    }
+                    if !self.scenario_entities.contains(&id) {
+                        self.scenario_entities.push(id);
+                    }
+                    return id;
                 }
-                if !self.scenario_entities.contains(&id) {
-                    self.scenario_entities.push(id);
-                }
-                return id;
             }
         }
         let label = if display_name.trim().is_empty() {
@@ -477,7 +515,7 @@ impl State {
         } else {
             display_name
         };
-        let id = if let Some(desired) = desired_id.filter(|&d| d != 0) {
+        let id = if let Some(desired) = desired {
             if self.world.spawn_with_id(desired, Some(label)) {
                 desired
             } else {

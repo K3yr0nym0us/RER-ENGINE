@@ -347,27 +347,62 @@ impl State {
                 continue;
             };
 
-            self.entity_attachments.insert(
-                entry.entity_id,
-                EntityAttachmentLocal {
-                    anchor,
-                    local_position: Vec3::from_array(entry.local_position),
-                    local_rotation: Quat::from_xyzw(
+            let (local_position, local_rotation, child_world_scale) = if entry.recompute_locals {
+                match &anchor {
+                    AttachmentAnchor::Entity(parent_id) => {
+                        let Some(parent_t) = self.world.get::<Transform>(*parent_id).cloned() else {
+                            continue;
+                        };
+                        let Some(child_t) = self.world.get::<Transform>(entry.entity_id).cloned()
+                        else {
+                            continue;
+                        };
+                        compute_local_attachment(&parent_t, &child_t)
+                    }
+                    AttachmentAnchor::Socket { .. } => {
+                        // Sin locals de socket: mantener pose mundial actual (offset 0 local
+                        // se corrige en sync_socket_attached_children si el socket existe).
+                        (
+                            Vec3::from_array(entry.local_position),
+                            Quat::from_xyzw(
+                                entry.local_rotation[0],
+                                entry.local_rotation[1],
+                                entry.local_rotation[2],
+                                entry.local_rotation[3],
+                            ),
+                            Vec3::from_array(entry.child_world_scale),
+                        )
+                    }
+                }
+            } else {
+                (
+                    Vec3::from_array(entry.local_position),
+                    Quat::from_xyzw(
                         entry.local_rotation[0],
                         entry.local_rotation[1],
                         entry.local_rotation[2],
                         entry.local_rotation[3],
                     ),
-                    child_world_scale: Vec3::from_array(entry.child_world_scale),
+                    Vec3::from_array(entry.child_world_scale),
+                )
+            };
+
+            self.entity_attachments.insert(
+                entry.entity_id,
+                EntityAttachmentLocal {
+                    anchor,
+                    local_position,
+                    local_rotation,
+                    child_world_scale,
                 },
             );
         }
 
-        if self.entity_attachments.is_empty() {
+        let count = self.entity_attachments.len();
+        if count == 0 {
             return;
         }
 
-        let count = self.entity_attachments.len();
         let entity_parent_ids: HashSet<EntityId> = self
             .entity_attachments
             .values()
@@ -391,4 +426,6 @@ pub(crate) struct SavedEntityAttachment {
     pub local_position: [f32; 3],
     pub local_rotation: [f32; 4],
     pub child_world_scale: [f32; 3],
+    /// Si true, recalcular offset local desde transforms mundiales al restaurar.
+    pub recompute_locals: bool,
 }

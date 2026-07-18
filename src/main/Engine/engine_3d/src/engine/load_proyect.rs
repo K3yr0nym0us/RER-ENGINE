@@ -1771,14 +1771,6 @@ fn collect_saved_entity_attachments(
 ) -> Vec<crate::config_3d::entity_attachments::SavedEntityAttachment> {
     let mut out = Vec::new();
     let mut push = |entity: &SavedEntity3D| {
-        let (Some(local_position), Some(local_rotation), Some(child_world_scale)) = (
-            entity.attach_local_position,
-            entity.attach_local_rotation,
-            entity.attach_local_scale,
-        ) else {
-            return;
-        };
-
         let is_socket = entity.attach_socket_host_id.is_some()
             && entity
                 .attach_socket_name
@@ -1789,6 +1781,14 @@ fn collect_saved_entity_attachments(
         if !is_socket && !is_entity {
             return;
         }
+
+        // Locals pueden faltar en saves antiguos: se recalculan al restaurar desde poses mundiales.
+        let local_position = entity.attach_local_position.unwrap_or([0.0, 0.0, 0.0]);
+        let local_rotation = entity.attach_local_rotation.unwrap_or([0.0, 0.0, 0.0, 1.0]);
+        let child_world_scale = entity.attach_local_scale.unwrap_or(entity.scale);
+        let locals_from_save = entity.attach_local_position.is_some()
+            && entity.attach_local_rotation.is_some()
+            && entity.attach_local_scale.is_some();
 
         out.push(crate::config_3d::entity_attachments::SavedEntityAttachment {
             entity_id: entity.id,
@@ -1810,6 +1810,7 @@ fn collect_saved_entity_attachments(
             local_position,
             local_rotation,
             child_world_scale,
+            recompute_locals: !locals_from_save,
         });
     };
     for entity in &view.entities {
@@ -1852,9 +1853,45 @@ fn restore_entity_bone_physics_after_scene_load(state: &mut State, view: &Active
 }
 
 fn restore_entity_attachments_after_scene_load(state: &mut State, view: &ActiveSaveView) {
-    let saved = collect_saved_entity_attachments(view);
+    let mut saved = collect_saved_entity_attachments(view);
+
+    // Si el id runtime del jugador ≠ id del manifest, remapear anclas de fusión/socket.
+    if let (Some(saved_player), Some(actual_player)) = (view.player.as_ref(), state.play_character_entity)
+    {
+        if saved_player.id != actual_player && saved_player.id != 0 {
+            let from = saved_player.id;
+            let to = actual_player;
+            let mut remapped = 0usize;
+            for entry in &mut saved {
+                if entry.parent_id == Some(from) {
+                    entry.parent_id = Some(to);
+                    remapped += 1;
+                }
+                if entry.attach_socket_host_id == Some(from) {
+                    entry.attach_socket_host_id = Some(to);
+                    remapped += 1;
+                }
+                if entry.entity_id == from {
+                    entry.entity_id = to;
+                    remapped += 1;
+                }
+            }
+            if remapped > 0 {
+                log::warn!(
+                    "[Fusión] remap jugador {from} → {to} en {remapped} campo(s) de vínculo"
+                );
+            }
+        }
+    }
+
+    // Siempre restaurar (aunque vacío) para limpiar estado stale tras clear de escena.
+    state.restore_entity_attachments_from_saved(&saved);
+
+    let excluded = state.play_character_movement_excluded_colliders().len();
     if !saved.is_empty() {
-        state.restore_entity_attachments_from_saved(&saved);
+        log::info!(
+            "[Fusión] exclusión de movimiento tras restore: {excluded} collider(s) (jugador + accesorios)"
+        );
     }
 }
 
