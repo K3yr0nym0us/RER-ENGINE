@@ -30,14 +30,16 @@ pub enum ReflectionDebugView {
     SsrHitClass,
     /// Escala de grises: distancia del hit en px (`path_px`); negro=miss, blanco=hit lejano.
     SsrPathPx,
-    /// RGB = `R_world * 0.5 + 0.5` — dirección exacta pasada a `ssr_evaluate_trace`.
+    /// RGB = `reflection_dir_world * 0.5 + 0.5` — dirección exacta pasada a `ssr_evaluate_trace`.
     SsrMarchReflDir,
-    /// `fract(hit_uv * 8)` — UV de muestreo en hits SSR válidos (post-reject, como `ssr.wgsl`).
+    /// `fract(reflection_hit_uv * 8)` — UV de muestreo en hits SSR válidos (post-reject, como `ssr.wgsl`).
     SsrHitUv,
-    /// RGB = `ssr_reflected_radiance(hit_uv)` en hits válidos (sin composite).
+    /// RGB = `ssr_reflected_radiance(reflection_hit_uv)` en hits válidos (sin composite).
     SsrHitSampleColor,
     /// Mapa de calor: |clip.z/w − prepass z| (moiré corona si alto).
     SsrProjDepthDelta,
+    /// Líneas SSR en pantalla (verde=hit, azul=miss) + crosshair central.
+    SsrRayOverlay,
 }
 
 impl ReflectionDebugView {
@@ -72,6 +74,9 @@ impl ReflectionDebugView {
             | "ssr_start_cs_z_delta"
             | "proj_depth_delta"
             | "start_cs_z_delta" => Some(Self::SsrProjDepthDelta),
+            "ssr_ray_overlay" | "ssr_rayoverlay" | "ssr_rays" | "ray_overlay" => {
+                Some(Self::SsrRayOverlay)
+            }
             _ => None,
         }
     }
@@ -89,6 +94,7 @@ impl ReflectionDebugView {
             Self::SsrHitUv => "ssr_hit_uv",
             Self::SsrHitSampleColor => "ssr_hit_sample_color",
             Self::SsrProjDepthDelta => "ssr_proj_depth_delta",
+            Self::SsrRayOverlay => "ssr_ray_overlay",
         }
     }
 
@@ -105,6 +111,7 @@ impl ReflectionDebugView {
                 | Self::SsrHitUv
                 | Self::SsrHitSampleColor
                 | Self::SsrProjDepthDelta
+                | Self::SsrRayOverlay
         )
     }
 
@@ -125,6 +132,7 @@ impl ReflectionDebugView {
             Self::SsrHitUv => 36,
             Self::SsrHitSampleColor => 37,
             Self::SsrProjDepthDelta => 38,
+            Self::SsrRayOverlay => 39,
         }
     }
 }

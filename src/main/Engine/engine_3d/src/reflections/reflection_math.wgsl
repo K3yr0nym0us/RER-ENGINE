@@ -111,22 +111,22 @@ fn ssr_ray_start_cs_at_uv(uv : vec2<f32>, depth_prepass : f32) -> vec3<f32> {
 
 /// Refleja en view space y devuelve dirección world (misma convención que la proyección).
 fn ssr_reflection_world_view_based(
-    world_pos : vec3<f32>,
-    n_world   : vec3<f32>,
-    view      : mat4x4<f32>,
-    inv_view  : mat4x4<f32>,
+    surface_pos_world    : vec3<f32>,
+    surface_normal_world : vec3<f32>,
+    view                 : mat4x4<f32>,
+    inv_view             : mat4x4<f32>,
 ) -> vec3<f32> {
-    let pos_view = (view * vec4<f32>(world_pos, 1.0)).xyz;
-    let n_view = normalize((view * vec4<f32>(n_world, 0.0)).xyz);
-    let R_view = ssr_reflection_dir_view(pos_view, n_view);
-    return normalize((inv_view * vec4<f32>(R_view, 0.0)).xyz);
+    let surface_pos_view = (view * vec4<f32>(surface_pos_world, 1.0)).xyz;
+    let surface_normal_view = normalize((view * vec4<f32>(surface_normal_world, 0.0)).xyz);
+    let reflection_dir_view = ssr_reflection_dir_view(surface_pos_view, surface_normal_view);
+    return normalize((inv_view * vec4<f32>(reflection_dir_view, 0.0)).xyz);
 }
 
-/// Proyecta P a NDC xy; z = prepass GL NDC (coherente con depth export, no clip.z/clip.w).
-fn ssr_ray_start_cs(world_pos : vec3<f32>, depth_prepass : f32, view_proj : mat4x4<f32>) -> vec3<f32> {
-    var cs = ssr_world_to_ndc(world_pos, view_proj);
-    cs.z = depth_prepass;
-    return cs;
+/// Origen del rayo SSR en NDC: xy desde la posición world, z = prepass GL NDC.
+fn ssr_ray_start_cs(surface_pos_world : vec3<f32>, depth_prepass : f32, view_proj : mat4x4<f32>) -> vec3<f32> {
+    var ray_origin_ndc = ssr_world_to_ndc(surface_pos_world, view_proj);
+    ray_origin_ndc.z = depth_prepass;
+    return ray_origin_ndc;
 }
 
 /// Vacío / far plane del depth prepass (GL NDC z ≈ 1).
@@ -147,45 +147,52 @@ fn ssr_view_depth_from_view_pos(view_pos : vec3<f32>) -> f32 {
     return max(-view_pos.z, 1e-4);
 }
 
-/// `V` = superficie→cámara; reflejo en view space: `reflect(normalize(position_view), N_view)`.
-fn ssr_view_dir_world(cam_pos : vec3<f32>, world_pos : vec3<f32>) -> vec3<f32> {
-    return normalize(cam_pos - world_pos);
+/// Dirección de vista en world: de la superficie hacia la cámara.
+fn ssr_view_dir_world(camera_pos_world : vec3<f32>, surface_pos_world : vec3<f32>) -> vec3<f32> {
+    return normalize(camera_pos_world - surface_pos_world);
 }
 
-fn ssr_reflection_world(cam_pos : vec3<f32>, world_pos : vec3<f32>, n_world : vec3<f32>) -> vec3<f32> {
-    let V = ssr_view_dir_world(cam_pos, world_pos);
-    return normalize(reflect(-V, normalize(n_world)));
+/// Dirección reflejada en world: `reflect(-view_dir, surface_normal)` con view = superficie→cámara.
+fn ssr_reflection_world(
+    camera_pos_world     : vec3<f32>,
+    surface_pos_world    : vec3<f32>,
+    surface_normal_world : vec3<f32>,
+) -> vec3<f32> {
+    let view_dir_world = ssr_view_dir_world(camera_pos_world, surface_pos_world);
+    return normalize(reflect(-view_dir_world, normalize(surface_normal_world)));
 }
 
 /// Primary RT ray on SSR miss: same mirror axis as SSR; GGX lobe only when rough.
 fn refl_rt_primary_trace_dir(
-    cam_pos : vec3<f32>,
-    world_pos : vec3<f32>,
-    n : vec3<f32>,
-    roughness : f32,
-    frame_index : u32,
-    uv : vec2<f32>,
+    camera_pos_world     : vec3<f32>,
+    surface_pos_world    : vec3<f32>,
+    surface_normal_world : vec3<f32>,
+    roughness            : f32,
+    frame_index          : u32,
+    uv                   : vec2<f32>,
 ) -> vec3<f32> {
-    let V = normalize(cam_pos - world_pos);
+    let view_dir_world = normalize(camera_pos_world - surface_pos_world);
     if roughness <= 0.04 {
-        return ssr_reflection_world(cam_pos, world_pos, n);
+        return ssr_reflection_world(camera_pos_world, surface_pos_world, surface_normal_world);
     }
     let seed = refl_blue_noise_seed(frame_index, uv);
-    let T = refl_tangent(n);
-    let B = refl_bitangent(n, T);
+    let T = refl_tangent(surface_normal_world);
+    let B = refl_bitangent(surface_normal_world, T);
     let H_local = ggx_sample_ndf(roughness, seed);
-    let H = normalize(H_local.x * T + H_local.y * B + H_local.z * n);
-    return normalize(reflect(-V, H));
+    let microfacet_normal = normalize(
+        H_local.x * T + H_local.y * B + H_local.z * surface_normal_world,
+    );
+    return normalize(reflect(-view_dir_world, microfacet_normal));
 }
 
-/// Dirección reflejada en view space: `reflect(normalize(position_view), N)`.
-fn ssr_reflection_dir_view(position_view : vec3<f32>, normal_view : vec3<f32>) -> vec3<f32> {
-    return normalize(reflect(normalize(position_view), normalize(normal_view)));
+/// Dirección reflejada en view space: `reflect(surface_pos_view, surface_normal_view)`.
+fn ssr_reflection_dir_view(surface_pos_view : vec3<f32>, surface_normal_view : vec3<f32>) -> vec3<f32> {
+    return normalize(reflect(normalize(surface_pos_view), normalize(surface_normal_view)));
 }
 
-fn ssr_reflection_dir(view_dir : vec3<f32>, normal_view : vec3<f32>) -> vec3<f32> {
-    _ = view_dir;
-    return ssr_reflection_dir_view(-view_dir, normal_view);
+fn ssr_reflection_dir(view_dir_view : vec3<f32>, surface_normal_view : vec3<f32>) -> vec3<f32> {
+    _ = view_dir_view;
+    return ssr_reflection_dir_view(-view_dir_view, surface_normal_view);
 }
 
 /// World → NDC xyz (post divide).
@@ -202,51 +209,52 @@ fn ssr_direction_world_to_clip(world_dir : vec3<f32>, view_proj : mat4x4<f32>) -
 
 /// Extremo del rayo SSR en NDC: marcha infinita en clip acotada al frustum.
 fn ssr_clip_ray_end_ndc(
-    start_cs : vec3<f32>,
-    world_dir : vec3<f32>,
-    view_proj : mat4x4<f32>,
+    ray_origin_ndc       : vec3<f32>,
+    reflection_dir_world : vec3<f32>,
+    view_proj            : mat4x4<f32>,
 ) -> vec3<f32> {
-    let dir_cs = ssr_direction_world_to_clip(world_dir, view_proj);
-    var end_cs4 = vec4<f32>(start_cs, 1.0) + dir_cs;
-    end_cs4 = end_cs4 / (select(-1.0, 1.0, end_cs4.w >= 0.0) * max(abs(end_cs4.w), 1e-10));
+    let reflection_dir_clip = ssr_direction_world_to_clip(reflection_dir_world, view_proj);
+    var ray_end_clip = vec4<f32>(ray_origin_ndc, 1.0) + reflection_dir_clip;
+    ray_end_clip = ray_end_clip
+        / (select(-1.0, 1.0, ray_end_clip.w >= 0.0) * max(abs(ray_end_clip.w), 1e-10));
 
-    var delta_cs = end_cs4.xyz - start_cs;
+    var ray_delta_ndc = ray_end_clip.xyz - ray_origin_ndc;
     let near_edge = select(
         vec3<f32>(-1.0, -1.0, -1.0),
         vec3<f32>(1.0, 1.0, 1.0),
-        delta_cs < vec3<f32>(0.0),
+        ray_delta_ndc < vec3<f32>(0.0),
     );
-    let dist_near = (near_edge - start_cs) / delta_cs;
+    let dist_near = (near_edge - ray_origin_ndc) / ray_delta_ndc;
     let max_dist_near = max(max(dist_near.x, dist_near.y), dist_near.z);
-    var ray_start_cs = start_cs + delta_cs * max(0.0, max_dist_near);
+    var clipped_origin_ndc = ray_origin_ndc + ray_delta_ndc * max(0.0, max_dist_near);
 
-    delta_cs = end_cs4.xyz - ray_start_cs;
+    ray_delta_ndc = ray_end_clip.xyz - clipped_origin_ndc;
     let far_edge = select(
         vec3<f32>(-1.0, -1.0, -1.0),
         vec3<f32>(1.0, 1.0, 1.0),
-        delta_cs >= vec3<f32>(0.0),
+        ray_delta_ndc >= vec3<f32>(0.0),
     );
-    let dist_far = (far_edge - ray_start_cs) / delta_cs;
+    let dist_far = (far_edge - clipped_origin_ndc) / ray_delta_ndc;
     let min_dist_far = min(min(dist_far.x, dist_far.y), dist_far.z);
-    delta_cs *= min_dist_far;
-    return ray_start_cs + delta_cs;
+    ray_delta_ndc *= min_dist_far;
+    return clipped_origin_ndc + ray_delta_ndc;
 }
 
 /// Segmento UV del rayo SSR: extremos NDC vía clip-march.
 fn ssr_uv_ray_segment_clip(
-    start_world : vec3<f32>,
-    R_world : vec3<f32>,
-    view_proj : mat4x4<f32>,
+    surface_pos_world    : vec3<f32>,
+    reflection_dir_world : vec3<f32>,
+    view_proj            : mat4x4<f32>,
 ) -> vec4<f32> {
-    let start_cs = ssr_world_to_ndc(start_world, view_proj);
-    let end_cs = ssr_clip_ray_end_ndc(start_cs, R_world, view_proj);
-    let start_uv = refl_ndc_xy_to_uv(start_cs.xy);
-    let end_uv = refl_ndc_xy_to_uv(end_cs.xy);
-    if start_uv.x < -0.5 || end_uv.x < -0.5 {
+    let ray_origin_ndc = ssr_world_to_ndc(surface_pos_world, view_proj);
+    let ray_end_ndc = ssr_clip_ray_end_ndc(ray_origin_ndc, reflection_dir_world, view_proj);
+    let ray_origin_uv = refl_ndc_xy_to_uv(ray_origin_ndc.xy);
+    let ray_end_uv = refl_ndc_xy_to_uv(ray_end_ndc.xy);
+    if ray_origin_uv.x < -0.5 || ray_end_uv.x < -0.5 {
         return vec4<f32>(0.0);
     }
-    let dp = end_uv - start_uv;
-    return vec4<f32>(dp, length(dp), 0.0);
+    let ray_uv_delta = ray_end_uv - ray_origin_uv;
+    return vec4<f32>(ray_uv_delta, length(ray_uv_delta), 0.0);
 }
 
 /// View → NDC con división perspectiva segura.
@@ -380,9 +388,13 @@ fn ssr_reflection_roughness(surface_roughness : f32) -> f32 {
     return clamp(surface_roughness, 0.0, 1.0);
 }
 
-/// `reflect(-V, N)` con `V` superficie→cámara (forward IBL).
-fn refl_mirror_dir(world_pos : vec3<f32>, cam_pos : vec3<f32>, n : vec3<f32>) -> vec3<f32> {
-    return ssr_reflection_world(cam_pos, world_pos, n);
+/// `reflect(-view_dir, surface_normal)` con view = superficie→cámara (forward IBL).
+fn refl_mirror_dir(
+    surface_pos_world    : vec3<f32>,
+    camera_pos_world     : vec3<f32>,
+    surface_normal_world : vec3<f32>,
+) -> vec3<f32> {
+    return ssr_reflection_world(camera_pos_world, surface_pos_world, surface_normal_world);
 }
 
 /// Dirección de muestreo del cubemap con parallax esférico (meta.w = radio de influencia).
@@ -612,17 +624,23 @@ fn ssr_view_normal_bias_m(view_depth_m : f32) -> f32 {
 
 /// Posición coherente con prepass depth + sesgo hacia afuera para reflect().
 fn ssr_reflect_surface_at_uv(
-    uv : vec2<f32>,
-    depth_prepass : f32,
-    n_world : vec3<f32>,
-    inv_view_proj : mat4x4<f32>,
-    near_plane : f32,
-    far_plane : f32,
+    uv                   : vec2<f32>,
+    depth_prepass        : f32,
+    surface_normal_world : vec3<f32>,
+    inv_view_proj        : mat4x4<f32>,
+    near_plane           : f32,
+    far_plane            : f32,
 ) -> vec3<f32> {
-    let world_pos = refl_world_pos_from_depth(uv, depth_prepass, inv_view_proj, near_plane, far_plane);
-    let surf_depth_m = refl_view_depth_m_from_gl_ndc_z(depth_prepass, near_plane, far_plane);
-    let bias = ssr_view_normal_bias_m(surf_depth_m);
-    return world_pos + normalize(n_world) * bias;
+    let surface_pos_world = refl_world_pos_from_depth(
+        uv,
+        depth_prepass,
+        inv_view_proj,
+        near_plane,
+        far_plane,
+    );
+    let surface_depth_m = refl_view_depth_m_from_gl_ndc_z(depth_prepass, near_plane, far_plane);
+    let normal_bias_m = ssr_view_normal_bias_m(surface_depth_m);
+    return surface_pos_world + normalize(surface_normal_world) * normal_bias_m;
 }
 
 /// RT primario; SSR refina en pantalla; en miss RT conserva SSR (cubemap/procedural).
@@ -670,31 +688,31 @@ fn ssr_march_skip_self_intersection_t(
 
 /// Rechazo post-marcha: misma lámina / cáscara convexa (esferas).
 fn ssr_reject_self_reflection(
-    surf_world : vec3<f32>,
-    hit_world : vec3<f32>,
-    n_surf : vec3<f32>,
-    n_hit : vec3<f32>,
-    surf_depth_m : f32,
-    hit_depth_m : f32,
-    surf_uv : vec2<f32>,
-    hit_uv : vec2<f32>,
-    tex_size : vec2<f32>,
+    surface_pos_world    : vec3<f32>,
+    hit_pos_world        : vec3<f32>,
+    surface_normal_world : vec3<f32>,
+    hit_normal_world     : vec3<f32>,
+    surface_depth_m      : f32,
+    hit_depth_m          : f32,
+    surface_uv           : vec2<f32>,
+    reflection_hit_uv    : vec2<f32>,
+    tex_size             : vec2<f32>,
 ) -> bool {
-    _ = surf_world;
-    _ = hit_world;
-    let ns = normalize(n_surf);
-    let nh = normalize(n_hit);
-    let abs_depth = abs(hit_depth_m - surf_depth_m);
-    let rel_depth = abs_depth / max(surf_depth_m, 0.05);
-    let n_dot = dot(ns, nh);
-    let px_dist = length((hit_uv - surf_uv) * tex_size);
+    _ = surface_pos_world;
+    _ = hit_pos_world;
+    let surface_normal = normalize(surface_normal_world);
+    let hit_normal = normalize(hit_normal_world);
+    let abs_depth = abs(hit_depth_m - surface_depth_m);
+    let rel_depth = abs_depth / max(surface_depth_m, 0.05);
+    let normals_dot = dot(surface_normal, hit_normal);
+    let pixel_distance = length((reflection_hit_uv - surface_uv) * tex_size);
 
     // Mismo píxel / misma lámina: autoreflexión (penetración ≈ 0).
-    if px_dist < 2.0 && (abs_depth < 0.05 || rel_depth < 0.008) {
+    if pixel_distance < 2.0 && (abs_depth < 0.05 || rel_depth < 0.008) {
         return true;
     }
     // Misma cáscara convexa: solo hits casi coincidentes (no toda la corona 5–64 px).
-    if n_dot > 0.94 && px_dist < 10.0 && rel_depth < 0.012 {
+    if normals_dot > 0.94 && pixel_distance < 10.0 && rel_depth < 0.012 {
         return true;
     }
     return false;

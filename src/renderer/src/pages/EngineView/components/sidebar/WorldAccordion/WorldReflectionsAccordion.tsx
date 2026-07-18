@@ -18,6 +18,7 @@ const DEBUG_VIEWS = [
 	{ key: 'ssr_hit_uv', labelKey: 'Reflection debug ssr hit uv' },
 	{ key: 'ssr_hit_sample_color', labelKey: 'Reflection debug ssr hit sample color' },
 	{ key: 'ssr_proj_depth_delta', labelKey: 'Reflection debug ssr proj depth delta' },
+	{ key: 'ssr_ray_overlay', labelKey: 'Reflection debug ssr ray overlay' },
 ] as const
 
 export default function WorldReflectionsAccordion() {

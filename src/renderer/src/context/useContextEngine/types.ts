@@ -125,7 +125,7 @@ export function normalizeShadowTier(value: unknown): ShadowTier {
 	return 'low';
 }
 
-export type ReflectionDebugView = 'final' | 'ssr_debug' | 'ssr_miss_green' | 'ssr_exit_reason' | 'ssr_vector_rgb' | 'ssr_hit_class' | 'ssr_path_px' | 'ssr_march_refl_dir' | 'ssr_hit_uv' | 'ssr_hit_sample_color' | 'ssr_proj_depth_delta'
+export type ReflectionDebugView = 'final' | 'ssr_debug' | 'ssr_miss_green' | 'ssr_exit_reason' | 'ssr_vector_rgb' | 'ssr_hit_class' | 'ssr_path_px' | 'ssr_march_refl_dir' | 'ssr_hit_uv' | 'ssr_hit_sample_color' | 'ssr_proj_depth_delta' | 'ssr_ray_overlay'
 
 export function normalizeReflectionDebugView(value: unknown): ReflectionDebugView {
 	const s = String(value ?? 'final').trim().toLowerCase()
@@ -188,6 +188,14 @@ export function normalizeReflectionDebugView(value: unknown): ReflectionDebugVie
 		|| s === 'start_cs_z_delta'
 	) {
 		return 'ssr_proj_depth_delta'
+	}
+	if (
+		s === 'ssr_ray_overlay'
+		|| s === 'ssr_rayoverlay'
+		|| s === 'ssr_rays'
+		|| s === 'ray_overlay'
+	) {
+		return 'ssr_ray_overlay'
 	}
 	return 'final'
 }

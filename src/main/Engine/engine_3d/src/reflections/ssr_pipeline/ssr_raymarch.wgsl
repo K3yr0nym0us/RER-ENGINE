@@ -305,30 +305,33 @@ fn ssr_depth_ray_march_march(raymarch : ptr<function, SsrDepthRayMarch>) -> SsrD
 }
 
 struct SsrMarchHit {
-    found  : bool,
-    hit_uv : vec2<f32>,
+    found             : bool,
+    reflection_hit_uv : vec2<f32>,
+    /// Extremo del segmento de marcha (solo overlay debug; no altera el hit).
+    ray_march_end_uv  : vec2<f32>,
 }
 
-/// Evalúa marcha SSR. `start_cs` = NDC xyz del píxel (xy desde UV, z = prepass GL NDC).
+/// Evalúa marcha SSR. `ray_origin_ndc` = NDC xyz del píxel (xy desde UV, z = prepass GL NDC).
 fn ssr_evaluate_trace(
-    R_world : vec3<f32>,
-    start_cs : vec3<f32>,
-    jitter : f32,
-    view_proj : mat4x4<f32>,
-    linear_steps : u32,
-    bisection_steps : u32,
-    thickness_linear_z : f32,
-    near_plane : f32,
+    reflection_dir_world : vec3<f32>,
+    ray_origin_ndc       : vec3<f32>,
+    jitter               : f32,
+    view_proj            : mat4x4<f32>,
+    linear_steps         : u32,
+    bisection_steps      : u32,
+    thickness_linear_z   : f32,
+    near_plane           : f32,
 ) -> SsrMarchHit {
     var out : SsrMarchHit;
     out.found = false;
-    out.hit_uv = vec2<f32>(-1.0);
+    out.reflection_hit_uv = vec2<f32>(-1.0);
+    out.ray_march_end_uv = refl_ndc_xy_to_uv(ray_origin_ndc.xy);
 
     let depth_size = vec2<f32>(textureDimensions(t_depth));
     var raymarch = ssr_depth_ray_march_new(depth_size, near_plane);
 
-    ssr_depth_ray_march_from_cs(&raymarch, start_cs);
-    ssr_depth_ray_march_to_ws_dir(&raymarch, normalize(R_world), view_proj);
+    ssr_depth_ray_march_from_cs(&raymarch, ray_origin_ndc);
+    ssr_depth_ray_march_to_ws_dir(&raymarch, normalize(reflection_dir_world), view_proj);
 
     raymarch.linear_steps = linear_steps;
     raymarch.bisection_steps = bisection_steps;
@@ -337,10 +340,12 @@ fn ssr_evaluate_trace(
     raymarch.jitter = jitter;
     raymarch.march_behind_surfaces = false;
 
+    out.ray_march_end_uv = refl_ndc_xy_to_uv(raymarch.ray_end_cs.xy);
+
     let result = ssr_depth_ray_march_march(&raymarch);
     if result.hit {
         out.found = true;
-        out.hit_uv = result.hit_uv;
+        out.reflection_hit_uv = result.hit_uv;
     }
     return out;
 }

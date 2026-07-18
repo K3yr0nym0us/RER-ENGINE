@@ -362,6 +362,7 @@
   "Reflection debug ssr hit uv": "SSR hit UV — RG=fract(hit_uv×8) en hits válidos; negro=miss (mismo UV que lit_scene)",
   "Reflection debug ssr hit sample color": "SSR sample color — lit_scene en hit_uv (Bevy directo); negro=miss; sin composite",
   "Reflection debug ssr proj depth delta": "SSR Δdepth proj — |clip.z/w − prepass|×80; azul≈0 OK, rojo=desalineación (corona/TAA)",
+  "Reflection debug ssr ray overlay": "SSR rayos en pantalla — verde=hit, azul=miss; crosshair=rayo central",
   "Reflection debug normals": "Normales — color = dirección de la superficie",
   "Reflection debug depth": "Profundidad — NDC exportada (R32, textureLoad)",
   "Reflection debug roughness": "Rugosidad — G-buffer crudo (blanco=1 mate, negro=0 espejo)",

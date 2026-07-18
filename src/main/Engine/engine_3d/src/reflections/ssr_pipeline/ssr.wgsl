@@ -47,8 +47,8 @@ struct VsOut {
 }
 
 struct SsrOut {
-    @location(0) reflection : vec4<f32>,
-    @location(1) hit_uv     : vec4<f32>,
+    @location(0) reflection         : vec4<f32>,
+    @location(1) reflection_hit_uv  : vec4<f32>,
 }
 
 @vertex
@@ -160,65 +160,65 @@ fn world_pos_at_uv(uv : vec2<f32>, depth_prepass : f32) -> vec3<f32> {
 
 /// Posición coherente con prepass depth + sesgo hacia afuera para reflect().
 fn ssr_reflect_surface(
-    uv : vec2<f32>,
-    depth_prepass : f32,
-    n_world : vec3<f32>,
+    uv                   : vec2<f32>,
+    depth_prepass        : f32,
+    surface_normal_world : vec3<f32>,
 ) -> vec3<f32> {
     return ssr_reflect_surface_at_uv(
         uv,
         depth_prepass,
-        n_world,
+        surface_normal_world,
         u.inv_view_proj,
         u.near_plane,
         u.far_plane,
     );
 }
 
-fn ssr_reflected_radiance(hit_uv : vec2<f32>) -> vec3<f32> {
+fn ssr_reflected_radiance(reflection_hit_uv : vec2<f32>) -> vec3<f32> {
     // Lit-composite lineal; peso Fresnel/metal va en alpha/miss, no aquí.
-    return textureSampleLevel(t_lit_scene, s_linear, hit_uv, 0.0).rgb;
+    return textureSampleLevel(t_lit_scene, s_linear, reflection_hit_uv, 0.0).rgb;
 }
 
 /// Peso especular SSR: en metales el F0 oscuro no debe anular el trazo.
-fn ssr_specular_weight(trace_w : f32, roughness : f32, metallic : f32) -> f32 {
+fn ssr_specular_weight(reflection_trace_strength : f32, roughness : f32, metallic : f32) -> f32 {
     if metallic > 0.5 {
         let r = clamp(roughness, 0.0, 1.0);
         let glossy = (1.0 - r) * (1.0 - r);
-        return max(trace_w, glossy * 0.8);
+        return max(reflection_trace_strength, glossy * 0.8);
     }
-    return trace_w;
+    return reflection_trace_strength;
 }
 
 /// Fallback en miss SSR: cubemap probe o procedural si no hay probe.
 fn ssr_environment_fallback_radiance(
-    world_pos : vec3<f32>,
-    cam_world : vec3<f32>,
-    n_world : vec3<f32>,
-    R_world : vec3<f32>,
-    albedo : vec3<f32>,
-    metallic : f32,
-    roughness : f32,
-    spec_w : f32,
+    surface_pos_world    : vec3<f32>,
+    camera_pos_world     : vec3<f32>,
+    surface_normal_world : vec3<f32>,
+    reflection_dir_world : vec3<f32>,
+    albedo               : vec3<f32>,
+    metallic             : f32,
+    roughness            : f32,
+    specular_weight      : f32,
 ) -> vec3<f32> {
-    let layer_i = refl_nearest_probe_layer_entries(world_pos, probe_meta.entries);
+    let layer_i = refl_nearest_probe_layer_entries(surface_pos_world, probe_meta.entries);
     var env : vec3<f32>;
     if layer_i >= 0 {
         let sample_dir = refl_cubemap_sample_dir(
-            world_pos,
-            cam_world,
-            n_world,
+            surface_pos_world,
+            camera_pos_world,
+            surface_normal_world,
             layer_i,
             probe_meta.entries,
         );
         let lod = refl_env_cubemap_lod(roughness);
         env = textureSampleLevel(t_probe_env, s_probe_env, sample_dir, layer_i, lod).rgb;
     } else {
-        env = refl_fake_environment(normalize(R_world));
+        env = refl_fake_environment(normalize(reflection_dir_world));
     }
     var rgb = refl_metal_attenuate(env, albedo, metallic);
     let lum = dot(rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
     rgb = mix(vec3<f32>(lum), rgb, 1.0 - roughness * 0.4);
-    return rgb * spec_w;
+    return rgb * specular_weight;
 }
 
 fn ssr_box_blur_radiance(uv : vec2<f32>, spacing_px : f32) -> vec3<f32> {
@@ -237,43 +237,54 @@ fn ssr_box_blur_radiance(uv : vec2<f32>, spacing_px : f32) -> vec3<f32> {
 fn fs_main(in : VsOut) -> SsrOut {
     var result : SsrOut;
     result.reflection = vec4<f32>(0.0);
-    result.hit_uv = vec4<f32>(-1.0, -1.0, 0.0, 0.0);
+    result.reflection_hit_uv = vec4<f32>(-1.0, -1.0, 0.0, 0.0);
 
     let depth_prepass = scene_depth_at_uv(in.uv);
     if refl_depth_prepass_invalid(depth_prepass) {
         return result;
     }
 
-    let surf_px = texel_px(in.uv, textureDimensions(t_surface));
-    let roughness = textureLoad(t_surface, surf_px, 0).g;
+    let surface_texel = texel_px(in.uv, textureDimensions(t_surface));
+    let roughness = textureLoad(t_surface, surface_texel, 0).g;
     if roughness > u.max_roughness {
         return result;
     }
 
-    let direct_px = texel_px(in.uv, textureDimensions(t_direct));
-    let direct_s = textureLoad(t_direct, direct_px, 0);
-    let metallic = direct_s.a;
-    let ior = select(0.0, direct_s.b * 10.0, direct_s.b > 0.01);
-    let albedo = textureLoad(t_base_color, surf_px, 0).rgb;
+    let direct_texel = texel_px(in.uv, textureDimensions(t_direct));
+    let direct_sample = textureLoad(t_direct, direct_texel, 0);
+    let metallic = direct_sample.a;
+    let ior = select(0.0, direct_sample.b * 10.0, direct_sample.b > 0.01);
+    let albedo = textureLoad(t_base_color, surface_texel, 0).rgb;
 
-    let n_world = decode_octahedral(
+    let surface_normal_world = decode_octahedral(
         textureLoad(t_normal_roughness, texel_px(in.uv, textureDimensions(t_normal_roughness)), 0).zw,
     );
-    let world_pos = world_pos_at_uv(in.uv, depth_prepass);
-    let cam_world = (u.inv_view * vec4<f32>(0.0, 0.0, 0.0, 1.0)).xyz;
+    let surface_pos_world = world_pos_at_uv(in.uv, depth_prepass);
+    let camera_pos_world = (u.inv_view * vec4<f32>(0.0, 0.0, 0.0, 1.0)).xyz;
 
-    let V_world = ssr_view_dir_world(cam_world, world_pos);
-    let trace_w = refl_trace_strength(roughness, metallic, n_world, V_world, albedo, ior);
+    let view_dir_world = ssr_view_dir_world(camera_pos_world, surface_pos_world);
+    let reflection_trace_strength = refl_trace_strength(
+        roughness,
+        metallic,
+        surface_normal_world,
+        view_dir_world,
+        albedo,
+        ior,
+    );
 
-    // P desde G-buffer; start_cs.z = prepass (no clip.z/w — distinto de @builtin(position).z en wgpu).
-    let R_world = ssr_reflection_world(cam_world, world_pos, n_world);
-    let start_cs = ssr_ray_start_cs(world_pos, depth_prepass, u.view_proj);
+    // Origen en G-buffer; ray_origin_ndc.z = prepass (no clip.z/w).
+    let reflection_dir_world = ssr_reflection_world(
+        camera_pos_world,
+        surface_pos_world,
+        surface_normal_world,
+    );
+    let ray_origin_ndc = ssr_ray_start_cs(surface_pos_world, depth_prepass, u.view_proj);
 
-    let spec_w = ssr_specular_weight(trace_w, roughness, metallic);
+    let specular_weight = ssr_specular_weight(reflection_trace_strength, roughness, metallic);
 
-    var hit = ssr_evaluate_trace(
-        R_world,
-        start_cs,
+    var march_hit = ssr_evaluate_trace(
+        reflection_dir_world,
+        ray_origin_ndc,
         1.0,
         u.view_proj,
         max(u.coarse_max_iters, 2u),
@@ -282,32 +293,39 @@ fn fs_main(in : VsOut) -> SsrOut {
         u.near_plane,
     );
 
-    var reflected : vec3<f32>;
-    if hit.found {
+    var reflected_radiance : vec3<f32>;
+    if march_hit.found {
         let blur_spacing = roughness * roughness * 4.0 + 1.0;
-        let color_sharp = ssr_reflected_radiance(hit.hit_uv);
-        let color_blur = ssr_box_blur_radiance(hit.hit_uv, blur_spacing);
-        reflected = mix(color_sharp, color_blur, clamp(roughness, 0.0, 1.0));
+        let color_sharp = ssr_reflected_radiance(march_hit.reflection_hit_uv);
+        let color_blur = ssr_box_blur_radiance(march_hit.reflection_hit_uv, blur_spacing);
+        reflected_radiance = mix(color_sharp, color_blur, clamp(roughness, 0.0, 1.0));
     } else {
-        reflected = ssr_environment_fallback_radiance(
-            world_pos,
-            cam_world,
-            n_world,
-            R_world,
+        reflected_radiance = ssr_environment_fallback_radiance(
+            surface_pos_world,
+            camera_pos_world,
+            surface_normal_world,
+            reflection_dir_world,
             albedo,
             metallic,
             roughness,
-            spec_w,
+            specular_weight,
         );
     }
 
-    // spec_w solo en miss (fallback); hits SSR no multiplican radiance por Fresnel.
-    let refl_rgb = select(reflected * spec_w, reflected, hit.found);
-    let refl_lum = dot(refl_rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
+    // specular_weight solo en miss (fallback); hits SSR no multiplican radiance por Fresnel.
+    let reflection_rgb = select(
+        reflected_radiance * specular_weight,
+        reflected_radiance,
+        march_hit.found,
+    );
+    let reflection_luminance = dot(reflection_rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
 
-    result.reflection = vec4<f32>(refl_rgb, max(spec_w, saturate(refl_lum * 2.0)));
-    if hit.found {
-        result.hit_uv = vec4<f32>(hit.hit_uv, 1.0, 1.0);
+    result.reflection = vec4<f32>(
+        reflection_rgb,
+        max(specular_weight, saturate(reflection_luminance * 2.0)),
+    );
+    if march_hit.found {
+        result.reflection_hit_uv = vec4<f32>(march_hit.reflection_hit_uv, 1.0, 1.0);
     }
     return result;
 }

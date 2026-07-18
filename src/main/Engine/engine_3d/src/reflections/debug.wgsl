@@ -143,14 +143,14 @@ fn fs_main(in : VsOut) -> @location(0) vec4<f32> {
             if !t.eligible {
                 return vec4<f32>(0.0, 0.0, 0.0, 1.0);
             }
-            return vec4<f32>(t.view_dir * 0.5 + vec3<f32>(0.5), 1.0);
+            return vec4<f32>(t.view_dir_world * 0.5 + vec3<f32>(0.5), 1.0);
         }
         case 14u: {
             let t = trace_ssr_debug(in.uv);
             if !t.eligible {
                 return vec4<f32>(0.0, 0.0, 0.0, 1.0);
             }
-            return vec4<f32>(t.refl_dir * 0.5 + vec3<f32>(0.5), 1.0);
+            return vec4<f32>(t.reflection_dir_world * 0.5 + vec3<f32>(0.5), 1.0);
         }
         case 15u: {
             let t = trace_ssr_debug(in.uv);
@@ -174,14 +174,14 @@ fn fs_main(in : VsOut) -> @location(0) vec4<f32> {
             if !t.found {
                 return vec4<f32>(0.0, 0.0, 0.0, 1.0);
             }
-            return vec4<f32>(t.hit_uv, 0.0, 1.0);
+            return vec4<f32>(t.reflection_hit_uv, 0.0, 1.0);
         }
         case 18u: {
             let t = trace_ssr_debug(in.uv);
             if !t.found {
                 return vec4<f32>(0.0, 0.0, 0.0, 1.0);
             }
-            return vec4<f32>(lit_scene_at(t.hit_uv), 1.0);
+            return vec4<f32>(lit_scene_at(t.reflection_hit_uv), 1.0);
         }
         case 19u: {
             let t = trace_ssr_debug(in.uv);
@@ -189,7 +189,7 @@ fn fs_main(in : VsOut) -> @location(0) vec4<f32> {
                 return vec4<f32>(0.0, 0.0, 0.0, 1.0);
             }
             let spacing_px = ssr_reflection_roughness(t.roughness) * 4.0 + 1.0;
-            return vec4<f32>(ssr_debug_box_blur(t.hit_uv, spacing_px), 1.0);
+            return vec4<f32>(ssr_debug_box_blur(t.reflection_hit_uv, spacing_px), 1.0);
         }
         case 20u: {
             let r = textureSample(t_reflection, s_linear, in.uv);
@@ -208,21 +208,21 @@ fn fs_main(in : VsOut) -> @location(0) vec4<f32> {
             if !t.found {
                 return vec4<f32>(0.0, 0.0, 0.0, 1.0);
             }
-            return vec4<f32>(t.hit_uv, 0.0, 1.0);
+            return vec4<f32>(t.reflection_hit_uv, 0.0, 1.0);
         }
         case 24u: {
             let t = trace_ssr_debug(in.uv);
             if !t.found {
                 return vec4<f32>(0.0, 0.0, 0.0, 1.0);
             }
-            return vec4<f32>(t.hit_uv, 0.0, 1.0);
+            return vec4<f32>(t.reflection_hit_uv, 0.0, 1.0);
         }
         case 25u: {
             let t = trace_ssr_debug(in.uv);
             if !t.found {
                 return vec4<f32>(0.0, 0.0, 0.0, 1.0);
             }
-            return vec4<f32>(t.hit_uv, 0.0, 1.0);
+            return vec4<f32>(t.reflection_hit_uv, 0.0, 1.0);
         }
         case 26u: {
             let base = textureSample(t_scene, s_linear, in.uv);
@@ -305,7 +305,7 @@ fn fs_main(in : VsOut) -> @location(0) vec4<f32> {
                 return vec4<f32>(0.0, 0.0, 0.0, 1.0);
             }
             if t.found {
-                return vec4<f32>(lit_scene_at(t.hit_uv), 1.0);
+                return vec4<f32>(lit_scene_at(t.reflection_hit_uv), 1.0);
             }
             return vec4<f32>(0.0, 1.0, 0.0, 1.0);
         }
@@ -325,7 +325,7 @@ fn fs_main(in : VsOut) -> @location(0) vec4<f32> {
                 case 6u: { return vec4<f32>(0.0, 0.0, 1.0, 1.0); }      // azul
                 case 7u: { return vec4<f32>(0.5, 0.0, 1.0, 1.0); }      // violeta
                 case 8u: { return vec4<f32>(1.0, 0.0, 0.5, 1.0); }      // rosa
-                default: { return vec4<f32>(lit_scene_at(t.hit_uv), 1.0); } // escena
+                default: { return vec4<f32>(lit_scene_at(t.reflection_hit_uv), 1.0); } // escena
             }
         }
         case 32u: {
@@ -333,7 +333,7 @@ fn fs_main(in : VsOut) -> @location(0) vec4<f32> {
             if !m.eligible {
                 return vec4<f32>(0.0, 0.0, 0.0, 1.0);
             }
-            return vec4<f32>(m.R_world * 0.5 + vec3<f32>(0.5), 1.0);
+            return vec4<f32>(m.reflection_dir_world * 0.5 + vec3<f32>(0.5), 1.0);
         }
         case 33u: {
             let t = trace_ssr_debug(in.uv);
@@ -365,15 +365,15 @@ fn fs_main(in : VsOut) -> @location(0) vec4<f32> {
             return vec4<f32>(vec3<f32>(v), 1.0);
         }
         case 35u: {
-            // R_world exacto → `ssr_evaluate_trace(m.R_world, m.start_cs, …)` (ver `ssr_march_inputs_at`).
+            // reflection_dir_world exacto → `ssr_evaluate_trace` (ver `ssr_march_inputs_at`).
             let m = ssr_march_inputs_at(in.uv);
             if !m.eligible {
                 return vec4<f32>(0.05, 0.05, 0.08, 1.0);
             }
-            return vec4<f32>(m.R_world * 0.5 + vec3<f32>(0.5), 1.0);
+            return vec4<f32>(m.reflection_dir_world * 0.5 + vec3<f32>(0.5), 1.0);
         }
         case 36u: {
-            // hit_uv idéntico al que usa `ssr_reflected_radiance(hit.hit_uv)` en `ssr.wgsl`.
+            // reflection_hit_uv idéntico al que usa `ssr_reflected_radiance` en `ssr.wgsl`.
             let t = trace_ssr_debug(in.uv);
             if !t.eligible {
                 return vec4<f32>(0.05, 0.05, 0.08, 1.0);
@@ -381,11 +381,11 @@ fn fs_main(in : VsOut) -> @location(0) vec4<f32> {
             if !t.found {
                 return vec4<f32>(0.0, 0.0, 0.0, 1.0);
             }
-            let uv_pat = fract(t.hit_uv * 8.0);
+            let uv_pat = fract(t.reflection_hit_uv * 8.0);
             return vec4<f32>(uv_pat.x, uv_pat.y, 0.0, 1.0);
         }
         case 37u: {
-            // Color exacto que entra al pass SSR: `ssr_reflected_radiance(hit.hit_uv)`.
+            // Color exacto que entra al pass SSR: `ssr_reflected_radiance(reflection_hit_uv)`.
             let t = trace_ssr_debug(in.uv);
             if !t.eligible {
                 return vec4<f32>(0.05, 0.05, 0.08, 1.0);
@@ -393,7 +393,7 @@ fn fs_main(in : VsOut) -> @location(0) vec4<f32> {
             if !t.found {
                 return vec4<f32>(0.0, 0.0, 0.0, 1.0);
             }
-            return vec4<f32>(ssr_reflected_radiance_at_hit(t.hit_uv), 1.0);
+            return vec4<f32>(ssr_reflected_radiance_at_hit(t.reflection_hit_uv), 1.0);
         }
         case 38u: {
             // Δdepth: |clip.z/w desde P − prepass z| — azul≈0 (OK), rojo=desalineación (corona).
@@ -403,6 +403,47 @@ fn fs_main(in : VsOut) -> @location(0) vec4<f32> {
             }
             let v = clamp(delta * 80.0, 0.0, 1.0);
             return vec4<f32>(v, v * 0.35, 1.0 - v, 1.0);
+        }
+        case 39u: {
+            // Overlay de rayos SSR (misma lógica que el modo final).
+            var scene = textureSample(t_scene, s_linear, in.uv).rgb * 0.32;
+            let texel = vec2<f32>(1.0) / u.gb_resolution;
+            let grid_step = 8.0;
+            let line_w_px = 1.35;
+            let center_w_px = 2.75;
+
+            var overlay = vec3<f32>(0.0);
+
+            let grid_origin = (floor(in.uv / (texel * grid_step)) + vec2<f32>(0.5)) * texel * grid_step;
+            let grid_vis = ssr_ray_vis_at(grid_origin);
+            if grid_vis.eligible {
+                let dist = ssr_overlay_line_dist_px(in.uv, grid_vis.surface_uv, grid_vis.reflection_target_uv, u.gb_resolution);
+                if dist <= line_w_px {
+                    if grid_vis.found {
+                        overlay = max(overlay, vec3<f32>(0.0, 1.0, 0.0));
+                    } else {
+                        overlay = max(overlay, vec3<f32>(0.0, 0.45, 1.0));
+                    }
+                }
+            }
+
+            let center_uv = vec2<f32>(0.5, 0.5);
+            let center_vis = ssr_ray_vis_at(center_uv);
+            if center_vis.eligible {
+                let dist_c = ssr_overlay_line_dist_px(in.uv, center_vis.surface_uv, center_vis.reflection_target_uv, u.gb_resolution);
+                if dist_c <= center_w_px {
+                    if center_vis.found {
+                        overlay = vec3<f32>(0.0, 1.0, 0.0);
+                    } else {
+                        overlay = vec3<f32>(0.0, 0.45, 1.0);
+                    }
+                }
+                if length((in.uv - center_uv) * u.gb_resolution) < 4.0 {
+                    overlay = max(overlay, vec3<f32>(1.0, 1.0, 0.0));
+                }
+            }
+
+            return vec4<f32>(scene + overlay, 1.0);
         }
         default: {
             return textureSample(t_scene, s_linear, in.uv);

@@ -100,26 +100,26 @@ fn ssr_march_depth_linear(uv : vec2<f32>, tex_size : vec2<f32>) -> f32 {
     return depth_bilinear_at(uv);
 }
 
-fn lit_scene_at(hit_uv : vec2<f32>) -> vec3<f32> {
+fn lit_scene_at(reflection_hit_uv : vec2<f32>) -> vec3<f32> {
     let dims = textureDimensions(t_scene);
-    let px = texel_px(hit_uv, dims);
+    let px = texel_px(reflection_hit_uv, dims);
     return textureLoad(t_scene, px, 0).rgb;
 }
 
 /// Idéntico a `ssr_reflected_radiance` en `ssr.wgsl` (`t_lit_scene` → `t_scene` en debug).
-fn ssr_reflected_radiance_at_hit(hit_uv : vec2<f32>) -> vec3<f32> {
-    return textureSampleLevel(t_scene, s_linear, hit_uv, 0.0).rgb;
+fn ssr_reflected_radiance_at_hit(reflection_hit_uv : vec2<f32>) -> vec3<f32> {
+    return textureSampleLevel(t_scene, s_linear, reflection_hit_uv, 0.0).rgb;
 }
 
 /// |clip.z/w − prepass z| — moiré en corona si > ~0.01 (TAA / G-buffer vs reproyección).
-fn ssr_proj_depth_delta_at(surf_uv : vec2<f32>) -> f32 {
-    let depth_prepass = depth_at(surf_uv, textureDimensions(t_depth));
+fn ssr_proj_depth_delta_at(surface_uv : vec2<f32>) -> f32 {
+    let depth_prepass = depth_at(surface_uv, textureDimensions(t_depth));
     if refl_depth_prepass_invalid(depth_prepass) {
         return -1.0;
     }
-    let world_pos = world_pos_at_uv(surf_uv, depth_prepass);
-    let proj_z = ssr_world_to_ndc(world_pos, u.view_proj).z;
-    return abs(proj_z - depth_prepass);
+    let surface_pos_world = world_pos_at_uv(surface_uv, depth_prepass);
+    let projected_ndc_z = ssr_world_to_ndc(surface_pos_world, u.view_proj).z;
+    return abs(projected_ndc_z - depth_prepass);
 }
 
 fn ssr_debug_box_blur(uv : vec2<f32>, spacing_px : f32) -> vec3<f32> {
@@ -135,105 +135,83 @@ fn ssr_debug_box_blur(uv : vec2<f32>, spacing_px : f32) -> vec3<f32> {
 }
 
 struct SsrMarchInputs {
-    eligible    : bool,
-    exit_reason : u32,
+    eligible             : bool,
+    exit_reason          : u32,
     /// Idéntico al primer argumento de `ssr_evaluate_trace` en `ssr.wgsl`.
-    R_world     : vec3<f32>,
-    start_cs    : vec3<f32>,
+    reflection_dir_world : vec3<f32>,
+    ray_origin_ndc       : vec3<f32>,
 }
 
-/// Misma cadena que `ssr.wgsl` antes de `ssr_evaluate_trace` (P, N, R, start_cs).
-fn ssr_march_inputs_at(surf_uv : vec2<f32>) -> SsrMarchInputs {
+/// Misma cadena que `ssr.wgsl` antes de `ssr_evaluate_trace`.
+fn ssr_march_inputs_at(surface_uv : vec2<f32>) -> SsrMarchInputs {
     var out : SsrMarchInputs;
     out.eligible = false;
     out.exit_reason = 0u;
-    out.R_world = vec3<f32>(0.0);
-    out.start_cs = vec3<f32>(0.0);
+    out.reflection_dir_world = vec3<f32>(0.0);
+    out.ray_origin_ndc = vec3<f32>(0.0);
 
-    let depth_prepass = depth_at(surf_uv, textureDimensions(t_depth));
+    let depth_prepass = depth_at(surface_uv, textureDimensions(t_depth));
     if refl_depth_prepass_invalid(depth_prepass) {
         out.exit_reason = 1u;
         return out;
     }
 
-    let n_world = decode_octahedral(
-        textureLoad(t_normal_roughness, texel_px(surf_uv, textureDimensions(t_normal_roughness)), 0).zw,
+    let surface_normal_world = decode_octahedral(
+        textureLoad(t_normal_roughness, texel_px(surface_uv, textureDimensions(t_normal_roughness)), 0).zw,
     );
-    let surf_px = texel_px(surf_uv, textureDimensions(t_surface));
-    let roughness = textureLoad(t_surface, surf_px, 0).g;
+    let surface_texel = texel_px(surface_uv, textureDimensions(t_surface));
+    let roughness = textureLoad(t_surface, surface_texel, 0).g;
 
     if roughness > u.max_roughness {
         out.exit_reason = 2u;
         return out;
     }
 
-    let world_pos = world_pos_at_uv(surf_uv, depth_prepass);
-    out.R_world = ssr_reflection_world(u.cam_pos.xyz, world_pos, n_world);
-    out.start_cs = ssr_ray_start_cs(world_pos, depth_prepass, u.view_proj);
+    let surface_pos_world = world_pos_at_uv(surface_uv, depth_prepass);
+    out.reflection_dir_world = ssr_reflection_world(
+        u.cam_pos.xyz,
+        surface_pos_world,
+        surface_normal_world,
+    );
+    out.ray_origin_ndc = ssr_ray_start_cs(surface_pos_world, depth_prepass, u.view_proj);
     out.eligible = true;
     return out;
 }
 
-struct SsrTraceDbg {
-    eligible      : bool,
-    found         : bool,
-    march_hit     : bool,
-    self_rejected : bool,
-    exit_reason   : u32,
-    view_dir      : vec3<f32>,
-    refl_dir      : vec3<f32>,
-    hit_uv        : vec2<f32>,
-    depth_delta   : f32,
-    path_px       : f32,
-    steps_frac    : f32,
-    strength      : f32,
-    roughness     : f32,
-    march_dist_m  : f32,
+struct SsrRayVis {
+    eligible           : bool,
+    found              : bool,
+    surface_uv         : vec2<f32>,
+    reflection_target_uv : vec2<f32>,
 }
 
-fn trace_ssr_debug(surf_uv : vec2<f32>) -> SsrTraceDbg {
-    var out : SsrTraceDbg;
+fn ssr_overlay_line_dist_px(uv : vec2<f32>, a : vec2<f32>, b : vec2<f32>, res : vec2<f32>) -> f32 {
+    let p = uv * res;
+    let p0 = a * res;
+    let p1 = b * res;
+    let ab = p1 - p0;
+    let len2 = max(dot(ab, ab), 1e-6);
+    let t = clamp(dot(p - p0, ab) / len2, 0.0, 1.0);
+    let closest = p0 + ab * t;
+    return length(p - closest);
+}
+
+/// Overlay de rayos: misma lógica que el SSR final (`ssr_march_inputs_at` + `ssr_evaluate_trace`).
+fn ssr_ray_vis_at(surface_uv : vec2<f32>) -> SsrRayVis {
+    var out : SsrRayVis;
     out.eligible = false;
     out.found = false;
-    out.march_hit = false;
-    out.self_rejected = false;
-    out.exit_reason = 0u;
-    out.hit_uv = vec2<f32>(-1.0);
-    out.depth_delta = 0.0;
-    out.path_px = 0.0;
-    out.steps_frac = 0.0;
-    out.strength = 0.0;
-    out.roughness = 1.0;
-    out.march_dist_m = 0.0;
-    out.view_dir = vec3<f32>(0.0);
-    out.refl_dir = vec3<f32>(0.0);
+    out.surface_uv = surface_uv;
+    out.reflection_target_uv = surface_uv;
 
-    let march_in = ssr_march_inputs_at(surf_uv);
+    let march_in = ssr_march_inputs_at(surface_uv);
     if !march_in.eligible {
-        out.exit_reason = march_in.exit_reason;
         return out;
     }
 
-    let n_world = decode_octahedral(
-        textureLoad(t_normal_roughness, texel_px(surf_uv, textureDimensions(t_normal_roughness)), 0).zw,
-    );
-    let surf_px = texel_px(surf_uv, textureDimensions(t_surface));
-    let roughness = textureLoad(t_surface, surf_px, 0).g;
-    out.roughness = roughness;
-
-    let dir_px = texel_px(surf_uv, textureDimensions(t_direct));
-    let metallic = textureLoad(t_direct, dir_px, 0).a;
-    let albedo = textureLoad(t_base_color, surf_px, 0).rgb;
-
-    let world_pos = world_pos_at_uv(surf_uv, depth_at(surf_uv, textureDimensions(t_depth)));
-    out.view_dir = ssr_view_dir_world(u.cam_pos.xyz, world_pos);
-    out.refl_dir = march_in.R_world;
-    out.strength = refl_trace_strength(roughness, metallic, n_world, out.view_dir, albedo, 0.0);
-    out.eligible = true;
-
-    let hit = ssr_evaluate_trace(
-        march_in.R_world,
-        march_in.start_cs,
+    let march_hit = ssr_evaluate_trace(
+        march_in.reflection_dir_world,
+        march_in.ray_origin_ndc,
         1.0,
         u.view_proj,
         max(u.coarse_max_iters, 2u),
@@ -242,14 +220,102 @@ fn trace_ssr_debug(surf_uv : vec2<f32>) -> SsrTraceDbg {
         u.near_plane,
     );
 
-    if !hit.found {
+    out.eligible = true;
+    out.found = march_hit.found;
+    out.reflection_target_uv = select(
+        march_hit.ray_march_end_uv,
+        march_hit.reflection_hit_uv,
+        march_hit.found,
+    );
+    return out;
+}
+
+struct SsrTraceDbg {
+    eligible             : bool,
+    found                : bool,
+    march_hit            : bool,
+    self_rejected        : bool,
+    exit_reason          : u32,
+    view_dir_world       : vec3<f32>,
+    reflection_dir_world : vec3<f32>,
+    reflection_hit_uv    : vec2<f32>,
+    depth_delta          : f32,
+    path_px              : f32,
+    steps_frac           : f32,
+    strength             : f32,
+    roughness            : f32,
+    march_dist_m         : f32,
+}
+
+fn trace_ssr_debug(surface_uv : vec2<f32>) -> SsrTraceDbg {
+    var out : SsrTraceDbg;
+    out.eligible = false;
+    out.found = false;
+    out.march_hit = false;
+    out.self_rejected = false;
+    out.exit_reason = 0u;
+    out.reflection_hit_uv = vec2<f32>(-1.0);
+    out.depth_delta = 0.0;
+    out.path_px = 0.0;
+    out.steps_frac = 0.0;
+    out.strength = 0.0;
+    out.roughness = 1.0;
+    out.march_dist_m = 0.0;
+    out.view_dir_world = vec3<f32>(0.0);
+    out.reflection_dir_world = vec3<f32>(0.0);
+
+    let march_in = ssr_march_inputs_at(surface_uv);
+    if !march_in.eligible {
+        out.exit_reason = march_in.exit_reason;
+        return out;
+    }
+
+    let surface_normal_world = decode_octahedral(
+        textureLoad(t_normal_roughness, texel_px(surface_uv, textureDimensions(t_normal_roughness)), 0).zw,
+    );
+    let surface_texel = texel_px(surface_uv, textureDimensions(t_surface));
+    let roughness = textureLoad(t_surface, surface_texel, 0).g;
+    out.roughness = roughness;
+
+    let direct_texel = texel_px(surface_uv, textureDimensions(t_direct));
+    let metallic = textureLoad(t_direct, direct_texel, 0).a;
+    let albedo = textureLoad(t_base_color, surface_texel, 0).rgb;
+
+    let surface_pos_world = world_pos_at_uv(
+        surface_uv,
+        depth_at(surface_uv, textureDimensions(t_depth)),
+    );
+    out.view_dir_world = ssr_view_dir_world(u.cam_pos.xyz, surface_pos_world);
+    out.reflection_dir_world = march_in.reflection_dir_world;
+    out.strength = refl_trace_strength(
+        roughness,
+        metallic,
+        surface_normal_world,
+        out.view_dir_world,
+        albedo,
+        0.0,
+    );
+    out.eligible = true;
+
+    let march_hit = ssr_evaluate_trace(
+        march_in.reflection_dir_world,
+        march_in.ray_origin_ndc,
+        1.0,
+        u.view_proj,
+        max(u.coarse_max_iters, 2u),
+        u.binary_steps,
+        u.thickness_m,
+        u.near_plane,
+    );
+
+    if !march_hit.found {
         out.exit_reason = 4u;
         return out;
     }
 
     out.march_hit = true;
-    out.hit_uv = hit.hit_uv;
-    out.path_px = length((hit.hit_uv - surf_uv) * u.gb_resolution);
+    out.reflection_hit_uv = march_hit.reflection_hit_uv;
+    out.path_px = length((march_hit.reflection_hit_uv - surface_uv) * u.gb_resolution);
 
     out.found = true;
     out.exit_reason = 9u;
@@ -257,8 +323,8 @@ fn trace_ssr_debug(surf_uv : vec2<f32>) -> SsrTraceDbg {
 }
 
 fn compute_reflection_strength(uv : vec2<f32>) -> f32 {
-    let surf_px = texel_px(uv, textureDimensions(t_surface));
-    let roughness = textureLoad(t_surface, surf_px, 0).g;
+    let surface_texel = texel_px(uv, textureDimensions(t_surface));
+    let roughness = textureLoad(t_surface, surface_texel, 0).g;
     if roughness > u.max_roughness {
         return 0.0;
     }
@@ -266,13 +332,20 @@ fn compute_reflection_strength(uv : vec2<f32>) -> f32 {
     if refl_depth_prepass_invalid(depth_prepass) {
         return 0.0;
     }
-    let n_world = decode_octahedral(
+    let surface_normal_world = decode_octahedral(
         textureLoad(t_normal_roughness, texel_px(uv, textureDimensions(t_normal_roughness)), 0).zw,
     );
-    let dir_px = texel_px(uv, textureDimensions(t_direct));
-    let metallic = textureLoad(t_direct, dir_px, 0).a;
-    let albedo = textureLoad(t_base_color, surf_px, 0).rgb;
-    let world_pos = world_pos_at_uv(uv, depth_prepass);
-    let V_world = ssr_view_dir_world(u.cam_pos.xyz, world_pos);
-    return refl_trace_strength(roughness, metallic, n_world, V_world, albedo, 0.0);
+    let direct_texel = texel_px(uv, textureDimensions(t_direct));
+    let metallic = textureLoad(t_direct, direct_texel, 0).a;
+    let albedo = textureLoad(t_base_color, surface_texel, 0).rgb;
+    let surface_pos_world = world_pos_at_uv(uv, depth_prepass);
+    let view_dir_world = ssr_view_dir_world(u.cam_pos.xyz, surface_pos_world);
+    return refl_trace_strength(
+        roughness,
+        metallic,
+        surface_normal_world,
+        view_dir_world,
+        albedo,
+        0.0,
+    );
 }
