@@ -8,8 +8,8 @@ use wgpu::util::DeviceExt;
 use crate::config_3d::reflection_graphics::ReflectionSettings;
 use crate::ecs::EntityId;
 use crate::engine::{SceneUniforms, State};
-use crate::reflections::probes_pipeline::registry;
 use crate::reflections::probe_env;
+use crate::reflections::probes_pipeline::registry;
 
 /// Datos de probes preparados al inicio del frame (antes del main pass).
 pub struct ProbeFrameData {
@@ -27,12 +27,9 @@ pub fn prepare_probe_frame(state: &mut State, settings: &ReflectionSettings) -> 
     if settings.uses_probes() {
         let probe_ids: Vec<_> = probe_list.iter().map(|(id, _, _)| *id).collect();
         state.sync_probe_capture_burst_for_entity_set(&probe_ids);
-        let meta = registry::build_probe_meta(&probe_list, |id| {
-            state.reflection_probe_world_radius(id)
-        });
-        state
-            .probe_env
-            .write_probe_meta(&state.queue, &meta);
+        let meta =
+            registry::build_probe_meta(&probe_list, |id| state.reflection_probe_world_radius(id));
+        state.probe_env.write_probe_meta(&state.queue, &meta);
     } else {
         state.probe_env.write_probe_meta(
             &state.queue,
@@ -57,9 +54,7 @@ pub fn probe_capture_indices(
     }
     if state.probe_capture_burst_all {
         state.probe_capture_burst_all = false;
-        log::info!(
-            "[reflexiones] captura burst de {probe_list_len} probes (cubemap)"
-        );
+        log::info!("[reflexiones] captura burst de {probe_list_len} probes (cubemap)");
         for &(id, _, slot) in probe_list {
             log::info!("[reflexiones] probe entidad {id} → ranura cubemap {slot}");
         }
@@ -91,11 +86,13 @@ pub fn encode_probe_captures(
     let probe_skinned_bufs: Vec<wgpu::Buffer> = skinned_probe
         .iter()
         .map(|(_, inst)| {
-            state.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("probe-skinned-inst"),
-                contents: bytemuck::cast_slice(std::slice::from_ref(inst)),
-                usage: wgpu::BufferUsages::VERTEX,
-            })
+            state
+                .device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("probe-skinned-inst"),
+                    contents: bytemuck::cast_slice(std::slice::from_ref(inst)),
+                    usage: wgpu::BufferUsages::VERTEX,
+                })
         })
         .collect();
 
@@ -103,30 +100,26 @@ pub fn encode_probe_captures(
     let probe_index_map = &probe_frame.probe_index_map;
 
     for &list_idx in &probe_indices {
-        let capture_batches = state.build_scene_instance_batches(
-            &probe_capture_static,
-            probe_index_map,
-            true,
-        );
+        let capture_batches =
+            state.build_scene_instance_batches(&probe_capture_static, probe_index_map, true);
         let capture_slices: Vec<_> = capture_batches
             .iter()
             .map(|b| b.instances.as_slice())
             .collect();
-        let capture_instance_buffers = state.capture_instance_pool.upload(
-            &state.device,
-            &state.queue,
-            &capture_slices,
-        );
+        let capture_instance_buffers =
+            state
+                .capture_instance_pool
+                .upload(&state.device, &state.queue, &capture_slices);
 
         let (_, center, cubemap_slot) = probe_frame.probe_list[list_idx];
         let face_vps = probe_env::cube_face_view_projs(center, 0.05, 200.0);
 
-        for f in 0..6usize {
+        for (f, face_vp) in face_vps.iter().enumerate() {
             let su = SceneUniforms {
-                view_proj: face_vps[f],
-                view_proj_stable: face_vps[f],
-                prev_view_proj: face_vps[f],
-                inv_view_proj: face_vps[f],
+                view_proj: *face_vp,
+                view_proj_stable: *face_vp,
+                prev_view_proj: *face_vp,
+                inv_view_proj: *face_vp,
                 cam_pos: [center.x, center.y, center.z, 0.0],
                 light_dir: scene_uni.light_dir,
                 light_color: scene_uni.light_color,
@@ -169,10 +162,7 @@ pub fn encode_probe_captures(
             cap_pass.set_pipeline(state.probe_env.capture_pipeline());
             cap_pass.set_bind_group(0, state.probe_env.face_scene_bind_group(f), &[]);
             cap_pass.set_bind_group(1, state.texture_array.bind_group.as_ref(), &[]);
-            for (batch, inst_buf) in capture_batches
-                .iter()
-                .zip(capture_instance_buffers.iter())
-            {
+            for (batch, inst_buf) in capture_batches.iter().zip(capture_instance_buffers.iter()) {
                 let Some(mesh) = state.meshes.get(batch.mesh_idx) else {
                     continue;
                 };
@@ -187,7 +177,8 @@ pub fn encode_probe_captures(
                 cap_pass.set_bind_group(0, state.probe_env.face_scene_bind_group(f), &[]);
                 cap_pass.set_bind_group(1, state.texture_array.bind_group.as_ref(), &[]);
                 cap_pass.set_bind_group(2, state.probe_env.capture_sample_bind_group(), &[]);
-                for ((gpu_idx, _), inst_buf) in skinned_probe.iter().zip(probe_skinned_bufs.iter()) {
+                for ((gpu_idx, _), inst_buf) in skinned_probe.iter().zip(probe_skinned_bufs.iter())
+                {
                     let Some(entry) = state.skinned_gpu_meshes.get(*gpu_idx) else {
                         continue;
                     };

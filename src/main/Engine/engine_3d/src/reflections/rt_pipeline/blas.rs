@@ -34,11 +34,11 @@ impl BlasCache {
 
     pub fn ensure(&mut self, device: &Device, mesh_idx: usize, mesh: &Mesh) -> Option<&Blas> {
         let rt_count = mesh.rt_index_count();
-        if rt_count == 0 || rt_count % 3 != 0 || mesh.rt_indices.is_empty() {
+        if rt_count == 0 || !rt_count.is_multiple_of(3) || mesh.rt_indices.is_empty() {
             return None;
         }
         let uses_rt_ibo = mesh.rt_index_buffer.is_some();
-        if !self.entries.contains_key(&mesh_idx) {
+        if let std::collections::hash_map::Entry::Vacant(e) = self.entries.entry(mesh_idx) {
             let sizes = BlasGeometrySizeDescriptors::Triangles {
                 descriptors: vec![BlasTriangleGeometrySizeDescriptor {
                     vertex_format: wgpu::VertexFormat::Float32x3,
@@ -56,14 +56,11 @@ impl BlasCache {
                 },
                 sizes,
             );
-            self.entries.insert(
-                mesh_idx,
-                BlasEntry {
-                    blas,
-                    rt_index_count: rt_count,
-                    uses_rt_ibo,
-                },
-            );
+            e.insert(BlasEntry {
+                blas,
+                rt_index_count: rt_count,
+                uses_rt_ibo,
+            });
             self.pending_build.push(mesh_idx);
         }
         self.entries.get(&mesh_idx).map(|e| &e.blas)
@@ -128,7 +125,8 @@ impl BlasCache {
                     size: sd,
                     vertex_buffer: &mesh.vertex_buffer,
                     first_vertex: 0,
-                    vertex_stride: std::mem::size_of::<crate::mesh::Vertex>() as wgpu::BufferAddress,
+                    vertex_stride: std::mem::size_of::<crate::mesh::Vertex>()
+                        as wgpu::BufferAddress,
                     index_buffer: Some(ibo),
                     first_index: Some(0),
                     transform_buffer: None,

@@ -15,11 +15,13 @@ use super::model_asset::{
 
 /// Metadatos de clips del FBX sin cargar malla skinned (para listar en UI si falla el asset completo).
 pub fn list_fbx_clip_infos(path: &Path) -> Vec<ModelClipInfo> {
-    let mut opts = ufbx::LoadOpts::default();
-    opts.generate_missing_normals = true;
-    opts.load_external_files = true;
-    opts.target_axes = ufbx::CoordinateAxes::right_handed_y_up();
-    opts.space_conversion = ufbx::SpaceConversion::ModifyGeometry;
+    let opts = ufbx::LoadOpts {
+        generate_missing_normals: true,
+        load_external_files: true,
+        target_axes: ufbx::CoordinateAxes::right_handed_y_up(),
+        space_conversion: ufbx::SpaceConversion::ModifyGeometry,
+        ..Default::default()
+    };
 
     let Ok(scene) = ufbx::load_file(path.to_str().unwrap_or(""), opts) else {
         return Vec::new();
@@ -119,13 +121,18 @@ fn fbx_scene_world_bounds(scene: &ufbx::Scene) -> Option<([f32; 3], [f32; 3])> {
 
 // ── FBX (ufbx) ───────────────────────────────────────────────────────────────
 
-pub(crate) fn load_fbx_asset(path: &Path, normalize_to_extent: Option<f32>) -> Option<Arc<ModelAsset>> {
-    let mut opts = ufbx::LoadOpts::default();
-    opts.generate_missing_normals = true;
-    opts.load_external_files = true;
-    opts.target_axes = ufbx::CoordinateAxes::right_handed_y_up();
-    opts.target_unit_meters = 1.0;
-    opts.space_conversion = ufbx::SpaceConversion::ModifyGeometry;
+pub(crate) fn load_fbx_asset(
+    path: &Path,
+    normalize_to_extent: Option<f32>,
+) -> Option<Arc<ModelAsset>> {
+    let opts = ufbx::LoadOpts {
+        generate_missing_normals: true,
+        load_external_files: true,
+        target_axes: ufbx::CoordinateAxes::right_handed_y_up(),
+        target_unit_meters: 1.0,
+        space_conversion: ufbx::SpaceConversion::ModifyGeometry,
+        ..Default::default()
+    };
 
     let scene = ufbx::load_file(path.to_str()?, opts).ok()?;
     let has_skinned_mesh = scene.nodes.iter().any(|n| {
@@ -156,7 +163,10 @@ pub(crate) fn load_fbx_asset(path: &Path, normalize_to_extent: Option<f32>) -> O
     }
 
     let mut skeleton = build_fbx_skeleton_from_scene(&scene).or_else(|| {
-        log::warn!("[model_asset] sin huesos en skins del FBX: {}", path.display());
+        log::warn!(
+            "[model_asset] sin huesos en skins del FBX: {}",
+            path.display()
+        );
         None
     })?;
     extend_fbx_skeleton_with_ancestors(&scene, &mut skeleton, None);
@@ -182,8 +192,7 @@ pub(crate) fn load_fbx_asset(path: &Path, normalize_to_extent: Option<f32>) -> O
     let mut asset_parts: Vec<SkinnedMeshPart> = Vec::new();
     for (skinned_mesh_node, mesh, skin_def) in &skinned_nodes {
         let world = ufbx_matrix_to_mat4(&skinned_mesh_node.geometry_to_world);
-        let Some(mesh_data) =
-            read_skinned_fbx_mesh(mesh, skin_def, fbx_dir, world, node_to_joint)
+        let Some(mesh_data) = read_skinned_fbx_mesh(mesh, skin_def, fbx_dir, world, node_to_joint)
         else {
             continue;
         };
@@ -202,7 +211,10 @@ pub(crate) fn load_fbx_asset(path: &Path, normalize_to_extent: Option<f32>) -> O
         });
     }
     if asset_parts.is_empty() {
-        log::warn!("[model_asset] FBX sin geometr├¡a skinned legible: {}", path.display());
+        log::warn!(
+            "[model_asset] FBX sin geometr├¡a skinned legible: {}",
+            path.display()
+        );
         return None;
     }
 
@@ -229,7 +241,7 @@ pub(crate) fn load_fbx_asset(path: &Path, normalize_to_extent: Option<f32>) -> O
         } else {
             stack.element.name.to_string()
         };
-        if let Some(clip) = parse_fbx_anim_stack(stack, &scene, &node_to_joint, &name) {
+        if let Some(clip) = parse_fbx_anim_stack(stack, &scene, node_to_joint, &name) {
             clips.push(clip);
         }
     }
@@ -297,8 +309,8 @@ fn build_fbx_skeleton_from_scene(scene: &ufbx::Scene) -> Option<FbxSkeletonData>
             for cluster in skin_ref.clusters.iter() {
                 if let Some(bone) = cluster.bone_node.as_ref() {
                     let tid = bone.element.typed_id;
-                    if !bone_to_joint.contains_key(&tid) {
-                        bone_to_joint.insert(tid, bone_order.len());
+                    if let std::collections::hash_map::Entry::Vacant(e) = bone_to_joint.entry(tid) {
+                        e.insert(bone_order.len());
                         bone_order.push(tid);
                     }
                 }
@@ -325,12 +337,11 @@ fn inverse_bind_for_skin(
 ) -> Vec<[[f32; 4]; 4]> {
     let mut ibm = vec![Mat4::IDENTITY.to_cols_array_2d(); joint_count];
     for cluster in skin_def.clusters.iter() {
-        if let Some(bone) = cluster.bone_node.as_ref() {
-            if let Some(&ji) = bone_to_joint.get(&bone.element.typed_id) {
-                if ji < joint_count {
-                    ibm[ji] = ufbx_matrix_to_mat4(&cluster.geometry_to_bone).to_cols_array_2d();
-                }
-            }
+        if let Some(bone) = cluster.bone_node.as_ref()
+            && let Some(&ji) = bone_to_joint.get(&bone.element.typed_id)
+            && ji < joint_count
+        {
+            ibm[ji] = ufbx_matrix_to_mat4(&cluster.geometry_to_bone).to_cols_array_2d();
         }
     }
     ibm
@@ -344,15 +355,14 @@ fn extend_fbx_skeleton_with_ancestors(
 ) {
     let initial: Vec<u32> = skeleton.bone_order.clone();
     for &bone_tid in &initial {
-        let Some(mut node) = scene.nodes.iter().find_map(|n| {
-            (n.element.typed_id == bone_tid).then_some(n.as_ref())
-        }) else {
+        let Some(mut node) = scene
+            .nodes
+            .iter()
+            .find_map(|n| (n.element.typed_id == bone_tid).then_some(n.as_ref()))
+        else {
             continue;
         };
-        loop {
-            let Some(parent) = node.parent.as_ref() else {
-                break;
-            };
+        while let Some(parent) = node.parent.as_ref() {
             let parent = parent.as_ref();
             let ptid = parent.element.typed_id;
             if stop_at_mesh_tid.is_some_and(|tid| ptid == tid) {
@@ -360,12 +370,12 @@ fn extend_fbx_skeleton_with_ancestors(
             }
             if !skeleton.bone_to_joint.contains_key(&ptid) {
                 if skeleton.bone_order.len() >= MAX_JOINTS {
-                    log::warn!(
-                        "[model_asset] ancestros FBX omitidos: l├¡mite {MAX_JOINTS} huesos"
-                    );
+                    log::warn!("[model_asset] ancestros FBX omitidos: l├¡mite {MAX_JOINTS} huesos");
                     break;
                 }
-                skeleton.bone_to_joint.insert(ptid, skeleton.bone_order.len());
+                skeleton
+                    .bone_to_joint
+                    .insert(ptid, skeleton.bone_order.len());
                 skeleton.bone_order.push(ptid);
             }
             node = parent;
@@ -400,10 +410,10 @@ fn rebuild_fbx_skeleton_tables(scene: &ufbx::Scene, skeleton: &mut FbxSkeletonDa
         if let Some(cluster) = find_fbx_cluster_for_bone(scene, bone_tid) {
             inverse_bind[ji] = ufbx_matrix_to_mat4(&cluster.geometry_to_bone).to_cols_array_2d();
         }
-        if let Some(parent) = bone_node.parent.as_ref() {
-            if let Some(&pji) = skeleton.bone_to_joint.get(&parent.element.typed_id) {
-                joint_parents[ji] = Some(pji);
-            }
+        if let Some(parent) = bone_node.parent.as_ref()
+            && let Some(&pji) = skeleton.bone_to_joint.get(&parent.element.typed_id)
+        {
+            joint_parents[ji] = Some(pji);
         }
     }
 
@@ -414,7 +424,7 @@ fn rebuild_fbx_skeleton_tables(scene: &ufbx::Scene, skeleton: &mut FbxSkeletonDa
     Some(())
 }
 
-fn find_fbx_bone_node<'a>(scene: &'a ufbx::Scene, bone_tid: u32) -> Option<&'a ufbx::Node> {
+fn find_fbx_bone_node(scene: &ufbx::Scene, bone_tid: u32) -> Option<&ufbx::Node> {
     for node_ref in scene.nodes.iter() {
         let node = node_ref.as_ref();
         if node.element.typed_id == bone_tid {
@@ -424,10 +434,7 @@ fn find_fbx_bone_node<'a>(scene: &'a ufbx::Scene, bone_tid: u32) -> Option<&'a u
     None
 }
 
-fn find_fbx_cluster_for_bone<'a>(
-    scene: &'a ufbx::Scene,
-    bone_tid: u32,
-) -> Option<&'a ufbx::SkinCluster> {
+fn find_fbx_cluster_for_bone(scene: &ufbx::Scene, bone_tid: u32) -> Option<&ufbx::SkinCluster> {
     for node_ref in scene.nodes.iter() {
         let Some(mesh) = node_ref.mesh.as_ref() else {
             continue;
@@ -458,10 +465,10 @@ fn fbx_cluster_to_joint_index(
     if ci >= skin_def.clusters.len() {
         return 0;
     }
-    if let Some(bone) = skin_def.clusters[ci].bone_node.as_ref() {
-        if let Some(&ji) = bone_to_joint.get(&bone.element.typed_id) {
-            return ji.min(MAX_JOINTS - 1) as u32;
-        }
+    if let Some(bone) = skin_def.clusters[ci].bone_node.as_ref()
+        && let Some(&ji) = bone_to_joint.get(&bone.element.typed_id)
+    {
+        return ji.min(MAX_JOINTS - 1) as u32;
     }
     0
 }
@@ -522,8 +529,20 @@ fn read_skinned_fbx_mesh(
             let ix = index as usize;
             let pos_local = ufbx::get_vertex_vec3(&mesh.vertex_position, ix);
             let norm_local = ufbx::get_vertex_vec3(&mesh.vertex_normal, ix);
-            let pos4 = world * Vec4::new(pos_local.x as f32, pos_local.y as f32, pos_local.z as f32, 1.0);
-            let norm4 = normal_mat * Vec4::new(norm_local.x as f32, norm_local.y as f32, norm_local.z as f32, 0.0);
+            let pos4 = world
+                * Vec4::new(
+                    pos_local.x as f32,
+                    pos_local.y as f32,
+                    pos_local.z as f32,
+                    1.0,
+                );
+            let norm4 = normal_mat
+                * Vec4::new(
+                    norm_local.x as f32,
+                    norm_local.y as f32,
+                    norm_local.z as f32,
+                    0.0,
+                );
             let pos = pos4.truncate();
             let norm = norm4.truncate().normalize_or_zero();
             let uv = ufbx::get_vertex_vec2(&mesh.vertex_uv, ix);
@@ -538,7 +557,8 @@ fn read_skinned_fbx_mesh(
                 for i in 0..n.min(4) {
                     if begin + i < skin_def.weights.len() {
                         let w = &skin_def.weights[begin + i];
-                        joints[i] = fbx_cluster_to_joint_index(skin_def, w.cluster_index, bone_to_joint);
+                        joints[i] =
+                            fbx_cluster_to_joint_index(skin_def, w.cluster_index, bone_to_joint);
                         weights[i] = w.weight as f32;
                     }
                 }
@@ -579,54 +599,54 @@ fn read_skinned_fbx_mesh(
 }
 
 fn fbx_texture_rgba(mesh: &ufbx::Mesh, fbx_dir: &Path) -> (Vec<u8>, u32, u32) {
-    if let Some(mat) = mesh.materials.first().map(|m| m.as_ref()) {
-        if let Some(tex) = fbx_material_texture(mat) {
-            if !tex.content.is_empty() {
-                if let Ok(img) = image::load_from_memory(&tex.content) {
-                    let rgba = img.to_rgba8();
-                    let w = rgba.width();
-                    let h = rgba.height();
-                    return (rgba.into_raw(), w, h);
-                }
+    if let Some(mat) = mesh.materials.first().map(|m| m.as_ref())
+        && let Some(tex) = fbx_material_texture(mat)
+    {
+        if !tex.content.is_empty()
+            && let Ok(img) = image::load_from_memory(&tex.content)
+        {
+            let rgba = img.to_rgba8();
+            let w = rgba.width();
+            let h = rgba.height();
+            return (rgba.into_raw(), w, h);
+        }
+        for name in [
+            tex.absolute_filename.as_ref(),
+            tex.filename.as_ref(),
+            tex.relative_filename.as_ref(),
+        ] {
+            if name.is_empty() {
+                continue;
             }
-            for name in [
-                tex.absolute_filename.as_ref(),
-                tex.filename.as_ref(),
-                tex.relative_filename.as_ref(),
-            ] {
-                if name.is_empty() {
-                    continue;
-                }
-                let path = Path::new(name);
-                let resolved = if path.is_absolute() {
-                    path.to_path_buf()
-                } else {
-                    fbx_dir.join(path)
-                };
-                if resolved.is_file() {
-                    if let Ok(img) = image::open(&resolved) {
-                        let rgba = img.to_rgba8();
-                        let w = rgba.width();
-                    let h = rgba.height();
-                    return (rgba.into_raw(), w, h);
-                    }
-                }
+            let path = Path::new(name);
+            let resolved = if path.is_absolute() {
+                path.to_path_buf()
+            } else {
+                fbx_dir.join(path)
+            };
+            if resolved.is_file()
+                && let Ok(img) = image::open(&resolved)
+            {
+                let rgba = img.to_rgba8();
+                let w = rgba.width();
+                let h = rgba.height();
+                return (rgba.into_raw(), w, h);
             }
         }
     }
     (vec![255, 255, 255, 255], 1, 1)
 }
 
-fn fbx_material_texture<'a>(material: &'a ufbx::Material) -> Option<&'a ufbx::Texture> {
-    if material.pbr.base_color.texture_enabled {
-        if let Some(tex) = material.pbr.base_color.texture.as_ref() {
-            return Some(tex.as_ref());
-        }
+fn fbx_material_texture(material: &ufbx::Material) -> Option<&ufbx::Texture> {
+    if material.pbr.base_color.texture_enabled
+        && let Some(tex) = material.pbr.base_color.texture.as_ref()
+    {
+        return Some(tex.as_ref());
     }
-    if material.fbx.diffuse_color.texture_enabled {
-        if let Some(tex) = material.fbx.diffuse_color.texture.as_ref() {
-            return Some(tex.as_ref());
-        }
+    if material.fbx.diffuse_color.texture_enabled
+        && let Some(tex) = material.fbx.diffuse_color.texture.as_ref()
+    {
+        return Some(tex.as_ref());
     }
     material
         .textures
@@ -728,37 +748,60 @@ fn parse_fbx_anim_stack(
     })
 }
 
-
 fn estimate_forward_from_normals_local(vertices: &[crate::mesh::Vertex]) -> glam::Vec2 {
     let mut sum = glam::Vec2::ZERO;
     for v in vertices {
         let n = glam::Vec2::new(v.normal[0], v.normal[2]);
         let len = n.length();
-        if len > 1e-5 { sum += n / len; }
+        if len > 1e-5 {
+            sum += n / len;
+        }
     }
-    if sum.length_squared() < 1e-6 { glam::Vec2::new(0.0, 1.0) } else { sum.normalize() }
+    if sum.length_squared() < 1e-6 {
+        glam::Vec2::new(0.0, 1.0)
+    } else {
+        sum.normalize()
+    }
 }
 
 fn estimate_forward_torso_local(vertices: &[crate::mesh::Vertex]) -> glam::Vec2 {
-    if vertices.is_empty() { return glam::Vec2::new(0.0, 1.0); }
+    if vertices.is_empty() {
+        return glam::Vec2::new(0.0, 1.0);
+    }
     crate::config_3d::mesh_3d::estimate_mesh_forward_xz(vertices)
 }
 
 fn part_counts_for_play_forward(name: &str) -> bool {
     let n = name.to_ascii_lowercase();
-    if n.is_empty() { return true; }
-    const SKIP: &[&str] = &["hair","gun","weapon","boost","cape","wing","shield","backpack","acc","accessory","prop"];
+    if n.is_empty() {
+        return true;
+    }
+    const SKIP: &[&str] = &[
+        "hair",
+        "gun",
+        "weapon",
+        "boost",
+        "cape",
+        "wing",
+        "shield",
+        "backpack",
+        "acc",
+        "accessory",
+        "prop",
+    ];
     !SKIP.iter().any(|s| n.contains(s))
 }
 
 /// Forward desde piezas skinned del FBX (sin clips embebidos).
 pub fn fbx_skinned_play_forward_xz(path: &Path, normalize_to_extent: f32) -> Option<glam::Vec2> {
-    let mut opts = ufbx::LoadOpts::default();
-    opts.generate_missing_normals = true;
-    opts.load_external_files = true;
-    opts.target_axes = ufbx::CoordinateAxes::right_handed_y_up();
-    opts.target_unit_meters = 1.0;
-    opts.space_conversion = ufbx::SpaceConversion::ModifyGeometry;
+    let opts = ufbx::LoadOpts {
+        generate_missing_normals: true,
+        load_external_files: true,
+        target_axes: ufbx::CoordinateAxes::right_handed_y_up(),
+        target_unit_meters: 1.0,
+        space_conversion: ufbx::SpaceConversion::ModifyGeometry,
+        ..Default::default()
+    };
     let scene = ufbx::load_file(path.to_str()?, opts).ok()?;
     let skinned_nodes = collect_fbx_skinned_nodes(&scene);
     if skinned_nodes.is_empty() {

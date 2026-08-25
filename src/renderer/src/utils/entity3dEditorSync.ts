@@ -114,12 +114,10 @@ export function entity3dToMeta(entity: Entity3D): EntityMeta {
 		marker ??
 		(isPlayer ? '[Player]' : entity.model);
 	let visualModelPath: string | undefined;
-	if (marker && entity.model !== path) {
-		visualModelPath = entity.model;
-	} else if (!marker && isPlayer && MODEL_3D_EXT.test(entity.model)) {
-		// Player FP: el manifest guarda el GLB en `model`, no en un marcador `[Player]`.
-		visualModelPath = entity.model;
-	} else if (!marker && !isPlayer) {
+	const useModelAsVisual =
+		(Boolean(marker) && entity.model !== path) ||
+		(!marker && (!isPlayer || MODEL_3D_EXT.test(entity.model)));
+	if (useModelAsVisual) {
 		visualModelPath = entity.model;
 	}
 

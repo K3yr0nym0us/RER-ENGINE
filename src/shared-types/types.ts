@@ -291,8 +291,8 @@ export interface SavedAnimation {
   frames: {
     path:    string
     /** Punto ancla en píxeles dentro del frame (esquina superior-izq = 0,0). */
-    pivot_x: number
-    pivot_y: number
+    pivot_x?: number
+    pivot_y?: number
     /** Coordenadas opcionales dentro del sprite sheet (si el frame viene de un atlas). */
     src_x?:  number
     src_y?:  number
@@ -357,7 +357,7 @@ export interface SavedWorldConfig {
   /** 3D: reflection probes (cubemap IBL + captura). */
   reflectionProbes?: boolean
   /** 3D: nivel de calidad de sombras (resolución del shadow map por tier). */
-  shadowTier?: 'low' | 'medium' | 'high' | 'ultra'
+  shadowTier?: 'off' | 'low' | 'medium' | 'high' | 'ultra'
 }
 
 /** @deprecated 3D: `player` + `config_camera`. Solo runtime 2D / migración UI. */
@@ -663,6 +663,12 @@ export interface EngineSaveSceneSnapshot {
     light_ambient?: number | null
     light_intensity?: number | null
     shadow_darkness?: number | null
+    graphics_texture_tier?: 'low' | 'medium' | 'high' | 'ultra' | null
+    texture_detail_distance_m?: number | null
+    reflection_tier?: 'off' | 'low' | 'medium' | 'high' | 'ultra' | null
+    reflection_raytracing?: boolean | null
+    reflection_probes?: boolean | null
+    shadow_tier?: 'off' | 'low' | 'medium' | 'high' | 'ultra' | null
   }
   background_path?: string | null
   entities: Entity3D[]
@@ -671,7 +677,13 @@ export interface EngineSaveSceneSnapshot {
   config_editor_camera?: ConfigEditorCamera | null
   camera2d?: { x: number; y: number; half_h: number } | null
   sprites: Array<{ name: string; path: string }>
-  models?: Array<{ name: string; path: string; category?: ModelCategory }>
+  models?: Array<{
+    name: string
+    path: string
+    category?: ModelCategory
+    model_id?: string
+    asset?: string
+  }>
   sounds: Array<{ name: string; path: string }>
   backgrounds: Array<{ name: string; path: string }>
   fonts?: Array<{ name: string; path: string }>

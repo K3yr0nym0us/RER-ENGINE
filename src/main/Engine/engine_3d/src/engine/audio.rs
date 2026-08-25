@@ -14,7 +14,10 @@ pub struct DecodedAudio {
 
 /// Comandos enviados al thread de audio.
 pub enum AudioCmd {
-    Play { audio: Arc<DecodedAudio>, loop_: bool },
+    Play {
+        audio: Arc<DecodedAudio>,
+        loop_: bool,
+    },
     Stop,
 }
 

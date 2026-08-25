@@ -3,18 +3,24 @@ use glam::Vec3 as GlamVec3;
 use crate::config_shared::point_to_segment_2d;
 use crate::ecs::{EntityId, Transform};
 use crate::engine::State;
-use crate::ipc::{send_event, EngineEvent};
+use crate::ipc::{EngineEvent, send_event};
 
 impl State {
     // ── Proyeccion 2D a pantalla ──────────────────────────────────────────────
 
     /// Proyecta un punto de mundo XY a coordenadas de pantalla en píxeles.
-    pub(crate) fn project_to_screen_2d(&self, cam: &super::Camera2D, p: GlamVec3) -> Option<(f32, f32)> {
-        let w  = self.size.width  as f32;
-        let h  = self.size.height as f32;
+    pub(crate) fn project_to_screen_2d(
+        &self,
+        cam: &super::Camera2D,
+        p: GlamVec3,
+    ) -> Option<(f32, f32)> {
+        let w = self.size.width as f32;
+        let h = self.size.height as f32;
         let vp = cam.view_proj(w / h);
-        let c  = vp * glam::Vec4::new(p.x, p.y, p.z, 1.0);
-        if c.w.abs() < 1e-6 { return None; }
+        let c = vp * glam::Vec4::new(p.x, p.y, p.z, 1.0);
+        if c.w.abs() < 1e-6 {
+            return None;
+        }
         Some(((c.x / c.w + 1.0) * 0.5 * w, (1.0 - c.y / c.w) * 0.5 * h))
     }
 
@@ -27,18 +33,26 @@ impl State {
         if self.player_ui_edit_active {
             return;
         }
-        let Some((wx, wy)) = self.screen_to_world_2d(pixel_x, pixel_y) else { return };
+        let Some((wx, wy)) = self.screen_to_world_2d(pixel_x, pixel_y) else {
+            return;
+        };
 
         // AABB en centro visual (mismo criterio que render y spatial grid).
         let mut best: Option<(EntityId, f32)> = None;
         for &entity in self.world.entities() {
-            if self.world.has::<crate::ecs::NonSelectable>(entity) { continue; }
-            let Some(center) = self.entity_visual_center(entity) else { continue };
-            let Some(transform) = self.world.get::<Transform>(entity) else { continue };
+            if self.world.has::<crate::ecs::NonSelectable>(entity) {
+                continue;
+            }
+            let Some(center) = self.entity_visual_center(entity) else {
+                continue;
+            };
+            let Some(transform) = self.world.get::<Transform>(entity) else {
+                continue;
+            };
             let sx = transform.scale.x * 0.5;
             let sy = transform.scale.y * 0.5;
             if super::aabb_contains_point_xy(center.x, center.y, sx, sy, wx, wy)
-                && best.map_or(true, |(_, bz)| transform.position.z > bz)
+                && best.is_none_or(|(_, bz)| transform.position.z > bz)
             {
                 best = Some((entity, transform.position.z));
             }
@@ -56,21 +70,36 @@ impl State {
                             self.selected_entity = None;
                             send_event(&EngineEvent::EntityDeselected);
                         } else if let Some(active_id) = self.selected_entity {
-                            let active_name      = self.world.name(active_id).unwrap_or("Entity").to_string();
-                            let active_transform = self.world.get::<Transform>(active_id).cloned().unwrap_or_default();
+                            let active_name =
+                                self.world.name(active_id).unwrap_or("Entity").to_string();
+                            let active_transform = self
+                                .world
+                                .get::<Transform>(active_id)
+                                .cloned()
+                                .unwrap_or_default();
                             let active_pos = active_transform.position.to_array();
-                            let active_rot = [active_transform.rotation.x, active_transform.rotation.y,
-                                              active_transform.rotation.z, active_transform.rotation.w];
-                            let active_scl             = active_transform.scale.to_array();
+                            let active_rot = [
+                                active_transform.rotation.x,
+                                active_transform.rotation.y,
+                                active_transform.rotation.z,
+                                active_transform.rotation.w,
+                            ];
+                            let active_scl = active_transform.scale.to_array();
                             let physics_enabled = self.physics_2d.has_physics(active_id);
-                            let physics_type    = self.physics_2d.get_body_type(active_id).to_string();
+                            let physics_type = self.physics_2d.get_body_type(active_id).to_string();
                             send_event(&EngineEvent::EntitySelected {
-                                id: active_id, name: active_name, position: active_pos, rotation: active_rot, scale: active_scl,
+                                id: active_id,
+                                name: active_name,
+                                position: active_pos,
+                                rotation: active_rot,
+                                scale: active_scl,
                                 physics_enabled,
                                 physics_type,
                             });
                         }
-                        send_event(&EngineEvent::MultiSelectChanged { ids: self.selected_entities.clone() });
+                        send_event(&EngineEvent::MultiSelectChanged {
+                            ids: self.selected_entities.clone(),
+                        });
                         return;
                     } else {
                         self.selected_entities.push(entity);
@@ -79,32 +108,49 @@ impl State {
                 } else {
                     if self.selected_entity == Some(entity)
                         && self.selected_entities.len() == 1
-                        && self.selected_entities[0] == entity {
+                        && self.selected_entities[0] == entity
+                    {
                         return;
                     }
                     self.selected_entities.clear();
                     self.selected_entities.push(entity);
                     self.selected_entity = Some(entity);
                 }
-                let name      = self.world.name(entity).unwrap_or("Entity").to_string();
-                let transform = self.world.get::<Transform>(entity).cloned().unwrap_or_default();
+                let name = self.world.name(entity).unwrap_or("Entity").to_string();
+                let transform = self
+                    .world
+                    .get::<Transform>(entity)
+                    .cloned()
+                    .unwrap_or_default();
                 let pos = transform.position.to_array();
-                let rot = [transform.rotation.x, transform.rotation.y,
-                           transform.rotation.z, transform.rotation.w];
-                let scl             = transform.scale.to_array();
+                let rot = [
+                    transform.rotation.x,
+                    transform.rotation.y,
+                    transform.rotation.z,
+                    transform.rotation.w,
+                ];
+                let scl = transform.scale.to_array();
                 let physics_enabled = self.physics_2d.has_physics(entity);
-                let physics_type    = self.physics_2d.get_body_type(entity).to_string();
+                let physics_type = self.physics_2d.get_body_type(entity).to_string();
                 send_event(&EngineEvent::EntitySelected {
-                    id: entity, name, position: pos, rotation: rot, scale: scl,
+                    id: entity,
+                    name,
+                    position: pos,
+                    rotation: rot,
+                    scale: scl,
                     physics_enabled,
                     physics_type,
                 });
                 if self.ctrl_held && self.selected_entities.len() > 1 {
-                    send_event(&EngineEvent::MultiSelectChanged { ids: self.selected_entities.clone() });
+                    send_event(&EngineEvent::MultiSelectChanged {
+                        ids: self.selected_entities.clone(),
+                    });
                 }
             }
             None => {
-                if !self.ctrl_held && (self.selected_entity.is_some() || !self.selected_entities.is_empty()) {
+                if !self.ctrl_held
+                    && (self.selected_entity.is_some() || !self.selected_entities.is_empty())
+                {
                     self.selected_entity = None;
                     self.selected_entities.clear();
                     send_event(&EngineEvent::EntityDeselected);
@@ -118,10 +164,10 @@ impl State {
     /// Devuelve el índice del eje del gizmo 2D más cercano al cursor (0=X, 1=Y).
     pub fn pick_gizmo_axis_2d(&self, pixel_x: f32, pixel_y: f32) -> Option<usize> {
         let origin = self.selection_center()?;
-        let cam    = self.camera_2d.as_ref()?;
-        let so     = self.project_to_screen_2d(cam, origin)?;
+        let cam = self.camera_2d.as_ref()?;
+        let so = self.project_to_screen_2d(cam, origin)?;
 
-        const LEN:    f32 = 1.2;
+        const LEN: f32 = 1.2;
         const THRESH: f32 = 16.0;
         let dirs = [GlamVec3::X, GlamVec3::Y];
 
@@ -129,7 +175,7 @@ impl State {
         for (i, &dir) in dirs.iter().enumerate() {
             if let Some(tip) = self.project_to_screen_2d(cam, origin + dir * LEN) {
                 let d = point_to_segment_2d(pixel_x, pixel_y, so.0, so.1, tip.0, tip.1);
-                if d < THRESH && best.map_or(true, |(bd, _)| d < bd) {
+                if d < THRESH && best.is_none_or(|(bd, _)| d < bd) {
                     best = Some((d, i));
                 }
             }
@@ -140,17 +186,33 @@ impl State {
     // ── Drag de gizmo 2D ──────────────────────────────────────────────────────
 
     /// Arrastra la entidad seleccionada sobre el eje X (0) o Y (1) en modo 2D.
-    pub fn drag_gizmo_2d(&mut self, pixel_x: f32, pixel_y: f32, last_x: f32, last_y: f32, axis_idx: usize, snap: bool) {
+    pub fn drag_gizmo_2d(
+        &mut self,
+        pixel_x: f32,
+        pixel_y: f32,
+        last_x: f32,
+        last_y: f32,
+        axis_idx: usize,
+        snap: bool,
+    ) {
         let selected_ids: Vec<EntityId> = if !self.selected_entities.is_empty() {
             self.selected_entities.clone()
         } else {
             self.selected_entity.into_iter().collect()
         };
-        if selected_ids.is_empty() { return; }
+        if selected_ids.is_empty() {
+            return;
+        }
 
         let cam = match &self.camera_2d {
-            Some(c) => super::Camera2D { x: c.x, y: c.y, half_h: c.half_h, near: c.near, far: c.far },
-            None    => return,
+            Some(c) => super::Camera2D {
+                x: c.x,
+                y: c.y,
+                half_h: c.half_h,
+                near: c.near,
+                far: c.far,
+            },
+            None => return,
         };
         let mut sum = GlamVec3::ZERO;
         let mut count = 0usize;
@@ -160,16 +222,30 @@ impl State {
                 count += 1;
             }
         }
-        if count == 0 { return; }
+        if count == 0 {
+            return;
+        }
         let origin = sum / count as f32;
 
-        let axis_world = if axis_idx == 0 { GlamVec3::X } else { GlamVec3::Y };
-        let so = match self.project_to_screen_2d(&cam, origin)               { Some(p) => p, None => return };
-        let se = match self.project_to_screen_2d(&cam, origin + axis_world)  { Some(p) => p, None => return };
-        let ax  = se.0 - so.0;
-        let ay  = se.1 - so.1;
+        let axis_world = if axis_idx == 0 {
+            GlamVec3::X
+        } else {
+            GlamVec3::Y
+        };
+        let so = match self.project_to_screen_2d(&cam, origin) {
+            Some(p) => p,
+            None => return,
+        };
+        let se = match self.project_to_screen_2d(&cam, origin + axis_world) {
+            Some(p) => p,
+            None => return,
+        };
+        let ax = se.0 - so.0;
+        let ay = se.1 - so.1;
         let len = (ax * ax + ay * ay).sqrt();
-        if len < 1e-4 { return; }
+        if len < 1e-4 {
+            return;
+        }
         let dx = pixel_x - last_x;
         let dy = pixel_y - last_y;
         let world_delta = (dx * ax + dy * ay) / (len * len);
@@ -183,9 +259,9 @@ impl State {
                 if snap && cell > 1e-6 {
                     if axis_idx == 0 {
                         let hw = t.scale.x * 0.5;
-                        let left  = t.position.x - hw;
+                        let left = t.position.x - hw;
                         let right = t.position.x + hw;
-                        let left_snap  = (left  / cell).round() * cell;
+                        let left_snap = (left / cell).round() * cell;
                         let right_snap = (right / cell).round() * cell;
                         if (left - left_snap).abs() <= (right - right_snap).abs() {
                             t.position.x = left_snap + hw;
@@ -195,9 +271,9 @@ impl State {
                     } else {
                         let hh = t.scale.y * 0.5;
                         let bottom = t.position.y - hh;
-                        let top    = t.position.y + hh;
+                        let top = t.position.y + hh;
                         let bottom_snap = (bottom / cell).round() * cell;
-                        let top_snap    = (top    / cell).round() * cell;
+                        let top_snap = (top / cell).round() * cell;
                         if (bottom - bottom_snap).abs() <= (top - top_snap).abs() {
                             t.position.y = bottom_snap + hh;
                         } else {
@@ -208,17 +284,23 @@ impl State {
             }
         }
 
-        let lead_id = self.selected_entity.or_else(|| selected_ids.last().copied());
+        let lead_id = self
+            .selected_entity
+            .or_else(|| selected_ids.last().copied());
         if let Some(sel_id) = lead_id {
             let name = self.world.name(sel_id).unwrap_or("Entity").to_string();
             if let Some(t) = self.world.get::<Transform>(sel_id) {
                 let pos = t.position.to_array();
                 let rot = [t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w];
-                let scl             = t.scale.to_array();
+                let scl = t.scale.to_array();
                 let physics_enabled = self.physics_2d.has_physics(sel_id);
-                let physics_type    = self.physics_2d.get_body_type(sel_id).to_string();
+                let physics_type = self.physics_2d.get_body_type(sel_id).to_string();
                 send_event(&EngineEvent::EntitySelected {
-                    id: sel_id, name, position: pos, rotation: rot, scale: scl,
+                    id: sel_id,
+                    name,
+                    position: pos,
+                    rotation: rot,
+                    scale: scl,
                     physics_enabled,
                     physics_type,
                 });
@@ -229,7 +311,9 @@ impl State {
         // Sin esto, el cuerpo físico (y por tanto las colisiones) permanece
         // en la posición original aunque el cuadro visual se haya movido.
         for &sel_id in &selected_ids {
-            let new_pos = self.world.get::<Transform>(sel_id)
+            let new_pos = self
+                .world
+                .get::<Transform>(sel_id)
                 .map(|t| (t.position.x, t.position.y));
             if let Some((nx, ny)) = new_pos {
                 // Si existe una base de animación guardada para la entidad,
@@ -246,14 +330,17 @@ impl State {
         // Emitir evento con transformaciones de TODAS las entidades en multiselección
         // para sincronizar correctamente entityTransformsRef en el frontend y guardar posiciones.
         if !self.selected_entities.is_empty() {
-            let entities: Vec<crate::ipc::EntityTransformUpdate> = selected_ids.iter()
+            let entities: Vec<crate::ipc::EntityTransformUpdate> = selected_ids
+                .iter()
                 .filter_map(|&id| {
-                    self.world.get::<Transform>(id).map(|t| crate::ipc::EntityTransformUpdate {
-                        id,
-                        position: t.position.to_array(),
-                        rotation: [t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w],
-                        scale: t.scale.to_array(),
-                    })
+                    self.world
+                        .get::<Transform>(id)
+                        .map(|t| crate::ipc::EntityTransformUpdate {
+                            id,
+                            position: t.position.to_array(),
+                            rotation: [t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w],
+                            scale: t.scale.to_array(),
+                        })
                 })
                 .collect();
             if !entities.is_empty() {
@@ -271,7 +358,9 @@ impl State {
             return;
         }
         let prev_hover = self.hovered_entity;
-        let Some((wx, wy)) = self.screen_to_world_2d(pixel_x, pixel_y) else { return };
+        let Some((wx, wy)) = self.screen_to_world_2d(pixel_x, pixel_y) else {
+            return;
+        };
 
         self.hovered_entity = None;
         let mut best_hover: Option<(EntityId, f32)> = None;
@@ -279,26 +368,32 @@ impl State {
         // Query spatial grid para entidades cerca del cursor
         let candidates = self.spatial_grid.query_cell(wx, wy);
         for entity in candidates {
-            if self.world.has::<crate::ecs::NonSelectable>(entity) { continue; }
-            let Some(center) = self.entity_visual_center(entity) else { continue };
-            let Some(t) = self.world.get::<Transform>(entity) else { continue };
+            if self.world.has::<crate::ecs::NonSelectable>(entity) {
+                continue;
+            }
+            let Some(center) = self.entity_visual_center(entity) else {
+                continue;
+            };
+            let Some(t) = self.world.get::<Transform>(entity) else {
+                continue;
+            };
             let sx = t.scale.x * 0.5;
             let sy = t.scale.y * 0.5;
             if super::aabb_contains_point_xy(center.x, center.y, sx, sy, wx, wy)
-                && best_hover.map_or(true, |(_, bz)| t.position.z > bz)
+                && best_hover.is_none_or(|(_, bz)| t.position.z > bz)
             {
                 best_hover = Some((entity, t.position.z));
             }
         }
 
-        self.hovered_entity    = best_hover.map(|(id, _)| id);
+        self.hovered_entity = best_hover.map(|(id, _)| id);
         self.hovered_gizmo_axis = self.pick_gizmo_axis_2d(pixel_x, pixel_y);
         // Emitir evento solo si el hover cambió para no saturar el IPC
         match (prev_hover, self.hovered_entity) {
-            (None, Some(id))              => send_event(&EngineEvent::EntityHovered { id }),
-            (Some(_), None)               => send_event(&EngineEvent::EntityUnhovered),
-            (Some(a), Some(b)) if a != b  => send_event(&EngineEvent::EntityHovered { id: b }),
-            _                             => {}
+            (None, Some(id)) => send_event(&EngineEvent::EntityHovered { id }),
+            (Some(_), None) => send_event(&EngineEvent::EntityUnhovered),
+            (Some(a), Some(b)) if a != b => send_event(&EngineEvent::EntityHovered { id: b }),
+            _ => {}
         }
     }
 }

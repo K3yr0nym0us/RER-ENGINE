@@ -1,14 +1,14 @@
 use std::time::Instant;
 
 use crate::ecs::Transform;
-use crate::ipc::{send_event, EngineEvent};
+use crate::ipc::{EngineEvent, send_event};
 
-use super::types::AUTOSAVE_INTERVAL;
 use super::State;
+use super::types::AUTOSAVE_INTERVAL;
 
 impl State {
     pub fn update(&mut self) {
-        let now         = Instant::now();
+        let now = Instant::now();
         self.delta_time = now.duration_since(self.last_frame).as_secs_f32();
         self.last_frame = now;
         self.update_snap_hint_alpha();
@@ -21,16 +21,17 @@ impl State {
             let physics_bodies = self.physics_2d.body_count();
             send_event(&EngineEvent::DebugMetrics {
                 fps,
-                frame_time_ms:  self.delta_time * 1000.0,
-                draw_calls:     self.last_draw_calls,
+                frame_time_ms: self.delta_time * 1000.0,
+                draw_calls: self.last_draw_calls,
                 physics_bodies,
-                cpu_percent:    self.process_metrics_sampler.sample_cpu_percent(),
-                gpu_percent:    self.process_metrics_sampler.sample_gpu_percent(),
+                cpu_percent: self.process_metrics_sampler.sample_cpu_percent(),
+                gpu_percent: self.process_metrics_sampler.sample_gpu_percent(),
             });
-            self.metrics_last_emit   = now;
+            self.metrics_last_emit = now;
             self.metrics_frame_count = 0;
         }
-        if self.autosave_enabled && now.duration_since(self.autosave_last_tick) >= AUTOSAVE_INTERVAL {
+        if self.autosave_enabled && now.duration_since(self.autosave_last_tick) >= AUTOSAVE_INTERVAL
+        {
             send_event(&EngineEvent::AutosaveTick);
             self.autosave_last_tick = now;
         }
@@ -54,13 +55,14 @@ impl State {
     fn sync_physics_anim_origins(&mut self) {
         let ids: Vec<u32> = self.anim_saved_transforms.keys().copied().collect();
         for id in ids {
-            if self.physics_2d.has_physics(id) && self.physics_2d.get_body_type(id) != "static" {
-                if let Some(t) = self.world.get::<Transform>(id) {
-                    let (px, py) = (t.position.x, t.position.y);
-                    if let Some(saved) = self.anim_saved_transforms.get_mut(&id) {
-                        saved.0.x = px;
-                        saved.0.y = py;
-                    }
+            if self.physics_2d.has_physics(id)
+                && self.physics_2d.get_body_type(id) != "static"
+                && let Some(t) = self.world.get::<Transform>(id)
+            {
+                let (px, py) = (t.position.x, t.position.y);
+                if let Some(saved) = self.anim_saved_transforms.get_mut(&id) {
+                    saved.0.x = px;
+                    saved.0.y = py;
                 }
             }
         }
@@ -73,7 +75,9 @@ impl State {
         let dt = self.delta_time;
         let ids: Vec<u32> = self.pending_slides.keys().copied().collect();
         for id in ids {
-            let Some(slide) = self.pending_slides.get(&id).copied() else { continue; };
+            let Some(slide) = self.pending_slides.get(&id).copied() else {
+                continue;
+            };
             let (cx, cy) = if let Some(t) = self.world.get::<Transform>(id) {
                 (t.position.x, t.position.y)
             } else {
@@ -96,7 +100,9 @@ impl State {
             let effective_speed = slide.speed.min(max_speed);
             let dir_x = delta_x / dist;
             let dir_y = delta_y / dist;
-            let moved = self.physics_2d.move_physics_entity(id, effective_speed, dir_x, dir_y, dt);
+            let moved = self
+                .physics_2d
+                .move_physics_entity(id, effective_speed, dir_x, dir_y, dt);
             if !moved {
                 // Fallback: traslación directa para entidades sin física activa.
                 let step_x = dir_x * effective_speed * dt;

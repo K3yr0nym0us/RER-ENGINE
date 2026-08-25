@@ -1,13 +1,9 @@
 //! Imágenes HUD del jugador (alta/baja/lista/persistencia).
 
 use crate::engine::State;
-use crate::ipc::{
-    send_event, EngineEvent, PlayerUiImageListItem, SavePlayerUiImageSnapshot,
-};
+use crate::ipc::{EngineEvent, PlayerUiImageListItem, SavePlayerUiImageSnapshot, send_event};
 
-use super::config::{
-    default_image_width_ndc, ndc_height_for_width, PlayerUiImage, BOX_STACK_GAP,
-};
+use super::config::{BOX_STACK_GAP, PlayerUiImage, default_image_width_ndc, ndc_height_for_width};
 
 impl State {
     pub(crate) fn add_player_ui_image(&mut self, image_path: &str) -> Result<u32, String> {
@@ -70,10 +66,7 @@ impl State {
         self.player_ui_text_drag = None;
         self.rebuild_player_ui_overlay();
         log::info!("[player-ui] imagen HUD añadida: id={} {}", id, image_name);
-        send_event(&EngineEvent::PlayerUiImageAdded {
-            id,
-            image_name,
-        });
+        send_event(&EngineEvent::PlayerUiImageAdded { id, image_name });
         Ok(id)
     }
 
@@ -115,21 +108,23 @@ impl State {
         self.player_ui_images.clear();
         for snap in images {
             let key = format!("{}:{}", snap.scope, snap.screen_id);
-            self.player_ui_images.entry(key).or_default().push(PlayerUiImage {
-                id: snap.id,
-                image_path: snap.image_path.clone(),
-                image_name: snap.image_name.clone(),
-                center_x: snap.center_x,
-                center_y: snap.center_y,
-                width: snap.width,
-                height: snap.height,
-                source_aspect: snap.source_aspect.max(0.01),
-                z_index: snap.z_index,
-                locked: snap.locked,
-            });
-            self.player_ui_text_next_id = self
-                .player_ui_text_next_id
-                .max(snap.id.saturating_add(1));
+            self.player_ui_images
+                .entry(key)
+                .or_default()
+                .push(PlayerUiImage {
+                    id: snap.id,
+                    image_path: snap.image_path.clone(),
+                    image_name: snap.image_name.clone(),
+                    center_x: snap.center_x,
+                    center_y: snap.center_y,
+                    width: snap.width,
+                    height: snap.height,
+                    source_aspect: snap.source_aspect.max(0.01),
+                    z_index: snap.z_index,
+                    locked: snap.locked,
+                });
+            self.player_ui_text_next_id =
+                self.player_ui_text_next_id.max(snap.id.saturating_add(1));
         }
         if self.player_ui_edit_active {
             self.rebuild_player_ui_overlay();

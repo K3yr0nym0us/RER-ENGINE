@@ -1,14 +1,14 @@
 //! Reflejos: SSR, acumulación temporal, composite y debug views.
 
-pub(crate) mod probe_env;
-pub(crate) mod policy;
-pub(crate) mod probes_pipeline;
-pub(crate) mod rt_pipeline;
-pub(crate) mod ssr_pipeline;
 pub(crate) mod frame;
+pub(crate) mod policy;
+pub(crate) mod probe_env;
+pub(crate) mod probes_pipeline;
 pub(crate) mod quality_preset;
+pub(crate) mod rt_pipeline;
 pub(crate) mod settings;
 pub(crate) mod ssil;
+pub(crate) mod ssr_pipeline;
 
 use rt_pipeline::rt_accel::RtAccel;
 use rt_pipeline::rt_reflections_v2::RtReflectionPassV2;
@@ -18,7 +18,7 @@ use std::time::Instant;
 use bytemuck::{Pod, Zeroable};
 use glam::{Mat4, Vec3};
 use wgpu::util::DeviceExt;
-use wgpu::{include_wgsl, Device, Queue, TextureFormat, TextureView};
+use wgpu::{Device, Queue, TextureFormat, TextureView, include_wgsl};
 
 use crate::config_3d::reflection_graphics::{
     ReflectionDebugView, ReflectionProfilerMs, ReflectionSettings,
@@ -87,7 +87,7 @@ struct DebugUniforms {
 }
 
 const _: () = assert!(std::mem::size_of::<DebugUniforms>() == 336);
-const _: () = assert!(std::mem::size_of::<DebugUniforms>() % 16 == 0);
+const _: () = assert!(std::mem::size_of::<DebugUniforms>().is_multiple_of(16));
 
 pub struct ReflectionPass {
     pub ssr: ssr_pipeline::SsrPipeline,
@@ -174,8 +174,20 @@ impl ReflectionPass {
             create_color_texture(device, color_format, refl_width, refl_height, "reflection");
         let (hit_uv_tex, hit_uv_view) =
             create_hit_uv_texture(device, refl_width, refl_height, "reflection-hit-uv");
-        let (h0, hv0) = create_color_texture(device, color_format, refl_width, refl_height, "reflection-hist-0");
-        let (h1, hv1) = create_color_texture(device, color_format, refl_width, refl_height, "reflection-hist-1");
+        let (h0, hv0) = create_color_texture(
+            device,
+            color_format,
+            refl_width,
+            refl_height,
+            "reflection-hist-0",
+        );
+        let (h1, hv1) = create_color_texture(
+            device,
+            color_format,
+            refl_width,
+            refl_height,
+            "reflection-hist-1",
+        );
         let (hit_uv_h0, hit_uv_hv0) =
             create_hit_uv_texture(device, refl_width, refl_height, "reflection-hit-uv-hist-0");
         let (hit_uv_h1, hit_uv_hv1) =
@@ -304,11 +316,13 @@ impl ReflectionPass {
         });
         let denoise_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
             label: Some("denoise-pipeline"),
-            layout: Some(&device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("denoise-pl"),
-                bind_group_layouts: &[Some(&denoise_bgl)],
-                immediate_size: 0,
-            })),
+            layout: Some(
+                &device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("denoise-pl"),
+                    bind_group_layouts: &[Some(&denoise_bgl)],
+                    immediate_size: 0,
+                }),
+            ),
             module: &denoise_shader,
             entry_point: Some("cs_main"),
             compilation_options: Default::default(),
@@ -388,30 +402,33 @@ impl ReflectionPass {
             Some(&debug_pl),
         ));
 
-        let ssr = ssr_pipeline::SsrPipeline::new(device, color_format, width, height, probe_sample_bgl);
-        let temporal_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("refl-temporal-uniforms"),
-            contents: bytemuck::bytes_of(&TemporalUniforms {
-                resolution: [width.max(1) as f32, height.max(1) as f32],
-                blend: 0.55,
-                enabled: 1.0,
-                depth_reject_m: 0.35,
-                gbuffer_scale: 1.0,
-                near_plane: 0.1,
-                far_plane: 1000.0,
-            }),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-        let composite_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("refl-composite-uniforms"),
-            contents: bytemuck::bytes_of(&CompositeUniforms {
-                strength: 1.0,
-                ssil_strength: 0.0,
-                refl_mix: 1.0,
-                _pad2: 0.0,
-            }),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
+        let ssr =
+            ssr_pipeline::SsrPipeline::new(device, color_format, width, height, probe_sample_bgl);
+        let temporal_uniform_buffer =
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("refl-temporal-uniforms"),
+                contents: bytemuck::bytes_of(&TemporalUniforms {
+                    resolution: [width.max(1) as f32, height.max(1) as f32],
+                    blend: 0.55,
+                    enabled: 1.0,
+                    depth_reject_m: 0.35,
+                    gbuffer_scale: 1.0,
+                    near_plane: 0.1,
+                    far_plane: 1000.0,
+                }),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            });
+        let composite_uniform_buffer =
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("refl-composite-uniforms"),
+                contents: bytemuck::bytes_of(&CompositeUniforms {
+                    strength: 1.0,
+                    ssil_strength: 0.0,
+                    refl_mix: 1.0,
+                    _pad2: 0.0,
+                }),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            });
         let debug_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("refl-debug-uniforms"),
             contents: bytemuck::bytes_of(&DebugUniforms {
@@ -689,7 +706,6 @@ impl ReflectionPass {
         let frame_index = self.reflection_frame_index;
         self.reflection_frame_index = self.reflection_frame_index.wrapping_add(1);
 
-
         let t_ssr = Instant::now();
         self.ssr.run(
             device,
@@ -931,7 +947,9 @@ impl ReflectionPass {
                         },
                         wgpu::BindGroupEntry {
                             binding: 5,
-                            resource: wgpu::BindingResource::TextureView(&self.denoise_scratch_view),
+                            resource: wgpu::BindingResource::TextureView(
+                                &self.denoise_scratch_view,
+                            ),
                         },
                     ],
                 });
@@ -942,8 +960,8 @@ impl ReflectionPass {
                     });
                     pass.set_pipeline(&self.denoise_pipeline);
                     pass.set_bind_group(0, &self.denoise_bind_group, &[]);
-                    let dispatch_x = (self.refl_width + 7) / 8;
-                    let dispatch_y = (self.refl_height + 7) / 8;
+                    let dispatch_x = self.refl_width.div_ceil(8);
+                    let dispatch_y = self.refl_height.div_ceil(8);
                     pass.dispatch_workgroups(dispatch_x, dispatch_y, 1);
                 }
                 // Copiar resultado denoised → history (reemplaza la entrada ruidosa)
@@ -1100,7 +1118,7 @@ impl ReflectionPass {
             &self.composite_uniform_buffer,
             scene_view,
             reflection_view,
-            &self.ssil_pass.output_view(),
+            self.ssil_pass.output_view(),
             &self.linear_sampler,
             &self.nearest_sampler,
         );
@@ -1303,8 +1321,6 @@ fn create_composite_scratch_texture(
     (texture, view)
 }
 
-
-
 fn draw_fullscreen_pass(
     encoder: &mut wgpu::CommandEncoder,
     pipeline: &wgpu::RenderPipeline,
@@ -1337,8 +1353,6 @@ fn draw_fullscreen_pass(
     }
     pass.draw(0..3, 0..1);
 }
-
-
 
 fn uniform_entry(binding: u32, visibility: wgpu::ShaderStages) -> wgpu::BindGroupLayoutEntry {
     wgpu::BindGroupLayoutEntry {
@@ -1558,12 +1572,12 @@ fn make_debug_bind_group(
     })
 }
 
-pub(crate) fn load_refl_wgsl(device: &Device, label: &'static str, body: &str) -> wgpu::ShaderModule {
-    let source = format!(
-        "{}\n{}",
-        include_str!("reflection_math.wgsl"),
-        body
-    );
+pub(crate) fn load_refl_wgsl(
+    device: &Device,
+    label: &'static str,
+    body: &str,
+) -> wgpu::ShaderModule {
+    let source = format!("{}\n{}", include_str!("reflection_math.wgsl"), body);
     device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some(label),
         source: wgpu::ShaderSource::Wgsl(source.into()),

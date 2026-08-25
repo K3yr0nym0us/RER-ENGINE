@@ -86,7 +86,7 @@ export function usePlayerUiEditorModal(scope: UiScreenScope) {
 				body: createElement(PlayerUiEditorModalBody, { scope: 'player', screenId }),
 			})
 		},
-		[scope, engine, openModal, objectDraw, pushPatch, t],
+		[scope, openModal, objectDraw, pushPatch, t],
 	)
 
 	return { openEditor }

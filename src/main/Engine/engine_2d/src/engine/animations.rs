@@ -2,10 +2,10 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use crate::ecs::Transform;
-use crate::ipc::{send_event, EngineEvent};
+use crate::ipc::{EngineEvent, send_event};
 
-use super::types::{ActiveAnimation, AnimationState};
 use super::State;
+use super::types::{ActiveAnimation, AnimationState};
 
 impl State {
     pub(super) fn resolve_animation_flip(&self, entity_id: u32, anim: &AnimationState) -> bool {
@@ -15,7 +15,11 @@ impl State {
 
         // `anim.flip_horizontal` representa la orientación base de autoría:
         // false = dibujada mirando derecha, true = dibujada mirando izquierda.
-        let facing_right = self.entity_facing_right.get(&entity_id).copied().unwrap_or(true);
+        let facing_right = self
+            .entity_facing_right
+            .get(&entity_id)
+            .copied()
+            .unwrap_or(true);
         let target_is_left = !facing_right;
         anim.flip_horizontal ^ target_is_left
     }
@@ -24,11 +28,14 @@ impl State {
     /// Aplica el frame 0 de inmediato para recalcular pivot/offset; si un script lanza
     /// `PlayAnimation` en el mismo tick, ese comando sobreescribe el visual.
     pub(super) fn start_animation_deferred(&mut self, entity_id: u32, name: String) {
-        let anim_opt = self.animations
+        let anim_opt = self
+            .animations
             .get(&entity_id)
             .and_then(|m| m.get(&name))
             .cloned();
-        let Some(anim) = anim_opt else { return; };
+        let Some(anim) = anim_opt else {
+            return;
+        };
 
         self.active_animations.remove(&entity_id);
 
@@ -36,7 +43,9 @@ impl State {
         if let Some(t) = self.world.get::<Transform>(entity_id).cloned() {
             self.anim_saved_transforms
                 .entry(entity_id)
-                .and_modify(|saved| { saved.0 = t.position; })
+                .and_modify(|saved| {
+                    saved.0 = t.position;
+                })
                 .or_insert((t.position, t.scale));
         }
 
@@ -49,16 +58,21 @@ impl State {
         self.script_engine.detach_animation_scripts(entity_id);
         for script in &anim.scripts {
             let anim_path = format!("$anim$::{}::{}", name, script.name);
-            let _ = self.script_engine.attach_script(entity_id, &anim_path, &script.source);
+            let _ = self
+                .script_engine
+                .attach_script(entity_id, &anim_path, &script.source);
         }
 
-        self.active_animations.insert(entity_id, ActiveAnimation {
-            animation_name: name.clone(),
-            current_frame:  0,
-            last_frame_time: Instant::now(),
-            fps:    anim.fps,
-            finished: false,
-        });
+        self.active_animations.insert(
+            entity_id,
+            ActiveAnimation {
+                animation_name: name.clone(),
+                current_frame: 0,
+                last_frame_time: Instant::now(),
+                fps: anim.fps,
+                finished: false,
+            },
+        );
 
         self.prepare_character_animation_visual(entity_id);
         self.show_first_frame_of_animation(entity_id, &name);
@@ -66,7 +80,8 @@ impl State {
 
     pub(super) fn show_first_frame_of_animation(&mut self, entity_id: u32, animation_name: &str) {
         self.prepare_character_animation_visual(entity_id);
-        let frame_data = self.animations
+        let frame_data = self
+            .animations
             .get(&entity_id)
             .and_then(|m| m.get(animation_name))
             .and_then(|anim| {
@@ -79,14 +94,29 @@ impl State {
                         pivot_y,
                         anim.logical_w,
                         anim.logical_h,
-                        first.src_x.zip(first.src_y).zip(first.src_w.zip(first.src_h)).map(|((x, y), (w, h))| (x, y, w, h)),
+                        first
+                            .src_x
+                            .zip(first.src_y)
+                            .zip(first.src_w.zip(first.src_h))
+                            .map(|((x, y), (w, h))| (x, y, w, h)),
                         flip,
                     )
                 })
             });
 
-        if let Some((path, pivot_x, pivot_y, logical_w, logical_h, src_rect, flip_horizontal)) = frame_data {
-            self.play_animation_frame(entity_id, &path, pivot_x, pivot_y, logical_w, logical_h, src_rect, flip_horizontal);
+        if let Some((path, pivot_x, pivot_y, logical_w, logical_h, src_rect, flip_horizontal)) =
+            frame_data
+        {
+            self.play_animation_frame(
+                entity_id,
+                &path,
+                pivot_x,
+                pivot_y,
+                logical_w,
+                logical_h,
+                src_rect,
+                flip_horizontal,
+            );
         }
     }
 
@@ -107,8 +137,11 @@ impl State {
             }
             // Nota: la lógica de avance de frames se hace abajo con corrección de drift
 
-            let anim_state = match self.animations.get(&entity_id)
-                .and_then(|m| m.get(&active.animation_name)) {
+            let anim_state = match self
+                .animations
+                .get(&entity_id)
+                .and_then(|m| m.get(&active.animation_name))
+            {
                 Some(a) => a,
                 None => continue,
             };
@@ -149,32 +182,52 @@ impl State {
             } else {
                 active.current_frame = next_frame_idx;
                 if self.debug_mode {
-                    log::info!("[anim] entidad {entity_id} avanza a frame {next_frame_idx} (anim '{}')", active.animation_name);
+                    log::info!(
+                        "[anim] entidad {entity_id} avanza a frame {next_frame_idx} (anim '{}')",
+                        active.animation_name
+                    );
                 }
                 to_play.push((entity_id, next_frame_idx));
             }
         }
 
         for (entity_id, frame_idx) in to_play {
-            let anim_name = self.active_animations.get(&entity_id)
+            let anim_name = self
+                .active_animations
+                .get(&entity_id)
                 .map(|a| a.animation_name.clone())
                 .unwrap_or_default();
-            let (frame_data, flip, logical_w, logical_h) = if let Some(anim_map) = self.animations.get(&entity_id) {
+            let (frame_data, flip, logical_w, logical_h) = if let Some(anim_map) =
+                self.animations.get(&entity_id)
+            {
                 if let Some(anim) = anim_map.get(&anim_name) {
                     let frame_idx_clamped = frame_idx.min(anim.frames.len().saturating_sub(1));
                     if let Some(f) = anim.frames.get(frame_idx_clamped) {
                         let flip = self.resolve_animation_flip(entity_id, anim);
                         (Some(f.clone()), flip, anim.logical_w, anim.logical_h)
                     } else {
-                        log::warn!("[animation] Frame {} no existe para entidad {} animación '{}' — se mantiene en active_animations", frame_idx_clamped, entity_id, anim_name);
+                        log::warn!(
+                            "[animation] Frame {} no existe para entidad {} animación '{}' — se mantiene en active_animations",
+                            frame_idx_clamped,
+                            entity_id,
+                            anim_name
+                        );
                         (None, false, 0, 0)
                     }
                 } else {
-                    log::warn!("[animation] animación '{}' no existe para entidad {} — se mantiene en active_animations", anim_name, entity_id);
+                    log::warn!(
+                        "[animation] animación '{}' no existe para entidad {} — se mantiene en active_animations",
+                        anim_name,
+                        entity_id
+                    );
                     (None, false, 0, 0)
                 }
             } else {
-                log::warn!("[animation] entidad {} tiene active_animation '{}' pero ya no existe en el almacén — se mantiene en active_animations", entity_id, anim_name);
+                log::warn!(
+                    "[animation] entidad {} tiene active_animation '{}' pero ya no existe en el almacén — se mantiene en active_animations",
+                    entity_id,
+                    anim_name
+                );
                 (None, false, 0, 0)
             };
             if let Some(f) = frame_data {
@@ -186,7 +239,10 @@ impl State {
                     pivot_y,
                     logical_w,
                     logical_h,
-                    f.src_x.zip(f.src_y).zip(f.src_w.zip(f.src_h)).map(|((x, y), (w, h))| (x, y, w, h)),
+                    f.src_x
+                        .zip(f.src_y)
+                        .zip(f.src_w.zip(f.src_h))
+                        .map(|((x, y), (w, h))| (x, y, w, h)),
                     flip,
                 );
             }

@@ -19,28 +19,28 @@ pub(crate) struct CameraUniform {
 // ---------------------------------------------------------------------------
 pub(crate) struct Camera {
     /// Punto alrededor del que orbita la cámara.
-    pub target:   Vec3,
+    pub target: Vec3,
     /// Distancia al target.
     pub distance: f32,
     /// Ángulo horizontal (azimut) en radianes.
-    pub yaw:      f32,
+    pub yaw: f32,
     /// Ángulo vertical (elevación) en radianes, clampeado para no girar 360.
-    pub pitch:    f32,
-    pub fov_y:    f32,
-    pub near:     f32,
-    pub far:      f32,
+    pub pitch: f32,
+    pub fov_y: f32,
+    pub near: f32,
+    pub far: f32,
 }
 
 impl Camera {
     pub(crate) fn new() -> Self {
         Self {
-            target:   Vec3::ZERO,
+            target: Vec3::ZERO,
             distance: 3.0,
-            yaw:      -std::f32::consts::FRAC_PI_4,
-            pitch:    0.3,
-            fov_y:    45_f32.to_radians(),
-            near:     0.1,
-            far:      1000.0,
+            yaw: -std::f32::consts::FRAC_PI_4,
+            pitch: 0.3,
+            fov_y: 45_f32.to_radians(),
+            near: 0.1,
+            far: 1000.0,
         }
     }
 
@@ -59,12 +59,12 @@ impl Camera {
     /// Pan: desplazar el target en el plano de la cámara.
     pub(crate) fn pan(&mut self, dx: f32, dy: f32) {
         const SENSITIVITY: f32 = 0.002;
-        let pos   = self.position();
-        let fwd   = (self.target - pos).normalize();
+        let pos = self.position();
+        let fwd = (self.target - pos).normalize();
         let right = fwd.cross(Vec3::Y).normalize();
-        let up    = right.cross(fwd).normalize();
-        let offset = right * (-dx * SENSITIVITY * self.distance)
-                   + up   * ( dy * SENSITIVITY * self.distance);
+        let up = right.cross(fwd).normalize();
+        let offset =
+            right * (-dx * SENSITIVITY * self.distance) + up * (dy * SENSITIVITY * self.distance);
         self.target += offset;
     }
 

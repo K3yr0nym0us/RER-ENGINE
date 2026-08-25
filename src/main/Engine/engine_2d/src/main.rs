@@ -1,23 +1,23 @@
-mod engine_command;
 mod ecs;
-mod entity_save_meta;
 mod engine;
-mod scene_target;
+mod engine_command;
+mod entity_save_meta;
 mod gizmo;
+mod hud_image_asset;
 mod ipc;
 mod mesh;
 mod on_keep;
 mod on_press;
+mod scene_target;
+mod screen_hud_image;
 mod scripting;
 mod spatial;
 mod texture;
-mod screen_hud_image;
-mod hud_image_asset;
 
 #[path = "config_2d/mod.rs"]
 mod config_2d;
-mod config_compat;
 mod config_base;
+mod config_compat;
 mod config_shared;
 
 use std::collections::HashSet;
@@ -34,16 +34,16 @@ use winit::{
 };
 
 use ipc::{EngineCommand, EngineCommandCommon, EngineEvent};
-use rer_engine_shared::platform::query_shift_held_os;
-use rer_engine_shared::gpu::{resolve_backend, EngineGpuProfile};
-use rer_engine_shared::wgpu_surface::SurfacePresentError;
-use rer_engine_shared::overlay::{parse_overlay_config, OverlayConfig};
+use rer_engine_shared::gpu::{EngineGpuProfile, resolve_backend};
+use rer_engine_shared::overlay::{OverlayConfig, parse_overlay_config};
 #[cfg(any(target_os = "windows", target_os = "linux"))]
 use rer_engine_shared::platform::TrackerOffset;
+use rer_engine_shared::platform::query_shift_held_os;
 #[cfg(target_os = "windows")]
 use rer_engine_shared::platform::setup_overlay_win32;
 #[cfg(target_os = "linux")]
 use rer_engine_shared::platform::{setup_overlay_x11, start_position_tracker};
+use rer_engine_shared::wgpu_surface::SurfacePresentError;
 
 // ---------------------------------------------------------------------------
 // Consulta de Ctrl en el OS (sin depender del foco de ventana del motor)
@@ -53,7 +53,9 @@ fn query_ctrl_held_os() -> bool {
     // SAFETY: llamadas estándar a libX11; Display se abre y cierra en la misma función.
     unsafe {
         let display = x11::xlib::XOpenDisplay(std::ptr::null());
-        if display.is_null() { return false; }
+        if display.is_null() {
+            return false;
+        }
         let mut keys = [0u8; 32];
         x11::xlib::XQueryKeymap(display, keys.as_mut_ptr() as *mut i8);
         x11::xlib::XCloseDisplay(display);
@@ -72,15 +74,19 @@ fn query_ctrl_held_os() -> bool {
 fn query_ctrl_held_os() -> bool {
     // SAFETY: GetAsyncKeyState es seguro de llamar en cualquier contexto Win32.
     unsafe {
-        use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LCONTROL, VK_RCONTROL};
-        let left  = (GetAsyncKeyState(VK_LCONTROL.0 as i32) as u16 & 0x8000) != 0;
+        use windows::Win32::UI::Input::KeyboardAndMouse::{
+            GetAsyncKeyState, VK_LCONTROL, VK_RCONTROL,
+        };
+        let left = (GetAsyncKeyState(VK_LCONTROL.0 as i32) as u16 & 0x8000) != 0;
         let right = (GetAsyncKeyState(VK_RCONTROL.0 as i32) as u16 & 0x8000) != 0;
         left || right
     }
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
-fn query_ctrl_held_os() -> bool { false }
+fn query_ctrl_held_os() -> bool {
+    false
+}
 
 /// Convierte un `KeyCode` de winit a la string de control usada en los bindings.
 ///
@@ -91,28 +97,27 @@ fn map_keyboard_control_key(code: KeyCode) -> Option<String> {
     let debug = format!("{code:?}");
 
     // Letras: "KeyA" → "A", "KeyZ" → "Z"
-    if let Some(letter) = debug.strip_prefix("Key") {
-        if letter.len() == 1 && letter.as_bytes()[0].is_ascii_alphabetic() {
-            return Some(letter.to_uppercase());
-        }
+    if let Some(letter) = debug.strip_prefix("Key")
+        && letter.len() == 1
+        && letter.as_bytes()[0].is_ascii_alphabetic()
+    {
+        return Some(letter.to_uppercase());
     }
 
     // Dígitos: "Digit0" → "0", "Digit9" → "9"
-    if let Some(digit) = debug.strip_prefix("Digit") {
-        if digit.len() == 1 && digit.as_bytes()[0].is_ascii_digit() {
-            return Some(digit.to_string());
-        }
+    if let Some(digit) = debug.strip_prefix("Digit")
+        && digit.len() == 1
+        && digit.as_bytes()[0].is_ascii_digit()
+    {
+        return Some(digit.to_string());
     }
 
     // Teclas especiales con nombre distinto al variant
     match code {
-        KeyCode::Space        => Some("SPACE".to_string()),
-        KeyCode::ControlLeft
-        | KeyCode::ControlRight => Some("CTRL".to_string()),
-        KeyCode::ShiftLeft
-        | KeyCode::ShiftRight   => Some("SHIFT".to_string()),
-        KeyCode::AltLeft
-        | KeyCode::AltRight     => Some("ALT".to_string()),
+        KeyCode::Space => Some("SPACE".to_string()),
+        KeyCode::ControlLeft | KeyCode::ControlRight => Some("CTRL".to_string()),
+        KeyCode::ShiftLeft | KeyCode::ShiftRight => Some("SHIFT".to_string()),
+        KeyCode::AltLeft | KeyCode::AltRight => Some("ALT".to_string()),
         _ => None,
     }
 }
@@ -152,32 +157,32 @@ fn map_gamepad_control_key(button: GamepadButton) -> Option<&'static str> {
 // Estructura principal de la aplicación winit
 // ---------------------------------------------------------------------------
 struct App {
-    state:           Option<engine::State>,
-    overlay:         Option<OverlayConfig>,
+    state: Option<engine::State>,
+    overlay: Option<OverlayConfig>,
     // ── Navegación del editor
-    mouse_right:     bool,   // botón derecho  → pan
-    mouse_middle:    bool,   // botón central  → pan
-    last_cursor:     Option<(f32, f32)>,
+    mouse_right: bool,  // botón derecho  → pan
+    mouse_middle: bool, // botón central  → pan
+    last_cursor: Option<(f32, f32)>,
     // Picking con click izquierdo
-    left_click_pos:  Option<(f32, f32)>,  // posición al presionar
+    left_click_pos: Option<(f32, f32)>, // posición al presionar
     // Drag de gizmo
-    gizmo_drag_axis: Option<usize>,       // eje activo (0=X,1=Y)
-    gizmo_drag_start: Option<Vec<(u32, [f32; 3], [f32; 4], [f32; 3])>>,
+    gizmo_drag_axis: Option<usize>, // eje activo (0=X,1=Y)
+    gizmo_drag_start: Option<Vec<engine::types::EntityTransformSnapshot>>,
     // Teclas modificadoras
-    ctrl_held:       bool,                // Ctrl izquierdo o derecho presionado
-    shift_held:      bool,
+    ctrl_held: bool, // Ctrl izquierdo o derecho presionado
+    shift_held: bool,
     player_ui_left_press: Option<(f32, f32)>,
     keyboard_mouse_pressed: HashSet<String>,
     // Input de mando (gamepad)
-    gilrs:           Option<Gilrs>,
+    gilrs: Option<Gilrs>,
     gamepad_pressed: HashSet<GamepadButton>,
     // Frame rate cap: tiempo objetivo del próximo frame (evita busy loop)
-    next_frame_at:   std::time::Instant,
-    target_fps:      u64,
+    next_frame_at: std::time::Instant,
+    target_fps: u64,
     #[cfg(any(target_os = "windows", target_os = "linux"))]
-    tracker_offset:      TrackerOffset,
+    tracker_offset: TrackerOffset,
     #[cfg(any(target_os = "windows", target_os = "linux"))]
-    tracker_parent_id:   u64,
+    tracker_parent_id: u64,
 }
 
 impl App {
@@ -190,12 +195,16 @@ impl App {
 
     #[cfg(any(target_os = "windows", target_os = "linux"))]
     fn setup_overlay_tracking(&mut self, window: &Window) {
-        let Some(overlay) = self.overlay.as_ref() else { return };
+        let Some(overlay) = self.overlay.as_ref() else {
+            return;
+        };
         if overlay.parent_id == 0 {
             return;
         }
         use raw_window_handle::HasWindowHandle;
-        let Ok(handle) = window.window_handle() else { return };
+        let Ok(handle) = window.window_handle() else {
+            return;
+        };
 
         let offset = Self::initial_tracker_offset(overlay);
         self.tracker_offset = std::sync::Arc::clone(&offset);
@@ -205,7 +214,7 @@ impl App {
         {
             use raw_window_handle::RawWindowHandle;
             if let RawWindowHandle::Win32(h) = handle.as_raw() {
-                setup_overlay_win32(h.hwnd.get() as isize, overlay.parent_id as isize, offset);
+                setup_overlay_win32(h.hwnd.get(), overlay.parent_id as isize, offset);
             }
         }
 
@@ -222,7 +231,13 @@ impl App {
     }
 
     #[cfg(any(target_os = "windows", target_os = "linux"))]
-    fn update_tracker_offset(&mut self, x: i32, y: i32, offset_x: Option<i32>, offset_y: Option<i32>) {
+    fn update_tracker_offset(
+        &mut self,
+        x: i32,
+        y: i32,
+        offset_x: Option<i32>,
+        offset_y: Option<i32>,
+    ) {
         if self.tracker_parent_id == 0 {
             return;
         }
@@ -266,8 +281,12 @@ impl App {
                     &mut child_return,
                 ) != 0
                 {
-                    self.tracker_offset.0.store(x - parent_root_x, Ordering::Relaxed);
-                    self.tracker_offset.1.store(y - parent_root_y, Ordering::Relaxed);
+                    self.tracker_offset
+                        .0
+                        .store(x - parent_root_x, Ordering::Relaxed);
+                    self.tracker_offset
+                        .1
+                        .store(y - parent_root_y, Ordering::Relaxed);
                 }
                 x11::xlib::XCloseDisplay(display);
             }
@@ -279,11 +298,12 @@ impl ApplicationHandler<EngineCommand> for App {
     /// Llamado al iniciar (y al volver de suspensión en móvil).
     /// Aquí creamos la ventana y el estado wgpu.
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        if self.state.is_some() { return; }
+        if self.state.is_some() {
+            return;
+        }
 
         // Atributos base
-        let mut attrs = Window::default_attributes()
-            .with_title("RER-ENGINE — Viewport");
+        let mut attrs = Window::default_attributes().with_title("RER-ENGINE — Viewport");
 
         if let Some(overlay) = &self.overlay {
             // ── Modo overlay: ventana separada alineada al hueco del editor ───
@@ -316,9 +336,7 @@ impl ApplicationHandler<EngineCommand> for App {
             }
             Err(e) => {
                 log::error!("Inicialización GPU fallida: {e}");
-                ipc::send_event(&EngineEvent::Error {
-                    message: e.message,
-                });
+                ipc::send_event(&EngineEvent::Error { message: e.message });
             }
         }
     }
@@ -334,12 +352,22 @@ impl ApplicationHandler<EngineCommand> for App {
             self.next_frame_at = std::time::Instant::now();
         }
         #[cfg(any(target_os = "windows", target_os = "linux"))]
-        if let EngineCommand::Common(EngineCommandCommon::SetBounds { x, y, offset_x, offset_y, .. }) = &cmd {
+        if let EngineCommand::Common(EngineCommandCommon::SetBounds {
+            x,
+            y,
+            offset_x,
+            offset_y,
+            ..
+        }) = &cmd
+        {
             self.update_tracker_offset(*x, *y, *offset_x, *offset_y);
         }
         // When entering game mode, automatically focus the engine window
         // so keyboard/mouse input is captured without requiring a manual click.
-        let entering_play = matches!(cmd, EngineCommand::Common(EngineCommandCommon::SetPreviewPlaying { playing: true }));
+        let entering_play = matches!(
+            cmd,
+            EngineCommand::Common(EngineCommandCommon::SetPreviewPlaying { playing: true })
+        );
 
         if let Some(state) = self.state.as_mut() {
             state.handle_command(cmd);
@@ -368,24 +396,26 @@ impl ApplicationHandler<EngineCommand> for App {
             WindowEvent::Resized(size) => {
                 state.resize(size);
             }
-            WindowEvent::Ime(ime) => {
-                if let Ime::Commit(text) = ime {
-                    let _ = state.player_ui_text_ime_commit(&text);
-                }
+            WindowEvent::Ime(Ime::Commit(text)) => {
+                let _ = state.player_ui_text_ime_commit(&text);
             }
             // ── Input de ratón para editor 2D ─────────────────────────────────
-            WindowEvent::MouseInput { button, state: btn_state, .. } => {
+            WindowEvent::MouseInput {
+                button,
+                state: btn_state,
+                ..
+            } => {
                 let pressed = btn_state == ElementState::Pressed;
-                if state.is_preview_playing() {
-                    if let Some(control_key) = map_mouse_control_key(button) {
-                        if pressed {
-                            self.keyboard_mouse_pressed.insert(control_key.to_string());
-                            state.dispatch_on_press("keyboard_mouse", control_key);
-                            state.dispatch_on_keep_key_down(control_key);
-                        } else {
-                            self.keyboard_mouse_pressed.remove(control_key);
-                            state.dispatch_on_keep_key_up("keyboard_mouse", control_key);
-                        }
+                if state.is_preview_playing()
+                    && let Some(control_key) = map_mouse_control_key(button)
+                {
+                    if pressed {
+                        self.keyboard_mouse_pressed.insert(control_key.to_string());
+                        state.dispatch_on_press("keyboard_mouse", control_key);
+                        state.dispatch_on_keep_key_down(control_key);
+                    } else {
+                        self.keyboard_mouse_pressed.remove(control_key);
+                        state.dispatch_on_keep_key_up("keyboard_mouse", control_key);
                     }
                 }
                 match button {
@@ -416,7 +446,10 @@ impl ApplicationHandler<EngineCommand> for App {
                         if pressed {
                             // En modo quick_build_place los clicks son capturados por la herramienta;
                             // no se deben seleccionar entidades ni activar el gizmo.
-                            let is_quick_build = matches!(state.active_tool, crate::config_2d::ActiveTool::QuickBuildPlace { .. });
+                            let is_quick_build = matches!(
+                                state.active_tool,
+                                crate::config_2d::ActiveTool::QuickBuildPlace { .. }
+                            );
 
                             // Comprobar si el click es sobre un eje del gizmo.
                             // Se omite en modo pivot/quick_build para no robar el click al handler.
@@ -430,18 +463,27 @@ impl ApplicationHandler<EngineCommand> for App {
                                 if axis.is_some() {
                                     state.set_active_gizmo_axis(axis);
                                     state.set_snap_hint_visible(state.camera_2d.is_some());
-                                    let selected_ids: Vec<u32> = if !state.selected_entities.is_empty() {
-                                        state.selected_entities.clone()
-                                    } else {
-                                        state.selected_entity.into_iter().collect()
-                                    };
-                                    let mut snapshots: Vec<(u32, [f32; 3], [f32; 4], [f32; 3])> = Vec::new();
+                                    let selected_ids: Vec<u32> =
+                                        if !state.selected_entities.is_empty() {
+                                            state.selected_entities.clone()
+                                        } else {
+                                            state.selected_entity.into_iter().collect()
+                                        };
+                                    let mut snapshots: Vec<engine::types::EntityTransformSnapshot> =
+                                        Vec::new();
                                     for sel_id in selected_ids {
-                                        if let Some(t) = state.world.get::<crate::ecs::Transform>(sel_id) {
+                                        if let Some(t) =
+                                            state.world.get::<crate::ecs::Transform>(sel_id)
+                                        {
                                             snapshots.push((
                                                 sel_id,
                                                 t.position.to_array(),
-                                                [t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w],
+                                                [
+                                                    t.rotation.x,
+                                                    t.rotation.y,
+                                                    t.rotation.z,
+                                                    t.rotation.w,
+                                                ],
                                                 t.scale.to_array(),
                                             ));
                                         }
@@ -463,11 +505,20 @@ impl ApplicationHandler<EngineCommand> for App {
                                 state.set_active_gizmo_axis(None);
                                 state.set_snap_hint_visible(false);
                                 if let Some(start_snapshots) = self.gizmo_drag_start.take() {
-                                    let mut changed_snapshots: Vec<(u32, [f32; 3], [f32; 4], [f32; 3])> = Vec::new();
+                                    let mut changed_snapshots: Vec<
+                                        engine::types::EntityTransformSnapshot,
+                                    > = Vec::new();
                                     for (id, pos, rot, scl) in start_snapshots {
-                                        if let Some(t) = state.world.get::<crate::ecs::Transform>(id) {
+                                        if let Some(t) =
+                                            state.world.get::<crate::ecs::Transform>(id)
+                                        {
                                             let changed = t.position.to_array() != pos
-                                                || [t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w] != rot
+                                                || [
+                                                    t.rotation.x,
+                                                    t.rotation.y,
+                                                    t.rotation.z,
+                                                    t.rotation.w,
+                                                ] != rot
                                                 || t.scale.to_array() != scl;
                                             if changed {
                                                 changed_snapshots.push((id, pos, rot, scl));
@@ -485,7 +536,9 @@ impl ApplicationHandler<EngineCommand> for App {
                                 }
                             } else {
                                 // Al soltar: si no hubo arrastre, disparar picking
-                                if let (Some(start), Some(cur)) = (self.left_click_pos, self.last_cursor) {
+                                if let (Some(start), Some(cur)) =
+                                    (self.left_click_pos, self.last_cursor)
+                                {
                                     let dx = (cur.0 - start.0).abs();
                                     let dy = (cur.1 - start.1).abs();
                                     if dx < 5.0 && dy < 5.0 {
@@ -507,20 +560,20 @@ impl ApplicationHandler<EngineCommand> for App {
                             self.left_click_pos = None;
                         }
                     }
-                    MouseButton::Right  => {
+                    MouseButton::Right => {
                         self.mouse_right = pressed;
                         // Fin de pan: notificar posición actual de la cámara 2D
-                        if !pressed {
-                            if let Some(cam2d) = &state.camera_2d {
-                                ipc::send_event(&EngineEvent::Camera2dUpdated {
-                                    x:      cam2d.x,
-                                    y:      cam2d.y,
-                                    half_h: cam2d.half_h,
-                                });
-                            }
+                        if !pressed && let Some(cam2d) = &state.camera_2d {
+                            ipc::send_event(&EngineEvent::Camera2dUpdated {
+                                x: cam2d.x,
+                                y: cam2d.y,
+                                half_h: cam2d.half_h,
+                            });
                         }
                     }
-                    MouseButton::Middle => { self.mouse_middle = pressed; }
+                    MouseButton::Middle => {
+                        self.mouse_middle = pressed;
+                    }
                     _ => {}
                 }
                 if !pressed && matches!(button, MouseButton::Right | MouseButton::Middle) {
@@ -559,17 +612,20 @@ impl ApplicationHandler<EngineCommand> for App {
                     let dy = cur.1 - ly;
                     if !state.is_preview_playing() {
                         if let Some(axis) = self.gizmo_drag_axis {
-                        // Drag de gizmo: mover entidad en el plano 2D.
-                        // OS query directa para snap: independiente del foco de ventana.
-                        let snap = self.ctrl_held || query_ctrl_held_os();
-                        state.drag_gizmo_2d(cur.0, cur.1, lx, ly, axis, snap);
+                            // Drag de gizmo: mover entidad en el plano 2D.
+                            // OS query directa para snap: independiente del foco de ventana.
+                            let snap = self.ctrl_held || query_ctrl_held_os();
+                            state.drag_gizmo_2d(cur.0, cur.1, lx, ly, axis, snap);
                         } else if self.mouse_right {
-                        let (vw, vh) = { let s = state.size(); (s.width as f32, s.height as f32) };
-                        if let Some(cam2d) = &mut state.camera_2d {
-                            cam2d.pan(dx, dy, vw, vh);
-                        }
+                            let (vw, vh) = {
+                                let s = state.size();
+                                (s.width as f32, s.height as f32)
+                            };
+                            if let Some(cam2d) = &mut state.camera_2d {
+                                cam2d.pan(dx, dy, vw, vh);
+                            }
                         } else if self.mouse_middle {
-                        state.camera.pan(dx, dy);
+                            state.camera.pan(dx, dy);
                         }
                     }
                 }
@@ -580,7 +636,10 @@ impl ApplicationHandler<EngineCommand> for App {
                     && !self.mouse_middle
                     && self.gizmo_drag_axis.is_none()
                 {
-                    let is_quick_build = matches!(state.active_tool, crate::config_2d::ActiveTool::QuickBuildPlace { .. });
+                    let is_quick_build = matches!(
+                        state.active_tool,
+                        crate::config_2d::ActiveTool::QuickBuildPlace { .. }
+                    );
                     if !is_quick_build {
                         state.update_hover_2d(cur.0, cur.1);
                     }
@@ -588,13 +647,14 @@ impl ApplicationHandler<EngineCommand> for App {
                 self.last_cursor = Some(cur);
             }
             WindowEvent::KeyboardInput {
-                event: KeyEvent {
-                    physical_key,
-                    state: key_state,
-                    repeat,
-                    text,
-                    ..
-                },
+                event:
+                    KeyEvent {
+                        physical_key,
+                        state: key_state,
+                        repeat,
+                        text,
+                        ..
+                    },
                 ..
             } => {
                 let pressed = key_state == ElementState::Pressed;
@@ -612,20 +672,20 @@ impl ApplicationHandler<EngineCommand> for App {
                 ) {
                     return;
                 }
-                if state.is_preview_playing() {
-                    if let Some(control_key) = map_keyboard_control_key(code) {
-                        if pressed {
-                            // Insertar siempre para que on_keep_frame la procese cada frame.
-                            // on_press y key_down solo se disparan en el borde (no repeat).
-                            self.keyboard_mouse_pressed.insert(control_key.clone());
-                            if !repeat {
-                                state.dispatch_on_press("keyboard_mouse", &control_key);
-                                state.dispatch_on_keep_key_down(&control_key);
-                            }
-                        } else {
-                            self.keyboard_mouse_pressed.remove(&control_key);
-                            state.dispatch_on_keep_key_up("keyboard_mouse", &control_key);
+                if state.is_preview_playing()
+                    && let Some(control_key) = map_keyboard_control_key(code)
+                {
+                    if pressed {
+                        // Insertar siempre para que on_keep_frame la procese cada frame.
+                        // on_press y key_down solo se disparan en el borde (no repeat).
+                        self.keyboard_mouse_pressed.insert(control_key.clone());
+                        if !repeat {
+                            state.dispatch_on_press("keyboard_mouse", &control_key);
+                            state.dispatch_on_keep_key_down(&control_key);
                         }
+                    } else {
+                        self.keyboard_mouse_pressed.remove(&control_key);
+                        state.dispatch_on_keep_key_up("keyboard_mouse", &control_key);
                     }
                 }
                 match code {
@@ -640,20 +700,16 @@ impl ApplicationHandler<EngineCommand> for App {
                             state.player_ui_on_shift_released();
                         }
                     }
-                    KeyCode::KeyZ => {
-                        if pressed && !repeat {
-                            let ctrl_active = self.ctrl_held || query_ctrl_held_os();
-                            if ctrl_active {
-                                state.handle_command(EngineCommand::Common(EngineCommandCommon::Undo));
-                            }
+                    KeyCode::KeyZ if pressed && !repeat => {
+                        let ctrl_active = self.ctrl_held || query_ctrl_held_os();
+                        if ctrl_active {
+                            state.handle_command(EngineCommand::Common(EngineCommandCommon::Undo));
                         }
                     }
-                    KeyCode::KeyY => {
-                        if pressed && !repeat {
-                            let ctrl_active = self.ctrl_held || query_ctrl_held_os();
-                            if ctrl_active {
-                                state.handle_command(EngineCommand::Common(EngineCommandCommon::Redo));
-                            }
+                    KeyCode::KeyY if pressed && !repeat => {
+                        let ctrl_active = self.ctrl_held || query_ctrl_held_os();
+                        if ctrl_active {
+                            state.handle_command(EngineCommand::Common(EngineCommandCommon::Redo));
                         }
                     }
                     _ => {}
@@ -666,15 +722,15 @@ impl ApplicationHandler<EngineCommand> for App {
             }
             WindowEvent::MouseWheel { delta, .. } => {
                 let scroll = match delta {
-                    MouseScrollDelta::LineDelta(_, y)   => y,
-                    MouseScrollDelta::PixelDelta(p)     => p.y as f32 * 0.05,
+                    MouseScrollDelta::LineDelta(_, y) => y,
+                    MouseScrollDelta::PixelDelta(p) => p.y as f32 * 0.05,
                 };
                 if let Some(cam2d) = &mut state.camera_2d {
                     // Zoom ortográfico: reducir/aumentar half_h
                     cam2d.half_h = (cam2d.half_h - scroll * 0.5).clamp(1.0, 50.0);
                     ipc::send_event(&EngineEvent::Camera2dUpdated {
-                        x:      cam2d.x,
-                        y:      cam2d.y,
+                        x: cam2d.x,
+                        y: cam2d.y,
                         half_h: cam2d.half_h,
                     });
                 } else {
@@ -748,7 +804,6 @@ impl ApplicationHandler<EngineCommand> for App {
                         }
                     }
                 }
-
             } else {
                 self.keyboard_mouse_pressed.clear();
                 self.gamepad_pressed.clear();
@@ -762,7 +817,7 @@ impl ApplicationHandler<EngineCommand> for App {
             }
             // Calcular el próximo tick desde el tiempo objetivo, no desde `now`,
             // para evitar drift acumulado si un frame tardó más de lo esperado.
-            self.next_frame_at = self.next_frame_at + frame_duration;
+            self.next_frame_at += frame_duration;
             // Si nos retrasamos más de un frame, resincronizar para evitar
             // ráfagas de frames de recuperación.
             if self.next_frame_at < now {
@@ -801,29 +856,31 @@ fn main() {
     }
 
     let mut app = App {
-        state:               None,
+        state: None,
         overlay,
-        mouse_right:         false,
-        mouse_middle:        false,
-        last_cursor:         None,
-        left_click_pos:      None,
-        gizmo_drag_axis:     None,
-        gizmo_drag_start:    None,
-        ctrl_held:           false,
-        shift_held:          false,
+        mouse_right: false,
+        mouse_middle: false,
+        last_cursor: None,
+        left_click_pos: None,
+        gizmo_drag_axis: None,
+        gizmo_drag_start: None,
+        ctrl_held: false,
+        shift_held: false,
         player_ui_left_press: None,
         keyboard_mouse_pressed: HashSet::new(),
-        gilrs:               Gilrs::new().ok(),
-        gamepad_pressed:     HashSet::new(),
-        next_frame_at:       std::time::Instant::now(),
-        target_fps:          60,
+        gilrs: Gilrs::new().ok(),
+        gamepad_pressed: HashSet::new(),
+        next_frame_at: std::time::Instant::now(),
+        target_fps: 60,
         #[cfg(any(target_os = "windows", target_os = "linux"))]
-        tracker_offset:      std::sync::Arc::new((
+        tracker_offset: std::sync::Arc::new((
             std::sync::atomic::AtomicI32::new(0),
             std::sync::atomic::AtomicI32::new(0),
         )),
         #[cfg(any(target_os = "windows", target_os = "linux"))]
-        tracker_parent_id:   0,
+        tracker_parent_id: 0,
     };
-    event_loop.run_app(&mut app).expect("Error en el event loop");
+    event_loop
+        .run_app(&mut app)
+        .expect("Error en el event loop");
 }

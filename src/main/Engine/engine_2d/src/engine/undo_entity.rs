@@ -3,10 +3,10 @@ use glam::{Quat, Vec3 as GlamVec3};
 use crate::config_2d::{CharacterMarker, ColliderMarker, ExecutionAreaMarker, ScenarioMarker};
 use crate::ecs::{MeshComponent, Transform};
 use crate::entity_save_meta::EntitySaveMeta;
-use crate::ipc::{send_event, EngineEvent};
+use crate::ipc::{EngineEvent, send_event};
 
-use super::types::{EntityUndoSnapshot, UndoAction, UndoEntityKind};
 use super::State;
+use super::types::{EntityUndoSnapshot, UndoAction, UndoEntityKind};
 
 impl State {
     pub(crate) fn capture_entity_undo_snapshot(&self, id: u32) -> Option<EntityUndoSnapshot> {
@@ -59,7 +59,10 @@ impl State {
         self.redo_stack.clear();
     }
 
-    pub(crate) fn restore_entity_from_undo_snapshot(&mut self, snapshot: &EntityUndoSnapshot) -> bool {
+    pub(crate) fn restore_entity_from_undo_snapshot(
+        &mut self,
+        snapshot: &EntityUndoSnapshot,
+    ) -> bool {
         if !self.world.spawn_with_id(snapshot.id, Some(&snapshot.name)) {
             log::warn!("[redo] no se pudo reinsertar entidad {}", snapshot.id);
             return false;

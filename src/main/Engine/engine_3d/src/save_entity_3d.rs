@@ -4,8 +4,8 @@ use crate::ecs::Transform;
 use crate::engine::State;
 use crate::entity_save_meta::EntitySaveMeta;
 use crate::ipc::{
-    SaveAnimationSnapshot, SaveConfigCameraSnapshot,
-    SaveConfigEditorCameraSnapshot, SaveEntity3DSnapshot, SaveScriptSnapshot,
+    SaveAnimationSnapshot, SaveConfigCameraSnapshot, SaveConfigEditorCameraSnapshot,
+    SaveEntity3DSnapshot, SaveScriptSnapshot,
 };
 
 pub(crate) fn entity_category_for(state: &State, id: u32, meta: &EntitySaveMeta) -> String {
@@ -21,14 +21,15 @@ pub(crate) fn entity_category_for(state: &State, id: u32, meta: &EntitySaveMeta)
     if state.character_entities.contains(&id) {
         return "character".to_string();
     }
-    if let Some(name) = state.entity_display_name(id) {
-        if let Some(from_name) =
+    if let Some(name) = state.entity_display_name(id)
+        && let Some(from_name) =
             rer_engine_shared::editor_defaults::infer_entity_category_from_numbered_name(&name)
-        {
-            if matches!(from_name, "environment" | "character" | "weapon" | "projectile") {
-                return from_name.to_string();
-            }
-        }
+        && matches!(
+            from_name,
+            "environment" | "character" | "weapon" | "projectile"
+        )
+    {
+        return from_name.to_string();
     }
     if let Some(cat) = meta.entity_category.as_deref() {
         if matches!(cat, "environment" | "character" | "weapon" | "projectile") {
@@ -36,14 +37,17 @@ pub(crate) fn entity_category_for(state: &State, id: u32, meta: &EntitySaveMeta)
         }
         // `object` en meta puede ser genérico; el prefijo del nombre manda si es Environment_* / Object_*.
         if cat == "object" {
-            if let Some(name) = state.entity_display_name(id) {
-                if let Some(from_name) =
-                    rer_engine_shared::editor_defaults::infer_entity_category_from_numbered_name(&name)
-                {
-                    if matches!(from_name, "environment" | "character" | "weapon" | "projectile") {
-                        return from_name.to_string();
-                    }
-                }
+            if let Some(name) = state.entity_display_name(id)
+                && let Some(from_name) =
+                    rer_engine_shared::editor_defaults::infer_entity_category_from_numbered_name(
+                        &name,
+                    )
+                && matches!(
+                    from_name,
+                    "environment" | "character" | "weapon" | "projectile"
+                )
+            {
+                return from_name.to_string();
             }
             return "object".to_string();
         }
@@ -85,39 +89,34 @@ pub(crate) fn build_entity_3d_snapshot(
                     .collect()
             })
             .unwrap_or_default();
-        if list.is_empty() {
-            if let Some(binding) = state.model_animation_bindings.get(&id) {
-                if let Some(asset) = state.get_model_asset_for_entity(&binding.asset_path, id) {
-                    let default_name = state.model_clip_defaults.get(&id);
-                    list = asset
-                        .clips
-                        .iter()
-                        .map(|c| SaveAnimationSnapshot {
-                            name: c.name.clone(),
-                            fps: c.fps.round() as u32,
-                            loop_: true,
-                            is_default: default_name
-                                .map(|d| d == &c.name)
-                                .filter(|&b| b)
-                                .map(|_| true),
-                            facing_right: None,
-                            logical_w: 1,
-                            logical_h: 1,
-                            audio_path: None,
-                            frames: vec![],
-                            scripts: vec![],
-                            is_cancelable: None,
-                            embedded_in_model: Some(true),
-                        })
-                        .collect();
-                }
-            }
+        if list.is_empty()
+            && let Some(binding) = state.model_animation_bindings.get(&id)
+            && let Some(asset) = state.get_model_asset_for_entity(&binding.asset_path, id)
+        {
+            let default_name = state.model_clip_defaults.get(&id);
+            list = asset
+                .clips
+                .iter()
+                .map(|c| SaveAnimationSnapshot {
+                    name: c.name.clone(),
+                    fps: c.fps.round() as u32,
+                    loop_: true,
+                    is_default: default_name
+                        .map(|d| d == &c.name)
+                        .filter(|&b| b)
+                        .map(|_| true),
+                    facing_right: None,
+                    logical_w: 1,
+                    logical_h: 1,
+                    audio_path: None,
+                    frames: vec![],
+                    scripts: vec![],
+                    is_cancelable: None,
+                    embedded_in_model: Some(true),
+                })
+                .collect();
         }
-        if list.is_empty() {
-            None
-        } else {
-            Some(list)
-        }
+        if list.is_empty() { None } else { Some(list) }
     };
 
     let scripts = {
@@ -135,20 +134,12 @@ pub(crate) fn build_entity_3d_snapshot(
                     .collect()
             })
             .unwrap_or_default();
-        if list.is_empty() {
-            None
-        } else {
-            Some(list)
-        }
+        if list.is_empty() { None } else { Some(list) }
     };
 
     let controls = state.control_bindings_by_entity.get(&id).cloned();
     let category = entity_category_for(state, id, meta);
-    let controls = if category == "player" {
-        controls
-    } else {
-        None
-    };
+    let controls = if category == "player" { controls } else { None };
 
     let model = entity_model_for(meta);
     let model_id = state.imported_model_registry.model_id_for_path(&model);
@@ -193,12 +184,7 @@ pub(crate) fn build_entity_3d_snapshot(
         model,
         model_id,
         position: t.position.to_array(),
-        rotation: [
-            t.rotation.x,
-            t.rotation.y,
-            t.rotation.z,
-            t.rotation.w,
-        ],
+        rotation: [t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w],
         scale: t.scale.to_array(),
         physics_type,
         colision: entity_colision_for(state, id),
@@ -255,11 +241,6 @@ pub(crate) fn build_config_editor_camera_snapshot(
     let t = state.world.get::<Transform>(id)?;
     Some(SaveConfigEditorCameraSnapshot {
         position: t.position.to_array(),
-        rotation: Some([
-            t.rotation.x,
-            t.rotation.y,
-            t.rotation.z,
-            t.rotation.w,
-        ]),
+        rotation: Some([t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w]),
     })
 }

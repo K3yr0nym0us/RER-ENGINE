@@ -41,16 +41,16 @@ pub(crate) fn is_play_character_visual_model_path(path: &str) -> bool {
 
 /// Entorno y objetos estáticos: colisión por AABB de malla.
 pub(crate) fn entity_category_uses_mesh_collision(category: Option<&str>) -> bool {
-    matches!(category, Some("environment") | Some("object") | Some("weapon") | Some("projectile"))
+    matches!(
+        category,
+        Some("environment") | Some("object") | Some("weapon") | Some("projectile")
+    )
 }
 
 /// Ruta simbólica de plantilla (`[Player]`, `[EditorBox]`, …), no un archivo en disco.
 pub(crate) fn entity_path_marker(p: &str) -> Option<&'static str> {
     let marker = p.split(['/', '\\']).next_back().unwrap_or(p);
-    ENTITY_MARKERS
-        .iter()
-        .copied()
-        .find(|m| *m == marker)
+    ENTITY_MARKERS.iter().copied().find(|m| *m == marker)
 }
 
 /// Tras `replace_entity_model`: conserva `path` marcador y guarda el mesh real en `visual_model_path`.
@@ -175,9 +175,7 @@ impl State {
         if self.quick_build_ghost_id == Some(id) {
             return None;
         }
-        if self.world.get::<Transform>(id).is_none() {
-            return None;
-        }
+        self.world.get::<Transform>(id)?;
 
         if let Some(m) = self.save_registry.meta.get(&id) {
             return Some(m.clone());
@@ -250,8 +248,6 @@ impl State {
     }
 
     pub(crate) fn entity_display_name(&self, id: EntityId) -> Option<String> {
-        self.world
-            .get::<NameComponent>(id)
-            .map(|c| c.name.clone())
+        self.world.get::<NameComponent>(id).map(|c| c.name.clone())
     }
 }

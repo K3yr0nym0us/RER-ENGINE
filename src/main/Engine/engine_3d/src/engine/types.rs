@@ -9,6 +9,9 @@ use crate::ipc::{AnimScriptData, AnimationFrameData};
 
 use super::DecodedAudio;
 
+/// Undo/gizmo snapshot: `(entity_id, position, rotation_quat, scale)`.
+pub(crate) type EntityTransformSnapshot = (u32, [f32; 3], [f32; 4], [f32; 3]);
+
 pub(crate) enum UndoAction {
     RestoreTransform {
         id: u32,
@@ -17,12 +20,16 @@ pub(crate) enum UndoAction {
         scale: [f32; 3],
     },
     RestoreTransforms {
-        items: Vec<(u32, [f32; 3], [f32; 4], [f32; 3])>,
+        items: Vec<EntityTransformSnapshot>,
     },
     /// Undo de creación: deshacer = eliminar la entidad (snapshot para redo).
-    RemoveEntity { snapshot: EntityUndoSnapshot },
+    RemoveEntity {
+        snapshot: EntityUndoSnapshot,
+    },
     /// Redo tras Ctrl+Z en creación: volver a insertar con el mismo id.
-    RestoreEntity { snapshot: EntityUndoSnapshot },
+    RestoreEntity {
+        snapshot: EntityUndoSnapshot,
+    },
     /// Deshacer cambios en el HUD de la pantalla UI en edición (texto, botones, imágenes, objetos, dibujo).
     RestorePlayerUiHud {
         snapshot: crate::config_3d::player_ui::hud_undo::PlayerUiHudUndoSnapshot,
@@ -56,18 +63,18 @@ pub(crate) enum UndoAction {
 
 #[derive(Clone)]
 pub(crate) struct EntityUndoSnapshot {
-    pub id:                 u32,
-    pub name:               String,
+    pub id: u32,
+    pub name: String,
     pub transform_position: [f32; 3],
     pub transform_rotation: [f32; 4],
-    pub transform_scale:    [f32; 3],
-    pub mesh:               MeshComponent,
-    pub save_meta:          EntitySaveMeta,
-    pub physics_enabled:    bool,
-    pub physics_type:       String,
-    pub physics_half:       [f32; 3],
-    pub in_character_list:  bool,
-    pub in_scenario_list:   bool,
+    pub transform_scale: [f32; 3],
+    pub mesh: MeshComponent,
+    pub save_meta: EntitySaveMeta,
+    pub physics_enabled: bool,
+    pub physics_type: String,
+    pub physics_half: [f32; 3],
+    pub in_character_list: bool,
+    pub in_scenario_list: bool,
 }
 
 #[derive(Clone)]

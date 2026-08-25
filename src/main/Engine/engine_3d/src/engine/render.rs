@@ -1,7 +1,7 @@
 use glam::Vec3 as GlamVec3;
 use winit::dpi::PhysicalSize;
 
-use rer_engine_shared::wgpu_surface::{acquire_surface_texture, SurfacePresentError};
+use rer_engine_shared::wgpu_surface::{SurfacePresentError, acquire_surface_texture};
 
 use crate::config_3d::Camera;
 use crate::config_3d::reflection_graphics::{ReflectionSettings, ReflectionTier};
@@ -9,7 +9,7 @@ use crate::gizmo;
 
 use glam::Mat4;
 
-use super::{SceneUniforms, State, DEPTH_FORMAT};
+use super::{DEPTH_FORMAT, SceneUniforms, State};
 
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -88,12 +88,11 @@ fn collect_sorted_transparent_draws(
             draws.push((b.mesh_idx, *inst, dist_sq));
         }
     }
-    draws.sort_by(|a, b| {
-        b.2
-            .partial_cmp(&a.2)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-    draws.into_iter().map(|(mesh, inst, _)| (mesh, inst)).collect()
+    draws.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
+    draws
+        .into_iter()
+        .map(|(mesh, inst, _)| (mesh, inst))
+        .collect()
 }
 
 impl State {
@@ -146,8 +145,8 @@ impl State {
             {
                 continue;
             }
-            let is_selected =
-                self.selected_entity == Some(*entity_id) || self.selected_entities.contains(entity_id);
+            let is_selected = self.selected_entity == Some(*entity_id)
+                || self.selected_entities.contains(entity_id);
             let is_hovered = self.hovered_entity == Some(*entity_id);
             let flag = self.editor_selection_flag(*entity_id, is_selected, is_hovered);
             let layer = self.texture_layer_for(*tex_idx);
@@ -165,10 +164,8 @@ impl State {
                 inst.flag_pad[1] = crate::config_3d::plane_tools::PLANE_WALL_VISUAL_ALPHA;
                 inst.flag_pad[2] = crate::config_3d::plane_tools::PLANE_WALL_RENDER_KIND;
             }
-            let can_extend = batches.last().map_or(false, |b| {
-                b.mesh_idx == *mesh_idx
-                    && b.texture_layer == layer
-                    && b.probe_layer == probe_layer
+            let can_extend = batches.last().is_some_and(|b| {
+                b.mesh_idx == *mesh_idx && b.texture_layer == layer && b.probe_layer == probe_layer
             });
             if can_extend {
                 batches.last_mut().unwrap().instances.push(inst);
@@ -269,11 +266,13 @@ impl State {
             let Some(mesh) = self.meshes.get(mesh_idx) else {
                 continue;
             };
-            let inst_buf = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("transparent-inst-buf"),
-                contents: bytemuck::cast_slice(&[inst]),
-                usage: wgpu::BufferUsages::VERTEX,
-            });
+            let inst_buf = self
+                .device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("transparent-inst-buf"),
+                    contents: bytemuck::cast_slice(&[inst]),
+                    usage: wgpu::BufferUsages::VERTEX,
+                });
             pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
             pass.set_vertex_buffer(1, inst_buf.slice(..));
             pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
@@ -292,9 +291,7 @@ impl State {
                 if self.model_animation_bindings.contains_key(&id) {
                     return None;
                 }
-                if self.quick_build_ghost_id == Some(id)
-                    || self.plane_tool_ghost_id == Some(id)
-                {
+                if self.quick_build_ghost_id == Some(id) || self.plane_tool_ghost_id == Some(id) {
                     return None;
                 }
                 if self.preview_playing
@@ -348,11 +345,8 @@ impl State {
             new_size.width,
             new_size.height,
         );
-        self.reflections.resize(
-            &self.device,
-            new_size.width,
-            new_size.height,
-        );
+        self.reflections
+            .resize(&self.device, new_size.width, new_size.height);
         if self.reflection_tier != ReflectionTier::Off {
             let tier_settings = ReflectionSettings::from_tier(self.reflection_tier);
             self.reflections
@@ -409,7 +403,8 @@ impl State {
                 let min_z = t.position.z - sz;
                 let max_x = t.position.x + sx;
                 let max_z = t.position.z + sz;
-                self.spatial_grid.insert_entity(entity, [min_x, min_z, max_x, max_z]);
+                self.spatial_grid
+                    .insert_entity(entity, [min_x, min_z, max_x, max_z]);
             }
         }
 
@@ -428,11 +423,14 @@ impl State {
             self.taa.begin_frame(false);
         }
         let reflection_settings = {
-            let mut settings =
-                crate::config_3d::reflection_graphics::ReflectionSettings::from_tier(self.reflection_tier);
+            let mut settings = crate::config_3d::reflection_graphics::ReflectionSettings::from_tier(
+                self.reflection_tier,
+            );
             settings.probes_enabled = self.reflection_probes_enabled;
             settings.raytracing_enabled = self.reflection_raytracing_enabled;
-            let ipc_prev = self.reflection_tier_effective_ipc.replace(self.reflection_tier);
+            let ipc_prev = self
+                .reflection_tier_effective_ipc
+                .replace(self.reflection_tier);
             if ipc_prev != Some(self.reflection_tier) {
                 crate::ipc::send_event(&crate::ipc::EngineEvent::ReflectionTierEffective {
                     requested: self.reflection_tier.wire().to_string(),
@@ -471,7 +469,11 @@ impl State {
                 self.scene_shadow_bias(),
             )
         };
-        scene_uni.depth_plane[2] = if reflection_settings.active() { 1.0 } else { 0.0 };
+        scene_uni.depth_plane[2] = if reflection_settings.active() {
+            1.0
+        } else {
+            0.0
+        };
         self.queue
             .write_buffer(&self.scene_buffer, 0, bytemuck::cast_slice(&[scene_uni]));
         let zoom_stability = if self.uses_player_fps_viewport() {
@@ -548,17 +550,13 @@ impl State {
                 Some((id, mesh_idx, tex_idx, model_mat, layer))
             })
             .collect();
-        entities.sort_by(|a, b| a.4.cmp(&b.4));
+        entities.sort_by_key(|a| a.4);
 
         struct Batch {
             mesh_idx: usize,
             instances: Vec<crate::mesh::InstanceData>,
         }
-        let batches = self.build_scene_instance_batches(
-            &entities,
-            &probe_index_map,
-            false,
-        );
+        let batches = self.build_scene_instance_batches(&entities, &probe_index_map, false);
         let opaque_batches = filter_batches_by_alpha(&batches, false);
         let transparent_batches = filter_batches_by_alpha(&batches, true);
 
@@ -590,7 +588,7 @@ impl State {
             let inst = crate::mesh::InstanceData::new(*model_matrix, 0.0, self.fallback_layer);
             let can_extend = shadow_batches
                 .last()
-                .map_or(false, |b| b.mesh_idx == *mesh_idx);
+                .is_some_and(|b| b.mesh_idx == *mesh_idx);
             if can_extend {
                 shadow_batches.last_mut().unwrap().instances.push(inst);
             } else {
@@ -606,19 +604,19 @@ impl State {
             for b in &shadow_batches {
                 shadow_slices.push(b.instances.as_slice());
             }
-            let shadow_instance_buffers = self.shadow_instance_pool.upload(
-                &self.device,
-                &self.queue,
-                &shadow_slices,
-            );
+            let shadow_instance_buffers =
+                self.shadow_instance_pool
+                    .upload(&self.device, &self.queue, &shadow_slices);
 
             if self.shadow_tier == crate::config_3d::shadow_graphics::ShadowTier::Off {
                 // sombras desactivadas — saltamos el pase de shadow map
             } else {
-                let shadow_map_view = self._shadow_texture.create_view(&wgpu::TextureViewDescriptor {
-                    label: Some("shadow-map-pass"),
-                    ..Default::default()
-                });
+                let shadow_map_view =
+                    self._shadow_texture
+                        .create_view(&wgpu::TextureViewDescriptor {
+                            label: Some("shadow-map-pass"),
+                            ..Default::default()
+                        });
                 let mut shadow_pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("shadow-pass"),
                     color_attachments: &[],
@@ -636,17 +634,19 @@ impl State {
                 });
                 shadow_pass.set_pipeline(&self.shadow_pipeline);
                 shadow_pass.set_bind_group(0, &self.shadow_pass_bind_group, &[]);
-                for (batch, inst_buf) in shadow_batches
-                    .iter()
-                    .zip(shadow_instance_buffers.iter())
-                {
+                for (batch, inst_buf) in shadow_batches.iter().zip(shadow_instance_buffers.iter()) {
                     let Some(mesh) = self.meshes.get(batch.mesh_idx) else {
                         continue;
                     };
                     shadow_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
                     shadow_pass.set_vertex_buffer(1, inst_buf.slice(..));
-                    shadow_pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                    shadow_pass.draw_indexed(0..mesh.index_count, 0, 0..batch.instances.len() as u32);
+                    shadow_pass
+                        .set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                    shadow_pass.draw_indexed(
+                        0..mesh.index_count,
+                        0,
+                        0..batch.instances.len() as u32,
+                    );
                 }
 
                 if !skinned_shadow.is_empty() {
@@ -668,14 +668,18 @@ impl State {
                         shadow_pass.set_bind_group(3, &entry.joint_bind_group, &[]);
                         shadow_pass.set_vertex_buffer(0, entry.mesh.vertex_buffer.slice(..));
                         shadow_pass.set_vertex_buffer(1, inst_buf.slice(..));
-                        shadow_pass.set_index_buffer(entry.mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                        shadow_pass.set_index_buffer(
+                            entry.mesh.index_buffer.slice(..),
+                            wgpu::IndexFormat::Uint32,
+                        );
                         shadow_pass.draw_indexed(0..entry.mesh.index_count, 0, 0..1);
                     }
                 }
             }
         }
 
-        let mut instance_slices = Vec::with_capacity(opaque_batches.len() + transparent_batches.len());
+        let mut instance_slices =
+            Vec::with_capacity(opaque_batches.len() + transparent_batches.len());
         for b in &opaque_batches {
             instance_slices.push(b.instances.as_slice());
         }
@@ -684,7 +688,9 @@ impl State {
             instance_slices.push(b.instances.as_slice());
         }
 
-        let _probe_meta_for_diag: Option<std::sync::Arc<crate::reflections::probe_env::ProbeMetaUniform>> = None;
+        let _probe_meta_for_diag: Option<
+            std::sync::Arc<crate::reflections::probe_env::ProbeMetaUniform>,
+        > = None;
 
         let all_instance_buffers =
             self.scene_instance_pool
@@ -702,145 +708,148 @@ impl State {
 
             {
                 let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("render-pass"),
-                color_attachments: &[
-                    Some(wgpu::RenderPassColorAttachment {
-                        view: ambient_view,
-                        resolve_target: None,
-                        depth_slice: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(self.clear_color),
+                    label: Some("render-pass"),
+                    color_attachments: &[
+                        Some(wgpu::RenderPassColorAttachment {
+                            view: ambient_view,
+                            resolve_target: None,
+                            depth_slice: None,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Clear(self.clear_color),
+                                store: wgpu::StoreOp::Store,
+                            },
+                        }),
+                        Some(wgpu::RenderPassColorAttachment {
+                            view: shadow_mask_view,
+                            resolve_target: None,
+                            depth_slice: None,
+                            ops: wgpu::Operations {
+                                // Rg16Float: .r=shadow (1=sin sombra), .g=roughness (1=máximo
+                                // mate → sin reflejos). Píxeles sin geometría quedan fuera de
+                                // cualquier traza SSR/RT. (Metallic del cielo es 0 vía direct.a).
+                                load: wgpu::LoadOp::Clear(wgpu::Color {
+                                    r: 1.0,
+                                    g: 1.0,
+                                    b: 0.0,
+                                    a: 0.0,
+                                }),
+                                store: wgpu::StoreOp::Store,
+                            },
+                        }),
+                        Some(wgpu::RenderPassColorAttachment {
+                            view: direct_view,
+                            resolve_target: None,
+                            depth_slice: None,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                                store: wgpu::StoreOp::Store,
+                            },
+                        }),
+                        Some(wgpu::RenderPassColorAttachment {
+                            view: depth_export_view,
+                            resolve_target: None,
+                            depth_slice: None,
+                            ops: wgpu::Operations {
+                                // R32Float: GL NDC z (`clip.z/clip.w`) para SSR (1/z march).
+                                load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                                store: wgpu::StoreOp::Store,
+                            },
+                        }),
+                        Some(wgpu::RenderPassColorAttachment {
+                            view: velocity_view,
+                            resolve_target: None,
+                            depth_slice: None,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                                store: wgpu::StoreOp::Store,
+                            },
+                        }),
+                    ],
+                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                        view: &self.depth_view,
+                        depth_ops: Some(wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(1.0),
                             store: wgpu::StoreOp::Store,
-                        },
+                        }),
+                        stencil_ops: None,
                     }),
-                    Some(wgpu::RenderPassColorAttachment {
-                        view: shadow_mask_view,
-                        resolve_target: None,
-                        depth_slice: None,
-                        ops: wgpu::Operations {
-                            // Rg16Float: .r=shadow (1=sin sombra), .g=roughness (1=máximo
-                            // mate → sin reflejos). Píxeles sin geometría quedan fuera de
-                            // cualquier traza SSR/RT. (Metallic del cielo es 0 vía direct.a).
-                            load: wgpu::LoadOp::Clear(wgpu::Color {
-                                r: 1.0,
-                                g: 1.0,
-                                b: 0.0,
-                                a: 0.0,
-                            }),
-                            store: wgpu::StoreOp::Store,
-                        },
-                    }),
-                    Some(wgpu::RenderPassColorAttachment {
-                        view: direct_view,
-                        resolve_target: None,
-                        depth_slice: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                            store: wgpu::StoreOp::Store,
-                        },
-                    }),
-                    Some(wgpu::RenderPassColorAttachment {
-                        view: depth_export_view,
-                        resolve_target: None,
-                        depth_slice: None,
-                        ops: wgpu::Operations {
-                            // R32Float: GL NDC z (`clip.z/clip.w`) para SSR (1/z march).
-                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                            store: wgpu::StoreOp::Store,
-                        },
-                    }),
-                    Some(wgpu::RenderPassColorAttachment {
-                        view: velocity_view,
-                        resolve_target: None,
-                        depth_slice: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                            store: wgpu::StoreOp::Store,
-                        },
-                    }),
-                ],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.depth_view,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
-                        store: wgpu::StoreOp::Store,
-                    }),
-                    stencil_ops: None,
-                }),
-                occlusion_query_set: None,
-                timestamp_writes: None,
-                multiview_mask: None,
-            });
+                    occlusion_query_set: None,
+                    timestamp_writes: None,
+                    multiview_mask: None,
+                });
 
-            pass.set_pipeline(&self.render_pipeline);
-
-            if self.world_sky_buffer.vertex_count > 0 {
-                let vp = glam::Mat4::from_cols_array_2d(&scene_uni.view_proj);
-                let sky_uni: [[f32; 4]; 9] = [
-                    vp.x_axis.to_array(),
-                    vp.y_axis.to_array(),
-                    vp.z_axis.to_array(),
-                    vp.w_axis.to_array(),
-                    [1.0, 0.0, 0.0, 0.0],
-                    [0.0, 1.0, 0.0, 0.0],
-                    [0.0, 0.0, 1.0, 0.0],
-                    [0.0, 0.0, 0.0, 1.0],
-                    [-1.0, -1.0, 0.0, 0.0],
-                ];
-                self.queue.write_buffer(
-                    &self.grid_buffer_uni,
-                    0,
-                    bytemuck::cast_slice(&sky_uni),
-                );
-                pass.set_pipeline(&self.sky_pipeline);
-                pass.set_bind_group(0, &self.grid_bind_group, &[]);
-                pass.set_vertex_buffer(0, self.world_sky_buffer.vertex_buffer.slice(..));
-                pass.draw(0..self.world_sky_buffer.vertex_count, 0..1);
                 pass.set_pipeline(&self.render_pipeline);
-            }
 
-            pass.set_bind_group(0, &self.scene_bind_group, &[]);
-            pass.set_bind_group(1, self.texture_array.bind_group.as_ref(), &[]);
-            // Grupo 2: cube array de los probes (el shader principal lo referencia siempre).
-            pass.set_bind_group(2, self.probe_env.sample_bind_group(), &[]);
+                if self.world_sky_buffer.vertex_count > 0 {
+                    let vp = glam::Mat4::from_cols_array_2d(&scene_uni.view_proj);
+                    let sky_uni: [[f32; 4]; 9] = [
+                        vp.x_axis.to_array(),
+                        vp.y_axis.to_array(),
+                        vp.z_axis.to_array(),
+                        vp.w_axis.to_array(),
+                        [1.0, 0.0, 0.0, 0.0],
+                        [0.0, 1.0, 0.0, 0.0],
+                        [0.0, 0.0, 1.0, 0.0],
+                        [0.0, 0.0, 0.0, 1.0],
+                        [-1.0, -1.0, 0.0, 0.0],
+                    ];
+                    self.queue.write_buffer(
+                        &self.grid_buffer_uni,
+                        0,
+                        bytemuck::cast_slice(&sky_uni),
+                    );
+                    pass.set_pipeline(&self.sky_pipeline);
+                    pass.set_bind_group(0, &self.grid_bind_group, &[]);
+                    pass.set_vertex_buffer(0, self.world_sky_buffer.vertex_buffer.slice(..));
+                    pass.draw(0..self.world_sky_buffer.vertex_count, 0..1);
+                    pass.set_pipeline(&self.render_pipeline);
+                }
 
-            for (batch, inst_buf) in opaque_batches.iter().zip(opaque_instance_buffers.iter()) {
-                let Some(mesh) = self.meshes.get(batch.mesh_idx) else {
-                    continue;
-                };
-                pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
-                pass.set_vertex_buffer(1, inst_buf.slice(..));
-                pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                pass.draw_indexed(0..mesh.index_count, 0, 0..batch.instances.len() as u32);
-                draw_calls += 1;
-            }
-
-            if !skinned_main.is_empty() {
-                pass.set_pipeline(&self.skinned_render_pipeline);
                 pass.set_bind_group(0, &self.scene_bind_group, &[]);
                 pass.set_bind_group(1, self.texture_array.bind_group.as_ref(), &[]);
+                // Grupo 2: cube array de los probes (el shader principal lo referencia siempre).
                 pass.set_bind_group(2, self.probe_env.sample_bind_group(), &[]);
-                let skinned_slices: Vec<&[crate::mesh::SkinnedInstanceData]> = skinned_main
-                    .iter()
-                    .map(|(_, inst)| std::slice::from_ref(inst))
-                    .collect();
-                let skinned_bufs = self.skinned_instance_pool.upload_skinned(
-                    &self.device,
-                    &self.queue,
-                    &skinned_slices,
-                );
-                for ((gpu_idx, _), inst_buf) in skinned_main.iter().zip(skinned_bufs.iter()) {
-                    let Some(entry) = self.skinned_gpu_meshes.get(*gpu_idx) else {
+
+                for (batch, inst_buf) in opaque_batches.iter().zip(opaque_instance_buffers.iter()) {
+                    let Some(mesh) = self.meshes.get(batch.mesh_idx) else {
                         continue;
                     };
-                    pass.set_bind_group(3, &entry.joint_bind_group, &[]);
-                    pass.set_vertex_buffer(0, entry.mesh.vertex_buffer.slice(..));
+                    pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
                     pass.set_vertex_buffer(1, inst_buf.slice(..));
-                    pass.set_index_buffer(entry.mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                    pass.draw_indexed(0..entry.mesh.index_count, 0, 0..1);
+                    pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                    pass.draw_indexed(0..mesh.index_count, 0, 0..batch.instances.len() as u32);
                     draw_calls += 1;
                 }
-            }
+
+                if !skinned_main.is_empty() {
+                    pass.set_pipeline(&self.skinned_render_pipeline);
+                    pass.set_bind_group(0, &self.scene_bind_group, &[]);
+                    pass.set_bind_group(1, self.texture_array.bind_group.as_ref(), &[]);
+                    pass.set_bind_group(2, self.probe_env.sample_bind_group(), &[]);
+                    let skinned_slices: Vec<&[crate::mesh::SkinnedInstanceData]> = skinned_main
+                        .iter()
+                        .map(|(_, inst)| std::slice::from_ref(inst))
+                        .collect();
+                    let skinned_bufs = self.skinned_instance_pool.upload_skinned(
+                        &self.device,
+                        &self.queue,
+                        &skinned_slices,
+                    );
+                    for ((gpu_idx, _), inst_buf) in skinned_main.iter().zip(skinned_bufs.iter()) {
+                        let Some(entry) = self.skinned_gpu_meshes.get(*gpu_idx) else {
+                            continue;
+                        };
+                        pass.set_bind_group(3, &entry.joint_bind_group, &[]);
+                        pass.set_vertex_buffer(0, entry.mesh.vertex_buffer.slice(..));
+                        pass.set_vertex_buffer(1, inst_buf.slice(..));
+                        pass.set_index_buffer(
+                            entry.mesh.index_buffer.slice(..),
+                            wgpu::IndexFormat::Uint32,
+                        );
+                        pass.draw_indexed(0..entry.mesh.index_count, 0, 0..1);
+                        draw_calls += 1;
+                    }
+                }
             }
 
             // Prepass G-buffer transparentes (depth + rugosidad) para SSR — sin tocar `ambient`
@@ -912,8 +921,13 @@ impl State {
                     };
                     trans_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
                     trans_pass.set_vertex_buffer(1, inst_buf.slice(..));
-                    trans_pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                    trans_pass.draw_indexed(0..mesh.index_count, 0, 0..batch.instances.len() as u32);
+                    trans_pass
+                        .set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                    trans_pass.draw_indexed(
+                        0..mesh.index_count,
+                        0,
+                        0..batch.instances.len() as u32,
+                    );
                     draw_calls += 1;
                 }
             }
@@ -965,11 +979,13 @@ impl State {
                     };
                     albedo_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
                     albedo_pass.set_vertex_buffer(1, inst_buf.slice(..));
-                    albedo_pass.set_index_buffer(
-                        mesh.index_buffer.slice(..),
-                        wgpu::IndexFormat::Uint32,
+                    albedo_pass
+                        .set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                    albedo_pass.draw_indexed(
+                        0..mesh.index_count,
+                        0,
+                        0..batch.instances.len() as u32,
                     );
-                    albedo_pass.draw_indexed(0..mesh.index_count, 0, 0..batch.instances.len() as u32);
                 }
                 if !transparent_batches.is_empty() {
                     for (batch, inst_buf) in transparent_batches
@@ -1075,7 +1091,11 @@ impl State {
             self.prepare_lit_scene(
                 &mut enc,
                 shadows_enabled,
-                if shadows_enabled { shadow_darkness } else { 0.35 },
+                if shadows_enabled {
+                    shadow_darkness
+                } else {
+                    0.35
+                },
                 zoom_stability,
             );
         }
@@ -1090,10 +1110,12 @@ impl State {
         let normal_roughness_view = self.taa.normal_roughness_view();
         let shadow_mask_view = self.taa.shadow_mask_view();
         let view_mat = self.camera_view_matrix();
-        let shadow_map_view = self._shadow_texture.create_view(&wgpu::TextureViewDescriptor {
-            label: Some("shadow-map-rt"),
-            ..Default::default()
-        });
+        let shadow_map_view = self
+            ._shadow_texture
+            .create_view(&wgpu::TextureViewDescriptor {
+                label: Some("shadow-map-rt"),
+                ..Default::default()
+            });
 
         let ran_reflections = if reflection_settings.active() {
             self.reflections.run_screen(
@@ -1103,7 +1125,7 @@ impl State {
                 crate::reflections::frame::ReflectionScreenInput {
                     settings: reflection_settings,
                     debug_view: self.reflection_debug_view,
-                    depth_view: &depth_export_view,
+                    depth_view: depth_export_view,
                     normal_roughness_view,
                     lit_scene_view,
                     direct_view,
@@ -1111,7 +1133,7 @@ impl State {
                     surface_view: shadow_mask_view,
                     base_color_view,
                     world_pos_view,
-                    depth_export_view: &depth_export_view,
+                    depth_export_view,
                     velocity_view,
                     accel: &mut self.rt_accel,
                     inv_view_proj,
@@ -1134,8 +1156,7 @@ impl State {
             false
         };
 
-        let debug_reflections = ran_reflections
-            && self.reflection_debug_view.is_visual_debug();
+        let debug_reflections = ran_reflections && self.reflection_debug_view.is_visual_debug();
 
         if debug_reflections {
             self.reflections.run_debug_blit(
@@ -1171,8 +1192,7 @@ impl State {
                     self.camera.far,
                 );
             }
-            self.taa
-                .blit_present_pub(&mut enc, &view, use_scene_taa);
+            self.taa.blit_present_pub(&mut enc, &view, use_scene_taa);
             self.taa.tick_frame_index();
         } else if shadows_enabled {
             self.taa.resolve_shadow_and_present(
@@ -1213,11 +1233,13 @@ impl State {
 
         if let Some((ghost_mesh_idx, ghost_inst)) = ghost_overlay {
             use wgpu::util::DeviceExt;
-            let ghost_inst_buf = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("qb-ghost-inst-buf"),
-                contents: bytemuck::cast_slice(&[ghost_inst]),
-                usage: wgpu::BufferUsages::VERTEX,
-            });
+            let ghost_inst_buf =
+                self.device
+                    .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                        label: Some("qb-ghost-inst-buf"),
+                        contents: bytemuck::cast_slice(&[ghost_inst]),
+                        usage: wgpu::BufferUsages::VERTEX,
+                    });
             if let Some(mesh) = self.meshes.get(ghost_mesh_idx) {
                 let mut ghost_pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("qb-ghost-overlay-pass"),
@@ -1253,57 +1275,52 @@ impl State {
             }
         }
 
-        if self.debug_mode {
-            if !self.preview_playing {
-                let collision_overlay =
-                    crate::config_3d::collision_overlay::build_editor_collision_overlay(
-                        &self.device,
-                        self,
-                    );
-                if collision_overlay.vertex_count > 0 {
-                    let aspect = self.size.width as f32 / self.size.height as f32;
-                    let vp = self
-                        .camera_to_uniform_at_anchor(self.orbit_view_anchor(), aspect)
-                        .view_proj;
-                    let col_uni: [[f32; 4]; 9] = [
-                        vp[0],
-                        vp[1],
-                        vp[2],
-                        vp[3],
-                        [1.0, 0.0, 0.0, 0.0],
-                        [0.0, 1.0, 0.0, 0.0],
-                        [0.0, 0.0, 1.0, 0.0],
-                        [0.0, 0.0, 0.0, 1.0],
-                        [-1.0, -1.0, 0.0, 0.0],
-                    ];
-                    self.queue.write_buffer(
-                        &self.grid_buffer_uni,
-                        0,
-                        bytemuck::cast_slice(&col_uni),
-                    );
+        if self.debug_mode && !self.preview_playing {
+            let collision_overlay =
+                crate::config_3d::collision_overlay::build_editor_collision_overlay(
+                    &self.device,
+                    self,
+                );
+            if collision_overlay.vertex_count > 0 {
+                let aspect = self.size.width as f32 / self.size.height as f32;
+                let vp = self
+                    .camera_to_uniform_at_anchor(self.orbit_view_anchor(), aspect)
+                    .view_proj;
+                let col_uni: [[f32; 4]; 9] = [
+                    vp[0],
+                    vp[1],
+                    vp[2],
+                    vp[3],
+                    [1.0, 0.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                    [0.0, 0.0, 0.0, 1.0],
+                    [-1.0, -1.0, 0.0, 0.0],
+                ];
+                self.queue
+                    .write_buffer(&self.grid_buffer_uni, 0, bytemuck::cast_slice(&col_uni));
 
-                    let mut col_pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
-                        label: Some("collision-debug-pass"),
-                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                            view: &view,
-                            resolve_target: None,
-                            depth_slice: None,
-                            ops: wgpu::Operations {
-                                load: wgpu::LoadOp::Load,
-                                store: wgpu::StoreOp::Store,
-                            },
-                        })],
-                        depth_stencil_attachment: None,
-                        occlusion_query_set: None,
-                        timestamp_writes: None,
-                        multiview_mask: None,
-                    });
-                    col_pass.set_pipeline(&self.grid_pipeline);
-                    col_pass.set_bind_group(0, &self.grid_bind_group, &[]);
-                    col_pass.set_vertex_buffer(0, collision_overlay.vertex_buffer.slice(..));
-                    col_pass.draw(0..collision_overlay.vertex_count, 0..1);
-                    draw_calls += 1;
-                }
+                let mut col_pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("collision-debug-pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &view,
+                        resolve_target: None,
+                        depth_slice: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Load,
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    occlusion_query_set: None,
+                    timestamp_writes: None,
+                    multiview_mask: None,
+                });
+                col_pass.set_pipeline(&self.grid_pipeline);
+                col_pass.set_bind_group(0, &self.grid_bind_group, &[]);
+                col_pass.set_vertex_buffer(0, collision_overlay.vertex_buffer.slice(..));
+                col_pass.draw(0..collision_overlay.vertex_count, 0..1);
+                draw_calls += 1;
             }
         }
 
@@ -1334,11 +1351,8 @@ impl State {
                     [0.0, 0.0, 0.0, 1.0],
                     [-1.0, -1.0, 0.0, 0.0],
                 ];
-                self.queue.write_buffer(
-                    &self.grid_buffer_uni,
-                    0,
-                    bytemuck::cast_slice(&probe_uni),
-                );
+                self.queue
+                    .write_buffer(&self.grid_buffer_uni, 0, bytemuck::cast_slice(&probe_uni));
                 let mut probe_pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("reflection-probe-gizmo-pass"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -1409,70 +1423,71 @@ impl State {
         // Gizmo de cámara FP en modo editor: cubito en el ojo + frustum hasta el
         // rectángulo lejano, para visualizar a dónde mirará la cámara al pulsar
         // Play: vista desde cámara de juego seleccionada.
-        if !self.preview_playing && !self.player_ui_edit_active && self.has_play_character() {
-            if let Some((eye, yaw, pitch)) = self.play_character_camera_gizmo_pose() {
-                let aspect = self.size.width as f32 / self.size.height as f32;
-                let frustum_buf = gizmo::build_fps_camera_frustum(
-                    &self.device,
-                    eye,
-                    yaw,
-                    pitch,
-                    self.camera.fov_y,
-                    aspect,
-                    self.fps_editor_frustum_distance,
-                );
+        if !self.preview_playing
+            && !self.player_ui_edit_active
+            && self.has_play_character()
+            && let Some((eye, yaw, pitch)) = self.play_character_camera_gizmo_pose()
+        {
+            let aspect = self.size.width as f32 / self.size.height as f32;
+            let frustum_buf = gizmo::build_fps_camera_frustum(
+                &self.device,
+                eye,
+                yaw,
+                pitch,
+                self.camera.fov_y,
+                aspect,
+                self.fps_editor_frustum_distance,
+            );
 
-                let vp = self
+            let vp = self
                 .camera_to_uniform_at_anchor(self.orbit_view_anchor(), aspect)
                 .view_proj;
-                let frustum_uni: [[f32; 4]; 9] = [
-                    vp[0],
-                    vp[1],
-                    vp[2],
-                    vp[3],
-                    [1.0, 0.0, 0.0, 0.0],
-                    [0.0, 1.0, 0.0, 0.0],
-                    [0.0, 0.0, 1.0, 0.0],
-                    [0.0, 0.0, 0.0, 1.0],
-                    [-1.0, -1.0, 0.0, 0.0],
-                ];
-                self.queue.write_buffer(
-                    &self.grid_buffer_uni,
-                    0,
-                    bytemuck::cast_slice(&frustum_uni),
-                );
+            let frustum_uni: [[f32; 4]; 9] = [
+                vp[0],
+                vp[1],
+                vp[2],
+                vp[3],
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+                [-1.0, -1.0, 0.0, 0.0],
+            ];
+            self.queue
+                .write_buffer(&self.grid_buffer_uni, 0, bytemuck::cast_slice(&frustum_uni));
 
-                let mut frustum_pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("fp-camera-frustum-pass"),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: &view,
-                        resolve_target: None,
-                        depth_slice: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Load,
-                            store: wgpu::StoreOp::Store,
-                        },
-                    })],
-                    depth_stencil_attachment: None,
-                    occlusion_query_set: None,
-                    timestamp_writes: None,
-                    multiview_mask: None,
-                });
-                frustum_pass.set_pipeline(&self.grid_pipeline);
-                frustum_pass.set_bind_group(0, &self.grid_bind_group, &[]);
-                frustum_pass.set_vertex_buffer(0, frustum_buf.vertex_buffer.slice(..));
-                frustum_pass.draw(0..frustum_buf.vertex_count, 0..1);
-                draw_calls += 1;
-            }
+            let mut frustum_pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("fp-camera-frustum-pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    depth_slice: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                occlusion_query_set: None,
+                timestamp_writes: None,
+                multiview_mask: None,
+            });
+            frustum_pass.set_pipeline(&self.grid_pipeline);
+            frustum_pass.set_bind_group(0, &self.grid_bind_group, &[]);
+            frustum_pass.set_vertex_buffer(0, frustum_buf.vertex_buffer.slice(..));
+            frustum_pass.draw(0..frustum_buf.vertex_count, 0..1);
+            draw_calls += 1;
         }
 
         if let Some(hint_inst) = self.build_fps_exit_hint_instance() {
             use wgpu::util::DeviceExt;
-            let hint_inst_buf = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("fp-exit-hint-inst-buf"),
-                contents: bytemuck::cast_slice(&[hint_inst]),
-                usage: wgpu::BufferUsages::VERTEX,
-            });
+            let hint_inst_buf = self
+                .device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("fp-exit-hint-inst-buf"),
+                    contents: bytemuck::cast_slice(&[hint_inst]),
+                    usage: wgpu::BufferUsages::VERTEX,
+                });
 
             let mut hint_pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("fp-exit-hint-pass"),
@@ -1514,9 +1529,7 @@ impl State {
         draw_calls += self.draw_player_ui_object_draw_overlay(&mut enc, &view);
         draw_calls += self.draw_player_ui_text_boxes(&mut enc, &view);
 
-        if !self.preview_playing
-            && !self.player_ui_edit_active
-        {
+        if !self.preview_playing && !self.player_ui_edit_active {
             let skeleton_overlay =
                 crate::config_3d::skeleton_debug::build_selected_skeleton_overlay(
                     &self.device,
@@ -1538,11 +1551,8 @@ impl State {
                     [0.0, 0.0, 0.0, 1.0],
                     [-1.0, -1.0, 0.0, 0.0],
                 ];
-                self.queue.write_buffer(
-                    &self.grid_buffer_uni,
-                    0,
-                    bytemuck::cast_slice(&skel_uni),
-                );
+                self.queue
+                    .write_buffer(&self.grid_buffer_uni, 0, bytemuck::cast_slice(&skel_uni));
                 let mut skel_pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("skeleton-debug-pass"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -1567,10 +1577,7 @@ impl State {
             }
 
             let socket_overlay =
-                crate::config_3d::socket_debug::build_selected_socket_overlay(
-                    &self.device,
-                    self,
-                );
+                crate::config_3d::socket_debug::build_selected_socket_overlay(&self.device, self);
             if socket_overlay.vertex_count > 0 {
                 let aspect = self.size.width as f32 / self.size.height as f32;
                 let vp = self
@@ -1587,11 +1594,8 @@ impl State {
                     [0.0, 0.0, 0.0, 1.0],
                     [-1.0, -1.0, 0.0, 0.0],
                 ];
-                self.queue.write_buffer(
-                    &self.grid_buffer_uni,
-                    0,
-                    bytemuck::cast_slice(&skel_uni),
-                );
+                self.queue
+                    .write_buffer(&self.grid_buffer_uni, 0, bytemuck::cast_slice(&skel_uni));
                 let mut sock_pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("socket-debug-pass"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -1620,58 +1624,55 @@ impl State {
             && !self.player_ui_edit_active
             && self.socket_bone_pick_entity.is_none()
             && self.bone_physics_pick_entity.is_none()
+            && let Some(origin) = self
+                .selection_center()
+                .filter(|_| self.pivot_edit_mode.is_none())
         {
-            if let Some(origin) = self.selection_center().filter(|_| self.pivot_edit_mode.is_none())
-            {
-                let aspect = self.size.width as f32 / self.size.height as f32;
-                let vp = self
-                    .camera_to_uniform_at_anchor(self.orbit_view_anchor(), aspect)
-                    .view_proj;
+            let aspect = self.size.width as f32 / self.size.height as f32;
+            let vp = self
+                .camera_to_uniform_at_anchor(self.orbit_view_anchor(), aspect)
+                .view_proj;
 
-                let gizmo_model = glam::Mat4::from_translation(origin);
+            let gizmo_model = glam::Mat4::from_translation(origin);
 
-                let gm = gizmo_model.to_cols_array_2d();
-                let h_ax = self.hovered_gizmo_axis.map(|a| a as f32).unwrap_or(-1.0);
-                let a_ax = self.active_gizmo_axis.map(|a| a as f32).unwrap_or(-1.0);
-                let gizmo_uni: [[f32; 4]; 9] = [
-                    vp[0],
-                    vp[1],
-                    vp[2],
-                    vp[3],
-                    gm[0],
-                    gm[1],
-                    gm[2],
-                    gm[3],
-                    [h_ax, a_ax, 0.0, 0.0],
-                ];
-                self.queue.write_buffer(
-                    &self.gizmo_buffer_uni,
-                    0,
-                    bytemuck::cast_slice(&gizmo_uni),
-                );
+            let gm = gizmo_model.to_cols_array_2d();
+            let h_ax = self.hovered_gizmo_axis.map(|a| a as f32).unwrap_or(-1.0);
+            let a_ax = self.active_gizmo_axis.map(|a| a as f32).unwrap_or(-1.0);
+            let gizmo_uni: [[f32; 4]; 9] = [
+                vp[0],
+                vp[1],
+                vp[2],
+                vp[3],
+                gm[0],
+                gm[1],
+                gm[2],
+                gm[3],
+                [h_ax, a_ax, 0.0, 0.0],
+            ];
+            self.queue
+                .write_buffer(&self.gizmo_buffer_uni, 0, bytemuck::cast_slice(&gizmo_uni));
 
-                let mut gpass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("gizmo-pass"),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: &view,
-                        resolve_target: None,
-                        depth_slice: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Load,
-                            store: wgpu::StoreOp::Store,
-                        },
-                    })],
-                    depth_stencil_attachment: None,
-                    occlusion_query_set: None,
-                    timestamp_writes: None,
-                    multiview_mask: None,
-                });
-                gpass.set_pipeline(&self.gizmo_pipeline);
-                gpass.set_bind_group(0, &self.gizmo_bind_group, &[]);
-                gpass.set_vertex_buffer(0, self.gizmo_buffer.vertex_buffer.slice(..));
-                gpass.draw(0..self.gizmo_buffer.vertex_count, 0..1);
-                draw_calls += 1;
-            }
+            let mut gpass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("gizmo-pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    depth_slice: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                occlusion_query_set: None,
+                timestamp_writes: None,
+                multiview_mask: None,
+            });
+            gpass.set_pipeline(&self.gizmo_pipeline);
+            gpass.set_bind_group(0, &self.gizmo_bind_group, &[]);
+            gpass.set_vertex_buffer(0, self.gizmo_buffer.vertex_buffer.slice(..));
+            gpass.draw(0..self.gizmo_buffer.vertex_count, 0..1);
+            draw_calls += 1;
         }
 
         self.queue.submit(std::iter::once(enc.finish()));
@@ -1716,8 +1717,8 @@ impl State {
             if !is_ground && !is_aabb_visible_3d(frustum_vp, mesh_center, mesh_half) {
                 continue;
             }
-            let is_selected = self.selected_entity == Some(id)
-                || self.selected_entities.contains(&id);
+            let is_selected =
+                self.selected_entity == Some(id) || self.selected_entities.contains(&id);
             let is_hovered = self.hovered_entity == Some(id);
             let flag = self.editor_selection_flag(id, is_selected, is_hovered);
             for (pi, &gpu_idx) in binding.part_gpu_indices.iter().enumerate() {
@@ -1733,7 +1734,10 @@ impl State {
                 if let Some(&probe_idx) = probe_index_map.get(&id) {
                     inst.tex_layer_pad[2] = probe_idx as f32;
                 }
-                out.push((gpu_idx, crate::mesh::SkinnedInstanceData::from_instance(&inst)));
+                out.push((
+                    gpu_idx,
+                    crate::mesh::SkinnedInstanceData::from_instance(&inst),
+                ));
             }
         }
         out
@@ -1772,14 +1776,11 @@ impl State {
             {
                 continue;
             }
-            if !is_ground
-                && !is_player
-                && !is_aabb_visible_3d(frustum_vp, mesh_center, mesh_half)
-            {
+            if !is_ground && !is_player && !is_aabb_visible_3d(frustum_vp, mesh_center, mesh_half) {
                 continue;
             }
-            let is_selected = self.selected_entity == Some(id)
-                || self.selected_entities.contains(&id);
+            let is_selected =
+                self.selected_entity == Some(id) || self.selected_entities.contains(&id);
             let is_hovered = self.hovered_entity == Some(id);
             let flag = self.editor_selection_flag(id, is_selected, is_hovered);
             for (pi, &gpu_idx) in binding.part_gpu_indices.iter().enumerate() {
@@ -1789,7 +1790,10 @@ impl State {
                     .copied()
                     .unwrap_or(binding.tex_layer);
                 let inst = crate::mesh::InstanceData::new(t.to_matrix(), flag, layer);
-                out.push((gpu_idx, crate::mesh::SkinnedInstanceData::from_instance(&inst)));
+                out.push((
+                    gpu_idx,
+                    crate::mesh::SkinnedInstanceData::from_instance(&inst),
+                ));
             }
         }
         out
@@ -1888,11 +1892,7 @@ pub(crate) fn build_scene_uniforms_from_view(
     }
 }
 
-pub(crate) fn is_aabb_visible_3d(
-    view_proj: &glam::Mat4,
-    center: GlamVec3,
-    half: GlamVec3,
-) -> bool {
+pub(crate) fn is_aabb_visible_3d(view_proj: &glam::Mat4, center: GlamVec3, half: GlamVec3) -> bool {
     let m = view_proj.to_cols_array_2d();
     let r0 = [m[0][0], m[1][0], m[2][0], m[3][0]];
     let r1 = [m[0][1], m[1][1], m[2][1], m[3][1]];
@@ -1909,11 +1909,8 @@ pub(crate) fn is_aabb_visible_3d(
     ];
 
     for plane in &planes {
-        let extent = half.x * plane[0].abs()
-            + half.y * plane[1].abs()
-            + half.z * plane[2].abs();
-        let dist =
-            plane[0] * center.x + plane[1] * center.y + plane[2] * center.z + plane[3];
+        let extent = half.x * plane[0].abs() + half.y * plane[1].abs() + half.z * plane[2].abs();
+        let dist = plane[0] * center.x + plane[1] * center.y + plane[2] * center.z + plane[3];
         if dist < -extent {
             return false;
         }

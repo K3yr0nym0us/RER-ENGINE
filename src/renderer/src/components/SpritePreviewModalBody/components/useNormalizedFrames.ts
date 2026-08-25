@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
-import { CANVAS_SIZE, SelectionMode, SpriteFrameRect } from './spritePreviewReducer';
+import type { SelectionMode, SpriteFrameRect } from './spritePreviewReducer';
+import { CANVAS_SIZE } from './spritePreviewReducer';
 
 interface UseNormalizedFramesParams {
   imageSize: { width: number; height: number } | null;

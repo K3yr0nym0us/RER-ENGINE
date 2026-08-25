@@ -1,10 +1,10 @@
 //! Ajustes globales de reflejos (tier UI + debug views).
 
 use crate::config_3d::reflection_graphics::{
-    ReflectionDebugView, ReflectionTier, DEFAULT_REFLECTION_TIER,
+    DEFAULT_REFLECTION_TIER, ReflectionDebugView, ReflectionTier,
 };
 use crate::engine::State;
-use crate::ipc::{send_event, EngineEvent};
+use crate::ipc::{EngineEvent, send_event};
 
 impl State {
     /// Fuerza captura burst del cubemap si los reflejos están activos (p. ej. nuevas sondas).
@@ -76,7 +76,10 @@ impl State {
     }
 
     /// Inserta una sonda `[ReflectionProbe]` en la escena (no altera el switch de uso).
-    pub(crate) fn spawn_reflection_probe(&mut self, position: Option<[f32; 3]>) -> Option<crate::ecs::EntityId> {
+    pub(crate) fn spawn_reflection_probe(
+        &mut self,
+        position: Option<[f32; 3]>,
+    ) -> Option<crate::ecs::EntityId> {
         use crate::reflections::probe_env::MAX_PROBES;
         use crate::reflections::probes_pipeline::registry::{
             self, DEFAULT_REFLECTION_PROBE_INFLUENCE_M,
@@ -90,11 +93,7 @@ impl State {
             return None;
         }
         let pos = position.unwrap_or_else(|| self.default_reflection_probe_spawn_position());
-        let id = self.spawn_reflection_probe_entity(
-            "",
-            pos,
-            DEFAULT_REFLECTION_PROBE_INFLUENCE_M,
-        );
+        let id = self.spawn_reflection_probe_entity("", pos, DEFAULT_REFLECTION_PROBE_INFLUENCE_M);
         self.probe_capture_burst_all = true;
         self.request_probe_capture_burst_if_reflections_active();
         Some(id)
@@ -103,15 +102,20 @@ impl State {
     pub(crate) fn set_reflection_tier(&mut self, tier: ReflectionTier) {
         let prev = self.reflection_tier;
         if prev == tier {
-            log::info!("[reflexiones] Nivel de reflejos sin cambios: {}", tier.wire());
+            log::info!(
+                "[reflexiones] Nivel de reflejos sin cambios: {}",
+                tier.wire()
+            );
             return;
         }
         self.reflection_tier = tier;
         self.probe_capture_burst_all =
             tier != ReflectionTier::Off && self.reflection_probes_enabled;
         self.reflections.invalidate_temporal();
-        let tier_settings = crate::config_3d::reflection_graphics::ReflectionSettings::from_tier(tier);
-        self.reflections.set_screen_fraction(&self.device, tier_settings.screen_fraction);
+        let tier_settings =
+            crate::config_3d::reflection_graphics::ReflectionSettings::from_tier(tier);
+        self.reflections
+            .set_screen_fraction(&self.device, tier_settings.screen_fraction);
         // Cubemap de probes por tier (Low 128 … Ultra 1024): recrear solo si cambia el tamaño.
         let new_cubemap_size = tier.cubemap_face_size();
         if new_cubemap_size != self.probe_cubemap_size {
@@ -204,7 +208,6 @@ impl State {
             view.wire()
         );
     }
-
 }
 
 pub(crate) fn apply_reflection_settings_from_world_wire(
@@ -227,15 +230,15 @@ pub(crate) fn apply_reflection_settings_from_world_wire(
             state.reflections.invalidate_temporal();
         }
     }
-    if let Some(enabled) = probes {
-        if state.reflection_probes_enabled != enabled {
-            state.set_reflection_probes(enabled);
-        }
+    if let Some(enabled) = probes
+        && state.reflection_probes_enabled != enabled
+    {
+        state.set_reflection_probes(enabled);
     }
-    if let Some(enabled) = raytracing {
-        if state.reflection_raytracing_enabled != enabled {
-            state.set_reflection_raytracing(enabled);
-        }
+    if let Some(enabled) = raytracing
+        && state.reflection_raytracing_enabled != enabled
+    {
+        state.set_reflection_raytracing(enabled);
     }
     state.sanitize_reflection_probe_entities();
 }

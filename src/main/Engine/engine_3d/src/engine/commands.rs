@@ -1,18 +1,21 @@
-use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 
-use rodio;
 use rodio::Source as RodioSource;
 use winit::dpi::PhysicalSize;
 
-use crate::config_compat::ActiveTool;
 use crate::config_3d::plane_tools::{PlaneToolKind, plane_tool_scale_from_preview};
+use crate::config_compat::ActiveTool;
 use crate::ecs::{NameComponent, Transform};
 use crate::gizmo;
-use crate::ipc::{send_event, AnimationFrameData, EngineCommand, EngineCommand3dOnly, EngineCommandCommon, EngineEvent};
+use crate::ipc::{
+    AnimationFrameData, EngineCommand, EngineCommand3dOnly, EngineCommandCommon, EngineEvent,
+    send_event,
+};
 
-use super::{ActiveAnimation, AnimationState, DecodedAudio, State, UndoAction};
+use super::{
+    ActiveAnimation, AnimationState, DecodedAudio, EntityTransformSnapshot, State, UndoAction,
+};
 
 impl State {
     pub fn window(&self) -> &std::sync::Arc<winit::window::Window> {
@@ -37,19 +40,24 @@ impl State {
         if !self.is_applying_undo {
             self.redo_stack.clear();
         }
-        self.undo_stack
-            .push(UndoAction::RestoreTransform { id, position, rotation, scale });
+        self.undo_stack.push(UndoAction::RestoreTransform {
+            id,
+            position,
+            rotation,
+            scale,
+        });
         self.sync_editor_scenes_undo_dirty_to_renderer();
     }
 
-    pub fn push_undo_transforms(&mut self, items: Vec<(u32, [f32; 3], [f32; 4], [f32; 3])>) {
+    pub fn push_undo_transforms(&mut self, items: Vec<EntityTransformSnapshot>) {
         if items.is_empty() {
             return;
         }
         if !self.is_applying_undo {
             self.redo_stack.clear();
         }
-        self.undo_stack.push(UndoAction::RestoreTransforms { items });
+        self.undo_stack
+            .push(UndoAction::RestoreTransforms { items });
         self.sync_editor_scenes_undo_dirty_to_renderer();
     }
 
@@ -98,7 +106,7 @@ impl State {
                 }));
             }
             UndoAction::RestoreTransforms { items } => {
-                let mut redo_items: Vec<(u32, [f32; 3], [f32; 4], [f32; 3])> = Vec::new();
+                let mut redo_items: Vec<EntityTransformSnapshot> = Vec::new();
                 for (id, _, _, _) in &items {
                     if let Some(t) = self.world.get::<Transform>(*id) {
                         redo_items.push((
@@ -110,7 +118,8 @@ impl State {
                     }
                 }
                 if !redo_items.is_empty() {
-                    self.redo_stack.push(UndoAction::RestoreTransforms { items: redo_items });
+                    self.redo_stack
+                        .push(UndoAction::RestoreTransforms { items: redo_items });
                 }
                 for (id, position, rotation, scale) in items {
                     self.handle_command(EngineCommand::Common(EngineCommandCommon::SetTransform {
@@ -129,9 +138,10 @@ impl State {
             }
             UndoAction::RemoveEntity { snapshot } => {
                 let id = snapshot.id;
-                self.handle_command(EngineCommand::Common(EngineCommandCommon::RemoveEntity { id }));
-                self.redo_stack
-                    .push(UndoAction::RestoreEntity { snapshot });
+                self.handle_command(EngineCommand::Common(EngineCommandCommon::RemoveEntity {
+                    id,
+                }));
+                self.redo_stack.push(UndoAction::RestoreEntity { snapshot });
             }
             UndoAction::RestoreEntity { .. } => {}
             UndoAction::RestorePlayerUiHud { snapshot } => {
@@ -144,8 +154,10 @@ impl State {
                 self.restore_player_ui_hud_undo_snapshot(snapshot);
             }
             UndoAction::RemoveEntitySocket { entity_id, socket } => {
-                self.redo_stack
-                    .push(UndoAction::RestoreEntitySocket { entity_id, socket: socket.clone() });
+                self.redo_stack.push(UndoAction::RestoreEntitySocket {
+                    entity_id,
+                    socket: socket.clone(),
+                });
                 self.apply_undo_remove_entity_socket(entity_id, &socket);
             }
             UndoAction::RestoreEntitySocket { .. } => {}
@@ -238,7 +250,7 @@ impl State {
                 }));
             }
             UndoAction::RestoreTransforms { items } => {
-                let mut undo_items: Vec<(u32, [f32; 3], [f32; 4], [f32; 3])> = Vec::new();
+                let mut undo_items: Vec<EntityTransformSnapshot> = Vec::new();
                 for (id, _, _, _) in &items {
                     if let Some(t) = self.world.get::<Transform>(*id) {
                         undo_items.push((
@@ -250,7 +262,8 @@ impl State {
                     }
                 }
                 if !undo_items.is_empty() {
-                    self.undo_stack.push(UndoAction::RestoreTransforms { items: undo_items });
+                    self.undo_stack
+                        .push(UndoAction::RestoreTransforms { items: undo_items });
                 }
                 for (id, position, rotation, scale) in items {
                     self.handle_command(EngineCommand::Common(EngineCommandCommon::SetTransform {
@@ -269,14 +282,14 @@ impl State {
             }
             UndoAction::RestoreEntity { snapshot } => {
                 self.restore_entity_from_undo_snapshot(&snapshot);
-                self.undo_stack
-                    .push(UndoAction::RemoveEntity { snapshot });
+                self.undo_stack.push(UndoAction::RemoveEntity { snapshot });
             }
             UndoAction::RemoveEntity { snapshot } => {
                 let id = snapshot.id;
-                self.handle_command(EngineCommand::Common(EngineCommandCommon::RemoveEntity { id }));
-                self.undo_stack
-                    .push(UndoAction::RestoreEntity { snapshot });
+                self.handle_command(EngineCommand::Common(EngineCommandCommon::RemoveEntity {
+                    id,
+                }));
+                self.undo_stack.push(UndoAction::RestoreEntity { snapshot });
             }
             UndoAction::RestorePlayerUiHud { snapshot } => {
                 if let Some(current) =
@@ -289,8 +302,10 @@ impl State {
             }
             UndoAction::RemoveEntitySocket { .. } => {}
             UndoAction::RestoreEntitySocket { entity_id, socket } => {
-                self.undo_stack
-                    .push(UndoAction::RemoveEntitySocket { entity_id, socket: socket.clone() });
+                self.undo_stack.push(UndoAction::RemoveEntitySocket {
+                    entity_id,
+                    socket: socket.clone(),
+                });
                 self.apply_redo_restore_entity_socket(entity_id, &socket);
             }
             UndoAction::RestoreSocketAttachment {
@@ -306,12 +321,7 @@ impl State {
                         child_id,
                         previous_attachment: self.entity_attachments.get(&child_id).cloned(),
                         previous_position: t.position.to_array(),
-                        previous_rotation: [
-                            t.rotation.x,
-                            t.rotation.y,
-                            t.rotation.z,
-                            t.rotation.w,
-                        ],
+                        previous_rotation: [t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w],
                         previous_scale: t.scale.to_array(),
                         applied_attachment: applied_attachment.clone(),
                     });
@@ -355,7 +365,8 @@ impl State {
                 height,
                 ..
             }) => {
-                let _ = self.window.set_outer_position(winit::dpi::PhysicalPosition::new(x, y));
+                self.window
+                    .set_outer_position(winit::dpi::PhysicalPosition::new(x, y));
                 self.resize(PhysicalSize::new(width, height));
                 let _ = self
                     .window
@@ -408,7 +419,10 @@ impl State {
             }) => {
                 let _ = self.spawn_quick_build_instance_at(position, rotation, scale);
             }
-            EngineCommand::Only3d(EngineCommand3dOnly::PlaceQuickBuildAtCursor { pixel_x, pixel_y }) => {
+            EngineCommand::Only3d(EngineCommand3dOnly::PlaceQuickBuildAtCursor {
+                pixel_x,
+                pixel_y,
+            }) => {
                 let pixels = match (pixel_x, pixel_y) {
                     (Some(x), Some(y)) => Some((x, y)),
                     _ => None,
@@ -420,12 +434,18 @@ impl State {
             EngineCommand::Common(EngineCommandCommon::ReplaceEntityModel { id, path }) => {
                 self.replace_entity_model(id, &path);
             }
-            EngineCommand::Only3d(EngineCommand3dOnly::LoadModelAsset { path, name, category }) => {
+            EngineCommand::Only3d(EngineCommand3dOnly::LoadModelAsset {
+                path,
+                name,
+                category,
+            }) => {
                 self.register_model_asset(&path, &name, category.as_deref());
             }
             EngineCommand::Only3d(EngineCommand3dOnly::RemoveModelAsset { path }) => {
                 if let Some(removed) = self.remove_model_from_library(&path) {
-                    send_event(&EngineEvent::ModelAssetRemoved { path: removed.clone() });
+                    send_event(&EngineEvent::ModelAssetRemoved {
+                        path: removed.clone(),
+                    });
                     log::info!("[model] eliminado de recursos: {}", removed);
                 } else {
                     log::warn!("[model] intento de eliminar modelo inexistente: {}", path);
@@ -439,9 +459,7 @@ impl State {
                         let state = entry.model_id.as_ref().and_then(|id| {
                             self.imported_model_registry.get(id).map(|e| {
                                 match e.state {
-                                    rer_engine_shared::assets::AssetState::Importing => {
-                                        "importing"
-                                    }
+                                    rer_engine_shared::assets::AssetState::Importing => "importing",
                                     rer_engine_shared::assets::AssetState::Ready => "ready",
                                     rer_engine_shared::assets::AssetState::Failed => "failed",
                                 }
@@ -492,17 +510,7 @@ impl State {
                 pitch,
             }) => {
                 self.apply_play_character_view(
-                    position,
-                    yaw,
-                    pitch,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
+                    position, yaw, pitch, None, None, None, None, None, None, None, None,
                 );
             }
             EngineCommand::Only3d(EngineCommand3dOnly::SetPlayCharacterView {
@@ -569,21 +577,14 @@ impl State {
                 let before = self.world.get::<Transform>(id).cloned();
                 let is_play_character = self.play_character_entity == Some(id);
                 let is_editor_camera = self.editor_camera_entity == Some(id);
-                let in_play_mode =
-                    self.preview_playing || self.is_play_controller_active();
+                let in_play_mode = self.preview_playing || self.is_play_controller_active();
 
                 let current_rot = before
                     .as_ref()
                     .map(|t| t.rotation)
                     .unwrap_or(Quat::IDENTITY);
-                let current_pos = before
-                    .as_ref()
-                    .map(|t| t.position)
-                    .unwrap_or(Vec3::ZERO);
-                let current_scale = before
-                    .as_ref()
-                    .map(|t| t.scale)
-                    .unwrap_or(Vec3::ONE);
+                let current_pos = before.as_ref().map(|t| t.position).unwrap_or(Vec3::ZERO);
+                let current_scale = before.as_ref().map(|t| t.scale).unwrap_or(Vec3::ONE);
 
                 let rot_quat = crate::config_3d::resolve_set_transform_rotation(
                     current_rot,
@@ -591,16 +592,10 @@ impl State {
                     rotation_euler_delta,
                     rotation_euler_degrees,
                 );
-                let position_vec = crate::config_3d::resolve_axis_update(
-                    current_pos,
-                    position,
-                    position_axis,
-                );
-                let scale_vec = crate::config_3d::resolve_axis_update(
-                    current_scale,
-                    scale,
-                    scale_axis,
-                );
+                let position_vec =
+                    crate::config_3d::resolve_axis_update(current_pos, position, position_axis);
+                let scale_vec =
+                    crate::config_3d::resolve_axis_update(current_scale, scale, scale_axis);
                 let position_arr = position_vec.map(|v| v.to_array());
                 let rotation_changed = rot_quat.is_some();
 
@@ -613,7 +608,6 @@ impl State {
                         );
                     }
                     let rot_apply = if in_play_mode && rot_quat.is_some() {
-                        
                         None
                     } else {
                         rot_quat
@@ -631,17 +625,17 @@ impl State {
                         scale_vec,
                     );
                     // No sync_player_rotation_from_look: panel Transform = solo cuerpo en editor.
-                } else if !is_editor_camera {
-                    if let Some(transform) = self.world.get_mut::<Transform>(id) {
-                        if let Some(r) = rot_quat {
-                            transform.rotation = r;
-                        }
-                        if let Some(p) = position_vec {
-                            transform.position = p;
-                        }
-                        if let Some(s) = scale_vec {
-                            transform.scale = s;
-                        }
+                } else if !is_editor_camera
+                    && let Some(transform) = self.world.get_mut::<Transform>(id)
+                {
+                    if let Some(r) = rot_quat {
+                        transform.rotation = r;
+                    }
+                    if let Some(p) = position_vec {
+                        transform.position = p;
+                    }
+                    if let Some(s) = scale_vec {
+                        transform.scale = s;
                     }
                 }
 
@@ -660,22 +654,31 @@ impl State {
                             p
                         };
                     }
-                    if let Some(s) = scale_vec {
-                        if !is_play_character {
-                            saved.1 = s;
-                        }
+                    if let Some(s) = scale_vec
+                        && !is_play_character
+                    {
+                        saved.1 = s;
                     }
                 }
-                if !is_play_character && !is_editor_camera {
-                    if position_vec.is_some() || rotation_changed || scale_vec.is_some() {
-                        self.sync_entity_physics_collider(id);
-                    }
+                if !is_play_character
+                    && !is_editor_camera
+                    && (position_vec.is_some() || rotation_changed || scale_vec.is_some())
+                {
+                    self.sync_entity_physics_collider(id);
                 }
                 if let Some(prev) = before {
                     let prev_pos = prev.position.to_array();
-                    let prev_rot = [prev.rotation.x, prev.rotation.y, prev.rotation.z, prev.rotation.w];
+                    let prev_rot = [
+                        prev.rotation.x,
+                        prev.rotation.y,
+                        prev.rotation.z,
+                        prev.rotation.w,
+                    ];
                     let prev_scl = prev.scale.to_array();
-                    let next_pos = self.world.get::<Transform>(id).map(|t| t.position.to_array());
+                    let next_pos = self
+                        .world
+                        .get::<Transform>(id)
+                        .map(|t| t.position.to_array());
                     let next_rot = self
                         .world
                         .get::<Transform>(id)
@@ -749,34 +752,36 @@ impl State {
                     });
                 }
             }
-            EngineCommand::Common(EngineCommandCommon::SetScene { scene, save_path }) => match scene.as_str() {
-                "3D" | "first-person" | "second-person" | "third-person" => {
-                    if let Some(path) = save_path.filter(|p| !p.trim().is_empty()) {
-                        if std::path::Path::new(&path).is_dir() {
-                            self.load_proyect_from_save_path(&path);
+            EngineCommand::Common(EngineCommandCommon::SetScene { scene, save_path }) => {
+                match scene.as_str() {
+                    "3D" | "first-person" | "second-person" | "third-person" => {
+                        if let Some(path) = save_path.filter(|p| !p.trim().is_empty()) {
+                            if std::path::Path::new(&path).is_dir() {
+                                self.load_proyect_from_save_path(&path);
+                            } else {
+                                log::warn!(
+                                    "[SetScene] se esperaba directorio extraído, no archivo: {path}"
+                                );
+                                self.setup_default_3d_scene();
+                            }
                         } else {
-                            log::warn!(
-                                "[SetScene] se esperaba directorio extraído, no archivo: {path}"
-                            );
                             self.setup_default_3d_scene();
                         }
-                    } else {
-                        self.setup_default_3d_scene();
                     }
+                    "2D" => {
+                        let _ = save_path;
+                        log::warn!("SetScene '2D' ignorado en rer_engine_3d");
+                    }
+                    _ => log::info!("SetScene: escena '{}' no reconocida", scene),
                 }
-                "2D" => {
-                    let _ = save_path;
-                    log::warn!("SetScene '2D' ignorado en rer_engine_3d");
-                }
-                _ => log::info!("SetScene: escena '{}' no reconocida", scene),
-            },
+            }
             EngineCommand::Only3d(EngineCommand3dOnly::LoadCharacter { path, track_undo }) => {
                 self.load_character(&path);
-                if track_undo.unwrap_or(false) {
-                    if let Some(&id) = self.character_entities.last() {
-                        self.push_remove_entity_undo(id);
-                        log::info!("[quick_build] personaje {id} registrado en undo");
-                    }
+                if track_undo.unwrap_or(false)
+                    && let Some(&id) = self.character_entities.last()
+                {
+                    self.push_remove_entity_undo(id);
+                    log::info!("[quick_build] personaje {id} registrado en undo");
                 }
             }
             EngineCommand::Common(EngineCommandCommon::PlayAudio { path, loop_ }) => {
@@ -950,10 +955,18 @@ impl State {
                 self.set_world_bounds_3d_radius(radius);
                 self.clamp_play_character_camera_to_bounds();
             }
-            EngineCommand::Only3d(EngineCommand3dOnly::SetTaa { enabled, blend, jitter_scale }) => {
+            EngineCommand::Only3d(EngineCommand3dOnly::SetTaa {
+                enabled,
+                blend,
+                jitter_scale,
+            }) => {
                 // TAA IPC log suppressed
                 self.set_taa(enabled, blend, jitter_scale);
-                send_event(&EngineEvent::TaaChanged { enabled, blend, jitter_scale });
+                send_event(&EngineEvent::TaaChanged {
+                    enabled,
+                    blend,
+                    jitter_scale,
+                });
             }
             EngineCommand::Common(EngineCommandCommon::SetDebugMode { show }) => {
                 self.debug_mode = show;
@@ -964,32 +977,27 @@ impl State {
                 scope,
                 screen_id,
             }) => {
-                self.apply_player_ui_edit_mode(
-                    active,
-                    scope.as_deref(),
-                    screen_id.as_deref(),
-                );
+                self.apply_player_ui_edit_mode(active, scope.as_deref(), screen_id.as_deref());
             }
             EngineCommand::Common(EngineCommandCommon::AddPlayerUiTextBox { font_path }) => {
                 match self.add_player_ui_text_box(&font_path) {
                     Ok(id) => {
-                        if let Some(key) = self.player_ui_text_key() {
-                            if let Some(entry) = self
+                        if let Some(key) = self.player_ui_text_key()
+                            && let Some(entry) = self
                                 .player_ui_text_boxes
                                 .get(&key)
                                 .and_then(|list| list.iter().find(|b| b.id == id))
-                            {
-                                send_event(&EngineEvent::PlayerUiTextBoxAdded {
-                                    id: entry.id,
-                                    font_path: entry.font_path.clone(),
-                                    font_name: entry.font_name.clone(),
-                                    text: entry.text.clone(),
-                                    center_x: entry.center_x,
-                                    center_y: entry.center_y,
-                                    width: entry.width,
-                                    height: entry.height,
-                                });
-                            }
+                        {
+                            send_event(&EngineEvent::PlayerUiTextBoxAdded {
+                                id: entry.id,
+                                font_path: entry.font_path.clone(),
+                                font_name: entry.font_name.clone(),
+                                text: entry.text.clone(),
+                                center_x: entry.center_x,
+                                center_y: entry.center_y,
+                                width: entry.width,
+                                height: entry.height,
+                            });
                         }
                     }
                     Err(message) => {
@@ -999,8 +1007,7 @@ impl State {
             }
             EngineCommand::Common(EngineCommandCommon::RemovePlayerUiTextBox { id }) => {
                 let removed_id = if let Some(box_id) = id {
-                    self.remove_player_ui_text_box(box_id)
-                        .then_some(box_id)
+                    self.remove_player_ui_text_box(box_id).then_some(box_id)
                 } else {
                     self.remove_selected_player_ui_text_box()
                 };
@@ -1017,10 +1024,10 @@ impl State {
                 }
             }
             EngineCommand::Common(EngineCommandCommon::RemovePlayerUiButton { id }) => {
-                if let Some(button_id) = id {
-                    if self.remove_player_ui_button(button_id) {
-                        send_event(&EngineEvent::PlayerUiButtonRemoved { id: button_id });
-                    }
+                if let Some(button_id) = id
+                    && self.remove_player_ui_button(button_id)
+                {
+                    send_event(&EngineEvent::PlayerUiButtonRemoved { id: button_id });
                 }
             }
             EngineCommand::Common(EngineCommandCommon::AddPlayerUiImage { image_path }) => {
@@ -1054,12 +1061,9 @@ impl State {
                 locked,
                 z_index,
             }) => {
-                if let Err(message) = self.set_player_ui_hud_element_props(
-                    &element_kind,
-                    id,
-                    locked,
-                    z_index,
-                ) {
+                if let Err(message) =
+                    self.set_player_ui_hud_element_props(&element_kind, id, locked, z_index)
+                {
                     send_event(&EngineEvent::Error { message });
                 }
             }
@@ -1160,7 +1164,10 @@ impl State {
 
                 self.execution_overlaps.clear();
 
-                log::info!("[preview] modo {}", if playing { "juego" } else { "editor" });
+                log::info!(
+                    "[preview] modo {}",
+                    if playing { "juego" } else { "editor" }
+                );
             }
             EngineCommand::Common(EngineCommandCommon::SetCtrlHeld { held }) => {
                 self.ctrl_held = held;
@@ -1171,23 +1178,27 @@ impl State {
                     self.emit_play_character_view_changed(false);
                 }
             }
-            EngineCommand::Only3d(EngineCommand3dOnly::SetPlayEditorFrustumDistance { distance }) => {
+            EngineCommand::Only3d(EngineCommand3dOnly::SetPlayEditorFrustumDistance {
+                distance,
+            }) => {
                 self.fps_editor_frustum_distance = distance.clamp(0.5, 50.0);
                 if self.has_play_character() {
                     self.emit_play_character_view_changed(false);
                 }
             }
-            EngineCommand::Common(EngineCommandCommon::SetPhysics { id, enabled, body_type }) => {
-                if self.play_character_entity == Some(id)
-                    || self.editor_camera_entity == Some(id)
-                {
+            EngineCommand::Common(EngineCommandCommon::SetPhysics {
+                id,
+                enabled,
+                body_type,
+            }) => {
+                if self.play_character_entity == Some(id) || self.editor_camera_entity == Some(id) {
                     self.physics.remove_entity_body(id);
                 } else if enabled {
                     self.set_entity_physics_from_mesh_aabb(id, &body_type);
                 } else {
                     self.physics.remove_entity_body(id);
                 }
-                
+
                 send_event(&EngineEvent::PhysicsChanged {
                     entity_id: id,
                     enabled,
@@ -1206,10 +1217,12 @@ impl State {
                 } else if self.play_character_entity != Some(id) {
                     self.physics.remove_entity_body(id);
                 }
-                
             }
             EngineCommand::Only3d(EngineCommand3dOnly::RegisterBlueprint { blueprint }) => {
-                if let Some(id) = blueprint.blueprint_id.clone().filter(|s| !s.trim().is_empty())
+                if let Some(id) = blueprint
+                    .blueprint_id
+                    .clone()
+                    .filter(|s| !s.trim().is_empty())
                 {
                     log::info!(
                         "[blueprint] registrada id={id} categoría={:?}",
@@ -1234,8 +1247,8 @@ impl State {
                 preview_blueprint_id,
                 preview_blueprint,
             }) => {
-                let preview_blueprint: Option<crate::ipc::BlueprintPlacementMeta> = preview_blueprint
-                    .and_then(|v| serde_json::from_value(v).ok());
+                let preview_blueprint: Option<crate::ipc::BlueprintPlacementMeta> =
+                    preview_blueprint.and_then(|v| serde_json::from_value(v).ok());
                 if tool.is_empty() {
                     let was_active = !matches!(self.active_tool, ActiveTool::None);
                     if let Some(ghost_id) = self.quick_build_ghost_id.take() {
@@ -1256,7 +1269,8 @@ impl State {
                     if let Some(ghost_id) = self.quick_build_ghost_id.take() {
                         self.world.despawn(ghost_id);
                     }
-                    let plane_tool_cmd = matches!(tool.as_str(), "draw_collider" | "draw_execution_area");
+                    let plane_tool_cmd =
+                        matches!(tool.as_str(), "draw_collider" | "draw_execution_area");
                     if !plane_tool_cmd {
                         self.deactivate_plane_tool();
                     }
@@ -1283,10 +1297,9 @@ impl State {
                             self.active_tool = ActiveTool::QuickBuildPlace { cursor_world: None };
                             self.tool_overlay_buffer =
                                 crate::gizmo::build_from_vertices(&self.device, &[]);
-                            if let (Some(path), Some(kind)) = (
-                                preview_path.as_deref(),
-                                preview_kind.as_deref(),
-                            ) {
+                            if let (Some(path), Some(kind)) =
+                                (preview_path.as_deref(), preview_kind.as_deref())
+                            {
                                 let mut placement_meta =
                                     preview_blueprint.clone().unwrap_or_else(|| {
                                         crate::ipc::BlueprintPlacementMeta {
@@ -1310,7 +1323,13 @@ impl State {
                                 if placement_meta.blueprint_id.is_none() {
                                     placement_meta.blueprint_id = preview_blueprint_id.clone();
                                 }
-                                if placement_meta.model.as_deref().map(str::trim).unwrap_or("").is_empty() {
+                                if placement_meta
+                                    .model
+                                    .as_deref()
+                                    .map(str::trim)
+                                    .unwrap_or("")
+                                    .is_empty()
+                                {
                                     placement_meta.model = Some(path.to_string());
                                 }
                                 if placement_meta.category.is_none() {
@@ -1339,7 +1358,8 @@ impl State {
                                 self.quick_build_preview_path = Some(path.to_owned());
                                 self.quick_build_preview_kind = Some(kind.to_owned());
                                 self.quick_build_preview_scale = Some(scale);
-                                self.quick_build_ghost_id = self.load_quick_build_ghost_3d(path, scale);
+                                self.quick_build_ghost_id =
+                                    self.load_quick_build_ghost_3d(path, scale);
                                 if self.quick_build_ghost_id.is_none() {
                                     log::warn!(
                                         "[quick_build] no se pudo crear ghost para preview: {path}"
@@ -1379,7 +1399,10 @@ impl State {
             EngineCommand::Common(EngineCommandCommon::SetAutosave { enabled }) => {
                 self.autosave_enabled = enabled;
                 self.autosave_last_tick = Instant::now();
-                log::info!("[autosave] {}", if enabled { "activado" } else { "desactivado" });
+                log::info!(
+                    "[autosave] {}",
+                    if enabled { "activado" } else { "desactivado" }
+                );
             }
             EngineCommand::Common(EngineCommandCommon::ExportSaveSnapshot) => {
                 self.export_save_snapshot();
@@ -1415,10 +1438,7 @@ impl State {
             }
             EngineCommand::Only3d(EngineCommand3dOnly::ListEntitySockets { entity_id }) => {
                 let sockets = self.list_entity_sockets(entity_id);
-                send_event(&crate::ipc::EngineEvent::EntitySocketsList {
-                    entity_id,
-                    sockets,
-                });
+                send_event(&crate::ipc::EngineEvent::EntitySocketsList { entity_id, sockets });
             }
             EngineCommand::Only3d(EngineCommand3dOnly::UpsertEntitySocket {
                 entity_id,
@@ -1546,10 +1566,7 @@ impl State {
                         path
                     );
                 } else {
-                    log::warn!(
-                        "[hot-reload] Path no está en caché de modelos 3D: {}",
-                        path
-                    );
+                    log::warn!("[hot-reload] Path no está en caché de modelos 3D: {}", path);
                 }
             }
             EngineCommand::Common(EngineCommandCommon::SetAnimation {
@@ -1566,21 +1583,21 @@ impl State {
                 is_cancelable,
                 ..
             }) => {
-                
-
                 let fallback_logical_w = logical_w.unwrap_or(64).max(1);
                 let fallback_logical_h = logical_h.unwrap_or(64).max(1);
 
-                let measure_bounds =
-                    |anim_frames: &Vec<AnimationFrameData>, fallback_w: u32, fallback_h: u32| -> (u32, u32) {
-                        let mut max_w = fallback_w.max(1);
-                        let mut max_h = fallback_h.max(1);
-                        for frame in anim_frames {
-                            max_w = max_w.max(frame.src_w.unwrap_or(fallback_w).max(1));
-                            max_h = max_h.max(frame.src_h.unwrap_or(fallback_h).max(1));
-                        }
-                        (max_w, max_h)
-                    };
+                let measure_bounds = |anim_frames: &Vec<AnimationFrameData>,
+                                      fallback_w: u32,
+                                      fallback_h: u32|
+                 -> (u32, u32) {
+                    let mut max_w = fallback_w.max(1);
+                    let mut max_h = fallback_h.max(1);
+                    for frame in anim_frames {
+                        max_w = max_w.max(frame.src_w.unwrap_or(fallback_w).max(1));
+                        max_h = max_h.max(frame.src_h.unwrap_or(fallback_h).max(1));
+                    }
+                    (max_w, max_h)
+                };
 
                 let (measured_w, measured_h) =
                     measure_bounds(&frames, fallback_logical_w, fallback_logical_h);
@@ -1607,60 +1624,59 @@ impl State {
                         ((measured_h as f32) / ratio_h.max(0.0001)).round().max(1.0) as u32;
                 }
 
-                let audio_decoded: Option<Arc<DecodedAudio>> = audio_path.as_deref().and_then(|p| {
-                    let bytes = match std::fs::read(p) {
-                        Ok(b) => b,
-                        Err(e) => {
-                            log::warn!("[SetAnimation] error leyendo audio {}: {}", p, e);
-                            return None;
-                        }
-                    };
-                    let cursor = std::io::Cursor::new(bytes);
-                    let decoder = match rodio::Decoder::new(cursor) {
-                        Ok(d) => d,
-                        Err(e) => {
-                            log::warn!("[SetAnimation] error decodificando audio {}: {}", p, e);
-                            return None;
-                        }
-                    };
-                    let channels = decoder.channels().get();
-                    let sample_rate = decoder.sample_rate().get();
-                    let samples: Vec<f32> = decoder.collect();
+                let audio_decoded: Option<Arc<DecodedAudio>> =
+                    audio_path.as_deref().and_then(|p| {
+                        let bytes = match std::fs::read(p) {
+                            Ok(b) => b,
+                            Err(e) => {
+                                log::warn!("[SetAnimation] error leyendo audio {}: {}", p, e);
+                                return None;
+                            }
+                        };
+                        let cursor = std::io::Cursor::new(bytes);
+                        let decoder = match rodio::Decoder::new(cursor) {
+                            Ok(d) => d,
+                            Err(e) => {
+                                log::warn!("[SetAnimation] error decodificando audio {}: {}", p, e);
+                                return None;
+                            }
+                        };
+                        let channels = decoder.channels().get();
+                        let sample_rate = decoder.sample_rate().get();
+                        let samples: Vec<f32> = decoder.collect();
 
-                    Some(Arc::new(DecodedAudio {
-                        samples,
-                        channels,
-                        sample_rate,
-                    }))
-                });
+                        Some(Arc::new(DecodedAudio {
+                            samples,
+                            channels,
+                            sample_rate,
+                        }))
+                    });
 
                 for frame in &frames {
                     self.preload_anim_frame_with_rect(
                         &frame.path,
-                        frame.src_x
+                        frame
+                            .src_x
                             .zip(frame.src_y)
                             .zip(frame.src_w.zip(frame.src_h))
                             .map(|((x, y), (w, h))| (x, y, w, h)),
                     );
                 }
 
-                self.animations
-                    .entry(id)
-                    .or_insert_with(HashMap::new)
-                    .insert(
-                        name.clone(),
-                        AnimationState {
-                            frames,
-                            fps,
-                            loop_,
-                            flip_horizontal,
-                            audio_decoded,
-                            logical_w: resolved_logical_w,
-                            logical_h: resolved_logical_h,
-                            scripts,
-                            is_cancelable,
-                        },
-                    );
+                self.animations.entry(id).or_default().insert(
+                    name.clone(),
+                    AnimationState {
+                        frames,
+                        fps,
+                        loop_,
+                        flip_horizontal,
+                        audio_decoded,
+                        logical_w: resolved_logical_w,
+                        logical_h: resolved_logical_h,
+                        scripts,
+                        is_cancelable,
+                    },
+                );
                 self.default_animation_by_entity
                     .entry(id)
                     .or_insert(name.clone());
@@ -1670,23 +1686,21 @@ impl State {
                     logical_w: resolved_logical_w,
                     logical_h: resolved_logical_h,
                 });
-                
             }
             EngineCommand::Common(EngineCommandCommon::RemoveAnimation { id, name }) => {
                 log::info!("[IPC] RemoveAnimation: entity_id={}, name='{}'", id, name);
 
-                if let Some(active) = self.active_animations.get(&id) {
-                    if active.animation_name == name {
-                        self.active_animations.remove(&id);
-                        self.restore_animation_frame(id);
-                        self.script_engine.detach_animation_scripts(id);
-                        send_event(&EngineEvent::AnimationFinished { entity_id: id });
-                    }
+                if let Some(active) = self.active_animations.get(&id)
+                    && active.animation_name == name
+                {
+                    self.active_animations.remove(&id);
+                    self.restore_animation_frame(id);
+                    self.script_engine.detach_animation_scripts(id);
+                    send_event(&EngineEvent::AnimationFinished { entity_id: id });
                 }
 
                 if let Some(entity_anims) = self.animations.get_mut(&id) {
                     entity_anims.remove(&name);
-                    
 
                     if entity_anims.is_empty() {
                         self.animations.remove(&id);
@@ -1694,21 +1708,20 @@ impl State {
                     }
                 }
 
-                if let Some(default) = self.default_animation_by_entity.get(&id) {
-                    if default == &name {
-                        let new_default = self
-                            .animations
-                            .get(&id)
-                            .and_then(|m| m.keys().next().cloned());
-                        match new_default {
-                            Some(new_name) => {
-                                self.default_animation_by_entity.insert(id, new_name.clone());
-                                
-                            }
-                            None => {
-                                self.default_animation_by_entity.remove(&id);
-                                
-                            }
+                if let Some(default) = self.default_animation_by_entity.get(&id)
+                    && default == &name
+                {
+                    let new_default = self
+                        .animations
+                        .get(&id)
+                        .and_then(|m| m.keys().next().cloned());
+                    match new_default {
+                        Some(new_name) => {
+                            self.default_animation_by_entity
+                                .insert(id, new_name.clone());
+                        }
+                        None => {
+                            self.default_animation_by_entity.remove(&id);
                         }
                     }
                 }
@@ -1716,7 +1729,7 @@ impl State {
             EngineCommand::Common(EngineCommandCommon::SetDefaultAnimation { id, name }) => {
                 if self.model_animation_bindings.contains_key(&id) {
                     self.set_default_model_clip(id, &name);
-                    
+
                     return;
                 }
                 let exists = self
@@ -1726,7 +1739,6 @@ impl State {
                     .unwrap_or(false);
                 if exists {
                     self.default_animation_by_entity.insert(id, name.clone());
-                    
                 } else {
                     log::warn!(
                         "[animation] set_default_animation ignorado: '{}' no existe en entidad {}",
@@ -1736,33 +1748,34 @@ impl State {
                 }
             }
             EngineCommand::Common(EngineCommandCommon::PlayAnimation { id, name, loop_ }) => {
-                
-
                 if self.model_animation_bindings.contains_key(&id) {
                     self.play_model_clip(id, &name, loop_);
                     return;
                 }
 
-                if let Some(active) = self.active_animations.get(&id) {
-                    if !active.finished {
-                        let current_name = active.animation_name.clone();
-                        let is_cancelable = self
-                            .animations
-                            .get(&id)
-                            .and_then(|m| m.get(&current_name))
-                            .map(|a| a.is_cancelable)
-                            .unwrap_or(true);
-                        if !is_cancelable {
-                            
-                            return;
-                        }
+                if let Some(active) = self.active_animations.get(&id)
+                    && !active.finished
+                {
+                    let current_name = active.animation_name.clone();
+                    let is_cancelable = self
+                        .animations
+                        .get(&id)
+                        .and_then(|m| m.get(&current_name))
+                        .map(|a| a.is_cancelable)
+                        .unwrap_or(true);
+                    if !is_cancelable {
+                        return;
                     }
                 }
 
                 let anim_opt = self.animations.get(&id).and_then(|m| m.get(&name)).cloned();
 
                 match anim_opt {
-                    None => log::warn!("[IPC] Animación '{}' no encontrada para entidad {}", name, id),
+                    None => log::warn!(
+                        "[IPC] Animación '{}' no encontrada para entidad {}",
+                        name,
+                        id
+                    ),
                     Some(anim) => {
                         self.active_animations.remove(&id);
 
@@ -1805,7 +1818,8 @@ impl State {
                         for script in &anim.scripts {
                             let anim_path = format!("$anim$::{}::{}", name, script.name);
                             if let Err(e) =
-                                self.script_engine.attach_script(id, &anim_path, &script.source)
+                                self.script_engine
+                                    .attach_script(id, &anim_path, &script.source)
                             {
                                 log::error!(
                                     "[scripting] Error cargando script de animación '{}': {}",
@@ -1838,15 +1852,15 @@ impl State {
                 let stopped_animation_name =
                     self.active_animations.remove(&id).map(|a| a.animation_name);
                 if self.preview_playing {
-                    let fallback_name = self
-                        .default_animation_by_entity
-                        .get(&id)
-                        .cloned()
-                        .or_else(|| {
-                            self.animations
-                                .get(&id)
-                                .and_then(|m| m.keys().next().cloned())
-                        });
+                    let fallback_name =
+                        self.default_animation_by_entity
+                            .get(&id)
+                            .cloned()
+                            .or_else(|| {
+                                self.animations
+                                    .get(&id)
+                                    .and_then(|m| m.keys().next().cloned())
+                            });
                     if let Some(name) = fallback_name {
                         self.show_first_frame_of_animation(id, &name);
                     } else {
@@ -1868,7 +1882,10 @@ impl State {
             }) => {
                 self.emit_entity_animation_play_state(entity_id);
             }
-            EngineCommand::Common(EngineCommandCommon::LoadSceneVisualScript { scene_id, source }) => {
+            EngineCommand::Common(EngineCommandCommon::LoadSceneVisualScript {
+                scene_id,
+                source,
+            }) => {
                 log::info!("[IPC] LoadSceneVisualScript: scene_id={}", scene_id);
                 if let Err(e) = self.handle_load_scene_visual_script(scene_id, &source) {
                     log::error!("[scene_script] Error: {e}");
@@ -1886,18 +1903,11 @@ impl State {
                     });
                 } else {
                     use crate::entity_save_meta::ScriptSourceRecord;
-                    let list = self
-                        .save_registry
-                        .script_sources
-                        .entry(id)
-                        .or_insert_with(Vec::new);
+                    let list = self.save_registry.script_sources.entry(id).or_default();
                     if let Some(existing) = list.iter_mut().find(|s| s.name == path) {
                         existing.source = source;
                     } else {
-                        list.push(ScriptSourceRecord {
-                            name: path,
-                            source,
-                        });
+                        list.push(ScriptSourceRecord { name: path, source });
                     }
                 }
             }
@@ -1941,7 +1951,6 @@ impl State {
                                     width: w,
                                     height: h,
                                 });
-                                
                             }
                             Err(e) => {
                                 log::error!("[sprite] error decodificando {}: {}", path, e);
@@ -1988,7 +1997,6 @@ impl State {
                     path: path.clone(),
                     name: name.clone(),
                 });
-                
             }
             EngineCommand::Common(EngineCommandCommon::RemoveSound { path }) => {
                 if self.sound_store.remove(&path).is_some() {
@@ -2019,7 +2027,6 @@ impl State {
                             path: path.clone(),
                             name: name.clone(),
                         });
-                        
                     }
                     Err(e) => {
                         log::error!("[font] error cargando {}: {}", path, e);
@@ -2067,7 +2074,6 @@ impl State {
                             width: width_px,
                             height: height_px,
                         });
-                        
                     }
                     Err(e) => {
                         log::error!("[hud-image] error cargando {}: {}", path, e);
@@ -2082,7 +2088,10 @@ impl State {
                     send_event(&EngineEvent::HudImageRemoved { path: path.clone() });
                     log::info!("[hud-image] eliminada: {}", path);
                 } else {
-                    log::warn!("[hud-image] intento de eliminar imagen inexistente: {}", path);
+                    log::warn!(
+                        "[hud-image] intento de eliminar imagen inexistente: {}",
+                        path
+                    );
                 }
             }
             EngineCommand::Common(EngineCommandCommon::GetHudImagesList) => {
@@ -2106,14 +2115,16 @@ impl State {
                     path: path.clone(),
                     name: name.clone(),
                 });
-                
             }
             EngineCommand::Common(EngineCommandCommon::RemoveBackgroundAsset { path }) => {
                 if self.background_store.remove(&path).is_some() {
                     send_event(&EngineEvent::BackgroundAssetRemoved { path: path.clone() });
                     log::info!("[background] eliminado: {}", path);
                 } else {
-                    log::warn!("[background] intento de eliminar fondo inexistente: {}", path);
+                    log::warn!(
+                        "[background] intento de eliminar fondo inexistente: {}",
+                        path
+                    );
                 }
             }
             EngineCommand::Common(EngineCommandCommon::GetBackgroundsList) => {
@@ -2144,8 +2155,7 @@ fn validate_font_file(path: &str) -> Result<(), String> {
     if ext != "ttf" && ext != "otf" {
         return Err("Se esperaba un archivo .ttf u .otf".to_string());
     }
-    let bytes =
-        std::fs::read(path).map_err(|e| format!("No se pudo leer la fuente: {e}"))?;
+    let bytes = std::fs::read(path).map_err(|e| format!("No se pudo leer la fuente: {e}"))?;
     ttf_parser::Face::parse(&bytes, 0).map_err(|e| format!("Archivo de fuente inválido: {e}"))?;
     Ok(())
 }

@@ -8,7 +8,7 @@ import {
   type ComponentProps,
   type ReactNode,
 } from 'react'
-import { Accordion } from 'react-bootstrap'
+import type { Accordion } from 'react-bootstrap'
 
 import type { PluginUiAction } from '@shared-types'
 import { usePluginUiActionBridge } from '../plugins/usePluginUiActionBridge'

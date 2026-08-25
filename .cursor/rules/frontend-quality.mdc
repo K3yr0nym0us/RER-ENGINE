@@ -1,0 +1,60 @@
+---
+description: Frontend quality gate — ESLint, TypeScript, tests, Sonar
+alwaysApply: true
+globs:
+  - "src/main/**/*.{ts,tsx,js,jsx}"
+  - "src/preload/**/*.{ts,tsx,js,jsx}"
+  - "src/renderer/**/*.{ts,tsx,js,jsx}"
+  - "src/shared-types/**/*.{ts,tsx}"
+  - "electron.vite.config.ts"
+  - "eslint.config.mjs"
+  - "tsconfig*.json"
+  - "vitest.config.ts"
+  - ".github/workflows/frontend-quality.yml"
+  - "sonar-project.properties"
+---
+
+# RER-ENGINE — Frontend Quality Gate
+
+Applies to Electron, React, TypeScript and related frontend JavaScript only.
+Does **not** replace Rust engine quality rules.
+
+## Mandatory before finishing any frontend task
+
+1. Changes must satisfy **ESLint** (`yarn lint`).
+2. Changes must pass **TypeScript** (`yarn typecheck`).
+3. Existing tests must not break (`yarn test` / `yarn test:coverage`).
+4. **Sonar Quality Gate** must remain green for CI (new code: no critical bugs/vulns, reviewed hotspots, maintainability, duplication, complexity, coverage where applicable).
+5. Run **`yarn quality`** before considering the task done.
+6. If `yarn quality` fails, the task is **not** done — fix issues introduced by the change.
+
+## Forbidden as “quick fixes”
+
+Do **not** use these to hide problems (except rare, documented, justified cases):
+
+- `eslint-disable` / `eslint-disable-next-line`
+- `@ts-ignore` / `@ts-nocheck`
+- `any` / `as any`
+- Disabling or weakening quality rules just to make the code pass
+
+Prefer fixing types, simplifying logic, or extracting helpers.
+
+## Scope separation
+
+- Frontend quality tools: ESLint, `tsc`, Vitest, Sonar JS/TS analysis.
+- Rust engine: Cargo / clippy / Rust tests — separate from this gate.
+- Never point Sonar or ESLint at `src/main/Engine/engine_*` or `target/`.
+
+## Commands
+
+```bash
+yarn lint
+yarn lint:fix
+yarn typecheck
+yarn test
+yarn test:coverage
+yarn quality
+```
+
+`yarn quality` = frontend (lint + typecheck + coverage) **and** Rust (`yarn quality:rust`).
+See also `.cursor/rules/rust-quality.mdc`.

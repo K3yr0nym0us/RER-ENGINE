@@ -240,8 +240,8 @@ impl SsrStatsReadback {
             });
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &bind_group, &[]);
-            let dx = (refl_w + 7) / 8;
-            let dy = (refl_h + 7) / 8;
+            let dx = refl_w.div_ceil(8);
+            let dy = refl_h.div_ceil(8);
             pass.dispatch_workgroups(dx, dy, 1);
         }
 
@@ -379,7 +379,13 @@ fn log_ssr_debug_report(snapshot: &SsrDebugLogSnapshot, stats: &SsrStatsGpu) {
         snapshot.composite_ms,
     );
 
-    for hint in diagnose_ssr(stats, miss_trace_rate, miss_vis_rate, visible_rate, avg_refl_lum) {
+    for hint in diagnose_ssr(
+        stats,
+        miss_trace_rate,
+        miss_vis_rate,
+        visible_rate,
+        avg_refl_lum,
+    ) {
         log::info!("[reflexiones][ssr]   → {hint}");
     }
 }
@@ -403,7 +409,9 @@ fn diagnose_ssr(
                 "ningún píxel trazable: rugosidad > max_roughness del tier; baja roughness en SurfacePbr o sube el tier",
             );
         } else {
-            out.push("ningún píxel trazable en la muestra; revisa escena o cámara apuntando al vacío");
+            out.push(
+                "ningún píxel trazable en la muestra; revisa escena o cámara apuntando al vacío",
+            );
         }
         return out;
     }
@@ -430,7 +438,9 @@ fn diagnose_ssr(
             );
         }
     } else {
-        out.push("traza SSR activa; si Final no se ve, revisa ángulo de cámara o fuerza en composite");
+        out.push(
+            "traza SSR activa; si Final no se ve, revisa ángulo de cámara o fuerza en composite",
+        );
     }
 
     out

@@ -1,0 +1,131 @@
+---
+description: RER-ENGINE Electron React TypeScript frontend rules
+alwaysApply: true
+---
+
+# RER-ENGINE — Frontend
+
+## Stack
+
+- Electron
+- React
+- TypeScript
+- Yarn
+
+Use **Yarn** for JavaScript dependencies.
+
+Do not use npm, pnpm or bun unless explicitly requested.
+
+## Responsibilities
+
+Frontend handles:
+
+- UI
+- editor controls
+- panels
+- dialogs
+- menus
+- user input
+- presentation
+- engine commands/events
+
+Frontend does NOT own:
+
+- transforms
+- spatial calculations
+- collisions
+- snapping
+- entity classification
+- world/scene state
+- rendering state
+- engine calculations
+
+These belong to Rust.
+
+If a value or behavior belongs to the engine, Rust is the source of truth.
+
+Do not duplicate engine logic or engine state in TypeScript.
+
+## React
+
+- Follow existing component and hook patterns.
+- Reuse components and hooks before creating new ones.
+- Keep components focused on presentation and interaction.
+- Keep business/domain logic outside presentation components.
+- Never put complex async workflows directly inside components.
+- Async work belongs in hooks/services according to the existing architecture.
+- Follow React Hooks rules.
+- Do not bypass hook rules to make an implementation work.
+- Avoid unnecessary re-renders and duplicated state.
+- Prefer existing state-management patterns used by the project.
+
+## Engine Communication
+
+Flow:
+
+React
+→ Electron/Bridge
+→ Rust Engine
+→ Electron/Bridge
+→ React
+
+React sends **intent**.
+
+Rust performs the operation.
+
+React displays the result.
+
+Never maintain a second independent implementation of engine state in TypeScript.
+
+If the frontend needs a value calculated by the engine, obtain it from the engine instead of recreating the calculation in TypeScript.
+
+## TypeScript
+
+Use English for:
+
+- variables
+- functions
+- components
+- hooks
+- interfaces
+- types
+- enums
+- services
+- utilities
+
+UI text may be Spanish or English, but remain consistent.
+
+Prefer explicit and safe types.
+
+Avoid:
+
+- `any`
+- unnecessary type assertions
+- `@ts-ignore`
+- `@ts-nocheck`
+- unsafe casts
+- duplicated type definitions
+
+Do not weaken TypeScript strictness to make code compile.
+
+Fix the underlying type problem instead.
+
+## Code Quality
+
+Every Electron/React/TypeScript change must comply with:
+
+- ESLint
+- TypeScript strict checking
+- automated tests
+- Sonar analysis
+- Sonar Quality Gate
+
+The quality configuration is defined in:
+
+- `.cursor/rules/frontend-quality.mdc`
+- `docs/FRONTEND_QUALITY.md`
+
+Before considering an implementation complete, run:
+
+```text
+yarn quality

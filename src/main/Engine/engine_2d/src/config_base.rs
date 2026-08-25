@@ -3,8 +3,8 @@
 // Se activa con:  SetScene { scene: "scratch" }
 // Contiene únicamente la lógica de reinicio del estado del editor.
 
-use crate::config_compat::Camera;
 use crate::config_2d::{ActiveTool, Camera2D};
+use crate::config_compat::Camera;
 use crate::ecs::MeshComponent;
 use crate::engine::State;
 use crate::gizmo;
@@ -79,11 +79,11 @@ impl State {
     pub(crate) fn setup_scratch(&mut self) {
         self.reset_runtime_scene_2d();
         self.camera_2d = Some(Camera2D {
-            x:      0.0,
-            y:      0.0,
+            x: 0.0,
+            y: 0.0,
             half_h: 3.5,
-            near:  -100.0,
-            far:    100.0,
+            near: -100.0,
+            far: 100.0,
         });
 
         // Cubo central con textura blanca (fallback)
@@ -94,11 +94,22 @@ impl State {
         let tex_idx = self.uv_rects.len();
         self.uv_rects.push(uv);
         let cube_id = self.world.spawn(Some("Cube"));
-        self.world.insert(cube_id, MeshComponent { mesh_idx: 0, tex_idx });
+        self.world.insert(
+            cube_id,
+            MeshComponent {
+                mesh_idx: 0,
+                tex_idx,
+            },
+        );
 
         // Cámara base del editor (fallback de uniforms).
         self.camera = Camera::new();
-        self.clear_color = wgpu::Color { r: 0.06, g: 0.06, b: 0.10, a: 1.0 };
+        self.clear_color = wgpu::Color {
+            r: 0.06,
+            g: 0.06,
+            b: 0.10,
+            a: 1.0,
+        };
 
         log::info!("Escena BASE cargada: estado limpio del editor 2D");
     }

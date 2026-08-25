@@ -6,9 +6,9 @@ mod rtex;
 
 pub use mesh::{SkinnedMeshVertex, StaticMeshVertex};
 pub use rerasset::{
-    read_rerasset, write_rerasset, write_rerasset_atomic, AssetFlags, AssetHeader, AssetState,
-    BakeInput, BakeMeshPart, BakeSkinnedPart, ChunkEntry, ChunkType, ImportedAnimationClip,
-    ImportedSkeleton, MaterialDesc, RER_ASSET_VERSION, RER_IMPORTER_VERSION, RerassetFile,
-    SourceExt,
+    AssetFlags, AssetHeader, AssetState, BakeInput, BakeMeshPart, BakeSkinnedPart, ChunkEntry,
+    ChunkType, ImportedAnimationClip, ImportedSkeleton, MaterialDesc, RER_ASSET_VERSION,
+    RER_IMPORTER_VERSION, RerassetFile, SourceExt, read_rerasset, write_rerasset,
+    write_rerasset_atomic,
 };
-pub use rtex::{read_rtex, write_rtex, CompressionType, RtexData, TextureFormat};
+pub use rtex::{CompressionType, RtexData, TextureFormat, read_rtex, write_rtex};

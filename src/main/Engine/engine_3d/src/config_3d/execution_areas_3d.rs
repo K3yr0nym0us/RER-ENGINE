@@ -5,7 +5,7 @@ use glam::Vec3;
 use crate::config_3d::plane_tools::PLANE_TOOL_PHYSICS_DEPTH;
 use crate::ecs::{EntityId, Transform};
 use crate::engine::State;
-use crate::ipc::{send_event, EngineEvent};
+use crate::ipc::{EngineEvent, send_event};
 
 impl State {
     /// Detecta entradas a triggers 3D (planos execution area) en modo preview.
@@ -78,10 +78,10 @@ impl State {
 
     fn execution_area_trigger_actors(&self) -> Vec<EntityId> {
         let mut ids = self.character_entities.clone();
-        if let Some(pc) = self.play_character_entity {
-            if !ids.contains(&pc) {
-                ids.push(pc);
-            }
+        if let Some(pc) = self.play_character_entity
+            && !ids.contains(&pc)
+        {
+            ids.push(pc);
         }
         ids
     }
@@ -97,13 +97,7 @@ impl State {
             return Some((feet, radius));
         }
         let t = self.world.get::<Transform>(actor_id)?;
-        let radius = t
-            .scale
-            .x
-            .abs()
-            .max(t.scale.z.abs())
-            .max(t.scale.y.abs())
-            * 0.35;
+        let radius = t.scale.x.abs().max(t.scale.z.abs()).max(t.scale.y.abs()) * 0.35;
         Some((t.position, radius))
     }
 

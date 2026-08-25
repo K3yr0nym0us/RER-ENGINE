@@ -5,7 +5,16 @@ use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 
-use crate::ipc::{send_load_progress, send_project_load_2d_complete_event, send_project_loaded_2d_event, AnimationFrameData, ControlBindingsData, ControlScriptData, EngineCommand, EngineCommand2dOnly, EngineCommandCommon, EntityRestoreAnimation, EntityRestorePhysics, EntityRestoreScript, EntityRestoreTransform, HudImageInfo, ImportSceneCamera2d, ImportSceneEntity, ImportScenePayload, ImportSceneSprite, ImportSceneWorld, PlayerUiScreenInfo, ProjectLoaded2dCamera2d, ProjectLoaded2dEvent, ProjectLoaded2dSceneTab, ProjectLoaded2dWorld, SavePlayerUiButtonSnapshot, SavePlayerUiImageSnapshot, SavePlayerUiObjectSnapshot, SavePlayerUiTextBoxSnapshot, SaveUiScreenSnapshot};
+use crate::ipc::{
+    AnimationFrameData, ControlBindingsData, ControlScriptData, EngineCommand, EngineCommand2dOnly,
+    EngineCommandCommon, EntityRestoreAnimation, EntityRestorePhysics, EntityRestoreScript,
+    EntityRestoreTransform, HudImageInfo, ImportSceneCamera2d, ImportSceneEntity,
+    ImportScenePayload, ImportSceneSprite, ImportSceneWorld, PlayerUiScreenInfo,
+    ProjectLoaded2dCamera2d, ProjectLoaded2dEvent, ProjectLoaded2dSceneTab, ProjectLoaded2dWorld,
+    SavePlayerUiButtonSnapshot, SavePlayerUiImageSnapshot, SavePlayerUiObjectSnapshot,
+    SavePlayerUiTextBoxSnapshot, SaveUiScreenSnapshot, send_load_progress,
+    send_project_load_2d_complete_event, send_project_loaded_2d_event,
+};
 
 use super::State;
 
@@ -88,8 +97,8 @@ struct SavedWorldConfig {
 #[allow(non_snake_case)]
 #[derive(Debug, Deserialize, Clone)]
 struct SavedCamera2d {
-    x:     f32,
-    y:     f32,
+    x: f32,
+    y: f32,
     halfH: f32,
 }
 
@@ -254,10 +263,7 @@ impl State {
         match load_project_from_extract_dir(&path) {
             Ok(mut project) => {
                 if project.r#type != "2D" {
-                    log::warn!(
-                        "tipo '{}' ignorado en binario 2D",
-                        project.r#type
-                    );
+                    log::warn!("tipo '{}' ignorado en binario 2D", project.r#type);
                     return;
                 }
                 let extract_dir = PathBuf::from(&path);
@@ -298,7 +304,8 @@ fn load_project_from_extract_dir(extract_path: &str) -> Result<ProjectSaveData, 
     let extract_dir = Path::new(extract_path);
     if extract_dir.is_file() {
         return Err(
-            "se esperaba directorio extraído, no archivo .save (Electron ya descomprimió)".to_string(),
+            "se esperaba directorio extraído, no archivo .save (Electron ya descomprimió)"
+                .to_string(),
         );
     }
     if !extract_dir.is_dir() {
@@ -321,10 +328,7 @@ fn load_project_from_extract_dir(extract_path: &str) -> Result<ProjectSaveData, 
 
 fn entity_path_marker(p: &str) -> Option<&'static str> {
     let marker = p.split(['/', '\\']).next_back().unwrap_or(p);
-    ENTITY_MARKERS
-        .iter()
-        .copied()
-        .find(|m| *m == marker)
+    ENTITY_MARKERS.iter().copied().find(|m| *m == marker)
 }
 
 fn resolve_path(p: &str, extracted_dir: &Path) -> String {
@@ -368,7 +372,10 @@ fn resolve_script_source(source: &str, extracted_dir: &Path) -> String {
     fs::read_to_string(&abs).unwrap_or_default()
 }
 
-fn resolve_scripts(scripts: &Option<Vec<SavedScript>>, extracted_dir: &Path) -> Option<Vec<SavedScript>> {
+fn resolve_scripts(
+    scripts: &Option<Vec<SavedScript>>,
+    extracted_dir: &Path,
+) -> Option<Vec<SavedScript>> {
     scripts.as_ref().map(|list| {
         list.iter()
             .map(|s| SavedScript {
@@ -628,7 +635,9 @@ fn find_blueprint<'a>(id: &str, blueprints: &'a [SavedBlueprint]) -> Option<&'a 
     blueprints.iter().find(|bp| bp.id == id)
 }
 
-fn map_restore_animations(anims: Option<&Vec<SavedAnimation>>) -> Option<Vec<EntityRestoreAnimation>> {
+fn map_restore_animations(
+    anims: Option<&Vec<SavedAnimation>>,
+) -> Option<Vec<EntityRestoreAnimation>> {
     anims.map(|list| {
         list.iter()
             .map(|anim| EntityRestoreAnimation {
@@ -722,7 +731,10 @@ struct EntityRestoreResolved {
     control_bindings: Option<ControlBindingsData>,
 }
 
-fn resolve_entity_restore(entity: &SavedEntity, blueprints: &[SavedBlueprint]) -> EntityRestoreResolved {
+fn resolve_entity_restore(
+    entity: &SavedEntity,
+    blueprints: &[SavedBlueprint],
+) -> EntityRestoreResolved {
     let bp = entity
         .blueprint_id
         .as_deref()
@@ -766,7 +778,10 @@ fn resolve_entity_restore(entity: &SavedEntity, blueprints: &[SavedBlueprint]) -
     }
 }
 
-fn build_import_scene_entity(entity: &SavedEntity, blueprints: &[SavedBlueprint]) -> ImportSceneEntity {
+fn build_import_scene_entity(
+    entity: &SavedEntity,
+    blueprints: &[SavedBlueprint],
+) -> ImportSceneEntity {
     let restore = resolve_entity_restore(entity, blueprints);
     let is_player = is_player_path(&entity.path);
 
@@ -802,17 +817,21 @@ fn build_import_scene_payload(
     view: &ActiveSaveView,
     blueprints: &[SavedBlueprint],
 ) -> ImportScenePayload {
-    let camera = view.camera2d.as_ref().map(|c| ImportSceneCamera2d {
-        x: c.x,
-        y: c.y,
-        half_h: c.halfH,
-    }).or_else(|| {
-        Some(ImportSceneCamera2d {
-            x: 0.0,
-            y: 0.0,
-            half_h: DEFAULT_CAMERA_2D_HALF_H,
+    let camera = view
+        .camera2d
+        .as_ref()
+        .map(|c| ImportSceneCamera2d {
+            x: c.x,
+            y: c.y,
+            half_h: c.halfH,
         })
-    });
+        .or({
+            Some(ImportSceneCamera2d {
+                x: 0.0,
+                y: 0.0,
+                half_h: DEFAULT_CAMERA_2D_HALF_H,
+            })
+        });
 
     let target_fps = if view.world.targetFps.is_finite() && view.world.targetFps > 0.0 {
         view.world.targetFps as u64
@@ -866,10 +885,12 @@ fn load_project_asset_stores(state: &mut State, project: &ProjectSaveData) {
         }));
     }
     for bg in &project.backgrounds {
-        state.handle_command(EngineCommand::Common(EngineCommandCommon::LoadBackgroundAsset {
-            path: bg.path.clone(),
-            name: bg.name.clone(),
-        }));
+        state.handle_command(EngineCommand::Common(
+            EngineCommandCommon::LoadBackgroundAsset {
+                path: bg.path.clone(),
+                name: bg.name.clone(),
+            },
+        ));
     }
     for img in &project.hud_images {
         state.handle_command(EngineCommand::Common(EngineCommandCommon::LoadHudImage {
@@ -949,17 +970,23 @@ fn apply_loaded_proyect_2d(
     state.handle_command(EngineCommand::Common(EngineCommandCommon::SetGridVisible {
         visible: view.world.gridVisible,
     }));
-    state.handle_command(EngineCommand::Common(EngineCommandCommon::SetGridCellSize {
-        size: view.world.gridCellSize,
-    }));
+    state.handle_command(EngineCommand::Common(
+        EngineCommandCommon::SetGridCellSize {
+            size: view.world.gridCellSize,
+        },
+    ));
     let target_fps = if view.world.targetFps.is_finite() && view.world.targetFps > 0.0 {
         view.world.targetFps as u64
     } else {
         60
     };
-    state.handle_command(EngineCommand::Common(EngineCommandCommon::SetTargetFps { fps: target_fps }));
+    state.handle_command(EngineCommand::Common(EngineCommandCommon::SetTargetFps {
+        fps: target_fps,
+    }));
     if let Some(gravity) = view.world.gravity {
-        state.handle_command(EngineCommand::Common(EngineCommandCommon::SetGravity { gravity }));
+        state.handle_command(EngineCommand::Common(EngineCommandCommon::SetGravity {
+            gravity,
+        }));
     }
 
     if let Some(camera) = &view.camera2d {

@@ -3,7 +3,6 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState, type R
 import type {
   EditorSceneListItem,
   EngineEvent,
-  Entity3D,
   GameStyle,
   SavedScene,
   SavedWorldConfig,
@@ -35,7 +34,6 @@ import {
   endSceneImportLoading,
   needsSceneBurstLoad,
   scheduleEndSceneWorldCleanup,
-  trackSceneBurstCollider,
   trackSceneBurstOp,
   trackSceneBurstModelPreloads,
   collectUncachedBurstModelPaths,
@@ -124,7 +122,7 @@ function tabsFromMotorItems(items: EditorSceneListItem[]): SceneTab[] {
 
 export function SceneManagerProvider({
   children,
-  initialSavePath,
+  initialSavePath: _initialSavePath,
   initialExtractDir,
   projectType,
   gameStyle,
@@ -139,7 +137,6 @@ export function SceneManagerProvider({
 }) {
   const { t } = useTraslate();
   const {
-    engineReady,
     worldConfig,
     backgroundPath,
     scenarioEntities,
@@ -175,7 +172,6 @@ export function SceneManagerProvider({
     removeCharacter,
     removeCollider,
     removeExecutionArea,
-    setWorldSize,
     setWorldRadius,
     setGridVisible,
     setGridCellSize,
@@ -331,7 +327,7 @@ export function SceneManagerProvider({
     return () => {
       window.engine.off(onEngineEvent);
     };
-  }, [useMotorScenes]);
+  }, [useMotorScenes, dispatch, modelReplaceInProgressRef, pendingImportSceneRef, reportBounds, sceneBurstLoadInProgressRef, sceneImportInProgressRef]);
 
   useEffect(() => {
     if (projectType !== '2D' || projectLoaded2dSeq === 0) return;
@@ -499,7 +495,7 @@ export function SceneManagerProvider({
       }
 
       if (scene.camera2d) {
-        send({ cmd: 'set_camera2d', x: scene.camera2d.x, y: scene.camera2d.y, half_h: scene.camera2d.halfH });
+        send({ cmd: 'set_camera_2d', x: scene.camera2d.x, y: scene.camera2d.y, half_h: scene.camera2d.halfH });
         camera2dRef.current = scene.camera2d;
       }
     }

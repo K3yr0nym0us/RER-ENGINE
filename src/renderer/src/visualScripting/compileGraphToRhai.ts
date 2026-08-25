@@ -9,7 +9,6 @@ import {
   THEN_FALSE,
   THEN_TRUE,
   VISUAL_NODE_TYPES,
-  type VisualGraphContext,
 } from './nodeDefinitions'
 import { compileEntityIdExpr, compileRhaiExprField, graphContext } from './compileEntityId'
 import { normalizeReflectionTier } from '../context/useContextEngine/types'

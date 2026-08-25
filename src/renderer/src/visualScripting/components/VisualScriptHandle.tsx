@@ -1,6 +1,7 @@
 import type { CSSProperties } from 'react'
 
-import { Handle, Position } from '@xyflow/react'
+import type { Position } from '@xyflow/react';
+import { Handle } from '@xyflow/react'
 
 import { useTraslate } from '@hooks'
 import { HANDLE_TOOLTIP_KEYS } from '../handleTooltips'

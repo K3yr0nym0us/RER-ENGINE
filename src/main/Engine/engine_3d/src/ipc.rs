@@ -9,9 +9,9 @@ use serde::{Deserialize, Serialize};
 
 pub use crate::engine_command::{EngineCommand, EngineCommand3dOnly};
 pub use rer_engine_ipc_common::{
-    AddPlayerUiButtonPayload, AnimScriptData, AnimationFrameData, ControlBindingsData,
+    AddPlayerUiButtonPayload, AnimScriptData, AnimationFrameData, AxisValue, ControlBindingsData,
     ControlScriptData, EngineCommandCommon, EntityRestorePhysics, EntityRestoreTransform,
-    PlayerUiScreenInfo, AxisValue, RotationEulerDelta,
+    PlayerUiScreenInfo, RotationEulerDelta,
 };
 
 /// Modo de seguimiento del ojo FPS respecto al jugador en editor.
@@ -158,18 +158,42 @@ pub struct SaveEntity3DSnapshot {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub texture_lod: Option<SaveEntityTextureLodSnapshot>,
     /// Padre de fusión (entidad ancla; esta entidad es el hijo).
-    #[serde(default, skip_serializing_if = "Option::is_none", alias = "attachParentId")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        alias = "attachParentId"
+    )]
     pub attach_parent_id: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none", alias = "attachLocalPosition")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        alias = "attachLocalPosition"
+    )]
     pub attach_local_position: Option<[f32; 3]>,
-    #[serde(default, skip_serializing_if = "Option::is_none", alias = "attachLocalRotation")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        alias = "attachLocalRotation"
+    )]
     pub attach_local_rotation: Option<[f32; 4]>,
-    #[serde(default, skip_serializing_if = "Option::is_none", alias = "attachLocalScale")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        alias = "attachLocalScale"
+    )]
     pub attach_local_scale: Option<[f32; 3]>,
     /// Host del socket (esta entidad es hijo enganchado a un socket).
-    #[serde(default, skip_serializing_if = "Option::is_none", alias = "attachSocketHostId")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        alias = "attachSocketHostId"
+    )]
     pub attach_socket_host_id: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none", alias = "attachSocketName")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        alias = "attachSocketName"
+    )]
     pub attach_socket_name: Option<String>,
     /// Sockets definidos en esta entidad host.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -306,7 +330,11 @@ pub struct SavePlayerUiObjectSnapshot {
     pub vertices: Vec<[f32; 2]>,
     #[serde(alias = "fillColor", default = "default_object_fill")]
     pub fill_color: [f32; 4],
-    #[serde(default, skip_serializing_if = "Option::is_none", alias = "texturePath")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        alias = "texturePath"
+    )]
     pub texture_path: Option<String>,
     #[serde(default)]
     pub z_index: i32,
@@ -382,9 +410,13 @@ pub struct SaveSceneSnapshotPayload {
 #[serde(tag = "event", rename_all = "snake_case")]
 #[allow(dead_code)]
 pub enum EngineEvent {
-    Ready { gravity: f32 },
+    Ready {
+        gravity: f32,
+    },
     Pong,
-    Error { message: String },
+    Error {
+        message: String,
+    },
     ModelLoaded {
         id: u32,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -421,20 +453,22 @@ pub enum EngineEvent {
     },
     /// Emitido cuando el usuario hace click izquierdo sobre una entidad.
     EntitySelected {
-        id:              u32,
-        name:            String,
-        position:        [f32; 3],
-        rotation:        [f32; 4],   // quaternion xyzw
-        scale:           [f32; 3],
+        id: u32,
+        name: String,
+        position: [f32; 3],
+        rotation: [f32; 4], // quaternion xyzw
+        scale: [f32; 3],
         physics_enabled: bool,
-        physics_type:    String,
+        physics_type: String,
         #[serde(skip_serializing_if = "Option::is_none")]
-        blueprint_id:    Option<String>,
+        blueprint_id: Option<String>,
     },
     /// Emitido cuando el usuario hace click izquierdo en vacío.
     EntityDeselected,
     /// Emitido cuando el cursor pasa por encima de una entidad (solo cuando cambia).
-    EntityHovered { id: u32 },
+    EntityHovered {
+        id: u32,
+    },
     /// Emitido cuando el cursor deja de estar sobre cualquier entidad.
     EntityUnhovered,
     /// Emitido cuando un escenario PNG se cargó correctamente.
@@ -445,16 +479,27 @@ pub enum EngineEvent {
         name: Option<String>,
     },
     /// Emitido cuando un personaje PNG se cargó correctamente.
-    CharacterLoaded { id: u32, path: String },
+    CharacterLoaded {
+        id: u32,
+        path: String,
+    },
     /// Emitido cuando la cámara 2D cambia (fin de pan o zoom).
     #[serde(rename = "camera_2d_updated")]
-    Camera2dUpdated { x: f32, y: f32, half_h: f32 },
+    Camera2dUpdated {
+        x: f32,
+        y: f32,
+        half_h: f32,
+    },
     /// Emitido cuando se cargó una imagen de fondo del mundo.
-    BackgroundLoaded { path: String },
+    BackgroundLoaded {
+        path: String,
+    },
     /// Emitido cuando una herramienta de dibujo fue cancelada desde el motor.
     ToolCancelled,
     /// Progreso de herramienta de dibujo por puntos (colisionador 2D u objeto HUD UI).
-    DrawingProgress { count: u32 },
+    DrawingProgress {
+        count: u32,
+    },
     /// Colisionador creado (2D: `points`; 3D: `position` + `scale` del muro plano).
     ColliderCreated {
         id: u32,
@@ -476,9 +521,15 @@ pub enum EngineEvent {
         scale: Option<[f32; 3]>,
     },
     /// Emitido cuando el usuario selecciona el pivot de un frame en modo edición.
-    PivotSelected { frame_path: String, pivot_x: f32, pivot_y: f32 },
+    PivotSelected {
+        frame_path: String,
+        pivot_x: f32,
+        pivot_y: f32,
+    },
     /// Emitido cuando una animación termina (no loop) o se detiene.
-    AnimationFinished { entity_id: u32 },
+    AnimationFinished {
+        entity_id: u32,
+    },
     /// Estado de reproducción de animación de una entidad (consulta o tras play/stop).
     #[serde(rename = "entity_animation_play_state")]
     EntityAnimationPlayState {
@@ -491,7 +542,9 @@ pub enum EngineEvent {
     },
     /// El array de texturas 1024×256 capas está lleno.
     #[serde(rename = "texture_array_exhausted")]
-    TextureArrayExhausted { max_layers: u32 },
+    TextureArrayExhausted {
+        max_layers: u32,
+    },
     /// Clips de animación embebidos en el modelo 3D de una entidad.
     ModelClipsReady {
         id: u32,
@@ -499,7 +552,10 @@ pub enum EngineEvent {
         clips: Vec<ModelClipInfoEvent>,
     },
     /// Progreso de carga de un GLB grande (hilo en segundo plano).
-    ModelLoadProgress { path: String, stage: String },
+    ModelLoadProgress {
+        path: String,
+        stage: String,
+    },
     /// Mensaje legible al abrir un `.save` 3D (también en stderr).
     LoadProgress {
         message: String,
@@ -509,13 +565,26 @@ pub enum EngineEvent {
         total_ms: Option<u64>,
     },
     /// Emitido cuando el estado de física de una entidad cambia (activado/desactivado por script).
-    PhysicsChanged { entity_id: u32, enabled: bool, body_type: String },
+    PhysicsChanged {
+        entity_id: u32,
+        enabled: bool,
+        body_type: String,
+    },
     /// Emitido cuando un sprite PNG se cargó correctamente en el almacén.
-    SpriteLoaded { path: String, name: String, width: u32, height: u32 },
+    SpriteLoaded {
+        path: String,
+        name: String,
+        width: u32,
+        height: u32,
+    },
     /// Emitido cuando se eliminó un sprite del almacén.
-    SpriteRemoved { path: String },
+    SpriteRemoved {
+        path: String,
+    },
     /// Emitido como respuesta a GetSpritesList: lista de sprites disponibles.
-    SpritesList { sprites: Vec<SpriteInfo> },
+    SpritesList {
+        sprites: Vec<SpriteInfo>,
+    },
     /// Bake `.rerasset` en curso (import en Resources).
     ModelAssetImporting {
         model_id: String,
@@ -550,40 +619,82 @@ pub enum EngineEvent {
         #[serde(skip_serializing_if = "Option::is_none")]
         model_id: Option<String>,
     },
-    ModelAssetRemoved { path: String },
-    ModelsList { models: Vec<ModelInfo> },
+    ModelAssetRemoved {
+        path: String,
+    },
+    ModelsList {
+        models: Vec<ModelInfo>,
+    },
     /// Emitido cuando un archivo de audio se registró en el almacén.
-    SoundLoaded { path: String, name: String },
+    SoundLoaded {
+        path: String,
+        name: String,
+    },
     /// Emitido cuando se eliminó un sonido del almacén.
-    SoundRemoved { path: String },
+    SoundRemoved {
+        path: String,
+    },
     /// Emitido como respuesta a GetSoundsList: lista de sonidos disponibles.
-    SoundsList { sounds: Vec<SoundInfo> },
+    SoundsList {
+        sounds: Vec<SoundInfo>,
+    },
     /// Emitido cuando un archivo de fuente se registró en el almacén.
-    FontLoaded { path: String, name: String },
+    FontLoaded {
+        path: String,
+        name: String,
+    },
     /// Emitido cuando se eliminó una fuente del almacén.
-    FontRemoved { path: String },
+    FontRemoved {
+        path: String,
+    },
     /// Emitido como respuesta a GetFontsList: lista de fuentes disponibles.
-    FontsList { fonts: Vec<FontInfo> },
+    FontsList {
+        fonts: Vec<FontInfo>,
+    },
     HudImageLoaded {
         path: String,
         name: String,
         width: u32,
         height: u32,
     },
-    HudImageRemoved { path: String },
-    HudImagesList { images: Vec<HudImageInfo> },
+    HudImageRemoved {
+        path: String,
+    },
+    HudImagesList {
+        images: Vec<HudImageInfo>,
+    },
     /// Emitido cuando un fondo se registró en el almacén.
-    BackgroundAssetLoaded { path: String, name: String },
+    BackgroundAssetLoaded {
+        path: String,
+        name: String,
+    },
     /// Emitido cuando se eliminó un fondo del almacén.
-    BackgroundAssetRemoved { path: String },
+    BackgroundAssetRemoved {
+        path: String,
+    },
     /// Emitido como respuesta a GetBackgroundsList: lista de fondos disponibles.
-    BackgroundsList { backgrounds: Vec<BackgroundInfo> },
+    BackgroundsList {
+        backgrounds: Vec<BackgroundInfo>,
+    },
     /// Ghost de construcción rápida 3D listo para previsualizar.
-    QuickBuildGhostReady { path: String, #[serde(skip_serializing_if = "Option::is_none")] name: Option<String> },
+    QuickBuildGhostReady {
+        path: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        name: Option<String>,
+    },
     /// Herramienta muro/trigger 3D activa (ghost listo).
-    PlaneToolReady { tool: String, width: f32, height: f32 },
+    PlaneToolReady {
+        tool: String,
+        width: f32,
+        height: f32,
+    },
     /// Emitido cuando el cursor se mueve y la herramienta quick_build_place está activa.
-    QuickBuildMove { x: f32, y: f32, #[serde(default)] z: f32 },
+    QuickBuildMove {
+        x: f32,
+        y: f32,
+        #[serde(default)]
+        z: f32,
+    },
     /// Emitido cuando el usuario hace click con la herramienta quick_build_place activa.
     /// `fit_to_grid` indica si Ctrl estaba presionado al colocar.
     /// `scale` contiene el tamaño final resuelto por el motor para esta colocación.
@@ -596,10 +707,18 @@ pub enum EngineEvent {
         scale: [f32; 3],
     },
     /// Emitido cuando SetAnimation resolvió/normalizó el tamaño lógico final.
-    AnimationLogicalResolved { id: u32, name: String, logical_w: u32, logical_h: u32 },
+    AnimationLogicalResolved {
+        id: u32,
+        name: String,
+        logical_w: u32,
+        logical_h: u32,
+    },
     /// Emitido cuando una entidad es eliminada del mundo (por Ctrl+Z, RemoveEntity, etc.).
     /// `kind` permite al frontend sincronizar estado sin inferencias locales.
-    EntityRemoved { id: u32, kind: String },
+    EntityRemoved {
+        id: u32,
+        kind: String,
+    },
     /// Emitido cuando un actor entra en un área de ejecución (trigger).
     TriggerEntered {
         trigger_id: u32,
@@ -608,10 +727,15 @@ pub enum EngineEvent {
         has_attached_script: Option<bool>,
     },
     /// Emitido cuando un actor sale de un área de ejecución (trigger).
-    TriggerExited { trigger_id: u32, actor_id: u32 },
+    TriggerExited {
+        trigger_id: u32,
+        actor_id: u32,
+    },
     /// Emitido cuando el usuario mantiene Ctrl y hace click añadiendo/quitando entidades
     /// a la selección múltiple. `ids` contiene todos los IDs actualmente seleccionados.
-    MultiSelectChanged { ids: Vec<u32> },
+    MultiSelectChanged {
+        ids: Vec<u32>,
+    },
     /// Entidades fusionadas en editor (padre + hijos con offset local).
     #[serde(rename = "entities_merged")]
     EntitiesMerged {
@@ -620,7 +744,9 @@ pub enum EngineEvent {
     },
     /// Vínculos de fusión restaurados al cargar escena desde `.save`.
     #[serde(rename = "entities_attachments_restored")]
-    EntitiesAttachmentsRestored { count: usize },
+    EntitiesAttachmentsRestored {
+        count: usize,
+    },
     /// Lista de huesos del modelo skinned de una entidad.
     #[serde(rename = "entity_bones_list")]
     EntityBonesList {
@@ -712,15 +838,25 @@ pub enum EngineEvent {
         sync_editor_viewport: bool,
     },
     #[serde(rename = "graphics_texture_tier_changed")]
-    GraphicsTextureTierChanged { tier: String },
+    GraphicsTextureTierChanged {
+        tier: String,
+    },
     #[serde(rename = "texture_detail_distance_changed")]
-    TextureDetailDistanceChanged { distance_m: f32 },
+    TextureDetailDistanceChanged {
+        distance_m: f32,
+    },
     #[serde(rename = "reflection_tier_changed")]
-    ReflectionTierChanged { tier: String },
+    ReflectionTierChanged {
+        tier: String,
+    },
     #[serde(rename = "reflection_probes_changed")]
-    ReflectionProbesChanged { enabled: bool },
+    ReflectionProbesChanged {
+        enabled: bool,
+    },
     #[serde(rename = "reflection_raytracing_changed")]
-    ReflectionRaytracingChanged { enabled: bool },
+    ReflectionRaytracingChanged {
+        enabled: bool,
+    },
     /// Tier de reflejos pedido vs efectivo (p. ej. High degradado a Medium sin RT).
     #[serde(rename = "reflection_tier_effective")]
     ReflectionTierEffective {
@@ -730,11 +866,17 @@ pub enum EngineEvent {
         rt_available: Option<bool>,
     },
     #[serde(rename = "shadow_tier_changed")]
-    ShadowTierChanged { tier: String },
+    ShadowTierChanged {
+        tier: String,
+    },
     #[serde(rename = "reflection_debug_view_changed")]
-    ReflectionDebugViewChanged { view: String },
+    ReflectionDebugViewChanged {
+        view: String,
+    },
     #[serde(rename = "ssr_debug_mode_changed")]
-    SsrDebugModeChanged { enabled: bool },
+    SsrDebugModeChanged {
+        enabled: bool,
+    },
     #[serde(rename = "taa_changed")]
     TaaChanged {
         enabled: bool,
@@ -745,13 +887,13 @@ pub enum EngineEvent {
     },
     /// Emitido ~1 vez por segundo con métricas de rendimiento del motor.
     DebugMetrics {
-        fps:            f32,
-        frame_time_ms:  f32,
-        draw_calls:     u32,
+        fps: f32,
+        frame_time_ms: f32,
+        draw_calls: u32,
         physics_bodies: u32,
-        cpu_percent:    f32,
+        cpu_percent: f32,
         #[serde(skip_serializing_if = "Option::is_none")]
-        gpu_percent:    Option<f32>,
+        gpu_percent: Option<f32>,
         #[serde(skip_serializing_if = "Option::is_none")]
         play_character_position: Option<[f32; 3]>,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -760,7 +902,9 @@ pub enum EngineEvent {
         play_character_pitch: Option<f32>,
     },
     /// Emitido cuando el preview cambia de estado desde el motor.
-    PreviewPlayingChanged { playing: bool },
+    PreviewPlayingChanged {
+        playing: bool,
+    },
     /// Cuadro de texto HUD creado en edición de UI.
     PlayerUiTextBoxAdded {
         id: u32,
@@ -772,8 +916,13 @@ pub enum EngineEvent {
         width: f32,
         height: f32,
     },
-    PlayerUiTextBoxUpdated { id: u32, text: String },
-    PlayerUiTextBoxRemoved { id: u32 },
+    PlayerUiTextBoxUpdated {
+        id: u32,
+        text: String,
+    },
+    PlayerUiTextBoxRemoved {
+        id: u32,
+    },
     /// Lista de cuadros de la pantalla UI al entrar en edición (sincroniza sidebar).
     PlayerUiTextBoxesList {
         scope: String,
@@ -791,17 +940,23 @@ pub enum EngineEvent {
         text: String,
         font_name: String,
     },
-    PlayerUiButtonRemoved { id: u32 },
+    PlayerUiButtonRemoved {
+        id: u32,
+    },
     PlayerUiImageAdded {
         id: u32,
         image_name: String,
     },
-    PlayerUiImageRemoved { id: u32 },
+    PlayerUiImageRemoved {
+        id: u32,
+    },
     PlayerUiObjectAdded {
         id: u32,
         vertex_count: u32,
     },
-    PlayerUiObjectRemoved { id: u32 },
+    PlayerUiObjectRemoved {
+        id: u32,
+    },
     /// Dibujo de objeto HUD cancelado (Esc o comando desde el editor).
     PlayerUiObjectDrawEnded,
     /// Pantalla Player UI activa cambiada (editor o script Rhai).
@@ -812,9 +967,14 @@ pub enum EngineEvent {
     /// Emitido cada 5 minutos cuando el autosave está activo.
     AutosaveTick,
     /// Respuesta a `export_save_snapshot`: escena activa lista para el `.save`.
-    SaveSnapshotReady { scene: SaveSceneSnapshotPayload },
+    SaveSnapshotReady {
+        scene: Box<SaveSceneSnapshotPayload>,
+    },
     /// Respuesta a `get_default_scene_name`.
-    DefaultSceneNameReady { id: u32, name: String },
+    DefaultSceneNameReady {
+        id: u32,
+        name: String,
+    },
     /// Escena creada en el registro del motor.
     EditorSceneCreated {
         id: u32,
@@ -899,9 +1059,9 @@ pub struct HudImageInfo {
 /// Información básica de un sprite almacenado en el motor.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SpriteInfo {
-    pub path:   String,
-    pub name:   String,
-    pub width:  u32,
+    pub path: String,
+    pub name: String,
+    pub width: u32,
     pub height: u32,
 }
 
@@ -980,32 +1140,30 @@ pub fn enrich_blueprint_placement_meta(
     meta: &mut BlueprintPlacementMeta,
     preview_path: &str,
 ) {
-    if let Some(id) = meta.blueprint_id.as_deref() {
-        if let Some(reg) = blueprint_registry.get(id) {
-            let weak = meta
-                .category
-                .as_deref()
-                .map(|c| c.trim().is_empty() || c == "object")
-                .unwrap_or(true);
-            if weak {
-                if let Some(cat) = reg.category.clone() {
-                    meta.category = Some(cat);
-                }
-            }
-            merge_optional_field(&mut meta.colision, &reg.colision);
-            merge_optional_field(&mut meta.physics_type, &reg.physics_type);
-            merge_optional_field(&mut meta.physics_enabled, &reg.physics_enabled);
-            merge_optional_field(&mut meta.scale, &reg.scale);
-            merge_optional_field(&mut meta.scripts, &reg.scripts);
-            merge_optional_field(&mut meta.animations, &reg.animations);
-            if meta
-                .template_name
-                .as_deref()
-                .map(|n| n.trim().is_empty() || n == "Blueprint")
-                .unwrap_or(true)
-            {
-                merge_optional_field(&mut meta.template_name, &reg.template_name);
-            }
+    if let Some(id) = meta.blueprint_id.as_deref()
+        && let Some(reg) = blueprint_registry.get(id)
+    {
+        let weak = meta
+            .category
+            .as_deref()
+            .map(|c| c.trim().is_empty() || c == "object")
+            .unwrap_or(true);
+        if weak && let Some(cat) = reg.category.clone() {
+            meta.category = Some(cat);
+        }
+        merge_optional_field(&mut meta.colision, &reg.colision);
+        merge_optional_field(&mut meta.physics_type, &reg.physics_type);
+        merge_optional_field(&mut meta.physics_enabled, &reg.physics_enabled);
+        merge_optional_field(&mut meta.scale, &reg.scale);
+        merge_optional_field(&mut meta.scripts, &reg.scripts);
+        merge_optional_field(&mut meta.animations, &reg.animations);
+        if meta
+            .template_name
+            .as_deref()
+            .map(|n| n.trim().is_empty() || n == "Blueprint")
+            .unwrap_or(true)
+        {
+            merge_optional_field(&mut meta.template_name, &reg.template_name);
         }
     }
 
@@ -1016,10 +1174,10 @@ pub fn enrich_blueprint_placement_meta(
         .unwrap_or(true);
     if weak_cat {
         let key = model_path_key(preview_path);
-        if let Some(entry) = model_store.get(&key) {
-            if let Some(cat) = normalize_model_library_category(entry.category.as_deref()) {
-                meta.category = Some(cat);
-            }
+        if let Some(entry) = model_store.get(&key)
+            && let Some(cat) = normalize_model_library_category(entry.category.as_deref())
+        {
+            meta.category = Some(cat);
         }
     }
 }
@@ -1072,7 +1230,7 @@ pub struct ImportSceneSprite {
 #[allow(non_snake_case)]
 #[derive(Debug, Serialize, Clone)]
 pub struct ProjectLoaded3dSceneTab {
-    pub id:   u32,
+    pub id: u32,
     pub name: String,
 }
 
@@ -1080,23 +1238,23 @@ pub struct ProjectLoaded3dSceneTab {
 #[allow(non_snake_case)]
 #[derive(Debug, Serialize, Clone)]
 pub struct ProjectLoaded3dWorld {
-    pub worldWidth:   f32,
-    pub worldHeight:  f32,
+    pub worldWidth: f32,
+    pub worldHeight: f32,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub worldDepth:   Option<f32>,
+    pub worldDepth: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub worldRadius:  Option<f32>,
-    pub gridVisible:  bool,
+    pub worldRadius: Option<f32>,
+    pub gridVisible: bool,
     pub gridCellSize: f32,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub gravity:      Option<f32>,
-    pub targetFps:    f64,
+    pub gravity: Option<f32>,
+    pub targetFps: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub lightAmbient:     Option<f32>,
+    pub lightAmbient: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub lightIntensity:   Option<f32>,
+    pub lightIntensity: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub shadowDarkness:   Option<f32>,
+    pub shadowDarkness: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub graphicsTextureTier: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1115,22 +1273,22 @@ pub struct ProjectLoaded3dWorld {
 #[allow(non_snake_case)]
 #[derive(Debug, Serialize)]
 pub struct ProjectLoaded3dEvent {
-    pub event:          &'static str,
-    pub activeSceneId:  u32,
-    pub sceneName:      String,
-    pub entityCount:    u32,
+    pub event: &'static str,
+    pub activeSceneId: u32,
+    pub sceneName: String,
+    pub entityCount: u32,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub scenes:         Vec<ProjectLoaded3dSceneTab>,
+    pub scenes: Vec<ProjectLoaded3dSceneTab>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub language:       Option<String>,
-    pub models:         Vec<ImportSceneSprite>,
-    pub sounds:         Vec<ImportSceneSprite>,
-    pub fonts:          Vec<ImportSceneSprite>,
-    pub backgrounds:    Vec<ImportSceneSprite>,
+    pub language: Option<String>,
+    pub models: Vec<ImportSceneSprite>,
+    pub sounds: Vec<ImportSceneSprite>,
+    pub fonts: Vec<ImportSceneSprite>,
+    pub backgrounds: Vec<ImportSceneSprite>,
     #[serde(default, skip_serializing_if = "Vec::is_empty", rename = "hudImages")]
-    pub hud_images:     Vec<ImportSceneSprite>,
-    pub blueprints:     serde_json::Value,
-    pub world:          ProjectLoaded3dWorld,
+    pub hud_images: Vec<ImportSceneSprite>,
+    pub blueprints: serde_json::Value,
+    pub world: ProjectLoaded3dWorld,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub player: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]

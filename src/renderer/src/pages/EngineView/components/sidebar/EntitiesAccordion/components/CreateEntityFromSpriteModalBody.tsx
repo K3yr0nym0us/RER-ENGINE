@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import { SpritePreviewModalBody, type SpriteFrameRect } from '@components';
+import type { SpriteFrameRect } from '@components';
 
 import type { SpriteInfo } from '@shared-types';
 import { useTraslate } from '@hooks';
@@ -22,7 +22,7 @@ interface CreateEntityFromSpriteModalBodyProps {
       scripts: { name: string; source: string }[];
       isCancelable: boolean;
       defaultAnimation?: boolean;
-      selectionMode?: string;
+      selectionMode?: 'cell' | 'box';
       gridSize?: number;
       cellOffsetX?: number;
       cellOffsetY?: number;
@@ -33,7 +33,7 @@ interface CreateEntityFromSpriteModalBodyProps {
 export function CreateEntityFromSpriteModalBody({
   sprites = [],
   parentHandlerId,
-  onCreateEntity,
+  onCreateEntity: _onCreateEntity,
   previewTitle,
 }: CreateEntityFromSpriteModalBodyProps) {
   const { t } = useTraslate();

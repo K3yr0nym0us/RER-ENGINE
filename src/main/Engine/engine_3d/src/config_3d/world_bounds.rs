@@ -149,7 +149,8 @@ impl WorldBounds3D {
         );
 
         for ring in 1..BOUNDS_WIRE_LATITUDE_RINGS {
-            let phi = (ring as f32 / BOUNDS_WIRE_LATITUDE_RINGS as f32) * std::f32::consts::FRAC_PI_2;
+            let phi =
+                (ring as f32 / BOUNDS_WIRE_LATITUDE_RINGS as f32) * std::f32::consts::FRAC_PI_2;
             push_latitude_ring(
                 &mut verts,
                 center,
@@ -171,7 +172,11 @@ impl WorldBounds3D {
                 let sin_phi = phi.sin();
                 let cos_phi = phi.cos();
                 let p = center
-                    + Vec3::new(radius * ca * sin_phi, radius * cos_phi, radius * sa * sin_phi);
+                    + Vec3::new(
+                        radius * ca * sin_phi,
+                        radius * cos_phi,
+                        radius * sa * sin_phi,
+                    );
                 push_wire_line(&mut verts, prev, p, WORLD_BOUNDS_COLOR);
                 prev = p;
             }
@@ -197,11 +202,7 @@ impl WorldBounds3D {
             let cos_phi = phi.cos();
             for sector in 0..=sectors {
                 let theta = (sector as f32 / sectors as f32) * std::f32::consts::TAU;
-                let dir = Vec3::new(
-                    sin_phi * theta.cos(),
-                    cos_phi,
-                    sin_phi * theta.sin(),
-                );
+                let dir = Vec3::new(sin_phi * theta.cos(), cos_phi, sin_phi * theta.sin());
                 unit_dirs.push(dir);
             }
         }
@@ -246,12 +247,7 @@ impl State {
         self.sync_ground_plane_to_world_bounds();
     }
 
-    pub(crate) fn set_world_bounds_3d_size(
-        &mut self,
-        width: f32,
-        height: f32,
-        depth: Option<f32>,
-    ) {
+    pub(crate) fn set_world_bounds_3d_size(&mut self, width: f32, height: f32, depth: Option<f32>) {
         self.set_world_bounds_3d_radius(
             WorldBounds3D::from_legacy_box(width, height, depth.unwrap_or(height)).radius,
         );

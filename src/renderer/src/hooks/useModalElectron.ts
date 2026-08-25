@@ -35,8 +35,9 @@ import {
 	runEntityPropertiesAction,
 	unregisterEntityPropertiesSession,
 } from '../modal-electron/entityPropertiesModalSessions'
+import type {
+	buildSocketConfigModalState} from '../modal-electron/socketConfigModalSessions';
 import {
-	buildSocketConfigModalState,
 	pushSocketConfigModalPatch,
 	registerSocketConfigModalSession,
 	runSocketConfigModalAction,
@@ -140,7 +141,9 @@ export function useModalElectron() {
 		window.electronAPI.onModalElectronDelegateRequest(async (req) => {
 			const delegate = pendingDelegates.get(req.handlerId)
 			if (!delegate) return null
-			const { requestId: _rid, handlerId: _hid, ...action } = req
+			const action = { ...req } as Record<string, unknown>
+			delete action.requestId
+			delete action.handlerId
 			return delegate(action as BluePrintModalDelegateAction)
 		})
 	}, [])
@@ -228,9 +231,15 @@ export function useModalElectron() {
 			resizable: componentKey === 'VisualScriptingModalBody',
 			props: preparedProps,
 			callbackKeys,
-			...(entityPropertiesState ? { entityPropertiesState } : {}),
-			...(socketConfigModalState ? { socketConfigModalState } : {}),
-			...(playerUiEditorState ? { playerUiEditorState } : {}),
+			...(entityPropertiesState
+				? { entityPropertiesState: entityPropertiesState as unknown as Record<string, unknown> }
+				: {}),
+			...(socketConfigModalState
+				? { socketConfigModalState: socketConfigModalState as unknown as Record<string, unknown> }
+				: {}),
+			...(playerUiEditorState
+				? { playerUiEditorState: playerUiEditorState as unknown as Record<string, unknown> }
+				: {}),
 			...engineSnapshot,
 			...(componentKey === 'VisualScriptingModalBody'
 				? {

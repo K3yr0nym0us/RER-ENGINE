@@ -37,7 +37,7 @@ const rhaiTokenizer: languages.IMonarchLanguage = {
       [/"([^"\\]|\\.)*$/, 'string.invalid'],
       [/"/, 'string', '@string'],
       [/'[^\\']'/, 'string'],
-      [/\d*\.\d+([eE][\-+]?\d+)?/, 'number.float'],
+      [/\d*\.\d+([eE][-+]?\d+)?/, 'number.float'],
       [/\d+/, 'number'],
       [/[;,.]/, 'delimiter'],
       [
@@ -52,9 +52,9 @@ const rhaiTokenizer: languages.IMonarchLanguage = {
       [/\s+/, 'white'],
     ],
     comment: [
-      [/[^\/*]+/, 'comment'],
+      [/[^/*]+/, 'comment'],
       [/\*\//, 'comment', '@pop'],
-      [/[\/*]/, 'comment'],
+      [/[/*]/, 'comment'],
     ],
     string: [
       [/[^\\"]+/, 'string'],

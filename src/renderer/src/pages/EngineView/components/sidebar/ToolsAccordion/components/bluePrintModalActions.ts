@@ -62,7 +62,7 @@ export function deleteBlueprintKeepEntities(
 		meta.controlBindings = pendingDelete.control_bindings ?? meta.controlBindings
 		const tr = deps.entityTransformsRef.current[id]
 		if (tr) {
-			tr.scale = [...pendingDelete.scale] as [number, number, number]
+			tr.scale = [...(pendingDelete.scale ?? [1, 1, 1])] as [number, number, number]
 			if (pendingDelete.rotation) {
 				tr.rotation = [...pendingDelete.rotation] as [number, number, number, number]
 			}

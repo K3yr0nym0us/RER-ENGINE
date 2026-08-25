@@ -4,15 +4,15 @@ use std::path::PathBuf;
 
 use rer_engine_shared::assets::{AssetState, RER_IMPORTER_VERSION};
 
-use crate::config_3d::mesh_3d::{preload_model_cpu_bundle, ModelPreloadOptions};
+use crate::config_3d::mesh_3d::{ModelPreloadOptions, preload_model_cpu_bundle};
 use crate::config_3d::static_model_cache::ModelPreloadCpuResult;
 use crate::engine::State;
-use crate::ipc::{send_event, EngineEvent};
+use crate::ipc::{EngineEvent, send_event};
 
 use super::bake::{bake_to_rerasset, build_bake_input, current_importer_version};
 use super::registry::{
-    generate_model_id, relative_rerasset_manifest_path, rerasset_path_for_id,
-    source_fingerprint, ImportedModelEntry,
+    ImportedModelEntry, generate_model_id, relative_rerasset_manifest_path, rerasset_path_for_id,
+    source_fingerprint,
 };
 
 impl State {
@@ -40,31 +40,31 @@ impl State {
         let is_character = category.as_deref() == Some("character");
 
         let (size, mtime) = source_fingerprint(&path_buf);
-        if let Some(existing) = self.imported_model_registry.get_by_source_path(&key).cloned() {
-            if existing.state == AssetState::Ready
-                && existing.source_size == size
-                && existing.source_mtime_secs == mtime
-                && existing.importer_version >= current_importer_version()
-            {
-                self.model_store.insert(
-                    key.clone(),
-                    crate::ipc::ModelStoreEntry {
-                        name: name.to_string(),
-                        category: category.clone(),
-                        model_id: Some(existing.model_id.clone()),
-                        rerasset_path: Some(
-                            existing.rerasset_path.to_string_lossy().into_owned(),
-                        ),
-                    },
-                );
-                self.enqueue_gpu_from_rerasset(
-                    &existing.model_id,
-                    &existing.rerasset_path,
-                    name,
-                    is_character,
-                );
-                return;
-            }
+        if let Some(existing) = self
+            .imported_model_registry
+            .get_by_source_path(&key)
+            .cloned()
+            && existing.state == AssetState::Ready
+            && existing.source_size == size
+            && existing.source_mtime_secs == mtime
+            && existing.importer_version >= current_importer_version()
+        {
+            self.model_store.insert(
+                key.clone(),
+                crate::ipc::ModelStoreEntry {
+                    name: name.to_string(),
+                    category: category.clone(),
+                    model_id: Some(existing.model_id.clone()),
+                    rerasset_path: Some(existing.rerasset_path.to_string_lossy().into_owned()),
+                },
+            );
+            self.enqueue_gpu_from_rerasset(
+                &existing.model_id,
+                &existing.rerasset_path,
+                name,
+                is_character,
+            );
+            return;
         }
 
         let model_id = generate_model_id(name, &key);
@@ -108,21 +108,18 @@ impl State {
         let rerasset_path_thread = rerasset_path.clone();
         let key_thread = key.clone();
         let name_thread = name.to_string();
-        let category_label = self
-            .model_store
-            .get(&key)
-            .and_then(|e| e.category.clone());
+        let category_label = self.model_store.get(&key).and_then(|e| e.category.clone());
 
         if let Err(e) = std::thread::Builder::new()
             .name(format!("model-import-{model_id_thread}"))
             .spawn(move || {
-                let options = ModelPreloadOptions::library(if category_label.as_deref()
-                    == Some("character")
-                {
-                    Some("character")
-                } else {
-                    None
-                });
+                let options = ModelPreloadOptions::library(
+                    if category_label.as_deref() == Some("character") {
+                        Some("character")
+                    } else {
+                        None
+                    },
+                );
 
                 let result = (|| -> Result<ModelPreloadCpuResult, String> {
                     let (parts, anim_asset, play_parts) =
@@ -202,10 +199,8 @@ impl State {
             }
         };
 
-        self.rerasset_material_tex.insert(
-            model_id.to_string(),
-            loaded.material_tex_chunks.clone(),
-        );
+        self.rerasset_material_tex
+            .insert(model_id.to_string(), loaded.material_tex_chunks.clone());
 
         self.model_preload_inflight.insert(model_id.to_string());
         send_event(&EngineEvent::ModelAssetPreloadStarted {

@@ -62,7 +62,9 @@ pub enum EngineCommand3dOnly {
         #[serde(default)]
         category: Option<String>,
     },
-    RemoveModelAsset { path: String },
+    RemoveModelAsset {
+        path: String,
+    },
     GetModelsList,
     SpawnEditorBox {
         name: String,
@@ -121,19 +123,37 @@ pub enum EngineCommand3dOnly {
         #[serde(default)]
         fps_camera_pitch: Option<f32>,
     },
-    SetGraphicsTextureTier { tier: String },
-    SetTextureDetailDistance { distance_m: f32 },
-    SetReflectionTier { tier: String },
-    SetReflectionRaytracing { enabled: bool },
-    SetReflectionProbes { enabled: bool },
+    SetGraphicsTextureTier {
+        tier: String,
+    },
+    SetTextureDetailDistance {
+        distance_m: f32,
+    },
+    SetReflectionTier {
+        tier: String,
+    },
+    SetReflectionRaytracing {
+        enabled: bool,
+    },
+    SetReflectionProbes {
+        enabled: bool,
+    },
     SpawnReflectionProbe {
         #[serde(default)]
         position: Option<[f32; 3]>,
     },
-    SetReflectionDebugView { view: String },
-    SetSsrDebugMode { enabled: bool },
-    SetShadowTier { tier: String },
-    SetWorldRadius { radius: f32 },
+    SetReflectionDebugView {
+        view: String,
+    },
+    SetSsrDebugMode {
+        enabled: bool,
+    },
+    SetShadowTier {
+        tier: String,
+    },
+    SetWorldRadius {
+        radius: f32,
+    },
     SetTaa {
         enabled: bool,
         #[serde(default)]
@@ -141,23 +161,44 @@ pub enum EngineCommand3dOnly {
         #[serde(default)]
         jitter_scale: Option<f32>,
     },
-    SetCameraFov { fov_y: f32 },
+    SetCameraFov {
+        fov_y: f32,
+    },
     #[serde(rename = "set_play_editor_frustum_distance")]
-    SetPlayEditorFrustumDistance { distance: f32 },
-    SetEntityColision { id: u32, colision: bool },
+    SetPlayEditorFrustumDistance {
+        distance: f32,
+    },
+    SetEntityColision {
+        id: u32,
+        colision: bool,
+    },
     LoadCharacter {
         path: String,
         #[serde(default)]
         track_undo: Option<bool>,
     },
-    CreateEditorScene { name: String },
-    SwitchEditorScene { scene_id: u32 },
-    DeleteEditorScene { scene_id: u32 },
-    NotifyProjectSaved { extract_dir: String },
+    CreateEditorScene {
+        name: String,
+    },
+    SwitchEditorScene {
+        scene_id: u32,
+    },
+    DeleteEditorScene {
+        scene_id: u32,
+    },
+    NotifyProjectSaved {
+        extract_dir: String,
+    },
     ClearEditorUndoRedo,
-    MergeEntities { ids: Vec<u32> },
-    ListEntityBones { entity_id: u32 },
-    ListEntitySockets { entity_id: u32 },
+    MergeEntities {
+        ids: Vec<u32>,
+    },
+    ListEntityBones {
+        entity_id: u32,
+    },
+    ListEntitySockets {
+        entity_id: u32,
+    },
     UpsertEntitySocket {
         entity_id: u32,
         name: String,
@@ -167,26 +208,42 @@ pub enum EngineCommand3dOnly {
         #[serde(default = "default_unit_quat")]
         local_rotation: [f32; 4],
     },
-    RemoveEntitySocket { entity_id: u32, name: String },
+    RemoveEntitySocket {
+        entity_id: u32,
+        name: String,
+    },
     AttachToSocket {
         child_ids: Vec<u32>,
         host_id: u32,
         socket_name: String,
     },
-    DetachFromSocket { child_id: u32 },
-    SetSocketBonePickMode { entity_id: u32, active: bool },
+    DetachFromSocket {
+        child_id: u32,
+    },
+    SetSocketBonePickMode {
+        entity_id: u32,
+        active: bool,
+    },
     SetBonePhysicsEditorEntity {
         entity_id: u32,
         active: bool,
     },
-    SetBonePhysicsPickMode { entity_id: u32, active: bool },
+    SetBonePhysicsPickMode {
+        entity_id: u32,
+        active: bool,
+    },
     SetBonePhysics {
         entity_id: u32,
         bone_name: String,
         mode: String,
     },
-    RemoveBonePhysics { entity_id: u32, bone_name: String },
-    ListEntityBonePhysics { entity_id: u32 },
+    RemoveBonePhysics {
+        entity_id: u32,
+        bone_name: String,
+    },
+    ListEntityBonePhysics {
+        entity_id: u32,
+    },
 }
 
 #[cfg(test)]
@@ -222,7 +279,11 @@ mod tests {
         let json = r#"{"cmd":"set_taa","enabled":true,"blend":0.7,"jitter_scale":0.8}"#;
         let cmd: EngineCommand = serde_json::from_str(json).expect("set_taa IPC with params");
         match cmd {
-            EngineCommand::Only3d(EngineCommand3dOnly::SetTaa { enabled, blend, jitter_scale }) => {
+            EngineCommand::Only3d(EngineCommand3dOnly::SetTaa {
+                enabled,
+                blend,
+                jitter_scale,
+            }) => {
                 assert!(enabled);
                 assert_eq!(blend, Some(0.7));
                 assert_eq!(jitter_scale, Some(0.8));

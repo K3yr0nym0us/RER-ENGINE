@@ -62,7 +62,11 @@ impl State {
     }
 
     pub(crate) fn restore_preview_editor_snapshots_on_enter(&mut self) {
-        let ids: Vec<EntityId> = self.preview_entity_transform_snapshots.keys().copied().collect();
+        let ids: Vec<EntityId> = self
+            .preview_entity_transform_snapshots
+            .keys()
+            .copied()
+            .collect();
         for id in ids {
             let Some(snap) = self.preview_entity_transform_snapshots.get(&id).copied() else {
                 continue;

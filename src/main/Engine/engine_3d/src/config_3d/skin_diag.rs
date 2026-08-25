@@ -17,18 +17,18 @@ impl RemapDropReason {
 
 #[derive(Clone, Debug)]
 struct RemapDropSample {
-    vert_index:        usize,
-    slot:              usize,
+    vert_index: usize,
+    slot: usize,
     local_joint_index: u32,
-    skin_node_index:   Option<usize>,
-    weight:            f32,
-    reason:            RemapDropReason,
+    skin_node_index: Option<usize>,
+    weight: f32,
+    reason: RemapDropReason,
 }
 
 #[derive(Default)]
 pub struct RemapDropCollector {
-    pub total:   usize,
-    samples:     Vec<RemapDropSample>,
+    pub total: usize,
+    samples: Vec<RemapDropSample>,
     max_samples: usize,
 }
 

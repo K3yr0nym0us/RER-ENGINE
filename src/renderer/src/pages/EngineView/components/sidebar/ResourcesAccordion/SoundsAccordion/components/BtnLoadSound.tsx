@@ -21,7 +21,7 @@ const BtnLoadSound = () => {
         />
       ),
     });
-  }, [openModal]);
+  }, [openModal, t]);
 
   return (
     <button

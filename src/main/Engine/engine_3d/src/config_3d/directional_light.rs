@@ -66,9 +66,9 @@ impl State {
                 t.scale = Vec3::splat(1.0);
             }
             self.sync_directional_light_from_sun();
-            let label = self
-                .entity_display_name(id)
-                .unwrap_or_else(|| rer_engine_shared::editor_defaults::entity_label::SUN.to_string());
+            let label = self.entity_display_name(id).unwrap_or_else(|| {
+                rer_engine_shared::editor_defaults::entity_label::SUN.to_string()
+            });
             self.send_model_loaded_event(id, &label);
         } else {
             self.spawn_sun("", pos.to_array(), [1.0, 1.0, 1.0]);
@@ -85,11 +85,12 @@ impl State {
     }
 
     pub(crate) fn scene_light_color(&self) -> [f32; 4] {
-        let shadows_enabled = if self.shadow_tier == crate::config_3d::shadow_graphics::ShadowTier::Off {
-            0.0
-        } else {
-            1.0
-        };
+        let shadows_enabled =
+            if self.shadow_tier == crate::config_3d::shadow_graphics::ShadowTier::Off {
+                0.0
+            } else {
+                1.0
+            };
         [
             self.directional_light_color.x,
             self.directional_light_color.y,
@@ -133,11 +134,7 @@ impl State {
         let min = self.world_bounds_3d.min_corner();
         let max = self.world_bounds_3d.max_corner();
         let extent = (max - min).length().max(48.0) * 0.55;
-        let up = if dir.y.abs() > 0.95 {
-            Vec3::X
-        } else {
-            Vec3::Y
-        };
+        let up = if dir.y.abs() > 0.95 { Vec3::X } else { Vec3::Y };
         let eye = center + dir * extent * 2.5;
         let view = Mat4::look_at_rh(eye, center, up);
         let center_ls = view.transform_point3(center);
@@ -214,13 +211,7 @@ impl State {
             mc.mesh_idx = mesh_idx;
             mc.tex_idx = tex_idx;
         } else {
-            self.world.insert(
-                id,
-                MeshComponent {
-                    mesh_idx,
-                    tex_idx,
-                },
-            );
+            self.world.insert(id, MeshComponent { mesh_idx, tex_idx });
         }
     }
 
@@ -234,10 +225,7 @@ impl State {
             self.apply_sun_icon_visual(id);
             if let Some(t) = self.world.get_mut::<Transform>(id) {
                 t.position = Vec3::from_array(position);
-                let s = scale
-                    .into_iter()
-                    .fold(f32::INFINITY, f32::min)
-                    .max(0.15);
+                let s = scale.into_iter().fold(f32::INFINITY, f32::min).max(0.15);
                 t.scale = Vec3::splat(s);
             }
             self.sync_directional_light_from_sun();
@@ -249,10 +237,7 @@ impl State {
         self.apply_sun_icon_visual(id);
         if let Some(t) = self.world.get_mut::<Transform>(id) {
             t.position = Vec3::from_array(position);
-            let s = scale
-                .into_iter()
-                .fold(f32::INFINITY, f32::min)
-                .max(0.15);
+            let s = scale.into_iter().fold(f32::INFINITY, f32::min).max(0.15);
             t.scale = Vec3::splat(s);
         }
 
@@ -286,8 +271,8 @@ impl State {
         scale: [f32; 3],
         physics_type: &str,
     ) -> EntityId {
-        use crate::ipc::send_event;
         use crate::ipc::EngineEvent;
+        use crate::ipc::send_event;
 
         let label = self.resolve_entity_display_name(
             name,
@@ -295,22 +280,13 @@ impl State {
         );
         let id = self.world.spawn(Some(&label));
         self.apply_sun_icon_visual(id);
-        let radius = scale
-            .into_iter()
-            .fold(f32::INFINITY, f32::min)
-            .max(0.15)
-            * 0.5;
+        let radius = scale.into_iter().fold(f32::INFINITY, f32::min).max(0.15) * 0.5;
         if let Some(t) = self.world.get_mut::<Transform>(id) {
             t.position = Vec3::from_array(position);
             t.scale = Vec3::splat(radius * 2.0);
         }
-        self.physics.set_entity_sphere_physics(
-            id,
-            true,
-            physics_type,
-            position,
-            radius,
-        );
+        self.physics
+            .set_entity_sphere_physics(id, true, physics_type, position, radius);
         self.entity_colision.insert(id, true);
         self.scenario_entities.push(id);
         self.save_registry.register_meta(
@@ -335,7 +311,12 @@ impl State {
             physics_type: Some(physics_type.to_string()),
             entity_category: Some("object".to_string()),
         });
-        log::info!("Pelota física «{label}» en [{:.1}, {:.1}, {:.1}]", position[0], position[1], position[2]);
+        log::info!(
+            "Pelota física «{label}» en [{:.1}, {:.1}, {:.1}]",
+            position[0],
+            position[1],
+            position[2]
+        );
         id
     }
 
@@ -346,8 +327,8 @@ impl State {
         position: [f32; 3],
         influence_radius_m: f32,
     ) -> EntityId {
-        use crate::ipc::send_event;
         use crate::ipc::EngineEvent;
+        use crate::ipc::send_event;
 
         let label = self.resolve_entity_display_name(
             name,

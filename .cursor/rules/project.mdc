@@ -1,0 +1,66 @@
+---
+description: RER-ENGINE general project architecture and environment
+alwaysApply: true
+---
+
+# RER-ENGINE — Project
+
+## Environment
+
+- Primary development environment: **Windows 10/11**.
+- Use PowerShell-compatible commands and Windows paths.
+- Do not assume Linux, Bash or WSL is available.
+- Runtime targets: **Windows and Linux**.
+
+## Stack
+
+### Frontend / Desktop
+- Electron
+- React
+- TypeScript
+- Yarn
+
+### Engine
+- Rust
+- Cargo
+- `rer_engine_2d`
+- `rer_engine_3d`
+- `engine_shared`
+
+## Architecture
+
+- Electron + React + TypeScript are responsible for the editor/UI.
+- Rust is the authoritative game/engine runtime.
+- Engine/domain logic must live in Rust.
+- Frontend sends user intent and displays engine state/events.
+- Never duplicate engine logic in TypeScript.
+
+Rust owns:
+- transforms
+- position/rotation/scale
+- spatial math
+- entities
+- snapping
+- collisions
+- scene/world state
+- rendering state
+- GPU state
+- engine calculations
+
+React owns:
+- UI
+- panels
+- menus
+- dialogs
+- user interaction
+- presentation state
+
+## General Rules
+
+- Prefer the least invasive solution.
+- Reuse existing components, hooks, helpers and Rust abstractions.
+- Follow existing project conventions.
+- Do not rewrite large areas unnecessarily.
+- If requirements are unclear, ask instead of inventing behavior.
+- Code identifiers are always in English.
+- Engine logs are in Spanish.

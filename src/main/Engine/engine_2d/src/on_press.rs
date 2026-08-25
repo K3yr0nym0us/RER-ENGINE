@@ -30,19 +30,22 @@ impl State {
             .filter_map(|(&id, b)| {
                 let script = match device {
                     "keyboard_mouse" => b.keyboard_mouse.get(control_key),
-                    "gamepad"        => b.gamepad.get(control_key),
-                    _                => None,
+                    "gamepad" => b.gamepad.get(control_key),
+                    _ => None,
                 }?;
                 Some((id, script.name.clone(), script.source.clone()))
             })
             .collect();
 
         for (id, path, source) in bindings {
-            if let Some(dir_x) = self.infer_horizontal_input_dir(device, control_key) {
-                if self.physics_2d.has_physics(id) && self.physics_2d.is_horizontal_blocked(id, dir_x) {
-                    self.handle_command(EngineCommand::Common(EngineCommandCommon::StopAnimation { id }));
-                    continue;
-                }
+            if let Some(dir_x) = self.infer_horizontal_input_dir(device, control_key)
+                && self.physics_2d.has_physics(id)
+                && self.physics_2d.is_horizontal_blocked(id, dir_x)
+            {
+                self.handle_command(EngineCommand::Common(EngineCommandCommon::StopAnimation {
+                    id,
+                }));
+                continue;
             }
 
             let snap = self.build_script_snapshot(id);
@@ -56,13 +59,19 @@ impl State {
                 Ok(cmds) => {
                     for cmd in &cmds {
                         match cmd {
-                            ScriptCmd::MoveEntity { id, speed, dir_x, .. } => {
+                            ScriptCmd::MoveEntity {
+                                id, speed, dir_x, ..
+                            } => {
                                 self.update_entity_facing_from_horizontal(*id, *speed * *dir_x);
                             }
                             ScriptCmd::MoveEntityFacing { id, amount_x, .. } => {
-                                let facing_right = self.entity_facing_right.get(id).copied().unwrap_or(true);
+                                let facing_right =
+                                    self.entity_facing_right.get(id).copied().unwrap_or(true);
                                 let facing_sign = if facing_right { 1.0 } else { -1.0 };
-                                self.update_entity_facing_from_horizontal(*id, *amount_x * facing_sign);
+                                self.update_entity_facing_from_horizontal(
+                                    *id,
+                                    *amount_x * facing_sign,
+                                );
                             }
                             ScriptCmd::SlideEntity { id, dx, .. } => {
                                 self.update_entity_facing_from_horizontal(*id, *dx);
@@ -73,7 +82,7 @@ impl State {
 
                     self.apply_script_commands(cmds)
                 }
-                Err(e)   => log::error!("[on_press] Error en '{}' ({}): {}", path, control_key, e),
+                Err(e) => log::error!("[on_press] Error en '{}' ({}): {}", path, control_key, e),
             }
         }
     }

@@ -3,7 +3,7 @@
 use crate::gizmo::GizmoVertex;
 use crate::screen_hud_image::ScreenHudAtlas;
 
-use super::config::{box_corners, PlayerUiImage};
+use super::config::{PlayerUiImage, box_corners};
 use super::ndc_draw::{push_handle_disc, push_line_segment, push_quad};
 use super::text_render::HANDLE_RADIUS;
 
@@ -46,7 +46,10 @@ pub(crate) fn append_image_hud_glyphs(
     instances: &mut Vec<crate::mesh::InstanceData>,
     viewport_w: f32,
     viewport_h: f32,
-    texture_cache: &mut std::collections::HashMap<String, crate::screen_hud_image::ScreenHudPackedImage>,
+    texture_cache: &mut std::collections::HashMap<
+        String,
+        crate::screen_hud_image::ScreenHudPackedImage,
+    >,
 ) {
     for img in images {
         super::font::build_hud_texture_quad_cached(

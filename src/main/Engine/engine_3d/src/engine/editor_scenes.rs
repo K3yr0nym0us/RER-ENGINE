@@ -2,11 +2,9 @@
 
 use std::collections::HashMap;
 
-use super::load_proyect::{
-    self, ActiveSaveView, ProjectSaveData, SavedScene,
-};
 use super::State;
-use crate::ipc::{send_event, EditorSceneListItem, EngineEvent};
+use super::load_proyect::{self, ActiveSaveView, ProjectSaveData, SavedScene};
+use crate::ipc::{EditorSceneListItem, EngineEvent, send_event};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BaselineKind {
@@ -66,8 +64,7 @@ impl EditorSceneStore {
 
 impl State {
     pub(crate) fn editor_scene_list_items(&self) -> Vec<EditorSceneListItem> {
-        self.editor_scenes
-            .list_items(!self.undo_stack.is_empty())
+        self.editor_scenes.list_items(!self.undo_stack.is_empty())
     }
 
     pub(crate) fn emit_editor_scenes_updated(&self, update_reason: &str) {
@@ -165,12 +162,10 @@ impl State {
             .map(|r| r.name.clone())
             .unwrap_or_default();
         let snapshot = self.build_save_scene_snapshot();
-        let scene =
-            load_proyect::saved_scene_from_snapshot_payload(&snapshot, active_id, &name);
+        let scene = load_proyect::saved_scene_from_snapshot_payload(&snapshot, active_id, &name);
         if let Some(rec) = self.editor_scenes.records.get_mut(&active_id) {
             rec.committed = Some(scene);
         }
-        
     }
 
     pub(crate) fn handle_create_editor_scene(&mut self, name: &str) {
@@ -237,7 +232,6 @@ impl State {
         let current_id = self.editor_scenes.active_scene_id;
 
         if !skip_dirty_check && !self.undo_stack.is_empty() {
-            
             send_event(&EngineEvent::EditorSceneSwitchBlocked {
                 reason: "unsaved_changes".to_string(),
                 active_scene_id: current_id,
@@ -287,10 +281,10 @@ impl State {
         match load_proyect::apply_editor_scene_switch(self, &project, &target_scene) {
             Ok(view) => {
                 self.editor_scenes.active_scene_id = target_id;
-                if let Some(r) = self.editor_scenes.records.get_mut(&target_id) {
-                    if r.committed.is_none() {
-                        r.committed = Some(load_proyect::saved_scene_from_active_view(&view));
-                    }
+                if let Some(r) = self.editor_scenes.records.get_mut(&target_id)
+                    && r.committed.is_none()
+                {
+                    r.committed = Some(load_proyect::saved_scene_from_active_view(&view));
                 }
                 let editor_tabs = self.editor_scene_list_items();
                 load_proyect::send_project_loaded_3d_with_editor_scenes(

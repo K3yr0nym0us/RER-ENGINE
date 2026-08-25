@@ -75,11 +75,7 @@ impl ScreenHudAtlas {
         })
     }
 
-    pub fn new(
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        bgl: &wgpu::BindGroupLayout,
-    ) -> Self {
+    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, bgl: &wgpu::BindGroupLayout) -> Self {
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("screen-hud-atlas"),
             size: wgpu::Extent3d {

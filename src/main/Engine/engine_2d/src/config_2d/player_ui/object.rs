@@ -2,9 +2,7 @@
 
 use crate::engine::State;
 use crate::gizmo::{self, GizmoVertex};
-use crate::ipc::{
-    send_event, EngineEvent, PlayerUiObjectListItem, SavePlayerUiObjectSnapshot,
-};
+use crate::ipc::{EngineEvent, PlayerUiObjectListItem, SavePlayerUiObjectSnapshot, send_event};
 
 use rer_engine_shared::platform::query_ctrl_held_os;
 
@@ -72,8 +70,7 @@ impl State {
             self.push_undo_player_ui_hud();
         }
         self.player_ui_object_draw = None;
-        self.player_ui_object_draw_overlay =
-            gizmo::build_from_vertices(&self.device, &[]);
+        self.player_ui_object_draw_overlay = gizmo::build_from_vertices(&self.device, &[]);
         send_event(&EngineEvent::PlayerUiObjectDrawEnded);
         log::info!("[player-ui] dibujo de objeto HUD cancelado");
     }
@@ -111,8 +108,7 @@ impl State {
                 .map(|s| s.points_ndc.clone())
                 .unwrap_or_default();
             self.player_ui_object_draw = None;
-            self.player_ui_object_draw_overlay =
-                gizmo::build_from_vertices(&self.device, &[]);
+            self.player_ui_object_draw_overlay = gizmo::build_from_vertices(&self.device, &[]);
             self.create_player_ui_object_from_vertices(&vertices);
             return true;
         }
@@ -208,19 +204,20 @@ impl State {
             }
             max_id = max_id.max(snap.id);
             let key = format!("{}:{}", snap.scope, snap.screen_id);
-            self.player_ui_objects.entry(key).or_default().push(PlayerUiObject {
-                id: snap.id,
-                vertices: snap.vertices.clone(),
-                fill_color: snap.fill_color,
-                texture_path: snap.texture_path.clone(),
-                z_index: snap.z_index,
-                locked: snap.locked,
-            });
+            self.player_ui_objects
+                .entry(key)
+                .or_default()
+                .push(PlayerUiObject {
+                    id: snap.id,
+                    vertices: snap.vertices.clone(),
+                    fill_color: snap.fill_color,
+                    texture_path: snap.texture_path.clone(),
+                    z_index: snap.z_index,
+                    locked: snap.locked,
+                });
         }
         if max_id > 0 {
-            self.player_ui_text_next_id = self
-                .player_ui_text_next_id
-                .max(max_id.saturating_add(1));
+            self.player_ui_text_next_id = self.player_ui_text_next_id.max(max_id.saturating_add(1));
         }
         if self.player_ui_edit_active {
             self.rebuild_player_ui_overlay();
@@ -237,8 +234,7 @@ impl State {
             .as_ref()
             .map(|s| build_object_draw_overlay_verts(&s.points_ndc, s.cursor_ndc))
             .unwrap_or_default();
-        self.player_ui_object_draw_overlay =
-            gizmo::build_from_vertices(&self.device, &verts);
+        self.player_ui_object_draw_overlay = gizmo::build_from_vertices(&self.device, &verts);
     }
 
     pub(crate) fn draw_player_ui_object_draw_overlay(
@@ -246,9 +242,7 @@ impl State {
         enc: &mut wgpu::CommandEncoder,
         view: &wgpu::TextureView,
     ) -> u32 {
-        if !self.player_ui_edit_active
-            || self.player_ui_object_draw_overlay.vertex_count == 0
-        {
+        if !self.player_ui_edit_active || self.player_ui_object_draw_overlay.vertex_count == 0 {
             return 0;
         }
         const NDC_IDENTITY: [[f32; 4]; 9] = [
@@ -289,10 +283,7 @@ impl State {
             0,
             self.player_ui_object_draw_overlay.vertex_buffer.slice(..),
         );
-        pass.draw(
-            0..self.player_ui_object_draw_overlay.vertex_count,
-            0..1,
-        );
+        pass.draw(0..self.player_ui_object_draw_overlay.vertex_count, 0..1);
         1
     }
 }
@@ -348,10 +339,7 @@ fn push_point_cross(verts: &mut Vec<GizmoVertex>, x: f32, y: f32, color: [f32; 4
     );
 }
 
-fn build_object_draw_overlay_verts(
-    pts: &[[f32; 2]],
-    cursor: Option<[f32; 2]>,
-) -> Vec<GizmoVertex> {
+fn build_object_draw_overlay_verts(pts: &[[f32; 2]], cursor: Option<[f32; 2]>) -> Vec<GizmoVertex> {
     let cross_color = [1.0_f32, 1.0, 1.0, 1.0];
     let line_color = [1.0_f32, 0.75, 0.0, 1.0];
     let handle_color = [1.0_f32, 0.85, 0.2, 0.95];
@@ -370,16 +358,16 @@ fn build_object_draw_overlay_verts(
     for i in 0..pts.len().saturating_sub(1) {
         let [ax, ay] = pts[i];
         let [bx, by] = pts[i + 1];
-        push_line_segment(
-            &mut verts,
-            [ax, ay, z],
-            [bx, by, z],
-            line_color,
-        );
+        push_line_segment(&mut verts, [ax, ay, z], [bx, by, z], line_color);
     }
 
     if let (Some(last), Some(cur)) = (pts.last().copied(), cursor) {
-        push_line_segment(&mut verts, [last[0], last[1], z], [cur[0], cur[1], z], line_color);
+        push_line_segment(
+            &mut verts,
+            [last[0], last[1], z],
+            [cur[0], cur[1], z],
+            line_color,
+        );
         if pts.len() >= 2 {
             let first = pts[0];
             push_line_segment(
@@ -490,7 +478,11 @@ pub(crate) fn append_object_gizmo_verts(
     selected: Option<u32>,
 ) {
     for obj in objects {
-        if obj.texture_path.as_deref().is_none_or(|p| p.trim().is_empty()) {
+        if obj
+            .texture_path
+            .as_deref()
+            .is_none_or(|p| p.trim().is_empty())
+        {
             append_polygon_fill(verts, &obj.vertices, obj.fill_color);
         }
         if selected == Some(obj.id) {
@@ -506,4 +498,3 @@ pub(crate) fn append_object_gizmo_verts(
         }
     }
 }
-

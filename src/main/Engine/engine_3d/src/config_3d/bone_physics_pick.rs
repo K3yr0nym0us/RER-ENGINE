@@ -2,7 +2,7 @@
 
 use crate::ecs::EntityId;
 use crate::engine::State;
-use crate::ipc::{send_event, EngineEvent};
+use crate::ipc::{EngineEvent, send_event};
 
 impl State {
     pub(crate) fn set_bone_physics_editor_entity(&mut self, entity_id: EntityId, active: bool) {
@@ -66,9 +66,7 @@ impl State {
             let dx = hit.screen.0 - pixel_x;
             let dy = hit.screen.1 - pixel_y;
             let dist = (dx * dx + dy * dy).sqrt();
-            if dist <= PICK_THRESHOLD_PX
-                && best.as_ref().map_or(true, |(bd, _, _)| dist < *bd)
-            {
+            if dist <= PICK_THRESHOLD_PX && best.as_ref().is_none_or(|(bd, _, _)| dist < *bd) {
                 best = Some((dist, hit.joint_index, hit.bone_name));
             }
         }

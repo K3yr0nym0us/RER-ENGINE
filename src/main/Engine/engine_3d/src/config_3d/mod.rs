@@ -14,44 +14,44 @@
 pub(crate) mod camera_3d;
 pub(crate) use camera_3d::Camera;
 
+pub(crate) mod bone_physics;
+pub(crate) mod bone_physics_pick;
 pub(crate) mod character_anchor;
-pub(crate) mod play_character;
-pub(crate) mod fps_camera;
+pub(crate) mod collision_overlay;
 pub(crate) mod editor_camera;
-pub(crate) mod preview_editor;
-pub(crate) mod play_controller;
+pub(crate) mod entity_attachments;
+pub(crate) mod entity_sockets;
 pub(crate) mod entity_textures;
+pub(crate) mod execution_areas_3d;
+pub(crate) mod fbx_facing;
+pub(crate) mod fps_camera;
 pub(crate) mod gltf_texture_load;
-pub(crate) mod texture_graphics;
+pub(crate) mod material_validation;
+pub(crate) mod mesh_3d;
+pub(crate) mod mesh_3d_fbx;
+pub(crate) mod model_animation;
+pub(crate) mod model_asset;
+pub(crate) mod model_asset_fbx;
+pub(crate) mod pbr_presets;
+pub(crate) mod physics_3d;
+pub(crate) mod plane_tool_rotate_dbg;
+pub(crate) mod plane_tools;
+pub(crate) mod play_character;
+pub(crate) mod play_controller;
+pub(crate) mod player_ui;
+pub(crate) mod preview_editor;
+pub(crate) mod quick_build;
 pub(crate) mod reflection_graphics;
 pub(crate) mod reflection_settings;
 pub(crate) mod shadow_graphics;
 pub(crate) mod shadow_settings;
-pub(crate) mod fbx_facing;
-pub(crate) mod pbr_presets;
-pub(crate) mod material_validation;
-pub(crate) mod mesh_3d;
-pub(crate) mod mesh_3d_fbx;
-pub(crate) mod model_asset;
-pub(crate) mod model_asset_fbx;
-pub(crate) mod skin_diag;
-pub(crate) mod model_animation;
 pub(crate) mod skeleton_debug;
-pub(crate) mod collision_overlay;
-pub(crate) mod physics_3d;
-pub(crate) mod quick_build;
-pub(crate) mod plane_tools;
-pub(crate) mod execution_areas_3d;
-pub(crate) mod plane_tool_rotate_dbg;
-pub(crate) mod static_model_cache;
-pub(crate) mod world_bounds;
-pub(crate) mod player_ui;
-pub(crate) mod entity_attachments;
-pub(crate) mod entity_sockets;
+pub(crate) mod skin_diag;
 pub(crate) mod socket_bone_pick;
-pub(crate) mod bone_physics;
-pub(crate) mod bone_physics_pick;
 pub(crate) mod socket_debug;
+pub(crate) mod static_model_cache;
+pub(crate) mod texture_graphics;
+pub(crate) mod world_bounds;
 pub(crate) use world_bounds::WorldBounds3D;
 
 pub(crate) fn is_fbx_model_path(path: &str) -> bool {
@@ -65,9 +65,7 @@ pub(crate) fn is_gltf_model_path(path: &str) -> bool {
     std::path::Path::new(path)
         .extension()
         .and_then(|e| e.to_str())
-        .is_some_and(|e| {
-            e.eq_ignore_ascii_case("glb") || e.eq_ignore_ascii_case("gltf")
-        })
+        .is_some_and(|e| e.eq_ignore_ascii_case("glb") || e.eq_ignore_ascii_case("gltf"))
 }
 
 /// Posición del cuerpo Rapier: pies en `transform.position` para FBX; centro en el resto.
@@ -226,13 +224,11 @@ use std::path::Path;
 
 use glam::Vec3 as GlamVec3;
 
-use crate::config_3d::character_anchor::{
-    PLAY_CHARACTER_BODY_HEIGHT,
-};
+use crate::config_3d::character_anchor::PLAY_CHARACTER_BODY_HEIGHT;
 use crate::config_shared::point_to_segment_2d;
 use crate::ecs::{EntityId, MeshComponent, NonSelectable, Transform};
 use crate::engine::State;
-use crate::ipc::{send_event, EngineEvent};
+use crate::ipc::{EngineEvent, send_event};
 
 impl State {
     pub(crate) fn entity_model_local_bounds(&self, id: EntityId) -> Option<([f32; 3], [f32; 3])> {
@@ -264,9 +260,7 @@ impl State {
         let Some(t) = self.world.get::<Transform>(id).cloned() else {
             return;
         };
-        let model_path = self
-            .entity_asset_path_for_bounds(id)
-            .unwrap_or_default();
+        let model_path = self.entity_asset_path_for_bounds(id).unwrap_or_default();
         let bounds = self.entity_model_local_bounds(id);
         let half = physics_half_extents_for_model(t.scale.abs().to_array(), bounds);
         let body_pos = physics_body_world_center(&t, bounds, model_path.as_str(), half);
@@ -280,11 +274,7 @@ impl State {
             return;
         };
         let scale = t.scale.abs().to_array();
-        let half = [
-            scale[0] * 0.5,
-            scale[1] * 0.5,
-            scale[2] * 0.5,
-        ];
+        let half = [scale[0] * 0.5, scale[1] * 0.5, scale[2] * 0.5];
         let pos = t.position.to_array();
         self.physics
             .set_entity_physics(id, true, body_type, pos, half);
@@ -423,14 +413,12 @@ impl State {
         id: EntityId,
         transform: &Transform,
     ) -> (GlamVec3, GlamVec3) {
-        if self.play_character_entity == Some(id) {
-            if let Some((center, half)) = self.play_character_world_pick_aabb() {
-                return (center, half);
-            }
+        if self.play_character_entity == Some(id)
+            && let Some((center, half)) = self.play_character_world_pick_aabb()
+        {
+            return (center, half);
         }
-        let model_path = self
-            .entity_asset_path_for_bounds(id)
-            .unwrap_or_default();
+        let model_path = self.entity_asset_path_for_bounds(id).unwrap_or_default();
         let bounds = self.entity_model_local_bounds(id);
         let half = physics_half_extents_for_model(transform.scale.abs().to_array(), bounds);
         let center = physics_body_world_center(transform, bounds, model_path.as_str(), half);
@@ -547,7 +535,10 @@ impl State {
         }
 
         if is_play_character {
-            if self.install_play_character_visual_from_path(id, path).is_err() {
+            if self
+                .install_play_character_visual_from_path(id, path)
+                .is_err()
+            {
                 return false;
             }
             if self.restoring_save_manifest {
@@ -557,20 +548,14 @@ impl State {
                 return true;
             }
             if self.should_apply_play_character_mesh_collision(id, path) {
-                self.apply_play_character_model_placement_after_load(
-                    id,
-                    path,
-                    part.local_bounds,
-                );
+                self.apply_play_character_model_placement_after_load(id, path, part.local_bounds);
                 self.sync_play_character_body_rotation_after_mesh_assign();
             }
             if self.should_apply_play_character_mesh_collision(id, path) {
                 self.finish_play_character_model_replace(id, path);
             }
             self.emit_entity_model_replaced_for_play_character(id, &library_path);
-            log::info!(
-                "Modelo reemplazado desde caché en entidad {id}: {mesh_cache_key}"
-            );
+            log::info!("Modelo reemplazado desde caché en entidad {id}: {mesh_cache_key}");
             return true;
         }
 
@@ -580,12 +565,7 @@ impl State {
         let (position, rotation, scale) = match self.world.get::<Transform>(id) {
             Some(t) => (
                 Some(t.position.to_array()),
-                Some([
-                    t.rotation.x,
-                    t.rotation.y,
-                    t.rotation.z,
-                    t.rotation.w,
-                ]),
+                Some([t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w]),
                 Some(t.scale.to_array()),
             ),
             None => (None, None, None),
@@ -597,9 +577,7 @@ impl State {
             rotation,
             scale,
         });
-        log::info!(
-            "Modelo reemplazado desde caché en entidad {id}: {mesh_cache_key}"
-        );
+        log::info!("Modelo reemplazado desde caché en entidad {id}: {mesh_cache_key}");
         true
     }
 
@@ -650,25 +628,20 @@ impl State {
             mc.mesh_idx = mesh_idx;
             mc.tex_idx = tex_idx;
         } else {
-            self.world.insert(
-                id,
-                MeshComponent {
-                    mesh_idx,
-                    tex_idx,
-                },
-            );
+            self.world.insert(id, MeshComponent { mesh_idx, tex_idx });
         }
 
         if is_play_character {
             self.register_or_update_visual_model_meta(id, path, true);
             self.play_character_mesh_forward_xz = part.forward_xz;
-            if is_fbx_model_path(path) {
-                if let Some(skin_fwd) = crate::config_3d::model_asset_fbx::fbx_skinned_play_forward_xz(
-                    Path::new(path),
-                    PLAY_CHARACTER_BODY_HEIGHT,
-                ) {
-                    self.play_character_mesh_forward_xz = skin_fwd;
-                }
+            if is_fbx_model_path(path)
+                && let Some(skin_fwd) =
+                    crate::config_3d::model_asset_fbx::fbx_skinned_play_forward_xz(
+                        Path::new(path),
+                        PLAY_CHARACTER_BODY_HEIGHT,
+                    )
+            {
+                self.play_character_mesh_forward_xz = skin_fwd;
             }
             self.physics.remove_entity_body(id);
         } else {
@@ -676,15 +649,18 @@ impl State {
         }
 
         if is_play_character && self.restoring_save_manifest {
-            self.play_character_mesh_extents =
-                Some(crate::config_3d::character_anchor::PlayCharacterMeshExtents::from_local_bounds(
+            self.play_character_mesh_extents = Some(
+                crate::config_3d::character_anchor::PlayCharacterMeshExtents::from_local_bounds(
                     part.local_bounds.0,
                     part.local_bounds.1,
-                ));
-            self.model_assets.remove(&crate::config_3d::static_model_cache::model_asset_cache_key(
-                &self.model_cache_key(path),
-                Some(PLAY_CHARACTER_BODY_HEIGHT),
-            ));
+                ),
+            );
+            self.model_assets.remove(
+                &crate::config_3d::static_model_cache::model_asset_cache_key(
+                    &self.model_cache_key(path),
+                    Some(PLAY_CHARACTER_BODY_HEIGHT),
+                ),
+            );
             self.model_assets.remove(&self.model_cache_key(path));
             self.try_bind_model_animations_with_gltf(id, path, gltf_file.as_deref());
             if let Some(asset) = self.get_model_asset_for_entity(path, id) {
@@ -699,10 +675,11 @@ impl State {
             let asset_key = self.model_path_key(path);
             let play_key =
                 crate::config_3d::static_model_cache::play_character_cache_key(&asset_key);
-            if !self.static_model_cache.contains_key(&play_key) {
-                self.static_model_cache.insert(
-                    play_key,
-                    vec![crate::config_3d::static_model_cache::CachedStaticModelPart {
+            if let std::collections::hash_map::Entry::Vacant(e) =
+                self.static_model_cache.entry(play_key)
+            {
+                e.insert(vec![
+                    crate::config_3d::static_model_cache::CachedStaticModelPart {
                         mesh_idx,
                         tex_idx,
                         local_bounds: part.local_bounds,
@@ -710,18 +687,13 @@ impl State {
                         roughness: -1.0,
                         metallic: 0.0,
                         ior: 0.0,
-                    }],
-                );
+                    },
+                ]);
             }
             let (position, rotation, scale) = match self.world.get::<Transform>(id) {
                 Some(t) => (
                     Some(self.play_character_feet_position().to_array()),
-                    Some([
-                        t.rotation.x,
-                        t.rotation.y,
-                        t.rotation.z,
-                        t.rotation.w,
-                    ]),
+                    Some([t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w]),
                     Some(t.scale.to_array()),
                 ),
                 None => (None, None, None),
@@ -746,19 +718,12 @@ impl State {
 
         let (position, rotation, scale) = match self.world.get::<Transform>(id) {
             Some(t) => (
-                Some(
-                    if is_play_character {
-                        self.play_character_feet_position().to_array()
-                    } else {
-                        t.position.to_array()
-                    },
-                ),
-                Some([
-                    t.rotation.x,
-                    t.rotation.y,
-                    t.rotation.z,
-                    t.rotation.w,
-                ]),
+                Some(if is_play_character {
+                    self.play_character_feet_position().to_array()
+                } else {
+                    t.position.to_array()
+                }),
+                Some([t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w]),
                 Some(t.scale.to_array()),
             ),
             None => (None, None, None),
@@ -798,10 +763,11 @@ impl State {
             let asset_key = self.model_path_key(path);
             let play_key =
                 crate::config_3d::static_model_cache::play_character_cache_key(&asset_key);
-            if !self.static_model_cache.contains_key(&play_key) {
-                self.static_model_cache.insert(
-                    play_key,
-                    vec![crate::config_3d::static_model_cache::CachedStaticModelPart {
+            if let std::collections::hash_map::Entry::Vacant(e) =
+                self.static_model_cache.entry(play_key)
+            {
+                e.insert(vec![
+                    crate::config_3d::static_model_cache::CachedStaticModelPart {
                         mesh_idx,
                         tex_idx,
                         local_bounds: part.local_bounds,
@@ -809,10 +775,9 @@ impl State {
                         roughness: -1.0,
                         metallic: 0.0,
                         ior: 0.0,
-                    }],
-                );
+                    },
+                ]);
             }
-
         }
 
         send_event(&EngineEvent::EntityModelReplaced {
@@ -903,10 +868,9 @@ impl State {
                 self.entity_world_pick_aabb(entity, transform)
             };
             if let Some(t) = Self::ray_intersects_aabb(ray_origin, world_dir, center, half)
+                && closest.is_none_or(|(ct, _)| t < ct)
             {
-                if closest.map_or(true, |(ct, _)| t < ct) {
-                    closest = Some((t, entity));
-                }
+                closest = Some((t, entity));
             }
         }
         closest.map(|(_, id)| id)
@@ -1008,7 +972,7 @@ impl State {
         for (i, &dir) in dirs.iter().enumerate() {
             if let Some(tip) = self.project_to_screen(origin + dir * LEN) {
                 let d = point_to_segment_2d(pixel_x, pixel_y, so.0, so.1, tip.0, tip.1);
-                if d < THRESH && best.map_or(true, |(bd, _)| d < bd) {
+                if d < THRESH && best.is_none_or(|(bd, _)| d < bd) {
                     best = Some((d, i));
                 }
             }
@@ -1101,35 +1065,33 @@ impl State {
                         .get(&sel_id)
                         .map(|m| m.path.as_str())
                         .unwrap_or("");
-                    let body_pos =
-                        physics_body_position_for_model_path(model_path, pos, half);
+                    let body_pos = physics_body_position_for_model_path(model_path, pos, half);
                     self.physics
                         .sync_entity_physics_from_transform(sel_id, body_pos, half);
                 }
             }
         }
 
-        if selected_ids
-            .iter()
-            .any(|id| self.sun_entity == Some(*id))
-        {
+        if selected_ids.iter().any(|id| self.sun_entity == Some(*id)) {
             self.sync_directional_light_from_sun();
         }
         if !self.is_play_controller_active() {
             self.sync_editor_camera_focus();
         }
 
-        if let Some(player_id) = self.play_character_entity {
-            if selected_ids.contains(&player_id) {
-                self.emit_play_character_view_changed(false);
-            }
+        if let Some(player_id) = self.play_character_entity
+            && selected_ids.contains(&player_id)
+        {
+            self.emit_play_character_view_changed(false);
         }
 
-        let lead_id = self.selected_entity.or_else(|| selected_ids.last().copied());
-        if let Some(sel_id) = lead_id {
-            if self.world.get::<Transform>(sel_id).is_some() {
-                self.send_entity_selected_event(sel_id);
-            }
+        let lead_id = self
+            .selected_entity
+            .or_else(|| selected_ids.last().copied());
+        if let Some(sel_id) = lead_id
+            && self.world.get::<Transform>(sel_id).is_some()
+        {
+            self.send_entity_selected_event(sel_id);
         }
 
         self.handle_entity_attachment_after_transform(&selected_ids);
@@ -1162,7 +1124,9 @@ impl State {
         self.hovered_entity = self.ray_cast(pixel_x, pixel_y);
         self.hovered_gizmo_axis = self.pick_gizmo_axis(pixel_x, pixel_y);
         match (prev_hover, self.hovered_entity) {
-            (None, Some(id)) => crate::ipc::send_event(&crate::ipc::EngineEvent::EntityHovered { id }),
+            (None, Some(id)) => {
+                crate::ipc::send_event(&crate::ipc::EngineEvent::EntityHovered { id })
+            }
             (Some(_), None) => crate::ipc::send_event(&crate::ipc::EngineEvent::EntityUnhovered),
             (Some(a), Some(b)) if a != b => {
                 crate::ipc::send_event(&crate::ipc::EngineEvent::EntityHovered { id: b })

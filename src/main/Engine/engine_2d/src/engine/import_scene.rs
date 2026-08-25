@@ -1,4 +1,7 @@
-use crate::ipc::{send_event, EngineCommand, EngineCommand2dOnly, EngineCommandCommon, EngineEvent, ImportSceneCamera2d, ImportSceneEntity, ImportScenePayload};
+use crate::ipc::{
+    EngineCommand, EngineCommand2dOnly, EngineCommandCommon, EngineEvent, ImportSceneCamera2d,
+    ImportSceneEntity, ImportScenePayload, send_event,
+};
 
 use super::State;
 
@@ -15,24 +18,35 @@ impl State {
         }
 
         self.handle_command(EngineCommand::Common(EngineCommandCommon::SetWorldSize {
-            width:  payload.world.world_width,
+            width: payload.world.world_width,
             height: payload.world.world_height,
             depth: None,
         }));
         self.handle_command(EngineCommand::Common(EngineCommandCommon::SetGridVisible {
             visible: payload.world.grid_visible,
         }));
-        self.handle_command(EngineCommand::Common(EngineCommandCommon::SetGridCellSize {
-            size: payload.world.grid_cell_size,
-        }));
+        self.handle_command(EngineCommand::Common(
+            EngineCommandCommon::SetGridCellSize {
+                size: payload.world.grid_cell_size,
+            },
+        ));
         self.handle_command(EngineCommand::Common(EngineCommandCommon::SetTargetFps {
             fps: payload.world.target_fps,
         }));
-        let gravity = payload.world.gravity.unwrap_or(rer_engine_shared::DEFAULT_GRAVITY_MAGNITUDE);
-        self.handle_command(EngineCommand::Common(EngineCommandCommon::SetGravity { gravity }));
+        let gravity = payload
+            .world
+            .gravity
+            .unwrap_or(rer_engine_shared::DEFAULT_GRAVITY_MAGNITUDE);
+        self.handle_command(EngineCommand::Common(EngineCommandCommon::SetGravity {
+            gravity,
+        }));
 
         if let Some(ImportSceneCamera2d { x, y, half_h }) = payload.camera2d {
-            self.handle_command(EngineCommand::Only2d(EngineCommand2dOnly::SetCamera2d { x, y, half_h }));
+            self.handle_command(EngineCommand::Only2d(EngineCommand2dOnly::SetCamera2d {
+                x,
+                y,
+                half_h,
+            }));
         }
 
         for sprite in &payload.sprites {
@@ -58,7 +72,6 @@ impl State {
             self.import_scene_entity(ent);
         }
 
-        
         send_event(&EngineEvent::SceneImported {
             entity_count: entity_count as u32,
         });
@@ -79,11 +92,16 @@ impl State {
             "character" => self
                 .insert_character_at(&ent.path, Some(id), ent.name.as_deref())
                 .then_some(id),
-            "collider" => ent
-                .points
-                .and_then(|pts| self.create_collision_box_from_points_at(&pts, Some(id), ent.name.as_deref(), false)),
+            "collider" => ent.points.and_then(|pts| {
+                self.create_collision_box_from_points_at(&pts, Some(id), ent.name.as_deref(), false)
+            }),
             "execution_area" => ent.points.and_then(|pts| {
-                self.create_execution_area_from_points_at(&pts, Some(id), ent.name.as_deref(), false)
+                self.create_execution_area_from_points_at(
+                    &pts,
+                    Some(id),
+                    ent.name.as_deref(),
+                    false,
+                )
             }),
             other => {
                 log::warn!("[import_scene] kind '{other}' ignorado para entidad {id}");

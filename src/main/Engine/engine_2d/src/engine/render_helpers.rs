@@ -4,7 +4,7 @@ use winit::dpi::PhysicalSize;
 use crate::config_2d::Camera2D;
 use crate::config_compat::Camera;
 
-use super::types::{SceneUniforms, DEPTH_FORMAT};
+use super::types::{DEPTH_FORMAT, SceneUniforms};
 
 pub(super) fn create_depth_texture(
     device: &wgpu::Device,
@@ -13,14 +13,14 @@ pub(super) fn create_depth_texture(
     let tex = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("depth-texture"),
         size: wgpu::Extent3d {
-            width:                 config.width.max(1),
-            height:                config.height.max(1),
+            width: config.width.max(1),
+            height: config.height.max(1),
             depth_or_array_layers: 1,
         },
         mip_level_count: 1,
-        sample_count:    1,
-        dimension:       wgpu::TextureDimension::D2,
-        format:          DEPTH_FORMAT,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: DEPTH_FORMAT,
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
         view_formats: &[],
     });
@@ -28,7 +28,7 @@ pub(super) fn create_depth_texture(
 }
 
 pub(super) fn build_scene_uniforms(camera: &Camera, size: PhysicalSize<u32>) -> SceneUniforms {
-    let aspect    = size.width as f32 / size.height as f32;
+    let aspect = size.width as f32 / size.height as f32;
     let view_proj = camera.to_uniform(aspect).view_proj;
     let p = camera.position();
     SceneUniforms {
@@ -38,7 +38,7 @@ pub(super) fn build_scene_uniforms(camera: &Camera, size: PhysicalSize<u32>) -> 
 }
 
 pub(super) fn build_scene_uniforms_2d(cam: &Camera2D, size: PhysicalSize<u32>) -> SceneUniforms {
-    let aspect    = size.width as f32 / size.height as f32;
+    let aspect = size.width as f32 / size.height as f32;
     let view_proj = cam.view_proj(aspect).to_cols_array_2d();
     let p = cam.position();
     SceneUniforms {
@@ -58,8 +58,8 @@ pub(crate) fn is_visible_2d(cam: &Camera2D, pos: GlamVec3, scale: GlamVec3, aspe
     let half_w = cam.half_h * aspect;
     // Margen de seguridad: la mitad del lado mayor de la entidad
     let margin = scale.x.abs().max(scale.y.abs()) * 0.5;
-    let min_x = cam.x - half_w  - margin;
-    let max_x = cam.x + half_w  + margin;
+    let min_x = cam.x - half_w - margin;
+    let max_x = cam.x + half_w + margin;
     let min_y = cam.y - cam.half_h - margin;
     let max_y = cam.y + cam.half_h + margin;
 

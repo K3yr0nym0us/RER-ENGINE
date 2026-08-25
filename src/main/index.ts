@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, dialog, Menu, session, screen as electronScreen } from 'electron';
-import { spawn, ChildProcess } from 'child_process';
+import type { ChildProcess } from 'child_process';
+import { spawn } from 'child_process';
 import path from 'path';
 import fs from 'fs';
 import AdmZip from 'adm-zip';
@@ -36,8 +37,8 @@ import {
   repositionViewportCornerModalIfOpen,
 } from './modalElectronWindow';
 import { resolveAppWindowIcon } from './appWindowIcon';
-import { registerEngineCmdIpc } from './engine/registerEngineCmdIpc';
-import { sendEngineStartupScene } from './engine/engineStartupScene';
+import { registerEngineCmdIpc } from './Engine/registerEngineCmdIpc';
+import { sendEngineStartupScene } from './Engine/engineStartupScene';
 import { autoStartEnabledPlugins, registerPluginIpc } from './plugins/registerPluginIpc';
 import { stopLlamaServer } from './plugins/local-ai-assistant/llamaServerProcess';
 import {
@@ -82,7 +83,6 @@ if (process.platform === 'linux') {
 // ---------------------------------------------------------------------------
 let mainWindow: BrowserWindow | null = null
 let engineProcess: ChildProcess | null = null
-let currentLocale: 'en' | 'es' = 'en'
 let currentGameStyle: GameStyle | null = null
 /** Cuando `gameStyle` es null, decide 2D vs 3D hasta arrancar el motor. */
 let currentProjectType: ProjectType | null = null
@@ -470,7 +470,6 @@ function sendToEngine(cmd: EngineCommand): void {
     engineProcess.stdin.write(data, () => {})
   } else if (cmd.cmd === 'set_locale') {
     const next = String((cmd as Record<string, unknown>)['locale'] ?? 'en').toLowerCase() === 'es' ? 'es' : 'en'
-    currentLocale = next
     updateAiAssistantOverlayConfig({ locale: next })
     console.log(`[i18n] set_locale con motor inactivo (overlay actualizado): ${next}`)
   }
@@ -564,7 +563,6 @@ registerEngineCmdIpc({
   getProjectType: () => currentProjectType,
   sendToEngine,
   setLocale: (locale) => {
-    currentLocale = locale
     updateAiAssistantOverlayConfig({ locale })
   },
   watchPngAsset: watchAsset,
@@ -765,7 +763,8 @@ ipcMain.on('modal-electron:resize', (_event, contentHeight: number) => {
 ipcMain.handle(
   'modal-electron:delegate',
   async (_event, request: ModalElectronDelegateRequest): Promise<{ blueprints?: unknown[] } | null> => {
-    if (!mainWindow || mainWindow.isDestroyed()) return null
+    const win = mainWindow
+    if (!win || win.isDestroyed()) return null
     return new Promise((resolve) => {
       const requestId = `${Date.now()}-${Math.random()}`
       const channel = `modal-electron:delegate-response-${requestId}`
@@ -777,7 +776,7 @@ ipcMain.handle(
         clearTimeout(timeout)
         resolve(result ?? null)
       })
-      mainWindow!.webContents.send('modal-electron:delegate-request', { ...request, requestId })
+      win.webContents.send('modal-electron:delegate-request', { ...request, requestId })
     })
   },
 )
@@ -805,7 +804,8 @@ ipcMain.on('modal-electron:patch', (_event, data: {
 ipcMain.handle(
   'modal-electron:player-ui-action',
   async (_event, req: { handlerId: string; action: unknown }) => {
-    if (!mainWindow || mainWindow.isDestroyed()) return
+    const win = mainWindow
+    if (!win || win.isDestroyed()) return
     return new Promise<void>((resolve) => {
       const requestId = `${Date.now()}-${Math.random()}`
       const channel = `modal-electron:player-ui-action-done-${requestId}`
@@ -817,7 +817,7 @@ ipcMain.handle(
         clearTimeout(timeout)
         resolve()
       })
-      mainWindow!.webContents.send('modal-electron:player-ui-action-request', {
+      win.webContents.send('modal-electron:player-ui-action-request', {
         ...req,
         requestId,
       })
@@ -828,7 +828,8 @@ ipcMain.handle(
 ipcMain.handle(
   'modal-electron:entity-properties-action',
   async (_event, req: { handlerId: string; action: unknown }) => {
-    if (!mainWindow || mainWindow.isDestroyed()) return
+    const win = mainWindow
+    if (!win || win.isDestroyed()) return
     return new Promise<void>((resolve) => {
       const requestId = `${Date.now()}-${Math.random()}`
       const channel = `modal-electron:entity-properties-action-done-${requestId}`
@@ -840,7 +841,7 @@ ipcMain.handle(
         clearTimeout(timeout)
         resolve()
       })
-      mainWindow!.webContents.send('modal-electron:entity-properties-action-request', {
+      win.webContents.send('modal-electron:entity-properties-action-request', {
         ...req,
         requestId,
       })
@@ -851,7 +852,8 @@ ipcMain.handle(
 ipcMain.handle(
   'modal-electron:socket-config-modal-action',
   async (_event, req: { handlerId: string; action: unknown }) => {
-    if (!mainWindow || mainWindow.isDestroyed()) return
+    const win = mainWindow
+    if (!win || win.isDestroyed()) return
     return new Promise<void>((resolve) => {
       const requestId = `${Date.now()}-${Math.random()}`
       const channel = `modal-electron:socket-config-modal-action-done-${requestId}`
@@ -863,7 +865,7 @@ ipcMain.handle(
         clearTimeout(timeout)
         resolve()
       })
-      mainWindow!.webContents.send('modal-electron:socket-config-modal-action-request', {
+      win.webContents.send('modal-electron:socket-config-modal-action-request', {
         ...req,
         requestId,
       })
@@ -874,7 +876,8 @@ ipcMain.handle(
 ipcMain.handle(
   'modal-electron:player-ui-state',
   async (_event, req: { handlerId: string }) => {
-    if (!mainWindow || mainWindow.isDestroyed()) return null
+    const win = mainWindow
+    if (!win || win.isDestroyed()) return null
     return new Promise<unknown>((resolve) => {
       const requestId = `${Date.now()}-${Math.random()}`
       const channel = `modal-electron:player-ui-state-done-${requestId}`
@@ -886,7 +889,7 @@ ipcMain.handle(
         clearTimeout(timeout)
         resolve(result ?? null)
       })
-      mainWindow!.webContents.send('modal-electron:player-ui-state-request', {
+      win.webContents.send('modal-electron:player-ui-state-request', {
         ...req,
         requestId,
       })
@@ -930,10 +933,16 @@ const HUD_IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp'])
 
 function sanitizeSegment(raw: string | null | undefined, fallback = 'item'): string {
   const text = (raw ?? '').trim()
-  const cleaned = text
-    .replace(/[<>:"/\\|?*\x00-\x1f]/g, '_')
-    .replace(/\s+/g, '_')
-    .replace(/^\.+/, '')
+  let cleaned = ''
+  for (const ch of text) {
+    const code = ch.charCodeAt(0)
+    if (code < 32 || '<>:"/\\|?*'.includes(ch)) {
+      cleaned += '_'
+    } else {
+      cleaned += ch
+    }
+  }
+  cleaned = cleaned.replace(/\s+/g, '_').replace(/^\.+/, '')
   return cleaned.length > 0 ? cleaned : fallback
 }
 

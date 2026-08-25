@@ -1,6 +1,6 @@
 import { useEffect, useRef, type Dispatch, type RefObject } from 'react';
 import type { GameStyle } from '@shared-types';
-import type { Locale } from '../LanguageContext';
+import type { Locale } from '../../LanguageContext';
 import { createEngineEventHandler } from './createEngineEventHandler';
 import {
 	beginEngineBootEntityWait,
@@ -21,7 +21,7 @@ interface UseEngineEffectsParams {
 	gameStyle?: GameStyle
 	reportBounds: () => void
 	reportBoundsDebounced: () => void
-	applyInitialAnimationFrame: (entityId: number, animations?: any[]) => void
+	applyInitialAnimationFrame: (entityId: number, animations?: import('../types').EntityAnimations) => void
 	setLocale?: (locale: Locale) => void
 }
 
@@ -89,7 +89,7 @@ export function useEngineEffects({
 			observer.disconnect();
 			if (refs.resizeTimerRef.current) clearTimeout(refs.resizeTimerRef.current);
 		};
-	}, []);
+	}, [dispatch, projectType, refs, viewportRef]);
 
 	useEffect(() => {
 		const isTypingTarget = (target: EventTarget | null) => {
@@ -148,7 +148,7 @@ export function useEngineEffects({
 		return () => {
 			if (refs.readyTimer.current) clearTimeout(refs.readyTimer.current);
 		};
-	}, [dispatch, projectType]);
+	}, [dispatch, projectType, refs.readyTimer]);
 
 	useEffect(() => {
 		const handleEngineEvent = (event: { event: string; [key: string]: unknown }) => {

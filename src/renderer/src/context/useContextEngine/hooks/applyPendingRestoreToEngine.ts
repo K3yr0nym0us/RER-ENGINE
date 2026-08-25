@@ -71,7 +71,7 @@ export function sendApplyEntityRestore(
 			: {}),
 		...(pending.animations?.length
 			? {
-					animations: pending.animations.map((anim: any) => ({
+					animations: pending.animations.map((anim) => ({
 						name: anim.name,
 						frames: anim.frames,
 						fps: anim.fps,

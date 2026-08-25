@@ -231,8 +231,8 @@ function BluePrintCard({
 			ctx.clearRect(0, 0, PREVIEW_SIZE, PREVIEW_SIZE)
 
 			const hasCrop = firstFrame?.src_w != null && firstFrame?.src_h != null
-			if (hasCrop) {
-				const { src_x = 0, src_y = 0, src_w = img.width, src_h = img.height } = firstFrame!
+			if (hasCrop && firstFrame) {
+				const { src_x = 0, src_y = 0, src_w = img.width, src_h = img.height } = firstFrame
 				ctx.drawImage(img, src_x, src_y, src_w, src_h, 0, 0, PREVIEW_SIZE, PREVIEW_SIZE)
 			} else {
 				const scale = Math.min(PREVIEW_SIZE / img.width, PREVIEW_SIZE / img.height)

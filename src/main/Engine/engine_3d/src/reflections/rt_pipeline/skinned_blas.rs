@@ -14,8 +14,8 @@ use wgpu::{
     BlasTriangleGeometrySizeDescriptor, CreateBlasDescriptor, Device, Queue,
 };
 
-use crate::config_3d::model_animation::GpuSkinnedMeshEntry;
 use super::skinned_rt::skinned_local_positions;
+use crate::config_3d::model_animation::GpuSkinnedMeshEntry;
 
 pub struct SkinnedBlasCache {
     entries: HashMap<usize, SkinnedBlasEntry>,
@@ -45,7 +45,7 @@ impl SkinnedBlasCache {
         }
         let mesh = &entry.rt_mesh;
         let index_count = mesh.indices.len() as u32;
-        if index_count == 0 || index_count % 3 != 0 || mesh.vertices.is_empty() {
+        if index_count == 0 || !index_count.is_multiple_of(3) || mesh.vertices.is_empty() {
             return;
         }
         let vertex_count = mesh.vertices.len() as u32;
@@ -106,11 +106,7 @@ impl SkinnedBlasCache {
         );
     }
 
-    pub fn build_updates<'a>(
-        &'a self,
-        active: &HashSet<usize>,
-        out: &mut Vec<BlasBuildEntry<'a>>,
-    ) {
+    pub fn build_updates<'a>(&'a self, active: &HashSet<usize>, out: &mut Vec<BlasBuildEntry<'a>>) {
         for (&gpu_idx, slot) in self.entries.iter() {
             if !active.contains(&gpu_idx) {
                 continue;

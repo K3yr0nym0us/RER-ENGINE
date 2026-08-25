@@ -346,7 +346,11 @@ fn bgl_texture(
     }
 }
 
-fn bgl_sampler(binding: u32, linear: bool, visibility: wgpu::ShaderStages) -> wgpu::BindGroupLayoutEntry {
+fn bgl_sampler(
+    binding: u32,
+    linear: bool,
+    visibility: wgpu::ShaderStages,
+) -> wgpu::BindGroupLayoutEntry {
     wgpu::BindGroupLayoutEntry {
         binding,
         visibility,

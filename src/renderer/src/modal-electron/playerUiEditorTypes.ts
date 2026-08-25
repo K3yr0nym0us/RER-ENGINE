@@ -1,4 +1,4 @@
-import type { EditingUiElement } from '@engine'
+import type { EditingUiElement, EditingUiElementKind } from '@engine'
 
 export interface PlayerUiEditorState {
 	screenId: string
@@ -10,7 +10,7 @@ export interface PlayerUiEditorState {
 
 export type PlayerUiEditorAction =
 	| { action: 'rename'; name: string }
-	| { action: 'setElementProps'; kind: 'text' | 'image' | 'object'; id: number; props: { locked?: boolean; z_index?: number } }
+	| { action: 'setElementProps'; kind: EditingUiElementKind; id: number; props: { locked?: boolean; z_index?: number } }
 	| {
 			action: 'setObjectStyle';
 			id: number;

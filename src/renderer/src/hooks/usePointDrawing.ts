@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import type { EngineCommand2D, EngineCommand3D } from '@shared-types'
 
 /**
  * Hook reutilizable para herramientas de dibujo por puntos en el viewport del motor.
@@ -15,7 +16,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 export function usePointDrawing(
   toolName:    string,
   totalPoints: number,
-  send:        (cmd: object) => void,
+  send:        (cmd: EngineCommand2D | EngineCommand3D) => void,
   toolProgress: number | null,
 ) {
   const [isActive, setIsActive] = useState(false)

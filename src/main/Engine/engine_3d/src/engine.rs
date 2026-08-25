@@ -14,10 +14,10 @@ use crate::config_3d::physics_3d::PhysicsWorld;
 use crate::config_3d::{Camera, WorldBounds3D};
 use crate::config_compat::{ActiveTool, GridConfig};
 use crate::ecs::{EntityId, NameComponent, World};
+use crate::entity_save_meta::EntitySaveRegistry;
 use crate::gizmo::GizmoBuffer;
 use crate::ipc::PlayCameraFollowMode;
 use crate::mesh::Mesh;
-use crate::entity_save_meta::EntitySaveRegistry;
 use crate::scripting::ScriptEngine;
 
 pub struct State {
@@ -141,14 +141,17 @@ pub struct State {
     /// Metadatos del blueprint activo (nombre, física, rotación…) para colocar instancias.
     pub(crate) quick_build_blueprint: Option<crate::config_3d::quick_build::QuickBuildBlueprint>,
     /// Registro IPC de blueprints (`register_blueprint`) por id.
-    pub(crate) blueprint_registry: std::collections::HashMap<String, crate::ipc::BlueprintPlacementMeta>,
+    pub(crate) blueprint_registry:
+        std::collections::HashMap<String, crate::ipc::BlueprintPlacementMeta>,
     /// Blueprint de origen por entidad (construcción rápida u otras vías del motor).
     pub(crate) entity_blueprint_ids: std::collections::HashMap<EntityId, String>,
     /// Colisión de malla Rapier on/off por entidad (`docs/Entities_Model_3D.yaml`).
     pub(crate) entity_colision: std::collections::HashMap<EntityId, bool>,
     /// Hijo → ancla + transform local (fusión de entidades o socket en editor).
-    pub(crate) entity_attachments:
-        std::collections::HashMap<EntityId, crate::config_3d::entity_attachments::EntityAttachmentLocal>,
+    pub(crate) entity_attachments: std::collections::HashMap<
+        EntityId,
+        crate::config_3d::entity_attachments::EntityAttachmentLocal,
+    >,
     /// Sockets nombrados por entidad host con esqueleto.
     pub(crate) entity_sockets:
         std::collections::HashMap<EntityId, Vec<crate::config_3d::entity_sockets::EntitySocket>>,
@@ -176,7 +179,8 @@ pub struct State {
     pub preview_playing: bool,
     /// Edición de UI del jugador (vista play + cuadrícula de trabajo).
     pub(crate) player_ui_edit_active: bool,
-    pub(crate) player_ui_edit_restore: Option<crate::config_3d::player_ui::edit::PlayerUiEditViewportRestore>,
+    pub(crate) player_ui_edit_restore:
+        Option<crate::config_3d::player_ui::edit::PlayerUiEditViewportRestore>,
     pub(crate) ui_work_grid_buffer: GizmoBuffer,
     pub(crate) player_ui_edit_scope: Option<String>,
     pub(crate) player_ui_edit_screen_id: Option<String>,
@@ -192,7 +196,8 @@ pub struct State {
         std::collections::HashMap<String, Vec<crate::config_3d::player_ui::PlayerUiImage>>,
     pub(crate) player_ui_objects:
         std::collections::HashMap<String, Vec<crate::config_3d::player_ui::PlayerUiObject>>,
-    pub(crate) player_ui_object_draw: Option<crate::config_3d::player_ui::object::PlayerUiObjectDrawSession>,
+    pub(crate) player_ui_object_draw:
+        Option<crate::config_3d::player_ui::object::PlayerUiObjectDrawSession>,
     pub(crate) player_ui_object_draw_overlay: GizmoBuffer,
     pub(crate) player_ui_text_next_id: u32,
     pub(crate) player_ui_text_overlay_buffer: crate::gizmo::GizmoBuffer,
@@ -200,7 +205,8 @@ pub struct State {
     /// UV empaquetados en `player_ui_text_atlas` por ruta de imagen (evita releer disco en cada frame).
     pub(crate) player_ui_hud_texture_cache:
         std::collections::HashMap<String, crate::screen_hud_image::ScreenHudPackedImage>,
-    pub(crate) player_ui_font_cache: std::collections::HashMap<String, std::sync::Arc<ab_glyph::FontArc>>,
+    pub(crate) player_ui_font_cache:
+        std::collections::HashMap<String, std::sync::Arc<ab_glyph::FontArc>>,
     pub(crate) player_ui_glyph_instances: Vec<crate::mesh::InstanceData>,
     pub(crate) player_ui_glyph_instance_buffer: Option<wgpu::Buffer>,
     pub(crate) player_ui_selected_text_id: Option<u32>,
@@ -241,7 +247,8 @@ pub struct State {
     /// Forward local (plano XZ) del mesh del jugador; se recalcula al reemplazar el modelo.
     pub(crate) play_character_mesh_forward_xz: glam::Vec2,
     /// AABB de la malla visual del jugador (pies en `local_min_y`, típ. 0 tras normalizar).
-    pub(crate) play_character_mesh_extents: Option<crate::config_3d::character_anchor::PlayCharacterMeshExtents>,
+    pub(crate) play_character_mesh_extents:
+        Option<crate::config_3d::character_anchor::PlayCharacterMeshExtents>,
     pub(crate) play_session_body_yaw_baseline: f32,
     pub(crate) play_session_camera_yaw_baseline: f32,
     pub(crate) tool_overlay_buffer: GizmoBuffer,
@@ -266,7 +273,8 @@ pub struct State {
     /// Assets importados indexados por `model_id` (.rerasset).
     pub(crate) imported_model_registry: crate::assets::ImportedModelRegistry,
     /// `model_id` → (`material_index` → `texture_chunk`) del último `.rerasset` cargado.
-    pub(crate) rerasset_material_tex: std::collections::HashMap<String, std::collections::HashMap<u32, u32>>,
+    pub(crate) rerasset_material_tex:
+        std::collections::HashMap<String, std::collections::HashMap<u32, u32>>,
     /// Mallas estáticas en GPU indexadas por ruta (precarga al registrar recurso).
     pub(crate) static_model_cache: crate::config_3d::static_model_cache::StaticModelCache,
     pub(crate) model_preload_rx: crate::config_3d::static_model_cache::ModelPreloadRx,
@@ -312,8 +320,7 @@ pub struct State {
     /// Ray tracing HW (toggle editor, independiente del tier).
     pub(crate) reflection_raytracing_enabled: bool,
     /// Vista debug de reflejos (editor).
-    pub(crate) reflection_debug_view:
-        crate::config_3d::reflection_graphics::ReflectionDebugView,
+    pub(crate) reflection_debug_view: crate::config_3d::reflection_graphics::ReflectionDebugView,
     pub(crate) reflections: crate::reflections::ReflectionPass,
     /// Modo depuración SSR: emite logs del pipeline cada frame.
     pub(crate) ssr_debug_mode: bool,
@@ -391,10 +398,10 @@ impl State {
         w: u32,
         h: u32,
     ) -> crate::texture::TextureLayer {
-        if let Some(key) = cache_key {
-            if let Some(&layer) = self.texture_path_layers.get(key) {
-                return layer;
-            }
+        if let Some(key) = cache_key
+            && let Some(&layer) = self.texture_path_layers.get(key)
+        {
+            return layer;
         }
         let layer = self.texture_array.pack(&self.queue, rgba, w, h);
         if layer >= crate::texture::TextureArray::MAX_LAYERS - 1 {
@@ -403,8 +410,7 @@ impl State {
             });
         }
         if let Some(key) = cache_key {
-            self.texture_path_layers
-                .insert(key.to_string(), layer);
+            self.texture_path_layers.insert(key.to_string(), layer);
         }
         self.tex_layers.push(layer);
         let albedo = crate::texture::rgba_mip0_average_linear(rgba);
@@ -434,7 +440,11 @@ impl State {
         rer_engine_shared::editor_defaults::next_numbered_entity_label(base, names)
     }
 
-    pub(crate) fn resolve_entity_display_name(&self, requested: &str, default_base: &str) -> String {
+    pub(crate) fn resolve_entity_display_name(
+        &self,
+        requested: &str,
+        default_base: &str,
+    ) -> String {
         let names = self
             .world
             .query::<NameComponent>()
@@ -455,7 +465,10 @@ impl State {
             wgpu::PresentMode::AutoNoVsync
         };
         self.surface.configure(&self.device, &self.config);
-        log::info!("[vsync] V-Sync {}", if enabled { "activado" } else { "desactivado" });
+        log::info!(
+            "[vsync] V-Sync {}",
+            if enabled { "activado" } else { "desactivado" }
+        );
     }
 
     /// Activa o desactiva TAA (sombra + escena) y opcionalmente ajusta blend/jitter.

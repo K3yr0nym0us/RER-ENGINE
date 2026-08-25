@@ -103,11 +103,7 @@ impl State {
             }
         }
 
-        let images = self
-            .player_ui_images
-            .get(&key)
-            .cloned()
-            .unwrap_or_default();
+        let images = self.player_ui_images.get(&key).cloned().unwrap_or_default();
         let buttons = self
             .player_ui_buttons
             .get(&key)
@@ -232,19 +228,20 @@ impl State {
         }
         let bytes = bytemuck::cast_slice(&self.player_ui_glyph_instances);
         let size = bytes.len() as u64;
-        if let Some(buf) = &self.player_ui_glyph_instance_buffer {
-            if buf.size() == size {
-                self.queue.write_buffer(buf, 0, bytes);
-                return;
-            }
+        if let Some(buf) = &self.player_ui_glyph_instance_buffer
+            && buf.size() == size
+        {
+            self.queue.write_buffer(buf, 0, bytes);
+            return;
         }
         use wgpu::util::DeviceExt;
-        self.player_ui_glyph_instance_buffer =
-            Some(self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        self.player_ui_glyph_instance_buffer = Some(self.device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
                 label: Some("player-ui-hud-glyphs-inst"),
                 contents: bytes,
                 usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            }));
+            },
+        ));
     }
 
     pub(crate) fn draw_player_ui_hud(
@@ -302,7 +299,10 @@ impl State {
             });
             pass.set_pipeline(&self.gizmo_pipeline);
             pass.set_bind_group(0, &self.gizmo_bind_group, &[]);
-            pass.set_vertex_buffer(0, self.player_ui_text_overlay_buffer.vertex_buffer.slice(..));
+            pass.set_vertex_buffer(
+                0,
+                self.player_ui_text_overlay_buffer.vertex_buffer.slice(..),
+            );
             pass.draw(0..self.player_ui_text_overlay_buffer.vertex_count, 0..1);
             draw_calls += 1;
         }
@@ -341,44 +341,42 @@ impl State {
             }
         }
 
-        if has_glyphs {
-            if let Some(inst_buf) = &self.player_ui_glyph_instance_buffer {
-                let count = self.player_ui_glyph_instances.len() as u32;
-                let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("player-ui-hud-glyphs-pass"),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view,
-                        resolve_target: None,
-                        depth_slice: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Load,
-                            store: wgpu::StoreOp::Store,
-                        },
-                    })],
-                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                        view: &self.depth_view,
-                        depth_ops: Some(wgpu::Operations {
-                            load: wgpu::LoadOp::Load,
-                            store: wgpu::StoreOp::Store,
-                        }),
-                        stencil_ops: None,
+        if has_glyphs && let Some(inst_buf) = &self.player_ui_glyph_instance_buffer {
+            let count = self.player_ui_glyph_instances.len() as u32;
+            let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("player-ui-hud-glyphs-pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view,
+                    resolve_target: None,
+                    depth_slice: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.depth_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
                     }),
-                    occlusion_query_set: None,
-                    timestamp_writes: None,
-                    multiview_mask: None,
-                });
-                pass.set_pipeline(&self.screen_hud_pipeline);
-                pass.set_bind_group(0, &self.hud_scene_bind_group, &[]);
-                pass.set_bind_group(1, self.player_ui_text_atlas.bind_group.as_ref(), &[]);
-                pass.set_vertex_buffer(0, self.hud_quad_mesh.vertex_buffer.slice(..));
-                pass.set_vertex_buffer(1, inst_buf.slice(..));
-                pass.set_index_buffer(
-                    self.hud_quad_mesh.index_buffer.slice(..),
-                    wgpu::IndexFormat::Uint32,
-                );
-                pass.draw_indexed(0..self.hud_quad_mesh.index_count, 0, 0..count);
-                draw_calls += 1;
-            }
+                    stencil_ops: None,
+                }),
+                occlusion_query_set: None,
+                timestamp_writes: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&self.screen_hud_pipeline);
+            pass.set_bind_group(0, &self.hud_scene_bind_group, &[]);
+            pass.set_bind_group(1, self.player_ui_text_atlas.bind_group.as_ref(), &[]);
+            pass.set_vertex_buffer(0, self.hud_quad_mesh.vertex_buffer.slice(..));
+            pass.set_vertex_buffer(1, inst_buf.slice(..));
+            pass.set_index_buffer(
+                self.hud_quad_mesh.index_buffer.slice(..),
+                wgpu::IndexFormat::Uint32,
+            );
+            pass.draw_indexed(0..self.hud_quad_mesh.index_count, 0, 0..count);
+            draw_calls += 1;
         }
 
         draw_calls

@@ -1,9 +1,10 @@
-import { createElement } from 'react'
+import { createElement, type ReactNode } from 'react'
 
 import type { EngineContextValue } from '@engine'
 import type { OpenModalElectronOptions } from '../hooks/useModalElectron'
 import type {
 	EntityPropertiesAction,
+	EntityPropertiesNestedModalKind,
 	EntityPropertiesState,
 } from './entityPropertiesTypes'
 import {
@@ -20,7 +21,7 @@ import {
 import {
 	isMultiSelectionMerged,
 } from '../utils/entity3dEditorSync'
-import type { BluePrintEntry } from '@shared-types'
+import type { BluePrintEntry, PhysicsType3D } from '@shared-types'
 import { CreateEntityFromModelModalBody } from '../pages/EngineView/components/sidebar/EntitiesAccordion/components/CreateEntityFromModelModalBody'
 import { CreateEntityFromSpriteModalBody } from '../pages/EngineView/components/sidebar/EntitiesAccordion/components/CreateEntityFromSpriteModalBody'
 import { SpritePreviewModalBody } from '@components'
@@ -31,6 +32,11 @@ import { createEmptyEntityVisualGraph, saveEntityVisualGraph } from '../visualSc
 import { resolveSceneEntitiesForVisualScript } from '../visualScripting/resolveSceneEntities'
 import { buildPlayAnimationFrameCmd } from '../context/useContextEngine/hooks/applyPendingRestoreToEngine'
 import type { TransformSendCommand } from '../pages/EngineView/components/sidebar/PropertiesAccordion/TransformPanel'
+import type {
+	SelectionMode,
+	SpriteFrameRect,
+} from '../components/SpritePreviewModalBody/components/spritePreviewReducer'
+import type { ScriptEntry } from '@hooks'
 import {
 	buildEntityPropertiesBonePhysicsUi,
 	createBonePhysicsSession,
@@ -45,6 +51,11 @@ import {
 } from './entityPropertiesBonePhysics'
 
 export const activeEntityPropertiesHandlerRef = { current: null as string | null }
+
+function toPhysicsType3D(value: string | undefined): PhysicsType3D | undefined {
+	if (value === 'dynamic' || value === 'static' || value === 'kinematic') return value
+	return undefined
+}
 
 export interface EntityPropertiesSessionDeps {
 	getEngine: () => EngineContextValue
@@ -338,11 +349,12 @@ export async function runEntityPropertiesAction(
 				category: resolvedCategory,
 				kind,
 				path,
+				model: modelPath,
 				scale: transform?.scale ?? [1, 1, 1],
 				rotation: transform?.rotation ?? [0, 0, 0, 1],
 				colision: meta?.physicsEnabled ?? true,
 				physics_enabled: meta?.physicsEnabled,
-				physics_type: meta?.physicsType,
+				physics_type: toPhysicsType3D(meta?.physicsType),
 				animations: meta?.animations,
 				scripts: meta?.scripts,
 				control_bindings: meta?.controlBindings,
@@ -474,9 +486,7 @@ export async function runEntityPropertiesAction(
 
 async function openEntityPropertiesNestedModal(
 	handlerId: string,
-	kind: EntityPropertiesAction extends { action: 'openNestedModal' }
-		? EntityPropertiesAction['kind']
-		: never,
+	kind: EntityPropertiesNestedModalKind,
 	payload: Record<string, unknown>,
 	ctx: {
 		engine: EngineContextValue
@@ -496,7 +506,7 @@ async function openEntityPropertiesNestedModal(
 				title: (payload.title as string) ?? t('Confirm action'),
 				size: 'sm',
 				body: createElement(ModalConfirmBody, {
-					message: payload.message,
+					message: payload.message as ReactNode,
 					confirmLabel: payload.confirmLabel as string,
 					confirmVariant: payload.confirmVariant as 'primary' | 'danger' | undefined,
 					onConfirm: () => {
@@ -636,15 +646,15 @@ async function openEntityPropertiesNestedModal(
 				body: createElement(SpritePreviewModalBody, {
 					src: spritePath,
 					initialAnimationName: payload.animationName as string,
-					initialFrames: payload.initialFrames,
+					initialFrames: payload.initialFrames as SpriteFrameRect[] | undefined,
 					initialFps: payload.initialFps as number,
 					initialLoop: payload.initialLoop as boolean,
 					initialIsDefaultAnimation: payload.initialIsDefault as boolean,
 					initialIsCancelable: payload.initialIsCancelable as boolean,
 					initialFacingRight: payload.initialFacingRight as boolean,
 					initialAudioPath: payload.initialAudioPath as string | undefined,
-					initialScripts: payload.initialScripts,
-					initialSelectionMode: payload.initialSelectionMode,
+					initialScripts: payload.initialScripts as ScriptEntry[] | undefined,
+					initialSelectionMode: payload.initialSelectionMode as SelectionMode | undefined,
 					initialGridSize: payload.initialGridSize as number | undefined,
 					initialCellOffsetX: payload.initialCellOffsetX as number | undefined,
 					initialCellOffsetY: payload.initialCellOffsetY as number | undefined,
@@ -718,7 +728,7 @@ async function openEntityPropertiesNestedModal(
 				title: (payload.title as string) ?? t('New Rhai script'),
 				size: 'lg',
 				body: createElement(ScriptEditorModalBody, {
-					initialData: payload.initialData,
+					initialData: payload.initialData as { name?: string; source?: string } | undefined,
 					onSave: (data: { name: string; source: string }) => {
 						const next = replacing
 							? currentScripts.map((s) => (s.name === replacing ? data : s))
@@ -771,7 +781,7 @@ async function openEntityPropertiesNestedModal(
 				title: t('Confirm deletion'),
 				size: 'sm',
 				body: createElement(ModalConfirmBody, {
-					message: payload.message,
+					message: payload.message as ReactNode,
 					confirmLabel: (payload.confirmLabel as string) ?? t('Yes, delete'),
 					onConfirm: () => {
 						const callback = payload.onConfirm as (() => void) | undefined

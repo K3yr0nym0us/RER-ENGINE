@@ -21,7 +21,7 @@ const BtnLoadBackground = () => {
         />
       ),
     });
-  }, [openModal]);
+  }, [openModal, t]);
 
   return (
     <button

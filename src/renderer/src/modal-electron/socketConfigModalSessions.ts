@@ -163,7 +163,11 @@ export function registerSocketConfigModalSession(
 		linksLastInvalidPick: null,
 	})
 	activeSocketConfigModalHandlerRef.current = handlerId
-	return buildSocketConfigModalState(engine, sessions.get(handlerId)!)
+	const session = sessions.get(handlerId)
+	if (!session) {
+		throw new Error('Socket config session missing after register')
+	}
+	return buildSocketConfigModalState(engine, session)
 }
 
 export function unregisterSocketConfigModalSession(handlerId: string): void {
@@ -304,13 +308,15 @@ export async function runSocketConfigModalAction(
 		}
 		case 'create': {
 			const entityId = session.targetEntityId
-			if (entityId == null && action.payload.action !== 'close') return
+			if (action.payload.action === 'close') return
+			if (entityId == null) return
 
 			switch (action.payload.action) {
 				case 'upsertSocket':
+					if (entityId == null) return
 					engine.send({
 						cmd: 'upsert_entity_socket',
-						entity_id: entityId!,
+						entity_id: entityId,
 						name: action.payload.socket.name,
 						bone_name: action.payload.socket.bone_name,
 						local_position: action.payload.socket.local_position,
@@ -318,19 +324,22 @@ export async function runSocketConfigModalAction(
 					})
 					return
 				case 'removeSocket':
+					if (entityId == null) return
 					engine.send({
 						cmd: 'remove_entity_socket',
-						entity_id: entityId!,
+						entity_id: entityId,
 						name: action.payload.name,
 					})
 					return
 				case 'requestSockets':
-					engine.send({ cmd: 'list_entity_sockets', entity_id: entityId! })
+					if (entityId == null) return
+					engine.send({ cmd: 'list_entity_sockets', entity_id: entityId })
 					return
 				case 'setSocketBonePickMode':
+					if (entityId == null) return
 					engine.send({
 						cmd: 'set_socket_bone_pick_mode',
-						entity_id: entityId!,
+						entity_id: entityId,
 						active: action.payload.active,
 					})
 					return

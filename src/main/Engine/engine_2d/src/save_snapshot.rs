@@ -1,17 +1,20 @@
 use crate::ecs::Transform;
-use crate::engine::State;
 use crate::engine::AnimationState;
+use crate::engine::State;
 use crate::ipc::{
-    send_event, EngineEvent, SaveAnimationFrameSnapshot, SaveAnimationSnapshot,
-    SaveAssetRefSnapshot, SaveCamera2dSnapshot, SaveEntitySnapshot, SavePlayerTransformSnapshot,
+    EngineEvent, SaveAnimationFrameSnapshot, SaveAnimationSnapshot, SaveAssetRefSnapshot,
+    SaveCamera2dSnapshot, SaveEntitySnapshot, SavePlayerTransformSnapshot,
     SavePlayerUiButtonSnapshot, SavePlayerUiImageSnapshot, SavePlayerUiObjectSnapshot,
     SavePlayerUiTextBoxSnapshot, SaveSceneSnapshotPayload, SaveScriptSnapshot, SaveWorldSnapshot,
+    send_event,
 };
 
 impl State {
     pub(crate) fn export_save_snapshot(&self) {
         let scene = self.build_save_scene_snapshot();
-        send_event(&EngineEvent::SaveSnapshotReady { scene });
+        send_event(&EngineEvent::SaveSnapshotReady {
+            scene: Box::new(scene),
+        });
     }
 
     fn build_save_scene_snapshot(&self) -> SaveSceneSnapshotPayload {
@@ -44,15 +47,13 @@ impl State {
                     .get(&id)
                     .map(|map| {
                         map.iter()
-                            .map(|(anim_name, anim)| self.animation_to_snapshot(id, anim_name, anim))
+                            .map(|(anim_name, anim)| {
+                                self.animation_to_snapshot(id, anim_name, anim)
+                            })
                             .collect()
                     })
                     .unwrap_or_default();
-                if list.is_empty() {
-                    None
-                } else {
-                    Some(list)
-                }
+                if list.is_empty() { None } else { Some(list) }
             };
 
             let scripts = {
@@ -70,11 +71,7 @@ impl State {
                             .collect()
                     })
                     .unwrap_or_default();
-                if list.is_empty() {
-                    None
-                } else {
-                    Some(list)
-                }
+                if list.is_empty() { None } else { Some(list) }
             };
 
             let control_bindings = self.control_bindings_by_entity.get(&id).cloned();
@@ -85,14 +82,13 @@ impl State {
                 kind: meta.kind.clone(),
                 path: meta.path.clone(),
                 position: t.position.to_array(),
-                rotation: [
-                    t.rotation.x,
-                    t.rotation.y,
-                    t.rotation.z,
-                    t.rotation.w,
-                ],
+                rotation: [t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w],
                 scale: t.scale.to_array(),
-                physics_enabled: if physics_enabled { Some(true) } else { Some(false) },
+                physics_enabled: if physics_enabled {
+                    Some(true)
+                } else {
+                    Some(false)
+                },
                 physics_type,
                 points: meta.points,
                 animations,

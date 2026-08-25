@@ -27,5 +27,6 @@ export function sendMotor(
 }
 
 export function createEngineSend(projectType: ProjectType | undefined) {
-  return projectType === '3D' ? send3d : send2d
+  return (cmd: EngineCommand2D | EngineCommand3D | object) =>
+    sendMotor(projectType, cmd as EngineCommand2D | EngineCommand3D)
 }

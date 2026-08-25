@@ -7,13 +7,13 @@ use glam::{Mat4, Vec3};
 
 pub(crate) struct Camera2D {
     /// Centro de la vista en X (seguimiento horizontal del personaje).
-    pub x:      f32,
+    pub x: f32,
     /// Centro de la vista en Y (seguimiento vertical).
-    pub y:      f32,
+    pub y: f32,
     /// Mitad de la altura visible en unidades de mundo.
     pub half_h: f32,
-    pub near:   f32,
-    pub far:    f32,
+    pub near: f32,
+    pub far: f32,
 }
 
 impl Camera2D {
@@ -30,13 +30,16 @@ impl Camera2D {
     pub(crate) fn view_proj(&self, aspect: f32) -> Mat4 {
         let half_w = self.half_h * aspect;
         let proj = Mat4::orthographic_rh(
-            -half_w, half_w,
-            -self.half_h, self.half_h,
-            self.near, self.far,
+            -half_w,
+            half_w,
+            -self.half_h,
+            self.half_h,
+            self.near,
+            self.far,
         );
         let view = Mat4::look_at_rh(
             Vec3::new(self.x, self.y, 10.0),
-            Vec3::new(self.x, self.y,  0.0),
+            Vec3::new(self.x, self.y, 0.0),
             Vec3::Y,
         );
         proj * view
@@ -50,7 +53,7 @@ impl Camera2D {
         let aspect = vw / vh;
         let half_w = self.half_h * aspect;
         // Convertir delta de píxeles a unidades de mundo proporcionales al zoom
-        self.x -= dx / vw * half_w  * 2.0;
-        self.y += dy / vh * self.half_h * 2.0;  // Y de pantalla invertida respecto a mundo
+        self.x -= dx / vw * half_w * 2.0;
+        self.y += dy / vh * self.half_h * 2.0; // Y de pantalla invertida respecto a mundo
     }
 }

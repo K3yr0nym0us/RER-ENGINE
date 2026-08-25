@@ -1,7 +1,7 @@
 //! Catálogo de pantallas Player UI y pantalla activa en play.
 
 use crate::engine::State;
-use crate::ipc::{send_event, EngineEvent, PlayerUiScreenInfo};
+use crate::ipc::{EngineEvent, PlayerUiScreenInfo, send_event};
 
 impl State {
     fn player_ui_screens_catalog_matches(&self, screens: &[PlayerUiScreenInfo]) -> bool {
@@ -16,10 +16,7 @@ impl State {
     }
 
     fn player_ui_active_screen_from_list(screens: &[PlayerUiScreenInfo]) -> Option<String> {
-        screens
-            .iter()
-            .find(|s| s.active)
-            .map(|s| s.id.clone())
+        screens.iter().find(|s| s.active).map(|s| s.id.clone())
     }
 
     fn player_ui_active_screen_matches(&self, screens: &[PlayerUiScreenInfo]) -> bool {
@@ -47,8 +44,8 @@ impl State {
         self.player_ui_active_player_screen_id = Self::player_ui_active_screen_from_list(screens);
 
         if self.preview_playing {
-            let structure_changed = screens.len() != prev_len
-                || screens.iter().any(|s| !prev_ids.contains(&s.id));
+            let structure_changed =
+                screens.len() != prev_len || screens.iter().any(|s| !prev_ids.contains(&s.id));
             let active_changed = self.player_ui_active_player_screen_id != prev_active;
             if active_changed || structure_changed {
                 self.rebuild_player_ui_overlay();
@@ -68,10 +65,7 @@ impl State {
         log::info!("[player-ui] ninguna pantalla activa para play");
     }
 
-    pub(crate) fn set_active_player_ui_screen(
-        &mut self,
-        screen_id: &str,
-    ) -> Result<(), String> {
+    pub(crate) fn set_active_player_ui_screen(&mut self, screen_id: &str) -> Result<(), String> {
         if !self.player_ui_player_screen_names.contains_key(screen_id) {
             return Err(format!("pantalla Player UI desconocida: {screen_id}"));
         }
@@ -89,10 +83,7 @@ impl State {
         Ok(())
     }
 
-    pub(crate) fn set_active_player_ui_screen_by_name(
-        &mut self,
-        name: &str,
-    ) -> Result<(), String> {
+    pub(crate) fn set_active_player_ui_screen_by_name(&mut self, name: &str) -> Result<(), String> {
         let id = self
             .player_ui_player_screen_names
             .iter()

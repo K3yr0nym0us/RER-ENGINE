@@ -2,7 +2,6 @@ import fs from 'fs'
 import path from 'path'
 import { app } from 'electron'
 
-const LOG_PREFIX = '[ai-assistant]'
 const MAX_LOG_CHARS = 1_200
 
 function logFilePath(): string {

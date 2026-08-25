@@ -6,16 +6,16 @@ use bytemuck::{Pod, Zeroable};
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
 pub struct StaticMeshVertex {
     pub position: [f32; 3],
-    pub normal:   [f32; 3],
-    pub uv:       [f32; 2],
+    pub normal: [f32; 3],
+    pub uv: [f32; 2],
 }
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
 pub struct SkinnedMeshVertex {
     pub position: [f32; 3],
-    pub normal:   [f32; 3],
-    pub uv:       [f32; 2],
-    pub joints:   [u32; 4],
-    pub weights:  [f32; 4],
+    pub normal: [f32; 3],
+    pub uv: [f32; 2],
+    pub joints: [u32; 4],
+    pub weights: [f32; 4],
 }

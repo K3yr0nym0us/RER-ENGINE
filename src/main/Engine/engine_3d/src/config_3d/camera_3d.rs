@@ -156,5 +156,4 @@ impl Camera {
             view_proj: (self.proj_matrix(aspect) * self.view_matrix_at(anchor)).to_cols_array_2d(),
         }
     }
-
 }

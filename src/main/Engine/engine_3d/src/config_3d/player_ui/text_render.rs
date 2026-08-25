@@ -7,7 +7,7 @@ use ab_glyph::FontArc;
 use crate::engine::State;
 use crate::gizmo::{self, GizmoVertex};
 
-use super::config::{box_corners, HasUiHudRect, PlayerUiTextBox};
+use super::config::{HasUiHudRect, PlayerUiTextBox, box_corners};
 use super::font::{build_hud_label_glyph, text_caret_line_ndc};
 use super::ndc_draw::{push_handle_disc, push_line_segment, push_quad};
 
@@ -113,8 +113,7 @@ pub(crate) fn rebuild_caret_buffer(state: &mut State, edit_id: u32) {
     let vw = state.size.width.max(1) as f32;
     let vh = state.size.height.max(1) as f32;
     let rect = b.ui_hud_rect();
-    let Some(line) =
-        text_caret_line_ndc(&font, &b.text, state.player_ui_text_caret, &rect, vw, vh)
+    let Some(line) = text_caret_line_ndc(&font, &b.text, state.player_ui_text_caret, &rect, vw, vh)
     else {
         state.player_ui_caret_buffer = gizmo::build_from_vertices(&state.device, &[]);
         return;

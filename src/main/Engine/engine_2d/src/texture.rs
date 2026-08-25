@@ -1,11 +1,11 @@
 use wgpu::util::DeviceExt;
 
-use crate::ipc::{send_event, EngineEvent};
+use crate::ipc::{EngineEvent, send_event};
 
 /// Textura en GPU lista para bindear: view + sampler.
 #[allow(dead_code)]
 pub struct GpuTexture {
-    pub view:    wgpu::TextureView,
+    pub view: wgpu::TextureView,
     pub sampler: wgpu::Sampler,
 }
 
@@ -14,25 +14,29 @@ impl GpuTexture {
     // ── Constructor desde bytes RGBA crudos ───────────────────────────────────
     pub fn from_rgba(
         device: &wgpu::Device,
-        queue:  &wgpu::Queue,
-        rgba:   &[u8],
-        width:  u32,
+        queue: &wgpu::Queue,
+        rgba: &[u8],
+        width: u32,
         height: u32,
-        label:  &str,
+        label: &str,
     ) -> Self {
-        let size = wgpu::Extent3d { width, height, depth_or_array_layers: 1 };
+        let size = wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        };
 
         let texture = device.create_texture_with_data(
             queue,
             &wgpu::TextureDescriptor {
-                label:           Some(label),
+                label: Some(label),
                 size,
                 mip_level_count: 1,
-                sample_count:    1,
-                dimension:       wgpu::TextureDimension::D2,
-                format:          wgpu::TextureFormat::Rgba8UnormSrgb,
-                usage:           wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-                view_formats:    &[],
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
             },
             wgpu::util::TextureDataOrder::LayerMajor,
             rgba,
@@ -40,13 +44,13 @@ impl GpuTexture {
 
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label:          Some(&format!("{label}-sampler")),
+            label: Some(&format!("{label}-sampler")),
             address_mode_u: wgpu::AddressMode::Repeat,
             address_mode_v: wgpu::AddressMode::Repeat,
             address_mode_w: wgpu::AddressMode::Repeat,
-            mag_filter:     wgpu::FilterMode::Linear,
-            min_filter:     wgpu::FilterMode::Linear,
-            mipmap_filter:  wgpu::MipmapFilterMode::Nearest,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
             ..Default::default()
         });
 
@@ -71,11 +75,7 @@ impl GpuTexture {
             for x in 0..size {
                 let light = ((x + y) % 2) == 0;
                 // claro: #3a3d50  |  oscuro: #1e2030
-                let (r, g, b): (u8, u8, u8) = if light {
-                    (58, 61, 80)
-                } else {
-                    (30, 32, 48)
-                };
+                let (r, g, b): (u8, u8, u8) = if light { (58, 61, 80) } else { (30, 32, 48) };
                 pixels.push(r);
                 pixels.push(g);
                 pixels.push(b);
@@ -88,9 +88,9 @@ impl GpuTexture {
     // ── Constructor desde datos de imagen gltf ────────────────────────────────
     pub fn from_gltf_image(
         device: &wgpu::Device,
-        queue:  &wgpu::Queue,
-        img:    &gltf::image::Data,
-        label:  &str,
+        queue: &wgpu::Queue,
+        img: &gltf::image::Data,
+        label: &str,
     ) -> Self {
         use gltf::image::Format;
 
@@ -119,22 +119,22 @@ impl GpuTexture {
     // ── Bind group layout (group 1) ───────────────────────────────────────────
     pub fn bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
         device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label:   Some("texture-bgl"),
+            label: Some("texture-bgl"),
             entries: &[
                 // binding 0 — texture
                 wgpu::BindGroupLayoutEntry {
-                    binding:    0,
+                    binding: 0,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Texture {
-                        multisampled:   false,
+                        multisampled: false,
                         view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type:    wgpu::TextureSampleType::Float { filterable: true },
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
                     },
                     count: None,
                 },
                 // binding 1 — sampler
                 wgpu::BindGroupLayoutEntry {
-                    binding:    1,
+                    binding: 1,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
@@ -150,15 +150,15 @@ impl GpuTexture {
         layout: &wgpu::BindGroupLayout,
     ) -> wgpu::BindGroup {
         device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label:   Some("texture-bg"),
+            label: Some("texture-bg"),
             layout,
             entries: &[
                 wgpu::BindGroupEntry {
-                    binding:  0,
+                    binding: 0,
                     resource: wgpu::BindingResource::TextureView(&self.view),
                 },
                 wgpu::BindGroupEntry {
-                    binding:  1,
+                    binding: 1,
                     resource: wgpu::BindingResource::Sampler(&self.sampler),
                 },
             ],
@@ -175,16 +175,16 @@ impl GpuTexture {
 // Cada textura empacada recibe un UV rect [u_min, v_min, u_max, v_max] que
 // el shader usa para muestrear la sub-región correcta del atlas.
 pub struct TextureAtlas {
-    texture:         wgpu::Texture,
-    _view:           wgpu::TextureView,   // vivo mientras exista el bind_group
-    _sampler:        wgpu::Sampler,       // ídem
+    texture: wgpu::Texture,
+    _view: wgpu::TextureView, // vivo mientras exista el bind_group
+    _sampler: wgpu::Sampler,  // ídem
     /// Bind group compartido por TODOS los sprites (group 1 en el shader).
-    pub bind_group:  std::sync::Arc<wgpu::BindGroup>,
-    width:           u32,
-    height:          u32,
-    cursor_x:        u32,
-    cursor_y:        u32,
-    row_h:           u32,
+    pub bind_group: std::sync::Arc<wgpu::BindGroup>,
+    width: u32,
+    height: u32,
+    cursor_x: u32,
+    cursor_y: u32,
+    row_h: u32,
     /// Evita spam de IPC/log cuando el atlas ya no tiene hueco reutilizable.
     exhausted_notified: bool,
 }
@@ -196,46 +196,56 @@ impl TextureAtlas {
     /// que actúa como UV de fallback cuando un tex_idx es inválido.
     pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, bgl: &wgpu::BindGroupLayout) -> Self {
         let texture = device.create_texture(&wgpu::TextureDescriptor {
-            label:           Some("texture-atlas"),
-            size:            wgpu::Extent3d { width: Self::SIZE, height: Self::SIZE, depth_or_array_layers: 1 },
+            label: Some("texture-atlas"),
+            size: wgpu::Extent3d {
+                width: Self::SIZE,
+                height: Self::SIZE,
+                depth_or_array_layers: 1,
+            },
             mip_level_count: 1,
-            sample_count:    1,
-            dimension:       wgpu::TextureDimension::D2,
-            format:          wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage:           wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            view_formats:    &[],
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
         });
 
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label:          Some("atlas-sampler"),
+            label: Some("atlas-sampler"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter:     wgpu::FilterMode::Linear,
-            min_filter:     wgpu::FilterMode::Linear,
-            mipmap_filter:  wgpu::MipmapFilterMode::Nearest,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
             ..Default::default()
         });
         let bg = std::sync::Arc::new(device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label:   Some("atlas-bg"),
-            layout:  bgl,
+            label: Some("atlas-bg"),
+            layout: bgl,
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&view) },
-                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&sampler) },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&sampler),
+                },
             ],
         }));
 
         let mut atlas = Self {
             texture,
-            _view:    view,
+            _view: view,
             _sampler: sampler,
             bind_group: bg,
-            width:    Self::SIZE,
-            height:   Self::SIZE,
+            width: Self::SIZE,
+            height: Self::SIZE,
             cursor_x: 0,
             cursor_y: 0,
-            row_h:    0,
+            row_h: 0,
             exhausted_notified: false,
         };
         // Pixel blanco de fallback en (0,0)
@@ -270,11 +280,15 @@ impl TextureAtlas {
         // Avanzar a la siguiente fila si la imagen no cabe en la actual
         if self.cursor_x + w > self.width {
             self.cursor_y += self.row_h;
-            self.cursor_x  = 0;
-            self.row_h     = 0;
+            self.cursor_x = 0;
+            self.row_h = 0;
         }
         if self.cursor_y + h > self.height {
-            log::error!("[TextureAtlas] atlas lleno — no se puede empacar {}×{}", w, h);
+            log::error!(
+                "[TextureAtlas] atlas lleno — no se puede empacar {}×{}",
+                w,
+                h
+            );
             if !self.exhausted_notified {
                 self.exhausted_notified = true;
                 send_event(&EngineEvent::AtlasExhausted {
@@ -288,53 +302,67 @@ impl TextureAtlas {
 
         queue.write_texture(
             wgpu::TexelCopyTextureInfo {
-                texture:   &self.texture,
+                texture: &self.texture,
                 mip_level: 0,
-                origin:    wgpu::Origin3d { x: self.cursor_x, y: self.cursor_y, z: 0 },
-                aspect:    wgpu::TextureAspect::All,
+                origin: wgpu::Origin3d {
+                    x: self.cursor_x,
+                    y: self.cursor_y,
+                    z: 0,
+                },
+                aspect: wgpu::TextureAspect::All,
             },
             rgba,
             wgpu::TexelCopyBufferLayout {
-                offset:         0,
-                bytes_per_row:  Some(4 * w),
+                offset: 0,
+                bytes_per_row: Some(4 * w),
                 rows_per_image: None,
             },
-            wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+            wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
         );
 
         let uv = [
-            self.cursor_x as f32 / self.width  as f32,
+            self.cursor_x as f32 / self.width as f32,
             self.cursor_y as f32 / self.height as f32,
-            (self.cursor_x + w) as f32 / self.width  as f32,
+            (self.cursor_x + w) as f32 / self.width as f32,
             (self.cursor_y + h) as f32 / self.height as f32,
         ];
         self.cursor_x += w;
-        self.row_h     = self.row_h.max(h);
+        self.row_h = self.row_h.max(h);
         uv
     }
 
     /// Sobreescribe los píxeles de una región ya empacada (mismas dimensiones).
     /// Usado por `enter_pivot_edit_mode` para mostrar el frame temporalmente.
     pub fn update(&self, queue: &wgpu::Queue, rgba: &[u8], uv_rect: [f32; 4]) {
-        let x = (uv_rect[0] * self.width  as f32).round() as u32;
+        let x = (uv_rect[0] * self.width as f32).round() as u32;
         let y = (uv_rect[1] * self.height as f32).round() as u32;
-        let w = ((uv_rect[2] - uv_rect[0]) * self.width  as f32).round() as u32;
+        let w = ((uv_rect[2] - uv_rect[0]) * self.width as f32).round() as u32;
         let h = ((uv_rect[3] - uv_rect[1]) * self.height as f32).round() as u32;
-        if w == 0 || h == 0 { return; }
+        if w == 0 || h == 0 {
+            return;
+        }
         queue.write_texture(
             wgpu::TexelCopyTextureInfo {
-                texture:   &self.texture,
+                texture: &self.texture,
                 mip_level: 0,
-                origin:    wgpu::Origin3d { x, y, z: 0 },
-                aspect:    wgpu::TextureAspect::All,
+                origin: wgpu::Origin3d { x, y, z: 0 },
+                aspect: wgpu::TextureAspect::All,
             },
             rgba,
             wgpu::TexelCopyBufferLayout {
-                offset:         0,
-                bytes_per_row:  Some(4 * w),
+                offset: 0,
+                bytes_per_row: Some(4 * w),
                 rows_per_image: None,
             },
-            wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+            wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
         );
     }
 }

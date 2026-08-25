@@ -10,7 +10,7 @@ use rer_engine_shared::bundled_models::{
 
 use crate::engine::State;
 
-use super::registry::{normalize_source_key, source_fingerprint, ImportedModelEntry};
+use super::registry::{ImportedModelEntry, normalize_source_key, source_fingerprint};
 
 /// Carpeta `Models` junto al binario del motor (dev: `Engine/Models`, empaquetado: `resources/engine/Models`).
 pub fn resolve_engine_models_dir() -> Option<PathBuf> {
@@ -45,11 +45,7 @@ fn bundled_rerasset_path() -> Option<PathBuf> {
     resolve_engine_models_dir().map(|d| d.join(DEFAULT_PLAY_CHARACTER_RERASSET))
 }
 
-fn register_bundled_entry(
-    state: &mut State,
-    source_path: &str,
-    rerasset_path: PathBuf,
-) -> String {
+fn register_bundled_entry(state: &mut State, source_path: &str, rerasset_path: PathBuf) -> String {
     let model_id = DEFAULT_PLAY_CHARACTER_MODEL_ID.to_string();
     let (size, mtime) = source_fingerprint(Path::new(source_path));
     let category = Some("character".to_string());
@@ -118,12 +114,7 @@ pub fn ensure_bundled_default_player_model(state: &mut State) -> Option<String> 
             rerasset_path.display()
         );
         let id = register_bundled_entry(state, &source_key, rerasset_path.clone());
-        state.enqueue_gpu_from_rerasset(
-            &id,
-            &rerasset_path,
-            DEFAULT_PLAY_CHARACTER_NAME,
-            true,
-        );
+        state.enqueue_gpu_from_rerasset(&id, &rerasset_path, DEFAULT_PLAY_CHARACTER_NAME, true);
         return Some(id);
     }
 
@@ -146,7 +137,7 @@ pub fn ensure_bundled_default_player_model(state: &mut State) -> Option<String> 
 #[cfg_attr(not(test), allow(dead_code))]
 pub fn bake_default_player_rerasset_to_disk() -> Result<(), String> {
     use super::bake::{bake_to_rerasset, build_bake_input};
-    use crate::config_3d::mesh_3d::{preload_model_cpu_bundle, ModelPreloadOptions};
+    use crate::config_3d::mesh_3d::{ModelPreloadOptions, preload_model_cpu_bundle};
 
     let models_dir = engine_models_dir_for_bake();
     let fbx = models_dir.join(DEFAULT_PLAY_CHARACTER_FBX);

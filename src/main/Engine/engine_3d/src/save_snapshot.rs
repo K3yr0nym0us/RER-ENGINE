@@ -1,19 +1,21 @@
-use crate::engine::State;
 use crate::assets::registry::relative_rerasset_manifest_path;
-use rer_engine_shared::assets::AssetState;
+use crate::engine::State;
 use crate::ipc::{
-    send_event, EngineEvent, SaveAssetRefSnapshot, SavePlayerUiTextBoxSnapshot,
-    SaveSceneSnapshotPayload, SaveWorldSnapshot,
+    EngineEvent, SaveAssetRefSnapshot, SavePlayerUiTextBoxSnapshot, SaveSceneSnapshotPayload,
+    SaveWorldSnapshot, send_event,
 };
 use crate::save_entity_3d::{
     build_config_camera_snapshot, build_config_editor_camera_snapshot, build_entity_3d_snapshot,
     build_player_snapshot,
 };
+use rer_engine_shared::assets::AssetState;
 
 impl State {
     pub(crate) fn export_save_snapshot(&self) {
         let scene = self.build_save_scene_snapshot();
-        send_event(&EngineEvent::SaveSnapshotReady { scene });
+        send_event(&EngineEvent::SaveSnapshotReady {
+            scene: Box::new(scene),
+        });
     }
 
     pub(crate) fn build_save_scene_snapshot(&self) -> SaveSceneSnapshotPayload {
@@ -70,7 +72,6 @@ impl State {
                     let model_id = entry.model_id.as_ref()?;
                     let reg = self.imported_model_registry.get(model_id)?;
                     if reg.state != AssetState::Ready {
-                        
                         return None;
                     }
                     if !reg.rerasset_path.is_file() {

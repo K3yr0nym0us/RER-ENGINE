@@ -3,14 +3,12 @@
 use glam::Vec3;
 
 use crate::config_compat::ActiveTool;
-use crate::gizmo::{self, GizmoBuffer, GizmoVertex};
 use crate::engine::State;
-use crate::ipc::{send_event, EngineEvent};
+use crate::gizmo::{self, GizmoBuffer, GizmoVertex};
+use crate::ipc::{EngineEvent, send_event};
 use rer_engine_shared::player_ui::grid::NDC_SCREEN_UNIFORM;
 
-pub(crate) use rer_engine_shared::player_ui::grid::{
-    player_ui_grid_steps, snap_ndc_point_to_grid,
-};
+pub(crate) use rer_engine_shared::player_ui::grid::{player_ui_grid_steps, snap_ndc_point_to_grid};
 
 /// Snapshot del viewport de editor al entrar en edición UI.
 #[derive(Clone, Copy, Debug)]
@@ -162,7 +160,11 @@ impl State {
 }
 
 /// Cuadrícula de trabajo en NDC (regla sobre el viewport del jugador).
-fn build_player_ui_screen_grid(device: &wgpu::Device, viewport_w: f32, viewport_h: f32) -> GizmoBuffer {
+fn build_player_ui_screen_grid(
+    device: &wgpu::Device,
+    viewport_w: f32,
+    viewport_h: f32,
+) -> GizmoBuffer {
     let mut verts: Vec<GizmoVertex> = Vec::new();
 
     let extent = 1.0_f32;

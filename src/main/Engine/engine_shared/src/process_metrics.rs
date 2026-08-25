@@ -1,8 +1,8 @@
 // CPU/GPU del proceso del motor (no uso global del SO).
 // Windows: contadores GPU Engine por PID. Linux: provisional nvidia-smi (ver CHECKLIST).
 
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
@@ -26,7 +26,8 @@ impl ProcessMetricsSampler {
     pub fn new() -> Self {
         let gpu_raw = Arc::new(AtomicU32::new(GPU_RAW_NONE));
         let gpu_stop = Arc::new(AtomicBool::new(false));
-        let gpu_thread = spawn_gpu_poll_thread(std::process::id(), gpu_raw.clone(), gpu_stop.clone());
+        let gpu_thread =
+            spawn_gpu_poll_thread(std::process::id(), gpu_raw.clone(), gpu_stop.clone());
         Self {
             system: System::new(),
             gpu_raw,
@@ -39,7 +40,10 @@ impl ProcessMetricsSampler {
         let pid = Pid::from_u32(std::process::id());
         self.system
             .refresh_processes(ProcessesToUpdate::Some(&[pid]), true);
-        self.system.process(pid).map(|p| p.cpu_usage()).unwrap_or(0.0)
+        self.system
+            .process(pid)
+            .map(|p| p.cpu_usage())
+            .unwrap_or(0.0)
     }
 
     /// % GPU del proceso del motor (contadores por PID; no uso global del sistema).
@@ -103,12 +107,12 @@ pub fn is_engine_gpu_metrics_available() -> bool {
 fn gpu_sampling_available() -> bool {
     #[cfg(target_os = "windows")]
     {
-        return true;
+        true
     }
     #[cfg(target_os = "linux")]
     {
-        return std::path::Path::new("/usr/bin/nvidia-smi").exists()
-            || std::path::Path::new("/bin/nvidia-smi").exists();
+        std::path::Path::new("/usr/bin/nvidia-smi").exists()
+            || std::path::Path::new("/bin/nvidia-smi").exists()
     }
     #[cfg(not(any(target_os = "windows", target_os = "linux")))]
     {
@@ -120,11 +124,11 @@ fn gpu_sampling_available() -> bool {
 fn query_process_gpu_percent(pid: u32) -> Option<f32> {
     #[cfg(target_os = "windows")]
     {
-        return windows::query_process_gpu_percent(pid);
+        windows::query_process_gpu_percent(pid)
     }
     #[cfg(target_os = "linux")]
     {
-        return linux::query_process_gpu_percent(pid);
+        linux::query_process_gpu_percent(pid)
     }
     #[cfg(not(any(target_os = "windows", target_os = "linux")))]
     {
@@ -197,10 +201,6 @@ mod linux {
                 found = true;
             }
         }
-        if found {
-            Some(total.min(100.0))
-        } else {
-            None
-        }
+        if found { Some(total.min(100.0)) } else { None }
     }
 }

@@ -13,6 +13,16 @@ interface ScriptEditorInstance {
   setValue: (value: string) => void;
 }
 
+interface ScriptEditorBridge {
+  getScriptEditorInit: () => Promise<{ name: string; source: string } | null>
+  saveScriptEditor: (data: { name: string; source: string }) => void | Promise<void>
+  cancelScriptEditor: () => void | Promise<void>
+}
+
+function scriptEditorBridge(): ScriptEditorBridge {
+  return window.electronAPI as unknown as ScriptEditorBridge
+}
+
 /**
  * Ventana secundaria del editor de scripts Rhai.
  * Se renderiza cuando la URL contiene `?mode=script-editor`.
@@ -30,7 +40,7 @@ export function ScriptEditorApp() {
   // Pedir datos iniciales al proceso main via IPC (evita el problema de
   // additionalArguments que corrompe JSON con comillas en Windows)
   useEffect(() => {
-    void (window as any).electronAPI.getScriptEditorInit().then(
+    void scriptEditorBridge().getScriptEditorInit().then(
       (data: { name: string; source: string } | null) => {
         if (!data) return
         setIsEditing(true)
@@ -49,14 +59,14 @@ export function ScriptEditorApp() {
 
   const handleSave = () => {
     if (!name.trim()) return
-    void (window as any).electronAPI.saveScriptEditor({
+    void scriptEditorBridge().saveScriptEditor({
       name:   name.trim(),
       source: sourceRef.current,
     })
   }
 
   const handleCancel = () => {
-    void (window as any).electronAPI.cancelScriptEditor()
+    void scriptEditorBridge().cancelScriptEditor()
   }
 
   return (

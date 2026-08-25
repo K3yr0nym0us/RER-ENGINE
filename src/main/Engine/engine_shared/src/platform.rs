@@ -14,11 +14,11 @@ mod win32_tracker {
 
     use windows::Win32::Foundation::{HWND, POINT};
     use windows::Win32::Graphics::Gdi::ClientToScreen;
-    use windows::Win32::UI::Accessibility::{SetWinEventHook, UnhookWinEvent, HWINEVENTHOOK};
+    use windows::Win32::UI::Accessibility::{HWINEVENTHOOK, SetWinEventHook, UnhookWinEvent};
     use windows::Win32::UI::WindowsAndMessaging::{
-        DispatchMessageW, IsWindow, PeekMessageW, SetWindowPos, TranslateMessage,
-        EVENT_OBJECT_LOCATIONCHANGE, HWND_TOP, MSG, PM_REMOVE, SWP_NOACTIVATE, SWP_NOSIZE,
-        SWP_NOZORDER, WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS,
+        DispatchMessageW, EVENT_OBJECT_LOCATIONCHANGE, HWND_TOP, IsWindow, MSG, PM_REMOVE,
+        PeekMessageW, SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOZORDER, SetWindowPos, TranslateMessage,
+        WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS,
     };
 
     use super::TrackerOffset;
@@ -137,8 +137,8 @@ pub use win32_tracker::start_position_tracker;
 pub fn setup_overlay_win32(engine_hwnd: isize, parent_hwnd: isize, offset: TrackerOffset) {
     use windows::Win32::Foundation::HWND;
     use windows::Win32::UI::WindowsAndMessaging::{
-        GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE, GWLP_HWNDPARENT,
-        HWND_TOP, SWP_FRAMECHANGED, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WS_EX_APPWINDOW,
+        GWL_EXSTYLE, GWLP_HWNDPARENT, GetWindowLongPtrW, HWND_TOP, SWP_FRAMECHANGED, SWP_NOMOVE,
+        SWP_NOSIZE, SWP_NOZORDER, SetWindowLongPtrW, SetWindowPos, WS_EX_APPWINDOW,
         WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
     };
 
@@ -191,76 +191,74 @@ pub fn start_position_tracker(engine_xid: u32, parent_xid: u32, offset: TrackerO
 
     std::thread::Builder::new()
         .name("position-tracker".into())
-        .spawn(move || {
-            unsafe {
-                let display = x11::xlib::XOpenDisplay(std::ptr::null());
-                if display.is_null() {
-                    return;
-                }
-                let root = x11::xlib::XDefaultRootWindow(display);
-                x11::xlib::XSelectInput(display, parent_xid, x11::xlib::StructureNotifyMask);
-
-                let mut sync = || {
-                    let mut parent_root_x: i32 = 0;
-                    let mut parent_root_y: i32 = 0;
-                    let mut child_return: x11::xlib::Window = 0;
-                    if x11::xlib::XTranslateCoordinates(
-                        display,
-                        parent_xid,
-                        root,
-                        0,
-                        0,
-                        &mut parent_root_x,
-                        &mut parent_root_y,
-                        &mut child_return,
-                    ) == 0
-                    {
-                        return false;
-                    }
-                    let off_x = offset.0.load(std::sync::atomic::Ordering::Relaxed);
-                    let off_y = offset.1.load(std::sync::atomic::Ordering::Relaxed);
-                    let desired_x = parent_root_x + off_x;
-                    let desired_y = parent_root_y + off_y;
-
-                    let mut cur_x: i32 = 0;
-                    let mut cur_y: i32 = 0;
-                    if x11::xlib::XTranslateCoordinates(
-                        display,
-                        engine_xid,
-                        root,
-                        0,
-                        0,
-                        &mut cur_x,
-                        &mut cur_y,
-                        &mut child_return,
-                    ) == 0
-                    {
-                        return false;
-                    }
-                    if cur_x != desired_x || cur_y != desired_y {
-                        x11::xlib::XMoveWindow(display, engine_xid, desired_x, desired_y);
-                        x11::xlib::XFlush(display);
-                    }
-                    true
-                };
-
-                sync();
-
-                loop {
-                    while x11::xlib::XPending(display) > 0 {
-                        let mut event: x11::xlib::XEvent = std::mem::zeroed();
-                        x11::xlib::XNextEvent(display, &mut event);
-                        if event.type_ == x11::xlib::ConfigureNotify {
-                            sync();
-                        }
-                    }
-                    if !sync() {
-                        break;
-                    }
-                    std::thread::sleep(std::time::Duration::from_millis(4));
-                }
-                x11::xlib::XCloseDisplay(display);
+        .spawn(move || unsafe {
+            let display = x11::xlib::XOpenDisplay(std::ptr::null());
+            if display.is_null() {
+                return;
             }
+            let root = x11::xlib::XDefaultRootWindow(display);
+            x11::xlib::XSelectInput(display, parent_xid, x11::xlib::StructureNotifyMask);
+
+            let mut sync = || {
+                let mut parent_root_x: i32 = 0;
+                let mut parent_root_y: i32 = 0;
+                let mut child_return: x11::xlib::Window = 0;
+                if x11::xlib::XTranslateCoordinates(
+                    display,
+                    parent_xid,
+                    root,
+                    0,
+                    0,
+                    &mut parent_root_x,
+                    &mut parent_root_y,
+                    &mut child_return,
+                ) == 0
+                {
+                    return false;
+                }
+                let off_x = offset.0.load(std::sync::atomic::Ordering::Relaxed);
+                let off_y = offset.1.load(std::sync::atomic::Ordering::Relaxed);
+                let desired_x = parent_root_x + off_x;
+                let desired_y = parent_root_y + off_y;
+
+                let mut cur_x: i32 = 0;
+                let mut cur_y: i32 = 0;
+                if x11::xlib::XTranslateCoordinates(
+                    display,
+                    engine_xid,
+                    root,
+                    0,
+                    0,
+                    &mut cur_x,
+                    &mut cur_y,
+                    &mut child_return,
+                ) == 0
+                {
+                    return false;
+                }
+                if cur_x != desired_x || cur_y != desired_y {
+                    x11::xlib::XMoveWindow(display, engine_xid, desired_x, desired_y);
+                    x11::xlib::XFlush(display);
+                }
+                true
+            };
+
+            sync();
+
+            loop {
+                while x11::xlib::XPending(display) > 0 {
+                    let mut event: x11::xlib::XEvent = std::mem::zeroed();
+                    x11::xlib::XNextEvent(display, &mut event);
+                    if event.type_ == x11::xlib::ConfigureNotify {
+                        sync();
+                    }
+                }
+                if !sync() {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(4));
+            }
+            x11::xlib::XCloseDisplay(display);
         })
         .expect("No se pudo crear el hilo position-tracker");
 }
@@ -317,9 +315,7 @@ pub fn query_shift_held_os() -> bool {
 #[cfg(target_os = "windows")]
 pub fn query_shift_held_os() -> bool {
     unsafe {
-        use windows::Win32::UI::Input::KeyboardAndMouse::{
-            GetAsyncKeyState, VK_LSHIFT, VK_RSHIFT,
-        };
+        use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LSHIFT, VK_RSHIFT};
         let left = (GetAsyncKeyState(VK_LSHIFT.0 as i32) as u16 & 0x8000) != 0;
         let right = (GetAsyncKeyState(VK_RSHIFT.0 as i32) as u16 & 0x8000) != 0;
         left || right
@@ -340,7 +336,7 @@ pub fn focus_overlay_parent_window(parent_id: u64) {
     {
         use windows::Win32::Foundation::HWND;
         use windows::Win32::UI::WindowsAndMessaging::{
-            AllowSetForegroundWindow, SetForegroundWindow, ShowWindow, ASFW_ANY, SW_SHOW,
+            ASFW_ANY, AllowSetForegroundWindow, SW_SHOW, SetForegroundWindow, ShowWindow,
         };
         unsafe {
             let _ = AllowSetForegroundWindow(ASFW_ANY);
@@ -357,7 +353,12 @@ pub fn focus_overlay_parent_window(parent_id: u64) {
                 return;
             }
             x11::xlib::XRaiseWindow(display, parent_id);
-            x11::xlib::XSetInputFocus(display, parent_id, x11::xlib::RevertToParent, x11::xlib::CurrentTime);
+            x11::xlib::XSetInputFocus(
+                display,
+                parent_id,
+                x11::xlib::RevertToParent,
+                x11::xlib::CurrentTime,
+            );
             x11::xlib::XFlush(display);
             x11::xlib::XCloseDisplay(display);
         }

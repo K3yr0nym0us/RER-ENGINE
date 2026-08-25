@@ -7,13 +7,11 @@ export interface AiAssistantOverlayConfig {
 }
 
 export const FAB_SIZE = 126
-const SPEECH_BUBBLE_MAX_WIDTH = 340
 const OVERLAY_EDGE_PAD = 14
 const STACK_PAD = 16
 const STACK_GAP = 10
 const INTRO_BUBBLE_HEIGHT = 120
 const TAIL_GAP = 10
-const COLLAPSED_INTRO_WIDTH = SPEECH_BUBBLE_MAX_WIDTH + OVERLAY_EDGE_PAD
 const COLLAPSED_INTRO_HEIGHT =
   STACK_PAD + INTRO_BUBBLE_HEIGHT + TAIL_GAP + FAB_SIZE + STACK_PAD
 const INPUT_BUBBLE_MAX_WIDTH = 450
@@ -21,7 +19,6 @@ const INPUT_FAB_GAP = 10
 const ANSWER_BUBBLE_HEIGHT = 140
 const COLLAPSED_INPUT_WIDTH = INPUT_BUBBLE_MAX_WIDTH + INPUT_FAB_GAP + FAB_SIZE + OVERLAY_EDGE_PAD
 const COLLAPSED_INPUT_HEIGHT = STACK_PAD + FAB_SIZE + STACK_PAD
-const COLLAPSED_ANSWER_WIDTH = INPUT_BUBBLE_MAX_WIDTH + OVERLAY_EDGE_PAD
 const COLLAPSED_ANSWER_HEIGHT =
   STACK_PAD + FAB_SIZE + STACK_GAP + ANSWER_BUBBLE_HEIGHT + STACK_PAD
 
@@ -37,7 +34,6 @@ let getMainWindow: () => BrowserWindow | null = () => null
 
 let overlayWindow: BrowserWindow | null = null
 let overlayVisible = false
-let overlayLayout: AiAssistantLayout = 'intro'
 let pendingConfig: AiAssistantOverlayConfig | null = null
 /** Offset desde la esquina del área de contenido de la ventana principal. */
 let savedOffsetFromContent: { x: number; y: number } | null = null
@@ -269,7 +265,6 @@ function getOrCreateOverlayWindow(): BrowserWindow {
     stopDragTick()
     overlayWindow = null
     overlayVisible = false
-    overlayLayout = 'intro'
     pendingConfig = null
     savedOffsetFromContent = null
     overlayHiddenByParentMinimize = false
@@ -301,7 +296,6 @@ export async function showAiAssistantOverlay(config: AiAssistantOverlayConfig = 
     return
   }
 
-  overlayLayout = 'intro'
   setOverlayBounds(win, false)
   sendConfigToOverlay(config)
   overlayVisible = true
@@ -319,7 +313,6 @@ export async function showAiAssistantOverlay(config: AiAssistantOverlayConfig = 
 
 export function hideAiAssistantOverlay(): void {
   overlayVisible = false
-  overlayLayout = 'intro'
   pendingConfig = null
   overlayHiddenByParentMinimize = false
   if (!overlayWindow || overlayWindow.isDestroyed()) return
@@ -335,12 +328,12 @@ export function repositionAiAssistantOverlayIfOpen(): void {
 
 export function restackAiAssistantOverlayIfOpen(): void {
   if (!shouldOverlayBeOnScreen()) return
-  raiseOverlayAboveEngine(overlayWindow!)
+  if (!overlayWindow || overlayWindow.isDestroyed()) return
+  raiseOverlayAboveEngine(overlayWindow)
 }
 
-export function setAiAssistantOverlayLayout(layout: AiAssistantLayout): void {
+export function setAiAssistantOverlayLayout(_layout: AiAssistantLayout): void {
   if (!overlayWindow || overlayWindow.isDestroyed()) return
-  overlayLayout = layout
   raiseOverlayAboveEngine(overlayWindow)
 }
 
@@ -387,7 +380,6 @@ export function destroyAiAssistantOverlay(): void {
   }
   overlayWindow = null
   overlayVisible = false
-  overlayLayout = 'intro'
   pendingConfig = null
   savedOffsetFromContent = null
   overlayHiddenByParentMinimize = false

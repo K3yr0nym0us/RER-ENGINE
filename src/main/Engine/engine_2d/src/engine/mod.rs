@@ -1,4 +1,4 @@
-﻿use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -8,40 +8,40 @@ use winit::{dpi::PhysicalSize, window::Window};
 #[path = "../save_snapshot.rs"]
 mod save_snapshot;
 
+mod animation_play_state;
 mod animations;
 mod audio;
 mod commands;
 mod entity_restore;
 mod import_scene;
-mod load_proyect;
 mod init;
+mod load_proyect;
 mod render;
 mod render_helpers;
-mod scripts;
 mod scene_scripts;
+mod scripts;
 mod snap_hint;
 mod tick;
-mod types;
+pub(crate) mod types;
 mod undo_entity;
-mod animation_play_state;
 
+use audio::AudioSlot;
 #[allow(unused_imports)]
 pub use audio::{AudioCmd, DecodedAudio};
-pub use types::{ActiveAnimation, AnimTextureCacheEntry, AnimationState};
+use render_helpers::create_depth_texture;
 #[allow(unused_imports)]
 pub(crate) use render_helpers::is_visible_2d;
-pub(crate) use types::{PendingSlide, UndoAction};
-use audio::AudioSlot;
-use render_helpers::create_depth_texture;
+pub use types::{ActiveAnimation, AnimTextureCacheEntry, AnimationState};
+pub(crate) use types::{EntityTransformSnapshot, PendingSlide, UndoAction};
 
-use crate::config_2d::{GridBuffer, GridConfig};
 use crate::config_2d::ActiveTool;
+use crate::config_2d::{GridBuffer, GridConfig};
 
-use crate::config_compat::Camera;
 use crate::config_2d::Camera2D;
 use crate::config_2d::PhysicsWorld2D;
-use crate::entity_save_meta::EntitySaveRegistry;
+use crate::config_compat::Camera;
 use crate::ecs::{NameComponent, Transform, World};
+use crate::entity_save_meta::EntitySaveRegistry;
 use crate::gizmo::GizmoBuffer;
 use crate::ipc::{EngineCommand, EngineCommandCommon};
 use crate::mesh::Mesh;
@@ -50,65 +50,65 @@ use crate::scripting::ScriptEngine;
 use crate::ecs::EntityId;
 
 pub struct State {
-    pub(crate) window:           Arc<Window>,
-    pub(crate) surface:          wgpu::Surface<'static>,
-    pub(crate) device:           wgpu::Device,
-    pub(crate) queue:            wgpu::Queue,
-    pub(crate) config:           wgpu::SurfaceConfiguration,
-    pub(crate) size:             PhysicalSize<u32>,
-    pub(crate) clear_color:      wgpu::Color,
-    pub(crate) render_pipeline:     wgpu::RenderPipeline,
+    pub(crate) window: Arc<Window>,
+    pub(crate) surface: wgpu::Surface<'static>,
+    pub(crate) device: wgpu::Device,
+    pub(crate) queue: wgpu::Queue,
+    pub(crate) config: wgpu::SurfaceConfiguration,
+    pub(crate) size: PhysicalSize<u32>,
+    pub(crate) clear_color: wgpu::Color,
+    pub(crate) render_pipeline: wgpu::RenderPipeline,
     /// Pipeline para modo 2D: sin depth-write, CompareFunction::Always.
     /// Permite que el alpha blending funcione correctamente con back-to-front sort.
-    pub(crate) render_pipeline_2d:  wgpu::RenderPipeline,
+    pub(crate) render_pipeline_2d: wgpu::RenderPipeline,
     /// Sprites sobre swapchain (1 color target; p.ej. hints tras el blit de escena).
     pub(crate) render_pipeline_overlay: wgpu::RenderPipeline,
-    pub(crate) depth_view:       wgpu::TextureView,
+    pub(crate) depth_view: wgpu::TextureView,
     /// Escena offscreen + blit al swapchain (sin TAA).
-    pub(crate) scene_target:     crate::scene_target::SceneTarget,
+    pub(crate) scene_target: crate::scene_target::SceneTarget,
     // Uniforms (group 0) — un buffer por malla para que cada draw call
     // tenga sus propios datos y write_buffer no sobreescriba el anterior.
-    pub(crate) scene_buffer:       wgpu::Buffer,
+    pub(crate) scene_buffer: wgpu::Buffer,
     /// Bind group del buffer escena (group 0, binding 0).
-    pub(crate) scene_bind_group:   wgpu::BindGroup,
+    pub(crate) scene_bind_group: wgpu::BindGroup,
     // Texturas (group 1) — todas en el atlas compartido
     /// Atlas de texturas: una sola textura GPU 4096×4096 que empaca todos los sprites.
     /// Todas las entidades comparten su bind group, eliminando los cambios de grupo por batch.
-    pub(crate) atlas:              crate::texture::TextureAtlas,
+    pub(crate) atlas: crate::texture::TextureAtlas,
     /// UV rects de cada textura en el atlas, indexados por `MeshComponent.tex_idx`.
-    pub(crate) uv_rects:           Vec<[f32; 4]>,
+    pub(crate) uv_rects: Vec<[f32; 4]>,
     /// UV del pixel blanco 1×1 en (0,0) del atlas — fallback cuando tex_idx es inválido.
-    pub(crate) fallback_uv:        [f32; 4],
+    pub(crate) fallback_uv: [f32; 4],
     /// Caché de texturas estáticas PNG: path → UV rect en el atlas.
-    pub(crate) static_tex_cache:   std::collections::HashMap<String, [f32; 4]>,
+    pub(crate) static_tex_cache: std::collections::HashMap<String, [f32; 4]>,
     /// Índice en `meshes[]` del quad unitario canónico (1×1 en origen).
     /// Todos los sprites 2D apuntan a este mesh; sus texturas individuales
     /// se almacenan en `textures[]` indexadas por `MeshComponent.tex_idx`.
     pub(crate) canonical_quad_idx: usize,
     // Cámara
-    pub camera:       Camera,
+    pub camera: Camera,
     /// Cámara 2D ortográfica activa cuando se carga una escena 2D.
     /// Si es `None`, se usa la cámara base del editor.
-    pub camera_2d:    Option<Camera2D>,
+    pub camera_2d: Option<Camera2D>,
     // Escena y mallas
-    pub(crate) meshes:           Vec<Mesh>,
-    pub(crate) world:            World,
+    pub(crate) meshes: Vec<Mesh>,
+    pub(crate) world: World,
     // Tiempo
-    pub(crate) last_frame:       Instant,
-    pub        delta_time:       f32,
+    pub(crate) last_frame: Instant,
+    pub delta_time: f32,
     // Gizmos
-    pub(crate) gizmo_pipeline:   wgpu::RenderPipeline,
-    pub(crate) gizmo_buffer:     GizmoBuffer,
+    pub(crate) gizmo_pipeline: wgpu::RenderPipeline,
+    pub(crate) gizmo_buffer: GizmoBuffer,
     pub(crate) gizmo_bind_group: wgpu::BindGroup,
     pub(crate) gizmo_buffer_uni: wgpu::Buffer,
     // Física
-    pub physics_2d:   PhysicsWorld2D,
+    pub physics_2d: PhysicsWorld2D,
     // Selección
-    pub selected_entity:     Option<EntityId>,
-    pub selected_entities:   Vec<EntityId>,
-    pub hovered_entity:      Option<EntityId>,
-    pub hovered_gizmo_axis:  Option<usize>,
-    pub active_gizmo_axis:   Option<usize>,
+    pub selected_entity: Option<EntityId>,
+    pub selected_entities: Vec<EntityId>,
+    pub hovered_entity: Option<EntityId>,
+    pub hovered_gizmo_axis: Option<usize>,
+    pub active_gizmo_axis: Option<usize>,
     // Spatial partitioning para picking/queries
     pub(crate) spatial_grid: crate::spatial::SpatialGrid,
     // Escenario 2D: lista de entidades ECS que actúan como fondos PNG.
@@ -117,19 +117,19 @@ pub struct State {
     pub(crate) character_entities: Vec<EntityId>,
     // Fondo del mundo 2D: entidad especial no seleccionable que cubre todo el área.
     pub(crate) background_entity: Option<EntityId>,
-    pub(crate) background_path:   Option<String>,
+    pub(crate) background_path: Option<String>,
     // Grid 2D: cuadrícula y límites del mundo.
-    pub(crate) grid_config:      GridConfig,
-    pub(crate) grid_pipeline:    wgpu::RenderPipeline,
-    pub(crate) grid_buffer:      GridBuffer,
-    pub(crate) grid_bind_group:  wgpu::BindGroup,
-    pub(crate) grid_buffer_uni:  wgpu::Buffer,
+    pub(crate) grid_config: GridConfig,
+    pub(crate) grid_pipeline: wgpu::RenderPipeline,
+    pub(crate) grid_buffer: GridBuffer,
+    pub(crate) grid_bind_group: wgpu::BindGroup,
+    pub(crate) grid_buffer_uni: wgpu::Buffer,
     /// Estado de la tecla Ctrl (enviado por IPC desde Electron, ya que la ventana overlay
     /// no recibe keyboard events directamente).
-    pub(crate) ctrl_held:        bool,
-    pub(crate) shift_held:       bool,
+    pub(crate) ctrl_held: bool,
+    pub(crate) shift_held: bool,
     /// Herramienta de dibujo activa en modo 2D.
-    pub        active_tool:      ActiveTool,
+    pub active_tool: ActiveTool,
     /// Entidad fantasma para previsualizar el blueprint a colocar (Quick Build mode).
     pub(crate) quick_build_ghost_id: Option<EntityId>,
     /// Ruta de asset de la blueprint activa en Quick Build (para snap por igualdad de blueprint).
@@ -139,7 +139,7 @@ pub struct State {
     /// Escala base de la blueprint activa (sin ajuste dinámico por Ctrl).
     pub(crate) quick_build_preview_scale: Option<[f32; 3]>,
     /// true = modo juego (simulación), false = modo editor.
-    pub        preview_playing:  bool,
+    pub preview_playing: bool,
     /// Edición de UI del jugador (cuadrícula de trabajo NDC).
     pub(crate) player_ui_edit_active: bool,
     pub(crate) ui_work_grid_buffer: GizmoBuffer,
@@ -149,13 +149,11 @@ pub struct State {
     pub(crate) player_ui_player_screen_names: HashMap<String, String>,
     pub(crate) player_ui_text_boxes:
         HashMap<String, Vec<crate::config_2d::player_ui::PlayerUiTextBox>>,
-    pub(crate) player_ui_buttons:
-        HashMap<String, Vec<crate::config_2d::player_ui::PlayerUiButton>>,
-    pub(crate) player_ui_images:
-        HashMap<String, Vec<crate::config_2d::player_ui::PlayerUiImage>>,
-    pub(crate) player_ui_objects:
-        HashMap<String, Vec<crate::config_2d::player_ui::PlayerUiObject>>,
-    pub(crate) player_ui_object_draw: Option<crate::config_2d::player_ui::object::PlayerUiObjectDrawSession>,
+    pub(crate) player_ui_buttons: HashMap<String, Vec<crate::config_2d::player_ui::PlayerUiButton>>,
+    pub(crate) player_ui_images: HashMap<String, Vec<crate::config_2d::player_ui::PlayerUiImage>>,
+    pub(crate) player_ui_objects: HashMap<String, Vec<crate::config_2d::player_ui::PlayerUiObject>>,
+    pub(crate) player_ui_object_draw:
+        Option<crate::config_2d::player_ui::object::PlayerUiObjectDrawSession>,
     pub(crate) player_ui_object_draw_overlay: GizmoBuffer,
     pub(crate) player_ui_text_next_id: u32,
     pub(crate) player_ui_text_overlay_buffer: GizmoBuffer,
@@ -229,7 +227,7 @@ pub struct State {
     /// play_animation_frame escribe aquí; restore_animation_frame borra la entrada;
     /// el render loop lo lee con prioridad sobre uv_rects[].
     pub(crate) anim_overrides: std::collections::HashMap<usize, [f32; 4]>,
-/// Animaciones guardadas: entity_id → (name → AnimationState).
+    /// Animaciones guardadas: entity_id → (name → AnimationState).
     /// Permite almacenar TODAS las animaciones de una entidad y reproducir
     /// cualquiera por nombre sin reenviar datos desde el frontend.
     pub(crate) animations: HashMap<u32, HashMap<String, AnimationState>>,
@@ -267,11 +265,11 @@ pub struct State {
     pub(crate) is_applying_undo: bool,
     // ── Debug metrics ────────────────────────────────────────────────────────
     process_metrics_sampler: rer_engine_shared::process_metrics::ProcessMetricsSampler,
-    metrics_last_emit:   Instant,
+    metrics_last_emit: Instant,
     metrics_frame_count: u32,
-    last_draw_calls:     u32,
-    autosave_enabled:    bool,
-    autosave_last_tick:  Instant,
+    last_draw_calls: u32,
+    autosave_enabled: bool,
+    autosave_last_tick: Instant,
     /// Límite de FPS del bucle (sincronizado con `set_target_fps`).
     pub(crate) target_fps: u64,
     /// Bloqueo persistente de input horizontal para `on_keep`.
@@ -309,19 +307,29 @@ impl State {
         rer_engine_shared::editor_defaults::next_numbered_entity_label(base, names)
     }
 
-
     // ── Accesores ─────────────────────────────────────────────────────────────
 
-    pub fn window(&self) -> &Arc<Window> { &self.window }
-    pub fn size(&self)   -> PhysicalSize<u32> { self.size }
-    pub fn is_preview_playing(&self) -> bool { self.preview_playing }
+    pub fn window(&self) -> &Arc<Window> {
+        &self.window
+    }
+    pub fn size(&self) -> PhysicalSize<u32> {
+        self.size
+    }
+    pub fn is_preview_playing(&self) -> bool {
+        self.preview_playing
+    }
 
     /// Sincroniza el body 2D con una mutacion externa del `Transform`.
     /// No reemplaza el movimiento de gameplay: ese debe pasar por
     /// `move_physics_entity()` o por las rutas kinematic del runtime.
     pub(crate) fn sync_physics_2d_body_from_transform(&mut self, id: u32) {
-        let Some((x, y)) = self.world.get::<Transform>(id)
-            .map(|t| (t.position.x, t.position.y)) else { return; };
+        let Some((x, y)) = self
+            .world
+            .get::<Transform>(id)
+            .map(|t| (t.position.x, t.position.y))
+        else {
+            return;
+        };
         self.physics_2d.sync_body_from_transform(id, x, y);
     }
 
@@ -330,28 +338,47 @@ impl State {
         self.physics_2d.sync_body_from_transform(id, x, y);
     }
 
-    pub fn push_undo_transform(&mut self, id: u32, position: [f32; 3], rotation: [f32; 4], scale: [f32; 3]) {
+    pub fn push_undo_transform(
+        &mut self,
+        id: u32,
+        position: [f32; 3],
+        rotation: [f32; 4],
+        scale: [f32; 3],
+    ) {
         if !self.is_applying_undo {
             self.redo_stack.clear();
         }
-        self.undo_stack.push(UndoAction::RestoreTransform { id, position, rotation, scale });
+        self.undo_stack.push(UndoAction::RestoreTransform {
+            id,
+            position,
+            rotation,
+            scale,
+        });
     }
 
-    pub fn push_undo_transforms(&mut self, items: Vec<(u32, [f32; 3], [f32; 4], [f32; 3])>) {
+    pub fn push_undo_transforms(&mut self, items: Vec<EntityTransformSnapshot>) {
         if items.is_empty() {
             return;
         }
         if !self.is_applying_undo {
             self.redo_stack.clear();
         }
-        self.undo_stack.push(UndoAction::RestoreTransforms { items });
+        self.undo_stack
+            .push(UndoAction::RestoreTransforms { items });
     }
 
     pub fn apply_undo(&mut self) {
-        let Some(action) = self.undo_stack.pop() else { return; };
+        let Some(action) = self.undo_stack.pop() else {
+            return;
+        };
         self.is_applying_undo = true;
         match action {
-            UndoAction::RestoreTransform { id, position, rotation, scale } => {
+            UndoAction::RestoreTransform {
+                id,
+                position,
+                rotation,
+                scale,
+            } => {
                 if let Some(t) = self.world.get::<Transform>(id) {
                     self.redo_stack.push(UndoAction::RestoreTransform {
                         id,
@@ -374,7 +401,7 @@ impl State {
                 }));
             }
             UndoAction::RestoreTransforms { items } => {
-                let mut redo_items: Vec<(u32, [f32; 3], [f32; 4], [f32; 3])> = Vec::new();
+                let mut redo_items: Vec<EntityTransformSnapshot> = Vec::new();
                 for (id, _, _, _) in &items {
                     if let Some(t) = self.world.get::<Transform>(*id) {
                         redo_items.push((
@@ -386,7 +413,8 @@ impl State {
                     }
                 }
                 if !redo_items.is_empty() {
-                    self.redo_stack.push(UndoAction::RestoreTransforms { items: redo_items });
+                    self.redo_stack
+                        .push(UndoAction::RestoreTransforms { items: redo_items });
                 }
                 for (id, position, rotation, scale) in items {
                     self.handle_command(EngineCommand::Common(EngineCommandCommon::SetTransform {
@@ -405,7 +433,9 @@ impl State {
             }
             UndoAction::RemoveEntity { snapshot } => {
                 let id = snapshot.id;
-                self.handle_command(EngineCommand::Common(EngineCommandCommon::RemoveEntity { id }));
+                self.handle_command(EngineCommand::Common(EngineCommandCommon::RemoveEntity {
+                    id,
+                }));
                 self.redo_stack.push(UndoAction::RestoreEntity { snapshot });
             }
             UndoAction::RestoreEntity { snapshot } => {
@@ -426,10 +456,17 @@ impl State {
     }
 
     pub fn apply_redo(&mut self) {
-        let Some(action) = self.redo_stack.pop() else { return; };
+        let Some(action) = self.redo_stack.pop() else {
+            return;
+        };
         self.is_applying_undo = true;
         match action {
-            UndoAction::RestoreTransform { id, position, rotation, scale } => {
+            UndoAction::RestoreTransform {
+                id,
+                position,
+                rotation,
+                scale,
+            } => {
                 if let Some(t) = self.world.get::<Transform>(id) {
                     self.undo_stack.push(UndoAction::RestoreTransform {
                         id,
@@ -452,7 +489,7 @@ impl State {
                 }));
             }
             UndoAction::RestoreTransforms { items } => {
-                let mut undo_items: Vec<(u32, [f32; 3], [f32; 4], [f32; 3])> = Vec::new();
+                let mut undo_items: Vec<EntityTransformSnapshot> = Vec::new();
                 for (id, _, _, _) in &items {
                     if let Some(t) = self.world.get::<Transform>(*id) {
                         undo_items.push((
@@ -464,7 +501,8 @@ impl State {
                     }
                 }
                 if !undo_items.is_empty() {
-                    self.undo_stack.push(UndoAction::RestoreTransforms { items: undo_items });
+                    self.undo_stack
+                        .push(UndoAction::RestoreTransforms { items: undo_items });
                 }
                 for (id, position, rotation, scale) in items {
                     self.handle_command(EngineCommand::Common(EngineCommandCommon::SetTransform {
@@ -487,7 +525,9 @@ impl State {
             }
             UndoAction::RemoveEntity { snapshot } => {
                 let id = snapshot.id;
-                self.handle_command(EngineCommand::Common(EngineCommandCommon::RemoveEntity { id }));
+                self.handle_command(EngineCommand::Common(EngineCommandCommon::RemoveEntity {
+                    id,
+                }));
                 self.undo_stack.push(UndoAction::RestoreEntity { snapshot });
             }
             UndoAction::RestorePlayerUiHud { snapshot } => {
@@ -506,9 +546,11 @@ impl State {
     // ── Resize ───────────────────────────────────────────────────────────────
 
     pub fn resize(&mut self, new_size: PhysicalSize<u32>) {
-        if new_size.width == 0 || new_size.height == 0 { return; }
-        self.size          = new_size;
-        self.config.width  = new_size.width;
+        if new_size.width == 0 || new_size.height == 0 {
+            return;
+        }
+        self.size = new_size;
+        self.config.width = new_size.width;
         self.config.height = new_size.height;
         self.surface.configure(&self.device, &self.config);
         self.depth_view = create_depth_texture(&self.device, &self.config);
@@ -532,9 +574,11 @@ impl State {
             wgpu::PresentMode::AutoNoVsync
         };
         self.surface.configure(&self.device, &self.config);
-        log::info!("[vsync] V-Sync {}", if enabled { "activado" } else { "desactivado" });
+        log::info!(
+            "[vsync] V-Sync {}",
+            if enabled { "activado" } else { "desactivado" }
+        );
     }
-
 
     /// Reconstruye el vertex buffer de la cuadrícula con la configuración actual.
     pub(crate) fn rebuild_grid(&mut self) {
@@ -569,6 +613,4 @@ impl State {
         self.selected_entity
             .and_then(|id| self.world.get::<Transform>(id).map(|t| t.position))
     }
-
-
 }

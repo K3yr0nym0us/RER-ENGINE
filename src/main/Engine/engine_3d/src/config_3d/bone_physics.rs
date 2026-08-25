@@ -6,9 +6,9 @@ use serde::{Deserialize, Serialize};
 use crate::config_3d::entity_sockets::resolve_joint_index;
 use crate::config_3d::model_asset::ModelAsset;
 use crate::ecs::{EntityId, Transform};
-use crate::engine::UndoAction;
 use crate::engine::State;
-use crate::ipc::{send_event, EngineEvent};
+use crate::engine::UndoAction;
+use crate::ipc::{EngineEvent, send_event};
 
 /// Modo persistido por hueso (`.save` + IPC).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -103,10 +103,7 @@ impl State {
         }
     }
 
-    pub(crate) fn list_entity_bone_physics(
-        &self,
-        entity_id: EntityId,
-    ) -> Vec<BonePhysicsSnapshot> {
+    pub(crate) fn list_entity_bone_physics(&self, entity_id: EntityId) -> Vec<BonePhysicsSnapshot> {
         self.entity_bone_physics
             .get(&entity_id)
             .cloned()
@@ -139,22 +136,21 @@ impl State {
         if mode == BonePhysicsMode::None {
             self.remove_bone_physics_entry(entity_id, bone_name);
         } else {
-            let _ = self.set_bone_physics_no_undo(entity_id, bone_name, mode)?;
+            self.set_bone_physics_no_undo(entity_id, bone_name, mode)?;
         }
 
         if !self.is_applying_undo {
             self.redo_stack.clear();
-            self.undo_stack
-                .push(UndoAction::RestoreBonePhysics {
-                    entity_id,
-                    bone_name: bone_name.to_string(),
-                    before: previous,
-                    after: if mode == BonePhysicsMode::None {
-                        None
-                    } else {
-                        Some(mode)
-                    },
-                });
+            self.undo_stack.push(UndoAction::RestoreBonePhysics {
+                entity_id,
+                bone_name: bone_name.to_string(),
+                before: previous,
+                after: if mode == BonePhysicsMode::None {
+                    None
+                } else {
+                    Some(mode)
+                },
+            });
             self.sync_editor_scenes_undo_dirty_to_renderer();
         }
 
@@ -177,7 +173,11 @@ impl State {
         self.clear_bone_physics_sim_for_entity_bone(entity_id, bone_name);
     }
 
-    pub(crate) fn clear_bone_physics_sim_for_entity_bone(&mut self, entity_id: EntityId, bone_name: &str) {
+    pub(crate) fn clear_bone_physics_sim_for_entity_bone(
+        &mut self,
+        entity_id: EntityId,
+        bone_name: &str,
+    ) {
         let Some(binding) = self.model_animation_bindings.get(&entity_id) else {
             return;
         };
@@ -215,10 +215,7 @@ impl State {
 
     pub(crate) fn emit_entity_bone_physics_changed(&self, entity_id: EntityId) {
         let entries = self.list_entity_bone_physics(entity_id);
-        send_event(&EngineEvent::EntityBonePhysicsChanged {
-            entity_id,
-            entries,
-        });
+        send_event(&EngineEvent::EntityBonePhysicsChanged { entity_id, entries });
     }
 
     pub(crate) fn emit_entity_bone_physics_if_any(&self, entity_id: EntityId) {
@@ -283,11 +280,14 @@ impl State {
                     continue;
                 }
                 EffectiveBonePhysics::Dynamic | EffectiveBonePhysics::Kinematic => {
-                    let sim = self.bone_physics_sim.entry(key).or_insert(BonePhysicsSimState {
-                        rot_offset: Quat::IDENTITY,
-                        ang_vel: Vec3::ZERO,
-                        prev_anim_rot: anim_rot,
-                    });
+                    let sim = self
+                        .bone_physics_sim
+                        .entry(key)
+                        .or_insert(BonePhysicsSimState {
+                            rot_offset: Quat::IDENTITY,
+                            ang_vel: Vec3::ZERO,
+                            prev_anim_rot: anim_rot,
+                        });
 
                     let stiffness = if effective == EffectiveBonePhysics::Dynamic {
                         SPRING_STIFFNESS
@@ -307,8 +307,7 @@ impl State {
                     sim.ang_vel += entity_motion_impulse;
 
                     let (rx, ry, rz) = sim.rot_offset.to_euler(EulerRot::XYZ);
-                    let mut accel =
-                        Vec3::new(-rx, -ry, -rz) * stiffness - sim.ang_vel * damping;
+                    let mut accel = Vec3::new(-rx, -ry, -rz) * stiffness - sim.ang_vel * damping;
 
                     if effective == EffectiveBonePhysics::Dynamic {
                         let g = self.physics.gravity_magnitude().max(0.01) / 15.0;
@@ -340,15 +339,15 @@ impl State {
         let pos = t.position;
         let rot = t.rotation.normalize();
 
-        let motion = self
-            .bone_physics_entity_motion
-            .entry(entity_id)
-            .or_insert(BonePhysicsEntityMotion {
-                prev_position: pos,
-                prev_velocity: Vec3::ZERO,
-                prev_rotation: rot,
-                initialized: false,
-            });
+        let motion =
+            self.bone_physics_entity_motion
+                .entry(entity_id)
+                .or_insert(BonePhysicsEntityMotion {
+                    prev_position: pos,
+                    prev_velocity: Vec3::ZERO,
+                    prev_rotation: rot,
+                    initialized: false,
+                });
 
         if !motion.initialized {
             motion.prev_position = pos;

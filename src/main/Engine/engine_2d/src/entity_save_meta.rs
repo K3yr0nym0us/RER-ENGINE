@@ -49,15 +49,15 @@ impl EntitySaveRegistry {
 
 impl State {
     pub(crate) fn is_player_entity(&self, id: EntityId) -> bool {
-        if let Some(m) = self.save_registry.meta.get(&id) {
-            if m.path == "[Player]" || m.path.ends_with("[Player]") {
-                return true;
-            }
+        if let Some(m) = self.save_registry.meta.get(&id)
+            && (m.path == "[Player]" || m.path.ends_with("[Player]"))
+        {
+            return true;
         }
-        if let Some(c) = self.world.get::<CharacterMarker>(id) {
-            if c.path == "[Player]" || c.path.ends_with("[Player]") {
-                return true;
-            }
+        if let Some(c) = self.world.get::<CharacterMarker>(id)
+            && (c.path == "[Player]" || c.path.ends_with("[Player]"))
+        {
+            return true;
         }
         false
     }
@@ -76,9 +76,7 @@ impl State {
         if self.is_player_entity(id) {
             return None;
         }
-        if self.world.get::<Transform>(id).is_none() {
-            return None;
-        }
+        self.world.get::<Transform>(id)?;
 
         if let Some(m) = self.save_registry.meta.get(&id) {
             return Some(m.clone());
@@ -142,8 +140,6 @@ impl State {
     }
 
     pub(crate) fn entity_display_name(&self, id: EntityId) -> Option<String> {
-        self.world
-            .get::<NameComponent>(id)
-            .map(|c| c.name.clone())
+        self.world.get::<NameComponent>(id).map(|c| c.name.clone())
     }
 }

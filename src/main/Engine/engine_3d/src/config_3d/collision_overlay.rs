@@ -212,18 +212,17 @@ fn push_character_capsule_overlay(
         return;
     };
     let radius = crate::config_3d::character_anchor::PLAY_CHARACTER_COLLIDER_RADIUS;
-    let body_h =
-        crate::config_3d::character_anchor::PLAY_CHARACTER_BODY_HEIGHT * t.scale.y.abs();
+    let body_h = crate::config_3d::character_anchor::PLAY_CHARACTER_BODY_HEIGHT * t.scale.y.abs();
     let feet = crate::config_3d::character_anchor::feet_from_transform(
-        t.position,
-        t.scale,
-        t.rotation,
-        None,
+        t.position, t.scale, t.rotation, None,
     );
     push_wire_capsule_y(verts, feet, radius, body_h, color);
 }
 
-pub(crate) fn build_editor_collision_overlay(device: &wgpu::Device, state: &State) -> gizmo::GizmoBuffer {
+pub(crate) fn build_editor_collision_overlay(
+    device: &wgpu::Device,
+    state: &State,
+) -> gizmo::GizmoBuffer {
     if state.preview_playing {
         return gizmo::build_from_vertices(device, &[]);
     }
@@ -256,13 +255,7 @@ pub(crate) fn build_editor_collision_overlay(device: &wgpu::Device, state: &Stat
                 push_wire_box(&mut verts, t.position, half, COLOR_PLAYER_PLACEHOLDER);
             }
         } else if let Some((feet, radius, total_h)) = state.play_character_capsule_wire_dims() {
-            push_wire_capsule_y(
-                &mut verts,
-                feet,
-                radius,
-                total_h,
-                COLOR_CHARACTER_CAPSULE,
-            );
+            push_wire_capsule_y(&mut verts, feet, radius, total_h, COLOR_CHARACTER_CAPSULE);
         }
     }
 

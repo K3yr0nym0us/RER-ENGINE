@@ -19,7 +19,6 @@ import type {
 	PlayCharacterViewChanged,
 	ProjectLoaded2dPayload,
 	ProjectLoaded3dPayload,
-	SavedScene,
 } from '@shared-types';
 import {
 	activeEntityPropertiesHandlerRef,
@@ -33,16 +32,10 @@ import {
 	tryAssignSocketConfigModalEntity,
 } from '../../../modal-electron/socketConfigModalSessions';
 import {
-	DEFAULT_LIGHT_AMBIENT,
-	DEFAULT_LIGHT_INTENSITY,
-	DEFAULT_SHADOW_DARKNESS,
 	PLAY_CHARACTER_BODY_SCALE,
-	isEditorBoxPath,
 	isEditorCameraPath,
 	isPlayerEntity,
 	isPlayerPath,
-	isGroundPath,
-	isSunPath,
 	type EntityCategory,
 } from '@shared-types';
 import { applyPlayCharacterControlDefaultsIfEmpty } from '../../../defaults/applyPlayCharacterControlDefaults';
@@ -63,25 +56,18 @@ import {
 	normalizeBlueprintCategory,
 	reconcileCategoryWithName,
 	isModel3DPath,
-	is3dModelFileEntity,
 } from '../../../utils/blueprintModelPath';
 import { entityHasSkinnedModel, invalidateEntityBoneNames, playViewFromPlayerAndCamera } from '../../../utils/entity3dEditorSync';
 import {
-	buildImportSceneCommand,
 	is2dProjectLoadedByEngine,
 	is3dProjectLoadedByEngine,
 	isProjectOpenedFromSave,
-	resolveEntityTransform,
-	resolveSavedEntityTransform,
 	syncEditorStateFromSavedScene,
 	syncPlayerEntityMetaFromPlayer,
-	syncPlayerEntityMetaFromTransform,
 } from './buildImportSceneCommand';
 import { applyPendingRestoreMeta, buildPlayAnimationFrameCmd, sendApplyEntityRestore } from './applyPendingRestoreToEngine';
 import {
-	beginSceneBurstLoad,
 	beginSceneImportLoading,
-	beginModelReplaceLoading,
 	beginEngineBootEntityWait,
 	completeEngineBootIpcEvent,
 	endEngineBootLoadingIfIdle,
@@ -92,9 +78,6 @@ import {
 	endSceneBurstLoad,
 	endSceneImportLoading,
 	endFpSceneBaselineLogging,
-	trackSceneBurstCollider,
-	trackSceneBurstOp,
-	trackSceneBurstModelPreloads,
 	completeSceneBurstOp,
 	tryEndSceneBurstLoad,
 	takePendingBurstSpawnRestoreForPath,
@@ -110,7 +93,15 @@ import {
 import {
 	DEFAULT_PLAYER_UI_BUTTON_CONFIG,
 } from '../../../pages/EngineView/components/sidebar/UIAccordion/components/playerUiButtonModel';
-import type { EngineAction, EngineInternalRefs, EntityMeta, PendingRestore, Transform } from '../types';
+import type { EngineAction, EngineInternalRefs, EntityAnimations, EntityMeta, PendingRestore, Transform } from '../types';
+function mustTakeQueued<T>(queue: T[]): T {
+	const item = queue.shift()
+	if (item === undefined) {
+		throw new Error('Cola de restore vacía tras comprobar length')
+	}
+	return item
+}
+
 import { buildEditingUiElementsFromEngineList, normalizeGraphicsTextureTier, normalizeReflectionTier, normalizeReflectionDebugView, normalizeShadowTier } from '../types';
 import { takePendingPlayerUiButtonConfig } from './createEngineActions';
 
@@ -251,7 +242,7 @@ function panelLogLineForBaselineSpawn(
 	const tag = bootPreloaded ? '[Carga]' : '[Escena]';
 
 	if (event.event === 'model_loaded') {
-		const name = (event as { name?: string }).name ?? '';
+		const name = (event as unknown as { name?: string }).name ?? '';
 		if (name === 'Ground') {
 			if (bootPreloaded || fpBaseline) return `${tag} Insertando suelo`;
 			return null;
@@ -267,7 +258,7 @@ function panelLogLineForBaselineSpawn(
 	}
 
 	if (event.event === 'character_loaded') {
-		const path = (event as { path?: string }).path ?? '';
+		const path = (event as unknown as { path?: string }).path ?? '';
 		if (!isPlayerPath(path)) return null;
 		if (bootPreloaded || fpBaseline) {
 			if (fpBaseline) endFpSceneBaselineLogging(refs.fpSceneBaselineLogRef);
@@ -361,7 +352,7 @@ function panelLogLineForSocketEvent(
 				|| refs.engineBootAwaitRef.current;
 			if (loadPanelActive) return null;
 
-			const e = event as {
+			const e = event as unknown as {
 				entity_id: number;
 				sockets: Array<{ name: string; bone_name: string }>;
 			};
@@ -375,7 +366,7 @@ function panelLogLineForSocketEvent(
 		}
 
 		case 'entity_socket_attached': {
-			const e = event as {
+			const e = event as unknown as {
 				socket_name: string;
 				child_ids: number[];
 			};
@@ -480,7 +471,7 @@ interface CreateEngineEventHandlerParams {
 	addLog: (text: string, isError?: boolean) => void
 	projectType?: string
 	gameStyle?: GameStyle
-	applyInitialAnimationFrame: (entityId: number, animations?: any[]) => void
+	applyInitialAnimationFrame: (entityId: number, animations?: EntityAnimations) => void
 	setLocale?: (locale: Locale) => void
 	reportBounds: () => void
 }
@@ -521,8 +512,8 @@ export function createEngineEventHandler({
 	refs,
 	addLog,
 	projectType,
-	gameStyle,
-	applyInitialAnimationFrame,
+	gameStyle: _gameStyle,
+	applyInitialAnimationFrame: _applyInitialAnimationFrame,
 	setLocale,
 	reportBounds,
 }: CreateEngineEventHandlerParams) {
@@ -549,7 +540,7 @@ export function createEngineEventHandler({
 
 	return (event: RuntimeEngineEvent) => {
 		if (event.event === 'load_progress') {
-			const progress = event as {
+			const progress = event as unknown as {
 				message?: string
 				step_ms?: number
 				total_ms?: number
@@ -629,7 +620,7 @@ export function createEngineEventHandler({
 
 		if (event.event === 'model_loaded') {
 			trackEngineBootIpcSeen(refs, projectType, isProjectOpenedFromSave(refs.initialExtractDirRef.current));
-			const loaded = event as {
+			const loaded = event as unknown as {
 				id?: number
 				name?: string
 				position?: [number, number, number]
@@ -830,7 +821,7 @@ export function createEngineEventHandler({
 			const burstActive = refs.sceneBurstLoadInProgressRef.current;
 			const sunQueue = refs.pendingRestoresRef.current.get('[Sun]');
 			if (sunQueue && sunQueue.length > 0) {
-				const pending = sunQueue.shift()!;
+				const pending = mustTakeQueued(sunQueue);
 				refs.entityMetaRef.current[id] = {
 					kind: 'directional_light',
 					path: '[Sun]',
@@ -848,7 +839,7 @@ export function createEngineEventHandler({
 			} else {
 			const ballQueue = refs.pendingRestoresRef.current.get('[Ball]');
 			if (ballQueue && ballQueue.length > 0) {
-				const pending = ballQueue.shift()!;
+				const pending = mustTakeQueued(ballQueue);
 				refs.entityMetaRef.current[id] = {
 					kind: 'model',
 					path: '[Ball]',
@@ -868,7 +859,7 @@ export function createEngineEventHandler({
 			} else {
 			const groundQueue = refs.pendingRestoresRef.current.get('[Ground]');
 			if (groundQueue && groundQueue.length > 0) {
-				const pending = groundQueue.shift()!;
+				const pending = mustTakeQueued(groundQueue);
 				refs.entityMetaRef.current[id] = {
 					kind: 'model',
 					path: '[Ground]',
@@ -886,7 +877,7 @@ export function createEngineEventHandler({
 			} else {
 			const editorBoxQueue = refs.pendingRestoresRef.current.get('[EditorBox]');
 			if (editorBoxQueue && editorBoxQueue.length > 0) {
-				const pending = editorBoxQueue.shift()!;
+				const pending = mustTakeQueued(editorBoxQueue);
 				refs.entityMetaRef.current[id] = {
 					kind: 'model',
 					path: '[EditorBox]',
@@ -921,7 +912,7 @@ export function createEngineEventHandler({
 				if (!restorePending && modelPath) {
 					const qbQueue = refs.pendingRestoresRef.current.get(modelPath);
 					if (qbQueue && qbQueue.length > 0) {
-						restorePending = qbQueue.shift()!;
+						restorePending = mustTakeQueued(qbQueue);
 						if (qbQueue.length === 0) {
 							refs.pendingRestoresRef.current.delete(modelPath);
 						}
@@ -1056,7 +1047,7 @@ export function createEngineEventHandler({
 					}
 					refs.pendingModelPathRef.current = null;
 					refs.pendingSpawnCategoryRef.current = null;
-					if (burstActive && modelPath) {
+					if (burstActive) {
 						drainPendingRestoreSlot(
 							refs.pendingRestoresRef.current,
 							refs.pendingModelLoadQueueRef.current,
@@ -1097,7 +1088,7 @@ export function createEngineEventHandler({
 		}
 
 		if (event.event === 'entity_model_replaced') {
-			const replaced = event as {
+			const replaced = event as unknown as {
 				id?: number
 				path?: string
 				position?: [number, number, number]
@@ -1331,7 +1322,7 @@ export function createEngineEventHandler({
 		}
 
 		if (event.event === 'entity_hovered') {
-			dispatch({ type: 'SET_HOVER', payload: (event as { id?: number }).id ?? null });
+			dispatch({ type: 'SET_HOVER', payload: (event as unknown as { id?: number }).id ?? null });
 		}
 
 		if (event.event === 'entity_unhovered') {
@@ -1345,7 +1336,7 @@ export function createEngineEventHandler({
 		}
 
 		if (event.event === 'background_loaded') {
-			dispatch({ type: 'SET_BACKGROUND', payload: (event as { path?: string }).path ?? null });
+			dispatch({ type: 'SET_BACKGROUND', payload: (event as unknown as { path?: string }).path ?? null });
 		}
 
 		if (event.event === 'project_loaded_2d') {
@@ -1371,7 +1362,7 @@ export function createEngineEventHandler({
 		}
 
 		if (event.event === 'player_ui_active_screen_changed') {
-			const e = event as { screen_id?: string | null };
+			const e = event as unknown as { screen_id?: string | null };
 			const screenId =
 				typeof e.screen_id === 'string' && e.screen_id.length > 0
 					? e.screen_id
@@ -1555,7 +1546,7 @@ export function createEngineEventHandler({
 				return;
 			}
 
-			let scene = refs.pendingImportSceneRef.current;
+			const scene = refs.pendingImportSceneRef.current;
 			if (scene) {
 				syncEditorStateFromSavedScene(
 					scene,
@@ -1586,7 +1577,7 @@ export function createEngineEventHandler({
 			refs.entityMetaRef.current[scenario.id] = { kind: 'scenario', path: scenario.path, physicsEnabled: false, physicsType: '' };
 			const queue = refs.pendingRestoresRef.current.get(scenario.path);
 			if (queue && queue.length > 0) {
-				const pending = queue.shift()!;
+				const pending = mustTakeQueued(queue);
 				sendApplyEntityRestore(scenario.id, pending);
 				applyPendingRestoreMeta(refs, scenario.id, pending);
 				if (queue.length === 0) refs.pendingRestoresRef.current.delete(scenario.path);
@@ -1602,7 +1593,7 @@ export function createEngineEventHandler({
 		}
 
 		if (event.event === 'character_loaded') {
-			const characterPath = (event as { path?: string }).path ?? '';
+			const characterPath = (event as unknown as { path?: string }).path ?? '';
 			if (refs.sceneImportInProgressRef.current && !isPlayerPath(characterPath)) return;
 			trackEngineBootIpcSeen(refs, projectType, isProjectOpenedFromSave(refs.initialExtractDirRef.current));
 			const character = event as unknown as CharacterLoaded;
@@ -1614,7 +1605,7 @@ export function createEngineEventHandler({
 				const queue = refs.pendingRestoresRef.current.get(path);
 				if (!queue || queue.length === 0) return false;
 
-				const pending = queue.shift()!;
+				const pending = mustTakeQueued(queue);
 				const isPlayer = isPlayerPath(path);
 				sendApplyEntityRestore(id, pending, {
 					omitScale: options?.omitScale ?? isPlayer,
@@ -1937,7 +1928,7 @@ export function createEngineEventHandler({
 					reportBounds,
 				);
 			}
-			dispatch({ type: 'ENGINE_STOPPED', payload: (event as { code?: number }).code });
+			dispatch({ type: 'ENGINE_STOPPED', payload: (event as unknown as { code?: number }).code });
 		}
 
 		if (event.event === 'play_character_view_changed') {
@@ -1979,7 +1970,7 @@ export function createEngineEventHandler({
 		}
 
 		if (event.event === 'player_ui_text_box_added') {
-			const e = event as {
+			const e = event as unknown as {
 				id?: number;
 				font_name?: string;
 				text?: string;
@@ -2001,7 +1992,7 @@ export function createEngineEventHandler({
 		}
 
 		if (event.event === 'player_ui_text_box_updated') {
-			const e = event as { id?: number; text?: string };
+			const e = event as unknown as { id?: number; text?: string };
 			if (typeof e.id === 'number' && typeof e.text === 'string') {
 				dispatch({
 					type: 'UPDATE_PLAYER_UI_TEXT_BOX',
@@ -2011,14 +2002,14 @@ export function createEngineEventHandler({
 		}
 
 		if (event.event === 'player_ui_text_box_removed') {
-			const e = event as { id?: number };
+			const e = event as unknown as { id?: number };
 			if (typeof e.id === 'number') {
 				dispatch({ type: 'REMOVE_PLAYER_UI_TEXT_BOX', payload: e.id });
 			}
 		}
 
 		if (event.event === 'player_ui_text_boxes_list') {
-			const e = event as {
+			const e = event as unknown as {
 				boxes?: Array<{
 					id?: number;
 					font_name?: string;
@@ -2127,7 +2118,7 @@ export function createEngineEventHandler({
 		}
 
 		if (event.event === 'player_ui_button_added') {
-			const e = event as { id?: number; text?: string; font_name?: string };
+			const e = event as unknown as { id?: number; text?: string; font_name?: string };
 			if (typeof e.id === 'number') {
 				const base =
 					takePendingPlayerUiButtonConfig() ?? DEFAULT_PLAYER_UI_BUTTON_CONFIG;
@@ -2146,14 +2137,14 @@ export function createEngineEventHandler({
 		}
 
 		if (event.event === 'player_ui_button_removed') {
-			const e = event as { id?: number };
+			const e = event as unknown as { id?: number };
 			if (typeof e.id === 'number') {
 				dispatch({ type: 'REMOVE_PLAYER_UI_BUTTON', payload: e.id });
 			}
 		}
 
 		if (event.event === 'player_ui_image_added') {
-			const e = event as {
+			const e = event as unknown as {
 				id?: number;
 				image_name?: string;
 				z_index?: number;
@@ -2182,35 +2173,35 @@ export function createEngineEventHandler({
 		}
 
 		if (event.event === 'player_ui_object_removed') {
-			const e = event as { id?: number };
+			const e = event as unknown as { id?: number };
 			if (typeof e.id === 'number') {
 				dispatch({ type: 'REMOVE_PLAYER_UI_OBJECT', payload: e.id });
 			}
 		}
 
 		if (event.event === 'player_ui_image_removed') {
-			const e = event as { id?: number };
+			const e = event as unknown as { id?: number };
 			if (typeof e.id === 'number') {
 				dispatch({ type: 'REMOVE_PLAYER_UI_IMAGE', payload: e.id });
 			}
 		}
 
 		if (event.event === 'hud_image_loaded') {
-			const e = event as { path?: string; name?: string };
+			const e = event as unknown as { path?: string; name?: string };
 			if (e.path && e.name) {
 				dispatch({ type: 'ADD_HUD_IMAGE', payload: { path: e.path, name: e.name } });
 			}
 		}
 
 		if (event.event === 'hud_image_removed') {
-			const e = event as { path?: string };
+			const e = event as unknown as { path?: string };
 			if (e.path) {
 				dispatch({ type: 'REMOVE_HUD_IMAGE', payload: e.path });
 			}
 		}
 
 		if (event.event === 'hud_images_list') {
-			const list = event as { images?: Array<{ path?: string; name?: string }> };
+			const list = event as unknown as { images?: Array<{ path?: string; name?: string }> };
 			const images = (list.images ?? [])
 				.filter((img): img is { path: string; name: string } =>
 					Boolean(img.path && img.name),
@@ -2220,12 +2211,12 @@ export function createEngineEventHandler({
 		}
 
 		if (event.event === 'preview_playing_changed') {
-			const playing = Boolean((event as { playing?: boolean }).playing);
+			const playing = Boolean((event as unknown as { playing?: boolean }).playing);
 			dispatch({ type: 'SET_PREVIEW_PLAYING', payload: playing });
 		}
 
 		if (event.event === 'atlas_exhausted') {
-			const e = event as { atlas_size?: number; width?: number; height?: number };
+			const e = event as unknown as { atlas_size?: number; width?: number; height?: number };
 			const atlas = e.atlas_size ?? 4096;
 			const w = e.width ?? 0;
 			const h = e.height ?? 0;
@@ -2267,16 +2258,16 @@ export function createEngineEventHandler({
 					reportBounds,
 				);
 			}
-			dispatch({ type: 'SET_ERROR', payload: (event as { message?: string }).message ?? 'Error desconocido' });
+			dispatch({ type: 'SET_ERROR', payload: (event as unknown as { message?: string }).message ?? 'Error desconocido' });
 		}
 
 		if (event.event === 'drawing_progress') {
-			dispatch({ type: 'SET_TOOL_PROGRESS', payload: (event as { count?: number }).count ?? 0 });
+			dispatch({ type: 'SET_TOOL_PROGRESS', payload: (event as unknown as { count?: number }).count ?? 0 });
 		}
 
 		if (event.event === 'collider_created') {
 			if (refs.sceneImportInProgressRef.current) return;
-			const collider = event as {
+			const collider = event as unknown as {
 				id?: number
 				points?: [[number, number], [number, number], [number, number], [number, number]]
 				position?: [number, number, number]
@@ -2324,7 +2315,7 @@ export function createEngineEventHandler({
 
 		if (event.event === 'execution_area_created') {
 			if (refs.sceneImportInProgressRef.current) return;
-			const area = event as {
+			const area = event as unknown as {
 				id?: number
 				points?: [[number, number], [number, number], [number, number], [number, number]]
 				position?: [number, number, number]
@@ -2354,7 +2345,7 @@ export function createEngineEventHandler({
 			}
 			const queue = refs.pendingRestoresRef.current.get('[ExecutionArea]');
 			if (queue && queue.length > 0) {
-				const pending = queue.shift()!;
+				const pending = mustTakeQueued(queue);
 				sendApplyEntityRestore(id, pending, { applyInitialAnimationFrame: false });
 				applyPendingRestoreMeta(refs, id, pending);
 				if (queue.length === 0) refs.pendingRestoresRef.current.delete('[ExecutionArea]');
@@ -2408,7 +2399,7 @@ export function createEngineEventHandler({
 		}
 
 		if (event.event === 'quick_build_ghost_ready') {
-			const ghost = event as { path?: string; name?: string };
+			const ghost = event as unknown as { path?: string; name?: string };
 			addLog(
 				`[quick_build] herramienta activa${ghost.name ? `: ${ghost.name}` : ''}${ghost.path ? ` (${ghost.path.split(/[/\\]/).pop()})` : ''}`,
 			);
@@ -2428,9 +2419,9 @@ export function createEngineEventHandler({
 			const e = event as unknown as AnimationLogicalResolved;
 			const meta = refs.entityMetaRef.current[e.id];
 			if (!meta?.animations) return;
-			const patchLogical = (anims: any[]) =>
-				anims.map((anim: any) =>
-					anim?.name === e.name
+			const patchLogical = (anims: EntityAnimations): EntityAnimations =>
+				anims.map((anim) =>
+					anim.name === e.name
 						? { ...anim, logical_w: e.logical_w, logical_h: e.logical_h }
 						: anim,
 				);
@@ -2495,7 +2486,7 @@ export function createEngineEventHandler({
 		}
 
 		if (event.event === 'entities_merged') {
-			const e = event as { parent_id?: number; child_ids?: number[] };
+			const e = event as unknown as { parent_id?: number; child_ids?: number[] };
 			const parentId = e.parent_id;
 			const childIds = e.child_ids ?? [];
 			if (parentId != null) {
@@ -2525,7 +2516,7 @@ export function createEngineEventHandler({
 		}
 
 		if (event.event === 'entity_bones_list') {
-			const e = event as { entity_id: number; bones: string[] };
+			const e = event as unknown as { entity_id: number; bones: string[] };
 			const meta = refs.entityMetaRef.current[e.entity_id];
 			const prev = meta?.boneNames;
 			if (prev && prev.length === e.bones.length && prev.every((b, i) => b === e.bones[i])) {
@@ -2548,7 +2539,7 @@ export function createEngineEventHandler({
 		}
 
 		if (event.event === 'socket_bone_picked') {
-			const e = event as { entity_id: number; bone_name: string };
+			const e = event as unknown as { entity_id: number; bone_name: string };
 			recordSocketBonePick(e.entity_id, e.bone_name);
 			if (activeSocketConfigModalHandlerRef.current) {
 				pushSocketConfigModalPatch(activeSocketConfigModalHandlerRef.current);
@@ -2556,7 +2547,7 @@ export function createEngineEventHandler({
 		}
 
 		if (event.event === 'bone_physics_picked') {
-			const e = event as { entity_id: number; bone_name: string };
+			const e = event as unknown as { entity_id: number; bone_name: string };
 			if (activeEntityPropertiesHandlerRef.current) {
 				onEntityPropertiesBonePhysicsPicked(
 					activeEntityPropertiesHandlerRef.current,
@@ -2567,7 +2558,7 @@ export function createEngineEventHandler({
 		}
 
 		if (event.event === 'entity_bone_physics_list' || event.event === 'entity_bone_physics_changed') {
-			const e = event as {
+			const e = event as unknown as {
 				entity_id: number;
 				entries: import('@shared-types').EntityBonePhysics3D[];
 			};
@@ -2594,7 +2585,7 @@ export function createEngineEventHandler({
 		}
 
 		if (event.event === 'entity_sockets_list') {
-			const e = event as {
+			const e = event as unknown as {
 				entity_id: number;
 				sockets: import('@shared-types').EntitySocket3D[];
 			};
@@ -2628,7 +2619,7 @@ export function createEngineEventHandler({
 		}
 
 		if (event.event === 'entity_sockets_changed') {
-			const e = event as {
+			const e = event as unknown as {
 				entity_id: number;
 				sockets: import('@shared-types').EntitySocket3D[];
 			};
@@ -2659,7 +2650,7 @@ export function createEngineEventHandler({
 		}
 
 		if (event.event === 'entity_socket_attached') {
-			const e = event as {
+			const e = event as unknown as {
 				host_id: number;
 				socket_name: string;
 				child_ids: number[];
@@ -2692,7 +2683,7 @@ export function createEngineEventHandler({
 		}
 
 		if (event.event === 'entity_attachment_restored') {
-			const e = event as {
+			const e = event as unknown as {
 				child_id: number;
 				attach_parent_id?: number;
 				attach_socket_host_id?: number;
@@ -2808,7 +2799,7 @@ export function createEngineEventHandler({
 		}
 
 		if (event.event === 'entity_animation_play_state') {
-			const e = event as {
+			const e = event as unknown as {
 				entity_id: number;
 				playing: boolean;
 				name?: string;

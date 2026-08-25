@@ -2,7 +2,7 @@ import { createContext, useContext, type ReactNode } from 'react'
 
 import { useModalElectron, type OpenModalElectronOptions } from '../hooks/useModalElectron'
 
-export type ModalSize = 'sm' | 'md' | 'lg' | 'xl'
+export type ModalSize = 'sm' | 'md' | 'lg' | 'xl' | 'xxl'
 
 export interface ModalConfig {
 	title: string

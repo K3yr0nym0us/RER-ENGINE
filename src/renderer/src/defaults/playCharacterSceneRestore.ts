@@ -1,4 +1,6 @@
 import type {
+	EngineCommand2D,
+	EngineCommand3D,
 	PlayCharacterViewChanged,
 	PlayCameraFollowMode,
 	Entity3D,
@@ -51,7 +53,7 @@ export function applyPlayCharacterViewFromEngine(
 	if (ev.player_id != null) {
 		entityTransformsRef.current[ev.player_id] = {
 			position: ev.body_center,
-			rotation: keepSavedBodyRotation ? savedBody! : ev.body_rotation,
+		rotation: keepSavedBodyRotation && savedBody ? savedBody : ev.body_rotation,
 			scale: ev.body_scale,
 		};
 	}
@@ -147,7 +149,7 @@ function buildPlayerPendingFromSave(saved: SavedPlayerTransform): PendingRestore
 export function ensurePlayCharacterOnLoad(
 	scene: { player?: Entity3D | null; playerTransform?: SavedPlayerTransform | null },
 	pendingRestoresRef: MutableRefObject<Map<string, PendingRestore[]>>,
-	send: (cmd: object) => void,
+	send: (cmd: EngineCommand2D | EngineCommand3D) => void,
 	options?: { onBurstOp?: () => void },
 ) {
 	if (scene.player) {

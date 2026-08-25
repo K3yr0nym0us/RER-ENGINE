@@ -4,6 +4,7 @@ import type {
 	BluePrintEntry,
 	EngineAction,
 	EngineInternalRefs,
+	EntityAnimations,
 	EntityMeta,
 	EntityScripts,
 	Transform,
@@ -70,30 +71,15 @@ export function createEngineActions({
 	const is3D = projectType === '3D';
 	const sendMotor = is3D ? send3dFn : send2dFn;
 	const supportsPlayerUi = projectType === '2D' || projectType === '3D';
-	const cloneTransform = (transform: Transform): Transform => ({
-		position: [...transform.position] as [number, number, number],
-		rotation: [...transform.rotation] as [number, number, number, number],
-		scale: [...transform.scale] as [number, number, number],
-	});
-
-	const cloneAnimations = (animations?: any[]) =>
-		animations?.map((anim) => ({
-			...anim,
-			frames: Array.isArray(anim.frames)
-				? anim.frames.map((frame: any) => ({ ...frame }))
-				: [],
-			scripts: Array.isArray(anim.scripts)
-				? anim.scripts.map((script: any) => ({ ...script }))
-				: [],
-		}));
-
-	const cloneScripts = (scripts?: EntityScripts) =>
-		scripts?.map((script) => ({ ...script }));
 
 	const sendAsync = <T,>(cmd: EngineCommand2D | EngineCommand3D, waitForEvent: string, onStart?: () => void): Promise<T> => {
 		if (onStart) onStart();
 		return new Promise((resolve) => {
-			refs.pendingEventsRef.current.set(waitForEvent, { resolve });
+			refs.pendingEventsRef.current.set(waitForEvent, {
+				resolve: (value: unknown) => {
+					resolve(value as T);
+				},
+			});
 			send(cmd);
 		});
 	};
@@ -113,7 +99,7 @@ export function createEngineActions({
 		}
 	};
 
-	const applyInitialAnimationFrame = (entityId: number, animations?: any[]) => {
+	const applyInitialAnimationFrame = (entityId: number, animations?: EntityAnimations) => {
 		if (!animations || animations.length === 0) return;
 
 		const defaultAnim = animations.find((anim) => anim?.is_default);
@@ -393,7 +379,7 @@ export function createEngineActions({
 	const removeCollider = (id: number) => removeEntity(id);
 	const removeExecutionArea = (id: number) => removeEntity(id);
 
-	const updateEntityAnimations = (id: number, animations: any[]): any[] => {
+	const updateEntityAnimations = (id: number, animations: EntityAnimations): EntityAnimations => {
 		const bpId = refs.entityMetaRef.current[id]?.blueprintId;
 
 		const applyAnimationsToSingleEntity = (entityId: number) => {
@@ -586,14 +572,18 @@ export function createEngineActions({
 		const isPlayer = refs.playerEntityIdRef.current === id;
 		const isEditorCamera = refs.editorCameraEntityIdRef.current === id;
 		const skipOptimisticTransform = isPlayer || isEditorCamera;
-		const {
-			bodyRotationOnly: _strip,
-			positionAxis,
-			scaleAxis,
-			rotationEulerDelta,
-			rotationEulerDegrees,
-			...transformPatch
-		} = patch;
+		const positionAxis = patch.positionAxis;
+		const scaleAxis = patch.scaleAxis;
+		const rotationEulerDelta = patch.rotationEulerDelta;
+		const rotationEulerDegrees = patch.rotationEulerDegrees;
+		const transformPatch: Partial<{
+			position: [number, number, number];
+			rotation: [number, number, number, number];
+			scale: [number, number, number];
+		}> = {};
+		if (patch.position !== undefined) transformPatch.position = patch.position;
+		if (patch.rotation !== undefined) transformPatch.rotation = patch.rotation;
+		if (patch.scale !== undefined) transformPatch.scale = patch.scale;
 		const motorRotationPatch = {
 			...(rotationEulerDelta !== undefined ? { rotationEulerDelta } : {}),
 			...(rotationEulerDegrees !== undefined ? { rotationEulerDegrees } : {}),
@@ -725,7 +715,7 @@ export function createEngineActions({
 						...bp,
 						colision: enabled,
 						physics_enabled: enabled,
-						physics_type: bodyType,
+						physics_type: bodyType as import('@shared-types').PhysicsType3D,
 					}
 					: bp
 			);

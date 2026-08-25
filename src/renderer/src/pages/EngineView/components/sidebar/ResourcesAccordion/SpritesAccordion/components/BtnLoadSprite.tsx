@@ -23,7 +23,7 @@ export const BtnLoadSprite = () => {
         />
       ),
     });
-  }, [openModal]);
+  }, [openModal, t]);
 
   return (
     <button

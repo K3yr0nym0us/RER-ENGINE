@@ -8,14 +8,14 @@ use glam::{Mat4, Quat, Vec3};
 
 use crate::config_3d::character_anchor::PLAY_CHARACTER_BODY_HEIGHT;
 use crate::config_3d::model_asset::{
-    self, compute_gltf_joint_worlds, gltf_bind_globals_from_ibm, AnimChannel, AnimKeyframe,
-    AnimProperty, AnimationClip, GltfFile, ModelAsset, SkinnedMeshData, MAX_JOINTS,
+    self, AnimChannel, AnimKeyframe, AnimProperty, AnimationClip, GltfFile, MAX_JOINTS, ModelAsset,
+    SkinnedMeshData, compute_gltf_joint_worlds, gltf_bind_globals_from_ibm,
 };
-use crate::ipc::ModelClipInfoEvent;
 use crate::ecs::EntityId;
 use crate::engine::State;
-use crate::ipc::{send_event, EngineEvent};
-use crate::mesh::{upload_skinned, SkinnedMesh};
+use crate::ipc::ModelClipInfoEvent;
+use crate::ipc::{EngineEvent, send_event};
+use crate::mesh::{SkinnedMesh, upload_skinned};
 
 #[derive(Clone)]
 pub(crate) struct ModelAnimationBinding {
@@ -71,10 +71,8 @@ impl State {
         };
 
         let cache_key = self.model_cache_key(path);
-        let asset_key = crate::config_3d::static_model_cache::model_asset_cache_key(
-            &cache_key,
-            normalize,
-        );
+        let asset_key =
+            crate::config_3d::static_model_cache::model_asset_cache_key(&cache_key, normalize);
 
         let cached_asset = self
             .model_assets
@@ -88,10 +86,8 @@ impl State {
             })
             .map(Arc::clone);
         let asset = if let Some(cached) = cached_asset {
-            
             cached
         } else if let Some(file) = gltf_file {
-            
             match model_asset::load_model_asset_from_gltf(file, normalize) {
                 Some(loaded) => {
                     self.model_assets
@@ -99,16 +95,15 @@ impl State {
                     loaded
                 }
                 None => {
-                    let clip_meta: Vec<ModelClipInfoEvent> = model_asset::list_gltf_clip_infos_from_file(
-                        file,
-                    )
-                    .into_iter()
-                    .map(|c| ModelClipInfoEvent {
-                        name: c.name,
-                        duration_s: c.duration_s,
-                        fps: c.fps,
-                    })
-                    .collect();
+                    let clip_meta: Vec<ModelClipInfoEvent> =
+                        model_asset::list_gltf_clip_infos_from_file(file)
+                            .into_iter()
+                            .map(|c| ModelClipInfoEvent {
+                                name: c.name,
+                                duration_s: c.duration_s,
+                                fps: c.fps,
+                            })
+                            .collect();
                     if !clip_meta.is_empty() {
                         send_event(&EngineEvent::ModelClipsReady {
                             id,
@@ -122,7 +117,7 @@ impl State {
             }
         } else {
             let load_path = self.model_library_path_for(path);
-            
+
             match model_asset::load_model_asset(Path::new(&load_path), normalize) {
                 Some(loaded) => {
                     self.model_assets
@@ -225,8 +220,6 @@ impl State {
             clips: clip_meta,
         });
         self.write_joint_matrices_all_parts(id, &binding, &asset, None, 0.0);
-
-        
     }
 
     /// Re-emite metadatos de clips ya enlazados (p. ej. tras cargar `.save` en el renderer).
@@ -235,34 +228,33 @@ impl State {
             return;
         };
         let path = binding.asset_path.clone();
-        let clip_meta: Vec<crate::ipc::ModelClipInfoEvent> = if let Some(asset) =
-            self.model_assets.get(&path)
-        {
-            asset
-                .clips
-                .iter()
-                .map(|c| crate::ipc::ModelClipInfoEvent {
-                    name: c.name.clone(),
-                    duration_s: c.duration_s,
-                    fps: c.fps,
-                })
-                .collect()
-        } else {
-            let path_buf = Path::new(&path);
-            let infos = if crate::config_3d::is_gltf_model_path(&path) {
-                model_asset::list_gltf_clip_infos(path_buf)
+        let clip_meta: Vec<crate::ipc::ModelClipInfoEvent> =
+            if let Some(asset) = self.model_assets.get(&path) {
+                asset
+                    .clips
+                    .iter()
+                    .map(|c| crate::ipc::ModelClipInfoEvent {
+                        name: c.name.clone(),
+                        duration_s: c.duration_s,
+                        fps: c.fps,
+                    })
+                    .collect()
             } else {
-                model_asset::list_model_clip_infos(path_buf)
+                let path_buf = Path::new(&path);
+                let infos = if crate::config_3d::is_gltf_model_path(&path) {
+                    model_asset::list_gltf_clip_infos(path_buf)
+                } else {
+                    model_asset::list_model_clip_infos(path_buf)
+                };
+                infos
+                    .into_iter()
+                    .map(|c| ModelClipInfoEvent {
+                        name: c.name,
+                        duration_s: c.duration_s,
+                        fps: c.fps,
+                    })
+                    .collect()
             };
-            infos
-                .into_iter()
-                .map(|c| ModelClipInfoEvent {
-                    name: c.name,
-                    duration_s: c.duration_s,
-                    fps: c.fps,
-                })
-                .collect()
-        };
         if clip_meta.is_empty() {
             return;
         }
@@ -308,7 +300,7 @@ impl State {
             ActiveModelClip {
                 clip_name: name.to_string(),
                 time_s: 0.0,
-                loop_: loop_,
+                loop_,
                 playing: true,
                 finished: false,
             },
@@ -413,8 +405,7 @@ impl State {
 
         self.apply_bone_physics_to_locals(entity_id, asset, self.delta_time, &mut local_transforms);
 
-        let use_per_part_ibm =
-            asset.bind_pose_from_ibm && !asset.joint_gltf_nodes.is_empty();
+        let use_per_part_ibm = asset.bind_pose_from_ibm && !asset.joint_gltf_nodes.is_empty();
         let shared_global = if use_per_part_ibm {
             None
         } else {
@@ -452,11 +443,8 @@ impl State {
                 joint_palette.iter().map(|m| m.to_cols_array_2d()).collect();
             if let Some(entry) = self.skinned_gpu_meshes.get_mut(gpu_idx) {
                 entry.joint_palette = flat.clone();
-                self.queue.write_buffer(
-                    &entry.joint_buffer,
-                    0,
-                    bytemuck::cast_slice(&flat),
-                );
+                self.queue
+                    .write_buffer(&entry.joint_buffer, 0, bytemuck::cast_slice(&flat));
             }
         }
     }
@@ -501,7 +489,10 @@ fn compute_joint_globals(
     locals: &[Mat4],
     prefix_world: &[Mat4],
 ) -> Vec<Mat4> {
-    let n = locals.len().min(joint_parents.len()).min(prefix_world.len());
+    let n = locals
+        .len()
+        .min(joint_parents.len())
+        .min(prefix_world.len());
     let mut global = vec![Mat4::IDENTITY; n];
     let mut done = vec![false; n];
     let mut remaining = n;
@@ -541,10 +532,8 @@ fn compute_joint_globals(
 }
 
 fn apply_clip_to_locals(clip: &AnimationClip, time_s: f32, locals: &mut [Mat4]) {
-    let channels_by_joint: HashMap<usize, Vec<&AnimChannel>> = clip
-        .channels
-        .iter()
-        .fold(HashMap::new(), |mut m, ch| {
+    let channels_by_joint: HashMap<usize, Vec<&AnimChannel>> =
+        clip.channels.iter().fold(HashMap::new(), |mut m, ch| {
             m.entry(ch.joint_index).or_default().push(ch);
             m
         });
@@ -612,10 +601,10 @@ fn sample_rotation(keys: &[AnimKeyframe], t: f32) -> Option<Quat> {
     Some(qa.slerp(qb, alpha))
 }
 
-fn find_keyframe_pair<'a>(
-    keys: &'a [AnimKeyframe],
+fn find_keyframe_pair(
+    keys: &[AnimKeyframe],
     t: f32,
-) -> Option<(&'a AnimKeyframe, &'a AnimKeyframe, f32)> {
+) -> Option<(&AnimKeyframe, &AnimKeyframe, f32)> {
     if keys.is_empty() {
         return None;
     }

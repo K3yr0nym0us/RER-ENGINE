@@ -13,8 +13,8 @@ use wgpu::{CommandEncoder, Device, Queue, TextureView};
 
 use crate::config_3d::reflection_graphics::{ReflectionDebugView, ReflectionSettings};
 use crate::engine::{SceneUniforms, State};
-use crate::reflections::probes_pipeline::capture::{self, ProbeFrameData};
 use crate::reflections::ReflectionPass;
+use crate::reflections::probes_pipeline::capture::{self, ProbeFrameData};
 
 /// Prepara lista de probes, meta y mapa entidad→ranura para el main pass.
 pub fn prepare_probes(state: &mut State, settings: &ReflectionSettings) -> ProbeFrameData {

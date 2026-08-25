@@ -5,8 +5,9 @@ pub use mesh::GridConfig;
 
 use crate::config_3d::plane_tools::PlaneToolKind;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub(crate) enum ActiveTool {
+    #[default]
     None,
     QuickBuildPlace {
         cursor_world: Option<[f32; 3]>,
@@ -20,18 +21,11 @@ pub(crate) enum ActiveTool {
     },
 }
 
-impl Default for ActiveTool {
-    fn default() -> Self {
-        ActiveTool::None
-    }
-}
-
 pub(crate) fn is_editor_placement_tool(tool: &ActiveTool) -> bool {
-    match tool {
-        ActiveTool::QuickBuildPlace { .. } => true,
-        ActiveTool::PlacePlaneTool { .. } => true,
-        _ => false,
-    }
+    matches!(
+        tool,
+        ActiveTool::QuickBuildPlace { .. } | ActiveTool::PlacePlaneTool { .. }
+    )
 }
 
 pub(crate) fn is_plane_tool_active(tool: &ActiveTool) -> bool {

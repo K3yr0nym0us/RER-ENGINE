@@ -25,7 +25,7 @@ pub fn rt_generation_pipeline_enabled() -> bool {
 
 /// Semilla blue-noise determinista por píxel+frame para fuzzy RTIOW convergente vía temporal.
 pub fn blue_noise_seed(frame_index: u32, uv: [f32; 2]) -> [f32; 2] {
-    let f = frame_index as f32 * 0.6180339887;
+    let f = frame_index as f32 * 0.618_034;
     [uv[0] + f * 0.173, uv[1] + f * 0.271]
 }
 

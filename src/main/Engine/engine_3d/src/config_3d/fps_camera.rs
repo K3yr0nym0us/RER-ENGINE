@@ -1,12 +1,11 @@
 use glam::Vec3;
 
 use crate::config_3d::character_anchor::{
-    PLAY_CHARACTER_EDITOR_ORBIT_DISTANCE,
-    PLAY_CHARACTER_EYE_OFFSET, PLAY_CHARACTER_MOUSE_SPEED,
+    PLAY_CHARACTER_EDITOR_ORBIT_DISTANCE, PLAY_CHARACTER_EYE_OFFSET, PLAY_CHARACTER_MOUSE_SPEED,
 };
 use crate::ecs::Transform;
 use crate::engine::State;
-use crate::ipc::{send_event, EngineEvent};
+use crate::ipc::{EngineEvent, send_event};
 
 /// Forward de la c?mara proyectado al plano XZ. Coincide con `Camera::view_forward` con pitch=0.
 fn look_xz_from_camera_yaw(camera_yaw: f32) -> glam::Vec2 {
@@ -69,7 +68,7 @@ impl State {
 
     /// Punto al que mira la ?rbita del editor (pivote de `look_at`, no la posici?n del ojo).
     pub(crate) fn editor_orbit_look_at_pivot(&self) -> Vec3 {
-        let pivot = if let Some(id) = self.editor_camera_entity {
+        if let Some(id) = self.editor_camera_entity {
             if let Some(t) = self.world.get::<Transform>(id) {
                 t.position
             } else {
@@ -77,8 +76,7 @@ impl State {
             }
         } else {
             self.editor_orbit_target
-        };
-        pivot
+        }
     }
 
     /// Punto al que mira la c?mara orbital del viewport.
@@ -140,7 +138,11 @@ impl State {
         self.camera.position_at_angles(anchor, yaw, pitch, dist)
     }
 
-    pub(crate) fn camera_to_uniform_at_anchor(&self, anchor: Vec3, aspect: f32) -> crate::config_3d::camera_3d::CameraUniform {
+    pub(crate) fn camera_to_uniform_at_anchor(
+        &self,
+        anchor: Vec3,
+        aspect: f32,
+    ) -> crate::config_3d::camera_3d::CameraUniform {
         let view = if self.uses_player_fps_viewport() {
             self.camera.view_matrix_from_eye(
                 self.play_camera_eye_position,
@@ -163,7 +165,11 @@ impl State {
     /// Mover o rotar al Player en el panel Transform NO afecta este gizmo.
     pub(crate) fn play_character_camera_gizmo_pose(&self) -> Option<(Vec3, f32, f32)> {
         let _ = self.play_character_entity?;
-        Some((self.play_camera_eye_position, self.camera.yaw, self.camera.pitch))
+        Some((
+            self.play_camera_eye_position,
+            self.camera.yaw,
+            self.camera.pitch,
+        ))
     }
 
     /// Eye offset SIEMPRE en world Y (cámara FPS anclada al pivote del jugador).
@@ -210,7 +216,6 @@ impl State {
             self.camera.orbit_pivot_offset = Vec3::ZERO;
             self.camera.eye_height_offset = 0.0;
             self.camera.eye_offset_local = Vec3::ZERO;
-            return;
         } else if self.has_play_character() {
             self.camera.eye_height_offset = 0.0;
             self.camera.eye_offset_local = Vec3::ZERO;
@@ -238,7 +243,6 @@ impl State {
         fps_camera_pitch: Option<f32>,
         preserve_saved_fps_eye: bool,
     ) {
-
         self.set_play_character_feet_position(Vec3::from_array(position));
         let pitch_clamped = pitch.clamp(
             -std::f32::consts::FRAC_PI_2 + 0.05,
@@ -327,12 +331,10 @@ impl State {
         }
         let exclude = self.play_character_movement_excluded_colliders();
         const MARGIN: f32 = 0.12;
-        if let Some(hit_dist) = self.physics.raycast_first_hit_distance(
-            focus,
-            offset,
-            dist,
-            &exclude,
-        ) {
+        if let Some(hit_dist) = self
+            .physics
+            .raycast_first_hit_distance(focus, offset, dist, &exclude)
+        {
             let t = (hit_dist - MARGIN).max(0.0);
             return focus + offset.normalize() * t;
         }
@@ -346,8 +348,7 @@ impl State {
             self.play_character_body_yaw(),
         );
         let desired = head + world_offset;
-        self.play_camera_eye_position =
-            self.resolve_play_camera_eye_line_of_sight(head, desired);
+        self.play_camera_eye_position = self.resolve_play_camera_eye_line_of_sight(head, desired);
         self.play_camera_follow_offset = self.play_camera_eye_position - head;
     }
 
@@ -451,11 +452,9 @@ impl State {
             fps_camera_pitch,
             preserve_eye,
         );
-        if let (Some(id), Some(rot), Some(scale)) = (
-            self.play_character_entity,
-            body_rotation,
-            body_scale,
-        ) {
+        if let (Some(id), Some(rot), Some(scale)) =
+            (self.play_character_entity, body_rotation, body_scale)
+        {
             let rot_q = glam::Quat::from_xyzw(rot[0], rot[1], rot[2], rot[3]);
             self.apply_play_character_transform_editor(
                 id,
@@ -507,12 +506,7 @@ impl State {
             if let Some(t) = self.world.get::<Transform>(id) {
                 (
                     feet_arr,
-                    [
-                        t.rotation.x,
-                        t.rotation.y,
-                        t.rotation.z,
-                        t.rotation.w,
-                    ],
+                    [t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w],
                     t.scale.to_array(),
                 )
             } else {
@@ -523,7 +517,9 @@ impl State {
         } else {
             (self.camera.yaw, self.camera.pitch)
         };
-        let editor_orbit_target = self.editor_camera_entity.map(|_| self.editor_orbit_target.to_array());
+        let editor_orbit_target = self
+            .editor_camera_entity
+            .map(|_| self.editor_orbit_target.to_array());
         send_event(&EngineEvent::PlayCharacterViewChanged {
             player_id,
             editor_camera_id: self.editor_camera_entity,
@@ -558,7 +554,6 @@ impl State {
     }
 
     pub(crate) fn clamp_play_character_camera_to_bounds(&mut self) {
-
         let feet = self
             .world_bounds_3d
             .clamp_sphere_center(self.play_character_feet_position(), 0.0);

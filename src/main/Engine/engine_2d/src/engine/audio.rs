@@ -20,7 +20,10 @@ pub struct DecodedAudio {
 /// Comandos enviados al thread de audio.
 pub enum AudioCmd {
     /// Reproducir audio desde muestras PCM ya decodificadas en RAM.
-    Play { audio: Arc<DecodedAudio>, loop_: bool },
+    Play {
+        audio: Arc<DecodedAudio>,
+        loop_: bool,
+    },
     /// Detener el audio en curso (música looping).
     Stop,
 }

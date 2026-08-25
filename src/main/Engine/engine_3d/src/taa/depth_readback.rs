@@ -48,11 +48,7 @@ impl DepthExportReadback {
     }
 
     /// Copia la textura justo antes del submit (contenido del G-buffer).
-    pub fn queue_copy(
-        &mut self,
-        encoder: &mut wgpu::CommandEncoder,
-        texture: &wgpu::Texture,
-    ) {
+    pub fn queue_copy(&mut self, encoder: &mut wgpu::CommandEncoder, texture: &wgpu::Texture) {
         if self.cooldown > 0 {
             self.cooldown -= 1;
             return;
@@ -109,12 +105,7 @@ impl DepthExportReadback {
     }
 }
 
-fn scan_depth_f32(
-    mapped: &[u8],
-    width: u32,
-    height: u32,
-    bytes_per_row: u32,
-) -> DepthExportStats {
+fn scan_depth_f32(mapped: &[u8], width: u32, height: u32, bytes_per_row: u32) -> DepthExportStats {
     let mut min = f32::INFINITY;
     let mut max = f32::NEG_INFINITY;
     let mut sum = 0.0f64;
@@ -210,7 +201,7 @@ pub fn log_depth_probe_cpu(
     let clip_w = clip.w;
     let ndc_gl = clip_z / clip_w;
     let ndc_vk = ndc_gl * 0.5 + 0.5;
-    let linear_vk = if ndc_vk >= 0.0 && ndc_vk <= 1.0 {
+    let linear_vk = if (0.0..=1.0).contains(&ndc_vk) {
         (near * far) / (far - ndc_vk * (far - near))
     } else {
         f32::NAN

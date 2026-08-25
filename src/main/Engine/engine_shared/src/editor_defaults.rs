@@ -63,10 +63,10 @@ pub fn next_numbered_entity_label(
 
     for name in existing_names {
         let current = name.as_ref().trim();
-        if let Some(rest) = current.strip_prefix(&prefix) {
-            if let Ok(n) = rest.parse::<u32>() {
-                max_suffix = max_suffix.max(n);
-            }
+        if let Some(rest) = current.strip_prefix(&prefix)
+            && let Ok(n) = rest.parse::<u32>()
+        {
+            max_suffix = max_suffix.max(n);
         }
     }
 
@@ -169,7 +169,11 @@ mod tests {
             "Sun_02"
         );
         assert_eq!(
-            resolve_entity_display_name("Custom Sun", entity_label::SUN, std::iter::empty::<&str>()),
+            resolve_entity_display_name(
+                "Custom Sun",
+                entity_label::SUN,
+                std::iter::empty::<&str>()
+            ),
             "Custom Sun"
         );
     }

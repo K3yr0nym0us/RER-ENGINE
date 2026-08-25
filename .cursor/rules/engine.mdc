@@ -1,0 +1,87 @@
+---
+description: RER-ENGINE Rust engine and graphics rules
+alwaysApply: true
+---
+
+# RER-ENGINE — Rust Engine
+
+## Engine First
+
+Rust is the source of truth for all engine state and calculations.
+
+Never reimplement engine logic in TypeScript.
+
+If React needs engine data, obtain it from the Rust engine through the existing bridge.
+
+## 2D / 3D
+
+Keep 2D and 3D logic separated:
+
+- `rer_engine_2d`
+- `rer_engine_3d`
+- `engine_shared`
+
+Only place code in `engine_shared` when it is genuinely shared.
+
+## GPU
+
+GPU policy is defined in:
+
+- `engine_shared/src/gpu.rs`
+- `EngineGpuProfile`
+
+Mandatory backend:
+
+- Vulkan
+
+Targets:
+
+- Windows
+- Linux
+
+Never use:
+
+- OpenGL
+- DX12
+- WebGL
+- `Backends::all()`
+- automatic backend selection
+- GPU backend fallback logic
+- `RER_GPU_BACKEND`
+
+Do not reintroduce OpenGL compatibility branches.
+
+## Viewport
+
+The game viewport uses a separate **winit overlay window** aligned with the editor viewport.
+
+The game world is NOT rendered by React/Chromium.
+
+Never introduce:
+
+- WebGL
+- Three.js
+- Babylon.js
+- React Three Fiber
+
+for the game renderer.
+
+Overlay policy:
+
+- `engine_shared/src/overlay.rs`
+
+Do not reintroduce:
+
+- `Backends::GL`
+- `with_embed_parent_window`
+
+## Cross-platform
+
+Development happens on Windows.
+
+Engine code must remain compatible with:
+
+- Windows
+- Linux
+
+Avoid unnecessary platform-specific APIs and crates.

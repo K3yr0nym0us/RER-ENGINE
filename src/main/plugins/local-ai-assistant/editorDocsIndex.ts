@@ -51,8 +51,9 @@ export function refreshAiEditorGuideCache(): void {
 
 /** Solo el archivo de guía del idioma activo (menos tokens → respuesta más rápida). */
 export function buildSystemContext(_userQuery?: string, locale: 'en' | 'es' = 'en'): string {
-  if (cachedByLocale[locale] == null) {
-    cachedByLocale[locale] = loadGuideForLocale(locale)
-  }
-  return cachedByLocale[locale]!
+  const cached = cachedByLocale[locale]
+  if (cached != null) return cached
+  const loaded = loadGuideForLocale(locale)
+  cachedByLocale[locale] = loaded
+  return loaded
 }

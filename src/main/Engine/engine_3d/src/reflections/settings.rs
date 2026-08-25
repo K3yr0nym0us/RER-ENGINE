@@ -54,22 +54,16 @@ impl ReflectionDebugView {
             "ssr_vector_rgb" | "vector_rgb" | "vectorrgb" | "refl_vector" => {
                 Some(Self::SsrVectorRgb)
             }
-            "ssr_hit_class"
-            | "ssr_hitclass"
-            | "hit_class"
-            | "self_hit"
-            | "ssr_self_hit" => Some(Self::SsrHitClass),
+            "ssr_hit_class" | "ssr_hitclass" | "hit_class" | "self_hit" | "ssr_self_hit" => {
+                Some(Self::SsrHitClass)
+            }
             "ssr_path_px" | "ssr_pathpx" | "path_px" | "ssr_ray_path" => Some(Self::SsrPathPx),
-            "ssr_march_refl_dir"
-            | "ssr_refl_dir"
-            | "ssr_r_world"
-            | "R_world"
+            "ssr_march_refl_dir" | "ssr_refl_dir" | "ssr_r_world" | "R_world"
             | "march_refl_dir" => Some(Self::SsrMarchReflDir),
             "ssr_hit_uv" | "ssr_hituv" | "hit_uv" | "ssr_sample_uv" => Some(Self::SsrHitUv),
-            "ssr_hit_sample_color"
-            | "ssr_sample_color"
-            | "hit_sample_color"
-            | "ssr_lit_at_hit" => Some(Self::SsrHitSampleColor),
+            "ssr_hit_sample_color" | "ssr_sample_color" | "hit_sample_color" | "ssr_lit_at_hit" => {
+                Some(Self::SsrHitSampleColor)
+            }
             "ssr_proj_depth_delta"
             | "ssr_start_cs_z_delta"
             | "proj_depth_delta"

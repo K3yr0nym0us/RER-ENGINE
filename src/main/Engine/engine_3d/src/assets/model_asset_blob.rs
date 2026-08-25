@@ -51,9 +51,8 @@ fn read_mat4(r: &mut impl Read) -> std::io::Result<Mat4> {
 }
 
 fn write_option_usize_vec(w: &mut impl Write, values: &[Option<usize>]) -> std::io::Result<()> {
-    let count = u16::try_from(values.len()).map_err(|_| {
-        std::io::Error::new(std::io::ErrorKind::InvalidInput, "demasiados joints")
-    })?;
+    let count = u16::try_from(values.len())
+        .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "demasiados joints"))?;
     w.write_all(&count.to_le_bytes())?;
     for v in values {
         let raw = v.map(|x| x as u32).unwrap_or(u32::MAX);
@@ -103,9 +102,8 @@ fn read_mat4_vec(r: &mut impl Read) -> std::io::Result<Vec<Mat4>> {
 }
 
 fn write_ibm_vec(w: &mut impl Write, ibms: &[[[f32; 4]; 4]]) -> std::io::Result<()> {
-    let count = u16::try_from(ibms.len()).map_err(|_| {
-        std::io::Error::new(std::io::ErrorKind::InvalidInput, "demasiados IBM")
-    })?;
+    let count = u16::try_from(ibms.len())
+        .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "demasiados IBM"))?;
     w.write_all(&count.to_le_bytes())?;
     for m in ibms {
         for row in m {
@@ -168,9 +166,12 @@ pub fn serialize_skeleton(asset: &ModelAsset) -> Vec<u8> {
     write_mat4_vec(&mut buf, &asset.joint_prefix_world).unwrap();
     write_ibm_vec(&mut buf, &asset.inverse_bind).unwrap();
     write_mat4(&mut buf, &asset.mesh_normalize).unwrap();
-    buf.write_all(&asset.facing_forward_xz.x.to_le_bytes()).unwrap();
-    buf.write_all(&asset.facing_forward_xz.y.to_le_bytes()).unwrap();
-    buf.write_all(&[u8::from(asset.bind_pose_from_ibm)]).unwrap();
+    buf.write_all(&asset.facing_forward_xz.x.to_le_bytes())
+        .unwrap();
+    buf.write_all(&asset.facing_forward_xz.y.to_le_bytes())
+        .unwrap();
+    buf.write_all(&[u8::from(asset.bind_pose_from_ibm)])
+        .unwrap();
 
     let node_count = u16::try_from(asset.joint_gltf_nodes.len()).unwrap();
     buf.write_all(&node_count.to_le_bytes()).unwrap();
@@ -347,7 +348,8 @@ pub fn serialize_animation_clip(clip: &AnimationClip) -> Vec<u8> {
     let ch_count = u16::try_from(clip.channels.len()).unwrap();
     buf.write_all(&ch_count.to_le_bytes()).unwrap();
     for ch in &clip.channels {
-        buf.write_all(&(ch.joint_index as u16).to_le_bytes()).unwrap();
+        buf.write_all(&(ch.joint_index as u16).to_le_bytes())
+            .unwrap();
         buf.write_all(&[property_to_u8(&ch.property)]).unwrap();
         let kf_count = u16::try_from(ch.keyframes.len()).unwrap();
         buf.write_all(&kf_count.to_le_bytes()).unwrap();

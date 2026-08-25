@@ -13,7 +13,7 @@ mod depth_readback;
 use bytemuck::{Pod, Zeroable};
 use depth_readback::{DepthExportReadback, log_depth_export_stats, log_depth_probe_cpu};
 use wgpu::util::DeviceExt;
-use wgpu::{include_wgsl, Device, Queue, TextureFormat, TextureView};
+use wgpu::{Device, Queue, TextureFormat, TextureView, include_wgsl};
 
 /// Acumulación temporal sombras (más alto = bordes más suaves).
 const SHADOW_HISTORY_BLEND: f32 = 30.0 / 32.0;
@@ -184,8 +184,20 @@ impl TaaPass {
             create_texture(device, color_format, width, height, "scene-lit");
         let (shadow_mask_texture, shadow_mask_view) =
             create_texture(device, SHADOW_MASK_FORMAT, width, height, "shadow-mask");
-        let (h0, v0) = create_texture(device, SHADOW_MASK_FORMAT, width, height, "shadow-history-0");
-        let (h1, v1) = create_texture(device, SHADOW_MASK_FORMAT, width, height, "shadow-history-1");
+        let (h0, v0) = create_texture(
+            device,
+            SHADOW_MASK_FORMAT,
+            width,
+            height,
+            "shadow-history-0",
+        );
+        let (h1, v1) = create_texture(
+            device,
+            SHADOW_MASK_FORMAT,
+            width,
+            height,
+            "shadow-history-1",
+        );
         let (s0, sv0) = create_texture(device, color_format, width, height, "scene-history-0");
         let (s1, sv1) = create_texture(device, color_format, width, height, "scene-history-1");
 
@@ -209,37 +221,39 @@ impl TaaPass {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
-        let scene_taa_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("scene-taa-uniforms"),
-            contents: bytemuck::bytes_of(&SceneTaaUniforms {
-                resolution: [width.max(1) as f32, height.max(1) as f32],
-                blend: 0.0,
-                enabled: 1.0,
-                zoom_stability: 1.0,
-                _pad_jitter: 0.0,
-                jitter: [0.0; 2],
-                disocclusion: DISOCCLUSION_THRESHOLD,
-                near_plane: 0.1,
-                far_plane: 1000.0,
-                _pad_vec2: 0.0,
-                _pad_align: [0.0; 2],
-                _pad_mat4: [0.0; 2],
-                inv_view_proj: glam::Mat4::IDENTITY.to_cols_array_2d(),
-                prev_view_proj: glam::Mat4::IDENTITY.to_cols_array_2d(),
-            }),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
+        let scene_taa_uniform_buffer =
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("scene-taa-uniforms"),
+                contents: bytemuck::bytes_of(&SceneTaaUniforms {
+                    resolution: [width.max(1) as f32, height.max(1) as f32],
+                    blend: 0.0,
+                    enabled: 1.0,
+                    zoom_stability: 1.0,
+                    _pad_jitter: 0.0,
+                    jitter: [0.0; 2],
+                    disocclusion: DISOCCLUSION_THRESHOLD,
+                    near_plane: 0.1,
+                    far_plane: 1000.0,
+                    _pad_vec2: 0.0,
+                    _pad_align: [0.0; 2],
+                    _pad_mat4: [0.0; 2],
+                    inv_view_proj: glam::Mat4::IDENTITY.to_cols_array_2d(),
+                    prev_view_proj: glam::Mat4::IDENTITY.to_cols_array_2d(),
+                }),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            });
 
-        let lit_composite_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("lit-composite-uniforms"),
-            contents: bytemuck::bytes_of(&LitCompositeUniforms {
-                shadow_darkness: 0.35,
-                shadows_enabled: 1.0,
-                _pad0: 0.0,
-                _pad1: 0.0,
-            }),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
+        let lit_composite_uniform_buffer =
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("lit-composite-uniforms"),
+                contents: bytemuck::bytes_of(&LitCompositeUniforms {
+                    shadow_darkness: 0.35,
+                    shadows_enabled: 1.0,
+                    _pad0: 0.0,
+                    _pad1: 0.0,
+                }),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            });
 
         let shadow_resolve_shader = device.create_shader_module(include_wgsl!("taa.wgsl"));
         let scene_resolve_shader = device.create_shader_module(include_wgsl!("taa_scene.wgsl"));
@@ -489,9 +503,24 @@ impl TaaPass {
             ),
         ];
         self.blit_bind_groups = [
-            make_blit_bind_group(device, &self.blit_bgl, &self.sampler, &self.scene_color_view),
-            make_blit_bind_group(device, &self.blit_bgl, &self.sampler, &self.scene_history_views[0]),
-            make_blit_bind_group(device, &self.blit_bgl, &self.sampler, &self.scene_history_views[1]),
+            make_blit_bind_group(
+                device,
+                &self.blit_bgl,
+                &self.sampler,
+                &self.scene_color_view,
+            ),
+            make_blit_bind_group(
+                device,
+                &self.blit_bgl,
+                &self.sampler,
+                &self.scene_history_views[0],
+            ),
+            make_blit_bind_group(
+                device,
+                &self.blit_bgl,
+                &self.sampler,
+                &self.scene_history_views[1],
+            ),
         ];
     }
 
@@ -510,7 +539,8 @@ impl TaaPass {
     /// Infra de readback depth (sin logs activos).
     #[allow(dead_code)]
     pub(crate) fn queue_depth_export_readback(&mut self, encoder: &mut wgpu::CommandEncoder) {
-        self.depth_readback.queue_copy(encoder, &self._depth_export_texture);
+        self.depth_readback
+            .queue_copy(encoder, &self._depth_export_texture);
     }
 
     #[allow(dead_code)]
@@ -586,8 +616,20 @@ impl TaaPass {
             create_texture(device, color_format, width, height, "scene-lit");
         let (shadow_mask_texture, shadow_mask_view) =
             create_texture(device, SHADOW_MASK_FORMAT, width, height, "shadow-mask");
-        let (h0, v0) = create_texture(device, SHADOW_MASK_FORMAT, width, height, "shadow-history-0");
-        let (h1, v1) = create_texture(device, SHADOW_MASK_FORMAT, width, height, "shadow-history-1");
+        let (h0, v0) = create_texture(
+            device,
+            SHADOW_MASK_FORMAT,
+            width,
+            height,
+            "shadow-history-0",
+        );
+        let (h1, v1) = create_texture(
+            device,
+            SHADOW_MASK_FORMAT,
+            width,
+            height,
+            "shadow-history-1",
+        );
         let (s0, sv0) = create_texture(device, color_format, width, height, "scene-history-0");
         let (s1, sv1) = create_texture(device, color_format, width, height, "scene-history-1");
 

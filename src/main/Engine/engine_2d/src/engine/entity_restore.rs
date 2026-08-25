@@ -1,4 +1,7 @@
-use crate::ipc::{ControlBindingsData, EngineCommand, EngineCommandCommon, EntityRestoreAnimation, EntityRestorePhysics, EntityRestoreScript, EntityRestoreTransform};
+use crate::ipc::{
+    ControlBindingsData, EngineCommand, EngineCommandCommon, EntityRestoreAnimation,
+    EntityRestorePhysics, EntityRestoreScript, EntityRestoreTransform,
+};
 
 use super::State;
 
@@ -41,14 +44,14 @@ impl State {
                 rotation_euler_degrees: None,
             }));
         }
-        if let Some(physics) = physics {
-            if physics.enabled {
-                self.handle_command(EngineCommand::Common(EngineCommandCommon::SetPhysics {
-                    id,
-                    enabled: true,
-                    body_type: physics.body_type.clone(),
-                }));
-            }
+        if let Some(physics) = physics
+            && physics.enabled
+        {
+            self.handle_command(EngineCommand::Common(EngineCommandCommon::SetPhysics {
+                id,
+                enabled: true,
+                body_type: physics.body_type.clone(),
+            }));
         }
         if let Some(anims) = animations {
             for anim in anims {
@@ -67,43 +70,46 @@ impl State {
                 }));
             }
             if let Some(default) = anims.iter().find(|a| a.is_default) {
-                self.handle_command(EngineCommand::Common(EngineCommandCommon::SetDefaultAnimation {
-                    id,
-                    name: default.name.clone(),
-                }));
+                self.handle_command(EngineCommand::Common(
+                    EngineCommandCommon::SetDefaultAnimation {
+                        id,
+                        name: default.name.clone(),
+                    },
+                ));
             } else {
-                self.handle_command(EngineCommand::Common(EngineCommandCommon::SetDefaultAnimation {
-                    id,
-                    name: String::new(),
-                }));
+                self.handle_command(EngineCommand::Common(
+                    EngineCommandCommon::SetDefaultAnimation {
+                        id,
+                        name: String::new(),
+                    },
+                ));
             }
             if apply_initial_animation_frame {
                 let preview_anim = anims.iter().find(|a| a.is_default).or(anims.first());
-                if let Some(first_anim) = preview_anim {
-                    if let Some(first_frame) = first_anim.frames.first() {
-                        let (logical_w, logical_h) = self
-                            .animations
-                            .get(&id)
-                            .and_then(|by_name| by_name.get(&first_anim.name))
-                            .map(|a| (a.logical_w, a.logical_h))
-                            .unwrap_or((64, 64));
-                        let (pivot_x, pivot_y) =
-                            first_frame.resolved_pivot(logical_w, logical_h);
-                        self.play_animation_frame(
-                            id,
-                            &first_frame.path,
-                            pivot_x,
-                            pivot_y,
-                            logical_w,
-                            logical_h,
-                            first_frame
-                                .src_x
-                                .zip(first_frame.src_y)
-                                .zip(first_frame.src_w.zip(first_frame.src_h))
-                                .map(|((x, y), (w, h))| (x, y, w, h)),
-                            false,
-                        );
-                    }
+                if let Some(first_anim) = preview_anim
+                    && let Some(first_frame) = first_anim.frames.first()
+                {
+                    let (logical_w, logical_h) = self
+                        .animations
+                        .get(&id)
+                        .and_then(|by_name| by_name.get(&first_anim.name))
+                        .map(|a| (a.logical_w, a.logical_h))
+                        .unwrap_or((64, 64));
+                    let (pivot_x, pivot_y) = first_frame.resolved_pivot(logical_w, logical_h);
+                    self.play_animation_frame(
+                        id,
+                        &first_frame.path,
+                        pivot_x,
+                        pivot_y,
+                        logical_w,
+                        logical_h,
+                        first_frame
+                            .src_x
+                            .zip(first_frame.src_y)
+                            .zip(first_frame.src_w.zip(first_frame.src_h))
+                            .map(|((x, y), (w, h))| (x, y, w, h)),
+                        false,
+                    );
                 }
             }
         }
@@ -117,10 +123,12 @@ impl State {
             }
         }
         if let Some(bindings) = control_bindings {
-            self.handle_command(EngineCommand::Common(EngineCommandCommon::SetControlBindings {
-                id,
-                bindings: bindings.clone(),
-            }));
+            self.handle_command(EngineCommand::Common(
+                EngineCommandCommon::SetControlBindings {
+                    id,
+                    bindings: bindings.clone(),
+                },
+            ));
         }
     }
 }

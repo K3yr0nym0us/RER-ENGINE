@@ -6,7 +6,7 @@ use crate::config_3d::model_animation::asset_joint_globals_with_clip;
 use crate::config_3d::model_asset::ModelAsset;
 use crate::ecs::{EntityId, Transform};
 use crate::engine::State;
-use crate::ipc::{send_event, EngineEvent};
+use crate::ipc::{EngineEvent, send_event};
 
 pub(crate) struct JointScreenHit {
     pub joint_index: usize,
@@ -62,7 +62,7 @@ impl State {
         let (asset, globals, entity_model) = self.entity_skeleton_globals(entity_id)?;
         let joint_count = asset.joint_names.len().min(globals.len());
         let mut out = Vec::with_capacity(joint_count);
-        for ji in 0..joint_count {
+        for (ji, global) in globals.iter().enumerate().take(joint_count) {
             let Some(name) = asset.joint_names.get(ji) else {
                 continue;
             };
@@ -70,7 +70,7 @@ impl State {
                 continue;
             }
             let norm = asset.mesh_normalize;
-            let local = norm.transform_point3(globals[ji].transform_point3(Vec3::ZERO));
+            let local = norm.transform_point3(global.transform_point3(Vec3::ZERO));
             let world = entity_model.transform_point3(local);
             let Some(screen) = self.project_to_screen(world) else {
                 continue;

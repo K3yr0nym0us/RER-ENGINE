@@ -5,12 +5,12 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 use crate::config_3d::texture_graphics::{
-    self, TextureGraphicsTier, DEFAULT_TEXTURE_DETAIL_NEAR_M,
+    self, DEFAULT_TEXTURE_DETAIL_NEAR_M, TextureGraphicsTier,
 };
 use crate::ecs::{EntityId, Transform};
 use crate::engine::State;
 use crate::entity_save_meta::is_model_3d_asset_path;
-use crate::ipc::{send_event, EngineEvent};
+use crate::ipc::{EngineEvent, send_event};
 
 #[derive(Debug, Clone)]
 pub struct MaterialTexturesCatalog {
@@ -21,7 +21,10 @@ pub struct MaterialTexturesCatalog {
     pub variants: Vec<(u32, u32, u32)>,
 }
 
-fn build_material_variants(indices: &HashSet<u32>, all_variants: &[(u32, u32, u32)]) -> Vec<(u32, u32, u32)> {
+fn build_material_variants(
+    indices: &HashSet<u32>,
+    all_variants: &[(u32, u32, u32)],
+) -> Vec<(u32, u32, u32)> {
     let mut by_size: HashMap<(u32, u32), (u32, u32, u32)> = HashMap::new();
     for &(idx, w, h) in all_variants {
         if indices.contains(&idx) {
@@ -150,11 +153,7 @@ impl State {
     }
 
     pub(crate) fn refresh_all_entity_textures(&mut self) {
-        let ids: Vec<EntityId> = self
-            .model_animation_bindings
-            .keys()
-            .copied()
-            .collect();
+        let ids: Vec<EntityId> = self.model_animation_bindings.keys().copied().collect();
         self.entity_texture_effective_cap.clear();
         for id in ids {
             self.refresh_entity_textures_with_distance(id);
@@ -193,11 +192,7 @@ impl State {
         }
         self.texture_lod_last_update = Instant::now();
 
-        let ids: Vec<EntityId> = self
-            .model_animation_bindings
-            .keys()
-            .copied()
-            .collect();
+        let ids: Vec<EntityId> = self.model_animation_bindings.keys().copied().collect();
         for id in ids {
             if self.entity_model_path_for_textures(id).is_none() {
                 continue;
@@ -256,9 +251,7 @@ impl State {
                             cap_px,
                         )
                     })
-                    .or_else(|| {
-                        pack_skinned_part_embedded_texture(self, &catalog_path, pi, part)
-                    })
+                    .or_else(|| pack_skinned_part_embedded_texture(self, &catalog_path, pi, part))
             } else {
                 pack_skinned_part_embedded_texture(self, &catalog_path, pi, part)
             };

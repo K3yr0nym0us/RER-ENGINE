@@ -40,10 +40,10 @@ impl PhysicsWorld2D {
     pub(crate) fn move_physics_entity(
         &mut self,
         entity: EntityId,
-        speed:  f32,
-        dir_x:  f32,
-        dir_y:  f32,
-        dt:     f32,
+        speed: f32,
+        dir_x: f32,
+        dir_y: f32,
+        dt: f32,
     ) -> bool {
         let Some(&body_handle) = self.entity_bodies.get(&entity) else {
             return false;
@@ -57,7 +57,9 @@ impl PhysicsWorld2D {
         let len = (dir_x * dir_x + dir_y * dir_y).sqrt();
         if len <= 1e-6 {
             if body_type == "kinematic" {
-                let vy = self.bodies.get(body_handle)
+                let vy = self
+                    .bodies
+                    .get(body_handle)
                     .map(|b| b.linvel().y)
                     .unwrap_or(0.0);
                 self.set_kinematic_actor_vel_xy(entity, Vector::new(0.0, vy, 0.0));
@@ -74,7 +76,9 @@ impl PhysicsWorld2D {
             let (nx, ny) = (dir_x / len, dir_y / len);
             // Priorizar la intención vertical ya acumulada en kinematic_actor_vel.
             // Permite combinar salto (Y) y deriva lateral (X) en el mismo frame.
-            let vy_base = self.kinematic_actor_vel.get(&entity)
+            let vy_base = self
+                .kinematic_actor_vel
+                .get(&entity)
                 .map(|v| v.y)
                 .or_else(|| self.bodies.get(body_handle).map(|b| b.linvel().y))
                 .unwrap_or(0.0);
@@ -95,10 +99,14 @@ impl PhysicsWorld2D {
         let controls_y = ny.abs() > 1e-6;
 
         // ── Leer estado actual del body (inmutable) ───────────────────────────
-        let current_vy = self.bodies.get(body_handle).map(|b| b.linvel().y).unwrap_or(0.0);
+        let current_vy = self
+            .bodies
+            .get(body_handle)
+            .map(|b| b.linvel().y)
+            .unwrap_or(0.0);
         let col_handle = match self.entity_colliders.get(&entity).copied() {
             Some(h) => h,
-            None    => {
+            None => {
                 // Sin colisionador: aplicar velocidad directamente
                 if let Some(body) = self.bodies.get_mut(body_handle) {
                     let vy = if controls_y { ny * speed } else { current_vy };
@@ -110,9 +118,9 @@ impl PhysicsWorld2D {
 
         let shape_pos = match self.colliders.get(col_handle) {
             Some(c) => *c.position(),
-            None    => match self.bodies.get(body_handle) {
+            None => match self.bodies.get(body_handle) {
                 Some(b) => *b.position(),
-                None    => return false,
+                None => return false,
             },
         };
 
@@ -137,9 +145,9 @@ impl PhysicsWorld2D {
                 shape_vel,
                 col.shape(),
                 ShapeCastOptions {
-                    max_time_of_impact:                    1.0,
-                    target_distance:                       0.01,
-                    stop_at_penetration:                   false,
+                    max_time_of_impact: 1.0,
+                    target_distance: 0.01,
+                    stop_at_penetration: false,
                     compute_impact_geometry_on_penetration: false,
                 },
             )
@@ -163,11 +171,9 @@ impl PhysicsWorld2D {
                     let wall_normal = hit_data.normal2;
                     let vx_req = nx * speed;
                     let vy_req = if controls_y { ny * speed } else { 0.0 };
-                    let vel    = Vector::new(vx_req, vy_req, 0.0);
-                    let dot    = vel.dot(wall_normal);
-                    let slide  = vel - wall_normal * dot;
-
-                    
+                    let vel = Vector::new(vx_req, vy_req, 0.0);
+                    let dot = vel.dot(wall_normal);
+                    let slide = vel - wall_normal * dot;
 
                     let vy = if controls_y { slide.y } else { current_vy };
                     (slide.x, vy)
@@ -175,8 +181,12 @@ impl PhysicsWorld2D {
                     // Obstáculo a toi fracción del frame — avanzar hasta el borde.
                     // effective_speed = toi * speed (sin divisiones frágiles por dt).
                     let safe_speed = toi * speed;
-                    
-                    let vy = if controls_y { ny * safe_speed } else { current_vy };
+
+                    let vy = if controls_y {
+                        ny * safe_speed
+                    } else {
+                        current_vy
+                    };
                     (nx * safe_speed, vy)
                 }
             }

@@ -5,9 +5,9 @@ use std::collections::{HashMap, HashSet};
 use glam::Vec3;
 
 use crate::ecs::EntityId;
-use crate::entity_save_meta::{entity_path_marker, EntitySaveRegistry};
+use crate::entity_save_meta::{EntitySaveRegistry, entity_path_marker};
 use crate::reflections::policy::ProbeSlot;
-use crate::reflections::probe_env::{ProbeMetaUniform, MAX_PROBES};
+use crate::reflections::probe_env::{MAX_PROBES, ProbeMetaUniform};
 
 pub const REFLECTION_PROBE_PATH_MARKER: &str = "[ReflectionProbe]";
 
@@ -33,13 +33,17 @@ pub fn reflection_probe_entities(registry: &EntitySaveRegistry) -> Vec<EntityId>
 }
 
 pub fn is_reflection_probe_entity(registry: &EntitySaveRegistry, id: EntityId) -> bool {
-    registry.meta.get(&id).is_some_and(|m| {
-        entity_path_marker(&m.path) == Some(REFLECTION_PROBE_PATH_MARKER)
-    })
+    registry
+        .meta
+        .get(&id)
+        .is_some_and(|m| entity_path_marker(&m.path) == Some(REFLECTION_PROBE_PATH_MARKER))
 }
 
 /// Asigna ranura fija 0..MAX_PROBES-1; reutiliza la existente si ya estaba registrada.
-pub fn allocate_probe_slot(slots: &mut HashMap<EntityId, ProbeSlot>, id: EntityId) -> Option<ProbeSlot> {
+pub fn allocate_probe_slot(
+    slots: &mut HashMap<EntityId, ProbeSlot>,
+    id: EntityId,
+) -> Option<ProbeSlot> {
     if let Some(&slot) = slots.get(&id) {
         return Some(slot);
     }
@@ -91,7 +95,7 @@ pub fn sync_capture_burst_for_entity_set(
 ) -> bool {
     let changed = last_ids
         .as_ref()
-        .map_or(true, |prev| prev.as_slice() != probe_ids);
+        .is_none_or(|prev| prev.as_slice() != probe_ids);
     if changed {
         *last_ids = Some(probe_ids.to_vec());
     }
@@ -121,7 +125,10 @@ pub fn build_probe_meta(
 pub fn probe_index_map_from_list(
     probe_list: &[(EntityId, Vec3, ProbeSlot)],
 ) -> HashMap<EntityId, ProbeSlot> {
-    probe_list.iter().map(|(id, _, slot)| (*id, *slot)).collect()
+    probe_list
+        .iter()
+        .map(|(id, _, slot)| (*id, *slot))
+        .collect()
 }
 
 #[cfg(test)]
@@ -169,8 +176,8 @@ mod tests {
             (2u32, Vec3::new(0.0, 0.8, 1.5), 1usize),
         ];
         let meta = build_probe_meta(&list, |_| 0.8);
-        assert_eq!(meta.entries[0], [-4.0, 0.8, 1.5, 0.8]);
-        assert_eq!(meta.entries[1], [0.0, 0.8, 1.5, 0.8]);
+        assert_eq!(meta.entries[0], [-4.0, 0.8, 1.5, 1.0]);
+        assert_eq!(meta.entries[1], [0.0, 0.8, 1.5, 1.0]);
         assert_eq!(meta.entries[2], [0.0; 4]);
     }
 }

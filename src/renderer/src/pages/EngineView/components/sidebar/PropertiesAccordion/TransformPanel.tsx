@@ -1,4 +1,5 @@
-import { useEffect, useState, useCallback, useRef, ReactNode } from 'react';
+import type { ReactNode } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 
 import { Lock, Unlock } from 'react-bootstrap-icons';
 
@@ -240,7 +241,7 @@ export function TransformPanel({
   const rotMax = is2D ? 1 : 180
   const rotStep = is2D ? 0.01 : 1
 
-  const formatRotDisplay = (axisIndex: number, deg: number) =>
+  const formatRotDisplay = (_axisIndex: number, deg: number) =>
     (is2D ? deg.toFixed(2) : deg.toFixed(1))
 
   const commitRotAxis3d = (axisIndex: 0 | 1 | 2, newDeg: number, prevDeg: number) => {

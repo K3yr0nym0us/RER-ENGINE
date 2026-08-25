@@ -3,12 +3,12 @@ use crate::platform::{query_key_e_held_os, query_key_q_held_os};
 
 use glam::{Quat, Vec3};
 
-use crate::config_3d::quick_build::{snap_axis_edges_to_grid, GHOST_OFFSCREEN};
+use crate::config_3d::quick_build::{GHOST_OFFSCREEN, snap_axis_edges_to_grid};
 use crate::config_compat::ActiveTool;
 use crate::ecs::{EntityId, MeshComponent, NonSelectable, Transform};
 use crate::engine::State;
 use crate::entity_save_meta::EntitySaveMeta;
-use crate::ipc::{send_event, EngineEvent};
+use crate::ipc::{EngineEvent, send_event};
 use crate::mesh;
 
 const GHOST_ALPHA: f32 = 0.38;
@@ -103,9 +103,7 @@ impl State {
             return idx;
         }
         let tex_idx = self.tex_layers.len();
-        let block_layer = self
-            .texture_array
-            .pack(&self.queue, &rgba, 1, 1);
+        let block_layer = self.texture_array.pack(&self.queue, &rgba, 1, 1);
         self.tex_layers.push(block_layer);
         self.plane_tool_tex_cache.insert(rgba, tex_idx);
         tex_idx
@@ -113,9 +111,7 @@ impl State {
 
     fn plane_tool_effective_scale(&self) -> [f32; 3] {
         match &self.active_tool {
-            ActiveTool::PlacePlaneTool { size, .. } => {
-                plane_tool_visual_scale(size[0], size[1])
-            }
+            ActiveTool::PlacePlaneTool { size, .. } => plane_tool_visual_scale(size[0], size[1]),
             _ => plane_tool_scale_from_preview(self.plane_tool_preview_scale),
         }
     }
@@ -163,12 +159,7 @@ impl State {
         if let Some((px, py)) = self.tool_cursor_pixels {
             self.update_plane_tool_cursor_3d(px, py);
         }
-        log::info!(
-            "[plane_tool] activada {:?} tamaño {:.2}×{:.2}",
-            kind,
-            w,
-            h
-        );
+        log::info!("[plane_tool] activada {:?} tamaño {:.2}×{:.2}", kind, w, h);
         send_event(&EngineEvent::PlaneToolReady {
             tool: match kind {
                 PlaneToolKind::Collider => "draw_collider",
@@ -192,12 +183,11 @@ impl State {
             size: active_size,
             ..
         } = &self.active_tool
+            && *active_kind == kind
         {
-            if *active_kind == kind {
-                let old_h = active_size[1];
-                self.apply_plane_tool_preview_size(size[0], size[1], old_h);
-                return;
-            }
+            let old_h = active_size[1];
+            self.apply_plane_tool_preview_size(size[0], size[1], old_h);
+            return;
         }
         self.activate_plane_tool(kind, size);
     }
@@ -221,12 +211,11 @@ impl State {
         } else {
             return;
         };
-        if let Some(ghost_id) = self.plane_tool_ghost_id {
-            if let Some(t) = self.world.get_mut::<Transform>(ghost_id) {
-                t.rotation = Quat::from_rotation_y(new_yaw);
-            }
+        if let Some(ghost_id) = self.plane_tool_ghost_id
+            && let Some(t) = self.world.get_mut::<Transform>(ghost_id)
+        {
+            t.rotation = Quat::from_rotation_y(new_yaw);
         }
-        
     }
 
     pub(crate) fn clear_plane_tool_rotate_held(&mut self) {
@@ -290,9 +279,7 @@ impl State {
         self.plane_tool_preview_scale = Some(scale);
 
         if let ActiveTool::PlacePlaneTool {
-            size,
-            cursor_world,
-            ..
+            size, cursor_world, ..
         } = &mut self.active_tool
         {
             *size = [w, h];
@@ -302,14 +289,14 @@ impl State {
             }
         }
 
-        if let Some(ghost_id) = self.plane_tool_ghost_id {
-            if let Some(t) = self.world.get_mut::<Transform>(ghost_id) {
-                t.scale = Vec3::from_array(scale);
-                if let ActiveTool::PlacePlaneTool { cursor_world, .. } = &self.active_tool {
-                    if let Some(pos) = cursor_world {
-                        t.position = Vec3::from_array(*pos);
-                    }
-                }
+        if let Some(ghost_id) = self.plane_tool_ghost_id
+            && let Some(t) = self.world.get_mut::<Transform>(ghost_id)
+        {
+            t.scale = Vec3::from_array(scale);
+            if let ActiveTool::PlacePlaneTool { cursor_world, .. } = &self.active_tool
+                && let Some(pos) = cursor_world
+            {
+                t.position = Vec3::from_array(*pos);
             }
         }
     }
@@ -318,13 +305,8 @@ impl State {
         let mesh_idx = self.ensure_plane_tool_wall_mesh();
         let tex_idx = self.ensure_plane_tool_colored_texture(kind.color_rgba());
         let ghost_id = self.world.spawn(Some("__plane_ghost__"));
-        self.world.insert(
-            ghost_id,
-            MeshComponent {
-                mesh_idx,
-                tex_idx,
-            },
-        );
+        self.world
+            .insert(ghost_id, MeshComponent { mesh_idx, tex_idx });
         self.world.insert(
             ghost_id,
             Transform {
@@ -364,12 +346,12 @@ impl State {
             *cursor_world = Some(snapped);
         }
 
-        if let Some(ghost_id) = self.plane_tool_ghost_id {
-            if let Some(t) = self.world.get_mut::<Transform>(ghost_id) {
-                t.scale = Vec3::from_array(scale);
-                t.position = Vec3::from_array(snapped);
-                t.rotation = Quat::from_rotation_y(yaw);
-            }
+        if let Some(ghost_id) = self.plane_tool_ghost_id
+            && let Some(t) = self.world.get_mut::<Transform>(ghost_id)
+        {
+            t.scale = Vec3::from_array(scale);
+            t.position = Vec3::from_array(snapped);
+            t.rotation = Quat::from_rotation_y(yaw);
         }
     }
 
@@ -377,10 +359,7 @@ impl State {
         self.raycast_placement_point(pixel_x, pixel_y)
     }
 
-    pub(crate) fn place_plane_tool_at_cursor(
-        &mut self,
-        pixels: Option<(f32, f32)>,
-    ) -> bool {
+    pub(crate) fn place_plane_tool_at_cursor(&mut self, pixels: Option<(f32, f32)>) -> bool {
         let kind = match &self.active_tool {
             ActiveTool::PlacePlaneTool { kind, .. } => *kind,
             _ => return false,
@@ -502,13 +481,7 @@ impl State {
             Quat::from_rotation_y(yaw.unwrap_or(0.0))
         };
 
-        self.world.insert(
-            id,
-            MeshComponent {
-                mesh_idx,
-                tex_idx,
-            },
-        );
+        self.world.insert(id, MeshComponent { mesh_idx, tex_idx });
         if let Some(t) = self.world.get_mut::<Transform>(id) {
             t.position = Vec3::from_array(position);
             t.scale = Vec3::from_array(visual_scale);
@@ -520,7 +493,6 @@ impl State {
                     position: Vec3::from_array(position),
                     scale: Vec3::from_array(visual_scale),
                     rotation,
-                    ..Default::default()
                 },
             );
         }

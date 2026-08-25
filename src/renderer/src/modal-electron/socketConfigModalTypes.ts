@@ -9,13 +9,10 @@ export interface SocketConfigModalState {
 	links: SocketLinksModalState
 }
 
-type CreateAction = Exclude<SocketsModalAction, { action: 'close' }>
-type LinksAction = Exclude<SocketLinksModalAction, { action: 'close' }>
-
 export type SocketConfigModalAction =
 	| { action: 'close' }
 	| { action: 'setTab'; tab: SocketConfigTab }
 	| { action: 'focusEntityPick' }
 	| { action: 'focusHostPick' }
-	| { action: 'create'; payload: CreateAction }
-	| { action: 'links'; payload: LinksAction }
+	| { action: 'create'; payload: SocketsModalAction }
+	| { action: 'links'; payload: SocketLinksModalAction }

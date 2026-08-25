@@ -108,14 +108,17 @@ export function useControlBindingsRuntime() {
     window.addEventListener('mouseup', onMouseUp)
     window.addEventListener('blur', onBlur)
 
+    const pressedKeys = pressedKeysRef.current
+    const pressedMouse = pressedMouseRef.current
+
     return () => {
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('keyup', onKeyUp)
       window.removeEventListener('mousedown', onMouseDown)
       window.removeEventListener('mouseup', onMouseUp)
       window.removeEventListener('blur', onBlur)
-      pressedKeysRef.current.clear()
-      pressedMouseRef.current.clear()
+      pressedKeys.clear()
+      pressedMouse.clear()
     }
   }, [previewPlaying])
 

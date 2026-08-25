@@ -1,10 +1,10 @@
 use glam::{Quat, Vec3 as GlamVec3};
 
 use crate::ecs::{MeshComponent, NonSelectable, Transform};
-use crate::ipc::{send_event, EngineEvent};
+use crate::ipc::{EngineEvent, send_event};
 
-use super::types::EntityUndoSnapshot;
 use super::State;
+use super::types::EntityUndoSnapshot;
 
 impl State {
     pub(crate) fn capture_entity_undo_snapshot(&self, id: u32) -> Option<EntityUndoSnapshot> {
@@ -29,11 +29,7 @@ impl State {
         let scale = t.scale.to_array();
         let physics_enabled = self.physics.has_physics(id);
         let physics_type = self.physics.get_body_type(id).to_string();
-        let physics_half = [
-            scale[0] * 0.5,
-            scale[1] * 0.5,
-            scale[2] * 0.5,
-        ];
+        let physics_half = [scale[0] * 0.5, scale[1] * 0.5, scale[2] * 0.5];
 
         Some(EntityUndoSnapshot {
             id,
@@ -64,7 +60,10 @@ impl State {
         self.sync_editor_scenes_undo_dirty_to_renderer();
     }
 
-    pub(crate) fn restore_entity_from_undo_snapshot(&mut self, snapshot: &EntityUndoSnapshot) -> bool {
+    pub(crate) fn restore_entity_from_undo_snapshot(
+        &mut self,
+        snapshot: &EntityUndoSnapshot,
+    ) -> bool {
         if !self.world.spawn_with_id(snapshot.id, Some(&snapshot.name)) {
             log::warn!("[redo] no se pudo reinsertar entidad {}", snapshot.id);
             return false;

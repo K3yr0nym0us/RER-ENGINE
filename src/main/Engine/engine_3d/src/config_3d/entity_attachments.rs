@@ -7,7 +7,7 @@ use glam::{Quat, Vec3};
 
 use crate::ecs::{EntityId, Transform};
 use crate::engine::State;
-use crate::ipc::{send_event, EngineEvent};
+use crate::ipc::{EngineEvent, send_event};
 
 /// Ancla de un attachment: entidad raíz o socket en hueso.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -164,8 +164,7 @@ impl State {
             });
         } else {
             send_event(&EngineEvent::Error {
-                message: "No se pudo fusionar ninguna entidad (revisa la selección)."
-                    .to_string(),
+                message: "No se pudo fusionar ninguna entidad (revisa la selección).".to_string(),
             });
         }
     }
@@ -193,16 +192,14 @@ impl State {
     }
 
     pub(crate) fn detach_children_of(&mut self, parent_id: EntityId) {
-        self.entity_attachments.retain(|_, attachment| {
-            attachment.parent_id() != Some(parent_id)
-        });
+        self.entity_attachments
+            .retain(|_, attachment| attachment.parent_id() != Some(parent_id));
     }
 
     pub(crate) fn clear_entity_attachments_for_removed(&mut self, id: EntityId) {
         self.entity_attachments.remove(&id);
-        self.entity_attachments.retain(|_, attachment| {
-            attachment.parent_id() != Some(id)
-        });
+        self.entity_attachments
+            .retain(|_, attachment| attachment.parent_id() != Some(id));
         self.clear_entity_sockets_for_removed(id);
     }
 
@@ -265,10 +262,7 @@ impl State {
     }
 
     /// Tras mover entidades (gizmo o panel): sincroniza hijos o recaptura offset local.
-    pub(crate) fn handle_entity_attachment_after_transform(
-        &mut self,
-        changed_ids: &[EntityId],
-    ) {
+    pub(crate) fn handle_entity_attachment_after_transform(&mut self, changed_ids: &[EntityId]) {
         if changed_ids.is_empty() {
             return;
         }
@@ -289,15 +283,19 @@ impl State {
         }
 
         for &id in changed_ids {
-            let has_entity_children = self.entity_attachments.values().any(|attachment| {
-                attachment.parent_id() == Some(id)
-            });
+            let has_entity_children = self
+                .entity_attachments
+                .values()
+                .any(|attachment| attachment.parent_id() == Some(id));
             if !has_entity_children {
                 continue;
             }
-            let any_child_selected = self.entity_attachments.iter().any(|(child_id, attachment)| {
-                attachment.parent_id() == Some(id) && changed.contains(child_id)
-            });
+            let any_child_selected =
+                self.entity_attachments
+                    .iter()
+                    .any(|(child_id, attachment)| {
+                        attachment.parent_id() == Some(id) && changed.contains(child_id)
+                    });
             if !any_child_selected {
                 self.sync_attached_children_of(id);
             }
@@ -317,9 +315,10 @@ impl State {
                 );
                 continue;
             }
-            let anchor = if let (Some(host_id), Some(socket_name)) =
-                (entry.attach_socket_host_id, entry.attach_socket_name.as_deref())
-            {
+            let anchor = if let (Some(host_id), Some(socket_name)) = (
+                entry.attach_socket_host_id,
+                entry.attach_socket_name.as_deref(),
+            ) {
                 if self.world.get::<Transform>(host_id).is_none() {
                     log::warn!(
                         "[Sockets] omitiendo vínculo {} → socket {} en host {} (host ausente)",
@@ -350,7 +349,8 @@ impl State {
             let (local_position, local_rotation, child_world_scale) = if entry.recompute_locals {
                 match &anchor {
                     AttachmentAnchor::Entity(parent_id) => {
-                        let Some(parent_t) = self.world.get::<Transform>(*parent_id).cloned() else {
+                        let Some(parent_t) = self.world.get::<Transform>(*parent_id).cloned()
+                        else {
                             continue;
                         };
                         let Some(child_t) = self.world.get::<Transform>(entry.entity_id).cloned()

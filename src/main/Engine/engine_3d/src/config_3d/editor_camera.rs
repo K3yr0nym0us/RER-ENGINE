@@ -3,7 +3,7 @@ use glam::Vec3;
 use crate::ecs::{EditorCamera, EntityId, NonSelectable, Transform};
 use crate::engine::State;
 use crate::entity_save_meta::EntitySaveMeta;
-use crate::ipc::{send_event, EngineEvent};
+use crate::ipc::{EngineEvent, send_event};
 
 impl State {
     /// Crea la entidad de cámara orbital del editor (separada del jugador FP).

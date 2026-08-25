@@ -1,10 +1,10 @@
 use std::time::Instant;
 
 use crate::ecs::Transform;
-use crate::ipc::{send_event, EngineEvent};
+use crate::ipc::{EngineEvent, send_event};
 use crate::mesh;
 
-use super::{ActiveAnimation, AnimationState, State, AUTOSAVE_INTERVAL};
+use super::{AUTOSAVE_INTERVAL, ActiveAnimation, AnimationState, State};
 
 impl State {
     pub(crate) fn update_entity_facing_from_horizontal(&mut self, entity_id: u32, horizontal: f32) {
@@ -181,10 +181,8 @@ impl State {
         if let Some(player_id) = self.play_character_entity {
             let player_selected = self.selected_entity == Some(player_id)
                 || self.selected_entities.contains(&player_id);
-            if player_selected {
-                if let Some((center, _)) = self.play_character_world_pick_aabb() {
-                    return Some(center);
-                }
+            if player_selected && let Some((center, _)) = self.play_character_world_pick_aabb() {
+                return Some(center);
             }
         }
 
@@ -221,14 +219,11 @@ impl State {
                 return Some(sum / count as f32);
             }
         }
-        self.selected_entity
-            .and_then(|id| {
-                if let Some(t) = self.world.get::<Transform>(id) {
-                    Some(model_aabb_center_for(id).unwrap_or(t.position))
-                } else {
-                    None
-                }
-            })
+        self.selected_entity.and_then(|id| {
+            self.world
+                .get::<Transform>(id)
+                .map(|t| model_aabb_center_for(id).unwrap_or(t.position))
+        })
     }
 
     pub fn update(&mut self) {

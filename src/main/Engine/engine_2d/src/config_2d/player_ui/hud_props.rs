@@ -132,10 +132,11 @@ impl State {
             self.push_undo_player_ui_hud();
         }
 
-        if let Some(ref path) = texture_path {
-            if !path.trim().is_empty() && !self.hud_image_store.contains_key(path) {
-                return Err(format!("imagen no registrada: {path}"));
-            }
+        if let Some(ref path) = texture_path
+            && !path.trim().is_empty()
+            && !self.hud_image_store.contains_key(path)
+        {
+            return Err(format!("imagen no registrada: {path}"));
         }
 
         let Some(list) = self.player_ui_objects.get_mut(&key) else {

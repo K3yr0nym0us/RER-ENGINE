@@ -338,7 +338,8 @@ export function takePendingRestoreByPath(
 	for (const [key, queue] of restores.entries()) {
 		if (queue.length === 0 || key.startsWith('[')) continue;
 		if (pathsMatchForBurstRestore(key, loadedPath)) {
-			const pending = queue.shift()!;
+			const pending = queue.shift();
+			if (pending == null) continue;
 			if (queue.length === 0) restores.delete(key);
 			return { path: key, pending };
 		}
@@ -497,7 +498,7 @@ export function endModelReplaceLoading(
 /** Carga 3D por ráfaga IPC (cambio de escena activa o `ready` inicial), no `import_scene` 2D. */
 export function needsSceneBurstLoad(
 	projectType: string | undefined,
-	gameStyle: GameStyle | undefined,
+	_gameStyle: GameStyle | undefined,
 	scene: Pick<SavedScene, 'entities' | 'player'>,
 ): boolean {
 	if (projectType !== '3D') return false;

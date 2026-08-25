@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use crate::ipc::{send_event, EngineEvent};
+use crate::ipc::{EngineEvent, send_event};
 
 use super::State;
 
@@ -71,7 +71,10 @@ impl State {
                     .get(&entity_id)
                     .map(|a| a.animation_name.clone())
                     .unwrap_or_default();
-                let anim_opt = self.animations.get(&entity_id).and_then(|m| m.get(&anim_name));
+                let anim_opt = self
+                    .animations
+                    .get(&entity_id)
+                    .and_then(|m| m.get(&anim_name));
                 match anim_opt {
                     None => {
                         log::warn!(
@@ -139,7 +142,7 @@ impl State {
             } else {
                 self.show_first_frame_of_animation(entity_id, &animation_name);
             }
-            
+
             self.emit_entity_animation_play_state(entity_id);
             send_event(&EngineEvent::AnimationFinished { entity_id });
         }

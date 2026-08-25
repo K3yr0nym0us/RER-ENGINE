@@ -1,0 +1,10 @@
+# Clippy defaults for the engine workspace.
+# CI / yarn quality deny warnings via:
+#   cargo clippy --workspace --all-targets --all-features -- -D warnings
+#
+# Prefer fixing code over allowing lints. Document any #[allow(...)] with a real reason.
+
+cognitive-complexity-threshold = 30
+# Spawn/render/TAA helpers naturally take many typed params; prefer this over #[allow].
+too-many-arguments-threshold = 20
+type-complexity-threshold = 250

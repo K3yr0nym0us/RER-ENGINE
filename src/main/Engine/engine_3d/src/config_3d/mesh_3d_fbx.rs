@@ -3,12 +3,12 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::config_3d::model_asset::MaterialTextureCpu;
 use super::mesh_3d::{
-    estimate_mesh_forward_xz, normalize_vertices_height_feet_pivot, vertex_local_bounds,
-    CpuModelMeshPart, LoadedModelMesh,
+    CpuModelMeshPart, LoadedModelMesh, estimate_mesh_forward_xz,
+    normalize_vertices_height_feet_pivot, vertex_local_bounds,
 };
-use crate::mesh::{upload, Vertex};
+use crate::config_3d::model_asset::MaterialTextureCpu;
+use crate::mesh::{Vertex, upload};
 
 fn white_pixel() -> (Vec<u8>, u32, u32) {
     (vec![255, 255, 255, 255], 1, 1)
@@ -53,9 +53,11 @@ fn push_fbx_mesh_triangles(
     let world3 = Mat3::from_mat4(world);
 
     let face_iter: Box<dyn Iterator<Item = u32>> = if !mesh.material_parts.is_empty() {
-        Box::new(mesh.material_parts.iter().flat_map(|part| {
-            part.face_indices.iter().copied()
-        }))
+        Box::new(
+            mesh.material_parts
+                .iter()
+                .flat_map(|part| part.face_indices.iter().copied()),
+        )
     } else {
         Box::new((0..mesh.faces.len() as u32).collect::<Vec<_>>().into_iter())
     };
@@ -87,12 +89,14 @@ pub(crate) fn load_fbx(
     path: &Path,
     normalize_to_extent: Option<f32>,
 ) -> Result<Vec<LoadedModelMesh>, String> {
-    let mut opts = ufbx::LoadOpts::default();
-    opts.generate_missing_normals = true;
-    opts.load_external_files = true;
-    opts.target_axes = ufbx::CoordinateAxes::right_handed_y_up();
-    opts.target_unit_meters = 1.0;
-    opts.space_conversion = ufbx::SpaceConversion::ModifyGeometry;
+    let opts = ufbx::LoadOpts {
+        generate_missing_normals: true,
+        load_external_files: true,
+        target_axes: ufbx::CoordinateAxes::right_handed_y_up(),
+        target_unit_meters: 1.0,
+        space_conversion: ufbx::SpaceConversion::ModifyGeometry,
+        ..Default::default()
+    };
 
     let scene = ufbx::load_file(
         path.to_str()
@@ -116,16 +120,15 @@ pub(crate) fn load_fbx(
         };
         let mesh: &ufbx::Mesh = mesh_ref.as_ref();
 
-        if !texture_picked {
-            if let Some(mat) = mesh.materials.first().map(|m| m.as_ref()) {
-                if let Some(tex) = texture_from_material(mat) {
-                    let (r, w, h) = texture_rgba(tex, fbx_dir);
-                    rgba = r;
-                    tex_w = w;
-                    tex_h = h;
-                    texture_picked = true;
-                }
-            }
+        if !texture_picked
+            && let Some(mat) = mesh.materials.first().map(|m| m.as_ref())
+            && let Some(tex) = texture_from_material(mat)
+        {
+            let (r, w, h) = texture_rgba(tex, fbx_dir);
+            rgba = r;
+            tex_w = w;
+            tex_h = h;
+            texture_picked = true;
         }
 
         let world = ufbx_matrix_to_mat4(&node.geometry_to_world);
@@ -138,8 +141,7 @@ pub(crate) fn load_fbx(
 
     normalize_vertices_height_feet_pivot(&mut vertices, normalize_to_extent.unwrap_or(1.8));
     let local_bounds = vertex_local_bounds(&vertices);
-    let meta =
-        crate::config_3d::fbx_facing::forward_xz_from_ufbx_front(scene.settings.axes.front);
+    let meta = crate::config_3d::fbx_facing::forward_xz_from_ufbx_front(scene.settings.axes.front);
     let est = estimate_mesh_forward_xz(&vertices);
     let forward_xz = crate::config_3d::fbx_facing::resolve_fbx_forward_xz(meta, est);
 
@@ -157,12 +159,14 @@ pub(crate) fn load_fbx_cpu(
     path: &Path,
     normalize_to_extent: Option<f32>,
 ) -> Result<Vec<CpuModelMeshPart>, String> {
-    let mut opts = ufbx::LoadOpts::default();
-    opts.generate_missing_normals = true;
-    opts.load_external_files = true;
-    opts.target_axes = ufbx::CoordinateAxes::right_handed_y_up();
-    opts.target_unit_meters = 1.0;
-    opts.space_conversion = ufbx::SpaceConversion::ModifyGeometry;
+    let opts = ufbx::LoadOpts {
+        generate_missing_normals: true,
+        load_external_files: true,
+        target_axes: ufbx::CoordinateAxes::right_handed_y_up(),
+        target_unit_meters: 1.0,
+        space_conversion: ufbx::SpaceConversion::ModifyGeometry,
+        ..Default::default()
+    };
 
     let scene = ufbx::load_file(
         path.to_str()
@@ -188,14 +192,12 @@ pub(crate) fn load_fbx_cpu(
         let mesh: &ufbx::Mesh = mesh_ref.as_ref();
 
         if let Some(mat) = mesh.materials.first().map(|m| m.as_ref()) {
-            if !texture_picked {
-                if let Some(tex) = texture_from_material(mat) {
-                    let (r, w, h) = texture_rgba(tex, fbx_dir);
-                    rgba = r;
-                    tex_w = w;
-                    tex_h = h;
-                    texture_picked = true;
-                }
+            if !texture_picked && let Some(tex) = texture_from_material(mat) {
+                let (r, w, h) = texture_rgba(tex, fbx_dir);
+                rgba = r;
+                tex_w = w;
+                tex_h = h;
+                texture_picked = true;
             }
             roughness = mat.pbr.roughness.value_vec4.x as f32;
             metallic = mat.pbr.metalness.value_vec4.x as f32;
@@ -231,16 +233,16 @@ pub(crate) fn load_fbx_cpu(
     }])
 }
 
-fn texture_from_material<'a>(material: &'a ufbx::Material) -> Option<&'a ufbx::Texture> {
-    if material.pbr.base_color.texture_enabled {
-        if let Some(tex) = material.pbr.base_color.texture.as_ref() {
-            return Some(tex.as_ref());
-        }
+fn texture_from_material(material: &ufbx::Material) -> Option<&ufbx::Texture> {
+    if material.pbr.base_color.texture_enabled
+        && let Some(tex) = material.pbr.base_color.texture.as_ref()
+    {
+        return Some(tex.as_ref());
     }
-    if material.fbx.diffuse_color.texture_enabled {
-        if let Some(tex) = material.fbx.diffuse_color.texture.as_ref() {
-            return Some(tex.as_ref());
-        }
+    if material.fbx.diffuse_color.texture_enabled
+        && let Some(tex) = material.fbx.diffuse_color.texture.as_ref()
+    {
+        return Some(tex.as_ref());
     }
     material
         .textures
@@ -249,10 +251,10 @@ fn texture_from_material<'a>(material: &'a ufbx::Material) -> Option<&'a ufbx::T
 }
 
 fn texture_rgba(texture: &ufbx::Texture, fbx_dir: &Path) -> (Vec<u8>, u32, u32) {
-    if !texture.content.is_empty() {
-        if let Some(decoded) = decode_image_bytes(&texture.content) {
-            return decoded;
-        }
+    if !texture.content.is_empty()
+        && let Some(decoded) = decode_image_bytes(&texture.content)
+    {
+        return decoded;
     }
 
     for name in [

@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import type { EngineCommand2D, EngineCommand3D } from '@shared-types'
 
 /**
  * Modo dibujo de objeto HUD: puntos indefinidos; el motor cierra al clicar el primer punto.
  */
 export function usePlayerUiObjectDrawing(
-	send: (cmd: object) => void,
+	send: (cmd: EngineCommand2D | EngineCommand3D) => void,
 	drawEndTick: number,
 ) {
 	const [isActive, setIsActive] = useState(false)

@@ -2,15 +2,17 @@
 
 use crate::engine::State;
 use crate::ipc::{
-    send_event, AddPlayerUiButtonPayload, EngineEvent, PlayerUiButtonListItem, SavePlayerUiButtonSnapshot,
+    AddPlayerUiButtonPayload, EngineEvent, PlayerUiButtonListItem, SavePlayerUiButtonSnapshot,
+    send_event,
 };
 
-use super::config::{
-    default_button_size_ndc, parse_hex_color_rgba, PlayerUiButton, BOX_STACK_GAP,
-};
+use super::config::{BOX_STACK_GAP, PlayerUiButton, default_button_size_ndc, parse_hex_color_rgba};
 
 impl State {
-    pub(crate) fn add_player_ui_button(&mut self, payload: AddPlayerUiButtonPayload) -> Result<u32, String> {
+    pub(crate) fn add_player_ui_button(
+        &mut self,
+        payload: AddPlayerUiButtonPayload,
+    ) -> Result<u32, String> {
         if !self.player_ui_edit_active {
             return Err("modo edición UI inactivo".into());
         }
@@ -72,7 +74,10 @@ impl State {
             locked: false,
         };
 
-        self.player_ui_buttons.entry(key).or_default().push(entry.clone());
+        self.player_ui_buttons
+            .entry(key)
+            .or_default()
+            .push(entry.clone());
         self.player_ui_selected_button_id = Some(id);
         self.player_ui_selected_text_id = None;
         self.player_ui_selected_image_id = None;
@@ -121,8 +126,10 @@ impl State {
         self.player_ui_buttons.clear();
         for snap in buttons {
             let key = format!("{}:{}", snap.scope, snap.screen_id);
-            self.player_ui_buttons.entry(key).or_default().push(
-                PlayerUiButton {
+            self.player_ui_buttons
+                .entry(key)
+                .or_default()
+                .push(PlayerUiButton {
                     id: snap.id,
                     shape_type: snap.shape_type.clone(),
                     round: snap.round,
@@ -161,11 +168,9 @@ impl State {
                         .unwrap_or_else(|| (snap.width / snap.height.max(0.01)).max(0.01)),
                     z_index: snap.z_index,
                     locked: snap.locked,
-                },
-            );
-            self.player_ui_text_next_id = self
-                .player_ui_text_next_id
-                .max(snap.id.saturating_add(1));
+                });
+            self.player_ui_text_next_id =
+                self.player_ui_text_next_id.max(snap.id.saturating_add(1));
         }
         let vw = self.size.width.max(1) as f32;
         let vh = self.size.height.max(1) as f32;

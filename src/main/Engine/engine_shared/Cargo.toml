@@ -3,6 +3,9 @@ name = "rer-engine-shared"
 version.workspace = true
 edition.workspace = true
 
+[lints]
+workspace = true
+
 [[bin]]
 name = "rer_engine_shared"
 path = "src/main.rs"

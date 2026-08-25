@@ -4,8 +4,8 @@ use crate::ecs::Transform;
 use crate::ipc::{EngineCommand, EngineCommandCommon};
 use crate::scripting::{EntitySnapshot, ScriptCmd};
 
-use super::types::PendingSlide;
 use super::State;
+use super::types::PendingSlide;
 
 impl State {
     pub(crate) fn update_entity_facing_from_horizontal(&mut self, entity_id: u32, horizontal: f32) {
@@ -19,7 +19,11 @@ impl State {
     /// Intenta inferir intención horizontal pura desde el input bruto.
     /// Se usa para pre-filtrar scripts de movimiento cuando el actor ya está
     /// bloqueado por colisión en esa dirección, evitando ejecutar scripts de más.
-    pub(crate) fn infer_horizontal_input_dir(&self, device: &str, control_key: &str) -> Option<f32> {
+    pub(crate) fn infer_horizontal_input_dir(
+        &self,
+        device: &str,
+        control_key: &str,
+    ) -> Option<f32> {
         match device {
             "keyboard_mouse" => match control_key {
                 "A" => Some(-1.0),
@@ -35,7 +39,11 @@ impl State {
         }
     }
 
-    pub(crate) fn clear_on_keep_horizontal_block_for_input(&mut self, device: &str, control_key: &str) {
+    pub(crate) fn clear_on_keep_horizontal_block_for_input(
+        &mut self,
+        device: &str,
+        control_key: &str,
+    ) {
         let Some(dir_x) = self.infer_horizontal_input_dir(device, control_key) else {
             return;
         };
@@ -63,14 +71,21 @@ impl State {
             if sign * dir_x < -EPS {
                 self.blocked_on_keep_horizontal.remove(&entity_id);
             } else if sign * dir_x > EPS {
-                self.handle_command(EngineCommand::Common(EngineCommandCommon::StopAnimation { id: entity_id }));
+                self.handle_command(EngineCommand::Common(EngineCommandCommon::StopAnimation {
+                    id: entity_id,
+                }));
                 return true;
             }
         }
 
-        if self.physics_2d.has_physics(entity_id) && self.physics_2d.is_horizontal_blocked(entity_id, dir_x) {
-            self.blocked_on_keep_horizontal.insert(entity_id, dir_x.signum());
-            self.handle_command(EngineCommand::Common(EngineCommandCommon::StopAnimation { id: entity_id }));
+        if self.physics_2d.has_physics(entity_id)
+            && self.physics_2d.is_horizontal_blocked(entity_id, dir_x)
+        {
+            self.blocked_on_keep_horizontal
+                .insert(entity_id, dir_x.signum());
+            self.handle_command(EngineCommand::Common(EngineCommandCommon::StopAnimation {
+                id: entity_id,
+            }));
             return true;
         }
 
@@ -94,33 +109,61 @@ impl State {
                 };
                 let facing_right = self.entity_facing_right.get(&id).copied().unwrap_or(true);
                 let facing_sign = if facing_right { 1.0 } else { -1.0 };
-                let animations: Vec<String> = self.animations
+                let animations: Vec<String> = self
+                    .animations
                     .get(&id)
                     .map(|m| m.keys().cloned().collect())
                     .unwrap_or_default();
-                map.insert(id, EntitySnapshot { id, x, y, scale_x, scale_y, facing_right, facing_sign, animations });
+                map.insert(
+                    id,
+                    EntitySnapshot {
+                        id,
+                        x,
+                        y,
+                        scale_x,
+                        scale_y,
+                        facing_right,
+                        facing_sign,
+                        animations,
+                    },
+                );
             }
             map
         };
 
         let active_ui = self.player_ui_active_player_screen_id.clone();
-        let commands = self.script_engine.tick(
-            self.delta_time,
-            &snapshots,
-            active_ui.as_deref(),
-        );
+        let commands = self
+            .script_engine
+            .tick(self.delta_time, &snapshots, active_ui.as_deref());
         self.apply_script_commands(commands);
     }
 
-    pub(super) fn execute_control_script(&mut self, id: u32, control_key: &str, path: &str, source: &str) {
+    pub(super) fn execute_control_script(
+        &mut self,
+        id: u32,
+        control_key: &str,
+        path: &str,
+        source: &str,
+    ) {
         if !self.preview_playing {
             return;
         }
 
         let snapshot = self.build_script_snapshot(id);
-        match self.script_engine.run_control_script(id, control_key, path, source, snapshot.as_ref()) {
+        match self.script_engine.run_control_script(
+            id,
+            control_key,
+            path,
+            source,
+            snapshot.as_ref(),
+        ) {
             Ok(commands) => self.apply_script_commands(commands),
-            Err(e) => log::error!("[control] Error ejecutando script '{}' ({}): {}", path, control_key, e),
+            Err(e) => log::error!(
+                "[control] Error ejecutando script '{}' ({}): {}",
+                path,
+                control_key,
+                e
+            ),
         }
     }
 
@@ -133,12 +176,22 @@ impl State {
         let facing_right = self.entity_facing_right.get(&id).copied().unwrap_or(true);
         let facing_sign = if facing_right { 1.0 } else { -1.0 };
 
-        let animations: Vec<String> = self.animations
+        let animations: Vec<String> = self
+            .animations
             .get(&id)
             .map(|m| m.keys().cloned().collect())
             .unwrap_or_default();
 
-        Some(EntitySnapshot { id, x, y, scale_x, scale_y, facing_right, facing_sign, animations })
+        Some(EntitySnapshot {
+            id,
+            x,
+            y,
+            scale_x,
+            scale_y,
+            facing_right,
+            facing_sign,
+            animations,
+        })
     }
 
     /// Aplica los comandos generados por los scripts al estado del motor.
@@ -146,11 +199,11 @@ impl State {
         for cmd in commands {
             match cmd {
                 ScriptCmd::SetPosition { id, x, y } => {
-                    let current_pos = self.world.get::<Transform>(id)
+                    let current_pos = self
+                        .world
+                        .get::<Transform>(id)
                         .map(|t| (t.position.x, t.position.y));
-                    let horizontal = current_pos
-                        .map(|(cx, _)| x - cx)
-                        .unwrap_or(0.0);
+                    let horizontal = current_pos.map(|(cx, _)| x - cx).unwrap_or(0.0);
                     self.update_entity_facing_from_horizontal(id, horizontal);
 
                     // En modo juego con física activa, SetPosition debe respetar colisiones
@@ -164,7 +217,13 @@ impl State {
                             if dist > 1e-6 {
                                 let dt_safe = self.delta_time.max(1e-4);
                                 let speed = dist / dt_safe;
-                                let _ = self.physics_2d.move_physics_entity(id, speed, dx / dist, dy / dist, dt_safe);
+                                let _ = self.physics_2d.move_physics_entity(
+                                    id,
+                                    speed,
+                                    dx / dist,
+                                    dy / dist,
+                                    dt_safe,
+                                );
                             }
                         }
                     } else {
@@ -194,7 +253,13 @@ impl State {
                         if dist > 1e-6 {
                             let dt_safe = self.delta_time.max(1e-4);
                             let speed = dist / dt_safe;
-                            let _ = self.physics_2d.move_physics_entity(id, speed, dx / dist, dy / dist, dt_safe);
+                            let _ = self.physics_2d.move_physics_entity(
+                                id,
+                                speed,
+                                dx / dist,
+                                dy / dist,
+                                dt_safe,
+                            );
                         }
                     } else {
                         if let Some(t) = self.world.get_mut::<Transform>(id) {
@@ -206,9 +271,11 @@ impl State {
                         if let Some(saved) = self.anim_saved_transforms.get_mut(&id) {
                             saved.0.x += dx;
                             saved.0.y += dy;
-                            
                         } else {
-                            log::warn!("[script/translate] entidad {} SIN entrada en anim_saved_transforms — translate no acumulado", id);
+                            log::warn!(
+                                "[script/translate] entidad {} SIN entrada en anim_saved_transforms — translate no acumulado",
+                                id
+                            );
                         }
                         // Mantener el contrato actual editor/script -> body fisico.
                         // Esta ruta existe para compatibilidad; el movimiento normal
@@ -232,20 +299,36 @@ impl State {
                 ScriptCmd::PlayAnimation { id, name } => {
                     // Si la animación solicitada ya está activa en esa entidad,
                     // ignorar para evitar el bucle on_start → play_animation → on_start.
-                    let already_active = self.active_animations.get(&id)
+                    let already_active = self
+                        .active_animations
+                        .get(&id)
                         .map(|a| a.animation_name == name)
                         .unwrap_or(false);
                     if !already_active {
-                        self.handle_command(EngineCommand::Common(EngineCommandCommon::PlayAnimation { id, name, loop_: true }));
+                        self.handle_command(EngineCommand::Common(
+                            EngineCommandCommon::PlayAnimation {
+                                id,
+                                name,
+                                loop_: true,
+                            },
+                        ));
                     }
                 }
                 ScriptCmd::SetDefaultAnimation { id, name } => {
-                    self.handle_command(EngineCommand::Common(EngineCommandCommon::SetDefaultAnimation { id, name }));
+                    self.handle_command(EngineCommand::Common(
+                        EngineCommandCommon::SetDefaultAnimation { id, name },
+                    ));
                 }
                 ScriptCmd::StopAnimation { id } => {
-                    self.handle_command(EngineCommand::Common(EngineCommandCommon::StopAnimation { id }));
+                    self.handle_command(EngineCommand::Common(
+                        EngineCommandCommon::StopAnimation { id },
+                    ));
                 }
-                ScriptCmd::SetPhysics { id, enabled, body_type } => {
+                ScriptCmd::SetPhysics {
+                    id,
+                    enabled,
+                    body_type,
+                } => {
                     // Evitar recrear el cuerpo Rapier si ya tiene el estado correcto.
                     // Destruir y recrear cada frame resetea la velocidad a 0, lo que
                     // impide que la gravedad acumule y que las colisiones funcionen.
@@ -256,16 +339,33 @@ impl State {
                         !self.physics_2d.has_physics(id)
                     };
                     if !already_same {
-                        self.handle_command(EngineCommand::Common(EngineCommandCommon::SetPhysics { id, enabled, body_type }));
+                        self.handle_command(EngineCommand::Common(
+                            EngineCommandCommon::SetPhysics {
+                                id,
+                                enabled,
+                                body_type,
+                            },
+                        ));
                     }
                 }
-                ScriptCmd::MoveEntity { id, speed, dir_x, dir_y } => {
+                ScriptCmd::MoveEntity {
+                    id,
+                    speed,
+                    dir_x,
+                    dir_y,
+                } => {
                     self.update_entity_facing_from_horizontal(id, speed * dir_x);
                     // Aplica velocidad lineal al Rapier body usando shape cast para
                     // detectar obstáculos antes de aplicar. Si no tiene física activa,
                     // se aplica fallback por traslación directa para facilitar pruebas.
                     if self.preview_playing {
-                        let moved = self.physics_2d.move_physics_entity(id, speed, dir_x, dir_y, self.delta_time);
+                        let moved = self.physics_2d.move_physics_entity(
+                            id,
+                            speed,
+                            dir_x,
+                            dir_y,
+                            self.delta_time,
+                        );
                         if !moved {
                             let dx = speed * dir_x * self.delta_time;
                             let dy = speed * dir_y * self.delta_time;
@@ -277,7 +377,10 @@ impl State {
                                 saved.0.x += dx;
                                 saved.0.y += dy;
                             }
-                            log::warn!("[script/move_entity] entidad {} sin cuerpo físico activo — aplicado fallback translate", id);
+                            log::warn!(
+                                "[script/move_entity] entidad {} sin cuerpo físico activo — aplicado fallback translate",
+                                id
+                            );
                         }
                     } else {
                         // En modo editor no corremos el step de físicas; para pruebas
@@ -294,7 +397,12 @@ impl State {
                         }
                     }
                 }
-                ScriptCmd::MoveEntityFacing { id, speed, amount_x, dir_y } => {
+                ScriptCmd::MoveEntityFacing {
+                    id,
+                    speed,
+                    amount_x,
+                    dir_y,
+                } => {
                     let facing_right = self.entity_facing_right.get(&id).copied().unwrap_or(true);
                     let facing_sign = if facing_right { 1.0 } else { -1.0 };
                     let dir_x = amount_x.abs() * facing_sign;
@@ -303,7 +411,13 @@ impl State {
                     // detectar obstáculos antes de aplicar. Si no tiene física activa,
                     // se aplica fallback por traslación directa para facilitar pruebas.
                     if self.preview_playing {
-                        let moved = self.physics_2d.move_physics_entity(id, speed, dir_x, dir_y, self.delta_time);
+                        let moved = self.physics_2d.move_physics_entity(
+                            id,
+                            speed,
+                            dir_x,
+                            dir_y,
+                            self.delta_time,
+                        );
                         if !moved {
                             let dx = speed * dir_x * self.delta_time;
                             let dy = speed * dir_y * self.delta_time;
@@ -315,7 +429,10 @@ impl State {
                                 saved.0.x += dx;
                                 saved.0.y += dy;
                             }
-                            log::warn!("[script/move_entity_facing] entidad {} sin cuerpo físico activo — aplicado fallback translate", id);
+                            log::warn!(
+                                "[script/move_entity_facing] entidad {} sin cuerpo físico activo — aplicado fallback translate",
+                                id
+                            );
                         }
                     } else {
                         // En modo editor no corremos el step de físicas; para pruebas
@@ -332,16 +449,32 @@ impl State {
                         }
                     }
                 }
-                ScriptCmd::ApplyKinematicGravity { id, speed_x, jump_speed_y, gravity } => {
+                ScriptCmd::ApplyKinematicGravity {
+                    id,
+                    speed_x,
+                    jump_speed_y,
+                    gravity,
+                } => {
                     if self.preview_playing {
                         self.physics_2d.apply_kinematic_gravity(
-                            id, speed_x, jump_speed_y, gravity, self.delta_time, None,
+                            id,
+                            speed_x,
+                            jump_speed_y,
+                            gravity,
+                            self.delta_time,
+                            None,
                         );
                     }
                 }
-                ScriptCmd::ApplyKinematicImpulse { id, dir_x, dir_y, impulse } => {
+                ScriptCmd::ApplyKinematicImpulse {
+                    id,
+                    dir_x,
+                    dir_y,
+                    impulse,
+                } => {
                     if self.preview_playing {
-                        self.physics_2d.apply_kinematic_impulse(id, dir_x, dir_y, impulse);
+                        self.physics_2d
+                            .apply_kinematic_impulse(id, dir_x, dir_y, impulse);
                     }
                 }
                 ScriptCmd::SlideEntity { id, dx, dy, speed } => {
@@ -351,12 +484,15 @@ impl State {
                         } else {
                             (0.0, 0.0)
                         };
-                        self.pending_slides.insert(id, PendingSlide {
-                            target_x: cx + dx,
-                            target_y: cy + dy,
-                            speed:    speed.max(0.001),
-                            keep_current_y: dy.abs() <= 1e-6,
-                        });
+                        self.pending_slides.insert(
+                            id,
+                            PendingSlide {
+                                target_x: cx + dx,
+                                target_y: cy + dy,
+                                speed: speed.max(0.001),
+                                keep_current_y: dy.abs() <= 1e-6,
+                            },
+                        );
                     }
                 }
                 ScriptCmd::Log { message } => {

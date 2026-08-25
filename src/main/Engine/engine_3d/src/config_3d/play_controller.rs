@@ -23,8 +23,14 @@ impl State {
         let Some(bindings) = self.control_bindings_by_entity.get(&player_id) else {
             return false;
         };
-        bindings.keyboard_mouse.values().any(|s| !s.source.trim().is_empty())
-            || bindings.gamepad.values().any(|s| !s.source.trim().is_empty())
+        bindings
+            .keyboard_mouse
+            .values()
+            .any(|s| !s.source.trim().is_empty())
+            || bindings
+                .gamepad
+                .values()
+                .any(|s| !s.source.trim().is_empty())
     }
 
     pub(crate) fn play_controller_effective_inputs(
@@ -85,8 +91,7 @@ impl State {
             return;
         }
 
-        let Some((radius, half_height, _, _)) = self.play_character_capsule_for_controller()
-        else {
+        let Some((radius, half_height, _, _)) = self.play_character_capsule_for_controller() else {
             return;
         };
         let up = Vec3::Y;
@@ -98,8 +103,8 @@ impl State {
         let old_feet = feet;
         let mut velocity = self.play_controller_velocity;
 
-        let jump_held_now = self.play_controller_jump_request_active
-            || pressed_inputs.contains("SPACE");
+        let jump_held_now =
+            self.play_controller_jump_request_active || pressed_inputs.contains("SPACE");
         let jump_just_pressed = jump_held_now && !self.play_controller_jump_request_prev;
         self.play_controller_jump_request_prev = jump_held_now;
         self.play_controller_jump_request_active = false;

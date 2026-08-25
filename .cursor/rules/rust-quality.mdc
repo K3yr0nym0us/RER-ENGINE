@@ -1,0 +1,57 @@
+---
+description: Rust engine quality gate — fmt, check, clippy, test, audit
+alwaysApply: true
+globs:
+  - "src/main/Engine/**/*.rs"
+  - "src/main/Engine/**/Cargo.toml"
+  - "src/main/Engine/rustfmt.toml"
+  - "src/main/Engine/clippy.toml"
+  - "src/main/Engine/Cargo.lock"
+  - "scripts/run-rust-quality.mjs"
+  - ".github/workflows/*.yml"
+---
+
+# RER-ENGINE — Rust Quality Gate
+
+Applies to the Cargo workspace under `src/main/Engine/`
+(`rer-engine-2d`, `rer-engine-3d`, `rer-engine-shared`, `rer-engine-ipc-common`).
+
+Does **not** replace frontend ESLint/TypeScript rules.
+
+## Mandatory before finishing any Rust task
+
+Run (from repo root, or via yarn):
+
+```bash
+cargo fmt --manifest-path src/main/Engine/Cargo.toml --all -- --check
+cargo check --manifest-path src/main/Engine/Cargo.toml --workspace --all-targets
+cargo clippy --manifest-path src/main/Engine/Cargo.toml --workspace --all-targets --all-features -- -D warnings
+cargo test --manifest-path src/main/Engine/Cargo.toml --workspace --all-features
+cargo audit --file src/main/Engine/Cargo.lock
+```
+
+Or:
+
+```bash
+yarn quality:rust
+yarn quality
+```
+
+If any step fails, the task is **not** done — fix issues introduced by the change.
+
+## Rules
+
+1. **rustfmt** is mandatory (`cargo fmt --all -- --check`).
+2. **clippy** is mandatory; **warnings are errors** (`-D warnings`).
+3. Do **not** hide problems with `#[allow(...)]` unless there is a real, documented technical justification.
+4. Do **not** use `unsafe` unless truly necessary and justified in a comment.
+5. Do **not** introduce needless clones, allocations, or complexity.
+6. Do **not** ignore warnings.
+7. Do **not** weaken quality config (rustfmt/clippy/CI/scripts) just to make bad code pass.
+8. Do **not** delete or gut tests to hide a broken implementation.
+
+## Scope
+
+- Engine quality: rustfmt, `cargo check`, clippy, `cargo test`, `cargo audit`.
+- Frontend quality: ESLint / tsc / Vitest (see `frontend-quality.mdc`).
+- SonarCloud Quality Gate remains part of CI for the overall project.

@@ -2,10 +2,10 @@
 
 use glam::{Mat4, Vec3};
 
+use super::bvh::RtTriangle;
 use crate::ecs::{MeshComponent, Transform};
 use crate::engine::State;
 use crate::mesh::Mesh;
-use super::bvh::RtTriangle;
 
 pub const MAX_STATIC_RT_INSTANCES: usize = 512;
 pub const MAX_SKINNED_RT_INSTANCES: usize = 32;
@@ -88,17 +88,16 @@ pub fn collect_rt_instances(
         }
         let transform = t.to_matrix();
 
-        if include_skinned {
-            if let Some(binding) = state.model_animation_bindings.get(&entity) {
-                if let Some(&gpu_idx) = binding.part_gpu_indices.first() {
-                    out.push(RtInstanceDesc::skinned(gpu_idx, transform, entity));
-                    if out.len() >= MAX_STATIC_RT_INSTANCES + MAX_SKINNED_RT_INSTANCES {
-                        skinned_truncated = true;
-                        break;
-                    }
-                    continue;
-                }
+        if include_skinned
+            && let Some(binding) = state.model_animation_bindings.get(&entity)
+            && let Some(&gpu_idx) = binding.part_gpu_indices.first()
+        {
+            out.push(RtInstanceDesc::skinned(gpu_idx, transform, entity));
+            if out.len() >= MAX_STATIC_RT_INSTANCES + MAX_SKINNED_RT_INSTANCES {
+                skinned_truncated = true;
+                break;
             }
+            continue;
         }
 
         if state.model_animation_bindings.contains_key(&entity) {
@@ -121,14 +120,10 @@ pub fn collect_rt_instances(
         }
     }
     if static_truncated {
-        log::warn!(
-            "[RT] Límite de instancias estáticas alcanzado ({MAX_STATIC_RT_INSTANCES})"
-        );
+        log::warn!("[RT] Límite de instancias estáticas alcanzado ({MAX_STATIC_RT_INSTANCES})");
     }
     if skinned_truncated {
-        log::warn!(
-            "[RT] Límite de instancias skinned alcanzado ({MAX_SKINNED_RT_INSTANCES})"
-        );
+        log::warn!("[RT] Límite de instancias skinned alcanzado ({MAX_SKINNED_RT_INSTANCES})");
     }
     out
 }
@@ -174,8 +169,6 @@ pub fn mesh_triangles_world(mesh: &Mesh, transform: Mat4) -> Vec<RtTriangle> {
 pub fn mat4_to_tlas_transform(m: Mat4) -> [f32; 12] {
     let c = m.to_cols_array();
     [
-        c[0], c[4], c[8], c[12],
-        c[1], c[5], c[9], c[13],
-        c[2], c[6], c[10], c[14],
+        c[0], c[4], c[8], c[12], c[1], c[5], c[9], c[13], c[2], c[6], c[10], c[14],
     ]
 }

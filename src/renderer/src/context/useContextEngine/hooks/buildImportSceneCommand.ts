@@ -10,7 +10,7 @@ import type {
 import { DEFAULT_GRAVITY_MAGNITUDE, entityPathMarker, isPlayerPath } from '@shared-types';
 import { entity3dToMeta } from '../../../utils/entity3dEditorSync';
 
-import type { EngineAction, EngineInternalRefs, EntityMeta, Transform } from '../types';
+import type { EngineAction, EngineInternalRefs, Transform } from '../types';
 
 /** Debe coincidir con `setup_2d_platformer` / `Camera2D` inicial del motor. */
 const DEFAULT_CAMERA_2D = { x: 0, y: 0, halfH: 3.5 };
@@ -150,7 +150,9 @@ export function buildImportSceneCommand(scene: SavedScene, blueprints?: BluePrin
 			half_h: camera.halfH,
 		},
 		sprites: scene.sprites ?? [],
-		entities: scene.entities.map((entity) => buildImportSceneEntity(entity, blueprints)),
+		entities: (scene.entities as unknown as SavedEntity[]).map((entity) =>
+			buildImportSceneEntity(entity, blueprints),
+		),
 	};
 }
 
@@ -211,7 +213,7 @@ export function syncEditorStateFromSavedScene(
 		| 'editorCameraEntityIdRef'
 	>,
 	dispatch: (action: EngineAction) => void,
-	blueprints?: BluePrintEntry[],
+	_blueprints?: BluePrintEntry[],
 ) {
 	const scenarioEntities: { id: number; path: string }[] = [];
 	const characterEntities: { id: number; path: string }[] = [];
@@ -233,7 +235,7 @@ export function syncEditorStateFromSavedScene(
 		entityIds.push(entity.id);
 
 		const entry = { id: entity.id, path: meta.path };
-		const listKind = meta.kind ?? entity.category;
+		const listKind = String(meta.kind ?? entity.category);
 		switch (listKind) {
 			case 'character':
 				characterEntities.push(entry);

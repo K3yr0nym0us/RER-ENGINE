@@ -3,6 +3,9 @@ name = "rer-engine-3d"
 version.workspace = true
 edition.workspace = true
 
+[lints]
+workspace = true
+
 [[bin]]
 name = "rer_engine_3d"
 path = "src/main.rs"

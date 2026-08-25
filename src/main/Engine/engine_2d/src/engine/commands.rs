@@ -1,20 +1,21 @@
-use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 
 use glam::Vec3 as GlamVec3;
-use rodio;
 use rodio::Source as RodioSource;
 use winit::dpi::PhysicalSize;
 
 use crate::config_2d::ActiveTool;
 use crate::ecs::{NameComponent, Transform};
 use crate::gizmo;
-use crate::ipc::{send_event, AnimationFrameData, EngineCommand, EngineCommand2dOnly, EngineCommandCommon, EngineEvent};
+use crate::ipc::{
+    AnimationFrameData, EngineCommand, EngineCommand2dOnly, EngineCommandCommon, EngineEvent,
+    send_event,
+};
 
+use super::State;
 use super::audio::DecodedAudio;
 use super::types::{ActiveAnimation, AnimationState};
-use super::State;
 
 impl State {
     pub fn handle_command(&mut self, cmd: EngineCommand) {
@@ -27,17 +28,23 @@ impl State {
             }
             EngineCommand::Common(EngineCommandCommon::Resize { width, height }) => {
                 self.resize(PhysicalSize::new(width, height));
-            }            EngineCommand::Common(EngineCommandCommon::SetBounds { x, y, width, height, .. }) => {
+            }
+            EngineCommand::Common(EngineCommandCommon::SetBounds {
+                x,
+                y,
+                width,
+                height,
+                ..
+            }) => {
                 // Mover/redimensionar la ventana overlay
-                let _ = self.window.set_outer_position(
-                    winit::dpi::PhysicalPosition::new(x, y)
-                );
+                self.window
+                    .set_outer_position(winit::dpi::PhysicalPosition::new(x, y));
                 // Redimensionar superficie wgpu
                 self.resize(PhysicalSize::new(width, height));
                 // Pedir al compositor que aplique el nuevo tamaño
-                let _ = self.window.request_inner_size(
-                    winit::dpi::PhysicalSize::new(width, height)
-                );
+                let _ = self
+                    .window
+                    .request_inner_size(winit::dpi::PhysicalSize::new(width, height));
             }
             EngineCommand::Common(EngineCommandCommon::LoadModel { path, .. }) => {
                 send_event(&EngineEvent::Error {
@@ -51,7 +58,14 @@ impl State {
                     ),
                 });
             }
-            EngineCommand::Common(EngineCommandCommon::SetTransform { id, position, rotation, scale, track_undo, .. }) => {
+            EngineCommand::Common(EngineCommandCommon::SetTransform {
+                id,
+                position,
+                rotation,
+                scale,
+                track_undo,
+                ..
+            }) => {
                 use glam::{Quat, Vec3};
                 let before = self.world.get::<Transform>(id).cloned();
                 if let Some(transform) = self.world.get_mut::<Transform>(id) {
@@ -79,22 +93,36 @@ impl State {
                 // Ruta de compatibilidad editor -> fisica.
                 // El Transform ya fue mutado; aqui solo resincronizamos el body.
                 // No usar esto como sustituto del movimiento normal de gameplay.
-                if let Some(p) = position {
-                    if self.camera_2d.is_some() {
-                        self.sync_physics_2d_body_from_xy(id, p[0], p[1]);
-                    }
+                if let Some(p) = position
+                    && self.camera_2d.is_some()
+                {
+                    self.sync_physics_2d_body_from_xy(id, p[0], p[1]);
                 }
                 if let Some(prev) = before {
                     let prev_pos = prev.position.to_array();
-                    let prev_rot = [prev.rotation.x, prev.rotation.y, prev.rotation.z, prev.rotation.w];
+                    let prev_rot = [
+                        prev.rotation.x,
+                        prev.rotation.y,
+                        prev.rotation.z,
+                        prev.rotation.w,
+                    ];
                     let prev_scl = prev.scale.to_array();
-                    let next_pos = self.world.get::<Transform>(id).map(|t| t.position.to_array());
-                    let next_rot = self.world.get::<Transform>(id).map(|t| [t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w]);
+                    let next_pos = self
+                        .world
+                        .get::<Transform>(id)
+                        .map(|t| t.position.to_array());
+                    let next_rot = self
+                        .world
+                        .get::<Transform>(id)
+                        .map(|t| [t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w]);
                     let next_scl = self.world.get::<Transform>(id).map(|t| t.scale.to_array());
                     let should_track_undo = track_undo.unwrap_or(true);
                     if !self.is_applying_undo
                         && should_track_undo
-                        && (next_pos != Some(prev_pos) || next_rot != Some(prev_rot) || next_scl != Some(prev_scl)) {
+                        && (next_pos != Some(prev_pos)
+                            || next_rot != Some(prev_rot)
+                            || next_scl != Some(prev_scl))
+                    {
                         self.push_undo_transform(id, prev_pos, prev_rot, prev_scl);
                     }
                 }
@@ -102,19 +130,28 @@ impl State {
             EngineCommand::Common(EngineCommandCommon::SetEntityName { id, name, force }) => {
                 let next_name = name.trim();
                 if next_name.is_empty() {
-                    send_event(&EngineEvent::Error { message: "El nombre no puede estar vacio".to_string() });
+                    send_event(&EngineEvent::Error {
+                        message: "El nombre no puede estar vacio".to_string(),
+                    });
                     return;
                 }
 
                 if !force && self.is_entity_name_taken(next_name, Some(id)) {
-                    send_event(&EngineEvent::Error { message: format!("Ya existe una entidad con el nombre '{}'", next_name) });
+                    send_event(&EngineEvent::Error {
+                        message: format!("Ya existe una entidad con el nombre '{}'", next_name),
+                    });
                     return;
                 }
 
                 if let Some(existing) = self.world.get_mut::<NameComponent>(id) {
                     existing.name = next_name.to_string();
                 } else {
-                    self.world.insert(id, NameComponent { name: next_name.to_string() });
+                    self.world.insert(
+                        id,
+                        NameComponent {
+                            name: next_name.to_string(),
+                        },
+                    );
                 }
 
                 if self.selected_entity == Some(id) {
@@ -150,24 +187,27 @@ impl State {
                         }
                     }
                     "scratch" => self.setup_scratch(),
-                    _         => log::info!("SetScene: escena '{}' no reconocida", scene),
+                    _ => log::info!("SetScene: escena '{}' no reconocida", scene),
                 }
             }
             EngineCommand::Only2d(EngineCommand2dOnly::LoadScenario { path, track_undo }) => {
                 self.load_scenario(&path);
-                if track_undo.unwrap_or(false) {
-                    if let Some(&id) = self.scenario_entities.last() {
-                        self.push_remove_entity_undo(id);
-                        log::info!("[quick_build] escenario {id} registrado en undo");
-                    }
+                if track_undo.unwrap_or(false)
+                    && let Some(&id) = self.scenario_entities.last()
+                {
+                    self.push_remove_entity_undo(id);
+                    log::info!("[quick_build] escenario {id} registrado en undo");
                 }
             }
             EngineCommand::Only2d(EngineCommand2dOnly::SetScenarioScale { id, scale }) => {
-                let marker = self.world.get::<crate::config_2d::ScenarioMarker>(id).cloned();
+                let marker = self
+                    .world
+                    .get::<crate::config_2d::ScenarioMarker>(id)
+                    .cloned();
                 if let Some(m) = marker {
                     let aspect = m.img_width as f32 / m.img_height.max(1) as f32;
-                    let new_h  = m.base_world_h * scale.clamp(0.05, 20.0);
-                    let new_w  = new_h * aspect;
+                    let new_h = m.base_world_h * scale.clamp(0.05, 20.0);
+                    let new_w = new_h * aspect;
                     if let Some(t) = self.world.get_mut::<Transform>(id) {
                         // Mantener el comportamiento actual: cambia la escala visual
                         // sin recomponer automaticamente collider/shape en esta fase.
@@ -177,17 +217,28 @@ impl State {
             }
             EngineCommand::Only2d(EngineCommand2dOnly::LoadCharacter { path, track_undo }) => {
                 self.load_character(&path);
-                if track_undo.unwrap_or(false) {
-                    if let Some(&id) = self.character_entities.last() {
-                        self.push_remove_entity_undo(id);
-                        log::info!("[quick_build] personaje {id} registrado en undo");
-                    }
+                if track_undo.unwrap_or(false)
+                    && let Some(&id) = self.character_entities.last()
+                {
+                    self.push_remove_entity_undo(id);
+                    log::info!("[quick_build] personaje {id} registrado en undo");
                 }
             }
             EngineCommand::Only2d(EngineCommand2dOnly::SetCharacterScale { id, scale }) => {
                 self.set_character_scale(id, scale);
             }
-            EngineCommand::Only2d(EngineCommand2dOnly::PlayAnimationFrame { id, path, pivot_x, pivot_y, logical_w, logical_h, src_x, src_y, src_w, src_h }) => {
+            EngineCommand::Only2d(EngineCommand2dOnly::PlayAnimationFrame {
+                id,
+                path,
+                pivot_x,
+                pivot_y,
+                logical_w,
+                logical_h,
+                src_x,
+                src_y,
+                src_w,
+                src_h,
+            }) => {
                 if self.pivot_edit_mode.is_some() {
                     // Ignorar: el modo edición de pivot tiene prioridad para no interferir con la textura/escala
                     return;
@@ -196,12 +247,29 @@ impl State {
                     (Some(x), Some(y)) => (x, y),
                     _ => (logical_w.max(1) as f32 * 0.5, logical_h.max(1) as f32),
                 };
-                self.play_animation_frame(id, &path, pivot_x, pivot_y, logical_w, logical_h, src_x.zip(src_y).zip(src_w.zip(src_h)).map(|((x, y), (w, h))| (x, y, w, h)), false);
+                self.play_animation_frame(
+                    id,
+                    &path,
+                    pivot_x,
+                    pivot_y,
+                    logical_w,
+                    logical_h,
+                    src_x
+                        .zip(src_y)
+                        .zip(src_w.zip(src_h))
+                        .map(|((x, y), (w, h))| (x, y, w, h)),
+                    false,
+                );
             }
             EngineCommand::Only2d(EngineCommand2dOnly::RestoreAnimationFrame { id }) => {
                 self.restore_animation_frame(id);
             }
-            EngineCommand::Only2d(EngineCommand2dOnly::SetPivotEditMode { id, frame_path, pivot_x, pivot_y }) => {
+            EngineCommand::Only2d(EngineCommand2dOnly::SetPivotEditMode {
+                id,
+                frame_path,
+                pivot_x,
+                pivot_y,
+            }) => {
                 self.enter_pivot_edit_mode(id, &frame_path, pivot_x, pivot_y);
             }
             EngineCommand::Only2d(EngineCommand2dOnly::CancelPivotEditMode) => {
@@ -215,16 +283,19 @@ impl State {
             }
             EngineCommand::Common(EngineCommandCommon::PlayAudio { path, loop_ }) => {
                 // Decodificar a PCM y enviar al Sink persistente.
-                let decoded = std::fs::read(&path).ok()
-                    .and_then(|b| {
-                        let cursor = std::io::Cursor::new(b);
-                        rodio::Decoder::new(cursor).ok().map(|dec| {
-                            let ch = dec.channels().get();
-                            let sr = dec.sample_rate().get();
-                            let s: Vec<f32> = dec.collect();
-                            Arc::new(DecodedAudio { samples: s, channels: ch, sample_rate: sr })
+                let decoded = std::fs::read(&path).ok().and_then(|b| {
+                    let cursor = std::io::Cursor::new(b);
+                    rodio::Decoder::new(cursor).ok().map(|dec| {
+                        let ch = dec.channels().get();
+                        let sr = dec.sample_rate().get();
+                        let s: Vec<f32> = dec.collect();
+                        Arc::new(DecodedAudio {
+                            samples: s,
+                            channels: ch,
+                            sample_rate: sr,
                         })
-                    });
+                    })
+                });
                 match decoded {
                     Some(audio) => self.play_audio_internal(audio, loop_),
                     None => log::error!("[audio] no se pudo cargar o decodificar: {path}"),
@@ -241,12 +312,12 @@ impl State {
                 }
             }
             EngineCommand::Common(EngineCommandCommon::RemoveEntity { id }) => {
-                if !self.is_applying_undo {
-                    if let Some(snapshot) = self.capture_entity_undo_snapshot(id) {
-                        self.undo_stack
-                            .push(crate::engine::UndoAction::RestoreEntity { snapshot });
-                        self.redo_stack.clear();
-                    }
+                if !self.is_applying_undo
+                    && let Some(snapshot) = self.capture_entity_undo_snapshot(id)
+                {
+                    self.undo_stack
+                        .push(crate::engine::UndoAction::RestoreEntity { snapshot });
+                    self.redo_stack.clear();
                 }
                 let removed_kind = if self.scenario_entities.contains(&id) {
                     "scenario"
@@ -267,8 +338,8 @@ impl State {
                 if self.selected_entities.is_empty() && self.selected_entity.is_none() {
                     send_event(&EngineEvent::EntityDeselected);
                 }
-                if Some(id) == self.hovered_entity  {
-                    self.hovered_entity  = None;
+                if Some(id) == self.hovered_entity {
+                    self.hovered_entity = None;
                     send_event(&EngineEvent::EntityUnhovered);
                 }
                 self.physics_2d.remove_entity_body(id);
@@ -276,7 +347,8 @@ impl State {
                 self.character_entities.retain(|&e| e != id);
                 self.collider_entities.retain(|&e| e != id);
                 self.execution_area_entities.retain(|&e| e != id);
-                self.execution_overlaps.retain(|(trigger_id, actor_id)| *trigger_id != id && *actor_id != id);
+                self.execution_overlaps
+                    .retain(|(trigger_id, actor_id)| *trigger_id != id && *actor_id != id);
                 self.anim_flip_overrides.remove(&id);
                 self.entity_facing_right.remove(&id);
                 self.default_animation_by_entity.remove(&id);
@@ -305,14 +377,18 @@ impl State {
                 });
             }
             EngineCommand::Common(EngineCommandCommon::SetWorldSize { width, height, .. }) => {
-                self.grid_config.world_width  = width.max(1.0);
+                self.grid_config.world_width = width.max(1.0);
                 self.grid_config.world_height = height.max(1.0);
                 self.rebuild_grid();
                 // Redimensionar el fondo si existe
-                if let Some(bg_id) = self.background_entity {
-                    if let Some(t) = self.world.get_mut::<Transform>(bg_id) {
-                        t.scale = GlamVec3::new(self.grid_config.world_width, self.grid_config.world_height, 1.0);
-                    }
+                if let Some(bg_id) = self.background_entity
+                    && let Some(t) = self.world.get_mut::<Transform>(bg_id)
+                {
+                    t.scale = GlamVec3::new(
+                        self.grid_config.world_width,
+                        self.grid_config.world_height,
+                        1.0,
+                    );
                 }
             }
             EngineCommand::Common(EngineCommandCommon::SetGravity { gravity }) => {
@@ -378,19 +454,35 @@ impl State {
                     self.run_scene_script_on_play_start();
                     let entities_with_anims: Vec<u32> = self.animations.keys().copied().collect();
                     let default_count = self.default_animation_by_entity.len();
-                    log::info!("[SetPreviewPlaying] entidades con animaciones: {}, con default: {}", entities_with_anims.len(), default_count);
+                    log::info!(
+                        "[SetPreviewPlaying] entidades con animaciones: {}, con default: {}",
+                        entities_with_anims.len(),
+                        default_count
+                    );
                     for entity_id in entities_with_anims {
-                        let default_name = self.default_animation_by_entity.get(&entity_id).cloned();
+                        let default_name =
+                            self.default_animation_by_entity.get(&entity_id).cloned();
                         if let Some(name) = default_name {
-                            log::info!("[SetPreviewPlaying] iniciando animación '{}' para entidad {}", name, entity_id);
-                            self.handle_command(EngineCommand::Common(EngineCommandCommon::PlayAnimation { id: entity_id, name, loop_: true }));
+                            log::info!(
+                                "[SetPreviewPlaying] iniciando animación '{}' para entidad {}",
+                                name,
+                                entity_id
+                            );
+                            self.handle_command(EngineCommand::Common(
+                                EngineCommandCommon::PlayAnimation {
+                                    id: entity_id,
+                                    name,
+                                    loop_: true,
+                                },
+                            ));
                         }
                     }
                 } else {
                     self.script_engine.reset_scene_play_state();
                     // Al volver al modo editor, detener todas las animaciones activas
                     // y mostrar el primer frame de la animación correspondiente.
-                    let active: Vec<(u32, String)> = self.active_animations
+                    let active: Vec<(u32, String)> = self
+                        .active_animations
                         .iter()
                         .map(|(&id, a)| (id, a.animation_name.clone()))
                         .collect();
@@ -416,10 +508,9 @@ impl State {
             }
             EngineCommand::Only2d(EngineCommand2dOnly::SetCamera2d { x, y, half_h }) => {
                 if let Some(cam2d) = &mut self.camera_2d {
-                    cam2d.x      = x;
-                    cam2d.y      = y;
+                    cam2d.x = x;
+                    cam2d.y = y;
                     cam2d.half_h = half_h.clamp(1.0, 50.0);
-                    
                 }
             }
             EngineCommand::Only2d(EngineCommand2dOnly::LoadBackground { path }) => {
@@ -430,15 +521,22 @@ impl State {
                 self.background_path = None;
                 self.clear_background();
             }
-            EngineCommand::Common(EngineCommandCommon::SetPhysics { id, enabled, body_type }) => {
-                let (pos, half, collider_offset) = if let Some(t) = self.world.get::<Transform>(id) {
+            EngineCommand::Common(EngineCommandCommon::SetPhysics {
+                id,
+                enabled,
+                body_type,
+            }) => {
+                let (pos, half, collider_offset) = if let Some(t) = self.world.get::<Transform>(id)
+                {
                     // Forzar z=0 en la posición física: el Z del Transform es visual
                     // (orden de capas), pero la física usa XYZ interno. Si dos cuerpos
                     // tienen Z distinto no colisionan aunque se solapen en XY.
                     let mut p = t.position.to_array();
                     p[2] = 0.0;
                     if self.character_entities.contains(&id) {
-                        if let Some((shape_half, shape_offset)) = crate::config_2d::character_collision_shape(self, id) {
+                        if let Some((shape_half, shape_offset)) =
+                            crate::config_2d::character_collision_shape(self, id)
+                        {
                             (p, shape_half, shape_offset)
                         } else {
                             (p, (t.scale * 0.5).to_array(), [0.0, 0.0, 0.0])
@@ -449,12 +547,29 @@ impl State {
                 } else {
                     ([0.0_f32; 3], [0.5_f32; 3], [0.0, 0.0, 0.0])
                 };
-                self.physics_2d
-                    .set_entity_physics(id, enabled, &body_type, pos, half, collider_offset);
-                
-                send_event(&EngineEvent::PhysicsChanged { entity_id: id, enabled, body_type });
+                self.physics_2d.set_entity_physics(
+                    id,
+                    enabled,
+                    &body_type,
+                    pos,
+                    half,
+                    collider_offset,
+                );
+
+                send_event(&EngineEvent::PhysicsChanged {
+                    entity_id: id,
+                    enabled,
+                    body_type,
+                });
             }
-            EngineCommand::Common(EngineCommandCommon::SetActiveTool { tool, preview_path, preview_kind, preview_scale, preview_src_rect, .. }) => {
+            EngineCommand::Common(EngineCommandCommon::SetActiveTool {
+                tool,
+                preview_path,
+                preview_kind,
+                preview_scale,
+                preview_src_rect,
+                ..
+            }) => {
                 if tool.is_empty() {
                     // Solo cancelar si había una herramienta activa (evita eventos espurios al inicio)
                     let was_active = !matches!(self.active_tool, ActiveTool::None);
@@ -481,22 +596,38 @@ impl State {
                     self.quick_build_preview_scale = None;
                     match tool.as_str() {
                         "draw_collider" => {
-                            self.active_tool = ActiveTool::DrawCollider { points_world: Vec::new(), cursor_world: None };
+                            self.active_tool = ActiveTool::DrawCollider {
+                                points_world: Vec::new(),
+                                cursor_world: None,
+                            };
                             log::info!("Herramienta activa: dibujar colisionador (4 puntos)");
                         }
                         "draw_execution_area" => {
-                            self.active_tool = ActiveTool::DrawExecutionArea { points_world: Vec::new(), cursor_world: None };
+                            self.active_tool = ActiveTool::DrawExecutionArea {
+                                points_world: Vec::new(),
+                                cursor_world: None,
+                            };
                             log::info!("Herramienta activa: dibujar área de ejecución (4 puntos)");
                         }
                         "quick_build_place" => {
                             self.active_tool = ActiveTool::QuickBuildPlace { cursor_world: None };
-                            self.tool_overlay_buffer = crate::gizmo::build_from_vertices(&self.device, &[]);
+                            self.tool_overlay_buffer =
+                                crate::gizmo::build_from_vertices(&self.device, &[]);
                             // Cargar entidad fantasma si se proporcionaron datos del blueprint
-                            if let (Some(path), Some(kind), Some(scale)) = (preview_path.as_deref(), preview_kind.as_deref(), preview_scale) {
+                            if let (Some(path), Some(kind), Some(scale)) = (
+                                preview_path.as_deref(),
+                                preview_kind.as_deref(),
+                                preview_scale,
+                            ) {
                                 self.quick_build_preview_path = Some(path.to_owned());
                                 self.quick_build_preview_kind = Some(kind.to_owned());
                                 self.quick_build_preview_scale = Some(scale);
-                                self.quick_build_ghost_id = self.load_quick_build_ghost(path, kind, scale, preview_src_rect);
+                                self.quick_build_ghost_id = self.load_quick_build_ghost(
+                                    path,
+                                    kind,
+                                    scale,
+                                    preview_src_rect,
+                                );
                             }
                             log::info!("Herramienta activa: construcción rápida");
                         }
@@ -504,14 +635,20 @@ impl State {
                     }
                 }
             }
-            EngineCommand::Only2d(EngineCommand2dOnly::CreateColliderFromPoints { points, track_undo }) => {
+            EngineCommand::Only2d(EngineCommand2dOnly::CreateColliderFromPoints {
+                points,
+                track_undo,
+            }) => {
                 if self.camera_2d.is_some() {
                     self.create_collision_box_from_points(&points, track_undo.unwrap_or(true));
                 } else {
                     log::warn!("CreateColliderFromPoints solo disponible en modo 2D");
                 }
             }
-            EngineCommand::Only2d(EngineCommand2dOnly::CreateExecutionAreaFromPoints { points, track_undo }) => {
+            EngineCommand::Only2d(EngineCommand2dOnly::CreateExecutionAreaFromPoints {
+                points,
+                track_undo,
+            }) => {
                 if self.camera_2d.is_some() {
                     self.create_execution_area_from_points(&points, track_undo.unwrap_or(true));
                 } else {
@@ -534,7 +671,10 @@ impl State {
             EngineCommand::Common(EngineCommandCommon::SetAutosave { enabled }) => {
                 self.autosave_enabled = enabled;
                 self.autosave_last_tick = Instant::now();
-                log::info!("[autosave] {}", if enabled { "activado" } else { "desactivado" });
+                log::info!(
+                    "[autosave] {}",
+                    if enabled { "activado" } else { "desactivado" }
+                );
             }
             EngineCommand::Common(EngineCommandCommon::ExportSaveSnapshot) => {
                 self.export_save_snapshot();
@@ -548,32 +688,27 @@ impl State {
                 scope,
                 screen_id,
             }) => {
-                self.apply_player_ui_edit_mode(
-                    active,
-                    scope.as_deref(),
-                    screen_id.as_deref(),
-                );
+                self.apply_player_ui_edit_mode(active, scope.as_deref(), screen_id.as_deref());
             }
             EngineCommand::Common(EngineCommandCommon::AddPlayerUiTextBox { font_path }) => {
                 match self.add_player_ui_text_box(&font_path) {
                     Ok(id) => {
-                        if let Some(key) = self.player_ui_text_key() {
-                            if let Some(entry) = self
+                        if let Some(key) = self.player_ui_text_key()
+                            && let Some(entry) = self
                                 .player_ui_text_boxes
                                 .get(&key)
                                 .and_then(|list| list.iter().find(|b| b.id == id))
-                            {
-                                send_event(&EngineEvent::PlayerUiTextBoxAdded {
-                                    id: entry.id,
-                                    font_path: entry.font_path.clone(),
-                                    font_name: entry.font_name.clone(),
-                                    text: entry.text.clone(),
-                                    center_x: entry.center_x,
-                                    center_y: entry.center_y,
-                                    width: entry.width,
-                                    height: entry.height,
-                                });
-                            }
+                        {
+                            send_event(&EngineEvent::PlayerUiTextBoxAdded {
+                                id: entry.id,
+                                font_path: entry.font_path.clone(),
+                                font_name: entry.font_name.clone(),
+                                text: entry.text.clone(),
+                                center_x: entry.center_x,
+                                center_y: entry.center_y,
+                                width: entry.width,
+                                height: entry.height,
+                            });
                         }
                     }
                     Err(message) => {
@@ -583,8 +718,7 @@ impl State {
             }
             EngineCommand::Common(EngineCommandCommon::RemovePlayerUiTextBox { id }) => {
                 let removed_id = if let Some(box_id) = id {
-                    self.remove_player_ui_text_box(box_id)
-                        .then_some(box_id)
+                    self.remove_player_ui_text_box(box_id).then_some(box_id)
                 } else {
                     self.remove_selected_player_ui_text_box()
                 };
@@ -598,10 +732,10 @@ impl State {
                 }
             }
             EngineCommand::Common(EngineCommandCommon::RemovePlayerUiButton { id }) => {
-                if let Some(button_id) = id {
-                    if self.remove_player_ui_button(button_id) {
-                        send_event(&EngineEvent::PlayerUiButtonRemoved { id: button_id });
-                    }
+                if let Some(button_id) = id
+                    && self.remove_player_ui_button(button_id)
+                {
+                    send_event(&EngineEvent::PlayerUiButtonRemoved { id: button_id });
                 }
             }
             EngineCommand::Common(EngineCommandCommon::AddPlayerUiImage { image_path }) => {
@@ -632,12 +766,9 @@ impl State {
                 locked,
                 z_index,
             }) => {
-                if let Err(message) = self.set_player_ui_hud_element_props(
-                    &element_kind,
-                    id,
-                    locked,
-                    z_index,
-                ) {
+                if let Err(message) =
+                    self.set_player_ui_hud_element_props(&element_kind, id, locked, z_index)
+                {
                     send_event(&EngineEvent::Error { message });
                 }
             }
@@ -696,28 +827,54 @@ impl State {
                                 Ok(img) => {
                                     let rgba = img.to_rgba8();
                                     self.atlas.update(&self.queue, rgba.as_raw(), uv_rect);
-                                    log::info!("[hot-reload] Textura actualizada en atlas: {}", path);
+                                    log::info!(
+                                        "[hot-reload] Textura actualizada en atlas: {}",
+                                        path
+                                    );
                                 }
-                                Err(e) => log::warn!("[hot-reload] Error decodificando PNG '{}': {}", path, e),
+                                Err(e) => log::warn!(
+                                    "[hot-reload] Error decodificando PNG '{}': {}",
+                                    path,
+                                    e
+                                ),
                             }
                         }
-                        Err(e) => log::warn!("[hot-reload] Error leyendo archivo '{}': {}", path, e),
+                        Err(e) => {
+                            log::warn!("[hot-reload] Error leyendo archivo '{}': {}", path, e)
+                        }
                     }
                 } else if self.background_path.as_deref() == Some(path.as_str()) {
                     // El fondo usa GpuTexture propia, no el atlas — recargarlo completo.
                     self.load_background(&path);
                     log::info!("[hot-reload] Fondo recargado: {}", path);
                 } else {
-                    log::warn!("[hot-reload] Path no encontrado en static_tex_cache ni como fondo: {}", path);
+                    log::warn!(
+                        "[hot-reload] Path no encontrado en static_tex_cache ni como fondo: {}",
+                        path
+                    );
                 }
             }
-            EngineCommand::Common(EngineCommandCommon::SetAnimation { id, name, frames, fps, loop_, flip_horizontal, audio_path, logical_w, logical_h, scripts, is_cancelable, .. }) => {
-                
-
+            EngineCommand::Common(EngineCommandCommon::SetAnimation {
+                id,
+                name,
+                frames,
+                fps,
+                loop_,
+                flip_horizontal,
+                audio_path,
+                logical_w,
+                logical_h,
+                scripts,
+                is_cancelable,
+                ..
+            }) => {
                 let fallback_logical_w = logical_w.unwrap_or(64).max(1);
                 let fallback_logical_h = logical_h.unwrap_or(64).max(1);
 
-                let measure_bounds = |anim_frames: &Vec<AnimationFrameData>, fallback_w: u32, fallback_h: u32| -> (u32, u32) {
+                let measure_bounds = |anim_frames: &Vec<AnimationFrameData>,
+                                      fallback_w: u32,
+                                      fallback_h: u32|
+                 -> (u32, u32) {
                     let mut max_w = fallback_w.max(1);
                     let mut max_h = fallback_h.max(1);
                     for frame in anim_frames {
@@ -728,7 +885,8 @@ impl State {
                 };
 
                 let mut frames = frames;
-                let (measured_w, measured_h) = measure_bounds(&frames, fallback_logical_w, fallback_logical_h);
+                let (measured_w, measured_h) =
+                    measure_bounds(&frames, fallback_logical_w, fallback_logical_h);
 
                 // Espacio de dibujo: solo lo que envía el editor o el máximo de frames de esta animación.
                 let resolved_logical_w = logical_w.unwrap_or(measured_w).max(1);
@@ -743,37 +901,51 @@ impl State {
 
                 // Pre-decodificar audio a muestras PCM durante SetAnimation.
                 // En PlayAnimation solo se clona un Vec<f32> — cero I/O, cero decode.
-                let audio_decoded: Option<Arc<DecodedAudio>> = audio_path.as_deref().and_then(|p| {
-                    let bytes = match std::fs::read(p) {
-                        Ok(b) => b,
-                        Err(e) => { log::warn!("[SetAnimation] error leyendo audio {}: {}", p, e); return None; }
-                    };
-                    let cursor = std::io::Cursor::new(bytes);
-                    let decoder = match rodio::Decoder::new(cursor) {
-                        Ok(d) => d,
-                        Err(e) => { log::warn!("[SetAnimation] error decodificando audio {}: {}", p, e); return None; }
-                    };
-                    let channels = decoder.channels().get();
-                    let sample_rate = decoder.sample_rate().get();
-                    let samples: Vec<f32> = decoder.collect();
+                let audio_decoded: Option<Arc<DecodedAudio>> =
+                    audio_path.as_deref().and_then(|p| {
+                        let bytes = match std::fs::read(p) {
+                            Ok(b) => b,
+                            Err(e) => {
+                                log::warn!("[SetAnimation] error leyendo audio {}: {}", p, e);
+                                return None;
+                            }
+                        };
+                        let cursor = std::io::Cursor::new(bytes);
+                        let decoder = match rodio::Decoder::new(cursor) {
+                            Ok(d) => d,
+                            Err(e) => {
+                                log::warn!("[SetAnimation] error decodificando audio {}: {}", p, e);
+                                return None;
+                            }
+                        };
+                        let channels = decoder.channels().get();
+                        let sample_rate = decoder.sample_rate().get();
+                        let samples: Vec<f32> = decoder.collect();
 
-                    Some(Arc::new(DecodedAudio { samples, channels, sample_rate }))
-                });
+                        Some(Arc::new(DecodedAudio {
+                            samples,
+                            channels,
+                            sample_rate,
+                        }))
+                    });
 
                 // Pre-cargar todos los frames de la animación en la caché GPU.
                 // El primer PlayAnimation ya no tendrá latencia de decode+upload.
                 for frame in &frames {
                     self.preload_anim_frame_with_rect(
                         &frame.path,
-                        frame.src_x.zip(frame.src_y).zip(frame.src_w.zip(frame.src_h)).map(|((x, y), (w, h))| (x, y, w, h)),
+                        frame
+                            .src_x
+                            .zip(frame.src_y)
+                            .zip(frame.src_w.zip(frame.src_h))
+                            .map(|((x, y), (w, h))| (x, y, w, h)),
                     );
                 }
 
                 // Guardar animación en el almacén por entidad+nombre.
-                self.animations
-                    .entry(id)
-                    .or_insert_with(HashMap::new)
-                    .insert(name.clone(), AnimationState {
+                self.animations.entry(id).or_default().insert(
+                    name.clone(),
+                    AnimationState {
                         frames,
                         fps,
                         loop_,
@@ -783,32 +955,31 @@ impl State {
                         logical_h: resolved_logical_h,
                         scripts,
                         is_cancelable,
-                    });
+                    },
+                );
                 send_event(&EngineEvent::AnimationLogicalResolved {
                     id,
                     name: name.clone(),
                     logical_w: resolved_logical_w,
                     logical_h: resolved_logical_h,
                 });
-                
             }
             EngineCommand::Common(EngineCommandCommon::RemoveAnimation { id, name }) => {
                 log::info!("[IPC] RemoveAnimation: entity_id={}, name='{}'", id, name);
 
                 // Detener la animación si está activa
-                if let Some(active) = self.active_animations.get(&id) {
-                    if active.animation_name == name {
-                        self.active_animations.remove(&id);
-                        self.restore_animation_frame(id);
-                        self.script_engine.detach_animation_scripts(id);
-                        send_event(&EngineEvent::AnimationFinished { entity_id: id });
-                    }
+                if let Some(active) = self.active_animations.get(&id)
+                    && active.animation_name == name
+                {
+                    self.active_animations.remove(&id);
+                    self.restore_animation_frame(id);
+                    self.script_engine.detach_animation_scripts(id);
+                    send_event(&EngineEvent::AnimationFinished { entity_id: id });
                 }
 
                 // Eliminar del almacén de animaciones
                 if let Some(entity_anims) = self.animations.get_mut(&id) {
                     entity_anims.remove(&name);
-                    
 
                     // Si no quedan animaciones, limpiar la entrada
                     if entity_anims.is_empty() {
@@ -819,52 +990,55 @@ impl State {
 
                 if self.default_animation_by_entity.get(&id) == Some(&name) {
                     self.default_animation_by_entity.remove(&id);
-                    
                 }
             }
             EngineCommand::Common(EngineCommandCommon::SetDefaultAnimation { id, name }) => {
                 if name.is_empty() {
                     self.default_animation_by_entity.remove(&id);
-                    
+
                     return;
                 }
-                let exists = self.animations
+                let exists = self
+                    .animations
                     .get(&id)
                     .map(|m| m.contains_key(&name))
                     .unwrap_or(false);
                 if exists {
                     self.default_animation_by_entity.insert(id, name.clone());
-                    
                 } else {
-                    log::warn!("[animation] set_default_animation ignorado: '{}' no existe en entidad {}", name, id);
+                    log::warn!(
+                        "[animation] set_default_animation ignorado: '{}' no existe en entidad {}",
+                        name,
+                        id
+                    );
                 }
             }
-EngineCommand::Common(EngineCommandCommon::PlayAnimation { id, name, .. }) => {
-                
-
+            EngineCommand::Common(EngineCommandCommon::PlayAnimation { id, name, .. }) => {
                 // Si hay una animación activa con is_cancelable=false que aún no terminó,
                 // bloquear la nueva hasta que termine naturalmente.
-                if let Some(active) = self.active_animations.get(&id) {
-                    if !active.finished {
-                        let current_name = active.animation_name.clone();
-                        let is_cancelable = self.animations
-                            .get(&id)
-                            .and_then(|m| m.get(&current_name))
-                            .map(|a| a.is_cancelable)
-                            .unwrap_or(true); // default: cancelable
-                        if !is_cancelable {
-                            
-                            return;
-                        }
+                if let Some(active) = self.active_animations.get(&id)
+                    && !active.finished
+                {
+                    let current_name = active.animation_name.clone();
+                    let is_cancelable = self
+                        .animations
+                        .get(&id)
+                        .and_then(|m| m.get(&current_name))
+                        .map(|a| a.is_cancelable)
+                        .unwrap_or(true); // default: cancelable
+                    if !is_cancelable {
+                        return;
                     }
                 }
 
-                let anim_opt = self.animations.get(&id)
-                    .and_then(|m| m.get(&name))
-                    .cloned();
+                let anim_opt = self.animations.get(&id).and_then(|m| m.get(&name)).cloned();
 
                 match anim_opt {
-                    None => log::warn!("[IPC] Animación '{}' no encontrada para entidad {}", name, id),
+                    None => log::warn!(
+                        "[IPC] Animación '{}' no encontrada para entidad {}",
+                        name,
+                        id
+                    ),
                     Some(anim) => {
                         // Detener animación previa (el Play de audio incluye clear interno)
                         self.active_animations.remove(&id);
@@ -897,7 +1071,11 @@ EngineCommand::Common(EngineCommandCommon::PlayAnimation { id, name, .. }) => {
                                 pivot_y,
                                 anim.logical_w,
                                 anim.logical_h,
-                                first_frame.src_x.zip(first_frame.src_y).zip(first_frame.src_w.zip(first_frame.src_h)).map(|((x, y), (w, h))| (x, y, w, h)),
+                                first_frame
+                                    .src_x
+                                    .zip(first_frame.src_y)
+                                    .zip(first_frame.src_w.zip(first_frame.src_h))
+                                    .map(|((x, y), (w, h))| (x, y, w, h)),
                                 effective_flip,
                             );
                         }
@@ -912,25 +1090,37 @@ EngineCommand::Common(EngineCommandCommon::PlayAnimation { id, name, .. }) => {
                         self.script_engine.detach_animation_scripts(id);
                         for script in &anim.scripts {
                             let anim_path = format!("$anim$::{}::{}", name, script.name);
-                            if let Err(e) = self.script_engine.attach_script(id, &anim_path, &script.source) {
-                                log::error!("[scripting] Error cargando script de animación '{}': {}", anim_path, e);
+                            if let Err(e) =
+                                self.script_engine
+                                    .attach_script(id, &anim_path, &script.source)
+                            {
+                                log::error!(
+                                    "[scripting] Error cargando script de animación '{}': {}",
+                                    anim_path,
+                                    e
+                                );
                             }
                         }
 
-                        self.active_animations.insert(id, ActiveAnimation {
-                            animation_name: name.clone(),
-                            current_frame: 0,
-                            last_frame_time: frame_start,
-                            fps: anim.fps,
-                            finished: false,
-                        });
+                        self.active_animations.insert(
+                            id,
+                            ActiveAnimation {
+                                animation_name: name.clone(),
+                                current_frame: 0,
+                                last_frame_time: frame_start,
+                                fps: anim.fps,
+                                finished: false,
+                            },
+                        );
                         self.emit_entity_animation_play_state(id);
                     }
                 }
             }
             EngineCommand::Common(EngineCommandCommon::StopAnimation { id }) => {
                 self.anim_flip_overrides.remove(&id);
-                let Some(stopped_animation_name) = self.active_animations.remove(&id).map(|a| a.animation_name) else {
+                let Some(stopped_animation_name) =
+                    self.active_animations.remove(&id).map(|a| a.animation_name)
+                else {
                     // Ya estaba detenida: no repetir fallback, audio stop, detach ni logs.
                     return;
                 };
@@ -955,8 +1145,10 @@ EngineCommand::Common(EngineCommandCommon::PlayAnimation { id, name, .. }) => {
             }) => {
                 self.emit_entity_animation_play_state(entity_id);
             }
-            EngineCommand::Common(EngineCommandCommon::LoadSceneVisualScript { scene_id, source }) => {
-                
+            EngineCommand::Common(EngineCommandCommon::LoadSceneVisualScript {
+                scene_id,
+                source,
+            }) => {
                 if let Err(e) = self.handle_load_scene_visual_script(scene_id, &source) {
                     log::error!("[scene_script] Error: {e}");
                     send_event(&EngineEvent::Error {
@@ -973,18 +1165,11 @@ EngineCommand::Common(EngineCommandCommon::PlayAnimation { id, name, .. }) => {
                     });
                 } else {
                     use crate::entity_save_meta::ScriptSourceRecord;
-                    let list = self
-                        .save_registry
-                        .script_sources
-                        .entry(id)
-                        .or_insert_with(Vec::new);
+                    let list = self.save_registry.script_sources.entry(id).or_default();
                     if let Some(existing) = list.iter_mut().find(|s| s.name == path) {
                         existing.source = source;
                     } else {
-                        list.push(ScriptSourceRecord {
-                            name: path,
-                            source,
-                        });
+                        list.push(ScriptSourceRecord { name: path, source });
                     }
                 }
             }
@@ -995,7 +1180,12 @@ EngineCommand::Common(EngineCommandCommon::PlayAnimation { id, name, .. }) => {
                     self.control_bindings_by_entity.insert(id, bindings);
                 }
             }
-            EngineCommand::Common(EngineCommandCommon::RunControlScript { id, control_key, path, source }) => {
+            EngineCommand::Common(EngineCommandCommon::RunControlScript {
+                id,
+                control_key,
+                path,
+                source,
+            }) => {
                 self.execute_control_script(id, &control_key, &path, &source);
             }
             EngineCommand::Common(EngineCommandCommon::UnloadScript { id }) => {
@@ -1017,17 +1207,26 @@ EngineCommand::Common(EngineCommandCommon::PlayAnimation { id, name, .. }) => {
                                 let img = img.to_rgba8();
                                 let (w, h) = img.dimensions();
                                 self.sprite_store.insert(path.clone(), (name.clone(), w, h));
-                                send_event(&EngineEvent::SpriteLoaded { path, name, width: w, height: h });
+                                send_event(&EngineEvent::SpriteLoaded {
+                                    path,
+                                    name,
+                                    width: w,
+                                    height: h,
+                                });
                             }
                             Err(e) => {
                                 log::error!("[sprite] error decodificando {}: {}", path, e);
-                                send_event(&EngineEvent::Error { message: format!("Error al decodificar sprite: {e}") });
+                                send_event(&EngineEvent::Error {
+                                    message: format!("Error al decodificar sprite: {e}"),
+                                });
                             }
                         }
                     }
                     Err(e) => {
                         log::error!("[sprite] error leyendo {}: {}", path, e);
-                        send_event(&EngineEvent::Error { message: format!("No se pudo leer el sprite: {e}") });
+                        send_event(&EngineEvent::Error {
+                            message: format!("No se pudo leer el sprite: {e}"),
+                        });
                     }
                 }
             }
@@ -1040,16 +1239,24 @@ EngineCommand::Common(EngineCommandCommon::PlayAnimation { id, name, .. }) => {
                 }
             }
             EngineCommand::Common(EngineCommandCommon::GetSpritesList) => {
-                let sprites: Vec<crate::ipc::SpriteInfo> = self.sprite_store
+                let sprites: Vec<crate::ipc::SpriteInfo> = self
+                    .sprite_store
                     .iter()
-                    .map(|(path, &(ref name, w, h))| crate::ipc::SpriteInfo { path: path.clone(), name: name.clone(), width: w, height: h })
+                    .map(|(path, &(ref name, w, h))| crate::ipc::SpriteInfo {
+                        path: path.clone(),
+                        name: name.clone(),
+                        width: w,
+                        height: h,
+                    })
                     .collect();
                 send_event(&EngineEvent::SpritesList { sprites });
             }
             EngineCommand::Common(EngineCommandCommon::LoadSound { path, name }) => {
                 self.sound_store.insert(path.clone(), name.clone());
-                send_event(&EngineEvent::SoundLoaded { path: path.clone(), name: name.clone() });
-                
+                send_event(&EngineEvent::SoundLoaded {
+                    path: path.clone(),
+                    name: name.clone(),
+                });
             }
             EngineCommand::Common(EngineCommandCommon::RemoveSound { path }) => {
                 if self.sound_store.remove(&path).is_some() {
@@ -1060,9 +1267,13 @@ EngineCommand::Common(EngineCommandCommon::PlayAnimation { id, name, .. }) => {
                 }
             }
             EngineCommand::Common(EngineCommandCommon::GetSoundsList) => {
-                let sounds: Vec<crate::ipc::SoundInfo> = self.sound_store
+                let sounds: Vec<crate::ipc::SoundInfo> = self
+                    .sound_store
                     .iter()
-                    .map(|(path, name)| crate::ipc::SoundInfo { path: path.clone(), name: name.clone() })
+                    .map(|(path, name)| crate::ipc::SoundInfo {
+                        path: path.clone(),
+                        name: name.clone(),
+                    })
                     .collect();
                 send_event(&EngineEvent::SoundsList { sounds });
             }
@@ -1074,7 +1285,6 @@ EngineCommand::Common(EngineCommandCommon::PlayAnimation { id, name, .. }) => {
                             path: path.clone(),
                             name: name.clone(),
                         });
-                        
                     }
                     Err(e) => {
                         log::error!("[font] error cargando {}: {}", path, e);
@@ -1120,7 +1330,6 @@ EngineCommand::Common(EngineCommandCommon::PlayAnimation { id, name, .. }) => {
                             width,
                             height,
                         });
-                        
                     }
                     Err(e) => {
                         log::error!("[hud-image] error cargando {}: {}", path, e);
@@ -1135,7 +1344,10 @@ EngineCommand::Common(EngineCommandCommon::PlayAnimation { id, name, .. }) => {
                     send_event(&EngineEvent::HudImageRemoved { path: path.clone() });
                     log::info!("[hud-image] eliminada: {}", path);
                 } else {
-                    log::warn!("[hud-image] intento de eliminar imagen inexistente: {}", path);
+                    log::warn!(
+                        "[hud-image] intento de eliminar imagen inexistente: {}",
+                        path
+                    );
                 }
             }
             EngineCommand::Common(EngineCommandCommon::GetHudImagesList) => {
@@ -1153,21 +1365,30 @@ EngineCommand::Common(EngineCommandCommon::PlayAnimation { id, name, .. }) => {
             }
             EngineCommand::Common(EngineCommandCommon::LoadBackgroundAsset { path, name }) => {
                 self.background_store.insert(path.clone(), name.clone());
-                send_event(&EngineEvent::BackgroundAssetLoaded { path: path.clone(), name: name.clone() });
-                
+                send_event(&EngineEvent::BackgroundAssetLoaded {
+                    path: path.clone(),
+                    name: name.clone(),
+                });
             }
             EngineCommand::Common(EngineCommandCommon::RemoveBackgroundAsset { path }) => {
                 if self.background_store.remove(&path).is_some() {
                     send_event(&EngineEvent::BackgroundAssetRemoved { path: path.clone() });
                     log::info!("[background] eliminado: {}", path);
                 } else {
-                    log::warn!("[background] intento de eliminar fondo inexistente: {}", path);
+                    log::warn!(
+                        "[background] intento de eliminar fondo inexistente: {}",
+                        path
+                    );
                 }
             }
             EngineCommand::Common(EngineCommandCommon::GetBackgroundsList) => {
-                let backgrounds: Vec<crate::ipc::BackgroundInfo> = self.background_store
+                let backgrounds: Vec<crate::ipc::BackgroundInfo> = self
+                    .background_store
                     .iter()
-                    .map(|(path, name)| crate::ipc::BackgroundInfo { path: path.clone(), name: name.clone() })
+                    .map(|(path, name)| crate::ipc::BackgroundInfo {
+                        path: path.clone(),
+                        name: name.clone(),
+                    })
                     .collect();
                 send_event(&EngineEvent::BackgroundsList { backgrounds });
             }
@@ -1215,8 +1436,7 @@ fn validate_font_file(path: &str) -> Result<(), String> {
     if ext != "ttf" && ext != "otf" {
         return Err("Se esperaba un archivo .ttf u .otf".to_string());
     }
-    let bytes =
-        std::fs::read(path).map_err(|e| format!("No se pudo leer la fuente: {e}"))?;
+    let bytes = std::fs::read(path).map_err(|e| format!("No se pudo leer la fuente: {e}"))?;
     ttf_parser::Face::parse(&bytes, 0).map_err(|e| format!("Archivo de fuente inválido: {e}"))?;
     Ok(())
 }

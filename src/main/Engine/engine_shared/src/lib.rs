@@ -1,15 +1,15 @@
 pub mod assets;
 pub mod bundled_models;
 pub mod editor_defaults;
-pub mod scripting;
 pub mod gpu;
-pub mod wgpu_surface;
 pub mod logging;
 pub mod overlay;
-pub mod player_ui;
-pub mod process_metrics;
 #[cfg(any(target_os = "windows", target_os = "linux"))]
 pub mod platform;
+pub mod player_ui;
+pub mod process_metrics;
+pub mod scripting;
+pub mod wgpu_surface;
 
 /// Magnitud de gravedad por defecto del mundo (m/s², positiva = hacia abajo).
 pub const DEFAULT_GRAVITY_MAGNITUDE: f32 = 15.0;

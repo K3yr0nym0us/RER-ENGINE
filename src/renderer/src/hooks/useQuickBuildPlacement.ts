@@ -73,12 +73,18 @@ export function useQuickBuildPlacement(viewportRef: RefObject<HTMLDivElement | n
       const modelPath = resolveBlueprintModelPath(activeBluePrint)
       const enginePath = resolveEngineModelPath(modelPath, models)
       const firstFrame = activeBluePrint.animations?.[0]?.frames?.[0]
-      const hasCrop =
+      const cropSrcX = firstFrame?.src_x
+      const cropSrcY = firstFrame?.src_y
+      const cropSrcW = firstFrame?.src_w
+      const cropSrcH = firstFrame?.src_h
+      const previewSrcRect =
         !is3D &&
-        firstFrame?.src_x != null &&
-        firstFrame?.src_y != null &&
-        firstFrame?.src_w != null &&
-        firstFrame?.src_h != null
+        cropSrcX != null &&
+        cropSrcY != null &&
+        cropSrcW != null &&
+        cropSrcH != null
+          ? [cropSrcX, cropSrcY, cropSrcW, cropSrcH] as [number, number, number, number]
+          : undefined
       const placementMeta = buildBlueprintPlacementMeta(activeBluePrint, models)
       const { physicsEnabled, physicsType } = blueprintPlacementPhysics(activeBluePrint, models)
       const placementCategory = placementMeta.category
@@ -111,14 +117,7 @@ export function useQuickBuildPlacement(viewportRef: RefObject<HTMLDivElement | n
           preview_physics_type: physicsType,
           preview_blueprint: placementMeta,
           preview_blueprint_id: activeBluePrint.id,
-          preview_src_rect: hasCrop
-            ? [
-                firstFrame!.src_x!,
-                firstFrame!.src_y!,
-                firstFrame!.src_w!,
-                firstFrame!.src_h!,
-              ]
-            : undefined,
+          preview_src_rect: previewSrcRect,
         })
       } else {
         const previewPath = firstFrame?.path ?? activeBluePrint.path
@@ -129,14 +128,7 @@ export function useQuickBuildPlacement(viewportRef: RefObject<HTMLDivElement | n
           preview_kind: activeBluePrint.kind === 'scenario' ? 'scenario' : 'character',
           preview_scale: activeBluePrint.scale,
           preview_blueprint_id: activeBluePrint.id,
-          preview_src_rect: hasCrop
-            ? [
-                firstFrame!.src_x!,
-                firstFrame!.src_y!,
-                firstFrame!.src_w!,
-                firstFrame!.src_h!,
-              ]
-            : undefined,
+          preview_src_rect: previewSrcRect,
         })
       }
     } else if (hadBluePrintRef.current && !activePlaneToolRef.current) {
@@ -153,13 +145,13 @@ export function useQuickBuildPlacement(viewportRef: RefObject<HTMLDivElement | n
       worldX: number,
       worldY: number,
       worldZ: number,
-      fitToGrid: boolean,
+      _fitToGrid: boolean,
       scaleFromEngine?: [number, number, number],
     ) => {
       const bp = activeBluePrintRef.current
       if (!bp) return
 
-      const placementScale = scaleFromEngine ?? bp.scale
+      const placementScale = scaleFromEngine ?? bp.scale ?? [1, 1, 1]
 
       // Modelos 3D: el motor coloca vía spawn_cached_model_part_at (misma vía que Entidades).
       if (is3DRef.current && blueprintUsesModel3D(bp)) {
@@ -178,7 +170,7 @@ export function useQuickBuildPlacement(viewportRef: RefObject<HTMLDivElement | n
       const modelPath = resolveBlueprintModelPath(bp)
       const enginePath = resolveEngineModelPath(modelPath, modelsRef.current)
       queueQuickBuildPendingRestore(pendingRestoresRef.current, enginePath, pending)
-      if (enginePath !== bp.path) {
+      if (bp.path && enginePath !== bp.path) {
         queueQuickBuildPendingRestore(pendingRestoresRef.current, bp.path, pending)
       }
 

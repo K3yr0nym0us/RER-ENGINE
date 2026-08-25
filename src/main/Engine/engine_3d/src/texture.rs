@@ -10,12 +10,12 @@ pub(crate) struct LayerMipChain {
 
 /// Array GPU `texture_2d_array`: una capa por material, UV [0,1] en el mesh.
 pub struct TextureArray {
-    texture:    wgpu::Texture,
-    _view:      wgpu::TextureView,
-    _sampler:   wgpu::Sampler,
+    texture: wgpu::Texture,
+    _view: wgpu::TextureView,
+    _sampler: wgpu::Sampler,
     pub bind_group: Arc<wgpu::BindGroup>,
-    width:      u32,
-    height:     u32,
+    width: u32,
+    height: u32,
     max_layers: u32,
     next_layer: u32,
 }
@@ -26,20 +26,20 @@ impl TextureArray {
 
     pub fn bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
         device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label:   Some("texture-array-bgl"),
+            label: Some("texture-array-bgl"),
             entries: &[
                 wgpu::BindGroupLayoutEntry {
-                    binding:    0,
+                    binding: 0,
                     visibility: wgpu::ShaderStages::FRAGMENT | wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::Texture {
-                        multisampled:   false,
+                        multisampled: false,
                         view_dimension: wgpu::TextureViewDimension::D2Array,
-                        sample_type:    wgpu::TextureSampleType::Float { filterable: true },
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
                     },
                     count: None,
                 },
                 wgpu::BindGroupLayoutEntry {
-                    binding:    1,
+                    binding: 1,
                     visibility: wgpu::ShaderStages::FRAGMENT | wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
@@ -53,16 +53,16 @@ impl TextureArray {
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("texture-array"),
             size: wgpu::Extent3d {
-                width:                 Self::TEXTURE_SIZE,
-                height:                Self::TEXTURE_SIZE,
+                width: Self::TEXTURE_SIZE,
+                height: Self::TEXTURE_SIZE,
                 depth_or_array_layers: Self::MAX_LAYERS,
             },
             mip_level_count: mip_levels,
-            sample_count:    1,
-            dimension:       wgpu::TextureDimension::D2,
-            format:          wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage:           wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            view_formats:    &[],
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
         });
 
         let view = texture.create_view(&wgpu::TextureViewDescriptor {
@@ -71,26 +71,26 @@ impl TextureArray {
         });
 
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label:          Some("texture-array-sampler"),
+            label: Some("texture-array-sampler"),
             address_mode_u: wgpu::AddressMode::Repeat,
             address_mode_v: wgpu::AddressMode::Repeat,
             address_mode_w: wgpu::AddressMode::Repeat,
-            mag_filter:     wgpu::FilterMode::Linear,
-            min_filter:     wgpu::FilterMode::Linear,
-            mipmap_filter:  wgpu::MipmapFilterMode::Linear,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::MipmapFilterMode::Linear,
             ..Default::default()
         });
 
         let bind_group = Arc::new(device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label:   Some("texture-array-bg"),
-            layout:  bgl,
+            label: Some("texture-array-bg"),
+            layout: bgl,
             entries: &[
                 wgpu::BindGroupEntry {
-                    binding:  0,
+                    binding: 0,
                     resource: wgpu::BindingResource::TextureView(&view),
                 },
                 wgpu::BindGroupEntry {
-                    binding:  1,
+                    binding: 1,
                     resource: wgpu::BindingResource::Sampler(&sampler),
                 },
             ],
@@ -131,7 +131,10 @@ impl TextureArray {
                 "[TextureArray] mip chain inválida ({} niveles) — reconstruyendo desde mip0",
                 mips.len()
             );
-            let base = mips.first().cloned().unwrap_or_else(|| vec![255, 255, 255, 255]);
+            let base = mips
+                .first()
+                .cloned()
+                .unwrap_or_else(|| vec![255, 255, 255, 255]);
             let (w, h) = infer_base_dimensions_from_mip0(&base);
             let chain = build_layer_mip_chain_timed(base, w, h);
             return self.upload_layer_from_mips(queue, &chain.mips);
@@ -164,24 +167,24 @@ impl TextureArray {
             let mip_h = (self.height >> level).max(1);
             queue.write_texture(
                 wgpu::TexelCopyTextureInfo {
-                    texture:   &self.texture,
+                    texture: &self.texture,
                     mip_level: level as u32,
-                    origin:    wgpu::Origin3d {
+                    origin: wgpu::Origin3d {
                         x: 0,
                         y: 0,
                         z: layer,
                     },
-                    aspect:    wgpu::TextureAspect::All,
+                    aspect: wgpu::TextureAspect::All,
                 },
                 mip_data,
                 wgpu::TexelCopyBufferLayout {
-                    offset:         0,
-                    bytes_per_row:  Some(4 * mip_w),
+                    offset: 0,
+                    bytes_per_row: Some(4 * mip_w),
                     rows_per_image: Some(mip_h),
                 },
                 wgpu::Extent3d {
-                    width:                 mip_w,
-                    height:                mip_h,
+                    width: mip_w,
+                    height: mip_h,
                     depth_or_array_layers: 1,
                 },
             );
@@ -297,12 +300,7 @@ fn resize_rgba_vec_to_layer(rgba: Vec<u8>, w: u32, h: u32, tw: u32, th: u32) -> 
         return rgba;
     }
     if let Some(img) = image::RgbaImage::from_raw(w, h, rgba) {
-        let resized = image::imageops::resize(
-            &img,
-            tw,
-            th,
-            image::imageops::FilterType::Triangle,
-        );
+        let resized = image::imageops::resize(&img, tw, th, image::imageops::FilterType::Triangle);
         return resized.into_raw();
     }
     vec![255; expected]

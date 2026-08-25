@@ -238,7 +238,8 @@ function AiAssistantOverlayInner() {
         setError((result.error ?? t('Chat failed')) + detail)
         setPhase('input')
       } else if (result.content?.trim()) {
-        setLines((prev) => [...prev, { role: 'assistant', content: result.content!.trim() }])
+        const content = result.content.trim()
+        setLines((prev) => [...prev, { role: 'assistant', content }])
         setPhase('answer')
       } else {
         const detail = result.debug?.logFile ? ` ${result.debug.logFile}` : ''

@@ -63,7 +63,8 @@ function normalizeEngineAnimations(
 	if (!animations?.length) return undefined;
 	return animations.map((anim) => {
 		const loop = anim.loop_ ?? anim.loop;
-		const { loop_: _ignored, ...rest } = anim;
+		const rest = { ...anim };
+		delete (rest as { loop_?: boolean }).loop_;
 		return { ...rest, loop: loop ?? false };
 	});
 }
@@ -365,15 +366,19 @@ function attachModelIdsToEntities<T extends { model: string; model_id?: string }
 	models: ModelInfo[],
 ): T[] {
 	const byPath = new Map(
-		models.filter((m) => m.model_id).map((m) => [m.path, m.model_id!] as const),
+		models
+			.filter((m): m is ModelInfo & { model_id: string } => typeof m.model_id === 'string')
+			.map((m) => [m.path, m.model_id] as const),
 	)
 	const byModelId = new Map(
-		models.filter((m) => m.model_id).map((m) => [m.model_id!, m.model_id!] as const),
+		models
+			.filter((m): m is ModelInfo & { model_id: string } => typeof m.model_id === 'string')
+			.map((m) => [m.model_id, m.model_id] as const),
 	)
 	const byBasename = new Map(
 		models
-			.filter((m) => m.model_id)
-			.map((m) => [modelBasename(m.path).toLowerCase(), m.model_id!] as const),
+			.filter((m): m is ModelInfo & { model_id: string } => typeof m.model_id === 'string')
+			.map((m) => [modelBasename(m.path).toLowerCase(), m.model_id] as const),
 	)
 	return entities.map((entity) => {
 		const model_id =
@@ -516,8 +521,6 @@ export async function buildProjectSaveFromEngineSnapshot(
 				: { ...tab, models: [] },
 		);
 	}
-
-	const root = scenes.find((s) => s.id === activeSceneId) ?? scenes[0];
 
 	const mergedFonts = mergeLibraryAssets(fonts, engineScene.fonts);
 	const mergedHudImages = mergeLibraryAssets(hudImages, engineScene.hud_images);

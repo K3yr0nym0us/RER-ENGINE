@@ -1,14 +1,14 @@
 // ── Escenas base 3D por código ────────────────────────────────────────────────
 
-use crate::config_3d::physics_3d::PhysicsWorld;
 use crate::config_3d::mesh_3d::GROUND_PLANE_MESH_EXTENT;
+use crate::config_3d::physics_3d::PhysicsWorld;
 use crate::config_3d::{Camera, WorldBounds3D};
 use crate::config_compat::ActiveTool;
 use crate::ecs::{EntityId, MeshComponent, NonSelectable, SurfacePbr, Transform};
 use crate::engine::State;
-use crate::gizmo;
-use crate::ipc::{send_event, send_load_progress, EngineEvent};
 use crate::entity_save_meta::EntitySaveMeta;
+use crate::gizmo;
+use crate::ipc::{EngineEvent, send_event, send_load_progress};
 use crate::mesh;
 use crate::scripting::{ScriptEngine, ScriptEngineProfile};
 
@@ -39,11 +39,7 @@ impl State {
 
     pub(crate) fn send_entity_selected_event(&self, id: EntityId) {
         let name = self.world.name(id).unwrap_or("Entity").to_string();
-        let transform = self
-            .world
-            .get::<Transform>(id)
-            .cloned()
-            .unwrap_or_default();
+        let transform = self.world.get::<Transform>(id).cloned().unwrap_or_default();
         let position = transform.position.to_array();
         let rotation = [
             transform.rotation.x,
@@ -155,10 +151,8 @@ impl State {
         self.last_probe_capture_ids = None;
         self.directional_light_dir =
             crate::config_3d::directional_light::DEFAULT_LIGHT_DIR.normalize();
-        self.directional_light_color =
-            crate::config_3d::directional_light::DEFAULT_LIGHT_COLOR;
-        self.directional_light_ambient =
-            crate::config_3d::directional_light::DEFAULT_LIGHT_AMBIENT;
+        self.directional_light_color = crate::config_3d::directional_light::DEFAULT_LIGHT_COLOR;
+        self.directional_light_ambient = crate::config_3d::directional_light::DEFAULT_LIGHT_AMBIENT;
         self.light_intensity = crate::config_3d::directional_light::DEFAULT_LIGHT_INTENSITY;
         self.shadow_darkness = crate::config_3d::directional_light::DEFAULT_SHADOW_DARKNESS;
         self.play_character_mesh_forward_xz = glam::Vec2::new(0.0, 1.0);
@@ -183,12 +177,8 @@ impl State {
         let mut px: Vec<u8> = Vec::with_capacity((S * S * 4) as usize);
         for y in 0..S {
             for x in 0..S {
-                let light = ((x / TILE + y / TILE) % 2) == 0;
-                let (r, g, b): (u8, u8, u8) = if light {
-                    (58, 61, 80)
-                } else {
-                    (30, 32, 48)
-                };
+                let light = (x / TILE + y / TILE).is_multiple_of(2);
+                let (r, g, b): (u8, u8, u8) = if light { (58, 61, 80) } else { (30, 32, 48) };
                 px.extend_from_slice(&[r, g, b, 255]);
             }
         }
@@ -207,11 +197,12 @@ impl State {
         let ground_mesh_idx = self.meshes.len();
         let b = self.world_bounds_3d;
         let cell = self.grid_config.cell_size;
-        self.meshes.push(crate::config_3d::mesh_3d::create_ground_disk(
-            &self.device,
-            b.radius,
-            cell,
-        ));
+        self.meshes
+            .push(crate::config_3d::mesh_3d::create_ground_disk(
+                &self.device,
+                b.radius,
+                cell,
+            ));
         let tex_idx = self.pack_scene_checker_texture();
 
         let plane_id = self.world.spawn(Some("Ground"));
@@ -301,11 +292,8 @@ impl State {
         };
         let b = self.world_bounds_3d;
         let cell = self.grid_config.cell_size;
-        self.meshes[mesh_idx] = crate::config_3d::mesh_3d::create_ground_disk(
-            &self.device,
-            b.radius,
-            cell,
-        );
+        self.meshes[mesh_idx] =
+            crate::config_3d::mesh_3d::create_ground_disk(&self.device, b.radius, cell);
     }
 
     /// Plantilla 3D por defecto (proyecto nuevo): suelo checker y cámara play character a ras de editor.
@@ -320,36 +308,37 @@ impl State {
 
         let mut spawn_block =
             |position: [f32; 3], scale: [f32; 3], entity_category: Option<&str>| {
-            let base_label = rer_engine_shared::editor_defaults::entity_label_for_category(entity_category);
-            let label = self.next_numbered_entity_name(base_label);
-            let id = self.world.spawn(Some(&label));
-            self.world.insert(
-                id,
-                MeshComponent {
-                    mesh_idx: block_mesh_idx,
-                    tex_idx: block_tex_idx,
-                },
-            );
-            if let Some(t) = self.world.get_mut::<Transform>(id) {
-                t.position = glam::Vec3::from_array(position);
-                t.scale = glam::Vec3::from_array(scale);
-            }
-            let half = [scale[0] * 0.5, scale[1] * 0.5, scale[2] * 0.5];
-            self.physics
-                .set_entity_physics(id, true, "static", position, half);
-            self.entity_colision.insert(id, true);
-            self.scenario_entities.push(id);
-            self.save_registry.register_meta(
-                id,
-                EntitySaveMeta {
-                    kind: "model".to_string(),
-                    path: "[EditorBox]".to_string(),
-                    visual_model_path: None,
-                    entity_category: entity_category.map(str::to_string),
-                },
-            );
-            self.send_model_loaded_event(id, &label);
-        };
+                let base_label =
+                    rer_engine_shared::editor_defaults::entity_label_for_category(entity_category);
+                let label = self.next_numbered_entity_name(base_label);
+                let id = self.world.spawn(Some(&label));
+                self.world.insert(
+                    id,
+                    MeshComponent {
+                        mesh_idx: block_mesh_idx,
+                        tex_idx: block_tex_idx,
+                    },
+                );
+                if let Some(t) = self.world.get_mut::<Transform>(id) {
+                    t.position = glam::Vec3::from_array(position);
+                    t.scale = glam::Vec3::from_array(scale);
+                }
+                let half = [scale[0] * 0.5, scale[1] * 0.5, scale[2] * 0.5];
+                self.physics
+                    .set_entity_physics(id, true, "static", position, half);
+                self.entity_colision.insert(id, true);
+                self.scenario_entities.push(id);
+                self.save_registry.register_meta(
+                    id,
+                    EntitySaveMeta {
+                        kind: "model".to_string(),
+                        path: "[EditorBox]".to_string(),
+                        visual_model_path: None,
+                        entity_category: entity_category.map(str::to_string),
+                    },
+                );
+                self.send_model_loaded_event(id, &label);
+            };
 
         // Placeholder plantilla 3D: 3 muros (environment) + 3 cubos (object).
         send_load_progress("Insertando Paredes (3)", None, None);
@@ -372,10 +361,8 @@ impl State {
             .find_ground_y_at(spawn_xz.0, spawn_xz.1, 10.0, 20.0)
             .unwrap_or(0.0);
         self.camera.target = glam::Vec3::new(spawn_xz.0, ground_y, spawn_xz.1);
-        self.camera.pitch =
-            crate::config_3d::character_anchor::PLAY_CHARACTER_EDITOR_ORBIT_PITCH;
-        self.camera.yaw =
-            crate::config_3d::character_anchor::PLAY_CHARACTER_EDITOR_ORBIT_YAW;
+        self.camera.pitch = crate::config_3d::character_anchor::PLAY_CHARACTER_EDITOR_ORBIT_PITCH;
+        self.camera.yaw = crate::config_3d::character_anchor::PLAY_CHARACTER_EDITOR_ORBIT_YAW;
         self.camera.distance =
             crate::config_3d::character_anchor::PLAY_CHARACTER_EDITOR_ORBIT_DISTANCE;
         self.editor_viewport_yaw = self.camera.yaw;
@@ -395,8 +382,7 @@ impl State {
 
         send_load_progress("Plantilla 3D lista", None, None);
         log::info!("Plantilla 3D por defecto lista");
-        let scene_name =
-            rer_engine_shared::editor_defaults::default_scene_name(1);
+        let scene_name = rer_engine_shared::editor_defaults::default_scene_name(1);
         self.editor_scenes_init_from_boot(&scene_name);
         send_event(&EngineEvent::Ready {
             gravity: self.physics.gravity_magnitude(),
@@ -412,10 +398,8 @@ impl State {
             .find_ground_y_at(spawn_xz.0, spawn_xz.1, 10.0, 20.0)
             .unwrap_or(0.0);
         self.camera.target = glam::Vec3::new(spawn_xz.0, ground_y, spawn_xz.1);
-        self.camera.pitch =
-            crate::config_3d::character_anchor::PLAY_CHARACTER_EDITOR_ORBIT_PITCH;
-        self.camera.yaw =
-            crate::config_3d::character_anchor::PLAY_CHARACTER_EDITOR_ORBIT_YAW;
+        self.camera.pitch = crate::config_3d::character_anchor::PLAY_CHARACTER_EDITOR_ORBIT_PITCH;
+        self.camera.yaw = crate::config_3d::character_anchor::PLAY_CHARACTER_EDITOR_ORBIT_YAW;
         self.camera.distance =
             crate::config_3d::character_anchor::PLAY_CHARACTER_EDITOR_ORBIT_DISTANCE;
         self.editor_viewport_yaw = self.camera.yaw;
@@ -461,17 +445,25 @@ impl State {
     }
 
     pub(crate) fn is_reflection_probe_entity(&self, id: EntityId) -> bool {
-        crate::reflections::probes_pipeline::registry::is_reflection_probe_entity(&self.save_registry, id)
+        crate::reflections::probes_pipeline::registry::is_reflection_probe_entity(
+            &self.save_registry,
+            id,
+        )
     }
 
     /// Asigna ranura fija 0..MAX_PROBES-1; reutiliza la existente si ya estaba registrada.
     pub(crate) fn allocate_probe_slot(&mut self, id: EntityId) -> Option<usize> {
-        crate::reflections::probes_pipeline::registry::allocate_probe_slot(&mut self.probe_entity_slots, id)
+        crate::reflections::probes_pipeline::registry::allocate_probe_slot(
+            &mut self.probe_entity_slots,
+            id,
+        )
     }
 
     pub(crate) fn release_probe_entity_slot(&mut self, id: EntityId) {
-        if crate::reflections::probes_pipeline::registry::release_probe_slot(&mut self.probe_entity_slots, id)
-        {
+        if crate::reflections::probes_pipeline::registry::release_probe_slot(
+            &mut self.probe_entity_slots,
+            id,
+        ) {
             self.request_probe_capture_burst_if_reflections_active();
         }
     }
@@ -529,7 +521,10 @@ impl State {
         (transform.position, glam::Vec3::splat(r))
     }
 
-    pub(crate) fn notify_reflection_probe_transform_changed(&mut self, ids: &[crate::ecs::EntityId]) {
+    pub(crate) fn notify_reflection_probe_transform_changed(
+        &mut self,
+        ids: &[crate::ecs::EntityId],
+    ) {
         if ids.iter().any(|id| self.is_reflection_probe_entity(*id)) {
             self.request_probe_capture_burst_if_reflections_active();
         }
@@ -563,13 +558,13 @@ impl State {
         }
         let feet = self.play_character_feet_position().to_array();
         let body_rotation = self.play_character_entity.and_then(|id| {
-            self.world.get::<Transform>(id).map(|t| {
-                [t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w]
-            })
+            self.world
+                .get::<Transform>(id)
+                .map(|t| [t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w])
         });
-        let body_scale = self.play_character_entity.and_then(|id| {
-            self.world.get::<Transform>(id).map(|t| t.scale.to_array())
-        });
+        let body_scale = self
+            .play_character_entity
+            .and_then(|id| self.world.get::<Transform>(id).map(|t| t.scale.to_array()));
         self.apply_play_character_view(
             feet,
             PLAY_CHARACTER_EDITOR_ORBIT_YAW,
@@ -600,20 +595,20 @@ impl State {
     }
 
     fn prune_stale_fp_entity_refs(&mut self) {
-        if let Some(id) = self.play_character_entity {
-            if self.world.get::<crate::ecs::Transform>(id).is_none() {
-                self.play_character_entity = None;
-            }
+        if let Some(id) = self.play_character_entity
+            && self.world.get::<crate::ecs::Transform>(id).is_none()
+        {
+            self.play_character_entity = None;
         }
-        if let Some(id) = self.sun_entity {
-            if self.world.get::<crate::ecs::Transform>(id).is_none() {
-                self.sun_entity = None;
-            }
+        if let Some(id) = self.sun_entity
+            && self.world.get::<crate::ecs::Transform>(id).is_none()
+        {
+            self.sun_entity = None;
         }
-        if let Some(id) = self.editor_camera_entity {
-            if self.world.get::<crate::ecs::Transform>(id).is_none() {
-                self.editor_camera_entity = None;
-            }
+        if let Some(id) = self.editor_camera_entity
+            && self.world.get::<crate::ecs::Transform>(id).is_none()
+        {
+            self.editor_camera_entity = None;
         }
     }
 
@@ -709,8 +704,7 @@ impl State {
 
     /// Mesh + textura 1×1 compartidos para cajas del editor (`[EditorBox]`).
     pub(crate) fn ensure_editor_box_gpu_assets(&mut self) -> (usize, usize) {
-        if let (Some(mesh_idx), Some(tex_idx)) =
-            (self.editor_box_mesh_idx, self.editor_box_tex_idx)
+        if let (Some(mesh_idx), Some(tex_idx)) = (self.editor_box_mesh_idx, self.editor_box_tex_idx)
         {
             return (mesh_idx, tex_idx);
         }
@@ -726,7 +720,12 @@ impl State {
     }
 
     /// Cubo del editor (muros/cajas de plantilla) sin archivo `.glb`.
-    pub(crate) fn spawn_editor_box(&mut self, name: &str, position: [f32; 3], scale: [f32; 3]) -> EntityId {
+    pub(crate) fn spawn_editor_box(
+        &mut self,
+        name: &str,
+        position: [f32; 3],
+        scale: [f32; 3],
+    ) -> EntityId {
         let label = self.resolve_entity_display_name(
             name,
             rer_engine_shared::editor_defaults::entity_label::BOX,
@@ -767,20 +766,20 @@ impl State {
     pub(crate) fn load_character(&mut self, path: &str) {
         let is_player = path == "[Player]" || path.ends_with("[Player]");
         if !is_player {
-            log::error!("[load_character] en 3D solo aplica a [Player]; use load_model para modelos: {path}");
+            log::error!(
+                "[load_character] en 3D solo aplica a [Player]; use load_model para modelos: {path}"
+            );
             return;
         }
-        if let Some(id) = self.play_character_entity {
-            if self.world.get::<Transform>(id).is_some() {
-                log::info!(
-                    "[load_character] jugador ya existe (id={id}); no se crea entidad nueva"
-                );
-                send_event(&EngineEvent::CharacterLoaded {
-                    id,
-                    path: path.to_string(),
-                });
-                return;
-            }
+        if let Some(id) = self.play_character_entity
+            && self.world.get::<Transform>(id).is_some()
+        {
+            log::info!("[load_character] jugador ya existe (id={id}); no se crea entidad nueva");
+            send_event(&EngineEvent::CharacterLoaded {
+                id,
+                path: path.to_string(),
+            });
+            return;
         }
         let label = rer_engine_shared::editor_defaults::entity_label::PLAYER.to_string();
         let id = self.world.spawn(Some(&label));

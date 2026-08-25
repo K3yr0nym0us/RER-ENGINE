@@ -175,8 +175,10 @@ fn find_sah_split(
                 continue;
             }
 
-            let left_area = bbox_surface_area(left_min_prefix[split_bin], left_max_prefix[split_bin]);
-            let right_area = bbox_surface_area(right_min_suffix[split_bin], right_max_suffix[split_bin]);
+            let left_area =
+                bbox_surface_area(left_min_prefix[split_bin], left_max_prefix[split_bin]);
+            let right_area =
+                bbox_surface_area(right_min_suffix[split_bin], right_max_suffix[split_bin]);
             let cost = SAH_TRAVERSAL_COST
                 + SAH_INTERSECTION_COST
                     * (left_area * left_count as f32 + right_area * right_count as f32)

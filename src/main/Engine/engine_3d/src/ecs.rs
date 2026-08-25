@@ -8,9 +8,9 @@
 //   - World: contiene todos los ComponentStorage registrados
 // ---------------------------------------------------------------------------
 
+use glam::{Mat4, Quat, Vec3};
 use std::any::{Any, TypeId};
 use std::collections::{HashMap, HashSet};
-use glam::{Mat4, Quat, Vec3};
 
 // ── Tipos base ────────────────────────────────────────────────────────────────
 pub type EntityId = u32;
@@ -35,12 +35,16 @@ fn new_entity_id(alive: &HashSet<EntityId>) -> EntityId {
 pub struct Transform {
     pub position: Vec3,
     pub rotation: Quat,
-    pub scale:    Vec3,
+    pub scale: Vec3,
 }
 
 impl Default for Transform {
     fn default() -> Self {
-        Self { position: Vec3::ZERO, rotation: Quat::IDENTITY, scale: Vec3::ONE }
+        Self {
+            position: Vec3::ZERO,
+            rotation: Quat::IDENTITY,
+            scale: Vec3::ONE,
+        }
     }
 }
 
@@ -56,7 +60,7 @@ pub struct MeshComponent {
     /// Índice en `State.meshes` (vértices + índices GPU).
     pub mesh_idx: usize,
     /// Índice en `State.tex_layers` → capa del `TextureArray` compartido.
-    pub tex_idx:  usize,
+    pub tex_idx: usize,
 }
 
 /// Marca una entidad como no seleccionable por el usuario (escenario/fondo).
@@ -83,13 +87,9 @@ impl Default for EditorCamera {
 }
 
 /// Orden de dibujado para decals/UI en mundo (el depth buffer ordena opacos 3D).
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct RenderLayer {
-    pub value: i32,  // default 0; mayor = después
-}
-
-impl Default for RenderLayer {
-    fn default() -> Self { Self { value: 0 } }
+    pub value: i32, // default 0; mayor = después
 }
 
 /// Nombre visible en el SceneTree.
@@ -114,14 +114,18 @@ pub struct SurfacePbr {
 /// Almacenamiento denso para un tipo de componente.
 /// Los accesos son O(1) a través del mapa entity→índice.
 pub struct ComponentStorage<T> {
-    data:       Vec<T>,
-    entity_map: HashMap<EntityId, usize>,   // entity → índice en data
-    index_map:  Vec<EntityId>,              // índice → entity (para iterar)
+    data: Vec<T>,
+    entity_map: HashMap<EntityId, usize>, // entity → índice en data
+    index_map: Vec<EntityId>,             // índice → entity (para iterar)
 }
 
 impl<T> Default for ComponentStorage<T> {
     fn default() -> Self {
-        Self { data: Vec::new(), entity_map: HashMap::new(), index_map: Vec::new() }
+        Self {
+            data: Vec::new(),
+            entity_map: HashMap::new(),
+            index_map: Vec::new(),
+        }
     }
 }
 
@@ -177,33 +181,39 @@ impl<T> ComponentStorage<T> {
 
 trait AnyStorage: Any {
     fn remove_entity(&mut self, entity: EntityId);
-    fn as_any(&self)     -> &dyn Any;
+    fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 
 impl<T: 'static> AnyStorage for ComponentStorage<T> {
-    fn remove_entity(&mut self, entity: EntityId) { self.remove(entity); }
-    fn as_any(&self)         -> &dyn Any     { self }
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
+    fn remove_entity(&mut self, entity: EntityId) {
+        self.remove(entity);
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
 }
 
 // ── World ─────────────────────────────────────────────────────────────────────
 
 /// Mundo ECS: contiene todas las entidades y sus componentes.
 pub struct World {
-    alive:      Vec<EntityId>,
-    alive_ids:  HashSet<EntityId>,
-    free_ids:   Vec<EntityId>,
-    storages:   HashMap<TypeId, Box<dyn AnyStorage>>,
+    alive: Vec<EntityId>,
+    alive_ids: HashSet<EntityId>,
+    free_ids: Vec<EntityId>,
+    storages: HashMap<TypeId, Box<dyn AnyStorage>>,
 }
 
 impl Default for World {
     fn default() -> Self {
         let mut w = Self {
-            alive:     Vec::new(),
+            alive: Vec::new(),
             alive_ids: HashSet::new(),
-            free_ids:  Vec::new(),
-            storages:  HashMap::new(),
+            free_ids: Vec::new(),
+            storages: HashMap::new(),
         };
         // Registrar almacenamientos estándar
         w.register::<Transform>();
@@ -218,7 +228,9 @@ impl Default for World {
 }
 
 impl World {
-    pub fn new() -> Self { Self::default() }
+    pub fn new() -> Self {
+        Self::default()
+    }
 
     /// Registra un tipo de componente. Llamar antes de usar insert/get.
     pub fn register<T: 'static>(&mut self) {
@@ -271,7 +283,9 @@ impl World {
         }
     }
 
-    pub fn entities(&self) -> &[EntityId] { &self.alive }
+    pub fn entities(&self) -> &[EntityId] {
+        &self.alive
+    }
 
     pub fn clear(&mut self) {
         let ids: Vec<_> = self.alive.clone();
@@ -287,7 +301,8 @@ impl World {
 
     pub fn insert<T: 'static>(&mut self, entity: EntityId, component: T) {
         self.register::<T>();
-        let storage = self.storages
+        let storage = self
+            .storages
             .get_mut(&TypeId::of::<T>())
             .unwrap()
             .as_any_mut()
@@ -297,14 +312,16 @@ impl World {
     }
 
     pub fn get<T: 'static>(&self, entity: EntityId) -> Option<&T> {
-        self.storages.get(&TypeId::of::<T>())?
+        self.storages
+            .get(&TypeId::of::<T>())?
             .as_any()
             .downcast_ref::<ComponentStorage<T>>()?
             .get(entity)
     }
 
     pub fn get_mut<T: 'static>(&mut self, entity: EntityId) -> Option<&mut T> {
-        self.storages.get_mut(&TypeId::of::<T>())?
+        self.storages
+            .get_mut(&TypeId::of::<T>())?
             .as_any_mut()
             .downcast_mut::<ComponentStorage<T>>()?
             .get_mut(entity)
@@ -336,7 +353,9 @@ impl World {
             .map(|cs| {
                 // Safety: collect necesario porque el borrow de self.storages no puede durar
                 let ptrs: Vec<(EntityId, *mut T)> = cs
-                    .index_map.iter().copied()
+                    .index_map
+                    .iter()
+                    .copied()
                     .zip(cs.data.iter_mut().map(|c| c as *mut T))
                     .collect();
                 ptrs
@@ -358,20 +377,23 @@ impl World {
     /// Más eficiente que filtrar `entities()` cuando A es el componente menos frecuente.
     #[allow(dead_code)]
     pub fn query2<A: 'static, B: 'static>(&self) -> impl Iterator<Item = (EntityId, &A, &B)> {
-        let storage_a = self.storages
+        let storage_a = self
+            .storages
             .get(&TypeId::of::<A>())
             .and_then(|s| s.as_any().downcast_ref::<ComponentStorage<A>>());
-        let storage_b = self.storages
+        let storage_b = self
+            .storages
             .get(&TypeId::of::<B>())
             .and_then(|s| s.as_any().downcast_ref::<ComponentStorage<B>>());
 
         match (storage_a, storage_b) {
             (Some(sa), Some(sb)) => {
-                let pairs: Vec<(EntityId, &A, &B)> = sa.index_map.iter().copied()
+                let pairs: Vec<(EntityId, &A, &B)> = sa
+                    .index_map
+                    .iter()
+                    .copied()
                     .zip(sa.data.iter())
-                    .filter_map(|(id, a)| {
-                        sb.get(id).map(|b| (id, a, b))
-                    })
+                    .filter_map(|(id, a)| sb.get(id).map(|b| (id, a, b)))
                     .collect();
                 pairs.into_iter()
             }
@@ -385,19 +407,25 @@ impl World {
     pub fn query3<A: 'static, B: 'static, C: 'static>(
         &self,
     ) -> impl Iterator<Item = (EntityId, &A, &B, &C)> {
-        let storage_a = self.storages
+        let storage_a = self
+            .storages
             .get(&TypeId::of::<A>())
             .and_then(|s| s.as_any().downcast_ref::<ComponentStorage<A>>());
-        let storage_b = self.storages
+        let storage_b = self
+            .storages
             .get(&TypeId::of::<B>())
             .and_then(|s| s.as_any().downcast_ref::<ComponentStorage<B>>());
-        let storage_c = self.storages
+        let storage_c = self
+            .storages
             .get(&TypeId::of::<C>())
             .and_then(|s| s.as_any().downcast_ref::<ComponentStorage<C>>());
 
         match (storage_a, storage_b, storage_c) {
             (Some(sa), Some(sb), Some(sc)) => {
-                let triples: Vec<(EntityId, &A, &B, &C)> = sa.index_map.iter().copied()
+                let triples: Vec<(EntityId, &A, &B, &C)> = sa
+                    .index_map
+                    .iter()
+                    .copied()
                     .zip(sa.data.iter())
                     .filter_map(|(id, a)| {
                         let b = sb.get(id)?;

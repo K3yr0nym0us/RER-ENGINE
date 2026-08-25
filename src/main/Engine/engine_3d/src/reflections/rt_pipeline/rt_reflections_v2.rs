@@ -5,12 +5,12 @@ use glam::{Mat4, Vec3};
 use wgpu::util::DeviceExt;
 use wgpu::{Device, Queue, TextureFormat, TextureView};
 
-use crate::config_3d::reflection_graphics::ReflectionSettings;
-use crate::engine::SceneUniforms;
-use crate::reflections::probe_env::ProbeEnvPass;
 use super::rt_accel::RtAccel;
 use super::rt_extensions;
 use super::rt_scratch::RtScratchCopy;
+use crate::config_3d::reflection_graphics::ReflectionSettings;
+use crate::engine::SceneUniforms;
+use crate::reflections::probe_env::ProbeEnvPass;
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -133,7 +133,8 @@ impl RtReflectionPassV2 {
         height: u32,
         hw_available: bool,
     ) -> Self {
-        let bvh_shader = crate::reflections::load_refl_wgsl(device, "rt-bvh", include_str!("rt_bvh.wgsl"));
+        let bvh_shader =
+            crate::reflections::load_refl_wgsl(device, "rt-bvh", include_str!("rt_bvh.wgsl"));
         let bvh_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("rt-bvh-bgl"),
             entries: &[
@@ -164,7 +165,12 @@ impl RtReflectionPassV2 {
         });
         let bvh_pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("rt-bvh-pl"),
-            bind_group_layouts: &[Some(&bvh_bgl), Some(&probe_bgl), Some(&rt_light_bgl), Some(&texture_bgl)],
+            bind_group_layouts: &[
+                Some(&bvh_bgl),
+                Some(&probe_bgl),
+                Some(&rt_light_bgl),
+                Some(&texture_bgl),
+            ],
             immediate_size: 0,
         });
         let bvh_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
@@ -211,7 +217,12 @@ impl RtReflectionPassV2 {
             });
             let pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("rt-hw-pl"),
-                bind_group_layouts: &[Some(&bgl), Some(&probe_bgl), Some(&rt_light_bgl), Some(&texture_bgl)],
+                bind_group_layouts: &[
+                    Some(&bgl),
+                    Some(&probe_bgl),
+                    Some(&rt_light_bgl),
+                    Some(&texture_bgl),
+                ],
                 immediate_size: 0,
             });
             let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
@@ -387,8 +398,8 @@ impl RtReflectionPassV2 {
         self.height = height.max(1);
         self.scratch.resize(self.width, self.height);
 
-        let step_size = (settings.max_distance_m / settings.max_steps.max(1) as f32)
-            .clamp(0.05, 0.25);
+        let step_size =
+            (settings.max_distance_m / settings.max_steps.max(1) as f32).clamp(0.05, 0.25);
 
         let rt_light = rt_light_from_scene(scene_uniforms, &settings);
         queue.write_buffer(&self.rt_light_buffer, 0, bytemuck::bytes_of(&rt_light));
@@ -414,10 +425,11 @@ impl RtReflectionPassV2 {
         }
         let rt_light_bind_group = self.rt_light_bind_group.as_ref().expect("rt-light-bg");
 
-        self.scratch.seed_output_from_ssr(device, encoder, ssr_view, output_view);
+        self.scratch
+            .seed_output_from_ssr(device, encoder, ssr_view, output_view);
 
-        let wg_x = (self.width + 7) / 8;
-        let wg_y = (self.height + 7) / 8;
+        let wg_x = self.width.div_ceil(8);
+        let wg_y = self.height.div_ceil(8);
 
         match self.mode {
             RtPipelineMode::HardwareRayQuery => {
@@ -627,28 +639,36 @@ fn dispatch_bvh(
     texture_bind_group: &wgpu::BindGroup,
 ) {
     let rt_light = rt_light_from_scene(scene_uniforms, &settings);
-    queue.write_buffer(&pass_state.rt_light_buffer, 0, bytemuck::bytes_of(&rt_light));
+    queue.write_buffer(
+        &pass_state.rt_light_buffer,
+        0,
+        bytemuck::bytes_of(&rt_light),
+    );
     if pass_state.rt_light_bind_group.is_none() {
-        pass_state.rt_light_bind_group = Some(device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("rt-light-bg-bvh"),
-            layout: &pass_state.rt_light_bgl,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(shadow_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(shadow_sampler),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: pass_state.rt_light_buffer.as_entire_binding(),
-                },
-            ],
-        }));
+        pass_state.rt_light_bind_group =
+            Some(device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("rt-light-bg-bvh"),
+                layout: &pass_state.rt_light_bgl,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(shadow_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(shadow_sampler),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: pass_state.rt_light_buffer.as_entire_binding(),
+                    },
+                ],
+            }));
     }
-    let rt_light_bind_group = pass_state.rt_light_bind_group.as_ref().expect("rt-light-bg");
+    let rt_light_bind_group = pass_state
+        .rt_light_bind_group
+        .as_ref()
+        .expect("rt-light-bg");
 
     let uniforms = RtUniforms {
         inv_view_proj: inv_view_proj.to_cols_array_2d(),
@@ -695,8 +715,8 @@ fn dispatch_bvh(
     pass.set_bind_group(1, probe_bind_group, &[]);
     pass.set_bind_group(2, rt_light_bind_group, &[]);
     pass.set_bind_group(3, texture_bind_group, &[]);
-    let wg_x = (width + 7) / 8;
-    let wg_y = (height + 7) / 8;
+    let wg_x = width.div_ceil(8);
+    let wg_y = height.div_ceil(8);
     pass.dispatch_workgroups(wg_x, wg_y, 1);
 }
 

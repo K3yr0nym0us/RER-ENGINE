@@ -120,8 +120,8 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
                 else if (kind === 'character') removeCharacter(id);
                 else if (kind === 'collider') removeCollider(id);
                 else if (kind === 'execution_area') removeExecutionArea(id);
-                else if (scenarioEntities.some((s: any) => s.id === id)) removeScenario(id);
-                else if (characterEntities.some((c: any) => c.id === id)) removeCharacter(id);
+                else if (scenarioEntities.some((s) => s.id === id)) removeScenario(id);
+                else if (characterEntities.some((c) => c.id === id)) removeCharacter(id);
                 else removeEntity(id);
               });
             }}
@@ -162,7 +162,7 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
     );
   }
 
-  const isScenario = scenarioEntities.some((s: any) => s.id === selectedEntity?.id)
+  const isScenario = scenarioEntities.some((s) => s.id === selectedEntity?.id)
   const entityMeta = entityMetaRef.current[selectedEntity.id]
   const isEnvironment = isEnvironmentEntity(isScenario, entityMeta)
   const isPlayer = isPlayerEntity(selectedEntity.id, entityMeta, playerEntityIdRef.current)
@@ -171,15 +171,16 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
     entityMeta,
     editorCameraEntityIdRef.current,
   )
-  const isCharacter = characterEntities.some((c: any) => c.id === selectedEntity?.id)
+  const isCharacter = characterEntities.some((c) => c.id === selectedEntity?.id)
   const hasEmbeddedModelClips =
     is3D &&
     (entityMeta?.animations?.some((a) => a.embedded_in_model) ?? false)
   const isCollider = selectedEntity ? entityMetaRef.current[selectedEntity.id]?.kind === 'collider' : false
   const isExecutionArea = selectedEntity ? entityMetaRef.current[selectedEntity.id]?.kind === 'execution_area' : false
-  const isFromBlueprint = selectedEntity ? !!entityMetaRef.current[selectedEntity.id]?.blueprintId : false
-  const linkedBlueprintName = isFromBlueprint
-    ? (blueprints.find(bp => bp.id === entityMetaRef.current[selectedEntity!.id]?.blueprintId)?.name ?? null)
+  const selectedMeta = selectedEntity ? entityMetaRef.current[selectedEntity.id] : undefined
+  const isFromBlueprint = Boolean(selectedMeta?.blueprintId)
+  const linkedBlueprintName = isFromBlueprint && selectedMeta?.blueprintId
+    ? (blueprints.find(bp => bp.id === selectedMeta.blueprintId)?.name ?? null)
     : null
 
   const handleConfirmModal = (onConfirm: () => void, action: 'delete' | 'duplicate') => {
@@ -476,11 +477,14 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
                 category:         resolvedCategory,
                 kind,
                 path,
+                model:            modelPath,
                 scale:            transform?.scale ?? [1, 1, 1],
                 rotation:         transform?.rotation ?? [0, 0, 0, 1],
                 colision:         meta?.physicsEnabled ?? true,
                 physics_enabled:  meta?.physicsEnabled,
-                physics_type:     meta?.physicsType,
+                physics_type:     (meta?.physicsType === 'dynamic' || meta?.physicsType === 'static' || meta?.physicsType === 'kinematic')
+                  ? meta.physicsType
+                  : undefined,
                 animations:       meta?.animations,
                 scripts:          meta?.scripts,
                 control_bindings: meta?.controlBindings,

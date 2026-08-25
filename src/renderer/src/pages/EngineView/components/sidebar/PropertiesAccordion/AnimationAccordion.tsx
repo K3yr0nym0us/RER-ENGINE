@@ -7,8 +7,8 @@ import { useTraslate } from '@hooks';
 
 interface AnimationFrame {
   path:    string
-  pivot_x: number
-  pivot_y: number
+  pivot_x?: number
+  pivot_y?: number
 }
 
 interface ScriptEntry {
@@ -68,7 +68,7 @@ export function AnimationAccordion({
   onAddFrame,
   onRemoveFrame,
   onMoveFrame,
-  onUpdateFramePivot,
+  onUpdateFramePivot: _onUpdateFramePivot,
   onStartPivotEdit,
   onAddScript,
   onEditScript,

@@ -42,9 +42,10 @@ export function useEntityPropertiesModal(): void {
 	}, [send])
 
 	useEffect(() => {
+		const multiSelectedKey = multiSelectedIds.join(',')
 		const selectionKey =
 			multiSelectedIds.length > 1
-				? `multi:${multiSelectedIds.join(',')}`
+				? `multi:${multiSelectedKey}`
 				: selectedEntity
 					? `single:${selectedEntity.id}`
 					: ''
@@ -87,16 +88,22 @@ export function useEntityPropertiesModal(): void {
 		if (selectedEntity?.id != null) {
 			send({ cmd: 'query_entity_animation_play_state', entity_id: selectedEntity.id } as never)
 		}
-	}, [selectedEntity?.id, selectedEntity?.name, multiSelectedIds.join(','), t, send])
+	}, [selectedEntity, multiSelectedIds, t, send])
+
+	const selectedPositionKey = selectedEntity?.position?.join(',')
+	const selectedRotationKey = selectedEntity?.rotation?.join(',')
+	const selectedScaleKey = selectedEntity?.scale?.join(',')
+	const selectedPhysicsEnabled = selectedEntity?.physicsEnabled
+	const selectedPhysicsType = selectedEntity?.physicsType
 
 	useEffect(() => {
 		if (!modalOpenRef.current || !activeEntityPropertiesHandlerRef.current) return
 		pushEntityPropertiesPatch(activeEntityPropertiesHandlerRef.current)
 	}, [
-		selectedEntity?.position?.join(','),
-		selectedEntity?.rotation?.join(','),
-		selectedEntity?.scale?.join(','),
-		selectedEntity?.physicsEnabled,
-		selectedEntity?.physicsType,
+		selectedPositionKey,
+		selectedRotationKey,
+		selectedScaleKey,
+		selectedPhysicsEnabled,
+		selectedPhysicsType,
 	])
 }

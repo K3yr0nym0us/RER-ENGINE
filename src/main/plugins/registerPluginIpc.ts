@@ -6,7 +6,6 @@ import { startLlamaServer, stopLlamaServer } from './local-ai-assistant/llamaSer
 import { cancelPluginInstall, installPlugin, uninstallPlugin } from './pluginInstall'
 import { PLUGIN_CATALOG } from './pluginCatalog'
 import {
-  isPluginEnabled,
   isPluginInstalled,
   readPluginsState,
   writePluginsState,

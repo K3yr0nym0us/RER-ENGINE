@@ -35,8 +35,8 @@ function buildProgress(
   bytesTotal: number,
 ): PluginDownloadProgress {
   const bytesOverallTotal = entry.llamaServer.sizeBytes + entry.model.sizeBytes
-  let bytesOverallReceived = 0
-  let step = 1
+  let bytesOverallReceived: number
+  let step: number
 
   if (phase === 'llama-server') {
     bytesOverallReceived = bytesReceived

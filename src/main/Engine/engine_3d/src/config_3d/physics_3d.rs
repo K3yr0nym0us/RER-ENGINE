@@ -104,9 +104,9 @@ impl PhysicsWorld {
         let collider = ColliderBuilder::ball(radius.max(0.01))
             .restitution(0.5)
             .build();
-        let collider_handle =
-            self.colliders
-                .insert_with_parent(collider, handle, &mut self.bodies);
+        let collider_handle = self
+            .colliders
+            .insert_with_parent(collider, handle, &mut self.bodies);
         (handle, collider_handle)
     }
 
@@ -120,9 +120,9 @@ impl PhysicsWorld {
             .build();
         let handle = self.bodies.insert(body);
         let collider = ColliderBuilder::ball(radius.max(0.01)).build();
-        let collider_handle =
-            self.colliders
-                .insert_with_parent(collider, handle, &mut self.bodies);
+        let collider_handle = self
+            .colliders
+            .insert_with_parent(collider, handle, &mut self.bodies);
         (handle, collider_handle)
     }
 
@@ -136,9 +136,9 @@ impl PhysicsWorld {
             .build();
         let handle = self.bodies.insert(body);
         let collider = ColliderBuilder::ball(radius.max(0.01)).build();
-        let collider_handle =
-            self.colliders
-                .insert_with_parent(collider, handle, &mut self.bodies);
+        let collider_handle = self
+            .colliders
+            .insert_with_parent(collider, handle, &mut self.bodies);
         (handle, collider_handle)
     }
 
@@ -194,11 +194,11 @@ impl PhysicsWorld {
         let pose = pose_from_parts(position, rotation);
         let body = RigidBodyBuilder::fixed().pose(pose).build();
         let handle = self.bodies.insert(body);
-        let collider = ColliderBuilder::cuboid(half_extents[0], half_extents[1], half_extents[2])
-            .build();
-        let collider_handle =
-            self.colliders
-                .insert_with_parent(collider, handle, &mut self.bodies);
+        let collider =
+            ColliderBuilder::cuboid(half_extents[0], half_extents[1], half_extents[2]).build();
+        let collider_handle = self
+            .colliders
+            .insert_with_parent(collider, handle, &mut self.bodies);
         (handle, collider_handle)
     }
 
@@ -260,9 +260,7 @@ impl PhysicsWorld {
                 (handle, collider_handle)
             }
             _ => {
-                let body = RigidBodyBuilder::dynamic()
-                    .pose(pose(position))
-                    .build();
+                let body = RigidBodyBuilder::dynamic().pose(pose(position)).build();
                 let handle = self.bodies.insert(body);
                 let collider = ColliderBuilder::cuboid(half[0], half[1], half[2])
                     .restitution(0.3)
@@ -342,10 +340,10 @@ impl PhysicsWorld {
         self.entity_colliders.get(&entity).copied()
     }
 
-    pub(crate) fn entity_collider_entries(&self) -> impl Iterator<Item = (EntityId, ColliderHandle)> + '_ {
-        self.entity_colliders
-            .iter()
-            .map(|(&id, &h)| (id, h))
+    pub(crate) fn entity_collider_entries(
+        &self,
+    ) -> impl Iterator<Item = (EntityId, ColliderHandle)> + '_ {
+        self.entity_colliders.iter().map(|(&id, &h)| (id, h))
     }
 
     /// AABB mundial del collider Rapier (wireframe de debug en editor).
@@ -364,11 +362,7 @@ impl PhysicsWorld {
     }
 
     /// El jugador FP usa shape-cast (no cuerpo Rapier): empuja dinámicos al contactar.
-    fn apply_character_push_to_dynamic_hit(
-        &mut self,
-        hit_handle: ColliderHandle,
-        movement: Vec3,
-    ) {
+    fn apply_character_push_to_dynamic_hit(&mut self, hit_handle: ColliderHandle, movement: Vec3) {
         let body_handle = self
             .colliders
             .get(hit_handle)
@@ -448,20 +442,27 @@ impl PhysicsWorld {
         let floor = ColliderBuilder::cylinder(FLOOR_THICKNESS, floor_radius)
             .translation(Vector::new(0.0, -FLOOR_THICKNESS, 0.0))
             .build();
-        self.world_bounds_colliders.push(self.colliders.insert(floor));
+        self.world_bounds_colliders
+            .push(self.colliders.insert(floor));
     }
 
     /// Raycast vertical para colocar pies al spawn (solo contacto, sin Y fijo).
-    pub(crate) fn find_ground_y_at(&mut self, x: f32, z: f32, from_y: f32, max_down: f32) -> Option<f32> {
+    pub(crate) fn find_ground_y_at(
+        &mut self,
+        x: f32,
+        z: f32,
+        from_y: f32,
+        max_down: f32,
+    ) -> Option<f32> {
         let filter = QueryFilter::default();
         let ray = Ray::new(Vector::new(x, from_y, z), Vector::new(0.0, -1.0, 0.0));
-        let hit = self
-            .query_pipeline(filter)
-            .cast_ray_and_get_normal(&ray, max_down.max(0.1), true);
-        if let Some((_, hit)) = hit {
-            if hit.normal.y > 0.45 {
-                return Some(from_y - hit.time_of_impact + 0.02);
-            }
+        let hit =
+            self.query_pipeline(filter)
+                .cast_ray_and_get_normal(&ray, max_down.max(0.1), true);
+        if let Some((_, hit)) = hit
+            && hit.normal.y > 0.45
+        {
+            return Some(from_y - hit.time_of_impact + 0.02);
         }
         None
     }
@@ -491,14 +492,13 @@ impl PhysicsWorld {
         let dir = Vector::new(0.0, -1.0, 0.0);
         let ray = Ray::new(origin, dir);
 
-        if let Some((_, hit)) = self
-            .query_pipeline(filter)
-            .cast_ray_and_get_normal(&ray, SKIN + PROBE, true)
+        if let Some((_, hit)) =
+            self.query_pipeline(filter)
+                .cast_ray_and_get_normal(&ray, SKIN + PROBE, true)
+            && hit.normal.y > 0.707
         {
-            if hit.normal.y > 0.707 {
-                let ground_y = feet.y + SKIN - hit.time_of_impact;
-                return Some(ground_y);
-            }
+            let ground_y = feet.y + SKIN - hit.time_of_impact;
+            return Some(ground_y);
         }
         None
     }
@@ -643,12 +643,7 @@ impl PhysicsWorld {
         current_feet
     }
 
-    pub(crate) fn step(
-        &mut self,
-        dt: f32,
-        ecs: &mut World,
-        skip_ecs_sync: &[EntityId],
-    ) {
+    pub(crate) fn step(&mut self, dt: f32, ecs: &mut World, skip_ecs_sync: &[EntityId]) {
         if self.entity_bodies.is_empty() {
             return;
         }
@@ -676,14 +671,14 @@ impl PhysicsWorld {
             if skip_ecs_sync.contains(&entity) {
                 continue;
             }
-            if let Some(body) = self.bodies.get(handle) {
-                if body.is_dynamic() {
-                    let t = body.translation();
-                    let r = body.rotation();
-                    if let Some(transform) = ecs.get_mut::<Transform>(entity) {
-                        transform.position = glam::Vec3::new(t.x, t.y, t.z);
-                        transform.rotation = glam::Quat::from_xyzw(r.x, r.y, r.z, r.w);
-                    }
+            if let Some(body) = self.bodies.get(handle)
+                && body.is_dynamic()
+            {
+                let t = body.translation();
+                let r = body.rotation();
+                if let Some(transform) = ecs.get_mut::<Transform>(entity) {
+                    transform.position = glam::Vec3::new(t.x, t.y, t.z);
+                    transform.rotation = glam::Quat::from_xyzw(r.x, r.y, r.z, r.w);
                 }
             }
         }
@@ -691,10 +686,7 @@ impl PhysicsWorld {
 }
 
 fn pose_from_parts(position: [f32; 3], rotation: Rotation) -> Pose {
-    Pose::from_parts(
-        Vector::new(position[0], position[1], position[2]),
-        rotation,
-    )
+    Pose::from_parts(Vector::new(position[0], position[1], position[2]), rotation)
 }
 
 fn glam_quat_to_rotation(q: glam::Quat) -> Rotation {
@@ -709,12 +701,7 @@ fn feet_from_capsule_center(center: Vec3, up: Vec3, radius: f32, half_height: f3
     center - up.normalize_or_zero() * (half_height + radius)
 }
 
-fn capsule_pose_at_feet(
-    feet: Vec3,
-    up: Vec3,
-    radius: f32,
-    half_height: f32,
-) -> Pose {
+fn capsule_pose_at_feet(feet: Vec3, up: Vec3, radius: f32, half_height: f32) -> Pose {
     let up = up.normalize_or_zero();
     let center = capsule_center_from_feet(feet, up, radius, half_height);
     let rot = Rotation::from_rotation_arc(Vector::Y, up);

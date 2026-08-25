@@ -11,8 +11,11 @@ pub struct RtScratchCopy {
 
 impl RtScratchCopy {
     pub fn new(device: &Device, color_format: wgpu::TextureFormat) -> Self {
-        let copy_shader =
-            crate::reflections::load_refl_wgsl(device, "rt-copy-ssr", include_str!("rt_copy_ssr.wgsl"));
+        let copy_shader = crate::reflections::load_refl_wgsl(
+            device,
+            "rt-copy-ssr",
+            include_str!("rt_copy_ssr.wgsl"),
+        );
         let copy_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("rt-copy-ssr-bgl"),
             entries: &[
@@ -74,7 +77,7 @@ impl RtScratchCopy {
         });
         pass.set_pipeline(&self.copy_pipeline);
         pass.set_bind_group(0, &copy_bg, &[]);
-        pass.dispatch_workgroups((self.width + 7) / 8, (self.height + 7) / 8, 1);
+        pass.dispatch_workgroups(self.width.div_ceil(8), self.height.div_ceil(8), 1);
     }
 }
 

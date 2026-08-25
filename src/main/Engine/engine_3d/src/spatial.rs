@@ -17,12 +17,14 @@ const CELL_SIZE: f32 = 5.0;
 /// Grid 2D para spatial partitioning.
 /// Cada celda contiene la lista de EntityIds que ocupan esa celda.
 pub struct SpatialGrid {
-    cells: HashMap<(i32, i32), Vec<u32>>,  // (grid_x, grid_y) → [EntityId, ...]
+    cells: HashMap<(i32, i32), Vec<u32>>, // (grid_x, grid_y) → [EntityId, ...]
 }
 
 impl SpatialGrid {
     pub fn new() -> Self {
-        Self { cells: HashMap::new() }
+        Self {
+            cells: HashMap::new(),
+        }
     }
 
     /// Limpia el grid para rebuild.
@@ -37,7 +39,7 @@ impl SpatialGrid {
     }
 
     /// Inserta una entidad en las celdas que ocupa su AABB.
-    /// 
+    ///
     /// AABB: [min_x, min_y, max_x, max_y]
     pub fn insert_entity(&mut self, entity_id: u32, aabb: [f32; 4]) {
         let gx_min = Self::world_to_grid(aabb[0]);
@@ -47,10 +49,7 @@ impl SpatialGrid {
 
         for gx in gx_min..=gx_max {
             for gy in gy_min..=gy_max {
-                self.cells
-                    .entry((gx, gy))
-                    .or_insert_with(Vec::new)
-                    .push(entity_id);
+                self.cells.entry((gx, gy)).or_default().push(entity_id);
             }
         }
     }

@@ -78,16 +78,16 @@ pub fn pick_image_index_for_cap(variants: &[(u32, u32, u32)], cap_px: u32) -> Op
             }
         } else if best_over.is_none_or(|(md, _)| max_dim < md) {
             best_over = Some((max_dim, idx));
-        } else if best_over.is_some_and(|(md, _)| max_dim == md) {
-            if let Some((_, prev_idx)) = best_over {
-                let prev_area = variants
-                    .iter()
-                    .find(|(i, _, _)| *i == prev_idx)
-                    .map(|(_, w, h)| u64::from(*w) * u64::from(*h))
-                    .unwrap_or(u64::MAX);
-                if area < prev_area {
-                    best_over = Some((max_dim, idx));
-                }
+        } else if best_over.is_some_and(|(md, _)| max_dim == md)
+            && let Some((_, prev_idx)) = best_over
+        {
+            let prev_area = variants
+                .iter()
+                .find(|(i, _, _)| *i == prev_idx)
+                .map(|(_, w, h)| u64::from(*w) * u64::from(*h))
+                .unwrap_or(u64::MAX);
+            if area < prev_area {
+                best_over = Some((max_dim, idx));
             }
         }
     }

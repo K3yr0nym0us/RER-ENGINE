@@ -18,7 +18,7 @@ pub(crate) fn load_font_arc(path: &str) -> Option<Arc<FontArc>> {
 
 /// Segmento vertical del cursor en NDC (z = 0).
 pub(crate) struct TextCaretLineNdc {
-    pub x:  f32,
+    pub x: f32,
     pub y0: f32,
     pub y1: f32,
 }
@@ -69,7 +69,8 @@ fn layout_caret_x_px(
         return width_px as f32 * 0.5;
     }
 
-    let Some(boundaries) = text_x_boundaries_in_bitmap(font, text, width_px, height_px, font_px) else {
+    let Some(boundaries) = text_x_boundaries_in_bitmap(font, text, width_px, height_px, font_px)
+    else {
         return width_px as f32 * 0.5;
     };
     let idx = caret_char.min(boundaries.len().saturating_sub(1));
@@ -123,12 +124,7 @@ fn text_x_boundaries_in_bitmap(
     let shift_x = (width_px as f32 - ink_w) * 0.5 - min_x;
     let _shift_y = (height_px as f32 - ink_h) * 0.5 - min_y;
 
-    Some(
-        boundaries
-            .into_iter()
-            .map(|x| x + shift_x)
-            .collect(),
-    )
+    Some(boundaries.into_iter().map(|x| x + shift_x).collect())
 }
 
 /// Layout en píxeles → raster → atlas → un quad con UV.
@@ -173,7 +169,9 @@ pub(crate) fn build_hud_label_glyph(
         viewport_h,
         HUD_BITMAP_FLIP_Y,
     ) {
-        out.push(screen_hud_image::build_screen_hud_instance(packed, model, 1.0));
+        out.push(screen_hud_image::build_screen_hud_instance(
+            packed, model, 1.0,
+        ));
     }
 }
 
@@ -258,14 +256,7 @@ pub(crate) fn build_hud_texture_quad_cached(
         log::warn!("[player-ui] textura no legible: {path}");
         return;
     };
-    push_hud_texture_quad_instance(
-        packed,
-        box_rect,
-        viewport_w,
-        viewport_h,
-        opacity,
-        out,
-    );
+    push_hud_texture_quad_instance(packed, box_rect, viewport_w, viewport_h, opacity, out);
 }
 
 /// Buffer RGBA: origen arriba-izquierda, filas hacia abajo (igual que textura GPU).

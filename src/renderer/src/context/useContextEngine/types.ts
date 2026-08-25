@@ -9,13 +9,15 @@ import {
 	type BackgroundInfo,
 	type BluePrintEntry,
 	type DebugMetrics,
+	type EngineCommand2D,
+	type EngineCommand3D,
 	type Entity3DCategory,
 	type EntityCategory,
 	type ModelCategory,
 	type ModelInfo,
 	type ProjectLoaded2dPayload,
 	type ProjectLoaded3dPayload,
-	type ProjectSaveData,
+	type SavedAnimation,
 	type SavedControlBindings,
 	type SavedPlayerTransform,
 	type SavedScene,
@@ -29,6 +31,8 @@ import {
 	DEFAULT_PLAYER_UI_BUTTON_CONFIG,
 	type PlayerUiButtonConfig,
 } from '../../pages/EngineView/components/sidebar/UIAccordion/components/playerUiButtonModel';
+
+export type { PlayerUiButtonConfig };
 
 export interface Entity {
 	id: number
@@ -45,29 +49,7 @@ export interface SelectedEntity {
 	path?: string
 	/** Ruta del modelo visual 3D (FBX/GLB) en la entidad. */
 	visualModelPath?: string
-	animations?: {
-		name: string
-		fps: number
-		loop: boolean
-		embedded_in_model?: boolean
-		is_default?: boolean
-		facing_right?: boolean
-		logical_w: number
-		logical_h: number
-		frames: {
-			path: string
-			pivot_x: number
-			pivot_y: number
-			src_x?: number
-			src_y?: number
-			src_w?: number
-			src_h?: number
-		}[]
-		selection_mode?: 'cell' | 'box'
-		grid_size?: number
-		cell_offset_x?: number
-		cell_offset_y?: number
-	}[]
+	animations?: SavedAnimation[]
 	scripts?: { name: string; source: string }[]
 }
 
@@ -319,9 +301,12 @@ export function mergeEditingUiTextElements(
 export function mergeEditingUiButtonElements(
 	elements: EditingUiElement[],
 	buttons: Array<{
-		zIndex: any;
-		locked: any; id: number; text: string; fontName: string 
-}>,
+		zIndex: number;
+		locked: boolean;
+		id: number;
+		text: string;
+		fontName: string;
+	}>,
 	defaultConfig: PlayerUiButtonConfig,
 ): EditingUiElement[] {
 	const other = elements.filter((e) => e.kind !== 'button');
@@ -425,7 +410,7 @@ export interface EngineState {
 	sprites: SpriteInfo[]
 	loadedSpritesInfo: Map<string, { name: string }>
 	models: ModelInfo[]
-	loadedModelsInfo: Map<string, { name: string; category?: ModelCategory }>
+	loadedModelsInfo: Map<string, { name: string; category?: ModelCategory; model_id?: string; asset?: string }>
 	sounds: SoundInfo[]
 	fonts: FontInfo[]
 	hudImages: HudImageInfo[]
@@ -640,7 +625,14 @@ export const initialState: EngineState = {
 };
 
 export function engineReducer(state: EngineState, action: EngineAction): EngineState {
-	const handlers: Record<string, (prevState: EngineState, nextAction: any) => EngineState> = {
+	type EngineHandlers = {
+		[K in EngineAction['type']]?: (
+			prevState: EngineState,
+			nextAction: Extract<EngineAction, { type: K }>,
+		) => EngineState
+	}
+
+	const handlers: EngineHandlers = {
 		SET_READY: (prevState) => ({
 			...prevState,
 			engineReady: true,
@@ -1083,7 +1075,7 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 			const removed = nextAction.payload;
 			const nextMap = new Map(prevState.loadedModelsInfo);
 			nextMap.delete(removed);
-			for (const [key, info] of prevState.loadedModelsInfo) {
+			for (const [key] of prevState.loadedModelsInfo) {
 				if (key === removed) continue;
 				const model = prevState.models.find((m) => m.path === key);
 				if (model?.model_id === removed) nextMap.delete(key);
@@ -1097,7 +1089,7 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 			};
 		},
 		SET_MODELS: (prevState, nextAction) => {
-			const models = nextAction.payload.map((m: { path: string; name: string; category: string | undefined; }) => {
+			const models: ModelInfo[] = nextAction.payload.map((m) => {
 				const fromState = prevState.models.find(
 					(x) => x.path === m.path || (x.loading && x.name === m.name),
 				);
@@ -1109,11 +1101,13 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 					...(loading ? { loading } : {}),
 				};
 			});
-			const nextMap = new Map<string, { name: string; category?: ModelCategory }>();
+			const nextMap = new Map<string, { name: string; category?: ModelCategory; model_id?: string; asset?: string }>();
 			for (const m of models) {
 				nextMap.set(m.path, {
 					name: m.name,
 					...(m.category ? { category: m.category } : {}),
+					...(m.model_id ? { model_id: m.model_id } : {}),
+					...(m.asset ? { asset: m.asset } : {}),
 				});
 			}
 			return { ...prevState, models, loadedModelsInfo: nextMap };
@@ -1274,8 +1268,9 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 		}),
 	};
 
-	const handler = handlers[action.type as keyof typeof handlers];
-	return handler ? handler(state, action) : state;
+	const handler = handlers[action.type];
+	if (!handler) return state;
+	return (handler as (prevState: EngineState, nextAction: EngineAction) => EngineState)(state, action);
 }
 
 export type Transform = {
@@ -1331,7 +1326,7 @@ export interface PendingRestore {
 	name?: string
 	physicsEnabled: boolean
 	physicsType: string
-	animations?: any[]
+	animations?: EntityAnimations
 	scripts?: EntityScripts
 	visualGraph?: import('@shared-types').VisualGraphDocument
 	visualScriptRhai?: string
@@ -1382,7 +1377,7 @@ export interface EngineInternalRefs {
 	quickBuildClickListenerRef: MutableRefObject<((x: number, y: number, z: number, fitToGrid: boolean, scale?: [number, number, number]) => void) | null>
 	/** Blueprint activa en construcción rápida (fallback si el motor no envía `blueprint_id`). */
 	quickBuildActiveBlueprintIdRef: MutableRefObject<string | null>
-	pendingEventsRef: MutableRefObject<Map<string, { resolve: (value: any) => void }>>
+	pendingEventsRef: MutableRefObject<Map<string, { resolve: (value: unknown) => void }>>
 	blueprintsRef: MutableRefObject<BluePrintEntry[]>
 	modelsRef: MutableRefObject<ModelInfo[]>
 	updateEntityTransformRef: MutableRefObject<
@@ -1447,8 +1442,12 @@ export interface EngineContextValue extends EngineState {
 	camera2dRef: MutableRefObject<Camera2dState | null>
 	projectLoaded2dMetaRef: MutableRefObject<ProjectLoaded2dPayload | null>
 	projectLoaded3dMetaRef: MutableRefObject<ProjectLoaded3dPayload | null>
-	send: (cmd: object) => void
-	sendAsync: <T>(cmd: object, waitForEvent: string, onStart?: () => void) => Promise<T>
+	send: (cmd: EngineCommand2D | EngineCommand3D) => void
+	sendAsync: <T>(
+		cmd: EngineCommand2D | EngineCommand3D,
+		waitForEvent: string,
+		onStart?: () => void,
+	) => Promise<T>
 	setAnimationPlaying: (entityId: number, playing: boolean, animationName?: string | null) => void
 	loadModelAsset: (
 		path: string,
@@ -1488,7 +1487,7 @@ export interface EngineContextValue extends EngineState {
 	setTextureDetailDistance: (distanceM: number) => void
 	removeCollider: (id: number) => void
 	removeExecutionArea: (id: number) => void
-	updateEntityAnimations: (id: number, animations: any[]) => any[]
+	updateEntityAnimations: (id: number, animations: EntityAnimations) => EntityAnimations
 	updateEntityScripts: (id: number, scripts: EntityScripts) => void
 	updateEntityVisualGraph: (
 		id: number,
@@ -1520,6 +1519,7 @@ export interface EngineContextValue extends EngineState {
 	endUiScreenEdit: () => void
 	addPlayerUiTextBox: (fontPath: string) => void
 	removePlayerUiTextBox: (id?: number) => void
+	addEditingUiButton: (config: PlayerUiButtonConfig) => void
 	addPlayerUiImage: (imagePath: string) => void
 	removePlayerUiImage: (id?: number) => void
 	removePlayerUiObject: (id?: number) => void

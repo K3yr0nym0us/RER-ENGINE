@@ -19,12 +19,12 @@ pub enum CompressionType {
 
 #[derive(Clone, Debug)]
 pub struct RtexData {
-    pub width:            u32,
-    pub height:           u32,
-    pub texture_format:   TextureFormat,
+    pub width: u32,
+    pub height: u32,
+    pub texture_format: TextureFormat,
     pub compression_type: CompressionType,
     /// mip0 .. mipN consecutivos (RGBA8).
-    pub mips:             Vec<Vec<u8>>,
+    pub mips: Vec<Vec<u8>>,
 }
 
 pub fn write_rtex(w: &mut impl Write, data: &RtexData) -> std::io::Result<()> {
@@ -32,9 +32,8 @@ pub fn write_rtex(w: &mut impl Write, data: &RtexData) -> std::io::Result<()> {
     w.write_all(&RTEX_VERSION.to_le_bytes())?;
     w.write_all(&data.width.to_le_bytes())?;
     w.write_all(&data.height.to_le_bytes())?;
-    let mip_count = u8::try_from(data.mips.len()).map_err(|_| {
-        std::io::Error::new(std::io::ErrorKind::InvalidInput, "demasiados mips")
-    })?;
+    let mip_count = u8::try_from(data.mips.len())
+        .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "demasiados mips"))?;
     w.write_all(&[mip_count])?;
     w.write_all(&[data.texture_format as u8])?;
     w.write_all(&[data.compression_type as u8])?;
@@ -95,9 +94,7 @@ pub fn read_rtex(r: &mut impl Read) -> std::io::Result<RtexData> {
     let mut w = width;
     let mut h = height;
     for _ in 0..mip_count {
-        let byte_len = (w as usize)
-            .saturating_mul(h as usize)
-            .saturating_mul(4);
+        let byte_len = (w as usize).saturating_mul(h as usize).saturating_mul(4);
         let mut buf = vec![0u8; byte_len];
         r.read_exact(&mut buf)?;
         mips.push(buf);

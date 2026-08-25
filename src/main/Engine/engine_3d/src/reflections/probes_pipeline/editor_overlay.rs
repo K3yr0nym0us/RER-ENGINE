@@ -60,7 +60,11 @@ fn append_probe_wire_sphere(verts: &mut Vec<GizmoVertex>, center: Vec3, radius: 
             let sin_phi = phi.sin();
             let cos_phi = phi.cos();
             let p = center
-                + Vec3::new(radius * ca * sin_phi, radius * cos_phi, radius * sa * sin_phi);
+                + Vec3::new(
+                    radius * ca * sin_phi,
+                    radius * cos_phi,
+                    radius * sa * sin_phi,
+                );
             push_wire_line(verts, prev, p, PROBE_SPHERE_COLOR);
             prev = p;
         }
@@ -69,9 +73,24 @@ fn append_probe_wire_sphere(verts: &mut Vec<GizmoVertex>, center: Vec3, radius: 
 
 fn append_probe_center_marker(verts: &mut Vec<GizmoVertex>, center: Vec3, radius: f32) {
     let s = (radius * 0.12).clamp(0.15, 0.45);
-    push_wire_line(verts, center + Vec3::new(-s, 0.0, 0.0), center + Vec3::new(s, 0.0, 0.0), PROBE_CENTER_COLOR);
-    push_wire_line(verts, center + Vec3::new(0.0, -s, 0.0), center + Vec3::new(0.0, s, 0.0), PROBE_CENTER_COLOR);
-    push_wire_line(verts, center + Vec3::new(0.0, 0.0, -s), center + Vec3::new(0.0, 0.0, s), PROBE_CENTER_COLOR);
+    push_wire_line(
+        verts,
+        center + Vec3::new(-s, 0.0, 0.0),
+        center + Vec3::new(s, 0.0, 0.0),
+        PROBE_CENTER_COLOR,
+    );
+    push_wire_line(
+        verts,
+        center + Vec3::new(0.0, -s, 0.0),
+        center + Vec3::new(0.0, s, 0.0),
+        PROBE_CENTER_COLOR,
+    );
+    push_wire_line(
+        verts,
+        center + Vec3::new(0.0, 0.0, -s),
+        center + Vec3::new(0.0, 0.0, s),
+        PROBE_CENTER_COLOR,
+    );
 }
 
 pub(crate) fn build_reflection_probe_editor_overlay(

@@ -1,7 +1,7 @@
 use glam::Vec3 as GlamVec3;
 
 use crate::ecs::{MeshComponent, Transform};
-use crate::ipc::{send_event, EngineEvent};
+use crate::ipc::{EngineEvent, send_event};
 use crate::texture::GpuTexture;
 
 use crate::entity_save_meta::EntitySaveMeta;
@@ -24,15 +24,20 @@ impl State {
 
         // -- Cámara ortográfica -----------------------------------------------
         self.camera_2d = Some(super::Camera2D {
-            x:      0.0,
-            y:      0.0,
+            x: 0.0,
+            y: 0.0,
             half_h: 3.5,
-            near:  -100.0,
-            far:    100.0,
+            near: -100.0,
+            far: 100.0,
         });
 
         // Fondo oscuro azulado (estilo Hollow Knight)
-        self.clear_color = wgpu::Color { r: 0.04, g: 0.04, b: 0.10, a: 1.0 };
+        self.clear_color = wgpu::Color {
+            r: 0.04,
+            g: 0.04,
+            b: 0.10,
+            a: 1.0,
+        };
 
         if !self.suppress_scene_setup_logs {
             log::info!("Escena 2D cargada: plataformer vista lateral");
@@ -56,10 +61,12 @@ impl State {
         display_name: Option<&str>,
     ) -> bool {
         let bytes = match std::fs::read(path) {
-            Ok(b)  => b,
+            Ok(b) => b,
             Err(e) => {
                 log::error!("[load_scenario] error leyendo {path}: {e}");
-                send_event(&EngineEvent::Error { message: format!("No se pudo leer el escenario (ruta: {path:?}): {e}") });
+                send_event(&EngineEvent::Error {
+                    message: format!("No se pudo leer el escenario (ruta: {path:?}): {e}"),
+                });
                 return false;
             }
         };
@@ -71,20 +78,29 @@ impl State {
             .map_err(|e| e.to_string())
             .and_then(|r| r.decode().map_err(|e| e.to_string()))
         {
-            Ok(i)  => i.to_rgba8(),
+            Ok(i) => i.to_rgba8(),
             Err(e) => {
                 log::error!("[load_scenario] error decodificando PNG {path}: {e}");
-                send_event(&EngineEvent::Error { message: format!("Error al decodificar PNG: {e}") });
+                send_event(&EngineEvent::Error {
+                    message: format!("Error al decodificar PNG: {e}"),
+                });
                 return false;
             }
         };
 
         let (img_width, img_height) = img.dimensions();
-        let aspect       = img_width as f32 / img_height.max(1) as f32;
+        let aspect = img_width as f32 / img_height.max(1) as f32;
         let base_world_h = 7.0_f32;
         let base_world_w = base_world_h * aspect;
 
-        let gpu_tex  = GpuTexture::from_rgba(&self.device, &self.queue, &img, img_width, img_height, "scenario");
+        let gpu_tex = GpuTexture::from_rgba(
+            &self.device,
+            &self.queue,
+            &img,
+            img_width,
+            img_height,
+            "scenario",
+        );
         let uv = if let Some(&cached_uv) = self.static_tex_cache.get(path) {
             cached_uv
         } else {
@@ -93,12 +109,16 @@ impl State {
             u
         };
         drop(gpu_tex);
-        let tex_idx  = self.uv_rects.len();
+        let tex_idx = self.uv_rects.len();
         self.uv_rects.push(uv);
         let scenario_name = display_name
             .filter(|n| !n.trim().is_empty())
             .map(|n| n.to_owned())
-            .unwrap_or_else(|| self.next_numbered_entity_name(rer_engine_shared::editor_defaults::entity_label::SCENARIO));
+            .unwrap_or_else(|| {
+                self.next_numbered_entity_name(
+                    rer_engine_shared::editor_defaults::entity_label::SCENARIO,
+                )
+            });
         let sc_id = if let Some(id) = forced_id {
             if !self.world.spawn_with_id(id, Some(&scenario_name)) {
                 log::warn!("[insert_scenario_at] id {id} ya en uso");
@@ -108,13 +128,30 @@ impl State {
         } else {
             self.world.spawn(Some(&scenario_name))
         };
-        self.world.insert(sc_id, MeshComponent { mesh_idx: self.canonical_quad_idx, tex_idx });
-        self.world.insert(sc_id, Transform {
-            position: GlamVec3::new(0.0, 0.0, -1.0),
-            scale:    GlamVec3::new(base_world_w, base_world_h, 1.0),
-            ..Default::default()
-        });
-        self.world.insert(sc_id, ScenarioMarker { img_width, img_height, base_world_h, path: path.to_owned() });
+        self.world.insert(
+            sc_id,
+            MeshComponent {
+                mesh_idx: self.canonical_quad_idx,
+                tex_idx,
+            },
+        );
+        self.world.insert(
+            sc_id,
+            Transform {
+                position: GlamVec3::new(0.0, 0.0, -1.0),
+                scale: GlamVec3::new(base_world_w, base_world_h, 1.0),
+                ..Default::default()
+            },
+        );
+        self.world.insert(
+            sc_id,
+            ScenarioMarker {
+                img_width,
+                img_height,
+                base_world_h,
+                path: path.to_owned(),
+            },
+        );
         self.scenario_entities.push(sc_id);
         self.save_registry.register_meta(
             sc_id,
@@ -135,7 +172,7 @@ impl State {
             default_pivot_x: img_width as f32 * 0.5,
             default_pivot_y: img_height as f32,
         });
-        
+
         true
     }
 
@@ -152,10 +189,12 @@ impl State {
         }
 
         let bytes = match std::fs::read(path) {
-            Ok(b)  => b,
+            Ok(b) => b,
             Err(e) => {
                 log::error!("[load_background] error leyendo {path}: {e}");
-                send_event(&EngineEvent::Error { message: format!("No se pudo leer el fondo: {e}") });
+                send_event(&EngineEvent::Error {
+                    message: format!("No se pudo leer el fondo: {e}"),
+                });
                 return;
             }
         };
@@ -167,10 +206,12 @@ impl State {
             .map_err(|e| e.to_string())
             .and_then(|r| r.decode().map_err(|e| e.to_string()))
         {
-            Ok(i)  => i.to_rgba8(),
+            Ok(i) => i.to_rgba8(),
             Err(e) => {
                 log::error!("[load_background] error decodificando imagen {path}: {e}");
-                send_event(&EngineEvent::Error { message: format!("Error al decodificar imagen: {e}") });
+                send_event(&EngineEvent::Error {
+                    message: format!("Error al decodificar imagen: {e}"),
+                });
                 return;
             }
         };
@@ -179,25 +220,38 @@ impl State {
         let world_w = self.grid_config.world_width;
         let world_h = self.grid_config.world_height;
 
-        let gpu_tex  = GpuTexture::from_rgba(&self.device, &self.queue, &img, img_w, img_h, "background");
-        let uv       = self.atlas.pack(&self.queue, &img, img_w, img_h);
+        let gpu_tex =
+            GpuTexture::from_rgba(&self.device, &self.queue, &img, img_w, img_h, "background");
+        let uv = self.atlas.pack(&self.queue, &img, img_w, img_h);
         drop(gpu_tex);
-        let tex_idx  = self.uv_rects.len();
+        let tex_idx = self.uv_rects.len();
         self.uv_rects.push(uv);
-        let background_name = self.next_numbered_entity_name(rer_engine_shared::editor_defaults::entity_label::BACKGROUND);
+        let background_name = self.next_numbered_entity_name(
+            rer_engine_shared::editor_defaults::entity_label::BACKGROUND,
+        );
         let bg_id = self.world.spawn(Some(&background_name));
-        self.world.insert(bg_id, MeshComponent { mesh_idx: self.canonical_quad_idx, tex_idx });
-        self.world.insert(bg_id, Transform {
-            position: GlamVec3::new(0.0, 0.0, -10.0),
-            scale:    GlamVec3::new(world_w, world_h, 1.0),
-            ..Default::default()
-        });
+        self.world.insert(
+            bg_id,
+            MeshComponent {
+                mesh_idx: self.canonical_quad_idx,
+                tex_idx,
+            },
+        );
+        self.world.insert(
+            bg_id,
+            Transform {
+                position: GlamVec3::new(0.0, 0.0, -10.0),
+                scale: GlamVec3::new(world_w, world_h, 1.0),
+                ..Default::default()
+            },
+        );
         // No seleccionable para que no interfiera con el picking
         self.world.insert(bg_id, crate::ecs::NonSelectable);
         self.background_entity = Some(bg_id);
 
-        send_event(&EngineEvent::BackgroundLoaded { path: path.to_owned() });
-        
+        send_event(&EngineEvent::BackgroundLoaded {
+            path: path.to_owned(),
+        });
     }
 
     /// Elimina el fondo actual del mundo 2D, si existe.
@@ -224,10 +278,12 @@ impl State {
         display_name: Option<&str>,
     ) -> bool {
         let bytes = match std::fs::read(path) {
-            Ok(b)  => b,
+            Ok(b) => b,
             Err(e) => {
                 log::error!("[load_character] error leyendo {path}: {e}");
-                send_event(&EngineEvent::Error { message: format!("No se pudo leer el personaje (ruta: {path:?}): {e}") });
+                send_event(&EngineEvent::Error {
+                    message: format!("No se pudo leer el personaje (ruta: {path:?}): {e}"),
+                });
                 return false;
             }
         };
@@ -239,21 +295,30 @@ impl State {
             .map_err(|e| e.to_string())
             .and_then(|r| r.decode().map_err(|e| e.to_string()))
         {
-            Ok(i)  => i.to_rgba8(),
+            Ok(i) => i.to_rgba8(),
             Err(e) => {
                 log::error!("[load_character] error decodificando PNG {path}: {e}");
-                send_event(&EngineEvent::Error { message: format!("Error al decodificar PNG: {e}") });
+                send_event(&EngineEvent::Error {
+                    message: format!("Error al decodificar PNG: {e}"),
+                });
                 return false;
             }
         };
 
         let (img_width, img_height) = img.dimensions();
-        let aspect       = img_width as f32 / img_height.max(1) as f32;
+        let aspect = img_width as f32 / img_height.max(1) as f32;
         let base_world_h = self.grid_config.cell_size * 1.5;
         let base_world_w = base_world_h * aspect;
         let tight_bounds = compute_tight_bounds(&img);
 
-        let gpu_tex  = GpuTexture::from_rgba(&self.device, &self.queue, &img, img_width, img_height, "character");
+        let gpu_tex = GpuTexture::from_rgba(
+            &self.device,
+            &self.queue,
+            &img,
+            img_width,
+            img_height,
+            "character",
+        );
         let uv = if let Some(&cached_uv) = self.static_tex_cache.get(path) {
             cached_uv
         } else {
@@ -262,12 +327,16 @@ impl State {
             u
         };
         drop(gpu_tex);
-        let tex_idx  = self.uv_rects.len();
+        let tex_idx = self.uv_rects.len();
         self.uv_rects.push(uv);
         let character_name = display_name
             .filter(|n| !n.trim().is_empty())
             .map(|n| n.to_owned())
-            .unwrap_or_else(|| self.next_numbered_entity_name(rer_engine_shared::editor_defaults::entity_label::CHARACTER));
+            .unwrap_or_else(|| {
+                self.next_numbered_entity_name(
+                    rer_engine_shared::editor_defaults::entity_label::CHARACTER,
+                )
+            });
         let ch_id = if let Some(id) = forced_id {
             if !self.world.spawn_with_id(id, Some(&character_name)) {
                 log::warn!("[insert_character_at] id {id} ya en uso");
@@ -277,13 +346,31 @@ impl State {
         } else {
             self.world.spawn(Some(&character_name))
         };
-        self.world.insert(ch_id, MeshComponent { mesh_idx: self.canonical_quad_idx, tex_idx });
-        self.world.insert(ch_id, Transform {
-            position: GlamVec3::new(0.0, 0.0, 0.0),
-            scale:    GlamVec3::new(base_world_w, base_world_h, 1.0),
-            ..Default::default()
-        });
-        self.world.insert(ch_id, CharacterMarker { img_width, img_height, base_world_h, tight_bounds, path: path.to_owned() });
+        self.world.insert(
+            ch_id,
+            MeshComponent {
+                mesh_idx: self.canonical_quad_idx,
+                tex_idx,
+            },
+        );
+        self.world.insert(
+            ch_id,
+            Transform {
+                position: GlamVec3::new(0.0, 0.0, 0.0),
+                scale: GlamVec3::new(base_world_w, base_world_h, 1.0),
+                ..Default::default()
+            },
+        );
+        self.world.insert(
+            ch_id,
+            CharacterMarker {
+                img_width,
+                img_height,
+                base_world_h,
+                tight_bounds,
+                path: path.to_owned(),
+            },
+        );
         self.character_entities.push(ch_id);
         self.save_registry.register_meta(
             ch_id,
@@ -303,7 +390,7 @@ impl State {
             default_pivot_x: img_width as f32 * 0.5,
             default_pivot_y: img_height as f32,
         });
-        
+
         true
     }
 
@@ -312,8 +399,8 @@ impl State {
         let marker = self.world.get::<CharacterMarker>(id).cloned();
         if let Some(m) = marker {
             let aspect = m.img_width as f32 / m.img_height.max(1) as f32;
-            let new_h  = m.base_world_h * scale.clamp(0.05, 20.0);
-            let new_w  = new_h * aspect;
+            let new_h = m.base_world_h * scale.clamp(0.05, 20.0);
+            let new_w = new_h * aspect;
             if let Some(t) = self.world.get_mut::<Transform>(id) {
                 // Mantener este comportamiento por ahora: la escala visual cambia,
                 // pero el collider no se recompone automaticamente en esta fase.
@@ -325,14 +412,23 @@ impl State {
     /// Carga una entidad fantasma para previsualizar el blueprint en modo Quick Build.
     /// No se añade a `scenario_entities` ni `character_entities` y no emite eventos.
     /// Se posiciona fuera de pantalla hasta que el cursor se mueva.
-    pub(crate) fn load_quick_build_ghost(&mut self, path: &str, kind: &str, scale: [f32; 3], src_rect: Option<[u32; 4]>) -> Option<u32> {
+    pub(crate) fn load_quick_build_ghost(
+        &mut self,
+        path: &str,
+        kind: &str,
+        scale: [f32; 3],
+        src_rect: Option<[u32; 4]>,
+    ) -> Option<u32> {
         let bytes = std::fs::read(path).ok()?;
         use image::ImageReader;
         use image::imageops;
         use std::io::Cursor;
         let mut img = ImageReader::new(Cursor::new(&bytes))
-            .with_guessed_format().ok()?
-            .decode().ok()?.to_rgba8();
+            .with_guessed_format()
+            .ok()?
+            .decode()
+            .ok()?
+            .to_rgba8();
         if let Some([sx, sy, sw, sh]) = src_rect {
             let iw = img.width();
             let ih = img.height();
@@ -359,15 +455,28 @@ impl State {
         let tex_idx = self.uv_rects.len();
         self.uv_rects.push(uv);
         let ghost_id = self.world.spawn(Some("__qb_ghost__"));
-        self.world.insert(ghost_id, MeshComponent { mesh_idx: self.canonical_quad_idx, tex_idx });
-        let z = if kind == "scenario" { -0.5_f32 } else { 0.5_f32 };
-        self.world.insert(ghost_id, Transform {
-            position: GlamVec3::new(-99999.0, -99999.0, z),
-            scale:    GlamVec3::new(scale[0], scale[1], scale[2]),
-            ..Default::default()
-        });
+        self.world.insert(
+            ghost_id,
+            MeshComponent {
+                mesh_idx: self.canonical_quad_idx,
+                tex_idx,
+            },
+        );
+        let z = if kind == "scenario" {
+            -0.5_f32
+        } else {
+            0.5_f32
+        };
+        self.world.insert(
+            ghost_id,
+            Transform {
+                position: GlamVec3::new(-99999.0, -99999.0, z),
+                scale: GlamVec3::new(scale[0], scale[1], scale[2]),
+                ..Default::default()
+            },
+        );
         self.world.insert(ghost_id, crate::ecs::NonSelectable);
-        
+
         Some(ghost_id)
     }
 }

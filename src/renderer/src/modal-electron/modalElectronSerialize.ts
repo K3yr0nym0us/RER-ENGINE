@@ -1,5 +1,3 @@
-import { isValidElement } from 'react'
-
 import type { Entity3D } from '@shared-types'
 
 import { sanitizeSceneEntitiesForModal } from '../visualScripting/resolveSceneEntities'

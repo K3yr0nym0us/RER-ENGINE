@@ -32,7 +32,7 @@ export function resolveEntityRhaiSource(
 }
 
 export function saveEntityVisualGraph(
-  entityId: number,
+  _entityId: number,
   graph: VisualGraphDocument,
 ): { ok: boolean; errors: string[]; rhaiSource?: string } {
   const { source, errors } = compileGraphToRhai(graph)

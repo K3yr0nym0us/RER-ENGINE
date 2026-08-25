@@ -131,49 +131,37 @@ pub fn register_native_api(engine: &mut Engine, ctx: &ScriptApiContext) {
         c.push(ScriptCmd::Log { message: msg });
     });
 
-    register_id_num2!(
-        engine,
-        ctx,
-        "__engine_move_to",
-        |id, x, y| ScriptCmd::SetPosition {
+    register_id_num2!(engine, ctx, "__engine_move_to", |id, x, y| {
+        ScriptCmd::SetPosition {
             id: id as u32,
             x: x as f32,
             y: y as f32,
         }
-    );
+    });
 
-    register_id_num2!(
-        engine,
-        ctx,
-        "__engine_translate",
-        |id, dx, dy| ScriptCmd::Translate {
+    register_id_num2!(engine, ctx, "__engine_translate", |id, dx, dy| {
+        ScriptCmd::Translate {
             id: id as u32,
             dx: dx as f32,
             dy: dy as f32,
         }
-    );
+    });
 
-    register_id_num2!(
-        engine,
-        ctx,
-        "__engine_set_scale",
-        |id, sx, sy| ScriptCmd::SetScale {
+    register_id_num2!(engine, ctx, "__engine_set_scale", |id, sx, sy| {
+        ScriptCmd::SetScale {
             id: id as u32,
             sx: sx as f32,
             sy: sy as f32,
         }
-    );
+    });
 
     let c = ctx.clone();
-    engine.register_fn(
-        "__engine_play_animation",
-        move |id: i64, name: String| {
-            c.push(ScriptCmd::PlayAnimation {
-                id: id as u32,
-                name,
-            });
-        },
-    );
+    engine.register_fn("__engine_play_animation", move |id: i64, name: String| {
+        c.push(ScriptCmd::PlayAnimation {
+            id: id as u32,
+            name,
+        });
+    });
 
     let c = ctx.clone();
     engine.register_fn(
@@ -316,26 +304,17 @@ pub fn register_native_api(engine: &mut Engine, ctx: &ScriptApiContext) {
             c.push(ScriptCmd::PlayControllerJump);
         });
 
-        register_num_fn1!(
-            engine,
-            ctx,
-            "__engine_fp_set_walk_speed",
-            |speed| ScriptCmd::PlayControllerSetWalkSpeed(speed as f32)
-        );
+        register_num_fn1!(engine, ctx, "__engine_fp_set_walk_speed", |speed| {
+            ScriptCmd::PlayControllerSetWalkSpeed(speed as f32)
+        });
 
-        register_num_fn1!(
-            engine,
-            ctx,
-            "__engine_fp_set_sprint_multiplier",
-            |mult| ScriptCmd::PlayControllerSetSprintMultiplier(mult as f32)
-        );
+        register_num_fn1!(engine, ctx, "__engine_fp_set_sprint_multiplier", |mult| {
+            ScriptCmd::PlayControllerSetSprintMultiplier(mult as f32)
+        });
 
-        register_num_fn1!(
-            engine,
-            ctx,
-            "__engine_fp_set_jump_speed",
-            |speed| ScriptCmd::PlayControllerSetJumpSpeed(speed as f32)
-        );
+        register_num_fn1!(engine, ctx, "__engine_fp_set_jump_speed", |speed| {
+            ScriptCmd::PlayControllerSetJumpSpeed(speed as f32)
+        });
 
         let c = ctx.clone();
         engine.register_fn("__engine_set_taa", move |enabled: bool| {
@@ -348,9 +327,12 @@ pub fn register_native_api(engine: &mut Engine, ctx: &ScriptApiContext) {
         });
 
         let c = ctx.clone();
-        engine.register_fn("__engine_set_active_player_ui_by_name", move |name: String| {
-            c.push(ScriptCmd::SetActivePlayerUiScreenByName { name });
-        });
+        engine.register_fn(
+            "__engine_set_active_player_ui_by_name",
+            move |name: String| {
+                c.push(ScriptCmd::SetActivePlayerUiScreenByName { name });
+            },
+        );
 
         let c = ctx.clone();
         engine.register_fn("__engine_clear_active_player_ui", move || {

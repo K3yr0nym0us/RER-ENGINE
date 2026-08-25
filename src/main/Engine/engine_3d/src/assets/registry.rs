@@ -7,20 +7,20 @@ use rer_engine_shared::assets::AssetState;
 
 #[derive(Clone, Debug)]
 pub struct ImportedModelEntry {
-    pub model_id:          String,
-    pub name:              String,
-    pub category:          Option<String>,
-    pub state:             AssetState,
-    pub rerasset_path:     PathBuf,
-    pub source_path:       String,
-    pub source_size:       u64,
+    pub model_id: String,
+    pub name: String,
+    pub category: Option<String>,
+    pub state: AssetState,
+    pub rerasset_path: PathBuf,
+    pub source_path: String,
+    pub source_size: u64,
     pub source_mtime_secs: u64,
-    pub importer_version:  u16,
+    pub importer_version: u16,
 }
 
 #[derive(Default)]
 pub struct ImportedModelRegistry {
-    by_id:     HashMap<String, ImportedModelEntry>,
+    by_id: HashMap<String, ImportedModelEntry>,
     path_to_id: HashMap<String, String>,
 }
 
@@ -31,9 +31,7 @@ impl ImportedModelRegistry {
 
     pub fn get_by_source_path(&self, path: &str) -> Option<&ImportedModelEntry> {
         let key = normalize_source_key(path);
-        self.path_to_id
-            .get(&key)
-            .and_then(|id| self.by_id.get(id))
+        self.path_to_id.get(&key).and_then(|id| self.by_id.get(id))
     }
 
     pub fn model_id_for_path(&self, path: &str) -> Option<String> {
@@ -54,10 +52,7 @@ impl ImportedModelRegistry {
         }
         self.link_alias(model_id, source_path);
         self.link_alias(model_id, model_id);
-        if let Some(base) = Path::new(source_path)
-            .file_name()
-            .and_then(|n| n.to_str())
-        {
+        if let Some(base) = Path::new(source_path).file_name().and_then(|n| n.to_str()) {
             self.link_alias(model_id, base);
             self.link_alias(model_id, &relative_source_manifest_path(base));
         }
@@ -107,7 +102,11 @@ pub fn imported_models_dir() -> PathBuf {
         .filter(|s| !s.is_empty())
         .map(PathBuf::from)
         .map(|p| p.join("imported").join("models"))
-        .unwrap_or_else(|| std::env::temp_dir().join("rer-engine-imported").join("models"))
+        .unwrap_or_else(|| {
+            std::env::temp_dir()
+                .join("rer-engine-imported")
+                .join("models")
+        })
 }
 
 pub fn source_fingerprint(path: &Path) -> (u64, u64) {
@@ -131,19 +130,17 @@ pub fn generate_model_id(display_name: &str, source_path: &str) -> String {
     let slug: String = display_name
         .to_ascii_lowercase()
         .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() {
-                c
-            } else {
-                '_'
-            }
-        })
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
         .collect::<String>()
         .trim_matches('_')
         .chars()
         .take(32)
         .collect();
-    let slug = if slug.is_empty() { "model".to_string() } else { slug };
+    let slug = if slug.is_empty() {
+        "model".to_string()
+    } else {
+        slug
+    };
 
     let mut hasher = DefaultHasher::new();
     normalize_source_key(source_path).hash(&mut hasher);
@@ -174,10 +171,7 @@ pub fn resolve_rerasset_on_disk(extract_dir: &Path, model_id: &str) -> PathBuf {
 /// Resuelve `resources.models[].asset` (relativo al extract dir) a path en disco.
 pub fn resolve_manifest_asset_path(asset: &str, extract_dir: &Path, model_id: &str) -> PathBuf {
     let normalized = normalize_source_key(asset);
-    if !asset.is_empty()
-        && !Path::new(asset).is_absolute()
-        && normalized.starts_with("imported/")
-    {
+    if !asset.is_empty() && !Path::new(asset).is_absolute() && normalized.starts_with("imported/") {
         if extract_dir.as_os_str().is_empty() {
             rerasset_path_for_id(model_id)
         } else {
@@ -196,12 +190,18 @@ pub fn source_models_dir() -> PathBuf {
         .filter(|s| !s.is_empty())
         .map(PathBuf::from)
         .map(|p| p.join("source").join("models"))
-        .unwrap_or_else(|| std::env::temp_dir().join("rer-engine-source").join("models"))
+        .unwrap_or_else(|| {
+            std::env::temp_dir()
+                .join("rer-engine-source")
+                .join("models")
+        })
 }
 
 /// Copia el archivo fuente a `source/models/` (solo sesión de editor con extract dir).
 pub fn mirror_source_file(source_path: &Path) -> Option<PathBuf> {
-    let extract = std::env::var("RER_PROJECT_EXTRACT_DIR").ok().filter(|s| !s.is_empty())?;
+    let extract = std::env::var("RER_PROJECT_EXTRACT_DIR")
+        .ok()
+        .filter(|s| !s.is_empty())?;
     if extract.is_empty() {
         return None;
     }

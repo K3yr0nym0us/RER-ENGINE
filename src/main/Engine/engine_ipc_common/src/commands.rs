@@ -16,8 +16,15 @@ fn default_clip_loop() -> bool {
 pub enum EngineCommandCommon {
     Ping,
     Shutdown,
-    SetClearColor { r: f64, g: f64, b: f64 },
-    Resize { width: u32, height: u32 },
+    SetClearColor {
+        r: f64,
+        g: f64,
+        b: f64,
+    },
+    Resize {
+        width: u32,
+        height: u32,
+    },
     SetBounds {
         x: i32,
         y: i32,
@@ -39,7 +46,10 @@ pub enum EngineCommandCommon {
         #[serde(default)]
         kind: Option<String>,
     },
-    ReplaceEntityModel { id: u32, path: String },
+    ReplaceEntityModel {
+        id: u32,
+        path: String,
+    },
     SetTransform {
         id: u32,
         #[serde(default)]
@@ -62,7 +72,7 @@ pub enum EngineCommandCommon {
         rotation_euler_degrees: Option<[f32; 3]>,
     },
     SetEntityName {
-        id:   u32,
+        id: u32,
         name: String,
         #[serde(default)]
         force: bool,
@@ -72,7 +82,9 @@ pub enum EngineCommandCommon {
         #[serde(default)]
         save_path: Option<String>,
     },
-    RemoveEntity { id: u32 },
+    RemoveEntity {
+        id: u32,
+    },
     DeselectEntity,
     SetWorldSize {
         width: f32,
@@ -80,11 +92,21 @@ pub enum EngineCommandCommon {
         #[serde(default)]
         depth: Option<f32>,
     },
-    SetGravity { gravity: f32 },
-    SetGridVisible { visible: bool },
-    SetGridCellSize { size: f32 },
-    SetTargetFps { fps: u64 },
-    SetCtrlHeld { held: bool },
+    SetGravity {
+        gravity: f32,
+    },
+    SetGridVisible {
+        visible: bool,
+    },
+    SetGridCellSize {
+        size: f32,
+    },
+    SetTargetFps {
+        fps: u64,
+    },
+    SetCtrlHeld {
+        held: bool,
+    },
     SetPhysics {
         id: u32,
         enabled: bool,
@@ -115,63 +137,117 @@ pub enum EngineCommandCommon {
         #[serde(default)]
         preview_blueprint: Option<serde_json::Value>,
     },
-    PlayAudio { path: String, loop_: bool },
+    PlayAudio {
+        path: String,
+        loop_: bool,
+    },
     StopAudio,
     SetAnimation {
-        id:         u32,
-        name:       String,
-        frames:     Vec<AnimationFrameData>,
-        fps:        u32,
-        loop_:      bool,
+        id: u32,
+        name: String,
+        frames: Vec<AnimationFrameData>,
+        fps: u32,
+        loop_: bool,
         #[serde(default)]
         flip_horizontal: bool,
         audio_path: Option<String>,
         #[serde(default)]
-        logical_w:  Option<u32>,
+        logical_w: Option<u32>,
         #[serde(default)]
-        logical_h:  Option<u32>,
+        logical_h: Option<u32>,
         #[serde(default)]
-        scripts:    Vec<AnimScriptData>,
+        scripts: Vec<AnimScriptData>,
         #[serde(default)]
         is_cancelable: bool,
     },
-    RemoveAnimation { id: u32, name: String },
-    SetDefaultAnimation { id: u32, name: String },
+    RemoveAnimation {
+        id: u32,
+        name: String,
+    },
+    SetDefaultAnimation {
+        id: u32,
+        name: String,
+    },
     PlayAnimation {
         id: u32,
         name: String,
         #[serde(default = "default_clip_loop", alias = "loop")]
         loop_: bool,
     },
-    StopAnimation { id: u32 },
-    QueryEntityAnimationPlayState { entity_id: u32 },
-    LoadScript { id: u32, path: String, source: String },
+    StopAnimation {
+        id: u32,
+    },
+    QueryEntityAnimationPlayState {
+        entity_id: u32,
+    },
+    LoadScript {
+        id: u32,
+        path: String,
+        source: String,
+    },
     RunControlScript {
         id: u32,
         control_key: String,
         path: String,
         source: String,
     },
-    SetControlBindings { id: u32, bindings: ControlBindingsData },
-    UnloadScript { id: u32 },
-    LoadSceneVisualScript { scene_id: u32, source: String },
-    LoadSprite { path: String, name: String },
-    RemoveSprite { path: String },
+    SetControlBindings {
+        id: u32,
+        bindings: ControlBindingsData,
+    },
+    UnloadScript {
+        id: u32,
+    },
+    LoadSceneVisualScript {
+        scene_id: u32,
+        source: String,
+    },
+    LoadSprite {
+        path: String,
+        name: String,
+    },
+    RemoveSprite {
+        path: String,
+    },
     GetSpritesList,
-    LoadSound { path: String, name: String },
-    RemoveSound { path: String },
+    LoadSound {
+        path: String,
+        name: String,
+    },
+    RemoveSound {
+        path: String,
+    },
     GetSoundsList,
-    LoadFont { path: String, name: String },
-    RemoveFont { path: String },
+    LoadFont {
+        path: String,
+        name: String,
+    },
+    RemoveFont {
+        path: String,
+    },
     GetFontsList,
-    LoadHudImage { path: String, name: String },
-    RemoveHudImage { path: String },
+    LoadHudImage {
+        path: String,
+        name: String,
+    },
+    RemoveHudImage {
+        path: String,
+    },
     GetHudImagesList,
-    LoadBackgroundAsset { path: String, name: String },
-    RemoveBackgroundAsset { path: String },
+    LoadBackgroundAsset {
+        path: String,
+        name: String,
+    },
+    RemoveBackgroundAsset {
+        path: String,
+    },
     GetBackgroundsList,
-    SetDebugMode { show: bool },
-    SetPreviewPlaying { playing: bool },
+    SetDebugMode {
+        show: bool,
+    },
+    SetPreviewPlaying {
+        playing: bool,
+    },
     SetPlayerUiEditMode {
         active: bool,
         #[serde(default)]
@@ -179,7 +255,9 @@ pub enum EngineCommandCommon {
         #[serde(default)]
         screen_id: Option<String>,
     },
-    AddPlayerUiTextBox { font_path: String },
+    AddPlayerUiTextBox {
+        font_path: String,
+    },
     RemovePlayerUiTextBox {
         #[serde(default)]
         id: Option<u32>,
@@ -192,12 +270,16 @@ pub enum EngineCommandCommon {
         #[serde(default)]
         id: Option<u32>,
     },
-    AddPlayerUiImage { image_path: String },
+    AddPlayerUiImage {
+        image_path: String,
+    },
     RemovePlayerUiImage {
         #[serde(default)]
         id: Option<u32>,
     },
-    SetPlayerUiObjectDraw { active: bool },
+    SetPlayerUiObjectDraw {
+        active: bool,
+    },
     RemovePlayerUiObject {
         #[serde(default)]
         id: Option<u32>,
@@ -232,11 +314,19 @@ pub enum EngineCommandCommon {
     },
     Undo,
     Redo,
-    ReloadAsset { path: String },
-    SetLocale { locale: String },
-    SetAutosave { enabled: bool },
+    ReloadAsset {
+        path: String,
+    },
+    SetLocale {
+        locale: String,
+    },
+    SetAutosave {
+        enabled: bool,
+    },
     ExportSaveSnapshot,
-    GetDefaultSceneName { id: u32 },
+    GetDefaultSceneName {
+        id: u32,
+    },
     ResendAllModelClips,
     ApplyEntityRestore {
         id: u32,

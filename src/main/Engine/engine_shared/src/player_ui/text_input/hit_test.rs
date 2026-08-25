@@ -1,15 +1,13 @@
 //! Hit-test y helpers de resize/snap para edición HUD (sin dependencia de `State`).
 
 use crate::player_ui::config::{
-    self, box_corners, HasUiHudRect, PlayerUiButton, PlayerUiImage, PlayerUiObject,
-    PlayerUiResizeHandle, PlayerUiTextBox, UiHudRect,
+    self, HasUiHudRect, PlayerUiButton, PlayerUiImage, PlayerUiObject, PlayerUiResizeHandle,
+    PlayerUiTextBox, UiHudRect, box_corners,
 };
 use crate::player_ui::geometry::point_in_polygon;
 use crate::player_ui::grid::{player_ui_grid_steps, snap_ui_hud_rect_to_grid};
 use crate::player_ui::hud_layers::{self, HudLayerKind};
-use crate::player_ui::text_input::types::{
-    PlayerUiHitTarget, HANDLE_RADIUS, MIN_BOX_H, MIN_BOX_W,
-};
+use crate::player_ui::text_input::types::{HANDLE_RADIUS, MIN_BOX_H, MIN_BOX_W, PlayerUiHitTarget};
 
 pub fn hit_test_box(boxes: &[PlayerUiTextBox], id: u32, ndc: [f32; 2]) -> bool {
     let Some(b) = boxes.iter().find(|b| b.id == id) else {
@@ -19,10 +17,7 @@ pub fn hit_test_box(boxes: &[PlayerUiTextBox], id: u32, ndc: [f32; 2]) -> bool {
     ndc_in_rect(ndc, x0, y0, x1, y1)
 }
 
-pub fn hit_test_handle_at_rect(
-    rect: UiHudRect,
-    ndc: [f32; 2],
-) -> Option<PlayerUiResizeHandle> {
+pub fn hit_test_handle_at_rect(rect: UiHudRect, ndc: [f32; 2]) -> Option<PlayerUiResizeHandle> {
     let (x0, y0, x1, y1) = config::box_corners(rect);
     let corners = [
         (PlayerUiResizeHandle::TopLeft, x0, y1),

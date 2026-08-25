@@ -2,7 +2,7 @@
 
 use glam::{Mat4, Vec3};
 
-use crate::config_3d::model_asset::{ModelAsset, MAX_JOINTS};
+use crate::config_3d::model_asset::{MAX_JOINTS, ModelAsset};
 use crate::engine::State;
 use crate::gizmo::{self, GizmoVertex};
 
@@ -180,11 +180,11 @@ fn push_skeleton_lines(
             BONE_CROSS_SIZE
         };
         push_joint_cross(verts, wp, line_color, size);
-        if let Some(pi) = asset.joint_parents.get(ji).and_then(|p| *p) {
-            if pi < joint_count {
-                let a = entity_model.transform_point3(joint_positions[pi]);
-                push_line(verts, a, wp, line_color);
-            }
+        if let Some(pi) = asset.joint_parents.get(ji).and_then(|p| *p)
+            && pi < joint_count
+        {
+            let a = entity_model.transform_point3(joint_positions[pi]);
+            push_line(verts, a, wp, line_color);
         }
     }
 }

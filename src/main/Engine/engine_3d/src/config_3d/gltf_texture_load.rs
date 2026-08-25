@@ -20,9 +20,7 @@ pub fn peek_encoded_dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
                 continue;
             }
             let marker = bytes[i + 1];
-            if (0xC0..=0xC3).contains(&marker)
-                || (0xC5..=0xC7).contains(&marker)
-                || marker == 0xC9
+            if (0xC0..=0xC3).contains(&marker) || (0xC5..=0xC7).contains(&marker) || marker == 0xC9
             {
                 if i + 9 >= bytes.len() {
                     break;
@@ -57,16 +55,13 @@ pub(crate) fn gltf_image_search_label(image: gltf::Image) -> String {
             parts.push(trimmed.to_lowercase());
         }
     }
-    match image.source() {
-        Source::Uri { uri, .. } => {
-            let stem = Path::new(uri)
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or(uri);
-            parts.push(stem.to_lowercase());
-            parts.push(uri.to_lowercase());
-        }
-        _ => {}
+    if let Source::Uri { uri, .. } = image.source() {
+        let stem = Path::new(uri)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or(uri);
+        parts.push(stem.to_lowercase());
+        parts.push(uri.to_lowercase());
     }
     parts.join(" ")
 }
@@ -140,11 +135,10 @@ pub(crate) fn token_matches_label(token: &str, label: &str) -> bool {
     if label == token {
         return true;
     }
-    if label.starts_with(token) {
-        let rest = &label[token.len()..];
-        if rest.is_empty() || rest.starts_with(|c: char| !c.is_alphanumeric()) {
-            return true;
-        }
+    if let Some(rest) = label.strip_prefix(token)
+        && (rest.is_empty() || rest.starts_with(|c: char| !c.is_alphanumeric()))
+    {
+        return true;
     }
     for pat in [
         format!("{token}_"),
@@ -203,10 +197,10 @@ pub(crate) fn discover_material_image_indices(
     let material_count = doc.materials().len();
     let mut indices: HashSet<u32> = HashSet::new();
 
-    if let Some(mat) = doc.materials().nth(material_index) {
-        if let Some(info) = mat.pbr_metallic_roughness().base_color_texture() {
-            indices.insert(info.texture().source().index() as u32);
-        }
+    if let Some(mat) = doc.materials().nth(material_index)
+        && let Some(info) = mat.pbr_metallic_roughness().base_color_texture()
+    {
+        indices.insert(info.texture().source().index() as u32);
     }
 
     for (other_idx, other) in doc.materials().enumerate() {
@@ -220,10 +214,10 @@ pub(crate) fn discover_material_image_indices(
     }
 
     for &(idx, _, _) in all_variants {
-        if let Some(label) = image_labels.get(&idx) {
-            if material_name_matches_image_label(mat_name, label) {
-                indices.insert(idx);
-            }
+        if let Some(label) = image_labels.get(&idx)
+            && material_name_matches_image_label(mat_name, label)
+        {
+            indices.insert(idx);
         }
     }
 

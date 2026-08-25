@@ -17,13 +17,8 @@ impl SceneTarget {
         let sampler = linear_sampler(device, "scene-blit");
         let blit_bgl = blit_bind_group_layout(device);
         let blit_shader = device.create_shader_module(wgpu::include_wgsl!("scene_blit.wgsl"));
-        let blit_pipeline = build_fullscreen_pipeline(
-            device,
-            &blit_bgl,
-            &blit_shader,
-            "scene-blit",
-            color_format,
-        );
+        let blit_pipeline =
+            build_fullscreen_pipeline(device, &blit_bgl, &blit_shader, "scene-blit", color_format);
         Self {
             scene_color_view,
             _scene_color_texture: scene_color_texture,
@@ -37,7 +32,13 @@ impl SceneTarget {
         &self.scene_color_view
     }
 
-    pub fn resize(&mut self, device: &Device, color_format: TextureFormat, width: u32, height: u32) {
+    pub fn resize(
+        &mut self,
+        device: &Device,
+        color_format: TextureFormat,
+        width: u32,
+        height: u32,
+    ) {
         let (scene_color_texture, scene_color_view) =
             create_texture(device, color_format, width, height, "scene-color");
         self._scene_color_texture = scene_color_texture;

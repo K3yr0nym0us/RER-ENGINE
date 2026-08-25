@@ -6,12 +6,12 @@ use crate::config_3d::{is_fbx_model_path, is_gltf_model_path};
 use crate::config_compat::ActiveTool;
 use crate::ecs::{EntityId, MeshComponent, NonSelectable, Transform};
 use crate::engine::State;
-use crate::entity_save_meta::EntitySaveMeta;
-use crate::ipc::{
-    send_event, BlueprintPlacementMeta, EngineEvent, SaveAnimationSnapshot, SaveScriptSnapshot,
-};
 use crate::engine::entity_restore::{
     apply_entity_animations_snapshots, apply_entity_scripts_snapshots,
+};
+use crate::entity_save_meta::EntitySaveMeta;
+use crate::ipc::{
+    BlueprintPlacementMeta, EngineEvent, SaveAnimationSnapshot, SaveScriptSnapshot, send_event,
 };
 use crate::mesh;
 use rer_engine_shared::editor_defaults::entity_label_for_category;
@@ -69,7 +69,8 @@ impl QuickBuildBlueprint {
             animations: meta.animations.clone(),
         };
         if bp.entity_category.is_none() {
-            bp.entity_category = infer_category_from_template(&template_name, meta.category.as_deref());
+            bp.entity_category =
+                infer_category_from_template(&template_name, meta.category.as_deref());
         }
         let is_environment = bp.entity_category.as_deref() == Some("environment");
         if is_environment {
@@ -81,15 +82,14 @@ impl QuickBuildBlueprint {
     }
 }
 
-fn infer_category_from_template(
-    template_name: &str,
-    category: Option<&str>,
-) -> Option<String> {
+fn infer_category_from_template(template_name: &str, category: Option<&str>) -> Option<String> {
     category
         .and_then(|c| crate::ipc::normalize_placement_entity_category(Some(c)))
         .or_else(|| {
-            rer_engine_shared::editor_defaults::infer_entity_category_from_numbered_name(template_name)
-                .and_then(|c| crate::ipc::normalize_placement_entity_category(Some(c)))
+            rer_engine_shared::editor_defaults::infer_entity_category_from_numbered_name(
+                template_name,
+            )
+            .and_then(|c| crate::ipc::normalize_placement_entity_category(Some(c)))
         })
 }
 
@@ -99,9 +99,9 @@ fn is_model_file_path(path: &str) -> bool {
 
 /// Categoría IPC para nombrado/físicas (manifest `environment` | `object` | `character`).
 fn resolve_quick_build_entity_category(bp: &QuickBuildBlueprint) -> Option<String> {
-    bp.entity_category.clone().or_else(|| {
-        infer_category_from_template(&bp.template_name, bp.category.as_deref())
-    })
+    bp.entity_category
+        .clone()
+        .or_else(|| infer_category_from_template(&bp.template_name, bp.category.as_deref()))
 }
 
 fn apply_blueprint_instance_metadata(state: &mut State, id: EntityId, bp: &QuickBuildBlueprint) {
@@ -195,12 +195,16 @@ impl State {
         Some((ray_origin, world_dir))
     }
 
-    pub(crate) fn raycast_placement_point(&mut self, pixel_x: f32, pixel_y: f32) -> Option<[f32; 3]> {
+    pub(crate) fn raycast_placement_point(
+        &mut self,
+        pixel_x: f32,
+        pixel_y: f32,
+    ) -> Option<[f32; 3]> {
         let (origin, dir) = self.viewport_ray(pixel_x, pixel_y)?;
 
-        if let Some(dist) = self
-            .physics
-            .raycast_first_hit_distance(origin, dir, PLACEMENT_RAY_MAX, &[])
+        if let Some(dist) =
+            self.physics
+                .raycast_first_hit_distance(origin, dir, PLACEMENT_RAY_MAX, &[])
         {
             let hit = origin + dir * dist;
             return Some(hit.to_array());
@@ -289,13 +293,13 @@ impl State {
             *cursor_world = Some(target);
         }
 
-        if let Some(ghost_id) = self.quick_build_ghost_id {
-            if let Some(t) = self.world.get_mut::<Transform>(ghost_id) {
-                if let Some(scale) = scale {
-                    t.scale = Vec3::new(scale[0], scale[1], scale[2]);
-                }
-                t.position = Vec3::new(target[0], target[1], target[2]);
+        if let Some(ghost_id) = self.quick_build_ghost_id
+            && let Some(t) = self.world.get_mut::<Transform>(ghost_id)
+        {
+            if let Some(scale) = scale {
+                t.scale = Vec3::new(scale[0], scale[1], scale[2]);
             }
+            t.position = Vec3::new(target[0], target[1], target[2]);
         }
     }
 
@@ -346,7 +350,6 @@ impl State {
             other => {
                 log::warn!("[quick_build] kind no soportado en 3D: {other}");
             }
-
         }
         true
     }
@@ -391,14 +394,9 @@ impl State {
             .first()
             .copied()?;
         let bp = self.quick_build_blueprint.clone();
-        let rotation = bp
-            .as_ref()
-            .map(|b| b.rotation)
-            .unwrap_or(DEFAULT_ROTATION);
+        let rotation = bp.as_ref().map(|b| b.rotation).unwrap_or(DEFAULT_ROTATION);
         let kind = "model".to_string();
-        let entity_category = bp
-            .as_ref()
-            .and_then(resolve_quick_build_entity_category);
+        let entity_category = bp.as_ref().and_then(resolve_quick_build_entity_category);
         let is_environment = entity_category.as_deref() == Some("environment");
         let default_label = entity_label_for_category(entity_category.as_deref());
         // Instancias: nombre nuevo por categoría (Environment_05, Object_03, …), no el de la plantilla.
@@ -446,10 +444,7 @@ impl State {
         Some(id)
     }
 
-    pub(crate) fn place_quick_build_at_cursor(
-        &mut self,
-        pixels: Option<(f32, f32)>,
-    ) -> bool {
+    pub(crate) fn place_quick_build_at_cursor(&mut self, pixels: Option<(f32, f32)>) -> bool {
         if !matches!(self.active_tool, ActiveTool::QuickBuildPlace { .. }) {
             return false;
         }
@@ -492,7 +487,12 @@ impl State {
     }
 
     /// Instancia un modelo 3D como una sola entidad (primera malla del archivo).
-    pub(crate) fn load_model_single(&mut self, path: &str, entity_category: Option<&str>, kind: &str) {
+    pub(crate) fn load_model_single(
+        &mut self,
+        path: &str,
+        entity_category: Option<&str>,
+        kind: &str,
+    ) {
         if self.queue_load_model_if_preloading(path, entity_category, true, kind) {
             return;
         }

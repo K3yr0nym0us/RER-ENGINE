@@ -85,7 +85,7 @@ const UiScreensAccordion = ({
 			setUiNameDraft(editingScreen.name);
 			setIsEditingUiName(false);
 		}
-	}, [editingScreen?.id, editingScreen?.name]);
+	}, [editingScreen]);
 
 	useEffect(() => {
 		if (scope === 'player') {

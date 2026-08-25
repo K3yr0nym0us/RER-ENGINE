@@ -5,10 +5,10 @@ use glam::{Quat, Vec3};
 use crate::config_3d::entity_attachments::{AttachmentAnchor, EntityAttachmentLocal};
 use crate::config_3d::entity_sockets::{EntitySocket, EntitySocketSnapshot};
 use crate::ecs::{EntityId, Transform};
-use crate::ipc::{send_event, EngineEvent};
+use crate::ipc::{EngineEvent, send_event};
 
-use super::types::UndoAction;
 use super::State;
+use super::types::UndoAction;
 
 impl State {
     pub(crate) fn push_undo_entity_socket_created(
@@ -20,10 +20,8 @@ impl State {
             return;
         }
         self.redo_stack.clear();
-        self.undo_stack.push(UndoAction::RemoveEntitySocket {
-            entity_id,
-            socket,
-        });
+        self.undo_stack
+            .push(UndoAction::RemoveEntitySocket { entity_id, socket });
         self.sync_editor_scenes_undo_dirty_to_renderer();
     }
 

@@ -2,11 +2,11 @@
 
 use bytemuck::{Pod, Zeroable};
 
+use super::tlas::{MAX_SKINNED_RT_INSTANCES, MAX_STATIC_RT_INSTANCES, RtInstanceDesc};
 use crate::config_3d::model_animation::GpuSkinnedMeshEntry;
 use crate::ecs::{MeshComponent, SurfacePbr};
 use crate::engine::State;
 use crate::mesh::Mesh;
-use super::tlas::{RtInstanceDesc, MAX_SKINNED_RT_INSTANCES, MAX_STATIC_RT_INSTANCES};
 
 pub const MAX_RT_MATERIALS: usize = MAX_STATIC_RT_INSTANCES + MAX_SKINNED_RT_INSTANCES;
 
@@ -31,18 +31,24 @@ impl RtInstanceMaterialGpu {
         probe_layer: i32,
         albedo_rgb: [f32; 3],
     ) -> Self {
-        let (roughness, metallic, ior, dielectric) = if let Some(pbr) = state.world.get::<SurfacePbr>(entity_id) {
-            let dielectric = pbr.ior > 1.0;
-            (pbr.roughness, pbr.metallic, pbr.ior.max(0.0), dielectric)
-        } else {
-            (0.5, 0.0, 0.0, false)
-        };
+        let (roughness, metallic, ior, dielectric) =
+            if let Some(pbr) = state.world.get::<SurfacePbr>(entity_id) {
+                let dielectric = pbr.ior > 1.0;
+                (pbr.roughness, pbr.metallic, pbr.ior.max(0.0), dielectric)
+            } else {
+                (0.5, 0.0, 0.0, false)
+            };
         let mut flags = 0u32;
         if dielectric {
             flags |= RT_MAT_FLAG_DIELECTRIC;
         }
         Self {
-            albedo: [albedo_rgb[0], albedo_rgb[1], albedo_rgb[2], f32::from_bits(flags)],
+            albedo: [
+                albedo_rgb[0],
+                albedo_rgb[1],
+                albedo_rgb[2],
+                f32::from_bits(flags),
+            ],
             pbr: [
                 roughness,
                 metallic,

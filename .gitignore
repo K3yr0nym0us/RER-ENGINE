@@ -1,10 +1,35 @@
+# Desarrollo
+dev/
+
 # Rust
 src/main/Engine/target/
+src/main/Engine/_sz.exe
+src/main/Engine/_sz.pdb
+src/main/Engine/_size_check.pdb
+src/main/Engine/*.pdb
+src/main/Engine/*.exe
 
 # Node / Electron
 node_modules/
 out/
 dist/
+coverage/
+.eslintcache
+.scannerwork/
+
+# Quality / tooling local reports (repo root only — never commit)
+/*-out.txt
+/*-err.txt
+/*-report.txt
+/clippy-*.txt
+/cargo-*.txt
+/audit-*.txt
+/quality-*.txt
+/eslint-report.json
+/eslint-errors-flat.json
+/lint-report.txt
+/typecheck-report.txt
+/clippy-report.txt
 
 # yarn
 .yarn/cache
@@ -27,8 +52,3 @@ Thumbs.db
 
 # IA
 AGENTS.md
-.claude
-.cursor
-
-# Projects
-vampire_2d.save

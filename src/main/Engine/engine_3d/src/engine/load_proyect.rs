@@ -5,7 +5,13 @@ use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 
-use crate::ipc::{send_event, send_load_progress, send_project_load_3d_complete_event, send_project_loaded_3d_event, AnimScriptData, AnimationFrameData, ControlBindingsData, ControlScriptData, EngineCommand, EngineCommand3dOnly, EngineCommandCommon, EngineEvent, EntityRestorePhysics, EntityRestoreTransform, ImportSceneSprite, ProjectLoaded3dEvent, ProjectLoaded3dSceneTab, ProjectLoaded3dWorld};
+use crate::ipc::{
+    AnimScriptData, AnimationFrameData, ControlBindingsData, ControlScriptData, EngineCommand,
+    EngineCommand3dOnly, EngineCommandCommon, EngineEvent, EntityRestorePhysics,
+    EntityRestoreTransform, ImportSceneSprite, ProjectLoaded3dEvent, ProjectLoaded3dSceneTab,
+    ProjectLoaded3dWorld, send_event, send_load_progress, send_project_load_3d_complete_event,
+    send_project_loaded_3d_event,
+};
 
 use super::State;
 use crate::assets::registry::{relative_rerasset_manifest_path, resolve_manifest_asset_path};
@@ -354,7 +360,11 @@ fn file_size_label(path: &Path) -> String {
 }
 
 fn log_load_manifest_summary(project: &ProjectSaveData, extract_dir: &Path) {
-    let model_count = project.resources.as_ref().map(|r| r.models.len()).unwrap_or(0);
+    let model_count = project
+        .resources
+        .as_ref()
+        .map(|r| r.models.len())
+        .unwrap_or(0);
     log::info!(
         "[load-pack] v{} {} {} | {} modelos, {} escenas, {} entidades | {}",
         project.version,
@@ -399,10 +409,7 @@ impl State {
         match load_project_from_extract_dir(&path) {
             Ok(mut project) => {
                 if project.r#type != "3D" {
-                    log::warn!(
-                        "tipo '{}' ignorado en binario 3D",
-                        project.r#type
-                    );
+                    log::warn!("tipo '{}' ignorado en binario 3D", project.r#type);
                     return;
                 }
                 let extract_dir = PathBuf::from(&path);
@@ -433,7 +440,8 @@ pub(crate) fn load_project_from_extract_dir(extract_path: &str) -> Result<Projec
     let extract_dir = Path::new(extract_path);
     if extract_dir.is_file() {
         return Err(
-            "se esperaba directorio extraído, no archivo .save (Electron ya descomprimió)".to_string(),
+            "se esperaba directorio extraído, no archivo .save (Electron ya descomprimió)"
+                .to_string(),
         );
     }
     if !extract_dir.is_dir() {
@@ -456,10 +464,7 @@ pub(crate) fn load_project_from_extract_dir(extract_path: &str) -> Result<Projec
 
 fn entity_path_marker(p: &str) -> Option<&'static str> {
     let marker = p.split(['/', '\\']).next_back().unwrap_or(p);
-    ENTITY_MARKERS
-        .iter()
-        .copied()
-        .find(|m| *m == marker)
+    ENTITY_MARKERS.iter().copied().find(|m| *m == marker)
 }
 
 fn is_editor_box_path(p: &str) -> bool {
@@ -484,11 +489,7 @@ fn is_model_3d_path(p: &str) -> bool {
 }
 
 fn is_3d_model_file_entity(entity: &SavedEntity3D) -> bool {
-    if entity
-        .model_id
-        .as_deref()
-        .is_some_and(|id| !id.is_empty())
-    {
+    if entity.model_id.as_deref().is_some_and(|id| !id.is_empty()) {
         return entity_path_marker(&entity.model).is_none()
             && !matches!(entity.category.as_str(), "sun" | "ground" | "player");
     }
@@ -501,23 +502,23 @@ fn is_3d_model_file_entity(entity: &SavedEntity3D) -> bool {
 
 /// Clave GPU (`model_id`) para spawn / caché al abrir `.save`.
 fn entity_model_cache_lookup(state: &State, entity: &SavedEntity3D) -> Result<String, String> {
-    if let Some(id) = entity.model_id.as_deref().filter(|s| !s.is_empty()) {
-        if state
+    if let Some(id) = entity.model_id.as_deref().filter(|s| !s.is_empty())
+        && state
             .imported_model_registry
             .get(id)
             .is_some_and(|e| e.state == AssetState::Ready)
-        {
-            return Ok(id.to_string());
-        }
+    {
+        return Ok(id.to_string());
     }
-    if let Some(id) = state.imported_model_registry.model_id_for_path(&entity.model) {
-        if state
+    if let Some(id) = state
+        .imported_model_registry
+        .model_id_for_path(&entity.model)
+        && state
             .imported_model_registry
             .get(&id)
             .is_some_and(|e| e.state == AssetState::Ready)
-        {
-            return Ok(id);
-        }
+    {
+        return Ok(id);
     }
     let basename = path_basename_lower(&entity.model);
     for entry in state.imported_model_registry.iter() {
@@ -536,7 +537,9 @@ fn entity_model_cache_lookup(state: &State, entity: &SavedEntity3D) -> Result<St
 
 fn entity_library_category(category: &str) -> Option<String> {
     match category {
-        "environment" | "object" | "character" | "weapon" | "projectile" => Some(category.to_string()),
+        "environment" | "object" | "character" | "weapon" | "projectile" => {
+            Some(category.to_string())
+        }
         _ => None,
     }
 }
@@ -585,11 +588,7 @@ fn source_path_for_imported_model(
     extract_dir: &Path,
 ) -> String {
     for scene in &project.scenes {
-        for entity in scene
-            .entities
-            .iter()
-            .chain(scene.player.iter())
-        {
+        for entity in scene.entities.iter().chain(scene.player.iter()) {
             if entity.model_id.as_deref() == Some(model_id) && !entity.model.is_empty() {
                 if is_imported_model_id(&entity.model) {
                     continue;
@@ -654,7 +653,10 @@ fn resolve_script_source(source: &str, extracted_dir: &Path) -> String {
     fs::read_to_string(&abs).unwrap_or_default()
 }
 
-fn resolve_scripts(scripts: &Option<Vec<SavedScript>>, extracted_dir: &Path) -> Option<Vec<SavedScript>> {
+fn resolve_scripts(
+    scripts: &Option<Vec<SavedScript>>,
+    extracted_dir: &Path,
+) -> Option<Vec<SavedScript>> {
     scripts.as_ref().map(|list| {
         list.iter()
             .map(|s| SavedScript {
@@ -712,9 +714,7 @@ fn resolve_player_entity(
     player: &Option<SavedEntity3D>,
     extracted_dir: &Path,
 ) -> Option<SavedEntity3D> {
-    player
-        .as_ref()
-        .map(|p| resolve_entity_3d(p, extracted_dir))
+    player.as_ref().map(|p| resolve_entity_3d(p, extracted_dir))
 }
 
 fn resolve_loaded_paths(project: &mut ProjectSaveData, extracted_dir: &Path) {
@@ -949,8 +949,6 @@ fn build_generic_pending_restore(
             Some(id.to_string())
         } else if is_imported_model_id(&entity.model) {
             Some(entity.model.clone())
-        } else if is_imported_model_id(marker_model) {
-            Some(marker_model.to_string())
         } else {
             Some(marker_model.to_string())
         }
@@ -970,9 +968,7 @@ fn build_generic_pending_restore(
         scripts: bp
             .and_then(|b| b.scripts.clone())
             .or_else(|| entity.scripts.clone()),
-        control_bindings: map_control_bindings(
-            entity.controls.as_ref(),
-        ),
+        control_bindings: map_control_bindings(entity.controls.as_ref()),
         blueprint_id: entity.blueprint_id.clone(),
         entity_category: entity_library_category(&entity.category),
         visual_model_path: visual,
@@ -1067,10 +1063,12 @@ fn apply_entity_animations(state: &mut State, id: u32, animations: Option<&[Save
             is_cancelable: anim.is_cancelable.unwrap_or(true),
         }));
         if anim.is_default.unwrap_or(false) {
-            state.handle_command(EngineCommand::Common(EngineCommandCommon::SetDefaultAnimation {
-                id,
-                name: anim.name.clone(),
-            }));
+            state.handle_command(EngineCommand::Common(
+                EngineCommandCommon::SetDefaultAnimation {
+                    id,
+                    name: anim.name.clone(),
+                },
+            ));
         }
     }
 }
@@ -1128,19 +1126,16 @@ fn ensure_model_cached(state: &mut State, path: &str) -> bool {
 }
 
 /// Modelos 3D que la escena instancia al abrir el `.save` (vía `resources.models`).
-fn collect_scene_required_model_ids(
-    state: &State,
-    view: &ActiveSaveView,
-) -> Vec<String> {
+fn collect_scene_required_model_ids(state: &State, view: &ActiveSaveView) -> Vec<String> {
     let mut ids: Vec<String> = Vec::new();
     let mut push = |entity: &SavedEntity3D| {
         if !is_3d_model_file_entity(entity) {
             return;
         }
-        if let Ok(id) = entity_model_cache_lookup(state, entity) {
-            if !ids.iter().any(|existing| existing == &id) {
-                ids.push(id);
-            }
+        if let Ok(id) = entity_model_cache_lookup(state, entity)
+            && !ids.iter().any(|existing| existing == &id)
+        {
+            ids.push(id);
         }
     };
     for entity in &view.entities {
@@ -1155,7 +1150,7 @@ fn collect_scene_required_model_ids(
 fn log_load_step(total: Instant, step: &mut Instant, message: &str) {
     let step_ms = step.elapsed().as_millis() as u64;
     let total_ms = total.elapsed().as_millis() as u64;
-    
+
     send_load_progress(message, Some(step_ms), Some(total_ms));
     *step = Instant::now();
 }
@@ -1174,10 +1169,12 @@ fn load_project_asset_stores(state: &mut State, project: &ProjectSaveData) {
         }));
     }
     for bg in &project.backgrounds {
-        state.handle_command(EngineCommand::Common(EngineCommandCommon::LoadBackgroundAsset {
-            path: bg.path.clone(),
-            name: bg.name.clone(),
-        }));
+        state.handle_command(EngineCommand::Common(
+            EngineCommandCommon::LoadBackgroundAsset {
+                path: bg.path.clone(),
+                name: bg.name.clone(),
+            },
+        ));
     }
     for img in &project.hud_images {
         state.handle_command(EngineCommand::Common(EngineCommandCommon::LoadHudImage {
@@ -1217,7 +1214,6 @@ fn restore_player_from_manifest(
     if let Some(ref model_id) = cache_key {
         match state.install_play_character_visual_from_path(id, model_id) {
             Ok(asset_key) => {
-                
                 state.emit_entity_model_replaced_for_play_character(id, &asset_key);
             }
             Err(e) => log::error!("[restore] mesh jugador: {e}"),
@@ -1356,15 +1352,23 @@ fn apply_loaded_proyect_3d_with_scene(
         view.sceneName,
         view.entities.len()
     );
-    
+
     send_load_progress(&open_msg, None, None);
     if forced_scene.is_none() && state.mount_save_on_empty_world {
         state.mount_save_on_empty_world = false;
-        log_load_step(load_started_at, &mut step_started, "Montando escena desde .save");
+        log_load_step(
+            load_started_at,
+            &mut step_started,
+            "Montando escena desde .save",
+        );
     } else {
         state.clear_scene_entities_for_save_load();
         state.apply_empty_3d_editor_defaults();
-        log_load_step(load_started_at, &mut step_started, "Escena anterior vaciada, leyendo mundo");
+        log_load_step(
+            load_started_at,
+            &mut step_started,
+            "Escena anterior vaciada, leyendo mundo",
+        );
     }
     let game_style = project.gameStyle.as_str();
     let blueprints = &project.blueprints;
@@ -1372,45 +1376,46 @@ fn apply_loaded_proyect_3d_with_scene(
     let saved_player = view.player.clone();
     let saved_config_camera = view.config_camera.clone();
 
-    let light_ambient = view
-        .world
-        .lightAmbient
-        .unwrap_or(DEFAULT_LIGHT_AMBIENT);
-    let light_intensity = view
-        .world
-        .lightIntensity
-        .unwrap_or(DEFAULT_LIGHT_INTENSITY);
-    let shadow_darkness = view
-        .world
-        .shadowDarkness
-        .unwrap_or(DEFAULT_SHADOW_DARKNESS);
+    let light_ambient = view.world.lightAmbient.unwrap_or(DEFAULT_LIGHT_AMBIENT);
+    let light_intensity = view.world.lightIntensity.unwrap_or(DEFAULT_LIGHT_INTENSITY);
+    let shadow_darkness = view.world.shadowDarkness.unwrap_or(DEFAULT_SHADOW_DARKNESS);
 
     let depth = view.world.worldDepth.unwrap_or(50.0);
     let radius = view
         .world
         .worldRadius
         .unwrap_or_else(|| view.world.worldWidth.min(view.world.worldHeight).min(depth) * 0.5);
-    state.handle_command(EngineCommand::Only3d(EngineCommand3dOnly::SetWorldRadius { radius }));
+    state.handle_command(EngineCommand::Only3d(EngineCommand3dOnly::SetWorldRadius {
+        radius,
+    }));
     state.handle_command(EngineCommand::Common(EngineCommandCommon::SetGridVisible {
         visible: view.world.gridVisible,
     }));
-    state.handle_command(EngineCommand::Common(EngineCommandCommon::SetGridCellSize {
-        size: view.world.gridCellSize,
-    }));
+    state.handle_command(EngineCommand::Common(
+        EngineCommandCommon::SetGridCellSize {
+            size: view.world.gridCellSize,
+        },
+    ));
     let target_fps = if view.world.targetFps.is_finite() && view.world.targetFps > 0.0 {
         view.world.targetFps as u64
     } else {
         60
     };
-    state.handle_command(EngineCommand::Common(EngineCommandCommon::SetTargetFps { fps: target_fps }));
-    if let Some(gravity) = view.world.gravity {
-        state.handle_command(EngineCommand::Common(EngineCommandCommon::SetGravity { gravity }));
-    }
-    state.handle_command(EngineCommand::Only3d(EngineCommand3dOnly::SetDirectionalLight {
-        ambient: Some(light_ambient),
-        intensity: Some(light_intensity),
-        shadow_darkness: Some(shadow_darkness),
+    state.handle_command(EngineCommand::Common(EngineCommandCommon::SetTargetFps {
+        fps: target_fps,
     }));
+    if let Some(gravity) = view.world.gravity {
+        state.handle_command(EngineCommand::Common(EngineCommandCommon::SetGravity {
+            gravity,
+        }));
+    }
+    state.handle_command(EngineCommand::Only3d(
+        EngineCommand3dOnly::SetDirectionalLight {
+            ambient: Some(light_ambient),
+            intensity: Some(light_intensity),
+            shadow_darkness: Some(shadow_darkness),
+        },
+    ));
     crate::config_3d::entity_textures::apply_graphics_settings_from_world_wire(
         state,
         view.world.graphicsTextureTier.as_deref(),
@@ -1452,13 +1457,16 @@ fn apply_loaded_proyect_3d_with_scene(
     });
 
     load_project_asset_stores(state, project);
-    log_load_step(load_started_at, &mut step_started, "Sonidos y fondos registrados");
+    log_load_step(
+        load_started_at,
+        &mut step_started,
+        "Sonidos y fondos registrados",
+    );
     if let Some(resources) = &project.resources {
         let extract_dir = std::env::var("RER_PROJECT_EXTRACT_DIR").unwrap_or_default();
         let extract_path = std::path::Path::new(extract_dir.as_str());
         for res in &resources.models {
-            let asset_disk =
-                resolve_manifest_asset_path(&res.asset, extract_path, &res.id);
+            let asset_disk = resolve_manifest_asset_path(&res.asset, extract_path, &res.id);
             if !asset_disk.is_file() {
                 log::error!(
                     "[load] .rerasset no encontrado: {} (model_id={})",
@@ -1481,8 +1489,9 @@ fn apply_loaded_proyect_3d_with_scene(
             );
             let source_path = source_path_for_imported_model(project, &res.id, extract_path);
             state.cache_rerasset_material_tex_map(&res.id, &asset_disk);
-            state.imported_model_registry.insert(
-                crate::assets::ImportedModelEntry {
+            state
+                .imported_model_registry
+                .insert(crate::assets::ImportedModelEntry {
                     model_id: res.id.clone(),
                     name: res.name.clone(),
                     category: crate::ipc::normalize_model_library_category(Some(
@@ -1494,8 +1503,7 @@ fn apply_loaded_proyect_3d_with_scene(
                     source_size: 0,
                     source_mtime_secs: 0,
                     importer_version: res.importer_version,
-                },
-            );
+                });
             state
                 .imported_model_registry
                 .link_imported_model_aliases(&res.id, &source_path);
@@ -1517,13 +1525,8 @@ fn apply_loaded_proyect_3d_with_scene(
                 },
             );
         }
-        for entity in view
-            .entities
-            .iter()
-            .chain(view.player.iter())
-        {
+        for entity in view.entities.iter().chain(view.player.iter()) {
             if let Ok(model_id) = entity_model_cache_lookup(state, entity) {
-                
                 state
                     .imported_model_registry
                     .link_imported_model_aliases(&model_id, &entity.model);
@@ -1557,7 +1560,6 @@ fn apply_loaded_proyect_3d_with_scene(
                 );
             }
             _ if is_collider_path(&entity.model) => {
-                
                 if let Some(id) = state.restore_collider_plane_from_save(
                     &entity.name,
                     entity.position,
@@ -1569,7 +1571,6 @@ fn apply_loaded_proyect_3d_with_scene(
                 }
             }
             _ if is_execution_area_path(&entity.model) => {
-                
                 if let Some(id) = state.restore_trigger_plane_from_save(
                     &entity.name,
                     entity.position,
@@ -1581,7 +1582,6 @@ fn apply_loaded_proyect_3d_with_scene(
                 }
             }
             _ if is_editor_box_path(&entity.model) => {
-                
                 state.spawn_editor_box(&entity.name, entity.position, entity.scale);
                 if let Some(id) = state.scenario_entities.last().copied() {
                     apply_full_entity_restore(state, id, &pending, "[EditorBox]", true, false);
@@ -1605,10 +1605,7 @@ fn apply_loaded_proyect_3d_with_scene(
                     .into_iter()
                     .fold(f32::INFINITY, f32::min)
                     .max(0.15);
-                let physics_type = entity
-                    .physics_type
-                    .as_deref()
-                    .unwrap_or("dynamic");
+                let physics_type = entity.physics_type.as_deref().unwrap_or("dynamic");
                 let id = state.spawn_physics_ball(
                     &entity.name,
                     entity.position,
@@ -1618,7 +1615,8 @@ fn apply_loaded_proyect_3d_with_scene(
                 apply_full_entity_restore(state, id, &pending, "[Ball]", true, false);
             }
             "environment" | "object" | "character" | "weapon" | "projectile"
-                if is_3d_model_file_entity(entity) => {
+                if is_3d_model_file_entity(entity) =>
+            {
                 let model_key = match entity_model_cache_lookup(state, entity) {
                     Ok(id) => id,
                     Err(e) => {
@@ -1660,11 +1658,13 @@ fn apply_loaded_proyect_3d_with_scene(
     log_load_step(
         load_started_at,
         &mut step_started,
-        &format!("Entidades del manifest procesadas ({})", view.entities.len()),
+        &format!(
+            "Entidades del manifest procesadas ({})",
+            view.entities.len()
+        ),
     );
 
     if burst_load_planned {
-        
         state.poll_and_advance_model_preloads(MODEL_GPU_PARTS_DURING_SAVE_LOAD);
 
         let queued_ids: Vec<String> = model_load_queue.iter().map(|(p, _)| p.clone()).collect();
@@ -1713,13 +1713,19 @@ fn apply_loaded_proyect_3d_with_scene(
     }
 
     if burst_load_planned {
-        log_load_step(load_started_at, &mut step_started, "Modelos 3D instanciados");
+        log_load_step(
+            load_started_at,
+            &mut step_started,
+            "Modelos 3D instanciados",
+        );
     }
 
-    if let (Some(player_entity), Some(id)) = (saved_player.as_ref(), state.play_character_entity) {
-        if let Some(bindings) = map_control_bindings(player_entity.controls.as_ref()) {
-            state.handle_command(crate::ipc::EngineCommand::Common(EngineCommandCommon::SetControlBindings { id, bindings }));
-        }
+    if let (Some(player_entity), Some(id)) = (saved_player.as_ref(), state.play_character_entity)
+        && let Some(bindings) = map_control_bindings(player_entity.controls.as_ref())
+    {
+        state.handle_command(crate::ipc::EngineCommand::Common(
+            EngineCommandCommon::SetControlBindings { id, bindings },
+        ));
     }
 
     for id in state.world.entities().to_vec() {
@@ -1753,10 +1759,10 @@ fn apply_loaded_proyect_3d_with_scene(
         })
         .collect();
     state.sync_player_ui_screens(&player_screens);
-    if let Some(scene) = forced_scene {
-        if is_3d_placeholder_saved_scene(scene) {
-            state.finalize_3d_placeholder_editor_scene();
-        }
+    if let Some(scene) = forced_scene
+        && is_3d_placeholder_saved_scene(scene)
+    {
+        state.finalize_3d_placeholder_editor_scene();
     }
     restore_entity_sockets_after_scene_load(state, &view);
     restore_entity_bone_physics_after_scene_load(state, &view);
@@ -1790,28 +1796,30 @@ fn collect_saved_entity_attachments(
             && entity.attach_local_rotation.is_some()
             && entity.attach_local_scale.is_some();
 
-        out.push(crate::config_3d::entity_attachments::SavedEntityAttachment {
-            entity_id: entity.id,
-            parent_id: if is_socket {
-                None
-            } else {
-                entity.attach_parent_id
+        out.push(
+            crate::config_3d::entity_attachments::SavedEntityAttachment {
+                entity_id: entity.id,
+                parent_id: if is_socket {
+                    None
+                } else {
+                    entity.attach_parent_id
+                },
+                attach_socket_host_id: if is_socket {
+                    entity.attach_socket_host_id
+                } else {
+                    None
+                },
+                attach_socket_name: if is_socket {
+                    entity.attach_socket_name.clone()
+                } else {
+                    None
+                },
+                local_position,
+                local_rotation,
+                child_world_scale,
+                recompute_locals: !locals_from_save,
             },
-            attach_socket_host_id: if is_socket {
-                entity.attach_socket_host_id
-            } else {
-                None
-            },
-            attach_socket_name: if is_socket {
-                entity.attach_socket_name.clone()
-            } else {
-                None
-            },
-            local_position,
-            local_rotation,
-            child_world_scale,
-            recompute_locals: !locals_from_save,
-        });
+        );
     };
     for entity in &view.entities {
         push(entity);
@@ -1856,31 +1864,30 @@ fn restore_entity_attachments_after_scene_load(state: &mut State, view: &ActiveS
     let mut saved = collect_saved_entity_attachments(view);
 
     // Si el id runtime del jugador ≠ id del manifest, remapear anclas de fusión/socket.
-    if let (Some(saved_player), Some(actual_player)) = (view.player.as_ref(), state.play_character_entity)
+    if let (Some(saved_player), Some(actual_player)) =
+        (view.player.as_ref(), state.play_character_entity)
+        && saved_player.id != actual_player
+        && saved_player.id != 0
     {
-        if saved_player.id != actual_player && saved_player.id != 0 {
-            let from = saved_player.id;
-            let to = actual_player;
-            let mut remapped = 0usize;
-            for entry in &mut saved {
-                if entry.parent_id == Some(from) {
-                    entry.parent_id = Some(to);
-                    remapped += 1;
-                }
-                if entry.attach_socket_host_id == Some(from) {
-                    entry.attach_socket_host_id = Some(to);
-                    remapped += 1;
-                }
-                if entry.entity_id == from {
-                    entry.entity_id = to;
-                    remapped += 1;
-                }
+        let from = saved_player.id;
+        let to = actual_player;
+        let mut remapped = 0usize;
+        for entry in &mut saved {
+            if entry.parent_id == Some(from) {
+                entry.parent_id = Some(to);
+                remapped += 1;
             }
-            if remapped > 0 {
-                log::warn!(
-                    "[Fusión] remap jugador {from} → {to} en {remapped} campo(s) de vínculo"
-                );
+            if entry.attach_socket_host_id == Some(from) {
+                entry.attach_socket_host_id = Some(to);
+                remapped += 1;
             }
+            if entry.entity_id == from {
+                entry.entity_id = to;
+                remapped += 1;
+            }
+        }
+        if remapped > 0 {
+            log::warn!("[Fusión] remap jugador {from} → {to} en {remapped} campo(s) de vínculo");
         }
     }
 
@@ -1898,14 +1905,8 @@ fn restore_entity_attachments_after_scene_load(state: &mut State, view: &ActiveS
 fn is_3d_placeholder_saved_scene(scene: &SavedScene) -> bool {
     scene.player.is_some()
         && scene.models.is_empty()
-        && scene
-            .entities
-            .iter()
-            .any(|e| e.category == "sun")
-        && scene
-            .entities
-            .iter()
-            .any(|e| e.category == "ground")
+        && scene.entities.iter().any(|e| e.category == "sun")
+        && scene.entities.iter().any(|e| e.category == "ground")
 }
 
 /// Lista de biblioteca para el editor desde `resources.models` (`path` = `model_id`).
@@ -1989,20 +1990,17 @@ fn send_project_loaded_3d(
             .graphicsTextureTier
             .clone()
             .or_else(|| Some("medium".to_string())),
-        textureDetailDistance: view.world.textureDetailDistance.or_else(|| {
-            Some(crate::config_3d::entity_textures::default_texture_detail_near_m())
-        }),
-        reflectionTier: view
+        textureDetailDistance: view
             .world
-            .reflectionTier
-            .clone()
-            .or_else(|| {
-                Some(
-                    crate::config_3d::reflection_graphics::DEFAULT_REFLECTION_TIER
-                        .wire()
-                        .to_string(),
-                )
-            }),
+            .textureDetailDistance
+            .or_else(|| Some(crate::config_3d::entity_textures::default_texture_detail_near_m())),
+        reflectionTier: view.world.reflectionTier.clone().or_else(|| {
+            Some(
+                crate::config_3d::reflection_graphics::DEFAULT_REFLECTION_TIER
+                    .wire()
+                    .to_string(),
+            )
+        }),
         reflectionRaytracing: view.world.reflectionRaytracing,
         reflectionProbes: view.world.reflectionProbes,
         shadowTier: view.world.shadowTier.clone().or_else(|| {
@@ -2219,12 +2217,13 @@ pub(crate) fn saved_scene_from_snapshot_payload(
                 camera_follow_mode: Some(follow.to_string()),
             }
         }),
-        config_editor_camera: p.config_editor_camera.as_ref().map(|c| {
-            SavedConfigEditorCamera {
+        config_editor_camera: p
+            .config_editor_camera
+            .as_ref()
+            .map(|c| SavedConfigEditorCamera {
                 position: c.position,
                 rotation: c.rotation,
-            }
-        }),
+            }),
         sprites: p
             .sprites
             .iter()

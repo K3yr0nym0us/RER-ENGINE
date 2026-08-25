@@ -1,0 +1,6 @@
+# Standard Rust formatting for the engine workspace.
+# Validate with: cargo fmt --all -- --check
+edition = "2024"
+use_field_init_shorthand = true
+use_try_shorthand = true
+newline_style = "Unix"

@@ -65,8 +65,7 @@ pub struct PlayerUiButton {
 
 impl PlayerUiButton {
     pub fn sync_height_for_viewport(&mut self, viewport_w: f32, viewport_h: f32) {
-        self.height =
-            ndc_height_for_width(self.width, self.source_aspect, viewport_w, viewport_h);
+        self.height = ndc_height_for_width(self.width, self.source_aspect, viewport_w, viewport_h);
     }
 }
 
@@ -248,41 +247,27 @@ pub fn apply_resize_locked_aspect(
         let h_from_w = ndc_height_for_width(cand_w, source_aspect, viewport_w, viewport_h);
         if w_from_h >= cand_w {
             cand_w = w_from_h.max(min_width);
-            cand_h = ndc_height_for_width(cand_w, source_aspect, viewport_w, viewport_h)
-                .max(min_height);
+            cand_h =
+                ndc_height_for_width(cand_w, source_aspect, viewport_w, viewport_h).max(min_height);
         } else {
             cand_h = h_from_w.max(min_height);
             cand_w = (cand_h * source_aspect / pixel_aspect).max(min_width);
-            cand_h = ndc_height_for_width(cand_w, source_aspect, viewport_w, viewport_h)
-                .max(min_height);
+            cand_h =
+                ndc_height_for_width(cand_w, source_aspect, viewport_w, viewport_h).max(min_height);
         }
     }
 
     let (x0, y0, x1, y1) = match handle {
-        PlayerUiResizeHandle::TopLeft => (
-            anchor_x - cand_w,
-            anchor_y,
-            anchor_x,
-            anchor_y + cand_h,
-        ),
-        PlayerUiResizeHandle::TopRight => (
-            anchor_x,
-            anchor_y,
-            anchor_x + cand_w,
-            anchor_y + cand_h,
-        ),
-        PlayerUiResizeHandle::BottomLeft => (
-            anchor_x - cand_w,
-            anchor_y - cand_h,
-            anchor_x,
-            anchor_y,
-        ),
-        PlayerUiResizeHandle::BottomRight => (
-            anchor_x,
-            anchor_y - cand_h,
-            anchor_x + cand_w,
-            anchor_y,
-        ),
+        PlayerUiResizeHandle::TopLeft => (anchor_x - cand_w, anchor_y, anchor_x, anchor_y + cand_h),
+        PlayerUiResizeHandle::TopRight => {
+            (anchor_x, anchor_y, anchor_x + cand_w, anchor_y + cand_h)
+        }
+        PlayerUiResizeHandle::BottomLeft => {
+            (anchor_x - cand_w, anchor_y - cand_h, anchor_x, anchor_y)
+        }
+        PlayerUiResizeHandle::BottomRight => {
+            (anchor_x, anchor_y - cand_h, anchor_x + cand_w, anchor_y)
+        }
     };
 
     rect.center_x = (x0 + x1) * 0.5;

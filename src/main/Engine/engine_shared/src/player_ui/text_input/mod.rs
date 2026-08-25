@@ -1,11 +1,13 @@
-﻿//! Macro: impl `State` para edición de texto HUD (parametrizado por motor).
+//! Macro: impl `State` para edición de texto HUD (parametrizado por motor).
 
-pub mod types;
 pub mod hit_test;
+pub mod types;
 
 pub use types::PlayerUiTextDrag;
 
 /// Genera el bloque `impl State` de edición HUD. `$pu` = módulo `player_ui` del motor; `$ipc` = módulo IPC.
+/// `use crate::engine::State` refers to the calling engine crate (2d/3d), not `engine_shared`.
+#[allow(clippy::crate_in_macro_def)]
 #[macro_export]
 macro_rules! impl_player_ui_text_input {
     ($pu:path, $ipc:path) => {

@@ -5,14 +5,14 @@ use std::collections::{HashMap, HashSet};
 use glam::{Mat4, Quat, Vec3};
 
 use crate::config_3d::entity_attachments::{
-    compute_local_attachment, world_transform_from_attachment, AttachmentAnchor,
-    EntityAttachmentLocal,
+    AttachmentAnchor, EntityAttachmentLocal, compute_local_attachment,
+    world_transform_from_attachment,
 };
 use crate::config_3d::model_animation::asset_joint_globals_with_clip;
 use crate::config_3d::model_asset::ModelAsset;
 use crate::ecs::{EntityId, Transform};
 use crate::engine::State;
-use crate::ipc::{send_event, EngineEvent};
+use crate::ipc::{EngineEvent, send_event};
 
 /// Punto de anclaje en un hueso (persistido en el host).
 #[derive(Clone, Debug, PartialEq)]
@@ -100,10 +100,7 @@ pub(crate) fn bone_world_transform(
     Some(transform_from_mat4(bone_mat))
 }
 
-pub(crate) fn socket_world_transform(
-    bone: &Transform,
-    socket: &EntitySocket,
-) -> Transform {
+pub(crate) fn socket_world_transform(bone: &Transform, socket: &EntitySocket) -> Transform {
     Transform {
         position: bone.position + bone.rotation * socket.local_position,
         rotation: (bone.rotation * socket.local_rotation).normalize(),
@@ -161,8 +158,9 @@ impl State {
         }
 
         let sockets = self.entity_sockets.entry(entity_id).or_default();
-        let created_new = if let Some(existing) =
-            sockets.iter_mut().find(|s| s.name.eq_ignore_ascii_case(&name))
+        let created_new = if let Some(existing) = sockets
+            .iter_mut()
+            .find(|s| s.name.eq_ignore_ascii_case(&name))
         {
             *existing = EntitySocket {
                 name: name.clone(),
@@ -255,15 +253,12 @@ impl State {
             return;
         }
 
-        let socket = self
-            .entity_sockets
-            .get(&host_id)
-            .and_then(|sockets| {
-                sockets
-                    .iter()
-                    .find(|s| s.name.eq_ignore_ascii_case(socket_name))
-                    .cloned()
-            });
+        let socket = self.entity_sockets.get(&host_id).and_then(|sockets| {
+            sockets
+                .iter()
+                .find(|s| s.name.eq_ignore_ascii_case(socket_name))
+                .cloned()
+        });
         let Some(socket) = socket else {
             send_event(&EngineEvent::Error {
                 message: format!("Socket no encontrado: {socket_name}"),

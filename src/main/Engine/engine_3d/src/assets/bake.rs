@@ -5,8 +5,8 @@ use std::path::Path;
 use std::sync::Arc;
 
 use rer_engine_shared::assets::{
-    BakeInput, BakeMeshPart, BakeSkinnedPart, MaterialDesc, RER_IMPORTER_VERSION, RtexData,
-    SourceExt, TextureFormat, CompressionType, write_rerasset_atomic,
+    BakeInput, BakeMeshPart, BakeSkinnedPart, CompressionType, MaterialDesc, RER_IMPORTER_VERSION,
+    RtexData, SourceExt, TextureFormat, write_rerasset_atomic,
 };
 
 use crate::config_3d::mesh_3d::CpuModelMeshPart;
@@ -137,8 +137,7 @@ pub fn build_bake_input(
 ) -> BakeInput {
     let (source_size, source_mtime_secs) = super::registry::source_fingerprint(source_path);
 
-    let (textures, materials) =
-        collect_textures_from_editor_and_play(editor_parts, play_parts);
+    let (textures, materials) = collect_textures_from_editor_and_play(editor_parts, play_parts);
 
     let editor_bake: Vec<BakeMeshPart> = editor_parts
         .iter()
@@ -206,12 +205,11 @@ pub fn build_bake_input(
     }
 }
 
-pub fn bake_to_rerasset(
-    rerasset_path: &Path,
-    input: &BakeInput,
-) -> Result<(), String> {
+pub fn bake_to_rerasset(rerasset_path: &Path, input: &BakeInput) -> Result<(), String> {
     write_rerasset_atomic(rerasset_path, input).map_err(|e| e.to_string())?;
-    let size = std::fs::metadata(rerasset_path).map(|m| m.len()).unwrap_or(0);
+    let size = std::fs::metadata(rerasset_path)
+        .map(|m| m.len())
+        .unwrap_or(0);
     let skinned = input.skinned_parts.as_ref().map(|p| p.len()).unwrap_or(0);
     let play = input.play_parts.as_ref().map(|p| p.len()).unwrap_or(0);
     log::info!(

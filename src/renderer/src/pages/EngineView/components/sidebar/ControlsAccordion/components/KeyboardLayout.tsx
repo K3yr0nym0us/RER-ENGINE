@@ -7,7 +7,7 @@ interface KeyboardLayoutProps {
 }
 
 export function KeyboardLayout({ bindings, onOpenScriptEditor }: KeyboardLayoutProps) {
-  const B = (k: string, wide?: boolean) => (
+  const renderKey = (k: string, wide?: boolean) => (
     <KeyBtn key={k} controlKey={k} bindings={bindings} onOpenScriptEditor={onOpenScriptEditor} wide={wide} />
   )
 
@@ -20,22 +20,22 @@ export function KeyboardLayout({ bindings, onOpenScriptEditor }: KeyboardLayoutP
           <hr className="ckb-section-hr" />
           <div className="ckb-keyboard-keys">
             <div className="ckb-row">
-              {['1','2','3','4','5','6','7','8','9','0'].map(k => B(k))}
+              {['1','2','3','4','5','6','7','8','9','0'].map(k => renderKey(k))}
             </div>
             <div className="ckb-row">
-              {['Q','W','E','R'].map(k => B(k))}
+              {['Q','W','E','R'].map(k => renderKey(k))}
             </div>
             <div className="ckb-row">
-              {['A','S','D','F'].map(k => B(k))}
+              {['A','S','D','F'].map(k => renderKey(k))}
             </div>
             <div className="ckb-row">
-              {['Z','X','C'].map(k => B(k))}
+              {['Z','X','C'].map(k => renderKey(k))}
             </div>
             <div className="ckb-row">
-              {B('SHIFT')}
-              {B('CTRL')}
-              {B('ALT')}
-              {B('SPACE', true)}
+              {renderKey('SHIFT')}
+              {renderKey('CTRL')}
+              {renderKey('ALT')}
+              {renderKey('SPACE', true)}
             </div>
           </div>
         </div>
@@ -46,7 +46,7 @@ export function KeyboardLayout({ bindings, onOpenScriptEditor }: KeyboardLayoutP
           <span className="ckb-section-title">Mouse</span>
           <hr className="ckb-section-hr" />
           <div className="ckb-mouse-keys">
-            {['MOUSE_LEFT','MOUSE_RIGHT','MOUSE_MIDDLE'].map(k => B(k))}
+            {['MOUSE_LEFT','MOUSE_RIGHT','MOUSE_MIDDLE'].map(k => renderKey(k))}
           </div>
         </div>
       </div>

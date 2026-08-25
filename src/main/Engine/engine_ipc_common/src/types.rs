@@ -32,13 +32,13 @@ impl AnimationFrameData {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct AnimScriptData {
-    pub name:   String,
+    pub name: String,
     pub source: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct ControlScriptData {
-    pub name:   String,
+    pub name: String,
     pub source: String,
 }
 
@@ -54,22 +54,22 @@ pub struct ControlBindingsData {
 pub struct EntityRestoreTransform {
     pub position: [f32; 3],
     pub rotation: [f32; 4],
-    pub scale:    [f32; 3],
+    pub scale: [f32; 3],
 }
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct EntityRestorePhysics {
-    pub enabled:   bool,
+    pub enabled: bool,
     pub body_type: String,
 }
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct EntityRestoreAnimation {
-    pub name:   String,
+    pub name: String,
     pub frames: Vec<AnimationFrameData>,
-    pub fps:    u32,
+    pub fps: u32,
     #[serde(alias = "loop")]
-    pub loop_:  bool,
+    pub loop_: bool,
     #[serde(default)]
     pub flip_horizontal: bool,
     #[serde(default)]
@@ -84,15 +84,15 @@ pub struct EntityRestoreAnimation {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct EntityRestoreScript {
-    pub path:   String,
+    pub path: String,
     pub source: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PlayerUiScreenInfo {
-    pub id:      String,
-    pub name:    String,
-    pub active:  bool,
+    pub id: String,
+    pub name: String,
+    pub active: bool,
 }
 
 /// Payload JSON de `add_player_ui_button` (idéntico en 2D y 3D).

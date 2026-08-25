@@ -3,7 +3,7 @@ import { useEffect, useReducer, useRef } from 'react';
 import { PlayFill, StopFill, XCircleFill } from 'react-bootstrap-icons';
 
 import { AppTooltip } from '@components';
-import { SelectionMode } from './';
+import type { SelectionMode } from './';
 import { useAudioPreview } from '@hooks';
 import { useTraslate } from '@hooks';
 
@@ -101,7 +101,7 @@ export function SpritePreviewRightPanel({
   const [{ selectedFrameIndex, isPlaying }, dispatch] = useReducer(playbackReducer, initialPlaybackState);
   const { t } = useTraslate();
   useAudioPreview(audioPath, isPlaying, isLooping);
-  const animIntervalRef = useRef<number | null>(null);
+  const animIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
 
   const frames = selectionMode === 'cell'

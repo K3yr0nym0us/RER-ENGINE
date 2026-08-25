@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 
 use winit::keyboard::{KeyCode, PhysicalKey};
 
-use crate::platform::{probe_vk_os, VkOsProbe};
+use crate::platform::{VkOsProbe, probe_vk_os};
 
 const HOLD_LOG_INTERVAL: Duration = Duration::from_millis(400);
 

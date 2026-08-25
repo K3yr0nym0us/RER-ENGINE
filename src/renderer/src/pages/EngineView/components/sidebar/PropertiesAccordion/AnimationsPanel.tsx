@@ -14,8 +14,8 @@ import { useTraslate } from '@hooks';
 
 interface AnimationFrame {
   path: string;
-  pivot_x: number;
-  pivot_y: number;
+  pivot_x?: number;
+  pivot_y?: number;
   src_x?: number;
   src_y?: number;
   src_w?: number;
@@ -83,7 +83,7 @@ export function AnimationsPanel({ projectType }: { projectType?: string }) {
       setAnimations(entity.animations ?? meta?.animations ?? []);
     }
     setPlayingAnimationName(null);
-  }, [entity?.id, entity?.animations, entity?.visualModelPath]);
+  }, [entity?.id, entity?.animations, entity?.visualModelPath, entityMetaRef]);
 
   useEffect(() => {
     if (!entity?.id) return;

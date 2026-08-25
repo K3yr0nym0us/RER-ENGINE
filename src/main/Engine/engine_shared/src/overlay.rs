@@ -13,13 +13,13 @@ pub enum WindowAttachMode {
 #[derive(Debug, Clone)]
 pub struct OverlayConfig {
     pub parent_id: u64,
-    pub x:         i32,
-    pub y:         i32,
-    pub width:     u32,
-    pub height:    u32,
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
     /// Offset físico del viewport dentro del área de contenido de Electron.
-    pub rel_x:     i32,
-    pub rel_y:     i32,
+    pub rel_x: i32,
+    pub rel_y: i32,
 }
 
 /// Parsea `--overlay` o `--embed` (alias legacy).
@@ -35,11 +35,11 @@ pub fn parse_overlay_config() -> Option<OverlayConfig> {
     }
     Some(OverlayConfig {
         parent_id: args[2].parse().ok()?,
-        x:         args[3].parse().ok()?,
-        y:         args[4].parse().ok()?,
-        width:     args[5].parse().ok()?,
-        height:    args[6].parse().ok()?,
-        rel_x:     args.get(7).and_then(|a| a.parse().ok()).unwrap_or(0),
-        rel_y:     args.get(8).and_then(|a| a.parse().ok()).unwrap_or(0),
+        x: args[3].parse().ok()?,
+        y: args[4].parse().ok()?,
+        width: args[5].parse().ok()?,
+        height: args[6].parse().ok()?,
+        rel_x: args.get(7).and_then(|a| a.parse().ok()).unwrap_or(0),
+        rel_y: args.get(8).and_then(|a| a.parse().ok()).unwrap_or(0),
     })
 }

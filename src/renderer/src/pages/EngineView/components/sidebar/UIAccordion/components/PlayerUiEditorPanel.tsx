@@ -3,6 +3,7 @@ import { Check2Square, FloppyFill, Pencil } from 'react-bootstrap-icons'
 
 import { AppTooltip } from '@components'
 import { useTraslate } from '@hooks'
+import type { EditingUiElementKind } from '@engine'
 import type { PlayerUiEditorState } from '../../../../../../modal-electron/playerUiEditorTypes'
 import EditingUiElementGroups from './EditingUiElementGroups'
 
@@ -17,7 +18,7 @@ export interface PlayerUiEditorPanelProps {
 	onRemoveImage: (id: number, label: string) => void
 	onRemoveObject: (id: number, label: string) => void
 	onSetElementProps: (
-		kind: 'text' | 'image' | 'object',
+		kind: EditingUiElementKind,
 		id: number,
 		props: { locked?: boolean; z_index?: number },
 	) => void

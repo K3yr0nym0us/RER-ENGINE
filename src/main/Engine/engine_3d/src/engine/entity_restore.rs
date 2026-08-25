@@ -1,4 +1,7 @@
-use crate::ipc::{AnimScriptData, AnimationFrameData, ControlBindingsData, EntityRestorePhysics, EntityRestoreTransform, EngineCommand, EngineCommandCommon, SaveAnimationSnapshot, SaveScriptSnapshot};
+use crate::ipc::{
+    AnimScriptData, AnimationFrameData, ControlBindingsData, EngineCommand, EngineCommandCommon,
+    EntityRestorePhysics, EntityRestoreTransform, SaveAnimationSnapshot, SaveScriptSnapshot,
+};
 
 use super::State;
 
@@ -62,10 +65,12 @@ pub(crate) fn apply_entity_animations_snapshots(
             is_cancelable: anim.is_cancelable.unwrap_or(true),
         }));
         if anim.is_default.unwrap_or(false) {
-            state.handle_command(EngineCommand::Common(EngineCommandCommon::SetDefaultAnimation {
-                id,
-                name: anim.name.clone(),
-            }));
+            state.handle_command(EngineCommand::Common(
+                EngineCommandCommon::SetDefaultAnimation {
+                    id,
+                    name: anim.name.clone(),
+                },
+            ));
         }
     }
 }
@@ -106,20 +111,22 @@ impl State {
                 rotation_euler_degrees: None,
             }));
         }
-        if let Some(physics) = physics {
-            if physics.enabled {
-                self.handle_command(EngineCommand::Common(EngineCommandCommon::SetPhysics {
-                    id,
-                    enabled: true,
-                    body_type: physics.body_type.clone(),
-                }));
-            }
+        if let Some(physics) = physics
+            && physics.enabled
+        {
+            self.handle_command(EngineCommand::Common(EngineCommandCommon::SetPhysics {
+                id,
+                enabled: true,
+                body_type: physics.body_type.clone(),
+            }));
         }
         if let Some(bindings) = control_bindings {
-            self.handle_command(EngineCommand::Common(EngineCommandCommon::SetControlBindings {
-                id,
-                bindings: bindings.clone(),
-            }));
+            self.handle_command(EngineCommand::Common(
+                EngineCommandCommon::SetControlBindings {
+                    id,
+                    bindings: bindings.clone(),
+                },
+            ));
         }
     }
 }

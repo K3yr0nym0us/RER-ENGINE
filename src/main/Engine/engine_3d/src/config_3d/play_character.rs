@@ -3,18 +3,17 @@ use std::path::Path;
 use glam::Vec3;
 
 use crate::config_3d::character_anchor::{
-    body_center_from_feet, center_from_feet, feet_from_transform, PlayCharacterMeshExtents,
-    PLAY_CHARACTER_BODY_HEIGHT,
-    PLAY_CHARACTER_COLLIDER_RADIUS,
+    PLAY_CHARACTER_BODY_HEIGHT, PLAY_CHARACTER_COLLIDER_RADIUS, PlayCharacterMeshExtents,
+    body_center_from_feet, center_from_feet, feet_from_transform,
 };
 use crate::config_3d::model_asset;
-use crate::config_3d::{is_fbx_model_path, is_gltf_model_path};
-use crate::config_3d::static_model_cache::play_character_cache_key;
 use crate::config_3d::physics_3d::PhysicsWorld;
+use crate::config_3d::static_model_cache::play_character_cache_key;
+use crate::config_3d::{is_fbx_model_path, is_gltf_model_path};
 use crate::ecs::{EntityId, MeshComponent, Transform};
 use crate::engine::State;
 use crate::entity_save_meta::EntitySaveMeta;
-use crate::ipc::{send_event, EngineEvent};
+use crate::ipc::{EngineEvent, send_event};
 use crate::mesh;
 
 impl State {
@@ -316,17 +315,16 @@ impl State {
         model_path: &str,
     ) -> Option<([f32; 3], [f32; 3])> {
         let key = self.model_cache_key(model_path);
-        let play_asset_key =
-            crate::config_3d::static_model_cache::play_character_cache_key(&key);
-        if let Some(asset) = self.model_assets.get(&play_asset_key) {
-            if let Some(b) = model_asset::model_asset_play_character_visual_bounds(asset) {
-                return Some(b);
-            }
+        let play_asset_key = crate::config_3d::static_model_cache::play_character_cache_key(&key);
+        if let Some(asset) = self.model_assets.get(&play_asset_key)
+            && let Some(b) = model_asset::model_asset_play_character_visual_bounds(asset)
+        {
+            return Some(b);
         }
-        if let Some(asset) = self.model_assets.get(&key) {
-            if let Some(b) = model_asset::model_asset_play_character_visual_bounds(asset) {
-                return Some(b);
-            }
+        if let Some(asset) = self.model_assets.get(&key)
+            && let Some(b) = model_asset::model_asset_play_character_visual_bounds(asset)
+        {
+            return Some(b);
         }
         let play_key = play_character_cache_key(&key);
         self.static_model_cache
@@ -345,14 +343,15 @@ impl State {
 
     /// Bounds para colocación: bind pose skinned (lo que dibuja el motor), no solo caché estática.
     fn play_character_placement_bounds(&self, model_path: &str) -> Option<([f32; 3], [f32; 3])> {
-        self.play_character_visual_local_bounds(model_path).or_else(|| {
-            let cache_key = self.model_cache_key(model_path);
-            let play_key = play_character_cache_key(&cache_key);
-            self.static_model_cache
-                .get(&play_key)
-                .and_then(|parts| parts.first())
-                .map(|p| p.local_bounds)
-        })
+        self.play_character_visual_local_bounds(model_path)
+            .or_else(|| {
+                let cache_key = self.model_cache_key(model_path);
+                let play_key = play_character_cache_key(&cache_key);
+                self.static_model_cache
+                    .get(&play_key)
+                    .and_then(|parts| parts.first())
+                    .map(|p| p.local_bounds)
+            })
     }
 
     /// Fija `Transform.position` según pies en mundo y AABB local (pivote malla normalizada).
@@ -447,8 +446,10 @@ impl State {
         } else {
             self.play_character_feet_position()
         };
-        self.play_character_mesh_extents =
-            Some(PlayCharacterMeshExtents::from_local_bounds(local_bounds.0, local_bounds.1));
+        self.play_character_mesh_extents = Some(PlayCharacterMeshExtents::from_local_bounds(
+            local_bounds.0,
+            local_bounds.1,
+        ));
         let feet = self.snap_play_character_feet_to_ground(feet);
         let extents = PlayCharacterMeshExtents::from_local_bounds(local_bounds.0, local_bounds.1);
         if let Some(t) = self.world.get_mut::<Transform>(id) {
@@ -464,7 +465,10 @@ impl State {
     /// Ajusta los pies al suelo estático (mesh collider del terreno), sin usar la malla visual del jugador.
     fn snap_play_character_feet_to_ground(&mut self, feet: glam::Vec3) -> glam::Vec3 {
         let mut out = feet;
-        if let Some(ground_y) = self.physics.find_ground_y_at(out.x, out.z, out.y + 4.0, 12.0) {
+        if let Some(ground_y) = self
+            .physics
+            .find_ground_y_at(out.x, out.z, out.y + 4.0, 12.0)
+        {
             out.y = ground_y;
         }
         out
@@ -479,35 +483,35 @@ impl State {
         desired_id: Option<EntityId>,
     ) -> EntityId {
         let desired = desired_id.filter(|&d| d != 0);
-        if let Some(id) = self.play_character_entity {
-            if self.world.get::<Transform>(id).is_some() {
-                // En carga de .save hay que respetar el id del manifest para que
-                // `attach_parent_id` de accesorios fusionados coincida con el jugador.
-                let reuse_existing = match desired {
-                    Some(wanted) if wanted != id && self.restoring_save_manifest => {
-                        log::warn!(
-                            "[restore] jugador runtime {id} ≠ id guardado {wanted}; recreando shell"
-                        );
-                        self.physics.remove_entity_body(id);
-                        self.clear_entity_attachments_for_removed(id);
-                        self.save_registry.remove_entity(id);
-                        self.world.despawn(id);
-                        self.character_entities.retain(|&e| e != id);
-                        self.scenario_entities.retain(|&e| e != id);
-                        self.play_character_entity = None;
-                        false
-                    }
-                    _ => true,
-                };
-                if reuse_existing {
-                    if !self.character_entities.contains(&id) {
-                        self.character_entities.push(id);
-                    }
-                    if !self.scenario_entities.contains(&id) {
-                        self.scenario_entities.push(id);
-                    }
-                    return id;
+        if let Some(id) = self.play_character_entity
+            && self.world.get::<Transform>(id).is_some()
+        {
+            // En carga de .save hay que respetar el id del manifest para que
+            // `attach_parent_id` de accesorios fusionados coincida con el jugador.
+            let reuse_existing = match desired {
+                Some(wanted) if wanted != id && self.restoring_save_manifest => {
+                    log::warn!(
+                        "[restore] jugador runtime {id} ≠ id guardado {wanted}; recreando shell"
+                    );
+                    self.physics.remove_entity_body(id);
+                    self.clear_entity_attachments_for_removed(id);
+                    self.save_registry.remove_entity(id);
+                    self.world.despawn(id);
+                    self.character_entities.retain(|&e| e != id);
+                    self.scenario_entities.retain(|&e| e != id);
+                    self.play_character_entity = None;
+                    false
                 }
+                _ => true,
+            };
+            if reuse_existing {
+                if !self.character_entities.contains(&id) {
+                    self.character_entities.push(id);
+                }
+                if !self.scenario_entities.contains(&id) {
+                    self.scenario_entities.push(id);
+                }
+                return id;
             }
         }
         let label = if display_name.trim().is_empty() {
@@ -584,13 +588,13 @@ impl State {
 
         self.register_or_update_visual_model_meta(id, &library_path, true);
         self.play_character_mesh_forward_xz = part.forward_xz;
-        if is_fbx_model_path(&source_for_ext) {
-            if let Some(skin_fwd) = model_asset::fbx_skinned_play_forward_xz(
+        if is_fbx_model_path(&source_for_ext)
+            && let Some(skin_fwd) = model_asset::fbx_skinned_play_forward_xz(
                 Path::new(&source_for_ext),
                 crate::config_3d::character_anchor::PLAY_CHARACTER_BODY_HEIGHT,
-            ) {
-                self.play_character_mesh_forward_xz = skin_fwd;
-            }
+            )
+        {
+            self.play_character_mesh_forward_xz = skin_fwd;
         }
         self.physics.remove_entity_body(id);
 
@@ -598,13 +602,11 @@ impl State {
         let placement_bounds = self
             .play_character_visual_local_bounds(path)
             .unwrap_or(part.local_bounds);
-        self.play_character_mesh_extents =
-            Some(PlayCharacterMeshExtents::from_local_bounds(
-                placement_bounds.0,
-                placement_bounds.1,
-            ));
-        let play_asset_key =
-            play_character_cache_key(&cache_key);
+        self.play_character_mesh_extents = Some(PlayCharacterMeshExtents::from_local_bounds(
+            placement_bounds.0,
+            placement_bounds.1,
+        ));
+        let play_asset_key = play_character_cache_key(&cache_key);
         if let Some(asset) = self.model_assets.get(&play_asset_key) {
             if is_fbx_model_path(&source_for_ext) {
                 self.play_character_mesh_forward_xz =
@@ -622,12 +624,7 @@ impl State {
         let (position, rotation, scale) = match self.world.get::<Transform>(id) {
             Some(t) => (
                 Some(self.play_character_feet_position().to_array()),
-                Some([
-                    t.rotation.x,
-                    t.rotation.y,
-                    t.rotation.z,
-                    t.rotation.w,
-                ]),
+                Some([t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w]),
                 Some(t.scale.to_array()),
             ),
             None => (None, None, None),
@@ -650,13 +647,7 @@ impl State {
         let body_layer = self.texture_array.pack(&self.queue, &body_px, 1, 1);
         self.tex_layers.push(body_layer);
 
-        self.world.insert(
-            id,
-            MeshComponent {
-                mesh_idx,
-                tex_idx,
-            },
-        );
+        self.world.insert(id, MeshComponent { mesh_idx, tex_idx });
         if let Some(t) = self.world.get_mut::<Transform>(id) {
             let w = PLAY_CHARACTER_COLLIDER_RADIUS * 2.0;
             t.scale = glam::Vec3::new(w, PLAY_CHARACTER_BODY_HEIGHT, w);

@@ -37,21 +37,9 @@ impl State {
                 .get(key)
                 .cloned()
                 .unwrap_or_default(),
-            buttons: self
-                .player_ui_buttons
-                .get(key)
-                .cloned()
-                .unwrap_or_default(),
-            images: self
-                .player_ui_images
-                .get(key)
-                .cloned()
-                .unwrap_or_default(),
-            objects: self
-                .player_ui_objects
-                .get(key)
-                .cloned()
-                .unwrap_or_default(),
+            buttons: self.player_ui_buttons.get(key).cloned().unwrap_or_default(),
+            images: self.player_ui_images.get(key).cloned().unwrap_or_default(),
+            objects: self.player_ui_objects.get(key).cloned().unwrap_or_default(),
             object_draw: self.player_ui_object_draw.clone(),
             text_next_id: self.player_ui_text_next_id,
             selected_text_id: self.player_ui_selected_text_id,
@@ -79,10 +67,7 @@ impl State {
         self.sync_editor_scenes_undo_dirty_to_renderer();
     }
 
-    pub(crate) fn restore_player_ui_hud_undo_snapshot(
-        &mut self,
-        snap: PlayerUiHudUndoSnapshot,
-    ) {
+    pub(crate) fn restore_player_ui_hud_undo_snapshot(&mut self, snap: PlayerUiHudUndoSnapshot) {
         let key = snap.key.clone();
         Self::restore_hud_vec(&mut self.player_ui_text_boxes, &key, snap.text_boxes);
         Self::restore_hud_vec(&mut self.player_ui_buttons, &key, snap.buttons);

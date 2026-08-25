@@ -159,7 +159,7 @@ export function CameraAccordion({
 		const ph = parseCameraNum(halfH);
 		if ([px, py, ph].some((n) => Number.isNaN(n))) return;
 		skipSyncRef.current = true;
-		send({ cmd: 'set_camera2d', x: px, y: py, half_h: ph });
+		send({ cmd: 'set_camera_2d', x: px, y: py, half_h: ph });
 		camera2dRef.current = { x: px, y: py, halfH: ph };
 	};
 

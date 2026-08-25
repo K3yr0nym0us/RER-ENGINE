@@ -44,8 +44,8 @@ impl State {
             .filter_map(|(&id, b)| {
                 let script = match device {
                     "keyboard_mouse" => b.keyboard_mouse.get(control_key),
-                    "gamepad"        => b.gamepad.get(control_key),
-                    _                => None,
+                    "gamepad" => b.gamepad.get(control_key),
+                    _ => None,
                 }?;
                 Some((id, script.name.clone(), script.source.clone()))
             })
@@ -70,7 +70,7 @@ impl State {
                     cmds.retain(|c| !matches!(c, ScriptCmd::Log { .. }));
                     self.apply_script_commands(cmds);
                 }
-                Err(e)   => log::error!("[on_keep] Error en '{}' ({}): {}", path, control_key, e),
+                Err(e) => log::error!("[on_keep] Error en '{}' ({}): {}", path, control_key, e),
             }
         }
     }

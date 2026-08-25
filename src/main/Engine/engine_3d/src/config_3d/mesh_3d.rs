@@ -1,15 +1,15 @@
 // ── Primitivas de malla exclusivas del modo 3D ────────────────────────────────
 
+use crate::config_3d::model_asset::{
+    MaterialTextureCpu, empty_rgba_placeholder, shared_white_material_texture,
+};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
-use crate::config_3d::model_asset::{
-    empty_rgba_placeholder, shared_white_material_texture, MaterialTextureCpu,
-};
 
 use crate::config_3d::model_asset::{self, GltfFile};
 use crate::config_3d::skin_diag;
-use crate::mesh::{upload, Mesh, Vertex};
+use crate::mesh::{Mesh, Vertex, upload};
 
 pub(crate) struct LoadedModelMesh {
     pub(crate) mesh: Mesh,
@@ -159,8 +159,8 @@ pub(crate) fn resolve_mesh_forward_xz(meta: glam::Vec2, geometry_est: glam::Vec2
 }
 
 fn upright_candidates() -> [glam::Quat; 6] {
-    use std::f32::consts::FRAC_PI_2;
     use glam::Quat;
+    use std::f32::consts::FRAC_PI_2;
     [
         Quat::IDENTITY,
         Quat::from_rotation_x(-FRAC_PI_2),
@@ -273,9 +273,9 @@ pub(crate) fn load_model_file(
 
     match ext.as_str() {
         "glb" | "gltf" => {
-            if normalize_to_extent.is_some() {
+            if let Some(extent) = normalize_to_extent {
                 let file = crate::config_3d::model_asset::import_gltf(path)?;
-                load_gltf_preview_from_file(device, file.as_ref(), normalize_to_extent.unwrap())
+                load_gltf_preview_from_file(device, file.as_ref(), extent)
             } else {
                 load_gltf(device, path, normalize_to_extent)
             }
@@ -288,17 +288,16 @@ pub(crate) fn load_model_file(
 }
 
 /// Precarga en hilo: un solo `gltf::import` para malla estática en editor.
+pub(crate) type ModelPreloadCpuBundle = (
+    Vec<CpuModelMeshPart>,
+    Option<Arc<model_asset::ModelAsset>>,
+    Option<Vec<CpuModelMeshPart>>,
+);
+
 pub(crate) fn preload_model_cpu_bundle(
     path: &Path,
     options: ModelPreloadOptions,
-) -> Result<
-    (
-        Vec<CpuModelMeshPart>,
-        Option<Arc<model_asset::ModelAsset>>,
-        Option<Vec<CpuModelMeshPart>>,
-    ),
-    String,
-> {
+) -> Result<ModelPreloadCpuBundle, String> {
     let ext = path
         .extension()
         .and_then(|e| e.to_str())
@@ -318,10 +317,7 @@ pub(crate) fn preload_model_cpu_bundle(
                 None
             };
             let anim_asset = if model_asset::gltf_needs_model_asset(file.as_ref()) {
-                let label = path
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("model");
+                let label = path.file_name().and_then(|n| n.to_str()).unwrap_or("model");
                 match model_asset::load_model_asset_from_gltf(file.as_ref(), None) {
                     Some(asset) => Some(asset),
                     None => {
@@ -444,12 +440,8 @@ fn read_gltf_primitive(
     let metallic = pbr.metallic_factor();
     let ior = if metallic > 0.5 { 0.0 } else { 1.5 };
 
-    let texture = resolve_gltf_primitive_texture(
-        mat_idx,
-        material_textures,
-        material_albedos,
-        albedo_cache,
-    );
+    let texture =
+        resolve_gltf_primitive_texture(mat_idx, material_textures, material_albedos, albedo_cache);
 
     Ok(GltfRawPrim {
         vertices,
@@ -559,20 +551,17 @@ pub(crate) fn load_gltf_preview_from_file(
         .or_else(|| file.doc.scenes().next())
         .ok_or_else(|| "glTF sin escena".to_string())?;
     let scene_parents = crate::config_3d::model_asset::build_gltf_node_parents(&scene);
-    let world =
-        crate::config_3d::model_asset::world_matrix_for_gltf_node_index(
-            &file.doc,
-            &scene_parents,
-            node_ix,
-        );
+    let world = crate::config_3d::model_asset::world_matrix_for_gltf_node_index(
+        &file.doc,
+        &scene_parents,
+        node_ix,
+    );
     let node = file
         .doc
         .nodes()
         .nth(node_ix)
         .ok_or_else(|| "nodo glTF inválido".to_string())?;
-    let mesh = node
-        .mesh()
-        .ok_or_else(|| "nodo sin mesh".to_string())?;
+    let mesh = node.mesh().ok_or_else(|| "nodo sin mesh".to_string())?;
 
     let mut vertices: Vec<Vertex> = Vec::new();
     let mut indices: Vec<u32> = Vec::new();
@@ -827,11 +816,7 @@ pub(crate) fn recenter_vertices_to_local_feet(vertices: &mut [Vertex]) {
         return;
     }
     let (min, max) = vertex_local_bounds(vertices);
-    let shift = glam::Vec3::new(
-        (min[0] + max[0]) * 0.5,
-        min[1],
-        (min[2] + max[2]) * 0.5,
-    );
+    let shift = glam::Vec3::new((min[0] + max[0]) * 0.5, min[1], (min[2] + max[2]) * 0.5);
     if shift.length_squared() < 1e-8 {
         return;
     }
@@ -920,15 +905,17 @@ pub(crate) fn create_ground_plane(
         }
     }
 
-    upload(device, &vertices, &indices, "ground-plane", Some(&rt_indices))
+    upload(
+        device,
+        &vertices,
+        &indices,
+        "ground-plane",
+        Some(&rt_indices),
+    )
 }
 
 /// Disco en XZ (radio local = `GROUND_PLANE_MESH_EXTENT / 2`); escalar uniforme al radio del mundo.
-pub(crate) fn create_ground_disk(
-    device: &wgpu::Device,
-    world_radius: f32,
-    cell_size: f32,
-) -> Mesh {
+pub(crate) fn create_ground_disk(device: &wgpu::Device, world_radius: f32, cell_size: f32) -> Mesh {
     const SEGMENTS: u32 = 96;
     let local_radius = GROUND_PLANE_MESH_EXTENT * 0.5;
     let cell = cell_size.max(0.05);
@@ -971,5 +958,11 @@ pub(crate) fn create_ground_disk(
         rt_indices.extend_from_slice(&[0, i0, i1]);
     }
 
-    upload(device, &vertices, &indices, "ground-disk", Some(&rt_indices))
+    upload(
+        device,
+        &vertices,
+        &indices,
+        "ground-disk",
+        Some(&rt_indices),
+    )
 }

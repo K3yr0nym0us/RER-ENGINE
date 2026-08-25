@@ -120,12 +120,12 @@ impl State {
                 .unwrap_or(1.0);
             cap.height = self.play_character_visual_world_height();
             let max_r = (cap.height * 0.5 - 0.05).max(PLAY_CHARACTER_COLLISION_RADIUS_MIN);
-            cap.radius = (ext.horizontal_extent() * scale_xz * 0.5
-                * PLAY_CHARACTER_COLLISION_RADIUS_FACTOR)
-                .clamp(
-                    PLAY_CHARACTER_COLLISION_RADIUS_MIN,
-                    max_r.min(PLAY_CHARACTER_COLLISION_RADIUS_MAX),
-                );
+            cap.radius =
+                (ext.horizontal_extent() * scale_xz * 0.5 * PLAY_CHARACTER_COLLISION_RADIUS_FACTOR)
+                    .clamp(
+                        PLAY_CHARACTER_COLLISION_RADIUS_MIN,
+                        max_r.min(PLAY_CHARACTER_COLLISION_RADIUS_MAX),
+                    );
         }
         cap.height *= PLAY_CHARACTER_CAPSULE_HEIGHT_SCALE;
         cap
@@ -177,10 +177,9 @@ pub(crate) fn center_from_feet(
     rotation: Quat,
     extents: Option<&PlayCharacterMeshExtents>,
 ) -> Vec3 {
-    feet
-        - extents
-            .map(|e| e.feet_world_offset(scale, rotation))
-            .unwrap_or_else(|| play_character_placeholder_feet_offset(rotation))
+    feet - extents
+        .map(|e| e.feet_world_offset(scale, rotation))
+        .unwrap_or_else(|| play_character_placeholder_feet_offset(rotation))
 }
 
 /// Cubo `[Player]` antes de asignar un `.glb`: centro del cuerpo a mitad de altura fija (1.7 m).

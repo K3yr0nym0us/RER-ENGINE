@@ -4,21 +4,21 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
-use rer_engine_shared::assets::{read_rerasset, ChunkType, RerassetFile};
+use rer_engine_shared::assets::{ChunkType, RerassetFile, read_rerasset};
 
+use crate::config_3d::mesh_3d::{CpuModelMeshPart, prepare_cpu_parts_textures_for_gpu};
 use crate::config_3d::model_asset::{
-    empty_rgba_placeholder, MaterialTextureCpu, ModelAsset, SkinnedMeshData, SkinnedMeshPart,
+    MaterialTextureCpu, ModelAsset, SkinnedMeshData, SkinnedMeshPart, empty_rgba_placeholder,
 };
-use crate::config_3d::mesh_3d::{prepare_cpu_parts_textures_for_gpu, CpuModelMeshPart};
-use crate::texture::layer_mip_chain_valid_for_array;
 use crate::mesh::{SkinnedVertex, Vertex};
+use crate::texture::layer_mip_chain_valid_for_array;
 
 use super::model_asset_blob::{deserialize_animation_clip, deserialize_skeleton};
 
 pub struct LoadedRerassetCpu {
-    pub editor_parts:        Vec<CpuModelMeshPart>,
-    pub play_parts:          Option<Vec<CpuModelMeshPart>>,
-    pub anim_asset:          Option<Arc<ModelAsset>>,
+    pub editor_parts: Vec<CpuModelMeshPart>,
+    pub play_parts: Option<Vec<CpuModelMeshPart>>,
+    pub anim_asset: Option<Arc<ModelAsset>>,
     /// `material_index` GLB → índice de chunk de textura en el `.rerasset`.
     pub material_tex_chunks: HashMap<u32, u32>,
 }
@@ -26,7 +26,11 @@ pub struct LoadedRerassetCpu {
 /// Mapa material GLB → chunk de textura desde chunks `Material` del `.rerasset`.
 pub fn material_texture_chunk_map(file: &RerassetFile) -> HashMap<u32, u32> {
     let mut map = HashMap::new();
-    for entry in file.chunks.iter().filter(|c| c.chunk_type == ChunkType::Material) {
+    for entry in file
+        .chunks
+        .iter()
+        .filter(|c| c.chunk_type == ChunkType::Material)
+    {
         let Ok(data) = file.chunk_data(entry) else {
             continue;
         };
@@ -40,7 +44,10 @@ pub fn material_texture_chunk_map(file: &RerassetFile) -> HashMap<u32, u32> {
     map
 }
 
-fn rtex_to_material_texture(file: &RerassetFile, texture_chunk_index: u32) -> Arc<MaterialTextureCpu> {
+fn rtex_to_material_texture(
+    file: &RerassetFile,
+    texture_chunk_index: u32,
+) -> Arc<MaterialTextureCpu> {
     let entry = file
         .chunks
         .iter()
@@ -70,13 +77,12 @@ fn rtex_to_material_texture(file: &RerassetFile, texture_chunk_index: u32) -> Ar
     }
 }
 
-fn material_texture_for_index(
-    file: &RerassetFile,
-    material_index: u32,
-) -> Arc<MaterialTextureCpu> {
-    if let Some(entry) = file.chunks.iter().find(|c| {
-        c.chunk_type == ChunkType::Material && c.chunk_index == material_index
-    }) {
+fn material_texture_for_index(file: &RerassetFile, material_index: u32) -> Arc<MaterialTextureCpu> {
+    if let Some(entry) = file
+        .chunks
+        .iter()
+        .find(|c| c.chunk_type == ChunkType::Material && c.chunk_index == material_index)
+    {
         let data = file.chunk_data(entry).expect("material chunk");
         let tex_idx = u32::from_le_bytes(data[4..8].try_into().unwrap());
         return rtex_to_material_texture(file, tex_idx);
@@ -100,9 +106,10 @@ fn load_static_parts(
             .find(|c| c.chunk_type == idx_type && c.chunk_index == part_index)
             .ok_or_else(|| format!("índices faltantes para parte {part_index}"))?;
 
-        let meta_entry = file.chunks.iter().find(|c| {
-            c.chunk_type == ChunkType::MeshPartMeta && c.chunk_index == part_index
-        });
+        let meta_entry = file
+            .chunks
+            .iter()
+            .find(|c| c.chunk_type == ChunkType::MeshPartMeta && c.chunk_index == part_index);
 
         let (material_index, forward_xz, local_bounds) = if let Some(meta) = meta_entry {
             let data = file.chunk_data(meta).map_err(|e| e.to_string())?;
@@ -162,9 +169,7 @@ fn load_skinned_mesh_stubs(file: &RerassetFile) -> Result<Vec<SkinnedMeshPart>, 
         let idx_entry = file
             .chunks
             .iter()
-            .find(|c| {
-                c.chunk_type == ChunkType::MeshSkinnedIdx && c.chunk_index == part_index
-            })
+            .find(|c| c.chunk_type == ChunkType::MeshSkinnedIdx && c.chunk_index == part_index)
             .ok_or_else(|| format!("skinned idx faltante parte {part_index}"))?;
 
         let skinned_verts = file
@@ -182,9 +187,10 @@ fn load_skinned_mesh_stubs(file: &RerassetFile) -> Result<Vec<SkinnedMeshPart>, 
             .collect();
         let indices = file.read_indices(idx_entry).map_err(|e| e.to_string())?;
 
-        let meta = file.chunks.iter().find(|c| {
-            c.chunk_type == ChunkType::MeshPartMeta && c.chunk_index == part_index
-        });
+        let meta = file
+            .chunks
+            .iter()
+            .find(|c| c.chunk_type == ChunkType::MeshPartMeta && c.chunk_index == part_index);
         let material_index = meta
             .and_then(|m| {
                 file.chunk_data(m)

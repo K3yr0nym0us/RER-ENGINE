@@ -71,6 +71,7 @@ export function useControlBindings() {
   const [revision, setRevision] = useState(0)
 
   const characterOptions = useMemo<CharacterOption[]>(() => {
+    void playCharacterViewSyncSeq
     const seen = new Set<number>()
     const options: CharacterOption[] = []
     for (const character of characterEntities) {
@@ -115,6 +116,7 @@ export function useControlBindings() {
   }, [characterOptions, effectiveCharacterId])
 
   const getBindingsForCurrentCharacter = useCallback((): CharacterBindings => {
+    void revision
     if (!effectiveCharacterId) return EMPTY_BINDINGS
     return fromSavedBindings(entityMetaRef.current[effectiveCharacterId]?.controlBindings)
   }, [effectiveCharacterId, entityMetaRef, revision])

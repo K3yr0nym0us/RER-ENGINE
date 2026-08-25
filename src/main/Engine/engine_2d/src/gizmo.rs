@@ -5,14 +5,13 @@
 // siempre sean visibles encima de la escena del editor.
 // ---------------------------------------------------------------------------
 
-use bytemuck;
 use wgpu::util::DeviceExt;
 
 pub use rer_engine_shared::player_ui::ndc_draw::NdcVertex as GizmoVertex;
 
 pub struct GizmoBuffer {
     pub vertex_buffer: wgpu::Buffer,
-    pub vertex_count:  u32,
+    pub vertex_count: u32,
 }
 
 fn push_tri(verts: &mut Vec<GizmoVertex>, a: [f32; 3], b: [f32; 3], c: [f32; 3], color: [f32; 4]) {
@@ -21,7 +20,14 @@ fn push_tri(verts: &mut Vec<GizmoVertex>, a: [f32; 3], b: [f32; 3], c: [f32; 3],
     verts.push(GizmoVertex { position: c, color });
 }
 
-fn push_quad(verts: &mut Vec<GizmoVertex>, a: [f32; 3], b: [f32; 3], c: [f32; 3], d: [f32; 3], color: [f32; 4]) {
+fn push_quad(
+    verts: &mut Vec<GizmoVertex>,
+    a: [f32; 3],
+    b: [f32; 3],
+    c: [f32; 3],
+    d: [f32; 3],
+    color: [f32; 4],
+) {
     push_tri(verts, a, b, c, color);
     push_tri(verts, a, c, d, color);
 }
@@ -33,13 +39,13 @@ fn add_arrow_x(verts: &mut Vec<GizmoVertex>, length: f32, color: [f32; 4]) {
     let head = length * 0.072;
 
     let p000 = [0.0, -shaft, -shaft];
-    let p001 = [0.0, -shaft,  shaft];
-    let p010 = [0.0,  shaft, -shaft];
-    let p011 = [0.0,  shaft,  shaft];
+    let p001 = [0.0, -shaft, shaft];
+    let p010 = [0.0, shaft, -shaft];
+    let p011 = [0.0, shaft, shaft];
     let p100 = [base, -shaft, -shaft];
-    let p101 = [base, -shaft,  shaft];
-    let p110 = [base,  shaft, -shaft];
-    let p111 = [base,  shaft,  shaft];
+    let p101 = [base, -shaft, shaft];
+    let p110 = [base, shaft, -shaft];
+    let p111 = [base, shaft, shaft];
 
     push_quad(verts, p000, p100, p110, p010, color);
     push_quad(verts, p001, p011, p111, p101, color);
@@ -49,9 +55,9 @@ fn add_arrow_x(verts: &mut Vec<GizmoVertex>, length: f32, color: [f32; 4]) {
     push_quad(verts, p100, p101, p111, p110, color);
 
     let b0 = [base, -head, -head];
-    let b1 = [base, -head,  head];
-    let b2 = [base,  head,  head];
-    let b3 = [base,  head, -head];
+    let b1 = [base, -head, head];
+    let b2 = [base, head, head];
+    let b3 = [base, head, -head];
     let apex = [tip, 0.0, 0.0];
     push_tri(verts, b0, b1, apex, color);
     push_tri(verts, b1, b2, apex, color);
@@ -66,13 +72,13 @@ fn add_arrow_y(verts: &mut Vec<GizmoVertex>, length: f32, color: [f32; 4]) {
     let head = length * 0.072;
 
     let p000 = [-shaft, 0.0, -shaft];
-    let p001 = [-shaft, 0.0,  shaft];
-    let p010 = [ shaft, 0.0, -shaft];
-    let p011 = [ shaft, 0.0,  shaft];
+    let p001 = [-shaft, 0.0, shaft];
+    let p010 = [shaft, 0.0, -shaft];
+    let p011 = [shaft, 0.0, shaft];
     let p100 = [-shaft, base, -shaft];
-    let p101 = [-shaft, base,  shaft];
-    let p110 = [ shaft, base, -shaft];
-    let p111 = [ shaft, base,  shaft];
+    let p101 = [-shaft, base, shaft];
+    let p110 = [shaft, base, -shaft];
+    let p111 = [shaft, base, shaft];
 
     push_quad(verts, p000, p100, p110, p010, color);
     push_quad(verts, p001, p011, p111, p101, color);
@@ -82,9 +88,9 @@ fn add_arrow_y(verts: &mut Vec<GizmoVertex>, length: f32, color: [f32; 4]) {
     push_quad(verts, p100, p101, p111, p110, color);
 
     let b0 = [-head, base, -head];
-    let b1 = [-head, base,  head];
-    let b2 = [ head, base,  head];
-    let b3 = [ head, base, -head];
+    let b1 = [-head, base, head];
+    let b2 = [head, base, head];
+    let b3 = [head, base, -head];
     let apex = [0.0, tip, 0.0];
     push_tri(verts, b0, b1, apex, color);
     push_tri(verts, b1, b2, apex, color);
@@ -99,13 +105,13 @@ fn add_arrow_z(verts: &mut Vec<GizmoVertex>, length: f32, color: [f32; 4]) {
     let head = length * 0.072;
 
     let p000 = [-shaft, -shaft, 0.0];
-    let p001 = [-shaft,  shaft, 0.0];
-    let p010 = [ shaft, -shaft, 0.0];
-    let p011 = [ shaft,  shaft, 0.0];
+    let p001 = [-shaft, shaft, 0.0];
+    let p010 = [shaft, -shaft, 0.0];
+    let p011 = [shaft, shaft, 0.0];
     let p100 = [-shaft, -shaft, base];
-    let p101 = [-shaft,  shaft, base];
-    let p110 = [ shaft, -shaft, base];
-    let p111 = [ shaft,  shaft, base];
+    let p101 = [-shaft, shaft, base];
+    let p110 = [shaft, -shaft, base];
+    let p111 = [shaft, shaft, base];
 
     push_quad(verts, p000, p100, p110, p010, color);
     push_quad(verts, p001, p011, p111, p101, color);
@@ -115,9 +121,9 @@ fn add_arrow_z(verts: &mut Vec<GizmoVertex>, length: f32, color: [f32; 4]) {
     push_quad(verts, p100, p101, p111, p110, color);
 
     let b0 = [-head, -head, base];
-    let b1 = [-head,  head, base];
-    let b2 = [ head,  head, base];
-    let b3 = [ head, -head, base];
+    let b1 = [-head, head, base];
+    let b2 = [head, head, base];
+    let b3 = [head, -head, base];
     let apex = [0.0, 0.0, tip];
     push_tri(verts, b0, b1, apex, color);
     push_tri(verts, b1, b2, apex, color);
@@ -137,7 +143,10 @@ pub fn build_axes(device: &wgpu::Device, length: f32) -> GizmoBuffer {
         usage: wgpu::BufferUsages::VERTEX,
     });
 
-    GizmoBuffer { vertex_buffer, vertex_count: verts.len() as u32 }
+    GizmoBuffer {
+        vertex_buffer,
+        vertex_count: verts.len() as u32,
+    }
 }
 
 /// Creates a GizmoBuffer from arbitrary pre-built line vertices (tool overlays, etc.).
@@ -149,9 +158,12 @@ pub fn build_from_vertices(device: &wgpu::Device, verts: &[GizmoVertex]) -> Gizm
         bytemuck::cast_slice(verts)
     };
     let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label:    Some("tool-overlay-vbo"),
+        label: Some("tool-overlay-vbo"),
         contents: data,
-        usage:    wgpu::BufferUsages::VERTEX,
+        usage: wgpu::BufferUsages::VERTEX,
     });
-    GizmoBuffer { vertex_buffer, vertex_count: verts.len() as u32 }
+    GizmoBuffer {
+        vertex_buffer,
+        vertex_count: verts.len() as u32,
+    }
 }

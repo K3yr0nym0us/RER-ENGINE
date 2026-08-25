@@ -216,7 +216,12 @@ impl ProbeEnvPass {
         let capture_skinned_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("probe-env-capture-skinned-layout"),
-                bind_group_layouts: &[Some(scene_bgl), Some(texture_bgl), Some(sample_bgl), Some(joint_bgl)],
+                bind_group_layouts: &[
+                    Some(scene_bgl),
+                    Some(texture_bgl),
+                    Some(sample_bgl),
+                    Some(joint_bgl),
+                ],
                 immediate_size: 0,
             });
 
@@ -386,7 +391,11 @@ impl ProbeEnvPass {
         // Dummy 1×1 cube array texture + bind group for capture (avoids RESOURCE + COLOR_TARGET conflict).
         let dummy_cube = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("probe-env-capture-dummy"),
-            size: wgpu::Extent3d { width: 1, height: 1, depth_or_array_layers: 6 },
+            size: wgpu::Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 6,
+            },
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,

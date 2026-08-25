@@ -39,3 +39,10 @@ ttf-parser = "0.25"
 ab_glyph = "0.2"
 zip = { version = "8", default-features = false, features = ["deflate"] }
 sysinfo = "0.39"
+
+# Workspace lints: quality scripts deny Clippy warnings with `-D warnings`.
+# `unsafe` is allowed only in justified platform/GPU FFI (see rust-quality.mdc); do not warn-deny it globally.
+[workspace.lints.rust]
+
+[workspace.lints.clippy]
+dbg_macro = "deny"

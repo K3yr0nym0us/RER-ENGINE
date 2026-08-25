@@ -13,18 +13,13 @@ pub type ProbeSlot = usize;
 
 #[allow(dead_code)]
 /// Cómo el shader elige la capa de cubemap al samplear.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum ProbeLayerPolicy {
     /// Entidad `[ReflectionProbe]`: usa `probe_index` de instancia (su propia ranura).
+    #[default]
     OwnSlotForProbes,
     /// Cualquier superficie: probe más cercano por `probe_meta.entries`.
     NearestByWorldPos,
-}
-
-impl Default for ProbeLayerPolicy {
-    fn default() -> Self {
-        Self::OwnSlotForProbes
-    }
 }
 
 #[allow(dead_code)]

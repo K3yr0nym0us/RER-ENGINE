@@ -9,15 +9,14 @@
 
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::mpsc;
 use std::sync::Arc;
+use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-use crate::config_3d::mesh_3d::{
-    prepare_cpu_parts_textures_for_gpu, vertex_local_bounds, CpuModelMeshPart,
-};
 use crate::assets::load::{load_rerasset_cpu, material_texture_chunk_map};
-use rer_engine_shared::assets::read_rerasset;
+use crate::config_3d::mesh_3d::{
+    CpuModelMeshPart, prepare_cpu_parts_textures_for_gpu, vertex_local_bounds,
+};
 use crate::config_3d::model_asset;
 use crate::config_3d::{
     physics_body_world_center, physics_half_extents_for_model, transform_position_for_visual_center,
@@ -25,7 +24,8 @@ use crate::config_3d::{
 use crate::ecs::{EntityId, MeshComponent, SurfacePbr, Transform};
 use crate::engine::State;
 use crate::entity_save_meta::EntitySaveMeta;
-use crate::ipc::{send_event, send_load_progress, EngineEvent};
+use crate::ipc::{EngineEvent, send_event, send_load_progress};
+use rer_engine_shared::assets::read_rerasset;
 use rer_engine_shared::editor_defaults::entity_label_for_spawn;
 
 #[derive(Clone, Copy)]
@@ -49,10 +49,8 @@ pub(crate) struct ModelPreloadCpuResult {
     pub play_character_parts: Option<Vec<CpuModelMeshPart>>,
 }
 
-pub(crate) type ModelPreloadRx =
-    mpsc::Receiver<Result<ModelPreloadCpuResult, (String, String)>>;
-pub(crate) type ModelPreloadTx =
-    mpsc::Sender<Result<ModelPreloadCpuResult, (String, String)>>;
+pub(crate) type ModelPreloadRx = mpsc::Receiver<Result<ModelPreloadCpuResult, (String, String)>>;
+pub(crate) type ModelPreloadTx = mpsc::Sender<Result<ModelPreloadCpuResult, (String, String)>>;
 
 pub(crate) fn create_model_preload_channel() -> (ModelPreloadTx, ModelPreloadRx) {
     mpsc::channel()
@@ -140,11 +138,11 @@ impl State {
     fn emit_model_asset_load_failed(&mut self, path: &str, message: String) {
         let key = self.model_path_key(path);
         self.model_preload_inflight.remove(&key);
-        if path.starts_with("model_") {
-            if let Some(entry) = self.imported_model_registry.get(path) {
-                let source_key = self.model_path_key(&entry.source_path);
-                self.model_store.remove(&source_key);
-            }
+        if path.starts_with("model_")
+            && let Some(entry) = self.imported_model_registry.get(path)
+        {
+            let source_key = self.model_path_key(&entry.source_path);
+            self.model_store.remove(&source_key);
         }
         self.model_store.remove(&key);
         self.model_preload_gpu_queue.retain(|p| p.path != key);
@@ -152,7 +150,8 @@ impl State {
         log::error!("error cargando modelo {key}: {message}");
         let model_id = self.imported_model_registry.model_id_for_path(&key);
         if let Some(ref id) = model_id {
-            self.imported_model_registry.set_state(id, rer_engine_shared::assets::AssetState::Failed);
+            self.imported_model_registry
+                .set_state(id, rer_engine_shared::assets::AssetState::Failed);
         }
         send_event(&EngineEvent::ModelAssetLoadFailed {
             path: key,
@@ -172,14 +171,13 @@ impl State {
             return path.to_string();
         }
         let source_key = self.model_path_key(path);
-        if let Some(id) = self.imported_model_registry.model_id_for_path(&source_key) {
-            if self
+        if let Some(id) = self.imported_model_registry.model_id_for_path(&source_key)
+            && self
                 .imported_model_registry
                 .get(&id)
                 .is_some_and(|e| e.state == rer_engine_shared::assets::AssetState::Ready)
-            {
-                return id;
-            }
+        {
+            return id;
         }
         source_key
     }
@@ -189,9 +187,7 @@ impl State {
         &self,
         path: &str,
     ) -> Option<std::sync::Arc<crate::config_3d::model_asset::ModelAsset>> {
-        self.model_assets
-            .get(&self.model_cache_key(path))
-            .cloned()
+        self.model_assets.get(&self.model_cache_key(path)).cloned()
     }
 
     pub(crate) fn get_model_asset_for_entity(
@@ -215,10 +211,10 @@ impl State {
     }
 
     pub(crate) fn model_store_display_name(&self, path: &str) -> String {
-        if path.starts_with("model_") {
-            if let Some(entry) = self.imported_model_registry.get(path) {
-                return entry.name.clone();
-            }
+        if path.starts_with("model_")
+            && let Some(entry) = self.imported_model_registry.get(path)
+        {
+            return entry.name.clone();
         }
         let key = self.model_path_key(path);
         self.model_store
@@ -243,12 +239,7 @@ impl State {
             .is_some_and(|a| !a.parts.is_empty())
     }
 
-    pub(crate) fn register_model_asset(
-        &mut self,
-        path: &str,
-        name: &str,
-        category: Option<&str>,
-    ) {
+    pub(crate) fn register_model_asset(&mut self, path: &str, name: &str, category: Option<&str>) {
         self.start_imported_model_pipeline(path, name, category);
     }
 
@@ -383,10 +374,8 @@ impl State {
             match result {
                 Ok(data) => {
                     if data.path.starts_with("model_") {
-                        let import_meta = self
-                            .imported_model_registry
-                            .get(&data.path)
-                            .map(|entry| {
+                        let import_meta =
+                            self.imported_model_registry.get(&data.path).map(|entry| {
                                 (
                                     entry.source_path.clone(),
                                     entry.name.clone(),
@@ -458,22 +447,15 @@ impl State {
         }
         let entry = self.imported_model_registry.get(model_id)?;
         if entry.state != rer_engine_shared::assets::AssetState::Ready {
-            
             return None;
         }
         let loaded = load_rerasset_cpu(&entry.rerasset_path).ok()?;
-        self.rerasset_material_tex.insert(
-            model_id.to_string(),
-            loaded.material_tex_chunks.clone(),
-        );
-        let Some(tex_part) = loaded
+        self.rerasset_material_tex
+            .insert(model_id.to_string(), loaded.material_tex_chunks.clone());
+        let tex_part = loaded
             .editor_parts
             .iter()
-            .find(|p| p.material_index == material_index)
-        else {
-            
-            return None;
-        };
+            .find(|p| p.material_index == material_index)?;
         let tex = std::sync::Arc::clone(&tex_part.texture);
         let mip0 = tex.effective_rgba();
         let layer = if let Some(mips) = &tex.layer_mips {
@@ -487,21 +469,12 @@ impl State {
                 .insert(tex_cache_key.clone(), layer);
             layer
         } else {
-            self.pack_texture_layer(
-                Some(&tex_cache_key),
-                mip0,
-                tex.width,
-                tex.height,
-            )
+            self.pack_texture_layer(Some(&tex_cache_key), mip0, tex.width, tex.height)
         };
         Some(layer)
     }
 
-    fn upload_texture_for_cpu_part(
-        &mut self,
-        cache_key: &str,
-        part: &CpuModelMeshPart,
-    ) -> usize {
+    fn upload_texture_for_cpu_part(&mut self, cache_key: &str, part: &CpuModelMeshPart) -> usize {
         let tex_idx = self.tex_layers.len();
         let tex_cache_key = format!("{cache_key}::mat{}", part.material_index);
         let mip0 = part.texture.effective_rgba();
@@ -583,7 +556,6 @@ impl State {
             })
             .collect();
         self.static_model_cache.insert(play_key, cached);
-        
     }
 
     fn finalize_gpu_model_preload(&mut self, pending: PendingGpuModelPreload) {
@@ -660,15 +632,10 @@ impl State {
                 return Err(format!("Carga del modelo falló: {key}"));
             }
             if !self.model_preload_inflight.contains(key)
-                && self
-                    .model_preload_gpu_queue
-                    .iter()
-                    .all(|p| p.path != key)
+                && self.model_preload_gpu_queue.iter().all(|p| p.path != key)
                 && !self.static_model_cache.contains_key(key)
             {
-                return Err(format!(
-                    "Precarga GPU detenida sin completar caché: {key}"
-                ));
+                return Err(format!("Precarga GPU detenida sin completar caché: {key}"));
             }
             self.poll_and_advance_model_preloads(MODEL_GPU_PARTS_DURING_SAVE_LOAD);
             std::thread::yield_now();
@@ -790,10 +757,7 @@ impl State {
 
     fn flush_pending_entity_model_replaces_for_path(&mut self, path: &str) {
         let key = self.model_path_key(path);
-        let pending: Vec<_> = self
-            .pending_entity_model_replaces
-            .drain(..)
-            .collect();
+        let pending: Vec<_> = self.pending_entity_model_replaces.drain(..).collect();
         let (for_path, rest): (Vec<_>, Vec<_>) = pending
             .into_iter()
             .partition(|req| self.model_path_key(&req.path) == key);
@@ -869,9 +833,9 @@ impl State {
                 })
         };
 
-        if let Some(entry) = ready_entry.filter(|e| {
-            e.state == rer_engine_shared::assets::AssetState::Ready
-        }) {
+        if let Some(entry) =
+            ready_entry.filter(|e| e.state == rer_engine_shared::assets::AssetState::Ready)
+        {
             let is_character = entry.category.as_deref() == Some("character");
             let model_id = entry.model_id.clone();
             let rerasset_path = entry.rerasset_path.clone();
@@ -882,12 +846,7 @@ impl State {
                     rerasset_path.display()
                 ));
             }
-            self.enqueue_gpu_from_rerasset(
-                &model_id,
-                &rerasset_path,
-                &entry_name,
-                is_character,
-            );
+            self.enqueue_gpu_from_rerasset(&model_id, &rerasset_path, &entry_name, is_character);
             if !self.static_model_cache.contains_key(&model_id)
                 && !self.model_preload_inflight.contains(&model_id)
             {
@@ -986,8 +945,7 @@ impl State {
         }
         if let Some(t) = self.world.get_mut::<Transform>(id) {
             t.position = glam::Vec3::from_array(position);
-            t.rotation =
-                glam::Quat::from_xyzw(rotation[0], rotation[1], rotation[2], rotation[3]);
+            t.rotation = glam::Quat::from_xyzw(rotation[0], rotation[1], rotation[2], rotation[3]);
             t.scale = glam::Vec3::from_array(scale);
         }
         self.save_registry.register_meta(
@@ -1001,12 +959,9 @@ impl State {
         );
         if physics_enabled && self.play_character_entity != Some(id) {
             if let Some(t) = self.world.get::<Transform>(id).cloned() {
-                let half = physics_half_extents_for_model(
-                    t.scale.abs().to_array(),
-                    Some(local_bounds),
-                );
-                let body_pos =
-                    physics_body_world_center(&t, Some(local_bounds), path, half);
+                let half =
+                    physics_half_extents_for_model(t.scale.abs().to_array(), Some(local_bounds));
+                let body_pos = physics_body_world_center(&t, Some(local_bounds), path, half);
                 self.physics
                     .set_entity_physics(id, true, physics_type, body_pos, half);
             }
@@ -1052,9 +1007,7 @@ impl State {
         physics_type: &str,
         desired_id: Option<EntityId>,
     ) -> Result<EntityId, String> {
-        if let Err(e) = self.ensure_static_model_cached(path) {
-            return Err(e);
-        }
+        self.ensure_static_model_cached(path)?;
         let Some(part) = self
             .cached_static_model_parts(path)
             .and_then(|parts| parts.first())
@@ -1105,8 +1058,7 @@ impl State {
         entity_category: Option<&str>,
         kind: &str,
     ) -> EntityId {
-        let label = self
-            .next_numbered_entity_name(entity_label_for_spawn(kind, entity_category));
+        let label = self.next_numbered_entity_name(entity_label_for_spawn(kind, entity_category));
         let desired = glam::Vec3::from_array(self.default_model_spawn_position());
         let rotation = glam::Quat::IDENTITY;
         let scale = glam::Vec3::ONE;
@@ -1186,12 +1138,7 @@ impl State {
         }
 
         let canonical = model_id
-            .or_else(|| {
-                store_keys
-                    .iter()
-                    .find(|k| k.starts_with("model_"))
-                    .cloned()
-            })
+            .or_else(|| store_keys.iter().find(|k| k.starts_with("model_")).cloned())
             .unwrap_or_else(|| key.clone());
 
         for store_key in store_keys {

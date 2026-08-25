@@ -8,8 +8,8 @@ use wgpu::util::DeviceExt;
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
 pub struct Vertex {
     pub position: [f32; 3],
-    pub normal:   [f32; 3],
-    pub uv:       [f32; 2],
+    pub normal: [f32; 3],
+    pub uv: [f32; 2],
 }
 
 impl Vertex {
@@ -22,8 +22,8 @@ impl Vertex {
     pub fn desc() -> wgpu::VertexBufferLayout<'static> {
         wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<Self>() as wgpu::BufferAddress,
-            step_mode:    wgpu::VertexStepMode::Vertex,
-            attributes:   &Self::ATTRIBS,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &Self::ATTRIBS,
         }
     }
 }
@@ -33,8 +33,8 @@ impl Vertex {
 // ---------------------------------------------------------------------------
 pub struct Mesh {
     pub vertex_buffer: wgpu::Buffer,
-    pub index_buffer:  wgpu::Buffer,
-    pub index_count:   u32,
+    pub index_buffer: wgpu::Buffer,
+    pub index_count: u32,
 }
 
 // ---------------------------------------------------------------------------
@@ -102,9 +102,9 @@ pub fn create_cube(device: &wgpu::Device) -> Mesh {
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct InstanceData {
-    pub model:    [[f32; 4]; 4],
-    pub flag_pad: [f32; 4],   // x: estado selección/hover, y: alpha multiplicador
-    pub uv_rect:  [f32; 4],   // sub-región del texture atlas [u_min, v_min, u_max, v_max]
+    pub model: [[f32; 4]; 4],
+    pub flag_pad: [f32; 4], // x: estado selección/hover, y: alpha multiplicador
+    pub uv_rect: [f32; 4],  // sub-región del texture atlas [u_min, v_min, u_max, v_max]
 }
 
 impl InstanceData {
@@ -120,14 +120,14 @@ impl InstanceData {
     pub fn desc() -> wgpu::VertexBufferLayout<'static> {
         wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<Self>() as wgpu::BufferAddress,
-            step_mode:    wgpu::VertexStepMode::Instance,
-            attributes:   &Self::ATTRIBS,
+            step_mode: wgpu::VertexStepMode::Instance,
+            attributes: &Self::ATTRIBS,
         }
     }
 
     pub fn new(model: glam::Mat4, flag: f32, uv_rect: [f32; 4]) -> Self {
         Self {
-            model:    model.to_cols_array_2d(),
+            model: model.to_cols_array_2d(),
             flag_pad: [flag, 1.0, 0.0, 0.0],
             uv_rect,
         }
@@ -152,16 +152,25 @@ pub fn create_unit_quad_xy(device: &wgpu::Device) -> Mesh {
     upload(device, &vertices, &indices, "unit-quad-xy")
 }
 
-pub(crate) fn upload(device: &wgpu::Device, vertices: &[Vertex], indices: &[u32], label: &str) -> Mesh {
+pub(crate) fn upload(
+    device: &wgpu::Device,
+    vertices: &[Vertex],
+    indices: &[u32],
+    label: &str,
+) -> Mesh {
     let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label:    Some(&format!("{label}-vbo")),
+        label: Some(&format!("{label}-vbo")),
         contents: bytemuck::cast_slice(vertices),
-        usage:    wgpu::BufferUsages::VERTEX,
+        usage: wgpu::BufferUsages::VERTEX,
     });
     let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label:    Some(&format!("{label}-ibo")),
+        label: Some(&format!("{label}-ibo")),
         contents: bytemuck::cast_slice(indices),
-        usage:    wgpu::BufferUsages::INDEX,
+        usage: wgpu::BufferUsages::INDEX,
     });
-    Mesh { vertex_buffer, index_buffer, index_count: indices.len() as u32 }
+    Mesh {
+        vertex_buffer,
+        index_buffer,
+        index_count: indices.len() as u32,
+    }
 }

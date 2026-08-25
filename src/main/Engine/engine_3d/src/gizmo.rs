@@ -5,14 +5,13 @@
 // el depth buffer para que siempre sean visibles encima de la geometría.
 // ---------------------------------------------------------------------------
 
-use bytemuck;
 use wgpu::util::DeviceExt;
 
 pub use rer_engine_shared::player_ui::ndc_draw::NdcVertex as GizmoVertex;
 
 pub struct GizmoBuffer {
     pub vertex_buffer: wgpu::Buffer,
-    pub vertex_count:  u32,
+    pub vertex_count: u32,
 }
 
 fn push_tri(verts: &mut Vec<GizmoVertex>, a: [f32; 3], b: [f32; 3], c: [f32; 3], color: [f32; 4]) {
@@ -21,7 +20,14 @@ fn push_tri(verts: &mut Vec<GizmoVertex>, a: [f32; 3], b: [f32; 3], c: [f32; 3],
     verts.push(GizmoVertex { position: c, color });
 }
 
-fn push_quad(verts: &mut Vec<GizmoVertex>, a: [f32; 3], b: [f32; 3], c: [f32; 3], d: [f32; 3], color: [f32; 4]) {
+fn push_quad(
+    verts: &mut Vec<GizmoVertex>,
+    a: [f32; 3],
+    b: [f32; 3],
+    c: [f32; 3],
+    d: [f32; 3],
+    color: [f32; 4],
+) {
     push_tri(verts, a, b, c, color);
     push_tri(verts, a, c, d, color);
 }
@@ -33,13 +39,13 @@ fn add_arrow_x(verts: &mut Vec<GizmoVertex>, length: f32, color: [f32; 4]) {
     let head = length * 0.072;
 
     let p000 = [0.0, -shaft, -shaft];
-    let p001 = [0.0, -shaft,  shaft];
-    let p010 = [0.0,  shaft, -shaft];
-    let p011 = [0.0,  shaft,  shaft];
+    let p001 = [0.0, -shaft, shaft];
+    let p010 = [0.0, shaft, -shaft];
+    let p011 = [0.0, shaft, shaft];
     let p100 = [base, -shaft, -shaft];
-    let p101 = [base, -shaft,  shaft];
-    let p110 = [base,  shaft, -shaft];
-    let p111 = [base,  shaft,  shaft];
+    let p101 = [base, -shaft, shaft];
+    let p110 = [base, shaft, -shaft];
+    let p111 = [base, shaft, shaft];
 
     push_quad(verts, p000, p100, p110, p010, color);
     push_quad(verts, p001, p011, p111, p101, color);
@@ -49,9 +55,9 @@ fn add_arrow_x(verts: &mut Vec<GizmoVertex>, length: f32, color: [f32; 4]) {
     push_quad(verts, p100, p101, p111, p110, color);
 
     let b0 = [base, -head, -head];
-    let b1 = [base, -head,  head];
-    let b2 = [base,  head,  head];
-    let b3 = [base,  head, -head];
+    let b1 = [base, -head, head];
+    let b2 = [base, head, head];
+    let b3 = [base, head, -head];
     let apex = [tip, 0.0, 0.0];
     push_tri(verts, b0, b1, apex, color);
     push_tri(verts, b1, b2, apex, color);
@@ -66,13 +72,13 @@ fn add_arrow_y(verts: &mut Vec<GizmoVertex>, length: f32, color: [f32; 4]) {
     let head = length * 0.072;
 
     let p000 = [-shaft, 0.0, -shaft];
-    let p001 = [-shaft, 0.0,  shaft];
-    let p010 = [ shaft, 0.0, -shaft];
-    let p011 = [ shaft, 0.0,  shaft];
+    let p001 = [-shaft, 0.0, shaft];
+    let p010 = [shaft, 0.0, -shaft];
+    let p011 = [shaft, 0.0, shaft];
     let p100 = [-shaft, base, -shaft];
-    let p101 = [-shaft, base,  shaft];
-    let p110 = [ shaft, base, -shaft];
-    let p111 = [ shaft, base,  shaft];
+    let p101 = [-shaft, base, shaft];
+    let p110 = [shaft, base, -shaft];
+    let p111 = [shaft, base, shaft];
 
     push_quad(verts, p000, p100, p110, p010, color);
     push_quad(verts, p001, p011, p111, p101, color);
@@ -82,9 +88,9 @@ fn add_arrow_y(verts: &mut Vec<GizmoVertex>, length: f32, color: [f32; 4]) {
     push_quad(verts, p100, p101, p111, p110, color);
 
     let b0 = [-head, base, -head];
-    let b1 = [-head, base,  head];
-    let b2 = [ head, base,  head];
-    let b3 = [ head, base, -head];
+    let b1 = [-head, base, head];
+    let b2 = [head, base, head];
+    let b3 = [head, base, -head];
     let apex = [0.0, tip, 0.0];
     push_tri(verts, b0, b1, apex, color);
     push_tri(verts, b1, b2, apex, color);
@@ -99,13 +105,13 @@ fn add_arrow_z(verts: &mut Vec<GizmoVertex>, length: f32, color: [f32; 4]) {
     let head = length * 0.072;
 
     let p000 = [-shaft, -shaft, 0.0];
-    let p001 = [-shaft,  shaft, 0.0];
-    let p010 = [ shaft, -shaft, 0.0];
-    let p011 = [ shaft,  shaft, 0.0];
+    let p001 = [-shaft, shaft, 0.0];
+    let p010 = [shaft, -shaft, 0.0];
+    let p011 = [shaft, shaft, 0.0];
     let p100 = [-shaft, -shaft, base];
-    let p101 = [-shaft,  shaft, base];
-    let p110 = [ shaft, -shaft, base];
-    let p111 = [ shaft,  shaft, base];
+    let p101 = [-shaft, shaft, base];
+    let p110 = [shaft, -shaft, base];
+    let p111 = [shaft, shaft, base];
 
     push_quad(verts, p000, p100, p110, p010, color);
     push_quad(verts, p001, p011, p111, p101, color);
@@ -115,9 +121,9 @@ fn add_arrow_z(verts: &mut Vec<GizmoVertex>, length: f32, color: [f32; 4]) {
     push_quad(verts, p100, p101, p111, p110, color);
 
     let b0 = [-head, -head, base];
-    let b1 = [-head,  head, base];
-    let b2 = [ head,  head, base];
-    let b3 = [ head, -head, base];
+    let b1 = [-head, head, base];
+    let b2 = [head, head, base];
+    let b3 = [head, -head, base];
     let apex = [0.0, 0.0, tip];
     push_tri(verts, b0, b1, apex, color);
     push_tri(verts, b1, b2, apex, color);
@@ -137,7 +143,10 @@ pub fn build_axes(device: &wgpu::Device, length: f32) -> GizmoBuffer {
         usage: wgpu::BufferUsages::VERTEX,
     });
 
-    GizmoBuffer { vertex_buffer, vertex_count: verts.len() as u32 }
+    GizmoBuffer {
+        vertex_buffer,
+        vertex_count: verts.len() as u32,
+    }
 }
 
 /// Frustum visual de la cámara del jugador (modo editor 3D).
@@ -169,8 +178,14 @@ pub fn build_fps_camera_frustum(
 
     let mut verts: Vec<GizmoVertex> = Vec::with_capacity(40);
     let mut push_line = |a: Vec3, b: Vec3| {
-        verts.push(GizmoVertex { position: a.to_array(), color });
-        verts.push(GizmoVertex { position: b.to_array(), color });
+        verts.push(GizmoVertex {
+            position: a.to_array(),
+            color,
+        });
+        verts.push(GizmoVertex {
+            position: b.to_array(),
+            color,
+        });
     };
 
     // Cuerpo de la cámara: cubito wireframe pequeño centrado en el ojo.
@@ -179,18 +194,24 @@ pub fn build_fps_camera_frustum(
     let c001 = eye + (-right - up + forward) * s;
     let c010 = eye + (-right + up - forward) * s;
     let c011 = eye + (-right + up + forward) * s;
-    let c100 = eye + ( right - up - forward) * s;
-    let c101 = eye + ( right - up + forward) * s;
-    let c110 = eye + ( right + up - forward) * s;
-    let c111 = eye + ( right + up + forward) * s;
+    let c100 = eye + (right - up - forward) * s;
+    let c101 = eye + (right - up + forward) * s;
+    let c110 = eye + (right + up - forward) * s;
+    let c111 = eye + (right + up + forward) * s;
 
     // 12 aristas del cubo
-    push_line(c000, c100); push_line(c001, c101);
-    push_line(c010, c110); push_line(c011, c111);
-    push_line(c000, c010); push_line(c001, c011);
-    push_line(c100, c110); push_line(c101, c111);
-    push_line(c000, c001); push_line(c010, c011);
-    push_line(c100, c101); push_line(c110, c111);
+    push_line(c000, c100);
+    push_line(c001, c101);
+    push_line(c010, c110);
+    push_line(c011, c111);
+    push_line(c000, c010);
+    push_line(c001, c011);
+    push_line(c100, c110);
+    push_line(c101, c111);
+    push_line(c000, c001);
+    push_line(c010, c011);
+    push_line(c100, c101);
+    push_line(c110, c111);
 
     // Rectángulo lejano: tamaño según fov y aspect.
     let half_h = (fov_y * 0.5).tan() * far_dist;
@@ -225,9 +246,12 @@ pub fn build_from_vertices(device: &wgpu::Device, verts: &[GizmoVertex]) -> Gizm
         bytemuck::cast_slice(verts)
     };
     let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label:    Some("tool-overlay-vbo"),
+        label: Some("tool-overlay-vbo"),
         contents: data,
-        usage:    wgpu::BufferUsages::VERTEX,
+        usage: wgpu::BufferUsages::VERTEX,
     });
-    GizmoBuffer { vertex_buffer, vertex_count: verts.len() as u32 }
+    GizmoBuffer {
+        vertex_buffer,
+        vertex_count: verts.len() as u32,
+    }
 }

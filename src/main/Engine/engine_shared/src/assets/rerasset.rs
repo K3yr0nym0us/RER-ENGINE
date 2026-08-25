@@ -3,8 +3,8 @@
 use std::io::{Read, Write};
 
 use super::mesh::{SkinnedMeshVertex, StaticMeshVertex};
-use super::rtex::{read_rtex, write_rtex, RtexData};
-use bytemuck::{cast_slice, Pod};
+use super::rtex::{RtexData, read_rtex, write_rtex};
+use bytemuck::{Pod, cast_slice};
 
 pub const RERA_MAGIC: &[u8; 4] = b"RERA";
 pub const RER_ASSET_VERSION: u16 = 1;
@@ -17,17 +17,17 @@ pub const CHUNK_ENTRY_SIZE: usize = 24;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AssetState {
     Importing = 0,
-    Ready     = 1,
-    Failed    = 2,
+    Ready = 1,
+    Failed = 2,
 }
 
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SourceExt {
-    Glb  = 0,
+    Glb = 0,
     Gltf = 1,
     /// Legado — `.rerasset` antiguos importados desde `.fbx`.
-    Fbx  = 2,
+    Fbx = 2,
 }
 
 bitflags::bitflags! {
@@ -42,74 +42,74 @@ bitflags::bitflags! {
 #[repr(u32)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ChunkType {
-    Texture        = 1,
-    Material       = 2,
-    MeshPartMeta   = 3,
+    Texture = 1,
+    Material = 2,
+    MeshPartMeta = 3,
     MeshEditorVert = 4,
-    MeshEditorIdx  = 5,
-    MeshPlayVert   = 6,
-    MeshPlayIdx    = 7,
+    MeshEditorIdx = 5,
+    MeshPlayVert = 6,
+    MeshPlayIdx = 7,
     MeshSkinnedVert = 8,
-    MeshSkinnedIdx  = 9,
-    Skeleton       = 10,
-    AnimClip       = 11,
+    MeshSkinnedIdx = 9,
+    Skeleton = 10,
+    AnimClip = 11,
 }
 
 #[derive(Clone, Debug)]
 pub struct AssetHeader {
-    pub asset_version:     u16,
-    pub importer_version:  u16,
-    pub flags:             AssetFlags,
-    pub category:          u8,
-    pub source_ext:        SourceExt,
-    pub chunk_count:       u16,
-    pub material_count:    u16,
-    pub clip_count:        u16,
-    pub source_size:       u64,
+    pub asset_version: u16,
+    pub importer_version: u16,
+    pub flags: AssetFlags,
+    pub category: u8,
+    pub source_ext: SourceExt,
+    pub chunk_count: u16,
+    pub material_count: u16,
+    pub clip_count: u16,
+    pub source_size: u64,
     pub source_mtime_secs: u64,
-    pub source_sha256:     [u8; 32],
+    pub source_sha256: [u8; 32],
 }
 
 #[derive(Clone, Debug)]
 pub struct ChunkEntry {
-    pub chunk_type:  ChunkType,
+    pub chunk_type: ChunkType,
     pub chunk_index: u32,
-    pub offset:      u64,
-    pub size:        u64,
+    pub offset: u64,
+    pub size: u64,
 }
 
 #[derive(Clone, Debug)]
 pub struct MaterialDesc {
-    pub material_index:      u32,
+    pub material_index: u32,
     pub texture_chunk_index: u32,
-    pub name:                String,
+    pub name: String,
 }
 
 #[derive(Clone, Debug)]
 pub struct BakeMeshPart {
-    pub part_index:     u16,
+    pub part_index: u16,
     pub material_index: u32,
-    pub forward_xz:     [f32; 2],
-    pub local_bounds:   ([f32; 3], [f32; 3]),
-    pub vertices:       Vec<StaticMeshVertex>,
-    pub indices:        Vec<u32>,
+    pub forward_xz: [f32; 2],
+    pub local_bounds: ([f32; 3], [f32; 3]),
+    pub vertices: Vec<StaticMeshVertex>,
+    pub indices: Vec<u32>,
 }
 
 #[derive(Clone, Debug)]
 pub struct BakeSkinnedPart {
-    pub part_index:     u16,
-    pub name:           String,
+    pub part_index: u16,
+    pub name: String,
     pub material_index: u32,
-    pub vertices:       Vec<SkinnedMeshVertex>,
-    pub indices:        Vec<u32>,
+    pub vertices: Vec<SkinnedMeshVertex>,
+    pub indices: Vec<u32>,
 }
 
 #[derive(Clone, Debug)]
 pub struct ImportedAnimationClip {
-    pub name:       String,
+    pub name: String,
     pub duration_s: f32,
-    pub fps:        f32,
-    pub blob:       Vec<u8>,
+    pub fps: f32,
+    pub blob: Vec<u8>,
 }
 
 #[derive(Clone, Debug)]
@@ -119,24 +119,24 @@ pub struct ImportedSkeleton {
 
 #[derive(Clone, Debug)]
 pub struct BakeInput {
-    pub category:           u8,
-    pub source_ext:         SourceExt,
-    pub source_size:        u64,
-    pub source_mtime_secs:  u64,
-    pub source_sha256:      Option<[u8; 32]>,
-    pub textures:           Vec<RtexData>,
-    pub materials:          Vec<MaterialDesc>,
-    pub editor_parts:       Vec<BakeMeshPart>,
-    pub play_parts:         Option<Vec<BakeMeshPart>>,
-    pub skinned_parts:      Option<Vec<BakeSkinnedPart>>,
-    pub skeleton:           Option<ImportedSkeleton>,
-    pub clips:              Vec<ImportedAnimationClip>,
+    pub category: u8,
+    pub source_ext: SourceExt,
+    pub source_size: u64,
+    pub source_mtime_secs: u64,
+    pub source_sha256: Option<[u8; 32]>,
+    pub textures: Vec<RtexData>,
+    pub materials: Vec<MaterialDesc>,
+    pub editor_parts: Vec<BakeMeshPart>,
+    pub play_parts: Option<Vec<BakeMeshPart>>,
+    pub skinned_parts: Option<Vec<BakeSkinnedPart>>,
+    pub skeleton: Option<ImportedSkeleton>,
+    pub clips: Vec<ImportedAnimationClip>,
 }
 
 #[derive(Clone, Debug)]
 pub struct RerassetFile {
-    pub header:    AssetHeader,
-    pub chunks:    Vec<ChunkEntry>,
+    pub header: AssetHeader,
+    pub chunks: Vec<ChunkEntry>,
     pub raw_bytes: Vec<u8>,
 }
 
@@ -155,7 +155,7 @@ fn write_pod_slice<T: Pod>(w: &mut impl Write, slice: &[T]) -> std::io::Result<(
 
 fn read_pod_vec<T: Pod>(r: &mut impl Read, byte_len: usize) -> std::io::Result<Vec<T>> {
     let elem = std::mem::size_of::<T>();
-    if byte_len % elem != 0 {
+    if !byte_len.is_multiple_of(elem) {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
             "tamaño de chunk no alineado",
@@ -314,9 +314,8 @@ pub fn write_rerasset(w: &mut impl Write, input: &BakeInput) -> std::io::Result<
         chunk_bodies.push((ChunkType::AnimClip, ci as u32, clip.blob.clone()));
     }
 
-    let chunk_count = u16::try_from(chunk_bodies.len()).map_err(|_| {
-        std::io::Error::new(std::io::ErrorKind::InvalidInput, "demasiados chunks")
-    })?;
+    let chunk_count = u16::try_from(chunk_bodies.len())
+        .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "demasiados chunks"))?;
 
     let header = AssetHeader {
         asset_version: RER_ASSET_VERSION,
@@ -482,9 +481,9 @@ impl RerassetFile {
     pub fn chunk_data(&self, entry: &ChunkEntry) -> std::io::Result<&[u8]> {
         let start = entry.offset as usize;
         let end = start + entry.size as usize;
-        self.raw_bytes
-            .get(start..end)
-            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "chunk fuera de rango"))
+        self.raw_bytes.get(start..end).ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::InvalidData, "chunk fuera de rango")
+        })
     }
 
     pub fn read_texture(&self, entry: &ChunkEntry) -> std::io::Result<RtexData> {
@@ -492,7 +491,10 @@ impl RerassetFile {
         read_rtex(&mut std::io::Cursor::new(data))
     }
 
-    pub fn read_editor_vertices(&self, entry: &ChunkEntry) -> std::io::Result<Vec<StaticMeshVertex>> {
+    pub fn read_editor_vertices(
+        &self,
+        entry: &ChunkEntry,
+    ) -> std::io::Result<Vec<StaticMeshVertex>> {
         let data = self.chunk_data(entry)?;
         read_pod_vec(&mut std::io::Cursor::new(data), data.len())
     }

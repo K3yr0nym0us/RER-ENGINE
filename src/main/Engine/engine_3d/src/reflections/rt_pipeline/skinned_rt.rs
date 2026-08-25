@@ -2,10 +2,10 @@
 
 use glam::{Mat4, Vec3};
 
+use super::bvh::RtTriangle;
 use crate::config_3d::model_animation::GpuSkinnedMeshEntry;
 use crate::config_3d::model_asset::MAX_JOINTS;
 use crate::mesh::SkinnedVertex;
-use super::bvh::RtTriangle;
 
 fn skin_matrix(joints: [u32; 4], weights: [f32; 4], palette: &[[[f32; 4]; 4]]) -> Mat4 {
     let j0 = joints[0].min((MAX_JOINTS - 1) as u32) as usize;

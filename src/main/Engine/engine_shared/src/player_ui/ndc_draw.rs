@@ -32,20 +32,33 @@ pub fn push_quad(
     p3: [f32; 3],
     color: [f32; 4],
 ) {
-    verts.push(NdcVertex { position: p0, color });
-    verts.push(NdcVertex { position: p1, color });
-    verts.push(NdcVertex { position: p2, color });
-    verts.push(NdcVertex { position: p0, color });
-    verts.push(NdcVertex { position: p2, color });
-    verts.push(NdcVertex { position: p3, color });
+    verts.push(NdcVertex {
+        position: p0,
+        color,
+    });
+    verts.push(NdcVertex {
+        position: p1,
+        color,
+    });
+    verts.push(NdcVertex {
+        position: p2,
+        color,
+    });
+    verts.push(NdcVertex {
+        position: p0,
+        color,
+    });
+    verts.push(NdcVertex {
+        position: p2,
+        color,
+    });
+    verts.push(NdcVertex {
+        position: p3,
+        color,
+    });
 }
 
-pub fn push_line_segment(
-    verts: &mut Vec<NdcVertex>,
-    a: [f32; 3],
-    b: [f32; 3],
-    color: [f32; 4],
-) {
+pub fn push_line_segment(verts: &mut Vec<NdcVertex>, a: [f32; 3], b: [f32; 3], color: [f32; 4]) {
     let dx = b[0] - a[0];
     let dy = b[1] - a[1];
     let len = (dx * dx + dy * dy).sqrt();

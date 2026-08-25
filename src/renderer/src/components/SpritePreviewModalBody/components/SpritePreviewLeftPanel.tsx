@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
-import { SelectionMode, type ScriptEntry } from './';
+import type { SelectionMode} from './';
+import type { ScriptEntry } from './';
 import { Link, Unlock, MusicNoteBeamed, FileEarmarkCode, PencilSquare, SkipEndFill, Trash } from 'react-bootstrap-icons';
 import { AppTooltip } from '@components';
 import { useTraslate } from '@hooks';

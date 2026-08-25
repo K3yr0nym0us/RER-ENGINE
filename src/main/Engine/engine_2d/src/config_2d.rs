@@ -17,7 +17,9 @@ pub(crate) use camera_2d::Camera2D;
 
 #[path = "config_2d/world_xy.rs"]
 pub(crate) mod world_xy;
-pub(crate) use world_xy::{aabb_contains_point_xy, screen_pixel_to_world_xy, transform_visual_center};
+pub(crate) use world_xy::{
+    aabb_contains_point_xy, screen_pixel_to_world_xy, transform_visual_center,
+};
 
 #[path = "config_2d/grid_2d.rs"]
 pub(crate) mod grid_2d;
@@ -29,13 +31,13 @@ pub(crate) use physics_2d::PhysicsWorld2D;
 
 #[path = "config_2d/drawing_tool.rs"]
 mod drawing_tool;
-use std::fs;
-use glam::Vec3 as GlamVec3;
 use crate::ecs::{MeshComponent, Transform};
-use crate::engine::State;
 use crate::engine::AnimTextureCacheEntry;
-use crate::ipc::{send_event, EngineEvent};
+use crate::engine::State;
 use crate::gizmo;
+use crate::ipc::{EngineEvent, send_event};
+use glam::Vec3 as GlamVec3;
+use std::fs;
 
 #[path = "config_2d/assets.rs"]
 mod assets;
@@ -46,57 +48,62 @@ mod selection;
 
 #[path = "config_2d/player_ui/mod.rs"]
 pub(crate) mod player_ui;
+pub(crate) use overlay::build_scenario_collision_overlay;
 use overlay::{
-    build_logical_area_overlay,
-    build_pivot_edit_overlay_with_cross,
-    build_tool_overlay,
+    build_logical_area_overlay, build_pivot_edit_overlay_with_cross, build_tool_overlay,
     create_quad_xy,
 };
-pub(crate) use overlay::build_scenario_collision_overlay;
 
 // ── Componente exclusivo del modo 2D ─────────────────────────────────────────
 
 /// Marca una entidad como escenario PNG en una escena 2D.
 #[derive(Debug, Clone)]
 pub(crate) struct ScenarioMarker {
-    pub img_width:    u32,
-    pub img_height:   u32,
+    pub img_width: u32,
+    pub img_height: u32,
     /// Altura base en unidades de mundo (user_scale = 1.0).
     pub base_world_h: f32,
     /// Ruta del PNG original, necesaria para duplicar la entidad.
-    pub path:         String,
+    pub path: String,
 }
 
 /// Marca una entidad como personaje PNG en una escena 2D.
 #[derive(Debug, Clone)]
 pub(crate) struct CharacterMarker {
-    pub img_width:    u32,
-    pub img_height:   u32,
+    pub img_width: u32,
+    pub img_height: u32,
     /// Altura base en unidades de mundo (user_scale = 1.0).
     pub base_world_h: f32,
     /// Bounds opacos del PNG original, usados como collider de arranque.
     pub tight_bounds: Option<[u32; 4]>,
     /// Ruta del PNG original, necesaria para duplicar la entidad.
-    pub path:         String,
+    pub path: String,
 }
 
 // ── Herramientas de dibujo ─────────────────────────────────────────────────
 
 /// Estado de la herramienta activa de dibujo (solo en modo 2D).
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub(crate) enum ActiveTool {
+    #[default]
     None,
-    DrawCollider { points_world: Vec<[f32; 2]>, cursor_world: Option<[f32; 2]> },
-    DrawExecutionArea { points_world: Vec<[f32; 2]>, cursor_world: Option<[f32; 2]> },
-    QuickBuildPlace { cursor_world: Option<[f32; 2]> },
-}
-
-impl Default for ActiveTool {
-    fn default() -> Self { ActiveTool::None }
+    DrawCollider {
+        points_world: Vec<[f32; 2]>,
+        cursor_world: Option<[f32; 2]>,
+    },
+    DrawExecutionArea {
+        points_world: Vec<[f32; 2]>,
+        cursor_world: Option<[f32; 2]>,
+    },
+    QuickBuildPlace {
+        cursor_world: Option<[f32; 2]>,
+    },
 }
 
 impl ActiveTool {
-    pub(crate) fn is_active(&self) -> bool { !matches!(self, ActiveTool::None) }
+    pub(crate) fn is_active(&self) -> bool {
+        !matches!(self, ActiveTool::None)
+    }
 }
 
 /// Marca una entidad ECS como colisionador creado con la herramienta de dibujo.
@@ -164,7 +171,9 @@ impl State {
 
         let mut best: Option<(f32, (f32, f32))> = None;
         for &id in candidates {
-            if id == ghost_id { continue; }
+            if id == ghost_id {
+                continue;
+            }
 
             let same_blueprint = if preview_kind == "scenario" {
                 self.world
@@ -177,9 +186,13 @@ impl State {
                     .map(|m| m.path.as_str() == preview_path)
                     .unwrap_or(false)
             };
-            if !same_blueprint { continue; }
+            if !same_blueprint {
+                continue;
+            }
 
-            let Some(t) = self.world.get::<Transform>(id) else { continue; };
+            let Some(t) = self.world.get::<Transform>(id) else {
+                continue;
+            };
             let entity_scale_x = if preview_kind == "scenario" {
                 self.snap_size_to_grid_2d(t.scale.x)
             } else {
@@ -196,19 +209,21 @@ impl State {
             let dx = wx - t.position.x;
             let dy = wy - t.position.y;
 
-            let snap_x = t.position.x + if dx >= 0.0 {
-                entity_half_w + ghost_half_w
-            } else {
-                -(entity_half_w + ghost_half_w)
-            };
+            let snap_x = t.position.x
+                + if dx >= 0.0 {
+                    entity_half_w + ghost_half_w
+                } else {
+                    -(entity_half_w + ghost_half_w)
+                };
             let snap_y = t.position.y;
 
             let snap_x_v = t.position.x;
-            let snap_y_v = t.position.y + if dy >= 0.0 {
-                entity_half_h + ghost_half_h
-            } else {
-                -(entity_half_h + ghost_half_h)
-            };
+            let snap_y_v = t.position.y
+                + if dy >= 0.0 {
+                    entity_half_h + ghost_half_h
+                } else {
+                    -(entity_half_h + ghost_half_h)
+                };
 
             let dist_h = ((wx - snap_x).powi(2) + (wy - snap_y).powi(2)).sqrt();
             let dist_v = ((wx - snap_x_v).powi(2) + (wy - snap_y_v).powi(2)).sqrt();
@@ -227,7 +242,7 @@ impl State {
                 continue;
             }
 
-            if best.map_or(true, |(best_dist, _)| dist < best_dist) {
+            if best.is_none_or(|(best_dist, _)| dist < best_dist) {
                 best = Some((dist, candidate));
             }
         }
@@ -243,29 +258,41 @@ impl State {
     }
 
     pub(crate) fn update_tool_overlay_cursor_2d(&mut self, pixel_x: f32, pixel_y: f32) {
-        let Some((wx, wy)) = self.screen_to_world_2d(pixel_x, pixel_y) else { return; };
+        let Some((wx, wy)) = self.screen_to_world_2d(pixel_x, pixel_y) else {
+            return;
+        };
         let quick_build_snap_target = self.quick_build_snap_position_2d(wx, wy);
         match &mut self.active_tool {
-            ActiveTool::DrawCollider { points_world, cursor_world }
-            | ActiveTool::DrawExecutionArea { points_world, cursor_world } => {
+            ActiveTool::DrawCollider {
+                points_world,
+                cursor_world,
+            }
+            | ActiveTool::DrawExecutionArea {
+                points_world,
+                cursor_world,
+            } => {
                 *cursor_world = Some([wx, wy]);
                 let pts_clone = points_world.clone();
-                self.tool_overlay_buffer = build_tool_overlay(&self.device, &pts_clone, *cursor_world);
+                self.tool_overlay_buffer =
+                    build_tool_overlay(&self.device, &pts_clone, *cursor_world);
             }
             ActiveTool::QuickBuildPlace { cursor_world } => {
                 let (target_x, target_y) = quick_build_snap_target.unwrap_or((wx, wy));
                 *cursor_world = Some([target_x, target_y]);
                 let effective_scale = self.quick_build_effective_scale_2d();
-                if let Some(ghost_id) = self.quick_build_ghost_id {
-                    if let Some(t) = self.world.get_mut::<Transform>(ghost_id) {
-                        if let Some(scale) = effective_scale {
-                            t.scale = GlamVec3::new(scale[0], scale[1], scale[2]);
-                        }
-                        t.position = GlamVec3::new(target_x, target_y, 0.5);
+                if let Some(ghost_id) = self.quick_build_ghost_id
+                    && let Some(t) = self.world.get_mut::<Transform>(ghost_id)
+                {
+                    if let Some(scale) = effective_scale {
+                        t.scale = GlamVec3::new(scale[0], scale[1], scale[2]);
                     }
+                    t.position = GlamVec3::new(target_x, target_y, 0.5);
                 }
                 self.tool_overlay_buffer = gizmo::build_from_vertices(&self.device, &[]);
-                send_event(&EngineEvent::QuickBuildMove { x: target_x, y: target_y });
+                send_event(&EngineEvent::QuickBuildMove {
+                    x: target_x,
+                    y: target_y,
+                });
             }
             ActiveTool::None => {}
         }
@@ -273,12 +300,21 @@ impl State {
 
     pub(crate) fn undo_last_tool_step_2d(&mut self) -> bool {
         match &mut self.active_tool {
-            ActiveTool::DrawCollider { points_world, cursor_world }
-            | ActiveTool::DrawExecutionArea { points_world, cursor_world } => {
+            ActiveTool::DrawCollider {
+                points_world,
+                cursor_world,
+            }
+            | ActiveTool::DrawExecutionArea {
+                points_world,
+                cursor_world,
+            } => {
                 if points_world.pop().is_some() {
                     let pts_clone = points_world.clone();
-                    self.tool_overlay_buffer = build_tool_overlay(&self.device, &pts_clone, *cursor_world);
-                    send_event(&EngineEvent::DrawingProgress { count: points_world.len() as u32 });
+                    self.tool_overlay_buffer =
+                        build_tool_overlay(&self.device, &pts_clone, *cursor_world);
+                    send_event(&EngineEvent::DrawingProgress {
+                        count: points_world.len() as u32,
+                    });
                     return true;
                 }
                 false
@@ -296,10 +332,10 @@ impl State {
             return;
         }
         if let Some(t) = self.world.get::<Transform>(id).cloned() {
-            if let Some(saved) = self.anim_saved_transforms.get(&id) {
-                if let Some(tt) = self.world.get_mut::<Transform>(id) {
-                    tt.scale = saved.1;
-                }
+            if let Some(saved) = self.anim_saved_transforms.get(&id)
+                && let Some(tt) = self.world.get_mut::<Transform>(id)
+            {
+                tt.scale = saved.1;
             }
             if let Some(saved) = self.anim_saved_transforms.get_mut(&id) {
                 saved.0 = t.position;
@@ -326,7 +362,7 @@ impl State {
         flip_horizontal: bool,
     ) {
         // Verificar que la entidad existe y obtener su tipo
-        let is_scenario  = self.scenario_entities.contains(&id);
+        let is_scenario = self.scenario_entities.contains(&id);
         let is_character = self.character_entities.contains(&id);
         if !is_scenario && !is_character {
             log::warn!("[play_animation_frame] entidad {id} no es escenario ni personaje");
@@ -342,64 +378,71 @@ impl State {
             path.to_string()
         };
 
-        let cache_entry =
-            if let Some(cached_entry) = self.anim_texture_cache.get(&cache_key) {
-                *cached_entry
-            } else {
-                // Cache miss: cargar, decodificar y subir a GPU UNA sola vez
-                let bytes = match fs::read(path) {
-                    Ok(b)  => b,
-                    Err(e) => {
-                        log::error!("[play_animation_frame] error leyendo {path}: {e}");
-                        send_event(&EngineEvent::Error { message: format!("No se pudo leer el frame: {e}") });
-                        return;
-                    }
-                };
-                use image::ImageReader;
-                use std::io::Cursor;
-                let img = match ImageReader::new(Cursor::new(&bytes))
-                    .with_guessed_format()
-                    .map_err(|e| e.to_string())
-                    .and_then(|r| r.decode().map_err(|e| e.to_string()))
-                {
-                    Ok(i)  => i.to_rgba8(),
-                    Err(e) => {
-                        log::error!("[play_animation_frame] error decodificando PNG {path}: {e}");
-                        send_event(&EngineEvent::Error { message: format!("Error al decodificar frame: {e}") });
-                        return;
-                    }
-                };
-                let processed = if let Some((sx, sy, sw, sh)) = src_rect {
-                    let (sheet_w, sheet_h) = img.dimensions();
-                    if sx >= sheet_w || sy >= sheet_h {
-                        log::error!("[play_animation_frame] recorte fuera de rango para {path}: x={sx} y={sy} sheet={sheet_w}x{sheet_h}");
-                        send_event(&EngineEvent::Error { message: "Recorte de frame fuera del sprite sheet".to_string() });
-                        return;
-                    }
-
-                    let max_w = sheet_w.saturating_sub(sx);
-                    let max_h = sheet_h.saturating_sub(sy);
-                    let crop_w = sw.min(max_w).max(1);
-                    let crop_h = sh.min(max_h).max(1);
-
-                    image::imageops::crop_imm(&img, sx, sy, crop_w, crop_h).to_image()
-                } else {
-                    img
-                };
-
-                let (w, h) = processed.dimensions();
-                let uv_packed = self.atlas.pack(&self.queue, &processed, w, h);
-                let tight_bounds = compute_tight_bounds(&processed);
-                let cache_entry = AnimTextureCacheEntry {
-                    uv_rect: uv_packed,
-                    img_width: w,
-                    img_height: h,
-                    tight_bounds,
-                };
-                self.anim_texture_cache.insert(cache_key, cache_entry);
-                
-                cache_entry
+        let cache_entry = if let Some(cached_entry) = self.anim_texture_cache.get(&cache_key) {
+            *cached_entry
+        } else {
+            // Cache miss: cargar, decodificar y subir a GPU UNA sola vez
+            let bytes = match fs::read(path) {
+                Ok(b) => b,
+                Err(e) => {
+                    log::error!("[play_animation_frame] error leyendo {path}: {e}");
+                    send_event(&EngineEvent::Error {
+                        message: format!("No se pudo leer el frame: {e}"),
+                    });
+                    return;
+                }
             };
+            use image::ImageReader;
+            use std::io::Cursor;
+            let img = match ImageReader::new(Cursor::new(&bytes))
+                .with_guessed_format()
+                .map_err(|e| e.to_string())
+                .and_then(|r| r.decode().map_err(|e| e.to_string()))
+            {
+                Ok(i) => i.to_rgba8(),
+                Err(e) => {
+                    log::error!("[play_animation_frame] error decodificando PNG {path}: {e}");
+                    send_event(&EngineEvent::Error {
+                        message: format!("Error al decodificar frame: {e}"),
+                    });
+                    return;
+                }
+            };
+            let processed = if let Some((sx, sy, sw, sh)) = src_rect {
+                let (sheet_w, sheet_h) = img.dimensions();
+                if sx >= sheet_w || sy >= sheet_h {
+                    log::error!(
+                        "[play_animation_frame] recorte fuera de rango para {path}: x={sx} y={sy} sheet={sheet_w}x{sheet_h}"
+                    );
+                    send_event(&EngineEvent::Error {
+                        message: "Recorte de frame fuera del sprite sheet".to_string(),
+                    });
+                    return;
+                }
+
+                let max_w = sheet_w.saturating_sub(sx);
+                let max_h = sheet_h.saturating_sub(sy);
+                let crop_w = sw.min(max_w).max(1);
+                let crop_h = sh.min(max_h).max(1);
+
+                image::imageops::crop_imm(&img, sx, sy, crop_w, crop_h).to_image()
+            } else {
+                img
+            };
+
+            let (w, h) = processed.dimensions();
+            let uv_packed = self.atlas.pack(&self.queue, &processed, w, h);
+            let tight_bounds = compute_tight_bounds(&processed);
+            let cache_entry = AnimTextureCacheEntry {
+                uv_rect: uv_packed,
+                img_width: w,
+                img_height: h,
+                tight_bounds,
+            };
+            self.anim_texture_cache.insert(cache_key, cache_entry);
+
+            cache_entry
+        };
 
         let uv_rect = cache_entry.uv_rect;
         let img_width = cache_entry.img_width;
@@ -432,91 +475,101 @@ impl State {
         // recorte activo se conserva la proporción del PNG completo y el frame
         // queda estirado. Ajustamos solo escala para preservar la posición de
         // colocación (quick build/grid) y evitar saltos visuales.
-        if is_scenario && logical_w > 0 && logical_h > 0 {
-            if let Some(t) = self.world.get_mut::<Transform>(id) {
-                let world_per_px = t.scale.y / logical_h.max(1) as f32;
-                t.scale = GlamVec3::new(
-                    img_width as f32 * world_per_px,
-                    img_height as f32 * world_per_px,
-                    1.0,
-                );
-            }
+        if is_scenario
+            && logical_w > 0
+            && logical_h > 0
+            && let Some(t) = self.world.get_mut::<Transform>(id)
+        {
+            let world_per_px = t.scale.y / logical_h.max(1) as f32;
+            t.scale = GlamVec3::new(
+                img_width as f32 * world_per_px,
+                img_height as f32 * world_per_px,
+                1.0,
+            );
         }
 
-        if is_character && logical_w > 0 && logical_h > 0 {
-            if let Some(transform) = self.world.get::<Transform>(id).cloned() {
-                let saved = self.anim_saved_transforms
-                    .entry(id)
-                    .or_insert((transform.position, transform.scale));
+        if is_character
+            && logical_w > 0
+            && logical_h > 0
+            && let Some(transform) = self.world.get::<Transform>(id).cloned()
+        {
+            let saved = self
+                .anim_saved_transforms
+                .entry(id)
+                .or_insert((transform.position, transform.scale));
 
-                let orig_pos = saved.0;
-                let orig_scale = saved.1;
+            let orig_pos = saved.0;
+            let orig_scale = saved.1;
 
-                // Espacio de dibujo fijo (logical_w×logical_h); frame a 1:1 px dentro; solo pivot.
-                let logical_w_f = logical_w.max(1) as f32;
-                let logical_h_f = logical_h.max(1) as f32;
-                let img_w_f = img_width as f32;
-                let img_h_f = img_height.max(1) as f32;
-                let world_per_px = orig_scale.y / logical_h_f;
-                let frame_offset_x = (logical_w_f - img_w_f) * 0.5;
-                let frame_offset_y = logical_h_f - img_h_f;
-                let pivot_on_image_x = if flip_horizontal {
-                    img_w_f - (pivot_x - frame_offset_x)
+            // Espacio de dibujo fijo (logical_w×logical_h); frame a 1:1 px dentro; solo pivot.
+            let logical_w_f = logical_w.max(1) as f32;
+            let logical_h_f = logical_h.max(1) as f32;
+            let img_w_f = img_width as f32;
+            let img_h_f = img_height.max(1) as f32;
+            let world_per_px = orig_scale.y / logical_h_f;
+            let frame_offset_x = (logical_w_f - img_w_f) * 0.5;
+            let frame_offset_y = logical_h_f - img_h_f;
+            let pivot_on_image_x = if flip_horizontal {
+                img_w_f - (pivot_x - frame_offset_x)
+            } else {
+                pivot_x - frame_offset_x
+            };
+            let pivot_on_image_y = pivot_y - frame_offset_y;
+            let new_scale_x = img_w_f * world_per_px;
+            let new_scale_y = img_h_f * world_per_px;
+            let offset_x = (pivot_on_image_x - img_w_f * 0.5) * world_per_px;
+            let offset_y = -(pivot_on_image_y / img_h_f - 0.5) * new_scale_y;
+
+            if let Some(t) = self.world.get_mut::<Transform>(id) {
+                t.scale = GlamVec3::new(new_scale_x, new_scale_y, 1.0);
+                // Entidades con física: t.position es el body position (pivot point),
+                // el offset visual se aplica al renderizar vía visual_offsets.
+                // Entidades sin física: ajuste directo de posición para backward compat.
+                if self.physics_2d.has_physics(id) {
+                    let vis_offset = GlamVec3::new(-offset_x, -offset_y, 0.0);
+                    self.visual_offsets.insert(id, vis_offset);
                 } else {
-                    pivot_x - frame_offset_x
-                };
-                let pivot_on_image_y = pivot_y - frame_offset_y;
-                let new_scale_x = img_w_f * world_per_px;
-                let new_scale_y = img_h_f * world_per_px;
-                let offset_x = (pivot_on_image_x - img_w_f * 0.5) * world_per_px;
-                let offset_y = -(pivot_on_image_y / img_h_f - 0.5) * new_scale_y;
-
-                if let Some(t) = self.world.get_mut::<Transform>(id) {
-                    t.scale = GlamVec3::new(new_scale_x, new_scale_y, 1.0);
-                    // Entidades con física: t.position es el body position (pivot point),
-                    // el offset visual se aplica al renderizar vía visual_offsets.
-                    // Entidades sin física: ajuste directo de posición para backward compat.
-                    if self.physics_2d.has_physics(id) {
-                        let vis_offset = GlamVec3::new(-offset_x, -offset_y, 0.0);
-                        self.visual_offsets.insert(id, vis_offset);
-                    } else {
-                        t.position = orig_pos - GlamVec3::new(offset_x, offset_y, 0.0);
-                    }
+                    t.position = orig_pos - GlamVec3::new(offset_x, offset_y, 0.0);
                 }
+            }
 
-                // Actualizar collider por frame solo fuera de gameplay.
-                // En preview/juego el collider del personaje debe ser estable
-                // (estilo CharacterBody2D de Godot) para evitar atravesar
-                // paredes cuando los frames cambian tight-bounds/offset.
-                if self.physics_2d.has_physics(id) && !self.preview_playing {
-                    let bounds = cache_entry.tight_bounds.unwrap_or([0, 0, cache_entry.img_width.max(1), cache_entry.img_height.max(1)]);
-                    if let Some(transform) = self.world.get::<Transform>(id) {
-                        let world_per_px = transform.scale.y / cache_entry.img_height.max(1) as f32;
-                        let bx = bounds[0] as f32;
-                        let by = bounds[1] as f32;
-                        let bw = bounds[2] as f32;
-                        let bh = bounds[3] as f32;
-                        let half_ext = [
-                            bw * 0.5 * world_per_px,
-                            bh * 0.5 * world_per_px,
-                            0.01,
-                        ];
-                        let col_off = [
-                            (bx + bw * 0.5 - cache_entry.img_width as f32 * 0.5) * world_per_px,
-                            (cache_entry.img_height as f32 * 0.5 - by - bh * 0.5) * world_per_px,
-                            0.0,
-                        ];
-                        // Recomponer forma desde tight_bounds del frame (contorno), no solo offset.
-                        self.physics_2d.clear_collider_shape(id);
-                        self.physics_2d
-                            .sync_entity_collider_offset_preserving_shape(id, half_ext, col_off);
-                    }
+            // Actualizar collider por frame solo fuera de gameplay.
+            // En preview/juego el collider del personaje debe ser estable
+            // (estilo CharacterBody2D de Godot) para evitar atravesar
+            // paredes cuando los frames cambian tight-bounds/offset.
+            if self.physics_2d.has_physics(id) && !self.preview_playing {
+                let bounds = cache_entry.tight_bounds.unwrap_or([
+                    0,
+                    0,
+                    cache_entry.img_width.max(1),
+                    cache_entry.img_height.max(1),
+                ]);
+                if let Some(transform) = self.world.get::<Transform>(id) {
+                    let world_per_px = transform.scale.y / cache_entry.img_height.max(1) as f32;
+                    let bx = bounds[0] as f32;
+                    let by = bounds[1] as f32;
+                    let bw = bounds[2] as f32;
+                    let bh = bounds[3] as f32;
+                    let half_ext = [bw * 0.5 * world_per_px, bh * 0.5 * world_per_px, 0.01];
+                    let col_off = [
+                        (bx + bw * 0.5 - cache_entry.img_width as f32 * 0.5) * world_per_px,
+                        (cache_entry.img_height as f32 * 0.5 - by - bh * 0.5) * world_per_px,
+                        0.0,
+                    ];
+                    // Recomponer forma desde tight_bounds del frame (contorno), no solo offset.
+                    self.physics_2d.clear_collider_shape(id);
+                    self.physics_2d
+                        .sync_entity_collider_offset_preserving_shape(id, half_ext, col_off);
                 }
             }
         }
     }
 
-    pub(crate) fn preload_anim_frame_with_rect(&mut self, path: &str, src_rect: Option<(u32, u32, u32, u32)>) {
+    pub(crate) fn preload_anim_frame_with_rect(
+        &mut self,
+        path: &str,
+        src_rect: Option<(u32, u32, u32, u32)>,
+    ) {
         let cache_key = if let Some((sx, sy, sw, sh)) = src_rect {
             format!("{path}#{sx}:{sy}:{sw}:{sh}")
         } else {
@@ -528,7 +581,10 @@ impl State {
         }
         let bytes = match fs::read(path) {
             Ok(b) => b,
-            Err(e) => { log::warn!("[preload] no se pudo leer {path}: {e}"); return; }
+            Err(e) => {
+                log::warn!("[preload] no se pudo leer {path}: {e}");
+                return;
+            }
         };
         use image::ImageReader;
         use std::io::Cursor;
@@ -538,12 +594,17 @@ impl State {
             .and_then(|r| r.decode().map_err(|e| e.to_string()))
         {
             Ok(i) => i.to_rgba8(),
-            Err(e) => { log::warn!("[preload] error decodificando {path}: {e}"); return; }
+            Err(e) => {
+                log::warn!("[preload] error decodificando {path}: {e}");
+                return;
+            }
         };
         let processed = if let Some((sx, sy, sw, sh)) = src_rect {
             let (sheet_w, sheet_h) = img.dimensions();
             if sx >= sheet_w || sy >= sheet_h {
-                log::warn!("[preload] recorte fuera de rango para {path}: x={sx} y={sy} sheet={sheet_w}x{sheet_h}");
+                log::warn!(
+                    "[preload] recorte fuera de rango para {path}: x={sx} y={sy} sheet={sheet_w}x{sheet_h}"
+                );
                 return;
             }
             let max_w = sheet_w.saturating_sub(sx);
@@ -557,18 +618,20 @@ impl State {
 
         let (w, h) = processed.dimensions();
         let uv = self.atlas.pack(&self.queue, &processed, w, h);
-        self.anim_texture_cache.insert(cache_key, AnimTextureCacheEntry {
-            uv_rect: uv,
-            img_width: w,
-            img_height: h,
-            // tight_bounds solo se calcula aquí (preload/edición), nunca en hot path.
-            tight_bounds: compute_tight_bounds(&processed),
-        });
-        
+        self.anim_texture_cache.insert(
+            cache_key,
+            AnimTextureCacheEntry {
+                uv_rect: uv,
+                img_width: w,
+                img_height: h,
+                // tight_bounds solo se calcula aquí (preload/edición), nunca en hot path.
+                tight_bounds: compute_tight_bounds(&processed),
+            },
+        );
     }
 
     /// Restaura el sprite original de una entidad después de una animación.
-pub(crate) fn restore_animation_frame(&mut self, id: u32) {
+    pub(crate) fn restore_animation_frame(&mut self, id: u32) {
         let is_scenario = self.scenario_entities.contains(&id);
         let is_character = self.character_entities.contains(&id);
         if !is_scenario && !is_character {
@@ -597,9 +660,13 @@ pub(crate) fn restore_animation_frame(&mut self, id: u32) {
             if let Some(t) = self.world.get_mut::<Transform>(id) {
                 t.scale = orig_scale;
             }
-            log::info!("[restore_animation_frame] entidad {id} → escala restaurada, posición conservada");
+            log::info!(
+                "[restore_animation_frame] entidad {id} → escala restaurada, posición conservada"
+            );
         } else {
-            log::warn!("[restore_animation_frame] entidad {id} sin anim_saved_transforms — escala NO modificada");
+            log::warn!(
+                "[restore_animation_frame] entidad {id} sin anim_saved_transforms — escala NO modificada"
+            );
         }
 
         log::info!("[restore_animation_frame] sprite restaurado para entidad {id}");
@@ -611,10 +678,19 @@ pub(crate) fn restore_animation_frame(&mut self, id: u32) {
     /// - Muestra el frame como textura temporal (sin modificar la escala).
     /// - Dibuja un borde cyan alrededor de la entidad en el overlay.
     /// - El siguiente click calculará el pivot y emitirá PivotSelected.
-    pub(crate) fn enter_pivot_edit_mode(&mut self, id: u32, frame_path: &str, pivot_x: f32, pivot_y: f32) {
+    pub(crate) fn enter_pivot_edit_mode(
+        &mut self,
+        id: u32,
+        frame_path: &str,
+        pivot_x: f32,
+        pivot_y: f32,
+    ) {
         let bytes = match fs::read(frame_path) {
-            Ok(b)  => b,
-            Err(e) => { log::error!("[enter_pivot_edit_mode] error leyendo {frame_path}: {e}"); return; }
+            Ok(b) => b,
+            Err(e) => {
+                log::error!("[enter_pivot_edit_mode] error leyendo {frame_path}: {e}");
+                return;
+            }
         };
         use image::ImageReader;
         use std::io::Cursor;
@@ -623,8 +699,11 @@ pub(crate) fn restore_animation_frame(&mut self, id: u32) {
             .map_err(|e| e.to_string())
             .and_then(|r| r.decode().map_err(|e| e.to_string()))
         {
-            Ok(i)  => i.to_rgba8(),
-            Err(e) => { log::error!("[enter_pivot_edit_mode] error decodificando {frame_path}: {e}"); return; }
+            Ok(i) => i.to_rgba8(),
+            Err(e) => {
+                log::error!("[enter_pivot_edit_mode] error decodificando {frame_path}: {e}");
+                return;
+            }
         };
         let (img_w, img_h) = img.dimensions();
 
@@ -633,14 +712,20 @@ pub(crate) fn restore_animation_frame(&mut self, id: u32) {
         let (new_pos, new_scale_x, new_scale_y) = {
             let t = match self.world.get::<Transform>(id) {
                 Some(t) => t.clone(),
-                None    => { log::error!("[enter_pivot_edit_mode] entidad {id} sin Transform"); return; }
+                None => {
+                    log::error!("[enter_pivot_edit_mode] entidad {id} sin Transform");
+                    return;
+                }
             };
-            let (_, orig_scale) = *self.anim_saved_transforms.entry(id).or_insert((t.position, t.scale));
+            let (_, orig_scale) = *self
+                .anim_saved_transforms
+                .entry(id)
+                .or_insert((t.position, t.scale));
             // Escala ajustada: altura = orig_scale.y, ancho proporcional al ratio píxel del frame.
             // Esto asegura que el frame se vea sin deformar al hacer click para asignar el pivot.
-            let aspect   = img_w as f32 / img_h as f32;
-            let scale_y  = orig_scale.y;
-            let scale_x  = scale_y * aspect;
+            let aspect = img_w as f32 / img_h as f32;
+            let scale_y = orig_scale.y;
+            let scale_x = scale_y * aspect;
             (t.position, scale_x, scale_y)
         };
 
@@ -653,19 +738,22 @@ pub(crate) fn restore_animation_frame(&mut self, id: u32) {
         if let Some(m) = self.world.get::<MeshComponent>(id) {
             let tex_pos = m.tex_idx;
             if tex_pos < self.uv_rects.len() {
-                // Empacar el frame en el atlas (o recuperar de caché) 
+                // Empacar el frame en el atlas (o recuperar de caché)
                 let cache_key = frame_path.to_string();
                 let uv = if let Some(cached_entry) = self.anim_texture_cache.get(&cache_key) {
                     cached_entry.uv_rect
                 } else {
                     let u = self.atlas.pack(&self.queue, &img, img_w, img_h);
-                    self.anim_texture_cache.insert(cache_key, AnimTextureCacheEntry {
-                        uv_rect: u,
-                        img_width: img_w,
-                        img_height: img_h,
-                        // tight_bounds solo se calcula aquí (preload/edición), nunca en hot path.
-                        tight_bounds: compute_tight_bounds(&img),
-                    });
+                    self.anim_texture_cache.insert(
+                        cache_key,
+                        AnimTextureCacheEntry {
+                            uv_rect: u,
+                            img_width: img_w,
+                            img_height: img_h,
+                            // tight_bounds solo se calcula aquí (preload/edición), nunca en hot path.
+                            tight_bounds: compute_tight_bounds(&img),
+                        },
+                    );
                     u
                 };
                 self.anim_overrides.insert(tex_pos, uv);
@@ -677,12 +765,16 @@ pub(crate) fn restore_animation_frame(&mut self, id: u32) {
             &self.device,
             new_pos,
             GlamVec3::new(new_scale_x, new_scale_y, 1.0),
-            pivot_x, pivot_y,
-            img_w, img_h,
+            pivot_x,
+            pivot_y,
+            img_w,
+            img_h,
         );
 
         self.pivot_edit_mode = Some((id, frame_path.to_string(), img_w, img_h));
-        log::info!("[enter_pivot_edit_mode] activo para entidad {id} ({img_w}×{img_h}) escala=({new_scale_x:.3},{new_scale_y:.3}): {frame_path}");
+        log::info!(
+            "[enter_pivot_edit_mode] activo para entidad {id} ({img_w}×{img_h}) escala=({new_scale_x:.3},{new_scale_y:.3}): {frame_path}"
+        );
     }
 
     /// Cancela el modo edición de pivot y restaura el sprite original.
@@ -702,17 +794,20 @@ pub(crate) fn restore_animation_frame(&mut self, id: u32) {
     pub(crate) fn enter_logical_area_mode(&mut self, id: u32, w: u32, h: u32) {
         let transform = match self.world.get::<Transform>(id) {
             Some(t) => t.clone(),
-            None    => { log::warn!("[enter_logical_area_mode] entidad {id} sin Transform"); return; }
+            None => {
+                log::warn!("[enter_logical_area_mode] entidad {id} sin Transform");
+                return;
+            }
         };
         // Usar escala original si hay animación en curso, si no la actual
-        let orig_scale_y = self.anim_saved_transforms
+        let orig_scale_y = self
+            .anim_saved_transforms
             .get(&id)
             .map(|(_, s)| s.y)
             .unwrap_or(transform.scale.y);
 
-        self.tool_overlay_buffer = build_logical_area_overlay(
-            &self.device, transform.position, orig_scale_y, w, h,
-        );
+        self.tool_overlay_buffer =
+            build_logical_area_overlay(&self.device, transform.position, orig_scale_y, w, h);
         self.logical_area_mode = Some(id);
         log::info!("[enter_logical_area_mode] área {w}×{h} para entidad {id}");
     }
@@ -730,23 +825,29 @@ pub(crate) fn restore_animation_frame(&mut self, id: u32) {
     pub(crate) fn handle_pivot_click_2d(&mut self, pixel_x: f32, pixel_y: f32) -> bool {
         let (entity_id, frame_path, img_w, img_h) = match self.pivot_edit_mode.clone() {
             Some(m) => m,
-            None    => return false,
+            None => return false,
         };
-        let Some((wx, wy)) = self.screen_to_world_2d(pixel_x, pixel_y) else { return false };
+        let Some((wx, wy)) = self.screen_to_world_2d(pixel_x, pixel_y) else {
+            return false;
+        };
 
         // Mundo → [0,1] dentro del quad de la entidad
         let transform = match self.world.get::<Transform>(entity_id) {
             Some(t) => t.clone(),
-            None    => return false,
+            None => return false,
         };
-        let nx       = ((wx - transform.position.x) / transform.scale.x + 0.5).clamp(0.0, 1.0);
+        let nx = ((wx - transform.position.x) / transform.scale.x + 0.5).clamp(0.0, 1.0);
         let ny_world = ((wy - transform.position.y) / transform.scale.y + 0.5).clamp(0.0, 1.0);
-        let ny       = 1.0 - ny_world; // imagen: Y = arriba→abajo
+        let ny = 1.0 - ny_world; // imagen: Y = arriba→abajo
 
         let pivot_x = nx * img_w as f32;
         let pivot_y = ny * img_h as f32;
 
-        send_event(&EngineEvent::PivotSelected { frame_path: frame_path.clone(), pivot_x, pivot_y });
+        send_event(&EngineEvent::PivotSelected {
+            frame_path: frame_path.clone(),
+            pivot_x,
+            pivot_y,
+        });
 
         // Restaurar sprite original y limpiar modo
         self.pivot_edit_mode = None;
@@ -763,50 +864,72 @@ pub(crate) fn restore_animation_frame(&mut self, id: u32) {
     /// Devuelve `true` si la herramienta consumió el click (no debe disparar picking).
     pub(crate) fn handle_tool_click_2d(&mut self, pixel_x: f32, pixel_y: f32) -> bool {
         let _cam = match &self.camera_2d {
-            Some(c) => Camera2D { x: c.x, y: c.y, half_h: c.half_h, near: c.near, far: c.far },
-            None    => return false,
+            Some(c) => Camera2D {
+                x: c.x,
+                y: c.y,
+                half_h: c.half_h,
+                near: c.near,
+                far: c.far,
+            },
+            None => return false,
         };
-        if !self.active_tool.is_active() { return false; }
+        if !self.active_tool.is_active() {
+            return false;
+        }
 
-        let Some((wx, wy)) = self.screen_to_world_2d(pixel_x, pixel_y) else { return false; };
+        let Some((wx, wy)) = self.screen_to_world_2d(pixel_x, pixel_y) else {
+            return false;
+        };
 
         match &mut self.active_tool {
-            ActiveTool::DrawCollider { points_world, cursor_world } => {
+            ActiveTool::DrawCollider {
+                points_world,
+                cursor_world,
+            } => {
                 points_world.push([wx, wy]);
                 *cursor_world = Some([wx, wy]);
                 let count = points_world.len() as u32;
 
                 if count >= 4 {
                     let pts: [[f32; 2]; 4] = [
-                        points_world[0], points_world[1],
-                        points_world[2], points_world[3],
+                        points_world[0],
+                        points_world[1],
+                        points_world[2],
+                        points_world[3],
                     ];
                     self.active_tool = ActiveTool::None;
                     self.tool_overlay_buffer = gizmo::build_from_vertices(&self.device, &[]);
                     self.create_collision_box_from_points(&pts, true);
                 } else {
                     let pts_clone: Vec<[f32; 2]> = points_world.clone();
-                    self.tool_overlay_buffer = build_tool_overlay(&self.device, &pts_clone, *cursor_world);
+                    self.tool_overlay_buffer =
+                        build_tool_overlay(&self.device, &pts_clone, *cursor_world);
                     send_event(&EngineEvent::DrawingProgress { count });
                 }
                 true
             }
-            ActiveTool::DrawExecutionArea { points_world, cursor_world } => {
+            ActiveTool::DrawExecutionArea {
+                points_world,
+                cursor_world,
+            } => {
                 points_world.push([wx, wy]);
                 *cursor_world = Some([wx, wy]);
                 let count = points_world.len() as u32;
 
                 if count >= 4 {
                     let pts: [[f32; 2]; 4] = [
-                        points_world[0], points_world[1],
-                        points_world[2], points_world[3],
+                        points_world[0],
+                        points_world[1],
+                        points_world[2],
+                        points_world[3],
                     ];
                     self.active_tool = ActiveTool::None;
                     self.tool_overlay_buffer = gizmo::build_from_vertices(&self.device, &[]);
                     self.create_execution_area_from_points(&pts, true);
                 } else {
                     let pts_clone: Vec<[f32; 2]> = points_world.clone();
-                    self.tool_overlay_buffer = build_tool_overlay(&self.device, &pts_clone, *cursor_world);
+                    self.tool_overlay_buffer =
+                        build_tool_overlay(&self.device, &pts_clone, *cursor_world);
                     send_event(&EngineEvent::DrawingProgress { count });
                 }
                 true
@@ -814,15 +937,23 @@ pub(crate) fn restore_animation_frame(&mut self, id: u32) {
             ActiveTool::QuickBuildPlace { cursor_world } => {
                 let fit_to_grid = self.ctrl_held;
                 let [cx, cy] = if fit_to_grid {
-                    let (sx, sy) = self.quick_build_snap_position_2d(wx, wy).unwrap_or((wx, wy));
+                    let (sx, sy) = self
+                        .quick_build_snap_position_2d(wx, wy)
+                        .unwrap_or((wx, wy));
                     [sx, sy]
                 } else {
                     cursor_world.unwrap_or([wx, wy])
                 };
-                let scale = self.quick_build_effective_scale_2d()
+                let scale = self
+                    .quick_build_effective_scale_2d()
                     .or(self.quick_build_preview_scale)
                     .unwrap_or([1.0, 1.0, 1.0]);
-                send_event(&EngineEvent::QuickBuildClick { x: cx, y: cy, fit_to_grid, scale });
+                send_event(&EngineEvent::QuickBuildClick {
+                    x: cx,
+                    y: cy,
+                    fit_to_grid,
+                    scale,
+                });
                 true
             }
             ActiveTool::None => false,
@@ -830,23 +961,32 @@ pub(crate) fn restore_animation_frame(&mut self, id: u32) {
     }
 
     /// Crea una entidad ECS de colisionador a partir de 4 puntos en espacio de mundo.
-    pub(crate) fn create_collision_box_from_points(&mut self, pts: &[[f32; 2]; 4], track_undo: bool) {
+    pub(crate) fn create_collision_box_from_points(
+        &mut self,
+        pts: &[[f32; 2]; 4],
+        track_undo: bool,
+    ) {
         self.create_collision_box_from_points_at(pts, None, None, track_undo);
     }
 
     /// Igual que `create_collision_box_from_points`, con id y nombre opcionales (import de escena).
     pub(crate) fn create_collision_box_from_points_at(
         &mut self,
-        pts:          &[[f32; 2]; 4],
-        forced_id:    Option<crate::ecs::EntityId>,
+        pts: &[[f32; 2]; 4],
+        forced_id: Option<crate::ecs::EntityId>,
         display_name: Option<&str>,
-        track_undo:   bool,
+        track_undo: bool,
     ) -> Option<crate::ecs::EntityId> {
         let collider_name = display_name
             .filter(|n| !n.trim().is_empty())
             .map(|n| n.to_owned())
-            .unwrap_or_else(|| self.next_numbered_entity_name(rer_engine_shared::editor_defaults::entity_label::COLLIDER));
-        let (entity, pos, scale) = self.create_box_entity_at(pts, &collider_name, [60, 220, 200, 235], forced_id)?;
+            .unwrap_or_else(|| {
+                self.next_numbered_entity_name(
+                    rer_engine_shared::editor_defaults::entity_label::COLLIDER,
+                )
+            });
+        let (entity, pos, scale) =
+            self.create_box_entity_at(pts, &collider_name, [60, 220, 200, 235], forced_id)?;
 
         // Marca la entidad como colisionador y añade física estática.
         self.world.insert(entity, ColliderMarker {});
@@ -856,7 +996,9 @@ pub(crate) fn restore_animation_frame(&mut self, id: u32) {
         // z=-0.5 para el orden de render, pero la simulación física usa XYZ interno:
         // si colisionador y personaje tienen z distinto no detectan contacto.
         self.physics_2d.set_entity_physics(
-            entity, true, "static",
+            entity,
+            true,
+            "static",
             [pos[0], pos[1], 0.0],
             [scale[0] * 0.5, scale[1] * 0.5, 0.01],
             [0.0, 0.0, 0.0],
@@ -875,7 +1017,10 @@ pub(crate) fn restore_animation_frame(&mut self, id: u32) {
             self.push_remove_entity_undo(entity);
         }
 
-        send_event(&EngineEvent::ColliderCreated { id: entity, points: *pts });
+        send_event(&EngineEvent::ColliderCreated {
+            id: entity,
+            points: *pts,
+        });
         if track_undo {
             log::info!("[tool] colisionador creado: entidad {entity} en {:?}", pts);
         }
@@ -884,22 +1029,31 @@ pub(crate) fn restore_animation_frame(&mut self, id: u32) {
 
     /// Crea una entidad ECS de área de ejecución (trigger) a partir de 4 puntos.
     /// No añade física para evitar colisiones con personajes.
-    pub(crate) fn create_execution_area_from_points(&mut self, pts: &[[f32; 2]; 4], track_undo: bool) {
+    pub(crate) fn create_execution_area_from_points(
+        &mut self,
+        pts: &[[f32; 2]; 4],
+        track_undo: bool,
+    ) {
         self.create_execution_area_from_points_at(pts, None, None, track_undo);
     }
 
     pub(crate) fn create_execution_area_from_points_at(
         &mut self,
-        pts:          &[[f32; 2]; 4],
-        forced_id:    Option<crate::ecs::EntityId>,
+        pts: &[[f32; 2]; 4],
+        forced_id: Option<crate::ecs::EntityId>,
         display_name: Option<&str>,
-        track_undo:   bool,
+        track_undo: bool,
     ) -> Option<crate::ecs::EntityId> {
         let trigger_name = display_name
             .filter(|n| !n.trim().is_empty())
             .map(|n| n.to_owned())
-            .unwrap_or_else(|| self.next_numbered_entity_name(rer_engine_shared::editor_defaults::entity_label::EXECUTION_AREA));
-        let (entity, _pos, _scale) = self.create_box_entity_at(pts, &trigger_name, [220, 80, 80, 230], forced_id)?;
+            .unwrap_or_else(|| {
+                self.next_numbered_entity_name(
+                    rer_engine_shared::editor_defaults::entity_label::EXECUTION_AREA,
+                )
+            });
+        let (entity, _pos, _scale) =
+            self.create_box_entity_at(pts, &trigger_name, [220, 80, 80, 230], forced_id)?;
 
         self.world.insert(entity, ExecutionAreaMarker {});
         self.execution_area_entities.push(entity);
@@ -916,9 +1070,15 @@ pub(crate) fn restore_animation_frame(&mut self, id: u32) {
             self.push_remove_entity_undo(entity);
         }
 
-        send_event(&EngineEvent::ExecutionAreaCreated { id: entity, points: *pts });
+        send_event(&EngineEvent::ExecutionAreaCreated {
+            id: entity,
+            points: *pts,
+        });
         if track_undo {
-            log::info!("[tool] área de ejecución creada: entidad {entity} en {:?}", pts);
+            log::info!(
+                "[tool] área de ejecución creada: entidad {entity} en {:?}",
+                pts
+            );
         }
         Some(entity)
     }
@@ -938,13 +1098,19 @@ pub(crate) fn restore_animation_frame(&mut self, id: u32) {
         let mut next_overlaps = std::collections::HashSet::new();
 
         for trigger_id in trigger_ids {
-            let Some(trigger_t) = self.world.get::<Transform>(trigger_id).cloned() else { continue; };
+            let Some(trigger_t) = self.world.get::<Transform>(trigger_id).cloned() else {
+                continue;
+            };
             let trigger_hx = trigger_t.scale.x * 0.5;
             let trigger_hy = trigger_t.scale.y * 0.5;
 
             for actor_id in &actor_ids {
-                let Some(actor_t) = self.world.get::<Transform>(*actor_id).cloned() else { continue; };
-                let Some(actor_center) = self.entity_visual_center(*actor_id) else { continue; };
+                let Some(actor_t) = self.world.get::<Transform>(*actor_id).cloned() else {
+                    continue;
+                };
+                let Some(actor_center) = self.entity_visual_center(*actor_id) else {
+                    continue;
+                };
                 let actor_hx = actor_t.scale.x * 0.5;
                 let actor_hy = actor_t.scale.y * 0.5;
 
@@ -961,7 +1127,6 @@ pub(crate) fn restore_animation_frame(&mut self, id: u32) {
                     continue;
                 }
 
-                
                 let has_attached_script = self.script_engine.entity_has_scripts(trigger_id);
                 crate::ipc::send_event(&crate::ipc::EngineEvent::TriggerEntered {
                     trigger_id,
@@ -978,25 +1143,29 @@ pub(crate) fn restore_animation_frame(&mut self, id: u32) {
                     actor_snapshot.as_ref(),
                 ) {
                     Ok(commands) => self.apply_script_commands(commands),
-                    Err(e) => log::warn!("[trigger] error ejecutando script en área {trigger_id}: {e}"),
+                    Err(e) => {
+                        log::warn!("[trigger] error ejecutando script en área {trigger_id}: {e}")
+                    }
                 }
             }
         }
 
         // Detectar salidas: pares que estaban pero ya no están
-        let exited: Vec<_> = self.execution_overlaps
+        let exited: Vec<_> = self
+            .execution_overlaps
             .iter()
             .filter(|pair| !next_overlaps.contains(*pair))
             .cloned()
             .collect();
         for (trigger_id, actor_id) in exited {
-            
-            crate::ipc::send_event(&crate::ipc::EngineEvent::TriggerExited { trigger_id, actor_id });
+            crate::ipc::send_event(&crate::ipc::EngineEvent::TriggerExited {
+                trigger_id,
+                actor_id,
+            });
         }
 
         self.execution_overlaps = next_overlaps;
     }
-
 }
 
 pub(crate) fn compute_tight_bounds(img: &image::RgbaImage) -> Option<[u32; 4]> {
@@ -1032,7 +1201,10 @@ pub(crate) fn compute_tight_bounds(img: &image::RgbaImage) -> Option<[u32; 4]> {
     ])
 }
 
-pub(crate) fn current_character_cache_entry(state: &State, entity_id: u32) -> Option<AnimTextureCacheEntry> {
+pub(crate) fn current_character_cache_entry(
+    state: &State,
+    entity_id: u32,
+) -> Option<AnimTextureCacheEntry> {
     let (anim_name, frame_index) = if let Some(active) = state.active_animations.get(&entity_id) {
         (active.animation_name.clone(), active.current_frame)
     } else {
@@ -1041,8 +1213,15 @@ pub(crate) fn current_character_cache_entry(state: &State, entity_id: u32) -> Op
     };
 
     let anim = state.animations.get(&entity_id)?.get(&anim_name)?;
-    let frame = anim.frames.get(frame_index.min(anim.frames.len().saturating_sub(1)))?;
-    let cache_key = if let Some((sx, sy, sw, sh)) = frame.src_x.zip(frame.src_y).zip(frame.src_w.zip(frame.src_h)).map(|((x, y), (w, h))| (x, y, w, h)) {
+    let frame = anim
+        .frames
+        .get(frame_index.min(anim.frames.len().saturating_sub(1)))?;
+    let cache_key = if let Some((sx, sy, sw, sh)) = frame
+        .src_x
+        .zip(frame.src_y)
+        .zip(frame.src_w.zip(frame.src_h))
+        .map(|((x, y), (w, h))| (x, y, w, h))
+    {
         format!("{}#{}:{}:{}:{}", frame.path, sx, sy, sw, sh)
     } else {
         frame.path.clone()
@@ -1050,7 +1229,10 @@ pub(crate) fn current_character_cache_entry(state: &State, entity_id: u32) -> Op
     state.anim_texture_cache.get(&cache_key).copied()
 }
 
-pub(crate) fn character_collision_shape(state: &State, entity_id: u32) -> Option<([f32; 3], [f32; 3])> {
+pub(crate) fn character_collision_shape(
+    state: &State,
+    entity_id: u32,
+) -> Option<([f32; 3], [f32; 3])> {
     let transform = state.world.get::<Transform>(entity_id)?;
     let marker = state.world.get::<CharacterMarker>(entity_id)?;
 
@@ -1059,13 +1241,20 @@ pub(crate) fn character_collision_shape(state: &State, entity_id: u32) -> Option
         (
             entry.img_width,
             entry.img_height,
-            entry.tight_bounds.unwrap_or([0, 0, entry.img_width.max(1), entry.img_height.max(1)]),
+            entry
+                .tight_bounds
+                .unwrap_or([0, 0, entry.img_width.max(1), entry.img_height.max(1)]),
         )
     } else {
         (
             marker.img_width,
             marker.img_height,
-            marker.tight_bounds.unwrap_or([0, 0, marker.img_width.max(1), marker.img_height.max(1)]),
+            marker.tight_bounds.unwrap_or([
+                0,
+                0,
+                marker.img_width.max(1),
+                marker.img_height.max(1),
+            ]),
         )
     };
 
@@ -1082,11 +1271,7 @@ pub(crate) fn character_collision_shape(state: &State, entity_id: u32) -> Option
     let bw = bounds[2] as f32;
     let bh = bounds[3] as f32;
 
-    let half_ext = [
-        bw * 0.5 * world_per_px,
-        bh * 0.5 * world_per_px,
-        0.01,
-    ];
+    let half_ext = [bw * 0.5 * world_per_px, bh * 0.5 * world_per_px, 0.01];
     let collider_offset = [
         (bx + bw * 0.5 - img_width as f32 * 0.5) * world_per_px,
         (img_height as f32 * 0.5 - by - bh * 0.5) * world_per_px,

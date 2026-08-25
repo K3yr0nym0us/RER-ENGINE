@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
-use rhai::{Dynamic, Engine, Map, Scope, AST, INT};
+use rhai::{AST, Dynamic, Engine, INT, Map, Scope};
 
 use super::api::{
-    register_native_api, wrap_scene_source, wrap_user_source, ScriptApiContext, ScriptEngineProfile,
+    ScriptApiContext, ScriptEngineProfile, register_native_api, wrap_scene_source, wrap_user_source,
 };
 use super::control::ControlScriptDispatch;
 use super::entity_snapshot::EntitySnapshot;
@@ -67,7 +67,7 @@ impl ScriptEngine {
                 ast,
                 started: false,
             });
-        
+
         Ok(())
     }
 
@@ -84,7 +84,6 @@ impl ScriptEngine {
                     None,
                 );
             }
-            
         }
     }
 
@@ -121,10 +120,6 @@ impl ScriptEngine {
         if let Some(scripts) = self.scripts.get_mut(&entity_id) {
             scripts.retain(|s| !s.path.starts_with("$anim$::"));
         }
-        if anim.is_empty() {
-            return;
-        }
-        
     }
 
     pub fn entity_ids(&self) -> Vec<u32> {
@@ -139,7 +134,6 @@ impl ScriptEngine {
 
     pub fn clear_control_script_cache(&mut self) {
         self.control_script_cache.clear();
-        
     }
 
     pub fn sync_graphics_texture_tier_readback(&self, tier: &str) {
@@ -228,8 +222,7 @@ impl ScriptEngine {
     }
 
     fn source_defines_fn(source: &str, method: &str) -> bool {
-        source.contains(&format!("fn {method}("))
-            || source.contains(&format!("fn {method} ("))
+        source.contains(&format!("fn {method}(")) || source.contains(&format!("fn {method} ("))
     }
 
     fn invoke_script_ast<F>(
@@ -278,12 +271,9 @@ impl ScriptEngine {
             String::new()
         };
         let profile = self.profile;
-        self.invoke_script_ast(
-            &cache_key,
-            source,
-            &invoke_suffix,
-            move |s| wrap_user_source(profile, s),
-        )
+        self.invoke_script_ast(&cache_key, source, &invoke_suffix, move |s| {
+            wrap_user_source(profile, s)
+        })
     }
 
     fn run_control_script_dispatch(
@@ -435,10 +425,10 @@ impl ScriptEngine {
         snapshots: &HashMap<u32, EntitySnapshot>,
         player_ui_active_screen: Option<&str>,
     ) -> Vec<ScriptCmd> {
-        if self.profile == ScriptEngineProfile::Engine3d {
-            if let Ok(mut guard) = self.api_ctx.player_ui_active_screen.lock() {
-                *guard = player_ui_active_screen.map(str::to_string);
-            }
+        if self.profile == ScriptEngineProfile::Engine3d
+            && let Ok(mut guard) = self.api_ctx.player_ui_active_screen.lock()
+        {
+            *guard = player_ui_active_screen.map(str::to_string);
         }
 
         let entity_ids: Vec<u32> = self.scripts.keys().copied().collect();
@@ -459,7 +449,11 @@ impl ScriptEngine {
             let snapshot = snapshots.get(&entity_id);
             let (path, user_source, ast) = {
                 let script = &self.scripts.get(&entity_id).unwrap()[idx];
-                (script.path.clone(), script.user_source.clone(), script.ast.clone())
+                (
+                    script.path.clone(),
+                    script.user_source.clone(),
+                    script.ast.clone(),
+                )
             };
             self.run_entity_method(
                 &path,
@@ -538,12 +532,9 @@ impl ScriptEngine {
         if Self::source_defines_fn(user_source, method) {
             let cache_key = format!("{path}::{method}::invoke");
             let profile = self.profile;
-            match self.invoke_script_ast(
-                &cache_key,
-                user_source,
-                invoke_suffix,
-                move |s| wrap_user_source(profile, s),
-            ) {
+            match self.invoke_script_ast(&cache_key, user_source, invoke_suffix, move |s| {
+                wrap_user_source(profile, s)
+            }) {
                 Ok(ast) => {
                     let mut scope = Scope::new();
                     scope.push("entity", entity);
@@ -555,7 +546,10 @@ impl ScriptEngine {
             }
         } else {
             let mut scope = Scope::new();
-            if let Err(e) = self.engine.call_fn::<()>(&mut scope, base_ast, method, (entity,)) {
+            if let Err(e) = self
+                .engine
+                .call_fn::<()>(&mut scope, base_ast, method, (entity,))
+            {
                 log::warn!("[scripting] {method}: {e}");
             }
         }
@@ -572,12 +566,9 @@ impl ScriptEngine {
         let cache_key = format!("scene::{method}::invoke");
         if Self::source_defines_fn(user_source, method) {
             let profile = self.profile;
-            match self.invoke_script_ast(
-                &cache_key,
-                user_source,
-                invoke_suffix,
-                |src| wrap_scene_source(profile, src),
-            ) {
+            match self.invoke_script_ast(&cache_key, user_source, invoke_suffix, |src| {
+                wrap_scene_source(profile, src)
+            }) {
                 Ok(ast) => {
                     let mut scope = Scope::new();
                     if let Some(dt) = dt {
@@ -604,10 +595,30 @@ impl ScriptEngine {
     }
 }
 
+fn entity_to_dynamic(entity_id: u32, snap: Option<&EntitySnapshot>) -> Dynamic {
+    let mut map = Map::new();
+    map.insert("id".into(), Dynamic::from(entity_id as INT));
+    if let Some(s) = snap {
+        map.insert("x".into(), Dynamic::from(s.x as f64));
+        map.insert("y".into(), Dynamic::from(s.y as f64));
+        map.insert("scale_x".into(), Dynamic::from(s.scale_x as f64));
+        map.insert("scale_y".into(), Dynamic::from(s.scale_y as f64));
+        map.insert("facing_right".into(), Dynamic::from(s.facing_right));
+        map.insert("facing_sign".into(), Dynamic::from(s.facing_sign as f64));
+        let anims: rhai::Array = s
+            .animations
+            .iter()
+            .map(|n| Dynamic::from(n.clone()))
+            .collect();
+        map.insert("animations".into(), Dynamic::from(anims));
+    }
+    Dynamic::from_map(map)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::scripting::api::{register_native_api, wrap_user_source, ScriptApiContext};
+    use crate::scripting::api::{ScriptApiContext, register_native_api, wrap_user_source};
 
     fn compile_control(profile: ScriptEngineProfile, source: &str) -> Result<(), String> {
         let mut engine = ScriptEngine::new(profile).unwrap();
@@ -620,7 +631,10 @@ mod tests {
     fn preamble_only_compiles() {
         let wrapped = wrap_user_source(ScriptEngineProfile::Engine3d, "");
         let mut engine = Engine::new();
-        register_native_api(&mut engine, &ScriptApiContext::new(ScriptEngineProfile::Engine3d));
+        register_native_api(
+            &mut engine,
+            &ScriptApiContext::new(ScriptEngineProfile::Engine3d),
+        );
         engine.compile(&wrapped).expect("preamble only");
     }
 
@@ -763,7 +777,8 @@ mod tests {
     engine.log("triggered");
 }"#;
         let mut se = ScriptEngine::new(ScriptEngineProfile::Engine2d).unwrap();
-        se.attach_script(10, "trigger_script", source).expect("attach");
+        se.attach_script(10, "trigger_script", source)
+            .expect("attach");
         let cmds = se
             .run_trigger_enter_hook(10, 20, None, None)
             .expect("trigger hook");
@@ -785,9 +800,8 @@ mod tests {
             .run_control_script_just_pressed(1, "SPACE", "fp_jump_press", source, None)
             .expect("run on_press callback");
         assert!(
-            cmds.iter().any(
-                |c| matches!(c, ScriptCmd::PlayControllerPressKey { key } if key == "SPACE")
-            ),
+            cmds.iter()
+                .any(|c| matches!(c, ScriptCmd::PlayControllerPressKey { key } if key == "SPACE")),
             "expected fp_press_key cmd, got {cmds:?}"
         );
     }
@@ -806,10 +820,10 @@ mod tests {
                 let path = entry.path();
                 if path.is_dir() {
                     collect_rhai_dir(&path, out);
-                } else if path.extension().is_some_and(|e| e == "rhai") {
-                    if let Ok(source) = std::fs::read_to_string(&path) {
-                        out.push((path, source));
-                    }
+                } else if path.extension().is_some_and(|e| e == "rhai")
+                    && let Ok(source) = std::fs::read_to_string(&path)
+                {
+                    out.push((path, source));
                 }
             }
         }
@@ -879,24 +893,4 @@ mod tests {
                 .unwrap_or_else(|e| panic!("compile {}: {e}", path.display()));
         }
     }
-}
-
-fn entity_to_dynamic(entity_id: u32, snap: Option<&EntitySnapshot>) -> Dynamic {
-    let mut map = Map::new();
-    map.insert("id".into(), Dynamic::from(entity_id as INT));
-    if let Some(s) = snap {
-        map.insert("x".into(), Dynamic::from(s.x as f64));
-        map.insert("y".into(), Dynamic::from(s.y as f64));
-        map.insert("scale_x".into(), Dynamic::from(s.scale_x as f64));
-        map.insert("scale_y".into(), Dynamic::from(s.scale_y as f64));
-        map.insert("facing_right".into(), Dynamic::from(s.facing_right));
-        map.insert("facing_sign".into(), Dynamic::from(s.facing_sign as f64));
-        let anims: rhai::Array = s
-            .animations
-            .iter()
-            .map(|n| Dynamic::from(n.clone()))
-            .collect();
-        map.insert("animations".into(), Dynamic::from(anims));
-    }
-    Dynamic::from_map(map)
 }

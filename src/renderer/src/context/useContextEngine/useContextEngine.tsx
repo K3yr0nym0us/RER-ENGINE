@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useEffect, useReducer, useRef } from 'react';
+import type React from 'react';
+import { createContext, useContext, useEffect, useReducer, useRef } from 'react';
 import type {
 	GameStyle,
 	ModelInfo,
@@ -77,7 +78,7 @@ export function EngineProvider({
 		pivotEditListenerRef: useRef<((framePath: string, px: number, py: number) => void) | null>(null),
 		quickBuildClickListenerRef: useRef<((x: number, y: number, z: number, fitToGrid: boolean, scale?: [number, number, number]) => void) | null>(null),
 		quickBuildActiveBlueprintIdRef: useRef<string | null>(null),
-		pendingEventsRef: useRef<Map<string, { resolve: (value: any) => void }>>(new Map()),
+		pendingEventsRef: useRef<Map<string, { resolve: (value: unknown) => void }>>(new Map()),
 		pendingImportSceneRef: useRef<SavedScene | null>(null),
 		sceneImportInProgressRef: useRef(false),
 		modelReplaceInProgressRef: useRef(false),
@@ -148,7 +149,7 @@ export function EngineProvider({
 	useEffect(() => {
 		refs.initialSavePathRef.current = initialSavePath;
 		refs.initialExtractDirRef.current = initialExtractDir;
-	}, [initialSavePath, initialExtractDir]);
+	}, [initialSavePath, initialExtractDir, refs.initialExtractDirRef, refs.initialSavePathRef]);
 
 	// Mantener blueprintsRef sincronizado con el estado para acceso desde acciones
 	useEffect(() => {

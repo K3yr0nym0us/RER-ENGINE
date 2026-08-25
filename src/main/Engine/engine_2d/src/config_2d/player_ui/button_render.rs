@@ -7,7 +7,7 @@ use ab_glyph::FontArc;
 use crate::gizmo::GizmoVertex;
 use crate::screen_hud_image::ScreenHudAtlas;
 
-use super::config::{box_corners, HasUiHudRect, PlayerUiButton, UiHudRect};
+use super::config::{HasUiHudRect, PlayerUiButton, UiHudRect, box_corners};
 use super::font::build_hud_label_glyph;
 use super::ndc_draw::{append_rect_fill, append_rect_outline, push_handle_disc, push_quad};
 use super::text_render::HANDLE_RADIUS;
@@ -47,7 +47,10 @@ pub(crate) fn append_button_hud_glyphs(
     instances: &mut Vec<crate::mesh::InstanceData>,
     viewport_w: f32,
     viewport_h: f32,
-    texture_cache: &mut std::collections::HashMap<String, crate::screen_hud_image::ScreenHudPackedImage>,
+    texture_cache: &mut std::collections::HashMap<
+        String,
+        crate::screen_hud_image::ScreenHudPackedImage,
+    >,
 ) {
     for btn in buttons {
         if let Some(path) = btn.texture_path.as_deref() {
@@ -110,8 +113,22 @@ fn push_diamond(verts: &mut Vec<GizmoVertex>, rect: UiHudRect, color: [f32; 4]) 
     let (x0, y0, x1, y1) = super::config::box_corners(rect);
     let cx = rect.center_x;
     let cy = rect.center_y;
-    push_quad(verts, [cx, y1, 0.0], [x1, cy, 0.0], [cx, y0, 0.0], [cx, y1, 0.0], color);
-    push_quad(verts, [cx, y1, 0.0], [x0, cy, 0.0], [cx, y0, 0.0], [x1, cy, 0.0], color);
+    push_quad(
+        verts,
+        [cx, y1, 0.0],
+        [x1, cy, 0.0],
+        [cx, y0, 0.0],
+        [cx, y1, 0.0],
+        color,
+    );
+    push_quad(
+        verts,
+        [cx, y1, 0.0],
+        [x0, cy, 0.0],
+        [cx, y0, 0.0],
+        [x1, cy, 0.0],
+        color,
+    );
 }
 
 fn push_triangle(verts: &mut Vec<GizmoVertex>, rect: UiHudRect, color: [f32; 4]) {
@@ -150,7 +167,12 @@ fn push_circle(verts: &mut Vec<GizmoVertex>, rect: UiHudRect, color: [f32; 4]) {
     }
 }
 
-fn push_rounded_rect(verts: &mut Vec<GizmoVertex>, rect: UiHudRect, round_px: f32, color: [f32; 4]) {
+fn push_rounded_rect(
+    verts: &mut Vec<GizmoVertex>,
+    rect: UiHudRect,
+    round_px: f32,
+    color: [f32; 4],
+) {
     let round = round_px.clamp(0.0, 64.0);
     if round < 1.0 {
         append_rect_fill(verts, rect, color);

@@ -13,10 +13,11 @@ pub(crate) fn probe_vk_os(vk: u8) -> VkOsProbe {
         use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, GetKeyboardState};
         let async_val = GetAsyncKeyState(i32::from(vk)) as u16;
         let mut kbd = [0u8; 256];
-        let kbd_down = GetKeyboardState(&mut kbd)
-            .is_ok()
-            .then(|| kbd[vk as usize] & 0x80 != 0)
-            .unwrap_or(false);
+        let kbd_down = if GetKeyboardState(&mut kbd).is_ok() {
+            kbd[vk as usize] & 0x80 != 0
+        } else {
+            false
+        };
         VkOsProbe {
             async_down: async_val & 0x8000 != 0,
             async_toggle: async_val & 0x0001 != 0,
@@ -81,4 +82,3 @@ pub(crate) fn query_key_q_held_os() -> bool {
 pub(crate) fn query_key_e_held_os() -> bool {
     false
 }
-

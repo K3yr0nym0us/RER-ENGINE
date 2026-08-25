@@ -13,14 +13,23 @@ export function buildEngineSnapshot(
 ): Partial<ModalElectronOpenRequest> {
 	switch (componentKey) {
 		case 'ModalSelectFont':
-			return { fonts: serializeModalProps({ fonts: engine.fonts }).fonts }
+			return {
+				fonts: serializeModalProps({ fonts: engine.fonts }).fonts as ModalElectronOpenRequest['fonts'],
+			}
 		case 'ModalSelectHudImage':
-			return { hudImages: serializeModalProps({ hudImages: engine.hudImages }).hudImages }
+			return {
+				hudImages: serializeModalProps({ hudImages: engine.hudImages })
+					.hudImages as ModalElectronOpenRequest['hudImages'],
+			}
 		case 'CreateEntityFromSpriteModalBody':
-			return { sprites: serializeModalProps({ sprites: engine.sprites }).sprites }
+			return {
+				sprites: serializeModalProps({ sprites: engine.sprites })
+					.sprites as ModalElectronOpenRequest['sprites'],
+			}
 		case 'CreateEntityFromModelModalBody':
 			return {
-				models: serializeModalProps({ models: engine.models }).models,
+				models: serializeModalProps({ models: engine.models })
+					.models as ModalElectronOpenRequest['models'],
 			}
 		case 'BluePrintModalBody':
 			return {
@@ -42,8 +51,10 @@ export function buildEngineSnapshot(
 				entityPropertiesState: JSON.parse(
 					JSON.stringify(buildEntityPropertiesState(engine)),
 				),
-				sprites: serializeModalProps({ sprites: engine.sprites }).sprites,
-				models: serializeModalProps({ models: engine.models }).models,
+				sprites: serializeModalProps({ sprites: engine.sprites })
+					.sprites as ModalElectronOpenRequest['sprites'],
+				models: serializeModalProps({ models: engine.models })
+					.models as ModalElectronOpenRequest['models'],
 				blueprints: JSON.parse(JSON.stringify(engine.blueprints)) as typeof engine.blueprints,
 			}
 		default:

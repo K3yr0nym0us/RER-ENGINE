@@ -191,11 +191,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onModalElectronEntityPropertiesActionRequest: (
     cb: (req: { handlerId: string; action: unknown; requestId: string }) => void,
   ): (() => void) => {
-    const listener = async (
+    const listener = (
       _event: Electron.IpcRendererEvent,
       data: { handlerId: string; action: unknown; requestId: string },
     ) => {
-      await cb(data)
+      cb(data)
       ipcRenderer.send(`modal-electron:entity-properties-action-done-${data.requestId}`)
     }
     ipcRenderer.on('modal-electron:entity-properties-action-request', listener)
@@ -205,11 +205,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onModalElectronSocketConfigModalActionRequest: (
     cb: (req: { handlerId: string; action: unknown; requestId: string }) => void,
   ): (() => void) => {
-    const listener = async (
+    const listener = (
       _event: Electron.IpcRendererEvent,
       data: { handlerId: string; action: unknown; requestId: string },
     ) => {
-      await cb(data)
+      cb(data)
       ipcRenderer.send(`modal-electron:socket-config-modal-action-done-${data.requestId}`)
     }
     ipcRenderer.on('modal-electron:socket-config-modal-action-request', listener)
@@ -228,11 +228,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onModalElectronPlayerUiActionRequest: (
     cb: (req: { handlerId: string; action: unknown; requestId: string }) => void,
   ): (() => void) => {
-    const listener = async (
+    const listener = (
       _event: Electron.IpcRendererEvent,
       data: { handlerId: string; action: unknown; requestId: string },
     ) => {
-      await cb(data)
+      cb(data)
       ipcRenderer.send(`modal-electron:player-ui-action-done-${data.requestId}`)
     }
     ipcRenderer.on('modal-electron:player-ui-action-request', listener)

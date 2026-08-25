@@ -30,6 +30,8 @@ export function EntityPropertiesElectronHost({ payload }: EntityPropertiesElectr
 			scripts: [],
 			animationPlayingIds: [],
 			playingAnimationName: null,
+			canHaveBonePhysics: false,
+			bonePhysics: null,
 		},
 	)
 

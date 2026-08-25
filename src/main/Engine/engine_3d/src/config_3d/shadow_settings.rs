@@ -1,8 +1,8 @@
 //! Ajustes de calidad de sombras (tier UI): recrea el shadow map a la resolución del tier.
 
-use crate::config_3d::shadow_graphics::{ShadowTier, DEFAULT_SHADOW_TIER};
-use crate::engine::{State, DEPTH_FORMAT};
-use crate::ipc::{send_event, EngineEvent};
+use crate::config_3d::shadow_graphics::{DEFAULT_SHADOW_TIER, ShadowTier};
+use crate::engine::{DEPTH_FORMAT, State};
+use crate::ipc::{EngineEvent, send_event};
 
 impl State {
     pub(crate) fn set_shadow_tier(&mut self, tier: ShadowTier) {

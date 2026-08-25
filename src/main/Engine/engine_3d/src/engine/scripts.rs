@@ -47,11 +47,9 @@ impl State {
         };
 
         let active_ui = self.player_ui_active_player_screen_id.clone();
-        let commands = self.script_engine.tick(
-            self.delta_time,
-            &snapshots,
-            active_ui.as_deref(),
-        );
+        let commands = self
+            .script_engine
+            .tick(self.delta_time, &snapshots, active_ui.as_deref());
         self.apply_script_commands(commands);
     }
 
@@ -67,10 +65,13 @@ impl State {
         }
 
         let snapshot = self.build_script_snapshot(id);
-        match self
-            .script_engine
-            .run_control_script(id, control_key, path, source, snapshot.as_ref())
-        {
+        match self.script_engine.run_control_script(
+            id,
+            control_key,
+            path,
+            source,
+            snapshot.as_ref(),
+        ) {
             Ok(commands) => self.apply_script_commands(commands),
             Err(e) => log::error!(
                 "[control] Error ejecutando script '{}' ({}): {}",
@@ -167,7 +168,6 @@ impl State {
                     if let Some(saved) = self.anim_saved_transforms.get_mut(&id) {
                         saved.0.x += dx;
                         saved.0.y += dy;
-                        
                     } else {
                         log::warn!(
                             "[script/translate] entidad {} SIN entrada en anim_saved_transforms — translate no acumulado",
@@ -192,54 +192,61 @@ impl State {
                         .map(|a| a.animation_name == name)
                         .unwrap_or(false);
                     if !already_active {
-                        self.handle_command(EngineCommand::Common(EngineCommandCommon::PlayAnimation {
-                            id,
-                            name,
-                            loop_: true,
-                        }));
+                        self.handle_command(EngineCommand::Common(
+                            EngineCommandCommon::PlayAnimation {
+                                id,
+                                name,
+                                loop_: true,
+                            },
+                        ));
                     }
                 }
                 ScriptCmd::SetDefaultAnimation { id, name } => {
-                    self.handle_command(EngineCommand::Common(EngineCommandCommon::SetDefaultAnimation { id, name }));
+                    self.handle_command(EngineCommand::Common(
+                        EngineCommandCommon::SetDefaultAnimation { id, name },
+                    ));
                 }
                 ScriptCmd::StopAnimation { id } => {
-                    self.handle_command(EngineCommand::Common(EngineCommandCommon::StopAnimation { id }));
+                    self.handle_command(EngineCommand::Common(
+                        EngineCommandCommon::StopAnimation { id },
+                    ));
                 }
-                ScriptCmd::SetPhysics { id, enabled, body_type } => {
+                ScriptCmd::SetPhysics {
+                    id,
+                    enabled,
+                    body_type,
+                } => {
                     let already_same = if enabled {
-                        self.physics.has_physics(id)
-                            && self.physics.get_body_type(id) == body_type
+                        self.physics.has_physics(id) && self.physics.get_body_type(id) == body_type
                     } else {
                         !self.physics.has_physics(id)
                     };
                     if !already_same {
-                        self.handle_command(EngineCommand::Common(EngineCommandCommon::SetPhysics { id, enabled, body_type }));
+                        self.handle_command(EngineCommand::Common(
+                            EngineCommandCommon::SetPhysics {
+                                id,
+                                enabled,
+                                body_type,
+                            },
+                        ));
                     }
                 }
-                ScriptCmd::MoveEntity { id, speed, dir_x, dir_y } => {
+                ScriptCmd::MoveEntity {
+                    id,
+                    speed,
+                    dir_x,
+                    dir_y,
+                } => {
                     self.update_entity_facing_from_horizontal(id, speed * dir_x);
-                    if self.preview_playing {
-                        let dx = speed * dir_x * self.delta_time;
-                        let dy = speed * dir_y * self.delta_time;
-                        if let Some(t) = self.world.get_mut::<Transform>(id) {
-                            t.position.x += dx;
-                            t.position.y += dy;
-                        }
-                        if let Some(saved) = self.anim_saved_transforms.get_mut(&id) {
-                            saved.0.x += dx;
-                            saved.0.y += dy;
-                        }
-                    } else {
-                        let dx = speed * dir_x * self.delta_time;
-                        let dy = speed * dir_y * self.delta_time;
-                        if let Some(t) = self.world.get_mut::<Transform>(id) {
-                            t.position.x += dx;
-                            t.position.y += dy;
-                        }
-                        if let Some(saved) = self.anim_saved_transforms.get_mut(&id) {
-                            saved.0.x += dx;
-                            saved.0.y += dy;
-                        }
+                    let dx = speed * dir_x * self.delta_time;
+                    let dy = speed * dir_y * self.delta_time;
+                    if let Some(t) = self.world.get_mut::<Transform>(id) {
+                        t.position.x += dx;
+                        t.position.y += dy;
+                    }
+                    if let Some(saved) = self.anim_saved_transforms.get_mut(&id) {
+                        saved.0.x += dx;
+                        saved.0.y += dy;
                     }
                 }
                 ScriptCmd::MoveEntityFacing {

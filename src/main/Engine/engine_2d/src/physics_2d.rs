@@ -27,30 +27,30 @@ mod kinematic_gravity;
 
 use std::collections::{HashMap, HashSet};
 
+use rapier3d::control::{CharacterLength, KinematicCharacterController};
 use rapier3d::prelude::*;
 use rer_engine_shared::DEFAULT_GRAVITY_MAGNITUDE;
-use rapier3d::control::{CharacterLength, KinematicCharacterController};
 
 use crate::ecs::{EntityId, Transform, World};
 
 // ── Mundo físico 2D ───────────────────────────────────────────────────────────
 pub(crate) struct PhysicsWorld2D {
-    gravity:            Vector,
+    gravity: Vector,
     integration_params: IntegrationParameters,
-    physics_pipeline:   PhysicsPipeline,
-    island_manager:     IslandManager,
-    broad_phase:        DefaultBroadPhase,
-    narrow_phase:       NarrowPhase,
-    bodies:             RigidBodySet,
-    colliders:          ColliderSet,
-    impulse_joints:     ImpulseJointSet,
-    multibody_joints:   MultibodyJointSet,
-    ccd_solver:         CCDSolver,
-    entity_bodies:      HashMap<EntityId, RigidBodyHandle>,
-    entity_body_types:  HashMap<EntityId, String>,
+    physics_pipeline: PhysicsPipeline,
+    island_manager: IslandManager,
+    broad_phase: DefaultBroadPhase,
+    narrow_phase: NarrowPhase,
+    bodies: RigidBodySet,
+    colliders: ColliderSet,
+    impulse_joints: ImpulseJointSet,
+    multibody_joints: MultibodyJointSet,
+    ccd_solver: CCDSolver,
+    entity_bodies: HashMap<EntityId, RigidBodyHandle>,
+    entity_body_types: HashMap<EntityId, String>,
     /// Collider handle associated to each entity, used by move_physics_entity
     /// to query the narrow phase and detect blocking contacts before applying velocity.
-    entity_colliders:   HashMap<EntityId, ColliderHandle>,
+    entity_colliders: HashMap<EntityId, ColliderHandle>,
     /// Set de entidades cuyo collider ya fue inicializado con la forma correcta.
     /// Las siguientes llamadas solo actualizan el offset (translation local) sin
     /// recrear el collider, preservando los contactos de Rapier.
@@ -67,31 +67,32 @@ pub(crate) struct PhysicsWorld2D {
 }
 
 fn default_kinematic_character() -> KinematicCharacterController {
-    let mut cc = KinematicCharacterController::default();
-    cc.snap_to_ground = Some(CharacterLength::Relative(0.14));
-    cc.offset = CharacterLength::Relative(0.012);
-    cc
+    KinematicCharacterController {
+        snap_to_ground: Some(CharacterLength::Relative(0.14)),
+        offset: CharacterLength::Relative(0.012),
+        ..Default::default()
+    }
 }
 
 impl Default for PhysicsWorld2D {
     fn default() -> Self {
         Self {
-            gravity:            Vector::new(0.0, -DEFAULT_GRAVITY_MAGNITUDE, 0.0),
+            gravity: Vector::new(0.0, -DEFAULT_GRAVITY_MAGNITUDE, 0.0),
             integration_params: IntegrationParameters::default(),
-            physics_pipeline:   PhysicsPipeline::new(),
-            island_manager:     IslandManager::new(),
-            broad_phase:        DefaultBroadPhase::new(),
-            narrow_phase:       NarrowPhase::new(),
-            bodies:             RigidBodySet::new(),
-            colliders:          ColliderSet::new(),
-            impulse_joints:     ImpulseJointSet::new(),
-            multibody_joints:   MultibodyJointSet::new(),
-            ccd_solver:         CCDSolver::new(),
-            entity_bodies:      HashMap::new(),
-            entity_body_types:  HashMap::new(),
-            entity_colliders:   HashMap::new(),
+            physics_pipeline: PhysicsPipeline::new(),
+            island_manager: IslandManager::new(),
+            broad_phase: DefaultBroadPhase::new(),
+            narrow_phase: NarrowPhase::new(),
+            bodies: RigidBodySet::new(),
+            colliders: ColliderSet::new(),
+            impulse_joints: ImpulseJointSet::new(),
+            multibody_joints: MultibodyJointSet::new(),
+            ccd_solver: CCDSolver::new(),
+            entity_bodies: HashMap::new(),
+            entity_body_types: HashMap::new(),
+            entity_colliders: HashMap::new(),
             collider_shape_set: HashSet::new(),
-            debug_mode:         false,
+            debug_mode: false,
             kinematic_actor_vel: HashMap::new(),
             blocked_horizontal_sign: HashMap::new(),
             kinematic_character: default_kinematic_character(),
@@ -100,7 +101,9 @@ impl Default for PhysicsWorld2D {
 }
 
 impl PhysicsWorld2D {
-    pub(crate) fn new() -> Self { Self::default() }
+    pub(crate) fn new() -> Self {
+        Self::default()
+    }
 
     fn query_pipeline<'a>(&'a self, filter: QueryFilter<'a>) -> QueryPipeline<'a> {
         self.broad_phase.as_query_pipeline(
@@ -116,7 +119,9 @@ impl PhysicsWorld2D {
     }
 
     /// Número de rigid bodies activos en el mundo físico 2D.
-    pub(crate) fn body_count(&self) -> u32 { self.bodies.len() as u32 }
+    pub(crate) fn body_count(&self) -> u32 {
+        self.bodies.len() as u32
+    }
 
     /// Gravedad positiva hacia abajo (m/s²).
     pub(crate) fn gravity_magnitude(&self) -> f32 {
@@ -135,11 +140,11 @@ impl PhysicsWorld2D {
     /// half_ext: semidimensiones de la caja colisionadora (XY; Z se ignora).
     pub(crate) fn set_entity_physics(
         &mut self,
-        entity:    EntityId,
-        enabled:   bool,
+        entity: EntityId,
+        enabled: bool,
         body_type: &str,
-        position:  [f32; 3],
-        half_ext:  [f32; 3],
+        position: [f32; 3],
+        half_ext: [f32; 3],
         collider_offset: [f32; 3],
     ) {
         // Eliminar cuerpo previo si existe (incluyendo su collider handle)
@@ -149,7 +154,9 @@ impl PhysicsWorld2D {
             self.collider_shape_set.remove(&entity);
             self.remove_body(handle);
         }
-        if !enabled { return; }
+        if !enabled {
+            return;
+        }
 
         let hx = half_ext[0].max(0.01);
         let hy = half_ext[1].max(0.01);
@@ -164,7 +171,9 @@ impl PhysicsWorld2D {
                 let col = ColliderBuilder::cuboid(hx, hy, 0.01)
                     .translation(offset)
                     .build();
-                let col_handle = self.colliders.insert_with_parent(col, handle, &mut self.bodies);
+                let col_handle = self
+                    .colliders
+                    .insert_with_parent(col, handle, &mut self.bodies);
                 self.entity_colliders.insert(entity, col_handle);
                 handle
             }
@@ -176,8 +185,8 @@ impl PhysicsWorld2D {
                     .translation(Vector::new(position[0], position[1], 0.0))
                     .locked_axes(
                         LockedAxes::TRANSLATION_LOCKED_Z
-                        | LockedAxes::ROTATION_LOCKED_X
-                        | LockedAxes::ROTATION_LOCKED_Y,
+                            | LockedAxes::ROTATION_LOCKED_X
+                            | LockedAxes::ROTATION_LOCKED_Y,
                     )
                     .build();
                 let handle = self.bodies.insert(body);
@@ -186,7 +195,9 @@ impl PhysicsWorld2D {
                     .restitution(0.0)
                     .friction(0.5)
                     .build();
-                let col_handle = self.colliders.insert_with_parent(col, handle, &mut self.bodies);
+                let col_handle = self
+                    .colliders
+                    .insert_with_parent(col, handle, &mut self.bodies);
                 self.entity_colliders.insert(entity, col_handle);
                 handle
             }
@@ -198,8 +209,8 @@ impl PhysicsWorld2D {
                     .translation(Vector::new(position[0], position[1], 0.0))
                     .locked_axes(
                         LockedAxes::TRANSLATION_LOCKED_Z
-                        | LockedAxes::ROTATION_LOCKED_X
-                        | LockedAxes::ROTATION_LOCKED_Y,
+                            | LockedAxes::ROTATION_LOCKED_X
+                            | LockedAxes::ROTATION_LOCKED_Y,
                     )
                     .ccd_enabled(true)
                     .build();
@@ -209,7 +220,9 @@ impl PhysicsWorld2D {
                     .restitution(0.0)
                     .friction(0.5)
                     .build();
-                let col_handle = self.colliders.insert_with_parent(col, handle, &mut self.bodies);
+                let col_handle = self
+                    .colliders
+                    .insert_with_parent(col, handle, &mut self.bodies);
                 self.entity_colliders.insert(entity, col_handle);
                 handle
             }
@@ -221,10 +234,10 @@ impl PhysicsWorld2D {
     /// Actualiza la posición del rigid body en el mundo físico (sin recrearlo).
     #[allow(dead_code)]
     pub(crate) fn set_entity_body_position(&mut self, entity: EntityId, position: [f32; 3]) {
-        if let Some(&handle) = self.entity_bodies.get(&entity) {
-            if let Some(body) = self.bodies.get_mut(handle) {
-                body.set_translation(Vector::new(position[0], position[1], 0.0), true);
-            }
+        if let Some(&handle) = self.entity_bodies.get(&entity)
+            && let Some(body) = self.bodies.get_mut(handle)
+        {
+            body.set_translation(Vector::new(position[0], position[1], 0.0), true);
         }
     }
 
@@ -243,11 +256,13 @@ impl PhysicsWorld2D {
     /// contactos en Rapier, pero NO recompone la forma tras cambios de escala.
     pub(crate) fn sync_entity_collider_offset_preserving_shape(
         &mut self,
-        entity:   EntityId,
+        entity: EntityId,
         half_ext: [f32; 3],
         collider_offset: [f32; 3],
     ) {
-        let Some(&body_handle) = self.entity_bodies.get(&entity) else { return };
+        let Some(&body_handle) = self.entity_bodies.get(&entity) else {
+            return;
+        };
         let hx = half_ext[0].max(0.01);
         let hy = half_ext[1].max(0.01);
         let offset = Vector::new(collider_offset[0], collider_offset[1], collider_offset[2]);
@@ -255,14 +270,17 @@ impl PhysicsWorld2D {
         if !self.collider_shape_set.contains(&entity) {
             // Primera vez: crear collider completo (remove previo si existe + insert nuevo)
             if let Some(old_handle) = self.entity_colliders.remove(&entity) {
-                self.colliders.remove(old_handle, &mut self.island_manager, &mut self.bodies, true);
+                self.colliders
+                    .remove(old_handle, &mut self.island_manager, &mut self.bodies, true);
             }
             let col = ColliderBuilder::cuboid(hx, hy, 0.01)
                 .translation(offset)
                 .restitution(0.0)
                 .friction(0.5)
                 .build();
-            let col_handle = self.colliders.insert_with_parent(col, body_handle, &mut self.bodies);
+            let col_handle = self
+                .colliders
+                .insert_with_parent(col, body_handle, &mut self.bodies);
             self.entity_colliders.insert(entity, col_handle);
             self.collider_shape_set.insert(entity);
         } else if let Some(&col_handle) = self.entity_colliders.get(&entity) {
@@ -278,7 +296,7 @@ impl PhysicsWorld2D {
     #[allow(dead_code)]
     pub(crate) fn update_entity_collider(
         &mut self,
-        entity:   EntityId,
+        entity: EntityId,
         half_ext: [f32; 3],
         collider_offset: [f32; 3],
     ) {
@@ -309,7 +327,9 @@ impl PhysicsWorld2D {
     /// Limpia todos los cuerpos físicos (al cambiar de escena).
     pub(crate) fn clear(&mut self) {
         let handles: Vec<RigidBodyHandle> = self.entity_bodies.values().copied().collect();
-        for h in handles { self.remove_body(h); }
+        for h in handles {
+            self.remove_body(h);
+        }
         self.entity_bodies.clear();
         self.entity_body_types.clear();
         self.entity_colliders.clear();
@@ -323,7 +343,10 @@ impl PhysicsWorld2D {
     }
 
     pub(crate) fn get_body_type(&self, entity: EntityId) -> &str {
-        self.entity_body_types.get(&entity).map(|s| s.as_str()).unwrap_or("")
+        self.entity_body_types
+            .get(&entity)
+            .map(|s| s.as_str())
+            .unwrap_or("")
     }
 
     /// Registra velocidad planar para un actor kinematic (Rapier ignora `set_linvel` en KinematicPositionBased).
@@ -347,7 +370,9 @@ impl PhysicsWorld2D {
     // ── Paso de simulación ────────────────────────────────────────────────────
 
     pub(crate) fn step(&mut self, dt: f32, ecs: &mut World) {
-        if self.entity_bodies.is_empty() { return; }
+        if self.entity_bodies.is_empty() {
+            return;
+        }
 
         self.integration_params.dt = dt.clamp(0.0001, 0.05);
 
@@ -356,32 +381,39 @@ impl PhysicsWorld2D {
 
         #[derive(Clone, Copy)]
         struct KData {
-            entity:     EntityId,
-            handle:     RigidBodyHandle,
+            entity: EntityId,
+            handle: RigidBodyHandle,
             col_handle: ColliderHandle,
-            linvel:     Vector,
-            pos:        Vector,
-            shape_pos:  Pose,
+            linvel: Vector,
+            pos: Vector,
+            shape_pos: Pose,
         }
 
-        let kdata: Vec<KData> = self.entity_bodies.iter()
+        let kdata: Vec<KData> = self
+            .entity_bodies
+            .iter()
             .filter_map(|(&entity, &handle)| {
-                (self.get_body_type(entity) == "kinematic").then(|| {
-                    let col_handle = *self.entity_colliders.get(&entity)?;
-                    let body = self.bodies.get(handle)?;
-                    let shape_pos = self.colliders.get(col_handle)
-                        .map(|c| *c.position())
-                        .unwrap_or(*body.position());
-                    Some(KData {
-                        entity,
-                        handle,
-                        col_handle,
-                        linvel: body.linvel(),
-                        pos: body.translation(),
-                        shape_pos,
+                (self.get_body_type(entity) == "kinematic")
+                    .then(|| {
+                        let col_handle = *self.entity_colliders.get(&entity)?;
+                        let body = self.bodies.get(handle)?;
+                        let shape_pos = self
+                            .colliders
+                            .get(col_handle)
+                            .map(|c| *c.position())
+                            .unwrap_or(*body.position());
+                        Some(KData {
+                            entity,
+                            handle,
+                            col_handle,
+                            linvel: body.linvel(),
+                            pos: body.translation(),
+                            shape_pos,
+                        })
                     })
-                }).flatten()
-            }).collect();
+                    .flatten()
+            })
+            .collect();
 
         let dt_clamped = self.integration_params.dt;
         let cc = self.kinematic_character;
@@ -392,49 +424,52 @@ impl PhysicsWorld2D {
             next_pos: Vector,
             blocked_sign: Option<f32>,
         }
-        let results: Vec<KResult> = kdata.iter().filter_map(|d| {
-            let script = self.kinematic_actor_vel.remove(&d.entity);
-            // Godot CharacterBody: la velocidad horizontal la fija cada frame el input;
-            // sin comando => 0 (no arrastrar velocidad interpolada lateral de Rapier).
-            let vx = script.as_ref().map(|s| s.x).unwrap_or(0.0);
-            let vy_base = script.map(|s| s.y).unwrap_or(d.linvel.y);
-            let vy = vy_base + self.gravity.y * dt_clamped;
-            let desired_translation = Vector::new(vx * dt_clamped, vy * dt_clamped, 0.0);
+        let results: Vec<KResult> = kdata
+            .iter()
+            .filter_map(|d| {
+                let script = self.kinematic_actor_vel.remove(&d.entity);
+                // Godot CharacterBody: la velocidad horizontal la fija cada frame el input;
+                // sin comando => 0 (no arrastrar velocidad interpolada lateral de Rapier).
+                let vx = script.as_ref().map(|s| s.x).unwrap_or(0.0);
+                let vy_base = script.map(|s| s.y).unwrap_or(d.linvel.y);
+                let vy = vy_base + self.gravity.y * dt_clamped;
+                let desired_translation = Vector::new(vx * dt_clamped, vy * dt_clamped, 0.0);
 
-            let character_col = self.colliders.get(d.col_handle)?;
-            let filter = QueryFilter::default().exclude_collider(d.col_handle);
-            let queries = self.query_pipeline(filter);
-            let movement = cc.move_shape(
-                dt_clamped,
-                &queries,
-                character_col.shape(),
-                &d.shape_pos,
-                desired_translation,
-                |_collision| (),
-            );
+                let character_col = self.colliders.get(d.col_handle)?;
+                let filter = QueryFilter::default().exclude_collider(d.col_handle);
+                let queries = self.query_pipeline(filter);
+                let movement = cc.move_shape(
+                    dt_clamped,
+                    &queries,
+                    character_col.shape(),
+                    &d.shape_pos,
+                    desired_translation,
+                    |_collision| (),
+                );
 
-            // Traslación rígida del centro del body = misma Δ que sobre el volumen swept.
-            let next_pos = d.pos + movement.translation;
+                // Traslación rígida del centro del body = misma Δ que sobre el volumen swept.
+                let next_pos = d.pos + movement.translation;
 
-            // Si la traslación horizontal real es mucho menor que la deseada,
-            // consideramos que chocó contra pared en esa dirección.
-            let blocked_sign = {
-                let desired_x = desired_translation.x;
-                let actual_x = movement.translation.x;
-                if desired_x.abs() > 1e-4 && actual_x.abs() < desired_x.abs() * 0.25 {
-                    Some(desired_x.signum())
-                } else {
-                    None
-                }
-            };
+                // Si la traslación horizontal real es mucho menor que la deseada,
+                // consideramos que chocó contra pared en esa dirección.
+                let blocked_sign = {
+                    let desired_x = desired_translation.x;
+                    let actual_x = movement.translation.x;
+                    if desired_x.abs() > 1e-4 && actual_x.abs() < desired_x.abs() * 0.25 {
+                        Some(desired_x.signum())
+                    } else {
+                        None
+                    }
+                };
 
-            Some(KResult {
-                entity: d.entity,
-                handle: d.handle,
-                next_pos,
-                blocked_sign,
+                Some(KResult {
+                    entity: d.entity,
+                    handle: d.handle,
+                    next_pos,
+                    blocked_sign,
+                })
             })
-        }).collect();
+            .collect();
 
         self.blocked_horizontal_sign.clear();
         for r in &results {
@@ -469,13 +504,13 @@ impl PhysicsWorld2D {
         let pairs: Vec<(EntityId, RigidBodyHandle)> =
             self.entity_bodies.iter().map(|(&e, &h)| (e, h)).collect();
         for (entity, handle) in pairs {
-            if let Some(body) = self.bodies.get(handle) {
-                if body.is_dynamic() || body.is_kinematic() {
-                    let t = body.translation();
-                    if let Some(transform) = ecs.get_mut::<Transform>(entity) {
-                        transform.position.x = t.x;
-                        transform.position.y = t.y;
-                    }
+            if let Some(body) = self.bodies.get(handle)
+                && (body.is_dynamic() || body.is_kinematic())
+            {
+                let t = body.translation();
+                if let Some(transform) = ecs.get_mut::<Transform>(entity) {
+                    transform.position.x = t.x;
+                    transform.position.y = t.y;
                 }
             }
         }
