@@ -173,7 +173,6 @@ mod bake_tests {
     #[test]
     #[ignore = "herramienta de mantenimiento: precocina .rerasset del jugador base"]
     fn bake_default_player_rerasset() {
-        let _ = env_logger::try_init();
         bake_default_player_rerasset_to_disk().expect("bake jugador base");
     }
 }

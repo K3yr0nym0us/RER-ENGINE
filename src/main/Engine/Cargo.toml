@@ -12,7 +12,7 @@ version = "0.1.0"
 edition = "2024"
 
 [workspace.dependencies]
-winit = "0.30"
+winit = { version = "0.30", default-features = false, features = ["rwh_06"] }
 # Backends en runtime (`engine_shared::gpu`): solo Vulkan (2D y 3D).
 # wgpu 29: `default-features = false`; hay que activar `vulkan` explícitamente (no basta `wgsl`).
 wgpu = { version = "29", default-features = false, features = ["wgsl", "vulkan"] }

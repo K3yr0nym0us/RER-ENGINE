@@ -19,7 +19,6 @@ bytemuck.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 log.workspace = true
-env_logger.workspace = true
 gltf.workspace = true
 image.workspace = true
 rapier3d.workspace = true
