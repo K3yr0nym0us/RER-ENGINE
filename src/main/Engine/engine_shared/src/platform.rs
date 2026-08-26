@@ -1,13 +1,11 @@
-//! Utilidades de plataforma para overlay (position-tracker, Z-order).
+//! Utilidades de plataforma Windows para overlay (position-tracker, Z-order).
 
-#[cfg(any(target_os = "windows", target_os = "linux"))]
 pub type TrackerOffset =
     std::sync::Arc<(std::sync::atomic::AtomicI32, std::sync::atomic::AtomicI32)>;
 
 // ---------------------------------------------------------------------------
 // Windows: WinEventHook + respaldo de polling (sin IPC)
 // ---------------------------------------------------------------------------
-#[cfg(target_os = "windows")]
 mod win32_tracker {
     use std::sync::atomic::Ordering;
     use std::sync::{Arc, OnceLock};
@@ -129,11 +127,9 @@ mod win32_tracker {
     }
 }
 
-#[cfg(target_os = "windows")]
 pub use win32_tracker::start_position_tracker;
 
 /// Ventana owned del editor: sin botón en la barra de tareas ni en Alt+Tab.
-#[cfg(target_os = "windows")]
 pub fn setup_overlay_win32(engine_hwnd: isize, parent_hwnd: isize, offset: TrackerOffset) {
     use windows::Win32::Foundation::HWND;
     use windows::Win32::UI::WindowsAndMessaging::{
@@ -164,122 +160,6 @@ pub fn setup_overlay_win32(engine_hwnd: isize, parent_hwnd: isize, offset: Track
     start_position_tracker(engine_hwnd, parent_hwnd, offset);
 }
 
-// ---------------------------------------------------------------------------
-// Linux X11 position tracker + transient (Z-order)
-// ---------------------------------------------------------------------------
-#[cfg(target_os = "linux")]
-pub fn setup_overlay_x11(engine_xid: u32, parent_xid: u32) {
-    if parent_xid == 0 {
-        return;
-    }
-    unsafe {
-        let display = x11::xlib::XOpenDisplay(std::ptr::null());
-        if display.is_null() {
-            return;
-        }
-        x11::xlib::XSetTransientForHint(display, engine_xid, parent_xid);
-        x11::xlib::XFlush(display);
-        x11::xlib::XCloseDisplay(display);
-    }
-}
-
-#[cfg(target_os = "linux")]
-pub fn start_position_tracker(engine_xid: u32, parent_xid: u32, offset: TrackerOffset) {
-    if parent_xid == 0 {
-        return;
-    }
-
-    std::thread::Builder::new()
-        .name("position-tracker".into())
-        .spawn(move || unsafe {
-            let display = x11::xlib::XOpenDisplay(std::ptr::null());
-            if display.is_null() {
-                return;
-            }
-            let root = x11::xlib::XDefaultRootWindow(display);
-            x11::xlib::XSelectInput(display, parent_xid, x11::xlib::StructureNotifyMask);
-
-            let mut sync = || {
-                let mut parent_root_x: i32 = 0;
-                let mut parent_root_y: i32 = 0;
-                let mut child_return: x11::xlib::Window = 0;
-                if x11::xlib::XTranslateCoordinates(
-                    display,
-                    parent_xid,
-                    root,
-                    0,
-                    0,
-                    &mut parent_root_x,
-                    &mut parent_root_y,
-                    &mut child_return,
-                ) == 0
-                {
-                    return false;
-                }
-                let off_x = offset.0.load(std::sync::atomic::Ordering::Relaxed);
-                let off_y = offset.1.load(std::sync::atomic::Ordering::Relaxed);
-                let desired_x = parent_root_x + off_x;
-                let desired_y = parent_root_y + off_y;
-
-                let mut cur_x: i32 = 0;
-                let mut cur_y: i32 = 0;
-                if x11::xlib::XTranslateCoordinates(
-                    display,
-                    engine_xid,
-                    root,
-                    0,
-                    0,
-                    &mut cur_x,
-                    &mut cur_y,
-                    &mut child_return,
-                ) == 0
-                {
-                    return false;
-                }
-                if cur_x != desired_x || cur_y != desired_y {
-                    x11::xlib::XMoveWindow(display, engine_xid, desired_x, desired_y);
-                    x11::xlib::XFlush(display);
-                }
-                true
-            };
-
-            sync();
-
-            loop {
-                while x11::xlib::XPending(display) > 0 {
-                    let mut event: x11::xlib::XEvent = std::mem::zeroed();
-                    x11::xlib::XNextEvent(display, &mut event);
-                    if event.type_ == x11::xlib::ConfigureNotify {
-                        sync();
-                    }
-                }
-                if !sync() {
-                    break;
-                }
-                std::thread::sleep(std::time::Duration::from_millis(4));
-            }
-            x11::xlib::XCloseDisplay(display);
-        })
-        .expect("No se pudo crear el hilo position-tracker");
-}
-
-#[cfg(target_os = "linux")]
-pub fn query_ctrl_held_os() -> bool {
-    unsafe {
-        let display = x11::xlib::XOpenDisplay(std::ptr::null());
-        if display.is_null() {
-            return false;
-        }
-        let mut keys = [0u8; 32];
-        x11::xlib::XQueryKeymap(display, keys.as_mut_ptr() as *mut i8);
-        x11::xlib::XCloseDisplay(display);
-        let lctrl = (keys[37 / 8] >> (37 % 8)) & 1;
-        let rctrl = (keys[105 / 8] >> (105 % 8)) & 1;
-        lctrl != 0 || rctrl != 0
-    }
-}
-
-#[cfg(target_os = "windows")]
 pub fn query_ctrl_held_os() -> bool {
     unsafe {
         use windows::Win32::UI::Input::KeyboardAndMouse::{
@@ -291,28 +171,6 @@ pub fn query_ctrl_held_os() -> bool {
     }
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "windows")))]
-pub fn query_ctrl_held_os() -> bool {
-    false
-}
-
-#[cfg(target_os = "linux")]
-pub fn query_shift_held_os() -> bool {
-    unsafe {
-        let display = x11::xlib::XOpenDisplay(std::ptr::null());
-        if display.is_null() {
-            return false;
-        }
-        let mut keys = [0u8; 32];
-        x11::xlib::XQueryKeymap(display, keys.as_mut_ptr() as *mut i8);
-        x11::xlib::XCloseDisplay(display);
-        let lshift = (keys[50 / 8] >> (50 % 8)) & 1;
-        let rshift = (keys[62 / 8] >> (62 % 8)) & 1;
-        lshift != 0 || rshift != 0
-    }
-}
-
-#[cfg(target_os = "windows")]
 pub fn query_shift_held_os() -> bool {
     unsafe {
         use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LSHIFT, VK_RSHIFT};
@@ -322,45 +180,19 @@ pub fn query_shift_held_os() -> bool {
     }
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "windows")))]
-pub fn query_shift_held_os() -> bool {
-    false
-}
-
 /// Devuelve el foco del teclado a la ventana Electron (padre del overlay).
 pub fn focus_overlay_parent_window(parent_id: u64) {
     if parent_id == 0 {
         return;
     }
-    #[cfg(target_os = "windows")]
-    {
-        use windows::Win32::Foundation::HWND;
-        use windows::Win32::UI::WindowsAndMessaging::{
-            ASFW_ANY, AllowSetForegroundWindow, SW_SHOW, SetForegroundWindow, ShowWindow,
-        };
-        unsafe {
-            let _ = AllowSetForegroundWindow(ASFW_ANY);
-            let hwnd = HWND(parent_id as *mut _);
-            let _ = ShowWindow(hwnd, SW_SHOW);
-            let _ = SetForegroundWindow(hwnd);
-        }
-    }
-    #[cfg(target_os = "linux")]
-    {
-        unsafe {
-            let display = x11::xlib::XOpenDisplay(std::ptr::null());
-            if display.is_null() {
-                return;
-            }
-            x11::xlib::XRaiseWindow(display, parent_id);
-            x11::xlib::XSetInputFocus(
-                display,
-                parent_id,
-                x11::xlib::RevertToParent,
-                x11::xlib::CurrentTime,
-            );
-            x11::xlib::XFlush(display);
-            x11::xlib::XCloseDisplay(display);
-        }
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        ASFW_ANY, AllowSetForegroundWindow, SW_SHOW, SetForegroundWindow, ShowWindow,
+    };
+    unsafe {
+        let _ = AllowSetForegroundWindow(ASFW_ANY);
+        let hwnd = HWND(parent_id as *mut _);
+        let _ = ShowWindow(hwnd, SW_SHOW);
+        let _ = SetForegroundWindow(hwnd);
     }
 }

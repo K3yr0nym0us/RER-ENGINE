@@ -7,7 +7,7 @@ updated: 2026-06-04
 summary: |
   Guía breve para escribir scripts en entidades. El motor 2D y el 3D comparten la misma forma
   de script; algunas funciones solo existen en uno de los dos.
-  Render del motor: Rust + wgpu — rer_engine_2d y rer_engine_3d usan Vulkan (Windows y Linux;
+  Render del motor: Rust + wgpu — rer_engine_2d y rer_engine_3d usan Vulkan (Windows;
   sin variables de entorno). Ventana overlay junto al editor Electron. Los scripts Rhai no
   configuran la GPU; solo llaman a la API engine.* de gameplay.
 

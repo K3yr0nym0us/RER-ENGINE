@@ -30,10 +30,8 @@ pub enum EngineCommandCommon {
         y: i32,
         width: u32,
         height: u32,
-        #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
         #[serde(default)]
         offset_x: Option<i32>,
-        #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
         #[serde(default)]
         offset_y: Option<i32>,
     },

@@ -7,7 +7,6 @@ pub struct VkOsProbe {
     pub kbd_down: bool,
 }
 
-#[cfg(target_os = "windows")]
 pub(crate) fn probe_vk_os(vk: u8) -> VkOsProbe {
     unsafe {
         use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, GetKeyboardState};
@@ -26,13 +25,7 @@ pub(crate) fn probe_vk_os(vk: u8) -> VkOsProbe {
     }
 }
 
-#[cfg(not(target_os = "windows"))]
-pub(crate) fn probe_vk_os(_vk: u8) -> VkOsProbe {
-    VkOsProbe::default()
-}
-
 /// Q física (rotación izquierda del ghost muro/trigger). Lectura global vía OS.
-#[cfg(target_os = "windows")]
 pub(crate) fn query_key_q_held_os() -> bool {
     unsafe {
         use windows::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState;
@@ -40,45 +33,10 @@ pub(crate) fn query_key_q_held_os() -> bool {
     }
 }
 
-#[cfg(target_os = "linux")]
-pub(crate) fn query_key_q_held_os() -> bool {
-    query_x11_keycode_held(24)
-}
-
 /// E física (rotación derecha del ghost muro/trigger). Lectura global vía OS.
-#[cfg(target_os = "windows")]
 pub(crate) fn query_key_e_held_os() -> bool {
     unsafe {
         use windows::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState;
         (GetAsyncKeyState(0x45) as u16 & 0x8000) != 0
     }
-}
-
-#[cfg(target_os = "linux")]
-pub(crate) fn query_key_e_held_os() -> bool {
-    query_x11_keycode_held(26)
-}
-
-#[cfg(target_os = "linux")]
-fn query_x11_keycode_held(keycode: u8) -> bool {
-    unsafe {
-        let display = x11::xlib::XOpenDisplay(std::ptr::null());
-        if display.is_null() {
-            return false;
-        }
-        let mut keys = [0u8; 32];
-        x11::xlib::XQueryKeymap(display, keys.as_mut_ptr() as *mut i8);
-        x11::xlib::XCloseDisplay(display);
-        ((keys[(keycode as usize) / 8] >> ((keycode as usize) % 8)) & 1) != 0
-    }
-}
-
-#[cfg(not(any(target_os = "linux", target_os = "windows")))]
-pub(crate) fn query_key_q_held_os() -> bool {
-    false
-}
-
-#[cfg(not(any(target_os = "linux", target_os = "windows")))]
-pub(crate) fn query_key_e_held_os() -> bool {
-    false
 }

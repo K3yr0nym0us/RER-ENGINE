@@ -783,16 +783,16 @@ export interface PlayCharacterViewChanged {
   editor_orbit_target?: [number, number, number]
 }
 
-/** Plataforma para métricas GPU del shell Electron (no del motor Rust). */
-export type GpuMetricsPlatform = 'windows' | 'linux' | 'darwin' | 'other'
+/** Plataforma para métricas GPU del shell Electron (no del motor Rust). Windows-only. */
+export type GpuMetricsPlatform = 'windows'
 
 export interface AppResourceUsage {
   /** Suma de procesos Chromium/Electron de esta app (no del sistema). */
   electronCpuPercent: number
-  /** % GPU de procesos Electron por PID (solo implementado en Windows). */
+  /** % GPU de procesos Electron por PID. */
   electronGpuPercent: number | null
   gpuMetricsPlatform: GpuMetricsPlatform
-  /** Si esta plataforma puede leer % GPU de procesos Electron (hoy solo Windows). */
+  /** Si se pueden leer % GPU de procesos Electron. */
   electronGpuMetricsSupported: boolean
 }
 

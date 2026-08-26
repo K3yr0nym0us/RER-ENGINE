@@ -10,7 +10,7 @@ globs:
   - "eslint.config.mjs"
   - "tsconfig*.json"
   - "vitest.config.ts"
-  - ".github/workflows/frontend-quality.yml"
+  - ".github/workflows/quality.yml"
   - "sonar-project.properties"
 ---
 

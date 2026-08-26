@@ -27,20 +27,16 @@ function isModalElectronShown(): boolean {
 }
 
 /**
- * La ventana del motor (winit) es un HWND/X11 separado, hermano del shell Electron.
+ * La ventana del motor (winit) es un HWND separado, hermano del shell Electron.
  * Sin esto, un clic en el viewport la eleva por encima de la modal aunque el motor tenga foco.
  */
 function raiseModalAboveEngineViewport(win: BrowserWindow): void {
-  if (process.platform === 'win32' || process.platform === 'linux') {
-    win.setAlwaysOnTop(true, 'floating')
-  }
+  win.setAlwaysOnTop(true, 'floating')
   win.moveTop()
 }
 
 function clearModalAboveEngineViewport(win: BrowserWindow): void {
-  if (process.platform === 'win32' || process.platform === 'linux') {
-    win.setAlwaysOnTop(false)
-  }
+  win.setAlwaysOnTop(false)
 }
 
 export function initModalElectron(

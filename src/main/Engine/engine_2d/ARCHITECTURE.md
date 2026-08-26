@@ -22,8 +22,8 @@ Este documento fija el contrato tecnico actual del motor 2D para que el codigo n
 ## Ventana overlay (integracion con Electron)
 
 - Arranque: `--overlay <parent_id> <x> <y> <w> <h> [rel_x rel_y]` (alias legacy `--embed`). Ver `engine_shared::overlay`.
-- **No** hay reparent X11 (`with_embed_parent_window` eliminado): ventana hermana alineada por coordenadas de pantalla.
-- Sincronizacion: `engine_shared::platform` (position-tracker Win32 / X11).
+- **No** hay reparent (`with_embed_parent_window` eliminado): ventana hermana alineada por coordenadas de pantalla.
+- Sincronizacion: `engine_shared::platform` (position-tracker Win32).
 - IPC `set_bounds` redimensiona y actualiza offset del tracker.
 
 ## Archivos fuente de verdad

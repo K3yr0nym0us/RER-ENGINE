@@ -79,16 +79,12 @@ function shouldOverlayBeOnScreen(): boolean {
 
 function raiseOverlayAboveEngine(win: BrowserWindow): void {
   if (!shouldOverlayBeOnScreen()) return
-  if (process.platform === 'win32' || process.platform === 'linux') {
-    win.setAlwaysOnTop(true, 'floating')
-  }
+  win.setAlwaysOnTop(true, 'floating')
   win.moveTop()
 }
 
 function clearOverlayAboveEngine(win: BrowserWindow): void {
-  if (process.platform === 'win32' || process.platform === 'linux') {
-    win.setAlwaysOnTop(false)
-  }
+  win.setAlwaysOnTop(false)
 }
 
 function getMainContentBounds(): Rectangle | null {

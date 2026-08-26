@@ -13,7 +13,7 @@ concurrency:
 jobs:
   frontend:
     name: ESLint · TypeScript · Tests
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     timeout-minutes: 30
 
     steps:
@@ -87,7 +87,7 @@ jobs:
   sonar:
     name: Sonar Quality Gate
     needs: [frontend, rust]
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     timeout-minutes: 30
 
     steps:
@@ -102,14 +102,34 @@ jobs:
           name: frontend-coverage
           path: coverage
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Cache Sonar packages
+        uses: actions/cache@v4
+        with:
+          path: ~\.sonar\cache
+          key: ${{ runner.os }}-sonar
+          restore-keys: ${{ runner.os }}-sonar
+
+      # sonarqube-scan-action is Linux/Docker-only; use the Node scanner wrapper on Windows.
       - name: SonarCloud Scan + Quality Gate
-        uses: SonarSource/sonarqube-scan-action@v5
+        shell: pwsh
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        with:
-          args: >
-            -Dsonar.organization=${{ vars.SONAR_ORGANIZATION }}
-            -Dsonar.projectKey=${{ vars.SONAR_PROJECT_KEY }}
-            -Dsonar.host.url=https://sonarcloud.io
-            -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
-            -Dsonar.qualitygate.wait=true
+        run: >
+          npx --yes sonarqube-scanner@4.2.6
+          "-Dsonar.organization=${{ vars.SONAR_ORGANIZATION }}"
+          "-Dsonar.projectKey=${{ vars.SONAR_PROJECT_KEY }}"
+          "-Dsonar.host.url=https://sonarcloud.io"
+          "-Dsonar.token=$env:SONAR_TOKEN"
+          "-Dsonar.javascript.lcov.reportPaths=coverage/lcov.info"
+          "-Dsonar.qualitygate.wait=true"

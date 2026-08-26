@@ -23,7 +23,7 @@ Runtime 3D: camara orbital en editor, play con jugador `[Player]`, Rapier3D, mal
 ## Politica GPU
 
 - Perfil **ThreeD** via `rer_engine_shared::gpu`:
-  - **Windows y Linux**: Vulkan (`Backends::VULKAN`, `EngineGpuProfile::ThreeD`).
+  - **Windows**: Vulkan (`Backends::VULKAN`, `EngineGpuProfile::ThreeD`).
   - Sin variables de entorno: `resolve_backend(ThreeD)` no lee `RER_GPU_BACKEND`.
 - Sin OpenGL ni otros backends wgpu. Shaders en **WGSL** (naga).
 - Fallo de `init_gpu` → `EngineEvent::Error`; Electron muestra overlay de ayuda.
@@ -31,7 +31,7 @@ Runtime 3D: camara orbital en editor, play con jugador `[Player]`, Rapier3D, mal
 ## Ventana overlay
 
 - Identico al 2D: `--overlay`, ventana winit separada, tracker en `engine_shared::platform`.
-- Ver `engine_2d/ARCHITECTURE.md` (seccion overlay) para detalle de plataformas.
+- Ver `engine_2d/ARCHITECTURE.md` (seccion overlay) para detalle Win32.
 
 ## Archivos fuente de verdad
 

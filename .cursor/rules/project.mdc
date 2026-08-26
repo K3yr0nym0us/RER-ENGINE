@@ -9,8 +9,7 @@ alwaysApply: true
 
 - Primary development environment: **Windows 10/11**.
 - Use PowerShell-compatible commands and Windows paths.
-- Do not assume Linux, Bash or WSL is available.
-- Runtime targets: **Windows and Linux**.
+- Runtime target: **Windows only** (no Linux / macOS / WSL support).
 
 ## Stack
 

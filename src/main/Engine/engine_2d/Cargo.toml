@@ -32,8 +32,5 @@ rer-engine-ipc-common = { path = "../engine_ipc_common" }
 ttf-parser.workspace = true
 ab_glyph.workspace = true
 
-[target.'cfg(target_os = "linux")'.dependencies]
-x11.workspace = true
-
 [target.'cfg(target_os = "windows")'.dependencies]
 windows.workspace = true

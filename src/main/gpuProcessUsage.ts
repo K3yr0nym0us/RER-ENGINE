@@ -1,5 +1,4 @@
 import { execFile } from 'child_process'
-import { existsSync } from 'fs'
 import { app } from 'electron'
 import { promisify } from 'util'
 
@@ -8,27 +7,12 @@ import type { GpuMetricsPlatform } from '../shared-types/types'
 const execFileAsync = promisify(execFile)
 
 export function getGpuMetricsPlatform(): GpuMetricsPlatform {
-  switch (process.platform) {
-    case 'win32':
-      return 'windows'
-    case 'linux':
-      return 'linux'
-    case 'darwin':
-      return 'darwin'
-    default:
-      return 'other'
-  }
+  return 'windows'
 }
 
 /** Lectura de % GPU de procesos Electron por PID (contadores Windows). */
 export function isElectronGpuMetricsSupported(): boolean {
-  return process.platform === 'win32'
-}
-
-/** Motor en Linux: ruta provisional vía `nvidia-smi` (ver CHECKLIST). */
-export function isLinuxEngineGpuMetricsAvailable(): boolean {
-  if (process.platform !== 'linux') return false
-  return existsSync('/usr/bin/nvidia-smi') || existsSync('/bin/nvidia-smi')
+  return true
 }
 
 /** Script PowerShell: 2 muestras (obligatorio para % utilización) + salida con punto decimal. */
@@ -56,7 +40,7 @@ export function parseGpuPercentStdout(stdout: string | Buffer): number | null {
 }
 
 export async function queryWindowsProcessGpuPercent(pids: number[]): Promise<number | null> {
-  if (!isElectronGpuMetricsSupported() || pids.length === 0) return null
+  if (pids.length === 0) return null
 
   try {
     const { stdout } = await execFileAsync(
@@ -72,13 +56,8 @@ export async function queryWindowsProcessGpuPercent(pids: number[]): Promise<num
 
 /**
  * % GPU de los procesos Electron de esta app (por PID), no utilización global del sistema.
- * Linux: pendiente de compatibilización (CHECKLIST).
  */
 export async function queryElectronAppGpuPercent(): Promise<number | null> {
-  if (!isElectronGpuMetricsSupported()) {
-    return null
-  }
-
   const pids = [...new Set(app.getAppMetrics().map((m) => m.pid).filter((pid) => pid > 0))]
   return queryWindowsProcessGpuPercent(pids)
 }

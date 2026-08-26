@@ -42,7 +42,7 @@ Activo: `strict`, `noImplicitAny`, `strictNullChecks`, `noUnusedLocals`, `noUnus
 ## SonarCloud / Quality Gate
 
 - Propiedades: `sonar-project.properties` (default `sonar.projectKey=rer-engine`)
-- CI: `.github/workflows/frontend-quality.yml` con `sonar.qualitygate.wait=true` (bloquea PR si el gate falla)
+- CI: `.github/workflows/quality.yml` (`windows-latest`; SonarScanner CLI + `sonar.qualitygate.wait=true`)
 
 Secrets / variables de GitHub:
 

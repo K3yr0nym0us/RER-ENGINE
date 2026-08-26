@@ -38,15 +38,13 @@ El render **no** ocurre dentro del DOM de Electron. Es un **proceso hijo** con v
          ▼  IPC viewport-bounds / set_bounds
 ┌─────────────────────────────────────────────────────────┐
 │  rer_engine_2d | rer_engine_3d (ventana winit overlay)  │
-│  rer_engine_2d | rer_engine_3d — Vulkan (Windows/Linux) │
+│  rer_engine_2d | rer_engine_3d — Vulkan (Windows)       │
 └─────────────────────────────────────────────────────────┘
 ```
 
 | Plataforma | Comportamiento |
 |------------|----------------|
 | **Windows** | Popup separado; `GWLP_HWNDPARENT` + position-tracker (WinEventHook). |
-| **Linux X11** | Ventana separada; `XSetTransientForHint` + position-tracker (`ConfigureNotify`). |
-| **Wayland** | No soportado nativamente; usar XWayland / `ELECTRON_OZONE_PLATFORM_HINT=x11`. |
 
 Principio **engine-first**: posiciones, cámaras, física y convenciones espaciales las resuelve el motor; el frontend envía intención y refleja eventos. Detalle en [`src/renderer/ARCHITECTURE.md`](src/renderer/ARCHITECTURE.md) y en los `ARCHITECTURE.md` de cada crate.
 
@@ -56,12 +54,12 @@ Principio **engine-first**: posiciones, cámaras, física y convenciones espacia
 
 | Regla | Detalle |
 |-------|---------|
-| **Motor 2D y 3D** | Siempre **Vulkan** (Windows y Linux). |
+| **Motor 2D y 3D** | Siempre **Vulkan** (Windows). |
 | **Prohibido** | OpenGL, EGL, `Backends::all()`, otros backends wgpu (p. ej. DX12). |
 | **Shaders** | WGSL compilado con naga; portable entre backends wgpu. |
 | **Si la GPU falla** | El editor Electron **sí** abre; el viewport muestra ayuda. El motor emite `{"event":"error"}` y no envía `ready`. |
 
-Requisitos: **Vulkan** en Windows y Linux (`vulkaninfo` o drivers actualizados).
+Requisitos: **Vulkan** en Windows (`vulkaninfo` o drivers actualizados).
 
 ### Implementación (`engine_shared/src/gpu.rs`)
 
@@ -92,8 +90,8 @@ Requisitos: **Vulkan** en Windows y Linux (`vulkaninfo` o drivers actualizados).
 
 - **Node.js** 20+ y **Yarn**
 - **Rust** (toolchain estable) y **Cargo**
-- **Windows 11** o **Linux con X11** (viewport overlay; en Wayland usar XWayland)
-- **GPU**: **Vulkan** para `rer_engine_2d` y `rer_engine_3d` (drivers + `vulkaninfo` en WSL2 si aplica).
+- **Windows 10/11**
+- **GPU**: **Vulkan** para `rer_engine_2d` y `rer_engine_3d` (drivers actualizados).
 
 ---
 

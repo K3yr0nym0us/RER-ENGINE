@@ -30,8 +30,5 @@ image.workspace = true
 [dev-dependencies]
 zip.workspace = true
 
-[target.'cfg(target_os = "linux")'.dependencies]
-x11.workspace = true
-
 [target.'cfg(target_os = "windows")'.dependencies]
 windows.workspace = true

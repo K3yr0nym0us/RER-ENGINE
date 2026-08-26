@@ -1,4 +1,4 @@
-//! Configuración de ventana overlay (viewport alineado al editor sin reparent X11).
+//! Configuración de ventana overlay (viewport alineado al editor; Win32 HWND parent).
 
 /// Modo de acoplamiento de la ventana del motor al editor (solo geometría OS).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

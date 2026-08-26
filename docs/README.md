@@ -10,7 +10,7 @@
 
 | Documento | Contenido |
 |-----------|-----------|
-| [Engine_Runtime_Foundation.yaml](./Engine_Runtime_Foundation.yaml) | Viewport overlay winit, GPU Vulkan, métricas, plataformas Win/Linux |
+| [Engine_Runtime_Foundation.yaml](./Engine_Runtime_Foundation.yaml) | Viewport overlay winit, GPU Vulkan, métricas (Windows) |
 | [Engine_Context.yaml](./Engine_Context.yaml) | `EngineProvider`, refs, `createEngineActions` / `createEngineEventHandler` |
 | [IPC_Protocol.yaml](./IPC_Protocol.yaml) | `engine:cmd` / `engine:event`, catálogo por motor, `engine_ipc_common` |
 | [MODAL_ELECTRON.yaml](./MODAL_ELECTRON.yaml) | Ventanas hijas (propiedades, blueprint, player UI, scripting) |

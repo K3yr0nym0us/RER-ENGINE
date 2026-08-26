@@ -36,7 +36,7 @@ assistant_tools_v1:
 out_of_scope_v1:
   - engine:cmd / crear entidades desde la IA
   - embeddings / RAG vectorial
-  - macOS / Linux binary for llama-server
+  - macOS / Linux binary for llama-server (fuera de alcance; producto Windows-only)
 
 files:
   context:

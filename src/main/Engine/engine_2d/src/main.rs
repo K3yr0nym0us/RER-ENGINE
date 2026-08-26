@@ -36,41 +36,19 @@ use winit::{
 use ipc::{EngineCommand, EngineCommandCommon, EngineEvent};
 use rer_engine_shared::gpu::{EngineGpuProfile, resolve_backend};
 use rer_engine_shared::overlay::{OverlayConfig, parse_overlay_config};
-#[cfg(any(target_os = "windows", target_os = "linux"))]
 use rer_engine_shared::platform::TrackerOffset;
 use rer_engine_shared::platform::query_shift_held_os;
-#[cfg(target_os = "windows")]
 use rer_engine_shared::platform::setup_overlay_win32;
-#[cfg(target_os = "linux")]
-use rer_engine_shared::platform::{setup_overlay_x11, start_position_tracker};
 use rer_engine_shared::wgpu_surface::SurfacePresentError;
 
 // ---------------------------------------------------------------------------
 // Consulta de Ctrl en el OS (sin depender del foco de ventana del motor)
 // ---------------------------------------------------------------------------
-#[cfg(target_os = "linux")]
-fn query_ctrl_held_os() -> bool {
-    // SAFETY: llamadas estándar a libX11; Display se abre y cierra en la misma función.
-    unsafe {
-        let display = x11::xlib::XOpenDisplay(std::ptr::null());
-        if display.is_null() {
-            return false;
-        }
-        let mut keys = [0u8; 32];
-        x11::xlib::XQueryKeymap(display, keys.as_mut_ptr() as *mut i8);
-        x11::xlib::XCloseDisplay(display);
-        // Keycode 37 = Control_L, keycode 105 = Control_R (estándar X11 en Linux)
-        let lctrl = (keys[37 / 8] >> (37 % 8)) & 1;
-        let rctrl = (keys[105 / 8] >> (105 % 8)) & 1;
-        lctrl != 0 || rctrl != 0
-    }
-}
 
-/// En Windows usamos GetAsyncKeyState para consultar el estado real del Ctrl
+/// Usamos GetAsyncKeyState para consultar el estado real del Ctrl
 /// sin depender del foco de ventana. Esto evita el bug de "toggle" que ocurre
 /// cuando Electron pierde el foco al hacer click en el viewport del motor y
 /// el keyup de Control nunca llega al renderer.
-#[cfg(target_os = "windows")]
 fn query_ctrl_held_os() -> bool {
     // SAFETY: GetAsyncKeyState es seguro de llamar en cualquier contexto Win32.
     unsafe {
@@ -81,11 +59,6 @@ fn query_ctrl_held_os() -> bool {
         let right = (GetAsyncKeyState(VK_RCONTROL.0 as i32) as u16 & 0x8000) != 0;
         left || right
     }
-}
-
-#[cfg(not(any(target_os = "linux", target_os = "windows")))]
-fn query_ctrl_held_os() -> bool {
-    false
 }
 
 /// Convierte un `KeyCode` de winit a la string de control usada en los bindings.
@@ -179,9 +152,7 @@ struct App {
     // Frame rate cap: tiempo objetivo del próximo frame (evita busy loop)
     next_frame_at: std::time::Instant,
     target_fps: u64,
-    #[cfg(any(target_os = "windows", target_os = "linux"))]
     tracker_offset: TrackerOffset,
-    #[cfg(any(target_os = "windows", target_os = "linux"))]
     tracker_parent_id: u64,
 }
 
@@ -193,7 +164,6 @@ impl App {
         ))
     }
 
-    #[cfg(any(target_os = "windows", target_os = "linux"))]
     fn setup_overlay_tracking(&mut self, window: &Window) {
         let Some(overlay) = self.overlay.as_ref() else {
             return;
@@ -210,27 +180,12 @@ impl App {
         self.tracker_offset = std::sync::Arc::clone(&offset);
         self.tracker_parent_id = overlay.parent_id;
 
-        #[cfg(target_os = "windows")]
-        {
-            use raw_window_handle::RawWindowHandle;
-            if let RawWindowHandle::Win32(h) = handle.as_raw() {
-                setup_overlay_win32(h.hwnd.get(), overlay.parent_id as isize, offset);
-            }
-        }
-
-        #[cfg(target_os = "linux")]
-        {
-            use raw_window_handle::RawWindowHandle;
-            if let RawWindowHandle::Xlib(x) = handle.as_raw() {
-                let engine_xid = x.window as u32;
-                let parent_xid = overlay.parent_id as u32;
-                setup_overlay_x11(engine_xid, parent_xid);
-                start_position_tracker(engine_xid, parent_xid, offset);
-            }
+        use raw_window_handle::RawWindowHandle;
+        if let RawWindowHandle::Win32(h) = handle.as_raw() {
+            setup_overlay_win32(h.hwnd.get(), overlay.parent_id as isize, offset);
         }
     }
 
-    #[cfg(any(target_os = "windows", target_os = "linux"))]
     fn update_tracker_offset(
         &mut self,
         x: i32,
@@ -247,48 +202,13 @@ impl App {
             self.tracker_offset.1.store(oy, Ordering::Relaxed);
             return;
         }
-        #[cfg(target_os = "windows")]
-        {
-            use windows::Win32::Foundation::{HWND, POINT};
-            use windows::Win32::Graphics::Gdi::ClientToScreen;
-            unsafe {
-                let mut pt = POINT { x: 0, y: 0 };
-                if ClientToScreen(HWND(self.tracker_parent_id as *mut _), &mut pt).as_bool() {
-                    self.tracker_offset.0.store(x - pt.x, Ordering::Relaxed);
-                    self.tracker_offset.1.store(y - pt.y, Ordering::Relaxed);
-                }
-            }
-        }
-        #[cfg(target_os = "linux")]
-        {
-            unsafe {
-                let display = x11::xlib::XOpenDisplay(std::ptr::null());
-                if display.is_null() {
-                    return;
-                }
-                let root = x11::xlib::XDefaultRootWindow(display);
-                let mut parent_root_x: i32 = 0;
-                let mut parent_root_y: i32 = 0;
-                let mut child_return: x11::xlib::Window = 0;
-                if x11::xlib::XTranslateCoordinates(
-                    display,
-                    self.tracker_parent_id as u32,
-                    root,
-                    0,
-                    0,
-                    &mut parent_root_x,
-                    &mut parent_root_y,
-                    &mut child_return,
-                ) != 0
-                {
-                    self.tracker_offset
-                        .0
-                        .store(x - parent_root_x, Ordering::Relaxed);
-                    self.tracker_offset
-                        .1
-                        .store(y - parent_root_y, Ordering::Relaxed);
-                }
-                x11::xlib::XCloseDisplay(display);
+        use windows::Win32::Foundation::{HWND, POINT};
+        use windows::Win32::Graphics::Gdi::ClientToScreen;
+        unsafe {
+            let mut pt = POINT { x: 0, y: 0 };
+            if ClientToScreen(HWND(self.tracker_parent_id as *mut _), &mut pt).as_bool() {
+                self.tracker_offset.0.store(x - pt.x, Ordering::Relaxed);
+                self.tracker_offset.1.store(y - pt.y, Ordering::Relaxed);
             }
         }
     }
@@ -351,7 +271,6 @@ impl ApplicationHandler<EngineCommand> for App {
             self.target_fps = (*fps).clamp(1, 1000);
             self.next_frame_at = std::time::Instant::now();
         }
-        #[cfg(any(target_os = "windows", target_os = "linux"))]
         if let EngineCommand::Common(EngineCommandCommon::SetBounds {
             x,
             y,
@@ -543,10 +462,9 @@ impl ApplicationHandler<EngineCommand> for App {
                                     let dy = (cur.1 - start.1).abs();
                                     if dx < 5.0 && dy < 5.0 {
                                         // Consultar el estado real del Ctrl al momento del click.
-                                        // Usar query_ctrl_held_os() (Windows: GetAsyncKeyState,
-                                        // Linux: XQueryKeymap) como fuente autoritativa del OS,
-                                        // sin releer state.ctrl_held que podría estar obsoleto si
-                                        // Electron perdió el foco y el keyup no llegó.
+                                        // Usar query_ctrl_held_os() (GetAsyncKeyState) como fuente
+                                        // autoritativa del OS, sin releer state.ctrl_held que podría
+                                        // estar obsoleto si Electron perdió el foco y el keyup no llegó.
                                         let ctrl_active = self.ctrl_held || query_ctrl_held_os();
                                         state.ctrl_held = ctrl_active;
                                         if state.pivot_edit_mode.is_some() {
@@ -872,12 +790,10 @@ fn main() {
         gamepad_pressed: HashSet::new(),
         next_frame_at: std::time::Instant::now(),
         target_fps: 60,
-        #[cfg(any(target_os = "windows", target_os = "linux"))]
         tracker_offset: std::sync::Arc::new((
             std::sync::atomic::AtomicI32::new(0),
             std::sync::atomic::AtomicI32::new(0),
         )),
-        #[cfg(any(target_os = "windows", target_os = "linux"))]
         tracker_parent_id: 0,
     };
     event_loop

@@ -1,4 +1,4 @@
-//! Política GPU del motor: **Vulkan** exclusivo (2D y 3D; Windows y Linux).
+//! Política GPU del motor: **Vulkan** exclusivo (2D y 3D; Windows).
 //!
 //! Sin OpenGL, sin `Backends::all()` ni otros backends wgpu.
 
@@ -59,8 +59,6 @@ fn user_facing_message(backend: EngineGpuBackend, detail: &str) -> String {
     let _ = backend;
     let hints = "\
          • Instala o actualiza los controladores de tu tarjeta gráfica (NVIDIA / AMD / Intel).\n\
-         • En WSL2: usa WSLg (Windows 11), drivers GPU en Windows y en la distro \
-         `sudo apt install mesa-vulkan-drivers` (o drivers NVIDIA para WSL).\n\
          • Comprueba Vulkan en terminal: `vulkaninfo` o `vkcube`.\n\
          • Reinicia el editor después de instalar drivers.";
 

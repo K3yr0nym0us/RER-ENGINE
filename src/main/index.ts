@@ -67,17 +67,6 @@ import type {
 app.commandLine.appendSwitch('disable-gpu');
 app.commandLine.appendSwitch('disable-software-rasterizer');
 
-// En Linux forzar el backend X11 de Chromium/GTK para alinear el viewport
-// overlay del motor (coordenadas de pantalla). Las vars deben establecerse
-// antes de que las librerías nativas (libwayland, GTK, libGL) se inicialicen.
-if (process.platform === 'linux') {
-  app.commandLine.appendSwitch('ozone-platform-hint', 'x11');
-  process.env['WAYLAND_DISPLAY']           = '';
-  process.env['GDK_BACKEND']              = 'x11';
-  process.env['__NV_PRIME_RENDER_OFFLOAD'] = '1';
-  process.env['__GLX_VENDOR_LIBRARY_NAME'] = 'nvidia';
-}
-
 // ---------------------------------------------------------------------------
 // Variables de módulo
 // ---------------------------------------------------------------------------
@@ -125,7 +114,6 @@ const ENGINE_GPU_LABEL = 'Vulkan'
 function gpuStartupErrorMessage(): string {
   return (
     'No se pudo iniciar el motor gráfico con Vulkan. Instala o actualiza los controladores de video. ' +
-    'En WSL2: usa WSLg, instala mesa-vulkan-drivers (o drivers NVIDIA para WSL) y comprueba con vulkaninfo. ' +
     'Reinicia el editor después de instalar drivers.'
   )
 }
@@ -211,20 +199,13 @@ function createMainWindow(): void {
   })
 
   const syncViewportAndModalOnMainWindowChange = (): void => {
-    if (process.platform === 'linux') {
-      mainWindow?.webContents.send('request-viewport-bounds')
-    }
     repositionViewportCornerModalIfOpen()
     repositionAiAssistantOverlayIfOpen()
   }
 
-  // Linux: respaldo IPC al mover (el tracker X11 escucha ConfigureNotify).
   // Windows: el motor usa WinEventHook; la modal de propiedades se recoloca aquí.
   const hideOverlaysOnMainMinimize = (): void => {
     hideAiAssistantOverlayForMainMinimize()
-    if (process.platform === 'linux') {
-      mainWindow?.webContents.send('request-viewport-bounds')
-    }
     repositionViewportCornerModalIfOpen()
   }
 
@@ -250,16 +231,6 @@ function createMainWindow(): void {
     }
     eventBuffer.length = 0
   })
-}
-
-// ---------------------------------------------------------------------------
-// Extraer XID nativo de la ventana principal (Linux X11)
-// ---------------------------------------------------------------------------
-function getMainWindowXID(): number {
-  if (!mainWindow) return 0
-  const handle = mainWindow.getNativeWindowHandle()
-  // En Linux X11, el handle es el XID almacenado como uint32 little-endian
-  return handle.readUInt32LE(0)
 }
 
 // ---------------------------------------------------------------------------
@@ -306,7 +277,7 @@ function startEngine(embed?: ViewportBounds): void {
 
   lastEngineBinary = baseBinaryName
 
-  const binaryName = process.platform === 'win32' ? `${baseBinaryName}.exe` : baseBinaryName
+  const binaryName = `${baseBinaryName}.exe`
   const engineProfile = (process.env.RER_ENGINE_PROFILE || 'debug').trim()
   const enginePath = app.isPackaged
     ? path.join(process.resourcesPath, 'engine', binaryName)
@@ -314,37 +285,21 @@ function startEngine(embed?: ViewportBounds): void {
 
   // Modo overlay: ventana nativa separada alineada al hueco del editor.
   let engineArgs: string[] = []
-  if (embed && (process.platform === 'linux' || process.platform === 'win32')) {
+  if (embed) {
     const x      = Math.round(embed.x)
     const y      = Math.round(embed.y)
     const width  = Math.max(1, Math.round(embed.width))
     const height = Math.max(1, Math.round(embed.height))
     const relX   = Math.max(0, Math.round(embed.rel_x ?? 0))
     const relY   = Math.max(0, Math.round(embed.rel_y ?? 0))
-    if (process.platform === 'linux') {
-      const xid = getMainWindowXID()
-      if (xid !== 0) {
-        engineArgs = ['--overlay', String(xid), String(x), String(y), String(width), String(height), String(relX), String(relY)]
-        console.log(`[engine] modo overlay Linux — xid=${xid} pos=(${x},${y}) size=${width}x${height} offset=(${relX},${relY})`)
-      }
-    } else {
-      const hwnd = getMainWindowHWND()
-      engineArgs = ['--overlay', hwnd, String(x), String(y), String(width), String(height), String(relX), String(relY)]
-      console.log(`[engine] modo overlay Windows — hwnd=${hwnd} pos=(${x},${y}) size=${width}x${height} offset=(${relX},${relY})`)
-    }
+    const hwnd = getMainWindowHWND()
+    engineArgs = ['--overlay', hwnd, String(x), String(y), String(width), String(height), String(relX), String(relY)]
+    console.log(`[engine] modo overlay Windows — hwnd=${hwnd} pos=(${x},${y}) size=${width}x${height} offset=(${relX},${relY})`)
   }
-
-  const linuxEnv = process.platform === 'linux'
-    ? {
-        WAYLAND_DISPLAY: '',
-        GDK_BACKEND:     'x11',
-        ...(process.env.PULSE_SERVER ? { PULSE_SERVER: process.env.PULSE_SERVER } : {}),
-      }
-    : {}
 
   console.log(`[engine] binario=${baseBinaryName} perfil=${engineProfile} GPU esperada=${ENGINE_GPU_LABEL}`)
 
-  const engineEnv: NodeJS.ProcessEnv = { ...process.env, ...linuxEnv }
+  const engineEnv: NodeJS.ProcessEnv = { ...process.env }
   delete engineEnv.RER_GPU_BACKEND
 
   if (currentProjectFilePath) {
@@ -718,15 +673,14 @@ ipcMain.handle('get-image-data-url', async (_event, filePath: string): Promise<s
 })
 
 function sendEngineViewportBounds(bounds: ViewportBounds): void {
-  const useScreenBounds = process.platform === 'win32' || process.platform === 'linux'
   sendToEngine({
     cmd:    'set_bounds',
     x:      Math.round(bounds.x),
     y:      Math.round(bounds.y),
     width:  Math.max(1, Math.round(bounds.width)),
     height: Math.max(1, Math.round(bounds.height)),
-    offset_x: useScreenBounds && lastRelativeBounds ? Math.round(lastRelativeBounds.x) : undefined,
-    offset_y: useScreenBounds && lastRelativeBounds ? Math.round(lastRelativeBounds.y) : undefined,
+    offset_x: lastRelativeBounds ? Math.round(lastRelativeBounds.x) : undefined,
+    offset_y: lastRelativeBounds ? Math.round(lastRelativeBounds.y) : undefined,
   })
 }
 
@@ -963,8 +917,7 @@ function isHudImageAsset(filePath: string): boolean {
 }
 
 function toAssetPathKey(filePath: string): string {
-  const normalized = path.normalize(filePath)
-  return process.platform === 'win32' ? normalized.toLowerCase() : normalized
+  return path.normalize(filePath).toLowerCase()
 }
 
 /** Entidad 2D (`path`) o 3D (`model`) en manifest. */
@@ -2306,8 +2259,7 @@ ipcMain.on('viewport-bounds', (_event, bounds: ViewportBounds) => {
     engineViewportHidden = true
   }
 
-  const useScreenBounds = process.platform === 'win32' || process.platform === 'linux'
-  const effectiveBounds = useScreenBounds ? viewportToScreenBounds(bounds) : bounds
+  const effectiveBounds = viewportToScreenBounds(bounds)
   lastEffectiveBounds = effectiveBounds
   repositionAiAssistantOverlayIfOpen()
 
@@ -2395,7 +2347,5 @@ app.on('window-all-closed', () => {
   stopEngine()
   cleanupExtractedProjectDirs()
   clearAssetWatchers()
-  if (process.platform !== 'darwin') {
-    app.quit()
-  }
+  app.quit()
 })

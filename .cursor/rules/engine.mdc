@@ -37,7 +37,6 @@ Mandatory backend:
 Targets:
 
 - Windows
-- Linux
 
 Never use:
 
@@ -74,14 +73,10 @@ Do not reintroduce:
 
 - `Backends::GL`
 - `with_embed_parent_window`
+- X11 / Wayland / Linux overlay paths
 
-## Cross-platform
+## Platform
 
-Development happens on Windows.
+Development and runtime are **Windows only**.
 
-Engine code must remain compatible with:
-
-- Windows
-- Linux
-
-Avoid unnecessary platform-specific APIs and crates.
+Do not add Linux, macOS, or WSL compatibility branches.

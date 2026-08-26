@@ -20,16 +20,6 @@ extraResources:
   - from: src/main/Engine/Models
     to: engine/Models
 
-linux:
-  target:
-    - AppImage
-    - deb
-  category: Development
-
 win:
   target:
     - nsis
-
-mac:
-  target:
-    - dmg

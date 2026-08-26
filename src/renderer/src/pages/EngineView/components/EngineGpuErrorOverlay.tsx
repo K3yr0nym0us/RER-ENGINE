@@ -35,7 +35,6 @@ export function EngineGpuErrorOverlay() {
 
         <ul className="small mb-3 ps-3">
           <li>{t('Engine GPU hint drivers')}</li>
-          <li>{t('Engine GPU hint wsl')}</li>
           <li>{t('Engine GPU hint vulkaninfo')}</li>
           <li>{t('Engine GPU hint restart')}</li>
         </ul>

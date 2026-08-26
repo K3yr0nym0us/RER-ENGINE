@@ -15,7 +15,7 @@ El renderer **no renderiza** el mundo de juego. Solo reserva un hueco visual y r
 
 **GPU:** wgpu con **Vulkan** en ambos binarios (`EngineGpuProfile` 2D/3D). El front no elige backend ni usa WebGL para el viewport. Al hacer `spawn`, el main **elimina** `RER_GPU_BACKEND` del entorno del proceso motor.
 
-Si la GPU no arranca: evento `error` del motor → `engineError` → `EngineGpuErrorOverlay` (drivers / WSL / Vulkan). El resto del editor sigue usable.
+Si la GPU no arranca: evento `error` del motor → `engineError` → `EngineGpuErrorOverlay` (drivers / Vulkan). El resto del editor sigue usable.
 
 ## Principio: engine-first
 

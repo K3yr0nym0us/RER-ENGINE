@@ -14,9 +14,9 @@ constants:
 
 editor_contract:
   principle: |
-    En el editor (Windows y Linux) todos los albedos bakeados usan RTEX v1 con
+    En el editor (Windows) todos los albedos bakeados usan RTEX v1 con
     RGBA8 sin compresión GPU (BC7/ASTC/BC1 no participan en import/bake/carga).
-    La optimización por plataforma es solo al exportar el juego compilado.
+    La optimización por perfil GPU es solo al exportar el juego compilado.
   supported_read_write:
     texture_format: 0  # Rgba8UnormSrgb
     compression_type: 0  # None — mips son RGBA8 crudos consecutivos
@@ -86,7 +86,7 @@ rtex:
     1:
       id: BC7
       status: reserved_export
-      note: albedo en build Windows/Linux — no leer en editor actual
+      note: albedo en build Windows — no leer en editor actual
     2:
       id: ASTC_6x6
       status: reserved_export

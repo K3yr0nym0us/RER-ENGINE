@@ -1,5 +1,5 @@
 // CPU/GPU del proceso del motor (no uso global del SO).
-// Windows: contadores GPU Engine por PID. Linux: provisional nvidia-smi (ver CHECKLIST).
+// Windows: contadores GPU Engine por PID.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -105,39 +105,14 @@ pub fn is_engine_gpu_metrics_available() -> bool {
 }
 
 fn gpu_sampling_available() -> bool {
-    #[cfg(target_os = "windows")]
-    {
-        true
-    }
-    #[cfg(target_os = "linux")]
-    {
-        std::path::Path::new("/usr/bin/nvidia-smi").exists()
-            || std::path::Path::new("/bin/nvidia-smi").exists()
-    }
-    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
-    {
-        false
-    }
+    true
 }
 
 /// Suma utilización GPU de todos los motores/gráficos asociados a un PID (solo ese proceso).
 fn query_process_gpu_percent(pid: u32) -> Option<f32> {
-    #[cfg(target_os = "windows")]
-    {
-        windows::query_process_gpu_percent(pid)
-    }
-    #[cfg(target_os = "linux")]
-    {
-        linux::query_process_gpu_percent(pid)
-    }
-    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
-    {
-        let _ = pid;
-        None
-    }
+    windows::query_process_gpu_percent(pid)
 }
 
-#[cfg(target_os = "windows")]
 mod windows {
     use std::os::windows::process::CommandExt;
     use std::process::Command;
@@ -171,36 +146,5 @@ mod windows {
         } else {
             None
         }
-    }
-}
-
-#[cfg(target_os = "linux")]
-mod linux {
-    use std::process::Command;
-
-    pub fn query_process_gpu_percent(pid: u32) -> Option<f32> {
-        let out = Command::new("nvidia-smi")
-            .args([
-                "--query-compute-apps=pid,gpu_util",
-                "--format=csv,noheader,nounits",
-            ])
-            .output()
-            .ok()?;
-        if !out.status.success() {
-            return None;
-        }
-        let text = String::from_utf8_lossy(&out.stdout);
-        let mut total = 0.0f32;
-        let mut found = false;
-        for line in text.lines() {
-            let mut parts = line.split(',').map(str::trim);
-            let line_pid = parts.next()?.parse::<u32>().ok()?;
-            let util = parts.next()?.parse::<f32>().ok()?;
-            if line_pid == pid {
-                total += util;
-                found = true;
-            }
-        }
-        if found { Some(total.min(100.0)) } else { None }
     }
 }
