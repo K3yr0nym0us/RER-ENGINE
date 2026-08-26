@@ -1,0 +1,23 @@
+node_modules/
+dist/
+build/
+out/
+release/
+coverage/
+.cache/
+.vite/
+.eslintcache/
+logs/
+*.log
+.git/
+
+# Bases de datos generadas
+*.db
+*.sqlite
+*.sqlite3
+
+# Builds
+*.exe
+*.msi
+*.dmg
+*.AppImage
