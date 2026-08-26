@@ -164,6 +164,11 @@ export function SceneManagerProvider({
     sceneBurstPendingOpsRef,
     sceneWorldCleanupRef,
     fpSceneBaselineLogRef,
+    bootRevealPendingRef,
+    scenesTabsReadyRef,
+    bootCargaLogSeenRef,
+    engineBootAwaitRef,
+    notifyScenesTabsReady,
     reportBounds,
     dispatch,
     sceneImportLoading,
@@ -205,31 +210,37 @@ export function SceneManagerProvider({
   const scenesListLoading = sceneImportLoading && switchingToSceneId === null;
   const sceneActionsDisabled = switchingToSceneId !== null || scenesListLoading;
   const pendingScenesTabsRef = useRef<SceneTab[] | null>(null);
-  const scenesListLoadingRef = useRef(scenesListLoading);
-  scenesListLoadingRef.current = scenesListLoading;
   const lastProjectLoaded2dSeq = useRef(0);
   const lastProjectLoaded3dSeq = useRef(0);
 
+  const bootOverlayGates = {
+    engineBootAwaitRef,
+    bootRevealPendingRef,
+    scenesTabsReadyRef,
+    bootCargaLogSeenRef,
+    sceneImportInProgressRef,
+    sceneBurstLoadInProgressRef,
+    modelReplaceInProgressRef,
+  };
+
+  const notifyScenesTabsReadyRef = useRef(notifyScenesTabsReady);
+  notifyScenesTabsReadyRef.current = notifyScenesTabsReady;
+
   const applySceneTabs = (tabs: SceneTab[]) => {
-    if (scenesListLoadingRef.current) {
-      pendingScenesTabsRef.current = tabs;
-      return;
-    }
+    pendingScenesTabsRef.current = tabs;
+    // Keep tabs in state during load: accordion shows a spinner instead of the list,
+    // so when loading ends the scenes are already there (no post-loader flash/empty list).
     setScenes(tabs);
+    notifyScenesTabsReadyRef.current(tabs.length);
   };
 
   useEffect(() => {
-    if (!scenesListLoading) return;
-    setScenes([]);
-  }, [scenesListLoading]);
-
-  useEffect(() => {
-    if (sceneImportLoading) return;
+    if (scenesListLoading) return;
 
     const pending = pendingScenesTabsRef.current;
     if (pending != null && pending.length > 0) {
       setScenes(pending);
-      pendingScenesTabsRef.current = null;
+      notifyScenesTabsReadyRef.current(pending.length);
       return;
     }
 
@@ -240,6 +251,7 @@ export function SceneManagerProvider({
         ? meta.scenes
         : [{ id: meta.activeSceneId, name: meta.sceneName }];
       setScenes(tabs.map((tab) => ({ id: tab.id, name: tab.name })));
+      notifyScenesTabsReadyRef.current(tabs.length);
       return;
     }
 
@@ -250,9 +262,10 @@ export function SceneManagerProvider({
         ? meta.scenes
         : [{ id: meta.activeSceneId, name: meta.sceneName }];
       setScenes(tabs.map((tab) => ({ id: tab.id, name: tab.name })));
+      notifyScenesTabsReadyRef.current(tabs.length);
     }
   }, [
-    sceneImportLoading,
+    scenesListLoading,
     projectType,
     projectLoaded2dMetaRef,
     projectLoaded3dMetaRef,
@@ -265,6 +278,9 @@ export function SceneManagerProvider({
       setSwitchingToSceneId(null);
     }
   }, [sceneImportLoading, switchingToSceneId]);
+
+  const reportBoundsRef = useRef(reportBounds);
+  reportBoundsRef.current = reportBounds;
 
   useEffect(() => {
     if (!useMotorScenes) return;
@@ -279,11 +295,7 @@ export function SceneManagerProvider({
         const activeId = event.active_scene_id as number | undefined;
         if (items.length > 0) {
           const tabs = tabsFromMotorItems(items);
-          if (scenesListLoadingRef.current) {
-            pendingScenesTabsRef.current = tabs;
-          } else {
-            setScenes(tabs);
-          }
+          applySceneTabs(tabs);
         }
         if (activeId != null && !Number.isNaN(activeId)) {
           setActiveSceneId(activeId);
@@ -304,7 +316,8 @@ export function SceneManagerProvider({
             pendingImportSceneRef,
             sceneBurstLoadInProgressRef,
             modelReplaceInProgressRef,
-            reportBounds,
+            reportBoundsRef.current,
+            bootOverlayGates,
           );
         }
         const reason = event.reason as string | undefined;
@@ -327,7 +340,8 @@ export function SceneManagerProvider({
     return () => {
       window.engine.off(onEngineEvent);
     };
-  }, [useMotorScenes, dispatch, modelReplaceInProgressRef, pendingImportSceneRef, reportBounds, sceneBurstLoadInProgressRef, sceneImportInProgressRef]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- subscribe once per motor mode; reportBounds via ref
+  }, [useMotorScenes]);
 
   useEffect(() => {
     if (projectType !== '2D' || projectLoaded2dSeq === 0) return;
@@ -721,6 +735,7 @@ export function SceneManagerProvider({
           sceneBurstLoadInProgressRef,
           modelReplaceInProgressRef,
           reportBounds,
+          bootOverlayGates,
         );
         dispatch({ type: 'SYNC_PLAY_CHARACTER_VIEW' });
       });

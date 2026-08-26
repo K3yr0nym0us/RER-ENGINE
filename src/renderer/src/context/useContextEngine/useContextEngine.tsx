@@ -18,6 +18,7 @@ import {
 	pushPlayerUiEditorPatch,
 } from '../../modal-electron/playerUiEditorSessions';
 import type { ModelLoadOverlayKind } from './hooks/sceneImportOverlay';
+import { markScenesTabsReady } from './hooks/sceneImportOverlay';
 import {
 	engineReducer,
 	initialState,
@@ -91,6 +92,9 @@ export function EngineProvider({
 		engineBootIpcPendingRef: useRef(0),
 		engineBootIpcSeenRef: useRef(0),
 		engineBootFinishedRef: useRef(false),
+		bootRevealPendingRef: useRef(true),
+		scenesTabsReadyRef: useRef(false),
+		bootCargaLogSeenRef: useRef(false),
 		sceneWorldCleanupRef: useRef({ active: false, summaryLogged: false }),
 		fpSceneBaselineLogRef: useRef(false),
 		blueprintsRef: useRef([]),
@@ -113,6 +117,10 @@ export function EngineProvider({
 			width: rect.width * dpr,
 			height: rect.height * dpr,
 		});
+	};
+
+	const notifyScenesTabsReady = (tabCount: number) => {
+		markScenesTabsReady(dispatch, refs, reportBounds, tabCount);
 	};
 
 	const reportBoundsDebounced = () => {
@@ -190,6 +198,11 @@ export function EngineProvider({
 		sceneBurstPendingOpsRef: refs.sceneBurstPendingOpsRef,
 		sceneWorldCleanupRef: refs.sceneWorldCleanupRef,
 		fpSceneBaselineLogRef: refs.fpSceneBaselineLogRef,
+		bootRevealPendingRef: refs.bootRevealPendingRef,
+		scenesTabsReadyRef: refs.scenesTabsReadyRef,
+		bootCargaLogSeenRef: refs.bootCargaLogSeenRef,
+		engineBootAwaitRef: refs.engineBootAwaitRef,
+		notifyScenesTabsReady,
 		entityTransformsRef: refs.entityTransformsRef,
 		entityMetaRef: refs.entityMetaRef,
 		pendingRestoresRef: refs.pendingRestoresRef,

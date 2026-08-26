@@ -18,9 +18,80 @@ export function isEngineBootScenePreloaded(
 	return projectType === '3D' && !hasInitialSave;
 }
 
+export type BootOverlayGateRefs = Pick<
+	EngineInternalRefs,
+	| 'engineBootAwaitRef'
+	| 'bootRevealPendingRef'
+	| 'scenesTabsReadyRef'
+	| 'bootCargaLogSeenRef'
+	| 'sceneImportInProgressRef'
+	| 'sceneBurstLoadInProgressRef'
+	| 'modelReplaceInProgressRef'
+>;
+
 /** Overlay React mientras el proceso del motor arranca (antes de `ready`). */
-export function beginEngineBootLoading(dispatch: Dispatch<EngineAction>) {
+export function beginEngineBootLoading(
+	dispatch: Dispatch<EngineAction>,
+	refs?: Pick<
+		EngineInternalRefs,
+		'bootRevealPendingRef' | 'scenesTabsReadyRef' | 'bootCargaLogSeenRef'
+	>,
+) {
+	if (refs) {
+		refs.bootRevealPendingRef.current = true;
+		refs.scenesTabsReadyRef.current = false;
+		refs.bootCargaLogSeenRef.current = false;
+	}
 	dispatch({ type: 'SET_SCENE_IMPORT_LOADING', payload: true });
+}
+
+/**
+ * Quita el overlay solo si no hay cargas en curso y, en el arranque inicial,
+ * ya hay ≥1 escena listada y al menos un log `[Carga]`.
+ */
+export function tryRevealSceneImportOverlay(
+	dispatch: Dispatch<EngineAction>,
+	refs: BootOverlayGateRefs,
+	reportBounds: () => void,
+): boolean {
+	if (refs.engineBootAwaitRef.current) return false;
+	if (
+		refs.sceneImportInProgressRef.current
+		|| refs.sceneBurstLoadInProgressRef.current
+		|| refs.modelReplaceInProgressRef.current
+	) {
+		return false;
+	}
+	if (refs.bootRevealPendingRef.current) {
+		if (!refs.scenesTabsReadyRef.current || !refs.bootCargaLogSeenRef.current) {
+			return false;
+		}
+	}
+	refs.bootRevealPendingRef.current = false;
+	reportBounds();
+	window.electronAPI?.restoreEngineViewport?.();
+	dispatch({ type: 'SET_SCENE_IMPORT_LOADING', payload: false });
+	return true;
+}
+
+export function markScenesTabsReady(
+	dispatch: Dispatch<EngineAction>,
+	refs: BootOverlayGateRefs,
+	reportBounds: () => void,
+	tabCount: number,
+) {
+	if (tabCount <= 0) return;
+	refs.scenesTabsReadyRef.current = true;
+	tryRevealSceneImportOverlay(dispatch, refs, reportBounds);
+}
+
+export function markBootCargaLogSeen(
+	dispatch: Dispatch<EngineAction>,
+	refs: BootOverlayGateRefs,
+	reportBounds: () => void,
+) {
+	refs.bootCargaLogSeenRef.current = true;
+	tryRevealSceneImportOverlay(dispatch, refs, reportBounds);
 }
 
 export function trackEngineBootIpcSeen(
@@ -56,15 +127,11 @@ export function beginEngineBootEntityWait(
 
 export function tryFinishEngineBootLoading(
 	dispatch: Dispatch<EngineAction>,
-	refs: Pick<
-		EngineInternalRefs,
-		| 'engineBootAwaitRef'
-		| 'engineBootIpcPendingRef'
-		| 'engineBootFinishedRef'
-		| 'sceneImportInProgressRef'
-		| 'sceneBurstLoadInProgressRef'
-		| 'modelReplaceInProgressRef'
-	>,
+	refs: BootOverlayGateRefs &
+		Pick<
+			EngineInternalRefs,
+			'engineBootIpcPendingRef' | 'engineBootFinishedRef'
+		>,
 	reportBounds: () => void,
 ) {
 	if (!refs.engineBootAwaitRef.current) return;
@@ -76,15 +143,11 @@ export function tryFinishEngineBootLoading(
 
 export function completeEngineBootIpcEvent(
 	dispatch: Dispatch<EngineAction>,
-	refs: Pick<
-		EngineInternalRefs,
-		| 'engineBootAwaitRef'
-		| 'engineBootIpcPendingRef'
-		| 'engineBootFinishedRef'
-		| 'sceneImportInProgressRef'
-		| 'sceneBurstLoadInProgressRef'
-		| 'modelReplaceInProgressRef'
-	>,
+	refs: BootOverlayGateRefs &
+		Pick<
+			EngineInternalRefs,
+			'engineBootIpcPendingRef' | 'engineBootFinishedRef'
+		>,
 	reportBounds: () => void,
 ) {
 	if (!refs.engineBootAwaitRef.current) return;
@@ -96,20 +159,10 @@ export function completeEngineBootIpcEvent(
 
 export function endEngineBootLoadingIfIdle(
 	dispatch: Dispatch<EngineAction>,
-	refs: Pick<
-		EngineInternalRefs,
-		'sceneImportInProgressRef' | 'sceneBurstLoadInProgressRef' | 'modelReplaceInProgressRef'
-	>,
+	refs: BootOverlayGateRefs,
 	reportBounds: () => void,
 ) {
-	const stillBusy =
-		refs.sceneImportInProgressRef.current
-		|| refs.sceneBurstLoadInProgressRef.current
-		|| refs.modelReplaceInProgressRef.current;
-	if (stillBusy) return;
-	reportBounds();
-	window.electronAPI?.restoreEngineViewport?.();
-	dispatch({ type: 'SET_SCENE_IMPORT_LOADING', payload: false });
+	tryRevealSceneImportOverlay(dispatch, refs, reportBounds);
 }
 
 type SceneBurstRefs = Pick<
@@ -375,14 +428,21 @@ function syncBlockingLoadOverlay(
 	dispatch: Dispatch<EngineAction>,
 	refs: BlockingLoadRefs,
 	reportBounds: () => void,
+	bootGates?: BootOverlayGateRefs,
 ) {
 	const stillBusy =
 		refs.sceneImport.current || refs.burst.current || refs.modelReplace.current;
-	if (!stillBusy) {
-		reportBounds();
-		window.electronAPI?.restoreEngineViewport?.();
+	if (stillBusy) {
+		dispatch({ type: 'SET_SCENE_IMPORT_LOADING', payload: true });
+		return;
 	}
-	dispatch({ type: 'SET_SCENE_IMPORT_LOADING', payload: stillBusy });
+	if (bootGates) {
+		tryRevealSceneImportOverlay(dispatch, bootGates, reportBounds);
+		return;
+	}
+	reportBounds();
+	window.electronAPI?.restoreEngineViewport?.();
+	dispatch({ type: 'SET_SCENE_IMPORT_LOADING', payload: false });
 }
 
 export function beginSceneImportLoading(
@@ -401,6 +461,7 @@ export function endSceneImportLoading(
 	sceneBurstLoadInProgressRef: MutableRefObject<boolean>,
 	modelReplaceInProgressRef: MutableRefObject<boolean>,
 	reportBounds: () => void,
+	bootGates?: BootOverlayGateRefs,
 ) {
 	sceneImportInProgressRef.current = false;
 	pendingImportSceneRef.current = null;
@@ -412,6 +473,7 @@ export function endSceneImportLoading(
 			modelReplace: modelReplaceInProgressRef,
 		},
 		reportBounds,
+		bootGates,
 	);
 }
 
@@ -452,7 +514,8 @@ export function trackModelAssetPreloadEnd(
 		| 'sceneImportInProgressRef'
 		| 'sceneBurstLoadInProgressRef'
 		| 'modelLoadOverlayKindRef'
-	>,
+	> &
+		Partial<BootOverlayGateRefs>,
 	reportBounds: () => void,
 ) {
 	if (refs.modelAssetPreloadPendingRef.current > 0) {
@@ -460,6 +523,13 @@ export function trackModelAssetPreloadEnd(
 	}
 	if (refs.modelAssetPreloadPendingRef.current <= 0) {
 		refs.modelAssetPreloadPendingRef.current = 0;
+		const bootGates =
+			refs.bootRevealPendingRef != null
+			&& refs.scenesTabsReadyRef != null
+			&& refs.bootCargaLogSeenRef != null
+			&& refs.engineBootAwaitRef != null
+				? (refs as BootOverlayGateRefs)
+				: undefined;
 		endModelReplaceLoading(
 			dispatch,
 			refs.modelReplaceInProgressRef,
@@ -467,6 +537,7 @@ export function trackModelAssetPreloadEnd(
 			refs.sceneBurstLoadInProgressRef,
 			reportBounds,
 			refs.modelLoadOverlayKindRef,
+			bootGates,
 		);
 	}
 }
@@ -478,6 +549,7 @@ export function endModelReplaceLoading(
 	sceneBurstLoadInProgressRef: MutableRefObject<boolean>,
 	reportBounds: () => void,
 	modelLoadOverlayKindRef?: MutableRefObject<ModelLoadOverlayKind | null>,
+	bootGates?: BootOverlayGateRefs,
 ) {
 	if (!modelReplaceInProgressRef.current) return;
 	modelReplaceInProgressRef.current = false;
@@ -492,6 +564,7 @@ export function endModelReplaceLoading(
 			modelReplace: modelReplaceInProgressRef,
 		},
 		reportBounds,
+		bootGates,
 	);
 }
 
@@ -535,6 +608,7 @@ export function endSceneBurstLoad(
 	sceneImportInProgressRef: MutableRefObject<boolean>,
 	modelReplaceInProgressRef: MutableRefObject<boolean>,
 	reportBounds: () => void,
+	bootGates?: BootOverlayGateRefs,
 ) {
 	if (!sceneBurstLoadInProgressRef.current) return;
 	sceneBurstLoadInProgressRef.current = false;
@@ -546,6 +620,7 @@ export function endSceneBurstLoad(
 			modelReplace: modelReplaceInProgressRef,
 		},
 		reportBounds,
+		bootGates,
 	);
 }
 
@@ -565,6 +640,7 @@ export function tryEndSceneBurstLoad(
 	sceneImportInProgressRef: MutableRefObject<boolean>,
 	modelReplaceInProgressRef: MutableRefObject<boolean>,
 	reportBounds: () => void,
+	bootGates?: BootOverlayGateRefs,
 ) {
 	if (!sceneBurstLoadInProgressRef.current) return;
 	if (hasPendingSceneBurstWork(refs)) return;
@@ -574,6 +650,7 @@ export function tryEndSceneBurstLoad(
 		sceneImportInProgressRef,
 		modelReplaceInProgressRef,
 		reportBounds,
+		bootGates,
 	);
 }
 

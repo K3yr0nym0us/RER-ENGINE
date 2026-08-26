@@ -44,7 +44,6 @@ import {
 	applySavedPlayCharacterView,
 	savedPlayCharacterViewForRestore,
 } from '../../../defaults/playCharacterSceneRestore';
-import { buildSetSceneCommand } from '../../../defaults/projectSceneLoad';
 import { engineSceneToSavedScene, requestEngineSaveSnapshot } from '../../../defaults/buildProjectSaveFromEngine';
 import {
 	blueprintEntityCategoryForEngine,
@@ -72,6 +71,7 @@ import {
 	completeEngineBootIpcEvent,
 	endEngineBootLoadingIfIdle,
 	isEngineBootScenePreloaded,
+	markBootCargaLogSeen,
 	trackEngineBootIpcSeen,
 	tryFinishEngineBootLoading,
 	endModelReplaceLoading,
@@ -182,6 +182,10 @@ const SILENT_ENGINE_EVENTS = new Set<string>([
 	'shadow_tier_changed',
 	'taa_changed',
 	'model_clips_ready',
+	'project_loaded_2d',
+	'project_loaded_3d',
+	'project_load_2d_complete',
+	'project_load_3d_complete',
 ]);
 
 /** Eventos IPC que no deben duplicar `[Carga]` durante carga de escena o plantilla 3D al arrancar. */
@@ -193,10 +197,6 @@ const SCENE_LOAD_SILENT_EVENTS = new Set<string>([
 	'sounds_list',
 	'backgrounds_list',
 	'default_scene_name_ready',
-	'project_loaded_2d',
-	'project_loaded_3d',
-	'project_load_2d_complete',
-	'project_load_3d_complete',
 ]);
 
 function shouldSilenceEngineEventLog(
@@ -552,12 +552,16 @@ export function createEngineEventHandler({
 						? ` (+${progress.step_ms} ms, total ${progress.total_ms} ms)`
 						: '';
 				addLog(`[Carga] ${msg}${timing}`);
+				markBootCargaLogSeen(dispatch, refs, reportBounds);
 			}
 		}
 
 		const panelLine = panelLogLineForEngineEvent(event, refs, projectType);
 		if (panelLine != null) {
 			addLog(panelLine, event.event === 'error');
+			if (panelLine.startsWith('[Carga]')) {
+				markBootCargaLogSeen(dispatch, refs, reportBounds);
+			}
 		} else if (panelLine === undefined) {
 			addLog(JSON.stringify(event), event.event === 'error');
 		}
@@ -585,12 +589,9 @@ export function createEngineEventHandler({
 			if (refs.readyTimer.current) clearTimeout(refs.readyTimer.current);
 			const boot3dNoSave =
 				isEngineBootScenePreloaded(projectType, openedFromSave) && !engineLoads3dSave;
-			// Proyecto nuevo: plantilla vacía. Proyecto .save: el motor ya cargó desde extract_dir.
-			if (projectType && !openedFromSave && !boot3dNoSave) {
-				window.engine.send(
-					buildSetSceneCommand(projectType, refs.initialSavePathRef.current) as never,
-				);
-			} else if (boot3dNoSave) {
+			// 2D: `set_scene` lo envía main en `sendEngineStartupScene` (evitar doble plantilla).
+			// 3D nuevo: plantilla ya cargada en boot; solo UI/player por defecto.
+			if (boot3dNoSave) {
 				if (projectType === '3D') {
 					dispatch({ type: 'INIT_DEFAULT_3D_PLAYER_UI' });
 				} else if (projectType === '2D') {
@@ -695,14 +696,7 @@ export function createEngineEventHandler({
 				});
 				applyPendingRestoreMeta(refs, id, pending);
 				completeSceneBurstOp(refs);
-				tryEndSceneBurstLoad(
-					dispatch,
-					refs.sceneBurstLoadInProgressRef,
-					refs,
-					refs.sceneImportInProgressRef,
-					refs.modelReplaceInProgressRef,
-					reportBounds,
-				);
+				tryEndSceneBurstLoad(dispatch, refs.sceneBurstLoadInProgressRef, refs, refs.sceneImportInProgressRef, refs.modelReplaceInProgressRef, reportBounds, refs);
 				return;
 			}
 
@@ -798,14 +792,7 @@ export function createEngineEventHandler({
 						`[quick_build] entidad colocada: ${loaded.name ?? id} (id=${id})`,
 					);
 				}
-				tryEndSceneBurstLoad(
-					dispatch,
-					refs.sceneBurstLoadInProgressRef,
-					refs,
-					refs.sceneImportInProgressRef,
-					refs.modelReplaceInProgressRef,
-					reportBounds,
-				);
+				tryEndSceneBurstLoad(dispatch, refs.sceneBurstLoadInProgressRef, refs, refs.sceneImportInProgressRef, refs.modelReplaceInProgressRef, reportBounds, refs);
 				return;
 			}
 
@@ -1047,6 +1034,7 @@ export function createEngineEventHandler({
 					}
 					refs.pendingModelPathRef.current = null;
 					refs.pendingSpawnCategoryRef.current = null;
+					// modelPath is narrowed non-null in this restore branch
 					if (burstActive) {
 						drainPendingRestoreSlot(
 							refs.pendingRestoresRef.current,
@@ -1077,14 +1065,7 @@ export function createEngineEventHandler({
 				completeSceneBurstOp(refs);
 			}
 			completeEngineBootIpcEvent(dispatch, refs, reportBounds);
-			tryEndSceneBurstLoad(
-				dispatch,
-				refs.sceneBurstLoadInProgressRef,
-				refs,
-				refs.sceneImportInProgressRef,
-				refs.modelReplaceInProgressRef,
-				reportBounds,
-			);
+			tryEndSceneBurstLoad(dispatch, refs.sceneBurstLoadInProgressRef, refs, refs.sceneImportInProgressRef, refs.modelReplaceInProgressRef, reportBounds, refs);
 		}
 
 		if (event.event === 'entity_model_replaced') {
@@ -1197,24 +1178,10 @@ export function createEngineEventHandler({
 				completeSceneBurstOp(refs);
 			}
 			if (refs.sceneBurstLoadInProgressRef.current) {
-				tryEndSceneBurstLoad(
-					dispatch,
-					refs.sceneBurstLoadInProgressRef,
-					refs,
-					refs.sceneImportInProgressRef,
-					refs.modelReplaceInProgressRef,
-					reportBounds,
-				);
+				tryEndSceneBurstLoad(dispatch, refs.sceneBurstLoadInProgressRef, refs, refs.sceneImportInProgressRef, refs.modelReplaceInProgressRef, reportBounds, refs);
 			}
 			if (refs.modelReplaceInProgressRef.current) {
-				endModelReplaceLoading(
-					dispatch,
-					refs.modelReplaceInProgressRef,
-					refs.sceneImportInProgressRef,
-					refs.sceneBurstLoadInProgressRef,
-					reportBounds,
-					refs.modelLoadOverlayKindRef,
-				);
+				endModelReplaceLoading(dispatch, refs.modelReplaceInProgressRef, refs.sceneImportInProgressRef, refs.sceneBurstLoadInProgressRef, reportBounds, refs.modelLoadOverlayKindRef, refs);
 			}
 			if (activeEntityPropertiesHandlerRef.current) {
 				pushEntityPropertiesPatch(activeEntityPropertiesHandlerRef.current);
@@ -1440,14 +1407,7 @@ export function createEngineEventHandler({
 				} catch (err) {
 					console.error('[project_load_2d_complete] sync desde snapshot del motor:', err);
 				} finally {
-					endSceneImportLoading(
-						dispatch,
-						refs.sceneImportInProgressRef,
-						refs.pendingImportSceneRef,
-						refs.sceneBurstLoadInProgressRef,
-						refs.modelReplaceInProgressRef,
-						reportBounds,
-					);
+					endSceneImportLoading(dispatch, refs.sceneImportInProgressRef, refs.pendingImportSceneRef, refs.sceneBurstLoadInProgressRef, refs.modelReplaceInProgressRef, reportBounds, refs);
 				}
 			})();
 			return;
@@ -1524,14 +1484,7 @@ export function createEngineEventHandler({
 				} catch (err) {
 					console.error('[project_load_3d_complete] sync desde snapshot del motor:', err);
 				} finally {
-					endSceneImportLoading(
-						dispatch,
-						refs.sceneImportInProgressRef,
-						refs.pendingImportSceneRef,
-						refs.sceneBurstLoadInProgressRef,
-						refs.modelReplaceInProgressRef,
-						reportBounds,
-					);
+					endSceneImportLoading(dispatch, refs.sceneImportInProgressRef, refs.pendingImportSceneRef, refs.sceneBurstLoadInProgressRef, refs.modelReplaceInProgressRef, reportBounds, refs);
 				}
 			})();
 			return;
@@ -1560,14 +1513,7 @@ export function createEngineEventHandler({
 				window.engine.send({ cmd: 'get_sprites_list' } as never);
 				dispatch({ type: 'SYNC_PLAY_CHARACTER_VIEW' });
 			}
-			endSceneImportLoading(
-				dispatch,
-				refs.sceneImportInProgressRef,
-				refs.pendingImportSceneRef,
-				refs.sceneBurstLoadInProgressRef,
-				refs.modelReplaceInProgressRef,
-				reportBounds,
-			);
+			endSceneImportLoading(dispatch, refs.sceneImportInProgressRef, refs.pendingImportSceneRef, refs.sceneBurstLoadInProgressRef, refs.modelReplaceInProgressRef, reportBounds, refs);
 		}
 
 		if (event.event === 'scenario_loaded') {
@@ -1582,14 +1528,7 @@ export function createEngineEventHandler({
 				applyPendingRestoreMeta(refs, scenario.id, pending);
 				if (queue.length === 0) refs.pendingRestoresRef.current.delete(scenario.path);
 			}
-			tryEndSceneBurstLoad(
-				dispatch,
-				refs.sceneBurstLoadInProgressRef,
-				refs,
-				refs.sceneImportInProgressRef,
-				refs.modelReplaceInProgressRef,
-				reportBounds,
-			);
+			tryEndSceneBurstLoad(dispatch, refs.sceneBurstLoadInProgressRef, refs, refs.sceneImportInProgressRef, refs.modelReplaceInProgressRef, reportBounds, refs);
 		}
 
 		if (event.event === 'character_loaded') {
@@ -1710,14 +1649,7 @@ export function createEngineEventHandler({
 				applyPendingRestore(character.id, character.path);
 			}
 			completeEngineBootIpcEvent(dispatch, refs, reportBounds);
-			tryEndSceneBurstLoad(
-				dispatch,
-				refs.sceneBurstLoadInProgressRef,
-				refs,
-				refs.sceneImportInProgressRef,
-				refs.modelReplaceInProgressRef,
-				reportBounds,
-			);
+			tryEndSceneBurstLoad(dispatch, refs.sceneBurstLoadInProgressRef, refs, refs.sceneImportInProgressRef, refs.modelReplaceInProgressRef, reportBounds, refs);
 		}
 
 		if (event.event === 'sprite_loaded') {
@@ -1827,14 +1759,7 @@ export function createEngineEventHandler({
 				);
 			}
 			if (burstActive) {
-				tryEndSceneBurstLoad(
-					dispatch,
-					refs.sceneBurstLoadInProgressRef,
-					refs,
-					refs.sceneImportInProgressRef,
-					refs.modelReplaceInProgressRef,
-					reportBounds,
-				);
+				tryEndSceneBurstLoad(dispatch, refs.sceneBurstLoadInProgressRef, refs, refs.sceneImportInProgressRef, refs.modelReplaceInProgressRef, reportBounds, refs);
 			}
 		}
 
@@ -1897,36 +1822,16 @@ export function createEngineEventHandler({
 
 		if (event.event === 'stopped') {
 			if (refs.sceneImportInProgressRef.current) {
-				endSceneImportLoading(
-					dispatch,
-					refs.sceneImportInProgressRef,
-					refs.pendingImportSceneRef,
-					refs.sceneBurstLoadInProgressRef,
-					refs.modelReplaceInProgressRef,
-					reportBounds,
-				);
+				endSceneImportLoading(dispatch, refs.sceneImportInProgressRef, refs.pendingImportSceneRef, refs.sceneBurstLoadInProgressRef, refs.modelReplaceInProgressRef, reportBounds, refs);
 			}
 			if (refs.modelReplaceInProgressRef.current) {
 				refs.modelAssetPreloadPendingRef.current = 0;
-				endModelReplaceLoading(
-					dispatch,
-					refs.modelReplaceInProgressRef,
-					refs.sceneImportInProgressRef,
-					refs.sceneBurstLoadInProgressRef,
-					reportBounds,
-					refs.modelLoadOverlayKindRef,
-				);
+				endModelReplaceLoading(dispatch, refs.modelReplaceInProgressRef, refs.sceneImportInProgressRef, refs.sceneBurstLoadInProgressRef, reportBounds, refs.modelLoadOverlayKindRef, refs);
 			}
 			if (refs.sceneBurstLoadInProgressRef.current) {
 				refs.sceneBurstPendingColliderCountRef.current = 0;
 				refs.sceneBurstPendingOpsRef.current = 0;
-				endSceneBurstLoad(
-					dispatch,
-					refs.sceneBurstLoadInProgressRef,
-					refs.sceneImportInProgressRef,
-					refs.modelReplaceInProgressRef,
-					reportBounds,
-				);
+				endSceneBurstLoad(dispatch, refs.sceneBurstLoadInProgressRef, refs.sceneImportInProgressRef, refs.modelReplaceInProgressRef, reportBounds, refs);
 			}
 			dispatch({ type: 'ENGINE_STOPPED', payload: (event as unknown as { code?: number }).code });
 		}
@@ -1958,14 +1863,7 @@ export function createEngineEventHandler({
 			}
 			dispatch({ type: 'SYNC_PLAY_CHARACTER_VIEW' });
 			if (refs.sceneBurstLoadInProgressRef.current) {
-				tryEndSceneBurstLoad(
-				dispatch,
-				refs.sceneBurstLoadInProgressRef,
-				refs,
-				refs.sceneImportInProgressRef,
-				refs.modelReplaceInProgressRef,
-				reportBounds,
-			);
+				tryEndSceneBurstLoad(dispatch, refs.sceneBurstLoadInProgressRef, refs, refs.sceneImportInProgressRef, refs.modelReplaceInProgressRef, reportBounds, refs);
 			}
 		}
 
@@ -2228,35 +2126,15 @@ export function createEngineEventHandler({
 
 		if (event.event === 'error') {
 			if (refs.sceneImportInProgressRef.current) {
-				endSceneImportLoading(
-					dispatch,
-					refs.sceneImportInProgressRef,
-					refs.pendingImportSceneRef,
-					refs.sceneBurstLoadInProgressRef,
-					refs.modelReplaceInProgressRef,
-					reportBounds,
-				);
+				endSceneImportLoading(dispatch, refs.sceneImportInProgressRef, refs.pendingImportSceneRef, refs.sceneBurstLoadInProgressRef, refs.modelReplaceInProgressRef, reportBounds, refs);
 			} else if (refs.modelReplaceInProgressRef.current) {
 				refs.modelAssetPreloadPendingRef.current = 0;
-				endModelReplaceLoading(
-					dispatch,
-					refs.modelReplaceInProgressRef,
-					refs.sceneImportInProgressRef,
-					refs.sceneBurstLoadInProgressRef,
-					reportBounds,
-					refs.modelLoadOverlayKindRef,
-				);
+				endModelReplaceLoading(dispatch, refs.modelReplaceInProgressRef, refs.sceneImportInProgressRef, refs.sceneBurstLoadInProgressRef, reportBounds, refs.modelLoadOverlayKindRef, refs);
 			}
 			if (refs.sceneBurstLoadInProgressRef.current) {
 				refs.sceneBurstPendingColliderCountRef.current = 0;
 				refs.sceneBurstPendingOpsRef.current = 0;
-				endSceneBurstLoad(
-					dispatch,
-					refs.sceneBurstLoadInProgressRef,
-					refs.sceneImportInProgressRef,
-					refs.modelReplaceInProgressRef,
-					reportBounds,
-				);
+				endSceneBurstLoad(dispatch, refs.sceneBurstLoadInProgressRef, refs.sceneImportInProgressRef, refs.modelReplaceInProgressRef, reportBounds, refs);
 			}
 			dispatch({ type: 'SET_ERROR', payload: (event as unknown as { message?: string }).message ?? 'Error desconocido' });
 		}
@@ -2302,14 +2180,7 @@ export function createEngineEventHandler({
 					0,
 					refs.sceneBurstPendingColliderCountRef.current - 1,
 				);
-				tryEndSceneBurstLoad(
-				dispatch,
-				refs.sceneBurstLoadInProgressRef,
-				refs,
-				refs.sceneImportInProgressRef,
-				refs.modelReplaceInProgressRef,
-				reportBounds,
-			);
+				tryEndSceneBurstLoad(dispatch, refs.sceneBurstLoadInProgressRef, refs, refs.sceneImportInProgressRef, refs.modelReplaceInProgressRef, reportBounds, refs);
 			}
 		}
 
@@ -2352,27 +2223,13 @@ export function createEngineEventHandler({
 			}
 			dispatch({ type: 'ADD_EXECUTION_AREA', payload: { id, path: '[ExecutionArea]' } });
 			dispatch({ type: 'SET_TOOL_PROGRESS', payload: null });
-			tryEndSceneBurstLoad(
-				dispatch,
-				refs.sceneBurstLoadInProgressRef,
-				refs,
-				refs.sceneImportInProgressRef,
-				refs.modelReplaceInProgressRef,
-				reportBounds,
-			);
+			tryEndSceneBurstLoad(dispatch, refs.sceneBurstLoadInProgressRef, refs, refs.sceneImportInProgressRef, refs.modelReplaceInProgressRef, reportBounds, refs);
 		}
 
 		if (event.event === 'tool_cancelled') {
 			dispatch({ type: 'SET_TOOL_PROGRESS', payload: null });
 			if (refs.modelReplaceInProgressRef.current) {
-				endModelReplaceLoading(
-					dispatch,
-					refs.modelReplaceInProgressRef,
-					refs.sceneImportInProgressRef,
-					refs.sceneBurstLoadInProgressRef,
-					reportBounds,
-					refs.modelLoadOverlayKindRef,
-				);
+				endModelReplaceLoading(dispatch, refs.modelReplaceInProgressRef, refs.sceneImportInProgressRef, refs.sceneBurstLoadInProgressRef, reportBounds, refs.modelLoadOverlayKindRef, refs);
 			}
 		}
 
@@ -2404,14 +2261,7 @@ export function createEngineEventHandler({
 				`[quick_build] herramienta activa${ghost.name ? `: ${ghost.name}` : ''}${ghost.path ? ` (${ghost.path.split(/[/\\]/).pop()})` : ''}`,
 			);
 			if (refs.modelReplaceInProgressRef.current) {
-				endModelReplaceLoading(
-					dispatch,
-					refs.modelReplaceInProgressRef,
-					refs.sceneImportInProgressRef,
-					refs.sceneBurstLoadInProgressRef,
-					reportBounds,
-					refs.modelLoadOverlayKindRef,
-				);
+				endModelReplaceLoading(dispatch, refs.modelReplaceInProgressRef, refs.sceneImportInProgressRef, refs.sceneBurstLoadInProgressRef, reportBounds, refs.modelLoadOverlayKindRef, refs);
 			}
 		}
 

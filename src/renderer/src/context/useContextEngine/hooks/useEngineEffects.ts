@@ -1,4 +1,4 @@
-import { useEffect, useRef, type Dispatch, type RefObject } from 'react';
+import { useEffect, useLayoutEffect, useRef, type Dispatch, type RefObject } from 'react';
 import type { GameStyle } from '@shared-types';
 import type { Locale } from '../../LanguageContext';
 import { createEngineEventHandler } from './createEngineEventHandler';
@@ -73,12 +73,14 @@ export function useEngineEffects({
 		});
 	}, [dispatch, refs, addLog, projectType, gameStyle, applyInitialAnimationFrame, reportBounds, reportBoundsDebounced, setLocale]);
 
+	// Mount-once: `refs` / `reportBounds` are recreated each render in EngineProvider.
+	// Re-running this effect would call beginEngineBootLoading forever (stuck scene loader).
 	useEffect(() => {
 		const onRequestViewportBounds = () => reportBoundsRef.current();
 		const onViewportResize = () => reportBoundsDebouncedRef.current();
 
-		beginEngineBootLoading(dispatch);
-		if (isEngineBootScenePreloaded(projectType, Boolean(refs.initialExtractDirRef.current?.trim()))) {
+		beginEngineBootLoading(dispatch, refs);
+		if (isEngineBootScenePreloaded(projectTypeRef.current, Boolean(refs.initialExtractDirRef.current?.trim()))) {
 			beginEngineBootEntityWait(refs);
 		}
 		reportBoundsRef.current();
@@ -89,7 +91,8 @@ export function useEngineEffects({
 			observer.disconnect();
 			if (refs.resizeTimerRef.current) clearTimeout(refs.resizeTimerRef.current);
 		};
-	}, [dispatch, projectType, refs, viewportRef]);
+		// eslint-disable-next-line react-hooks/exhaustive-deps -- intentional mount-once boot + viewport wiring
+	}, []);
 
 	useEffect(() => {
 		const isTypingTarget = (target: EventTarget | null) => {
@@ -131,7 +134,7 @@ export function useEngineEffects({
 			window.removeEventListener('keyup', onKeyUp);
 			window.removeEventListener('blur', onBlur);
 		};
-	}, [dispatch]);
+	}, []);
 
 	useEffect(() => {
 		const timeoutMs = projectType === '3D'
@@ -148,9 +151,11 @@ export function useEngineEffects({
 		return () => {
 			if (refs.readyTimer.current) clearTimeout(refs.readyTimer.current);
 		};
-	}, [dispatch, projectType, refs.readyTimer]);
+		// eslint-disable-next-line react-hooks/exhaustive-deps -- readyTimer ref identity is stable; avoid deps on whole `refs` bag
+	}, [dispatch, projectType]);
 
-	useEffect(() => {
+	// Subscribe before paint so early engine IPC (esp. 2D) is not dropped before useEffect.
+	useLayoutEffect(() => {
 		const handleEngineEvent = (event: { event: string; [key: string]: unknown }) => {
 			engineEventHandlerRef.current(event);
 		};

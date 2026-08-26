@@ -1404,6 +1404,13 @@ export interface EngineInternalRefs {
 	engineBootIpcPendingRef: MutableRefObject<number>
 	engineBootIpcSeenRef: MutableRefObject<number>
 	engineBootFinishedRef: MutableRefObject<boolean>
+	/**
+	 * Arranque inicial: no quitar overlay hasta escenas listadas + primer `[Carga]`.
+	 * Tras el primer reveal queda en false (cambios de escena mid-session no lo reactivan).
+	 */
+	bootRevealPendingRef: MutableRefObject<boolean>
+	scenesTabsReadyRef: MutableRefObject<boolean>
+	bootCargaLogSeenRef: MutableRefObject<boolean>
 	/** Cambio de escena activa 3D: agrupar `entity_removed` en log `[Limpieza]`. */
 	sceneWorldCleanupRef: MutableRefObject<{ active: boolean; summaryLogged: boolean }>
 	/** Escena FP vacía tras limpieza: logs legibles para suelo/sol/jugador del motor. */
@@ -1425,6 +1432,12 @@ export interface EngineContextValue extends EngineState {
 	sceneBurstPendingOpsRef: MutableRefObject<number>
 	sceneWorldCleanupRef: MutableRefObject<{ active: boolean; summaryLogged: boolean }>
 	fpSceneBaselineLogRef: MutableRefObject<boolean>
+	bootRevealPendingRef: MutableRefObject<boolean>
+	scenesTabsReadyRef: MutableRefObject<boolean>
+	bootCargaLogSeenRef: MutableRefObject<boolean>
+	engineBootAwaitRef: MutableRefObject<boolean>
+	/** Marca tabs del acordeón listas y reintenta quitar el overlay de arranque. */
+	notifyScenesTabsReady: (tabCount: number) => void
 	entityTransformsRef: MutableRefObject<Record<number, Transform>>
 	entityMetaRef: MutableRefObject<Record<number, EntityMeta>>
 	pendingRestoresRef: MutableRefObject<Map<string, PendingRestore[]>>

@@ -9,12 +9,30 @@ import type {
 type EngineEventListener = (event: EngineEvent) => void
 
 const engineEventListeners = new Set<EngineEventListener>()
+/** Eventos llegados antes de que React registre `engine.on` (arranque 2D rápido). */
+const engineEventBuffer: EngineEvent[] = []
 
-ipcRenderer.on('engine:event', (_ipcEvent, data: EngineEvent) => {
+function dispatchToListeners(data: EngineEvent): void {
   for (const listener of engineEventListeners) {
     listener(data)
   }
+}
+
+ipcRenderer.on('engine:event', (_ipcEvent, data: EngineEvent) => {
+  if (engineEventListeners.size === 0) {
+    engineEventBuffer.push(data)
+    return
+  }
+  dispatchToListeners(data)
 })
+
+function flushBufferedEngineEvents(): void {
+  if (engineEventBuffer.length === 0 || engineEventListeners.size === 0) return
+  const pending = engineEventBuffer.splice(0, engineEventBuffer.length)
+  for (const event of pending) {
+    dispatchToListeners(event)
+  }
+}
 
 function dispatchEngineCommand(cmd: EngineCommand): void {
   ipcRenderer.send('engine:cmd', cmd)
@@ -22,6 +40,7 @@ function dispatchEngineCommand(cmd: EngineCommand): void {
 
 const onEngineEvent = (cb: EngineEventListener): void => {
   engineEventListeners.add(cb)
+  flushBufferedEngineEvents()
 }
 
 const offEngineEvent = (cb?: EngineEventListener): void => {

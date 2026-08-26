@@ -184,6 +184,9 @@ impl State {
                         self.setup_2d_platformer();
                         if let Some(path) = save_path.filter(|p| !p.trim().is_empty()) {
                             self.load_proyect_from_save_path(&path);
+                        } else {
+                            // Proyecto nuevo: notificar al editor (logs + Scene-01), como la plantilla 3D.
+                            self.emit_default_2d_boot_loaded();
                         }
                     }
                     "scratch" => self.setup_scratch(),

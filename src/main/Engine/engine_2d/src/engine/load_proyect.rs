@@ -1125,3 +1125,58 @@ fn send_project_loaded_2d(state: &State, project: &ProjectSaveData, view: &Activ
         camera2d,
     });
 }
+
+impl State {
+    /// Proyecto 2D nuevo (sin `.save`): emite progreso y `project_loaded_2d` con Scene-01.
+    /// Equivalente funcional a la plantilla 3D (`setup_default_3d_scene` + `editor_scenes_init_from_boot`).
+    pub(crate) fn emit_default_2d_boot_loaded(&mut self) {
+        send_load_progress("Cargando plantilla 2D…", None, None);
+        send_load_progress("Plantilla 2D lista", None, None);
+        log::info!("Plantilla 2D por defecto lista");
+
+        let scene_name = rer_engine_shared::editor_defaults::default_scene_name(1);
+        let camera2d = self.camera_2d.as_ref().map(|c| ProjectLoaded2dCamera2d {
+            x: c.x,
+            y: c.y,
+            halfH: c.half_h,
+        });
+
+        let language = if self.snap_locale == "en" || self.snap_locale == "es" {
+            Some(self.snap_locale.clone())
+        } else {
+            None
+        };
+
+        send_project_loaded_2d_event(&ProjectLoaded2dEvent {
+            event: "project_loaded_2d",
+            activeSceneId: 1,
+            sceneName: scene_name.clone(),
+            entityCount: 0,
+            scenes: vec![ProjectLoaded2dSceneTab {
+                id: 1,
+                name: scene_name,
+            }],
+            language,
+            sprites: Vec::new(),
+            sounds: Vec::new(),
+            fonts: Vec::new(),
+            backgrounds: Vec::new(),
+            hudImages: Vec::new(),
+            playerUiScreens: crate::config_2d::player_ui::defaults::default_2d_project_ui_screens_info(
+            ),
+            menuUiScreens: Vec::new(),
+            blueprints: serde_json::Value::Array(Vec::new()),
+            world: ProjectLoaded2dWorld {
+                worldWidth: self.grid_config.world_width,
+                worldHeight: self.grid_config.world_height,
+                worldDepth: None,
+                gridVisible: self.grid_config.visible,
+                gridCellSize: self.grid_config.cell_size,
+                gravity: Some(self.physics_2d.gravity_magnitude()),
+                targetFps: self.target_fps as f64,
+            },
+            backgroundPath: None,
+            camera2d,
+        });
+    }
+}

@@ -8,6 +8,8 @@ export interface EngineStartupSceneDeps {
   getExtractDir: () => string
   getGameStyle: () => GameStyle | null
   sendToEngine: EngineCmdSend
+  is2dStartupSceneSent: () => boolean
+  mark2dStartupSceneSent: () => void
   is3dStartupSceneSent: () => boolean
   mark3dStartupSceneSent: () => void
 }
@@ -19,6 +21,8 @@ export function sendEngineStartupScene(deps: EngineStartupSceneDeps): void {
   const extractDir = deps.getExtractDir()
 
   if (binary === 'rer_engine_2d' && projectType === '2D') {
+    if (deps.is2dStartupSceneSent()) return
+    deps.mark2dStartupSceneSent()
     deps.sendToEngine({
       cmd: 'set_scene',
       scene: '2D',

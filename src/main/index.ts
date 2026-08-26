@@ -111,7 +111,8 @@ let lastEffectiveBounds: ViewportBounds | null = null
 /** true tras recibir `ready` del proceso motor de la sesión actual. */
 let engineReceivedReady = false
 
-/** Evita reenviar `set_scene` 3D si el motor emite más de un `ready` (p. ej. tras `setup_empty_3d`). */
+/** Evita reenviar `set_scene` 2D/3D si el motor emite más de un `ready`. */
+let engine2dStartupSceneSent = false
 let engine3dStartupSceneSent = false
 /** Tras un crash del motor en sesión, no relanzar en bucle con cada `viewport-bounds`. */
 let engineSessionCrashed = false
@@ -292,6 +293,7 @@ interface ViewportBounds {
 
 function startEngine(embed?: ViewportBounds): void {
   engineReceivedReady = false
+  engine2dStartupSceneSent = false
   engine3dStartupSceneSent = false
 
   // Seleccionar binario según el tipo de proyecto (2D / 3D)
@@ -386,6 +388,8 @@ function startEngine(embed?: ViewportBounds): void {
             getExtractDir: () => currentProjectExtractDir ?? '',
             getGameStyle: () => currentGameStyle,
             sendToEngine,
+            is2dStartupSceneSent: () => engine2dStartupSceneSent,
+            mark2dStartupSceneSent: () => { engine2dStartupSceneSent = true },
             is3dStartupSceneSent: () => engine3dStartupSceneSent,
             mark3dStartupSceneSent: () => { engine3dStartupSceneSent = true },
           })

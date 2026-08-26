@@ -133,6 +133,7 @@ export function createEngineActions({
 				refs.sceneBurstLoadInProgressRef,
 				reportBounds,
 				refs.modelLoadOverlayKindRef,
+				refs,
 			);
 		}
 		send3dFn({
