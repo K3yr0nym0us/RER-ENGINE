@@ -325,7 +325,7 @@ export async function ensureMsvc2015to2022X64(
   if (isMsvc2015to2022X64Installed(deps)) {
     // Already present: drop leftover installer copies (userData + packaged resources).
     const bundled = deps.resolveBundledInstallerPath()
-    let working: string | null = null
+    let working: string | null
     try {
       working = deps.resolveWorkingInstallerPath()
     } catch {
