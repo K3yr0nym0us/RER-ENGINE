@@ -1,3 +1,4 @@
+import './monacoSetup'
 import type { languages } from 'monaco-editor'
 
 export const RHAI_MONACO_LANGUAGE = 'rhai'

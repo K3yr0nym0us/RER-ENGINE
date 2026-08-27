@@ -2293,30 +2293,45 @@ function cleanupExtractedProjectDirs(): void {
 app.whenReady().then(() => {
   startElectronResourceSampling()
 
-  // CSP estricto solo en producción (app.isPackaged).
-  // En desarrollo, Vite inyecta scripts inline para HMR/React preamble
-  // que serían bloqueados. El warning de Electron en dev desaparece
-  // automáticamente al empaquetar la app.
-  if (app.isPackaged) {
-    const CSP = [
-      "default-src 'self'",
-      "script-src 'self'",
-      "style-src 'self' 'unsafe-inline'",
-      "img-src 'self' data: blob: file:",
-      "media-src 'self' file: blob:",
-      "connect-src 'self'",
-      "font-src 'self' data:",
-    ].join('; ')
-
-    session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
-      callback({
-        responseHeaders: {
-          ...details.responseHeaders,
-          'Content-Security-Policy': [CSP],
-        },
-      })
-    })
+  // Vite HMR needs 'unsafe-eval' in development; Electron always warns about that.
+  // Silence the console warning only when not packaged (packaged CSP has no unsafe-eval).
+  if (!app.isPackaged) {
+    process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true'
   }
+
+  // Always set CSP. Packaged: strict. Dev: allow Vite HMR / React Fast Refresh.
+  const CSP = app.isPackaged
+    ? [
+        "default-src 'self'",
+        "script-src 'self'",
+        "style-src 'self' 'unsafe-inline'",
+        "img-src 'self' data: blob: file:",
+        "media-src 'self' file: blob:",
+        "connect-src 'self'",
+        "font-src 'self' data:",
+        "worker-src 'self' blob:",
+        "child-src 'self' blob:",
+      ].join('; ')
+    : [
+        "default-src 'self'",
+        "script-src 'self' 'unsafe-eval' 'unsafe-inline'",
+        "style-src 'self' 'unsafe-inline'",
+        "img-src 'self' data: blob: file:",
+        "media-src 'self' file: blob:",
+        "connect-src 'self' ws: wss: http://localhost:* http://127.0.0.1:*",
+        "font-src 'self' data:",
+        "worker-src 'self' blob:",
+        "child-src 'self' blob:",
+      ].join('; ')
+
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': [CSP],
+      },
+    })
+  })
 
   createMainWindow()
   initModalElectron(() => mainWindow, getEngineViewportScreenOrigin)

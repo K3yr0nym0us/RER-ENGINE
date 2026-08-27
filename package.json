@@ -12,8 +12,8 @@
   "contributors": [],
   "scripts": {
     "predev": "cargo build --manifest-path src/main/Engine/Cargo.toml -p rer-engine-2d && cargo build --manifest-path src/main/Engine/Cargo.toml -p rer-engine-3d && cargo build --manifest-path src/main/Engine/Cargo.toml -p rer-engine-shared",
-    "dev": "cross-env RER_ENGINE_PROFILE=debug electron-vite dev",
-    "start": "cargo build --release --manifest-path src/main/Engine/Cargo.toml -p rer-engine-2d -p rer-engine-3d -p rer-engine-shared && cross-env RER_ENGINE_PROFILE=release electron-vite dev",
+    "dev": "cross-env ELECTRON_DISABLE_SECURITY_WARNINGS=true RER_ENGINE_PROFILE=debug electron-vite dev",
+    "start": "cargo build --release --manifest-path src/main/Engine/Cargo.toml -p rer-engine-2d -p rer-engine-3d -p rer-engine-shared && cross-env ELECTRON_DISABLE_SECURITY_WARNINGS=true RER_ENGINE_PROFILE=release electron-vite dev",
     "prebuild": "cargo build --manifest-path src/main/Engine/Cargo.toml -p rer-engine-2d && cargo build --manifest-path src/main/Engine/Cargo.toml -p rer-engine-3d && cargo build --manifest-path src/main/Engine/Cargo.toml -p rer-engine-shared",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
