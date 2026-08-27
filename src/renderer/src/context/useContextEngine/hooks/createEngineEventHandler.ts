@@ -102,7 +102,7 @@ function mustTakeQueued<T>(queue: T[]): T {
 	return item
 }
 
-import { buildEditingUiElementsFromEngineList, normalizeGraphicsTextureTier, normalizeReflectionTier, normalizeReflectionDebugView, normalizeShadowTier } from '../types';
+import { buildEditingUiElementsFromEngineList, normalizeGraphicsTextureTier, normalizeReflectionTier, normalizeReflectionDebugView, normalizeShadowTier, normalizeMsaaTier } from '../types';
 import { takePendingPlayerUiButtonConfig } from './createEngineActions';
 
 type RuntimeEngineEvent = {
@@ -180,6 +180,7 @@ const SILENT_ENGINE_EVENTS = new Set<string>([
 	'reflection_debug_view_changed',
 	'ssr_debug_mode_changed',
 	'shadow_tier_changed',
+	'msaa_tier_changed',
 	'taa_changed',
 	'model_clips_ready',
 	'project_loaded_2d',
@@ -2770,6 +2771,14 @@ export function createEngineEventHandler({
 			const tier = normalizeShadowTier(event.tier);
 			dispatch({ type: 'SET_WORLD_CONFIG', payload: { shadowTier: tier } });
 			addLog(`[Sombras] Motor confirmó nivel: ${tier}`);
+		}
+
+		if (event.event === 'msaa_tier_changed') {
+			const tier = normalizeMsaaTier(event.tier);
+			dispatch({ type: 'SET_WORLD_CONFIG', payload: { msaaTier: tier } });
+			const samples =
+				typeof event.sample_count === 'number' ? ` (${event.sample_count}x)` : '';
+			addLog(`[MSAA] Motor confirmó nivel: ${tier}${samples}`);
 		}
 
 		if (event.event === 'taa_changed') {

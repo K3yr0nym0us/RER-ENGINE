@@ -16,8 +16,9 @@ import type {
 	ReflectionTier,
 	ReflectionDebugView,
 	ShadowTier,
+	MsaaTier,
 } from '../types';
-import { normalizeGraphicsTextureTier, normalizeReflectionTier, normalizeReflectionDebugView, normalizeShadowTier } from '../types';
+import { normalizeGraphicsTextureTier, normalizeReflectionTier, normalizeReflectionDebugView, normalizeShadowTier, normalizeMsaaTier } from '../types';
 import { buildPlayAnimationFrameCmd } from './applyPendingRestoreToEngine';
 import { beginModelReplaceLoading, endModelReplaceLoading } from './sceneImportOverlay';
 import { invalidateEntityBoneNames } from '../../../utils/entity3dEditorSync';
@@ -336,6 +337,13 @@ export function createEngineActions({
 		dispatch({ type: 'SET_WORLD_CONFIG', payload: { shadowTier: normalized } });
 		send3dFn({ cmd: 'set_shadow_tier', tier: normalized });
 		addLog(`[Sombras] Nivel solicitado: ${normalized}`);
+	};
+
+	const setMsaaTier = (tier: MsaaTier) => {
+		const normalized = normalizeMsaaTier(tier);
+		dispatch({ type: 'SET_WORLD_CONFIG', payload: { msaaTier: normalized } });
+		send3dFn({ cmd: 'set_msaa_tier', tier: normalized });
+		addLog(`[MSAA] Nivel solicitado: ${normalized}`);
 	};
 
 	const setTaaEnabled = (enabled: boolean) => {
@@ -1070,6 +1078,7 @@ export function createEngineActions({
 		spawnReflectionProbe,
 		setSsrDebugMode,
 		setShadowTier,
+		setMsaaTier,
 		setTaaEnabled,
 		setTaaParams,
 		setReflectionDebugView,

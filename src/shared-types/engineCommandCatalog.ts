@@ -133,6 +133,7 @@ export const ENGINE_COMMANDS_3D_ONLY = [
   'set_reflection_debug_view',
   'set_ssr_debug_mode',
   'set_shadow_tier',
+  'set_msaa_tier',
   'set_world_radius',
   'set_taa',
   'create_editor_scene',

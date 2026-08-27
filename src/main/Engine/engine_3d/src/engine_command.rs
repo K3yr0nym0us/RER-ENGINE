@@ -151,6 +151,9 @@ pub enum EngineCommand3dOnly {
     SetShadowTier {
         tier: String,
     },
+    SetMsaaTier {
+        tier: String,
+    },
     SetWorldRadius {
         radius: f32,
     },

@@ -57,6 +57,8 @@ pub struct SaveWorldSnapshot {
     pub reflection_probes: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shadow_tier: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub msaa_tier: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -869,6 +871,11 @@ pub enum EngineEvent {
     ShadowTierChanged {
         tier: String,
     },
+    #[serde(rename = "msaa_tier_changed")]
+    MsaaTierChanged {
+        tier: String,
+        sample_count: u32,
+    },
     #[serde(rename = "reflection_debug_view_changed")]
     ReflectionDebugViewChanged {
         view: String,
@@ -1267,6 +1274,8 @@ pub struct ProjectLoaded3dWorld {
     pub reflectionProbes: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub shadowTier: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub msaaTier: Option<String>,
 }
 
 /// Evento `project_loaded_3d` (fuera de `EngineEvent` para no heredar snake_case del enum).

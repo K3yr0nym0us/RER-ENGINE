@@ -38,6 +38,7 @@
 | [Reflections_RT.yaml](./Reflections_RT.yaml) | Ray tracing HW, quality preset, denoise |
 | [Reflections_Diagnostics.yaml](./Reflections_Diagnostics.yaml) | Auditoría y pruebas manuales |
 | [TAA_3D.yaml](./TAA_3D.yaml) | Anti-aliasing temporal: blend, jitter, pipeline, IPC |
+| [MSAA_3D.yaml](./MSAA_3D.yaml) | MSAA forward 3D por tier, resolve a G-buffers 1×, IPC |
 | [Shadows_3D.yaml](./Shadows_3D.yaml) | Shadow map único, tiers de resolución, IPC |
 
 ---

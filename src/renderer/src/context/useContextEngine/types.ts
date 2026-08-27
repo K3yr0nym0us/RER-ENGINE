@@ -107,6 +107,18 @@ export function normalizeShadowTier(value: unknown): ShadowTier {
 	return 'low';
 }
 
+/** Low = Off (1 muestra). Medium 2x, High 4x, Ultra 8x (clamp GPU). */
+export type MsaaTier = 'low' | 'medium' | 'high' | 'ultra';
+
+export function normalizeMsaaTier(value: unknown): MsaaTier {
+	const s = String(value ?? 'low').trim().toLowerCase();
+	if (s === 'low' || s === 'bajo' || s === 'off' || s === 'apagado') return 'low';
+	if (s === 'medium' || s === 'medio') return 'medium';
+	if (s === 'high' || s === 'alto') return 'high';
+	if (s === 'ultra') return 'ultra';
+	return 'low';
+}
+
 export type ReflectionDebugView = 'final' | 'ssr_debug' | 'ssr_miss_green' | 'ssr_exit_reason' | 'ssr_vector_rgb' | 'ssr_hit_class' | 'ssr_path_px' | 'ssr_march_refl_dir' | 'ssr_hit_uv' | 'ssr_hit_sample_color' | 'ssr_proj_depth_delta' | 'ssr_ray_overlay'
 
 export function normalizeReflectionDebugView(value: unknown): ReflectionDebugView {
@@ -209,6 +221,7 @@ export interface WorldConfig {
 	reflectionDebugView: ReflectionDebugView
 	ssrDebugMode: boolean
 	shadowTier: ShadowTier
+	msaaTier: MsaaTier
 	taaEnabled: boolean
 	taaBlend: number
 	taaJitterScale: number
@@ -234,6 +247,7 @@ export const DEFAULT_WORLD_CONFIG: WorldConfig = {
 	reflectionDebugView: 'final',
 	ssrDebugMode: false,
 	shadowTier: 'low',
+	msaaTier: 'low',
 	taaEnabled: true,
 	taaBlend: 0.62,
 	taaJitterScale: 1.0,
@@ -1244,6 +1258,7 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 					),
 					reflectionProbes: Boolean(p.world.reflectionProbes),
 					shadowTier: normalizeShadowTier(p.world.shadowTier),
+					msaaTier: normalizeMsaaTier(p.world.msaaTier),
 				},
 				sounds: p.sounds,
 				fonts: p.fonts ?? [],
@@ -1495,6 +1510,7 @@ export interface EngineContextValue extends EngineState {
 	setReflectionDebugView: (view: ReflectionDebugView) => void
 	setSsrDebugMode: (enabled: boolean) => void
 	setShadowTier: (tier: ShadowTier) => void
+	setMsaaTier: (tier: MsaaTier) => void
 	setTaaEnabled: (enabled: boolean) => void
 	setTaaParams: (params: { blend: number; jitterScale: number; enabled: boolean }) => void
 	setTextureDetailDistance: (distanceM: number) => void

@@ -141,6 +141,8 @@ pub(crate) struct SavedWorldConfig {
     reflectionProbes: Option<bool>,
     #[serde(default)]
     shadowTier: Option<String>,
+    #[serde(default)]
+    msaaTier: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize, Clone, Serialize)]
@@ -1431,6 +1433,10 @@ fn apply_loaded_proyect_3d_with_scene(
         state,
         view.world.shadowTier.as_deref(),
     );
+    crate::config_3d::msaa_settings::apply_msaa_settings_from_world_wire(
+        state,
+        view.world.msaaTier.as_deref(),
+    );
     state.ensure_material_validation_demo();
     send_event(&EngineEvent::GraphicsTextureTierChanged {
         tier: state.graphics_texture_tier.wire().to_string(),
@@ -1449,6 +1455,10 @@ fn apply_loaded_proyect_3d_with_scene(
     });
     send_event(&EngineEvent::ShadowTierChanged {
         tier: state.shadow_tier.wire().to_string(),
+    });
+    send_event(&EngineEvent::MsaaTierChanged {
+        tier: state.msaa_tier.wire().to_string(),
+        sample_count: state.msaa_sample_count,
     });
     send_event(&EngineEvent::TaaChanged {
         enabled: state.taa.enabled,
@@ -2010,6 +2020,13 @@ fn send_project_loaded_3d(
                     .to_string(),
             )
         }),
+        msaaTier: view.world.msaaTier.clone().or_else(|| {
+            Some(
+                crate::config_3d::msaa_graphics::DEFAULT_MSAA_TIER
+                    .wire()
+                    .to_string(),
+            )
+        }),
     };
 
     let models = editor_models_from_manifest(project);
@@ -2196,6 +2213,7 @@ pub(crate) fn saved_scene_from_snapshot_payload(
             reflectionRaytracing: p.world.reflection_raytracing,
             reflectionProbes: p.world.reflection_probes,
             shadowTier: p.world.shadow_tier.clone(),
+            msaaTier: p.world.msaa_tier.clone(),
         },
         backgroundPath: p.background_path.clone(),
         entities: p.entities.iter().map(map_entity).collect(),
@@ -2269,6 +2287,11 @@ pub(crate) fn build_fp_placeholder_saved_scene(id: u32, name: &str) -> SavedScen
         reflectionProbes: None,
         shadowTier: Some(
             crate::config_3d::shadow_graphics::DEFAULT_SHADOW_TIER
+                .wire()
+                .to_string(),
+        ),
+        msaaTier: Some(
+            crate::config_3d::msaa_graphics::DEFAULT_MSAA_TIER
                 .wire()
                 .to_string(),
         ),

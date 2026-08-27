@@ -57,6 +57,7 @@ impl State {
                 reflection_raytracing: Some(self.reflection_raytracing_enabled),
                 reflection_probes: Some(self.reflection_probes_enabled),
                 shadow_tier: Some(self.shadow_tier.wire().to_string()),
+                msaa_tier: Some(self.msaa_tier.wire().to_string()),
             },
             background_path: self.background_path.clone(),
             entities,

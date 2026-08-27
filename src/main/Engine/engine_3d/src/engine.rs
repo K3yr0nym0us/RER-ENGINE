@@ -41,6 +41,8 @@ pub struct State {
     pub(crate) transparent_refl_sampler: wgpu::Sampler,
     pub(crate) shadow_pipeline: wgpu::RenderPipeline,
     pub(crate) _shadow_texture: wgpu::Texture,
+    /// Depth buffer del viewport (puede ser multisample si MSAA > 1).
+    pub(crate) _depth_texture: wgpu::Texture,
     pub(crate) depth_view: wgpu::TextureView,
     pub(crate) taa: crate::taa::TaaPass,
     pub(crate) vsync_enabled: bool,
@@ -58,6 +60,14 @@ pub struct State {
     pub(crate) shadow_tier: crate::config_3d::shadow_graphics::ShadowTier,
     /// Resolución actual del shadow map (px por lado); se recrea al cambiar de tier.
     pub(crate) shadow_map_size: u32,
+    /// Nivel MSAA del pase forward (Low = Off).
+    pub(crate) msaa_tier: crate::config_3d::msaa_graphics::MsaaTier,
+    /// `sample_count` efectivo tras clamp al soporte del dispositivo.
+    pub(crate) msaa_sample_count: u32,
+    /// Layouts guardados para recrear pipelines forward al cambiar MSAA.
+    pub(crate) forward_main_pipeline_layout: wgpu::PipelineLayout,
+    pub(crate) forward_skinned_pipeline_layout: wgpu::PipelineLayout,
+    pub(crate) forward_sky_pipeline_layout: wgpu::PipelineLayout,
 
     pub(crate) texture_array: crate::texture::TextureArray,
     /// `tex_idx` de `MeshComponent` → capa en `texture_array`.

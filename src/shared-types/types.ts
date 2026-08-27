@@ -358,6 +358,8 @@ export interface SavedWorldConfig {
   reflectionProbes?: boolean
   /** 3D: nivel de calidad de sombras (resolución del shadow map por tier). */
   shadowTier?: 'off' | 'low' | 'medium' | 'high' | 'ultra'
+  /** 3D: MSAA del pase forward (Low=Off, Medium 2x, High 4x, Ultra 8x). */
+  msaaTier?: 'low' | 'medium' | 'high' | 'ultra'
 }
 
 /** @deprecated 3D: `player` + `config_camera`. Solo runtime 2D / migración UI. */
@@ -669,6 +671,7 @@ export interface EngineSaveSceneSnapshot {
     reflection_raytracing?: boolean | null
     reflection_probes?: boolean | null
     shadow_tier?: 'off' | 'low' | 'medium' | 'high' | 'ultra' | null
+    msaa_tier?: 'low' | 'medium' | 'high' | 'ultra' | null
   }
   background_path?: string | null
   entities: Entity3D[]

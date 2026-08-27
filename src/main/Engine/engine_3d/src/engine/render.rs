@@ -337,7 +337,10 @@ impl State {
         self.config.width = new_size.width;
         self.config.height = new_size.height;
         self.surface.configure(&self.device, &self.config);
-        self.depth_view = create_depth_texture(&self.device, &self.config);
+        let (depth_tex, depth_view) =
+            create_depth_texture(&self.device, &self.config, self.msaa_sample_count);
+        self._depth_texture = depth_tex;
+        self.depth_view = depth_view;
         self.taa.resize(
             &self.device,
             crate::taa::MRT_LIT_FORMAT,
@@ -699,12 +702,19 @@ impl State {
             all_instance_buffers.split_at(opaque_buf_count);
 
         {
-            let ambient_view = self.taa.ambient_view();
-            let direct_view = self.taa.direct_view();
-            let depth_export_view = self.taa.depth_export_view();
-            let velocity_view = self.taa.velocity_view();
-            let base_color_view = self.taa.base_color_view();
-            let shadow_mask_view = self.taa.shadow_mask_view();
+            let ambient_view = self.taa.ambient_render_view();
+            let ambient_resolve = self.taa.ambient_resolve_target();
+            let direct_view = self.taa.direct_render_view();
+            let direct_resolve = self.taa.direct_resolve_target();
+            let depth_export_view = self.taa.depth_export_render_view();
+            let depth_export_resolve = self.taa.depth_export_resolve_target();
+            let velocity_view = self.taa.velocity_render_view();
+            let velocity_resolve = self.taa.velocity_resolve_target();
+            let base_color_view = self.taa.base_color_render_view();
+            let base_color_resolve = self.taa.base_color_resolve_target();
+            let shadow_mask_view = self.taa.shadow_mask_render_view();
+            let shadow_mask_resolve = self.taa.shadow_mask_resolve_target();
+            let msaa_store = wgpu::StoreOp::Store;
 
             {
                 let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -712,16 +722,16 @@ impl State {
                     color_attachments: &[
                         Some(wgpu::RenderPassColorAttachment {
                             view: ambient_view,
-                            resolve_target: None,
+                            resolve_target: ambient_resolve,
                             depth_slice: None,
                             ops: wgpu::Operations {
                                 load: wgpu::LoadOp::Clear(self.clear_color),
-                                store: wgpu::StoreOp::Store,
+                                store: msaa_store,
                             },
                         }),
                         Some(wgpu::RenderPassColorAttachment {
                             view: shadow_mask_view,
-                            resolve_target: None,
+                            resolve_target: shadow_mask_resolve,
                             depth_slice: None,
                             ops: wgpu::Operations {
                                 // Rg16Float: .r=shadow (1=sin sombra), .g=roughness (1=máximo
@@ -733,35 +743,35 @@ impl State {
                                     b: 0.0,
                                     a: 0.0,
                                 }),
-                                store: wgpu::StoreOp::Store,
+                                store: msaa_store,
                             },
                         }),
                         Some(wgpu::RenderPassColorAttachment {
                             view: direct_view,
-                            resolve_target: None,
+                            resolve_target: direct_resolve,
                             depth_slice: None,
                             ops: wgpu::Operations {
                                 load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                                store: wgpu::StoreOp::Store,
+                                store: msaa_store,
                             },
                         }),
                         Some(wgpu::RenderPassColorAttachment {
                             view: depth_export_view,
-                            resolve_target: None,
+                            resolve_target: depth_export_resolve,
                             depth_slice: None,
                             ops: wgpu::Operations {
                                 // R32Float: GL NDC z (`clip.z/clip.w`) para SSR (1/z march).
                                 load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                                store: wgpu::StoreOp::Store,
+                                store: msaa_store,
                             },
                         }),
                         Some(wgpu::RenderPassColorAttachment {
                             view: velocity_view,
-                            resolve_target: None,
+                            resolve_target: velocity_resolve,
                             depth_slice: None,
                             ops: wgpu::Operations {
                                 load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                                store: wgpu::StoreOp::Store,
+                                store: msaa_store,
                             },
                         }),
                     ],
@@ -861,38 +871,38 @@ impl State {
                         None,
                         Some(wgpu::RenderPassColorAttachment {
                             view: shadow_mask_view,
-                            resolve_target: None,
+                            resolve_target: shadow_mask_resolve,
                             depth_slice: None,
                             ops: wgpu::Operations {
                                 load: wgpu::LoadOp::Load,
-                                store: wgpu::StoreOp::Store,
+                                store: msaa_store,
                             },
                         }),
                         Some(wgpu::RenderPassColorAttachment {
                             view: direct_view,
-                            resolve_target: None,
+                            resolve_target: direct_resolve,
                             depth_slice: None,
                             ops: wgpu::Operations {
                                 load: wgpu::LoadOp::Load,
-                                store: wgpu::StoreOp::Store,
+                                store: msaa_store,
                             },
                         }),
                         Some(wgpu::RenderPassColorAttachment {
                             view: depth_export_view,
-                            resolve_target: None,
+                            resolve_target: depth_export_resolve,
                             depth_slice: None,
                             ops: wgpu::Operations {
                                 load: wgpu::LoadOp::Load,
-                                store: wgpu::StoreOp::Store,
+                                store: msaa_store,
                             },
                         }),
                         Some(wgpu::RenderPassColorAttachment {
                             view: velocity_view,
-                            resolve_target: None,
+                            resolve_target: velocity_resolve,
                             depth_slice: None,
                             ops: wgpu::Operations {
                                 load: wgpu::LoadOp::Load,
-                                store: wgpu::StoreOp::Store,
+                                store: msaa_store,
                             },
                         }),
                     ],
@@ -934,26 +944,27 @@ impl State {
 
             // Albedo + world_pos para SSR (deferred `world_position`).
             if reflection_settings.active() {
-                let world_pos_view = self.taa.world_pos_view();
+                let world_pos_view = self.taa.world_pos_render_view();
+                let world_pos_resolve = self.taa.world_pos_resolve_target();
                 let mut albedo_pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("base-color-export-pass"),
                     color_attachments: &[
                         Some(wgpu::RenderPassColorAttachment {
                             view: base_color_view,
-                            resolve_target: None,
+                            resolve_target: base_color_resolve,
                             depth_slice: None,
                             ops: wgpu::Operations {
                                 load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                                store: wgpu::StoreOp::Store,
+                                store: msaa_store,
                             },
                         }),
                         Some(wgpu::RenderPassColorAttachment {
                             view: world_pos_view,
-                            resolve_target: None,
+                            resolve_target: world_pos_resolve,
                             depth_slice: None,
                             ops: wgpu::Operations {
                                 load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                                store: wgpu::StoreOp::Store,
+                                store: msaa_store,
                             },
                         }),
                     ],
@@ -1038,6 +1049,9 @@ impl State {
                 }
             }
         }
+
+        // R32Float (y otros sin MULTISAMPLE_RESOLVE) no pueden usar resolve HW.
+        self.taa.resolve_non_hw_msaa(&self.device, &mut enc);
 
         if reflection_settings.uses_probes() {
             crate::reflections::frame::encode_probe_captures(
@@ -1803,7 +1817,8 @@ impl State {
 pub(crate) fn create_depth_texture(
     device: &wgpu::Device,
     config: &wgpu::SurfaceConfiguration,
-) -> wgpu::TextureView {
+    sample_count: u32,
+) -> (wgpu::Texture, wgpu::TextureView) {
     let tex = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("depth-texture"),
         size: wgpu::Extent3d {
@@ -1812,13 +1827,14 @@ pub(crate) fn create_depth_texture(
             depth_or_array_layers: 1,
         },
         mip_level_count: 1,
-        sample_count: 1,
+        sample_count: sample_count.max(1),
         dimension: wgpu::TextureDimension::D2,
         format: DEPTH_FORMAT,
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
         view_formats: &[],
     });
-    tex.create_view(&wgpu::TextureViewDescriptor::default())
+    let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
+    (tex, view)
 }
 
 pub(crate) fn build_scene_uniforms(

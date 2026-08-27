@@ -77,13 +77,16 @@ impl State {
         };
         surface.configure(&device, &config);
 
-        let depth_view = create_depth_texture(&device, &config);
+        let (depth_texture, depth_view) = create_depth_texture(&device, &config, 1);
 
         let camera = Camera::new();
         let aspect = size.width as f32 / size.height as f32;
         let p = camera.position();
         let shadow_tier = crate::config_3d::shadow_graphics::DEFAULT_SHADOW_TIER;
         let shadow_map_size = shadow_tier.shadow_map_size();
+        let msaa_tier = crate::config_3d::msaa_graphics::DEFAULT_MSAA_TIER;
+        let msaa_sample_count = msaa_tier.desired_sample_count();
+        let forward_ms = crate::config_3d::msaa_settings::multisample_state(msaa_sample_count);
         let identity_vp = glam::Mat4::IDENTITY.to_cols_array_2d();
         let cam_vp = camera.to_uniform(aspect).view_proj;
         let uniforms = SceneUniforms {
@@ -488,7 +491,7 @@ impl State {
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
-            multisample: wgpu::MultisampleState::default(),
+            multisample: forward_ms,
             multiview_mask: None,
             cache: None,
         });
@@ -519,7 +522,7 @@ impl State {
                     stencil: wgpu::StencilState::default(),
                     bias: wgpu::DepthBiasState::default(),
                 }),
-                multisample: wgpu::MultisampleState::default(),
+                multisample: forward_ms,
                 multiview_mask: None,
                 cache: None,
             });
@@ -550,7 +553,7 @@ impl State {
                 ..Default::default()
             },
             depth_stencil: Some(base_color_depth.clone()),
-            multisample: wgpu::MultisampleState::default(),
+            multisample: forward_ms,
             multiview_mask: None,
             cache: None,
         });
@@ -752,6 +755,12 @@ impl State {
             bind_group_layouts: &[Some(&gizmo_bgl)],
             immediate_size: 0,
         });
+        let forward_sky_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("forward-sky-pl-layout"),
+                bind_group_layouts: &[Some(&gizmo_bgl)],
+                immediate_size: 0,
+            });
         let gizmo_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("gizmo-pipeline"),
             layout: Some(&gizmo_pl_layout),
@@ -844,7 +853,7 @@ impl State {
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
-            multisample: wgpu::MultisampleState::default(),
+            multisample: forward_ms,
             multiview_mask: None,
             cache: None,
         });
@@ -938,7 +947,7 @@ impl State {
                     stencil: wgpu::StencilState::default(),
                     bias: wgpu::DepthBiasState::default(),
                 }),
-                multisample: wgpu::MultisampleState::default(),
+                multisample: forward_ms,
                 multiview_mask: None,
                 cache: None,
             });
@@ -966,7 +975,7 @@ impl State {
                     ..Default::default()
                 },
                 depth_stencil: Some(base_color_depth),
-                multisample: wgpu::MultisampleState::default(),
+                multisample: forward_ms,
                 multiview_mask: None,
                 cache: None,
             });
@@ -1088,6 +1097,7 @@ impl State {
             transparent_refl_sampler,
             shadow_pipeline,
             _shadow_texture: shadow_texture,
+            _depth_texture: depth_texture,
             depth_view,
             taa,
             vsync_enabled: false,
@@ -1288,6 +1298,11 @@ impl State {
             shadow_sampler,
             shadow_tier,
             shadow_map_size,
+            msaa_tier,
+            msaa_sample_count,
+            forward_main_pipeline_layout: main_pipeline_layout,
+            forward_skinned_pipeline_layout: skinned_pipeline_layout,
+            forward_sky_pipeline_layout,
             texture_detail_near_m: crate::config_3d::entity_textures::default_texture_detail_near_m(
             ),
             glb_texture_catalog_cache: HashMap::new(),

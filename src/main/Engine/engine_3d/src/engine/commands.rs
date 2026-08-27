@@ -951,6 +951,14 @@ impl State {
                     log::warn!("[sombras] tier IPC no reconocido: {tier}");
                 }
             }
+            EngineCommand::Only3d(EngineCommand3dOnly::SetMsaaTier { tier }) => {
+                log::info!("[msaa] IPC set_msaa_tier: {tier}");
+                if let Some(t) = crate::config_3d::msaa_graphics::MsaaTier::from_wire(&tier) {
+                    self.set_msaa_tier(t);
+                } else {
+                    log::warn!("[msaa] tier IPC no reconocido: {tier}");
+                }
+            }
             EngineCommand::Only3d(EngineCommand3dOnly::SetWorldRadius { radius }) => {
                 self.set_world_bounds_3d_radius(radius);
                 self.clamp_play_character_camera_to_bounds();

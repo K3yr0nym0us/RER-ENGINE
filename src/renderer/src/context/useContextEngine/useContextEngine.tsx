@@ -249,6 +249,7 @@ export function EngineProvider({
 		setReflectionDebugView: actions.setReflectionDebugView,
 		setSsrDebugMode: actions.setSsrDebugMode,
 		setShadowTier: actions.setShadowTier,
+		setMsaaTier: actions.setMsaaTier,
 		setTaaEnabled: actions.setTaaEnabled,
 		setTaaParams: actions.setTaaParams,
 		setTextureDetailDistance: actions.setTextureDetailDistance,

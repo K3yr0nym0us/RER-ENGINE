@@ -225,6 +225,7 @@ export function engineSceneToSavedScene(
 			reflectionRaytracing: scene.world.reflection_raytracing ?? undefined,
 			reflectionProbes: scene.world.reflection_probes ?? undefined,
 			shadowTier: scene.world.shadow_tier ?? undefined,
+			msaaTier: scene.world.msaa_tier ?? undefined,
 		},
 		backgroundPath: scene.background_path ?? null,
 		entities: mapEngineEntities(scene.entities, entityMeta),

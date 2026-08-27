@@ -1,0 +1,65 @@
+# MSAA 3D (multisample anti-aliasing del pase forward)
+#
+# El MRT forward se dibuja a targets multisample; al final de cada pass
+# se resuelve a los G-buffers 1× que consumen TAA, SSR, lit-composite y blit.
+# Shadow maps, probes y post-FX permanecen en sample_count = 1.
+#
+# Relacionado con:
+#   - docs/TAA_3D.yaml
+#   - docs/Shadows_3D.yaml
+#   - docs/Reflections_3D.yaml
+#   - docs/IPC_Protocol.yaml
+
+version: 1
+updated: 2026-08-27
+
+principle:
+  owner: motor_3d
+  pipeline: |
+    1. Forward MRT (ambient, shadow_mask, direct, depth_export, velocity) + depth:
+       sample_count = N del tier; resolve_target → texturas 1× de TaaPass.
+    2. Prepass transparente y export base_color/world_pos: mismo N + resolve.
+    3. TAA sombra/escena, lit-composite, SSR/RT y blit leen solo los 1× resueltos.
+  note: |
+    Low = Off (1 muestra, sin resolve; comportamiento histórico).
+    Ultra pide 8× y se clampa al máximo soportado por todos los formatos del MRT
+    (guaranteed_format_features + Features del dispositivo).
+    R32Float (depth-export) no admite MULTISAMPLE_RESOLVE: se escribe MS y se
+    resuelve a 1× con un pase manual (textureLoad sample 0) antes de TAA/SSR.
+
+graphics_tiers:
+  - id: low
+    aliases: [bajo, off, apagado]
+    sample_count: 1
+    note: Sin MSAA
+  - id: medium
+    aliases: [medio]
+    sample_count: 2
+  - id: high
+    aliases: [alto]
+    sample_count: 4
+  - id: ultra
+    aliases: [ultra]
+    sample_count: 8
+    note: Clamp a 4× o 2× si el formato/GPU no soporta 8×
+
+commands:
+  set_msaa_tier:
+    params: { tier: low | medium | high | ultra }
+    effect: |
+      Cambia sample_count del forward, recrea texturas MS + depth MS,
+      y recrea pipelines MRT (opaque, transparent prepass, sky, skinned,
+      base_color export).
+
+events:
+  msaa_tier_changed:
+    payload: { tier: string, sample_count: u32 }
+
+persistence:
+  save_field: msaaTier en world del .save
+  default: low
+
+ui:
+  accordion: World → MSAA
+  controls:
+    - tier selector: low | medium | high | ultra

@@ -112,6 +112,10 @@ pub struct TaaPass {
     pub scene_taa_enabled: bool,
     pub blend: f32,
     pub jitter_scale: f32,
+    /// Muestras del pase forward (1 = sin MSAA). Los views públicos 1× son el destino del resolve.
+    sample_count: u32,
+    width: u32,
+    height: u32,
     ambient_view: TextureView,
     direct_view: TextureView,
     depth_export_view: TextureView,
@@ -120,6 +124,14 @@ pub struct TaaPass {
     world_pos_view: TextureView,
     scene_color_view: TextureView,
     shadow_mask_view: TextureView,
+    /// Vistas multisample del MRT (solo si `sample_count > 1`).
+    ms_ambient_view: Option<TextureView>,
+    ms_direct_view: Option<TextureView>,
+    ms_depth_export_view: Option<TextureView>,
+    ms_velocity_view: Option<TextureView>,
+    ms_base_color_view: Option<TextureView>,
+    ms_world_pos_view: Option<TextureView>,
+    ms_shadow_mask_view: Option<TextureView>,
     shadow_history_views: [TextureView; 2],
     scene_history_views: [TextureView; 2],
     shadow_history_index: u8,
@@ -153,6 +165,26 @@ pub struct TaaPass {
     _world_pos_texture: wgpu::Texture,
     _scene_color_texture: wgpu::Texture,
     _shadow_mask_texture: wgpu::Texture,
+    _ms_ambient_texture: Option<wgpu::Texture>,
+    _ms_direct_texture: Option<wgpu::Texture>,
+    _ms_depth_export_texture: Option<wgpu::Texture>,
+    _ms_velocity_texture: Option<wgpu::Texture>,
+    _ms_base_color_texture: Option<wgpu::Texture>,
+    _ms_world_pos_texture: Option<wgpu::Texture>,
+    _ms_shadow_mask_texture: Option<wgpu::Texture>,
+    /// Qué attachments del MRT admiten resolve HW (R32Float suele no).
+    hw_resolve_ambient: bool,
+    hw_resolve_shadow_mask: bool,
+    hw_resolve_direct: bool,
+    hw_resolve_depth_export: bool,
+    hw_resolve_velocity: bool,
+    hw_resolve_base_color: bool,
+    hw_resolve_world_pos: bool,
+    /// Pase fullscreen: textureLoad(sample 0) MS → 1× para formatos sin resolve HW.
+    manual_resolve_bgl: wgpu::BindGroupLayout,
+    manual_resolve_pipeline_r32: wgpu::RenderPipeline,
+    manual_resolve_pipeline_rg16: wgpu::RenderPipeline,
+    manual_resolve_pipeline_rgba16: wgpu::RenderPipeline,
     _shadow_history_textures: [wgpu::Texture; 2],
     _scene_history_textures: [wgpu::Texture; 2],
     color_format: TextureFormat,
@@ -373,9 +405,34 @@ impl TaaPass {
             make_blit_bind_group(device, &blit_bgl, &sampler, &sv1),
         ];
 
+        let manual_resolve_bgl = manual_resolve_bind_group_layout(device);
+        let manual_resolve_shader =
+            device.create_shader_module(include_wgsl!("msaa_manual_resolve.wgsl"));
+        let manual_resolve_pipeline_r32 = build_manual_resolve_pipeline(
+            device,
+            &manual_resolve_bgl,
+            &manual_resolve_shader,
+            DEPTH_EXPORT_FORMAT,
+        );
+        let manual_resolve_pipeline_rg16 = build_manual_resolve_pipeline(
+            device,
+            &manual_resolve_bgl,
+            &manual_resolve_shader,
+            SHADOW_MASK_FORMAT,
+        );
+        let manual_resolve_pipeline_rgba16 = build_manual_resolve_pipeline(
+            device,
+            &manual_resolve_bgl,
+            &manual_resolve_shader,
+            WORLD_POS_FORMAT,
+        );
+
         Self {
             enabled: false,
             scene_taa_enabled: false,
+            sample_count: 1,
+            width: width.max(1),
+            height: height.max(1),
             ambient_view,
             direct_view,
             depth_export_view,
@@ -384,6 +441,13 @@ impl TaaPass {
             world_pos_view,
             scene_color_view,
             shadow_mask_view,
+            ms_ambient_view: None,
+            ms_direct_view: None,
+            ms_depth_export_view: None,
+            ms_velocity_view: None,
+            ms_base_color_view: None,
+            ms_world_pos_view: None,
+            ms_shadow_mask_view: None,
             shadow_history_views: [v0, v1],
             scene_history_views: [sv0, sv1],
             shadow_history_index: 0,
@@ -419,6 +483,24 @@ impl TaaPass {
             _world_pos_texture: world_pos_texture,
             _scene_color_texture: scene_color_texture,
             _shadow_mask_texture: shadow_mask_texture,
+            _ms_ambient_texture: None,
+            _ms_direct_texture: None,
+            _ms_depth_export_texture: None,
+            _ms_velocity_texture: None,
+            _ms_base_color_texture: None,
+            _ms_world_pos_texture: None,
+            _ms_shadow_mask_texture: None,
+            hw_resolve_ambient: true,
+            hw_resolve_shadow_mask: true,
+            hw_resolve_direct: true,
+            hw_resolve_depth_export: false,
+            hw_resolve_velocity: true,
+            hw_resolve_base_color: true,
+            hw_resolve_world_pos: true,
+            manual_resolve_bgl,
+            manual_resolve_pipeline_r32,
+            manual_resolve_pipeline_rg16,
+            manual_resolve_pipeline_rgba16,
             _shadow_history_textures: [h0, h1],
             _scene_history_textures: [s0, s1],
             color_format,
@@ -592,6 +674,268 @@ impl TaaPass {
         &self.shadow_mask_view
     }
 
+    pub(crate) fn sample_count(&self) -> u32 {
+        self.sample_count
+    }
+
+    /// Vista de color a la que se dibuja el forward (MS o 1×).
+    pub(crate) fn ambient_render_view(&self) -> &TextureView {
+        self.ms_ambient_view.as_ref().unwrap_or(&self.ambient_view)
+    }
+
+    pub(crate) fn ambient_resolve_target(&self) -> Option<&TextureView> {
+        if !self.hw_resolve_ambient {
+            return None;
+        }
+        self.ms_ambient_view.as_ref().map(|_| &self.ambient_view)
+    }
+
+    pub(crate) fn shadow_mask_render_view(&self) -> &TextureView {
+        self.ms_shadow_mask_view
+            .as_ref()
+            .unwrap_or(&self.shadow_mask_view)
+    }
+
+    pub(crate) fn shadow_mask_resolve_target(&self) -> Option<&TextureView> {
+        if !self.hw_resolve_shadow_mask {
+            return None;
+        }
+        self.ms_shadow_mask_view
+            .as_ref()
+            .map(|_| &self.shadow_mask_view)
+    }
+
+    pub(crate) fn direct_render_view(&self) -> &TextureView {
+        self.ms_direct_view.as_ref().unwrap_or(&self.direct_view)
+    }
+
+    pub(crate) fn direct_resolve_target(&self) -> Option<&TextureView> {
+        if !self.hw_resolve_direct {
+            return None;
+        }
+        self.ms_direct_view.as_ref().map(|_| &self.direct_view)
+    }
+
+    pub(crate) fn depth_export_render_view(&self) -> &TextureView {
+        self.ms_depth_export_view
+            .as_ref()
+            .unwrap_or(&self.depth_export_view)
+    }
+
+    pub(crate) fn depth_export_resolve_target(&self) -> Option<&TextureView> {
+        if !self.hw_resolve_depth_export {
+            return None;
+        }
+        self.ms_depth_export_view
+            .as_ref()
+            .map(|_| &self.depth_export_view)
+    }
+
+    pub(crate) fn velocity_render_view(&self) -> &TextureView {
+        self.ms_velocity_view
+            .as_ref()
+            .unwrap_or(&self.velocity_view)
+    }
+
+    pub(crate) fn velocity_resolve_target(&self) -> Option<&TextureView> {
+        if !self.hw_resolve_velocity {
+            return None;
+        }
+        self.ms_velocity_view.as_ref().map(|_| &self.velocity_view)
+    }
+
+    pub(crate) fn base_color_render_view(&self) -> &TextureView {
+        self.ms_base_color_view
+            .as_ref()
+            .unwrap_or(&self.base_color_view)
+    }
+
+    pub(crate) fn base_color_resolve_target(&self) -> Option<&TextureView> {
+        if !self.hw_resolve_base_color {
+            return None;
+        }
+        self.ms_base_color_view
+            .as_ref()
+            .map(|_| &self.base_color_view)
+    }
+
+    pub(crate) fn world_pos_render_view(&self) -> &TextureView {
+        self.ms_world_pos_view
+            .as_ref()
+            .unwrap_or(&self.world_pos_view)
+    }
+
+    pub(crate) fn world_pos_resolve_target(&self) -> Option<&TextureView> {
+        if !self.hw_resolve_world_pos {
+            return None;
+        }
+        self.ms_world_pos_view
+            .as_ref()
+            .map(|_| &self.world_pos_view)
+    }
+
+    /// Recrea texturas multisample del MRT forward (los 1× resueltos no cambian).
+    pub(crate) fn set_sample_count(&mut self, device: &Device, sample_count: u32) {
+        let sample_count = sample_count.max(1);
+        if self.sample_count == sample_count {
+            return;
+        }
+        self.sample_count = sample_count;
+        self.rebuild_msaa_targets(device);
+        self.shadow_first_frame = true;
+        self.scene_first_frame = true;
+    }
+
+    fn rebuild_msaa_targets(&mut self, device: &Device) {
+        use crate::config_3d::msaa_graphics::format_supports_resolve;
+
+        self.hw_resolve_ambient = format_supports_resolve(device, self.color_format);
+        self.hw_resolve_direct = format_supports_resolve(device, self.color_format);
+        self.hw_resolve_shadow_mask = format_supports_resolve(device, SHADOW_MASK_FORMAT);
+        self.hw_resolve_depth_export = format_supports_resolve(device, DEPTH_EXPORT_FORMAT);
+        self.hw_resolve_velocity = format_supports_resolve(device, VELOCITY_FORMAT);
+        self.hw_resolve_base_color = format_supports_resolve(device, BASE_COLOR_FORMAT);
+        self.hw_resolve_world_pos = format_supports_resolve(device, WORLD_POS_FORMAT);
+
+        if self.sample_count <= 1 {
+            self.clear_msaa_targets();
+            return;
+        }
+        let w = self.width;
+        let h = self.height;
+        let sc = self.sample_count;
+        let (a_t, a_v) = create_ms_texture(device, self.color_format, w, h, sc, "ambient-ms");
+        let (d_t, d_v) = create_ms_texture(device, self.color_format, w, h, sc, "direct-ms");
+        let (de_t, de_v) =
+            create_ms_texture(device, DEPTH_EXPORT_FORMAT, w, h, sc, "depth-export-ms");
+        let (v_t, v_v) = create_ms_texture(device, VELOCITY_FORMAT, w, h, sc, "velocity-ms");
+        let (bc_t, bc_v) = create_ms_texture(device, BASE_COLOR_FORMAT, w, h, sc, "base-color-ms");
+        let (wp_t, wp_v) = create_ms_texture(device, WORLD_POS_FORMAT, w, h, sc, "world-pos-ms");
+        let (sm_t, sm_v) =
+            create_ms_texture(device, SHADOW_MASK_FORMAT, w, h, sc, "shadow-mask-ms");
+        self._ms_ambient_texture = Some(a_t);
+        self.ms_ambient_view = Some(a_v);
+        self._ms_direct_texture = Some(d_t);
+        self.ms_direct_view = Some(d_v);
+        self._ms_depth_export_texture = Some(de_t);
+        self.ms_depth_export_view = Some(de_v);
+        self._ms_velocity_texture = Some(v_t);
+        self.ms_velocity_view = Some(v_v);
+        self._ms_base_color_texture = Some(bc_t);
+        self.ms_base_color_view = Some(bc_v);
+        self._ms_world_pos_texture = Some(wp_t);
+        self.ms_world_pos_view = Some(wp_v);
+        self._ms_shadow_mask_texture = Some(sm_t);
+        self.ms_shadow_mask_view = Some(sm_v);
+
+        if !self.hw_resolve_depth_export {
+            log::info!(
+                "[msaa] depth-export (R32Float) sin resolve HW → resolve manual (sample 0)"
+            );
+        }
+    }
+
+    /// Copia MS → 1× para attachments cuyo formato no admite resolve por hardware.
+    pub(crate) fn resolve_non_hw_msaa(&self, device: &Device, encoder: &mut wgpu::CommandEncoder) {
+        if self.sample_count <= 1 {
+            return;
+        }
+        if !self.hw_resolve_depth_export
+            && let (Some(ms), dst) = (
+                self.ms_depth_export_view.as_ref(),
+                &self.depth_export_view,
+            )
+        {
+            self.encode_manual_resolve(
+                device,
+                encoder,
+                ms,
+                dst,
+                &self.manual_resolve_pipeline_r32,
+                "msaa-manual-resolve-depth-export",
+            );
+        }
+        if !self.hw_resolve_shadow_mask
+            && let (Some(ms), dst) = (self.ms_shadow_mask_view.as_ref(), &self.shadow_mask_view)
+        {
+            self.encode_manual_resolve(
+                device,
+                encoder,
+                ms,
+                dst,
+                &self.manual_resolve_pipeline_rg16,
+                "msaa-manual-resolve-shadow-mask",
+            );
+        }
+        if !self.hw_resolve_world_pos
+            && let (Some(ms), dst) = (self.ms_world_pos_view.as_ref(), &self.world_pos_view)
+        {
+            self.encode_manual_resolve(
+                device,
+                encoder,
+                ms,
+                dst,
+                &self.manual_resolve_pipeline_rgba16,
+                "msaa-manual-resolve-world-pos",
+            );
+        }
+    }
+
+    fn encode_manual_resolve(
+        &self,
+        device: &Device,
+        encoder: &mut wgpu::CommandEncoder,
+        ms_view: &TextureView,
+        dst_view: &TextureView,
+        pipeline: &wgpu::RenderPipeline,
+        label: &str,
+    ) {
+        let bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some(label),
+            layout: &self.manual_resolve_bgl,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(ms_view),
+            }],
+        });
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some(label),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: dst_view,
+                resolve_target: None,
+                depth_slice: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            occlusion_query_set: None,
+            timestamp_writes: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(pipeline);
+        pass.set_bind_group(0, &bg, &[]);
+        pass.draw(0..3, 0..1);
+    }
+
+    fn clear_msaa_targets(&mut self) {
+        self._ms_ambient_texture = None;
+        self.ms_ambient_view = None;
+        self._ms_direct_texture = None;
+        self.ms_direct_view = None;
+        self._ms_depth_export_texture = None;
+        self.ms_depth_export_view = None;
+        self._ms_velocity_texture = None;
+        self.ms_velocity_view = None;
+        self._ms_base_color_texture = None;
+        self.ms_base_color_view = None;
+        self._ms_world_pos_texture = None;
+        self.ms_world_pos_view = None;
+        self._ms_shadow_mask_texture = None;
+        self.ms_shadow_mask_view = None;
+    }
+
     pub fn resize(
         &mut self,
         device: &Device,
@@ -635,6 +979,8 @@ impl TaaPass {
 
         self.color_format = color_format;
         self.present_format = present_format;
+        self.width = width.max(1);
+        self.height = height.max(1);
         self._ambient_texture = ambient_texture;
         self.ambient_view = ambient_view;
         self._direct_texture = direct_texture;
@@ -664,6 +1010,7 @@ impl TaaPass {
         self.blend = SCENE_HISTORY_BLEND;
         self.jitter_scale = 1.0;
         self.frame_index = 0;
+        self.rebuild_msaa_targets(device);
 
         self.rebuild_cached_bind_groups(device);
     }
@@ -1305,6 +1652,60 @@ fn build_fullscreen_pipeline(
     })
 }
 
+fn manual_resolve_bind_group_layout(device: &Device) -> wgpu::BindGroupLayout {
+    device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("msaa-manual-resolve-bgl"),
+        entries: &[wgpu::BindGroupLayoutEntry {
+            binding: 0,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Texture {
+                sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                view_dimension: wgpu::TextureViewDimension::D2,
+                multisampled: true,
+            },
+            count: None,
+        }],
+    })
+}
+
+fn build_manual_resolve_pipeline(
+    device: &Device,
+    bgl: &wgpu::BindGroupLayout,
+    shader: &wgpu::ShaderModule,
+    color_format: TextureFormat,
+) -> wgpu::RenderPipeline {
+    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("msaa-manual-resolve-pl"),
+        bind_group_layouts: &[Some(bgl)],
+        immediate_size: 0,
+    });
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("msaa-manual-resolve"),
+        layout: Some(&pipeline_layout),
+        vertex: wgpu::VertexState {
+            module: shader,
+            entry_point: Some("vs_main"),
+            buffers: &[],
+            compilation_options: Default::default(),
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: shader,
+            entry_point: Some("fs_main"),
+            targets: &[Some(wgpu::ColorTargetState {
+                format: color_format,
+                blend: None,
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+            compilation_options: Default::default(),
+        }),
+        primitive: wgpu::PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState::default(),
+        multiview_mask: None,
+        cache: None,
+    })
+}
+
 fn create_texture(
     device: &Device,
     format: TextureFormat,
@@ -1312,6 +1713,39 @@ fn create_texture(
     height: u32,
     label: &str,
 ) -> (wgpu::Texture, TextureView) {
+    create_texture_with_samples(device, format, width, height, 1, label)
+}
+
+fn create_ms_texture(
+    device: &Device,
+    format: TextureFormat,
+    width: u32,
+    height: u32,
+    sample_count: u32,
+    label: &str,
+) -> (wgpu::Texture, TextureView) {
+    create_texture_with_samples(device, format, width, height, sample_count, label)
+}
+
+fn create_texture_with_samples(
+    device: &Device,
+    format: TextureFormat,
+    width: u32,
+    height: u32,
+    sample_count: u32,
+    label: &str,
+) -> (wgpu::Texture, TextureView) {
+    let sample_count = sample_count.max(1);
+    let mut usage = wgpu::TextureUsages::RENDER_ATTACHMENT;
+    // MS necesita TEXTURE_BINDING para resolve manual (formatos sin MULTISAMPLE_RESOLVE).
+    usage |= wgpu::TextureUsages::TEXTURE_BINDING;
+    if sample_count == 1 {
+        if label == "scene-lit" {
+            usage |= wgpu::TextureUsages::COPY_DST;
+        } else if label == "depth-export" {
+            usage |= wgpu::TextureUsages::COPY_SRC;
+        }
+    }
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some(label),
         size: wgpu::Extent3d {
@@ -1320,18 +1754,10 @@ fn create_texture(
             depth_or_array_layers: 1,
         },
         mip_level_count: 1,
-        sample_count: 1,
+        sample_count,
         dimension: wgpu::TextureDimension::D2,
         format,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-            | wgpu::TextureUsages::TEXTURE_BINDING
-            | if label == "scene-lit" {
-                wgpu::TextureUsages::COPY_DST
-            } else if label == "depth-export" {
-                wgpu::TextureUsages::COPY_SRC
-            } else {
-                wgpu::TextureUsages::empty()
-            },
+        usage,
         view_formats: &[],
     });
     let view = texture.create_view(&wgpu::TextureViewDescriptor::default());

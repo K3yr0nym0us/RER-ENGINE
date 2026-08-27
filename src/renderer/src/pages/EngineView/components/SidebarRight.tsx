@@ -6,6 +6,7 @@ import WorldLightingAccordion from './sidebar/WorldAccordion/WorldLightingAccord
 import WorldTexturesAccordion from './sidebar/WorldAccordion/WorldTexturesAccordion';
 import WorldReflectionsAccordion from './sidebar/WorldAccordion/WorldReflectionsAccordion';
 import WorldShadowsAccordion from './sidebar/WorldAccordion/WorldShadowsAccordion';
+import WorldMsaaAccordion from './sidebar/WorldAccordion/WorldMsaaAccordion';
 import WorldTaaAccordion from './sidebar/WorldAccordion/WorldTaaAccordion';
 import WorldPhysicsAccordion from './sidebar/WorldAccordion/WorldPhysicsAccordion';
 import WorldPerformanceAccordion from './sidebar/WorldAccordion/WorldPerformanceAccordion';
@@ -36,6 +37,7 @@ export function SidebarRight({
           {is3dProject && <WorldTexturesAccordion />}
           {is3dProject && <WorldReflectionsAccordion />}
           {is3dProject && <WorldShadowsAccordion />}
+          {is3dProject && <WorldMsaaAccordion />}
           {is3dProject && <WorldTaaAccordion />}
           <WorldPhysicsAccordion />
           <WorldPerformanceAccordion />
