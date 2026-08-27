@@ -185,8 +185,18 @@ impl State {
                         if let Some(path) = save_path.filter(|p| !p.trim().is_empty()) {
                             self.load_proyect_from_save_path(&path);
                         } else {
-                            // Proyecto nuevo: notificar al editor (logs + Scene-01), como la plantilla 3D.
-                            self.emit_default_2d_boot_loaded();
+                            // Proyecto nuevo: plantilla 2D embebida en el binario.
+                            match crate::bundled_demo::ensure_bundled_demo_2d_extract_dir() {
+                                Ok(dir) => {
+                                    self.load_proyect_from_save_path(&dir.to_string_lossy());
+                                }
+                                Err(err) => {
+                                    log::warn!(
+                                        "[demo_2d] plantilla no disponible ({err}); fallback vacío"
+                                    );
+                                    self.emit_default_2d_boot_loaded();
+                                }
+                            }
                         }
                     }
                     "scratch" => self.setup_scratch(),

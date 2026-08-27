@@ -1375,7 +1375,9 @@ export function createEngineEventHandler({
 				projectType,
 				refs.initialExtractDirRef.current,
 			);
-			if (!engineLoads2dSave) return;
+			// `.save` abierto por Electron, o demo/plantilla cargada en el motor sin extract_dir
+			// (p.ej. DEMO 2D embebida): `project_loaded_2d` ya abrió el overlay.
+			if (!engineLoads2dSave && !refs.sceneImportInProgressRef.current) return;
 			const meta = refs.projectLoaded2dMetaRef.current;
 			void (async () => {
 				try {

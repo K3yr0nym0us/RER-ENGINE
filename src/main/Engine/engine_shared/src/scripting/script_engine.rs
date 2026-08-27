@@ -806,7 +806,7 @@ mod tests {
         );
     }
 
-    /// Compiles Rhai control scripts embedded in DEMO `.save` archives at repo root.
+    /// Compiles Rhai control scripts from the embedded 2D demo (and optional 3D DEMO save).
     #[test]
     fn demo_save_rhai_sources_compile() {
         use std::io::Read;
@@ -850,10 +850,11 @@ mod tests {
             }
         }
 
-        let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../..");
+        let engine_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
+        let repo = engine_root.join("../..");
         let mut sources: Vec<(ScriptEngineProfile, PathBuf, String)> = Vec::new();
 
-        let save_2d = repo.join("DEMO_2d.save");
+        let save_2d = engine_root.join("engine_2d/assets/DEMO_2d.save");
         let save_3d = repo.join("DEMO_3d_FIRST_PERSON.save");
         let tmp_2d = repo.join(".tmp_demo2d");
         let tmp_3d = repo.join(".tmp_demo3d");
@@ -864,6 +865,7 @@ mod tests {
         } else if save_2d.is_file() {
             collect_rhai_zip(&save_2d, &mut from_2d);
         }
+        let from_2d_count = from_2d.len();
         for (path, source) in from_2d {
             sources.push((ScriptEngineProfile::Engine2d, path, source));
         }
@@ -879,9 +881,8 @@ mod tests {
         }
 
         assert!(
-            sources.len() >= 11,
-            "expected at least 11 demo .rhai sources from DEMO saves, got {}",
-            sources.len()
+            from_2d_count >= 5,
+            "expected at least 5 .rhai sources from embedded DEMO_2d.save, got {from_2d_count}"
         );
 
         for (profile, path, source) in sources {

@@ -26,6 +26,7 @@ rodio.workspace = true
 getrandom.workspace = true
 raw-window-handle.workspace = true
 gilrs.workspace = true
+zip.workspace = true
 rer-engine-shared = { path = "../engine_shared" }
 rer-engine-ipc-common = { path = "../engine_ipc_common" }
 ttf-parser.workspace = true

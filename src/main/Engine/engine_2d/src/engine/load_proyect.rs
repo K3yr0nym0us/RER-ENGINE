@@ -1162,8 +1162,8 @@ impl State {
             fonts: Vec::new(),
             backgrounds: Vec::new(),
             hudImages: Vec::new(),
-            playerUiScreens: crate::config_2d::player_ui::defaults::default_2d_project_ui_screens_info(
-            ),
+            playerUiScreens:
+                crate::config_2d::player_ui::defaults::default_2d_project_ui_screens_info(),
             menuUiScreens: Vec::new(),
             blueprints: serde_json::Value::Array(Vec::new()),
             world: ProjectLoaded2dWorld {

@@ -51,6 +51,12 @@ Los modulos bajo `src/config_compat/` son shims minimos **dentro de este crate**
 
 Registro: `entity_save_meta` + inferencia desde `ScenarioMarker` / `CharacterMarker`. El renderer solo fusiona escenas inactivas, blueprints e idioma. Ver `src/renderer/ARCHITECTURE.md`.
 
+## Plantilla por defecto (proyecto nuevo)
+
+- Sin `.save` / `extract_dir`: `set_scene` 2D carga la demo embebida (`include_bytes!` de `assets/DEMO_2d.save` → extract a `%TEMP%` → `load_proyect_from_save_path`).
+- No hay archivo `.save` externo en runtime ni en el empaquetado Electron; el ZIP vive en el binario `rer_engine_2d`.
+- Fallback: si la extracción falla, `emit_default_2d_boot_loaded` (escena vacía Scene-01).
+
 ## Eventos de entidades
 
 - `entity_removed` incluye `points` opcional para colisionadores y áreas de ejecución (cuadrilátero en espacio mundo), para sincronizar meta del editor y undo/redo.

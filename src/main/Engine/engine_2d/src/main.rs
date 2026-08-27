@@ -1,3 +1,4 @@
+mod bundled_demo;
 mod ecs;
 mod engine;
 mod engine_command;
