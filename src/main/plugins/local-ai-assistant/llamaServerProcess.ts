@@ -6,6 +6,8 @@ import path from 'path'
 import type { PluginLlmStatus } from '../../../shared-types/plugins'
 import { getPluginCatalogEntry } from '../pluginCatalog'
 import { ensureLlamaRuntime, formatWindowsExitCode } from './llamaRuntime'
+import { ensureMsvc2015to2022X64 } from './msvcRedistributable'
+import { resolvePluginUiLocale } from './pluginUiLocale'
 
 const DEFAULT_PORT = 8765
 const STARTUP_TIMEOUT_MS = 120_000
@@ -77,6 +79,17 @@ export async function startLlamaServer(
   executablePath: string,
   modelPath: string,
 ): Promise<{ ok: boolean; error?: string }> {
+  if (process.platform === 'win32') {
+    currentStatus = 'starting'
+    currentError = null
+    const msvc = await ensureMsvc2015to2022X64(resolvePluginUiLocale())
+    if (!msvc.ok) {
+      currentStatus = 'error'
+      currentError = msvc.error
+      return { ok: false, error: currentError }
+    }
+  }
+
   if (!fs.existsSync(executablePath)) {
     return { ok: false, error: 'llama-server executable not found' }
   }

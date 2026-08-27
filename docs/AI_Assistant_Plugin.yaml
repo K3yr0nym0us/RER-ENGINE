@@ -19,6 +19,32 @@ runtime:
   download: on-demand from GitHub releases (win x64 avx2 in v1)
   api: OpenAI-compatible http://127.0.0.1:8765/v1
   spawn_from: Electron main (src/main/plugins/local-ai-assistant/llamaServerProcess.ts)
+  system_requirements:
+    os: Windows x64 only (v1)
+    msvc_redistributable:
+      name: Microsoft Visual C++ 2015–2022 Redistributable (x64)
+      download_url: https://aka.ms/vs/17/release/vc_redist.x64.exe
+      bundled_installer: src/resources/vc_redist.x64.exe (build input only)
+      packaged_as: |
+        Installed layout (electron-builder extraResources):
+          {appInstallDir}/resources/vc_redist/vc_redist.x64.exe
+          (process.resourcesPath + /vc_redist/vc_redist.x64.exe)
+        Working copy while installing:
+          {userData}/plugins/vc_redist/vc_redist.x64.exe
+          (app.getPath('userData'), typically %APPDATA%/rer-engine/…)
+        Dev-only fallback: repo src/resources/ — never used when app.isPackaged.
+      preflight: |
+        Before installPlugin download and before startLlamaServer spawn,
+        main probes HKLM VisualStudio\14.0\VC\Runtimes\x64 (Installed=1)
+        and falls back to System32\vcruntime140.dll
+        (src/main/plugins/local-ai-assistant/msvcRedistributable.ts).
+      on_missing: |
+        Packaged app: copy from resources/vc_redist → userData/plugins/vc_redist,
+        run with UAC (/install /passive /norestart), wait, re-probe.
+        On success, delete the userData copy and best-effort delete
+        resources/vc_redist/vc_redist.x64.exe (~25 MB).
+        Never deletes repo src/resources (dev). On failure, keep files for retry.
+        Exit code 0xC0000135 maps to the manual Microsoft download URL message.
 
 context:
   strategy: compact prompt — one file per locale (ES/EN only, no dual load)
@@ -53,6 +79,8 @@ files:
     - src/main/plugins/local-ai-assistant/install.ts
     - src/main/plugins/local-ai-assistant/llamaServerProcess.ts
     - src/main/plugins/local-ai-assistant/llamaRuntime.ts
+    - src/main/plugins/local-ai-assistant/msvcRedistributable.ts
+    - src/main/plugins/local-ai-assistant/pluginUiLocale.ts
     - src/main/plugins/local-ai-assistant/assistantChat.ts
     - src/main/plugins/local-ai-assistant/assistantReplyFormat.ts
     - src/main/plugins/local-ai-assistant/editorDocsIndex.ts

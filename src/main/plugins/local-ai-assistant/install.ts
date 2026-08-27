@@ -10,6 +10,8 @@ import type {
 import { cancelActiveDownload, DownloadCancelledError, downloadFile, resetDownloadCancelState } from '../fileDownload'
 import { getPluginCatalogEntry } from '../pluginCatalog'
 import { downloadAndExtractLlamaRuntime } from './llamaRuntime'
+import { ensureMsvc2015to2022X64 } from './msvcRedistributable'
+import { resolvePluginUiLocale } from './pluginUiLocale'
 import {
   getPluginDir,
   readPluginsState,
@@ -37,8 +39,14 @@ function buildProgress(
   const bytesOverallTotal = entry.llamaServer.sizeBytes + entry.model.sizeBytes
   let bytesOverallReceived: number
   let step: number
+  let stepsTotal = 2
 
-  if (phase === 'llama-server') {
+  if (phase === 'msvc-redist') {
+    bytesOverallReceived = 0
+    step = 0
+    stepsTotal = 3
+    percent = Math.max(percent, 5)
+  } else if (phase === 'llama-server') {
     bytesOverallReceived = bytesReceived
     step = 1
   } else if (phase === 'extracting') {
@@ -50,16 +58,16 @@ function buildProgress(
     step = 2
   }
 
-  const overallPercent = Math.min(
-    100,
-    Math.round((bytesOverallReceived / bytesOverallTotal) * 100),
-  )
+  const overallPercent =
+    phase === 'msvc-redist'
+      ? Math.min(15, Math.max(5, percent))
+      : Math.min(100, Math.round((bytesOverallReceived / bytesOverallTotal) * 100))
 
   return {
     pluginId,
     phase,
     step,
-    stepsTotal: 2,
+    stepsTotal,
     percent,
     overallPercent,
     bytesReceived,
@@ -117,6 +125,15 @@ export async function installPlugin(pluginId: PluginId): Promise<PluginInstallRe
   const pluginDir = getPluginDir(pluginId)
 
   try {
+    sendProgress(buildProgress(pluginId, entry, 'msvc-redist', 5, 0, 0), true)
+    const msvc = await ensureMsvc2015to2022X64(resolvePluginUiLocale(), undefined, () => {
+      sendProgress(buildProgress(pluginId, entry, 'msvc-redist', 10, 0, 0), true)
+    })
+    if (!msvc.ok) {
+      return msvc
+    }
+    throwIfInstallCancelled()
+
     const binDir = path.join(pluginDir, 'bin')
     const modelsDir = path.join(pluginDir, 'models')
     fs.mkdirSync(binDir, { recursive: true })

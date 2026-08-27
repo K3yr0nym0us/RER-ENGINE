@@ -611,6 +611,7 @@
   "Downloading runtime…": "Descargando runtime…",
   "Extracting runtime…": "Extrayendo runtime…",
   "Preparing download…": "Preparando descarga…",
+  "Installing Visual C++ Redistributable…": "Instalando Visual C++ Redistributable…",
   "Step {step} of {total}": "Paso {step} de {total}",
   "Cancel installation": "Cancelar instalación",
   "Cancelling installation…": "Cancelando instalación…",

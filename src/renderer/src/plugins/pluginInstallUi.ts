@@ -8,11 +8,14 @@ export function formatDownloadBytes(bytes: number): string {
   return `${Math.max(1, Math.round(bytes / 1024))} KB`
 }
 
-/** Etiqueta única: descargando o instalando (extracción). */
+/** Etiqueta única: descargando o instalando (extracción / VC++). */
 export function pluginInstallStatusLabel(
   phase: PluginDownloadPhase | undefined,
   t: (key: string) => string,
 ): string {
+  if (phase === 'msvc-redist') {
+    return t('Installing Visual C++ Redistributable…')
+  }
   if (phase === 'extracting') {
     return t('Installing…')
   }

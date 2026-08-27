@@ -34,7 +34,7 @@ function PluginInstallProgress({
   const statusLabel = pluginInstallStatusLabel(progress?.phase, t)
   const bytesOverallReceived = progress?.bytesOverallReceived ?? 0
   const bytesOverallTotal = progress?.bytesOverallTotal ?? 0
-  const isExtracting = progress?.phase === 'extracting'
+  const isExtracting = progress?.phase === 'extracting' || progress?.phase === 'msvc-redist'
 
   const bytesLabel = `${formatDownloadBytes(bytesOverallReceived)} / ${formatDownloadBytes(bytesOverallTotal)}`
 

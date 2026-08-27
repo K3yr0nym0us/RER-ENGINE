@@ -76,11 +76,15 @@ export async function ensureLlamaRuntime(
   }
 }
 
+import { msvcMissingUserMessage } from './msvcRedistributable'
+import { resolvePluginUiLocale } from './pluginUiLocale'
+
 export function formatWindowsExitCode(code: number | null): string {
   if (code == null) return 'unknown exit code'
   const unsigned = code >>> 0
   if (unsigned === 0xc0000135) {
-    return 'missing DLL (0xC0000135). Reinstall the plugin or install MSVC 2015–2022 Redistributable.'
+    // Same root cause as the MSVC preflight (missing runtime DLL).
+    return msvcMissingUserMessage(resolvePluginUiLocale())
   }
   if (unsigned === 0xc0000005) {
     return 'access violation (0xC0000005)'

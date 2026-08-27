@@ -19,6 +19,8 @@ extraResources:
       - rer_engine_shared*
   - from: src/main/Engine/Models
     to: engine/Models
+  - from: src/resources/vc_redist.x64.exe
+    to: vc_redist/vc_redist.x64.exe
 
 win:
   target:

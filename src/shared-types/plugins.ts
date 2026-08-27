@@ -46,7 +46,7 @@ export type PluginLlmStatus =
   | 'running'
   | 'error'
 
-export type PluginDownloadPhase = 'llama-server' | 'extracting' | 'model'
+export type PluginDownloadPhase = 'msvc-redist' | 'llama-server' | 'extracting' | 'model'
 
 export interface PluginDownloadProgress {
   pluginId: PluginId
