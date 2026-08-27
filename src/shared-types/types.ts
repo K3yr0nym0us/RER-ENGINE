@@ -179,6 +179,13 @@ export interface Entity3D {
   sockets?: EntitySocket3D[]
   /** Física secundaria por hueso (jiggle). */
   bone_physics?: EntityBonePhysics3D[]
+  /** Config de disparo (categoría `projectile`). */
+  projectile?: ProjectileConfig3D
+}
+
+export interface ProjectileConfig3D {
+  speed: number
+  lifetime_s: number
 }
 
 export interface EntitySocket3D {

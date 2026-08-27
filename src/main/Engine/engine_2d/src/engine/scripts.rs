@@ -522,6 +522,7 @@ impl State {
                 }
                 ScriptCmd::SetGraphicsTextureTier { .. } => {}
                 ScriptCmd::SetReflectionTier { .. } => {}
+                ScriptCmd::FireProjectile { .. } => {}
             }
         }
     }

@@ -375,6 +375,33 @@ pub fn register_native_api(engine: &mut Engine, ctx: &ScriptApiContext) {
                 .map(|g| g.clone())
                 .unwrap_or_else(|| "off".to_string())
         });
+
+        let c = ctx.clone();
+        engine.register_fn(
+            "__engine_fire_projectile",
+            move |template_id: i64, from_id: i64, dir_x: f64, dir_y: f64, dir_z: f64| {
+                c.push(ScriptCmd::FireProjectile {
+                    template_id: template_id as u32,
+                    from_id: from_id as u32,
+                    dir_x: dir_x as f32,
+                    dir_y: dir_y as f32,
+                    dir_z: dir_z as f32,
+                });
+            },
+        );
+        let c = ctx.clone();
+        engine.register_fn(
+            "__engine_fire_projectile",
+            move |template_id: INT, from_id: INT, dir_x: INT, dir_y: INT, dir_z: INT| {
+                c.push(ScriptCmd::FireProjectile {
+                    template_id: template_id as u32,
+                    from_id: from_id as u32,
+                    dir_x: dir_x as f32,
+                    dir_y: dir_y as f32,
+                    dir_z: dir_z as f32,
+                });
+            },
+        );
     }
 }
 
@@ -432,6 +459,7 @@ let engine = #{
     get_graphics_texture_tier: || { __engine_get_graphics_texture_tier() },
     set_reflection_tier: |tier| { __engine_set_reflection_tier(tier); },
     get_reflection_tier: || { __engine_get_reflection_tier() },
+    fire_projectile: |template_id, from_id, dir_x, dir_y, dir_z| { __engine_fire_projectile(template_id, from_id, dir_x, dir_y, dir_z); },
 };
 "#;
 

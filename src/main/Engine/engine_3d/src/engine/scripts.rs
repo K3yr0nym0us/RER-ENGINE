@@ -321,6 +321,20 @@ impl State {
                         self.set_reflection_tier(t);
                     }
                 }
+                ScriptCmd::FireProjectile {
+                    template_id,
+                    from_id,
+                    dir_x,
+                    dir_y,
+                    dir_z,
+                } => {
+                    let from = if from_id == 0 { None } else { Some(from_id) };
+                    let _ = self.fire_projectile_from_template(
+                        template_id,
+                        from,
+                        glam::Vec3::new(dir_x, dir_y, dir_z),
+                    );
+                }
                 ScriptCmd::ApplyKinematicGravity { .. }
                 | ScriptCmd::ApplyKinematicImpulse { .. }
                 | ScriptCmd::SlideEntity { .. } => {}

@@ -280,5 +280,6 @@ impl State {
                 .step(self.delta_time, &mut self.world, &skip_sync);
             self.update_execution_areas_3d();
         }
+        self.tick_projectiles(self.delta_time);
     }
 }

@@ -680,6 +680,9 @@ export function createEngineEventHandler({
 							),
 						}
 						: {}),
+					...(burstCategory === 'projectile' || pending.entityCategory === 'projectile'
+						? { projectileConfig: { speed: 20, lifetime_s: 3 } }
+						: {}),
 					...(pending.blueprintId || loaded.blueprint_id
 						? { blueprintId: pending.blueprintId ?? loaded.blueprint_id }
 						: {}),
@@ -979,6 +982,15 @@ export function createEngineEventHandler({
 						...(restorePending?.entityCategory ? { entityCategory: restorePending.entityCategory } : {}),
 						...(placementCategory === 'object'
 							? { entityCategory: 'object' as EntityCategory }
+							: {}),
+						...(placementCategory === 'weapon'
+							? { entityCategory: 'weapon' as EntityCategory }
+							: {}),
+						...(placementCategory === 'projectile'
+							? {
+								entityCategory: 'projectile' as EntityCategory,
+								projectileConfig: { speed: 20, lifetime_s: 3 },
+							}
 							: {}),
 						...(placementCategory === 'character'
 							? { entity3dCategory: 'character' as const }
@@ -2430,6 +2442,32 @@ export function createEngineEventHandler({
 					physicsEnabled: false,
 					physicsType: 'static',
 					bonePhysics: e.entries,
+				};
+			}
+			if (activeEntityPropertiesHandlerRef.current) {
+				pushEntityPropertiesPatch(activeEntityPropertiesHandlerRef.current);
+			}
+		}
+
+		if (event.event === 'projectile_config_changed') {
+			const e = event as unknown as {
+				entity_id: number;
+				speed: number;
+				lifetime_s: number;
+			};
+			const next = { speed: e.speed, lifetime_s: e.lifetime_s };
+			const meta = refs.entityMetaRef.current[e.entity_id];
+			if (meta) {
+				meta.projectileConfig = next;
+			} else {
+				refs.entityMetaRef.current[e.entity_id] = {
+					kind: 'model',
+					path: '',
+					physicsEnabled: false,
+					physicsType: 'static',
+					entityCategory: 'projectile',
+					entity3dCategory: 'projectile',
+					projectileConfig: next,
 				};
 			}
 			if (activeEntityPropertiesHandlerRef.current) {

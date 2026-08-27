@@ -127,6 +127,8 @@ impl State {
         self.bone_physics_pick_entity = None;
         self.bone_physics_pick_hovered_joint = None;
         self.entity_bone_physics.clear();
+        self.entity_projectile_config.clear();
+        self.active_projectiles.clear();
         self.bone_physics_sim.clear();
         self.bone_physics_entity_motion.clear();
         self.tool_overlay_buffer = gizmo::build_from_vertices(&self.device, &[]);
@@ -677,6 +679,8 @@ impl State {
         self.bone_physics_pick_entity = None;
         self.bone_physics_pick_hovered_joint = None;
         self.entity_bone_physics.clear();
+        self.entity_projectile_config.clear();
+        self.active_projectiles.clear();
         self.bone_physics_sim.clear();
         self.bone_physics_entity_motion.clear();
         self.tool_overlay_buffer = gizmo::build_from_vertices(&self.device, &[]);

@@ -154,6 +154,8 @@ export const ENGINE_COMMANDS_3D_ONLY = [
   'set_bone_physics',
   'remove_bone_physics',
   'list_entity_bone_physics',
+  'set_projectile_config',
+  'fire_projectile',
 ] as const
 
 function toSet<T extends string>(items: readonly T[]): ReadonlySet<string> {

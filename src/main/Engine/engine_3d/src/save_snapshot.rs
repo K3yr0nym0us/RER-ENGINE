@@ -30,6 +30,9 @@ impl State {
             let Some(meta) = self.resolve_entity_save_meta(id) else {
                 continue;
             };
+            if self.is_runtime_projectile(id) {
+                continue;
+            }
             let Some(t) = self.world.get::<crate::ecs::Transform>(id) else {
                 continue;
             };

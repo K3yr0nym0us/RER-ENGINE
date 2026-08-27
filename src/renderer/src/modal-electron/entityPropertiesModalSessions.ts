@@ -118,6 +118,8 @@ export function buildEntityPropertiesState(
 			playingAnimationName: null,
 			canHaveBonePhysics: false,
 			bonePhysics: null,
+			isProjectile: false,
+			projectileConfig: null,
 		}
 	}
 
@@ -136,6 +138,15 @@ export function buildEntityPropertiesState(
 	const isFromBlueprint = !!entityMeta?.blueprintId
 	const linkedBlueprintName = isFromBlueprint
 		? (engine.blueprints.find((bp) => bp.id === entityMeta?.blueprintId)?.name ?? null)
+		: null
+	const isProjectile =
+		entityMeta?.entityCategory === 'projectile' ||
+		entityMeta?.entity3dCategory === 'projectile' ||
+		/^Projectile(?:_\d+)?$/i.test(
+			(entityMeta?.name ?? selectedEntity.name ?? '').trim(),
+		)
+	const projectileConfig = isProjectile
+		? (entityMeta?.projectileConfig ?? { speed: 20, lifetime_s: 3 })
 		: null
 
 	const metaAnimations = entityMeta?.animations ?? []
@@ -184,6 +195,8 @@ export function buildEntityPropertiesState(
 		bonePhysics: session
 			? buildEntityPropertiesBonePhysicsUi(engine, selectedEntity.id, session)
 			: null,
+		isProjectile,
+		projectileConfig,
 	}
 }
 
@@ -286,6 +299,13 @@ export async function runEntityPropertiesAction(
 		case 'setPhysics':
 			engine.setEntityPhysics(action.id, action.enabled, action.bodyType)
 			pushEntityPropertiesPatch(handlerId)
+			return
+		case 'setProjectileConfig':
+			engine.setProjectileConfig(action.id, action.speed, action.lifetimeS)
+			pushEntityPropertiesPatch(handlerId)
+			return
+		case 'fireProjectile':
+			engine.fireProjectile(action.templateId, action.dir, action.fromId)
 			return
 		case 'removeEntity':
 			removeEntityByKind(engine, action.id)

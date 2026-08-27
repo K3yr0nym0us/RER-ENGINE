@@ -1,6 +1,6 @@
 import type { TransformSendCommand } from '../pages/EngineView/components/sidebar/PropertiesAccordion/TransformPanel'
 import type { ScriptEntry } from '@hooks'
-import type { EntityBonePhysics3D } from '@shared-types'
+import type { EntityBonePhysics3D, ProjectileConfig3D } from '@shared-types'
 
 export type BonePhysicsMode = EntityBonePhysics3D['mode']
 
@@ -69,6 +69,8 @@ export interface EntityPropertiesState {
 	playingAnimationName: string | null
 	canHaveBonePhysics: boolean
 	bonePhysics: EntityPropertiesBonePhysicsUi | null
+	isProjectile: boolean
+	projectileConfig: ProjectileConfig3D | null
 }
 
 export type EntityPropertiesNestedModalKind =
@@ -87,6 +89,8 @@ export type EntityPropertiesAction =
 	| { action: 'setEntityName'; id: number; name: string }
 	| { action: 'setTransform'; cmd: TransformSendCommand }
 	| { action: 'setPhysics'; id: number; enabled: boolean; bodyType: string }
+	| { action: 'setProjectileConfig'; id: number; speed: number; lifetimeS: number }
+	| { action: 'fireProjectile'; templateId: number; dir: [number, number, number]; fromId?: number }
 	| { action: 'removeEntity'; id: number }
 	| { action: 'removeMultiple'; ids: number[] }
 	| { action: 'mergeEntities'; ids: number[] }

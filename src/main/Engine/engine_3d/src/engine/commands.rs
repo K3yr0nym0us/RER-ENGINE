@@ -408,6 +408,7 @@ impl State {
                     physics_enabled,
                     &physics_type,
                     None,
+                    true,
                 ) {
                     send_event(&EngineEvent::Error { message });
                 }
@@ -860,6 +861,8 @@ impl State {
                 }
                 self.entity_blueprint_ids.remove(&id);
                 self.entity_colision.remove(&id);
+                self.entity_projectile_config.remove(&id);
+                self.active_projectiles.retain(|p| p.entity_id != id);
                 self.clear_entity_attachments_for_removed(id);
                 if self.sun_entity == Some(id) {
                     self.sun_entity = None;
@@ -1120,6 +1123,7 @@ impl State {
                 self.apply_player_ui_play_hud(playing);
 
                 if playing {
+                    self.clear_active_projectiles();
                     self.capture_preview_editor_snapshots();
                     self.reset_play_controller_motion();
                     self.ensure_play_character_kinematic_only();
@@ -1148,6 +1152,7 @@ impl State {
                     self.capture_play_session_rotation_baselines();
                     self.run_scene_script_on_play_start();
                 } else {
+                    self.clear_active_projectiles();
                     self.script_engine.reset_scene_play_state();
                     for id in self.active_model_clips.keys().copied().collect::<Vec<_>>() {
                         self.stop_model_clip(id);
@@ -1536,6 +1541,29 @@ impl State {
                     entity_id,
                     entries,
                 });
+            }
+            EngineCommand::Only3d(EngineCommand3dOnly::SetProjectileConfig {
+                id,
+                speed,
+                lifetime_s,
+            }) => {
+                self.set_projectile_config(
+                    id,
+                    crate::config_3d::projectiles::ProjectileConfig { speed, lifetime_s },
+                );
+            }
+            EngineCommand::Only3d(EngineCommand3dOnly::FireProjectile {
+                template_id,
+                from_id,
+                dir_x,
+                dir_y,
+                dir_z,
+            }) => {
+                let _ = self.fire_projectile_from_template(
+                    template_id,
+                    from_id,
+                    glam::Vec3::new(dir_x, dir_y, dir_z),
+                );
             }
             EngineCommand::Common(EngineCommandCommon::ResendAllModelClips) => {
                 self.resend_all_model_clips_ready();

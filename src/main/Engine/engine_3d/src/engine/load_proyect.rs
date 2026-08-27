@@ -252,6 +252,8 @@ pub(crate) struct SavedEntity3D {
     pub sockets: Vec<crate::config_3d::entity_sockets::EntitySocketSnapshot>,
     #[serde(default)]
     pub bone_physics: Vec<crate::config_3d::bone_physics::BonePhysicsSnapshot>,
+    #[serde(default)]
+    pub projectile: Option<crate::config_3d::projectiles::ProjectileConfig>,
 }
 
 fn default_colision_on() -> bool {
@@ -1651,6 +1653,7 @@ fn apply_loaded_proyect_3d_with_scene(
                         pending.physics_enabled,
                         &pending.physics_type,
                         Some(pending.saved_entity_id),
+                        true,
                     ) {
                         apply_full_entity_restore(state, id, &pending, &model_key, false, false);
                     }
@@ -1700,6 +1703,7 @@ fn apply_loaded_proyect_3d_with_scene(
                 pending.physics_enabled,
                 &pending.physics_type,
                 Some(pending.saved_entity_id),
+                true,
             ) {
                 apply_full_entity_restore(state, id, &pending, &path, false, false);
             }
@@ -1776,6 +1780,7 @@ fn apply_loaded_proyect_3d_with_scene(
     }
     restore_entity_sockets_after_scene_load(state, &view);
     restore_entity_bone_physics_after_scene_load(state, &view);
+    restore_entity_projectile_config_after_scene_load(state, &view);
     restore_entity_attachments_after_scene_load(state, &view);
     state.sanitize_reflection_probe_entities();
     state.restoring_save_manifest = false;
@@ -1860,6 +1865,22 @@ fn restore_entity_bone_physics_after_scene_load(state: &mut State, view: &Active
         if !entity.bone_physics.is_empty() {
             state.restore_entity_bone_physics_from_saved(entity.id, &entity.bone_physics);
             state.emit_entity_bone_physics_if_any(entity.id);
+        }
+    };
+    for entity in &view.entities {
+        restore(entity);
+    }
+    if let Some(player) = &view.player {
+        restore(player);
+    }
+}
+
+fn restore_entity_projectile_config_after_scene_load(state: &mut State, view: &ActiveSaveView) {
+    let mut restore = |entity: &SavedEntity3D| {
+        if entity.category == "projectile" {
+            let config = entity.projectile.unwrap_or_default();
+            state.restore_projectile_config_from_saved(entity.id, &config);
+            state.emit_projectile_config_changed(entity.id);
         }
     };
     for entity in &view.entities {
@@ -2189,6 +2210,7 @@ pub(crate) fn saved_scene_from_snapshot_payload(
             attach_socket_name: e.attach_socket_name.clone(),
             sockets: e.sockets.clone(),
             bone_physics: e.bone_physics.clone(),
+            projectile: e.projectile,
         }
     }
 
@@ -2329,6 +2351,7 @@ pub(crate) fn build_fp_placeholder_saved_scene(id: u32, name: &str) -> SavedScen
             attach_socket_name: None,
             sockets: vec![],
             bone_physics: vec![],
+            projectile: None,
         },
         SavedEntity3D {
             id: 0,
@@ -2354,6 +2377,7 @@ pub(crate) fn build_fp_placeholder_saved_scene(id: u32, name: &str) -> SavedScen
             attach_socket_name: None,
             sockets: vec![],
             bone_physics: vec![],
+            projectile: None,
         },
         SavedEntity3D {
             id: 0,
@@ -2379,6 +2403,7 @@ pub(crate) fn build_fp_placeholder_saved_scene(id: u32, name: &str) -> SavedScen
             attach_socket_name: None,
             sockets: vec![],
             bone_physics: vec![],
+            projectile: None,
         },
     ];
 
@@ -2406,6 +2431,7 @@ pub(crate) fn build_fp_placeholder_saved_scene(id: u32, name: &str) -> SavedScen
         attach_socket_name: None,
         sockets: vec![],
         bone_physics: vec![],
+        projectile: None,
     };
 
     SavedScene {

@@ -32,6 +32,8 @@ export function EntityPropertiesElectronHost({ payload }: EntityPropertiesElectr
 			playingAnimationName: null,
 			canHaveBonePhysics: false,
 			bonePhysics: null,
+			isProjectile: false,
+			projectileConfig: null,
 		},
 	)
 

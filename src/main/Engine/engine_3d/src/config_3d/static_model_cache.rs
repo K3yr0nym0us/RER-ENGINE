@@ -909,6 +909,7 @@ impl State {
         roughness: f32,
         metallic: f32,
         ior: f32,
+        track_undo: bool,
     ) -> EntityId {
         let key = self.model_path_key(path);
         let resolved_category = entity_category.clone().or_else(|| {
@@ -977,7 +978,9 @@ impl State {
         if self.model_needs_skinned_bind(&key) {
             self.try_bind_model_animations_with_gltf(id, &key, None);
         }
-        self.push_remove_entity_undo(id);
+        if track_undo {
+            self.push_remove_entity_undo(id);
+        }
         send_event(&EngineEvent::ModelLoaded {
             id,
             name: Some(entity_name.to_string()),
@@ -1006,6 +1009,7 @@ impl State {
         physics_enabled: bool,
         physics_type: &str,
         desired_id: Option<EntityId>,
+        track_undo: bool,
     ) -> Result<EntityId, String> {
         self.ensure_static_model_cached(path)?;
         let Some(part) = self
@@ -1048,6 +1052,7 @@ impl State {
             part.roughness,
             part.metallic,
             part.ior,
+            track_undo,
         ))
     }
 
@@ -1089,6 +1094,7 @@ impl State {
             part.roughness,
             part.metallic,
             part.ior,
+            true,
         )
     }
 

@@ -24,7 +24,7 @@ import type {
 	EntityPropertiesState,
 } from '../../../../../modal-electron/entityPropertiesTypes'
 
-type PropertiesTab = 'transform' | 'animations' | 'scripting' | 'bones'
+type PropertiesTab = 'transform' | 'animations' | 'scripting' | 'bones' | 'projectile'
 
 export interface EntityPropertiesModalContentProps {
 	state: EntityPropertiesState
@@ -54,11 +54,15 @@ export function EntityPropertiesModalContent({
 		playingAnimationName,
 		canHaveBonePhysics,
 		bonePhysics,
+		isProjectile,
+		projectileConfig,
 	} = state
 
 	const [entityNameDraft, setEntityNameDraft] = useState('')
 	const [isEditingEntityName, setIsEditingEntityName] = useState(false)
 	const [animations, setAnimations] = useState<EntityPropertiesAnimation[]>([])
+	const [projectileSpeedDraft, setProjectileSpeedDraft] = useState(20)
+	const [projectileLifetimeDraft, setProjectileLifetimeDraft] = useState(3)
 	const [pendingConfirm, setPendingConfirm] = useState<{
 		title: string
 		message: React.ReactNode
@@ -75,6 +79,11 @@ export function EntityPropertiesModalContent({
 		setEntityNameDraft(selectedEntity?.name ?? '')
 		setIsEditingEntityName(false)
 	}, [selectedEntity?.id, selectedEntity?.name])
+
+	useEffect(() => {
+		setProjectileSpeedDraft(projectileConfig?.speed ?? 20)
+		setProjectileLifetimeDraft(projectileConfig?.lifetime_s ?? 3)
+	}, [selectedEntity?.id, projectileConfig?.speed, projectileConfig?.lifetime_s])
 
 	useEffect(() => {
 		if (!selectedEntity?.id) {
@@ -103,8 +112,18 @@ export function EntityPropertiesModalContent({
 		}
 		if (!isCollider) list.push('scripting')
 		if (is3D && canHaveBonePhysics) list.push('bones')
+		if (is3D && isProjectile && !isMultiSelect) list.push('projectile')
 		return list
-	}, [isCollider, isExecutionArea, is2D, hasEmbeddedModelClips, is3D, canHaveBonePhysics])
+	}, [
+		isCollider,
+		isExecutionArea,
+		is2D,
+		hasEmbeddedModelClips,
+		is3D,
+		canHaveBonePhysics,
+		isProjectile,
+		isMultiSelect,
+	])
 
 	useEffect(() => {
 		setActiveTab((prev) => (tabs.includes(prev) ? prev : (tabs[0] ?? 'transform')))
@@ -576,6 +595,11 @@ export function EntityPropertiesModalContent({
 							<Nav.Link eventKey="bones">{t('Bones')}</Nav.Link>
 						</Nav.Item>
 					)}
+					{tabs.includes('projectile') && (
+						<Nav.Item>
+							<Nav.Link eventKey="projectile">{t('Projectile')}</Nav.Link>
+						</Nav.Item>
+					)}
 				</Nav>
 				<Tab.Content className="entity-props-tab-content">
 					{tabs.includes('transform') && (
@@ -670,6 +694,71 @@ export function EntityPropertiesModalContent({
 					{tabs.includes('bones') && bonePhysics && (
 						<Tab.Pane eventKey="bones" className="py-1 px-1">
 							<EntityPropertiesBonesPanel bonePhysics={bonePhysics} onAction={onAction} />
+						</Tab.Pane>
+					)}
+					{tabs.includes('projectile') && selectedEntity && (
+						<Tab.Pane eventKey="projectile" className="py-1 px-1">
+							<label className="form-label text-light small mb-0" htmlFor="modal-projectile-speed">
+								{t('Speed (m/s)')}
+							</label>
+							<input
+								id="modal-projectile-speed"
+								type="number"
+								min={0}
+								step={0.5}
+								className="form-control form-control-sm bg-dark text-light border-secondary mt-1"
+								value={projectileSpeedDraft}
+								onChange={(e) => setProjectileSpeedDraft(Number(e.target.value))}
+								onBlur={() => {
+									onAction({
+										action: 'setProjectileConfig',
+										id: selectedEntity.id,
+										speed: projectileSpeedDraft,
+										lifetimeS: projectileLifetimeDraft,
+									})
+								}}
+							/>
+							<label
+								className="form-label text-light small mb-0 mt-2"
+								htmlFor="modal-projectile-lifetime"
+							>
+								{t('Lifetime (s)')}
+							</label>
+							<input
+								id="modal-projectile-lifetime"
+								type="number"
+								min={0.05}
+								step={0.1}
+								className="form-control form-control-sm bg-dark text-light border-secondary mt-1"
+								value={projectileLifetimeDraft}
+								onChange={(e) => setProjectileLifetimeDraft(Number(e.target.value))}
+								onBlur={() => {
+									onAction({
+										action: 'setProjectileConfig',
+										id: selectedEntity.id,
+										speed: projectileSpeedDraft,
+										lifetimeS: projectileLifetimeDraft,
+									})
+								}}
+							/>
+							<button
+								type="button"
+								className="btn btn-sm btn-outline-secondary w-100 mt-3"
+								onClick={() => {
+									onAction({
+										action: 'fireProjectile',
+										templateId: selectedEntity.id,
+										dir: [0, 0, -1],
+									})
+								}}
+							>
+								{t('Test fire (forward -Z)')}
+							</button>
+							<p className="text-secondary small mb-0 mt-2">
+								{t(
+									'Editor or Play. Rhai: engine.fire_projectile(template_id, from_id, dx, dy, dz)',
+								)}
+							</p>
 						</Tab.Pane>
 					)}
 				</Tab.Content>

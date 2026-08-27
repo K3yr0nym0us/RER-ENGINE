@@ -740,6 +740,38 @@ export function createEngineActions({
 		}
 	};
 
+	const setProjectileConfig = (id: number, speed: number, lifetimeS: number) => {
+		const next = {
+			speed: Math.max(0, speed),
+			lifetime_s: Math.max(0.05, lifetimeS),
+		};
+		const meta = refs.entityMetaRef.current[id];
+		if (meta) {
+			meta.projectileConfig = next;
+		}
+		send3dFn({
+			cmd: 'set_projectile_config',
+			id,
+			speed: next.speed,
+			lifetime_s: next.lifetime_s,
+		});
+	};
+
+	const fireProjectile = (
+		templateId: number,
+		dir: [number, number, number],
+		fromId?: number,
+	) => {
+		send3dFn({
+			cmd: 'fire_projectile',
+			template_id: templateId,
+			from_id: fromId ?? null,
+			dir_x: dir[0],
+			dir_y: dir[1],
+			dir_z: dir[2],
+		});
+	};
+
 	const registerPivotEditListener = (fn: (framePath: string, px: number, py: number) => void) => {
 		refs.pivotEditListenerRef.current = fn;
 	};
@@ -1089,6 +1121,8 @@ export function createEngineActions({
 		updateEntityScripts,
 		updateEntityVisualGraph,
 		setEntityPhysics,
+		setProjectileConfig,
+		fireProjectile,
 		updateEntityTransform,
 		registerPivotEditListener,
 		unregisterPivotEditListener,

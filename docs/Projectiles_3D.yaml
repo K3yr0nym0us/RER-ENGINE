@@ -1,0 +1,36 @@
+# Proyectiles 3D (MVP)
+
+# Referencias:
+#   - docs/Entities_Model_3D.yaml
+
+summary: |
+  Categoría `projectile` + disparo cinemático en play (clon de plantilla).
+  Sin hits/daño/muzzle en este MVP. Paridad 2D: follow-up.
+
+projectile_config:
+  speed: number # m/s, default 20
+  lifetime_s: number # segundos, default 3, mínimo 0.05
+  persist: |
+    Campo opcional `projectile` en entidad 3D del `.save` cuando category == projectile.
+
+runtime:
+  templates: entidades de escena con category projectile
+  fire: |
+    IPC `fire_projectile` { template_id, from_id?, dir_x, dir_y, dir_z }
+    Rhai `engine.fire_projectile(template_id, from_id, dx, dy, dz)`
+    from_id == 0 → origen = posición de la plantilla
+    Funciona en editor (Test fire) y en play.
+  movement: position += normalize(dir) * speed * dt (cinemático, sin Rapier)
+  despawn: al superar lifetime_s; limpia al entrar/salir de play
+  save: clones runtime no se serializan
+
+ipc:
+  set_projectile_config: { id, speed, lifetime_s }
+  fire_projectile: { template_id, from_id?, dir_x, dir_y, dir_z }
+  event projectile_config_changed: { entity_id, speed, lifetime_s }
+
+out_of_scope_mvp:
+  - hits / daño
+  - sockets de muzzle
+  - gravedad del proyectil
+  - paridad 2D

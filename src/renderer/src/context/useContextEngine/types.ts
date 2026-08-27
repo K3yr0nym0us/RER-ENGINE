@@ -1328,6 +1328,8 @@ export interface EntityMeta {
 	sockets?: import('@shared-types').EntitySocket3D[]
 	/** Física secundaria por hueso. */
 	bonePhysics?: import('@shared-types').EntityBonePhysics3D[]
+	/** Config de disparo (categoría projectile). */
+	projectileConfig?: import('@shared-types').ProjectileConfig3D
 	/** Huesos del modelo skinned (cache editor; invalidar al cambiar visualModelPath). */
 	boneNames?: string[]
 	/** El motor enlazó animación/esqueleto skinned (`model_clips_ready`). */
@@ -1524,6 +1526,12 @@ export interface EngineContextValue extends EngineState {
 		rhaiSource: string,
 	) => void
 	setEntityPhysics: (id: number, enabled: boolean, bodyType: string) => void
+	setProjectileConfig: (id: number, speed: number, lifetimeS: number) => void
+	fireProjectile: (
+		templateId: number,
+		dir: [number, number, number],
+		fromId?: number,
+	) => void
 	updateEntityTransform: (
 		id: number,
 		patch: Partial<Transform> & {

@@ -1181,6 +1181,8 @@ impl State {
             bone_physics_pick_entity: None,
             bone_physics_pick_hovered_joint: None,
             entity_bone_physics: HashMap::new(),
+            entity_projectile_config: HashMap::new(),
+            active_projectiles: Vec::new(),
             bone_physics_sim: HashMap::new(),
             bone_physics_entity_motion: HashMap::new(),
             preview_playing: false,

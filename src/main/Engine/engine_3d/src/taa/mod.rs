@@ -829,9 +829,7 @@ impl TaaPass {
         self.ms_shadow_mask_view = Some(sm_v);
 
         if !self.hw_resolve_depth_export {
-            log::info!(
-                "[msaa] depth-export (R32Float) sin resolve HW → resolve manual (sample 0)"
-            );
+            log::info!("[msaa] depth-export (R32Float) sin resolve HW → resolve manual (sample 0)");
         }
     }
 
@@ -841,10 +839,7 @@ impl TaaPass {
             return;
         }
         if !self.hw_resolve_depth_export
-            && let (Some(ms), dst) = (
-                self.ms_depth_export_view.as_ref(),
-                &self.depth_export_view,
-            )
+            && let (Some(ms), dst) = (self.ms_depth_export_view.as_ref(), &self.depth_export_view)
         {
             self.encode_manual_resolve(
                 device,

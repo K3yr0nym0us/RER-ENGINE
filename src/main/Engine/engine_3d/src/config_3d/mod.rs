@@ -42,6 +42,7 @@ pub(crate) mod play_character;
 pub(crate) mod play_controller;
 pub(crate) mod player_ui;
 pub(crate) mod preview_editor;
+pub(crate) mod projectiles;
 pub(crate) mod quick_build;
 pub(crate) mod reflection_graphics;
 pub(crate) mod reflection_settings;

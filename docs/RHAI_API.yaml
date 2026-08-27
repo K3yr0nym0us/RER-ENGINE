@@ -195,6 +195,10 @@ engine_3d_only:
         También en World → Reflejos y nodo de escena Set reflection tier.
     - function: engine.get_reflection_tier()
       description: Devuelve el tier activo como string.
+    - function: engine.fire_projectile(template_id, from_id, dir_x, dir_y, dir_z)
+      description: |
+        Dispara un clon cinemático de una plantilla `projectile` (solo en play).
+        from_id == 0 usa la posición de la plantilla. Ver docs/Projectiles_3D.yaml.
 
   example_fp_entity: |
     fn on_start(entity) {

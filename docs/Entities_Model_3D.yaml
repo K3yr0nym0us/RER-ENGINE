@@ -7,6 +7,8 @@ ENTITES_TYPES:
   character:   category character   # Personajes (NPC, Enemigos, animales, etc.) 
   player:      category player      # Modelo visual reemplazable; manifest .save FP: position = pies, scale/rotation del save
   object:      category object      # Objetos del mundo (Cajas, mesas, sillas, etc.)
+  weapon:      category weapon      # Armas (plantillas / props)
+  projectile:  category projectile  # Proyectiles (plantilla + config de disparo; ver docs/Projectiles_3D.yaml)
   sun:         category sun         # Sol (Dirección y color de la luz)
   ground:      category ground      # Suelo (Placeholder visual cuadriculado + colision)
   # POSIBLEMENTE CREAREMOS MAS A FUTURO
@@ -26,6 +28,7 @@ common: # FORMATO COMUN DE LAS ENTIDADES
   blueprint_id: optional string # Si tiene significa que es una instancia de una blueprint existente
   controls: optional # WASD / gamepad → Rhai en preview; (Solo para Player)
   colision: boolean # Colisiones de la entidad (Malla fisica del ultimo modelo 3D cargado on/off default:on)
+  projectile: optional # Solo category projectile: { speed, lifetime_s } — docs/Projectiles_3D.yaml
 
 Blueprints:
   reference: docs/Blueprints_Model_3D.yaml

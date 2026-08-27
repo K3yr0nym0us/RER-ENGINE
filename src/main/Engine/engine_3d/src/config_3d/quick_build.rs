@@ -431,6 +431,7 @@ impl State {
             part.roughness,
             part.metallic,
             part.ior,
+            true,
         );
         if let Some(ref blueprint) = bp {
             apply_blueprint_instance_metadata(self, id, blueprint);

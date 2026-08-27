@@ -247,6 +247,19 @@ pub enum EngineCommand3dOnly {
     ListEntityBonePhysics {
         entity_id: u32,
     },
+    SetProjectileConfig {
+        id: u32,
+        speed: f32,
+        lifetime_s: f32,
+    },
+    FireProjectile {
+        template_id: u32,
+        #[serde(default)]
+        from_id: Option<u32>,
+        dir_x: f32,
+        dir_y: f32,
+        dir_z: f32,
+    },
 }
 
 #[cfg(test)]

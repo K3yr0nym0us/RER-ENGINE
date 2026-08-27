@@ -164,6 +164,11 @@ export function entity3dToMeta(entity: Entity3D): EntityMeta {
 			: {}),
 		...(entity.sockets?.length ? { sockets: entity.sockets } : {}),
 		...(entity.bone_physics?.length ? { bonePhysics: entity.bone_physics } : {}),
+		...(entity.projectile
+			? { projectileConfig: entity.projectile }
+			: entity3dCategory === 'projectile'
+				? { projectileConfig: { speed: 20, lifetime_s: 3 } }
+				: {}),
 	};
 }
 

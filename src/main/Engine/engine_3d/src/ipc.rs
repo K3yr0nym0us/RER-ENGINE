@@ -203,6 +203,9 @@ pub struct SaveEntity3DSnapshot {
     /// Física secundaria por hueso (jiggle).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub bone_physics: Vec<crate::config_3d::bone_physics::BonePhysicsSnapshot>,
+    /// Config de disparo (solo categoría `projectile`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub projectile: Option<crate::config_3d::projectiles::ProjectileConfig>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -790,6 +793,13 @@ pub enum EngineEvent {
     EntityBonePhysicsChanged {
         entity_id: u32,
         entries: Vec<crate::config_3d::bone_physics::BonePhysicsSnapshot>,
+    },
+    /// Config de proyectil actualizada.
+    #[serde(rename = "projectile_config_changed")]
+    ProjectileConfigChanged {
+        entity_id: u32,
+        speed: f32,
+        lifetime_s: f32,
     },
     /// Entidad(es) vinculada(s) a un socket.
     #[serde(rename = "entity_socket_attached")]

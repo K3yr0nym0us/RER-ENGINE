@@ -43,6 +43,8 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
     addBlueprint,
     multiSelectedIds,
     setEntityPhysics,
+    setProjectileConfig,
+    fireProjectile,
     updateEntityTransform,
     blueprints,
   } = useContextEngine()
@@ -50,6 +52,8 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
   const { openModal } = useModal();
   const [entityNameDraft, setEntityNameDraft] = useState('');
   const [isEditingEntityName, setIsEditingEntityName] = useState(false);
+  const [projectileSpeedDraft, setProjectileSpeedDraft] = useState(20);
+  const [projectileLifetimeDraft, setProjectileLifetimeDraft] = useState(3);
 
   const handleSend = (cmd: TransformSendCommand) => {
     if (cmd.cmd === 'set_transform' && selectedEntity && cmd.id === selectedEntity.id) {
@@ -84,6 +88,13 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
     setEntityNameDraft(selectedEntity?.name ?? '');
     setIsEditingEntityName(false);
   }, [selectedEntity?.id, selectedEntity?.name]);
+
+  useEffect(() => {
+    if (!selectedEntity?.id) return;
+    const cfg = entityMetaRef.current[selectedEntity.id]?.projectileConfig;
+    setProjectileSpeedDraft(cfg?.speed ?? 20);
+    setProjectileLifetimeDraft(cfg?.lifetime_s ?? 3);
+  }, [selectedEntity?.id, entityMetaRef]);
 
   // Derivar directamente desde el contexto para que sea reactivo a cambios
   // por scripts (PhysicsChanged) sin necesitar estado local intermedio.
@@ -172,6 +183,9 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
     editorCameraEntityIdRef.current,
   )
   const isCharacter = characterEntities.some((c) => c.id === selectedEntity?.id)
+  const isProjectile =
+    entityMeta?.entityCategory === 'projectile' ||
+    entityMeta?.entity3dCategory === 'projectile'
   const hasEmbeddedModelClips =
     is3D &&
     (entityMeta?.animations?.some((a) => a.embedded_in_model) ?? false)
@@ -349,6 +363,62 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
             )}
           </div>
         )
+      )}
+
+      {is3D && isProjectile && (
+        <div className="mb-2">
+          <p className="prop-label">{t('Projectile')}</p>
+          <label className="form-label text-light small mb-0" htmlFor="projectile-speed">
+            {t('Speed (m/s)')}
+          </label>
+          <input
+            id="projectile-speed"
+            type="number"
+            min={0}
+            step={0.5}
+            className="form-control form-control-sm bg-dark text-light border-secondary mt-1"
+            value={projectileSpeedDraft}
+            onChange={(e) => setProjectileSpeedDraft(Number(e.target.value))}
+            onBlur={() => {
+              setProjectileConfig(
+                selectedEntity.id,
+                projectileSpeedDraft,
+                projectileLifetimeDraft,
+              );
+            }}
+          />
+          <label className="form-label text-light small mb-0 mt-2" htmlFor="projectile-lifetime">
+            {t('Lifetime (s)')}
+          </label>
+          <input
+            id="projectile-lifetime"
+            type="number"
+            min={0.05}
+            step={0.1}
+            className="form-control form-control-sm bg-dark text-light border-secondary mt-1"
+            value={projectileLifetimeDraft}
+            onChange={(e) => setProjectileLifetimeDraft(Number(e.target.value))}
+            onBlur={() => {
+              setProjectileConfig(
+                selectedEntity.id,
+                projectileSpeedDraft,
+                projectileLifetimeDraft,
+              );
+            }}
+          />
+          <button
+            type="button"
+            className="btn btn-sm btn-outline-secondary w-100 mt-2"
+            onClick={() => {
+              fireProjectile(selectedEntity.id, [0, 0, -1]);
+            }}
+          >
+            {t('Test fire (forward -Z)')}
+          </button>
+          <p className="text-secondary small mb-0 mt-1">
+            {t('Editor or Play. Rhai: engine.fire_projectile(template_id, from_id, dx, dy, dz)')}
+          </p>
+        </div>
       )}
 
       {(isCollider || isExecutionArea) && (

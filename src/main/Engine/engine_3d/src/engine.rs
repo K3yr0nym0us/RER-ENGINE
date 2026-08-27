@@ -177,6 +177,11 @@ pub struct State {
     /// Configuración persistida de física por hueso.
     pub(crate) entity_bone_physics:
         std::collections::HashMap<EntityId, Vec<crate::config_3d::bone_physics::BonePhysicsEntry>>,
+    /// Config de proyectil (plantillas categoría `projectile`).
+    pub(crate) entity_projectile_config:
+        std::collections::HashMap<EntityId, crate::config_3d::projectiles::ProjectileConfig>,
+    /// Instancias de proyectil en play (no persistidas).
+    pub(crate) active_projectiles: Vec<crate::config_3d::projectiles::ActiveProjectile>,
     /// Estado de simulación jiggle (no persistido).
     pub(crate) bone_physics_sim: std::collections::HashMap<
         (EntityId, usize),

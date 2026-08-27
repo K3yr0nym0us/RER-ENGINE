@@ -175,6 +175,12 @@ pub(crate) fn build_entity_3d_snapshot(
 
     let bone_physics = state.list_entity_bone_physics(id);
 
+    let projectile = if category == "projectile" {
+        Some(state.projectile_config_for(id))
+    } else {
+        None
+    };
+
     SaveEntity3DSnapshot {
         id,
         name: state
@@ -201,6 +207,7 @@ pub(crate) fn build_entity_3d_snapshot(
         attach_socket_name,
         sockets,
         bone_physics,
+        projectile,
     }
 }
 
