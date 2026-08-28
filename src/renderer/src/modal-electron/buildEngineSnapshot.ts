@@ -22,6 +22,7 @@ export function buildEngineSnapshot(
 					.hudImages as ModalElectronOpenRequest['hudImages'],
 			}
 		case 'CreateEntityFromSpriteModalBody':
+		case 'CreateProjectileFromSpriteModalBody':
 			return {
 				sprites: serializeModalProps({ sprites: engine.sprites })
 					.sprites as ModalElectronOpenRequest['sprites'],

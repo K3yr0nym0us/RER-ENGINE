@@ -43,6 +43,8 @@ use std::fs;
 mod assets;
 #[path = "config_2d/overlay.rs"]
 mod overlay;
+#[path = "config_2d/projectiles.rs"]
+pub(crate) mod projectiles;
 #[path = "config_2d/selection.rs"]
 mod selection;
 
@@ -77,6 +79,14 @@ pub(crate) struct CharacterMarker {
     /// Bounds opacos del PNG original, usados como collider de arranque.
     pub tight_bounds: Option<[u32; 4]>,
     /// Ruta del PNG original, necesaria para duplicar la entidad.
+    pub path: String,
+}
+
+/// Marca una entidad como plantilla de proyectil PNG en una escena 2D.
+#[derive(Debug, Clone)]
+pub(crate) struct ProjectileMarker {
+    pub img_width: u32,
+    pub img_height: u32,
     pub path: String,
 }
 

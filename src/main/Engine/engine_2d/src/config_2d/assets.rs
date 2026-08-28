@@ -6,7 +6,9 @@ use crate::texture::GpuTexture;
 
 use crate::entity_save_meta::EntitySaveMeta;
 
-use super::{CharacterMarker, ScenarioMarker, compute_tight_bounds, create_quad_xy};
+use super::{
+    CharacterMarker, ProjectileMarker, ScenarioMarker, compute_tight_bounds, create_quad_xy,
+};
 use crate::engine::State;
 
 impl State {
@@ -390,6 +392,135 @@ impl State {
             default_pivot_x: img_width as f32 * 0.5,
             default_pivot_y: img_height as f32,
         });
+
+        true
+    }
+
+    pub(crate) fn load_projectile(&mut self, path: &str) {
+        self.insert_projectile_at(path, None, None);
+    }
+
+    pub(crate) fn insert_projectile_at(
+        &mut self,
+        path: &str,
+        forced_id: Option<u32>,
+        display_name: Option<&str>,
+    ) -> bool {
+        let bytes = match std::fs::read(path) {
+            Ok(b) => b,
+            Err(e) => {
+                log::error!("[load_projectile] error leyendo {path}: {e}");
+                send_event(&EngineEvent::Error {
+                    message: format!("No se pudo leer el proyectil (ruta: {path:?}): {e}"),
+                });
+                return false;
+            }
+        };
+
+        use image::ImageReader;
+        use std::io::Cursor;
+        let img = match ImageReader::new(Cursor::new(&bytes))
+            .with_guessed_format()
+            .map_err(|e| e.to_string())
+            .and_then(|r| r.decode().map_err(|e| e.to_string()))
+        {
+            Ok(i) => i.to_rgba8(),
+            Err(e) => {
+                log::error!("[load_projectile] error decodificando PNG {path}: {e}");
+                send_event(&EngineEvent::Error {
+                    message: format!("Error al decodificar PNG: {e}"),
+                });
+                return false;
+            }
+        };
+
+        let (img_width, img_height) = img.dimensions();
+        let aspect = img_width as f32 / img_height.max(1) as f32;
+        let base_world_h = self.grid_config.cell_size * 0.75;
+        let base_world_w = base_world_h * aspect;
+
+        let gpu_tex = GpuTexture::from_rgba(
+            &self.device,
+            &self.queue,
+            &img,
+            img_width,
+            img_height,
+            "projectile",
+        );
+        let uv = if let Some(&cached_uv) = self.static_tex_cache.get(path) {
+            cached_uv
+        } else {
+            let u = self.atlas.pack(&self.queue, &img, img_width, img_height);
+            self.static_tex_cache.insert(path.to_owned(), u);
+            u
+        };
+        drop(gpu_tex);
+        let tex_idx = self.uv_rects.len();
+        self.uv_rects.push(uv);
+        let projectile_name = display_name
+            .filter(|n| !n.trim().is_empty())
+            .map(|n| n.to_owned())
+            .unwrap_or_else(|| {
+                self.next_numbered_entity_name(
+                    rer_engine_shared::editor_defaults::entity_label::PROJECTILE,
+                )
+            });
+        let proj_id = if let Some(id) = forced_id {
+            if !self.world.spawn_with_id(id, Some(&projectile_name)) {
+                log::warn!("[insert_projectile_at] id {id} ya en uso");
+                return false;
+            }
+            id
+        } else {
+            self.world.spawn(Some(&projectile_name))
+        };
+        self.world.insert(
+            proj_id,
+            MeshComponent {
+                mesh_idx: self.canonical_quad_idx,
+                tex_idx,
+            },
+        );
+        self.world.insert(
+            proj_id,
+            Transform {
+                position: GlamVec3::new(0.0, 0.0, 0.5),
+                scale: GlamVec3::new(base_world_w, base_world_h, 1.0),
+                ..Default::default()
+            },
+        );
+        self.world.insert(
+            proj_id,
+            ProjectileMarker {
+                img_width,
+                img_height,
+                path: path.to_owned(),
+            },
+        );
+        self.projectile_entities.push(proj_id);
+        self.save_registry.register_meta(
+            proj_id,
+            EntitySaveMeta {
+                kind: "projectile".to_string(),
+                path: path.to_owned(),
+                visual_model_path: None,
+                points: None,
+            },
+        );
+        self.entity_projectile_config.insert(
+            proj_id,
+            crate::config_2d::projectiles::ProjectileConfig::default(),
+        );
+
+        send_event(&EngineEvent::ProjectileLoaded {
+            id: proj_id,
+            path: path.to_owned(),
+            img_width,
+            img_height,
+            default_pivot_x: img_width as f32 * 0.5,
+            default_pivot_y: img_height as f32,
+        });
+        self.emit_projectile_config_changed(proj_id);
 
         true
     }

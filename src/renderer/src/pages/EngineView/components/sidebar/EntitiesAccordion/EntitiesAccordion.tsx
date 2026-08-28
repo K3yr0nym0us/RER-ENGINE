@@ -5,6 +5,7 @@ import { EnvironmentsAccordion } from './EnvironmentsAccordion/EnvironmentsAccor
 import BtnCreateEntityFromModel from './components/BtnCreateEntityFromModel';
 import BtnCreateCharacter from './CharactersAccordion/components/BtnCreateCharacter';
 import ObjectsAccordion from './ObjectsAccordion/ObjectsAccordion';
+import ProjectilesAccordion from './ProjectilesAccordion/ProjectilesAccordion';
 import SidebarSubAccordion from '../SidebarSubAccordion';
 import { useTraslate } from '@hooks';
 
@@ -59,6 +60,14 @@ export default function EntitiesAccordeon({ projectType }: { projectType?: strin
               <Accordion.Header><RecordCircleFill className="me-2" />{t('Projectiles')}</Accordion.Header>
               <Accordion.Body className="py-2 px-2">
                 <BtnCreateEntityFromModel intent="projectile" />
+              </Accordion.Body>
+            </Accordion.Item>
+          )}
+          {projectType === '2D' && (
+            <Accordion.Item eventKey="proyectiles">
+              <Accordion.Header><RecordCircleFill className="me-2" />{t('Projectiles')}</Accordion.Header>
+              <Accordion.Body className="py-2 px-2">
+                <ProjectilesAccordion />
               </Accordion.Body>
             </Accordion.Item>
           )}

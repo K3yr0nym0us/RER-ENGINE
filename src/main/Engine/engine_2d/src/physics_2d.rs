@@ -27,6 +27,7 @@ mod kinematic_gravity;
 
 use std::collections::{HashMap, HashSet};
 
+use glam::Vec2;
 use rapier3d::control::{CharacterLength, KinematicCharacterController};
 use rapier3d::prelude::*;
 use rer_engine_shared::DEFAULT_GRAVITY_MAGNITUDE;
@@ -365,6 +366,61 @@ impl PhysicsWorld2D {
             return false;
         };
         sign * dir_x > EPS
+    }
+
+    /// AABB mundial XY del collider Rapier de una entidad (sin depender del broad-phase).
+    pub(crate) fn entity_collider_aabb_xy(&self, entity: EntityId) -> Option<(Vec2, Vec2)> {
+        let handle = self.entity_colliders.get(&entity)?;
+        let collider = self.colliders.get(*handle)?;
+        let aabb = collider.compute_aabb();
+        let center = aabb.center();
+        let half = aabb.half_extents();
+        Some((
+            Vec2::new(center.x, center.y),
+            Vec2::new(half.x.max(0.01), half.y.max(0.01)),
+        ))
+    }
+
+    /// Raycast de proyectil en XY contra colliders registrados (editor + play).
+    pub(crate) fn raycast_projectile_hit_xy<F>(
+        &self,
+        from: Vec2,
+        direction: Vec2,
+        max_dist: f32,
+        exclude_entities: &[EntityId],
+        mut accept_entity: F,
+    ) -> Option<(f32, EntityId, Vec2)>
+    where
+        F: FnMut(EntityId) -> bool,
+    {
+        use crate::config_2d::world_xy::ray_aabb_intersect_xy;
+
+        if max_dist <= 1e-6 {
+            return None;
+        }
+        let dir = direction.normalize_or_zero();
+        if dir.length_squared() < 1e-8 {
+            return None;
+        }
+        let exclude: HashSet<EntityId> = exclude_entities.iter().copied().collect();
+        let mut best: Option<(f32, EntityId, Vec2)> = None;
+
+        for &entity in self.entity_colliders.keys() {
+            if exclude.contains(&entity) || !accept_entity(entity) {
+                continue;
+            }
+            let Some((center, half)) = self.entity_collider_aabb_xy(entity) else {
+                continue;
+            };
+            let Some((toi, normal)) = ray_aabb_intersect_xy(from, dir, max_dist, center, half)
+            else {
+                continue;
+            };
+            if best.is_none_or(|(best_toi, _, _)| toi < best_toi) {
+                best = Some((toi, entity, normal));
+            }
+        }
+        best
     }
 
     // ── Paso de simulación ────────────────────────────────────────────────────

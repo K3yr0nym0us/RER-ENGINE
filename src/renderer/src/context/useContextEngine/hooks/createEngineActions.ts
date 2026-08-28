@@ -776,19 +776,34 @@ export function createEngineActions({
 		if (meta) {
 			meta.projectileConfig = next
 		}
-		send3dFn({
-			cmd: 'set_projectile_config',
-			id,
-			speed: next.speed,
-			lifetime_s: next.lifetime_s,
-			affected_by_gravity: next.affected_by_gravity,
-			gravity_scale: next.gravity_scale,
-			align_to_velocity: next.align_to_velocity,
-			muzzle_socket: next.muzzle_socket ?? null,
-			bounceable: next.bounceable,
-			max_bounces: next.max_bounces,
-			bounce_speed_loss: next.bounce_speed_loss,
-		})
+		sendMotor(
+			is3D
+				? {
+						cmd: 'set_projectile_config',
+						id,
+						speed: next.speed,
+						lifetime_s: next.lifetime_s,
+						affected_by_gravity: next.affected_by_gravity,
+						gravity_scale: next.gravity_scale,
+						align_to_velocity: next.align_to_velocity,
+						muzzle_socket: next.muzzle_socket ?? null,
+						bounceable: next.bounceable,
+						max_bounces: next.max_bounces,
+						bounce_speed_loss: next.bounce_speed_loss,
+					}
+				: {
+						cmd: 'set_projectile_config',
+						id,
+						speed: next.speed,
+						lifetime_s: next.lifetime_s,
+						affected_by_gravity: next.affected_by_gravity,
+						gravity_scale: next.gravity_scale,
+						align_to_velocity: next.align_to_velocity,
+						bounceable: next.bounceable,
+						max_bounces: next.max_bounces,
+						bounce_speed_loss: next.bounce_speed_loss,
+					},
+		)
 	}
 
 	const fireProjectile = (
@@ -796,14 +811,24 @@ export function createEngineActions({
 		dir: [number, number, number],
 		fromId?: number,
 	) => {
-		send3dFn({
-			cmd: 'fire_projectile',
-			template_id: templateId,
-			from_id: fromId ?? null,
-			dir_x: dir[0],
-			dir_y: dir[1],
-			dir_z: dir[2],
-		});
+		sendMotor(
+			is3D
+				? {
+						cmd: 'fire_projectile',
+						template_id: templateId,
+						from_id: fromId ?? null,
+						dir_x: dir[0],
+						dir_y: dir[1],
+						dir_z: dir[2],
+					}
+				: {
+						cmd: 'fire_projectile',
+						template_id: templateId,
+						from_id: fromId ?? null,
+						dir_x: dir[0],
+						dir_y: dir[1],
+					},
+		);
 	};
 
 	const registerPivotEditListener = (fn: (framePath: string, px: number, py: number) => void) => {

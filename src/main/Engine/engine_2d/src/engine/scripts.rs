@@ -522,7 +522,20 @@ impl State {
                 }
                 ScriptCmd::SetGraphicsTextureTier { .. } => {}
                 ScriptCmd::SetReflectionTier { .. } => {}
-                ScriptCmd::FireProjectile { .. } => {}
+                ScriptCmd::FireProjectile {
+                    template_id,
+                    from_id,
+                    dir_x,
+                    dir_y,
+                    dir_z: _,
+                } => {
+                    let from = if from_id == 0 { None } else { Some(from_id) };
+                    let _ = self.fire_projectile_from_template(
+                        template_id,
+                        from,
+                        glam::Vec2::new(dir_x, dir_y),
+                    );
+                }
             }
         }
     }

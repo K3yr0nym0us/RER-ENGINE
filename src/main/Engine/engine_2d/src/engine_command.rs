@@ -92,4 +92,33 @@ pub enum EngineCommand2dOnly {
         enabled: bool,
     },
     ImportScene(ImportScenePayload),
+    LoadProjectile {
+        path: String,
+        #[serde(default)]
+        track_undo: Option<bool>,
+    },
+    SetProjectileConfig {
+        id: u32,
+        speed: f32,
+        lifetime_s: f32,
+        #[serde(default)]
+        affected_by_gravity: Option<bool>,
+        #[serde(default)]
+        gravity_scale: Option<f32>,
+        #[serde(default)]
+        align_to_velocity: Option<bool>,
+        #[serde(default)]
+        bounceable: Option<bool>,
+        #[serde(default)]
+        max_bounces: Option<u32>,
+        #[serde(default)]
+        bounce_speed_loss: Option<f32>,
+    },
+    FireProjectile {
+        template_id: u32,
+        #[serde(default)]
+        from_id: Option<u32>,
+        dir_x: f32,
+        dir_y: f32,
+    },
 }

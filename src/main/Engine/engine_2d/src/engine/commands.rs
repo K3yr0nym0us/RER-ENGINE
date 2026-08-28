@@ -237,6 +237,15 @@ impl State {
                     log::info!("[quick_build] personaje {id} registrado en undo");
                 }
             }
+            EngineCommand::Only2d(EngineCommand2dOnly::LoadProjectile { path, track_undo }) => {
+                self.load_projectile(&path);
+                if track_undo.unwrap_or(false)
+                    && let Some(&id) = self.projectile_entities.last()
+                {
+                    self.push_remove_entity_undo(id);
+                    log::info!("[quick_build] proyectil {id} registrado en undo");
+                }
+            }
             EngineCommand::Only2d(EngineCommand2dOnly::SetCharacterScale { id, scale }) => {
                 self.set_character_scale(id, scale);
             }
@@ -325,6 +334,10 @@ impl State {
                 }
             }
             EngineCommand::Common(EngineCommandCommon::RemoveEntity { id }) => {
+                if self.is_runtime_projectile(id) {
+                    self.despawn_runtime_projectile(id);
+                    return;
+                }
                 if !self.is_applying_undo
                     && let Some(snapshot) = self.capture_entity_undo_snapshot(id)
                 {
@@ -336,6 +349,8 @@ impl State {
                     "scenario"
                 } else if self.character_entities.contains(&id) {
                     "character"
+                } else if self.projectile_entities.contains(&id) {
+                    "projectile"
                 } else if self.collider_entities.contains(&id) {
                     "collider"
                 } else if self.execution_area_entities.contains(&id) {
@@ -358,6 +373,9 @@ impl State {
                 self.physics_2d.remove_entity_body(id);
                 self.scenario_entities.retain(|&e| e != id);
                 self.character_entities.retain(|&e| e != id);
+                self.projectile_entities.retain(|&e| e != id);
+                self.entity_projectile_config.remove(&id);
+                self.active_projectiles.retain(|p| p.entity_id != id);
                 self.collider_entities.retain(|&e| e != id);
                 self.execution_area_entities.retain(|&e| e != id);
                 self.execution_overlaps
@@ -436,6 +454,7 @@ impl State {
                 self.apply_player_ui_play_hud(playing);
 
                 if playing {
+                    self.clear_active_projectiles();
                     self.active_tool = ActiveTool::None;
                     self.tool_overlay_buffer = gizmo::build_from_vertices(&self.device, &[]);
                     if self.pivot_edit_mode.is_some() {
@@ -491,6 +510,7 @@ impl State {
                         }
                     }
                 } else {
+                    self.clear_active_projectiles();
                     self.script_engine.reset_scene_play_state();
                     // Al volver al modo editor, detener todas las animaciones activas
                     // y mostrar el primer frame de la animación correspondiente.
@@ -1433,6 +1453,45 @@ impl State {
             }
             EngineCommand::Only2d(EngineCommand2dOnly::ImportScene(payload)) => {
                 self.import_scene(payload);
+            }
+            EngineCommand::Only2d(EngineCommand2dOnly::SetProjectileConfig {
+                id,
+                speed,
+                lifetime_s,
+                affected_by_gravity,
+                gravity_scale,
+                align_to_velocity,
+                bounceable,
+                max_bounces,
+                bounce_speed_loss,
+            }) => {
+                let prev = self.projectile_config_for(id);
+                self.set_projectile_config(
+                    id,
+                    crate::config_2d::projectiles::ProjectileConfig {
+                        speed,
+                        lifetime_s,
+                        affected_by_gravity: affected_by_gravity
+                            .unwrap_or(prev.affected_by_gravity),
+                        gravity_scale: gravity_scale.unwrap_or(prev.gravity_scale),
+                        align_to_velocity: align_to_velocity.unwrap_or(prev.align_to_velocity),
+                        bounceable: bounceable.unwrap_or(prev.bounceable),
+                        max_bounces: max_bounces.unwrap_or(prev.max_bounces),
+                        bounce_speed_loss: bounce_speed_loss.unwrap_or(prev.bounce_speed_loss),
+                    },
+                );
+            }
+            EngineCommand::Only2d(EngineCommand2dOnly::FireProjectile {
+                template_id,
+                from_id,
+                dir_x,
+                dir_y,
+            }) => {
+                let _ = self.fire_projectile_from_template(
+                    template_id,
+                    from_id,
+                    glam::Vec2::new(dir_x, dir_y),
+                );
             }
             EngineCommand::Common(EngineCommandCommon::Shutdown) => {}
         }

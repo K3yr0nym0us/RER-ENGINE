@@ -1,4 +1,5 @@
 import { useCallback, createElement } from 'react';
+import { useContextEngine } from '@engine';
 import { useModal } from '@modal';
 import ModalSetNameSprite from '../pages/EngineView/components/sidebar/ResourcesAccordion/SpritesAccordion/components/ModalSetNameSprite';
 
@@ -7,21 +8,25 @@ import ModalSetNameSprite from '../pages/EngineView/components/sidebar/Resources
  */
 export function useLoadSprite() {
   const { openModal } = useModal();
+  const { loadSprite } = useContextEngine();
 
   const triggerLoad = useCallback(async () => {
     const path = await window.electronAPI.openSpriteDialog();
     if (!path) return;
 
-    const autoName = path.split('/').pop()?.replace(/\.[^/.]+$/, '') ?? 'sprite';
+    const autoName = path.split(/[/\\]/).pop()?.replace(/\.[^/.]+$/, '') ?? 'sprite';
 
     openModal({
       title: 'Asignar nombre al Sprite',
       body: createElement(ModalSetNameSprite, {
         path,
         autoName,
+        onConfirm: ({ path: spritePath, name }) => {
+          loadSprite(spritePath, name);
+        },
       }),
     });
-  }, [openModal]);
+  }, [loadSprite, openModal]);
 
   return triggerLoad;
 }

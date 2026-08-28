@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import { MusicNoteBeamed } from 'react-bootstrap-icons';
+import { useContextEngine } from '@engine';
 import { useModal } from '@modal';
 import { useTraslate } from '@hooks';
 import ModalSetNameSound from './ModalSetNameSound';
@@ -7,6 +8,7 @@ import ModalSetNameSound from './ModalSetNameSound';
 const BtnLoadSound = () => {
   const { t } = useTraslate();
   const { openModal } = useModal();
+  const { loadSound } = useContextEngine();
 
   const handleLoad = useCallback(async () => {
     const path = await window.electronAPI.openAudioDialog();
@@ -18,10 +20,13 @@ const BtnLoadSound = () => {
         <ModalSetNameSound
           path={path}
           autoName={autoName}
+          onConfirm={({ path: soundPath, name }) => {
+            loadSound(soundPath, name);
+          }}
         />
       ),
     });
-  }, [openModal, t]);
+  }, [loadSound, openModal, t]);
 
   return (
     <button

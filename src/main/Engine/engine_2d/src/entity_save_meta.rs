@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::config_2d::{CharacterMarker, ScenarioMarker};
+use crate::config_2d::{CharacterMarker, ProjectileMarker, ScenarioMarker};
 use crate::ecs::{EntityId, NameComponent, NonSelectable, Transform};
 use crate::engine::State;
 
@@ -113,6 +113,15 @@ impl State {
             return Some(EntitySaveMeta {
                 kind: "scenario".to_string(),
                 path: s.path.clone(),
+                visual_model_path: None,
+                points: None,
+            });
+        }
+
+        if let Some(p) = self.world.get::<ProjectileMarker>(id) {
+            return Some(EntitySaveMeta {
+                kind: "projectile".to_string(),
+                path: p.path.clone(),
                 visual_model_path: None,
                 points: None,
             });

@@ -1546,6 +1546,31 @@ export function createEngineEventHandler({
 			tryEndSceneBurstLoad(dispatch, refs.sceneBurstLoadInProgressRef, refs, refs.sceneImportInProgressRef, refs.modelReplaceInProgressRef, reportBounds, refs);
 		}
 
+		if (event.event === 'projectile_loaded') {
+			if (refs.sceneImportInProgressRef.current) return;
+			const projectile = event as unknown as {
+				id: number;
+				path: string;
+			};
+			refs.entityMetaRef.current[projectile.id] = {
+				kind: 'projectile',
+				path: projectile.path,
+				physicsEnabled: false,
+				physicsType: '',
+				projectileConfig: {
+					speed: 20,
+					lifetime_s: 3,
+					affected_by_gravity: false,
+					gravity_scale: 1,
+					align_to_velocity: true,
+					bounceable: false,
+					max_bounces: 3,
+					bounce_speed_loss: 0.2,
+				},
+			};
+			tryEndSceneBurstLoad(dispatch, refs.sceneBurstLoadInProgressRef, refs, refs.sceneImportInProgressRef, refs.modelReplaceInProgressRef, reportBounds, refs);
+		}
+
 		if (event.event === 'character_loaded') {
 			const characterPath = (event as unknown as { path?: string }).path ?? '';
 			if (refs.sceneImportInProgressRef.current && !isPlayerPath(characterPath)) return;
@@ -2478,12 +2503,13 @@ export function createEngineEventHandler({
 				meta.projectileConfig = next;
 			} else {
 				refs.entityMetaRef.current[e.entity_id] = {
-					kind: 'model',
+					kind: projectType === '2D' ? 'projectile' : 'model',
 					path: '',
 					physicsEnabled: false,
 					physicsType: 'static',
-					entityCategory: 'projectile',
-					entity3dCategory: 'projectile',
+					...(projectType === '3D'
+						? { entityCategory: 'projectile' as const, entity3dCategory: 'projectile' as const }
+						: {}),
 					projectileConfig: next,
 				};
 			}

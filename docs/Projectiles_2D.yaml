@@ -1,0 +1,113 @@
+# Proyectiles 2D
+
+# Referencias:
+#   - docs/Entities_Model_2D.yaml
+#   - docs/RHAI_API.yaml
+#   - src/main/Engine/engine_2d/src/config_2d/projectiles.rs
+#   - src/main/Engine/engine_2d/src/physics_2d.rs (raycast_projectile_hit_xy)
+
+summary: |
+  Sistema de proyectiles 2D (`kind: projectile`): plantilla sprite en escena +
+  disparo cinemático (clon runtime) en editor y play.
+  Paridad con Projectiles_3D.yaml salvo: plano XY, sin muzzle socket,
+  rebote en cualquier collider físico (no execution_area) cuando `bounceable`.
+  Daño/HP: no implementado (solo evento `projectile_hit`).
+
+overview: |
+  1. Crear plantilla PNG (sidebar → Projectiles → Create projectile).
+  2. Configurar speed, lifetime, gravedad, rebote en Propiedades → tab Projectile.
+  3. Disparar con IPC/Rhai/UI Test fire → clon del sprite.
+  4. El clon se mueve cinemáticamente; al impactar o expirar se despawnea.
+  5. Los clones NO se guardan en el `.save`.
+
+# Config persistida (campo `projectile` en entidad del .save)
+projectile_config:
+  speed: number # m/s, default 20
+  lifetime_s: number # default 3, mín 0.05
+  affected_by_gravity: boolean # default false
+  gravity_scale: number # default 1; eje Y del mundo 2D (convención -Y gravedad)
+  align_to_velocity: boolean # default true; +X local alineado a velocity en XY
+  bounceable: boolean # default false; si true, rebota en colliders físicos
+  max_bounces: number # default 3, máx 64; rebotes iniciales si bounceable al disparar
+  bounce_speed_loss: number # default 0.2 (0..1); fracción de |v| perdida por rebote
+  persist: |
+    Campo opcional `projectile` en entidad 2D del `.save` cuando kind == projectile.
+    Al cargar escena se restaura y se emite `projectile_config_changed`.
+
+runtime:
+  templates: entidades `kind: projectile` con ProjectileMarker (lista projectile_entities)
+  active_instances: |
+    ActiveProjectile: entity_id, velocity (Vec2), age, lifetime_s,
+    affected_by_gravity, gravity_scale, align_to_velocity, visual_angle_offset,
+    bounceable, bounces_left, bounce_speed_loss, exclude_entities.
+    La config de rebote se congela al disparar (cambios en plantilla no afectan clones ya vivos).
+  test_fire: |
+    UI envía dir_x=1, dir_y=0 (mundo +X). Trayectoria fija; rotación visual = plantilla.
+    El botón Test fire guarda la config actual (commit) antes de `fire_projectile`.
+  dir_zero: |
+    Script/Rhai con dir (0,0) → forward mundo +X (DEFAULT_PROJECTILE_DIR_2D).
+  origin: |
+    Posición XY de from_id (o plantilla si from_id omitido/0). Sin muzzle socket.
+  align_to_velocity: |
+    visual_angle_offset = angle(template.rotation) - atan2(dir.y, dir.x)
+    En vuelo: rotation.z = atan2(vy, vx) + visual_angle_offset
+  hits: |
+    Cada frame: segmento XY prev → prev + velocity*dt.
+    Detección: raycast_projectile_hit_xy contra AABB de colliders Rapier registrados
+    (entity_colliders). Funciona en editor y play sin depender del broad-phase de física.
+    Ignora execution_area_entities y exclude_entities (plantilla, tirador, clon, muros ya rebotados).
+    Si impacto:
+      - bounceable && bounces_left > 0:
+          reflexión v' = v - 2(v·n)n; |v'| *= (1 - bounce_speed_loss);
+          bounces_left--; nudge 0.02 por normal; entidad impactada → exclude_entities;
+          projectile_hit { bounced: true } (sin despawn).
+      - si no:
+          projectile_hit { bounced: false } + despawn inmediato.
+    lifetime agotado → despawn sin evento hit.
+  movement_tick: |
+    tick_projectiles cada frame (editor y play), antes del paso de física en play.
+  clear: |
+    clear_active_projectiles al entrar/salir de preview play y al limpiar escena.
+
+ipc:
+  load_projectile: { path }
+  set_projectile_config: |
+    { id, speed, lifetime_s, affected_by_gravity?, gravity_scale?,
+      align_to_velocity?, bounceable?, max_bounces?, bounce_speed_loss? }
+  fire_projectile: { template_id, from_id?, dir_x, dir_y }
+  event projectile_config_changed: |
+    { entity_id, speed, lifetime_s, affected_by_gravity, gravity_scale,
+      align_to_velocity, bounceable, max_bounces, bounce_speed_loss }
+    (sin muzzle_socket)
+  event projectile_hit: |
+    { projectile_id, hit_entity_id?, position: [x,y,z], bounced: bool }
+    bounced=true → rebote (sigue vivo); bounced=false → impacto final (despawn).
+  event projectile_loaded: |
+    Al crear plantilla PNG desde sidebar o import_scene.
+
+editor_ui: |
+  Sidebar → Entities → Projectiles (2D): Create projectile (sprite de biblioteca).
+  Modal Electron: CreateProjectileFromSpriteModalBody (registrado en modalElectronRegistry).
+  Propiedades / modal → tab Projectile (solo kind projectile, single select):
+    - Speed, Lifetime, Affected by gravity (+ Gravity scale)
+    - Align to velocity
+    - Checkbox Bounceable (+ Max bounces + Bounce speed loss si activo)
+    - Test fire (+X mundo); guarda config antes de disparar
+  Carga de sprites: ModalSetNameSprite con callback onConfirm en ventana padre (sin EngineProvider).
+
+rhai: |
+  engine.fire_projectile(template_id, from_id, dir_x, dir_y, dir_z)
+  En 2D solo dir_x/dir_y; dir_z ignorado.
+
+differences_vs_3d:
+  - Trayectoria Vec2 en XY; test fire +X (no -Z)
+  - Sin muzzle_socket
+  - Rebote: cualquier collider físico (no metal ni capa Z)
+  - visual_angle_offset (float) en lugar de visual_offset (Quat)
+  - Clon: mesh/tex_idx de plantilla (no spawn_cached_model)
+
+out_of_scope:
+  - daño / HP / tiers de dureza (tarjeta futura)
+  - muzzle sockets 2D
+  - blueprints projectile 2D
+  - filtro por capa Z en rebote (diferido; ver tarjeta tiers de dureza)

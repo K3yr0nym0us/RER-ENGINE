@@ -151,6 +151,8 @@ struct SavedEntity {
     control_bindings: Option<SavedControlBindings>,
     #[serde(default)]
     blueprint_id: Option<String>,
+    #[serde(default)]
+    projectile: Option<crate::config_2d::projectiles::ProjectileConfig>,
 }
 
 #[derive(Debug, Deserialize, Clone, Serialize)]
@@ -810,6 +812,7 @@ fn build_import_scene_entity(
         omit_scale: is_player,
         skip_transform: false,
         apply_initial_animation_frame: Some(true),
+        projectile: entity.projectile.clone(),
     }
 }
 

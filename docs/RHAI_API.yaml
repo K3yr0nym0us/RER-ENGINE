@@ -124,6 +124,11 @@ engine_2d_only:
         El motor resuelve la dirección; no compares la tecla en el script.
     - function: engine.set_vsync(enabled)
       description: Activa o desactiva V-Sync.
+    - function: engine.fire_projectile(template_id, from_id, dir_x, dir_y, dir_z)
+      description: |
+        Dispara un clon cinemático de plantilla `kind: projectile` (editor y play).
+        from_id == 0 → origen en la plantilla. dir_z ignorado; dir (0,0) → +X mundo.
+        Ver docs/Projectiles_2D.yaml.
 
   triggers:
     description: |

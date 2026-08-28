@@ -3,27 +3,32 @@ import { useCallback } from 'react';
 import { Image } from 'react-bootstrap-icons';
 import ModalSetNameSprite from './ModalSetNameSprite';
 
+import { useContextEngine } from '@engine';
 import { useModal } from '@modal';
 import { useTraslate } from '@hooks';
 
 export const BtnLoadSprite = () => {
   const { t } = useTraslate();
   const { openModal } = useModal();
+  const { loadSprite } = useContextEngine();
 
   const openLoadSpriteModal = useCallback(async () => {
     const path = await window.electronAPI.openSpriteDialog();
     if (!path) return;
-    const autoName = path.split('/').pop()?.replace(/\.[^/.]+$/, '') ?? 'sprite';
+    const autoName = path.split(/[/\\]/).pop()?.replace(/\.[^/.]+$/, '') ?? 'sprite';
     openModal({
       title: t('Assign name to Sprite'),
       body: (
         <ModalSetNameSprite
           path={path}
           autoName={autoName}
+          onConfirm={({ path: spritePath, name }) => {
+            loadSprite(spritePath, name);
+          }}
         />
       ),
     });
-  }, [openModal, t]);
+  }, [loadSprite, openModal, t]);
 
   return (
     <button

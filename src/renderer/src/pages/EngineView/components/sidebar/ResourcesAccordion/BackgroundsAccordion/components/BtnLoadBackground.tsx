@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import { CardImage } from 'react-bootstrap-icons';
+import { useContextEngine } from '@engine';
 import { useModal } from '@modal';
 import { useTraslate } from '@hooks';
 import ModalSetNameBackground from './ModalSetNameBackground';
@@ -7,6 +8,7 @@ import ModalSetNameBackground from './ModalSetNameBackground';
 const BtnLoadBackground = () => {
   const { t } = useTraslate();
   const { openModal } = useModal();
+  const { loadBackgroundToLibrary } = useContextEngine();
 
   const handleLoad = useCallback(async () => {
     const path = await window.electronAPI.openBackgroundDialog();
@@ -18,10 +20,13 @@ const BtnLoadBackground = () => {
         <ModalSetNameBackground
           path={path}
           autoName={autoName}
+          onConfirm={({ path: backgroundPath, name }) => {
+            loadBackgroundToLibrary(backgroundPath, name);
+          }}
         />
       ),
     });
-  }, [openModal, t]);
+  }, [loadBackgroundToLibrary, openModal, t]);
 
   return (
     <button

@@ -1,6 +1,8 @@
 use glam::{Quat, Vec3 as GlamVec3};
 
-use crate::config_2d::{CharacterMarker, ColliderMarker, ExecutionAreaMarker, ScenarioMarker};
+use crate::config_2d::{
+    CharacterMarker, ColliderMarker, ExecutionAreaMarker, ProjectileMarker, ScenarioMarker,
+};
 use crate::ecs::{MeshComponent, Transform};
 use crate::entity_save_meta::EntitySaveMeta;
 use crate::ipc::{EngineEvent, send_event};
@@ -29,6 +31,8 @@ impl State {
             UndoEntityKind::Character(m.clone())
         } else if let Some(m) = self.world.get::<ScenarioMarker>(id) {
             UndoEntityKind::Scenario(m.clone())
+        } else if let Some(m) = self.world.get::<ProjectileMarker>(id) {
+            UndoEntityKind::Projectile(m.clone())
         } else if self.world.get::<ColliderMarker>(id).is_some() {
             let points = points?;
             UndoEntityKind::Collider { points }
@@ -90,6 +94,7 @@ impl State {
                     self.character_entities.push(snapshot.id);
                 }
                 self.scenario_entities.retain(|&e| e != snapshot.id);
+                self.projectile_entities.retain(|&e| e != snapshot.id);
                 self.save_registry.register_meta(
                     snapshot.id,
                     EntitySaveMeta {
@@ -114,6 +119,7 @@ impl State {
                     self.scenario_entities.push(snapshot.id);
                 }
                 self.character_entities.retain(|&e| e != snapshot.id);
+                self.projectile_entities.retain(|&e| e != snapshot.id);
                 self.save_registry.register_meta(
                     snapshot.id,
                     EntitySaveMeta {
@@ -132,6 +138,35 @@ impl State {
                     default_pivot_x: marker.img_width as f32 * 0.5,
                     default_pivot_y: marker.img_height as f32,
                 });
+            }
+            UndoEntityKind::Projectile(marker) => {
+                self.world.insert(snapshot.id, marker.clone());
+                if !self.projectile_entities.contains(&snapshot.id) {
+                    self.projectile_entities.push(snapshot.id);
+                }
+                self.scenario_entities.retain(|&e| e != snapshot.id);
+                self.character_entities.retain(|&e| e != snapshot.id);
+                self.save_registry.register_meta(
+                    snapshot.id,
+                    EntitySaveMeta {
+                        kind: "projectile".to_string(),
+                        path: marker.path.clone(),
+                        visual_model_path: None,
+                        points: None,
+                    },
+                );
+                self.entity_projectile_config
+                    .entry(snapshot.id)
+                    .or_default();
+                send_event(&EngineEvent::ProjectileLoaded {
+                    id: snapshot.id,
+                    path: marker.path.clone(),
+                    img_width: marker.img_width,
+                    img_height: marker.img_height,
+                    default_pivot_x: marker.img_width as f32 * 0.5,
+                    default_pivot_y: marker.img_height as f32,
+                });
+                self.emit_projectile_config_changed(snapshot.id);
             }
             UndoEntityKind::Collider { points } => {
                 self.world.insert(snapshot.id, ColliderMarker {});

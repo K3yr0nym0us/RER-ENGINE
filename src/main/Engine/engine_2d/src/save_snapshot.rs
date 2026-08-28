@@ -95,6 +95,11 @@ impl State {
                 scripts,
                 control_bindings,
                 visual_model_path: meta.visual_model_path.clone(),
+                projectile: if meta.kind == "projectile" {
+                    Some(self.projectile_config_for(id))
+                } else {
+                    None
+                },
             });
         }
 

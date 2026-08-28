@@ -183,9 +183,10 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
     editorCameraEntityIdRef.current,
   )
   const isCharacter = characterEntities.some((c) => c.id === selectedEntity?.id)
-  const isProjectile =
-    entityMeta?.entityCategory === 'projectile' ||
-    entityMeta?.entity3dCategory === 'projectile'
+	const isProjectile =
+		entityMeta?.kind === 'projectile' ||
+		entityMeta?.entityCategory === 'projectile' ||
+		entityMeta?.entity3dCategory === 'projectile'
   const hasEmbeddedModelClips =
     is3D &&
     (entityMeta?.animations?.some((a) => a.embedded_in_model) ?? false)
@@ -365,7 +366,7 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
         )
       )}
 
-      {is3D && isProjectile && (
+      {isProjectile && (
         <div className="mb-2">
           <p className="prop-label">{t('Projectile')}</p>
           <label className="form-label text-light small mb-0" htmlFor="projectile-speed">
@@ -402,10 +403,10 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
             type="button"
             className="btn btn-sm btn-outline-secondary w-100 mt-2"
             onClick={() => {
-              fireProjectile(selectedEntity.id, [0, 0, -1]);
+              fireProjectile(selectedEntity.id, is3D ? [0, 0, -1] : [1, 0, 0]);
             }}
           >
-            {t('Test fire (forward -Z)')}
+            {is3D ? t('Test fire (forward -Z)') : t('Test fire (forward +X)')}
           </button>
           <p className="text-secondary small mb-0 mt-1">
             {t('Full projectile settings: Properties modal → Projectile tab')}

@@ -140,6 +140,7 @@ export function buildEntityPropertiesState(
 		? (engine.blueprints.find((bp) => bp.id === entityMeta?.blueprintId)?.name ?? null)
 		: null
 	const isProjectile =
+		entityMeta?.kind === 'projectile' ||
 		entityMeta?.entityCategory === 'projectile' ||
 		entityMeta?.entity3dCategory === 'projectile' ||
 		/^Projectile(?:_\d+)?$/i.test(

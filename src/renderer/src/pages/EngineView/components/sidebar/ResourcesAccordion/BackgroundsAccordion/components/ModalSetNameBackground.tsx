@@ -1,21 +1,27 @@
 import { useRef } from 'react';
-import { useContextEngine } from '@engine';
 import { useModalClose, useTraslate } from '@hooks';
+
+export interface ModalSetNameBackgroundConfirmPayload {
+  path: string;
+  name: string;
+}
 
 interface ModalSetNameBackgroundProps {
   path: string;
   autoName: string;
+  /** Registrado en el padre vía modal Electron (la ventana hijo no tiene EngineProvider). */
+  onConfirm?: (payload: ModalSetNameBackgroundConfirmPayload) => void;
 }
 
-export default function ModalSetNameBackground({ path, autoName }: ModalSetNameBackgroundProps) {
+function ModalSetNameBackground({ path, autoName, onConfirm }: ModalSetNameBackgroundProps) {
   const { t } = useTraslate();
-  const { loadBackgroundToLibrary } = useContextEngine();
   const closeModal = useModalClose();
 
   const nameRef = useRef<HTMLInputElement>(null);
 
-  const handleConfirm = (name: string) => {
-    loadBackgroundToLibrary(path, name);
+  const handleLoad = () => {
+    const name = nameRef.current?.value?.trim() || autoName;
+    onConfirm?.({ path, name });
     closeModal();
   };
 
@@ -32,16 +38,15 @@ export default function ModalSetNameBackground({ path, autoName }: ModalSetNameB
       <div className="d-flex gap-2 justify-content-end">
         <button
           className="btn btn-secondary btn-sm"
+          type="button"
           onClick={closeModal}
         >
           {t('Cancel')}
         </button>
         <button
           className="btn btn-primary btn-sm"
-          onClick={() => {
-            const name = nameRef.current?.value || autoName;
-            handleConfirm(name);
-          }}
+          type="button"
+          onClick={handleLoad}
         >
           {t('Load')}
         </button>
@@ -49,3 +54,7 @@ export default function ModalSetNameBackground({ path, autoName }: ModalSetNameB
     </div>
   );
 }
+
+ModalSetNameBackground.displayName = 'ModalSetNameBackground';
+
+export default ModalSetNameBackground;

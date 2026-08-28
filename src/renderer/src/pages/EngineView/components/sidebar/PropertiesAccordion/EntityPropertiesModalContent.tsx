@@ -155,6 +155,7 @@ export function EntityPropertiesModalContent({
 		if (!isCollider) list.push('scripting')
 		if (is3D && canHaveBonePhysics) list.push('bones')
 		if (is3D && isProjectile && !isMultiSelect) list.push('projectile')
+		if (is2D && isProjectile && !isMultiSelect) list.push('projectile')
 		return list
 	}, [
 		isCollider,
@@ -825,20 +826,24 @@ export function EntityPropertiesModalContent({
 									/>
 								</>
 							)}
-							<label
-								className="form-label text-light small mb-0 mt-2"
-								htmlFor="modal-projectile-muzzle"
-							>
-								{t('Muzzle socket')}
-							</label>
-							<input
-								id="modal-projectile-muzzle"
-								type="text"
-								className="form-control form-control-sm bg-dark text-light border-secondary mt-1"
-								value={projectileMuzzleDraft}
-								onChange={(e) => setProjectileMuzzleDraft(e.target.value)}
-								onBlur={commitProjectileConfig}
-							/>
+							{is3D && (
+								<>
+									<label
+										className="form-label text-light small mb-0 mt-2"
+										htmlFor="modal-projectile-muzzle"
+									>
+										{t('Muzzle socket')}
+									</label>
+									<input
+										id="modal-projectile-muzzle"
+										type="text"
+										className="form-control form-control-sm bg-dark text-light border-secondary mt-1"
+										value={projectileMuzzleDraft}
+										onChange={(e) => setProjectileMuzzleDraft(e.target.value)}
+										onBlur={commitProjectileConfig}
+									/>
+								</>
+							)}
 							<div className="d-flex align-items-center gap-2 mt-2">
 								<input
 									type="checkbox"
@@ -893,7 +898,7 @@ export function EntityPropertiesModalContent({
 									htmlFor="modal-projectile-bounceable"
 									className="form-check-label text-light small mb-0"
 								>
-									{t('Bounce on metal')}
+									{is3D ? t('Bounce on metal') : t('Bounce on collision')}
 								</label>
 							</div>
 							{projectileBounceableDraft && (
@@ -938,19 +943,24 @@ export function EntityPropertiesModalContent({
 								type="button"
 								className="btn btn-sm btn-outline-secondary w-100 mt-3"
 								onClick={() => {
+									commitProjectileConfig()
 									onAction({
 										action: 'fireProjectile',
 										templateId: selectedEntity.id,
-										dir: [0, 0, -1],
+										dir: is3D ? [0, 0, -1] : [1, 0, 0],
 									})
 								}}
 							>
-								{t('Test fire (forward -Z)')}
+								{is3D ? t('Test fire (forward -Z)') : t('Test fire (forward +X)')}
 							</button>
 							<p className="text-secondary small mb-0 mt-2">
-								{t(
-									'Editor or Play. Origin: muzzle socket on from_id / attached weapon. Hits despawn + projectile_hit.',
-								)}
+								{is3D
+									? t(
+											'Editor or Play. Origin: muzzle socket on from_id / attached weapon. Hits despawn + projectile_hit.',
+										)
+									: t(
+											'Editor or Play. Origin: from_id position (or template). Bounce reflects off physics colliders when enabled.',
+										)}
 							</p>
 						</Tab.Pane>
 					)}

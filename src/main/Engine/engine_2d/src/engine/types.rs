@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 
 use bytemuck::{Pod, Zeroable};
 
-use crate::config_2d::{CharacterMarker, ScenarioMarker};
+use crate::config_2d::{CharacterMarker, ProjectileMarker, ScenarioMarker};
 use crate::ecs::MeshComponent;
 use crate::ipc::{AnimScriptData, AnimationFrameData};
 
@@ -53,6 +53,7 @@ pub(crate) struct EntityUndoSnapshot {
 pub(crate) enum UndoEntityKind {
     Character(CharacterMarker),
     Scenario(ScenarioMarker),
+    Projectile(ProjectileMarker),
     Collider { points: [[f32; 2]; 4] },
     ExecutionArea { points: [[f32; 2]; 4] },
 }

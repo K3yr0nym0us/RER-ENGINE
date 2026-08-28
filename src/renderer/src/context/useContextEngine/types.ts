@@ -1300,7 +1300,7 @@ export type EntityAnimations = NonNullable<SelectedEntity['animations']>;
 export type EntityScripts = NonNullable<SelectedEntity['scripts']>;
 
 export interface EntityMeta {
-	kind: 'scenario' | 'character' | 'model' | 'collider' | 'execution_area' | 'directional_light'
+	kind: 'scenario' | 'character' | 'projectile' | 'model' | 'collider' | 'execution_area' | 'directional_light'
 	path: string
 	name?: string
 	physicsEnabled: boolean

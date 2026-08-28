@@ -12,13 +12,14 @@
 ENTITY_TYPES:
   scenario:   category scenario   # Capas de fondo / escenario (sprite PNG)
   character:  category character  # Personajes jugables o NPC (sprite PNG)
+  projectile: kind projectile     # Plantilla de proyectil (sprite PNG + config disparo)
   collider:   kind collider      # Muro físico (cuadrilátero 4 puntos XY)
   execution_area: kind execution_area  # Trigger sin colisión (4 puntos XY)
   # El jugador ([Player]) no se serializa como entidad normal en entities[]
 
 common:
   id: number                    # Generado por el motor
-  kind: scenario | character | collider | execution_area
+  kind: scenario | character | projectile | collider | execution_area
   name: string                  # Editable; generado por defecto
   path: string                  # Ruta al sprite en store o marcador [Colisionador] / [ExecutionArea]
   position: [number, number, number]  # Z suele ser 0; mundo XY
@@ -29,6 +30,7 @@ common:
   animations: optional          # Sprite sheets por entidad (frames, pivot, logical_w/h)
   scripts: optional             # Rhai por entidad
   blueprint_id: optional string # Instancia de blueprint 2D
+  projectile: optional          # Config disparo (solo kind projectile); ver Projectiles_2D.yaml
   points: optional [[x,y]; 4]   # Solo collider / execution_area (esquinas en mundo)
 
 Blueprints:

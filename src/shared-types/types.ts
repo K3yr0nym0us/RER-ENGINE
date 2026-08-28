@@ -264,7 +264,7 @@ export interface SavedEntity {
   /** Nombre visible de la entidad en el editor. */
   name?:            string
   path:             string
-  kind:             'model' | 'scenario' | 'character' | 'collider' | 'execution_area' | 'directional_light'
+  kind:             'model' | 'scenario' | 'character' | 'projectile' | 'collider' | 'execution_area' | 'directional_light'
   position:         [number, number, number]
   rotation:         [number, number, number, number]
   scale:            [number, number, number]
@@ -292,6 +292,8 @@ export interface SavedEntity {
   blueprint_id?:    string
   /** Ruta del modelo visual (.glb/.fbx) si difiere de `path` (p. ej. jugador con `[Player]`). */
   visual_model_path?: string
+  /** Config de disparo (kind `projectile`). */
+  projectile?: ProjectileConfig3D
   /** Categoría de entorno para UI de colisión en 3D. */
   entity_category?: EntityCategory
 }
@@ -942,7 +944,7 @@ export interface TriggerExited {
 export interface EntityRemoved {
   event: 'entity_removed'
   id: number
-  kind: 'scenario' | 'character' | 'model' | 'collider' | 'execution_area' | 'directional_light'
+  kind: 'scenario' | 'character' | 'projectile' | 'model' | 'collider' | 'execution_area' | 'directional_light'
   /** Vértices del quad (solo colisionadores / áreas de ejecución 2D). */
   points?: [[number, number], [number, number], [number, number], [number, number]]
 }

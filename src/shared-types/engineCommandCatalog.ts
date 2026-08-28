@@ -103,6 +103,9 @@ export const ENGINE_COMMANDS_2D_ONLY = [
   'create_execution_area_from_points',
   'set_vsync',
   'import_scene',
+  'load_projectile',
+  'set_projectile_config',
+  'fire_projectile',
 ] as const
 
 /** Solo `rer_engine_3d` (`EngineCommand3dOnly`). */

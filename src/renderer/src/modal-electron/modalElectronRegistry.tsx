@@ -22,6 +22,7 @@ import { SpritePreviewModalBody } from '@components'
 import { UserGuide } from '../pages/EngineView/components/sidebar/UserGuide'
 import { ControlBindingsModalBody } from '../pages/EngineView/components/sidebar/ControlsAccordion/components/ControlBindingsModalBody'
 import { CreateEntityFromSpriteModalBody } from '../pages/EngineView/components/sidebar/EntitiesAccordion/components/CreateEntityFromSpriteModalBody'
+import { CreateProjectileFromSpriteModalBody } from '../pages/EngineView/components/sidebar/EntitiesAccordion/components/CreateProjectileFromSpriteModalBody'
 import { CreateEntityFromModelModalBody } from '../pages/EngineView/components/sidebar/EntitiesAccordion/components/CreateEntityFromModelModalBody'
 import ModalSetNameBackground from '../pages/EngineView/components/sidebar/ResourcesAccordion/BackgroundsAccordion/components/ModalSetNameBackground'
 import ModalSetNameFont from '../pages/EngineView/components/sidebar/ResourcesAccordion/FontsAccordion/components/ModalSetNameFont'
@@ -82,6 +83,7 @@ export const MODAL_ELECTRON_REGISTRY: Record<string, RegistryEntry> = {
 	ScriptEditorModalBody: modalEntry(ScriptEditorModalBody),
 	SpritePreviewModalBody: modalEntry(SpritePreviewModalBody),
 	CreateEntityFromSpriteModalBody: modalEntry(CreateEntityFromSpriteModalBody),
+	CreateProjectileFromSpriteModalBody: modalEntry(CreateProjectileFromSpriteModalBody),
 	CreateEntityFromModelModalBody: modalEntry(CreateEntityFromModelModalBody),
 	ControlBindingsModalBody: modalEntry(ControlBindingsModalBody),
 	UserGuide: modalEntry(UserGuide),

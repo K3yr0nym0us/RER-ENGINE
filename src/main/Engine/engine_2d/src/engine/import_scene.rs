@@ -92,6 +92,9 @@ impl State {
             "character" => self
                 .insert_character_at(&ent.path, Some(id), ent.name.as_deref())
                 .then_some(id),
+            "projectile" => self
+                .insert_projectile_at(&ent.path, Some(id), ent.name.as_deref())
+                .then_some(id),
             "collider" => ent.points.and_then(|pts| {
                 self.create_collision_box_from_points_at(&pts, Some(id), ent.name.as_deref(), false)
             }),
@@ -125,5 +128,11 @@ impl State {
             skip_transform,
             apply_initial,
         );
+        if ent.kind == "projectile" {
+            if let Some(config) = ent.projectile.as_ref() {
+                self.restore_projectile_config_from_saved(entity_id, config);
+            }
+            self.emit_projectile_config_changed(entity_id);
+        }
     }
 }

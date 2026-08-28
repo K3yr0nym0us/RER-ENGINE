@@ -137,6 +137,8 @@ pub struct ImportSceneEntity {
     pub skip_transform: bool,
     #[serde(default)]
     pub apply_initial_animation_frame: Option<bool>,
+    #[serde(default)]
+    pub projectile: Option<crate::config_2d::projectiles::ProjectileConfig>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -244,6 +246,8 @@ pub struct SaveEntitySnapshot {
     pub control_bindings: Option<ControlBindingsData>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub visual_model_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub projectile: Option<crate::config_2d::projectiles::ProjectileConfig>,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -474,6 +478,15 @@ pub enum EngineEvent {
         default_pivot_x: f32,
         default_pivot_y: f32,
     },
+    /// Emitido cuando una plantilla de proyectil PNG se cargó correctamente.
+    ProjectileLoaded {
+        id: u32,
+        path: String,
+        img_width: u32,
+        img_height: u32,
+        default_pivot_x: f32,
+        default_pivot_y: f32,
+    },
     /// Emitido al terminar `import_scene` (carga atómica de escena 2D).
     SceneImported {
         entity_count: u32,
@@ -672,6 +685,28 @@ pub enum EngineEvent {
         name: String,
         logical_w: u32,
         logical_h: u32,
+    },
+    /// Config de proyectil actualizada.
+    #[serde(rename = "projectile_config_changed")]
+    ProjectileConfigChanged {
+        entity_id: u32,
+        speed: f32,
+        lifetime_s: f32,
+        affected_by_gravity: bool,
+        gravity_scale: f32,
+        align_to_velocity: bool,
+        bounceable: bool,
+        max_bounces: u32,
+        bounce_speed_loss: f32,
+    },
+    /// Impacto de proyectil (`bounced` true = rebote en misma capa Z).
+    #[serde(rename = "projectile_hit")]
+    ProjectileHit {
+        projectile_id: u32,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        hit_entity_id: Option<u32>,
+        position: [f32; 3],
+        bounced: bool,
     },
     /// Emitido cuando una entidad es eliminada del mundo (por Ctrl+Z, RemoveEntity, etc.).
     /// `kind` permite al frontend sincronizar estado sin inferencias locales.

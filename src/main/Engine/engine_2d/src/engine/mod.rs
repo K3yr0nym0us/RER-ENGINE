@@ -115,6 +115,11 @@ pub struct State {
     pub(crate) scenario_entities: Vec<EntityId>,
     // Personajes 2D: lista de entidades ECS que actúan como sprites de personaje.
     pub(crate) character_entities: Vec<EntityId>,
+    // Plantillas de proyectil 2D.
+    pub(crate) projectile_entities: Vec<EntityId>,
+    pub(crate) entity_projectile_config:
+        std::collections::HashMap<EntityId, crate::config_2d::projectiles::ProjectileConfig>,
+    pub(crate) active_projectiles: Vec<crate::config_2d::projectiles::ActiveProjectile>,
     // Fondo del mundo 2D: entidad especial no seleccionable que cubre todo el área.
     pub(crate) background_entity: Option<EntityId>,
     pub(crate) background_path: Option<String>,
