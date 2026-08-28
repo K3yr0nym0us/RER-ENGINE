@@ -366,7 +366,7 @@ impl State {
         log::info!("[Socket] La entidad {label} fue desvinculada del socket.");
     }
 
-    fn socket_world_for_entity(
+    pub(crate) fn socket_world_for_entity(
         &self,
         host_id: EntityId,
         socket: &EntitySocket,
@@ -375,7 +375,11 @@ impl State {
         Some(socket_world_transform(&bone, socket))
     }
 
-    fn find_socket_on_host(&self, host_id: EntityId, socket_name: &str) -> Option<EntitySocket> {
+    pub(crate) fn find_socket_on_host(
+        &self,
+        host_id: EntityId,
+        socket_name: &str,
+    ) -> Option<EntitySocket> {
         self.entity_sockets.get(&host_id).and_then(|sockets| {
             sockets
                 .iter()

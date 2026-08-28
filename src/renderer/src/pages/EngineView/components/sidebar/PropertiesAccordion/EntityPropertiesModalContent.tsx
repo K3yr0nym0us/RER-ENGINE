@@ -63,6 +63,13 @@ export function EntityPropertiesModalContent({
 	const [animations, setAnimations] = useState<EntityPropertiesAnimation[]>([])
 	const [projectileSpeedDraft, setProjectileSpeedDraft] = useState(20)
 	const [projectileLifetimeDraft, setProjectileLifetimeDraft] = useState(3)
+	const [projectileAffectedByGravityDraft, setProjectileAffectedByGravityDraft] = useState(false)
+	const [projectileGravityDraft, setProjectileGravityDraft] = useState(1)
+	const [projectileAlignDraft, setProjectileAlignDraft] = useState(true)
+	const [projectileMuzzleDraft, setProjectileMuzzleDraft] = useState('muzzle')
+	const [projectileBounceableDraft, setProjectileBounceableDraft] = useState(false)
+	const [projectileMaxBouncesDraft, setProjectileMaxBouncesDraft] = useState(3)
+	const [projectileBounceLossDraft, setProjectileBounceLossDraft] = useState(0.2)
 	const [pendingConfirm, setPendingConfirm] = useState<{
 		title: string
 		message: React.ReactNode
@@ -83,7 +90,42 @@ export function EntityPropertiesModalContent({
 	useEffect(() => {
 		setProjectileSpeedDraft(projectileConfig?.speed ?? 20)
 		setProjectileLifetimeDraft(projectileConfig?.lifetime_s ?? 3)
-	}, [selectedEntity?.id, projectileConfig?.speed, projectileConfig?.lifetime_s])
+		setProjectileAffectedByGravityDraft(projectileConfig?.affected_by_gravity ?? false)
+		setProjectileGravityDraft(projectileConfig?.gravity_scale ?? 1)
+		setProjectileAlignDraft(projectileConfig?.align_to_velocity ?? true)
+		setProjectileMuzzleDraft(projectileConfig?.muzzle_socket ?? 'muzzle')
+		setProjectileBounceableDraft(projectileConfig?.bounceable ?? false)
+		setProjectileMaxBouncesDraft(projectileConfig?.max_bounces ?? 3)
+		setProjectileBounceLossDraft(projectileConfig?.bounce_speed_loss ?? 0.2)
+	}, [
+		selectedEntity?.id,
+		projectileConfig?.speed,
+		projectileConfig?.lifetime_s,
+		projectileConfig?.affected_by_gravity,
+		projectileConfig?.gravity_scale,
+		projectileConfig?.align_to_velocity,
+		projectileConfig?.muzzle_socket,
+		projectileConfig?.bounceable,
+		projectileConfig?.max_bounces,
+		projectileConfig?.bounce_speed_loss,
+	])
+
+	const commitProjectileConfig = () => {
+		if (!selectedEntity) return
+		onAction({
+			action: 'setProjectileConfig',
+			id: selectedEntity.id,
+			speed: projectileSpeedDraft,
+			lifetimeS: projectileLifetimeDraft,
+			affectedByGravity: projectileAffectedByGravityDraft,
+			gravityScale: projectileGravityDraft,
+			alignToVelocity: projectileAlignDraft,
+			muzzleSocket: projectileMuzzleDraft.trim() || 'muzzle',
+			bounceable: projectileBounceableDraft,
+			maxBounces: projectileMaxBouncesDraft,
+			bounceSpeedLoss: projectileBounceLossDraft,
+		})
+	}
 
 	useEffect(() => {
 		if (!selectedEntity?.id) {
@@ -709,14 +751,7 @@ export function EntityPropertiesModalContent({
 								className="form-control form-control-sm bg-dark text-light border-secondary mt-1"
 								value={projectileSpeedDraft}
 								onChange={(e) => setProjectileSpeedDraft(Number(e.target.value))}
-								onBlur={() => {
-									onAction({
-										action: 'setProjectileConfig',
-										id: selectedEntity.id,
-										speed: projectileSpeedDraft,
-										lifetimeS: projectileLifetimeDraft,
-									})
-								}}
+								onBlur={commitProjectileConfig}
 							/>
 							<label
 								className="form-label text-light small mb-0 mt-2"
@@ -732,15 +767,173 @@ export function EntityPropertiesModalContent({
 								className="form-control form-control-sm bg-dark text-light border-secondary mt-1"
 								value={projectileLifetimeDraft}
 								onChange={(e) => setProjectileLifetimeDraft(Number(e.target.value))}
-								onBlur={() => {
-									onAction({
-										action: 'setProjectileConfig',
-										id: selectedEntity.id,
-										speed: projectileSpeedDraft,
-										lifetimeS: projectileLifetimeDraft,
-									})
-								}}
+								onBlur={commitProjectileConfig}
 							/>
+							<div className="d-flex align-items-center gap-2 mt-2">
+								<input
+									type="checkbox"
+									id="modal-projectile-affected-gravity"
+									className="form-check-input"
+									checked={projectileAffectedByGravityDraft}
+									onChange={(e) => {
+										const checked = e.target.checked
+										const nextScale =
+											checked && projectileGravityDraft <= 0 ? 1 : projectileGravityDraft
+										setProjectileAffectedByGravityDraft(checked)
+										if (checked && projectileGravityDraft <= 0) {
+											setProjectileGravityDraft(1)
+										}
+										onAction({
+											action: 'setProjectileConfig',
+											id: selectedEntity.id,
+											speed: projectileSpeedDraft,
+											lifetimeS: projectileLifetimeDraft,
+											affectedByGravity: checked,
+											gravityScale: nextScale,
+											alignToVelocity: projectileAlignDraft,
+											muzzleSocket: projectileMuzzleDraft.trim() || 'muzzle',
+											bounceable: projectileBounceableDraft,
+											maxBounces: projectileMaxBouncesDraft,
+											bounceSpeedLoss: projectileBounceLossDraft,
+										})
+									}}
+								/>
+								<label
+									htmlFor="modal-projectile-affected-gravity"
+									className="form-check-label text-light small mb-0"
+								>
+									{t('Affected by gravity')}
+								</label>
+							</div>
+							{projectileAffectedByGravityDraft && (
+								<>
+									<label
+										className="form-label text-light small mb-0 mt-2"
+										htmlFor="modal-projectile-gravity"
+									>
+										{t('Gravity scale')}
+									</label>
+									<input
+										id="modal-projectile-gravity"
+										type="number"
+										min={0}
+										step={0.1}
+										className="form-control form-control-sm bg-dark text-light border-secondary mt-1"
+										value={projectileGravityDraft}
+										onChange={(e) => setProjectileGravityDraft(Number(e.target.value))}
+										onBlur={commitProjectileConfig}
+									/>
+								</>
+							)}
+							<label
+								className="form-label text-light small mb-0 mt-2"
+								htmlFor="modal-projectile-muzzle"
+							>
+								{t('Muzzle socket')}
+							</label>
+							<input
+								id="modal-projectile-muzzle"
+								type="text"
+								className="form-control form-control-sm bg-dark text-light border-secondary mt-1"
+								value={projectileMuzzleDraft}
+								onChange={(e) => setProjectileMuzzleDraft(e.target.value)}
+								onBlur={commitProjectileConfig}
+							/>
+							<div className="d-flex align-items-center gap-2 mt-2">
+								<input
+									type="checkbox"
+									id="modal-projectile-align"
+									className="form-check-input"
+									checked={projectileAlignDraft}
+									onChange={(e) => {
+										setProjectileAlignDraft(e.target.checked)
+										onAction({
+											action: 'setProjectileConfig',
+											id: selectedEntity.id,
+											speed: projectileSpeedDraft,
+											lifetimeS: projectileLifetimeDraft,
+											affectedByGravity: projectileAffectedByGravityDraft,
+											gravityScale: projectileGravityDraft,
+											alignToVelocity: e.target.checked,
+											muzzleSocket: projectileMuzzleDraft.trim() || 'muzzle',
+											bounceable: projectileBounceableDraft,
+											maxBounces: projectileMaxBouncesDraft,
+											bounceSpeedLoss: projectileBounceLossDraft,
+										})
+									}}
+								/>
+								<label htmlFor="modal-projectile-align" className="form-check-label text-light small mb-0">
+									{t('Align to velocity')}
+								</label>
+							</div>
+							<div className="d-flex align-items-center gap-2 mt-2">
+								<input
+									type="checkbox"
+									id="modal-projectile-bounceable"
+									className="form-check-input"
+									checked={projectileBounceableDraft}
+									onChange={(e) => {
+										setProjectileBounceableDraft(e.target.checked)
+										onAction({
+											action: 'setProjectileConfig',
+											id: selectedEntity.id,
+											speed: projectileSpeedDraft,
+											lifetimeS: projectileLifetimeDraft,
+											affectedByGravity: projectileAffectedByGravityDraft,
+											gravityScale: projectileGravityDraft,
+											alignToVelocity: projectileAlignDraft,
+											muzzleSocket: projectileMuzzleDraft.trim() || 'muzzle',
+											bounceable: e.target.checked,
+											maxBounces: projectileMaxBouncesDraft,
+											bounceSpeedLoss: projectileBounceLossDraft,
+										})
+									}}
+								/>
+								<label
+									htmlFor="modal-projectile-bounceable"
+									className="form-check-label text-light small mb-0"
+								>
+									{t('Bounce on metal')}
+								</label>
+							</div>
+							{projectileBounceableDraft && (
+								<>
+									<label
+										className="form-label text-light small mb-0 mt-2"
+										htmlFor="modal-projectile-max-bounces"
+									>
+										{t('Max bounces')}
+									</label>
+									<input
+										id="modal-projectile-max-bounces"
+										type="number"
+										min={0}
+										max={64}
+										step={1}
+										className="form-control form-control-sm bg-dark text-light border-secondary mt-1"
+										value={projectileMaxBouncesDraft}
+										onChange={(e) => setProjectileMaxBouncesDraft(Number(e.target.value))}
+										onBlur={commitProjectileConfig}
+									/>
+									<label
+										className="form-label text-light small mb-0 mt-2"
+										htmlFor="modal-projectile-bounce-loss"
+									>
+										{t('Bounce speed loss (0–1)')}
+									</label>
+									<input
+										id="modal-projectile-bounce-loss"
+										type="number"
+										min={0}
+										max={1}
+										step={0.05}
+										className="form-control form-control-sm bg-dark text-light border-secondary mt-1"
+										value={projectileBounceLossDraft}
+										onChange={(e) => setProjectileBounceLossDraft(Number(e.target.value))}
+										onBlur={commitProjectileConfig}
+									/>
+								</>
+							)}
 							<button
 								type="button"
 								className="btn btn-sm btn-outline-secondary w-100 mt-3"
@@ -756,7 +949,7 @@ export function EntityPropertiesModalContent({
 							</button>
 							<p className="text-secondary small mb-0 mt-2">
 								{t(
-									'Editor or Play. Rhai: engine.fire_projectile(template_id, from_id, dx, dy, dz)',
+									'Editor or Play. Origin: muzzle socket on from_id / attached weapon. Hits despawn + projectile_hit.',
 								)}
 							</p>
 						</Tab.Pane>

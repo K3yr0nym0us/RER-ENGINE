@@ -197,8 +197,9 @@ engine_3d_only:
       description: Devuelve el tier activo como string.
     - function: engine.fire_projectile(template_id, from_id, dir_x, dir_y, dir_z)
       description: |
-        Dispara un clon cinemático de una plantilla `projectile` (solo en play).
-        from_id == 0 usa la posición de la plantilla. Ver docs/Projectiles_3D.yaml.
+        Dispara un clon cinemático de una plantilla `projectile` (editor y play).
+        from_id == 0 usa la plantilla (muzzle socket si existe).
+        Gravedad / rebote / muzzle: config de la plantilla (docs/Projectiles_3D.yaml).
 
   example_fp_entity: |
     fn on_start(entity) {

@@ -800,6 +800,23 @@ pub enum EngineEvent {
         entity_id: u32,
         speed: f32,
         lifetime_s: f32,
+        affected_by_gravity: bool,
+        gravity_scale: f32,
+        align_to_velocity: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        muzzle_socket: Option<String>,
+        bounceable: bool,
+        max_bounces: u32,
+        bounce_speed_loss: f32,
+    },
+    /// Impacto de proyectil (`bounced` true = rebote en metal; false = despawn).
+    #[serde(rename = "projectile_hit")]
+    ProjectileHit {
+        projectile_id: u32,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        hit_entity_id: Option<u32>,
+        position: [f32; 3],
+        bounced: bool,
     },
     /// Entidad(es) vinculada(s) a un socket.
     #[serde(rename = "entity_socket_attached")]

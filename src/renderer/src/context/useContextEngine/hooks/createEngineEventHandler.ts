@@ -2454,8 +2454,25 @@ export function createEngineEventHandler({
 				entity_id: number;
 				speed: number;
 				lifetime_s: number;
+				affected_by_gravity?: boolean;
+				gravity_scale?: number;
+				align_to_velocity?: boolean;
+				muzzle_socket?: string;
+				bounceable?: boolean;
+				max_bounces?: number;
+				bounce_speed_loss?: number;
 			};
-			const next = { speed: e.speed, lifetime_s: e.lifetime_s };
+			const next = {
+				speed: e.speed,
+				lifetime_s: e.lifetime_s,
+				affected_by_gravity: e.affected_by_gravity ?? false,
+				gravity_scale: e.gravity_scale ?? 1,
+				align_to_velocity: e.align_to_velocity ?? true,
+				muzzle_socket: e.muzzle_socket ?? 'muzzle',
+				bounceable: e.bounceable ?? false,
+				max_bounces: e.max_bounces ?? 3,
+				bounce_speed_loss: e.bounce_speed_loss ?? 0.2,
+			};
 			const meta = refs.entityMetaRef.current[e.entity_id];
 			if (meta) {
 				meta.projectileConfig = next;

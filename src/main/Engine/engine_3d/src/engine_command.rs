@@ -251,6 +251,20 @@ pub enum EngineCommand3dOnly {
         id: u32,
         speed: f32,
         lifetime_s: f32,
+        #[serde(default)]
+        affected_by_gravity: Option<bool>,
+        #[serde(default)]
+        gravity_scale: Option<f32>,
+        #[serde(default)]
+        align_to_velocity: Option<bool>,
+        #[serde(default)]
+        muzzle_socket: Option<String>,
+        #[serde(default)]
+        bounceable: Option<bool>,
+        #[serde(default)]
+        max_bounces: Option<u32>,
+        #[serde(default)]
+        bounce_speed_loss: Option<f32>,
     },
     FireProjectile {
         template_id: u32,

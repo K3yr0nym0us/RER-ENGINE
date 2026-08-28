@@ -1546,10 +1546,29 @@ impl State {
                 id,
                 speed,
                 lifetime_s,
+                affected_by_gravity,
+                gravity_scale,
+                align_to_velocity,
+                muzzle_socket,
+                bounceable,
+                max_bounces,
+                bounce_speed_loss,
             }) => {
+                let prev = self.projectile_config_for(id);
                 self.set_projectile_config(
                     id,
-                    crate::config_3d::projectiles::ProjectileConfig { speed, lifetime_s },
+                    crate::config_3d::projectiles::ProjectileConfig {
+                        speed,
+                        lifetime_s,
+                        affected_by_gravity: affected_by_gravity
+                            .unwrap_or(prev.affected_by_gravity),
+                        gravity_scale: gravity_scale.unwrap_or(prev.gravity_scale),
+                        align_to_velocity: align_to_velocity.unwrap_or(prev.align_to_velocity),
+                        muzzle_socket: muzzle_socket.or(prev.muzzle_socket),
+                        bounceable: bounceable.unwrap_or(prev.bounceable),
+                        max_bounces: max_bounces.unwrap_or(prev.max_bounces),
+                        bounce_speed_loss: bounce_speed_loss.unwrap_or(prev.bounce_speed_loss),
+                    },
                 );
             }
             EngineCommand::Only3d(EngineCommand3dOnly::FireProjectile {

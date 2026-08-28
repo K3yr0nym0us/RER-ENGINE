@@ -52,7 +52,7 @@
 | [Entities_Model_3D.yaml](./Entities_Model_3D.yaml) | Tipos 3D, entidades, modelos GLB/GLTF |
 | [Blueprints_Model_3D.yaml](./Blueprints_Model_3D.yaml) | Blueprints 3D, model_id, quick build, propagación, `.save` |
 | [Entities_Model_3D_extras.yaml](./Entities_Model_3D_extras.yaml) | Cámara play character, colisión por tipo, orientación GLB jugador |
-| [Projectiles_3D.yaml](./Projectiles_3D.yaml) | Proyectiles 3D MVP: config, fire cinemático, IPC/Rhai |
+| [Projectiles_3D.yaml](./Projectiles_3D.yaml) | Proyectiles 3D: config, gravedad opcional, muzzle, hits/rebote, IPC/Rhai |
 | [Physics_Model.yaml](./Physics_Model.yaml) | Rapier 2D/3D, herramientas plano 3D, jugador shape cast |
 | [Animation_Model.yaml](./Animation_Model.yaml) | Sprite 2D, clips GLTF skinned, `play_animation`, blueprints |
 | [Controls_Model.yaml](./Controls_Model.yaml) | Bindings, control scripts Rhai |

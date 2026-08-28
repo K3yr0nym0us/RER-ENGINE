@@ -399,6 +399,18 @@ impl PhysicsWorld {
         max_dist: f32,
         exclude_colliders: &[ColliderHandle],
     ) -> Option<f32> {
+        self.raycast_first_hit(from, direction, max_dist, exclude_colliders)
+            .map(|(toi, _, _)| toi)
+    }
+
+    /// Primer hit de rayo: (toi, collider, normal mundo).
+    pub(crate) fn raycast_first_hit(
+        &mut self,
+        from: Vec3,
+        direction: Vec3,
+        max_dist: f32,
+        exclude_colliders: &[ColliderHandle],
+    ) -> Option<(f32, ColliderHandle, Vec3)> {
         if max_dist <= 1e-6 {
             return None;
         }
@@ -423,7 +435,20 @@ impl PhysicsWorld {
         );
         self.query_pipeline(filter)
             .cast_ray_and_get_normal(&ray, max_dist, true)
-            .map(|(_, hit)| hit.time_of_impact)
+            .map(|(handle, hit)| {
+                (
+                    hit.time_of_impact,
+                    handle,
+                    Vec3::new(hit.normal.x, hit.normal.y, hit.normal.z),
+                )
+            })
+    }
+
+    pub(crate) fn entity_for_collider(&self, handle: ColliderHandle) -> Option<EntityId> {
+        self.entity_colliders
+            .iter()
+            .find(|(_, h)| **h == handle)
+            .map(|(&id, _)| id)
     }
 
     /// Altura del segmento cilíndrico de la cápsula (total ≈ scale_y con hemisferios).

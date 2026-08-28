@@ -1526,7 +1526,20 @@ export interface EngineContextValue extends EngineState {
 		rhaiSource: string,
 	) => void
 	setEntityPhysics: (id: number, enabled: boolean, bodyType: string) => void
-	setProjectileConfig: (id: number, speed: number, lifetimeS: number) => void
+	setProjectileConfig: (
+		id: number,
+		speed: number,
+		lifetimeS: number,
+		extras?: {
+			affectedByGravity?: boolean
+			gravityScale?: number
+			alignToVelocity?: boolean
+			muzzleSocket?: string | null
+			bounceable?: boolean
+			maxBounces?: number
+			bounceSpeedLoss?: number
+		},
+	) => void
 	fireProjectile: (
 		templateId: number,
 		dir: [number, number, number],

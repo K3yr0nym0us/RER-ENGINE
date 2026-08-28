@@ -146,7 +146,17 @@ export function buildEntityPropertiesState(
 			(entityMeta?.name ?? selectedEntity.name ?? '').trim(),
 		)
 	const projectileConfig = isProjectile
-		? (entityMeta?.projectileConfig ?? { speed: 20, lifetime_s: 3 })
+		? (entityMeta?.projectileConfig ?? {
+				speed: 20,
+				lifetime_s: 3,
+				affected_by_gravity: false,
+				gravity_scale: 1,
+				align_to_velocity: true,
+				muzzle_socket: 'muzzle',
+				bounceable: false,
+				max_bounces: 3,
+				bounce_speed_loss: 0.2,
+			})
 		: null
 
 	const metaAnimations = entityMeta?.animations ?? []
@@ -301,7 +311,15 @@ export async function runEntityPropertiesAction(
 			pushEntityPropertiesPatch(handlerId)
 			return
 		case 'setProjectileConfig':
-			engine.setProjectileConfig(action.id, action.speed, action.lifetimeS)
+			engine.setProjectileConfig(action.id, action.speed, action.lifetimeS, {
+				affectedByGravity: action.affectedByGravity,
+				gravityScale: action.gravityScale,
+				alignToVelocity: action.alignToVelocity,
+				muzzleSocket: action.muzzleSocket,
+				bounceable: action.bounceable,
+				maxBounces: action.maxBounces,
+				bounceSpeedLoss: action.bounceSpeedLoss,
+			})
 			pushEntityPropertiesPatch(handlerId)
 			return
 		case 'fireProjectile':

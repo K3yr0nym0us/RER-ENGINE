@@ -167,7 +167,19 @@ export function entity3dToMeta(entity: Entity3D): EntityMeta {
 		...(entity.projectile
 			? { projectileConfig: entity.projectile }
 			: entity3dCategory === 'projectile'
-				? { projectileConfig: { speed: 20, lifetime_s: 3 } }
+				? {
+						projectileConfig: {
+							speed: 20,
+							lifetime_s: 3,
+							affected_by_gravity: false,
+							gravity_scale: 1,
+							align_to_velocity: true,
+							muzzle_socket: 'muzzle',
+							bounceable: false,
+							max_bounces: 3,
+							bounce_speed_loss: 0.2,
+						},
+					}
 				: {}),
 	};
 }

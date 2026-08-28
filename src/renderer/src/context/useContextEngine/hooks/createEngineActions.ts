@@ -740,22 +740,56 @@ export function createEngineActions({
 		}
 	};
 
-	const setProjectileConfig = (id: number, speed: number, lifetimeS: number) => {
+	const setProjectileConfig = (
+		id: number,
+		speed: number,
+		lifetimeS: number,
+		extras?: {
+			affectedByGravity?: boolean
+			gravityScale?: number
+			alignToVelocity?: boolean
+			muzzleSocket?: string | null
+			bounceable?: boolean
+			maxBounces?: number
+			bounceSpeedLoss?: number
+		},
+	) => {
+		const prev = refs.entityMetaRef.current[id]?.projectileConfig
 		const next = {
 			speed: Math.max(0, speed),
 			lifetime_s: Math.max(0.05, lifetimeS),
-		};
-		const meta = refs.entityMetaRef.current[id];
+			affected_by_gravity: extras?.affectedByGravity ?? prev?.affected_by_gravity ?? false,
+			gravity_scale: extras?.gravityScale ?? prev?.gravity_scale ?? 1,
+			align_to_velocity: extras?.alignToVelocity ?? prev?.align_to_velocity ?? true,
+			muzzle_socket:
+				extras?.muzzleSocket === null
+					? undefined
+					: (extras?.muzzleSocket ?? prev?.muzzle_socket ?? 'muzzle'),
+			bounceable: extras?.bounceable ?? prev?.bounceable ?? false,
+			max_bounces: Math.min(64, Math.max(0, extras?.maxBounces ?? prev?.max_bounces ?? 3)),
+			bounce_speed_loss: Math.min(
+				1,
+				Math.max(0, extras?.bounceSpeedLoss ?? prev?.bounce_speed_loss ?? 0.2),
+			),
+		}
+		const meta = refs.entityMetaRef.current[id]
 		if (meta) {
-			meta.projectileConfig = next;
+			meta.projectileConfig = next
 		}
 		send3dFn({
 			cmd: 'set_projectile_config',
 			id,
 			speed: next.speed,
 			lifetime_s: next.lifetime_s,
-		});
-	};
+			affected_by_gravity: next.affected_by_gravity,
+			gravity_scale: next.gravity_scale,
+			align_to_velocity: next.align_to_velocity,
+			muzzle_socket: next.muzzle_socket ?? null,
+			bounceable: next.bounceable,
+			max_bounces: next.max_bounces,
+			bounce_speed_loss: next.bounce_speed_loss,
+		})
+	}
 
 	const fireProjectile = (
 		templateId: number,

@@ -1,36 +1,168 @@
-# Proyectiles 3D (MVP)
+# Proyectiles 3D
 
 # Referencias:
 #   - docs/Entities_Model_3D.yaml
+#   - docs/Sockets_3D.yaml
+#   - docs/RHAI_API.yaml
+#   - src/main/Engine/engine_3d/src/config_3d/projectiles.rs
 
 summary: |
-  Categoría `projectile` + disparo cinemático en play (clon de plantilla).
-  Sin hits/daño/muzzle en este MVP. Paridad 2D: follow-up.
+  Sistema de proyectiles 3D (categoría `projectile`): plantilla en escena +
+  disparo cinemático (clon runtime) en editor y play.
+  Incluye gravedad opcional, muzzle socket, align-to-velocity, hits por raycast
+  y rebote opcional en superficies metálicas.
+  Daño/HP: no implementado (solo evento `projectile_hit`). Paridad 2D: follow-up.
+
+overview: |
+  1. El autor coloca una entidad con category == projectile (plantilla).
+  2. Configura speed, lifetime, gravedad, muzzle, rebote, etc. en Propiedades.
+  3. Dispara con IPC/Rhai/UI Test fire → el motor clona la plantilla.
+  4. El clon se mueve cinemáticamente; al impactar o expirar se despawnea.
+  5. Los clones NO se guardan en el `.save`.
+
+# ---------------------------------------------------------------------------
+# Config persistida (campo `projectile` en entidad del .save)
+# ---------------------------------------------------------------------------
 
 projectile_config:
-  speed: number # m/s, default 20
-  lifetime_s: number # segundos, default 3, mínimo 0.05
+  speed: number # m/s, default 20, mínimo 0
+  lifetime_s: number # segundos de vida del clon, default 3, mínimo 0.05
+  affected_by_gravity: boolean # default false; si false → trayectoria recta (ignora gravity_scale)
+  gravity_scale: number # default 1; multiplica la gravedad del mundo (eje Y) solo si affected_by_gravity
+  align_to_velocity: boolean # default true; en vuelo orienta -Z local hacia velocity preservando offset visual
+  muzzle_socket: optional string # default "muzzle"; origen al disparar desde from_id
+  bounceable: boolean # default false; rebote solo en metal (SurfacePbr.metallic >= 0.5)
+  max_bounces: number # default 3, máx 64; rebotes iniciales si bounceable
+  bounce_speed_loss: number # default 0.2 (0..1); fracción de |v| perdida por rebote
   persist: |
     Campo opcional `projectile` en entidad 3D del `.save` cuando category == projectile.
+    Al cargar escena se restaura y se emite `projectile_config_changed`.
+  gravity_notes: |
+    - Proyectiles “balísticos” (caída por distancia): affected_by_gravity = true, gravity_scale ≈ 1.
+    - Proyectiles “láser / hitscan-like” (recto): affected_by_gravity = false.
+    - gravity_scale < 1 = caída más suave; > 1 = caída más agresiva.
+    - Umbral metal para rebote: METAL_BOUNCE_THRESHOLD = 0.5 (SurfacePbr.metallic).
+
+# ---------------------------------------------------------------------------
+# Runtime
+# ---------------------------------------------------------------------------
 
 runtime:
-  templates: entidades de escena con category projectile
+  templates: entidades de escena con category projectile (no se mueven solas)
+  active_instances: |
+    Vec de ActiveProjectile (no serializado): entity_id, velocity, age, lifetime,
+    affected_by_gravity, gravity_scale, align_to_velocity, visual_offset (Quat),
+    bounceable, bounces_left, bounce_speed_loss, exclude_entities (plantilla / tirador / clon).
+  trajectory_vs_rotation: |
+    Trayectoria y orientación visual del mesh son independientes al disparar la plantilla en escena.
+
+  test_fire (plantilla sola, dir explícita mundo -Z):
+    - velocity: siempre en la dirección IPC (test fire envía dir_x/y/z = 0,0,-1 mundo).
+    - spawn: rotación del clon = Transform.rotation actual de la plantilla (girar la plantilla en el editor sí afecta el mesh del clon).
+    - Girar la plantilla NO cambia la trayectoria del test fire.
+
+  dir cero (0,0,0) desde script/Rhai:
+    - velocity: forward del socket muzzle en el host (arma/personaje) si existe; si no, -Z mundo.
+    - spawn: igual, rotación de plantilla al momento del disparo.
+
+  align_to_velocity (default true):
+    - Al spawn se guarda visual_offset = inverse(align(dir)) * template.rotation.
+    - En cada tick: rotation = align(velocity) * visual_offset.
+    - Efecto: el clon conserva roll/orientación relativa de la plantilla; si la velocidad curva (gravedad/rebote), el mesh sigue el vector de vuelo sin perder ese offset.
+    - Si false: rotación fija = la de la plantilla al spawn (no se actualiza en vuelo).
+
+  from_id + muzzle (arma en personaje):
+    - Origen y dir (0,0,0) salen del socket; la plantilla projectile define speed/lifetime/visual, no el aim del arma.
   fire: |
     IPC `fire_projectile` { template_id, from_id?, dir_x, dir_y, dir_z }
     Rhai `engine.fire_projectile(template_id, from_id, dx, dy, dz)`
-    from_id == 0 → origen = posición de la plantilla
-    Funciona en editor (Test fire) y en play.
-  movement: position += normalize(dir) * speed * dt (cinemático, sin Rapier)
-  despawn: al superar lifetime_s; limpia al entrar/salir de play
-  save: clones runtime no se serializan
+    UI: Propiedades → tab Projectile → Test fire (dir mundo -Z; no gira con rotar la plantilla)
+    from_id omitido / 0 → host = plantilla
+    Origen (resolve_muzzle_world):
+      1) socket `muzzle_socket` en el host
+      2) mismo socket en arma hija enganchada a un socket del host
+      3) si no hay socket → Transform del host
+    Dir explícita (p. ej. test fire -Z mundo) → trayectoria en espacio mundo.
+    Dir (0,0,0) → forward del socket muzzle si existe (arma/host); si no, -Z mundo.
+    Spawn: rotación del clon = Transform.rotation actual de la plantilla.
+    align_to_velocity + visual_offset: ver trajectory_vs_rotation.
+    velocity inicial = dir.normalize() * speed
+  movement_tick: |
+    Cada frame (editor y play):
+      if affected_by_gravity && gravity_scale > 0:
+        velocity.y -= world_gravity * gravity_scale * dt
+      next = position + velocity * dt
+      raycast segmento [position → next] (exclude plantilla/tirador/clon)
+      si hit → bounce o despawn (ver hits)
+      si no hit → position = next; si align_to_velocity → rotation = align(velocity) * visual_offset
+  hits: |
+    Raycast del segmento de movimiento.
+    Metal (metallic >= 0.5) + bounceable + bounces_left > 0:
+      reflect velocity, *= (1 - bounce_speed_loss), bounces_left--, nudge por normal,
+      evento projectile_hit { bounced: true } (sin despawn).
+    En otro caso:
+      evento projectile_hit { bounced: false } + despawn inmediato.
+  despawn: |
+    lifetime agotado, o hit final (bounced=false).
+    clear_active_projectiles al entrar/salir de play y al limpiar escena.
+  save: clones runtime no se serializan; solo la plantilla + projectile_config
+
+# ---------------------------------------------------------------------------
+# IPC / eventos
+# ---------------------------------------------------------------------------
 
 ipc:
-  set_projectile_config: { id, speed, lifetime_s }
+  set_projectile_config: |
+    {
+      id, speed, lifetime_s,
+      affected_by_gravity?, gravity_scale?,
+      align_to_velocity?, muzzle_socket?,
+      bounceable?, max_bounces?, bounce_speed_loss?
+    }
+    Campos Option se fusionan con la config previa.
   fire_projectile: { template_id, from_id?, dir_x, dir_y, dir_z }
-  event projectile_config_changed: { entity_id, speed, lifetime_s }
+  event projectile_config_changed: |
+    {
+      entity_id, speed, lifetime_s,
+      affected_by_gravity, gravity_scale,
+      align_to_velocity, muzzle_socket?,
+      bounceable, max_bounces, bounce_speed_loss
+    }
+  event projectile_hit: |
+    { projectile_id, hit_entity_id?, position: [x,y,z], bounced: bool }
+    bounced=true → rebote (sigue vivo); bounced=false → impacto final (despawn).
 
-out_of_scope_mvp:
-  - hits / daño
-  - sockets de muzzle
-  - gravedad del proyectil
-  - paridad 2D
+# ---------------------------------------------------------------------------
+# Editor / UI
+# ---------------------------------------------------------------------------
+
+editor_ui: |
+  Sidebar Propiedades: speed / lifetime + enlace al modal completo.
+  Modal Propiedades → tab Projectile (solo category projectile, single select):
+    - Speed (m/s)
+    - Lifetime (s)
+    - Checkbox Affected by gravity
+    - Gravity scale (visible/usable cuando affected; multiplica gravedad mundo)
+    - Muzzle socket (nombre)
+    - Checkbox Align to velocity
+    - Checkbox Bounce on metal (+ Max bounces + Bounce speed loss si activo)
+    - Botón Test fire (dir mundo -Z; trayectoria fija, rotación visual = plantilla)
+
+# ---------------------------------------------------------------------------
+# Scripting
+# ---------------------------------------------------------------------------
+
+rhai: |
+  engine.fire_projectile(template_id, from_id, dir_x, dir_y, dir_z)
+  from_id == 0 → origen en plantilla / su muzzle.
+  Ver docs/RHAI_API.yaml.
+
+# ---------------------------------------------------------------------------
+# Fuera de alcance
+# ---------------------------------------------------------------------------
+
+out_of_scope:
+  - daño / HP / equipos / friendly fire
+  - shape cast / collider propio del proyectil (hoy: raycast de segmento)
+  - paridad 2D (tarjeta PROYECTILES 2D)
+  - particles / trails / VFX de impacto

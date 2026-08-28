@@ -1878,7 +1878,7 @@ fn restore_entity_bone_physics_after_scene_load(state: &mut State, view: &Active
 fn restore_entity_projectile_config_after_scene_load(state: &mut State, view: &ActiveSaveView) {
     let mut restore = |entity: &SavedEntity3D| {
         if entity.category == "projectile" {
-            let config = entity.projectile.unwrap_or_default();
+            let config = entity.projectile.clone().unwrap_or_default();
             state.restore_projectile_config_from_saved(entity.id, &config);
             state.emit_projectile_config_changed(entity.id);
         }
@@ -2210,7 +2210,7 @@ pub(crate) fn saved_scene_from_snapshot_payload(
             attach_socket_name: e.attach_socket_name.clone(),
             sockets: e.sockets.clone(),
             bone_physics: e.bone_physics.clone(),
-            projectile: e.projectile,
+            projectile: e.projectile.clone(),
         }
     }
 

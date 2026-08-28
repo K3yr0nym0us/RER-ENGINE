@@ -89,7 +89,19 @@ export type EntityPropertiesAction =
 	| { action: 'setEntityName'; id: number; name: string }
 	| { action: 'setTransform'; cmd: TransformSendCommand }
 	| { action: 'setPhysics'; id: number; enabled: boolean; bodyType: string }
-	| { action: 'setProjectileConfig'; id: number; speed: number; lifetimeS: number }
+	| {
+			action: 'setProjectileConfig'
+			id: number
+			speed: number
+			lifetimeS: number
+			affectedByGravity?: boolean
+			gravityScale?: number
+			alignToVelocity?: boolean
+			muzzleSocket?: string
+			bounceable?: boolean
+			maxBounces?: number
+			bounceSpeedLoss?: number
+		}
 	| { action: 'fireProjectile'; templateId: number; dir: [number, number, number]; fromId?: number }
 	| { action: 'removeEntity'; id: number }
 	| { action: 'removeMultiple'; ids: number[] }

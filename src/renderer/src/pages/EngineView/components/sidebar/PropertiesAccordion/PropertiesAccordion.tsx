@@ -380,11 +380,7 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
             value={projectileSpeedDraft}
             onChange={(e) => setProjectileSpeedDraft(Number(e.target.value))}
             onBlur={() => {
-              setProjectileConfig(
-                selectedEntity.id,
-                projectileSpeedDraft,
-                projectileLifetimeDraft,
-              );
+              setProjectileConfig(selectedEntity.id, projectileSpeedDraft, projectileLifetimeDraft);
             }}
           />
           <label className="form-label text-light small mb-0 mt-2" htmlFor="projectile-lifetime">
@@ -399,11 +395,7 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
             value={projectileLifetimeDraft}
             onChange={(e) => setProjectileLifetimeDraft(Number(e.target.value))}
             onBlur={() => {
-              setProjectileConfig(
-                selectedEntity.id,
-                projectileSpeedDraft,
-                projectileLifetimeDraft,
-              );
+              setProjectileConfig(selectedEntity.id, projectileSpeedDraft, projectileLifetimeDraft);
             }}
           />
           <button
@@ -416,7 +408,7 @@ export function PropertiesAccordion({ projectType }: { projectType?: string }) {
             {t('Test fire (forward -Z)')}
           </button>
           <p className="text-secondary small mb-0 mt-1">
-            {t('Editor or Play. Rhai: engine.fire_projectile(template_id, from_id, dx, dy, dz)')}
+            {t('Full projectile settings: Properties modal → Projectile tab')}
           </p>
         </div>
       )}

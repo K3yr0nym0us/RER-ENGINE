@@ -186,6 +186,20 @@ export interface Entity3D {
 export interface ProjectileConfig3D {
   speed: number
   lifetime_s: number
+  /** Si false, trayectoria recta (ignora gravity_scale). */
+  affected_by_gravity?: boolean
+  /** Multiplicador de gravedad del mundo (solo si affected_by_gravity). */
+  gravity_scale?: number
+  /** Orientar mesh al vector de vuelo. */
+  align_to_velocity?: boolean
+  /** Socket de origen (default `muzzle`) al disparar desde from_id. */
+  muzzle_socket?: string
+  /** Rebote en superficies metálicas (metallic >= 0.5). */
+  bounceable?: boolean
+  /** Rebotes máxim (si bounceable). */
+  max_bounces?: number
+  /** Fracción de velocidad perdida por rebote (0..1). */
+  bounce_speed_loss?: number
 }
 
 export interface EntitySocket3D {
