@@ -721,22 +721,15 @@ impl State {
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Uniform,
                     has_dynamic_offset: false,
-                    min_binding_size: None,
+                    min_binding_size: std::num::NonZeroU64::new(
+                        (crate::gizmo::GIZMO_UNIFORM_ROW_COUNT * std::mem::size_of::<[f32; 4]>())
+                            as u64,
+                    ),
                 },
                 count: None,
             }],
         });
-        let gizmo_uni_data: [[f32; 4]; 9] = [
-            [1.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
-            [1.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
-            [-1.0, -1.0, 0.0, 0.0],
-        ];
+        let gizmo_uni_data = crate::gizmo::GIZMO_UNIFORM_IDENTITY;
         let gizmo_buffer_uni = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("gizmo-uni"),
             contents: bytemuck::cast_slice(&gizmo_uni_data),
@@ -791,6 +784,8 @@ impl State {
             cache: None,
         });
         let gizmo_buffer = gizmo::build_axes(&device, 1.14);
+        let gizmo_rotate_buffer =
+            gizmo::build_rotation_rings(&device, gizmo::GIZMO_ROTATION_RING_RADIUS);
         let ui_work_grid_buffer = gizmo::build_from_vertices(&device, &[]);
         let player_ui_text_overlay_buffer = gizmo::build_from_vertices(&device, &[]);
         let player_ui_caret_buffer = gizmo::build_from_vertices(&device, &[]);
@@ -857,20 +852,9 @@ impl State {
             multiview_mask: None,
             cache: None,
         });
-        let grid_uni_identity: [[f32; 4]; 9] = [
-            [1.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
-            [1.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
-            [-1.0, -1.0, 0.0, 0.0],
-        ];
         let grid_buffer_uni = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("grid-uni"),
-            contents: bytemuck::cast_slice(&grid_uni_identity),
+            contents: bytemuck::cast_slice(&crate::gizmo::GIZMO_UNIFORM_IDENTITY),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
         let grid_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -1129,6 +1113,7 @@ impl State {
             delta_time: 0.0,
             gizmo_pipeline,
             gizmo_buffer,
+            gizmo_rotate_buffer,
             gizmo_bind_group,
             gizmo_buffer_uni,
             physics: PhysicsWorld::new(),
@@ -1137,6 +1122,7 @@ impl State {
             hovered_entity: None,
             hovered_gizmo_axis: None,
             active_gizmo_axis: None,
+            transform_gizmo_mode: crate::config_3d::transform_gizmo::TransformGizmoMode::Translate,
             spatial_grid: crate::spatial::SpatialGrid::new(),
             scenario_entities: Vec::new(),
             character_entities: Vec::new(),

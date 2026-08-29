@@ -47,7 +47,9 @@ use rer_engine_shared::platform::setup_overlay_win32;
 use rer_engine_shared::platform::{query_ctrl_held_os, query_shift_held_os};
 use rer_engine_shared::wgpu_surface::SurfacePresentError;
 
+use crate::config_3d::editor_viewport_controls::{self, GIZMO_CENTER_AXIS};
 use crate::config_3d::plane_tool_rotate_dbg;
+use crate::config_3d::transform_gizmo::TransformGizmoMode;
 
 /// Evita que Q/E se consuman como texto en player_ui mientras la herramienta plano está activa.
 fn is_plane_tool_rotate_key(key: PhysicalKey, text: Option<&str>) -> bool {
@@ -129,23 +131,348 @@ fn map_gamepad_control_key(button: GamepadButton) -> Option<&'static str> {
     }
 }
 
+const ENTITY_PICK_DOUBLE_CLICK_MAX_MS: u128 = 450;
+const ENTITY_PICK_DOUBLE_CLICK_MAX_DIST_PX: f32 = 8.0;
+const ENTITY_CLICK_DRAG_THRESHOLD_PX: f32 = 5.0;
+
+#[derive(Clone, Copy)]
+struct EntityPickClickState {
+    time: std::time::Instant,
+    x: f32,
+    y: f32,
+    entity_id: u32,
+}
+
+fn register_entity_pick_double_click(
+    last: &mut Option<EntityPickClickState>,
+    x: f32,
+    y: f32,
+    hit_entity: Option<u32>,
+) -> Option<u32> {
+    let now = std::time::Instant::now();
+    if let (Some(prev), Some(entity_id)) = (*last, hit_entity)
+        && now.duration_since(prev.time).as_millis() <= ENTITY_PICK_DOUBLE_CLICK_MAX_MS
+    {
+        let dist = ((x - prev.x).powi(2) + (y - prev.y).powi(2)).sqrt();
+        if dist <= ENTITY_PICK_DOUBLE_CLICK_MAX_DIST_PX && entity_id == prev.entity_id {
+            *last = None;
+            return Some(entity_id);
+        }
+    }
+    if let Some(entity_id) = hit_entity {
+        *last = Some(EntityPickClickState {
+            time: now,
+            x,
+            y,
+            entity_id,
+        });
+    } else {
+        *last = None;
+    }
+    None
+}
+
+// ---------------------------------------------------------------------------
+// Arrastre de entidades en el viewport (gizmo o libre en plano de vista)
+// ---------------------------------------------------------------------------
+#[derive(Clone, Copy, Debug)]
+enum EntityDragMode {
+    GizmoTranslate(usize),
+    GizmoRotate {
+        axis: usize,
+        pivot: glam::Vec3,
+        start_mouse: (f32, f32),
+        plane_u: glam::Vec3,
+        plane_v: glam::Vec3,
+    },
+    Free {
+        plane_point: glam::Vec3,
+        plane_normal: glam::Vec3,
+        last_world: glam::Vec3,
+    },
+}
+
+#[derive(Clone)]
+struct EntityGrabMode {
+    plane_point: glam::Vec3,
+    plane_normal: glam::Vec3,
+    start_world: glam::Vec3,
+    start_snapshots: Vec<engine::types::EntityTransformSnapshot>,
+    constraint_axis: Option<usize>,
+}
+
+fn set_viewport_transform_constraint(entity_grab: &mut Option<EntityGrabMode>, axis: usize) {
+    if let Some(session) = entity_grab.as_mut() {
+        session.constraint_axis = Some(axis);
+    }
+}
+
+fn collect_transform_snapshots(
+    state: &engine::State,
+) -> Vec<engine::types::EntityTransformSnapshot> {
+    let selected_ids = state.selected_entity_ids();
+    let mut snapshots = Vec::new();
+    for sel_id in selected_ids {
+        if let Some(t) = state.world.get::<crate::ecs::Transform>(sel_id) {
+            snapshots.push((
+                sel_id,
+                t.position.to_array(),
+                [t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w],
+                t.scale.to_array(),
+            ));
+        }
+    }
+    snapshots
+}
+
+fn clear_entity_drag_fields(
+    entity_drag: &mut Option<EntityDragMode>,
+    entity_drag_start: &mut Option<Vec<engine::types::EntityTransformSnapshot>>,
+    state: &mut engine::State,
+) {
+    *entity_drag = None;
+    *entity_drag_start = None;
+    state.set_active_gizmo_axis(None);
+    state.set_snap_hint_visible(false);
+}
+
+fn begin_entity_drag_fields(
+    entity_drag: &mut Option<EntityDragMode>,
+    entity_drag_start: &mut Option<Vec<engine::types::EntityTransformSnapshot>>,
+    state: &mut engine::State,
+    mode: EntityDragMode,
+    set_snap_hint: bool,
+) {
+    *entity_drag = Some(mode);
+    *entity_drag_start = Some(collect_transform_snapshots(state));
+    state.set_snap_hint_visible(set_snap_hint);
+    if let EntityDragMode::GizmoTranslate(axis) | EntityDragMode::GizmoRotate { axis, .. } = mode {
+        state.set_active_gizmo_axis(Some(axis));
+    } else {
+        state.set_active_gizmo_axis(None);
+    }
+}
+
+fn try_begin_entity_drag_at_press(
+    entity_drag: &mut Option<EntityDragMode>,
+    entity_drag_start: &mut Option<Vec<engine::types::EntityTransformSnapshot>>,
+    left_click_pos: &mut Option<(f32, f32)>,
+    state: &mut engine::State,
+    cur: (f32, f32),
+) {
+    let axis = if state.pivot_edit_mode.is_none() {
+        state.pick_gizmo_axis(cur.0, cur.1)
+    } else {
+        None
+    };
+
+    if let Some(axis) = axis {
+        if axis == GIZMO_CENTER_AXIS && state.transform_gizmo_mode == TransformGizmoMode::Translate
+        {
+            if let Some(plane_point) = state.selection_center() {
+                let plane_normal = state.camera.view_forward();
+                if let Some(last_world) =
+                    state.free_drag_world_point(cur.0, cur.1, plane_point, plane_normal)
+                {
+                    begin_entity_drag_fields(
+                        entity_drag,
+                        entity_drag_start,
+                        state,
+                        EntityDragMode::Free {
+                            plane_point,
+                            plane_normal,
+                            last_world,
+                        },
+                        false,
+                    );
+                }
+            }
+        } else if axis <= 2 {
+            match state.transform_gizmo_mode {
+                TransformGizmoMode::Translate => {
+                    begin_entity_drag_fields(
+                        entity_drag,
+                        entity_drag_start,
+                        state,
+                        EntityDragMode::GizmoTranslate(axis),
+                        false,
+                    );
+                }
+                TransformGizmoMode::Rotate => {
+                    let Some(pivot) = state.selection_center() else {
+                        return;
+                    };
+                    let axis_world = [glam::Vec3::X, glam::Vec3::Y, glam::Vec3::Z][axis];
+                    let (plane_u, plane_v) =
+                        crate::config_3d::editor_viewport_controls::rotation_plane_basis(
+                            axis_world,
+                            state.camera.view_forward(),
+                        );
+                    begin_entity_drag_fields(
+                        entity_drag,
+                        entity_drag_start,
+                        state,
+                        EntityDragMode::GizmoRotate {
+                            axis,
+                            pivot,
+                            start_mouse: cur,
+                            plane_u,
+                            plane_v,
+                        },
+                        false,
+                    );
+                }
+            }
+        }
+        *left_click_pos = None;
+        return;
+    }
+
+    *left_click_pos = Some(cur);
+}
+
+fn try_promote_left_click_to_entity_drag(
+    entity_drag: &mut Option<EntityDragMode>,
+    entity_drag_start: &mut Option<Vec<engine::types::EntityTransformSnapshot>>,
+    left_click_pos: &mut Option<(f32, f32)>,
+    state: &mut engine::State,
+    press: (f32, f32),
+    current: (f32, f32),
+) {
+    if entity_drag.is_some() {
+        return;
+    }
+    let dx = (current.0 - press.0).abs();
+    let dy = (current.1 - press.1).abs();
+    if dx < ENTITY_CLICK_DRAG_THRESHOLD_PX && dy < ENTITY_CLICK_DRAG_THRESHOLD_PX {
+        return;
+    }
+
+    if state.selected_entity_at_pixel(press.0, press.1).is_some()
+        && let Some(plane_point) = state.selection_center()
+    {
+        let plane_normal = state.camera.view_forward();
+        if let Some(last_world) =
+            state.free_drag_world_point(current.0, current.1, plane_point, plane_normal)
+        {
+            begin_entity_drag_fields(
+                entity_drag,
+                entity_drag_start,
+                state,
+                EntityDragMode::Free {
+                    plane_point,
+                    plane_normal,
+                    last_world,
+                },
+                false,
+            );
+            *left_click_pos = None;
+        }
+    }
+}
+
+fn finish_entity_drag_fields(
+    entity_drag: &mut Option<EntityDragMode>,
+    entity_drag_start: &mut Option<Vec<engine::types::EntityTransformSnapshot>>,
+    state: &mut engine::State,
+) {
+    if let Some(start_snapshots) = entity_drag_start.take() {
+        let mut changed_snapshots: Vec<engine::types::EntityTransformSnapshot> = Vec::new();
+        for (id, pos, rot, scl) in start_snapshots {
+            if let Some(t) = state.world.get::<crate::ecs::Transform>(id) {
+                let changed = t.position.to_array() != pos
+                    || [t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w] != rot
+                    || t.scale.to_array() != scl;
+                if changed {
+                    changed_snapshots.push((id, pos, rot, scl));
+                }
+            }
+        }
+        if !changed_snapshots.is_empty() {
+            if changed_snapshots.len() == 1 {
+                let (id, pos, rot, scl) = changed_snapshots[0];
+                state.push_undo_transform(id, pos, rot, scl);
+            } else {
+                state.push_undo_transforms(changed_snapshots);
+            }
+        }
+    }
+    clear_entity_drag_fields(entity_drag, entity_drag_start, state);
+    if !state.is_play_controller_active() {
+        state.sync_editor_camera_focus();
+    }
+}
+
+fn try_begin_entity_grab(state: &engine::State, cursor: (f32, f32)) -> Option<EntityGrabMode> {
+    if state.pivot_edit_mode.is_some() || state.selected_entity_ids().is_empty() {
+        return None;
+    }
+    let plane_point = state.selection_center()?;
+    let plane_normal = state.camera.view_forward();
+    let start_world = state.free_drag_world_point(cursor.0, cursor.1, plane_point, plane_normal)?;
+    Some(EntityGrabMode {
+        plane_point,
+        plane_normal,
+        start_world,
+        start_snapshots: collect_transform_snapshots(state),
+        constraint_axis: None,
+    })
+}
+
+fn cancel_entity_grab(entity_grab: &mut Option<EntityGrabMode>, state: &mut engine::State) {
+    if let Some(session) = entity_grab.take() {
+        state.restore_transform_snapshots(&session.start_snapshots);
+        state.set_snap_hint_visible(false);
+    }
+}
+
+fn finish_entity_grab_confirm(entity_grab: &mut Option<EntityGrabMode>, state: &mut engine::State) {
+    let Some(session) = entity_grab.take() else {
+        return;
+    };
+    let mut changed_snapshots: Vec<engine::types::EntityTransformSnapshot> = Vec::new();
+    for (id, pos, rot, scl) in session.start_snapshots {
+        if let Some(t) = state.world.get::<crate::ecs::Transform>(id) {
+            let changed = t.position.to_array() != pos
+                || [t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w] != rot
+                || t.scale.to_array() != scl;
+            if changed {
+                changed_snapshots.push((id, pos, rot, scl));
+            }
+        }
+    }
+    if !changed_snapshots.is_empty() {
+        if changed_snapshots.len() == 1 {
+            let (id, pos, rot, scl) = changed_snapshots[0];
+            state.push_undo_transform(id, pos, rot, scl);
+        } else {
+            state.push_undo_transforms(changed_snapshots);
+        }
+    }
+    state.set_snap_hint_visible(false);
+    if !state.is_play_controller_active() {
+        state.sync_editor_camera_focus();
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Estructura principal de la aplicación winit
 // ---------------------------------------------------------------------------
 struct App {
     state: Option<engine::State>,
     overlay: Option<OverlayConfig>,
-    // ── Cámara orbital
-    mouse_right: bool,  // botón derecho  → orbitar
-    mouse_middle: bool, // botón central  → pan
+    // ── Cámara orbital (Blender: MMB + modificadores)
+    mouse_middle: bool,
     last_cursor: Option<(f32, f32)>,
     // Picking con click izquierdo
     left_click_pos: Option<(f32, f32)>, // posición al presionar
     /// Press izquierdo durante edición UI (para click vs drag).
     player_ui_left_press: Option<(f32, f32)>,
-    // Drag de gizmo
-    gizmo_drag_axis: Option<usize>, // eje activo (0=X,1=Y,2=Z)
-    gizmo_drag_start: Option<Vec<engine::types::EntityTransformSnapshot>>,
+    // Drag de entidad / gizmo
+    entity_drag: Option<EntityDragMode>,
+    entity_drag_start: Option<Vec<engine::types::EntityTransformSnapshot>>,
+    entity_grab: Option<EntityGrabMode>,
+    last_entity_pick_click: Option<EntityPickClickState>,
     // Teclas modificadoras
     ctrl_held: bool,  // Ctrl izquierdo o derecho presionado
     shift_held: bool, // Shift izquierdo o derecho presionado
@@ -220,15 +547,12 @@ impl App {
 
     fn reset_preview_input_state(&mut self, state: &mut engine::State) {
         self.last_cursor = None;
-        self.mouse_right = false;
         self.mouse_middle = false;
         self.left_click_pos = None;
-        self.gizmo_drag_axis = None;
-        self.gizmo_drag_start = None;
+        clear_entity_drag_fields(&mut self.entity_drag, &mut self.entity_drag_start, state);
+        cancel_entity_grab(&mut self.entity_grab, state);
         self.keyboard_mouse_pressed.clear();
         self.gamepad_pressed.clear();
-        state.set_active_gizmo_axis(None);
-        state.set_snap_hint_visible(false);
         state.reset_play_controller_motion();
     }
 
@@ -492,9 +816,11 @@ impl ApplicationHandler<EngineCommand> for App {
                         MouseButton::Left => {
                             if state.is_preview_playing() {
                                 self.left_click_pos = None;
-                                self.gizmo_drag_axis = None;
-                                state.set_active_gizmo_axis(None);
-                                state.set_snap_hint_visible(false);
+                                clear_entity_drag_fields(
+                                    &mut self.entity_drag,
+                                    &mut self.entity_drag_start,
+                                    state,
+                                );
                                 return;
                             }
                             if state.player_ui_edit_active {
@@ -507,13 +833,19 @@ impl ApplicationHandler<EngineCommand> for App {
                                     }
                                 }
                                 self.left_click_pos = None;
-                                self.gizmo_drag_axis = None;
-                                self.gizmo_drag_start = None;
-                                state.set_active_gizmo_axis(None);
-                                state.set_snap_hint_visible(false);
+                                clear_entity_drag_fields(
+                                    &mut self.entity_drag,
+                                    &mut self.entity_drag_start,
+                                    state,
+                                );
                                 return;
                             }
                             if pressed {
+                                if self.entity_grab.is_some() {
+                                    finish_entity_grab_confirm(&mut self.entity_grab, state);
+                                    self.left_click_pos = None;
+                                    return;
+                                }
                                 // En modo quick_build_place los clicks son capturados por la herramienta;
                                 // no se deben seleccionar entidades ni activar el gizmo.
                                 let is_placement_tool =
@@ -540,60 +872,22 @@ impl ApplicationHandler<EngineCommand> for App {
                                         }
                                     }
                                     self.left_click_pos = None;
-                                    self.gizmo_drag_axis = None;
-                                    state.set_active_gizmo_axis(None);
-                                    self.gizmo_drag_start = None;
-                                } else if !pressed || !is_placement_tool {
-                                    // Comprobar si el click es sobre un eje del gizmo.
-                                    // Se omite en modo pivot/placement para no robar el click al handler.
-                                    if let Some(cur) = self.last_cursor {
-                                        let axis = if state.pivot_edit_mode.is_none()
-                                            && !is_placement_tool
-                                        {
-                                            state.pick_gizmo_axis(cur.0, cur.1)
-                                        } else {
-                                            None
-                                        };
-                                        self.gizmo_drag_axis = axis;
-                                        if axis.is_some() {
-                                            state.set_active_gizmo_axis(axis);
-                                            state.set_snap_hint_visible(false);
-                                            let selected_ids: Vec<u32> =
-                                                if !state.selected_entities.is_empty() {
-                                                    state.selected_entities.clone()
-                                                } else {
-                                                    state.selected_entity.into_iter().collect()
-                                                };
-                                            let mut snapshots: Vec<
-                                                engine::types::EntityTransformSnapshot,
-                                            > = Vec::new();
-                                            for sel_id in selected_ids {
-                                                if let Some(t) =
-                                                    state.world.get::<crate::ecs::Transform>(sel_id)
-                                                {
-                                                    snapshots.push((
-                                                        sel_id,
-                                                        t.position.to_array(),
-                                                        [
-                                                            t.rotation.x,
-                                                            t.rotation.y,
-                                                            t.rotation.z,
-                                                            t.rotation.w,
-                                                        ],
-                                                        t.scale.to_array(),
-                                                    ));
-                                                }
-                                            }
-                                            self.gizmo_drag_start = Some(snapshots);
-                                        }
-                                    }
-                                    if self.gizmo_drag_axis.is_none() {
-                                        state.set_snap_hint_visible(false);
-                                    }
-                                    if self.gizmo_drag_axis.is_none() {
-                                        // Guardar posición inicial del click izquierdo para picking normal
-                                        self.left_click_pos = self.last_cursor;
-                                    }
+                                    clear_entity_drag_fields(
+                                        &mut self.entity_drag,
+                                        &mut self.entity_drag_start,
+                                        state,
+                                    );
+                                } else if (!pressed || !is_placement_tool)
+                                    && self.entity_grab.is_none()
+                                    && let Some(cur) = self.last_cursor
+                                {
+                                    try_begin_entity_drag_at_press(
+                                        &mut self.entity_drag,
+                                        &mut self.entity_drag_start,
+                                        &mut self.left_click_pos,
+                                        state,
+                                        cur,
+                                    );
                                 }
                             } else {
                                 let is_placement_tool_release =
@@ -602,41 +896,12 @@ impl ApplicationHandler<EngineCommand> for App {
                                     );
                                 if is_placement_tool_release {
                                     // Colocado en press.
-                                } else if self.gizmo_drag_axis.is_some() {
-                                    // Fin del drag de gizmo
-                                    self.gizmo_drag_axis = None;
-                                    state.set_active_gizmo_axis(None);
-                                    state.set_snap_hint_visible(false);
-                                    if let Some(start_snapshots) = self.gizmo_drag_start.take() {
-                                        let mut changed_snapshots: Vec<
-                                            engine::types::EntityTransformSnapshot,
-                                        > = Vec::new();
-                                        for (id, pos, rot, scl) in start_snapshots {
-                                            if let Some(t) =
-                                                state.world.get::<crate::ecs::Transform>(id)
-                                            {
-                                                let changed = t.position.to_array() != pos
-                                                    || [
-                                                        t.rotation.x,
-                                                        t.rotation.y,
-                                                        t.rotation.z,
-                                                        t.rotation.w,
-                                                    ] != rot
-                                                    || t.scale.to_array() != scl;
-                                                if changed {
-                                                    changed_snapshots.push((id, pos, rot, scl));
-                                                }
-                                            }
-                                        }
-                                        if !changed_snapshots.is_empty() {
-                                            if changed_snapshots.len() == 1 {
-                                                let (id, pos, rot, scl) = changed_snapshots[0];
-                                                state.push_undo_transform(id, pos, rot, scl);
-                                            } else {
-                                                state.push_undo_transforms(changed_snapshots);
-                                            }
-                                        }
-                                    }
+                                } else if self.entity_drag.is_some() {
+                                    finish_entity_drag_fields(
+                                        &mut self.entity_drag,
+                                        &mut self.entity_drag_start,
+                                        state,
+                                    );
                                 } else {
                                     // Al soltar: si no hubo arrastre, disparar picking
                                     if let (Some(start), Some(cur)) =
@@ -644,16 +909,28 @@ impl ApplicationHandler<EngineCommand> for App {
                                     {
                                         let dx = (cur.0 - start.0).abs();
                                         let dy = (cur.1 - start.1).abs();
-                                        if dx < 5.0 && dy < 5.0 {
-                                            // Consultar el estado real del Ctrl al momento del click.
-                                            // Usar query_ctrl_held_os() (GetAsyncKeyState) como fuente
-                                            // autoritativa del OS, sin releer state.ctrl_held que podría
-                                            // estar obsoleto si Electron perdió el foco y el keyup no llegó.
+                                        if dx < ENTITY_CLICK_DRAG_THRESHOLD_PX
+                                            && dy < ENTITY_CLICK_DRAG_THRESHOLD_PX
+                                        {
                                             let ctrl_active =
                                                 self.ctrl_held || query_ctrl_held_os();
                                             state.ctrl_held = ctrl_active;
                                             if !state.handle_tool_click_3d(cur.0, cur.1) {
+                                                let hit_entity =
+                                                    state.entity_at_pixel(cur.0, cur.1);
+                                                let properties_entity =
+                                                    register_entity_pick_double_click(
+                                                        &mut self.last_entity_pick_click,
+                                                        cur.0,
+                                                        cur.1,
+                                                        hit_entity,
+                                                    );
                                                 state.pick_entity(cur.0, cur.1);
+                                                if let Some(id) = properties_entity {
+                                                    ipc::send_event(
+                                                        &EngineEvent::EntityPropertiesOpen { id },
+                                                    );
+                                                }
                                             }
                                         }
                                     }
@@ -661,16 +938,19 @@ impl ApplicationHandler<EngineCommand> for App {
                                 self.left_click_pos = None;
                             }
                         }
-                        MouseButton::Right => {
-                            self.mouse_right = pressed;
-                            // Fin de pan: notificar posición actual de la cámara 2D
+                        MouseButton::Right
+                            if !pressed
+                                && !state.is_preview_playing()
+                                && self.entity_grab.is_some() =>
+                        {
+                            cancel_entity_grab(&mut self.entity_grab, state);
                         }
                         MouseButton::Middle => {
                             self.mouse_middle = pressed;
                         }
                         _ => {}
                     }
-                    if !pressed && matches!(button, MouseButton::Right | MouseButton::Middle) {
+                    if !pressed && matches!(button, MouseButton::Middle) {
                         self.last_cursor = None;
                     }
                 }
@@ -695,10 +975,11 @@ impl ApplicationHandler<EngineCommand> for App {
                         return;
                     }
                     if state.is_preview_playing() {
-                        self.gizmo_drag_axis = None;
-                        self.gizmo_drag_start = None;
-                        state.set_active_gizmo_axis(None);
-                        state.set_snap_hint_visible(false);
+                        clear_entity_drag_fields(
+                            &mut self.entity_drag,
+                            &mut self.entity_drag_start,
+                            state,
+                        );
                     }
                     if !state.is_preview_playing() {
                         let is_placement_tool =
@@ -712,30 +993,107 @@ impl ApplicationHandler<EngineCommand> for App {
                     if let Some((lx, ly)) = self.last_cursor {
                         let dx = cur.0 - lx;
                         let dy = cur.1 - ly;
+                        if let Some(press) = self.left_click_pos {
+                            try_promote_left_click_to_entity_drag(
+                                &mut self.entity_drag,
+                                &mut self.entity_drag_start,
+                                &mut self.left_click_pos,
+                                state,
+                                press,
+                                cur,
+                            );
+                        }
                         if state.is_play_controller_active() {
                             state.apply_fps_mouse_look(dx, dy);
                         }
                         if !state.is_preview_playing() {
-                            if let Some(axis) = self.gizmo_drag_axis {
-                                // Drag de gizmo: mover entidad a lo largo del eje
-                                state.drag_gizmo(cur.0, cur.1, lx, ly, axis);
-                            } else if self.mouse_right {
-                                if state.uses_editor_viewport_camera() {
-                                    state.orbit_editor_viewport(dx, dy);
-                                } else {
-                                    state.camera.orbit(dx, dy);
+                            let shift_active = self.shift_held || query_shift_held_os();
+                            self.shift_held = shift_active;
+                            state.shift_held = shift_active;
+                            let ctrl_active = self.ctrl_held || query_ctrl_held_os();
+                            self.ctrl_held = ctrl_active;
+                            state.ctrl_held = ctrl_active;
+
+                            if let Some(session) = self.entity_grab.as_ref() {
+                                state.set_snap_hint_visible(ctrl_active);
+                                state.apply_viewport_grab(
+                                    session.plane_point,
+                                    session.plane_normal,
+                                    &session.start_snapshots,
+                                    session.start_world,
+                                    cur,
+                                    session.constraint_axis,
+                                    shift_active,
+                                    ctrl_active,
+                                );
+                            } else {
+                                match self.entity_drag {
+                                    Some(EntityDragMode::GizmoTranslate(axis)) => {
+                                        state.drag_gizmo(
+                                            cur.0,
+                                            cur.1,
+                                            lx,
+                                            ly,
+                                            axis,
+                                            shift_active,
+                                            ctrl_active,
+                                        );
+                                    }
+                                    Some(EntityDragMode::GizmoRotate {
+                                        axis,
+                                        pivot,
+                                        start_mouse,
+                                        plane_u,
+                                        plane_v,
+                                    }) => {
+                                        if let Some(snapshots) = self.entity_drag_start.as_ref() {
+                                            state.drag_gizmo_rotate(
+                                                pivot,
+                                                snapshots,
+                                                start_mouse,
+                                                cur,
+                                                axis,
+                                                plane_u,
+                                                plane_v,
+                                                shift_active,
+                                                ctrl_active,
+                                            );
+                                        }
+                                    }
+                                    Some(EntityDragMode::Free {
+                                        plane_point,
+                                        plane_normal,
+                                        ref mut last_world,
+                                    }) => {
+                                        state.drag_entity_free(
+                                            cur.0,
+                                            cur.1,
+                                            plane_point,
+                                            plane_normal,
+                                            last_world,
+                                            shift_active,
+                                            ctrl_active,
+                                        );
+                                    }
+                                    None if self.mouse_middle => {
+                                        let nav =
+                                        editor_viewport_controls::resolve_editor_camera_nav_mode(
+                                            shift_active,
+                                            ctrl_active,
+                                        );
+                                        state.apply_editor_camera_nav(nav, dx, dy);
+                                    }
+                                    None => {}
                                 }
-                            } else if self.mouse_middle {
-                                state.pan_editor_viewport(dx, dy);
                             }
                         }
                     }
-                    // Hover: solo cuando no se está arrastrando
+                    // Hover: solo cuando no se está arrastrando ni navegando cámara
                     if !state.is_preview_playing()
                         && !state.player_ui_edit_active
-                        && !self.mouse_right
                         && !self.mouse_middle
-                        && self.gizmo_drag_axis.is_none()
+                        && self.entity_drag.is_none()
+                        && self.entity_grab.is_none()
                     {
                         let is_placement_tool =
                             crate::config_compat::is_editor_placement_tool(&state.active_tool);
@@ -837,7 +1195,9 @@ impl ApplicationHandler<EngineCommand> for App {
                         }
                         KeyCode::KeyZ if pressed && !repeat => {
                             let ctrl_active = self.ctrl_held || query_ctrl_held_os();
-                            if ctrl_active {
+                            if self.entity_grab.is_some() && !ctrl_active {
+                                set_viewport_transform_constraint(&mut self.entity_grab, 2);
+                            } else if ctrl_active {
                                 state.handle_command(EngineCommand::Common(
                                     EngineCommandCommon::Undo,
                                 ));
@@ -845,11 +1205,70 @@ impl ApplicationHandler<EngineCommand> for App {
                         }
                         KeyCode::KeyY if pressed && !repeat => {
                             let ctrl_active = self.ctrl_held || query_ctrl_held_os();
-                            if ctrl_active {
+                            if self.entity_grab.is_some() && !ctrl_active {
+                                set_viewport_transform_constraint(&mut self.entity_grab, 1);
+                            } else if ctrl_active {
                                 state.handle_command(EngineCommand::Common(
                                     EngineCommandCommon::Redo,
                                 ));
                             }
+                        }
+                        KeyCode::NumpadDecimal | KeyCode::Period
+                            if pressed && !repeat && !state.is_preview_playing() =>
+                        {
+                            state.frame_selected_in_viewport();
+                        }
+                        KeyCode::KeyG
+                            if pressed
+                                && !repeat
+                                && !state.is_preview_playing()
+                                && state.pivot_edit_mode.is_none()
+                                && !crate::config_compat::is_editor_placement_tool(
+                                    &state.active_tool,
+                                ) =>
+                        {
+                            if self.entity_grab.is_some() {
+                                finish_entity_grab_confirm(&mut self.entity_grab, state);
+                            } else {
+                                if let Some(cur) = self.last_cursor
+                                    && let Some(session) = try_begin_entity_grab(state, cur)
+                                {
+                                    self.entity_grab = Some(session);
+                                }
+                            }
+                        }
+                        KeyCode::KeyR
+                            if pressed
+                                && !repeat
+                                && !state.is_preview_playing()
+                                && state.pivot_edit_mode.is_none()
+                                && !crate::config_compat::is_editor_placement_tool(
+                                    &state.active_tool,
+                                ) =>
+                        {
+                            cancel_entity_grab(&mut self.entity_grab, state);
+                            clear_entity_drag_fields(
+                                &mut self.entity_drag,
+                                &mut self.entity_drag_start,
+                                state,
+                            );
+                            state.toggle_transform_gizmo_mode();
+                        }
+                        KeyCode::KeyX
+                            if pressed
+                                && !repeat
+                                && self.entity_grab.is_some()
+                                && !(self.ctrl_held || query_ctrl_held_os()) =>
+                        {
+                            set_viewport_transform_constraint(&mut self.entity_grab, 0);
+                        }
+                        KeyCode::Escape
+                            if pressed
+                                && !repeat
+                                && !state.is_preview_playing()
+                                && self.entity_grab.is_some() =>
+                        {
+                            cancel_entity_grab(&mut self.entity_grab, state);
                         }
                         _ => {}
                     }
@@ -869,6 +1288,9 @@ impl ApplicationHandler<EngineCommand> for App {
                     }
                 }
                 WindowEvent::MouseWheel { delta, .. } => {
+                    if state.is_preview_playing() {
+                        return;
+                    }
                     let scroll = match delta {
                         MouseScrollDelta::LineDelta(_, y) => y,
                         MouseScrollDelta::PixelDelta(p) => p.y as f32 * 0.05,
@@ -1024,13 +1446,14 @@ wgpu_hal::vulkan::instance=error,wgpu_core=warn,wgpu_hal=warn,naga=warn";
     let mut app = App {
         state: None,
         overlay,
-        mouse_right: false,
         mouse_middle: false,
         last_cursor: None,
         left_click_pos: None,
         player_ui_left_press: None,
-        gizmo_drag_axis: None,
-        gizmo_drag_start: None,
+        entity_drag: None,
+        entity_drag_start: None,
+        entity_grab: None,
+        last_entity_pick_click: None,
         ctrl_held: false,
         shift_held: false,
         keyboard_mouse_pressed: HashSet::new(),

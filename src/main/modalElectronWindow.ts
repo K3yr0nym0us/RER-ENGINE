@@ -15,6 +15,8 @@ import {
 } from './modalElectronSizes'
 
 let lastModalContentWidth = 400
+/** Si la ventana modal hija usa `modal: true` de Electron (bloquea la ventana padre). */
+let modalWindowUsesNativeModal = false
 
 let getMainWindow: () => BrowserWindow | null = () => null
 let getViewportScreenOrigin: () => { x: number; y: number } | null = () => null
@@ -137,17 +139,32 @@ function modalElectronUrl(): string {
   return `${pathToFileURL(file).toString()}#/modal-electron`
 }
 
-function getOrCreateModalWindow(): BrowserWindow {
+function wantsNativeElectronModal(payload: ModalElectronOpenRequest): boolean {
+  return (
+    payload.blockingOverlay === true
+    || MODAL_BLOCKING_OVERLAY_COMPONENT_KEYS.has(payload.componentKey)
+  )
+}
+
+function getOrCreateModalWindow(wantsNativeModal: boolean): BrowserWindow {
   const parent = getMainWindow()
+  if (modalWindow && !modalWindow.isDestroyed()) {
+    if (modalWindowUsesNativeModal !== wantsNativeModal) {
+      clearModalAboveEngineViewport(modalWindow)
+      modalWindow.destroy()
+      modalWindow = null
+    }
+  }
   if (modalWindow && !modalWindow.isDestroyed()) {
     return modalWindow
   }
 
   const windowIcon = resolveAppWindowIcon()
+  modalWindowUsesNativeModal = wantsNativeModal
 
   modalWindow = new BrowserWindow({
     parent: parent ?? undefined,
-    modal: parent != null,
+    modal: wantsNativeModal && parent != null,
     show: false,
     autoHideMenuBar: true,
     resizable: false,
@@ -232,7 +249,8 @@ export async function openModalElectronWindow(payload: ModalElectronOpenRequest)
     || MODAL_BLOCKING_OVERLAY_COMPONENT_KEYS.has(payload.componentKey)
 
   pendingRenderPayload = payload
-  const win = getOrCreateModalWindow()
+  const wantsNativeModal = wantsNativeElectronModal(payload)
+  const win = getOrCreateModalWindow(wantsNativeModal)
   const windowIcon = resolveAppWindowIcon()
   if (windowIcon) win.setIcon(windowIcon)
   win.setTitle(payload.title)
@@ -291,7 +309,10 @@ export async function openModalElectronWindow(payload: ModalElectronOpenRequest)
     win.center()
   }
   raiseModalAboveEngineViewport(win)
-  win.focus()
+  // Propiedades de entidad: no robar foco; el usuario sigue interactuando con el viewport.
+  if (!isViewportCornerModal) {
+    win.focus()
+  }
 }
 
 export function closeModalElectronWindow(): void {
@@ -328,5 +349,6 @@ export function destroyModalElectronWindow(): void {
     modalWindow.destroy()
   }
   modalWindow = null
+  modalWindowUsesNativeModal = false
   pendingRenderPayload = null
 }

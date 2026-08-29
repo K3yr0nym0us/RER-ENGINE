@@ -127,6 +127,46 @@ fn map_gamepad_control_key(button: GamepadButton) -> Option<&'static str> {
     }
 }
 
+const ENTITY_PICK_DOUBLE_CLICK_MAX_MS: u128 = 450;
+const ENTITY_PICK_DOUBLE_CLICK_MAX_DIST_PX: f32 = 8.0;
+
+#[derive(Clone, Copy)]
+struct EntityPickClickState {
+    time: std::time::Instant,
+    x: f32,
+    y: f32,
+    entity_id: u32,
+}
+
+fn register_entity_pick_double_click(
+    last: &mut Option<EntityPickClickState>,
+    x: f32,
+    y: f32,
+    hit_entity: Option<u32>,
+) -> Option<u32> {
+    let now = std::time::Instant::now();
+    if let (Some(prev), Some(entity_id)) = (*last, hit_entity)
+        && now.duration_since(prev.time).as_millis() <= ENTITY_PICK_DOUBLE_CLICK_MAX_MS
+    {
+        let dist = ((x - prev.x).powi(2) + (y - prev.y).powi(2)).sqrt();
+        if dist <= ENTITY_PICK_DOUBLE_CLICK_MAX_DIST_PX && entity_id == prev.entity_id {
+            *last = None;
+            return Some(entity_id);
+        }
+    }
+    if let Some(entity_id) = hit_entity {
+        *last = Some(EntityPickClickState {
+            time: now,
+            x,
+            y,
+            entity_id,
+        });
+    } else {
+        *last = None;
+    }
+    None
+}
+
 // ---------------------------------------------------------------------------
 // Estructura principal de la aplicación winit
 // ---------------------------------------------------------------------------
@@ -139,6 +179,7 @@ struct App {
     last_cursor: Option<(f32, f32)>,
     // Picking con click izquierdo
     left_click_pos: Option<(f32, f32)>, // posición al presionar
+    last_entity_pick_click: Option<EntityPickClickState>,
     // Drag de gizmo
     gizmo_drag_axis: Option<usize>, // eje activo (0=X,1=Y)
     gizmo_drag_start: Option<Vec<engine::types::EntityTransformSnapshot>>,
@@ -474,7 +515,20 @@ impl ApplicationHandler<EngineCommand> for App {
                                         if state.pivot_edit_mode.is_some() {
                                             state.handle_pivot_click_2d(cur.0, cur.1);
                                         } else if !state.handle_tool_click_2d(cur.0, cur.1) {
+                                            let hit_entity = state.entity_at_pixel_2d(cur.0, cur.1);
+                                            let properties_entity =
+                                                register_entity_pick_double_click(
+                                                    &mut self.last_entity_pick_click,
+                                                    cur.0,
+                                                    cur.1,
+                                                    hit_entity,
+                                                );
                                             state.pick_entity_2d(cur.0, cur.1);
+                                            if let Some(id) = properties_entity {
+                                                ipc::send_event(
+                                                    &EngineEvent::EntityPropertiesOpen { id },
+                                                );
+                                            }
                                         }
                                     }
                                 }
@@ -787,6 +841,7 @@ fn main() {
         mouse_middle: false,
         last_cursor: None,
         left_click_pos: None,
+        last_entity_pick_click: None,
         gizmo_drag_axis: None,
         gizmo_drag_start: None,
         ctrl_held: false,

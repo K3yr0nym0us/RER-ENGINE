@@ -19,6 +19,7 @@ pub(crate) mod bone_physics_pick;
 pub(crate) mod character_anchor;
 pub(crate) mod collision_overlay;
 pub(crate) mod editor_camera;
+pub(crate) mod editor_viewport_controls;
 pub(crate) mod entity_attachments;
 pub(crate) mod entity_sockets;
 pub(crate) mod entity_textures;
@@ -54,6 +55,7 @@ pub(crate) mod socket_bone_pick;
 pub(crate) mod socket_debug;
 pub(crate) mod static_model_cache;
 pub(crate) mod texture_graphics;
+pub(crate) mod transform_gizmo;
 pub(crate) mod world_bounds;
 pub(crate) use world_bounds::WorldBounds3D;
 
@@ -138,6 +140,28 @@ pub(crate) fn transform_position_for_visual_center(
         half,
     ));
     desired_center - visual
+}
+
+/// Aplica rotación alrededor de `group_pivot` manteniendo el centro visual de la malla
+/// (mismo criterio que `entity_world_pick_aabb` / gizmo), no `Transform.position`.
+pub(crate) fn rotate_entity_transform_about_visual_center(
+    start_transform: &Transform,
+    start_visual_center: glam::Vec3,
+    group_pivot: glam::Vec3,
+    delta_quat: glam::Quat,
+    model_path: &str,
+    local_bounds: Option<([f32; 3], [f32; 3])>,
+) -> (glam::Vec3, glam::Quat) {
+    let new_visual = group_pivot + delta_quat * (start_visual_center - group_pivot);
+    let new_rot = (delta_quat * start_transform.rotation).normalize();
+    let new_pos = transform_position_for_visual_center(
+        new_visual,
+        new_rot,
+        start_transform.scale,
+        model_path,
+        local_bounds,
+    );
+    (new_pos, new_rot)
 }
 
 /// Semieje del collider: AABB local de la malla × escala del transform.
@@ -228,6 +252,7 @@ use std::path::Path;
 use glam::Vec3 as GlamVec3;
 
 use crate::config_3d::character_anchor::PLAY_CHARACTER_BODY_HEIGHT;
+use crate::config_3d::transform_gizmo::TransformGizmoMode;
 use crate::config_shared::point_to_segment_2d;
 use crate::ecs::{EntityId, MeshComponent, NonSelectable, Transform};
 use crate::engine::State;
@@ -249,13 +274,31 @@ impl State {
             return Some(bounds);
         }
 
-        if let Some(model_id) = self.imported_model_registry.model_id_for_path(&asset_path) {
-            return self
+        if let Some(model_id) = self.imported_model_registry.model_id_for_path(&asset_path)
+            && let Some(bounds) = self
                 .cached_static_model_parts(&model_id)
                 .and_then(|parts| parts.first())
-                .map(|p| p.local_bounds);
+                .map(|p| p.local_bounds)
+        {
+            return Some(bounds);
         }
 
+        self.play_character_visual_local_bounds(&asset_path)
+    }
+
+    /// Bounds locales de la malla visible (estática, skinned o caché del jugador).
+    pub(crate) fn resolve_entity_visual_local_bounds(
+        &self,
+        id: EntityId,
+    ) -> Option<([f32; 3], [f32; 3])> {
+        if let Some(bounds) = self.entity_model_local_bounds(id) {
+            return Some(bounds);
+        }
+        if self.play_character_entity == Some(id)
+            && let Some(ext) = self.play_character_mesh_extents
+        {
+            return Some((ext.local_min, ext.local_max));
+        }
         None
     }
 
@@ -422,7 +465,7 @@ impl State {
             return (center, half);
         }
         let model_path = self.entity_asset_path_for_bounds(id).unwrap_or_default();
-        let bounds = self.entity_model_local_bounds(id);
+        let bounds = self.resolve_entity_visual_local_bounds(id);
         let half = physics_half_extents_for_model(transform.scale.abs().to_array(), bounds);
         let center = physics_body_world_center(transform, bounds, model_path.as_str(), half);
         (GlamVec3::from_array(center), GlamVec3::from_array(half))
@@ -836,6 +879,10 @@ impl State {
         if t >= 0.0 { Some(t) } else { None }
     }
 
+    pub(crate) fn entity_at_pixel(&self, pixel_x: f32, pixel_y: f32) -> Option<EntityId> {
+        self.ray_cast(pixel_x, pixel_y)
+    }
+
     fn ray_cast(&self, pixel_x: f32, pixel_y: f32) -> Option<EntityId> {
         use glam::Vec4;
 
@@ -965,22 +1012,337 @@ impl State {
             return None;
         }
         let origin = self.selection_center()?;
+        match self.transform_gizmo_mode {
+            TransformGizmoMode::Translate => {
+                self.pick_translate_gizmo_axis(origin, pixel_x, pixel_y)
+            }
+            TransformGizmoMode::Rotate => self.pick_rotate_gizmo_axis(origin, pixel_x, pixel_y),
+        }
+    }
+
+    fn pick_translate_gizmo_axis(
+        &self,
+        origin: GlamVec3,
+        pixel_x: f32,
+        pixel_y: f32,
+    ) -> Option<usize> {
         let so = self.project_to_screen(origin)?;
 
-        const LEN: f32 = 1.2;
+        let center_dist = ((pixel_x - so.0).powi(2) + (pixel_y - so.1).powi(2)).sqrt();
+        if center_dist < editor_viewport_controls::GIZMO_CENTER_PICK_RADIUS_PX {
+            return Some(editor_viewport_controls::GIZMO_CENTER_AXIS);
+        }
+
+        let gizmo_scale = self.transform_gizmo_world_scale().unwrap_or(1.0);
+        let len = rer_engine_shared::gizmo::axis_world_length(gizmo_scale);
+        let axis_starts = self
+            .transform_gizmo_axis_start_mesh()
+            .unwrap_or([0.0, 0.0, 0.0]);
         const THRESH: f32 = 16.0;
         let dirs = [GlamVec3::X, GlamVec3::Y, GlamVec3::Z];
 
         let mut best: Option<(f32, usize)> = None;
         for (i, &dir) in dirs.iter().enumerate() {
-            if let Some(tip) = self.project_to_screen(origin + dir * LEN) {
-                let d = point_to_segment_2d(pixel_x, pixel_y, so.0, so.1, tip.0, tip.1);
+            let start_world = origin + dir * axis_starts[i] * gizmo_scale;
+            if let (Some(base), Some(tip)) = (
+                self.project_to_screen(start_world),
+                self.project_to_screen(start_world + dir * len),
+            ) {
+                let d = point_to_segment_2d(pixel_x, pixel_y, base.0, base.1, tip.0, tip.1);
                 if d < THRESH && best.is_none_or(|(bd, _)| d < bd) {
                     best = Some((d, i));
                 }
             }
         }
         best.map(|(_, i)| i)
+    }
+
+    fn pick_rotate_gizmo_axis(
+        &self,
+        origin: GlamVec3,
+        pixel_x: f32,
+        pixel_y: f32,
+    ) -> Option<usize> {
+        let gizmo_scale = self.transform_gizmo_rotation_world_scale().unwrap_or(1.0);
+        let radius = crate::gizmo::GIZMO_ROTATION_RING_RADIUS * gizmo_scale;
+        const THRESH: f32 = 18.0;
+        const SEGMENTS: u32 = 48;
+
+        let mut best: Option<(f32, usize)> = None;
+        for axis in 0..3 {
+            let mut prev_screen = None;
+            for seg in 0..=SEGMENTS {
+                let t = std::f32::consts::TAU * seg as f32 / SEGMENTS as f32;
+                let local = crate::gizmo::rotation_ring_point(axis, radius, t);
+                let world = origin + GlamVec3::from_array(local);
+                if let Some(screen) = self.project_to_screen(world) {
+                    if let Some((px, py)) = prev_screen {
+                        let d = point_to_segment_2d(pixel_x, pixel_y, px, py, screen.0, screen.1);
+                        if d < THRESH && best.is_none_or(|(bd, _)| d < bd) {
+                            best = Some((d, axis));
+                        }
+                    }
+                    prev_screen = Some(screen);
+                }
+            }
+        }
+        best.map(|(_, i)| i)
+    }
+
+    pub(crate) fn is_entity_selected(&self, id: EntityId) -> bool {
+        self.selected_entities.contains(&id) || self.selected_entity == Some(id)
+    }
+
+    pub(crate) fn selected_entity_at_pixel(&self, pixel_x: f32, pixel_y: f32) -> Option<EntityId> {
+        let hit = self.ray_cast(pixel_x, pixel_y)?;
+        if self.is_entity_selected(hit) {
+            Some(hit)
+        } else {
+            None
+        }
+    }
+
+    pub(crate) fn selected_entity_ids(&self) -> Vec<EntityId> {
+        if !self.selected_entities.is_empty() {
+            self.selected_entities.clone()
+        } else {
+            self.selected_entity.into_iter().collect()
+        }
+    }
+
+    fn apply_selection_translation_delta(
+        &mut self,
+        selected_ids: &[EntityId],
+        delta: GlamVec3,
+        snap: bool,
+        sync_camera_focus: bool,
+    ) {
+        if selected_ids.is_empty() || delta.length_squared() < 1e-12 {
+            return;
+        }
+
+        let cell = if snap {
+            self.grid_config.cell_size.max(0.05)
+        } else {
+            0.0
+        };
+
+        for &sel_id in selected_ids {
+            if let Some(t) = self.world.get_mut::<Transform>(sel_id) {
+                t.position += delta;
+                if cell > 0.0 {
+                    t.position = editor_viewport_controls::snap_vec3_to_grid(t.position, cell);
+                }
+            }
+            if let Some(t) = self.world.get::<Transform>(sel_id).cloned() {
+                if self.is_plane_wall_entity(sel_id) && self.collider_entities.contains(&sel_id) {
+                    self.sync_plane_wall_physics(sel_id);
+                } else if self.physics.has_physics(sel_id) {
+                    let half = [
+                        (t.scale.x * 0.5).max(0.01),
+                        (t.scale.y * 0.5).max(0.01),
+                        (t.scale.z * 0.5).max(0.01),
+                    ];
+                    let pos = t.position.to_array();
+                    let model_path = self
+                        .save_registry
+                        .meta
+                        .get(&sel_id)
+                        .map(|m| m.path.as_str())
+                        .unwrap_or("");
+                    let body_pos = physics_body_position_for_model_path(model_path, pos, half);
+                    self.physics
+                        .sync_entity_physics_from_transform(sel_id, body_pos, half);
+                }
+            }
+        }
+
+        if selected_ids.iter().any(|id| self.sun_entity == Some(*id)) {
+            self.sync_directional_light_from_sun();
+        }
+        if !self.is_play_controller_active() && sync_camera_focus {
+            self.sync_editor_camera_focus();
+        }
+
+        if let Some(player_id) = self.play_character_entity
+            && selected_ids.contains(&player_id)
+        {
+            self.emit_play_character_view_changed(false);
+        }
+
+        let lead_id = self
+            .selected_entity
+            .or_else(|| selected_ids.last().copied());
+        if let Some(sel_id) = lead_id
+            && self.world.get::<Transform>(sel_id).is_some()
+        {
+            self.send_entity_selected_event(sel_id);
+        }
+
+        self.handle_entity_attachment_after_transform(selected_ids);
+        self.notify_reflection_probe_transform_changed(selected_ids);
+    }
+
+    pub(crate) fn apply_selection_rotation_from_snapshots(
+        &mut self,
+        pivot: GlamVec3,
+        snapshots: &[crate::engine::types::EntityTransformSnapshot],
+        delta_quat: glam::Quat,
+    ) {
+        if snapshots.is_empty() {
+            return;
+        }
+
+        let selected_ids: Vec<EntityId> = snapshots.iter().map(|(id, _, _, _)| *id).collect();
+        for &(id, start_pos, start_rot, start_scl) in snapshots {
+            if self.editor_camera_entity == Some(id) {
+                continue;
+            }
+            let start_pos = GlamVec3::from_array(start_pos);
+            let start_rot =
+                glam::Quat::from_xyzw(start_rot[0], start_rot[1], start_rot[2], start_rot[3]);
+            let start_scale = GlamVec3::from_array(start_scl);
+            let start_transform = Transform {
+                position: start_pos,
+                rotation: start_rot,
+                scale: start_scale,
+            };
+            let start_visual = self.entity_world_pick_aabb(id, &start_transform).0;
+            let model_path = self.entity_asset_path_for_bounds(id).unwrap_or_default();
+            let bounds = self.resolve_entity_visual_local_bounds(id);
+            let (new_pos, new_rot) = rotate_entity_transform_about_visual_center(
+                &start_transform,
+                start_visual,
+                pivot,
+                delta_quat,
+                model_path.as_str(),
+                bounds,
+            );
+
+            if let Some(t) = self.world.get_mut::<Transform>(id) {
+                t.position = new_pos;
+                t.rotation = new_rot;
+            }
+            if self.is_plane_wall_entity(id) && self.collider_entities.contains(&id) {
+                self.sync_plane_wall_physics(id);
+            } else if self.physics.has_physics(id) {
+                self.sync_entity_physics_collider(id);
+            }
+            if self.sun_entity == Some(id) {
+                self.sync_directional_light_from_sun();
+            }
+        }
+
+        let lead_id = self
+            .selected_entity
+            .or_else(|| selected_ids.last().copied());
+        if let Some(sel_id) = lead_id
+            && self.world.get::<Transform>(sel_id).is_some()
+        {
+            self.send_entity_selected_event(sel_id);
+        }
+
+        self.handle_entity_attachment_after_transform(&selected_ids);
+        self.notify_reflection_probe_transform_changed(&selected_ids);
+    }
+
+    pub(crate) fn apply_selection_translation_from_snapshots(
+        &mut self,
+        snapshots: &[crate::engine::types::EntityTransformSnapshot],
+        delta: GlamVec3,
+        snap: bool,
+    ) {
+        if snapshots.is_empty() || delta.length_squared() < 1e-12 {
+            return;
+        }
+
+        let cell = if snap {
+            self.grid_config.cell_size.max(0.05)
+        } else {
+            0.0
+        };
+
+        let selected_ids: Vec<EntityId> = snapshots.iter().map(|(id, _, _, _)| *id).collect();
+        for &(id, start_pos, start_rot, start_scl) in snapshots {
+            if self.editor_camera_entity == Some(id) {
+                continue;
+            }
+            let mut new_pos = GlamVec3::from_array(start_pos) + delta;
+            if cell > 0.0 {
+                new_pos = editor_viewport_controls::snap_vec3_to_grid(new_pos, cell);
+            }
+            if let Some(t) = self.world.get_mut::<Transform>(id) {
+                t.position = new_pos;
+                t.rotation =
+                    glam::Quat::from_xyzw(start_rot[0], start_rot[1], start_rot[2], start_rot[3]);
+                t.scale = GlamVec3::from_array(start_scl);
+            }
+            if self.is_plane_wall_entity(id) && self.collider_entities.contains(&id) {
+                self.sync_plane_wall_physics(id);
+            } else if self.physics.has_physics(id) {
+                self.sync_entity_physics_collider(id);
+            }
+            if self.sun_entity == Some(id) {
+                self.sync_directional_light_from_sun();
+            }
+        }
+
+        if let Some(player_id) = self.play_character_entity
+            && selected_ids.contains(&player_id)
+        {
+            self.emit_play_character_view_changed(false);
+        }
+
+        let lead_id = self
+            .selected_entity
+            .or_else(|| selected_ids.last().copied());
+        if let Some(sel_id) = lead_id
+            && self.world.get::<Transform>(sel_id).is_some()
+        {
+            self.send_entity_selected_event(sel_id);
+        }
+
+        self.handle_entity_attachment_after_transform(&selected_ids);
+        self.notify_reflection_probe_transform_changed(&selected_ids);
+    }
+
+    pub fn drag_entity_free(
+        &mut self,
+        pixel_x: f32,
+        pixel_y: f32,
+        plane_point: GlamVec3,
+        plane_normal: GlamVec3,
+        last_world: &mut GlamVec3,
+        shift_held: bool,
+        ctrl_held: bool,
+    ) {
+        let selected_ids = self.selected_entity_ids();
+        if selected_ids.is_empty() {
+            return;
+        }
+        let Some(hit) = self.free_drag_world_point(pixel_x, pixel_y, plane_point, plane_normal)
+        else {
+            return;
+        };
+
+        let mut delta = hit - *last_world;
+        let max_delta = self.editor_viewport_drag_max_delta();
+        if delta.length() > max_delta {
+            // Resincronizar sin teletransportar (p. ej. tras perder frames de intersección).
+            *last_world = hit;
+            return;
+        }
+
+        if shift_held {
+            delta *= editor_viewport_controls::DRAG_PRECISION_FACTOR;
+            *last_world += delta;
+        } else {
+            *last_world = hit;
+        }
+
+        delta = editor_viewport_controls::clamp_drag_delta(delta, max_delta);
+
+        self.apply_selection_translation_delta(&selected_ids, delta, ctrl_held, false);
     }
 
     pub fn drag_gizmo(
@@ -990,32 +1352,22 @@ impl State {
         last_x: f32,
         last_y: f32,
         axis_idx: usize,
+        shift_held: bool,
+        ctrl_held: bool,
     ) {
-        let selected_ids: Vec<EntityId> = if !self.selected_entities.is_empty() {
-            self.selected_entities.clone()
-        } else {
-            self.selected_entity.into_iter().collect()
-        };
-        if selected_ids.is_empty() {
+        let selected_ids = self.selected_entity_ids();
+        if selected_ids.is_empty() || axis_idx > 2 {
             return;
         }
+
+        let origin = match self.selection_center() {
+            Some(c) => c,
+            None => return,
+        };
 
         let w = self.size.width as f32;
         let h = self.size.height as f32;
         let aspect = w / h;
-
-        let mut sum = GlamVec3::ZERO;
-        let mut count = 0usize;
-        for &id in &selected_ids {
-            if let Some(t) = self.world.get::<Transform>(id) {
-                sum += t.position;
-                count += 1;
-            }
-        }
-        if count == 0 {
-            return;
-        }
-        let origin = sum / count as f32;
 
         let vp = self.camera.proj_matrix(aspect) * self.camera_view_matrix();
         let axis_world = [GlamVec3::X, GlamVec3::Y, GlamVec3::Z][axis_idx];
@@ -1046,59 +1398,81 @@ impl State {
 
         let dx = pixel_x - last_x;
         let dy = pixel_y - last_y;
-        let world_delta = (dx * ax + dy * ay) / (axis_len * axis_len);
+        let mut world_delta = (dx * ax + dy * ay) / (axis_len * axis_len);
+        if shift_held {
+            world_delta *= editor_viewport_controls::DRAG_PRECISION_FACTOR;
+        }
 
-        for &sel_id in &selected_ids {
-            if let Some(t) = self.world.get_mut::<Transform>(sel_id) {
-                t.position += axis_world * world_delta;
+        let axis_delta = axis_world * world_delta;
+        let max_delta = self.editor_viewport_drag_max_delta();
+        let clamped = editor_viewport_controls::clamp_drag_delta(axis_delta, max_delta);
+
+        self.apply_selection_translation_delta(&selected_ids, clamped, ctrl_held, false);
+    }
+
+    pub fn drag_gizmo_rotate(
+        &mut self,
+        pivot: GlamVec3,
+        snapshots: &[crate::engine::types::EntityTransformSnapshot],
+        start_mouse: (f32, f32),
+        current_mouse: (f32, f32),
+        axis_idx: usize,
+        plane_u: GlamVec3,
+        plane_v: GlamVec3,
+        shift_held: bool,
+        ctrl_held: bool,
+    ) {
+        if snapshots.is_empty() || axis_idx > 2 {
+            return;
+        }
+        let axis_world = [GlamVec3::X, GlamVec3::Y, GlamVec3::Z][axis_idx];
+        let Some(mut angle) = self.rotation_angle_on_axis_plane(
+            pivot,
+            axis_world,
+            start_mouse,
+            current_mouse,
+            plane_u,
+            plane_v,
+        ) else {
+            return;
+        };
+        if shift_held {
+            angle *= editor_viewport_controls::DRAG_PRECISION_FACTOR;
+        }
+        let mut delta = glam::Quat::from_axis_angle(axis_world, angle);
+        if ctrl_held {
+            delta = editor_viewport_controls::snap_rotation_quat(delta);
+        }
+        self.apply_selection_rotation_from_snapshots(pivot, snapshots, delta);
+    }
+
+    fn rotation_angle_on_axis_plane(
+        &self,
+        pivot: GlamVec3,
+        axis: GlamVec3,
+        start_mouse: (f32, f32),
+        current_mouse: (f32, f32),
+        plane_u: GlamVec3,
+        plane_v: GlamVec3,
+    ) -> Option<f32> {
+        let (ro0, rd0) = self.viewport_ray(start_mouse.0, start_mouse.1)?;
+        let (ro1, rd1) = self.viewport_ray(current_mouse.0, current_mouse.1)?;
+        editor_viewport_controls::rotation_drag_angle(
+            ro0, rd0, ro1, rd1, pivot, axis, plane_u, plane_v,
+        )
+    }
+
+    pub fn toggle_transform_gizmo_mode(&mut self) {
+        self.transform_gizmo_mode = self.transform_gizmo_mode.toggle();
+        self.hovered_gizmo_axis = None;
+        self.active_gizmo_axis = None;
+        log::info!(
+            "[gizmo] modo {}",
+            match self.transform_gizmo_mode {
+                TransformGizmoMode::Translate => "traslación",
+                TransformGizmoMode::Rotate => "rotación",
             }
-            if let Some(t) = self.world.get::<Transform>(sel_id).cloned() {
-                if self.is_plane_wall_entity(sel_id) && self.collider_entities.contains(&sel_id) {
-                    self.sync_plane_wall_physics(sel_id);
-                } else if self.physics.has_physics(sel_id) {
-                    let half = [
-                        (t.scale.x * 0.5).max(0.01),
-                        (t.scale.y * 0.5).max(0.01),
-                        (t.scale.z * 0.5).max(0.01),
-                    ];
-                    let pos = t.position.to_array();
-                    let model_path = self
-                        .save_registry
-                        .meta
-                        .get(&sel_id)
-                        .map(|m| m.path.as_str())
-                        .unwrap_or("");
-                    let body_pos = physics_body_position_for_model_path(model_path, pos, half);
-                    self.physics
-                        .sync_entity_physics_from_transform(sel_id, body_pos, half);
-                }
-            }
-        }
-
-        if selected_ids.iter().any(|id| self.sun_entity == Some(*id)) {
-            self.sync_directional_light_from_sun();
-        }
-        if !self.is_play_controller_active() {
-            self.sync_editor_camera_focus();
-        }
-
-        if let Some(player_id) = self.play_character_entity
-            && selected_ids.contains(&player_id)
-        {
-            self.emit_play_character_view_changed(false);
-        }
-
-        let lead_id = self
-            .selected_entity
-            .or_else(|| selected_ids.last().copied());
-        if let Some(sel_id) = lead_id
-            && self.world.get::<Transform>(sel_id).is_some()
-        {
-            self.send_entity_selected_event(sel_id);
-        }
-
-        self.handle_entity_attachment_after_transform(&selected_ids);
-        self.notify_reflection_probe_transform_changed(&selected_ids);
+        );
     }
 
     pub fn update_hover(&mut self, pixel_x: f32, pixel_y: f32) {

@@ -111,11 +111,16 @@ export function EngineProvider({
 		if (!viewportRef.current) return;
 		const rect = viewportRef.current.getBoundingClientRect();
 		const dpr = window.devicePixelRatio ?? 1;
+		// Evitar bounds absurdos si el layout se desincroniza (p. ej. durante fusión/modales).
+		const maxW = Math.ceil(window.innerWidth * dpr);
+		const maxH = Math.ceil(window.innerHeight * dpr);
+		const width = Math.max(1, Math.min(Math.round(rect.width * dpr), maxW));
+		const height = Math.max(1, Math.min(Math.round(rect.height * dpr), maxH));
 		window.electronAPI.sendViewportBounds({
-			x: rect.x * dpr,
-			y: rect.y * dpr,
-			width: rect.width * dpr,
-			height: rect.height * dpr,
+			x: Math.round(rect.x * dpr),
+			y: Math.round(rect.y * dpr),
+			width,
+			height,
 		});
 	};
 

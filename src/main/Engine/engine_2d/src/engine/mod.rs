@@ -556,6 +556,18 @@ impl State {
         if new_size.width == 0 || new_size.height == 0 {
             return;
         }
+        let requested = new_size;
+        let new_size =
+            rer_engine_shared::wgpu_surface::clamp_surface_physical_size(&self.device, new_size);
+        if new_size.width != requested.width || new_size.height != requested.height {
+            log::warn!(
+                "[render-2d] tamaño de viewport {}x{} recortado a {}x{} (límite GPU)",
+                requested.width,
+                requested.height,
+                new_size.width,
+                new_size.height
+            );
+        }
         self.size = new_size;
         self.config.width = new_size.width;
         self.config.height = new_size.height;
@@ -619,5 +631,33 @@ impl State {
         }
         self.selected_entity
             .and_then(|id| self.world.get::<Transform>(id).map(|t| t.position))
+    }
+
+    pub(crate) fn selection_max_extent_2d(&self) -> Option<f32> {
+        let ids: Vec<u32> = if !self.selected_entities.is_empty() {
+            self.selected_entities.clone()
+        } else {
+            self.selected_entity.into_iter().collect()
+        };
+        if ids.is_empty() {
+            return None;
+        }
+        let mut max_extent = 0.0f32;
+        for id in ids {
+            let t = self.world.get::<Transform>(id)?;
+            let extent = t.scale.x.abs().max(t.scale.y.abs());
+            max_extent = max_extent.max(extent);
+        }
+        Some(max_extent.max(1e-4))
+    }
+
+    pub(crate) fn transform_gizmo_world_scale_2d(&self) -> Option<f32> {
+        let cam = self.camera_2d.as_ref()?;
+        let _ = self.selection_center()?;
+        let screen = rer_engine_shared::gizmo::world_scale_ortho_2d(cam.half_h, self.size.height);
+        Some(rer_engine_shared::gizmo::clamp_scale_for_selection(
+            screen,
+            self.selection_max_extent_2d(),
+        ))
     }
 }

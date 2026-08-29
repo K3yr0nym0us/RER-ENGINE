@@ -176,54 +176,115 @@ impl State {
         ))
     }
 
-    /// Centro de selección para gizmo/grupo. Si no hay grupo, usa `selected_entity`.
-    pub(crate) fn selection_center(&self) -> Option<glam::Vec3> {
-        if let Some(player_id) = self.play_character_entity {
-            let player_selected = self.selected_entity == Some(player_id)
-                || self.selected_entities.contains(&player_id);
-            if player_selected && let Some((center, _)) = self.play_character_world_pick_aabb() {
-                return Some(center);
-            }
-        }
-
-        // Para modelos 3D (environment/object/model), el gizmo debe seguir el centro real del
-        // AABB de la malla. Algunos GLB (p.ej. terrain) tienen pivot lejos del volumen,
-        // y si anclamos en `Transform.position` el gizmo queda desplazado.
-        let model_aabb_center_for = |id: u32| -> Option<glam::Vec3> {
-            let t = self.world.get::<Transform>(id)?.clone();
-            let bounds = self.entity_model_local_bounds(id)?;
-            let model_path = self.entity_asset_path_for_bounds(id)?;
-            let half = crate::config_3d::physics_half_extents_for_model(
-                t.scale.abs().to_array(),
-                Some(bounds),
-            );
-            let center = crate::config_3d::physics_body_world_center(
-                &t,
-                Some(bounds),
-                model_path.as_str(),
-                half,
-            );
-            Some(glam::Vec3::from_array(center))
-        };
-
+    fn selection_entity_ids(&self) -> Vec<crate::ecs::EntityId> {
         if !self.selected_entities.is_empty() {
-            let mut sum = glam::Vec3::ZERO;
-            let mut count = 0usize;
-            for &id in &self.selected_entities {
-                if let Some(t) = self.world.get::<Transform>(id) {
-                    sum += model_aabb_center_for(id).unwrap_or(t.position);
-                    count += 1;
-                }
-            }
-            if count > 0 {
-                return Some(sum / count as f32);
-            }
+            self.selected_entities.clone()
+        } else {
+            self.selected_entity.into_iter().collect()
         }
-        self.selected_entity.and_then(|id| {
-            self.world
-                .get::<Transform>(id)
-                .map(|t| model_aabb_center_for(id).unwrap_or(t.position))
-        })
+    }
+
+    /// AABB mundial de la selección: centro + semiejes (misma fuente para gizmo y rotación).
+    pub(crate) fn selection_world_bounds(&self) -> Option<(glam::Vec3, glam::Vec3)> {
+        let ids = self.selection_entity_ids();
+        if ids.is_empty() {
+            return None;
+        }
+
+        let mut bounds_min = glam::Vec3::splat(f32::INFINITY);
+        let mut bounds_max = glam::Vec3::splat(f32::NEG_INFINITY);
+        for id in ids {
+            let t = self.world.get::<crate::ecs::Transform>(id)?;
+            let (center, half) = self.entity_world_pick_aabb(id, t);
+            bounds_min = bounds_min.min(center - half);
+            bounds_max = bounds_max.max(center + half);
+        }
+        if !bounds_min.is_finite() || !bounds_max.is_finite() {
+            return None;
+        }
+        let half = (bounds_max - bounds_min) * 0.5;
+        let center = (bounds_max + bounds_min) * 0.5;
+        Some((center, half))
+    }
+
+    /// Centro de selección para gizmo/grupo (centro del AABB mundial de la malla).
+    pub(crate) fn selection_center(&self) -> Option<glam::Vec3> {
+        self.selection_world_bounds().map(|(center, _)| center)
+    }
+
+    /// Mayor dimensión (m) del AABB de selección para acotar el gizmo en objetos pequeños.
+    pub(crate) fn selection_max_extent(&self) -> Option<f32> {
+        let ids: Vec<u32> = if !self.selected_entities.is_empty() {
+            self.selected_entities.clone()
+        } else {
+            self.selected_entity.into_iter().collect()
+        };
+        if ids.is_empty() {
+            return None;
+        }
+        let mut max_extent = 0.0f32;
+        for id in ids {
+            let t = self.world.get::<Transform>(id)?;
+            let (_, half) = self.entity_world_pick_aabb(id, t);
+            let extent = half[0].max(half[1]).max(half[2]) * 2.0;
+            max_extent = max_extent.max(extent);
+        }
+        Some(max_extent.max(1e-4))
+    }
+
+    /// Semiejes del AABB mundial de la selección (eje X/Y/Z alineados al mundo).
+    pub(crate) fn selection_world_half_extents(&self) -> Option<glam::Vec3> {
+        self.selection_world_bounds().map(|(_, half)| half)
+    }
+
+    /// Inicio de cada flecha del gizmo en unidades del mesh (antes de escalar).
+    pub(crate) fn transform_gizmo_axis_start_mesh(&self) -> Option<[f32; 3]> {
+        let half = self.selection_world_half_extents()?;
+        let scale = self.transform_gizmo_world_scale()?;
+        let anchor = self.selection_center()?;
+        let gap_world = rer_engine_shared::gizmo::axis_gap_world(
+            self.camera_world_position(),
+            anchor,
+            self.camera.fov_y,
+            self.size.height,
+        );
+        Some([
+            rer_engine_shared::gizmo::axis_start_mesh_units(half.x, gap_world, scale),
+            rer_engine_shared::gizmo::axis_start_mesh_units(half.y, gap_world, scale),
+            rer_engine_shared::gizmo::axis_start_mesh_units(half.z, gap_world, scale),
+        ])
+    }
+
+    /// Escala del gizmo de transformación (pantalla + tope por tamaño de selección).
+    pub(crate) fn transform_gizmo_world_scale(&self) -> Option<f32> {
+        let anchor = self.selection_center()?;
+        let screen = rer_engine_shared::gizmo::world_scale_perspective(
+            self.camera_world_position(),
+            anchor,
+            self.camera.fov_y,
+            self.size.height,
+        );
+        Some(rer_engine_shared::gizmo::clamp_scale_for_selection(
+            screen,
+            self.selection_max_extent(),
+        ))
+    }
+
+    /// Escala del gizmo de rotación: al menos un poco más grande que el AABB de la selección.
+    pub(crate) fn transform_gizmo_rotation_world_scale(&self) -> Option<f32> {
+        let base = self.transform_gizmo_world_scale()?;
+        let half = self.selection_world_half_extents()?;
+        let anchor = self.selection_center()?;
+        let gap_world = rer_engine_shared::gizmo::axis_gap_world(
+            self.camera_world_position(),
+            anchor,
+            self.camera.fov_y,
+            self.size.height,
+        );
+        const MARGIN: f32 = 1.18;
+        let min_radius_world = half.x.max(half.y).max(half.z) + gap_world;
+        let min_scale = min_radius_world / crate::gizmo::GIZMO_ROTATION_RING_RADIUS;
+        Some(base.max(min_scale * MARGIN))
     }
 
     pub fn update(&mut self) {

@@ -396,7 +396,9 @@ impl State {
             };
 
             // Situar el gizmo en el centro de selección (single o multi-select)
-            let gizmo_model = glam::Mat4::from_translation(origin);
+            let gizmo_scale = self.transform_gizmo_world_scale_2d().unwrap_or(1.0);
+            let gizmo_model = glam::Mat4::from_translation(origin)
+                * glam::Mat4::from_scale(glam::Vec3::splat(gizmo_scale));
 
             let gm = gizmo_model.to_cols_array_2d();
             let h_ax = self.hovered_gizmo_axis.map(|a| a as f32).unwrap_or(-1.0);

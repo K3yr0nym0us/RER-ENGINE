@@ -333,6 +333,18 @@ impl State {
         if new_size.width == 0 || new_size.height == 0 {
             return;
         }
+        let requested = new_size;
+        let new_size =
+            rer_engine_shared::wgpu_surface::clamp_surface_physical_size(&self.device, new_size);
+        if new_size.width != requested.width || new_size.height != requested.height {
+            log::warn!(
+                "[render] tamaño de viewport {}x{} recortado a {}x{} (límite GPU)",
+                requested.width,
+                requested.height,
+                new_size.width,
+                new_size.height
+            );
+        }
         self.size = new_size;
         self.config.width = new_size.width;
         self.config.height = new_size.height;
@@ -792,17 +804,12 @@ impl State {
 
                 if self.world_sky_buffer.vertex_count > 0 {
                     let vp = glam::Mat4::from_cols_array_2d(&scene_uni.view_proj);
-                    let sky_uni: [[f32; 4]; 9] = [
+                    let sky_uni = crate::gizmo::gizmo_uniform_world([
                         vp.x_axis.to_array(),
                         vp.y_axis.to_array(),
                         vp.z_axis.to_array(),
                         vp.w_axis.to_array(),
-                        [1.0, 0.0, 0.0, 0.0],
-                        [0.0, 1.0, 0.0, 0.0],
-                        [0.0, 0.0, 1.0, 0.0],
-                        [0.0, 0.0, 0.0, 1.0],
-                        [-1.0, -1.0, 0.0, 0.0],
-                    ];
+                    ]);
                     self.queue.write_buffer(
                         &self.grid_buffer_uni,
                         0,
@@ -1300,17 +1307,7 @@ impl State {
                 let vp = self
                     .camera_to_uniform_at_anchor(self.orbit_view_anchor(), aspect)
                     .view_proj;
-                let col_uni: [[f32; 4]; 9] = [
-                    vp[0],
-                    vp[1],
-                    vp[2],
-                    vp[3],
-                    [1.0, 0.0, 0.0, 0.0],
-                    [0.0, 1.0, 0.0, 0.0],
-                    [0.0, 0.0, 1.0, 0.0],
-                    [0.0, 0.0, 0.0, 1.0],
-                    [-1.0, -1.0, 0.0, 0.0],
-                ];
+                let col_uni = crate::gizmo::gizmo_uniform_world(vp);
                 self.queue
                     .write_buffer(&self.grid_buffer_uni, 0, bytemuck::cast_slice(&col_uni));
 
@@ -1354,17 +1351,7 @@ impl State {
                 let vp = self
                     .camera_to_uniform_at_anchor(self.orbit_view_anchor(), aspect)
                     .view_proj;
-                let probe_uni: [[f32; 4]; 9] = [
-                    vp[0],
-                    vp[1],
-                    vp[2],
-                    vp[3],
-                    [1.0, 0.0, 0.0, 0.0],
-                    [0.0, 1.0, 0.0, 0.0],
-                    [0.0, 0.0, 1.0, 0.0],
-                    [0.0, 0.0, 0.0, 1.0],
-                    [-1.0, -1.0, 0.0, 0.0],
-                ];
+                let probe_uni = crate::gizmo::gizmo_uniform_world(vp);
                 self.queue
                     .write_buffer(&self.grid_buffer_uni, 0, bytemuck::cast_slice(&probe_uni));
                 let mut probe_pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -1397,17 +1384,7 @@ impl State {
             let vp = self
                 .camera_to_uniform_at_anchor(self.orbit_view_anchor(), aspect)
                 .view_proj;
-            let bounds_uni: [[f32; 4]; 9] = [
-                vp[0],
-                vp[1],
-                vp[2],
-                vp[3],
-                [1.0, 0.0, 0.0, 0.0],
-                [0.0, 1.0, 0.0, 0.0],
-                [0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 1.0],
-                [-1.0, -1.0, 0.0, 0.0],
-            ];
+            let bounds_uni = crate::gizmo::gizmo_uniform_world(vp);
             self.queue
                 .write_buffer(&self.grid_buffer_uni, 0, bytemuck::cast_slice(&bounds_uni));
 
@@ -1456,17 +1433,7 @@ impl State {
             let vp = self
                 .camera_to_uniform_at_anchor(self.orbit_view_anchor(), aspect)
                 .view_proj;
-            let frustum_uni: [[f32; 4]; 9] = [
-                vp[0],
-                vp[1],
-                vp[2],
-                vp[3],
-                [1.0, 0.0, 0.0, 0.0],
-                [0.0, 1.0, 0.0, 0.0],
-                [0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 1.0],
-                [-1.0, -1.0, 0.0, 0.0],
-            ];
+            let frustum_uni = crate::gizmo::gizmo_uniform_world(vp);
             self.queue
                 .write_buffer(&self.grid_buffer_uni, 0, bytemuck::cast_slice(&frustum_uni));
 
@@ -1554,17 +1521,7 @@ impl State {
                 let vp = self
                     .camera_to_uniform_at_anchor(self.orbit_view_anchor(), aspect)
                     .view_proj;
-                let skel_uni: [[f32; 4]; 9] = [
-                    vp[0],
-                    vp[1],
-                    vp[2],
-                    vp[3],
-                    [1.0, 0.0, 0.0, 0.0],
-                    [0.0, 1.0, 0.0, 0.0],
-                    [0.0, 0.0, 1.0, 0.0],
-                    [0.0, 0.0, 0.0, 1.0],
-                    [-1.0, -1.0, 0.0, 0.0],
-                ];
+                let skel_uni = crate::gizmo::gizmo_uniform_world(vp);
                 self.queue
                     .write_buffer(&self.grid_buffer_uni, 0, bytemuck::cast_slice(&skel_uni));
                 let mut skel_pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -1597,17 +1554,7 @@ impl State {
                 let vp = self
                     .camera_to_uniform_at_anchor(self.orbit_view_anchor(), aspect)
                     .view_proj;
-                let skel_uni: [[f32; 4]; 9] = [
-                    vp[0],
-                    vp[1],
-                    vp[2],
-                    vp[3],
-                    [1.0, 0.0, 0.0, 0.0],
-                    [0.0, 1.0, 0.0, 0.0],
-                    [0.0, 0.0, 1.0, 0.0],
-                    [0.0, 0.0, 0.0, 1.0],
-                    [-1.0, -1.0, 0.0, 0.0],
-                ];
+                let skel_uni = crate::gizmo::gizmo_uniform_world(vp);
                 self.queue
                     .write_buffer(&self.grid_buffer_uni, 0, bytemuck::cast_slice(&skel_uni));
                 let mut sock_pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -1647,22 +1594,32 @@ impl State {
                 .camera_to_uniform_at_anchor(self.orbit_view_anchor(), aspect)
                 .view_proj;
 
-            let gizmo_model = glam::Mat4::from_translation(origin);
+            let gizmo_scale = match self.transform_gizmo_mode {
+                crate::config_3d::transform_gizmo::TransformGizmoMode::Translate => {
+                    self.transform_gizmo_world_scale().unwrap_or(1.0)
+                }
+                crate::config_3d::transform_gizmo::TransformGizmoMode::Rotate => {
+                    self.transform_gizmo_rotation_world_scale().unwrap_or(1.0)
+                }
+            };
+            let axis_start = match self.transform_gizmo_mode {
+                crate::config_3d::transform_gizmo::TransformGizmoMode::Translate => self
+                    .transform_gizmo_axis_start_mesh()
+                    .unwrap_or([0.0, 0.0, 0.0]),
+                crate::config_3d::transform_gizmo::TransformGizmoMode::Rotate => [0.0, 0.0, 0.0],
+            };
+            let gizmo_model = glam::Mat4::from_translation(origin)
+                * glam::Mat4::from_scale(glam::Vec3::splat(gizmo_scale));
 
-            let gm = gizmo_model.to_cols_array_2d();
             let h_ax = self.hovered_gizmo_axis.map(|a| a as f32).unwrap_or(-1.0);
             let a_ax = self.active_gizmo_axis.map(|a| a as f32).unwrap_or(-1.0);
-            let gizmo_uni: [[f32; 4]; 9] = [
-                vp[0],
-                vp[1],
-                vp[2],
-                vp[3],
-                gm[0],
-                gm[1],
-                gm[2],
-                gm[3],
-                [h_ax, a_ax, 0.0, 0.0],
-            ];
+            let gizmo_uni = crate::gizmo::gizmo_uniform(
+                vp,
+                gizmo_model.to_cols_array_2d(),
+                h_ax,
+                a_ax,
+                axis_start,
+            );
             self.queue
                 .write_buffer(&self.gizmo_buffer_uni, 0, bytemuck::cast_slice(&gizmo_uni));
 
@@ -1684,8 +1641,16 @@ impl State {
             });
             gpass.set_pipeline(&self.gizmo_pipeline);
             gpass.set_bind_group(0, &self.gizmo_bind_group, &[]);
-            gpass.set_vertex_buffer(0, self.gizmo_buffer.vertex_buffer.slice(..));
-            gpass.draw(0..self.gizmo_buffer.vertex_count, 0..1);
+            let gizmo_vbuf = match self.transform_gizmo_mode {
+                crate::config_3d::transform_gizmo::TransformGizmoMode::Translate => {
+                    &self.gizmo_buffer
+                }
+                crate::config_3d::transform_gizmo::TransformGizmoMode::Rotate => {
+                    &self.gizmo_rotate_buffer
+                }
+            };
+            gpass.set_vertex_buffer(0, gizmo_vbuf.vertex_buffer.slice(..));
+            gpass.draw(0..gizmo_vbuf.vertex_count, 0..1);
             draw_calls += 1;
         }
 

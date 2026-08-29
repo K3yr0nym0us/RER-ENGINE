@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 
 import type { ModalElectronOpenRequest } from '@shared-types'
 import { LanguageProvider } from '../context/LanguageContext'
+import { isBlockingOverlayModalComponent } from './modalElectronLayout'
 import { ModalElectronBody } from './ModalElectronBody'
 import { ModalElectronCloseProvider } from './ModalElectronCloseContext'
 import { useModalElectronContentSize } from './useModalElectronContentSize'
@@ -16,7 +17,10 @@ export function ModalElectronApp() {
   )
 
   const isResizable = payload?.resizable === true
-  const isBlockingOverlay = payload?.blockingOverlay === true
+  const isBlockingOverlay = isBlockingOverlayModalComponent(
+    payload?.componentKey,
+    payload?.blockingOverlay,
+  )
 
   useEffect(() => {
     document.documentElement.classList.toggle('modal-electron-resizable', isResizable)

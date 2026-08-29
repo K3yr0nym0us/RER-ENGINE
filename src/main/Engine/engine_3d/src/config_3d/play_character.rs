@@ -34,10 +34,38 @@ impl State {
         (body_center + forward * FORWARD_M).to_array()
     }
 
-    /// AABB de hover/click alineado a la cápsula del jugador (pies + altura), no al cubo genérico.
+    /// AABB de hover/click alineado al volumen visual del jugador (centro de malla, no solo cápsula).
     pub(crate) fn play_character_world_pick_aabb(&self) -> Option<(glam::Vec3, glam::Vec3)> {
         let id = self.play_character_entity?;
         let t = self.world.get::<Transform>(id)?;
+        let model_path = self.entity_asset_path_for_bounds(id).unwrap_or_default();
+
+        if let Some(bounds) = self.resolve_entity_visual_local_bounds(id) {
+            let half = crate::config_3d::physics_half_extents_for_model(
+                t.scale.abs().to_array(),
+                Some(bounds),
+            );
+            let center = crate::config_3d::physics_body_world_center(
+                t,
+                Some(bounds),
+                model_path.as_str(),
+                half,
+            );
+            return Some((glam::Vec3::from_array(center), glam::Vec3::from_array(half)));
+        }
+
+        if let Some(ext) = self.play_character_mesh_extents {
+            let (scale, rot) = self.play_character_transform_scale_rot();
+            let feet = self.play_character_feet_position();
+            let center = center_from_feet(feet, scale, rot, Some(&ext));
+            let half_h = ext.height() * scale.y.abs() * 0.5;
+            let r = ext.horizontal_extent() * scale.x.abs().max(scale.z.abs()) * 0.5;
+            return Some((
+                center,
+                glam::Vec3::new(r.max(0.15), half_h.max(0.01), r.max(0.15)),
+            ));
+        }
+
         let feet = self.play_character_feet_position();
         let half_h = self.play_character_body_height_world(t.scale.y) * 0.5;
         let r = self.play_character_capsule_radius_world(t.scale);

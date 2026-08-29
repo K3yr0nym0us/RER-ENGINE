@@ -245,21 +245,10 @@ impl State {
         if !self.player_ui_edit_active || self.player_ui_object_draw_overlay.vertex_count == 0 {
             return 0;
         }
-        const NDC_IDENTITY: [[f32; 4]; 9] = [
-            [1.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
-            [1.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
-            [-1.0, -1.0, 0.0, 0.0],
-        ];
         self.queue.write_buffer(
             &self.gizmo_buffer_uni,
             0,
-            bytemuck::cast_slice(&NDC_IDENTITY),
+            bytemuck::cast_slice(&crate::gizmo::GIZMO_UNIFORM_IDENTITY),
         );
         let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("player-ui-object-draw-overlay-pass"),

@@ -1,6 +1,7 @@
 pub mod assets;
 pub mod bundled_models;
 pub mod editor_defaults;
+pub mod gizmo;
 pub mod gpu;
 pub mod logging;
 pub mod overlay;

@@ -83,15 +83,6 @@ impl Camera {
             + self.eye_offset_local
     }
 
-    pub(crate) fn orbit(&mut self, dx: f32, dy: f32) {
-        const SENSITIVITY: f32 = 0.005;
-        self.yaw += dx * SENSITIVITY;
-        self.pitch = (self.pitch - dy * SENSITIVITY).clamp(
-            -std::f32::consts::FRAC_PI_2 + 0.05,
-            std::f32::consts::FRAC_PI_2 - 0.05,
-        );
-    }
-
     pub(crate) fn zoom(&mut self, delta: f32) {
         self.distance = (self.distance - delta * 0.3).clamp(0.5, 500.0);
     }

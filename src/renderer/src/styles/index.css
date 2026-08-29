@@ -53,6 +53,13 @@ body {
   background: #55566f;
 }
 
+/* Columna central del editor (viewport + top bar + log). !important solo en CSS, no en style inline de React. */
+.engine-center-column {
+  width: 60% !important;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
 .app-sidebar {
   width: 268px;
   min-width: 268px;

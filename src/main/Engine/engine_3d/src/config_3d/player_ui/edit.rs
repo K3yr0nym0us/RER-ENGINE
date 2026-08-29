@@ -6,7 +6,6 @@ use crate::config_compat::ActiveTool;
 use crate::engine::State;
 use crate::gizmo::{self, GizmoBuffer, GizmoVertex};
 use crate::ipc::{EngineEvent, send_event};
-use rer_engine_shared::player_ui::grid::NDC_SCREEN_UNIFORM;
 
 pub(crate) use rer_engine_shared::player_ui::grid::{player_ui_grid_steps, snap_ndc_point_to_grid};
 
@@ -118,7 +117,7 @@ impl State {
         self.queue.write_buffer(
             &self.grid_buffer_uni,
             0,
-            bytemuck::cast_slice(&NDC_SCREEN_UNIFORM),
+            bytemuck::cast_slice(&crate::gizmo::GIZMO_UNIFORM_IDENTITY),
         );
 
         let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {

@@ -30,9 +30,14 @@ export function isResizableModalComponent(componentKey: string | undefined): boo
   return componentKey != null && MODAL_RESIZABLE_COMPONENT_KEYS.has(componentKey)
 }
 
+export const MODAL_BLOCKING_OVERLAY_COMPONENT_KEYS = new Set(['ProjectSaveBlockingModalBody'])
+
 export function isBlockingOverlayModalComponent(
-  _componentKey: string | undefined,
+  componentKey: string | undefined,
   blockingOverlay?: boolean,
 ): boolean {
-  return blockingOverlay === true
+  return (
+    blockingOverlay === true
+    || (componentKey != null && MODAL_BLOCKING_OVERLAY_COMPONENT_KEYS.has(componentKey))
+  )
 }

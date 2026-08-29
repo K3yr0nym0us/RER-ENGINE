@@ -35,6 +35,25 @@ export function UserGuide() {
       </section>
 
       <section>
+        <h5 className="mb-1">Viewport 3D (estilo Blender)</h5>
+        <p className="text-secondary mb-1">
+          En proyectos 3D, la navegación y el movimiento de entidades siguen el esquema por defecto de Blender:
+        </p>
+        <ul className="mb-0 text-secondary">
+          <li><strong>Órbita:</strong> botón central del ratón (MMB) + arrastre.</li>
+          <li><strong>Pan:</strong> Shift + MMB + arrastre.</li>
+          <li><strong>Zoom (dolly):</strong> Ctrl + MMB + arrastre vertical, o rueda del ratón.</li>
+          <li><strong>Encuadrar selección:</strong> tecla <strong>.</strong> del teclado numérico (Frame Selected).</li>
+          <li><strong>Mover entidad:</strong> tecla <strong>G</strong> (grab) o clic en flecha/centro del gizmo o arrastrando el objeto; <strong>X</strong>/<strong>Y</strong>/<strong>Z</strong> limitan el eje; clic izquierdo confirma, clic derecho o Esc cancelan.</li>
+          <li><strong>Rotar entidad:</strong> tecla <strong>R</strong> alterna el gizmo entre traslación (flechas) y rotación (anillos); arrastra un anillo para rotar alrededor de ese eje.</li>
+          <li><strong>Precisión:</strong> mantén Shift mientras arrastras o rotas para ajuste fino.</li>
+          <li><strong>Snap a cuadrícula / ángulos:</strong> mantén Ctrl mientras arrastras (posición) o rotas (incrementos de 15°).</li>
+          <li><strong>Seleccionar:</strong> clic izquierdo. Multi-selección con Ctrl + clic.</li>
+          <li><strong>Propiedades de entidad:</strong> doble clic izquierdo sobre la entidad seleccionada.</li>
+        </ul>
+      </section>
+
+      <section>
         <h5 className="mb-1">Guardado y proyecto</h5>
         <p className="text-secondary mb-0">
           Usa el boton superior derecho para guardar el proyecto. Una vez guardado se activará el guardado automatico.

@@ -452,6 +452,10 @@ pub enum EngineEvent {
     },
     /// Emitido cuando el usuario hace click izquierdo en vacío.
     EntityDeselected,
+    /// Doble click izquierdo sobre una entidad: abrir propiedades en el editor.
+    EntityPropertiesOpen {
+        id: u32,
+    },
     /// Emitido cuando el cursor pasa por encima de una entidad (solo cuando cambia).
     EntityHovered {
         id: u32,

@@ -101,7 +101,7 @@ function EngineViewInner({ projectType, gameStyle, initialSavePath, initialExtra
               onGameStyleChange={onGameStyleChange}
             />
 
-            <div className="d-flex flex-column flex-fill" style={{ width: '60% !important' }}>
+            <div className="d-flex flex-column flex-fill engine-center-column">
               <TopBarEngine 
                 projectType={projectType}
                 handleSave={handleSave}

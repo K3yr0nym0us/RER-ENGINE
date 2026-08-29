@@ -263,23 +263,12 @@ impl State {
         }
 
         let mut draw_calls = 0u32;
-        const NDC_IDENTITY: [[f32; 4]; 9] = [
-            [1.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
-            [1.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
-            [-1.0, -1.0, 0.0, 0.0],
-        ];
 
         if has_gizmo {
             self.queue.write_buffer(
                 &self.gizmo_buffer_uni,
                 0,
-                bytemuck::cast_slice(&NDC_IDENTITY),
+                bytemuck::cast_slice(&crate::gizmo::GIZMO_UNIFORM_IDENTITY),
             );
             let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("player-ui-gizmo-pass"),
@@ -315,7 +304,7 @@ impl State {
                 self.queue.write_buffer(
                     &self.gizmo_buffer_uni,
                     0,
-                    bytemuck::cast_slice(&NDC_IDENTITY),
+                    bytemuck::cast_slice(&crate::gizmo::GIZMO_UNIFORM_IDENTITY),
                 );
                 let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("player-ui-caret-pass"),

@@ -29,15 +29,12 @@ impl State {
     /// Selecciona la entidad bajo el cursor usando AABB en el plano XY.
     /// Cuando varios AABBs se solapan (p.ej. escenario + player) se elige
     /// la entidad con mayor Z (más cercana a la cámara).
-    pub fn pick_entity_2d(&mut self, pixel_x: f32, pixel_y: f32) {
+    pub fn entity_at_pixel_2d(&self, pixel_x: f32, pixel_y: f32) -> Option<EntityId> {
         if self.player_ui_edit_active {
-            return;
+            return None;
         }
-        let Some((wx, wy)) = self.screen_to_world_2d(pixel_x, pixel_y) else {
-            return;
-        };
+        let (wx, wy) = self.screen_to_world_2d(pixel_x, pixel_y)?;
 
-        // AABB en centro visual (mismo criterio que render y spatial grid).
         let mut best: Option<(EntityId, f32)> = None;
         for &entity in self.world.entities() {
             if self.world.has::<crate::ecs::NonSelectable>(entity) {
@@ -57,7 +54,14 @@ impl State {
                 best = Some((entity, transform.position.z));
             }
         }
-        let hit = best.map(|(id, _)| id);
+        best.map(|(id, _)| id)
+    }
+
+    pub fn pick_entity_2d(&mut self, pixel_x: f32, pixel_y: f32) {
+        if self.player_ui_edit_active {
+            return;
+        }
+        let hit = self.entity_at_pixel_2d(pixel_x, pixel_y);
         match hit {
             Some(entity) => {
                 if self.ctrl_held {
@@ -167,13 +171,16 @@ impl State {
         let cam = self.camera_2d.as_ref()?;
         let so = self.project_to_screen_2d(cam, origin)?;
 
-        const LEN: f32 = 1.2;
+        let len = self
+            .transform_gizmo_world_scale_2d()
+            .map(rer_engine_shared::gizmo::axis_world_length)
+            .unwrap_or(rer_engine_shared::gizmo::GIZMO_MESH_AXIS_LENGTH);
         const THRESH: f32 = 16.0;
         let dirs = [GlamVec3::X, GlamVec3::Y];
 
         let mut best: Option<(f32, usize)> = None;
         for (i, &dir) in dirs.iter().enumerate() {
-            if let Some(tip) = self.project_to_screen_2d(cam, origin + dir * LEN) {
+            if let Some(tip) = self.project_to_screen_2d(cam, origin + dir * len) {
                 let d = point_to_segment_2d(pixel_x, pixel_y, so.0, so.1, tip.0, tip.1);
                 if d < THRESH && best.is_none_or(|(bd, _)| d < bd) {
                     best = Some((d, i));

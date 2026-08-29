@@ -673,12 +673,22 @@ ipcMain.handle('get-image-data-url', async (_event, filePath: string): Promise<s
 })
 
 function sendEngineViewportBounds(bounds: ViewportBounds): void {
+  const MAX_VIEWPORT_DIM = 8192
+  const clampDim = (value: number) =>
+    Math.max(1, Math.min(MAX_VIEWPORT_DIM, Math.round(value)))
+  const width = clampDim(bounds.width)
+  const height = clampDim(bounds.height)
+  if (width !== Math.round(bounds.width) || height !== Math.round(bounds.height)) {
+    console.warn(
+      `[editor] viewport bounds recortados: ${bounds.width}x${bounds.height} → ${width}x${height}`,
+    )
+  }
   sendToEngine({
     cmd:    'set_bounds',
     x:      Math.round(bounds.x),
     y:      Math.round(bounds.y),
-    width:  Math.max(1, Math.round(bounds.width)),
-    height: Math.max(1, Math.round(bounds.height)),
+    width,
+    height,
     offset_x: lastRelativeBounds ? Math.round(lastRelativeBounds.x) : undefined,
     offset_y: lastRelativeBounds ? Math.round(lastRelativeBounds.y) : undefined,
   })

@@ -2,11 +2,13 @@
 // El color ya viene en el vértice.
 
 struct GizmoUniforms {
-    view_proj : mat4x4<f32>,
-    model     : mat4x4<f32>,
+    view_proj   : mat4x4<f32>,
+    model       : mat4x4<f32>,
     // x = hovered_axis (-1=none, 0=X, 1=Y, 2=Z)
     // y = active_axis  (-1=none, 0=X, 1=Y, 2=Z)
-    flags     : vec4<f32>,
+    flags       : vec4<f32>,
+    // Inicio de cada flecha en espacio del mesh (unidades locales antes de escala).
+    axis_start  : vec4<f32>,
 }
 
 @group(0) @binding(0)
@@ -22,12 +24,30 @@ struct VOut {
     @location(0) color          : vec4<f32>,
 }
 
-@vertex
-fn vs_main(in: VIn, @builtin(vertex_index) vtx_idx: u32) -> VOut {
-    var out: VOut;
-    out.clip_pos = u.view_proj * u.model * vec4<f32>(in.position, 1.0);
+fn gizmo_axis_from_color(col: vec4<f32>) -> i32 {
+    if col.r > col.g + 0.05 && col.r > col.b + 0.05 {
+        return 0;
+    }
+    if col.g > col.r + 0.05 && col.g > col.b + 0.05 {
+        return 1;
+    }
+    return 2;
+}
 
-    let axis    = i32(vtx_idx / 48u);
+@vertex
+fn vs_main(in: VIn) -> VOut {
+    var out: VOut;
+    var pos = in.position;
+    let axis = gizmo_axis_from_color(in.color);
+    if axis == 0 {
+        pos.x += u.axis_start.x;
+    } else if axis == 1 {
+        pos.y += u.axis_start.y;
+    } else {
+        pos.z += u.axis_start.z;
+    }
+    out.clip_pos = u.view_proj * u.model * vec4<f32>(pos, 1.0);
+
     let h_axis  = i32(u.flags.x);
     let a_axis  = i32(u.flags.y);
 
