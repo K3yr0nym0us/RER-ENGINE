@@ -145,6 +145,8 @@ pub struct State {
     pub(crate) quick_build_preview_scale: Option<[f32; 3]>,
     /// true = modo juego (simulación), false = modo editor.
     pub preview_playing: bool,
+    /// Última posición del cursor en píxeles durante play (para aim en scripts de control).
+    pub(crate) play_mouse_px: Option<(f32, f32)>,
     /// Edición de UI del jugador (cuadrícula de trabajo NDC).
     pub(crate) player_ui_edit_active: bool,
     pub(crate) ui_work_grid_buffer: GizmoBuffer,

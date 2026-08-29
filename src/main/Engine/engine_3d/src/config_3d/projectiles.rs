@@ -49,7 +49,7 @@ pub struct ProjectileConfig {
     /// Orientar el mesh al vector de velocidad (-Z local = forward).
     #[serde(default = "default_align_to_velocity")]
     pub align_to_velocity: bool,
-    /// Socket de origen al disparar desde `from_id` (default `muzzle`).
+    /// Socket de origen en la plantilla al disparar (default `muzzle`); si no existe, Transform de la plantilla.
     #[serde(default = "default_muzzle_socket")]
     pub muzzle_socket: Option<String>,
     /// Si true, rebota al impactar superficies metálicas (`SurfacePbr.metallic`).
@@ -204,7 +204,8 @@ impl State {
     }
 
     /// Dispara un clon cinemático de la plantilla `template_id`.
-    /// Funciona en editor y en play (`from_id == 0` / `None` → origen = plantilla / muzzle).
+    /// Origen siempre en la plantilla (Transform o socket en la plantilla).
+    /// `from_id` opcional: tirador a excluir de impactos (no cambia el origen).
     pub(crate) fn fire_projectile_from_template(
         &mut self,
         template_id: EntityId,
@@ -225,23 +226,18 @@ impl State {
         })?;
         let template_t = self.world.get::<Transform>(template_id)?.clone();
         let config = self.projectile_config_for(template_id);
-        let origin_id = from_id.filter(|&id| id != 0).unwrap_or(template_id);
+        let shooter_id = from_id.filter(|&id| id != 0 && id != template_id);
 
         let muzzle_name = config
             .muzzle_socket
             .as_deref()
             .unwrap_or(DEFAULT_MUZZLE_SOCKET);
-        let muzzle = self.resolve_muzzle_world(origin_id, muzzle_name);
+        let muzzle = self.resolve_muzzle_world(template_id, muzzle_name);
 
         let (origin, muzzle_rot) = if let Some(m) = muzzle {
             (m.position, Some(m.rotation))
         } else {
-            let pos = self
-                .world
-                .get::<Transform>(origin_id)
-                .map(|t| t.position)
-                .unwrap_or(template_t.position);
-            (pos, None)
+            (template_t.position, None)
         };
 
         let dir = {
@@ -296,7 +292,10 @@ impl State {
             }
         };
 
-        let mut exclude = vec![template_id, origin_id, entity_id];
+        let mut exclude = vec![template_id, entity_id];
+        if let Some(shooter) = shooter_id {
+            exclude.push(shooter);
+        }
         exclude.sort_unstable();
         exclude.dedup();
 

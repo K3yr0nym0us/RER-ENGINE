@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 
-import { Nav, Tab } from 'react-bootstrap'
+import { Nav, OverlayTrigger, Tab, Tooltip } from 'react-bootstrap'
 import {
 	CircleSquare,
+	Check2,
 	Check2Square,
 	Pencil,
+	Copy,
 	Trash,
 	BoxSeam,
 	PlayFill,
@@ -77,6 +79,7 @@ export function EntityPropertiesModalContent({
 		onConfirm: () => void
 	} | null>(null)
 	const [activeTab, setActiveTab] = useState<PropertiesTab>('transform')
+	const [entityIdCopied, setEntityIdCopied] = useState(false)
 
 	const is2D = projectType === '2D'
 	const is3D = projectType === '3D'
@@ -85,7 +88,14 @@ export function EntityPropertiesModalContent({
 	useEffect(() => {
 		setEntityNameDraft(selectedEntity?.name ?? '')
 		setIsEditingEntityName(false)
+		setEntityIdCopied(false)
 	}, [selectedEntity?.id, selectedEntity?.name])
+
+	useEffect(() => {
+		if (!entityIdCopied) return
+		const timer = window.setTimeout(() => setEntityIdCopied(false), 2000)
+		return () => window.clearTimeout(timer)
+	}, [entityIdCopied])
 
 	useEffect(() => {
 		setProjectileSpeedDraft(projectileConfig?.speed ?? 20)
@@ -469,6 +479,32 @@ export function EntityPropertiesModalContent({
 						</AppTooltip>
 					)}
 				</div>
+				<OverlayTrigger
+					show={entityIdCopied ? true : undefined}
+					trigger={entityIdCopied ? [] : ['hover', 'focus']}
+					placement="bottom"
+					container={() => document.body}
+					overlay={
+						<Tooltip id={`entity-copy-id-${selectedEntity.id}`}>
+							{entityIdCopied ? t('Entity ID copied') : t('Copy entity ID')}
+						</Tooltip>
+					}
+				>
+					<button
+						type="button"
+						className={`btn btn-sm flex-shrink-0 d-inline-flex align-items-center entity-props-copy-id-btn${
+							entityIdCopied ? ' btn-outline-success entity-props-copy-id-btn--copied' : ' btn-outline-secondary'
+						}`}
+						onClick={() => {
+							void navigator.clipboard.writeText(String(selectedEntity.id)).then(() => {
+								setEntityIdCopied(true)
+							})
+						}}
+						aria-label={entityIdCopied ? t('Entity ID copied') : t('Copy entity ID')}
+					>
+						{entityIdCopied ? <Check2 /> : <Copy />}
+					</button>
+				</OverlayTrigger>
 				{!isPlayer && (
 					<AppTooltip content={t('Delete')} place="left">
 						<button

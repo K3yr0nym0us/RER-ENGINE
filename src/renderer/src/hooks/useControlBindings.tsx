@@ -62,6 +62,7 @@ export function useControlBindings() {
     editorCameraEntityIdRef,
     playerEntityIdRef,
     playCharacterViewSyncSeq,
+    projectType,
     send,
   } = useContextEngine()
   const { openModal } = useModal()
@@ -157,7 +158,10 @@ export function useControlBindings() {
           <ScriptEditorModalBody
             initialData={existing ?? {
               name: `${mode}_${controlKey.toLowerCase()}`,
-              source: getDefaultControlScript(locale),
+              source: getDefaultControlScript(locale, {
+                controlKey,
+                projectType: projectType === '3D' ? '3D' : '2D',
+              }),
             }}
             onSave={(data) => {
               setBinding(mode, controlKey, data)
@@ -181,7 +185,7 @@ export function useControlBindings() {
         />
       ),
     })
-  }, [effectiveCharacterId, getBindingsForCurrentCharacter, locale, openModal, selectedCharacterLabel, setBinding])
+  }, [effectiveCharacterId, getBindingsForCurrentCharacter, locale, openModal, projectType, selectedCharacterLabel, setBinding])
 
   const currentBindings = getBindingsForCurrentCharacter()
 

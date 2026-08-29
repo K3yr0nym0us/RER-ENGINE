@@ -432,6 +432,17 @@ body {
   padding-left: 0.45rem;
   padding-right: 0.45rem;
 }
+.entity-props-copy-id-btn {
+  transition: color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
+}
+.entity-props-copy-id-btn--copied {
+  animation: entity-props-copy-id-pop 0.25s ease-out;
+}
+@keyframes entity-props-copy-id-pop {
+  0% { transform: scale(0.92); }
+  60% { transform: scale(1.1); }
+  100% { transform: scale(1); }
+}
 .entity-props-model-actions .entity-props-model-action-btn {
   flex: 1 1 0;
   min-width: 0;

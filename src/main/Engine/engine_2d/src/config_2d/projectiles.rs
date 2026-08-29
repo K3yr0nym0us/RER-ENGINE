@@ -161,6 +161,7 @@ impl State {
     }
 
     /// Dispara un clon cinemático de la plantilla `template_id`.
+    /// Origen siempre en la plantilla. `from_id` opcional: tirador a excluir de impactos.
     pub(crate) fn fire_projectile_from_template(
         &mut self,
         template_id: EntityId,
@@ -179,13 +180,9 @@ impl State {
         let template_t = self.world.get::<Transform>(template_id)?.clone();
         let mesh = self.world.get::<MeshComponent>(template_id)?.clone();
         let config = self.projectile_config_for(template_id);
-        let origin_id = from_id.filter(|&id| id != 0).unwrap_or(template_id);
+        let shooter_id = from_id.filter(|&id| id != 0 && id != template_id);
 
-        let origin_xy = self
-            .world
-            .get::<Transform>(origin_id)
-            .map(|t| Vec2::new(t.position.x, t.position.y))
-            .unwrap_or(Vec2::new(template_t.position.x, template_t.position.y));
+        let origin_xy = Vec2::new(template_t.position.x, template_t.position.y);
 
         let dir = {
             let len = dir.length();
@@ -219,7 +216,10 @@ impl State {
             },
         );
 
-        let mut exclude = vec![template_id, origin_id, entity_id];
+        let mut exclude = vec![template_id, entity_id];
+        if let Some(shooter) = shooter_id {
+            exclude.push(shooter);
+        }
         exclude.sort_unstable();
         exclude.dedup();
 

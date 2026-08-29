@@ -102,6 +102,73 @@ const CONTROL_SCRIPT_ES = `// Script de control — se ejecuta cada frame mientr
 engine.fp_set_walk_speed(4.0);
 `
 
+const MOUSE_LEFT_PROJECTILE_2D_EN = `// MOUSE LEFT — fire projectile toward the mouse pointer (play mode only).
+// Use the numeric entity id (Properties → Copy entity ID), not the display name.
+//
+// fn on_press(entity, control_key) {
+//     if engine.is_play_mode() {
+//         let template_id = 42;
+//         let mx = engine.mouse_world_x();
+//         let my = engine.mouse_world_y();
+//         let dx = mx - entity.x;
+//         let dy = my - entity.y;
+//         let len_sq = dx * dx + dy * dy;
+//         if len_sq > 0.000001 {
+//             let len = len_sq.sqrt();
+//             engine.fire_projectile(template_id, entity.id, dx / len, dy / len, 0.0);
+//         }
+//     }
+// }
+`
+
+const MOUSE_LEFT_PROJECTILE_2D_ES = `// MOUSE LEFT — disparar proyectil hacia el puntero del ratón (solo en modo play).
+// Usa el id numérico de la entidad (Propiedades → Copiar ID de la entidad), no el nombre visible.
+//
+// fn on_press(entity, control_key) {
+//     if engine.is_play_mode() {
+//         let template_id = 42;
+//         let mx = engine.mouse_world_x();
+//         let my = engine.mouse_world_y();
+//         let dx = mx - entity.x;
+//         let dy = my - entity.y;
+//         let len_sq = dx * dx + dy * dy;
+//         if len_sq > 0.000001 {
+//             let len = len_sq.sqrt();
+//             engine.fire_projectile(template_id, entity.id, dx / len, dy / len, 0.0);
+//         }
+//     }
+// }
+`
+
+const MOUSE_LEFT_PROJECTILE_3D_EN = `// MOUSE LEFT — fire projectile toward the screen crosshair (FPS play mode).
+// The cursor is hidden in first-person; aim uses the camera forward vector.
+// Use the numeric entity id (Properties → Copy entity ID), not the display name.
+//
+// fn on_press(entity, control_key) {
+//     if engine.is_play_mode() {
+//         let template_id = 42;
+//         engine.fire_projectile(template_id, entity.id, engine.play_aim_dir_x(), engine.play_aim_dir_y(), engine.play_aim_dir_z());
+//     }
+// }
+`
+
+const MOUSE_LEFT_PROJECTILE_3D_ES = `// MOUSE LEFT — disparar proyectil hacia la cruceta central (modo play FPS).
+// El cursor está oculto en primera persona; la dirección sale de la cámara.
+// Usa el id numérico de la entidad (Propiedades → Copiar ID de la entidad), no el nombre visible.
+//
+// fn on_press(entity, control_key) {
+//     if engine.is_play_mode() {
+//         let template_id = 42;
+//         engine.fire_projectile(template_id, entity.id, engine.play_aim_dir_x(), engine.play_aim_dir_y(), engine.play_aim_dir_z());
+//     }
+// }
+`
+
+export type ControlScriptTemplateOptions = {
+  controlKey?: string
+  projectType?: '2D' | '3D'
+}
+
 export function getDefaultEntityScript(locale: Locale): string {
   return locale === 'es' ? ENTITY_SCRIPT_ES : ENTITY_SCRIPT_EN
 }
@@ -110,6 +177,16 @@ export function getDefaultSceneScript(locale: Locale): string {
   return locale === 'es' ? SCENE_SCRIPT_ES : SCENE_SCRIPT_EN
 }
 
-export function getDefaultControlScript(locale: Locale): string {
+export function getDefaultControlScript(
+  locale: Locale,
+  options?: ControlScriptTemplateOptions,
+): string {
+  if (options?.controlKey === 'MOUSE_LEFT') {
+    const is3d = options.projectType === '3D'
+    if (locale === 'es') {
+      return is3d ? MOUSE_LEFT_PROJECTILE_3D_ES : MOUSE_LEFT_PROJECTILE_2D_ES
+    }
+    return is3d ? MOUSE_LEFT_PROJECTILE_3D_EN : MOUSE_LEFT_PROJECTILE_2D_EN
+  }
   return locale === 'es' ? CONTROL_SCRIPT_ES : CONTROL_SCRIPT_EN
 }

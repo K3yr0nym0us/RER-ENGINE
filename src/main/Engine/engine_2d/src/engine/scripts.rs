@@ -2,12 +2,31 @@ use std::collections::HashMap;
 
 use crate::ecs::Transform;
 use crate::ipc::{EngineCommand, EngineCommandCommon};
-use crate::scripting::{EntitySnapshot, ScriptCmd};
+use crate::scripting::{EntitySnapshot, PlayScriptInput, ScriptCmd};
 
 use super::State;
 use super::types::PendingSlide;
 
 impl State {
+    pub(crate) fn set_play_mouse_px(&mut self, px: f32, py: f32) {
+        self.play_mouse_px = Some((px, py));
+    }
+
+    pub(crate) fn build_play_script_input(&self) -> PlayScriptInput {
+        PlayScriptInput {
+            is_play: self.preview_playing,
+            mouse_world_2d: self
+                .play_mouse_px
+                .and_then(|(px, py)| self.screen_to_world_2d(px, py)),
+            play_aim_dir_3d: None,
+        }
+    }
+
+    pub(crate) fn prepare_control_script_input(&mut self) {
+        let input = self.build_play_script_input();
+        self.script_engine.set_play_script_input(input);
+    }
+
     pub(crate) fn update_entity_facing_from_horizontal(&mut self, entity_id: u32, horizontal: f32) {
         const EPS: f32 = 0.0001;
         if horizontal.abs() <= EPS {
@@ -148,6 +167,8 @@ impl State {
         if !self.preview_playing {
             return;
         }
+
+        self.prepare_control_script_input();
 
         let snapshot = self.build_script_snapshot(id);
         match self.script_engine.run_control_script(

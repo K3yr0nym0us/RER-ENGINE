@@ -127,8 +127,15 @@ engine_2d_only:
     - function: engine.fire_projectile(template_id, from_id, dir_x, dir_y, dir_z)
       description: |
         Dispara un clon cinemático de plantilla `kind: projectile` (editor y play).
-        from_id == 0 → origen en la plantilla. dir_z ignorado; dir (0,0) → +X mundo.
+        Origen siempre en la plantilla. from_id opcional = tirador a excluir de impactos (0 = ninguno).
+        dir_z ignorado; dir (0,0) → +X mundo.
         Ver docs/Projectiles_2D.yaml.
+    - function: engine.is_play_mode()
+      description: true mientras la escena está en modo play (preview).
+    - function: engine.mouse_world_x()
+      description: Coordenada X del puntero en mundo durante play (scripts de control).
+    - function: engine.mouse_world_y()
+      description: Coordenada Y del puntero en mundo durante play (scripts de control).
 
   triggers:
     description: |
@@ -203,8 +210,17 @@ engine_3d_only:
     - function: engine.fire_projectile(template_id, from_id, dir_x, dir_y, dir_z)
       description: |
         Dispara un clon cinemático de una plantilla `projectile` (editor y play).
-        from_id == 0 usa la plantilla (muzzle socket si existe).
-        Gravedad / rebote / muzzle: config de la plantilla (docs/Projectiles_3D.yaml).
+        Origen siempre en la plantilla (Transform o muzzle_socket en la plantilla).
+        from_id opcional = tirador a excluir de impactos (0 = ninguno).
+        Gravedad / rebote: config de la plantilla (docs/Projectiles_3D.yaml).
+    - function: engine.is_play_mode()
+      description: true mientras la escena está en modo play (preview).
+    - function: engine.play_aim_dir_x()
+      description: Componente X del vector normalizado hacia la cruceta (cámara FPS en play).
+    - function: engine.play_aim_dir_y()
+      description: Componente Y del vector normalizado hacia la cruceta (cámara FPS en play).
+    - function: engine.play_aim_dir_z()
+      description: Componente Z del vector normalizado hacia la cruceta (cámara FPS en play).
 
   example_fp_entity: |
     fn on_start(entity) {

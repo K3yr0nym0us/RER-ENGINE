@@ -243,6 +243,8 @@
   "Translate node: empty value": "Nodo Trasladar: valor vacío",
   "Scene references": "Referencias de escena",
   "Copy ID": "Copiar ID",
+  "Copy entity ID": "Copiar ID de la entidad",
+  "Entity ID copied": "ID de la entidad copiado",
   "Copy name": "Copiar nombre",
   "Base environment": "Entorno base",
   "No variables available": "Sin variables disponibles",

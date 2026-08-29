@@ -13,7 +13,7 @@ import { EngineProvider } from '@engine';
 import { ModalProvider } from '@modal';
 import { QuickBuildProvider } from '../../context/QuickBuildContext';
 import { PlaneToolProvider } from '../../context/PlaneToolContext';
-import { useAutoSave, useControlBindingsRuntime } from '@hooks';
+import { useAutoSave } from '@hooks';
 import { useEntityPropertiesModal } from './hooks/useEntityPropertiesModal';
 import { SceneManagerProvider } from './hooks/useSceneManager';
 import { SidebarAccordionProvider } from '../../context/SidebarAccordionContext';
@@ -78,8 +78,7 @@ function EngineViewInner({ projectType, gameStyle, initialSavePath, initialExtra
     savingProject,
   } = useAutoSave({ projectType, gameStyle, initialSavePath, initialExtractDir })
 
-  // Teclado/mando del renderer → IPC run_control_script (ventana overlay no recibe input).
-  useControlBindingsRuntime()
+  // En play el input lo gestiona la ventana winit del motor (overlay), no el renderer.
   useEntityPropertiesModal()
   useAiAssistantOverlaySync()
 
@@ -91,44 +90,44 @@ function EngineViewInner({ projectType, gameStyle, initialSavePath, initialExtra
       gameStyle={gameStyle}
       onSaveProject={handleSave}
     >
-    <SidebarAccordionProvider>
-    <div className="app-shell d-flex flex-column">
-      <div className="d-flex flex-grow-1 overflow-hidden">
-        <SidebarLeft
-          projectType={projectType}
-          gameStyle={gameStyle}
-          initialSavePath={initialSavePath}
-          initialExtractDir={initialExtractDir}
-          onGameStyleChange={onGameStyleChange}
-        />
+      <SidebarAccordionProvider>
+        <div className="app-shell d-flex flex-column">
+          <div className="d-flex flex-grow-1 overflow-hidden">
+            <SidebarLeft
+              projectType={projectType}
+              gameStyle={gameStyle}
+              initialSavePath={initialSavePath}
+              initialExtractDir={initialExtractDir}
+              onGameStyleChange={onGameStyleChange}
+            />
 
-        <div className="d-flex flex-column flex-fill" style={{ width: '60%' }}>
-          <TopBarEngine 
-            projectType={projectType}
-            handleSave={handleSave}
-            toggleAutoSave={toggleAutoSave}
-            hasSavedOnce={hasSavedOnce}
-            autoSaveEnabled={autoSaveEnabled}
-            savingProject={savingProject}
-          />
+            <div className="d-flex flex-column flex-fill" style={{ width: '60% !important' }}>
+              <TopBarEngine 
+                projectType={projectType}
+                handleSave={handleSave}
+                toggleAutoSave={toggleAutoSave}
+                hasSavedOnce={hasSavedOnce}
+                autoSaveEnabled={autoSaveEnabled}
+                savingProject={savingProject}
+              />
 
-          <main
-            className="flex-fill position-relative overflow-hidden engine-viewport-area"
-            ref={viewportRef}
-            style={{ background: 'var(--bs-body-bg)', marginTop: 0 }}
-          >
-            <EngineGpuErrorOverlay />
-            <QuickBuildOverlay viewportRef={viewportRef} />
-            <SceneImportLoadingOverlay />
-          </main>
+              <main
+                className="flex-fill position-relative overflow-hidden engine-viewport-area"
+                ref={viewportRef}
+                style={{ background: 'var(--bs-body-bg)', marginTop: 0 }}
+              >
+                <EngineGpuErrorOverlay />
+                <QuickBuildOverlay viewportRef={viewportRef} />
+                <SceneImportLoadingOverlay />
+              </main>
 
-          <LogConsole />
+              <LogConsole />
+            </div>
+
+            <SidebarRight projectType={projectType} />
+          </div>
         </div>
-
-        <SidebarRight projectType={projectType} />
-      </div>
-    </div>
-    </SidebarAccordionProvider>
+      </SidebarAccordionProvider>
     </SceneManagerProvider>
   )
 }

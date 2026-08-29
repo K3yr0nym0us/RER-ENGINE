@@ -2,6 +2,7 @@ use std::sync::{Arc, Mutex};
 
 use rhai::{Engine, INT};
 
+use super::play_script_input::PlayScriptInput;
 use super::script_cmd::ScriptCmd;
 
 /// Dirección XY estándar para una tecla de control (2D / side-scroller).
@@ -96,6 +97,8 @@ pub struct ScriptApiContext {
     pub reflection_tier: Arc<Mutex<String>>,
     /// Tecla del binding activo en scripts de control 2D (`move_control`).
     pub control_binding_key: Arc<Mutex<String>>,
+    /// Input de juego (ratón / cruceta) para scripts de control en play.
+    pub play_input: Arc<Mutex<PlayScriptInput>>,
     pub profile: ScriptEngineProfile,
 }
 
@@ -107,6 +110,7 @@ impl ScriptApiContext {
             graphics_texture_tier: Arc::new(Mutex::new("medium".to_string())),
             reflection_tier: Arc::new(Mutex::new("off".to_string())),
             control_binding_key: Arc::new(Mutex::new(String::new())),
+            play_input: Arc::new(Mutex::new(PlayScriptInput::default())),
             profile,
         }
     }
@@ -129,6 +133,11 @@ pub fn register_native_api(engine: &mut Engine, ctx: &ScriptApiContext) {
     let c = ctx.clone();
     engine.register_fn("__engine_log", move |msg: String| {
         c.push(ScriptCmd::Log { message: msg });
+    });
+
+    let play_input_ctx = ctx.play_input.clone();
+    engine.register_fn("__engine_is_play_mode", move || {
+        play_input_ctx.lock().map(|g| g.is_play).unwrap_or(false)
     });
 
     register_id_num2!(engine, ctx, "__engine_move_to", |id, x, y| {
@@ -291,6 +300,52 @@ pub fn register_native_api(engine: &mut Engine, ctx: &ScriptApiContext) {
                 });
             }
         });
+
+        let play_input_ctx = ctx.play_input.clone();
+        engine.register_fn("__engine_mouse_world_x", move || {
+            play_input_ctx
+                .lock()
+                .ok()
+                .and_then(|g| g.mouse_world_2d)
+                .map(|(x, _)| x as f64)
+                .unwrap_or(0.0)
+        });
+        let play_input_ctx = ctx.play_input.clone();
+        engine.register_fn("__engine_mouse_world_y", move || {
+            play_input_ctx
+                .lock()
+                .ok()
+                .and_then(|g| g.mouse_world_2d)
+                .map(|(_, y)| y as f64)
+                .unwrap_or(0.0)
+        });
+
+        let c = ctx.clone();
+        engine.register_fn(
+            "__engine_fire_projectile",
+            move |template_id: i64, from_id: i64, dir_x: f64, dir_y: f64, dir_z: f64| {
+                c.push(ScriptCmd::FireProjectile {
+                    template_id: template_id as u32,
+                    from_id: from_id as u32,
+                    dir_x: dir_x as f32,
+                    dir_y: dir_y as f32,
+                    dir_z: dir_z as f32,
+                });
+            },
+        );
+        let c = ctx.clone();
+        engine.register_fn(
+            "__engine_fire_projectile",
+            move |template_id: INT, from_id: INT, dir_x: INT, dir_y: INT, dir_z: INT| {
+                c.push(ScriptCmd::FireProjectile {
+                    template_id: template_id as u32,
+                    from_id: from_id as u32,
+                    dir_x: dir_x as f32,
+                    dir_y: dir_y as f32,
+                    dir_z: dir_z as f32,
+                });
+            },
+        );
     }
 
     if ctx.profile == ScriptEngineProfile::Engine3d {
@@ -376,6 +431,34 @@ pub fn register_native_api(engine: &mut Engine, ctx: &ScriptApiContext) {
                 .unwrap_or_else(|| "off".to_string())
         });
 
+        let play_input_ctx = ctx.play_input.clone();
+        engine.register_fn("__engine_play_aim_dir_x", move || {
+            play_input_ctx
+                .lock()
+                .ok()
+                .and_then(|g| g.play_aim_dir_3d)
+                .map(|(x, _, _)| x as f64)
+                .unwrap_or(0.0)
+        });
+        let play_input_ctx = ctx.play_input.clone();
+        engine.register_fn("__engine_play_aim_dir_y", move || {
+            play_input_ctx
+                .lock()
+                .ok()
+                .and_then(|g| g.play_aim_dir_3d)
+                .map(|(_, y, _)| y as f64)
+                .unwrap_or(0.0)
+        });
+        let play_input_ctx = ctx.play_input.clone();
+        engine.register_fn("__engine_play_aim_dir_z", move || {
+            play_input_ctx
+                .lock()
+                .ok()
+                .and_then(|g| g.play_aim_dir_3d)
+                .map(|(_, _, z)| z as f64)
+                .unwrap_or(-1.0)
+        });
+
         let c = ctx.clone();
         engine.register_fn(
             "__engine_fire_projectile",
@@ -429,6 +512,10 @@ let engine = #{
     move_entity_slide: |id, dx, dy, speed| { __engine_move_entity_slide(id, dx, dy, speed); },
     move_control: |id, speed| { __engine_move_control(id, speed); },
     set_vsync: |enabled| { __engine_set_vsync(enabled); },
+    is_play_mode: || { __engine_is_play_mode() },
+    mouse_world_x: || { __engine_mouse_world_x() },
+    mouse_world_y: || { __engine_mouse_world_y() },
+    fire_projectile: |template_id, from_id, dir_x, dir_y, dir_z| { __engine_fire_projectile(template_id, from_id, dir_x, dir_y, dir_z); },
 };
 "#;
 
@@ -445,6 +532,7 @@ let engine = #{
     move_entity: |id, speed, dir_x, dir_y| { __engine_move_entity(id, speed, dir_x, dir_y); },
     move_entity_facing: |id, speed, amount_x, dir_y| { __engine_move_entity_facing(id, speed, amount_x, dir_y); },
     set_vsync: |enabled| { __engine_set_vsync(enabled); },
+    is_play_mode: || { __engine_is_play_mode() },
     set_taa: |enabled| { __engine_set_taa(enabled); },
     fp_press_key: |key| { __engine_fp_press_key(key); },
     fp_jump: || { __engine_fp_jump(); },
@@ -459,6 +547,9 @@ let engine = #{
     get_graphics_texture_tier: || { __engine_get_graphics_texture_tier() },
     set_reflection_tier: |tier| { __engine_set_reflection_tier(tier); },
     get_reflection_tier: || { __engine_get_reflection_tier() },
+    play_aim_dir_x: || { __engine_play_aim_dir_x() },
+    play_aim_dir_y: || { __engine_play_aim_dir_y() },
+    play_aim_dir_z: || { __engine_play_aim_dir_z() },
     fire_projectile: |template_id, from_id, dir_x, dir_y, dir_z| { __engine_fire_projectile(template_id, from_id, dir_x, dir_y, dir_z); },
 };
 "#;

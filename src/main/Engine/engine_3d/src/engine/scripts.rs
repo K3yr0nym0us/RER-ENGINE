@@ -2,11 +2,34 @@ use std::collections::HashMap;
 
 use crate::ecs::Transform;
 use crate::ipc::{EngineCommand, EngineCommandCommon};
-use crate::scripting::{EntitySnapshot, ScriptCmd};
+use crate::scripting::{EntitySnapshot, PlayScriptInput, ScriptCmd};
 
 use super::State;
 
 impl State {
+    pub(crate) fn build_play_script_input(&self) -> PlayScriptInput {
+        let play_aim_dir_3d = if self.preview_playing && self.is_play_controller_active() {
+            let dir = self.camera.view_forward();
+            if dir.length_squared() > f32::EPSILON {
+                Some((dir.x, dir.y, dir.z))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        PlayScriptInput {
+            is_play: self.preview_playing,
+            mouse_world_2d: None,
+            play_aim_dir_3d,
+        }
+    }
+
+    pub(crate) fn prepare_control_script_input(&mut self) {
+        let input = self.build_play_script_input();
+        self.script_engine.set_play_script_input(input);
+    }
+
     /// Ejecuta un tick del motor de scripting y aplica los comandos generados.
     pub(crate) fn update_scripts(&mut self) {
         if !self.preview_playing {
@@ -64,6 +87,8 @@ impl State {
             return;
         }
 
+        self.prepare_control_script_input();
+
         let snapshot = self.build_script_snapshot(id);
         match self.script_engine.run_control_script(
             id,
@@ -89,26 +114,100 @@ impl State {
         }
     }
 
-    pub fn handle_runtime_control_input(&mut self, device: &str, control_key: &str) {
+    /// Una sola vez por pulsación (borde ascendente). Ejecuta `on_press` en Rhai.
+    pub fn dispatch_on_press(&mut self, device: &str, control_key: &str) {
         if !self.preview_playing {
             return;
         }
 
-        let matches: Vec<(u32, String, String)> = self
+        self.prepare_control_script_input();
+        log::info!("[on_press] tecla {} detectada", control_key);
+
+        let bindings: Vec<(u32, String, String)> = self
             .control_bindings_by_entity
             .iter()
-            .filter_map(|(&id, bindings)| {
+            .filter_map(|(&id, b)| {
                 let script = match device {
-                    "keyboard_mouse" => bindings.keyboard_mouse.get(control_key),
-                    "gamepad" => bindings.gamepad.get(control_key),
+                    "keyboard_mouse" => b.keyboard_mouse.get(control_key),
+                    "gamepad" => b.gamepad.get(control_key),
                     _ => None,
                 }?;
                 Some((id, script.name.clone(), script.source.clone()))
             })
             .collect();
 
-        for (id, path, source) in matches {
-            self.execute_control_script(id, control_key, &path, &source);
+        for (id, path, source) in bindings {
+            let snapshot = self.build_script_snapshot(id);
+            match self.script_engine.run_control_script_just_pressed(
+                id,
+                control_key,
+                &path,
+                &source,
+                snapshot.as_ref(),
+            ) {
+                Ok(commands) => self.apply_script_commands(commands),
+                Err(e) => log::error!("[on_press] Error en '{}' ({}): {}", path, control_key, e),
+            }
+            if self.play_character_entity == Some(id) {
+                self.play_controller_script_input
+                    .insert(control_key.to_string());
+            }
+        }
+    }
+
+    pub fn dispatch_on_keep_key_down(&self, control_key: &str) {
+        if !self.preview_playing {
+            return;
+        }
+        log::info!("[on_keep] tecla {} bajó", control_key);
+    }
+
+    pub fn dispatch_on_keep_key_up(&mut self, device: &str, control_key: &str) {
+        if !self.preview_playing {
+            return;
+        }
+        let _ = device;
+        log::info!("[on_keep] tecla {} subió", control_key);
+    }
+
+    /// Cada frame mientras la tecla/botón está sostenido. Ejecuta `on_keep` en Rhai.
+    pub fn dispatch_on_keep_frame(&mut self, device: &str, control_key: &str) {
+        if !self.preview_playing {
+            return;
+        }
+
+        let bindings: Vec<(u32, String, String)> = self
+            .control_bindings_by_entity
+            .iter()
+            .filter_map(|(&id, b)| {
+                let script = match device {
+                    "keyboard_mouse" => b.keyboard_mouse.get(control_key),
+                    "gamepad" => b.gamepad.get(control_key),
+                    _ => None,
+                }?;
+                Some((id, script.name.clone(), script.source.clone()))
+            })
+            .collect();
+
+        for (id, path, source) in bindings {
+            let snapshot = self.build_script_snapshot(id);
+            match self.script_engine.run_control_script(
+                id,
+                control_key,
+                &path,
+                &source,
+                snapshot.as_ref(),
+            ) {
+                Ok(mut commands) => {
+                    commands.retain(|c| !matches!(c, ScriptCmd::Log { .. }));
+                    self.apply_script_commands(commands);
+                }
+                Err(e) => log::error!("[on_keep] Error en '{}' ({}): {}", path, control_key, e),
+            }
+            if self.play_character_entity == Some(id) {
+                self.play_controller_script_input
+                    .insert(control_key.to_string());
+            }
         }
     }
 

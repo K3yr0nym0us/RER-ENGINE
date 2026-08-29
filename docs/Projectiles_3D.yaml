@@ -71,17 +71,17 @@ runtime:
     - Efecto: el clon conserva roll/orientación relativa de la plantilla; si la velocidad curva (gravedad/rebote), el mesh sigue el vector de vuelo sin perder ese offset.
     - Si false: rotación fija = la de la plantilla al spawn (no se actualiza en vuelo).
 
-  from_id + muzzle (arma en personaje):
-    - Origen y dir (0,0,0) salen del socket; la plantilla projectile define speed/lifetime/visual, no el aim del arma.
+  from_id (tirador):
+    - Opcional. Solo añade al tirador a exclude_entities (no cambia el origen del disparo).
+    - Origen siempre en la plantilla: Transform o socket `muzzle_socket` en la plantilla.
   fire: |
     IPC `fire_projectile` { template_id, from_id?, dir_x, dir_y, dir_z }
     Rhai `engine.fire_projectile(template_id, from_id, dx, dy, dz)`
     UI: Propiedades → tab Projectile → Test fire (dir mundo -Z; no gira con rotar la plantilla)
-    from_id omitido / 0 → host = plantilla
-    Origen (resolve_muzzle_world):
-      1) socket `muzzle_socket` en el host
-      2) mismo socket en arma hija enganchada a un socket del host
-      3) si no hay socket → Transform del host
+    from_id omitido / 0 → sin tirador extra en exclude
+    Origen (resolve_muzzle_world en la plantilla):
+      1) socket `muzzle_socket` en la plantilla
+      2) si no hay socket → Transform de la plantilla
     Dir explícita (p. ej. test fire -Z mundo) → trayectoria en espacio mundo.
     Dir (0,0,0) → forward del socket muzzle si existe (arma/host); si no, -Z mundo.
     Spawn: rotación del clon = Transform.rotation actual de la plantilla.

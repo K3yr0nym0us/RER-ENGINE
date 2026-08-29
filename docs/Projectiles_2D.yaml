@@ -47,7 +47,8 @@ runtime:
   dir_zero: |
     Script/Rhai con dir (0,0) → forward mundo +X (DEFAULT_PROJECTILE_DIR_2D).
   origin: |
-    Posición XY de from_id (o plantilla si from_id omitido/0). Sin muzzle socket.
+    Siempre Transform de la plantilla projectile (posición en escena / arma).
+    from_id opcional: tirador a excluir de impactos; no mueve el origen.
   align_to_velocity: |
     visual_angle_offset = angle(template.rotation) - atan2(dir.y, dir.x)
     En vuelo: rotation.z = atan2(vy, vx) + visual_angle_offset

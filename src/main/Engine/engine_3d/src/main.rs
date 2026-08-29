@@ -480,11 +480,12 @@ impl ApplicationHandler<EngineCommand> for App {
                         && let Some(control_key) = map_mouse_control_key(button)
                     {
                         if pressed {
-                            if self.keyboard_mouse_pressed.insert(control_key.to_string()) {
-                                state.handle_runtime_control_input("keyboard_mouse", control_key);
-                            }
+                            self.keyboard_mouse_pressed.insert(control_key.to_string());
+                            state.dispatch_on_press("keyboard_mouse", control_key);
+                            state.dispatch_on_keep_key_down(control_key);
                         } else {
                             self.keyboard_mouse_pressed.remove(control_key);
+                            state.dispatch_on_keep_key_up("keyboard_mouse", control_key);
                         }
                     }
                     match button {
@@ -804,14 +805,14 @@ impl ApplicationHandler<EngineCommand> for App {
                     } else if state.is_preview_playing() {
                         if let Some(control_key) = map_keyboard_control_key(code) {
                             if pressed {
-                                if self.keyboard_mouse_pressed.insert(control_key.clone()) {
-                                    state.handle_runtime_control_input(
-                                        "keyboard_mouse",
-                                        &control_key,
-                                    );
+                                self.keyboard_mouse_pressed.insert(control_key.clone());
+                                if !repeat {
+                                    state.dispatch_on_press("keyboard_mouse", &control_key);
+                                    state.dispatch_on_keep_key_down(&control_key);
                                 }
                             } else {
                                 self.keyboard_mouse_pressed.remove(&control_key);
+                                state.dispatch_on_keep_key_up("keyboard_mouse", &control_key);
                             }
                         }
                     } else if pressed
@@ -879,6 +880,16 @@ impl ApplicationHandler<EngineCommand> for App {
                     }
                 }
                 WindowEvent::RedrawRequested => {
+                    if state.is_preview_playing() {
+                        for control_key in &self.keyboard_mouse_pressed {
+                            state.dispatch_on_keep_frame("keyboard_mouse", control_key);
+                        }
+                        for button in &self.gamepad_pressed {
+                            if let Some(control_key) = map_gamepad_control_key(*button) {
+                                state.dispatch_on_keep_frame("gamepad", control_key);
+                            }
+                        }
+                    }
                     state.poll_and_advance_model_preloads(
                         crate::config_3d::static_model_cache::MODEL_GPU_PARTS_PER_FRAME,
                     );
@@ -938,26 +949,20 @@ impl ApplicationHandler<EngineCommand> for App {
                     while let Some(evt) = gilrs.next_event() {
                         match evt.event {
                             GamepadEventType::ButtonPressed(button, _) => {
-                                if self.gamepad_pressed.insert(button)
-                                    && let Some(control_key) = map_gamepad_control_key(button)
-                                {
-                                    state.handle_runtime_control_input("gamepad", control_key);
+                                self.gamepad_pressed.insert(button);
+                                if let Some(control_key) = map_gamepad_control_key(button) {
+                                    state.dispatch_on_press("gamepad", control_key);
+                                    state.dispatch_on_keep_key_down(control_key);
                                 }
                             }
                             GamepadEventType::ButtonReleased(button, _) => {
                                 self.gamepad_pressed.remove(&button);
+                                if let Some(control_key) = map_gamepad_control_key(button) {
+                                    state.dispatch_on_keep_key_up("gamepad", control_key);
+                                }
                             }
                             _ => {}
                         }
-                    }
-                }
-
-                for control_key in &self.keyboard_mouse_pressed {
-                    state.handle_runtime_control_input("keyboard_mouse", control_key);
-                }
-                for button in &self.gamepad_pressed {
-                    if let Some(control_key) = map_gamepad_control_key(*button) {
-                        state.handle_runtime_control_input("gamepad", control_key);
                     }
                 }
             } else {

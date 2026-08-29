@@ -330,6 +330,9 @@ impl ApplicationHandler<EngineCommand> for App {
                     && let Some(control_key) = map_mouse_control_key(button)
                 {
                     if pressed {
+                        if let Some(cur) = self.last_cursor {
+                            state.set_play_mouse_px(cur.0, cur.1);
+                        }
                         self.keyboard_mouse_pressed.insert(control_key.to_string());
                         state.dispatch_on_press("keyboard_mouse", control_key);
                         state.dispatch_on_keep_key_down(control_key);
@@ -515,6 +518,9 @@ impl ApplicationHandler<EngineCommand> for App {
                     return;
                 }
                 if state.is_preview_playing() {
+                    if let Some(cur) = self.last_cursor {
+                        state.set_play_mouse_px(cur.0, cur.1);
+                    }
                     self.gizmo_drag_axis = None;
                     self.gizmo_drag_start = None;
                     state.set_active_gizmo_axis(None);

@@ -22,6 +22,8 @@ impl State {
             return;
         }
 
+        self.prepare_control_script_input();
+
         log::info!("[on_press] tecla {} detectada", control_key);
 
         let bindings: Vec<(u32, String, String)> = self

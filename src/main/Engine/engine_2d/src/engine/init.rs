@@ -590,6 +590,7 @@ impl State {
             quick_build_preview_kind: None,
             quick_build_preview_scale: None,
             preview_playing: false,
+            play_mouse_px: None,
             player_ui_edit_active: false,
             ui_work_grid_buffer,
             player_ui_edit_scope: None,

@@ -7,6 +7,7 @@ use super::api::{
 };
 use super::control::ControlScriptDispatch;
 use super::entity_snapshot::EntitySnapshot;
+use super::play_script_input::PlayScriptInput;
 use super::script_cmd::ScriptCmd;
 
 pub type ScriptResult<T> = Result<T, String>;
@@ -134,6 +135,12 @@ impl ScriptEngine {
 
     pub fn clear_control_script_cache(&mut self) {
         self.control_script_cache.clear();
+    }
+
+    pub fn set_play_script_input(&self, input: PlayScriptInput) {
+        if let Ok(mut guard) = self.api_ctx.play_input.lock() {
+            *guard = input;
+        }
     }
 
     pub fn sync_graphics_texture_tier_readback(&self, tier: &str) {
@@ -804,6 +811,34 @@ mod tests {
                 .any(|c| matches!(c, ScriptCmd::PlayControllerPressKey { key } if key == "SPACE")),
             "expected fp_press_key cmd, got {cmds:?}"
         );
+    }
+
+    #[test]
+    fn mouse_left_projectile_2d_control_compiles() {
+        let source = r#"if engine.is_play_mode() {
+    let template_id = 1;
+    let mx = engine.mouse_world_x();
+    let my = engine.mouse_world_y();
+    let dx = mx - entity.x;
+    let dy = my - entity.y;
+    let len_sq = dx * dx + dy * dy;
+    if len_sq > 0.000001 {
+        let len = len_sq.sqrt();
+        engine.fire_projectile(template_id, entity.id, dx / len, dy / len, 0.0);
+    }
+}"#;
+        compile_control(ScriptEngineProfile::Engine2d, source)
+            .expect("mouse left 2d projectile control");
+    }
+
+    #[test]
+    fn mouse_left_projectile_3d_control_compiles() {
+        let source = r#"if engine.is_play_mode() {
+    let template_id = 1;
+    engine.fire_projectile(template_id, entity.id, engine.play_aim_dir_x(), engine.play_aim_dir_y(), engine.play_aim_dir_z());
+}"#;
+        compile_control(ScriptEngineProfile::Engine3d, source)
+            .expect("mouse left 3d projectile control");
     }
 
     /// Compiles Rhai control scripts from the embedded 2D demo (and optional 3D DEMO save).
