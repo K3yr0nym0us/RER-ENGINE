@@ -134,5 +134,6 @@ impl State {
             }
             self.emit_projectile_config_changed(entity_id);
         }
+        self.set_entity_hardness(entity_id, ent.hardness);
     }
 }

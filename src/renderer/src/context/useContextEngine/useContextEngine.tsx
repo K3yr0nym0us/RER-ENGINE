@@ -265,6 +265,7 @@ export function EngineProvider({
 		updateEntityVisualGraph: actions.updateEntityVisualGraph,
 		setEntityPhysics: actions.setEntityPhysics,
 		setProjectileConfig: actions.setProjectileConfig,
+		setEntityHardness: actions.setEntityHardness,
 		fireProjectile: actions.fireProjectile,
 		updateEntityTransform: actions.updateEntityTransform,
 		registerPivotEditListener: actions.registerPivotEditListener,

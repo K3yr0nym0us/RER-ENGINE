@@ -159,6 +159,8 @@ export interface Entity3D {
   scale: [number, number, number]
   physics_type?: PhysicsType3D
   colision: boolean
+  /** Dureza de gameplay (0 = proyectiles la ignoran). */
+  hardness?: number
   animations?: SavedAnimation[]
   scripts?: SavedScript[]
   /** Lógica visual compilada (Entity Blueprint). */
@@ -194,12 +196,14 @@ export interface ProjectileConfig3D {
   align_to_velocity?: boolean
   /** Socket de origen (default `muzzle`) al disparar desde from_id. */
   muzzle_socket?: string
-  /** Rebote en superficies metálicas (metallic >= 0.5). */
+  /** Legacy (ignored for surface decision); rebote lo decide hardness. */
   bounceable?: boolean
-  /** Rebotes máxim (si bounceable). */
+  /** Rebotes máxim al disparar. */
   max_bounces?: number
-  /** Fracción de velocidad perdida por rebote (0..1). */
+  /** Fracción de velocidad perdida por rebote o pierce (0..1). */
   bounce_speed_loss?: number
+  /** Tier de dureza del proyectil (0 = atraviesa todo sin pérdida). */
+  hardness?: number
 }
 
 export interface EntitySocket3D {
@@ -294,6 +298,8 @@ export interface SavedEntity {
   visual_model_path?: string
   /** Config de disparo (kind `projectile`). */
   projectile?: ProjectileConfig3D
+  /** Dureza de gameplay (0 = proyectiles la ignoran). */
+  hardness?: number
   /** Categoría de entorno para UI de colisión en 3D. */
   entity_category?: EntityCategory
 }

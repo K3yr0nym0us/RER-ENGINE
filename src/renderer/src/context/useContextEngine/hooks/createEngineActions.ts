@@ -752,6 +752,7 @@ export function createEngineActions({
 			bounceable?: boolean
 			maxBounces?: number
 			bounceSpeedLoss?: number
+			hardness?: number
 		},
 	) => {
 		const prev = refs.entityMetaRef.current[id]?.projectileConfig
@@ -771,6 +772,7 @@ export function createEngineActions({
 				1,
 				Math.max(0, extras?.bounceSpeedLoss ?? prev?.bounce_speed_loss ?? 0.2),
 			),
+			hardness: Math.max(0, Math.floor(extras?.hardness ?? prev?.hardness ?? 0)),
 		}
 		const meta = refs.entityMetaRef.current[id]
 		if (meta) {
@@ -790,6 +792,7 @@ export function createEngineActions({
 						bounceable: next.bounceable,
 						max_bounces: next.max_bounces,
 						bounce_speed_loss: next.bounce_speed_loss,
+						hardness: next.hardness,
 					}
 				: {
 						cmd: 'set_projectile_config',
@@ -802,8 +805,18 @@ export function createEngineActions({
 						bounceable: next.bounceable,
 						max_bounces: next.max_bounces,
 						bounce_speed_loss: next.bounce_speed_loss,
+						hardness: next.hardness,
 					},
 		)
+	}
+
+	const setEntityHardness = (id: number, hardness: number) => {
+		const value = Math.max(0, Math.floor(hardness))
+		const meta = refs.entityMetaRef.current[id]
+		if (meta) {
+			meta.hardness = value
+		}
+		sendMotor({ cmd: 'set_entity_hardness', id, hardness: value })
 	}
 
 	const fireProjectile = (
@@ -1181,6 +1194,7 @@ export function createEngineActions({
 		updateEntityVisualGraph,
 		setEntityPhysics,
 		setProjectileConfig,
+		setEntityHardness,
 		fireProjectile,
 		updateEntityTransform,
 		registerPivotEditListener,

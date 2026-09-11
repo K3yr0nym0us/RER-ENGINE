@@ -139,6 +139,9 @@ pub struct ImportSceneEntity {
     pub apply_initial_animation_frame: Option<bool>,
     #[serde(default)]
     pub projectile: Option<crate::config_2d::projectiles::ProjectileConfig>,
+    /// Dureza de gameplay (0 = proyectiles la ignoran).
+    #[serde(default)]
+    pub hardness: u32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -248,6 +251,9 @@ pub struct SaveEntitySnapshot {
     pub visual_model_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub projectile: Option<crate::config_2d::projectiles::ProjectileConfig>,
+    /// Dureza de gameplay (0 = proyectiles la ignoran).
+    #[serde(default)]
+    pub hardness: u32,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -702,6 +708,7 @@ pub enum EngineEvent {
         bounceable: bool,
         max_bounces: u32,
         bounce_speed_loss: f32,
+        hardness: u32,
     },
     /// Impacto de proyectil (`bounced` true = rebote en misma capa Z).
     #[serde(rename = "projectile_hit")]

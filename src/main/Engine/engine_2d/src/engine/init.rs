@@ -574,6 +574,7 @@ impl State {
             character_entities: Vec::new(),
             projectile_entities: Vec::new(),
             entity_projectile_config: std::collections::HashMap::new(),
+            entity_hardness: std::collections::HashMap::new(),
             active_projectiles: Vec::new(),
             background_entity: None,
             background_path: None,

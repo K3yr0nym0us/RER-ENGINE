@@ -153,6 +153,9 @@ struct SavedEntity {
     blueprint_id: Option<String>,
     #[serde(default)]
     projectile: Option<crate::config_2d::projectiles::ProjectileConfig>,
+    /// Dureza de gameplay (0 = proyectiles la ignoran).
+    #[serde(default)]
+    hardness: u32,
 }
 
 #[derive(Debug, Deserialize, Clone, Serialize)]
@@ -813,6 +816,7 @@ fn build_import_scene_entity(
         skip_transform: false,
         apply_initial_animation_frame: Some(true),
         projectile: entity.projectile.clone(),
+        hardness: entity.hardness,
     }
 }
 

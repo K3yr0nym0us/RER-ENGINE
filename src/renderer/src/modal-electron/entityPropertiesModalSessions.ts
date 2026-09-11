@@ -120,6 +120,7 @@ export function buildEntityPropertiesState(
 			bonePhysics: null,
 			isProjectile: false,
 			projectileConfig: null,
+			entityHardness: 0,
 		}
 	}
 
@@ -157,6 +158,7 @@ export function buildEntityPropertiesState(
 				bounceable: false,
 				max_bounces: 3,
 				bounce_speed_loss: 0.2,
+				hardness: 0,
 			})
 		: null
 
@@ -208,6 +210,7 @@ export function buildEntityPropertiesState(
 			: null,
 		isProjectile,
 		projectileConfig,
+		entityHardness: entityMeta?.hardness ?? 0,
 	}
 }
 
@@ -320,7 +323,12 @@ export async function runEntityPropertiesAction(
 				bounceable: action.bounceable,
 				maxBounces: action.maxBounces,
 				bounceSpeedLoss: action.bounceSpeedLoss,
+				hardness: action.hardness,
 			})
+			pushEntityPropertiesPatch(handlerId)
+			return
+		case 'setEntityHardness':
+			engine.setEntityHardness(action.id, action.hardness)
 			pushEntityPropertiesPatch(handlerId)
 			return
 		case 'fireProjectile':

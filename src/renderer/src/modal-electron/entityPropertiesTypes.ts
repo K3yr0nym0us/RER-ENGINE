@@ -71,6 +71,7 @@ export interface EntityPropertiesState {
 	bonePhysics: EntityPropertiesBonePhysicsUi | null
 	isProjectile: boolean
 	projectileConfig: ProjectileConfig3D | null
+	entityHardness: number
 }
 
 export type EntityPropertiesNestedModalKind =
@@ -101,7 +102,9 @@ export type EntityPropertiesAction =
 			bounceable?: boolean
 			maxBounces?: number
 			bounceSpeedLoss?: number
+			hardness?: number
 		}
+	| { action: 'setEntityHardness'; id: number; hardness: number }
 	| { action: 'fireProjectile'; templateId: number; dir: [number, number, number]; fromId?: number }
 	| { action: 'removeEntity'; id: number }
 	| { action: 'removeMultiple'; ids: number[] }

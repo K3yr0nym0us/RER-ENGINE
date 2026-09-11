@@ -119,6 +119,8 @@ pub struct State {
     pub(crate) projectile_entities: Vec<EntityId>,
     pub(crate) entity_projectile_config:
         std::collections::HashMap<EntityId, crate::config_2d::projectiles::ProjectileConfig>,
+    /// Dureza de gameplay por entidad (0 = proyectiles la ignoran).
+    pub(crate) entity_hardness: HashMap<EntityId, u32>,
     pub(crate) active_projectiles: Vec<crate::config_2d::projectiles::ActiveProjectile>,
     // Fondo del mundo 2D: entidad especial no seleccionable que cubre todo el área.
     pub(crate) background_entity: Option<EntityId>,

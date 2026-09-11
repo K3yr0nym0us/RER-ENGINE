@@ -681,7 +681,7 @@ export function createEngineEventHandler({
 						}
 						: {}),
 					...(burstCategory === 'projectile' || pending.entityCategory === 'projectile'
-						? { projectileConfig: { speed: 20, lifetime_s: 3 } }
+						? { projectileConfig: { speed: 20, lifetime_s: 3, hardness: 0 } }
 						: {}),
 					...(pending.blueprintId || loaded.blueprint_id
 						? { blueprintId: pending.blueprintId ?? loaded.blueprint_id }
@@ -989,7 +989,7 @@ export function createEngineEventHandler({
 						...(placementCategory === 'projectile'
 							? {
 								entityCategory: 'projectile' as EntityCategory,
-								projectileConfig: { speed: 20, lifetime_s: 3 },
+								projectileConfig: { speed: 20, lifetime_s: 3, hardness: 0 },
 							}
 							: {}),
 						...(placementCategory === 'character'
@@ -1557,6 +1557,7 @@ export function createEngineEventHandler({
 				path: projectile.path,
 				physicsEnabled: false,
 				physicsType: '',
+				hardness: 0,
 				projectileConfig: {
 					speed: 20,
 					lifetime_s: 3,
@@ -1566,6 +1567,7 @@ export function createEngineEventHandler({
 					bounceable: false,
 					max_bounces: 3,
 					bounce_speed_loss: 0.2,
+					hardness: 0,
 				},
 			};
 			tryEndSceneBurstLoad(dispatch, refs.sceneBurstLoadInProgressRef, refs, refs.sceneImportInProgressRef, refs.modelReplaceInProgressRef, reportBounds, refs);
@@ -2486,6 +2488,7 @@ export function createEngineEventHandler({
 				bounceable?: boolean;
 				max_bounces?: number;
 				bounce_speed_loss?: number;
+				hardness?: number;
 			};
 			const next = {
 				speed: e.speed,
@@ -2497,6 +2500,7 @@ export function createEngineEventHandler({
 				bounceable: e.bounceable ?? false,
 				max_bounces: e.max_bounces ?? 3,
 				bounce_speed_loss: e.bounce_speed_loss ?? 0.2,
+				hardness: e.hardness ?? 0,
 			};
 			const meta = refs.entityMetaRef.current[e.entity_id];
 			if (meta) {

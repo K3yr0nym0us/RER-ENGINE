@@ -31,6 +31,7 @@ impl State {
         self.character_entities.clear();
         self.projectile_entities.clear();
         self.entity_projectile_config.clear();
+        self.entity_hardness.clear();
         self.active_projectiles.clear();
         self.collider_entities.clear();
         self.execution_area_entities.clear();

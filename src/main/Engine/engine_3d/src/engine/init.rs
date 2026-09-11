@@ -1158,6 +1158,7 @@ impl State {
             blueprint_registry: HashMap::new(),
             entity_blueprint_ids: HashMap::new(),
             entity_colision: HashMap::new(),
+            entity_hardness: HashMap::new(),
             entity_attachments: HashMap::new(),
             entity_sockets: HashMap::new(),
             bone_index_cache: HashMap::new(),

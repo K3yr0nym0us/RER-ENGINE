@@ -100,6 +100,7 @@ impl State {
                 } else {
                     None
                 },
+                hardness: self.entity_hardness_for(id),
             });
         }
 

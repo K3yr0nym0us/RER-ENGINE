@@ -120,6 +120,8 @@ function kindToEntityCategory(kind?: string): Entity3D['category'] | undefined {
 			return 'character'
 		case 'scenario':
 			return 'environment'
+		case 'projectile':
+			return 'projectile'
 		case 'collider':
 		case 'execution_area':
 		case 'model':

@@ -34,6 +34,7 @@ export function EntityPropertiesElectronHost({ payload }: EntityPropertiesElectr
 			bonePhysics: null,
 			isProjectile: false,
 			projectileConfig: null,
+			entityHardness: 0,
 		},
 	)
 

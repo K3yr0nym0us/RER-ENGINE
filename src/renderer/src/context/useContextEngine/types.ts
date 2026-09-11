@@ -1328,6 +1328,8 @@ export interface EntityMeta {
 	sockets?: import('@shared-types').EntitySocket3D[]
 	/** Física secundaria por hueso. */
 	bonePhysics?: import('@shared-types').EntityBonePhysics3D[]
+	/** Dureza de gameplay (0 = proyectiles la ignoran). */
+	hardness?: number
 	/** Config de disparo (categoría projectile). */
 	projectileConfig?: import('@shared-types').ProjectileConfig3D
 	/** Huesos del modelo skinned (cache editor; invalidar al cambiar visualModelPath). */
@@ -1538,8 +1540,10 @@ export interface EngineContextValue extends EngineState {
 			bounceable?: boolean
 			maxBounces?: number
 			bounceSpeedLoss?: number
+			hardness?: number
 		},
 	) => void
+	setEntityHardness: (id: number, hardness: number) => void
 	fireProjectile: (
 		templateId: number,
 		dir: [number, number, number],

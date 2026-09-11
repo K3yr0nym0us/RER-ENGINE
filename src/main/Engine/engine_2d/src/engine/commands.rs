@@ -375,6 +375,7 @@ impl State {
                 self.character_entities.retain(|&e| e != id);
                 self.projectile_entities.retain(|&e| e != id);
                 self.entity_projectile_config.remove(&id);
+                self.entity_hardness.remove(&id);
                 self.active_projectiles.retain(|p| p.entity_id != id);
                 self.collider_entities.retain(|&e| e != id);
                 self.execution_area_entities.retain(|&e| e != id);
@@ -1464,6 +1465,7 @@ impl State {
                 bounceable,
                 max_bounces,
                 bounce_speed_loss,
+                hardness,
             }) => {
                 let prev = self.projectile_config_for(id);
                 self.set_projectile_config(
@@ -1478,8 +1480,12 @@ impl State {
                         bounceable: bounceable.unwrap_or(prev.bounceable),
                         max_bounces: max_bounces.unwrap_or(prev.max_bounces),
                         bounce_speed_loss: bounce_speed_loss.unwrap_or(prev.bounce_speed_loss),
+                        hardness: hardness.unwrap_or(prev.hardness),
                     },
                 );
+            }
+            EngineCommand::Only2d(EngineCommand2dOnly::SetEntityHardness { id, hardness }) => {
+                self.set_entity_hardness(id, hardness);
             }
             EngineCommand::Only2d(EngineCommand2dOnly::FireProjectile {
                 template_id,

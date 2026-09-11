@@ -12,8 +12,8 @@ pub const DEFAULT_PROJECTILE_LIFETIME_S: f32 = 3.0;
 pub const DEFAULT_MUZZLE_SOCKET: &str = "muzzle";
 pub const DEFAULT_MAX_BOUNCES: u32 = 3;
 pub const DEFAULT_BOUNCE_SPEED_LOSS: f32 = 0.2;
-/// Umbral de `SurfacePbr.metallic` para considerar la superficie “metal”.
-pub const METAL_BOUNCE_THRESHOLD: f32 = 0.5;
+/// Máximo de rebotes/pierce-hits a resolver en un mismo `dt` (evita bucles infinitos).
+const MAX_HIT_STEPS_PER_TICK: usize = 8;
 
 fn default_align_to_velocity() -> bool {
     true
@@ -35,6 +35,10 @@ fn default_gravity_scale() -> f32 {
     1.0
 }
 
+fn default_hardness() -> u32 {
+    0
+}
+
 /// Parámetros de disparo persistidos en entidades categoría `projectile`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ProjectileConfig {
@@ -52,15 +56,18 @@ pub struct ProjectileConfig {
     /// Socket de origen en la plantilla al disparar (default `muzzle`); si no existe, Transform de la plantilla.
     #[serde(default = "default_muzzle_socket")]
     pub muzzle_socket: Option<String>,
-    /// Si true, rebota al impactar superficies metálicas (`SurfacePbr.metallic`).
+    /// Legacy: ya no decide superficies; se conserva en save. El rebote lo decide `hardness`.
     #[serde(default)]
     pub bounceable: bool,
-    /// Rebotes restantes iniciales (solo si `bounceable`).
+    /// Rebotes restantes iniciales al disparar.
     #[serde(default = "default_max_bounces")]
     pub max_bounces: u32,
-    /// Fracción de velocidad perdida por rebote (0..1).
+    /// Fracción de velocidad perdida por rebote o pierce (0..1).
     #[serde(default = "default_bounce_speed_loss")]
     pub bounce_speed_loss: f32,
+    /// Tier de dureza del proyectil (0 = atraviesa todo sin pérdida).
+    #[serde(default = "default_hardness")]
+    pub hardness: u32,
 }
 
 impl Default for ProjectileConfig {
@@ -75,6 +82,7 @@ impl Default for ProjectileConfig {
             bounceable: false,
             max_bounces: DEFAULT_MAX_BOUNCES,
             bounce_speed_loss: DEFAULT_BOUNCE_SPEED_LOSS,
+            hardness: 0,
         }
     }
 }
@@ -94,6 +102,7 @@ impl ProjectileConfig {
             bounceable: self.bounceable,
             max_bounces: self.max_bounces.min(64),
             bounce_speed_loss: self.bounce_speed_loss.clamp(0.0, 1.0),
+            hardness: self.hardness,
         }
     }
 }
@@ -110,10 +119,10 @@ pub(crate) struct ActiveProjectile {
     pub align_to_velocity: bool,
     /// Offset visual de la plantilla respecto a alinear -Z local a la velocidad.
     pub visual_offset: Quat,
-    pub bounceable: bool,
     pub bounces_left: u32,
     pub bounce_speed_loss: f32,
-    /// Entidades a excluir del raycast de impacto (plantilla / tirador).
+    pub hardness: u32,
+    /// Entidades a excluir del raycast de impacto (plantilla / tirador / pierce).
     pub exclude_entities: Vec<EntityId>,
 }
 
@@ -162,7 +171,16 @@ impl State {
             bounceable: config.bounceable,
             max_bounces: config.max_bounces,
             bounce_speed_loss: config.bounce_speed_loss,
+            hardness: config.hardness,
         });
+    }
+
+    pub(crate) fn entity_hardness_for(&self, entity_id: EntityId) -> u32 {
+        self.entity_hardness.get(&entity_id).copied().unwrap_or(0)
+    }
+
+    pub(crate) fn set_entity_hardness(&mut self, entity_id: EntityId, hardness: u32) {
+        self.entity_hardness.insert(entity_id, hardness);
     }
 
     pub(crate) fn is_runtime_projectile(&self, entity_id: EntityId) -> bool {
@@ -308,22 +326,19 @@ impl State {
             gravity_scale: config.gravity_scale,
             align_to_velocity: config.align_to_velocity,
             visual_offset,
-            bounceable: config.bounceable,
-            bounces_left: if config.bounceable {
-                config.max_bounces
-            } else {
-                0
-            },
+            bounces_left: config.max_bounces,
             bounce_speed_loss: config.bounce_speed_loss,
+            hardness: config.hardness,
             exclude_entities: exclude,
         });
         log::info!(
-            "[proyectil] disparado id={entity_id} plantilla={template_id} speed={} lifetime={} gravity={}×{} bounce={}",
+            "[proyectil] disparado id={entity_id} plantilla={template_id} speed={} lifetime={} gravity={}×{} hardness={} max_bounces={}",
             config.speed,
             config.lifetime_s,
             config.affected_by_gravity,
             config.gravity_scale,
-            config.bounceable
+            config.hardness,
+            config.max_bounces
         );
         Some(entity_id)
     }
@@ -335,99 +350,138 @@ impl State {
         let gravity = self.physics.gravity_magnitude();
         let mut expired = Vec::new();
         let mut hits: Vec<(EntityId, Option<EntityId>, Vec3, bool)> = Vec::new();
+        let count = self.active_projectiles.len();
 
-        for proj in &mut self.active_projectiles {
-            proj.age += dt;
-            if proj.age >= proj.lifetime_s {
-                expired.push(proj.entity_id);
+        for idx in 0..count {
+            self.active_projectiles[idx].age += dt;
+            if self.active_projectiles[idx].age >= self.active_projectiles[idx].lifetime_s {
+                expired.push(self.active_projectiles[idx].entity_id);
                 continue;
             }
-            if proj.affected_by_gravity && proj.gravity_scale > 0.0 {
-                proj.velocity.y -= gravity * proj.gravity_scale * dt;
+            if self.active_projectiles[idx].affected_by_gravity
+                && self.active_projectiles[idx].gravity_scale > 0.0
+            {
+                self.active_projectiles[idx].velocity.y -=
+                    gravity * self.active_projectiles[idx].gravity_scale * dt;
             }
-            let Some(prev) = self
-                .world
-                .get::<Transform>(proj.entity_id)
-                .map(|t| t.position)
+            let entity_id = self.active_projectiles[idx].entity_id;
+            let Some(mut cursor) = self.world.get::<Transform>(entity_id).map(|t| t.position)
             else {
-                expired.push(proj.entity_id);
+                expired.push(entity_id);
                 continue;
             };
-            let delta = proj.velocity * dt;
-            let dist = delta.length();
-            let next = prev + delta;
 
-            let mut hit_pos = None;
-            let mut hit_entity = None;
-            let mut hit_normal = Vec3::Y;
-            if dist > 1e-6 {
-                let exclude: Vec<_> = proj
-                    .exclude_entities
+            let mut remaining = self.active_projectiles[idx].velocity * dt;
+            let mut stopped = false;
+
+            for _ in 0..MAX_HIT_STEPS_PER_TICK {
+                let dist = remaining.length();
+                if dist <= 1e-6 {
+                    break;
+                }
+                let dir = remaining / dist;
+                let exclude_ids = self.active_projectiles[idx].exclude_entities.clone();
+                let exclude: Vec<_> = exclude_ids
                     .iter()
                     .filter_map(|&id| self.physics.collider_handle_for_entity(id))
                     .collect();
-                if let Some((toi, handle, normal)) =
-                    self.physics
-                        .raycast_first_hit(prev, delta / dist, dist, &exclude)
-                {
-                    let pos = prev + (delta / dist) * toi;
-                    hit_pos = Some(pos);
-                    hit_entity = self.physics.entity_for_collider(handle);
-                    hit_normal = if normal.length_squared() > 1e-8 {
-                        normal.normalize()
-                    } else {
-                        Vec3::Y
-                    };
-                }
-            }
-
-            if let Some(pos) = hit_pos {
-                let is_metal = match hit_entity {
-                    Some(id) => self
-                        .world
-                        .get::<crate::ecs::SurfacePbr>(id)
-                        .is_some_and(|pbr| pbr.metallic >= METAL_BOUNCE_THRESHOLD),
-                    None => false,
+                let Some((toi, handle, normal)) =
+                    self.physics.raycast_first_hit(cursor, dir, dist, &exclude)
+                else {
+                    cursor += remaining;
+                    remaining = Vec3::ZERO;
+                    break;
                 };
-                let can_bounce = proj.bounceable && proj.bounces_left > 0 && is_metal;
 
-                if can_bounce {
-                    let retain = (1.0 - proj.bounce_speed_loss).max(0.0);
-                    let reflected =
-                        proj.velocity - 2.0 * proj.velocity.dot(hit_normal) * hit_normal;
-                    proj.velocity = reflected * retain;
-                    proj.bounces_left = proj.bounces_left.saturating_sub(1);
-                    let nudge = hit_normal * 0.02;
-                    if let Some(t) = self.world.get_mut::<Transform>(proj.entity_id) {
-                        t.position = pos + nudge;
-                        if proj.align_to_velocity {
-                            t.rotation =
-                                projectile_rotation_for_velocity(proj.visual_offset, proj.velocity);
+                let pos = cursor + dir * toi;
+                let hit_entity = self.physics.entity_for_collider(handle);
+                let hit_normal = if normal.length_squared() > 1e-8 {
+                    normal.normalize()
+                } else {
+                    Vec3::Y
+                };
+                let entity_h = hit_entity
+                    .map(|id| self.entity_hardness.get(&id).copied().unwrap_or(0))
+                    .unwrap_or(0);
+                let proj_h = self.active_projectiles[idx].hardness;
+                let bounces_left = self.active_projectiles[idx].bounces_left;
+                let bounce_loss = self.active_projectiles[idx].bounce_speed_loss;
+                let outcome = rer_engine_shared::projectile_hardness::resolve_hardness_hit(
+                    proj_h,
+                    entity_h,
+                    bounces_left,
+                    bounce_loss,
+                );
+
+                match outcome {
+                    rer_engine_shared::projectile_hardness::HardnessHitOutcome::Ignore => {
+                        if let Some(id) = hit_entity {
+                            let exclude = &mut self.active_projectiles[idx].exclude_entities;
+                            if !exclude.contains(&id) {
+                                exclude.push(id);
+                            }
                         }
+                        remaining = dir * (dist - toi).max(0.0);
+                        cursor = pos + dir * 0.01;
+                        hits.push((entity_id, hit_entity, pos, false));
                     }
-                    hits.push((proj.entity_id, hit_entity, pos, true));
-                    continue;
-                }
-
-                if let Some(t) = self.world.get_mut::<Transform>(proj.entity_id) {
-                    t.position = pos;
-                    if proj.align_to_velocity {
-                        t.rotation =
-                            projectile_rotation_for_velocity(proj.visual_offset, proj.velocity);
+                    rer_engine_shared::projectile_hardness::HardnessHitOutcome::Pierce {
+                        speed_retain,
+                    } => {
+                        if let Some(id) = hit_entity {
+                            let exclude = &mut self.active_projectiles[idx].exclude_entities;
+                            if !exclude.contains(&id) {
+                                exclude.push(id);
+                            }
+                        }
+                        self.active_projectiles[idx].velocity *= speed_retain;
+                        let leftover = (dist - toi).max(0.0) * speed_retain;
+                        remaining =
+                            self.active_projectiles[idx].velocity.normalize_or_zero() * leftover;
+                        cursor = pos + dir * 0.01;
+                        hits.push((entity_id, hit_entity, pos, false));
+                    }
+                    rer_engine_shared::projectile_hardness::HardnessHitOutcome::Bounce {
+                        speed_retain,
+                    } => {
+                        let v = self.active_projectiles[idx].velocity;
+                        let reflected = v - 2.0 * v.dot(hit_normal) * hit_normal;
+                        self.active_projectiles[idx].velocity = reflected * speed_retain;
+                        self.active_projectiles[idx].bounces_left =
+                            self.active_projectiles[idx].bounces_left.saturating_sub(1);
+                        if let Some(id) = hit_entity {
+                            let exclude = &mut self.active_projectiles[idx].exclude_entities;
+                            if !exclude.contains(&id) {
+                                exclude.push(id);
+                            }
+                        }
+                        cursor = pos + hit_normal * 0.02;
+                        remaining = Vec3::ZERO;
+                        hits.push((entity_id, hit_entity, pos, true));
+                        break;
+                    }
+                    rer_engine_shared::projectile_hardness::HardnessHitOutcome::Stop => {
+                        cursor = pos;
+                        remaining = Vec3::ZERO;
+                        hits.push((entity_id, hit_entity, pos, false));
+                        expired.push(entity_id);
+                        stopped = true;
+                        break;
                     }
                 }
-                hits.push((proj.entity_id, hit_entity, pos, false));
-                expired.push(proj.entity_id);
-                continue;
             }
 
-            if let Some(t) = self.world.get_mut::<Transform>(proj.entity_id) {
-                t.position = next;
-                if proj.align_to_velocity {
-                    t.rotation =
-                        projectile_rotation_for_velocity(proj.visual_offset, proj.velocity);
+            let align = self.active_projectiles[idx].align_to_velocity;
+            let visual_offset = self.active_projectiles[idx].visual_offset;
+            let velocity = self.active_projectiles[idx].velocity;
+            cursor += remaining;
+            if let Some(t) = self.world.get_mut::<Transform>(entity_id) {
+                t.position = cursor;
+                if align {
+                    t.rotation = projectile_rotation_for_velocity(visual_offset, velocity);
                 }
             }
+            let _ = stopped;
         }
 
         for (projectile_id, hit_entity_id, position, bounced) in hits {
@@ -486,6 +540,7 @@ impl State {
         self.save_registry.remove_entity(id);
         self.entity_blueprint_ids.remove(&id);
         self.entity_colision.remove(&id);
+        self.entity_hardness.remove(&id);
         self.entity_projectile_config.remove(&id);
         self.clear_entity_attachments_for_removed(id);
         self.world.despawn(id);

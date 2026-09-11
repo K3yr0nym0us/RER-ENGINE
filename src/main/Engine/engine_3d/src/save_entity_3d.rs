@@ -194,6 +194,7 @@ pub(crate) fn build_entity_3d_snapshot(
         scale: t.scale.to_array(),
         physics_type,
         colision: entity_colision_for(state, id),
+        hardness: state.entity_hardness_for(id),
         animations,
         scripts,
         blueprint_id: state.entity_blueprint_ids.get(&id).cloned(),

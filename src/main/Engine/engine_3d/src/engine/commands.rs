@@ -861,6 +861,7 @@ impl State {
                 }
                 self.entity_blueprint_ids.remove(&id);
                 self.entity_colision.remove(&id);
+                self.entity_hardness.remove(&id);
                 self.entity_projectile_config.remove(&id);
                 self.active_projectiles.retain(|p| p.entity_id != id);
                 self.clear_entity_attachments_for_removed(id);
@@ -1553,6 +1554,7 @@ impl State {
                 bounceable,
                 max_bounces,
                 bounce_speed_loss,
+                hardness,
             }) => {
                 let prev = self.projectile_config_for(id);
                 self.set_projectile_config(
@@ -1568,8 +1570,12 @@ impl State {
                         bounceable: bounceable.unwrap_or(prev.bounceable),
                         max_bounces: max_bounces.unwrap_or(prev.max_bounces),
                         bounce_speed_loss: bounce_speed_loss.unwrap_or(prev.bounce_speed_loss),
+                        hardness: hardness.unwrap_or(prev.hardness),
                     },
                 );
+            }
+            EngineCommand::Only3d(EngineCommand3dOnly::SetEntityHardness { id, hardness }) => {
+                self.set_entity_hardness(id, hardness);
             }
             EngineCommand::Only3d(EngineCommand3dOnly::FireProjectile {
                 template_id,

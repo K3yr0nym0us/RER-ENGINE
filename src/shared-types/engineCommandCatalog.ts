@@ -105,6 +105,7 @@ export const ENGINE_COMMANDS_2D_ONLY = [
   'import_scene',
   'load_projectile',
   'set_projectile_config',
+  'set_entity_hardness',
   'fire_projectile',
 ] as const
 
@@ -158,6 +159,7 @@ export const ENGINE_COMMANDS_3D_ONLY = [
   'remove_bone_physics',
   'list_entity_bone_physics',
   'set_projectile_config',
+  'set_entity_hardness',
   'fire_projectile',
 ] as const
 

@@ -227,6 +227,8 @@ pub(crate) struct SavedEntity3D {
     #[serde(default = "default_colision_on")]
     pub colision: bool,
     #[serde(default)]
+    pub hardness: u32,
+    #[serde(default)]
     pub animations: Option<Vec<SavedAnimation>>,
     #[serde(default)]
     pub scripts: Option<Vec<SavedScript>>,
@@ -347,6 +349,7 @@ struct PendingRestore {
     physics_enabled: bool,
     physics_type: String,
     colision: bool,
+    hardness: u32,
     animations: Option<Vec<SavedAnimation>>,
     scripts: Option<Vec<SavedScript>>,
     control_bindings: Option<ControlBindingsData>,
@@ -966,6 +969,7 @@ fn build_generic_pending_restore(
             .is_some(),
         physics_type,
         colision: bp.map(|b| b.colision).unwrap_or(entity.colision),
+        hardness: entity.hardness,
         animations: bp
             .and_then(|b| b.animations.clone())
             .or_else(|| entity.animations.clone()),
@@ -1003,6 +1007,7 @@ fn build_player_pending_restore_from_entity(entity: &SavedEntity3D) -> PendingRe
             .clone()
             .unwrap_or_else(|| "dynamic".to_string()),
         colision: entity.colision,
+        hardness: entity.hardness,
         animations: entity.animations.clone(),
         scripts: entity.scripts.clone(),
         control_bindings: map_control_bindings(entity.controls.as_ref()),
@@ -1115,6 +1120,7 @@ fn apply_full_entity_restore(
     }
 
     state.entity_colision.insert(id, pending.colision);
+    state.entity_hardness.insert(id, pending.hardness);
     state.reconcile_entity_physics_with_mesh(id);
 }
 
@@ -1261,6 +1267,7 @@ fn restore_player_from_manifest(
     apply_entity_scripts(state, id, pending.scripts.as_deref());
     apply_entity_animations(state, id, pending.animations.as_deref());
     state.entity_colision.insert(id, pending.colision);
+    state.entity_hardness.insert(id, pending.hardness);
     state.ensure_play_character_kinematic_only();
     state.reconcile_entity_physics_with_mesh(id);
 
@@ -2170,6 +2177,7 @@ pub(crate) fn saved_scene_from_snapshot_payload(
             scale: e.scale,
             physics_type: e.physics_type.clone(),
             colision: e.colision,
+            hardness: e.hardness,
             animations: None,
             scripts: None,
             controls: e.controls.as_ref().map(|c| SavedControlBindings {
@@ -2337,6 +2345,7 @@ pub(crate) fn build_fp_placeholder_saved_scene(id: u32, name: &str) -> SavedScen
             scale: ground_scale,
             physics_type: Some("static".to_string()),
             colision: true,
+            hardness: 0,
             animations: None,
             scripts: None,
             controls: None,
@@ -2363,6 +2372,7 @@ pub(crate) fn build_fp_placeholder_saved_scene(id: u32, name: &str) -> SavedScen
             scale: [1.0, 1.0, 1.0],
             physics_type: Some("static".to_string()),
             colision: true,
+            hardness: 0,
             animations: None,
             scripts: None,
             controls: None,
@@ -2389,6 +2399,7 @@ pub(crate) fn build_fp_placeholder_saved_scene(id: u32, name: &str) -> SavedScen
             scale: [0.6, 0.6, 0.6],
             physics_type: Some("dynamic".to_string()),
             colision: true,
+            hardness: 0,
             animations: None,
             scripts: None,
             controls: None,
@@ -2417,6 +2428,7 @@ pub(crate) fn build_fp_placeholder_saved_scene(id: u32, name: &str) -> SavedScen
         scale: [0.8, 1.7, 0.8],
         physics_type: Some("dynamic".to_string()),
         colision: true,
+        hardness: 0,
         animations: None,
         scripts: None,
         controls: None,

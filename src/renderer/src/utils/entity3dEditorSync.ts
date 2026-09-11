@@ -164,6 +164,7 @@ export function entity3dToMeta(entity: Entity3D): EntityMeta {
 			: {}),
 		...(entity.sockets?.length ? { sockets: entity.sockets } : {}),
 		...(entity.bone_physics?.length ? { bonePhysics: entity.bone_physics } : {}),
+		hardness: entity.hardness ?? 0,
 		...(entity.projectile
 			? { projectileConfig: entity.projectile }
 			: entity3dCategory === 'projectile'
@@ -178,6 +179,7 @@ export function entity3dToMeta(entity: Entity3D): EntityMeta {
 							bounceable: false,
 							max_bounces: 3,
 							bounce_speed_loss: 0.2,
+							hardness: 0,
 						},
 					}
 				: {}),

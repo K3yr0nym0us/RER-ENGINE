@@ -8,6 +8,7 @@ pub mod overlay;
 pub mod platform;
 pub mod player_ui;
 pub mod process_metrics;
+pub mod projectile_hardness;
 pub mod scripting;
 pub mod wgpu_surface;
 

@@ -149,6 +149,9 @@ pub struct SaveEntity3DSnapshot {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub physics_type: Option<String>,
     pub colision: bool,
+    /// Dureza de gameplay (0 = proyectiles la ignoran).
+    #[serde(default)]
+    pub hardness: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub animations: Option<Vec<SaveAnimationSnapshot>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -812,8 +815,9 @@ pub enum EngineEvent {
         bounceable: bool,
         max_bounces: u32,
         bounce_speed_loss: f32,
+        hardness: u32,
     },
-    /// Impacto de proyectil (`bounced` true = rebote en metal; false = despawn).
+    /// Impacto de proyectil (`bounced` true = rebote por dureza; false = pierce/ignore/stop).
     #[serde(rename = "projectile_hit")]
     ProjectileHit {
         projectile_id: u32,

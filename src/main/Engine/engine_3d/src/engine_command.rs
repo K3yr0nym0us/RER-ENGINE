@@ -265,6 +265,8 @@ pub enum EngineCommand3dOnly {
         max_bounces: Option<u32>,
         #[serde(default)]
         bounce_speed_loss: Option<f32>,
+        #[serde(default)]
+        hardness: Option<u32>,
     },
     FireProjectile {
         template_id: u32,
@@ -273,6 +275,10 @@ pub enum EngineCommand3dOnly {
         dir_x: f32,
         dir_y: f32,
         dir_z: f32,
+    },
+    SetEntityHardness {
+        id: u32,
+        hardness: u32,
     },
 }
 

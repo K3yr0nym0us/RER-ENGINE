@@ -118,6 +118,7 @@ impl State {
         self.blueprint_registry.clear();
         self.entity_blueprint_ids.clear();
         self.entity_colision.clear();
+        self.entity_hardness.clear();
         self.entity_attachments.clear();
         self.entity_sockets.clear();
         self.bone_index_cache.clear();
@@ -670,6 +671,7 @@ impl State {
         self.blueprint_registry.clear();
         self.entity_blueprint_ids.clear();
         self.entity_colision.clear();
+        self.entity_hardness.clear();
         self.entity_attachments.clear();
         self.entity_sockets.clear();
         self.bone_index_cache.clear();

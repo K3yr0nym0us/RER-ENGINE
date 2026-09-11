@@ -58,6 +58,7 @@ export function EntityPropertiesModalContent({
 		bonePhysics,
 		isProjectile,
 		projectileConfig,
+		entityHardness,
 	} = state
 
 	const [entityNameDraft, setEntityNameDraft] = useState('')
@@ -72,6 +73,8 @@ export function EntityPropertiesModalContent({
 	const [projectileBounceableDraft, setProjectileBounceableDraft] = useState(false)
 	const [projectileMaxBouncesDraft, setProjectileMaxBouncesDraft] = useState(3)
 	const [projectileBounceLossDraft, setProjectileBounceLossDraft] = useState(0.2)
+	const [projectileHardnessDraft, setProjectileHardnessDraft] = useState(0)
+	const [entityHardnessDraft, setEntityHardnessDraft] = useState(0)
 	const [pendingConfirm, setPendingConfirm] = useState<{
 		title: string
 		message: React.ReactNode
@@ -107,6 +110,7 @@ export function EntityPropertiesModalContent({
 		setProjectileBounceableDraft(projectileConfig?.bounceable ?? false)
 		setProjectileMaxBouncesDraft(projectileConfig?.max_bounces ?? 3)
 		setProjectileBounceLossDraft(projectileConfig?.bounce_speed_loss ?? 0.2)
+		setProjectileHardnessDraft(projectileConfig?.hardness ?? 0)
 	}, [
 		selectedEntity?.id,
 		projectileConfig?.speed,
@@ -118,7 +122,21 @@ export function EntityPropertiesModalContent({
 		projectileConfig?.bounceable,
 		projectileConfig?.max_bounces,
 		projectileConfig?.bounce_speed_loss,
+		projectileConfig?.hardness,
 	])
+
+	useEffect(() => {
+		setEntityHardnessDraft(entityHardness)
+	}, [selectedEntity?.id, entityHardness])
+
+	const commitEntityHardness = () => {
+		if (!selectedEntity) return
+		onAction({
+			action: 'setEntityHardness',
+			id: selectedEntity.id,
+			hardness: entityHardnessDraft,
+		})
+	}
 
 	const commitProjectileConfig = () => {
 		if (!selectedEntity) return
@@ -134,6 +152,7 @@ export function EntityPropertiesModalContent({
 			bounceable: projectileBounceableDraft,
 			maxBounces: projectileMaxBouncesDraft,
 			bounceSpeedLoss: projectileBounceLossDraft,
+			hardness: projectileHardnessDraft,
 		})
 	}
 
@@ -649,6 +668,25 @@ export function EntityPropertiesModalContent({
 							)}
 						</>
 					)}
+					<label
+						className="form-label text-light small mb-0 mt-2"
+						htmlFor="modal-entity-hardness"
+					>
+						{t('Hardness')}
+					</label>
+					<input
+						id="modal-entity-hardness"
+						type="number"
+						min={0}
+						step={1}
+						className="form-control form-control-sm bg-dark text-light border-secondary mt-1"
+						value={entityHardnessDraft}
+						onChange={(e) => setEntityHardnessDraft(Number(e.target.value))}
+						onBlur={commitEntityHardness}
+					/>
+					<p className="text-secondary small mb-0 mt-1">
+						{t('0 = projectiles ignore this entity')}
+					</p>
 				</div>
 			)}
 
@@ -832,6 +870,7 @@ export function EntityPropertiesModalContent({
 											bounceable: projectileBounceableDraft,
 											maxBounces: projectileMaxBouncesDraft,
 											bounceSpeedLoss: projectileBounceLossDraft,
+											hardness: projectileHardnessDraft,
 										})
 									}}
 								/>
@@ -900,6 +939,7 @@ export function EntityPropertiesModalContent({
 											bounceable: projectileBounceableDraft,
 											maxBounces: projectileMaxBouncesDraft,
 											bounceSpeedLoss: projectileBounceLossDraft,
+											hardness: projectileHardnessDraft,
 										})
 									}}
 								/>
@@ -907,74 +947,56 @@ export function EntityPropertiesModalContent({
 									{t('Align to velocity')}
 								</label>
 							</div>
-							<div className="d-flex align-items-center gap-2 mt-2">
-								<input
-									type="checkbox"
-									id="modal-projectile-bounceable"
-									className="form-check-input"
-									checked={projectileBounceableDraft}
-									onChange={(e) => {
-										setProjectileBounceableDraft(e.target.checked)
-										onAction({
-											action: 'setProjectileConfig',
-											id: selectedEntity.id,
-											speed: projectileSpeedDraft,
-											lifetimeS: projectileLifetimeDraft,
-											affectedByGravity: projectileAffectedByGravityDraft,
-											gravityScale: projectileGravityDraft,
-											alignToVelocity: projectileAlignDraft,
-											muzzleSocket: projectileMuzzleDraft.trim() || 'muzzle',
-											bounceable: e.target.checked,
-											maxBounces: projectileMaxBouncesDraft,
-											bounceSpeedLoss: projectileBounceLossDraft,
-										})
-									}}
-								/>
-								<label
-									htmlFor="modal-projectile-bounceable"
-									className="form-check-label text-light small mb-0"
-								>
-									{is3D ? t('Bounce on metal') : t('Bounce on collision')}
-								</label>
-							</div>
-							{projectileBounceableDraft && (
-								<>
-									<label
-										className="form-label text-light small mb-0 mt-2"
-										htmlFor="modal-projectile-max-bounces"
-									>
-										{t('Max bounces')}
-									</label>
-									<input
-										id="modal-projectile-max-bounces"
-										type="number"
-										min={0}
-										max={64}
-										step={1}
-										className="form-control form-control-sm bg-dark text-light border-secondary mt-1"
-										value={projectileMaxBouncesDraft}
-										onChange={(e) => setProjectileMaxBouncesDraft(Number(e.target.value))}
-										onBlur={commitProjectileConfig}
-									/>
-									<label
-										className="form-label text-light small mb-0 mt-2"
-										htmlFor="modal-projectile-bounce-loss"
-									>
-										{t('Bounce speed loss (0–1)')}
-									</label>
-									<input
-										id="modal-projectile-bounce-loss"
-										type="number"
-										min={0}
-										max={1}
-										step={0.05}
-										className="form-control form-control-sm bg-dark text-light border-secondary mt-1"
-										value={projectileBounceLossDraft}
-										onChange={(e) => setProjectileBounceLossDraft(Number(e.target.value))}
-										onBlur={commitProjectileConfig}
-									/>
-								</>
-							)}
+							<label
+								className="form-label text-light small mb-0 mt-2"
+								htmlFor="modal-projectile-hardness"
+							>
+								{t('Hardness')}
+							</label>
+							<input
+								id="modal-projectile-hardness"
+								type="number"
+								min={0}
+								step={1}
+								className="form-control form-control-sm bg-dark text-light border-secondary mt-1"
+								value={projectileHardnessDraft}
+								onChange={(e) => setProjectileHardnessDraft(Number(e.target.value))}
+								onBlur={commitProjectileConfig}
+							/>
+							<label
+								className="form-label text-light small mb-0 mt-2"
+								htmlFor="modal-projectile-max-bounces"
+							>
+								{t('Max bounces')}
+							</label>
+							<input
+								id="modal-projectile-max-bounces"
+								type="number"
+								min={0}
+								max={64}
+								step={1}
+								className="form-control form-control-sm bg-dark text-light border-secondary mt-1"
+								value={projectileMaxBouncesDraft}
+								onChange={(e) => setProjectileMaxBouncesDraft(Number(e.target.value))}
+								onBlur={commitProjectileConfig}
+							/>
+							<label
+								className="form-label text-light small mb-0 mt-2"
+								htmlFor="modal-projectile-bounce-loss"
+							>
+								{t('Hit speed loss (0–1)')}
+							</label>
+							<input
+								id="modal-projectile-bounce-loss"
+								type="number"
+								min={0}
+								max={1}
+								step={0.05}
+								className="form-control form-control-sm bg-dark text-light border-secondary mt-1"
+								value={projectileBounceLossDraft}
+								onChange={(e) => setProjectileBounceLossDraft(Number(e.target.value))}
+								onBlur={commitProjectileConfig}
+							/>
 							<button
 								type="button"
 								className="btn btn-sm btn-outline-secondary w-100 mt-3"
@@ -995,7 +1017,7 @@ export function EntityPropertiesModalContent({
 											'Editor or Play. Origin: muzzle socket on from_id / attached weapon. Hits despawn + projectile_hit.',
 										)
 									: t(
-											'Editor or Play. Origin: from_id position (or template). Bounce reflects off physics colliders when enabled.',
+											'Editor or Play. Origin: from_id position (or template). Hardness decides pierce / bounce / ignore.',
 										)}
 							</p>
 						</Tab.Pane>

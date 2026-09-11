@@ -159,6 +159,8 @@ pub struct State {
     pub(crate) entity_blueprint_ids: std::collections::HashMap<EntityId, String>,
     /// Colisión de malla Rapier on/off por entidad (`docs/Entities_Model_3D.yaml`).
     pub(crate) entity_colision: std::collections::HashMap<EntityId, bool>,
+    /// Dureza de gameplay por entidad (0 = no afecta proyectiles).
+    pub(crate) entity_hardness: std::collections::HashMap<EntityId, u32>,
     /// Hijo → ancla + transform local (fusión de entidades o socket en editor).
     pub(crate) entity_attachments: std::collections::HashMap<
         EntityId,
