@@ -66,7 +66,6 @@ export default tseslint.config(
       '@typescript-eslint/no-import-type-side-effects': 'error',
       '@typescript-eslint/no-non-null-assertion': 'error',
 
-      // Cyclomatic complexity is enforced on *new code* by SonarCloud Quality Gate.
       // Local ESLint keeps max-depth for readability without blocking legacy IPC handlers.
       'max-depth': ['error', { max: 5 }],
 
@@ -81,8 +80,8 @@ export default tseslint.config(
       'no-duplicate-imports': 'off',
       'no-console': 'off',
 
-      // SonarJS: keep bug/security-oriented; turn off high-noise legacy/style rules.
-      // Cognitive complexity & nested conditionals are enforced on *new code* via SonarCloud QG.
+      // SonarJS via ESLint (local/CI, no SonarCloud token). High-noise legacy/style rules off.
+      // Broader Sonar feedback in the IDE comes from SonarLint (standalone, no Connected Mode).
       'sonarjs/cognitive-complexity': 'off',
       'sonarjs/no-nested-conditional': 'off',
       'sonarjs/function-return-type': 'off',

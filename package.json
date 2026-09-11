@@ -32,8 +32,7 @@
     "rust:audit": "cargo audit --file src/main/Engine/Cargo.lock",
     "quality:frontend": "yarn lint && yarn typecheck && yarn test:coverage",
     "quality:rust": "node ./scripts/run-rust-quality.mjs",
-    "quality": "yarn quality:frontend && yarn quality:rust",
-    "sonar": "node ./scripts/run-sonar.mjs"
+    "quality": "yarn quality:frontend && yarn quality:rust"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

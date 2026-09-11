@@ -53,5 +53,4 @@ If any step fails, the task is **not** done — fix issues introduced by the cha
 ## Scope
 
 - Engine quality: rustfmt, `cargo check`, clippy, `cargo test`, `cargo audit`.
-- Frontend quality: ESLint / tsc / Vitest (see `frontend-quality.mdc`).
-- SonarCloud Quality Gate remains part of CI for the overall project.
+- Frontend quality: ESLint (+ SonarJS) / tsc / Vitest / SonarLint IDE (see `frontend-quality.mdc`).

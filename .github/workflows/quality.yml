@@ -40,13 +40,6 @@ jobs:
       - name: Tests with coverage
         run: yarn test:coverage
 
-      - name: Upload coverage artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: frontend-coverage
-          path: coverage/lcov.info
-          if-no-files-found: error
-
   rust:
     name: fmt · check · clippy · test · audit
     runs-on: windows-latest
@@ -83,53 +76,3 @@ jobs:
 
       - name: cargo audit
         run: cargo audit --file src/main/Engine/Cargo.lock
-
-  sonar:
-    name: Sonar Quality Gate
-    needs: [frontend, rust]
-    runs-on: windows-latest
-    timeout-minutes: 30
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Download coverage
-        uses: actions/download-artifact@v4
-        with:
-          name: frontend-coverage
-          path: coverage
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - name: Cache Sonar packages
-        uses: actions/cache@v4
-        with:
-          path: ~\.sonar\cache
-          key: ${{ runner.os }}-sonar
-          restore-keys: ${{ runner.os }}-sonar
-
-      # sonarqube-scan-action is Linux/Docker-only; use the Node scanner wrapper on Windows.
-      - name: SonarCloud Scan + Quality Gate
-        shell: pwsh
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: >
-          npx --yes sonarqube-scanner@4.2.6
-          "-Dsonar.organization=${{ vars.SONAR_ORGANIZATION }}"
-          "-Dsonar.projectKey=${{ vars.SONAR_PROJECT_KEY }}"
-          "-Dsonar.host.url=https://sonarcloud.io"
-          "-Dsonar.token=$env:SONAR_TOKEN"
-          "-Dsonar.javascript.lcov.reportPaths=coverage/lcov.info"
-          "-Dsonar.qualitygate.wait=true"

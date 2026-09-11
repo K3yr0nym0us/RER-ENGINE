@@ -1,5 +1,5 @@
 ---
-description: Frontend quality gate — ESLint, TypeScript, tests, Sonar
+description: Frontend quality gate — ESLint, TypeScript, tests, SonarLint
 alwaysApply: true
 globs:
   - "src/main/**/*.{ts,tsx,js,jsx}"
@@ -11,7 +11,6 @@ globs:
   - "tsconfig*.json"
   - "vitest.config.ts"
   - ".github/workflows/quality.yml"
-  - "sonar-project.properties"
 ---
 
 # RER-ENGINE — Frontend Quality Gate
@@ -21,10 +20,10 @@ Does **not** replace Rust engine quality rules.
 
 ## Mandatory before finishing any frontend task
 
-1. Changes must satisfy **ESLint** (`yarn lint`).
+1. Changes must satisfy **ESLint** (`yarn lint`), including `eslint-plugin-sonarjs`.
 2. Changes must pass **TypeScript** (`yarn typecheck`).
 3. Existing tests must not break (`yarn test` / `yarn test:coverage`).
-4. **Sonar Quality Gate** must remain green for CI (new code: no critical bugs/vulns, reviewed hotspots, maintainability, duplication, complexity, coverage where applicable).
+4. Prefer fixing issues flagged by **SonarLint** in the IDE (extension `SonarSource.sonarlint-vscode`); do **not** introduce SonarCloud scanners or `SONAR_TOKEN` flows.
 5. Run **`yarn quality`** before considering the task done.
 6. If `yarn quality` fails, the task is **not** done — fix issues introduced by the change.
 
@@ -41,9 +40,9 @@ Prefer fixing types, simplifying logic, or extracting helpers.
 
 ## Scope separation
 
-- Frontend quality tools: ESLint, `tsc`, Vitest, Sonar JS/TS analysis.
+- Frontend quality tools: ESLint (+ SonarJS), `tsc`, Vitest, SonarLint in the IDE.
 - Rust engine: Cargo / clippy / Rust tests — separate from this gate.
-- Never point Sonar or ESLint at `src/main/Engine/engine_*` or `target/`.
+- Never point SonarLint or ESLint at `src/main/Engine/engine_*` or `target/`.
 
 ## Commands
 

@@ -114,11 +114,10 @@ Fix the underlying type problem instead.
 
 Every Electron/React/TypeScript change must comply with:
 
-- ESLint
+- ESLint (incluye `eslint-plugin-sonarjs`)
 - TypeScript strict checking
 - automated tests
-- Sonar analysis
-- Sonar Quality Gate
+- SonarLint en el IDE (sin SonarCloud / sin token)
 
 The quality configuration is defined in:
 
@@ -129,3 +128,4 @@ Before considering an implementation complete, run:
 
 ```text
 yarn quality
+```
