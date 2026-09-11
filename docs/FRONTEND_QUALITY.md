@@ -9,11 +9,27 @@ Gate de calidad **estricto** para el editor Electron. El motor Rust queda fuera 
 | `yarn lint` | ESLint (cero warnings; con caché) |
 | `yarn lint:fix` | Autofix ESLint seguro |
 | `yarn typecheck` | `tsc -b` (strict + unused) |
-| `yarn test` | Vitest |
-| `yarn test:coverage` | Vitest + LCOV (`coverage/`) |
+| `yarn test` | Vitest (una pasada) |
+| `yarn test:watch` | Vitest en watch |
+| `yarn test:coverage` | Vitest + cobertura (`coverage/`: text, LCOV, HTML) |
 | `yarn quality` | lint + typecheck + test:coverage (+ Rust vía `quality:rust`) |
 
 Si `yarn quality` falla, el cambio **no** está listo.
+
+## Vitest
+
+Config: `vitest.config.ts`. Setup compartido: `src/test/setup.ts` (limpia mocks tras cada test).
+
+| Ámbito | Entorno | Convención de archivos |
+|--------|---------|------------------------|
+| main / preload / shared-types / helpers | `node` | `*.test.ts` / `*.spec.ts` junto al módulo |
+| React (renderer) | `jsdom` | `*.test.tsx` / `*.spec.tsx` bajo `src/renderer/` |
+
+Aliases iguales que `electron.vite.config.ts` (`@renderer`, `@shared-types`, `@hooks`, …).
+
+**Fuera de alcance:** crates Rust bajo `src/main/Engine/engine_*` y `target/` (calidad aparte con Cargo).
+
+Ejemplos existentes: `src/shared-types/engineCommands.test.ts`, `src/main/plugins/local-ai-assistant/msvcRedistributable.test.ts`.
 
 ## ESLint
 

@@ -25,7 +25,8 @@
     "vitest.config.ts",
     "src/main/**/*",
     "src/preload/**/*",
-    "src/shared-types/**/*"
+    "src/shared-types/**/*",
+    "src/test/**/*"
   ],
   "exclude": [
     "src/main/Engine/target",

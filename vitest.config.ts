@@ -1,23 +1,39 @@
-import { resolve } from 'path'
+import { resolve } from 'node:path'
 import { defineConfig } from 'vitest/config'
+
+const engineRustGlobs = [
+  'src/main/Engine/target/**',
+  'src/main/Engine/engine_2d/**',
+  'src/main/Engine/engine_3d/**',
+  'src/main/Engine/engine_shared/**',
+  'src/main/Engine/engine_ipc_common/**',
+  'src/main/Engine/Models/**',
+  'src/main/Engine/assets/**',
+] as const
 
 export default defineConfig({
   test: {
+    // Default: Node (main / preload / shared-types / pure helpers).
+    // Renderer DOM tests: name files `*.test.tsx` under src/renderer (jsdom).
     environment: 'node',
+    environmentMatchGlobs: [['src/renderer/**/*.{test,spec}.tsx', 'jsdom']],
+    setupFiles: ['./src/test/setup.ts'],
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
     exclude: [
       '**/node_modules/**',
       '**/out/**',
       '**/dist/**',
-      'src/main/Engine/target/**',
-      'src/main/Engine/engine_2d/**',
-      'src/main/Engine/engine_3d/**',
-      'src/main/Engine/engine_shared/**',
-      'src/main/Engine/engine_ipc_common/**',
+      '**/coverage/**',
+      ...engineRustGlobs,
     ],
+    clearMocks: true,
+    restoreMocks: true,
+    mockReset: true,
+    passWithNoTests: false,
+    reporters: ['default'],
     coverage: {
       provider: 'v8',
-      reporter: ['text', 'lcov'],
+      reporter: ['text', 'lcov', 'html'],
       reportsDirectory: './coverage',
       include: [
         'src/main/**/*.{ts,tsx}',
@@ -26,15 +42,11 @@ export default defineConfig({
         'src/shared-types/**/*.{ts,tsx}',
       ],
       exclude: [
-        'src/main/Engine/target/**',
-        'src/main/Engine/engine_2d/**',
-        'src/main/Engine/engine_3d/**',
-        'src/main/Engine/engine_shared/**',
-        'src/main/Engine/engine_ipc_common/**',
-        'src/main/Engine/Models/**',
-        'src/main/Engine/assets/**',
+        ...engineRustGlobs,
+        'src/test/**',
         '**/*.{test,spec}.{ts,tsx}',
         '**/env.d.ts',
+        '**/*.d.ts',
       ],
     },
   },
