@@ -473,6 +473,19 @@ impl State {
         )
     }
 
+    /// Sondas con centro, radio de influencia y ranura (para el IBL por instancia).
+    pub(crate) fn reflection_probe_fields(&self) -> Vec<crate::probe_registry::ProbeField> {
+        crate::probe_registry::reflection_probe_fields(
+            &self.save_registry,
+            &self.probe_entity_slots,
+            |id| {
+                self.world
+                    .get::<crate::ecs::Transform>(id)
+                    .map(|t| (t.position, t.scale.x))
+            },
+        )
+    }
+
     /// Si el conjunto de probes activos cambió, solicita burst de captura.
     pub(crate) fn sync_probe_capture_burst_for_entity_set(&mut self, probe_ids: &[EntityId]) {
         if crate::probe_registry::sync_capture_burst_for_entity_set(

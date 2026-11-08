@@ -56,7 +56,7 @@ Principio **engine-first**: posiciones, cámaras, física y convenciones espacia
 |-------|---------|
 | **Motor 2D y 3D** | Siempre **Vulkan** (Windows). |
 | **Prohibido** | OpenGL, EGL, `Backends::all()`, otros backends wgpu (p. ej. DX12). |
-| **Shaders** | WGSL compilado con naga; portable entre backends wgpu. |
+| **Shaders** | 2D: WGSL vía wgpu (naga). 3D: GLSL en `engine_3d/shaders/` compilado a SPIR-V con `glslc` (Ash/Vulkan). |
 | **Si la GPU falla** | El editor Electron **sí** abre; el viewport muestra ayuda. El motor emite `{"event":"error"}` y no envía `ready`. |
 
 Requisitos: **Vulkan** en Windows (`vulkaninfo` o drivers actualizados).

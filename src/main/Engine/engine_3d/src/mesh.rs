@@ -32,7 +32,7 @@ pub struct Vertex {
 }
 
 // ---------------------------------------------------------------------------
-// Vértice skinned — layout para shader_skinned.wgsl (locations 0..4)
+// Vértice skinned — layout espejado de `shaders/raster/skinned.vert` (locations 0..4)
 // ---------------------------------------------------------------------------
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
@@ -197,7 +197,8 @@ pub fn create_unit_quad_xy(gpu: &SharedGpu) -> Mesh {
 // Per-instance data for the instanced rendering pipeline
 // ---------------------------------------------------------------------------
 
-/// Rama legacy en `shader.wgsl` (texture_2d_array). PNG de UI en pantalla: `screen_hud_image` only.
+/// Rama legacy de la ruta `texture_2d_array` del pipeline forward. PNG de UI en pantalla: solo
+/// `screen_hud_image`.
 #[allow(dead_code)]
 pub const RENDER_KIND_HUD_OVERLAY: f32 = 3.0;
 
@@ -210,7 +211,7 @@ pub const RENDER_KIND_HUD_OVERLAY: f32 = 3.0;
 ///   offset 80..96  → tex_layer_pad  (x = capa en texture_2d_array; y = metallic; z = índice
 ///                    de reflection probe en el cube array, -1 = sin probe)
 ///
-/// Matches WGSL `InstanceInput` locations 3..8.
+/// Coincide con las locations 3..8 de `InstanceInput` en `shaders/raster/forward.vert`.
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct InstanceData {

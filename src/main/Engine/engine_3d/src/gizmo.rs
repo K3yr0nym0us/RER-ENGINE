@@ -12,7 +12,8 @@ use crate::vulkan::{GpuBuffer, SharedGpu};
 
 pub use rer_engine_shared::player_ui::ndc_draw::NdcVertex as GizmoVertex;
 
-/// Filas del uniform `GizmoUniforms` en `gizmo.wgsl` (view_proj + model + flags + axis_start).
+/// Filas del uniform `GizmoUniforms` (view_proj + model + flags + axis_start), espejo de
+/// `shaders/raster/gizmo.vert`.
 pub const GIZMO_UNIFORM_ROW_COUNT: usize = 10;
 
 /// view_proj + model identidad; sin hover/eje activo ni offset de flechas.

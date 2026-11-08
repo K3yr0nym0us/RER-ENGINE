@@ -122,8 +122,8 @@ impl State {
         }
     }
 
-    /// Recrea el cubemap de probes al tamaÃ±o de cara `face_size` (px).
-    /// No-op temporal: la captura de probes vive en `vulkan::FrameRenderer` (Fase 4).
+    /// Cambia la vista de recepción de reflejos. `SsrDebug` presenta la imagen SSR/trazada en
+    /// crudo; el renderer la elige en `resolve_present`, así que no hace falta recrear nada.
     pub(crate) fn set_reflection_debug_view(&mut self, view: ReflectionDebugView) {
         let prev = self.reflection_debug_view;
         if prev == view {
@@ -135,10 +135,15 @@ impl State {
             view: view.wire().to_string(),
         });
         log::info!(
-            "[reflexiones] Vista debug: {} -> {} (no-op temporal Fase 4)",
+            "[reflexiones] Vista debug: {} -> {}",
             prev.wire(),
             view.wire()
         );
+        if view != ReflectionDebugView::Final && self.reflection_tier == ReflectionTier::Off {
+            log::warn!(
+                "[reflexiones] la vista de debug no mostrará nada con el tier de reflejos en off"
+            );
+        }
     }
 }
 

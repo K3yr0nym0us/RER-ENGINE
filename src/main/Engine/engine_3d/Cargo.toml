@@ -35,7 +35,6 @@ ab_glyph.workspace = true
 ash = "0.38"
 ash-window = "0.13"
 gpu-allocator = { version = "0.27", default-features = false, features = ["vulkan"] }
-naga = { version = "25", features = ["wgsl-in", "spv-out"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows.workspace = true

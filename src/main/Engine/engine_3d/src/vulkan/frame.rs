@@ -90,18 +90,32 @@ pub struct RtBatch<'a> {
     pub rebuild: bool,
 }
 
+/// Captura de una sonda: centro de la esfera y ranura de cubemap (`slot * 6` es la primera capa).
+#[derive(Clone, Copy, Debug)]
+pub struct ProbeCapture {
+    pub origin: [f32; 3],
+    pub slot: usize,
+}
+
 pub struct FrameInput<'a> {
     pub scene: &'a [u8],
     pub shadows: bool,
     /// Lado del shadow map (px) exigido por el tier de sombras. `FrameRenderer` reasigna el mapa
     /// cuando cambia; sin esto el tier solo movía un número en el log.
     pub shadow_map_size: u32,
+    /// Muestras de MSAA pedidas por el tier (1 = sin multisampling). `FrameRenderer` lo recorta
+    /// a lo que el adaptador admite y recrea el G-buffer multisampleado.
+    pub msaa_samples: u32,
     pub taa_enabled: bool,
     pub taa_blend: f32,
     pub reflections: bool,
     /// `true`: el pase de reflejos traza rayos (HW o BVH). `false`: solo SSR.
     pub raytracing: bool,
-    pub probe_origins: &'a [[f32; 3]],
+    /// Sondas a capturar este frame, cada una con su ranura del cubemap array.
+    pub probe_captures: &'a [ProbeCapture],
+    /// Vista de debug: en vez del resultado final se presenta la imagen SSR/trazado en crudo.
+    /// Lo pide el editor con `set_reflection_debug_view`; no requiere cambiar ningún shader.
+    pub debug_ssr_view: bool,
     pub static_batches: &'a [MeshBatch<'a>],
     /// Batches con alpha < 0.98 para el pase blend.
     pub static_transparent_batches: &'a [MeshBatch<'a>],
@@ -140,13 +154,30 @@ struct Targets {
     history: [GpuImage; 2],
     shadow: GpuImage,
     probe: GpuImage,
-    probe_faces: Vec<vk::ImageView>,
     probe_color: GpuImage,
     probe_normal: GpuImage,
     probe_albedo: GpuImage,
     probe_world: GpuImage,
     probe_velocity: GpuImage,
     probe_depth: GpuImage,
+    /// G-buffer multisampleado del pase forward (solo existe si el tier de MSAA pide > 1).
+    ms: Option<MultisampleTargets>,
+}
+
+/// Copias multisampleadas de los 5 adjuntos del G-buffer + su profundidad.
+///
+/// Se resuelven contra las imágenes 1× que ya consume TAA/SSR/present, así que el resto del frame
+/// no cambia. La profundidad NO se resuelve: se rellena con un segundo pase a 1× (ver
+/// `forward_pass`), porque el resolve de un adjunto de profundidad tiene requisitos de layout que
+/// no aportan nada frente a volver a rasterizar los lotes opacos.
+struct MultisampleTargets {
+    samples: u32,
+    scene: GpuImage,
+    normal: GpuImage,
+    albedo: GpuImage,
+    world: GpuImage,
+    velocity: GpuImage,
+    depth: GpuImage,
 }
 
 pub struct FrameRenderer {
@@ -200,29 +231,43 @@ pub struct FrameRenderer {
     depth_layout: vk::ImageLayout,
     /// Lado actual del shadow map; coincide con `targets.shadow.extent.width`.
     shadow_size: u32,
+    /// Muestras activas del G-buffer forward (1 = sin MSAA). Sigue al tier elegido por el editor.
+    msaa_samples: u32,
+    /// `[forward, forward_blend, skinned, skinned_blend]` creados con `msaa_samples` muestras.
+    ms_pipelines: Option<[vk::Pipeline; 4]>,
+    /// `[depth_only, depth_only_skinned]` a 1×: rellenan `targets.depth` tras el pase MSAA.
+    depth_pipelines: [vk::Pipeline; 2],
+    /// Módulos del forward, guardados para poder recrear los pipelines cuando cambia el tier.
+    forward_vert: vk::ShaderModule,
+    forward_frag: vk::ShaderModule,
+    skinned_vert: vk::ShaderModule,
 }
 
+/// Los sets se indexan por slot en vuelo (`FRAMES`). Un set único reescrito cada frame era
+/// inseguro: `begin_frame` solo espera el fence de SU slot, así que el frame anterior podía estar
+/// aún en vuelo mientras la CPU actualizaba el mismo set, y actualizar un set ya enlazado
+/// invalida todo el command buffer (VVL: "destroyed or updated without UPDATE_AFTER_BIND").
+/// `empty` queda compartido porque no se reescribe después de la inicialización.
 struct DescriptorSets {
     scene: [vk::DescriptorSet; FRAMES],
-    albedo: vk::DescriptorSet,
-    probe: vk::DescriptorSet,
+    albedo: [vk::DescriptorSet; FRAMES],
+    probe: [vk::DescriptorSet; FRAMES],
     joints: [vk::DescriptorSet; FRAMES],
     empty: vk::DescriptorSet,
     gizmo: [vk::DescriptorSet; FRAMES],
-    hud: vk::DescriptorSet,
-    /// Un set por uso (0 = fondo, 1 = reflejos) y por slot. Actualizar un descriptor set que ya
-    /// está enlazado en el command buffer invalida TODO el command buffer (VVL: "was destroyed or
-    /// updated without UPDATE_AFTER_BIND"), así que el trazado de fondo y el de reflejos no pueden
-    /// compartir set aunque vayan en el mismo frame.
+    hud: [vk::DescriptorSet; FRAMES],
+    /// Un set por uso (0 = fondo, 1 = reflejos) y por slot: el trazado de fondo y el de reflejos
+    /// no pueden compartir set aunque vayan en el mismo frame.
     rt: [[vk::DescriptorSet; 2]; FRAMES],
     bvh: [[vk::DescriptorSet; 2]; FRAMES],
     taa: [vk::DescriptorSet; FRAMES],
-    ssr: vk::DescriptorSet,
-    denoise: [vk::DescriptorSet; 2],
-    composite: vk::DescriptorSet,
-    present: vk::DescriptorSet,
+    ssr: [vk::DescriptorSet; FRAMES],
+    denoise: [vk::DescriptorSet; FRAMES],
+    composite: [vk::DescriptorSet; FRAMES],
+    present: [vk::DescriptorSet; FRAMES],
 }
 
+#[derive(Clone, Copy)]
 struct Pipes {
     forward: vk::Pipeline,
     forward_blend: vk::Pipeline,
@@ -257,9 +302,6 @@ impl Drop for FrameRenderer {
             for sampler in self.samplers.drain(..) {
                 device.destroy_sampler(sampler, None);
             }
-            for view in self.targets.probe_faces.drain(..) {
-                device.destroy_image_view(view, None);
-            }
             device.destroy_descriptor_pool(self.pool, None);
         }
     }
@@ -279,22 +321,27 @@ impl FrameRenderer {
         let shadow_sampler = compare_sampler(device)?;
         let clamp = sampler(device, false, vk::SamplerAddressMode::CLAMP_TO_EDGE)?;
         let samplers = vec![linear, shadow_sampler, clamp];
-        write_combined(
-            device,
-            sets.albedo,
-            0,
-            albedo.view,
-            linear,
-            vk::ImageLayout::GENERAL,
-        )?;
-        write_combined(
-            device,
-            sets.probe,
-            0,
-            targets.probe.view,
-            linear,
-            vk::ImageLayout::GENERAL,
-        )?;
+        // Las vistas de álbum y probes se escriben en TODOS los slots: cambian en momentos
+        // arbitrarios (carga de modelos, recreate) y un slot con la vista vieja apuntando a una
+        // imagen ya destruida es ilegal.
+        for slot in 0..FRAMES {
+            write_combined(
+                device,
+                sets.albedo[slot],
+                0,
+                albedo.view,
+                linear,
+                vk::ImageLayout::GENERAL,
+            )?;
+            write_combined(
+                device,
+                sets.probe[slot],
+                0,
+                targets.probe.view,
+                linear,
+                vk::ImageLayout::GENERAL,
+            )?;
+        }
         let scene_ubo = [
             host_buffer(gpu, 512, "scene-ubo-0")?,
             host_buffer(gpu, 512, "scene-ubo-1")?,
@@ -602,6 +649,34 @@ impl FrameRenderer {
             &mut pipelines,
         )?;
         let bvh_layout = *layouts.last().unwrap_or(&vk::PipelineLayout::null());
+        // Pipelines de solo-profundidad (sin adjuntos de color) para el segundo pase que rellena
+        // la depth 1× cuando el G-buffer está multisampleado. Llevan el fragment shader del
+        // forward solo por el `discard` de alfa: sin él, el cristal cortado escribiría profundidad.
+        let depth_only = graphics(
+            device,
+            forward_layout,
+            vert,
+            Some(frag),
+            &static_vertex(),
+            &[],
+            Some(DEPTH),
+            false,
+            false,
+            &mut pipelines,
+        )?;
+        let depth_only_skinned = graphics(
+            device,
+            skinned_layout,
+            skinned_vert,
+            Some(frag),
+            &skinned_vertex(),
+            &[],
+            Some(DEPTH),
+            false,
+            false,
+            &mut pipelines,
+        )?;
+        let depth_pipelines = [depth_only, depth_only_skinned];
         let _kept = (
             forward,
             forward_blend,
@@ -618,8 +693,16 @@ impl FrameRenderer {
             composite,
             present,
             gizmo_lines,
+            depth_only,
+            depth_only_skinned,
         );
         Ok(Self {
+            msaa_samples: 1,
+            ms_pipelines: None,
+            forward_vert: vert,
+            forward_frag: frag,
+            skinned_vert,
+            depth_pipelines,
             gpu: gpu.clone(),
             targets,
             shaders,
@@ -715,14 +798,17 @@ impl FrameRenderer {
         if let Some(atlas) = input.hud_atlas
             && self.hud_image != atlas.image
         {
-            write_combined(
-                self.gpu.device(),
-                self.sets.hud,
-                0,
-                atlas.view,
-                self.samplers[0],
-                vk::ImageLayout::GENERAL,
-            )?;
+            // Igual que el álbum de texturas: el atlas nuevo se enlaza en todos los slots.
+            for index in 0..FRAMES {
+                write_combined(
+                    self.gpu.device(),
+                    self.sets.hud[index],
+                    0,
+                    atlas.view,
+                    self.samplers[0],
+                    vk::ImageLayout::GENERAL,
+                )?;
+            }
             self.hud_image = atlas.image;
         }
         let slot = frame.slot.min(FRAMES - 1);
@@ -731,6 +817,11 @@ impl FrameRenderer {
         let pipes = self.pipe_handles();
         let device = self.gpu.device().clone();
         let cmd = frame.command;
+        // El tier de MSAA puede haber cambiado: se ajustan el G-buffer multisampleado y sus
+        // pipelines antes de cualquier pase que dependa del número de muestras. `pipes` se queda
+        // con los de 1× porque la captura de sondas dibuja en imágenes de una muestra; solo
+        // `forward_pass` cambia a los pipelines MSAA.
+        self.ensure_msaa(input.msaa_samples, &device)?;
         self.trace_background(slot, input, &pipes, &device, cmd)?;
         if input.shadows {
             self.shadow_pass(slot, input, &pipes, &device, cmd)?;
@@ -746,10 +837,8 @@ impl FrameRenderer {
                 DEPTH_READ_ONLY,
             );
         }
-        if !input.probe_origins.is_empty() {
-            for origin in input.probe_origins {
-                self.capture_probe(slot, input, *origin, &pipes, &device, cmd)?;
-            }
+        for capture in input.probe_captures {
+            self.capture_probe(slot, input, *capture, &pipes, &device, cmd)?;
         }
         self.forward_pass(slot, input, &pipes, &device, cmd)?;
         if input.reflections && input.raytracing {
@@ -763,6 +852,28 @@ impl FrameRenderer {
 }
 
 impl FrameRenderer {
+    fn forward_pipes(&self, base: Pipes) -> Pipes {
+        match self.ms_pipelines {
+            Some([forward, forward_blend, skinned, skinned_blend]) if self.msaa_samples > 1 => {
+                let mut pipes = base;
+                pipes.forward = forward;
+                pipes.forward_blend = forward_blend;
+                pipes.skinned = skinned;
+                pipes.skinned_blend = skinned_blend;
+                pipes
+            }
+            _ => base,
+        }
+    }
+
+    /// `Pipes` con los pipelines de solo-profundidad (sin adjuntos de color) para el segundo pase.
+    fn depth_pipes(&self, base: Pipes) -> Pipes {
+        let mut pipes = base;
+        pipes.forward = self.depth_pipelines[0];
+        pipes.skinned = self.depth_pipelines[1];
+        pipes
+    }
+
     fn pipe_handles(&self) -> Pipes {
         Pipes {
             forward: self.pipelines[0],
@@ -793,15 +904,115 @@ impl FrameRenderer {
                 self.samplers[1],
                 vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
             )?;
+            write_combined(
+                device,
+                self.sets.probe[slot],
+                0,
+                self.targets.probe.view,
+                self.samplers[0],
+                vk::ImageLayout::GENERAL,
+            )?;
         }
-        write_combined(
-            device,
-            self.sets.probe,
-            0,
-            self.targets.probe.view,
-            self.samplers[0],
-            vk::ImageLayout::GENERAL,
-        )?;
+        Ok(())
+    }
+
+    /// Ajusta el G-buffer multisampleado y sus pipelines al número de muestras pedido por el tier.
+    ///
+    /// Se consulta al adaptador (`max_gbuffer_samples`), así que un `Ultra` en una GPU sin soporte
+    /// baja a 1× en vez de crear pipelines inválidos. Los pipelines de 1× siguen existiendo porque
+    /// la captura de sondas dibuja en imágenes de una muestra.
+    fn ensure_msaa(&mut self, wanted: u32, device: &ash::Device) -> Result<(), VulkanError> {
+        let wanted = self.gpu.max_gbuffer_samples(wanted).clamp(1, 8);
+        if wanted == self.msaa_samples {
+            return Ok(());
+        }
+        self.targets.ensure_ms(&self.gpu, wanted)?;
+        if let Some(old) = self.ms_pipelines.take() {
+            for pipeline in old {
+                unsafe { device.destroy_pipeline(pipeline, None) };
+            }
+            // Eran los últimos del registro: se quitan para no destruirlos otra vez en `Drop`.
+            for _ in old {
+                self.pipelines.pop();
+            }
+        }
+        if wanted > 1 {
+            let static_ms = with_samples(static_vertex(), wanted);
+            let skinned_ms = with_samples(skinned_vertex(), wanted);
+            let created = [
+                graphics(
+                    device,
+                    self.layouts[0],
+                    self.forward_vert,
+                    Some(self.forward_frag),
+                    &static_ms,
+                    &MRT,
+                    Some(DEPTH),
+                    false,
+                    false,
+                    &mut self.pipelines,
+                ),
+                graphics(
+                    device,
+                    self.layouts[0],
+                    self.forward_vert,
+                    Some(self.forward_frag),
+                    &static_ms,
+                    &MRT,
+                    Some(DEPTH),
+                    true,
+                    false,
+                    &mut self.pipelines,
+                ),
+                graphics(
+                    device,
+                    self.layouts[1],
+                    self.skinned_vert,
+                    Some(self.forward_frag),
+                    &skinned_ms,
+                    &MRT,
+                    Some(DEPTH),
+                    false,
+                    false,
+                    &mut self.pipelines,
+                ),
+                graphics(
+                    device,
+                    self.layouts[1],
+                    self.skinned_vert,
+                    Some(self.forward_frag),
+                    &skinned_ms,
+                    &MRT,
+                    Some(DEPTH),
+                    true,
+                    false,
+                    &mut self.pipelines,
+                ),
+            ];
+            let mut built = Vec::new();
+            for pipeline in created {
+                match pipeline {
+                    Ok(pipeline) => built.push(pipeline),
+                    Err(error) => {
+                        for partial in built {
+                            unsafe { device.destroy_pipeline(partial, None) };
+                        }
+                        return Err(error);
+                    }
+                }
+            }
+            let [forward, forward_blend, skinned, skinned_blend] =
+                built.try_into().map_err(|_| {
+                    VulkanError::new(
+                        "No se pudieron crear los pipelines MSAA del forward.".to_string(),
+                    )
+                })?;
+            self.ms_pipelines = Some([forward, forward_blend, skinned, skinned_blend]);
+        }
+        self.msaa_samples = wanted;
+        if wanted > 1 {
+            log::info!("[msaa] G-buffer multisampleado a {wanted}x");
+        }
         Ok(())
     }
 
@@ -1198,18 +1409,20 @@ impl FrameRenderer {
         Ok(())
     }
 
+    /// Captura una sonda completa (6 caras) dentro de su ranura del cubemap array.
     fn capture_probe(
         &mut self,
         slot: usize,
         input: &FrameInput<'_>,
-        origin: [f32; 3],
+        capture: ProbeCapture,
         pipes: &Pipes,
         device: &ash::Device,
         cmd: vk::CommandBuffer,
     ) -> Result<(), VulkanError> {
+        let face_size = crate::probe_registry::PROBE_FACE_SIZE;
         let extent = vk::Extent2D {
-            width: 32,
-            height: 32,
+            width: face_size,
+            height: face_size,
         };
         let views = [
             self.targets.probe_color.view,
@@ -1219,9 +1432,10 @@ impl FrameRenderer {
             self.targets.probe_velocity.view,
         ];
         const LIGHT_PARAMS_Y: usize = 64 * 4 + 16 * 2 + 16 + 64 + 4;
+        let base_layer = (capture.slot.min(crate::probe_registry::MAX_PROBES - 1) as u32) * 6;
         for face in 0..6 {
             let mut scene = input.scene.to_vec();
-            let vp = cube_face_view_proj(origin, face);
+            let vp = cube_face_view_proj(capture.origin, face);
             if scene.len() >= 64 {
                 scene[..64].copy_from_slice(bytemuck::bytes_of(&vp));
             }
@@ -1244,13 +1458,15 @@ impl FrameRenderer {
             set_viewport(device, cmd, extent);
             self.draw_forward(slot, input, pipes, device, cmd, 0.0);
             unsafe { device.cmd_end_rendering(cmd) };
+            // `copy_color` escribe en `base_array_layer`, así que cada cara de cada sonda ocupa su
+            // propia capa (slot * 6 + cara) en vez de pisar la ranura 0.
             copy_color(
                 device,
                 cmd,
                 &self.targets.probe_color,
                 &self.targets.probe,
                 extent,
-                face as u32,
+                base_layer + face as u32,
             );
         }
         if !input.scene.is_empty() {
@@ -1269,49 +1485,125 @@ impl FrameRenderer {
         cmd: vk::CommandBuffer,
     ) -> Result<(), VulkanError> {
         let extent = self.targets.extent;
-        copy_color(
-            device,
-            cmd,
-            &self.targets.background,
-            &self.targets.scene,
-            extent,
-            0,
-        );
-        let views = [
+        let resolve = [
             self.targets.scene.view,
             self.targets.normal.view,
             self.targets.albedo_out.view,
             self.targets.world.view,
             self.targets.velocity.view,
         ];
-        let depth_image = self.targets.depth.image;
-        transition_depth(
-            device,
-            cmd,
-            depth_image,
-            &mut self.depth_layout,
-            DEPTH_ATTACHMENT,
-        );
-        begin_color(
-            device,
-            cmd,
-            &views,
-            Some(self.targets.depth.view),
-            extent,
-            false,
-        );
-        set_viewport(device, cmd, extent);
-        self.draw_forward(slot, input, pipes, device, cmd, 0.0);
-        self.draw_forward(slot, input, pipes, device, cmd, 1.0);
-        unsafe { device.cmd_end_rendering(cmd) };
-        // El trazado de reflejos, el SSR, el denoise y la sonda muestrean esta imagen.
-        transition_depth(
-            device,
-            cmd,
-            depth_image,
-            &mut self.depth_layout,
-            DEPTH_READ_ONLY,
-        );
+        // `ms.samples == msaa_samples`: si el G-buffer no se recreó aún para este nivel, se cae
+        // al camino de 1× en vez de mezclar pipelines y adjuntos con muestras distintas.
+        let msaa = self.msaa_samples > 1
+            && self
+                .targets
+                .ms
+                .as_ref()
+                .is_some_and(|ms| ms.samples == self.msaa_samples);
+        if msaa {
+            // El cielo trazado se copia sobre la escena MULTISAMPLEADA: es esa imagen la que se
+            // resuelve contra `targets.scene`; copiarla en la 1× la pisaría el resolve.
+            let ms_scene = &self
+                .targets
+                .ms
+                .as_ref()
+                .ok_or_else(|| {
+                    VulkanError::new("MSAA activo sin G-buffer multisampleado.".to_string())
+                })?
+                .scene;
+            copy_color(device, cmd, &self.targets.background, ms_scene, extent, 0);
+        } else {
+            copy_color(
+                device,
+                cmd,
+                &self.targets.background,
+                &self.targets.scene,
+                extent,
+                0,
+            );
+        }
+        let color_pipes = self.forward_pipes(*pipes);
+        // Vistas multisampleadas copiadas fuera del borrow: los pases necesitan `&mut self` para
+        // registrar los layouts de profundidad y `self.targets.ms` prestado no convive con eso.
+        let ms_pack: Option<([vk::ImageView; 5], vk::ImageView)> = if msaa {
+            self.targets.ms.as_ref().map(|ms| {
+                (
+                    [
+                        ms.scene.view,
+                        ms.normal.view,
+                        ms.albedo.view,
+                        ms.world.view,
+                        ms.velocity.view,
+                    ],
+                    ms.depth.view,
+                )
+            })
+        } else {
+            None
+        };
+        match ms_pack {
+            Some((ms_views, ms_depth)) => {
+                begin_color_ms(device, cmd, &ms_views, ms_depth, &resolve, extent, false);
+                set_viewport(device, cmd, extent);
+                self.draw_forward(slot, input, &color_pipes, device, cmd, 0.0);
+                self.draw_forward(slot, input, &color_pipes, device, cmd, 1.0);
+                unsafe { device.cmd_end_rendering(cmd) };
+                // La profundidad del pase MSAA se descarta: se vuelve a rasterizar la geometría
+                // opaca contra `targets.depth` con el fragment shader del forward, para conservar
+                // el `discard` del alfa cortado y no resolver un adjunto de profundidad.
+                let depth_image = self.targets.depth.image;
+                transition_depth(
+                    device,
+                    cmd,
+                    depth_image,
+                    &mut self.depth_layout,
+                    DEPTH_ATTACHMENT,
+                );
+                begin_depth(device, cmd, self.targets.depth.view, extent);
+                set_viewport(device, cmd, extent);
+                let depth_pipes = self.depth_pipes(*pipes);
+                self.draw_forward(slot, input, &depth_pipes, device, cmd, 0.0);
+                unsafe { device.cmd_end_rendering(cmd) };
+                transition_depth(
+                    device,
+                    cmd,
+                    depth_image,
+                    &mut self.depth_layout,
+                    DEPTH_READ_ONLY,
+                );
+            }
+            _ => {
+                let views = resolve;
+                let depth_image = self.targets.depth.image;
+                transition_depth(
+                    device,
+                    cmd,
+                    depth_image,
+                    &mut self.depth_layout,
+                    DEPTH_ATTACHMENT,
+                );
+                begin_color(
+                    device,
+                    cmd,
+                    &views,
+                    Some(self.targets.depth.view),
+                    extent,
+                    false,
+                );
+                set_viewport(device, cmd, extent);
+                self.draw_forward(slot, input, &color_pipes, device, cmd, 0.0);
+                self.draw_forward(slot, input, &color_pipes, device, cmd, 1.0);
+                unsafe { device.cmd_end_rendering(cmd) };
+                // El trazado de reflejos, el SSR, el denoise y la sonda muestrean esta imagen.
+                transition_depth(
+                    device,
+                    cmd,
+                    depth_image,
+                    &mut self.depth_layout,
+                    DEPTH_READ_ONLY,
+                );
+            }
+        }
         Ok(())
     }
 
@@ -1430,9 +1722,9 @@ impl FrameRenderer {
                 0,
                 &[
                     self.sets.scene[slot],
-                    self.sets.albedo,
+                    self.sets.albedo[slot],
                     self.sets.empty,
-                    self.sets.probe,
+                    self.sets.probe[slot],
                 ],
                 &[],
             );
@@ -1472,9 +1764,9 @@ impl FrameRenderer {
                 0,
                 &[
                     self.sets.scene[slot],
-                    self.sets.albedo,
+                    self.sets.albedo[slot],
                     self.sets.joints[slot],
-                    self.sets.probe,
+                    self.sets.probe[slot],
                 ],
                 &[],
             );
@@ -1618,7 +1910,7 @@ impl FrameRenderer {
         let source = if input.reflections {
             write_combined(
                 device,
-                self.sets.ssr,
+                self.sets.ssr[slot],
                 0,
                 self.targets.depth.view,
                 clamp,
@@ -1626,7 +1918,7 @@ impl FrameRenderer {
             )?;
             write_combined(
                 device,
-                self.sets.ssr,
+                self.sets.ssr[slot],
                 1,
                 self.targets.normal.view,
                 clamp,
@@ -1634,7 +1926,7 @@ impl FrameRenderer {
             )?;
             write_combined(
                 device,
-                self.sets.ssr,
+                self.sets.ssr[slot],
                 2,
                 self.targets.scene.view,
                 clamp,
@@ -1645,14 +1937,14 @@ impl FrameRenderer {
                 cmd,
                 pipes.ssr,
                 self.layouts[6],
-                self.sets.ssr,
+                self.sets.ssr[slot],
                 self.targets.ssr.view,
                 extent,
                 &[],
             );
             write_combined(
                 device,
-                self.sets.denoise[0],
+                self.sets.denoise[slot],
                 0,
                 self.targets.reflection.view,
                 clamp,
@@ -1660,7 +1952,7 @@ impl FrameRenderer {
             )?;
             write_combined(
                 device,
-                self.sets.denoise[0],
+                self.sets.denoise[slot],
                 1,
                 self.targets.depth.view,
                 clamp,
@@ -1668,7 +1960,7 @@ impl FrameRenderer {
             )?;
             write_combined(
                 device,
-                self.sets.denoise[0],
+                self.sets.denoise[slot],
                 2,
                 self.targets.normal.view,
                 clamp,
@@ -1680,14 +1972,14 @@ impl FrameRenderer {
                 cmd,
                 pipes.denoise,
                 self.layouts[8],
-                self.sets.denoise[0],
+                self.sets.denoise[slot],
                 self.targets.denoise.view,
                 extent,
                 &step,
             );
             write_combined(
                 device,
-                self.sets.composite,
+                self.sets.composite[slot],
                 0,
                 self.targets.scene.view,
                 clamp,
@@ -1695,7 +1987,7 @@ impl FrameRenderer {
             )?;
             write_combined(
                 device,
-                self.sets.composite,
+                self.sets.composite[slot],
                 1,
                 self.targets.denoise.view,
                 clamp,
@@ -1703,7 +1995,7 @@ impl FrameRenderer {
             )?;
             write_combined(
                 device,
-                self.sets.composite,
+                self.sets.composite[slot],
                 2,
                 self.targets.ssr.view,
                 clamp,
@@ -1711,7 +2003,7 @@ impl FrameRenderer {
             )?;
             write_combined(
                 device,
-                self.sets.composite,
+                self.sets.composite[slot],
                 3,
                 self.targets.normal.view,
                 clamp,
@@ -1722,7 +2014,7 @@ impl FrameRenderer {
                 cmd,
                 pipes.composite,
                 self.layouts[6],
-                self.sets.composite,
+                self.sets.composite[slot],
                 self.targets.history[slot].view,
                 extent,
                 &[],
@@ -1785,9 +2077,16 @@ impl FrameRenderer {
             source
         };
         self.taa_history_valid = input.taa_enabled;
+        // Vista de debug del editor: se presenta la imagen SSR/trazada en crudo, sin composite ni
+        // TAA encima, para ver qué devuelve realmente el pase de reflejos.
+        let present_source = if input.debug_ssr_view && input.reflections {
+            self.targets.ssr.view
+        } else {
+            present_source
+        };
         write_combined(
             device,
-            self.sets.present,
+            self.sets.present[slot],
             0,
             present_source,
             clamp,
@@ -1816,7 +2115,7 @@ impl FrameRenderer {
                 vk::PipelineBindPoint::GRAPHICS,
                 self.layouts[6],
                 0,
-                &[self.sets.present],
+                &[self.sets.present[slot]],
                 &[],
             );
             device.cmd_draw(cmd, 3, 1, 0, 0);
@@ -1864,7 +2163,7 @@ impl FrameRenderer {
                     vk::PipelineBindPoint::GRAPHICS,
                     self.layouts[5],
                     0,
-                    &[self.sets.hud],
+                    &[self.sets.hud[slot]],
                     &[],
                 );
                 device.cmd_bind_vertex_buffers(
@@ -1944,7 +2243,7 @@ fn clear_probe_cube(gpu: &SharedGpu, image: vk::Image) -> Result<(), VulkanError
             base_mip_level: 0,
             level_count: 1,
             base_array_layer: 0,
-            layer_count: 6,
+            layer_count: crate::probe_registry::PROBE_CUBE_ARRAY_LAYERS,
         };
         unsafe {
             device.cmd_clear_color_image(
@@ -2040,6 +2339,67 @@ fn begin_depth(
         })
         .layer_count(1)
         .depth_attachment(&depth);
+    unsafe { device.cmd_begin_rendering(cmd, &info) };
+}
+
+/// Inicia el pase forward sobre el G-buffer multisampleado y resuelve cada adjunto sobre su
+/// imagen 1× (la que ya consumen TAA/SSR/present). La profundidad multisampleada se descarta:
+/// `targets.depth` se rellena después con un segundo pase a 1×.
+fn begin_color_ms(
+    device: &ash::Device,
+    cmd: vk::CommandBuffer,
+    ms_views: &[vk::ImageView; 5],
+    ms_depth: vk::ImageView,
+    resolve: &[vk::ImageView; 5],
+    extent: vk::Extent2D,
+    clear: bool,
+) {
+    let colors: Vec<vk::RenderingAttachmentInfo> = ms_views
+        .iter()
+        .zip(resolve)
+        .enumerate()
+        .map(|(index, (view, resolve_view))| {
+            let value = if index == 0 {
+                [0.72, 0.86, 0.98, 1.0]
+            } else {
+                [0.0, 0.0, 0.0, 0.0]
+            };
+            vk::RenderingAttachmentInfo::default()
+                .image_view(*view)
+                .image_layout(vk::ImageLayout::GENERAL)
+                .load_op(if clear || index > 0 {
+                    vk::AttachmentLoadOp::CLEAR
+                } else {
+                    vk::AttachmentLoadOp::LOAD
+                })
+                .store_op(vk::AttachmentStoreOp::STORE)
+                .resolve_image_view(*resolve_view)
+                .resolve_image_layout(vk::ImageLayout::GENERAL)
+                // `resolveMode != NONE` es lo que hace que el contenido multisampleado llegue a la
+                // imagen 1×; con NONE el resolve no ocurre y la imagen 1× quedaría vacía.
+                .resolve_mode(vk::ResolveModeFlags::AVERAGE)
+                .clear_value(clear_color(value))
+        })
+        .collect();
+    let depth_info = vk::RenderingAttachmentInfo::default()
+        .image_view(ms_depth)
+        .image_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+        .load_op(vk::AttachmentLoadOp::CLEAR)
+        .store_op(vk::AttachmentStoreOp::DONT_CARE)
+        .clear_value(vk::ClearValue {
+            depth_stencil: vk::ClearDepthStencilValue {
+                depth: 1.0,
+                stencil: 0,
+            },
+        });
+    let info = vk::RenderingInfo::default()
+        .render_area(vk::Rect2D {
+            offset: vk::Offset2D::default(),
+            extent,
+        })
+        .layer_count(1)
+        .color_attachments(&colors)
+        .depth_attachment(&depth_info);
     unsafe { device.cmd_begin_rendering(cmd, &info) };
 }
 
@@ -2646,8 +3006,14 @@ fn create_sets(
             alloc_set(device, pool, scene)?,
             alloc_set(device, pool, scene)?,
         ],
-        albedo: alloc_set(device, pool, albedo)?,
-        probe: alloc_set(device, pool, probe)?,
+        albedo: [
+            alloc_set(device, pool, albedo)?,
+            alloc_set(device, pool, albedo)?,
+        ],
+        probe: [
+            alloc_set(device, pool, probe)?,
+            alloc_set(device, pool, probe)?,
+        ],
         joints: [
             alloc_set(device, pool, joints)?,
             alloc_set(device, pool, joints)?,
@@ -2657,7 +3023,7 @@ fn create_sets(
             alloc_set(device, pool, gizmo)?,
             alloc_set(device, pool, gizmo)?,
         ],
-        hud: alloc_set(device, pool, hud)?,
+        hud: [alloc_set(device, pool, hud)?, alloc_set(device, pool, hud)?],
         rt: [
             [alloc_set(device, pool, rt)?, alloc_set(device, pool, rt)?],
             [alloc_set(device, pool, rt)?, alloc_set(device, pool, rt)?],
@@ -2667,13 +3033,22 @@ fn create_sets(
             [alloc_set(device, pool, bvh)?, alloc_set(device, pool, bvh)?],
         ],
         taa: [alloc_set(device, pool, taa)?, alloc_set(device, pool, taa)?],
-        ssr: alloc_set(device, pool, full)?,
+        ssr: [
+            alloc_set(device, pool, full)?,
+            alloc_set(device, pool, full)?,
+        ],
         denoise: [
             alloc_set(device, pool, denoise)?,
             alloc_set(device, pool, denoise)?,
         ],
-        composite: alloc_set(device, pool, full)?,
-        present: alloc_set(device, pool, full)?,
+        composite: [
+            alloc_set(device, pool, full)?,
+            alloc_set(device, pool, full)?,
+        ],
+        present: [
+            alloc_set(device, pool, full)?,
+            alloc_set(device, pool, full)?,
+        ],
     };
     Ok((pool, layouts, sets))
 }
@@ -2802,6 +3177,27 @@ fn compare_sampler(device: &ash::Device) -> Result<vk::Sampler, VulkanError> {
 struct VertexSpec {
     bindings: Vec<vk::VertexInputBindingDescription>,
     attributes: Vec<vk::VertexInputAttributeDescription>,
+    /// Muestras del framebuffer al que se dibuja (1 = sin MSAA). Se mete aquí en vez de añadir un
+    /// argumento más a `graphics()` porque Vulkan exige que `rasterizationSamples` coincida con el
+    /// `sampleCount` de TODOS los adjuntos del render pass.
+    samples: u32,
+}
+
+/// Copia una spec de vértices con otro número de muestras (para los pipelines MSAA del forward).
+fn with_samples(mut spec: VertexSpec, samples: u32) -> VertexSpec {
+    spec.samples = samples.max(1);
+    spec
+}
+
+/// `sample_count` (1/2/4/8/16) a banderas de Vulkan. Cualquier otro valor se interpreta como 1×.
+fn sample_flags(samples: u32) -> vk::SampleCountFlags {
+    match samples {
+        2 => vk::SampleCountFlags::TYPE_2,
+        4 => vk::SampleCountFlags::TYPE_4,
+        8 => vk::SampleCountFlags::TYPE_8,
+        16 => vk::SampleCountFlags::TYPE_16,
+        _ => vk::SampleCountFlags::TYPE_1,
+    }
 }
 
 fn static_vertex() -> VertexSpec {
@@ -2829,6 +3225,7 @@ fn static_vertex() -> VertexSpec {
             attr(7, 1, vk::Format::R32G32B32A32_SFLOAT, 64),
             attr(8, 1, vk::Format::R32G32B32A32_SFLOAT, 80),
         ],
+        samples: 1,
     }
 }
 
@@ -2859,6 +3256,7 @@ fn skinned_vertex() -> VertexSpec {
             attr(9, 1, vk::Format::R32G32B32A32_SFLOAT, 64),
             attr(10, 1, vk::Format::R32G32B32A32_SFLOAT, 80),
         ],
+        samples: 1,
     }
 }
 
@@ -2873,6 +3271,7 @@ fn gizmo_vertex() -> VertexSpec {
             attr(0, 0, vk::Format::R32G32B32_SFLOAT, 0),
             attr(1, 0, vk::Format::R32G32B32A32_SFLOAT, 12),
         ],
+        samples: 1,
     }
 }
 
@@ -2880,6 +3279,7 @@ fn empty_vertex() -> VertexSpec {
     VertexSpec {
         bindings: Vec::new(),
         attributes: Vec::new(),
+        samples: 1,
     }
 }
 
@@ -2974,7 +3374,7 @@ fn graphics_topology(
         .depth_bias_constant_factor(if depth_bias { 1.5 } else { 0.0 })
         .depth_bias_slope_factor(if depth_bias { 2.0 } else { 0.0 });
     let multisample = vk::PipelineMultisampleStateCreateInfo::default()
-        .rasterization_samples(vk::SampleCountFlags::TYPE_1);
+        .rasterization_samples(sample_flags(vertex.samples));
     let depth_state = vk::PipelineDepthStencilStateCreateInfo::default()
         .depth_test_enable(depth.is_some())
         .depth_write_enable(depth.is_some() && !blend)
@@ -3333,21 +3733,23 @@ impl Targets {
             vk::ImageAspectFlags::DEPTH,
             "shadow",
         )?;
+        // Un cubemap array: 6 caras por ranura. Con un solo cubemap compartido, la última sonda
+        // capturada del frame tapaba a las demás y todas las entidades recibían el mismo entorno.
         let probe = gpu.create_image_layers(
             vk::Extent2D {
-                width: 32,
-                height: 32,
+                width: crate::probe_registry::PROBE_FACE_SIZE,
+                height: crate::probe_registry::PROBE_FACE_SIZE,
             },
-            6,
+            crate::probe_registry::PROBE_CUBE_ARRAY_LAYERS,
             1,
             COLOR,
             color_usage,
             vk::ImageAspectFlags::COLOR,
-            "probe-cube",
+            "probe-cube-array",
         )?;
         let probe_extent = vk::Extent2D {
-            width: 32,
-            height: 32,
+            width: crate::probe_registry::PROBE_FACE_SIZE,
+            height: crate::probe_registry::PROBE_FACE_SIZE,
         };
         let probe_color = gpu.create_image(
             probe_extent,
@@ -3391,7 +3793,6 @@ impl Targets {
             vk::ImageAspectFlags::DEPTH,
             "probe-depth",
         )?;
-        let probe_faces = Vec::new();
         Ok(Self {
             extent,
             scene,
@@ -3408,14 +3809,68 @@ impl Targets {
             history,
             shadow,
             probe,
-            probe_faces,
             probe_color,
             probe_normal,
             probe_albedo,
             probe_world,
             probe_velocity,
             probe_depth,
+            ms: None,
         })
+    }
+
+    /// Crea (o recrea) el G-buffer multisampleado para `samples` muestras.
+    fn ensure_ms(&mut self, gpu: &SharedGpu, samples: u32) -> Result<(), VulkanError> {
+        if samples <= 1 {
+            // Soltar las imágenes liberadas por `Drop` de `GpuImage`.
+            self.ms = None;
+            return Ok(());
+        }
+        let ms_samples = sample_flags(samples);
+        let usage = vk::ImageUsageFlags::COLOR_ATTACHMENT
+            | vk::ImageUsageFlags::SAMPLED
+            | vk::ImageUsageFlags::TRANSFER_DST;
+        let ms_color = |name| {
+            gpu.create_image_with_samples(
+                self.extent,
+                COLOR,
+                ms_samples,
+                usage,
+                vk::ImageAspectFlags::COLOR,
+                name,
+            )
+        };
+        self.ms = Some(MultisampleTargets {
+            samples,
+            scene: ms_color("scene-ms")?,
+            normal: ms_color("normal-ms")?,
+            albedo: ms_color("albedo-ms")?,
+            world: gpu.create_image_with_samples(
+                self.extent,
+                WORLD,
+                ms_samples,
+                usage,
+                vk::ImageAspectFlags::COLOR,
+                "world-ms",
+            )?,
+            velocity: gpu.create_image_with_samples(
+                self.extent,
+                VELOCITY,
+                ms_samples,
+                usage,
+                vk::ImageAspectFlags::COLOR,
+                "velocity-ms",
+            )?,
+            depth: gpu.create_image_with_samples(
+                self.extent,
+                DEPTH,
+                ms_samples,
+                vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
+                vk::ImageAspectFlags::DEPTH,
+                "depth-ms",
+            )?,
+        });
+        Ok(())
     }
 
     fn recreate(&mut self, gpu: &SharedGpu, extent: vk::Extent2D) -> Result<(), VulkanError> {
@@ -3441,14 +3896,18 @@ impl Targets {
 }
 
 impl FrameRenderer {
+    /// Enlaza el álbum de álbedos nuevo en TODOS los slots en vuelo.
     pub fn albedo_set_image(&self, albedo: &GpuImage) -> Result<(), VulkanError> {
-        write_combined(
-            self.gpu.device(),
-            self.sets.albedo,
-            0,
-            albedo.view,
-            self.samplers[0],
-            vk::ImageLayout::GENERAL,
-        )
+        for slot in 0..FRAMES {
+            write_combined(
+                self.gpu.device(),
+                self.sets.albedo[slot],
+                0,
+                albedo.view,
+                self.samplers[0],
+                vk::ImageLayout::GENERAL,
+            )?;
+        }
+        Ok(())
     }
 }

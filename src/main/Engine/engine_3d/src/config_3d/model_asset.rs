@@ -2179,7 +2179,7 @@ fn gltf_play_bind_height_and_center(
     Some((height, center))
 }
 
-fn skinned_vertex_position(palette: &[Mat4], vertex: &SkinnedVertex) -> Vec3 {
+pub(crate) fn skinned_vertex_position(palette: &[Mat4], vertex: &SkinnedVertex) -> Vec3 {
     let pos = Vec4::new(
         vertex.position[0],
         vertex.position[1],

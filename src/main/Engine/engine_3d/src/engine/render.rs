@@ -107,6 +107,12 @@ fn rt_scene_hash(state: &State, records: &[RtInstanceRecord]) -> u64 {
             pbr.opacity.to_bits().hash(&mut hasher);
         }
     }
+    // La geometría skinned no está en `records` (se deforma en CPU y se cachea), así que su
+    // refresco entra en el hash por tick: el BVH se reconstruye cuando cambia la pose cacheada y
+    // no en los frames intermedios.
+    if !state.rt_skinned_triangles.is_empty() {
+        (state.rt_skinned_tick / SKINNED_TRACE_REFRESH_FRAMES.max(1)).hash(&mut hasher);
+    }
     hasher.finish()
 }
 
@@ -137,6 +143,107 @@ fn rt_material(state: &State, rec: &RtInstanceRecord) -> RtMaterialGpu {
         pbr: [roughness, metallic, ior, tex_idx as f32],
         probe: [rec.probe_layer as f32, 0.0, 0.0, 0.0],
     }
+}
+
+/// Cada cuántos frames se re-deforma la geometría skinned para el BVH. A 60 fps son 15 Hz de
+/// actualización de la silueta reflejada, de sobra para un reflejo y mucho más barato que un
+/// `build_bvh` por frame.
+const SKINNED_TRACE_REFRESH_FRAMES: u32 = 4;
+/// Techo de triángulos skinned trazables por escena: protege el frame en rigs con mallas pesadas.
+const SKINNED_TRACE_MAX_TRIANGLES: usize = 24_000;
+
+/// Deforma en CPU las mallas skinned visibles y devuelve sus triángulos en espacio mundo con sus
+/// materiales.
+///
+/// Usa la misma fórmula que `shaders/raster/skinned.vert`
+/// (`model * (Σ pesos·palette[joint] · posición)`), así la silueta que trazan el BVH y el RT
+/// coincide con la rasterizada. Los materiales se numeran desde 0: `build_rt_scene` les suma el
+/// desplazamiento de los lotes estáticos.
+fn build_skinned_trace(
+    state: &State,
+    frustum_vp: &Mat4,
+    probe_fields: &[crate::probe_registry::ProbeField],
+) -> (Vec<crate::bvh::RtTriangle>, Vec<RtMaterialGpu>) {
+    let mut triangles: Vec<crate::bvh::RtTriangle> = Vec::new();
+    let mut materials: Vec<RtMaterialGpu> = Vec::new();
+    for (&id, binding) in &state.model_animation_bindings {
+        let Some(transform) = state.world.get::<crate::ecs::Transform>(id) else {
+            continue;
+        };
+        if state.sun_entity == Some(id) {
+            continue;
+        }
+        let model_matrix = transform.to_matrix();
+        let (center, half) = state.entity_world_pick_aabb(id, transform);
+        if !is_aabb_visible_3d(frustum_vp, center, half) {
+            continue;
+        }
+        let Some(asset) = state.model_assets.get(&binding.asset_path) else {
+            continue;
+        };
+        let probe_layer = crate::probe_registry::select_probe_slot(probe_fields, center)
+            .map(|slot| slot as i32)
+            .unwrap_or(-1);
+        for (part_index, &gpu_idx) in binding.part_gpu_indices.iter().enumerate() {
+            let (Some(entry), Some(part)) = (
+                state.skinned_gpu_meshes.get(gpu_idx),
+                asset.parts.get(part_index),
+            ) else {
+                continue;
+            };
+            if triangles.len() >= SKINNED_TRACE_MAX_TRIANGLES {
+                return (triangles, materials);
+            }
+            let palette: Vec<Mat4> = entry
+                .joint_palette
+                .iter()
+                .map(Mat4::from_cols_array_2d)
+                .collect();
+            if palette.is_empty() {
+                continue;
+            }
+            let record = RtInstanceRecord {
+                mesh_idx: 0,
+                entity_id: id,
+                transform: model_matrix,
+                probe_layer,
+            };
+            let slot = materials.len() as u32;
+            materials.push(rt_material(state, &record));
+            let vertices = &part.mesh.vertices;
+            for chunk in part.mesh.indices.chunks_exact(3) {
+                let mut tri = crate::bvh::RtTriangle {
+                    v0: GlamVec3::ZERO,
+                    v1: GlamVec3::ZERO,
+                    v2: GlamVec3::ZERO,
+                    uv0: [0.0; 2],
+                    uv1: [0.0; 2],
+                    uv2: [0.0; 2],
+                    material_slot: slot,
+                };
+                let mut ok = true;
+                for (out_pos, out_uv, src_uv) in [
+                    (&mut tri.v0, &mut tri.uv0, 0usize),
+                    (&mut tri.v1, &mut tri.uv1, 1usize),
+                    (&mut tri.v2, &mut tri.uv2, 2usize),
+                ] {
+                    let index = chunk[src_uv] as usize;
+                    let Some(vertex) = vertices.get(index) else {
+                        ok = false;
+                        break;
+                    };
+                    let local =
+                        crate::config_3d::model_asset::skinned_vertex_position(&palette, vertex);
+                    *out_pos = model_matrix.transform_point3(local);
+                    *out_uv = vertex.uv;
+                }
+                if ok {
+                    triangles.push(tri);
+                }
+            }
+        }
+    }
+    (triangles, materials)
 }
 
 /// Triángulos en espacio mundo + materiales por instancia → BVH y buffers GPU.
@@ -176,6 +283,15 @@ fn build_rt_scene(state: &State, records: &[RtInstanceRecord]) -> RtSceneBlob {
             });
         }
     }
+    // Geometría skinned ya deformada (pose del personaje en el último refresco). Sus materiales se
+    // añadieron después de los de los lotes estáticos, así que se les corre el índice.
+    let skinned_base = materials.len() as u32;
+    for triangle in &state.rt_skinned_triangles {
+        let mut triangle = *triangle;
+        triangle.material_slot += skinned_base;
+        triangles.push(triangle);
+    }
+    materials.extend(state.rt_skinned_materials.iter().copied());
     let (nodes, gpu_triangles) = crate::bvh::build_bvh(triangles);
     RtSceneBlob::from_parts(&nodes, &gpu_triangles, &materials)
 }
@@ -248,6 +364,7 @@ pub(crate) fn filter_batches_by_alpha(
 pub(crate) fn build_scene_instance_batches(
     state: &State,
     entities: &[(crate::ecs::EntityId, usize, usize, Mat4, i32)],
+    probe_fields: &[crate::probe_registry::ProbeField],
 ) -> Vec<SceneInstanceBatch> {
     let mut batches: Vec<SceneInstanceBatch> = Vec::new();
     for (entity_id, mesh_idx, tex_idx, model_matrix, _layer) in entities {
@@ -272,7 +389,16 @@ pub(crate) fn build_scene_instance_batches(
         if let Some(pbr) = state.world.get::<crate::ecs::SurfacePbr>(*entity_id) {
             apply_surface_pbr_to_instance(&mut inst, pbr);
         }
-        let probe_layer = -1i32;
+        // Ranura de sonda de la entidad: la más cercana cuyo volumen la contiene (`-1` = ninguna →
+        // el shader cae al cielo procedural). Se resuelve por entidad y entra en la clave de lote,
+        // así dos entidades con la misma malla pero distinta sonda no comparten instancing.
+        let probe_layer = crate::probe_registry::select_probe_slot(
+            probe_fields,
+            model_matrix.transform_point3(GlamVec3::ZERO),
+        )
+        .map(|slot| slot as i32)
+        .unwrap_or(-1);
+        inst.tex_layer_pad[2] = probe_layer as f32;
         if state.is_plane_wall_entity(*entity_id) {
             inst.flag_pad[1] = crate::config_3d::plane_tools::PLANE_WALL_VISUAL_ALPHA;
             inst.flag_pad[2] = crate::config_3d::plane_tools::PLANE_WALL_RENDER_KIND;
@@ -350,9 +476,11 @@ impl State {
 
         // Probes: la lista se resuelve una vez por frame (gizmos + captura).
         let mut probe_list: Vec<(crate::ecs::EntityId, GlamVec3, usize)> = Vec::new();
+        let mut probe_fields: Vec<crate::probe_registry::ProbeField> = Vec::new();
         if reflections {
             self.ensure_probe_slots_allocated();
             probe_list = self.reflection_probe_render_list();
+            probe_fields = self.reflection_probe_fields();
         }
         let probes_active = self.reflection_probes_enabled && !probe_list.is_empty();
 
@@ -439,11 +567,11 @@ impl State {
             .collect();
         entities.sort_by_key(|a| a.4);
 
-        let batches = build_scene_instance_batches(self, &entities);
+        let batches = build_scene_instance_batches(self, &entities, &probe_fields);
         let opaque_batches = filter_batches_by_alpha(&batches, false);
 
         // ── Probes: ranuras estables + burst/round-robin de captura ──
-        let probe_origins: Vec<[f32; 3]> = if probes_active {
+        let probe_captures: Vec<crate::vulkan::ProbeCapture> = if probes_active {
             let ids: Vec<crate::ecs::EntityId> = probe_list.iter().map(|(id, _, _)| *id).collect();
             self.sync_probe_capture_burst_for_entity_set(&ids);
             let burst = self.probe_capture_burst_all;
@@ -453,7 +581,10 @@ impl State {
                 self.probe_capture_cooldown = 0;
                 probe_list
                     .iter()
-                    .map(|(_, position, _)| position.to_array())
+                    .map(|(_, position, slot)| crate::vulkan::ProbeCapture {
+                        origin: position.to_array(),
+                        slot: *slot,
+                    })
                     .collect()
             } else if self.probe_capture_cooldown > 0 {
                 self.probe_capture_cooldown -= 1;
@@ -463,7 +594,11 @@ impl State {
                 let index = self.probe_capture_cursor % probe_list.len();
                 self.probe_capture_cursor = self.probe_capture_cursor.wrapping_add(1);
                 self.probe_capture_cooldown = 30;
-                vec![probe_list[index].1.to_array()]
+                let (_, position, slot) = probe_list[index];
+                vec![crate::vulkan::ProbeCapture {
+                    origin: position.to_array(),
+                    slot,
+                }]
             }
         } else {
             Vec::new()
@@ -790,6 +925,25 @@ impl State {
             None
         };
 
+        // Geometría skinned trazable: se re-deforma cada pocos frames (ver
+        // `SKINNED_TRACE_REFRESH_FRAMES`) porque rehacer el BVH en cada frame con un personaje
+        // animado cuesta más de lo que un reflejo puede notar.
+        self.rt_skinned_tick = self.rt_skinned_tick.wrapping_add(1);
+        if raytracing {
+            if self
+                .rt_skinned_tick
+                .is_multiple_of(SKINNED_TRACE_REFRESH_FRAMES)
+                || self.rt_skinned_triangles.is_empty()
+            {
+                let (triangles, materials) = build_skinned_trace(self, &frustum_vp, &probe_fields);
+                self.rt_skinned_triangles = triangles;
+                self.rt_skinned_materials = materials;
+            }
+        } else {
+            self.rt_skinned_triangles.clear();
+            self.rt_skinned_materials.clear();
+        }
+
         let rt_records = if raytracing {
             collect_rt_instances(self, &opaque_batches)
         } else {
@@ -851,11 +1005,14 @@ impl State {
             scene: scene_bytes,
             shadows: self.shadow_tier != crate::config_3d::shadow_graphics::ShadowTier::Off,
             shadow_map_size: self.active_shadow_map_size(),
+            msaa_samples: self.msaa_sample_count,
+            debug_ssr_view: self.reflection_debug_view
+                != crate::config_3d::reflection_graphics::ReflectionDebugView::Final,
             taa_enabled: self.taa_enabled,
             taa_blend: self.taa_blend,
             reflections,
             raytracing,
-            probe_origins: &probe_origins,
+            probe_captures: &probe_captures,
             static_batches: &static_batches,
             static_transparent_batches: &static_transparent_batches,
             skinned_batches: &skinned_batches,

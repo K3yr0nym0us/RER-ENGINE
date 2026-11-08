@@ -1,8 +1,8 @@
 //! Nivel de anti-aliasing por multisampling (MSAA) del pase forward 3D.
 //!
-//! Nota: la creación de pipelines wgpu y la verificación de formatos contra el device
-//! se eliminó al cortar el frame a Ash (Fase 2). Mientras tanto, `clamp_sample_count`
-//! devuelve el `desired` clampado sin consultar al device (Fase 4 lo hará con Vulkan).
+//! El tier pide un número de muestras; `clamp_sample_count` lo ajusta a lo que el adaptador
+//! soporta realmente como adjunto de color Y de profundidad (`SharedGpu::max_gbuffer_samples`),
+//! y `FrameRenderer` reserva el G-buffer multisampleado con ese valor.
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
 pub enum MsaaTier {
@@ -46,8 +46,8 @@ impl MsaaTier {
 
 pub const DEFAULT_MSAA_TIER: MsaaTier = MsaaTier::Low;
 
-/// Elige el mayor `sample_count` ≤ `desired`. Versión temporal sin consulta al device;
-/// se conecta a Vulkan en Fase 4.
-pub fn clamp_sample_count(_device: &crate::vulkan::SharedGpu, desired: u32) -> u32 {
-    desired.clamp(1, 8)
+/// Elige el mayor `sample_count` ≤ `desired` que el adaptador admite para el G-buffer del pase
+/// forward (color y profundidad a la vez). Sin soporte de MSAA devuelve 1×.
+pub fn clamp_sample_count(device: &crate::vulkan::SharedGpu, desired: u32) -> u32 {
+    device.max_gbuffer_samples(desired).clamp(1, 8)
 }

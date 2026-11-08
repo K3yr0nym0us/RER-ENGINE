@@ -119,6 +119,8 @@ struct GpuInner {
     /// Cargador y messenger de `VK_EXT_debug_utils` (solo con `RER_VK_VALIDATION=1`).
     debug_utils: Option<ash::ext::debug_utils::Instance>,
     messenger: Option<vk::DebugUtilsMessengerEXT>,
+    /// Límites del adaptador: deciden el MSAA real y el tamaño máximo de imágenes.
+    limits: vk::PhysicalDeviceLimits,
 }
 
 impl Drop for GpuInner {
@@ -571,6 +573,7 @@ impl SharedGpu {
                 rt_props,
                 debug_utils,
                 messenger,
+                limits: props.limits,
             }),
         })
     }
@@ -581,13 +584,26 @@ impl SharedGpu {
 
     /// Límite de dimensión 2D de texturas del adaptador (para recortar tamaños de shadow map).
     pub fn max_image_dimension(&self) -> u32 {
-        let limits = unsafe {
-            self.inner
-                .instance
-                .get_physical_device_properties(self.inner.physical)
-        }
-        .limits;
-        limits.max_image_dimension2_d.max(2048)
+        self.inner.limits.max_image_dimension2_d.max(2048)
+    }
+
+    /// Muestras de color admitidas como adjunto, como máximo `desired`.
+    pub fn max_color_samples(&self, desired: u32) -> u32 {
+        pick_sample_count(self.inner.limits.framebuffer_color_sample_counts, desired)
+    }
+
+    /// Muestras de profundidad admitidas como adjunto, como máximo `desired`.
+    pub fn max_depth_samples(&self, desired: u32) -> u32 {
+        pick_sample_count(self.inner.limits.framebuffer_depth_sample_counts, desired)
+    }
+
+    /// Muestras efectivas para el G-buffer: lo que el adaptador admite a la vez como adjunto de
+    /// color Y de profundidad. Si la intersección no llega a 2× devuelve 1 y el renderer trabaja
+    /// sin multisampling, en vez de crear pipelines inválidos.
+    pub fn max_gbuffer_samples(&self, desired: u32) -> u32 {
+        let both = self.inner.limits.framebuffer_color_sample_counts
+            & self.inner.limits.framebuffer_depth_sample_counts;
+        pick_sample_count(both, desired)
     }
 
     pub fn rt_properties(&self) -> Option<&RtProperties> {
@@ -751,6 +767,26 @@ impl SharedGpu {
         aspect: vk::ImageAspectFlags,
         name: &str,
     ) -> Result<GpuImage, VulkanError> {
+        self.create_image_with_samples(
+            extent,
+            format,
+            vk::SampleCountFlags::TYPE_1,
+            usage,
+            aspect,
+            name,
+        )
+    }
+
+    /// Igual que `create_image` pero con `samples > 1` (adjuntos del G-buffer multisampleado).
+    pub fn create_image_with_samples(
+        &self,
+        extent: vk::Extent2D,
+        format: vk::Format,
+        samples: vk::SampleCountFlags,
+        usage: vk::ImageUsageFlags,
+        aspect: vk::ImageAspectFlags,
+        name: &str,
+    ) -> Result<GpuImage, VulkanError> {
         let image = unsafe {
             self.inner.device.create_image(
                 &vk::ImageCreateInfo::default()
@@ -763,7 +799,7 @@ impl SharedGpu {
                     })
                     .mip_levels(1)
                     .array_layers(1)
-                    .samples(vk::SampleCountFlags::TYPE_1)
+                    .samples(samples)
                     .tiling(vk::ImageTiling::OPTIMAL)
                     .usage(usage)
                     .sharing_mode(vk::SharingMode::EXCLUSIVE)
@@ -1669,4 +1705,67 @@ unsafe fn create_frames(
     frames
         .try_into()
         .map_err(|_| VulkanError::new("No se pudieron crear los frames en vuelo.".to_string()))
+}
+
+/// Mayor número de muestras ≤ `desired` presente en `supported`.
+///
+/// Vulkan reporta el soporte de MSAA como banderas (`framebufferColorSampleCounts`,
+/// `framebufferDepthSampleCounts`) con los bits 1/2/4/8/16/32/64; no existe un límite
+/// `maxImageSampleCount` que consultar, así que estas banderas son la única fuente. MSAA solo
+/// admite potencias de dos, por eso se recorre la tabla de menor a mayor y se conserva el último
+/// valor soportado. Si no hay ninguno se devuelve 1 (sin multisampling) en lugar de un
+/// `sample_count` que invalide el pipeline.
+fn pick_sample_count(supported: vk::SampleCountFlags, desired: u32) -> u32 {
+    const CANDIDATES: [(u32, vk::SampleCountFlags); 6] = [
+        (2, vk::SampleCountFlags::TYPE_2),
+        (4, vk::SampleCountFlags::TYPE_4),
+        (8, vk::SampleCountFlags::TYPE_8),
+        (16, vk::SampleCountFlags::TYPE_16),
+        (32, vk::SampleCountFlags::TYPE_32),
+        (64, vk::SampleCountFlags::TYPE_64),
+    ];
+    let mut best = 1;
+    for (count, flag) in CANDIDATES {
+        if count > desired {
+            break;
+        }
+        if supported.contains(flag) {
+            best = count;
+        }
+    }
+    best
+}
+
+#[cfg(test)]
+mod tests {
+    use super::pick_sample_count;
+    use ash::vk;
+
+    fn all_samples() -> vk::SampleCountFlags {
+        vk::SampleCountFlags::TYPE_1
+            | vk::SampleCountFlags::TYPE_2
+            | vk::SampleCountFlags::TYPE_4
+            | vk::SampleCountFlags::TYPE_8
+    }
+
+    #[test]
+    fn pick_sample_count_never_exceeds_desired() {
+        let supported = all_samples();
+        assert_eq!(pick_sample_count(supported, 8), 8);
+        assert_eq!(pick_sample_count(supported, 6), 4);
+        assert_eq!(pick_sample_count(supported, 3), 2);
+        assert_eq!(pick_sample_count(supported, 1), 1);
+    }
+
+    #[test]
+    fn pick_sample_count_falls_back_to_supported_level() {
+        let supported = vk::SampleCountFlags::TYPE_1 | vk::SampleCountFlags::TYPE_4;
+        assert_eq!(pick_sample_count(supported, 8), 4);
+        assert_eq!(pick_sample_count(supported, 2), 1);
+    }
+
+    #[test]
+    fn pick_sample_count_without_msaa_support_returns_one() {
+        assert_eq!(pick_sample_count(vk::SampleCountFlags::empty(), 8), 1);
+    }
 }

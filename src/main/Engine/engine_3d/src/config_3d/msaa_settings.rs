@@ -40,9 +40,23 @@ impl State {
         self.msaa_sample_count = sample_count.max(1);
     }
 
-    /// Los pipelines forward viven en `vulkan::FrameRenderer` (MSAA 1x por ahora).
+    /// `FrameRenderer` reacciona al valor en el siguiente frame (`ensure_msaa`): crea el G-buffer
+    /// multisampleado y los pipelines con esas muestras. Aquí se informa del límite real del
+    /// adaptador, para que un tier que pida 8× no se lea como un fallo silencioso.
     pub(crate) fn recreate_forward_msaa_pipelines(&mut self) {
-        log::info!("[msaa] pipelines forward gestionados por FrameRenderer");
+        let desired = self.msaa_tier.desired_sample_count();
+        if desired <= 1 {
+            return;
+        }
+        let color = self.vulkan.max_color_samples(desired);
+        let depth = self.vulkan.max_depth_samples(desired);
+        if self.msaa_sample_count < desired {
+            log::warn!(
+                "[msaa] pedido {}x; el adaptador admite color {color}x y profundidad {depth}x, y hace falta `sampledImageResolve` para resolver el G-buffer -> se usará {}x",
+                desired,
+                self.msaa_sample_count
+            );
+        }
     }
 }
 

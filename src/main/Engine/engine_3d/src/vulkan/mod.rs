@@ -10,7 +10,9 @@ mod frame;
 mod gpu;
 mod select;
 
-pub use frame::{FrameInput, FrameRenderer, GizmoBatch, MeshBatch, RtBatch, SkinnedBatch};
+pub use frame::{
+    FrameInput, FrameRenderer, GizmoBatch, MeshBatch, ProbeCapture, RtBatch, SkinnedBatch,
+};
 
 pub use error::VulkanError;
 pub use gpu::{FrameAcquire, GpuBuffer, GpuImage, SharedGpu};

@@ -25,7 +25,7 @@ layout(set = 0, binding = 0) uniform Scene {
 
 layout(set = 0, binding = 1) uniform sampler2DShadow shadow_map;
 layout(set = 1, binding = 0) uniform sampler2DArray albedo_tex;
-layout(set = 3, binding = 0) uniform samplerCube probe_cube;
+layout(set = 3, binding = 0) uniform highp samplerCubeArray probe_cube;
 layout(push_constant) uniform Push {
     uint joint_base;
     float pass_kind;
@@ -88,8 +88,17 @@ void main() {
     if (u.depth_plane.z < 0.5) {
         lit += u.light_color.rgb * spec * (1.0 - roughness) * shadow * 0.35;
     }
+    // IBL de sondas. `v_tex.z` es la ranura del cubemap array asignada a esta instancia
+    // (-1 = fuera de todo volumen de influencia). El peso viene en `light_params.y` y solo es > 0
+    // si hay sondas activas; sin sonda cercana se cae al color de cielo procedural, que es el que
+    // ya mostraba el viewport, así el cambio de una sonda no deja la zona negra.
     if (u.light_params.y > 0.0) {
-        lit += albedo * texture(probe_cube, n).rgb * u.light_params.y;
+        float probe_index = v_tex.z;
+        vec3 probe_dir = normalize(mix(n, reflect(-v, n), clamp(1.0 - roughness, 0.0, 1.0)));
+        vec3 probe = probe_index >= 0.0
+            ? texture(probe_cube, vec4(probe_dir, probe_index)).rgb
+            : vec3(0.72, 0.86, 0.98);
+        lit += albedo * probe * u.light_params.y;
     }
     float flag = v_flag.x;
     float rim = pow(1.0 - max(dot(n, v), 0.0), 2.5);

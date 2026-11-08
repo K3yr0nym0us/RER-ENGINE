@@ -321,6 +321,15 @@ pub struct State {
     pub(crate) last_probe_capture_ids: Option<Vec<crate::ecs::EntityId>>,
     /// Frames que faltan para volver a capturar una probe (evita capturar cada frame).
     pub(crate) probe_capture_cooldown: u32,
+    /// Triángulos trazables de las entidades skinned, ya deformados a espacio mundo.
+    ///
+    /// Se cachean en el `State` en vez de recalcularse cada frame: reconstruir el BVH por frame con
+    /// un personaje animado cuesta más de lo que aporta a un reflejo.
+    pub(crate) rt_skinned_triangles: Vec<crate::bvh::RtTriangle>,
+    /// Materiales de `rt_skinned_triangles`, en el mismo orden (se añaden tras los estáticos).
+    pub(crate) rt_skinned_materials: Vec<crate::bvh::RtMaterialGpu>,
+    /// Contador de frames para el refresco periódico de la geometría skinned trazable.
+    pub(crate) rt_skinned_tick: u32,
     /// Distancia (m) a la cÃ¡mara con textura al tope del tier activo.
     pub(crate) texture_detail_near_m: f32,
     pub(crate) glb_texture_catalog_cache:

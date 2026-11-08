@@ -27,13 +27,58 @@ Runtime 3D: camara orbital en editor, play con jugador `[Player]`, Rapier3D, mal
 - `wgpu` permanece como dependencia del crate 3D solo por el macro compartido
   `impl_player_ui_text_input!` (genera `wgpu::CommandEncoder`/`TextureView`).
 - Shaders: GLSL en `engine_3d/shaders/` (`raster/`, `rt/`, `bvh/`) compilados a SPIR-V
-  por `build.rs` con `glslc` del Vulkan SDK. Los `.wgsl` heredados quedan como referencia
-  hasta completar la paridad con naga.
+  por `build.rs` con `glslc` del Vulkan SDK. Son la única fuente: los `.wgsl` heredados del
+  motor wgpu se borraron, y las variantes de pantalla del 2D viven en `engine_2d/`.
 - Ray tracing: se piden juntas `VK_KHR_ray_tracing_pipeline`,
   `VK_KHR_acceleration_structure` y `VK_KHR_deferred_host_operations`. Si falta alguna
   extensión o sus features, `hw_rt = false` y los reflejos usan el BVH por software
   (`src/bvh.rs` + `shaders/bvh/trace.comp`).
 - Fallo de inicializacion Vulkan → `EngineEvent::Error`; Electron muestra overlay de ayuda.
+
+## Tiers de calidad gráfica (qué hace cada uno de verdad)
+
+Cada tier se aplica en `vulkan::FrameRenderer`; los valores pedidos se recortan a lo que admite
+el adaptador, y el recorte se registra en el log (nada de números que no afectan al render).
+
+- **Sombras** (`set_shadow_tier`): resuelve el lado del shadow map (Low 1024, Medium 2048,
+  High 4096, Ultra 8192; `Off` no dibuja el pase). `record()` reasigna solo esa imagen cuando
+  cambia (`Targets::recreate_shadow`), recortado a `max_image_dimension2_d`, y si la asignación
+  falla baja a la mitad en vez de abortar cada frame. El texel del PCF y el snapping de la
+  matriz de luz salen del tamaño real (`active_shadow_map_size`), y el radio PCF escala con la
+  raíz del tamaño para que la penumbra no se afinde al subir resolución; por encima de 2.5
+  texeles el kernel pasa de 3×3 a 5×5. Sigue siendo un único mapa sobre los bounds del mundo:
+  no hay cascadas (CSM).
+- **MSAA** (`set_msaa_tier`): Low 1× (por defecto, sin multisampling), Medium 2×, High 4×,
+  Ultra 8×, recortado por `SharedGpu::max_gbuffer_samples` (intersección de
+  `framebufferColorSampleCounts` y `framebufferDepthSampleCounts`). Con >1× se crean copias
+  multisampleadas de los 5 adjuntos del G-buffer que se resuelven (`resolveMode = AVERAGE`)
+  sobre las imágenes 1× que ya consumen TAA/SSR/present. La profundidad NO se resuelve: el pase
+  MSAA descarta su depth y se rellena `targets.depth` con un segundo pase a 1× con pipelines de
+  solo-profundidad (usan el fragment shader del forward para conservar el `discard` del alfa
+  cortado). La captura de sondas sigue dibujando con los pipelines de 1×.
+- **Reflejos** (`set_reflection_tier`): `Off` (por defecto) deja solo el forward+TAA; cualquier
+  otro tier activa la cadena SSR → denoise → composite. El switch adicional de ray tracing
+  (`set_reflection_raytracing`) hace que el trazado use `VK_KHR_ray_tracing_pipeline` si el
+  device lo expone, o el BVH por software en caso contrario.
+- **Sondas de reflejo**: un `texture_cube_array` con 6 caras por ranura
+  (`probe_registry::MAX_PROBES` = 8, caras de `PROBE_FACE_SIZE` px). `capture_probe` escribe en
+  la capa `slot * 6 + cara`, así varias sondas conviven (antes todas pisaban las caras 0..5 y
+  la última del frame ganaba). Cada instancia lleva su ranura en `InstanceData.tex_layer_pad[2]`
+  → `v_tex.z`, elegida en CPU por `probe_registry::select_probe_slot` según el radio de
+  influencia (`scale.x * 0.5`); `-1` = fuera de todo volumen → el shader cae al cielo
+  procedural. Se captura en burst cuando cambia el conjunto de sondas y luego una sonda cada
+  ~30 frames.
+- **Geometría trazable skinned**: las entidades animadas también entran en el **BVH por software**.
+  Sus triángulos se deforman en CPU con el mismo palette que usa `skinned.vert`
+  (`model * (Σ pesos·palette[joint]·posición)`) y se cachean, refrescándose cada
+  `SKINNED_TRACE_REFRESH_FRAMES` (4) frames y con un tope de `SKINNED_TRACE_MAX_TRIANGLES`
+  (24 000): rehacer el BVH cada frame con un personaje animado cuesta más de lo que un reflejo
+  agradece. El hash de la escena cacheada incluye el tick del refresco. Pendiente para el camino de
+  `VK_KHR_ray_tracing_pipeline`: ahí el TLAS sigue armando BLAS sólo con lotes estáticos, porque
+  una malla skinned necesita refit del BLAS por frame (o un scratch deformado en GPU) y el `RtBatch`
+  actual indexa el BLAS por malla, no por instancia poseída.
+- **Vista de debug** (`set_reflection_debug_view`): `ssr_hits` presenta la imagen SSR/trazada en
+  crudo como fuente del `present`, saltando el composite y el TAA, para ver qué devuelve el pase.
 
 ## Ventana overlay
 
