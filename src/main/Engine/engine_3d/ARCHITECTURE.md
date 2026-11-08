@@ -52,10 +52,15 @@ el adaptador, y el recorte se registra en el log (nada de números que no afecta
   Ultra 8×, recortado por `SharedGpu::max_gbuffer_samples` (intersección de
   `framebufferColorSampleCounts` y `framebufferDepthSampleCounts`). Con >1× se crean copias
   multisampleadas de los 5 adjuntos del G-buffer que se resuelven (`resolveMode = AVERAGE`)
-  sobre las imágenes 1× que ya consumen TAA/SSR/present. La profundidad NO se resuelve: el pase
-  MSAA descarta su depth y se rellena `targets.depth` con un segundo pase a 1× con pipelines de
-  solo-profundidad (usan el fragment shader del forward para conservar el `discard` del alfa
-  cortado). La captura de sondas sigue dibujando con los pipelines de 1×.
+  sobre las imágenes 1× que ya consumen TAA/SSR/present. El fondo trazado **no se copia** al
+  adjunto multisampleado (`vkCmdCopyImage` exige las mismas muestras en origen y destino,
+  VUID-vkCmdCopyImage-srcImage-00136): se dibuja un quad full-screen con `sky.frag`, sin prueba ni
+  escritura de profundidad, que escribe las cinco salidas del G-buffer para que ningún adjunto
+  quede sin definir. La profundidad multisampleada se descarta y `targets.depth` se rellena con un
+  segundo pase a 1× con los pipelines de `depth_only.frag` (sin salidas de color, solo el `discard`
+  del alfa cortado, para que la profundidad coincida con la imagen resuelta). Tras un resize hay que
+  recrear el G-buffer MSAA (`ensure_ms`), porque `Targets::recreate` lo destruye y `ensure_msaa`
+  saldría por su early-return. La captura de sondas sigue dibujando con los pipelines de 1×.
 - **Reflejos** (`set_reflection_tier`): `Off` (por defecto) deja solo el forward+TAA; cualquier
   otro tier activa la cadena SSR → denoise → composite. El switch adicional de ray tracing
   (`set_reflection_raytracing`) hace que el trazado use `VK_KHR_ray_tracing_pipeline` si el

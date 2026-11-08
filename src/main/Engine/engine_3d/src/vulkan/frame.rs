@@ -49,6 +49,8 @@ fn spv(name: &str) -> &'static [u8] {
         "denoise.frag" => include_bytes!(concat!(env!("OUT_DIR"), "/denoise.frag.spv")),
         "composite.frag" => include_bytes!(concat!(env!("OUT_DIR"), "/composite.frag.spv")),
         "present.frag" => include_bytes!(concat!(env!("OUT_DIR"), "/present.frag.spv")),
+        "depth_only.frag" => include_bytes!(concat!(env!("OUT_DIR"), "/depth_only.frag.spv")),
+        "sky.frag" => include_bytes!(concat!(env!("OUT_DIR"), "/sky.frag.spv")),
         _ => &[],
     }
 }
@@ -234,13 +236,18 @@ pub struct FrameRenderer {
     /// Muestras activas del G-buffer forward (1 = sin MSAA). Sigue al tier elegido por el editor.
     msaa_samples: u32,
     /// `[forward, forward_blend, skinned, skinned_blend]` creados con `msaa_samples` muestras.
-    ms_pipelines: Option<[vk::Pipeline; 4]>,
+    ms_pipelines: Option<[vk::Pipeline; 5]>,
     /// `[depth_only, depth_only_skinned]` a 1×: rellenan `targets.depth` tras el pase MSAA.
     depth_pipelines: [vk::Pipeline; 2],
     /// Módulos del forward, guardados para poder recrear los pipelines cuando cambia el tier.
     forward_vert: vk::ShaderModule,
     forward_frag: vk::ShaderModule,
     skinned_vert: vk::ShaderModule,
+    /// Triángulo full-screen + shader de fondo, para recrear el pipeline del cielo con las
+    /// muestras activas.
+    full_vert: vk::ShaderModule,
+    sky_frag: vk::ShaderModule,
+    layout_full: vk::PipelineLayout,
 }
 
 /// Los sets se indexan por slot en vuelo (`FRAMES`). Un set único reescrito cada frame era
@@ -265,6 +272,8 @@ struct DescriptorSets {
     denoise: [vk::DescriptorSet; FRAMES],
     composite: [vk::DescriptorSet; FRAMES],
     present: [vk::DescriptorSet; FRAMES],
+    /// Fondo trazado para el quad del cielo del pase MSAA (misma layout que `full`).
+    sky: [vk::DescriptorSet; FRAMES],
 }
 
 #[derive(Clone, Copy)]
@@ -283,6 +292,9 @@ struct Pipes {
     denoise: vk::Pipeline,
     composite: vk::Pipeline,
     present: vk::Pipeline,
+    /// Quad del cielo del pase MSAA. Sin MSAA no se usa; se rellena con `present` para no dejar un
+    /// pipeline nulo suelto en `Pipes`.
+    sky: vk::Pipeline,
 }
 
 impl Drop for FrameRenderer {
@@ -382,6 +394,15 @@ impl FrameRenderer {
             )?;
             write_uniform(device, sets.gizmo[slot], 0, &gizmo_ubo[slot])?;
             write_storage(device, sets.joints[slot], 0, &joints[slot])?;
+            // Fondo para el quad del cielo del pase MSAA.
+            write_combined(
+                device,
+                sets.sky[slot],
+                0,
+                targets.background.view,
+                clamp,
+                vk::ImageLayout::GENERAL,
+            )?;
         }
         let forward_layout = pipeline_layout(
             device,
@@ -536,6 +557,7 @@ impl FrameRenderer {
         let denoise_frag = shader(device, spv("denoise.frag"), &mut shaders)?;
         let composite_frag = shader(device, spv("composite.frag"), &mut shaders)?;
         let present_frag = shader(device, spv("present.frag"), &mut shaders)?;
+        let sky_frag = shader(device, spv("sky.frag"), &mut shaders)?;
         let taa = graphics(
             device,
             taa_layout,
@@ -650,13 +672,14 @@ impl FrameRenderer {
         )?;
         let bvh_layout = *layouts.last().unwrap_or(&vk::PipelineLayout::null());
         // Pipelines de solo-profundidad (sin adjuntos de color) para el segundo pase que rellena
-        // la depth 1× cuando el G-buffer está multisampleado. Llevan el fragment shader del
-        // forward solo por el `discard` de alfa: sin él, el cristal cortado escribiría profundidad.
+        // la depth 1× cuando el G-buffer está multisampleado. Usan `depth_only.frag`, que solo
+        // repite el `discard` del alfa cortado: así la profundidad coincide con la imagen resuelta.
+        let depth_frag = shader(device, spv("depth_only.frag"), &mut shaders)?;
         let depth_only = graphics(
             device,
             forward_layout,
             vert,
-            Some(frag),
+            Some(depth_frag),
             &static_vertex(),
             &[],
             Some(DEPTH),
@@ -668,7 +691,7 @@ impl FrameRenderer {
             device,
             skinned_layout,
             skinned_vert,
-            Some(frag),
+            Some(depth_frag),
             &skinned_vertex(),
             &[],
             Some(DEPTH),
@@ -703,6 +726,9 @@ impl FrameRenderer {
             forward_frag: frag,
             skinned_vert,
             depth_pipelines,
+            full_vert,
+            sky_frag,
+            layout_full: full_layout,
             gpu: gpu.clone(),
             targets,
             shaders,
@@ -760,7 +786,10 @@ impl FrameRenderer {
             // anterior ya no describe la realidad y hay que reiniciarlo.
             self.depth_layout = DEPTH_ATTACHMENT;
             self.shadow_layout = DEPTH_ATTACHMENT;
-            // `recreate` reconstruye también el shadow map con el tamaño base.
+            // `recreate` también destruye el G-buffer multisampleado y el shadow map en su tamaño
+            // base: hay que volver a crearlos, si no MSAA se apaga solo tras un resize porque
+            // `ensure_msaa` ve el mismo nivel de muestras y sale por su early-return.
+            self.targets.ensure_ms(&self.gpu, self.msaa_samples)?;
             self.shadow_size = crate::engine::SHADOW_MAP_SIZE;
             self.rewrite_target_descriptors()?;
         }
@@ -854,12 +883,15 @@ impl FrameRenderer {
 impl FrameRenderer {
     fn forward_pipes(&self, base: Pipes) -> Pipes {
         match self.ms_pipelines {
-            Some([forward, forward_blend, skinned, skinned_blend]) if self.msaa_samples > 1 => {
+            Some([forward, forward_blend, skinned, skinned_blend, sky])
+                if self.msaa_samples > 1 =>
+            {
                 let mut pipes = base;
                 pipes.forward = forward;
                 pipes.forward_blend = forward_blend;
                 pipes.skinned = skinned;
                 pipes.skinned_blend = skinned_blend;
+                pipes.sky = sky;
                 pipes
             }
             _ => base,
@@ -890,6 +922,7 @@ impl FrameRenderer {
             composite: self.pipelines[12],
             present: self.pipelines[13],
             gizmo_lines: self.pipelines[14],
+            sky: self.pipelines[13],
         }
     }
 
@@ -910,6 +943,14 @@ impl FrameRenderer {
                 0,
                 self.targets.probe.view,
                 self.samplers[0],
+                vk::ImageLayout::GENERAL,
+            )?;
+            write_combined(
+                device,
+                self.sets.sky[slot],
+                0,
+                self.targets.background.view,
+                self.samplers[2],
                 vk::ImageLayout::GENERAL,
             )?;
         }
@@ -988,6 +1029,19 @@ impl FrameRenderer {
                     false,
                     &mut self.pipelines,
                 ),
+                // `vkCmdCopyImage` no puede copiar de 1× a 2× (VUID-vkCmdCopyImage-srcImage-00136),
+                // así que el fondo trazado se dibuja con un quad full-screen sobre el adjunto
+                // multisampleado, sin prueba ni escritura de profundidad.
+                graphics_no_depth_test(
+                    device,
+                    self.layout_full,
+                    self.full_vert,
+                    Some(self.sky_frag),
+                    &with_samples(empty_vertex(), wanted),
+                    &MRT,
+                    Some(DEPTH),
+                    &mut self.pipelines,
+                ),
             ];
             let mut built = Vec::new();
             for pipeline in created {
@@ -1001,13 +1055,13 @@ impl FrameRenderer {
                     }
                 }
             }
-            let [forward, forward_blend, skinned, skinned_blend] =
+            let [forward, forward_blend, skinned, skinned_blend, sky] =
                 built.try_into().map_err(|_| {
                     VulkanError::new(
                         "No se pudieron crear los pipelines MSAA del forward.".to_string(),
                     )
                 })?;
-            self.ms_pipelines = Some([forward, forward_blend, skinned, skinned_blend]);
+            self.ms_pipelines = Some([forward, forward_blend, skinned, skinned_blend, sky]);
         }
         self.msaa_samples = wanted;
         if wanted > 1 {
@@ -1500,19 +1554,10 @@ impl FrameRenderer {
                 .ms
                 .as_ref()
                 .is_some_and(|ms| ms.samples == self.msaa_samples);
-        if msaa {
-            // El cielo trazado se copia sobre la escena MULTISAMPLEADA: es esa imagen la que se
-            // resuelve contra `targets.scene`; copiarla en la 1× la pisaría el resolve.
-            let ms_scene = &self
-                .targets
-                .ms
-                .as_ref()
-                .ok_or_else(|| {
-                    VulkanError::new("MSAA activo sin G-buffer multisampleado.".to_string())
-                })?
-                .scene;
-            copy_color(device, cmd, &self.targets.background, ms_scene, extent, 0);
-        } else {
+        // Sin MSAA el fondo se copia 1:1 a la escena. Con MSAA no se puede copiar (Vulkan exige el
+        // mismo número de muestras en origen y destino, VUID-vkCmdCopyImage-srcImage-00136), así
+        // que el quad del cielo se dibuja dentro del propio pase multisampleado.
+        if !msaa {
             copy_color(
                 device,
                 cmd,
@@ -1543,8 +1588,21 @@ impl FrameRenderer {
         };
         match ms_pack {
             Some((ms_views, ms_depth)) => {
-                begin_color_ms(device, cmd, &ms_views, ms_depth, &resolve, extent, false);
+                // `clear = true`: el adjunto de escena empieza vacío y el quad del cielo lo pinta.
+                begin_color_ms(device, cmd, &ms_views, ms_depth, &resolve, extent, true);
                 set_viewport(device, cmd, extent);
+                unsafe {
+                    device.cmd_bind_pipeline(cmd, vk::PipelineBindPoint::GRAPHICS, color_pipes.sky);
+                    device.cmd_bind_descriptor_sets(
+                        cmd,
+                        vk::PipelineBindPoint::GRAPHICS,
+                        self.layout_full,
+                        0,
+                        &[self.sets.sky[slot]],
+                        &[],
+                    );
+                    device.cmd_draw(cmd, 3, 1, 0, 0);
+                }
                 self.draw_forward(slot, input, &color_pipes, device, cmd, 0.0);
                 self.draw_forward(slot, input, &color_pipes, device, cmd, 1.0);
                 unsafe { device.cmd_end_rendering(cmd) };
@@ -3049,6 +3107,10 @@ fn create_sets(
             alloc_set(device, pool, full)?,
             alloc_set(device, pool, full)?,
         ],
+        sky: [
+            alloc_set(device, pool, full)?,
+            alloc_set(device, pool, full)?,
+        ],
     };
     Ok((pool, layouts, sets))
 }
@@ -3310,7 +3372,7 @@ fn graphics(
     depth_bias: bool,
     keep: &mut Vec<vk::Pipeline>,
 ) -> Result<vk::Pipeline, VulkanError> {
-    graphics_topology(
+    graphics_with_depth_test(
         device,
         layout,
         vert,
@@ -3321,6 +3383,38 @@ fn graphics(
         blend,
         depth_bias,
         vk::PrimitiveTopology::TRIANGLE_LIST,
+        true,
+        keep,
+    )
+}
+
+/// Igual que `graphics` pero sin prueba ni escritura de profundidad.
+///
+/// Lo usa el quad del cielo dentro del pase MSAA: el adjunto de profundidad existe (el resto de
+/// adjuntos sí la usan), pero el fondo no debe tapar la geometría que se dibuja después.
+#[allow(clippy::too_many_arguments)]
+fn graphics_no_depth_test(
+    device: &ash::Device,
+    layout: vk::PipelineLayout,
+    vert: vk::ShaderModule,
+    frag: Option<vk::ShaderModule>,
+    vertex: &VertexSpec,
+    colors: &[vk::Format],
+    depth: Option<vk::Format>,
+    keep: &mut Vec<vk::Pipeline>,
+) -> Result<vk::Pipeline, VulkanError> {
+    graphics_with_depth_test(
+        device,
+        layout,
+        vert,
+        frag,
+        vertex,
+        colors,
+        depth,
+        false,
+        false,
+        vk::PrimitiveTopology::TRIANGLE_LIST,
+        false,
         keep,
     )
 }
@@ -3337,6 +3431,26 @@ fn graphics_topology(
     blend: bool,
     depth_bias: bool,
     topology: vk::PrimitiveTopology,
+    keep: &mut Vec<vk::Pipeline>,
+) -> Result<vk::Pipeline, VulkanError> {
+    graphics_with_depth_test(
+        device, layout, vert, frag, vertex, colors, depth, blend, depth_bias, topology, true, keep,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn graphics_with_depth_test(
+    device: &ash::Device,
+    layout: vk::PipelineLayout,
+    vert: vk::ShaderModule,
+    frag: Option<vk::ShaderModule>,
+    vertex: &VertexSpec,
+    colors: &[vk::Format],
+    depth: Option<vk::Format>,
+    blend: bool,
+    depth_bias: bool,
+    topology: vk::PrimitiveTopology,
+    depth_test: bool,
     keep: &mut Vec<vk::Pipeline>,
 ) -> Result<vk::Pipeline, VulkanError> {
     let name = c"main";
@@ -3376,8 +3490,8 @@ fn graphics_topology(
     let multisample = vk::PipelineMultisampleStateCreateInfo::default()
         .rasterization_samples(sample_flags(vertex.samples));
     let depth_state = vk::PipelineDepthStencilStateCreateInfo::default()
-        .depth_test_enable(depth.is_some())
-        .depth_write_enable(depth.is_some() && !blend)
+        .depth_test_enable(depth.is_some() && depth_test)
+        .depth_write_enable(depth.is_some() && depth_test && !blend)
         .depth_compare_op(vk::CompareOp::LESS);
     let blend_attachment = vk::PipelineColorBlendAttachmentState::default()
         .color_write_mask(vk::ColorComponentFlags::RGBA)

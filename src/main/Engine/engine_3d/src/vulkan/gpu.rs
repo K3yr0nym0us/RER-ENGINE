@@ -458,6 +458,10 @@ impl SharedGpu {
             fill_mode_non_solid: vk::TRUE,
             fragment_stores_and_atomics: vk::TRUE,
             shader_int64: core_features.shader_int64,
+            // Las probes usan un `texture_cube_array` (6 caras por ranura) y el forward lo muestrea
+            // con `samplerCubeArray`. Las dos cosas exigen `imageCubeArray`: sin la feature la vista
+            // y el muestreo quedan indefinidos (reflejos duplicados / basura).
+            image_cube_array: vk::TRUE,
             ..vk::PhysicalDeviceFeatures::default()
         };
 

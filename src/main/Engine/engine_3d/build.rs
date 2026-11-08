@@ -40,6 +40,8 @@ fn main() {
         ("shaders/raster/hud_inst.vert", "hud_inst.vert.spv"),
         ("shaders/raster/hud_inst.frag", "hud_inst.frag.spv"),
         ("shaders/raster/present.frag", "present.frag.spv"),
+        ("shaders/raster/depth_only.frag", "depth_only.frag.spv"),
+        ("shaders/raster/sky.frag", "sky.frag.spv"),
     ];
 
     for (src, out_name) in shaders {
