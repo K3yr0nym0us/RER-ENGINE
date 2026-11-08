@@ -7,7 +7,8 @@ use rer_engine_shared::player_ui::viewport::ndc_transform_top_left;
 
 use super::config::UiHudRect;
 use crate::mesh;
-use crate::screen_hud_image::{self, ScreenHudAtlas, ScreenHudPackedImage};
+use crate::screen_hud_image::{self, HudAtlas, ScreenHudPackedImage};
+use crate::vulkan::SharedGpu;
 
 const HUD_BITMAP_FLIP_Y: bool = true;
 
@@ -23,7 +24,7 @@ pub(crate) struct TextCaretLineNdc {
     pub y1: f32,
 }
 
-/// Posición horizontal del cursor alineada con el layout de `rasterize_text_block`.
+/// PosiciÃ³n horizontal del cursor alineada con el layout de `rasterize_text_block`.
 pub(crate) fn text_caret_line_ndc(
     font: &FontArc,
     text: &str,
@@ -77,7 +78,7 @@ fn layout_caret_x_px(
     boundaries[idx].clamp(0.0, width_px as f32)
 }
 
-/// `boundaries[i]` = posición X en el bitmap antes del carácter `i` (y tras el último).
+/// `boundaries[i]` = posiciÃ³n X en el bitmap antes del carÃ¡cter `i` (y tras el Ãºltimo).
 fn text_x_boundaries_in_bitmap(
     font: &FontArc,
     text: &str,
@@ -127,7 +128,8 @@ fn text_x_boundaries_in_bitmap(
     Some(boundaries.into_iter().map(|x| x + shift_x).collect())
 }
 
-/// Layout en píxeles → raster → atlas → un quad con UV.
+/// Layout en pÃ­xeles â†’ raster â†’ atlas â†’ un quad con UV.
+/// No-op temporal Fase 4: el HUD de texto se porta a Ash con `FrameRenderer`.
 pub(crate) fn build_hud_label_glyph(
     font: &FontArc,
     text: &str,
@@ -135,8 +137,8 @@ pub(crate) fn build_hud_label_glyph(
     tint: [f32; 4],
     viewport_w: f32,
     viewport_h: f32,
-    atlas: &mut ScreenHudAtlas,
-    queue: &wgpu::Queue,
+    gpu: &SharedGpu,
+    atlas: &mut HudAtlas,
     out: &mut Vec<mesh::InstanceData>,
 ) {
     if viewport_w <= 0.0 || viewport_h <= 0.0 || text.is_empty() {
@@ -151,7 +153,7 @@ pub(crate) fn build_hud_label_glyph(
         return;
     };
 
-    let packed = atlas.pack_rgba(queue, &rgba, width_px, height_px);
+    let packed = atlas.pack_rgba(gpu, &rgba, width_px, height_px);
 
     let hw = box_rect.width * 0.5;
     let hh = box_rect.height * 0.5;
@@ -175,12 +177,11 @@ pub(crate) fn build_hud_label_glyph(
     }
 }
 
-/// Empaqueta la imagen en el atlas (o devuelve la entrada de caché).
 pub(crate) fn pack_hud_texture_cached(
     path: &str,
     cache: &mut std::collections::HashMap<String, ScreenHudPackedImage>,
-    atlas: &mut ScreenHudAtlas,
-    queue: &wgpu::Queue,
+    gpu: &SharedGpu,
+    atlas: &mut HudAtlas,
 ) -> Option<ScreenHudPackedImage> {
     if let Some(packed) = cache.get(path) {
         return Some(*packed);
@@ -197,7 +198,7 @@ pub(crate) fn pack_hud_texture_cached(
     if w == 0 || h == 0 {
         return None;
     }
-    let packed = atlas.pack_rgba(queue, img.as_raw(), w, h);
+    let packed = atlas.pack_rgba(gpu, img.as_raw(), w, h);
     cache.insert(path.to_string(), packed);
     Some(packed)
 }
@@ -240,19 +241,18 @@ pub(crate) fn push_hud_texture_quad_instance(
     }
 }
 
-/// Textura HUD con caché de UV (rebuild completo o preview en vivo).
 pub(crate) fn build_hud_texture_quad_cached(
     path: &str,
     box_rect: UiHudRect,
     viewport_w: f32,
     viewport_h: f32,
     cache: &mut std::collections::HashMap<String, ScreenHudPackedImage>,
-    atlas: &mut ScreenHudAtlas,
-    queue: &wgpu::Queue,
+    gpu: &SharedGpu,
+    atlas: &mut HudAtlas,
     out: &mut Vec<mesh::InstanceData>,
     opacity: f32,
 ) {
-    let Some(packed) = pack_hud_texture_cached(path, cache, atlas, queue) else {
+    let Some(packed) = pack_hud_texture_cached(path, cache, gpu, atlas) else {
         log::warn!("[player-ui] textura no legible: {path}");
         return;
     };

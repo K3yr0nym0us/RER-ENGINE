@@ -261,7 +261,7 @@ pub(crate) fn transform_aabb_corners_for_play(
 /// Despacha por extensión: glTF (`.glb`/`.gltf`).
 /// Si `normalize_to_extent` es `Some`, centra la malla en el origen y escala al alto indicado.
 pub(crate) fn load_model_file(
-    device: &wgpu::Device,
+    gpu: &crate::vulkan::SharedGpu,
     path: &Path,
     normalize_to_extent: Option<f32>,
 ) -> Result<Vec<LoadedModelMesh>, String> {
@@ -275,12 +275,12 @@ pub(crate) fn load_model_file(
         "glb" | "gltf" => {
             if let Some(extent) = normalize_to_extent {
                 let file = crate::config_3d::model_asset::import_gltf(path)?;
-                load_gltf_preview_from_file(device, file.as_ref(), extent)
+                load_gltf_preview_from_file(gpu, file.as_ref(), extent)
             } else {
-                load_gltf(device, path, normalize_to_extent)
+                load_gltf(gpu, path, normalize_to_extent)
             }
         }
-        "fbx" => super::mesh_3d_fbx::load_fbx(device, path, normalize_to_extent),
+        "fbx" => super::mesh_3d_fbx::load_fbx(gpu, path, normalize_to_extent),
         other => Err(format!(
             "formato no soportado: .{other} (usa .glb, .gltf o .fbx)"
         )),
@@ -539,7 +539,7 @@ fn walk_gltf_node(
 
 /// Una sola malla (nodo principal) para sustituir jugador FP — evita subir toda la escena a GPU.
 pub(crate) fn load_gltf_preview_from_file(
-    device: &wgpu::Device,
+    gpu: &crate::vulkan::SharedGpu,
     file: &crate::config_3d::model_asset::GltfFile,
     normalize_to_extent: f32,
 ) -> Result<Vec<LoadedModelMesh>, String> {
@@ -610,7 +610,7 @@ pub(crate) fn load_gltf_preview_from_file(
     let local_bounds = vertex_local_bounds(&vertices);
 
     Ok(vec![LoadedModelMesh {
-        mesh: upload(device, &vertices, &indices, "gltf-preview", None),
+        mesh: upload(gpu, &vertices, &indices, "gltf-preview", None),
         rgba,
         width: tex_w,
         height: tex_h,
@@ -620,7 +620,7 @@ pub(crate) fn load_gltf_preview_from_file(
 }
 
 fn load_gltf(
-    device: &wgpu::Device,
+    gpu: &crate::vulkan::SharedGpu,
     path: &Path,
     normalize_to_extent: Option<f32>,
 ) -> Result<Vec<LoadedModelMesh>, String> {
@@ -679,7 +679,7 @@ fn load_gltf(
         let forward_xz = estimate_mesh_forward_xz(&p.vertices);
         let local_bounds = vertex_local_bounds(&p.vertices);
         meshes.push(LoadedModelMesh {
-            mesh: upload(device, &p.vertices, &p.indices, "gltf-mesh", None),
+            mesh: upload(gpu, &p.vertices, &p.indices, "gltf-mesh", None),
             rgba: p.texture.effective_rgba().to_vec(),
             width: p.texture.width,
             height: p.texture.height,
@@ -859,7 +859,7 @@ pub(crate) const GROUND_CHECKER_TILES_PER_UV: f32 = 16.0;
 /// UV del suelo para que cada baldosín del checker mida `cell_size` metros en mundo
 /// (tras `sync_ground_plane_to_world_bounds`: escala = límites / `GROUND_PLANE_MESH_EXTENT`).
 pub(crate) fn create_ground_plane(
-    device: &wgpu::Device,
+    gpu: &crate::vulkan::SharedGpu,
     world_width: f32,
     world_depth: f32,
     cell_size: f32,
@@ -905,17 +905,15 @@ pub(crate) fn create_ground_plane(
         }
     }
 
-    upload(
-        device,
-        &vertices,
-        &indices,
-        "ground-plane",
-        Some(&rt_indices),
-    )
+    upload(gpu, &vertices, &indices, "ground-plane", Some(&rt_indices))
 }
 
 /// Disco en XZ (radio local = `GROUND_PLANE_MESH_EXTENT / 2`); escalar uniforme al radio del mundo.
-pub(crate) fn create_ground_disk(device: &wgpu::Device, world_radius: f32, cell_size: f32) -> Mesh {
+pub(crate) fn create_ground_disk(
+    gpu: &crate::vulkan::SharedGpu,
+    world_radius: f32,
+    cell_size: f32,
+) -> Mesh {
     const SEGMENTS: u32 = 96;
     let local_radius = GROUND_PLANE_MESH_EXTENT * 0.5;
     let cell = cell_size.max(0.05);
@@ -958,11 +956,5 @@ pub(crate) fn create_ground_disk(device: &wgpu::Device, world_radius: f32, cell_
         rt_indices.extend_from_slice(&[0, i0, i1]);
     }
 
-    upload(
-        device,
-        &vertices,
-        &indices,
-        "ground-disk",
-        Some(&rt_indices),
-    )
+    upload(gpu, &vertices, &indices, "ground-disk", Some(&rt_indices))
 }

@@ -16,9 +16,9 @@ const GHOST_ALPHA: f32 = 0.38;
 const PLANE_TOOL_ROTATE_SPEED_DEG: f32 = 90.0;
 /// Alpha de muros/triggers colocados (semistransparentes en escena).
 pub(crate) const PLANE_WALL_VISUAL_ALPHA: f32 = 0.38;
-/// Iluminación normal pero sin recibir sombras (shader: 0.25 ≤ render_kind < 0.5).
+/// IluminaciÃ³n normal pero sin recibir sombras (shader: 0.25 â‰¤ render_kind < 0.5).
 pub(crate) const PLANE_WALL_RENDER_KIND: f32 = 0.25;
-/// Grosor de colisión Rapier (invisible; el mesh es un quad sin volumen).
+/// Grosor de colisiÃ³n Rapier (invisible; el mesh es un quad sin volumen).
 pub(crate) const PLANE_TOOL_PHYSICS_DEPTH: f32 = 0.05;
 pub(crate) const DEFAULT_PLANE_WIDTH: f32 = 4.0;
 pub(crate) const DEFAULT_PLANE_HEIGHT: f32 = 3.0;
@@ -86,7 +86,7 @@ impl State {
         }
         let mesh_idx = self.meshes.len();
         self.meshes
-            .push(mesh::create_unit_wall_quad_xy(&self.device));
+            .push(mesh::create_unit_wall_quad_xy(&self.vulkan));
         self.plane_tool_wall_mesh_idx = Some(mesh_idx);
         mesh_idx
     }
@@ -103,7 +103,7 @@ impl State {
             return idx;
         }
         let tex_idx = self.tex_layers.len();
-        let block_layer = self.texture_array.pack(&self.queue, &rgba, 1, 1);
+        let block_layer = self.texture_array.pack(&self.vulkan, &rgba, 1, 1).unwrap();
         self.tex_layers.push(block_layer);
         self.plane_tool_tex_cache.insert(rgba, tex_idx);
         tex_idx
@@ -155,11 +155,16 @@ impl State {
             yaw: 0.0,
         };
         self.plane_tool_ghost_id = self.spawn_plane_tool_ghost(kind, scale);
-        self.tool_overlay_buffer = crate::gizmo::build_from_vertices(&self.device, &[]);
+        self.tool_overlay_buffer = crate::gizmo::build_from_vertices(&self.vulkan, &[]);
         if let Some((px, py)) = self.tool_cursor_pixels {
             self.update_plane_tool_cursor_3d(px, py);
         }
-        log::info!("[plane_tool] activada {:?} tamaño {:.2}×{:.2}", kind, w, h);
+        log::info!(
+            "[plane_tool] activada {:?} tamaÃ±o {:.2}Ã—{:.2}",
+            kind,
+            w,
+            h
+        );
         send_event(&EngineEvent::PlaneToolReady {
             tool: match kind {
                 PlaneToolKind::Collider => "draw_collider",
@@ -393,7 +398,7 @@ impl State {
 
         let Some(pos) = position else {
             send_event(&EngineEvent::Error {
-                message: "[plane_tool] sin posición (apunta al suelo o una superficie)".into(),
+                message: "[plane_tool] sin posiciÃ³n (apunta al suelo o una superficie)".into(),
             });
             return false;
         };

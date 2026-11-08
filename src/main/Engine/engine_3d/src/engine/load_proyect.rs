@@ -1469,12 +1469,6 @@ fn apply_loaded_proyect_3d_with_scene(
         tier: state.msaa_tier.wire().to_string(),
         sample_count: state.msaa_sample_count,
     });
-    send_event(&EngineEvent::TaaChanged {
-        enabled: state.taa.enabled,
-        blend: Some(state.taa.blend),
-        jitter_scale: Some(state.taa.jitter_scale),
-    });
-
     load_project_asset_stores(state, project);
     log_load_step(
         load_started_at,

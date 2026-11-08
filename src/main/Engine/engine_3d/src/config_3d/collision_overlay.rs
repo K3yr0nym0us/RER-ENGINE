@@ -3,7 +3,7 @@ use glam::Vec3 as GlamVec3;
 use crate::ecs::Transform;
 use crate::engine::State;
 use crate::entity_save_meta::entity_category_uses_character_capsule;
-use crate::gizmo::{self, GizmoVertex};
+use crate::gizmo::GizmoVertex;
 
 const COLOR_RAPIER: [f32; 4] = [0.2, 0.9, 1.0, 1.0];
 const COLOR_CHARACTER_CAPSULE: [f32; 4] = [1.0, 0.55, 0.1, 1.0];
@@ -219,12 +219,9 @@ fn push_character_capsule_overlay(
     push_wire_capsule_y(verts, feet, radius, body_h, color);
 }
 
-pub(crate) fn build_editor_collision_overlay(
-    device: &wgpu::Device,
-    state: &State,
-) -> gizmo::GizmoBuffer {
+pub(crate) fn editor_collision_overlay_verts(state: &State) -> Vec<GizmoVertex> {
     if state.preview_playing {
-        return gizmo::build_from_vertices(device, &[]);
+        return Vec::new();
     }
 
     let mut verts: Vec<GizmoVertex> = Vec::new();
@@ -273,5 +270,5 @@ pub(crate) fn build_editor_collision_overlay(
         }
     }
 
-    gizmo::build_from_vertices(device, &verts)
+    verts
 }

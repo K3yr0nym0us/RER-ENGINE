@@ -1,4 +1,5 @@
 mod assets;
+mod bvh;
 mod ecs;
 mod engine_command;
 mod entity_save_meta;
@@ -7,14 +8,12 @@ mod hud_image_asset;
 mod ipc;
 mod mesh;
 mod platform;
-mod reflections;
+mod probe_registry;
 mod save_entity_3d;
 mod screen_hud_image;
 mod scripting;
-mod shader_loader;
-mod spatial;
-mod taa;
 mod texture;
+mod vulkan;
 
 #[path = "config_3d/mod.rs"]
 mod config_3d;
@@ -463,6 +462,10 @@ struct App {
     overlay: Option<OverlayConfig>,
     // ── Cámara orbital (Blender: MMB + modificadores)
     mouse_middle: bool,
+    /// ── Cámara libre del editor: RMB mantiene pulsado el "mirar alrededor".
+    mouse_right: bool,
+    /// Teclas actualmente presionadas para el vuelo del viewport (WASD / Space / C / Shift).
+    editor_keys: HashSet<KeyCode>,
     last_cursor: Option<(f32, f32)>,
     // Picking con click izquierdo
     left_click_pos: Option<(f32, f32)>, // posición al presionar
@@ -548,6 +551,8 @@ impl App {
     fn reset_preview_input_state(&mut self, state: &mut engine::State) {
         self.last_cursor = None;
         self.mouse_middle = false;
+        self.mouse_right = false;
+        self.editor_keys.clear();
         self.left_click_pos = None;
         clear_entity_drag_fields(&mut self.entity_drag, &mut self.entity_drag_start, state);
         cancel_entity_grab(&mut self.entity_grab, state);
@@ -678,6 +683,9 @@ impl ApplicationHandler<EngineCommand> for App {
                     state.setup_default_3d_scene();
                 }
                 state.editor_parent_id = self.tracker_parent_id;
+                log::info!(
+                    "[editor] navegación del viewport: RMB mirar · WASD volar · Space/C subir/bajar · Shift sprint · MMB órbita · Shift+MMB paneo · Ctrl+MMB dolly · rueda zoom · Numpad. encuadrar selección"
+                );
                 self.state = Some(state);
             }
             Err(e) => {
@@ -800,6 +808,12 @@ impl ApplicationHandler<EngineCommand> for App {
                     ..
                 } => {
                     let pressed = btn_state == ElementState::Pressed;
+                    if pressed && !state.is_preview_playing() {
+                        // En modo overlay la ventana del motor es `WS_EX_NOACTIVATE`, así que el
+                        // teclado se queda en Electron: sin tomar foco al clicar, ni WASD ni los
+                        // atajos del editor (G, R, Numpad-.) llegan nunca al motor.
+                        state.window().focus_window();
+                    }
                     if state.is_preview_playing()
                         && let Some(control_key) = map_mouse_control_key(button)
                     {
@@ -938,19 +952,21 @@ impl ApplicationHandler<EngineCommand> for App {
                                 self.left_click_pos = None;
                             }
                         }
-                        MouseButton::Right
-                            if !pressed
-                                && !state.is_preview_playing()
-                                && self.entity_grab.is_some() =>
-                        {
-                            cancel_entity_grab(&mut self.entity_grab, state);
+                        MouseButton::Right => {
+                            // RMB + arrastre = mirar alrededor en el viewport de edición.
+                            self.mouse_right = pressed;
+                            if !pressed && !state.is_preview_playing() && self.entity_grab.is_some()
+                            {
+                                cancel_entity_grab(&mut self.entity_grab, state);
+                            }
                         }
                         MouseButton::Middle => {
                             self.mouse_middle = pressed;
                         }
                         _ => {}
                     }
-                    if !pressed && matches!(button, MouseButton::Middle) {
+                    if !pressed && matches!(button, MouseButton::Middle | MouseButton::Right) {
+                        // Sin esto, el siguiente arrastre hereda el delta del punto donde se soltó.
                         self.last_cursor = None;
                     }
                 }
@@ -1075,6 +1091,10 @@ impl ApplicationHandler<EngineCommand> for App {
                                             ctrl_active,
                                         );
                                     }
+                                    None if self.mouse_right => {
+                                        // RMB: mirar estilo FPS (gira alrededor del ojo, no del pivote).
+                                        state.editor_fly_look(dx, dy);
+                                    }
                                     None if self.mouse_middle => {
                                         let nav =
                                         editor_viewport_controls::resolve_editor_camera_nav_mode(
@@ -1092,6 +1112,7 @@ impl ApplicationHandler<EngineCommand> for App {
                     if !state.is_preview_playing()
                         && !state.player_ui_edit_active
                         && !self.mouse_middle
+                        && !self.mouse_right
                         && self.entity_drag.is_none()
                         && self.entity_grab.is_none()
                     {
@@ -1142,6 +1163,14 @@ impl ApplicationHandler<EngineCommand> for App {
                     let Some(code) = key_code_from_physical(physical_key) else {
                         return;
                     };
+
+                    // Estado de teclado para el vuelo del viewport de edición. Se registra antes de
+                    // los `return` de abajo porque esos consumen el evento, no la tecla.
+                    if pressed {
+                        self.editor_keys.insert(code);
+                    } else {
+                        self.editor_keys.remove(&code);
+                    }
 
                     if state.player_ui_edit_key_input(code, pressed, repeat) {
                         return;
@@ -1279,6 +1308,11 @@ impl ApplicationHandler<EngineCommand> for App {
                     if !focused {
                         self.keyboard_mouse_pressed.clear();
                         self.gamepad_pressed.clear();
+                        // Sin foco no llegan los `KeyUp`: si no se limpian, WASD se queda "pegado"
+                        // y la cámara del editor sigue volando aunque se suelten las teclas.
+                        self.editor_keys.clear();
+                        self.mouse_right = false;
+                        self.mouse_middle = false;
                         state.clear_plane_tool_rotate_held();
                         if self.cursor_captured {
                             release_cursor_on_focus_loss = true;
@@ -1320,6 +1354,9 @@ impl ApplicationHandler<EngineCommand> for App {
                         let inputs =
                             state.play_controller_effective_inputs(&self.keyboard_mouse_pressed);
                         state.apply_play_controller_keyboard(&inputs, state.delta_time);
+                    } else if state.editor_fly_active() {
+                        // WASD/Space/C para recorrer el mapa en edición (estilo Minecraft).
+                        state.apply_editor_fly_input(&self.editor_keys, state.delta_time);
                     }
                     match state.render() {
                         Ok(_) => {}
@@ -1447,6 +1484,8 @@ wgpu_hal::vulkan::instance=error,wgpu_core=warn,wgpu_hal=warn,naga=warn";
         state: None,
         overlay,
         mouse_middle: false,
+        mouse_right: false,
+        editor_keys: HashSet::new(),
         last_cursor: None,
         left_click_pos: None,
         player_ui_left_press: None,

@@ -1,11 +1,11 @@
-// ── Precarga asíncrona y caché GPU de modelos 3D ─────────────────────────────
+// â”€â”€ Precarga asÃ­ncrona y cachÃ© GPU de modelos 3D â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //
-// Dos entradas por path canónico:
-//   · clave normal — mesh tal cual (Recursos / props / `load_model`).
-//   · `{path}::play_character` — mesh normalizado (~PLAY_CHARACTER_BODY_HEIGHT) para
+// Dos entradas por path canÃ³nico:
+//   Â· clave normal â€” mesh tal cual (Recursos / props / `load_model`).
+//   Â· `{path}::play_character` â€” mesh normalizado (~PLAY_CHARACTER_BODY_HEIGHT) para
 //     `replace_entity_model` del jugador. No reutilizar la entrada normal en el player:
 //     el pivote/escala difieren y forzar `sync_player_rotation_from_look` en editor
-//     rompe la restauración del `.save`.
+//     rompe la restauraciÃ³n del `.save`.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -85,7 +85,7 @@ pub(crate) fn play_character_cache_key(canonical_path: &str) -> String {
     format!("{canonical_path}::play_character")
 }
 
-/// Clave de `model_assets` (skinning/clips); distinta de la malla estática del editor.
+/// Clave de `model_assets` (skinning/clips); distinta de la malla estÃ¡tica del editor.
 pub(crate) fn model_asset_cache_key(canonical_path: &str, normalize: Option<f32>) -> String {
     use crate::config_3d::character_anchor::PLAY_CHARACTER_BODY_HEIGHT;
     match normalize {
@@ -123,7 +123,7 @@ pub(crate) struct PendingGpuModelPreload {
     pending_part_mesh_idx: Option<usize>,
     /// Tras este job, ejecutar flush de `load_model` / replace en cola.
     defer_flush_path: Option<String>,
-    /// Solo calienta caché `::play_character` (sin repetir `ModelAssetLoaded`).
+    /// Solo calienta cachÃ© `::play_character` (sin repetir `ModelAssetLoaded`).
     play_character_warm_only: bool,
     /// Variante jugador ya parseada en CPU (precarga Recursos con warm).
     play_character_parts: Option<Vec<CpuModelMeshPart>>,
@@ -165,7 +165,7 @@ impl State {
         normalize_model_path(path)
     }
 
-    /// Clave de caché GPU: `model_id` si el asset importado está listo; si no, ruta fuente.
+    /// Clave de cachÃ© GPU: `model_id` si el asset importado estÃ¡ listo; si no, ruta fuente.
     pub(crate) fn model_cache_key(&self, path: &str) -> String {
         if path.starts_with("model_") {
             return path.to_string();
@@ -254,7 +254,7 @@ impl State {
         }
     }
 
-    /// Registra `ModelAsset` skinned bajo la clave canónica y, si aplica, `::play_character`.
+    /// Registra `ModelAsset` skinned bajo la clave canÃ³nica y, si aplica, `::play_character`.
     fn register_model_anim_assets(
         &mut self,
         canonical_path: &str,
@@ -310,7 +310,7 @@ impl State {
         self.ensure_model_anim_assets_from_rerasset(model_id, true)
     }
 
-    /// Variante `::play_character` en GPU para `replace_entity_model` instantáneo.
+    /// Variante `::play_character` en GPU para `replace_entity_model` instantÃ¡neo.
     fn ensure_play_character_model_cache_warmed(&mut self, canonical_path: &str) {
         let play_key = play_character_cache_key(canonical_path);
         if self.static_model_cache.contains_key(&play_key) {
@@ -319,7 +319,7 @@ impl State {
         self.try_warm_play_character_model_cache(canonical_path);
     }
 
-    /// Tras precarga/import GPU, sube la variante jugador si falta en caché.
+    /// Tras precarga/import GPU, sube la variante jugador si falta en cachÃ©.
     fn try_warm_play_character_model_cache(&mut self, cache_key: &str) {
         let play_key = play_character_cache_key(cache_key);
         if self.static_model_cache.contains_key(&play_key) {
@@ -352,7 +352,7 @@ impl State {
         }
         if self.model_preload_inflight.contains(&cache_key) {
             return Err(format!(
-                "El modelo aún se está importando: {cache_key}. Espera a que termine en Recursos."
+                "El modelo aÃºn se estÃ¡ importando: {cache_key}. Espera a que termine en Recursos."
             ));
         }
         self.try_warm_play_character_model_cache(&cache_key);
@@ -408,7 +408,7 @@ impl State {
     ) -> usize {
         let mesh_idx = self.meshes.len();
         self.meshes.push(crate::mesh::upload(
-            &self.device,
+            &self.vulkan,
             &part.vertices,
             &part.indices,
             &format!("{label}-{part_index}"),
@@ -459,7 +459,10 @@ impl State {
         let tex = std::sync::Arc::clone(&tex_part.texture);
         let mip0 = tex.effective_rgba();
         let layer = if let Some(mips) = &tex.layer_mips {
-            let layer = self.texture_array.pack_prepared_mips(&self.queue, mips);
+            let layer = self
+                .texture_array
+                .pack_prepared_mips(&self.vulkan, mips)
+                .unwrap();
             if layer >= crate::texture::TextureArray::MAX_LAYERS - 1 {
                 send_event(&EngineEvent::TextureArrayExhausted {
                     max_layers: crate::texture::TextureArray::MAX_LAYERS,
@@ -482,7 +485,10 @@ impl State {
             let layer = if let Some(&cached) = self.texture_path_layers.get(&tex_cache_key) {
                 cached
             } else {
-                let layer = self.texture_array.pack_prepared_mips(&self.queue, mips);
+                let layer = self
+                    .texture_array
+                    .pack_prepared_mips(&self.vulkan, mips)
+                    .unwrap();
                 if layer >= crate::texture::TextureArray::MAX_LAYERS - 1 {
                     send_event(&EngineEvent::TextureArrayExhausted {
                         max_layers: crate::texture::TextureArray::MAX_LAYERS,
@@ -520,7 +526,7 @@ impl State {
         part.local_bounds = vertex_local_bounds(&part.vertices);
     }
 
-    /// Sube la variante `::play_character` a GPU de forma síncrona (replace jugador inmediato).
+    /// Sube la variante `::play_character` a GPU de forma sÃ­ncrona (replace jugador inmediato).
     /// Reutiliza capas de textura ya empaquetadas bajo `canonical_path` (precarga Recursos).
     fn sync_upload_play_character_cache(
         &mut self,
@@ -584,7 +590,7 @@ impl State {
         self.model_preload_inflight.remove(&path);
 
         if pending.uploaded.is_empty() {
-            self.emit_model_asset_load_failed(&path, format!("Modelo vacío: {path}"));
+            self.emit_model_asset_load_failed(&path, format!("Modelo vacÃ­o: {path}"));
             return;
         }
 
@@ -629,13 +635,13 @@ impl State {
                 .get(key)
                 .is_some_and(|e| e.state == rer_engine_shared::assets::AssetState::Failed)
             {
-                return Err(format!("Carga del modelo falló: {key}"));
+                return Err(format!("Carga del modelo fallÃ³: {key}"));
             }
             if !self.model_preload_inflight.contains(key)
                 && self.model_preload_gpu_queue.iter().all(|p| p.path != key)
                 && !self.static_model_cache.contains_key(key)
             {
-                return Err(format!("Precarga GPU detenida sin completar caché: {key}"));
+                return Err(format!("Precarga GPU detenida sin completar cachÃ©: {key}"));
             }
             self.poll_and_advance_model_preloads(MODEL_GPU_PARTS_DURING_SAVE_LOAD);
             std::thread::yield_now();
@@ -668,7 +674,7 @@ impl State {
         }
 
         if data.parts.is_empty() {
-            self.emit_model_asset_load_failed(&path, format!("Modelo vacío: {path}"));
+            self.emit_model_asset_load_failed(&path, format!("Modelo vacÃ­o: {path}"));
             return;
         }
 
@@ -865,7 +871,7 @@ impl State {
 
         let display_name = self.model_display_label(path);
         if self.model_preload_inflight.contains(&cache_key) {
-            let wait_msg = format!("Esperando importación de «{display_name}»…");
+            let wait_msg = format!("Esperando importaciÃ³n de Â«{display_name}Â»â€¦");
             log::info!("{wait_msg}");
             send_load_progress(&wait_msg, None, None);
             self.wait_for_static_model_cache(&cache_key)?;
@@ -873,7 +879,7 @@ impl State {
         }
 
         Err(format!(
-            "Modelo «{display_name}» no importado (requiere .rerasset). Importa el GLB/GLTF/FBX en Recursos."
+            "Modelo Â«{display_name}Â» no importado (requiere .rerasset). Importa el GLB/GLTF/FBX en Recursos."
         ))
     }
 
@@ -888,8 +894,8 @@ impl State {
         [spawn.x, spawn.y.max(0.0), spawn.z]
     }
 
-    /// Misma lógica que el acordeón Entidades (`load_model` → primera malla en caché),
-    /// con transform y metadatos explícitos.
+    /// Misma lÃ³gica que el acordeÃ³n Entidades (`load_model` â†’ primera malla en cachÃ©),
+    /// con transform y metadatos explÃ­citos.
     pub(crate) fn spawn_cached_model_part_at(
         &mut self,
         mesh_idx: usize,
@@ -1018,7 +1024,7 @@ impl State {
             .copied()
         else {
             let key = self.model_cache_key(path);
-            return Err(format!("Modelo vacío: {key}"));
+            return Err(format!("Modelo vacÃ­o: {key}"));
         };
         let kind = if entity_category.as_deref() == Some("character") {
             "character"
@@ -1111,8 +1117,8 @@ impl State {
         }
     }
 
-    /// Elimina un modelo de la biblioteca Resources (`model_store` + registro importado + caché GPU).
-    /// Devuelve la clave canónica (`model_id`) si se eliminó algo.
+    /// Elimina un modelo de la biblioteca Resources (`model_store` + registro importado + cachÃ© GPU).
+    /// Devuelve la clave canÃ³nica (`model_id`) si se eliminÃ³ algo.
     pub(crate) fn remove_model_from_library(&mut self, path: &str) -> Option<String> {
         let key = self.model_path_key(path);
         let model_id = if key.starts_with("model_") {

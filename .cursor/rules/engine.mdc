@@ -34,6 +34,8 @@ Mandatory backend:
 
 - Vulkan
 
+2D: wgpu (engine_shared/src/gpu.rs). 3D: Ash/Vulkan (engine_3d/src/vulkan/).
+
 Targets:
 
 - Windows

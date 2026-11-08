@@ -1,0 +1,43 @@
+#version 460
+#extension GL_EXT_ray_tracing : require
+
+layout(location = 0) rayPayloadEXT vec3 payload;
+
+layout(set = 0, binding = 0) uniform Camera {
+    mat4 inv_view_proj;
+    vec4 cam_pos;
+    vec4 resolution;
+    vec4 light_dir;
+} cam;
+
+layout(set = 0, binding = 1, rgba8) uniform image2D image_out;
+layout(set = 0, binding = 2) uniform accelerationStructureEXT tlas;
+layout(set = 0, binding = 4) uniform sampler2D depth_tex;
+layout(set = 0, binding = 5) uniform sampler2D normal_tex;
+
+void main() {
+    ivec2 pix = ivec2(gl_LaunchIDEXT.xy);
+    vec2 uv = (vec2(pix) + vec2(0.5)) / max(cam.resolution.xy, vec2(1.0));
+    float depth = texture(depth_tex, uv).r;
+    vec3 sky = vec3(0.72, 0.86, 0.98);
+    if (depth >= 0.9999) {
+        imageStore(image_out, pix, vec4(0.0, 0.0, 0.0, 0.0));
+        return;
+    }
+    vec3 normal = texture(normal_tex, uv).xyz * 2.0 - 1.0;
+    float roughness = texture(normal_tex, uv).w;
+    if (roughness > 0.65) {
+        imageStore(image_out, pix, vec4(0.0, 0.0, 0.0, 0.0));
+        return;
+    }
+    vec2 ndc = vec2(uv.x * 2.0 - 1.0, (1.0 - uv.y) * 2.0 - 1.0);
+    vec4 world_h = cam.inv_view_proj * vec4(ndc, depth, 1.0);
+    vec3 world = world_h.xyz / world_h.w;
+    vec3 view_dir = normalize(world - cam.cam_pos.xyz);
+    vec3 n = normalize(normal);
+    vec3 refl = reflect(view_dir, n);
+    payload = sky;
+    traceRayEXT(tlas, gl_RayFlagsOpaqueEXT, 0xffu, 0u, 0u, 0u, world + n * 0.03, 0.02, refl, 200.0, 0);
+    float confidence = 1.0 - roughness;
+    imageStore(image_out, pix, vec4(payload, confidence));
+}

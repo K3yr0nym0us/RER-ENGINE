@@ -1,8 +1,10 @@
-//! Nivel de calidad de sombras (resolución del shadow map por tier).
+//! Nivel de calidad de sombras (resolución del shadow map y amplitud del filtro PCF).
 //!
-//! Hoy el motor usa un único shadow map (sin cascadas); este tier solo controla su resolución.
-//! Las cascadas (CSM) y la distancia de sombra extendida de Ultra están en el checklist como
-//! tarea pendiente (`CHECKLIST-3D.md` → Gráficos / Preset de calidad).
+//! El motor usa un único shadow map (sin cascadas). El tier fija su resolución real;
+//! `vulkan::FrameRenderer` reasigna la imagen cuando cambia y `scene_light_params` ajusta el
+//! texel/radio del PCF, así que low/medium/high/ultra se ven distinto (no solo cuestan distinto).
+//! Las cascadas (CSM) y la distancia de sombra extendida de Ultra siguen pendientes
+//! (`CHECKLIST-3D.md` → Gráficos / Preset de calidad).
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
 pub enum ShadowTier {

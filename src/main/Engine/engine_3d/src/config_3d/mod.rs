@@ -19,6 +19,7 @@ pub(crate) mod bone_physics_pick;
 pub(crate) mod character_anchor;
 pub(crate) mod collision_overlay;
 pub(crate) mod editor_camera;
+pub(crate) mod editor_fly;
 pub(crate) mod editor_viewport_controls;
 pub(crate) mod entity_attachments;
 pub(crate) mod entity_sockets;
@@ -638,7 +639,7 @@ impl State {
         let path_buf = Path::new(path);
         let loaded = match (gltf_file.as_deref(), normalize) {
             (Some(file), Some(extent)) => {
-                match mesh_3d::load_gltf_preview_from_file(&self.device, file, extent) {
+                match mesh_3d::load_gltf_preview_from_file(&self.vulkan, file, extent) {
                     Ok(parts) => parts,
                     Err(e) => {
                         send_event(&EngineEvent::Error { message: e });
@@ -646,7 +647,7 @@ impl State {
                     }
                 }
             }
-            _ => match mesh_3d::load_model_file(&self.device, path_buf, normalize) {
+            _ => match mesh_3d::load_model_file(&self.vulkan, path_buf, normalize) {
                 Ok(parts) => parts,
                 Err(e) => {
                     send_event(&EngineEvent::Error { message: e });
@@ -667,7 +668,8 @@ impl State {
         self.meshes.push(part.mesh);
         let layer = self
             .texture_array
-            .pack(&self.queue, &part.rgba, part.width, part.height);
+            .pack(&self.vulkan, &part.rgba, part.width, part.height)
+            .unwrap();
         self.tex_layers.push(layer);
 
         if let Some(mc) = self.world.get_mut::<MeshComponent>(id) {

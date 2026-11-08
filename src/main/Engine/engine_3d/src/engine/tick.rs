@@ -2,7 +2,6 @@ use std::time::Instant;
 
 use crate::ecs::Transform;
 use crate::ipc::{EngineEvent, send_event};
-use crate::mesh;
 
 use super::{AUTOSAVE_INTERVAL, ActiveAnimation, AnimationState, State};
 
@@ -118,63 +117,6 @@ impl State {
 
     /// Compatibilidad IPC 2D: en 3D el hint Ctrl no se dibuja (solo HUD vía `screen_hud_image`).
     pub fn set_snap_hint_visible(&mut self, _visible: bool) {}
-
-    /// Recarga PNG de HUD de pantalla en `screen_hud_atlas` (no tocar `texture_array`).
-    pub(crate) fn reload_screen_hud_images(&mut self) {
-        self.screen_hud_atlas.reset(&self.queue);
-        self.fps_exit_hint_es = self
-            .screen_hud_atlas
-            .pack_png_from_engine_assets(&self.queue, "tooltip-btn-esc-salir.png");
-        self.fps_exit_hint_en = self
-            .screen_hud_atlas
-            .pack_png_from_engine_assets(&self.queue, "tooltip-btn-esc-exit.png");
-    }
-
-    pub(crate) fn update_fps_exit_hint_alpha(&mut self) {
-        let target = if self.preview_playing && self.play_character_entity.is_some() {
-            1.0_f32
-        } else {
-            0.0_f32
-        };
-        let k = if target > self.fps_exit_hint_alpha {
-            3.6_f32
-        } else {
-            2.8_f32
-        };
-        let blend = 1.0 - (-k * self.delta_time.max(0.0)).exp();
-        self.fps_exit_hint_alpha += (target - self.fps_exit_hint_alpha) * blend;
-        if (self.fps_exit_hint_alpha - target).abs() < 0.001 {
-            self.fps_exit_hint_alpha = target;
-        }
-    }
-
-    /// Tooltip «Esc para salir del play» (`screen_hud_image`, esquina inferior izquierda).
-    pub(crate) fn build_fps_exit_hint_instance(&self) -> Option<mesh::InstanceData> {
-        if self.fps_exit_hint_alpha <= 0.003 {
-            return None;
-        }
-        let packed = crate::screen_hud_image::pick_localized_screen_hud(
-            &self.snap_locale,
-            self.fps_exit_hint_en,
-            self.fps_exit_hint_es,
-        )?;
-        let vw = self.size.width as f32;
-        let vh = self.size.height as f32;
-        let a = self.fps_exit_hint_alpha.clamp(0.0, 1.0);
-        let eased_alpha = a * a * (3.0 - 2.0 * a);
-        let model = crate::screen_hud_image::ndc_transform_bottom_left(
-            vw,
-            vh,
-            packed,
-            crate::screen_hud_image::ScreenHudBottomLeftLayout::default(),
-            eased_alpha,
-        )?;
-        Some(crate::screen_hud_image::build_screen_hud_instance(
-            packed,
-            model,
-            eased_alpha,
-        ))
-    }
 
     fn selection_entity_ids(&self) -> Vec<crate::ecs::EntityId> {
         if !self.selected_entities.is_empty() {
@@ -292,7 +234,6 @@ impl State {
         self.delta_time = now.duration_since(self.last_frame).as_secs_f32();
         self.last_frame = now;
         self.tick_fp_baseline_defer();
-        self.update_fps_exit_hint_alpha();
 
         self.metrics_frame_count += 1;
         if now.duration_since(self.metrics_last_emit) >= std::time::Duration::from_secs(1) {

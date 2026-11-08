@@ -1,5 +1,24 @@
+use ash::vk;
 use bytemuck::{Pod, Zeroable};
-use wgpu::util::DeviceExt;
+
+use crate::vulkan::{GpuBuffer, SharedGpu};
+
+/// `0x0008_0000` es `VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR`.
+const AS_INPUT: vk::BufferUsageFlags = vk::BufferUsageFlags::from_raw(0x0008_0000);
+const VERTEX_USAGE_RAW: vk::BufferUsageFlags = vk::BufferUsageFlags::from_raw(
+    vk::BufferUsageFlags::VERTEX_BUFFER.as_raw()
+        | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS.as_raw()
+        | vk::BufferUsageFlags::STORAGE_BUFFER.as_raw()
+        | vk::BufferUsageFlags::TRANSFER_DST.as_raw()
+        | AS_INPUT.as_raw(),
+);
+const INDEX_USAGE_RAW: vk::BufferUsageFlags = vk::BufferUsageFlags::from_raw(
+    vk::BufferUsageFlags::INDEX_BUFFER.as_raw()
+        | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS.as_raw()
+        | vk::BufferUsageFlags::STORAGE_BUFFER.as_raw()
+        | vk::BufferUsageFlags::TRANSFER_DST.as_raw()
+        | AS_INPUT.as_raw(),
+);
 
 // ---------------------------------------------------------------------------
 // Vértice — layout debe coincidir con el shader (location 0,1,2)
@@ -10,22 +29,6 @@ pub struct Vertex {
     pub position: [f32; 3],
     pub normal: [f32; 3],
     pub uv: [f32; 2],
-}
-
-impl Vertex {
-    const ATTRIBS: [wgpu::VertexAttribute; 3] = wgpu::vertex_attr_array![
-        0 => Float32x3,  // position
-        1 => Float32x3,  // normal
-        2 => Float32x2,  // uv
-    ];
-
-    pub fn desc() -> wgpu::VertexBufferLayout<'static> {
-        wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<Self>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &Self::ATTRIBS,
-        }
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -41,37 +44,19 @@ pub struct SkinnedVertex {
     pub weights: [f32; 4],
 }
 
-impl SkinnedVertex {
-    const ATTRIBS: [wgpu::VertexAttribute; 5] = wgpu::vertex_attr_array![
-        0 => Float32x3,
-        1 => Float32x3,
-        2 => Float32x2,
-        3 => Uint32x4,
-        4 => Float32x4,
-    ];
-
-    pub fn desc() -> wgpu::VertexBufferLayout<'static> {
-        wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<Self>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &Self::ATTRIBS,
-        }
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Mesh en GPU
 // ---------------------------------------------------------------------------
 pub struct Mesh {
-    pub vertex_buffer: wgpu::Buffer,
-    pub index_buffer: wgpu::Buffer,
+    pub vertex_buffer: GpuBuffer,
+    pub index_buffer: GpuBuffer,
     pub index_count: u32,
     /// Posiciones locales + índices para BLAS/BVH (RT v2).
     pub rt_positions: Vec<[f32; 3]>,
     pub rt_uvs: Vec<[f32; 2]>,
     pub rt_indices: Vec<u32>,
     /// Índices RT en GPU cuando difieren del draw (p. ej. suelo single-sided).
-    pub rt_index_buffer: Option<wgpu::Buffer>,
+    pub rt_index_buffer: Option<GpuBuffer>,
 }
 
 impl Mesh {
@@ -79,7 +64,7 @@ impl Mesh {
         self.rt_indices.len() as u32
     }
 
-    pub fn rt_index_buffer(&self) -> &wgpu::Buffer {
+    pub fn rt_index_buffer(&self) -> &GpuBuffer {
         self.rt_index_buffer.as_ref().unwrap_or(&self.index_buffer)
     }
 }
@@ -87,7 +72,7 @@ impl Mesh {
 // ---------------------------------------------------------------------------
 // Cubo procedural — siempre disponible sin necesitar un archivo externo
 // ---------------------------------------------------------------------------
-pub fn create_cube(device: &wgpu::Device) -> Mesh {
+pub fn create_cube(gpu: &SharedGpu) -> Mesh {
     #[rustfmt::skip]
     let vertices: Vec<Vertex> = vec![
         // Front  (z =+0.5)
@@ -132,11 +117,11 @@ pub fn create_cube(device: &wgpu::Device) -> Mesh {
         20, 21, 22, 22, 23, 20,  // Left
     ];
 
-    upload(device, &vertices, &indices, "cube", None)
+    upload(gpu, &vertices, &indices, "cube", None)
 }
 
 /// Esfera UV unitaria (radio 0.5) para el icono del sol.
-pub fn create_uv_sphere(device: &wgpu::Device, segments: u32) -> Mesh {
+pub fn create_uv_sphere(gpu: &SharedGpu, segments: u32) -> Mesh {
     let rings = segments.max(4);
     let sectors = segments.max(6);
     let mut vertices: Vec<Vertex> = Vec::new();
@@ -175,11 +160,11 @@ pub fn create_uv_sphere(device: &wgpu::Device, segments: u32) -> Mesh {
         }
     }
 
-    upload(device, &vertices, &indices, "uv-sphere", None)
+    upload(gpu, &vertices, &indices, "uv-sphere", None)
 }
 
 /// Quad en XY (normal +Z), doble cara; muros/triggers del editor (sin grosor visible).
-pub fn create_unit_wall_quad_xy(device: &wgpu::Device) -> Mesh {
+pub fn create_unit_wall_quad_xy(gpu: &SharedGpu) -> Mesh {
     #[rustfmt::skip]
     let vertices: Vec<Vertex> = vec![
         Vertex { position: [-0.5, -0.5, 0.0], normal: [0.0, 0.0, 1.0], uv: [0.0, 1.0] },
@@ -192,11 +177,11 @@ pub fn create_unit_wall_quad_xy(device: &wgpu::Device) -> Mesh {
         0, 1, 2, 2, 3, 0,
         0, 2, 1, 2, 0, 3,
     ];
-    upload(device, &vertices, &indices, "unit-wall-quad-xy", None)
+    upload(gpu, &vertices, &indices, "unit-wall-quad-xy", None)
 }
 
 /// Quad unitario en el plano XY (Z=0), normal +Z; para overlays HUD texturizados.
-pub fn create_unit_quad_xy(device: &wgpu::Device) -> Mesh {
+pub fn create_unit_quad_xy(gpu: &SharedGpu) -> Mesh {
     #[rustfmt::skip]
     let vertices: Vec<Vertex> = vec![
         Vertex { position: [-0.5, -0.5, 0.0], normal: [0.0, 0.0, 1.0], uv: [0.0, 1.0] },
@@ -205,7 +190,7 @@ pub fn create_unit_quad_xy(device: &wgpu::Device) -> Mesh {
         Vertex { position: [-0.5,  0.5, 0.0], normal: [0.0, 0.0, 1.0], uv: [0.0, 0.0] },
     ];
     let indices: Vec<u32> = vec![0, 1, 2, 2, 3, 0];
-    upload(device, &vertices, &indices, "unit-quad-xy", None)
+    upload(gpu, &vertices, &indices, "unit-quad-xy", None)
 }
 
 // ---------------------------------------------------------------------------
@@ -235,23 +220,6 @@ pub struct InstanceData {
 }
 
 impl InstanceData {
-    const ATTRIBS: [wgpu::VertexAttribute; 6] = wgpu::vertex_attr_array![
-        3 => Float32x4,  // model col 0
-        4 => Float32x4,  // model col 1
-        5 => Float32x4,  // model col 2
-        6 => Float32x4,  // model col 3
-        7 => Float32x4,  // flag_pad
-        8 => Float32x4,  // tex_layer_pad
-    ];
-
-    pub fn desc() -> wgpu::VertexBufferLayout<'static> {
-        wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<Self>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Instance,
-            attributes: &Self::ATTRIBS,
-        }
-    }
-
     pub fn new(model: glam::Mat4, flag: f32, tex_layer: u32) -> Self {
         Self {
             model: model.to_cols_array_2d(),
@@ -272,23 +240,6 @@ pub struct SkinnedInstanceData {
 }
 
 impl SkinnedInstanceData {
-    const ATTRIBS: [wgpu::VertexAttribute; 6] = wgpu::vertex_attr_array![
-        5 => Float32x4,
-        6 => Float32x4,
-        7 => Float32x4,
-        8 => Float32x4,
-        9 => Float32x4,
-        10 => Float32x4,
-    ];
-
-    pub fn desc() -> wgpu::VertexBufferLayout<'static> {
-        wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<Self>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Instance,
-            attributes: &Self::ATTRIBS,
-        }
-    }
-
     pub fn from_instance(inst: &InstanceData) -> Self {
         Self {
             model: inst.model,
@@ -304,27 +255,33 @@ impl SkinnedInstanceData {
 // Helper: sube vértices e índices a la GPU
 // ---------------------------------------------------------------------------
 pub struct SkinnedMesh {
-    pub vertex_buffer: wgpu::Buffer,
-    pub index_buffer: wgpu::Buffer,
+    pub vertex_buffer: GpuBuffer,
+    pub index_buffer: GpuBuffer,
     pub index_count: u32,
 }
 
 pub(crate) fn upload_skinned(
-    device: &wgpu::Device,
+    gpu: &SharedGpu,
     vertices: &[SkinnedVertex],
     indices: &[u32],
     label: &str,
 ) -> SkinnedMesh {
-    let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some(&format!("{label}-skinned-vbo")),
-        contents: bytemuck::cast_slice(vertices),
-        usage: wgpu::BufferUsages::VERTEX,
-    });
-    let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some(&format!("{label}-skinned-ibo")),
-        contents: bytemuck::cast_slice(indices),
-        usage: wgpu::BufferUsages::INDEX,
-    });
+    let vertex_buffer = gpu
+        .create_buffer_with_data(
+            bytemuck::cast_slice(vertices),
+            VERTEX_USAGE_RAW,
+            gpu_allocator::MemoryLocation::CpuToGpu,
+            &format!("{label}-skinned-vbo"),
+        )
+        .expect("no se pudo crear el buffer de vértices skinned");
+    let index_buffer = gpu
+        .create_buffer_with_data(
+            bytemuck::cast_slice(indices),
+            INDEX_USAGE_RAW,
+            gpu_allocator::MemoryLocation::CpuToGpu,
+            &format!("{label}-skinned-ibo"),
+        )
+        .expect("no se pudo crear el buffer de índices skinned");
     SkinnedMesh {
         vertex_buffer,
         index_buffer,
@@ -333,7 +290,7 @@ pub(crate) fn upload_skinned(
 }
 
 pub(crate) fn upload(
-    device: &wgpu::Device,
+    gpu: &SharedGpu,
     vertices: &[Vertex],
     indices: &[u32],
     label: &str,
@@ -344,31 +301,31 @@ pub(crate) fn upload(
         .unwrap_or_else(|| indices.to_vec());
     let rt_positions: Vec<[f32; 3]> = vertices.iter().map(|v| v.position).collect();
     let rt_uvs: Vec<[f32; 2]> = vertices.iter().map(|v| v.uv).collect();
-    let blas = if device
-        .features()
-        .contains(wgpu::Features::EXPERIMENTAL_RAY_QUERY)
-    {
-        wgpu::BufferUsages::BLAS_INPUT
-    } else {
-        wgpu::BufferUsages::empty()
-    };
-    let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some(&format!("{label}-vbo")),
-        contents: bytemuck::cast_slice(vertices),
-        usage: wgpu::BufferUsages::VERTEX | blas,
-    });
-    let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some(&format!("{label}-ibo")),
-        contents: bytemuck::cast_slice(indices),
-        usage: wgpu::BufferUsages::INDEX | blas,
-    });
+    let vertex_buffer = gpu
+        .create_buffer_with_data(
+            bytemuck::cast_slice(vertices),
+            VERTEX_USAGE_RAW,
+            gpu_allocator::MemoryLocation::CpuToGpu,
+            &format!("{label}-vbo"),
+        )
+        .expect("no se pudo crear el buffer de vértices");
+    let index_buffer = gpu
+        .create_buffer_with_data(
+            bytemuck::cast_slice(indices),
+            INDEX_USAGE_RAW,
+            gpu_allocator::MemoryLocation::CpuToGpu,
+            &format!("{label}-ibo"),
+        )
+        .expect("no se pudo crear el buffer de índices");
     let rt_index_buffer = if rt_indices.is_some() && rt_indices_vec.len() != indices.len() {
         Some(
-            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some(&format!("{label}-rt-ibo")),
-                contents: bytemuck::cast_slice(&rt_indices_vec),
-                usage: wgpu::BufferUsages::INDEX | blas,
-            }),
+            gpu.create_buffer_with_data(
+                bytemuck::cast_slice(&rt_indices_vec),
+                INDEX_USAGE_RAW,
+                gpu_allocator::MemoryLocation::CpuToGpu,
+                &format!("{label}-rt-ibo"),
+            )
+            .expect("no se pudo crear el buffer de índices RT"),
         )
     } else {
         None

@@ -83,11 +83,10 @@ impl State {
         self.model_preload_gpu_queue.clear();
         self.pending_load_models.clear();
         self.pending_entity_model_replaces.clear();
-        self.texture_array.reset(&self.queue);
+        let _ = self.texture_array.reset(&self.vulkan);
         self.texture_path_layers.clear();
         self.glb_texture_catalog_cache.clear();
         self.entity_texture_effective_cap.clear();
-        self.reload_screen_hud_images();
         self.animations.clear();
         self.active_animations.clear();
         self.default_animation_by_entity.clear();
@@ -132,8 +131,7 @@ impl State {
         self.active_projectiles.clear();
         self.bone_physics_sim.clear();
         self.bone_physics_entity_motion.clear();
-        self.tool_overlay_buffer = gizmo::build_from_vertices(&self.device, &[]);
-        self.fps_exit_hint_alpha = 0.0;
+        self.tool_overlay_buffer = gizmo::build_from_vertices(&self.vulkan, &[]);
         self.pivot_edit_mode = None;
         self.logical_area_mode = None;
         self.script_engine = ScriptEngine::new(ScriptEngineProfile::Engine3d)
@@ -185,7 +183,7 @@ impl State {
                 px.extend_from_slice(&[r, g, b, 255]);
             }
         }
-        let checker_layer = self.texture_array.pack(&self.queue, &px, S, S);
+        let checker_layer = self.texture_array.pack(&self.vulkan, &px, S, S).unwrap();
         let tex_idx = self.tex_layers.len();
         self.tex_layers.push(checker_layer);
         tex_idx
@@ -202,7 +200,7 @@ impl State {
         let cell = self.grid_config.cell_size;
         self.meshes
             .push(crate::config_3d::mesh_3d::create_ground_disk(
-                &self.device,
+                &self.vulkan,
                 b.radius,
                 cell,
             ));
@@ -296,7 +294,7 @@ impl State {
         let b = self.world_bounds_3d;
         let cell = self.grid_config.cell_size;
         self.meshes[mesh_idx] =
-            crate::config_3d::mesh_3d::create_ground_disk(&self.device, b.radius, cell);
+            crate::config_3d::mesh_3d::create_ground_disk(&self.vulkan, b.radius, cell);
     }
 
     /// Plantilla 3D por defecto (proyecto nuevo): suelo checker y cámara play character a ras de editor.
@@ -372,12 +370,7 @@ impl State {
         self.editor_viewport_pitch = self.camera.pitch;
         self.editor_viewport_distance = self.camera.distance;
         self.clamp_play_character_camera_to_bounds();
-        self.clear_color = wgpu::Color {
-            r: 0.72,
-            g: 0.86,
-            b: 0.98,
-            a: 1.0,
-        };
+        self.clear_color = [0.72, 0.86, 0.98, 1.0f32];
 
         send_load_progress("Insertando Character (Player)", None, None);
         let _ = crate::assets::bundled::ensure_bundled_default_player_model(self);
@@ -409,12 +402,7 @@ impl State {
         self.editor_viewport_pitch = self.camera.pitch;
         self.editor_viewport_distance = self.camera.distance;
         self.clamp_play_character_camera_to_bounds();
-        self.clear_color = wgpu::Color {
-            r: 0.72,
-            g: 0.86,
-            b: 0.98,
-            a: 1.0,
-        };
+        self.clear_color = [0.72, 0.86, 0.98, 1.0f32];
     }
 
     /// Suelo checker + sol + jugador + pelota de prueba de la plantilla FP (sin muros ni cubos).
@@ -448,32 +436,23 @@ impl State {
     }
 
     pub(crate) fn is_reflection_probe_entity(&self, id: EntityId) -> bool {
-        crate::reflections::probes_pipeline::registry::is_reflection_probe_entity(
-            &self.save_registry,
-            id,
-        )
+        crate::probe_registry::is_reflection_probe_entity(&self.save_registry, id)
     }
 
     /// Asigna ranura fija 0..MAX_PROBES-1; reutiliza la existente si ya estaba registrada.
     pub(crate) fn allocate_probe_slot(&mut self, id: EntityId) -> Option<usize> {
-        crate::reflections::probes_pipeline::registry::allocate_probe_slot(
-            &mut self.probe_entity_slots,
-            id,
-        )
+        crate::probe_registry::allocate_probe_slot(&mut self.probe_entity_slots, id)
     }
 
     pub(crate) fn release_probe_entity_slot(&mut self, id: EntityId) {
-        if crate::reflections::probes_pipeline::registry::release_probe_slot(
-            &mut self.probe_entity_slots,
-            id,
-        ) {
+        if crate::probe_registry::release_probe_slot(&mut self.probe_entity_slots, id) {
             self.request_probe_capture_burst_if_reflections_active();
         }
     }
 
     /// Asegura ranura para cada probe registrado (cargas .save, plantilla FP, etc.).
     pub(crate) fn ensure_probe_slots_allocated(&mut self) {
-        crate::reflections::probes_pipeline::registry::ensure_probe_slots_allocated(
+        crate::probe_registry::ensure_probe_slots_allocated(
             &self.save_registry,
             &mut self.probe_entity_slots,
         );
@@ -483,7 +462,7 @@ impl State {
     pub(crate) fn reflection_probe_render_list(
         &self,
     ) -> Vec<(crate::ecs::EntityId, glam::Vec3, usize)> {
-        crate::reflections::probes_pipeline::registry::reflection_probe_render_list(
+        crate::probe_registry::reflection_probe_render_list(
             &self.save_registry,
             &self.probe_entity_slots,
             |id| {
@@ -496,7 +475,7 @@ impl State {
 
     /// Si el conjunto de probes activos cambió, solicita burst de captura.
     pub(crate) fn sync_probe_capture_burst_for_entity_set(&mut self, probe_ids: &[EntityId]) {
-        if crate::reflections::probes_pipeline::registry::sync_capture_burst_for_entity_set(
+        if crate::probe_registry::sync_capture_burst_for_entity_set(
             &mut self.last_probe_capture_ids,
             probe_ids,
         ) {
@@ -504,22 +483,12 @@ impl State {
         }
     }
 
-    /// Radio de influencia del probe (metros) para parallax del cubemap.
-    pub(crate) fn reflection_probe_world_radius(&self, id: crate::ecs::EntityId) -> f32 {
-        let half = self
-            .world
-            .get::<crate::ecs::Transform>(id)
-            .map(|t| t.scale.x.abs() * 0.5)
-            .unwrap_or(1.0);
-        crate::reflections::probes_pipeline::registry::probe_world_radius(half)
-    }
-
     /// AABB de pick/hover para probes sin malla (alineado al gizmo de editor).
     pub(crate) fn reflection_probe_pick_aabb(
         &self,
         transform: &crate::ecs::Transform,
     ) -> (glam::Vec3, glam::Vec3) {
-        use crate::reflections::probes_pipeline::registry::REFLECTION_PROBE_GIZMO_RADIUS_M;
+        use crate::probe_registry::REFLECTION_PROBE_GIZMO_RADIUS_M;
         let r = (REFLECTION_PROBE_GIZMO_RADIUS_M * 1.35).max(0.2);
         (transform.position, glam::Vec3::splat(r))
     }
@@ -685,8 +654,7 @@ impl State {
         self.active_projectiles.clear();
         self.bone_physics_sim.clear();
         self.bone_physics_entity_motion.clear();
-        self.tool_overlay_buffer = gizmo::build_from_vertices(&self.device, &[]);
-        self.fps_exit_hint_alpha = 0.0;
+        self.tool_overlay_buffer = gizmo::build_from_vertices(&self.vulkan, &[]);
         self.pivot_edit_mode = None;
         self.logical_area_mode = None;
         self.control_bindings_by_entity.clear();
@@ -715,10 +683,13 @@ impl State {
             return (mesh_idx, tex_idx);
         }
         let mesh_idx = self.meshes.len();
-        self.meshes.push(mesh::create_cube(&self.device));
+        self.meshes.push(mesh::create_cube(&self.vulkan));
         let white_px = [255u8, 255, 255, 255];
         let tex_idx = self.tex_layers.len();
-        let block_layer = self.texture_array.pack(&self.queue, &white_px, 1, 1);
+        let block_layer = self
+            .texture_array
+            .pack(&self.vulkan, &white_px, 1, 1)
+            .unwrap();
         self.tex_layers.push(block_layer);
         self.editor_box_mesh_idx = Some(mesh_idx);
         self.editor_box_tex_idx = Some(tex_idx);

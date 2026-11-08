@@ -4,7 +4,7 @@ use glam::{Mat4, Vec3};
 
 use crate::config_3d::model_asset::{MAX_JOINTS, ModelAsset};
 use crate::engine::State;
-use crate::gizmo::{self, GizmoVertex};
+use crate::gizmo::GizmoVertex;
 
 const COLOR_BONE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 const COLOR_BONE_HOVER: [f32; 4] = [1.0, 0.85, 0.15, 1.0];
@@ -69,10 +69,7 @@ fn joint_positions_mesh_space(asset: &ModelAsset, globals: &[Mat4]) -> Vec<Vec3>
         .collect()
 }
 
-pub(crate) fn build_selected_skeleton_overlay(
-    device: &wgpu::Device,
-    state: &State,
-) -> gizmo::GizmoBuffer {
+pub(crate) fn selected_skeleton_overlay_verts(state: &State) -> Vec<GizmoVertex> {
     let id = state
         .socket_bone_pick_entity
         .or(state.bone_physics_pick_entity)
@@ -80,7 +77,7 @@ pub(crate) fn build_selected_skeleton_overlay(
         .or(state.selected_entity)
         .unwrap_or(0);
     if id == 0 {
-        return gizmo::build_from_vertices(device, &[]);
+        return Vec::new();
     }
     let hovered = if state.socket_bone_pick_entity == Some(id) {
         state.socket_bone_pick_hovered_joint
@@ -90,7 +87,7 @@ pub(crate) fn build_selected_skeleton_overlay(
         None
     };
     let physics_joints = state.bone_physics_joint_indices(id);
-    build_entity_skeleton_overlay(device, state, id, hovered, &physics_joints)
+    entity_skeleton_overlay_verts(state, id, hovered, &physics_joints)
 }
 
 fn bone_line_color(ji: usize, hovered_joint: Option<usize>, physics_joints: &[usize]) -> [f32; 4] {
@@ -189,15 +186,14 @@ fn push_skeleton_lines(
     }
 }
 
-pub(crate) fn build_entity_skeleton_overlay(
-    device: &wgpu::Device,
+pub(crate) fn entity_skeleton_overlay_verts(
     state: &State,
     entity_id: u32,
     hovered_joint: Option<usize>,
     physics_joints: &[usize],
-) -> gizmo::GizmoBuffer {
+) -> Vec<GizmoVertex> {
     let Some((asset, globals, entity_model)) = state.entity_skeleton_globals(entity_id) else {
-        return gizmo::build_from_vertices(device, &[]);
+        return Vec::new();
     };
 
     let mut verts = Vec::new();
@@ -210,5 +206,5 @@ pub(crate) fn build_entity_skeleton_overlay(
         physics_joints,
     );
 
-    gizmo::build_from_vertices(device, &verts)
+    verts
 }

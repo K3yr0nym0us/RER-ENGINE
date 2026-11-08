@@ -224,19 +224,19 @@ impl WorldBounds3D {
         verts
     }
 
-    pub(crate) fn build_buffer(&self, device: &wgpu::Device) -> GizmoBuffer {
-        gizmo::build_from_vertices(device, &self.build_wireframe_vertices())
+    pub(crate) fn build_buffer(&self, gpu: &crate::vulkan::SharedGpu) -> GizmoBuffer {
+        gizmo::build_lines_from_vertices(gpu, &self.build_wireframe_vertices())
     }
 
-    pub(crate) fn build_sky_buffer(&self, device: &wgpu::Device) -> GizmoBuffer {
-        gizmo::build_from_vertices(device, &self.build_sky_sphere_vertices())
+    pub(crate) fn build_sky_buffer(&self, gpu: &crate::vulkan::SharedGpu) -> GizmoBuffer {
+        gizmo::build_from_vertices(gpu, &self.build_sky_sphere_vertices())
     }
 }
 
 impl State {
     pub(crate) fn sync_world_bounds_3d_runtime(&mut self) {
-        self.world_bounds_buffer = self.world_bounds_3d.build_buffer(&self.device);
-        self.world_sky_buffer = self.world_bounds_3d.build_sky_buffer(&self.device);
+        self.world_bounds_buffer = self.world_bounds_3d.build_buffer(&self.vulkan);
+        self.world_sky_buffer = self.world_bounds_3d.build_sky_buffer(&self.vulkan);
         self.physics
             .rebuild_world_bounds_colliders(&self.world_bounds_3d);
     }

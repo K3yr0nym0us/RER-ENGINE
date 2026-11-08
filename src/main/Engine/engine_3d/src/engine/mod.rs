@@ -25,8 +25,6 @@ pub use inner::State;
 pub use types::{ActiveAnimation, AnimationState};
 
 pub(crate) use audio::{AudioSlot, start_audio_thread};
-pub(crate) use render::create_depth_texture;
 pub(crate) use types::{
-    AUTOSAVE_INTERVAL, DEPTH_FORMAT, EntityTransformSnapshot, SHADOW_MAP_SIZE, SceneUniforms,
-    UndoAction,
+    AUTOSAVE_INTERVAL, EntityTransformSnapshot, SHADOW_MAP_SIZE, SceneUniforms, UndoAction,
 };

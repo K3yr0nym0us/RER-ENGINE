@@ -1,5 +1,5 @@
-//! Luz direccional (sol) para iluminación PBR compatible con pipelines RTX.
-//! La posición del sol en el mundo define la dirección de la luz.
+//! Luz direccional (sol) para iluminaciÃ³n PBR compatible con pipelines RTX.
+//! La posiciÃ³n del sol en el mundo define la direcciÃ³n de la luz.
 
 use glam::{Mat4, Vec3};
 
@@ -8,25 +8,25 @@ use crate::engine::State;
 use crate::entity_save_meta::EntitySaveMeta;
 use crate::mesh;
 
-/// Dirección por defecto (hacia la luz, mismo sentido que el shader histórico).
+/// DirecciÃ³n por defecto (hacia la luz, mismo sentido que el shader histÃ³rico).
 pub const DEFAULT_LIGHT_DIR: Vec3 = Vec3::new(0.6, 1.0, 0.4);
 /// Color de la luz direccional (intensidad ~1; evita saturar el framebuffer sRGB).
 pub const DEFAULT_LIGHT_COLOR: Vec3 = Vec3::new(1.0, 0.96, 0.88);
-/// Factor de ambiente (0–1). Bajo = caras no iluminadas más oscuras.
+/// Factor de ambiente (0â€“1). Bajo = caras no iluminadas mÃ¡s oscuras.
 pub const DEFAULT_LIGHT_AMBIENT: f32 = 0.06;
 /// Multiplicador de color de luz direccional.
 pub const DEFAULT_LIGHT_INTENSITY: f32 = 1.0;
-/// Factor mínimo en zona de sombra (0–1). Bajo = sombras más oscuras.
+/// Factor mÃ­nimo en zona de sombra (0â€“1). Bajo = sombras mÃ¡s oscuras.
 pub const DEFAULT_SHADOW_DARKNESS: f32 = 0.22;
-/// Desplazamiento mínimo hacia la luz al comparar sombras (metros).
+/// Desplazamiento mÃ­nimo hacia la luz al comparar sombras (metros).
 pub const SHADOW_NORMAL_BIAS_MIN: f32 = 0.0;
-/// Desplazamiento máximo en superficies casi paralelas a los rayos del sol.
+/// Desplazamiento mÃ¡ximo en superficies casi paralelas a los rayos del sol.
 pub const SHADOW_NORMAL_BIAS_MAX: f32 = 0.0004;
 /// Offset constante en profundidad del comparador de sombras (NDC).
 pub const SHADOW_DEPTH_BIAS_CONST: f32 = 0.0;
-/// Escala de bias por pendiente (1 - N·L).
+/// Escala de bias por pendiente (1 - NÂ·L).
 pub const SHADOW_DEPTH_BIAS_SLOPE: f32 = 0.00003;
-/// Distancia típica del icono del sol respecto al origen.
+/// Distancia tÃ­pica del icono del sol respecto al origen.
 pub const SUN_DISTANCE: f32 = 42.0;
 
 impl State {
@@ -35,14 +35,14 @@ impl State {
         center + DEFAULT_LIGHT_DIR.normalize() * SUN_DISTANCE
     }
 
-    /// Centro de la escena para calcular la dirección del sol (luz direccional).
+    /// Centro de la escena para calcular la direcciÃ³n del sol (luz direccional).
     pub(crate) fn directional_light_scene_center(&self) -> Vec3 {
         let min = self.world_bounds_3d.min_corner();
         let max = self.world_bounds_3d.max_corner();
         (min + max) * 0.5
     }
 
-    /// Actualiza la dirección de luz: del centro de la escena hacia el icono del sol.
+    /// Actualiza la direcciÃ³n de luz: del centro de la escena hacia el icono del sol.
     pub(crate) fn sync_directional_light_from_sun(&mut self) {
         let Some(sun_id) = self.sun_entity else {
             return;
@@ -56,7 +56,7 @@ impl State {
         }
     }
 
-    /// Misma posición que `ensure_default_sun` / plantilla FP al arrancar sin `.save`.
+    /// Misma posiciÃ³n que `ensure_default_sun` / plantilla FP al arrancar sin `.save`.
     pub(crate) fn align_editor_sun_to_default_position(&mut self) {
         let pos = self.default_sun_position();
         if let Some(id) = self.sun_entity {
@@ -99,10 +99,21 @@ impl State {
         ]
     }
 
+    /// Lado real del shadow map según el tier, en px. Con `Off` no se renderiza ni se muestrea,
+    /// pero la matriz de luz se sigue construyendo: se usa el tamaño base para que el snapping al
+    /// texel no trabaje con un mapa de 1 px.
+    pub(crate) fn active_shadow_map_size(&self) -> u32 {
+        if self.shadow_tier == crate::config_3d::shadow_graphics::ShadowTier::Off {
+            crate::engine::SHADOW_MAP_SIZE
+        } else {
+            self.shadow_map_size.max(crate::engine::SHADOW_MAP_SIZE / 2)
+        }
+    }
+
     /// x = intensidad; y = oscuridad sombra (lit-composite / pase transparente); z = 1/texel sombra; w = radio PCF.
     pub(crate) fn scene_light_params(&self) -> [f32; 4] {
         let dist = self.camera.distance;
-        // Radio PCF algo mayor con shadow map 1024 para compensar resolución.
+        // Radio PCF algo mayor con shadow map 1024 para compensar resoluciÃ³n.
         let pcf_radius = if dist < 12.0 {
             0.85
         } else if dist < 28.0 {
@@ -110,11 +121,17 @@ impl State {
         } else {
             1.15
         };
+        // El radio PCF se expresa en TEXELES del mapa actual: sin escalarlo, pasar de 1024 a 4096
+        // hace la penumbra 4 veces más fina en el mundo y la sombra se ve igual en todos los tiers
+        // (solo cambia el coste). Con raíz cuadrada la penumbra se mantiene parecida mientras el
+        // detalle sube de verdad.
+        let size = self.active_shadow_map_size() as f32;
+        let scale = (size / crate::engine::SHADOW_MAP_SIZE as f32).sqrt();
         [
             self.light_intensity,
             self.shadow_darkness,
-            1.0 / self.shadow_map_size as f32,
-            pcf_radius,
+            1.0 / size,
+            pcf_radius * scale,
         ]
     }
 
@@ -127,7 +144,7 @@ impl State {
         ]
     }
 
-    /// Proyección ortográfica de la luz que cubre los bounds del mundo.
+    /// ProyecciÃ³n ortogrÃ¡fica de la luz que cubre los bounds del mundo.
     pub(crate) fn build_light_view_proj(&self) -> [[f32; 4]; 4] {
         let center = self.directional_light_scene_center();
         let dir = self.directional_light_dir.normalize();
@@ -138,7 +155,7 @@ impl State {
         let eye = center + dir * extent * 2.5;
         let view = Mat4::look_at_rh(eye, center, up);
         let center_ls = view.transform_point3(center);
-        let texel = (2.0 * extent) / self.shadow_map_size as f32;
+        let texel = (2.0 * extent) / self.active_shadow_map_size() as f32;
         let cx = (center_ls.x / texel).floor() * texel + texel * 0.5;
         let cy = (center_ls.y / texel).floor() * texel + texel * 0.5;
         let proj = Mat4::orthographic_rh(
@@ -174,7 +191,7 @@ impl State {
             return idx;
         }
         let idx = self.meshes.len();
-        self.meshes.push(mesh::create_uv_sphere(&self.device, 20));
+        self.meshes.push(mesh::create_uv_sphere(&self.vulkan, 20));
         self.sun_icon_mesh_idx = Some(idx);
         idx
     }
@@ -198,7 +215,7 @@ impl State {
             }
         }
         let tex_idx = self.tex_layers.len();
-        let layer = self.texture_array.pack(&self.queue, &px, N, N);
+        let layer = self.texture_array.pack(&self.vulkan, &px, N, N).unwrap();
         self.tex_layers.push(layer);
         self.sun_icon_tex_idx = Some(tex_idx);
         tex_idx
@@ -215,7 +232,7 @@ impl State {
         }
     }
 
-    /// Icono del sol seleccionable con gizmo; sin física. Idempotente al recargar `.save`.
+    /// Icono del sol seleccionable con gizmo; sin fÃ­sica. Idempotente al recargar `.save`.
     pub(crate) fn spawn_sun(&mut self, name: &str, position: [f32; 3], scale: [f32; 3]) {
         let label = self.resolve_entity_display_name(
             name,
@@ -263,7 +280,7 @@ impl State {
         self.spawn_sun("", pos.to_array(), [1.0, 1.0, 1.0]);
     }
 
-    /// Esfera visual como el sol (malla UV + textura) sin luz direccional; física esférica.
+    /// Esfera visual como el sol (malla UV + textura) sin luz direccional; fÃ­sica esfÃ©rica.
     pub(crate) fn spawn_physics_ball(
         &mut self,
         name: &str,
@@ -312,7 +329,7 @@ impl State {
             entity_category: Some("object".to_string()),
         });
         log::info!(
-            "Pelota física «{label}» en [{:.1}, {:.1}, {:.1}]",
+            "Pelota fÃ­sica Â«{label}Â» en [{:.1}, {:.1}, {:.1}]",
             position[0],
             position[1],
             position[2]
@@ -320,7 +337,7 @@ impl State {
         id
     }
 
-    /// Entidad lógica de reflection probe: sin malla en escena (solo gizmo en editor/debug).
+    /// Entidad lÃ³gica de reflection probe: sin malla en escena (solo gizmo en editor/debug).
     pub(crate) fn spawn_reflection_probe_entity(
         &mut self,
         name: &str,
@@ -367,7 +384,7 @@ impl State {
             entity_category: Some("object".to_string()),
         });
         log::info!(
-            "Sonda de reflejo «{label}» radio={influence:.1}m en [{:.1}, {:.1}, {:.1}]",
+            "Sonda de reflejo Â«{label}Â» radio={influence:.1}m en [{:.1}, {:.1}, {:.1}]",
             position[0],
             position[1],
             position[2]

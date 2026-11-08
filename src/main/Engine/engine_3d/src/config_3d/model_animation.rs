@@ -9,7 +9,7 @@ use glam::{Mat4, Quat, Vec3};
 use crate::config_3d::character_anchor::PLAY_CHARACTER_BODY_HEIGHT;
 use crate::config_3d::model_asset::{
     self, AnimChannel, AnimKeyframe, AnimProperty, AnimationClip, GltfFile, MAX_JOINTS, ModelAsset,
-    SkinnedMeshData, compute_gltf_joint_worlds, gltf_bind_globals_from_ibm,
+    compute_gltf_joint_worlds, gltf_bind_globals_from_ibm,
 };
 use crate::ecs::EntityId;
 use crate::engine::State;
@@ -39,16 +39,8 @@ pub(crate) struct ActiveModelClip {
 
 pub(crate) struct GpuSkinnedMeshEntry {
     pub mesh: SkinnedMesh,
-    pub rt_mesh: SkinnedMeshData,
-    pub joint_buffer: wgpu::Buffer,
-    pub joint_bind_group: wgpu::BindGroup,
-    joint_palette: Vec<[[f32; 4]; 4]>,
-}
-
-impl GpuSkinnedMeshEntry {
-    pub fn joint_palette(&self) -> &[[[f32; 4]; 4]] {
-        &self.joint_palette
-    }
+    /// Palette de matrices de joint (actualizada por `FrameRenderer` desde `FrameInput`).
+    pub joint_palette: Vec<[[f32; 4]; 4]>,
 }
 
 impl State {
@@ -167,39 +159,18 @@ impl State {
 
         let fallback_layer = self.fallback_layer;
 
-        let joint_layout = self
-            .joint_bind_group_layout
-            .as_ref()
-            .expect("joint_bind_group_layout");
         let mut part_gpu_indices = Vec::with_capacity(asset.parts.len());
         for (pi, part) in asset.parts.iter().enumerate() {
             let mesh_label = format!("skinned-{id}-p{pi}");
             let gpu_mesh = upload_skinned(
-                &self.device,
+                &self.vulkan,
                 &part.mesh.vertices,
                 &part.mesh.indices,
                 &mesh_label,
             );
-            let joint_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("joint-matrices"),
-                size: (MAX_JOINTS * 64) as u64,
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            });
-            let joint_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("joint-bind-group"),
-                layout: joint_layout,
-                entries: &[wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: joint_buffer.as_entire_binding(),
-                }],
-            });
             let gpu_idx = self.skinned_gpu_meshes.len();
             self.skinned_gpu_meshes.push(GpuSkinnedMeshEntry {
                 mesh: gpu_mesh,
-                rt_mesh: part.mesh.clone(),
-                joint_buffer,
-                joint_bind_group,
                 joint_palette: vec![Mat4::IDENTITY.to_cols_array_2d(); MAX_JOINTS],
             });
             part_gpu_indices.push(gpu_idx);
@@ -443,8 +414,6 @@ impl State {
                 joint_palette.iter().map(|m| m.to_cols_array_2d()).collect();
             if let Some(entry) = self.skinned_gpu_meshes.get_mut(gpu_idx) {
                 entry.joint_palette = flat.clone();
-                self.queue
-                    .write_buffer(&entry.joint_buffer, 0, bytemuck::cast_slice(&flat));
             }
         }
     }

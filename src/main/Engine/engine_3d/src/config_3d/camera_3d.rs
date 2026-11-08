@@ -45,10 +45,6 @@ impl Camera {
         }
     }
 
-    fn orbit_pivot(&self) -> Vec3 {
-        self.target + self.orbit_pivot_offset
-    }
-
     pub(crate) fn orbit_pivot_at(&self, anchor: Vec3) -> Vec3 {
         anchor + self.orbit_pivot_offset
     }
@@ -57,14 +53,6 @@ impl Camera {
         let (sy, cy) = self.yaw.sin_cos();
         let (sp, cp) = self.pitch.sin_cos();
         Vec3::new(-cy * cp, -sp, -sy * cp).normalize_or_zero()
-    }
-
-    pub(crate) fn position(&self) -> Vec3 {
-        self.position_at(self.orbit_pivot())
-    }
-
-    pub(crate) fn position_at(&self, anchor: Vec3) -> Vec3 {
-        self.position_at_angles(anchor, self.yaw, self.pitch, self.distance)
     }
 
     pub(crate) fn position_at_angles(
@@ -113,10 +101,6 @@ impl Camera {
         Mat4::look_at_rh(eye, eye + forward, Vec3::Y)
     }
 
-    pub(crate) fn view_matrix_at(&self, anchor: Vec3) -> Mat4 {
-        self.view_matrix_at_angles(anchor, self.yaw, self.pitch, self.distance)
-    }
-
     pub(crate) fn view_matrix_at_angles(
         &self,
         anchor: Vec3,
@@ -136,15 +120,5 @@ impl Camera {
 
     pub(crate) fn proj_matrix(&self, aspect: f32) -> Mat4 {
         Mat4::perspective_rh(self.fov_y, aspect, self.near, self.far)
-    }
-
-    pub(crate) fn to_uniform(&self, aspect: f32) -> CameraUniform {
-        self.to_uniform_at(self.orbit_pivot(), aspect)
-    }
-
-    pub(crate) fn to_uniform_at(&self, anchor: Vec3, aspect: f32) -> CameraUniform {
-        CameraUniform {
-            view_proj: (self.proj_matrix(aspect) * self.view_matrix_at(anchor)).to_cols_array_2d(),
-        }
     }
 }

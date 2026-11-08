@@ -9,6 +9,7 @@ use super::mesh_3d::{
 };
 use crate::config_3d::model_asset::MaterialTextureCpu;
 use crate::mesh::{Vertex, upload};
+use crate::vulkan::SharedGpu;
 
 fn white_pixel() -> (Vec<u8>, u32, u32) {
     (vec![255, 255, 255, 255], 1, 1)
@@ -85,7 +86,7 @@ fn push_fbx_mesh_triangles(
 }
 
 pub(crate) fn load_fbx(
-    device: &wgpu::Device,
+    gpu: &SharedGpu,
     path: &Path,
     normalize_to_extent: Option<f32>,
 ) -> Result<Vec<LoadedModelMesh>, String> {
@@ -146,7 +147,7 @@ pub(crate) fn load_fbx(
     let forward_xz = crate::config_3d::fbx_facing::resolve_fbx_forward_xz(meta, est);
 
     Ok(vec![LoadedModelMesh {
-        mesh: upload(device, &vertices, &indices, "fbx-mesh", None),
+        mesh: upload(gpu, &vertices, &indices, "fbx-mesh", None),
         rgba,
         width: tex_w,
         height: tex_h,

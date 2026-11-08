@@ -89,6 +89,8 @@ impl Default for EditorCamera {
 /// Orden de dibujado para decals/UI en mundo (el depth buffer ordena opacos 3D).
 #[derive(Debug, Clone, Copy, Default)]
 pub struct RenderLayer {
+    /// Reservado para ordenar capas de decals/UI en el futuro.
+    #[allow(dead_code)]
     pub value: i32, // default 0; mayor = después
 }
 

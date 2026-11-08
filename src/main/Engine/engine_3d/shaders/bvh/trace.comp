@@ -1,0 +1,166 @@
+#version 460
+layout(local_size_x = 8, local_size_y = 8) in;
+
+struct BvhNode {
+    vec4 bbox_min;
+    vec4 bbox_max;
+    uint left_or_tri_offset;
+    uint right_or_tri_count;
+    uint flags;
+    uint pad;
+};
+
+struct Tri {
+    vec4 v0;
+    vec4 v1;
+    vec4 v2;
+    vec4 uv0;
+    vec4 uv1;
+    vec4 uv2;
+};
+
+struct Material {
+    vec4 albedo;
+    vec4 pbr;
+    vec4 probe;
+};
+
+layout(set = 0, binding = 0) uniform TraceU {
+    mat4 inv_view_proj;
+    vec4 cam_pos;
+    vec4 resolution;
+    vec4 light_dir;
+    uvec4 counts;
+} u;
+
+layout(set = 0, binding = 1) readonly buffer Nodes { BvhNode nodes[]; };
+layout(set = 0, binding = 2) readonly buffer Tris { Tri tris[]; };
+layout(set = 0, binding = 3) readonly buffer Mats { Material mats[]; };
+layout(set = 0, binding = 4, rgba8) uniform image2D image_out;
+layout(set = 0, binding = 5) uniform sampler2D depth_tex;
+layout(set = 0, binding = 6) uniform sampler2D normal_tex;
+
+bool ray_aabb(vec3 origin, vec3 inv_dir, vec3 bmin, vec3 bmax, float t_max) {
+    vec3 t0 = (bmin - origin) * inv_dir;
+    vec3 t1 = (bmax - origin) * inv_dir;
+    vec3 tsmaller = min(t0, t1);
+    vec3 tbigger = max(t0, t1);
+    float t_near = max(max(tsmaller.x, tsmaller.y), tsmaller.z);
+    float t_far = min(min(tbigger.x, tbigger.y), tbigger.z);
+    return t_far >= max(t_near, 0.0) && t_near < t_max;
+}
+
+bool ray_tri(vec3 origin, vec3 dir, vec3 v0, vec3 v1, vec3 v2, out float t, out vec3 n) {
+    vec3 e1 = v1 - v0;
+    vec3 e2 = v2 - v0;
+    vec3 p = cross(dir, e2);
+    float det = dot(e1, p);
+    if (abs(det) < 1e-8) {
+        return false;
+    }
+    float inv_det = 1.0 / det;
+    vec3 s = origin - v0;
+    float u = dot(s, p) * inv_det;
+    if (u < 0.0 || u > 1.0) {
+        return false;
+    }
+    vec3 q = cross(s, e1);
+    float v = dot(dir, q) * inv_det;
+    if (v < 0.0 || u + v > 1.0) {
+        return false;
+    }
+    t = dot(e2, q) * inv_det;
+    if (t < 0.001) {
+        return false;
+    }
+    n = normalize(cross(e1, e2));
+    return true;
+}
+
+bool trace_bvh(vec3 origin, vec3 dir, out vec3 hit_n, out uint slot) {
+    if (u.counts.x == 0u) {
+        return false;
+    }
+    vec3 inv_dir = 1.0 / dir;
+    uint stack[32];
+    int sp = 0;
+    stack[0] = 0u;
+    float best_t = 1e9;
+    bool hit = false;
+    while (sp >= 0) {
+        uint idx = stack[sp];
+        sp--;
+        BvhNode node = nodes[idx];
+        if (!ray_aabb(origin, inv_dir, node.bbox_min.xyz, node.bbox_max.xyz, best_t)) {
+            continue;
+        }
+        if (node.flags == 1u) {
+            for (uint i = 0u; i < node.right_or_tri_count; i++) {
+                Tri tri = tris[node.left_or_tri_offset + i];
+                float t;
+                vec3 n;
+                if (ray_tri(origin, dir, tri.v0.xyz, tri.v1.xyz, tri.v2.xyz, t, n) && t < best_t) {
+                    best_t = t;
+                    hit_n = n;
+                    slot = floatBitsToUint(tri.v0.w);
+                    hit = true;
+                }
+            }
+        } else if (sp < 30) {
+            stack[++sp] = node.left_or_tri_offset;
+            stack[++sp] = node.right_or_tri_count;
+        }
+    }
+    return hit;
+}
+
+void main() {
+    ivec2 pix = ivec2(gl_GlobalInvocationID.xy);
+    if (pix.x >= int(u.resolution.x) || pix.y >= int(u.resolution.y)) {
+        return;
+    }
+    vec2 uv = (vec2(pix) + vec2(0.5)) / max(u.resolution.xy, vec2(1.0));
+    vec3 sky = vec3(0.72, 0.86, 0.98);
+    vec3 origin = u.cam_pos.xyz;
+    vec3 dir;
+    float confidence = 1.0;
+    if (u.counts.z == 0u) {
+        vec2 ndc = vec2(uv.x * 2.0 - 1.0, (1.0 - uv.y) * 2.0 - 1.0);
+        vec4 target = u.inv_view_proj * vec4(ndc, 1.0, 1.0);
+        dir = normalize(target.xyz / target.w - origin);
+    } else {
+        float depth = texture(depth_tex, uv).r;
+        if (depth >= 0.9999) {
+            imageStore(image_out, pix, vec4(0.0));
+            return;
+        }
+        vec4 nr = texture(normal_tex, uv);
+        if (nr.w > 0.65) {
+            imageStore(image_out, pix, vec4(0.0));
+            return;
+        }
+        vec2 ndc = vec2(uv.x * 2.0 - 1.0, (1.0 - uv.y) * 2.0 - 1.0);
+        vec4 world_h = u.inv_view_proj * vec4(ndc, depth, 1.0);
+        vec3 world = world_h.xyz / world_h.w;
+        vec3 n = normalize(nr.xyz * 2.0 - 1.0);
+        dir = reflect(normalize(world - origin), n);
+        origin = world + n * 0.03;
+        confidence = 1.0 - nr.w;
+    }
+    vec3 hit_n;
+    uint slot = 0u;
+    vec3 color = sky;
+    if (trace_bvh(origin, dir, hit_n, slot)) {
+        if (dot(hit_n, dir) > 0.0) {
+            hit_n = -hit_n;
+        }
+        vec3 albedo = mats[min(slot, max(u.counts.w, 1u) - 1u)].albedo.rgb;
+        float ndotl = max(dot(hit_n, normalize(u.light_dir.xyz)), 0.0);
+        float ambient = clamp(u.light_dir.w, 0.0, 1.0);
+        color = albedo * (ambient + (1.0 - ambient) * ndotl);
+    } else if (u.counts.z != 0u) {
+        imageStore(image_out, pix, vec4(0.0));
+        return;
+    }
+    imageStore(image_out, pix, vec4(color, confidence));
+}

@@ -1,7 +1,6 @@
 //! Renderizado de imágenes HUD (marco de selección + quad texturizado).
 
 use crate::gizmo::GizmoVertex;
-use crate::screen_hud_image::ScreenHudAtlas;
 
 use super::config::{PlayerUiImage, box_corners};
 use super::ndc_draw::{push_handle_disc, push_line_segment, push_quad};
@@ -41,8 +40,8 @@ pub(crate) fn append_image_gizmo_verts(
 
 pub(crate) fn append_image_hud_glyphs(
     images: &[PlayerUiImage],
-    atlas: &mut ScreenHudAtlas,
-    queue: &wgpu::Queue,
+    gpu: &crate::vulkan::SharedGpu,
+    atlas: &mut crate::screen_hud_image::HudAtlas,
     instances: &mut Vec<crate::mesh::InstanceData>,
     viewport_w: f32,
     viewport_h: f32,
@@ -58,8 +57,8 @@ pub(crate) fn append_image_hud_glyphs(
             viewport_w,
             viewport_h,
             texture_cache,
+            gpu,
             atlas,
-            queue,
             instances,
             1.0,
         );

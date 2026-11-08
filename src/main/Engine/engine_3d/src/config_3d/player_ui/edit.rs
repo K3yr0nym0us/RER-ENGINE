@@ -1,4 +1,4 @@
-//! Vista de edición de UI del jugador (3D): cámara FPS del panel Cámara sin modo play.
+//! Vista de ediciÃƒÂ³n de UI del jugador (3D): cÃƒÂ¡mara FPS del panel CÃƒÂ¡mara sin modo play.
 
 use glam::Vec3;
 
@@ -6,10 +6,11 @@ use crate::config_compat::ActiveTool;
 use crate::engine::State;
 use crate::gizmo::{self, GizmoBuffer, GizmoVertex};
 use crate::ipc::{EngineEvent, send_event};
+use crate::vulkan::SharedGpu;
 
 pub(crate) use rer_engine_shared::player_ui::grid::{player_ui_grid_steps, snap_ndc_point_to_grid};
 
-/// Snapshot del viewport de editor al entrar en edición UI.
+/// Snapshot del viewport de editor al entrar en ediciÃƒÂ³n UI.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct PlayerUiEditViewportRestore {
     editor_viewport_yaw: f32,
@@ -22,7 +23,7 @@ pub(crate) struct PlayerUiEditViewportRestore {
 }
 
 impl State {
-    /// Vista desde el ojo del jugador (play real o edición UI), sin órbita de editor.
+    /// Vista desde el ojo del jugador (play real o ediciÃƒÂ³n UI), sin ÃƒÂ³rbita de editor.
     pub(crate) fn uses_player_fps_viewport(&self) -> bool {
         self.has_play_character()
             && (self.is_play_controller_active() || self.player_ui_edit_active)
@@ -32,14 +33,14 @@ impl State {
         self.ui_work_grid_buffer = if self.player_ui_edit_active {
             let vw = self.size.width.max(1) as f32;
             let vh = self.size.height.max(1) as f32;
-            let buf = build_player_ui_screen_grid(&self.device, vw, vh);
+            let buf = build_player_ui_screen_grid(&self.vulkan, vw, vh);
             log::info!(
-                "[player-ui] cuadrícula pantalla: {} vértices",
+                "[player-ui] cuadrÃƒÂ­cula pantalla: {} vÃƒÂ©rtices",
                 buf.vertex_count
             );
             buf
         } else {
-            gizmo::build_from_vertices(&self.device, &[])
+            gizmo::build_from_vertices(&self.vulkan, &[])
         };
     }
 
@@ -76,14 +77,14 @@ impl State {
             self.player_ui_edit_active = true;
             self.suspend_world_picking_for_ui_edit();
             self.active_tool = ActiveTool::None;
-            self.tool_overlay_buffer = gizmo::build_from_vertices(&self.device, &[]);
+            self.tool_overlay_buffer = gizmo::build_from_vertices(&self.vulkan, &[]);
             self.set_player_ui_edit_context(
                 scope.map(str::to_string),
                 screen_id.map(str::to_string),
             );
             self.rebuild_player_ui_screen_grid();
             self.emit_player_ui_text_boxes_list();
-            log::info!("[player-ui] vista de edición activada (cámara jugador, sin play)");
+            log::info!("[player-ui] vista de ediciÃƒÂ³n activada (cÃƒÂ¡mara jugador, sin play)");
         } else {
             self.player_ui_edit_active = false;
             self.cancel_player_ui_object_draw();
@@ -100,47 +101,8 @@ impl State {
                 self.sync_editor_camera_entity_from_viewport();
             }
             self.rebuild_player_ui_screen_grid();
-            log::info!("[player-ui] vista de edición desactivada");
+            log::info!("[player-ui] vista de ediciÃƒÂ³n desactivada");
         }
-    }
-
-    /// Regla NDC sobre el viewport (mismo pass que crosshair: `grid_pipeline` + `LineList`).
-    pub(crate) fn draw_player_ui_screen_grid(
-        &self,
-        enc: &mut wgpu::CommandEncoder,
-        view: &wgpu::TextureView,
-    ) -> u32 {
-        if !self.player_ui_edit_active || self.ui_work_grid_buffer.vertex_count == 0 {
-            return 0;
-        }
-
-        self.queue.write_buffer(
-            &self.grid_buffer_uni,
-            0,
-            bytemuck::cast_slice(&crate::gizmo::GIZMO_UNIFORM_IDENTITY),
-        );
-
-        let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("player-ui-screen-grid-pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view,
-                resolve_target: None,
-                depth_slice: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Load,
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: None,
-            occlusion_query_set: None,
-            timestamp_writes: None,
-            multiview_mask: None,
-        });
-        pass.set_pipeline(&self.grid_pipeline);
-        pass.set_bind_group(0, &self.grid_bind_group, &[]);
-        pass.set_vertex_buffer(0, self.ui_work_grid_buffer.vertex_buffer.slice(..));
-        pass.draw(0..self.ui_work_grid_buffer.vertex_count, 0..1);
-        1
     }
 
     /// En edición UI el ratón solo interactúa con el HUD; sin hover/selección del mundo 3D.
@@ -158,12 +120,8 @@ impl State {
     }
 }
 
-/// Cuadrícula de trabajo en NDC (regla sobre el viewport del jugador).
-fn build_player_ui_screen_grid(
-    device: &wgpu::Device,
-    viewport_w: f32,
-    viewport_h: f32,
-) -> GizmoBuffer {
+/// CuadrÃƒÂ­cula de trabajo en NDC (regla sobre el viewport del jugador).
+fn build_player_ui_screen_grid(gpu: &SharedGpu, viewport_w: f32, viewport_h: f32) -> GizmoBuffer {
     let mut verts: Vec<GizmoVertex> = Vec::new();
 
     let extent = 1.0_f32;
@@ -202,7 +160,7 @@ fn build_player_ui_screen_grid(
         y += step_y;
     }
 
-    gizmo::build_from_vertices(device, &verts)
+    gizmo::build_lines_from_vertices(gpu, &verts)
 }
 
 fn push_line(verts: &mut Vec<GizmoVertex>, a: [f32; 3], b: [f32; 3], color: [f32; 4]) {

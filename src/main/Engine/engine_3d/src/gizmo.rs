@@ -5,7 +5,10 @@
 // el depth buffer para que siempre sean visibles encima de la geometría.
 // ---------------------------------------------------------------------------
 
-use wgpu::util::DeviceExt;
+use ash::vk;
+use gpu_allocator::MemoryLocation;
+
+use crate::vulkan::{GpuBuffer, SharedGpu};
 
 pub use rer_engine_shared::player_ui::ndc_draw::NdcVertex as GizmoVertex;
 
@@ -64,8 +67,10 @@ pub fn gizmo_uniform_world(view_proj: [[f32; 4]; 4]) -> [[f32; 4]; GIZMO_UNIFORM
 }
 
 pub struct GizmoBuffer {
-    pub vertex_buffer: wgpu::Buffer,
+    pub vertex_buffer: GpuBuffer,
     pub vertex_count: u32,
+    /// `true` si los vértices son `LineList`. Los ejes y anillos son triángulos.
+    pub lines: bool,
 }
 
 fn push_tri(verts: &mut Vec<GizmoVertex>, a: [f32; 3], b: [f32; 3], c: [f32; 3], color: [f32; 4]) {
@@ -261,7 +266,7 @@ fn push_ring_segment(
     push_quad(verts, c01, c11, d11, d01, color);
 }
 
-pub fn build_rotation_rings(device: &wgpu::Device, radius: f32) -> GizmoBuffer {
+pub fn build_rotation_rings(gpu: &SharedGpu, radius: f32) -> GizmoBuffer {
     let mut verts = Vec::new();
     let segments = GIZMO_ROTATION_RING_SEGMENTS;
     let colors = [
@@ -277,33 +282,51 @@ pub fn build_rotation_rings(device: &wgpu::Device, radius: f32) -> GizmoBuffer {
         }
     }
 
-    let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some("gizmo-rotation-rings-vbo"),
-        contents: bytemuck::cast_slice(&verts),
-        usage: wgpu::BufferUsages::VERTEX,
-    });
+    let data: &[u8] = if verts.is_empty() {
+        &[0u8; std::mem::size_of::<GizmoVertex>()]
+    } else {
+        bytemuck::cast_slice(&verts)
+    };
+    let vertex_buffer = gpu
+        .create_buffer_with_data(
+            data,
+            vk::BufferUsageFlags::VERTEX_BUFFER,
+            MemoryLocation::CpuToGpu,
+            "gizmo-rotation-rings-vbo",
+        )
+        .unwrap_or_else(|error| panic!("No se pudo subir los anillos de rotación: {error}"));
 
     GizmoBuffer {
         vertex_buffer,
         vertex_count: verts.len() as u32,
+        lines: false,
     }
 }
 
-pub fn build_axes(device: &wgpu::Device, length: f32) -> GizmoBuffer {
+pub fn build_axes(gpu: &SharedGpu, length: f32) -> GizmoBuffer {
     let mut verts = Vec::new();
     add_arrow_x(&mut verts, length, [1.0, 0.18, 0.18, 1.0]);
     add_arrow_y(&mut verts, length, [0.18, 1.0, 0.18, 1.0]);
     add_arrow_z(&mut verts, length, [0.18, 0.55, 1.0, 1.0]);
 
-    let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some("gizmo-vbo"),
-        contents: bytemuck::cast_slice(&verts),
-        usage: wgpu::BufferUsages::VERTEX,
-    });
+    let data: &[u8] = if verts.is_empty() {
+        &[0u8; std::mem::size_of::<GizmoVertex>()]
+    } else {
+        bytemuck::cast_slice(&verts)
+    };
+    let vertex_buffer = gpu
+        .create_buffer_with_data(
+            data,
+            vk::BufferUsageFlags::VERTEX_BUFFER,
+            MemoryLocation::CpuToGpu,
+            "gizmo-vbo",
+        )
+        .unwrap_or_else(|error| panic!("No se pudo subir los ejes del gizmo: {error}"));
 
     GizmoBuffer {
         vertex_buffer,
         vertex_count: verts.len() as u32,
+        lines: false,
     }
 }
 
@@ -312,15 +335,14 @@ pub fn build_axes(device: &wgpu::Device, length: f32) -> GizmoBuffer {
 /// Dibuja un pequeño cubo en la posición del ojo + una pirámide de líneas hasta
 /// un rectángulo lejano (vista de cámara de juego seleccionada).
 /// Topología esperada: `LineList`. Vértices en espacio de mundo.
-pub fn build_fps_camera_frustum(
-    device: &wgpu::Device,
+pub fn fps_camera_frustum_verts(
     eye: glam::Vec3,
     yaw: f32,
     pitch: f32,
     fov_y: f32,
     aspect: f32,
     far_dist: f32,
-) -> GizmoBuffer {
+) -> Vec<GizmoVertex> {
     use glam::Vec3;
 
     let (sy, cy) = yaw.sin_cos();
@@ -392,24 +414,69 @@ pub fn build_fps_camera_frustum(
     push_line(f_br, f_bl);
     push_line(f_bl, f_tl);
 
-    build_from_vertices(device, &verts)
+    verts
 }
 
 /// Creates a GizmoBuffer from arbitrary pre-built line vertices (tool overlays, etc.).
-pub fn build_from_vertices(device: &wgpu::Device, verts: &[GizmoVertex]) -> GizmoBuffer {
+pub fn build_from_vertices(gpu: &SharedGpu, verts: &[GizmoVertex]) -> GizmoBuffer {
+    build_buffer(gpu, verts, false)
+}
+
+/// Variante para topología `LINE_LIST` (rejillas, bounds, esqueletos y sockets).
+pub fn build_lines_from_vertices(gpu: &SharedGpu, verts: &[GizmoVertex]) -> GizmoBuffer {
+    build_buffer(gpu, verts, true)
+}
+
+fn build_buffer(gpu: &SharedGpu, verts: &[GizmoVertex], lines: bool) -> GizmoBuffer {
     // Always allocate at least one vertex so the buffer is valid.
     let data: &[u8] = if verts.is_empty() {
         &[0u8; std::mem::size_of::<GizmoVertex>()]
     } else {
         bytemuck::cast_slice(verts)
     };
-    let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some("tool-overlay-vbo"),
-        contents: data,
-        usage: wgpu::BufferUsages::VERTEX,
-    });
+    let vertex_buffer = gpu
+        .create_buffer_with_data(
+            data,
+            vk::BufferUsageFlags::VERTEX_BUFFER,
+            MemoryLocation::CpuToGpu,
+            "tool-overlay-vbo",
+        )
+        .unwrap_or_else(|error| panic!("No se pudo subir el overlay de herramientas: {error}"));
     GizmoBuffer {
         vertex_buffer,
         vertex_count: verts.len() as u32,
+        lines,
     }
+}
+
+/// Escribe vértices en un `GizmoBuffer` reutilizable (line-list).
+///
+/// Solo reasigna cuando el buffer actual es demasiado pequeño; en el caso normal
+/// reutiliza la memoria mapeada y evita una asignación Vulkan por frame.
+pub fn write_lines(gpu: &SharedGpu, buffer: &mut GizmoBuffer, verts: &[GizmoVertex]) {
+    let empty = [0u8; std::mem::size_of::<GizmoVertex>()];
+    let data: &[u8] = if verts.is_empty() {
+        &empty
+    } else {
+        bytemuck::cast_slice(verts)
+    };
+    if buffer.vertex_buffer.size < data.len() as u64 {
+        buffer.vertex_buffer = match gpu.create_buffer_with_data(
+            data,
+            vk::BufferUsageFlags::VERTEX_BUFFER | vk::BufferUsageFlags::TRANSFER_DST,
+            MemoryLocation::CpuToGpu,
+            "gizmo-lines-vbo",
+        ) {
+            Ok(buffer) => buffer,
+            Err(error) => {
+                log::error!("[gizmo] no se pudo recrear el buffer de líneas: {error}");
+                return;
+            }
+        };
+    } else if let Err(error) = buffer.vertex_buffer.write(0, data) {
+        log::error!("[gizmo] no se pudo actualizar el buffer de líneas: {error}");
+        return;
+    }
+    buffer.vertex_count = verts.len() as u32;
+    buffer.lines = true;
 }

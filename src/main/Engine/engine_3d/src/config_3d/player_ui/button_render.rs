@@ -5,10 +5,8 @@ use std::sync::Arc;
 use ab_glyph::FontArc;
 
 use crate::gizmo::GizmoVertex;
-use crate::screen_hud_image::ScreenHudAtlas;
 
 use super::config::{HasUiHudRect, PlayerUiButton, UiHudRect, box_corners};
-use super::font::build_hud_label_glyph;
 use super::ndc_draw::{append_rect_fill, append_rect_outline, push_handle_disc, push_quad};
 use super::text_render::HANDLE_RADIUS;
 
@@ -42,8 +40,8 @@ pub(crate) fn append_button_gizmo_verts(
 pub(crate) fn append_button_hud_glyphs(
     buttons: &[PlayerUiButton],
     font_cache: &mut std::collections::HashMap<String, Arc<FontArc>>,
-    atlas: &mut ScreenHudAtlas,
-    queue: &wgpu::Queue,
+    gpu: &crate::vulkan::SharedGpu,
+    atlas: &mut crate::screen_hud_image::HudAtlas,
     instances: &mut Vec<crate::mesh::InstanceData>,
     viewport_w: f32,
     viewport_h: f32,
@@ -60,8 +58,8 @@ pub(crate) fn append_button_hud_glyphs(
                 viewport_w,
                 viewport_h,
                 texture_cache,
+                gpu,
                 atlas,
-                queue,
                 instances,
                 1.0,
             );
@@ -81,15 +79,15 @@ pub(crate) fn append_button_hud_glyphs(
         };
         let mut tint = btn.text_color;
         tint[3] *= btn.transparency_text.clamp(0.0, 1.0);
-        build_hud_label_glyph(
+        super::font::build_hud_label_glyph(
             &font,
             &btn.text,
             btn.ui_hud_rect(),
             tint,
             viewport_w,
             viewport_h,
+            gpu,
             atlas,
-            queue,
             instances,
         );
     }

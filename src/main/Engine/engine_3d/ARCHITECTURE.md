@@ -22,11 +22,18 @@ Runtime 3D: camara orbital en editor, play con jugador `[Player]`, Rapier3D, mal
 
 ## Politica GPU
 
-- Perfil **ThreeD** via `rer_engine_shared::gpu`:
-  - **Windows**: Vulkan (`Backends::VULKAN`, `EngineGpuProfile::ThreeD`).
-  - Sin variables de entorno: `resolve_backend(ThreeD)` no lee `RER_GPU_BACKEND`.
-- Sin OpenGL ni otros backends wgpu. Shaders en **WGSL** (naga).
-- Fallo de `init_gpu` → `EngineEvent::Error`; Electron muestra overlay de ayuda.
+- **3D**: Vulkan crudo con `ash` en `src/vulkan/` (sin wgpu). El motor 2D y la fachada
+  `rer_engine_shared::gpu` siguen en wgpu y no cambian.
+- `wgpu` permanece como dependencia del crate 3D solo por el macro compartido
+  `impl_player_ui_text_input!` (genera `wgpu::CommandEncoder`/`TextureView`).
+- Shaders: GLSL en `engine_3d/shaders/` (`raster/`, `rt/`, `bvh/`) compilados a SPIR-V
+  por `build.rs` con `glslc` del Vulkan SDK. Los `.wgsl` heredados quedan como referencia
+  hasta completar la paridad con naga.
+- Ray tracing: se piden juntas `VK_KHR_ray_tracing_pipeline`,
+  `VK_KHR_acceleration_structure` y `VK_KHR_deferred_host_operations`. Si falta alguna
+  extensión o sus features, `hw_rt = false` y los reflejos usan el BVH por software
+  (`src/bvh.rs` + `shaders/bvh/trace.comp`).
+- Fallo de inicializacion Vulkan → `EngineEvent::Error`; Electron muestra overlay de ayuda.
 
 ## Ventana overlay
 
@@ -35,17 +42,23 @@ Runtime 3D: camara orbital en editor, play con jugador `[Player]`, Rapier3D, mal
 
 ## Archivos fuente de verdad
 
-- `engine_shared/src/gpu.rs`: `resolve_backend(ThreeD)` y `init_gpu(_, ThreeD)`.
+- `engine_shared/src/gpu.rs`: fachada wgpu del motor 2D (`resolve_backend`, `init_gpu`); el 3D no la usa.
 - `src/main.rs`: bucle winit, input, gizmo, play (cámara play character), setup overlay.
-- `src/engine.rs` + `src/engine/mod.rs`: `State` (GPU, ECS, caches, undo/redo, scripting).
-- `src/engine/init.rs`: instancia wgpu (Vulkan), pipelines WGSL, texture array, HUD/gizmo, TAA.
+- `src/engine.rs` + `src/engine/mod.rs`: `State` (GPU Ash, ECS, caches, undo/redo, scripting).
+- `src/engine/init.rs`: `SharedGpu::new` (Ash), texture array y `FrameRenderer::new`.
+- `src/vulkan/`: contexto Vulkan, swapchain Win32, BLAS/TLAS y `FrameRenderer` (sombras,
+  forward, TAA, SSR, denoise, reflejos RT/BVH, gizmo y HUD).
+- `src/bvh.rs`: BVH binario en CPU y layouts GPU del fallback por software.
 - `src/engine/commands.rs`: IPC y mutaciones de estado.
-- `src/engine/render.rs`: mundo 3D, crosshair, tooltip Esc, gizmo de editor.
+- `src/engine/render.rs`: mundo 3D, batches estáticos y skinned, escena RT cacheada
+  (instancias/materiales/BVH), overlays gizmo, HUD y `FrameInput`.
 - `src/engine/tick.rs`: delta time, metricas, fade del hint Esc.
 - `src/config_3d/mod.rs`: picking, raycast, gizmo, modelos, pantalla.
 - `src/config_3d/camera_3d.rs`: camara orbital y uniforms.
 - `src/config_3d/character_anchor.rs`: pies ↔ centro del personaje jugable.
 - `src/config_3d/play_character.rs`: entidad `[Player]`, spawn y cuerpo placeholder.
+- `src/config_3d/editor_viewport_controls.rs`: navegación orbital (esquema Blender), arrastre/gizmo.
+- `src/config_3d/editor_fly.rs`: navegación libre del viewport de edición (RMB mirar, WASD volar).
 - `src/config_3d/fps_camera.rs`: vista play character acoplada, IPC `play_character_view_changed`.
 - `src/config_3d/play_controller.rs`: movimiento en play (cápsula cinemática).
 - `src/config_3d/player_ui/`: editor HUD del jugador (pantallas, texto, botones, imágenes, objetos poligonales, undo).
@@ -58,7 +71,7 @@ Runtime 3D: camara orbital en editor, play con jugador `[Player]`, Rapier3D, mal
 - `src/ecs.rs`: `Transform`, `MeshComponent`, marcadores.
 - `src/ipc.rs`: comandos y eventos JSON.
 
-Soporte: `mesh.rs`, `shader.wgsl`, `gizmo.rs`, `gizmo.wgsl`, `texture.rs`, `scripting.rs`.
+Soporte: `mesh.rs`, `gizmo.rs`, `texture.rs`, `scripting.rs`, `build.rs` y `shaders/`.
 
 ## Soporte interno 3D (no es IPC del otro motor)
 
@@ -72,6 +85,9 @@ Soporte: `mesh.rs`, `shader.wgsl`, `gizmo.rs`, `gizmo.wgsl`, `texture.rs`, `scri
 ## Modos de camara y render
 
 - **Editor 3D**: solo `Camera` orbital + viewport desacoplado del jugador; gizmo y frustum de cámara play character con `preview_playing == false`. No hay modo cámara 2D en este binario.
+  - Navegación (toda en `!preview_playing` y fuera del editor de HUD): **RMB + arrastre** mira alrededor del ojo (estilo Minecraft, `editor_fly_look`), **W/A/S/D** vuela, **Space/C** suben y bajan, **Shift** acelera (×3), y se conserva el esquema Blender: **MMB** órbita, **Shift+MMB** paneo, **Ctrl+MMB** dolly, **rueda** zoom, **Numpad.** encuadra la selección.
+  - La cámara del editor es orbital, así que "mirar" no es solo cambiar yaw/pitch: hay que girar manteniendo el ojo fijo y recolocar el pivote (`pivote = ojo − back·distancia`). Ver `config_3d/editor_fly.rs`.
+  - La ventana del motor es `WS_EX_NOACTIVATE` en modo overlay: `main.rs` llama `focus_window()` al presionar cualquier botón en edición, si no el teclado (WASD y los atajos G/R/.) nunca llega al motor.
 - **Play 3D**: `preview_playing`, vista desde acordeón Camera; mesh del jugador visible; capsula cinematica en `play_controller.rs`.
 - **HUD play** (crosshair, Esc): NDC + `hud_scene_bind_group` (identidad). PNG de pantalla **solo** vía `screen_hud_image` + `screen_hud_pipeline` (no `TextureArray`).
 - **HUD Player UI** (autoría + play): pantallas con elementos en NDC (`config_3d/player_ui/`); en play se muestra la pantalla activa; en edición UI la cámara del jugador sin `preview_playing`.
