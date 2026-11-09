@@ -675,6 +675,14 @@ impl SharedGpu {
         pick_sample_count(both, desired)
     }
 
+    /// Techo de multisampling del adaptador para el G-buffer, sin capar por tier. Sirve para decir
+    /// por qué un tier Ultra 8× acabó en 4× en vez de dejar al usuario sin pistas.
+    pub fn gbuffer_sample_ceiling(&self) -> u32 {
+        let both = self.inner.limits.framebuffer_color_sample_counts
+            & self.inner.limits.framebuffer_depth_sample_counts;
+        pick_sample_count(both, 64)
+    }
+
     pub fn rt_properties(&self) -> Option<&RtProperties> {
         self.inner.rt_props.as_ref()
     }

@@ -51,3 +51,43 @@ pub const DEFAULT_MSAA_TIER: MsaaTier = MsaaTier::Low;
 pub fn clamp_sample_count(device: &crate::vulkan::SharedGpu, desired: u32) -> u32 {
     device.max_gbuffer_samples(desired).clamp(1, 8)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ALL: [MsaaTier; 4] = [
+        MsaaTier::Low,
+        MsaaTier::Medium,
+        MsaaTier::High,
+        MsaaTier::Ultra,
+    ];
+
+    #[test]
+    fn sample_counts_grow_and_ultra_asks_for_eight() {
+        // Card `MSAA EXTENDIDO (3D)`: comprobar que Ultra PIDE 8x. Si el adaptador recorta,
+        // `ensure_msaa` lo avisa; aquí sólo se fija la petición del tier.
+        assert_eq!(MsaaTier::Low.desired_sample_count(), 1);
+        assert_eq!(MsaaTier::Medium.desired_sample_count(), 2);
+        assert_eq!(MsaaTier::High.desired_sample_count(), 4);
+        assert_eq!(MsaaTier::Ultra.desired_sample_count(), 8);
+        for pair in ALL.windows(2) {
+            assert!(
+                pair[0].desired_sample_count() <= pair[1].desired_sample_count(),
+                "el tier {} pide menos que {}",
+                pair[0].wire(),
+                pair[1].wire()
+            );
+        }
+    }
+
+    #[test]
+    fn wire_round_trip_and_off_maps_to_low() {
+        for tier in ALL {
+            assert_eq!(MsaaTier::from_wire(tier.wire()), Some(tier));
+        }
+        assert_eq!(MsaaTier::from_wire("apagado"), Some(MsaaTier::Low));
+        assert_eq!(MsaaTier::from_wire("2x"), None);
+        assert_eq!(DEFAULT_MSAA_TIER, MsaaTier::Low);
+    }
+}

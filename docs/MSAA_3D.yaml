@@ -10,8 +10,8 @@
 #   - docs/Reflections_3D.yaml
 #   - docs/IPC_Protocol.yaml
 
-version: 2
-updated: 2026-11-08
+version: 3
+updated: 2026-11-09
 
 principle:
   owner: motor_3d
@@ -76,3 +76,53 @@ ui:
   accordion: World → MSAA
   controls:
     - tier selector: low | medium | high | ultra
+
+# Seguimiento de la card `MSAA EXTENDIDO (3D)`: qué queda, qué se descartó y por qué.
+extended_scope:
+  ultra_8x_verification:
+    status: implemented-needs-hardware-check
+    detail: |
+      Ultra ya PIDE 8× (`MsaaTier::Ultra::desired_sample_count`) y `clamp_sample_count` lo recorta a
+      la intersección `framebufferColorSampleCounts ∩ framebufferDepthSampleCounts`. La tabla de
+      petición por tier está testeada (`msaa_graphics::tests`). Falta la comprobación en la máquina
+      del usuario: el log dice `[msaa] G-buffer multisampleado a 8x`, y si el adaptador no llega a 8×
+      ahora se registra `[msaa] el tier pidió 8x y el adaptador llega a Nx como G-buffer` gracias a
+      `SharedGpu::gbuffer_sample_ceiling`. Antes el recorte era silencioso y no se podía distinguir
+      "Ultra roto" de "Ultra recortado por hardware".
+  msaa_in_shadow_maps:
+    status: descartado
+    reason: |
+      El shadow pass es depth-only y su salida se muestrea con PCF: el filtrado ya hace el trabajo
+      que aportaría multisampling sobre el borde. Para ganarlo habría que crear el array MS, resolver
+      profundidad (vkCmdResolveImage sobre el aspecto DEPTH exige soporte `sampledImageResolve` del
+      portability subset y no está garantizado) y pasar el mapa a 1× igualmente. Coste y riesgo sin
+      ganancia visible.
+  msaa_in_probes:
+    status: pendiente-de-decidir
+    reason: |
+      Sería el único con ganancia real: las caras del cubemap se capturan a 1× y en espejos con
+      roughness baja se leen los bordes dentados de la geometría. El coste es bajo (5 adjuntos de
+      PROBE_FACE_SIZE con N muestras + resolve), pero toca el pase de captura, que es donde más
+      validación se rompió históricamente (layout de depth, `imageCubeArray`, capas `slot*6+face`).
+      Decide el usuario tras ver CSM: si los bordes de las reflexiones de sonda molestan, se hace.
+  msaa_in_overlay_ui:
+    status: descartado
+    reason: |
+      HUD y gizmos son quads con textura alfa (glifos de fuente, sprites). MSAA resuelve coberturas
+      de geometría opaca, no el canal alfa: el escalado de texto fino se combate con filtrado/TAA, no
+      con muestras. No aporta.
+  msaa_in_2d_engine:
+    status: no_aplica
+    reason: |
+      El motor 2D sigue en wgpu y su frame es un passthrough de sprites/quad con blend alfa; además la
+      fachada `engine_shared/src/gpu.rs` está fuera de límites para este trabajo (regla de la
+      migración Ash: el 2D no se toca). Si algún día se quisiera, sería cambio de la capa compartida,
+      no del crate 3D.
+  sampling_multisample_textures_in_taa_ssr:
+    status: pendiente-de-decidir
+    reason: |
+      Hoy TAA/SSR leen los 1× ya resueltos. Muestrear las muestras explícitas
+      (`sampler2DMS` + `texelFetch` por muestra) permitiría un resolve con pesos por profundidad,
+      que es lo que hace bien bordes delgados en movimiento. Es el trabajo grande de la card:
+      necesita imágenes MS con `SAMPLED`, `sampledImageSampleCounts` del adaptador, y reescribir el
+      resolve del G-buffer. Se justifica solo si el TAA actual pierde geometría fina.

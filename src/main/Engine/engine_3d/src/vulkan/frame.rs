@@ -988,8 +988,8 @@ impl FrameRenderer {
     /// Se consulta al adaptador (`max_gbuffer_samples`), así que un `Ultra` en una GPU sin soporte
     /// baja a 1× en vez de crear pipelines inválidos. Los pipelines de 1× siguen existiendo porque
     /// la captura de sondas dibuja en imágenes de una muestra.
-    fn ensure_msaa(&mut self, wanted: u32, device: &ash::Device) -> Result<(), VulkanError> {
-        let wanted = self.gpu.max_gbuffer_samples(wanted).clamp(1, 8);
+    fn ensure_msaa(&mut self, requested: u32, device: &ash::Device) -> Result<(), VulkanError> {
+        let wanted = self.gpu.max_gbuffer_samples(requested).clamp(1, 8);
         if wanted == self.msaa_samples {
             return Ok(());
         }
@@ -1092,6 +1092,19 @@ impl FrameRenderer {
         self.msaa_samples = wanted;
         if wanted > 1 {
             log::info!("[msaa] G-buffer multisampleado a {wanted}x");
+            if wanted != requested {
+                // Sin este aviso, un Ultra que baja a 4x es indistinguible de un Ultra roto.
+                log::warn!(
+                    "[msaa] el tier pidió {requested}x y el adaptador llega a {}x como G-buffer \
+                     (color y profundidad a la vez): se usa {wanted}x",
+                    self.gpu.gbuffer_sample_ceiling()
+                );
+            }
+        } else if requested > 1 {
+            log::warn!(
+                "[msaa] el tier pidió {requested}x pero la intersección color∩profundidad del \
+                 adaptador no da multisampling: el G-buffer trabaja a 1x"
+            );
         }
         Ok(())
     }

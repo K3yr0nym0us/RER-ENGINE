@@ -101,3 +101,88 @@ impl ShadowTier {
 }
 
 pub const DEFAULT_SHADOW_TIER: ShadowTier = ShadowTier::Low;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ALL: [ShadowTier; 5] = [
+        ShadowTier::Off,
+        ShadowTier::Low,
+        ShadowTier::Medium,
+        ShadowTier::High,
+        ShadowTier::Ultra,
+    ];
+
+    #[test]
+    fn wire_round_trips_every_tier() {
+        for tier in ALL {
+            assert_eq!(
+                ShadowTier::from_wire(tier.wire()),
+                Some(tier),
+                "wire {}",
+                tier.wire()
+            );
+        }
+        assert_eq!(ShadowTier::from_wire("NOEXISTE"), None);
+        // El editor también envía sinónimos en español.
+        assert_eq!(ShadowTier::from_wire(" Apagado "), Some(ShadowTier::Off));
+        assert_eq!(ShadowTier::from_wire("MEDIO"), Some(ShadowTier::Medium));
+    }
+
+    #[test]
+    fn cascades_and_resolution_never_shrink_as_the_tier_grows() {
+        // Un tier que no cambiara nada visible fue justo el bug que había detrás de "las sombras no
+        // se aplican": la tabla se protege sola a partir de ahora.
+        let previous = ALL
+            .windows(2)
+            .map(|pair| {
+                let (a, b) = (pair[0], pair[1]);
+                (
+                    a.cascades() <= b.cascades(),
+                    a.shadow_map_size() <= b.shadow_map_size(),
+                    a.shadow_distance_scale() <= b.shadow_distance_scale(),
+                    a.shadow_soft_radius() <= b.shadow_soft_radius(),
+                )
+            })
+            .collect::<Vec<_>>();
+        for (index, checks) in previous.iter().enumerate() {
+            assert!(checks.0, "cascadas retroceden en {index}");
+            assert!(checks.1, "resolución retrocede en {index}");
+            assert!(checks.2, "alcance retrocede en {index}");
+            assert!(checks.3, "radio PCF retrocede en {index}");
+        }
+    }
+
+    #[test]
+    fn tier_table_matches_the_csm_card() {
+        // Card `CASCADES / CSM (3D)`: Low 2, Medium 3, High 4, Ultra 4 + Ultra extended distance.
+        assert_eq!(ShadowTier::Off.cascades(), 0);
+        assert_eq!(ShadowTier::Low.cascades(), 2);
+        assert_eq!(ShadowTier::Medium.cascades(), 3);
+        assert_eq!(ShadowTier::High.cascades(), 4);
+        assert_eq!(ShadowTier::Ultra.cascades(), 4);
+        assert!(
+            ShadowTier::Ultra.shadow_distance_scale() > ShadowTier::High.shadow_distance_scale(),
+            "Ultra tiene que alcanzar más lejos que High"
+        );
+        assert_eq!(
+            ShadowTier::Ultra
+                .cascades()
+                .min(crate::config_3d::shadow_cascades::MAX_SHADOW_CASCADES),
+            crate::config_3d::shadow_cascades::MAX_SHADOW_CASCADES
+        );
+    }
+
+    #[test]
+    fn off_is_the_only_tier_without_cascades_and_default_is_not_off() {
+        assert_eq!(DEFAULT_SHADOW_TIER, ShadowTier::Low);
+        for tier in ALL {
+            assert_eq!(
+                tier.cascades() == 0,
+                tier == ShadowTier::Off,
+                "cascadas 0 sólo en Off"
+            );
+        }
+    }
+}
