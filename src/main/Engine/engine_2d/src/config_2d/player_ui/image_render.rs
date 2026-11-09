@@ -42,7 +42,6 @@ pub(crate) fn append_image_gizmo_verts(
 pub(crate) fn append_image_hud_glyphs(
     images: &[PlayerUiImage],
     atlas: &mut ScreenHudAtlas,
-    queue: &wgpu::Queue,
     instances: &mut Vec<crate::mesh::InstanceData>,
     viewport_w: f32,
     viewport_h: f32,
@@ -59,7 +58,6 @@ pub(crate) fn append_image_hud_glyphs(
             viewport_h,
             texture_cache,
             atlas,
-            queue,
             instances,
             1.0,
         );

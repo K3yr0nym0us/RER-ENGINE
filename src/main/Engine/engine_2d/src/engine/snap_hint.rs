@@ -18,7 +18,7 @@ impl State {
                     Ok(img) => {
                         let img = img.to_rgba8();
                         let (w, h) = img.dimensions();
-                        let uv = self.atlas.pack(&self.queue, img.as_raw(), w, h);
+                        let uv = self.atlas.pack(img.as_raw(), w, h);
                         (Some(uv), (w as f32, h as f32))
                     }
                     Err(e) => {

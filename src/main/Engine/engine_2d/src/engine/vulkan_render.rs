@@ -22,14 +22,8 @@ impl State {
         &mut self,
         vulkan: &Arc<Vulkan2d>,
     ) -> Result<(), SurfacePresentError> {
-        // `wgpu::Color` guarda r/g/b en 0..=1 (el IPC manda f64 y `SetClearColor` los copia tal
-        // cual), así que el clear de Vulkan es una conversión directa.
-        let clear = [
-            self.clear_color.r as f32,
-            self.clear_color.g as f32,
-            self.clear_color.b as f32,
-            self.clear_color.a as f32,
-        ];
+        // El color de fondo ya se guarda en 0..=1 (el IPC manda f64 y se convierte al asignar).
+        let clear = self.clear_color;
         let use_2d_pipeline = self.camera_2d.is_some();
 
         // Los datos del frame se calculan en un bloque para que sus préstamos a `self` terminen

@@ -24,7 +24,7 @@ impl State {
                 send_event(&EngineEvent::Pong);
             }
             EngineCommand::Common(EngineCommandCommon::SetClearColor { r, g, b }) => {
-                self.clear_color = wgpu::Color { r, g, b, a: 1.0 };
+                self.clear_color = [r as f32, g as f32, b as f32, 1.0];
             }
             EngineCommand::Common(EngineCommandCommon::Resize { width, height }) => {
                 self.resize(PhysicalSize::new(width, height));
@@ -39,7 +39,7 @@ impl State {
                 // Mover/redimensionar la ventana overlay
                 self.window
                     .set_outer_position(winit::dpi::PhysicalPosition::new(x, y));
-                // Redimensionar superficie wgpu
+                // Redimensionar el swapchain y la escena fuera de pantalla
                 self.resize(PhysicalSize::new(width, height));
                 // Pedir al compositor que aplique el nuevo tamaño
                 let _ = self
@@ -457,7 +457,7 @@ impl State {
                 if playing {
                     self.clear_active_projectiles();
                     self.active_tool = ActiveTool::None;
-                    self.tool_overlay_buffer = gizmo::build_from_vertices(&self.device, &[]);
+                    self.tool_overlay_buffer = gizmo::build_from_vertices(&[]);
                     if self.pivot_edit_mode.is_some() {
                         self.cancel_pivot_edit_mode();
                     }
@@ -615,7 +615,7 @@ impl State {
                     self.quick_build_preview_kind = None;
                     self.quick_build_preview_scale = None;
                     self.active_tool = ActiveTool::None;
-                    self.tool_overlay_buffer = gizmo::build_from_vertices(&self.device, &[]);
+                    self.tool_overlay_buffer = gizmo::build_from_vertices(&[]);
                     if was_active {
                         send_event(&EngineEvent::ToolCancelled);
                         log::info!("Herramienta cancelada");
@@ -646,7 +646,7 @@ impl State {
                         "quick_build_place" => {
                             self.active_tool = ActiveTool::QuickBuildPlace { cursor_world: None };
                             self.tool_overlay_buffer =
-                                crate::gizmo::build_from_vertices(&self.device, &[]);
+                                crate::gizmo::build_from_vertices(&[]);
                             // Cargar entidad fantasma si se proporcionaron datos del blueprint
                             if let (Some(path), Some(kind), Some(scale)) = (
                                 preview_path.as_deref(),
@@ -860,7 +860,7 @@ impl State {
                             {
                                 Ok(img) => {
                                     let rgba = img.to_rgba8();
-                                    self.atlas.update(&self.queue, rgba.as_raw(), uv_rect);
+                                    self.atlas.update(rgba.as_raw(), uv_rect);
                                     log::info!(
                                         "[hot-reload] Textura actualizada en atlas: {}",
                                         path

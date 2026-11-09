@@ -1,8 +1,4 @@
-//! Ruta de render Vulkan (Ash) del motor 2D, en paralelo a la de wgpu.
-//!
-//! Se activa con `RER_2D_VULKAN=1`; sin esa variable el motor sigue usando la ruta wgpu de
-//! siempre, así que la lógica de negocio del 2D no cambia mientras el camino nuevo no esté
-//! completo (`RER_2D_VULKAN=1` es la puerta, retirar wgpu es la fase 6).
+//! Ruta de render Vulkan (Ash) del motor 2D.
 //!
 //! El contexto no reimplementa Vulkan: reutiliza `engine_shared::vulkan`, el mismo núcleo que usa
 //! el 3D (instancia, device, swapchain, `FrameTarget`, barreras). Aquí solo está lo propio del 2D:
@@ -24,24 +20,6 @@ mod targets;
 
 pub(crate) use renderer::{FrameInput, GizmoBatch, GridBatch, HudBatch, NdcOverlay};
 
-/// ¿Debe usar el 2D la ruta Vulkan? Por defecto no: wgpu sigue mandando hasta la fase 6.
-pub(crate) fn enabled_from_env() -> bool {
-    use std::sync::OnceLock;
-    static ON: OnceLock<bool> = OnceLock::new();
-    *ON.get_or_init(|| {
-        let on = std::env::var("RER_2D_VULKAN")
-            .map(|value| value.trim() == "1" || value.trim().eq_ignore_ascii_case("true"))
-            .unwrap_or(false);
-        if on {
-            log::warn!(
-                "[2d-vulkan] RER_2D_VULKAN activo: render por Ash. La ruta wgpu queda inactiva \
-                 en este proceso."
-            );
-        }
-        on
-    })
-}
-
 /// Contexto Ash del 2D. Se comparte con `Arc` desde el `State`: el `resize` y el `render` tienen
 /// que ver los mismos recursos, y el renderer no es clonable (posee imágenes, buffers y
 /// pipelines con `Drop`).
@@ -55,8 +33,7 @@ impl Vulkan2d {
     ///
     /// `VulkanOptions::default()` es la clave de la separación: al no pedir `ray_tracing`, el
     /// núcleo omite las `VK_KHR_*` de trazado, no exige *buffer device address* y no registra los
-    /// handles de RT. Un error aquí es duro (no hay fallback a wgpu en caliente): se propaga al
-    /// arranque como cualquier otro fallo de GPU.
+    /// handles de RT. Un error aquí es duro: se propaga al arranque como cualquier otro fallo de GPU.
     pub(crate) fn new(window: &Window) -> Result<Self, VulkanError> {
         let gpu = SharedGpu::new(window, &VulkanOptions::default())?;
         let renderer = renderer::Renderer::new(&gpu)?;
@@ -103,7 +80,7 @@ impl Vulkan2d {
         self.lock().upload_atlas_region(rgba, x, y, width, height)
     }
 
-    /// Copia una región RGBA al atlas de glyphs/UI de pantalla (espejo del atlas wgpu).
+    /// Copia una región RGBA al atlas de glyphs/UI de pantalla.
     pub(crate) fn upload_hud_atlas_region(
         &self,
         rgba: &[u8],
@@ -126,7 +103,7 @@ impl Vulkan2d {
             Err(FrameAcquire::Outdated) => return Err(SurfacePresentError::Reconfigure),
             Err(FrameAcquire::Skip) => return Err(SurfacePresentError::SkipFrame),
             // Sin más información recuperable: el bucle del motor trata Validation como "siguiente
-            // frame", igual que hace la ruta wgpu hoy.
+            // frame".
             Err(FrameAcquire::Fail(_)) => return Err(SurfacePresentError::Validation),
         };
         let mut renderer = self.lock();

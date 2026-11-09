@@ -70,7 +70,7 @@ impl State {
             self.push_undo_player_ui_hud();
         }
         self.player_ui_object_draw = None;
-        self.player_ui_object_draw_overlay = gizmo::build_from_vertices(&self.device, &[]);
+        self.player_ui_object_draw_overlay = gizmo::build_from_vertices(&[]);
         send_event(&EngineEvent::PlayerUiObjectDrawEnded);
         log::info!("[player-ui] dibujo de objeto HUD cancelado");
     }
@@ -108,7 +108,7 @@ impl State {
                 .map(|s| s.points_ndc.clone())
                 .unwrap_or_default();
             self.player_ui_object_draw = None;
-            self.player_ui_object_draw_overlay = gizmo::build_from_vertices(&self.device, &[]);
+            self.player_ui_object_draw_overlay = gizmo::build_from_vertices(&[]);
             self.create_player_ui_object_from_vertices(&vertices);
             return true;
         }
@@ -234,57 +234,7 @@ impl State {
             .as_ref()
             .map(|s| build_object_draw_overlay_verts(&s.points_ndc, s.cursor_ndc))
             .unwrap_or_default();
-        self.player_ui_object_draw_overlay = gizmo::build_from_vertices(&self.device, &verts);
-    }
-
-    pub(crate) fn draw_player_ui_object_draw_overlay(
-        &self,
-        enc: &mut wgpu::CommandEncoder,
-        view: &wgpu::TextureView,
-    ) -> u32 {
-        if !self.player_ui_edit_active || self.player_ui_object_draw_overlay.vertex_count == 0 {
-            return 0;
-        }
-        const NDC_IDENTITY: [[f32; 4]; 9] = [
-            [1.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
-            [1.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
-            [-1.0, -1.0, 0.0, 0.0],
-        ];
-        self.queue.write_buffer(
-            &self.gizmo_buffer_uni,
-            0,
-            bytemuck::cast_slice(&NDC_IDENTITY),
-        );
-        let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("player-ui-object-draw-overlay-pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view,
-                resolve_target: None,
-                depth_slice: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Load,
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: None,
-            occlusion_query_set: None,
-            timestamp_writes: None,
-            multiview_mask: None,
-        });
-        pass.set_pipeline(&self.gizmo_pipeline);
-        pass.set_bind_group(0, &self.gizmo_bind_group, &[]);
-        pass.set_vertex_buffer(
-            0,
-            self.player_ui_object_draw_overlay.vertex_buffer.slice(..),
-        );
-        pass.draw(0..self.player_ui_object_draw_overlay.vertex_count, 0..1);
-        1
+        self.player_ui_object_draw_overlay = gizmo::build_from_vertices(&verts);
     }
 }
 
@@ -440,7 +390,6 @@ pub(crate) fn ui_hud_rect_from_vertices(vertices: &[[f32; 2]]) -> UiHudRect {
 pub(crate) fn append_object_hud_glyphs(
     objects: &[PlayerUiObject],
     atlas: &mut crate::screen_hud_image::ScreenHudAtlas,
-    queue: &wgpu::Queue,
     instances: &mut Vec<crate::mesh::InstanceData>,
     viewport_w: f32,
     viewport_h: f32,
@@ -465,7 +414,6 @@ pub(crate) fn append_object_hud_glyphs(
             viewport_h,
             texture_cache,
             atlas,
-            queue,
             instances,
             opacity,
         );

@@ -23,7 +23,7 @@ pub(crate) use world_xy::{
 
 #[path = "config_2d/grid_2d.rs"]
 pub(crate) mod grid_2d;
-pub(crate) use grid_2d::{GridBuffer, GridConfig, build_grid, grid_vertices};
+pub(crate) use grid_2d::{GridConfig, grid_vertices};
 
 #[path = "config_2d/physics_2d/mod.rs"]
 pub(crate) mod physics_2d;
@@ -54,7 +54,7 @@ use overlay::{
     build_logical_area_overlay, build_pivot_edit_overlay_with_cross, build_tool_overlay,
     create_quad_xy,
 };
-pub(crate) use overlay::{build_scenario_collision_overlay, collision_overlay_vertices};
+pub(crate) use overlay::collision_overlay_vertices;
 
 // ── Componente exclusivo del modo 2D ─────────────────────────────────────────
 
@@ -284,7 +284,7 @@ impl State {
                 *cursor_world = Some([wx, wy]);
                 let pts_clone = points_world.clone();
                 self.tool_overlay_buffer =
-                    build_tool_overlay(&self.device, &pts_clone, *cursor_world);
+                    build_tool_overlay(&pts_clone, *cursor_world);
             }
             ActiveTool::QuickBuildPlace { cursor_world } => {
                 let (target_x, target_y) = quick_build_snap_target.unwrap_or((wx, wy));
@@ -298,7 +298,7 @@ impl State {
                     }
                     t.position = GlamVec3::new(target_x, target_y, 0.5);
                 }
-                self.tool_overlay_buffer = gizmo::build_from_vertices(&self.device, &[]);
+                self.tool_overlay_buffer = gizmo::build_from_vertices(&[]);
                 send_event(&EngineEvent::QuickBuildMove {
                     x: target_x,
                     y: target_y,
@@ -321,7 +321,7 @@ impl State {
                 if points_world.pop().is_some() {
                     let pts_clone = points_world.clone();
                     self.tool_overlay_buffer =
-                        build_tool_overlay(&self.device, &pts_clone, *cursor_world);
+                        build_tool_overlay(&pts_clone, *cursor_world);
                     send_event(&EngineEvent::DrawingProgress {
                         count: points_world.len() as u32,
                     });
@@ -441,7 +441,7 @@ impl State {
             };
 
             let (w, h) = processed.dimensions();
-            let uv_packed = self.atlas.pack(&self.queue, &processed, w, h);
+            let uv_packed = self.atlas.pack(&processed, w, h);
             let tight_bounds = compute_tight_bounds(&processed);
             let cache_entry = AnimTextureCacheEntry {
                 uv_rect: uv_packed,
@@ -627,7 +627,7 @@ impl State {
         };
 
         let (w, h) = processed.dimensions();
-        let uv = self.atlas.pack(&self.queue, &processed, w, h);
+        let uv = self.atlas.pack(&processed, w, h);
         self.anim_texture_cache.insert(
             cache_key,
             AnimTextureCacheEntry {
@@ -753,7 +753,7 @@ impl State {
                 let uv = if let Some(cached_entry) = self.anim_texture_cache.get(&cache_key) {
                     cached_entry.uv_rect
                 } else {
-                    let u = self.atlas.pack(&self.queue, &img, img_w, img_h);
+                    let u = self.atlas.pack(&img, img_w, img_h);
                     self.anim_texture_cache.insert(
                         cache_key,
                         AnimTextureCacheEntry {
@@ -772,7 +772,6 @@ impl State {
 
         // 4. Overlay combinado: borde cyan + cruceta amarilla en el pivot actual
         self.tool_overlay_buffer = build_pivot_edit_overlay_with_cross(
-            &self.device,
             new_pos,
             GlamVec3::new(new_scale_x, new_scale_y, 1.0),
             pivot_x,
@@ -791,7 +790,7 @@ impl State {
     pub(crate) fn cancel_pivot_edit_mode(&mut self) {
         if let Some((entity_id, _, _, _)) = self.pivot_edit_mode.take() {
             self.restore_animation_frame(entity_id);
-            self.tool_overlay_buffer = gizmo::build_from_vertices(&self.device, &[]);
+            self.tool_overlay_buffer = gizmo::build_from_vertices(&[]);
             log::info!("[cancel_pivot_edit_mode] modo cancelado para entidad {entity_id}");
         }
     }
@@ -817,7 +816,7 @@ impl State {
             .unwrap_or(transform.scale.y);
 
         self.tool_overlay_buffer =
-            build_logical_area_overlay(&self.device, transform.position, orig_scale_y, w, h);
+            build_logical_area_overlay(transform.position, orig_scale_y, w, h);
         self.logical_area_mode = Some(id);
         log::info!("[enter_logical_area_mode] área {w}×{h} para entidad {id}");
     }
@@ -825,7 +824,7 @@ impl State {
     /// Oculta el overlay de área lógica.
     pub(crate) fn cancel_logical_area_mode(&mut self) {
         self.logical_area_mode = None;
-        self.tool_overlay_buffer = gizmo::build_from_vertices(&self.device, &[]);
+        self.tool_overlay_buffer = gizmo::build_from_vertices(&[]);
         log::info!("[cancel_logical_area_mode] overlay ocultado");
     }
 
@@ -862,7 +861,7 @@ impl State {
         // Restaurar sprite original y limpiar modo
         self.pivot_edit_mode = None;
         self.restore_animation_frame(entity_id);
-        self.tool_overlay_buffer = gizmo::build_from_vertices(&self.device, &[]);
+        self.tool_overlay_buffer = gizmo::build_from_vertices(&[]);
 
         log::info!("[handle_pivot_click_2d] pivot ({pivot_x:.1}, {pivot_y:.1}) para {frame_path}");
         true
@@ -908,12 +907,12 @@ impl State {
                         points_world[3],
                     ];
                     self.active_tool = ActiveTool::None;
-                    self.tool_overlay_buffer = gizmo::build_from_vertices(&self.device, &[]);
+                    self.tool_overlay_buffer = gizmo::build_from_vertices(&[]);
                     self.create_collision_box_from_points(&pts, true);
                 } else {
                     let pts_clone: Vec<[f32; 2]> = points_world.clone();
                     self.tool_overlay_buffer =
-                        build_tool_overlay(&self.device, &pts_clone, *cursor_world);
+                        build_tool_overlay(&pts_clone, *cursor_world);
                     send_event(&EngineEvent::DrawingProgress { count });
                 }
                 true
@@ -934,12 +933,12 @@ impl State {
                         points_world[3],
                     ];
                     self.active_tool = ActiveTool::None;
-                    self.tool_overlay_buffer = gizmo::build_from_vertices(&self.device, &[]);
+                    self.tool_overlay_buffer = gizmo::build_from_vertices(&[]);
                     self.create_execution_area_from_points(&pts, true);
                 } else {
                     let pts_clone: Vec<[f32; 2]> = points_world.clone();
                     self.tool_overlay_buffer =
-                        build_tool_overlay(&self.device, &pts_clone, *cursor_world);
+                        build_tool_overlay(&pts_clone, *cursor_world);
                     send_event(&EngineEvent::DrawingProgress { count });
                 }
                 true

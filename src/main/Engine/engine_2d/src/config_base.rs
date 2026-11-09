@@ -24,7 +24,7 @@ impl State {
         self.uv_rects.clear();
         self.static_tex_cache.clear();
         self.anim_texture_cache.clear();
-        self.atlas.reset(&self.queue);
+        self.atlas.reset();
         self.reload_snap_hint_assets();
 
         self.scenario_entities.clear();
@@ -56,7 +56,7 @@ impl State {
         self.ctrl_held = false;
 
         self.active_tool = ActiveTool::None;
-        self.tool_overlay_buffer = gizmo::build_from_vertices(&self.device, &[]);
+        self.tool_overlay_buffer = gizmo::build_from_vertices(&[]);
         self.quick_build_ghost_id = None;
         self.quick_build_preview_path = None;
         self.quick_build_preview_kind = None;
@@ -91,10 +91,10 @@ impl State {
         });
 
         // Cubo central con textura blanca (fallback)
-        let cube = mesh::create_cube(&self.device);
+        let cube = mesh::create_cube();
         self.meshes.push(cube);
         let white_px = [255u8, 255, 255, 255];
-        let uv = self.atlas.pack(&self.queue, &white_px, 1, 1);
+        let uv = self.atlas.pack(&white_px, 1, 1);
         let tex_idx = self.uv_rects.len();
         self.uv_rects.push(uv);
         let cube_id = self.world.spawn(Some("Cube"));
@@ -108,12 +108,7 @@ impl State {
 
         // Cámara base del editor (fallback de uniforms).
         self.camera = Camera::new();
-        self.clear_color = wgpu::Color {
-            r: 0.06,
-            g: 0.06,
-            b: 0.10,
-            a: 1.0,
-        };
+        self.clear_color = [0.06, 0.06, 0.10, 1.0];
 
         log::info!("Escena BASE cargada: estado limpio del editor 2D");
     }

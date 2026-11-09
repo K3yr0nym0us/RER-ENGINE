@@ -9,14 +9,7 @@ use super::character_collision_shape;
 
 /// Quad en el plano XY (normal +Z).
 /// `cx`, `cy` = centro en mundo  |  `w`, `h` = ancho y alto  |  UVs: 0..1
-pub(super) fn create_quad_xy(
-    device: &wgpu::Device,
-    cx: f32,
-    cy: f32,
-    w: f32,
-    h: f32,
-    label: &str,
-) -> Mesh {
+pub(super) fn create_quad_xy(cx: f32, cy: f32, w: f32, h: f32) -> Mesh {
     let hw = w / 2.0;
     let hh = h / 2.0;
     let vertices = vec![
@@ -42,15 +35,11 @@ pub(super) fn create_quad_xy(
         },
     ];
     let indices = vec![0u32, 1, 2, 2, 3, 0];
-    upload(device, &vertices, &indices, label)
+    upload(&vertices, &indices)
 }
 
 /// Construye el GizmoBuffer (LineList) de overlay para la herramienta de dibujo.
-pub(super) fn build_tool_overlay(
-    device: &wgpu::Device,
-    pts: &[[f32; 2]],
-    cursor: Option<[f32; 2]>,
-) -> gizmo::GizmoBuffer {
+pub(super) fn build_tool_overlay(pts: &[[f32; 2]], cursor: Option<[f32; 2]>) -> gizmo::GizmoBuffer {
     const ARM: f32 = 0.15;
     const Z: f32 = 0.1;
     let cross_color = [1.0_f32, 1.0, 1.0, 1.0]; // blanco
@@ -118,13 +107,12 @@ pub(super) fn build_tool_overlay(
         }
     }
 
-    gizmo::build_from_vertices(device, &verts)
+    gizmo::build_from_vertices(&verts)
 }
 
 /// Borde cyan + cruceta amarilla en el pivot actual del frame.
 /// pivot_x, pivot_y: coordenadas en píxeles dentro del frame (0,0 = esquina superior-izquierda).
 pub(super) fn build_pivot_edit_overlay_with_cross(
-    device: &wgpu::Device,
     pos: GlamVec3,
     scale: GlamVec3,
     pivot_x: f32,
@@ -201,20 +189,19 @@ pub(super) fn build_pivot_edit_overlay_with_cross(
         ]);
     }
 
-    gizmo::build_from_vertices(device, &verts)
+    gizmo::build_from_vertices(&verts)
 }
 
 /// Overlay naranja para el área lógica: rectángulo centrado en la entidad
 /// con las dimensiones del bounding box lógico (w×h píxeles → mundo).
 pub(super) fn build_logical_area_overlay(
-    device: &wgpu::Device,
     pos: GlamVec3,
     orig_scale_y: f32,
     w: u32,
     h: u32,
 ) -> gizmo::GizmoBuffer {
     if h == 0 {
-        return gizmo::build_from_vertices(device, &[]);
+        return gizmo::build_from_vertices(&[]);
     }
     let aspect = w as f32 / h as f32;
     let world_h = orig_scale_y;
@@ -261,7 +248,7 @@ pub(super) fn build_logical_area_overlay(
         },
     ];
 
-    gizmo::build_from_vertices(device, &verts)
+    gizmo::build_from_vertices(&verts)
 }
 
 /// Overlay de líneas para escenarios con colisión activa.
@@ -383,13 +370,4 @@ pub(crate) fn collision_overlay_vertices(state: &State) -> Vec<GizmoVertex> {
     }
 
     verts
-}
-
-/// Overlay de líneas de colisión subido al buffer de la ruta wgpu.
-pub(crate) fn build_scenario_collision_overlay(
-    device: &wgpu::Device,
-    state: &State,
-) -> gizmo::GizmoBuffer {
-    let verts = collision_overlay_vertices(state);
-    gizmo::build_from_vertices(device, &verts)
 }

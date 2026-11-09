@@ -4,28 +4,7 @@ use winit::dpi::PhysicalSize;
 use crate::config_2d::Camera2D;
 use crate::config_compat::Camera;
 
-use super::types::{DEPTH_FORMAT, SceneUniforms};
-
-pub(super) fn create_depth_texture(
-    device: &wgpu::Device,
-    config: &wgpu::SurfaceConfiguration,
-) -> wgpu::TextureView {
-    let tex = device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("depth-texture"),
-        size: wgpu::Extent3d {
-            width: config.width.max(1),
-            height: config.height.max(1),
-            depth_or_array_layers: 1,
-        },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: DEPTH_FORMAT,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-        view_formats: &[],
-    });
-    tex.create_view(&wgpu::TextureViewDescriptor::default())
-}
+use super::types::SceneUniforms;
 
 pub(super) fn build_scene_uniforms(camera: &Camera, size: PhysicalSize<u32>) -> SceneUniforms {
     let aspect = size.width as f32 / size.height as f32;

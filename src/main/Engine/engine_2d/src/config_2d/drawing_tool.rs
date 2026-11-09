@@ -19,13 +19,12 @@ impl State {
         color: [u8; 4],
         forced_id: Option<EntityId>,
     ) -> Option<(EntityId, [f32; 3], [f32; 3])> {
-        let (mesh, pos, scale) = create_mesh_from_4_points(pts, &self.device);
+        let (mesh, pos, scale) = create_mesh_from_4_points(pts);
         let mesh_idx = self.meshes.len();
         self.meshes.push(mesh);
 
         let tex_idx = self.uv_rects.len();
-        self.uv_rects
-            .push(self.atlas.pack(&self.queue, &color, 1, 1));
+        self.uv_rects.push(self.atlas.pack(&color, 1, 1));
 
         let entity = if let Some(id) = forced_id {
             if !self.world.spawn_with_id(id, Some(name)) {
@@ -55,10 +54,7 @@ impl State {
 /// `Transform.position = centroid` and `Transform.scale = (bbox_w, bbox_h, 1)`
 /// are consistent with the renderer and AABB picking.
 /// Returns `(Mesh, position[3], scale[3])`.
-pub(super) fn create_mesh_from_4_points(
-    pts: &[[f32; 2]; 4],
-    device: &wgpu::Device,
-) -> (Mesh, [f32; 3], [f32; 3]) {
+pub(super) fn create_mesh_from_4_points(pts: &[[f32; 2]; 4]) -> (Mesh, [f32; 3], [f32; 3]) {
     let cx = pts.iter().map(|p| p[0]).sum::<f32>() / 4.0;
     let cy = pts.iter().map(|p| p[1]).sum::<f32>() / 4.0;
     let min_x = pts.iter().map(|p| p[0]).fold(f32::INFINITY, f32::min);
@@ -85,7 +81,7 @@ pub(super) fn create_mesh_from_4_points(
     let position = [cx, cy, -0.5];
     let scale = [bw, bh, 1.0];
     (
-        upload(device, &vertices, &indices, "collider-quad"),
+        upload(&vertices, &indices),
         position,
         scale,
     )

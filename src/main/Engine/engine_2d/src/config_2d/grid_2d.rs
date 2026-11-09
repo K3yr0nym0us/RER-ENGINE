@@ -7,8 +7,6 @@
 //
 // El buffer se regenera cada vez que cambia la configuración.
 
-use wgpu::util::DeviceExt;
-
 use crate::gizmo::GizmoVertex;
 
 // ── Configuración del mundo / cuadrícula ─────────────────────────────────────
@@ -36,11 +34,6 @@ impl Default for GridConfig {
 }
 
 // ── Buffer de vértices ────────────────────────────────────────────────────────
-
-pub struct GridBuffer {
-    pub vertex_buffer: wgpu::Buffer,
-    pub vertex_count: u32,
-}
 
 /// Construye los vértices de la cuadrícula a partir de la configuración actual.
 /// El eje Z de todas las líneas es 0.5 para que queden en el plano de la
@@ -136,19 +129,4 @@ pub fn grid_vertices(config: &GridConfig) -> Vec<GizmoVertex> {
     }
 
     verts
-}
-
-/// Sube `grid_vertices` al buffer de la ruta wgpu.
-pub fn build_grid(device: &wgpu::Device, config: &GridConfig) -> GridBuffer {
-    let verts = grid_vertices(config);
-    let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some("grid-vbuf"),
-        contents: bytemuck::cast_slice(&verts),
-        usage: wgpu::BufferUsages::VERTEX,
-    });
-
-    GridBuffer {
-        vertex_buffer,
-        vertex_count: verts.len() as u32,
-    }
 }

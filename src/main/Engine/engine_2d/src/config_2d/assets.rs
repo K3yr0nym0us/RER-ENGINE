@@ -2,7 +2,6 @@ use glam::Vec3 as GlamVec3;
 
 use crate::ecs::{MeshComponent, Transform};
 use crate::ipc::{EngineEvent, send_event};
-use crate::texture::GpuTexture;
 
 use crate::entity_save_meta::EntitySaveMeta;
 
@@ -20,7 +19,7 @@ impl State {
 
         // Quad unitario canónico — compartido por TODOS los sprites 2D de la escena.
         // El Transform de cada entidad lo escala y posiciona correctamente.
-        let canonical_quad = create_quad_xy(&self.device, 0.0, 0.0, 1.0, 1.0, "canonical-quad");
+        let canonical_quad = create_quad_xy(0.0, 0.0, 1.0, 1.0);
         self.meshes.push(canonical_quad);
         self.canonical_quad_idx = 0;
 
@@ -34,12 +33,7 @@ impl State {
         });
 
         // Fondo oscuro azulado (estilo Hollow Knight)
-        self.clear_color = wgpu::Color {
-            r: 0.04,
-            g: 0.04,
-            b: 0.10,
-            a: 1.0,
-        };
+        self.clear_color = [0.04, 0.04, 0.10, 1.0];
 
         if !self.suppress_scene_setup_logs {
             log::info!("Escena 2D cargada: plataformer vista lateral");
@@ -95,22 +89,13 @@ impl State {
         let base_world_h = 7.0_f32;
         let base_world_w = base_world_h * aspect;
 
-        let gpu_tex = GpuTexture::from_rgba(
-            &self.device,
-            &self.queue,
-            &img,
-            img_width,
-            img_height,
-            "scenario",
-        );
         let uv = if let Some(&cached_uv) = self.static_tex_cache.get(path) {
             cached_uv
         } else {
-            let u = self.atlas.pack(&self.queue, &img, img_width, img_height);
+            let u = self.atlas.pack(&img, img_width, img_height);
             self.static_tex_cache.insert(path.to_owned(), u);
             u
         };
-        drop(gpu_tex);
         let tex_idx = self.uv_rects.len();
         self.uv_rects.push(uv);
         let scenario_name = display_name
@@ -222,10 +207,7 @@ impl State {
         let world_w = self.grid_config.world_width;
         let world_h = self.grid_config.world_height;
 
-        let gpu_tex =
-            GpuTexture::from_rgba(&self.device, &self.queue, &img, img_w, img_h, "background");
-        let uv = self.atlas.pack(&self.queue, &img, img_w, img_h);
-        drop(gpu_tex);
+        let uv = self.atlas.pack(&img, img_w, img_h);
         let tex_idx = self.uv_rects.len();
         self.uv_rects.push(uv);
         let background_name = self.next_numbered_entity_name(
@@ -313,22 +295,13 @@ impl State {
         let base_world_w = base_world_h * aspect;
         let tight_bounds = compute_tight_bounds(&img);
 
-        let gpu_tex = GpuTexture::from_rgba(
-            &self.device,
-            &self.queue,
-            &img,
-            img_width,
-            img_height,
-            "character",
-        );
         let uv = if let Some(&cached_uv) = self.static_tex_cache.get(path) {
             cached_uv
         } else {
-            let u = self.atlas.pack(&self.queue, &img, img_width, img_height);
+            let u = self.atlas.pack(&img, img_width, img_height);
             self.static_tex_cache.insert(path.to_owned(), u);
             u
         };
-        drop(gpu_tex);
         let tex_idx = self.uv_rects.len();
         self.uv_rects.push(uv);
         let character_name = display_name
@@ -439,22 +412,13 @@ impl State {
         let base_world_h = self.grid_config.cell_size * 0.75;
         let base_world_w = base_world_h * aspect;
 
-        let gpu_tex = GpuTexture::from_rgba(
-            &self.device,
-            &self.queue,
-            &img,
-            img_width,
-            img_height,
-            "projectile",
-        );
         let uv = if let Some(&cached_uv) = self.static_tex_cache.get(path) {
             cached_uv
         } else {
-            let u = self.atlas.pack(&self.queue, &img, img_width, img_height);
+            let u = self.atlas.pack(&img, img_width, img_height);
             self.static_tex_cache.insert(path.to_owned(), u);
             u
         };
-        drop(gpu_tex);
         let tex_idx = self.uv_rects.len();
         self.uv_rects.push(uv);
         let projectile_name = display_name
@@ -576,12 +540,12 @@ impl State {
             if let Some(&cached_uv) = self.static_tex_cache.get(path) {
                 cached_uv
             } else {
-                let u = self.atlas.pack(&self.queue, img.as_raw(), img_w, img_h);
+                let u = self.atlas.pack(img.as_raw(), img_w, img_h);
                 self.static_tex_cache.insert(path.to_owned(), u);
                 u
             }
         } else {
-            self.atlas.pack(&self.queue, img.as_raw(), img_w, img_h)
+            self.atlas.pack(img.as_raw(), img_w, img_h)
         };
         let tex_idx = self.uv_rects.len();
         self.uv_rects.push(uv);

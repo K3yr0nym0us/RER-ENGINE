@@ -12,8 +12,6 @@ path = "src/main.rs"
 
 [dependencies]
 winit.workspace = true
-wgpu.workspace = true
-pollster.workspace = true
 glam.workspace = true
 bytemuck.workspace = true
 serde.workspace = true
@@ -28,7 +26,6 @@ raw-window-handle.workspace = true
 gilrs.workspace = true
 zip.workspace = true
 # `vulkan`: el núcleo Ash compartido (contexto, swapchain, barreras) que usa `src/vulkan/` del 2D.
-# Se mantiene la fachada wgpu (feature default `gpu`) hasta la fase 6 de la migración.
 rer-engine-shared = { path = "../engine_shared", features = ["vulkan"] }
 ash.workspace = true
 rer-engine-ipc-common = { path = "../engine_ipc_common" }

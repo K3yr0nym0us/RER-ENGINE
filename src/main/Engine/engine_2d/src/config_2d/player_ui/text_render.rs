@@ -95,7 +95,6 @@ pub(crate) fn append_text_glyphs(
             vw,
             vh,
             &mut state.player_ui_text_atlas,
-            &state.queue,
             &mut state.player_ui_glyph_instances,
         );
     }
@@ -103,11 +102,11 @@ pub(crate) fn append_text_glyphs(
 
 pub(crate) fn rebuild_caret_buffer(state: &mut State, edit_id: u32) {
     let Some(b) = state.player_ui_boxes_for_id(edit_id).cloned() else {
-        state.player_ui_caret_buffer = gizmo::build_from_vertices(&state.device, &[]);
+        state.player_ui_caret_buffer = gizmo::build_from_vertices(&[]);
         return;
     };
     let Some(font) = state.player_ui_font_cached(&b.font_path) else {
-        state.player_ui_caret_buffer = gizmo::build_from_vertices(&state.device, &[]);
+        state.player_ui_caret_buffer = gizmo::build_from_vertices(&[]);
         return;
     };
     let vw = state.size.width.max(1) as f32;
@@ -115,7 +114,7 @@ pub(crate) fn rebuild_caret_buffer(state: &mut State, edit_id: u32) {
     let rect = b.ui_hud_rect();
     let Some(line) = text_caret_line_ndc(&font, &b.text, state.player_ui_text_caret, &rect, vw, vh)
     else {
-        state.player_ui_caret_buffer = gizmo::build_from_vertices(&state.device, &[]);
+        state.player_ui_caret_buffer = gizmo::build_from_vertices(&[]);
         return;
     };
     let mut verts = Vec::new();
@@ -125,5 +124,5 @@ pub(crate) fn rebuild_caret_buffer(state: &mut State, edit_id: u32) {
         [line.x, line.y1, 0.0],
         [1.0, 1.0, 1.0, 0.95],
     );
-    state.player_ui_caret_buffer = gizmo::build_from_vertices(&state.device, &verts);
+    state.player_ui_caret_buffer = gizmo::build_from_vertices(&verts);
 }

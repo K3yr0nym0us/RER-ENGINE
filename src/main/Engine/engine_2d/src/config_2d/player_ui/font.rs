@@ -139,7 +139,6 @@ pub(crate) fn build_hud_label_glyph(
     viewport_w: f32,
     viewport_h: f32,
     atlas: &mut ScreenHudAtlas,
-    queue: &wgpu::Queue,
     out: &mut Vec<mesh::InstanceData>,
 ) {
     if viewport_w <= 0.0 || viewport_h <= 0.0 || text.is_empty() {
@@ -154,7 +153,7 @@ pub(crate) fn build_hud_label_glyph(
         return;
     };
 
-    let packed = atlas.pack_rgba(queue, &rgba, width_px, height_px);
+    let packed = atlas.pack_rgba(&rgba, width_px, height_px);
 
     let hw = box_rect.width * 0.5;
     let hh = box_rect.height * 0.5;
@@ -183,7 +182,6 @@ pub(crate) fn pack_hud_texture_cached(
     path: &str,
     cache: &mut std::collections::HashMap<String, ScreenHudPackedImage>,
     atlas: &mut ScreenHudAtlas,
-    queue: &wgpu::Queue,
 ) -> Option<ScreenHudPackedImage> {
     if let Some(packed) = cache.get(path) {
         return Some(*packed);
@@ -200,7 +198,7 @@ pub(crate) fn pack_hud_texture_cached(
     if w == 0 || h == 0 {
         return None;
     }
-    let packed = atlas.pack_rgba(queue, img.as_raw(), w, h);
+    let packed = atlas.pack_rgba(img.as_raw(), w, h);
     cache.insert(path.to_string(), packed);
     Some(packed)
 }
@@ -251,11 +249,10 @@ pub(crate) fn build_hud_texture_quad_cached(
     viewport_h: f32,
     cache: &mut std::collections::HashMap<String, ScreenHudPackedImage>,
     atlas: &mut ScreenHudAtlas,
-    queue: &wgpu::Queue,
     out: &mut Vec<mesh::InstanceData>,
     opacity: f32,
 ) {
-    let Some(packed) = pack_hud_texture_cached(path, cache, atlas, queue) else {
+    let Some(packed) = pack_hud_texture_cached(path, cache, atlas) else {
         log::warn!("[player-ui] textura no legible: {path}");
         return;
     };

@@ -2,8 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Instant;
 
-use rer_engine_shared::gpu::{EngineGpuProfile, GpuInitError, init_gpu};
-use wgpu::{include_wgsl, util::DeviceExt};
+use rer_engine_shared::gpu::GpuInitError;
 use winit::window::Window;
 
 use crate::config_2d::{ActiveTool, GridConfig, PhysicsWorld2D};
@@ -13,107 +12,23 @@ use crate::entity_save_meta::EntitySaveRegistry;
 use crate::gizmo;
 use crate::mesh;
 use crate::scripting::{ScriptEngine, ScriptEngineProfile};
-use crate::texture::GpuTexture;
 
 use super::State;
 use super::audio::start_audio_thread;
-use super::render_helpers::{build_scene_uniforms, create_depth_texture};
-use super::types::{DEPTH_FORMAT, ScreenHudSceneUniforms};
 
 impl State {
-    /// Inicializa wgpu (motor 2D: siempre Vulkan vía `rer_engine_shared::gpu`).
-    pub async fn new(window: Arc<Window>) -> Result<Self, GpuInitError> {
+    /// Inicializa el contexto Vulkan (Ash) y los recursos CPU del motor.
+    pub fn new(window: Arc<Window>) -> Result<Self, GpuInitError> {
         let size = window.inner_size();
 
-        let (_instance, surface, adapter) =
-            init_gpu(window.clone(), EngineGpuProfile::TwoD).await?;
+        let vulkan2d = Arc::new(
+            crate::vulkan::Vulkan2d::new(window.as_ref()).map_err(|error| GpuInitError {
+                message: error.to_string(),
+            })?,
+        );
 
-        // Ruta en paralelo (fase 2 del plan de migración a Ash). Con `RER_2D_VULKAN=1` el frame se
-        // presenta por Vulkan y el camino wgpu queda inactivo en `render()`; sin la variable esto
-        // es `None` y el motor se comporta exactamente igual que antes.
-        let vulkan2d = if crate::vulkan::enabled_from_env() {
-            Some(Arc::new(
-                crate::vulkan::Vulkan2d::new(window.as_ref()).map_err(|error| GpuInitError {
-                    message: error.to_string(),
-                })?,
-            ))
-        } else {
-            None
-        };
-
-        // ── Device & Queue ────────────────────────────────────────────────────
-        let (device, queue) = adapter
-            .request_device(&wgpu::DeviceDescriptor {
-                label: Some("oxide-device"),
-                required_features: wgpu::Features::empty(),
-                required_limits: wgpu::Limits::default(),
-                memory_hints: Default::default(),
-                experimental_features: wgpu::ExperimentalFeatures::disabled(),
-                trace: wgpu::Trace::Off,
-            })
-            .await
-            .expect("no se pudo crear el Device");
-
-        // ── Surface config ────────────────────────────────────────────────────
-        let caps = surface.get_capabilities(&adapter);
-        let format = caps
-            .formats
-            .iter()
-            .find(|f| f.is_srgb())
-            .copied()
-            .unwrap_or(caps.formats[0]);
-        let config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format,
-            width: size.width.max(1),
-            height: size.height.max(1),
-            present_mode: wgpu::PresentMode::AutoNoVsync,
-            alpha_mode: caps.alpha_modes[0],
-            view_formats: vec![],
-            desired_maximum_frame_latency: 2,
-        };
-        surface.configure(&device, &config);
-
-        // ── Depth texture ─────────────────────────────────────────────────────
-        let depth_view = create_depth_texture(&device, &config);
-
-        // ── Uniforms buffer (compartido por todo el frame) ──────────────────
-        let camera = Camera::new();
-        let uniforms = build_scene_uniforms(&camera, size);
-
-        // ── Bind group layout group 0 (uniforms) ─────────────────────────────────
-        let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("scene-bgl"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        });
-        // Buffer de uniforms de escena (view_proj + cam_pos, compartido por todos los sprites)
-        let scene_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("scene-uniforms"),
-            contents: bytemuck::cast_slice(&[uniforms]),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-        let scene_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("scene-bg"),
-            layout: &bgl,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: scene_buf.as_entire_binding(),
-            }],
-        });
-
-        // ── Bind group layout group 1 (textura) + atlas ─────────────────────────────
-        let texture_bgl = GpuTexture::bind_group_layout(&device);
-        let mut atlas =
-            crate::texture::TextureAtlas::new(&device, &queue, &texture_bgl, vulkan2d.clone());
+        // ── Atlas de sprites ──────────────────────────────────────────────────
+        let mut atlas = crate::texture::TextureAtlas::new(vulkan2d.clone());
         let fallback_uv = crate::texture::TextureAtlas::fallback_uv();
 
         // Checkerboard para el plano de suelo (tex_idx=0).
@@ -131,12 +46,11 @@ impl State {
             }
             px
         };
-        let checker_uv = atlas.pack(&queue, &checker_pixels, 128, 128);
+        let checker_uv = atlas.pack(&checker_pixels, 128, 128);
         let uv_rects = vec![checker_uv]; // idx 0 = checkerboard (plano de suelo)
 
         // Hint visual de snap (Ctrl): carga versión ES y EN del PNG en el atlas.
         let load_snap_hint = |atlas: &mut crate::texture::TextureAtlas,
-                              queue: &wgpu::Queue,
                               filename: &str|
          -> (Option<[f32; 4]>, (f32, f32)) {
             let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -153,7 +67,7 @@ impl State {
                         Ok(img) => {
                             let img = img.to_rgba8();
                             let (w, h) = img.dimensions();
-                            let uv = atlas.pack(queue, img.as_raw(), w, h);
+                            let uv = atlas.pack(img.as_raw(), w, h);
                             (Some(uv), (w as f32, h as f32))
                         }
                         Err(e) => {
@@ -173,130 +87,12 @@ impl State {
             }
         };
         let (snap_hint_uv, snap_hint_size) =
-            load_snap_hint(&mut atlas, &queue, "tooltip-btn-ctrl-to-auto-adjust.png");
-        let (snap_hint_uv_en, snap_hint_size_en) = load_snap_hint(
-            &mut atlas,
-            &queue,
-            "tooltip-btn-ctrl-to-auto-adjust-english.png",
-        );
-
-        // ── Pipeline ─────────────────────────────────────────────────────────
-        let shader = device.create_shader_module(include_wgsl!("../shader.wgsl"));
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("pipeline-layout"),
-            bind_group_layouts: &[Some(&bgl), Some(&texture_bgl)],
-            immediate_size: 0,
-        });
-        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("main-pipeline"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                buffers: &[mesh::Vertex::desc(), mesh::InstanceData::desc()],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                cull_mode: Some(wgpu::Face::Back),
-                ..Default::default()
-            },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: DEPTH_FORMAT,
-                depth_write_enabled: Some(true),
-                depth_compare: Some(wgpu::CompareFunction::Less),
-                stencil: wgpu::StencilState::default(),
-                bias: wgpu::DepthBiasState::default(),
-            }),
-            multisample: wgpu::MultisampleState::default(),
-            multiview_mask: None,
-            cache: None,
-        });
-
-        // Pipeline 2D: sin depth-write ni depth-test — el orden back-to-front
-        // ya garantiza el orden correcto y el alpha blending funciona bien.
-        let render_pipeline_2d = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("main-pipeline-2d"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                buffers: &[mesh::Vertex::desc(), mesh::InstanceData::desc()],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                cull_mode: None,
-                ..Default::default()
-            },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: DEPTH_FORMAT,
-                depth_write_enabled: Some(false),
-                depth_compare: Some(wgpu::CompareFunction::Always),
-                stencil: wgpu::StencilState::default(),
-                bias: wgpu::DepthBiasState::default(),
-            }),
-            multisample: wgpu::MultisampleState::default(),
-            multiview_mask: None,
-            cache: None,
-        });
-
-        let render_pipeline_overlay =
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("sprite-overlay-pipeline"),
-                layout: Some(&pipeline_layout),
-                vertex: wgpu::VertexState {
-                    module: &shader,
-                    entry_point: Some("vs_main"),
-                    buffers: &[mesh::Vertex::desc(), mesh::InstanceData::desc()],
-                    compilation_options: Default::default(),
-                },
-                fragment: Some(wgpu::FragmentState {
-                    module: &shader,
-                    entry_point: Some("fs_overlay"),
-                    targets: &[Some(wgpu::ColorTargetState {
-                        format,
-                        blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                        write_mask: wgpu::ColorWrites::ALL,
-                    })],
-                    compilation_options: Default::default(),
-                }),
-                primitive: wgpu::PrimitiveState {
-                    cull_mode: None,
-                    ..Default::default()
-                },
-                depth_stencil: Some(wgpu::DepthStencilState {
-                    format: DEPTH_FORMAT,
-                    depth_write_enabled: Some(false),
-                    depth_compare: Some(wgpu::CompareFunction::Always),
-                    stencil: wgpu::StencilState::default(),
-                    bias: wgpu::DepthBiasState::default(),
-                }),
-                multisample: wgpu::MultisampleState::default(),
-                multiview_mask: None,
-                cache: None,
-            });
+            load_snap_hint(&mut atlas, "tooltip-btn-ctrl-to-auto-adjust.png");
+        let (snap_hint_uv_en, snap_hint_size_en) =
+            load_snap_hint(&mut atlas, "tooltip-btn-ctrl-to-auto-adjust-english.png");
 
         // ── Escenario base del editor 2D ─────────────────────────────────────
-        let ground_plane = crate::config_compat::mesh::create_ground_plane(&device);
+        let ground_plane = crate::config_compat::mesh::create_ground_plane();
         let meshes = vec![ground_plane];
         let mut world = World::new();
         // Entidad del plano
@@ -308,7 +104,6 @@ impl State {
                 tex_idx: 0,
             },
         );
-        // Textura checkerboard para el plano base (UV idx 0 ya en uv_rects)
         // Cámara base del editor para estados sin cámara ortográfica inicializada.
         let mut camera = Camera::new();
         camera.target = glam::Vec3::new(0.0, 1.75, 5.0);
@@ -316,256 +111,30 @@ impl State {
         camera.yaw = -std::f32::consts::FRAC_PI_2;
         camera.distance = 0.01; // muy cerca — simula la posición del ojo
 
-        // ── Pipeline de gizmos (LineList, sin depth write) ───────────────────
-        let gizmo_shader = device.create_shader_module(include_wgsl!("../gizmo.wgsl"));
-        let gizmo_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("gizmo-bgl"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        });
-        // Uniform de gizmo: view_proj + model + flags (144 bytes)
-        let gizmo_uni_data: [[f32; 4]; 9] = [
-            [1.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
-            [1.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
-            [-1.0, -1.0, 0.0, 0.0], // flags: hovered_axis, active_axis
-        ];
-        let gizmo_buffer_uni = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("gizmo-uni"),
-            contents: bytemuck::cast_slice(&gizmo_uni_data),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-        let gizmo_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("gizmo-bg"),
-            layout: &gizmo_bgl,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: gizmo_buffer_uni.as_entire_binding(),
-            }],
-        });
-        let gizmo_pl_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("gizmo-pl-layout"),
-            bind_group_layouts: &[Some(&gizmo_bgl)],
-            immediate_size: 0,
-        });
-        let gizmo_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("gizmo-pipeline"),
-            layout: Some(&gizmo_pl_layout),
-            vertex: wgpu::VertexState {
-                module: &gizmo_shader,
-                entry_point: Some("vs_main"),
-                buffers: &[gizmo::GizmoVertex::desc()],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &gizmo_shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                cull_mode: None,
-                ..Default::default()
-            },
-            // Sin depth test — los gizmos siempre visibles
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            multiview_mask: None,
-            cache: None,
-        });
-        let gizmo_buffer = gizmo::build_axes(&device, 1.14);
-        let tool_overlay_buffer_init = gizmo::build_from_vertices(&device, &[]);
+        // ── Overlays (CPU): el renderer Ash los sube cada frame ───────────────
+        let tool_overlay_buffer_init = gizmo::build_from_vertices(&[]);
+        let ui_work_grid_buffer = gizmo::build_from_vertices(&[]);
+        let player_ui_text_overlay_buffer = gizmo::build_from_vertices(&[]);
+        let player_ui_caret_buffer = gizmo::build_from_vertices(&[]);
+        let player_ui_object_draw_overlay = gizmo::build_from_vertices(&[]);
 
-        // ── Pipeline de grid (LineList, sin depth, reutiliza shader de gizmo) ──
-        let grid_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("grid-pipeline"),
-            layout: Some(&gizmo_pl_layout),
-            vertex: wgpu::VertexState {
-                module: &gizmo_shader,
-                entry_point: Some("vs_main"),
-                buffers: &[gizmo::GizmoVertex::desc()],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &gizmo_shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::LineList,
-                cull_mode: None,
-                ..Default::default()
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            multiview_mask: None,
-            cache: None,
-        });
-        // Buffer de uniforms del grid (view_proj se actualiza en render; model = identity; flags = -1)
-        let grid_uni_identity: [[f32; 4]; 9] = [
-            [1.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
-            [1.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
-            [-1.0, -1.0, 0.0, 0.0],
-        ];
-        let grid_buffer_uni = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("grid-uni"),
-            contents: bytemuck::cast_slice(&grid_uni_identity),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-        let grid_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("grid-bg"),
-            layout: &gizmo_bgl,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: grid_buffer_uni.as_entire_binding(),
-            }],
-        });
         let grid_config = GridConfig::default();
-        let grid_buffer = crate::config_2d::build_grid(&device, &grid_config);
 
-        let ui_work_grid_buffer = gizmo::build_from_vertices(&device, &[]);
-        let player_ui_text_overlay_buffer = gizmo::build_from_vertices(&device, &[]);
-        let player_ui_caret_buffer = gizmo::build_from_vertices(&device, &[]);
-        let player_ui_object_draw_overlay = gizmo::build_from_vertices(&device, &[]);
-
-        let screen_hud_bgl = crate::screen_hud_image::ScreenHudAtlas::bind_group_layout(&device);
-        let player_ui_text_atlas = crate::screen_hud_image::ScreenHudAtlas::new(
-            &device,
-            &queue,
-            &screen_hud_bgl,
-            vulkan2d.clone(),
-        );
-
-        let screen_hud_shader =
-            device.create_shader_module(include_wgsl!("../shader_screen_hud.wgsl"));
-        let screen_hud_scene_bgl =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("screen-hud-scene-bgl"),
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                }],
-            });
-        let hud_scene_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("hud-scene-uniforms"),
-            contents: bytemuck::cast_slice(&[ScreenHudSceneUniforms::ndc_identity()]),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-        let hud_scene_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("hud-scene-bg"),
-            layout: &screen_hud_scene_bgl,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: hud_scene_buf.as_entire_binding(),
-            }],
-        });
-        let screen_hud_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("screen-hud-pipeline-layout"),
-                bind_group_layouts: &[Some(&screen_hud_scene_bgl), Some(&screen_hud_bgl)],
-                immediate_size: 0,
-            });
-        let screen_hud_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("screen-hud-pipeline"),
-            layout: Some(&screen_hud_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &screen_hud_shader,
-                entry_point: Some("vs_screen_hud"),
-                buffers: &[mesh::Vertex::desc(), mesh::InstanceData::desc()],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &screen_hud_shader,
-                entry_point: Some("fs_screen_hud"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                cull_mode: None,
-                ..Default::default()
-            },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: DEPTH_FORMAT,
-                depth_write_enabled: Some(false),
-                depth_compare: Some(wgpu::CompareFunction::Always),
-                stencil: wgpu::StencilState::default(),
-                bias: wgpu::DepthBiasState::default(),
-            }),
-            multisample: wgpu::MultisampleState::default(),
-            multiview_mask: None,
-            cache: None,
-        });
-        let hud_quad_mesh = mesh::create_unit_quad_xy(&device);
+        // ── Atlas HUD de pantalla + quad instanciado ──────────────────────────
+        let player_ui_text_atlas = crate::screen_hud_image::ScreenHudAtlas::new(vulkan2d.clone());
+        let hud_quad_mesh = mesh::create_unit_quad_xy();
 
         // ── Audio: thread dedicado ──────────────────────────────────────────────
         // El thread de audio vive independiente del render thread para que la
-        // creaci\u00f3n/destrucci\u00f3n de Sinks de rodio (que puede bloquear en ALSA/PulseAudio)
+        // creación/destrucción de Sinks de rodio (que puede bloquear en ALSA/PulseAudio)
         // nunca detenga el render loop ni cause drift en el timing de animaciones.
         let audio_slot = start_audio_thread();
 
-        let scene_target =
-            crate::scene_target::SceneTarget::new(&device, format, size.width, size.height);
-
         Ok(Self {
             window,
-            surface,
-            device,
-            queue,
-            config,
             size,
-            clear_color: wgpu::Color {
-                r: 0.06,
-                g: 0.06,
-                b: 0.10,
-                a: 1.0,
-            },
+            clear_color: [0.06, 0.06, 0.10, 1.0],
             vulkan2d,
-            render_pipeline,
-            render_pipeline_2d,
-            render_pipeline_overlay,
-            depth_view,
-            scene_target,
-            scene_buffer: scene_buf,
-            scene_bind_group: scene_bg,
             atlas,
             uv_rects,
             fallback_uv,
@@ -578,10 +147,6 @@ impl State {
             world,
             last_frame: Instant::now(),
             delta_time: 0.0,
-            gizmo_pipeline,
-            gizmo_buffer,
-            gizmo_bind_group,
-            gizmo_buffer_uni,
             physics_2d: PhysicsWorld2D::new(),
             selected_entity: None,
             selected_entities: Vec::new(),
@@ -598,10 +163,6 @@ impl State {
             background_entity: None,
             background_path: None,
             grid_config,
-            grid_pipeline,
-            grid_buffer,
-            grid_bind_group,
-            grid_buffer_uni,
             ctrl_held: false,
             shift_held: false,
             active_tool: ActiveTool::None,
@@ -629,7 +190,6 @@ impl State {
             player_ui_hud_texture_cache: HashMap::new(),
             player_ui_font_cache: HashMap::new(),
             player_ui_glyph_instances: Vec::new(),
-            player_ui_glyph_instance_buffer: None,
             player_ui_selected_text_id: None,
             player_ui_selected_button_id: None,
             player_ui_selected_image_id: None,
@@ -640,8 +200,6 @@ impl State {
             player_ui_caret_buffer,
             player_ui_text_drag: None,
             player_ui_last_text_click: None,
-            screen_hud_pipeline,
-            hud_scene_bind_group,
             hud_quad_mesh,
             hud_image_store: HashMap::new(),
             debug_mode: false,

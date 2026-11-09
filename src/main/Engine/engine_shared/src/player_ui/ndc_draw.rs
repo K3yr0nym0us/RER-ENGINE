@@ -11,23 +11,6 @@ pub struct NdcVertex {
     pub color: [f32; 4],
 }
 
-impl NdcVertex {
-    // El layout de vértices es de wgpu; el motor 3D tiene el suyo (Ash), así que solo existe con
-    // la feature `gpu`. La geometría NDC de arriba (`push_quad`, `push_line_segment`, …) es pura.
-    #[cfg(feature = "gpu")]
-    const ATTRIBS: [wgpu::VertexAttribute; 2] =
-        wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x4];
-
-    #[cfg(feature = "gpu")]
-    pub fn desc() -> wgpu::VertexBufferLayout<'static> {
-        wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<Self>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &Self::ATTRIBS,
-        }
-    }
-}
-
 pub fn push_quad(
     verts: &mut Vec<NdcVertex>,
     p0: [f32; 3],

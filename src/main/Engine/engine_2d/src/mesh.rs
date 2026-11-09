@@ -1,5 +1,4 @@
 use bytemuck::{Pod, Zeroable};
-use wgpu::util::DeviceExt;
 
 // ---------------------------------------------------------------------------
 // Vértice — layout debe coincidir con el shader (location 0,1,2)
@@ -12,32 +11,13 @@ pub struct Vertex {
     pub uv: [f32; 2],
 }
 
-impl Vertex {
-    const ATTRIBS: [wgpu::VertexAttribute; 3] = wgpu::vertex_attr_array![
-        0 => Float32x3,  // position
-        1 => Float32x3,  // normal
-        2 => Float32x2,  // uv
-    ];
-
-    pub fn desc() -> wgpu::VertexBufferLayout<'static> {
-        wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<Self>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &Self::ATTRIBS,
-        }
-    }
-}
-
 // ---------------------------------------------------------------------------
-// Mesh en GPU
+// Mesh (CPU)
 // ---------------------------------------------------------------------------
+/// Geometría de una malla en CPU. El renderer Ash crea y posee sus propios `VkBuffer` a partir de
+/// estos datos (`ensure_meshes`); el motor ya no guarda buffers gráficos por malla.
 pub struct Mesh {
-    pub vertex_buffer: wgpu::Buffer,
-    pub index_buffer: wgpu::Buffer,
     pub index_count: u32,
-    /// Copia CPU de la geometría. La ruta Vulkan (fase 5) no puede leer los buffers de wgpu, así
-    /// que reutiliza estos datos para crear sus propios `VkBuffer`. Mantenerlos es barato: las
-    /// mallas del 2D son quads y el cubo de 24 vértices.
     pub vertices: Vec<Vertex>,
     pub indices: Vec<u32>,
 }
@@ -45,7 +25,7 @@ pub struct Mesh {
 // ---------------------------------------------------------------------------
 // Cubo procedural — siempre disponible sin necesitar un archivo externo
 // ---------------------------------------------------------------------------
-pub fn create_cube(device: &wgpu::Device) -> Mesh {
+pub fn create_cube() -> Mesh {
     #[rustfmt::skip]
     let vertices: Vec<Vertex> = vec![
         // Front  (z =+0.5)
@@ -90,7 +70,7 @@ pub fn create_cube(device: &wgpu::Device) -> Mesh {
         20, 21, 22, 22, 23, 20,  // Left
     ];
 
-    upload(device, &vertices, &indices, "cube")
+    upload(&vertices, &indices)
 }
 
 // ---------------------------------------------------------------------------
@@ -103,7 +83,7 @@ pub fn create_cube(device: &wgpu::Device) -> Mesh {
 ///   offset 64..80  → flag_pad  (x = selection flag, yzw = unused)
 ///   offset 80..96  → uv_rect   [u_min, v_min, u_max, v_max] en el atlas
 ///
-/// Matches WGSL `InstanceInput` locations 3..8.
+/// Matches the GLSL instance locations 3..8.
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct InstanceData {
@@ -113,23 +93,6 @@ pub struct InstanceData {
 }
 
 impl InstanceData {
-    const ATTRIBS: [wgpu::VertexAttribute; 6] = wgpu::vertex_attr_array![
-        3 => Float32x4,  // model col 0
-        4 => Float32x4,  // model col 1
-        5 => Float32x4,  // model col 2
-        6 => Float32x4,  // model col 3
-        7 => Float32x4,  // flag_pad
-        8 => Float32x4,  // uv_rect  ← nuevo
-    ];
-
-    pub fn desc() -> wgpu::VertexBufferLayout<'static> {
-        wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<Self>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Instance,
-            attributes: &Self::ATTRIBS,
-        }
-    }
-
     pub fn new(model: glam::Mat4, flag: f32, uv_rect: [f32; 4]) -> Self {
         Self {
             model: model.to_cols_array_2d(),
@@ -140,12 +103,10 @@ impl InstanceData {
 }
 
 // ---------------------------------------------------------------------------
-// Loader de archivos .glb / .gltf
-// ---------------------------------------------------------------------------
-// Helper: sube vértices e índices a la GPU
+// Geometría
 // ---------------------------------------------------------------------------
 /// Quad unitario en el plano XY (Z=0), normal +Z; para overlays HUD texturizados.
-pub fn create_unit_quad_xy(device: &wgpu::Device) -> Mesh {
+pub fn create_unit_quad_xy() -> Mesh {
     #[rustfmt::skip]
     let vertices: Vec<Vertex> = vec![
         Vertex { position: [-0.5, -0.5, 0.0], normal: [0.0, 0.0, 1.0], uv: [0.0, 1.0] },
@@ -154,28 +115,12 @@ pub fn create_unit_quad_xy(device: &wgpu::Device) -> Mesh {
         Vertex { position: [-0.5,  0.5, 0.0], normal: [0.0, 0.0, 1.0], uv: [0.0, 0.0] },
     ];
     let indices: Vec<u32> = vec![0, 1, 2, 2, 3, 0];
-    upload(device, &vertices, &indices, "unit-quad-xy")
+    upload(&vertices, &indices)
 }
 
-pub(crate) fn upload(
-    device: &wgpu::Device,
-    vertices: &[Vertex],
-    indices: &[u32],
-    label: &str,
-) -> Mesh {
-    let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some(&format!("{label}-vbo")),
-        contents: bytemuck::cast_slice(vertices),
-        usage: wgpu::BufferUsages::VERTEX,
-    });
-    let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some(&format!("{label}-ibo")),
-        contents: bytemuck::cast_slice(indices),
-        usage: wgpu::BufferUsages::INDEX,
-    });
+/// Envuelve vértices e índices en una `Mesh` CPU.
+pub(crate) fn upload(vertices: &[Vertex], indices: &[u32]) -> Mesh {
     Mesh {
-        vertex_buffer,
-        index_buffer,
         index_count: indices.len() as u32,
         vertices: vertices.to_vec(),
         indices: indices.to_vec(),

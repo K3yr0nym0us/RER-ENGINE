@@ -9,7 +9,6 @@ mod ipc;
 mod mesh;
 mod on_keep;
 mod on_press;
-mod scene_target;
 mod screen_hud_image;
 mod scripting;
 mod spatial;
@@ -36,7 +35,6 @@ use winit::{
 };
 
 use ipc::{EngineCommand, EngineCommandCommon, EngineEvent};
-use rer_engine_shared::gpu::{EngineGpuProfile, resolve_backend};
 use rer_engine_shared::overlay::{OverlayConfig, parse_overlay_config};
 use rer_engine_shared::platform::TrackerOffset;
 use rer_engine_shared::platform::query_shift_held_os;
@@ -259,7 +257,7 @@ impl App {
 
 impl ApplicationHandler<EngineCommand> for App {
     /// Llamado al iniciar (y al volver de suspensión en móvil).
-    /// Aquí creamos la ventana y el estado wgpu.
+    /// Aquí creamos la ventana y el estado Vulkan.
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.state.is_some() {
             return;
@@ -292,7 +290,7 @@ impl ApplicationHandler<EngineCommand> for App {
 
         self.setup_overlay_tracking(&window);
 
-        match pollster::block_on(engine::State::new(Arc::clone(&window))) {
+        match engine::State::new(Arc::clone(&window)) {
             Ok(state) => {
                 ipc::send_event(&EngineEvent::Ready {
                     gravity: state.physics_2d.gravity_magnitude(),
@@ -812,11 +810,9 @@ impl ApplicationHandler<EngineCommand> for App {
 }
 fn main() {
     // Logs van a stderr; IPC usa stdout.
-    // wgpu_hal::vulkan genera spam de "Suboptimal present" y warnings de capas
-    // en entornos sin GPU hardware — subirlos a error los silencia.
     rer_engine_shared::logging::init(
         // `rer_engine_2d=info` permite ver logs de colisión/física sin RUST_LOG.
-        "rer_engine_2d=info,warn,wgpu_core=warn,wgpu_hal::vulkan::conv=error,wgpu_hal::vulkan::instance=error,wgpu_hal=warn,naga=warn",
+        "rer_engine_2d=info,warn",
     );
 
     // Canal IPC: hilo stdin → event loop vía EventLoopProxy (despierta el loop inmediatamente)
@@ -830,7 +826,7 @@ fn main() {
     // NO usar Poll aquí: Poll + request_redraw en RedrawRequested = busy loop al 100% CPU.
 
     let overlay = parse_overlay_config();
-    let gpu = resolve_backend(EngineGpuProfile::TwoD).label();
+    let gpu = "Vulkan";
     if overlay.is_some() {
         log::info!("Modo overlay activado (GPU: {gpu})");
     } else {

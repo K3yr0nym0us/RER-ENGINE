@@ -29,14 +29,13 @@ mod vulkan_render;
 use audio::AudioSlot;
 #[allow(unused_imports)]
 pub use audio::{AudioCmd, DecodedAudio};
-use render_helpers::create_depth_texture;
 #[allow(unused_imports)]
 pub(crate) use render_helpers::is_visible_2d;
 pub use types::{ActiveAnimation, AnimTextureCacheEntry, AnimationState};
 pub(crate) use types::{EntityTransformSnapshot, PendingSlide, UndoAction};
 
 use crate::config_2d::ActiveTool;
-use crate::config_2d::{GridBuffer, GridConfig};
+use crate::config_2d::GridConfig;
 
 use crate::config_2d::Camera2D;
 use crate::config_2d::PhysicsWorld2D;
@@ -52,33 +51,13 @@ use crate::ecs::EntityId;
 
 pub struct State {
     pub(crate) window: Arc<Window>,
-    pub(crate) surface: wgpu::Surface<'static>,
-    pub(crate) device: wgpu::Device,
-    pub(crate) queue: wgpu::Queue,
-    pub(crate) config: wgpu::SurfaceConfiguration,
     pub(crate) size: PhysicalSize<u32>,
-    pub(crate) clear_color: wgpu::Color,
-    /// Contexto Ash del 2D cuando `RER_2D_VULKAN=1`. `None` = ruta wgpu de siempre (comportamiento
-    /// actual del motor, sin cambios). En `Arc` porque `resize()` y `render()` comparten los mismos
-    /// objetivos fuera de pantalla.
-    pub(crate) vulkan2d: Option<Arc<crate::vulkan::Vulkan2d>>,
-    pub(crate) render_pipeline: wgpu::RenderPipeline,
-    /// Pipeline para modo 2D: sin depth-write, CompareFunction::Always.
-    /// Permite que el alpha blending funcione correctamente con back-to-front sort.
-    pub(crate) render_pipeline_2d: wgpu::RenderPipeline,
-    /// Sprites sobre swapchain (1 color target; p.ej. hints tras el blit de escena).
-    pub(crate) render_pipeline_overlay: wgpu::RenderPipeline,
-    pub(crate) depth_view: wgpu::TextureView,
-    /// Escena offscreen + blit al swapchain (sin TAA).
-    pub(crate) scene_target: crate::scene_target::SceneTarget,
-    // Uniforms (group 0) — un buffer por malla para que cada draw call
-    // tenga sus propios datos y write_buffer no sobreescriba el anterior.
-    pub(crate) scene_buffer: wgpu::Buffer,
-    /// Bind group del buffer escena (group 0, binding 0).
-    pub(crate) scene_bind_group: wgpu::BindGroup,
-    // Texturas (group 1) — todas en el atlas compartido
-    /// Atlas de texturas: una sola textura GPU 4096×4096 que empaca todos los sprites.
-    /// Todas las entidades comparten su bind group, eliminando los cambios de grupo por batch.
+    /// Color de fondo en 0..=1 (r, g, b, a).
+    pub(crate) clear_color: [f32; 4],
+    /// Contexto Ash del 2D: swapchain, escena fuera de pantalla y todos los pipelines. En `Arc`
+    /// porque `resize()` y `render()` comparten los mismos objetivos.
+    pub(crate) vulkan2d: Arc<crate::vulkan::Vulkan2d>,
+    /// Atlas de texturas: una sola imagen GPU 4096×4096 que empaca todos los sprites.
     pub(crate) atlas: crate::texture::TextureAtlas,
     /// UV rects de cada textura en el atlas, indexados por `MeshComponent.tex_idx`.
     pub(crate) uv_rects: Vec<[f32; 4]>,
@@ -101,11 +80,6 @@ pub struct State {
     // Tiempo
     pub(crate) last_frame: Instant,
     pub delta_time: f32,
-    // Gizmos
-    pub(crate) gizmo_pipeline: wgpu::RenderPipeline,
-    pub(crate) gizmo_buffer: GizmoBuffer,
-    pub(crate) gizmo_bind_group: wgpu::BindGroup,
-    pub(crate) gizmo_buffer_uni: wgpu::Buffer,
     // Física
     pub physics_2d: PhysicsWorld2D,
     // Selección
@@ -132,10 +106,6 @@ pub struct State {
     pub(crate) background_path: Option<String>,
     // Grid 2D: cuadrícula y límites del mundo.
     pub(crate) grid_config: GridConfig,
-    pub(crate) grid_pipeline: wgpu::RenderPipeline,
-    pub(crate) grid_buffer: GridBuffer,
-    pub(crate) grid_bind_group: wgpu::BindGroup,
-    pub(crate) grid_buffer_uni: wgpu::Buffer,
     /// Estado de la tecla Ctrl (enviado por IPC desde Electron, ya que la ventana overlay
     /// no recibe keyboard events directamente).
     pub(crate) ctrl_held: bool,
@@ -176,7 +146,6 @@ pub struct State {
         HashMap<String, crate::screen_hud_image::ScreenHudPackedImage>,
     pub(crate) player_ui_font_cache: HashMap<String, std::sync::Arc<ab_glyph::FontArc>>,
     pub(crate) player_ui_glyph_instances: Vec<crate::mesh::InstanceData>,
-    pub(crate) player_ui_glyph_instance_buffer: Option<wgpu::Buffer>,
     pub(crate) player_ui_selected_text_id: Option<u32>,
     pub(crate) player_ui_selected_button_id: Option<u32>,
     pub(crate) player_ui_selected_image_id: Option<u32>,
@@ -187,8 +156,6 @@ pub struct State {
     pub(crate) player_ui_caret_buffer: GizmoBuffer,
     pub(crate) player_ui_text_drag: Option<crate::config_2d::player_ui::PlayerUiTextDrag>,
     pub(crate) player_ui_last_text_click: Option<(u32, Instant)>,
-    pub(crate) screen_hud_pipeline: wgpu::RenderPipeline,
-    pub(crate) hud_scene_bind_group: wgpu::BindGroup,
     pub(crate) hud_quad_mesh: Mesh,
     pub(crate) hud_image_store: HashMap<String, crate::hud_image_asset::HudImageAssetMeta>,
     /// Muestra los colliders overlay incluso en modo juego (debug toggle).
@@ -563,61 +530,28 @@ impl State {
         if new_size.width == 0 || new_size.height == 0 {
             return;
         }
-        let requested = new_size;
-        let new_size =
-            rer_engine_shared::wgpu_surface::clamp_surface_physical_size(&self.device, new_size);
-        if new_size.width != requested.width || new_size.height != requested.height {
-            log::warn!(
-                "[render-2d] tamaño de viewport {}x{} recortado a {}x{} (límite GPU)",
-                requested.width,
-                requested.height,
-                new_size.width,
-                new_size.height
-            );
-        }
         self.size = new_size;
-        // Con la ruta Ash activa hay que recrear también su swapchain, con el tamaño ya recortado
-        // por el límite de la GPU para que las dos vistas coincidan.
-        if let Some(vulkan) = &self.vulkan2d {
-            let recreated = vulkan.resize(new_size.width, new_size.height);
-            if let Err(error) = recreated {
-                log::warn!("[2d-vulkan] no se pudo recrear el swapchain: {error}");
-            }
+        if let Err(error) = self.vulkan2d.resize(new_size.width, new_size.height) {
+            log::warn!("[2d-vulkan] no se pudo recrear el swapchain: {error}");
         }
-        self.config.width = new_size.width;
-        self.config.height = new_size.height;
-        self.surface.configure(&self.device, &self.config);
-        self.depth_view = create_depth_texture(&self.device, &self.config);
-        self.scene_target.resize(
-            &self.device,
-            self.config.format,
-            new_size.width,
-            new_size.height,
-        );
         if self.player_ui_edit_active {
             self.rebuild_player_ui_screen_grid();
         }
     }
 
-    /// Activa o desactiva V-Sync reconfigurendo el swapchain.
+    /// Activa o desactiva V-Sync. El present mode se fija al crear el swapchain Vulkan; aquí solo
+    /// se conserva la preferencia para la próxima recreación.
     pub fn set_vsync(&mut self, enabled: bool) {
         self.vsync_enabled = enabled;
-        self.config.present_mode = if enabled {
-            wgpu::PresentMode::AutoVsync
-        } else {
-            wgpu::PresentMode::AutoNoVsync
-        };
-        self.surface.configure(&self.device, &self.config);
         log::info!(
             "[vsync] V-Sync {}",
             if enabled { "activado" } else { "desactivado" }
         );
     }
 
-    /// Reconstruye el vertex buffer de la cuadrícula con la configuración actual.
-    pub(crate) fn rebuild_grid(&mut self) {
-        self.grid_buffer = crate::config_2d::build_grid(&self.device, &self.grid_config);
-    }
+    /// La cuadrícula se calcula por frame desde `grid_config` en `render_vulkan`; no hay buffer
+    /// que reconstruir. Se mantiene el punto de entrada para los comandos del editor.
+    pub(crate) fn rebuild_grid(&mut self) {}
 
     /// Notifica al State qué eje del gizmo está siendo arrastrado (None = sin drag).
     pub fn set_active_gizmo_axis(&mut self, axis: Option<usize>) {

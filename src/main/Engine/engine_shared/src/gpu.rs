@@ -1,14 +1,9 @@
 //! Política GPU del motor: **Vulkan** exclusivo (2D y 3D; Windows).
 //!
-//! Sin OpenGL, sin `Backends::all()` ni otros backends wgpu.
+//! El backend real lo crea `engine_shared::vulkan` (Ash). Este módulo solo expone la etiqueta
+//! común y el error de arranque que comparten los binarios.
 
 use std::fmt;
-
-// Sólo del lado wgpu: sin la feature `gpu` el crate no enlaza wgpu y estos imports sobraban.
-#[cfg(feature = "gpu")]
-use std::sync::Arc;
-#[cfg(feature = "gpu")]
-use winit::window::Window;
 
 /// Perfil del binario que solicita GPU (2D vs 3D).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -24,21 +19,9 @@ pub enum EngineGpuBackend {
 }
 
 impl EngineGpuBackend {
-    #[cfg(feature = "gpu")]
-    pub fn wgpu_backends(self) -> wgpu::Backends {
-        let _ = self;
-        wgpu::Backends::VULKAN
-    }
-
     pub fn label(self) -> &'static str {
         let _ = self;
         "Vulkan"
-    }
-
-    #[cfg(feature = "gpu")]
-    fn expected_wgpu_backend(self) -> wgpu::Backend {
-        let _ = self;
-        wgpu::Backend::Vulkan
     }
 }
 
@@ -59,78 +42,6 @@ impl fmt::Display for GpuInitError {
 }
 
 impl std::error::Error for GpuInitError {}
-
-#[cfg(feature = "gpu")]
-fn user_facing_message(backend: EngineGpuBackend, detail: &str) -> String {
-    let _ = backend;
-    let hints = "\
-         • Instala o actualiza los controladores de tu tarjeta gráfica (NVIDIA / AMD / Intel).\n\
-         • Comprueba Vulkan en terminal: `vulkaninfo` o `vkcube`.\n\
-         • Reinicia el editor después de instalar drivers.";
-
-    format!(
-        "No se pudo iniciar el motor gráfico con {}.\n\n\
-         {detail}\n\n\
-         Sugerencias:\n{hints}",
-        backend.label()
-    )
-}
-
-/// Crea instancia wgpu, surface y adapter para el perfil indicado.
-#[cfg(feature = "gpu")]
-pub async fn init_gpu(
-    window: Arc<Window>,
-    profile: EngineGpuProfile,
-) -> Result<(wgpu::Instance, wgpu::Surface<'static>, wgpu::Adapter), GpuInitError> {
-    let backend = resolve_backend(profile);
-    let backends = backend.wgpu_backends();
-
-    let instance = wgpu::Instance::new({
-        let mut desc = wgpu::InstanceDescriptor::new_without_display_handle();
-        desc.backends = backends;
-        desc
-    });
-
-    let surface = instance.create_surface(window).map_err(|e| GpuInitError {
-        message: user_facing_message(
-            backend,
-            &format!("No se pudo crear la superficie de presentación: {e}"),
-        ),
-    })?;
-
-    let adapter = instance
-        .request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::HighPerformance,
-            compatible_surface: Some(&surface),
-            force_fallback_adapter: false,
-        })
-        .await
-        .map_err(|e| GpuInitError {
-            message: user_facing_message(
-                backend,
-                &format!(
-                    "No se encontró ningún adaptador gráfico compatible con la superficie: {e}"
-                ),
-            ),
-        })?;
-
-    let info = adapter.get_info();
-    if info.backend != backend.expected_wgpu_backend() {
-        return Err(GpuInitError {
-            message: user_facing_message(
-                backend,
-                &format!(
-                    "El adaptador devolvió {:?} en lugar de {}.",
-                    info.backend,
-                    backend.label()
-                ),
-            ),
-        });
-    }
-
-    log::info!("Motor GPU: {} — {}", backend.label(), info.name);
-    Ok((instance, surface, adapter))
-}
 
 #[cfg(test)]
 mod tests {

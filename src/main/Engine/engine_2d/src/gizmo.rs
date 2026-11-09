@@ -5,16 +5,12 @@
 // siempre sean visibles encima de la escena del editor.
 // ---------------------------------------------------------------------------
 
-use wgpu::util::DeviceExt;
-
 pub use rer_engine_shared::player_ui::ndc_draw::NdcVertex as GizmoVertex;
 
+/// Overlay de vértices en CPU. El renderer Ash sube estos datos a sus propios `VkBuffer` en el
+/// frame (`FrameInput`); el motor ya no mantiene buffers gráficos por overlay.
 pub struct GizmoBuffer {
-    pub vertex_buffer: wgpu::Buffer,
     pub vertex_count: u32,
-    /// Copia CPU de los vértices. La ruta Vulkan (fase 5b) no puede leer los buffers de wgpu, así
-    /// que reutiliza estos datos para sus propios `VkBuffer`. Son overlays pequeños (rejilla de
-    /// pantalla, texto, cursor, herramienta), así que mantenerlos es barato.
     pub vertices: Vec<GizmoVertex>,
 }
 
@@ -143,37 +139,9 @@ pub fn axes_vertices(length: f32) -> Vec<GizmoVertex> {
     verts
 }
 
-pub fn build_axes(device: &wgpu::Device, length: f32) -> GizmoBuffer {
-    let verts = axes_vertices(length);
-
-    let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some("gizmo-vbo"),
-        contents: bytemuck::cast_slice(&verts),
-        usage: wgpu::BufferUsages::VERTEX,
-    });
-
+/// Crea un GizmoBuffer a partir de vértices ya construidos (tool overlays, etc.).
+pub fn build_from_vertices(verts: &[GizmoVertex]) -> GizmoBuffer {
     GizmoBuffer {
-        vertex_buffer,
-        vertex_count: verts.len() as u32,
-        vertices: verts,
-    }
-}
-
-/// Creates a GizmoBuffer from arbitrary pre-built line vertices (tool overlays, etc.).
-pub fn build_from_vertices(device: &wgpu::Device, verts: &[GizmoVertex]) -> GizmoBuffer {
-    // Always allocate at least one vertex so the buffer is valid.
-    let data: &[u8] = if verts.is_empty() {
-        &[0u8; std::mem::size_of::<GizmoVertex>()]
-    } else {
-        bytemuck::cast_slice(verts)
-    };
-    let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some("tool-overlay-vbo"),
-        contents: data,
-        usage: wgpu::BufferUsages::VERTEX,
-    });
-    GizmoBuffer {
-        vertex_buffer,
         vertex_count: verts.len() as u32,
         vertices: verts.to_vec(),
     }

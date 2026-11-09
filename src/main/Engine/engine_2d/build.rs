@@ -4,7 +4,8 @@
 //! por último en `C:\VulkanSDK\*`. Los `.spv` quedan en `OUT_DIR` y la ruta Vulkan los carga con
 //! `include_bytes!(concat!(env!("OUT_DIR"), "/<nombre>.spv"))`.
 //!
-//! Los WGSL originales siguen en `src/` porque la ruta wgpu los necesita hasta la fase 6.
+//! Los WGSL originales siguen en `src/` como referencia histórica; el motor ya solo compila y
+//! carga estos SPIR-V.
 
 use std::env;
 use std::path::{Path, PathBuf};

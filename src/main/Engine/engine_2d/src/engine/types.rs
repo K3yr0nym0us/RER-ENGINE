@@ -9,7 +9,6 @@ use crate::ipc::{AnimScriptData, AnimationFrameData};
 
 use super::audio::DecodedAudio;
 
-pub(crate) const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 pub(crate) const AUTOSAVE_INTERVAL: Duration = Duration::from_secs(5 * 60);
 
 /// Undo/gizmo snapshot: `(entity_id, position, rotation_quat, scale)`.
