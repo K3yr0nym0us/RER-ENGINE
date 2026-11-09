@@ -25,10 +25,14 @@ impl State {
     pub async fn new(window: Arc<Window>) -> Result<Self, GpuInitError> {
         let size = window.inner_size();
 
-        let vulkan =
-            crate::vulkan::SharedGpu::new(window.as_ref()).map_err(|error| GpuInitError {
-                message: error.to_string(),
-            })?;
+        // El 3D sí pide trazado por hardware (todo-o-nada) y `imageCubeArray` para las sondas.
+        let vulkan = crate::vulkan::SharedGpu::new(
+            window.as_ref(),
+            &crate::vulkan::VulkanOptions::three_d(),
+        )
+        .map_err(|error| GpuInitError {
+            message: error.to_string(),
+        })?;
 
         let shadow_tier = crate::config_3d::shadow_graphics::DEFAULT_SHADOW_TIER;
         let shadow_map_size = shadow_tier.shadow_map_size();

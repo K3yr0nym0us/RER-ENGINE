@@ -2751,12 +2751,16 @@ dependencies = [
 name = "rer-engine-shared"
 version = "0.1.0"
 dependencies = [
+ "ash",
+ "ash-window",
  "bitflags 2.13.2",
  "bytemuck",
  "env_logger",
  "glam 0.33.1",
+ "gpu-allocator 0.27.0",
  "image",
  "log",
+ "raw-window-handle",
  "rhai",
  "serde",
  "serde_json",

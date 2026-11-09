@@ -3,7 +3,7 @@
 // estrecha el invariante (Entry vive más que Instance, e Instance más que Device).
 #![allow(unsafe_op_in_unsafe_fn)]
 
-//! Contexto Vulkan del motor 3D.
+//! Contexto Vulkan compartido (Ash): instancia, adapter, device, superficie y swapchain.
 //!
 //! `ash` no libera `Instance` ni `Device` en `Drop`: el driver ata la vida de cada objeto
 //! al padre (buffer → device → instance → entry). Por eso este módulo usa `unsafe` de FFI
@@ -171,6 +171,30 @@ pub struct SharedGpu {
     inner: Arc<GpuInner>,
 }
 
+/// Qué le pide al adaptador el motor que crea el contexto.
+///
+/// El núcleo es el mismo para los dos motores; lo único que cambia son las capacidades que cada uno
+/// necesita. Con `ray_tracing = false` no se solicitan las extensiones `VK_KHR_*` de trazado (el 3D
+/// las pide **todo-o-nada** y cae al BVH si falta alguna) ni se exige `buffer device address`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub struct VulkanOptions {
+    /// Pedir RT (`acceleration_structure`, `ray_tracing_pipeline`, `deferred_host_operations`),
+    /// `shader_int64` y `buffer_device_address`. Lo usa el 3D; el 2D lo deja en `false`.
+    pub ray_tracing: bool,
+    /// Activar `imageCubeArray`: las sondas de reflejo del 3D muestrean un `samplerCubeArray`.
+    pub image_cube_array: bool,
+}
+
+impl VulkanOptions {
+    /// Opciones del motor 3D: trazado por hardware con fallback BVH y sondas en cubemap array.
+    pub const fn three_d() -> Self {
+        Self {
+            ray_tracing: true,
+            image_cube_array: true,
+        }
+    }
+}
+
 pub struct GpuBuffer {
     gpu: SharedGpu,
     pub buffer: vk::Buffer,
@@ -244,8 +268,8 @@ pub struct FrameTarget {
 }
 
 impl SharedGpu {
-    pub fn new(window: &Window) -> Result<Self, VulkanError> {
-        let gpu = Self::create(window)?;
+    pub fn new(window: &Window, options: &VulkanOptions) -> Result<Self, VulkanError> {
+        let gpu = Self::create(window, options)?;
         // Comprueba el allocator antes de registrar el device como listo.
         let smoke = gpu.create_buffer(
             256,
@@ -256,7 +280,9 @@ impl SharedGpu {
         drop(smoke);
         log::info!(
             "[vulkan] contexto Ash listo. RT por hardware: {}",
-            if gpu.hw_rt() {
+            if !options.ray_tracing {
+                "no solicitado"
+            } else if gpu.hw_rt() {
                 "disponible"
             } else {
                 "no disponible (BVH por software)"
@@ -265,12 +291,15 @@ impl SharedGpu {
         Ok(gpu)
     }
 
-    fn create(window: &Window) -> Result<Self, VulkanError> {
+    fn create(window: &Window, options: &VulkanOptions) -> Result<Self, VulkanError> {
         // FFI: cargar vulkan-1.dll y crear instance/device. El Drop de GpuInner los destruye.
-        unsafe { Self::create_unchecked(window) }
+        unsafe { Self::create_unchecked(window, options) }
     }
 
-    unsafe fn create_unchecked(window: &Window) -> Result<Self, VulkanError> {
+    unsafe fn create_unchecked(
+        window: &Window,
+        options: &VulkanOptions,
+    ) -> Result<Self, VulkanError> {
         let entry = ash::Entry::load().map_err(|error| {
             VulkanError::new(format!(
                 "No se pudo cargar vulkan-1.dll ({error}). Instala los controladores de la GPU o el Vulkan Runtime."
@@ -379,8 +408,10 @@ impl SharedGpu {
             .map_err(|error| vk_error("enumerar extensiones del adaptador", error))?;
         let available = extension_name_list(&extensions);
         let missing = missing_extensions(RT_DEVICE_EXTENSIONS, &available);
-        let mut hw_rt = hw_rt_supported(&available);
-        if !missing.is_empty() {
+        // Sin `ray_tracing` no se pregunta ni se avisa: el 2D no usa trazado y un aviso suyo
+        // sería ruido ("se usará el BVH por software" sin que nadie lo haya pedido).
+        let mut hw_rt = options.ray_tracing && hw_rt_supported(&available);
+        if options.ray_tracing && !missing.is_empty() {
             for ext in &missing {
                 log::warn!(
                     "[vulkan] extensión de ray tracing ausente: {ext}. Se usará el BVH por software."
@@ -403,7 +434,7 @@ impl SharedGpu {
                 "El adaptador no expone Vulkan 1.3 (dynamic rendering / synchronization2).",
             ));
         }
-        if queried_12.buffer_device_address == vk::FALSE {
+        if options.ray_tracing && queried_12.buffer_device_address == vk::FALSE {
             return Err(VulkanError::new(
                 "El adaptador no expone buffer device address, necesario para el trazado.",
             ));
@@ -423,7 +454,9 @@ impl SharedGpu {
         let mut enabled_rt =
             vk::PhysicalDeviceRayTracingPipelineFeaturesKHR::default().ray_tracing_pipeline(true);
         let mut enabled_12 = vk::PhysicalDeviceVulkan12Features::default()
-            .buffer_device_address(true)
+            // Solo el motor que traza necesita direcciones de dispositivo; activarla sin soporte
+            // haría fallar `create_device`, así que sigue a la opción del motor.
+            .buffer_device_address(options.ray_tracing)
             .descriptor_indexing(true)
             .runtime_descriptor_array(true)
             .shader_sampled_image_array_non_uniform_indexing(true)
@@ -458,10 +491,14 @@ impl SharedGpu {
             fill_mode_non_solid: vk::TRUE,
             fragment_stores_and_atomics: vk::TRUE,
             shader_int64: core_features.shader_int64,
-            // Las probes usan un `texture_cube_array` (6 caras por ranura) y el forward lo muestrea
-            // con `samplerCubeArray`. Las dos cosas exigen `imageCubeArray`: sin la feature la vista
-            // y el muestreo quedan indefinidos (reflejos duplicados / basura).
-            image_cube_array: vk::TRUE,
+            // Las probes del 3D usan un `texture_cube_array` (6 caras por ranura) y el forward lo
+            // muestrea con `samplerCubeArray`: sin la feature la vista y el muestreo quedan
+            // indefinidos (reflejos duplicados / basura). El 2D no la pide.
+            image_cube_array: if options.image_cube_array {
+                vk::TRUE
+            } else {
+                vk::FALSE
+            },
             ..vk::PhysicalDeviceFeatures::default()
         };
 
@@ -498,7 +535,7 @@ impl SharedGpu {
             device: device.clone(),
             physical_device: physical,
             debug_settings: Default::default(),
-            buffer_device_address: true,
+            buffer_device_address: options.ray_tracing,
             allocation_sizes: Default::default(),
         })
         .map_err(|error| {
@@ -1457,7 +1494,9 @@ impl GpuBuffer {
     }
 }
 
-pub(crate) fn cmd_image_barrier(
+/// Barrera de imagen. `pub` porque el renderer de cada motor la llama para transitar layouts
+/// fuera del ciclo normal de recursos (adjunto ↔ lectura en los pases).
+pub fn cmd_image_barrier(
     device: &ash::Device,
     command: vk::CommandBuffer,
     image: vk::Image,

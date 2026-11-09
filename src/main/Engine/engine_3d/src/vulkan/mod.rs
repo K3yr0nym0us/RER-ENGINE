@@ -1,18 +1,36 @@
-//! Vulkan crudo (Ash) del motor 3D. El motor 2D sigue en wgpu.
+//! Vulkan crudo (Ash) del motor 3D.
 //!
-//! El `unsafe` de este módulo es FFI de Vulkan: ash expone handles cuyo orden de
-//! destrucción lo marca la especificación (buffer, imagen, swapchain, device, surface,
-//! instance) y esos tipos no implementan `Drop`.
+//! El núcleo (contexto, swapchain, buffers, imágenes, selección de formato) ya no está aquí: vive
+//! en `rer_engine_shared::vulkan` y se comparte con el motor 2D. Estos alias de módulo mantienen
+//! vivas las rutas `super::gpu::…`, `super::error::…` y `super::select::…` que usan `frame.rs` y
+//! `accel.rs`, así que la extracción no obligó a reescribir el renderer.
+//!
+//! Lo que sí se queda en el crate: `frame.rs` (raster + G-buffer + MSAA + TAA + SSR + sondas +
+//! sombras) y `accel.rs` (BLAS/TLAS), que son específicos de la escena 3D.
+//!
+//! El `unsafe` de este módulo es FFI de Vulkan: ash expone handles cuyo orden de destrucción lo
+//! marca la especificación (buffer → device → instance → entry) y esos tipos no implementan
+//! `Drop`.
 
 mod accel;
-mod error;
 mod frame;
-mod gpu;
-mod select;
+
+pub(crate) mod error {
+    pub use rer_engine_shared::vulkan::error::*;
+}
+
+pub(crate) mod gpu {
+    pub use rer_engine_shared::vulkan::gpu::*;
+}
+
+pub(crate) mod select {
+    pub use rer_engine_shared::vulkan::select::*;
+}
 
 pub use frame::{
     FrameInput, FrameRenderer, GizmoBatch, MeshBatch, ProbeCapture, RtBatch, SkinnedBatch,
 };
 
-pub use error::VulkanError;
-pub use gpu::{FrameAcquire, GpuBuffer, GpuImage, SharedGpu};
+pub use rer_engine_shared::vulkan::{
+    FrameAcquire, GpuBuffer, GpuImage, SharedGpu, VulkanError, VulkanOptions,
+};

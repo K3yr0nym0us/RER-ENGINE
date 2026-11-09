@@ -10,6 +10,8 @@ pub mod player_ui;
 pub mod process_metrics;
 pub mod projectile_hardness;
 pub mod scripting;
+#[cfg(feature = "vulkan")]
+pub mod vulkan;
 pub mod wgpu_surface;
 
 /// Magnitud de gravedad por defecto del mundo (m/s², positiva = hacia abajo).

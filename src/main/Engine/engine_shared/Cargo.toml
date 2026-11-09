@@ -16,10 +16,6 @@ path = "src/lib.rs"
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
-# `wgpu` es OPCIONAL a propósito: el motor 3D renderiza con Ash/Vulkan y no debe enlazar wgpu
-# ni de rebote. La feature `gpu` (activada por defecto) trae de vuelta la fachada wgpu que usan
-# el 2D y el editor, así que ningún crate cambia sus rutas de import.
-wgpu = { workspace = true, optional = true }
 winit.workspace = true
 log.workspace = true
 env_logger.workspace = true
@@ -29,6 +25,18 @@ glam.workspace = true
 bytemuck.workspace = true
 bitflags = "2"
 image.workspace = true
+# `wgpu` es OPCIONAL a propósito: el motor 3D renderiza con Ash/Vulkan y no debe enlazar wgpu
+# ni de rebote. La feature `gpu` (activada por defecto) trae de vuelta la fachada wgpu que usan
+# el 2D y el editor, así que ningún crate cambia sus rutas de import.
+wgpu = { workspace = true, optional = true }
+# Núcleo Vulkan crudo (Ash) compartido: contexto, superficie/swapchain, buffers e imágenes.
+# Lo activan el 3D hoy y el 2D cuando migre; el editor tiene su propio renderer de egui.
+ash = { workspace = true, optional = true }
+ash-window = { workspace = true, optional = true }
+raw-window-handle = { workspace = true, optional = true }
+gpu-allocator = { version = "0.27", default-features = false, features = [
+    "vulkan",
+], optional = true }
 
 [features]
 default = ["gpu"]
@@ -36,6 +44,9 @@ default = ["gpu"]
 # `wgpu_surface::acquire_surface_texture`, `player_ui::{ndc_draw::NdcVertex::desc,
 # screen_hud_atlas::ScreenHudAtlas}`).
 gpu = ["dep:wgpu"]
+# `engine_shared::vulkan`: contexto Ash, swapchain, `GpuBuffer`/`GpuImage` y selección de
+# formatos/present mode. Es el mismo código del que el 3D partía en `src/vulkan/`.
+vulkan = ["dep:ash", "dep:ash-window", "dep:raw-window-handle", "dep:gpu-allocator"]
 
 [dev-dependencies]
 zip.workspace = true
